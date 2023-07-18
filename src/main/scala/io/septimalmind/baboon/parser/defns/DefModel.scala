@@ -63,7 +63,6 @@ class DefModel(context: ParserContext,
   def adt[$: P]: P[RawTLDef.ADT] = ???
 
   def member[$: P]: P[RawTLDef] = {
-    val members = List(choice, dto)
     P(choice | dto)
   }
 
