@@ -14,7 +14,7 @@ class DefEnum(context: ParserContext, meta: DefMeta) {
         RawEnumMember(name, meta)
     }
 
-  def enum[$: P]: P[Seq[RawEnumMember]] = {
+  def defEnum[$: P]: P[Seq[RawEnumMember]] = {
     import fastparse.ScalaWhitespace.whitespace
     P(enumMember.rep())
   }
@@ -27,7 +27,7 @@ class DefEnum(context: ParserContext, meta: DefMeta) {
   }
 
   def enumEnclosed[$: P]: P[RawEnum] = {
-    P(meta.member(kw.choice, struct.enclosed(enum(sepEnum)))).map {
+    P(meta.member(kw.choice, struct.enclosed(defEnum(sepEnum)))).map {
       case (meta, name, members) => RawEnum(TypeName(name), members, meta)
     }
   }

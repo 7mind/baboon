@@ -13,7 +13,7 @@ case class ParserContext(file: FSPath, content: String) {
   val defMeta = new DefMeta(this)
   val defEnum = new DefEnum(this, defMeta)
   val defDto = new DefDto(this, defMeta)
-  val defAdt = new DefAdt(this, defMeta)
+  val defAdt = new DefAdt(this, defMeta, defDto)
   val defModel = new DefModel(this, defMeta, defEnum, defDto, defAdt)
 
 }

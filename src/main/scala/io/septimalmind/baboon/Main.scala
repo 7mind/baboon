@@ -1,6 +1,5 @@
 package io.septimalmind.baboon
 
-import fastparse.*
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.{Parser, ParserContext}
 import izumi.fundamentals.collections.nonempty.NonEmptyString
@@ -24,7 +23,18 @@ object Main {
         |data D1 {
         | f1: i08
         | f2: i32
-        | f3: str
+        | f3: opt[str]
+        | f4: map[str, str]
+        |}
+        |
+        |adt A1 {
+        |  data B1 {
+        |     value: D1
+        |  }
+        |
+        |  data B1 {
+        |     value: E1
+        |  }
         |}
         |""".stripMargin
     )
