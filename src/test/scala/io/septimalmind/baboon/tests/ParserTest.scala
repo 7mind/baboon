@@ -14,6 +14,8 @@ class ParserTest extends AnyWordSpec {
         """/* test comment */
           |model my.test.model
           |
+          |version "1.2.3"
+          |
           |enum E1 { A B C }
           |
           |enum E2 {
