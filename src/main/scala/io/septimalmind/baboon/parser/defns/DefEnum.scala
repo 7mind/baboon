@@ -3,7 +3,7 @@ package io.septimalmind.baboon.parser.defns
 import fastparse.P
 import io.septimalmind.baboon.parser.ParserContext
 import io.septimalmind.baboon.parser.defns.base.{idt, kw, sep, struct}
-import io.septimalmind.baboon.parser.model.{RawEnum, RawEnumMember, TypeName}
+import io.septimalmind.baboon.parser.model.{RawEnum, RawEnumMember, RawTypeName}
 
 class DefEnum(context: ParserContext, meta: DefMeta) {
   def enumMemberName[$: P]: P[String] = idt.symbol
@@ -28,7 +28,7 @@ class DefEnum(context: ParserContext, meta: DefMeta) {
 
   def enumEnclosed[$: P]: P[RawEnum] = {
     P(meta.member(kw.choice, struct.enclosed(defEnum(sepEnum)))).map {
-      case (meta, name, members) => RawEnum(TypeName(name), members, meta)
+      case (meta, name, members) => RawEnum(RawTypeName(name), members, meta)
     }
   }
 }

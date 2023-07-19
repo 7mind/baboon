@@ -15,6 +15,9 @@ lazy val root = (project in file("."))
     libraryDependencies ++= Seq(
       "org.scala-lang.modules" %% "scala-parser-combinators" % "2.3.0"
     ),
+    libraryDependencies ++= Seq(
+      "org.scalatest" %% "scalatest" % "3.2.16" % Test,
+    ),
 //    idePackagePrefix := Some("io.septimalmind.baboon"),
     scalacOptions ++= Seq(
       "-Wconf:cat=other-match-analysis:error",

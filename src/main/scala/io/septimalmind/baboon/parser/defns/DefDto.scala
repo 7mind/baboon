@@ -9,7 +9,7 @@ import io.septimalmind.baboon.parser.model.{
   RawField,
   RawFieldName,
   RawTypeRef,
-  TypeName
+  RawTypeName
 }
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 
@@ -26,9 +26,9 @@ class DefDto(context: ParserContext, meta: DefMeta) {
       case (name, params) =>
         params match {
           case Some(value) =>
-            RawTypeRef.Constructor(TypeName(name), value)
+            RawTypeRef.Constructor(RawTypeName(name), value)
           case None =>
-            RawTypeRef.Simple(TypeName(name))
+            RawTypeRef.Simple(RawTypeName(name))
         }
     }
   }
@@ -54,7 +54,7 @@ class DefDto(context: ParserContext, meta: DefMeta) {
 
   def dtoEnclosed[$: P]: P[RawDto] = {
     P(meta.member(kw.data, struct.enclosed(dto))).map {
-      case (meta, name, members) => RawDto(TypeName(name), members, meta)
+      case (meta, name, members) => RawDto(RawTypeName(name), members, meta)
     }
   }
 

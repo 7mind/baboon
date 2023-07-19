@@ -1,3 +1,3 @@
 package io.septimalmind.baboon.parser.model
 
-case class TypeName(name: String)
+case class RawTypeName(name: String)
