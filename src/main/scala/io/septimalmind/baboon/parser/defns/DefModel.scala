@@ -16,7 +16,7 @@ class DefModel(context: ParserContext,
 
   def version[$: P]: P[RawVersion] =
     meta
-      .withMeta(P(kw(kw.version, Literals.Literals.Str)))
+      .withMeta(P(kw(kw.version, Literals.Literals.SimpleStr)))
       .map(RawVersion.tupled)
 
   def choice[$: P]: P[RawTLDef.Enum] = defEnum.enumEnclosed.map(RawTLDef.Enum)

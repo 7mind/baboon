@@ -107,6 +107,12 @@ object Literals {
       }
     }
 
+    def SimpleStr[$: P]: P[String] = {
+      P {
+        ("\"" ~/ SingleChars(false).! ~ "\"")
+      }
+    }
+
 //    case class NamedFunction(f: Char => Boolean)
 //                            (implicit name: sourcecode.Name) extends (Char => Boolean){
 //      def apply(t: Char): Boolean = f(t)
