@@ -24,11 +24,12 @@ object BaboonFamilyManager {
       definitions: List[BaboonParser.Input]
     ): Either[NonEmptyList[BaboonIssue], BaboonFamily] = {
       for {
-
+        parser <- Right(new BaboonParser.BaboonParserImpl())
+        typer <- Right(new BaboonTyper.BaboonTyperImpl())
         domains <- definitions.toList.biMapAggregate { input =>
           for {
-            parsed <- new BaboonParser.BaboonParserImpl().parse(input)
-            typed <- new BaboonTyper.BaboonTyperImpl().process(parsed)
+            parsed <- parser.parse(input)
+            typed <- typer.process(parsed)
           } yield {
             typed
           }
