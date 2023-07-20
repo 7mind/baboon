@@ -2,16 +2,31 @@ package io.septimalmind.baboon.typer.model
 
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 
-case class Domain(defs: List[Typedef])
+case class Domain(id: Pkg, version: Version, defs: Map[TypeId, DomainMember])
+
+sealed trait DomainMember {
+  def id: TypeId
+}
+object DomainMember {
+  case class Builtin(id: TypeId.Builtin) extends DomainMember
+  case class User(root: Boolean, defn: Typedef.User) extends DomainMember {
+    def id: TypeId.User = defn.id
+  }
+}
 
 sealed trait Typedef {
   def id: TypeId
 }
 
 object Typedef {
-  case class Dto(id: TypeId, fields: List[Field]) extends Typedef
-  case class Enum(id: TypeId, members: NonEmptyList[EnumMember]) extends Typedef
-  case class Adt(id: TypeId, members: NonEmptyList[TypeId]) extends Typedef
+  sealed trait User extends Typedef {
+    def id: TypeId.User
+  }
+
+  case class Dto(id: TypeId.User, fields: List[Field]) extends User
+  case class Enum(id: TypeId.User, members: NonEmptyList[EnumMember])
+      extends User
+  case class Adt(id: TypeId.User, members: NonEmptyList[TypeId]) extends User
 }
 
 sealed trait TypeRef
@@ -21,7 +36,36 @@ object TypeRef {
       extends TypeRef
 }
 
-case class TypeId(pkg: Pkg, owner: Owner, name: TypeName)
+sealed trait TypeId {
+  def name: TypeName
+
+}
+object TypeId {
+  case class Builtin(name: TypeName) extends TypeId
+  case class User(pkg: Pkg, owner: Owner, name: TypeName) extends TypeId
+
+  object Builtins {
+    final val i08 = Builtin(TypeName("i08"))
+    final val i32 = Builtin(TypeName("i32"))
+    final val i64 = Builtin(TypeName("i64"))
+    final val str = Builtin(TypeName("str"))
+    final val tsu = Builtin(TypeName("tsu"))
+    final val tso = Builtin(TypeName("tso"))
+
+    final val map = Builtin(TypeName("map"))
+    final val opt = Builtin(TypeName("opt"))
+    final val lst = Builtin(TypeName("lst"))
+    final val set = Builtin(TypeName("set"))
+
+    final val integers = Set(i08, i32, i64)
+    final val timestamps = Set(tsu, tso)
+    final val data = Set(str)
+    final val collections = Set(map, opt, lst, set)
+
+    final val scalars = integers ++ data ++ timestamps
+    final val all = scalars ++ collections
+  }
+}
 
 sealed trait Owner
 object Owner {
@@ -36,3 +80,5 @@ case class EnumMember(name: String)
 
 case class FieldName(name: String)
 case class Field(name: FieldName, tpe: TypeRef)
+
+case class Version(version: String)

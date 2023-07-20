@@ -19,12 +19,19 @@ class DefModel(context: ParserContext,
       .withMeta(P(kw(kw.version, Literals.Literals.SimpleStr)))
       .map(RawVersion.tupled)
 
-  def choice[$: P]: P[RawTLDef.Enum] = defEnum.enumEnclosed.map(RawTLDef.Enum)
-  def dto[$: P]: P[RawTLDef.DTO] = defDto.dtoEnclosed.map(RawTLDef.DTO)
-  def adt[$: P]: P[RawTLDef.ADT] = defAdt.adtEnclosed.map(RawTLDef.ADT)
+  def choice[$: P]: P[RawTLDef.Enum] =
+    defEnum.enumEnclosed.map(RawTLDef.Enum(false, _))
+  def dto[$: P]: P[RawTLDef.DTO] =
+    defDto.dtoEnclosed.map(RawTLDef.DTO(false, _))
+  def adt[$: P]: P[RawTLDef.ADT] =
+    defAdt.adtEnclosed.map(RawTLDef.ADT(false, _))
 
   def member[$: P]: P[RawTLDef] = {
-    P(choice | dto | adt)
+    import fastparse.ScalaWhitespace.whitespace
+    P(kw.root.!.? ~ (choice | dto | adt)).map {
+      case (root, defn) =>
+        defn.setRoot(root.nonEmpty)
+    }
   }
 
   def model[$: P]: P[RawDomain] = {

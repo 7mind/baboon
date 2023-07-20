@@ -18,13 +18,13 @@ class ParserTest extends AnyWordSpec {
           |
           |enum E1 { A B C }
           |
-          |enum E2 {
+          |root enum E2 {
           | A
           | B
           | C
           |}
           |
-          |data D1 {
+          |root data D1 {
           | f1: i08
           | f2: i32
           | f3: opt[str]
