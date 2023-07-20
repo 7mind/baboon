@@ -1,17 +1,20 @@
 package io.septimalmind.baboon.tests
 
+import io.septimalmind.baboon.parser.BaboonParser.BaboonParserImpl
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.{Parser, ParserContext}
+import io.septimalmind.baboon.parser.BaboonParser
 import izumi.fundamentals.collections.nonempty.{NonEmptyList, NonEmptyString}
 import org.scalatest.wordspec.AnyWordSpec
 
 class ParserTest extends AnyWordSpec {
   "baboon parser" should {
     "parse sources" in {
-      val ctx = ParserContext(
-        FSPath.Name(NonEmptyString.unsafeFrom("testfile.baboon")),
-        """/* test comment */
+      val parser = new BaboonParserImpl()
+      val parsed = parser.parse(
+        BaboonParser.Input(
+          FSPath.Name(NonEmptyString.unsafeFrom("testfile.baboon")),
+          """/* test comment */
           |model my.test.model
           |
           |version "1.2.3"
@@ -41,9 +44,8 @@ class ParserTest extends AnyWordSpec {
           |  }
           |}
           |""".stripMargin
+        )
       )
-      val parser = new Parser(ctx)
-      val parsed = parser.parse()
       parsed match {
         case Left(value) =>
           value match {
