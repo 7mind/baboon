@@ -1,16 +1,15 @@
-package io.septimalmind.baboon
+package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue.TODOIssue
-import io.septimalmind.baboon.typer.BaboonTyper
-import io.septimalmind.baboon.typer.model.{Domain, Pkg, Version}
+import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage}
 import izumi.functional.IzEitherAggregations.*
-import izumi.fundamentals.collections.nonempty.{NonEmptyList, NonEmptyMap}
 import izumi.fundamentals.collections.IzCollections.*
+import izumi.fundamentals.collections.nonempty.{NonEmptyList, NonEmptyMap}
 
-case class BaboonLineage(pkg: Pkg, versions: NonEmptyMap[Version, Domain])
-case class BaboonFamily(domains: NonEmptyMap[Pkg, BaboonLineage])
+
+
 
 trait BaboonFamilyManager {
   def load(

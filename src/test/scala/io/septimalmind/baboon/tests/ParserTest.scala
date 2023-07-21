@@ -1,9 +1,9 @@
 package io.septimalmind.baboon.tests
 
+import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.BaboonParser.BaboonParserImpl
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.BaboonParser
 import izumi.fundamentals.collections.nonempty.{NonEmptyList, NonEmptyString}
 import org.scalatest.wordspec.AnyWordSpec
 

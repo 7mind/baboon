@@ -1,0 +1,14 @@
+model testpkg.pkg0
+
+version "1.0.0"
+
+root enum E2 {
+ A
+ B
+}
+
+root data D1 {
+ f1: i08
+ f2: i32
+}
+
