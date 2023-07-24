@@ -7,7 +7,12 @@ root enum E2 {
  B
 }
 
+data D2 {
+    f: D2
+}
+
 root data D1 {
+ f0: D2
  f1: i08
  f2: i32
 }

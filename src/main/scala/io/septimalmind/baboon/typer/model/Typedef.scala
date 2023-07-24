@@ -1,8 +1,19 @@
 package io.septimalmind.baboon.typer.model
 
 import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.graphs.DG
 
-case class Domain(id: Pkg, version: Version, defs: Map[TypeId, DomainMember])
+case class Domain(id: Pkg,
+                  version: Version,
+                  defs: DG[TypeId, DomainMember],
+                  excludedIds: Set[TypeId]) {
+  import izumi.fundamentals.platform.strings.IzString.*
+  override def toString: String =
+    s"""${id} ${version}
+       |  deps: ${defs.predecessors.links.toList.niceList().shift(4)}
+       |  excluded: ${excludedIds.niceList().shift(4)}
+       |  defns: ${defs.meta.nodes.values.niceList().shift(4)}""".stripMargin
+}
 
 sealed trait DomainMember {
   def id: TypeId
@@ -38,11 +49,14 @@ object TypeRef {
 
 sealed trait TypeId {
   def name: TypeName
-
 }
 object TypeId {
-  case class Builtin(name: TypeName) extends TypeId
-  case class User(pkg: Pkg, owner: Owner, name: TypeName) extends TypeId
+  case class Builtin(name: TypeName) extends TypeId {
+    override def toString: String = s"#${name.name}"
+  }
+  case class User(pkg: Pkg, owner: Owner, name: TypeName) extends TypeId {
+    override def toString: String = s"$pkg#${name.name}"
+  }
 
   object Builtins {
     final val i08 = Builtin(TypeName("i08"))
@@ -73,12 +87,20 @@ object Owner {
   case class Adt(id: TypeId) extends Owner
 }
 
-case class Pkg(path: NonEmptyList[String])
+case class Pkg(path: NonEmptyList[String]) {
+  override def toString: String = path.mkString(".")
+}
 case class TypeName(name: String)
 
 case class EnumMember(name: String)
 
-case class FieldName(name: String)
-case class Field(name: FieldName, tpe: TypeRef)
+case class FieldName(name: String) {
+  override def toString: String = s"$name"
+}
+case class Field(name: FieldName, tpe: TypeRef) {
+  override def toString: String = s"$name: $tpe"
+}
 
-case class Version(version: String)
+case class Version(version: String) {
+  override def toString: String = s"{${version}}"
+}

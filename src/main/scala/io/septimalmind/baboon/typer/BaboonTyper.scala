@@ -12,6 +12,10 @@ import io.septimalmind.baboon.typer.model.*
 import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.graphs.struct.IncidenceMatrix
+import izumi.fundamentals.graphs.{DG, GraphMeta}
+
+import scala.annotation.tailrec
 
 trait BaboonTyper {
   def process(
@@ -32,9 +36,67 @@ object BaboonTyper {
         indexedDefs <- defs
           .map(d => (d.id, d))
           .toUniqueMap(_ => NonEmptyList(TODOIssue()))
-
+        roots = indexedDefs.collect {
+          case (k, v: DomainMember.User) if v.root =>
+            (k, v)
+        }
+        predecessors <- buildDependencies(
+          indexedDefs,
+          roots,
+          List.empty
+        )
+        predMatrix = IncidenceMatrix(predecessors)
+        graph = DG.fromPred(predMatrix, GraphMeta(indexedDefs.filter {
+          case (k, _) => predMatrix.links.contains(k)
+        }))
+        excludedIds = indexedDefs.keySet.diff(graph.meta.nodes.keySet)
       } yield {
-        Domain(id, version, indexedDefs)
+        Domain(id, version, graph, excludedIds)
+      }
+    }
+
+    private def explode(tpe: TypeRef): Set[TypeId] = tpe match {
+      case TypeRef.Scalar(id) => Set(id)
+      case TypeRef.Constructor(id, args) =>
+        Set(id) ++ args.toList.flatMap(a => explode(a))
+    }
+
+    private def depsOf(defn: DomainMember): Set[TypeId] = defn match {
+      case _: DomainMember.Builtin => Set.empty
+      case u: DomainMember.User =>
+        u.defn match {
+          case t: Typedef.Dto  => t.fields.flatMap(f => explode(f.tpe)).toSet
+          case _: Typedef.Enum => Set.empty
+          case t: Typedef.Adt  => t.members.toSet
+        }
+    }
+
+    @tailrec
+    private def buildDependencies(defs: Map[TypeId, DomainMember],
+                                  current: Map[TypeId, DomainMember],
+                                  predecessors: List[(TypeId, TypeId)],
+    ): Either[NonEmptyList[BaboonIssue.TyperIssue], Map[TypeId, Set[TypeId]]] = {
+      val nextDepMap = current.toList.flatMap {
+        case (id, defn) =>
+          depsOf(defn).toList.map(dep => (id, dep))
+      }
+      val nextDeps = nextDepMap.map(_._2).toSet
+
+      val next = defs.collect {
+        case (k, v) if nextDeps.contains(k) =>
+          (k, v)
+      }
+
+      import izumi.fundamentals.collections.IzCollections.*
+
+      // here we may extract circular dependencies, that is fine
+      val newPredecessors = predecessors ++ nextDepMap
+      val todo = defs.removedAll(nextDepMap.map(_._1))
+
+      if (next.isEmpty) {
+        Right(newPredecessors.toMultimap)
+      } else {
+        buildDependencies(todo, next, newPredecessors)
       }
     }
 

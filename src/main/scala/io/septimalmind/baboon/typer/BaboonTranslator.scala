@@ -28,7 +28,7 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
                 isRoot: Boolean): Either[NonEmptyList[BaboonIssue.TyperIssue],
                                          Map[TypeId, DomainMember.User]] = {
     for {
-      id <- convertId(defn.name)
+      id <- convertUserId(defn.name)
       members <- convertMember(id, isRoot, defn)
       uniqueMembers <- members
         .map(m => (m.id: TypeId, m))
@@ -40,13 +40,34 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
     }
   }
 
-  private def convertId(
+  private def convertUserId(
     name: RawTypeName,
   ): Either[NonEmptyList[BaboonIssue.TyperIssue], TypeId.User] = {
     for {
+      id <- convertId(name)
+      userId <- id match {
+        case _: TypeId.Builtin =>
+          Left(NonEmptyList(TODOIssue()))
+        case u: TypeId.User =>
+          Right(u)
+      }
+    } yield {
+      userId
+    }
+  }
+
+  private def convertId(
+    name: RawTypeName,
+  ): Either[NonEmptyList[BaboonIssue.TyperIssue], TypeId] = {
+    for {
+      name <- Right(TypeName(name.name))
       _ <- Right(()) // TODO: validate name
     } yield {
-      TypeId.User(pkg, owner, TypeName(name.name))
+      if (TypeId.Builtins.all.map(_.name).contains(name)) {
+        TypeId.Builtin(name)
+      } else {
+        TypeId.User(pkg, owner, name)
+      }
     }
   }
 
