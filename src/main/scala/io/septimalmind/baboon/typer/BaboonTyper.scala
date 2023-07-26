@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue.TODOIssue
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue.TODOTyperIssue
 import io.septimalmind.baboon.parser.model.{
   RawDomain,
   RawHeader,
@@ -13,7 +13,9 @@ import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 import izumi.fundamentals.graphs.struct.IncidenceMatrix
+import izumi.fundamentals.graphs.tools.{Toposort, ToposortLoopBreaker}
 import izumi.fundamentals.graphs.{DG, GraphMeta}
+import izumi.fundamentals.platform.crypto.IzSha256Hash
 
 import scala.annotation.tailrec
 
@@ -25,6 +27,7 @@ trait BaboonTyper {
 
 object BaboonTyper {
   class BaboonTyperImpl() extends BaboonTyper {
+    private val enquiries = new BaboonEnquiries.BaboonEnquiriesImpl()
 
     override def process(
       model: RawDomain
@@ -35,40 +38,57 @@ object BaboonTyper {
         defs <- runTyper(id, model.members)
         indexedDefs <- defs
           .map(d => (d.id, d))
-          .toUniqueMap(_ => NonEmptyList(TODOIssue()))
+          .toUniqueMap(_ => NonEmptyList(TODOTyperIssue()))
         roots = indexedDefs.collect {
           case (k, v: DomainMember.User) if v.root =>
             (k, v)
         }
-        predecessors <- buildDependencies(
-          indexedDefs,
-          roots,
-          List.empty
-        )
+        predecessors <- buildDependencies(indexedDefs, roots, List.empty)
         predMatrix = IncidenceMatrix(predecessors)
         graph = DG.fromPred(predMatrix, GraphMeta(indexedDefs.filter {
           case (k, _) => predMatrix.links.contains(k)
         }))
+//        _ <- LoopDetector.Impl.findLoopMember(graph.predecessors) match {
+//          case Some(_) => Left(NonEmptyList(TODOTyperIssue()))
+//          case None    => Right(())
+//        }
         excludedIds = indexedDefs.keySet.diff(graph.meta.nodes.keySet)
+        shallowSchema = graph.meta.nodes.view
+          .mapValues(enquiries.shallowId)
+          .toMap
+        sorted <- Toposort
+          .cycleBreaking(graph.predecessors, ToposortLoopBreaker.dontBreak)
+          .left
+          .map(_ => NonEmptyList(TODOTyperIssue()))
+        deepSchema <- computeDeepSchema(graph, shallowSchema, sorted)
       } yield {
-        Domain(id, version, graph, excludedIds)
+        println(sorted)
+        Domain(id, version, graph, excludedIds, shallowSchema, deepSchema)
       }
     }
 
-    private def explode(tpe: TypeRef): Set[TypeId] = tpe match {
-      case TypeRef.Scalar(id) => Set(id)
-      case TypeRef.Constructor(id, args) =>
-        Set(id) ++ args.toList.flatMap(a => explode(a))
-    }
+    private def computeDeepSchema(graph: DG[TypeId, DomainMember],
+                                  shallowSchema: Map[TypeId, ShallowSchemaId],
+                                  sorted: Seq[TypeId])
+      : Either[NonEmptyList[BaboonIssue.TyperIssue], Map[TypeId,
+                                                         DeepSchemaId]] = {
+      val out = sorted.foldLeft(Map.empty[TypeId, DeepSchemaId]) {
+        case (idx, id) =>
+          assert(!idx.contains(id))
+          val defn = graph.meta.nodes(id)
+          val deps = enquiries.directDepsOf(defn)
 
-    private def depsOf(defn: DomainMember): Set[TypeId] = defn match {
-      case _: DomainMember.Builtin => Set.empty
-      case u: DomainMember.User =>
-        u.defn match {
-          case t: Typedef.Dto  => t.fields.flatMap(f => explode(f.tpe)).toSet
-          case _: Typedef.Enum => Set.empty
-          case t: Typedef.Adt  => t.members.toSet
-        }
+          val shallowId = shallowSchema(id)
+          val depList = deps.toList
+            .map(id => (enquiries.wrap(id), idx(id).id))
+            .sortBy(_._1)
+
+          val normalizedRepr =
+            s"[${enquiries.wrap(id)};${shallowId};${depList.mkString(",")}]"
+
+          idx.updated(id, DeepSchemaId(IzSha256Hash.hash(normalizedRepr)))
+      }
+      Right(out)
     }
 
     @tailrec
@@ -78,7 +98,7 @@ object BaboonTyper {
     ): Either[NonEmptyList[BaboonIssue.TyperIssue], Map[TypeId, Set[TypeId]]] = {
       val nextDepMap = current.toList.flatMap {
         case (id, defn) =>
-          depsOf(defn).toList.map(dep => (id, dep))
+          enquiries.directDepsOf(defn).toList.map(dep => (id, dep))
       }
       val nextDeps = nextDepMap.map(_._2).toSet
 
@@ -104,7 +124,9 @@ object BaboonTyper {
       header: RawHeader
     ): Either[NonEmptyList[BaboonIssue.TyperIssue], Pkg] = {
       for {
-        nel <- NonEmptyList.from(header.name).toRight(NonEmptyList(TODOIssue()))
+        nel <- NonEmptyList
+          .from(header.name)
+          .toRight(NonEmptyList(TODOTyperIssue()))
         // TODO: validate format
       } yield {
         Pkg(nel)
@@ -129,7 +151,7 @@ object BaboonTyper {
       for {
         initial <- TypeId.Builtins.all
           .map(id => (id: TypeId, DomainMember.Builtin(id): DomainMember))
-          .toUniqueMap(_ => NonEmptyList(TODOIssue()))
+          .toUniqueMap(_ => NonEmptyList(TODOTyperIssue()))
         // we don't support inheritance, so order doesn't matter here
         out <- members.biFoldLeft(initial) {
           case (acc, defn) =>

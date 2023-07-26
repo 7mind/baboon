@@ -6,13 +6,22 @@ import izumi.fundamentals.graphs.DG
 case class Domain(id: Pkg,
                   version: Version,
                   defs: DG[TypeId, DomainMember],
-                  excludedIds: Set[TypeId]) {
+                  excludedIds: Set[TypeId],
+                  shallowSchema: Map[TypeId, ShallowSchemaId],
+                  deepSchema: Map[TypeId, DeepSchemaId],
+) {
   import izumi.fundamentals.platform.strings.IzString.*
   override def toString: String =
     s"""${id} ${version}
        |  deps: ${defs.predecessors.links.toList.niceList().shift(4)}
        |  excluded: ${excludedIds.niceList().shift(4)}
-       |  defns: ${defs.meta.nodes.values.niceList().shift(4)}""".stripMargin
+       |  defns: ${defs.meta.nodes.values
+         .map(
+           member =>
+             s"${shallowSchema(member.id)}, ${deepSchema(member.id)} = $member"
+         )
+         .niceList()
+         .shift(4)}""".stripMargin
 }
 
 sealed trait DomainMember {
@@ -37,7 +46,8 @@ object Typedef {
   case class Dto(id: TypeId.User, fields: List[Field]) extends User
   case class Enum(id: TypeId.User, members: NonEmptyList[EnumMember])
       extends User
-  case class Adt(id: TypeId.User, members: NonEmptyList[TypeId]) extends User
+  case class Adt(id: TypeId.User, members: NonEmptyList[TypeId.User])
+      extends User
 }
 
 sealed trait TypeRef
@@ -84,7 +94,7 @@ object TypeId {
 sealed trait Owner
 object Owner {
   case object Toplevel extends Owner
-  case class Adt(id: TypeId) extends Owner
+  case class Adt(id: TypeId.User) extends Owner
 }
 
 case class Pkg(path: NonEmptyList[String]) {

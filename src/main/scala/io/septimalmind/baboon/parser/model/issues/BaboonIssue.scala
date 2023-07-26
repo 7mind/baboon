@@ -9,10 +9,16 @@ object BaboonIssue {
   case class ParserFailed(fail: Parsed.Failure) extends ParserIssue
 
   sealed trait TyperIssue extends BaboonIssue
-  case class TODOIssue() extends TyperIssue {
+  case class TODOTyperIssue() extends TyperIssue {
     ???
   }
 
   sealed trait VerificationIssue extends BaboonIssue
   sealed trait TranslationIssue extends BaboonIssue
+  sealed trait EvolutionIssue extends BaboonIssue
+
+  case class TODOEvoIssue() extends EvolutionIssue {
+    ???
+  }
+
 }

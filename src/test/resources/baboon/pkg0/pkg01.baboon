@@ -8,7 +8,7 @@ root enum E2 {
 }
 
 data D2 {
-    f: D2
+    f: E2
 }
 
 root data D1 {

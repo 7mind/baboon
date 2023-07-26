@@ -2,14 +2,11 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue.TODOIssue
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue.TODOTyperIssue
 import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage}
 import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.{NonEmptyList, NonEmptyMap}
-
-
-
 
 trait BaboonFamilyManager {
   def load(
@@ -25,6 +22,7 @@ object BaboonFamilyManager {
       for {
         parser <- Right(new BaboonParser.BaboonParserImpl())
         typer <- Right(new BaboonTyper.BaboonTyperImpl())
+        comparator <- Right(new BaboonComparator.BaboonComparatorImpl())
         domains <- definitions.toList.biMapAggregate { input =>
           for {
             parsed <- parser.parse(input)
@@ -43,22 +41,23 @@ object BaboonFamilyManager {
               for {
                 uniqueVersions <- domains
                   .map(d => (d.version, d))
-                  .toUniqueMap(_ => NonEmptyList(TODOIssue()))
+                  .toUniqueMap(_ => NonEmptyList(TODOTyperIssue()))
                 nel <- NonEmptyMap
                   .from(uniqueVersions)
-                  .toRight(NonEmptyList(TODOIssue()))
+                  .toRight(NonEmptyList(TODOTyperIssue()))
+                evo <- comparator.evolve(pkg, nel)
               } yield {
-                BaboonLineage(pkg, nel)
+                BaboonLineage(pkg, nel, evo)
               }
           }
 
         uniqueLineages <- lineages
           .map(l => (l.pkg, l))
-          .toUniqueMap(_ => NonEmptyList(TODOIssue()))
+          .toUniqueMap(_ => NonEmptyList(TODOTyperIssue()))
 
         nem <- NonEmptyMap
           .from(uniqueLineages)
-          .toRight(NonEmptyList(TODOIssue()))
+          .toRight(NonEmptyList(TODOTyperIssue()))
       } yield {
         BaboonFamily(nem)
       }

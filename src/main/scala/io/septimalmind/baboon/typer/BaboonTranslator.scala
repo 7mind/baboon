@@ -2,7 +2,7 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue.TODOIssue
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue.TODOTyperIssue
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.IzCollections.*
@@ -15,7 +15,7 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
     for {
       translated <- translate(defn.value, defn.root)
       next <- if (acc.keySet.intersect(translated.keySet).nonEmpty) {
-        Left(NonEmptyList(TODOIssue()))
+        Left(NonEmptyList(TODOTyperIssue()))
       } else {
         Right(translated)
       }
@@ -33,7 +33,7 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
       uniqueMembers <- members
         .map(m => (m.id: TypeId, m))
         .toList
-        .toUniqueMap(_ => NonEmptyList(TODOIssue()))
+        .toUniqueMap(_ => NonEmptyList(TODOTyperIssue()))
 
     } yield {
       uniqueMembers
@@ -47,7 +47,7 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
       id <- convertId(name)
       userId <- id match {
         case _: TypeId.Builtin =>
-          Left(NonEmptyList(TODOIssue()))
+          Left(NonEmptyList(TODOTyperIssue()))
         case u: TypeId.User =>
           Right(u)
       }
@@ -87,10 +87,10 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
   private def converEnum(
     id: TypeId.User,
     isRoot: Boolean,
-    enum: RawEnum
+    choice: RawEnum
   ): Either[NonEmptyList[BaboonIssue.TyperIssue], DomainMember.User] = {
     for {
-      converted <- enum.members.biMapAggregate { raw =>
+      converted <- choice.members.biMapAggregate { raw =>
         for {
           name <- Right(raw.value)
           _ <- Right(()) // TODO: validate names
@@ -101,8 +101,10 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
       }
       unique <- converted
         .map(m => (m.name.toLowerCase, m))
-        .toUniqueMap(_ => NonEmptyList(TODOIssue()))
-      nel <- NonEmptyList.from(unique.values).toRight(NonEmptyList(TODOIssue()))
+        .toUniqueMap(_ => NonEmptyList(TODOTyperIssue()))
+      nel <- NonEmptyList
+        .from(unique.values)
+        .toRight(NonEmptyList(TODOTyperIssue()))
     } yield {
       DomainMember.User(isRoot, Typedef.Enum(id, nel))
     }
@@ -125,7 +127,7 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
       }
       unique <- converted
         .map(m => (m.name.name.toLowerCase, m))
-        .toUniqueMap(_ => NonEmptyList(TODOIssue()))
+        .toUniqueMap(_ => NonEmptyList(TODOTyperIssue()))
     } yield {
       DomainMember.User(isRoot, Typedef.Dto(id, unique.values.toList))
     }
@@ -149,7 +151,7 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
 
       nel <- NonEmptyList
         .from(converted.map(_.id))
-        .toRight(NonEmptyList(TODOIssue()))
+        .toRight(NonEmptyList(TODOTyperIssue()))
     } yield {
       NonEmptyList(DomainMember.User(isRoot, Typedef.Adt(id, nel)), converted)
     }
@@ -169,7 +171,7 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
         for {
           id <- convertId(name)
           args <- params.toList.biMapAggregate(convertTpe)
-          nel <- NonEmptyList.from(args).toRight(NonEmptyList(TODOIssue()))
+          nel <- NonEmptyList.from(args).toRight(NonEmptyList(TODOTyperIssue()))
         } yield {
           TypeRef.Constructor(id, nel)
         }
