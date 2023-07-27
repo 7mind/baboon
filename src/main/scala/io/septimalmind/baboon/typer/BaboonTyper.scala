@@ -60,15 +60,14 @@ object BaboonTyper {
           .cycleBreaking(graph.predecessors, ToposortLoopBreaker.dontBreak)
           .left
           .map(_ => NonEmptyList(TODOTyperIssue()))
-        deepSchema <- computeDeepSchema(graph, shallowSchema, sorted)
+        deepSchema <- computeDeepSchema(graph, sorted)
       } yield {
-        println(sorted)
         Domain(id, version, graph, excludedIds, shallowSchema, deepSchema)
       }
     }
 
     private def computeDeepSchema(graph: DG[TypeId, DomainMember],
-                                  shallowSchema: Map[TypeId, ShallowSchemaId],
+//                                  shallowSchema: Map[TypeId, ShallowSchemaId],
                                   sorted: Seq[TypeId])
       : Either[NonEmptyList[BaboonIssue.TyperIssue], Map[TypeId,
                                                          DeepSchemaId]] = {
@@ -78,14 +77,17 @@ object BaboonTyper {
           val defn = graph.meta.nodes(id)
           val deps = enquiries.directDepsOf(defn)
 
-          val shallowId = shallowSchema(id)
+//          val shallowId = shallowSchema(id)
           val depList = deps.toList
             .map(id => (enquiries.wrap(id), idx(id).id))
             .sortBy(_._1)
 
           val normalizedRepr =
-            s"[${enquiries.wrap(id)};${shallowId};${depList.mkString(",")}]"
+            s"[${enquiries.wrap(id)};${depList
+              .map({ case (k, v) => s"$k=deep/$v" })
+              .mkString(",")}]"
 
+          println(s"$id: $normalizedRepr")
           idx.updated(id, DeepSchemaId(IzSha256Hash.hash(normalizedRepr)))
       }
       Right(out)

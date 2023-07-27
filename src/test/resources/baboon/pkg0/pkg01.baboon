@@ -2,18 +2,33 @@ model testpkg.pkg0
 
 version "1.0.0"
 
-root enum E2 {
+root enum T1_E1 {
  A
  B
 }
 
-data D2 {
-    f: E2
+data T1_D2 {
+    f: T1_E1
 }
 
-root data D1 {
- f0: D2
+root data T1_D1 {
+ f0: T1_D2
  f1: i08
  f2: i32
 }
 
+//
+
+data T2_D2 {
+    f: i08
+}
+
+root data T2_D1 {
+  f0: T2_D2
+}
+
+//
+
+root data T3_D1 {
+  f0: str
+}

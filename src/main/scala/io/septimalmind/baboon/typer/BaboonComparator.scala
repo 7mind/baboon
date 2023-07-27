@@ -58,7 +58,52 @@ object BaboonComparator {
       val kept = newTypes.intersect(oldTypes)
       val added = newTypes.diff(oldTypes)
       val removed = oldTypes.diff(newTypes)
-      println(last)
+
+      val unmodified = kept.filter { id =>
+        last.shallowSchema(id) == prev.shallowSchema(id) &&
+        last.deepSchema(id) == prev.deepSchema(id)
+      }
+
+      val changed = kept.diff(unmodified)
+
+      // different local structure and different dependencies
+      val completelyModified = changed.filter { id =>
+        last.shallowSchema(id) != prev.shallowSchema(id) &&
+        last.deepSchema(id) != prev.deepSchema(id)
+      }
+
+      val partiallyModified = changed.diff(completelyModified)
+
+      // same dependencies, different local structure
+      val shallowModified = partiallyModified.filter { id =>
+        last.shallowSchema(id) != prev.shallowSchema(id)
+      }
+
+      // same local structure, different dependencies
+      val deepModified = partiallyModified.filter { id =>
+        last.deepSchema(id) != prev.deepSchema(id)
+      }
+
+      assert(shallowModified.intersect(deepModified).isEmpty)
+      assert(shallowModified.intersect(completelyModified).isEmpty)
+      assert(deepModified.intersect(completelyModified).isEmpty)
+      assert(changed.intersect(unmodified).isEmpty)
+      assert(kept.intersect(added).isEmpty)
+      assert(kept.intersect(removed).isEmpty)
+      assert(removed.intersect(added).isEmpty)
+
+//      println(s"added: $added")
+//      println(s"removed: $removed")
+//      println(s"kept: $kept")
+//      println(s"* unmodified: $unmodified")
+//      println(s"* locallyModified: $completelyModified")
+//      println(s"* shallowModified: $shallowModified")
+//      println(s"* deepmodified: $deepModified")
+//
+//      println("OLD:")
+//      println(prev)
+//      println("NEW:")
+//      println(last)
 
       ???
     }
