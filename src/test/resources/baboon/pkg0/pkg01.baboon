@@ -32,3 +32,17 @@ root data T2_D1 {
 root data T3_D1 {
   f0: str
 }
+
+//
+
+root adt T4_A1 {
+   data B1 {
+       f: T3_D1
+   }
+   data B2 {
+       f: T2_D1
+   }
+   data B3 {
+       f: i08
+   }
+}

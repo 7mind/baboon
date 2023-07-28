@@ -28,7 +28,7 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
                 isRoot: Boolean): Either[NonEmptyList[BaboonIssue.TyperIssue],
                                          Map[TypeId, DomainMember.User]] = {
     for {
-      id <- convertUserId(defn.name)
+      id <- convertDefnUserId(defn.name)
       members <- convertMember(id, isRoot, defn)
       uniqueMembers <- members
         .map(m => (m.id: TypeId, m))
@@ -40,11 +40,11 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
     }
   }
 
-  private def convertUserId(
+  private def convertDefnUserId(
     name: RawTypeName,
   ): Either[NonEmptyList[BaboonIssue.TyperIssue], TypeId.User] = {
     for {
-      id <- convertId(name)
+      id <- convertId(name, owner)
       userId <- id match {
         case _: TypeId.Builtin =>
           Left(NonEmptyList(TODOTyperIssue()))
@@ -56,8 +56,8 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
     }
   }
 
-  private def convertId(
-    name: RawTypeName,
+  private def convertId(name: RawTypeName,
+                        ownedBy: Owner,
   ): Either[NonEmptyList[BaboonIssue.TyperIssue], TypeId] = {
     for {
       name <- Right(TypeName(name.name))
@@ -66,7 +66,7 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
       if (TypeId.Builtins.all.map(_.name).contains(name)) {
         TypeId.Builtin(name)
       } else {
-        TypeId.User(pkg, owner, name)
+        TypeId.User(pkg, ownedBy, name)
       }
     }
   }
@@ -163,13 +163,13 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
     tpe match {
       case RawTypeRef.Simple(name) =>
         for {
-          id <- convertId(name)
+          id <- convertId(name, Owner.Toplevel)
         } yield {
           TypeRef.Scalar(id)
         }
       case RawTypeRef.Constructor(name, params) =>
         for {
-          id <- convertId(name)
+          id <- convertId(name, Owner.Toplevel)
           args <- params.toList.biMapAggregate(convertTpe)
           nel <- NonEmptyList.from(args).toRight(NonEmptyList(TODOTyperIssue()))
         } yield {

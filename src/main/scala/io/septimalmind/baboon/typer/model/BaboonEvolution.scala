@@ -66,15 +66,20 @@ object DtoOp {
   case class AddField(f: Field) extends DtoOp
   case class RemoveField(f: Field) extends DtoOp
   case class ChangeField(f: Field, newType: TypeRef) extends DtoOp
-  case class KeepField(f: Field, modification: FieldModification) extends DtoOp
+  case class KeepField(f: Field, modification: RefModification) extends DtoOp
 }
 
-sealed trait FieldModification
-object FieldModification {
-  case object Unchanged extends FieldModification
-  case object Shallow extends FieldModification
-  case object Deep extends FieldModification
-  case object Full extends FieldModification
+sealed trait RefModification
+object RefModification {
+  case object Unchanged extends RefModification
+  case object Shallow extends RefModification
+  case object Deep extends RefModification
+  case object Full extends RefModification
 }
 
 sealed trait AdtOp extends AbstractOp
+object AdtOp {
+  case class AddBranch(id: TypeId.User) extends AdtOp
+  case class RemoveBranch(id: TypeId.User) extends AdtOp
+  case class KeepBranch(id: TypeId.User, modification: RefModification) extends AdtOp
+}

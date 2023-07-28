@@ -123,9 +123,7 @@ object BaboonComparator {
 
           (defOld, defNew) match {
             case (uold: DomainMember.User, unew: DomainMember.User) =>
-              diff(prev, last, changes, uold.defn, unew.defn).map(
-                diff => (id, diff)
-              )
+              diff(changes, uold.defn, unew.defn).map(diff => (id, diff))
 
             case _ =>
               Left(NonEmptyList(BaboonIssue.TODOEvoIssue()))
@@ -141,8 +139,6 @@ object BaboonComparator {
     }
 
     private def diff(
-      prev: Domain,
-      last: Domain,
       changes: BaboonChanges,
       prevDef: Typedef.User,
       nextDef: Typedef.User
@@ -151,7 +147,7 @@ object BaboonComparator {
         case (e1: Typedef.Enum, e2: Typedef.Enum) =>
           diffEnums(e1, e2)
         case (a1: Typedef.Adt, a2: Typedef.Adt) =>
-          diffAdts(prev, last, a1, a2)
+          diffAdts(changes, a1, a2)
         case (d1: Typedef.Dto, d2: Typedef.Dto) =>
           diffDtos(changes, d1, d2)
         case (o1, o2) =>
@@ -182,12 +178,29 @@ object BaboonComparator {
     }
 
     private def diffAdts(
-      prev: Domain,
-      last: Domain,
+      changes: BaboonChanges,
       a1: Typedef.Adt,
       a2: Typedef.Adt
     ): Either[NonEmptyList[BaboonIssue.EvolutionIssue], TypedefDiff] = {
-      Right(TypedefDiff.AdtDiff(List.empty))
+      val members1 = a1.members.toSet
+      val members2 = a2.members.toSet
+
+      val removedMembers = members1.diff(members2)
+      val addedMembers = members2.diff(members1)
+      val keptMembers = members1.intersect(members2).map { ref =>
+        val modification =
+          figureOutModification(changes, Set(ref))
+
+        AdtOp.KeepBranch(ref, modification)
+      }
+
+      val ops = List(
+        removedMembers.map(id => AdtOp.RemoveBranch(id)),
+        addedMembers.map(id => AdtOp.AddBranch(id)),
+        keptMembers,
+      ).flatten
+
+      Right(TypedefDiff.AdtDiff(ops))
     }
 
     private def diffDtos(
@@ -219,28 +232,7 @@ object BaboonComparator {
           case (_, f2) =>
             val directRefs = enquiries.explode(f2.tpe)
             val modification =
-              if (directRefs.exists(id => changes.changed.contains(id))) {
-
-                if (directRefs.exists(id => changes.fullyModified.contains(id))) {
-                  FieldModification.Full
-                } else if (directRefs.exists(
-                             id => changes.shallowModified.contains(id)
-                           )) {
-                  FieldModification.Shallow
-                } else {
-                  assert(
-                    directRefs.forall(
-                      id =>
-                        changes.unmodified.contains(id) || changes.deepModified
-                          .contains(id)
-                    )
-                  )
-                  FieldModification.Deep
-                }
-
-              } else {
-                FieldModification.Unchanged
-              }
+              figureOutModification(changes, directRefs)
 
             DtoOp.KeepField(f2, modification)
         }
@@ -255,6 +247,33 @@ object BaboonComparator {
       Right(TypedefDiff.DtoDiff(ops))
     }
 
+    private def figureOutModification(
+      changes: BaboonChanges,
+      directRefs: Set[TypeId]
+    ): RefModification = {
+      if (directRefs.exists(id => changes.changed.contains(id))) {
+
+        if (directRefs.exists(id => changes.fullyModified.contains(id))) {
+          RefModification.Full
+        } else if (directRefs.exists(
+                     id => changes.shallowModified.contains(id)
+                   )) {
+          RefModification.Shallow
+        } else {
+          assert(
+            directRefs.forall(
+              id =>
+                changes.unmodified.contains(id) || changes.deepModified
+                  .contains(id)
+            )
+          )
+          RefModification.Deep
+        }
+
+      } else {
+        RefModification.Unchanged
+      }
+    }
   }
 
 }
