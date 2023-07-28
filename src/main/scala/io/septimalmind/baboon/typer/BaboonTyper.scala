@@ -87,7 +87,7 @@ object BaboonTyper {
               .map({ case (k, v) => s"$k=deep/$v" })
               .mkString(",")}]"
 
-          println(s"$id: $normalizedRepr")
+//          println(s"$id: $normalizedRepr")
           idx.updated(id, DeepSchemaId(IzSha256Hash.hash(normalizedRepr)))
       }
       Right(out)

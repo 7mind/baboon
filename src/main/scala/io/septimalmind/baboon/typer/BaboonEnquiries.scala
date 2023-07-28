@@ -1,11 +1,19 @@
 package io.septimalmind.baboon.typer
 
-import io.septimalmind.baboon.typer.model.{DomainMember, Owner, ShallowSchemaId, TypeId, TypeRef, Typedef}
+import io.septimalmind.baboon.typer.model.{
+  DomainMember,
+  Owner,
+  ShallowSchemaId,
+  TypeId,
+  TypeRef,
+  Typedef
+}
 import izumi.fundamentals.platform.crypto.IzSha256Hash
 
 trait BaboonEnquiries {
   def directDepsOf(defn: DomainMember): Set[TypeId]
   def wrap(id: TypeId): String
+  def explode(tpe: TypeRef): Set[TypeId]
 }
 
 object BaboonEnquiries {
@@ -21,7 +29,7 @@ object BaboonEnquiries {
         }
     }
 
-    private def explode(tpe: TypeRef): Set[TypeId] = tpe match {
+    def explode(tpe: TypeRef): Set[TypeId] = tpe match {
       case TypeRef.Scalar(id) => Set(id)
       case TypeRef.Constructor(id, args) =>
         Set(id) ++ args.toList.flatMap(a => explode(a))
@@ -77,5 +85,3 @@ object BaboonEnquiries {
   }
 
 }
-
-
