@@ -84,10 +84,31 @@ object TypeId {
     final val integers = Set(i08, i32, i64)
     final val timestamps = Set(tsu, tso)
     final val data = Set(str)
-    final val collections = Set(map, opt, lst, set)
+
+    final val seqCollections = Set(lst, set)
+    final val collections = Set(map, opt) ++ seqCollections
 
     final val scalars = integers ++ data ++ timestamps
     final val all = scalars ++ collections
+
+    private final val collIds = TypeId.Builtins.collections.toSet[TypeId]
+    private final val seqColls = TypeId.Builtins.seqCollections.toSet[TypeId]
+    private final val safeSources = seqColls ++ Set(TypeId.Builtins.opt)
+
+    def hasDefaultValue(id: TypeRef.Constructor): Boolean =
+      collIds.contains(id.id)
+
+    def canBeWrappedIntoCollection(o: TypeRef.Scalar,
+                                   n: TypeRef.Constructor): Boolean = {
+      collIds.contains(n.id) && n.args == NonEmptyList(o)
+    }
+
+    def canChangeCollectionType(o: TypeRef.Constructor,
+                                n: TypeRef.Constructor): Boolean = {
+      // we can safely change collection types between list <-> set, opt -> (list | set)
+      o.args == n.args && safeSources.contains(o.id) && seqColls
+        .contains(n.id)
+    }
   }
 }
 

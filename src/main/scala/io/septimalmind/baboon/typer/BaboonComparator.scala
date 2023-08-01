@@ -30,16 +30,24 @@ object BaboonComparator {
       val pinnacle = versions(pinnacleVersion)
 
       for {
+        rules <- Right(new BaboonRules.BaboonRulesImpl())
         indexedDiffs <- prior
           .map(v => compare(pinnacle, versions(v)).map(diff => (v, diff)))
           .biAggregate
-        asMap <- indexedDiffs.toUniqueMap(
+        diffMap <- indexedDiffs.toUniqueMap(
+          e => NonEmptyList(BaboonIssue.TODOEvoIssue())
+        )
+
+        rulesets <- diffMap.map {
+          case (v, diff) =>
+            rules.compute(versions(v), pinnacle, diff).map(rs => (v, rs))
+        }.biAggregate
+        rulesetMap <- rulesets.toUniqueMap(
           e => NonEmptyList(BaboonIssue.TODOEvoIssue())
         )
       } yield {
-        BaboonEvolution(pkg, pinnacleVersion, asMap)
+        BaboonEvolution(pkg, pinnacleVersion, diffMap, rulesetMap)
       }
-
     }
 
     private def compare(

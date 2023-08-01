@@ -4,17 +4,23 @@ import izumi.fundamentals.platform.strings.IzString.*
 
 case class BaboonEvolution(pkg: Pkg,
                            latest: Version,
-                           diffs: Map[Version, BaboonDiff]) {
+                           diffs: Map[Version, BaboonDiff],
+                           rules: Map[Version, BaboonRuleset],
+) {
   override def toString: String = {
     diffs
       .map {
         case (v, diff) =>
+          val modRepr = diff.diffs
+            .map {
+              case (id, d) =>
+                s"$id = ${d.ops.niceList().shift(2)}"
+            }
+          val ruleset = rules(v).conversions
           s"""$v => $latest:
              |${diff.changes.toString.shift(2)}
-             |Modifications: ${diff.diffs
-               .map({ case (id, d) => s"$id = ${d.ops.niceList().shift(2)}" })
-               .niceList()
-               .shift(2)}""".stripMargin
+             |Modifications: ${modRepr.niceList().shift(2)}
+             |Rules: ${ruleset.niceList().shift(2)}""".stripMargin
       }
       .niceList()
   }
@@ -40,46 +46,4 @@ case class BaboonChanges(added: Set[TypeId],
       s"Modified (deep): ${deepModified.niceList()}",
       s"Modified (full): ${fullyModified.niceList()}",
     ).mkString("\n")
-}
-
-sealed trait TypedefDiff {
-  def ops: List[AbstractOp]
-}
-
-object TypedefDiff {
-  case class EnumDiff(ops: List[EnumOp]) extends TypedefDiff
-  case class DtoDiff(ops: List[DtoOp]) extends TypedefDiff
-  case class AdtDiff(ops: List[AdtOp]) extends TypedefDiff
-}
-
-sealed trait AbstractOp
-
-sealed trait EnumOp extends AbstractOp
-object EnumOp {
-  case class AddBranch(m: EnumMember) extends EnumOp
-  case class RemoveBranch(m: EnumMember) extends EnumOp
-  case class KeepBranch(m: EnumMember) extends EnumOp
-}
-
-sealed trait DtoOp extends AbstractOp
-object DtoOp {
-  case class AddField(f: Field) extends DtoOp
-  case class RemoveField(f: Field) extends DtoOp
-  case class ChangeField(f: Field, newType: TypeRef) extends DtoOp
-  case class KeepField(f: Field, modification: RefModification) extends DtoOp
-}
-
-sealed trait RefModification
-object RefModification {
-  case object Unchanged extends RefModification
-  case object Shallow extends RefModification
-  case object Deep extends RefModification
-  case object Full extends RefModification
-}
-
-sealed trait AdtOp extends AbstractOp
-object AdtOp {
-  case class AddBranch(id: TypeId.User) extends AdtOp
-  case class RemoveBranch(id: TypeId.User) extends AdtOp
-  case class KeepBranch(id: TypeId.User, modification: RefModification) extends AdtOp
 }
