@@ -35,7 +35,7 @@ object BaboonComparator {
           .map(v => compare(pinnacle, versions(v)).map(diff => (v, diff)))
           .biAggregate
         diffMap <- indexedDiffs.toUniqueMap(
-          e => NonEmptyList(BaboonIssue.TODOEvoIssue())
+          e => NonEmptyList(BaboonIssue.NonUniqueDiff(e))
         )
 
         rulesets <- diffMap.map {
@@ -43,7 +43,7 @@ object BaboonComparator {
             rules.compute(versions(v), pinnacle, diff).map(rs => (v, rs))
         }.biAggregate
         rulesetMap <- rulesets.toUniqueMap(
-          e => NonEmptyList(BaboonIssue.TODOEvoIssue())
+          e => NonEmptyList(BaboonIssue.NonUniqueRuleset(e))
         )
       } yield {
         BaboonEvolution(pkg, pinnacleVersion, diffMap, rulesetMap)
@@ -133,13 +133,13 @@ object BaboonComparator {
             case (uold: DomainMember.User, unew: DomainMember.User) =>
               diff(changes, uold.defn, unew.defn).map(diff => (id, diff))
 
-            case _ =>
-              Left(NonEmptyList(BaboonIssue.TODOEvoIssue()))
+            case (o, n) =>
+              Left(NonEmptyList(BaboonIssue.IncomparableTypedefs(o, n)))
           }
 
         }.biAggregate
         indexedDiffs <- diffs.toUniqueMap(
-          _ => NonEmptyList(BaboonIssue.TODOEvoIssue())
+          e => NonEmptyList(BaboonIssue.NonUniqueDiffs(e))
         )
       } yield {
         BaboonDiff(changes, indexedDiffs)
@@ -159,7 +159,7 @@ object BaboonComparator {
         case (d1: Typedef.Dto, d2: Typedef.Dto) =>
           diffDtos(changes, d1, d2)
         case (o1, o2) =>
-          Left(NonEmptyList(BaboonIssue.TODOEvoIssue()))
+          Left(NonEmptyList(BaboonIssue.MismatchingTypedefs(o1, o2)))
       }
     }
 

@@ -1,13 +1,7 @@
 package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue.TODOTyperIssue
-import io.septimalmind.baboon.parser.model.{
-  RawDomain,
-  RawHeader,
-  RawTLDef,
-  RawVersion
-}
+import io.septimalmind.baboon.parser.model.{RawDomain, RawHeader, RawTLDef, RawVersion}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.IzCollections.*
@@ -38,7 +32,7 @@ object BaboonTyper {
         defs <- runTyper(id, model.members)
         indexedDefs <- defs
           .map(d => (d.id, d))
-          .toUniqueMap(_ => NonEmptyList(TODOTyperIssue()))
+          .toUniqueMap(e => NonEmptyList(BaboonIssue.DuplicatedTypedefs(model, e)))
         roots = indexedDefs.collect {
           case (k, v: DomainMember.User) if v.root =>
             (k, v)
@@ -59,7 +53,7 @@ object BaboonTyper {
         sorted <- Toposort
           .cycleBreaking(graph.predecessors, ToposortLoopBreaker.dontBreak)
           .left
-          .map(_ => NonEmptyList(TODOTyperIssue()))
+          .map(e => NonEmptyList(BaboonIssue.CircularDependency(model, e)))
         deepSchema <- computeDeepSchema(graph, sorted)
       } yield {
         Domain(id, version, graph, excludedIds, shallowSchema, deepSchema)
@@ -128,7 +122,7 @@ object BaboonTyper {
       for {
         nel <- NonEmptyList
           .from(header.name)
-          .toRight(NonEmptyList(TODOTyperIssue()))
+          .toRight(NonEmptyList(BaboonIssue.EmptyPackageId(header)))
         // TODO: validate format
       } yield {
         Pkg(nel)
@@ -153,7 +147,7 @@ object BaboonTyper {
       for {
         initial <- TypeId.Builtins.all
           .map(id => (id: TypeId, DomainMember.Builtin(id): DomainMember))
-          .toUniqueMap(_ => NonEmptyList(TODOTyperIssue()))
+          .toUniqueMap(e => NonEmptyList(BaboonIssue.NonUniqueBuiltins(e)))
         // we don't support inheritance, so order doesn't matter here
         out <- members.biFoldLeft(initial) {
           case (acc, defn) =>

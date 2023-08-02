@@ -63,8 +63,8 @@ object BaboonRules {
                     ops <- diff.diffs(id) match {
                       case TypedefDiff.DtoDiff(ops) =>
                         Right(ops)
-                      case _ =>
-                        Left(NonEmptyList(BaboonIssue.TODOEvoIssue()))
+                      case o =>
+                        Left(NonEmptyList(BaboonIssue.UnexpectedDiffType(o)))
                     }
 
                     additions = ops.collect { case op: DtoOp.AddField => op }.toSet
@@ -145,8 +145,8 @@ object BaboonRules {
                     incompatible <- diff.diffs(id) match {
                       case TypedefDiff.EnumDiff(ops) =>
                         Right(ops.exists(_.isInstanceOf[EnumOp.RemoveBranch]))
-                      case _ =>
-                        Left(NonEmptyList(BaboonIssue.TODOEvoIssue()))
+                      case o =>
+                        Left(NonEmptyList(BaboonIssue.UnexpectedDiffType(o)))
                     }
                   } yield {
                     if (incompatible) {
@@ -162,8 +162,8 @@ object BaboonRules {
                     incompatible <- diff.diffs(id) match {
                       case TypedefDiff.AdtDiff(ops) =>
                         Right(ops.exists(_.isInstanceOf[AdtOp.RemoveBranch]))
-                      case _ =>
-                        Left(NonEmptyList(BaboonIssue.TODOEvoIssue()))
+                      case o =>
+                        Left(NonEmptyList(BaboonIssue.UnexpectedDiffType(o)))
                     }
                   } yield {
                     if (incompatible) {

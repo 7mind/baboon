@@ -27,7 +27,7 @@ object BaboonLoader {
         inputs <- paths.biMapAggregate { path =>
           for {
             content <- Try(IzFiles.readString(path.toFile)).toEither.left
-              .map(e => NonEmptyList(BaboonIssue.TODOTyperIssue()))
+              .map(e => NonEmptyList(BaboonIssue.CantReadInput(e)))
           } yield {
             BaboonParser.Input(
               FSPath.parse(NonEmptyString.unsafeFrom(path.toString)),

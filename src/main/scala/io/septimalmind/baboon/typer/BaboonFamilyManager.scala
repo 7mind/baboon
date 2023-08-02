@@ -2,7 +2,6 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue.TODOTyperIssue
 import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage}
 import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.IzCollections.*
@@ -41,10 +40,12 @@ object BaboonFamilyManager {
               for {
                 uniqueVersions <- domains
                   .map(d => (d.version, d))
-                  .toUniqueMap(_ => NonEmptyList(TODOTyperIssue()))
+                  .toUniqueMap(
+                    v => NonEmptyList(BaboonIssue.NonUniqueDomainVersions(v))
+                  )
                 nel <- NonEmptyMap
                   .from(uniqueVersions)
-                  .toRight(NonEmptyList(TODOTyperIssue()))
+                  .toRight(NonEmptyList(BaboonIssue.EmptyDomainFamily(pkg)))
                 evo <- comparator.evolve(pkg, nel)
               } yield {
                 BaboonLineage(pkg, nel, evo)
@@ -53,11 +54,11 @@ object BaboonFamilyManager {
 
         uniqueLineages <- lineages
           .map(l => (l.pkg, l))
-          .toUniqueMap(_ => NonEmptyList(TODOTyperIssue()))
+          .toUniqueMap(e => NonEmptyList(BaboonIssue.NonUniqueLineages(e)))
 
         nem <- NonEmptyMap
           .from(uniqueLineages)
-          .toRight(NonEmptyList(TODOTyperIssue()))
+          .toRight(NonEmptyList(BaboonIssue.EmptyFamily(definitions)))
       } yield {
         BaboonFamily(nem)
       }
