@@ -197,7 +197,9 @@ object BaboonValidator {
       val diffIds = diff.diffs.keySet
       val missingDiffs = nextIds.diff(diffIds)
 
-      val prevIds = prev.defs.meta.nodes.keySet
+      val prevIds = prev.defs.meta.nodes.collect {
+        case (id: TypeId.User, _) => id: TypeId
+      }.toSet
       val conversionIds = ruleset.conversions.map(_.sourceTpe).toSet[TypeId]
       val missingConversions = prevIds.diff(conversionIds)
       val extraConversions = conversionIds.diff(prevIds)

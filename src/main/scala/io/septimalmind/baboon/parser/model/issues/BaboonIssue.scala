@@ -26,6 +26,7 @@ object BaboonIssue {
   //
   sealed trait IOIssue extends BaboonIssue
   case class CantReadInput(issue: Throwable) extends IOIssue
+  case class CantWriteOutput(path: String, issue: Throwable) extends IOIssue
 
   //
   sealed trait ParserIssue extends BaboonIssue
