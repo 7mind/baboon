@@ -5,6 +5,7 @@ import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.BaboonFamilyManager.BaboonFamilyManagerImpl
 import io.septimalmind.baboon.typer.model.BaboonFamily
+import io.septimalmind.baboon.validator.BaboonValidator
 import izumi.fundamentals.collections.nonempty.{NonEmptyList, NonEmptyString}
 
 import java.nio.file.Path
@@ -22,6 +23,7 @@ object BaboonLoader {
       paths: List[Path]
     ): Either[NonEmptyList[BaboonIssue], BaboonFamily] = {
       val manager = new BaboonFamilyManagerImpl()
+      val validator = new BaboonValidator.BaboonValidatorImpl()
 
       for {
         inputs <- paths.biMapAggregate { path =>
@@ -36,6 +38,7 @@ object BaboonLoader {
           }
         }
         out <- manager.load(inputs)
+        _ <- validator.validate(out)
       } yield {
         out
       }
