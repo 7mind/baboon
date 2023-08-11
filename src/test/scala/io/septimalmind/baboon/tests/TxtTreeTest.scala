@@ -31,6 +31,23 @@ class TxtTreeTest extends AnyWordSpec {
       assert(t3.render == t3.flatten.render)
       assert(t3.map(v => TestVal2(v.value)).render == t3.render)
     }
+
+    "handle margin removal" in {
+      val t1 = q"${TestVal("1")}"
+      val t2 = q"test"
+
+      val t3 =
+        q""" t1: $t1,
+           | t2: $t2,
+           | t3: ${TestVal("3")}""".stripMargin
+
+      assert(
+        t3.render ==
+          """ t1: <1>,
+          | t2: test,
+          | t3: <3>""".stripMargin
+      )
+    }
   }
 }
 

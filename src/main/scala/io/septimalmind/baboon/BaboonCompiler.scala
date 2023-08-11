@@ -29,6 +29,9 @@ object BaboonCompiler {
             Try {
               val tgt = output.resolve(p)
               tgt.getParent.toFile.mkdirs()
+
+              println(s">> $tgt")
+              println(c)
               Files.writeString(
                 tgt,
                 c,

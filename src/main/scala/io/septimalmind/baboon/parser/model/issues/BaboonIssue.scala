@@ -2,12 +2,7 @@ package io.septimalmind.baboon.parser.model.issues
 
 import fastparse.Parsed
 import io.septimalmind.baboon.parser.BaboonParser
-import io.septimalmind.baboon.parser.model.{
-  RawDefn,
-  RawDomain,
-  RawHeader,
-  RawTLDef
-}
+import io.septimalmind.baboon.parser.model.{RawDefn, RawDomain, RawHeader, RawTLDef}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 import izumi.fundamentals.graphs.ToposortError
@@ -16,8 +11,6 @@ import izumi.fundamentals.graphs.tools.cycles.LoopDetector
 sealed trait BaboonIssue
 
 object BaboonIssue {
-
-  sealed trait TranslationIssue extends BaboonIssue
 
   sealed trait BaboonBug {
     this: BaboonIssue =>
@@ -173,5 +166,10 @@ object BaboonIssue {
                                             issue: ConversionIssue)
       extends VerificationIssue
       with BaboonBug
+
+  //
+  sealed trait TranslationIssue extends BaboonIssue
+  case class NonUniqueOutputFiles(c: Map[String, List[String]])
+      extends TranslationIssue
 
 }

@@ -1,9 +1,15 @@
 package io.septimalmind.baboon.translator
 
-import io.septimalmind.baboon.translator.TextTree.{Node, StringNode, ValueNode}
+import io.septimalmind.baboon.translator.TextTree.{
+  Node,
+  Shift,
+  StringNode,
+  ValueNode
+}
 import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.platform.strings.IzString.*
 
-sealed trait TextTree[T] {}
+sealed trait TextTree[+T]
 
 trait TextTreeLowPrio {
   implicit class TextTreeUnknownOps(target: TextTree[?]) {
@@ -14,7 +20,8 @@ trait TextTreeLowPrio {
             s"Probably TTValue is undefined for $target"
           )
         case s: StringNode[_] =>
-          StringNode.StringNodeOps(s).render
+          s.value
+        case s: Shift[_] => TextTreeUnknownOps(s.nested).render.shift(s.shift)
         case n: Node[_] =>
           n.chunks.map(c => TextTreeUnknownOps(c).render).mkString
       }
@@ -32,42 +39,57 @@ object TextTree extends TextTreeLowPrio {
   }
 
   case class ValueNode[T](value: T) extends TextTree[T]
-  object ValueNode {
-    implicit class ValueNodeOps[T: TextTree.TTValue](target: ValueNode[T]) {
-      def render: String = TTValue[T].render(target.value)
-    }
-  }
 
   case class StringNode[T](value: String) extends TextTree[T]
-  object StringNode {
-    implicit class StringNodeOps(target: StringNode[?]) {
-      def render: String = target.value
-    }
-  }
 
   case class Node[T](chunks: NonEmptyList[TextTree[T]]) extends TextTree[T]
 
-  object Node {
-    implicit class NodeOps[T: TextTree.TTValue](target: Node[T]) {
-      def render: String =
-        target.chunks.map(c => TextTreeOps(c).render).mkString
-    }
-  }
+  case class Shift[T](nested: TextTree[T], shift: Int) extends TextTree[T]
 
   implicit class TextTreeOps[T: TextTree.TTValue](target: TextTree[T]) {
     def render: String = {
       target match {
-        case v: ValueNode[T]  => ValueNode.ValueNodeOps[T](v).render
-        case s: StringNode[T] => StringNode.StringNodeOps(s).render
-        case n: Node[T]       => Node.NodeOps[T](n).render
+        case v: ValueNode[T]  => TTValue[T].render(v.value)
+        case s: StringNode[T] => s.value
+        case s: Shift[T]      => TextTreeOps(s.nested).render.shift(s.shift)
+        case n: Node[T]       => n.chunks.map(c => TextTreeOps(c).render).mkString
+      }
+    }
+  }
+
+  implicit class TextTreeSeqOps[T](target: Seq[TextTree[T]]) {
+    def join(sep: String): TextTree[T] = {
+      NonEmptyList.from(target.flatMap(t => Seq(t, StringNode[T](sep))).init) match {
+        case Some(value) =>
+          Node(value)
+        case None =>
+          StringNode("")
+      }
+    }
+  }
+
+  implicit class TextTreeGenericOps[T](target: TextTree[T]) {
+    def mapRender(f: T => String): String = {
+      target match {
+        case v: ValueNode[T]  => f(v.value)
+        case s: StringNode[T] => s.value
+        case s: Shift[T]      => s.nested.mapRender(f).shift(s.shift)
+        case n: Node[T]       => n.chunks.map(_.mapRender(f)).mkString
       }
     }
 
-    def flatten: Node[T] = {
+    def flatten: TextTree[T] = {
       target match {
         case v: ValueNode[T]  => Node(NonEmptyList(v))
         case s: StringNode[T] => Node(NonEmptyList(s))
-        case n: Node[T]       => Node(n.chunks.flatMap(_.flatten.chunks))
+        case s: Shift[T]      => Shift(s.flatten, s.shift)
+        case n: Node[T] =>
+          Node(n.chunks.flatMap {
+            _.flatten match {
+              case n: Node[T] => n.chunks
+              case o          => NonEmptyList(o)
+            }
+          })
       }
     }
 
@@ -75,8 +97,39 @@ object TextTree extends TextTreeLowPrio {
       target match {
         case v: ValueNode[T]  => ValueNode(f(v.value))
         case s: StringNode[T] => StringNode(s.value)
+        case s: Shift[T]      => Shift(s.nested.map(f), s.shift)
         case n: Node[T]       => Node(n.chunks.map(_.map(f)))
       }
+    }
+
+    def values: Seq[T] = {
+      target match {
+        case v: ValueNode[T]  => Seq(v.value)
+        case _: StringNode[T] => Seq.empty
+        case _: Shift[T]      => Seq.empty
+        case n: Node[T]       => n.chunks.toSeq.flatMap(_.values)
+      }
+    }
+
+    def stripMargin(marginChar: Char): TextTree[T] = {
+      target match {
+        case v: ValueNode[T]  => v
+        case s: StringNode[T] => s
+        case s: Shift[T]      => s
+        case n: Node[T] =>
+          Node(n.chunks.map {
+            case v: ValueNode[T]  => v
+            case n: Node[T]       => n
+            case s: Shift[T]      => s
+            case s: StringNode[T] => StringNode(s.value.stripMargin(marginChar))
+          })
+      }
+    }
+
+    def stripMargin: TextTree[T] = stripMargin('|')
+
+    def shift(pad: Int): TextTree[T] = {
+      Shift(target, pad)
     }
   }
 
@@ -96,11 +149,11 @@ object TextTree extends TextTreeLowPrio {
     }
   }
 
-  trait InterpolationArg[T] {
+  trait InterpolationArg[+T] {
     def asNode: TextTree[T]
   }
 
-  object InterpolationArg {
+  trait LowPrioInterpolationArg {
     implicit def forT[T](t: T): InterpolationArg[T] = new InterpolationArg[T] {
       override def asNode: TextTree[T] = ValueNode(t)
     }
@@ -108,6 +161,14 @@ object TextTree extends TextTreeLowPrio {
     implicit def forNodeT[T](node: TextTree[T]): InterpolationArg[T] =
       new InterpolationArg[T] {
         override def asNode: TextTree[T] = node
+      }
+
+  }
+
+  object InterpolationArg extends LowPrioInterpolationArg {
+    implicit def forString[T](t: String): InterpolationArg[T] =
+      new InterpolationArg[T] {
+        override def asNode: TextTree[T] = StringNode(t)
       }
 
     implicit def forNodeNothing[T](
