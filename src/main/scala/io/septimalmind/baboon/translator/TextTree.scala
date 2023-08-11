@@ -1,43 +1,11 @@
 package io.septimalmind.baboon.translator
 
-import io.septimalmind.baboon.translator.TextTree.{
-  Node,
-  Shift,
-  StringNode,
-  ValueNode
-}
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 import izumi.fundamentals.platform.strings.IzString.*
 
 sealed trait TextTree[+T]
 
-trait TextTreeLowPrio {
-  implicit class TextTreeUnknownOps(target: TextTree[?]) {
-    def render: String = {
-      target match {
-        case _: ValueNode[_] =>
-          throw new IllegalArgumentException(
-            s"Probably TTValue is undefined for $target"
-          )
-        case s: StringNode[_] =>
-          s.value
-        case s: Shift[_] => TextTreeUnknownOps(s.nested).render.shift(s.shift)
-        case n: Node[_] =>
-          n.chunks.map(c => TextTreeUnknownOps(c).render).mkString
-      }
-    }
-  }
-}
-
-object TextTree extends TextTreeLowPrio {
-  trait TTValue[T] {
-    def render(value: T): String
-  }
-
-  object TTValue {
-    def apply[T: TTValue]: TTValue[T] = implicitly[TTValue[T]]
-  }
-
+object TextTree {
   case class ValueNode[T](value: T) extends TextTree[T]
 
   case class StringNode[T](value: String) extends TextTree[T]
@@ -45,17 +13,6 @@ object TextTree extends TextTreeLowPrio {
   case class Node[T](chunks: NonEmptyList[TextTree[T]]) extends TextTree[T]
 
   case class Shift[T](nested: TextTree[T], shift: Int) extends TextTree[T]
-
-  implicit class TextTreeOps[T: TextTree.TTValue](target: TextTree[T]) {
-    def render: String = {
-      target match {
-        case v: ValueNode[T]  => TTValue[T].render(v.value)
-        case s: StringNode[T] => s.value
-        case s: Shift[T]      => TextTreeOps(s.nested).render.shift(s.shift)
-        case n: Node[T]       => n.chunks.map(c => TextTreeOps(c).render).mkString
-      }
-    }
-  }
 
   implicit class TextTreeSeqOps[T](target: Seq[TextTree[T]]) {
     def join(sep: String): TextTree[T] = {
@@ -69,6 +26,8 @@ object TextTree extends TextTreeLowPrio {
   }
 
   implicit class TextTreeGenericOps[T](target: TextTree[T]) {
+    def dump: String = mapRender(_.toString)
+
     def mapRender(f: T => String): String = {
       target match {
         case v: ValueNode[T]  => f(v.value)

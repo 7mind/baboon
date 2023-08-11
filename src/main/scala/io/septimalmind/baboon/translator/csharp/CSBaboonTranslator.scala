@@ -42,7 +42,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
       case t: CSValue.CSType => t.pkg
     }.toSet
 
-    val allPackages = (requiredPackages ++ usedPackages).diff(Set())
+    val allPackages = requiredPackages ++ usedPackages
 
     val imports = allPackages.toSeq
       .map { p =>
