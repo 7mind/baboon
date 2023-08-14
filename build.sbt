@@ -51,3 +51,16 @@ lazy val root = (project in file("."))
       "-Vtype-diffs",
     ),
   )
+  .enablePlugins(GraalVMNativeImagePlugin, UniversalPlugin)
+  .settings(
+    GraalVMNativeImage / mainClass := Some("io.septimalmind.baboon.Baboon"),
+    graalVMNativeImageOptions ++= Seq(
+      "--no-fallback",
+      "-H:+ReportExceptionStackTraces",
+      "--report-unsupported-elements-at-runtime",
+      "--enable-https",
+      "--enable-http",
+    ),
+//    graalVMNativeImageGraalVersion := Some("ol9-java17-22.3.1"),
+    run / fork := true,
+  )

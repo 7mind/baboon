@@ -6,7 +6,7 @@ import java.nio.file.Paths
 
 case class Options(model: List[String], output: String)
 
-object Main {
+object Baboon {
   def main(args: Array[String]): Unit = {
 
     CaseApp.parse[Options](args.toSeq) match {
