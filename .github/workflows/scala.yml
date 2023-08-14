@@ -42,7 +42,10 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         cache: 'sbt'
     - name: Run tests
-      run: sbt test
-      # Optional: This step uploads information to the GitHub dependency graph and unblocking Dependabot alerts for the repository
-    #- name: Upload dependency graph
-    #  uses: scalacenter/sbt-dependency-submission@ab086b50c947c9774b70f39fc7f6e20ca2706c91
+      run: sbt test GraalVMNativeImage/packageBin
+    - name: Archive production artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: native-image
+        path: |
+          target/graalvm-native-image/**
