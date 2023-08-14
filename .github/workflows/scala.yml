@@ -1,9 +1,4 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-name: Scala CI
+name: Baboon Build
 
 on:
   push:
@@ -41,11 +36,14 @@ jobs:
         components: 'native-image'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         cache: 'sbt'
+        native-image-job-reports: true
     - name: Run tests
-      run: sbt test GraalVMNativeImage/packageBin
-    - name: Archive production artifacts
+      run: sbt test
+    - name: Build NI
+      run: sbt GraalVMNativeImage/packageBin
+    - name: Archive NI artifacts
       uses: actions/upload-artifact@v3
       with:
-        name: native-image
+        name: native-image-${{ matrix.os }}
         path: |
           target/graalvm-native-image/**
