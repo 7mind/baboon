@@ -34,7 +34,7 @@ object CSDefnTranslator {
             val mname = s"${f.name.name.capitalize}"
             (q"""private readonly $tpe ${fname};""", q"""public $tpe ${mname}
                  |{
-                 |    return ${fname};
+                 |    return this.${fname};
                  |}""".stripMargin, (fname, tpe))
           }
           val fields = outs.map(_._1)
