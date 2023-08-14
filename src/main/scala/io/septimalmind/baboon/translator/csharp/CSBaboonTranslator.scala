@@ -32,18 +32,18 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
   }
 
   private def renderTree(v: TextTree[CSValue]): String = {
-    val requiredPackages = Set(
+    val requiredPackages: Set[CSPackageId] = Set.empty /*Set(
       CSPackageId(NonEmptyList("System")),
       CSPackageId(NonEmptyList("System", "Collections", "Generic")),
       CSPackageId(NonEmptyList("System", "Linq")),
-    )
+    )*/
 
     val usedPackages = v.values.collect {
       case t: CSValue.CSType => t.pkg
     }.toSet
 
     val allPackages = requiredPackages ++ usedPackages
-
+    println(allPackages)
     val imports = allPackages.toSeq
       .map { p =>
         q"using ${p.parts.mkString(".")};"
@@ -51,11 +51,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
       .join("\n")
 
     val full =
-      q"""#nullable enable
-         |
-         |$imports
-         |
-         |$v""".stripMargin
+      Seq(Seq(q"#nullable enable"), Seq(imports), Seq(v)).flatten.join("\n\n")
 
     full.mapRender {
       case t: CSValue.CSType =>

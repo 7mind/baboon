@@ -83,12 +83,12 @@ object TypeId {
 
     final val integers = Set(i08, i32, i64)
     final val timestamps = Set(tsu, tso)
-    final val data = Set(str)
+    final val varlens = Set(str)
 
     final val seqCollections = Set(lst, set)
     final val collections = Set(map, opt) ++ seqCollections
 
-    final val scalars = integers ++ data ++ timestamps
+    final val scalars = integers ++ varlens ++ timestamps
     final val all = scalars ++ collections
 
     private final val collIds = TypeId.Builtins.collections.toSet[TypeId]

@@ -3,8 +3,7 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.TextTree
 import io.septimalmind.baboon.translator.TextTree.*
-import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
-import io.septimalmind.baboon.typer.model.{Domain, DomainMember, Typedef}
+import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 
 trait CSDefnTranslator {
@@ -24,19 +23,51 @@ object CSDefnTranslator {
       defn: DomainMember.User,
       domain: Domain
     ): Either[NonEmptyList[BaboonIssue.TranslationIssue], List[Output]] = {
-
-      val verString = "v" + domain.version.version
-        .split('.')
-        .mkString("_")
-
-      val pkg =
-        defn.id.pkg.path.map(_.capitalize) :+ verString
-
-      val name = CSType(CSPackageId(pkg), defn.id.name.name.capitalize)
+      val trans = new CSTypeTranslator(domain)
+      val name = trans.toCsVal(defn.id)
 
       val defnRepr = defn.defn match {
         case d: Typedef.Dto =>
-          q""
+          val outs = d.fields.map { f =>
+            val tpe = trans.asCsType(f.tpe)
+            val fname = s"_${f.name.name}"
+            val mname = s"${f.name.name.capitalize}"
+            (q"""private readonly $tpe ${fname};""", q"""public $tpe ${mname}
+                 |{
+                 |    return ${fname};
+                 |}""".stripMargin, (fname, tpe))
+          }
+          val fields = outs.map(_._1)
+          val methods = outs.map(_._2)
+
+          val cargs = outs
+            .map(_._3)
+            .map {
+              case (fname, ftpe) =>
+                q"${ftpe} $fname"
+            }
+            .join(", ")
+
+          val inits = outs
+            .map(_._3)
+            .map {
+              case (fname, ftpe) =>
+                q"this.$fname = $fname;"
+            }
+            .join("\n")
+
+          val constructor =
+            q"""public ${name.name}($cargs) {
+               |${inits.shift(4)}
+               |}""".stripMargin
+
+          q"""public class $name {
+             |${fields.join("\n").shift(4)}
+             |
+             |${constructor.shift(4)}
+             |
+             |${methods.join("\n").shift(4)}
+             |}""".stripMargin
 
         case e: Typedef.Enum =>
           val branches =
@@ -56,7 +87,7 @@ object CSDefnTranslator {
 
       val fname = s"${defn.id.name.name.capitalize}.cs"
 
-      val ns = pkg.mkString(".")
+      val ns = name.pkg.parts.mkString(".")
       val content =
         q"""namespace ${ns} {
            |${defnRepr.shift(4)}
@@ -64,6 +95,7 @@ object CSDefnTranslator {
 
       Right(List(Output(s"$fbase/$fname", content)))
     }
+
   }
 
 }

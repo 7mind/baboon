@@ -16,11 +16,15 @@ object TextTree {
 
   implicit class TextTreeSeqOps[T](target: Seq[TextTree[T]]) {
     def join(sep: String): TextTree[T] = {
-      NonEmptyList.from(target.flatMap(t => Seq(t, StringNode[T](sep))).init) match {
-        case Some(value) =>
-          Node(value)
-        case None =>
-          StringNode("")
+      if (target.isEmpty) {
+        StringNode("")
+      } else {
+        NonEmptyList.from(target.flatMap(t => Seq(t, StringNode[T](sep))).init) match {
+          case Some(value) =>
+            Node(value)
+          case None =>
+            StringNode("")
+        }
       }
     }
   }
@@ -65,7 +69,7 @@ object TextTree {
       target match {
         case v: ValueNode[T]  => Seq(v.value)
         case _: StringNode[T] => Seq.empty
-        case _: Shift[T]      => Seq.empty
+        case s: Shift[T]      => s.nested.values
         case n: Node[T]       => n.chunks.toSeq.flatMap(_.values)
       }
     }

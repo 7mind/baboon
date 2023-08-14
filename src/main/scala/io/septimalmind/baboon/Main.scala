@@ -1,8 +1,8 @@
 package io.septimalmind.baboon
 import caseapp.*
+import izumi.fundamentals.platform.strings.IzString.*
 
 import java.nio.file.Paths
-import izumi.fundamentals.platform.strings.IzString.*
 
 case class Options(model: List[String], output: String)
 

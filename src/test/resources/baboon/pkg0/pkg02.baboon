@@ -21,6 +21,7 @@ root data T1_D1 {
 
 data T2_D2 {
     f: str
+    f1: opt[str]
 }
 
 root data T2_D1 {
