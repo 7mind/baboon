@@ -3,6 +3,8 @@ import caseapp.*
 import izumi.fundamentals.platform.strings.IzString.*
 
 import java.nio.file.Paths
+import java.util.UUID
+import scala.util.Random
 
 case class Options(model: List[String], output: String)
 

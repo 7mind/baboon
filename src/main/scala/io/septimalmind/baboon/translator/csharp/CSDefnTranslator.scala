@@ -61,7 +61,15 @@ object CSDefnTranslator {
                |${inits.shift(4)}
                |}""".stripMargin
 
-          q"""public class $name {
+          val parent = d.id.owner match {
+            case Owner.Toplevel =>
+              q""
+            case Owner.Adt(id) =>
+              val parentId = trans.asCsType(id)
+              q": $parentId"
+          }
+
+          val clz = q"""public class $name$parent {
              |${fields.join("\n").shift(4)}
              |
              |${constructor.shift(4)}
@@ -69,16 +77,27 @@ object CSDefnTranslator {
              |${methods.join("\n").shift(4)}
              |}""".stripMargin
 
+          d.id.owner match {
+            case Owner.Toplevel =>
+              clz
+            case Owner.Adt(id) =>
+              val adtns = id.name.name.toLowerCase
+              q"""namespace $adtns {
+                 |${clz.shift(4)}
+                 |}""".stripMargin
+          }
+
         case e: Typedef.Enum =>
           val branches =
             e.members.map(m => q"""${m.name.capitalize}""").toSeq.join(",\n")
 
-          q"""enum $name {
+          q"""public enum $name {
              |${branches.shift(4)}
              |}""".stripMargin
 
-        case a: Typedef.Adt =>
-          q""
+        case _: Typedef.Adt =>
+          q"""public interface $name {
+             |}""".stripMargin
       }
 
       val fbase =
@@ -93,7 +112,13 @@ object CSDefnTranslator {
            |${defnRepr.shift(4)}
            |}""".stripMargin
 
-      Right(List(Output(s"$fbase/$fname", content)))
+      val outname = defn.defn.id.owner match {
+        case Owner.Toplevel =>
+          s"$fbase/$fname"
+        case Owner.Adt(id) =>
+          s"$fbase/${id.name.name.toLowerCase}-$fname"
+      }
+      Right(List(Output(outname, content)))
     }
 
   }
