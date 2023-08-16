@@ -2,7 +2,13 @@ package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.translator.TextTree
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
-import io.septimalmind.baboon.typer.model.{Domain, Pkg, TypeId, TypeRef}
+import io.septimalmind.baboon.typer.model.{
+  Domain,
+  Pkg,
+  TypeId,
+  TypeRef,
+  Version
+}
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 import io.septimalmind.baboon.translator.TextTree.*
 
@@ -11,8 +17,10 @@ class CSTypeTranslator(domain: Domain) {
   private val generics =
     CSValue.CSPackageId(NonEmptyList("System", "Collections", "Generic"))
 
-  def toCsPkg(p: Pkg): CSPackageId = {
-    val verString = "v" + domain.version.version
+  def toCsPkg(p: Pkg, version: Option[Version] = None): CSPackageId = {
+    val verString = "v" + version
+      .getOrElse(domain.version)
+      .version
       .split('.')
       .mkString("_")
 
@@ -21,8 +29,8 @@ class CSTypeTranslator(domain: Domain) {
     CSPackageId(p.path.map(_.capitalize) :+ verString)
   }
 
-  def toCsVal(tid: TypeId.User): CSType = {
-    val pkg = toCsPkg(tid.pkg)
+  def toCsVal(tid: TypeId.User, version: Option[Version] = None): CSType = {
+    val pkg = toCsPkg(tid.pkg, version)
     CSType(pkg, tid.name.name.capitalize)
   }
 
