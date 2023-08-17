@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.translator.TextTree
 import io.septimalmind.baboon.translator.TextTree.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
-import io.septimalmind.baboon.typer.model.{Pkg, TypeId, TypeRef, Version}
+import io.septimalmind.baboon.typer.model.{Owner, Pkg, TypeId, TypeRef, Version}
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 
 class CSTypeTranslator() {
@@ -21,7 +21,11 @@ class CSTypeTranslator() {
 
   def toCsVal(tid: TypeId.User, version: Version): CSType = {
     val pkg = toCsPkg(tid.pkg, version)
-    CSType(pkg, tid.name.name.capitalize, fq = false)
+    val fullPkg = tid.owner match {
+      case Owner.Toplevel => pkg
+      case Owner.Adt(id)  => CSPackageId(pkg.parts :+ id.name.name.toLowerCase)
+    }
+    CSType(fullPkg, tid.name.name.capitalize, fq = false)
   }
 
   def asCsType(tpe: TypeId, version: Version): TextTree[CSValue] = {

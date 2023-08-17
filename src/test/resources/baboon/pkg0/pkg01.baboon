@@ -56,3 +56,11 @@ root enum T1_E2 {
 }
 
 //
+
+root adt T5_A1 {
+   data T5B1 {
+       f: str
+   }
+}
+
+//

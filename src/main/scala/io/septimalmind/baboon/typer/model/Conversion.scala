@@ -26,5 +26,6 @@ object Conversion {
                            initializeWithDefaults: Set[Field],
   ) extends Conversion
 
-  case class CopyAdtBranchByName(sourceTpe: TypeId.User) extends Conversion
+  case class CopyAdtBranchByName(sourceTpe: TypeId.User, oldDefn: Typedef.Adt)
+      extends Conversion
 }

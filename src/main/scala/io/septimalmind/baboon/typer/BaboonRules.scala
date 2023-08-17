@@ -51,8 +51,8 @@ object BaboonRules {
                   )
                 case _: Typedef.Enum if sameLocalStruct =>
                   Right(CopyEnumByName(id))
-                case _: Typedef.Adt if sameLocalStruct =>
-                  Right(CopyAdtBranchByName(id))
+                case oldDefn: Typedef.Adt if sameLocalStruct =>
+                  Right(CopyAdtBranchByName(id, oldDefn))
 
                 case _ if diff.changes.removed.contains(id) =>
                   Right(RemovedTypeNoConversion(id))
@@ -156,7 +156,7 @@ object BaboonRules {
                     }
                   }
 
-                case _: Typedef.Adt =>
+                case a: Typedef.Adt =>
                   assert(shallowChanged)
                   for {
                     incompatible <- diff.diffs(id) match {
@@ -169,7 +169,7 @@ object BaboonRules {
                     if (incompatible) {
                       CustomConversionRequired(id)
                     } else {
-                      CopyAdtBranchByName(id)
+                      CopyAdtBranchByName(id, a)
                     }
                   }
 

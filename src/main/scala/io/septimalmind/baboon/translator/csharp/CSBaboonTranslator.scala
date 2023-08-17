@@ -183,7 +183,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
          |        convs.Add(key, conversion);
          |    }
          |
-         |    public To ConvertWithContext<C, From, To>(C c, From from)
+         |    public To ConvertWithContext<C, From, To>(C? c, From from)
          |    {
          |        var tFrom = typeof(From);
          |        var tTo = typeof(To);
@@ -222,8 +222,6 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                         srcVer: Version,
                         domain: Domain,
                         rules: BaboonRuleset): List[RenderedConversion] = {
-    //Register(new Convert_Testpkg_Pkg0_1_0_0_T1_D1_TO_Testpkg_Pkg0_2_0_0_T1_D1().GetConverter());
-
     rules.conversions.flatMap { conv =>
       val convname = Seq(
         "Convert",
@@ -242,7 +240,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
           val cdefn =
             q"""public abstract class ${convname} : IConversion<${tin}, ${tout}>
                |{
-               |    public abstract ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} from);
+               |    public abstract ${tout} Convert<C>(C? context, BaboonConversions conversions, ${tin} from);
                |}""".stripMargin
           val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
           List(RenderedConversion(fname, ctree, None))
@@ -252,14 +250,14 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
           val cdefn =
             q"""public class ${convname} : IConversion<${tin}, ${tout}>
                |{
-               |    public ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} from) {
+               |    public ${tout} Convert<C>(C? context, BaboonConversions conversions, ${tin} from) {
                |        if (Enum.TryParse(from.ToString(), out ${tout} parsed))
                |        {
                |            return parsed;
                |        }
                |        else
                |        {
-               |            throw new ArgumentException("Bad input, this is a Baboon bug");
+               |            throw new ArgumentException($$"Bad input, this is a Baboon bug: {from}");
                |        }
                |    }
                |}""".stripMargin
@@ -269,7 +267,27 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
         case c: Conversion.DtoConversion =>
           List.empty
         case c: Conversion.CopyAdtBranchByName =>
-          List.empty
+          val branches = c.oldDefn.members.map { oldId =>
+            val oldFqid = trans.toCsVal(oldId, srcVer).fullyQualified
+            val newFqid = trans.toCsVal(oldId, domain.version).fullyQualified
+            q"""if (from is ${oldFqid} fromAs)
+               |{
+               |    return conversions.ConvertWithContext<C, ${oldFqid}, ${newFqid}>(context, fromAs);
+               |}""".stripMargin
+          }.toSeq ++ Seq(q"""{
+               |    throw new ArgumentException($$"Bad input: {from}");
+               |}""".stripMargin)
+
+          val cdefn =
+            q"""public class ${convname} : IConversion<${tin}, ${tout}>
+               |{
+               |    public ${tout} Convert<C>(C? context, BaboonConversions conversions, ${tin} from) {
+               |${branches.join("\nelse\n").shift(8)}
+               |    }
+               |}""".stripMargin
+          val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
+          val regtree = q"Register(new ${convname}());"
+          List(RenderedConversion(fname, ctree, Some(regtree)))
       }
     }
   }
