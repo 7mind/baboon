@@ -111,7 +111,15 @@ object BaboonValidator {
         _ <- {
           val dupes =
             domain.defs.meta.nodes.values
-              .groupBy(_.id.name.name)
+              .groupBy {
+                case DomainMember.Builtin(id) => id.name.name
+                case DomainMember.User(_, defn) =>
+                  defn.id.owner match {
+                    case Owner.Toplevel => defn.id.name.name
+                    case Owner.Adt(id) =>
+                      s"${id.name.name}#${defn.id.name.name}"
+                  }
+              }
               .filter(_._2.size > 1)
           Either.failWhen(dupes.nonEmpty)(
             NonEmptyList(BaboonIssue.ConflictingTypeIds(domain, dupes))
