@@ -28,13 +28,13 @@ object CSDefnTranslator {
       defn: DomainMember.User,
       domain: Domain
     ): Either[NonEmptyList[BaboonIssue.TranslationIssue], List[Output]] = {
-      val trans = new CSTypeTranslator(domain)
-      val name = trans.toCsVal(defn.id)
+      val trans = new CSTypeTranslator()
+      val name = trans.toCsVal(defn.id, domain.version)
 
       val defnRepr = defn.defn match {
         case d: Typedef.Dto =>
           val outs = d.fields.map { f =>
-            val tpe = trans.asCsType(f.tpe)
+            val tpe = trans.asCsType(f.tpe, domain.version)
             val fname = s"_${f.name.name}"
             val mname = s"${f.name.name.capitalize}"
             (q"""private readonly $tpe ${fname};""", q"""public $tpe ${mname}()
@@ -70,7 +70,7 @@ object CSDefnTranslator {
             case Owner.Toplevel =>
               q""
             case Owner.Adt(id) =>
-              val parentId = trans.asCsType(id)
+              val parentId = trans.asCsType(id, domain.version)
               q": $parentId"
           }
 
@@ -121,7 +121,9 @@ object CSDefnTranslator {
         case Owner.Adt(id) =>
           s"$fbase/${id.name.name.toLowerCase}-$fname"
       }
-      Right(List(Output(outname, content, trans.toCsPkg(domain.id))))
+      Right(
+        List(Output(outname, content, trans.toCsPkg(domain.id, domain.version)))
+      )
     }
 
     def basename(dom: Domain): String = {

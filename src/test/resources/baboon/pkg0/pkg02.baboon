@@ -47,3 +47,13 @@ root adt T4_A1 {
        f: str
    }
 }
+
+//
+
+root enum T1_E2 {
+ A
+ B
+ C
+}
+
+//

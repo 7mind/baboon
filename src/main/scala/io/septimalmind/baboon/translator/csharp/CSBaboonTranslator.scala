@@ -119,12 +119,12 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
     assert(domain.version == value.latest)
 
     val transd = new CSDefnTranslator.CSDefnTranslatorImpl()
-    val trans = new CSTypeTranslator(domain)
-    val pkg = trans.toCsPkg(domain.id)
+    val trans = new CSTypeTranslator()
+    val pkg = trans.toCsPkg(domain.id, domain.version)
 
     val convs = value.rules.flatMap {
       case (srcVer, rules) =>
-        makeConvs(transd, trans, pkg, srcVer, rules)
+        makeConvs(transd, trans, pkg, srcVer, domain, rules)
     }
 
     val base = q"""public interface IConversion<From, To>
@@ -220,6 +220,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                         trans: CSTypeTranslator,
                         pkg: CSPackageId,
                         srcVer: Version,
+                        domain: Domain,
                         rules: BaboonRuleset): List[RenderedConversion] = {
     //Register(new Convert_Testpkg_Pkg0_1_0_0_T1_D1_TO_Testpkg_Pkg0_2_0_0_T1_D1().GetConverter());
 
@@ -232,12 +233,12 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
       ).mkString("__")
 
       val fname = s"from-${srcVer.version}-${conv.sourceTpe.name.name}.cs"
+      val tin = trans.toCsVal(conv.sourceTpe, srcVer).fullyQualified
+      val tout =
+        trans.toCsVal(conv.sourceTpe, domain.version).fullyQualified
 
       conv match {
-        case c: Conversion.CustomConversionRequired =>
-          val tin = trans.toCsVal(c.sourceTpe, Some(srcVer)).copy(fq = true)
-          val tout = trans.toCsVal(c.sourceTpe).copy(fq = true)
-
+        case _: Conversion.CustomConversionRequired =>
           val cdefn =
             q"""public abstract class ${convname} : IConversion<${tin}, ${tout}>
                |{
@@ -245,9 +246,26 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                |}""".stripMargin
           val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
           List(RenderedConversion(fname, ctree, None))
-        case c: Conversion.RemovedTypeNoConversion => List.empty
-        case c: Conversion.CopyEnumByName =>
+        case _: Conversion.RemovedTypeNoConversion =>
           List.empty
+        case _: Conversion.CopyEnumByName =>
+          val cdefn =
+            q"""public class ${convname} : IConversion<${tin}, ${tout}>
+               |{
+               |    public ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} from) {
+               |        if (Enum.TryParse(from.ToString(), out ${tout} parsed))
+               |        {
+               |            return parsed;
+               |        }
+               |        else
+               |        {
+               |            throw new ArgumentException("Bad input, this is a Baboon bug");
+               |        }
+               |    }
+               |}""".stripMargin
+          val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
+          val regtree = q"Register(new ${convname}());"
+          List(RenderedConversion(fname, ctree, Some(regtree)))
         case c: Conversion.DtoConversion =>
           List.empty
         case c: Conversion.CopyAdtBranchByName =>

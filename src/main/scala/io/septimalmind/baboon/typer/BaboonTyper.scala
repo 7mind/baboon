@@ -1,7 +1,12 @@
 package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.model.{RawDomain, RawHeader, RawTLDef, RawVersion}
+import io.septimalmind.baboon.parser.model.{
+  RawDomain,
+  RawHeader,
+  RawTLDef,
+  RawVersion
+}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.IzCollections.*
@@ -32,12 +37,18 @@ object BaboonTyper {
         defs <- runTyper(id, model.members)
         indexedDefs <- defs
           .map(d => (d.id, d))
-          .toUniqueMap(e => NonEmptyList(BaboonIssue.DuplicatedTypedefs(model, e)))
+          .toUniqueMap(
+            e => NonEmptyList(BaboonIssue.DuplicatedTypedefs(model, e))
+          )
         roots = indexedDefs.collect {
           case (k, v: DomainMember.User) if v.root =>
             (k, v)
         }
-        predecessors <- buildDependencies(indexedDefs, roots, List.empty)
+        predecessors <- buildDependencies(
+          indexedDefs,
+          roots,
+          roots.keySet.map(t => (t, None)).toList
+        )
         predMatrix = IncidenceMatrix(predecessors)
         graph = DG.fromPred(predMatrix, GraphMeta(indexedDefs.filter {
           case (k, _) => predMatrix.links.contains(k)
@@ -90,16 +101,16 @@ object BaboonTyper {
     @tailrec
     private def buildDependencies(defs: Map[TypeId, DomainMember],
                                   current: Map[TypeId, DomainMember],
-                                  predecessors: List[(TypeId, TypeId)],
+                                  predecessors: List[(TypeId, Option[TypeId])],
     ): Either[NonEmptyList[BaboonIssue.TyperIssue], Map[TypeId, Set[TypeId]]] = {
       val nextDepMap = current.toList.flatMap {
         case (id, defn) =>
-          enquiries.directDepsOf(defn).toList.map(dep => (id, dep))
+          enquiries.directDepsOf(defn).toList.map(dep => (id, Some(dep)))
       }
       val nextDeps = nextDepMap.map(_._2).toSet
 
       val next = defs.collect {
-        case (k, v) if nextDeps.contains(k) =>
+        case (k, v) if nextDeps.contains(Some(k)) =>
           (k, v)
       }
 
@@ -110,7 +121,11 @@ object BaboonTyper {
       val todo = defs.removedAll(nextDepMap.map(_._1))
 
       if (next.isEmpty) {
-        Right(newPredecessors.toMultimap)
+        Right(
+          newPredecessors.toMultimapView.view
+            .mapValues(_.flatMap(_.toSeq).toSet)
+            .toMap
+        )
       } else {
         buildDependencies(todo, next, newPredecessors)
       }
