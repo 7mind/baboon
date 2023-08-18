@@ -76,6 +76,9 @@ data T6_D2 {
 root data T6_D1 {
     fSameBuiltin: i08
     fSameCustom: T6_D2
+    fSameCustomOpt: opt[T6_D2]
+    fSameCustomLst: lst[T6_D2]
+    fSameCustomMap: map[str, T6_D2]
 
     fWrapOpt: opt[i08]
     fWrapLst: lst[i08]
@@ -83,6 +86,7 @@ root data T6_D1 {
 
     fSwapOptSet: set[i08]
     fSwapOptLst: lst[i08]
+    fSwapOptLst1: lst[T6_D2]
 
     fSwapLstSet: set[i08]
     fSwapSetLst: lst[i08]

@@ -315,16 +315,29 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
               )
 
               def transfer(tpe: TypeRef,
-                           ref: TextTree[CSValue]): Node[CSValue] = {
+                           ref: TextTree[CSValue]): TextTree[CSValue] = {
                 val cnew =
                   trans.asCsType(tpe, domain.version, fullyQualified = true)
                 val cold = trans.asCsType(tpe, srcVer, fullyQualified = true)
-                q"conversions.ConvertWithContext<C, ${cold}, ${cnew}>(context, ${ref})"
+
+                val conv =
+                  q"conversions.ConvertWithContext<C, ${cold}, ${cnew}>(context, ${ref})"
+                tpe match {
+                  case TypeRef.Scalar(id) =>
+                    id match {
+                      case _: TypeId.Builtin =>
+                        ref
+                      case _ => conv
+                    }
+                  case _: TypeRef.Constructor =>
+                    conv
+                }
               }
 
               op match {
                 case o: FieldOp.Transfer =>
-                  val fieldRef = q"from.${o.targetField.name.name.capitalize}()"
+                  val fieldRef =
+                    q"_from.${o.targetField.name.name.capitalize}()"
                   val ftOld = trans.asCsType(
                     o.targetField.tpe,
                     srcVer,
@@ -352,13 +365,32 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                         q"(from e in $fieldRef select KeyValuePair.Create(${transfer(
                           c.args.head,
                           q"e.Key"
-                        )}, ${transfer(c.args.last, q"e.Value")})).ToDictionary(v => v.Key)"
+                        )}, ${transfer(c.args.last, q"e.Value")})).ToDictionary(v => v.Key, v => v.Value)"
                       )
                     case c: TypeRef.Constructor
                         if c.id == TypeId.Builtins.set =>
                       Right(
                         q"(from e in $fieldRef select ${transfer(c.args.head, q"e")}).ToHashSet()"
                       )
+                    case c: TypeRef.Constructor
+                        if c.id == TypeId.Builtins.opt =>
+                      val ftNew = trans.asCsType(
+                        c.args.head,
+                        domain.version,
+                        fullyQualified = true
+                      )
+
+                      val ftOld = trans.asCsType(
+                        c.args.head,
+                        srcVer,
+                        fullyQualified = true
+                      )
+
+                      val recConv =
+                        q"conversions.ConvertWithContext<C, ${ftOld}, ${ftNew}>(context, $fieldRef ?? default)"
+
+                      Right(q"($fieldRef == null ? null : $recConv)")
+
                     case _ =>
                       Right(recConv)
                   }
@@ -380,14 +412,14 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                 case o: FieldOp.WrapIntoCollection =>
                   o.newTpe.id match {
                     case TypeId.Builtins.opt =>
-                      Right(q"from.${o.targetField.name.name.capitalize}()")
+                      Right(q"_from.${o.targetField.name.name.capitalize}()")
                     case TypeId.Builtins.set =>
                       Right(
-                        q"new $ftNew { from.${o.targetField.name.name.capitalize}() }"
+                        q"new $ftNew { _from.${o.targetField.name.name.capitalize}() }"
                       )
                     case TypeId.Builtins.lst =>
                       Right(
-                        q"new $ftNew { from.${o.targetField.name.name.capitalize}() }"
+                        q"new $ftNew { _from.${o.targetField.name.name.capitalize}() }"
                       )
                     case _ =>
                       Left(NonEmptyList(BaboonIssue.TranslationBug()))
@@ -396,14 +428,31 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                 case o: FieldOp.SwapCollectionType =>
                   o.oldTpe.id match {
                     case TypeId.Builtins.opt =>
+                      val elNew = trans.asCsType(
+                        o.newTpe.args.head,
+                        domain.version,
+                        fullyQualified = true
+                      )
+
+                      val elOld = trans.asCsType(
+                        o.newTpe.args.head,
+                        srcVer,
+                        fullyQualified = true
+                      )
+
+                      val fieldRef =
+                        q"_from.${o.targetField.name.name.capitalize}()"
+                      val recConv =
+                        q"conversions.ConvertWithContext<C, ${elOld}, ${elNew}>(context, $fieldRef ?? default)"
+
                       o.newTpe.id match {
                         case TypeId.Builtins.lst =>
                           Right(
-                            q"(from.${o.targetField.name.name.capitalize}() != null) ? new ${ftNew} { from.${o.targetField.name.name.capitalize}().Value } : new ${ftNew}()"
+                            q"( ($fieldRef != null) ? new ${ftNew} { $recConv } : new ${ftNew}() )"
                           )
                         case TypeId.Builtins.set =>
                           Right(
-                            q"(from.${o.targetField.name.name.capitalize}() != null) ? new ${ftNew} {from.${o.targetField.name.name.capitalize}().Value } : new ${ftNew}()"
+                            q"( ($fieldRef != null) ? new ${ftNew} { $recConv } : new ${ftNew}() )"
                           )
                         case _ =>
                           Left(NonEmptyList(BaboonIssue.TranslationBug()))
@@ -412,7 +461,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                       o.newTpe.id match {
                         case TypeId.Builtins.set =>
                           Right(
-                            q"new ${ftNew}(from.${o.targetField.name.name.capitalize}())"
+                            q"new ${ftNew}(_from.${o.targetField.name.name.capitalize}())"
                           )
                         case _ =>
                           Left(NonEmptyList(BaboonIssue.TranslationBug()))
@@ -421,7 +470,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                       o.newTpe.id match {
                         case TypeId.Builtins.lst =>
                           Right(
-                            q"new ${ftNew}(from.${o.targetField.name.name.capitalize}())"
+                            q"new ${ftNew}(_from.${o.targetField.name.name.capitalize}())"
                           )
                         case _ =>
                           Left(NonEmptyList(BaboonIssue.TranslationBug()))
@@ -436,7 +485,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
             val cdefn =
               q"""public class ${convname} : IConversion<${tin}, ${tout}>
                  |{
-                 |    public ${tout} Convert<C>(C? context, BaboonConversions conversions, ${tin} from) {
+                 |    public ${tout} Convert<C>(C? context, BaboonConversions conversions, ${tin} _from) {
                  |        return new ${tout}(
                  |        ${exprs.join(",\n").shift(12)}
                  |        );
