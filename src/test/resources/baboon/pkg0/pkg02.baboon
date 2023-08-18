@@ -68,3 +68,29 @@ root adt T5_A1 {
 }
 
 //
+
+data T6_D2 {
+    f: str
+}
+
+root data T6_D1 {
+    fSameBuiltin: i08
+    fSameCustom: T6_D2
+
+    fWrapOpt: opt[i08]
+    fWrapLst: lst[i08]
+    fWrapSet: set[i08]
+
+    fSwapOptSet: set[i08]
+    fSwapOptLst: lst[i08]
+
+    fSwapLstSet: set[i08]
+    fSwapSetLst: lst[i08]
+
+    fNewOpt: opt[i32]
+    fNewSet: set[i32]
+    fNewLst: lst[i32]
+    fNewMap: map[str, i32]
+}
+
+//

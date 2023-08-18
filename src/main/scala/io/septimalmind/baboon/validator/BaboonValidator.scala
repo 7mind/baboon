@@ -238,7 +238,7 @@ object BaboonValidator {
             )
           case c: Conversion.CopyEnumByName =>
             val o = prev.defs.meta.nodes(c.sourceTpe)
-            val n = prev.defs.meta.nodes(c.sourceTpe)
+            val n = next.defs.meta.nodes(c.sourceTpe)
             (o, n) match {
               case (
                   DomainMember.User(_, oe: Typedef.Enum),
@@ -271,7 +271,7 @@ object BaboonValidator {
 
           case c: Conversion.DtoConversion =>
             val o = prev.defs.meta.nodes(c.sourceTpe)
-            val n = prev.defs.meta.nodes(c.sourceTpe)
+            val n = next.defs.meta.nodes(c.sourceTpe)
             (o, n) match {
               case (
                   DomainMember.User(_, od: Typedef.Dto),
@@ -281,8 +281,8 @@ object BaboonValidator {
                   newFieldNames <- Right(nd.fields.map(_.name).toSet)
                   oldFieldNames <- Right(od.fields.map(_.name).toSet)
                   _ <- Either.failWhen(
-                    newFieldNames
-                      .diff(oldFieldNames)
+                    oldFieldNames
+                      .diff(newFieldNames)
                       .nonEmpty
                   )(
                     NonEmptyList(
@@ -308,7 +308,7 @@ object BaboonValidator {
                     case f: FieldOp.WrapIntoCollection => f.fieldName
                   }.toSet
                   all = transfer ++ defaults ++ swap ++ wrap
-                  _ <- Either.failWhen(newFieldNames != all)(
+                  _ <- Either.failWhen(newFieldNames != all) {
                     NonEmptyList(
                       BaboonIssue.IncorrectConversionApplication(
                         c,
@@ -317,7 +317,7 @@ object BaboonValidator {
                         ConversionIssue.IncorrectFields
                       )
                     )
-                  )
+                  }
                   conflicts = Seq(
                     transfer.intersect(all.diff(transfer)),
                     defaults.intersect(all.diff(defaults)),
@@ -350,7 +350,7 @@ object BaboonValidator {
             }
           case c: Conversion.CopyAdtBranchByName =>
             val o = prev.defs.meta.nodes(c.sourceTpe)
-            val n = prev.defs.meta.nodes(c.sourceTpe)
+            val n = next.defs.meta.nodes(c.sourceTpe)
             (o, n) match {
               case (
                   DomainMember.User(_, oa: Typedef.Adt),

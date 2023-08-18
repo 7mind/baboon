@@ -64,3 +64,24 @@ root adt T5_A1 {
 }
 
 //
+
+data T6_D2 {
+    f: str
+}
+
+root data T6_D1 {
+    fSameBuiltin: i08
+    fSameCustom: T6_D2
+
+    fWrapOpt: i08
+    fWrapLst: i08
+    fWrapSet: i08
+
+    fSwapOptSet: opt[i08]
+    fSwapOptLst: opt[i08]
+
+    fSwapLstSet: lst[i08]
+    fSwapSetLst: set[i08]
+}
+
+//

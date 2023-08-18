@@ -276,114 +276,6 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
           val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
           val regtree = q"Register(new ${convname}());"
           Right(List(RenderedConversion(fname, ctree, Some(regtree))))
-        case c: Conversion.DtoConversion =>
-          for {
-            newDefn <- domain.defs.meta.nodes(c.sourceTpe) match {
-              case DomainMember.User(_, defn: Typedef.Dto) =>
-                Right(defn)
-              case _ => Left(NonEmptyList(BaboonIssue.Bug()))
-            }
-            opIndex = c.ops.map(op => (op.targetField, op)).toMap
-            exprs <- newDefn.fields.map { f =>
-              val op = opIndex(f)
-              val ftNew = trans.asCsType(
-                op.targetField.tpe,
-                domain.version,
-                fullyQualified = true
-              )
-
-              op match {
-                case o: FieldOp.Transfer =>
-                  val ftOld = trans.asCsType(
-                    o.targetField.tpe,
-                    srcVer,
-                    fullyQualified = true
-                  )
-
-                  Right(
-                    q"conversions.ConvertWithContext<C, ${ftOld}, ${ftNew}>(context, from.${o.targetField.name.name.capitalize}())"
-                  )
-                case o: FieldOp.InitializeWithDefault =>
-                  o.targetField.tpe match {
-                    case c: TypeRef.Constructor =>
-                      c.id match {
-                        case TypeId.Builtins.opt =>
-                          Right(q"null")
-                        case _ =>
-                          // this is a safe assumption for now, we know there would be collections only
-                          Right(q"new $ftNew()")
-                      }
-                    case _: TypeRef.Scalar =>
-                      Left(NonEmptyList(BaboonIssue.Bug()))
-                  }
-
-                case o: FieldOp.WrapIntoCollection =>
-                  o.newTpe.id match {
-                    case TypeId.Builtins.opt =>
-                      Right(q"from.${o.targetField.name.name.capitalize}()")
-                    case TypeId.Builtins.set =>
-                      Right(
-                        q"new $ftNew { from.${o.targetField.name.name.capitalize}() }"
-                      )
-                    case TypeId.Builtins.lst =>
-                      Right(
-                        q"new $ftNew { from.${o.targetField.name.name.capitalize}() }"
-                      )
-                    case _ => Left(NonEmptyList(BaboonIssue.Bug()))
-                  }
-
-                case o: FieldOp.SwapCollectionType =>
-                  o.oldTpe.id match {
-                    case TypeId.Builtins.opt =>
-                      o.newTpe.id match {
-                        case TypeId.Builtins.lst =>
-                          Right(
-                            q"(from.${o.targetField.name.name.capitalize}() != null) ? new ${ftNew} {from.${o.targetField.name.name.capitalize}()} : new ${ftNew}()"
-                          )
-                        case TypeId.Builtins.set =>
-                          Right(
-                            q"(from.${o.targetField.name.name.capitalize}() != null) ? new ${ftNew} {from.${o.targetField.name.name.capitalize}()} : new ${ftNew}()"
-                          )
-                        case _ => Left(NonEmptyList(BaboonIssue.Bug()))
-                      }
-                    case TypeId.Builtins.lst =>
-                      o.newTpe.id match {
-                        case TypeId.Builtins.set =>
-                          Right(
-                            q"new ${ftNew}(from.${o.targetField.name.name.capitalize}())"
-                          )
-                        case _ => Left(NonEmptyList(BaboonIssue.Bug()))
-                      }
-                    case TypeId.Builtins.set =>
-                      o.newTpe.id match {
-                        case TypeId.Builtins.lst =>
-                          Right(
-                            q"new ${ftNew}(from.${o.targetField.name.name.capitalize}())"
-                          )
-                        case _ => Left(NonEmptyList(BaboonIssue.Bug()))
-                      }
-                    case _ => Left(NonEmptyList(BaboonIssue.Bug()))
-                  }
-
-              }
-            }.biAggregate
-
-          } yield {
-            val cdefn =
-              q"""public class ${convname} : IConversion<${tin}, ${tout}>
-                 |{
-                 |    public ${tout} Convert<C>(C? context, BaboonConversions conversions, ${tin} from) {
-                 |        return new ${tout}(
-                 |        ${exprs.join(",\n").shift(12)}
-                 |        );
-                 |    }
-                 |}""".stripMargin
-
-            val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
-            val regtree = q"Register(new ${convname}());"
-            List(RenderedConversion(fname, ctree, Some(regtree)))
-          }
-
         case c: Conversion.CopyAdtBranchByName =>
           val branches = c.oldDefn.members.map { oldId =>
             val oldFqid = trans.toCsVal(oldId, srcVer).fullyQualified
@@ -406,6 +298,156 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
           val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
           val regtree = q"Register(new ${convname}());"
           Right(List(RenderedConversion(fname, ctree, Some(regtree))))
+        case c: Conversion.DtoConversion =>
+          for {
+            newDefn <- domain.defs.meta.nodes(c.sourceTpe) match {
+              case DomainMember.User(_, defn: Typedef.Dto) =>
+                Right(defn)
+              case _ => Left(NonEmptyList(BaboonIssue.TranslationBug()))
+            }
+            opIndex = c.ops.map(op => (op.targetField, op)).toMap
+            exprs <- newDefn.fields.map { f =>
+              val op = opIndex(f)
+              val ftNew = trans.asCsType(
+                op.targetField.tpe,
+                domain.version,
+                fullyQualified = true
+              )
+
+              def transfer(tpe: TypeRef,
+                           ref: TextTree[CSValue]): Node[CSValue] = {
+                val cnew =
+                  trans.asCsType(tpe, domain.version, fullyQualified = true)
+                val cold = trans.asCsType(tpe, srcVer, fullyQualified = true)
+                q"conversions.ConvertWithContext<C, ${cold}, ${cnew}>(context, ${ref})"
+              }
+
+              op match {
+                case o: FieldOp.Transfer =>
+                  val fieldRef = q"from.${o.targetField.name.name.capitalize}()"
+                  val ftOld = trans.asCsType(
+                    o.targetField.tpe,
+                    srcVer,
+                    fullyQualified = true
+                  )
+
+                  val recConv =
+                    q"conversions.ConvertWithContext<C, ${ftOld}, ${ftNew}>(context, $fieldRef)"
+                  o.targetField.tpe match {
+                    case s: TypeRef.Scalar =>
+                      s.id match {
+                        case _: TypeId.Builtin =>
+                          Right(fieldRef)
+                        case _: TypeId.User =>
+                          Right(recConv)
+                      }
+                    case c: TypeRef.Constructor
+                        if c.id == TypeId.Builtins.lst =>
+                      Right(
+                        q"(from e in $fieldRef select ${transfer(c.args.head, q"e")}).ToList()"
+                      )
+                    case c: TypeRef.Constructor
+                        if c.id == TypeId.Builtins.map =>
+                      Right(
+                        q"(from e in $fieldRef select KeyValuePair.Create(${transfer(
+                          c.args.head,
+                          q"e.Key"
+                        )}, ${transfer(c.args.last, q"e.Value")})).ToDictionary(v => v.Key)"
+                      )
+                    case c: TypeRef.Constructor
+                        if c.id == TypeId.Builtins.set =>
+                      Right(
+                        q"(from e in $fieldRef select ${transfer(c.args.head, q"e")}).ToHashSet()"
+                      )
+                    case _ =>
+                      Right(recConv)
+                  }
+
+                case o: FieldOp.InitializeWithDefault =>
+                  o.targetField.tpe match {
+                    case c: TypeRef.Constructor =>
+                      c.id match {
+                        case TypeId.Builtins.opt =>
+                          Right(q"null")
+                        case _ =>
+                          // this is a safe assumption for now, we know there would be collections only
+                          Right(q"new $ftNew()")
+                      }
+                    case _: TypeRef.Scalar =>
+                      Left(NonEmptyList(BaboonIssue.TranslationBug()))
+                  }
+
+                case o: FieldOp.WrapIntoCollection =>
+                  o.newTpe.id match {
+                    case TypeId.Builtins.opt =>
+                      Right(q"from.${o.targetField.name.name.capitalize}()")
+                    case TypeId.Builtins.set =>
+                      Right(
+                        q"new $ftNew { from.${o.targetField.name.name.capitalize}() }"
+                      )
+                    case TypeId.Builtins.lst =>
+                      Right(
+                        q"new $ftNew { from.${o.targetField.name.name.capitalize}() }"
+                      )
+                    case _ =>
+                      Left(NonEmptyList(BaboonIssue.TranslationBug()))
+                  }
+
+                case o: FieldOp.SwapCollectionType =>
+                  o.oldTpe.id match {
+                    case TypeId.Builtins.opt =>
+                      o.newTpe.id match {
+                        case TypeId.Builtins.lst =>
+                          Right(
+                            q"(from.${o.targetField.name.name.capitalize}() != null) ? new ${ftNew} { from.${o.targetField.name.name.capitalize}().Value } : new ${ftNew}()"
+                          )
+                        case TypeId.Builtins.set =>
+                          Right(
+                            q"(from.${o.targetField.name.name.capitalize}() != null) ? new ${ftNew} {from.${o.targetField.name.name.capitalize}().Value } : new ${ftNew}()"
+                          )
+                        case _ =>
+                          Left(NonEmptyList(BaboonIssue.TranslationBug()))
+                      }
+                    case TypeId.Builtins.lst =>
+                      o.newTpe.id match {
+                        case TypeId.Builtins.set =>
+                          Right(
+                            q"new ${ftNew}(from.${o.targetField.name.name.capitalize}())"
+                          )
+                        case _ =>
+                          Left(NonEmptyList(BaboonIssue.TranslationBug()))
+                      }
+                    case TypeId.Builtins.set =>
+                      o.newTpe.id match {
+                        case TypeId.Builtins.lst =>
+                          Right(
+                            q"new ${ftNew}(from.${o.targetField.name.name.capitalize}())"
+                          )
+                        case _ =>
+                          Left(NonEmptyList(BaboonIssue.TranslationBug()))
+                      }
+                    case _ =>
+                      Left(NonEmptyList(BaboonIssue.TranslationBug()))
+                  }
+
+              }
+            }.biAggregate
+          } yield {
+            val cdefn =
+              q"""public class ${convname} : IConversion<${tin}, ${tout}>
+                 |{
+                 |    public ${tout} Convert<C>(C? context, BaboonConversions conversions, ${tin} from) {
+                 |        return new ${tout}(
+                 |        ${exprs.join(",\n").shift(12)}
+                 |        );
+                 |    }
+                 |}""".stripMargin
+
+            val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
+            val regtree = q"Register(new ${convname}());"
+            List(RenderedConversion(fname, ctree, Some(regtree)))
+          }
+
       }
     }.biFlatAggregate
 
