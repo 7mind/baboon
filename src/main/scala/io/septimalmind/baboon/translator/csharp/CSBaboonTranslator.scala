@@ -247,6 +247,29 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
       val tout =
         trans.toCsVal(conv.sourceTpe, domain.version).fullyQualified
 
+      def transfer(tpe: TypeRef, ref: TextTree[CSValue]): TextTree[CSValue] = {
+        val cnew =
+          trans.asCsType(tpe, domain.version, fullyQualified = true)
+        val cold = trans.asCsType(tpe, srcVer, fullyQualified = true)
+
+        val conv =
+          q"conversions.ConvertWithContext<C, ${cold}, ${cnew}>(context, ${ref})"
+        tpe match {
+          case TypeRef.Scalar(id) =>
+            id match {
+              case _: TypeId.Builtin =>
+                ref
+              case _ => conv
+            }
+          case _: TypeRef.Constructor =>
+            conv
+        }
+      }
+
+      def transferId(tpe: TypeId, ref: TextTree[CSValue]): TextTree[CSValue] = {
+        transfer(TypeRef.Scalar(tpe), ref)
+      }
+
       conv match {
         case _: Conversion.CustomConversionRequired =>
           val cdefn =
@@ -279,10 +302,10 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
         case c: Conversion.CopyAdtBranchByName =>
           val branches = c.oldDefn.members.map { oldId =>
             val oldFqid = trans.toCsVal(oldId, srcVer).fullyQualified
-            val newFqid = trans.toCsVal(oldId, domain.version).fullyQualified
+
             q"""if (from is ${oldFqid} fromAs)
                |{
-               |    return conversions.ConvertWithContext<C, ${oldFqid}, ${newFqid}>(context, fromAs);
+               |    return ${transferId(oldId, q"fromAs")};
                |}""".stripMargin
           }.toSeq ++ Seq(q"""{
                |    throw new ArgumentException($$"Bad input: {from}");
@@ -314,38 +337,13 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                 fullyQualified = true
               )
 
-              def transfer(tpe: TypeRef,
-                           ref: TextTree[CSValue]): TextTree[CSValue] = {
-                val cnew =
-                  trans.asCsType(tpe, domain.version, fullyQualified = true)
-                val cold = trans.asCsType(tpe, srcVer, fullyQualified = true)
-
-                val conv =
-                  q"conversions.ConvertWithContext<C, ${cold}, ${cnew}>(context, ${ref})"
-                tpe match {
-                  case TypeRef.Scalar(id) =>
-                    id match {
-                      case _: TypeId.Builtin =>
-                        ref
-                      case _ => conv
-                    }
-                  case _: TypeRef.Constructor =>
-                    conv
-                }
-              }
-
               op match {
                 case o: FieldOp.Transfer =>
                   val fieldRef =
                     q"_from.${o.targetField.name.name.capitalize}()"
-                  val ftOld = trans.asCsType(
-                    o.targetField.tpe,
-                    srcVer,
-                    fullyQualified = true
-                  )
 
-                  val recConv =
-                    q"conversions.ConvertWithContext<C, ${ftOld}, ${ftNew}>(context, $fieldRef)"
+                  val recConv = transfer(o.targetField.tpe, fieldRef)
+
                   o.targetField.tpe match {
                     case s: TypeRef.Scalar =>
                       s.id match {
@@ -374,20 +372,8 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                       )
                     case c: TypeRef.Constructor
                         if c.id == TypeId.Builtins.opt =>
-                      val ftNew = trans.asCsType(
-                        c.args.head,
-                        domain.version,
-                        fullyQualified = true
-                      )
-
-                      val ftOld = trans.asCsType(
-                        c.args.head,
-                        srcVer,
-                        fullyQualified = true
-                      )
-
                       val recConv =
-                        q"conversions.ConvertWithContext<C, ${ftOld}, ${ftNew}>(context, $fieldRef ?? default)"
+                        transfer(c.args.head, q"$fieldRef ?? default")
 
                       Right(q"($fieldRef == null ? null : $recConv)")
 
@@ -428,22 +414,10 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                 case o: FieldOp.SwapCollectionType =>
                   o.oldTpe.id match {
                     case TypeId.Builtins.opt =>
-                      val elNew = trans.asCsType(
-                        o.newTpe.args.head,
-                        domain.version,
-                        fullyQualified = true
-                      )
-
-                      val elOld = trans.asCsType(
-                        o.newTpe.args.head,
-                        srcVer,
-                        fullyQualified = true
-                      )
-
                       val fieldRef =
                         q"_from.${o.targetField.name.name.capitalize}()"
                       val recConv =
-                        q"conversions.ConvertWithContext<C, ${elOld}, ${elNew}>(context, $fieldRef ?? default)"
+                        transfer(o.newTpe.args.head, q"$fieldRef ?? default")
 
                       o.newTpe.id match {
                         case TypeId.Builtins.lst =>
