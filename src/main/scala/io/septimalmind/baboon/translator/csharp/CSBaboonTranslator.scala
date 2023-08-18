@@ -6,13 +6,14 @@ import io.septimalmind.baboon.translator.{
   Sources,
   TextTree
 }
-import io.septimalmind.baboon.typer.model.*
-import izumi.functional.IzEitherAggregations.*
+import io.septimalmind.baboon.typer.model.{TypeId, *}
 import izumi.fundamentals.collections.IzCollections.*
+import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 import TextTree.*
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.RenderedConversion
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
+import io.septimalmind.baboon.typer.model.Conversion.FieldOp
 
 class CSBaboonTranslator() extends AbstractBaboonTranslator {
 
@@ -70,6 +71,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
     family: BaboonFamily
   ): Out[List[CSDefnTranslator.Output]] = {
     // TODO: fix .toSeq.toList
+
     family.domains.toSeq.toList.map {
       case (_, lineage) =>
         translateLineage(lineage)
@@ -79,6 +81,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
   private def translateLineage(
     lineage: BaboonLineage
   ): Out[List[CSDefnTranslator.Output]] = {
+
     lineage.versions.toSeq.toList.map {
       case (version, domain) =>
         val evo = if (lineage.evolution.latest == version) {
@@ -94,6 +97,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
     domain: Domain,
     evo: Option[BaboonEvolution]
   ): Out[List[CSDefnTranslator.Output]] = {
+
     for {
       defnSources <- domain.defs.meta.nodes.toList.map {
         case (_, defn: DomainMember.User) =>
@@ -122,15 +126,11 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
     val trans = new CSTypeTranslator()
     val pkg = trans.toCsPkg(domain.id, domain.version)
 
-    val convs = value.rules.flatMap {
-      case (srcVer, rules) =>
-        makeConvs(transd, trans, pkg, srcVer, domain, rules)
-    }
-
-    val base = q"""public interface IConversion<From, To>
-                  |{
-                  |    public To Convert<Ctx>(Ctx context, BaboonConversions conversions, From from);
-                  |}""".stripMargin
+    val base =
+      q"""public interface IConversion<From, To>
+         |{
+         |    public To Convert<Ctx>(Ctx context, BaboonConversions conversions, From from);
+         |}""".stripMargin
     val key =
       q"""public class ConversionKey
          |{
@@ -162,50 +162,60 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
          |    public Type TypeTo {get; }
          |}""".stripMargin
 
-    val regs = convs.flatMap(_.reg.iterator.toSeq).toSeq
-    val converter =
-      q"""
-         |public class BaboonConversions
-         |{
-         |    private Dictionary<ConversionKey, dynamic> convs = new ();
-         |
-         |    public BaboonConversions()
-         |    {
-         |    ${regs.join("\n").shift(4)}
-         |    }
-         |
-         |    public void Register<From, To>(IConversion<From, To> conversion)
-         |    {
-         |        var tFrom = typeof(From);
-         |        var tTo = typeof(To);
-         |        var key = new ConversionKey(tFrom, tTo);
-         |
-         |        convs.Add(key, conversion);
-         |    }
-         |
-         |    public To ConvertWithContext<C, From, To>(C? c, From from)
-         |    {
-         |        var tFrom = typeof(From);
-         |        var tTo = typeof(To);
-         |        var key = new ConversionKey(tFrom, tTo);
-         |
-         |        var conv = convs[key];
-         |        var tconv = ((IConversion<From, To>)conv);
-         |        return tconv.Convert(c, this, from);
-         |    }
-         |
-         |    public To Convert<From, To>(From from)
-         |    {
-         |        return ConvertWithContext<Object, From, To>(null, from);
-         |    }
-         |
-         |}""".stripMargin
+    for {
+      convs <- value.rules.map {
+        case (srcVer, rules) =>
+          makeConvs(transd, trans, pkg, srcVer, domain, rules)
+      }.biFlatAggregate
+    } yield {
+      val regs = convs.flatMap(_.reg.iterator.toSeq).toSeq
+      val converter =
+        q"""
+           |public class BaboonConversions
+           |{
+           |    private Dictionary<ConversionKey, dynamic> convs = new ();
+           |
+           |    public BaboonConversions()
+           |    {
+           |    ${regs.join("\n").shift(4)}
+           |    }
+           |
+           |    public void Register<From, To>(IConversion<From, To> conversion)
+           |    {
+           |        var tFrom = typeof(From);
+           |        var tTo = typeof(To);
+           |        var key = new ConversionKey(tFrom, tTo);
+           |
+           |        convs.Add(key, conversion);
+           |    }
+           |
+           |    public To ConvertWithContext<C, From, To>(C? c, From from)
+           |    {
+           |        if (from is To direct)
+           |        {
+           |            return direct;
+           |        }
+           |
+           |        var tFrom = typeof(From);
+           |        var tTo = typeof(To);
+           |        var key = new ConversionKey(tFrom, tTo);
+           |
+           |        var conv = convs[key];
+           |        var tconv = ((IConversion<From, To>)conv);
+           |        return tconv.Convert(c, this, from);
+           |    }
+           |
+           |    public To Convert<From, To>(From from)
+           |    {
+           |        return ConvertWithContext<Object, From, To>(null, from);
+           |    }
+           |
+           |}""".stripMargin
 
-    val runtime = Seq(base, key, converter).join("\n\n")
+      val runtime = Seq(base, key, converter).join("\n\n")
 
-    val rt = transd.inNs(pkg.parts.toSeq, runtime)
+      val rt = transd.inNs(pkg.parts.toSeq, runtime)
 
-    Right(
       List(
         CSDefnTranslator
           .Output(s"${transd.basename(domain)}/Baboon-Runtime.cs", rt, pkg)
@@ -213,7 +223,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
         CSDefnTranslator
           .Output(s"${transd.basename(domain)}/${conv.fname}", conv.conv, pkg)
       }
-    )
+    }
   }
 
   private def makeConvs(transd: CSDefnTranslator.CSDefnTranslatorImpl,
@@ -221,16 +231,18 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                         pkg: CSPackageId,
                         srcVer: Version,
                         domain: Domain,
-                        rules: BaboonRuleset): List[RenderedConversion] = {
-    rules.conversions.flatMap { conv =>
-      val convname = Seq(
-        "Convert",
+                        rules: BaboonRuleset): Out[List[RenderedConversion]] = {
+    rules.conversions.map { conv =>
+      val convname = (Seq("Convert") ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
         conv.sourceTpe.name.name,
         "From",
         srcVer.version.replace(".", "_")
-      ).mkString("__")
+      )).mkString("__")
 
-      val fname = s"from-${srcVer.version}-${conv.sourceTpe.name.name}.cs"
+      val fname =
+        (Seq("from", srcVer.version) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
+          s"${conv.sourceTpe.name.name}.cs"
+        )).mkString("-")
       val tin = trans.toCsVal(conv.sourceTpe, srcVer).fullyQualified
       val tout =
         trans.toCsVal(conv.sourceTpe, domain.version).fullyQualified
@@ -243,9 +255,9 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                |    public abstract ${tout} Convert<C>(C? context, BaboonConversions conversions, ${tin} from);
                |}""".stripMargin
           val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
-          List(RenderedConversion(fname, ctree, None))
+          Right(List(RenderedConversion(fname, ctree, None)))
         case _: Conversion.RemovedTypeNoConversion =>
-          List.empty
+          Right(List.empty)
         case _: Conversion.CopyEnumByName =>
           val cdefn =
             q"""public class ${convname} : IConversion<${tin}, ${tout}>
@@ -263,9 +275,115 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                |}""".stripMargin
           val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
           val regtree = q"Register(new ${convname}());"
-          List(RenderedConversion(fname, ctree, Some(regtree)))
+          Right(List(RenderedConversion(fname, ctree, Some(regtree))))
         case c: Conversion.DtoConversion =>
-          List.empty
+          for {
+            newDefn <- domain.defs.meta.nodes(c.sourceTpe) match {
+              case DomainMember.User(_, defn: Typedef.Dto) =>
+                Right(defn)
+              case _ => Left(NonEmptyList(BaboonIssue.Bug()))
+            }
+            opIndex = c.ops.map(op => (op.targetField, op)).toMap
+            exprs <- newDefn.fields.map { f =>
+              val op = opIndex(f)
+              val ftNew = trans.asCsType(
+                op.targetField.tpe,
+                domain.version,
+                fullyQualified = true
+              )
+
+              op match {
+                case o: FieldOp.Transfer =>
+                  val ftOld = trans.asCsType(
+                    o.targetField.tpe,
+                    srcVer,
+                    fullyQualified = true
+                  )
+
+                  Right(
+                    q"conversions.ConvertWithContext<C, ${ftOld}, ${ftNew}>(context, from.${o.targetField.name.name.capitalize}())"
+                  )
+                case o: FieldOp.InitializeWithDefault =>
+                  o.targetField.tpe match {
+                    case c: TypeRef.Constructor =>
+                      c.id match {
+                        case TypeId.Builtins.opt =>
+                          Right(q"null")
+                        case _ =>
+                          // this is a safe assumption for now, we know there would be collections only
+                          Right(q"new $ftNew()")
+                      }
+                    case _: TypeRef.Scalar =>
+                      Left(NonEmptyList(BaboonIssue.Bug()))
+                  }
+
+                case o: FieldOp.WrapIntoCollection =>
+                  o.newTpe.id match {
+                    case TypeId.Builtins.opt =>
+                      Right(q"from.${o.targetField.name.name.capitalize}()")
+                    case TypeId.Builtins.set =>
+                      Right(
+                        q"new $ftNew { from.${o.targetField.name.name.capitalize}() }"
+                      )
+                    case TypeId.Builtins.lst =>
+                      Right(
+                        q"new $ftNew { from.${o.targetField.name.name.capitalize}() }"
+                      )
+                    case _ => Left(NonEmptyList(BaboonIssue.Bug()))
+                  }
+
+                case o: FieldOp.SwapCollectionType =>
+                  o.oldTpe.id match {
+                    case TypeId.Builtins.opt =>
+                      o.newTpe.id match {
+                        case TypeId.Builtins.lst =>
+                          Right(
+                            q"(from.${o.targetField.name.name.capitalize}() != null) ? new ${ftNew} {from.${o.targetField.name.name.capitalize}()} : new ${ftNew}()"
+                          )
+                        case TypeId.Builtins.set =>
+                          Right(
+                            q"(from.${o.targetField.name.name.capitalize}() != null) ? new ${ftNew} {from.${o.targetField.name.name.capitalize}()} : new ${ftNew}()"
+                          )
+                        case _ => Left(NonEmptyList(BaboonIssue.Bug()))
+                      }
+                    case TypeId.Builtins.lst =>
+                      o.newTpe.id match {
+                        case TypeId.Builtins.set =>
+                          Right(
+                            q"new ${ftNew}(from.${o.targetField.name.name.capitalize}())"
+                          )
+                        case _ => Left(NonEmptyList(BaboonIssue.Bug()))
+                      }
+                    case TypeId.Builtins.set =>
+                      o.newTpe.id match {
+                        case TypeId.Builtins.lst =>
+                          Right(
+                            q"new ${ftNew}(from.${o.targetField.name.name.capitalize}())"
+                          )
+                        case _ => Left(NonEmptyList(BaboonIssue.Bug()))
+                      }
+                    case _ => Left(NonEmptyList(BaboonIssue.Bug()))
+                  }
+
+              }
+            }.biAggregate
+
+          } yield {
+            val cdefn =
+              q"""public class ${convname} : IConversion<${tin}, ${tout}>
+                 |{
+                 |    public ${tout} Convert<C>(C? context, BaboonConversions conversions, ${tin} from) {
+                 |        return new ${tout}(
+                 |        ${exprs.join(",\n").shift(12)}
+                 |        );
+                 |    }
+                 |}""".stripMargin
+
+            val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
+            val regtree = q"Register(new ${convname}());"
+            List(RenderedConversion(fname, ctree, Some(regtree)))
+          }
+
         case c: Conversion.CopyAdtBranchByName =>
           val branches = c.oldDefn.members.map { oldId =>
             val oldFqid = trans.toCsVal(oldId, srcVer).fullyQualified
@@ -287,9 +405,10 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                |}""".stripMargin
           val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
           val regtree = q"Register(new ${convname}());"
-          List(RenderedConversion(fname, ctree, Some(regtree)))
+          Right(List(RenderedConversion(fname, ctree, Some(regtree))))
       }
-    }
+    }.biFlatAggregate
+
   }
 
 }

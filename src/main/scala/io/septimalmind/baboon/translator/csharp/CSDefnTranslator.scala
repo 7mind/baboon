@@ -56,7 +56,7 @@ object CSDefnTranslator {
           val inits = outs
             .map(_._3)
             .map {
-              case (fname, ftpe) =>
+              case (fname, _) =>
                 q"this.$fname = $fname;"
             }
             .join("\n")

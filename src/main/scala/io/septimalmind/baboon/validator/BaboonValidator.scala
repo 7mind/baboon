@@ -4,6 +4,7 @@ import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue.ConversionIssue
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.Conversion.FieldOp
 import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.nonempty.{NonEmptyList, NonEmptyMap}
 import izumi.fundamentals.graphs.struct.IncidenceMatrix
@@ -294,10 +295,18 @@ object BaboonValidator {
                     )
                   )
 
-                  transfer = c.transferFields.map(_.name)
-                  defaults = c.initializeWithDefaults.map(_.name)
-                  swap = c.swapColllectionType.map(_.fieldName)
-                  wrap = c.wrapIntoCollection.map(_.fieldName)
+                  transfer = c.ops.collect {
+                    case f: FieldOp.Transfer => f.targetField.name
+                  }.toSet
+                  defaults = c.ops.collect {
+                    case f: FieldOp.InitializeWithDefault => f.targetField.name
+                  }.toSet
+                  swap = c.ops.collect {
+                    case f: FieldOp.SwapCollectionType => f.fieldName
+                  }.toSet
+                  wrap = c.ops.collect {
+                    case f: FieldOp.WrapIntoCollection => f.fieldName
+                  }.toSet
                   all = transfer ++ defaults ++ swap ++ wrap
                   _ <- Either.failWhen(newFieldNames != all)(
                     NonEmptyList(

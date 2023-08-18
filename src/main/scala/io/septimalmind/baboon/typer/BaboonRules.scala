@@ -41,13 +41,7 @@ object BaboonRules {
               defn match {
                 case d: Typedef.Dto if sameLocalStruct =>
                   Right(
-                    DtoConversion(
-                      id,
-                      d.fields.toSet,
-                      Set.empty,
-                      Set.empty,
-                      Set.empty
-                    )
+                    DtoConversion(id, d.fields.map(f => FieldOp.Transfer(f)))
                   )
                 case _: Typedef.Enum if sameLocalStruct =>
                   Right(CopyEnumByName(id))
@@ -91,7 +85,9 @@ object BaboonRules {
                           !TypeId.Builtins.canChangeCollectionType(o, n)
                       }
                     }
-                    initWithDefaults = compatibleAdditions.map(_.f)
+                    initWithDefaults = compatibleAdditions.map(
+                      a => FieldOp.InitializeWithDefault(a.f)
+                    )
 
                     wrap = changes
                       .map(op => (op.f.tpe, op.newType, op.f.name))
@@ -101,7 +97,7 @@ object BaboonRules {
                               o,
                               n
                             ) =>
-                          Wrap(name, o, n)
+                          FieldOp.WrapIntoCollection(name, o, n)
                       }
 
                     swap = changes
@@ -113,12 +109,12 @@ object BaboonRules {
                             name
                             )
                             if TypeId.Builtins.canChangeCollectionType(o, n) =>
-                          SwapCollectionType(name, o, n)
+                          FieldOp.SwapCollectionType(name, o, n)
                       }
 
                     keepFields = ops.collect {
-                      case op: DtoOp.KeepField => op.f
-                    }.toSet
+                      case op: DtoOp.KeepField => FieldOp.Transfer(op.f)
+                    }
                   } yield {
                     assert(
                       wrap
@@ -131,10 +127,7 @@ object BaboonRules {
                     } else {
                       DtoConversion(
                         id,
-                        keepFields,
-                        wrap,
-                        swap,
-                        initWithDefaults
+                        keepFields ++ (wrap ++ swap ++ initWithDefaults).toList
                       )
                     }
                   }

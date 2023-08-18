@@ -60,8 +60,10 @@ class CSTypeTranslator() {
     }
   }
 
-  def asCsType(tpe: TypeRef, version: Version): TextTree[CSValue] = {
-    tpe match {
+  def asCsType(tpe: TypeRef,
+               version: Version,
+               fullyQualified: Boolean = false): TextTree[CSValue] = {
+    val out = tpe match {
       case TypeRef.Scalar(id) =>
         asCsType(id, version)
 
@@ -74,6 +76,14 @@ class CSTypeTranslator() {
           q"$tpe<${targs.toSeq.join(", ")}>"
         }
 
+    }
+
+    if (fullyQualified) {
+      out.map {
+        case t: CSType => t.fullyQualified
+      }
+    } else {
+      out
     }
   }
 }

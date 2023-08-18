@@ -100,7 +100,7 @@ object TypeId {
 
     def canBeWrappedIntoCollection(o: TypeRef.Scalar,
                                    n: TypeRef.Constructor): Boolean = {
-      collIds.contains(n.id) && n.args == NonEmptyList(o)
+      safeSources.contains(n.id) && n.args == NonEmptyList(o)
     }
 
     def canChangeCollectionType(o: TypeRef.Constructor,
@@ -112,10 +112,18 @@ object TypeId {
   }
 }
 
-sealed trait Owner
+sealed trait Owner {
+  def asPseudoPkg: Seq[String]
+}
+
 object Owner {
-  case object Toplevel extends Owner
-  case class Adt(id: TypeId.User) extends Owner
+  case object Toplevel extends Owner {
+    override def asPseudoPkg: Seq[String] = Seq.empty
+  }
+  case class Adt(id: TypeId.User) extends Owner {
+    override def asPseudoPkg: Seq[String] =
+      id.owner.asPseudoPkg ++ Seq(id.name.name)
+  }
 }
 
 case class Pkg(path: NonEmptyList[String]) {
