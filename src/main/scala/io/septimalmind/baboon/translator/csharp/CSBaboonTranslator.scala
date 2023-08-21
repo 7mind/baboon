@@ -36,18 +36,30 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
   }
 
   private def renderTree(o: CSDefnTranslator.Output): String = {
-    val requiredPackages: Set[CSPackageId] = Set.empty /*Set(
+    val alwaysAvailable: Set[CSPackageId] = Set(
       CSPackageId(NonEmptyList("System")),
       CSPackageId(NonEmptyList("System", "Collections", "Generic")),
       CSPackageId(NonEmptyList("System", "Linq")),
-    )*/
+    )
 
-    val usedPackages = o.tree.values.collect {
-      case t: CSValue.CSType if !t.fq => t.pkg
-    }.toSet
+    val usedPackages = o.tree.values
+      .collect {
+        case t: CSValue.CSType => t
+      }
+      .flatMap { t =>
+        if (!t.fq) {
+          Seq(t.pkg)
+        } else {
+          Seq.empty
+        }
+      }
+      .distinct
+      .sortBy(_.parts.mkString("."))
 
     val available = Set(o.pkg)
-    val allPackages = (requiredPackages ++ usedPackages).diff(available)
+    val requiredPackages = Set.empty
+    val allPackages =
+      (requiredPackages ++ usedPackages).diff(available ++ alwaysAvailable)
 
     val imports = allPackages.toSeq
       .map { p =>
@@ -177,7 +189,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
            |
            |    public BaboonConversions()
            |    {
-           |    ${regs.join("\n").shift(4)}
+           |${regs.join("\n").shift(8)}
            |    }
            |
            |    public void Register<From, To>(IConversion<From, To> conversion)
@@ -245,12 +257,12 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
         )).mkString("-")
       val tin = trans.toCsVal(conv.sourceTpe, srcVer).fullyQualified
       val tout =
-        trans.toCsVal(conv.sourceTpe, domain.version).fullyQualified
+        trans.toCsVal(conv.sourceTpe, domain.version)
 
       def transfer(tpe: TypeRef, ref: TextTree[CSValue]): TextTree[CSValue] = {
         val cnew =
-          trans.asCsType(tpe, domain.version, fullyQualified = true)
-        val cold = trans.asCsType(tpe, srcVer, fullyQualified = true)
+          trans.asCsRef(tpe, domain.version)
+        val cold = trans.asCsRef(tpe, srcVer, fullyQualified = true)
 
         val conv =
           q"conversions.ConvertWithContext<C, ${cold}, ${cnew}>(context, ${ref})"
@@ -258,7 +270,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
           case TypeRef.Scalar(id) =>
             id match {
               case _: TypeId.Builtin =>
-                ref
+                q"((${cnew}) $ref)"
               case _ => conv
             }
           case _: TypeRef.Constructor =>
@@ -278,7 +290,15 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                |    public abstract ${tout} Convert<C>(C? context, BaboonConversions conversions, ${tin} from);
                |}""".stripMargin
           val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
-          Right(List(RenderedConversion(fname, ctree, None)))
+          Right(
+            List(
+              RenderedConversion(
+                fname,
+                ctree,
+                Some(q"// Register(new ${convname}()); ")
+              )
+            )
+          )
         case _: Conversion.RemovedTypeNoConversion =>
           Right(List.empty)
         case _: Conversion.CopyEnumByName =>
@@ -331,16 +351,14 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
             opIndex = c.ops.map(op => (op.targetField, op)).toMap
             exprs <- newDefn.fields.map { f =>
               val op = opIndex(f)
-              val ftNew = trans.asCsType(
-                op.targetField.tpe,
-                domain.version,
-                fullyQualified = true
-              )
-
-              op match {
+              val ftNew = trans.asCsRef(op.targetField.tpe, domain.version)
+              val ftNewInit =
+                trans.asCsRef(op.targetField.tpe, domain.version, mut = true)
+              val base = op.targetField.name.name.capitalize
+              val initExpr = op match {
                 case o: FieldOp.Transfer =>
                   val fieldRef =
-                    q"_from.${o.targetField.name.name.capitalize}()"
+                    q"_from.${base}()"
 
                   val recConv = transfer(o.targetField.tpe, fieldRef)
 
@@ -348,37 +366,50 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                     case s: TypeRef.Scalar =>
                       s.id match {
                         case _: TypeId.Builtin =>
-                          Right(fieldRef)
+                          Right(Seq(fieldRef))
                         case _: TypeId.User =>
-                          Right(recConv)
+                          Right(Seq(recConv))
                       }
                     case c: TypeRef.Constructor
                         if c.id == TypeId.Builtins.lst =>
                       Right(
-                        q"(from e in $fieldRef select ${transfer(c.args.head, q"e")}).ToList()"
+                        Seq(
+                          q"(from e in $fieldRef select ${transfer(c.args.head, q"e")}).ToImmutableList()"
+                        )
                       )
                     case c: TypeRef.Constructor
                         if c.id == TypeId.Builtins.map =>
                       Right(
-                        q"(from e in $fieldRef select KeyValuePair.Create(${transfer(
-                          c.args.head,
-                          q"e.Key"
-                        )}, ${transfer(c.args.last, q"e.Value")})).ToDictionary(v => v.Key, v => v.Value)"
+                        Seq(
+                          q"(from e in $fieldRef select KeyValuePair.Create(${transfer(
+                            c.args.head,
+                            q"e.Key"
+                          )}, ${transfer(c.args.last, q"e.Value")})).ToImmutableDictionary(v => v.Key, v => v.Value)"
+                        )
                       )
                     case c: TypeRef.Constructor
                         if c.id == TypeId.Builtins.set =>
                       Right(
-                        q"(from e in $fieldRef select ${transfer(c.args.head, q"e")}).ToHashSet()"
+                        Seq(
+                          q"(from e in $fieldRef select ${transfer(c.args.head, q"e")}).ToImmutableHashSet()"
+                        )
                       )
                     case c: TypeRef.Constructor
                         if c.id == TypeId.Builtins.opt =>
-                      val recConv =
-                        transfer(c.args.head, q"$fieldRef ?? default")
+                      val tmp = q"_${base.toLowerCase}_tmp"
 
-                      Right(q"($fieldRef == null ? null : $recConv)")
+                      val recConv =
+                        transfer(c.args.head, tmp)
+
+                      Right(
+                        Seq(
+                          q"var $tmp = $fieldRef",
+                          q"($tmp == null ? null : $recConv)"
+                        )
+                      )
 
                     case _ =>
-                      Right(recConv)
+                      Right(Seq(recConv))
                   }
 
                 case o: FieldOp.InitializeWithDefault =>
@@ -386,10 +417,19 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                     case c: TypeRef.Constructor =>
                       c.id match {
                         case TypeId.Builtins.opt =>
-                          Right(q"null")
-                        case _ =>
+                          Right(Seq(q"null"))
+                        case TypeId.Builtins.set =>
                           // this is a safe assumption for now, we know there would be collections only
-                          Right(q"new $ftNew()")
+                          Right(Seq(q"(new $ftNewInit()).ToImmutableHashSet()"))
+                        case TypeId.Builtins.lst =>
+                          Right(Seq(q"(new $ftNewInit()).ToImmutableList()"))
+                        case TypeId.Builtins.map =>
+                          Right(
+                            Seq(q"(new $ftNewInit()).ToImmutableDictionary()")
+                          )
+
+                        case _ =>
+                          Left(NonEmptyList(BaboonIssue.TranslationBug()))
                       }
                     case _: TypeRef.Scalar =>
                       Left(NonEmptyList(BaboonIssue.TranslationBug()))
@@ -398,14 +438,18 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                 case o: FieldOp.WrapIntoCollection =>
                   o.newTpe.id match {
                     case TypeId.Builtins.opt =>
-                      Right(q"_from.${o.targetField.name.name.capitalize}()")
+                      Right(Seq(q"_from.${base}()"))
                     case TypeId.Builtins.set =>
                       Right(
-                        q"new $ftNew { _from.${o.targetField.name.name.capitalize}() }"
+                        Seq(
+                          q"(new $ftNewInit { _from.${base}() }).ToImmutableHashSet()"
+                        )
                       )
                     case TypeId.Builtins.lst =>
                       Right(
-                        q"new $ftNew { _from.${o.targetField.name.name.capitalize}() }"
+                        Seq(
+                          q"(new $ftNewInit { _from.${base}() }).ToImmutableList()"
+                        )
                       )
                     case _ =>
                       Left(NonEmptyList(BaboonIssue.TranslationBug()))
@@ -415,18 +459,26 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                   o.oldTpe.id match {
                     case TypeId.Builtins.opt =>
                       val fieldRef =
-                        q"_from.${o.targetField.name.name.capitalize}()"
+                        q"_from.${base}()"
+                      val tmp = q"_${base.toLowerCase}_tmp"
+
                       val recConv =
-                        transfer(o.newTpe.args.head, q"$fieldRef ?? default")
+                        transfer(o.newTpe.args.head, tmp)
 
                       o.newTpe.id match {
                         case TypeId.Builtins.lst =>
                           Right(
-                            q"( ($fieldRef != null) ? new ${ftNew} { $recConv } : new ${ftNew}() )"
+                            Seq(
+                              q"var $tmp = $fieldRef",
+                              q"( ($tmp != null) ? new ${ftNewInit} { $recConv } : new ${ftNewInit}() ).ToImmutableList()"
+                            )
                           )
                         case TypeId.Builtins.set =>
                           Right(
-                            q"( ($fieldRef != null) ? new ${ftNew} { $recConv } : new ${ftNew}() )"
+                            Seq(
+                              q"var $tmp = $fieldRef",
+                              q"( ($tmp != null) ? new ${ftNewInit} { $recConv } : new ${ftNewInit}() ).ToImmutableHashSet()"
+                            )
                           )
                         case _ =>
                           Left(NonEmptyList(BaboonIssue.TranslationBug()))
@@ -435,7 +487,9 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                       o.newTpe.id match {
                         case TypeId.Builtins.set =>
                           Right(
-                            q"new ${ftNew}(_from.${o.targetField.name.name.capitalize}())"
+                            Seq(
+                              q"(new ${ftNewInit}(_from.${base}())).ToImmutableHashSet()"
+                            )
                           )
                         case _ =>
                           Left(NonEmptyList(BaboonIssue.TranslationBug()))
@@ -444,7 +498,9 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                       o.newTpe.id match {
                         case TypeId.Builtins.lst =>
                           Right(
-                            q"new ${ftNew}(_from.${o.targetField.name.name.capitalize}())"
+                            Seq(
+                              q"(new ${ftNewInit}(_from.${base}())).ToImmutableList()"
+                            )
                           )
                         case _ =>
                           Left(NonEmptyList(BaboonIssue.TranslationBug()))
@@ -454,14 +510,28 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                   }
 
               }
+
+              for {
+                init <- initExpr
+              } yield {
+                val localName = q"_${base.toLowerCase}"
+                val actualExpr = init.last;
+                val assignment = q"${ftNew} ${localName} = $actualExpr"
+                val full = (init.init ++ Seq(assignment)).join(";\n")
+                (full, localName)
+              }
             }.biAggregate
           } yield {
+            val initExprs = exprs.map(_._1) ++ Seq(q"")
+            val consExprs = exprs.map(_._2)
+
             val cdefn =
               q"""public class ${convname} : IConversion<${tin}, ${tout}>
                  |{
                  |    public ${tout} Convert<C>(C? context, BaboonConversions conversions, ${tin} _from) {
+                 |${initExprs.join(";\n").shift(8)}
                  |        return new ${tout}(
-                 |        ${exprs.join(",\n").shift(12)}
+                 |${consExprs.join(",\n").shift(12)}
                  |        );
                  |    }
                  |}""".stripMargin

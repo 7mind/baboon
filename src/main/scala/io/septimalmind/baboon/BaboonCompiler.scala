@@ -11,14 +11,18 @@ import scala.util.Try
 
 trait BaboonCompiler {
   def run(inputs: Set[Path],
-          output: Path): Either[NonEmptyList[BaboonIssue], Unit]
+          output: Path,
+          debug: Boolean,
+  ): Either[NonEmptyList[BaboonIssue], Unit]
 }
 
 object BaboonCompiler {
 
   class BaboonCompilerImpl() extends BaboonCompiler {
     override def run(inputs: Set[Path],
-                     output: Path): Either[NonEmptyList[BaboonIssue], Unit] = {
+                     output: Path,
+                     debug: Boolean,
+    ): Either[NonEmptyList[BaboonIssue], Unit] = {
       for {
         loader <- Right(new BaboonLoader.BaboonLoaderImpl())
         loaded <- loader.load(inputs.toList)
@@ -30,8 +34,11 @@ object BaboonCompiler {
               val tgt = output.resolve(p)
               tgt.getParent.toFile.mkdirs()
 
-              println(s">> $tgt")
-              println(c)
+              if (debug) {
+                println(s">> $tgt")
+                println(c)
+              }
+
               Files.writeString(
                 tgt,
                 c,

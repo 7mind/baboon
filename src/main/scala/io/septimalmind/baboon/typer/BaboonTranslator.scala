@@ -15,7 +15,11 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
       translated <- translate(defn.value, defn.root)
       duplications = acc.keySet.intersect(translated.keySet)
       next <- if (duplications.nonEmpty) {
-        Left(NonEmptyList(BaboonIssue.DuplicatedTypeId(duplications, pkg, owner, defn)))
+        Left(
+          NonEmptyList(
+            BaboonIssue.DuplicatedTypeId(duplications, pkg, owner, defn)
+          )
+        )
       } else {
         Right(translated)
       }
@@ -33,7 +37,9 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
       uniqueMembers <- members
         .map(m => (m.id: TypeId, m))
         .toList
-        .toUniqueMap(e => NonEmptyList(BaboonIssue.DuplicatedTypedef(e, pkg, owner, defn)))
+        .toUniqueMap(
+          e => NonEmptyList(BaboonIssue.DuplicatedTypedef(e, pkg, owner, defn))
+        )
 
     } yield {
       uniqueMembers
@@ -99,11 +105,13 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
           EnumMember(name)
         }
       }
-      unique <- converted
+      _ <- converted
         .map(m => (m.name.toLowerCase, m))
-        .toUniqueMap(e => NonEmptyList(BaboonIssue.NonUniqueEnumBranches(e, id)))
+        .toUniqueMap(
+          e => NonEmptyList(BaboonIssue.NonUniqueEnumBranches(e, id))
+        )
       nel <- NonEmptyList
-        .from(unique.values)
+        .from(converted)
         .toRight(NonEmptyList(BaboonIssue.EmptyEnum(id)))
     } yield {
       DomainMember.User(isRoot, Typedef.Enum(id, nel))
@@ -125,11 +133,11 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
           Field(name, tpe)
         }
       }
-      unique <- converted
+      _ <- converted
         .map(m => (m.name.name.toLowerCase, m))
         .toUniqueMap(e => NonEmptyList(BaboonIssue.NonUniqueFields(id, e)))
     } yield {
-      DomainMember.User(isRoot, Typedef.Dto(id, unique.values.toList))
+      DomainMember.User(isRoot, Typedef.Dto(id, converted.toList))
     }
   }
 
@@ -171,7 +179,9 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
         for {
           id <- convertId(name, Owner.Toplevel)
           args <- params.toList.biMapAggregate(convertTpe)
-          nel <- NonEmptyList.from(args).toRight(NonEmptyList(BaboonIssue.EmptyGenericArgs(id)))
+          nel <- NonEmptyList
+            .from(args)
+            .toRight(NonEmptyList(BaboonIssue.EmptyGenericArgs(id)))
         } yield {
           TypeRef.Constructor(id, nel)
         }

@@ -34,7 +34,7 @@ object CSDefnTranslator {
       val defnRepr = defn.defn match {
         case d: Typedef.Dto =>
           val outs = d.fields.map { f =>
-            val tpe = trans.asCsType(f.tpe, domain.version)
+            val tpe = trans.asCsRef(f.tpe, domain.version)
             val fname = s"_${f.name.name}"
             val mname = s"${f.name.name.capitalize}"
             (q"""private readonly $tpe ${fname};""", q"""public $tpe ${mname}()

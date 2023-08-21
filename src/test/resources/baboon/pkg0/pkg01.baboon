@@ -80,9 +80,12 @@ root data T6_D1 {
     fWrapLst: i08
     fWrapSet: i08
 
-    fSwapOptSet: opt[i08]
-    fSwapOptLst: opt[i08]
-    fSwapOptLst1: opt[T6_D2]
+    fSwapOptSet0: opt[i08]
+    fSwapOptSet1: opt[str]
+    fSwapOptSet2: opt[T6_D2]
+    fSwapOptLst0: opt[i08]
+    fSwapOptLst1: opt[str]
+    fSwapOptLst2: opt[T6_D2]
 
     fSwapLstSet: lst[i08]
     fSwapSetLst: set[i08]
