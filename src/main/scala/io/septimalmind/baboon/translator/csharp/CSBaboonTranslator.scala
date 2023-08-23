@@ -139,10 +139,22 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
     val pkg = trans.toCsPkg(domain.id, domain.version)
 
     val base =
-      q"""public interface IConversion<From, To>
+      q"""public interface IDynamicConversion<To>
+         | {
+         |     public To Convert<C>(C context, BaboonConversions conversions, dynamic from);
+         | }
+         |
+         |public abstract class AbstractConversion<From, To> : IDynamicConversion<To>
          |{
-         |    public To Convert<Ctx>(Ctx context, BaboonConversions conversions, From from);
-         |}""".stripMargin
+         |    public abstract To Convert<C>(C context, BaboonConversions conversions, From from);
+         |
+         |    public To Convert<C>(C context, BaboonConversions conversions, dynamic from)
+         |    {
+         |        return Convert<C>(context, conversions, (From)from);
+         |    }
+         |}
+         |""".stripMargin
+
     val key =
       q"""public class ConversionKey
          |{
@@ -181,18 +193,18 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
       }.biFlatAggregate
     } yield {
       val regs = convs.flatMap(_.reg.iterator.toSeq).toSeq
+
       val converter =
-        q"""
-           |public class BaboonConversions
+        q"""public class BaboonConversions
            |{
            |    private Dictionary<ConversionKey, dynamic> convs = new ();
            |
            |    public BaboonConversions()
            |    {
-           |${regs.join("\n").shift(8)}
+           |        ${regs.join("\n").shift(8)}
            |    }
            |
-           |    public void Register<From, To>(IConversion<From, To> conversion)
+           |    public void Register<From, To>(AbstractConversion<From, To> conversion)
            |    {
            |        var tFrom = typeof(From);
            |        var tTo = typeof(To);
@@ -203,24 +215,45 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
            |
            |    public To ConvertWithContext<C, From, To>(C? c, From from)
            |    {
+           |        var tFrom = typeof(From);
+           |        var tTo = typeof(To);
+           |
            |        if (from is To direct)
            |        {
            |            return direct;
            |        }
-           |
-           |        var tFrom = typeof(From);
-           |        var tTo = typeof(To);
            |        var key = new ConversionKey(tFrom, tTo);
            |
            |        var conv = convs[key];
-           |        var tconv = ((IConversion<From, To>)conv);
+           |        var tconv = ((AbstractConversion<From, To>)conv);
            |        return tconv.Convert(c, this, from);
+           |    }
+           |
+           |    public To ConvertWithContextDynamic<C, To>(C? c, Type tFrom, dynamic from)
+           |    {
+           |        var tTo = typeof(To);
+           |
+           |        if (from is To direct)
+           |        {
+           |            return direct;
+           |        }
+           |        var key = new ConversionKey(tFrom, tTo);
+           |
+           |        var conv = convs[key];
+           |        var tconv = ((IDynamicConversion<To>)conv);
+           |        return tconv.Convert(c, this, from);
+           |    }
+           |
+           |    public To ConvertDynamic<To>(dynamic from)
+           |    {
+           |        return ConvertWithContextDynamic<Object, To>(null, from.GetType(), from);
            |    }
            |
            |    public To Convert<From, To>(From from)
            |    {
            |        return ConvertWithContext<Object, From, To>(null, from);
            |    }
+           |
            |
            |}""".stripMargin
 
@@ -285,9 +318,9 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
       conv match {
         case _: Conversion.CustomConversionRequired =>
           val cdefn =
-            q"""public abstract class ${convname} : IConversion<${tin}, ${tout}>
+            q"""public abstract class ${convname} : AbstractConversion<${tin}, ${tout}>
                |{
-               |    public abstract ${tout} Convert<C>(C? context, BaboonConversions conversions, ${tin} from);
+               |    public abstract override ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} from);
                |}""".stripMargin
           val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
           Right(
@@ -303,9 +336,9 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
           Right(List.empty)
         case _: Conversion.CopyEnumByName =>
           val cdefn =
-            q"""public class ${convname} : IConversion<${tin}, ${tout}>
+            q"""public class ${convname} : AbstractConversion<${tin}, ${tout}>
                |{
-               |    public ${tout} Convert<C>(C? context, BaboonConversions conversions, ${tin} from) {
+               |    public override ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} from) {
                |        if (Enum.TryParse(from.ToString(), out ${tout} parsed))
                |        {
                |            return parsed;
@@ -332,9 +365,9 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                |}""".stripMargin)
 
           val cdefn =
-            q"""public class ${convname} : IConversion<${tin}, ${tout}>
+            q"""public class ${convname} : AbstractConversion<${tin}, ${tout}>
                |{
-               |    public ${tout} Convert<C>(C? context, BaboonConversions conversions, ${tin} from) {
+               |    public override ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} from) {
                |${branches.join("\nelse\n").shift(8)}
                |    }
                |}""".stripMargin
@@ -526,9 +559,9 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
             val consExprs = exprs.map(_._2)
 
             val cdefn =
-              q"""public class ${convname} : IConversion<${tin}, ${tout}>
+              q"""public class ${convname} : AbstractConversion<${tin}, ${tout}>
                  |{
-                 |    public ${tout} Convert<C>(C? context, BaboonConversions conversions, ${tin} _from) {
+                 |    public override ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} _from) {
                  |${initExprs.join(";\n").shift(8)}
                  |        return new ${tout}(
                  |${consExprs.join(",\n").shift(12)}
