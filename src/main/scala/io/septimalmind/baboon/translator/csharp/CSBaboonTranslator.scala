@@ -388,11 +388,9 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
               val ftNewInit =
                 trans.asCsRef(op.targetField.tpe, domain.version, mut = true)
               val base = op.targetField.name.name.capitalize
+              val fieldRef = q"_from.${base}"
               val initExpr = op match {
                 case o: FieldOp.Transfer =>
-                  val fieldRef =
-                    q"_from.${base}()"
-
                   val recConv = transfer(o.targetField.tpe, fieldRef)
 
                   o.targetField.tpe match {
@@ -471,18 +469,16 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                 case o: FieldOp.WrapIntoCollection =>
                   o.newTpe.id match {
                     case TypeId.Builtins.opt =>
-                      Right(Seq(q"_from.${base}()"))
+                      Right(Seq(fieldRef))
                     case TypeId.Builtins.set =>
                       Right(
                         Seq(
-                          q"(new $ftNewInit { _from.${base}() }).ToImmutableHashSet()"
+                          q"(new $ftNewInit { $fieldRef }).ToImmutableHashSet()"
                         )
                       )
                     case TypeId.Builtins.lst =>
                       Right(
-                        Seq(
-                          q"(new $ftNewInit { _from.${base}() }).ToImmutableList()"
-                        )
+                        Seq(q"(new $ftNewInit { $fieldRef }).ToImmutableList()")
                       )
                     case _ =>
                       Left(NonEmptyList(BaboonIssue.TranslationBug()))
@@ -491,8 +487,6 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                 case o: FieldOp.SwapCollectionType =>
                   o.oldTpe.id match {
                     case TypeId.Builtins.opt =>
-                      val fieldRef =
-                        q"_from.${base}()"
                       val tmp = q"_${base.toLowerCase}_tmp"
 
                       val recConv =
@@ -521,7 +515,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                         case TypeId.Builtins.set =>
                           Right(
                             Seq(
-                              q"(new ${ftNewInit}(_from.${base}())).ToImmutableHashSet()"
+                              q"(new ${ftNewInit}($fieldRef)).ToImmutableHashSet()"
                             )
                           )
                         case _ =>
@@ -532,7 +526,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
                         case TypeId.Builtins.lst =>
                           Right(
                             Seq(
-                              q"(new ${ftNewInit}(_from.${base}())).ToImmutableList()"
+                              q"(new ${ftNewInit}($fieldRef)).ToImmutableList()"
                             )
                           )
                         case _ =>

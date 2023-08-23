@@ -37,9 +37,9 @@ object CSDefnTranslator {
             val tpe = trans.asCsRef(f.tpe, domain.version)
             val fname = s"_${f.name.name}"
             val mname = s"${f.name.name.capitalize}"
-            (q"""private readonly $tpe ${fname};""", q"""public $tpe ${mname}()
+            (q"""private readonly $tpe ${fname};""", q"""public $tpe ${mname}
                  |{
-                 |    return this.${fname};
+                 |    get { return this.${fname}; }
                  |}""".stripMargin, (fname, tpe))
           }
           val fields = outs.map(_._1)
