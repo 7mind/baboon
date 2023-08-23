@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         #os: [ ubuntu-latest, macos-latest, windows-2022 ]
-        os: [ ubuntu-latest ]
+        #os: [ ubuntu-latest ]
         graalvm-version: [ '22.3.1' ]
         java-version: [ '17' ]
         include:
@@ -60,12 +60,18 @@ jobs:
       - uses: actions/download-artifact@v3
         with:
           name: native-image-ubuntu-latest
-      - uses: actions/download-artifact@v3
-        with:
-          name: native-image-macos-latest
-      - uses: actions/download-artifact@v3
-        with:
-          name: native-image-windows-2022
+#      - uses: actions/download-artifact@v3
+#        with:
+#          name: native-image-macos-latest
+#      - uses: actions/download-artifact@v3
+#        with:
+#          name: native-image-windows-2022
+      - name: Build NI
+        run: |
+          pwd 
+          ls -la
+          ls -la /home/runner/work/baboon/baboon || true
+          ls -la /home/runner/work/baboon || true
       - uses: softprops/action-gh-release@v1
         id: create-release
         if: startsWith(github.ref, 'refs/tags/')
