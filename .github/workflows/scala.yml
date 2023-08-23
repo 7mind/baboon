@@ -33,8 +33,8 @@ jobs:
             native-build-args: --verbose -J-Xmx10g
     steps:
     - uses: actions/checkout@v3
+    - name: Set up GraalVM (Java ${{ matrix.java-version }})
     - uses: graalvm/setup-graalvm@v1
-      name: Set up GraalVM (Java ${{ matrix.java-version }})
       with:
         version: '${{ matrix.graalvm-version }}'
         java-version: '${{ matrix.java-version }}'
@@ -48,7 +48,6 @@ jobs:
     - name: Build NI
       run: sbt GraalVMNativeImage/packageBin
     - uses: actions/upload-artifact@v3
-      name: Archive NI artifacts (temporary)
       with:
         name: native-image-${{ matrix.os }}
         path: |
