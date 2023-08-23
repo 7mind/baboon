@@ -61,17 +61,21 @@ jobs:
       - uses: actions/download-artifact@v3
         with:
           name: native-image-ubuntu-latest
-          path: dist/baboon-linux-x64
+          path: tmp/baboon-linux-x64
       - uses: actions/download-artifact@v3
         with:
           name: native-image-macos-latest
-          path: dist/baboon-mac-x64
+          path: tmp/baboon-mac-x64
       - uses: actions/download-artifact@v3
         with:
           name: native-image-windows-2022
-          path: dist/baboon-x64.exe
-      - name: wtf
-        run: tree dist
+          path: tmp/baboon-windows-x64
+      - name: Prepare layout
+        run: |
+          mkdir dist
+          mv tmp/baboon-linux-x64/baboon dist/baboon-linux-x64
+          mv tmp/baboon-mac-x64/baboon dist/baboon-mac-x64
+          mv tmp/baboon-windows-x64/baboon.exe dist/baboon-x64.exe
       - uses: softprops/action-gh-release@v1
         id: create-release
         if: startsWith(github.ref, 'refs/tags/')

@@ -8,6 +8,7 @@ import io.septimalmind.baboon.parser.model.{
   RawVersion
 }
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.validator.IzEitherTmp.EitherObjectExt
 import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NonEmptyList
@@ -65,37 +66,42 @@ object BaboonTyper {
           .cycleBreaking(graph.predecessors, ToposortLoopBreaker.dontBreak)
           .left
           .map(e => NonEmptyList(BaboonIssue.CircularDependency(model, e)))
-        deepSchema <- computeDeepSchema(graph, sorted)
+        deepSchema <- computeDeepSchema(id, graph, sorted)
       } yield {
         Domain(id, version, graph, excludedIds, shallowSchema, deepSchema)
       }
     }
 
-    private def computeDeepSchema(graph: DG[TypeId, DomainMember],
-//                                  shallowSchema: Map[TypeId, ShallowSchemaId],
+    private def computeDeepSchema(pkg: Pkg,
+                                  graph: DG[TypeId, DomainMember],
                                   sorted: Seq[TypeId])
       : Either[NonEmptyList[BaboonIssue.TyperIssue], Map[TypeId,
                                                          DeepSchemaId]] = {
-      val out = sorted.foldLeft(Map.empty[TypeId, DeepSchemaId]) {
-        case (idx, id) =>
-          assert(!idx.contains(id))
-          val defn = graph.meta.nodes(id)
-          val deps = enquiries.directDepsOf(defn)
 
-//          val shallowId = shallowSchema(id)
-          val depList = deps.toList
-            .map(id => (enquiries.wrap(id), idx(id).id))
-            .sortBy(_._1)
+      for {
+        missing <- Right(sorted.filter(id => !graph.meta.nodes.contains(id)))
+        _ <- Either.failWhen(missing.nonEmpty)(
+          NonEmptyList(BaboonIssue.MissingTypeId(pkg, missing.toSet))
+        )
+      } yield {
+        sorted.foldLeft(Map.empty[TypeId, DeepSchemaId]) {
+          case (idx, id) =>
+            assert(!idx.contains(id))
+            val defn = graph.meta.nodes(id)
+            val deps = enquiries.directDepsOf(defn)
 
-          val normalizedRepr =
-            s"[${enquiries.wrap(id)};${depList
-              .map({ case (k, v) => s"$k=deep/$v" })
-              .mkString(",")}]"
+            val depList = deps.toList
+              .map(id => (enquiries.wrap(id), idx(id).id))
+              .sortBy(_._1)
 
-//          println(s"$id: $normalizedRepr")
-          idx.updated(id, DeepSchemaId(IzSha256Hash.hash(normalizedRepr)))
+            val normalizedRepr =
+              s"[${enquiries.wrap(id)};${depList
+                .map({ case (k, v) => s"$k=deep/$v" })
+                .mkString(",")}]"
+
+            idx.updated(id, DeepSchemaId(IzSha256Hash.hash(normalizedRepr)))
+        }
       }
-      Right(out)
     }
 
     @tailrec

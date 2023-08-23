@@ -55,6 +55,9 @@ object BaboonIssue {
   case class UnexpectedBuiltin(id: TypeId.Builtin, owner: Owner)
       extends TyperIssue
 
+  case class MissingTypeId(domain: Pkg, missing: Set[TypeId])
+    extends TyperIssue
+
   case class NonUniqueEnumBranches(problems: Map[String, List[EnumMember]],
                                    id: TypeId.User,
   ) extends TyperIssue
