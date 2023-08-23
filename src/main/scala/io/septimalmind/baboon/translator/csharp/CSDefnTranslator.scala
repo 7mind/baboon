@@ -74,7 +74,8 @@ object CSDefnTranslator {
               q": $parentId"
           }
 
-          q"""public class $name$parent {
+          q"""[Serializable]
+             |public class $name$parent {
              |${fields.join("\n").shift(4)}
              |
              |${constructor.shift(4)}
@@ -96,7 +97,8 @@ object CSDefnTranslator {
           val branches =
             e.members.map(m => q"""${m.name.capitalize}""").toSeq.join(",\n")
 
-          q"""public enum $name {
+          q"""[Serializable]
+             |public enum $name {
              |${branches.shift(4)}
              |}""".stripMargin
 

@@ -61,21 +61,15 @@ jobs:
       - uses: actions/download-artifact@v3
         with:
           name: native-image-ubuntu-latest
-          path: dist/linux/baboon
+          path: dist/linux/baboon-linux-x64
       - uses: actions/download-artifact@v3
         with:
           name: native-image-macos-latest
-          path: dist/macos-intel/baboon
+          path: dist/macos-intel/baboon-mac-x64
       - uses: actions/download-artifact@v3
         with:
           name: native-image-windows-2022
-          path: dist/windows/baboon.exe
-      - name: Build NI
-        run: |
-          pwd 
-          ls -la
-          ls -la /home/runner/work/baboon/baboon || true
-          ls -la /home/runner/work/baboon || true
+          path: dist/windows/baboon-x64.exe
       - uses: softprops/action-gh-release@v1
         id: create-release
         if: startsWith(github.ref, 'refs/tags/')
