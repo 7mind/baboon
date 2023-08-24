@@ -22,15 +22,12 @@ jobs:
         java-version: [ '17' ]
         include:
           - os: ubuntu-latest
-            testbin: true
             executable-suffix: ''
             native-build-args: --verbose -J-Xmx10g
           - os: macos-latest
-            testbin: true
             executable-suffix: ''
             native-build-args: --verbose -J-Xmx13g
           - os: windows-2022
-            testbin: false
             executable-suffix: '.exe'
             # e2e is disabled due to unstable docker step
             #e2e: false
@@ -56,14 +53,13 @@ jobs:
         name: native-image-${{ matrix.os }}
         path: |
           target/graalvm-native-image/**
-    - name:  "add-path"
-      if: ${{ matrix.os == 'windows-2022' }}
-      shell: cmd
-      run:   |
-        echo ::add-path::C:\msys64\usr\bin
-        dir C:\msys64\usr\bin
+    - name: Enable bash (Windows)
+      if: ${{ runner.os == 'windows-2022' }}
+      shell: pwsh
+      run: |
+        $env:PATH = "C:\msys64\usr\bin;$env:PATH"
+        echo "C:\msys64\mingw64\bin" | Out-File -FilePath "$env:GITHUB_PATH" -Append
     - name: Run test build
-      #if: ${{ matrix.testbin==true }}
       shell: bash
       run: |
         target/graalvm-native-image/baboon \
