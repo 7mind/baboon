@@ -1,5 +1,8 @@
 # baboon
-Stripped-down experimental DML with schema evolution support and garbage collection
+
+*Let the Baboon do the monkey job*.
+
+Stripped-down experimental DML with schema evolution support and garbage collection.
 
 ## Limitations
 
@@ -16,7 +19,12 @@ Stripped-down experimental DML with schema evolution support and garbage collect
 
 ```bash
 baboon \
+    --model-dir ./src/test/resources/baboon/ \
     --model ./src/test/resources/baboon/pkg0/pkg01.baboon \
     --model ./src/test/resources/baboon/pkg0/pkg02.baboon \
     --output /path/to/directory
 ```
+
+## Notes
+
+All the types which are not transitively referenced by `root` types will be eliminated from the compiler output.

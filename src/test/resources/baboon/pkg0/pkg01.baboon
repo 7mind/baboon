@@ -83,6 +83,8 @@ data T6_D2 {
     f11: f32
     f12: f64
     f13: f128
+
+    f14: bit
 }
 
 root data T6_D1 {

@@ -78,6 +78,7 @@ object BaboonRules {
                         case (_: TypeRef.Constructor, _: TypeRef.Scalar) =>
                           true
                         case (_: TypeRef.Scalar, _: TypeRef.Scalar) =>
+                          // here we may support precision expansion
                           true
                         case (o: TypeRef.Scalar, n: TypeRef.Constructor) =>
                           !TypeId.Builtins.canBeWrappedIntoCollection(o, n)

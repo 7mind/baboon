@@ -69,6 +69,8 @@ object TypeId {
   }
 
   object Builtins {
+    final val bit = Builtin(TypeName("bit"))
+
     final val i08 = Builtin(TypeName("i08"))
     final val i16 = Builtin(TypeName("i16"))
     final val i32 = Builtin(TypeName("i32"))
@@ -93,14 +95,14 @@ object TypeId {
     final val set = Builtin(TypeName("set"))
 
     final val integers = Set(i08, i16, i32, i64, u08, u16, u32, u64)
-    final var floats = Set(f32, f64, f128)
+    final val floats = Set(f32, f64, f128)
     final val timestamps = Set(tsu, tso)
     final val varlens = Set(str)
 
     final val seqCollections = Set(lst, set)
     final val collections = Set(map, opt) ++ seqCollections
 
-    final val scalars = integers ++ floats ++ varlens ++ timestamps
+    final val scalars = integers ++ floats ++ varlens ++ timestamps ++ Set(bit)
     final val all = scalars ++ collections
 
     private final val collIds = TypeId.Builtins.collections.toSet[TypeId]

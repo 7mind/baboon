@@ -32,6 +32,9 @@ class CSTypeTranslator() {
 
   private def asCsTypeScalar(b: TypeId.Builtin) = {
     b match {
+      case TypeId.Builtins.bit =>
+        CSValue.CSType(system, "Boolean", fq = false)
+
       case TypeId.Builtins.i08 =>
         CSValue.CSType(system, "SByte", fq = false)
       case TypeId.Builtins.i16 =>
