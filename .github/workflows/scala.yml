@@ -56,8 +56,15 @@ jobs:
         name: native-image-${{ matrix.os }}
         path: |
           target/graalvm-native-image/**
+    - name:  "add-path"
+      if: ${{ matrix.os == " windows-2022" }}
+      shell: cmd
+      run:   |
+        echo ::add-path::C:\msys64\usr\bin
+        dir C:\msys64\usr\bin
     - name: Run test build
-      if: ${{ matrix.testbin==true }}
+      #if: ${{ matrix.testbin==true }}
+      shell: bash
       run: |
         target/graalvm-native-image/baboon \
           --model-dir ./src/test/resources/baboon/ \
