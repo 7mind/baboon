@@ -57,7 +57,7 @@ jobs:
         path: |
           target/graalvm-native-image/**
     - name:  "add-path"
-      if: ${{ matrix.os == " windows-2022" }}
+      if: ${{ matrix.os == 'windows-2022' }}
       shell: cmd
       run:   |
         echo ::add-path::C:\msys64\usr\bin
