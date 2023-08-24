@@ -98,13 +98,17 @@ object CSDefnTranslator {
               }
           }
 
+          val hc = if (hcGroups.isEmpty) { q"0" } else { hcGroups.join(" ^\n") }
+          val cmp = if (comparators.isEmpty) { q"true" } else {
+            comparators.join(" &&\n")
+          }
           val eq = Seq(q"""public override int GetHashCode()
                |{
                |    return
-               |${hcGroups.join(" ^\n").shift(8)};
+               |${hc.shift(8)};
                |}""".stripMargin, q"""protected bool Equals($name other) {
                |    return
-               |${comparators.join(" &&\n").shift(8)};
+               |${cmp.shift(8)};
                |}""".stripMargin, q"""public override bool Equals(object? obj) {
                |     if (ReferenceEquals(null, obj)) return false;
                |     if (ReferenceEquals(this, obj)) return true;

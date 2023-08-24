@@ -121,3 +121,7 @@ root data T6_D1 {
 }
 
 //
+
+root data T7_Empty {
+
+}
