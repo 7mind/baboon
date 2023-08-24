@@ -85,24 +85,36 @@ object CSDefnTranslator {
             .map(group => q"""HashCode.Combine(${group.join(", ")})""")
             .toList
 
+          def mkComparator(ref: TextTree[CSValue],
+                           oref: TextTree[CSValue],
+                           tpe: TypeRef): TextTree[CSValue] = {
+            TypeId.comparator(tpe) match {
+              case ComparatorType.Direct =>
+                q"$ref == $oref"
+              case ComparatorType.ObjectEquals =>
+                q"((Object)$ref).Equals($oref)"
+              case ComparatorType.OptionEquals =>
+                q"Equals($ref, $oref)"
+              case ComparatorType.SeqEquals =>
+                q"$ref.SequenceEqual($oref)"
+              case ComparatorType.SetEquals =>
+                q"$ref.SetEquals($oref)"
+              case ComparatorType.MapEquals(valtpe) =>
+                val vref = q"$oref[key]"
+                val ovref = q"$ref[key]"
+
+                val cmp = mkComparator(vref, ovref, valtpe)
+
+                q"($ref.Count == $oref.Count && !$ref.Keys.Any(key => !$oref.Keys.Contains(key)) && !$ref.Keys.Any(key => $cmp))"
+            }
+          }
+
           val comparators = outs.map(o => (o._4, o._3._1)).map {
             case (f, name) =>
               val ref = q"$name"
-              TypeId.comparator(f.tpe) match {
-                case ComparatorType.Direct =>
-                  q"$ref == other.$ref"
-                case ComparatorType.ObjectEquals =>
-                  q"((Object)$ref).Equals(other.$ref)"
-                case ComparatorType.OptionEquals =>
-                  q"Equals($ref, other.$ref)"
-                case ComparatorType.SeqEquals =>
-                  q"$ref.SequenceEqual(other.$ref)"
-                case ComparatorType.SetEquals =>
-                  q"$ref.SetEquals(other.$ref)"
-                case ComparatorType.MapEquals =>
-                  val oref = q"other.$ref"
-                  q"($ref.Count == $oref.Count && !$ref.Keys.Any(key => !$oref.Keys.Contains(key)) && !$ref.Keys.Any(key => $oref[key] != $ref[key]))"
-              }
+              val oref = q"other.$ref"
+
+              mkComparator(ref, oref, f.tpe)
           }
 
           val hc = if (hcGroups.isEmpty) { q"0" } else { hcGroups.join(" ^\n") }

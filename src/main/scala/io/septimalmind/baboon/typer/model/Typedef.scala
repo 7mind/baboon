@@ -133,7 +133,7 @@ object TypeId {
     case object OptionEquals extends ComparatorType
     case object SeqEquals extends ComparatorType
     case object SetEquals extends ComparatorType
-    case object MapEquals extends ComparatorType
+    case class MapEquals(valTpe: TypeRef) extends ComparatorType
   }
 
   def comparator(ref: TypeRef): ComparatorType = {
@@ -155,7 +155,7 @@ object TypeId {
             ComparatorType.SetEquals
 
           case TypeId.Builtins.map =>
-            ComparatorType.MapEquals
+            ComparatorType.MapEquals(c.args.last)
           case TypeId.Builtins.lst =>
             ComparatorType.SeqEquals
           case _ =>
