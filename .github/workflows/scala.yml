@@ -53,6 +53,14 @@ jobs:
         name: native-image-${{ matrix.os }}
         path: |
           target/graalvm-native-image/**
+    - name: Run test build
+      run: |
+        target/graalvm-native-image/baboon \
+          --model-dir ./src/test/resources/baboon/ \
+          --output ./test/cs-stub/ConversionsTest
+        cd ./test/cs-stub
+        dotnet build --configuration Release
+
   prepare-release:
     runs-on: ubuntu-latest
     needs: [ build ]
