@@ -70,8 +70,15 @@ object TypeId {
 
   object Builtins {
     final val i08 = Builtin(TypeName("i08"))
+    final val i16 = Builtin(TypeName("i16"))
     final val i32 = Builtin(TypeName("i32"))
     final val i64 = Builtin(TypeName("i64"))
+
+    final val u08 = Builtin(TypeName("u08"))
+    final val u16 = Builtin(TypeName("u16"))
+    final val u32 = Builtin(TypeName("u32"))
+    final val u64 = Builtin(TypeName("u64"))
+
     final val str = Builtin(TypeName("str"))
     final val tsu = Builtin(TypeName("tsu"))
     final val tso = Builtin(TypeName("tso"))
@@ -81,7 +88,7 @@ object TypeId {
     final val lst = Builtin(TypeName("lst"))
     final val set = Builtin(TypeName("set"))
 
-    final val integers = Set(i08, i32, i64)
+    final val integers = Set(i08, i16, i32, i64, u08, u16, u32, u64)
     final val timestamps = Set(tsu, tso)
     final val varlens = Set(str)
 
@@ -108,6 +115,33 @@ object TypeId {
       // we can safely change collection types between list <-> set, opt -> (list | set)
       o.args == n.args && safeSources.contains(o.id) && seqColls
         .contains(n.id)
+    }
+  }
+
+  sealed trait ComparatorType
+  object ComparatorType {
+    case object Direct extends ComparatorType
+    case object ObjectEquals extends ComparatorType
+    case object OptionEquals extends ComparatorType
+  }
+
+  def comparator(ref: TypeRef): ComparatorType = {
+    ref match {
+      case TypeRef.Scalar(id) =>
+        if (TypeId.Builtins.scalars.toSet[TypeId].contains(id)) {
+          ComparatorType.Direct
+        } else {
+          ComparatorType.ObjectEquals
+        }
+      case c: TypeRef.Constructor =>
+        if (c.id == TypeId.Builtins.opt) {
+          comparator(c.args.head) match {
+            case ComparatorType.Direct => ComparatorType.Direct
+            case _                     => ComparatorType.OptionEquals
+          }
+        } else {
+          ComparatorType.ObjectEquals
+        }
     }
   }
 }

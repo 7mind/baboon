@@ -201,7 +201,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
            |
            |    public BaboonConversions()
            |    {
-           |        ${regs.join("\n").shift(8)}
+           |${regs.join("\n").shift(8)}
            |    }
            |
            |    public void Register<From, To>(AbstractConversion<From, To> conversion)

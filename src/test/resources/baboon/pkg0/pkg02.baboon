@@ -70,8 +70,21 @@ root adt T5_A1 {
 //
 
 data T6_D2 {
-    f: str
+    f00: str
+    f01: u08
+    f02: u16
+    f03: u32
+    f04: u64
+
+    f05: i08
+    f06: i16
+    f07: i32
+    f08: i64
+
+    f09: tso
+    f10: tsu
 }
+
 
 root data T6_D1 {
     fSameBuiltin: i08

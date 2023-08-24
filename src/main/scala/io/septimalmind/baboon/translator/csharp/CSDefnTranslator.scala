@@ -5,7 +5,10 @@ import io.septimalmind.baboon.translator.TextTree
 import io.septimalmind.baboon.translator.TextTree.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
 import izumi.fundamentals.collections.nonempty.NonEmptyList
+
+import scala.annotation.tailrec
 
 trait CSDefnTranslator {
   def translate(defn: DomainMember.User, domain: Domain): Either[NonEmptyList[
@@ -37,10 +40,13 @@ object CSDefnTranslator {
             val tpe = trans.asCsRef(f.tpe, domain.version)
             val fname = s"_${f.name.name}"
             val mname = s"${f.name.name.capitalize}"
-            (q"""private readonly $tpe ${fname};""", q"""public $tpe ${mname}
+            val fieldDef = q"""private readonly $tpe ${fname};"""
+            val methodDef =
+              q"""public $tpe ${mname}
                  |{
                  |    get { return this.${fname}; }
-                 |}""".stripMargin, (fname, tpe))
+                 |}""".stripMargin
+            (fieldDef, methodDef, (fname, tpe), f)
           }
           val fields = outs.map(_._1)
           val methods = outs.map(_._2)
@@ -74,6 +80,40 @@ object CSDefnTranslator {
               q": $parentId"
           }
 
+          val hcGroups = outs
+            .map(_._3._1)
+            .map(name => q"$name")
+            .grouped(8)
+            .map(group => q"""HashCode.Combine(${group.join(", ")})""")
+            .toList
+
+          val comparators = outs.map(o => (o._4, o._3._1)).map {
+            case (f, name) =>
+              val ref = q"$name"
+              TypeId.comparator(f.tpe) match {
+                case ComparatorType.Direct =>
+                  q"$ref == other.$ref"
+                case ComparatorType.ObjectEquals =>
+                  q"((Object)$ref).Equals(other.$ref)"
+                case ComparatorType.OptionEquals =>
+                  q"Equals($ref, other.$ref)"
+              }
+          }
+
+          val eq = Seq(q"""public override int GetHashCode()
+               |{
+               |    return
+               |${hcGroups.join(" ^\n").shift(8)};
+               |}""".stripMargin, q"""protected bool Equals($name other) {
+               |    return
+               |${comparators.join(" &&\n").shift(8)};
+               |}""".stripMargin, q"""public override bool Equals(object? obj) {
+               |     if (ReferenceEquals(null, obj)) return false;
+               |     if (ReferenceEquals(this, obj)) return true;
+               |     if (obj.GetType() != this.GetType()) return false;
+               |     return Equals(($name)obj);
+               |}""".stripMargin)
+
           q"""[Serializable]
              |public class $name$parent {
              |${fields.join("\n").shift(4)}
@@ -81,6 +121,8 @@ object CSDefnTranslator {
              |${constructor.shift(4)}
              |
              |${methods.join("\n").shift(4)}
+             |
+             |${eq.join("\n\n").shift(4)}
              |}""".stripMargin
 
 //          d.id.owner match {

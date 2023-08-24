@@ -30,6 +30,37 @@ class CSTypeTranslator() {
     CSType(fullPkg, tid.name.name.capitalize, fq = false)
   }
 
+  private def asCsTypeScalar(b: TypeId.Builtin) = {
+    b match {
+      case TypeId.Builtins.i08 =>
+        CSValue.CSType(system, "SByte", fq = false)
+      case TypeId.Builtins.i16 =>
+        CSValue.CSType(system, "Int16", fq = false)
+      case TypeId.Builtins.i32 =>
+        CSValue.CSType(system, "Int32", fq = false)
+      case TypeId.Builtins.i64 =>
+        CSValue.CSType(system, "Int64", fq = false)
+
+      case TypeId.Builtins.u08 =>
+        CSValue.CSType(system, "Byte", fq = false)
+      case TypeId.Builtins.u16 =>
+        CSValue.CSType(system, "UInt16", fq = false)
+      case TypeId.Builtins.u32 =>
+        CSValue.CSType(system, "UInt32", fq = false)
+      case TypeId.Builtins.u64 =>
+        CSValue.CSType(system, "UInt64", fq = false)
+
+      case TypeId.Builtins.str =>
+        CSValue.CSType(system, "String", fq = false)
+      case TypeId.Builtins.tso =>
+        CSValue.CSType(system, "DateTime", fq = false)
+      case TypeId.Builtins.tsu =>
+        CSValue.CSType(system, "DateTime", fq = false)
+      case _ =>
+        throw new IllegalArgumentException(s"Unexpected: $b")
+    }
+  }
+
   def asCsType(tpe: TypeId,
                version: Version,
                mut: Boolean = false): TextTree[CSValue] = {
@@ -38,49 +69,25 @@ class CSTypeTranslator() {
         val ref = if (!mut) {
 
           b match {
-            case TypeId.Builtins.i08 =>
-              CSValue.CSType(system, "Int16", fq = false)
-            case TypeId.Builtins.i32 =>
-              CSValue.CSType(system, "Int32", fq = false)
-            case TypeId.Builtins.i64 =>
-              CSValue.CSType(system, "Int64", fq = false)
-            case TypeId.Builtins.str =>
-              CSValue.CSType(system, "String", fq = false)
-            case TypeId.Builtins.tso =>
-              CSValue.CSType(system, "DateTime", fq = false)
-            case TypeId.Builtins.tsu =>
-              CSValue.CSType(system, "DateTime", fq = false)
             case TypeId.Builtins.map =>
               CSValue.CSType(immutable, "ImmutableDictionary", fq = false)
             case TypeId.Builtins.lst =>
               CSValue.CSType(immutable, "ImmutableList", fq = false)
             case TypeId.Builtins.set =>
               CSValue.CSType(immutable, "ImmutableHashSet", fq = false)
-            case _ =>
-              throw new IllegalArgumentException(s"Unexpected: $b")
+            case o =>
+              asCsTypeScalar(o)
           }
         } else {
           b match {
-            case TypeId.Builtins.i08 =>
-              CSValue.CSType(system, "Int16", fq = false)
-            case TypeId.Builtins.i32 =>
-              CSValue.CSType(system, "Int32", fq = false)
-            case TypeId.Builtins.i64 =>
-              CSValue.CSType(system, "Int64", fq = false)
-            case TypeId.Builtins.str =>
-              CSValue.CSType(system, "String", fq = false)
-            case TypeId.Builtins.tso =>
-              CSValue.CSType(system, "DateTime", fq = false)
-            case TypeId.Builtins.tsu =>
-              CSValue.CSType(system, "DateTime", fq = false)
             case TypeId.Builtins.map =>
               CSValue.CSType(generics, "Dictionary", fq = false)
             case TypeId.Builtins.lst =>
               CSValue.CSType(generics, "List", fq = false)
             case TypeId.Builtins.set =>
               CSValue.CSType(generics, "HashSet", fq = false)
-            case _ =>
-              throw new IllegalArgumentException(s"Unexpected: $b")
+            case o =>
+              asCsTypeScalar(o)
           }
         }
         q"${ref}"
