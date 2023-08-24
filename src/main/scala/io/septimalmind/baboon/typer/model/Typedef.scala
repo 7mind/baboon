@@ -132,6 +132,8 @@ object TypeId {
     case object ObjectEquals extends ComparatorType
     case object OptionEquals extends ComparatorType
     case object SeqEquals extends ComparatorType
+    case object SetEquals extends ComparatorType
+    case object MapEquals extends ComparatorType
   }
 
   def comparator(ref: TypeRef): ComparatorType = {
@@ -143,17 +145,21 @@ object TypeId {
           ComparatorType.ObjectEquals
         }
       case c: TypeRef.Constructor =>
-        if (c.id == TypeId.Builtins.opt) {
-          comparator(c.args.head) match {
-            case ComparatorType.Direct => ComparatorType.Direct
-            case _                     => ComparatorType.OptionEquals
-          }
-        } else if (TypeId.Builtins.iterableCollections
-                     .toSet[TypeId]
-                     .contains(c.id)) {
-          ComparatorType.SeqEquals
-        } else {
-          ComparatorType.ObjectEquals
+        c.id match {
+          case TypeId.Builtins.opt =>
+            comparator(c.args.head) match {
+              case ComparatorType.Direct => ComparatorType.Direct
+              case _                     => ComparatorType.OptionEquals
+            }
+          case TypeId.Builtins.set =>
+            ComparatorType.SetEquals
+
+          case TypeId.Builtins.map =>
+            ComparatorType.MapEquals
+          case TypeId.Builtins.lst =>
+            ComparatorType.SeqEquals
+          case _ =>
+            ComparatorType.ObjectEquals
         }
     }
   }

@@ -97,6 +97,11 @@ object CSDefnTranslator {
                   q"Equals($ref, other.$ref)"
                 case ComparatorType.SeqEquals =>
                   q"$ref.SequenceEqual(other.$ref)"
+                case ComparatorType.SetEquals =>
+                  q"$ref.SetEquals(other.$ref)"
+                case ComparatorType.MapEquals =>
+                  val oref = q"other.$ref"
+                  q"($ref.Count == $oref.Count && !$ref.Keys.Any(key => !$oref.Keys.Contains(key)) && !$ref.Keys.Any(key => $oref[key] != $ref[key]))"
               }
           }
 
