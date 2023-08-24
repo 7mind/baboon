@@ -79,6 +79,10 @@ object TypeId {
     final val u32 = Builtin(TypeName("u32"))
     final val u64 = Builtin(TypeName("u64"))
 
+    final val f32 = Builtin(TypeName("f32"))
+    final val f64 = Builtin(TypeName("f64"))
+    final val f128 = Builtin(TypeName("f128"))
+
     final val str = Builtin(TypeName("str"))
     final val tsu = Builtin(TypeName("tsu"))
     final val tso = Builtin(TypeName("tso"))
@@ -89,13 +93,14 @@ object TypeId {
     final val set = Builtin(TypeName("set"))
 
     final val integers = Set(i08, i16, i32, i64, u08, u16, u32, u64)
+    final var floats = Set(f32, f64, f128)
     final val timestamps = Set(tsu, tso)
     final val varlens = Set(str)
 
     final val seqCollections = Set(lst, set)
     final val collections = Set(map, opt) ++ seqCollections
 
-    final val scalars = integers ++ varlens ++ timestamps
+    final val scalars = integers ++ floats ++ varlens ++ timestamps
     final val all = scalars ++ collections
 
     private final val collIds = TypeId.Builtins.collections.toSet[TypeId]

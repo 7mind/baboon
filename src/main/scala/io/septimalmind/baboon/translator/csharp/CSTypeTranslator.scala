@@ -50,6 +50,13 @@ class CSTypeTranslator() {
       case TypeId.Builtins.u64 =>
         CSValue.CSType(system, "UInt64", fq = false)
 
+      case TypeId.Builtins.f32 =>
+        CSValue.CSType(system, "Single", fq = false)
+      case TypeId.Builtins.f64 =>
+        CSValue.CSType(system, "Double", fq = false)
+      case TypeId.Builtins.f128 =>
+        CSValue.CSType(system, "Decimal", fq = false)
+
       case TypeId.Builtins.str =>
         CSValue.CSType(system, "String", fq = false)
       case TypeId.Builtins.tso =>

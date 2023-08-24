@@ -8,8 +8,6 @@ import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 
-import scala.annotation.tailrec
-
 trait CSDefnTranslator {
   def translate(defn: DomainMember.User, domain: Domain): Either[NonEmptyList[
     BaboonIssue.TranslationIssue
