@@ -100,7 +100,8 @@ object TypeId {
     final val varlens = Set(str)
 
     final val seqCollections = Set(lst, set)
-    final val collections = Set(map, opt) ++ seqCollections
+    final val iterableCollections = Set(map) ++ seqCollections
+    final val collections = Set(opt) ++ iterableCollections
 
     final val scalars = integers ++ floats ++ varlens ++ timestamps ++ Set(bit)
     final val all = scalars ++ collections
@@ -130,6 +131,7 @@ object TypeId {
     case object Direct extends ComparatorType
     case object ObjectEquals extends ComparatorType
     case object OptionEquals extends ComparatorType
+    case object SeqEquals extends ComparatorType
   }
 
   def comparator(ref: TypeRef): ComparatorType = {
@@ -146,6 +148,10 @@ object TypeId {
             case ComparatorType.Direct => ComparatorType.Direct
             case _                     => ComparatorType.OptionEquals
           }
+        } else if (TypeId.Builtins.iterableCollections
+                     .toSet[TypeId]
+                     .contains(c.id)) {
+          ComparatorType.SeqEquals
         } else {
           ComparatorType.ObjectEquals
         }

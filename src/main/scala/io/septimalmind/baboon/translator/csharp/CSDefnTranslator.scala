@@ -95,6 +95,8 @@ object CSDefnTranslator {
                   q"((Object)$ref).Equals(other.$ref)"
                 case ComparatorType.OptionEquals =>
                   q"Equals($ref, other.$ref)"
+                case ComparatorType.SeqEquals =>
+                  q"$ref.SequenceEqual(other.$ref)"
               }
           }
 
