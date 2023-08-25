@@ -1,4 +1,4 @@
-ThisBuild / version := "0.1.0-SNAPSHOT"
+import ReleaseTransformations._
 
 ThisBuild / scalaVersion := "2.13.11"
 
@@ -85,4 +85,18 @@ ThisBuild / scmInfo := Some(
     url("https://github.com/7mind/baboon"),
     "scm:git@github.com:7mind/baboon.git"
   )
+)
+
+ThisBuild / releaseProcess := Seq[ReleaseStep](
+  checkSnapshotDependencies, // : ReleaseStep
+  inquireVersions, // : ReleaseStep
+  runClean, // : ReleaseStep
+  runTest, // : ReleaseStep
+  setReleaseVersion, // : ReleaseStep
+  commitReleaseVersion, // : ReleaseStep, performs the initial git checks
+  tagRelease, // : ReleaseStep
+  //publishArtifacts,                       // : ReleaseStep, checks whether `publishTo` is properly set up
+  setNextVersion, // : ReleaseStep
+  commitNextVersion, // : ReleaseStep
+  pushChanges // : ReleaseStep, also checks that an upstream branch is properly configured
 )
