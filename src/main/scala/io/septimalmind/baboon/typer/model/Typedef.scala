@@ -83,6 +83,7 @@ object TypeId {
   }
 
   object Builtins {
+
     final val bit = BuiltinScalar(TypeName("bit"))
 
     final val i08 = BuiltinScalar(TypeName("i08"))
@@ -137,6 +138,22 @@ object TypeId {
       // we can safely change collection types between list <-> set, opt -> (list | set)
       o.args == n.args && safeSources.contains(o.id) && seqColls
         .contains(n.id)
+    }
+
+    def collectionPrecEx(o: TypeRef.Constructor,
+                         n: TypeRef.Constructor): Boolean = {
+      (o.id == n.id) && o.args.toSeq.zip(n.args.toSeq).forall {
+        case (o, n) => isPrecisionExpansion(o.id, n.id)
+      }
+    }
+
+    def isPrecisionExpansion(o: TypeId, n: TypeId): Boolean = {
+      (TypeId.Builtins.unpack(o), TypeId.Builtins.unpack(n)) match {
+        case (Some(oldScalar), Some(newScalar)) =>
+          oldScalar._1 == newScalar._1 && oldScalar._2 < newScalar._2
+        case _ =>
+          false
+      }
     }
 
     def unpack(typeId: TypeId): Option[(String, Int)] = {

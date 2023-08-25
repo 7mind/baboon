@@ -185,6 +185,8 @@ object BaboonIssue {
   sealed trait TranslationIssue extends BaboonIssue
   case class NonUniqueOutputFiles(c: Map[String, List[String]])
       extends TranslationIssue
-  case class TranslationBug() extends TranslationIssue with BaboonBug
+  case class TranslationBug() extends TranslationIssue with BaboonBug {
+    ???
+  }
 
 }

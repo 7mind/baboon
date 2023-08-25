@@ -45,8 +45,8 @@ object Conversion {
     }
 
     case class ExpandPrecision(fieldName: FieldName,
-                               oldTpe: TypeRef.Scalar,
-                               newTpe: TypeRef.Scalar,
+                               oldTpe: TypeRef,
+                               newTpe: TypeRef,
     ) extends FieldOp {
       def targetField: Field = Field(fieldName, newTpe)
 

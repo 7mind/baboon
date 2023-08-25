@@ -78,11 +78,13 @@ object BaboonRules {
                         case (_: TypeRef.Constructor, _: TypeRef.Scalar) =>
                           true
                         case (o: TypeRef.Scalar, n: TypeRef.Scalar) =>
-                          !isPrecisionExpansion(o, n)
+                          // TODO: precex in collections
+                          !TypeId.Builtins.isPrecisionExpansion(o.id, n.id)
                         case (o: TypeRef.Scalar, n: TypeRef.Constructor) =>
                           !TypeId.Builtins.canBeWrappedIntoCollection(o, n)
                         case (o: TypeRef.Constructor, n: TypeRef.Constructor) =>
-                          !TypeId.Builtins.canChangeCollectionType(o, n)
+                          !(TypeId.Builtins.canChangeCollectionType(o, n) || TypeId.Builtins
+                            .collectionPrecEx(o, n))
                       }
                     }
                     initWithDefaults = compatibleAdditions.map(
@@ -104,7 +106,21 @@ object BaboonRules {
                       .map(op => (op.f.tpe, op.newType, op.f.name))
                       .collect {
                         case (o: TypeRef.Scalar, n: TypeRef.Scalar, name)
-                            if isPrecisionExpansion(o, n) =>
+                            if TypeId.Builtins.isPrecisionExpansion(
+                              o.id,
+                              n.id
+                            ) =>
+                          FieldOp.ExpandPrecision(name, o, n)
+                      }
+
+                    precexColl = changes
+                      .map(op => (op.f.tpe, op.newType, op.f.name))
+                      .collect {
+                        case (
+                            o: TypeRef.Constructor,
+                            n: TypeRef.Constructor,
+                            name
+                            ) if TypeId.Builtins.collectionPrecEx(o, n) =>
                           FieldOp.ExpandPrecision(name, o, n)
                       }
 
@@ -135,7 +151,7 @@ object BaboonRules {
                     } else {
                       DtoConversion(
                         id,
-                        keepFields ++ (wrap ++ precex ++ swap ++ initWithDefaults).toList
+                        keepFields ++ (wrap ++ precex ++ swap ++ precexColl ++ initWithDefaults).toList
                       )
                     }
                   }
@@ -185,14 +201,6 @@ object BaboonRules {
       }
     }
 
-    private def isPrecisionExpansion(o: TypeRef.Scalar, n: TypeRef.Scalar) = {
-      (TypeId.Builtins.unpack(o.id), TypeId.Builtins.unpack(n.id)) match {
-        case (Some(oldScalar), Some(newScalar)) =>
-          oldScalar._1 == newScalar._1 && oldScalar._2 < newScalar._2
-        case _ =>
-          false
-      }
-    }
   }
 
 }
