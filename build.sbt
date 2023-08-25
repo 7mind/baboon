@@ -75,6 +75,14 @@ ThisBuild / scalacOptions ++= Seq(
   s"-Xmacro-settings:sbt-version=${sbtVersion.value}",
   s"-Xmacro-settings:git-repo-clean=${com.github.sbt.git.SbtGit.GitKeys.gitUncommittedChanges.value}",
   s"-Xmacro-settings:git-branch=${com.github.sbt.git.SbtGit.GitKeys.gitCurrentBranch.value}",
-  s"-Xmacro-settings:git-described-version=${com.github.sbt.git.SbtGit.GitKeys.gitDescribedVersion.value.getOrElse("")}",
+  s"-Xmacro-settings:git-described-version=${com.github.sbt.git.SbtGit.GitKeys.gitDescribedVersion.value
+    .getOrElse("")}",
   s"-Xmacro-settings:git-head-commit=${com.github.sbt.git.SbtGit.GitKeys.gitHeadCommit.value.getOrElse("")}"
+)
+
+ThisBuild / scmInfo := Some(
+  ScmInfo(
+    url("https://github.com/7mind/baboon"),
+    "scm:git@github.com:7mind/baboon.git"
+  )
 )
