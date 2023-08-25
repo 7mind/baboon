@@ -1,4 +1,4 @@
-import ReleaseTransformations._
+import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations.*
 
 ThisBuild / scalaVersion := "2.13.11"
 
@@ -69,6 +69,19 @@ lazy val root = (project in file("."))
       s"-Xmacro-settings:scala-version=${scalaVersion.value}",
       s"-Xmacro-settings:scala-versions=${crossScalaVersions.value.mkString(":")}"
     ),
+    releaseProcess := Seq[ReleaseStep](
+      checkSnapshotDependencies, // : ReleaseStep
+      inquireVersions, // : ReleaseStep
+      runClean, // : ReleaseStep
+      runTest, // : ReleaseStep
+      setReleaseVersion, // : ReleaseStep
+      commitReleaseVersion, // : ReleaseStep, performs the initial git checks
+      tagRelease, // : ReleaseStep
+      //publishArtifacts,                       // : ReleaseStep, checks whether `publishTo` is properly set up
+      setNextVersion, // : ReleaseStep
+      commitNextVersion, // : ReleaseStep
+      pushChanges // : ReleaseStep, also checks that an upstream branch is properly configured
+    )
   )
 
 ThisBuild / scalacOptions ++= Seq(
@@ -85,18 +98,4 @@ ThisBuild / scmInfo := Some(
     url("https://github.com/7mind/baboon"),
     "scm:git@github.com:7mind/baboon.git"
   )
-)
-
-ThisBuild / releaseProcess := Seq[ReleaseStep](
-  checkSnapshotDependencies, // : ReleaseStep
-  inquireVersions, // : ReleaseStep
-  runClean, // : ReleaseStep
-  runTest, // : ReleaseStep
-  setReleaseVersion, // : ReleaseStep
-  commitReleaseVersion, // : ReleaseStep, performs the initial git checks
-  tagRelease, // : ReleaseStep
-  //publishArtifacts,                       // : ReleaseStep, checks whether `publishTo` is properly set up
-  setNextVersion, // : ReleaseStep
-  commitNextVersion, // : ReleaseStep
-  pushChanges // : ReleaseStep, also checks that an upstream branch is properly configured
 )
