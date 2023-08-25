@@ -30,7 +30,7 @@ class CSTypeTranslator() {
     CSType(fullPkg, tid.name.name.capitalize, fq = false)
   }
 
-  private def asCsTypeScalar(b: TypeId.Builtin) = {
+  private def asCsTypeScalar(b: TypeId.BuiltinScalar) = {
     b match {
       case TypeId.Builtins.bit =>
         CSValue.CSType(system, "Boolean", fq = false)
@@ -75,7 +75,10 @@ class CSTypeTranslator() {
                version: Version,
                mut: Boolean = false): TextTree[CSValue] = {
     tpe match {
-      case b: TypeId.Builtin =>
+      case b: TypeId.BuiltinScalar =>
+        q"${asCsTypeScalar(b)}"
+
+      case b: TypeId.BuiltinCollection =>
         val ref = if (!mut) {
 
           b match {
@@ -85,8 +88,8 @@ class CSTypeTranslator() {
               CSValue.CSType(immutable, "ImmutableList", fq = false)
             case TypeId.Builtins.set =>
               CSValue.CSType(immutable, "ImmutableHashSet", fq = false)
-            case o =>
-              asCsTypeScalar(o)
+            case _ =>
+              throw new IllegalArgumentException(s"Unexpected: $b")
           }
         } else {
           b match {
@@ -96,8 +99,8 @@ class CSTypeTranslator() {
               CSValue.CSType(generics, "List", fq = false)
             case TypeId.Builtins.set =>
               CSValue.CSType(generics, "HashSet", fq = false)
-            case o =>
-              asCsTypeScalar(o)
+            case _ =>
+              throw new IllegalArgumentException(s"Unexpected: $b")
           }
         }
         q"${ref}"

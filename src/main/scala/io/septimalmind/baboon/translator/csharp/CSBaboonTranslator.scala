@@ -335,7 +335,8 @@ class CSBaboonTranslator(options: CompilerOptions)
         }
       }
 
-      def transferId(tpe: TypeId, ref: TextTree[CSValue]): TextTree[CSValue] = {
+      def transferId(tpe: TypeId.Scalar,
+                     ref: TextTree[CSValue]): TextTree[CSValue] = {
         transfer(TypeRef.Scalar(tpe), ref)
       }
 
@@ -508,6 +509,9 @@ class CSBaboonTranslator(options: CompilerOptions)
                     case _ =>
                       Left(NonEmptyList(BaboonIssue.TranslationBug()))
                   }
+
+                case o: FieldOp.ExpandPrecision =>
+                  Right(Seq(fieldRef))
 
                 case o: FieldOp.SwapCollectionType =>
                   o.oldTpe.id match {

@@ -32,6 +32,9 @@ object BaboonIssue {
 
   //
   sealed trait TyperIssue extends BaboonIssue
+  case class ScalarExpected(id: TypeId) extends TyperIssue with BaboonBug
+  case class CollectionExpected(id: TypeId) extends TyperIssue with BaboonBug
+
   case class NonUniqueDomainVersions(problems: Map[Version, List[Domain]])
       extends TyperIssue
   case class EmptyDomainFamily(pkg: Pkg) extends TyperIssue with BaboonBug

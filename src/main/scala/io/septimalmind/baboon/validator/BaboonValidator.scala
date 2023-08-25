@@ -309,10 +309,13 @@ object BaboonValidator {
                   swap = c.ops.collect {
                     case f: FieldOp.SwapCollectionType => f.fieldName
                   }.toSet
+                  precex = c.ops.collect {
+                    case f: FieldOp.ExpandPrecision => f.fieldName
+                  }.toSet
                   wrap = c.ops.collect {
                     case f: FieldOp.WrapIntoCollection => f.fieldName
                   }.toSet
-                  all = transfer ++ defaults ++ swap ++ wrap
+                  all = transfer ++ defaults ++ swap ++ wrap ++ precex
                   _ <- Either.failWhen(newFieldNames != all) {
                     NonEmptyList(
                       BaboonIssue.IncorrectConversionApplication(
@@ -328,6 +331,7 @@ object BaboonValidator {
                     defaults.intersect(all.diff(defaults)),
                     swap.intersect(all.diff(swap)),
                     wrap.intersect(all.diff(wrap)),
+                    precex.intersect(all.diff(precex)),
                   )
                   _ <- Either.failWhen(conflicts.exists(_.nonEmpty))(
                     NonEmptyList(

@@ -26,10 +26,11 @@ object Conversion {
   object FieldOp {
     case class Transfer(targetField: Field) extends FieldOp
     case class InitializeWithDefault(targetField: Field) extends FieldOp
+
     case class WrapIntoCollection(fieldName: FieldName,
                                   oldTpe: TypeRef.Scalar,
-                                  newTpe: TypeRef.Constructor)
-        extends FieldOp {
+                                  newTpe: TypeRef.Constructor,
+    ) extends FieldOp {
       def targetField: Field = Field(fieldName, newTpe)
       def sourceField: Field = Field(fieldName, oldTpe)
     }
@@ -38,6 +39,15 @@ object Conversion {
                                   oldTpe: TypeRef.Constructor,
                                   newTpe: TypeRef.Constructor)
         extends FieldOp {
+      def targetField: Field = Field(fieldName, newTpe)
+
+      def sourceField: Field = Field(fieldName, oldTpe)
+    }
+
+    case class ExpandPrecision(fieldName: FieldName,
+                               oldTpe: TypeRef.Scalar,
+                               newTpe: TypeRef.Scalar,
+    ) extends FieldOp {
       def targetField: Field = Field(fieldName, newTpe)
 
       def sourceField: Field = Field(fieldName, oldTpe)

@@ -50,10 +50,13 @@ object Typedef {
       extends User
 }
 
-sealed trait TypeRef
+sealed trait TypeRef {
+  def id: TypeId
+}
 object TypeRef {
-  case class Scalar(id: TypeId) extends TypeRef
-  case class Constructor(id: TypeId, args: NonEmptyList[TypeRef])
+  case class Scalar(id: TypeId.Scalar) extends TypeRef
+  case class Constructor(id: TypeId.BuiltinCollection,
+                         args: NonEmptyList[TypeRef])
       extends TypeRef
 }
 
@@ -61,38 +64,49 @@ sealed trait TypeId {
   def name: TypeName
 }
 object TypeId {
-  case class Builtin(name: TypeName) extends TypeId {
+  sealed trait Builtin extends TypeId
+
+  sealed trait Scalar extends TypeId
+
+  case class BuiltinScalar(name: TypeName) extends Builtin with Scalar {
     override def toString: String = s"#${name.name}"
   }
-  case class User(pkg: Pkg, owner: Owner, name: TypeName) extends TypeId {
+
+  case class BuiltinCollection(name: TypeName) extends Builtin {
+    override def toString: String = s"#${name.name}"
+  }
+
+  case class User(pkg: Pkg, owner: Owner, name: TypeName)
+      extends TypeId
+      with Scalar {
     override def toString: String = s"$pkg#${name.name}"
   }
 
   object Builtins {
-    final val bit = Builtin(TypeName("bit"))
+    final val bit = BuiltinScalar(TypeName("bit"))
 
-    final val i08 = Builtin(TypeName("i08"))
-    final val i16 = Builtin(TypeName("i16"))
-    final val i32 = Builtin(TypeName("i32"))
-    final val i64 = Builtin(TypeName("i64"))
+    final val i08 = BuiltinScalar(TypeName("i08"))
+    final val i16 = BuiltinScalar(TypeName("i16"))
+    final val i32 = BuiltinScalar(TypeName("i32"))
+    final val i64 = BuiltinScalar(TypeName("i64"))
 
-    final val u08 = Builtin(TypeName("u08"))
-    final val u16 = Builtin(TypeName("u16"))
-    final val u32 = Builtin(TypeName("u32"))
-    final val u64 = Builtin(TypeName("u64"))
+    final val u08 = BuiltinScalar(TypeName("u08"))
+    final val u16 = BuiltinScalar(TypeName("u16"))
+    final val u32 = BuiltinScalar(TypeName("u32"))
+    final val u64 = BuiltinScalar(TypeName("u64"))
 
-    final val f32 = Builtin(TypeName("f32"))
-    final val f64 = Builtin(TypeName("f64"))
-    final val f128 = Builtin(TypeName("f128"))
+    final val f32 = BuiltinScalar(TypeName("f32"))
+    final val f64 = BuiltinScalar(TypeName("f64"))
+    final val f128 = BuiltinScalar(TypeName("f128"))
 
-    final val str = Builtin(TypeName("str"))
-    final val tsu = Builtin(TypeName("tsu"))
-    final val tso = Builtin(TypeName("tso"))
+    final val str = BuiltinScalar(TypeName("str"))
+    final val tsu = BuiltinScalar(TypeName("tsu"))
+    final val tso = BuiltinScalar(TypeName("tso"))
 
-    final val map = Builtin(TypeName("map"))
-    final val opt = Builtin(TypeName("opt"))
-    final val lst = Builtin(TypeName("lst"))
-    final val set = Builtin(TypeName("set"))
+    final val map = BuiltinCollection(TypeName("map"))
+    final val opt = BuiltinCollection(TypeName("opt"))
+    final val lst = BuiltinCollection(TypeName("lst"))
+    final val set = BuiltinCollection(TypeName("set"))
 
     final val integers = Set(i08, i16, i32, i64, u08, u16, u32, u64)
     final val floats = Set(f32, f64, f128)
@@ -123,6 +137,23 @@ object TypeId {
       // we can safely change collection types between list <-> set, opt -> (list | set)
       o.args == n.args && safeSources.contains(o.id) && seqColls
         .contains(n.id)
+    }
+
+    def unpack(typeId: TypeId): Option[(String, Int)] = {
+      typeId match {
+        case Builtins.i08  => Some(("int", 8))
+        case Builtins.i16  => Some(("int", 16))
+        case Builtins.i32  => Some(("int", 32))
+        case Builtins.i64  => Some(("int", 64))
+        case Builtins.u08  => Some(("uint", 8))
+        case Builtins.u16  => Some(("uint", 16))
+        case Builtins.u32  => Some(("uint", 32))
+        case Builtins.u64  => Some(("uint", 64))
+        case Builtins.f32  => Some(("float", 32))
+        case Builtins.f64  => Some(("float", 64))
+        case Builtins.f128 => Some(("float", 128))
+        case _             => None
+      }
     }
   }
 

@@ -69,8 +69,10 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
       name <- Right(TypeName(name.name))
       _ <- Right(()) // TODO: validate name
     } yield {
-      if (TypeId.Builtins.all.map(_.name).contains(name)) {
-        TypeId.Builtin(name)
+      if (TypeId.Builtins.collections.map(_.name).contains(name)) {
+        TypeId.BuiltinCollection(name)
+      } else if (TypeId.Builtins.scalars.map(_.name).contains(name)) {
+        TypeId.BuiltinScalar(name)
       } else {
         TypeId.User(pkg, ownedBy, name)
       }
@@ -172,18 +174,30 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
       case RawTypeRef.Simple(name) =>
         for {
           id <- convertId(name, Owner.Toplevel)
+          asScalar <- id match {
+            case scalar: TypeId.Scalar =>
+              Right(scalar)
+            case o =>
+              Left(NonEmptyList(BaboonIssue.ScalarExpected(id)))
+          }
         } yield {
-          TypeRef.Scalar(id)
+          TypeRef.Scalar(asScalar)
         }
       case RawTypeRef.Constructor(name, params) =>
         for {
           id <- convertId(name, Owner.Toplevel)
+          asCollection <- id match {
+            case coll: TypeId.BuiltinCollection =>
+              Right(coll)
+            case o =>
+              Left(NonEmptyList(BaboonIssue.CollectionExpected(id)))
+          }
           args <- params.toList.biMapAggregate(convertTpe)
           nel <- NonEmptyList
             .from(args)
             .toRight(NonEmptyList(BaboonIssue.EmptyGenericArgs(id)))
         } yield {
-          TypeRef.Constructor(id, nel)
+          TypeRef.Constructor(asCollection, nel)
         }
     }
   }

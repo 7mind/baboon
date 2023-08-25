@@ -77,9 +77,8 @@ object BaboonRules {
                       (op.f.tpe, op.newType) match {
                         case (_: TypeRef.Constructor, _: TypeRef.Scalar) =>
                           true
-                        case (_: TypeRef.Scalar, _: TypeRef.Scalar) =>
-                          // here we may support precision expansion
-                          true
+                        case (o: TypeRef.Scalar, n: TypeRef.Scalar) =>
+                          !isPrecisionExpansion(o, n)
                         case (o: TypeRef.Scalar, n: TypeRef.Constructor) =>
                           !TypeId.Builtins.canBeWrappedIntoCollection(o, n)
                         case (o: TypeRef.Constructor, n: TypeRef.Constructor) =>
@@ -99,6 +98,14 @@ object BaboonRules {
                               n
                             ) =>
                           FieldOp.WrapIntoCollection(name, o, n)
+                      }
+
+                    precex = changes
+                      .map(op => (op.f.tpe, op.newType, op.f.name))
+                      .collect {
+                        case (o: TypeRef.Scalar, n: TypeRef.Scalar, name)
+                            if isPrecisionExpansion(o, n) =>
+                          FieldOp.ExpandPrecision(name, o, n)
                       }
 
                     swap = changes
@@ -128,7 +135,7 @@ object BaboonRules {
                     } else {
                       DtoConversion(
                         id,
-                        keepFields ++ (wrap ++ swap ++ initWithDefaults).toList
+                        keepFields ++ (wrap ++ precex ++ swap ++ initWithDefaults).toList
                       )
                     }
                   }
@@ -175,6 +182,15 @@ object BaboonRules {
           EvolutionStep(prev.version, last.version),
           conversions.toList
         )
+      }
+    }
+
+    private def isPrecisionExpansion(o: TypeRef.Scalar, n: TypeRef.Scalar) = {
+      (TypeId.Builtins.unpack(o.id), TypeId.Builtins.unpack(n.id)) match {
+        case (Some(oldScalar), Some(newScalar)) =>
+          oldScalar._1 == newScalar._1 && oldScalar._2 < newScalar._2
+        case _ =>
+          false
       }
     }
   }

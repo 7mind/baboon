@@ -118,6 +118,8 @@ root data T6_D1 {
     fNewSet: set[i32]
     fNewLst: lst[i32]
     fNewMap: map[str, i32]
+
+    fPrecex0: u16
 }
 
 //
