@@ -299,6 +299,9 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
   ] = {
     val collType = newTpe.args.head
     val collCsType = trans.asCsRef(collType, domain.version)
+
+    val collInit =
+      q"(new ${ftNewInit}(from e in $fieldRef select ($collCsType)e))"
     oldId match {
       case TypeId.Builtins.opt =>
         val tmp = q"_${base.toLowerCase}_tmp"
@@ -325,7 +328,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
             Right(
               Seq(
                 q"var $tmp = $fieldRef",
-                q"( ($tmp != null) ? $recConv  : null )"
+                q"( ($tmp != null) ? $recConv : null )"
               )
             )
           case _ =>
@@ -334,26 +337,19 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
       case TypeId.Builtins.lst =>
         newId match {
           case TypeId.Builtins.set =>
-            Right(Seq(q"(new ${ftNewInit}($fieldRef)).ToImmutableHashSet()"))
+            Right(Seq(q"$collInit.ToImmutableHashSet()"))
+
           case TypeId.Builtins.lst =>
-            Right(
-              Seq(
-                q"(new ${ftNewInit}(from e in $fieldRef select ($collCsType)e)).ToImmutableList()"
-              )
-            )
+            Right(Seq(q"$collInit.ToImmutableList()"))
           case _ =>
             Left(NonEmptyList(BaboonIssue.TranslationBug()))
         }
       case TypeId.Builtins.set =>
         newId match {
           case TypeId.Builtins.set =>
-            Right(
-              Seq(
-                q"(new ${ftNewInit}(from e in $fieldRef select ($collCsType)e)).ToImmutableHashSet()"
-              )
-            )
+            Right(Seq(q"$collInit.ToImmutableHashSet()"))
           case TypeId.Builtins.lst =>
-            Right(Seq(q"(new ${ftNewInit}($fieldRef)).ToImmutableList()"))
+            Right(Seq(q"$collInit.ToImmutableList()"))
           case _ =>
             Left(NonEmptyList(BaboonIssue.TranslationBug()))
         }

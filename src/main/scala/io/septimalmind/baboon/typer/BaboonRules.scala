@@ -28,6 +28,7 @@ object BaboonRules {
             case (id: TypeId.User, DomainMember.User(_, defn)) =>
               (id, defn)
           }
+          .toList
           .map {
             case (id, defn) =>
               val unmodified = diff.changes.unmodified.contains(id)
@@ -194,10 +195,17 @@ object BaboonRules {
           }
           .biAggregate
       } yield {
-        BaboonRuleset(
-          EvolutionStep(prev.version, last.version),
-          conversions.toList
+
+        val total = conversions.size
+        val user = conversions.collect {
+          case c: CustomConversionRequired => c
+        }.size
+        val trivial = total - user
+        println(
+          s"""[ ${last.id}: ${prev.version}->${last.version} ] conversions: $total, derived: $trivial, to be implemented: $user"""
         )
+
+        BaboonRuleset(EvolutionStep(prev.version, last.version), conversions)
       }
     }
 
