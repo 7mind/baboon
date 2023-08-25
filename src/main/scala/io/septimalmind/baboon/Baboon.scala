@@ -1,16 +1,17 @@
 package io.septimalmind.baboon
 import caseapp.*
+import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.strings.IzString.*
 
 import java.nio.file.Paths
-import java.util.UUID
-import scala.util.Random
 
 case class Options(model: List[String],
                    modelDir: List[String],
                    output: String,
-                   debug: Option[Boolean])
+                   debug: Option[Boolean],
+                   csObsoleteErrors: Option[Boolean],
+)
 
 object Baboon {
   def main(args: Array[String]): Unit = {
@@ -35,7 +36,14 @@ object Baboon {
           s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}"
         )
         println(s"Target: ${outDir.toFile.getCanonicalPath}")
-        compiler.run(inputModels, outDir, opts.debug.getOrElse(false)) match {
+        compiler.run(
+          inputModels,
+          outDir,
+          CompilerOptions(
+            opts.debug.getOrElse(false),
+            opts.csObsoleteErrors.getOrElse(false)
+          )
+        ) match {
           case Left(value) =>
             System.err.println("Compiler failed")
             System.err.println(value.toList.niceList())

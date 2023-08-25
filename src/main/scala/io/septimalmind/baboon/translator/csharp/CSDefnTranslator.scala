@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
+import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.TextTree
 import io.septimalmind.baboon.translator.TextTree.*
@@ -9,9 +10,12 @@ import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 
 trait CSDefnTranslator {
-  def translate(defn: DomainMember.User, domain: Domain): Either[NonEmptyList[
-    BaboonIssue.TranslationIssue
-  ], List[CSDefnTranslator.Output]]
+  def translate(defn: DomainMember.User,
+                domain: Domain,
+                evo: BaboonEvolution,
+  ): Either[NonEmptyList[BaboonIssue.TranslationIssue], List[
+    CSDefnTranslator.Output
+  ]]
 
   def inNs(nss: Seq[String], tree: TextTree[CSValue]): TextTree[CSValue]
 
@@ -22,17 +26,51 @@ object CSDefnTranslator {
 
   case class Output(path: String, tree: TextTree[CSValue], pkg: CSPackageId)
 
-  class CSDefnTranslatorImpl() extends CSDefnTranslator {
+  class CSDefnTranslatorImpl(options: CompilerOptions)
+      extends CSDefnTranslator {
     type Out[T] = Either[NonEmptyList[BaboonIssue.TranslationIssue], T]
+    private val trans = new CSTypeTranslator()
 
-    override def translate(
-      defn: DomainMember.User,
-      domain: Domain
+    override def translate(defn: DomainMember.User,
+                           domain: Domain,
+                           evo: BaboonEvolution,
     ): Either[NonEmptyList[BaboonIssue.TranslationIssue], List[Output]] = {
-      val trans = new CSTypeTranslator()
       val name = trans.toCsVal(defn.id, domain.version)
 
-      val defnRepr = defn.defn match {
+      val defnReprBase = makeRepr(defn, domain, name)
+      val isLatestVersion = domain.version == evo.latest
+      val defnRepr = if (isLatestVersion) {
+        defnReprBase
+      } else {
+        q"""[Obsolete("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${options.obsoleteErrors.toString})]
+           |$defnReprBase""".stripMargin
+      }
+
+      assert(defn.id.pkg == domain.id)
+      val fbase =
+        basename(domain)
+
+      val fname = s"${defn.id.name.name.capitalize}.cs"
+
+      val ns = name.pkg.parts
+
+      val content = inNs(ns.toSeq, defnRepr)
+
+      val outname = defn.defn.id.owner match {
+        case Owner.Toplevel =>
+          s"$fbase/$fname"
+        case Owner.Adt(id) =>
+          s"$fbase/${id.name.name.toLowerCase}-$fname"
+      }
+      Right(
+        List(Output(outname, content, trans.toCsPkg(domain.id, domain.version)))
+      )
+    }
+
+    private def makeRepr(defn: DomainMember.User,
+                         domain: Domain,
+                         name: CSValue.CSType): TextTree[CSValue] = {
+      defn.defn match {
         case d: Typedef.Dto =>
           val outs = d.fields.map { f =>
             val tpe = trans.asCsRef(f.tpe, domain.version)
@@ -117,8 +155,14 @@ object CSDefnTranslator {
               mkComparator(ref, oref, f.tpe)
           }
 
-          val hc = if (hcGroups.isEmpty) { q"0" } else { hcGroups.join(" ^\n") }
-          val cmp = if (comparators.isEmpty) { q"true" } else {
+          val hc = if (hcGroups.isEmpty) {
+            q"0"
+          } else {
+            hcGroups.join(" ^\n")
+          }
+          val cmp = if (comparators.isEmpty) {
+            q"true"
+          } else {
             comparators.join(" &&\n")
           }
           val eq = Seq(q"""public override int GetHashCode()
@@ -146,15 +190,15 @@ object CSDefnTranslator {
              |${eq.join("\n\n").shift(4)}
              |}""".stripMargin
 
-//          d.id.owner match {
-//            case Owner.Toplevel =>
-//              clz
-//            case Owner.Adt(id) =>
-//              val adtns = id.name.name.toLowerCase
-//              q"""namespace $adtns {
-//                 |${clz.shift(4)}
-//                 |}""".stripMargin
-//          }
+        //          d.id.owner match {
+        //            case Owner.Toplevel =>
+        //              clz
+        //            case Owner.Adt(id) =>
+        //              val adtns = id.name.name.toLowerCase
+        //              q"""namespace $adtns {
+        //                 |${clz.shift(4)}
+        //                 |}""".stripMargin
+        //          }
 
         case e: Typedef.Enum =>
           val branches =
@@ -169,26 +213,6 @@ object CSDefnTranslator {
           q"""public interface $name {
              |}""".stripMargin
       }
-
-      assert(defn.id.pkg == domain.id)
-      val fbase =
-        basename(domain)
-
-      val fname = s"${defn.id.name.name.capitalize}.cs"
-
-      val ns = name.pkg.parts
-
-      val content = inNs(ns.toSeq, defnRepr)
-
-      val outname = defn.defn.id.owner match {
-        case Owner.Toplevel =>
-          s"$fbase/$fname"
-        case Owner.Adt(id) =>
-          s"$fbase/${id.name.name.toLowerCase}-$fname"
-      }
-      Right(
-        List(Output(outname, content, trans.toCsPkg(domain.id, domain.version)))
-      )
     }
 
     def basename(dom: Domain): String = {

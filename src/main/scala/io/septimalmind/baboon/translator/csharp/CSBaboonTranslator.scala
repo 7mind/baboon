@@ -11,15 +11,18 @@ import izumi.fundamentals.collections.IzCollections.*
 import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 import TextTree.*
+import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.RenderedConversion
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.model.Conversion.FieldOp
 
-class CSBaboonTranslator() extends AbstractBaboonTranslator {
+class CSBaboonTranslator(options: CompilerOptions)
+    extends AbstractBaboonTranslator {
 
   type Out[T] = Either[NonEmptyList[BaboonIssue.TranslationIssue], T]
 
-  private val defnTranslator = new CSDefnTranslator.CSDefnTranslatorImpl()
+  private val defnTranslator =
+    new CSDefnTranslator.CSDefnTranslatorImpl(options)
 
   override def translate(family: BaboonFamily): Out[Sources] = {
     for {
@@ -68,7 +71,11 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
       .join("\n")
 
     val full =
-      Seq(Seq(q"#nullable enable"), Seq(imports), Seq(o.tree)).flatten
+      Seq(
+        Seq(q"#nullable enable", q"#pragma warning disable 612,618"),
+        Seq(imports),
+        Seq(o.tree)
+      ).flatten
         .join("\n\n")
 
     full.mapRender {
@@ -95,32 +102,26 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
   ): Out[List[CSDefnTranslator.Output]] = {
 
     lineage.versions.toSeq.toList.map {
-      case (version, domain) =>
-        val evo = if (lineage.evolution.latest == version) {
-          Some(lineage.evolution)
-        } else {
-          None
-        }
-        translateDomain(domain, evo)
+      case (_, domain) =>
+        //val isLatest =
+        translateDomain(domain, lineage.evolution)
     }.biFlatAggregate
   }
 
-  private def translateDomain(
-    domain: Domain,
-    evo: Option[BaboonEvolution]
+  private def translateDomain(domain: Domain,
+                              evo: BaboonEvolution,
   ): Out[List[CSDefnTranslator.Output]] = {
-
+    val isLatest = evo.latest == domain.version
     for {
       defnSources <- domain.defs.meta.nodes.toList.map {
         case (_, defn: DomainMember.User) =>
-          defnTranslator.translate(defn, domain)
+          defnTranslator.translate(defn, domain, evo)
         case _ => Right(List.empty)
       }.biFlatAggregate
-      conversionSources <- evo match {
-        case Some(value) =>
-          generateConversions(domain, value)
-        case None =>
-          Right(List.empty)
+      conversionSources <- if (isLatest) {
+        generateConversions(domain, evo)
+      } else {
+        Right(List.empty)
       }
     } yield {
       defnSources ++ conversionSources
@@ -134,7 +135,7 @@ class CSBaboonTranslator() extends AbstractBaboonTranslator {
     // TODO
     assert(domain.version == value.latest)
 
-    val transd = new CSDefnTranslator.CSDefnTranslatorImpl()
+    val transd = new CSDefnTranslator.CSDefnTranslatorImpl(options)
     val trans = new CSTypeTranslator()
     val pkg = trans.toCsPkg(domain.id, domain.version)
 
