@@ -2,6 +2,10 @@ package io.septimalmind.baboon
 import caseapp.*
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import izumi.fundamentals.platform.files.IzFiles
+import izumi.fundamentals.platform.resources.{
+  IzArtifact,
+  IzArtifactMaterializer
+}
 import izumi.fundamentals.platform.strings.IzString.*
 
 import java.nio.file.Paths
@@ -15,6 +19,8 @@ case class Options(model: List[String],
 
 object Baboon {
   def main(args: Array[String]): Unit = {
+    val artifact = implicitly[IzArtifactMaterializer]
+    println(s"Baboon ${artifact.get.shortInfo}")
 
     CaseApp.parse[Options](args.toSeq) match {
       case Left(value) =>
