@@ -111,15 +111,15 @@ class CSBaboonTranslator(options: CompilerOptions)
   private def translateDomain(domain: Domain,
                               evo: BaboonEvolution,
   ): Out[List[CSDefnTranslator.Output]] = {
-    val isLatest = evo.latest == domain.version
     for {
       defnSources <- domain.defs.meta.nodes.toList.map {
         case (_, defn: DomainMember.User) =>
           defnTranslator.translate(defn, domain, evo)
         case _ => Right(List.empty)
       }.biFlatAggregate
-      conversionSources <- if (isLatest) {
-        generateConversions(domain, evo)
+      evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
+      conversionSources <- if (evosToCurrent.nonEmpty) {
+        generateConversions(domain, evo, evosToCurrent)
       } else {
         Right(List.empty)
       }
@@ -128,13 +128,10 @@ class CSBaboonTranslator(options: CompilerOptions)
     }
   }
 
-  private def generateConversions(
-    domain: Domain,
-    value: BaboonEvolution
+  private def generateConversions(domain: Domain,
+                                  value: BaboonEvolution,
+                                  toCurrent: Set[EvolutionStep],
   ): Out[List[CSDefnTranslator.Output]] = {
-    // TODO
-    assert(domain.version == value.latest)
-
     val transd = new CSDefnTranslator.CSDefnTranslatorImpl(options)
     val trans = new CSTypeTranslator()
     val pkg = trans.toCsPkg(domain.id, domain.version)
@@ -188,10 +185,13 @@ class CSBaboonTranslator(options: CompilerOptions)
          |}""".stripMargin
 
     for {
-      convs <- value.rules.map {
-        case (srcVer, rules) =>
-          makeConvs(transd, trans, pkg, srcVer, domain, rules)
-      }.biFlatAggregate
+      convs <- value.rules
+        .filter(kv => toCurrent.contains(kv._1))
+        .map {
+          case (srcVer, rules) =>
+            makeConvs(transd, trans, pkg, srcVer.from, domain, rules)
+        }
+        .biFlatAggregate
     } yield {
       val regs = convs.flatMap(_.reg.iterator.toSeq).toSeq
 
@@ -356,10 +356,11 @@ class CSBaboonTranslator(options: CompilerOptions)
         case c: Conversion.CopyAdtBranchByName =>
           val branches = c.oldDefn.members.map { oldId =>
             val oldFqid = trans.toCsVal(oldId, srcVer).fullyQualified
+            val typedRef = q"fromAs_${oldId.name.name}"
 
-            q"""if (from is ${oldFqid} fromAs)
+            q"""if (from is ${oldFqid} $typedRef)
                |{
-               |    return ${transferId(oldId, q"fromAs")};
+               |    return ${transferId(oldId, typedRef)};
                |}""".stripMargin
           }.toSeq ++ Seq(q"""{
                |    throw new ArgumentException($$"Bad input: {from}");

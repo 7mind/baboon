@@ -186,13 +186,18 @@ object BaboonValidator {
       versions: NonEmptyMap[Version, Domain]
     ): Either[NonEmptyList[BaboonIssue.VerificationIssue], Unit] = {
 
-      val latest = versions(evolution.latest)
+      //val latest = versions(evolution.latest)
 
       assert(evolution.diffs.keySet == evolution.rules.keySet)
 
       evolution.diffs.toSeq.map {
         case (v, diff) =>
-          validateEvo(latest, versions(v), diff, evolution.rules(v))
+          validateEvo(
+            versions(v.to),
+            versions(v.from),
+            diff,
+            evolution.rules(v)
+          )
       }.biAggregateVoid
     }
 

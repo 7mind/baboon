@@ -171,7 +171,10 @@ object BaboonRules {
           }
           .biAggregate
       } yield {
-        BaboonRuleset(conversions.toList)
+        BaboonRuleset(
+          EvolutionStep(prev.version, last.version),
+          conversions.toList
+        )
       }
     }
   }

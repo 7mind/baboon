@@ -25,22 +25,31 @@ object BaboonComparator {
       val sortedVersions =
         versions.keySet.toList.sortBy(_.version)(Ordering.String.reverse)
       val pinnacleVersion = sortedVersions.head
-      val prior = sortedVersions.tail
 
-      val pinnacle = versions(pinnacleVersion)
+      val toCompare = sortedVersions.sliding(2).toList
+
+      println(
+        s"[ $pkg ] conversions chain: ${toCompare.map(_.mkString("<-")).mkString("; ")}"
+      )
 
       for {
         rules <- Right(new BaboonRules.BaboonRulesImpl())
-        indexedDiffs <- prior
-          .map(v => compare(pinnacle, versions(v)).map(diff => (v, diff)))
-          .biAggregate
+        indexedDiffs <- toCompare.map {
+          case fresh :: old :: Nil =>
+            compare(versions(fresh), versions(old))
+              .map(diff => (diff.id, diff))
+          case o =>
+            Left(NonEmptyList(BaboonIssue.BrokenComparison(o)))
+        }.biAggregate
         diffMap <- indexedDiffs.toUniqueMap(
           e => NonEmptyList(BaboonIssue.NonUniqueDiff(e))
         )
 
         rulesets <- diffMap.map {
           case (v, diff) =>
-            rules.compute(versions(v), pinnacle, diff).map(rs => (v, rs))
+            rules
+              .compute(versions(v.from), versions(v.to), diff)
+              .map(rs => (v, rs))
         }.biAggregate
         rulesetMap <- rulesets.toUniqueMap(
           e => NonEmptyList(BaboonIssue.NonUniqueRuleset(e))
@@ -142,7 +151,11 @@ object BaboonComparator {
           e => NonEmptyList(BaboonIssue.NonUniqueDiffs(e))
         )
       } yield {
-        BaboonDiff(changes, indexedDiffs)
+        BaboonDiff(
+          EvolutionStep(prev.version, last.version),
+          changes,
+          indexedDiffs
+        )
       }
     }
 

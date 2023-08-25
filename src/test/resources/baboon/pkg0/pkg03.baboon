@@ -1,29 +1,27 @@
 model testpkg.pkg0
 
-version "1.0.0"
-
-data NotReferenced {}
+version "3.0.0"
 
 root enum T1_E1 {
  A
- B
+ C
 }
 
 data T1_D2 {
-    f: T1_E1
+    f: str
 }
 
 root data T1_D1 {
  f0: T1_D2
  f1: i08
- f2: i32
+ f3: str
 }
 
 //
 
 data T2_D2 {
-    f: i08
-    f1: str
+    f: str
+    f1: opt[str]
 }
 
 root data T2_D1 {
@@ -33,7 +31,7 @@ root data T2_D1 {
 //
 
 root data T3_D1 {
-  f0: str
+  f1: str
 }
 
 //
@@ -45,8 +43,8 @@ root adt T4_A1 {
    data B2 {
        f: T2_D1
    }
-   data B3 {
-       f: i08
+   data B4 {
+       f: str
    }
 }
 
@@ -55,6 +53,7 @@ root adt T4_A1 {
 root enum T1_E2 {
  A
  B
+ C
 }
 
 //
@@ -62,6 +61,9 @@ root enum T1_E2 {
 root adt T5_A1 {
    data B1 {
        f: str
+   }
+   data B2 {
+      f: i32
    }
 }
 
@@ -78,7 +80,7 @@ data T6_D2 {
     f06: i16
     f07: i32
     f08: i64
-    
+
     f09: tso
     f10: tsu
 
@@ -89,6 +91,7 @@ data T6_D2 {
     f14: bit
 }
 
+
 root data T6_D1 {
     fSameBuiltin: i08
     fSameCustom: T6_D2
@@ -96,19 +99,25 @@ root data T6_D1 {
     fSameCustomLst: lst[T6_D2]
     fSameCustomMap: map[str, T6_D2]
 
-    fWrapOpt: i08
-    fWrapLst: i08
-    fWrapSet: i08
+    fWrapOpt: opt[i08]
+    fWrapLst: lst[i08]
+    fWrapSet: set[i08]
 
-    fSwapOptSet0: opt[i08]
-    fSwapOptSet1: opt[str]
-    fSwapOptSet2: opt[T6_D2]
-    fSwapOptLst0: opt[i08]
-    fSwapOptLst1: opt[str]
-    fSwapOptLst2: opt[T6_D2]
+    fSwapOptSet0: set[i08]
+    fSwapOptSet1: set[str]
+    fSwapOptSet2: set[T6_D2]
+    fSwapOptLst0: lst[i08]
+    fSwapOptLst1: lst[str]
+    fSwapOptLst2: lst[T6_D2]
 
-    fSwapLstSet: lst[i08]
-    fSwapSetLst: set[i08]
+
+    fSwapLstSet: set[i08]
+    fSwapSetLst: lst[i08]
+
+    fNewOpt: opt[i32]
+    fNewSet: set[i32]
+    fNewLst: lst[i32]
+    fNewMap: map[str, i32]
 }
 
 //

@@ -55,8 +55,7 @@ object BaboonIssue {
   case class UnexpectedBuiltin(id: TypeId.Builtin, owner: Owner)
       extends TyperIssue
 
-  case class MissingTypeId(domain: Pkg, missing: Set[TypeId])
-    extends TyperIssue
+  case class MissingTypeId(domain: Pkg, missing: Set[TypeId]) extends TyperIssue
 
   case class NonUniqueEnumBranches(problems: Map[String, List[EnumMember]],
                                    id: TypeId.User,
@@ -87,15 +86,19 @@ object BaboonIssue {
   //
   sealed trait EvolutionIssue extends BaboonIssue
 
+  case class BrokenComparison(o: List[Version])
+      extends EvolutionIssue
+      with BaboonBug
+
   case class UnexpectedDiffType(o: TypedefDiff)
       extends EvolutionIssue
       with BaboonBug
 
-  case class NonUniqueDiff(e: Map[Version, List[BaboonDiff]])
+  case class NonUniqueDiff(e: Map[EvolutionStep, List[BaboonDiff]])
       extends EvolutionIssue
       with BaboonBug
 
-  case class NonUniqueRuleset(e: Map[Version, List[BaboonRuleset]])
+  case class NonUniqueRuleset(e: Map[EvolutionStep, List[BaboonRuleset]])
       extends EvolutionIssue
       with BaboonBug
 

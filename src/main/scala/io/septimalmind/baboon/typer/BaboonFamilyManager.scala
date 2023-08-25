@@ -31,6 +31,15 @@ object BaboonFamilyManager {
           }
         }
 
+        _ <- Right(
+          domains.sortBy(d => (d.id.toString, d.version.version)).foreach { d =>
+            println(
+              s"[ ${d.id}@${d.version} ] retained definitions: ${d.defs.meta.nodes.size}, unreachable definitions: ${d.excludedIds.size}"
+            )
+
+          }
+        )
+
         lineages <- domains
           .map(d => (d.id, d))
           .toMultimap

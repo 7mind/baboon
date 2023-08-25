@@ -4,8 +4,8 @@ import izumi.fundamentals.platform.strings.IzString.*
 
 case class BaboonEvolution(pkg: Pkg,
                            latest: Version,
-                           diffs: Map[Version, BaboonDiff],
-                           rules: Map[Version, BaboonRuleset],
+                           diffs: Map[EvolutionStep, BaboonDiff],
+                           rules: Map[EvolutionStep, BaboonRuleset],
 ) {
   override def toString: String = {
     diffs
@@ -26,7 +26,11 @@ case class BaboonEvolution(pkg: Pkg,
   }
 }
 
-case class BaboonDiff(changes: BaboonChanges, diffs: Map[TypeId, TypedefDiff])
+case class EvolutionStep(from: Version, to: Version)
+
+case class BaboonDiff(id: EvolutionStep,
+                      changes: BaboonChanges,
+                      diffs: Map[TypeId, TypedefDiff])
 
 case class BaboonChanges(added: Set[TypeId],
                          removed: Set[TypeId],
