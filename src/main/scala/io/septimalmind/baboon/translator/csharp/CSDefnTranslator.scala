@@ -168,7 +168,7 @@ object CSDefnTranslator {
           val eq = Seq(q"""public override int GetHashCode()
                |{
                |    return ${hc.shift(8).trim};
-               |}""".stripMargin, q"""protected bool Equals($name other) {
+               |}""".stripMargin, q"""public bool Equals($name other) {
                |    return ${cmp.shift(8).trim};
                |}""".stripMargin, q"""public override bool Equals(object? obj) {
                |     if (ReferenceEquals(null, obj)) return false;
@@ -178,7 +178,7 @@ object CSDefnTranslator {
                |}""".stripMargin)
 
           q"""[Serializable]
-             |public class $name$parent {
+             |public sealed class $name$parent {
              |    ${fields.join("\n").shift(4).trim}
              |
              |    ${constructor.shift(4).trim}

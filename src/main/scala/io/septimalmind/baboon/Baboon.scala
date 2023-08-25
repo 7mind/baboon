@@ -42,6 +42,24 @@ object Baboon {
           s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}"
         )
         println(s"Target: ${outDir.toFile.getCanonicalPath}")
+
+        if (outDir.toFile.exists()) {
+          val unexpectedFiles = IzFiles.walk(outDir.toFile).filter { p =>
+            val f = p.toFile
+            !f.isDirectory && !(f.getName.endsWith(".cs") || f.getName
+              .startsWith("."))
+          }
+
+          if (unexpectedFiles.isEmpty) {
+            IzFiles.removeDir(outDir)
+          } else {
+            System.err.println(
+              s"Refusing to remove target directory, there are unexpected files: ${unexpectedFiles.niceList()}"
+            )
+            System.exit(0)
+          }
+        }
+
         compiler.run(
           inputModels,
           outDir,

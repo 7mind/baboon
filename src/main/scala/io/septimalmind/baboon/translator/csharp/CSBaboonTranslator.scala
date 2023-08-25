@@ -137,10 +137,15 @@ class CSBaboonTranslator(options: CompilerOptions)
     val pkg = trans.toCsPkg(domain.id, domain.version)
 
     val base =
-      q"""public interface IDynamicConversion<To>
-         | {
+      q"""public interface IConversion {
+         |    public Type TypeFrom();
+         |    public Type TypeTo();
+         |}
+         |
+         |public interface IDynamicConversion<To> : IConversion
+         |{
          |     public To Convert<C>(C context, BaboonConversions conversions, dynamic from);
-         | }
+         |}
          |
          |public abstract class AbstractConversion<From, To> : IDynamicConversion<To>
          |{
@@ -150,8 +155,15 @@ class CSBaboonTranslator(options: CompilerOptions)
          |    {
          |        return Convert<C>(context, conversions, (From)from);
          |    }
-         |}
-         |""".stripMargin
+         |
+         |    public Type TypeFrom() {
+         |         return typeof(From);
+         |    }
+         |
+         |     public Type TypeTo() {
+         |         return typeof(To);
+         |     }
+         |}""".stripMargin
 
     val key =
       q"""public class ConversionKey
@@ -198,11 +210,22 @@ class CSBaboonTranslator(options: CompilerOptions)
       val converter =
         q"""public class BaboonConversions
            |{
-           |    private Dictionary<ConversionKey, dynamic> convs = new ();
+           |    private Dictionary<ConversionKey, IConversion> convs = new ();
            |
            |    public BaboonConversions()
            |    {
            |        ${regs.join("\n").shift(8).trim}
+           |    }
+           |
+           |    public List<IConversion> AllConversions()
+           |    {
+           |        return convs.Values.ToList();
+           |    }
+           |
+           |    public void Register(IConversion conversion)
+           |    {
+           |        var key = new ConversionKey(conversion.TypeFrom(), conversion.TypeTo());
+           |        convs.Add(key, conversion);
            |    }
            |
            |    public void Register<From, To>(AbstractConversion<From, To> conversion)
