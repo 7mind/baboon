@@ -202,7 +202,7 @@ class CSBaboonTranslator(options: CompilerOptions)
            |
            |    public BaboonConversions()
            |    {
-           |${regs.join("\n").shift(8)}
+           |        ${regs.join("\n").shift(8).trim}
            |    }
            |
            |    public void Register<From, To>(AbstractConversion<From, To> conversion)
@@ -369,7 +369,7 @@ class CSBaboonTranslator(options: CompilerOptions)
             q"""public class ${convname} : AbstractConversion<${tin}, ${tout}>
                |{
                |    public override ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} from) {
-               |${branches.join("\nelse\n").shift(8)}
+               |        ${branches.join("\nelse\n").shift(8).trim}
                |    }
                |}""".stripMargin
           val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
@@ -557,9 +557,9 @@ class CSBaboonTranslator(options: CompilerOptions)
               q"""public class ${convname} : AbstractConversion<${tin}, ${tout}>
                  |{
                  |    public override ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} _from) {
-                 |${initExprs.join(";\n").shift(8)}
+                 |        ${initExprs.join(";\n").shift(8).trim}
                  |        return new ${tout}(
-                 |${consExprs.join(",\n").shift(12)}
+                 |            ${consExprs.join(",\n").shift(12).trim}
                  |        );
                  |    }
                  |}""".stripMargin

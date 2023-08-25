@@ -105,7 +105,7 @@ object CSDefnTranslator {
 
           val constructor =
             q"""public ${name.name}($cargs) {
-               |${inits.shift(4)}
+               |    ${inits.shift(4).trim}
                |}""".stripMargin
 
           val parent = d.id.owner match {
@@ -167,11 +167,9 @@ object CSDefnTranslator {
           }
           val eq = Seq(q"""public override int GetHashCode()
                |{
-               |    return
-               |${hc.shift(8)};
+               |    return ${hc.shift(8).trim};
                |}""".stripMargin, q"""protected bool Equals($name other) {
-               |    return
-               |${cmp.shift(8)};
+               |    return ${cmp.shift(8).trim};
                |}""".stripMargin, q"""public override bool Equals(object? obj) {
                |     if (ReferenceEquals(null, obj)) return false;
                |     if (ReferenceEquals(this, obj)) return true;
@@ -181,13 +179,13 @@ object CSDefnTranslator {
 
           q"""[Serializable]
              |public class $name$parent {
-             |${fields.join("\n").shift(4)}
+             |    ${fields.join("\n").shift(4).trim}
              |
-             |${constructor.shift(4)}
+             |    ${constructor.shift(4).trim}
              |
-             |${methods.join("\n").shift(4)}
+             |    ${methods.join("\n").shift(4).trim}
              |
-             |${eq.join("\n\n").shift(4)}
+             |    ${eq.join("\n\n").shift(4).trim}
              |}""".stripMargin
 
         //          d.id.owner match {
@@ -206,7 +204,7 @@ object CSDefnTranslator {
 
           q"""[Serializable]
              |public enum $name {
-             |${branches.shift(4)}
+             |    ${branches.shift(4).trim}
              |}""".stripMargin
 
         case _: Typedef.Adt =>
@@ -223,7 +221,7 @@ object CSDefnTranslator {
     private def inNs(name: String,
                      tree: TextTree[CSValue]): TextTree[CSValue] = {
       q"""namespace ${name} {
-         |${tree.shift(4)}
+         |    ${tree.shift(4).trim}
          |}""".stripMargin
     }
 

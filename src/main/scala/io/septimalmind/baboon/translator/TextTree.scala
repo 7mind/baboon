@@ -14,6 +14,8 @@ object TextTree {
 
   case class Shift[T](nested: TextTree[T], shift: Int) extends TextTree[T]
 
+  case class Trim[T](nested: TextTree[T]) extends TextTree[T]
+
   implicit class TextTreeSeqOps[T](target: Seq[TextTree[T]]) {
     def join(sep: String): TextTree[T] = {
       if (target.isEmpty) {
@@ -37,6 +39,7 @@ object TextTree {
         case v: ValueNode[T]  => f(v.value)
         case s: StringNode[T] => s.value
         case s: Shift[T]      => s.nested.mapRender(f).shift(s.shift)
+        case t: Trim[T]       => t.nested.mapRender(f).trim
         case n: Node[T]       => n.chunks.map(_.mapRender(f)).mkString
       }
     }
@@ -46,6 +49,7 @@ object TextTree {
         case v: ValueNode[T]  => Node(NonEmptyList(v))
         case s: StringNode[T] => Node(NonEmptyList(s))
         case s: Shift[T]      => Shift(s.flatten, s.shift)
+        case t: Trim[T]       => Trim(t.flatten)
         case n: Node[T] =>
           Node(n.chunks.flatMap {
             _.flatten match {
@@ -61,6 +65,7 @@ object TextTree {
         case v: ValueNode[T]  => ValueNode(f(v.value))
         case s: StringNode[T] => StringNode(s.value)
         case s: Shift[T]      => Shift(s.nested.map(f), s.shift)
+        case s: Trim[T]       => Trim(s.nested.map(f))
         case n: Node[T]       => Node(n.chunks.map(_.map(f)))
       }
     }
@@ -69,6 +74,7 @@ object TextTree {
       target match {
         case v: ValueNode[T]  => Seq(v.value)
         case _: StringNode[T] => Seq.empty
+        case t: Trim[T]       => t.nested.values
         case s: Shift[T]      => s.nested.values
         case n: Node[T]       => n.chunks.toSeq.flatMap(_.values)
       }
@@ -79,17 +85,23 @@ object TextTree {
         case v: ValueNode[T]  => v
         case s: StringNode[T] => s
         case s: Shift[T]      => s
+        case t: Trim[T]       => t
         case n: Node[T] =>
           Node(n.chunks.map {
             case v: ValueNode[T]  => v
             case n: Node[T]       => n
             case s: Shift[T]      => s
+            case t: Trim[T]       => t
             case s: StringNode[T] => StringNode(s.value.stripMargin(marginChar))
           })
       }
     }
 
     def stripMargin: TextTree[T] = stripMargin('|')
+
+    def trim: TextTree[T] = {
+      Trim(target)
+    }
 
     def shift(pad: Int): TextTree[T] = {
       Shift(target, pad)
