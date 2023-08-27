@@ -232,7 +232,14 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
                 case o: FieldOp.ExpandPrecision =>
                   (o.oldTpe, o.newTpe) match {
                     case (o: TypeRef.Constructor, n: TypeRef.Constructor) =>
-                      swapCollType(ftNewInit, base, fieldRef, n, o.id, n.id)
+                      swapCollType(
+                        ftNewInit,
+                        base,
+                        fieldRef,
+                        o.id,
+                        n.id,
+                        n.args.head
+                      )
                     case (_: TypeRef.Scalar, _: TypeRef.Scalar) =>
                       Right(Seq(fieldRef))
                     case _ =>
@@ -246,9 +253,9 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
                     ftNewInit,
                     base,
                     fieldRef,
-                    o.newTpe,
                     oldId,
-                    newId
+                    newId,
+                    o.newTpe.args.head,
                   )
 
               }
@@ -291,14 +298,11 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
   private def swapCollType(ftNewInit: TextTree[CSValue],
                            base: String,
                            fieldRef: Node[Nothing],
-                           newTpe: TypeRef.Constructor,
                            oldId: TypeId.BuiltinCollection,
-                           newId: TypeId.BuiltinCollection): Either[
-    NonEmptyList[BaboonIssue.TranslationBug],
-    Seq[TextTree[CSValue]]
-  ] = {
-    val collType = newTpe.args.head
-    val collCsType = trans.asCsRef(collType, domain.version)
+                           newId: TypeId.BuiltinCollection,
+                           newCollType: TypeRef,
+  ): Either[NonEmptyList[BaboonIssue.TranslationBug], Seq[TextTree[CSValue]]] = {
+    val collCsType = trans.asCsRef(newCollType, domain.version)
 
     val collInit =
       q"(new ${ftNewInit}(from e in $fieldRef select ($collCsType)e))"
@@ -307,7 +311,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
         val tmp = q"_${base.toLowerCase}_tmp"
 
         val recConv =
-          transfer(collType, tmp)
+          transfer(newCollType, tmp)
 
         newId match {
           case TypeId.Builtins.lst =>

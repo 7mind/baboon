@@ -99,3 +99,5 @@ ThisBuild / scmInfo := Some(
     "scm:git@github.com:7mind/baboon.git"
   )
 )
+
+ThisBuild / organization := "io.7mind"

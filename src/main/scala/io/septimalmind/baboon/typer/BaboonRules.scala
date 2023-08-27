@@ -84,8 +84,7 @@ object BaboonRules {
                         case (o: TypeRef.Scalar, n: TypeRef.Constructor) =>
                           !TypeId.Builtins.canBeWrappedIntoCollection(o, n)
                         case (o: TypeRef.Constructor, n: TypeRef.Constructor) =>
-                          !(TypeId.Builtins.canChangeCollectionType(o, n) || TypeId.Builtins
-                            .collectionPrecEx(o, n))
+                          !TypeId.Builtins.canChangeCollectionType(o, n)
                       }
                     }
                     initWithDefaults = compatibleAdditions.map(
@@ -114,16 +113,16 @@ object BaboonRules {
                           FieldOp.ExpandPrecision(name, o, n)
                       }
 
-                    precexColl = changes
-                      .map(op => (op.f.tpe, op.newType, op.f.name))
-                      .collect {
-                        case (
-                            o: TypeRef.Constructor,
-                            n: TypeRef.Constructor,
-                            name
-                            ) if TypeId.Builtins.collectionPrecEx(o, n) =>
-                          FieldOp.ExpandPrecision(name, o, n)
-                      }
+//                    precexColl = changes
+//                      .map(op => (op.f.tpe, op.newType, op.f.name))
+//                      .collect {
+//                        case (
+//                            o: TypeRef.Constructor,
+//                            n: TypeRef.Constructor,
+//                            name
+//                            ) if TypeId.Builtins.collectionPrecEx(o, n) =>
+//                          FieldOp.ExpandPrecision(name, o, n)
+//                      }
 
                     swap = changes
                       .map(op => (op.f.tpe, op.newType, op.f.name))
@@ -152,7 +151,7 @@ object BaboonRules {
                     } else {
                       DtoConversion(
                         id,
-                        keepFields ++ (wrap ++ precex ++ swap ++ precexColl ++ initWithDefaults).toList
+                        keepFields ++ (wrap ++ precex ++ swap ++ initWithDefaults).toList
                       )
                     }
                   }

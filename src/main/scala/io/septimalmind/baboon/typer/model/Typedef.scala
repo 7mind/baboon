@@ -136,15 +136,18 @@ object TypeId {
     def canChangeCollectionType(o: TypeRef.Constructor,
                                 n: TypeRef.Constructor): Boolean = {
       // we can safely change collection types between list <-> set, opt -> (list | set)
-      o.args == n.args && safeSources.contains(o.id) && seqColls
-        .contains(n.id)
-    }
+      val isSwap = safeSources.contains(o.id) && seqColls.contains(n.id)
 
-    def collectionPrecEx(o: TypeRef.Constructor,
-                         n: TypeRef.Constructor): Boolean = {
-      (o.id == n.id) && o.args.toSeq.zip(n.args.toSeq).forall {
+      val isSimpleSwap = (o.args == n.args && isSwap)
+
+      val isPrecex = o.args.toSeq.zip(n.args.toSeq).forall {
         case (o, n) => isPrecisionExpansion(o.id, n.id)
       }
+      val isSimplePrecex = (o.id == n.id) && isPrecex
+
+      val isSwapPrecex = (isSwap && isPrecex)
+
+      isSimpleSwap || isSimplePrecex || isSwapPrecex
     }
 
     def isPrecisionExpansion(o: TypeId, n: TypeId): Boolean = {

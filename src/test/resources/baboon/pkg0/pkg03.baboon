@@ -123,6 +123,10 @@ root data T6_D1 {
     fPrecex1: opt[u16]
     fPrecex2: lst[u16]
     fPrecex3: set[u16]
+
+    fSwapPrecex0: lst[u32]
+    fSwapPrecex1: set[u32]
+    fSwapPrecex2: lst[u32]
 }
 
 //
