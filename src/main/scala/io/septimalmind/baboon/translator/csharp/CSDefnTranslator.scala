@@ -6,6 +6,7 @@ import io.septimalmind.baboon.translator.TextTree
 import io.septimalmind.baboon.translator.TextTree.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 
 trait CSDefnTranslator {
@@ -74,13 +75,13 @@ object CSDefnTranslator {
           val outs = d.fields.map { f =>
             val tpe = trans.asCsRef(f.tpe, domain.version)
             val mname = s"${f.name.name.capitalize}"
-            (mname, tpe)
+            (mname, tpe, f)
           }
 
           val cargs = outs
             .map {
-              case (fname, ftpe) =>
-                q"${ftpe} $fname"
+              case (fname, tpe, _) =>
+                q"${tpe} $fname"
             }
             .join(",\n")
 
@@ -99,10 +100,71 @@ object CSDefnTranslator {
             q" : ${allParents.join(", ")} "
           }
 
+          val hcGroups = outs
+            .map(_._1)
+            .map(name => q"$name")
+            .grouped(8)
+            .map(group => q"""HashCode.Combine(${group.join(", ")})""")
+            .toList
+
+          def mkComparator(ref: TextTree[CSValue],
+                           oref: TextTree[CSValue],
+                           tpe: TypeRef): TextTree[CSValue] = {
+            TypeId.comparator(tpe) match {
+              case ComparatorType.Direct =>
+                q"$ref == $oref"
+              case ComparatorType.ObjectEquals =>
+                q"((Object)$ref).Equals($oref)"
+              case ComparatorType.OptionEquals =>
+                q"Equals($ref, $oref)"
+              case ComparatorType.SeqEquals =>
+                q"$ref.SequenceEqual($oref)"
+              case ComparatorType.SetEquals =>
+                q"$ref.SetEquals($oref)"
+              case ComparatorType.MapEquals(valtpe) =>
+                val vref = q"$oref[key]"
+                val ovref = q"$ref[key]"
+
+                val cmp = mkComparator(vref, ovref, valtpe)
+
+                q"($ref.Count == $oref.Count && !$ref.Keys.Any(key => !$oref.Keys.Contains(key)) && !$ref.Keys.Any(key => $cmp))"
+            }
+          }
+
+          val comparators = outs.map {
+            case (name, _, f) =>
+              val ref = q"$name"
+              val oref = q"other.$ref"
+
+              mkComparator(ref, oref, f.tpe)
+          }
+
+          val hc = if (hcGroups.isEmpty) {
+            q"0"
+          } else {
+            hcGroups.join(" ^\n")
+          }
+          val cmp = if (comparators.isEmpty) {
+            q"true"
+          } else {
+            comparators.join(" &&\n")
+          }
+          val eq = Seq(q"""public override int GetHashCode()
+               |{
+               |    return ${hc.shift(8).trim};
+               |}""".stripMargin, q"""public bool Equals($name? other) {
+               |    if (other == null) {
+               |        return false;
+               |    }
+               |    return ${cmp.shift(8).trim};
+               |}""".stripMargin)
+
           q"""[Serializable]
              |public sealed record $name(
              |    ${cargs.shift(4).trim}
-             |)$parents;""".stripMargin
+             |)$parents {
+             |    ${eq.join("\n\n").shift(4).trim}
+             |};""".stripMargin
 
         case e: Typedef.Enum =>
           val branches =
