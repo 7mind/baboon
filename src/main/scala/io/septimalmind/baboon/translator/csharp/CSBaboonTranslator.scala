@@ -3,7 +3,6 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.TextTree.*
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.translator.{AbstractBaboonTranslator, Sources, TextTree}
 import io.septimalmind.baboon.typer.model.*
@@ -127,7 +126,9 @@ class CSBaboonTranslator(options: CompilerOptions)
 
   private def sharedRuntime() : Out[List[CSDefnTranslator.Output]] = {
     val base =
-      q"""public interface IConversion {
+      q"""public interface IBaboonGenerated {}
+         |
+         |public interface IConversion {
          |    public Type TypeFrom();
          |    public Type TypeTo();
          |}
@@ -301,7 +302,7 @@ class CSBaboonTranslator(options: CompilerOptions)
            |    ${missing.join("\n").shift(4).trim}
            |}
            |
-           |public class BaboonConversions : ${CSBaboonTranslator.abstractConversions}
+           |public class BaboonConversions : ${CSBaboonTranslator.abstractBaboonConversions}
            |{
            |    public BaboonConversions(RequiredConversions requiredConversions)
            |    {
@@ -343,10 +344,9 @@ object CSBaboonTranslator {
                                )
 
 
-  val sharedRtPkg = CSPackageId(NonEmptyList("Baboon", "Runtime", "Shared"))
-  val iconversion = CSType(sharedRtPkg, "IConversion", fq = false)
-  val conversionKey = CSType(sharedRtPkg, "ConversionKey", fq = false)
-  val abstractConversion = CSType(sharedRtPkg, "AbstractConversion", fq = false)
-  val abstractConversions = CSType(sharedRtPkg, "AbstractBaboonConversions", fq = false)
+  val sharedRtPkg: CSPackageId = CSPackageId(NonEmptyList("Baboon", "Runtime", "Shared"))
+  val abstractConversion: CSType = CSType(sharedRtPkg, "AbstractConversion", fq = false)
+  val abstractBaboonConversions: CSType = CSType(sharedRtPkg, "AbstractBaboonConversions", fq = false)
+  val iBaboonGenerated: CSType = CSType(sharedRtPkg, "IBaboonGenerated", fq = false)
 
 }

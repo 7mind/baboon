@@ -4,6 +4,7 @@ import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.TextTree
 import io.septimalmind.baboon.translator.TextTree.*
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.iBaboonGenerated
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
@@ -93,7 +94,7 @@ object CSDefnTranslator {
               Some(parentId)
           }
 
-          val allParents = parent.toSeq
+          val allParents = parent.toSeq ++ Seq(q"$iBaboonGenerated")
           val parents = if (allParents.isEmpty) {
             q""
           } else {
@@ -176,7 +177,7 @@ object CSDefnTranslator {
              |}""".stripMargin
 
         case _: Typedef.Adt =>
-          q"""public interface $name {
+          q"""public interface $name : $iBaboonGenerated {
              |}""".stripMargin
       }
     }

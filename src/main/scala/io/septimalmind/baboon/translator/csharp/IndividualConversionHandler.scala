@@ -68,7 +68,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
           val cdefn =
             q"""public abstract class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
-               |    public abstract override ${tout} Convert<C>(C context, $abstractConversions conversions, ${tin} from);
+               |    public abstract override ${tout} Convert<C>(C context, $abstractBaboonConversions conversions, ${tin} from);
                |}""".stripMargin
           val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
 
@@ -92,7 +92,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
           val cdefn =
             q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
-               |    public override ${tout} Convert<C>(C context, $abstractConversions conversions, ${tin} from) {
+               |    public override ${tout} Convert<C>(C context, $abstractBaboonConversions conversions, ${tin} from) {
                |        if (Enum.TryParse(from.ToString(), out ${tout} parsed))
                |        {
                |            return parsed;
@@ -122,7 +122,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
           val cdefn =
             q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
-               |    public override ${tout} Convert<C>(C context, $abstractConversions conversions, ${tin} from) {
+               |    public override ${tout} Convert<C>(C context, $abstractBaboonConversions conversions, ${tin} from) {
                |        ${branches.join("\nelse\n").shift(8).trim}
                |    }
                |}""".stripMargin
@@ -287,7 +287,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
             val cdefn =
               q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                  |{
-                 |    public override ${tout} Convert<C>(C context, $abstractConversions conversions, ${tin} _from) {
+                 |    public override ${tout} Convert<C>(C context, $abstractBaboonConversions conversions, ${tin} _from) {
                  |        ${initExprs.join(";\n").shift(8).trim}
                  |        return new ${tout}(
                  |            ${consExprs.join(",\n").shift(12).trim}
