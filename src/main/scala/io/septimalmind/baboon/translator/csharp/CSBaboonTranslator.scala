@@ -3,12 +3,9 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.TextTree.*
-import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
-import io.septimalmind.baboon.translator.{
-  AbstractBaboonTranslator,
-  Sources,
-  TextTree
-}
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
+import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
+import io.septimalmind.baboon.translator.{AbstractBaboonTranslator, Sources, TextTree}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.IzCollections.*
@@ -21,11 +18,13 @@ class CSBaboonTranslator(options: CompilerOptions)
 
   private val defnTranslator =
     new CSDefnTranslator.CSDefnTranslatorImpl(options)
+  val trans = new CSTypeTranslator()
 
   override def translate(family: BaboonFamily): Out[Sources] = {
     for {
       translated <- doTranslate(family)
-      rendered = translated.map { o =>
+      rt <- sharedRuntime()
+      rendered = (rt ++ translated).map { o =>
         (o.path, renderTree(o))
       }
       unique <- rendered.toUniqueMap(
@@ -126,14 +125,7 @@ class CSBaboonTranslator(options: CompilerOptions)
     }
   }
 
-  private def generateConversions(domain: Domain,
-                                  value: BaboonEvolution,
-                                  toCurrent: Set[EvolutionStep],
-  ): Out[List[CSDefnTranslator.Output]] = {
-    val transd = new CSDefnTranslator.CSDefnTranslatorImpl(options)
-    val trans = new CSTypeTranslator()
-    val pkg = trans.toCsPkg(domain.id, domain.version)
-
+  private def sharedRuntime() : Out[List[CSDefnTranslator.Output]] = {
     val base =
       q"""public interface IConversion {
          |    public Type TypeFrom();
@@ -142,14 +134,14 @@ class CSBaboonTranslator(options: CompilerOptions)
          |
          |public interface IDynamicConversion<To> : IConversion
          |{
-         |     public To Convert<C>(C context, BaboonConversions conversions, dynamic from);
+         |     public To Convert<C>(C context, AbstractBaboonConversions conversions, dynamic from);
          |}
          |
          |public abstract class AbstractConversion<From, To> : IDynamicConversion<To>
          |{
-         |    public abstract To Convert<C>(C context, BaboonConversions conversions, From from);
+         |    public abstract To Convert<C>(C context, AbstractBaboonConversions conversions, From from);
          |
-         |    public To Convert<C>(C context, BaboonConversions conversions, dynamic from)
+         |    public To Convert<C>(C context, AbstractBaboonConversions conversions, dynamic from)
          |    {
          |        return Convert<C>(context, conversions, (From)from);
          |    }
@@ -194,13 +186,104 @@ class CSBaboonTranslator(options: CompilerOptions)
          |    public Type TypeTo {get; }
          |}""".stripMargin
 
+    val abstractAggregator =
+      q"""public abstract class AbstractBaboonConversions
+         |{
+         |    private Dictionary<ConversionKey, IConversion> convs = new ();
+         |
+         |    public abstract List<String> VersionsFrom();
+         |
+         |    public abstract String VersionTo();
+         |
+         |    public List<IConversion> AllConversions()
+         |    {
+         |        return convs.Values.ToList();
+         |    }
+         |
+         |    public void Register(IConversion conversion)
+         |    {
+         |        var key = new ConversionKey(conversion.TypeFrom(), conversion.TypeTo());
+         |        convs.Add(key, conversion);
+         |    }
+         |
+         |    public void Register<From, To>(AbstractConversion<From, To> conversion)
+         |    {
+         |        var tFrom = typeof(From);
+         |        var tTo = typeof(To);
+         |        var key = new ConversionKey(tFrom, tTo);
+         |
+         |        convs.Add(key, conversion);
+         |    }
+         |
+         |    public To ConvertWithContext<C, From, To>(C? c, From from)
+         |    {
+         |        var tFrom = typeof(From);
+         |        var tTo = typeof(To);
+         |
+         |        if (from is To direct)
+         |        {
+         |            return direct;
+         |        }
+         |        var key = new ConversionKey(tFrom, tTo);
+         |
+         |        var conv = convs[key];
+         |        var tconv = ((AbstractConversion<From, To>)conv);
+         |        return tconv.Convert(c, this, from);
+         |    }
+         |
+         |    public To ConvertWithContextDynamic<C, To>(C? c, Type tFrom, dynamic from)
+         |    {
+         |        var tTo = typeof(To);
+         |
+         |        if (from is To direct)
+         |        {
+         |            return direct;
+         |        }
+         |        var key = new ConversionKey(tFrom, tTo);
+         |
+         |        var conv = convs[key];
+         |        var tconv = ((IDynamicConversion<To>)conv);
+         |        return tconv.Convert(c, this, from);
+         |    }
+         |
+         |    public To ConvertDynamic<To>(dynamic from)
+         |    {
+         |        return ConvertWithContextDynamic<Object, To>(null, from.GetType(), from);
+         |    }
+         |
+         |    public To Convert<From, To>(From from)
+         |    {
+         |        return ConvertWithContext<Object, From, To>(null, from);
+         |    }
+         |
+         |
+         |}""".stripMargin
+
+    val runtime = Seq(key, base, abstractAggregator).join("\n\n")
+
+    val rt = defnTranslator.inNs(CSBaboonTranslator.sharedRtPkg.parts.toSeq, runtime)
+
+    Right(List(
+      CSDefnTranslator
+        .Output(s"Baboon-Runtime-Shared.cs", rt, CSBaboonTranslator.sharedRtPkg)
+    ))
+  }
+
+  private def generateConversions(domain: Domain,
+                                  value: BaboonEvolution,
+                                  toCurrent: Set[EvolutionStep],
+  ): Out[List[CSDefnTranslator.Output]] = {
+    val pkg = trans.toCsPkg(domain.id, domain.version)
+
+
+
     for {
       convs <- value.rules
         .filter(kv => toCurrent.contains(kv._1))
         .map {
           case (srcVer, rules) =>
             new IndividualConversionHandler(
-              transd,
+              defnTranslator,
               trans,
               pkg,
               srcVer.from,
@@ -218,99 +301,34 @@ class CSBaboonTranslator(options: CompilerOptions)
            |    ${missing.join("\n").shift(4).trim}
            |}
            |
-           |public class BaboonConversions
+           |public class BaboonConversions : ${CSBaboonTranslator.abstractConversions}
            |{
-           |    private Dictionary<ConversionKey, IConversion> convs = new ();
-           |
            |    public BaboonConversions(RequiredConversions requiredConversions)
            |    {
            |        ${regs.join("\n").shift(8).trim}
            |    }
            |
-           |    public List<String> VersionsFrom()
+           |    override public List<String> VersionsFrom()
            |    {
            |        return new List<String> { ${toCurrent.map(_.from.version).map(v => s"\"$v\"").mkString(", ")} };
            |    }
            |
-           |    public String VersionTo()
+           |    override public String VersionTo()
            |    {
            |        return "${domain.version.version}";
            |    }
-           |
-           |    public List<IConversion> AllConversions()
-           |    {
-           |        return convs.Values.ToList();
-           |    }
-           |
-           |    public void Register(IConversion conversion)
-           |    {
-           |        var key = new ConversionKey(conversion.TypeFrom(), conversion.TypeTo());
-           |        convs.Add(key, conversion);
-           |    }
-           |
-           |    public void Register<From, To>(AbstractConversion<From, To> conversion)
-           |    {
-           |        var tFrom = typeof(From);
-           |        var tTo = typeof(To);
-           |        var key = new ConversionKey(tFrom, tTo);
-           |
-           |        convs.Add(key, conversion);
-           |    }
-           |
-           |    public To ConvertWithContext<C, From, To>(C? c, From from)
-           |    {
-           |        var tFrom = typeof(From);
-           |        var tTo = typeof(To);
-           |
-           |        if (from is To direct)
-           |        {
-           |            return direct;
-           |        }
-           |        var key = new ConversionKey(tFrom, tTo);
-           |
-           |        var conv = convs[key];
-           |        var tconv = ((AbstractConversion<From, To>)conv);
-           |        return tconv.Convert(c, this, from);
-           |    }
-           |
-           |    public To ConvertWithContextDynamic<C, To>(C? c, Type tFrom, dynamic from)
-           |    {
-           |        var tTo = typeof(To);
-           |
-           |        if (from is To direct)
-           |        {
-           |            return direct;
-           |        }
-           |        var key = new ConversionKey(tFrom, tTo);
-           |
-           |        var conv = convs[key];
-           |        var tconv = ((IDynamicConversion<To>)conv);
-           |        return tconv.Convert(c, this, from);
-           |    }
-           |
-           |    public To ConvertDynamic<To>(dynamic from)
-           |    {
-           |        return ConvertWithContextDynamic<Object, To>(null, from.GetType(), from);
-           |    }
-           |
-           |    public To Convert<From, To>(From from)
-           |    {
-           |        return ConvertWithContext<Object, From, To>(null, from);
-           |    }
-           |
-           |
            |}""".stripMargin
 
-      val runtime = Seq(base, key, converter).join("\n\n")
+      val runtime = Seq(converter).join("\n\n")
 
-      val rt = transd.inNs(pkg.parts.toSeq, runtime)
+      val rt = defnTranslator.inNs(pkg.parts.toSeq, runtime)
 
       List(
         CSDefnTranslator
-          .Output(s"${transd.basename(domain)}/Baboon-Runtime.cs", rt, pkg)
+          .Output(s"${defnTranslator.basename(domain)}/Baboon-Runtime.cs", rt, pkg)
       ) ++ convs.map { conv =>
         CSDefnTranslator
-          .Output(s"${transd.basename(domain)}/${conv.fname}", conv.conv, pkg)
+          .Output(s"${defnTranslator.basename(domain)}/${conv.fname}", conv.conv, pkg)
       }
     }
   }
@@ -323,4 +341,12 @@ object CSBaboonTranslator {
                                 reg: Option[TextTree[CSValue]],
                                 missing: Option[TextTree[CSValue]],
                                )
+
+
+  val sharedRtPkg = CSPackageId(NonEmptyList("Baboon", "Runtime", "Shared"))
+  val iconversion = CSType(sharedRtPkg, "IConversion", fq = false)
+  val conversionKey = CSType(sharedRtPkg, "ConversionKey", fq = false)
+  val abstractConversion = CSType(sharedRtPkg, "AbstractConversion", fq = false)
+  val abstractConversions = CSType(sharedRtPkg, "AbstractBaboonConversions", fq = false)
+
 }

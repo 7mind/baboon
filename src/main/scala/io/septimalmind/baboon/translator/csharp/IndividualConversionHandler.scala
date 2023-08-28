@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.TextTree
 import io.septimalmind.baboon.translator.TextTree.*
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.RenderedConversion
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.FieldOp
@@ -66,9 +66,9 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
       conv match {
         case _: Conversion.CustomConversionRequired =>
           val cdefn =
-            q"""public abstract class ${convname} : AbstractConversion<${tin}, ${tout}>
+            q"""public abstract class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
-               |    public abstract override ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} from);
+               |    public abstract override ${tout} Convert<C>(C context, $abstractConversions conversions, ${tin} from);
                |}""".stripMargin
           val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
 
@@ -81,7 +81,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
                 ctree,
                 Some(q"Register(requiredConversions.${convMethodName}());"),
                 Some(
-                  q"public AbstractConversion<${tin}, ${tout}> ${convMethodName}();"
+                  q"public $abstractConversion<${tin}, ${tout}> ${convMethodName}();"
                 )
               )
             )
@@ -90,9 +90,9 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
           Right(List.empty)
         case _: Conversion.CopyEnumByName =>
           val cdefn =
-            q"""public sealed class ${convname} : AbstractConversion<${tin}, ${tout}>
+            q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
-               |    public override ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} from) {
+               |    public override ${tout} Convert<C>(C context, $abstractConversions conversions, ${tin} from) {
                |        if (Enum.TryParse(from.ToString(), out ${tout} parsed))
                |        {
                |            return parsed;
@@ -120,9 +120,9 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
                                                      |}""".stripMargin)
 
           val cdefn =
-            q"""public sealed class ${convname} : AbstractConversion<${tin}, ${tout}>
+            q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
-               |    public override ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} from) {
+               |    public override ${tout} Convert<C>(C context, $abstractConversions conversions, ${tin} from) {
                |        ${branches.join("\nelse\n").shift(8).trim}
                |    }
                |}""".stripMargin
@@ -285,9 +285,9 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
             val consExprs = exprs.map(_._2)
 
             val cdefn =
-              q"""public sealed class ${convname} : AbstractConversion<${tin}, ${tout}>
+              q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                  |{
-                 |    public override ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} _from) {
+                 |    public override ${tout} Convert<C>(C context, $abstractConversions conversions, ${tin} _from) {
                  |        ${initExprs.join(";\n").shift(8).trim}
                  |        return new ${tout}(
                  |            ${consExprs.join(",\n").shift(12).trim}
