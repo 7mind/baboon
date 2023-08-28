@@ -42,7 +42,11 @@ object BaboonRules {
               defn match {
                 case d: Typedef.Dto if sameLocalStruct =>
                   Right(
-                    DtoConversion(id, d.fields.map(f => FieldOp.Transfer(f)))
+                    DtoConversion(
+                      id,
+                      d.fields.map(f => FieldOp.Transfer(f)),
+                      Set.empty
+                    )
                   )
                 case _: Typedef.Enum if sameLocalStruct =>
                   Right(CopyEnumByName(id))
@@ -63,6 +67,10 @@ object BaboonRules {
                     }
 
                     additions = ops.collect { case op: DtoOp.AddField => op }.toSet
+                    removals = ops.collect {
+                      case op: DtoOp.RemoveField => op.f
+                    }.toSet
+
                     incompatibleAdditions = additions.filter { op =>
                       op.f.tpe match {
                         case _: TypeRef.Scalar =>
@@ -113,17 +121,6 @@ object BaboonRules {
                           FieldOp.ExpandPrecision(name, o, n)
                       }
 
-//                    precexColl = changes
-//                      .map(op => (op.f.tpe, op.newType, op.f.name))
-//                      .collect {
-//                        case (
-//                            o: TypeRef.Constructor,
-//                            n: TypeRef.Constructor,
-//                            name
-//                            ) if TypeId.Builtins.collectionPrecEx(o, n) =>
-//                          FieldOp.ExpandPrecision(name, o, n)
-//                      }
-
                     swap = changes
                       .map(op => (op.f.tpe, op.newType, op.f.name))
                       .collect {
@@ -151,7 +148,8 @@ object BaboonRules {
                     } else {
                       DtoConversion(
                         id,
-                        keepFields ++ (wrap ++ precex ++ swap ++ initWithDefaults).toList
+                        keepFields ++ (wrap ++ precex ++ swap ++ initWithDefaults).toList,
+                        removals,
                       )
                     }
                   }

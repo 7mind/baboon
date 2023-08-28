@@ -13,7 +13,9 @@ object Conversion {
 
 //  case class Wrap()
 
-  case class DtoConversion(sourceTpe: TypeId.User, ops: List[FieldOp])
+  case class DtoConversion(sourceTpe: TypeId.User,
+                           ops: List[FieldOp],
+                           removed: Set[Field])
       extends Conversion
 
   case class CopyAdtBranchByName(sourceTpe: TypeId.User, oldDefn: Typedef.Adt)
@@ -25,6 +27,7 @@ object Conversion {
 
   object FieldOp {
     case class Transfer(targetField: Field) extends FieldOp
+
     case class InitializeWithDefault(targetField: Field) extends FieldOp
 
     case class WrapIntoCollection(fieldName: FieldName,
@@ -52,6 +55,5 @@ object Conversion {
 
       def sourceField: Field = Field(fieldName, oldTpe)
     }
-
   }
 }

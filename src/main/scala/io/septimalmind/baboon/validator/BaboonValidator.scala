@@ -285,11 +285,9 @@ object BaboonValidator {
                 for {
                   newFieldNames <- Right(nd.fields.map(_.name).toSet)
                   oldFieldNames <- Right(od.fields.map(_.name).toSet)
-                  _ <- Either.failWhen(
-                    oldFieldNames
-                      .diff(newFieldNames)
-                      .nonEmpty
-                  )(
+                  removedFields <- Right(c.removed.map(_.name))
+                  removals = oldFieldNames.diff(newFieldNames)
+                  _ <- Either.failWhen(removals != removedFields)(
                     NonEmptyList(
                       BaboonIssue.IncorrectConversionApplication(
                         c,

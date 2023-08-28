@@ -134,3 +134,10 @@ root data T6_D1 {
 root data T7_Empty {
 
 }
+
+//
+
+root data T8_Removed_Fields {
+}
+
+//
