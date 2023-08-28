@@ -110,10 +110,11 @@ object CSDefnTranslator {
 
           val parent = d.id.owner match {
             case Owner.Toplevel =>
-              q""
+              None
             case Owner.Adt(id) =>
               val parentId = trans.asCsType(id, domain.version)
-              q": $parentId"
+              Some(parentId)
+            //$parentId"
           }
 
           val hcGroups = outs
@@ -168,7 +169,10 @@ object CSDefnTranslator {
           val eq = Seq(q"""public override int GetHashCode()
                |{
                |    return ${hc.shift(8).trim};
-               |}""".stripMargin, q"""public bool Equals($name other) {
+               |}""".stripMargin, q"""public bool Equals($name? other) {
+               |    if (other == null) {
+               |        return false;
+               |    }
                |    return ${cmp.shift(8).trim};
                |}""".stripMargin, q"""public override bool Equals(object? obj) {
                |     if (ReferenceEquals(null, obj)) return false;
@@ -177,8 +181,9 @@ object CSDefnTranslator {
                |     return Equals(($name)obj);
                |}""".stripMargin)
 
+          val allParents = Seq(q"IEquatable<$name>") ++ parent.toSeq
           q"""[Serializable]
-             |public sealed class $name$parent {
+             |public sealed class $name : ${allParents.join(", ")}  {
              |    ${fields.join("\n").shift(4).trim}
              |
              |    ${constructor.shift(4).trim}

@@ -211,15 +211,30 @@ class CSBaboonTranslator(options: CompilerOptions)
         .biFlatAggregate
     } yield {
       val regs = convs.flatMap(_.reg.iterator.toSeq).toSeq
+      val missing = convs.flatMap(_.missing.iterator.toSeq).toSeq
 
       val converter =
-        q"""public class BaboonConversions
+        q"""public interface RequiredConversions {
+           |    ${missing.join("\n").shift(4).trim}
+           |}
+           |
+           |public class BaboonConversions
            |{
            |    private Dictionary<ConversionKey, IConversion> convs = new ();
            |
-           |    public BaboonConversions()
+           |    public BaboonConversions(RequiredConversions requiredConversions)
            |    {
            |        ${regs.join("\n").shift(8).trim}
+           |    }
+           |
+           |    public List<String> VersionsFrom()
+           |    {
+           |        return new List<String> { ${toCurrent.map(_.from.version).map(v => s"\"$v\"").mkString(", ")} };
+           |    }
+           |
+           |    public String VersionTo()
+           |    {
+           |        return "${domain.version.version}";
            |    }
            |
            |    public List<IConversion> AllConversions()
@@ -305,5 +320,7 @@ class CSBaboonTranslator(options: CompilerOptions)
 object CSBaboonTranslator {
   case class RenderedConversion(fname: String,
                                 conv: TextTree[CSValue],
-                                reg: Option[TextTree[CSValue]])
+                                reg: Option[TextTree[CSValue]],
+                                missing: Option[TextTree[CSValue]],
+                               )
 }

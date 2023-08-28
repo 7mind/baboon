@@ -39,12 +39,16 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
   }
 
   def makeConvs(): Out[List[RenderedConversion]] = {
-    rules.conversions.map { conv =>
-      val convname = (Seq("Convert") ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
+    def makeName(prefix: String, conv: Conversion) = {
+      (Seq(prefix) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
         conv.sourceTpe.name.name,
         "From",
         srcVer.version.replace(".", "_")
       )).mkString("__")
+    }
+
+    rules.conversions.map { conv =>
+      val convname = makeName("Convert", conv)
 
       val fname =
         (Seq("from", srcVer.version) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
@@ -67,12 +71,18 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
                |    public abstract override ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} from);
                |}""".stripMargin
           val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
+
+          val convMethodName = makeName("Conversion", conv)
+
           Right(
             List(
               RenderedConversion(
                 fname,
                 ctree,
-                Some(q"// Register(new ${convname}()); ")
+                Some(q"Register(requiredConversions.${convMethodName}());"),
+                Some(
+                  q"public AbstractConversion<${tin}, ${tout}> ${convMethodName}();"
+                )
               )
             )
           )
@@ -80,7 +90,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
           Right(List.empty)
         case _: Conversion.CopyEnumByName =>
           val cdefn =
-            q"""public class ${convname} : AbstractConversion<${tin}, ${tout}>
+            q"""public sealed class ${convname} : AbstractConversion<${tin}, ${tout}>
                |{
                |    public override ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} from) {
                |        if (Enum.TryParse(from.ToString(), out ${tout} parsed))
@@ -95,7 +105,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
                |}""".stripMargin
           val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
           val regtree = q"Register(new ${convname}());"
-          Right(List(RenderedConversion(fname, ctree, Some(regtree))))
+          Right(List(RenderedConversion(fname, ctree, Some(regtree), None)))
         case c: Conversion.CopyAdtBranchByName =>
           val branches = c.oldDefn.members.map { oldId =>
             val oldFqid = trans.toCsVal(oldId, srcVer).fullyQualified
@@ -110,7 +120,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
                                                      |}""".stripMargin)
 
           val cdefn =
-            q"""public class ${convname} : AbstractConversion<${tin}, ${tout}>
+            q"""public sealed class ${convname} : AbstractConversion<${tin}, ${tout}>
                |{
                |    public override ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} from) {
                |        ${branches.join("\nelse\n").shift(8).trim}
@@ -118,7 +128,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
                |}""".stripMargin
           val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
           val regtree = q"Register(new ${convname}());"
-          Right(List(RenderedConversion(fname, ctree, Some(regtree))))
+          Right(List(RenderedConversion(fname, ctree, Some(regtree), None)))
         case c: Conversion.DtoConversion =>
           for {
             newDefn <- domain.defs.meta.nodes(c.sourceTpe) match {
@@ -275,7 +285,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
             val consExprs = exprs.map(_._2)
 
             val cdefn =
-              q"""public class ${convname} : AbstractConversion<${tin}, ${tout}>
+              q"""public sealed class ${convname} : AbstractConversion<${tin}, ${tout}>
                  |{
                  |    public override ${tout} Convert<C>(C context, BaboonConversions conversions, ${tin} _from) {
                  |        ${initExprs.join(";\n").shift(8).trim}
@@ -287,7 +297,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
 
             val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
             val regtree = q"Register(new ${convname}());"
-            List(RenderedConversion(fname, ctree, Some(regtree)))
+            List(RenderedConversion(fname, ctree, Some(regtree), None))
           }
 
       }

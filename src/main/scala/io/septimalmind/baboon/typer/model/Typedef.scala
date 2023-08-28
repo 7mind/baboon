@@ -140,9 +140,11 @@ object TypeId {
 
       val isSimpleSwap = (o.args == n.args && isSwap)
 
-      val isPrecex = o.args.toSeq.zip(n.args.toSeq).forall {
-        case (o, n) => isPrecisionExpansion(o.id, n.id)
-      }
+      val isPrecex = o.args.length == n.args.length && o.args.toSeq
+        .zip(n.args.toSeq)
+        .forall {
+          case (o, n) => isPrecisionExpansion(o.id, n.id)
+        }
       val isSimplePrecex = (o.id == n.id) && isPrecex
 
       val isSwapPrecex = (isSwap && isPrecex)
