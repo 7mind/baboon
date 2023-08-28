@@ -114,6 +114,7 @@ root data T6_D1 {
     fPrecex1: opt[u08]
     fPrecex2: lst[u08]
     fPrecex3: set[u08]
+    fPrecex4: map[u08, u08]
 
     fSwapPrecex0: opt[u08]
     fSwapPrecex1: lst[u08]

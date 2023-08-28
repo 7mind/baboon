@@ -199,7 +199,14 @@ object BaboonIssue {
 
 final case class ExceptionContext(sourceFilePosition: SourceFilePosition,
                                   stackTrace: Throwable,
-)
+) {
+  import izumi.fundamentals.platform.exceptions.IzThrowable.*
+  import izumi.fundamentals.platform.strings.IzString.*
+  override def toString: String =
+    s"""ExceptionContext($sourceFilePosition) {
+       |${stackTrace.stackTrace.shift(4)}
+       |}""".stripMargin
+}
 
 object ExceptionContext {
   implicit def materializeExceptionContext(

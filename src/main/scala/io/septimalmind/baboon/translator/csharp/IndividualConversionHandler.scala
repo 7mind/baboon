@@ -248,7 +248,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
                         fieldRef,
                         o.id,
                         n.id,
-                        n.args.head
+                        n.args
                       )
                     case (_: TypeRef.Scalar, _: TypeRef.Scalar) =>
                       Right(Seq(fieldRef))
@@ -265,7 +265,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
                     fieldRef,
                     oldId,
                     newId,
-                    o.newTpe.args.head,
+                    o.newTpe.args,
                   )
 
               }
@@ -310,18 +310,19 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
                            fieldRef: Node[Nothing],
                            oldId: TypeId.BuiltinCollection,
                            newId: TypeId.BuiltinCollection,
-                           newCollType: TypeRef,
+                           newCollArgs: NonEmptyList[TypeRef],
   ): Either[NonEmptyList[BaboonIssue.TranslationBug], Seq[TextTree[CSValue]]] = {
-    val collCsType = trans.asCsRef(newCollType, domain.version)
+    val collCsType = trans.asCsRef(newCollArgs.head, domain.version)
 
     val collInit =
       q"(new ${ftNewInit}(from e in $fieldRef select ($collCsType)e))"
+
     oldId match {
       case TypeId.Builtins.opt =>
         val tmp = q"_${base.toLowerCase}_tmp"
 
         val recConv =
-          transfer(newCollType, tmp)
+          transfer(newCollArgs.head, tmp)
 
         newId match {
           case TypeId.Builtins.lst =>
@@ -364,6 +365,19 @@ class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
             Right(Seq(q"$collInit.ToImmutableHashSet()"))
           case TypeId.Builtins.lst =>
             Right(Seq(q"$collInit.ToImmutableList()"))
+          case _ =>
+            Left(NonEmptyList(BaboonIssue.TranslationBug()))
+        }
+      case TypeId.Builtins.map =>
+        newId match {
+          case TypeId.Builtins.map =>
+            val kt = trans.asCsRef(newCollArgs.head, domain.version)
+            val vt = trans.asCsRef(newCollArgs.last, domain.version)
+            Right(
+              Seq(
+                q"(from e in $fieldRef select KeyValuePair.Create(($kt)e.Key, ($vt)e.Value)).ToImmutableDictionary(v => v.Key, v => v.Value)"
+              )
+            )
           case _ =>
             Left(NonEmptyList(BaboonIssue.TranslationBug()))
         }
