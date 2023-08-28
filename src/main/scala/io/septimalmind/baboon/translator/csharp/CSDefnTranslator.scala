@@ -6,7 +6,6 @@ import io.septimalmind.baboon.translator.TextTree
 import io.septimalmind.baboon.translator.TextTree.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 
 trait CSDefnTranslator {
@@ -74,39 +73,16 @@ object CSDefnTranslator {
         case d: Typedef.Dto =>
           val outs = d.fields.map { f =>
             val tpe = trans.asCsRef(f.tpe, domain.version)
-            val fname = s"_${f.name.name}"
             val mname = s"${f.name.name.capitalize}"
-            val fieldDef = q"""private readonly $tpe ${fname};"""
-            val methodDef =
-              q"""public $tpe ${mname}
-                 |{
-                 |    get { return this.${fname}; }
-                 |}""".stripMargin
-            (fieldDef, methodDef, (fname, tpe), f)
+            (mname, tpe)
           }
-          val fields = outs.map(_._1)
-          val methods = outs.map(_._2)
 
           val cargs = outs
-            .map(_._3)
             .map {
               case (fname, ftpe) =>
                 q"${ftpe} $fname"
             }
-            .join(", ")
-
-          val inits = outs
-            .map(_._3)
-            .map {
-              case (fname, _) =>
-                q"this.$fname = $fname;"
-            }
-            .join("\n")
-
-          val constructor =
-            q"""public ${name.name}($cargs) {
-               |    ${inits.shift(4).trim}
-               |}""".stripMargin
+            .join(",\n")
 
           val parent = d.id.owner match {
             case Owner.Toplevel =>
@@ -114,94 +90,19 @@ object CSDefnTranslator {
             case Owner.Adt(id) =>
               val parentId = trans.asCsType(id, domain.version)
               Some(parentId)
-            //$parentId"
           }
 
-          val hcGroups = outs
-            .map(_._3._1)
-            .map(name => q"$name")
-            .grouped(8)
-            .map(group => q"""HashCode.Combine(${group.join(", ")})""")
-            .toList
-
-          def mkComparator(ref: TextTree[CSValue],
-                           oref: TextTree[CSValue],
-                           tpe: TypeRef): TextTree[CSValue] = {
-            TypeId.comparator(tpe) match {
-              case ComparatorType.Direct =>
-                q"$ref == $oref"
-              case ComparatorType.ObjectEquals =>
-                q"((Object)$ref).Equals($oref)"
-              case ComparatorType.OptionEquals =>
-                q"Equals($ref, $oref)"
-              case ComparatorType.SeqEquals =>
-                q"$ref.SequenceEqual($oref)"
-              case ComparatorType.SetEquals =>
-                q"$ref.SetEquals($oref)"
-              case ComparatorType.MapEquals(valtpe) =>
-                val vref = q"$oref[key]"
-                val ovref = q"$ref[key]"
-
-                val cmp = mkComparator(vref, ovref, valtpe)
-
-                q"($ref.Count == $oref.Count && !$ref.Keys.Any(key => !$oref.Keys.Contains(key)) && !$ref.Keys.Any(key => $cmp))"
-            }
-          }
-
-          val comparators = outs.map(o => (o._4, o._3._1)).map {
-            case (f, name) =>
-              val ref = q"$name"
-              val oref = q"other.$ref"
-
-              mkComparator(ref, oref, f.tpe)
-          }
-
-          val hc = if (hcGroups.isEmpty) {
-            q"0"
+          val allParents = parent.toSeq
+          val parents = if (allParents.isEmpty) {
+            q""
           } else {
-            hcGroups.join(" ^\n")
+            q" : ${allParents.join(", ")} "
           }
-          val cmp = if (comparators.isEmpty) {
-            q"true"
-          } else {
-            comparators.join(" &&\n")
-          }
-          val eq = Seq(q"""public override int GetHashCode()
-               |{
-               |    return ${hc.shift(8).trim};
-               |}""".stripMargin, q"""public bool Equals($name? other) {
-               |    if (other == null) {
-               |        return false;
-               |    }
-               |    return ${cmp.shift(8).trim};
-               |}""".stripMargin, q"""public override bool Equals(object? obj) {
-               |     if (ReferenceEquals(null, obj)) return false;
-               |     if (ReferenceEquals(this, obj)) return true;
-               |     if (obj.GetType() != this.GetType()) return false;
-               |     return Equals(($name)obj);
-               |}""".stripMargin)
 
-          val allParents = Seq(q"IEquatable<$name>") ++ parent.toSeq
           q"""[Serializable]
-             |public sealed class $name : ${allParents.join(", ")}  {
-             |    ${fields.join("\n").shift(4).trim}
-             |
-             |    ${constructor.shift(4).trim}
-             |
-             |    ${methods.join("\n").shift(4).trim}
-             |
-             |    ${eq.join("\n\n").shift(4).trim}
-             |}""".stripMargin
-
-        //          d.id.owner match {
-        //            case Owner.Toplevel =>
-        //              clz
-        //            case Owner.Adt(id) =>
-        //              val adtns = id.name.name.toLowerCase
-        //              q"""namespace $adtns {
-        //                 |${clz.shift(4)}
-        //                 |}""".stripMargin
-        //          }
+             |public sealed record $name(
+             |    ${cargs.shift(4).trim}
+             |)$parents;""".stripMargin
 
         case e: Typedef.Enum =>
           val branches =
