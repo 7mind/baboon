@@ -1,7 +1,7 @@
-package io.septimalmind.baboon.tests
+package izumi.fundamentals.platform.strings
 
-import io.septimalmind.baboon.tests.TxtTreeTest.{TestVal, TestVal2}
-import io.septimalmind.baboon.translator.TextTree.*
+import izumi.fundamentals.platform.strings.TextTree.*
+import izumi.fundamentals.platform.strings.TxtTreeTest.{TestVal, TestVal2}
 import org.scalatest.wordspec.AnyWordSpec
 
 class TxtTreeTest extends AnyWordSpec {

@@ -2,13 +2,13 @@ package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.TextTree
-import io.septimalmind.baboon.translator.TextTree.*
+import izumi.fundamentals.platform.strings.TextTree.*
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.iBaboonGenerated
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
 import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.platform.strings.TextTree
 
 trait CSDefnTranslator {
   def translate(defn: DomainMember.User,

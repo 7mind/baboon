@@ -1,4 +1,4 @@
-package io.septimalmind.baboon.translator
+package izumi.fundamentals.platform.strings
 
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 import izumi.fundamentals.platform.strings.IzString.*

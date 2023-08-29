@@ -1,14 +1,14 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.TextTree
-import io.septimalmind.baboon.translator.TextTree.*
+import izumi.fundamentals.platform.strings.TextTree.*
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.FieldOp
 import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.platform.strings.TextTree
 
 class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
                                   trans: CSTypeTranslator,

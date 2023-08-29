@@ -1,7 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.translator.TextTree
-import io.septimalmind.baboon.translator.TextTree.*
+import izumi.fundamentals.platform.strings.TextTree.*
 import io.septimalmind.baboon.translator.csharp.CSTypeTranslator.{
   generics,
   immutable,
@@ -10,6 +9,7 @@ import io.septimalmind.baboon.translator.csharp.CSTypeTranslator.{
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.typer.model.{Owner, Pkg, TypeId, TypeRef, Version}
 import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.platform.strings.TextTree
 
 class CSTypeTranslator() {
 

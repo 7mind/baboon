@@ -8,7 +8,7 @@ import io.septimalmind.baboon.parser.model.{
   RawVersion
 }
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.validator.IzEitherTmp.EitherObjectExt
+import izumi.functional.IzEitherTmp.EitherObjectExt
 import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NonEmptyList

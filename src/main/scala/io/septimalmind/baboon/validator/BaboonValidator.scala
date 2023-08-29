@@ -10,21 +10,6 @@ import izumi.fundamentals.collections.nonempty.{NonEmptyList, NonEmptyMap}
 import izumi.fundamentals.graphs.struct.IncidenceMatrix
 import izumi.fundamentals.graphs.tools.cycles.LoopDetector
 
-object IzEitherTmp {
-  @inline implicit final def EitherObjectExt(e: Either.type): EitherExt =
-    new EitherExt(e)
-
-  final class EitherExt(val e: Either.type) extends AnyVal {
-    def failWhen[A](cond: Boolean)(fun: => A): Either[A, Unit] = {
-      if (cond) {
-        Left(fun)
-      } else {
-        Right(())
-      }
-    }
-  }
-}
-
 trait BaboonValidator {
   def validate(
     family: BaboonFamily
@@ -33,7 +18,7 @@ trait BaboonValidator {
 
 object BaboonValidator {
   class BaboonValidatorImpl() extends BaboonValidator {
-    import IzEitherTmp.*
+    import izumi.functional.IzEitherTmp.*
     private val enquiries = new BaboonEnquiries.BaboonEnquiriesImpl()
 
     override def validate(

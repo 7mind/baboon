@@ -12,10 +12,8 @@ import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 import izumi.fundamentals.graphs.ToposortError
 import izumi.fundamentals.graphs.tools.cycles.LoopDetector
-import izumi.fundamentals.platform.language.{
-  SourceFilePosition,
-  SourceFilePositionMaterializer
-}
+import izumi.fundamentals.platform.exceptions.Issue
+import izumi.fundamentals.platform.exceptions.Issue.IssueContext
 
 sealed trait BaboonIssue
 
@@ -190,26 +188,8 @@ object BaboonIssue {
   case class NonUniqueOutputFiles(c: Map[String, List[String]])
       extends TranslationIssue
 
-  case class TranslationBug()(implicit context: ExceptionContext)
+  case class TranslationBug()(implicit val context: IssueContext)
       extends TranslationIssue
-      with BaboonBug {
-    override def toString: String = s"TranslationBug(${context})"
-  }
-}
-
-final case class ExceptionContext(sourceFilePosition: SourceFilePosition,
-                                  stackTrace: Throwable,
-) {
-  import izumi.fundamentals.platform.exceptions.IzThrowable.*
-  import izumi.fundamentals.platform.strings.IzString.*
-  override def toString: String =
-    s"""ExceptionContext($sourceFilePosition) {
-       |${stackTrace.stackTrace.shift(4)}
-       |}""".stripMargin
-}
-
-object ExceptionContext {
-  implicit def materializeExceptionContext(
-    implicit pos: SourceFilePositionMaterializer
-  ): ExceptionContext = new ExceptionContext(pos.get, new Throwable())
+      with BaboonBug
+      with Issue
 }
