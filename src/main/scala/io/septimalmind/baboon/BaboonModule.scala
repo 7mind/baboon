@@ -9,13 +9,7 @@ import io.septimalmind.baboon.translator.csharp.{
   CSDefnTranslator,
   CSTypeTranslator
 }
-import io.septimalmind.baboon.typer.{
-  BaboonComparator,
-  BaboonEnquiries,
-  BaboonFamilyManager,
-  BaboonRules,
-  BaboonTyper
-}
+import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.validator.BaboonValidator
 
 class BaboonModule(options: CompilerOptions) extends ModuleDef {

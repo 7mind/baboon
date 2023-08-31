@@ -1,16 +1,13 @@
 package io.septimalmind.baboon.tests
 
 import io.septimalmind.baboon.parser.BaboonParser
-import io.septimalmind.baboon.parser.BaboonParser.BaboonParserImpl
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import izumi.fundamentals.collections.nonempty.{NonEmptyList, NonEmptyString}
-import org.scalatest.wordspec.AnyWordSpec
 
-class ParserTest extends AnyWordSpec {
+class ParserTest extends BaboonTest {
   "baboon parser" should {
-    "parse sources" in {
-      val parser = new BaboonParserImpl()
+    "parse sources" in { (parser: BaboonParser) =>
       val parsed = parser.parse(
         BaboonParser.Input(
           FSPath.Name(NonEmptyString.unsafeFrom("testfile.baboon")),
