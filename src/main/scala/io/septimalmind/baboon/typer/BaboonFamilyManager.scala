@@ -4,15 +4,15 @@ import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage}
 import io.septimalmind.baboon.util.BLogger
-import izumi.functional.IzEitherAggregations.*
+import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
-import izumi.fundamentals.collections.nonempty.{NonEmptyList, NonEmptyMap}
+import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
 trait BaboonFamilyManager {
   def load(
     definitions: List[BaboonParser.Input]
-  ): Either[NonEmptyList[BaboonIssue], BaboonFamily]
+  ): Either[NEList[BaboonIssue], BaboonFamily]
 }
 
 object BaboonFamilyManager {
@@ -23,9 +23,9 @@ object BaboonFamilyManager {
       extends BaboonFamilyManager {
     override def load(
       definitions: List[BaboonParser.Input]
-    ): Either[NonEmptyList[BaboonIssue], BaboonFamily] = {
+    ): Either[NEList[BaboonIssue], BaboonFamily] = {
       for {
-        domains <- definitions.toList.biMapAggregate { input =>
+        domains <- definitions.biTraverse { input =>
           for {
             parsed <- parser.parse(input)
             typed <- typer.process(parsed)
@@ -47,17 +47,17 @@ object BaboonFamilyManager {
           .map(d => (d.id, d))
           .toMultimap
           .toSeq
-          .biMapAggregate {
+          .biTraverse {
             case (pkg, domains) =>
               for {
                 uniqueVersions <- domains
                   .map(d => (d.version, d))
                   .toUniqueMap(
-                    v => NonEmptyList(BaboonIssue.NonUniqueDomainVersions(v))
+                    v => NEList(BaboonIssue.NonUniqueDomainVersions(v))
                   )
-                nel <- NonEmptyMap
+                nel <- NEMap
                   .from(uniqueVersions)
-                  .toRight(NonEmptyList(BaboonIssue.EmptyDomainFamily(pkg)))
+                  .toRight(NEList(BaboonIssue.EmptyDomainFamily(pkg)))
                 evo <- comparator.evolve(pkg, nel)
               } yield {
                 BaboonLineage(pkg, nel, evo)
@@ -66,11 +66,11 @@ object BaboonFamilyManager {
 
         uniqueLineages <- lineages
           .map(l => (l.pkg, l))
-          .toUniqueMap(e => NonEmptyList(BaboonIssue.NonUniqueLineages(e)))
+          .toUniqueMap(e => NEList(BaboonIssue.NonUniqueLineages(e)))
 
-        nem <- NonEmptyMap
+        nem <- NEMap
           .from(uniqueLineages)
-          .toRight(NonEmptyList(BaboonIssue.EmptyFamily(definitions)))
+          .toRight(NEList(BaboonIssue.EmptyFamily(definitions)))
       } yield {
         BaboonFamily(nem)
       }

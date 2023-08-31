@@ -3,16 +3,16 @@ package io.septimalmind.baboon.typer
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BLogger
-import izumi.functional.IzEitherAggregations.*
+import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
-import izumi.fundamentals.collections.nonempty.{NonEmptyList, NonEmptyMap}
+import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
 trait BaboonComparator {
   def evolve(
     pkg: Pkg,
-    versions: NonEmptyMap[Version, Domain]
-  ): Either[NonEmptyList[BaboonIssue], BaboonEvolution]
+    versions: NEMap[Version, Domain]
+  ): Either[NEList[BaboonIssue], BaboonEvolution]
 }
 
 object BaboonComparator {
@@ -23,8 +23,8 @@ object BaboonComparator {
       extends BaboonComparator {
     override def evolve(
       pkg: Pkg,
-      versions: NonEmptyMap[Version, Domain]
-    ): Either[NonEmptyList[BaboonIssue], BaboonEvolution] = {
+      versions: NEMap[Version, Domain]
+    ): Either[NEList[BaboonIssue], BaboonEvolution] = {
       val sortedVersions =
         versions.keySet.toList.sortBy(_.version)(Ordering.String.reverse)
       val pinnacleVersion = sortedVersions.head
@@ -42,10 +42,10 @@ object BaboonComparator {
             compare(versions(fresh), versions(old))
               .map(diff => (diff.id, diff))
           case o =>
-            Left(NonEmptyList(BaboonIssue.BrokenComparison(o)))
-        }.biAggregate
+            Left(NEList(BaboonIssue.BrokenComparison(o)))
+        }.biSequence
         diffMap <- indexedDiffs.toUniqueMap(
-          e => NonEmptyList(BaboonIssue.NonUniqueDiff(e))
+          e => NEList(BaboonIssue.NonUniqueDiff(e))
         )
 
         rulesets <- diffMap.map {
@@ -53,9 +53,9 @@ object BaboonComparator {
             rules
               .compute(versions(v.from), versions(v.to), diff)
               .map(rs => (v, rs))
-        }.biAggregate
+        }.biSequence
         rulesetMap <- rulesets.toUniqueMap(
-          e => NonEmptyList(BaboonIssue.NonUniqueRuleset(e))
+          e => NEList(BaboonIssue.NonUniqueRuleset(e))
         )
       } yield {
         BaboonEvolution(pkg, pinnacleVersion, diffMap, rulesetMap)
@@ -65,7 +65,7 @@ object BaboonComparator {
     private def compare(
       last: Domain,
       prev: Domain
-    ): Either[NonEmptyList[BaboonIssue.EvolutionIssue], BaboonDiff] = {
+    ): Either[NEList[BaboonIssue.EvolutionIssue], BaboonDiff] = {
       val newTypes = last.defs.meta.nodes.keySet
       val oldTypes = prev.defs.meta.nodes.keySet
 
@@ -146,12 +146,12 @@ object BaboonComparator {
               diff(changes, uold.defn, unew.defn).map(diff => (id, diff))
 
             case (o, n) =>
-              Left(NonEmptyList(BaboonIssue.IncomparableTypedefs(o, n)))
+              Left(NEList(BaboonIssue.IncomparableTypedefs(o, n)))
           }
 
-        }.biAggregate
+        }.biSequence
         indexedDiffs <- diffs.toUniqueMap(
-          e => NonEmptyList(BaboonIssue.NonUniqueDiffs(e))
+          e => NEList(BaboonIssue.NonUniqueDiffs(e))
         )
       } yield {
         BaboonDiff(
@@ -166,7 +166,7 @@ object BaboonComparator {
       changes: BaboonChanges,
       prevDef: Typedef.User,
       nextDef: Typedef.User
-    ): Either[NonEmptyList[BaboonIssue.EvolutionIssue], TypedefDiff] = {
+    ): Either[NEList[BaboonIssue.EvolutionIssue], TypedefDiff] = {
       (prevDef, nextDef) match {
         case (e1: Typedef.Enum, e2: Typedef.Enum) =>
           diffEnums(e1, e2)
@@ -175,14 +175,14 @@ object BaboonComparator {
         case (d1: Typedef.Dto, d2: Typedef.Dto) =>
           diffDtos(changes, d1, d2)
         case (o1, o2) =>
-          Left(NonEmptyList(BaboonIssue.MismatchingTypedefs(o1, o2)))
+          Left(NEList(BaboonIssue.MismatchingTypedefs(o1, o2)))
       }
     }
 
     private def diffEnums(
       e1: Typedef.Enum,
       e2: Typedef.Enum
-    ): Either[NonEmptyList[BaboonIssue.EvolutionIssue], TypedefDiff] = {
+    ): Either[NEList[BaboonIssue.EvolutionIssue], TypedefDiff] = {
       val members1 = e1.members.map(m => (m.name, m)).toMap
       val members2 = e2.members.map(m => (m.name, m)).toMap
 
@@ -205,7 +205,7 @@ object BaboonComparator {
       changes: BaboonChanges,
       a1: Typedef.Adt,
       a2: Typedef.Adt
-    ): Either[NonEmptyList[BaboonIssue.EvolutionIssue], TypedefDiff] = {
+    ): Either[NEList[BaboonIssue.EvolutionIssue], TypedefDiff] = {
       val members1 = a1.members.toSet
       val members2 = a2.members.toSet
 
@@ -231,7 +231,7 @@ object BaboonComparator {
       changes: BaboonChanges,
       d1: Typedef.Dto,
       d2: Typedef.Dto
-    ): Either[NonEmptyList[BaboonIssue.EvolutionIssue], TypedefDiff] = {
+    ): Either[NEList[BaboonIssue.EvolutionIssue], TypedefDiff] = {
       val members1 = d1.fields.map(m => (m.name, m)).toMap
       val members2 = d2.fields.map(m => (m.name, m)).toMap
 

@@ -3,12 +3,12 @@ package io.septimalmind.baboon.parser
 import fastparse.Parsed
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.parser.model.{FSPath, RawDomain}
-import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.collections.nonempty.NEList
 
 trait BaboonParser {
   def parse(
     input: BaboonParser.Input
-  ): Either[NonEmptyList[BaboonIssue.ParserIssue], RawDomain]
+  ): Either[NEList[BaboonIssue.ParserIssue], RawDomain]
 }
 
 object BaboonParser {
@@ -17,13 +17,13 @@ object BaboonParser {
   class BaboonParserImpl() extends BaboonParser {
     def parse(
       input: BaboonParser.Input
-    ): Either[NonEmptyList[BaboonIssue.ParserIssue], RawDomain] = {
+    ): Either[NEList[BaboonIssue.ParserIssue], RawDomain] = {
       val context = ParserContext(input.path, input.content)
       fastparse.parse(context.content, context.defModel.model(_)) match {
         case Parsed.Success(value, _) =>
           Right(value)
         case failure: Parsed.Failure =>
-          Left(NonEmptyList(BaboonIssue.ParserFailed(failure)))
+          Left(NEList(BaboonIssue.ParserFailed(failure)))
       }
     }
   }

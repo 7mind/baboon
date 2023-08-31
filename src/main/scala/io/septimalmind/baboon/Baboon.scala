@@ -1,12 +1,9 @@
 package io.septimalmind.baboon
 import caseapp.*
-import distage.{Injector, ModuleDef}
+import distage.Injector
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import izumi.fundamentals.platform.files.IzFiles
-import izumi.fundamentals.platform.resources.{
-  IzArtifact,
-  IzArtifactMaterializer
-}
+import izumi.fundamentals.platform.resources.IzArtifactMaterializer
 import izumi.fundamentals.platform.strings.IzString.*
 
 import java.nio.file.{Path, Paths}
@@ -74,14 +71,17 @@ object Baboon {
 
   private def cleanupTargetDir(outDir: Path): Either[Seq[Path], Unit] = {
     if (outDir.toFile.exists()) {
-      val unexpectedFiles = IzFiles.walk(outDir.toFile).filter { p =>
-        val f = p.toFile
-        !f.isDirectory && !(f.getName.endsWith(".cs") || f.getName
-          .startsWith("."))
-      }
+      val unexpectedFiles = IzFiles
+        .walk(outDir.toFile)
+        .filter { p =>
+          val f = p.toFile
+          !f.isDirectory && !(f.getName.endsWith(".cs") || f.getName
+            .startsWith("."))
+        }
+        .toSeq
 
       if (unexpectedFiles.isEmpty) {
-        IzFiles.removeDir(outDir)
+        IzFiles.erase(outDir)
         Right(())
       } else {
         Left(unexpectedFiles)

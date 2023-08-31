@@ -9,7 +9,7 @@ import io.septimalmind.baboon.parser.model.{
   RawTLDef
 }
 import io.septimalmind.baboon.typer.model.*
-import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.graphs.ToposortError
 import izumi.fundamentals.graphs.tools.cycles.LoopDetector
 import izumi.fundamentals.platform.exceptions.Issue
@@ -134,12 +134,12 @@ object BaboonIssue {
 
   case class ConflictingEnumBranches(
     u: Typedef.Enum,
-    dupes: Map[String, NonEmptyList[EnumMember]]
+    dupes: Map[String, NEList[EnumMember]]
   ) extends VerificationIssue
 
   case class ConflictingAdtBranches(
     u: Typedef.Adt,
-    dupes: Map[String, NonEmptyList[TypeId.User]]
+    dupes: Map[String, NEList[TypeId.User]]
   ) extends VerificationIssue
 
   case class ConflictingTypeIds(domain: Domain,

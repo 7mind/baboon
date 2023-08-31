@@ -1,20 +1,19 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import izumi.fundamentals.platform.strings.TextTree.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.translator.{AbstractBaboonTranslator, Sources}
 import io.septimalmind.baboon.typer.model.*
-import izumi.functional.IzEitherAggregations.*
+import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
-import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
+import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSBaboonTranslator(options: CompilerOptions, defnTranslator: CSDefnTranslator, trans: CSTypeTranslator)
+class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslator)
     extends AbstractBaboonTranslator {
 
-  type Out[T] = Either[NonEmptyList[BaboonIssue.TranslationIssue], T]
+  type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
   override def translate(family: BaboonFamily): Out[Sources] = {
     for {
@@ -24,7 +23,7 @@ class CSBaboonTranslator(options: CompilerOptions, defnTranslator: CSDefnTransla
         (o.path, renderTree(o))
       }
       unique <- rendered.toUniqueMap(
-        c => NonEmptyList(BaboonIssue.NonUniqueOutputFiles(c))
+        c => NEList(BaboonIssue.NonUniqueOutputFiles(c))
       )
     } yield {
       Sources(unique)
@@ -33,9 +32,9 @@ class CSBaboonTranslator(options: CompilerOptions, defnTranslator: CSDefnTransla
 
   private def renderTree(o: CSDefnTranslator.Output): String = {
     val alwaysAvailable: Set[CSPackageId] = Set(
-      CSPackageId(NonEmptyList("System")),
-      CSPackageId(NonEmptyList("System", "Collections", "Generic")),
-      CSPackageId(NonEmptyList("System", "Linq")),
+      CSPackageId(NEList("System")),
+      CSPackageId(NEList("System", "Collections", "Generic")),
+      CSPackageId(NEList("System", "Linq")),
     )
 
     val usedPackages = o.tree.values
@@ -87,7 +86,7 @@ class CSBaboonTranslator(options: CompilerOptions, defnTranslator: CSDefnTransla
     family.domains.toSeq.toList.map {
       case (_, lineage) =>
         translateLineage(lineage)
-    }.biFlatAggregate
+    }.biFlatten
   }
 
   private def translateLineage(
@@ -98,7 +97,7 @@ class CSBaboonTranslator(options: CompilerOptions, defnTranslator: CSDefnTransla
       case (_, domain) =>
         //val isLatest =
         translateDomain(domain, lineage.evolution)
-    }.biFlatAggregate
+    }.biFlatten
   }
 
   private def translateDomain(domain: Domain,
@@ -109,7 +108,7 @@ class CSBaboonTranslator(options: CompilerOptions, defnTranslator: CSDefnTransla
         case (_, defn: DomainMember.User) =>
           defnTranslator.translate(defn, domain, evo)
         case _ => Right(List.empty)
-      }.biFlatAggregate
+      }.biFlatten
       evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
       conversionSources <- if (evosToCurrent.nonEmpty) {
         generateConversions(domain, evo, evosToCurrent)
@@ -289,7 +288,7 @@ class CSBaboonTranslator(options: CompilerOptions, defnTranslator: CSDefnTransla
               rules
             ).makeConvs()
         }
-        .biFlatAggregate
+        .biFlatten
     } yield {
       val regs = convs.flatMap(_.reg.iterator.toSeq).toSeq
       val missing = convs.flatMap(_.missing.iterator.toSeq).toSeq
@@ -341,7 +340,7 @@ object CSBaboonTranslator {
                                )
 
 
-  val sharedRtPkg: CSPackageId = CSPackageId(NonEmptyList("Baboon", "Runtime", "Shared"))
+  val sharedRtPkg: CSPackageId = CSPackageId(NEList("Baboon", "Runtime", "Shared"))
   val abstractConversion: CSType = CSType(sharedRtPkg, "AbstractConversion", fq = false)
   val abstractBaboonConversions: CSType = CSType(sharedRtPkg, "AbstractBaboonConversions", fq = false)
   val iBaboonGenerated: CSType = CSType(sharedRtPkg, "IBaboonGenerated", fq = false)

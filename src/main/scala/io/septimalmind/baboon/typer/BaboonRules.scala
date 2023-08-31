@@ -4,8 +4,8 @@ import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.*
 import io.septimalmind.baboon.util.BLogger
-import izumi.functional.IzEitherAggregations.*
-import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.functional.IzEither.*
+import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree.*
 
 trait BaboonRules {
@@ -13,7 +13,7 @@ trait BaboonRules {
     prev: Domain,
     last: Domain,
     diff: BaboonDiff
-  ): Either[NonEmptyList[BaboonIssue.EvolutionIssue], BaboonRuleset]
+  ): Either[NEList[BaboonIssue.EvolutionIssue], BaboonRuleset]
 }
 
 object BaboonRules {
@@ -22,7 +22,7 @@ object BaboonRules {
     override def compute(prev: Domain,
                          last: Domain,
                          diff: BaboonDiff,
-    ): Either[NonEmptyList[BaboonIssue.EvolutionIssue], BaboonRuleset] = {
+    ): Either[NEList[BaboonIssue.EvolutionIssue], BaboonRuleset] = {
       for {
         conversions <- prev.defs.meta.nodes
           .collect {
@@ -64,7 +64,7 @@ object BaboonRules {
                       case TypedefDiff.DtoDiff(ops) =>
                         Right(ops)
                       case o =>
-                        Left(NonEmptyList(BaboonIssue.UnexpectedDiffType(o)))
+                        Left(NEList(BaboonIssue.UnexpectedDiffType(o)))
                     }
 
                     additions = ops.collect { case op: DtoOp.AddField => op }.toSet
@@ -162,7 +162,7 @@ object BaboonRules {
                       case TypedefDiff.EnumDiff(ops) =>
                         Right(ops.exists(_.isInstanceOf[EnumOp.RemoveBranch]))
                       case o =>
-                        Left(NonEmptyList(BaboonIssue.UnexpectedDiffType(o)))
+                        Left(NEList(BaboonIssue.UnexpectedDiffType(o)))
                     }
                   } yield {
                     if (incompatible) {
@@ -179,7 +179,7 @@ object BaboonRules {
                       case TypedefDiff.AdtDiff(ops) =>
                         Right(ops.exists(_.isInstanceOf[AdtOp.RemoveBranch]))
                       case o =>
-                        Left(NonEmptyList(BaboonIssue.UnexpectedDiffType(o)))
+                        Left(NEList(BaboonIssue.UnexpectedDiffType(o)))
                     }
                   } yield {
                     if (incompatible) {
@@ -191,7 +191,7 @@ object BaboonRules {
 
               }
           }
-          .biAggregate
+          .biSequence
       } yield {
 
         val total = conversions.size

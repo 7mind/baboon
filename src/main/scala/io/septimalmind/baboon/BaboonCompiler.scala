@@ -3,8 +3,8 @@ package io.septimalmind.baboon
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator
 import io.septimalmind.baboon.util.BLogger
-import izumi.functional.IzEitherAggregations.*
-import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.functional.IzEither.*
+import izumi.fundamentals.collections.nonempty.NEList
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, StandardOpenOption}
@@ -14,7 +14,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 trait BaboonCompiler {
   def run(inputs: Set[Path],
           output: Path,
-  ): Either[NonEmptyList[BaboonIssue], Unit]
+  ): Either[NEList[BaboonIssue], Unit]
 }
 
 object BaboonCompiler {
@@ -26,7 +26,7 @@ object BaboonCompiler {
                            logger: BLogger,
   ) extends BaboonCompiler {
     override def run(inputs: Set[Path],
-                     output: Path): Either[NonEmptyList[BaboonIssue], Unit] = {
+                     output: Path): Either[NEList[BaboonIssue], Unit] = {
       for {
         loaded <- loader.load(inputs.toList)
         translated <- translator.translate(loaded)
@@ -48,8 +48,8 @@ object BaboonCompiler {
                 StandardOpenOption.TRUNCATE_EXISTING
               )
             }.toEither.left
-              .map(t => NonEmptyList(BaboonIssue.CantWriteOutput(p, t)))
-        }.biAggregateVoid
+              .map(t => NEList(BaboonIssue.CantWriteOutput(p, t)))
+        }.biSequence_
       } yield {}
     }
   }

@@ -6,15 +6,15 @@ import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.BaboonFamilyManager
 import io.septimalmind.baboon.typer.model.BaboonFamily
 import io.septimalmind.baboon.validator.BaboonValidator
-import izumi.functional.IzEitherAggregations.*
-import izumi.fundamentals.collections.nonempty.{NonEmptyList, NonEmptyString}
+import izumi.functional.IzEither.*
+import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 import izumi.fundamentals.platform.files.IzFiles
 
 import java.nio.file.Path
 import scala.util.Try
 
 trait BaboonLoader {
-  def load(paths: List[Path]): Either[NonEmptyList[BaboonIssue], BaboonFamily]
+  def load(paths: List[Path]): Either[NEList[BaboonIssue], BaboonFamily]
 }
 
 object BaboonLoader {
@@ -23,15 +23,15 @@ object BaboonLoader {
       extends BaboonLoader {
     override def load(
       paths: List[Path]
-    ): Either[NonEmptyList[BaboonIssue], BaboonFamily] = {
+    ): Either[NEList[BaboonIssue], BaboonFamily] = {
       for {
-        inputs <- paths.biMapAggregate { path =>
+        inputs <- paths.biTraverse { path =>
           for {
             content <- Try(IzFiles.readString(path.toFile)).toEither.left
-              .map(e => NonEmptyList(BaboonIssue.CantReadInput(e)))
+              .map(e => NEList(BaboonIssue.CantReadInput(e)))
           } yield {
             BaboonParser.Input(
-              FSPath.parse(NonEmptyString.unsafeFrom(path.toString)),
+              FSPath.parse(NEString.unsafeFrom(path.toString)),
               content
             )
           }

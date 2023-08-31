@@ -1,9 +1,9 @@
 package io.septimalmind.baboon.typer.model
 
-import izumi.fundamentals.collections.nonempty.NonEmptyMap
+import izumi.fundamentals.collections.nonempty.NEMap
 
 case class BaboonLineage(pkg: Pkg,
-                         versions: NonEmptyMap[Version, Domain],
+                         versions: NEMap[Version, Domain],
                          evolution: BaboonEvolution) {
   import izumi.fundamentals.platform.strings.IzString.*
   override def toString: String =

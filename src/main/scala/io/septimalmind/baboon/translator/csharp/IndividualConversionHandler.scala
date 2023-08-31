@@ -6,8 +6,8 @@ import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.FieldOp
-import izumi.functional.IzEitherAggregations.*
-import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.functional.IzEither.*
+import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 
 class IndividualConversionHandler(transd: CSDefnTranslator,
@@ -16,7 +16,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                                   srcVer: Version,
                                   domain: Domain,
                                   rules: BaboonRuleset) {
-  type Out[T] = Either[NonEmptyList[BaboonIssue.TranslationIssue], T]
+  type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
   private def transfer(tpe: TypeRef,
                        ref: TextTree[CSValue]): TextTree[CSValue] = {
@@ -134,7 +134,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
             newDefn <- domain.defs.meta.nodes(c.sourceTpe) match {
               case DomainMember.User(_, defn: Typedef.Dto) =>
                 Right(defn)
-              case _ => Left(NonEmptyList(BaboonIssue.TranslationBug()))
+              case _ => Left(NEList(BaboonIssue.TranslationBug()))
             }
             opIndex = c.ops.map(op => (op.targetField, op)).toMap
             exprs <- newDefn.fields.map { f =>
@@ -215,10 +215,10 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                           )
 
                         case _ =>
-                          Left(NonEmptyList(BaboonIssue.TranslationBug()))
+                          Left(NEList(BaboonIssue.TranslationBug()))
                       }
                     case _: TypeRef.Scalar =>
-                      Left(NonEmptyList(BaboonIssue.TranslationBug()))
+                      Left(NEList(BaboonIssue.TranslationBug()))
                   }
 
                 case o: FieldOp.WrapIntoCollection =>
@@ -236,7 +236,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                         Seq(q"(new $ftNewInit { $fieldRef }).ToImmutableList()")
                       )
                     case _ =>
-                      Left(NonEmptyList(BaboonIssue.TranslationBug()))
+                      Left(NEList(BaboonIssue.TranslationBug()))
                   }
 
                 case o: FieldOp.ExpandPrecision =>
@@ -253,7 +253,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                     case (_: TypeRef.Scalar, _: TypeRef.Scalar) =>
                       Right(Seq(fieldRef))
                     case _ =>
-                      Left(NonEmptyList(BaboonIssue.TranslationBug()))
+                      Left(NEList(BaboonIssue.TranslationBug()))
                   }
 
                 case o: FieldOp.SwapCollectionType =>
@@ -279,7 +279,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                 val full = (init.init ++ Seq(assignment)).join(";\n")
                 (full, localName)
               }
-            }.biAggregate
+            }.biSequence
           } yield {
             val initExprs = exprs.map(_._1) ++ Seq(q"")
             val consExprs = exprs.map(_._2)
@@ -301,7 +301,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
           }
 
       }
-    }.biFlatAggregate
+    }.biFlatten
 
   }
 
@@ -310,8 +310,8 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                            fieldRef: Node[Nothing],
                            oldId: TypeId.BuiltinCollection,
                            newId: TypeId.BuiltinCollection,
-                           newCollArgs: NonEmptyList[TypeRef],
-  ): Either[NonEmptyList[BaboonIssue.TranslationBug], Seq[TextTree[CSValue]]] = {
+                           newCollArgs: NEList[TypeRef],
+  ): Either[NEList[BaboonIssue.TranslationBug], Seq[TextTree[CSValue]]] = {
     val collCsType = trans.asCsRef(newCollArgs.head, domain.version)
 
     val collInit =
@@ -347,7 +347,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
               )
             )
           case _ =>
-            Left(NonEmptyList(BaboonIssue.TranslationBug()))
+            Left(NEList(BaboonIssue.TranslationBug()))
         }
       case TypeId.Builtins.lst =>
         newId match {
@@ -357,7 +357,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
           case TypeId.Builtins.lst =>
             Right(Seq(q"$collInit.ToImmutableList()"))
           case _ =>
-            Left(NonEmptyList(BaboonIssue.TranslationBug()))
+            Left(NEList(BaboonIssue.TranslationBug()))
         }
       case TypeId.Builtins.set =>
         newId match {
@@ -366,7 +366,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
           case TypeId.Builtins.lst =>
             Right(Seq(q"$collInit.ToImmutableList()"))
           case _ =>
-            Left(NonEmptyList(BaboonIssue.TranslationBug()))
+            Left(NEList(BaboonIssue.TranslationBug()))
         }
       case TypeId.Builtins.map =>
         newId match {
@@ -379,10 +379,10 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
               )
             )
           case _ =>
-            Left(NonEmptyList(BaboonIssue.TranslationBug()))
+            Left(NEList(BaboonIssue.TranslationBug()))
         }
       case _ =>
-        Left(NonEmptyList(BaboonIssue.TranslationBug()))
+        Left(NEList(BaboonIssue.TranslationBug()))
     }
   }
 

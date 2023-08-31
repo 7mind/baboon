@@ -8,10 +8,9 @@ import io.septimalmind.baboon.parser.model.{
   RawVersion
 }
 import io.septimalmind.baboon.typer.model.*
-import izumi.functional.IzEitherTmp.EitherObjectExt
-import izumi.functional.IzEitherAggregations.*
+import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
-import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.graphs.struct.IncidenceMatrix
 import izumi.fundamentals.graphs.tools.{Toposort, ToposortLoopBreaker}
 import izumi.fundamentals.graphs.{DG, GraphMeta}
@@ -20,25 +19,21 @@ import izumi.fundamentals.platform.crypto.IzSha256Hash
 import scala.annotation.tailrec
 
 trait BaboonTyper {
-  def process(
-    model: RawDomain
-  ): Either[NonEmptyList[BaboonIssue.TyperIssue], Domain]
+  def process(model: RawDomain): Either[NEList[BaboonIssue.TyperIssue], Domain]
 }
 
 object BaboonTyper {
   class BaboonTyperImpl(enquiries: BaboonEnquiries) extends BaboonTyper {
     override def process(
       model: RawDomain
-    ): Either[NonEmptyList[BaboonIssue.TyperIssue], Domain] = {
+    ): Either[NEList[BaboonIssue.TyperIssue], Domain] = {
       for {
         id <- parsePkg(model.header)
         version <- parseVersion(model.version)
         defs <- runTyper(id, model.members)
         indexedDefs <- defs
           .map(d => (d.id, d))
-          .toUniqueMap(
-            e => NonEmptyList(BaboonIssue.DuplicatedTypedefs(model, e))
-          )
+          .toUniqueMap(e => NEList(BaboonIssue.DuplicatedTypedefs(model, e)))
         roots = indexedDefs.collect {
           case (k, v: DomainMember.User) if v.root =>
             (k, v)
@@ -53,7 +48,7 @@ object BaboonTyper {
           case (k, _) => predMatrix.links.contains(k)
         }))
 //        _ <- LoopDetector.Impl.findLoopMember(graph.predecessors) match {
-//          case Some(_) => Left(NonEmptyList(TODOTyperIssue()))
+//          case Some(_) => Left(NEList(TODOTyperIssue()))
 //          case None    => Right(())
 //        }
         excludedIds = indexedDefs.keySet.diff(graph.meta.nodes.keySet)
@@ -63,23 +58,23 @@ object BaboonTyper {
         sorted <- Toposort
           .cycleBreaking(graph.predecessors, ToposortLoopBreaker.dontBreak)
           .left
-          .map(e => NonEmptyList(BaboonIssue.CircularDependency(model, e)))
+          .map(e => NEList(BaboonIssue.CircularDependency(model, e)))
         deepSchema <- computeDeepSchema(id, graph, sorted)
       } yield {
         Domain(id, version, graph, excludedIds, shallowSchema, deepSchema)
       }
     }
 
-    private def computeDeepSchema(pkg: Pkg,
-                                  graph: DG[TypeId, DomainMember],
-                                  sorted: Seq[TypeId])
-      : Either[NonEmptyList[BaboonIssue.TyperIssue], Map[TypeId,
-                                                         DeepSchemaId]] = {
+    private def computeDeepSchema(
+      pkg: Pkg,
+      graph: DG[TypeId, DomainMember],
+      sorted: Seq[TypeId]
+    ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, DeepSchemaId]] = {
 
       for {
         missing <- Right(sorted.filter(id => !graph.meta.nodes.contains(id)))
-        _ <- Either.failWhen(missing.nonEmpty)(
-          NonEmptyList(BaboonIssue.MissingTypeId(pkg, missing.toSet))
+        _ <- Either.ifThenFail(missing.nonEmpty)(
+          NEList(BaboonIssue.MissingTypeId(pkg, missing.toSet))
         )
       } yield {
         sorted.foldLeft(Map.empty[TypeId, DeepSchemaId]) {
@@ -106,7 +101,7 @@ object BaboonTyper {
     private def buildDependencies(defs: Map[TypeId, DomainMember],
                                   current: Map[TypeId, DomainMember],
                                   predecessors: List[(TypeId, Option[TypeId])],
-    ): Either[NonEmptyList[BaboonIssue.TyperIssue], Map[TypeId, Set[TypeId]]] = {
+    ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, Set[TypeId]]] = {
       val nextDepMap = current.toList.flatMap {
         case (id, defn) =>
           enquiries.directDepsOf(defn).toList.map(dep => (id, Some(dep)))
@@ -137,11 +132,11 @@ object BaboonTyper {
 
     private def parsePkg(
       header: RawHeader
-    ): Either[NonEmptyList[BaboonIssue.TyperIssue], Pkg] = {
+    ): Either[NEList[BaboonIssue.TyperIssue], Pkg] = {
       for {
-        nel <- NonEmptyList
+        nel <- NEList
           .from(header.name)
-          .toRight(NonEmptyList(BaboonIssue.EmptyPackageId(header)))
+          .toRight(NEList(BaboonIssue.EmptyPackageId(header)))
         // TODO: validate format
       } yield {
         Pkg(nel)
@@ -150,7 +145,7 @@ object BaboonTyper {
 
     private def parseVersion(
       version: RawVersion
-    ): Either[NonEmptyList[BaboonIssue.TyperIssue], Version] = {
+    ): Either[NEList[BaboonIssue.TyperIssue], Version] = {
       for {
         v <- Right(version.value)
         // TODO: validate format
@@ -162,11 +157,11 @@ object BaboonTyper {
     private def runTyper(
       pkg: Pkg,
       members: Seq[RawTLDef]
-    ): Either[NonEmptyList[BaboonIssue.TyperIssue], List[DomainMember]] = {
+    ): Either[NEList[BaboonIssue.TyperIssue], List[DomainMember]] = {
       for {
         initial <- TypeId.Builtins.all
           .map(id => (id: TypeId, DomainMember.Builtin(id): DomainMember))
-          .toUniqueMap(e => NonEmptyList(BaboonIssue.NonUniqueBuiltins(e)))
+          .toUniqueMap(e => NEList(BaboonIssue.NonUniqueBuiltins(e)))
         // we don't support inheritance, so order doesn't matter here
         out <- members.biFoldLeft(initial) {
           case (acc, defn) =>

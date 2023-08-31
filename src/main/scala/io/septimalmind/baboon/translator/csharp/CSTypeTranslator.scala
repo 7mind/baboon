@@ -8,7 +8,7 @@ import io.septimalmind.baboon.translator.csharp.CSTypeTranslator.{
 }
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.typer.model.{Owner, Pkg, TypeId, TypeRef, Version}
-import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 
 class CSTypeTranslator() {
@@ -140,9 +140,9 @@ class CSTypeTranslator() {
 }
 
 object CSTypeTranslator {
-  private val system = CSValue.CSPackageId(NonEmptyList("System"))
+  private val system = CSValue.CSPackageId(NEList("System"))
   private val generics =
-    CSValue.CSPackageId(NonEmptyList("System", "Collections", "Generic"))
+    CSValue.CSPackageId(NEList("System", "Collections", "Generic"))
   private val immutable =
-    CSValue.CSPackageId(NonEmptyList("System", "Collections", "Immutable"))
+    CSValue.CSPackageId(NEList("System", "Collections", "Immutable"))
 }

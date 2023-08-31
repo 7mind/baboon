@@ -13,7 +13,7 @@ lazy val root = (project in file("."))
       "fundamentals-collections",
       "distage-core",
       "distage-testkit-scalatest",
-    ).map("io.7mind.izumi" %% _ % "1.1.0-M25"),
+    ).map("io.7mind.izumi" %% _ % "1.1.0-M27"),
     libraryDependencies ++= Seq(
       "org.scala-lang.modules" %% "scala-parser-combinators" % "2.3.0"
     ),

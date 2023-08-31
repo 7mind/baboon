@@ -3,14 +3,14 @@ package io.septimalmind.baboon.tests
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import izumi.fundamentals.collections.nonempty.{NonEmptyList, NonEmptyString}
+import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 
 class ParserTest extends BaboonTest {
   "baboon parser" should {
     "parse sources" in { (parser: BaboonParser) =>
       val parsed = parser.parse(
         BaboonParser.Input(
-          FSPath.Name(NonEmptyString.unsafeFrom("testfile.baboon")),
+          FSPath.Name(NEString.unsafeFrom("testfile.baboon")),
           """/* test comment */
           |model my.test.model
           |
@@ -46,7 +46,7 @@ class ParserTest extends BaboonTest {
       parsed match {
         case Left(value) =>
           value match {
-            case NonEmptyList(BaboonIssue.ParserFailed(fail)) =>
+            case NEList(BaboonIssue.ParserFailed(fail)) =>
               println(fail.trace())
           }
         case Right(value) => println(value)

@@ -11,13 +11,13 @@ import io.septimalmind.baboon.parser.model.{
   RawTypeRef,
   RawTypeName
 }
-import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.collections.nonempty.NEList
 
 class DefDto(context: ParserContext, meta: DefMeta) {
-  def typeParams[$: P]: P[NonEmptyList[RawTypeRef]] = {
+  def typeParams[$: P]: P[NEList[RawTypeRef]] = {
     import fastparse.SingleLineWhitespace.whitespace
     ("[" ~ typeRef.rep(min = 1, sep = ",") ~ "]")
-      .map(p => NonEmptyList.unsafeFrom(p.toList))
+      .map(p => NEList.unsafeFrom(p.toList))
   }
 
   def typeRef[$: P]: P[RawTypeRef] = {

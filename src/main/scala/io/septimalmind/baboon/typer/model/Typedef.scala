@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.typer.model
 
-import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.graphs.DG
 
 case class Domain(id: Pkg,
@@ -44,9 +44,9 @@ object Typedef {
   }
 
   case class Dto(id: TypeId.User, fields: List[Field]) extends User
-  case class Enum(id: TypeId.User, members: NonEmptyList[EnumMember])
+  case class Enum(id: TypeId.User, members: NEList[EnumMember])
       extends User
-  case class Adt(id: TypeId.User, members: NonEmptyList[TypeId.User])
+  case class Adt(id: TypeId.User, members: NEList[TypeId.User])
       extends User
 }
 
@@ -56,7 +56,7 @@ sealed trait TypeRef {
 object TypeRef {
   case class Scalar(id: TypeId.Scalar) extends TypeRef
   case class Constructor(id: TypeId.BuiltinCollection,
-                         args: NonEmptyList[TypeRef])
+                         args: NEList[TypeRef])
       extends TypeRef
 }
 
@@ -130,7 +130,7 @@ object TypeId {
 
     def canBeWrappedIntoCollection(o: TypeRef.Scalar,
                                    n: TypeRef.Constructor): Boolean = {
-      safeSources.contains(n.id) && n.args == NonEmptyList(o)
+      safeSources.contains(n.id) && n.args == NEList(o)
     }
 
     def canChangeCollectionType(o: TypeRef.Constructor,
@@ -232,7 +232,7 @@ object Owner {
   }
 }
 
-case class Pkg(path: NonEmptyList[String]) {
+case class Pkg(path: NEList[String]) {
   override def toString: String = path.mkString(".")
 }
 case class TypeName(name: String)

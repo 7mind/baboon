@@ -3,22 +3,20 @@ package io.septimalmind.baboon.typer
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.*
-import izumi.functional.IzEitherAggregations.*
+import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
-import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.collections.nonempty.NEList
 
 class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
   def translate(
     defn: RawTLDef,
-  ): Either[NonEmptyList[BaboonIssue.TyperIssue], Map[TypeId, DomainMember]] = {
+  ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, DomainMember]] = {
     for {
       translated <- translate(defn.value, defn.root)
       duplications = acc.keySet.intersect(translated.keySet)
       next <- if (duplications.nonEmpty) {
         Left(
-          NonEmptyList(
-            BaboonIssue.DuplicatedTypeId(duplications, pkg, owner, defn)
-          )
+          NEList(BaboonIssue.DuplicatedTypeId(duplications, pkg, owner, defn))
         )
       } else {
         Right(translated)
@@ -28,9 +26,10 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
     }
   }
 
-  def translate(defn: RawDefn,
-                isRoot: Boolean): Either[NonEmptyList[BaboonIssue.TyperIssue],
-                                         Map[TypeId, DomainMember.User]] = {
+  def translate(
+    defn: RawDefn,
+    isRoot: Boolean
+  ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, DomainMember.User]] = {
     for {
       id <- convertDefnUserId(defn.name)
       members <- convertMember(id, isRoot, defn)
@@ -38,7 +37,7 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
         .map(m => (m.id: TypeId, m))
         .toList
         .toUniqueMap(
-          e => NonEmptyList(BaboonIssue.DuplicatedTypedef(e, pkg, owner, defn))
+          e => NEList(BaboonIssue.DuplicatedTypedef(e, pkg, owner, defn))
         )
 
     } yield {
@@ -48,12 +47,12 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
 
   private def convertDefnUserId(
     name: RawTypeName,
-  ): Either[NonEmptyList[BaboonIssue.TyperIssue], TypeId.User] = {
+  ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User] = {
     for {
       id <- convertId(name, owner)
       userId <- id match {
         case id: TypeId.Builtin =>
-          Left(NonEmptyList(BaboonIssue.UnexpectedBuiltin(id, owner)))
+          Left(NEList(BaboonIssue.UnexpectedBuiltin(id, owner)))
         case u: TypeId.User =>
           Right(u)
       }
@@ -64,7 +63,7 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
 
   private def convertId(name: RawTypeName,
                         ownedBy: Owner,
-  ): Either[NonEmptyList[BaboonIssue.TyperIssue], TypeId] = {
+  ): Either[NEList[BaboonIssue.TyperIssue], TypeId] = {
     for {
       name <- Right(TypeName(name.name))
       _ <- Right(()) // TODO: validate name
@@ -79,15 +78,15 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
     }
   }
 
-  private def convertMember(id: TypeId.User,
-                            isRoot: Boolean,
-                            defn: RawDefn): Either[NonEmptyList[
-    BaboonIssue.TyperIssue
-  ], NonEmptyList[DomainMember.User]] = {
+  private def convertMember(
+    id: TypeId.User,
+    isRoot: Boolean,
+    defn: RawDefn
+  ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
 
     defn match {
-      case d: RawDto  => convertDto(id, isRoot, d).map(d => NonEmptyList(d))
-      case e: RawEnum => converEnum(id, isRoot, e).map(e => NonEmptyList(e))
+      case d: RawDto  => convertDto(id, isRoot, d).map(d => NEList(d))
+      case e: RawEnum => converEnum(id, isRoot, e).map(e => NEList(e))
       case a: RawAdt  => convertAdt(id, isRoot, a)
     }
   }
@@ -96,12 +95,12 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
     id: TypeId.User,
     isRoot: Boolean,
     choice: RawEnum
-  ): Either[NonEmptyList[BaboonIssue.TyperIssue], DomainMember.User] = {
+  ): Either[NEList[BaboonIssue.TyperIssue], DomainMember.User] = {
     for {
-      converted <- choice.members.biMapAggregate { raw =>
+      converted <- choice.members.biTraverse { raw =>
         for {
           name <- Right(raw.value)
-          _ <- Right(()) // TODO: validate names
+          _ <- Right(()): Either[NEList[BaboonIssue.TyperIssue], Unit] // TODO: validate names
 
         } yield {
           EnumMember(name)
@@ -109,12 +108,10 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
       }
       _ <- converted
         .map(m => (m.name.toLowerCase, m))
-        .toUniqueMap(
-          e => NonEmptyList(BaboonIssue.NonUniqueEnumBranches(e, id))
-        )
-      nel <- NonEmptyList
+        .toUniqueMap(e => NEList(BaboonIssue.NonUniqueEnumBranches(e, id)))
+      nel <- NEList
         .from(converted)
-        .toRight(NonEmptyList(BaboonIssue.EmptyEnum(id)))
+        .toRight(NEList(BaboonIssue.EmptyEnum(id)))
     } yield {
       DomainMember.User(isRoot, Typedef.Enum(id, nel))
     }
@@ -124,9 +121,9 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
     id: TypeId.User,
     isRoot: Boolean,
     dto: RawDto
-  ): Either[NonEmptyList[BaboonIssue.TyperIssue], DomainMember.User] = {
+  ): Either[NEList[BaboonIssue.TyperIssue], DomainMember.User] = {
     for {
-      converted <- dto.members.biMapAggregate { raw =>
+      converted <- dto.members.biTraverse { raw =>
         for {
           name <- Right(FieldName(raw.field.name.name))
           _ <- Right(()) // TODO: validate names
@@ -137,21 +134,21 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
       }
       _ <- converted
         .map(m => (m.name.name.toLowerCase, m))
-        .toUniqueMap(e => NonEmptyList(BaboonIssue.NonUniqueFields(id, e)))
+        .toUniqueMap(e => NEList(BaboonIssue.NonUniqueFields(id, e)))
     } yield {
       DomainMember.User(isRoot, Typedef.Dto(id, converted.toList))
     }
   }
 
-  private def convertAdt(id: TypeId.User,
-                         isRoot: Boolean,
-                         adt: RawAdt): Either[NonEmptyList[
-    BaboonIssue.TyperIssue
-  ], NonEmptyList[DomainMember.User]] = {
+  private def convertAdt(
+    id: TypeId.User,
+    isRoot: Boolean,
+    adt: RawAdt
+  ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
     for {
       sub <- Right(new BaboonTranslator(acc, pkg, Owner.Adt(id)))
 
-      converted <- adt.members.biFlatMapAggregate { raw =>
+      converted <- adt.members.biFlatTraverse { raw =>
         for {
           nested <- sub.translate(raw.dto, isRoot = false)
         } yield {
@@ -159,17 +156,17 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
         }
       }
 
-      nel <- NonEmptyList
+      nel <- NEList
         .from(converted.map(_.id))
-        .toRight(NonEmptyList(BaboonIssue.EmptyAdt(id)))
+        .toRight(NEList(BaboonIssue.EmptyAdt(id)))
     } yield {
-      NonEmptyList(DomainMember.User(isRoot, Typedef.Adt(id, nel)), converted)
+      NEList(DomainMember.User(isRoot, Typedef.Adt(id, nel)), converted)
     }
   }
 
   private def convertTpe(
     tpe: RawTypeRef
-  ): Either[NonEmptyList[BaboonIssue.TyperIssue], TypeRef] = {
+  ): Either[NEList[BaboonIssue.TyperIssue], TypeRef] = {
     tpe match {
       case RawTypeRef.Simple(name) =>
         for {
@@ -177,8 +174,8 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
           asScalar <- id match {
             case scalar: TypeId.Scalar =>
               Right(scalar)
-            case o =>
-              Left(NonEmptyList(BaboonIssue.ScalarExpected(id)))
+            case _ =>
+              Left(NEList(BaboonIssue.ScalarExpected(id)))
           }
         } yield {
           TypeRef.Scalar(asScalar)
@@ -189,13 +186,13 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
           asCollection <- id match {
             case coll: TypeId.BuiltinCollection =>
               Right(coll)
-            case o =>
-              Left(NonEmptyList(BaboonIssue.CollectionExpected(id)))
+            case _ =>
+              Left(NEList(BaboonIssue.CollectionExpected(id)))
           }
-          args <- params.toList.biMapAggregate(convertTpe)
-          nel <- NonEmptyList
+          args <- params.toList.biTraverse(convertTpe)
+          nel <- NEList
             .from(args)
-            .toRight(NonEmptyList(BaboonIssue.EmptyGenericArgs(id)))
+            .toRight(NEList(BaboonIssue.EmptyGenericArgs(id)))
         } yield {
           TypeRef.Constructor(asCollection, nel)
         }

@@ -7,14 +7,14 @@ import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.iBaboonGenera
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
-import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 
 trait CSDefnTranslator {
   def translate(defn: DomainMember.User,
                 domain: Domain,
                 evo: BaboonEvolution,
-  ): Either[NonEmptyList[BaboonIssue.TranslationIssue], List[
+  ): Either[NEList[BaboonIssue.TranslationIssue], List[
     CSDefnTranslator.Output
   ]]
 
@@ -29,12 +29,12 @@ object CSDefnTranslator {
 
   class CSDefnTranslatorImpl(options: CompilerOptions, trans: CSTypeTranslator)
       extends CSDefnTranslator {
-    type Out[T] = Either[NonEmptyList[BaboonIssue.TranslationIssue], T]
+    type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
     override def translate(defn: DomainMember.User,
                            domain: Domain,
                            evo: BaboonEvolution,
-    ): Either[NonEmptyList[BaboonIssue.TranslationIssue], List[Output]] = {
+    ): Either[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
       val name = trans.toCsVal(defn.id, domain.version)
 
       val defnReprBase = makeRepr(defn, domain, name)
