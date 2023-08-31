@@ -11,6 +11,7 @@ lazy val root = (project in file("."))
       "fundamentals-functional",
       "fundamentals-language",
       "fundamentals-collections",
+      "distage-core",
     ).map("io.7mind.izumi" %% _ % "1.1.0-M25"),
     libraryDependencies ++= Seq(
       "org.scala-lang.modules" %% "scala-parser-combinators" % "2.3.0"

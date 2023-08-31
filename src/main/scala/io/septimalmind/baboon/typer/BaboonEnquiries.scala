@@ -14,6 +14,7 @@ trait BaboonEnquiries {
   def directDepsOf(defn: DomainMember): Set[TypeId]
   def wrap(id: TypeId): String
   def explode(tpe: TypeRef): Set[TypeId]
+  def shallowId(defn: DomainMember): ShallowSchemaId
 }
 
 object BaboonEnquiries {

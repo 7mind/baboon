@@ -14,14 +14,15 @@ trait BaboonFamilyManager {
 }
 
 object BaboonFamilyManager {
-  class BaboonFamilyManagerImpl() extends BaboonFamilyManager {
+  class BaboonFamilyManagerImpl(
+    parser: BaboonParser,
+    typer: BaboonTyper,
+    comparator: BaboonComparator,
+                               ) extends BaboonFamilyManager {
     override def load(
       definitions: List[BaboonParser.Input]
     ): Either[NonEmptyList[BaboonIssue], BaboonFamily] = {
       for {
-        parser <- Right(new BaboonParser.BaboonParserImpl())
-        typer <- Right(new BaboonTyper.BaboonTyperImpl())
-        comparator <- Right(new BaboonComparator.BaboonComparatorImpl())
         domains <- definitions.toList.biMapAggregate { input =>
           for {
             parsed <- parser.parse(input)

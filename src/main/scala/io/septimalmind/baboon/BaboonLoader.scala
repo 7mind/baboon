@@ -3,7 +3,7 @@ package io.septimalmind.baboon
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.typer.BaboonFamilyManager.BaboonFamilyManagerImpl
+import io.septimalmind.baboon.typer.BaboonFamilyManager
 import io.septimalmind.baboon.typer.model.BaboonFamily
 import io.septimalmind.baboon.validator.BaboonValidator
 import izumi.functional.IzEitherAggregations.*
@@ -18,13 +18,12 @@ trait BaboonLoader {
 }
 
 object BaboonLoader {
-  class BaboonLoaderImpl() extends BaboonLoader {
+  class BaboonLoaderImpl(manager: BaboonFamilyManager,
+                         validator: BaboonValidator)
+      extends BaboonLoader {
     override def load(
       paths: List[Path]
     ): Either[NonEmptyList[BaboonIssue], BaboonFamily] = {
-      val manager = new BaboonFamilyManagerImpl()
-      val validator = new BaboonValidator.BaboonValidatorImpl()
-
       for {
         inputs <- paths.biMapAggregate { path =>
           for {

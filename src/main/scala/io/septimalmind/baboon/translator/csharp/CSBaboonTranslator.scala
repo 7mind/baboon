@@ -11,14 +11,10 @@ import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 import izumi.fundamentals.platform.strings.TextTree
 
-class CSBaboonTranslator(options: CompilerOptions)
+class CSBaboonTranslator(options: CompilerOptions, defnTranslator: CSDefnTranslator, trans: CSTypeTranslator)
     extends AbstractBaboonTranslator {
 
   type Out[T] = Either[NonEmptyList[BaboonIssue.TranslationIssue], T]
-
-  private val defnTranslator =
-    new CSDefnTranslator.CSDefnTranslatorImpl(options)
-  val trans = new CSTypeTranslator()
 
   override def translate(family: BaboonFamily): Out[Sources] = {
     for {

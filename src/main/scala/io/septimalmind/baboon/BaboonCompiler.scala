@@ -1,6 +1,5 @@
 package io.septimalmind.baboon
 
-import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator
 import izumi.functional.IzEitherAggregations.*
@@ -13,21 +12,20 @@ import scala.util.Try
 trait BaboonCompiler {
   def run(inputs: Set[Path],
           output: Path,
-          options: CompilerOptions,
   ): Either[NonEmptyList[BaboonIssue], Unit]
 }
 
 object BaboonCompiler {
   case class CompilerOptions(debug: Boolean, obsoleteErrors: Boolean)
-  class BaboonCompilerImpl() extends BaboonCompiler {
+
+  class BaboonCompilerImpl(loader: BaboonLoader,
+                           translator: CSBaboonTranslator,
+                           options: CompilerOptions,
+  ) extends BaboonCompiler {
     override def run(inputs: Set[Path],
-                     output: Path,
-                     options: CompilerOptions,
-    ): Either[NonEmptyList[BaboonIssue], Unit] = {
+                     output: Path): Either[NonEmptyList[BaboonIssue], Unit] = {
       for {
-        loader <- Right(new BaboonLoader.BaboonLoaderImpl())
         loaded <- loader.load(inputs.toList)
-        translator <- Right(new CSBaboonTranslator(options))
         translated <- translator.translate(loaded)
         _ <- translated.files.map {
           case (p, c) =>

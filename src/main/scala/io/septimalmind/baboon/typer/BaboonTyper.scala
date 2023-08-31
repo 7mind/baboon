@@ -26,9 +26,7 @@ trait BaboonTyper {
 }
 
 object BaboonTyper {
-  class BaboonTyperImpl() extends BaboonTyper {
-    private val enquiries = new BaboonEnquiries.BaboonEnquiriesImpl()
-
+  class BaboonTyperImpl(enquiries: BaboonEnquiries) extends BaboonTyper {
     override def process(
       model: RawDomain
     ): Either[NonEmptyList[BaboonIssue.TyperIssue], Domain] = {

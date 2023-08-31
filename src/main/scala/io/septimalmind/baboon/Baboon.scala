@@ -1,5 +1,6 @@
 package io.septimalmind.baboon
 import caseapp.*
+import distage.{Injector, ModuleDef}
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.{
@@ -29,51 +30,51 @@ object Baboon {
         System.exit(1)
       case Right(value) =>
         val opts = value._1
-        val compiler = new BaboonCompiler.BaboonCompilerImpl()
-        val inputModels = opts.model
-          .map(s => Paths.get(s))
-          .toSet ++ opts.modelDir.flatMap { dir =>
-          IzFiles
-            .walk(Paths.get(dir).toFile)
-            .filter(_.toFile.getName.endsWith(".baboon"))
-        }
-        val outDir = Paths.get(opts.output)
-        println(
-          s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}"
+        val options = CompilerOptions(
+          opts.debug.getOrElse(false),
+          opts.csObsoleteErrors.getOrElse(false)
         )
-        println(s"Target: ${outDir.toFile.getCanonicalPath}")
-
-        if (outDir.toFile.exists()) {
-          val unexpectedFiles = IzFiles.walk(outDir.toFile).filter { p =>
-            val f = p.toFile
-            !f.isDirectory && !(f.getName.endsWith(".cs") || f.getName
-              .startsWith("."))
-          }
-
-          if (unexpectedFiles.isEmpty) {
-            IzFiles.removeDir(outDir)
-          } else {
-            System.err.println(
-              s"Refusing to remove target directory, there are unexpected files: ${unexpectedFiles.niceList()}"
+        Injector.NoCycles().produceRun(new BaboonModule(options)) {
+          (compiler: BaboonCompiler) =>
+            val inputModels = opts.model
+              .map(s => Paths.get(s))
+              .toSet ++ opts.modelDir.flatMap { dir =>
+              IzFiles
+                .walk(Paths.get(dir).toFile)
+                .filter(_.toFile.getName.endsWith(".baboon"))
+            }
+            val outDir = Paths.get(opts.output)
+            println(
+              s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}"
             )
-            System.exit(0)
-          }
+            println(s"Target: ${outDir.toFile.getCanonicalPath}")
+
+            if (outDir.toFile.exists()) {
+              val unexpectedFiles = IzFiles.walk(outDir.toFile).filter { p =>
+                val f = p.toFile
+                !f.isDirectory && !(f.getName.endsWith(".cs") || f.getName
+                  .startsWith("."))
+              }
+
+              if (unexpectedFiles.isEmpty) {
+                IzFiles.removeDir(outDir)
+              } else {
+                System.err.println(
+                  s"Refusing to remove target directory, there are unexpected files: ${unexpectedFiles.niceList()}"
+                )
+                System.exit(0)
+              }
+            }
+
+            compiler.run(inputModels, outDir) match {
+              case Left(value) =>
+                System.err.println("Compiler failed")
+                System.err.println(value.toList.niceList())
+              case Right(_) =>
+                println("Done")
+            }
         }
 
-        compiler.run(
-          inputModels,
-          outDir,
-          CompilerOptions(
-            opts.debug.getOrElse(false),
-            opts.csObsoleteErrors.getOrElse(false)
-          )
-        ) match {
-          case Left(value) =>
-            System.err.println("Compiler failed")
-            System.err.println(value.toList.niceList())
-          case Right(_) =>
-            println("Done")
-        }
     }
   }
 }

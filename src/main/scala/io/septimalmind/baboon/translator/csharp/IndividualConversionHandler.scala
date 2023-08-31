@@ -10,7 +10,7 @@ import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.nonempty.NonEmptyList
 import izumi.fundamentals.platform.strings.TextTree
 
-class IndividualConversionHandler(transd: CSDefnTranslator.CSDefnTranslatorImpl,
+class IndividualConversionHandler(transd: CSDefnTranslator,
                                   trans: CSTypeTranslator,
                                   pkg: CSPackageId,
                                   srcVer: Version,

@@ -27,10 +27,9 @@ object CSDefnTranslator {
 
   case class Output(path: String, tree: TextTree[CSValue], pkg: CSPackageId)
 
-  class CSDefnTranslatorImpl(options: CompilerOptions)
+  class CSDefnTranslatorImpl(options: CompilerOptions, trans: CSTypeTranslator)
       extends CSDefnTranslator {
     type Out[T] = Either[NonEmptyList[BaboonIssue.TranslationIssue], T]
-    private val trans = new CSTypeTranslator()
 
     override def translate(defn: DomainMember.User,
                            domain: Domain,

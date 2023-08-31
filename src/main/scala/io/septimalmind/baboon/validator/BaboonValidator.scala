@@ -17,9 +17,9 @@ trait BaboonValidator {
 }
 
 object BaboonValidator {
-  class BaboonValidatorImpl() extends BaboonValidator {
+  class BaboonValidatorImpl(enquiries: BaboonEnquiries)
+      extends BaboonValidator {
     import izumi.functional.IzEitherTmp.*
-    private val enquiries = new BaboonEnquiries.BaboonEnquiriesImpl()
 
     override def validate(
       family: BaboonFamily

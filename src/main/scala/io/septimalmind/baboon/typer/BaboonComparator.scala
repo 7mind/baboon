@@ -15,9 +15,8 @@ trait BaboonComparator {
 
 object BaboonComparator {
 
-  class BaboonComparatorImpl() extends BaboonComparator {
-    private val enquiries = new BaboonEnquiries.BaboonEnquiriesImpl()
-
+  class BaboonComparatorImpl(enquiries: BaboonEnquiries, rules: BaboonRules)
+      extends BaboonComparator {
     override def evolve(
       pkg: Pkg,
       versions: NonEmptyMap[Version, Domain]
@@ -33,7 +32,6 @@ object BaboonComparator {
       )
 
       for {
-        rules <- Right(new BaboonRules.BaboonRulesImpl())
         indexedDiffs <- toCompare.map {
           case fresh :: old :: Nil =>
             compare(versions(fresh), versions(old))
