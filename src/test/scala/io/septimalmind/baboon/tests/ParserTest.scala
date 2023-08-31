@@ -2,8 +2,7 @@ package io.septimalmind.baboon.tests
 
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.FSPath
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import izumi.fundamentals.collections.nonempty.{NEList, NEString}
+import izumi.fundamentals.collections.nonempty.NEString
 
 class ParserTest extends BaboonTest {
   "baboon parser" should {
@@ -43,14 +42,15 @@ class ParserTest extends BaboonTest {
           |""".stripMargin
         )
       )
-      parsed match {
-        case Left(value) =>
-          value match {
-            case NEList(BaboonIssue.ParserFailed(fail)) =>
-              println(fail.trace())
-          }
-        case Right(value) => println(value)
-      }
+//      parsed match {
+//        case Left(value) =>
+//          value match {
+//            case NEList(BaboonIssue.ParserFailed(fail)) =>
+//              println(fail.trace())
+//          }
+//        case Right(value) =>
+//          println(value)
+//      }
       assert(parsed.isRight)
     }
   }
