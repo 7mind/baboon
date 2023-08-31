@@ -3,9 +3,11 @@ package io.septimalmind.baboon.typer
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage}
+import io.septimalmind.baboon.util.BLogger
 import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.{NonEmptyList, NonEmptyMap}
+import izumi.fundamentals.platform.strings.TextTree.Quote
 
 trait BaboonFamilyManager {
   def load(
@@ -14,11 +16,11 @@ trait BaboonFamilyManager {
 }
 
 object BaboonFamilyManager {
-  class BaboonFamilyManagerImpl(
-    parser: BaboonParser,
-    typer: BaboonTyper,
-    comparator: BaboonComparator,
-                               ) extends BaboonFamilyManager {
+  class BaboonFamilyManagerImpl(parser: BaboonParser,
+                                typer: BaboonTyper,
+                                comparator: BaboonComparator,
+                                logger: BLogger)
+      extends BaboonFamilyManager {
     override def load(
       definitions: List[BaboonParser.Input]
     ): Either[NonEmptyList[BaboonIssue], BaboonFamily] = {
@@ -34,10 +36,10 @@ object BaboonFamilyManager {
 
         _ <- Right(
           domains.sortBy(d => (d.id.toString, d.version.version)).foreach { d =>
-            println(
-              s"[ ${d.id}@${d.version} ] retained definitions: ${d.defs.meta.nodes.size}, unreachable definitions: ${d.excludedIds.size}"
+            logger.message(
+              d.id.toString,
+              q"${d.version}: retained definitions: ${d.defs.meta.nodes.size}, unreachable definitions: ${d.excludedIds.size}"
             )
-
           }
         )
 

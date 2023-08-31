@@ -2,9 +2,11 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.util.BLogger
 import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.{NonEmptyList, NonEmptyMap}
+import izumi.fundamentals.platform.strings.TextTree.Quote
 
 trait BaboonComparator {
   def evolve(
@@ -15,7 +17,9 @@ trait BaboonComparator {
 
 object BaboonComparator {
 
-  class BaboonComparatorImpl(enquiries: BaboonEnquiries, rules: BaboonRules)
+  class BaboonComparatorImpl(enquiries: BaboonEnquiries,
+                             rules: BaboonRules,
+                             logger: BLogger)
       extends BaboonComparator {
     override def evolve(
       pkg: Pkg,
@@ -27,8 +31,9 @@ object BaboonComparator {
 
       val toCompare = sortedVersions.sliding(2).toList
 
-      println(
-        s"[ $pkg ] conversions chain: ${toCompare.map(_.mkString("<-")).mkString("; ")}"
+      logger.message(
+        pkg.toString,
+        q"conversions chain: ${toCompare.map(_.mkString("<-")).mkString("; ")}"
       )
 
       for {

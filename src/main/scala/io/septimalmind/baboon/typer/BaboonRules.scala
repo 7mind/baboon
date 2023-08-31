@@ -3,8 +3,10 @@ package io.septimalmind.baboon.typer
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.*
+import io.septimalmind.baboon.util.BLogger
 import izumi.functional.IzEitherAggregations.*
 import izumi.fundamentals.collections.nonempty.NonEmptyList
+import izumi.fundamentals.platform.strings.TextTree.*
 
 trait BaboonRules {
   def compute(
@@ -16,11 +18,10 @@ trait BaboonRules {
 
 object BaboonRules {
 
-  class BaboonRulesImpl() extends BaboonRules {
-    override def compute(
-      prev: Domain,
-      last: Domain,
-      diff: BaboonDiff
+  class BaboonRulesImpl(logger: BLogger) extends BaboonRules {
+    override def compute(prev: Domain,
+                         last: Domain,
+                         diff: BaboonDiff,
     ): Either[NonEmptyList[BaboonIssue.EvolutionIssue], BaboonRuleset] = {
       for {
         conversions <- prev.defs.meta.nodes
@@ -198,8 +199,10 @@ object BaboonRules {
           case c: CustomConversionRequired => c
         }.size
         val trivial = total - user
-        println(
-          s"""[ ${last.id}: ${prev.version}->${last.version} ] conversions: $total, derived: $trivial, to be implemented: $user"""
+
+        logger.message(
+          last.id.toString,
+          q"${prev.version}->${last.version}: conversions: $total, derived: $trivial, to be implemented: $user"
         )
 
         BaboonRuleset(EvolutionStep(prev.version, last.version), conversions)

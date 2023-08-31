@@ -9,7 +9,7 @@ import izumi.fundamentals.platform.resources.{
 }
 import izumi.fundamentals.platform.strings.IzString.*
 
-import java.nio.file.Paths
+import java.nio.file.{Path, Paths}
 
 case class Options(model: List[String],
                    modelDir: List[String],
@@ -49,32 +49,45 @@ object Baboon {
             )
             println(s"Target: ${outDir.toFile.getCanonicalPath}")
 
-            if (outDir.toFile.exists()) {
-              val unexpectedFiles = IzFiles.walk(outDir.toFile).filter { p =>
-                val f = p.toFile
-                !f.isDirectory && !(f.getName.endsWith(".cs") || f.getName
-                  .startsWith("."))
-              }
-
-              if (unexpectedFiles.isEmpty) {
-                IzFiles.removeDir(outDir)
-              } else {
-                System.err.println(
-                  s"Refusing to remove target directory, there are unexpected files: ${unexpectedFiles.niceList()}"
-                )
-                System.exit(0)
-              }
-            }
-
-            compiler.run(inputModels, outDir) match {
+            cleanupTargetDir(outDir) match {
               case Left(value) =>
-                System.err.println("Compiler failed")
-                System.err.println(value.toList.niceList())
+                System.err.println(
+                  s"Refusing to remove target directory, there are unexpected files: ${value.niceList()}"
+                )
+                System.exit(2)
               case Right(_) =>
-                println("Done")
+                compiler.run(inputModels, outDir) match {
+                  case Left(value) =>
+                    System.err.println("Compiler failed")
+                    System.err.println(value.toList.niceList())
+                    System.exit(3)
+                  case Right(_) =>
+                    println("Done")
+                    System.exit(0)
+                }
             }
+
         }
 
+    }
+  }
+
+  private def cleanupTargetDir(outDir: Path): Either[Seq[Path], Unit] = {
+    if (outDir.toFile.exists()) {
+      val unexpectedFiles = IzFiles.walk(outDir.toFile).filter { p =>
+        val f = p.toFile
+        !f.isDirectory && !(f.getName.endsWith(".cs") || f.getName
+          .startsWith("."))
+      }
+
+      if (unexpectedFiles.isEmpty) {
+        IzFiles.removeDir(outDir)
+        Right(())
+      } else {
+        Left(unexpectedFiles)
+      }
+    } else {
+      Right(())
     }
   }
 }

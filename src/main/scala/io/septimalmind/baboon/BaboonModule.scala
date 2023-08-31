@@ -10,6 +10,7 @@ import io.septimalmind.baboon.translator.csharp.{
   CSTypeTranslator
 }
 import io.septimalmind.baboon.typer.*
+import io.septimalmind.baboon.util.BLogger
 import io.septimalmind.baboon.validator.BaboonValidator
 
 class BaboonModule(options: CompilerOptions) extends ModuleDef {
@@ -23,6 +24,8 @@ class BaboonModule(options: CompilerOptions) extends ModuleDef {
   make[BaboonParser].from[BaboonParser.BaboonParserImpl]
   make[BaboonTyper].from[BaboonTyper.BaboonTyperImpl]
   make[BaboonComparator].from[BaboonComparator.BaboonComparatorImpl]
+
+  make[BLogger].from[BLogger.BLoggerImpl]
 
   many[AbstractBaboonTranslator].ref[CSBaboonTranslator]
   make[CSBaboonTranslator]
