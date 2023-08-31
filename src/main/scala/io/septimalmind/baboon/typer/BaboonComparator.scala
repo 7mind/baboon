@@ -33,7 +33,7 @@ object BaboonComparator {
 
       logger.message(
         pkg.toString,
-        q"conversions chain: ${toCompare.map(_.mkString("<-")).mkString("; ")}"
+        q"conversions chain: ${toCompare.map(_.mkString("<-")).mkString("; "): AnyRef}"
       )
 
       for {
