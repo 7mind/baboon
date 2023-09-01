@@ -8,6 +8,7 @@ import io.septimalmind.baboon.parser.model.{
   RawVersion
 }
 import io.septimalmind.baboon.typer.model.*
+import izumi.distage.LocalContext
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -15,6 +16,7 @@ import izumi.fundamentals.graphs.struct.IncidenceMatrix
 import izumi.fundamentals.graphs.tools.{Toposort, ToposortLoopBreaker}
 import izumi.fundamentals.graphs.{DG, GraphMeta}
 import izumi.fundamentals.platform.crypto.IzSha256Hash
+import izumi.fundamentals.platform.functional.Identity
 
 import scala.annotation.tailrec
 
@@ -23,7 +25,9 @@ trait BaboonTyper {
 }
 
 object BaboonTyper {
-  class BaboonTyperImpl(enquiries: BaboonEnquiries) extends BaboonTyper {
+  class BaboonTyperImpl(enquiries: BaboonEnquiries,
+                        translator: LocalContext[Identity, BaboonTranslator])
+      extends BaboonTyper {
     override def process(
       model: RawDomain
     ): Either[NEList[BaboonIssue.TyperIssue], Domain] = {
@@ -165,7 +169,12 @@ object BaboonTyper {
         // we don't support inheritance, so order doesn't matter here
         out <- members.biFoldLeft(initial) {
           case (acc, defn) =>
-            new BaboonTranslator(acc, pkg, Owner.Toplevel).translate(defn)
+            translator
+              .provide(acc)
+              .provide(pkg)
+              .provide(Owner.Toplevel: Owner)
+              .produce()
+              .use(_.translate(defn))
         }
       } yield {
         out.values.toList

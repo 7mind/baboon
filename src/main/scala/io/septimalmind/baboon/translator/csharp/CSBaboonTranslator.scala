@@ -4,13 +4,15 @@ import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.translator.{AbstractBaboonTranslator, Sources}
 import io.septimalmind.baboon.typer.model.*
+import izumi.distage.LocalContext
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
+import izumi.fundamentals.platform.functional.Identity
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslator)
+class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslator, handler: LocalContext[Identity, IndividualConversionHandler])
     extends AbstractBaboonTranslator {
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
@@ -279,14 +281,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslat
         .filter(kv => toCurrent.contains(kv._1))
         .map {
           case (srcVer, rules) =>
-            new IndividualConversionHandler(
-              defnTranslator,
-              trans,
-              pkg,
-              srcVer.from,
-              domain,
-              rules
-            ).makeConvs()
+            handler.provide(pkg).provide(srcVer.from).provide(domain).provide(rules).produce().use(_.makeConvs())
         }
         .biFlatten
     } yield {

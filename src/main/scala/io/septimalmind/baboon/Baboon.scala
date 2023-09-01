@@ -1,7 +1,8 @@
 package io.septimalmind.baboon
 import caseapp.*
-import distage.Injector
+import distage.{Activation, DIKey, Injector, PlannerInput}
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
+import izumi.distage.model.plan.Roots
 import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzArtifactMaterializer
 import izumi.fundamentals.platform.strings.IzString.*

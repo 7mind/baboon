@@ -1,17 +1,30 @@
 package io.septimalmind.baboon
 
-import distage.ModuleDef
+import distage.{DIKey, ModuleDef}
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.translator.AbstractBaboonTranslator
+import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.translator.csharp.{
   CSBaboonTranslator,
   CSDefnTranslator,
-  CSTypeTranslator
+  CSTypeTranslator,
+  IndividualConversionHandler
 }
 import io.septimalmind.baboon.typer.*
+import io.septimalmind.baboon.typer.model.{
+  BaboonRuleset,
+  Domain,
+  DomainMember,
+  Owner,
+  Pkg,
+  TypeId,
+  Version
+}
 import io.septimalmind.baboon.util.BLogger
 import io.septimalmind.baboon.validator.BaboonValidator
+import izumi.distage.LocalContext
+import izumi.fundamentals.platform.functional.Identity
 
 class BaboonModule(options: CompilerOptions) extends ModuleDef {
   make[BaboonCompiler].from[BaboonCompiler.BaboonCompilerImpl]
@@ -31,4 +44,25 @@ class BaboonModule(options: CompilerOptions) extends ModuleDef {
   make[CSBaboonTranslator]
   make[CSDefnTranslator].from[CSDefnTranslator.CSDefnTranslatorImpl]
   make[CSTypeTranslator]
+
+  make[LocalContext[Identity, BaboonTranslator]]
+    .fromLocalContext(new ModuleDef {
+      make[BaboonTranslator]
+    }.running { (translator: BaboonTranslator) =>
+      translator
+    })
+    .external(DIKey[Pkg], DIKey[Owner], DIKey[Map[TypeId, DomainMember]])
+
+  make[LocalContext[Identity, IndividualConversionHandler]]
+    .fromLocalContext(new ModuleDef {
+      make[IndividualConversionHandler]
+    }.running { (handler: IndividualConversionHandler) =>
+      handler
+    })
+    .external(
+      DIKey[CSPackageId],
+      DIKey[Version],
+      DIKey.get[Domain],
+      DIKey.get[BaboonRuleset]
+    )
 }
