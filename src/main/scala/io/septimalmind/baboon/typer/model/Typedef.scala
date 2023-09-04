@@ -44,10 +44,8 @@ object Typedef {
   }
 
   case class Dto(id: TypeId.User, fields: List[Field]) extends User
-  case class Enum(id: TypeId.User, members: NEList[EnumMember])
-      extends User
-  case class Adt(id: TypeId.User, members: NEList[TypeId.User])
-      extends User
+  case class Enum(id: TypeId.User, members: NEList[EnumMember]) extends User
+  case class Adt(id: TypeId.User, members: NEList[TypeId.User]) extends User
 }
 
 sealed trait TypeRef {
@@ -55,8 +53,7 @@ sealed trait TypeRef {
 }
 object TypeRef {
   case class Scalar(id: TypeId.Scalar) extends TypeRef
-  case class Constructor(id: TypeId.BuiltinCollection,
-                         args: NEList[TypeRef])
+  case class Constructor(id: TypeId.BuiltinCollection, args: NEList[TypeRef])
       extends TypeRef
 }
 
@@ -181,12 +178,15 @@ object TypeId {
 
   sealed trait ComparatorType
   object ComparatorType {
-    case object Direct extends ComparatorType
-    case object ObjectEquals extends ComparatorType
-    case object OptionEquals extends ComparatorType
-    case object SeqEquals extends ComparatorType
-    case object SetEquals extends ComparatorType
-    case class MapEquals(valTpe: TypeRef) extends ComparatorType
+    sealed trait Basic extends ComparatorType
+    case object Direct extends Basic
+    case object ObjectEquals extends Basic
+
+    sealed trait Complex extends ComparatorType
+    case class OptionEquals(subComparator: ComparatorType) extends Complex
+    case class SeqEquals(subComparator: ComparatorType) extends Complex
+    case class SetEquals(subComparator: ComparatorType) extends Complex
+    case class MapEquals(valComparator: ComparatorType) extends Complex
   }
 
   def comparator(ref: TypeRef): ComparatorType = {
@@ -198,19 +198,21 @@ object TypeId {
           ComparatorType.ObjectEquals
         }
       case c: TypeRef.Constructor =>
+        val arg1 = c.args.head
+
         c.id match {
           case TypeId.Builtins.opt =>
-            comparator(c.args.head) match {
+            comparator(arg1) match {
               case ComparatorType.Direct => ComparatorType.Direct
-              case _                     => ComparatorType.OptionEquals
+              case out                   => ComparatorType.OptionEquals(out)
             }
           case TypeId.Builtins.set =>
-            ComparatorType.SetEquals
+            ComparatorType.SetEquals(comparator(arg1))
 
           case TypeId.Builtins.map =>
-            ComparatorType.MapEquals(c.args.last)
+            ComparatorType.MapEquals(comparator(c.args.last))
           case TypeId.Builtins.lst =>
-            ComparatorType.SeqEquals
+            ComparatorType.SeqEquals(comparator(arg1))
           case _ =>
             ComparatorType.ObjectEquals
         }

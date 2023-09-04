@@ -134,3 +134,14 @@ root data T8_Removed_Fields {
 }
 
 //
+
+root data T9_test {
+ //f1: opt[opt[str]] // must fail
+ //f1: set[opt[str]] // must fail
+ //f1: map[opt[str], str] // must fail
+
+ f2: map[str, lst[opt[i32]]]
+ f3: opt[lst[opt[str]]]
+ f4: opt[lst[opt[T8_Removed_Fields]]]
+ f5: map[str, lst[opt[T8_Removed_Fields]]]
+}

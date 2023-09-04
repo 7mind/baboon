@@ -132,15 +132,13 @@ object BaboonIssue {
                                   dupes: Map[String, List[Field]])
       extends VerificationIssue
 
-  case class ConflictingEnumBranches(
-    u: Typedef.Enum,
-    dupes: Map[String, NEList[EnumMember]]
-  ) extends VerificationIssue
+  case class ConflictingEnumBranches(u: Typedef.Enum,
+                                     dupes: Map[String, NEList[EnumMember]])
+      extends VerificationIssue
 
-  case class ConflictingAdtBranches(
-    u: Typedef.Adt,
-    dupes: Map[String, NEList[TypeId.User]]
-  ) extends VerificationIssue
+  case class ConflictingAdtBranches(u: Typedef.Adt,
+                                    dupes: Map[String, NEList[TypeId.User]])
+      extends VerificationIssue
 
   case class ConflictingTypeIds(domain: Domain,
                                 dupes: Map[String, Iterable[DomainMember]])
@@ -183,6 +181,15 @@ object BaboonIssue {
       extends VerificationIssue
       with BaboonBug
 
+  case class PathologicGenerics(d: Typedef.Dto, badFields: List[Field])
+      extends VerificationIssue
+
+  case class SetsCantContainGenerics(dto: Typedef.Dto, badFields: List[Field])
+      extends VerificationIssue
+
+  case class MapKeysShouldNotBeGeneric(dto: Typedef.Dto, badFields: List[Field])
+      extends VerificationIssue
+
   //
   sealed trait TranslationIssue extends BaboonIssue
   case class NonUniqueOutputFiles(c: Map[String, List[String]])
@@ -192,4 +199,5 @@ object BaboonIssue {
       extends TranslationIssue
       with BaboonBug
       with Issue
+
 }

@@ -55,6 +55,7 @@ object BaboonValidator {
         _ <- checkLoops(domain)
         _ <- checkUniqueness(domain)
         _ <- checkShape(domain)
+        _ <- checkPathologicGenerics(domain)
       } yield {}
 
     }
@@ -140,6 +141,99 @@ object BaboonValidator {
             }
         }.biSequence_
       } yield {}
+    }
+
+    private def checkPathologicGenerics(
+      domain: Domain
+    ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
+      for {
+        _ <- domain.defs.meta.nodes.values.map {
+          case _: DomainMember.Builtin =>
+            Right(())
+          case u: DomainMember.User =>
+            u.defn match {
+              case d: Typedef.Dto =>
+                for {
+                  _ <- checkDoubleOptions(d)
+                  _ <- checkComplexSetElements(d)
+                  _ <- checkComplexMapKeys(d)
+                } yield {}
+
+              case _ =>
+                Right(())
+
+            }
+        }.biSequence_
+      } yield {}
+    }
+
+    private def checkDoubleOptions(
+      dto: Typedef.Dto
+    ): Either[NEList[BaboonIssue.PathologicGenerics], Unit] = {
+      def isDoubleOption(t: TypeRef, path: Seq[TypeId]): Boolean = {
+
+        t match {
+          case _: TypeRef.Scalar =>
+            false
+          case TypeRef.Constructor(id, args) =>
+            if (id == TypeId.Builtins.opt && path.lastOption.contains(id)) {
+              true
+            } else {
+              args.exists(a => isDoubleOption(a, path :+ id))
+            }
+
+        }
+      }
+
+      val badFields = dto.fields.filter(f => isDoubleOption(f.tpe, Seq.empty))
+
+      Either.ifThenFail(badFields.nonEmpty)(
+        NEList(BaboonIssue.PathologicGenerics(dto, badFields))
+      )
+    }
+
+    private def checkComplexSetElements(
+      dto: Typedef.Dto
+    ): Either[NEList[BaboonIssue.SetsCantContainGenerics], Unit] = {
+      def isDoubleOption(t: TypeRef, path: Seq[TypeId]): Boolean = {
+        t match {
+          case TypeRef.Constructor(TypeId.Builtins.set, args) =>
+            args.head match {
+              case _: TypeRef.Constructor => true
+              case _                      => false
+            }
+          case _ =>
+            false
+        }
+      }
+
+      val badFields = dto.fields.filter(f => isDoubleOption(f.tpe, Seq.empty))
+
+      Either.ifThenFail(badFields.nonEmpty)(
+        NEList(BaboonIssue.SetsCantContainGenerics(dto, badFields))
+      )
+    }
+
+    private def checkComplexMapKeys(
+      dto: Typedef.Dto
+    ): Either[NEList[BaboonIssue.MapKeysShouldNotBeGeneric], Unit] = {
+      def isDoubleOption(t: TypeRef, path: Seq[TypeId]): Boolean = {
+        t match {
+          case TypeRef.Constructor(TypeId.Builtins.map, args) =>
+            args.head match {
+              case _: TypeRef.Constructor => true
+              case _                      => false
+            }
+          case _ =>
+            false
+        }
+      }
+
+      val badFields = dto.fields.filter(f => isDoubleOption(f.tpe, Seq.empty))
+
+      Either.ifThenFail(badFields.nonEmpty)(
+        NEList(BaboonIssue.MapKeysShouldNotBeGeneric(dto, badFields))
+      )
     }
 
     private def checkShape(

@@ -14,9 +14,7 @@ trait CSDefnTranslator {
   def translate(defn: DomainMember.User,
                 domain: Domain,
                 evo: BaboonEvolution,
-  ): Either[NEList[BaboonIssue.TranslationIssue], List[
-    CSDefnTranslator.Output
-  ]]
+  ): Either[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]]
 
   def inNs(nss: Seq[String], tree: TextTree[CSValue]): TextTree[CSValue]
 
@@ -107,30 +105,6 @@ object CSDefnTranslator {
             .map(group => q"""HashCode.Combine(${group.join(", ")})""")
             .toList
 
-          def mkComparator(ref: TextTree[CSValue],
-                           oref: TextTree[CSValue],
-                           tpe: TypeRef): TextTree[CSValue] = {
-            TypeId.comparator(tpe) match {
-              case ComparatorType.Direct =>
-                q"$ref == $oref"
-              case ComparatorType.ObjectEquals =>
-                q"((Object)$ref).Equals($oref)"
-              case ComparatorType.OptionEquals =>
-                q"Equals($ref, $oref)"
-              case ComparatorType.SeqEquals =>
-                q"$ref.SequenceEqual($oref)"
-              case ComparatorType.SetEquals =>
-                q"$ref.SetEquals($oref)"
-              case ComparatorType.MapEquals(valtpe) =>
-                val vref = q"$oref[key]"
-                val ovref = q"$ref[key]"
-
-                val cmp = mkComparator(vref, ovref, valtpe)
-
-                q"($ref.Count == $oref.Count && !$ref.Keys.Any(key => !$oref.Keys.Contains(key)) && !$ref.Keys.Any(key => $cmp))"
-            }
-          }
-
           val comparators = outs.map {
             case (name, _, f) =>
               val ref = q"$name"
@@ -178,6 +152,49 @@ object CSDefnTranslator {
         case _: Typedef.Adt =>
           q"""public interface $name : $iBaboonGenerated {
              |}""".stripMargin
+      }
+    }
+
+    private def mkComparator(ref: TextTree[CSValue],
+                             oref: TextTree[CSValue],
+                             tpe: TypeRef): TextTree[CSValue] = {
+      renderComparator(ref, oref, TypeId.comparator(tpe))
+    }
+
+    private def renderComparator(ref: TextTree[CSValue],
+                                 oref: TextTree[CSValue],
+                                 cmp: ComparatorType): TextTree[CSValue] = {
+      cmp match {
+        case ComparatorType.Direct =>
+          q"$ref == $oref"
+        case ComparatorType.ObjectEquals =>
+          q"((Object)$ref).Equals($oref)"
+        case ComparatorType.OptionEquals(subComparator) =>
+          subComparator match {
+            case _: ComparatorType.Basic =>
+              q"Equals($ref, $oref)"
+            case c: ComparatorType.Complex =>
+              q"(Equals($ref, $oref) || ($ref != null && $oref != null && ${renderComparator(ref, oref, c)}))"
+          }
+
+        case ComparatorType.SeqEquals(subComparator) =>
+          subComparator match {
+            case _: ComparatorType.Basic =>
+              q"$ref.SequenceEqual($oref)"
+            case c: ComparatorType.Complex =>
+              q"($ref.SequenceEqual($oref) || ($ref.Count == $oref.Count && ($ref.Zip($oref).All(p => ${renderComparator(q"p.First", q"p.Second", c)}))))"
+          }
+
+        case ComparatorType.SetEquals(_) =>
+          q"$ref.SetEquals($oref)"
+
+        case ComparatorType.MapEquals(valComp) =>
+          val vref = q"$oref[key]"
+          val ovref = q"$ref[key]"
+
+          val cmp = renderComparator(vref, ovref, valComp)
+
+          q"($ref.Count == $oref.Count && $ref.Keys.All(key => $oref.Keys.Contains(key)) && !$ref.Keys.Any(key => $cmp))"
       }
     }
 
