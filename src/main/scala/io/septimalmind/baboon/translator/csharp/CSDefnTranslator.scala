@@ -2,13 +2,13 @@ package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import izumi.fundamentals.platform.strings.TextTree.*
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.iBaboonGenerated
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
+import izumi.fundamentals.platform.strings.TextTree.*
 
 trait CSDefnTranslator {
   def translate(defn: DomainMember.User,
@@ -98,30 +98,41 @@ object CSDefnTranslator {
             q" : ${allParents.join(", ")} "
           }
 
-          val hcGroups = outs
-            .map(_._1)
-            .map(name => q"$name")
-            .grouped(8)
-            .map(group => q"""HashCode.Combine(${group.join(", ")})""")
-            .toList
-
           val comparators = outs.map {
             case (name, _, f) =>
               val ref = q"$name"
               val oref = q"other.$ref"
-
-              mkComparator(ref, oref, f.tpe)
+              val comparator = TypeId.comparator(f.tpe)
+              (ref, oref, comparator)
           }
+
+          val renderedHcParts = comparators.map {
+            case (ref, _, cmp) =>
+              renderHashcode(ref, cmp, 0)
+          }
+
+          val hcGroups = renderedHcParts
+            .grouped(8)
+            .map(group => q"""HashCode.Combine(
+                   |    ${group.join(",\n").shift(4).trim}
+                   |)""".stripMargin)
+            .toList
 
           val hc = if (hcGroups.isEmpty) {
             q"0"
           } else {
             hcGroups.join(" ^\n")
           }
-          val cmp = if (comparators.isEmpty) {
+
+          val renderedCmps = comparators.map {
+            case (ref, oref, cmp) =>
+              renderComparator(ref, oref, cmp)
+          }
+
+          val cmp = if (renderedCmps.isEmpty) {
             q"true"
           } else {
-            comparators.join(" &&\n")
+            renderedCmps.join(" &&\n")
           }
           val eq = Seq(q"""public override int GetHashCode()
                |{
@@ -155,10 +166,34 @@ object CSDefnTranslator {
       }
     }
 
-    private def mkComparator(ref: TextTree[CSValue],
-                             oref: TextTree[CSValue],
-                             tpe: TypeRef): TextTree[CSValue] = {
-      renderComparator(ref, oref, TypeId.comparator(tpe))
+    def renderHashcode(ref: TextTree[CSValue],
+                       cmp: ComparatorType,
+                       depth: Int): TextTree[CSValue] = {
+      val itemRef = q"item${depth.toString}"
+      cmp match {
+        case _: ComparatorType.Basic =>
+          if (depth == 0) {
+            ref
+          } else {
+            q"HashCode.Combine($ref)"
+          }
+
+        case c: ComparatorType.Complex =>
+          c match {
+            case ComparatorType.OptionEquals(subComparator) =>
+              q"($ref == null ? 0 : ${renderHashcode(ref, subComparator, depth + 1)})"
+            case ComparatorType.SeqEquals(subComparator) =>
+              q"($ref.Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ ${renderHashcode(itemRef, subComparator, depth + 1)}))"
+            case ComparatorType.SetEquals(subComparator) =>
+              q"($ref.Select($itemRef => ${renderHashcode(itemRef, subComparator, depth + 1)}).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
+            case ComparatorType.MapEquals(keyComparator, valComparator) =>
+              q"($ref.Select($itemRef => HashCode.Combine(${renderHashcode(
+                q"$itemRef.Key",
+                keyComparator,
+                depth + 1
+              )}, ${renderHashcode(q"$itemRef.Value", valComparator, depth + 1)})).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
+          }
+      }
     }
 
     private def renderComparator(ref: TextTree[CSValue],
@@ -188,7 +223,7 @@ object CSDefnTranslator {
         case ComparatorType.SetEquals(_) =>
           q"$ref.SetEquals($oref)"
 
-        case ComparatorType.MapEquals(valComp) =>
+        case ComparatorType.MapEquals(_, valComp) =>
           val vref = q"$oref[key]"
           val ovref = q"$ref[key]"
 
