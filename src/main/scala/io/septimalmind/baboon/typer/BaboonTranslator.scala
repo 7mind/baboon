@@ -2,92 +2,38 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.typer.BaboonTyper.{FullRawDefn, ScopedDefn}
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.Scope.NestedScope
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
 
-class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
+class BaboonTranslator(pkg: Pkg,
+                       path: NEList[Scope[FullRawDefn]],
+                       scopeSupport: ScopeSupport) {
   def translate(
-    defn: RawTLDef,
-  ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, DomainMember]] = {
+    defn: ScopedDefn
+  ): Either[NEList[BaboonIssue.TyperIssue], List[DomainMember]] = {
+
     for {
-      translated <- translate(defn.value, defn.root)
-      duplications = acc.keySet.intersect(translated.keySet)
-      next <- if (duplications.nonEmpty) {
-        Left(
-          NEList(BaboonIssue.DuplicatedTypeId(duplications, pkg, owner, defn))
-        )
-      } else {
-        Right(translated)
-      }
+      rawDefn <- Right(defn.thisScope.defn)
+      id <- scopeSupport.resolveUserTypeId(rawDefn.defn.name, path, pkg)
+      members <- convertMember(id, rawDefn, defn.thisScope)
     } yield {
-      acc ++ next
+      members.toList
     }
   }
 
-  def translate(
-    defn: RawDefn,
-    isRoot: Boolean
-  ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, DomainMember.User]] = {
-    for {
-      id <- convertDefnUserId(defn.name)
-      members <- convertMember(id, isRoot, defn)
-      uniqueMembers <- members
-        .map(m => (m.id: TypeId, m))
-        .toList
-        .toUniqueMap(
-          e => NEList(BaboonIssue.DuplicatedTypedef(e, pkg, owner, defn))
-        )
-
-    } yield {
-      uniqueMembers
-    }
-  }
-
-  private def convertDefnUserId(
-    name: RawTypeName,
-  ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User] = {
-    for {
-      id <- convertId(name, owner)
-      userId <- id match {
-        case id: TypeId.Builtin =>
-          Left(NEList(BaboonIssue.UnexpectedBuiltin(id, owner)))
-        case u: TypeId.User =>
-          Right(u)
-      }
-    } yield {
-      userId
-    }
-  }
-
-  private def convertId(name: RawTypeName,
-                        ownedBy: Owner,
-  ): Either[NEList[BaboonIssue.TyperIssue], TypeId] = {
-    for {
-      name <- Right(TypeName(name.name))
-      _ <- Right(()) // TODO: validate name
-    } yield {
-      if (TypeId.Builtins.collections.map(_.name).contains(name)) {
-        TypeId.BuiltinCollection(name)
-      } else if (TypeId.Builtins.scalars.map(_.name).contains(name)) {
-        TypeId.BuiltinScalar(name)
-      } else {
-        TypeId.User(pkg, ownedBy, name)
-      }
-    }
-  }
-
-  private def convertMember(
-    id: TypeId.User,
-    isRoot: Boolean,
-    defn: RawDefn
+  private def convertMember(id: TypeId.User,
+                            defn: FullRawDefn,
+                            thisScope: NestedScope[FullRawDefn],
   ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
-
-    defn match {
-      case d: RawDto  => convertDto(id, isRoot, d).map(d => NEList(d))
-      case e: RawEnum => converEnum(id, isRoot, e).map(e => NEList(e))
-      case a: RawAdt  => convertAdt(id, isRoot, a)
+    val root = defn.gcRoot
+    defn.defn match {
+      case d: RawDto  => convertDto(id, root, d).map(d => NEList(d))
+      case e: RawEnum => converEnum(id, root, e).map(e => NEList(e))
+      case a: RawAdt  => convertAdt(id, root, a, thisScope)
     }
   }
 
@@ -100,7 +46,7 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
       converted <- choice.members.biTraverse { raw =>
         for {
           name <- Right(raw.value)
-          _ <- Right(()): Either[NEList[BaboonIssue.TyperIssue], Unit] // TODO: validate names
+          _ <- SymbolNames.validEnumMemberName(name)
 
         } yield {
           EnumMember(name)
@@ -126,7 +72,7 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
       converted <- dto.members.biTraverse { raw =>
         for {
           name <- Right(FieldName(raw.field.name.name))
-          _ <- Right(()) // TODO: validate names
+          _ <- SymbolNames.validFieldName(name)
           tpe <- convertTpe(raw.field.tpe)
         } yield {
           Field(name, tpe)
@@ -140,27 +86,24 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
     }
   }
 
-  private def convertAdt(
-    id: TypeId.User,
-    isRoot: Boolean,
-    adt: RawAdt
+  private def convertAdt(id: TypeId.User,
+                         isRoot: Boolean,
+                         adt: RawAdt,
+                         thisScope: NestedScope[FullRawDefn],
   ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
     for {
-      sub <- Right(new BaboonTranslator(acc, pkg, Owner.Adt(id)))
-
-      converted <- adt.members.biFlatTraverse { raw =>
-        for {
-          nested <- sub.translate(raw.dto, isRoot = false)
-        } yield {
-          nested.values
-        }
-      }
-
+      converted <- adt.members
+        .map(
+          member =>
+            scopeSupport
+              .resolveUserTypeId(member.dto.name, path :+ thisScope, pkg)
+        )
+        .biSequence
       nel <- NEList
-        .from(converted.map(_.id))
+        .from(converted)
         .toRight(NEList(BaboonIssue.EmptyAdt(id)))
     } yield {
-      NEList(DomainMember.User(isRoot, Typedef.Adt(id, nel)), converted)
+      NEList(DomainMember.User(isRoot, Typedef.Adt(id, nel)))
     }
   }
 
@@ -170,7 +113,7 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
     tpe match {
       case RawTypeRef.Simple(name) =>
         for {
-          id <- convertId(name, Owner.Toplevel)
+          id <- scopeSupport.resolveTypeId(name, path, pkg)
           asScalar <- id match {
             case scalar: TypeId.Scalar =>
               Right(scalar)
@@ -182,7 +125,7 @@ class BaboonTranslator(acc: Map[TypeId, DomainMember], pkg: Pkg, owner: Owner) {
         }
       case RawTypeRef.Constructor(name, params) =>
         for {
-          id <- convertId(name, Owner.Toplevel)
+          id <- scopeSupport.resolveTypeId(name, path, pkg)
           asCollection <- id match {
             case coll: TypeId.BuiltinCollection =>
               Right(coll)

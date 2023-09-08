@@ -229,7 +229,7 @@ object CSDefnTranslator {
 
           val cmp = renderComparator(vref, ovref, valComp)
 
-          q"($ref.Count == $oref.Count && $ref.Keys.All(key => $oref.Keys.Contains(key)) && !$ref.Keys.Any(key => $cmp))"
+          q"($ref.Count == $oref.Count && $ref.Keys.All(key => $oref.ContainsKey(key)) && !$ref.Keys.Any(key => $cmp))"
       }
     }
 

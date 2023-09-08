@@ -76,7 +76,7 @@ object TypeId {
   case class User(pkg: Pkg, owner: Owner, name: TypeName)
       extends TypeId
       with Scalar {
-    override def toString: String = s"$pkg#${name.name}"
+    override def toString: String = s"$pkg/${owner}#${name.name}"
   }
 
   object Builtins {

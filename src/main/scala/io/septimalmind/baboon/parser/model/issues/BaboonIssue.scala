@@ -2,12 +2,8 @@ package io.septimalmind.baboon.parser.model.issues
 
 import fastparse.Parsed
 import io.septimalmind.baboon.parser.BaboonParser
-import io.septimalmind.baboon.parser.model.{
-  RawDefn,
-  RawDomain,
-  RawHeader,
-  RawTLDef
-}
+import io.septimalmind.baboon.parser.model.{RawDefn, RawDomain, RawHeader}
+import io.septimalmind.baboon.typer.BaboonTyper.FullRawDefn
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.graphs.ToposortError
@@ -34,6 +30,7 @@ object BaboonIssue {
 
   //
   sealed trait TyperIssue extends BaboonIssue
+
   case class ScalarExpected(id: TypeId) extends TyperIssue with BaboonBug
   case class CollectionExpected(id: TypeId) extends TyperIssue with BaboonBug
 
@@ -45,19 +42,15 @@ object BaboonIssue {
   case class EmptyFamily(input: List[BaboonParser.Input])
       extends TyperIssue
       with BaboonBug
-  case class DuplicatedTypeId(ids: Set[TypeId],
-                              pkg: Pkg,
-                              owner: Owner,
-                              defn: RawTLDef)
-      extends TyperIssue
 
-  case class DuplicatedTypedef(dupes: Map[TypeId, List[DomainMember.User]],
+  case class UnexpectedBuiltin(id: TypeId.Builtin,
                                pkg: Pkg,
-                               owner: Owner,
-                               defn: RawDefn)
-      extends TyperIssue
+                               path: NEList[Scope[FullRawDefn]],
+  ) extends TyperIssue
 
-  case class UnexpectedBuiltin(id: TypeId.Builtin, owner: Owner)
+  case class UnexpectedNonBuiltin(name: TypeName,
+                                  pkg: Pkg,
+                                  path: NEList[Scope[FullRawDefn]])
       extends TyperIssue
 
   case class MissingTypeId(domain: Pkg, missing: Set[TypeId]) extends TyperIssue
@@ -84,10 +77,24 @@ object BaboonIssue {
 
   case class EmptyPackageId(header: RawHeader) extends TyperIssue
 
-  case class NonUniqueBuiltins(problem: Map[TypeId, List[DomainMember]])
+  case class NonUniqueTypedefs(problem: Map[TypeId, List[DomainMember]])
+      extends TyperIssue
+
+  case class NonUniqueScope(
+    nus: Map[Scope.ScopeName, List[Scope.NestedScope[FullRawDefn]]]
+  ) extends TyperIssue
+
+  case class UnexpectedScoping(e: List[Scope[FullRawDefn]])
       extends TyperIssue
       with BaboonBug
 
+  case class ScopeCannotBeEmpty(member: RawDefn) extends TyperIssue
+
+  case class BadEnumName(name: String) extends TyperIssue
+
+  case class BadFieldName(name: String) extends TyperIssue
+
+  case class BadTypeName(name: String) extends TyperIssue
   //
   sealed trait EvolutionIssue extends BaboonIssue
 
