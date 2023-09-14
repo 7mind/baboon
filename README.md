@@ -31,4 +31,4 @@ baboon \
 ## Notes
 
 1. All the types which are not transitively referenced by `root` types will be eliminated from the compiler output.
-2. Usages in structural inheritance is not considered as references, so structural parents which are not directly referenced as fields and not marked as `root`s will be eliminated 
+2. Usages in structural inheritance are not considered references, so structural parents which are not directly referenced as fields and not marked as `root`s will be eliminated 
