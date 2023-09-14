@@ -11,6 +11,7 @@ import izumi.fundamentals.collections.nonempty.NEList
 
 class BaboonTranslator(pkg: Pkg,
                        path: NEList[Scope[FullRawDefn]],
+                       defined: Map[TypeId, DomainMember],
                        scopeSupport: ScopeSupport) {
   def translate(
     defn: ScopedDefn
@@ -69,14 +70,30 @@ class BaboonTranslator(pkg: Pkg,
     dto: RawDto
   ): Either[NEList[BaboonIssue.TyperIssue], DomainMember.User] = {
     for {
-      converted <- dto.members.biTraverse { raw =>
-        for {
-          name <- Right(FieldName(raw.field.name.name))
-          _ <- SymbolNames.validFieldName(name)
-          tpe <- convertTpe(raw.field.tpe)
-        } yield {
-          Field(name, tpe)
-        }
+      converted <- dto.members.biFlatTraverse {
+        case f: RawDtoMember.FieldDef =>
+          for {
+            name <- Right(FieldName(f.field.name.name))
+            _ <- SymbolNames.validFieldName(name)
+            tpe <- convertTpe(f.field.tpe)
+          } yield {
+            Seq(Field(name, tpe))
+          }
+        case p: RawDtoMember.ParentDef =>
+          for {
+            id <- scopeSupport.resolveScopedRef(p.parent, path, pkg)
+            parentDef = defined(id)
+            out <- parentDef match {
+              case DomainMember.User(_, defn: Typedef.Dto) =>
+                Right(defn.fields)
+              case o =>
+                Left(NEList(BaboonIssue.WrongParent(id, o.id)))
+            }
+
+          } yield {
+            out
+          }
+
       }
       _ <- converted
         .map(m => (m.name.name.toLowerCase, m))

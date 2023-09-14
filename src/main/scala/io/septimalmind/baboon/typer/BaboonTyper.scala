@@ -27,7 +27,8 @@ object BaboonTyper {
                         path: NEList[Scope[FullRawDefn]])
 
   class BaboonTyperImpl(enquiries: BaboonEnquiries,
-                        translator: LocalContext[Identity, BaboonTranslator])
+                        translator: LocalContext[Identity, BaboonTranslator],
+                        scopeSupport: ScopeSupport)
       extends BaboonTyper {
     override def process(
       model: RawDomain
@@ -171,24 +172,80 @@ object BaboonTyper {
 
         scopes <- buildScopes(pkg, members)
         flattened = flattenScopes(scopes)
+        ordered <- order(pkg, flattened)
 
-        // we don't support inheritance, so order doesn't matter here
-        out <- flattened
-          .map(
-            defn =>
-              translator
+        out <- ordered.biFoldLeft(Map.empty[TypeId, DomainMember]) {
+          case (acc, defn) =>
+            for {
+              next <- translator
                 .provide(pkg)
                 .provide(defn.path)
+                .provide(acc)
                 .produce()
                 .use(_.translate(defn))
-          )
-          .biFlatten
+              mapped = next.map(m => (m.id, m))
+              dupes = acc.keySet.intersect(mapped.map(_._1).toSet)
+              _ <- Either.ifThenFail(dupes.nonEmpty)(
+                NEList(BaboonIssue.DuplicatedTypes(dupes))
+              )
+            } yield {
+              acc ++ mapped
+            }
+        }
 
-        indexed <- (initial ++ out)
-          .map(m => (m.id, m))
+        indexed <- (initial.map(m => (m.id, m)) ++ out.toSeq)
           .toUniqueMap(e => NEList(BaboonIssue.NonUniqueTypedefs(e)))
       } yield {
         indexed.values.toList
+      }
+    }
+
+    def order(
+      pkg: Pkg,
+      flattened: List[ScopedDefn]
+    ): Either[NEList[BaboonIssue.TyperIssue], List[ScopedDefn]] = {
+      for {
+        depmap <- flattened.map(d => deps(pkg, d)).biSequence
+        asMap <- depmap.toUniqueMap(
+          bad => NEList(BaboonIssue.BadInheritance(bad))
+        )
+
+        predMatrix = IncidenceMatrix(asMap.view.mapValues(_._1).toMap)
+
+        sorted <- Toposort
+          .cycleBreaking(predMatrix, ToposortLoopBreaker.dontBreak)
+          .left
+          .map(e => NEList(BaboonIssue.CircularInheritance(e)))
+
+      } yield {
+        sorted.map(id => asMap(id)._2).toList
+      }
+    }
+
+    private def deps(pkg: Pkg, defn: ScopedDefn) = {
+      val d = defn.thisScope.defn.defn match {
+        case d: RawDto =>
+          d.members
+            .collect {
+              case d: RawDtoMember.ParentDef =>
+                Seq(d.parent)
+              case _ =>
+                Seq.empty
+            }
+            .flatten
+            .toSet
+        case _ =>
+          Set.empty
+      }
+
+      for {
+        rawDefn <- Right(defn.thisScope.defn)
+        id <- scopeSupport.resolveUserTypeId(rawDefn.defn.name, defn.path, pkg)
+        mappedDeps <- d
+          .map(v => scopeSupport.resolveScopedRef(v, defn.path, pkg))
+          .biSequence
+      } yield {
+        (id, (mappedDeps, defn))
       }
     }
 

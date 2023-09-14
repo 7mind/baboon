@@ -46,7 +46,7 @@ class BaboonModule(options: CompilerOptions) extends ModuleDef {
     }.running { (translator: BaboonTranslator) =>
       translator
     })
-    .external(DIKey[Pkg], DIKey[NEList[Scope[FullRawDefn]]])
+    .external(DIKey[Pkg], DIKey[NEList[Scope[FullRawDefn]]], DIKey[Map[TypeId, DomainMember]])
 
   make[LocalContext[Identity, IndividualConversionHandler]]
     .fromLocalContext(new ModuleDef {

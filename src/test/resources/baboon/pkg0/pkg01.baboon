@@ -145,3 +145,16 @@ root data T9_test {
  f4: opt[lst[opt[T8_Removed_Fields]]]
  f5: map[str, lst[opt[T8_Removed_Fields]]]
 }
+
+//
+
+root data T10_D1 {
+   + T10_A1.B1
+   f2: i08
+}
+
+adt T10_A1 {
+   data B1 {
+       f1: T3_D1
+   }
+}

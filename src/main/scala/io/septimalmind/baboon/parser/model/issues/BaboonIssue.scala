@@ -2,7 +2,14 @@ package io.septimalmind.baboon.parser.model.issues
 
 import fastparse.Parsed
 import io.septimalmind.baboon.parser.BaboonParser
-import io.septimalmind.baboon.parser.model.{RawDefn, RawDomain, RawHeader}
+import io.septimalmind.baboon.parser.model.{
+  RawDefn,
+  RawDomain,
+  RawHeader,
+  RawTypeName,
+  ScopedRef
+}
+import io.septimalmind.baboon.typer.BaboonTyper
 import io.septimalmind.baboon.typer.BaboonTyper.FullRawDefn
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -95,6 +102,25 @@ object BaboonIssue {
   case class BadFieldName(name: String) extends TyperIssue
 
   case class BadTypeName(name: String) extends TyperIssue
+
+  case class BadInheritance(
+    bad: Map[TypeId.User, List[(Set[TypeId.User], BaboonTyper.ScopedDefn)]]
+  ) extends TyperIssue
+      with BaboonBug
+
+  case class CircularInheritance(e: ToposortError[TypeId.User])
+      extends TyperIssue
+
+  case class NameNotFound(pkg: Pkg, name: ScopedRef) extends TyperIssue
+
+  case class UnexpectedScopeLookup(b: Scope[FullRawDefn]) extends TyperIssue
+
+  case class NamSeqeNotFound(names: Seq[RawTypeName]) extends TyperIssue
+
+  case class DuplicatedTypes(dupes: Set[TypeId]) extends TyperIssue
+
+  case class WrongParent(id: TypeId.User, id1: TypeId) extends TyperIssue
+
   //
   sealed trait EvolutionIssue extends BaboonIssue
 

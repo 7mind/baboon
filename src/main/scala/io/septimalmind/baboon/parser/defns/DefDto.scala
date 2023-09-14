@@ -8,8 +8,9 @@ import io.septimalmind.baboon.parser.model.{
   RawDtoMember,
   RawField,
   RawFieldName,
+  RawTypeName,
   RawTypeRef,
-  RawTypeName
+  ScopedRef
 }
 import izumi.fundamentals.collections.nonempty.NEList
 
@@ -18,6 +19,12 @@ class DefDto(context: ParserContext, meta: DefMeta) {
     import fastparse.SingleLineWhitespace.whitespace
     ("[" ~ typeRef.rep(min = 1, sep = ",") ~ "]")
       .map(p => NEList.unsafeFrom(p.toList))
+  }
+
+  def scopedRef[$: P]: P[ScopedRef] = {
+    idt.symbolSeq.map(
+      s => ScopedRef(NEList.unsafeFrom(s.map(p => RawTypeName(p)).toList))
+    )
   }
 
   def typeRef[$: P]: P[RawTypeRef] = {
@@ -41,11 +48,19 @@ class DefDto(context: ParserContext, meta: DefMeta) {
     (fieldName ~ ":" ~ typeRef).map { case (n, t) => model.RawField(n, t) }
   }
 
+  def parentDef[$: P]: P[ScopedRef] = {
+    import fastparse.ScalaWhitespace.whitespace
+    ("+" ~ scopedRef)
+  }
+
   def dtoMember[$: P]: P[RawDtoMember] =
-    P(meta.withMeta(fieldDef)).map {
+    (P(meta.withMeta(fieldDef)).map {
       case (meta, field) =>
-        model.RawDtoMember(field, meta)
-    }
+        model.RawDtoMember.FieldDef(field, meta)
+    } | P(meta.withMeta(parentDef)).map {
+      case (meta, parent) =>
+        model.RawDtoMember.ParentDef(parent, meta)
+    })
 
   def dto[$: P]: P[Seq[RawDtoMember]] = {
     import fastparse.ScalaWhitespace.whitespace
