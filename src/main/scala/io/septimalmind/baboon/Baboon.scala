@@ -8,12 +8,30 @@ import izumi.fundamentals.platform.strings.IzString.*
 
 import java.nio.file.{Path, Paths}
 
-case class Options(model: List[String],
-                   modelDir: List[String],
-                   output: String,
-                   debug: Option[Boolean],
-                   csObsoleteErrors: Option[Boolean],
+case class Options(
+  model: List[String],
+  modelDir: List[String],
+  output: String,
+  debug: Option[Boolean],
+  @HelpMessage(
+    "generate obsolete errors instead of deprecations (default is `false`)"
+  )
+  csObsoleteErrors: Option[Boolean],
+  @HelpMessage(
+    "generate shared runtime classes and evolution registrations, default is `with`"
+  )
+  @ValueDescription("with|only|without")
+  runtime: Option[String],
+  @HelpMessage("disable conversions (default is `false`)")
+  disableConversions: Option[Boolean],
 )
+
+sealed trait RuntimeGenOpt
+object RuntimeGenOpt {
+  case object Only extends RuntimeGenOpt
+  case object With extends RuntimeGenOpt
+  case object Without extends RuntimeGenOpt
+}
 
 object Baboon {
   def main(args: Array[String]): Unit = {
@@ -27,9 +45,18 @@ object Baboon {
         System.exit(1)
       case Right(value) =>
         val opts = value._1
+
+        val rtOpt = opts.runtime match {
+          case Some("only")    => RuntimeGenOpt.Only
+          case Some("without") => RuntimeGenOpt.Without
+          case _               => RuntimeGenOpt.With
+        }
+
         val options = CompilerOptions(
           opts.debug.getOrElse(false),
-          opts.csObsoleteErrors.getOrElse(false)
+          opts.csObsoleteErrors.getOrElse(false),
+          rtOpt,
+          !opts.disableConversions.getOrElse(false),
         )
         Injector.NoCycles().produceRun(new BaboonModule(options)) {
           (compiler: BaboonCompiler) =>

@@ -12,13 +12,15 @@ import scala.util.Try
 import izumi.fundamentals.platform.strings.TextTree.*
 
 trait BaboonCompiler {
-  def run(inputs: Set[Path],
-          output: Path,
-  ): Either[NEList[BaboonIssue], Unit]
+  def run(inputs: Set[Path], output: Path): Either[NEList[BaboonIssue], Unit]
 }
 
 object BaboonCompiler {
-  case class CompilerOptions(debug: Boolean, obsoleteErrors: Boolean)
+  case class CompilerOptions(debug: Boolean,
+                             obsoleteErrors: Boolean,
+                             runtime: RuntimeGenOpt,
+                             generateConversions: Boolean,
+  )
 
   class BaboonCompilerImpl(loader: BaboonLoader,
                            translator: CSBaboonTranslator,

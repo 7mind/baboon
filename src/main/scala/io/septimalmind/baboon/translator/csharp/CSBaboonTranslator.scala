@@ -1,5 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
+import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
+import io.septimalmind.baboon.RuntimeGenOpt
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.translator.{AbstractBaboonTranslator, Sources}
@@ -12,7 +14,7 @@ import izumi.fundamentals.platform.functional.Identity
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslator, handler: LocalContext[Identity, IndividualConversionHandler])
+class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslator, handler: LocalContext[Identity, IndividualConversionHandler], options: CompilerOptions)
     extends AbstractBaboonTranslator {
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
@@ -21,7 +23,12 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslat
     for {
       translated <- doTranslate(family)
       rt <- sharedRuntime()
-      rendered = (rt ++ translated).map { o =>
+      toRender = options.runtime match {
+        case RuntimeGenOpt.Only => rt
+        case RuntimeGenOpt.With => rt ++ translated
+        case RuntimeGenOpt.Without => translated
+      }
+      rendered = toRender.map { o =>
         (o.path, renderTree(o))
       }
       unique <- rendered.toUniqueMap(
@@ -112,7 +119,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslat
         case _ => Right(List.empty)
       }.biFlatten
       evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
-      conversionSources <- if (evosToCurrent.nonEmpty) {
+      conversionSources <- if (options.generateConversions) {
         generateConversions(domain, evo, evosToCurrent)
       } else {
         Right(List.empty)
