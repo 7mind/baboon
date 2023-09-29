@@ -1,4 +1,6 @@
-﻿namespace Main
+﻿using System;
+
+namespace Main
 {
     class Program
     {

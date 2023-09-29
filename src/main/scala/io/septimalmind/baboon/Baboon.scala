@@ -14,16 +14,20 @@ case class Options(
   output: String,
   debug: Option[Boolean],
   @HelpMessage(
-    "generate obsolete errors instead of deprecations (default is `false`)"
-  )
-  csObsoleteErrors: Option[Boolean],
-  @HelpMessage(
     "generate shared runtime classes and evolution registrations, default is `with`"
   )
   @ValueDescription("with|only|without")
   runtime: Option[String],
   @HelpMessage("disable conversions (default is `false`)")
   disableConversions: Option[Boolean],
+  @HelpMessage(
+    "generate obsolete errors instead of deprecations (default is `false`)"
+  )
+  csObsoleteErrors: Option[Boolean],
+  @HelpMessage(
+    "do not generate usings for System, System.Collections.Generic and System.Linq (see ImplicitUsings)"
+  )
+  csExcludeGlobalUsings: Option[Boolean],
 )
 
 sealed trait RuntimeGenOpt
@@ -57,6 +61,7 @@ object Baboon {
           opts.csObsoleteErrors.getOrElse(false),
           rtOpt,
           !opts.disableConversions.getOrElse(false),
+          !opts.csExcludeGlobalUsings.getOrElse(false),
         )
         Injector.NoCycles().produceRun(new BaboonModule(options)) {
           (compiler: BaboonCompiler) =>

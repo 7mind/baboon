@@ -20,6 +20,7 @@ object BaboonCompiler {
                              obsoleteErrors: Boolean,
                              runtime: RuntimeGenOpt,
                              generateConversions: Boolean,
+                             disregardImplicitUsings: Boolean,
   )
 
   class BaboonCompilerImpl(loader: BaboonLoader,

@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.iBaboonGenerated
-import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
+import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
 import izumi.fundamentals.collections.nonempty.NEList
@@ -25,6 +25,12 @@ object CSDefnTranslator {
 
   case class Output(path: String, tree: TextTree[CSValue], pkg: CSPackageId)
 
+  val obsolete: CSType =
+    CSType(CSBaboonTranslator.systemPkg, "Obsolete", fq = false)
+
+  val serializable: CSType =
+    CSType(CSBaboonTranslator.systemPkg, "Serializable", fq = false)
+
   class CSDefnTranslatorImpl(options: CompilerOptions, trans: CSTypeTranslator)
       extends CSDefnTranslator {
     type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
@@ -40,7 +46,7 @@ object CSDefnTranslator {
       val defnRepr = if (isLatestVersion) {
         defnReprBase
       } else {
-        q"""[Obsolete("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${options.obsoleteErrors.toString})]
+        q"""[${obsolete}("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${options.obsoleteErrors.toString})]
            |$defnReprBase""".stripMargin
       }
 
@@ -144,7 +150,7 @@ object CSDefnTranslator {
                |    return ${cmp.shift(8).trim};
                |}""".stripMargin)
 
-          q"""[Serializable]
+          q"""[$serializable]
              |public sealed record $name(
              |    ${cargs.shift(4).trim}
              |)$parents {
@@ -155,7 +161,7 @@ object CSDefnTranslator {
           val branches =
             e.members.map(m => q"""${m.name.capitalize}""").toSeq.join(",\n")
 
-          q"""[Serializable]
+          q"""[$serializable]
              |public enum $name {
              |    ${branches.shift(4).trim}
              |}""".stripMargin

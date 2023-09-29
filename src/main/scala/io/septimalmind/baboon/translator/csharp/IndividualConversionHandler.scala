@@ -93,13 +93,13 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
             q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
                |    public override ${tout} Convert<C>(C context, $abstractBaboonConversions conversions, ${tin} from) {
-               |        if (Enum.TryParse(from.ToString(), out ${tout} parsed))
+               |        if ($csEnum.TryParse(from.ToString(), out ${tout} parsed))
                |        {
                |            return parsed;
                |        }
                |        else
                |        {
-               |            throw new ArgumentException($$"Bad input, this is a Baboon bug: {from}");
+               |            throw new $csArgumentException($$"Bad input, this is a Baboon bug: {from}");
                |        }
                |    }
                |}""".stripMargin
@@ -116,7 +116,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                |    return ${transferId(oldId, typedRef)};
                |}""".stripMargin
           }.toSeq ++ Seq(q"""{
-                                                     |    throw new ArgumentException($$"Bad input: {from}");
+                                                     |    throw new $csArgumentException($$"Bad input: {from}");
                                                      |}""".stripMargin)
 
           val cdefn =
@@ -167,7 +167,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                         if c.id == TypeId.Builtins.map =>
                       Right(
                         Seq(
-                          q"(from e in $fieldRef select KeyValuePair.Create(${transfer(
+                          q"(from e in $fieldRef select $csKeyValuePair.Create(${transfer(
                             c.args.head,
                             q"e.Key"
                           )}, ${transfer(c.args.last, q"e.Value")})).ToImmutableDictionary(v => v.Key, v => v.Value)"
@@ -375,7 +375,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
             val vt = trans.asCsRef(newCollArgs.last, domain.version)
             Right(
               Seq(
-                q"(from e in $fieldRef select KeyValuePair.Create(($kt)e.Key, ($vt)e.Value)).ToImmutableDictionary(v => v.Key, v => v.Value)"
+                q"(from e in $fieldRef select $csKeyValuePair.Create(($kt)e.Key, ($vt)e.Value)).ToImmutableDictionary(v => v.Key, v => v.Value)"
               )
             )
           case _ =>

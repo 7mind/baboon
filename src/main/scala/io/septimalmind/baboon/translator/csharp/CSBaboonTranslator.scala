@@ -3,6 +3,15 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.RuntimeGenOpt
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
+  csDict,
+  csList,
+  csString,
+  csTpe,
+  genericPkg,
+  linqPkg,
+  systemPkg
+}
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.translator.{AbstractBaboonTranslator, Sources}
 import io.septimalmind.baboon.typer.model.*
@@ -14,8 +23,12 @@ import izumi.fundamentals.platform.functional.Identity
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslator, handler: LocalContext[Identity, IndividualConversionHandler], options: CompilerOptions)
-    extends AbstractBaboonTranslator {
+class CSBaboonTranslator(
+  defnTranslator: CSDefnTranslator,
+  trans: CSTypeTranslator,
+  handler: LocalContext[Identity, IndividualConversionHandler],
+  options: CompilerOptions
+) extends AbstractBaboonTranslator {
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
@@ -24,8 +37,8 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslat
       translated <- doTranslate(family)
       rt <- sharedRuntime()
       toRender = options.runtime match {
-        case RuntimeGenOpt.Only => rt
-        case RuntimeGenOpt.With => rt ++ translated
+        case RuntimeGenOpt.Only    => rt
+        case RuntimeGenOpt.With    => rt ++ translated
         case RuntimeGenOpt.Without => translated
       }
       rendered = toRender.map { o =>
@@ -40,11 +53,19 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslat
   }
 
   private def renderTree(o: CSDefnTranslator.Output): String = {
-    val alwaysAvailable: Set[CSPackageId] = Set(
-      CSPackageId(NEList("System")),
-      CSPackageId(NEList("System", "Collections", "Generic")),
-      CSPackageId(NEList("System", "Linq")),
-    )
+    val alwaysAvailable: Set[CSPackageId] =
+      if (options.disregardImplicitUsings) {
+        Set.empty
+      } else {
+        Set(systemPkg, genericPkg, linqPkg)
+      }
+
+    val forcedUses: Set[CSPackageId] =
+      if (options.disregardImplicitUsings) {
+        Set(linqPkg)
+      } else {
+        Set.empty
+      }
 
     val usedPackages = o.tree.values
       .collect {
@@ -63,7 +84,8 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslat
     val available = Set(o.pkg)
     val requiredPackages = Set.empty
     val allPackages =
-      (requiredPackages ++ usedPackages).diff(available ++ alwaysAvailable)
+      (requiredPackages ++ usedPackages ++ forcedUses)
+        .diff(available ++ alwaysAvailable)
 
     val imports = allPackages.toSeq
       .map { p =>
@@ -129,13 +151,13 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslat
     }
   }
 
-  private def sharedRuntime() : Out[List[CSDefnTranslator.Output]] = {
+  private def sharedRuntime(): Out[List[CSDefnTranslator.Output]] = {
     val base =
       q"""public interface IBaboonGenerated {}
          |
          |public interface IConversion {
-         |    public Type TypeFrom();
-         |    public Type TypeTo();
+         |    public $csTpe TypeFrom();
+         |    public $csTpe TypeTo();
          |}
          |
          |public interface IDynamicConversion<To> : IConversion
@@ -152,11 +174,11 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslat
          |        return Convert<C>(context, conversions, (From)from);
          |    }
          |
-         |    public Type TypeFrom() {
+         |    public $csTpe TypeFrom() {
          |         return typeof(From);
          |    }
          |
-         |     public Type TypeTo() {
+         |     public $csTpe TypeTo() {
          |         return typeof(To);
          |     }
          |}""".stripMargin
@@ -182,26 +204,26 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslat
          |        return HashCode.Combine(TypeFrom, TypeTo);
          |    }
          |
-         |    public ConversionKey(Type typeFrom, Type typeTo)
+         |    public ConversionKey($csTpe typeFrom, $csTpe typeTo)
          |    {
          |        TypeFrom = typeFrom;
          |        TypeTo = typeTo;
          |    }
          |
-         |    public Type TypeFrom { get; }
-         |    public Type TypeTo {get; }
+         |    public $csTpe TypeFrom { get; }
+         |    public $csTpe TypeTo {get; }
          |}""".stripMargin
 
     val abstractAggregator =
       q"""public abstract class AbstractBaboonConversions
          |{
-         |    private Dictionary<ConversionKey, IConversion> convs = new ();
+         |    private $csDict<ConversionKey, IConversion> convs = new ();
          |
-         |    public abstract List<String> VersionsFrom();
+         |    public abstract $csList<$csString> VersionsFrom();
          |
          |    public abstract String VersionTo();
          |
-         |    public List<IConversion> AllConversions()
+         |    public $csList<IConversion> AllConversions()
          |    {
          |        return convs.Values.ToList();
          |    }
@@ -237,7 +259,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslat
          |        return tconv.Convert(c, this, from);
          |    }
          |
-         |    public To ConvertWithContextDynamic<C, To>(C? c, Type tFrom, dynamic from)
+         |    public To ConvertWithContextDynamic<C, To>(C? c, $csTpe tFrom, dynamic from)
          |    {
          |        var tTo = typeof(To);
          |
@@ -267,12 +289,19 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslat
 
     val runtime = Seq(key, base, abstractAggregator).join("\n\n")
 
-    val rt = defnTranslator.inNs(CSBaboonTranslator.sharedRtPkg.parts.toSeq, runtime)
+    val rt =
+      defnTranslator.inNs(CSBaboonTranslator.sharedRtPkg.parts.toSeq, runtime)
 
-    Right(List(
-      CSDefnTranslator
-        .Output(s"Baboon-Runtime-Shared.cs", rt, CSBaboonTranslator.sharedRtPkg)
-    ))
+    Right(
+      List(
+        CSDefnTranslator
+          .Output(
+            s"Baboon-Runtime-Shared.cs",
+            rt,
+            CSBaboonTranslator.sharedRtPkg
+          )
+      )
+    )
   }
 
   private def generateConversions(domain: Domain,
@@ -281,14 +310,18 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslat
   ): Out[List[CSDefnTranslator.Output]] = {
     val pkg = trans.toCsPkg(domain.id, domain.version)
 
-
-
     for {
       convs <- value.rules
         .filter(kv => toCurrent.contains(kv._1))
         .map {
           case (srcVer, rules) =>
-            handler.provide(pkg).provide(srcVer.from).provide(domain).provide(rules).produce().use(_.makeConvs())
+            handler
+              .provide(pkg)
+              .provide(srcVer.from)
+              .provide(domain)
+              .provide(rules)
+              .produce()
+              .use(_.makeConvs())
         }
         .biFlatten
     } yield {
@@ -307,12 +340,15 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslat
            |        ${regs.join("\n").shift(8).trim}
            |    }
            |
-           |    override public List<String> VersionsFrom()
+           |    override public $csList<$csString> VersionsFrom()
            |    {
-           |        return new List<String> { ${toCurrent.map(_.from.version).map(v => s"\"$v\"").mkString(", ")} };
+           |        return new $csList<$csString> { ${toCurrent
+             .map(_.from.version)
+             .map(v => s"""\"$v\"""")
+             .mkString(", ")} };
            |    }
            |
-           |    override public String VersionTo()
+           |    override public $csString VersionTo()
            |    {
            |        return "${domain.version.version}";
            |    }
@@ -324,10 +360,18 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator, trans: CSTypeTranslat
 
       List(
         CSDefnTranslator
-          .Output(s"${defnTranslator.basename(domain)}/Baboon-Runtime.cs", rt, pkg)
+          .Output(
+            s"${defnTranslator.basename(domain)}/Baboon-Runtime.cs",
+            rt,
+            pkg
+          )
       ) ++ convs.map { conv =>
         CSDefnTranslator
-          .Output(s"${defnTranslator.basename(domain)}/${conv.fname}", conv.conv, pkg)
+          .Output(
+            s"${defnTranslator.basename(domain)}/${conv.fname}",
+            conv.conv,
+            pkg
+          )
       }
     }
   }
@@ -339,12 +383,38 @@ object CSBaboonTranslator {
                                 conv: TextTree[CSValue],
                                 reg: Option[TextTree[CSValue]],
                                 missing: Option[TextTree[CSValue]],
-                               )
+  )
 
+  val sharedRtPkg: CSPackageId = CSPackageId(
+    NEList("Baboon", "Runtime", "Shared")
+  )
+  val systemPkg: CSPackageId = CSPackageId(NEList("System"))
+  val genericPkg: CSPackageId = CSPackageId(
+    NEList("System", "Collections", "Generic")
+  )
+  val linqPkg: CSPackageId = CSPackageId(NEList("System", "Linq"))
 
-  val sharedRtPkg: CSPackageId = CSPackageId(NEList("Baboon", "Runtime", "Shared"))
-  val abstractConversion: CSType = CSType(sharedRtPkg, "AbstractConversion", fq = false)
-  val abstractBaboonConversions: CSType = CSType(sharedRtPkg, "AbstractBaboonConversions", fq = false)
-  val iBaboonGenerated: CSType = CSType(sharedRtPkg, "IBaboonGenerated", fq = false)
+  val abstractConversion: CSType =
+    CSType(sharedRtPkg, "AbstractConversion", fq = false)
+  val abstractBaboonConversions: CSType =
+    CSType(sharedRtPkg, "AbstractBaboonConversions", fq = false)
+  val iBaboonGenerated: CSType =
+    CSType(sharedRtPkg, "IBaboonGenerated", fq = false)
+
+  val csTpe: CSType =
+    CSType(systemPkg, "Type", fq = false)
+
+  val csList: CSType =
+    CSType(genericPkg, "List", fq = false)
+  val csDict: CSType =
+    CSType(genericPkg, "Dictionary", fq = false)
+  val csString: CSType =
+    CSType(systemPkg, "String", fq = false)
+  val csEnum: CSType =
+    CSType(systemPkg, "Enum", fq = false)
+  val csArgumentException: CSType =
+    CSType(systemPkg, "ArgumentException", fq = false)
+  val csKeyValuePair: CSType =
+    CSType(genericPkg, "KeyValuePair", fq = false)
 
 }
