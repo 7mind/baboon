@@ -155,6 +155,8 @@ class CSBaboonTranslator(
     val base =
       q"""public interface IBaboonGenerated {}
          |
+         |public interface IBaboonGeneratedLatest : IBaboonGenerated {}
+         |
          |public interface IConversion {
          |    public $csTpe TypeFrom();
          |    public $csTpe TypeTo();
@@ -400,6 +402,8 @@ object CSBaboonTranslator {
     CSType(sharedRtPkg, "AbstractBaboonConversions", fq = false)
   val iBaboonGenerated: CSType =
     CSType(sharedRtPkg, "IBaboonGenerated", fq = false)
+  val iBaboonGeneratedLatest: CSType =
+    CSType(sharedRtPkg, "IBaboonGeneratedLatest", fq = false)
 
   val csTpe: CSType =
     CSType(systemPkg, "Type", fq = false)
@@ -416,5 +420,4 @@ object CSBaboonTranslator {
     CSType(systemPkg, "ArgumentException", fq = false)
   val csKeyValuePair: CSType =
     CSType(genericPkg, "KeyValuePair", fq = false)
-
 }

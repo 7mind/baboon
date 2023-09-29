@@ -2,7 +2,10 @@ package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.iBaboonGenerated
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
+  iBaboonGenerated,
+  iBaboonGeneratedLatest
+}
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
@@ -40,9 +43,9 @@ object CSDefnTranslator {
                            evo: BaboonEvolution,
     ): Either[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
       val name = trans.toCsVal(defn.id, domain.version)
-
-      val defnReprBase = makeRepr(defn, domain, name)
       val isLatestVersion = domain.version == evo.latest
+
+      val defnReprBase = makeRepr(defn, domain, name, isLatestVersion)
       val defnRepr = if (isLatestVersion) {
         defnReprBase
       } else {
@@ -73,7 +76,12 @@ object CSDefnTranslator {
 
     private def makeRepr(defn: DomainMember.User,
                          domain: Domain,
-                         name: CSValue.CSType): TextTree[CSValue] = {
+                         name: CSValue.CSType,
+                         isLatestVersion: Boolean,
+    ): TextTree[CSValue] = {
+      val genMarker =
+        if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
+
       defn.defn match {
         case d: Typedef.Dto =>
           val outs = d.fields.map { f =>
@@ -97,7 +105,7 @@ object CSDefnTranslator {
               Some(parentId)
           }
 
-          val allParents = parent.toSeq ++ Seq(q"$iBaboonGenerated")
+          val allParents = parent.toSeq ++ Seq(q"$genMarker")
           val parents = if (allParents.isEmpty) {
             q""
           } else {
@@ -167,7 +175,7 @@ object CSDefnTranslator {
              |}""".stripMargin
 
         case _: Typedef.Adt =>
-          q"""public interface $name : $iBaboonGenerated {
+          q"""public interface $name : $genMarker {
              |}""".stripMargin
       }
     }
