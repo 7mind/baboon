@@ -1,17 +1,10 @@
 package io.septimalmind.baboon.translator.csharp
 
+import io.circe.syntax.*
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.RuntimeGenOpt
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
-  csDict,
-  csList,
-  csString,
-  csTpe,
-  genericPkg,
-  linqPkg,
-  systemPkg
-}
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.translator.{AbstractBaboonTranslator, Sources}
 import io.septimalmind.baboon.typer.model.*
@@ -36,6 +29,7 @@ class CSBaboonTranslator(
     for {
       translated <- doTranslate(family)
       rt <- sharedRuntime()
+      meta <- buildMeta(family)
       toRender = options.runtime match {
         case RuntimeGenOpt.Only    => rt
         case RuntimeGenOpt.With    => rt ++ translated
@@ -44,12 +38,28 @@ class CSBaboonTranslator(
       rendered = toRender.map { o =>
         (o.path, renderTree(o))
       }
-      unique <- rendered.toUniqueMap(
+      unique <- (rendered ++ meta).toUniqueMap(
         c => NEList(BaboonIssue.NonUniqueOutputFiles(c))
       )
     } yield {
       Sources(unique)
     }
+  }
+
+  private def buildMeta(family: BaboonFamily): Out[List[(String, String)]] = {
+
+    val data = family.domains.toSeq.flatMap {
+      case (_, lineage) =>
+        lineage.versions.toSeq.map {
+          case (ver, _) =>
+            VersionMeta(lineage.pkg.path.mkString("."), ver.version)
+        }
+
+    }
+    val meta: OutputMeta = OutputMeta(data.toList)
+    val json = meta.asJson.spaces2
+
+    Right(List((s"baboon-meta.json", json)))
   }
 
   private def renderTree(o: CSDefnTranslator.Output): String = {

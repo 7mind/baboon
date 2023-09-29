@@ -107,8 +107,9 @@ object Baboon {
         .walk(outDir.toFile)
         .filter { p =>
           val f = p.toFile
-          !f.isDirectory && !(f.getName.endsWith(".cs") || f.getName
-            .startsWith("."))
+          !f.isDirectory && !(f.getName.endsWith(".cs") ||
+            f.getName.endsWith(".json") ||
+            f.getName.startsWith("."))
         }
         .toSeq
 

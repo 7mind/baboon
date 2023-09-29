@@ -24,6 +24,11 @@ lazy val root = (project in file("."))
     libraryDependencies ++= Seq(
       "com.github.alexarchambault" %% "case-app" % "2.1.0-M25"
     ),
+    libraryDependencies ++= Seq(
+      "io.circe" %% "circe-core",
+      "io.circe" %% "circe-generic",
+      "io.circe" %% "circe-parser"
+    ).map(_ % "0.14.1"),
 //    idePackagePrefix := Some("io.septimalmind.baboon"),
     scalacOptions ++= Seq(
       "-Wconf:cat=other-match-analysis:error",
