@@ -164,9 +164,9 @@ class CSBaboonTranslator(
   private def sharedRuntime(): Out[List[CSDefnTranslator.Output]] = {
     val base =
       q"""public interface IBaboonGenerated {
-         |    public $csString DomainVersion();
-         |    public $csString DomainIdentifier();
-         |    public $csString TypeIdentifier();
+         |    public $csString BaboonDomainVersion();
+         |    public $csString BaboonDomainIdentifier();
+         |    public $csString BaboonTypeIdentifier();
          |}
          |
          |public interface IBaboonGeneratedLatest : IBaboonGenerated {}

@@ -8,15 +8,22 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.functional.IzEither.*
 
 object SymbolNames {
-  def validEnumMemberName(name: String, meta: RawNodeMeta): Either[NEList[TyperIssue], Unit] = {
+  def validEnumMemberName(
+    name: String,
+    meta: RawNodeMeta
+  ): Either[NEList[TyperIssue], Unit] = {
     for {
       _ <- Either.ifThenFail(
         !(name.forall(l => l.isLetterOrDigit || l == '_') && name.head.isLetter)
       )(NEList(BaboonIssue.BadEnumName(name, meta)))
+      _ <- Either.ifThenFail(name.toLowerCase.startsWith("baboon"))(
+        NEList(BaboonIssue.BadEnumName(name, meta))
+      )
     } yield {}
   }
 
-  def validFieldName(name: FieldName, meta: RawNodeMeta): Either[NEList[TyperIssue], Unit] = {
+  def validFieldName(name: FieldName,
+                     meta: RawNodeMeta): Either[NEList[TyperIssue], Unit] = {
     for {
       _ <- Either.ifThenFail(
         !(name.name
@@ -25,14 +32,21 @@ object SymbolNames {
       _ <- Either.ifThenFail(!name.name.head.isLower)(
         NEList(BaboonIssue.BadFieldName(name.name, meta))
       )
+      _ <- Either.ifThenFail(name.name.toLowerCase.startsWith("baboon"))(
+        NEList(BaboonIssue.BadFieldName(name.name, meta))
+      )
     } yield {}
   }
-  def validTypeName(name: TypeName, meta: RawNodeMeta): Either[NEList[TyperIssue], Unit] = {
+  def validTypeName(name: TypeName,
+                    meta: RawNodeMeta): Either[NEList[TyperIssue], Unit] = {
     for {
       _ <- Either.ifThenFail(
         !(name.name
           .forall(l => l.isLetterOrDigit || l == '_') && name.name.head.isLetter)
       )(NEList(BaboonIssue.BadTypeName(name.name, meta)))
+      _ <- Either.ifThenFail(name.name.toLowerCase.startsWith("baboon"))(
+        NEList(BaboonIssue.BadFieldName(name.name, meta))
+      )
     } yield {}
   }
 }

@@ -81,12 +81,12 @@ object CSDefnTranslator {
     ): TextTree[CSValue] = {
       val genMarker =
         if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
-      val meta = Seq(q"""public String DomainVersion()
+      val meta = Seq(q"""public String BaboonDomainVersion()
            |{
            |    return "${domain.version.version}";
-           |}""".stripMargin, q"""public String DomainIdentifier() {
+           |}""".stripMargin, q"""public String BaboonDomainIdentifier() {
            |    return "${domain.id.toString}";
-           |}""".stripMargin, q"""public String TypeIdentifier() {
+           |}""".stripMargin, q"""public String BaboonTypeIdentifier() {
            |    return "${defn.id.toString}";
            |}""".stripMargin)
       defn.defn match {
