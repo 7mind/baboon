@@ -163,7 +163,10 @@ class CSBaboonTranslator(
 
   private def sharedRuntime(): Out[List[CSDefnTranslator.Output]] = {
     val base =
-      q"""public interface IBaboonGenerated {}
+      q"""public interface IBaboonGenerated {
+         |    public $csString DomainVersion();
+         |    public $csString DomainIdentifier();
+         |}
          |
          |public interface IBaboonGeneratedLatest : IBaboonGenerated {}
          |

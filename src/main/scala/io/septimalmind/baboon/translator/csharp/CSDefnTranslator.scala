@@ -81,7 +81,12 @@ object CSDefnTranslator {
     ): TextTree[CSValue] = {
       val genMarker =
         if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
-
+      val meta = Seq(q"""public String DomainVersion()
+           |{
+           |    return "${domain.version.version}";
+           |}""".stripMargin, q"""public String DomainIdentifier() {
+           |    return "${domain.id.toString}";
+           |}""".stripMargin)
       defn.defn match {
         case d: Typedef.Dto =>
           val outs = d.fields.map { f =>
@@ -158,11 +163,12 @@ object CSDefnTranslator {
                |    return ${cmp.shift(8).trim};
                |}""".stripMargin)
 
+          val members = eq ++ meta
           q"""[$serializable]
              |public sealed record $name(
              |    ${cargs.shift(4).trim}
              |)$parents {
-             |    ${eq.join("\n\n").shift(4).trim}
+             |    ${members.join("\n\n").shift(4).trim}
              |};""".stripMargin
 
         case e: Typedef.Enum =>
@@ -175,8 +181,7 @@ object CSDefnTranslator {
              |}""".stripMargin
 
         case _: Typedef.Adt =>
-          q"""public interface $name : $genMarker {
-             |}""".stripMargin
+          q"""public interface $name : $genMarker {}""".stripMargin
       }
     }
 

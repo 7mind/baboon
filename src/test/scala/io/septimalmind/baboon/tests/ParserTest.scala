@@ -17,7 +17,7 @@ class ParserTest extends BaboonTest {
           |
           |enum E1 { A B C }
           |
-          |root enum E2 {
+          |enum E2 {
           | A
           | B
           | C

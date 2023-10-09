@@ -4,9 +4,13 @@ version "1.0.0"
 
 data NotReferenced {}
 
-root enum T1_E1 {
+enum T1_E1 {
  A
  B
+}
+
+root data T1_E1_RET {
+    f: T1_E1
 }
 
 data T1_D2 {
@@ -52,9 +56,13 @@ root adt T4_A1 {
 
 //
 
-root enum T1_E2 {
+enum T1_E2 {
  A
  B
+}
+
+root data T1_E2_RET {
+    f: T1_E2
 }
 
 //
