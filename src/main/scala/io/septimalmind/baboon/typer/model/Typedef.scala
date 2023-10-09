@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.typer.model
 
+import io.septimalmind.baboon.parser.model.RawNodeMeta
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.graphs.DG
 
@@ -9,19 +10,19 @@ case class Domain(id: Pkg,
                   excludedIds: Set[TypeId],
                   shallowSchema: Map[TypeId, ShallowSchemaId],
                   deepSchema: Map[TypeId, DeepSchemaId],
-) {
+                 ) {
   import izumi.fundamentals.platform.strings.IzString.*
   override def toString: String =
-    s"""${id} ${version}
+    s"""$id $version
        |  deps: ${defs.predecessors.links.toList.niceList().shift(4)}
        |  excluded: ${excludedIds.niceList().shift(4)}
        |  defns: ${defs.meta.nodes.values
-         .map(
-           member =>
-             s"${shallowSchema(member.id)}, ${deepSchema(member.id)} = $member"
-         )
-         .niceList()
-         .shift(4)}""".stripMargin
+      .map(
+        member =>
+          s"${shallowSchema(member.id)}, ${deepSchema(member.id)} = $member"
+      )
+      .niceList()
+      .shift(4)}""".stripMargin
 }
 
 sealed trait DomainMember {
@@ -29,7 +30,7 @@ sealed trait DomainMember {
 }
 object DomainMember {
   case class Builtin(id: TypeId.Builtin) extends DomainMember
-  case class User(root: Boolean, defn: Typedef.User) extends DomainMember {
+  case class User(root: Boolean, defn: Typedef.User, meta: RawNodeMeta) extends DomainMember {
     def id: TypeId.User = defn.id
   }
 }
@@ -54,7 +55,7 @@ sealed trait TypeRef {
 object TypeRef {
   case class Scalar(id: TypeId.Scalar) extends TypeRef
   case class Constructor(id: TypeId.BuiltinCollection, args: NEList[TypeRef])
-      extends TypeRef
+    extends TypeRef
 }
 
 sealed trait TypeId {
@@ -74,7 +75,7 @@ object TypeId {
   }
 
   case class User(pkg: Pkg, owner: Owner, name: TypeName)
-      extends TypeId
+    extends TypeId
       with Scalar {
     override def toString: String = s"$pkg/${owner}#${name.name}"
   }
@@ -188,7 +189,7 @@ object TypeId {
     case class SetEquals(subComparator: ComparatorType) extends Complex
     case class MapEquals(keyComparator: ComparatorType,
                          valComparator: ComparatorType)
-        extends Complex
+      extends Complex
   }
 
   def comparator(ref: TypeRef): ComparatorType = {

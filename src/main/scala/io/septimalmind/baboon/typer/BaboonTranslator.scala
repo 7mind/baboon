@@ -14,12 +14,12 @@ class BaboonTranslator(pkg: Pkg,
                        defined: Map[TypeId, DomainMember],
                        scopeSupport: ScopeSupport) {
   def translate(
-    defn: ScopedDefn
-  ): Either[NEList[BaboonIssue.TyperIssue], List[DomainMember]] = {
+                 defn: ScopedDefn
+               ): Either[NEList[BaboonIssue.TyperIssue], List[DomainMember]] = {
 
     for {
       rawDefn <- Right(defn.thisScope.defn)
-      id <- scopeSupport.resolveUserTypeId(rawDefn.defn.name, path, pkg)
+      id <- scopeSupport.resolveUserTypeId(rawDefn.defn.name, path, pkg, rawDefn.defn.meta)
       members <- convertMember(id, rawDefn, defn.thisScope)
     } yield {
       members.toList
@@ -29,7 +29,7 @@ class BaboonTranslator(pkg: Pkg,
   private def convertMember(id: TypeId.User,
                             defn: FullRawDefn,
                             thisScope: NestedScope[FullRawDefn],
-  ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
+                           ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
     val root = defn.gcRoot
     defn.defn match {
       case d: RawDto  => convertDto(id, root, d).map(d => NEList(d))
@@ -39,15 +39,15 @@ class BaboonTranslator(pkg: Pkg,
   }
 
   private def converEnum(
-    id: TypeId.User,
-    isRoot: Boolean,
-    choice: RawEnum
-  ): Either[NEList[BaboonIssue.TyperIssue], DomainMember.User] = {
+                          id: TypeId.User,
+                          isRoot: Boolean,
+                          choice: RawEnum
+                        ): Either[NEList[BaboonIssue.TyperIssue], DomainMember.User] = {
     for {
       converted <- choice.members.biTraverse { raw =>
         for {
           name <- Right(raw.value)
-          _ <- SymbolNames.validEnumMemberName(name)
+          _ <- SymbolNames.validEnumMemberName(name, raw.meta)
 
         } yield {
           EnumMember(name)
@@ -55,39 +55,39 @@ class BaboonTranslator(pkg: Pkg,
       }
       _ <- converted
         .map(m => (m.name.toLowerCase, m))
-        .toUniqueMap(e => NEList(BaboonIssue.NonUniqueEnumBranches(e, id)))
+        .toUniqueMap(e => NEList(BaboonIssue.NonUniqueEnumBranches(e, id, choice.meta)))
       nel <- NEList
         .from(converted)
-        .toRight(NEList(BaboonIssue.EmptyEnum(id)))
+        .toRight(NEList(BaboonIssue.EmptyEnum(id, choice.meta)))
     } yield {
-      DomainMember.User(isRoot, Typedef.Enum(id, nel))
+      DomainMember.User(isRoot, Typedef.Enum(id, nel), choice.meta)
     }
   }
 
   private def convertDto(
-    id: TypeId.User,
-    isRoot: Boolean,
-    dto: RawDto
-  ): Either[NEList[BaboonIssue.TyperIssue], DomainMember.User] = {
+                          id: TypeId.User,
+                          isRoot: Boolean,
+                          dto: RawDto
+                        ): Either[NEList[BaboonIssue.TyperIssue], DomainMember.User] = {
     for {
       converted <- dto.members.biFlatTraverse {
         case f: RawDtoMember.FieldDef =>
           for {
             name <- Right(FieldName(f.field.name.name))
-            _ <- SymbolNames.validFieldName(name)
-            tpe <- convertTpe(f.field.tpe)
+            _ <- SymbolNames.validFieldName(name, f.meta)
+            tpe <- convertTpe(f.field.tpe, f.meta)
           } yield {
             Seq(Field(name, tpe))
           }
         case p: RawDtoMember.ParentDef =>
           for {
-            id <- scopeSupport.resolveScopedRef(p.parent, path, pkg)
+            id <- scopeSupport.resolveScopedRef(p.parent, path, pkg, p.meta)
             parentDef = defined(id)
             out <- parentDef match {
-              case DomainMember.User(_, defn: Typedef.Dto) =>
+              case DomainMember.User(_, defn: Typedef.Dto, dto.meta) =>
                 Right(defn.fields)
               case o =>
-                Left(NEList(BaboonIssue.WrongParent(id, o.id)))
+                Left(NEList(BaboonIssue.WrongParent(id, o.id, dto.meta)))
             }
 
           } yield {
@@ -97,9 +97,9 @@ class BaboonTranslator(pkg: Pkg,
       }
       _ <- converted
         .map(m => (m.name.name.toLowerCase, m))
-        .toUniqueMap(e => NEList(BaboonIssue.NonUniqueFields(id, e)))
+        .toUniqueMap(e => NEList(BaboonIssue.NonUniqueFields(id, e, dto.meta)))
     } yield {
-      DomainMember.User(isRoot, Typedef.Dto(id, converted.toList))
+      DomainMember.User(isRoot, Typedef.Dto(id, converted.toList), dto.meta)
     }
   }
 
@@ -107,52 +107,53 @@ class BaboonTranslator(pkg: Pkg,
                          isRoot: Boolean,
                          adt: RawAdt,
                          thisScope: NestedScope[FullRawDefn],
-  ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
+                        ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
     for {
       converted <- adt.members
         .map(
           member =>
             scopeSupport
-              .resolveUserTypeId(member.dto.name, path :+ thisScope, pkg)
+              .resolveUserTypeId(member.dto.name, path :+ thisScope, pkg, member.meta)
         )
         .biSequence
       nel <- NEList
         .from(converted)
-        .toRight(NEList(BaboonIssue.EmptyAdt(id)))
+        .toRight(NEList(BaboonIssue.EmptyAdt(id, adt.meta)))
     } yield {
-      NEList(DomainMember.User(isRoot, Typedef.Adt(id, nel)))
+      NEList(DomainMember.User(isRoot, Typedef.Adt(id, nel), adt.meta))
     }
   }
 
   private def convertTpe(
-    tpe: RawTypeRef
-  ): Either[NEList[BaboonIssue.TyperIssue], TypeRef] = {
+                          tpe: RawTypeRef,
+                          meta: RawNodeMeta
+                        ): Either[NEList[BaboonIssue.TyperIssue], TypeRef] = {
     tpe match {
       case RawTypeRef.Simple(name) =>
         for {
-          id <- scopeSupport.resolveTypeId(name, path, pkg)
+          id <- scopeSupport.resolveTypeId(name, path, pkg, meta)
           asScalar <- id match {
             case scalar: TypeId.Scalar =>
               Right(scalar)
             case _ =>
-              Left(NEList(BaboonIssue.ScalarExpected(id)))
+              Left(NEList(BaboonIssue.ScalarExpected(id, meta)))
           }
         } yield {
           TypeRef.Scalar(asScalar)
         }
       case RawTypeRef.Constructor(name, params) =>
         for {
-          id <- scopeSupport.resolveTypeId(name, path, pkg)
+          id <- scopeSupport.resolveTypeId(name, path, pkg, meta)
           asCollection <- id match {
             case coll: TypeId.BuiltinCollection =>
               Right(coll)
             case _ =>
-              Left(NEList(BaboonIssue.CollectionExpected(id)))
+              Left(NEList(BaboonIssue.CollectionExpected(id, meta)))
           }
-          args <- params.toList.biTraverse(convertTpe)
+          args <- params.toList.biTraverse(convertTpe(_, meta))
           nel <- NEList
             .from(args)
-            .toRight(NEList(BaboonIssue.EmptyGenericArgs(id)))
+            .toRight(NEList(BaboonIssue.EmptyGenericArgs(id, meta)))
         } yield {
           TypeRef.Constructor(asCollection, nel)
         }

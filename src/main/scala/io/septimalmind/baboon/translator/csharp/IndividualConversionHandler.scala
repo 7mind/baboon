@@ -132,7 +132,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
         case c: Conversion.DtoConversion =>
           for {
             newDefn <- domain.defs.meta.nodes(c.sourceTpe) match {
-              case DomainMember.User(_, defn: Typedef.Dto) =>
+              case DomainMember.User(_, defn: Typedef.Dto, _) =>
                 Right(defn)
               case _ => Left(NEList(BaboonIssue.TranslationBug()))
             }
@@ -167,7 +167,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                         if c.id == TypeId.Builtins.map =>
                       Right(
                         Seq(
-                          q"(from e in $fieldRef select $csKeyValuePair.Create(${transfer(
+                          q"(from e in $fieldRef select ${csKeyValuePair}.Create(${transfer(
                             c.args.head,
                             q"e.Key"
                           )}, ${transfer(c.args.last, q"e.Value")})).ToImmutableDictionary(v => v.Key, v => v.Value)"

@@ -29,14 +29,14 @@ object BaboonTyper {
   class BaboonTyperImpl(enquiries: BaboonEnquiries,
                         translator: LocalContext[Identity, BaboonTranslator],
                         scopeSupport: ScopeSupport)
-      extends BaboonTyper {
+    extends BaboonTyper {
     override def process(
-      model: RawDomain
-    ): Either[NEList[BaboonIssue.TyperIssue], Domain] = {
+                          model: RawDomain
+                        ): Either[NEList[BaboonIssue.TyperIssue], Domain] = {
       for {
         id <- parsePkg(model.header)
         version <- parseVersion(model.version)
-        defs <- runTyper(id, model.members)
+        defs <- runTyper(id, model.members, model.header.meta)
         indexedDefs <- defs
           .map(d => (d.id, d))
           .toUniqueMap(e => NEList(BaboonIssue.DuplicatedTypedefs(model, e)))
@@ -53,10 +53,10 @@ object BaboonTyper {
         graph = DG.fromPred(predMatrix, GraphMeta(indexedDefs.filter {
           case (k, _) => predMatrix.links.contains(k)
         }))
-//        _ <- LoopDetector.Impl.findLoopMember(graph.predecessors) match {
-//          case Some(_) => Left(NEList(TODOTyperIssue()))
-//          case None    => Right(())
-//        }
+        //        _ <- LoopDetector.Impl.findLoopMember(graph.predecessors) match {
+        //          case Some(_) => Left(NEList(TODOTyperIssue()))
+        //          case None    => Right(())
+        //        }
         excludedIds = indexedDefs.keySet.diff(graph.meta.nodes.keySet)
         shallowSchema = graph.meta.nodes.view
           .mapValues(enquiries.shallowId)
@@ -65,22 +65,23 @@ object BaboonTyper {
           .cycleBreaking(graph.predecessors, ToposortLoopBreaker.dontBreak)
           .left
           .map(e => NEList(BaboonIssue.CircularDependency(model, e)))
-        deepSchema <- computeDeepSchema(id, graph, sorted)
+        deepSchema <- computeDeepSchema(id, graph, sorted, model.header.meta)
       } yield {
         Domain(id, version, graph, excludedIds, shallowSchema, deepSchema)
       }
     }
 
     private def computeDeepSchema(
-      pkg: Pkg,
-      graph: DG[TypeId, DomainMember],
-      sorted: Seq[TypeId]
-    ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, DeepSchemaId]] = {
+                                   pkg: Pkg,
+                                   graph: DG[TypeId, DomainMember],
+                                   sorted: Seq[TypeId],
+                                   meta: RawNodeMeta
+                                 ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, DeepSchemaId]] = {
 
       for {
         missing <- Right(sorted.filter(id => !graph.meta.nodes.contains(id)))
         _ <- Either.ifThenFail(missing.nonEmpty)(
-          NEList(BaboonIssue.MissingTypeId(pkg, missing.toSet))
+          NEList(BaboonIssue.MissingTypeId(pkg, missing.toSet, meta))
         )
       } yield {
         sorted.foldLeft(Map.empty[TypeId, DeepSchemaId]) {
@@ -94,9 +95,11 @@ object BaboonTyper {
               .sortBy(_._1)
 
             val normalizedRepr =
-              s"[${enquiries.wrap(id)};${depList
-                .map({ case (k, v) => s"$k=deep/$v" })
-                .mkString(",")}]"
+              s"[${enquiries.wrap(id)};${
+                depList
+                  .map({ case (k, v) => s"$k=deep/$v" })
+                  .mkString(",")
+              }]"
 
             idx.updated(id, DeepSchemaId(IzSha256Hash.hash(normalizedRepr)))
         }
@@ -107,7 +110,7 @@ object BaboonTyper {
     private def buildDependencies(defs: Map[TypeId, DomainMember],
                                   current: Map[TypeId, DomainMember],
                                   predecessors: List[(TypeId, Option[TypeId])],
-    ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, Set[TypeId]]] = {
+                                 ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, Set[TypeId]]] = {
       val nextDepMap = current.toList.flatMap {
         case (id, defn) =>
           enquiries.directDepsOf(defn).toList.map(dep => (id, Some(dep)))
@@ -137,8 +140,8 @@ object BaboonTyper {
     }
 
     private def parsePkg(
-      header: RawHeader
-    ): Either[NEList[BaboonIssue.TyperIssue], Pkg] = {
+                          header: RawHeader
+                        ): Either[NEList[BaboonIssue.TyperIssue], Pkg] = {
       for {
         nel <- NEList
           .from(header.name)
@@ -150,8 +153,8 @@ object BaboonTyper {
     }
 
     private def parseVersion(
-      version: RawVersion
-    ): Either[NEList[BaboonIssue.TyperIssue], Version] = {
+                              version: RawVersion
+                            ): Either[NEList[BaboonIssue.TyperIssue], Version] = {
       for {
         v <- Right(version.value)
         // TODO: validate format
@@ -161,18 +164,18 @@ object BaboonTyper {
     }
 
     private def runTyper(
-      pkg: Pkg,
-      members: Seq[RawTLDef]
-    ): Either[NEList[BaboonIssue.TyperIssue], List[DomainMember]] = {
-      import izumi.fundamentals.platform.strings.IzString.*
+                          pkg: Pkg,
+                          members: Seq[RawTLDef],
+                          meta: RawNodeMeta
+                        ): Either[NEList[BaboonIssue.TyperIssue], List[DomainMember]] = {
       for {
         initial <- Right(
           TypeId.Builtins.all.map(id => DomainMember.Builtin(id))
         )
 
-        scopes <- buildScopes(pkg, members)
+        scopes <- buildScopes(pkg, members, meta)
         flattened = flattenScopes(scopes)
-        ordered <- order(pkg, flattened)
+        ordered <- order(pkg, flattened, meta)
 
         out <- ordered.biFoldLeft(Map.empty[TypeId, DomainMember]) {
           case (acc, defn) =>
@@ -186,7 +189,7 @@ object BaboonTyper {
               mapped = next.map(m => (m.id, m))
               dupes = acc.keySet.intersect(mapped.map(_._1).toSet)
               _ <- Either.ifThenFail(dupes.nonEmpty)(
-                NEList(BaboonIssue.DuplicatedTypes(dupes))
+                NEList(BaboonIssue.DuplicatedTypes(dupes, meta))
               )
             } yield {
               acc ++ mapped
@@ -194,20 +197,21 @@ object BaboonTyper {
         }
 
         indexed <- (initial.map(m => (m.id, m)) ++ out.toSeq)
-          .toUniqueMap(e => NEList(BaboonIssue.NonUniqueTypedefs(e)))
+          .toUniqueMap(e => NEList(BaboonIssue.NonUniqueTypedefs(e, meta)))
       } yield {
         indexed.values.toList
       }
     }
 
-    def order(
-      pkg: Pkg,
-      flattened: List[ScopedDefn]
-    ): Either[NEList[BaboonIssue.TyperIssue], List[ScopedDefn]] = {
+    private def order(
+                       pkg: Pkg,
+                       flattened: List[ScopedDefn],
+                       meta: RawNodeMeta
+                     ): Either[NEList[BaboonIssue.TyperIssue], List[ScopedDefn]] = {
       for {
         depmap <- flattened.map(d => deps(pkg, d)).biSequence
         asMap <- depmap.toUniqueMap(
-          bad => NEList(BaboonIssue.BadInheritance(bad))
+          bad => NEList(BaboonIssue.BadInheritance(bad, meta))
         )
 
         predMatrix = IncidenceMatrix(asMap.view.mapValues(_._1).toMap)
@@ -215,14 +219,14 @@ object BaboonTyper {
         sorted <- Toposort
           .cycleBreaking(predMatrix, ToposortLoopBreaker.dontBreak)
           .left
-          .map(e => NEList(BaboonIssue.CircularInheritance(e)))
+          .map(e => NEList(BaboonIssue.CircularInheritance(e, meta)))
 
       } yield {
         sorted.map(id => asMap(id)._2).toList
       }
     }
 
-    private def deps(pkg: Pkg, defn: ScopedDefn) = {
+    private def deps(pkg: Pkg, defn: ScopedDefn): Either[NEList[BaboonIssue.TyperIssue], (TypeId.User, (Set[TypeId.User], ScopedDefn))] = {
       val d = defn.thisScope.defn.defn match {
         case d: RawDto =>
           d.members
@@ -240,9 +244,9 @@ object BaboonTyper {
 
       for {
         rawDefn <- Right(defn.thisScope.defn)
-        id <- scopeSupport.resolveUserTypeId(rawDefn.defn.name, defn.path, pkg)
+        id <- scopeSupport.resolveUserTypeId(rawDefn.defn.name, defn.path, pkg, rawDefn.defn.meta)
         mappedDeps <- d
-          .map(v => scopeSupport.resolveScopedRef(v, defn.path, pkg))
+          .map(v => scopeSupport.resolveScopedRef(v, defn.path, pkg, rawDefn.defn.meta))
           .biSequence
       } yield {
         (id, (mappedDeps, defn))
@@ -250,17 +254,17 @@ object BaboonTyper {
     }
 
     private def flattenScopes(
-      root: RootScope[FullRawDefn]
-    ): List[ScopedDefn] = {
+                               root: RootScope[FullRawDefn]
+                             ): List[ScopedDefn] = {
       root.nested.values
         .flatMap(defn => flattenScopes(NEList(root), defn))
         .toList
     }
 
     private def flattenScopes(
-      path: NEList[Scope[FullRawDefn]],
-      current: NestedScope[FullRawDefn]
-    ): List[ScopedDefn] = {
+                               path: NEList[Scope[FullRawDefn]],
+                               current: NestedScope[FullRawDefn]
+                             ): List[ScopedDefn] = {
 
       current match {
         case s: SubScope[FullRawDefn] =>
@@ -273,14 +277,15 @@ object BaboonTyper {
     }
 
     private def buildScopes(
-      pkg: Pkg,
-      members: Seq[RawTLDef]
-    ): Either[NEList[BaboonIssue.TyperIssue], RootScope[FullRawDefn]] = {
+                             pkg: Pkg,
+                             members: Seq[RawTLDef],
+                             meta: RawNodeMeta
+                           ): Either[NEList[BaboonIssue.TyperIssue], RootScope[FullRawDefn]] = {
       for {
         sub <- members.map(m => buildScope(m.value, m.root)).biSequence
         asMap <- sub
           .map(s => (s.name, s))
-          .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus)))
+          .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, meta)))
       } yield {
         RootScope(pkg, asMap)
       }
@@ -288,9 +293,9 @@ object BaboonTyper {
     }
 
     private def buildScope(
-      member: RawDefn,
-      isRoot: Boolean
-    ): Either[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
+                            member: RawDefn,
+                            isRoot: Boolean
+                          ): Either[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
       member match {
         case dto: RawDto =>
           Right(LeafScope(ScopeName(dto.name.name), FullRawDefn(dto, isRoot)))
@@ -303,7 +308,7 @@ object BaboonTyper {
               .biSequence
             asMap <- sub
               .map(s => (s.name, s))
-              .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus)))
+              .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta)))
             asNEMap <- NEMap
               .from(asMap)
               .toRight(NEList(BaboonIssue.ScopeCannotBeEmpty(member)))

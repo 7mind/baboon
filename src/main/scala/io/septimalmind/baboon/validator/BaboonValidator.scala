@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.validator
 
+import io.septimalmind.baboon.parser.model.RawNodeMeta
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue.ConversionIssue
 import io.septimalmind.baboon.typer.BaboonEnquiries
@@ -12,16 +13,16 @@ import izumi.fundamentals.graphs.tools.cycles.LoopDetector
 
 trait BaboonValidator {
   def validate(
-    family: BaboonFamily
-  ): Either[NEList[BaboonIssue.VerificationIssue], Unit]
+                family: BaboonFamily
+              ): Either[NEList[BaboonIssue.VerificationIssue], Unit]
 }
 
 object BaboonValidator {
   class BaboonValidatorImpl(enquiries: BaboonEnquiries)
-      extends BaboonValidator {
+    extends BaboonValidator {
     override def validate(
-      family: BaboonFamily
-    ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
+                           family: BaboonFamily
+                         ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
       family.domains.toSeq.map {
         case (pkg, lineage) =>
           validateLineage(pkg, lineage)
@@ -29,9 +30,9 @@ object BaboonValidator {
     }
 
     private def validateLineage(
-      pkg: Pkg,
-      lineage: BaboonLineage
-    ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
+                                 pkg: Pkg,
+                                 lineage: BaboonLineage
+                               ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
       assert(lineage.pkg == pkg)
 
       for {
@@ -45,9 +46,9 @@ object BaboonValidator {
     }
 
     private def validateDomain(
-      version: Version,
-      domain: Domain
-    ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
+                                version: Version,
+                                domain: Domain
+                              ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
       assert(domain.version == version)
 
       for {
@@ -61,8 +62,8 @@ object BaboonValidator {
     }
 
     private def checkLoops(
-      domain: Domain
-    ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
+                            domain: Domain
+                          ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
       val depMatrix = IncidenceMatrix(domain.defs.meta.nodes.view.mapValues {
         defn =>
           enquiries.directDepsOf(defn)
@@ -76,8 +77,8 @@ object BaboonValidator {
     }
 
     private def checkMissingTypes(
-      domain: Domain
-    ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
+                                   domain: Domain
+                                 ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
       val allDeps = domain.defs.meta.nodes.values.flatMap { defn =>
         enquiries.directDepsOf(defn)
       }.toSet
@@ -90,15 +91,15 @@ object BaboonValidator {
     }
 
     private def checkUniqueness(
-      domain: Domain
-    ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
+                                 domain: Domain
+                               ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
       for {
         _ <- {
           val dupes =
             domain.defs.meta.nodes.values
               .groupBy {
                 case DomainMember.Builtin(id) => id.name.name
-                case DomainMember.User(_, defn) =>
+                case DomainMember.User(_, defn, _) =>
                   defn.id.owner match {
                     case Owner.Toplevel => defn.id.name.name
                     case Owner.Adt(id) =>
@@ -121,13 +122,13 @@ object BaboonValidator {
                     .groupBy(_.name.name.toLowerCase)
                     .filter(_._2.size > 1)
                 Either.ifThenFail(dupes.nonEmpty)(
-                  NEList(BaboonIssue.ConflictingDtoFields(d, dupes))
+                  NEList(BaboonIssue.ConflictingDtoFields(d, dupes, u.meta))
                 )
               case e: Typedef.Enum =>
                 val dupes =
                   e.members.groupBy(_.name.toLowerCase).filter(_._2.size > 1)
                 Either.ifThenFail(dupes.nonEmpty)(
-                  NEList(BaboonIssue.ConflictingEnumBranches(e, dupes))
+                  NEList(BaboonIssue.ConflictingEnumBranches(e, dupes, u.meta))
                 )
               case a: Typedef.Adt =>
                 val dupes =
@@ -135,7 +136,7 @@ object BaboonValidator {
                     .groupBy(_.name.name.toLowerCase)
                     .filter(_._2.size > 1)
                 Either.ifThenFail(dupes.nonEmpty)(
-                  NEList(BaboonIssue.ConflictingAdtBranches(a, dupes))
+                  NEList(BaboonIssue.ConflictingAdtBranches(a, dupes, u.meta))
                 )
 
             }
@@ -144,8 +145,8 @@ object BaboonValidator {
     }
 
     private def checkPathologicGenerics(
-      domain: Domain
-    ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
+                                         domain: Domain
+                                       ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
       for {
         _ <- domain.defs.meta.nodes.values.map {
           case _: DomainMember.Builtin =>
@@ -154,9 +155,9 @@ object BaboonValidator {
             u.defn match {
               case d: Typedef.Dto =>
                 for {
-                  _ <- checkDoubleOptions(d)
-                  _ <- checkComplexSetElements(d)
-                  _ <- checkComplexMapKeys(d)
+                  _ <- checkDoubleOptions(d, u.meta)
+                  _ <- checkComplexSetElements(d, u.meta)
+                  _ <- checkComplexMapKeys(d, u.meta)
                 } yield {}
 
               case _ =>
@@ -168,8 +169,9 @@ object BaboonValidator {
     }
 
     private def checkDoubleOptions(
-      dto: Typedef.Dto
-    ): Either[NEList[BaboonIssue.PathologicGenerics], Unit] = {
+                                    dto: Typedef.Dto,
+                                    meta: RawNodeMeta
+                                  ): Either[NEList[BaboonIssue.PathologicGenerics], Unit] = {
       def isDoubleOption(t: TypeRef, path: Seq[TypeId]): Boolean = {
 
         t match {
@@ -188,14 +190,15 @@ object BaboonValidator {
       val badFields = dto.fields.filter(f => isDoubleOption(f.tpe, Seq.empty))
 
       Either.ifThenFail(badFields.nonEmpty)(
-        NEList(BaboonIssue.PathologicGenerics(dto, badFields))
+        NEList(BaboonIssue.PathologicGenerics(dto, badFields, meta))
       )
     }
 
     private def checkComplexSetElements(
-      dto: Typedef.Dto
-    ): Either[NEList[BaboonIssue.SetsCantContainGenerics], Unit] = {
-      def isDoubleOption(t: TypeRef, path: Seq[TypeId]): Boolean = {
+                                         dto: Typedef.Dto,
+                                         meta: RawNodeMeta
+                                       ): Either[NEList[BaboonIssue.SetsCantContainGenerics], Unit] = {
+      def isDoubleOption(t: TypeRef): Boolean = {
         t match {
           case TypeRef.Constructor(TypeId.Builtins.set, args) =>
             args.head match {
@@ -207,17 +210,18 @@ object BaboonValidator {
         }
       }
 
-      val badFields = dto.fields.filter(f => isDoubleOption(f.tpe, Seq.empty))
+      val badFields = dto.fields.filter(f => isDoubleOption(f.tpe))
 
       Either.ifThenFail(badFields.nonEmpty)(
-        NEList(BaboonIssue.SetsCantContainGenerics(dto, badFields))
+        NEList(BaboonIssue.SetsCantContainGenerics(dto, badFields, meta))
       )
     }
 
     private def checkComplexMapKeys(
-      dto: Typedef.Dto
-    ): Either[NEList[BaboonIssue.MapKeysShouldNotBeGeneric], Unit] = {
-      def isDoubleOption(t: TypeRef, path: Seq[TypeId]): Boolean = {
+                                     dto: Typedef.Dto,
+                                     meta: RawNodeMeta
+                                   ): Either[NEList[BaboonIssue.MapKeysShouldNotBeGeneric], Unit] = {
+      def isDoubleOption(t: TypeRef): Boolean = {
         t match {
           case TypeRef.Constructor(TypeId.Builtins.map, args) =>
             args.head match {
@@ -229,16 +233,16 @@ object BaboonValidator {
         }
       }
 
-      val badFields = dto.fields.filter(f => isDoubleOption(f.tpe, Seq.empty))
+      val badFields = dto.fields.filter(f => isDoubleOption(f.tpe))
 
       Either.ifThenFail(badFields.nonEmpty)(
-        NEList(BaboonIssue.MapKeysShouldNotBeGeneric(dto, badFields))
+        NEList(BaboonIssue.MapKeysShouldNotBeGeneric(dto, badFields, meta))
       )
     }
 
     private def checkShape(
-      domain: Domain
-    ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
+                            domain: Domain
+                          ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
       domain.defs.meta.nodes.values.map {
         case _: DomainMember.Builtin =>
           Right(())
@@ -248,20 +252,20 @@ object BaboonValidator {
               Right(())
             case e: Typedef.Enum =>
               Either.ifThenFail(e.members.isEmpty)(
-                NEList(BaboonIssue.EmptyEnumDef(e))
+                NEList(BaboonIssue.EmptyEnumDef(e, u.meta))
               )
             case a: Typedef.Adt =>
               Either.ifThenFail(a.members.isEmpty)(
-                NEList(BaboonIssue.EmptyAdtDef(a))
+                NEList(BaboonIssue.EmptyAdtDef(a, u.meta))
               )
           }
       }.biSequence_
     }
 
     private def validateEvolution(
-      evolution: BaboonEvolution,
-      versions: NEMap[Version, Domain]
-    ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
+                                   evolution: BaboonEvolution,
+                                   versions: NEMap[Version, Domain]
+                                 ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
 
       //val latest = versions(evolution.latest)
 
@@ -279,11 +283,11 @@ object BaboonValidator {
     }
 
     private def validateEvo(
-      next: Domain,
-      prev: Domain,
-      diff: BaboonDiff,
-      ruleset: BaboonRuleset
-    ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
+                             next: Domain,
+                             prev: Domain,
+                             diff: BaboonDiff,
+                             ruleset: BaboonRuleset
+                           ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
       val nextIds = next.defs.meta.nodes.keySet
       val diffIds = diff.diffs.keySet
       val missingDiffs = nextIds.diff(diffIds)
@@ -323,9 +327,9 @@ object BaboonValidator {
             val n = next.defs.meta.nodes(c.sourceTpe)
             (o, n) match {
               case (
-                  DomainMember.User(_, oe: Typedef.Enum),
-                  DomainMember.User(_, ne: Typedef.Enum)
-                  ) =>
+                DomainMember.User(_, oe: Typedef.Enum, _),
+                DomainMember.User(_, ne: Typedef.Enum, _)
+                ) =>
                 Either.ifThenFail(
                   oe.members.toSet.diff(ne.members.toSet).nonEmpty
                 )(
@@ -356,9 +360,9 @@ object BaboonValidator {
             val n = next.defs.meta.nodes(c.sourceTpe)
             (o, n) match {
               case (
-                  DomainMember.User(_, od: Typedef.Dto),
-                  DomainMember.User(_, nd: Typedef.Dto)
-                  ) =>
+                DomainMember.User(_, od: Typedef.Dto, _),
+                DomainMember.User(_, nd: Typedef.Dto, _)
+                ) =>
                 for {
                   newFieldNames <- Right(nd.fields.map(_.name).toSet)
                   oldFieldNames <- Right(od.fields.map(_.name).toSet)
@@ -437,9 +441,9 @@ object BaboonValidator {
             val n = next.defs.meta.nodes(c.sourceTpe)
             (o, n) match {
               case (
-                  DomainMember.User(_, oa: Typedef.Adt),
-                  DomainMember.User(_, na: Typedef.Adt)
-                  ) =>
+                DomainMember.User(_, oa: Typedef.Adt, _),
+                DomainMember.User(_, na: Typedef.Adt, _)
+                ) =>
                 Either.ifThenFail(
                   oa.members
                     .map(_.name)

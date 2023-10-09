@@ -20,15 +20,15 @@ trait BaboonLoader {
 object BaboonLoader {
   class BaboonLoaderImpl(manager: BaboonFamilyManager,
                          validator: BaboonValidator)
-      extends BaboonLoader {
+    extends BaboonLoader {
     override def load(
-      paths: List[Path]
-    ): Either[NEList[BaboonIssue], BaboonFamily] = {
+                       paths: List[Path]
+                     ): Either[NEList[BaboonIssue], BaboonFamily] = {
       for {
         inputs <- paths.biTraverse { path =>
           for {
             content <- Try(IzFiles.readString(path.toFile)).toEither.left
-              .map(e => NEList(BaboonIssue.CantReadInput(e)))
+              .map(e => NEList(BaboonIssue.CantReadInput(path.toString, e)))
           } yield {
             BaboonParser.Input(
               FSPath.parse(NEString.unsafeFrom(path.toString)),
