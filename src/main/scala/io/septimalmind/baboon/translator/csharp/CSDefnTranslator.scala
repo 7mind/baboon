@@ -86,6 +86,8 @@ object CSDefnTranslator {
            |    return "${domain.version.version}";
            |}""".stripMargin, q"""public String DomainIdentifier() {
            |    return "${domain.id.toString}";
+           |}""".stripMargin, q"""public String TypeIdentifier() {
+           |    return "${defn.id.toString}";
            |}""".stripMargin)
       defn.defn match {
         case d: Typedef.Dto =>

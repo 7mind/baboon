@@ -166,6 +166,7 @@ class CSBaboonTranslator(
       q"""public interface IBaboonGenerated {
          |    public $csString DomainVersion();
          |    public $csString DomainIdentifier();
+         |    public $csString TypeIdentifier();
          |}
          |
          |public interface IBaboonGeneratedLatest : IBaboonGenerated {}
