@@ -7,7 +7,9 @@ import io.septimalmind.baboon.translator.AbstractBaboonTranslator
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.translator.csharp.{
   CSBaboonTranslator,
+  CSCodecTranslator,
   CSDefnTranslator,
+  CSNSJsonCodecGenerator,
   CSTypeTranslator,
   IndividualConversionHandler
 }
@@ -46,7 +48,11 @@ class BaboonModule(options: CompilerOptions) extends ModuleDef {
     }.running { (translator: BaboonTranslator) =>
       translator
     })
-    .external(DIKey[Pkg], DIKey[NEList[Scope[FullRawDefn]]], DIKey[Map[TypeId, DomainMember]])
+    .external(
+      DIKey[Pkg],
+      DIKey[NEList[Scope[FullRawDefn]]],
+      DIKey[Map[TypeId, DomainMember]]
+    )
 
   make[LocalContext[Identity, IndividualConversionHandler]]
     .fromLocalContext(new ModuleDef {
@@ -60,4 +66,7 @@ class BaboonModule(options: CompilerOptions) extends ModuleDef {
       DIKey.get[Domain],
       DIKey.get[BaboonRuleset]
     )
+
+  many[CSCodecTranslator]
+    .add[CSNSJsonCodecGenerator]
 }

@@ -197,7 +197,26 @@ class CSBaboonTranslator(
          |     public $csTpe TypeTo() {
          |         return typeof(To);
          |     }
-         |}""".stripMargin
+         |}
+         |
+         |interface IBaboonCodec<Instance> {}
+         |
+         |interface IBaboonValueCodec<Instance, Wire> : IBaboonCodec<Instance>
+         |{
+         |    Wire Encode(Instance instance);
+         |    Instance Decode(Wire wire);
+         |}
+         |
+         |interface IBaboonJsonCodec<Instance> : IBaboonValueCodec<Instance, $nsJToken> {}
+         |
+         |interface IBaboonStreamCodec<Instance, OutStream, InStream> : IBaboonCodec<Instance>
+         |{
+         |    void Encode(OutStream writer, Instance instance);
+         |    Instance Decode(InStream wire);
+         |}
+         |
+         |interface IBaboonBinCodec<Instance> : IBaboonStreamCodec<Instance, $binaryWriter, $binaryReader> {}
+         |""".stripMargin
 
     val key =
       q"""public class ConversionKey
@@ -409,6 +428,8 @@ object CSBaboonTranslator {
     NEList("System", "Collections", "Generic")
   )
   val linqPkg: CSPackageId = CSPackageId(NEList("System", "Linq"))
+  val ioPkg: CSPackageId = CSPackageId(NEList("System", "IO"))
+  val nsLinqPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json", "Linq"))
 
   val abstractConversion: CSType =
     CSType(sharedRtPkg, "AbstractConversion", fq = false)
@@ -418,6 +439,33 @@ object CSBaboonTranslator {
     CSType(sharedRtPkg, "IBaboonGenerated", fq = false)
   val iBaboonGeneratedLatest: CSType =
     CSType(sharedRtPkg, "IBaboonGeneratedLatest", fq = false)
+
+  val iBaboonCodec: CSType =
+    CSType(sharedRtPkg, "IBaboonCodec", fq = false)
+  val iBaboonValueCodec: CSType =
+    CSType(sharedRtPkg, "IBaboonValueCodec", fq = false)
+  val iBaboonJsonCodec: CSType =
+    CSType(sharedRtPkg, "IBaboonJsonCodec", fq = false)
+  val iBaboonStreamCodec: CSType =
+    CSType(sharedRtPkg, "IBaboonStreamCodec", fq = false)
+  val iBaboonBinCodec: CSType =
+    CSType(sharedRtPkg, "IBaboonBinCodec", fq = false)
+
+  val nsJToken: CSType =
+    CSType(nsLinqPkg, "JToken", fq = false)
+  val nsJValue: CSType =
+    CSType(nsLinqPkg, "JValue", fq = false)
+  val nsJArray: CSType =
+    CSType(nsLinqPkg, "JArray", fq = false)
+  val nsJObject: CSType =
+    CSType(nsLinqPkg, "JObject", fq = false)
+  val nsJProperty: CSType =
+    CSType(nsLinqPkg, "JProperty", fq = false)
+
+  val binaryReader: CSType =
+    CSType(ioPkg, "BinaryReader", fq = false)
+  val binaryWriter: CSType =
+    CSType(ioPkg, "BinaryWriter", fq = false)
 
   val csTpe: CSType =
     CSType(systemPkg, "Type", fq = false)

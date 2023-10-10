@@ -34,7 +34,9 @@ object CSDefnTranslator {
   val serializable: CSType =
     CSType(CSBaboonTranslator.systemPkg, "Serializable", fq = false)
 
-  class CSDefnTranslatorImpl(options: CompilerOptions, trans: CSTypeTranslator)
+  class CSDefnTranslatorImpl(options: CompilerOptions,
+                             trans: CSTypeTranslator,
+                             codecs: Set[CSCodecTranslator])
       extends CSDefnTranslator {
     type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
@@ -45,13 +47,23 @@ object CSDefnTranslator {
       val name = trans.toCsVal(defn.id, domain.version)
       val isLatestVersion = domain.version == evo.latest
 
-      val defnReprBase = makeRepr(defn, domain, name, isLatestVersion)
-      val defnRepr = if (isLatestVersion) {
-        defnReprBase
-      } else {
-        q"""[${obsolete}("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${options.obsoleteErrors.toString})]
-           |$defnReprBase""".stripMargin
+      def obsoletePrevious(tree: TextTree[CSValue]) = {
+        if (isLatestVersion) {
+          tree
+        } else {
+          q"""[${obsolete}("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${options.obsoleteErrors.toString})]
+             |$tree""".stripMargin
+        }
       }
+
+      val defnReprBase = makeRepr(defn, domain, name, isLatestVersion)
+
+      val codecTrees =
+        codecs.toList
+          .map(t => t.translate(defn, name))
+          .map(obsoletePrevious)
+
+      val defnRepr = obsoletePrevious(defnReprBase)
 
       assert(defn.id.pkg == domain.id)
       val fbase =
@@ -61,7 +73,8 @@ object CSDefnTranslator {
 
       val ns = name.pkg.parts
 
-      val content = inNs(ns.toSeq, defnRepr)
+      val allDefs = (defnRepr +: codecTrees).join("\n\n")
+      val content = inNs(ns.toSeq, allDefs)
 
       val outname = defn.defn.id.owner match {
         case Owner.Toplevel =>
