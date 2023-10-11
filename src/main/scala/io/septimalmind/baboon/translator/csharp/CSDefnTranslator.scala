@@ -60,7 +60,7 @@ object CSDefnTranslator {
 
       val codecTrees =
         codecs.toList
-          .map(t => t.translate(defn, name))
+          .map(t => t.translate(defn, name, domain.version))
           .map(obsoletePrevious)
 
       val defnRepr = obsoletePrevious(defnReprBase)
