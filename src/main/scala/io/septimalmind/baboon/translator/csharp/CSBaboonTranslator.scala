@@ -469,7 +469,8 @@ object CSBaboonTranslator {
 
   val csTpe: CSType =
     CSType(systemPkg, "Type", fq = false)
-
+  val csLazy: CSType =
+    CSType(systemPkg, "Lazy", fq = false)
   val csList: CSType =
     CSType(genericPkg, "List", fq = false)
   val csDict: CSType =

@@ -10,7 +10,8 @@ trait CSCodecTranslator {
                 name: CSValue.CSType): TextTree[CSValue]
 }
 
-class CSNSJsonCodecGenerator extends CSCodecTranslator {
+class CSNSJsonCodecGenerator(trans: CSTypeTranslator)
+    extends CSCodecTranslator {
   override def translate(defn: DomainMember.User,
                          name: CSValue.CSType): TextTree[CSValue] = {
 
@@ -34,19 +35,44 @@ class CSNSJsonCodecGenerator extends CSCodecTranslator {
           q"""var asStr = wire.Value<String>()?.ToLower();
              |if (asStr == null)
              |{
-             |    throw new ArgumentException($$"Cannot convert {wire} to ${name.name}: string expected");
+             |    throw new ${csArgumentException}($$"Cannot convert {wire} to ${name.name}: string expected");
              |}
              |
              |${branches.join("\n")}
              |
-             |throw new ArgumentException($$"Cannot convert {wire} to ${name.name}: no matching value");""".stripMargin
+             |throw new ${csArgumentException}($$"Cannot convert {wire} to ${name.name}: no matching value");""".stripMargin
         )
 
       case a: Typedef.Adt =>
-        (
-          q"throw new NotImplementedException();",
-          q"throw new NotImplementedException();"
-        )
+        val branches = a.members.toList.map { m =>
+          val branchNs = q"${trans.adtNsName(a.id)}"
+          val branchName = m.name.name
+          val fqBranch = q"$branchNs.$branchName"
+
+          (q"""if (instance is $fqBranch)
+             |{
+             |    return new ${nsJObject}(new ${nsJProperty}("${m.name.name}"), ${fqBranch}_JsonCodec.Instance.Encode(($fqBranch)instance));
+             |}""".stripMargin, q"""if (head.Name == "B1")
+                                  |{
+                                  |    return ${fqBranch}_JsonCodec.Instance.Decode(head.Value);
+                                  |}""".stripMargin)
+
+        }
+
+        (q"""${branches.map(_._1).join("\n")}
+            |
+            |throw new ${csArgumentException}($$"Cannot encode {instance}: unexpected subclass");
+           """.stripMargin, q"""var asObject = wire.Value<JObject>();
+             |if (asObject == null)
+             |{
+             |    throw new ArgumentException($$"Cannot convert {wire} to ${name.name}: object expected");
+             |}
+             |var head = asObject.Properties().First();
+             |
+             |${branches.map(_._2).join("\n")}
+             |
+             |throw new ArgumentException($$"Cannot convert {wire} to ${name.name}: no matching value");
+           """.stripMargin)
 
     }
 
@@ -62,6 +88,10 @@ class CSNSJsonCodecGenerator extends CSCodecTranslator {
        |    {
        |        ${dec.shift(8).trim}
        |    }
+       |
+       |    private static $csLazy<$cName> instance = new $csLazy<$cName>(() => new $cName());
+       |
+       |    public static $cName Instance { get { return instance.Value; } }
        |}
      """.stripMargin
 

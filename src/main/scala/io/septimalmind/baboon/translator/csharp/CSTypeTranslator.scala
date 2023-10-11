@@ -21,11 +21,15 @@ class CSTypeTranslator() {
     CSPackageId(p.path.map(_.capitalize) :+ verString)
   }
 
+  def adtNsName(id: TypeId.User): String = {
+    id.name.name.toLowerCase
+  }
+
   def toCsVal(tid: TypeId.User, version: Version): CSType = {
     val pkg = toCsPkg(tid.pkg, version)
     val fullPkg = tid.owner match {
       case Owner.Toplevel => pkg
-      case Owner.Adt(id)  => CSPackageId(pkg.parts :+ id.name.name.toLowerCase)
+      case Owner.Adt(id)  => CSPackageId(pkg.parts :+ adtNsName(id))
     }
     CSType(fullPkg, tid.name.name.capitalize, fq = false)
   }
