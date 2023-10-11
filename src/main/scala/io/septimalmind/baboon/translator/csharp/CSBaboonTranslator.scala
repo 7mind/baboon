@@ -461,6 +461,8 @@ object CSBaboonTranslator {
     CSType(nsLinqPkg, "JObject", fq = false)
   val nsJProperty: CSType =
     CSType(nsLinqPkg, "JProperty", fq = false)
+  val nsJTokenType: CSType =
+    CSType(nsLinqPkg, "JTokenType", fq = false)
 
   val binaryReader: CSType =
     CSType(ioPkg, "BinaryReader", fq = false)
