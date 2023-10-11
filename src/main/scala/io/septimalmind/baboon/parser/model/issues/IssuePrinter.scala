@@ -24,7 +24,7 @@ trait BugPrinter[T <: BaboonBug & BaboonIssue] extends IssuePrinter[T] {
 }
 
 object IssuePrinter {
-  val issuesUrl = "https://github.com/7mind/baboon/issues"
+  private[issues] val issuesUrl = "https://github.com/7mind/baboon/issues"
 
   def apply[T <: BaboonIssue](implicit printer: IssuePrinter[T]): IssuePrinter[T] = printer
 
@@ -509,12 +509,14 @@ object IssuePrinter {
   private def extractLocation(meta: RawNodeMeta): String = {
     meta.pos match {
       case full: InputPointer.Full =>
-        s"""From => (${full.file.asString}:${full.start.line}) position=${full.start.column}
-           |To   => (${full.file.asString}:${full.stop.line})  position=${full.stop.column}""".stripMargin
+        s"""In model: ${full.file.name.theString}
+           |  line=${full.start.line} position=${full.start.column}
+           |  line=${full.stop.line}  position=${full.stop.column}""".stripMargin
       case offset: InputPointer.Offset =>
-        s"In => (${offset.file.asString}:${offset.start.line}) position=${offset.start.column}"
+        s"""In model: ${offset.file.name.theString}
+           |  line=${offset.start.line} position=${offset.start.column}""".stripMargin
       case file: InputPointer.JustFile =>
-        s"In file: ${file.file.asString}"
+        s"In model: ${file.file.name.theString}"
       case InputPointer.Undefined => ""
     }
   }
