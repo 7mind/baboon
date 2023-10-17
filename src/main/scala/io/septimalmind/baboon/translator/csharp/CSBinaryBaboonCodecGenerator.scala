@@ -13,9 +13,9 @@ class CSBinaryBaboonCodecGenerator(trans: CSTypeTranslator)
                          version: Version): TextTree[CSValue] = {
     val (enc, dec) = defn.defn match {
       case d: Typedef.Dto =>
-//        val branches = d.fields.map { f =>
-//          val fieldRef = q"instance.${f.name.name.capitalize}"
-//          val enc = mkEncoder(f.tpe, version, fieldRef)
+        val branches = d.fields.map { f =>
+          val fieldRef = q"instance.${f.name.name.capitalize}"
+          val enc = mkEncoder(f.tpe, version, fieldRef)
 //          val dec = mkDecoder(
 //            f.tpe,
 //            version,
@@ -26,28 +26,22 @@ class CSBinaryBaboonCodecGenerator(trans: CSTypeTranslator)
 //            q"""new $nsJProperty("${f.name.name}", $enc)""",
 //            q"${f.name.name.capitalize}: $dec",
 //          )
-//        }
-//
-//        (
-//          q"""return new $nsJObject(
-//             |${branches.map(_._1).join(",\n").shift(4)}
-//             |);""".stripMargin,
-//          q"""var asObject = wire.Value<JObject>();
-//             |
-//             |if (asObject == null)
-//             |{
-//             |    throw new ArgumentException($$"Cannot decode {wire} to ${name.name}: object expected");
-//             |}
-//             |
-//             |return new $name(
+          (enc, q"""null""")
+        }
+
+        val fenc =
+          q"""${branches
+               .map(_._1)
+               .join(";\n")};""".stripMargin
+
+//        val fdec =
+//          q"""return new $name(
 //             |${branches.map(_._2).join(",\n").shift(4)}
 //             |);
-//       """.stripMargin)
+//               """.stripMargin
+        val fdec = q"throw new $csNotImplementedException();"
+        (fenc, fdec)
 
-        (
-          q"throw new $csNotImplementedException();",
-          q"throw new $csNotImplementedException();"
-        )
       case e: Typedef.Enum =>
         val branches = e.members.zipWithIndex.toList.map {
           case (m, idx) =>
@@ -123,4 +117,108 @@ class CSBinaryBaboonCodecGenerator(trans: CSTypeTranslator)
     CSValue.CSType(name.pkg, s"${name.name}_BBCodec", name.fq)
   }
 
+  private def deNull(tpe: TypeRef,
+                     ref: TextTree[CSValue]): TextTree[CSValue] = {
+    tpe match {
+      case TypeRef.Scalar(id) =>
+        id match {
+          case s: TypeId.BuiltinScalar =>
+            s match {
+              case TypeId.Builtins.str =>
+                ref
+              case _ =>
+                q"$ref.Value"
+            }
+          case _ =>
+            q"$ref!"
+        }
+      case _ =>
+        q"$ref!"
+    }
+  }
+
+  private def mkEncoder(tpe: TypeRef,
+                        version: Version,
+                        ref: TextTree[CSValue]): TextTree[CSValue] = {
+    tpe match {
+      case TypeRef.Scalar(id) =>
+        id match {
+          case s: TypeId.BuiltinScalar =>
+            s match {
+              case TypeId.Builtins.bit =>
+                q"writer.Write($ref)"
+              case TypeId.Builtins.i08 =>
+                q"writer.Write($ref)"
+              case TypeId.Builtins.i16 =>
+                q"writer.Write($ref)"
+              case TypeId.Builtins.i32 =>
+                q"writer.Write($ref)"
+              case TypeId.Builtins.i64 =>
+                q"writer.Write($ref)"
+              case TypeId.Builtins.u08 =>
+                q"writer.Write($ref)"
+              case TypeId.Builtins.u16 =>
+                q"writer.Write($ref)"
+              case TypeId.Builtins.u32 =>
+                q"writer.Write($ref)"
+              case TypeId.Builtins.u64 =>
+                q"writer.Write($ref)"
+              case TypeId.Builtins.f32 =>
+                q"writer.Write($ref)"
+              case TypeId.Builtins.f64 =>
+                q"writer.Write($ref)"
+              case TypeId.Builtins.f128 =>
+                q"writer.Write($ref)"
+              case TypeId.Builtins.str =>
+                q"writer.Write($ref)"
+              case TypeId.Builtins.tsu =>
+                q"writer.Write($ref.ToString())"
+              case TypeId.Builtins.tso =>
+                q"writer.Write($ref.ToString())"
+              case o =>
+                throw new RuntimeException(s"BUG: Unexpected type: $o")
+            }
+          case u: TypeId.User =>
+            val targetTpe = codecName(trans.toCsVal(u, version))
+            q"""${targetTpe}.Instance.Encode(writer, $ref)"""
+        }
+      case c: TypeRef.Constructor =>
+        c.id match {
+          case TypeId.Builtins.opt =>
+            q"""if ($ref == null)
+               |{
+               |    writer.Write((byte)0);
+               |} else
+               |{
+               |   writer.Write((byte)1);
+               |   ${mkEncoder(c.args.head, version, deNull(c.args.head, ref))
+                 .shift(4)
+                 .trim};
+               |}""".stripMargin
+          case TypeId.Builtins.map =>
+            q"""writer.Write($ref.Count());
+               |foreach (var kv in $ref)
+               |{
+               |    ${mkEncoder(c.args.head, version, q"kv.Key").shift(4).trim};
+               |    ${mkEncoder(c.args.last, version, q"kv.Value")
+                 .shift(4)
+                 .trim};
+               |}""".stripMargin
+          case TypeId.Builtins.lst =>
+            q"""writer.Write($ref.Count());
+               |foreach (var i in $ref)
+               |{
+               |    ${mkEncoder(c.args.head, version, q"i").shift(4).trim};
+               |}""".stripMargin
+          case TypeId.Builtins.set =>
+            q"""writer.Write($ref.Count());
+               |foreach (var i in $ref)
+               |{
+               |    ${mkEncoder(c.args.head, version, q"i").shift(4).trim};
+               |}""".stripMargin
+          case o =>
+            throw new RuntimeException(s"BUG: Unexpected type: $o")
+        }
+    }
+  }
 }

@@ -14,7 +14,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator)
 
     val (enc, dec) = defn.defn match {
       case d: Typedef.Dto =>
-        val branches = d.fields.map { f =>
+        val fields = d.fields.map { f =>
           val fieldRef = q"instance.${f.name.name.capitalize}"
           val enc = mkEncoder(f.tpe, version, fieldRef)
           val dec = mkDecoder(
@@ -30,7 +30,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator)
         }
 
         (q"""return new $nsJObject(
-            |${branches.map(_._1).join(",\n").shift(4)}
+            |${fields.map(_._1).join(",\n").shift(4)}
             |);""".stripMargin, q"""var asObject = wire.Value<JObject>();
                                    |
                                    |if (asObject == null)
@@ -39,7 +39,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator)
                                    |}
                                    |
                                    |return new $name(
-                                   |${branches.map(_._2).join(",\n").shift(4)}
+                                   |${fields.map(_._2).join(",\n").shift(4)}
                                    |);
            """.stripMargin)
 
@@ -134,7 +134,6 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator)
           case TypeId.Builtins.opt =>
             q"$ref == null ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, version, ref)}"
           case TypeId.Builtins.map =>
-            q"$nsJValue.CreateNull()"
             q"new $nsJObject($ref.Select(e => new $nsJProperty(e.Key.ToString(), ${mkEncoder(c.args.last, version, q"e.Value")})))"
           case TypeId.Builtins.lst =>
             q"new $nsJArray($ref.Select(e => ${mkEncoder(c.args.head, version, q"e")}))"
