@@ -485,4 +485,11 @@ object CSBaboonTranslator {
     CSType(systemPkg, "ArgumentException", fq = false)
   val csKeyValuePair: CSType =
     CSType(genericPkg, "KeyValuePair", fq = false)
+
+  val csNotImplementedException: CSType =
+    CSType(
+      CSPackageId("System.Runtime.Serialization"),
+      "NotImplementedException",
+      fq = false
+    )
 }
