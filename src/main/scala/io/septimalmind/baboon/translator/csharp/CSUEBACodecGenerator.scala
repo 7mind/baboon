@@ -5,8 +5,7 @@ import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSBinaryBaboonCodecGenerator(trans: CSTypeTranslator)
-    extends CSCodecTranslator {
+class CSUEBACodecGenerator(trans: CSTypeTranslator) extends CSCodecTranslator {
 
   override def translate(defn: DomainMember.User,
                          name: CSValue.CSType,
@@ -114,7 +113,7 @@ class CSBinaryBaboonCodecGenerator(trans: CSTypeTranslator)
   }
 
   private def codecName(name: CSValue.CSType) = {
-    CSValue.CSType(name.pkg, s"${name.name}_BBCodec", name.fq)
+    CSValue.CSType(name.pkg, s"${name.name}_UEBACodec", name.fq)
   }
 
   private def deNull(tpe: TypeRef,
