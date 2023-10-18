@@ -151,7 +151,9 @@ root data T9_test {
  f2: map[str, lst[opt[i32]]]
  f3: opt[lst[opt[str]]]
  f4: opt[lst[opt[T8_Removed_Fields]]]
+
  f5: map[str, lst[opt[T8_Removed_Fields]]]
+ f6: map[str, lst[opt[str]]]
 }
 
 //

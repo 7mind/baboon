@@ -184,11 +184,11 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator)
         case TypeId.Builtins.f128 =>
           q"$fref.Value<Decimal>()"
         case TypeId.Builtins.str =>
-          q"$fref.Value<String>()"
+          q"$fref.Value<$csString>()"
         case TypeId.Builtins.tsu =>
-          q"$fref.Value<DateTime>()"
+          q"$fref.Value<$csDateTime>()"
         case TypeId.Builtins.tso =>
-          q"$fref.Value<DateTime>()"
+          q"$fref.Value<$csDateTime>()"
         case o =>
           throw new RuntimeException(s"BUG: Unexpected type: $o")
       }
@@ -229,9 +229,9 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator)
         case TypeId.Builtins.str =>
           ref
         case TypeId.Builtins.tsu =>
-          q"DateTime.Parse($ref)"
+          q"$csDateTime.Parse($ref)"
         case TypeId.Builtins.tso =>
-          q"DateTime.Parse($ref)"
+          q"$csDateTime.Parse($ref)"
         case o =>
           throw new RuntimeException(s"BUG: Unexpected type: $o")
       }

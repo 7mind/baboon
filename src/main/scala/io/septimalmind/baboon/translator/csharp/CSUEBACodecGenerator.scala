@@ -15,17 +15,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator) extends CSCodecTranslator {
         val branches = d.fields.map { f =>
           val fieldRef = q"instance.${f.name.name.capitalize}"
           val enc = mkEncoder(f.tpe, version, fieldRef)
-//          val dec = mkDecoder(
-//            f.tpe,
-//            version,
-//            q"""asObject["${f.name.name}"]""",
-//            removeNull = true
-//          )
-//          (
-//            q"""new $nsJProperty("${f.name.name}", $enc)""",
-//            q"${f.name.name.capitalize}: $dec",
-//          )
-          (enc, q"""null""")
+          val dec = mkDecoder(f.tpe, version)
+          (enc, dec)
         }
 
         val fenc =
@@ -33,12 +24,12 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator) extends CSCodecTranslator {
                .map(_._1)
                .join(";\n")};""".stripMargin
 
-//        val fdec =
-//          q"""return new $name(
-//             |${branches.map(_._2).join(",\n").shift(4)}
-//             |);
-//               """.stripMargin
-        val fdec = q"throw new $csNotImplementedException();"
+        val fdec =
+          q"""return new $name(
+             |${branches.map(_._2).join(",\n").shift(4)}
+             |);
+               """.stripMargin
+        //val fdec = q"throw new $csNotImplementedException();"
         (fenc, fdec)
 
       case e: Typedef.Enum =>
@@ -112,28 +103,122 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator) extends CSCodecTranslator {
      """.stripMargin
   }
 
-  private def codecName(name: CSValue.CSType) = {
-    CSValue.CSType(name.pkg, s"${name.name}_UEBACodec", name.fq)
-  }
-
-  private def deNull(tpe: TypeRef,
-                     ref: TextTree[CSValue]): TextTree[CSValue] = {
+  private def isCSValueType(tpe: TypeRef): Boolean = {
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
           case s: TypeId.BuiltinScalar =>
             s match {
-              case TypeId.Builtins.str =>
-                ref
+              case TypeId.Builtins.bit =>
+                true
+              case TypeId.Builtins.i08 =>
+                true
+              case TypeId.Builtins.i16 =>
+                true
+              case TypeId.Builtins.i32 =>
+                true
+              case TypeId.Builtins.i64 =>
+                true
+              case TypeId.Builtins.u08 =>
+                true
+              case TypeId.Builtins.u16 =>
+                true
+              case TypeId.Builtins.u32 =>
+                true
+              case TypeId.Builtins.u64 =>
+                true
+              case TypeId.Builtins.f32 =>
+                true
+              case TypeId.Builtins.f64 =>
+                true
+              case TypeId.Builtins.f128 =>
+                true
               case _ =>
-                q"$ref.Value"
+                false
             }
-          case _ =>
-            q"$ref!"
+          case _ => false
         }
-      case _ =>
-        q"$ref!"
+      case _ => false
     }
+  }
+  private def mkDecoder(tpe: TypeRef, version: Version): TextTree[CSValue] = {
+    tpe match {
+      case TypeRef.Scalar(id) =>
+        id match {
+          case s: TypeId.BuiltinScalar =>
+            s match {
+              case TypeId.Builtins.bit =>
+                q"wire.ReadBoolean()"
+              case TypeId.Builtins.i08 =>
+                q"wire.ReadSByte()"
+              case TypeId.Builtins.i16 =>
+                q"wire.ReadInt16()"
+              case TypeId.Builtins.i32 =>
+                q"wire.ReadInt32()"
+              case TypeId.Builtins.i64 =>
+                q"wire.ReadInt64()"
+              case TypeId.Builtins.u08 =>
+                q"wire.ReadByte()"
+              case TypeId.Builtins.u16 =>
+                q"wire.ReadUInt16()"
+              case TypeId.Builtins.u32 =>
+                q"wire.ReadUInt32()"
+              case TypeId.Builtins.u64 =>
+                q"wire.ReadUInt64()"
+              case TypeId.Builtins.f32 =>
+                q"wire.ReadSingle()"
+              case TypeId.Builtins.f64 =>
+                q"wire.ReadDouble()"
+              case TypeId.Builtins.f128 =>
+                q"wire.ReadDecimal()"
+              case TypeId.Builtins.str =>
+                q"wire.ReadString()"
+              case TypeId.Builtins.tsu =>
+                q"$csDateTime.Parse(wire.ReadString())"
+              case TypeId.Builtins.tso =>
+                q"$csDateTime.Parse(wire.ReadString())"
+              case o =>
+                throw new RuntimeException(s"BUG: Unexpected type: $o")
+            }
+          case u: TypeId.User =>
+            val targetTpe = codecName(trans.toCsVal(u, version))
+            q"""${targetTpe}.Instance.Decode(wire)"""
+        }
+      case c: TypeRef.Constructor =>
+        c.id match {
+          case TypeId.Builtins.opt =>
+            if (isCSValueType(c.args.head)) {
+              q"""$BaboonTools.ReadNullableValue(wire.ReadByte() == 0, () => ${mkDecoder(
+                   c.args.head,
+                   version
+                 )})""".stripMargin
+            } else {
+              q"""(wire.ReadByte() == 0 ? null : ${mkDecoder(
+                   c.args.head,
+                   version
+                 )})""".stripMargin
+            }
+
+          case TypeId.Builtins.map =>
+            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(idx => $csKeyValuePair.Create(${mkDecoder(
+              c.args.head,
+              version
+            )}, ${mkDecoder(c.args.last, version)})).ToImmutableDictionary()"""
+          case TypeId.Builtins.lst =>
+            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(idx => ${mkDecoder(
+              c.args.head,
+              version
+            )}).ToImmutableList()"""
+          case TypeId.Builtins.set =>
+            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(idx => ${mkDecoder(
+              c.args.head,
+              version
+            )}).ToImmutableHashSet()"""
+          case o =>
+            throw new RuntimeException(s"BUG: Unexpected type: $o")
+        }
+    }
+
   }
 
   private def mkEncoder(tpe: TypeRef,
@@ -218,6 +303,30 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator) extends CSCodecTranslator {
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+    }
+  }
+
+  private def codecName(name: CSValue.CSType) = {
+    CSValue.CSType(name.pkg, s"${name.name}_UEBACodec", name.fq)
+  }
+
+  private def deNull(tpe: TypeRef,
+                     ref: TextTree[CSValue]): TextTree[CSValue] = {
+    tpe match {
+      case TypeRef.Scalar(id) =>
+        id match {
+          case s: TypeId.BuiltinScalar =>
+            s match {
+              case TypeId.Builtins.str =>
+                ref
+              case _ =>
+                q"$ref.Value"
+            }
+          case _ =>
+            q"$ref!"
+        }
+      case _ =>
+        q"$ref!"
     }
   }
 }

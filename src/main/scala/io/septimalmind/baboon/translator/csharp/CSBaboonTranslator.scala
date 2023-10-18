@@ -216,7 +216,14 @@ class CSBaboonTranslator(
          |}
          |
          |interface IBaboonBinCodec<Instance> : IBaboonStreamCodec<Instance, $binaryWriter, $binaryReader> {}
-         |""".stripMargin
+         |
+         |public class BaboonTools {
+         |    public static A? ReadNullableValue<A>(Boolean ifNot, Func<A> thenReturn) where A: struct
+         |    {
+         |        if (ifNot) return null;
+         |        return thenReturn();
+         |    }
+         |}""".stripMargin
 
     val key =
       q"""public class ConversionKey
@@ -439,6 +446,8 @@ object CSBaboonTranslator {
     CSType(sharedRtPkg, "IBaboonGenerated", fq = false)
   val iBaboonGeneratedLatest: CSType =
     CSType(sharedRtPkg, "IBaboonGeneratedLatest", fq = false)
+  val BaboonTools: CSType =
+    CSType(sharedRtPkg, "BaboonTools", fq = false)
 
   val iBaboonCodec: CSType =
     CSType(sharedRtPkg, "IBaboonCodec", fq = false)
@@ -481,8 +490,13 @@ object CSBaboonTranslator {
     CSType(systemPkg, "String", fq = false)
   val csEnum: CSType =
     CSType(systemPkg, "Enum", fq = false)
+  val csDateTime: CSType =
+    CSType(systemPkg, "DateTime", fq = false)
   val csArgumentException: CSType =
     CSType(systemPkg, "ArgumentException", fq = false)
+  val csEnumerable: CSType =
+    CSType(linqPkg, "Enumerable", fq = false)
+
   val csKeyValuePair: CSType =
     CSType(genericPkg, "KeyValuePair", fq = false)
 

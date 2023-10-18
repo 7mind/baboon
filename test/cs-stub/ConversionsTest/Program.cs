@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using Newtonsoft.Json.Linq;
 
 namespace Main
@@ -41,6 +42,12 @@ namespace Main
             var v3 = new JObject(new JProperty("test", v2));
             JToken v4 = v3;
             Console.WriteLine(v4);
+            
+            foreach (var i in Enumerable.Range(0, 1))
+            {
+                Console.WriteLine(i);
+                
+            }
         }
     }
 }
