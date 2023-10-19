@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
+  baboonCodecImpls,
   iBaboonGenerated,
   iBaboonGeneratedLatest
 }
@@ -17,7 +18,9 @@ trait CSDefnTranslator {
   def translate(defn: DomainMember.User,
                 domain: Domain,
                 evo: BaboonEvolution,
-  ): Either[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]]
+  ): Either[NEList[BaboonIssue.TranslationIssue], List[
+    CSDefnTranslator.OutputExt
+  ]]
 
   def inNs(nss: Seq[String], tree: TextTree[CSValue]): TextTree[CSValue]
 
@@ -27,7 +30,7 @@ trait CSDefnTranslator {
 object CSDefnTranslator {
 
   case class Output(path: String, tree: TextTree[CSValue], pkg: CSPackageId)
-
+  case class OutputExt(output: Output, codecReg: TextTree[CSValue])
   val obsolete: CSType =
     CSType(CSBaboonTranslator.systemPkg, "Obsolete", fq = false)
 
@@ -43,7 +46,7 @@ object CSDefnTranslator {
     override def translate(defn: DomainMember.User,
                            domain: Domain,
                            evo: BaboonEvolution,
-    ): Either[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+    ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
       val name = trans.toCsVal(defn.id, domain.version)
       val isLatestVersion = domain.version == evo.latest
 
@@ -82,8 +85,19 @@ object CSDefnTranslator {
         case Owner.Adt(id) =>
           s"$fbase/${id.name.name.toLowerCase}-$fname"
       }
+
+      val reg = (List(q""""${defn.id.toString}"""") ++ codecs.toList
+        .sortBy(_.getClass.getName)
+        .map(codec => q"${codec.codecName(name).copy(fq = true)}.Instance"))
+        .join(", ")
+
       Right(
-        List(Output(outname, content, trans.toCsPkg(domain.id, domain.version)))
+        List(
+          OutputExt(
+            Output(outname, content, trans.toCsPkg(domain.id, domain.version)),
+            q"Register(new $baboonCodecImpls($reg));"
+          )
+        )
       )
     }
 
@@ -101,7 +115,7 @@ object CSDefnTranslator {
            |    return "${domain.id.toString}";
            |}""".stripMargin, q"""public String BaboonTypeIdentifier() {
            |    return "${defn.id.toString}";
-           |}""".stripMargin)
+           |}""".stripMargin) ++ codecs.map(_.codecMeta(defn, name).member)
       defn.defn match {
         case d: Typedef.Dto =>
           val outs = d.fields.map { f =>

@@ -20,7 +20,8 @@ class CSBaboonTranslator(
   defnTranslator: CSDefnTranslator,
   trans: CSTypeTranslator,
   handler: LocalContext[Identity, IndividualConversionHandler],
-  options: CompilerOptions
+  options: CompilerOptions,
+  codecs: Set[CSCodecTranslator]
 ) extends AbstractBaboonTranslator {
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
@@ -152,16 +153,21 @@ class CSBaboonTranslator(
       }.biFlatten
       evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
       conversionSources <- if (options.generateConversions) {
-        generateConversions(domain, evo, evosToCurrent)
+        generateConversions(domain, evo, evosToCurrent, defnSources)
       } else {
         Right(List.empty)
       }
     } yield {
-      defnSources ++ conversionSources
+      defnSources.map(_.output) ++ conversionSources
     }
   }
 
   private def sharedRuntime(): Out[List[CSDefnTranslator.Output]] = {
+    val metaFields =
+      (List(q"String id") ++ codecs.toList
+        .sortBy(_.getClass.getName)
+        .map(_.metaField())).join(", ")
+
     val base =
       q"""public interface IBaboonGenerated {
          |    public $csString BaboonDomainVersion();
@@ -199,29 +205,49 @@ class CSBaboonTranslator(
          |     }
          |}
          |
-         |interface IBaboonCodec<Instance> {}
+         |public interface IBaboonCodecAbstract {}
          |
-         |interface IBaboonValueCodec<Instance, Wire> : IBaboonCodec<Instance>
+         |public interface IBaboonCodec<Instance> : IBaboonCodecAbstract {}
+         |
+         |public interface IBaboonValueCodec<Instance, Wire> : IBaboonCodec<Instance>
          |{
          |    Wire Encode(Instance instance);
          |    Instance Decode(Wire wire);
          |}
          |
-         |interface IBaboonJsonCodec<Instance> : IBaboonValueCodec<Instance, $nsJToken> {}
+         |public interface IBaboonJsonCodec<Instance> : IBaboonValueCodec<Instance, $nsJToken> {}
          |
-         |interface IBaboonStreamCodec<Instance, OutStream, InStream> : IBaboonCodec<Instance>
+         |public interface IBaboonStreamCodec<Instance, OutStream, InStream> : IBaboonCodec<Instance>
          |{
          |    void Encode(OutStream writer, Instance instance);
          |    Instance Decode(InStream wire);
          |}
          |
-         |interface IBaboonBinCodec<Instance> : IBaboonStreamCodec<Instance, $binaryWriter, $binaryReader> {}
+         |public interface IBaboonBinCodec<Instance> : IBaboonStreamCodec<Instance, $binaryWriter, $binaryReader> {}
          |
          |public class BaboonTools {
          |    public static A? ReadNullableValue<A>(Boolean ifNot, Func<A> thenReturn) where A: struct
          |    {
          |        if (ifNot) return null;
          |        return thenReturn();
+         |    }
+         |}
+         |
+         |public record BaboonCodecImpls($metaFields);
+         |
+         |public abstract class AbstractBaboonCodecs
+         |{
+         |
+         |    private $csDict<$csString, BaboonCodecImpls> codecs = new ();
+         |
+         |    public void Register(BaboonCodecImpls impls)
+         |    {
+         |        codecs.Add(impls.id, impls);
+         |    }
+         |
+         |    public BaboonCodecImpls Find($csString id)
+         |    {
+         |        return codecs[id];
          |    }
          |}""".stripMargin
 
@@ -346,9 +372,11 @@ class CSBaboonTranslator(
     )
   }
 
-  private def generateConversions(domain: Domain,
-                                  value: BaboonEvolution,
-                                  toCurrent: Set[EvolutionStep],
+  private def generateConversions(
+    domain: Domain,
+    value: BaboonEvolution,
+    toCurrent: Set[EvolutionStep],
+    defnOut: List[CSDefnTranslator.OutputExt]
   ): Out[List[CSDefnTranslator.Output]] = {
     val pkg = trans.toCsPkg(domain.id, domain.version)
 
@@ -367,7 +395,7 @@ class CSBaboonTranslator(
         }
         .biFlatten
     } yield {
-      val regs = convs.flatMap(_.reg.iterator.toSeq).toSeq
+      val conversionRegs = convs.flatMap(_.reg.iterator.toSeq).toSeq
       val missing = convs.flatMap(_.missing.iterator.toSeq).toSeq
 
       val converter =
@@ -379,7 +407,7 @@ class CSBaboonTranslator(
            |{
            |    public BaboonConversions(RequiredConversions requiredConversions)
            |    {
-           |        ${regs.join("\n").shift(8).trim}
+           |        ${conversionRegs.join("\n").shift(8).trim}
            |    }
            |
            |    override public $csList<$csString> VersionsFrom()
@@ -396,7 +424,20 @@ class CSBaboonTranslator(
            |    }
            |}""".stripMargin
 
-      val runtime = Seq(converter).join("\n\n")
+      val codecs =
+        q"""public class BaboonCodecs : ${CSBaboonTranslator.abstractBaboonCodecs}
+           |{
+           |    private BaboonCodecs()
+           |    {
+           |        ${defnOut.map(_.codecReg).join("\n").shift(8).trim}
+           |    }
+           |
+           |    private static Lazy<BaboonCodecs> instance = new Lazy<BaboonCodecs>(() => new BaboonCodecs());
+           |
+           |    public static BaboonCodecs Instance { get { return instance.Value; } }
+           |}""".stripMargin
+
+      val runtime = Seq(converter, codecs).join("\n\n")
 
       val rt = defnTranslator.inNs(pkg.parts.toSeq, runtime)
 
@@ -449,16 +490,23 @@ object CSBaboonTranslator {
   val BaboonTools: CSType =
     CSType(sharedRtPkg, "BaboonTools", fq = false)
 
+  val iBaboonCodecAbstract: CSType =
+    CSType(sharedRtPkg, "IBaboonCodecAbstract", fq = false)
   val iBaboonCodec: CSType =
     CSType(sharedRtPkg, "IBaboonCodec", fq = false)
   val iBaboonValueCodec: CSType =
     CSType(sharedRtPkg, "IBaboonValueCodec", fq = false)
-  val iBaboonJsonCodec: CSType =
-    CSType(sharedRtPkg, "IBaboonJsonCodec", fq = false)
   val iBaboonStreamCodec: CSType =
     CSType(sharedRtPkg, "IBaboonStreamCodec", fq = false)
+
+  val iBaboonJsonCodec: CSType =
+    CSType(sharedRtPkg, "IBaboonJsonCodec", fq = false)
   val iBaboonBinCodec: CSType =
     CSType(sharedRtPkg, "IBaboonBinCodec", fq = false)
+  val baboonCodecImpls: CSType =
+    CSType(sharedRtPkg, "BaboonCodecImpls", fq = false)
+  val abstractBaboonCodecs: CSType =
+    CSType(sharedRtPkg, "AbstractBaboonCodecs", fq = false)
 
   val nsJToken: CSType =
     CSType(nsLinqPkg, "JToken", fq = false)

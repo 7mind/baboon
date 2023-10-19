@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
+import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -285,7 +286,20 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator)
 
   }
 
-  private def codecName(name: CSValue.CSType) = {
+  def codecName(name: CSValue.CSType): CSValue.CSType = {
     CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq)
   }
+
+  override def codecMeta(defn: DomainMember.User,
+                         name: CSValue.CSType): CSCodecTranslator.CodecMeta = {
+    val member =
+      q"""public IBaboonJsonCodec<$name> Codec_JSON()
+         |{
+         |    return ${codecName(name)}.Instance;
+         |}""".stripMargin
+    CodecMeta(member)
+  }
+
+  def metaField(): TextTree[CSValue] = q"IBaboonCodecAbstract json";
+
 }

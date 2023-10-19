@@ -1,12 +1,12 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
+import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 class CSUEBACodecGenerator(trans: CSTypeTranslator) extends CSCodecTranslator {
-
   override def translate(defn: DomainMember.User,
                          name: CSValue.CSType,
                          version: Version): TextTree[CSValue] = {
@@ -306,7 +306,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator) extends CSCodecTranslator {
     }
   }
 
-  private def codecName(name: CSValue.CSType) = {
+  def codecName(name: CSValue.CSType): CSValue.CSType = {
     CSValue.CSType(name.pkg, s"${name.name}_UEBACodec", name.fq)
   }
 
@@ -329,4 +329,14 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator) extends CSCodecTranslator {
         q"$ref!"
     }
   }
+
+  override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): CSCodecTranslator.CodecMeta = {
+    val member = q"""public IBaboonBinCodec<$name> Codec_UEBA()
+                    |{
+                    |    return ${codecName(name)}.Instance;
+                    |}""".stripMargin
+    CodecMeta(member)
+  }
+
+  def metaField(): TextTree[CSValue] = q"IBaboonCodecAbstract ueba";
 }
