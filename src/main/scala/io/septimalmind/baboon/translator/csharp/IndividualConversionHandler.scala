@@ -15,7 +15,8 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                                   pkg: CSPackageId,
                                   srcVer: Version,
                                   domain: Domain,
-                                  rules: BaboonRuleset) {
+                                  rules: BaboonRuleset,
+                                  tools: CSDefnTools) {
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
   private def transfer(tpe: TypeRef,
@@ -68,9 +69,9 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
           val cdefn =
             q"""public abstract class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
-               |    public abstract override ${tout} Convert<C>(C context, $abstractBaboonConversions conversions, ${tin} from);
+               |    public abstract override ${tout} Convert<C>(C? context, $abstractBaboonConversions conversions, ${tin} from) where C: default;
                |}""".stripMargin
-          val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
+          val ctree = tools.inNs(pkg.parts.toSeq, cdefn)
 
           val convMethodName = makeName("Conversion", conv)
 
@@ -92,7 +93,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
           val cdefn =
             q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
-               |    public override ${tout} Convert<C>(C context, $abstractBaboonConversions conversions, ${tin} from) {
+               |    public override ${tout} Convert<C>(C? context, $abstractBaboonConversions conversions, ${tin} from)  where C: default {
                |        if ($csEnum.TryParse(from.ToString(), out ${tout} parsed))
                |        {
                |            return parsed;
@@ -103,7 +104,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                |        }
                |    }
                |}""".stripMargin
-          val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
+          val ctree = tools.inNs(pkg.parts.toSeq, cdefn)
           val regtree = q"Register(new ${convname}());"
           Right(List(RenderedConversion(fname, ctree, Some(regtree), None)))
         case c: Conversion.CopyAdtBranchByName =>
@@ -122,11 +123,11 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
           val cdefn =
             q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
-               |    public override ${tout} Convert<C>(C context, $abstractBaboonConversions conversions, ${tin} from) {
+               |    public override ${tout} Convert<C>(C? context, $abstractBaboonConversions conversions, ${tin} from) where C: default {
                |        ${branches.join("\nelse\n").shift(8).trim}
                |    }
                |}""".stripMargin
-          val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
+          val ctree = tools.inNs(pkg.parts.toSeq, cdefn)
           val regtree = q"Register(new ${convname}());"
           Right(List(RenderedConversion(fname, ctree, Some(regtree), None)))
         case c: Conversion.DtoConversion =>
@@ -287,7 +288,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
             val cdefn =
               q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                  |{
-                 |    public override ${tout} Convert<C>(C context, $abstractBaboonConversions conversions, ${tin} _from) {
+                 |    public override ${tout} Convert<C>(C? context, $abstractBaboonConversions conversions, ${tin} _from) where C: default {
                  |        ${initExprs.join(";\n").shift(8).trim}
                  |        return new ${tout}(
                  |            ${consExprs.join(",\n").shift(12).trim}
@@ -295,7 +296,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                  |    }
                  |}""".stripMargin
 
-            val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
+            val ctree = tools.inNs(pkg.parts.toSeq, cdefn)
             val regtree = q"Register(new ${convname}());"
             List(RenderedConversion(fname, ctree, Some(regtree), None))
           }

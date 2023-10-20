@@ -6,7 +6,8 @@ import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSUEBACodecGenerator(trans: CSTypeTranslator) extends CSCodecTranslator {
+class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
+    extends CSCodecTranslator {
   override def translate(defn: DomainMember.User,
                          name: CSValue.CSType,
                          version: Version): TextTree[CSValue] = {
@@ -83,18 +84,48 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator) extends CSCodecTranslator {
              |
              |throw new ${csArgumentException}($$"Cannot decode {wire} to ${name.name}: no matching value");""".stripMargin,
         )
-
     }
+    val baseMethods = List(
+      q"""public void Encode($binaryWriter writer, $name instance)
+         |{
+         |    ${enc.shift(4).trim}
+         |}
+         |public $name Decode($binaryReader wire) {
+         |    ${dec.shift(4).trim}
+         |}""".stripMargin
+    )
+
+    val (parents, methods) = defn.defn match {
+      case _: Typedef.Enum =>
+        (List(q"$iBaboonBinCodec<$name>"), baseMethods)
+      case _ =>
+        (
+          List(
+            q"$iBaboonBinCodec<$name>",
+            q"$iBaboonBinCodec<$iBaboonGenerated>"
+          ),
+          baseMethods ++ List(
+            q"""public void Encode($binaryWriter writer, $iBaboonGenerated instance)
+               |{
+               |    if (instance is not $name value)
+               |        throw new Exception("Expected to have ${name.toString} type");
+               |    Encode(writer, value);
+               |}
+               |
+               |$iBaboonGenerated $iBaboonStreamCodec<$iBaboonGenerated, $binaryWriter, $binaryReader>.Decode($binaryReader wire)
+               |{
+               |    return Decode(wire);
+               |}""".stripMargin
+          )
+        )
+    }
+
     val cName = codecName(name)
-    q"""public class $cName : $iBaboonBinCodec<$name>
+    q"""public class $cName : ${parents.join(", ")}
        |{
-       |    public void Encode($binaryWriter writer, $name instance)
-       |    {
-       |        ${enc.shift(8).trim}
-       |    }
-       |    public $name Decode($binaryReader wire) {
-       |        ${dec.shift(8).trim}
-       |    }
+       |    ${methods.join("\n").shift(4).trim}
+       |
+       |    ${tools.makeMeta(defn, version).join("\n").shift(4).trim}
        |
        |    private static $csLazy<$cName> instance = new $csLazy<$cName>(() => new $cName());
        |
@@ -330,7 +361,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator) extends CSCodecTranslator {
     }
   }
 
-  override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): CSCodecTranslator.CodecMeta = {
+  override def codecMeta(defn: DomainMember.User,
+                         name: CSValue.CSType): CSCodecTranslator.CodecMeta = {
     val member = q"""public IBaboonBinCodec<$name> Codec_UEBA()
                     |{
                     |    return ${codecName(name)}.Instance;

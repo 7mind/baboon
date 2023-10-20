@@ -7,11 +7,12 @@ import io.septimalmind.baboon.translator.AbstractBaboonTranslator
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.translator.csharp.{
   CSBaboonTranslator,
-  CSUEBACodecGenerator,
   CSCodecTranslator,
+  CSDefnTools,
   CSDefnTranslator,
   CSNSJsonCodecGenerator,
   CSTypeTranslator,
+  CSUEBACodecGenerator,
   IndividualConversionHandler
 }
 import io.septimalmind.baboon.typer.*
@@ -39,6 +40,7 @@ class BaboonModule(options: CompilerOptions) extends ModuleDef {
 
   many[AbstractBaboonTranslator].ref[CSBaboonTranslator]
   make[CSBaboonTranslator]
+  make[CSDefnTools].from[CSDefnTools.CSDefnToolsImpl]
   make[CSDefnTranslator].from[CSDefnTranslator.CSDefnTranslatorImpl]
   make[CSTypeTranslator]
   make[ScopeSupport].from[ScopeSupport.ScopeSupportImpl]

@@ -6,7 +6,7 @@ import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSNSJsonCodecGenerator(trans: CSTypeTranslator)
+class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     extends CSCodecTranslator {
   override def translate(defn: DomainMember.User,
                          name: CSValue.CSType,
@@ -98,25 +98,53 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator)
 
     }
 
+    val baseMethods = List(q"""public $nsJToken Encode($name instance)
+         |{
+         |    ${enc.shift(4).trim}
+         |}
+         |
+         |public $name Decode($nsJToken wire)
+         |{
+         |    ${dec.shift(4).trim}
+         |}""".stripMargin)
+
+    val (parents, methods) = defn.defn match {
+      case _: Typedef.Enum =>
+        (List(q"$iBaboonJsonCodec<$name>"), baseMethods)
+      case _ =>
+        (
+          List(
+            q"$iBaboonJsonCodec<$name>",
+            q"$iBaboonJsonCodec<$iBaboonGenerated>"
+          ),
+          baseMethods ++ List(
+            q"""public $nsJToken Encode($iBaboonGenerated instance)
+               |{
+               |    if (instance is not $name value)
+               |        throw new Exception("Expected to have ${name.toString} type");
+               |    return Encode(value);
+               |}
+               |
+               |$iBaboonGenerated IBaboonValueCodec<$iBaboonGenerated, $nsJToken>.Decode($nsJToken wire)
+               |{
+               |    return Decode(wire);
+               |}""".stripMargin
+          )
+        )
+    }
+
     val cName = codecName(name)
-    q"""public class $cName : $iBaboonJsonCodec<$name>
+    q"""public class $cName : ${parents.join(", ")}
        |{
-       |    public $nsJToken Encode($name instance)
-       |    {
-       |        ${enc.shift(8).trim}
-       |    }
+       |    ${methods.join("\n").shift(4).trim}
        |
-       |    public $name Decode($nsJToken wire)
-       |    {
-       |        ${dec.shift(8).trim}
-       |    }
+       |    ${tools.makeMeta(defn, version).join("\n").shift(4).trim}
        |
        |    private static $csLazy<$cName> instance = new $csLazy<$cName>(() => new $cName());
        |
        |    public static $cName Instance { get { return instance.Value; } }
        |}
      """.stripMargin
-
   }
 
   private def mkEncoder(tpe: TypeRef,
@@ -278,7 +306,6 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator)
               removeNull = true
             )}).ToImmutableHashSet()"""
           case o =>
-//            q"null"
             throw new RuntimeException(s"BUG: Unexpected type: $o")
 
         }

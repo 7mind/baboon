@@ -14,6 +14,11 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
+import scala.collection.immutable.Seq
+
+
+
+
 trait CSDefnTranslator {
   def translate(defn: DomainMember.User,
                 domain: Domain,
@@ -22,9 +27,6 @@ trait CSDefnTranslator {
     CSDefnTranslator.OutputExt
   ]]
 
-  def inNs(nss: Seq[String], tree: TextTree[CSValue]): TextTree[CSValue]
-
-  def basename(dom: Domain): String
 }
 
 object CSDefnTranslator {
@@ -39,6 +41,7 @@ object CSDefnTranslator {
 
   class CSDefnTranslatorImpl(options: CompilerOptions,
                              trans: CSTypeTranslator,
+                             tools: CSDefnTools,
                              codecs: Set[CSCodecTranslator])
       extends CSDefnTranslator {
     type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
@@ -70,14 +73,14 @@ object CSDefnTranslator {
 
       assert(defn.id.pkg == domain.id)
       val fbase =
-        basename(domain)
+        tools.basename(domain)
 
       val fname = s"${defn.id.name.name.capitalize}.cs"
 
       val ns = name.pkg.parts
 
       val allDefs = (defnRepr +: codecTrees).join("\n\n")
-      val content = inNs(ns.toSeq, allDefs)
+      val content = tools.inNs(ns.toSeq, allDefs)
 
       val outname = defn.defn.id.owner match {
         case Owner.Toplevel =>
@@ -108,14 +111,9 @@ object CSDefnTranslator {
     ): TextTree[CSValue] = {
       val genMarker =
         if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
-      val meta = Seq(q"""public String BaboonDomainVersion()
-           |{
-           |    return "${domain.version.version}";
-           |}""".stripMargin, q"""public String BaboonDomainIdentifier() {
-           |    return "${domain.id.toString}";
-           |}""".stripMargin, q"""public String BaboonTypeIdentifier() {
-           |    return "${defn.id.toString}";
-           |}""".stripMargin) ++ codecs.map(_.codecMeta(defn, name).member)
+      val meta = tools.makeMeta(defn, domain.version) ++ codecs.map(
+        _.codecMeta(defn, name).member
+      )
       defn.defn match {
         case d: Typedef.Dto =>
           val outs = d.fields.map { f =>
@@ -281,24 +279,6 @@ object CSDefnTranslator {
       }
     }
 
-    def basename(dom: Domain): String = {
-      (dom.id.path.map(_.capitalize) ++ Seq(dom.version.version))
-        .mkString("-")
-    }
-
-    private def inNs(name: String,
-                     tree: TextTree[CSValue]): TextTree[CSValue] = {
-      q"""namespace ${name} {
-         |    ${tree.shift(4).trim}
-         |}""".stripMargin
-    }
-
-    def inNs(nss: Seq[String], tree: TextTree[CSValue]): TextTree[CSValue] = {
-      nss.foldRight(tree) {
-        case (ns, acc) =>
-          inNs(ns, acc)
-      }
-    }
   }
 
 }

@@ -21,7 +21,8 @@ class CSBaboonTranslator(
   trans: CSTypeTranslator,
   handler: LocalContext[Identity, IndividualConversionHandler],
   options: CompilerOptions,
-  codecs: Set[CSCodecTranslator]
+  codecs: Set[CSCodecTranslator],
+  tools: CSDefnTools,
 ) extends AbstractBaboonTranslator {
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
@@ -173,6 +174,7 @@ class CSBaboonTranslator(
          |    public $csString BaboonDomainVersion();
          |    public $csString BaboonDomainIdentifier();
          |    public $csString BaboonTypeIdentifier();
+         |
          |}
          |
          |public interface IBaboonGeneratedLatest : IBaboonGenerated {}
@@ -184,14 +186,14 @@ class CSBaboonTranslator(
          |
          |public interface IDynamicConversion<To> : IConversion
          |{
-         |     public To Convert<C>(C context, AbstractBaboonConversions conversions, dynamic from);
+         |     public To Convert<C>(C? context, AbstractBaboonConversions conversions, dynamic from);
          |}
          |
          |public abstract class AbstractConversion<From, To> : IDynamicConversion<To>
          |{
-         |    public abstract To Convert<C>(C context, AbstractBaboonConversions conversions, From from);
+         |    public abstract To Convert<C>(C? context, AbstractBaboonConversions conversions, From from);
          |
-         |    public To Convert<C>(C context, AbstractBaboonConversions conversions, dynamic from)
+         |    public To Convert<C>(C? context, AbstractBaboonConversions conversions, dynamic from)
          |    {
          |        return Convert<C>(context, conversions, (From)from);
          |    }
@@ -205,7 +207,11 @@ class CSBaboonTranslator(
          |     }
          |}
          |
-         |public interface IBaboonCodecAbstract {}
+         |public interface IBaboonCodecAbstract {
+         |    public $csString BaboonDomainVersion();
+         |    public $csString BaboonDomainIdentifier();
+         |    public $csString BaboonTypeIdentifier();
+         |}
          |
          |public interface IBaboonCodec<Instance> : IBaboonCodecAbstract {}
          |
@@ -235,7 +241,7 @@ class CSBaboonTranslator(
          |
          |public record BaboonCodecImpls($metaFields);
          |
-         |public abstract class AbstractBaboonCodecs
+         |public abstract class BaboonAbstractCodecs
          |{
          |
          |    private $csDict<$csString, BaboonCodecImpls> codecs = new ();
@@ -248,6 +254,11 @@ class CSBaboonTranslator(
          |    public BaboonCodecImpls Find($csString id)
          |    {
          |        return codecs[id];
+         |    }
+         |
+         |    public bool TryFind(String id, out BaboonCodecImpls? value)
+         |    {
+         |        return codecs.TryGetValue(id, out value);
          |    }
          |}""".stripMargin
 
@@ -286,6 +297,7 @@ class CSBaboonTranslator(
       q"""public abstract class AbstractBaboonConversions
          |{
          |    private $csDict<ConversionKey, IConversion> convs = new ();
+         |    private Dictionary<Type, List<IConversion>> convsWild = new ();
          |
          |    public abstract $csList<$csString> VersionsFrom();
          |
@@ -298,8 +310,12 @@ class CSBaboonTranslator(
          |
          |    public void Register(IConversion conversion)
          |    {
-         |        var key = new ConversionKey(conversion.TypeFrom(), conversion.TypeTo());
+         |        var fromType = conversion.TypeFrom();
+         |        var key = new ConversionKey(fromType, conversion.TypeTo());
          |        convs.Add(key, conversion);
+         |        var wild = convsWild.TryGetValue(fromType, out var v) ? v : new List<IConversion>();
+         |        wild.Add(conversion);
+         |        convsWild[fromType] = wild;
          |    }
          |
          |    public void Register<From, To>(AbstractConversion<From, To> conversion)
@@ -307,8 +323,28 @@ class CSBaboonTranslator(
          |        var tFrom = typeof(From);
          |        var tTo = typeof(To);
          |        var key = new ConversionKey(tFrom, tTo);
-         |
          |        convs.Add(key, conversion);
+         |
+         |        var wild = convsWild.TryGetValue(tFrom, out var v) ? v : new List<IConversion>();
+         |        wild.Add(conversion);
+         |        convsWild[tFrom] = wild;
+         |    }
+         |
+         |    public IBaboonGenerated ConvertWithContext<C>(C? c, IBaboonGenerated from, IConversion conversion)
+         |    {
+         |        var tconv = ((IDynamicConversion<IBaboonGenerated>)conversion);
+         |        return tconv.Convert<C>(c, this, from);
+         |    }
+         |
+         |    public IBaboonGenerated Convert(IBaboonGenerated from, IConversion conversion)
+         |    {
+         |        var tconv = ((IDynamicConversion<IBaboonGenerated>)conversion);
+         |        return tconv.Convert<Object>(null, this, from);
+         |    }
+         |
+         |    public IReadOnlyList<IConversion> FindConversions(IBaboonGenerated value)
+         |    {
+         |        return !convsWild.TryGetValue(value.GetType(), out var res) ? new List<IConversion>() : res;
          |    }
          |
          |    public To ConvertWithContext<C, From, To>(C? c, From from)
@@ -327,7 +363,7 @@ class CSBaboonTranslator(
          |        return tconv.Convert(c, this, from);
          |    }
          |
-         |    public To ConvertWithContextDynamic<C, To>(C? c, $csTpe tFrom, dynamic from)
+         |    public To ConvertWithContextDynamic<C, To>(C? c, Type tFrom, dynamic from)
          |    {
          |        var tTo = typeof(To);
          |
@@ -343,22 +379,24 @@ class CSBaboonTranslator(
          |    }
          |
          |    public To ConvertDynamic<To>(dynamic from)
+         |        where To : IBaboonGenerated
          |    {
          |        return ConvertWithContextDynamic<Object, To>(null, from.GetType(), from);
          |    }
          |
          |    public To Convert<From, To>(From from)
+         |        where From : IBaboonGenerated
+         |        where To : IBaboonGenerated
          |    {
          |        return ConvertWithContext<Object, From, To>(null, from);
          |    }
-         |
          |
          |}""".stripMargin
 
     val runtime = Seq(key, base, abstractAggregator).join("\n\n")
 
     val rt =
-      defnTranslator.inNs(CSBaboonTranslator.sharedRtPkg.parts.toSeq, runtime)
+      tools.inNs(CSBaboonTranslator.sharedRtPkg.parts.toSeq, runtime)
 
     Right(
       List(
@@ -439,22 +477,14 @@ class CSBaboonTranslator(
 
       val runtime = Seq(converter, codecs).join("\n\n")
 
-      val rt = defnTranslator.inNs(pkg.parts.toSeq, runtime)
+      val rt = tools.inNs(pkg.parts.toSeq, runtime)
 
       List(
         CSDefnTranslator
-          .Output(
-            s"${defnTranslator.basename(domain)}/Baboon-Runtime.cs",
-            rt,
-            pkg
-          )
+          .Output(s"${tools.basename(domain)}/Baboon-Runtime.cs", rt, pkg)
       ) ++ convs.map { conv =>
         CSDefnTranslator
-          .Output(
-            s"${defnTranslator.basename(domain)}/${conv.fname}",
-            conv.conv,
-            pkg
-          )
+          .Output(s"${tools.basename(domain)}/${conv.fname}", conv.conv, pkg)
       }
     }
   }
@@ -506,7 +536,7 @@ object CSBaboonTranslator {
   val baboonCodecImpls: CSType =
     CSType(sharedRtPkg, "BaboonCodecImpls", fq = false)
   val abstractBaboonCodecs: CSType =
-    CSType(sharedRtPkg, "AbstractBaboonCodecs", fq = false)
+    CSType(sharedRtPkg, "BaboonAbstractCodecs", fq = false)
 
   val nsJToken: CSType =
     CSType(nsLinqPkg, "JToken", fq = false)
