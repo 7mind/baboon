@@ -23,15 +23,15 @@ jobs:
         include:
           - os: ubuntu-latest
             executable-suffix: ''
-            native-build-args: --verbose -J-Xmx10g -march=compatibility
+            native-build-args: --verbose -J-Xmx10g
           - os: macos-latest
             executable-suffix: ''
-            native-build-args: --verbose -J-Xmx13g -march=compatibility
+            native-build-args: --verbose -J-Xmx13g
           - os: windows-2022
             executable-suffix: '.exe'
             # e2e is disabled due to unstable docker step
             #e2e: false
-            native-build-args: --verbose -J-Xmx10g -march=compatibility
+            native-build-args: --verbose -J-Xmx10g
     steps:
     - uses: actions/checkout@v3
     - name: Set up GraalVM (Java ${{ matrix.java-version }})
