@@ -606,4 +606,10 @@ object CSBaboonTranslator {
       "NotImplementedException",
       fq = false
     )
+
+  val csInvariantCulture: CSType = CSType(
+    CSPackageId("System.Globalization"),
+    "CultureInfo",
+    fq = false
+  )
 }

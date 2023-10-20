@@ -14,7 +14,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     val (enc, dec) = defn.defn match {
       case d: Typedef.Dto =>
         val branches = d.fields.map { f =>
-          val fieldRef = q"instance.${f.name.name.capitalize}"
+          val fieldRef = q"value.${f.name.name.capitalize}"
           val enc = mkEncoder(f.tpe, version, fieldRef)
           val dec = mkDecoder(f.tpe, version)
           (enc, dec)
@@ -36,7 +36,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
       case e: Typedef.Enum =>
         val branches = e.members.zipWithIndex.toList.map {
           case (m, idx) =>
-            (q"""if (instance == ${name}.${m.name})
+            (q"""if (value == ${name}.${m.name})
              |{
              |   writer.Write((byte)${idx.toString});
              |   return;
@@ -49,7 +49,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         (
           q"""${branches.map(_._1).join("\n")}
              |
-             |throw new ${csArgumentException}($$"Cannot encode {instance} to ${name.name}: no matching value");""".stripMargin,
+             |throw new ${csArgumentException}($$"Cannot encode {value} to ${name.name}: no matching value");""".stripMargin,
           q"""byte asByte = wire.ReadByte();
              |
              |${branches.map(_._2).join("\n")}
@@ -64,7 +64,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
             val fqBranch = q"$branchNs.$branchName"
             val cName = codecName(trans.toCsVal(m, version))
 
-            (q"""if (instance is $fqBranch)
+            (q"""if (value is $fqBranch)
                  |{
                  |   writer.Write((byte)${idx.toString});
                  |   return;
@@ -77,7 +77,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         (
           q"""${branches.map(_._1).join("\n")}
              |
-             |throw new ${csArgumentException}($$"Cannot encode {instance} to ${name.name}: no matching value");""".stripMargin,
+             |throw new ${csArgumentException}($$"Cannot encode {value} to ${name.name}: no matching value");""".stripMargin,
           q"""byte asByte = wire.ReadByte();
              |
              |${branches.map(_._2).join("\n")}
@@ -86,7 +86,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         )
     }
     val baseMethods = List(
-      q"""public void Encode($binaryWriter writer, $name instance)
+      q"""public void Encode($binaryWriter writer, $name value)
          |{
          |    ${enc.shift(4).trim}
          |}
@@ -105,11 +105,11 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
             q"$iBaboonBinCodec<$iBaboonGenerated>"
           ),
           baseMethods ++ List(
-            q"""public void Encode($binaryWriter writer, $iBaboonGenerated instance)
+            q"""public void Encode($binaryWriter writer, $iBaboonGenerated value)
                |{
-               |    if (instance is not $name value)
-               |        throw new Exception("Expected to have ${name.toString} type");
-               |    Encode(writer, value);
+               |    if (value is not $name dvalue)
+               |        throw new Exception("Expected to have ${name.name} type");
+               |    Encode(writer, dvalue);
                |}
                |
                |$iBaboonGenerated $iBaboonStreamCodec<$iBaboonGenerated, $binaryWriter, $binaryReader>.Decode($binaryReader wire)
@@ -287,9 +287,9 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
               case TypeId.Builtins.str =>
                 q"writer.Write($ref)"
               case TypeId.Builtins.tsu =>
-                q"writer.Write($ref.ToString())"
+                q"writer.Write($ref.ToString($csInvariantCulture.InvariantCulture))"
               case TypeId.Builtins.tso =>
-                q"writer.Write($ref.ToString())"
+                q"writer.Write($ref.ToString($csInvariantCulture.InvariantCulture))"
               case o =>
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }

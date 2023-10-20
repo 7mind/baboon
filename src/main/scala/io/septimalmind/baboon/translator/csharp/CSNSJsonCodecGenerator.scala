@@ -16,7 +16,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     val (enc, dec) = defn.defn match {
       case d: Typedef.Dto =>
         val fields = d.fields.map { f =>
-          val fieldRef = q"instance.${f.name.name.capitalize}"
+          val fieldRef = q"value.${f.name.name.capitalize}"
           val enc = mkEncoder(f.tpe, version, fieldRef)
           val dec = mkDecoder(
             f.tpe,
@@ -53,7 +53,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         }
 
         (
-          q"return $nsJValue.CreateString(instance.ToString());",
+          q"return $nsJValue.CreateString(value.ToString());",
           q"""var asStr = wire.Value<String>()?.ToLower();
              |if (asStr == null)
              |{
@@ -71,9 +71,9 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
           val branchName = m.name.name
           val fqBranch = q"$branchNs.$branchName"
 
-          (q"""if (instance is $fqBranch)
+          (q"""if (value is $fqBranch)
               |{
-              |    return new ${nsJObject}(new ${nsJProperty}("$branchName"), ${fqBranch}_JsonCodec.Instance.Encode(($fqBranch)instance));
+              |    return new ${nsJObject}(new ${nsJProperty}("$branchName"), ${fqBranch}_JsonCodec.Instance.Encode(($fqBranch)value));
               |}""".stripMargin, q"""if (head.Name == "$branchName")
                                     |{
                                     |    return ${fqBranch}_JsonCodec.Instance.Decode(head.Value);
@@ -83,7 +83,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
 
         (q"""${branches.map(_._1).join("\n")}
             |
-            |throw new ${csArgumentException}($$"Cannot encode {instance}: unexpected subclass");
+            |throw new ${csArgumentException}($$"Cannot encode {value}: unexpected subclass");
            """.stripMargin, q"""var asObject = wire.Value<JObject>();
                                |if (asObject == null)
                                |{
@@ -98,7 +98,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
 
     }
 
-    val baseMethods = List(q"""public $nsJToken Encode($name instance)
+    val baseMethods = List(q"""public $nsJToken Encode($name value)
          |{
          |    ${enc.shift(4).trim}
          |}
@@ -118,11 +118,11 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
             q"$iBaboonJsonCodec<$iBaboonGenerated>"
           ),
           baseMethods ++ List(
-            q"""public $nsJToken Encode($iBaboonGenerated instance)
+            q"""public $nsJToken Encode($iBaboonGenerated value)
                |{
-               |    if (instance is not $name value)
-               |        throw new Exception("Expected to have ${name.toString} type");
-               |    return Encode(value);
+               |    if (value is not $name dvalue)
+               |        throw new Exception("Expected to have ${name.name} type");
+               |    return Encode(dvalue);
                |}
                |
                |$iBaboonGenerated IBaboonValueCodec<$iBaboonGenerated, $nsJToken>.Decode($nsJToken wire)
