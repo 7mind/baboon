@@ -6,7 +6,7 @@ import io.septimalmind.baboon.RuntimeGenOpt
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
-import io.septimalmind.baboon.translator.{AbstractBaboonTranslator, Sources}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.distage.LocalContext
 import izumi.functional.IzEither.*
@@ -23,7 +23,7 @@ class CSBaboonTranslator(
   options: CompilerOptions,
   codecs: Set[CSCodecTranslator],
   tools: CSDefnTools,
-) extends AbstractBaboonTranslator {
+) extends BaboonAbstractTranslator {
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
@@ -184,18 +184,40 @@ class CSBaboonTranslator(
          |    public $csTpe TypeTo();
          |}
          |
+         |public interface IBaboonGeneratedConversion : IConversion
+         |{
+         |    public IBaboonGenerated Convert<C>(C? context, AbstractBaboonConversions conversions, IBaboonGenerated from);
+         |}
+         |
          |public interface IDynamicConversion<To> : IConversion
          |{
          |     public To Convert<C>(C? context, AbstractBaboonConversions conversions, dynamic from);
          |}
          |
-         |public abstract class AbstractConversion<From, To> : IDynamicConversion<To>
+         |public abstract class AbstractConversion<From, To> : IDynamicConversion<To>, IBaboonGeneratedConversion
          |{
          |    public abstract To Convert<C>(C? context, AbstractBaboonConversions conversions, From from);
          |
          |    public To Convert<C>(C? context, AbstractBaboonConversions conversions, dynamic from)
          |    {
          |        return Convert<C>(context, conversions, (From)from);
+         |    }
+         |
+         |    IBaboonGenerated IBaboonGeneratedConversion.Convert<C>(C? context, $abstractBaboonConversions conversions, $iBaboonGenerated from) where C : default
+         |    {
+         |        if (from is not From fr)
+         |        {
+         |            throw new Exception(
+         |                $"Can't use IBaboonGeneratedConversion interface when from is not of type {typeof(To).FullName}");
+         |        }
+         |        var res = Convert(context, conversions, fr);
+         |
+         |        if (res is not $iBaboonGenerated bg)
+         |        {
+         |            throw new $csArgumentException(
+         |                $$"Can't use IBaboonGeneratedConversion interface for non IBaboonGenerated return type To = {typeof(To).FullName}");
+         |        }
+         |        return bg;
          |    }
          |
          |    public $csTpe TypeFrom() {
@@ -332,13 +354,13 @@ class CSBaboonTranslator(
          |
          |    public IBaboonGenerated ConvertWithContext<C>(C? c, IBaboonGenerated from, IConversion conversion)
          |    {
-         |        var tconv = ((IDynamicConversion<IBaboonGenerated>)conversion);
+         |        var tconv = (IBaboonGeneratedConversion)conversion;
          |        return tconv.Convert<C>(c, this, from);
          |    }
          |
          |    public IBaboonGenerated Convert(IBaboonGenerated from, IConversion conversion)
          |    {
-         |        var tconv = ((IDynamicConversion<IBaboonGenerated>)conversion);
+         |        var tconv = (IBaboonGeneratedConversion)conversion;
          |        return tconv.Convert<Object>(null, this, from);
          |    }
          |

@@ -7,7 +7,7 @@ import izumi.fundamentals.collections.nonempty.NEList
 case class Sources(files: Map[String, String])
 case class DomainSources(domain: Domain, files: Map[String, String])
 
-trait AbstractBaboonTranslator {
+trait BaboonAbstractTranslator {
   def translate(
     family: BaboonFamily
   ): Either[NEList[BaboonIssue.TranslationIssue], Sources]

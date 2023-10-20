@@ -3,7 +3,7 @@ package io.septimalmind.baboon
 import distage.{DIKey, ModuleDef}
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.BaboonParser
-import io.septimalmind.baboon.translator.AbstractBaboonTranslator
+import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.translator.csharp.{
   CSBaboonTranslator,
@@ -38,7 +38,7 @@ class BaboonModule(options: CompilerOptions) extends ModuleDef {
 
   make[BLogger].from[BLogger.BLoggerImpl]
 
-  many[AbstractBaboonTranslator].ref[CSBaboonTranslator]
+  many[BaboonAbstractTranslator].ref[CSBaboonTranslator]
   make[CSBaboonTranslator]
   make[CSDefnTools].from[CSDefnTools.CSDefnToolsImpl]
   make[CSDefnTranslator].from[CSDefnTranslator.CSDefnTranslatorImpl]
