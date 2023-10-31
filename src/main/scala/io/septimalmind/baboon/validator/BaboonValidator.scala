@@ -53,6 +53,7 @@ object BaboonValidator {
 
       for {
         _ <- checkMissingTypes(domain)
+        _ <- checkConventions(domain)
         _ <- checkLoops(domain)
         _ <- checkUniqueness(domain)
         _ <- checkShape(domain)
@@ -274,6 +275,19 @@ object BaboonValidator {
                 NEList(BaboonIssue.EmptyAdtDef(a, u.meta))
               )
           }
+      }.biSequence_
+    }
+
+    private def checkConventions(
+      domain: Domain
+    ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
+      domain.defs.meta.nodes.values.map {
+        case _: DomainMember.Builtin =>
+          Right(())
+        case u: DomainMember.User =>
+          Either.ifThenFail(u.id.name.name.head == '_')(
+            NEList(BaboonIssue.UnderscoredDefinitionRetained(u, u.meta))
+          )
       }.biSequence_
     }
 

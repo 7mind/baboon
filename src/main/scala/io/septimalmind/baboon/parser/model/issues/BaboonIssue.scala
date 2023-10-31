@@ -750,6 +750,17 @@ object BaboonIssue {
     }
   }
 
+  case class UnderscoredDefinitionRetained(s: DomainMember.User,
+                                           meta: RawNodeMeta)
+      extends VerificationIssue {
+    override def toString: String = {
+      s"""
+         |${extractLocation(meta)}
+         |Underscored definitions should only be used in structural ineritance: ${s.id.toString}
+         |""".stripMargin
+    }
+  }
+
   case class MissingEvoDiff(prev: Domain,
                             next: Domain,
                             missingDiffs: Set[TypeId])

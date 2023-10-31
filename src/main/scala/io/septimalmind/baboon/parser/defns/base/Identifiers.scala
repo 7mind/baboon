@@ -9,7 +9,7 @@ trait Identifiers {
 
   def symbol[$: P]: P[String] = {
     P(
-      (CharPred(c => isLetter(c)) ~ CharPred(
+      (CharPred(c => isLetter(c) | c == '_') ~ CharPred(
         c => isLetter(c) | isDigit(c) | c == '_'
       ).rep).!
     )

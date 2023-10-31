@@ -168,3 +168,16 @@ adt T10_A1 {
        f1: T3_D1
    }
 }
+
+//
+
+data _To_Remove {
+ f6: map[str, lst[opt[str]]]
+}
+
+root data T11_D1 {
+  // f: _To_Remove // will fail
+  + T9_test
+  - _To_Remove
+  - f5: map[str, lst[opt[T8_Removed_Fields]]]
+}
