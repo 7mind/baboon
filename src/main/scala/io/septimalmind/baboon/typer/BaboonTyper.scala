@@ -237,6 +237,8 @@ object BaboonTyper {
                 Seq(d.parent)
               case d: RawDtoMember.UnparentDef =>
                 Seq(d.parent)
+              case d: RawDtoMember.IntersectionDef =>
+                Seq(d.parent)
               case _ =>
                 Seq.empty
             }

@@ -71,6 +71,38 @@ class BaboonTranslator(pkg: Pkg,
     }
   }
 
+  private def dtoFieldToDefs(
+    field: RawField,
+    meta: RawNodeMeta
+  ): Either[NEList[BaboonIssue.TyperIssue], Seq[Field]] = {
+    for {
+      name <- Right(FieldName(field.name.name))
+      _ <- SymbolNames.validFieldName(name, meta)
+      tpe <- convertTpe(field.tpe, meta)
+    } yield {
+      Seq(Field(name, tpe))
+    }
+  }
+
+  private def dtoParentToDefs(
+    parent: ScopedRef,
+    meta: RawNodeMeta,
+    refMeta: RawNodeMeta
+  ): Either[NEList[BaboonIssue.TyperIssue], Seq[Field]] = {
+    for {
+      id <- scopeSupport.resolveScopedRef(parent, path, pkg, refMeta)
+      parentDef = defined(id)
+      out <- parentDef match {
+        case DomainMember.User(_, defn: Typedef.Dto, meta) =>
+          Right(defn.fields)
+        case o =>
+          Left(NEList(BaboonIssue.WrongParent(id, o.id, meta)))
+      }
+    } yield {
+      out
+    }
+  }
+
   private def convertDto(
     id: TypeId.User,
     isRoot: Boolean,
@@ -79,58 +111,35 @@ class BaboonTranslator(pkg: Pkg,
     for {
       converted <- dto.members.biFlatTraverse {
         case f: RawDtoMember.FieldDef =>
-          for {
-            name <- Right(FieldName(f.field.name.name))
-            _ <- SymbolNames.validFieldName(name, f.meta)
-            tpe <- convertTpe(f.field.tpe, f.meta)
-          } yield {
-            Seq(Field(name, tpe))
-          }
+          dtoFieldToDefs(f.field, f.meta)
         case p: RawDtoMember.ParentDef =>
-          for {
-            id <- scopeSupport.resolveScopedRef(p.parent, path, pkg, p.meta)
-            parentDef = defined(id)
-            out <- parentDef match {
-              case DomainMember.User(_, defn: Typedef.Dto, dto.meta) =>
-                Right(defn.fields)
-              case o =>
-                Left(NEList(BaboonIssue.WrongParent(id, o.id, dto.meta)))
-            }
-
-          } yield {
-            out
-          }
+          dtoParentToDefs(p.parent, dto.meta, p.meta)
         case _ =>
           Right(Seq.empty)
       }
       removed <- dto.members.biFlatTraverse {
         case f: RawDtoMember.UnfieldDef =>
-          for {
-            name <- Right(FieldName(f.field.name.name))
-            _ <- SymbolNames.validFieldName(name, f.meta)
-            tpe <- convertTpe(f.field.tpe, f.meta)
-          } yield {
-            Seq(Field(name, tpe))
-          }
+          dtoFieldToDefs(f.field, f.meta)
         case p: RawDtoMember.UnparentDef =>
-          for {
-            id <- scopeSupport.resolveScopedRef(p.parent, path, pkg, p.meta)
-            parentDef = defined(id)
-            out <- parentDef match {
-              case DomainMember.User(_, defn: Typedef.Dto, dto.meta) =>
-                Right(defn.fields)
-              case o =>
-                Left(NEList(BaboonIssue.WrongParent(id, o.id, dto.meta)))
-            }
-
-          } yield {
-            out
-          }
+          dtoParentToDefs(p.parent, dto.meta, p.meta)
+        case _ =>
+          Right(Seq.empty)
+      }
+      intersectionLimiters <- dto.members.biFlatTraverse {
+        case p: RawDtoMember.IntersectionDef =>
+          dtoParentToDefs(p.parent, dto.meta, p.meta)
         case _ =>
           Right(Seq.empty)
       }
       removedSet = removed.toSet
-      finalFields = converted.filterNot(f => removedSet.contains(f))
+      intersectionSet = intersectionLimiters.toSet
+
+      withoutRemoved = converted.filterNot(f => removedSet.contains(f))
+      finalFields = if (intersectionSet.isEmpty) {
+        withoutRemoved
+      } else {
+        withoutRemoved.filter(f => intersectionSet.contains(f))
+      }
       _ <- finalFields
         .map(m => (m.name.name.toLowerCase, m))
         .toUniqueMap(e => NEList(BaboonIssue.NonUniqueFields(id, e, dto.meta)))

@@ -181,3 +181,27 @@ root data T11_D1 {
   - _To_Remove
   - f5: map[str, lst[opt[T8_Removed_Fields]]]
 }
+
+//
+
+data T12_left {
+    f1: str
+    f2: i32
+    f3: f64
+}
+
+data T12_right {
+    f5: tsu
+    f2: i32
+    f6: tso
+}
+
+root data T12_1 {
+  + T12_left
+  ^ T12_right
+}
+
+root data T12_2 {
+  + T12_right
+  ^ T12_left
+}

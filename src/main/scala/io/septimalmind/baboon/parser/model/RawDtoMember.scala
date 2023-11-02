@@ -13,4 +13,7 @@ object RawDtoMember {
   case class UnparentDef(parent: ScopedRef, meta: RawNodeMeta)
       extends RawDtoMember
 
+  case class IntersectionDef(parent: ScopedRef, meta: RawNodeMeta)
+    extends RawDtoMember
+
 }

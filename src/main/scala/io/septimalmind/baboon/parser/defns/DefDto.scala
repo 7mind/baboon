@@ -58,11 +58,15 @@ class DefDto(context: ParserContext, meta: DefMeta) {
     ("-" ~ scopedRef)
   }
 
+  def intersectionDef[$: P]: P[ScopedRef] = {
+    import fastparse.ScalaWhitespace.whitespace
+    ("^" ~ scopedRef)
+  }
+
   def unfieldDef[$: P]: P[RawField] = {
     import fastparse.ScalaWhitespace.whitespace
     ("-" ~ fieldDef)
   }
-
 
   def dtoMember[$: P]: P[RawDtoMember] =
     (P(meta.withMeta(fieldDef)).map {
@@ -77,6 +81,9 @@ class DefDto(context: ParserContext, meta: DefMeta) {
     } | P(meta.withMeta(unparentDef)).map {
       case (meta, parent) =>
         model.RawDtoMember.UnparentDef(parent, meta)
+    } | P(meta.withMeta(intersectionDef)).map {
+      case (meta, parent) =>
+        model.RawDtoMember.IntersectionDef(parent, meta)
     })
 
   def dto[$: P]: P[Seq[RawDtoMember]] = {
