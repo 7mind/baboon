@@ -18,12 +18,13 @@ Stripped-down experimental DML with schema evolution support and garbage collect
 3. (*) Comments are not preserved in the cogen output
 4. No nominal inheritance
 5. Only structural inheritance is supported
-6. No inheritance information is preserved in the transpiler output
+6. (*) No inheritance information is preserved in the transpiler output
 7. No templates
 8. Only Enums, DTOs and ADTs
 9. ADT members can only reference top-level type definitions
 10. No constants associated with enum members
 11. (*) No newtypes/type aliases
+12. (*) No inheritance-based lenses/projections/conversions
 
 Points marked with (*) will/may be improved in future.
 
