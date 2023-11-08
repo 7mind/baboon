@@ -1,51 +1,35 @@
 ﻿using System;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using Newtonsoft.Json.Linq;
+using Testpkg.Pkg0.v1_0_0;
 
 namespace Main
 {
-    interface IBaboonCodec<Instance>
-    {
-
-    }
-
-    interface IBaboonValueCodec<Instance, Wire> : IBaboonCodec<Instance>
-    {
-        Wire Encode(Instance instance);
-        Instance Decode(Wire wire);
-    }
-    
-    interface IBaboonJsonCodec<Instance> : IBaboonValueCodec<Instance, JToken>
-    {
-        
-    }
-    
-    interface IBaboonStreamCodec<Instance, OutStream, InStream> : IBaboonCodec<Instance>
-    {
-        void Encode(OutStream writer, Instance instance);
-        Instance Decode(InStream wire);
-    }
-    
-
-    interface IBaboonBinCodec<Instance> : IBaboonStreamCodec<Instance, BinaryWriter, BinaryReader>
-    {
-
-    }
-    
     class Program
     {
         static void Main(string[] args)
         {
-            var v1 = JValue.CreateString("a");
-            var v2 = new JArray(v1);
-            var v3 = new JObject(new JProperty("test", v2));
-            JToken v4 = v3;
-            Console.WriteLine(v4);
-            
-            foreach (var i in Enumerable.Range(0, 1))
+            var builder = ImmutableDictionary.CreateBuilder<T13_1, int>();
+            builder.Add(T13_1.A1, 99);
+            builder.Add(T13_1.A2, 99);
+            var result = builder.ToImmutable();
+            var g = Guid.NewGuid();
+            var i1 = new Testpkg.Pkg0.v1_0_0.T13_2(g, result);
+            using (MemoryStream stream = new MemoryStream())
             {
-                Console.WriteLine(i);
+                using (BinaryWriter writer = new BinaryWriter(stream))
+                {
+                    i1.Codec_UEBA().Encode(writer, i1);
+                }
+                stream.Flush();
+                byte[] bytes = stream.GetBuffer();
+                var s2 = new MemoryStream(bytes);
+                var r = new BinaryReader(s2);
+                var i2 = i1.Codec_UEBA().Decode(r);
+                Console.WriteLine(g);
+                Console.WriteLine(i2.F[T13_1.A2]);
                 
             }
         }

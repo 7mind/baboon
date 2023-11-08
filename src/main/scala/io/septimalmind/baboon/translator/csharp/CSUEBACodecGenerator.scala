@@ -65,9 +65,10 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
             val fqBranch = q"$branchNs.$branchName"
             val cName = codecName(trans.toCsVal(m, version))
 
-            (q"""if (value is $fqBranch)
+            (q"""if (value is $fqBranch cvalue)
                  |{
                  |   writer.Write((byte)${idx.toString});
+                 |   $cName.Instance.Encode(writer, cvalue);
                  |   return;
                  |}""".stripMargin, q"""if (asByte == ${idx.toString})
                  |{

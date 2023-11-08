@@ -216,5 +216,6 @@ enum T13_1 {
 }
 
 root data T13_2 {
+  u: uid
   f: map[T13_1, i32]
 }
