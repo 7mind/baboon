@@ -730,6 +730,15 @@ object BaboonIssue {
     }
   }
 
+  case class BadFieldNames(e: Typedef.Dto, bad: Seq[String], meta: RawNodeMeta)
+      extends VerificationIssue {
+    override def toString: String = {
+      s"""
+         |${extractLocation(meta)}
+         |Bad field names: ${e.id.toString} / ${bad}
+         |""".stripMargin
+    }
+  }
   case class EmptyEnumDef(e: Typedef.Enum, meta: RawNodeMeta)
       extends VerificationIssue {
     override def toString: String = {

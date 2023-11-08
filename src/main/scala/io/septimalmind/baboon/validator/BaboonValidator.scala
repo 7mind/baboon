@@ -264,8 +264,14 @@ object BaboonValidator {
           Right(())
         case u: DomainMember.User =>
           u.defn match {
-            case _: Typedef.Dto =>
-              Right(())
+            case d: Typedef.Dto =>
+              for {
+                badFields <- Right(d.fields.map(_.name.name.toLowerCase).filter(_ == d.id.name.name.toLowerCase))
+                _ <- Either.ifThenFail(badFields.nonEmpty)(
+                  NEList(BaboonIssue.BadFieldNames(d, badFields, u.meta))
+                )
+              } yield {
+              }
             case e: Typedef.Enum =>
               for {
                 _ <- Either.ifThenFail(e.members.isEmpty)(
