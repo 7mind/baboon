@@ -588,6 +588,8 @@ object CSBaboonTranslator {
     CSType(genericPkg, "Dictionary", fq = false)
   val csString: CSType =
     CSType(systemPkg, "String", fq = false)
+  val csGuid: CSType =
+    CSType(systemPkg, "Guid", fq = false)
   val csEnum: CSType =
     CSType(systemPkg, "Enum", fq = false)
   val csDateTime: CSType =

@@ -66,6 +66,8 @@ class CSTypeTranslator() {
 
       case TypeId.Builtins.str =>
         CSValue.CSType(system, "String", fq = false)
+      case TypeId.Builtins.uid =>
+        CSValue.CSType(system, "Guid", fq = false)
       case TypeId.Builtins.tso =>
         CSValue.CSType(system, "DateTime", fq = false)
       case TypeId.Builtins.tsu =>

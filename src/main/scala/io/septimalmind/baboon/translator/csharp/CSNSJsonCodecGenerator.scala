@@ -222,14 +222,23 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
           q"$fref.Value<$csDateTime>()"
         case TypeId.Builtins.tso =>
           q"$fref.Value<$csDateTime>()"
+        case TypeId.Builtins.uid =>
+          q"$fref.Value<$csString>()"
         case o =>
           throw new RuntimeException(s"BUG: Unexpected type: $o")
       }
 
-      if (removeNull) {
+      val unNulled = if (removeNull) {
         q"$out!"
       } else {
         out
+      }
+
+      bs match {
+        case TypeId.Builtins.uid =>
+          q"$csGuid.Parse($unNulled)"
+        case _ =>
+          unNulled
       }
     }
 
@@ -263,6 +272,8 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
           q"Decimal.Parse($ref)"
         case TypeId.Builtins.str =>
           ref
+        case TypeId.Builtins.uid =>
+          q"$csGuid.Parse($ref)"
         case TypeId.Builtins.tsu =>
           q"$csDateTime.Parse($ref)"
         case TypeId.Builtins.tso =>

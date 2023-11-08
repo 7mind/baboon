@@ -108,6 +108,7 @@ object TypeId {
     final val f128 = BuiltinScalar(TypeName("f128"))
 
     final val str = BuiltinScalar(TypeName("str"))
+    final val uid = BuiltinScalar(TypeName("uid"))
     final val tsu = BuiltinScalar(TypeName("tsu"))
     final val tso = BuiltinScalar(TypeName("tso"))
 
@@ -119,13 +120,16 @@ object TypeId {
     final val integers = Set(i08, i16, i32, i64, u08, u16, u32, u64)
     final val floats = Set(f32, f64, f128)
     final val timestamps = Set(tsu, tso)
+    final val stringy = Set(uid)
     final val varlens = Set(str)
 
     final val seqCollections = Set(lst, set)
     final val iterableCollections = Set(map) ++ seqCollections
     final val collections = Set(opt) ++ iterableCollections
 
-    final val scalars = integers ++ floats ++ varlens ++ timestamps ++ Set(bit)
+    final val scalars = integers ++ floats ++ varlens ++ stringy ++ timestamps ++ Set(
+      bit
+    )
     final val all = scalars ++ collections
 
     private final val collIds = TypeId.Builtins.collections.toSet[TypeId]

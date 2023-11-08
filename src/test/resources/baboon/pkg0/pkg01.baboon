@@ -95,6 +95,8 @@ data T6_D2 {
     f13: f128
 
     f14: bit
+
+    f15: uid
 }
 
 root data T6_D1 {

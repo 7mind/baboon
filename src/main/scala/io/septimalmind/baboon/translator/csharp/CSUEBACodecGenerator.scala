@@ -205,6 +205,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                 q"wire.ReadDecimal()"
               case TypeId.Builtins.str =>
                 q"wire.ReadString()"
+              case TypeId.Builtins.uid =>
+                q"$csGuid.Parse(wire.ReadString())"
               case TypeId.Builtins.tsu =>
                 q"$csDateTime.Parse(wire.ReadString())"
               case TypeId.Builtins.tso =>
@@ -287,6 +289,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                 q"writer.Write($ref)"
               case TypeId.Builtins.str =>
                 q"writer.Write($ref)"
+              case TypeId.Builtins.uid =>
+                q"writer.Write($ref.ToString())"
               case TypeId.Builtins.tsu =>
                 q"writer.Write($ref.ToString($csInvariantCulture.InvariantCulture))"
               case TypeId.Builtins.tso =>
