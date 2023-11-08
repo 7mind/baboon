@@ -7,7 +7,7 @@ import izumi.fundamentals.platform.strings.TextTree
 trait CSCodecTranslator {
   def translate(defn: DomainMember.User,
                 name: CSValue.CSType,
-                version: Version): TextTree[CSValue]
+                domain: Domain): TextTree[CSValue]
 
   def codecName(name: CSValue.CSType): CSValue.CSType
 

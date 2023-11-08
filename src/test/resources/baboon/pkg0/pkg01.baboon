@@ -205,3 +205,13 @@ root data T12_2 {
   + T12_right
   ^ T12_left
 }
+
+//
+
+enum T13_1 {
+  A1
+}
+
+root data T13_2 {
+  f: map[T13_1, i32]
+}

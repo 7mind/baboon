@@ -10,7 +10,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     extends CSCodecTranslator {
   override def translate(defn: DomainMember.User,
                          name: CSValue.CSType,
-                         version: Version): TextTree[CSValue] = {
+                         domain: Domain): TextTree[CSValue] = {
+    val version = domain.version
     val (enc, dec) = defn.defn match {
       case d: Typedef.Dto =>
         val branches = d.fields.map { f =>
