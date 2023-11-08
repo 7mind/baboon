@@ -267,9 +267,29 @@ object BaboonValidator {
             case _: Typedef.Dto =>
               Right(())
             case e: Typedef.Enum =>
-              Either.ifThenFail(e.members.isEmpty)(
-                NEList(BaboonIssue.EmptyEnumDef(e, u.meta))
-              )
+              for {
+                _ <- Either.ifThenFail(e.members.isEmpty)(
+                  NEList(BaboonIssue.EmptyEnumDef(e, u.meta))
+                )
+                consts = e.members.toList.flatMap(_.const.toSeq).toSet
+                _ <- Either.ifThenFail(
+                  consts.nonEmpty && e.members.size != consts.size
+                )(
+                  NEList(
+                    BaboonIssue
+                      .EitherAllOrNoneEnumMembersMustHaveConstants(e, u.meta)
+                  )
+                )
+                _ <- Either.ifThenFail(
+                  consts.exists(i => i < 0 || i > Int.MaxValue)
+                )(
+                  NEList(
+                    BaboonIssue
+                      .WrongEnumConstant(e, u.meta)
+                  )
+                )
+              } yield {}
+
             case a: Typedef.Adt =>
               Either.ifThenFail(a.members.isEmpty)(
                 NEList(BaboonIssue.EmptyAdtDef(a, u.meta))

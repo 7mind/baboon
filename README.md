@@ -22,7 +22,7 @@ Stripped-down experimental DML with schema evolution support and garbage collect
 7. No templates
 8. Only Enums, DTOs and ADTs
 9. ADT members can only reference top-level type definitions
-10. No constants associated with enum members
+10. (*) Only integer constants may be associated with enum members
 11. (*) No newtypes/type aliases
 12. (*) No inheritance-based lenses/projections/conversions
 

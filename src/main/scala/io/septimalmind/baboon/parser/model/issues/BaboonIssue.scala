@@ -740,6 +740,27 @@ object BaboonIssue {
     }
   }
 
+  case class EitherAllOrNoneEnumMembersMustHaveConstants(e: Typedef.Enum,
+                                                         meta: RawNodeMeta)
+      extends VerificationIssue {
+    override def toString: String = {
+      s"""
+         |${extractLocation(meta)}
+         |Either all or none enum members must have associated constants: ${e.id.toString}
+         |""".stripMargin
+    }
+  }
+
+  case class WrongEnumConstant(e: Typedef.Enum, meta: RawNodeMeta)
+      extends VerificationIssue {
+    override def toString: String = {
+      s"""
+         |${extractLocation(meta)}
+         |Enum constants must be in range 0..${Int.MaxValue}: ${e.id.toString}
+         |""".stripMargin
+    }
+  }
+
   case class EmptyAdtDef(a: Typedef.Adt, meta: RawNodeMeta)
       extends VerificationIssue {
     override def toString: String = {

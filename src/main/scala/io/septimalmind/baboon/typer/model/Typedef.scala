@@ -251,7 +251,7 @@ case class Pkg(path: NEList[String]) {
 }
 case class TypeName(name: String)
 
-case class EnumMember(name: String)
+case class EnumMember(name: String, const: Option[Long])
 
 case class FieldName(name: String) {
   override def toString: String = s"$name"

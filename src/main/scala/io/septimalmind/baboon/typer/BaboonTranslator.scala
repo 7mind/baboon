@@ -55,7 +55,9 @@ class BaboonTranslator(pkg: Pkg,
           _ <- SymbolNames.validEnumMemberName(name, raw.meta)
 
         } yield {
-          EnumMember(name)
+          EnumMember(name, raw.associated.map {
+            case RawEnumConst.RawInt(int) => int
+          })
         }
       }
       _ <- converted

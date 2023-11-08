@@ -16,9 +16,6 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 import scala.collection.immutable.Seq
 
-
-
-
 trait CSDefnTranslator {
   def translate(defn: DomainMember.User,
                 domain: Domain,
@@ -200,7 +197,17 @@ object CSDefnTranslator {
 
         case e: Typedef.Enum =>
           val branches =
-            e.members.map(m => q"""${m.name.capitalize}""").toSeq.join(",\n")
+            e.members
+              .map { m =>
+                val base = q"""${m.name.capitalize}"""
+                m.const match {
+                  case Some(value) =>
+                    q"""$base = ${value.toString}"""
+                  case None => base
+                }
+              }
+              .toSeq
+              .join(",\n")
 
           q"""[$serializable]
              |public enum $name {

@@ -282,7 +282,6 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
             case o =>
               throw new RuntimeException(s"BUG: Type/usertype mismatch: $o")
           }
-
         case o =>
           throw new RuntimeException(s"BUG: Unexpected key type: $o")
       }
