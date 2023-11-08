@@ -266,12 +266,15 @@ object BaboonValidator {
           u.defn match {
             case d: Typedef.Dto =>
               for {
-                badFields <- Right(d.fields.map(_.name.name.toLowerCase).filter(_ == d.id.name.name.toLowerCase))
+                badFields <- Right(
+                  d.fields
+                    .map(_.name.name.toLowerCase)
+                    .filter(_ == d.id.name.name.toLowerCase)
+                )
                 _ <- Either.ifThenFail(badFields.nonEmpty)(
                   NEList(BaboonIssue.BadFieldNames(d, badFields, u.meta))
                 )
-              } yield {
-              }
+              } yield {}
             case e: Typedef.Enum =>
               for {
                 _ <- Either.ifThenFail(e.members.isEmpty)(
@@ -287,7 +290,7 @@ object BaboonValidator {
                   )
                 )
                 _ <- Either.ifThenFail(
-                  consts.exists(i => i < 0 || i > Int.MaxValue)
+                  consts.exists(i => i < Int.MinValue || i > Int.MaxValue)
                 )(
                   NEList(
                     BaboonIssue

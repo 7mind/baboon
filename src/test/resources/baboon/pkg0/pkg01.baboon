@@ -212,6 +212,7 @@ root data T12_2 {
 
 enum T13_1 {
   A1 = 1
+  A2 = -1
 }
 
 root data T13_2 {
