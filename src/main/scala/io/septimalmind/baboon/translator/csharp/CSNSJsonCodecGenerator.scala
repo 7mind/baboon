@@ -77,7 +77,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
 
           (q"""if (value is $fqBranch)
               |{
-              |    return new ${nsJObject}(new ${nsJProperty}("$branchName"), ${fqBranch}_JsonCodec.Instance.Encode(($fqBranch)value));
+              |    return new ${nsJObject}(new ${nsJProperty}("$branchName", ${fqBranch}_JsonCodec.Instance.Encode(($fqBranch)value)));
               |}""".stripMargin, q"""if (head.Name == "$branchName")
                                     |{
                                     |    return ${fqBranch}_JsonCodec.Instance.Decode(head.Value);
@@ -223,22 +223,15 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         case TypeId.Builtins.tso =>
           q"$fref.Value<$csDateTime>()"
         case TypeId.Builtins.uid =>
-          q"$fref.Value<$csString>()"
+          q"$fref.Value<$csGuid>()"
         case o =>
           throw new RuntimeException(s"BUG: Unexpected type: $o")
       }
 
-      val unNulled = if (removeNull) {
+      if (removeNull) {
         q"$out!"
       } else {
         out
-      }
-
-      bs match {
-        case TypeId.Builtins.uid =>
-          q"$csGuid.Parse($unNulled)"
-        case _ =>
-          unNulled
       }
     }
 

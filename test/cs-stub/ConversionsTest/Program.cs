@@ -16,7 +16,12 @@ namespace Main
             builder.Add(T13_1.A2, 99);
             var result = builder.ToImmutable();
             var g = Guid.NewGuid();
-            var i1 = new Testpkg.Pkg0.v1_0_0.T13_2(g, result);
+            
+            var builder1 = ImmutableDictionary.CreateBuilder<Guid, int>();
+            builder1.Add(g, 99);
+            var result1 = builder1.ToImmutable();
+            
+            var i1 = new Testpkg.Pkg0.v1_0_0.T13_2(g, result, result1);
             using (MemoryStream stream = new MemoryStream())
             {
                 using (BinaryWriter writer = new BinaryWriter(stream))
