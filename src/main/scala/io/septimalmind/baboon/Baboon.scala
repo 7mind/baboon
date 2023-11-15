@@ -2,6 +2,7 @@ package io.septimalmind.baboon
 import caseapp.*
 import distage.Injector
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
+import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
 import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzArtifactMaterializer
 import izumi.fundamentals.platform.strings.IzString.*
@@ -88,7 +89,7 @@ object Baboon {
                 compiler.run(inputModels, outDir) match {
                   case Left(value) =>
                     System.err.println("Compiler failed")
-                    System.err.println(value.toList.niceList())
+                    System.err.println(value.toList.stringifyIssues)
                     System.exit(3)
                   case Right(_) =>
                     println("Done")
