@@ -99,7 +99,11 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                                |
                                |throw new ArgumentException($$"Cannot decode {wire} to ${name.name}: no matching value");
            """.stripMargin)
-
+      case _: Typedef.Foreign =>
+        (
+          q"""throw new ArgumentException($$"${name.name} is a foreign type");""",
+          q"""throw new ArgumentException($$"${name.name} is a foreign type");"""
+        )
     }
 
     val baseMethods = List(q"""public $nsJToken Encode($name value)

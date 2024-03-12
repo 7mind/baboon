@@ -19,3 +19,8 @@ case class RawAdt(name: RawTypeName,
                   members: Seq[RawAdtMember],
                   meta: RawNodeMeta)
     extends RawDefn
+
+case class RawForeign(name: RawTypeName,
+                      defns: Map[String, String],
+                      meta: RawNodeMeta)
+    extends RawDefn

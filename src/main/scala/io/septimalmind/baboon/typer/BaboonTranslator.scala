@@ -37,10 +37,20 @@ class BaboonTranslator(pkg: Pkg,
   ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
     val root = defn.gcRoot
     defn.defn match {
-      case d: RawDto  => convertDto(id, root, d).map(d => NEList(d))
-      case e: RawEnum => converEnum(id, root, e).map(e => NEList(e))
-      case a: RawAdt  => convertAdt(id, root, a, thisScope)
+      case d: RawDto     => convertDto(id, root, d).map(d => NEList(d))
+      case e: RawEnum    => converEnum(id, root, e).map(e => NEList(e))
+      case a: RawAdt     => convertAdt(id, root, a, thisScope)
+      case f: RawForeign => convertForeign(id, root, f)
     }
+  }
+
+  private def convertForeign(id: TypeId.User,
+                             isRoot: Boolean,
+                             f: RawForeign,
+  ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
+    Right(
+      NEList(DomainMember.User(isRoot, Typedef.Foreign(id, f.defns), f.meta))
+    )
   }
 
   private def converEnum(

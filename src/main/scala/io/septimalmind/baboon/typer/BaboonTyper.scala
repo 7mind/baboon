@@ -316,6 +316,8 @@ object BaboonTyper {
           Right(LeafScope(ScopeName(dto.name.name), FullRawDefn(dto, isRoot)))
         case e: RawEnum =>
           Right(LeafScope(ScopeName(e.name.name), FullRawDefn(e, isRoot)))
+        case f: RawForeign =>
+          Right(LeafScope(ScopeName(f.name.name), FullRawDefn(f, isRoot)))
         case adt: RawAdt =>
           for {
             sub <- adt.members

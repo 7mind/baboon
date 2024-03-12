@@ -2,6 +2,10 @@ model testpkg.pkg0
 
 version "1.0.0"
 
+foreign ObscureInt {
+  cs = "System.Int32"
+}
+
 data NotReferenced {}
 
 enum T1_E1 {
@@ -21,6 +25,7 @@ root data T1_D1 {
  f0: T1_D2
  f1: i08
  f2: i32
+ ft: ObscureInt
 }
 
 //

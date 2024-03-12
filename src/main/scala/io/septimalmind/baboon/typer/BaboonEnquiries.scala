@@ -24,9 +24,10 @@ object BaboonEnquiries {
       case _: DomainMember.Builtin => Set.empty
       case u: DomainMember.User =>
         u.defn match {
-          case t: Typedef.Dto  => t.fields.flatMap(f => explode(f.tpe)).toSet
-          case _: Typedef.Enum => Set.empty
-          case t: Typedef.Adt  => t.members.toSet
+          case t: Typedef.Dto     => t.fields.flatMap(f => explode(f.tpe)).toSet
+          case _: Typedef.Enum    => Set.empty
+          case t: Typedef.Adt     => t.members.toSet
+          case _: Typedef.Foreign => Set.empty
         }
     }
 
@@ -47,7 +48,6 @@ object BaboonEnquiries {
               }.sorted
 
               s"[dto;${wrap(d.id)};$members]"
-
             case c: Typedef.Enum =>
               val members = c.members.toList.map(_.name).sorted.mkString(",")
               s"[enum;${wrap(c.id)};$members]"
@@ -55,6 +55,9 @@ object BaboonEnquiries {
               val members =
                 a.members.toList.map(id => wrap(id)).sorted.mkString(",")
               s"[adt;${wrap(a.id)};$members]"
+            case f: Typedef.Foreign =>
+              val members = f.bindings.toSeq.sorted.mkString(":")
+              s"[foreign;${wrap(f.id)};$members]"
           }
       }
 

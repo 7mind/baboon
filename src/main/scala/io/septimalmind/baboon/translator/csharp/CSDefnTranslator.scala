@@ -216,6 +216,15 @@ object CSDefnTranslator {
 
         case _: Typedef.Adt =>
           q"""public interface $name : $genMarker {}""".stripMargin
+        case f: Typedef.Foreign =>
+          f.bindings.get("cs") match {
+            case Some(value) =>
+              q"""global using $name = $value;"""
+            case None =>
+              throw new IllegalStateException(
+                s"${f.id}: undefined 'cs' binding"
+              )
+          }
       }
     }
 

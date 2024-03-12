@@ -347,9 +347,10 @@ object BaboonIssue {
   case class ScopeCannotBeEmpty(member: RawDefn) extends TyperIssue {
     override def toString: String = {
       val memberType = member match {
-        case _: RawDto  => "DTO"
-        case _: RawEnum => "Enum"
-        case _: RawAdt  => "ADT"
+        case _: RawDto     => "DTO"
+        case _: RawEnum    => "Enum"
+        case _: RawAdt     => "ADT"
+        case _: RawForeign => "Foreign"
       }
       s"""
          |${extractLocation(member.meta)}
