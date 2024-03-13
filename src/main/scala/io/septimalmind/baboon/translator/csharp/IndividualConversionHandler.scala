@@ -59,7 +59,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
         )).mkString("-")
       val tin = trans.toCsVal(conv.sourceTpe, srcDom).fullyQualified
       val tout =
-        trans.toCsVal(conv.sourceTpe, domain)
+        trans.toCsVal(conv.sourceTpe, srcDom)
 
       def transferId(tpe: TypeId.Scalar,
                      ref: TextTree[CSValue]): TextTree[CSValue] = {

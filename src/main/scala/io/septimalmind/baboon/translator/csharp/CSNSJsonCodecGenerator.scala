@@ -76,7 +76,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
        |
        |    private static $csLazy<$cName> instance = new $csLazy<$cName>(() => new $cName());
        |
-       |    public static $cName Instance { get { return instance.Value; } }
+       |    public static $cName Instance { get { return instance.Value; } set {} }
        |}
      """.stripMargin
   }
