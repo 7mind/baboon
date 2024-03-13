@@ -58,8 +58,10 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
           s"${conv.sourceTpe.name.name}.cs"
         )).mkString("-")
       val tin = trans.toCsVal(conv.sourceTpe, srcDom).fullyQualified
-      val tout =
-        trans.toCsVal(conv.sourceTpe, srcDom)
+
+      // This would fail if `sourceTpe` had been removed from `domain`. It's inconvenient to have this defined in each branch of the match below, so we use `def`
+      def tout =
+        trans.toCsVal(conv.sourceTpe, domain)
 
       def transferId(tpe: TypeId.Scalar,
                      ref: TextTree[CSValue]): TextTree[CSValue] = {
