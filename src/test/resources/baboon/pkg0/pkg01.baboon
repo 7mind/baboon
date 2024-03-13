@@ -2,6 +2,10 @@ model testpkg.pkg0
 
 version "1.0.0"
 
+foreign ObscureInt {
+  cs = "System.Int32"
+}
+
 data NotReferenced {}
 
 enum T1_E1 {
@@ -21,6 +25,7 @@ root data T1_D1 {
  f0: T1_D2
  f1: i08
  f2: i32
+ ft: ObscureInt
 }
 
 //
@@ -95,6 +100,8 @@ data T6_D2 {
     f13: f128
 
     f14: bit
+
+    f15: uid
 }
 
 root data T6_D1 {
@@ -151,7 +158,9 @@ root data T9_test {
  f2: map[str, lst[opt[i32]]]
  f3: opt[lst[opt[str]]]
  f4: opt[lst[opt[T8_Removed_Fields]]]
+
  f5: map[str, lst[opt[T8_Removed_Fields]]]
+ f6: map[str, lst[opt[str]]]
 }
 
 //
@@ -165,4 +174,54 @@ adt T10_A1 {
    data B1 {
        f1: T3_D1
    }
+}
+
+//
+
+data _To_Remove {
+ f6: map[str, lst[opt[str]]]
+}
+
+root data T11_D1 {
+  // f: _To_Remove // will fail
+  + T9_test
+  - _To_Remove
+  - f5: map[str, lst[opt[T8_Removed_Fields]]]
+}
+
+//
+
+data T12_left {
+    f1: str
+    f2: i32
+    f3: f64
+}
+
+data T12_right {
+    f5: tsu
+    f2: i32
+    f6: tso
+}
+
+root data T12_1 {
+  + T12_left
+  ^ T12_right
+}
+
+root data T12_2 {
+  + T12_right
+  ^ T12_left
+}
+
+//
+
+enum T13_1 {
+  A1 = 1
+  A2 = -1
+}
+
+root data T13_2 {
+  u: uid
+  f: map[T13_1, i32]
+  f1: map[uid, i32]
 }

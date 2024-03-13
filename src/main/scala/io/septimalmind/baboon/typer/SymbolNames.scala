@@ -42,7 +42,7 @@ object SymbolNames {
     for {
       _ <- Either.ifThenFail(
         !(name.name
-          .forall(l => l.isLetterOrDigit || l == '_') && name.name.head.isLetter)
+          .forall(l => l.isLetterOrDigit || l == '_') && (name.name.head.isLetter || name.name.head == '_'))
       )(NEList(BaboonIssue.BadTypeName(name.name, meta)))
       _ <- Either.ifThenFail(name.name.toLowerCase.startsWith("baboon"))(
         NEList(BaboonIssue.BadFieldName(name.name, meta))

@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
+  baboonCodecImpls,
   iBaboonGenerated,
   iBaboonGeneratedLatest
 }
@@ -13,20 +14,22 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
+import scala.collection.immutable.Seq
+
 trait CSDefnTranslator {
   def translate(defn: DomainMember.User,
                 domain: Domain,
                 evo: BaboonEvolution,
-  ): Either[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]]
+  ): Either[NEList[BaboonIssue.TranslationIssue], List[
+    CSDefnTranslator.OutputExt
+  ]]
 
-  def inNs(nss: Seq[String], tree: TextTree[CSValue]): TextTree[CSValue]
-
-  def basename(dom: Domain): String
 }
 
 object CSDefnTranslator {
 
   case class Output(path: String, tree: TextTree[CSValue], pkg: CSPackageId)
+  case class OutputExt(output: Output, codecReg: TextTree[CSValue])
 
   val obsolete: CSType =
     CSType(CSBaboonTranslator.systemPkg, "Obsolete", fq = false)
@@ -34,34 +37,49 @@ object CSDefnTranslator {
   val serializable: CSType =
     CSType(CSBaboonTranslator.systemPkg, "Serializable", fq = false)
 
-  class CSDefnTranslatorImpl(options: CompilerOptions, trans: CSTypeTranslator)
+  class CSDefnTranslatorImpl(options: CompilerOptions,
+                             trans: CSTypeTranslator,
+                             tools: CSDefnTools,
+                             codecs: Set[CSCodecTranslator])
       extends CSDefnTranslator {
     type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
     override def translate(defn: DomainMember.User,
                            domain: Domain,
                            evo: BaboonEvolution,
-    ): Either[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
-      val name = trans.toCsVal(defn.id, domain.version)
+    ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
+      val name = trans.toCsVal(defn.id, domain)
       val isLatestVersion = domain.version == evo.latest
 
-      val defnReprBase = makeRepr(defn, domain, name, isLatestVersion)
-      val defnRepr = if (isLatestVersion) {
-        defnReprBase
-      } else {
-        q"""[${obsolete}("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${options.obsoleteErrors.toString})]
-           |$defnReprBase""".stripMargin
+      def obsoletePrevious(tree: TextTree[CSValue]) = {
+        val hackyIsEmpty = tree.mapRender(_ => "?").isEmpty
+        if (isLatestVersion || hackyIsEmpty) {
+          tree
+        } else {
+          q"""[${obsolete}("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${options.obsoleteErrors.toString})]
+             |$tree""".stripMargin
+        }
       }
+
+      val defnReprBase = makeRepr(defn, domain, name, isLatestVersion)
+
+      val codecTrees =
+        codecs.toList
+          .map(t => t.translate(defn, name, domain))
+          .map(obsoletePrevious)
+
+      val defnRepr = obsoletePrevious(defnReprBase)
 
       assert(defn.id.pkg == domain.id)
       val fbase =
-        basename(domain)
+        tools.basename(domain)
 
       val fname = s"${defn.id.name.name.capitalize}.cs"
 
       val ns = name.pkg.parts
 
-      val content = inNs(ns.toSeq, defnRepr)
+      val allDefs = (defnRepr +: codecTrees).join("\n\n")
+      val content = tools.inNs(ns.toSeq, allDefs)
 
       val outname = defn.defn.id.owner match {
         case Owner.Toplevel =>
@@ -69,8 +87,19 @@ object CSDefnTranslator {
         case Owner.Adt(id) =>
           s"$fbase/${id.name.name.toLowerCase}-$fname"
       }
+
+      val reg = (List(q""""${defn.id.toString}"""") ++ codecs.toList
+        .sortBy(_.getClass.getName)
+        .map(codec => q"${codec.codecName(name).copy(fq = true)}.Instance"))
+        .join(", ")
+
       Right(
-        List(Output(outname, content, trans.toCsPkg(domain.id, domain.version)))
+        List(
+          OutputExt(
+            Output(outname, content, trans.toCsPkg(domain.id, domain.version)),
+            q"Register(new $baboonCodecImpls($reg));"
+          )
+        )
       )
     }
 
@@ -81,18 +110,13 @@ object CSDefnTranslator {
     ): TextTree[CSValue] = {
       val genMarker =
         if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
-      val meta = Seq(q"""public String BaboonDomainVersion()
-           |{
-           |    return "${domain.version.version}";
-           |}""".stripMargin, q"""public String BaboonDomainIdentifier() {
-           |    return "${domain.id.toString}";
-           |}""".stripMargin, q"""public String BaboonTypeIdentifier() {
-           |    return "${defn.id.toString}";
-           |}""".stripMargin)
+      val meta = tools.makeMeta(defn, domain.version) ++ codecs.map(
+        _.codecMeta(defn, name).member
+      )
       defn.defn match {
         case d: Typedef.Dto =>
           val outs = d.fields.map { f =>
-            val tpe = trans.asCsRef(f.tpe, domain.version)
+            val tpe = trans.asCsRef(f.tpe, domain)
             val mname = s"${f.name.name.capitalize}"
             (mname, tpe, f)
           }
@@ -108,7 +132,7 @@ object CSDefnTranslator {
             case Owner.Toplevel =>
               None
             case Owner.Adt(id) =>
-              val parentId = trans.asCsType(id, domain.version)
+              val parentId = trans.asCsType(id, domain)
               Some(parentId)
           }
 
@@ -175,7 +199,17 @@ object CSDefnTranslator {
 
         case e: Typedef.Enum =>
           val branches =
-            e.members.map(m => q"""${m.name.capitalize}""").toSeq.join(",\n")
+            e.members
+              .map { m =>
+                val base = q"""${m.name.capitalize}"""
+                m.const match {
+                  case Some(value) =>
+                    q"""$base = ${value.toString}"""
+                  case None => base
+                }
+              }
+              .toSeq
+              .join(",\n")
 
           q"""[$serializable]
              |public enum $name {
@@ -184,6 +218,16 @@ object CSDefnTranslator {
 
         case _: Typedef.Adt =>
           q"""public interface $name : $genMarker {}""".stripMargin
+        case f: Typedef.Foreign =>
+          q""
+//          f.bindings.get("cs") match {
+//            case Some(value) =>
+//              q"""global using $name = $value;"""
+//            case None =>
+//              throw new IllegalStateException(
+//                s"${f.id}: undefined 'cs' binding"
+//              )
+//          }
       }
     }
 
@@ -250,28 +294,10 @@ object CSDefnTranslator {
 
           val cmp = renderComparator(vref, ovref, valComp)
 
-          q"($ref.Count == $oref.Count && $ref.Keys.All(key => $oref.ContainsKey(key)) && !$ref.Keys.Any(key => $cmp))"
+          q"($ref.Count == $oref.Count && $ref.Keys.All(key => $oref.ContainsKey(key)) && $ref.Keys.All(key => $cmp))"
       }
     }
 
-    def basename(dom: Domain): String = {
-      (dom.id.path.map(_.capitalize) ++ Seq(dom.version.version))
-        .mkString("-")
-    }
-
-    private def inNs(name: String,
-                     tree: TextTree[CSValue]): TextTree[CSValue] = {
-      q"""namespace ${name} {
-         |    ${tree.shift(4).trim}
-         |}""".stripMargin
-    }
-
-    def inNs(nss: Seq[String], tree: TextTree[CSValue]): TextTree[CSValue] = {
-      nss.foldRight(tree) {
-        case (ns, acc) =>
-          inNs(ns, acc)
-      }
-    }
   }
 
 }

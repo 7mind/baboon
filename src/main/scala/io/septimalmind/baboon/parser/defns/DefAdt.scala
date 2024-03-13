@@ -27,3 +27,5 @@ class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto) {
   }
 
 }
+
+

@@ -29,10 +29,10 @@ object BaboonTyper {
   class BaboonTyperImpl(enquiries: BaboonEnquiries,
                         translator: LocalContext[Identity, BaboonTranslator],
                         scopeSupport: ScopeSupport)
-    extends BaboonTyper {
+      extends BaboonTyper {
     override def process(
-                          model: RawDomain
-                        ): Either[NEList[BaboonIssue.TyperIssue], Domain] = {
+      model: RawDomain
+    ): Either[NEList[BaboonIssue.TyperIssue], Domain] = {
       for {
         id <- parsePkg(model.header)
         version <- parseVersion(model.version)
@@ -72,11 +72,11 @@ object BaboonTyper {
     }
 
     private def computeDeepSchema(
-                                   pkg: Pkg,
-                                   graph: DG[TypeId, DomainMember],
-                                   sorted: Seq[TypeId],
-                                   meta: RawNodeMeta
-                                 ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, DeepSchemaId]] = {
+      pkg: Pkg,
+      graph: DG[TypeId, DomainMember],
+      sorted: Seq[TypeId],
+      meta: RawNodeMeta
+    ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, DeepSchemaId]] = {
 
       for {
         missing <- Right(sorted.filter(id => !graph.meta.nodes.contains(id)))
@@ -95,11 +95,9 @@ object BaboonTyper {
               .sortBy(_._1)
 
             val normalizedRepr =
-              s"[${enquiries.wrap(id)};${
-                depList
-                  .map({ case (k, v) => s"$k=deep/$v" })
-                  .mkString(",")
-              }]"
+              s"[${enquiries.wrap(id)};${depList
+                .map({ case (k, v) => s"$k=deep/$v" })
+                .mkString(",")}]"
 
             idx.updated(id, DeepSchemaId(IzSha256Hash.hash(normalizedRepr)))
         }
@@ -110,7 +108,7 @@ object BaboonTyper {
     private def buildDependencies(defs: Map[TypeId, DomainMember],
                                   current: Map[TypeId, DomainMember],
                                   predecessors: List[(TypeId, Option[TypeId])],
-                                 ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, Set[TypeId]]] = {
+    ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, Set[TypeId]]] = {
       val nextDepMap = current.toList.flatMap {
         case (id, defn) =>
           enquiries.directDepsOf(defn).toList.map(dep => (id, Some(dep)))
@@ -140,8 +138,8 @@ object BaboonTyper {
     }
 
     private def parsePkg(
-                          header: RawHeader
-                        ): Either[NEList[BaboonIssue.TyperIssue], Pkg] = {
+      header: RawHeader
+    ): Either[NEList[BaboonIssue.TyperIssue], Pkg] = {
       for {
         nel <- NEList
           .from(header.name)
@@ -153,8 +151,8 @@ object BaboonTyper {
     }
 
     private def parseVersion(
-                              version: RawVersion
-                            ): Either[NEList[BaboonIssue.TyperIssue], Version] = {
+      version: RawVersion
+    ): Either[NEList[BaboonIssue.TyperIssue], Version] = {
       for {
         v <- Right(version.value)
         // TODO: validate format
@@ -164,10 +162,10 @@ object BaboonTyper {
     }
 
     private def runTyper(
-                          pkg: Pkg,
-                          members: Seq[RawTLDef],
-                          meta: RawNodeMeta
-                        ): Either[NEList[BaboonIssue.TyperIssue], List[DomainMember]] = {
+      pkg: Pkg,
+      members: Seq[RawTLDef],
+      meta: RawNodeMeta
+    ): Either[NEList[BaboonIssue.TyperIssue], List[DomainMember]] = {
       for {
         initial <- Right(
           TypeId.Builtins.all.map(id => DomainMember.Builtin(id))
@@ -204,10 +202,10 @@ object BaboonTyper {
     }
 
     private def order(
-                       pkg: Pkg,
-                       flattened: List[ScopedDefn],
-                       meta: RawNodeMeta
-                     ): Either[NEList[BaboonIssue.TyperIssue], List[ScopedDefn]] = {
+      pkg: Pkg,
+      flattened: List[ScopedDefn],
+      meta: RawNodeMeta
+    ): Either[NEList[BaboonIssue.TyperIssue], List[ScopedDefn]] = {
       for {
         depmap <- flattened.map(d => deps(pkg, d)).biSequence
         asMap <- depmap.toUniqueMap(
@@ -226,12 +224,20 @@ object BaboonTyper {
       }
     }
 
-    private def deps(pkg: Pkg, defn: ScopedDefn): Either[NEList[BaboonIssue.TyperIssue], (TypeId.User, (Set[TypeId.User], ScopedDefn))] = {
+    private def deps(
+      pkg: Pkg,
+      defn: ScopedDefn
+    ): Either[NEList[BaboonIssue.TyperIssue],
+              (TypeId.User, (Set[TypeId.User], ScopedDefn))] = {
       val d = defn.thisScope.defn.defn match {
         case d: RawDto =>
           d.members
             .collect {
               case d: RawDtoMember.ParentDef =>
+                Seq(d.parent)
+              case d: RawDtoMember.UnparentDef =>
+                Seq(d.parent)
+              case d: RawDtoMember.IntersectionDef =>
                 Seq(d.parent)
               case _ =>
                 Seq.empty
@@ -244,9 +250,18 @@ object BaboonTyper {
 
       for {
         rawDefn <- Right(defn.thisScope.defn)
-        id <- scopeSupport.resolveUserTypeId(rawDefn.defn.name, defn.path, pkg, rawDefn.defn.meta)
+        id <- scopeSupport.resolveUserTypeId(
+          rawDefn.defn.name,
+          defn.path,
+          pkg,
+          rawDefn.defn.meta
+        )
         mappedDeps <- d
-          .map(v => scopeSupport.resolveScopedRef(v, defn.path, pkg, rawDefn.defn.meta))
+          .map(
+            v =>
+              scopeSupport
+                .resolveScopedRef(v, defn.path, pkg, rawDefn.defn.meta)
+          )
           .biSequence
       } yield {
         (id, (mappedDeps, defn))
@@ -254,17 +269,17 @@ object BaboonTyper {
     }
 
     private def flattenScopes(
-                               root: RootScope[FullRawDefn]
-                             ): List[ScopedDefn] = {
+      root: RootScope[FullRawDefn]
+    ): List[ScopedDefn] = {
       root.nested.values
         .flatMap(defn => flattenScopes(NEList(root), defn))
         .toList
     }
 
     private def flattenScopes(
-                               path: NEList[Scope[FullRawDefn]],
-                               current: NestedScope[FullRawDefn]
-                             ): List[ScopedDefn] = {
+      path: NEList[Scope[FullRawDefn]],
+      current: NestedScope[FullRawDefn]
+    ): List[ScopedDefn] = {
 
       current match {
         case s: SubScope[FullRawDefn] =>
@@ -277,10 +292,10 @@ object BaboonTyper {
     }
 
     private def buildScopes(
-                             pkg: Pkg,
-                             members: Seq[RawTLDef],
-                             meta: RawNodeMeta
-                           ): Either[NEList[BaboonIssue.TyperIssue], RootScope[FullRawDefn]] = {
+      pkg: Pkg,
+      members: Seq[RawTLDef],
+      meta: RawNodeMeta
+    ): Either[NEList[BaboonIssue.TyperIssue], RootScope[FullRawDefn]] = {
       for {
         sub <- members.map(m => buildScope(m.value, m.root)).biSequence
         asMap <- sub
@@ -293,14 +308,16 @@ object BaboonTyper {
     }
 
     private def buildScope(
-                            member: RawDefn,
-                            isRoot: Boolean
-                          ): Either[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
+      member: RawDefn,
+      isRoot: Boolean
+    ): Either[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
       member match {
         case dto: RawDto =>
           Right(LeafScope(ScopeName(dto.name.name), FullRawDefn(dto, isRoot)))
         case e: RawEnum =>
           Right(LeafScope(ScopeName(e.name.name), FullRawDefn(e, isRoot)))
+        case f: RawForeign =>
+          Right(LeafScope(ScopeName(f.name.name), FullRawDefn(f, isRoot)))
         case adt: RawAdt =>
           for {
             sub <- adt.members
@@ -308,7 +325,9 @@ object BaboonTyper {
               .biSequence
             asMap <- sub
               .map(s => (s.name, s))
-              .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta)))
+              .toUniqueMap(
+                nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta))
+              )
             asNEMap <- NEMap
               .from(asMap)
               .toRight(NEList(BaboonIssue.ScopeCannotBeEmpty(member)))

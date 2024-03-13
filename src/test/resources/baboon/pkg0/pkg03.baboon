@@ -2,6 +2,10 @@ model testpkg.pkg0
 
 version "3.0.0"
 
+root data Maps {
+  f1: map[i08, str]
+}
+
 enum T1_E1 {
  A
  C

@@ -3,12 +3,16 @@ package io.septimalmind.baboon
 import distage.{DIKey, ModuleDef}
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.BaboonParser
-import io.septimalmind.baboon.translator.AbstractBaboonTranslator
+import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.translator.csharp.{
   CSBaboonTranslator,
+  CSCodecTranslator,
+  CSDefnTools,
   CSDefnTranslator,
+  CSNSJsonCodecGenerator,
   CSTypeTranslator,
+  CSUEBACodecGenerator,
   IndividualConversionHandler
 }
 import io.septimalmind.baboon.typer.*
@@ -34,8 +38,9 @@ class BaboonModule(options: CompilerOptions) extends ModuleDef {
 
   make[BLogger].from[BLogger.BLoggerImpl]
 
-  many[AbstractBaboonTranslator].ref[CSBaboonTranslator]
+  many[BaboonAbstractTranslator].ref[CSBaboonTranslator]
   make[CSBaboonTranslator]
+  make[CSDefnTools].from[CSDefnTools.CSDefnToolsImpl]
   make[CSDefnTranslator].from[CSDefnTranslator.CSDefnTranslatorImpl]
   make[CSTypeTranslator]
   make[ScopeSupport].from[ScopeSupport.ScopeSupportImpl]
@@ -46,7 +51,11 @@ class BaboonModule(options: CompilerOptions) extends ModuleDef {
     }.running { (translator: BaboonTranslator) =>
       translator
     })
-    .external(DIKey[Pkg], DIKey[NEList[Scope[FullRawDefn]]], DIKey[Map[TypeId, DomainMember]])
+    .external(
+      DIKey[Pkg],
+      DIKey[NEList[Scope[FullRawDefn]]],
+      DIKey[Map[TypeId, DomainMember]]
+    )
 
   make[LocalContext[Identity, IndividualConversionHandler]]
     .fromLocalContext(new ModuleDef {
@@ -57,7 +66,12 @@ class BaboonModule(options: CompilerOptions) extends ModuleDef {
     .external(
       DIKey[CSPackageId],
       DIKey[Version],
-      DIKey.get[Domain],
+      DIKey.get[Domain].named("current"),
+      DIKey.get[Domain].named("source"),
       DIKey.get[BaboonRuleset]
     )
+
+  many[CSCodecTranslator]
+    .add[CSNSJsonCodecGenerator]
+    .add[CSUEBACodecGenerator]
 }

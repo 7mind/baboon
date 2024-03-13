@@ -209,11 +209,52 @@ object BaboonIssue {
                                 dupes: Map[String, Iterable[DomainMember]])
       extends VerificationIssue
 
+  case class BadFieldNames(e: Typedef.Dto, bad: Seq[String], meta: RawNodeMeta)
+      extends VerificationIssue {
+    override def toString: String = {
+      s"""
+         |${extractLocation(meta)}
+         |Bad field names: ${e.id.toString} / ${bad}
+         |""".stripMargin
+    }
+  }
   case class EmptyEnumDef(e: Typedef.Enum, meta: RawNodeMeta)
       extends VerificationIssue
 
+  case class EitherAllOrNoneEnumMembersMustHaveConstants(e: Typedef.Enum,
+                                                         meta: RawNodeMeta)
+      extends VerificationIssue {
+    override def toString: String = {
+      s"""
+         |${extractLocation(meta)}
+         |Either all or none enum members must have associated constants: ${e.id.toString}
+         |""".stripMargin
+    }
+  }
+
+  case class WrongEnumConstant(e: Typedef.Enum, meta: RawNodeMeta)
+      extends VerificationIssue {
+    override def toString: String = {
+      s"""
+         |${extractLocation(meta)}
+         |Enum constants must be in range 0..${Int.MaxValue}: ${e.id.toString}
+         |""".stripMargin
+    }
+  }
+
   case class EmptyAdtDef(a: Typedef.Adt, meta: RawNodeMeta)
       extends VerificationIssue
+
+  case class UnderscoredDefinitionRetained(s: DomainMember.User,
+                                           meta: RawNodeMeta)
+      extends VerificationIssue {
+    override def toString: String = {
+      s"""
+         |${extractLocation(meta)}
+         |Underscored definitions should only be used in structural ineritance: ${s.id.toString}
+         |""".stripMargin
+    }
+  }
 
   case class MissingEvoDiff(prev: Domain,
                             next: Domain,

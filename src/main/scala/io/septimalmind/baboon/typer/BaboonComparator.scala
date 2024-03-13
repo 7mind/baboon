@@ -37,13 +37,16 @@ object BaboonComparator {
       )
 
       for {
-        indexedDiffs <- toCompare.map {
-          case fresh :: old :: Nil =>
-            compare(versions(fresh), versions(old))
-              .map(diff => (diff.id, diff))
-          case o =>
-            Left(NEList(BaboonIssue.BrokenComparison(o)))
-        }.biSequence
+        indexedDiffs <- if (sortedVersions.size == 1) { Right(List.empty) } else {
+          toCompare.map {
+            case fresh :: old :: Nil =>
+              compare(versions(fresh), versions(old))
+                .map(diff => (diff.id, diff))
+
+            case o =>
+              Left(NEList(BaboonIssue.BrokenComparison(o)))
+          }.biSequence
+        }
         diffMap <- indexedDiffs.toUniqueMap(
           e => NEList(BaboonIssue.NonUniqueDiff(e))
         )

@@ -67,6 +67,7 @@ lazy val root = (project in file("."))
       "--report-unsupported-elements-at-runtime",
       "--enable-https",
       "--enable-http",
+      "-march=compatibility"
     ),
     run / fork := true,
     scalacOptions ++= Seq(

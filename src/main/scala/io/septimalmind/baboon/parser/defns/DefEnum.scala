@@ -2,17 +2,38 @@ package io.septimalmind.baboon.parser.defns
 
 import fastparse.P
 import io.septimalmind.baboon.parser.ParserContext
-import io.septimalmind.baboon.parser.defns.base.{idt, kw, sep, struct}
-import io.septimalmind.baboon.parser.model.{RawEnum, RawEnumMember, RawTypeName}
+import io.septimalmind.baboon.parser.defns.base.{Literals, idt, kw, sep, struct}
+import io.septimalmind.baboon.parser.model.{
+  RawEnum,
+  RawEnumConst,
+  RawEnumMember,
+  RawTypeName
+}
 
 class DefEnum(context: ParserContext, meta: DefMeta) {
   def enumMemberName[$: P]: P[String] = idt.symbol
 
-  def enumMember[$: P]: P[RawEnumMember] =
-    P(meta.withMeta(enumMemberName)).map {
-      case (meta, name) =>
-        RawEnumMember(name, meta)
+  def constInt[$: P]: P[Int] = {
+    import fastparse.NoWhitespace.noWhitespaceImplicit
+
+    (P("-").? ~ Literals.Literals.Int).!.map { v =>
+      // todo: .endsWith("L")
+      v.toInt
     }
+  }
+  def enumVal[$: P]: P[RawEnumConst] = {
+    import fastparse.ScalaWhitespace.whitespace
+    (P("=") ~ constInt).map { v =>
+      RawEnumConst.RawInt(v)
+    }
+  }
+  def enumMember[$: P]: P[RawEnumMember] = {
+    import fastparse.ScalaWhitespace.whitespace
+    P(meta.withMeta(enumMemberName ~ enumVal.?)).map {
+      case (meta, (name, enumVal)) =>
+        RawEnumMember(name, enumVal, meta)
+    }
+  }
 
   def defEnum[$: P]: P[Seq[RawEnumMember]] = {
     import fastparse.ScalaWhitespace.whitespace

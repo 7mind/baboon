@@ -4,6 +4,7 @@ import io.septimalmind.baboon.parser.defns.{
   DefAdt,
   DefDto,
   DefEnum,
+  DefForeign,
   DefMeta,
   DefModel
 }
@@ -14,6 +15,8 @@ case class ParserContext(file: FSPath, content: String) {
   val defEnum = new DefEnum(this, defMeta)
   val defDto = new DefDto(this, defMeta)
   val defAdt = new DefAdt(this, defMeta, defDto)
-  val defModel = new DefModel(this, defMeta, defEnum, defDto, defAdt)
+  val defForeign = new DefForeign(this, defMeta)
+  val defModel =
+    new DefModel(this, defMeta, defEnum, defDto, defAdt, defForeign)
 
 }

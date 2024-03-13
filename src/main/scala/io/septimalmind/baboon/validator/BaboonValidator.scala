@@ -53,6 +53,7 @@ object BaboonValidator {
 
       for {
         _ <- checkMissingTypes(domain)
+        _ <- checkConventions(domain)
         _ <- checkLoops(domain)
         _ <- checkUniqueness(domain)
         _ <- checkShape(domain)
@@ -153,7 +154,8 @@ object BaboonValidator {
                 Either.ifThenFail(dupes.nonEmpty)(
                   NEList(BaboonIssue.ConflictingAdtBranches(a, dupes, u.meta))
                 )
-
+              case _: Typedef.Foreign =>
+                Right(())
             }
         }.biSequence_
       } yield {}
@@ -263,17 +265,62 @@ object BaboonValidator {
           Right(())
         case u: DomainMember.User =>
           u.defn match {
-            case _: Typedef.Dto =>
-              Right(())
+            case d: Typedef.Dto =>
+              for {
+                badFields <- Right(
+                  d.fields
+                    .map(_.name.name.toLowerCase)
+                    .filter(_ == d.id.name.name.toLowerCase)
+                )
+                _ <- Either.ifThenFail(badFields.nonEmpty)(
+                  NEList(BaboonIssue.BadFieldNames(d, badFields, u.meta))
+                )
+              } yield {}
             case e: Typedef.Enum =>
-              Either.ifThenFail(e.members.isEmpty)(
-                NEList(BaboonIssue.EmptyEnumDef(e, u.meta))
-              )
+              for {
+                _ <- Either.ifThenFail(e.members.isEmpty)(
+                  NEList(BaboonIssue.EmptyEnumDef(e, u.meta))
+                )
+                consts = e.members.toList.flatMap(_.const.toSeq).toSet
+                _ <- Either.ifThenFail(
+                  consts.nonEmpty && e.members.size != consts.size
+                )(
+                  NEList(
+                    BaboonIssue
+                      .EitherAllOrNoneEnumMembersMustHaveConstants(e, u.meta)
+                  )
+                )
+                _ <- Either.ifThenFail(
+                  consts.exists(i => i < Int.MinValue || i > Int.MaxValue)
+                )(
+                  NEList(
+                    BaboonIssue
+                      .WrongEnumConstant(e, u.meta)
+                  )
+                )
+              } yield {}
+
             case a: Typedef.Adt =>
               Either.ifThenFail(a.members.isEmpty)(
                 NEList(BaboonIssue.EmptyAdtDef(a, u.meta))
               )
+
+            case _: Typedef.Foreign =>
+              Right(())
           }
+      }.biSequence_
+    }
+
+    private def checkConventions(
+      domain: Domain
+    ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
+      domain.defs.meta.nodes.values.map {
+        case _: DomainMember.Builtin =>
+          Right(())
+        case u: DomainMember.User =>
+          Either.ifThenFail(u.id.name.name.head == '_')(
+            NEList(BaboonIssue.UnderscoredDefinitionRetained(u, u.meta))
+          )
       }.biSequence_
     }
 

@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
+import distage.Id
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import izumi.fundamentals.platform.strings.TextTree.*
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
@@ -13,16 +14,18 @@ import izumi.fundamentals.platform.strings.TextTree
 class IndividualConversionHandler(transd: CSDefnTranslator,
                                   trans: CSTypeTranslator,
                                   pkg: CSPackageId,
-                                  srcVer: Version,
-                                  domain: Domain,
-                                  rules: BaboonRuleset) {
+                                  srcDom: Domain @Id("source"),
+                                  domain: Domain @Id("current"),
+                                  rules: BaboonRuleset,
+                                  tools: CSDefnTools) {
+  private val srcVer = srcDom.version
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
   private def transfer(tpe: TypeRef,
                        ref: TextTree[CSValue]): TextTree[CSValue] = {
     val cnew =
-      trans.asCsRef(tpe, domain.version)
-    val cold = trans.asCsRef(tpe, srcVer, fullyQualified = true)
+      trans.asCsRef(tpe, domain)
+    val cold = trans.asCsRef(tpe, srcDom, fullyQualified = true)
 
     val conv =
       q"conversions.ConvertWithContext<C, ${cold}, ${cnew}>(context, ${ref})"
@@ -54,9 +57,11 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
         (Seq("from", srcVer.version) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
           s"${conv.sourceTpe.name.name}.cs"
         )).mkString("-")
-      val tin = trans.toCsVal(conv.sourceTpe, srcVer).fullyQualified
-      val tout =
-        trans.toCsVal(conv.sourceTpe, domain.version)
+      val tin = trans.toCsVal(conv.sourceTpe, srcDom).fullyQualified
+
+      // This would fail if `sourceTpe` had been removed from `domain`. It's inconvenient to have this defined in each branch of the match below, so we use `def`
+      def tout =
+        trans.toCsVal(conv.sourceTpe, domain)
 
       def transferId(tpe: TypeId.Scalar,
                      ref: TextTree[CSValue]): TextTree[CSValue] = {
@@ -68,9 +73,9 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
           val cdefn =
             q"""public abstract class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
-               |    public abstract override ${tout} Convert<C>(C context, $abstractBaboonConversions conversions, ${tin} from);
+               |    public abstract override ${tout} Convert<C>(C? context, $abstractBaboonConversions conversions, ${tin} from) where C: default;
                |}""".stripMargin
-          val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
+          val ctree = tools.inNs(pkg.parts.toSeq, cdefn)
 
           val convMethodName = makeName("Conversion", conv)
 
@@ -92,7 +97,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
           val cdefn =
             q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
-               |    public override ${tout} Convert<C>(C context, $abstractBaboonConversions conversions, ${tin} from) {
+               |    public override ${tout} Convert<C>(C? context, $abstractBaboonConversions conversions, ${tin} from)  where C: default {
                |        if ($csEnum.TryParse(from.ToString(), out ${tout} parsed))
                |        {
                |            return parsed;
@@ -103,12 +108,12 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                |        }
                |    }
                |}""".stripMargin
-          val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
+          val ctree = tools.inNs(pkg.parts.toSeq, cdefn)
           val regtree = q"Register(new ${convname}());"
           Right(List(RenderedConversion(fname, ctree, Some(regtree), None)))
         case c: Conversion.CopyAdtBranchByName =>
           val branches = c.oldDefn.members.map { oldId =>
-            val oldFqid = trans.toCsVal(oldId, srcVer).fullyQualified
+            val oldFqid = trans.toCsVal(oldId, srcDom).fullyQualified
             val typedRef = q"fromAs_${oldId.name.name}"
 
             q"""if (from is ${oldFqid} $typedRef)
@@ -122,11 +127,11 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
           val cdefn =
             q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
-               |    public override ${tout} Convert<C>(C context, $abstractBaboonConversions conversions, ${tin} from) {
+               |    public override ${tout} Convert<C>(C? context, $abstractBaboonConversions conversions, ${tin} from) where C: default {
                |        ${branches.join("\nelse\n").shift(8).trim}
                |    }
                |}""".stripMargin
-          val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
+          val ctree = tools.inNs(pkg.parts.toSeq, cdefn)
           val regtree = q"Register(new ${convname}());"
           Right(List(RenderedConversion(fname, ctree, Some(regtree), None)))
         case c: Conversion.DtoConversion =>
@@ -139,9 +144,9 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
             opIndex = c.ops.map(op => (op.targetField, op)).toMap
             exprs <- newDefn.fields.map { f =>
               val op = opIndex(f)
-              val ftNew = trans.asCsRef(op.targetField.tpe, domain.version)
+              val ftNew = trans.asCsRef(op.targetField.tpe, domain)
               val ftNewInit =
-                trans.asCsRef(op.targetField.tpe, domain.version, mut = true)
+                trans.asCsRef(op.targetField.tpe, domain, mut = true)
               val base = op.targetField.name.name.capitalize
               val fieldRef = q"_from.${base}"
               val initExpr = op match {
@@ -287,7 +292,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
             val cdefn =
               q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                  |{
-                 |    public override ${tout} Convert<C>(C context, $abstractBaboonConversions conversions, ${tin} _from) {
+                 |    public override ${tout} Convert<C>(C? context, $abstractBaboonConversions conversions, ${tin} _from) where C: default {
                  |        ${initExprs.join(";\n").shift(8).trim}
                  |        return new ${tout}(
                  |            ${consExprs.join(",\n").shift(12).trim}
@@ -295,7 +300,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                  |    }
                  |}""".stripMargin
 
-            val ctree = transd.inNs(pkg.parts.toSeq, cdefn)
+            val ctree = tools.inNs(pkg.parts.toSeq, cdefn)
             val regtree = q"Register(new ${convname}());"
             List(RenderedConversion(fname, ctree, Some(regtree), None))
           }
@@ -312,7 +317,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                            newId: TypeId.BuiltinCollection,
                            newCollArgs: NEList[TypeRef],
   ): Either[NEList[BaboonIssue.TranslationBug], Seq[TextTree[CSValue]]] = {
-    val collCsType = trans.asCsRef(newCollArgs.head, domain.version)
+    val collCsType = trans.asCsRef(newCollArgs.head, domain)
 
     val collInit =
       q"(new ${ftNewInit}(from e in $fieldRef select ($collCsType)e))"
@@ -371,8 +376,8 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
       case TypeId.Builtins.map =>
         newId match {
           case TypeId.Builtins.map =>
-            val kt = trans.asCsRef(newCollArgs.head, domain.version)
-            val vt = trans.asCsRef(newCollArgs.last, domain.version)
+            val kt = trans.asCsRef(newCollArgs.head, domain)
+            val vt = trans.asCsRef(newCollArgs.last, domain)
             Right(
               Seq(
                 q"(from e in $fieldRef select $csKeyValuePair.Create(($kt)e.Key, ($vt)e.Value)).ToImmutableDictionary(v => v.Key, v => v.Value)"
