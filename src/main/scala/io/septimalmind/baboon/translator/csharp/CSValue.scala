@@ -6,6 +6,7 @@ sealed trait CSValue
 
 object CSValue {
   case class CSPackageId(parts: NEList[String])
+
   object CSPackageId {
     def apply(pkg: String): CSPackageId = CSPackageId(NEList.unsafeFrom(pkg.split('.').toList))
   }

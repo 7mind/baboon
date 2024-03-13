@@ -16,5 +16,7 @@ object RawTLDef {
   case class ADT(root: Boolean, value: RawAdt) extends RawTLDef {
     override def setRoot(root: Boolean): ADT = this.copy(root = root)
   }
-
+  case class Foreign(root: Boolean, value: RawForeign) extends RawTLDef {
+    override def setRoot(root: Boolean): Foreign = this.copy(root = root)
+  }
 }

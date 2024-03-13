@@ -10,10 +10,10 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 trait BaboonRules {
   def compute(
-               prev: Domain,
-               last: Domain,
-               diff: BaboonDiff
-             ): Either[NEList[BaboonIssue.EvolutionIssue], BaboonRuleset]
+    prev: Domain,
+    last: Domain,
+    diff: BaboonDiff
+  ): Either[NEList[BaboonIssue.EvolutionIssue], BaboonRuleset]
 }
 
 object BaboonRules {
@@ -22,7 +22,7 @@ object BaboonRules {
     override def compute(prev: Domain,
                          last: Domain,
                          diff: BaboonDiff,
-                        ): Either[NEList[BaboonIssue.EvolutionIssue], BaboonRuleset] = {
+    ): Either[NEList[BaboonIssue.EvolutionIssue], BaboonRuleset] = {
       for {
         conversions <- prev.defs.meta.nodes
           .collect {
@@ -54,8 +54,14 @@ object BaboonRules {
                 case oldDefn: Typedef.Adt if sameLocalStruct =>
                   Right(CopyAdtBranchByName(id, oldDefn))
 
+                case _: Typedef.Foreign if sameLocalStruct =>
+                  Right(CustomConversionRequired(id))
+
                 case _ if diff.changes.removed.contains(id) =>
                   Right(RemovedTypeNoConversion(id))
+
+                case _: Typedef.Foreign =>
+                  Right(CustomConversionRequired(id))
 
                 case _: Typedef.Dto =>
                   assert(shallowChanged)
@@ -64,7 +70,9 @@ object BaboonRules {
                       case TypedefDiff.DtoDiff(ops) =>
                         Right(ops)
                       case o =>
-                        Left(NEList(BaboonIssue.UnexpectedDiffType(o, "DTODiff")))
+                        Left(
+                          NEList(BaboonIssue.UnexpectedDiffType(o, "DTODiff"))
+                        )
                     }
 
                     additions = ops.collect { case op: DtoOp.AddField => op }.toSet
@@ -104,10 +112,10 @@ object BaboonRules {
                       .map(op => (op.f.tpe, op.newType, op.f.name))
                       .collect {
                         case (o: TypeRef.Scalar, n: TypeRef.Constructor, name)
-                          if TypeId.Builtins.canBeWrappedIntoCollection(
-                            o,
-                            n
-                          ) =>
+                            if TypeId.Builtins.canBeWrappedIntoCollection(
+                              o,
+                              n
+                            ) =>
                           FieldOp.WrapIntoCollection(name, o, n)
                       }
 
@@ -115,10 +123,10 @@ object BaboonRules {
                       .map(op => (op.f.tpe, op.newType, op.f.name))
                       .collect {
                         case (o: TypeRef.Scalar, n: TypeRef.Scalar, name)
-                          if TypeId.Builtins.isPrecisionExpansion(
-                            o.id,
-                            n.id
-                          ) =>
+                            if TypeId.Builtins.isPrecisionExpansion(
+                              o.id,
+                              n.id
+                            ) =>
                           FieldOp.ExpandPrecision(name, o, n)
                       }
 
@@ -126,11 +134,11 @@ object BaboonRules {
                       .map(op => (op.f.tpe, op.newType, op.f.name))
                       .collect {
                         case (
-                          o: TypeRef.Constructor,
-                          n: TypeRef.Constructor,
-                          name
-                          )
-                          if TypeId.Builtins.canChangeCollectionType(o, n) =>
+                            o: TypeRef.Constructor,
+                            n: TypeRef.Constructor,
+                            name
+                            )
+                            if TypeId.Builtins.canChangeCollectionType(o, n) =>
                           FieldOp.SwapCollectionType(name, o, n)
                       }
 
@@ -162,7 +170,9 @@ object BaboonRules {
                       case TypedefDiff.EnumDiff(ops) =>
                         Right(ops.exists(_.isInstanceOf[EnumOp.RemoveBranch]))
                       case o =>
-                        Left(NEList(BaboonIssue.UnexpectedDiffType(o, "EnumDiff")))
+                        Left(
+                          NEList(BaboonIssue.UnexpectedDiffType(o, "EnumDiff"))
+                        )
                     }
                   } yield {
                     if (incompatible) {
@@ -179,7 +189,9 @@ object BaboonRules {
                       case TypedefDiff.AdtDiff(ops) =>
                         Right(ops.exists(_.isInstanceOf[AdtOp.RemoveBranch]))
                       case o =>
-                        Left(NEList(BaboonIssue.UnexpectedDiffType(o, "ADTDiff")))
+                        Left(
+                          NEList(BaboonIssue.UnexpectedDiffType(o, "ADTDiff"))
+                        )
                     }
                   } yield {
                     if (incompatible) {

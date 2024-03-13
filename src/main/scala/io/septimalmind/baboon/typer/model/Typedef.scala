@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.typer.model
 
 import io.septimalmind.baboon.parser.model.RawNodeMeta
-import izumi.fundamentals.collections.nonempty.NEList
+import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 import izumi.fundamentals.graphs.DG
 
 case class Domain(id: Pkg,
@@ -48,6 +48,8 @@ object Typedef {
   case class Dto(id: TypeId.User, fields: List[Field]) extends User
   case class Enum(id: TypeId.User, members: NEList[EnumMember]) extends User
   case class Adt(id: TypeId.User, members: NEList[TypeId.User]) extends User
+  case class Foreign(id: TypeId.User, bindings: Map[String, String])
+      extends User
 }
 
 sealed trait TypeRef {

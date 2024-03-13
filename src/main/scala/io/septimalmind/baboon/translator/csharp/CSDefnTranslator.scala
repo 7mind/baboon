@@ -30,6 +30,7 @@ object CSDefnTranslator {
 
   case class Output(path: String, tree: TextTree[CSValue], pkg: CSPackageId)
   case class OutputExt(output: Output, codecReg: TextTree[CSValue])
+
   val obsolete: CSType =
     CSType(CSBaboonTranslator.systemPkg, "Obsolete", fq = false)
 
@@ -47,11 +48,12 @@ object CSDefnTranslator {
                            domain: Domain,
                            evo: BaboonEvolution,
     ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
-      val name = trans.toCsVal(defn.id, domain.version)
+      val name = trans.toCsVal(defn.id, domain)
       val isLatestVersion = domain.version == evo.latest
 
       def obsoletePrevious(tree: TextTree[CSValue]) = {
-        if (isLatestVersion) {
+        val hackyIsEmpty = tree.mapRender(_ => "?").isEmpty
+        if (isLatestVersion || hackyIsEmpty) {
           tree
         } else {
           q"""[${obsolete}("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${options.obsoleteErrors.toString})]
@@ -114,7 +116,7 @@ object CSDefnTranslator {
       defn.defn match {
         case d: Typedef.Dto =>
           val outs = d.fields.map { f =>
-            val tpe = trans.asCsRef(f.tpe, domain.version)
+            val tpe = trans.asCsRef(f.tpe, domain)
             val mname = s"${f.name.name.capitalize}"
             (mname, tpe, f)
           }
@@ -130,7 +132,7 @@ object CSDefnTranslator {
             case Owner.Toplevel =>
               None
             case Owner.Adt(id) =>
-              val parentId = trans.asCsType(id, domain.version)
+              val parentId = trans.asCsType(id, domain)
               Some(parentId)
           }
 
@@ -216,6 +218,16 @@ object CSDefnTranslator {
 
         case _: Typedef.Adt =>
           q"""public interface $name : $genMarker {}""".stripMargin
+        case f: Typedef.Foreign =>
+          q""
+//          f.bindings.get("cs") match {
+//            case Some(value) =>
+//              q"""global using $name = $value;"""
+//            case None =>
+//              throw new IllegalStateException(
+//                s"${f.id}: undefined 'cs' binding"
+//              )
+//          }
       }
     }
 

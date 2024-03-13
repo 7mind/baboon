@@ -154,7 +154,8 @@ object BaboonValidator {
                 Either.ifThenFail(dupes.nonEmpty)(
                   NEList(BaboonIssue.ConflictingAdtBranches(a, dupes, u.meta))
                 )
-
+              case _: Typedef.Foreign =>
+                Right(())
             }
         }.biSequence_
       } yield {}
@@ -303,6 +304,9 @@ object BaboonValidator {
               Either.ifThenFail(a.members.isEmpty)(
                 NEList(BaboonIssue.EmptyAdtDef(a, u.meta))
               )
+
+            case _: Typedef.Foreign =>
+              Right(())
           }
       }.biSequence_
     }

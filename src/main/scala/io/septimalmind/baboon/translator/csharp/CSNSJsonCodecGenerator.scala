@@ -15,93 +15,32 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     val version = domain.version
     val (enc, dec) = defn.defn match {
       case d: Typedef.Dto =>
-        val fields = d.fields.map { f =>
-          val fieldRef = q"value.${f.name.name.capitalize}"
-          val enc = mkEncoder(f.tpe, version, fieldRef)
-          val dec = mkDecoder(
-            f.tpe,
-            domain,
-            q"""asObject["${f.name.name}"]""",
-            removeNull = true
-          )
-          (
-            q"""new $nsJProperty("${f.name.name}", $enc)""",
-            q"${f.name.name.capitalize}: $dec",
-          )
-        }
-
-        (q"""return new $nsJObject(
-            |${fields.map(_._1).join(",\n").shift(4)}
-            |);""".stripMargin, q"""var asObject = wire.Value<JObject>();
-                                   |
-                                   |if (asObject == null)
-                                   |{
-                                   |    throw new ArgumentException($$"Cannot decode {wire} to ${name.name}: object expected");
-                                   |}
-                                   |
-                                   |return new $name(
-                                   |${fields.map(_._2).join(",\n").shift(4)}
-                                   |);
-           """.stripMargin)
-
-      case e: Typedef.Enum =>
-//        val branches = e.members.toList.map { m =>
-//          q"""if (asStr == ${name}.${m.name}.ToString().ToLower())
-//             |{
-//             |   return ${name}.${m.name};
-//             |}""".stripMargin
-//        }
-
-        (
-          q"return $nsJValue.CreateString(value.ToString());",
-          q"""var asStr = wire.Value<String>()?.ToLower();
-             |if (asStr == null)
-             |{
-             |    throw new ${csArgumentException}($$"Cannot decode {wire} to ${name.name}: string expected");
-             |}
-             |
-             |${name} result;
-             |if (${name}.TryParse(asStr, true, out result))
-             |{
-             |    return result;
-             |}
-             |
-             |throw new ${csArgumentException}($$"Cannot decode {wire} to ${name.name}: no matching value");""".stripMargin
-        )
-
+        genDtoBodies(name, domain, version, d)
+      case _: Typedef.Enum =>
+        genEnumBodies(name)
       case a: Typedef.Adt =>
-        val branches = a.members.toList.map { m =>
-          val branchNs = q"${trans.adtNsName(a.id)}"
-          val branchName = m.name.name
-          val fqBranch = q"$branchNs.$branchName"
-
-          (q"""if (value is $fqBranch)
-              |{
-              |    return new ${nsJObject}(new ${nsJProperty}("$branchName", ${fqBranch}_JsonCodec.Instance.Encode(($fqBranch)value)));
-              |}""".stripMargin, q"""if (head.Name == "$branchName")
-                                    |{
-                                    |    return ${fqBranch}_JsonCodec.Instance.Decode(head.Value);
-                                    |}""".stripMargin)
-
-        }
-
-        (q"""${branches.map(_._1).join("\n")}
-            |
-            |throw new ${csArgumentException}($$"Cannot encode {value}: unexpected subclass");
-           """.stripMargin, q"""var asObject = wire.Value<JObject>();
-                               |if (asObject == null)
-                               |{
-                               |    throw new ArgumentException($$"Cannot decode {wire} to ${name.name}: object expected");
-                               |}
-                               |var head = asObject.Properties().First();
-                               |
-                               |${branches.map(_._2).join("\n")}
-                               |
-                               |throw new ArgumentException($$"Cannot decode {wire} to ${name.name}: no matching value");
-           """.stripMargin)
-
+        genAdtBodies(name, a)
+      case _: Typedef.Foreign =>
+        genForeignBodies(name)
     }
 
+    genCodec(
+      defn,
+      name,
+      version,
+      enc,
+      dec,
+      !defn.defn.isInstanceOf[Typedef.Foreign]
+    )
+  }
+
+  private def genCodec(defn: DomainMember.User,
+                       name: CSValue.CSType,
+                       version: Version,
+                       enc: TextTree[CSValue],
+                       dec: TextTree[CSValue],
+                       addExtensions: Boolean,
+  ): TextTree[CSValue] = {
     val baseMethods = List(q"""public $nsJToken Encode($name value)
          |{
          |    ${enc.shift(4).trim}
@@ -116,25 +55,35 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
       case _: Typedef.Enum =>
         (List(q"$iBaboonJsonCodec<$name>"), baseMethods)
       case _ =>
-        (
-          List(
-            q"$iBaboonJsonCodec<$name>",
-            q"$iBaboonJsonCodec<$iBaboonGenerated>"
-          ),
-          baseMethods ++ List(
-            q"""public $nsJToken Encode($iBaboonGenerated value)
-               |{
-               |    if (value is not $name dvalue)
-               |        throw new Exception("Expected to have ${name.name} type");
-               |    return Encode(dvalue);
-               |}
-               |
-               |$iBaboonGenerated IBaboonValueCodec<$iBaboonGenerated, $nsJToken>.Decode($nsJToken wire)
-               |{
-               |    return Decode(wire);
-               |}""".stripMargin
-          )
+        val extensions = List(
+          q"""public $nsJToken Encode($iBaboonGenerated value)
+             |{
+             |    if (value is not $name dvalue)
+             |        throw new Exception("Expected to have ${name.name} type");
+             |    return Encode(dvalue);
+             |}
+             |
+             |$iBaboonGenerated IBaboonValueCodec<$iBaboonGenerated, $nsJToken>.Decode($nsJToken wire)
+             |{
+             |    return Decode(wire);
+             |}""".stripMargin
         )
+        val extParents = List(q"$iBaboonJsonCodec<$iBaboonGenerated>")
+
+        val mm = if (addExtensions) {
+          baseMethods ++ extensions
+        } else {
+          baseMethods
+        }
+
+        val baseParents = List(q"$iBaboonJsonCodec<$name>")
+        val pp = if (addExtensions) {
+          baseParents ++ extParents
+        } else {
+          baseParents
+        }
+
+        (pp, mm)
     }
 
     val cName = codecName(name)
@@ -146,32 +95,131 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
        |
        |    private static $csLazy<$cName> instance = new $csLazy<$cName>(() => new $cName());
        |
-       |    public static $cName Instance { get { return instance.Value; } }
+       |    public static $cName Instance { get { return instance.Value; } set {} }
        |}
      """.stripMargin
   }
 
+  private def genForeignBodies(name: CSValue.CSType) = {
+    (
+      q"""throw new ArgumentException($$"${name.name} is a foreign type");""",
+      q"""throw new ArgumentException($$"${name.name} is a foreign type");"""
+    )
+  }
+
+  private def genAdtBodies(name: CSValue.CSType, a: Typedef.Adt) = {
+    val branches = a.members.toList.map { m =>
+      val branchNs = q"${trans.adtNsName(a.id)}"
+      val branchName = m.name.name
+      val fqBranch = q"$branchNs.$branchName"
+
+      (q"""if (value is $fqBranch)
+           |{
+           |    return new ${nsJObject}(new ${nsJProperty}("$branchName", ${fqBranch}_JsonCodec.Instance.Encode(($fqBranch)value)));
+           |}""".stripMargin, q"""if (head.Name == "$branchName")
+           |{
+           |    return ${fqBranch}_JsonCodec.Instance.Decode(head.Value);
+           |}""".stripMargin)
+
+    }
+
+    (q"""${branches.map(_._1).join("\n")}
+         |
+         |throw new ${csArgumentException}($$"Cannot encode {value}: unexpected subclass");
+           """.stripMargin, q"""var asObject = wire.Value<JObject>();
+         |if (asObject == null)
+         |{
+         |    throw new ArgumentException($$"Cannot decode {wire} to ${name.name}: object expected");
+         |}
+         |var head = asObject.Properties().First();
+         |
+         |${branches.map(_._2).join("\n")}
+         |
+         |throw new ArgumentException($$"Cannot decode {wire} to ${name.name}: no matching value");
+           """.stripMargin)
+  }
+
+  private def genEnumBodies(name: CSValue.CSType) = {
+    //        val branches = e.members.toList.map { m =>
+    //          q"""if (asStr == ${name}.${m.name}.ToString().ToLower())
+    //             |{
+    //             |   return ${name}.${m.name};
+    //             |}""".stripMargin
+    //        }
+
+    (
+      q"return $nsJValue.CreateString(value.ToString());",
+      q"""var asStr = wire.Value<String>()?.ToLower();
+         |if (asStr == null)
+         |{
+         |    throw new ${csArgumentException}($$"Cannot decode {wire} to ${name.name}: string expected");
+         |}
+         |
+         |${name} result;
+         |if (${name}.TryParse(asStr, true, out result))
+         |{
+         |    return result;
+         |}
+         |
+         |throw new ${csArgumentException}($$"Cannot decode {wire} to ${name.name}: no matching value");""".stripMargin
+    )
+  }
+
+  private def genDtoBodies(name: CSValue.CSType,
+                           domain: Domain,
+                           version: Version,
+                           d: Typedef.Dto) = {
+    val fields = d.fields.map { f =>
+      val fieldRef = q"value.${f.name.name.capitalize}"
+      val enc = mkEncoder(f.tpe, domain, fieldRef)
+      val dec = mkDecoder(
+        f.tpe,
+        domain,
+        q"""asObject["${f.name.name}"]""",
+        removeNull = true
+      )
+      (
+        q"""new $nsJProperty("${f.name.name}", $enc)""",
+        q"${f.name.name.capitalize}: $dec",
+      )
+    }
+
+    (q"""return new $nsJObject(
+         |${fields.map(_._1).join(",\n").shift(4)}
+         |);""".stripMargin, q"""var asObject = wire.Value<JObject>();
+         |
+         |if (asObject == null)
+         |{
+         |    throw new ArgumentException($$"Cannot decode {wire} to ${name.name}: object expected");
+         |}
+         |
+         |return new $name(
+         |${fields.map(_._2).join(",\n").shift(4)}
+         |);
+           """.stripMargin)
+  }
+
   private def mkEncoder(tpe: TypeRef,
-                        version: Version,
+                        domain: Domain,
                         ref: TextTree[CSValue]): TextTree[CSValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
           case _: TypeId.BuiltinScalar => q"new ${nsJValue}($ref)"
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toCsVal(u, version))
+            val targetTpe = codecName(trans.toCsVal(u, domain))
             q"""${targetTpe}.Instance.Encode($ref)"""
         }
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
-            q"$ref == null ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, version, ref)}"
+            q"$ref == null ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, domain, ref)}"
           case TypeId.Builtins.map =>
-            q"new $nsJObject($ref.Select(e => new $nsJProperty(e.Key.ToString(), ${mkEncoder(c.args.last, version, q"e.Value")})))"
+            q"new $nsJObject($ref.Select(e => new $nsJProperty(e.Key.ToString(), ${mkEncoder(c.args.last, domain, q"e.Value")})))"
           case TypeId.Builtins.lst =>
-            q"new $nsJArray($ref.Select(e => ${mkEncoder(c.args.head, version, q"e")}))"
+            q"new $nsJArray($ref.Select(e => ${mkEncoder(c.args.head, domain, q"e")}))"
           case TypeId.Builtins.set =>
-            q"new $nsJArray($ref.Select(e => ${mkEncoder(c.args.head, version, q"e")}))"
+            q"new $nsJArray($ref.Select(e => ${mkEncoder(c.args.head, domain, q"e")}))"
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
@@ -183,7 +231,6 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                         ref: TextTree[CSValue],
                         removeNull: Boolean,
   ): TextTree[CSValue] = {
-    val version = domain.version
     def mkReader(bs: TypeId.BuiltinScalar): TextTree[CSValue] = {
       val fref = if (removeNull) {
         q"$ref!"
@@ -276,7 +323,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
             case u: DomainMember.User =>
               u.defn match {
                 case _: Typedef.Enum =>
-                  val targetTpe = trans.toCsVal(uid, version)
+                  val targetTpe = trans.toCsVal(uid, domain)
                   q"""${targetTpe}_JsonCodec.Instance.Decode(new ${nsJValue}($ref!))"""
                 case o =>
                   throw new RuntimeException(
@@ -297,7 +344,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
           case bs: TypeId.BuiltinScalar =>
             mkReader(bs)
           case u: TypeId.User =>
-            val targetTpe = trans.toCsVal(u, version)
+            val targetTpe = trans.toCsVal(u, domain)
             q"""${targetTpe}_JsonCodec.Instance.Decode($ref!)"""
         }
       case TypeRef.Constructor(id, args) =>

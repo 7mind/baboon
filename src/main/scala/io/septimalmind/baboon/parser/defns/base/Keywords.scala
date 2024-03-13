@@ -14,6 +14,7 @@ trait Keywords {
   def data[$: P]: P[Unit] = kw("data", "struct")
   def choice[$: P]: P[Unit] = kw("enum")
   def adt[$: P]: P[Unit] = kw("adt")
+  def foreign[$: P]: P[Unit] = kw("foreign")
   def root[$: P]: P[Unit] = kw("root")
   def version[$: P]: P[Unit] = kw("version")
 

@@ -42,3 +42,16 @@ baboon \
 
 1. All the types which are not transitively referenced by `root` types will be eliminated from the compiler output.
 2. Usages in structural inheritance are not considered references, so structural parents which are not directly referenced as fields and not marked as `root`s will be eliminated 
+
+## Foreign types
+
+Be very careful about foreign types. It's your responsibility to make sure everything is set properly.
+
+At the bare minimum you will have to do the following for each foreign type you use:
+
+1) Create a custom codec for your FT
+2) Override generated dummy codec instance with `BaboonCodecs#Register`
+3) Override generated dummy codec instance using setter on `${Foreign_Type_Name}_UEBACodec#Instance` field
+4) Override generated dummy codec instance using setter on `${Foreign_Type_Name}_JsonCodec#Instance` field
+
+Make sure your foreign types are NOT primitive types or other generated types. It's a funny idea, but it will explode in runtime.
