@@ -24,14 +24,23 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         genForeignBodies(name)
     }
 
-    genCodec(defn, name, version, enc, dec)
+    genCodec(
+      defn,
+      name,
+      version,
+      enc,
+      dec,
+      !defn.defn.isInstanceOf[Typedef.Foreign]
+    )
   }
 
   private def genCodec(defn: DomainMember.User,
                        name: CSValue.CSType,
                        version: Version,
                        enc: TextTree[CSValue],
-                       dec: TextTree[CSValue]) = {
+                       dec: TextTree[CSValue],
+                       addExtensions: Boolean,
+  ): TextTree[CSValue] = {
     val baseMethods = List(q"""public $nsJToken Encode($name value)
          |{
          |    ${enc.shift(4).trim}
@@ -46,25 +55,35 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
       case _: Typedef.Enum =>
         (List(q"$iBaboonJsonCodec<$name>"), baseMethods)
       case _ =>
-        (
-          List(
-            q"$iBaboonJsonCodec<$name>",
-            q"$iBaboonJsonCodec<$iBaboonGenerated>"
-          ),
-          baseMethods ++ List(
-            q"""public $nsJToken Encode($iBaboonGenerated value)
-               |{
-               |    if (value is not $name dvalue)
-               |        throw new Exception("Expected to have ${name.name} type");
-               |    return Encode(dvalue);
-               |}
-               |
-               |$iBaboonGenerated IBaboonValueCodec<$iBaboonGenerated, $nsJToken>.Decode($nsJToken wire)
-               |{
-               |    return Decode(wire);
-               |}""".stripMargin
-          )
+        val extensions = List(
+          q"""public $nsJToken Encode($iBaboonGenerated value)
+             |{
+             |    if (value is not $name dvalue)
+             |        throw new Exception("Expected to have ${name.name} type");
+             |    return Encode(dvalue);
+             |}
+             |
+             |$iBaboonGenerated IBaboonValueCodec<$iBaboonGenerated, $nsJToken>.Decode($nsJToken wire)
+             |{
+             |    return Decode(wire);
+             |}""".stripMargin
         )
+        val extParents = List(q"$iBaboonJsonCodec<$iBaboonGenerated>")
+
+        val mm = if (addExtensions) {
+          baseMethods ++ extensions
+        } else {
+          baseMethods
+        }
+
+        val baseParents = List(q"$iBaboonJsonCodec<$name>")
+        val pp = if (addExtensions) {
+          baseParents ++ extParents
+        } else {
+          baseParents
+        }
+
+        (pp, mm)
     }
 
     val cName = codecName(name)

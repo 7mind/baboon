@@ -23,14 +23,23 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         genForeignBodies(name)
     }
 
-    genCodec(defn, name, version, enc, dec)
+    genCodec(
+      defn,
+      name,
+      version,
+      enc,
+      dec,
+      !defn.defn.isInstanceOf[Typedef.Foreign]
+    )
   }
 
   private def genCodec(defn: DomainMember.User,
                        name: CSValue.CSType,
                        version: Version,
                        enc: TextTree[CSValue],
-                       dec: TextTree[CSValue]) = {
+                       dec: TextTree[CSValue],
+                       addExtensions: Boolean,
+  ): TextTree[CSValue] = {
     val baseMethods = List(
       q"""public void Encode($binaryWriter writer, $name value)
          |{
@@ -45,25 +54,35 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
       case _: Typedef.Enum =>
         (List(q"$iBaboonBinCodec<$name>"), baseMethods)
       case _ =>
-        (
-          List(
-            q"$iBaboonBinCodec<$name>",
-            q"$iBaboonBinCodec<$iBaboonGenerated>"
-          ),
-          baseMethods ++ List(
-            q"""public void Encode($binaryWriter writer, $iBaboonGenerated value)
-               |{
-               |    if (value is not $name dvalue)
-               |        throw new Exception("Expected to have ${name.name} type");
-               |    Encode(writer, dvalue);
-               |}
-               |
-               |$iBaboonGenerated $iBaboonStreamCodec<$iBaboonGenerated, $binaryWriter, $binaryReader>.Decode($binaryReader wire)
-               |{
-               |    return Decode(wire);
-               |}""".stripMargin
-          )
+        val extensions = List(
+          q"""public void Encode($binaryWriter writer, $iBaboonGenerated value)
+             |{
+             |    if (value is not $name dvalue)
+             |        throw new Exception("Expected to have ${name.name} type");
+             |    Encode(writer, dvalue);
+             |}
+             |
+             |$iBaboonGenerated $iBaboonStreamCodec<$iBaboonGenerated, $binaryWriter, $binaryReader>.Decode($binaryReader wire)
+             |{
+             |    return Decode(wire);
+             |}""".stripMargin
         )
+        val extParents = List(q"$iBaboonBinCodec<$iBaboonGenerated>")
+
+        val mm = if (addExtensions) {
+          baseMethods ++ extensions
+        } else {
+          baseMethods
+        }
+
+        val baseParents = List(q"$iBaboonBinCodec<$name>")
+        val pp = if (addExtensions) {
+          baseParents ++ extParents
+        } else {
+          baseParents
+        }
+
+        (pp, mm)
     }
 
     val cName = codecName(name)
