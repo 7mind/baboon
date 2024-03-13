@@ -7,7 +7,14 @@ import io.septimalmind.baboon.translator.csharp.CSTypeTranslator.{
   system
 }
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
-import io.septimalmind.baboon.typer.model.{Owner, Pkg, TypeId, TypeRef, Version}
+import io.septimalmind.baboon.typer.model.{
+  Domain,
+  Owner,
+  Pkg,
+  TypeId,
+  TypeRef,
+  Version
+}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 
@@ -25,7 +32,8 @@ class CSTypeTranslator() {
     id.name.name.toLowerCase
   }
 
-  def toCsVal(tid: TypeId.User, version: Version): CSType = {
+  def toCsVal(tid: TypeId.User, domain: Domain): CSType = {
+    val version = domain.version
     val pkg = toCsPkg(tid.pkg, version)
     val fullPkg = tid.owner match {
       case Owner.Toplevel => pkg
@@ -78,7 +86,7 @@ class CSTypeTranslator() {
   }
 
   def asCsType(tpe: TypeId,
-               version: Version,
+               domain: Domain,
                mut: Boolean = false): TextTree[CSValue] = {
     tpe match {
       case b: TypeId.BuiltinScalar =>
@@ -111,25 +119,25 @@ class CSTypeTranslator() {
         }
         q"${ref}"
       case u: TypeId.User =>
-        q"${toCsVal(u, version)}"
+        q"${toCsVal(u, domain)}"
     }
   }
 
   def asCsRef(tpe: TypeRef,
-              version: Version,
+              domain: Domain,
               fullyQualified: Boolean = false,
               mut: Boolean = false,
   ): TextTree[CSValue] = {
     val out = tpe match {
       case TypeRef.Scalar(id) =>
-        asCsType(id, version, mut)
+        asCsType(id, domain, mut)
 
       case TypeRef.Constructor(id, args) =>
         if (id == TypeId.Builtins.opt) {
-          q"${asCsRef(args.head, version)}?"
+          q"${asCsRef(args.head, domain)}?"
         } else {
-          val tpe = asCsType(id, version, mut)
-          val targs = args.map(asCsRef(_, version))
+          val tpe = asCsType(id, domain, mut)
+          val targs = args.map(asCsRef(_, domain))
           q"$tpe<${targs.toSeq.join(", ")}>"
         }
 

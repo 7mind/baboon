@@ -30,6 +30,7 @@ object CSDefnTranslator {
 
   case class Output(path: String, tree: TextTree[CSValue], pkg: CSPackageId)
   case class OutputExt(output: Output, codecReg: TextTree[CSValue])
+
   val obsolete: CSType =
     CSType(CSBaboonTranslator.systemPkg, "Obsolete", fq = false)
 
@@ -47,7 +48,7 @@ object CSDefnTranslator {
                            domain: Domain,
                            evo: BaboonEvolution,
     ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
-      val name = trans.toCsVal(defn.id, domain.version)
+      val name = trans.toCsVal(defn.id, domain)
       val isLatestVersion = domain.version == evo.latest
 
       def obsoletePrevious(tree: TextTree[CSValue]) = {
@@ -114,7 +115,7 @@ object CSDefnTranslator {
       defn.defn match {
         case d: Typedef.Dto =>
           val outs = d.fields.map { f =>
-            val tpe = trans.asCsRef(f.tpe, domain.version)
+            val tpe = trans.asCsRef(f.tpe, domain)
             val mname = s"${f.name.name.capitalize}"
             (mname, tpe, f)
           }
@@ -130,7 +131,7 @@ object CSDefnTranslator {
             case Owner.Toplevel =>
               None
             case Owner.Adt(id) =>
-              val parentId = trans.asCsType(id, domain.version)
+              val parentId = trans.asCsType(id, domain)
               Some(parentId)
           }
 

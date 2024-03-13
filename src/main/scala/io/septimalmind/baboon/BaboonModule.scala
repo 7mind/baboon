@@ -66,7 +66,8 @@ class BaboonModule(options: CompilerOptions) extends ModuleDef {
     .external(
       DIKey[CSPackageId],
       DIKey[Version],
-      DIKey.get[Domain],
+      DIKey.get[Domain].named("current"),
+      DIKey.get[Domain].named("source"),
       DIKey.get[BaboonRuleset]
     )
 

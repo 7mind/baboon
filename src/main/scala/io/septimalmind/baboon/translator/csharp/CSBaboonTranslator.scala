@@ -139,13 +139,14 @@ class CSBaboonTranslator(
     lineage.versions.toSeq.toList.map {
       case (_, domain) =>
         //val isLatest =
-        translateDomain(domain, lineage.evolution)
+        translateDomain(domain, lineage)
     }.biFlatten
   }
 
   private def translateDomain(domain: Domain,
-                              evo: BaboonEvolution,
+                              lineage: BaboonLineage,
   ): Out[List[CSDefnTranslator.Output]] = {
+    val evo = lineage.evolution
     for {
       defnSources <- domain.defs.meta.nodes.toList.map {
         case (_, defn: DomainMember.User) =>
@@ -154,7 +155,7 @@ class CSBaboonTranslator(
       }.biFlatten
       evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
       conversionSources <- if (options.generateConversions) {
-        generateConversions(domain, evo, evosToCurrent, defnSources)
+        generateConversions(domain, lineage, evosToCurrent, defnSources)
       } else {
         Right(List.empty)
       }
@@ -434,21 +435,22 @@ class CSBaboonTranslator(
 
   private def generateConversions(
     domain: Domain,
-    value: BaboonEvolution,
+    lineage: BaboonLineage,
     toCurrent: Set[EvolutionStep],
     defnOut: List[CSDefnTranslator.OutputExt]
   ): Out[List[CSDefnTranslator.Output]] = {
     val pkg = trans.toCsPkg(domain.id, domain.version)
 
     for {
-      convs <- value.rules
+      convs <- lineage.evolution.rules
         .filter(kv => toCurrent.contains(kv._1))
         .map {
           case (srcVer, rules) =>
             handler
               .provide(pkg)
               .provide(srcVer.from)
-              .provide(domain)
+              .provideNamed("current", domain)
+              .provideNamed("source", lineage.versions(srcVer.from))
               .provide(rules)
               .produce()
               .use(_.makeConvs())

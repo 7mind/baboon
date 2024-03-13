@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
+import distage.Id
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import izumi.fundamentals.platform.strings.TextTree.*
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
@@ -13,17 +14,18 @@ import izumi.fundamentals.platform.strings.TextTree
 class IndividualConversionHandler(transd: CSDefnTranslator,
                                   trans: CSTypeTranslator,
                                   pkg: CSPackageId,
-                                  srcVer: Version,
-                                  domain: Domain,
+                                  srcDom: Domain @Id("source"),
+                                  domain: Domain @Id("current"),
                                   rules: BaboonRuleset,
                                   tools: CSDefnTools) {
+  private val srcVer = srcDom.version
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
   private def transfer(tpe: TypeRef,
                        ref: TextTree[CSValue]): TextTree[CSValue] = {
     val cnew =
-      trans.asCsRef(tpe, domain.version)
-    val cold = trans.asCsRef(tpe, srcVer, fullyQualified = true)
+      trans.asCsRef(tpe, domain)
+    val cold = trans.asCsRef(tpe, srcDom, fullyQualified = true)
 
     val conv =
       q"conversions.ConvertWithContext<C, ${cold}, ${cnew}>(context, ${ref})"
@@ -55,9 +57,9 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
         (Seq("from", srcVer.version) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
           s"${conv.sourceTpe.name.name}.cs"
         )).mkString("-")
-      val tin = trans.toCsVal(conv.sourceTpe, srcVer).fullyQualified
+      val tin = trans.toCsVal(conv.sourceTpe, srcDom).fullyQualified
       val tout =
-        trans.toCsVal(conv.sourceTpe, domain.version)
+        trans.toCsVal(conv.sourceTpe, domain)
 
       def transferId(tpe: TypeId.Scalar,
                      ref: TextTree[CSValue]): TextTree[CSValue] = {
@@ -109,7 +111,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
           Right(List(RenderedConversion(fname, ctree, Some(regtree), None)))
         case c: Conversion.CopyAdtBranchByName =>
           val branches = c.oldDefn.members.map { oldId =>
-            val oldFqid = trans.toCsVal(oldId, srcVer).fullyQualified
+            val oldFqid = trans.toCsVal(oldId, srcDom).fullyQualified
             val typedRef = q"fromAs_${oldId.name.name}"
 
             q"""if (from is ${oldFqid} $typedRef)
@@ -140,9 +142,9 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
             opIndex = c.ops.map(op => (op.targetField, op)).toMap
             exprs <- newDefn.fields.map { f =>
               val op = opIndex(f)
-              val ftNew = trans.asCsRef(op.targetField.tpe, domain.version)
+              val ftNew = trans.asCsRef(op.targetField.tpe, domain)
               val ftNewInit =
-                trans.asCsRef(op.targetField.tpe, domain.version, mut = true)
+                trans.asCsRef(op.targetField.tpe, domain, mut = true)
               val base = op.targetField.name.name.capitalize
               val fieldRef = q"_from.${base}"
               val initExpr = op match {
@@ -313,7 +315,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
                            newId: TypeId.BuiltinCollection,
                            newCollArgs: NEList[TypeRef],
   ): Either[NEList[BaboonIssue.TranslationBug], Seq[TextTree[CSValue]]] = {
-    val collCsType = trans.asCsRef(newCollArgs.head, domain.version)
+    val collCsType = trans.asCsRef(newCollArgs.head, domain)
 
     val collInit =
       q"(new ${ftNewInit}(from e in $fieldRef select ($collCsType)e))"
@@ -372,8 +374,8 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
       case TypeId.Builtins.map =>
         newId match {
           case TypeId.Builtins.map =>
-            val kt = trans.asCsRef(newCollArgs.head, domain.version)
-            val vt = trans.asCsRef(newCollArgs.last, domain.version)
+            val kt = trans.asCsRef(newCollArgs.head, domain)
+            val vt = trans.asCsRef(newCollArgs.last, domain)
             Right(
               Seq(
                 q"(from e in $fieldRef select $csKeyValuePair.Create(($kt)e.Key, ($vt)e.Value)).ToImmutableDictionary(v => v.Key, v => v.Value)"
