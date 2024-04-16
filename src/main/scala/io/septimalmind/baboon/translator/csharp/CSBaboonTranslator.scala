@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
+import distage.Subcontext
 import io.circe.syntax.*
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.RuntimeGenOpt
@@ -8,21 +9,19 @@ import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, Sources}
 import io.septimalmind.baboon.typer.model.*
-import izumi.distage.LocalContext
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
-import izumi.fundamentals.collections.nonempty.NEList
-import izumi.fundamentals.platform.functional.Identity
+import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 class CSBaboonTranslator(
-  defnTranslator: CSDefnTranslator,
-  trans: CSTypeTranslator,
-  handler: LocalContext[Identity, IndividualConversionHandler],
-  options: CompilerOptions,
-  codecs: Set[CSCodecTranslator],
-  tools: CSDefnTools,
+                          defnTranslator: CSDefnTranslator,
+                          trans: CSTypeTranslator,
+                          handler: Subcontext[IndividualConversionHandler],
+                          options: CompilerOptions,
+                          codecs: Set[CSCodecTranslator],
+                          tools: CSDefnTools,
 ) extends BaboonAbstractTranslator {
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
@@ -449,8 +448,8 @@ class CSBaboonTranslator(
             handler
               .provide(pkg)
               .provide(srcVer.from)
-              .provideNamed("current", domain)
-              .provideNamed("source", lineage.versions(srcVer.from))
+              .provide[Domain]("current")(domain)
+              .provide[Domain]("source")(lineage.versions(srcVer.from))
               .provide(rules)
               .produce()
               .use(_.makeConvs())

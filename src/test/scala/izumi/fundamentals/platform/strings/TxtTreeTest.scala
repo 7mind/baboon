@@ -17,7 +17,7 @@ class TxtTreeTest extends AnyWordSpec {
 
       assert(q"${TestVal("1")}".dump == "TestVal(1)")
 
-      assert((q"test": Node[Nothing]).dump == "test")
+      assert((q"test": TextTree[Nothing]).dump == "test")
       assert(q"test".dump == "test")
       assert(q"".dump == "")
     }

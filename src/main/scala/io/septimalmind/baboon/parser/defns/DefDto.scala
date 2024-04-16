@@ -3,18 +3,13 @@ package io.septimalmind.baboon.parser.defns
 import fastparse.*
 import io.septimalmind.baboon.parser.{ParserContext, model}
 import io.septimalmind.baboon.parser.defns.base.{idt, kw, struct}
-import io.septimalmind.baboon.parser.model.{
-  RawDto,
-  RawDtoMember,
-  RawField,
-  RawFieldName,
-  RawTypeName,
-  RawTypeRef,
-  ScopedRef
-}
+import io.septimalmind.baboon.parser.model.{RawDto, RawDtoMember, RawField, RawFieldName, RawTypeName, RawTypeRef, ScopedRef}
 import izumi.fundamentals.collections.nonempty.NEList
+import izumi.fundamentals.platform.language.Quirks.Discarder
 
 class DefDto(context: ParserContext, meta: DefMeta) {
+  context.discard()
+
   def typeParams[$: P]: P[NEList[RawTypeRef]] = {
     import fastparse.SingleLineWhitespace.whitespace
     ("[" ~ typeRef.rep(min = 1, sep = ",") ~ "]")

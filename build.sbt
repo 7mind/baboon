@@ -1,11 +1,11 @@
 import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations.*
 
-ThisBuild / scalaVersion := "2.13.11"
+ThisBuild / scalaVersion := "2.13.13"
 
 lazy val root = (project in file("."))
   .settings(
     name := "baboon",
-    libraryDependencies ++= Seq("com.lihaoyi" %% "fastparse" % "3.0.1"),
+    libraryDependencies ++= Seq("com.lihaoyi" %% "fastparse" % "3.1.0"),
     libraryDependencies ++= Seq(
       "fundamentals-platform",
       "fundamentals-functional",
@@ -13,16 +13,15 @@ lazy val root = (project in file("."))
       "fundamentals-collections",
       "distage-core",
       "distage-testkit-scalatest",
-    ).map("io.7mind.izumi" %% _ % "1.1.0-M27"),
+    ).map("io.7mind.izumi" %% _ % "1.2.8"),
     libraryDependencies ++= Seq(
       "org.scala-lang.modules" %% "scala-parser-combinators" % "2.3.0"
     ),
     libraryDependencies ++= Seq(
-      "org.scalatest" %% "scalatest" % "3.2.16" % Test,
+      "org.scalatest" %% "scalatest" % "3.2.18" % Test,
     ),
-//    libraryDependencies ++= Seq("com.lihaoyi" % "mainargs_2.13" % "0.5.0"),
     libraryDependencies ++= Seq(
-      "com.github.alexarchambault" %% "case-app" % "2.1.0-M25"
+      "com.github.alexarchambault" %% "case-app" % "2.1.0-M26"
     ),
     libraryDependencies ++= Seq(
       "io.circe" %% "circe-core",

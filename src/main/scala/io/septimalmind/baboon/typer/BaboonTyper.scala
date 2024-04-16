@@ -1,10 +1,10 @@
 package io.septimalmind.baboon.typer
 
+import distage.Subcontext
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.*
-import izumi.distage.LocalContext
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
@@ -27,7 +27,7 @@ object BaboonTyper {
                         path: NEList[Scope[FullRawDefn]])
 
   class BaboonTyperImpl(enquiries: BaboonEnquiries,
-                        translator: LocalContext[Identity, BaboonTranslator],
+                        translator: Subcontext[BaboonTranslator],
                         scopeSupport: ScopeSupport)
       extends BaboonTyper {
     override def process(

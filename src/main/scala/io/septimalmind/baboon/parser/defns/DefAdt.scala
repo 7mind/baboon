@@ -4,11 +4,13 @@ import fastparse.*
 import io.septimalmind.baboon.parser.{ParserContext, model}
 import io.septimalmind.baboon.parser.defns.base.{kw, struct}
 import io.septimalmind.baboon.parser.model.{RawAdt, RawAdtMember, RawTypeName}
+import izumi.fundamentals.platform.language.Quirks.Discarder
 
 
 
 
 class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto) {
+  context.discard()
   def adtMember[$: P]: P[RawAdtMember] =
     P(meta.withMeta(defDto.dtoEnclosed)).map {
       case (meta, name) =>

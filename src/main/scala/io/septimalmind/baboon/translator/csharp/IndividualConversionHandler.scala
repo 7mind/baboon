@@ -312,7 +312,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
 
   private def swapCollType(ftNewInit: TextTree[CSValue],
                            base: String,
-                           fieldRef: Node[Nothing],
+                           fieldRef: TextTree[Nothing],
                            oldId: TypeId.BuiltinCollection,
                            newId: TypeId.BuiltinCollection,
                            newCollArgs: NEList[TypeRef],

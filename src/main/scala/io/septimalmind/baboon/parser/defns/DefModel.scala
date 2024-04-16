@@ -4,6 +4,7 @@ import fastparse.*
 import io.septimalmind.baboon.parser.ParserContext
 import io.septimalmind.baboon.parser.defns.base.{Literals, idt, kw}
 import io.septimalmind.baboon.parser.model.*
+import izumi.fundamentals.platform.language.Quirks.Discarder
 
 class DefModel(context: ParserContext,
                meta: DefMeta,
@@ -12,6 +13,7 @@ class DefModel(context: ParserContext,
                defAdt: DefAdt,
                defForeign: DefForeign,
 ) {
+  context.discard()
 
   def header[$: P]: P[RawHeader] =
     meta.withMeta(P(kw(kw.model, idt.symbolSeq))).map(RawHeader.tupled)

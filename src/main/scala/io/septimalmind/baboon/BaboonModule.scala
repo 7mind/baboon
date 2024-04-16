@@ -5,24 +5,13 @@ import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
-import io.septimalmind.baboon.translator.csharp.{
-  CSBaboonTranslator,
-  CSCodecTranslator,
-  CSDefnTools,
-  CSDefnTranslator,
-  CSNSJsonCodecGenerator,
-  CSTypeTranslator,
-  CSUEBACodecGenerator,
-  IndividualConversionHandler
-}
+import io.septimalmind.baboon.translator.csharp.*
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.BaboonTyper.FullRawDefn
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BLogger
 import io.septimalmind.baboon.validator.BaboonValidator
-import izumi.distage.LocalContext
 import izumi.fundamentals.collections.nonempty.NEList
-import izumi.fundamentals.platform.functional.Identity
 
 class BaboonModule(options: CompilerOptions) extends ModuleDef {
   make[BaboonCompiler].from[BaboonCompiler.BaboonCompilerImpl]
@@ -45,31 +34,62 @@ class BaboonModule(options: CompilerOptions) extends ModuleDef {
   make[CSTypeTranslator]
   make[ScopeSupport].from[ScopeSupport.ScopeSupportImpl]
 
-  make[LocalContext[Identity, BaboonTranslator]]
-    .fromLocalContext(new ModuleDef {
+  makeSubcontext[BaboonTranslator]
+    .localDependencies(
+      List(
+        DIKey[Pkg],
+        DIKey[NEList[Scope[FullRawDefn]]],
+        DIKey[Map[TypeId, DomainMember]]
+      )
+    )
+    .withSubmodule(new ModuleDef {
       make[BaboonTranslator]
-    }.running { (translator: BaboonTranslator) =>
+    })
+    .extractWith { (translator: BaboonTranslator) =>
       translator
-    })
-    .external(
-      DIKey[Pkg],
-      DIKey[NEList[Scope[FullRawDefn]]],
-      DIKey[Map[TypeId, DomainMember]]
-    )
+    }
+//  make[LocalContext[Identity, BaboonTranslator]]
+//    .fromLocalContext(new ModuleDef {
+//      make[BaboonTranslator]
+//    }.running { (translator: BaboonTranslator) =>
+//      translator
+//    })
+//    .external(
+//      DIKey[Pkg],
+//      DIKey[NEList[Scope[FullRawDefn]]],
+//      DIKey[Map[TypeId, DomainMember]]
+//    )
 
-  make[LocalContext[Identity, IndividualConversionHandler]]
-    .fromLocalContext(new ModuleDef {
-      make[IndividualConversionHandler]
-    }.running { (handler: IndividualConversionHandler) =>
-      handler
-    })
-    .external(
-      DIKey[CSPackageId],
-      DIKey[Version],
-      DIKey.get[Domain].named("current"),
-      DIKey.get[Domain].named("source"),
-      DIKey.get[BaboonRuleset]
+  makeSubcontext[IndividualConversionHandler]
+    .localDependencies(
+      List(
+        DIKey[CSPackageId],
+        DIKey[Version],
+        DIKey.get[Domain].named("current"),
+        DIKey.get[Domain].named("source"),
+        DIKey.get[BaboonRuleset]
+      )
     )
+    .withSubmodule(new ModuleDef {
+      make[IndividualConversionHandler]
+    })
+    .extractWith { (handler: IndividualConversionHandler) =>
+      handler
+    }
+
+//  make[LocalContext[Identity, IndividualConversionHandler]]
+//    .fromLocalContext(new ModuleDef {
+//      make[IndividualConversionHandler]
+//    }.running { (handler: IndividualConversionHandler) =>
+//      handler
+//    })
+//    .external(
+//      DIKey[CSPackageId],
+//      DIKey[Version],
+//      DIKey.get[Domain].named("current"),
+//      DIKey.get[Domain].named("source"),
+//      DIKey.get[BaboonRuleset]
+//    )
 
   many[CSCodecTranslator]
     .add[CSNSJsonCodecGenerator]
