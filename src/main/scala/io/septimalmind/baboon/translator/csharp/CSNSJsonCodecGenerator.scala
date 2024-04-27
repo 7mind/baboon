@@ -9,24 +9,26 @@ import izumi.fundamentals.platform.strings.TextTree.*
 class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     extends CSCodecTranslator {
   override def translate(defn: DomainMember.User,
-                         name: CSValue.CSType,
+                         csRef: CSValue.CSType,
+                         srcRef: CSValue.CSType,
                          domain: Domain,
   ): TextTree[CSValue] = {
     val version = domain.version
     val (enc, dec) = defn.defn match {
       case d: Typedef.Dto =>
-        genDtoBodies(name, domain, version, d)
+        genDtoBodies(csRef, domain, version, d)
       case _: Typedef.Enum =>
-        genEnumBodies(name)
+        genEnumBodies(csRef)
       case a: Typedef.Adt =>
-        genAdtBodies(name, a)
+        genAdtBodies(csRef, a)
       case _: Typedef.Foreign =>
-        genForeignBodies(name)
+        genForeignBodies(csRef)
     }
 
     genCodec(
       defn,
-      name,
+      csRef,
+      srcRef,
       version,
       enc,
       dec,
@@ -36,6 +38,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
 
   private def genCodec(defn: DomainMember.User,
                        name: CSValue.CSType,
+                       srcRef: CSValue.CSType,
                        version: Version,
                        enc: TextTree[CSValue],
                        dec: TextTree[CSValue],
@@ -86,7 +89,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         (pp, mm)
     }
 
-    val cName = codecName(name)
+    val cName = codecName(srcRef)
     q"""public class $cName : ${parents.join(", ")}
        |{
        |    ${methods.join("\n").shift(4).trim}
@@ -207,7 +210,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         id match {
           case _: TypeId.BuiltinScalar => q"new ${nsJValue}($ref)"
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toCsVal(u, domain))
+            val targetTpe = codecName(trans.toCsTypeRefNoDeref(u, domain))
             q"""${targetTpe}.Instance.Encode($ref)"""
         }
       case c: TypeRef.Constructor =>
@@ -323,7 +326,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
             case u: DomainMember.User =>
               u.defn match {
                 case _: Typedef.Enum | _: Typedef.Foreign =>
-                  val targetTpe = trans.toCsVal(uid, domain)
+                  val targetTpe = trans.toCsTypeRefNoDeref(uid, domain)
                   q"""${targetTpe}_JsonCodec.Instance.Decode(new ${nsJValue}($ref!))"""
                 case o =>
                   throw new RuntimeException(
@@ -344,7 +347,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
           case bs: TypeId.BuiltinScalar =>
             mkReader(bs)
           case u: TypeId.User =>
-            val targetTpe = trans.toCsVal(u, domain)
+            val targetTpe = trans.toCsTypeRefNoDeref(u, domain)
             q"""${targetTpe}_JsonCodec.Instance.Decode($ref!)"""
         }
       case TypeRef.Constructor(id, args) =>

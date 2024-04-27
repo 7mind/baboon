@@ -34,7 +34,7 @@ class CSTypeTranslator() {
     id.name.name.toLowerCase
   }
 
-  def toCsVal(tid: TypeId.User, domain: Domain): CSType = {
+  def toCsTypeRefDeref(tid: TypeId.User, domain: Domain): CSType = {
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _) =>
         val fid = defn.bindings("cs")
@@ -44,15 +44,18 @@ class CSTypeTranslator() {
         val id = parts.last
         CSType(CSPackageId(NEList.unsafeFrom(pkg)), id, fq = false)
       case _ =>
-        val version = domain.version
-        val pkg = toCsPkg(tid.pkg, version)
-        val fullPkg = tid.owner match {
-          case Owner.Toplevel => pkg
-          case Owner.Adt(id)  => CSPackageId(pkg.parts :+ adtNsName(id))
-        }
-        CSType(fullPkg, tid.name.name.capitalize, fq = false)
+        toCsTypeRefNoDeref(tid, domain)
     }
+  }
 
+  def toCsTypeRefNoDeref(tid: TypeId.User, domain: Domain): CSType = {
+    val version = domain.version
+    val pkg = toCsPkg(tid.pkg, version)
+    val fullPkg = tid.owner match {
+      case Owner.Toplevel => pkg
+      case Owner.Adt(id)  => CSPackageId(pkg.parts :+ adtNsName(id))
+    }
+    CSType(fullPkg, tid.name.name.capitalize, fq = false)
   }
 
   private def asCsTypeScalar(b: TypeId.BuiltinScalar) = {
@@ -132,7 +135,7 @@ class CSTypeTranslator() {
         }
         q"${ref}"
       case u: TypeId.User =>
-        q"${toCsVal(u, domain)}"
+        q"${toCsTypeRefDeref(u, domain)}"
     }
   }
 

@@ -48,7 +48,9 @@ object CSDefnTranslator {
                            domain: Domain,
                            evo: BaboonEvolution,
     ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
-      val name = trans.toCsVal(defn.id, domain)
+      val csTypeRef = trans.toCsTypeRefDeref(defn.id, domain)
+      val srcRef = trans.toCsTypeRefNoDeref(defn.id, domain)
+
       val isLatestVersion = domain.version == evo.latest
 
       def obsoletePrevious(tree: TextTree[CSValue]) = {
@@ -61,11 +63,11 @@ object CSDefnTranslator {
         }
       }
 
-      val defnReprBase = makeRepr(defn, domain, name, isLatestVersion)
+      val defnReprBase = makeRepr(defn, domain, csTypeRef, isLatestVersion)
 
       val codecTrees =
         codecs.toList
-          .map(t => t.translate(defn, name, domain))
+          .map(t => t.translate(defn, csTypeRef, srcRef, domain))
           .map(obsoletePrevious)
 
       val defnRepr = obsoletePrevious(defnReprBase)
@@ -76,7 +78,7 @@ object CSDefnTranslator {
 
       val fname = s"${defn.id.name.name.capitalize}.cs"
 
-      val ns = name.pkg.parts
+      val ns = srcRef.pkg.parts
 
       val allDefs = (defnRepr +: codecTrees).join("\n\n")
       val content = tools.inNs(ns.toSeq, allDefs)
@@ -90,7 +92,7 @@ object CSDefnTranslator {
 
       val reg = (List(q""""${defn.id.toString}"""") ++ codecs.toList
         .sortBy(_.getClass.getName)
-        .map(codec => q"${codec.codecName(name).copy(fq = true)}.Instance"))
+        .map(codec => q"${codec.codecName(srcRef).copy(fq = true)}.Instance"))
         .join(", ")
 
       Right(

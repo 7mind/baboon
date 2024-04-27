@@ -9,23 +9,25 @@ import izumi.fundamentals.platform.strings.TextTree.*
 class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     extends CSCodecTranslator {
   override def translate(defn: DomainMember.User,
-                         name: CSValue.CSType,
+                         csRef: CSValue.CSType,
+                         srcRef: CSValue.CSType,
                          domain: Domain): TextTree[CSValue] = {
     val version = domain.version
     val (enc, dec) = defn.defn match {
       case d: Typedef.Dto =>
-        genDtoBodies(name, domain, d)
+        genDtoBodies(csRef, domain, d)
       case e: Typedef.Enum =>
-        genEnumBodies(name, e)
+        genEnumBodies(csRef, e)
       case a: Typedef.Adt =>
-        genAdtBodies(name, domain, a)
+        genAdtBodies(csRef, domain, a)
       case _: Typedef.Foreign =>
-        genForeignBodies(name)
+        genForeignBodies(csRef)
     }
 
     genCodec(
       defn,
-      name,
+      csRef,
+      srcRef,
       version,
       enc,
       dec,
@@ -35,6 +37,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
 
   private def genCodec(defn: DomainMember.User,
                        name: CSValue.CSType,
+                       srcRef: CSValue.CSType,
                        version: Version,
                        enc: TextTree[CSValue],
                        dec: TextTree[CSValue],
@@ -85,7 +88,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         (pp, mm)
     }
 
-    val cName = codecName(name)
+    val cName = codecName(srcRef)
     q"""public class $cName : ${parents.join(", ")}
        |{
        |    ${methods.join("\n").shift(4).trim}
@@ -115,7 +118,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         val branchNs = q"${trans.adtNsName(a.id)}"
         val branchName = m.name.name
         val fqBranch = q"$branchNs.$branchName"
-        val cName = codecName(trans.toCsVal(m, domain))
+        val cName = codecName(trans.toCsTypeRefNoDeref(m, domain))
         val castedName = branchName.toLowerCase
 
         (q"""if (value is $fqBranch $castedName)
@@ -270,7 +273,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toCsVal(u, domain))
+            val targetTpe = codecName(trans.toCsTypeRefNoDeref(u, domain))
             q"""${targetTpe}.Instance.Decode(wire)"""
         }
       case c: TypeRef.Constructor =>
@@ -354,7 +357,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toCsVal(u, domain))
+            val targetTpe = codecName(trans.toCsTypeRefNoDeref(u, domain))
             q"""${targetTpe}.Instance.Encode(writer, $ref)"""
         }
       case c: TypeRef.Constructor =>

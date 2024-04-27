@@ -57,11 +57,11 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
         (Seq("from", srcVer.version) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
           s"${conv.sourceTpe.name.name}.cs"
         )).mkString("-")
-      val tin = trans.toCsVal(conv.sourceTpe, srcDom).fullyQualified
+      val tin = trans.toCsTypeRefDeref(conv.sourceTpe, srcDom).fullyQualified
 
       // This would fail if `sourceTpe` had been removed from `domain`. It's inconvenient to have this defined in each branch of the match below, so we use `def`
       def tout =
-        trans.toCsVal(conv.sourceTpe, domain)
+        trans.toCsTypeRefDeref(conv.sourceTpe, domain)
 
       def transferId(tpe: TypeId.Scalar,
                      ref: TextTree[CSValue]): TextTree[CSValue] = {
@@ -113,7 +113,7 @@ class IndividualConversionHandler(transd: CSDefnTranslator,
           Right(List(RenderedConversion(fname, ctree, Some(regtree), None)))
         case c: Conversion.CopyAdtBranchByName =>
           val branches = c.oldDefn.members.map { oldId =>
-            val oldFqid = trans.toCsVal(oldId, srcDom).fullyQualified
+            val oldFqid = trans.toCsTypeRefDeref(oldId, srcDom).fullyQualified
             val typedRef = q"fromAs_${oldId.name.name}"
 
             q"""if (from is ${oldFqid} $typedRef)
