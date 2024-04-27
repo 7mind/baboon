@@ -270,7 +270,7 @@ class CSBaboonTranslator(
          |
          |    public void Register(BaboonCodecImpls impls)
          |    {
-         |        codecs.Add(impls.id, impls);
+         |        codecs[impls.id] = impls;
          |    }
          |
          |    public BaboonCodecImpls Find($csString id)
@@ -334,9 +334,9 @@ class CSBaboonTranslator(
          |    {
          |        var fromType = conversion.TypeFrom();
          |        var key = new ConversionKey(fromType, conversion.TypeTo());
-         |        convs.Add(key, conversion);
          |        var wild = convsWild.TryGetValue(fromType, out var v) ? v : new List<IConversion>();
          |        wild.Add(conversion);
+         |        convs[key] = conversion;
          |        convsWild[fromType] = wild;
          |    }
          |
@@ -345,10 +345,9 @@ class CSBaboonTranslator(
          |        var tFrom = typeof(From);
          |        var tTo = typeof(To);
          |        var key = new ConversionKey(tFrom, tTo);
-         |        convs.Add(key, conversion);
-         |
          |        var wild = convsWild.TryGetValue(tFrom, out var v) ? v : new List<IConversion>();
          |        wild.Add(conversion);
+         |        convs[key] = conversion;
          |        convsWild[tFrom] = wild;
          |    }
          |

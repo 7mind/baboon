@@ -41,11 +41,11 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                        addExtensions: Boolean,
   ): TextTree[CSValue] = {
     val baseMethods = List(
-      q"""public void Encode($binaryWriter writer, $name value)
+      q"""public virtual void Encode($binaryWriter writer, $name value)
          |{
          |    ${enc.shift(4).trim}
          |}
-         |public $name Decode($binaryReader wire) {
+         |public virtual $name Decode($binaryReader wire) {
          |    ${dec.shift(4).trim}
          |}""".stripMargin
     )
@@ -55,7 +55,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         (List(q"$iBaboonBinCodec<$name>"), baseMethods)
       case _ =>
         val extensions = List(
-          q"""public void Encode($binaryWriter writer, $iBaboonGenerated value)
+          q"""public virtual void Encode($binaryWriter writer, $iBaboonGenerated value)
              |{
              |    if (value is not $name dvalue)
              |        throw new Exception("Expected to have ${name.name} type");
@@ -94,7 +94,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
        |
        |    private static $csLazy<$cName> instance = new $csLazy<$cName>(() => new $cName());
        |
-       |    public static $cName Instance { get { return instance.Value; } set {} }
+       |    public static $cName Instance { get { return instance.Value; } set { instance = new $csLazy<$cName>(() => value); } }
        |}
      """.stripMargin
   }

@@ -41,12 +41,12 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                        dec: TextTree[CSValue],
                        addExtensions: Boolean,
   ): TextTree[CSValue] = {
-    val baseMethods = List(q"""public $nsJToken Encode($name value)
+    val baseMethods = List(q"""public virtual $nsJToken Encode($name value)
          |{
          |    ${enc.shift(4).trim}
          |}
          |
-         |public $name Decode($nsJToken wire)
+         |public virtual $name Decode($nsJToken wire)
          |{
          |    ${dec.shift(4).trim}
          |}""".stripMargin)
@@ -56,7 +56,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         (List(q"$iBaboonJsonCodec<$name>"), baseMethods)
       case _ =>
         val extensions = List(
-          q"""public $nsJToken Encode($iBaboonGenerated value)
+          q"""public virtual $nsJToken Encode($iBaboonGenerated value)
              |{
              |    if (value is not $name dvalue)
              |        throw new Exception("Expected to have ${name.name} type");
@@ -95,7 +95,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
        |
        |    private static $csLazy<$cName> instance = new $csLazy<$cName>(() => new $cName());
        |
-       |    public static $cName Instance { get { return instance.Value; } set {} }
+       |    public static $cName Instance { get { return instance.Value; } set { instance = new $csLazy<$cName>(() => value); } }
        |}
      """.stripMargin
   }
@@ -322,7 +322,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
           domain.defs.meta.nodes(uid) match {
             case u: DomainMember.User =>
               u.defn match {
-                case _: Typedef.Enum =>
+                case _: Typedef.Enum | _: Typedef.Foreign =>
                   val targetTpe = trans.toCsVal(uid, domain)
                   q"""${targetTpe}_JsonCodec.Instance.Decode(new ${nsJValue}($ref!))"""
                 case o =>

@@ -26,6 +26,7 @@ root data T1_D1 {
  f1: i08
  f2: i32
  ft: ObscureInt
+ fm: map[ObscureInt, ObscureInt]
 }
 
 //

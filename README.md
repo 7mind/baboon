@@ -55,3 +55,5 @@ At the bare minimum you will have to do the following for each foreign type you 
 4) Override generated dummy codec instance using setter on `${Foreign_Type_Name}_JsonCodec#Instance` field
 
 Make sure your foreign types are NOT primitive types or other generated types. It's a funny idea, but it will explode in runtime.
+
+Foreign types may hold any position in generics but it's up to you to ensure correctness.
