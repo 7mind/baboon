@@ -24,13 +24,27 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         genForeignBodies(csRef)
     }
 
+    // plumbing reference leaks
+    val insulatedEnc = q"""if (this == instance.Value)
+                          |{
+                          |    ${enc.shift(4).trim}
+                          |}
+                          |
+                          |instance.Value.Encode(writer, value);""".stripMargin
+    val insulatedDec = q"""if (this == instance.Value)
+                          |{
+                          |    ${dec.shift(4).trim}
+                          |}
+                          |
+                          |return instance.Value.Decode(wire);""".stripMargin
+
     genCodec(
       defn,
       csRef,
       srcRef,
       version,
-      enc,
-      dec,
+      insulatedEnc,
+      insulatedDec,
       !defn.defn.isInstanceOf[Typedef.Foreign]
     )
   }
