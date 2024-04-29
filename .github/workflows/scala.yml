@@ -37,13 +37,13 @@ jobs:
     - name: Set up GraalVM (Java ${{ matrix.java-version }})
       uses: graalvm/setup-graalvm@v1
       with:
-        #version: '${{ matrix.graalvm-version }}'
         java-version: '${{ matrix.java-version }}'
         distribution: 'graalvm-community'
         components: 'native-image'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         cache: 'sbt'
         native-image-job-reports: true
+        #version: '${{ matrix.graalvm-version }}'
     - name: Run tests
       run: sbt test
     - name: Build NI
