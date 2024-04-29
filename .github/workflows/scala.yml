@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         # don't forget to update prepare-release and the includes below
-        os: [ ubuntu-latest, macos-12, windows-2022, macos-latest ]
+        os: [ ubuntu-latest, macos-12, windows-2022, macos-14 ]
         #graalvm-version: [ '22.3.1' ]
         java-version: [ '17' ]
         include:
@@ -45,7 +45,7 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         cache: 'sbt'
         native-image-job-reports: true
-    - if: matrix.os == 'macos-latest'
+    - if: matrix.os == 'macos-14'
       run: |
         brew install sbt
     - name: Run tests
@@ -80,6 +80,10 @@ jobs:
           path: tmp/baboon-mac-x64
       - uses: actions/download-artifact@v4
         with:
+          name: native-image-macos-14
+          path: tmp/baboon-mac-arm64
+      - uses: actions/download-artifact@v4
+        with:
           name: native-image-windows-2022
           path: tmp/baboon-windows-x64
       - name: Prepare layout
@@ -88,17 +92,20 @@ jobs:
           cd tmp/
           zip -r9 baboon-linux-x64.zip ./baboon-linux-x64/
           zip -r9 baboon-mac-x64.zip ./baboon-mac-x64/
+          zip -r9 baboon-mac-arm64.zip ./baboon-mac-arm64/
           zip -r9 baboon-windows-x64.zip ./baboon-windows-x64/
           popd
           
           mkdir dist
           mv ./tmp/baboon-linux-x64/baboon dist/baboon-linux-x64
           mv ./tmp/baboon-mac-x64/baboon dist/baboon-mac-x64
+          mv ./tmp/baboon-mac-arm64/baboon dist/baboon-mac-arm64
           mv ./tmp/baboon-windows-x64/baboon.exe dist/baboon-x64.exe
           
           mkdir dist-zip
           mv ./tmp/baboon-linux-x64.zip ./dist-zip/
           mv ./tmp/baboon-mac-x64.zip ./dist-zip/
+          mv ./tmp/baboon-mac-arm64.zip ./dist-zip/
           mv ./tmp/baboon-windows-x64.zip ./dist-zip/
       - uses: softprops/action-gh-release@v2
         id: create-release
