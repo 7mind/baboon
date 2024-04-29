@@ -17,6 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # don't forget to update prepare-release and the includes below
         os: [ ubuntu-latest, macos-12, windows-2022 ]
         #graalvm-version: [ '22.3.1' ]
         java-version: [ '17' ]
@@ -72,7 +73,7 @@ jobs:
           path: tmp/baboon-linux-x64
       - uses: actions/download-artifact@v3
         with:
-          name: native-image-macos-latest
+          name: native-image-macos-12
           path: tmp/baboon-mac-x64
       - uses: actions/download-artifact@v3
         with:
