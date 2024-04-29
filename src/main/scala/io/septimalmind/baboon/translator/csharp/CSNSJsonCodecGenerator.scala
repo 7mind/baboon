@@ -44,6 +44,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                        dec: TextTree[CSValue],
                        addExtensions: Boolean,
   ): TextTree[CSValue] = {
+    val iName = q"$iBaboonJsonCodec<$name>"
     val baseMethods = List(q"""public virtual $nsJToken Encode($name value)
          |{
          |    ${enc.shift(4).trim}
@@ -79,7 +80,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
           baseMethods
         }
 
-        val baseParents = List(q"$iBaboonJsonCodec<$name>")
+        val baseParents = List(iName)
         val pp = if (addExtensions) {
           baseParents ++ extParents
         } else {
@@ -96,9 +97,10 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
        |
        |    ${tools.makeMeta(defn, version).join("\n").shift(4).trim}
        |
-       |    private static $csLazy<$cName> instance = new $csLazy<$cName>(() => new $cName());
+       |    private static $csLazy<$iName> instance = new $csLazy<$iName>(() => new $cName());
        |
-       |    public static $cName Instance { get { return instance.Value; } set { instance = new $csLazy<$cName>(() => value); } }
+       |    public static $iName Instance { get { return instance.Value; } set { instance = new $csLazy<$iName
+       |    >(() => value); } }
        |}
      """.stripMargin
   }

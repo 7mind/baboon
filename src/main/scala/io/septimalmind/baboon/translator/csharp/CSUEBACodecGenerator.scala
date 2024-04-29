@@ -43,6 +43,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                        dec: TextTree[CSValue],
                        addExtensions: Boolean,
   ): TextTree[CSValue] = {
+    val iName = q"$iBaboonBinCodec<$name>"
+
     val baseMethods = List(
       q"""public virtual void Encode($binaryWriter writer, $name value)
          |{
@@ -78,7 +80,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
           baseMethods
         }
 
-        val baseParents = List(q"$iBaboonBinCodec<$name>")
+        val baseParents = List(iName)
         val pp = if (addExtensions) {
           baseParents ++ extParents
         } else {
@@ -89,15 +91,16 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     }
 
     val cName = codecName(srcRef)
+
     q"""public class $cName : ${parents.join(", ")}
        |{
        |    ${methods.join("\n").shift(4).trim}
        |
        |    ${tools.makeMeta(defn, version).join("\n").shift(4).trim}
        |
-       |    private static $csLazy<$cName> instance = new $csLazy<$cName>(() => new $cName());
+       |    private static $csLazy<$iName> instance = new $csLazy<$iName>(() => new $cName());
        |
-       |    public static $cName Instance { get { return instance.Value; } set { instance = new $csLazy<$cName>(() => value); } }
+       |    public static $iName Instance { get { return instance.Value; } set { instance = new $csLazy<$iName>(() => value); } }
        |}
      """.stripMargin
   }
