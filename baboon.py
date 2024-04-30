@@ -83,4 +83,4 @@ if __name__ == "__main__":
         st = os.stat(baboon_path)
         os.chmod(baboon_path, st.st_mode | stat.S_IEXEC)
 
-    os.execlp(baboon_path, *args)
+    os.execv(baboon_path, [baboon_path] + args)
