@@ -28,6 +28,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     val insulatedEnc = q"""if (this == instance.Value)
                           |{
                           |    ${enc.shift(4).trim}
+                          |    return;
                           |}
                           |
                           |instance.Value.Encode(writer, value);""".stripMargin

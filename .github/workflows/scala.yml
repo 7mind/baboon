@@ -28,6 +28,9 @@ jobs:
           - os: macos-12
             executable-suffix: ''
             native-build-args: --verbose -J-Xmx13g
+          - os: macos-14
+            executable-suffix: ''
+            native-build-args: --verbose -J-Xmx13g
           - os: windows-2022
             executable-suffix: '.exe'
             # e2e is disabled due to unstable docker step
