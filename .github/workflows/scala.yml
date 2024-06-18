@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ build ]
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: native-image-ubuntu-latest
@@ -98,13 +98,13 @@ jobs:
           zip -r9 baboon-mac-arm64.zip ./baboon-mac-arm64/
           zip -r9 baboon-windows-x64.zip ./baboon-windows-x64/
           popd
-          
+
           mkdir dist
           mv ./tmp/baboon-linux-x64/baboon dist/baboon-linux-x64
           mv ./tmp/baboon-mac-x64/baboon dist/baboon-mac-x64
           mv ./tmp/baboon-mac-arm64/baboon dist/baboon-mac-arm64
           mv ./tmp/baboon-windows-x64/baboon.exe dist/baboon-x64.exe
-          
+
           mkdir dist-zip
           mv ./tmp/baboon-linux-x64.zip ./dist-zip/
           mv ./tmp/baboon-mac-x64.zip ./dist-zip/
