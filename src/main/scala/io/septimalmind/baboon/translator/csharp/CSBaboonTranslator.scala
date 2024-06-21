@@ -414,7 +414,52 @@ class CSBaboonTranslator(
          |
          |}""".stripMargin
 
-    val runtime = Seq(key, base, abstractAggregator).join("\n\n")
+    val formats =
+      q"""public static class BaboonDateTimeFormats {
+         |    public static readonly $csString TslDefault = "yyyy-MM-ddTHH:mm:ss.fff";
+         |    public static readonly $csString[] Tsl = new string[] {
+         |                "yyyy-MM-ddTHH:mm:ss",
+         |                "yyyy-MM-ddTHH:mm:ss.f",
+         |                "yyyy-MM-ddTHH:mm:ss.ff",
+         |                "yyyy-MM-ddTHH:mm:ss.fff",
+         |                "yyyy-MM-ddTHH:mm:ss.ffff",
+         |                "yyyy-MM-ddTHH:mm:ss.fffff",
+         |                "yyyy-MM-ddTHH:mm:ss.ffffff",
+         |                "yyyy-MM-ddTHH:mm:ss.fffffff",
+         |                "yyyy-MM-ddTHH:mm:ss.ffffffff",
+         |                "yyyy-MM-ddTHH:mm:ss.fffffffff"
+         |            };
+         |
+         |    public static readonly $csString TszDefault = "yyyy-MM-ddTHH:mm:ss.fffzzz";
+         |    public static readonly $csString[] Tsz = new string[] {
+         |               "yyyy-MM-ddTHH:mm:ssZ",
+         |               "yyyy-MM-ddTHH:mm:ss.fZ",
+         |               "yyyy-MM-ddTHH:mm:ss.ffZ",
+         |               "yyyy-MM-ddTHH:mm:ss.fffZ",
+         |               "yyyy-MM-ddTHH:mm:ss.ffffZ",
+         |               "yyyy-MM-ddTHH:mm:ss.fffffZ",
+         |               "yyyy-MM-ddTHH:mm:ss.ffffffZ",
+         |               "yyyy-MM-ddTHH:mm:ss.fffffffZ",
+         |               "yyyy-MM-ddTHH:mm:ss.ffffffffZ",
+         |               "yyyy-MM-ddTHH:mm:ss.fffffffffZ",
+         |               "yyyy-MM-ddTHH:mm:sszzz",
+         |               "yyyy-MM-ddTHH:mm:ss.fzzz",
+         |               "yyyy-MM-ddTHH:mm:ss.ffzzz",
+         |               "yyyy-MM-ddTHH:mm:ss.fffzzz",
+         |               "yyyy-MM-ddTHH:mm:ss.ffffzzz",
+         |               "yyyy-MM-ddTHH:mm:ss.fffffzzz",
+         |               "yyyy-MM-ddTHH:mm:ss.ffffffzzz",
+         |               "yyyy-MM-ddTHH:mm:ss.fffffffzzz",
+         |               "yyyy-MM-ddTHH:mm:ss.ffffffffzzz",
+         |               "yyyy-MM-ddTHH:mm:ss.fffffffffzzz"
+         |            };
+         |
+         |    public static readonly $csString TsuDefault = "yyyy-MM-ddTHH:mm:ss.fffZ";
+         |    public static readonly $csString[] Tsu = JsonNetTimeFormats.Tsz;
+         |}
+         |""".stripMargin
+
+    val runtime = Seq(key, base, abstractAggregator, formats).join("\n\n")
 
     val rt =
       tools.inNs(CSBaboonTranslator.sharedRtPkg.parts.toSeq, runtime)
@@ -612,6 +657,24 @@ object CSBaboonTranslator {
   val csInvariantCulture: CSType = CSType(
     CSPackageId("System.Globalization"),
     "CultureInfo",
+    fq = false
+  )
+
+  val csDateTimeStyles: CSType = CSType(
+    CSPackageId("System.Globalization"),
+    "DateTimeStyles",
+    fq = false
+  )
+
+  val csDateTimeKind: CSType = CSType(
+    CSPackageId("System"),
+    "DateTimeKind",
+    fq = false
+  )
+
+  val csDateTimeFormats: CSType = CSType(
+    sharedRtPkg,
+    "BaboonDateTimeFormats",
     fq = false
   )
 }

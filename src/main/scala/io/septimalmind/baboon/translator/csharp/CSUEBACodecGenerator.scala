@@ -284,9 +284,9 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
               case TypeId.Builtins.uid =>
                 q"$csGuid.Parse(wire.ReadString())"
               case TypeId.Builtins.tsu =>
-                q"$csDateTime.Parse(wire.ReadString())"
+                q"$csDateTime.ParseExact(wire.ReadString(), JsonNetTimeFormats.Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
               case TypeId.Builtins.tso =>
-                q"$csDateTime.Parse(wire.ReadString())"
+                q"$csDateTime.ParseExact(wire.ReadString(), JsonNetTimeFormats.Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
               case o =>
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
@@ -368,9 +368,9 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
               case TypeId.Builtins.uid =>
                 q"writer.Write($ref.ToString())"
               case TypeId.Builtins.tsu =>
-                q"writer.Write($ref.ToString($csInvariantCulture.InvariantCulture))"
+                q"writer.Write($ref.ToString($ref.Kind == $csDateTimeKind.Utc ? $csDateTimeFormats.TsuDefault : $csDateTimeFormats.TszDefault, $csInvariantCulture.InvariantCulture))"
               case TypeId.Builtins.tso =>
-                q"writer.Write($ref.ToString($csInvariantCulture.InvariantCulture))"
+                q"writer.Write($ref.ToString($ref.Kind == $csDateTimeKind.Utc ? $csDateTimeFormats.TsuDefault : $csDateTimeFormats.TszDefault, $csInvariantCulture.InvariantCulture))"
               case o =>
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }

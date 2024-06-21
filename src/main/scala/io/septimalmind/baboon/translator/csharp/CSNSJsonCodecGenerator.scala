@@ -224,7 +224,14 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
-          case _: TypeId.BuiltinScalar => q"new ${nsJValue}($ref)"
+          case TypeId.Builtins.uid =>
+            q"new $nsJValue($ref.ToString())"
+          case TypeId.Builtins.tsu =>
+            q"new $nsJValue($ref.ToString($ref.Kind == $csDateTimeKind.Utc ? $csDateTimeFormats.TsuDefault : $csDateTimeFormats.TszDefault, $csInvariantCulture.InvariantCulture))"
+          case TypeId.Builtins.tso =>
+            q"new $nsJValue($ref.ToString($ref.Kind == $csDateTimeKind.Utc ? $csDateTimeFormats.TsuDefault : $csDateTimeFormats.TszDefault, $csInvariantCulture.InvariantCulture))"
+          case _: TypeId.BuiltinScalar =>
+            q"new $nsJValue($ref)"
           case u: TypeId.User =>
             val targetTpe = codecName(trans.toCsTypeRefNoDeref(u, domain))
             q"""${targetTpe}.Instance.Encode($ref)"""
@@ -284,12 +291,12 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
           q"$fref.Value<Decimal>()"
         case TypeId.Builtins.str =>
           q"$fref.Value<$csString>()"
-        case TypeId.Builtins.tsu =>
-          q"$fref.Value<$csDateTime>()"
-        case TypeId.Builtins.tso =>
-          q"$fref.Value<$csDateTime>()"
         case TypeId.Builtins.uid =>
-          q"$fref.Value<$csGuid>()"
+          q"$csGuid.Parse($fref.Value<$csString>())"
+        case TypeId.Builtins.tsu =>
+          q"$csDateTime.ParseExact($fref.Value<$csString>(), $csDateTimeFormats.Tsu, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
+        case TypeId.Builtins.tso =>
+          q"$csDateTime.ParseExact($fref.Value<$csString>(), $csDateTimeFormats.Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
         case o =>
           throw new RuntimeException(s"BUG: Unexpected type: $o")
       }
@@ -334,16 +341,16 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         case TypeId.Builtins.uid =>
           q"$csGuid.Parse($ref)"
         case TypeId.Builtins.tsu =>
-          q"$csDateTime.Parse($ref)"
+          q"$csDateTime.ParseExact($ref, $csDateTimeFormats.Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
         case TypeId.Builtins.tso =>
-          q"$csDateTime.Parse($ref)"
+          q"$csDateTime.ParseExact($ref, $csDateTimeFormats.Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
         case uid: TypeId.User =>
           domain.defs.meta.nodes(uid) match {
             case u: DomainMember.User =>
               u.defn match {
                 case _: Typedef.Enum | _: Typedef.Foreign =>
                   val targetTpe = trans.toCsTypeRefNoDeref(uid, domain)
-                  q"""${targetTpe}_JsonCodec.Instance.Decode(new ${nsJValue}($ref!))"""
+                  q"""${targetTpe}_JsonCodec.Instance.Decode(new $nsJValue($ref!))"""
                 case o =>
                   throw new RuntimeException(
                     s"BUG: Unexpected key usertype: $o"
