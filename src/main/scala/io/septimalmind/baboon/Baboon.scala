@@ -38,6 +38,17 @@ object RuntimeGenOpt {
   case object Without extends RuntimeGenOpt
 }
 
+object Test extends App {
+  Baboon.main(Array(
+    "--model-dir",
+    "/Users/caparow/git/FireSDKTest/Assets/Vault",
+    "--output",
+    "/Users/caparow/git/FireSDKTest/Assets/Generated/Test",
+//    "--runtime",
+//    "without"
+  ))
+}
+
 object Baboon {
   def main(args: Array[String]): Unit = {
     val artifact = implicitly[IzArtifactMaterializer]

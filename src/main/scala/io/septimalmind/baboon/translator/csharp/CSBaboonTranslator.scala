@@ -259,6 +259,18 @@ class CSBaboonTranslator(
          |        if (ifNot) return null;
          |        return thenReturn();
          |    }
+         |
+         |    public static A? ReadNullableValue<A>($nsJToken? token, Func<$nsJToken, A> readValue) where A: struct
+         |    {
+         |        if (token == null || token.Type == $nsJTokenType.Null) return null;
+         |        return readValue(token);
+         |    }
+         |
+         |    public static A? ReadValue<A>($nsJToken? token, Func<$nsJToken, A> readValue) where A: class
+         |    {
+         |        if (token == null || token.Type == $nsJTokenType.Null) return null;
+         |        return readValue(token);
+         |    }
          |}
          |
          |public record BaboonCodecImpls($metaFields);
@@ -455,7 +467,14 @@ class CSBaboonTranslator(
          |            };
          |
          |    public static readonly $csString TsuDefault = "yyyy-MM-ddTHH:mm:ss.fffZ";
-         |    public static readonly $csString[] Tsu = BaboonDateTimeFormats.Tsz;
+         |    public static readonly $csString[] Tsu = Tsz;
+         |
+         |    public static $csString ToString($csDateTime dt) {
+         |        return dt.ToString(dt.Kind == $csDateTimeKind.Utc ? TsuDefault : TszDefault, $csInvariantCulture.InvariantCulture);
+         |    }
+         |    public static $csDateTime FromString($csString dt) {
+         |        return $csDateTime.ParseExact(dt, Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None);
+         |    }
          |}
          |""".stripMargin
 
@@ -574,6 +593,7 @@ object CSBaboonTranslator {
   )
   val linqPkg: CSPackageId = CSPackageId(NEList("System", "Linq"))
   val ioPkg: CSPackageId = CSPackageId(NEList("System", "IO"))
+  val nsPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json"))
   val nsLinqPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json", "Linq"))
 
   val abstractConversion: CSType =
@@ -605,6 +625,8 @@ object CSBaboonTranslator {
   val abstractBaboonCodecs: CSType =
     CSType(sharedRtPkg, "BaboonAbstractCodecs", fq = false)
 
+  val nsFormatting: CSType =
+    CSType(nsPkg, "Formatting", fq = false)
   val nsJToken: CSType =
     CSType(nsLinqPkg, "JToken", fq = false)
   val nsJValue: CSType =

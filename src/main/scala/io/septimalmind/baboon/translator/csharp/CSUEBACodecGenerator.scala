@@ -211,44 +211,6 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     (fenc, fdec)
   }
 
-  private def isCSValueType(tpe: TypeRef): Boolean = {
-    tpe match {
-      case TypeRef.Scalar(id) =>
-        id match {
-          case s: TypeId.BuiltinScalar =>
-            s match {
-              case TypeId.Builtins.bit =>
-                true
-              case TypeId.Builtins.i08 =>
-                true
-              case TypeId.Builtins.i16 =>
-                true
-              case TypeId.Builtins.i32 =>
-                true
-              case TypeId.Builtins.i64 =>
-                true
-              case TypeId.Builtins.u08 =>
-                true
-              case TypeId.Builtins.u16 =>
-                true
-              case TypeId.Builtins.u32 =>
-                true
-              case TypeId.Builtins.u64 =>
-                true
-              case TypeId.Builtins.f32 =>
-                true
-              case TypeId.Builtins.f64 =>
-                true
-              case TypeId.Builtins.f128 =>
-                true
-              case _ =>
-                false
-            }
-          case _ => false
-        }
-      case _ => false
-    }
-  }
   private def mkDecoder(tpe: TypeRef, domain: Domain): TextTree[CSValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>
@@ -283,10 +245,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                 q"wire.ReadString()"
               case TypeId.Builtins.uid =>
                 q"$csGuid.Parse(wire.ReadString())"
-              case TypeId.Builtins.tsu =>
-                q"$csDateTime.ParseExact(wire.ReadString(), $csDateTimeFormats.Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
-              case TypeId.Builtins.tso =>
-                q"$csDateTime.ParseExact(wire.ReadString(), $csDateTimeFormats.Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
+              case TypeId.Builtins.tsu | TypeId.Builtins.tso=>
+                q"$csDateTimeFormats.FromString(wire.ReadString())"
               case o =>
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
@@ -296,18 +256,11 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         }
       case c: TypeRef.Constructor =>
         c.id match {
+          case TypeId.Builtins.opt if trans.isCSValueType(c.args.head) =>
+            q"""$BaboonTools.ReadNullableValue(wire.ReadByte() == 0, () => ${mkDecoder(c.args.head, domain)})""".stripMargin
+
           case TypeId.Builtins.opt =>
-            if (isCSValueType(c.args.head)) {
-              q"""$BaboonTools.ReadNullableValue(wire.ReadByte() == 0, () => ${mkDecoder(
-                   c.args.head,
-                   domain
-                 )})""".stripMargin
-            } else {
-              q"""(wire.ReadByte() == 0 ? null : ${mkDecoder(
-                   c.args.head,
-                   domain
-                 )})""".stripMargin
-            }
+            q"""(wire.ReadByte() == 0 ? null : ${mkDecoder(c.args.head, domain)})""".stripMargin
 
           case TypeId.Builtins.map =>
             q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(idx => $csKeyValuePair.Create(${mkDecoder(
@@ -367,10 +320,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                 q"writer.Write($ref)"
               case TypeId.Builtins.uid =>
                 q"writer.Write($ref.ToString())"
-              case TypeId.Builtins.tsu =>
-                q"writer.Write($ref.ToString($ref.Kind == $csDateTimeKind.Utc ? $csDateTimeFormats.TsuDefault : $csDateTimeFormats.TszDefault, $csInvariantCulture.InvariantCulture))"
-              case TypeId.Builtins.tso =>
-                q"writer.Write($ref.ToString($ref.Kind == $csDateTimeKind.Utc ? $csDateTimeFormats.TsuDefault : $csDateTimeFormats.TszDefault, $csInvariantCulture.InvariantCulture))"
+              case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
+                q"writer.Write($csDateTimeFormats.ToString($ref))"
               case o =>
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }

@@ -92,9 +92,7 @@ class CSTypeTranslator() {
         CSValue.CSType(system, "String", fq = false)
       case TypeId.Builtins.uid =>
         CSValue.CSType(system, "Guid", fq = false)
-      case TypeId.Builtins.tso =>
-        CSValue.CSType(system, "DateTime", fq = false)
-      case TypeId.Builtins.tsu =>
+      case TypeId.Builtins.tso | TypeId.Builtins.tsu =>
         CSValue.CSType(system, "DateTime", fq = false)
       case _ =>
         throw new IllegalArgumentException(s"Unexpected: $b")
@@ -185,6 +183,52 @@ class CSTypeTranslator() {
         }
       case _ =>
         q"$ref!"
+    }
+  }
+
+
+  def isCSValueType(tpe: TypeRef): Boolean = {
+    tpe match {
+      case TypeRef.Scalar(id) =>
+        id match {
+          case s: TypeId.BuiltinScalar =>
+            s match {
+              case TypeId.Builtins.bit =>
+                true
+              case TypeId.Builtins.i08 =>
+                true
+              case TypeId.Builtins.i16 =>
+                true
+              case TypeId.Builtins.i32 =>
+                true
+              case TypeId.Builtins.i64 =>
+                true
+              case TypeId.Builtins.u08 =>
+                true
+              case TypeId.Builtins.u16 =>
+                true
+              case TypeId.Builtins.u32 =>
+                true
+              case TypeId.Builtins.u64 =>
+                true
+              case TypeId.Builtins.f32 =>
+                true
+              case TypeId.Builtins.f64 =>
+                true
+              case TypeId.Builtins.f128 =>
+                true
+              case TypeId.Builtins.uid =>
+                true
+              case TypeId.Builtins.tsu =>
+                true
+              case TypeId.Builtins.tso =>
+                true
+              case _ =>
+                false
+            }
+          case _ => false
+        }
+      case _ => false
     }
   }
 }
