@@ -284,9 +284,9 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
               case TypeId.Builtins.uid =>
                 q"$csGuid.Parse(wire.ReadString())"
               case TypeId.Builtins.tsu =>
-                q"$csDateTime.ParseExact(wire.ReadString(), JsonNetTimeFormats.Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
+                q"$csDateTime.ParseExact(wire.ReadString(), $csDateTimeFormats.Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
               case TypeId.Builtins.tso =>
-                q"$csDateTime.ParseExact(wire.ReadString(), JsonNetTimeFormats.Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
+                q"$csDateTime.ParseExact(wire.ReadString(), $csDateTimeFormats.Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
               case o =>
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
@@ -387,7 +387,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                |} else
                |{
                |   writer.Write((byte)1);
-               |   ${mkEncoder(c.args.head, domain, deNull(c.args.head, ref))
+               |   ${mkEncoder(c.args.head, domain, trans.deNull(c.args.head, ref))
                  .shift(4)
                  .trim};
                |}""".stripMargin
@@ -420,26 +420,6 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
 
   def codecName(name: CSValue.CSType): CSValue.CSType = {
     CSValue.CSType(name.pkg, s"${name.name}_UEBACodec", name.fq)
-  }
-
-  private def deNull(tpe: TypeRef,
-                     ref: TextTree[CSValue]): TextTree[CSValue] = {
-    tpe match {
-      case TypeRef.Scalar(id) =>
-        id match {
-          case s: TypeId.BuiltinScalar =>
-            s match {
-              case TypeId.Builtins.str =>
-                ref
-              case _ =>
-                q"$ref.Value"
-            }
-          case _ =>
-            q"$ref!"
-        }
-      case _ =>
-        q"$ref!"
-    }
   }
 
   override def codecMeta(defn: DomainMember.User,

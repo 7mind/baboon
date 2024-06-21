@@ -191,12 +191,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     val fields = d.fields.map { f =>
       val fieldRef = q"value.${f.name.name.capitalize}"
       val enc = mkEncoder(f.tpe, domain, fieldRef)
-      val dec = mkDecoder(
-        f.tpe,
-        domain,
-        q"""asObject["${f.name.name}"]""",
-        removeNull = true
-      )
+      val dec = mkDecoder(f.tpe, domain, q"""asObject["${f.name.name}"]""")
       (
         q"""new $nsJProperty("${f.name.name}", $enc)""",
         q"${f.name.name.capitalize}: $dec",
@@ -239,7 +234,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
-            q"$ref == null ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, domain, ref)}"
+            q"$ref == null ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, domain, trans.deNull(c.args.head, ref))}"
           case TypeId.Builtins.map =>
             q"new $nsJObject($ref.Select(e => new $nsJProperty(e.Key.ToString(), ${mkEncoder(c.args.last, domain, q"e.Value")})))"
           case TypeId.Builtins.lst =>
@@ -255,56 +250,44 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
   private def mkDecoder(tpe: TypeRef,
                         domain: Domain,
                         ref: TextTree[CSValue],
-                        removeNull: Boolean,
   ): TextTree[CSValue] = {
     def mkReader(bs: TypeId.BuiltinScalar): TextTree[CSValue] = {
-      val fref = if (removeNull) {
-        q"$ref!"
-      } else {
-        q"$ref?"
-      }
-
-      val out = bs match {
+      val fref = q"$ref!"
+      bs match {
         case TypeId.Builtins.bit =>
-          q"$fref.Value<Boolean>()"
+          q"$fref.Value<Boolean>()!"
         case TypeId.Builtins.i08 =>
-          q"$fref.Value<SByte>()"
+          q"$fref.Value<SByte>()!"
         case TypeId.Builtins.i16 =>
-          q"$fref.Value<Int16>()"
+          q"$fref.Value<Int16>()!"
         case TypeId.Builtins.i32 =>
-          q"$fref.Value<Int32>()"
+          q"$fref.Value<Int32>()!"
         case TypeId.Builtins.i64 =>
-          q"$fref.Value<Int64>()"
+          q"$fref.Value<Int64>()!"
         case TypeId.Builtins.u08 =>
-          q"$fref.Value<Byte>()"
+          q"$fref.Value<Byte>()!"
         case TypeId.Builtins.u16 =>
-          q"$fref.Value<UInt16>()"
+          q"$fref.Value<UInt16>()!"
         case TypeId.Builtins.u32 =>
-          q"$fref.Value<UInt32>()"
+          q"$fref.Value<UInt32>()!"
         case TypeId.Builtins.u64 =>
-          q"$fref.Value<UInt64>()"
+          q"$fref.Value<UInt64>()!"
         case TypeId.Builtins.f32 =>
-          q"$fref.Value<Single>()"
+          q"$fref.Value<Single>()!"
         case TypeId.Builtins.f64 =>
-          q"$fref.Value<Double>()"
+          q"$fref.Value<Double>()!"
         case TypeId.Builtins.f128 =>
-          q"$fref.Value<Decimal>()"
+          q"$fref.Value<Decimal>()!"
         case TypeId.Builtins.str =>
-          q"$fref.Value<$csString>()"
+          q"$fref.Value<$csString>()!"
         case TypeId.Builtins.uid =>
-          q"$csGuid.Parse($fref.Value<$csString>())"
+          q"$csGuid.Parse($fref.Value<$csString>()!)"
         case TypeId.Builtins.tsu =>
-          q"$csDateTime.ParseExact($fref.Value<$csString>(), $csDateTimeFormats.Tsu, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
+          q"$csDateTime.ParseExact($fref.Value<$csString>()!, $csDateTimeFormats.Tsu, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
         case TypeId.Builtins.tso =>
-          q"$csDateTime.ParseExact($fref.Value<$csString>(), $csDateTimeFormats.Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
+          q"$csDateTime.ParseExact($fref.Value<$csString>()!, $csDateTimeFormats.Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None)"
         case o =>
           throw new RuntimeException(s"BUG: Unexpected type: $o")
-      }
-
-      if (removeNull) {
-        q"$out!"
-      } else {
-        out
       }
     }
 
@@ -376,37 +359,21 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
       case TypeRef.Constructor(id, args) =>
         id match {
           case TypeId.Builtins.opt =>
-            q"""$ref!.Type == $nsJTokenType.Null ? null : ${mkDecoder(
-              args.head,
-              domain,
-              ref,
-              removeNull = false
-            )}"""
+            q"""$ref is { Type: not $nsJTokenType.Null } ? ${mkDecoder(args.head, domain, ref)} : null"""
 
           case TypeId.Builtins.map =>
-            q"""$ref!.Value<$nsJObject>()!.Properties().Select(kv => $csKeyValuePair.Create(${decodeKey(
-              args.head,
-              q"kv.Name",
-              domain
-            )}, ${mkDecoder(args.last, domain, q"kv.Value", removeNull = true)})).ToImmutableDictionary()"""
+            val keyDec = decodeKey(args.head, q"kv.Name", domain)
+            val valueDec =  mkDecoder(args.last, domain, q"kv.Value")
+            q"""$ref!.Value<$nsJObject>()!.Properties().Select(kv => $csKeyValuePair.Create($keyDec, $valueDec)).ToImmutableDictionary()"""
 
           case TypeId.Builtins.lst =>
-            q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(
-              args.head,
-              domain,
-              q"e",
-              removeNull = true
-            )}).ToImmutableList()"""
+            q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(args.head, domain, q"e")}).ToImmutableList()"""
+
           case TypeId.Builtins.set =>
-            q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(
-              args.head,
-              domain,
-              q"e",
-              removeNull = true
-            )}).ToImmutableHashSet()"""
+            q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(args.head, domain, q"e")}).ToImmutableHashSet()"""
+
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
-
         }
     }
 

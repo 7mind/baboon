@@ -455,7 +455,7 @@ class CSBaboonTranslator(
          |            };
          |
          |    public static readonly $csString TsuDefault = "yyyy-MM-ddTHH:mm:ss.fffZ";
-         |    public static readonly $csString[] Tsu = JsonNetTimeFormats.Tsz;
+         |    public static readonly $csString[] Tsu = BaboonDateTimeFormats.Tsz;
          |}
          |""".stripMargin
 

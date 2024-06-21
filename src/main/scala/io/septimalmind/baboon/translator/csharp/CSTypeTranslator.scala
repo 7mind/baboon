@@ -167,6 +167,26 @@ class CSTypeTranslator() {
       out
     }
   }
+
+  def deNull(tpe: TypeRef,
+             ref: TextTree[CSValue]): TextTree[CSValue] = {
+    tpe match {
+      case TypeRef.Scalar(id) =>
+        id match {
+          case s: TypeId.BuiltinScalar =>
+            s match {
+              case TypeId.Builtins.str =>
+                ref
+              case _ =>
+                q"$ref.Value"
+            }
+          case _ =>
+            q"$ref!"
+        }
+      case _ =>
+        q"$ref!"
+    }
+  }
 }
 
 object CSTypeTranslator {
