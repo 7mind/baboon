@@ -11,7 +11,7 @@ import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
-import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
+import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -567,7 +567,7 @@ class CSBaboonTranslator(
 
       List(
         CSDefnTranslator
-          .Output(s"${tools.basename(domain)}/Baboon-Runtime.cs", rt, pkg)
+          .Output(s"${tools.basename(domain)}/main/Baboon-Runtime.cs", rt, pkg)
       ) ++ convs.map { conv =>
         CSDefnTranslator
           .Output(s"${tools.basename(domain)}/${conv.fname}", conv.conv, pkg)

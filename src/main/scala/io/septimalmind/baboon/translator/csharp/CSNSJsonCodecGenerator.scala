@@ -16,7 +16,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     val version = domain.version
     val (enc, dec) = defn.defn match {
       case d: Typedef.Dto =>
-        genDtoBodies(csRef, domain, version, d)
+        genDtoBodies(csRef, domain, d)
       case _: Typedef.Enum =>
         genEnumBodies(csRef)
       case a: Typedef.Adt =>
@@ -122,14 +122,14 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
      """.stripMargin
   }
 
-  private def genForeignBodies(name: CSValue.CSType) = {
+  private def genForeignBodies(name: CSValue.CSType): (TextTree[Nothing], TextTree[Nothing]) = {
     (
       q"""throw new ArgumentException($$"${name.name} is a foreign type");""",
       q"""throw new ArgumentException($$"${name.name} is a foreign type");"""
     )
   }
 
-  private def genAdtBodies(name: CSValue.CSType, a: Typedef.Adt) = {
+  private def genAdtBodies(name: CSValue.CSType, a: Typedef.Adt): (TextTree[CSValue.CSType], TextTree[Nothing]) = {
     val branches = a.members.toList.map { m =>
       val branchNs = q"${trans.adtNsName(a.id)}"
       val branchName = m.name.name
@@ -162,10 +162,11 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
          |${branches.map(_._2).join("\n")}
          |
          |throw new ArgumentException($$"Cannot decode {wire} to ${name.name}: no matching value");
-           """.stripMargin)
+         """.stripMargin
+    )
   }
 
-  private def genEnumBodies(name: CSValue.CSType) = {
+  private def genEnumBodies(name: CSValue.CSType): (TextTree[CSValue.CSType], TextTree[CSValue.CSType]) = {
     //        val branches = e.members.toList.map { m =>
     //          q"""if (asStr == ${name}.${m.name}.ToString().ToLower())
     //             |{
@@ -193,8 +194,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
 
   private def genDtoBodies(name: CSValue.CSType,
                            domain: Domain,
-                           version: Version,
-                           d: Typedef.Dto) = {
+                           d: Typedef.Dto): (TextTree[CSValue], TextTree[CSValue]) = {
     val fields = d.fields.map { f =>
       val fieldRef = q"value.${f.name.name.capitalize}"
       val enc = mkEncoder(f.tpe, domain, fieldRef)
@@ -219,7 +219,8 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
          |return new $name(
          |${fields.map(_._2).join(",\n").shift(4)}
          |);
-           """.stripMargin)
+         """.stripMargin
+    )
   }
 
   private def mkEncoder(tpe: TypeRef,
@@ -430,5 +431,4 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
   }
 
   def metaField(): TextTree[CSValue] = q"IBaboonCodecAbstract json";
-
 }

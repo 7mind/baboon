@@ -4,7 +4,6 @@ import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-import scala.collection.immutable.Seq
 trait CSDefnTools {
   def inNs(nss: Seq[String], tree: TextTree[CSValue]): TextTree[CSValue]
 
@@ -23,18 +22,20 @@ object CSDefnTools {
 
     def makeMeta(defn: DomainMember.User,
                  version: Version): Seq[TextTree[CSValue]] = {
-      Seq(q"""public String BaboonDomainVersion()
+      Seq(
+        q"""public String BaboonDomainVersion()
            |{
            |    return "${version.version}";
-           |}""".stripMargin, q"""public String BaboonDomainIdentifier() {
+           |}""".stripMargin,
+        q"""public String BaboonDomainIdentifier() {
            |    return "${defn.id.pkg.toString}";
-           |}""".stripMargin, q"""public String BaboonTypeIdentifier() {
+           |}""".stripMargin,
+        q"""public String BaboonTypeIdentifier() {
            |    return "${defn.id.toString}";
            |}""".stripMargin)
     }
 
-    private def inNs(name: String,
-                     tree: TextTree[CSValue]): TextTree[CSValue] = {
+    private def inNs(name: String, tree: TextTree[CSValue]): TextTree[CSValue] = {
       q"""namespace ${name} {
          |    ${tree.shift(4).trim}
          |}""".stripMargin
