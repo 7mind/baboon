@@ -34,8 +34,6 @@ class BaboonModule(options: CompilerOptions) extends ModuleDef {
   make[CSTypeTranslator]
   make[ScopeSupport].from[ScopeSupport.ScopeSupportImpl]
   make[CSCodecTestsTranslator].from[CSCodecTestsTranslator.Impl]
-  make[CSNSJsonCodecGenerator]
-  make[CSUEBACodecGenerator]
 
   makeSubcontext[BaboonTranslator]
     .localDependencies(

@@ -5,15 +5,16 @@ import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{baboonCodecImpls, iBaboonGenerated, iBaboonGeneratedLatest}
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
+import io.septimalmind.baboon.typer.model.TypeId.{Builtins, ComparatorType}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 trait CSDefnTranslator {
-  def translate(defn: DomainMember.User,
-                domain: Domain,
-                evo: BaboonEvolution,
+  def translate(
+                 defn: DomainMember.User,
+                 domain: Domain,
+                 evo: BaboonEvolution,
                ): Either[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.OutputExt]]
 }
 
@@ -91,20 +92,21 @@ object CSDefnTranslator {
         .join(", ")
 
       val codecTestTrees = codecsTests.translate(defn, csTypeRef, srcRef, domain)
-      val codecTestWithNS = tools.inNs(ns.toSeq, codecTestTrees)
-      val codecTestOut = OutputExt(
+      val codecTestWithNS = codecTestTrees.map(tools.inNs(ns.toSeq, _))
+      val codecTestOut = codecTestWithNS.map(codecTestWithNS => OutputExt(
         Output(getOutputPath("test"), codecTestWithNS, trans.toCsPkg(domain.id, domain.version)),
         q""
-      )
+      ))
+
 
       Right(
         List(
-          OutputExt(
+          Some(OutputExt(
             Output(getOutputPath("main"), content, trans.toCsPkg(domain.id, domain.version)),
             q"Register(new $baboonCodecImpls($reg));"
-          ),
+          )),
           codecTestOut
-        )
+        ).flatten
       )
     }
 
@@ -119,21 +121,14 @@ object CSDefnTranslator {
         _.codecMeta(defn, name).member
       )
       defn.defn match {
-        case d: Typedef.Dto =>
-          val outs = d.fields.map { f =>
+        case dto: Typedef.Dto =>
+          val outs = dto.fields.map { f =>
             val tpe = trans.asCsRef(f.tpe, domain)
             val mname = s"${f.name.name.capitalize}"
             (mname, tpe, f)
           }
 
-          val cargs = outs
-            .map {
-              case (fname, tpe, _) =>
-                q"$tpe $fname"
-            }
-            .join(",\n")
-
-          val parent = d.id.owner match {
+          val parent = dto.id.owner match {
             case Owner.Toplevel =>
               None
             case Owner.Adt(id) =>
@@ -195,13 +190,19 @@ object CSDefnTranslator {
                |        return false;
                |    }
                |    return ${cmp.shift(8).trim};
-               |}""".stripMargin)
+               |}""".stripMargin
+          )
 
-          val members = eq ++ meta
+          val fields = Seq(outs.map { case (name, tpe, _) =>
+            q"public $tpe $name { get; init; }"
+          }.join("\n"))
+
+          val constructor = Seq(renderConstructor(dto, outs, domain))
+
+          val members = fields ++ constructor ++ eq ++ meta
           q"""[$serializable]
-             |public sealed record $name(
-             |    ${cargs.shift(4).trim}
-             |)$parents {
+             |public sealed record $name $parents
+             |{
              |    ${members.join("\n\n").shift(4).trim}
              |};""".stripMargin
 
@@ -228,20 +229,83 @@ object CSDefnTranslator {
           q"""public interface $name : $genMarker {}""".stripMargin
         case _: Typedef.Foreign =>
           q""
-        //          f.bindings.get("cs") match {
-        //            case Some(value) =>
-        //              q"""global using $name = $value;"""
-        //            case None =>
-        //              throw new IllegalStateException(
-        //                s"${f.id}: undefined 'cs' binding"
-        //              )
-        //          }
       }
     }
 
-    private def renderHashcode(ref: TextTree[CSValue],
-                               cmp: ComparatorType,
-                               depth: Int): TextTree[CSValue] = {
+    private def renderConstructor(
+                                   dto: Typedef.Dto,
+                                   fields: List[(String, TextTree[CSValue], Field)],
+                                   domain: Domain
+                                 ): TextTree[CSValue] = {
+      def renderFieldAssignments(name: String, field: Field): TextTree[CSValue] = {
+        def isCollection(tpe: TypeRef): Boolean = {
+          tpe match {
+            case TypeRef.Constructor(Builtins.lst, _) => true
+            case TypeRef.Constructor(Builtins.map, _) => true
+            case TypeRef.Constructor(Builtins.set, _) => true
+            case _ => false
+          }
+        }
+
+        def eligibleForDateTruncation(tpe: TypeRef): Boolean = {
+          tpe match {
+            case TypeRef.Scalar(Builtins.tsu) | TypeRef.Scalar(Builtins.tso) => true
+            case TypeRef.Constructor(Builtins.lst, args) => eligibleForDateTruncation(args.head)
+            case TypeRef.Constructor(Builtins.set, args) => eligibleForDateTruncation(args.head)
+            case TypeRef.Constructor(Builtins.opt, args) => eligibleForDateTruncation(args.head)
+            case TypeRef.Constructor(Builtins.map, args) => eligibleForDateTruncation(args(0)) || eligibleForDateTruncation(args(1))
+            case _ => false
+          }
+        }
+
+        def render(tpe: TypeRef, name: String): TextTree[CSValue] = {
+          tpe match {
+            case TypeRef.Scalar(Builtins.tsu) | TypeRef.Scalar(Builtins.tso) => q"BaboonDateTimeFormats.TruncateToMilliseconds($name)"
+            case TypeRef.Constructor(Builtins.lst, args) => q"$name.Select(value => ${render(args.head, s"value")}).ToImmutableList()"
+            case TypeRef.Constructor(Builtins.set, args) => q"$name.Select(value => ${render(args.head, s"value")}).ToImmutableHashSet()"
+            case TypeRef.Constructor(Builtins.opt, args) =>
+              val nextName = if (isCollection(args.head)) s"$name" else s"$name.Value"
+              q"$name == null ? $name : ${render(args.head, s"$nextName")}"
+            case TypeRef.Constructor(Builtins.map, args) =>
+              val key = args(0)
+              val value = args(1)
+              val keyType = trans.asCsRef(key, domain)
+              val valueType = trans.asCsRef(value, domain)
+              q"$name.Select(kv => new KeyValuePair<$keyType, $valueType>(${render(key, "kv.Key")}, ${render(value, "kv.Value")})).ToImmutableDictionary(kv => kv.Key, kv => kv.Value)".stripMargin
+            case _ => q"${field.name.name}"
+          }
+        }
+
+        val rendered = if (eligibleForDateTruncation(field.tpe)) {
+          render(field.tpe, field.name.name)
+        } else q"${field.name.name}"
+
+        q"$name = $rendered;"
+      }
+
+      val parameters = fields.map { case (_, tpe, field) =>
+        q"$tpe ${field.name.name}"
+      }.join(",\n")
+
+      val assignments = fields.map { case (name, fieldType, field) =>
+        renderFieldAssignments(name, field)
+      }.join("\n")
+
+
+      q"""public ${dto.id.name.name} (
+         |  ${parameters.shift(4).trim}
+         |)
+         |{
+         |  ${assignments.shift(4).trim}
+         |}
+         |""".stripMargin
+    }
+
+    private def renderHashcode(
+                                ref: TextTree[CSValue],
+                                cmp: ComparatorType,
+                                depth: Int
+                              ): TextTree[CSValue] = {
       val itemRef = q"item${depth.toString}"
       cmp match {
         case _: ComparatorType.Basic =>

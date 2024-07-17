@@ -138,7 +138,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
       (
         q"""if (value is $fqBranch)
            |{
-           |    return new ${nsJObject}(new ${nsJProperty}("$branchName", ${fqBranch}_JsonCodec.Instance.Encode(($fqBranch)value)));
+           |    return new $nsJObject(new $nsJProperty("$branchName", ${fqBranch}_JsonCodec.Instance.Encode(($fqBranch)value)));
            |}""".stripMargin,
         q"""if (head.Name == "$branchName")
            |{
@@ -167,16 +167,9 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
   }
 
   private def genEnumBodies(name: CSValue.CSType): (TextTree[CSValue.CSType], TextTree[CSValue.CSType]) = {
-    //        val branches = e.members.toList.map { m =>
-    //          q"""if (asStr == ${name}.${m.name}.ToString().ToLower())
-    //             |{
-    //             |   return ${name}.${m.name};
-    //             |}""".stripMargin
-    //        }
-
     (
       q"return $nsJValue.CreateString(value.ToString());",
-      q"""var asStr = wire.Value<String>()?.ToLower();
+      q"""var asStr = wire.Value<String>()?.ToLower().Trim('"');
          |if (asStr == null)
          |{
          |    throw new ${csArgumentException}($$"Cannot decode {wire} to ${name.name}: string expected");
@@ -201,7 +194,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
       val dec = mkDecoder(f.tpe, domain, q"""asObject["${f.name.name}"]""")
       (
         q"""new $nsJProperty("${f.name.name}", $enc)""",
-        q"${f.name.name.capitalize}: $dec",
+        q"${f.name.name}: $dec",
       )
     }
 

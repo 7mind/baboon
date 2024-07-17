@@ -131,7 +131,7 @@ class CSTypeTranslator() {
               throw new IllegalArgumentException(s"Unexpected: $b")
           }
         }
-        q"${ref}"
+        q"$ref"
       case u: TypeId.User =>
         q"${toCsTypeRefDeref(u, domain)}"
     }
