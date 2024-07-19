@@ -42,6 +42,8 @@ object CSCodecTestsTranslator {
              |[TestFixture]
              |public class $testClassName
              |{
+             |  #nullable disable
+             |
              |  private Fixture fixture;
              |
              |  ${testFields(definition, csRef, srcRef)}

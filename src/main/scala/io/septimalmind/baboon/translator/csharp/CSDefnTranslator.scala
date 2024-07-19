@@ -128,6 +128,8 @@ object CSDefnTranslator {
             (mname, tpe, f)
           }
 
+          val constructorArgs = outs.map { case (fname, tpe, _) => q"$tpe $fname" }.join(",\n")
+
           val parent = dto.id.owner match {
             case Owner.Toplevel =>
               None
@@ -193,16 +195,11 @@ object CSDefnTranslator {
                |}""".stripMargin
           )
 
-          val fields = Seq(outs.map { case (name, tpe, _) =>
-            q"public $tpe $name { get; init; }"
-          }.join("\n"))
-
-          val constructor = Seq(renderConstructor(dto, outs, domain))
-
-          val members = fields ++ constructor ++ eq ++ meta
+          val members = eq ++ meta
           q"""[$serializable]
-             |public sealed record $name $parents
-             |{
+             |public sealed record $name(
+             |    ${constructorArgs.shift(4).trim}
+             |)$parents {
              |    ${members.join("\n\n").shift(4).trim}
              |};""".stripMargin
 
@@ -230,75 +227,6 @@ object CSDefnTranslator {
         case _: Typedef.Foreign =>
           q""
       }
-    }
-
-    private def renderConstructor(
-                                   dto: Typedef.Dto,
-                                   fields: List[(String, TextTree[CSValue], Field)],
-                                   domain: Domain
-                                 ): TextTree[CSValue] = {
-      def renderFieldAssignments(name: String, field: Field): TextTree[CSValue] = {
-        def isCollection(tpe: TypeRef): Boolean = {
-          tpe match {
-            case TypeRef.Constructor(Builtins.lst, _) => true
-            case TypeRef.Constructor(Builtins.map, _) => true
-            case TypeRef.Constructor(Builtins.set, _) => true
-            case _ => false
-          }
-        }
-
-        def eligibleForDateTruncation(tpe: TypeRef): Boolean = {
-          tpe match {
-            case TypeRef.Scalar(Builtins.tsu) | TypeRef.Scalar(Builtins.tso) => true
-            case TypeRef.Constructor(Builtins.lst, args) => eligibleForDateTruncation(args.head)
-            case TypeRef.Constructor(Builtins.set, args) => eligibleForDateTruncation(args.head)
-            case TypeRef.Constructor(Builtins.opt, args) => eligibleForDateTruncation(args.head)
-            case TypeRef.Constructor(Builtins.map, args) => eligibleForDateTruncation(args(0)) || eligibleForDateTruncation(args(1))
-            case _ => false
-          }
-        }
-
-        def render(tpe: TypeRef, name: String): TextTree[CSValue] = {
-          tpe match {
-            case TypeRef.Scalar(Builtins.tsu) | TypeRef.Scalar(Builtins.tso) => q"BaboonDateTimeFormats.TruncateToMilliseconds($name)"
-            case TypeRef.Constructor(Builtins.lst, args) => q"$name.Select(value => ${render(args.head, s"value")}).ToImmutableList()"
-            case TypeRef.Constructor(Builtins.set, args) => q"$name.Select(value => ${render(args.head, s"value")}).ToImmutableHashSet()"
-            case TypeRef.Constructor(Builtins.opt, args) =>
-              val nextName = if (isCollection(args.head)) s"$name" else s"$name.Value"
-              q"$name == null ? $name : ${render(args.head, s"$nextName")}"
-            case TypeRef.Constructor(Builtins.map, args) =>
-              val key = args(0)
-              val value = args(1)
-              val keyType = trans.asCsRef(key, domain)
-              val valueType = trans.asCsRef(value, domain)
-              q"$name.Select(kv => new KeyValuePair<$keyType, $valueType>(${render(key, "kv.Key")}, ${render(value, "kv.Value")})).ToImmutableDictionary(kv => kv.Key, kv => kv.Value)".stripMargin
-            case _ => q"${field.name.name}"
-          }
-        }
-
-        val rendered = if (eligibleForDateTruncation(field.tpe)) {
-          render(field.tpe, field.name.name)
-        } else q"${field.name.name}"
-
-        q"$name = $rendered;"
-      }
-
-      val parameters = fields.map { case (_, tpe, field) =>
-        q"$tpe ${field.name.name}"
-      }.join(",\n")
-
-      val assignments = fields.map { case (name, fieldType, field) =>
-        renderFieldAssignments(name, field)
-      }.join("\n")
-
-
-      q"""public ${dto.id.name.name} (
-         |  ${parameters.shift(4).trim}
-         |)
-         |{
-         |  ${assignments.shift(4).trim}
-         |}
-         |""".stripMargin
     }
 
     private def renderHashcode(

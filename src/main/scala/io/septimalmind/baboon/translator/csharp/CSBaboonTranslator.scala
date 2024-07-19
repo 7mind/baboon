@@ -471,10 +471,10 @@ class CSBaboonTranslator(
          |    public static readonly $csString TsuDefault = "yyyy-MM-ddTHH:mm:ss.fffZ";
          |    public static readonly $csString[] Tsu = Tsz;
          |
-         |    public static $csString ToString($csDateTime dt) {
-         |        return dt.ToString(dt.Kind == $csDateTimeKind.Utc ? TsuDefault : TszDefault, $csInvariantCulture.InvariantCulture);
+         |    public static $csString ToString($rpDateTime dt) {
+         |        return dt._underlying.ToString(dt._underlying.Kind == $csDateTimeKind.Utc ? TsuDefault : TszDefault, $csInvariantCulture.InvariantCulture);
          |    }
-         |    public static $csDateTime FromString($csString dt) {
+         |    public static $rpDateTime FromString($csString dt) {
          |        return $csDateTime.ParseExact(dt, Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None);
          |    }
          |
@@ -485,7 +485,49 @@ class CSBaboonTranslator(
          |}
          |""".stripMargin
 
-    val runtime = Seq(key, base, abstractAggregator, formats).join("\n\n")
+    val customDateTime =
+      q"""/// Reduced to milliseconds precision DateTime
+         |public readonly struct RPDateTime
+         |{
+         |    public readonly DateTime _underlying;
+         |
+         |    public RPDateTime(DateTime dateTime)
+         |    {
+         |        _underlying = BaboonDateTimeFormats.TruncateToMilliseconds(dateTime);
+         |    }
+         |
+         |    public override int GetHashCode()
+         |    {
+         |        return _underlying.GetHashCode();
+         |    }
+         |
+         |    public bool Equals(RPDateTime? other)
+         |    {
+         |        return other != null && _underlying.Equals(other.Value._underlying);
+         |    }
+         |
+         |    public static bool operator ==(RPDateTime left, RPDateTime right)
+         |    {
+         |        return left.Equals(right);
+         |    }
+         |
+         |    public static bool operator !=(RPDateTime left, RPDateTime right)
+         |    {
+         |        return !(left == right);
+         |    }
+         |
+         |    public static TimeSpan operator -(RPDateTime left, RPDateTime right)
+         |    {
+         |        return left._underlying - right._underlying;
+         |    }
+         |
+         |    public static implicit operator RPDateTime(DateTime dt) => new(dt);
+         |    public static implicit operator DateTime(RPDateTime rpdt) => rpdt._underlying;
+         |}
+         |
+         |""".stripMargin
+
+    val runtime = Seq(key, base, abstractAggregator, customDateTime, formats).join("\n\n")
 
     val rt =
       tools.inNs(CSBaboonTranslator.sharedRtPkg.parts.toSeq, runtime)
@@ -534,7 +576,7 @@ class CSBaboonTranslator(
          |
          |public class EnumDictionaryBuilder : ISpecimenBuilder
          |{
-         |    public object Create(object request, ISpecimenContext context)
+         |    public object? Create(object request, ISpecimenContext context)
          |    {
          |        var type = ExtractType(request);
          |        if (type == null || !type.IsGenericType ||
@@ -553,15 +595,15 @@ class CSBaboonTranslator(
          |
          |            Type immutableDictType = typeof(ImmutableDictionary<,>).MakeGenericType(keyType, valueType);
          |
-         |            MethodInfo createMethod = typeof(ImmutableDictionary)
+         |            MethodInfo? createMethod = typeof(ImmutableDictionary)
          |                .GetMethod("Create", BindingFlags.Public | BindingFlags.Static, Type.EmptyTypes)
-         |                .MakeGenericMethod(keyType, valueType);
+         |                ?.MakeGenericMethod(keyType, valueType);
          |
-         |            var emptyImmutableDict = createMethod.Invoke(null, null);
+         |            var emptyImmutableDict = createMethod?.Invoke(null, null);
          |
-         |            MethodInfo addMethod = immutableDictType.GetMethod("Add", new[] { keyType, valueType });
+         |            MethodInfo? addMethod = immutableDictType.GetMethod("Add", new[] { keyType, valueType });
          |
-         |            return addMethod.Invoke(emptyImmutableDict, new[] { key, value });
+         |            return addMethod?.Invoke(emptyImmutableDict, new[] { key, value });
          |        }
          |
          |        return new NoSpecimen();
@@ -760,6 +802,8 @@ object CSBaboonTranslator {
     CSType(systemPkg, "Enum", fq = false)
   val csDateTime: CSType =
     CSType(systemPkg, "DateTime", fq = false)
+  val rpDateTime: CSType =
+    CSType(sharedRtPkg, "RPDateTime", fq = false)
   val csArgumentException: CSType =
     CSType(systemPkg, "ArgumentException", fq = false)
   val csEnumerable: CSType =

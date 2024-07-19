@@ -194,7 +194,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
       val dec = mkDecoder(f.tpe, domain, q"""asObject["${f.name.name}"]""")
       (
         q"""new $nsJProperty("${f.name.name}", $enc)""",
-        q"${f.name.name}: $dec",
+        q"${f.name.name.capitalize}: $dec",
       )
     }
 

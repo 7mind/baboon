@@ -1,22 +1,9 @@
 package io.septimalmind.baboon.translator.csharp
 
 import izumi.fundamentals.platform.strings.TextTree.*
-import io.septimalmind.baboon.translator.csharp.CSTypeTranslator.{
-  generics,
-  immutable,
-  system
-}
+import io.septimalmind.baboon.translator.csharp.CSTypeTranslator.{baboonRuntime, generics, immutable, system}
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
-import io.septimalmind.baboon.typer.model.{
-  Domain,
-  DomainMember,
-  Owner,
-  Pkg,
-  TypeId,
-  TypeRef,
-  Typedef,
-  Version
-}
+import io.septimalmind.baboon.typer.model.{Domain, DomainMember, Owner, Pkg, TypeId, TypeRef, Typedef, Version}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 
@@ -53,7 +40,7 @@ class CSTypeTranslator() {
     val pkg = toCsPkg(tid.pkg, version)
     val fullPkg = tid.owner match {
       case Owner.Toplevel => pkg
-      case Owner.Adt(id)  => CSPackageId(pkg.parts :+ adtNsName(id))
+      case Owner.Adt(id) => CSPackageId(pkg.parts :+ adtNsName(id))
     }
     CSType(fullPkg, tid.name.name.capitalize, fq = false)
   }
@@ -93,15 +80,17 @@ class CSTypeTranslator() {
       case TypeId.Builtins.uid =>
         CSValue.CSType(system, "Guid", fq = false)
       case TypeId.Builtins.tso | TypeId.Builtins.tsu =>
-        CSValue.CSType(system, "DateTime", fq = false)
+        CSValue.CSType(baboonRuntime, "RPDateTime", fq = false)
       case _ =>
         throw new IllegalArgumentException(s"Unexpected: $b")
     }
   }
 
-  def asCsType(tpe: TypeId,
-               domain: Domain,
-               mut: Boolean = false): TextTree[CSValue] = {
+  def asCsType(
+                tpe: TypeId,
+                domain: Domain,
+                mut: Boolean = false
+              ): TextTree[CSValue] = {
     tpe match {
       case b: TypeId.BuiltinScalar =>
         q"${asCsTypeScalar(b)}"
@@ -137,11 +126,12 @@ class CSTypeTranslator() {
     }
   }
 
-  def asCsRef(tpe: TypeRef,
-              domain: Domain,
-              fullyQualified: Boolean = false,
-              mut: Boolean = false,
-  ): TextTree[CSValue] = {
+  def asCsRef(
+               tpe: TypeRef,
+               domain: Domain,
+               fullyQualified: Boolean = false,
+               mut: Boolean = false,
+             ): TextTree[CSValue] = {
     val out = tpe match {
       case TypeRef.Scalar(id) =>
         asCsType(id, domain, mut)
@@ -239,4 +229,5 @@ object CSTypeTranslator {
     CSValue.CSPackageId(NEList("System", "Collections", "Generic"))
   private val immutable =
     CSValue.CSPackageId(NEList("System", "Collections", "Immutable"))
+  private val baboonRuntime = CSValue.CSPackageId(NEList("Baboon", "Runtime", "Shared"))
 }
