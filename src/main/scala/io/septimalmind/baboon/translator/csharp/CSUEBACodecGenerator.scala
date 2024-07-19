@@ -25,11 +25,14 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     }
 
     // plumbing reference leaks
-    val insulatedEnc = q"""if (this == instance.Value)
+    val insulatedEnc = q"""
+                          |#pragma warning disable CS0162
+                          |if (this == instance.Value)
                           |{
                           |    ${enc.shift(4).trim}
                           |    return;
                           |}
+                          |#pragma warning disable CS0162
                           |
                           |instance.Value.Encode(writer, value);""".stripMargin
     val insulatedDec = q"""if (this == instance.Value)
@@ -165,25 +168,25 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
   private def genEnumBodies(name: CSValue.CSType, e: Typedef.Enum) = {
     val branches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        (q"""if (value == ${name}.${m.name})
+        (q"""if (value == $name.${m.name})
              |{
              |   writer.Write((byte)${idx.toString});
              |   return;
              |}""".stripMargin, q"""if (asByte == ${idx.toString})
              |{
-             |   return ${name}.${m.name};
+             |   return $name.${m.name};
              |}""".stripMargin)
     }
 
     (
       q"""${branches.map(_._1).join("\n")}
          |
-         |throw new ${csArgumentException}($$"Cannot encode {value} to ${name.name}: no matching value");""".stripMargin,
+         |throw new $csArgumentException($$"Cannot encode {value} to ${name.name}: no matching value");""".stripMargin,
       q"""byte asByte = wire.ReadByte();
          |
          |${branches.map(_._2).join("\n")}
          |
-         |throw new ${csArgumentException}($$"Cannot decode {wire} to ${name.name}: no matching value");""".stripMargin,
+         |throw new $csArgumentException($$"Cannot decode {wire} to ${name.name}: no matching value");""".stripMargin,
     )
   }
 

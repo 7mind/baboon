@@ -501,9 +501,16 @@ class CSBaboonTranslator(
          |        return _underlying.GetHashCode();
          |    }
          |
-         |    public bool Equals(RPDateTime? other)
+         |    public override bool Equals(object? obj)
          |    {
-         |        return other != null && _underlying.Equals(other.Value._underlying);
+         |        if (obj == null) return false;
+         |
+         |        if (obj is RPDateTime other)
+         |        {
+         |            return other._underlying == _underlying;
+         |        }
+         |
+         |        return false;
          |    }
          |
          |    public static bool operator ==(RPDateTime left, RPDateTime right)

@@ -143,7 +143,8 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
         q"""if (head.Name == "$branchName")
            |{
            |    return ${fqBranch}_JsonCodec.Instance.Decode(head.Value);
-           |}""".stripMargin)
+           |}""".stripMargin
+      )
 
     }
 
@@ -172,16 +173,16 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
       q"""var asStr = wire.Value<String>()?.ToLower().Trim('"');
          |if (asStr == null)
          |{
-         |    throw new ${csArgumentException}($$"Cannot decode {wire} to ${name.name}: string expected");
+         |    throw new $csArgumentException($$"Cannot decode {wire} to ${name.name}: string expected");
          |}
          |
-         |${name} result;
-         |if (${name}.TryParse(asStr, true, out result))
+         |$name result;
+         |if ($name.TryParse(asStr, true, out result))
          |{
          |    return result;
          |}
          |
-         |throw new ${csArgumentException}($$"Cannot decode {wire} to ${name.name}: no matching value");""".stripMargin
+         |throw new $csArgumentException($$"Cannot decode {wire} to ${name.name}: no matching value");""".stripMargin
     )
   }
 
