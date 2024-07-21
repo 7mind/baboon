@@ -13,6 +13,7 @@ case class Options(
   model: List[String],
   modelDir: List[String],
   output: String,
+  testOutput: Option[String],
   debug: Option[Boolean],
   @HelpMessage(
     "generate shared runtime classes and evolution registrations, default is `with`"
@@ -74,10 +75,14 @@ object Baboon {
                 .filter(_.toFile.getName.endsWith(".baboon"))
             }
             val outDir = Paths.get(opts.output)
+            val testOutDir = opts.testOutput.map(o => Paths.get(o))
             println(
               s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}"
             )
             println(s"Target: ${outDir.toFile.getCanonicalPath}")
+            testOutDir.foreach { t =>
+              println(s"Test target: ${t.toFile.getCanonicalPath}")
+            }
 
             cleanupTargetDir(outDir) match {
               case Left(value) =>
@@ -86,7 +91,7 @@ object Baboon {
                 )
                 System.exit(2)
               case Right(_) =>
-                compiler.run(inputModels, outDir) match {
+                compiler.run(inputModels, outDir, testOutDir) match {
                   case Left(value) =>
                     System.err.println("Compiler failed")
                     System.err.println(value.toList.stringifyIssues)

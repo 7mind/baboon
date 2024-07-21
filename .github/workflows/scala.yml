@@ -65,7 +65,8 @@ jobs:
       run: |
         target/graalvm-native-image/baboon \
           --model-dir ./src/test/resources/baboon/ \
-          --output ./test/cs-stub/ConversionsTest/Generated
+          --output ./test/cs-stub/ConversionsTest/Generated \
+          --test-output ./test/cs-stub/ConversionsTest/Generated
         cd ./test/cs-stub
         dotnet build
         dotnet test ConversionsTest/ConversionsTest.csproj

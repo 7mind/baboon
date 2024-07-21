@@ -2,7 +2,11 @@ package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{baboonCodecImpls, iBaboonGenerated, iBaboonGeneratedLatest}
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
+  baboonCodecImpls,
+  iBaboonGenerated,
+  iBaboonGeneratedLatest
+}
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.{Builtins, ComparatorType}
@@ -11,16 +15,20 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 trait CSDefnTranslator {
-  def translate(
-                 defn: DomainMember.User,
-                 domain: Domain,
-                 evo: BaboonEvolution,
-               ): Either[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.OutputExt]]
+  def translate(defn: DomainMember.User,
+                domain: Domain,
+                evo: BaboonEvolution,
+  ): Either[NEList[BaboonIssue.TranslationIssue], List[
+    CSDefnTranslator.OutputExt
+  ]]
 }
 
 object CSDefnTranslator {
 
-  case class Output(path: String, tree: TextTree[CSValue], pkg: CSPackageId)
+  case class Output(path: String,
+                    tree: TextTree[CSValue],
+                    pkg: CSPackageId,
+                    isTest: Boolean)
 
   case class OutputExt(output: Output, codecReg: TextTree[CSValue])
 
@@ -30,20 +38,18 @@ object CSDefnTranslator {
   val serializable: CSType =
     CSType(CSBaboonTranslator.systemPkg, "Serializable", fq = false)
 
-  class CSDefnTranslatorImpl(
-                              options: CompilerOptions,
-                              trans: CSTypeTranslator,
-                              tools: CSDefnTools,
-                              codecs: Set[CSCodecTranslator],
-                              codecsTests: CSCodecTestsTranslator
-                            ) extends CSDefnTranslator {
+  class CSDefnTranslatorImpl(options: CompilerOptions,
+                             trans: CSTypeTranslator,
+                             tools: CSDefnTools,
+                             codecs: Set[CSCodecTranslator],
+                             codecsTests: CSCodecTestsTranslator)
+      extends CSDefnTranslator {
     type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
-    override def translate(
-                            defn: DomainMember.User,
-                            domain: Domain,
-                            evo: BaboonEvolution,
-                          ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
+    override def translate(defn: DomainMember.User,
+                           domain: Domain,
+                           evo: BaboonEvolution,
+    ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
       val isLatestVersion = domain.version == evo.latest
       val fbase = tools.basename(domain)
       val fname = s"${defn.id.name.name.capitalize}.cs"
@@ -91,20 +97,35 @@ object CSDefnTranslator {
         .map(codec => q"${codec.codecName(srcRef).copy(fq = true)}.Instance"))
         .join(", ")
 
-      val codecTestTrees = codecsTests.translate(defn, csTypeRef, srcRef, domain)
+      val codecTestTrees =
+        codecsTests.translate(defn, csTypeRef, srcRef, domain)
       val codecTestWithNS = codecTestTrees.map(tools.inNs(ns.toSeq, _))
-      val codecTestOut = codecTestWithNS.map(codecTestWithNS => OutputExt(
-        Output(getOutputPath("test"), codecTestWithNS, trans.toCsPkg(domain.id, domain.version)),
-        q""
-      ))
-
+      val codecTestOut = codecTestWithNS.map(
+        codecTestWithNS =>
+          OutputExt(
+            Output(
+              getOutputPath("test"),
+              codecTestWithNS,
+              trans.toCsPkg(domain.id, domain.version),
+              isTest = true
+            ),
+            q""
+        )
+      )
 
       Right(
         List(
-          Some(OutputExt(
-            Output(getOutputPath("main"), content, trans.toCsPkg(domain.id, domain.version)),
-            q"Register(new $baboonCodecImpls($reg));"
-          )),
+          Some(
+            OutputExt(
+              Output(
+                getOutputPath("main"),
+                content,
+                trans.toCsPkg(domain.id, domain.version),
+                isTest = false,
+              ),
+              q"Register(new $baboonCodecImpls($reg));"
+            )
+          ),
           codecTestOut
         ).flatten
       )
@@ -114,7 +135,7 @@ object CSDefnTranslator {
                          domain: Domain,
                          name: CSValue.CSType,
                          isLatestVersion: Boolean,
-                        ): TextTree[CSValue] = {
+    ): TextTree[CSValue] = {
       val genMarker =
         if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
       val meta = tools.makeMeta(defn, domain.version) ++ codecs.map(
@@ -128,7 +149,8 @@ object CSDefnTranslator {
             (mname, tpe, f)
           }
 
-          val constructorArgs = outs.map { case (fname, tpe, _) => q"$tpe $fname" }.join(",\n")
+          val constructorArgs =
+            outs.map { case (fname, tpe, _) => q"$tpe $fname" }.join(",\n")
 
           val parent = dto.id.owner match {
             case Owner.Toplevel =>
@@ -160,8 +182,7 @@ object CSDefnTranslator {
 
           val hcGroups = renderedHcParts
             .grouped(8)
-            .map(group =>
-              q"""HashCode.Combine(
+            .map(group => q"""HashCode.Combine(
                  |    ${group.join(",\n").shift(4).trim}
                  |)""".stripMargin)
             .toList
@@ -182,18 +203,15 @@ object CSDefnTranslator {
           } else {
             renderedCmps.join(" &&\n")
           }
-          val eq = Seq(
-            q"""public override int GetHashCode()
+          val eq = Seq(q"""public override int GetHashCode()
                |{
                |    return ${hc.shift(8).trim};
-               |}""".stripMargin,
-            q"""public bool Equals($name? other) {
+               |}""".stripMargin, q"""public bool Equals($name? other) {
                |    if (other == null) {
                |        return false;
                |    }
                |    return ${cmp.shift(8).trim};
-               |}""".stripMargin
-          )
+               |}""".stripMargin)
 
           val members = eq ++ meta
           q"""[$serializable]
@@ -229,11 +247,9 @@ object CSDefnTranslator {
       }
     }
 
-    private def renderHashcode(
-                                ref: TextTree[CSValue],
-                                cmp: ComparatorType,
-                                depth: Int
-                              ): TextTree[CSValue] = {
+    private def renderHashcode(ref: TextTree[CSValue],
+                               cmp: ComparatorType,
+                               depth: Int): TextTree[CSValue] = {
       val itemRef = q"item${depth.toString}"
       cmp match {
         case _: ComparatorType.Basic =>
@@ -252,13 +268,11 @@ object CSDefnTranslator {
             case ComparatorType.SetEquals(subComparator) =>
               q"($ref.Select($itemRef => ${renderHashcode(itemRef, subComparator, depth + 1)}).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
             case ComparatorType.MapEquals(keyComparator, valComparator) =>
-              q"($ref.Select($itemRef => HashCode.Combine(${
-                renderHashcode(
-                  q"$itemRef.Key",
-                  keyComparator,
-                  depth + 1
-                )
-              }, ${renderHashcode(q"$itemRef.Value", valComparator, depth + 1)})).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
+              q"($ref.Select($itemRef => HashCode.Combine(${renderHashcode(
+                q"$itemRef.Key",
+                keyComparator,
+                depth + 1
+              )}, ${renderHashcode(q"$itemRef.Value", valComparator, depth + 1)})).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
           }
       }
     }

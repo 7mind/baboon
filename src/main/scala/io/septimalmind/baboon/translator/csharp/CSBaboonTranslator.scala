@@ -7,7 +7,7 @@ import io.septimalmind.baboon.RuntimeGenOpt
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, Sources}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
@@ -38,9 +38,10 @@ class CSBaboonTranslator(
         case RuntimeGenOpt.Without => translated
       }
       rendered = toRender.map { o =>
-        (o.path, renderTree(o))
+        val content = renderTree(o)
+        (o.path, OutputFile(content, o.isTest) )
       }
-      unique <- (rendered ++ meta).toUniqueMap(
+      unique <- (rendered ++ meta.map {case (k, v) => (k, OutputFile(v, isTest = false))}).toUniqueMap(
         c => NEList(BaboonIssue.NonUniqueOutputFiles(c))
       )
     } yield {
@@ -545,7 +546,8 @@ class CSBaboonTranslator(
           .Output(
             s"Baboon-Runtime-Shared.cs",
             rt,
-            CSBaboonTranslator.sharedRtPkg
+            CSBaboonTranslator.sharedRtPkg,
+            isTest = false,
           )
       )
     )
@@ -635,7 +637,9 @@ class CSBaboonTranslator(
         CSDefnTranslator.Output(
           "Baboon-Test-Runtime-Shared.cs",
           tools.inNs(CSBaboonTranslator.sharedRtPkg.parts.toSeq, sharedTestRuntime),
-          CSBaboonTranslator.sharedRtPkg
+          CSBaboonTranslator.sharedRtPkg,
+            isTest = true,
+
         )
       )
     )
@@ -715,10 +719,10 @@ class CSBaboonTranslator(
 
       List(
         CSDefnTranslator
-          .Output(s"${tools.basename(domain)}/main/Baboon-Runtime.cs", rt, pkg)
+          .Output(s"${tools.basename(domain)}/main/Baboon-Runtime.cs", rt, pkg, isTest = false)
       ) ++ convs.map { conv =>
         CSDefnTranslator
-          .Output(s"${tools.basename(domain)}/${conv.fname}", conv.conv, pkg)
+          .Output(s"${tools.basename(domain)}/${conv.fname}", conv.conv, pkg, isTest = false)
       }
     }
   }
