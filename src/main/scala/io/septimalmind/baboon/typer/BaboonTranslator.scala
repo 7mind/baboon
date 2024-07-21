@@ -105,7 +105,7 @@ class BaboonTranslator(pkg: Pkg,
       id <- scopeSupport.resolveScopedRef(parent, path, pkg, refMeta)
       parentDef = defined(id)
       out <- parentDef match {
-        case DomainMember.User(_, defn: Typedef.Dto, meta) =>
+        case DomainMember.User(_, defn: Typedef.Dto, _) =>
           Right(defn.fields)
         case o =>
           Left(NEList(BaboonIssue.WrongParent(id, o.id, meta)))

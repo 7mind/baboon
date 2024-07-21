@@ -24,8 +24,7 @@ sealed trait FSPath extends Product with CachedProductHashcode {
 
 object FSPath {
 
-  final case class Full protected (location: Seq[NEString],
-                                   name: NEString)
+  final case class Full private (location: Seq[NEString], name: NEString)
       extends FSPath {
     override def segments: Seq[NEString] = location :+ name
 
@@ -38,7 +37,7 @@ object FSPath {
     override def toString: String = asString
   }
 
-  final case class Name protected (name: NEString) extends FSPath {
+  final case class Name private (name: NEString) extends FSPath {
     override def asString: String = name.theString
 
     override def segments: Seq[NEString] = Seq(name)

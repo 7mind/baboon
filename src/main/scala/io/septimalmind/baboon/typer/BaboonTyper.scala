@@ -12,7 +12,6 @@ import izumi.fundamentals.graphs.struct.IncidenceMatrix
 import izumi.fundamentals.graphs.tools.{Toposort, ToposortLoopBreaker}
 import izumi.fundamentals.graphs.{DG, GraphMeta}
 import izumi.fundamentals.platform.crypto.IzSha256Hash
-import izumi.fundamentals.platform.functional.Identity
 
 import scala.annotation.tailrec
 

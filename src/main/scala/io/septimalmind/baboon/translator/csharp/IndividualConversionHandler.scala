@@ -11,8 +11,7 @@ import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 
-class IndividualConversionHandler(transd: CSDefnTranslator,
-                                  trans: CSTypeTranslator,
+class IndividualConversionHandler(trans: CSTypeTranslator,
                                   pkg: CSPackageId,
                                   srcDom: Domain @Id("source"),
                                   domain: Domain @Id("current"),
