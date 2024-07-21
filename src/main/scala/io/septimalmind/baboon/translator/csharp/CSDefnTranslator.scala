@@ -2,14 +2,10 @@ package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
-  baboonCodecImpls,
-  iBaboonGenerated,
-  iBaboonGeneratedLatest
-}
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{baboonCodecImpls, iBaboonGenerated, iBaboonGeneratedLatest}
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.typer.model.TypeId.{Builtins, ComparatorType}
+import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*

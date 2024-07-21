@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.typer.model
 
 import io.septimalmind.baboon.parser.model.RawNodeMeta
-import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
+import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.graphs.DG
 
 case class Domain(id: Pkg,

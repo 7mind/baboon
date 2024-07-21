@@ -1,12 +1,8 @@
 package io.septimalmind.baboon.tests
 
-import io.septimalmind.baboon.{BaboonCompiler, BaboonLoader}
+import io.septimalmind.baboon.BaboonLoader
 import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzResources
-
-import java.io.File
-
-
 
 class LoaderTest extends BaboonTest {
   "baboon loader" should {
