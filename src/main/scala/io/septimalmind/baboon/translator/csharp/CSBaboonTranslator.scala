@@ -11,7 +11,7 @@ import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
-import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
+import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -22,7 +22,7 @@ class CSBaboonTranslator(
                           options: CompilerOptions,
                           codecs: Set[CSCodecTranslator],
                           tools: CSDefnTools,
-) extends BaboonAbstractTranslator {
+                        ) extends BaboonAbstractTranslator {
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
@@ -30,10 +30,11 @@ class CSBaboonTranslator(
     for {
       translated <- doTranslate(family)
       rt <- sharedRuntime()
+      testRuntime <- sharedTestRuntime
       meta <- buildMeta(family)
       toRender = options.runtime match {
-        case RuntimeGenOpt.Only    => rt
-        case RuntimeGenOpt.With    => rt ++ translated
+        case RuntimeGenOpt.Only => rt
+        case RuntimeGenOpt.With => rt ++ translated ++ testRuntime
         case RuntimeGenOpt.Without => translated
       }
       rendered = toRender.map { o =>
@@ -121,8 +122,8 @@ class CSBaboonTranslator(
   }
 
   private def doTranslate(
-    family: BaboonFamily
-  ): Out[List[CSDefnTranslator.Output]] = {
+                           family: BaboonFamily
+                         ): Out[List[CSDefnTranslator.Output]] = {
     // TODO: fix .toSeq.toList
 
     family.domains.toSeq.toList.map {
@@ -132,8 +133,8 @@ class CSBaboonTranslator(
   }
 
   private def translateLineage(
-    lineage: BaboonLineage
-  ): Out[List[CSDefnTranslator.Output]] = {
+                                lineage: BaboonLineage
+                              ): Out[List[CSDefnTranslator.Output]] = {
 
     lineage.versions.toSeq.toList.map {
       case (_, domain) =>
@@ -142,9 +143,10 @@ class CSBaboonTranslator(
     }.biFlatten
   }
 
-  private def translateDomain(domain: Domain,
-                              lineage: BaboonLineage,
-  ): Out[List[CSDefnTranslator.Output]] = {
+  private def translateDomain(
+                               domain: Domain,
+                               lineage: BaboonLineage,
+                             ): Out[List[CSDefnTranslator.Output]] = {
     val evo = lineage.evolution
     for {
       defnSources <- domain.defs.meta.nodes.toList.map {
@@ -469,16 +471,70 @@ class CSBaboonTranslator(
          |    public static readonly $csString TsuDefault = "yyyy-MM-ddTHH:mm:ss.fffZ";
          |    public static readonly $csString[] Tsu = Tsz;
          |
-         |    public static $csString ToString($csDateTime dt) {
-         |        return dt.ToString(dt.Kind == $csDateTimeKind.Utc ? TsuDefault : TszDefault, $csInvariantCulture.InvariantCulture);
+         |    public static $csString ToString($rpDateTime dt) {
+         |        return dt._underlying.ToString(dt._underlying.Kind == $csDateTimeKind.Utc ? TsuDefault : TszDefault, $csInvariantCulture.InvariantCulture);
          |    }
-         |    public static $csDateTime FromString($csString dt) {
+         |    public static $rpDateTime FromString($csString dt) {
          |        return $csDateTime.ParseExact(dt, Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None);
+         |    }
+         |
+         |    public static DateTime TruncateToMilliseconds(DateTime dateTime)
+         |    {
+         |        return new DateTime(dateTime.Ticks - (dateTime.Ticks % TimeSpan.TicksPerMillisecond), dateTime.Kind);
          |    }
          |}
          |""".stripMargin
 
-    val runtime = Seq(key, base, abstractAggregator, formats).join("\n\n")
+    val customDateTime =
+      q"""/// Reduced to milliseconds precision DateTime
+         |public readonly struct RPDateTime
+         |{
+         |    public readonly DateTime _underlying;
+         |
+         |    public RPDateTime(DateTime dateTime)
+         |    {
+         |        _underlying = BaboonDateTimeFormats.TruncateToMilliseconds(dateTime);
+         |    }
+         |
+         |    public override int GetHashCode()
+         |    {
+         |        return _underlying.GetHashCode();
+         |    }
+         |
+         |    public override bool Equals(object? obj)
+         |    {
+         |        if (obj == null) return false;
+         |
+         |        if (obj is RPDateTime other)
+         |        {
+         |            return other._underlying == _underlying;
+         |        }
+         |
+         |        return false;
+         |    }
+         |
+         |    public static bool operator ==(RPDateTime left, RPDateTime right)
+         |    {
+         |        return left.Equals(right);
+         |    }
+         |
+         |    public static bool operator !=(RPDateTime left, RPDateTime right)
+         |    {
+         |        return !(left == right);
+         |    }
+         |
+         |    public static TimeSpan operator -(RPDateTime left, RPDateTime right)
+         |    {
+         |        return left._underlying - right._underlying;
+         |    }
+         |
+         |    public static implicit operator RPDateTime(DateTime dt) => new(dt);
+         |    public static implicit operator DateTime(RPDateTime rpdt) => rpdt._underlying;
+         |}
+         |
+         |""".stripMargin
+
+    val runtime = Seq(key, base, abstractAggregator, customDateTime, formats).join("\n\n")
 
     val rt =
       tools.inNs(CSBaboonTranslator.sharedRtPkg.parts.toSeq, runtime)
@@ -495,12 +551,102 @@ class CSBaboonTranslator(
     )
   }
 
+  private def sharedTestRuntime: Out[List[CSDefnTranslator.Output]] = {
+    val sharedTestRuntime =
+      q"""
+         |using System;
+         |using System.Collections.Immutable;
+         |using System.Reflection;
+         |using AutoFixture.Kernel;
+         |using AutoFixture;
+         |
+         |internal class TruncatedRandomDateTimeSequenceGenerator : ISpecimenBuilder
+         |{
+         |    private readonly ISpecimenBuilder innerRandomDateTimeSequenceGenerator;
+         |
+         |    internal TruncatedRandomDateTimeSequenceGenerator()
+         |    {
+         |        this.innerRandomDateTimeSequenceGenerator =
+         |            new RandomDateTimeSequenceGenerator();
+         |    }
+         |
+         |    public object Create(object request, ISpecimenContext context)
+         |    {
+         |        var result =
+         |            this.innerRandomDateTimeSequenceGenerator.Create(request, context);
+         |        if (result is NoSpecimen)
+         |            return result;
+         |
+         |        return BaboonDateTimeFormats.TruncateToMilliseconds((DateTime)result);
+         |    }
+         |}
+         |
+         |public class EnumDictionaryBuilder : ISpecimenBuilder
+         |{
+         |    public object? Create(object request, ISpecimenContext context)
+         |    {
+         |        var type = ExtractType(request);
+         |        if (type == null || !type.IsGenericType ||
+         |            type.GetGenericTypeDefinition() != typeof(ImmutableDictionary<,>))
+         |        {
+         |            return new NoSpecimen();
+         |        }
+         |
+         |        var keyType = type.GetGenericArguments()[0];
+         |        var valueType = type.GetGenericArguments()[1];
+         |
+         |        if (keyType.IsEnum)
+         |        {
+         |            var key = Enum.GetValues(keyType).GetValue(0);
+         |            var value = context.Resolve(valueType);
+         |
+         |            Type immutableDictType = typeof(ImmutableDictionary<,>).MakeGenericType(keyType, valueType);
+         |
+         |            MethodInfo? createMethod = typeof(ImmutableDictionary)
+         |                .GetMethod("Create", BindingFlags.Public | BindingFlags.Static, Type.EmptyTypes)
+         |                ?.MakeGenericMethod(keyType, valueType);
+         |
+         |            var emptyImmutableDict = createMethod?.Invoke(null, null);
+         |
+         |            MethodInfo? addMethod = immutableDictType.GetMethod("Add", new[] { keyType, valueType });
+         |
+         |            return addMethod?.Invoke(emptyImmutableDict, new[] { key, value });
+         |        }
+         |
+         |        return new NoSpecimen();
+         |    }
+         |
+         |    private static Type? ExtractType(object request)
+         |    {
+         |        return request switch
+         |        {
+         |            Type type => type,
+         |            PropertyInfo propertyInfo => propertyInfo.PropertyType,
+         |            FieldInfo fieldInfo => fieldInfo.FieldType,
+         |            ParameterInfo parameterInfo => parameterInfo.ParameterType,
+         |            _ => null
+         |        };
+         |    }
+         |}
+         |""".stripMargin
+
+    Right(
+      List(
+        CSDefnTranslator.Output(
+          "Baboon-Test-Runtime-Shared.cs",
+          tools.inNs(CSBaboonTranslator.sharedRtPkg.parts.toSeq, sharedTestRuntime),
+          CSBaboonTranslator.sharedRtPkg
+        )
+      )
+    )
+  }
+
   private def generateConversions(
-    domain: Domain,
-    lineage: BaboonLineage,
-    toCurrent: Set[EvolutionStep],
-    defnOut: List[CSDefnTranslator.OutputExt]
-  ): Out[List[CSDefnTranslator.Output]] = {
+                                   domain: Domain,
+                                   lineage: BaboonLineage,
+                                   toCurrent: Set[EvolutionStep],
+                                   defnOut: List[CSDefnTranslator.OutputExt]
+                                 ): Out[List[CSDefnTranslator.Output]] = {
     val pkg = trans.toCsPkg(domain.id, domain.version)
 
     for {
@@ -536,10 +682,12 @@ class CSBaboonTranslator(
            |
            |    override public $csList<$csString> VersionsFrom()
            |    {
-           |        return new $csList<$csString> { ${toCurrent
-             .map(_.from.version)
-             .map(v => s"""\"$v\"""")
-             .mkString(", ")} };
+           |        return new $csList<$csString> { ${
+          toCurrent
+            .map(_.from.version)
+            .map(v => s"""\"$v\"""")
+            .mkString(", ")
+        } };
            |    }
            |
            |    override public $csString VersionTo()
@@ -567,7 +715,7 @@ class CSBaboonTranslator(
 
       List(
         CSDefnTranslator
-          .Output(s"${tools.basename(domain)}/Baboon-Runtime.cs", rt, pkg)
+          .Output(s"${tools.basename(domain)}/main/Baboon-Runtime.cs", rt, pkg)
       ) ++ convs.map { conv =>
         CSDefnTranslator
           .Output(s"${tools.basename(domain)}/${conv.fname}", conv.conv, pkg)
@@ -582,7 +730,7 @@ object CSBaboonTranslator {
                                 conv: TextTree[CSValue],
                                 reg: Option[TextTree[CSValue]],
                                 missing: Option[TextTree[CSValue]],
-  )
+                               )
 
   val sharedRtPkg: CSPackageId = CSPackageId(
     NEList("Baboon", "Runtime", "Shared")
@@ -661,6 +809,8 @@ object CSBaboonTranslator {
     CSType(systemPkg, "Enum", fq = false)
   val csDateTime: CSType =
     CSType(systemPkg, "DateTime", fq = false)
+  val rpDateTime: CSType =
+    CSType(sharedRtPkg, "RPDateTime", fq = false)
   val csArgumentException: CSType =
     CSType(systemPkg, "ArgumentException", fq = false)
   val csEnumerable: CSType =

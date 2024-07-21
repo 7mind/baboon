@@ -1,8 +1,10 @@
 package io.septimalmind.baboon.tests
 
-import io.septimalmind.baboon.BaboonLoader
+import io.septimalmind.baboon.{BaboonCompiler, BaboonLoader}
 import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzResources
+
+import java.io.File
 
 
 

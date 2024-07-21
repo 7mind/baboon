@@ -68,6 +68,7 @@ jobs:
           --output ./test/cs-stub/ConversionsTest/Generated
         cd ./test/cs-stub
         dotnet build
+        dotnet test ConversionsTest/ConversionsTest.csproj
   prepare-release:
     runs-on: ubuntu-latest
     needs: [ build ]
