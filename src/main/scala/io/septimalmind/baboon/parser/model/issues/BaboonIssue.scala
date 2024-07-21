@@ -3,6 +3,7 @@ package io.septimalmind.baboon.parser.model.issues
 import fastparse.Parsed
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.*
+import io.septimalmind.baboon.translator.OutputFile
 import io.septimalmind.baboon.typer.BaboonTyper
 import io.septimalmind.baboon.typer.BaboonTyper.FullRawDefn
 import io.septimalmind.baboon.typer.model.*
@@ -277,7 +278,7 @@ object BaboonIssue {
 
   //
   sealed trait TranslationIssue extends BaboonIssue
-  case class NonUniqueOutputFiles(c: Map[String, List[String]])
+  case class NonUniqueOutputFiles(c: Map[String, List[OutputFile]])
       extends TranslationIssue
 
   case class TranslationBug()(implicit val context: IssueContext)
