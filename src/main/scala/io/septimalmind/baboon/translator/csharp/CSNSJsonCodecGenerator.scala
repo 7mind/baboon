@@ -393,9 +393,11 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
             q"""$BaboonTools.ReadValue($ref, t => ${mkDecoder(args.head, domain, q"t")})"""
 
           case TypeId.Builtins.map =>
+            val keyRef = args.head
+            val valueRef = args.last
             val keyDec = decodeKey(args.head, domain, q"kv.Name")
             val valueDec = mkDecoder(args.last, domain, q"kv.Value")
-            q"""$ref!.Value<$nsJObject>()!.Properties().Select(kv => $csKeyValuePair.Create($keyDec, $valueDec)).ToImmutableDictionary()"""
+            q"""$ref!.Value<$nsJObject>()!.Properties().Select(kv => new $csKeyValuePair<${trans.asCsRef(keyRef, domain)}, ${trans.asCsRef(valueRef, domain)}>($keyDec, $valueDec)).ToImmutableDictionary()"""
 
           case TypeId.Builtins.lst =>
             q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(args.head, domain, q"e")}).ToImmutableList()"""
