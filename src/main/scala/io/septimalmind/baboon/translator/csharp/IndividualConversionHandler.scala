@@ -169,9 +169,11 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
                       )
                     case c: TypeRef.Constructor
                         if c.id == TypeId.Builtins.map =>
+                      val keyRef = c.args.head
+                      val valueRef = c.args.last
                       Right(
                         Seq(
-                          q"(from e in $fieldRef select ${csKeyValuePair}.Create(${transfer(
+                          q"(from e in $fieldRef select new $csKeyValuePair<${trans.asCsRef(keyRef, domain)}, ${trans.asCsRef(valueRef, domain)}>(${transfer(
                             c.args.head,
                             q"e.Key"
                           )}, ${transfer(c.args.last, q"e.Value")})).ToImmutableDictionary(v => v.Key, v => v.Value)"
@@ -379,7 +381,7 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
             val vt = trans.asCsRef(newCollArgs.last, domain)
             Right(
               Seq(
-                q"(from e in $fieldRef select $csKeyValuePair.Create(($kt)e.Key, ($vt)e.Value)).ToImmutableDictionary(v => v.Key, v => v.Value)"
+                q"(from e in $fieldRef select new $csKeyValuePair<$kt, $vt>(($kt)e.Key, ($vt)e.Value)).ToImmutableDictionary(v => v.Key, v => v.Value)"
               )
             )
           case _ =>
