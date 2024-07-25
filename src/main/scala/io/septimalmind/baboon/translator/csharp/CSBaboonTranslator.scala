@@ -177,7 +177,6 @@ class CSBaboonTranslator(
          |    public $csString BaboonDomainVersion();
          |    public $csString BaboonDomainIdentifier();
          |    public $csString BaboonTypeIdentifier();
-         |
          |}
          |
          |public interface IBaboonGeneratedLatest : IBaboonGenerated {}
@@ -189,113 +188,91 @@ class CSBaboonTranslator(
          |
          |public interface IBaboonGeneratedConversion : IConversion
          |{
-         |    public IBaboonGenerated Convert<C>(C? context, AbstractBaboonConversions conversions, IBaboonGenerated from);
+         |    public $iBaboonGenerated Convert<TC>(TC? context, $abstractBaboonConversions conversions, $iBaboonGenerated from);
          |}
          |
-         |public interface IDynamicConversion<To> : IConversion
+         |public interface IDynamicConversion<out TTo> : IConversion
          |{
-         |     public To Convert<C>(C? context, AbstractBaboonConversions conversions, dynamic from);
+         |     public TTo Convert<T>(T? context, $abstractBaboonConversions conversions, dynamic from);
          |}
          |
-         |public abstract class AbstractConversion<From, To> : IDynamicConversion<To>, IBaboonGeneratedConversion
+         |public abstract class AbstractConversion<TFrom, TTo> : IDynamicConversion<TTo>, IBaboonGeneratedConversion
          |{
-         |    public abstract To Convert<C>(C? context, AbstractBaboonConversions conversions, From from);
+         |    public abstract TTo Convert<TCtx>(TCtx? context, $abstractBaboonConversions conversions, TFrom from);
          |
-         |    public To Convert<C>(C? context, AbstractBaboonConversions conversions, dynamic from)
+         |    public TTo Convert<TCtx>(TCtx? context, $abstractBaboonConversions conversions, dynamic from)
          |    {
-         |        return Convert<C>(context, conversions, (From)from);
+         |        return Convert<TCtx>(context, conversions, (TFrom)from);
          |    }
          |
-         |    IBaboonGenerated IBaboonGeneratedConversion.Convert<C>(C? context, $abstractBaboonConversions conversions, $iBaboonGenerated from) where C : default
+         |    IBaboonGenerated IBaboonGeneratedConversion.Convert<TCtx>(TCtx? context, $abstractBaboonConversions conversions, $iBaboonGenerated from) where TCtx : default
          |    {
-         |        if (from is not From fr)
+         |        if (from is not TFrom fr)
          |        {
-         |            throw new Exception(
-         |                $"Can't use IBaboonGeneratedConversion interface when from is not of type {typeof(To).FullName}");
+         |            throw new Exception("Can't use IBaboonGeneratedConversion interface when from is not of type {typeof(To).FullName}");
          |        }
          |        var res = Convert(context, conversions, fr);
          |
          |        if (res is not $iBaboonGenerated bg)
          |        {
-         |            throw new $csArgumentException(
-         |                $$"Can't use IBaboonGeneratedConversion interface for non IBaboonGenerated return type To = {typeof(To).FullName}");
+         |            throw new $csArgumentException($$"Can't use IBaboonGeneratedConversion interface for non IBaboonGenerated return type To = {typeof(TTo).FullName}");
          |        }
          |        return bg;
          |    }
          |
          |    public $csTpe TypeFrom() {
-         |         return typeof(From);
+         |         return typeof(TFrom);
          |    }
          |
          |     public $csTpe TypeTo() {
-         |         return typeof(To);
+         |         return typeof(TTo);
          |     }
          |}
          |
-         |public interface IBaboonCodecAbstract {
+         |public interface IBaboonCodecData {
          |    public $csString BaboonDomainVersion();
          |    public $csString BaboonDomainIdentifier();
          |    public $csString BaboonTypeIdentifier();
          |}
          |
-         |public interface IBaboonCodec<Instance> : IBaboonCodecAbstract {}
+         |public interface IBaboonCodec<T> : $iBaboonCodecData {}
          |
-         |public interface IBaboonValueCodec<Instance, Wire> : IBaboonCodec<Instance>
+         |public interface IBaboonValueCodec<T, TWire> : $iBaboonCodec<T>
          |{
-         |    Wire Encode(Instance instance);
-         |    Instance Decode(Wire wire);
+         |    TWire Encode(T instance);
+         |    T Decode(TWire wire);
          |}
          |
-         |public interface IBaboonJsonCodec<Instance> : IBaboonValueCodec<Instance, $nsJToken> {}
+         |public interface IBaboonJsonCodec<T> : $iBaboonValueCodec<T, $nsJToken> {}
          |
-         |public interface IBaboonStreamCodec<Instance, OutStream, InStream> : IBaboonCodec<Instance>
+         |public interface IBaboonStreamCodec<T, in TOut, in TIn> : $iBaboonCodec<T>
          |{
-         |    void Encode(OutStream writer, Instance instance);
-         |    Instance Decode(InStream wire);
+         |    void Encode(TOut writer, T instance);
+         |    T Decode(TIn wire);
          |}
          |
-         |public interface IBaboonBinCodec<Instance> : IBaboonStreamCodec<Instance, $binaryWriter, $binaryReader> {}
+         |public interface IBaboonBinCodec<T> : $iBaboonStreamCodec<T, $binaryWriter, $binaryReader> {}
          |
-         |public class BaboonTools {
-         |    public static A? ReadNullableValue<A>(Boolean ifNot, Func<A> thenReturn) where A: struct
-         |    {
-         |        if (ifNot) return null;
-         |        return thenReturn();
-         |    }
+         |public record BaboonTypeCodecs($csString Id, IBaboonCodecData Json, IBaboonCodecData Ueba);
          |
-         |    public static A? ReadNullableValue<A>($nsJToken? token, Func<$nsJToken, A> readValue) where A: struct
-         |    {
-         |        if (token == null || token.Type == $nsJTokenType.Null) return null;
-         |        return readValue(token);
-         |    }
-         |
-         |    public static A? ReadValue<A>($nsJToken? token, Func<$nsJToken, A> readValue) where A: class
-         |    {
-         |        if (token == null || token.Type == $nsJTokenType.Null) return null;
-         |        return readValue(token);
-         |    }
-         |}
-         |
-         |public record BaboonCodecImpls($metaFields);
-         |
-         |public abstract class BaboonAbstractCodecs
+         |public abstract class AbstractBaboonCodecs
          |{
          |
-         |    private $csDict<$csString, BaboonCodecImpls> codecs = new ();
+         |    private readonly Dictionary<$csString, $baboonTypeCodecs> _codecs = new ();
          |
-         |    public void Register(BaboonCodecImpls impls)
+         |    public void Register($baboonTypeCodecs impls)
          |    {
-         |        codecs[impls.id] = impls;
+         |        _codecs[impls.Id] = impls;
          |    }
          |
-         |    public BaboonCodecImpls Find($csString id)
+         |    public $baboonTypeCodecs Find($csString id)
          |    {
-         |        return codecs[id];
+         |        return _codecs[id];
          |    }
          |
-         |    public bool TryFind(String id, out BaboonCodecImpls? value)
+         |    public bool TryFind($csString id, out $baboonTypeCodecs? value)
          |    {
-         |        return codecs.TryGetValue(id, out value);
+         |        return _codecs.TryGetValue(id, out value);
          |    }
          |}""".stripMargin
 
@@ -333,43 +310,43 @@ class CSBaboonTranslator(
     val abstractAggregator =
       q"""public abstract class AbstractBaboonConversions
          |{
-         |    private $csDict<ConversionKey, IConversion> convs = new ();
-         |    private Dictionary<Type, List<IConversion>> convsWild = new ();
+         |    private readonly $csDict<ConversionKey, IConversion> _convs = new ();
+         |    private readonly $csDict<Type, List<IConversion>> _convsWild = new ();
          |
-         |    public abstract $csList<$csString> VersionsFrom();
+         |    public abstract $csList<String> VersionsFrom();
          |
-         |    public abstract String VersionTo();
+         |    public abstract $csString VersionTo();
          |
          |    public $csList<IConversion> AllConversions()
          |    {
-         |        return convs.Values.ToList();
+         |        return _convs.Values.ToList();
          |    }
          |
          |    public void Register(IConversion conversion)
          |    {
          |        var fromType = conversion.TypeFrom();
          |        var key = new ConversionKey(fromType, conversion.TypeTo());
-         |        var wild = convsWild.TryGetValue(fromType, out var v) ? v : new List<IConversion>();
+         |        var wild = _convsWild.TryGetValue(fromType, out var v) ? v : new $csList<IConversion>();
          |        wild.Add(conversion);
-         |        convs[key] = conversion;
-         |        convsWild[fromType] = wild;
+         |        _convs[key] = conversion;
+         |        _convsWild[fromType] = wild;
          |    }
          |
-         |    public void Register<From, To>(AbstractConversion<From, To> conversion)
+         |    public void Register<TFrom, TTo>(AbstractConversion<TFrom, TTo> conversion)
          |    {
-         |        var tFrom = typeof(From);
-         |        var tTo = typeof(To);
+         |        var tFrom = typeof(TFrom);
+         |        var tTo = typeof(TTo);
          |        var key = new ConversionKey(tFrom, tTo);
-         |        var wild = convsWild.TryGetValue(tFrom, out var v) ? v : new List<IConversion>();
+         |        var wild = _convsWild.TryGetValue(tFrom, out var v) ? v : new List<IConversion>();
          |        wild.Add(conversion);
-         |        convs[key] = conversion;
-         |        convsWild[tFrom] = wild;
+         |        _convs[key] = conversion;
+         |        _convsWild[tFrom] = wild;
          |    }
          |
-         |    public IBaboonGenerated ConvertWithContext<C>(C? c, IBaboonGenerated from, IConversion conversion)
+         |    public IBaboonGenerated ConvertWithContext<T>(T? c, IBaboonGenerated from, IConversion conversion)
          |    {
          |        var tconv = (IBaboonGeneratedConversion)conversion;
-         |        return tconv.Convert<C>(c, this, from);
+         |        return tconv.Convert<T>(c, this, from);
          |    }
          |
          |    public IBaboonGenerated Convert(IBaboonGenerated from, IConversion conversion)
@@ -380,57 +357,77 @@ class CSBaboonTranslator(
          |
          |    public IReadOnlyList<IConversion> FindConversions(IBaboonGenerated value)
          |    {
-         |        return !convsWild.TryGetValue(value.GetType(), out var res) ? new List<IConversion>() : res;
+         |        return !_convsWild.TryGetValue(value.GetType(), out var res) ? new List<IConversion>() : res;
          |    }
          |
-         |    public To ConvertWithContext<C, From, To>(C? c, From from)
+         |    public TTo ConvertWithContext<T, TFrom, TTo>(T? c, TFrom from)
          |    {
-         |        var tFrom = typeof(From);
-         |        var tTo = typeof(To);
+         |        var tFrom = typeof(TFrom);
+         |        var tTo = typeof(TTo);
          |
-         |        if (from is To direct)
+         |        if (from is TTo direct)
          |        {
          |            return direct;
          |        }
          |        var key = new ConversionKey(tFrom, tTo);
          |
-         |        var conv = convs[key];
-         |        var tconv = ((AbstractConversion<From, To>)conv);
+         |        var conv = _convs[key];
+         |        var tconv = ((AbstractConversion<TFrom, TTo>)conv);
          |        return tconv.Convert(c, this, from);
          |    }
          |
-         |    public To ConvertWithContextDynamic<C, To>(C? c, Type tFrom, dynamic from)
+         |    public TTo ConvertWithContextDynamic<T, TTo>(T? c, Type tFrom, dynamic from)
          |    {
-         |        var tTo = typeof(To);
+         |        var tTo = typeof(TTo);
          |
-         |        if (from is To direct)
+         |        if (from is TTo direct)
          |        {
          |            return direct;
          |        }
          |        var key = new ConversionKey(tFrom, tTo);
          |
-         |        var conv = convs[key];
-         |        var tconv = ((IDynamicConversion<To>)conv);
+         |        var conv = _convs[key];
+         |        var tconv = ((IDynamicConversion<TTo>)conv);
          |        return tconv.Convert(c, this, from);
          |    }
          |
-         |    public To ConvertDynamic<To>(dynamic from)
-         |        where To : IBaboonGenerated
+         |    public TTo ConvertDynamic<TTo>(dynamic from)
+         |        where TTo : IBaboonGenerated
          |    {
-         |        return ConvertWithContextDynamic<Object, To>(null, from.GetType(), from);
+         |        return ConvertWithContextDynamic<Object, TTo>(null, from.GetType(), from);
          |    }
          |
-         |    public To Convert<From, To>(From from)
-         |        where From : IBaboonGenerated
-         |        where To : IBaboonGenerated
+         |    public TTo Convert<TFrom, TTo>(TFrom from)
+         |        where TFrom : IBaboonGenerated
+         |        where TTo : IBaboonGenerated
          |    {
-         |        return ConvertWithContext<Object, From, To>(null, from);
+         |        return ConvertWithContext<Object, TFrom, TTo>(null, from);
          |    }
          |
          |}""".stripMargin
 
     val formats =
-      q"""public static class BaboonDateTimeFormats {
+      q"""public class BaboonTools {
+         |    public static T? ReadNullableValue<T>(Boolean ifNot, Func<T> thenReturn) where T: struct
+         |    {
+         |        if (ifNot) return null;
+         |        return thenReturn();
+         |    }
+         |
+         |    public static T? ReadNullableValue<T>($nsJToken? token, Func<$nsJToken, T> readValue) where T: struct
+         |    {
+         |        if (token == null || token.Type == $nsJTokenType.Null) return null;
+         |        return readValue(token);
+         |    }
+         |
+         |    public static T? ReadValue<T>($nsJToken? token, Func<$nsJToken, T> readValue) where T: class
+         |    {
+         |        if (token == null || token.Type == $nsJTokenType.Null) return null;
+         |        return readValue(token);
+         |    }
+         |}
+         |
+         |public static class BaboonDateTimeFormats {
          |    public static readonly $csString TslDefault = "yyyy-MM-ddTHH:mm:ss.fff";
          |    public static readonly $csString[] Tsl = new string[] {
          |                "yyyy-MM-ddTHH:mm:ss",
@@ -473,7 +470,7 @@ class CSBaboonTranslator(
          |    public static readonly $csString[] Tsu = Tsz;
          |
          |    public static $csString ToString($rpDateTime dt) {
-         |        return dt._underlying.ToString(dt._underlying.Kind == $csDateTimeKind.Utc ? TsuDefault : TszDefault, $csInvariantCulture.InvariantCulture);
+         |        return dt.Underlying.ToString(dt.Underlying.Kind == $csDateTimeKind.Utc ? TsuDefault : TszDefault, $csInvariantCulture.InvariantCulture);
          |    }
          |    public static $rpDateTime FromString($csString dt) {
          |        return $csDateTime.ParseExact(dt, Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None);
@@ -487,53 +484,49 @@ class CSBaboonTranslator(
          |""".stripMargin
 
     val customDateTime =
-      q"""/// Reduced to milliseconds precision DateTime
-         |public readonly struct RPDateTime
+      q"""/** Reduced to milliseconds precision DateTime */
+         |public readonly struct RpDateTime
          |{
-         |    public readonly DateTime _underlying;
+         |    internal readonly DateTime Underlying;
          |
-         |    public RPDateTime(DateTime dateTime)
+         |    public RpDateTime(DateTime dateTime)
          |    {
-         |        _underlying = BaboonDateTimeFormats.TruncateToMilliseconds(dateTime);
+         |        Underlying = BaboonDateTimeFormats.TruncateToMilliseconds(dateTime);
          |    }
          |
          |    public override int GetHashCode()
          |    {
-         |        return _underlying.GetHashCode();
+         |        return Underlying.GetHashCode();
          |    }
          |
          |    public override bool Equals(object? obj)
          |    {
-         |        if (obj == null) return false;
-         |
-         |        if (obj is RPDateTime other)
+         |        if (obj is RpDateTime other)
          |        {
-         |            return other._underlying == _underlying;
+         |            return other.Underlying == Underlying;
          |        }
          |
          |        return false;
          |    }
          |
-         |    public static bool operator ==(RPDateTime left, RPDateTime right)
+         |    public static bool operator ==(RpDateTime left, RpDateTime right)
          |    {
          |        return left.Equals(right);
          |    }
          |
-         |    public static bool operator !=(RPDateTime left, RPDateTime right)
+         |    public static bool operator !=(RpDateTime left, RpDateTime right)
          |    {
          |        return !(left == right);
          |    }
          |
-         |    public static TimeSpan operator -(RPDateTime left, RPDateTime right)
+         |    public static TimeSpan operator -(RpDateTime left, RpDateTime right)
          |    {
-         |        return left._underlying - right._underlying;
+         |        return left.Underlying - right.Underlying;
          |    }
          |
-         |    public static implicit operator RPDateTime(DateTime dt) => new(dt);
-         |    public static implicit operator DateTime(RPDateTime rpdt) => rpdt._underlying;
-         |}
-         |
-         |""".stripMargin
+         |    public static implicit operator RpDateTime(DateTime dt) => new(dt);
+         |    public static implicit operator DateTime(RpDateTime rpdt) => rpdt.Underlying;
+         |}""".stripMargin
 
     val runtime = Seq(key, base, abstractAggregator, customDateTime, formats).join("\n\n")
 
@@ -719,7 +712,7 @@ class CSBaboonTranslator(
 
       List(
         CSDefnTranslator
-          .Output(s"${tools.basename(domain)}/main/Baboon-Runtime.cs", rt, pkg, isTest = false)
+          .Output(s"${tools.basename(domain)}/Baboon-Runtime.cs", rt, pkg, isTest = false)
       ) ++ convs.map { conv =>
         CSDefnTranslator
           .Output(s"${tools.basename(domain)}/${conv.fname}", conv.conv, pkg, isTest = false)
@@ -759,8 +752,8 @@ object CSBaboonTranslator {
   val BaboonTools: CSType =
     CSType(sharedRtPkg, "BaboonTools", fq = false)
 
-  val iBaboonCodecAbstract: CSType =
-    CSType(sharedRtPkg, "IBaboonCodecAbstract", fq = false)
+  val iBaboonCodecData: CSType =
+    CSType(sharedRtPkg, "IBaboonCodecData", fq = false)
   val iBaboonCodec: CSType =
     CSType(sharedRtPkg, "IBaboonCodec", fq = false)
   val iBaboonValueCodec: CSType =
@@ -772,10 +765,10 @@ object CSBaboonTranslator {
     CSType(sharedRtPkg, "IBaboonJsonCodec", fq = false)
   val iBaboonBinCodec: CSType =
     CSType(sharedRtPkg, "IBaboonBinCodec", fq = false)
-  val baboonCodecImpls: CSType =
-    CSType(sharedRtPkg, "BaboonCodecImpls", fq = false)
+  val baboonTypeCodecs: CSType =
+    CSType(sharedRtPkg, "BaboonTypeCodecs", fq = false)
   val abstractBaboonCodecs: CSType =
-    CSType(sharedRtPkg, "BaboonAbstractCodecs", fq = false)
+    CSType(sharedRtPkg, "AbstractBaboonCodecs", fq = false)
 
   val nsFormatting: CSType =
     CSType(nsPkg, "Formatting", fq = false)
@@ -814,7 +807,7 @@ object CSBaboonTranslator {
   val csDateTime: CSType =
     CSType(systemPkg, "DateTime", fq = false)
   val rpDateTime: CSType =
-    CSType(sharedRtPkg, "RPDateTime", fq = false)
+    CSType(sharedRtPkg, "RpDateTime", fq = false)
   val csArgumentException: CSType =
     CSType(systemPkg, "ArgumentException", fq = false)
   val csEnumerable: CSType =
