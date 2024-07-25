@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.binaryWriter
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BLogger
 import izumi.fundamentals.platform.strings.TextTree
@@ -188,7 +189,7 @@ object CSCodecTestsTranslator {
               val binaryReader = s"${fieldName}_binaryReader"
               q"""using (MemoryStream writeMemoryStream = new MemoryStream())
                |{
-               |  using (BinaryWriter binaryWriter = new BinaryWriter(writeMemoryStream))
+               |  using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))
                |  {
                |   $codecName.Instance.Encode(binaryWriter, $fieldName);
                |  }

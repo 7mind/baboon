@@ -80,7 +80,7 @@ class CSTypeTranslator() {
       case TypeId.Builtins.uid =>
         CSValue.CSType(system, "Guid", fq = false)
       case TypeId.Builtins.tso | TypeId.Builtins.tsu =>
-        CSValue.CSType(baboonRuntime, "RPDateTime", fq = false)
+        CSValue.CSType(baboonRuntime, "RpDateTime", fq = false)
       case _ =>
         throw new IllegalArgumentException(s"Unexpected: $b")
     }

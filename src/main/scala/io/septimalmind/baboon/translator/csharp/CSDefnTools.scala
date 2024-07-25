@@ -23,16 +23,15 @@ object CSDefnTools {
     def makeMeta(defn: DomainMember.User,
                  version: Version): Seq[TextTree[CSValue]] = {
       Seq(
-        q"""public String BaboonDomainVersion()
-           |{
-           |    return "${version.version}";
-           |}""".stripMargin,
-        q"""public String BaboonDomainIdentifier() {
-           |    return "${defn.id.pkg.toString}";
-           |}""".stripMargin,
-        q"""public String BaboonTypeIdentifier() {
-           |    return "${defn.id.toString}";
-           |}""".stripMargin)
+        q"""public static String BaboonDomainVersionValue = "${version.version}";
+           |public String BaboonDomainVersion() => BaboonDomainVersionValue;
+           |""".stripMargin,
+        q"""public static String BaboonDomainIdentifierValue = "${defn.id.pkg.toString}";
+           |public String BaboonDomainIdentifier() => BaboonDomainIdentifierValue;
+           |""".stripMargin,
+        q"""public static String BaboonTypeIdentifierValue = "${defn.id.toString}";
+           |public String BaboonTypeIdentifier() => BaboonTypeIdentifierValue;
+           |""".stripMargin)
     }
 
     private def inNs(name: String, tree: TextTree[CSValue]): TextTree[CSValue] = {
