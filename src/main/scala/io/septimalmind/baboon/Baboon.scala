@@ -30,6 +30,7 @@ case class Options(
     "do not generate usings for System, System.Collections.Generic and System.Linq (see ImplicitUsings)"
   )
   csExcludeGlobalUsings: Option[Boolean],
+  genTests: Option[Boolean]
 )
 
 sealed trait RuntimeGenOpt
@@ -64,6 +65,7 @@ object Baboon {
           rtOpt,
           !opts.disableConversions.getOrElse(false),
           !opts.csExcludeGlobalUsings.getOrElse(false),
+          opts.genTests.getOrElse(false)
         )
         Injector.NoCycles().produceRun(new BaboonModule(options)) {
           (compiler: BaboonCompiler) =>

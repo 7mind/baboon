@@ -167,11 +167,6 @@ class CSBaboonTranslator(
   }
 
   private def sharedRuntime(): Out[List[CSDefnTranslator.Output]] = {
-    val metaFields =
-      (List(q"String id") ++ codecs.toList
-        .sortBy(_.getClass.getName)
-        .map(_.metaField())).join(", ")
-
     val base =
       q"""public interface IBaboonGenerated {
          |    public $csString BaboonDomainVersion();

@@ -94,7 +94,9 @@ object CSDefnTranslator {
         .map(codec => q"${codec.codecName(srcRef).copy(fq = true)}.Instance"))
         .join(", ")
 
-      val codecTestTrees = codecsTests.translate(defn, csTypeRef, srcRef, domain)
+      val codecTestTrees =
+        if (options.generateTests) codecsTests.translate(defn, csTypeRef, srcRef, domain)
+        else None
       val codecTestWithNS = codecTestTrees.map(tools.inNs(ns.toSeq, _))
       val codecTestOut = codecTestWithNS.map(
         codecTestWithNS =>

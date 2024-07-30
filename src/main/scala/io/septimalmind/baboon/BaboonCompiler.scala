@@ -19,22 +19,24 @@ trait BaboonCompiler {
 }
 
 object BaboonCompiler {
-  case class CompilerOptions(debug: Boolean,
-                             obsoleteErrors: Boolean,
-                             runtime: RuntimeGenOpt,
-                             generateConversions: Boolean,
-                             disregardImplicitUsings: Boolean,
-  )
+  case class CompilerOptions(
+                              debug: Boolean,
+                              obsoleteErrors: Boolean,
+                              runtime: RuntimeGenOpt,
+                              generateConversions: Boolean,
+                              disregardImplicitUsings: Boolean,
+                              generateTests: Boolean
+                            )
 
   class BaboonCompilerImpl(loader: BaboonLoader,
                            translator: CSBaboonTranslator,
                            options: CompilerOptions,
                            logger: BLogger,
-  ) extends BaboonCompiler {
+                          ) extends BaboonCompiler {
     override def run(inputs: Set[Path],
                      output: Path,
                      testOutput: Option[Path],
-    ): Either[NEList[BaboonIssue], Unit] = {
+                    ): Either[NEList[BaboonIssue], Unit] = {
       for {
         loaded <- loader.load(inputs.toList)
         translated <- translator.translate(loaded)

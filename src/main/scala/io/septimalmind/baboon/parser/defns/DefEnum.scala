@@ -24,7 +24,7 @@ class DefEnum(context: ParserContext, meta: DefMeta) {
   def enumVal[$: P]: P[RawEnumConst] = {
     import fastparse.ScalaWhitespace.whitespace
     (P("=") ~ constInt).map { v =>
-      RawEnumConst.RawInt(v)
+      RawEnumConst.RawInt(v.toLong)
     }
   }
   def enumMember[$: P]: P[RawEnumMember] = {
