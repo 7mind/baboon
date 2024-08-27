@@ -644,7 +644,7 @@ class CSBaboonTranslator(
                                    toCurrent: Set[EvolutionStep],
                                    defnOut: List[CSDefnTranslator.OutputExt]
                                  ): Out[List[CSDefnTranslator.Output]] = {
-    val pkg = trans.toCsPkg(domain.id, domain.version)
+    val pkg = trans.toCsPkg(domain.id, domain.version, lineage.evolution, options)
 
     for {
       convs <- lineage.evolution.rules
@@ -657,6 +657,7 @@ class CSBaboonTranslator(
               .provide[Domain]("current")(domain)
               .provide[Domain]("source")(lineage.versions(srcVer.from))
               .provide(rules)
+              .provide(lineage.evolution)
               .produce()
               .use(_.makeConvs())
         }
@@ -710,12 +711,14 @@ class CSBaboonTranslator(
 
       val rt = tools.inNs(pkg.parts.toSeq, runtime)
 
+      val basename = tools.basename(domain, lineage.evolution, options)
+
       List(
         CSDefnTranslator
-          .Output(s"${tools.basename(domain)}/Baboon-Runtime.cs", rt, pkg, isTest = false)
+          .Output(s"$basename/Baboon-Runtime.cs", rt, pkg, isTest = false)
       ) ++ convs.map { conv =>
         CSDefnTranslator
-          .Output(s"${tools.basename(domain)}/${conv.fname}", conv.conv, pkg, isTest = false)
+          .Output(s"$basename/${conv.fname}", conv.conv, pkg, isTest = false)
       }
     }
   }

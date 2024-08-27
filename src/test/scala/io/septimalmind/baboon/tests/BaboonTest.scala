@@ -17,6 +17,8 @@ abstract class BaboonTest extends Spec1[Identity] {
           runtime = RuntimeGenOpt.With,
           generateConversions = true,
           disregardImplicitUsings = true,
+          omitMostRecentVersionSuffixFromPaths = true,
+          omitMostRecentVersionSuffixFromNamespaces = true,
         )
       ).morph[PluginBase]
     )

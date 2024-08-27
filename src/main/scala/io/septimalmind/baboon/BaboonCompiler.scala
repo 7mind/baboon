@@ -24,6 +24,8 @@ object BaboonCompiler {
                              runtime: RuntimeGenOpt,
                              generateConversions: Boolean,
                              disregardImplicitUsings: Boolean,
+                             omitMostRecentVersionSuffixFromPaths: Boolean,
+                             omitMostRecentVersionSuffixFromNamespaces: Boolean,
   )
 
   class BaboonCompilerImpl(loader: BaboonLoader,

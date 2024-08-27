@@ -68,7 +68,8 @@ class BaboonModule(options: CompilerOptions) extends ModuleDef {
         DIKey[Version],
         DIKey.get[Domain].named("current"),
         DIKey.get[Domain].named("source"),
-        DIKey.get[BaboonRuleset]
+        DIKey.get[BaboonRuleset],
+        DIKey.get[BaboonEvolution],
       )
     )
     .withSubmodule(new ModuleDef {

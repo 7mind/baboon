@@ -30,6 +30,8 @@ case class Options(
     "do not generate usings for System, System.Collections.Generic and System.Linq (see ImplicitUsings)"
   )
   csExcludeGlobalUsings: Option[Boolean],
+  omitMostRecentVersionSuffixFromPaths: Option[Boolean],
+  omitMostRecentVersionSuffixFromNamespaces: Option[Boolean],
 )
 
 sealed trait RuntimeGenOpt
@@ -64,6 +66,8 @@ object Baboon {
           rtOpt,
           !opts.disableConversions.getOrElse(false),
           !opts.csExcludeGlobalUsings.getOrElse(false),
+          !opts.omitMostRecentVersionSuffixFromPaths.getOrElse(false),
+          !opts.omitMostRecentVersionSuffixFromNamespaces.getOrElse(false),
         )
         Injector.NoCycles().produceRun(new BaboonModule(options)) {
           (compiler: BaboonCompiler) =>

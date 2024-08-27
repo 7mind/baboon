@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.binaryWriter
+import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BLogger
 import izumi.fundamentals.platform.strings.TextTree
@@ -12,18 +13,21 @@ trait CSCodecTestsTranslator {
   def translate(definition: DomainMember.User,
                 csRef: CSValue.CSType,
                 srcRef: CSValue.CSType,
-                domain: Domain): Option[TextTree[CSValue]]
+                domain: Domain,
+                evo: BaboonEvolution): Option[TextTree[CSValue]]
 }
 
 object CSCodecTestsTranslator {
   final class Impl(codecs: Set[CSCodecTranslator],
                    typeTranslator: CSTypeTranslator,
-                   logger: BLogger)
-      extends CSCodecTestsTranslator {
+                   options: CompilerOptions,
+                   logger: BLogger,
+  ) extends CSCodecTestsTranslator {
     override def translate(definition: DomainMember.User,
                            csRef: CSValue.CSType,
                            srcRef: CSValue.CSType,
                            domain: Domain,
+                           evo: BaboonEvolution,
     ): Option[TextTree[CSValue]] = {
       val testClassName =
         CSValue.CSType(srcRef.pkg, s"${srcRef.name}_Codec_Test", srcRef.fq)
@@ -57,10 +61,10 @@ object CSCodecTestsTranslator {
              |  [OneTimeSetUp]
              |  public void Setup()
              |  {
-             |    ${fieldsInitialization(definition, srcRef, domain)}
+             |    ${fieldsInitialization(definition, srcRef, domain, evo)}
              |  }
              |
-             |  ${tests(definition, srcRef, domain)}
+             |  ${tests(definition, srcRef, domain, evo)}
              |}
              |""".stripMargin
         Some(testClass)
@@ -82,13 +86,16 @@ object CSCodecTestsTranslator {
       }
     }
 
-    private def fieldsInitialization(definition: DomainMember.User,
-                                     srcRef: CSValue.CSType,
-                                     domain: Domain): TextTree[CSValue] = {
+    private def fieldsInitialization(
+      definition: DomainMember.User,
+      srcRef: CSValue.CSType,
+      domain: Domain,
+      evo: BaboonEvolution
+    ): TextTree[CSValue] = {
       definition.defn match {
         case Typedef.Adt(root, members) =>
           val adtMembersNamespace = typeTranslator
-            .toCsPkg(domain.id, domain.version)
+            .toCsPkg(domain.id, domain.version, evo, options)
             .parts
             .mkString(".") + s".${root.name.name.toLowerCase}"
           members
@@ -109,6 +116,7 @@ object CSCodecTestsTranslator {
     private def tests(definition: DomainMember.User,
                       srcRef: CSValue.CSType,
                       domain: Domain,
+                      evo: BaboonEvolution,
     ): TextTree[CSValue] = {
       codecs
         .map {
@@ -116,14 +124,26 @@ object CSCodecTestsTranslator {
             q"""[Test]
              |public void jsonCodecTest()
              |{
-             |  ${jsonCodecAssertions(jsonCodec, definition, srcRef, domain)}
+             |  ${jsonCodecAssertions(
+                 jsonCodec,
+                 definition,
+                 srcRef,
+                 domain,
+                 evo
+               )}
              |}
              |""".stripMargin
           case uebaCodec: CSUEBACodecGenerator =>
             q"""[Test]
              |public void uebaCodecTest()
              |{
-             |  ${uebaCodecAssertions(uebaCodec, definition, srcRef, domain)}
+             |  ${uebaCodecAssertions(
+                 uebaCodec,
+                 definition,
+                 srcRef,
+                 domain,
+                 evo
+               )}
              |}
              |""".stripMargin
           case unknown =>
@@ -141,12 +161,15 @@ object CSCodecTestsTranslator {
     private def jsonCodecAssertions(codec: CSNSJsonCodecGenerator,
                                     definition: DomainMember.User,
                                     srcRef: CSValue.CSType,
-                                    domain: Domain): TextTree[CSValue] = {
+                                    domain: Domain,
+                                    evo: BaboonEvolution,
+    ): TextTree[CSValue] = {
       definition.defn match {
         case Typedef.Adt(root, members) =>
           members
             .map { member =>
-              val typeRef = typeTranslator.toCsTypeRefNoDeref(root, domain)
+              val typeRef =
+                typeTranslator.toCsTypeRefNoDeref(root, domain, evo, options)
               val codecName = codec.codecName(typeRef)
               val fieldName = member.name.name.toLowerCase
               val serialized = s"${fieldName}_json"
@@ -175,12 +198,15 @@ object CSCodecTestsTranslator {
     private def uebaCodecAssertions(codec: CSUEBACodecGenerator,
                                     definition: DomainMember.User,
                                     srcRef: CSValue.CSType,
-                                    domain: Domain): TextTree[CSValue] = {
+                                    domain: Domain,
+                                    evo: BaboonEvolution,
+    ): TextTree[CSValue] = {
       definition.defn match {
         case Typedef.Adt(root, members) =>
           members
             .map { member =>
-              val typeRef = typeTranslator.toCsTypeRefNoDeref(root, domain)
+              val typeRef =
+                typeTranslator.toCsTypeRefNoDeref(root, domain, evo, options)
               val codecName = codec.codecName(typeRef)
               val fieldName = member.name.name.toLowerCase
               val serialized = s"${fieldName}_bytes"

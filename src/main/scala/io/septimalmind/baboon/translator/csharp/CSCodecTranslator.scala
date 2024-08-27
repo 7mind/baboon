@@ -8,7 +8,9 @@ trait CSCodecTranslator {
   def translate(defn: DomainMember.User,
                 csRef: CSValue.CSType,
                 srcRef: CSValue.CSType,
-                domain: Domain): TextTree[CSValue]
+                domain: Domain,
+                evo: BaboonEvolution,
+               ): TextTree[CSValue]
 
   def codecName(name: CSValue.CSType): CSValue.CSType
 

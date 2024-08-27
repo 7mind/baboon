@@ -1,25 +1,29 @@
 package io.septimalmind.baboon.translator.csharp
 
+import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
-  extends CSCodecTranslator {
+class CSUEBACodecGenerator(trans: CSTypeTranslator,
+                           tools: CSDefnTools,
+                           options: CompilerOptions)
+    extends CSCodecTranslator {
   override def translate(defn: DomainMember.User,
                          csRef: CSValue.CSType,
                          srcRef: CSValue.CSType,
-                         domain: Domain): TextTree[CSValue] = {
+                         domain: Domain,
+                         evo: BaboonEvolution): TextTree[CSValue] = {
     val version = domain.version
     val (enc, dec) = defn.defn match {
       case d: Typedef.Dto =>
-        genDtoBodies(csRef, domain, d)
+        genDtoBodies(csRef, domain, d, evo)
       case e: Typedef.Enum =>
         genEnumBodies(csRef, e)
       case a: Typedef.Adt =>
-        genAdtBodies(csRef, domain, a)
+        genAdtBodies(csRef, domain, a, evo)
       case _: Typedef.Foreign =>
         genForeignBodies(csRef)
     }
@@ -62,7 +66,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                        enc: TextTree[CSValue],
                        dec: TextTree[CSValue],
                        addExtensions: Boolean,
-                      ): TextTree[CSValue] = {
+  ): TextTree[CSValue] = {
     val iName = q"$iBaboonBinCodec<$name>"
 
     val baseMethods = List(
@@ -135,23 +139,21 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
   private def genAdtBodies(name: CSValue.CSType,
                            domain: Domain,
                            a: Typedef.Adt,
-                          ) = {
+                           evo: BaboonEvolution) = {
     val branches = a.members.zipWithIndex.toList.map {
       case (m, idx) =>
         val branchNs = q"${trans.adtNsName(a.id)}"
         val branchName = m.name.name
         val fqBranch = q"$branchNs.$branchName"
-        val cName = codecName(trans.toCsTypeRefNoDeref(m, domain))
+        val cName = codecName(trans.toCsTypeRefNoDeref(m, domain, evo, options))
         val castedName = branchName.toLowerCase
 
-        (
-          q"""if (value is $fqBranch $castedName)
+        (q"""if (value is $fqBranch $castedName)
              |{
              |   writer.Write((byte)${idx.toString});
              |   $cName.Instance.Encode(writer, $castedName);
              |   return;
-             |}""".stripMargin,
-          q"""if (asByte == ${idx.toString})
+             |}""".stripMargin, q"""if (asByte == ${idx.toString})
              |{
              |   return $cName.Instance.Decode(wire);
              |}""".stripMargin)
@@ -172,13 +174,11 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
   private def genEnumBodies(name: CSValue.CSType, e: Typedef.Enum) = {
     val branches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        (
-          q"""if (value == $name.${m.name})
+        (q"""if (value == $name.${m.name})
              |{
              |   writer.Write((byte)${idx.toString});
              |   return;
-             |}""".stripMargin,
-          q"""if (asByte == ${idx.toString})
+             |}""".stripMargin, q"""if (asByte == ${idx.toString})
              |{
              |   return $name.${m.name};
              |}""".stripMargin)
@@ -198,20 +198,19 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
 
   private def genDtoBodies(name: CSValue.CSType,
                            domain: Domain,
-                           d: Typedef.Dto) = {
+                           d: Typedef.Dto,
+                           evo: BaboonEvolution) = {
     val branches = d.fields.map { f =>
       val fieldRef = q"value.${f.name.name.capitalize}"
-      val enc = mkEncoder(f.tpe, domain, fieldRef)
-      val dec = mkDecoder(f.tpe, domain)
+      val enc = mkEncoder(f.tpe, domain, fieldRef, evo)
+      val dec = mkDecoder(f.tpe, domain, evo)
       (enc, dec)
     }
 
     val fenc =
-      q"""${
-        branches
-          .map(_._1)
-          .join(";\n")
-      };""".stripMargin
+      q"""${branches
+           .map(_._1)
+           .join(";\n")};""".stripMargin
 
     val fdec =
       q"""return new $name(
@@ -222,7 +221,9 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     (fenc, fdec)
   }
 
-  private def mkDecoder(tpe: TypeRef, domain: Domain): TextTree[CSValue] = {
+  private def mkDecoder(tpe: TypeRef,
+                        domain: Domain,
+                        evo: BaboonEvolution): TextTree[CSValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
@@ -262,29 +263,53 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toCsTypeRefNoDeref(u, domain))
+            val targetTpe = codecName(
+              trans.toCsTypeRefNoDeref(u, domain, evo, options)
+            )
             q"""${targetTpe}.Instance.Decode(wire)"""
         }
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt if trans.isCSValueType(c.args.head) =>
-            q"""$BaboonTools.ReadNullableValue(wire.ReadByte() == 0, () => ${mkDecoder(c.args.head, domain)})""".stripMargin
+            q"""$BaboonTools.ReadNullableValue(wire.ReadByte() == 0, () => ${mkDecoder(
+                 c.args.head,
+                 domain,
+                 evo
+               )})""".stripMargin
 
           case TypeId.Builtins.opt =>
-            q"""(wire.ReadByte() == 0 ? null : ${mkDecoder(c.args.head, domain)})""".stripMargin
+            q"""(wire.ReadByte() == 0 ? null : ${mkDecoder(
+                 c.args.head,
+                 domain,
+                 evo
+               )})""".stripMargin
 
           case TypeId.Builtins.map =>
             val keyRef = c.args.head
             val valueRef = c.args.last
-            val keyDecoder = mkDecoder(keyRef, domain)
-            val valueDecoder = mkDecoder(valueRef, domain)
-            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(idx => new $csKeyValuePair<${trans.asCsRef(keyRef, domain)}, ${trans.asCsRef(valueRef, domain)}>($keyDecoder, $valueDecoder)).ToImmutableDictionary()"""
+            val keyDecoder = mkDecoder(keyRef, domain, evo)
+            val valueDecoder = mkDecoder(valueRef, domain, evo)
+            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(idx => new $csKeyValuePair<${trans
+              .asCsRef(keyRef, domain, evo, options)}, ${trans.asCsRef(
+              valueRef,
+              domain,
+              evo,
+              options
+            )}>($keyDecoder, $valueDecoder)).ToImmutableDictionary()"""
 
           case TypeId.Builtins.lst =>
-            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(idx => ${mkDecoder(c.args.head, domain)}).ToImmutableList()"""
+            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(idx => ${mkDecoder(
+              c.args.head,
+              domain,
+              evo
+            )}).ToImmutableList()"""
 
           case TypeId.Builtins.set =>
-            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(idx => ${mkDecoder(c.args.head, domain)}).ToImmutableHashSet()"""
+            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(idx => ${mkDecoder(
+              c.args.head,
+              domain,
+              evo
+            )}).ToImmutableHashSet()"""
 
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
@@ -295,7 +320,9 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
 
   private def mkEncoder(tpe: TypeRef,
                         domain: Domain,
-                        ref: TextTree[CSValue]): TextTree[CSValue] = {
+                        ref: TextTree[CSValue],
+                        evo: BaboonEvolution,
+  ): TextTree[CSValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
@@ -335,7 +362,9 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toCsTypeRefNoDeref(u, domain))
+            val targetTpe = codecName(
+              trans.toCsTypeRefNoDeref(u, domain, evo, options)
+            )
             q"""${targetTpe}.Instance.Encode(writer, $ref)"""
         }
       case c: TypeRef.Constructor =>
@@ -347,34 +376,35 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                |} else
                |{
                |   writer.Write((byte)1);
-               |   ${
-              mkEncoder(c.args.head, domain, trans.deNull(c.args.head, ref))
-                .shift(4)
-                .trim
-            };
+               |   ${mkEncoder(
+                 c.args.head,
+                 domain,
+                 trans.deNull(c.args.head, ref),
+                 evo
+               ).shift(4).trim};
                |}""".stripMargin
           case TypeId.Builtins.map =>
             q"""writer.Write($ref.Count());
                |foreach (var kv in $ref)
                |{
-               |    ${mkEncoder(c.args.head, domain, q"kv.Key").shift(4).trim};
-               |    ${
-              mkEncoder(c.args.last, domain, q"kv.Value")
-                .shift(4)
-                .trim
-            };
+               |    ${mkEncoder(c.args.head, domain, q"kv.Key", evo)
+                 .shift(4)
+                 .trim};
+               |    ${mkEncoder(c.args.last, domain, q"kv.Value", evo)
+                 .shift(4)
+                 .trim};
                |}""".stripMargin
           case TypeId.Builtins.lst =>
             q"""writer.Write($ref.Count());
                |foreach (var i in $ref)
                |{
-               |    ${mkEncoder(c.args.head, domain, q"i").shift(4).trim};
+               |    ${mkEncoder(c.args.head, domain, q"i", evo).shift(4).trim};
                |}""".stripMargin
           case TypeId.Builtins.set =>
             q"""writer.Write($ref.Count());
                |foreach (var i in $ref)
                |{
-               |    ${mkEncoder(c.args.head, domain, q"i").shift(4).trim};
+               |    ${mkEncoder(c.args.head, domain, q"i", evo).shift(4).trim};
                |}""".stripMargin
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
