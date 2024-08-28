@@ -1,6 +1,15 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{autofixtureFixture, autofixtureImmutableCollectionsCustomization, baboonTest_EnumDictionaryBuilder, baboonTest_TruncatedRandomDateTimeSequenceGenerator, binaryWriter, memoryStream, nunitOneTimeSetUp, nunitTestFixture}
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
+  autofixtureFixture,
+  autofixtureImmutableCollectionsCustomization,
+  baboonTest_EnumDictionaryBuilder,
+  baboonTest_TruncatedRandomDateTimeSequenceGenerator,
+  binaryWriter,
+  memoryStream,
+  nunitOneTimeSetUp,
+  nunitTestFixture
+}
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BLogger
@@ -20,7 +29,6 @@ trait CSCodecTestsTranslator {
 object CSCodecTestsTranslator {
   final class Impl(codecs: Set[CSCodecTranslator],
                    typeTranslator: CSTypeTranslator,
-                   options: CompilerOptions,
                    logger: BLogger,
   ) extends CSCodecTestsTranslator {
     override def translate(definition: DomainMember.User,
@@ -91,7 +99,8 @@ object CSCodecTestsTranslator {
           val adtMembersNamespace = typeTranslator
             .toCsPkg(domain.id, domain.version, evo)
             .parts
-            .mkString(".") + s".${root.name.name.toLowerCase}"
+            .mkString(".") + s".${typeTranslator.adtNsName(root)}"
+
           members
             .map { member =>
               q"""fixture.Register<${root.name.name}>(() => fixture.Create<$adtMembersNamespace.${member.name.name}>());
@@ -124,8 +133,7 @@ object CSCodecTestsTranslator {
                  srcRef,
                  domain,
                  evo
-               ).shift(4)
-                 .trim}
+               ).shift(4).trim}
              |}
              |""".stripMargin
           case uebaCodec: CSUEBACodecGenerator =>
