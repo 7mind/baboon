@@ -216,7 +216,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
       q"""return new $name(
          |${branches.map(_._2).join(",\n").shift(4)}
          |);
-               """.stripMargin
+         |""".stripMargin
     //val fdec = q"throw new $csNotImplementedException();"
     (fenc, fdec)
   }
@@ -258,7 +258,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
               case TypeId.Builtins.uid =>
                 q"$csGuid.Parse(wire.ReadString())"
               case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-                q"$csDateTimeFormats.FromString(wire.ReadString())"
+                q"$baboonTimeFormats.FromString(wire.ReadString())"
               case o =>
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
@@ -357,7 +357,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
               case TypeId.Builtins.uid =>
                 q"writer.Write($ref.ToString())"
               case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-                q"writer.Write($csDateTimeFormats.ToString($ref))"
+                q"writer.Write($baboonTimeFormats.ToString($ref))"
               case o =>
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
@@ -426,5 +426,5 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
     CodecMeta(member)
   }
 
-  def metaField(): TextTree[CSValue] = q"IBaboonCodecAbstract ueba";
+  def metaField(): TextTree[CSValue] = q"IBaboonCodecData Ueba";
 }
