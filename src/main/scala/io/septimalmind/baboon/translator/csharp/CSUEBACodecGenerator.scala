@@ -117,7 +117,11 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
        |{
        |    ${methods.join("\n").shift(4).trim}
        |
-       |    ${tools.makeMeta(defn, version).join("\n").shift(4).trim}
+       |    ${tools
+         .makeMeta(defn, version, isCodec = true)
+         .join("\n")
+         .shift(4)
+         .trim}
        |
        |    private static $csLazy<$iName> instance = new $csLazy<$iName>(() => new $cName());
        |
@@ -411,8 +415,10 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
 
   override def codecMeta(defn: DomainMember.User,
                          name: CSValue.CSType): CSCodecTranslator.CodecMeta = {
+    val fix = tools.makeFix(defn, isCodec = false)
+
     val member =
-      q"""public IBaboonBinCodec<$name> Codec_UEBA()
+      q"""public${fix}IBaboonBinCodec<$name> Codec_UEBA()
          |{
          |    return ${codecName(name)}.Instance;
          |}""".stripMargin

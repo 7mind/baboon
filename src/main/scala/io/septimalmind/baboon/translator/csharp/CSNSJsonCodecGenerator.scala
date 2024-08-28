@@ -112,7 +112,11 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
        |{
        |    ${methods.join("\n").shift(4).trim}
        |
-       |    ${tools.makeMeta(defn, version).join("\n").shift(4).trim}
+       |    ${tools
+         .makeMeta(defn, version, isCodec = true)
+         .join("\n")
+         .shift(4)
+         .trim}
        |
        |    private static $csLazy<$iName> instance = new $csLazy<$iName>(() => new $cName());
        |
@@ -447,8 +451,9 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
 
   override def codecMeta(defn: DomainMember.User,
                          name: CSValue.CSType): CSCodecTranslator.CodecMeta = {
+    val fix = tools.makeFix(defn, isCodec = false)
     val member =
-      q"""public IBaboonJsonCodec<$name> Codec_JSON()
+      q"""public${fix}IBaboonJsonCodec<$name> Codec_JSON()
          |{
          |    return ${codecName(name)}.Instance;
          |}""".stripMargin

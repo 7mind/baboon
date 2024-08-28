@@ -8,18 +8,26 @@ import izumi.fundamentals.platform.strings.TextTree.*
 trait CSDefnTools {
   def inNs(nss: Seq[String], tree: TextTree[CSValue]): TextTree[CSValue]
 
-  def basename(dom: Domain, evolution: BaboonEvolution, options: CompilerOptions): String = {
-    basename(dom, options.omitMostRecentVersionSuffixFromPaths && evolution.latest == dom.version)
+  def basename(dom: Domain,
+               evolution: BaboonEvolution,
+               options: CompilerOptions): String = {
+    basename(
+      dom,
+      options.omitMostRecentVersionSuffixFromPaths && evolution.latest == dom.version
+    )
   }
 
   def basename(dom: Domain, omitVersion: Boolean): String
 
   def makeMeta(defn: DomainMember.User,
-               version: Version): Seq[TextTree[CSValue]]
+               version: Version,
+               isCodec: Boolean): Seq[TextTree[CSValue]]
+
+  def makeFix(defn: DomainMember.User, isCodec: Boolean): String
 }
 
 object CSDefnTools {
-  class CSDefnToolsImpl extends CSDefnTools {
+  class CSDefnToolsImpl(options: CompilerOptions) extends CSDefnTools {
     def basename(dom: Domain, omitVersion: Boolean): String = {
       val base = dom.id.path.map(_.capitalize)
       val segments = if (omitVersion) {
@@ -31,18 +39,35 @@ object CSDefnTools {
       segments.mkString("-")
     }
 
+    def makeFix(defn: DomainMember.User, isCodec: Boolean): String = {
+      val isNested = defn.id.owner match {
+        case Owner.Toplevel => false
+        case Owner.Adt(_)   => true
+      }
+      val fix = if (options.csUseCompactAdtForm && !isCodec && isNested) {
+        " new "
+      } else {
+        " "
+      }
+      fix
+    }
+
     def makeMeta(defn: DomainMember.User,
-                 version: Version): Seq[TextTree[CSValue]] = {
+                 version: Version,
+                 isCodec: Boolean): Seq[TextTree[CSValue]] = {
+      val fix = makeFix(defn, isCodec)
+
       Seq(
-        q"""public const String BaboonDomainVersionValue = "${version.version}";
-           |public String BaboonDomainVersion() => BaboonDomainVersionValue;
+        q"""public${fix}const String BaboonDomainVersionValue = "${version.version}";
+           |public${fix}String BaboonDomainVersion() => BaboonDomainVersionValue;
            |""".stripMargin,
-        q"""public const String BaboonDomainIdentifierValue = "${defn.id.pkg.toString}";
-           |public String BaboonDomainIdentifier() => BaboonDomainIdentifierValue;
+        q"""public${fix}const String BaboonDomainIdentifierValue = "${defn.id.pkg.toString}";
+           |public${fix}String BaboonDomainIdentifier() => BaboonDomainIdentifierValue;
            |""".stripMargin,
-        q"""public const String BaboonTypeIdentifierValue = "${defn.id.toString}";
-           |public String BaboonTypeIdentifier() => BaboonTypeIdentifierValue;
-           |""".stripMargin)
+        q"""public${fix}const String BaboonTypeIdentifierValue = "${defn.id.toString}";
+           |public${fix}String BaboonTypeIdentifier() => BaboonTypeIdentifierValue;
+           |""".stripMargin
+      )
     }
 
     def inNs(nss: Seq[String], tree: TextTree[CSValue]): TextTree[CSValue] = {
