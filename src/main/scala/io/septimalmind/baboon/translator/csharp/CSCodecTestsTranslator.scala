@@ -1,14 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
-  autofixtureFixture,
-  autofixtureImmutableCollectionsCustomization,
-  baboonTest_EnumDictionaryBuilder,
-  baboonTest_TruncatedRandomDateTimeSequenceGenerator,
-  binaryWriter,
-  nunitOneTimeSetUp,
-  nunitTestFixture
-}
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{autofixtureFixture, autofixtureImmutableCollectionsCustomization, baboonTest_EnumDictionaryBuilder, baboonTest_TruncatedRandomDateTimeSequenceGenerator, binaryWriter, memoryStream, nunitOneTimeSetUp, nunitTestFixture}
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BLogger
@@ -216,7 +208,7 @@ object CSCodecTestsTranslator {
               val decoded = s"${fieldName}_decoded"
               val readStream = s"${fieldName}_readMemoryStream"
               val binaryReader = s"${fieldName}_binaryReader"
-              q"""using (MemoryStream writeMemoryStream = new MemoryStream())
+              q"""using (${memoryStream} writeMemoryStream = new ${memoryStream}())
                |{
                |  using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))
                |  {
@@ -240,9 +232,9 @@ object CSCodecTestsTranslator {
           val fieldName = srcRef.name.toLowerCase
           val serialized = s"${fieldName}_bytes"
           val decoded = s"${fieldName}_decoded"
-          q"""using (MemoryStream writeMemoryStream = new MemoryStream())
+          q"""using (${memoryStream} writeMemoryStream = new ${memoryStream}())
              |{
-             |  using (BinaryWriter binaryWriter = new BinaryWriter(writeMemoryStream))
+             |  using (${binaryWriter} binaryWriter = new ${binaryWriter}(writeMemoryStream))
              |  {
              |    $codecName.Instance.Encode(binaryWriter, $fieldName);
              |  }

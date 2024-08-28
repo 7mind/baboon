@@ -953,6 +953,8 @@ object CSBaboonTranslator {
     CSType(csIoPkg, "BinaryReader", fq = false)
   val binaryWriter: CSType =
     CSType(csIoPkg, "BinaryWriter", fq = false)
+  val memoryStream: CSType =
+    CSType(csIoPkg, "MemoryStream", fq = false)
 
   val csTpe: CSType =
     CSType(csSystemPkg, "Type", fq = false)
