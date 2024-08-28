@@ -1,6 +1,14 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.binaryWriter
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
+  autofixtureFixture,
+  autofixtureImmutableCollectionsCustomization,
+  baboonTest_EnumDictionaryBuilder,
+  baboonTest_TruncatedRandomDateTimeSequenceGenerator,
+  binaryWriter,
+  nunitOneTimeSetUp,
+  nunitTestFixture
+}
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BLogger
@@ -35,30 +43,24 @@ object CSCodecTestsTranslator {
       if (hasForeignType(definition, domain)) None
       else {
         val testClass =
-          q"""using NUnit.Framework;
-             |using AutoFixture;
-             |using System.IO;
-             |using System;
-             |using Baboon.Test.Runtime.Shared;
-             |
-             |[TestFixture]
+          q"""[${nunitTestFixture}]
              |public class $testClassName
              |{
              |  #nullable disable
              |
-             |  private Fixture fixture;
+             |  private ${autofixtureFixture} fixture;
              |
              |  ${testFields(definition, srcRef)}
              |
              |  public $testClassName()
              |  {
-             |    fixture = new Fixture();
-             |    fixture.Customize(new ImmutableCollectionsCustomization());
-             |    fixture.Customizations.Add(new TruncatedRandomDateTimeSequenceGenerator());
-             |    fixture.Customizations.Add(new EnumDictionaryBuilder());
+             |    fixture = new ${autofixtureFixture}();
+             |    fixture.Customize(new ${autofixtureImmutableCollectionsCustomization}());
+             |    fixture.Customizations.Add(new ${baboonTest_TruncatedRandomDateTimeSequenceGenerator}());
+             |    fixture.Customizations.Add(new ${baboonTest_EnumDictionaryBuilder}());
              |  }
              |
-             |  [OneTimeSetUp]
+             |  [${nunitOneTimeSetUp}]
              |  public void Setup()
              |  {
              |    ${fieldsInitialization(definition, srcRef, domain, evo)}
@@ -95,7 +97,7 @@ object CSCodecTestsTranslator {
       definition.defn match {
         case Typedef.Adt(root, members) =>
           val adtMembersNamespace = typeTranslator
-            .toCsPkg(domain.id, domain.version, evo, options)
+            .toCsPkg(domain.id, domain.version, evo)
             .parts
             .mkString(".") + s".${root.name.name.toLowerCase}"
           members
@@ -124,26 +126,27 @@ object CSCodecTestsTranslator {
             q"""[Test]
              |public void jsonCodecTest()
              |{
-             |  ${jsonCodecAssertions(
+             |    ${jsonCodecAssertions(
                  jsonCodec,
                  definition,
                  srcRef,
                  domain,
                  evo
-               )}
+               ).shift(4)
+                 .trim}
              |}
              |""".stripMargin
           case uebaCodec: CSUEBACodecGenerator =>
             q"""[Test]
              |public void uebaCodecTest()
              |{
-             |  ${uebaCodecAssertions(
+             |    ${uebaCodecAssertions(
                  uebaCodec,
                  definition,
                  srcRef,
                  domain,
                  evo
-               )}
+               ).shift(4).trim}
              |}
              |""".stripMargin
           case unknown =>
@@ -169,7 +172,7 @@ object CSCodecTestsTranslator {
           members
             .map { member =>
               val typeRef =
-                typeTranslator.toCsTypeRefNoDeref(root, domain, evo, options)
+                typeTranslator.toCsTypeRefNoDeref(root, domain, evo)
               val codecName = codec.codecName(typeRef)
               val fieldName = member.name.name.toLowerCase
               val serialized = s"${fieldName}_json"
@@ -206,7 +209,7 @@ object CSCodecTestsTranslator {
           members
             .map { member =>
               val typeRef =
-                typeTranslator.toCsTypeRefNoDeref(root, domain, evo, options)
+                typeTranslator.toCsTypeRefNoDeref(root, domain, evo)
               val codecName = codec.codecName(typeRef)
               val fieldName = member.name.name.toLowerCase
               val serialized = s"${fieldName}_bytes"

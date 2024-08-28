@@ -55,6 +55,8 @@ object Baboon {
       case Right(value) =>
         val opts = value._1
         val inputPaths = opts.modelDir.map(s => Paths.get(s))
+        val testOutDir = opts.testOutput.map(o => Paths.get(o))
+
         val rtOpt = opts.runtime match {
           case Some("only")    => RuntimeGenOpt.Only
           case Some("without") => RuntimeGenOpt.Without
@@ -69,8 +71,9 @@ object Baboon {
           !opts.csExcludeGlobalUsings.getOrElse(false),
           !opts.omitMostRecentVersionSuffixFromPaths.getOrElse(false),
           !opts.omitMostRecentVersionSuffixFromNamespaces.getOrElse(false),
+          csUseCompactAdtForm = true,
         )
-        Injector.NoCycles().produceRun(new BaboonModule(options, inputPaths)) {
+        Injector.NoCycles().produceRun(new BaboonModule(options, inputPaths, testOutDir)) {
           (compiler: BaboonCompiler) =>
             val inputModels = opts.model
               .map(s => Paths.get(s))
@@ -80,7 +83,6 @@ object Baboon {
                 .filter(_.toFile.getName.endsWith(".baboon"))
             }
             val outDir = Paths.get(opts.output)
-            val testOutDir = opts.testOutput.map(o => Paths.get(o))
             println(
               s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}"
             )

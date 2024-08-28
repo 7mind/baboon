@@ -8,12 +8,11 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSTypeTranslator() {
+class CSTypeTranslator(options: CompilerOptions) {
 
   def toCsPkg(p: Pkg,
               version: Version,
-              evolution: BaboonEvolution,
-              options: CompilerOptions): CSPackageId = {
+              evolution: BaboonEvolution): CSPackageId = {
     toCsPkg(
       p,
       version,
@@ -37,13 +36,16 @@ class CSTypeTranslator() {
   }
 
   def adtNsName(id: TypeId.User): String = {
-    id.name.name.toLowerCase
+    if (options.csUseCompactAdtForm) {
+      id.name.name
+    } else {
+      id.name.name.toLowerCase
+    }
   }
 
   def toCsTypeRefDeref(tid: TypeId.User,
                        domain: Domain,
-                       evolution: BaboonEvolution,
-                       options: CompilerOptions): CSType = {
+                       evolution: BaboonEvolution): CSType = {
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _) =>
         val fid = defn.bindings("cs")
@@ -53,19 +55,19 @@ class CSTypeTranslator() {
         val id = parts.last
         CSType(CSPackageId(NEList.unsafeFrom(pkg)), id, fq = false)
       case _ =>
-        toCsTypeRefNoDeref(tid, domain, evolution, options)
+        toCsTypeRefNoDeref(tid, domain, evolution)
     }
   }
 
   def toCsTypeRefNoDeref(tid: TypeId.User,
                          domain: Domain,
-                         evolution: BaboonEvolution,
-                         options: CompilerOptions): CSType = {
+                         evolution: BaboonEvolution): CSType = {
     val version = domain.version
-    val pkg = toCsPkg(tid.pkg, version, evolution, options)
+    val pkg = toCsPkg(tid.pkg, version, evolution)
     val fullPkg = tid.owner match {
       case Owner.Toplevel => pkg
-      case Owner.Adt(id)  => CSPackageId(pkg.parts :+ adtNsName(id))
+      case Owner.Adt(id) =>
+        CSPackageId(pkg.parts :+ adtNsName(id), isStatic = true)
     }
     CSType(fullPkg, tid.name.name.capitalize, fq = false)
   }
@@ -114,7 +116,6 @@ class CSTypeTranslator() {
   def asCsType(tpe: TypeId,
                domain: Domain,
                evolution: BaboonEvolution,
-               options: CompilerOptions,
                mut: Boolean = false): TextTree[CSValue] = {
     tpe match {
       case b: TypeId.BuiltinScalar =>
@@ -125,11 +126,23 @@ class CSTypeTranslator() {
 
           b match {
             case TypeId.Builtins.map =>
-              CSValue.CSType(csCollectionsImmutablePkg, "ImmutableDictionary", fq = false)
+              CSValue.CSType(
+                csCollectionsImmutablePkg,
+                "ImmutableDictionary",
+                fq = false
+              )
             case TypeId.Builtins.lst =>
-              CSValue.CSType(csCollectionsImmutablePkg, "ImmutableList", fq = false)
+              CSValue.CSType(
+                csCollectionsImmutablePkg,
+                "ImmutableList",
+                fq = false
+              )
             case TypeId.Builtins.set =>
-              CSValue.CSType(csCollectionsImmutablePkg, "ImmutableHashSet", fq = false)
+              CSValue.CSType(
+                csCollectionsImmutablePkg,
+                "ImmutableHashSet",
+                fq = false
+              )
             case _ =>
               throw new IllegalArgumentException(s"Unexpected: $b")
           }
@@ -147,27 +160,26 @@ class CSTypeTranslator() {
         }
         q"$ref"
       case u: TypeId.User =>
-        q"${toCsTypeRefDeref(u, domain, evolution, options)}"
+        q"${toCsTypeRefDeref(u, domain, evolution)}"
     }
   }
 
   def asCsRef(tpe: TypeRef,
               domain: Domain,
               evolution: BaboonEvolution,
-              options: CompilerOptions,
               fullyQualified: Boolean = false,
               mut: Boolean = false,
   ): TextTree[CSValue] = {
     val out = tpe match {
       case TypeRef.Scalar(id) =>
-        asCsType(id, domain, evolution, options, mut)
+        asCsType(id, domain, evolution, mut)
 
       case TypeRef.Constructor(id, args) =>
         if (id == TypeId.Builtins.opt) {
-          q"${asCsRef(args.head, domain, evolution, options)}?"
+          q"${asCsRef(args.head, domain, evolution)}?"
         } else {
-          val tpe = asCsType(id, domain, evolution, options, mut)
-          val targs = args.map(asCsRef(_, domain, evolution, options))
+          val tpe = asCsType(id, domain, evolution, mut)
+          val targs = args.map(asCsRef(_, domain, evolution))
           q"$tpe<${targs.toSeq.join(", ")}>"
         }
 

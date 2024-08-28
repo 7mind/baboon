@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
+import distage.Id
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
@@ -13,6 +14,8 @@ import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+
+import java.nio.file.Path
 
 trait CSDefnTranslator {
   def translate(defn: DomainMember.User,
@@ -42,7 +45,8 @@ object CSDefnTranslator {
                              trans: CSTypeTranslator,
                              tools: CSDefnTools,
                              codecs: Set[CSCodecTranslator],
-                             codecsTests: CSCodecTestsTranslator)
+                             codecsTests: CSCodecTestsTranslator,
+                             testOutput: Option[Path] @Id("test-output"))
       extends CSDefnTranslator {
     type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
@@ -50,18 +54,18 @@ object CSDefnTranslator {
                            domain: Domain,
                            evo: BaboonEvolution,
     ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
-      val isLatestVersion = domain.version == evo.latest
-
-      def obsoletePrevious(tree: TextTree[CSValue]) = {
-        val hackyIsEmpty = tree.mapRender(_ => "?").isEmpty
-        if (isLatestVersion || hackyIsEmpty) {
-          tree
-        } else {
-          q"""[$obsolete("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${options.obsoleteErrors.toString})]
-             |$tree""".stripMargin
-        }
+      defn.id.owner match {
+        case Owner.Adt(_) if options.csUseCompactAdtForm =>
+          Right(List.empty)
+        case _ =>
+          doTranslate(defn, domain, evo)
       }
+    }
 
+    private def doTranslate(defn: DomainMember.User,
+                            domain: Domain,
+                            evo: BaboonEvolution,
+    ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
       def getOutputPath(tests: Boolean): String = {
         val fbase = tools.basename(domain, evo, options)
         val fsufix = if (tests) "_Tests" else ""
@@ -74,8 +78,57 @@ object CSDefnTranslator {
         }
       }
 
-      val csTypeRef = trans.toCsTypeRefDeref(defn.id, domain, evo, options)
-      val srcRef = trans.toCsTypeRefNoDeref(defn.id, domain, evo, options)
+      val (content, reg, codecTestWithNS) =
+        makeFullRepr(defn, domain, evo, inNs = true)
+
+      val codecTestOut = codecTestWithNS.map(
+        codecTestWithNS =>
+          OutputExt(
+            Output(
+              getOutputPath(tests = true),
+              codecTestWithNS,
+              trans.toCsPkg(domain.id, domain.version, evo),
+              isTest = true
+            ),
+            q""
+        )
+      )
+
+      Right(
+        List(
+          Some(
+            OutputExt(
+              Output(
+                getOutputPath(tests = false),
+                content,
+                trans.toCsPkg(domain.id, domain.version, evo),
+                isTest = false,
+              ),
+              q"Register(new $baboonTypeCodecs($reg));"
+            )
+          ),
+          codecTestOut
+        ).flatten
+      )
+    }
+
+    private def makeFullRepr(defn: DomainMember.User,
+                             domain: Domain,
+                             evo: BaboonEvolution,
+                             inNs: Boolean) = {
+      val isLatestVersion = domain.version == evo.latest
+
+      def obsoletePrevious(tree: TextTree[CSValue]) = {
+        val hackyIsEmpty = tree.mapRender(_ => "?").isEmpty
+        if (isLatestVersion || hackyIsEmpty) {
+          tree
+        } else {
+          q"""[$obsolete("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${options.obsoleteErrors.toString})]
+             |$tree""".stripMargin
+        }
+      }
+      val csTypeRef = trans.toCsTypeRefDeref(defn.id, domain, evo)
+      val srcRef = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
 
       val defnReprBase = makeRepr(defn, domain, csTypeRef, isLatestVersion, evo)
 
@@ -91,7 +144,11 @@ object CSDefnTranslator {
       val ns = srcRef.pkg.parts
 
       val allDefs = (defnRepr +: codecTrees).join("\n\n")
-      val content = tools.inNs(ns.toSeq, allDefs)
+      val content = if (inNs) {
+        tools.inNs(ns.toSeq, allDefs)
+      } else {
+        allDefs
+      }
 
       val reg = (List(q""""${defn.id.toString}"""") ++ codecs.toList
         .sortBy(_.getClass.getName)
@@ -100,36 +157,16 @@ object CSDefnTranslator {
 
       val codecTestTrees =
         codecsTests.translate(defn, csTypeRef, srcRef, domain, evo)
-      val codecTestWithNS = codecTestTrees.map(tools.inNs(ns.toSeq, _))
-      val codecTestOut = codecTestWithNS.map(
-        codecTestWithNS =>
-          OutputExt(
-            Output(
-              getOutputPath(tests = true),
-              codecTestWithNS,
-              trans.toCsPkg(domain.id, domain.version, evo, options),
-              isTest = true
-            ),
-            q""
-        )
-      )
 
-      Right(
-        List(
-          Some(
-            OutputExt(
-              Output(
-                getOutputPath(tests = false),
-                content,
-                trans.toCsPkg(domain.id, domain.version, evo, options),
-                isTest = false,
-              ),
-              q"Register(new $baboonTypeCodecs($reg));"
-            )
-          ),
-          codecTestOut
-        ).flatten
-      )
+      val codecTestWithNS = codecTestTrees.map { t =>
+        if (inNs) {
+          tools.inNs(ns.toSeq, t)
+        } else {
+          t
+        }
+      }
+
+      (content, reg, codecTestWithNS)
     }
 
     private def makeRepr(defn: DomainMember.User,
@@ -139,13 +176,15 @@ object CSDefnTranslator {
                          evo: BaboonEvolution): TextTree[CSValue] = {
       val genMarker =
         if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
-      val meta = tools.makeMeta(defn, domain.version) ++ codecs.map(
-        _.codecMeta(defn, name).member
-      )
+
+      val mainMeta = tools.makeMeta(defn, domain.version)
+      val codecMeta = codecs.map(_.codecMeta(defn, name).member)
+      val meta = mainMeta ++ codecMeta
+
       defn.defn match {
         case dto: Typedef.Dto =>
           val outs = dto.fields.map { f =>
-            val tpe = trans.asCsRef(f.tpe, domain, evo, options)
+            val tpe = trans.asCsRef(f.tpe, domain, evo)
             val mname = s"${f.name.name.capitalize}"
             (mname, tpe, f)
           }
@@ -157,7 +196,7 @@ object CSDefnTranslator {
             case Owner.Toplevel =>
               None
             case Owner.Adt(id) =>
-              val parentId = trans.asCsType(id, domain, evo, options)
+              val parentId = trans.asCsType(id, domain, evo)
               Some(parentId)
           }
 
@@ -241,8 +280,42 @@ object CSDefnTranslator {
              |    ${branches.shift(4).trim}
              |}""".stripMargin
 
-        case _: Typedef.Adt =>
-          q"""public interface $name : $genMarker {}""".stripMargin
+        case adt: Typedef.Adt =>
+          if (options.csUseCompactAdtForm) {
+            val branches = adt.members
+              .map { mid =>
+                domain.defs.meta.nodes.get(mid) match {
+                  case Some(mdefn: DomainMember.User) =>
+                    val (content, _, codecTestWithNS) =
+                      makeFullRepr(mdefn, domain, evo, inNs = false)
+
+                    val tests = if (testOutput.isDefined) {
+                      codecTestWithNS.toList
+                    } else {
+                      List.empty
+                    }
+                    (List(content) ++ tests).join("\n")
+                  case m =>
+                    throw new RuntimeException(
+                      s"BUG: missing/wrong adt member: $mid => $m"
+                    )
+                }
+
+              }
+              .toSeq
+              .join("\n")
+
+            val members = meta
+
+            q"""|public abstract record $name : $genMarker {
+                |    ${branches.shift(4).trim}
+                |    ${members.join("\n\n").shift(4).trim}
+                |}""".stripMargin
+
+          } else {
+            q"""public interface $name : $genMarker {}""".stripMargin
+          }
+
         case _: Typedef.Foreign =>
           q""
       }

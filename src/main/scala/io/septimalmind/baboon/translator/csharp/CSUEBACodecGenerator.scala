@@ -1,15 +1,12 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSUEBACodecGenerator(trans: CSTypeTranslator,
-                           tools: CSDefnTools,
-                           options: CompilerOptions)
+class CSUEBACodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     extends CSCodecTranslator {
   override def translate(defn: DomainMember.User,
                          csRef: CSValue.CSType,
@@ -145,7 +142,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
         val branchNs = q"${trans.adtNsName(a.id)}"
         val branchName = m.name.name
         val fqBranch = q"$branchNs.$branchName"
-        val cName = codecName(trans.toCsTypeRefNoDeref(m, domain, evo, options))
+
+        val cName = codecName(trans.toCsTypeRefNoDeref(m, domain, evo))
         val castedName = branchName.toLowerCase
 
         (q"""if (value is $fqBranch $castedName)
@@ -263,9 +261,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(
-              trans.toCsTypeRefNoDeref(u, domain, evo, options)
-            )
+            val targetTpe = codecName(trans.toCsTypeRefNoDeref(u, domain, evo))
             q"""${targetTpe}.Instance.Decode(wire)"""
         }
       case c: TypeRef.Constructor =>
@@ -290,11 +286,10 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
             val keyDecoder = mkDecoder(keyRef, domain, evo)
             val valueDecoder = mkDecoder(valueRef, domain, evo)
             q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(idx => new $csKeyValuePair<${trans
-              .asCsRef(keyRef, domain, evo, options)}, ${trans.asCsRef(
+              .asCsRef(keyRef, domain, evo)}, ${trans.asCsRef(
               valueRef,
               domain,
               evo,
-              options
             )}>($keyDecoder, $valueDecoder)).ToImmutableDictionary()"""
 
           case TypeId.Builtins.lst =>
@@ -362,9 +357,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(
-              trans.toCsTypeRefNoDeref(u, domain, evo, options)
-            )
+            val targetTpe = codecName(trans.toCsTypeRefNoDeref(u, domain, evo))
             q"""${targetTpe}.Instance.Encode(writer, $ref)"""
         }
       case c: TypeRef.Constructor =>

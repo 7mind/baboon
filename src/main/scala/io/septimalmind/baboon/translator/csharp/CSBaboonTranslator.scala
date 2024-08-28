@@ -7,7 +7,11 @@ import io.septimalmind.baboon.RuntimeGenOpt
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
+import io.septimalmind.baboon.translator.{
+  BaboonAbstractTranslator,
+  OutputFile,
+  Sources
+}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
@@ -15,14 +19,13 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSBaboonTranslator(
-                          defnTranslator: CSDefnTranslator,
-                          trans: CSTypeTranslator,
-                          handler: Subcontext[IndividualConversionHandler],
-                          options: CompilerOptions,
-                          codecs: Set[CSCodecTranslator],
-                          tools: CSDefnTools,
-                        ) extends BaboonAbstractTranslator {
+class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
+                         trans: CSTypeTranslator,
+                         handler: Subcontext[IndividualConversionHandler],
+                         options: CompilerOptions,
+                         codecs: Set[CSCodecTranslator],
+                         tools: CSDefnTools,
+) extends BaboonAbstractTranslator {
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
@@ -33,17 +36,17 @@ class CSBaboonTranslator(
       testRuntime <- sharedTestRuntime
       meta <- buildMeta(family)
       toRender = options.runtime match {
-        case RuntimeGenOpt.Only => rt
-        case RuntimeGenOpt.With => rt ++ translated ++ testRuntime
+        case RuntimeGenOpt.Only    => rt
+        case RuntimeGenOpt.With    => rt ++ translated ++ testRuntime
         case RuntimeGenOpt.Without => translated
       }
       rendered = toRender.map { o =>
         val content = renderTree(o)
         (o.path, OutputFile(content, o.isTest))
       }
-      unique <- (rendered ++ meta.map { case (k, v) => (k, OutputFile(v, isTest = false)) }).toUniqueMap(
-        c => NEList(BaboonIssue.NonUniqueOutputFiles(c))
-      )
+      unique <- (rendered ++ meta.map {
+        case (k, v) => (k, OutputFile(v, isTest = false))
+      }).toUniqueMap(c => NEList(BaboonIssue.NonUniqueOutputFiles(c)))
     } yield {
       Sources(unique)
     }
@@ -102,7 +105,12 @@ class CSBaboonTranslator(
 
     val imports = allPackages.toSeq
       .map { p =>
-        q"using ${p.parts.mkString(".")};"
+        if (p.isStatic) {
+          q"using static ${p.parts.mkString(".")};"
+        } else {
+          q"using ${p.parts.mkString(".")};"
+        }
+
       }
       .join("\n")
 
@@ -123,8 +131,8 @@ class CSBaboonTranslator(
   }
 
   private def doTranslate(
-                           family: BaboonFamily
-                         ): Out[List[CSDefnTranslator.Output]] = {
+    family: BaboonFamily
+  ): Out[List[CSDefnTranslator.Output]] = {
     // TODO: fix .toSeq.toList
 
     family.domains.toSeq.toList.map {
@@ -134,8 +142,8 @@ class CSBaboonTranslator(
   }
 
   private def translateLineage(
-                                lineage: BaboonLineage
-                              ): Out[List[CSDefnTranslator.Output]] = {
+    lineage: BaboonLineage
+  ): Out[List[CSDefnTranslator.Output]] = {
 
     lineage.versions.toSeq.toList.map {
       case (_, domain) =>
@@ -144,10 +152,9 @@ class CSBaboonTranslator(
     }.biFlatten
   }
 
-  private def translateDomain(
-                               domain: Domain,
-                               lineage: BaboonLineage,
-                             ): Out[List[CSDefnTranslator.Output]] = {
+  private def translateDomain(domain: Domain,
+                              lineage: BaboonLineage,
+  ): Out[List[CSDefnTranslator.Output]] = {
     val evo = lineage.evolution
     for {
       defnSources <- domain.defs.meta.nodes.toList.map {
@@ -620,18 +627,34 @@ class CSBaboonTranslator(
          |}
          |""".stripMargin
 
-    val sharedRuntimeSource = Seq(baseCodecsSource, baseToolsSource, conversionKeySource, conversionsSource).join("\n\n")
-    val sharedRuntime = tools.inNs(CSBaboonTranslator.baboonRtPkg.parts.toSeq, sharedRuntimeSource)
-    val sharedOutput = CSDefnTranslator.Output(s"BaboonRuntimeShared.cs", sharedRuntime, CSBaboonTranslator.baboonRtPkg, isTest = false)
+    val sharedRuntimeSource = Seq(
+      baseCodecsSource,
+      baseToolsSource,
+      conversionKeySource,
+      conversionsSource
+    ).join("\n\n")
+    val sharedRuntime = tools.inNs(
+      CSBaboonTranslator.baboonRtPkg.parts.toSeq,
+      sharedRuntimeSource
+    )
+    val sharedOutput = CSDefnTranslator.Output(
+      s"BaboonRuntimeShared.cs",
+      sharedRuntime,
+      CSBaboonTranslator.baboonRtPkg,
+      isTest = false
+    )
 
     val timeSource = Seq(rpDateTimeSource, timeFormatsSource).join("\n\n")
-    val time = tools.inNs(CSBaboonTranslator.baboonTimePkg.parts.toSeq, timeSource)
-    val timeOutput = CSDefnTranslator.Output(s"BaboonTime.cs", time, CSBaboonTranslator.baboonTimePkg, isTest = false)
+    val time =
+      tools.inNs(CSBaboonTranslator.baboonTimePkg.parts.toSeq, timeSource)
+    val timeOutput = CSDefnTranslator.Output(
+      s"BaboonTime.cs",
+      time,
+      CSBaboonTranslator.baboonTimePkg,
+      isTest = false
+    )
 
-    Right(List(
-      sharedOutput,
-      timeOutput
-    ))
+    Right(List(sharedOutput, timeOutput))
   }
 
   private def sharedTestRuntime: Out[List[CSDefnTranslator.Output]] = {
@@ -719,7 +742,10 @@ class CSBaboonTranslator(
       List(
         CSDefnTranslator.Output(
           "BaboonTestRuntimeShared.cs",
-          tools.inNs(CSBaboonTranslator.baboonTestRtPkg.parts.toSeq, sharedTestRuntime),
+          tools.inNs(
+            CSBaboonTranslator.baboonTestRtPkg.parts.toSeq,
+            sharedTestRuntime
+          ),
           CSBaboonTranslator.baboonTestRtPkg,
           isTest = true,
         )
@@ -728,12 +754,12 @@ class CSBaboonTranslator(
   }
 
   private def generateConversions(
-                                   domain: Domain,
-                                   lineage: BaboonLineage,
-                                   toCurrent: Set[EvolutionStep],
-                                   defnOut: List[CSDefnTranslator.OutputExt]
-                                 ): Out[List[CSDefnTranslator.Output]] = {
-    val pkg = trans.toCsPkg(domain.id, domain.version, lineage.evolution, options)
+    domain: Domain,
+    lineage: BaboonLineage,
+    toCurrent: Set[EvolutionStep],
+    defnOut: List[CSDefnTranslator.OutputExt]
+  ): Out[List[CSDefnTranslator.Output]] = {
+    val pkg = trans.toCsPkg(domain.id, domain.version, lineage.evolution)
 
     for {
       convs <- lineage.evolution.rules
@@ -769,12 +795,10 @@ class CSBaboonTranslator(
            |
            |    override public $csList<$csString> VersionsFrom()
            |    {
-           |        return new $csList<$csString> { ${
-          toCurrent
-            .map(_.from.version)
-            .map(v => s"""\"$v\"""")
-            .mkString(", ")
-        } };
+           |        return new $csList<$csString> { ${toCurrent
+             .map(_.from.version)
+             .map(v => s"""\"$v\"""")
+             .mkString(", ")} };
            |    }
            |
            |    override public $csString VersionTo()
@@ -800,16 +824,19 @@ class CSBaboonTranslator(
 
       val runtimeSource = Seq(converter, codecs).join("\n\n")
       val runtime = tools.inNs(pkg.parts.toSeq, runtimeSource)
-      val runtimeOutput = CSDefnTranslator.Output(s"$basename/BaboonRuntime.cs", runtime, pkg, isTest = false)
+      val runtimeOutput = CSDefnTranslator.Output(
+        s"$basename/BaboonRuntime.cs",
+        runtime,
+        pkg,
+        isTest = false
+      )
 
       val convertersOutput = convs.map { conv =>
         CSDefnTranslator
           .Output(s"$basename/${conv.fname}", conv.conv, pkg, isTest = false)
       }
 
-      List(
-        runtimeOutput
-      ) ++ convertersOutput
+      List(runtimeOutput) ++ convertersOutput
     }
   }
 
@@ -820,21 +847,52 @@ object CSBaboonTranslator {
                                 conv: TextTree[CSValue],
                                 reg: Option[TextTree[CSValue]],
                                 missing: Option[TextTree[CSValue]],
-                               )
+  )
 
-  val baboonRtPkg: CSPackageId = CSPackageId(NEList("Baboon", "Runtime", "Shared"))
-  val baboonTestRtPkg: CSPackageId = CSPackageId(NEList("Baboon", "Test", "Runtime", "Shared"))
+  val baboonRtPkg: CSPackageId = CSPackageId(
+    NEList("Baboon", "Runtime", "Shared")
+  )
+  val baboonTestRtPkg: CSPackageId = CSPackageId(
+    NEList("Baboon", "Test", "Runtime", "Shared")
+  )
+  val baboonTest_TruncatedRandomDateTimeSequenceGenerator: CSType =
+    CSType(
+      baboonTestRtPkg,
+      "TruncatedRandomDateTimeSequenceGenerator",
+      fq = false
+    )
+  val baboonTest_EnumDictionaryBuilder: CSType =
+    CSType(baboonTestRtPkg, "EnumDictionaryBuilder", fq = false)
+
   val baboonTimePkg: CSPackageId = CSPackageId(NEList("Baboon", "Time"))
 
   val csSystemPkg: CSPackageId = CSPackageId(NEList("System"))
-  val csGlobalizationPkg: CSPackageId = CSPackageId(NEList("System", "Globalization"))
-  val csCollectionsGenericPkg: CSPackageId = CSPackageId(NEList("System", "Collections", "Generic"))
-  val csCollectionsImmutablePkg: CSPackageId = CSPackageId(NEList("System", "Collections", "Immutable"))
+  val csGlobalizationPkg: CSPackageId = CSPackageId(
+    NEList("System", "Globalization")
+  )
+  val csCollectionsGenericPkg: CSPackageId = CSPackageId(
+    NEList("System", "Collections", "Generic")
+  )
+  val csCollectionsImmutablePkg: CSPackageId = CSPackageId(
+    NEList("System", "Collections", "Immutable")
+  )
   val csLinqPkg: CSPackageId = CSPackageId(NEList("System", "Linq"))
   val csIoPkg: CSPackageId = CSPackageId(NEList("System", "IO"))
 
   val nsPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json"))
   val nsLinqPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json", "Linq"))
+
+  val nunitPkg: CSPackageId = CSPackageId(NEList("NUnit", "Framework"))
+  val nunitTestFixture: CSType =
+    CSType(nunitPkg, "TestFixture", fq = false)
+  val nunitOneTimeSetUp: CSType =
+    CSType(nunitPkg, "OneTimeSetUp", fq = false)
+
+  val autofixturePkg: CSPackageId = CSPackageId(NEList("AutoFixture"))
+  val autofixtureFixture: CSType =
+    CSType(autofixturePkg, "Fixture", fq = false)
+  val autofixtureImmutableCollectionsCustomization: CSType =
+    CSType(autofixturePkg, "ImmutableCollectionsCustomization", fq = false)
 
   val abstractConversion: CSType =
     CSType(baboonRtPkg, "AbstractConversion", fq = false)
@@ -921,7 +979,6 @@ object CSBaboonTranslator {
 
   val csKeyValuePair: CSType =
     CSType(csCollectionsGenericPkg, "KeyValuePair", fq = false)
-
 
   val csInvariantCulture: CSType =
     CSType(csGlobalizationPkg, "CultureInfo", fq = false)

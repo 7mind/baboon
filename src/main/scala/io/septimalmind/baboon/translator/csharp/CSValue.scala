@@ -5,10 +5,11 @@ import izumi.fundamentals.collections.nonempty.NEList
 sealed trait CSValue
 
 object CSValue {
-  case class CSPackageId(parts: NEList[String])
+  case class CSPackageId(parts: NEList[String], isStatic: Boolean = false)
 
   object CSPackageId {
-    def apply(pkg: String): CSPackageId = CSPackageId(NEList.unsafeFrom(pkg.split('.').toList))
+    def apply(pkg: String): CSPackageId =
+      CSPackageId(NEList.unsafeFrom(pkg.split('.').toList))
   }
 
   case class CSType(pkg: CSValue.CSPackageId, name: String, fq: Boolean)

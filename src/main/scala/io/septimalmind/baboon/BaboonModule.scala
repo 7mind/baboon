@@ -15,7 +15,9 @@ import izumi.fundamentals.collections.nonempty.NEList
 
 import java.nio.file.Path
 
-class BaboonModule(options: CompilerOptions, inputs: Seq[Path])
+class BaboonModule(options: CompilerOptions,
+                   inputs: Seq[Path],
+                   testOutDir: Option[Path])
     extends ModuleDef {
   make[BaboonCompiler].from[BaboonCompiler.BaboonCompilerImpl]
   make[BaboonLoader].from[BaboonLoader.BaboonLoaderImpl]
@@ -39,6 +41,7 @@ class BaboonModule(options: CompilerOptions, inputs: Seq[Path])
   make[CSCodecTestsTranslator].from[CSCodecTestsTranslator.Impl]
 
   make[Seq[Path]].named("inputs").fromValue(inputs)
+  make[Option[Path]].named("test-output").fromValue(testOutDir)
 
   makeSubcontext[BaboonTranslator]
     .localDependencies(
