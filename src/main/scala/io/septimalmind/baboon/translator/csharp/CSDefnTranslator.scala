@@ -33,10 +33,10 @@ object CSDefnTranslator {
   case class OutputExt(output: Output, codecReg: TextTree[CSValue])
 
   val obsolete: CSType =
-    CSType(CSBaboonTranslator.systemPkg, "Obsolete", fq = false)
+    CSType(CSBaboonTranslator.csSystemPkg, "Obsolete", fq = false)
 
   val serializable: CSType =
-    CSType(CSBaboonTranslator.systemPkg, "Serializable", fq = false)
+    CSType(CSBaboonTranslator.csSystemPkg, "Serializable", fq = false)
 
   class CSDefnTranslatorImpl(options: CompilerOptions,
                              trans: CSTypeTranslator,

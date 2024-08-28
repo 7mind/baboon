@@ -229,7 +229,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
                   ref: TextTree[CSValue]): TextTree[CSValue] = {
       tpe.id match {
         case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-          q"$csDateTimeFormats.ToString($ref)"
+          q"$baboonTimeFormats.ToString($ref)"
         case _: TypeId.Builtin =>
           q"$ref.ToString()"
         case uid: TypeId.User =>
@@ -259,7 +259,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
           case TypeId.Builtins.uid =>
             q"new $nsJValue($ref.ToString())"
           case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-            q"new $nsJValue($csDateTimeFormats.ToString($ref))"
+            q"new $nsJValue($baboonTimeFormats.ToString($ref))"
           case _: TypeId.BuiltinScalar =>
             q"new $nsJValue($ref)"
           case u: TypeId.User =>
@@ -323,7 +323,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
         case TypeId.Builtins.uid =>
           q"$csGuid.Parse($fref.Value<$csString>()!)"
         case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-          q"$csDateTimeFormats.FromString($fref.Value<$csString>()!)"
+          q"$baboonTimeFormats.FromString($fref.Value<$csString>()!)"
         case o =>
           throw new RuntimeException(s"BUG: Unexpected type: $o")
       }
@@ -362,7 +362,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
         case TypeId.Builtins.uid =>
           q"$csGuid.Parse($ref)"
         case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-          q"$csDateTimeFormats.FromString($ref)"
+          q"$baboonTimeFormats.FromString($ref)"
         case uid: TypeId.User =>
           domain.defs.meta.nodes(uid) match {
             case u: DomainMember.User =>
@@ -461,5 +461,5 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
     CodecMeta(member)
   }
 
-  def metaField(): TextTree[CSValue] = q"IBaboonCodecAbstract json";
+  def metaField(): TextTree[CSValue] = q"IBaboonCodecData Json";
 }

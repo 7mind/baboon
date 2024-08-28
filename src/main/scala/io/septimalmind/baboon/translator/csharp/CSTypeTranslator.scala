@@ -1,12 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
-import io.septimalmind.baboon.translator.csharp.CSTypeTranslator.{
-  baboonRuntime,
-  generics,
-  immutable,
-  system
-}
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -78,39 +73,39 @@ class CSTypeTranslator() {
   private def asCsTypeScalar(b: TypeId.BuiltinScalar) = {
     b match {
       case TypeId.Builtins.bit =>
-        CSValue.CSType(system, "Boolean", fq = false)
+        CSValue.CSType(csSystemPkg, "Boolean", fq = false)
 
       case TypeId.Builtins.i08 =>
-        CSValue.CSType(system, "SByte", fq = false)
+        CSValue.CSType(csSystemPkg, "SByte", fq = false)
       case TypeId.Builtins.i16 =>
-        CSValue.CSType(system, "Int16", fq = false)
+        CSValue.CSType(csSystemPkg, "Int16", fq = false)
       case TypeId.Builtins.i32 =>
-        CSValue.CSType(system, "Int32", fq = false)
+        CSValue.CSType(csSystemPkg, "Int32", fq = false)
       case TypeId.Builtins.i64 =>
-        CSValue.CSType(system, "Int64", fq = false)
+        CSValue.CSType(csSystemPkg, "Int64", fq = false)
 
       case TypeId.Builtins.u08 =>
-        CSValue.CSType(system, "Byte", fq = false)
+        CSValue.CSType(csSystemPkg, "Byte", fq = false)
       case TypeId.Builtins.u16 =>
-        CSValue.CSType(system, "UInt16", fq = false)
+        CSValue.CSType(csSystemPkg, "UInt16", fq = false)
       case TypeId.Builtins.u32 =>
-        CSValue.CSType(system, "UInt32", fq = false)
+        CSValue.CSType(csSystemPkg, "UInt32", fq = false)
       case TypeId.Builtins.u64 =>
-        CSValue.CSType(system, "UInt64", fq = false)
+        CSValue.CSType(csSystemPkg, "UInt64", fq = false)
 
       case TypeId.Builtins.f32 =>
-        CSValue.CSType(system, "Single", fq = false)
+        CSValue.CSType(csSystemPkg, "Single", fq = false)
       case TypeId.Builtins.f64 =>
-        CSValue.CSType(system, "Double", fq = false)
+        CSValue.CSType(csSystemPkg, "Double", fq = false)
       case TypeId.Builtins.f128 =>
-        CSValue.CSType(system, "Decimal", fq = false)
+        CSValue.CSType(csSystemPkg, "Decimal", fq = false)
 
       case TypeId.Builtins.str =>
-        CSValue.CSType(system, "String", fq = false)
+        CSValue.CSType(csSystemPkg, "String", fq = false)
       case TypeId.Builtins.uid =>
-        CSValue.CSType(system, "Guid", fq = false)
+        CSValue.CSType(csSystemPkg, "Guid", fq = false)
       case TypeId.Builtins.tso | TypeId.Builtins.tsu =>
-        CSValue.CSType(baboonRuntime, "RpDateTime", fq = false)
+        CSValue.CSType(baboonTimePkg, "RpDateTime", fq = false)
       case _ =>
         throw new IllegalArgumentException(s"Unexpected: $b")
     }
@@ -130,22 +125,22 @@ class CSTypeTranslator() {
 
           b match {
             case TypeId.Builtins.map =>
-              CSValue.CSType(immutable, "ImmutableDictionary", fq = false)
+              CSValue.CSType(csCollectionsImmutablePkg, "ImmutableDictionary", fq = false)
             case TypeId.Builtins.lst =>
-              CSValue.CSType(immutable, "ImmutableList", fq = false)
+              CSValue.CSType(csCollectionsImmutablePkg, "ImmutableList", fq = false)
             case TypeId.Builtins.set =>
-              CSValue.CSType(immutable, "ImmutableHashSet", fq = false)
+              CSValue.CSType(csCollectionsImmutablePkg, "ImmutableHashSet", fq = false)
             case _ =>
               throw new IllegalArgumentException(s"Unexpected: $b")
           }
         } else {
           b match {
             case TypeId.Builtins.map =>
-              CSValue.CSType(generics, "Dictionary", fq = false)
+              CSValue.CSType(csCollectionsGenericPkg, "Dictionary", fq = false)
             case TypeId.Builtins.lst =>
-              CSValue.CSType(generics, "List", fq = false)
+              CSValue.CSType(csCollectionsGenericPkg, "List", fq = false)
             case TypeId.Builtins.set =>
-              CSValue.CSType(generics, "HashSet", fq = false)
+              CSValue.CSType(csCollectionsGenericPkg, "HashSet", fq = false)
             case _ =>
               throw new IllegalArgumentException(s"Unexpected: $b")
           }
@@ -250,14 +245,4 @@ class CSTypeTranslator() {
       case _ => false
     }
   }
-}
-
-object CSTypeTranslator {
-  private val system = CSValue.CSPackageId(NEList("System"))
-  private val generics =
-    CSValue.CSPackageId(NEList("System", "Collections", "Generic"))
-  private val immutable =
-    CSValue.CSPackageId(NEList("System", "Collections", "Immutable"))
-  private val baboonRuntime =
-    CSValue.CSPackageId(NEList("Baboon", "Runtime", "Shared"))
 }

@@ -39,7 +39,7 @@ object CSCodecTestsTranslator {
              |using AutoFixture;
              |using System.IO;
              |using System;
-             |using Baboon.Runtime.Shared;
+             |using Baboon.Test.Runtime.Shared;
              |
              |[TestFixture]
              |public class $testClassName

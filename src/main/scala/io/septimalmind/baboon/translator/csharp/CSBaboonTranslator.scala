@@ -39,9 +39,9 @@ class CSBaboonTranslator(
       }
       rendered = toRender.map { o =>
         val content = renderTree(o)
-        (o.path, OutputFile(content, o.isTest) )
+        (o.path, OutputFile(content, o.isTest))
       }
-      unique <- (rendered ++ meta.map {case (k, v) => (k, OutputFile(v, isTest = false))}).toUniqueMap(
+      unique <- (rendered ++ meta.map { case (k, v) => (k, OutputFile(v, isTest = false)) }).toUniqueMap(
         c => NEList(BaboonIssue.NonUniqueOutputFiles(c))
       )
     } yield {
@@ -70,12 +70,12 @@ class CSBaboonTranslator(
       if (options.disregardImplicitUsings) {
         Set.empty
       } else {
-        Set(systemPkg, genericPkg, linqPkg)
+        Set(csSystemPkg, csCollectionsGenericPkg, csLinqPkg)
       }
 
     val forcedUses: Set[CSPackageId] =
       if (options.disregardImplicitUsings) {
-        Set(linqPkg)
+        Set(csLinqPkg)
       } else {
         Set.empty
       }
@@ -167,12 +167,11 @@ class CSBaboonTranslator(
   }
 
   private def sharedRuntime(): Out[List[CSDefnTranslator.Output]] = {
-    val metaFields =
-      (List(q"String id") ++ codecs.toList
-        .sortBy(_.getClass.getName)
-        .map(_.metaField())).join(", ")
+    val metaFields = (List(q"String Id") ++ codecs.toList
+      .sortBy(_.getClass.getName)
+      .map(_.metaField())).join(", ")
 
-    val base =
+    val baseCodecsSource =
       q"""public interface IBaboonGenerated {
          |    public $csString BaboonDomainVersion();
          |    public $csString BaboonDomainIdentifier();
@@ -253,7 +252,7 @@ class CSBaboonTranslator(
          |
          |public interface IBaboonBinCodec<T> : $iBaboonStreamCodec<T, $binaryWriter, $binaryReader> {}
          |
-         |public record BaboonTypeCodecs($csString Id, IBaboonCodecData Json, IBaboonCodecData Ueba);
+         |public record BaboonTypeCodecs($metaFields);
          |
          |public abstract class AbstractBaboonCodecs
          |{
@@ -276,7 +275,7 @@ class CSBaboonTranslator(
          |    }
          |}""".stripMargin
 
-    val key =
+    val conversionKeySource =
       q"""public class ConversionKey
          |{
          |    protected bool Equals(ConversionKey other)
@@ -307,7 +306,7 @@ class CSBaboonTranslator(
          |    public $csTpe TypeTo {get; }
          |}""".stripMargin
 
-    val abstractAggregator =
+    val conversionsSource =
       q"""public abstract class AbstractBaboonConversions
          |{
          |    private readonly $csDict<ConversionKey, IConversion> _convs = new ();
@@ -406,7 +405,7 @@ class CSBaboonTranslator(
          |
          |}""".stripMargin
 
-    val formats =
+    val baseToolsSource =
       q"""public class BaboonTools {
          |    public static T? ReadNullableValue<T>(Boolean ifNot, Func<T> thenReturn) where T: struct
          |    {
@@ -426,72 +425,28 @@ class CSBaboonTranslator(
          |        return readValue(token);
          |    }
          |}
-         |
-         |public static class BaboonDateTimeFormats {
-         |    public static readonly $csString TslDefault = "yyyy-MM-ddTHH:mm:ss.fff";
-         |    public static readonly $csString[] Tsl = new string[] {
-         |                "yyyy-MM-ddTHH:mm:ss",
-         |                "yyyy-MM-ddTHH:mm:ss.f",
-         |                "yyyy-MM-ddTHH:mm:ss.ff",
-         |                "yyyy-MM-ddTHH:mm:ss.fff",
-         |                "yyyy-MM-ddTHH:mm:ss.ffff",
-         |                "yyyy-MM-ddTHH:mm:ss.fffff",
-         |                "yyyy-MM-ddTHH:mm:ss.ffffff",
-         |                "yyyy-MM-ddTHH:mm:ss.fffffff",
-         |                "yyyy-MM-ddTHH:mm:ss.ffffffff",
-         |                "yyyy-MM-ddTHH:mm:ss.fffffffff"
-         |            };
-         |
-         |    public static readonly $csString TszDefault = "yyyy-MM-ddTHH:mm:ss.fffzzz";
-         |    public static readonly $csString[] Tsz = new string[] {
-         |               "yyyy-MM-ddTHH:mm:ssZ",
-         |               "yyyy-MM-ddTHH:mm:ss.fZ",
-         |               "yyyy-MM-ddTHH:mm:ss.ffZ",
-         |               "yyyy-MM-ddTHH:mm:ss.fffZ",
-         |               "yyyy-MM-ddTHH:mm:ss.ffffZ",
-         |               "yyyy-MM-ddTHH:mm:ss.fffffZ",
-         |               "yyyy-MM-ddTHH:mm:ss.ffffffZ",
-         |               "yyyy-MM-ddTHH:mm:ss.fffffffZ",
-         |               "yyyy-MM-ddTHH:mm:ss.ffffffffZ",
-         |               "yyyy-MM-ddTHH:mm:ss.fffffffffZ",
-         |               "yyyy-MM-ddTHH:mm:sszzz",
-         |               "yyyy-MM-ddTHH:mm:ss.fzzz",
-         |               "yyyy-MM-ddTHH:mm:ss.ffzzz",
-         |               "yyyy-MM-ddTHH:mm:ss.fffzzz",
-         |               "yyyy-MM-ddTHH:mm:ss.ffffzzz",
-         |               "yyyy-MM-ddTHH:mm:ss.fffffzzz",
-         |               "yyyy-MM-ddTHH:mm:ss.ffffffzzz",
-         |               "yyyy-MM-ddTHH:mm:ss.fffffffzzz",
-         |               "yyyy-MM-ddTHH:mm:ss.ffffffffzzz",
-         |               "yyyy-MM-ddTHH:mm:ss.fffffffffzzz"
-         |            };
-         |
-         |    public static readonly $csString TsuDefault = "yyyy-MM-ddTHH:mm:ss.fffZ";
-         |    public static readonly $csString[] Tsu = Tsz;
-         |
-         |    public static $csString ToString($rpDateTime dt) {
-         |        return dt.Underlying.ToString(dt.Underlying.Kind == $csDateTimeKind.Utc ? TsuDefault : TszDefault, $csInvariantCulture.InvariantCulture);
-         |    }
-         |    public static $rpDateTime FromString($csString dt) {
-         |        return $csDateTime.ParseExact(dt, Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None);
-         |    }
-         |
-         |    public static DateTime TruncateToMilliseconds(DateTime dateTime)
-         |    {
-         |        return new DateTime(dateTime.Ticks - (dateTime.Ticks % TimeSpan.TicksPerMillisecond), dateTime.Kind);
-         |    }
-         |}
          |""".stripMargin
 
-    val customDateTime =
+    val rpDateTimeSource =
       q"""/** Reduced to milliseconds precision DateTime */
+         |[$nsJsonConverter(typeof(JsonConverter))]
          |public readonly struct RpDateTime
          |{
-         |    internal readonly DateTime Underlying;
+         |    internal readonly $csDateTime Underlying;
+         |
+         |    public RpDateTime(int year, int month, int day, int hour, int minute, int second, int millisecond, DateTimeKind kind)
+         |    {
+         |        Underlying = new $csDateTime(year, month, day, hour, minute, second, millisecond, kind);
+         |    }
+         |
+         |    public RpDateTime(long ticks, $csDateTimeKind kind)
+         |    {
+         |        Underlying = $baboonTimeFormats.TruncateToMilliseconds(ticks, kind);
+         |    }
          |
          |    public RpDateTime(DateTime dateTime)
          |    {
-         |        Underlying = BaboonDateTimeFormats.TruncateToMilliseconds(dateTime);
+         |        Underlying = $baboonTimeFormats.TruncateToMilliseconds(dateTime);
          |    }
          |
          |    public override int GetHashCode()
@@ -503,11 +458,38 @@ class CSBaboonTranslator(
          |    {
          |        if (obj is RpDateTime other)
          |        {
-         |            return other.Underlying == Underlying;
+         |            return other.Underlying.ToUniversalTime() == Underlying.ToUniversalTime();
          |        }
          |
          |        return false;
          |    }
+         |
+         |    public override string ToString() => $baboonTimeFormats.ToString(this);
+         |
+         |    public long Ticks => Underlying.Ticks;
+         |    public DateTimeKind Kind => Underlying.Kind;
+         |    public RpDateTime ToUniversalTime() => new RpDateTime(Underlying.ToUniversalTime());
+         |    public RpDateTime ToLocalTime() => new RpDateTime(Underlying.ToLocalTime());
+         |    public RpDateTime LocalDate => new RpDateTime(Underlying.ToLocalTime().Date);
+         |    public RpDateTime Date => new RpDateTime(Underlying.Date);
+         |    public TimeSpan GetUtcOffset() => $csTimeZoneInfo.Local.GetUtcOffset(Underlying);
+         |    public TimeSpan Subtract(RpDateTime right) => Underlying.ToUniversalTime().Subtract(right.Underlying);
+         |    public RpDateTime Subtract(TimeSpan span) => new RpDateTime(Underlying.Subtract(span));
+         |    public RpDateTime Add(TimeSpan value) => new RpDateTime(Underlying.Add(value));
+         |    public RpDateTime AddTicks(long value) => new RpDateTime(Underlying.AddTicks(value));
+         |    public RpDateTime AddMilliseconds(double value) => new RpDateTime(Underlying.AddMilliseconds(value));
+         |    public RpDateTime AddSeconds(double value) => new RpDateTime(Underlying.AddSeconds(value));
+         |    public RpDateTime AddMinutes(double value) => new RpDateTime(Underlying.AddMinutes(value));
+         |    public RpDateTime AddHours(double value) => new RpDateTime(Underlying.AddHours(value));
+         |    public RpDateTime AddDays(double value) => new RpDateTime(Underlying.AddDays(value));
+         |    public RpDateTime AddMonths(int value) => new RpDateTime(Underlying.AddMonths(value));
+         |    public RpDateTime AddYears(int value) => new RpDateTime(Underlying.AddYears(value));
+         |
+         |    public static RpDateTime Now => new RpDateTime($csDateTime.Now);
+         |    public static RpDateTime UtcNow => new RpDateTime($csDateTime.UtcNow);
+         |    public static RpDateTime Epoch => new RpDateTime(1970, 1, 1, 0, 0, 0, 0, $csDateTimeKind.Utc);
+         |    public static RpDateTime MinValue => new RpDateTime($csDateTime.MinValue);
+         |    public static RpDateTime MaxValue => new RpDateTime($csDateTime.MaxValue);
          |
          |    public static bool operator ==(RpDateTime left, RpDateTime right)
          |    {
@@ -521,29 +503,135 @@ class CSBaboonTranslator(
          |
          |    public static TimeSpan operator -(RpDateTime left, RpDateTime right)
          |    {
-         |        return left.Underlying - right.Underlying;
+         |        return left.Underlying.ToUniversalTime() - right.Underlying.ToUniversalTime();
          |    }
          |
-         |    public static implicit operator RpDateTime(DateTime dt) => new(dt);
-         |    public static implicit operator DateTime(RpDateTime rpdt) => rpdt.Underlying;
+         |    public static bool operator >(RpDateTime left, RpDateTime right)
+         |    {
+         |        return left.Underlying.ToUniversalTime() > right.Underlying.ToUniversalTime();
+         |    }
+         |
+         |    public static bool operator <(RpDateTime left, RpDateTime right)
+         |    {
+         |        return left.Underlying.ToUniversalTime() < right.Underlying.ToUniversalTime();
+         |    }
+         |
+         |    public static bool operator <=(RpDateTime left, RpDateTime right)
+         |    {
+         |        return left.Underlying.ToUniversalTime() <= right.Underlying.ToUniversalTime();
+         |    }
+         |
+         |    public static bool operator >=(RpDateTime left, RpDateTime right)
+         |    {
+         |        return left.Underlying.ToUniversalTime() >= right.Underlying.ToUniversalTime();
+         |    }
+         |
+         |    public static implicit operator RpDateTime($csDateTime dt) => new(dt);
+         |    public static implicit operator $csDateTime(RpDateTime dt) => dt.Underlying;
+         |
+         |    public static RpDateTime Parse($csString dt) => $baboonTimeFormats.FromString(dt);
+         |
+         |    private class JsonConverter : $nsJsonConverter<RpDateTime>
+         |    {
+         |        public override void WriteJson($nsJsonWriter writer, RpDateTime value, $nsJsonSerializer serializer)
+         |        {
+         |            writer.WriteValue($baboonTimeFormats.ToString(value));
+         |        }
+         |
+         |        public override RpDateTime ReadJson($nsJsonReader reader, $csTpe objectType, RpDateTime existingValue, bool hasExistingValue, $nsJsonSerializer serializer)
+         |        {
+         |            return $baboonTimeFormats.FromString((string)reader.Value!);
+         |        }
+         |    }
          |}""".stripMargin
 
-    val runtime = Seq(key, base, abstractAggregator, customDateTime, formats).join("\n\n")
+    val timeFormatsSource =
+      q"""public static class BaboonDateTimeFormats
+         |{
+         |    public static readonly String TslDefault = "yyyy-MM-ddTHH:mm:ss.fff";
+         |
+         |    public static readonly String[] Tsl = new string[]
+         |    {
+         |        "yyyy-MM-ddTHH:mm:ss",
+         |        "yyyy-MM-ddTHH:mm:ss.f",
+         |        "yyyy-MM-ddTHH:mm:ss.ff",
+         |        "yyyy-MM-ddTHH:mm:ss.fff",
+         |        "yyyy-MM-ddTHH:mm:ss.ffff",
+         |        "yyyy-MM-ddTHH:mm:ss.fffff",
+         |        "yyyy-MM-ddTHH:mm:ss.ffffff",
+         |        "yyyy-MM-ddTHH:mm:ss.fffffff",
+         |        "yyyy-MM-ddTHH:mm:ss.ffffffff",
+         |        "yyyy-MM-ddTHH:mm:ss.fffffffff"
+         |    };
+         |
+         |    public static readonly String TszDefault = "yyyy-MM-ddTHH:mm:ss.fffzzz";
+         |
+         |    public static readonly String[] Tsz = new string[]
+         |    {
+         |        "yyyy-MM-ddTHH:mm:ssZ",
+         |        "yyyy-MM-ddTHH:mm:ss.fZ",
+         |        "yyyy-MM-ddTHH:mm:ss.ffZ",
+         |        "yyyy-MM-ddTHH:mm:ss.fffZ",
+         |        "yyyy-MM-ddTHH:mm:ss.ffffZ",
+         |        "yyyy-MM-ddTHH:mm:ss.fffffZ",
+         |        "yyyy-MM-ddTHH:mm:ss.ffffffZ",
+         |        "yyyy-MM-ddTHH:mm:ss.fffffffZ",
+         |        "yyyy-MM-ddTHH:mm:ss.ffffffffZ",
+         |        "yyyy-MM-ddTHH:mm:ss.fffffffffZ",
+         |        "yyyy-MM-ddTHH:mm:sszzz",
+         |        "yyyy-MM-ddTHH:mm:ss.fzzz",
+         |        "yyyy-MM-ddTHH:mm:ss.ffzzz",
+         |        "yyyy-MM-ddTHH:mm:ss.fffzzz",
+         |        "yyyy-MM-ddTHH:mm:ss.ffffzzz",
+         |        "yyyy-MM-ddTHH:mm:ss.fffffzzz",
+         |        "yyyy-MM-ddTHH:mm:ss.ffffffzzz",
+         |        "yyyy-MM-ddTHH:mm:ss.fffffffzzz",
+         |        "yyyy-MM-ddTHH:mm:ss.ffffffffzzz",
+         |        "yyyy-MM-ddTHH:mm:ss.fffffffffzzz"
+         |    };
+         |
+         |    public static readonly String TsuDefault = "yyyy-MM-ddTHH:mm:ss.fffZ";
+         |    public static readonly String[] Tsu = Tsz;
+         |
+         |    public static String ToString($csDateTime dt)
+         |    {
+         |        return dt.ToString(dt.Kind == $csDateTimeKind.Utc ? TsuDefault : TszDefault, $csInvariantCulture.InvariantCulture);
+         |    }
+         |
+         |    public static String ToString(RpDateTime dt)
+         |    {
+         |        return dt.Underlying.ToString(dt.Underlying.Kind == $csDateTimeKind.Utc ? TsuDefault : TszDefault, $csInvariantCulture.InvariantCulture);
+         |    }
+         |
+         |    public static RpDateTime FromString(String dt)
+         |    {
+         |        return $csDateTime.ParseExact(dt, Tsz, $csInvariantCulture.InvariantCulture, $csDateTimeStyles.None);
+         |    }
+         |
+         |    public static $csDateTime TruncateToMilliseconds(long ticks, $csDateTimeKind kind)
+         |    {
+         |        return new $csDateTime(ticks - (ticks % TimeSpan.TicksPerMillisecond), kind);
+         |    }
+         |
+         |    public static $csDateTime TruncateToMilliseconds($csDateTime dateTime)
+         |    {
+         |        return TruncateToMilliseconds(dateTime.Ticks, dateTime.Kind);
+         |    }
+         |}
+         |""".stripMargin
 
-    val rt =
-      tools.inNs(CSBaboonTranslator.sharedRtPkg.parts.toSeq, runtime)
+    val sharedRuntimeSource = Seq(baseCodecsSource, baseToolsSource, conversionKeySource, conversionsSource).join("\n\n")
+    val sharedRuntime = tools.inNs(CSBaboonTranslator.baboonRtPkg.parts.toSeq, sharedRuntimeSource)
+    val sharedOutput = CSDefnTranslator.Output(s"BaboonRuntimeShared.cs", sharedRuntime, CSBaboonTranslator.baboonRtPkg, isTest = false)
 
-    Right(
-      List(
-        CSDefnTranslator
-          .Output(
-            s"Baboon-Runtime-Shared.cs",
-            rt,
-            CSBaboonTranslator.sharedRtPkg,
-            isTest = false,
-          )
-      )
-    )
+    val timeSource = Seq(rpDateTimeSource, timeFormatsSource).join("\n\n")
+    val time = tools.inNs(CSBaboonTranslator.baboonTimePkg.parts.toSeq, timeSource)
+    val timeOutput = CSDefnTranslator.Output(s"BaboonTime.cs", time, CSBaboonTranslator.baboonTimePkg, isTest = false)
+
+    Right(List(
+      sharedOutput,
+      timeOutput
+    ))
   }
 
   private def sharedTestRuntime: Out[List[CSDefnTranslator.Output]] = {
@@ -554,6 +642,7 @@ class CSBaboonTranslator(
          |using System.Reflection;
          |using AutoFixture.Kernel;
          |using AutoFixture;
+         |using Baboon.Time;
          |
          |internal class TruncatedRandomDateTimeSequenceGenerator : ISpecimenBuilder
          |{
@@ -561,17 +650,15 @@ class CSBaboonTranslator(
          |
          |    internal TruncatedRandomDateTimeSequenceGenerator()
          |    {
-         |        this.innerRandomDateTimeSequenceGenerator =
-         |            new RandomDateTimeSequenceGenerator();
+         |        this.innerRandomDateTimeSequenceGenerator = new RandomDateTimeSequenceGenerator();
          |    }
          |
          |    public object Create(object request, ISpecimenContext context)
          |    {
-         |        var result =
-         |            this.innerRandomDateTimeSequenceGenerator.Create(request, context);
-         |        if (result is NoSpecimen)
+         |        var result = this.innerRandomDateTimeSequenceGenerator.Create(request, context);
+         |        if (result is NoSpecimen) {
          |            return result;
-         |
+         |        }
          |        return BaboonDateTimeFormats.TruncateToMilliseconds((DateTime)result);
          |    }
          |}
@@ -581,8 +668,11 @@ class CSBaboonTranslator(
          |    public object? Create(object request, ISpecimenContext context)
          |    {
          |        var type = ExtractType(request);
-         |        if (type == null || !type.IsGenericType ||
-         |            type.GetGenericTypeDefinition() != typeof(ImmutableDictionary<,>))
+         |        if (
+         |          type == null ||
+         |          !type.IsGenericType ||
+         |          type.GetGenericTypeDefinition() != typeof(ImmutableDictionary<,>)
+         |        )
          |        {
          |            return new NoSpecimen();
          |        }
@@ -628,11 +718,10 @@ class CSBaboonTranslator(
     Right(
       List(
         CSDefnTranslator.Output(
-          "Baboon-Test-Runtime-Shared.cs",
-          tools.inNs(CSBaboonTranslator.sharedRtPkg.parts.toSeq, sharedTestRuntime),
-          CSBaboonTranslator.sharedRtPkg,
-            isTest = true,
-
+          "BaboonTestRuntimeShared.cs",
+          tools.inNs(CSBaboonTranslator.baboonTestRtPkg.parts.toSeq, sharedTestRuntime),
+          CSBaboonTranslator.baboonTestRtPkg,
+          isTest = true,
         )
       )
     )
@@ -671,7 +760,7 @@ class CSBaboonTranslator(
            |    ${missing.join("\n").shift(4).trim}
            |}
            |
-           |public class BaboonConversions : ${CSBaboonTranslator.abstractBaboonConversions}
+           |public class BaboonConversions : $abstractBaboonConversions
            |{
            |    public BaboonConversions(RequiredConversions requiredConversions)
            |    {
@@ -695,7 +784,7 @@ class CSBaboonTranslator(
            |}""".stripMargin
 
       val codecs =
-        q"""public class BaboonCodecs : ${CSBaboonTranslator.abstractBaboonCodecs}
+        q"""public class BaboonCodecs : $abstractBaboonCodecs
            |{
            |    private BaboonCodecs()
            |    {
@@ -707,19 +796,20 @@ class CSBaboonTranslator(
            |    public static BaboonCodecs Instance { get { return instance.Value; } }
            |}""".stripMargin
 
-      val runtime = Seq(converter, codecs).join("\n\n")
-
-      val rt = tools.inNs(pkg.parts.toSeq, runtime)
-
       val basename = tools.basename(domain, lineage.evolution, options)
 
-      List(
-        CSDefnTranslator
-          .Output(s"$basename/Baboon-Runtime.cs", rt, pkg, isTest = false)
-      ) ++ convs.map { conv =>
+      val runtimeSource = Seq(converter, codecs).join("\n\n")
+      val runtime = tools.inNs(pkg.parts.toSeq, runtimeSource)
+      val runtimeOutput = CSDefnTranslator.Output(s"$basename/BaboonRuntime.cs", runtime, pkg, isTest = false)
+
+      val convertersOutput = convs.map { conv =>
         CSDefnTranslator
           .Output(s"$basename/${conv.fname}", conv.conv, pkg, isTest = false)
       }
+
+      List(
+        runtimeOutput
+      ) ++ convertersOutput
     }
   }
 
@@ -732,47 +822,60 @@ object CSBaboonTranslator {
                                 missing: Option[TextTree[CSValue]],
                                )
 
-  val sharedRtPkg: CSPackageId = CSPackageId(
-    NEList("Baboon", "Runtime", "Shared")
-  )
-  val systemPkg: CSPackageId = CSPackageId(NEList("System"))
-  val genericPkg: CSPackageId = CSPackageId(
-    NEList("System", "Collections", "Generic")
-  )
-  val linqPkg: CSPackageId = CSPackageId(NEList("System", "Linq"))
-  val ioPkg: CSPackageId = CSPackageId(NEList("System", "IO"))
+  val baboonRtPkg: CSPackageId = CSPackageId(NEList("Baboon", "Runtime", "Shared"))
+  val baboonTestRtPkg: CSPackageId = CSPackageId(NEList("Baboon", "Test", "Runtime", "Shared"))
+  val baboonTimePkg: CSPackageId = CSPackageId(NEList("Baboon", "Time"))
+
+  val csSystemPkg: CSPackageId = CSPackageId(NEList("System"))
+  val csGlobalizationPkg: CSPackageId = CSPackageId(NEList("System", "Globalization"))
+  val csCollectionsGenericPkg: CSPackageId = CSPackageId(NEList("System", "Collections", "Generic"))
+  val csCollectionsImmutablePkg: CSPackageId = CSPackageId(NEList("System", "Collections", "Immutable"))
+  val csLinqPkg: CSPackageId = CSPackageId(NEList("System", "Linq"))
+  val csIoPkg: CSPackageId = CSPackageId(NEList("System", "IO"))
+
   val nsPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json"))
   val nsLinqPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json", "Linq"))
 
   val abstractConversion: CSType =
-    CSType(sharedRtPkg, "AbstractConversion", fq = false)
+    CSType(baboonRtPkg, "AbstractConversion", fq = false)
   val abstractBaboonConversions: CSType =
-    CSType(sharedRtPkg, "AbstractBaboonConversions", fq = false)
+    CSType(baboonRtPkg, "AbstractBaboonConversions", fq = false)
   val iBaboonGenerated: CSType =
-    CSType(sharedRtPkg, "IBaboonGenerated", fq = false)
+    CSType(baboonRtPkg, "IBaboonGenerated", fq = false)
   val iBaboonGeneratedLatest: CSType =
-    CSType(sharedRtPkg, "IBaboonGeneratedLatest", fq = false)
+    CSType(baboonRtPkg, "IBaboonGeneratedLatest", fq = false)
   val BaboonTools: CSType =
-    CSType(sharedRtPkg, "BaboonTools", fq = false)
+    CSType(baboonRtPkg, "BaboonTools", fq = false)
 
   val iBaboonCodecData: CSType =
-    CSType(sharedRtPkg, "IBaboonCodecData", fq = false)
+    CSType(baboonRtPkg, "IBaboonCodecData", fq = false)
   val iBaboonCodec: CSType =
-    CSType(sharedRtPkg, "IBaboonCodec", fq = false)
+    CSType(baboonRtPkg, "IBaboonCodec", fq = false)
   val iBaboonValueCodec: CSType =
-    CSType(sharedRtPkg, "IBaboonValueCodec", fq = false)
+    CSType(baboonRtPkg, "IBaboonValueCodec", fq = false)
   val iBaboonStreamCodec: CSType =
-    CSType(sharedRtPkg, "IBaboonStreamCodec", fq = false)
+    CSType(baboonRtPkg, "IBaboonStreamCodec", fq = false)
 
   val iBaboonJsonCodec: CSType =
-    CSType(sharedRtPkg, "IBaboonJsonCodec", fq = false)
+    CSType(baboonRtPkg, "IBaboonJsonCodec", fq = false)
   val iBaboonBinCodec: CSType =
-    CSType(sharedRtPkg, "IBaboonBinCodec", fq = false)
+    CSType(baboonRtPkg, "IBaboonBinCodec", fq = false)
   val baboonTypeCodecs: CSType =
-    CSType(sharedRtPkg, "BaboonTypeCodecs", fq = false)
+    CSType(baboonRtPkg, "BaboonTypeCodecs", fq = false)
   val abstractBaboonCodecs: CSType =
-    CSType(sharedRtPkg, "AbstractBaboonCodecs", fq = false)
+    CSType(baboonRtPkg, "AbstractBaboonCodecs", fq = false)
 
+  val baboonTimeFormats: CSType =
+    CSType(baboonTimePkg, "BaboonDateTimeFormats", fq = false)
+
+  val nsJsonWriter: CSType =
+    CSType(nsPkg, "JsonWriter", fq = false)
+  val nsJsonReader: CSType =
+    CSType(nsPkg, "JsonReader", fq = false)
+  val nsJsonSerializer: CSType =
+    CSType(nsPkg, "JsonSerializer", fq = false)
+  val nsJsonConverter: CSType =
+    CSType(nsPkg, "JsonConverter", fq = false)
   val nsFormatting: CSType =
     CSType(nsPkg, "Formatting", fq = false)
   val nsJToken: CSType =
@@ -789,35 +892,45 @@ object CSBaboonTranslator {
     CSType(nsLinqPkg, "JTokenType", fq = false)
 
   val binaryReader: CSType =
-    CSType(ioPkg, "BinaryReader", fq = false)
+    CSType(csIoPkg, "BinaryReader", fq = false)
   val binaryWriter: CSType =
-    CSType(ioPkg, "BinaryWriter", fq = false)
+    CSType(csIoPkg, "BinaryWriter", fq = false)
 
   val csTpe: CSType =
-    CSType(systemPkg, "Type", fq = false)
+    CSType(csSystemPkg, "Type", fq = false)
   val csLazy: CSType =
-    CSType(systemPkg, "Lazy", fq = false)
+    CSType(csSystemPkg, "Lazy", fq = false)
   val csList: CSType =
-    CSType(genericPkg, "List", fq = false)
+    CSType(csCollectionsGenericPkg, "List", fq = false)
   val csDict: CSType =
-    CSType(genericPkg, "Dictionary", fq = false)
+    CSType(csCollectionsGenericPkg, "Dictionary", fq = false)
   val csString: CSType =
-    CSType(systemPkg, "String", fq = false)
+    CSType(csSystemPkg, "String", fq = false)
   val csGuid: CSType =
-    CSType(systemPkg, "Guid", fq = false)
+    CSType(csSystemPkg, "Guid", fq = false)
   val csEnum: CSType =
-    CSType(systemPkg, "Enum", fq = false)
+    CSType(csSystemPkg, "Enum", fq = false)
   val csDateTime: CSType =
-    CSType(systemPkg, "DateTime", fq = false)
+    CSType(csSystemPkg, "DateTime", fq = false)
   val rpDateTime: CSType =
-    CSType(sharedRtPkg, "RpDateTime", fq = false)
+    CSType(baboonTimePkg, "RpDateTime", fq = false)
   val csArgumentException: CSType =
-    CSType(systemPkg, "ArgumentException", fq = false)
+    CSType(csSystemPkg, "ArgumentException", fq = false)
   val csEnumerable: CSType =
-    CSType(linqPkg, "Enumerable", fq = false)
+    CSType(csLinqPkg, "Enumerable", fq = false)
 
   val csKeyValuePair: CSType =
-    CSType(genericPkg, "KeyValuePair", fq = false)
+    CSType(csCollectionsGenericPkg, "KeyValuePair", fq = false)
+
+
+  val csInvariantCulture: CSType =
+    CSType(csGlobalizationPkg, "CultureInfo", fq = false)
+  val csDateTimeStyles: CSType =
+    CSType(csGlobalizationPkg, "DateTimeStyles", fq = false)
+  val csDateTimeKind: CSType =
+    CSType(csSystemPkg, "DateTimeKind", fq = false)
+  val csTimeZoneInfo: CSType =
+    CSType(csSystemPkg, "TimeZoneInfo", fq = false)
 
   val csNotImplementedException: CSType =
     CSType(
@@ -825,28 +938,4 @@ object CSBaboonTranslator {
       "NotImplementedException",
       fq = false
     )
-
-  val csInvariantCulture: CSType = CSType(
-    CSPackageId("System.Globalization"),
-    "CultureInfo",
-    fq = false
-  )
-
-  val csDateTimeStyles: CSType = CSType(
-    CSPackageId("System.Globalization"),
-    "DateTimeStyles",
-    fq = false
-  )
-
-  val csDateTimeKind: CSType = CSType(
-    CSPackageId("System"),
-    "DateTimeKind",
-    fq = false
-  )
-
-  val csDateTimeFormats: CSType = CSType(
-    sharedRtPkg,
-    "BaboonDateTimeFormats",
-    fq = false
-  )
 }
