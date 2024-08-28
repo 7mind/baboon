@@ -19,7 +19,8 @@ abstract class BaboonTest extends Spec1[Identity] {
           disregardImplicitUsings = true,
           omitMostRecentVersionSuffixFromPaths = true,
           omitMostRecentVersionSuffixFromNamespaces = true,
-        )
+        ),
+        Seq.empty,
       ).morph[PluginBase]
     )
   )

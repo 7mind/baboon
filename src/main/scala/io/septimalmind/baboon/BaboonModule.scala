@@ -13,7 +13,10 @@ import io.septimalmind.baboon.util.BLogger
 import io.septimalmind.baboon.validator.BaboonValidator
 import izumi.fundamentals.collections.nonempty.NEList
 
-class BaboonModule(options: CompilerOptions) extends ModuleDef {
+import java.nio.file.Path
+
+class BaboonModule(options: CompilerOptions, inputs: Seq[Path])
+    extends ModuleDef {
   make[BaboonCompiler].from[BaboonCompiler.BaboonCompilerImpl]
   make[BaboonLoader].from[BaboonLoader.BaboonLoaderImpl]
   make[CompilerOptions].fromValue(options)
@@ -34,6 +37,8 @@ class BaboonModule(options: CompilerOptions) extends ModuleDef {
   make[CSTypeTranslator]
   make[ScopeSupport].from[ScopeSupport.ScopeSupportImpl]
   make[CSCodecTestsTranslator].from[CSCodecTestsTranslator.Impl]
+
+  make[Seq[Path]].named("inputs").fromValue(inputs)
 
   makeSubcontext[BaboonTranslator]
     .localDependencies(

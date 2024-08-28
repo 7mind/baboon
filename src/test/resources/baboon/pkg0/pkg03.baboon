@@ -2,22 +2,7 @@ model testpkg.pkg0
 
 version "3.0.0"
 
-root data Maps {
-  f1: map[i08, str]
-}
-
-enum T1_E1 {
- A
- C
-}
-
-root data T1_E1_RET {
-    f: T1_E1
-}
-
-data T1_D2 {
-    f: str
-}
+include "pkg0/pkg03-inclusion.model"
 
 root data T1_D1 {
  f0: T1_D2

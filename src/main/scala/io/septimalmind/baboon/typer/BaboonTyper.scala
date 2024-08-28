@@ -35,7 +35,7 @@ object BaboonTyper {
       for {
         id <- parsePkg(model.header)
         version <- parseVersion(model.version)
-        defs <- runTyper(id, model.members, model.header.meta)
+        defs <- runTyper(id, model.members.defs, model.header.meta)
         indexedDefs <- defs
           .map(d => (d.id, d))
           .toUniqueMap(e => NEList(BaboonIssue.DuplicatedTypedefs(model, e)))

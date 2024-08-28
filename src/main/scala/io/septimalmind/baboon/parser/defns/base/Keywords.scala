@@ -17,6 +17,7 @@ trait Keywords {
   def foreign[$: P]: P[Unit] = kw("foreign")
   def root[$: P]: P[Unit] = kw("root")
   def version[$: P]: P[Unit] = kw("version")
+  def include[$: P]: P[Unit] = kw("include")
 
   def apply[T](kw: => P[Unit], defparser: => P[T])(implicit v: P[?]): P[T] = {
     import fastparse.ScalaWhitespace.whitespace

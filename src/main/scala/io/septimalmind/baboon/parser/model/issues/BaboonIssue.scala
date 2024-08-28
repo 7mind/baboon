@@ -32,6 +32,7 @@ object BaboonIssue {
   sealed trait ParserIssue extends BaboonIssue
 
   case class ParserFailed(error: Parsed.Failure) extends ParserIssue
+  case class IncludeNotFound(path: String) extends ParserIssue
 
   //
   sealed trait TyperIssue extends BaboonIssue

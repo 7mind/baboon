@@ -7,10 +7,6 @@ import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
   iBaboonGenerated,
   iBaboonGeneratedLatest
 }
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
-  iBaboonGenerated,
-  iBaboonGeneratedLatest
-}
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.ComparatorType

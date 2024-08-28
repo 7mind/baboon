@@ -51,6 +51,11 @@ object IssuePrinter {
       s"Parser error occurred on => line:$line position:$character".stripMargin
     }
 
+  implicit val includeNotFoundPrinter: IssuePrinter[IncludeNotFound] =
+    (issue: IncludeNotFound) => {
+      s"Failed to find inclusion `${issue.path}``".stripMargin
+    }
+
   implicit val scalaExpectedPrinter: IssuePrinter[ScalarExpected] =
     new BugPrinter[ScalarExpected] {
       override def errorMessage(bug: ScalarExpected): String = {
@@ -652,7 +657,8 @@ object IssuePrinter {
   }
 
   implicit val parserIssuePrinter: IssuePrinter[ParserIssue] = {
-    case i: ParserFailed => apply[ParserFailed].stringify(i)
+    case i: ParserFailed    => apply[ParserFailed].stringify(i)
+    case i: IncludeNotFound => apply[IncludeNotFound].stringify(i)
   }
 
   implicit val typerIssue: IssuePrinter[TyperIssue] = {

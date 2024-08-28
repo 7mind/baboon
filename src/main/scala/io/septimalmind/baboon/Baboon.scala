@@ -53,7 +53,7 @@ object Baboon {
         System.exit(1)
       case Right(value) =>
         val opts = value._1
-
+        val inputPaths = opts.modelDir.map(s => Paths.get(s))
         val rtOpt = opts.runtime match {
           case Some("only")    => RuntimeGenOpt.Only
           case Some("without") => RuntimeGenOpt.Without
@@ -69,13 +69,13 @@ object Baboon {
           !opts.omitMostRecentVersionSuffixFromPaths.getOrElse(false),
           !opts.omitMostRecentVersionSuffixFromNamespaces.getOrElse(false),
         )
-        Injector.NoCycles().produceRun(new BaboonModule(options)) {
+        Injector.NoCycles().produceRun(new BaboonModule(options, inputPaths)) {
           (compiler: BaboonCompiler) =>
             val inputModels = opts.model
               .map(s => Paths.get(s))
-              .toSet ++ opts.modelDir.flatMap { dir =>
+              .toSet ++ inputPaths.flatMap { dir =>
               IzFiles
-                .walk(Paths.get(dir).toFile)
+                .walk(dir.toFile)
                 .filter(_.toFile.getName.endsWith(".baboon"))
             }
             val outDir = Paths.get(opts.output)
