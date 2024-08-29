@@ -7,8 +7,9 @@ Stripped-down experimental DML with schema evolution support and garbage collect
 ## Features
 
 1. Set-based structural inheritance with subtraction and intersections
-2. Automatic codecs derivation (JSON and tagless custom binary format)
-3. Automatic evolution derivation where possible, stubs where manual convertion is required
+2. Automatic JSON codec derivation
+3. Automatic UEBA (Ultra-Efficient Binary Aggregate, a custom tagless binary format) codec derivation
+3. Automatic evolution derivation where possible, stubs where manual conversion is required
 4. Codegen targets: C#
 
 ## Limitations
@@ -26,7 +27,7 @@ Stripped-down experimental DML with schema evolution support and garbage collect
 11. (*) No newtypes/type aliases
 12. (*) No inheritance-based lenses/projections/conversions
 
-Points marked with (*) will/may be improved in future.
+Points marked with (*) will/may be improved in the future.
 
 ## CLI
 
