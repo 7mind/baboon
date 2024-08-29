@@ -66,7 +66,7 @@ lazy val root = (project in file("."))
     graalVMNativeImageOptions ++= Seq(
       "--no-fallback",
       "-H:+ReportExceptionStackTraces",
-      "-H:+UnlockExperimentalVMOptions",
+      //"-H:+UnlockExperimentalVMOptions",
       "--report-unsupported-elements-at-runtime",
       "--enable-https",
       "--enable-http",

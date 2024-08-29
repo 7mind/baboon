@@ -879,6 +879,10 @@ object CSBaboonTranslator {
   val csLinqPkg: CSPackageId = CSPackageId(NEList("System", "Linq"))
   val csIoPkg: CSPackageId = CSPackageId(NEList("System", "IO"))
 
+  val csDiagnosticsPkg: CSPackageId = CSPackageId(NEList("System", "Diagnostics"))
+  val debug: CSType =
+    CSType(csDiagnosticsPkg, "Debug", fq = false)
+
   val nsPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json"))
   val nsLinqPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json", "Linq"))
 

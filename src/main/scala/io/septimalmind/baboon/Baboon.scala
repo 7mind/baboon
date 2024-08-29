@@ -34,6 +34,9 @@ case class Options(
   omitMostRecentVersionSuffixFromPaths: Option[Boolean],
   omitMostRecentVersionSuffixFromNamespaces: Option[Boolean],
   csUseCompactAdtForm: Option[Boolean],
+  @HelpMessage(
+    "Every ADT branch will encode ADT information and expect it. UEBA codecs will only work for streams supporting Position operations"
+  )
   csWrappedAdtBranchCodecs: Option[Boolean],
 )
 
@@ -74,7 +77,7 @@ object Baboon {
           opts.omitMostRecentVersionSuffixFromPaths.getOrElse(true),
           opts.omitMostRecentVersionSuffixFromNamespaces.getOrElse(true),
           opts.csUseCompactAdtForm.getOrElse(true),
-          opts.csWrappedAdtBranchCodecs.getOrElse(true),
+          opts.csWrappedAdtBranchCodecs.getOrElse(false),
         )
         Injector
           .NoCycles()
