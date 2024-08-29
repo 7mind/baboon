@@ -22,6 +22,7 @@ abstract class BaboonTest extends Spec1[Identity] {
           csUseCompactAdtForm = true,
         ),
         Seq.empty,
+        None,
       ).morph[PluginBase]
     )
   )

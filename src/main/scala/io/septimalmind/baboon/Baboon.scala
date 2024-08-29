@@ -69,47 +69,49 @@ object Baboon {
           rtOpt,
           !opts.disableConversions.getOrElse(false),
           !opts.csExcludeGlobalUsings.getOrElse(false),
-          !opts.omitMostRecentVersionSuffixFromPaths.getOrElse(false),
-          !opts.omitMostRecentVersionSuffixFromNamespaces.getOrElse(false),
+          opts.omitMostRecentVersionSuffixFromPaths.getOrElse(true),
+          opts.omitMostRecentVersionSuffixFromNamespaces.getOrElse(true),
           csUseCompactAdtForm = true,
         )
-        Injector.NoCycles().produceRun(new BaboonModule(options, inputPaths, testOutDir)) {
-          (compiler: BaboonCompiler) =>
-            val inputModels = opts.model
-              .map(s => Paths.get(s))
-              .toSet ++ inputPaths.flatMap { dir =>
-              IzFiles
-                .walk(dir.toFile)
-                .filter(_.toFile.getName.endsWith(".baboon"))
-            }
-            val outDir = Paths.get(opts.output)
-            println(
-              s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}"
-            )
-            println(s"Target: ${outDir.toFile.getCanonicalPath}")
-            testOutDir.foreach { t =>
-              println(s"Test target: ${t.toFile.getCanonicalPath}")
-            }
+        Injector
+          .NoCycles()
+          .produceRun(new BaboonModule(options, inputPaths, testOutDir)) {
+            (compiler: BaboonCompiler) =>
+              val inputModels = opts.model
+                .map(s => Paths.get(s))
+                .toSet ++ inputPaths.flatMap { dir =>
+                IzFiles
+                  .walk(dir.toFile)
+                  .filter(_.toFile.getName.endsWith(".baboon"))
+              }
+              val outDir = Paths.get(opts.output)
+              println(
+                s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}"
+              )
+              println(s"Target: ${outDir.toFile.getCanonicalPath}")
+              testOutDir.foreach { t =>
+                println(s"Test target: ${t.toFile.getCanonicalPath}")
+              }
 
-            cleanupTargetDir(outDir) match {
-              case Left(value) =>
-                System.err.println(
-                  s"Refusing to remove target directory, there are unexpected files: ${value.niceList()}"
-                )
-                System.exit(2)
-              case Right(_) =>
-                compiler.run(inputModels, outDir, testOutDir) match {
-                  case Left(value) =>
-                    System.err.println("Compiler failed")
-                    System.err.println(value.toList.stringifyIssues)
-                    System.exit(3)
-                  case Right(_) =>
-                    println("Done")
-                    System.exit(0)
-                }
-            }
+              cleanupTargetDir(outDir) match {
+                case Left(value) =>
+                  System.err.println(
+                    s"Refusing to remove target directory, there are unexpected files: ${value.niceList()}"
+                  )
+                  System.exit(2)
+                case Right(_) =>
+                  compiler.run(inputModels, outDir, testOutDir) match {
+                    case Left(value) =>
+                      System.err.println("Compiler failed")
+                      System.err.println(value.toList.stringifyIssues)
+                      System.exit(3)
+                    case Right(_) =>
+                      println("Done")
+                      System.exit(0)
+                  }
+              }
 
-        }
+          }
 
     }
   }
