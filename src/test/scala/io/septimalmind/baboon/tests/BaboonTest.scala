@@ -7,6 +7,8 @@ import izumi.distage.testkit.model.TestConfig
 import izumi.distage.testkit.scalatest.Spec1
 import izumi.fundamentals.platform.functional.Identity
 
+import java.nio.file.Paths
+
 abstract class BaboonTest extends Spec1[Identity] {
   override protected def config: TestConfig = super.config.copy(
     pluginConfig = PluginConfig.const(
@@ -22,7 +24,7 @@ abstract class BaboonTest extends Spec1[Identity] {
           csUseCompactAdtForm = true,
           csWrappedAdtBranchCodecs = true,
         ),
-        Seq.empty,
+        Seq(Paths.get("./src/test/resources/baboon")),
         None,
       ).morph[PluginBase]
     )
