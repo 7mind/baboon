@@ -35,7 +35,7 @@ case class Options(
   omitMostRecentVersionSuffixFromNamespaces: Option[Boolean],
   csUseCompactAdtForm: Option[Boolean],
   @HelpMessage(
-    "Every ADT branch will encode ADT information and expect it. UEBA codecs will only work for streams supporting Position operations"
+    "Every ADT branch will encode ADT metadata and expect it in the decoder"
   )
   csWrappedAdtBranchCodecs: Option[Boolean],
 )
