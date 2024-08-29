@@ -20,6 +20,7 @@ abstract class BaboonTest extends Spec1[Identity] {
           omitMostRecentVersionSuffixFromPaths = true,
           omitMostRecentVersionSuffixFromNamespaces = true,
           csUseCompactAdtForm = true,
+          csWrappedAdtBranchCodecs = true,
         ),
         Seq.empty,
         None,

@@ -27,6 +27,7 @@ object BaboonCompiler {
                              omitMostRecentVersionSuffixFromPaths: Boolean,
                              omitMostRecentVersionSuffixFromNamespaces: Boolean,
                              csUseCompactAdtForm: Boolean,
+                             csWrappedAdtBranchCodecs: Boolean,
   )
 
   class BaboonCompilerImpl(loader: BaboonLoader,

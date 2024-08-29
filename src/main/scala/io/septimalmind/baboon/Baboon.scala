@@ -34,6 +34,7 @@ case class Options(
   omitMostRecentVersionSuffixFromPaths: Option[Boolean],
   omitMostRecentVersionSuffixFromNamespaces: Option[Boolean],
   csUseCompactAdtForm: Option[Boolean],
+  csWrappedAdtBranchCodecs: Option[Boolean],
 )
 
 sealed trait RuntimeGenOpt
@@ -73,6 +74,7 @@ object Baboon {
           opts.omitMostRecentVersionSuffixFromPaths.getOrElse(true),
           opts.omitMostRecentVersionSuffixFromNamespaces.getOrElse(true),
           opts.csUseCompactAdtForm.getOrElse(true),
+          opts.csWrappedAdtBranchCodecs.getOrElse(true),
         )
         Injector
           .NoCycles()

@@ -1,15 +1,16 @@
 package io.septimalmind.baboon.translator.csharp
 
+import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
+class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
+                             tools: CSDefnTools,
+                             compilerOptions: CompilerOptions)
     extends CSCodecTranslator {
-  val csWrappedAdtBranchCodecs = true
-
   override def translate(defn: DomainMember.User,
                          csRef: CSValue.CSType,
                          srcRef: CSValue.CSType,
@@ -157,13 +158,13 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
       val routedBranchEncoder =
         q"${fqBranch}_JsonCodec.Instance.Encode(($fqBranch)value)"
 
-      val branchEncoder = if (csWrappedAdtBranchCodecs) {
+      val branchEncoder = if (compilerOptions.csWrappedAdtBranchCodecs) {
         routedBranchEncoder
       } else {
         wrapAdtBranchEncoder(branchName, routedBranchEncoder)
       }
 
-      val branchValue = if (csWrappedAdtBranchCodecs) {
+      val branchValue = if (compilerOptions.csWrappedAdtBranchCodecs) {
         q"wire"
       } else {
         q"head.Value"
@@ -236,7 +237,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
                            |)""".stripMargin
 
     val fullEnc = d.id.owner match {
-      case Owner.Adt(_) if csWrappedAdtBranchCodecs =>
+      case Owner.Adt(_) if compilerOptions.csWrappedAdtBranchCodecs =>
         wrapAdtBranchEncoder(d.id.name.name, mainEnc)
       case _ => mainEnc
     }
@@ -244,7 +245,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     val encBody = q"""return $fullEnc;"""
 
     val fullDec = d.id.owner match {
-      case Owner.Adt(_) if csWrappedAdtBranchCodecs =>
+      case Owner.Adt(_) if compilerOptions.csWrappedAdtBranchCodecs =>
         q"wire.Value<JObject>().Properties().First().Value.Value<JObject>()"
       case _ => q"wire.Value<JObject>()"
     }
