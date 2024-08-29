@@ -48,6 +48,13 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
          |
          |return instance.Value.Decode(wire);""".stripMargin
 
+    val branchDecoder = defn.defn match {
+      case d: Typedef.Dto =>
+        genBranchDecoder(csRef, domain, d, evo)
+      case _ =>
+        None
+    }
+
     genCodec(
       defn,
       csRef,
@@ -55,17 +62,20 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
       version,
       insulatedEnc,
       insulatedDec,
-      !defn.defn.isInstanceOf[Typedef.Foreign]
+      !defn.defn.isInstanceOf[Typedef.Foreign],
+      branchDecoder,
     )
   }
 
-  private def genCodec(defn: DomainMember.User,
-                       name: CSValue.CSType,
-                       srcRef: CSValue.CSType,
-                       version: Version,
-                       enc: TextTree[CSValue],
-                       dec: TextTree[CSValue],
-                       addExtensions: Boolean,
+  private def genCodec(
+    defn: DomainMember.User,
+    name: CSValue.CSType,
+    srcRef: CSValue.CSType,
+    version: Version,
+    enc: TextTree[CSValue],
+    dec: TextTree[CSValue],
+    addExtensions: Boolean,
+    branchDecoder: Option[TextTree[CSValue]]
   ): TextTree[CSValue] = {
     val iName = q"$iBaboonBinCodec<$name>"
 
@@ -77,7 +87,11 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
          |public virtual $name Decode($binaryReader wire) {
          |    ${dec.shift(4).trim}
          |}""".stripMargin
-    )
+    ) ++ branchDecoder.map { body =>
+      q"""internal $name DecodeBranch($binaryReader wire) {
+           |    ${body.shift(4).trim}
+           |}""".stripMargin
+    }.toList
 
     val (parents, methods) = defn.defn match {
       case _: Typedef.Enum =>
@@ -116,6 +130,12 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
 
     val cName = codecName(srcRef)
 
+    val abstractCodecName = if (options.csWrappedAdtBranchCodecs) {
+      q"$cName"
+    } else {
+      iName
+    }
+
     q"""public class $cName : ${parents.join(", ")}
        |{
        |    ${methods.join("\n").shift(4).trim}
@@ -126,9 +146,9 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
          .shift(4)
          .trim}
        |
-       |    private static $csLazy<$iName> instance = new $csLazy<$iName>(() => new $cName());
+       |    private static $csLazy<$abstractCodecName> instance = new $csLazy<$abstractCodecName>(() => new $cName());
        |
-       |    public static $iName Instance { get { return instance.Value; } set { instance = new $csLazy<$iName>(() => value); } }
+       |    public static $abstractCodecName Instance { get { return instance.Value; } set { instance = new $csLazy<$abstractCodecName>(() => value); } }
        |}
      """.stripMargin
   }
@@ -161,29 +181,27 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
            """.stripMargin
         }
 
+        val decBody = if (options.csWrappedAdtBranchCodecs) {
+          q"""return $cName.Instance.DecodeBranch(wire);"""
+        } else {
+          q"""return $cName.Instance.Decode(wire);"""
+        }
+
         (q"""if (value is $fqBranch $castedName)
              |{
              |    ${encBody.shift(4).trim}
              |    return;
              |}""".stripMargin, q"""if (asByte == ${idx.toString})
              |{
-             |    return $cName.Instance.Decode(wire);
+             |    ${decBody.shift(4).trim}
              |}""".stripMargin)
-    }
-
-    val decHeader = if (options.csWrappedAdtBranchCodecs) {
-      q"""byte asByte = wire.ReadByte();
-         |wire.BaseStream.Position--;""".stripMargin
-    } else {
-      q"""byte asByte = wire.ReadByte();"""
-
     }
 
     (
       q"""${branches.map(_._1).join("\n")}
          |
          |throw new ${csArgumentException}($$"Cannot encode {value} to ${name.name}: no matching value");""".stripMargin,
-      q"""$decHeader
+      q"""byte asByte = wire.ReadByte();
          |
          |${branches.map(_._2).join("\n")}
          |
@@ -216,16 +234,27 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
     )
   }
 
+  private def genBranchDecoder(
+    name: CSValue.CSType,
+    domain: Domain,
+    d: Typedef.Dto,
+    evo: BaboonEvolution
+  ): Option[TextTree[CSValue]] = {
+
+    d.id.owner match {
+      case Owner.Adt(id) if options.csWrappedAdtBranchCodecs =>
+        val fields = fieldsOf(domain, d, evo)
+        Some(dtoDec(name, fields))
+      case _ =>
+        None
+    }
+  }
+
   private def genDtoBodies(name: CSValue.CSType,
                            domain: Domain,
                            d: Typedef.Dto,
                            evo: BaboonEvolution) = {
-    val fields = d.fields.map { f =>
-      val fieldRef = q"value.${f.name.name.capitalize}"
-      val enc = mkEncoder(f.tpe, domain, fieldRef, evo)
-      val dec = mkDecoder(f.tpe, domain, evo)
-      (enc, dec)
-    }
+    val fields = fieldsOf(domain, d, evo)
 
     val fenc =
       q"""${fields
@@ -233,11 +262,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
            .join(";\n")};""".stripMargin
 
     val fdec =
-      q"""return new $name(
-         |${fields.map(_._2).join(",\n").shift(4)}
-         |);
-         |""".stripMargin
-    //val fdec = q"throw new $csNotImplementedException();"
+      dtoDec(name, fields)
 
     def adtBranchIndex(id: TypeId.User) = {
       domain.defs.meta
@@ -267,11 +292,28 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
 
         q"""byte marker = wire.ReadByte();
            |${CSBaboonTranslator.debug}.Assert(marker == ${idx.toString});
-           |$fdec""".stripMargin
+           |return DecodeBranch(wire);""".stripMargin
       case _ => fdec
     }
 
     (enc, dec)
+  }
+
+  private def dtoDec(name: CSValue.CSType,
+                     fields: List[(TextTree[CSValue], TextTree[CSValue])]) = {
+    q"""return new $name(
+       |${fields.map(_._2).join(",\n").shift(4)}
+       |);
+       |""".stripMargin
+  }
+
+  private def fieldsOf(domain: Domain, d: Typedef.Dto, evo: BaboonEvolution) = {
+    d.fields.map { f =>
+      val fieldRef = q"value.${f.name.name.capitalize}"
+      val enc = mkEncoder(f.tpe, domain, fieldRef, evo)
+      val dec = mkDecoder(f.tpe, domain, evo)
+      (enc, dec)
+    }
   }
 
   private def mkDecoder(tpe: TypeRef,

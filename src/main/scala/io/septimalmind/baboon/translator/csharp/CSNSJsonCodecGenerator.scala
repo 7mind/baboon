@@ -246,7 +246,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
 
     val fullDec = d.id.owner match {
       case Owner.Adt(_) if compilerOptions.csWrappedAdtBranchCodecs =>
-        q"wire.Value<JObject>().Properties().First().Value.Value<JObject>()"
+        q"wire.Value<JObject>()!.Properties().First().Value.Value<JObject>()"
       case _ => q"wire.Value<JObject>()"
     }
 
