@@ -116,7 +116,8 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
 
     val full =
       Seq(
-        Seq(q"#nullable enable", q"#pragma warning disable 612,618"),
+        Seq(q"#nullable enable"),
+        Seq(q"#pragma warning disable 612,618"), // deprecation warnings
         Seq(imports),
         Seq(o.tree)
       ).flatten
@@ -183,6 +184,10 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |    public $csString BaboonDomainVersion();
          |    public $csString BaboonDomainIdentifier();
          |    public $csString BaboonTypeIdentifier();
+         |}
+         |
+         |public interface IBaboonAdtMemberMeta {
+         |    public $csString BaboonAdtTypeIdentifier();
          |}
          |
          |public interface IBaboonGeneratedLatest : IBaboonGenerated {}
@@ -879,7 +884,9 @@ object CSBaboonTranslator {
   val csLinqPkg: CSPackageId = CSPackageId(NEList("System", "Linq"))
   val csIoPkg: CSPackageId = CSPackageId(NEList("System", "IO"))
 
-  val csDiagnosticsPkg: CSPackageId = CSPackageId(NEList("System", "Diagnostics"))
+  val csDiagnosticsPkg: CSPackageId = CSPackageId(
+    NEList("System", "Diagnostics")
+  )
   val debug: CSType =
     CSType(csDiagnosticsPkg, "Debug", fq = false)
 
@@ -904,6 +911,8 @@ object CSBaboonTranslator {
     CSType(baboonRtPkg, "AbstractBaboonConversions", fq = false)
   val iBaboonGenerated: CSType =
     CSType(baboonRtPkg, "IBaboonGenerated", fq = false)
+  val iBaboonAdtMemberMeta: CSType =
+    CSType(baboonRtPkg, "IBaboonAdtMemberMeta", fq = false)
   val iBaboonGeneratedLatest: CSType =
     CSType(baboonRtPkg, "IBaboonGeneratedLatest", fq = false)
   val BaboonTools: CSType =

@@ -5,6 +5,7 @@ import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
   baboonTypeCodecs,
+  iBaboonAdtMemberMeta,
   iBaboonGenerated,
   iBaboonGeneratedLatest
 }
@@ -204,15 +205,15 @@ object CSDefnTranslator {
           val constructorArgs =
             outs.map { case (fname, tpe, _) => q"$tpe $fname" }.join(",\n")
 
-          val parent = dto.id.owner match {
+          val mainParents = dto.id.owner match {
             case Owner.Toplevel =>
-              None
+              Seq.empty
             case Owner.Adt(id) =>
               val parentId = trans.asCsType(id, domain, evo)
-              Some(parentId)
+              Seq(parentId, q"$iBaboonAdtMemberMeta")
           }
 
-          val allParents = parent.toSeq ++ Seq(q"$genMarker")
+          val allParents = mainParents ++ Seq(q"$genMarker")
           val parents = if (allParents.isEmpty) {
             q""
           } else {
@@ -258,12 +259,14 @@ object CSDefnTranslator {
           val eq = Seq(q"""public override int GetHashCode()
                |{
                |    return ${hc.shift(8).trim};
-               |}""".stripMargin, q"""public bool Equals($name? other) {
+               |}""".stripMargin, q"""#nullable enable
+               |public bool Equals($name? other) {
                |    if (other == null) {
                |        return false;
                |    }
                |    return ${cmp.shift(8).trim};
-               |}""".stripMargin)
+               |}
+               |#nullable disable""".stripMargin)
 
           val members = eq ++ meta
           (q"""[$serializable]

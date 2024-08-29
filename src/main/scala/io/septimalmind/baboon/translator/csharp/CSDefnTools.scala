@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.csString
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -57,6 +58,16 @@ object CSDefnTools {
                  isCodec: Boolean): Seq[TextTree[CSValue]] = {
       val fix = makeFix(defn, isCodec)
 
+      val adtMethods = defn.id.owner match {
+        case Owner.Toplevel => List.empty
+        case Owner.Adt(id) =>
+          List(
+            q"""public const String BaboonAdtTypeIdentifierValue = "${id.toString}";
+               |public $csString BaboonAdtTypeIdentifier() => BaboonAdtTypeIdentifierValue;
+               |""".stripMargin,
+          )
+      }
+
       Seq(
         q"""public${fix}const String BaboonDomainVersionValue = "${version.version}";
            |public${fix}String BaboonDomainVersion() => BaboonDomainVersionValue;
@@ -67,7 +78,7 @@ object CSDefnTools {
         q"""public${fix}const String BaboonTypeIdentifierValue = "${defn.id.toString}";
            |public${fix}String BaboonTypeIdentifier() => BaboonTypeIdentifierValue;
            |""".stripMargin
-      )
+      ) ++ adtMethods
     }
 
     def inNs(nss: Seq[String], tree: TextTree[CSValue]): TextTree[CSValue] = {

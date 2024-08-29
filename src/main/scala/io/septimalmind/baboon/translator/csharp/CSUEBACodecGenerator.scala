@@ -103,14 +103,18 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
              |    if (value is not $name dvalue)
              |        throw new Exception("Expected to have ${name.name} type");
              |    Encode(writer, dvalue);
-             |}
-             |
-             |$iBaboonGenerated $iBaboonStreamCodec<$iBaboonGenerated, $binaryWriter, $binaryReader>.Decode($binaryReader wire)
+             |}""".stripMargin,
+          q"""$iBaboonGenerated $iBaboonStreamCodec<$iBaboonGenerated, $binaryWriter, $binaryReader>.Decode($binaryReader wire)
              |{
              |    return Decode(wire);
              |}""".stripMargin
         )
-        val extParents = List(q"$iBaboonBinCodec<$iBaboonGenerated>")
+
+        val adtParents = defn.id.owner match {
+          case Owner.Toplevel => List.empty
+          case Owner.Adt(_)  => List(q"$iBaboonAdtMemberMeta")
+        }
+        val extParents = List(q"$iBaboonBinCodec<$iBaboonGenerated>") ++ adtParents
 
         val mm = if (addExtensions) {
           baseMethods ++ extensions
@@ -138,7 +142,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
 
     q"""public class $cName : ${parents.join(", ")}
        |{
-       |    ${methods.join("\n").shift(4).trim}
+       |    ${methods.join("\n\n").shift(4).trim}
        |
        |    ${tools
          .makeMeta(defn, version, isCodec = true)
