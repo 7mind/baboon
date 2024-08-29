@@ -1,6 +1,6 @@
 import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations.*
 
-ThisBuild / scalaVersion := "2.13.13"
+ThisBuild / scalaVersion := "2.13.14"
 
 lazy val root = (project in file("."))
   .settings(
@@ -21,8 +21,11 @@ lazy val root = (project in file("."))
       "org.scalatest" %% "scalatest" % "3.2.18" % Test,
     ),
     libraryDependencies ++= Seq(
-      "com.github.alexarchambault" %% "case-app" % "2.1.0-M26"
+      "com.github.alexarchambault" %% "case-app" % "2.1.0-M29"
     ),
+//    libraryDependencies ++= Seq(
+//      "org.graalvm.buildtools" % "graalvm-reachability-metadata" % "0.10.2"
+//    ),
     libraryDependencies ++= Seq(
       "io.circe" %% "circe-core",
       "io.circe" %% "circe-generic",
@@ -63,6 +66,7 @@ lazy val root = (project in file("."))
     graalVMNativeImageOptions ++= Seq(
       "--no-fallback",
       "-H:+ReportExceptionStackTraces",
+      "-H:+UnlockExperimentalVMOptions",
       "--report-unsupported-elements-at-runtime",
       "--enable-https",
       "--enable-http",

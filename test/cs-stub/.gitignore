@@ -1,5 +1,7 @@
 Generated/
 
+global.json
+
 bin/
 obj/
 /packages/

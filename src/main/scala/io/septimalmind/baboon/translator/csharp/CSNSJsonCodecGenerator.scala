@@ -8,12 +8,15 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     extends CSCodecTranslator {
+  val csWrappedAdtBranchCodecs = true
+
   override def translate(defn: DomainMember.User,
                          csRef: CSValue.CSType,
                          srcRef: CSValue.CSType,
                          domain: Domain,
                          evo: BaboonEvolution,
   ): TextTree[CSValue] = {
+
     val version = domain.version
     val (enc, dec) = defn.defn match {
       case d: Typedef.Dto =>
@@ -135,21 +138,43 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
     )
   }
 
+  private def wrapAdtBranchEncoder(
+    branchName: String,
+    tree: TextTree[CSValue]
+  ): TextTree[CSValue] = {
+    q"""new $nsJObject(new $nsJProperty("$branchName", $tree))"""
+  }
+
   private def genAdtBodies(
     name: CSValue.CSType,
     a: Typedef.Adt
-  ): (TextTree[CSValue.CSType], TextTree[Nothing]) = {
+  ): (TextTree[CSValue], TextTree[Nothing]) = {
+
     val branches = a.members.toList.map { m =>
       val branchNs = q"${trans.adtNsName(a.id)}"
       val branchName = m.name.name
       val fqBranch = q"$branchNs.$branchName"
+      val routedBranchEncoder =
+        q"${fqBranch}_JsonCodec.Instance.Encode(($fqBranch)value)"
+
+      val branchEncoder = if (csWrappedAdtBranchCodecs) {
+        routedBranchEncoder
+      } else {
+        wrapAdtBranchEncoder(branchName, routedBranchEncoder)
+      }
+
+      val branchValue = if (csWrappedAdtBranchCodecs) {
+        q"wire"
+      } else {
+        q"head.Value"
+      }
 
       (q"""if (value is $fqBranch)
            |{
-           |    return new $nsJObject(new $nsJProperty("$branchName", ${fqBranch}_JsonCodec.Instance.Encode(($fqBranch)value)));
+           |    return $branchEncoder;
            |}""".stripMargin, q"""if (head.Name == "$branchName")
            |{
-           |    return ${fqBranch}_JsonCodec.Instance.Decode(head.Value);
+           |    return ${fqBranch}_JsonCodec.Instance.Decode($branchValue);
            |}""".stripMargin)
 
     }
@@ -206,19 +231,37 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, tools: CSDefnTools)
       )
     }
 
-    (q"""return new $nsJObject(
-         |${fields.map(_._1).join(",\n").shift(4)}
-         |);""".stripMargin, q"""var asObject = wire.Value<JObject>();
-         |
-         |if (asObject == null)
-         |{
-         |    throw new ArgumentException($$"Cannot decode {wire} to ${name.name}: object expected");
-         |}
-         |
-         |return new $name(
-         |${fields.map(_._2).join(",\n").shift(4)}
-         |);
-         """.stripMargin)
+    val mainEnc = q"""new $nsJObject(
+                           |${fields.map(_._1).join(",\n").shift(4)}
+                           |)""".stripMargin
+
+    val fullEnc = d.id.owner match {
+      case Owner.Adt(_) if csWrappedAdtBranchCodecs =>
+        wrapAdtBranchEncoder(d.id.name.name, mainEnc)
+      case _ => mainEnc
+    }
+
+    val encBody = q"""return $fullEnc;"""
+
+    val fullDec = d.id.owner match {
+      case Owner.Adt(_) if csWrappedAdtBranchCodecs =>
+        q"wire.Value<JObject>().Properties().First().Value.Value<JObject>()"
+      case _ => q"wire.Value<JObject>()"
+    }
+
+    val decBody = q"""var asObject = $fullDec;
+                     |
+                     |if (asObject == null)
+                     |{
+                     |    throw new ArgumentException($$"Cannot decode {wire} to ${name.name}: object expected");
+                     |}
+                     |
+                     |return new $name(
+                     |${fields.map(_._2).join(",\n").shift(4)}
+                     |);
+         """.stripMargin
+
+    (encBody, decBody)
   }
 
   private def mkEncoder(tpe: TypeRef,

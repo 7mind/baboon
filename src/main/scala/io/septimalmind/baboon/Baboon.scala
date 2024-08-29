@@ -33,6 +33,7 @@ case class Options(
   csExcludeGlobalUsings: Option[Boolean],
   omitMostRecentVersionSuffixFromPaths: Option[Boolean],
   omitMostRecentVersionSuffixFromNamespaces: Option[Boolean],
+  csUseCompactAdtForm: Option[Boolean],
 )
 
 sealed trait RuntimeGenOpt
@@ -71,7 +72,7 @@ object Baboon {
           !opts.csExcludeGlobalUsings.getOrElse(false),
           opts.omitMostRecentVersionSuffixFromPaths.getOrElse(true),
           opts.omitMostRecentVersionSuffixFromNamespaces.getOrElse(true),
-          csUseCompactAdtForm = true,
+          opts.csUseCompactAdtForm.getOrElse(true),
         )
         Injector
           .NoCycles()
