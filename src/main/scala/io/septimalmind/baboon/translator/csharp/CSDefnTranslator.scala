@@ -123,7 +123,7 @@ object CSDefnTranslator {
                              domain: Domain,
                              evo: BaboonEvolution,
                              inNs: Boolean): (TextTree[CSValue],
-                                              List[TextTree[CSType]],
+                                              List[TextTree[CSValue]],
                                               Option[TextTree[CSValue]]) = {
       val isLatestVersion = domain.version == evo.latest
 
@@ -139,7 +139,7 @@ object CSDefnTranslator {
       val csTypeRef = trans.toCsTypeRefDeref(defn.id, domain, evo)
       val srcRef = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
 
-      val (defnReprBase, extraRegs) =
+      val (defnReprBase, extraRegs, tests) =
         makeRepr(defn, domain, csTypeRef, isLatestVersion, evo)
 
       val codecTrees =
@@ -165,9 +165,13 @@ object CSDefnTranslator {
         .map(codec => q"${codec.codecName(srcRef).copy(fq = true)}.Instance"))
         .join(", ")
 
-      val allRegs = List(reg) ++ extraRegs.toList
+      val allRegs = List(reg) ++ extraRegs
       val codecTestTrees =
-        codecsTests.translate(defn, csTypeRef, srcRef, domain, evo)
+        Some(
+          codecsTests
+            .translate(defn, csTypeRef, srcRef, domain, evo)
+            .toList ++ tests
+        ).filterNot(_.isEmpty).map(_.join("\n\n"))
 
       val codecTestWithNS = codecTestTrees.map { t =>
         if (inNs) {
@@ -186,7 +190,7 @@ object CSDefnTranslator {
       name: CSValue.CSType,
       isLatestVersion: Boolean,
       evo: BaboonEvolution
-    ): (TextTree[CSValue], List[TextTree[CSType]]) = {
+    ): (TextTree[CSValue], List[TextTree[CSValue]], List[TextTree[CSValue]]) = {
       val genMarker =
         if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
 
@@ -274,7 +278,7 @@ object CSDefnTranslator {
              |    ${constructorArgs.shift(4).trim}
              |)$parents {
              |    ${members.join("\n\n").shift(4).trim}
-             |};""".stripMargin, List.empty)
+             |};""".stripMargin, List.empty, List.empty)
 
         case e: Typedef.Enum =>
           val branches =
@@ -293,7 +297,7 @@ object CSDefnTranslator {
           (q"""[$serializable]
              |public enum $name {
              |    ${branches.shift(4).trim}
-             |}""".stripMargin, List.empty)
+             |}""".stripMargin, List.empty, List.empty)
 
         case adt: Typedef.Adt =>
           if (options.csUseCompactAdtForm) {
@@ -309,7 +313,7 @@ object CSDefnTranslator {
                     } else {
                       List.empty
                     }
-                    ((List(content) ++ tests).join("\n"), reg)
+                    (content, reg, tests)
                   case m =>
                     throw new RuntimeException(
                       s"BUG: missing/wrong adt member: $mid => $m"
@@ -325,20 +329,25 @@ object CSDefnTranslator {
             val regs = memberTrees.map(_._2)
             val members = meta
 
-            (q"""|public abstract record $name : $genMarker {
+            (
+              q"""|public abstract record $name : $genMarker {
                 |    ${branches.shift(4).trim}
                 |    ${members.join("\n\n").shift(4).trim}
-                |}""".stripMargin, regs.toList.flatten)
+                |}""".stripMargin,
+              regs.toList.flatten,
+              memberTrees.toList.flatMap(_._3)
+            )
 
           } else {
             (
               q"""public interface $name : $genMarker {}""".stripMargin,
+              List.empty,
               List.empty
             )
           }
 
         case _: Typedef.Foreign =>
-          (q"", List.empty)
+          (q"", List.empty, List.empty)
       }
     }
 

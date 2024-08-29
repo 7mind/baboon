@@ -37,8 +37,14 @@ object CSCodecTestsTranslator {
                            domain: Domain,
                            evo: BaboonEvolution,
     ): Option[TextTree[CSValue]] = {
+
+      val codecTestName = definition.id.owner match {
+        case Owner.Toplevel => srcRef.name
+        case Owner.Adt(id)  => s"${id.name.name}__${srcRef.name}"
+      }
+
       val testClassName =
-        CSValue.CSType(srcRef.pkg, s"${srcRef.name}_Codec_Test", srcRef.fq)
+        CSValue.CSType(srcRef.pkg, s"${codecTestName}__Codec_Test", srcRef.fq)
 
       if (hasForeignType(definition, domain)) None
       else {
