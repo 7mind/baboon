@@ -9,9 +9,9 @@ object Conversion {
 
   case class RemovedTypeNoConversion(sourceTpe: TypeId.User) extends Conversion
 
-  case class CopyEnumByName(sourceTpe: TypeId.User) extends Conversion
+  case class NonDataTypeTypeNoConversion(sourceTpe: TypeId.User) extends Conversion
 
-//  case class Wrap()
+  case class CopyEnumByName(sourceTpe: TypeId.User) extends Conversion
 
   case class DtoConversion(sourceTpe: TypeId.User,
                            ops: List[FieldOp],

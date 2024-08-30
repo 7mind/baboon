@@ -2,6 +2,7 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.typer.model.{
   DomainMember,
+  Field,
   Owner,
   ShallowSchemaId,
   TypeId,
@@ -20,15 +21,22 @@ trait BaboonEnquiries {
 object BaboonEnquiries {
 
   class BaboonEnquiriesImpl() extends BaboonEnquiries {
-    def directDepsOf(defn: DomainMember): Set[TypeId] = defn match {
-      case _: DomainMember.Builtin => Set.empty
-      case u: DomainMember.User =>
-        u.defn match {
-          case t: Typedef.Dto     => t.fields.flatMap(f => explode(f.tpe)).toSet
-          case _: Typedef.Enum    => Set.empty
-          case t: Typedef.Adt     => t.members.toSet
-          case _: Typedef.Foreign => Set.empty
-        }
+    def directDepsOf(defn: DomainMember): Set[TypeId] = {
+      def explodeFields(f: List[Field]) = {
+        f.flatMap(f => explode(f.tpe)).toSet
+      }
+
+      defn match {
+        case _: DomainMember.Builtin => Set.empty
+        case u: DomainMember.User =>
+          u.defn match {
+            case t: Typedef.Dto      => explodeFields(t.fields) ++ t.contracts
+            case t: Typedef.Contract => explodeFields(t.fields) ++ t.contracts
+            case _: Typedef.Enum     => Set.empty
+            case t: Typedef.Adt      => t.members.toSet
+            case _: Typedef.Foreign  => Set.empty
+          }
+      }
     }
 
     def explode(tpe: TypeRef): Set[TypeId] = tpe match {
@@ -48,6 +56,13 @@ object BaboonEnquiries {
               }.sorted
 
               s"[dto;${wrap(d.id)};$members]"
+            case d: Typedef.Contract =>
+              val members = d.fields.map { f =>
+                s"${f.name}:${wrap(f.tpe)}"
+              }.sorted
+
+              s"[contract;${wrap(d.id)};$members]"
+
             case c: Typedef.Enum =>
               val members = c.members.toList.map(_.name).sorted.mkString(",")
               s"[enum;${wrap(c.id)};$members]"

@@ -3,7 +3,16 @@ package io.septimalmind.baboon.parser.defns
 import fastparse.*
 import io.septimalmind.baboon.parser.{ParserContext, model}
 import io.septimalmind.baboon.parser.defns.base.{idt, kw, struct}
-import io.septimalmind.baboon.parser.model.{RawDto, RawDtoMember, RawField, RawFieldName, RawTypeName, RawTypeRef, ScopedRef}
+import io.septimalmind.baboon.parser.model.{
+  RawContractRef,
+  RawDto,
+  RawDtoMember,
+  RawField,
+  RawFieldName,
+  RawTypeName,
+  RawTypeRef,
+  ScopedRef
+}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.language.Quirks.Discarder
 
@@ -37,6 +46,11 @@ class DefDto(context: ParserContext, meta: DefMeta) {
 
   def fieldName[$: P]: P[RawFieldName] =
     idt.symbol.map(name => RawFieldName(name))
+
+  def contractDef[$: P]: P[RawContractRef] = {
+    import fastparse.ScalaWhitespace.whitespace
+    ("is" ~ scopedRef).map { case (t) => model.RawContractRef(t) }
+  }
 
   def fieldDef[$: P]: P[RawField] = {
     import fastparse.ScalaWhitespace.whitespace
@@ -79,6 +93,9 @@ class DefDto(context: ParserContext, meta: DefMeta) {
     } | P(meta.withMeta(intersectionDef)).map {
       case (meta, parent) =>
         model.RawDtoMember.IntersectionDef(parent, meta)
+    } | P(meta.withMeta(contractDef)).map {
+      case (meta, parent) =>
+        model.RawDtoMember.ContractDef(parent, meta)
     })
 
   def dto[$: P]: P[Seq[RawDtoMember]] = {

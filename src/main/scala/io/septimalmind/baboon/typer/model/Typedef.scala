@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.typer.model
 
-import io.septimalmind.baboon.parser.model.RawNodeMeta
+import io.septimalmind.baboon.parser.model.{RawAdtMemberDto, RawNodeMeta}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.graphs.DG
 
@@ -45,11 +45,38 @@ object Typedef {
     def id: TypeId.User
   }
 
-  case class Dto(id: TypeId.User, fields: List[Field]) extends User
+  sealed trait NonDataTypedef {
+    this: Typedef =>
+  }
+
+  case class Dto(id: TypeId.User,
+                 fields: List[Field],
+                 contracts: Set[TypeId.User])
+      extends User
+  case class Contract(id: TypeId.User,
+                      fields: List[Field],
+                      contracts: Set[TypeId.User])
+      extends User
+      with NonDataTypedef
   case class Enum(id: TypeId.User, members: NEList[EnumMember]) extends User
   case class Adt(id: TypeId.User, members: NEList[TypeId.User]) extends User
   case class Foreign(id: TypeId.User, bindings: Map[String, String])
       extends User
+
+  object Adt {
+    implicit class AdtSyntax(val adt: Adt) extends AnyVal {
+      def dataMembers(domain: Domain): Seq[TypeId.User] =
+        adt.members.toList.filterNot { id =>
+          val a: DomainMember = domain.defs.meta.nodes(id)
+          a match {
+            case u: DomainMember.User =>
+              u.defn.isInstanceOf[Typedef.NonDataTypedef]
+            case _ => false
+          }
+
+        }
+    }
+  }
 }
 
 sealed trait TypeRef {

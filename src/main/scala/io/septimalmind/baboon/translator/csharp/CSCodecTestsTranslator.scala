@@ -1,16 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
-  autofixtureFixture,
-  autofixtureImmutableCollectionsCustomization,
-  baboonTest_EnumDictionaryBuilder,
-  baboonTest_TruncatedRandomDateTimeSequenceGenerator,
-  binaryWriter,
-  memoryStream,
-  nunitOneTimeSetUp,
-  nunitTestFixture
-}
-import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BLogger
 import izumi.fundamentals.platform.strings.TextTree
@@ -46,46 +36,50 @@ object CSCodecTestsTranslator {
       val testClassName =
         CSValue.CSType(srcRef.pkg, s"${codecTestName}__Codec_Test", srcRef.fq)
 
-      if (hasForeignType(definition, domain)) None
-      else {
-        val testClass =
-          q"""[${nunitTestFixture}]
-             |public class $testClassName
-             |{
-             |  #nullable disable
-             |
-             |  private ${autofixtureFixture} fixture;
-             |
-             |  ${testFields(definition, srcRef)}
-             |
-             |  public $testClassName()
-             |  {
-             |    fixture = new ${autofixtureFixture}();
-             |    fixture.Customize(new ${autofixtureImmutableCollectionsCustomization}());
-             |    fixture.Customizations.Add(new ${baboonTest_TruncatedRandomDateTimeSequenceGenerator}());
-             |    fixture.Customizations.Add(new ${baboonTest_EnumDictionaryBuilder}());
-             |  }
-             |
-             |  [${nunitOneTimeSetUp}]
-             |  public void Setup()
-             |  {
-             |    ${fieldsInitialization(definition, srcRef, domain, evo)}
-             |  }
-             |
-             |  ${tests(definition, srcRef, domain, evo)}
-             |}
-             |""".stripMargin
-        Some(testClass)
+      definition match {
+        case d if hasForeignType(d, domain)                   => None
+        case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
+        case _ =>
+          val testClass =
+            q"""[${nunitTestFixture}]
+               |public class $testClassName
+               |{
+               |  #nullable disable
+               |
+               |  private ${autofixtureFixture} fixture;
+               |
+               |  ${testFields(definition, srcRef, domain)}
+               |
+               |  public $testClassName()
+               |  {
+               |    fixture = new ${autofixtureFixture}();
+               |    fixture.Customize(new ${autofixtureImmutableCollectionsCustomization}());
+               |    fixture.Customizations.Add(new ${baboonTest_TruncatedRandomDateTimeSequenceGenerator}());
+               |    fixture.Customizations.Add(new ${baboonTest_EnumDictionaryBuilder}());
+               |  }
+               |
+               |  [${nunitOneTimeSetUp}]
+               |  public void Setup()
+               |  {
+               |    ${fieldsInitialization(definition, srcRef, domain, evo)}
+               |  }
+               |
+               |  ${tests(definition, srcRef, domain, evo)}
+               |}
+               |""".stripMargin
+          Some(testClass)
       }
     }
 
     private def testFields(definition: DomainMember.User,
-                           srcRef: CSValue.CSType): TextTree[CSValue] = {
+                           srcRef: CSValue.CSType,
+                           domain: Domain): TextTree[CSValue] = {
       definition.defn match {
-        case Typedef.Adt(root, members) =>
-          members
+        case adt: Typedef.Adt =>
+          adt
+            .dataMembers(domain)
             .map(_.name.name)
-            .map(n => q"private ${root.name.name} ${n.toLowerCase};")
+            .map(n => q"private ${adt.id.name.name} ${n.toLowerCase};")
             .toList
             .join("\n")
             .shift(2)
@@ -101,16 +95,17 @@ object CSCodecTestsTranslator {
       evo: BaboonEvolution
     ): TextTree[CSValue] = {
       definition.defn match {
-        case Typedef.Adt(root, members) =>
+        case adt: Typedef.Adt =>
           val adtMembersNamespace = typeTranslator
             .toCsPkg(domain.id, domain.version, evo)
             .parts
-            .mkString(".") + s".${typeTranslator.adtNsName(root)}"
+            .mkString(".") + s".${typeTranslator.adtNsName(adt.id)}"
 
-          members
+          adt
+            .dataMembers(domain)
             .map { member =>
-              q"""fixture.Register<${root.name.name}>(() => fixture.Create<$adtMembersNamespace.${member.name.name}>());
-               |${member.name.name.toLowerCase} = fixture.Create<${root.name.name}>();
+              q"""fixture.Register<${adt.id.name.name}>(() => fixture.Create<$adtMembersNamespace.${member.name.name}>());
+               |${member.name.name.toLowerCase} = fixture.Create<${adt.id.name.name}>();
                |""".stripMargin
             }
             .toList
@@ -174,11 +169,12 @@ object CSCodecTestsTranslator {
                                     evo: BaboonEvolution,
     ): TextTree[CSValue] = {
       definition.defn match {
-        case Typedef.Adt(root, members) =>
-          members
+        case adt: Typedef.Adt =>
+          adt
+            .dataMembers(domain)
             .map { member =>
               val typeRef =
-                typeTranslator.toCsTypeRefNoDeref(root, domain, evo)
+                typeTranslator.toCsTypeRefNoDeref(adt.id, domain, evo)
               val codecName = codec.codecName(typeRef)
               val fieldName = member.name.name.toLowerCase
               val serialized = s"${fieldName}_json"
@@ -211,11 +207,12 @@ object CSCodecTestsTranslator {
                                     evo: BaboonEvolution,
     ): TextTree[CSValue] = {
       definition.defn match {
-        case Typedef.Adt(root, members) =>
-          members
+        case adt: Typedef.Adt =>
+          adt
+            .dataMembers(domain)
             .map { member =>
               val typeRef =
-                typeTranslator.toCsTypeRefNoDeref(root, domain, evo)
+                typeTranslator.toCsTypeRefNoDeref(adt.id, domain, evo)
               val codecName = codec.codecName(typeRef)
               val fieldName = member.name.name.toLowerCase
               val serialized = s"${fieldName}_bytes"
@@ -266,6 +263,29 @@ object CSCodecTestsTranslator {
 
     private def hasForeignType(definition: DomainMember.User,
                                domain: Domain): Boolean = {
+      def processFields(foreignType: Option[TypeId],
+                        tail: List[Typedef],
+                        f: List[Field]) = {
+        val fieldsTypes = f.map(_.tpe)
+        val moreToCheck = fieldsTypes.flatMap {
+          case TypeRef.Scalar(id) =>
+            List(domain.defs.meta.nodes(id) match {
+              case _: DomainMember.Builtin => None
+              case u: DomainMember.User    => Some(u.defn)
+            }).flatten
+          case TypeRef.Constructor(_, args) =>
+            args
+              .map(_.id)
+              .map(domain.defs.meta.nodes(_))
+              .toList
+              .flatMap {
+                case _: DomainMember.Builtin => None
+                case u: DomainMember.User    => Some(u.defn)
+              }
+        }
+        collectForeignType(tail ++ moreToCheck, foreignType)
+      }
+
       @tailrec
       def collectForeignType(toCheck: List[Typedef],
                              foreignType: Option[TypeId]): Option[TypeId] = {
@@ -275,30 +295,16 @@ object CSCodecTestsTranslator {
           case (head :: tail, None) =>
             head match {
               case dto: Typedef.Dto =>
-                val fieldsTypes = dto.fields.map(_.tpe)
-                val moreToCheck = fieldsTypes.flatMap {
-                  case TypeRef.Scalar(id) =>
-                    List(domain.defs.meta.nodes(id) match {
-                      case _: DomainMember.Builtin => None
-                      case u: DomainMember.User    => Some(u.defn)
-                    }).flatten
-                  case TypeRef.Constructor(_, args) =>
-                    args
-                      .map(_.id)
-                      .map(domain.defs.meta.nodes(_))
-                      .toList
-                      .flatMap {
-                        case _: DomainMember.Builtin => None
-                        case u: DomainMember.User    => Some(u.defn)
-                      }
-                }
-                collectForeignType(tail ++ moreToCheck, foreignType)
+                processFields(foreignType, tail, dto.fields)
+              case c: Typedef.Contract =>
+                processFields(foreignType, tail, c.fields)
               case adt: Typedef.Adt =>
                 val dtos = adt.members
                   .map(tpeId => domain.defs.meta.nodes(tpeId))
                   .toList
                   .collect {
-                    case DomainMember.User(_, dto @ Typedef.Dto(_, _), _) => dto
+                    case DomainMember.User(_, dto: Typedef.Dto, _)      => dto
+                    case DomainMember.User(_, dto: Typedef.Contract, _) => dto
                   }
                 collectForeignType(tail ++ dtos, foreignType)
               case f: Typedef.Foreign => collectForeignType(tail, Some(f.id))

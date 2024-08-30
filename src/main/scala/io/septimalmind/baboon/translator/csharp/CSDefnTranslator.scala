@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
-import distage.{Id, Lifecycle}
+import distage.Id
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
@@ -144,7 +144,9 @@ object CSDefnTranslator {
 
       val codecTrees =
         codecs.toList
-          .map(t => t.translate(defn, csTypeRef, srcRef, domain, evo))
+          .flatMap(
+            t => t.translate(defn, csTypeRef, srcRef, domain, evo).toList
+          )
           .map(obsoletePrevious)
 
       val defnRepr = obsoletePrevious(defnReprBase)
@@ -160,12 +162,20 @@ object CSDefnTranslator {
         allDefs
       }
 
-      val reg = (List(q""""${defn.id.toString}"""") ++ codecs.toList
-        .sortBy(_.getClass.getName)
-        .map(codec => q"${codec.codecName(srcRef).copy(fq = true)}.Instance"))
-        .join(", ")
+      val reg = defn.defn match {
+        case _: Typedef.NonDataTypedef => List.empty
+        case _ =>
+          List(
+            (List(q""""${defn.id.toString}"""") ++ codecs.toList
+              .sortBy(_.getClass.getName)
+              .map(
+                codec => q"${codec.codecName(srcRef).copy(fq = true)}.Instance"
+              ))
+              .join(", ")
+          )
+      }
 
-      val allRegs = List(reg) ++ extraRegs
+      val allRegs = reg ++ extraRegs
       val codecTestTrees =
         Some(
           codecsTests
@@ -199,6 +209,28 @@ object CSDefnTranslator {
       val meta = mainMeta ++ codecMeta
 
       defn.defn match {
+        case contract: Typedef.Contract =>
+          val methods = contract.fields
+            .map { f =>
+              val tpe = trans.asCsRef(f.tpe, domain, evo)
+              val mname = s"${f.name.name.capitalize}"
+              q"public $tpe $mname { get; }"
+            }
+            .join("\n")
+          val refs =
+            (contract.contracts.map(t => trans.asCsType(t, domain, evo)) ++ List(
+              q"$genMarker"
+            )).toList
+
+          val parents = if (refs.isEmpty) {
+            q""
+          } else {
+            q" : ${refs.join(", ")} "
+          }
+          (q"""public interface $name$parents  {
+               |    ${methods.shift(4).trim}
+               |}""".stripMargin, List.empty, List.empty)
+
         case dto: Typedef.Dto =>
           val outs = dto.fields.map { f =>
             val tpe = trans.asCsRef(f.tpe, domain, evo)
@@ -209,7 +241,9 @@ object CSDefnTranslator {
           val constructorArgs =
             outs.map { case (fname, tpe, _) => q"$tpe $fname" }.join(",\n")
 
-          val mainParents = dto.id.owner match {
+          val contractParents =
+            dto.contracts.toSeq.map(c => trans.asCsType(c, domain, evo))
+          val adtParents = dto.id.owner match {
             case Owner.Toplevel =>
               Seq.empty
             case Owner.Adt(id) =>
@@ -217,7 +251,7 @@ object CSDefnTranslator {
               Seq(parentId, q"$iBaboonAdtMemberMeta")
           }
 
-          val allParents = mainParents ++ Seq(q"$genMarker")
+          val allParents = adtParents ++ contractParents ++ Seq(q"$genMarker")
           val parents = if (allParents.isEmpty) {
             q""
           } else {

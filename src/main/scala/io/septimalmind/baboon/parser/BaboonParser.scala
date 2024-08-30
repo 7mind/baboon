@@ -42,7 +42,7 @@ object BaboonParser {
           }
 
         case failure: Parsed.Failure =>
-          Left(NEList(BaboonIssue.ParserFailed(failure)))
+          Left(NEList(BaboonIssue.ParserFailed(failure, input.path)))
       }
     }
 
@@ -69,7 +69,7 @@ object BaboonParser {
                     sub ++ value.defs
                   }
                 case failure: Parsed.Failure =>
-                  Left(NEList(BaboonIssue.ParserFailed(failure)))
+                  Left(NEList(BaboonIssue.ParserFailed(failure, context.file)))
 
               }
 

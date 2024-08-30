@@ -48,7 +48,7 @@ object IssuePrinter {
     (issue: ParserFailed) => {
       val Array(line, character, _*) =
         issue.error.extra.input.prettyIndex(issue.error.index).split(":")
-      s"Parser error occurred on => line:$line position:$character".stripMargin
+      s"Parser error occurred in ${issue.path} @ line:$line position:$character".stripMargin
     }
 
   implicit val includeNotFoundPrinter: IssuePrinter[IncludeNotFound] =
@@ -240,10 +240,11 @@ object IssuePrinter {
   implicit val scopeCannotBeEmptyPrinter: IssuePrinter[ScopeCannotBeEmpty] =
     (issue: ScopeCannotBeEmpty) => {
       val memberType = issue.member match {
-        case _: RawDto     => "DTO"
-        case _: RawEnum    => "Enum"
-        case _: RawAdt     => "ADT"
-        case _: RawForeign => "Foreign"
+        case _: RawDto      => "DTO"
+        case _: RawEnum     => "Enum"
+        case _: RawAdt      => "ADT"
+        case _: RawForeign  => "Foreign"
+        case _: RawContract => "Contract"
       }
       s"""${extractLocation(issue.member.meta)}
        |Found an empty $memberType: ${issue.member.name.name}
@@ -318,7 +319,7 @@ object IssuePrinter {
   implicit val nameNotFoundPrinter: IssuePrinter[NameNotFound] =
     (issue: NameNotFound) => {
       s"""${extractLocation(issue.meta)}
-       |Type ${issue.name.path.head.name} not found
+       |Type not found: ${issue.name.path.head.name}
        |""".stripMargin
     }
 
@@ -352,6 +353,14 @@ object IssuePrinter {
       s"""${extractLocation(issue.meta)}
        |DTO parent is expected instead provided => name:${issue.id.toString} type:${issue.id1.name.name}
        |""".stripMargin
+    }
+
+  implicit val missingContractFields: IssuePrinter[MissingContractFields] =
+    (issue: MissingContractFields) => {
+      s"""${extractLocation(issue.meta)}
+         |Contract fields were removed => name:${issue.id.toString} type:${issue.id}, missing: ${issue.missingFields
+           .mkString(", ")}
+         |""".stripMargin
     }
 
   implicit val brokenComparisonPrinter: IssuePrinter[BrokenComparison] =
@@ -464,7 +473,7 @@ object IssuePrinter {
   implicit val conflictingDtoFieldsPrinter: IssuePrinter[ConflictingDtoFields] =
     (issue: ConflictingDtoFields) => {
       s"""${extractLocation(issue.meta)}
-       |In DTO: ${issue.dto.id.name.name}
+       |In DTO: ${issue.dto.name.name}
        |Conflicting fields have been found:${issue.dupes.values.flatten
            .niceList()}
        |""".stripMargin
@@ -694,6 +703,7 @@ object IssuePrinter {
     case i: NamSeqeNotFound       => apply[NamSeqeNotFound].stringify(i)
     case i: DuplicatedTypes       => apply[DuplicatedTypes].stringify(i)
     case i: WrongParent           => apply[WrongParent].stringify(i)
+    case i: MissingContractFields => apply[MissingContractFields].stringify(i)
   }
 
   implicit val evolutionIssuePrinter: IssuePrinter[EvolutionIssue] = {

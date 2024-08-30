@@ -49,6 +49,8 @@ object BaboonRules {
                       Set.empty
                     )
                   )
+                case _: Typedef.Contract =>
+                  Right(NonDataTypeTypeNoConversion(id))
                 case _: Typedef.Enum if sameLocalStruct =>
                   Right(CopyEnumByName(id))
                 case oldDefn: Typedef.Adt if sameLocalStruct =>

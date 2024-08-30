@@ -31,7 +31,8 @@ object BaboonIssue {
   //
   sealed trait ParserIssue extends BaboonIssue
 
-  case class ParserFailed(error: Parsed.Failure) extends ParserIssue
+  case class ParserFailed(error: Parsed.Failure, path: FSPath)
+      extends ParserIssue
   case class IncludeNotFound(path: String) extends ParserIssue
 
   //
@@ -81,6 +82,11 @@ object BaboonIssue {
   case class NonUniqueFields(id: TypeId.User,
                              duplicateFields: Map[String, List[Field]],
                              meta: RawNodeMeta)
+      extends TyperIssue
+
+  case class MissingContractFields(id: TypeId.User,
+                                   missingFields: Seq[Field],
+                                   meta: RawNodeMeta)
       extends TyperIssue
 
   case class EmptyAdt(id: TypeId.User, meta: RawNodeMeta) extends TyperIssue
@@ -190,7 +196,7 @@ object BaboonIssue {
   case class IncorrectRootFound(domain: Domain, badRoots: Seq[TypeId.User])
       extends VerificationIssue
 
-  case class ConflictingDtoFields(dto: Typedef.Dto,
+  case class ConflictingDtoFields(dto: TypeId.User,
                                   dupes: Map[String, List[Field]],
                                   meta: RawNodeMeta)
       extends VerificationIssue
@@ -209,7 +215,7 @@ object BaboonIssue {
                                 dupes: Map[String, Iterable[DomainMember]])
       extends VerificationIssue
 
-  case class BadFieldNames(e: Typedef.Dto, bad: Seq[String], meta: RawNodeMeta)
+  case class BadFieldNames(e: TypeId.User, bad: Seq[String], meta: RawNodeMeta)
       extends VerificationIssue
 
   case class EmptyEnumDef(e: Typedef.Enum, meta: RawNodeMeta)

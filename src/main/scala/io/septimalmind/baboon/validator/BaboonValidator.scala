@@ -133,13 +133,7 @@ object BaboonValidator {
           case u: DomainMember.User =>
             u.defn match {
               case d: Typedef.Dto =>
-                val dupes =
-                  d.fields
-                    .groupBy(_.name.name.toLowerCase)
-                    .filter(_._2.size > 1)
-                Either.ifThenFail(dupes.nonEmpty)(
-                  NEList(BaboonIssue.ConflictingDtoFields(d, dupes, u.meta))
-                )
+                validateFields(u, d.fields)
               case e: Typedef.Enum =>
                 val dupes =
                   e.members.groupBy(_.name.toLowerCase).filter(_._2.size > 1)
@@ -156,9 +150,23 @@ object BaboonValidator {
                 )
               case _: Typedef.Foreign =>
                 Right(())
+              case c: Typedef.Contract =>
+                validateFields(u, c.fields)
             }
         }.biSequence_
       } yield {}
+    }
+
+    private def validateFields(u: DomainMember.User, fields: List[Field]) = {
+      // TODO: check that no contract fields were removed!!!
+
+      val dupes =
+        fields
+          .groupBy(_.name.name.toLowerCase)
+          .filter(_._2.size > 1)
+      Either.ifThenFail(dupes.nonEmpty)(
+        NEList(BaboonIssue.ConflictingDtoFields(u.id, dupes, u.meta))
+      )
     }
 
     private def checkPathologicGenerics(
@@ -266,16 +274,9 @@ object BaboonValidator {
         case u: DomainMember.User =>
           u.defn match {
             case d: Typedef.Dto =>
-              for {
-                badFields <- Right(
-                  d.fields
-                    .map(_.name.name.toLowerCase)
-                    .filter(_ == d.id.name.name.toLowerCase)
-                )
-                _ <- Either.ifThenFail(badFields.nonEmpty)(
-                  NEList(BaboonIssue.BadFieldNames(d, badFields, u.meta))
-                )
-              } yield {}
+              validateFieldShape(u, d.fields)
+            case c: Typedef.Contract =>
+              validateFieldShape(u, c.fields)
             case e: Typedef.Enum =>
               for {
                 _ <- Either.ifThenFail(e.members.isEmpty)(
@@ -309,6 +310,18 @@ object BaboonValidator {
               Right(())
           }
       }.biSequence_
+    }
+
+    private def validateFieldShape(u: DomainMember.User, f: List[Field]) = {
+      for {
+        badFields <- Right(
+          f.map(_.name.name.toLowerCase)
+            .filter(_ == u.id.name.name.toLowerCase)
+        )
+        _ <- Either.ifThenFail(badFields.nonEmpty)(
+          NEList(BaboonIssue.BadFieldNames(u.id, badFields, u.meta))
+        )
+      } yield {}
     }
 
     private def checkConventions(
@@ -379,6 +392,8 @@ object BaboonValidator {
         )
         _ <- ruleset.conversions.map {
           case _: Conversion.CustomConversionRequired =>
+            Right(())
+          case _: Conversion.NonDataTypeTypeNoConversion =>
             Right(())
           case c: Conversion.RemovedTypeNoConversion =>
             Either.ifThenFail(!diff.changes.removed.contains(c.sourceTpe))(

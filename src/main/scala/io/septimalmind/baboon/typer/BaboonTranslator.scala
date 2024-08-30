@@ -2,6 +2,7 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue.MissingContractFields
 import io.septimalmind.baboon.typer.BaboonTyper.{FullRawDefn, ScopedDefn}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.NestedScope
@@ -37,10 +38,19 @@ class BaboonTranslator(pkg: Pkg,
   ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
     val root = defn.gcRoot
     defn.defn match {
-      case d: RawDto     => convertDto(id, root, d).map(d => NEList(d))
+      case d: RawDto =>
+        convertDto(id, root, d) {
+          case (id, finalFields, contractRefs) =>
+            Typedef.Dto(id, finalFields, contractRefs)
+        }.map(d => NEList(d))
       case e: RawEnum    => converEnum(id, root, e).map(e => NEList(e))
       case a: RawAdt     => convertAdt(id, root, a, thisScope)
       case f: RawForeign => convertForeign(id, root, f)
+      case c: RawContract =>
+        convertDto(id, root, c) {
+          case (id, finalFields, contractRefs) =>
+            Typedef.Contract(id, finalFields, contractRefs)
+        }.map(d => NEList(d))
     }
   }
 
@@ -115,10 +125,29 @@ class BaboonTranslator(pkg: Pkg,
     }
   }
 
-  private def convertDto(
-    id: TypeId.User,
-    isRoot: Boolean,
-    dto: RawDto
+  def contractContent(
+    c: RawDtoMember.ContractDef,
+    meta: RawNodeMeta,
+    refMeta: RawNodeMeta
+  ): Either[NEList[BaboonIssue.TyperIssue], List[ContractContent]] = {
+    for {
+      id <- scopeSupport.resolveScopedRef(c.contract.tpe, path, pkg, refMeta)
+      parentDef = defined(id)
+      fields <- parentDef match {
+        case DomainMember.User(_, defn: Typedef.Contract, _) =>
+          Right(defn.fields)
+        case o =>
+          Left(NEList(BaboonIssue.WrongParent(id, o.id, meta)))
+      }
+    } yield {
+      List(ContractContent(fields, Set(id)))
+    }
+  }
+
+  case class ContractContent(fields: Seq[Field], refs: Set[TypeId.User])
+
+  private def convertDto(id: TypeId.User, isRoot: Boolean, dto: RawDtoid)(
+    produce: (TypeId.User, List[Field], Set[TypeId.User]) => Typedef.User
   ): Either[NEList[BaboonIssue.TyperIssue], DomainMember.User] = {
     for {
       converted <- dto.members.biFlatTraverse {
@@ -143,20 +172,39 @@ class BaboonTranslator(pkg: Pkg,
         case _ =>
           Right(Seq.empty)
       }
+      contracts <- dto.members.biFlatTraverse {
+        case p: RawDtoMember.ContractDef =>
+          contractContent(p, dto.meta, p.meta)
+        case _ =>
+          Right(Seq.empty)
+      }
+
       removedSet = removed.toSet
       intersectionSet = intersectionLimiters.toSet
 
-      withoutRemoved = converted.filterNot(f => removedSet.contains(f))
+      contractFields = contracts.flatMap(_.fields)
+      allFields = converted ++ contractFields
+      withoutRemoved = allFields.filterNot(f => removedSet.contains(f)).distinct
       finalFields = if (intersectionSet.isEmpty) {
         withoutRemoved
       } else {
         withoutRemoved.filter(f => intersectionSet.contains(f))
       }
+
+      missingIrremovable = contractFields.diff(withoutRemoved)
+      _ <- Either.ifThenFail(missingIrremovable.nonEmpty)(
+        NEList(MissingContractFields(id, missingIrremovable, dto.meta))
+      )
       _ <- finalFields
         .map(m => (m.name.name.toLowerCase, m))
         .toUniqueMap(e => NEList(BaboonIssue.NonUniqueFields(id, e, dto.meta)))
+      contractRefs = contracts.flatMap(_.refs).toSet
     } yield {
-      DomainMember.User(isRoot, Typedef.Dto(id, finalFields.toList), dto.meta)
+      DomainMember.User(
+        isRoot,
+        produce(id, finalFields.toList, contractRefs),
+        dto.meta
+      )
     }
   }
 
@@ -167,11 +215,12 @@ class BaboonTranslator(pkg: Pkg,
   ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
     for {
       converted <- adt.members
+        .collect { case d: RawAdtMember => d }
         .map(
           member =>
             scopeSupport
               .resolveUserTypeId(
-                member.dto.name,
+                member.defn.name,
                 path :+ thisScope,
                 pkg,
                 member.meta

@@ -9,23 +9,23 @@ Stripped-down experimental DML with schema evolution support and garbage collect
 1. Set-based structural inheritance with subtraction and intersections
 2. Automatic JSON codec derivation
 3. Automatic UEBA (Ultra-Efficient Binary Aggregate, a custom tagless binary format) codec derivation
-3. Automatic evolution derivation where possible, stubs where manual conversion is required
-4. Codegen targets: C#
+4. Automatic evolution derivation where possible, stubs where manual conversion is required
+5. Structural *and* nominal inheritance
+6. Codegen targets: C#
 
 ## Limitations
 
-1. (*) This is a DML, not an IDL, it does not support service/interface definitions
-2. (*) Currently only C# cogen target is supported
-3. (*) Comments are not preserved in the cogen output
-4. No nominal inheritance
-5. Only structural inheritance is supported
-6. (*) No inheritance information is preserved in the transpiler output
-7. No templates
-8. Only Enums, DTOs and ADTs
-9. ADT members can only reference top-level type definitions
-10. (*) Only integer constants may be associated with enum members
-11. (*) No newtypes/type aliases
-12. (*) No inheritance-based lenses/projections/conversions
+1. No templates
+2. Only Enums, DTOs and ADTs
+3. ADT members can only reference top-level type definitions
+4. Nominal inheritance support is limited to trait model
+5. (*) This is a DML, not an IDL, it does not support service/interface definitions
+6. (*) Currently only C# cogen target is supported
+7. (*) Comments are not preserved in the cogen output
+8. (*) No structural inheritance information is preserved in the transpiler output
+9. (*) Only integer constants may be associated with enum members
+10. (*) No newtypes/type aliases
+11. (*) No inheritance-based lenses/projections/conversions
 
 Points marked with (*) will/may be improved in the future.
 

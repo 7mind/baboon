@@ -5,10 +5,23 @@ sealed trait RawDefn {
   def meta: RawNodeMeta
 }
 
+sealed trait RawDtoid {
+  this: RawDefn =>
+  def name: RawTypeName
+  def members: Seq[RawDtoMember]
+  def meta: RawNodeMeta
+}
 case class RawDto(name: RawTypeName,
                   members: Seq[RawDtoMember],
                   meta: RawNodeMeta)
     extends RawDefn
+    with RawDtoid
+
+case class RawContract(name: RawTypeName,
+                       members: Seq[RawDtoMember],
+                       meta: RawNodeMeta)
+    extends RawDefn
+    with RawDtoid
 
 case class RawEnum(name: RawTypeName,
                    members: Seq[RawEnumMember],

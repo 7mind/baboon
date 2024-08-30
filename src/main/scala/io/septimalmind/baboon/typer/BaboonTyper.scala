@@ -212,7 +212,6 @@ object BaboonTyper {
         )
 
         predMatrix = IncidenceMatrix(asMap.view.mapValues(_._1).toMap)
-
         sorted <- Toposort
           .cycleBreaking(predMatrix, ToposortLoopBreaker.dontBreak)
           .left
@@ -229,7 +228,7 @@ object BaboonTyper {
     ): Either[NEList[BaboonIssue.TyperIssue],
               (TypeId.User, (Set[TypeId.User], ScopedDefn))] = {
       val d = defn.thisScope.defn.defn match {
-        case d: RawDto =>
+        case d: RawDtoid =>
           d.members
             .collect {
               case d: RawDtoMember.ParentDef =>
@@ -238,6 +237,8 @@ object BaboonTyper {
                 Seq(d.parent)
               case d: RawDtoMember.IntersectionDef =>
                 Seq(d.parent)
+              case d: RawDtoMember.ContractDef =>
+                Seq(d.contract.tpe)
               case _ =>
                 Seq.empty
             }
@@ -313,6 +314,13 @@ object BaboonTyper {
       member match {
         case dto: RawDto =>
           Right(LeafScope(ScopeName(dto.name.name), FullRawDefn(dto, isRoot)))
+        case contract: RawContract =>
+          Right(
+            LeafScope(
+              ScopeName(contract.name.name),
+              FullRawDefn(contract, isRoot)
+            )
+          )
         case e: RawEnum =>
           Right(LeafScope(ScopeName(e.name.name), FullRawDefn(e, isRoot)))
         case f: RawForeign =>
@@ -320,7 +328,8 @@ object BaboonTyper {
         case adt: RawAdt =>
           for {
             sub <- adt.members
-              .map(m => buildScope(m.dto, isRoot = false))
+              .collect { case d: RawAdtMember => d }
+              .map(m => buildScope(m.defn, isRoot = false))
               .biSequence
             asMap <- sub
               .map(s => (s.name, s))

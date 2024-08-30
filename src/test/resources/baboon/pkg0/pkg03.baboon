@@ -29,8 +29,31 @@ root data T3_D1 {
 
 //
 
+contract S0 {
+  f3: opt[str]
+}
+
+contract S {
+  is S0
+
+  f1: str
+}
+
+
+
 root adt T4_A1 {
+   contract S1 {
+       f2: i32
+   }
+
    data B1 {
+       is S
+       is S1
+       //-  f2: i32
+
+       f1: str
+       f2: i32
+
        f: T3_D1
    }
    data B2 {
