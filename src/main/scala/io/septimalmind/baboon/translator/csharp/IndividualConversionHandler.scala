@@ -117,7 +117,7 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
           val regtree = q"Register(new ${convname}());"
           Right(List(RenderedConversion(fname, ctree, Some(regtree), None)))
         case c: Conversion.CopyAdtBranchByName =>
-          val branches = c.oldDefn.members.map { oldId =>
+          val branches = c.oldDefn.dataMembers(srcDom).map { oldId =>
             val oldFqid =
               trans.toCsTypeRefDeref(oldId, srcDom, evo).fullyQualified
             val typedRef = q"fromAs_${oldId.name.name}"

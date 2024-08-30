@@ -162,12 +162,20 @@ object CSDefnTranslator {
         allDefs
       }
 
-      val reg = (List(q""""${defn.id.toString}"""") ++ codecs.toList
-        .sortBy(_.getClass.getName)
-        .map(codec => q"${codec.codecName(srcRef).copy(fq = true)}.Instance"))
-        .join(", ")
+      val reg = defn.defn match {
+        case _: Typedef.NonDataTypedef => List.empty
+        case _ =>
+          List(
+            (List(q""""${defn.id.toString}"""") ++ codecs.toList
+              .sortBy(_.getClass.getName)
+              .map(
+                codec => q"${codec.codecName(srcRef).copy(fq = true)}.Instance"
+              ))
+              .join(", ")
+          )
+      }
 
-      val allRegs = List(reg) ++ extraRegs
+      val allRegs = reg ++ extraRegs
       val codecTestTrees =
         Some(
           codecsTests
@@ -202,7 +210,12 @@ object CSDefnTranslator {
 
       defn.defn match {
         case dto: Typedef.Contract =>
-          ???
+          (
+            q"""public interface $name : $genMarker {}""".stripMargin,
+            List.empty,
+            List.empty
+          )
+
         case dto: Typedef.Dto =>
           val outs = dto.fields.map { f =>
             val tpe = trans.asCsRef(f.tpe, domain, evo)
@@ -213,7 +226,9 @@ object CSDefnTranslator {
           val constructorArgs =
             outs.map { case (fname, tpe, _) => q"$tpe $fname" }.join(",\n")
 
-          val mainParents = dto.id.owner match {
+          val contractParents =
+            dto.contracts.toSeq.map(c => trans.asCsType(c, domain, evo))
+          val adtParents = dto.id.owner match {
             case Owner.Toplevel =>
               Seq.empty
             case Owner.Adt(id) =>
@@ -221,7 +236,7 @@ object CSDefnTranslator {
               Seq(parentId, q"$iBaboonAdtMemberMeta")
           }
 
-          val allParents = mainParents ++ Seq(q"$genMarker")
+          val allParents = adtParents ++ contractParents ++ Seq(q"$genMarker")
           val parents = if (allParents.isEmpty) {
             q""
           } else {

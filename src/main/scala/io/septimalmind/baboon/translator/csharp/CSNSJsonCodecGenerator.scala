@@ -25,7 +25,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
       case _: Typedef.Enum =>
         Some(genEnumBodies(csRef))
       case a: Typedef.Adt =>
-        Some(genAdtBodies(csRef, a))
+        Some(genAdtBodies(csRef, a, domain))
       case _: Typedef.Foreign =>
         Some(genForeignBodies(csRef))
       case _: Typedef.Contract =>
@@ -155,10 +155,11 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
 
   private def genAdtBodies(
     name: CSValue.CSType,
-    a: Typedef.Adt
+    a: Typedef.Adt,
+    domain: Domain,
   ): (TextTree[CSValue], TextTree[Nothing]) = {
 
-    val branches = a.members.toList.map { m =>
+    val branches = a.dataMembers(domain).map { m =>
       val branchNs = q"${trans.adtNsName(a.id)}"
       val branchName = m.name.name
       val fqBranch = q"$branchNs.$branchName"

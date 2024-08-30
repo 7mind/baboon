@@ -209,12 +209,12 @@ class BaboonTranslator(pkg: Pkg,
   ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
     for {
       converted <- adt.members
-        .collect { case d: RawAdtMemberDto => d }
+        .collect { case d: RawAdtMember => d }
         .map(
           member =>
             scopeSupport
               .resolveUserTypeId(
-                member.dto.name,
+                member.defn.name,
                 path :+ thisScope,
                 pkg,
                 member.meta

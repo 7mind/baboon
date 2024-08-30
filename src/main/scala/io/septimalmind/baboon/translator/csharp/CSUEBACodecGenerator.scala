@@ -170,8 +170,9 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
   private def genAdtBodies(name: CSValue.CSType,
                            domain: Domain,
                            a: Typedef.Adt,
-                           evo: BaboonEvolution) = {
-    val branches = a.members.zipWithIndex.toList.map {
+                           evo: BaboonEvolution,
+  ) = {
+    val branches = a.dataMembers(domain).zipWithIndex.toList.map {
       case (m, idx) =>
         val branchNs = q"${trans.adtNsName(a.id)}"
         val branchName = m.name.name
@@ -277,7 +278,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
         .asInstanceOf[DomainMember.User]
         .defn
         .asInstanceOf[Typedef.Adt]
-        .members
+        .dataMembers(domain)
         .zipWithIndex
         .find(_._1 == d.id)
         .get

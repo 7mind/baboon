@@ -36,46 +36,50 @@ object CSCodecTestsTranslator {
       val testClassName =
         CSValue.CSType(srcRef.pkg, s"${codecTestName}__Codec_Test", srcRef.fq)
 
-      if (hasForeignType(definition, domain)) None
-      else {
-        val testClass =
-          q"""[${nunitTestFixture}]
-             |public class $testClassName
-             |{
-             |  #nullable disable
-             |
-             |  private ${autofixtureFixture} fixture;
-             |
-             |  ${testFields(definition, srcRef)}
-             |
-             |  public $testClassName()
-             |  {
-             |    fixture = new ${autofixtureFixture}();
-             |    fixture.Customize(new ${autofixtureImmutableCollectionsCustomization}());
-             |    fixture.Customizations.Add(new ${baboonTest_TruncatedRandomDateTimeSequenceGenerator}());
-             |    fixture.Customizations.Add(new ${baboonTest_EnumDictionaryBuilder}());
-             |  }
-             |
-             |  [${nunitOneTimeSetUp}]
-             |  public void Setup()
-             |  {
-             |    ${fieldsInitialization(definition, srcRef, domain, evo)}
-             |  }
-             |
-             |  ${tests(definition, srcRef, domain, evo)}
-             |}
-             |""".stripMargin
-        Some(testClass)
+      definition match {
+        case d if hasForeignType(d, domain)                   => None
+        case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
+        case _ =>
+          val testClass =
+            q"""[${nunitTestFixture}]
+               |public class $testClassName
+               |{
+               |  #nullable disable
+               |
+               |  private ${autofixtureFixture} fixture;
+               |
+               |  ${testFields(definition, srcRef, domain)}
+               |
+               |  public $testClassName()
+               |  {
+               |    fixture = new ${autofixtureFixture}();
+               |    fixture.Customize(new ${autofixtureImmutableCollectionsCustomization}());
+               |    fixture.Customizations.Add(new ${baboonTest_TruncatedRandomDateTimeSequenceGenerator}());
+               |    fixture.Customizations.Add(new ${baboonTest_EnumDictionaryBuilder}());
+               |  }
+               |
+               |  [${nunitOneTimeSetUp}]
+               |  public void Setup()
+               |  {
+               |    ${fieldsInitialization(definition, srcRef, domain, evo)}
+               |  }
+               |
+               |  ${tests(definition, srcRef, domain, evo)}
+               |}
+               |""".stripMargin
+          Some(testClass)
       }
     }
 
     private def testFields(definition: DomainMember.User,
-                           srcRef: CSValue.CSType): TextTree[CSValue] = {
+                           srcRef: CSValue.CSType,
+                           domain: Domain): TextTree[CSValue] = {
       definition.defn match {
-        case Typedef.Adt(root, members) =>
-          members
+        case adt: Typedef.Adt =>
+          adt
+            .dataMembers(domain)
             .map(_.name.name)
-            .map(n => q"private ${root.name.name} ${n.toLowerCase};")
+            .map(n => q"private ${adt.id.name.name} ${n.toLowerCase};")
             .toList
             .join("\n")
             .shift(2)
@@ -91,16 +95,17 @@ object CSCodecTestsTranslator {
       evo: BaboonEvolution
     ): TextTree[CSValue] = {
       definition.defn match {
-        case Typedef.Adt(root, members) =>
+        case adt: Typedef.Adt =>
           val adtMembersNamespace = typeTranslator
             .toCsPkg(domain.id, domain.version, evo)
             .parts
-            .mkString(".") + s".${typeTranslator.adtNsName(root)}"
+            .mkString(".") + s".${typeTranslator.adtNsName(adt.id)}"
 
-          members
+          adt
+            .dataMembers(domain)
             .map { member =>
-              q"""fixture.Register<${root.name.name}>(() => fixture.Create<$adtMembersNamespace.${member.name.name}>());
-               |${member.name.name.toLowerCase} = fixture.Create<${root.name.name}>();
+              q"""fixture.Register<${adt.id.name.name}>(() => fixture.Create<$adtMembersNamespace.${member.name.name}>());
+               |${member.name.name.toLowerCase} = fixture.Create<${adt.id.name.name}>();
                |""".stripMargin
             }
             .toList
@@ -164,11 +169,12 @@ object CSCodecTestsTranslator {
                                     evo: BaboonEvolution,
     ): TextTree[CSValue] = {
       definition.defn match {
-        case Typedef.Adt(root, members) =>
-          members
+        case adt: Typedef.Adt =>
+          adt
+            .dataMembers(domain)
             .map { member =>
               val typeRef =
-                typeTranslator.toCsTypeRefNoDeref(root, domain, evo)
+                typeTranslator.toCsTypeRefNoDeref(adt.id, domain, evo)
               val codecName = codec.codecName(typeRef)
               val fieldName = member.name.name.toLowerCase
               val serialized = s"${fieldName}_json"
@@ -201,11 +207,12 @@ object CSCodecTestsTranslator {
                                     evo: BaboonEvolution,
     ): TextTree[CSValue] = {
       definition.defn match {
-        case Typedef.Adt(root, members) =>
-          members
+        case adt: Typedef.Adt =>
+          adt
+            .dataMembers(domain)
             .map { member =>
               val typeRef =
-                typeTranslator.toCsTypeRefNoDeref(root, domain, evo)
+                typeTranslator.toCsTypeRefNoDeref(adt.id, domain, evo)
               val codecName = codec.codecName(typeRef)
               val fieldName = member.name.name.toLowerCase
               val serialized = s"${fieldName}_bytes"
