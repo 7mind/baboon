@@ -358,16 +358,17 @@ object CSDefnTranslator {
             val branches = memberTrees
               .map(_._1)
               .toSeq
-              .join("\n")
+              .join("\n\n")
 
             val regs = memberTrees.map(_._2)
             val members = meta
 
             (
               q"""|public abstract record $name : $genMarker {
-                |    ${branches.shift(4).trim}
-                |    ${members.join("\n\n").shift(4).trim}
-                |}""".stripMargin,
+                  |    ${branches.shift(4).trim}
+                  |    
+                  |    ${members.join("\n\n").shift(4).trim}
+                  |}""".stripMargin,
               regs.toList.flatten,
               memberTrees.toList.flatMap(_._3)
             )
