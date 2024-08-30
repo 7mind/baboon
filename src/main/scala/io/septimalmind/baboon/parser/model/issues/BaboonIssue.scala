@@ -191,7 +191,7 @@ object BaboonIssue {
   case class IncorrectRootFound(domain: Domain, badRoots: Seq[TypeId.User])
       extends VerificationIssue
 
-  case class ConflictingDtoFields(dto: Typedef.Dto,
+  case class ConflictingDtoFields(dto: TypeId.User,
                                   dupes: Map[String, List[Field]],
                                   meta: RawNodeMeta)
       extends VerificationIssue
@@ -210,7 +210,7 @@ object BaboonIssue {
                                 dupes: Map[String, Iterable[DomainMember]])
       extends VerificationIssue
 
-  case class BadFieldNames(e: Typedef.Dto, bad: Seq[String], meta: RawNodeMeta)
+  case class BadFieldNames(e: TypeId.User, bad: Seq[String], meta: RawNodeMeta)
       extends VerificationIssue
 
   case class EmptyEnumDef(e: Typedef.Enum, meta: RawNodeMeta)

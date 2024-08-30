@@ -10,7 +10,7 @@ trait CSCodecTranslator {
                 srcRef: CSValue.CSType,
                 domain: Domain,
                 evo: BaboonEvolution,
-               ): TextTree[CSValue]
+               ): Option[TextTree[CSValue]]
 
   def codecName(name: CSValue.CSType): CSValue.CSType
 

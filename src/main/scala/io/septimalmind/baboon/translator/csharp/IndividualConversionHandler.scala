@@ -1,9 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import distage.Id
-import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import izumi.fundamentals.platform.strings.TextTree.*
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.model.*
@@ -11,6 +9,7 @@ import io.septimalmind.baboon.typer.model.Conversion.FieldOp
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
+import izumi.fundamentals.platform.strings.TextTree.*
 
 class IndividualConversionHandler(trans: CSTypeTranslator,
                                   pkg: CSPackageId,
@@ -18,7 +17,6 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
                                   domain: Domain @Id("current"),
                                   rules: BaboonRuleset,
                                   tools: CSDefnTools,
-                                  options: CompilerOptions,
                                   evo: BaboonEvolution,
 ) {
   private val srcVer = srcDom.version
@@ -97,6 +95,8 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
             )
           )
         case _: Conversion.RemovedTypeNoConversion =>
+          Right(List.empty)
+        case _: Conversion.NonDataTypeTypeNoConversion =>
           Right(List.empty)
         case _: Conversion.CopyEnumByName =>
           val cdefn =

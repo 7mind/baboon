@@ -1,16 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
-  autofixtureFixture,
-  autofixtureImmutableCollectionsCustomization,
-  baboonTest_EnumDictionaryBuilder,
-  baboonTest_TruncatedRandomDateTimeSequenceGenerator,
-  binaryWriter,
-  memoryStream,
-  nunitOneTimeSetUp,
-  nunitTestFixture
-}
-import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BLogger
 import izumi.fundamentals.platform.strings.TextTree
@@ -266,6 +256,29 @@ object CSCodecTestsTranslator {
 
     private def hasForeignType(definition: DomainMember.User,
                                domain: Domain): Boolean = {
+      def processFields(foreignType: Option[TypeId],
+                        tail: List[Typedef],
+                        f: List[Field]) = {
+        val fieldsTypes = f.map(_.tpe)
+        val moreToCheck = fieldsTypes.flatMap {
+          case TypeRef.Scalar(id) =>
+            List(domain.defs.meta.nodes(id) match {
+              case _: DomainMember.Builtin => None
+              case u: DomainMember.User    => Some(u.defn)
+            }).flatten
+          case TypeRef.Constructor(_, args) =>
+            args
+              .map(_.id)
+              .map(domain.defs.meta.nodes(_))
+              .toList
+              .flatMap {
+                case _: DomainMember.Builtin => None
+                case u: DomainMember.User    => Some(u.defn)
+              }
+        }
+        collectForeignType(tail ++ moreToCheck, foreignType)
+      }
+
       @tailrec
       def collectForeignType(toCheck: List[Typedef],
                              foreignType: Option[TypeId]): Option[TypeId] = {
@@ -275,24 +288,9 @@ object CSCodecTestsTranslator {
           case (head :: tail, None) =>
             head match {
               case dto: Typedef.Dto =>
-                val fieldsTypes = dto.fields.map(_.tpe)
-                val moreToCheck = fieldsTypes.flatMap {
-                  case TypeRef.Scalar(id) =>
-                    List(domain.defs.meta.nodes(id) match {
-                      case _: DomainMember.Builtin => None
-                      case u: DomainMember.User    => Some(u.defn)
-                    }).flatten
-                  case TypeRef.Constructor(_, args) =>
-                    args
-                      .map(_.id)
-                      .map(domain.defs.meta.nodes(_))
-                      .toList
-                      .flatMap {
-                        case _: DomainMember.Builtin => None
-                        case u: DomainMember.User    => Some(u.defn)
-                      }
-                }
-                collectForeignType(tail ++ moreToCheck, foreignType)
+                processFields(foreignType, tail, dto.fields)
+              case c: Typedef.Contract =>
+                processFields(foreignType, tail, c.fields)
               case adt: Typedef.Adt =>
                 val dtos = adt.members
                   .map(tpeId => domain.defs.meta.nodes(tpeId))

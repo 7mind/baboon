@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
-import distage.{Id, Lifecycle}
+import distage.Id
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{
@@ -144,7 +144,9 @@ object CSDefnTranslator {
 
       val codecTrees =
         codecs.toList
-          .map(t => t.translate(defn, csTypeRef, srcRef, domain, evo))
+          .flatMap(
+            t => t.translate(defn, csTypeRef, srcRef, domain, evo).toList
+          )
           .map(obsoletePrevious)
 
       val defnRepr = obsoletePrevious(defnReprBase)
@@ -199,6 +201,8 @@ object CSDefnTranslator {
       val meta = mainMeta ++ codecMeta
 
       defn.defn match {
+        case dto: Typedef.Contract =>
+          ???
         case dto: Typedef.Dto =>
           val outs = dto.fields.map { f =>
             val tpe = trans.asCsRef(f.tpe, domain, evo)

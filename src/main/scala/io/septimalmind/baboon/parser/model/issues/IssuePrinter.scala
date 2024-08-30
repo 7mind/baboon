@@ -465,7 +465,7 @@ object IssuePrinter {
   implicit val conflictingDtoFieldsPrinter: IssuePrinter[ConflictingDtoFields] =
     (issue: ConflictingDtoFields) => {
       s"""${extractLocation(issue.meta)}
-       |In DTO: ${issue.dto.id.name.name}
+       |In DTO: ${issue.dto.name.name}
        |Conflicting fields have been found:${issue.dupes.values.flatten
            .niceList()}
        |""".stripMargin

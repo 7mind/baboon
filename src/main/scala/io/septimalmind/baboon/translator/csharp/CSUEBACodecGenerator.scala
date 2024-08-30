@@ -15,56 +15,59 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
                          csRef: CSValue.CSType,
                          srcRef: CSValue.CSType,
                          domain: Domain,
-                         evo: BaboonEvolution): TextTree[CSValue] = {
+                         evo: BaboonEvolution): Option[TextTree[CSValue]] = {
     val version = domain.version
-    val (enc, dec) = defn.defn match {
+    (defn.defn match {
       case d: Typedef.Dto =>
-        genDtoBodies(csRef, domain, d, evo)
+        Some(genDtoBodies(csRef, domain, d, evo))
       case e: Typedef.Enum =>
-        genEnumBodies(csRef, e)
+        Some(genEnumBodies(csRef, e))
       case a: Typedef.Adt =>
-        genAdtBodies(csRef, domain, a, evo)
+        Some(genAdtBodies(csRef, domain, a, evo))
       case _: Typedef.Foreign =>
-        genForeignBodies(csRef)
-    }
-
-    // plumbing reference leaks
-    val insulatedEnc =
-      q"""
-         |#pragma warning disable CS0162
-         |if (this == instance.Value)
-         |{
-         |    ${enc.shift(4).trim}
-         |    return;
-         |}
-         |#pragma warning disable CS0162
-         |
-         |instance.Value.Encode(writer, value);""".stripMargin
-    val insulatedDec =
-      q"""if (this == instance.Value)
-         |{
-         |    ${dec.shift(4).trim}
-         |}
-         |
-         |return instance.Value.Decode(wire);""".stripMargin
-
-    val branchDecoder = defn.defn match {
-      case d: Typedef.Dto =>
-        genBranchDecoder(csRef, domain, d, evo)
-      case _ =>
+        Some(genForeignBodies(csRef))
+      case _: Typedef.Contract =>
         None
-    }
+    }).map {
+      case (enc, dec) =>
+        // plumbing reference leaks
+        val insulatedEnc =
+          q"""
+             |#pragma warning disable CS0162
+             |if (this == instance.Value)
+             |{
+             |    ${enc.shift(4).trim}
+             |    return;
+             |}
+             |#pragma warning disable CS0162
+             |
+             |instance.Value.Encode(writer, value);""".stripMargin
+        val insulatedDec =
+          q"""if (this == instance.Value)
+             |{
+             |    ${dec.shift(4).trim}
+             |}
+             |
+             |return instance.Value.Decode(wire);""".stripMargin
 
-    genCodec(
-      defn,
-      csRef,
-      srcRef,
-      version,
-      insulatedEnc,
-      insulatedDec,
-      !defn.defn.isInstanceOf[Typedef.Foreign],
-      branchDecoder,
-    )
+        val branchDecoder = defn.defn match {
+          case d: Typedef.Dto =>
+            genBranchDecoder(csRef, domain, d, evo)
+          case _ =>
+            None
+        }
+
+        genCodec(
+          defn,
+          csRef,
+          srcRef,
+          version,
+          insulatedEnc,
+          insulatedDec,
+          !defn.defn.isInstanceOf[Typedef.Foreign],
+          branchDecoder,
+        )
+    }
   }
 
   private def genCodec(
@@ -112,7 +115,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
 
         val adtParents = defn.id.owner match {
           case Owner.Toplevel => List.empty
-          case Owner.Adt(_)  => List(q"$iBaboonAdtMemberMeta")
+          case Owner.Adt(_)   => List(q"$iBaboonAdtMemberMeta")
         }
         val extParents = List(q"$iBaboonBinCodec<$iBaboonGenerated>") ++ adtParents
 
@@ -246,7 +249,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
   ): Option[TextTree[CSValue]] = {
 
     d.id.owner match {
-      case Owner.Adt(id) if options.csWrappedAdtBranchCodecs =>
+      case Owner.Adt(_) if options.csWrappedAdtBranchCodecs =>
         val fields = fieldsOf(domain, d, evo)
         Some(dtoDec(name, fields))
       case _ =>

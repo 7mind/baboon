@@ -16,45 +16,48 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
                          srcRef: CSValue.CSType,
                          domain: Domain,
                          evo: BaboonEvolution,
-  ): TextTree[CSValue] = {
+  ): Option[TextTree[CSValue]] = {
 
     val version = domain.version
-    val (enc, dec) = defn.defn match {
+    (defn.defn match {
       case d: Typedef.Dto =>
-        genDtoBodies(csRef, domain, d, evo)
+        Some(genDtoBodies(csRef, domain, d, evo))
       case _: Typedef.Enum =>
-        genEnumBodies(csRef)
+        Some(genEnumBodies(csRef))
       case a: Typedef.Adt =>
-        genAdtBodies(csRef, a)
+        Some(genAdtBodies(csRef, a))
       case _: Typedef.Foreign =>
-        genForeignBodies(csRef)
+        Some(genForeignBodies(csRef))
+      case _: Typedef.Contract =>
+        None
+    }).map {
+      case (enc, dec) =>
+        // plumbing reference leaks
+        val insulatedEnc =
+          q"""if (this == instance.Value)
+             |{
+             |    ${enc.shift(4).trim}
+             |}
+             |
+             |return instance.Value.Encode(value);""".stripMargin
+        val insulatedDec =
+          q"""if (this == instance.Value)
+             |{
+             |    ${dec.shift(4).trim}
+             |}
+             |
+             |return instance.Value.Decode(wire);""".stripMargin
+
+        genCodec(
+          defn,
+          csRef,
+          srcRef,
+          version,
+          insulatedEnc,
+          insulatedDec,
+          !defn.defn.isInstanceOf[Typedef.Foreign]
+        )
     }
-
-    // plumbing reference leaks
-    val insulatedEnc =
-      q"""if (this == instance.Value)
-         |{
-         |    ${enc.shift(4).trim}
-         |}
-         |
-         |return instance.Value.Encode(value);""".stripMargin
-    val insulatedDec =
-      q"""if (this == instance.Value)
-         |{
-         |    ${dec.shift(4).trim}
-         |}
-         |
-         |return instance.Value.Decode(wire);""".stripMargin
-
-    genCodec(
-      defn,
-      csRef,
-      srcRef,
-      version,
-      insulatedEnc,
-      insulatedDec,
-      !defn.defn.isInstanceOf[Typedef.Foreign]
-    )
   }
 
   private def genCodec(defn: DomainMember.User,
