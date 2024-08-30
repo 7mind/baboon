@@ -45,8 +45,8 @@ object Typedef {
     def id: TypeId.User
   }
 
-  case class Dto(id: TypeId.User, fields: List[Field]) extends User
-  case class Contract(id: TypeId.User, fields: List[Field]) extends User
+  case class Dto(id: TypeId.User, fields: List[Field], contracts: Set[TypeId.User]) extends User
+  case class Contract(id: TypeId.User, fields: List[Field], contracts: Set[TypeId.User]) extends User
   case class Enum(id: TypeId.User, members: NEList[EnumMember]) extends User
   case class Adt(id: TypeId.User, members: NEList[TypeId.User]) extends User
   case class Foreign(id: TypeId.User, bindings: Map[String, String])

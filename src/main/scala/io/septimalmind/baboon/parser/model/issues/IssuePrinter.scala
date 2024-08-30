@@ -319,7 +319,7 @@ object IssuePrinter {
   implicit val nameNotFoundPrinter: IssuePrinter[NameNotFound] =
     (issue: NameNotFound) => {
       s"""${extractLocation(issue.meta)}
-       |Type ${issue.name.path.head.name} not found
+       |Type not found: ${issue.name.path.head.name}
        |""".stripMargin
     }
 

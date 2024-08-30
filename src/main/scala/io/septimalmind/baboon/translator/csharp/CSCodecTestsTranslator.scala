@@ -296,7 +296,8 @@ object CSCodecTestsTranslator {
                   .map(tpeId => domain.defs.meta.nodes(tpeId))
                   .toList
                   .collect {
-                    case DomainMember.User(_, dto @ Typedef.Dto(_, _), _) => dto
+                    case DomainMember.User(_, dto: Typedef.Dto, _)      => dto
+                    case DomainMember.User(_, dto: Typedef.Contract, _) => dto
                   }
                 collectForeignType(tail ++ dtos, foreignType)
               case f: Typedef.Foreign => collectForeignType(tail, Some(f.id))

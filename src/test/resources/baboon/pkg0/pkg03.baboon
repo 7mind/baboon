@@ -46,6 +46,7 @@ root adt T4_A1 {
 
        f1: str
        f2: i32
+
        f: T3_D1
    }
    data B2 {

@@ -1,3 +1,3 @@
 package io.septimalmind.baboon.parser.model
 
-case class RawContractRef(tpe: RawTypeRef)
+case class RawContractRef(tpe: ScopedRef)

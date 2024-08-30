@@ -49,7 +49,7 @@ class DefDto(context: ParserContext, meta: DefMeta) {
 
   def contractDef[$: P]: P[RawContractRef] = {
     import fastparse.ScalaWhitespace.whitespace
-    ("is" ~ typeRef).map { case (t) => model.RawContractRef(t) }
+    ("is" ~ scopedRef).map { case (t) => model.RawContractRef(t) }
   }
 
   def fieldDef[$: P]: P[RawField] = {
