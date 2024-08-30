@@ -2,6 +2,7 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue.MissingContractFields
 import io.septimalmind.baboon.typer.BaboonTyper.{FullRawDefn, ScopedDefn}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.NestedScope
@@ -181,18 +182,22 @@ class BaboonTranslator(pkg: Pkg,
       removedSet = removed.toSet
       intersectionSet = intersectionLimiters.toSet
 
-      // contract fields cannot be removed
-      withoutRemoved = (converted.filterNot(f => removedSet.contains(f)) ++ contracts
-        .flatMap(_.fields)).distinct
+      contractFields = contracts.flatMap(_.fields)
+      allFields = converted ++ contractFields
+      withoutRemoved = allFields.filterNot(f => removedSet.contains(f)).distinct
       finalFields = if (intersectionSet.isEmpty) {
         withoutRemoved
       } else {
         withoutRemoved.filter(f => intersectionSet.contains(f))
       }
+
+      missingIrremovable = contractFields.diff(withoutRemoved)
+      _ <- Either.ifThenFail(missingIrremovable.nonEmpty)(
+        NEList(MissingContractFields(id, missingIrremovable, dto.meta))
+      )
       _ <- finalFields
         .map(m => (m.name.name.toLowerCase, m))
         .toUniqueMap(e => NEList(BaboonIssue.NonUniqueFields(id, e, dto.meta)))
-
       contractRefs = contracts.flatMap(_.refs).toSet
     } yield {
       DomainMember.User(

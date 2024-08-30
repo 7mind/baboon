@@ -84,6 +84,11 @@ object BaboonIssue {
                              meta: RawNodeMeta)
       extends TyperIssue
 
+  case class MissingContractFields(id: TypeId.User,
+                                   missingFields: Seq[Field],
+                                   meta: RawNodeMeta)
+      extends TyperIssue
+
   case class EmptyAdt(id: TypeId.User, meta: RawNodeMeta) extends TyperIssue
 
   case class EmptyGenericArgs(id: TypeId, meta: RawNodeMeta) extends TyperIssue

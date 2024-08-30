@@ -49,6 +49,7 @@ root adt T4_A1 {
    data B1 {
        is S
        is S1
+       //-  f2: i32
 
        f1: str
        f2: i32

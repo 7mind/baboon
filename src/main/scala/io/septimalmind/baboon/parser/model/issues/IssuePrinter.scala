@@ -355,6 +355,14 @@ object IssuePrinter {
        |""".stripMargin
     }
 
+  implicit val missingContractFields: IssuePrinter[MissingContractFields] =
+    (issue: MissingContractFields) => {
+      s"""${extractLocation(issue.meta)}
+         |Contract fields were removed => name:${issue.id.toString} type:${issue.id}, missing: ${issue.missingFields
+           .mkString(", ")}
+         |""".stripMargin
+    }
+
   implicit val brokenComparisonPrinter: IssuePrinter[BrokenComparison] =
     new BugPrinter[BrokenComparison] {
       override def errorMessage(bug: BrokenComparison): String = {
@@ -695,6 +703,7 @@ object IssuePrinter {
     case i: NamSeqeNotFound       => apply[NamSeqeNotFound].stringify(i)
     case i: DuplicatedTypes       => apply[DuplicatedTypes].stringify(i)
     case i: WrongParent           => apply[WrongParent].stringify(i)
+    case i: MissingContractFields => apply[MissingContractFields].stringify(i)
   }
 
   implicit val evolutionIssuePrinter: IssuePrinter[EvolutionIssue] = {
