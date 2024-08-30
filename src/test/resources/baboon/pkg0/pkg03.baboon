@@ -29,7 +29,13 @@ root data T3_D1 {
 
 //
 
+contract S0 {
+  f3: opt[str]
+}
+
 contract S {
+  is S0
+
   f1: str
 }
 

@@ -181,8 +181,9 @@ class BaboonTranslator(pkg: Pkg,
       removedSet = removed.toSet
       intersectionSet = intersectionLimiters.toSet
 
-      allFields = converted ++ contracts.flatMap(_.fields)
-      withoutRemoved = allFields.filterNot(f => removedSet.contains(f)).distinct
+      // contract fields cannot be removed
+      withoutRemoved = (converted.filterNot(f => removedSet.contains(f)) ++ contracts
+        .flatMap(_.fields)).distinct
       finalFields = if (intersectionSet.isEmpty) {
         withoutRemoved
       } else {

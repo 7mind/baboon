@@ -209,12 +209,27 @@ object CSDefnTranslator {
       val meta = mainMeta ++ codecMeta
 
       defn.defn match {
-        case dto: Typedef.Contract =>
-          (
-            q"""public interface $name : $genMarker {}""".stripMargin,
-            List.empty,
-            List.empty
-          )
+        case contract: Typedef.Contract =>
+          val methods = contract.fields
+            .map { f =>
+              val tpe = trans.asCsRef(f.tpe, domain, evo)
+              val mname = s"${f.name.name.capitalize}"
+              q"public $tpe $mname { get; }"
+            }
+            .join("\n")
+          val refs =
+            (contract.contracts.map(t => trans.asCsType(t, domain, evo)) ++ List(
+              q"$genMarker"
+            )).toList
+
+          val parents = if (refs.isEmpty) {
+            q""
+          } else {
+            q" : ${refs.join(", ")} "
+          }
+          (q"""public interface $name$parents  {
+               |    ${methods.shift(4).trim}
+               |}""".stripMargin, List.empty, List.empty)
 
         case dto: Typedef.Dto =>
           val outs = dto.fields.map { f =>

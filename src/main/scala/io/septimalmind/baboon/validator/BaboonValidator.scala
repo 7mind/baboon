@@ -158,6 +158,8 @@ object BaboonValidator {
     }
 
     private def validateFields(u: DomainMember.User, fields: List[Field]) = {
+      // TODO: check that no contract fields were removed!!!
+
       val dupes =
         fields
           .groupBy(_.name.name.toLowerCase)
