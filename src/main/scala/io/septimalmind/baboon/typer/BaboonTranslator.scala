@@ -37,10 +37,11 @@ class BaboonTranslator(pkg: Pkg,
   ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
     val root = defn.gcRoot
     defn.defn match {
-      case d: RawDto     => convertDto(id, root, d).map(d => NEList(d))
-      case e: RawEnum    => converEnum(id, root, e).map(e => NEList(e))
-      case a: RawAdt     => convertAdt(id, root, a, thisScope)
-      case f: RawForeign => convertForeign(id, root, f)
+      case d: RawDto      => convertDto(id, root, d).map(d => NEList(d))
+      case e: RawEnum     => converEnum(id, root, e).map(e => NEList(e))
+      case a: RawAdt      => convertAdt(id, root, a, thisScope)
+      case f: RawForeign  => convertForeign(id, root, f)
+      case c: RawContract => convertContract(id, root, c).map(e => NEList(e))
     }
   }
 
@@ -115,6 +116,15 @@ class BaboonTranslator(pkg: Pkg,
     }
   }
 
+  private def convertContract(
+    id: TypeId.User,
+    isRoot: Boolean,
+    dto: RawContract
+  ): Either[NEList[BaboonIssue.TyperIssue], DomainMember.User] = {
+    ???
+
+  }
+
   private def convertDto(
     id: TypeId.User,
     isRoot: Boolean,
@@ -167,6 +177,7 @@ class BaboonTranslator(pkg: Pkg,
   ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
     for {
       converted <- adt.members
+        .collect { case d: RawAdtMemberDto => d }
         .map(
           member =>
             scopeSupport

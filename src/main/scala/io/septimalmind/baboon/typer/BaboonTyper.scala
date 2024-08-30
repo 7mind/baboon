@@ -313,6 +313,13 @@ object BaboonTyper {
       member match {
         case dto: RawDto =>
           Right(LeafScope(ScopeName(dto.name.name), FullRawDefn(dto, isRoot)))
+        case contract: RawContract =>
+          Right(
+            LeafScope(
+              ScopeName(contract.name.name),
+              FullRawDefn(contract, isRoot)
+            )
+          )
         case e: RawEnum =>
           Right(LeafScope(ScopeName(e.name.name), FullRawDefn(e, isRoot)))
         case f: RawForeign =>
@@ -320,6 +327,7 @@ object BaboonTyper {
         case adt: RawAdt =>
           for {
             sub <- adt.members
+              .collect { case d: RawAdtMemberDto => d }
               .map(m => buildScope(m.dto, isRoot = false))
               .biSequence
             asMap <- sub

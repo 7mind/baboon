@@ -48,7 +48,7 @@ object IssuePrinter {
     (issue: ParserFailed) => {
       val Array(line, character, _*) =
         issue.error.extra.input.prettyIndex(issue.error.index).split(":")
-      s"Parser error occurred on => line:$line position:$character".stripMargin
+      s"Parser error occurred in ${issue.path} @ line:$line position:$character".stripMargin
     }
 
   implicit val includeNotFoundPrinter: IssuePrinter[IncludeNotFound] =
@@ -240,10 +240,11 @@ object IssuePrinter {
   implicit val scopeCannotBeEmptyPrinter: IssuePrinter[ScopeCannotBeEmpty] =
     (issue: ScopeCannotBeEmpty) => {
       val memberType = issue.member match {
-        case _: RawDto     => "DTO"
-        case _: RawEnum    => "Enum"
-        case _: RawAdt     => "ADT"
-        case _: RawForeign => "Foreign"
+        case _: RawDto      => "DTO"
+        case _: RawEnum     => "Enum"
+        case _: RawAdt      => "ADT"
+        case _: RawForeign  => "Foreign"
+        case _: RawContract => "Contract"
       }
       s"""${extractLocation(issue.member.meta)}
        |Found an empty $memberType: ${issue.member.name.name}

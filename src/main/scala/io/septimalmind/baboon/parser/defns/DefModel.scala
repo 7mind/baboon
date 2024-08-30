@@ -12,6 +12,7 @@ class DefModel(context: ParserContext,
                defDto: DefDto,
                defAdt: DefAdt,
                defForeign: DefForeign,
+               defContract: DefContract,
 ) {
   context.discard()
 
@@ -38,7 +39,7 @@ class DefModel(context: ParserContext,
 
   def member[$: P]: P[RawTLDef] = {
     import fastparse.ScalaWhitespace.whitespace
-    P(kw.root.!.? ~ (choice | dto | adt | foreign)).map {
+    P(kw.root.!.? ~ (choice | dto | adt | foreign | contract)).map {
       case (root, defn) =>
         defn.setRoot(root.nonEmpty)
     }
@@ -57,4 +58,6 @@ class DefModel(context: ParserContext,
     defAdt.adtEnclosed.map(RawTLDef.ADT(false, _))
   def foreign[$: P]: P[RawTLDef.Foreign] =
     defForeign.foreignEnclosed.map(RawTLDef.Foreign(false, _))
+  def contract[$: P]: P[RawTLDef.Contract] =
+    defContract.contractEnclosed.map(RawTLDef.Contract(false, _))
 }

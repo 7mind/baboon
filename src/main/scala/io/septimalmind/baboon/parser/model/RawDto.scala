@@ -10,6 +10,11 @@ case class RawDto(name: RawTypeName,
                   meta: RawNodeMeta)
     extends RawDefn
 
+case class RawContract(name: RawTypeName,
+                       members: Seq[RawDtoMember],
+                       meta: RawNodeMeta)
+    extends RawDefn
+
 case class RawEnum(name: RawTypeName,
                    members: Seq[RawEnumMember],
                    meta: RawNodeMeta)

@@ -19,4 +19,7 @@ object RawTLDef {
   case class Foreign(root: Boolean, value: RawForeign) extends RawTLDef {
     override def setRoot(root: Boolean): Foreign = this.copy(root = root)
   }
+  case class Contract(root: Boolean, value: RawContract) extends RawTLDef {
+    override def setRoot(root: Boolean): Contract = this.copy(root = root)
+  }
 }
