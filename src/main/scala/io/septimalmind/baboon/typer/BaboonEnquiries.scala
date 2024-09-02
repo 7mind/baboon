@@ -64,11 +64,13 @@ object BaboonEnquiries {
         case _: DomainMember.Builtin => Set.empty
         case u: DomainMember.User =>
           u.defn match {
-            case t: Typedef.Dto      => explodeFields(t.fields) ++ t.contracts
-            case t: Typedef.Contract => explodeFields(t.fields) ++ t.contracts
-            case _: Typedef.Enum     => Set.empty
-            case t: Typedef.Adt      => t.members.toSet ++ t.contracts
-            case _: Typedef.Foreign  => Set.empty
+            case t: Typedef.Dto =>
+              explodeFields(t.fields) ++ t.contracts
+            case t: Typedef.Contract =>
+              explodeFields(t.fields) ++ t.contracts
+            case _: Typedef.Enum    => Set.empty
+            case t: Typedef.Adt     => t.members.toSet ++ t.contracts
+            case _: Typedef.Foreign => Set.empty
           }
       }
     }

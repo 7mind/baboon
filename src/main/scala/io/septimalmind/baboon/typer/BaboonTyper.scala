@@ -244,7 +244,12 @@ object BaboonTyper {
           )
           .biSequence
       } yield {
-        (id, (mappedDeps, defn))
+        val adtMemberDependsOnAdt = (id.owner match {
+          case Owner.Toplevel => Set.empty
+          case Owner.Adt(id)  => Set(id)
+        })
+
+        (id, (mappedDeps ++ adtMemberDependsOnAdt, defn))
       }
     }
 

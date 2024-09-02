@@ -324,11 +324,11 @@ object CSDefnTranslator {
              |}""".stripMargin, List.empty, List.empty)
 
         case adt: Typedef.Adt =>
-          val contractParents =
-            adt.contracts.toSeq.map(c => trans.asCsType(c, domain, evo))
-          val allParents = contractParents ++ Seq(q"$genMarker")
+//          val contractParents =
+//            adt.contracts.toSeq.map(c => trans.asCsType(c, domain, evo))
+          val allParents = /*contractParents ++*/ Seq(q"$genMarker")
           val parents = makeParents(allParents.toList)
-          val methods = renderContractFields(domain, evo, adt.fields)
+          //val methods = renderContractFields(domain, evo, adt.fields)
 
           if (options.csUseCompactAdtForm) {
             val memberTrees = adt.members
@@ -357,10 +357,10 @@ object CSDefnTranslator {
               .join("\n\n")
 
             val regs = memberTrees.map(_._2)
-            val members = methods ++ meta
+            val members = meta
 
             (
-              q"""|public abstract record $name$parents {
+              q"""public abstract record $name$parents {
                   |    ${branches.shift(4).trim}
                   |    
                   |    ${members.join("\n\n").shift(4).trim}
@@ -371,7 +371,7 @@ object CSDefnTranslator {
 
           } else {
             (q"""public interface $name$parents {
-                 |    ${methods.join("\n").shift(4).trim}
+                 |
                  |}""".stripMargin, List.empty, List.empty)
           }
 
