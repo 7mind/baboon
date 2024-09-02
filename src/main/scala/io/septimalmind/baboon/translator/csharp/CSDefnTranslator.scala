@@ -210,23 +210,16 @@ object CSDefnTranslator {
 
       defn.defn match {
         case contract: Typedef.Contract =>
-          val methods = contract.fields
-            .map { f =>
-              val tpe = trans.asCsRef(f.tpe, domain, evo)
-              val mname = s"${f.name.name.capitalize}"
-              q"public $tpe $mname { get; }"
-            }
-            .join("\n")
+          val methods =
+            renderContractFields(domain, evo, contract.fields).join("\n")
+
           val refs =
             (contract.contracts.map(t => trans.asCsType(t, domain, evo)) ++ List(
               q"$genMarker"
             )).toList
 
-          val parents = if (refs.isEmpty) {
-            q""
-          } else {
-            q" : ${refs.join(", ")} "
-          }
+          val parents = makeParents(refs)
+
           (q"""public interface $name$parents  {
                |    ${methods.shift(4).trim}
                |}""".stripMargin, List.empty, List.empty)
@@ -243,6 +236,7 @@ object CSDefnTranslator {
 
           val contractParents =
             dto.contracts.toSeq.map(c => trans.asCsType(c, domain, evo))
+
           val adtParents = dto.id.owner match {
             case Owner.Toplevel =>
               Seq.empty
@@ -252,11 +246,7 @@ object CSDefnTranslator {
           }
 
           val allParents = adtParents ++ contractParents ++ Seq(q"$genMarker")
-          val parents = if (allParents.isEmpty) {
-            q""
-          } else {
-            q" : ${allParents.join(", ")} "
-          }
+          val parents = makeParents(allParents.toList)
 
           val comparators = outs.map {
             case (name, _, f) =>
@@ -334,6 +324,12 @@ object CSDefnTranslator {
              |}""".stripMargin, List.empty, List.empty)
 
         case adt: Typedef.Adt =>
+          val contractParents =
+            adt.contracts.toSeq.map(c => trans.asCsType(c, domain, evo))
+          val allParents = contractParents ++ Seq(q"$genMarker")
+          val parents = makeParents(allParents.toList)
+          val methods = renderContractFields(domain, evo, adt.fields)
+
           if (options.csUseCompactAdtForm) {
             val memberTrees = adt.members
               .map { mid =>
@@ -361,10 +357,10 @@ object CSDefnTranslator {
               .join("\n\n")
 
             val regs = memberTrees.map(_._2)
-            val members = meta
+            val members = methods ++ meta
 
             (
-              q"""|public abstract record $name : $genMarker {
+              q"""|public abstract record $name$parents {
                   |    ${branches.shift(4).trim}
                   |    
                   |    ${members.join("\n\n").shift(4).trim}
@@ -374,15 +370,33 @@ object CSDefnTranslator {
             )
 
           } else {
-            (
-              q"""public interface $name : $genMarker {}""".stripMargin,
-              List.empty,
-              List.empty
-            )
+            (q"""public interface $name$parents {
+                 |    ${methods.join("\n").shift(4).trim}
+                 |}""".stripMargin, List.empty, List.empty)
           }
 
         case _: Typedef.Foreign =>
           (q"", List.empty, List.empty)
+      }
+    }
+
+    private def renderContractFields(domain: Domain,
+                                     evo: BaboonEvolution,
+                                     fields: List[Field]) = {
+      fields.map { f =>
+        val tpe = trans.asCsRef(f.tpe, domain, evo)
+        val mname = s"${f.name.name.capitalize}"
+        q"public $tpe $mname { get; }"
+      }
+    }
+
+    private def makeParents(
+      refs: List[TextTree[CSValue]]
+    ): TextTree[CSValue] = {
+      if (refs.isEmpty) {
+        q""
+      } else {
+        q" : ${refs.join(", ")} "
       }
     }
 

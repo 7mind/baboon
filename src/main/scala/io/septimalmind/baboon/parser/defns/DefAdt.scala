@@ -3,6 +3,7 @@ package io.septimalmind.baboon.parser.defns
 import fastparse.*
 import io.septimalmind.baboon.parser.{ParserContext, model}
 import io.septimalmind.baboon.parser.defns.base.{kw, struct}
+import io.septimalmind.baboon.parser.model.RawDtoMember.ContractRef
 import io.septimalmind.baboon.parser.model.{
   RawAdt,
   RawAdtMember,
@@ -30,15 +31,22 @@ class DefAdt(context: ParserContext,
         RawAdtMemberContract(c, meta)
     }
 
-  def adt[$: P]: P[Seq[RawAdtMember]] = {
+  def adt[$: P]: P[Seq[Either[ContractRef, RawAdtMember]]] = {
     import fastparse.ScalaWhitespace.whitespace
-    P((adtMember | adtMemberContract).rep())
+    P(
+      (adtMember | adtMemberContract)
+        .map(m => Right(m)) | defDto.extendedContractRef.map(ref => Left(ref))
+    ).rep()
   }
 
   def adtEnclosed[$: P]: P[RawAdt] = {
     P(meta.member(kw.adt, struct.enclosed(adt))).map {
       case (meta, name, members) =>
-        model.RawAdt(RawTypeName(name), members, meta)
+
+        val typeMembers = members.collect { case Right(m) => m}
+        val contractMembers = members.collect { case Left(m) => m}
+
+        model.RawAdt(RawTypeName(name), typeMembers, contractMembers, meta)
     }
   }
 

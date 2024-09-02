@@ -227,27 +227,6 @@ object BaboonTyper {
       defn: ScopedDefn
     ): Either[NEList[BaboonIssue.TyperIssue],
               (TypeId.User, (Set[TypeId.User], ScopedDefn))] = {
-      val d = defn.thisScope.defn.defn match {
-        case d: RawDtoid =>
-          d.members
-            .collect {
-              case d: RawDtoMember.ParentDef =>
-                Seq(d.parent)
-              case d: RawDtoMember.UnparentDef =>
-                Seq(d.parent)
-              case d: RawDtoMember.IntersectionDef =>
-                Seq(d.parent)
-              case d: RawDtoMember.ContractDef =>
-                Seq(d.contract.tpe)
-              case _ =>
-                Seq.empty
-            }
-            .flatten
-            .toSet
-        case _ =>
-          Set.empty
-      }
-
       for {
         rawDefn <- Right(defn.thisScope.defn)
         id <- scopeSupport.resolveUserTypeId(
@@ -256,7 +235,8 @@ object BaboonTyper {
           pkg,
           rawDefn.defn.meta
         )
-        mappedDeps <- d
+        mappedDeps <- enquiries
+          .hardDepsOf(defn.thisScope.defn.defn)
           .map(
             v =>
               scopeSupport

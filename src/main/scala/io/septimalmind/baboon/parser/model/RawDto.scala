@@ -1,5 +1,7 @@
 package io.septimalmind.baboon.parser.model
 
+import io.septimalmind.baboon.parser.model.RawDtoMember.ContractRef
+
 sealed trait RawDefn {
   def name: RawTypeName
   def meta: RawNodeMeta
@@ -30,6 +32,7 @@ case class RawEnum(name: RawTypeName,
 
 case class RawAdt(name: RawTypeName,
                   members: Seq[RawAdtMember],
+                  contracts: Seq[ContractRef],
                   meta: RawNodeMeta)
     extends RawDefn
 

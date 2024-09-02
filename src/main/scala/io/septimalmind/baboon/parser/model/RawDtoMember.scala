@@ -16,7 +16,7 @@ object RawDtoMember {
   case class IntersectionDef(parent: ScopedRef, meta: RawNodeMeta)
       extends RawDtoMember
 
-  case class ContractDef(contract: RawContractRef, meta: RawNodeMeta)
+  case class ContractRef(contract: RawContractRef, meta: RawNodeMeta)
       extends RawDtoMember
 
 }

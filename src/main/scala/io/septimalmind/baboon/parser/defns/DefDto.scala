@@ -3,6 +3,7 @@ package io.septimalmind.baboon.parser.defns
 import fastparse.*
 import io.septimalmind.baboon.parser.{ParserContext, model}
 import io.septimalmind.baboon.parser.defns.base.{idt, kw, struct}
+import io.septimalmind.baboon.parser.model.RawDtoMember.ContractRef
 import io.septimalmind.baboon.parser.model.{
   RawContractRef,
   RawDto,
@@ -52,6 +53,12 @@ class DefDto(context: ParserContext, meta: DefMeta) {
     ("is" ~ scopedRef).map { case (t) => model.RawContractRef(t) }
   }
 
+  def extendedContractRef[$: P]: P[ContractRef] = {
+    meta
+      .withMeta(contractDef)
+      .map { case (meta, ref) => ContractRef(ref, meta) }
+  }
+
   def fieldDef[$: P]: P[RawField] = {
     import fastparse.ScalaWhitespace.whitespace
     (fieldName ~ ":" ~ typeRef).map { case (n, t) => model.RawField(n, t) }
@@ -93,10 +100,7 @@ class DefDto(context: ParserContext, meta: DefMeta) {
     } | P(meta.withMeta(intersectionDef)).map {
       case (meta, parent) =>
         model.RawDtoMember.IntersectionDef(parent, meta)
-    } | P(meta.withMeta(contractDef)).map {
-      case (meta, parent) =>
-        model.RawDtoMember.ContractDef(parent, meta)
-    })
+    } | extendedContractRef)
 
   def dto[$: P]: P[Seq[RawDtoMember]] = {
     import fastparse.ScalaWhitespace.whitespace

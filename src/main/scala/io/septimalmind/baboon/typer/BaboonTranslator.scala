@@ -125,32 +125,52 @@ class BaboonTranslator(pkg: Pkg,
     }
   }
 
+  def readContractContent(
+    id: TypeId.User,
+    meta: RawNodeMeta
+  ): Either[NEList[BaboonIssue.WrongParent], List[ContractContent]] = {
+    for {
+      parentDef <- Right(defined(id))
+      fields <- parentDef match {
+        case DomainMember.User(_, defn: Typedef.Contract, _) =>
+          for {
+            parents <- defn.contracts.map { c =>
+              readContractContent(c, meta)
+            }.biFlatten
+          } yield {
+            parents ++ Set(ContractContent(defn.fields, Set(id)))
+          }
+        case o =>
+          Left(NEList(BaboonIssue.WrongParent(id, o.id, meta)))
+      }
+    } yield {
+      fields
+    }
+
+  }
+
   def contractContent(
-    c: RawDtoMember.ContractDef,
+    c: RawDtoMember.ContractRef,
     meta: RawNodeMeta,
     refMeta: RawNodeMeta
   ): Either[NEList[BaboonIssue.TyperIssue], List[ContractContent]] = {
     for {
       id <- scopeSupport.resolveScopedRef(c.contract.tpe, path, pkg, refMeta)
-      parentDef = defined(id)
-      fields <- parentDef match {
-        case DomainMember.User(_, defn: Typedef.Contract, _) =>
-          Right(defn.fields)
-        case o =>
-          Left(NEList(BaboonIssue.WrongParent(id, o.id, meta)))
-      }
+      content <- readContractContent(id, meta)
     } yield {
-      List(ContractContent(fields, Set(id)))
+      content
     }
   }
 
   case class ContractContent(fields: Seq[Field], refs: Set[TypeId.User])
 
   private def convertDto(id: TypeId.User, isRoot: Boolean, dto: RawDtoid)(
-    produce: (TypeId.User, List[Field], Set[TypeId.User]) => Typedef.User
+    produce: (TypeId.User, List[Field], List[TypeId.User]) => Typedef.User
   ): Either[NEList[BaboonIssue.TyperIssue], DomainMember.User] = {
     for {
       converted <- dto.members.biFlatTraverse {
+        case p: RawDtoMember.ContractRef =>
+          contractContent(p, dto.meta, p.meta).map(_.flatMap(_.fields))
         case f: RawDtoMember.FieldDef =>
           dtoFieldToDefs(f.field, f.meta)
         case p: RawDtoMember.ParentDef =>
@@ -173,7 +193,7 @@ class BaboonTranslator(pkg: Pkg,
           Right(Seq.empty)
       }
       contracts <- dto.members.biFlatTraverse {
-        case p: RawDtoMember.ContractDef =>
+        case p: RawDtoMember.ContractRef =>
           contractContent(p, dto.meta, p.meta)
         case _ =>
           Right(Seq.empty)
@@ -182,8 +202,7 @@ class BaboonTranslator(pkg: Pkg,
       removedSet = removed.toSet
       intersectionSet = intersectionLimiters.toSet
 
-      contractFields = contracts.flatMap(_.fields)
-      allFields = converted ++ contractFields
+      allFields = converted
       withoutRemoved = allFields.filterNot(f => removedSet.contains(f)).distinct
       finalFields = if (intersectionSet.isEmpty) {
         withoutRemoved
@@ -191,6 +210,7 @@ class BaboonTranslator(pkg: Pkg,
         withoutRemoved.filter(f => intersectionSet.contains(f))
       }
 
+      contractFields = contracts.flatMap(_.fields)
       missingIrremovable = contractFields.diff(withoutRemoved)
       _ <- Either.ifThenFail(missingIrremovable.nonEmpty)(
         NEList(MissingContractFields(id, missingIrremovable, dto.meta))
@@ -198,7 +218,7 @@ class BaboonTranslator(pkg: Pkg,
       _ <- finalFields
         .map(m => (m.name.name.toLowerCase, m))
         .toUniqueMap(e => NEList(BaboonIssue.NonUniqueFields(id, e, dto.meta)))
-      contractRefs = contracts.flatMap(_.refs).toSet
+      contractRefs = contracts.flatMap(_.refs).distinct.toList
     } yield {
       DomainMember.User(
         isRoot,
@@ -227,11 +247,27 @@ class BaboonTranslator(pkg: Pkg,
             )
         )
         .biSequence
+      contracts <- adt.contracts
+        .map(
+          ref =>
+            scopeSupport.resolveScopedRef(ref.contract.tpe, path, pkg, ref.meta)
+        )
+        .biSequence
       nel <- NEList
         .from(converted)
         .toRight(NEList(BaboonIssue.EmptyAdt(id, adt.meta)))
+      fields <- adt.contracts.biFlatTraverse { c =>
+        contractContent(c, adt.meta, c.meta).map(_.flatMap(_.fields))
+      }
     } yield {
-      NEList(DomainMember.User(isRoot, Typedef.Adt(id, nel), adt.meta))
+      NEList(
+        DomainMember
+          .User(
+            isRoot,
+            Typedef.Adt(id, nel, contracts.toList, fields.distinct.toList),
+            adt.meta
+          )
+      )
     }
   }
 

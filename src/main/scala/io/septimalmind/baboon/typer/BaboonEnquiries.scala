@@ -1,5 +1,12 @@
 package io.septimalmind.baboon.typer
 
+import io.septimalmind.baboon.parser.model.{
+  RawAdt,
+  RawDefn,
+  RawDtoMember,
+  RawDtoid,
+  ScopedRef
+}
 import io.septimalmind.baboon.typer.model.{
   DomainMember,
   Field,
@@ -16,16 +23,43 @@ trait BaboonEnquiries {
   def wrap(id: TypeId): String
   def explode(tpe: TypeRef): Set[TypeId]
   def shallowId(defn: DomainMember): ShallowSchemaId
+  def hardDepsOf(dd: RawDefn): Set[ScopedRef]
 }
 
 object BaboonEnquiries {
 
   class BaboonEnquiriesImpl() extends BaboonEnquiries {
+    def hardDepsOf(dd: RawDefn): Set[ScopedRef] = {
+      dd match {
+        case d: RawDtoid =>
+          d.members
+            .collect {
+              case d: RawDtoMember.ParentDef =>
+                Seq(d.parent)
+              case d: RawDtoMember.UnparentDef =>
+                Seq(d.parent)
+              case d: RawDtoMember.IntersectionDef =>
+                Seq(d.parent)
+              case d: RawDtoMember.ContractRef =>
+                Seq(d.contract.tpe)
+              case _ =>
+                Seq.empty
+            }
+            .flatten
+            .toSet
+        case a: RawAdt =>
+          a.contracts.map(_.contract.tpe).toSet
+        case _ =>
+          Set.empty
+      }
+    }
+
     def directDepsOf(defn: DomainMember): Set[TypeId] = {
       def explodeFields(f: List[Field]) = {
         f.flatMap(f => explode(f.tpe)).toSet
       }
 
+      // TODO: do we REALLY need to consider field types as dependencies?
       defn match {
         case _: DomainMember.Builtin => Set.empty
         case u: DomainMember.User =>
@@ -33,7 +67,7 @@ object BaboonEnquiries {
             case t: Typedef.Dto      => explodeFields(t.fields) ++ t.contracts
             case t: Typedef.Contract => explodeFields(t.fields) ++ t.contracts
             case _: Typedef.Enum     => Set.empty
-            case t: Typedef.Adt      => t.members.toSet
+            case t: Typedef.Adt      => t.members.toSet ++ t.contracts
             case _: Typedef.Foreign  => Set.empty
           }
       }

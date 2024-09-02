@@ -33,22 +33,21 @@ contract S0 {
   f3: opt[str]
 }
 
-contract S {
+contract S1 {
   is S0
 
   f1: str
 }
 
-
-
 root adt T4_A1 {
-   contract S1 {
+   is S1
+
+   contract S2 {
        f2: i32
    }
 
    data B1 {
-       is S
-       is S1
+       is S2
        //-  f2: i32
 
        f1: str

@@ -14,3 +14,4 @@ case class RawAdtMemberContract(contract: RawContract, meta: RawNodeMeta)
     extends RawAdtMember {
   override def defn: RawDefn = contract
 }
+
