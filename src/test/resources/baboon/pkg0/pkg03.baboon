@@ -4,6 +4,51 @@ version "3.0.0"
 
 include "pkg0/pkg03-inclusion.model"
 
+root adt VaultState {
+    // Undefined state, we haven't yet obtained enough information to define the state.
+    data Undefined {
+    }
+
+    // Broken state, remote vault is not retrievable therefore can't be synced.
+    data Broken {
+        reason: str
+    }
+
+    // Vault is identified and operational
+    contract Operational {
+        id: str
+        version: i64
+    }
+
+    // Up to date, might still have requests pending,
+    // but they don't require the game to interrupt and force any kind of updates.
+    data Current {
+        is Operational
+    }
+
+    // User vault needs a merge.
+    // The user can still write to the vault, however it will only add to the local state of the vault,
+    // until a user is ready to take onto a merge.
+    contract Diverged {
+        is Operational
+    }
+
+    // User vault is just outdated, there is a newer one on the backend and the user needs to
+    // reconcile versions divergence.
+    data Outdated {
+        is Diverged
+        additionalVaults: lst[str]
+    }
+
+    // Identity has been merged and there is now more than one vault.
+    // Needs to be reconciled and saved.
+    data Locked {
+        is Diverged
+        remoteVersion: i64
+        lockedBy: str
+    }
+}
+
 root data T1_D1 {
  f0: T1_D2
  f1: i08

@@ -192,18 +192,32 @@ class BaboonTranslator(pkg: Pkg,
         case _ =>
           Right(Seq.empty)
       }
-      contracts <- dto.members.biFlatTraverse {
+
+      adtContracts <- id.owner match {
+        case Owner.Toplevel => Right(List.empty)
+        case Owner.Adt(id) =>
+          Right(List.empty)
+//          defined(id) match {
+//            case DomainMember.User(_, defn: Typedef.Adt, _) =>
+//              defn.contracts
+//                .map(c => readContractContent(c, dto.meta))
+//                .biFlatten
+//            case o =>
+//              Left(NEList(BaboonIssue.WrongParent(id, o.id, dto.meta)))
+//          }
+      }
+      localContracts <- dto.members.biFlatTraverse {
         case p: RawDtoMember.ContractRef =>
           contractContent(p, dto.meta, p.meta)
         case _ =>
           Right(Seq.empty)
       }
+      contracts = (adtContracts ++ localContracts).distinct
 
       removedSet = removed.toSet
       intersectionSet = intersectionLimiters.toSet
 
-      allFields = converted
-      withoutRemoved = allFields.filterNot(f => removedSet.contains(f)).distinct
+      withoutRemoved = converted.filterNot(f => removedSet.contains(f)).distinct
       finalFields = if (intersectionSet.isEmpty) {
         withoutRemoved
       } else {
@@ -211,7 +225,8 @@ class BaboonTranslator(pkg: Pkg,
       }
 
       contractFields = contracts.flatMap(_.fields)
-      missingIrremovable = contractFields.diff(withoutRemoved)
+
+      missingIrremovable = contractFields.distinct.diff(withoutRemoved.distinct)
       _ <- Either.ifThenFail(missingIrremovable.nonEmpty)(
         NEList(MissingContractFields(id, missingIrremovable, dto.meta))
       )
