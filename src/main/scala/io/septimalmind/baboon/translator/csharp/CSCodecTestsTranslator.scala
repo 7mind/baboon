@@ -7,6 +7,7 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 import scala.annotation.tailrec
+import scala.collection.mutable
 
 trait CSCodecTestsTranslator {
   def translate(definition: DomainMember.User,
@@ -265,7 +266,8 @@ object CSCodecTestsTranslator {
                                domain: Domain): Boolean = {
       def processFields(foreignType: Option[TypeId],
                         tail: List[Typedef],
-                        f: List[Field]) = {
+                        f: List[Field],
+                        seen: mutable.HashSet[TypeId]) = {
         val fieldsTypes = f.map(_.tpe)
         val moreToCheck = fieldsTypes.flatMap {
           case TypeRef.Scalar(id) =>
@@ -283,21 +285,27 @@ object CSCodecTestsTranslator {
                 case u: DomainMember.User    => Some(u.defn)
               }
         }
-        collectForeignType(tail ++ moreToCheck, foreignType)
+        collectForeignType(tail ++ moreToCheck, foreignType, seen)
       }
 
       @tailrec
       def collectForeignType(toCheck: List[Typedef],
-                             foreignType: Option[TypeId]): Option[TypeId] = {
-        (toCheck, foreignType) match {
-          case (_, Some(tpe)) => Some(tpe)
-          case (Nil, fType)   => fType
+                             foreignType: Option[TypeId],
+                             seen: mutable.HashSet[TypeId]): Option[TypeId] = {
+        (toCheck.filterNot(d => seen.contains(d.id)), foreignType) match {
+          case (_, Some(tpe)) =>
+            seen += tpe
+            Some(tpe)
+          case (Nil, fType) =>
+            seen ++= fType
+            fType
           case (head :: tail, None) =>
+            seen += head.id
             head match {
               case dto: Typedef.Dto =>
-                processFields(foreignType, tail, dto.fields)
+                processFields(foreignType, tail, dto.fields, seen)
               case c: Typedef.Contract =>
-                processFields(foreignType, tail, c.fields)
+                processFields(foreignType, tail, c.fields, seen)
               case adt: Typedef.Adt =>
                 val dtos = adt.members
                   .map(tpeId => domain.defs.meta.nodes(tpeId))
@@ -306,14 +314,20 @@ object CSCodecTestsTranslator {
                     case DomainMember.User(_, dto: Typedef.Dto, _)      => dto
                     case DomainMember.User(_, dto: Typedef.Contract, _) => dto
                   }
-                collectForeignType(tail ++ dtos, foreignType)
-              case f: Typedef.Foreign => collectForeignType(tail, Some(f.id))
-              case _: Typedef.Enum    => collectForeignType(tail, foreignType)
+                collectForeignType(tail ++ dtos, foreignType, seen)
+              case f: Typedef.Foreign =>
+                collectForeignType(tail, Some(f.id), seen)
+              case _: Typedef.Enum =>
+                collectForeignType(tail, foreignType, seen)
             }
         }
       }
 
-      collectForeignType(List(definition.defn), None).nonEmpty
+      collectForeignType(
+        List(definition.defn),
+        None,
+        mutable.HashSet.empty[TypeId]
+      ).nonEmpty
     }
   }
 }
