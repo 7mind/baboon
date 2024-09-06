@@ -139,12 +139,19 @@ object ScopeSupport {
       for {
         typename <- Right(TypeName(name.name))
         _ <- SymbolNames.validTypeName(typename, meta)
-        result <- findDefn(ScopeName(name.name), path.reverse.toList) match {
+        found = findDefn(ScopeName(name.name), path.reverse.toList)
+        result <- found match {
           case Some(value) =>
             for {
               owner <- pathToOwner(value.path, pkg, meta)
             } yield {
-              TypeId.User(pkg, owner, typename)
+              val fixSelfRef = owner match {
+                case Owner.Adt(id) if id.name == typename =>
+                  Owner.Toplevel
+                case o => o
+              }
+
+              TypeId.User(pkg, fixSelfRef, typename)
             }
 
           case None =>
