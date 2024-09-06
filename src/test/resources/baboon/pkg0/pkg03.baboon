@@ -4,6 +4,18 @@ version "3.0.0"
 
 include "pkg0/pkg03-inclusion.model"
 
+
+root adt RecTest1 {
+   data Branch1 { value: RecTest1 }
+   data Branch2 { value : i32 }
+}
+
+
+root adt RecTest2 {
+   data Branch1 { value: opt[RecTest2] }
+}
+
+
 root adt VaultState {
     // Undefined state, we haven't yet obtained enough information to define the state.
     data Undefined {

@@ -8,8 +8,6 @@ import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.FieldOp
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
-import izumi.fundamentals.graphs.struct.IncidenceMatrix
-import izumi.fundamentals.graphs.tools.cycles.LoopDetector
 
 trait BaboonValidator {
   def validate(
@@ -66,16 +64,54 @@ object BaboonValidator {
     private def checkLoops(
       domain: Domain
     ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
-      val depMatrix = IncidenceMatrix(domain.defs.meta.nodes.view.mapValues {
-        defn =>
-          enquiries.directDepsOf(defn)
-      }.toMap)
+      val filtered = domain.loops
+        .map { l =>
+          val filtered =
+            l.loops.filterNot(
+              _.loop.exists(terminatesLoop(_, domain, List.empty))
+            )
 
-      val loops =
-        LoopDetector.Impl.findCyclesForNodes(depMatrix.links.keySet, depMatrix)
-      Either.ifThenFail(loops.nonEmpty)(
-        NEList(BaboonIssue.ReferentialCyclesFound(domain, loops))
+          l.copy(loops = filtered)
+
+        }
+        .filterNot(_.loops.isEmpty)
+
+      Either.ifThenFail(filtered.nonEmpty)(
+        NEList(BaboonIssue.ReferentialCyclesFound(domain, filtered))
       )
+    }
+
+    private def terminatesLoop(id: TypeId,
+                               domain: Domain,
+                               path: List[TypeId]): Boolean = {
+      val npath = path :+ id
+      if (path.contains(id)) {
+        false
+      } else {
+        domain.defs.meta.nodes(id) match {
+          case _: DomainMember.Builtin => true
+          case u: DomainMember.User =>
+            u.defn match {
+              case d: Typedef.Dto =>
+                allFieldsTerminal(domain, npath, d.fields)
+              case d: Typedef.Contract =>
+                allFieldsTerminal(domain, npath, d.fields)
+              case d: Typedef.Adt =>
+                d.members.exists(terminatesLoop(_, domain, npath))
+
+              case _: Typedef.Enum    => true
+              case _: Typedef.Foreign => true
+            }
+        }
+      }
+    }
+
+    private def allFieldsTerminal(domain: Domain,
+                                  npath: List[TypeId],
+                                  f: List[Field]): Boolean = {
+      f.map(_.tpe)
+        .map(ref => ref.id) // we ignore generic options, BIGs termninate loops, this might change
+        .forall(terminatesLoop(_, domain, npath))
     }
 
     private def checkRoots(
@@ -96,7 +132,7 @@ object BaboonValidator {
       domain: Domain
     ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
       val allDeps = domain.defs.meta.nodes.values.flatMap { defn =>
-        enquiries.directDepsOf(defn)
+        enquiries.fullDepsOfDefn(defn)
       }.toSet
 
       val allDefs = domain.defs.meta.nodes.keySet
@@ -164,6 +200,7 @@ object BaboonValidator {
         fields
           .groupBy(_.name.name.toLowerCase)
           .filter(_._2.size > 1)
+
       Either.ifThenFail(dupes.nonEmpty)(
         NEList(BaboonIssue.ConflictingDtoFields(u.id, dupes, u.meta))
       )

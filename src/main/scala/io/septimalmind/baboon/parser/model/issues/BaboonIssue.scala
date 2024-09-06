@@ -98,9 +98,6 @@ object BaboonIssue {
     duplicateTypeDefs: Map[TypeId, List[DomainMember]],
   ) extends TyperIssue
 
-  case class CircularDependency(model: RawDomain, error: ToposortError[TypeId])
-      extends TyperIssue
-
   case class EmptyPackageId(header: RawHeader) extends TyperIssue
 
   case class NonUniqueTypedefs(
