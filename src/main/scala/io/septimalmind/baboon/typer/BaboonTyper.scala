@@ -14,6 +14,7 @@ import izumi.fundamentals.graphs.{DG, GraphMeta}
 import izumi.fundamentals.platform.crypto.IzSha256Hash
 
 import scala.annotation.tailrec
+import scala.collection.mutable
 
 trait BaboonTyper {
   def process(model: RawDomain): Either[NEList[BaboonIssue.TyperIssue], Domain]
@@ -52,54 +53,108 @@ object BaboonTyper {
         graph = DG.fromPred(predMatrix, GraphMeta(indexedDefs.filter {
           case (k, _) => predMatrix.links.contains(k)
         }))
-        //        _ <- LoopDetector.Impl.findLoopMember(graph.predecessors) match {
-        //          case Some(_) => Left(NEList(TODOTyperIssue()))
-        //          case None    => Right(())
-        //        }
         excludedIds = indexedDefs.keySet.diff(graph.meta.nodes.keySet)
         shallowSchema = graph.meta.nodes.view
           .mapValues(enquiries.shallowId)
           .toMap
-        sorted <- Toposort
-          .cycleBreaking(graph.predecessors, ToposortLoopBreaker.dontBreak)
-          .left
-          .map(e => NEList(BaboonIssue.CircularDependency(model, e)))
-        deepSchema <- computeDeepSchema(id, graph, sorted, model.header.meta)
+        deepSchema <- computeDeepSchema(graph)
       } yield {
         Domain(id, version, graph, excludedIds, shallowSchema, deepSchema)
       }
     }
 
+    private def deepSchemaRepr(id: TypeId,
+                               defs: Map[TypeId, DomainMember],
+                               seen: List[TypeId]): List[String] = {
+      val self = enquiries.wrap(id)
+
+      val nseen = seen :+ id
+      if (seen.contains(id)) {
+        List(s"[recursive:$self]")
+      } else {
+        defs(id) match {
+          case _: DomainMember.Builtin =>
+            List(s"[builtin:$self]")
+          case u: DomainMember.User =>
+            u.defn match {
+              case d: Typedef.Dto =>
+                val content = d.fields.flatMap { m =>
+                  val exploded = enquiries
+                    .explode(m.tpe)
+                    .toList
+                    .flatMap(id => deepSchemaRepr(id, defs, nseen))
+                    .sorted
+                  List(s"{", m.name.name) ++ exploded ++ List("}")
+                }
+                List(s"[dto:$self]") ++ content ++ List(s"/[dto:$self]")
+              case d: Typedef.Contract =>
+                val content = d.fields.flatMap { m =>
+                  val exploded = enquiries
+                    .explode(m.tpe)
+                    .toList
+                    .flatMap(id => deepSchemaRepr(id, defs, nseen))
+                    .sorted
+                  List(s"{", m.name.name) ++ exploded ++ List("}")
+                }
+                List(s"[contract:$self]") ++ content ++ List(
+                  s"/[contract:$self]"
+                )
+              case d: Typedef.Adt =>
+                val content = d.fields.flatMap { m =>
+                  val exploded = enquiries
+                    .explode(m.tpe)
+                    .toList
+                    .flatMap(id => deepSchemaRepr(id, defs, nseen))
+                    .sorted
+                  List(s"{", m.name.name) ++ exploded ++ List("}")
+                }
+                val branches = List("{", "branches") ++ d.members.toList
+                  .flatMap(id => deepSchemaRepr(id, defs, nseen)) ++
+                  List("}", "{", "contracts") ++
+                  d.contracts.toList
+                    .flatMap(id => deepSchemaRepr(id, defs, nseen)) ++ List("}")
+
+                List(s"[adt:$self]") ++ content ++ branches ++ List(
+                  s"/[adt:$self]"
+                )
+
+              case d: Typedef.Enum =>
+                List(s"[enum:$self]") ++ d.members.map(
+                  m =>
+                    s"${m.name}/${m.const.map(_.toString).getOrElse("NoVal")}"
+                ) ++ List(s"/[enum:$self]")
+              case d: Typedef.Foreign =>
+                List(
+                  s"[foreign:$self:${d.bindings.map({ case (k, v) => s"$k->$v" }).mkString(",")}]"
+                )
+
+            }
+        }
+      }
+    }
+    private def deepSchemaOf(
+      id: TypeId,
+      defs: Map[TypeId, DomainMember]
+    ): Either[NEList[BaboonIssue.TyperIssue], DeepSchemaId] = {
+      for {
+        repr <- Right(deepSchemaRepr(id, defs, List.empty))
+      } yield {
+        DeepSchemaId(s"[${enquiries.wrap(id)};${repr
+          .mkString(",")}]")
+      }
+    }
+
     private def computeDeepSchema(
-      pkg: Pkg,
       graph: DG[TypeId, DomainMember],
-      sorted: Seq[TypeId],
-      meta: RawNodeMeta
     ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, DeepSchemaId]] = {
 
       for {
-        missing <- Right(sorted.filter(id => !graph.meta.nodes.contains(id)))
-        _ <- Either.ifThenFail(missing.nonEmpty)(
-          NEList(BaboonIssue.MissingTypeId(pkg, missing.toSet, meta))
-        )
+        out <- graph.meta.nodes.map {
+          case (id, _) =>
+            deepSchemaOf(id, graph.meta.nodes).map(s => (id, s))
+        }.biSequence
       } yield {
-        sorted.foldLeft(Map.empty[TypeId, DeepSchemaId]) {
-          case (idx, id) =>
-            assert(!idx.contains(id))
-            val defn = graph.meta.nodes(id)
-            val deps = enquiries.directDepsOf(defn)
-
-            val depList = deps.toList
-              .map(id => (enquiries.wrap(id), idx(id).id))
-              .sortBy(_._1)
-
-            val normalizedRepr =
-              s"[${enquiries.wrap(id)};${depList
-                .map({ case (k, v) => s"$k=deep/$v" })
-                .mkString(",")}]"
-
-            idx.updated(id, DeepSchemaId(IzSha256Hash.hash(normalizedRepr)))
-        }
+        out.toMap
       }
     }
 
@@ -110,7 +165,7 @@ object BaboonTyper {
     ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, Set[TypeId]]] = {
       val nextDepMap = current.toList.flatMap {
         case (id, defn) =>
-          enquiries.directDepsOf(defn).toList.map(dep => (id, Some(dep)))
+          enquiries.fullDepsOfDefn(defn).toList.map(dep => (id, Some(dep)))
       }
       val nextDeps = nextDepMap.map(_._2).toSet
 
@@ -236,7 +291,7 @@ object BaboonTyper {
           rawDefn.defn.meta
         )
         mappedDeps <- enquiries
-          .hardDepsOf(defn.thisScope.defn.defn)
+          .hardDepsOfRawDefn(defn.thisScope.defn.defn)
           .map(
             v =>
               scopeSupport

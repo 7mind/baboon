@@ -68,7 +68,7 @@ object BaboonValidator {
     ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
       val depMatrix = IncidenceMatrix(domain.defs.meta.nodes.view.mapValues {
         defn =>
-          enquiries.directDepsOf(defn)
+          enquiries.strongDepsOfDefn(defn)
       }.toMap)
 
       val loops =
@@ -96,7 +96,7 @@ object BaboonValidator {
       domain: Domain
     ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
       val allDeps = domain.defs.meta.nodes.values.flatMap { defn =>
-        enquiries.directDepsOf(defn)
+        enquiries.fullDepsOfDefn(defn)
       }.toSet
 
       val allDefs = domain.defs.meta.nodes.keySet

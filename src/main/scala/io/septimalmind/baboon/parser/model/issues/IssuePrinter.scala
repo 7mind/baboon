@@ -186,23 +186,6 @@ object IssuePrinter {
        |""".stripMargin
     }
 
-  implicit val circularDependencyPrinter: IssuePrinter[CircularDependency] =
-    (issue: CircularDependency) => {
-      val stringProblem = issue.error match {
-        case ToposortError.UnexpectedLoop(_, matrix) =>
-          matrix.links
-            .map {
-              case (typeId, dependencies) =>
-                s"type: ${typeId.name} => dependencies: ${dependencies.map(_.name.name).mkString(", ")}"
-            }
-            .niceList()
-        case _ => ""
-      }
-      s"""${extractLocation(issue.model.header.meta)}
-       |Circular dependencies have been found $stringProblem
-       |""".stripMargin
-    }
-
   implicit val emptyPackageIdPrinter: IssuePrinter[EmptyPackageId] =
     (issue: EmptyPackageId) => {
       s"""${extractLocation(issue.header.meta)}
@@ -462,7 +445,9 @@ object IssuePrinter {
       val stringLoops = issue.loops.toList
         .map(
           cycle =>
-            s"type: ${cycle.node.name.name} => loop: ${cycle.loops.flatMap(_.loop.map(_.name.name)).mkString}"
+            s"type: ${cycle.node.name.name} => loop: ${cycle.loops
+              .flatMap(_.loop.map(_.name.name))
+              .mkString("->")}"
         )
         .niceList()
       s"""Model: ${issue.domain.id.toString}
@@ -687,7 +672,6 @@ object IssuePrinter {
     case i: EmptyAdt              => apply[EmptyAdt].stringify(i)
     case i: EmptyGenericArgs      => apply[EmptyGenericArgs].stringify(i)
     case i: DuplicatedTypedefs    => apply[DuplicatedTypedefs].stringify(i)
-    case i: CircularDependency    => apply[CircularDependency].stringify(i)
     case i: EmptyPackageId        => apply[EmptyPackageId].stringify(i)
     case i: NonUniqueTypedefs     => apply[NonUniqueTypedefs].stringify(i)
     case i: NonUniqueScope        => apply[NonUniqueScope].stringify(i)

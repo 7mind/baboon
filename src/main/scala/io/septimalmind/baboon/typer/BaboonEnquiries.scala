@@ -18,18 +18,21 @@ import io.septimalmind.baboon.typer.model.{
 }
 import izumi.fundamentals.platform.crypto.IzSha256Hash
 
+import scala.collection.mutable
+
 trait BaboonEnquiries {
-  def directDepsOf(defn: DomainMember): Set[TypeId]
+  def fullDepsOfDefn(defn: DomainMember): Set[TypeId]
+  def strongDepsOfDefn(defn: DomainMember): Set[TypeId]
   def wrap(id: TypeId): String
   def explode(tpe: TypeRef): Set[TypeId]
   def shallowId(defn: DomainMember): ShallowSchemaId
-  def hardDepsOf(dd: RawDefn): Set[ScopedRef]
+  def hardDepsOfRawDefn(dd: RawDefn): Set[ScopedRef]
 }
 
 object BaboonEnquiries {
 
   class BaboonEnquiriesImpl() extends BaboonEnquiries {
-    def hardDepsOf(dd: RawDefn): Set[ScopedRef] = {
+    def hardDepsOfRawDefn(dd: RawDefn): Set[ScopedRef] = {
       dd match {
         case d: RawDtoid =>
           d.members
@@ -54,14 +57,25 @@ object BaboonEnquiries {
       }
     }
 
-    def directDepsOf(defn: DomainMember): Set[TypeId] = {
+    def fullDepsOfDefn(defn: DomainMember): Set[TypeId] = {
+      depsOfDefn(defn, explode)
+    }
+
+    def strongDepsOfDefn(defn: DomainMember): Set[TypeId] = {
+      depsOfDefn(defn, explodeStrong)
+    }
+
+    private def depsOfDefn(defn: DomainMember,
+                           explodeField: TypeRef => Set[TypeId],
+    ): Set[TypeId] = {
       def explodeFields(f: List[Field]) = {
-        f.flatMap(f => explode(f.tpe)).toSet
+        f.flatMap(f => explodeField(f.tpe)).toSet
       }
 
       // TODO: do we REALLY need to consider field types as dependencies?
       defn match {
-        case _: DomainMember.Builtin => Set.empty
+        case _: DomainMember.Builtin =>
+          Set.empty
         case u: DomainMember.User =>
           u.defn match {
             case t: Typedef.Dto =>
@@ -75,10 +89,34 @@ object BaboonEnquiries {
       }
     }
 
-    def explode(tpe: TypeRef): Set[TypeId] = tpe match {
-      case TypeRef.Scalar(id) => Set(id)
-      case TypeRef.Constructor(id, args) =>
-        Set(id) ++ args.toList.flatMap(a => explode(a))
+    def explode(tpe: TypeRef): Set[TypeId] = {
+      val seen = mutable.HashSet.empty[TypeId]
+      def doExplode(tpe: TypeRef): Set[TypeId] = tpe match {
+        case TypeRef.Scalar(id) =>
+          seen += id
+          Set(id)
+        case TypeRef.Constructor(id, args) if seen.contains(id) =>
+          args.toList.flatMap(a => explode(a)).toSet
+        case TypeRef.Constructor(id, args) =>
+          seen += id
+          Set(id) ++ args.toList.flatMap(a => explode(a))
+
+      }
+
+      doExplode(tpe)
+    }
+
+    def explodeStrong(tpe: TypeRef): Set[TypeId] = {
+      def doExplode(tpe: TypeRef): Set[TypeId] = tpe match {
+        case TypeRef.Scalar(id) =>
+          Set(id)
+        case TypeRef.Constructor(id, _) =>
+          // we ignore arguments for generics, that IS the point, current BIGs terminate referential loops
+          // this routing might be extended in the future if we add support for some other type constructors
+          Set(id)
+      }
+
+      doExplode(tpe)
     }
 
     def shallowId(defn: DomainMember): ShallowSchemaId = {
