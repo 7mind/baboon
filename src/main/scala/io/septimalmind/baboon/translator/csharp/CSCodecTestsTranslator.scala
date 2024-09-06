@@ -1,13 +1,11 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
+import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BLogger
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
-
-import scala.annotation.tailrec
-import scala.collection.mutable
 
 trait CSCodecTestsTranslator {
   def translate(definition: DomainMember.User,
@@ -21,6 +19,7 @@ object CSCodecTestsTranslator {
   final class Impl(codecs: Set[CSCodecTranslator],
                    typeTranslator: CSTypeTranslator,
                    logger: BLogger,
+                   enquiries: BaboonEnquiries,
   ) extends CSCodecTestsTranslator {
     override def translate(definition: DomainMember.User,
                            csRef: CSValue.CSType,
@@ -38,7 +37,8 @@ object CSCodecTestsTranslator {
         CSValue.CSType(srcRef.pkg, s"${codecTestName}__Codec_Test", srcRef.fq)
 
       definition match {
-        case d if hasForeignType(d, domain)                   => None
+        case d if enquiries.hasForeignType(d, domain)         => None
+        case d if enquiries.isRecursiveTypedef(d, domain)     => None
         case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
         case _ =>
           val testClass =
@@ -262,72 +262,5 @@ object CSCodecTestsTranslator {
       }
     }
 
-    private def hasForeignType(definition: DomainMember.User,
-                               domain: Domain): Boolean = {
-      def processFields(foreignType: Option[TypeId],
-                        tail: List[Typedef],
-                        f: List[Field],
-                        seen: mutable.HashSet[TypeId]) = {
-        val fieldsTypes = f.map(_.tpe)
-        val moreToCheck = fieldsTypes.flatMap {
-          case TypeRef.Scalar(id) =>
-            List(domain.defs.meta.nodes(id) match {
-              case _: DomainMember.Builtin => None
-              case u: DomainMember.User    => Some(u.defn)
-            }).flatten
-          case TypeRef.Constructor(_, args) =>
-            args
-              .map(_.id)
-              .map(domain.defs.meta.nodes(_))
-              .toList
-              .flatMap {
-                case _: DomainMember.Builtin => None
-                case u: DomainMember.User    => Some(u.defn)
-              }
-        }
-        collectForeignType(tail ++ moreToCheck, foreignType, seen)
-      }
-
-      @tailrec
-      def collectForeignType(toCheck: List[Typedef],
-                             foreignType: Option[TypeId],
-                             seen: mutable.HashSet[TypeId]): Option[TypeId] = {
-        (toCheck.filterNot(d => seen.contains(d.id)), foreignType) match {
-          case (_, Some(tpe)) =>
-            seen += tpe
-            Some(tpe)
-          case (Nil, fType) =>
-            seen ++= fType
-            fType
-          case (head :: tail, None) =>
-            seen += head.id
-            head match {
-              case dto: Typedef.Dto =>
-                processFields(foreignType, tail, dto.fields, seen)
-              case c: Typedef.Contract =>
-                processFields(foreignType, tail, c.fields, seen)
-              case adt: Typedef.Adt =>
-                val dtos = adt.members
-                  .map(tpeId => domain.defs.meta.nodes(tpeId))
-                  .toList
-                  .collect {
-                    case DomainMember.User(_, dto: Typedef.Dto, _)      => dto
-                    case DomainMember.User(_, dto: Typedef.Contract, _) => dto
-                  }
-                collectForeignType(tail ++ dtos, foreignType, seen)
-              case f: Typedef.Foreign =>
-                collectForeignType(tail, Some(f.id), seen)
-              case _: Typedef.Enum =>
-                collectForeignType(tail, foreignType, seen)
-            }
-        }
-      }
-
-      collectForeignType(
-        List(definition.defn),
-        None,
-        mutable.HashSet.empty[TypeId]
-      ).nonEmpty
-    }
   }
 }

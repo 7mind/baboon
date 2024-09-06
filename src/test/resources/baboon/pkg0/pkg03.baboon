@@ -10,6 +10,7 @@ root adt RecTest1 {
    data Branch2 { value : i32 }
 }
 
+
 root adt RecTest2 {
    data Branch1 { value: opt[RecTest2] }
 }

@@ -8,8 +8,6 @@ import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.FieldOp
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
-import izumi.fundamentals.graphs.struct.IncidenceMatrix
-import izumi.fundamentals.graphs.tools.cycles.LoopDetector
 
 trait BaboonValidator {
   def validate(
@@ -66,15 +64,7 @@ object BaboonValidator {
     private def checkLoops(
       domain: Domain
     ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
-      val depMatrix = IncidenceMatrix(domain.defs.meta.nodes.view.mapValues {
-        defn =>
-          enquiries.fullDepsOfDefn(defn)
-      }.toMap)
-
-      val loops =
-        LoopDetector.Impl.findCyclesForNodes(depMatrix.links.keySet, depMatrix)
-
-      val filtered = loops
+      val filtered = domain.loops
         .map { l =>
           val filtered =
             l.loops.filterNot(

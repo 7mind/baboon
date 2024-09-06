@@ -58,8 +58,9 @@ object BaboonTyper {
           .mapValues(enquiries.shallowId)
           .toMap
         deepSchema <- computeDeepSchema(graph)
+        loops = enquiries.loopsOf(graph.meta.nodes)
       } yield {
-        Domain(id, version, graph, excludedIds, shallowSchema, deepSchema)
+        Domain(id, version, graph, excludedIds, shallowSchema, deepSchema, loops)
       }
     }
 

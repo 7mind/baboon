@@ -3,6 +3,7 @@ package io.septimalmind.baboon.typer.model
 import io.septimalmind.baboon.parser.model.RawNodeMeta
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.graphs.DG
+import izumi.fundamentals.graphs.tools.cycles.LoopDetector
 
 case class Domain(id: Pkg,
                   version: Version,
@@ -10,6 +11,7 @@ case class Domain(id: Pkg,
                   excludedIds: Set[TypeId],
                   shallowSchema: Map[TypeId, ShallowSchemaId],
                   deepSchema: Map[TypeId, DeepSchemaId],
+                  loops: Set[LoopDetector.Cycles[TypeId]],
 ) {
   import izumi.fundamentals.platform.strings.IzString.*
   override def toString: String =
