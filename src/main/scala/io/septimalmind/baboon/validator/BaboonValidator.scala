@@ -68,14 +68,58 @@ object BaboonValidator {
     ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
       val depMatrix = IncidenceMatrix(domain.defs.meta.nodes.view.mapValues {
         defn =>
-          enquiries.strongDepsOfDefn(defn)
+          enquiries.fullDepsOfDefn(defn)
       }.toMap)
 
       val loops =
         LoopDetector.Impl.findCyclesForNodes(depMatrix.links.keySet, depMatrix)
-      Either.ifThenFail(loops.nonEmpty)(
-        NEList(BaboonIssue.ReferentialCyclesFound(domain, loops))
+
+      val filtered = loops
+        .map { l =>
+          val filtered =
+            l.loops.filterNot(
+              _.loop.exists(terminatesLoop(_, domain, List.empty))
+            )
+
+          l.copy(loops = filtered)
+
+        }
+        .filterNot(_.loops.isEmpty)
+
+      Either.ifThenFail(filtered.nonEmpty)(
+        NEList(BaboonIssue.ReferentialCyclesFound(domain, filtered))
       )
+    }
+
+    private def terminatesLoop(id: TypeId,
+                               domain: Domain,
+                               path: List[TypeId]): Boolean = {
+      val npath = path :+ id
+      if (path.contains(id)) {
+        false
+      } else {
+        domain.defs.meta.nodes(id) match {
+          case _: DomainMember.Builtin => true
+          case u: DomainMember.User =>
+            u.defn match {
+              case d: Typedef.Dto =>
+                d.fields
+                  .map(_.tpe)
+                  .map(ref => ref.id)
+                  .forall(terminatesLoop(_, domain, npath))
+              case d: Typedef.Contract =>
+                d.fields
+                  .map(_.tpe)
+                  .flatMap(enquiries.explode)
+                  .forall(terminatesLoop(_, domain, npath))
+              case d: Typedef.Adt =>
+                d.members.exists(terminatesLoop(_, domain, npath))
+
+              case _: Typedef.Enum    => true
+              case _: Typedef.Foreign => true
+            }
+        }
+      }
     }
 
     private def checkRoots(
@@ -164,6 +208,7 @@ object BaboonValidator {
         fields
           .groupBy(_.name.name.toLowerCase)
           .filter(_._2.size > 1)
+
       Either.ifThenFail(dupes.nonEmpty)(
         NEList(BaboonIssue.ConflictingDtoFields(u.id, dupes, u.meta))
       )
