@@ -103,15 +103,9 @@ object BaboonValidator {
           case u: DomainMember.User =>
             u.defn match {
               case d: Typedef.Dto =>
-                d.fields
-                  .map(_.tpe)
-                  .map(ref => ref.id)
-                  .forall(terminatesLoop(_, domain, npath))
+                allFieldsTerminal(domain, npath, d.fields)
               case d: Typedef.Contract =>
-                d.fields
-                  .map(_.tpe)
-                  .flatMap(enquiries.explode)
-                  .forall(terminatesLoop(_, domain, npath))
+                allFieldsTerminal(domain, npath, d.fields)
               case d: Typedef.Adt =>
                 d.members.exists(terminatesLoop(_, domain, npath))
 
@@ -120,6 +114,14 @@ object BaboonValidator {
             }
         }
       }
+    }
+
+    private def allFieldsTerminal(domain: Domain,
+                                  npath: List[TypeId],
+                                  f: List[Field]): Boolean = {
+      f.map(_.tpe)
+        .map(ref => ref.id) // we ignore generic options, BIGs termninate loops, this might change
+        .forall(terminatesLoop(_, domain, npath))
     }
 
     private def checkRoots(
