@@ -11,39 +11,42 @@ import izumi.fundamentals.platform.strings.IzString.*
 import java.nio.file.{Path, Paths}
 
 case class Options(
-  model: List[String],
-  modelDir: List[String],
-  output: String,
-  testOutput: Option[String],
-  debug: Option[Boolean],
-  @HelpMessage(
-    "generate shared runtime classes and evolution registrations, default is `with`"
-  )
-  @ValueDescription("with|only|without")
-  runtime: Option[String],
-  @HelpMessage("disable conversions (default is `false`)")
-  disableConversions: Option[Boolean],
-  @HelpMessage(
-    "generate obsolete errors instead of deprecations (default is `false`)"
-  )
-  csObsoleteErrors: Option[Boolean],
-  @HelpMessage(
-    "do not generate usings for System, System.Collections.Generic and System.Linq (see ImplicitUsings)"
-  )
-  csExcludeGlobalUsings: Option[Boolean],
-  omitMostRecentVersionSuffixFromPaths: Option[Boolean],
-  omitMostRecentVersionSuffixFromNamespaces: Option[Boolean],
-  csUseCompactAdtForm: Option[Boolean],
-  @HelpMessage(
-    "Every ADT branch will encode ADT metadata and expect it in the decoder"
-  )
-  csWrappedAdtBranchCodecs: Option[Boolean],
-)
+                    model: List[String],
+                    modelDir: List[String],
+                    output: String,
+                    testOutput: Option[String],
+                    debug: Option[Boolean],
+                    @HelpMessage(
+                      "generate shared runtime classes and evolution registrations, default is `with`"
+                    )
+                    @ValueDescription("with|only|without")
+                    runtime: Option[String],
+                    @HelpMessage("disable conversions (default is `false`)")
+                    disableConversions: Option[Boolean],
+                    @HelpMessage(
+                      "generate obsolete errors instead of deprecations (default is `false`)"
+                    )
+                    csObsoleteErrors: Option[Boolean],
+                    @HelpMessage(
+                      "do not generate usings for System, System.Collections.Generic and System.Linq (see ImplicitUsings)"
+                    )
+                    csExcludeGlobalUsings: Option[Boolean],
+                    omitMostRecentVersionSuffixFromPaths: Option[Boolean],
+                    omitMostRecentVersionSuffixFromNamespaces: Option[Boolean],
+                    csUseCompactAdtForm: Option[Boolean],
+                    @HelpMessage(
+                      "Every ADT branch will encode ADT metadata and expect it in the decoder"
+                    )
+                    csWrappedAdtBranchCodecs: Option[Boolean],
+                  )
 
 sealed trait RuntimeGenOpt
+
 object RuntimeGenOpt {
   case object Only extends RuntimeGenOpt
+
   case object With extends RuntimeGenOpt
+
   case object Without extends RuntimeGenOpt
 }
 
@@ -63,9 +66,9 @@ object Baboon {
         val testOutDir = opts.testOutput.map(o => Paths.get(o))
 
         val rtOpt = opts.runtime match {
-          case Some("only")    => RuntimeGenOpt.Only
+          case Some("only") => RuntimeGenOpt.Only
           case Some("without") => RuntimeGenOpt.Without
-          case _               => RuntimeGenOpt.With
+          case _ => RuntimeGenOpt.With
         }
 
         val options = CompilerOptions(
@@ -145,3 +148,4 @@ object Baboon {
     }
   }
 }
+

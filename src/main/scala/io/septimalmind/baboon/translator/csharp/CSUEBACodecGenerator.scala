@@ -371,7 +371,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
         }
       case c: TypeRef.Constructor =>
         c.id match {
-          case TypeId.Builtins.opt if trans.isCSValueType(c.args.head) =>
+          case TypeId.Builtins.opt if trans.isCSValueType(c.args.head, domain) =>
             q"""$BaboonTools.ReadNullableValue(wire.ReadByte() == 0, () => ${mkDecoder(
                  c.args.head,
                  domain,
@@ -477,7 +477,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
                |   ${mkEncoder(
                  c.args.head,
                  domain,
-                 trans.deNull(c.args.head, ref),
+                 trans.deNull(c.args.head, domain, ref),
                  evo
                ).shift(4).trim};
                |}""".stripMargin
