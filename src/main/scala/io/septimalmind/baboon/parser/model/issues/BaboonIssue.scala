@@ -99,7 +99,9 @@ object BaboonIssue {
   ) extends TyperIssue
 
   case class EmptyPackageId(header: RawHeader) extends TyperIssue
-  case class ScopedRefToNamespacedGeneric(prefix: Seq[RawTypeName], meta: RawNodeMeta) extends TyperIssue
+  case class ScopedRefToNamespacedGeneric(prefix: Seq[RawTypeName],
+                                          meta: RawNodeMeta)
+      extends TyperIssue
 
   case class NonUniqueTypedefs(
     duplicateTypedefs: Map[TypeId, List[DomainMember]],
@@ -113,7 +115,10 @@ object BaboonIssue {
 
   case class UnexpectedScoping(e: List[Scope[FullRawDefn]], meta: RawNodeMeta)
       extends TyperIssue
-      with BaboonBug
+      with BaboonBug {
+    println(e)
+    ???
+  }
 
   case class ScopeCannotBeEmpty(member: RawDefn) extends TyperIssue
 

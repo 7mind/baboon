@@ -205,8 +205,6 @@ class BaboonTranslator(pkg: Pkg,
       adtContracts <- dto match {
         case _: RawDto =>
           id.owner match {
-            case Owner.Toplevel =>
-              Right(List.empty)
             case Owner.Adt(xid) =>
               defined(xid) match {
                 case DomainMember.User(_, defn: Typedef.Adt, _) =>
@@ -216,6 +214,8 @@ class BaboonTranslator(pkg: Pkg,
                 case o =>
                   Left(NEList(BaboonIssue.WrongParent(id, o.id, dto.meta)))
               }
+            case _ =>
+              Right(List.empty)
           }
         case _: RawContract =>
           Right(List.empty)

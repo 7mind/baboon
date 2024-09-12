@@ -114,8 +114,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
         )
 
         val adtParents = defn.id.owner match {
-          case Owner.Toplevel => List.empty
-          case Owner.Adt(_)   => List(q"$iBaboonAdtMemberMeta")
+          case Owner.Adt(_) => List(q"$iBaboonAdtMemberMeta")
+          case _            => List.empty
         }
         val extParents = List(q"$iBaboonBinCodec<$iBaboonGenerated>") ++ adtParents
 
@@ -371,7 +371,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
         }
       case c: TypeRef.Constructor =>
         c.id match {
-          case TypeId.Builtins.opt if trans.isCSValueType(c.args.head, domain) =>
+          case TypeId.Builtins.opt
+              if trans.isCSValueType(c.args.head, domain) =>
             q"""$BaboonTools.ReadNullableValue(wire.ReadByte() == 0, () => ${mkDecoder(
                  c.args.head,
                  domain,

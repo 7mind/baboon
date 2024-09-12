@@ -221,7 +221,8 @@ object ScopeSupport {
               } yield {
                 Owner.Adt(id)
               }
-            case _ =>
+            case o =>
+              println(o)
               Left(NEList(BaboonIssue.UnexpectedScoping(defnPath, meta)))
           }
 

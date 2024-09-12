@@ -11,10 +11,8 @@ import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 import izumi.fundamentals.graphs.struct.IncidenceMatrix
 import izumi.fundamentals.graphs.tools.{Toposort, ToposortLoopBreaker}
 import izumi.fundamentals.graphs.{DG, GraphMeta}
-import izumi.fundamentals.platform.crypto.IzSha256Hash
 
 import scala.annotation.tailrec
-import scala.collection.mutable
 
 trait BaboonTyper {
   def process(model: RawDomain): Either[NEList[BaboonIssue.TyperIssue], Domain]
@@ -310,8 +308,8 @@ object BaboonTyper {
           .biSequence
       } yield {
         val adtMemberDependsOnAdt = (id.owner match {
-          case Owner.Toplevel => Set.empty
-          case Owner.Adt(id)  => Set(id)
+          case Owner.Adt(id) => Set(id)
+          case _             => Set.empty
         })
 
         (id, (mappedDeps ++ adtMemberDependsOnAdt, defn))

@@ -117,6 +117,8 @@ object TypeId {
       owner match {
         case Owner.Toplevel =>
           s"$pkg#${name.name}"
+        case ns: Owner.Ns =>
+          s"$pkg//${ns.asPseudoPkg.mkString("/")}#${name.name}"
         case Owner.Adt(id) =>
           s"$pkg/${id.name.name}#${name.name}"
       }
@@ -279,6 +281,11 @@ object Owner {
   case object Toplevel extends Owner {
     override def asPseudoPkg: Seq[String] = Seq.empty
   }
+
+  case class Ns(path: Seq[TypeName]) extends Owner {
+    override def asPseudoPkg: Seq[String] = path.map(_.name)
+  }
+
   case class Adt(id: TypeId.User) extends Owner {
     override def asPseudoPkg: Seq[String] =
       id.owner.asPseudoPkg ++ Seq(id.name.name)

@@ -66,6 +66,8 @@ class CSTypeTranslator(options: CompilerOptions) {
     val pkg = toCsPkg(tid.pkg, version, evolution)
     val fullPkg = tid.owner match {
       case Owner.Toplevel => pkg
+      case Owner.Ns(path) =>
+        CSPackageId(pkg.parts ++ path.map(_.name))
       case Owner.Adt(id) =>
         CSPackageId(pkg.parts :+ adtNsName(id), isStatic = true)
     }
@@ -169,7 +171,7 @@ class CSTypeTranslator(options: CompilerOptions) {
               evolution: BaboonEvolution,
               fullyQualified: Boolean = false,
               mut: Boolean = false,
-             ): TextTree[CSValue] = {
+  ): TextTree[CSValue] = {
     val out = tpe match {
       case TypeRef.Scalar(id) =>
         asCsType(id, domain, evolution, mut)
@@ -194,7 +196,9 @@ class CSTypeTranslator(options: CompilerOptions) {
     }
   }
 
-  def deNull(tpe: TypeRef, domain: Domain, ref: TextTree[CSValue]): TextTree[CSValue] = {
+  def deNull(tpe: TypeRef,
+             domain: Domain,
+             ref: TextTree[CSValue]): TextTree[CSValue] = {
     tpe match {
       case TypeRef.Scalar(TypeId.Builtins.str) =>
         ref
@@ -257,7 +261,7 @@ class CSTypeTranslator(options: CompilerOptions) {
   private def isEnum(tpe: TypeRef, domain: Domain) = {
     domain.defs.meta.nodes.get(tpe.id).exists {
       case DomainMember.User(_, _: Typedef.Enum, _) => true
-      case _ => false
+      case _                                        => false
     }
   }
 }
