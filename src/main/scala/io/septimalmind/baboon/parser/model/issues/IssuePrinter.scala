@@ -347,6 +347,16 @@ object IssuePrinter {
          |""".stripMargin
     }
 
+  implicit val scopedRefToNamespacedGeneric
+    : IssuePrinter[ScopedRefToNamespacedGeneric] =
+    (issue: ScopedRefToNamespacedGeneric) => {
+      s"""${extractLocation(issue.meta)}
+         |A reference to user-defined generic, which is not supported, prefix: ${issue.prefix
+           .map(_.name)
+           .mkString(".")}
+         |""".stripMargin
+    }
+
   implicit val brokenComparisonPrinter: IssuePrinter[BrokenComparison] =
     new BugPrinter[BrokenComparison] {
       override def errorMessage(bug: BrokenComparison): String = {
@@ -689,6 +699,8 @@ object IssuePrinter {
     case i: DuplicatedTypes       => apply[DuplicatedTypes].stringify(i)
     case i: WrongParent           => apply[WrongParent].stringify(i)
     case i: MissingContractFields => apply[MissingContractFields].stringify(i)
+    case i: ScopedRefToNamespacedGeneric =>
+      apply[ScopedRefToNamespacedGeneric].stringify(i)
   }
 
   implicit val evolutionIssuePrinter: IssuePrinter[EvolutionIssue] = {

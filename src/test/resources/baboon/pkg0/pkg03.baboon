@@ -7,12 +7,14 @@ include "pkg0/pkg03-inclusion.model"
 
 ns test {
     root data D1 {
-       a: A1
+       a: sub.A1
     }
 
-    adt A1 {
-       data B1 { value: i32}
-       data B2 { value: str}
+    ns sub {
+        adt A1 {
+           data B1 { value: i32}
+           data B2 { value: str}
+        }
     }
 }
 

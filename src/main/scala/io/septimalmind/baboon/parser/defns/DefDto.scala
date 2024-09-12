@@ -26,7 +26,7 @@ class DefDto(context: ParserContext, meta: DefMeta) {
       .map(p => NEList.unsafeFrom(p.toList))
   }
 
-  def scopedRef[$: P]: P[ScopedRef] = {
+  def nonGenericTypeRef[$: P]: P[ScopedRef] = {
     idt.symbolSeq.map(
       s => ScopedRef(NEList.unsafeFrom(s.map(p => RawTypeName(p)).toList))
     )
@@ -34,13 +34,16 @@ class DefDto(context: ParserContext, meta: DefMeta) {
 
   def typeRef[$: P]: P[RawTypeRef] = {
     import fastparse.SingleLineWhitespace.whitespace
-    (idt.symbol ~ typeParams.?).map {
-      case (name, params) =>
+    (nonGenericTypeRef ~ typeParams.?).map {
+      case (ref, params) =>
+        val name = ref.path.last.name
+        val prefix = ref.path.toList.init
+
         params match {
           case Some(value) =>
-            RawTypeRef.Constructor(RawTypeName(name), value)
+            RawTypeRef.Constructor(RawTypeName(name), value, prefix)
           case None =>
-            RawTypeRef.Simple(RawTypeName(name))
+            RawTypeRef.Simple(RawTypeName(name), prefix)
         }
     }
   }
@@ -50,7 +53,7 @@ class DefDto(context: ParserContext, meta: DefMeta) {
 
   def contractDef[$: P]: P[RawContractRef] = {
     import fastparse.ScalaWhitespace.whitespace
-    ("is" ~ scopedRef).map { case (t) => model.RawContractRef(t) }
+    ("is" ~ nonGenericTypeRef).map { case (t) => model.RawContractRef(t) }
   }
 
   def extendedContractRef[$: P]: P[ContractRef] = {
@@ -66,17 +69,17 @@ class DefDto(context: ParserContext, meta: DefMeta) {
 
   def parentDef[$: P]: P[ScopedRef] = {
     import fastparse.ScalaWhitespace.whitespace
-    ("+" ~ scopedRef)
+    ("+" ~ nonGenericTypeRef)
   }
 
   def unparentDef[$: P]: P[ScopedRef] = {
     import fastparse.ScalaWhitespace.whitespace
-    ("-" ~ scopedRef)
+    ("-" ~ nonGenericTypeRef)
   }
 
   def intersectionDef[$: P]: P[ScopedRef] = {
     import fastparse.ScalaWhitespace.whitespace
-    ("^" ~ scopedRef)
+    ("^" ~ nonGenericTypeRef)
   }
 
   def unfieldDef[$: P]: P[RawField] = {

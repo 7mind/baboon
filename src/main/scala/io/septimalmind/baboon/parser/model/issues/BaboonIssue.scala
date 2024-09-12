@@ -99,6 +99,7 @@ object BaboonIssue {
   ) extends TyperIssue
 
   case class EmptyPackageId(header: RawHeader) extends TyperIssue
+  case class ScopedRefToNamespacedGeneric(prefix: Seq[RawTypeName], meta: RawNodeMeta) extends TyperIssue
 
   case class NonUniqueTypedefs(
     duplicateTypedefs: Map[TypeId, List[DomainMember]],

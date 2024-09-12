@@ -2,7 +2,10 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue.MissingContractFields
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue.{
+  MissingContractFields,
+  ScopedRefToNamespacedGeneric
+}
 import io.septimalmind.baboon.typer.BaboonTyper.{FullRawDefn, ScopedDefn}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.NestedScope
@@ -311,7 +314,7 @@ class BaboonTranslator(pkg: Pkg,
     meta: RawNodeMeta
   ): Either[NEList[BaboonIssue.TyperIssue], TypeRef] = {
     tpe match {
-      case RawTypeRef.Simple(name) =>
+      case RawTypeRef.Simple(name, prefix) =>
         for {
           id <- scopeSupport.resolveTypeId(name, path, pkg, meta)
           asScalar <- id match {
@@ -323,8 +326,11 @@ class BaboonTranslator(pkg: Pkg,
         } yield {
           TypeRef.Scalar(asScalar)
         }
-      case RawTypeRef.Constructor(name, params) =>
+      case RawTypeRef.Constructor(name, params, prefix) =>
         for {
+          _ <- Either.ifThenFail(prefix.nonEmpty)(
+            NEList(ScopedRefToNamespacedGeneric(prefix, meta))
+          )
           id <- scopeSupport.resolveTypeId(name, path, pkg, meta)
           asCollection <- id match {
             case coll: TypeId.BuiltinCollection =>
