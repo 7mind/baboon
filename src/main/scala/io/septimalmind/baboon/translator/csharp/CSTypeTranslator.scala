@@ -169,7 +169,7 @@ class CSTypeTranslator(options: CompilerOptions) {
               evolution: BaboonEvolution,
               fullyQualified: Boolean = false,
               mut: Boolean = false,
-  ): TextTree[CSValue] = {
+             ): TextTree[CSValue] = {
     val out = tpe match {
       case TypeRef.Scalar(id) =>
         asCsType(id, domain, evolution, mut)
@@ -194,26 +194,20 @@ class CSTypeTranslator(options: CompilerOptions) {
     }
   }
 
-  def deNull(tpe: TypeRef, ref: TextTree[CSValue]): TextTree[CSValue] = {
+  def deNull(tpe: TypeRef, domain: Domain, ref: TextTree[CSValue]): TextTree[CSValue] = {
     tpe match {
-      case TypeRef.Scalar(id) =>
-        id match {
-          case s: TypeId.BuiltinScalar =>
-            s match {
-              case TypeId.Builtins.str =>
-                ref
-              case _ =>
-                q"$ref.Value"
-            }
-          case _ =>
-            q"$ref!"
-        }
+      case TypeRef.Scalar(TypeId.Builtins.str) =>
+        ref
+      case TypeRef.Scalar(_: TypeId.BuiltinScalar) =>
+        q"$ref.Value"
+      case _ if isEnum(tpe, domain) =>
+        q"$ref.Value"
       case _ =>
         q"$ref!"
     }
   }
 
-  def isCSValueType(tpe: TypeRef): Boolean = {
+  def isCSValueType(tpe: TypeRef, domain: Domain): Boolean = {
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
@@ -252,8 +246,17 @@ class CSTypeTranslator(options: CompilerOptions) {
               case _ =>
                 false
             }
-          case _ => false
+          case _ =>
+            isEnum(tpe, domain)
         }
+      case _ =>
+        false
+    }
+  }
+
+  private def isEnum(tpe: TypeRef, domain: Domain) = {
+    domain.defs.meta.nodes.get(tpe.id).exists {
+      case DomainMember.User(_, _: Typedef.Enum, _) => true
       case _ => false
     }
   }

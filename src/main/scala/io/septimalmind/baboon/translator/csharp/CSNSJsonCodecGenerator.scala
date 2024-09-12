@@ -322,7 +322,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
-            q"$ref == null ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, domain, trans.deNull(c.args.head, ref), evo)}"
+            q"$ref == null ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, domain, trans.deNull(c.args.head, domain, ref), evo)}"
           case TypeId.Builtins.map =>
             val keyEnc = encodeKey(c.args.head, domain, q"e.Key")
             val valueEnc = mkEncoder(c.args.last, domain, q"e.Value", evo)
@@ -446,7 +446,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
         }
       case TypeRef.Constructor(id, args) =>
         id match {
-          case TypeId.Builtins.opt if trans.isCSValueType(args.head) =>
+          case TypeId.Builtins.opt if trans.isCSValueType(args.head, domain) =>
             q"""$BaboonTools.ReadNullableValue($ref, t => ${mkDecoder(
                  args.head,
                  domain,

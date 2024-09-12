@@ -130,6 +130,7 @@ enum T1_E2 {
 
 root data T1_E2_RET {
     f: T1_E2
+    o: opt[T1_E2]
 }
 
 
