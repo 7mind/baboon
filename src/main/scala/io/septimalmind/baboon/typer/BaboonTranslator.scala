@@ -51,6 +51,8 @@ class BaboonTranslator(pkg: Pkg,
           case (id, finalFields, contractRefs) =>
             Typedef.Contract(id, finalFields, contractRefs)
         }.map(d => NEList(d))
+      case n: RawNamespace =>
+        ???
     }
   }
 

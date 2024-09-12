@@ -40,3 +40,8 @@ case class RawForeign(name: RawTypeName,
                       defns: Map[String, String],
                       meta: RawNodeMeta)
     extends RawDefn
+
+case class RawNamespace(name: RawTypeName,
+                        defns: Seq[RawDefn],
+                        meta: RawNodeMeta)
+    extends RawDefn

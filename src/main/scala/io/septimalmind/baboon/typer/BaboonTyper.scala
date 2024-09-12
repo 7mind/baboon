@@ -60,7 +60,15 @@ object BaboonTyper {
         deepSchema <- computeDeepSchema(graph)
         loops = enquiries.loopsOf(graph.meta.nodes)
       } yield {
-        Domain(id, version, graph, excludedIds, shallowSchema, deepSchema, loops)
+        Domain(
+          id,
+          version,
+          graph,
+          excludedIds,
+          shallowSchema,
+          deepSchema,
+          loops
+        )
       }
     }
 
@@ -353,6 +361,8 @@ object BaboonTyper {
       isRoot: Boolean
     ): Either[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
       member match {
+        case namespace: RawNamespace =>
+          ???
         case dto: RawDto =>
           Right(LeafScope(ScopeName(dto.name.name), FullRawDefn(dto, isRoot)))
         case contract: RawContract =>

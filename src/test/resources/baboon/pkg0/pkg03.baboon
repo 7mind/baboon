@@ -5,6 +5,17 @@ version "3.0.0"
 include "pkg0/pkg03-inclusion.model"
 
 
+ns test {
+    root data D1 {
+       a: A1
+    }
+
+    adt A1 {
+       data B1 { value: i32}
+       data B2 { value: str}
+    }
+}
+
 root adt RecTest1 {
    data Branch1 { value: RecTest1 }
    data Branch2 { value : i32 }

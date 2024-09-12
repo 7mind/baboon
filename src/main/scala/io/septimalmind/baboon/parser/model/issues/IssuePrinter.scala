@@ -223,11 +223,12 @@ object IssuePrinter {
   implicit val scopeCannotBeEmptyPrinter: IssuePrinter[ScopeCannotBeEmpty] =
     (issue: ScopeCannotBeEmpty) => {
       val memberType = issue.member match {
-        case _: RawDto      => "DTO"
-        case _: RawEnum     => "Enum"
-        case _: RawAdt      => "ADT"
-        case _: RawForeign  => "Foreign"
-        case _: RawContract => "Contract"
+        case _: RawDto       => "DTO"
+        case _: RawEnum      => "Enum"
+        case _: RawAdt       => "ADT"
+        case _: RawForeign   => "Foreign"
+        case _: RawContract  => "Contract"
+        case _: RawNamespace => "Namespace"
       }
       s"""${extractLocation(issue.member.meta)}
        |Found an empty $memberType: ${issue.member.name.name}
