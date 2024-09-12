@@ -235,6 +235,7 @@ object BaboonTyper {
         )
 
         scopes <- buildScopes(pkg, members, meta)
+//        _ <- Right(println(List(scopes).asStrDebug))
         flattened = flattenScopes(scopes)
         ordered <- order(pkg, flattened, meta)
 
@@ -362,7 +363,26 @@ object BaboonTyper {
     ): Either[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
       member match {
         case namespace: RawNamespace =>
-          ???
+          for {
+            sub <- namespace.defns
+              .map(m => buildScope(m.value, isRoot = m.root))
+              .biSequence
+            asMap <- sub
+              .map(s => (s.name, s))
+              .toUniqueMap(
+                nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta))
+              )
+            asNEMap <- NEMap
+              .from(asMap)
+              .toRight(NEList(BaboonIssue.ScopeCannotBeEmpty(member)))
+          } yield {
+            SubScope(
+              ScopeName(namespace.name.name),
+              FullRawDefn(namespace, isRoot),
+              asNEMap
+            )
+          }
+
         case dto: RawDto =>
           Right(LeafScope(ScopeName(dto.name.name), FullRawDefn(dto, isRoot)))
         case contract: RawContract =>

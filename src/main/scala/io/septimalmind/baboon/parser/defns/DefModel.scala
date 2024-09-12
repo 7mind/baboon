@@ -56,7 +56,7 @@ class DefModel(context: ParserContext,
   def namespaceDef[$: P]: P[RawNamespace] = {
     P(meta.member(kw.namespace, struct.enclosed(content))).map {
       case (meta, name, members) =>
-        RawNamespace(RawTypeName(name), members.defs.map(_.value), meta)
+        RawNamespace(RawTypeName(name), members.defs, meta)
     }
   }
 

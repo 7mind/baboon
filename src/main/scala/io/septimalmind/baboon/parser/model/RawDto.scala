@@ -42,6 +42,6 @@ case class RawForeign(name: RawTypeName,
     extends RawDefn
 
 case class RawNamespace(name: RawTypeName,
-                        defns: Seq[RawDefn],
+                        defns: Seq[RawTLDef],
                         meta: RawNodeMeta)
     extends RawDefn
