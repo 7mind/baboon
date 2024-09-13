@@ -1,17 +1,7 @@
 package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.model.{
-  RawAdt,
-  RawContract,
-  RawDto,
-  RawEnum,
-  RawForeign,
-  RawNamespace,
-  RawNodeMeta,
-  RawTypeName,
-  ScopedRef
-}
+import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.typer.BaboonTyper.FullRawDefn
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.{
@@ -24,7 +14,6 @@ import io.septimalmind.baboon.typer.model.Scope.{
 import izumi.fundamentals.collections.nonempty.NEList
 
 import scala.annotation.tailrec
-import scala.collection.immutable.List
 
 trait ScopeSupport {
   def resolveScopedRef(
@@ -161,26 +150,13 @@ object ScopeSupport {
       for {
         typename <- convertTypename(name, meta)
         needle = prefix.map(_.name).map(ScopeName) ++ List(ScopeName(name.name))
-//        _ <- Right(if (needle.toString().contains("TEST_SUB_A1")) {
-//          println()
-//          println(s"Looking for ${needle.map(_.name).mkString(">")}")
-//        })
         found = findPrefixedDefn(needle, path.reverse.toList)
         result <- found match {
           case Some(value) =>
-//            println(s"about to process $name")
-
             for {
               owner <- pathToOwner(value.path, pkg)
             } yield {
               val out = TypeId.User(pkg, owner, typename)
-
-//              println(
-//                s"$name => $out (prefix ${prefix.map(_.name).mkString(".")}; ${formatPath(
-//                  path.reverse.toList
-//                )} => ${formatPath(value.path)} => ${formatPath(fixedPath)})"
-//              )
-//              println()
               out
             }
           case None =>
@@ -191,26 +167,9 @@ object ScopeSupport {
             )
         }
       } yield {
-//        if (result.toString == "testpkg.pkg0/sub#TEST_SUB_A1") {
-//          ???
-//        }
-
         result
       }
     }
-
-//    def formatPath(path: List[Scope[FullRawDefn]]) = {
-//      path
-//        .map(_ match {
-//          case RootScope(pkg, nested) => "root"
-//          case scope: Scope.NestedScope[_] =>
-//            scope match {
-//              case SubScope(name, defn, nested) => s"sub:$name"
-//              case LeafScope(name, defn)        => s"leaf:$name"
-//            }
-//        })
-//        .mkString("<<")
-//    }
 
     private def findPrefixedDefn(
       needles: List[ScopeName],
@@ -238,30 +197,9 @@ object ScopeSupport {
         case head :: tail =>
           subfind(head, reversePath).flatMap { found =>
             val newpath = (found.path ++ List(found.scope)).reverse
-//            val newpath = if (found.path.last == found.scope) {
-//              found.path.reverse
-//            } else {
-//              (found.path ++ List(found.scope)).reverse
-//            }
-
-//            if (needles.toString().contains("TEST_SUB_A1")) {
-//
-//              println(
-//                s"Searching for ${needles.map(_.name).mkString(">")} in ${formatPath(reversePath)}"
-//              )
-//              println(
-//                s"head found: ${found.defn.defn.name}, new path = ${formatPath(newpath)}"
-//              )
-//            }
             findPrefixedDefn(tail, newpath)
           }
       }
-//      if (needles.toString().contains("TEST_SUB_A1")) {
-//        println(
-//          s"Searching for ${needles.map(_.name).mkString(">")} in ${formatPath(reversePath)} ==> ${out
-//            .map(_.defn.defn.name)} @ ${out.map(d => formatPath(d.path))}"
-//        )
-//      }
       out
     }
 
@@ -276,7 +214,6 @@ object ScopeSupport {
         } else {
           Right(Owner.Ns(ns))
         }
-//        _ <- Right(println(s"ns == ${ns.mkString(".")} => $nsOwner"))
         out <- defnPath.lastOption match {
           case Some(value: SubScope[FullRawDefn]) =>
             value.defn.defn match {
@@ -285,8 +222,6 @@ object ScopeSupport {
                   name <- convertTypename(a.name, a.meta)
                   nextOwner <- pathToOwner(defnPath.init, pkg)
                 } yield {
-//                  println(s"nextowner == ${nextOwner}")
-
                   Owner.Adt(TypeId.User(pkg, nextOwner, name))
                 }
               case _ =>

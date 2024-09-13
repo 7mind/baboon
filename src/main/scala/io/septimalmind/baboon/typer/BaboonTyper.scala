@@ -80,11 +80,7 @@ object BaboonTyper {
         List(s"[recursive:$self]")
       } else {
         val maybedef = defs.get(id)
-        if (maybedef.isEmpty) {
-          println(s"failure: ${id}")
-          defs.keySet.map(println)
-          ???
-        }
+        assert(maybedef.nonEmpty, s"BUG: $id not found")
         maybedef.get match {
           case _: DomainMember.Builtin =>
             List(s"[builtin:$self]")
@@ -239,7 +235,6 @@ object BaboonTyper {
         )
 
         scopes <- buildScopes(pkg, members, meta)
-//        _ <- Right(println(List(scopes).asStrDebug))
         flattened = flattenScopes(scopes)
         ordered <- order(pkg, flattened, meta)
 
