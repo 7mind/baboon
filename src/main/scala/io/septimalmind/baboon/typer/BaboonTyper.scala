@@ -79,7 +79,13 @@ object BaboonTyper {
       if (seen.contains(id)) {
         List(s"[recursive:$self]")
       } else {
-        defs(id) match {
+        val maybedef = defs.get(id)
+        if (maybedef.isEmpty) {
+          println(s"failure: ${id}")
+          defs.keySet.map(println)
+          ???
+        }
+        maybedef.get match {
           case _: DomainMember.Builtin =>
             List(s"[builtin:$self]")
           case u: DomainMember.User =>

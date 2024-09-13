@@ -6,14 +6,15 @@ include "pkg0/pkg03-inclusion.model"
 
 
 ns test {
-    root data D1 {
-       a: sub.A1
+    root data TEST_D1 {
+       a: test.sub.TEST_SUB_A1
+       b: sub.TEST_SUB_A1
     }
 
     ns sub {
-        adt A1 {
-           data B1 { value: i32}
-           data B2 { value: str}
+        adt TEST_SUB_A1 {
+           data TEST_SUB_A1_B1 { value: i32}
+           data TEST_SUB_A1_B2 { value: str}
         }
     }
 }

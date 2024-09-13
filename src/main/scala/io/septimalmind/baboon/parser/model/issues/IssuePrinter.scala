@@ -699,6 +699,7 @@ object IssuePrinter {
     case i: DuplicatedTypes       => apply[DuplicatedTypes].stringify(i)
     case i: WrongParent           => apply[WrongParent].stringify(i)
     case i: MissingContractFields => apply[MissingContractFields].stringify(i)
+    case i: Bug                   => i.descr
     case i: ScopedRefToNamespacedGeneric =>
       apply[ScopedRefToNamespacedGeneric].stringify(i)
   }

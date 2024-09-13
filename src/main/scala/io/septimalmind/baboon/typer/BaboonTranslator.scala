@@ -38,24 +38,24 @@ class BaboonTranslator(pkg: Pkg,
   private def convertMember(id: TypeId.User,
                             defn: FullRawDefn,
                             thisScope: NestedScope[FullRawDefn],
-  ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
+  ): Either[NEList[BaboonIssue.TyperIssue], List[DomainMember.User]] = {
     val root = defn.gcRoot
     defn.defn match {
       case d: RawDto =>
         convertDto(id, root, d) {
           case (id, finalFields, contractRefs) =>
             Typedef.Dto(id, finalFields, contractRefs)
-        }.map(d => NEList(d))
-      case e: RawEnum    => converEnum(id, root, e).map(e => NEList(e))
-      case a: RawAdt     => convertAdt(id, root, a, thisScope)
-      case f: RawForeign => convertForeign(id, root, f)
+        }.map(d => List(d))
+      case e: RawEnum    => converEnum(id, root, e).map(e => List(e))
+      case a: RawAdt     => convertAdt(id, root, a, thisScope).map(_.toList)
+      case f: RawForeign => convertForeign(id, root, f).map(_.toList)
       case c: RawContract =>
         convertDto(id, root, c) {
           case (id, finalFields, contractRefs) =>
             Typedef.Contract(id, finalFields, contractRefs)
-        }.map(d => NEList(d))
-      case n: RawNamespace =>
-        ???
+        }.map(d => List(d))
+      case _: RawNamespace => // namespace itself is not a typedef :3
+        Right(List.empty)
     }
   }
 
@@ -316,7 +316,7 @@ class BaboonTranslator(pkg: Pkg,
     tpe match {
       case RawTypeRef.Simple(name, prefix) =>
         for {
-          id <- scopeSupport.resolveTypeId(name, path, pkg, meta)
+          id <- scopeSupport.resolveTypeId(prefix, name, path, pkg, meta)
           asScalar <- id match {
             case scalar: TypeId.Scalar =>
               Right(scalar)
@@ -331,7 +331,7 @@ class BaboonTranslator(pkg: Pkg,
           _ <- Either.ifThenFail(prefix.nonEmpty)(
             NEList(ScopedRefToNamespacedGeneric(prefix, meta))
           )
-          id <- scopeSupport.resolveTypeId(name, path, pkg, meta)
+          id <- scopeSupport.resolveTypeId(prefix, name, path, pkg, meta)
           asCollection <- id match {
             case coll: TypeId.BuiltinCollection =>
               Right(coll)

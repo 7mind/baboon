@@ -66,7 +66,10 @@ object BaboonIssue {
                                   pkg: Pkg,
                                   path: NEList[Scope[FullRawDefn]],
                                   meta: RawNodeMeta)
-      extends TyperIssue
+      extends TyperIssue {
+    ???
+
+  }
 
   case class MissingTypeId(domain: Pkg, missing: Set[TypeId], meta: RawNodeMeta)
       extends TyperIssue
@@ -115,10 +118,9 @@ object BaboonIssue {
 
   case class UnexpectedScoping(e: List[Scope[FullRawDefn]], meta: RawNodeMeta)
       extends TyperIssue
-      with BaboonBug {
-    println(e)
-    ???
-  }
+      with BaboonBug
+
+  case class Bug(descr: String) extends TyperIssue with BaboonBug
 
   case class ScopeCannotBeEmpty(member: RawDefn) extends TyperIssue
 
