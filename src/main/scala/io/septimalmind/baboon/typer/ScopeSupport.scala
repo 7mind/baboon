@@ -170,14 +170,8 @@ object ScopeSupport {
           case Some(value) =>
 //            println(s"about to process $name")
 
-            val fixedPath = value.path.last match {
-              case scope: NestedScope[_] if scope.defn == value.defn =>
-                value.path.init
-              case _ => value.path
-            }
-
             for {
-              owner <- pathToOwner(fixedPath, pkg)
+              owner <- pathToOwner(value.path, pkg)
             } yield {
               val out = TypeId.User(pkg, owner, typename)
 
@@ -205,18 +199,18 @@ object ScopeSupport {
       }
     }
 
-    def formatPath(path: List[Scope[FullRawDefn]]) = {
-      path
-        .map(_ match {
-          case RootScope(pkg, nested) => "root"
-          case scope: Scope.NestedScope[_] =>
-            scope match {
-              case SubScope(name, defn, nested) => s"sub:$name"
-              case LeafScope(name, defn)        => s"leaf:$name"
-            }
-        })
-        .mkString("<<")
-    }
+//    def formatPath(path: List[Scope[FullRawDefn]]) = {
+//      path
+//        .map(_ match {
+//          case RootScope(pkg, nested) => "root"
+//          case scope: Scope.NestedScope[_] =>
+//            scope match {
+//              case SubScope(name, defn, nested) => s"sub:$name"
+//              case LeafScope(name, defn)        => s"leaf:$name"
+//            }
+//        })
+//        .mkString("<<")
+//    }
 
     private def findPrefixedDefn(
       needles: List[ScopeName],
@@ -227,7 +221,7 @@ object ScopeSupport {
                   reversePath: List[Scope[FullRawDefn]]): Option[FoundDefn] = {
         findDefn(needle, reversePath).orElse {
           reversePath match {
-            case head :: tail =>
+            case _ :: tail =>
               subfind(needle, tail)
             case Nil =>
               None
@@ -243,11 +237,12 @@ object ScopeSupport {
           subfind(head, reversePath)
         case head :: tail =>
           subfind(head, reversePath).flatMap { found =>
-            val newpath = if (found.path.last == found.scope) {
-              found.path.reverse
-            } else {
-              (found.path ++ List(found.scope)).reverse
-            }
+            val newpath = (found.path ++ List(found.scope)).reverse
+//            val newpath = if (found.path.last == found.scope) {
+//              found.path.reverse
+//            } else {
+//              (found.path ++ List(found.scope)).reverse
+//            }
 
 //            if (needles.toString().contains("TEST_SUB_A1")) {
 //
@@ -348,23 +343,32 @@ object ScopeSupport {
       needle: ScopeName,
       reversePath: List[Scope[FullRawDefn]]
     ): Option[FoundDefn] = {
+      def found(p: List[Scope[FullRawDefn]], n: NestedScope[FullRawDefn]) = {
+        if (p.last == n) {
+          FoundDefn(p.init, n)
+        } else {
+          FoundDefn(p, n)
+        }
+
+      }
+
       reversePath.headOption match {
         case Some(s: RootScope[FullRawDefn]) =>
           s.nested
             .get(needle)
-            .map(n => FoundDefn(reversePath, n))
+            .map(n => found(reversePath, n))
 
         case Some(s: LeafScope[FullRawDefn]) =>
           Some(s)
             .filter(_.name == needle)
-            .map(n => FoundDefn(reversePath.reverse, n))
+            .map(n => found(reversePath.reverse, n))
             .orElse(findDefn(needle, reversePath.tail))
 
         case Some(s: SubScope[FullRawDefn]) =>
           s.nested.toMap
             .get(needle)
             .orElse(Some(s).filter(_.name == needle))
-            .map(n => FoundDefn(reversePath.reverse, n))
+            .map(n => found(reversePath.reverse, n))
             .orElse(findDefn(needle, reversePath.tail))
 
         case None =>
