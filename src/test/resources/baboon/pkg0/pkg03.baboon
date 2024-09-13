@@ -13,8 +13,9 @@ ns test {
 
     ns sub {
         adt TEST_SUB_A1 {
-           data TEST_SUB_A1_B1 { value: i32}
-           data TEST_SUB_A1_B2 { value: str}
+           data TEST_SUB_A1_B1 { value: i32 }
+           data TEST_SUB_A1_B2 { value: str }
+           data TEST_SUB_A1_B3 { value: TEST_SUB_A1 }
         }
     }
 }
