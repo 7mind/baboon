@@ -11,7 +11,9 @@ Stripped-down experimental DML with schema evolution support and garbage collect
 3. Automatic UEBA (Ultra-Efficient Binary Aggregate, a custom tagless binary format) codec derivation
 4. Automatic evolution derivation where possible, stubs where manual conversion is required
 5. Structural *and* nominal inheritance
-6. Codegen targets: C#
+6. Namespaces
+7. Inclusions (at syntax tree level)
+8. Codegen targets: C#
 
 ## Limitations
 
