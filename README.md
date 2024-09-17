@@ -19,15 +19,14 @@ Stripped-down experimental DML with schema evolution support and garbage collect
 
 1. No templates
 2. Only Enums, DTOs and ADTs
-3. ADT members can only reference top-level type definitions
-4. Nominal inheritance support is limited to trait model
-5. (*) This is a DML, not an IDL, it does not support service/interface definitions
-6. (*) Currently only C# cogen target is supported
-7. (*) Comments are not preserved in the cogen output
-8. (*) No structural inheritance information is preserved in the transpiler output
-9. (*) Only integer constants may be associated with enum members
-10. (*) No newtypes/type aliases
-11. (*) No inheritance-based lenses/projections/conversions
+3. Nominal inheritance support is limited to trait model
+4. (*) This is a DML, not an IDL, it does not support service/interface definitions
+5. (*) Currently only C# cogen target is supported
+6. (*) Comments are not preserved in the cogen output
+7. (*) No structural inheritance information is preserved in the transpiler output
+8. (*) Only integer constants may be associated with enum members
+9. (*) No newtypes/type aliases
+10. (*) No inheritance-based lenses/projections/conversions
 
 Points marked with (*) will/may be improved in the future.
 
