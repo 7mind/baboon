@@ -35,14 +35,6 @@ class CSTypeTranslator(options: CompilerOptions) {
     CSPackageId(segments)
   }
 
-  def adtNsName(id: TypeId.User): String = {
-    if (options.csUseCompactAdtForm) {
-      id.name.name
-    } else {
-      id.name.name.toLowerCase
-    }
-  }
-
   def toCsTypeRefDeref(tid: TypeId.User,
                        domain: Domain,
                        evolution: BaboonEvolution): CSType = {
@@ -64,14 +56,37 @@ class CSTypeTranslator(options: CompilerOptions) {
                          evolution: BaboonEvolution): CSType = {
     val version = domain.version
     val pkg = toCsPkg(tid.pkg, version, evolution)
+
+    val ownerAsPrefix = renderOwner(tid.owner)
+    val fullPrefix = pkg.parts ++ ownerAsPrefix
+
     val fullPkg = tid.owner match {
-      case Owner.Toplevel => pkg
-      case Owner.Ns(path) =>
-        CSPackageId(pkg.parts ++ path.map(_.name))
-      case Owner.Adt(id) =>
-        CSPackageId(pkg.parts :+ adtNsName(id), isStatic = true)
+      case Owner.Adt(_) =>
+        CSPackageId(pkg.parts ++ ownerAsPrefix, isStatic = true)
+      case _ =>
+        CSPackageId(fullPrefix)
     }
     CSType(fullPkg, tid.name.name.capitalize, fq = false)
+  }
+
+  def adtNsName(id: TypeId.User): String = {
+    if (options.csUseCompactAdtForm) {
+      id.name.name
+    } else {
+      id.name.name.toLowerCase
+    }
+  }
+
+  def renderOwner(owner: Owner): Seq[String] = {
+    owner match {
+      case Owner.Toplevel =>
+        Seq.empty
+      case Owner.Ns(path) =>
+        path.map(_.name)
+      case Owner.Adt(id) =>
+        val sub = renderOwner(id.owner) :+ adtNsName(id)
+        sub
+    }
   }
 
   private def asCsTypeScalar(b: TypeId.BuiltinScalar) = {
