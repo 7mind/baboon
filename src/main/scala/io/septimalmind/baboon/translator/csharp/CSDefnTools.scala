@@ -42,8 +42,8 @@ object CSDefnTools {
 
     def makeFix(defn: DomainMember.User, isCodec: Boolean): String = {
       val isNested = defn.id.owner match {
-        case Owner.Toplevel => false
-        case Owner.Adt(_)   => true
+        case Owner.Adt(_) => true
+        case _            => false
       }
       val fix = if (options.csUseCompactAdtForm && !isCodec && isNested) {
         " new "
@@ -59,13 +59,13 @@ object CSDefnTools {
       val fix = makeFix(defn, isCodec)
 
       val adtMethods = defn.id.owner match {
-        case Owner.Toplevel => List.empty
         case Owner.Adt(id) =>
           List(
             q"""public const String BaboonAdtTypeIdentifierValue = "${id.toString}";
                |public $csString BaboonAdtTypeIdentifier() => BaboonAdtTypeIdentifierValue;
                |""".stripMargin,
           )
+        case _ => List.empty
       }
 
       Seq(

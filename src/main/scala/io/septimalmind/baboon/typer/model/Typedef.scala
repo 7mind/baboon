@@ -114,13 +114,7 @@ object TypeId {
       extends TypeId
       with Scalar {
     override def toString: String = {
-      owner match {
-        case Owner.Toplevel =>
-          s"$pkg#${name.name}"
-        case Owner.Adt(id) =>
-          s"$pkg/${id.name.name}#${name.name}"
-      }
-
+      s"$pkg/$owner#${name.name}"
     }
   }
 
@@ -278,10 +272,19 @@ sealed trait Owner {
 object Owner {
   case object Toplevel extends Owner {
     override def asPseudoPkg: Seq[String] = Seq.empty
+
+    override def toString: String = ":"
   }
+
+  case class Ns(path: Seq[TypeName]) extends Owner {
+    override def asPseudoPkg: Seq[String] = path.map(_.name)
+    override def toString: String = path.map(_.name).mkString("/")
+  }
+
   case class Adt(id: TypeId.User) extends Owner {
     override def asPseudoPkg: Seq[String] =
       id.owner.asPseudoPkg ++ Seq(id.name.name)
+    override def toString: String = s"[$id]"
   }
 }
 

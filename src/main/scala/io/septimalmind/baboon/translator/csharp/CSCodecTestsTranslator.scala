@@ -31,6 +31,8 @@ object CSCodecTestsTranslator {
       val codecTestName = definition.id.owner match {
         case Owner.Toplevel => srcRef.name
         case Owner.Adt(id)  => s"${id.name.name}__${srcRef.name}"
+        case Owner.Ns(path) =>
+          s"${path.map(_.name).mkString("_")}__${srcRef.name}"
       }
 
       val testClassName =

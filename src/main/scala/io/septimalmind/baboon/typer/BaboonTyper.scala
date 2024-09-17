@@ -11,10 +11,8 @@ import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 import izumi.fundamentals.graphs.struct.IncidenceMatrix
 import izumi.fundamentals.graphs.tools.{Toposort, ToposortLoopBreaker}
 import izumi.fundamentals.graphs.{DG, GraphMeta}
-import izumi.fundamentals.platform.crypto.IzSha256Hash
 
 import scala.annotation.tailrec
-import scala.collection.mutable
 
 trait BaboonTyper {
   def process(model: RawDomain): Either[NEList[BaboonIssue.TyperIssue], Domain]
@@ -60,7 +58,15 @@ object BaboonTyper {
         deepSchema <- computeDeepSchema(graph)
         loops = enquiries.loopsOf(graph.meta.nodes)
       } yield {
-        Domain(id, version, graph, excludedIds, shallowSchema, deepSchema, loops)
+        Domain(
+          id,
+          version,
+          graph,
+          excludedIds,
+          shallowSchema,
+          deepSchema,
+          loops
+        )
       }
     }
 
@@ -73,7 +79,9 @@ object BaboonTyper {
       if (seen.contains(id)) {
         List(s"[recursive:$self]")
       } else {
-        defs(id) match {
+        val maybedef = defs.get(id)
+        assert(maybedef.nonEmpty, s"BUG: $id not found")
+        maybedef.get match {
           case _: DomainMember.Builtin =>
             List(s"[builtin:$self]")
           case u: DomainMember.User =>
@@ -301,8 +309,8 @@ object BaboonTyper {
           .biSequence
       } yield {
         val adtMemberDependsOnAdt = (id.owner match {
-          case Owner.Toplevel => Set.empty
-          case Owner.Adt(id)  => Set(id)
+          case Owner.Adt(id) => Set(id)
+          case _             => Set.empty
         })
 
         (id, (mappedDeps ++ adtMemberDependsOnAdt, defn))
@@ -353,6 +361,27 @@ object BaboonTyper {
       isRoot: Boolean
     ): Either[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
       member match {
+        case namespace: RawNamespace =>
+          for {
+            sub <- namespace.defns
+              .map(m => buildScope(m.value, isRoot = m.root))
+              .biSequence
+            asMap <- sub
+              .map(s => (s.name, s))
+              .toUniqueMap(
+                nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta))
+              )
+            asNEMap <- NEMap
+              .from(asMap)
+              .toRight(NEList(BaboonIssue.ScopeCannotBeEmpty(member)))
+          } yield {
+            SubScope(
+              ScopeName(namespace.name.name),
+              FullRawDefn(namespace, isRoot),
+              asNEMap
+            )
+          }
+
         case dto: RawDto =>
           Right(LeafScope(ScopeName(dto.name.name), FullRawDefn(dto, isRoot)))
         case contract: RawContract =>

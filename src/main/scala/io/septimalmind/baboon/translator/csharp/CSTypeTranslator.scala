@@ -35,14 +35,6 @@ class CSTypeTranslator(options: CompilerOptions) {
     CSPackageId(segments)
   }
 
-  def adtNsName(id: TypeId.User): String = {
-    if (options.csUseCompactAdtForm) {
-      id.name.name
-    } else {
-      id.name.name.toLowerCase
-    }
-  }
-
   def toCsTypeRefDeref(tid: TypeId.User,
                        domain: Domain,
                        evolution: BaboonEvolution): CSType = {
@@ -64,12 +56,37 @@ class CSTypeTranslator(options: CompilerOptions) {
                          evolution: BaboonEvolution): CSType = {
     val version = domain.version
     val pkg = toCsPkg(tid.pkg, version, evolution)
+
+    val ownerAsPrefix = renderOwner(tid.owner)
+    val fullPrefix = pkg.parts ++ ownerAsPrefix
+
     val fullPkg = tid.owner match {
-      case Owner.Toplevel => pkg
-      case Owner.Adt(id) =>
-        CSPackageId(pkg.parts :+ adtNsName(id), isStatic = true)
+      case Owner.Adt(_) =>
+        CSPackageId(pkg.parts ++ ownerAsPrefix, isStatic = true)
+      case _ =>
+        CSPackageId(fullPrefix)
     }
     CSType(fullPkg, tid.name.name.capitalize, fq = false)
+  }
+
+  def adtNsName(id: TypeId.User): String = {
+    if (options.csUseCompactAdtForm) {
+      id.name.name
+    } else {
+      id.name.name.toLowerCase
+    }
+  }
+
+  private def renderOwner(owner: Owner): Seq[String] = {
+    owner match {
+      case Owner.Toplevel =>
+        Seq.empty
+      case Owner.Ns(path) =>
+        path.map(_.name)
+      case Owner.Adt(id) =>
+        val sub = renderOwner(id.owner) :+ adtNsName(id)
+        sub
+    }
   }
 
   private def asCsTypeScalar(b: TypeId.BuiltinScalar) = {
@@ -169,7 +186,7 @@ class CSTypeTranslator(options: CompilerOptions) {
               evolution: BaboonEvolution,
               fullyQualified: Boolean = false,
               mut: Boolean = false,
-             ): TextTree[CSValue] = {
+  ): TextTree[CSValue] = {
     val out = tpe match {
       case TypeRef.Scalar(id) =>
         asCsType(id, domain, evolution, mut)
@@ -194,7 +211,9 @@ class CSTypeTranslator(options: CompilerOptions) {
     }
   }
 
-  def deNull(tpe: TypeRef, domain: Domain, ref: TextTree[CSValue]): TextTree[CSValue] = {
+  def deNull(tpe: TypeRef,
+             domain: Domain,
+             ref: TextTree[CSValue]): TextTree[CSValue] = {
     tpe match {
       case TypeRef.Scalar(TypeId.Builtins.str) =>
         ref
@@ -257,7 +276,7 @@ class CSTypeTranslator(options: CompilerOptions) {
   private def isEnum(tpe: TypeRef, domain: Domain) = {
     domain.defs.meta.nodes.get(tpe.id).exists {
       case DomainMember.User(_, _: Typedef.Enum, _) => true
-      case _ => false
+      case _                                        => false
     }
   }
 }

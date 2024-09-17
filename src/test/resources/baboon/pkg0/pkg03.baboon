@@ -5,6 +5,28 @@ version "3.0.0"
 include "pkg0/pkg03-inclusion.model"
 
 
+ns test {
+    root data TEST_D1 {
+       a: test.sub.TEST_SUB_A1
+       b: sub.TEST_SUB_A1
+    }
+
+    ns sub {
+        adt TEST_SUB_A1 {
+           data TEST_SUB_A1_B1 { value: i32 }
+           data TEST_SUB_A1_B2 { value: str }
+           data TEST_SUB_A1_B3_RECURSIVE { value: TEST_SUB_A1 }
+           data TEST_SUB_A1_B4_RECURSIVE { value: test.sub.TEST_SUB_A1 }
+           data TEST_SUB_A1_B5_RECURSIVE { value: test.sub.TEST_SUB_A1 }
+        }
+
+        adt TEST_SUB_A2 {
+           data TEST_SUB_A2_B1 { value: i32 }
+           data TEST_SUB_A2_B2 { value: str }
+        }
+    }
+}
+
 root adt RecTest1 {
    data Branch1 { value: RecTest1 }
    data Branch2 { value : i32 }

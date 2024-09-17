@@ -1,16 +1,12 @@
 package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.model.{
-  RawAdt,
-  RawNodeMeta,
-  RawTypeName,
-  ScopedRef
-}
+import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.typer.BaboonTyper.FullRawDefn
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.{
   LeafScope,
+  NestedScope,
   RootScope,
   ScopeName,
   SubScope
@@ -28,6 +24,7 @@ trait ScopeSupport {
   ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User]
 
   def resolveTypeId(
+    prefix: List[RawTypeName],
     name: RawTypeName,
     path: NEList[Scope[FullRawDefn]],
     pkg: Pkg,
@@ -43,9 +40,10 @@ trait ScopeSupport {
 }
 
 object ScopeSupport {
-  case class FoundDefn(defn: FullRawDefn,
-                       path: List[Scope[FullRawDefn]],
-                       scope: Scope[FullRawDefn])
+  case class FoundDefn(path: List[Scope[FullRawDefn]],
+                       scope: NestedScope[FullRawDefn]) {
+    def defn: FullRawDefn = scope.defn
+  }
 
   case class LookupResult(suffix: List[Scope[FullRawDefn]],
                           scope: LeafScope[FullRawDefn])
@@ -118,7 +116,7 @@ object ScopeSupport {
       meta: RawNodeMeta
     ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User] = {
       for {
-        id <- resolveTypeId(name, path, pkg, meta)
+        id <- resolveTypeId(List.empty, name, path, pkg, meta)
         userId <- id match {
           case id: TypeId.Builtin =>
             Left(NEList(BaboonIssue.UnexpectedBuiltin(id, pkg, meta)))
@@ -130,30 +128,37 @@ object ScopeSupport {
       }
     }
 
+    def convertTypename(
+      raw: RawTypeName,
+      meta: RawNodeMeta
+    ): Either[NEList[BaboonIssue.TyperIssue], TypeName] = {
+      for {
+        typename <- Right(TypeName(raw.name))
+        _ <- SymbolNames.validTypeName(typename, meta)
+      } yield {
+        typename
+      }
+    }
+
     def resolveTypeId(
+      prefix: List[RawTypeName],
       name: RawTypeName,
       path: NEList[Scope[FullRawDefn]],
       pkg: Pkg,
       meta: RawNodeMeta
     ): Either[NEList[BaboonIssue.TyperIssue], TypeId] = {
       for {
-        typename <- Right(TypeName(name.name))
-        _ <- SymbolNames.validTypeName(typename, meta)
-        found = findDefn(ScopeName(name.name), path.reverse.toList)
+        typename <- convertTypename(name, meta)
+        needle = prefix.map(_.name).map(ScopeName) ++ List(ScopeName(name.name))
+        found = findPrefixedDefn(needle, path.reverse.toList)
         result <- found match {
           case Some(value) =>
             for {
-              owner <- pathToOwner(value.path, pkg, meta)
+              owner <- pathToOwner(value.path, pkg)
             } yield {
-              val fixSelfRef = owner match {
-                case Owner.Adt(id) if id.name == typename =>
-                  Owner.Toplevel
-                case o => o
-              }
-
-              TypeId.User(pkg, fixSelfRef, typename)
+              val out = TypeId.User(pkg, owner, typename)
+              out
             }
-
           case None =>
             asBuiltin(typename).toRight(
               NEList(
@@ -166,13 +171,106 @@ object ScopeSupport {
       }
     }
 
-    private def asBuiltin(name: TypeName): Option[TypeId.Builtin] = {
-      if (TypeId.Builtins.collections.map(_.name).contains(name)) {
-        Some(TypeId.BuiltinCollection(name))
-      } else if (TypeId.Builtins.scalars.map(_.name).contains(name)) {
-        Some(TypeId.BuiltinScalar(name))
-      } else {
-        None
+    private def findPrefixedDefn(
+      needles: List[ScopeName],
+      reversePath: List[Scope[FullRawDefn]]
+    ): Option[FoundDefn] = {
+
+      def subfind(needle: ScopeName,
+                  reversePath: List[Scope[FullRawDefn]]): Option[FoundDefn] = {
+        findDefn(needle, reversePath).orElse {
+          reversePath match {
+            case _ :: tail =>
+              subfind(needle, tail)
+            case Nil =>
+              None
+          }
+
+        }
+      }
+
+      val out = needles match {
+        case Nil =>
+          None
+        case head :: Nil =>
+          subfind(head, reversePath)
+        case head :: tail =>
+          subfind(head, reversePath).flatMap { found =>
+            val newpath = (found.path ++ List(found.scope)).reverse
+            findPrefixedDefn(tail, newpath)
+          }
+      }
+      out
+    }
+
+    private def pathToOwner(defnPath: List[Scope[FullRawDefn]],
+                            pkg: Pkg,
+    ): Either[NEList[BaboonIssue.TyperIssue], Owner] = {
+
+      for {
+        ns <- namespaceOf(defnPath)
+        nsOwner = if (ns.isEmpty) {
+          Right(Owner.Toplevel)
+        } else {
+          Right(Owner.Ns(ns))
+        }
+        out <- defnPath.lastOption match {
+          case Some(value: SubScope[FullRawDefn]) =>
+            value.defn.defn match {
+              case a: RawAdt =>
+                for {
+                  name <- convertTypename(a.name, a.meta)
+                  nextOwner <- pathToOwner(defnPath.init, pkg)
+                } yield {
+                  Owner.Adt(TypeId.User(pkg, nextOwner, name))
+                }
+              case _ =>
+                assert(true)
+                nsOwner
+            }
+
+          case Some(_) =>
+            nsOwner
+          case None =>
+            assert(ns.isEmpty)
+            Right(Owner.Toplevel)
+        }
+      } yield {
+        out
+      }
+    }
+
+    private def namespaceOf(
+      path: List[Scope[FullRawDefn]],
+    ): Either[NEList[BaboonIssue.TyperIssue], List[TypeName]] = {
+      path match {
+        case head :: tail =>
+          for {
+            next <- namespaceOf(tail)
+            out <- head match {
+              case _: RootScope[_] =>
+                Right(next)
+
+              case scope: Scope.SubScope[_] =>
+                assert(
+                  scope.defn.defn.isInstanceOf[RawAdt] || scope.defn.defn
+                    .isInstanceOf[RawNamespace]
+                )
+                Right(List(TypeName(scope.name.name)) ++ next)
+              case scope: Scope.LeafScope[_] =>
+                assert(
+                  !scope.defn.defn.isInstanceOf[RawAdt] && !scope.defn.defn
+                    .isInstanceOf[RawNamespace]
+                )
+                assert(tail.isEmpty, "typedefs must terminate type path")
+                Right(List.empty)
+            }
+          } yield {
+            out
+          }
+
+        case Nil =>
+          Right(List.empty)
       }
     }
 
@@ -180,23 +278,32 @@ object ScopeSupport {
       needle: ScopeName,
       reversePath: List[Scope[FullRawDefn]]
     ): Option[FoundDefn] = {
+      def found(p: List[Scope[FullRawDefn]], n: NestedScope[FullRawDefn]) = {
+        if (p.last == n) {
+          FoundDefn(p.init, n)
+        } else {
+          FoundDefn(p, n)
+        }
+
+      }
+
       reversePath.headOption match {
         case Some(s: RootScope[FullRawDefn]) =>
           s.nested
             .get(needle)
-            .map(n => FoundDefn(n.defn, reversePath, n))
+            .map(n => found(reversePath, n))
 
         case Some(s: LeafScope[FullRawDefn]) =>
           Some(s)
             .filter(_.name == needle)
-            .map(n => FoundDefn(n.defn, reversePath.reverse, n))
+            .map(n => found(reversePath.reverse, n))
             .orElse(findDefn(needle, reversePath.tail))
 
         case Some(s: SubScope[FullRawDefn]) =>
           s.nested.toMap
             .get(needle)
             .orElse(Some(s).filter(_.name == needle))
-            .map(n => FoundDefn(n.defn, reversePath.reverse, n))
+            .map(n => found(reversePath.reverse, n))
             .orElse(findDefn(needle, reversePath.tail))
 
         case None =>
@@ -204,31 +311,13 @@ object ScopeSupport {
       }
     }
 
-    private def pathToOwner(
-      defnPath: List[Scope[FullRawDefn]],
-      pkg: Pkg,
-      meta: RawNodeMeta
-    ): Either[NEList[BaboonIssue.TyperIssue], Owner] = {
-      defnPath match {
-        case (_: Scope.RootScope[FullRawDefn]) :: Nil => Right(Owner.Toplevel)
-        case (r: Scope.RootScope[FullRawDefn]) :: (sub: Scope.SubScope[
-              FullRawDefn
-            ]) :: Nil =>
-          sub.defn.defn match {
-            case a: RawAdt =>
-              for {
-                id <- resolveUserTypeId(a.name, NEList(r), pkg, a.meta)
-              } yield {
-                Owner.Adt(id)
-              }
-            case _ =>
-              Left(NEList(BaboonIssue.UnexpectedScoping(defnPath, meta)))
-          }
-
-        case Nil =>
-          Right(Owner.Toplevel)
-        case e =>
-          Left(NEList(BaboonIssue.UnexpectedScoping(e, meta)))
+    private def asBuiltin(name: TypeName): Option[TypeId.Builtin] = {
+      if (TypeId.Builtins.collections.map(_.name).contains(name)) {
+        Some(TypeId.BuiltinCollection(name))
+      } else if (TypeId.Builtins.scalars.map(_.name).contains(name)) {
+        Some(TypeId.BuiltinScalar(name))
+      } else {
+        None
       }
     }
   }

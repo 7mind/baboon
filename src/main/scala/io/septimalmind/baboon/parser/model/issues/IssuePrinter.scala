@@ -223,11 +223,12 @@ object IssuePrinter {
   implicit val scopeCannotBeEmptyPrinter: IssuePrinter[ScopeCannotBeEmpty] =
     (issue: ScopeCannotBeEmpty) => {
       val memberType = issue.member match {
-        case _: RawDto      => "DTO"
-        case _: RawEnum     => "Enum"
-        case _: RawAdt      => "ADT"
-        case _: RawForeign  => "Foreign"
-        case _: RawContract => "Contract"
+        case _: RawDto       => "DTO"
+        case _: RawEnum      => "Enum"
+        case _: RawAdt       => "ADT"
+        case _: RawForeign   => "Foreign"
+        case _: RawContract  => "Contract"
+        case _: RawNamespace => "Namespace"
       }
       s"""${extractLocation(issue.member.meta)}
        |Found an empty $memberType: ${issue.member.name.name}
@@ -343,6 +344,16 @@ object IssuePrinter {
       s"""${extractLocation(issue.meta)}
          |Contract fields were removed => name:${issue.id.toString} type:${issue.id}, missing: ${issue.missingFields
            .mkString(", ")}
+         |""".stripMargin
+    }
+
+  implicit val scopedRefToNamespacedGeneric
+    : IssuePrinter[ScopedRefToNamespacedGeneric] =
+    (issue: ScopedRefToNamespacedGeneric) => {
+      s"""${extractLocation(issue.meta)}
+         |A reference to user-defined generic, which is not supported, prefix: ${issue.prefix
+           .map(_.name)
+           .mkString(".")}
          |""".stripMargin
     }
 
@@ -688,6 +699,9 @@ object IssuePrinter {
     case i: DuplicatedTypes       => apply[DuplicatedTypes].stringify(i)
     case i: WrongParent           => apply[WrongParent].stringify(i)
     case i: MissingContractFields => apply[MissingContractFields].stringify(i)
+    case i: TodoTyperIssue                   => i.descr
+    case i: ScopedRefToNamespacedGeneric =>
+      apply[ScopedRefToNamespacedGeneric].stringify(i)
   }
 
   implicit val evolutionIssuePrinter: IssuePrinter[EvolutionIssue] = {

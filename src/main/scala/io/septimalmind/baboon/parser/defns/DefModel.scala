@@ -2,7 +2,7 @@ package io.septimalmind.baboon.parser.defns
 
 import fastparse.*
 import io.septimalmind.baboon.parser.ParserContext
-import io.septimalmind.baboon.parser.defns.base.{Literals, idt, kw}
+import io.septimalmind.baboon.parser.defns.base.{Literals, idt, kw, struct}
 import io.septimalmind.baboon.parser.model.*
 import izumi.fundamentals.platform.language.Quirks.Discarder
 
@@ -39,15 +39,25 @@ class DefModel(context: ParserContext,
 
   def member[$: P]: P[RawTLDef] = {
     import fastparse.ScalaWhitespace.whitespace
-    P(kw.root.!.? ~ (choice | dto | adt | foreign | contract)).map {
+
+    val main = P(kw.root.!.? ~ (choice | dto | adt | foreign | contract)).map {
       case (root, defn) =>
         defn.setRoot(root.nonEmpty)
     }
+
+    P(main | namespace)
   }
 
   def content[$: P]: P[RawContent] = {
     import fastparse.ScalaWhitespace.whitespace
     (include.rep() ~ member.rep()).map(RawContent.tupled)
+  }
+
+  def namespaceDef[$: P]: P[RawNamespace] = {
+    P(meta.member(kw.namespace, struct.enclosed(content))).map {
+      case (meta, name, members) =>
+        RawNamespace(RawTypeName(name), members.defs, meta)
+    }
   }
 
   def choice[$: P]: P[RawTLDef.Enum] =
@@ -60,4 +70,6 @@ class DefModel(context: ParserContext,
     defForeign.foreignEnclosed.map(RawTLDef.Foreign(false, _))
   def contract[$: P]: P[RawTLDef.Contract] =
     defContract.contractEnclosed.map(RawTLDef.Contract(false, _))
+  def namespace[$: P]: P[RawTLDef.Namespace] =
+    namespaceDef.map(RawTLDef.Namespace(_))
 }

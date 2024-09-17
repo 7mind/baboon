@@ -2,7 +2,10 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue.MissingContractFields
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue.{
+  MissingContractFields,
+  ScopedRefToNamespacedGeneric
+}
 import io.septimalmind.baboon.typer.BaboonTyper.{FullRawDefn, ScopedDefn}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.NestedScope
@@ -35,22 +38,24 @@ class BaboonTranslator(pkg: Pkg,
   private def convertMember(id: TypeId.User,
                             defn: FullRawDefn,
                             thisScope: NestedScope[FullRawDefn],
-  ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
+  ): Either[NEList[BaboonIssue.TyperIssue], List[DomainMember.User]] = {
     val root = defn.gcRoot
     defn.defn match {
       case d: RawDto =>
         convertDto(id, root, d) {
           case (id, finalFields, contractRefs) =>
             Typedef.Dto(id, finalFields, contractRefs)
-        }.map(d => NEList(d))
-      case e: RawEnum    => converEnum(id, root, e).map(e => NEList(e))
-      case a: RawAdt     => convertAdt(id, root, a, thisScope)
-      case f: RawForeign => convertForeign(id, root, f)
+        }.map(d => List(d))
+      case e: RawEnum    => converEnum(id, root, e).map(e => List(e))
+      case a: RawAdt     => convertAdt(id, root, a, thisScope).map(_.toList)
+      case f: RawForeign => convertForeign(id, root, f).map(_.toList)
       case c: RawContract =>
         convertDto(id, root, c) {
           case (id, finalFields, contractRefs) =>
             Typedef.Contract(id, finalFields, contractRefs)
-        }.map(d => NEList(d))
+        }.map(d => List(d))
+      case _: RawNamespace => // namespace itself is not a typedef :3
+        Right(List.empty)
     }
   }
 
@@ -200,8 +205,6 @@ class BaboonTranslator(pkg: Pkg,
       adtContracts <- dto match {
         case _: RawDto =>
           id.owner match {
-            case Owner.Toplevel =>
-              Right(List.empty)
             case Owner.Adt(xid) =>
               defined(xid) match {
                 case DomainMember.User(_, defn: Typedef.Adt, _) =>
@@ -211,6 +214,8 @@ class BaboonTranslator(pkg: Pkg,
                 case o =>
                   Left(NEList(BaboonIssue.WrongParent(id, o.id, dto.meta)))
               }
+            case _ =>
+              Right(List.empty)
           }
         case _: RawContract =>
           Right(List.empty)
@@ -309,9 +314,9 @@ class BaboonTranslator(pkg: Pkg,
     meta: RawNodeMeta
   ): Either[NEList[BaboonIssue.TyperIssue], TypeRef] = {
     tpe match {
-      case RawTypeRef.Simple(name) =>
+      case RawTypeRef.Simple(name, prefix) =>
         for {
-          id <- scopeSupport.resolveTypeId(name, path, pkg, meta)
+          id <- scopeSupport.resolveTypeId(prefix, name, path, pkg, meta)
           asScalar <- id match {
             case scalar: TypeId.Scalar =>
               Right(scalar)
@@ -321,9 +326,12 @@ class BaboonTranslator(pkg: Pkg,
         } yield {
           TypeRef.Scalar(asScalar)
         }
-      case RawTypeRef.Constructor(name, params) =>
+      case RawTypeRef.Constructor(name, params, prefix) =>
         for {
-          id <- scopeSupport.resolveTypeId(name, path, pkg, meta)
+          _ <- Either.ifThenFail(prefix.nonEmpty)(
+            NEList(ScopedRefToNamespacedGeneric(prefix, meta))
+          )
+          id <- scopeSupport.resolveTypeId(prefix, name, path, pkg, meta)
           asCollection <- id match {
             case coll: TypeId.BuiltinCollection =>
               Right(coll)

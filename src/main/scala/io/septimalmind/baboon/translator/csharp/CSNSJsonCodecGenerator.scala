@@ -97,8 +97,9 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
         )
 
         val adtParents = defn.id.owner match {
-          case Owner.Toplevel => List.empty
-          case Owner.Adt(_)   => List(q"$iBaboonAdtMemberMeta")
+          case Owner.Adt(_) => List(q"$iBaboonAdtMemberMeta")
+          case _            => List.empty
+
         }
         val extParents = List(q"$iBaboonJsonCodec<$iBaboonGenerated>") ++ adtParents
 
@@ -153,10 +154,9 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
     q"""new $nsJObject(new $nsJProperty("$branchName", $tree))"""
   }
 
-  private def genAdtBodies(
-    name: CSValue.CSType,
-    a: Typedef.Adt,
-    domain: Domain,
+  private def genAdtBodies(name: CSValue.CSType,
+                           a: Typedef.Adt,
+                           domain: Domain,
   ): (TextTree[CSValue], TextTree[Nothing]) = {
 
     val branches = a.dataMembers(domain).map { m =>

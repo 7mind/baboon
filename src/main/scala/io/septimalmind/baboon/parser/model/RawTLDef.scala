@@ -22,4 +22,8 @@ object RawTLDef {
   case class Contract(root: Boolean, value: RawContract) extends RawTLDef {
     override def setRoot(root: Boolean): Contract = this.copy(root = root)
   }
+  case class Namespace(value: RawNamespace) extends RawTLDef {
+    override def setRoot(root: Boolean): Namespace = this
+    override def root: Boolean = false
+  }
 }

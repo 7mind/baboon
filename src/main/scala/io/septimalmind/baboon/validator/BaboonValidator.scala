@@ -153,9 +153,13 @@ object BaboonValidator {
                 case DomainMember.Builtin(id) => id.name.name
                 case DomainMember.User(_, defn, _) =>
                   defn.id.owner match {
-                    case Owner.Toplevel => defn.id.name.name
+                    case Owner.Toplevel =>
+                      defn.id.name.name
                     case Owner.Adt(id) =>
                       s"${id.name.name}#${defn.id.name.name}"
+                    case Owner.Ns(path) =>
+                      s"//${path.map(_.name).mkString("/")}#${defn.id.name.name}"
+
                   }
               }
               .filter(_._2.size > 1)

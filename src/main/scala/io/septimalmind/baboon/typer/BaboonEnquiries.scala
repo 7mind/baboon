@@ -236,6 +236,7 @@ object BaboonEnquiries {
         case u: TypeId.User =>
           val owner = u.owner match {
             case Owner.Toplevel => "//"
+            case Owner.Ns(path) => s"//${path.map(_.name).mkString("/")}/"
             case Owner.Adt(id)  => s"/${wrap(id)}/"
           }
           s"${u.pkg.path.mkString(".")}#${owner}#${u.name.name}"

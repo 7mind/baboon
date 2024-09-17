@@ -74,6 +74,8 @@ object CSDefnTranslator {
         defn.defn.id.owner match {
           case Owner.Toplevel =>
             s"$fbase/$fname"
+          case Owner.Ns(path) =>
+            s"$fbase/${path.map(_.name.toLowerCase).mkString(".")}-$fname"
           case Owner.Adt(id) =>
             s"$fbase/${id.name.name.toLowerCase}-$fname"
         }
@@ -238,11 +240,11 @@ object CSDefnTranslator {
             dto.contracts.toSeq.map(c => trans.asCsType(c, domain, evo))
 
           val adtParents = dto.id.owner match {
-            case Owner.Toplevel =>
-              Seq.empty
             case Owner.Adt(id) =>
               val parentId = trans.asCsType(id, domain, evo)
               Seq(parentId, q"$iBaboonAdtMemberMeta")
+            case _ =>
+              Seq.empty
           }
 
           val allParents = adtParents ++ contractParents ++ Seq(q"$genMarker")
