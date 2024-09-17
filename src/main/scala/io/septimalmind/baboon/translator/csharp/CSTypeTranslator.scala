@@ -77,7 +77,7 @@ class CSTypeTranslator(options: CompilerOptions) {
     }
   }
 
-  def renderOwner(owner: Owner): Seq[String] = {
+  private def renderOwner(owner: Owner): Seq[String] = {
     owner match {
       case Owner.Toplevel =>
         Seq.empty
