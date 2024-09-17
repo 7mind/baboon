@@ -17,7 +17,7 @@ ns test {
            data TEST_SUB_A1_B2 { value: str }
            data TEST_SUB_A1_B3_RECURSIVE { value: TEST_SUB_A1 }
            data TEST_SUB_A1_B4_RECURSIVE { value: test.sub.TEST_SUB_A1 }
-           data TEST_SUB_A1_B5_RECURSIVE { value: test.sub.TEST_SUB_A1 }
+           data TEST_SUB_A1_B5_RECURSIVE { value: sub.TEST_SUB_A1 }
         }
 
         adt TEST_SUB_A2 {
