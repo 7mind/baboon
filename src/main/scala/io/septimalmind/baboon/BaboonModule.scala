@@ -7,7 +7,7 @@ import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.translator.csharp.*
 import io.septimalmind.baboon.typer.*
-import io.septimalmind.baboon.typer.BaboonTyper.FullRawDefn
+import io.septimalmind.baboon.typer.BaboonTyper.{FullRawDefn, ScopedDefn}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BLogger
 import io.septimalmind.baboon.validator.BaboonValidator
@@ -47,7 +47,7 @@ class BaboonModule(options: CompilerOptions,
     .localDependencies(
       List(
         DIKey[Pkg],
-        DIKey[Scope[FullRawDefn]],
+        DIKey[ScopedDefn],
         DIKey[Map[TypeId, DomainMember]]
       )
     )

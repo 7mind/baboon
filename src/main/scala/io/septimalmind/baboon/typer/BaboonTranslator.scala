@@ -14,24 +14,23 @@ import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
 
 class BaboonTranslator(pkg: Pkg,
-                       scope: Scope[FullRawDefn],
+                       defn: ScopedDefn,
                        defined: Map[TypeId, DomainMember],
                        scopeSupport: ScopeSupport) {
-  def translate(
-    defn: ScopedDefn
-  ): Either[NEList[BaboonIssue.TyperIssue], List[DomainMember]] = {
+  def translate()
+    : Either[NEList[BaboonIssue.TyperIssue], List[DomainMember]] = {
 
     for {
       rawDefn <- Right(defn.thisScope.defn)
       id <- scopeSupport.resolveUserTypeId(
         rawDefn.defn.name,
-        scope,
+        defn.thisScope,
         pkg,
         rawDefn.defn.meta
       )
       members <- convertMember(id, rawDefn, defn.thisScope)
     } yield {
-      members.toList
+      members
     }
   }
 
@@ -117,7 +116,7 @@ class BaboonTranslator(pkg: Pkg,
     refMeta: RawNodeMeta
   ): Either[NEList[BaboonIssue.TyperIssue], Seq[Field]] = {
     for {
-      id <- scopeSupport.resolveScopedRef(parent, scope, pkg, refMeta)
+      id <- scopeSupport.resolveScopedRef(parent, defn.thisScope, pkg, refMeta)
       parentDef = defined(id)
       out <- parentDef match {
         case DomainMember.User(_, defn: Typedef.Dto, _) =>
@@ -158,7 +157,12 @@ class BaboonTranslator(pkg: Pkg,
                       refMeta: RawNodeMeta,
   ): Either[NEList[BaboonIssue.TyperIssue], List[ContractContent]] = {
     for {
-      id <- scopeSupport.resolveScopedRef(c.contract.tpe, scope, pkg, refMeta)
+      id <- scopeSupport.resolveScopedRef(
+        c.contract.tpe,
+        defn.thisScope,
+        pkg,
+        refMeta
+      )
       content <- readContractContent(id, meta)
     } yield {
       content
@@ -256,11 +260,11 @@ class BaboonTranslator(pkg: Pkg,
       _ <- finalFields
         .map(m => (m.name.name.toLowerCase, m))
         .toUniqueMap(e => NEList(BaboonIssue.NonUniqueFields(id, e, dto.meta)))
-      contractRefs = contracts.flatMap(_.refs).distinct.toList
+      contractRefs = contracts.flatMap(_.refs).distinct
     } yield {
       DomainMember.User(
         isRoot,
-        produce(id, finalFields.toList, contractRefs),
+        produce(id, finalFields, contractRefs),
         dto.meta
       )
     }
@@ -287,7 +291,7 @@ class BaboonTranslator(pkg: Pkg,
         .map(
           ref =>
             scopeSupport
-              .resolveScopedRef(ref.contract.tpe, scope, pkg, ref.meta)
+              .resolveScopedRef(ref.contract.tpe, defn.thisScope, pkg, ref.meta)
         )
         .biSequence
         .map(_.toList)
@@ -312,7 +316,13 @@ class BaboonTranslator(pkg: Pkg,
     tpe match {
       case RawTypeRef.Simple(name, prefix) =>
         for {
-          id <- scopeSupport.resolveTypeId(prefix, name, scope, pkg, meta)
+          id <- scopeSupport.resolveTypeId(
+            prefix,
+            name,
+            defn.thisScope,
+            pkg,
+            meta
+          )
           asScalar <- id match {
             case scalar: TypeId.Scalar =>
               Right(scalar)
@@ -327,7 +337,13 @@ class BaboonTranslator(pkg: Pkg,
           _ <- Either.ifThenFail(prefix.nonEmpty)(
             NEList(ScopedRefToNamespacedGeneric(prefix, meta))
           )
-          id <- scopeSupport.resolveTypeId(prefix, name, scope, pkg, meta)
+          id <- scopeSupport.resolveTypeId(
+            prefix,
+            name,
+            defn.thisScope,
+            pkg,
+            meta
+          )
           asCollection <- id match {
             case coll: TypeId.BuiltinCollection =>
               Right(coll)

@@ -4,37 +4,59 @@ import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.BaboonTyper.FullRawDefn
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.typer.model.Scope.*
+import io.septimalmind.baboon.typer.model.Scope.{NestedScope, *}
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
+
+import java.util
+
+case class ScopeTree(
+  root: RootScope[FullRawDefn],
+  parents: scala.collection.Map[NestedScope[FullRawDefn], Scope[FullRawDefn]]
+)
 
 class ScopeBuilder() {
   def buildScopes(
     pkg: Pkg,
     members: Seq[RawTLDef],
     meta: RawNodeMeta
-  ): Either[NEList[BaboonIssue.TyperIssue], RootScope[FullRawDefn]] = {
+  ): Either[NEList[BaboonIssue.TyperIssue], ScopeTree] = {
+
+    val parents =
+      new util.IdentityHashMap[NestedScope[FullRawDefn], Scope[FullRawDefn]]()
+
     for {
-      sub <- members.map(m => buildScope(m.value, m.root)).biSequence
+      sub <- members.map(m => buildScope(m.value, m.root, parents)).biSequence
       asMap <- sub
         .map(s => (s.name, s))
         .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, meta)))
     } yield {
       val out = RootScope(pkg, asMap)
+
       asMap.foreach {
         case (_, s) =>
           s.unsafeGetWriter.setParent(out)
+          assert(!parents.containsKey(s))
+          parents.put(s, out)
       }
 
-      out
+      import scala.jdk.CollectionConverters.*
+      val tree = parents.asScala
+      asMap.foreach {
+        case (_, s) =>
+          assert(tree(s) == out)
+      }
+
+      ScopeTree(out, tree)
     }
 
   }
 
   private def buildScope(
     member: RawDefn,
-    isRoot: Boolean
+    isRoot: Boolean,
+    parents: util.IdentityHashMap[NestedScope[FullRawDefn], Scope[FullRawDefn]]
   ): Either[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
     def finish(defn: RawDefn,
                asNEMap: NEMap[ScopeName, NestedScope[FullRawDefn]]) = {
@@ -46,6 +68,9 @@ class ScopeBuilder() {
       asNEMap.foreach {
         case (_, s) =>
           s.unsafeGetWriter.setParent(out)
+          assert(!parents.containsKey(s))
+          val prev = parents.put(s, out)
+          assert(prev == null)
       }
       out
     }
@@ -54,7 +79,7 @@ class ScopeBuilder() {
       case namespace: RawNamespace =>
         for {
           sub <- namespace.defns
-            .map(m => buildScope(m.value, isRoot = m.root))
+            .map(m => buildScope(m.value, isRoot = m.root, parents))
             .biSequence
           asMap <- sub
             .map(s => (s.name, s))
@@ -72,7 +97,7 @@ class ScopeBuilder() {
         for {
           sub <- adt.members
             .collect { case d: RawAdtMember => d }
-            .map(m => buildScope(m.defn, isRoot = false))
+            .map(m => buildScope(m.defn, isRoot = false, parents))
             .biSequence
           asMap <- sub
             .map(s => (s.name, s))
@@ -105,4 +130,5 @@ class ScopeBuilder() {
 
     }
   }
+
 }

@@ -252,7 +252,7 @@ object BaboonTyper {
         )
         builder = new ScopeBuilder()
         scopes <- builder.buildScopes(pkg, members, meta)
-        flattened = flattenScopes(scopes)
+        flattened = flattenScopes(scopes.root)
         ordered <- order(pkg, flattened, meta)
 
         out <- ordered.biFoldLeft(Map.empty[TypeId, DomainMember]) {
@@ -260,10 +260,10 @@ object BaboonTyper {
             for {
               next <- translator
                 .provide(pkg)
-                .provide(defn.thisScope: Scope[FullRawDefn])
+                .provide(defn)
                 .provide(acc)
                 .produce()
-                .use(_.translate(defn))
+                .use(_.translate())
               mapped = next.map(m => (m.id, m))
               dupes = acc.keySet.intersect(mapped.map(_._1).toSet)
               _ <- Either.ifThenFail(dupes.nonEmpty)(
