@@ -367,8 +367,7 @@ object BaboonTyper {
         val out = RootScope(pkg, asMap)
         asMap.foreach {
           case (_, s) =>
-            assert(s.parent == null)
-            s.parent = out
+            s.unsafeGetWriter.setParent(out)
         }
 
         out
@@ -386,12 +385,10 @@ object BaboonTyper {
           ScopeName(defn.name.name),
           FullRawDefn(defn, isRoot),
           asNEMap,
-          null,
         )
         asNEMap.foreach {
           case (_, s) =>
-            assert(s.parent == null)
-            s.parent = out
+            s.unsafeGetWriter.setParent(out)
         }
         out
       }
@@ -433,24 +430,21 @@ object BaboonTyper {
           }
 
         case dto: RawDto =>
-          Right(
-            LeafScope(ScopeName(dto.name.name), FullRawDefn(dto, isRoot), null)
-          )
+          Right(LeafScope(ScopeName(dto.name.name), FullRawDefn(dto, isRoot)))
 
         case contract: RawContract =>
           Right(
             LeafScope(
               ScopeName(contract.name.name),
-              FullRawDefn(contract, isRoot),
-              null,
+              FullRawDefn(contract, isRoot)
             )
           )
 
         case e: RawEnum =>
-          Right(LeafScope(ScopeName(e.name.name), FullRawDefn(e, isRoot), null))
+          Right(LeafScope(ScopeName(e.name.name), FullRawDefn(e, isRoot)))
 
         case f: RawForeign =>
-          Right(LeafScope(ScopeName(f.name.name), FullRawDefn(f, isRoot), null))
+          Right(LeafScope(ScopeName(f.name.name), FullRawDefn(f, isRoot)))
 
       }
     }

@@ -243,7 +243,7 @@ object ScopeSupport {
         scope match {
           case r: RootScope[FullRawDefn] => NEList(r)
           case scope: NestedScope[FullRawDefn] =>
-            go(scope.parent) ++ NEList(scope)
+            go(scope.getParent) ++ NEList(scope)
         }
 
       }
@@ -264,13 +264,13 @@ object ScopeSupport {
         case s: LeafScope[FullRawDefn] =>
           Some(s)
             .filter(_.name == head)
-            .orElse(findScope(needles, s.parent))
+            .orElse(findScope(needles, s.getParent))
 
         case s: SubScope[FullRawDefn] =>
           s.nested.toMap
             .get(head)
             .orElse(Some(s).filter(_.name == head))
-            .orElse(findScope(needles, s.parent))
+            .orElse(findScope(needles, s.getParent))
       }
 
       NEList.from(needles.tail) match {
