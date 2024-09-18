@@ -2,7 +2,7 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.typer.BaboonTyper.FullRawDefn
+import io.septimalmind.baboon.typer.BaboonTyper.{FullRawDefn, ScopeInContext}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.{
   LeafScope,
@@ -18,7 +18,7 @@ import scala.annotation.tailrec
 trait ScopeSupport {
   def resolveScopedRef(
     name: ScopedRef,
-    scope: Scope[FullRawDefn],
+    scope: ScopeInContext,
     pkg: Pkg,
     meta: RawNodeMeta
   ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User]
@@ -26,14 +26,14 @@ trait ScopeSupport {
   def resolveTypeId(
     prefix: List[RawTypeName],
     name: RawTypeName,
-    scope: Scope[FullRawDefn],
+    scope: ScopeInContext,
     pkg: Pkg,
     meta: RawNodeMeta
   ): Either[NEList[BaboonIssue.TyperIssue], TypeId]
 
   def resolveUserTypeId(
     name: RawTypeName,
-    scope: Scope[FullRawDefn],
+    scope: ScopeInContext,
     pkg: Pkg,
     meta: RawNodeMeta
   ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User]
@@ -46,7 +46,7 @@ object ScopeSupport {
   class ScopeSupportImpl extends ScopeSupport {
     def resolveScopedRef(
       name: ScopedRef,
-      scope: Scope[FullRawDefn],
+      scope: ScopeInContext,
       pkg: Pkg,
       meta: RawNodeMeta
     ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User] = {
@@ -54,11 +54,11 @@ object ScopeSupport {
       found match {
         case Some(found) =>
           for {
-            scope <- lookupName(name.path.tail, found, List.empty, meta)
-            fullPath = List(found) ++ scope.suffix
+            scopeOfFound <- lookupName(name.path.tail, found, List.empty, meta)
+            fullPath = List(found) ++ scopeOfFound.suffix
             resolved <- resolveUserTypeId(
               name.path.last,
-              fullPath.last,
+              ScopeInContext(fullPath.last, scope.tree),
               pkg,
               meta
             )
@@ -104,7 +104,7 @@ object ScopeSupport {
 
     def resolveUserTypeId(
       name: RawTypeName,
-      scope: Scope[FullRawDefn],
+      scope: ScopeInContext,
       pkg: Pkg,
       meta: RawNodeMeta
     ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User] = {
@@ -136,7 +136,7 @@ object ScopeSupport {
     def resolveTypeId(
       prefix: List[RawTypeName],
       name: RawTypeName,
-      scope: Scope[FullRawDefn],
+      scope: ScopeInContext,
       pkg: Pkg,
       meta: RawNodeMeta
     ): Either[NEList[BaboonIssue.TyperIssue], TypeId] = {
@@ -157,7 +157,8 @@ object ScopeSupport {
           case None =>
             asBuiltin(typename).toRight(
               NEList(
-                BaboonIssue.UnexpectedNonBuiltin(typename, pkg, scope, meta)
+                BaboonIssue
+                  .UnexpectedNonBuiltin(typename, pkg, scope.scope, meta)
               )
             )
         }
@@ -252,30 +253,32 @@ object ScopeSupport {
     }
 
     private def findScope(needles: NEList[ScopeName],
-                          scope: Scope[FullRawDefn],
+                          scope: ScopeInContext,
     ): Option[NestedScope[FullRawDefn]] = {
 
       val head = needles.head
 
-      val headScope = scope match {
+      val headScope = scope.scope match {
         case s: RootScope[FullRawDefn] =>
           s.nested.get(head)
 
         case s: LeafScope[FullRawDefn] =>
           Some(s)
             .filter(_.name == head)
-            .orElse(findScope(needles, s.getParent))
+            .orElse(findScope(needles, scope.parentOf(s)))
 
         case s: SubScope[FullRawDefn] =>
           s.nested.toMap
             .get(head)
             .orElse(Some(s).filter(_.name == head))
-            .orElse(findScope(needles, s.getParent))
+            .orElse(findScope(needles, scope.parentOf(s)))
       }
 
       NEList.from(needles.tail) match {
         case Some(value) =>
-          headScope.flatMap(nested => findScope(value, nested))
+          headScope.flatMap(
+            nested => findScope(value, ScopeInContext(nested, scope.tree))
+          )
         case None =>
           headScope
       }

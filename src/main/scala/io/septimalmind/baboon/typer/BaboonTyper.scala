@@ -39,7 +39,14 @@ object BaboonTyper {
     }
   }
 
-  case class ScopedDefn(thisScope: NestedScope[FullRawDefn])
+  case class ScopedDefn(thisScope: NestedScope[FullRawDefn], tree: ScopeTree) {
+    def sic: ScopeInContext = ScopeInContext(thisScope, tree)
+  }
+
+  case class ScopeInContext(scope: Scope[FullRawDefn], tree: ScopeTree) {
+    def parentOf(s: NestedScope[FullRawDefn]) =
+      ScopeInContext(tree.parents(s), tree)
+  }
 
   class BaboonTyperImpl(enquiries: BaboonEnquiries,
                         translator: Subcontext[BaboonTranslator],
@@ -252,7 +259,7 @@ object BaboonTyper {
         )
         builder = new ScopeBuilder()
         scopes <- builder.buildScopes(pkg, members, meta)
-        flattened = flattenScopes(scopes.root)
+        flattened = flattenScopes(scopes)
         ordered <- order(pkg, flattened, meta)
 
         out <- ordered.biFoldLeft(Map.empty[TypeId, DomainMember]) {
@@ -312,7 +319,7 @@ object BaboonTyper {
         rawDefn <- Right(defn.thisScope.defn)
         id <- scopeSupport.resolveUserTypeId(
           rawDefn.defn.name,
-          defn.thisScope,
+          defn.sic,
           pkg,
           rawDefn.defn.meta
         )
@@ -321,7 +328,7 @@ object BaboonTyper {
           .map(
             v =>
               scopeSupport
-                .resolveScopedRef(v, defn.thisScope, pkg, rawDefn.defn.meta)
+                .resolveScopedRef(v, defn.sic, pkg, rawDefn.defn.meta)
           )
           .biSequence
       } yield {
@@ -334,21 +341,19 @@ object BaboonTyper {
       }
     }
 
-    private def flattenScopes(
-      root: RootScope[FullRawDefn]
-    ): List[ScopedDefn] = {
+    private def flattenScopes(root: ScopeTree): List[ScopedDefn] = {
       def flattenScopes(current: NestedScope[FullRawDefn]): List[ScopedDefn] = {
         current match {
           case s: SubScope[FullRawDefn] =>
-            List(ScopedDefn(s)) ++ s.nested.toMap.values
+            List(ScopedDefn(s, root)) ++ s.nested.toMap.values
               .flatMap(n => flattenScopes(n))
               .toList
           case l: LeafScope[FullRawDefn] =>
-            List(ScopedDefn(l))
+            List(ScopedDefn(l, root))
         }
       }
 
-      root.nested.values
+      root.root.nested.values
         .flatMap(defn => flattenScopes(defn))
         .toList
     }
