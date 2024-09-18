@@ -4,8 +4,6 @@ import fastparse.Parsed
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.translator.OutputFile
-import io.septimalmind.baboon.typer.BaboonTyper
-import io.septimalmind.baboon.typer.BaboonTyper.FullRawDefn
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.graphs.ToposortError
@@ -64,7 +62,7 @@ object BaboonIssue {
 
   case class UnexpectedNonBuiltin(name: TypeName,
                                   pkg: Pkg,
-                                  path: NEList[Scope[FullRawDefn]],
+                                  path: Scope[ExtendedRawDefn],
                                   meta: RawNodeMeta)
       extends TyperIssue
 
@@ -113,7 +111,8 @@ object BaboonIssue {
     meta: RawNodeMeta
   ) extends TyperIssue
 
-  case class UnexpectedScoping(e: List[Scope[FullRawDefn]], meta: RawNodeMeta)
+  case class UnexpectedScoping(e: List[Scope[ExtendedRawDefn]],
+                               meta: RawNodeMeta)
       extends TyperIssue
       with BaboonBug
 
@@ -128,7 +127,7 @@ object BaboonIssue {
   case class BadTypeName(name: String, meta: RawNodeMeta) extends TyperIssue
 
   case class BadInheritance(
-    bad: Map[TypeId.User, List[(Set[TypeId.User], BaboonTyper.ScopedDefn)]],
+    bad: Map[TypeId.User, List[(Set[TypeId.User], Scope[ExtendedRawDefn])]],
     meta: RawNodeMeta
   ) extends TyperIssue
       with BaboonBug
@@ -140,11 +139,11 @@ object BaboonIssue {
   case class NameNotFound(pkg: Pkg, name: ScopedRef, meta: RawNodeMeta)
       extends TyperIssue
 
-  case class UnexpectedScopeLookup(b: Scope[FullRawDefn], meta: RawNodeMeta)
+  case class UnexpectedScopeLookup(b: Scope[ExtendedRawDefn], meta: RawNodeMeta)
       extends TyperIssue
 
   case class NamSeqeNotFound(names: Seq[RawTypeName],
-                             scope: Scope.SubScope[FullRawDefn],
+                             scope: Scope.SubScope[ExtendedRawDefn],
                              meta: RawNodeMeta)
       extends TyperIssue
 

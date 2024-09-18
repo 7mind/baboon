@@ -7,7 +7,7 @@ import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.*
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
-import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
+import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.graphs.struct.IncidenceMatrix
 import izumi.fundamentals.graphs.tools.{Toposort, ToposortLoopBreaker}
 import izumi.fundamentals.graphs.{DG, GraphMeta}
@@ -19,10 +19,6 @@ trait BaboonTyper {
 }
 
 object BaboonTyper {
-  case class FullRawDefn(defn: RawDefn, gcRoot: Boolean)
-
-  case class ScopedDefn(thisScope: NestedScope[FullRawDefn],
-                        path: NEList[Scope[FullRawDefn]])
 
   class BaboonTyperImpl(enquiries: BaboonEnquiries,
                         translator: Subcontext[BaboonTranslator],
@@ -233,8 +229,8 @@ object BaboonTyper {
         initial <- Right(
           TypeId.Builtins.all.map(id => DomainMember.Builtin(id))
         )
-
-        scopes <- buildScopes(pkg, members, meta)
+        builder = new ScopeBuilder()
+        scopes <- builder.buildScopes(pkg, members, meta)
         flattened = flattenScopes(scopes)
         ordered <- order(pkg, flattened, meta)
 
@@ -243,10 +239,10 @@ object BaboonTyper {
             for {
               next <- translator
                 .provide(pkg)
-                .provide(defn.path)
+                .provide(defn)
                 .provide(acc)
                 .produce()
-                .use(_.translate(defn))
+                .use(_.translate())
               mapped = next.map(m => (m.id, m))
               dupes = acc.keySet.intersect(mapped.map(_._1).toSet)
               _ <- Either.ifThenFail(dupes.nonEmpty)(
@@ -266,9 +262,11 @@ object BaboonTyper {
 
     private def order(
       pkg: Pkg,
-      flattened: List[ScopedDefn],
+      flattened: List[NestedScope[ExtendedRawDefn]],
       meta: RawNodeMeta
-    ): Either[NEList[BaboonIssue.TyperIssue], List[ScopedDefn]] = {
+    ): Either[NEList[BaboonIssue.TyperIssue], List[
+      NestedScope[ExtendedRawDefn]
+    ]] = {
       for {
         depmap <- flattened.map(d => deps(pkg, d)).biSequence
         asMap <- depmap.toUniqueMap(
@@ -286,25 +284,24 @@ object BaboonTyper {
       }
     }
 
-    private def deps(
-      pkg: Pkg,
-      defn: ScopedDefn
-    ): Either[NEList[BaboonIssue.TyperIssue],
-              (TypeId.User, (Set[TypeId.User], ScopedDefn))] = {
+    private def deps(pkg: Pkg,
+                     defn: NestedScope[ExtendedRawDefn]): Either[NEList[
+      BaboonIssue.TyperIssue
+    ], (TypeId.User, (Set[TypeId.User], NestedScope[ExtendedRawDefn]))] = {
       for {
-        rawDefn <- Right(defn.thisScope.defn)
+        rawDefn <- Right(defn.defn)
         id <- scopeSupport.resolveUserTypeId(
           rawDefn.defn.name,
-          defn.path,
+          defn,
           pkg,
           rawDefn.defn.meta
         )
         mappedDeps <- enquiries
-          .hardDepsOfRawDefn(defn.thisScope.defn.defn)
+          .hardDepsOfRawDefn(defn.defn.defn)
           .map(
             v =>
               scopeSupport
-                .resolveScopedRef(v, defn.path, pkg, rawDefn.defn.meta)
+                .resolveScopedRef(v, defn, pkg, rawDefn.defn.meta)
           )
           .biSequence
       } yield {
@@ -318,105 +315,24 @@ object BaboonTyper {
     }
 
     private def flattenScopes(
-      root: RootScope[FullRawDefn]
-    ): List[ScopedDefn] = {
+      root: RootScope[ExtendedRawDefn]
+    ): List[NestedScope[ExtendedRawDefn]] = {
+      def flattenScopes(
+        current: NestedScope[ExtendedRawDefn]
+      ): List[NestedScope[ExtendedRawDefn]] = {
+        current match {
+          case s: SubScope[ExtendedRawDefn] =>
+            List(s) ++ s.nested.toMap.values
+              .flatMap(n => flattenScopes(n))
+              .toList
+          case l: LeafScope[ExtendedRawDefn] =>
+            List(l)
+        }
+      }
+
       root.nested.values
-        .flatMap(defn => flattenScopes(NEList(root), defn))
+        .flatMap(defn => flattenScopes(defn))
         .toList
-    }
-
-    private def flattenScopes(
-      path: NEList[Scope[FullRawDefn]],
-      current: NestedScope[FullRawDefn]
-    ): List[ScopedDefn] = {
-
-      current match {
-        case s: SubScope[FullRawDefn] =>
-          List(ScopedDefn(s, path)) ++ s.nested.toMap.values
-            .flatMap(n => flattenScopes(path :+ current, n))
-            .toList
-        case l: LeafScope[FullRawDefn] =>
-          List(ScopedDefn(l, path))
-      }
-    }
-
-    private def buildScopes(
-      pkg: Pkg,
-      members: Seq[RawTLDef],
-      meta: RawNodeMeta
-    ): Either[NEList[BaboonIssue.TyperIssue], RootScope[FullRawDefn]] = {
-      for {
-        sub <- members.map(m => buildScope(m.value, m.root)).biSequence
-        asMap <- sub
-          .map(s => (s.name, s))
-          .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, meta)))
-      } yield {
-        RootScope(pkg, asMap)
-      }
-
-    }
-
-    private def buildScope(
-      member: RawDefn,
-      isRoot: Boolean
-    ): Either[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
-      member match {
-        case namespace: RawNamespace =>
-          for {
-            sub <- namespace.defns
-              .map(m => buildScope(m.value, isRoot = m.root))
-              .biSequence
-            asMap <- sub
-              .map(s => (s.name, s))
-              .toUniqueMap(
-                nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta))
-              )
-            asNEMap <- NEMap
-              .from(asMap)
-              .toRight(NEList(BaboonIssue.ScopeCannotBeEmpty(member)))
-          } yield {
-            SubScope(
-              ScopeName(namespace.name.name),
-              FullRawDefn(namespace, isRoot),
-              asNEMap
-            )
-          }
-
-        case dto: RawDto =>
-          Right(LeafScope(ScopeName(dto.name.name), FullRawDefn(dto, isRoot)))
-        case contract: RawContract =>
-          Right(
-            LeafScope(
-              ScopeName(contract.name.name),
-              FullRawDefn(contract, isRoot)
-            )
-          )
-        case e: RawEnum =>
-          Right(LeafScope(ScopeName(e.name.name), FullRawDefn(e, isRoot)))
-        case f: RawForeign =>
-          Right(LeafScope(ScopeName(f.name.name), FullRawDefn(f, isRoot)))
-        case adt: RawAdt =>
-          for {
-            sub <- adt.members
-              .collect { case d: RawAdtMember => d }
-              .map(m => buildScope(m.defn, isRoot = false))
-              .biSequence
-            asMap <- sub
-              .map(s => (s.name, s))
-              .toUniqueMap(
-                nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta))
-              )
-            asNEMap <- NEMap
-              .from(asMap)
-              .toRight(NEList(BaboonIssue.ScopeCannotBeEmpty(member)))
-          } yield {
-            SubScope(
-              ScopeName(adt.name.name),
-              FullRawDefn(adt, isRoot),
-              asNEMap
-            )
-          }
-      }
     }
 
   }

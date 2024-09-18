@@ -4,14 +4,13 @@ import distage.{DIKey, ModuleDef}
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
-import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.translator.csharp.*
+import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.*
-import io.septimalmind.baboon.typer.BaboonTyper.FullRawDefn
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.Scope.NestedScope
 import io.septimalmind.baboon.util.BLogger
 import io.septimalmind.baboon.validator.BaboonValidator
-import izumi.fundamentals.collections.nonempty.NEList
 
 import java.nio.file.Path
 
@@ -47,7 +46,7 @@ class BaboonModule(options: CompilerOptions,
     .localDependencies(
       List(
         DIKey[Pkg],
-        DIKey[NEList[Scope[FullRawDefn]]],
+        DIKey[NestedScope[ExtendedRawDefn]],
         DIKey[Map[TypeId, DomainMember]]
       )
     )
@@ -57,17 +56,6 @@ class BaboonModule(options: CompilerOptions,
     .extractWith { (translator: BaboonTranslator) =>
       translator
     }
-//  make[LocalContext[Identity, BaboonTranslator]]
-//    .fromLocalContext(new ModuleDef {
-//      make[BaboonTranslator]
-//    }.running { (translator: BaboonTranslator) =>
-//      translator
-//    })
-//    .external(
-//      DIKey[Pkg],
-//      DIKey[NEList[Scope[FullRawDefn]]],
-//      DIKey[Map[TypeId, DomainMember]]
-//    )
 
   makeSubcontext[IndividualConversionHandler]
     .localDependencies(
@@ -86,20 +74,6 @@ class BaboonModule(options: CompilerOptions,
     .extractWith { (handler: IndividualConversionHandler) =>
       handler
     }
-
-//  make[LocalContext[Identity, IndividualConversionHandler]]
-//    .fromLocalContext(new ModuleDef {
-//      make[IndividualConversionHandler]
-//    }.running { (handler: IndividualConversionHandler) =>
-//      handler
-//    })
-//    .external(
-//      DIKey[CSPackageId],
-//      DIKey[Version],
-//      DIKey.get[Domain].named("current"),
-//      DIKey.get[Domain].named("source"),
-//      DIKey.get[BaboonRuleset]
-//    )
 
   many[CSCodecTranslator]
     .add[CSNSJsonCodecGenerator]
