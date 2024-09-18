@@ -39,8 +39,8 @@ trait ScopeSupport {
 }
 
 object ScopeSupport {
-  case class LookupResult(suffix: List[Scope[FullRawDefn]],
-                          scope: LeafScope[FullRawDefn])
+  case class LookupResult(suffix: List[Scope[ExtendedRawDefn]],
+                          scope: LeafScope[ExtendedRawDefn])
 
   class ScopeSupportImpl extends ScopeSupport {
     def resolveScopedRef(
@@ -57,7 +57,7 @@ object ScopeSupport {
             fullPath = List(found) ++ scopeOfFound.suffix
             resolved <- resolveUserTypeId(
               name.path.last,
-              CAnyScope(fullPath.last, scope.tree),
+              CAnyScope(fullPath.last),
               pkg,
               meta
             )
@@ -73,14 +73,14 @@ object ScopeSupport {
     @tailrec
     private def lookupName(
       names: Seq[RawTypeName],
-      in: Scope[FullRawDefn],
-      suffix: List[Scope[FullRawDefn]],
+      in: Scope[ExtendedRawDefn],
+      suffix: List[Scope[ExtendedRawDefn]],
       meta: RawNodeMeta
     ): Either[NEList[BaboonIssue.TyperIssue], LookupResult] = {
       names.headOption match {
         case Some(value) =>
           in match {
-            case s: SubScope[FullRawDefn] =>
+            case s: SubScope[ExtendedRawDefn] =>
               s.nested.toMap.get(ScopeName(value.name)) match {
                 case Some(value) =>
                   lookupName(names.tail, value, suffix :+ value, meta)
@@ -92,7 +92,7 @@ object ScopeSupport {
           }
         case None =>
           in match {
-            case s: LeafScope[FullRawDefn] =>
+            case s: LeafScope[ExtendedRawDefn] =>
               Right(LookupResult(suffix, s))
             case b =>
               Left(NEList(BaboonIssue.UnexpectedScopeLookup(b, meta)))
@@ -148,10 +148,7 @@ object ScopeSupport {
         result <- found match {
           case Some(value) =>
             for {
-              owner <- pathToOwner(
-                asPath(CAnyScope(value, scope.tree)),
-                pkg
-              )
+              owner <- pathToOwner(asPath(CAnyScope(value)), pkg)
             } yield {
               val out = TypeId.User(pkg, owner, typename)
               out
@@ -169,7 +166,7 @@ object ScopeSupport {
       }
     }
 
-    private def pathToOwner(defnPath: List[Scope[FullRawDefn]],
+    private def pathToOwner(defnPath: List[Scope[ExtendedRawDefn]],
                             pkg: Pkg,
     ): Either[NEList[BaboonIssue.TyperIssue], Owner] = {
 
@@ -181,7 +178,7 @@ object ScopeSupport {
           Right(Owner.Ns(ns))
         }
         out <- defnPath.lastOption match {
-          case Some(value: SubScope[FullRawDefn]) =>
+          case Some(value: SubScope[ExtendedRawDefn]) =>
             value.defn.defn match {
               case a: RawAdt =>
                 for {
@@ -207,7 +204,7 @@ object ScopeSupport {
     }
 
     private def namespaceOf(
-      path: List[Scope[FullRawDefn]],
+      path: List[Scope[ExtendedRawDefn]],
     ): Either[NEList[BaboonIssue.TyperIssue], List[TypeName]] = {
       path match {
         case head :: tail =>
@@ -240,12 +237,12 @@ object ScopeSupport {
       }
     }
 
-    private def asPath(scope: ScopeInContext): List[Scope[FullRawDefn]] = {
+    private def asPath(scope: ScopeInContext): List[Scope[ExtendedRawDefn]] = {
 
-      def go(s: Scope[FullRawDefn]): NEList[Scope[FullRawDefn]] = {
+      def go(s: Scope[ExtendedRawDefn]): NEList[Scope[ExtendedRawDefn]] = {
         s match {
-          case r: RootScope[FullRawDefn] => NEList(r)
-          case n: NestedScope[FullRawDefn] =>
+          case r: RootScope[ExtendedRawDefn] => NEList(r)
+          case n: NestedScope[ExtendedRawDefn] =>
             go(scope.parentOf(n).scope) ++ NEList(n)
         }
 
@@ -256,20 +253,20 @@ object ScopeSupport {
 
     private def findScope(needles: NEList[ScopeName],
                           scope: ScopeInContext,
-    ): Option[NestedScope[FullRawDefn]] = {
+    ): Option[NestedScope[ExtendedRawDefn]] = {
 
       val head = needles.head
 
       val headScope = scope.scope match {
-        case s: RootScope[FullRawDefn] =>
+        case s: RootScope[ExtendedRawDefn] =>
           s.nested.get(head)
 
-        case s: LeafScope[FullRawDefn] =>
+        case s: LeafScope[ExtendedRawDefn] =>
           Some(s)
             .filter(_.name == head)
             .orElse(findScope(needles, scope.parentOf(s)))
 
-        case s: SubScope[FullRawDefn] =>
+        case s: SubScope[ExtendedRawDefn] =>
           s.nested.toMap
             .get(head)
             .orElse(Some(s).filter(_.name == head))
@@ -278,9 +275,7 @@ object ScopeSupport {
 
       NEList.from(needles.tail) match {
         case Some(value) =>
-          headScope.flatMap(
-            nested => findScope(value, CAnyScope(nested, scope.tree))
-          )
+          headScope.flatMap(nested => findScope(value, CAnyScope(nested)))
         case None =>
           headScope
       }

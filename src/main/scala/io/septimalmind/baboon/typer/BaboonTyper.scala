@@ -261,9 +261,9 @@ object BaboonTyper {
     }
 
     private def order(
-                       pkg: Pkg,
-                       flattened: List[CNestedScope],
-                       meta: RawNodeMeta
+      pkg: Pkg,
+      flattened: List[CNestedScope],
+      meta: RawNodeMeta
     ): Either[NEList[BaboonIssue.TyperIssue], List[CNestedScope]] = {
       for {
         depmap <- flattened.map(d => deps(pkg, d)).biSequence
@@ -313,19 +313,23 @@ object BaboonTyper {
       }
     }
 
-    private def flattenScopes(root: ScopeTree): List[CNestedScope] = {
-      def flattenScopes(current: NestedScope[FullRawDefn]): List[CNestedScope] = {
+    private def flattenScopes(
+      root: RootScope[ExtendedRawDefn]
+    ): List[CNestedScope] = {
+      def flattenScopes(
+        current: NestedScope[ExtendedRawDefn]
+      ): List[CNestedScope] = {
         current match {
-          case s: SubScope[FullRawDefn] =>
-            List(CNestedScope(s, root)) ++ s.nested.toMap.values
+          case s: SubScope[ExtendedRawDefn] =>
+            List(CNestedScope(s)) ++ s.nested.toMap.values
               .flatMap(n => flattenScopes(n))
               .toList
-          case l: LeafScope[FullRawDefn] =>
-            List(CNestedScope(l, root))
+          case l: LeafScope[ExtendedRawDefn] =>
+            List(CNestedScope(l))
         }
       }
 
-      root.root.nested.values
+      root.nested.values
         .flatMap(defn => flattenScopes(defn))
         .toList
     }

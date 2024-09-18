@@ -23,11 +23,9 @@ class ScopeBuilder() {
     pkg: Pkg,
     members: Seq[RawTLDef],
     meta: RawNodeMeta
-  ): Either[NEList[BaboonIssue.TyperIssue], ScopeTree] = {
+  ): Either[NEList[BaboonIssue.TyperIssue], RootScope[ExtendedRawDefn]] = {
 
     val gen = new UIDGen {}
-//    val parents =
-//      new util.IdentityHashMap[NestedScope[FullRawDefn], Scope[FullRawDefn]]()
 
     for {
       sub <- members.map(m => buildScope(m.value, m.root, gen)).biSequence
@@ -36,23 +34,10 @@ class ScopeBuilder() {
         .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, meta)))
     } yield {
       val out = RootScope(gen.next(), pkg, asMap)
+      val parents = out.identifyParents
+      val index = out.index
 
-//      asMap.foreach {
-//        case (_, s) =>
-//          assert(!parents.containsKey(s))
-//          parents.put(s, out)
-//      }
-//
-//      import scala.jdk.CollectionConverters.*
-//      val tree = parents.asScala
-//      asMap.foreach {
-//        case (_, s) =>
-//          assert(tree(s) == out)
-//      }
-
-
-
-      ScopeTree(out, out.identifyParents, out.index)
+      out.map(defn => ExtendedRawDefn(defn, ScopeContext(parents, index)))
     }
 
   }
@@ -64,19 +49,12 @@ class ScopeBuilder() {
   ): Either[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
     def finish(defn: RawDefn,
                asNEMap: NEMap[ScopeName, NestedScope[FullRawDefn]]) = {
-      val out = SubScope(
+      SubScope(
         gen.next(),
         ScopeName(defn.name.name),
         FullRawDefn(defn, isRoot),
         asNEMap,
       )
-//      asNEMap.foreach {
-//        case (_, s) =>
-//          assert(!parents.containsKey(s))
-//          val prev = parents.put(s, out)
-//          assert(prev == null)
-//      }
-      out
     }
 
     member match {

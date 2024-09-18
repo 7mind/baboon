@@ -33,7 +33,7 @@ class BaboonTranslator(pkg: Pkg,
   }
 
   private def convertMember(id: TypeId.User,
-                            defn: FullRawDefn,
+                            defn: ExtendedRawDefn,
                             thisScope: ScopeInContext,
   ): Either[NEList[BaboonIssue.TyperIssue], List[DomainMember.User]] = {
     val root = defn.gcRoot

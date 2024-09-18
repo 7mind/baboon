@@ -5,6 +5,8 @@ import izumi.fundamentals.collections.nonempty.NEMap
 
 sealed trait Scope[Def] {
   def id: ScopeUID
+
+  def map[Def2](defnMap: Def => Def2): Scope[Def2]
 }
 
 object Scope {
@@ -17,12 +19,12 @@ object Scope {
                             nested: Map[ScopeName, NestedScope[Def]])
       extends Scope[Def] {
 
-    def identifyParents: Map[ScopeUID, ScopeUID] = {
-      Scope.identifyParents(this)
-    }
-
-    def index: Map[ScopeUID, Scope[Def]] = {
-      Scope.index(this)
+    def map[Def2](defnMap: Def => Def2): RootScope[Def2] = {
+      copy(
+        nested = nested.view
+          .mapValues(_.map(defnMap).asInstanceOf[NestedScope[Def2]])
+          .toMap
+      )
     }
 
   }
@@ -36,12 +38,33 @@ object Scope {
                            name: ScopeName,
                            defn: Def,
                            nested: NEMap[ScopeName, NestedScope[Def]])
-      extends NestedScope[Def]
+      extends NestedScope[Def] {
+    def map[Def2](defnMap: Def => Def2): SubScope[Def2] = {
+      copy(defn = defnMap(defn), nested = nested.map {
+        case (n, v) => (n, v.map(defnMap).asInstanceOf[NestedScope[Def2]])
+      })
+    }
+
+  }
 
   case class LeafScope[Def](id: ScopeUID, name: ScopeName, defn: Def)
-      extends NestedScope[Def]
+      extends NestedScope[Def] {
+    def map[Def2](defnMap: Def => Def2): LeafScope[Def2] = {
+      copy(defn = defnMap(defn))
+    }
+  }
 
-  implicit class DebugExt[Def](scope: Scope[Def]) {
+  implicit class RootScopeExt[Def](scope: RootScope[Def]) {
+    def identifyParents: Map[ScopeUID, ScopeUID] = {
+      Scope.identifyParents(scope)
+    }
+
+    def index: Map[ScopeUID, Scope[Def]] = {
+      Scope.index(scope)
+    }
+  }
+
+  implicit class ScopeExt[Def](scope: Scope[Def]) {
     def debugRepr(defnRepr: Def => String): String = {
       import izumi.fundamentals.platform.strings.IzString.*
       scope match {

@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.typer.model
 
 import io.septimalmind.baboon.parser.model.*
+import io.septimalmind.baboon.typer.model.Scope.ScopeUID
 
 case class FullRawDefn(defn: RawDefn, gcRoot: Boolean)
 
@@ -21,4 +22,12 @@ object FullRawDefn {
       s"$root$name $n"
     }
   }
+}
+
+case class ScopeContext(parents: Map[ScopeUID, ScopeUID],
+                        index: Map[ScopeUID, Scope[FullRawDefn]])
+
+case class ExtendedRawDefn(origin: FullRawDefn, context: ScopeContext) {
+  def defn: RawDefn = origin.defn
+  def gcRoot: Boolean = origin.gcRoot
 }

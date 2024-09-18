@@ -62,7 +62,7 @@ object BaboonIssue {
 
   case class UnexpectedNonBuiltin(name: TypeName,
                                   pkg: Pkg,
-                                  path: Scope[FullRawDefn],
+                                  path: Scope[ExtendedRawDefn],
                                   meta: RawNodeMeta)
       extends TyperIssue
 
@@ -111,7 +111,8 @@ object BaboonIssue {
     meta: RawNodeMeta
   ) extends TyperIssue
 
-  case class UnexpectedScoping(e: List[Scope[FullRawDefn]], meta: RawNodeMeta)
+  case class UnexpectedScoping(e: List[Scope[ExtendedRawDefn]],
+                               meta: RawNodeMeta)
       extends TyperIssue
       with BaboonBug
 
@@ -126,8 +127,8 @@ object BaboonIssue {
   case class BadTypeName(name: String, meta: RawNodeMeta) extends TyperIssue
 
   case class BadInheritance(
-                             bad: Map[TypeId.User, List[(Set[TypeId.User], CNestedScope)]],
-                             meta: RawNodeMeta
+    bad: Map[TypeId.User, List[(Set[TypeId.User], CNestedScope)]],
+    meta: RawNodeMeta
   ) extends TyperIssue
       with BaboonBug
 
@@ -138,11 +139,11 @@ object BaboonIssue {
   case class NameNotFound(pkg: Pkg, name: ScopedRef, meta: RawNodeMeta)
       extends TyperIssue
 
-  case class UnexpectedScopeLookup(b: Scope[FullRawDefn], meta: RawNodeMeta)
+  case class UnexpectedScopeLookup(b: Scope[ExtendedRawDefn], meta: RawNodeMeta)
       extends TyperIssue
 
   case class NamSeqeNotFound(names: Seq[RawTypeName],
-                             scope: Scope.SubScope[FullRawDefn],
+                             scope: Scope.SubScope[ExtendedRawDefn],
                              meta: RawNodeMeta)
       extends TyperIssue
 
