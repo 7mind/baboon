@@ -47,7 +47,7 @@ class BaboonModule(options: CompilerOptions,
     .localDependencies(
       List(
         DIKey[Pkg],
-        DIKey[NEList[Scope[FullRawDefn]]],
+        DIKey[Scope[FullRawDefn]],
         DIKey[Map[TypeId, DomainMember]]
       )
     )

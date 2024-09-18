@@ -39,8 +39,7 @@ object BaboonTyper {
     }
   }
 
-  case class ScopedDefn(thisScope: NestedScope[FullRawDefn],
-                        path: NEList[Scope[FullRawDefn]])
+  case class ScopedDefn(thisScope: NestedScope[FullRawDefn])
 
   class BaboonTyperImpl(enquiries: BaboonEnquiries,
                         translator: Subcontext[BaboonTranslator],
@@ -261,7 +260,7 @@ object BaboonTyper {
             for {
               next <- translator
                 .provide(pkg)
-                .provide(defn.path)
+                .provide(defn.thisScope: Scope[FullRawDefn])
                 .provide(acc)
                 .produce()
                 .use(_.translate(defn))
@@ -322,7 +321,7 @@ object BaboonTyper {
           .map(
             v =>
               scopeSupport
-                .resolveScopedRef(v, defn.path.last, pkg, rawDefn.defn.meta)
+                .resolveScopedRef(v, defn.thisScope, pkg, rawDefn.defn.meta)
           )
           .biSequence
       } yield {
@@ -339,22 +338,21 @@ object BaboonTyper {
       root: RootScope[FullRawDefn]
     ): List[ScopedDefn] = {
       root.nested.values
-        .flatMap(defn => flattenScopes(NEList(root), defn))
+        .flatMap(defn => flattenScopes(defn))
         .toList
     }
 
     private def flattenScopes(
-      path: NEList[Scope[FullRawDefn]],
       current: NestedScope[FullRawDefn]
     ): List[ScopedDefn] = {
 
       current match {
         case s: SubScope[FullRawDefn] =>
-          List(ScopedDefn(s, path)) ++ s.nested.toMap.values
-            .flatMap(n => flattenScopes(path :+ current, n))
+          List(ScopedDefn(s)) ++ s.nested.toMap.values
+            .flatMap(n => flattenScopes(n))
             .toList
         case l: LeafScope[FullRawDefn] =>
-          List(ScopedDefn(l, path))
+          List(ScopedDefn(l))
       }
     }
 

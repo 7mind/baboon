@@ -40,11 +40,6 @@ trait ScopeSupport {
 }
 
 object ScopeSupport {
-  case class FoundDefn(path: List[Scope[FullRawDefn]],
-                       scope: NestedScope[FullRawDefn]) {
-    def defn: FullRawDefn = scope.defn
-  }
-
   case class LookupResult(suffix: List[Scope[FullRawDefn]],
                           scope: LeafScope[FullRawDefn])
 
@@ -56,12 +51,11 @@ object ScopeSupport {
       meta: RawNodeMeta
     ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User] = {
       val found = findScope(NEList(ScopeName(name.path.head.name)), scope)
-        .map(convertToDefn)
       found match {
         case Some(found) =>
           for {
-            scope <- lookupName(name.path.tail, found.scope, List.empty, meta)
-            fullPath = (found.path :+ found.scope) ++ scope.suffix
+            scope <- lookupName(name.path.tail, found, List.empty, meta)
+            fullPath = List(found) ++ scope.suffix
             resolved <- resolveUserTypeId(
               name.path.last,
               fullPath.last,
@@ -151,11 +145,11 @@ object ScopeSupport {
         needle = prefix.map(_.name).map(ScopeName) ++: NEList(
           ScopeName(name.name)
         )
-        found = findScope(needle, scope).map(convertToDefn)
+        found = findScope(needle, scope)
         result <- found match {
           case Some(value) =>
             for {
-              owner <- pathToOwner(asPath(value.scope).toList, pkg)
+              owner <- pathToOwner(asPath(value), pkg)
             } yield {
               val out = TypeId.User(pkg, owner, typename)
               out
@@ -255,9 +249,6 @@ object ScopeSupport {
       }
       go(scope).toList.init
 
-    }
-    private def convertToDefn(scope: NestedScope[FullRawDefn]): FoundDefn = {
-      FoundDefn(asPath(scope), scope)
     }
 
     private def findScope(needles: NEList[ScopeName],

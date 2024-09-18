@@ -14,7 +14,7 @@ import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
 
 class BaboonTranslator(pkg: Pkg,
-                       path: NEList[Scope[FullRawDefn]],
+                       scope: Scope[FullRawDefn],
                        defined: Map[TypeId, DomainMember],
                        scopeSupport: ScopeSupport) {
   def translate(
@@ -25,7 +25,7 @@ class BaboonTranslator(pkg: Pkg,
       rawDefn <- Right(defn.thisScope.defn)
       id <- scopeSupport.resolveUserTypeId(
         rawDefn.defn.name,
-        path.last,
+        scope,
         pkg,
         rawDefn.defn.meta
       )
@@ -117,7 +117,7 @@ class BaboonTranslator(pkg: Pkg,
     refMeta: RawNodeMeta
   ): Either[NEList[BaboonIssue.TyperIssue], Seq[Field]] = {
     for {
-      id <- scopeSupport.resolveScopedRef(parent, path.last, pkg, refMeta)
+      id <- scopeSupport.resolveScopedRef(parent, scope, pkg, refMeta)
       parentDef = defined(id)
       out <- parentDef match {
         case DomainMember.User(_, defn: Typedef.Dto, _) =>
@@ -158,12 +158,7 @@ class BaboonTranslator(pkg: Pkg,
                       refMeta: RawNodeMeta,
   ): Either[NEList[BaboonIssue.TyperIssue], List[ContractContent]] = {
     for {
-      id <- scopeSupport.resolveScopedRef(
-        c.contract.tpe,
-        path.last,
-        pkg,
-        refMeta
-      )
+      id <- scopeSupport.resolveScopedRef(c.contract.tpe, scope, pkg, refMeta)
       content <- readContractContent(id, meta)
     } yield {
       content
@@ -292,7 +287,7 @@ class BaboonTranslator(pkg: Pkg,
         .map(
           ref =>
             scopeSupport
-              .resolveScopedRef(ref.contract.tpe, path.last, pkg, ref.meta)
+              .resolveScopedRef(ref.contract.tpe, scope, pkg, ref.meta)
         )
         .biSequence
         .map(_.toList)
@@ -317,7 +312,7 @@ class BaboonTranslator(pkg: Pkg,
     tpe match {
       case RawTypeRef.Simple(name, prefix) =>
         for {
-          id <- scopeSupport.resolveTypeId(prefix, name, path.last, pkg, meta)
+          id <- scopeSupport.resolveTypeId(prefix, name, scope, pkg, meta)
           asScalar <- id match {
             case scalar: TypeId.Scalar =>
               Right(scalar)
@@ -332,7 +327,7 @@ class BaboonTranslator(pkg: Pkg,
           _ <- Either.ifThenFail(prefix.nonEmpty)(
             NEList(ScopedRefToNamespacedGeneric(prefix, meta))
           )
-          id <- scopeSupport.resolveTypeId(prefix, name, path.last, pkg, meta)
+          id <- scopeSupport.resolveTypeId(prefix, name, scope, pkg, meta)
           asCollection <- id match {
             case coll: TypeId.BuiltinCollection =>
               Right(coll)
