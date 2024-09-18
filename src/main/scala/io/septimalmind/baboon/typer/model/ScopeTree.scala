@@ -1,9 +1,7 @@
 package io.septimalmind.baboon.typer.model
 
-import io.septimalmind.baboon.typer.model.Scope.{NestedScope, RootScope}
+import io.septimalmind.baboon.typer.model.Scope.{RootScope, ScopeUID}
 
-case class ScopeTree(
-  root: RootScope[FullRawDefn],
-  // the underlying map is an identity hashmap!
-  parents: scala.collection.Map[NestedScope[FullRawDefn], Scope[FullRawDefn]]
-)
+case class ScopeTree(root: RootScope[FullRawDefn],
+                     parents: Map[ScopeUID, ScopeUID],
+                     index: Map[ScopeUID, Scope[FullRawDefn]])

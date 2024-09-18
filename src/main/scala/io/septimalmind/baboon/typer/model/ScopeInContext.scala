@@ -7,7 +7,7 @@ trait ScopeInContext {
   def scope: Scope[FullRawDefn]
 
   def parentOf(s: NestedScope[FullRawDefn]): ScopeInContext =
-    CAnyScope(tree.parents(s), tree)
+    CAnyScope(tree.index(tree.parents(s.id)), tree)
 }
 
 case class CNestedScope(scope: NestedScope[FullRawDefn], tree: ScopeTree)
