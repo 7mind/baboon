@@ -20,6 +20,24 @@ trait BaboonTyper {
 
 object BaboonTyper {
   case class FullRawDefn(defn: RawDefn, gcRoot: Boolean)
+  object FullRawDefn {
+    implicit class DebugExt(defn: FullRawDefn) {
+      def debugRepr: String = {
+        val n = defn.defn.name.name
+        val name = defn.defn match {
+          case _: RawDto       => s"dto"
+          case _: RawContract  => s"contract"
+          case _: RawEnum      => s"contract"
+          case _: RawAdt       => s"adt"
+          case _: RawForeign   => s"foreign"
+          case _: RawNamespace => s"namespace"
+        }
+
+        val root = if (defn.gcRoot) { "!" } else { "" }
+        s"$root$name $n"
+      }
+    }
+  }
 
   case class ScopedDefn(thisScope: NestedScope[FullRawDefn],
                         path: NEList[Scope[FullRawDefn]])
@@ -351,7 +369,15 @@ object BaboonTyper {
           .map(s => (s.name, s))
           .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, meta)))
       } yield {
-        RootScope(pkg, asMap)
+        val out = RootScope(pkg, asMap)
+        asMap.foreach {
+          case (_, s) =>
+            assert(s.parent == null)
+            s.parent = out
+        }
+
+        //println(out.debugRepr(_.debugRepr))
+        out
       }
 
     }
@@ -360,6 +386,22 @@ object BaboonTyper {
       member: RawDefn,
       isRoot: Boolean
     ): Either[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
+      def finish(defn: RawDefn,
+                 asNEMap: NEMap[ScopeName, NestedScope[FullRawDefn]]) = {
+        val out = SubScope(
+          ScopeName(defn.name.name),
+          FullRawDefn(defn, isRoot),
+          asNEMap,
+          null,
+        )
+        asNEMap.foreach {
+          case (_, s) =>
+            assert(s.parent == null)
+            s.parent = out
+        }
+        out
+      }
+
       member match {
         case namespace: RawNamespace =>
           for {
@@ -375,26 +417,9 @@ object BaboonTyper {
               .from(asMap)
               .toRight(NEList(BaboonIssue.ScopeCannotBeEmpty(member)))
           } yield {
-            SubScope(
-              ScopeName(namespace.name.name),
-              FullRawDefn(namespace, isRoot),
-              asNEMap
-            )
+            finish(namespace, asNEMap)
           }
 
-        case dto: RawDto =>
-          Right(LeafScope(ScopeName(dto.name.name), FullRawDefn(dto, isRoot)))
-        case contract: RawContract =>
-          Right(
-            LeafScope(
-              ScopeName(contract.name.name),
-              FullRawDefn(contract, isRoot)
-            )
-          )
-        case e: RawEnum =>
-          Right(LeafScope(ScopeName(e.name.name), FullRawDefn(e, isRoot)))
-        case f: RawForeign =>
-          Right(LeafScope(ScopeName(f.name.name), FullRawDefn(f, isRoot)))
         case adt: RawAdt =>
           for {
             sub <- adt.members
@@ -410,12 +435,29 @@ object BaboonTyper {
               .from(asMap)
               .toRight(NEList(BaboonIssue.ScopeCannotBeEmpty(member)))
           } yield {
-            SubScope(
-              ScopeName(adt.name.name),
-              FullRawDefn(adt, isRoot),
-              asNEMap
-            )
+            finish(adt, asNEMap)
           }
+
+        case dto: RawDto =>
+          Right(
+            LeafScope(ScopeName(dto.name.name), FullRawDefn(dto, isRoot), null)
+          )
+
+        case contract: RawContract =>
+          Right(
+            LeafScope(
+              ScopeName(contract.name.name),
+              FullRawDefn(contract, isRoot),
+              null,
+            )
+          )
+
+        case e: RawEnum =>
+          Right(LeafScope(ScopeName(e.name.name), FullRawDefn(e, isRoot), null))
+
+        case f: RawForeign =>
+          Right(LeafScope(ScopeName(f.name.name), FullRawDefn(f, isRoot), null))
+
       }
     }
 
