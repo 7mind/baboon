@@ -12,7 +12,6 @@ import io.septimalmind.baboon.typer.BaboonTyper.{
   ScopedDefn
 }
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.typer.model.Scope.NestedScope
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList

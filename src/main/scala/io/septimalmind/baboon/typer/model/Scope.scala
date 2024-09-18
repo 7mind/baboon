@@ -10,28 +10,7 @@ object Scope {
   case class RootScope[Def](pkg: Pkg, nested: Map[ScopeName, NestedScope[Def]])
       extends Scope[Def]
 
-  sealed trait ParentWriter[Def] {
-    def setParent(parent: Scope[Def]): Unit
-  }
-
-  sealed trait WithParent[Def] {
-    this: NestedScope[Def] =>
-
-    private var parent: Scope[Def] = null
-
-    def getParent: Scope[Def] = parent
-
-    def unsafeGetWriter: ParentWriter[Def] = {
-      new ParentWriter[Def] {
-        def setParent(parent: Scope[Def]): Unit = {
-          assert(WithParent.this.parent == null)
-          WithParent.this.parent = parent
-        }
-      }
-    }
-  }
-
-  sealed trait NestedScope[Def] extends Scope[Def] with WithParent[Def] {
+  sealed trait NestedScope[Def] extends Scope[Def] {
     def name: ScopeName
     def defn: Def
   }

@@ -149,7 +149,10 @@ object ScopeSupport {
         result <- found match {
           case Some(value) =>
             for {
-              owner <- pathToOwner(asPath(value), pkg)
+              owner <- pathToOwner(
+                asPath(ScopeInContext(value, scope.tree)),
+                pkg
+              )
             } yield {
               val out = TypeId.User(pkg, owner, typename)
               out
@@ -238,17 +241,17 @@ object ScopeSupport {
       }
     }
 
-    private def asPath(scope: Scope[FullRawDefn]): List[Scope[FullRawDefn]] = {
+    private def asPath(scope: ScopeInContext): List[Scope[FullRawDefn]] = {
 
-      def go(scope: Scope[FullRawDefn]): NEList[Scope[FullRawDefn]] = {
-        scope match {
+      def go(s: Scope[FullRawDefn]): NEList[Scope[FullRawDefn]] = {
+        s match {
           case r: RootScope[FullRawDefn] => NEList(r)
-          case scope: NestedScope[FullRawDefn] =>
-            go(scope.getParent) ++ NEList(scope)
+          case n: NestedScope[FullRawDefn] =>
+            go(scope.parentOf(n).scope) ++ NEList(n)
         }
 
       }
-      go(scope).toList.init
+      go(scope.scope).toList.init
 
     }
 

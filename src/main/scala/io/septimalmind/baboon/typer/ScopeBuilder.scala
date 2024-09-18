@@ -36,7 +36,6 @@ class ScopeBuilder() {
 
       asMap.foreach {
         case (_, s) =>
-          s.unsafeGetWriter.setParent(out)
           assert(!parents.containsKey(s))
           parents.put(s, out)
       }
@@ -67,7 +66,6 @@ class ScopeBuilder() {
       )
       asNEMap.foreach {
         case (_, s) =>
-          s.unsafeGetWriter.setParent(out)
           assert(!parents.containsKey(s))
           val prev = parents.put(s, out)
           assert(prev == null)
