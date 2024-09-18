@@ -337,23 +337,20 @@ object BaboonTyper {
     private def flattenScopes(
       root: RootScope[FullRawDefn]
     ): List[ScopedDefn] = {
+      def flattenScopes(current: NestedScope[FullRawDefn]): List[ScopedDefn] = {
+        current match {
+          case s: SubScope[FullRawDefn] =>
+            List(ScopedDefn(s)) ++ s.nested.toMap.values
+              .flatMap(n => flattenScopes(n))
+              .toList
+          case l: LeafScope[FullRawDefn] =>
+            List(ScopedDefn(l))
+        }
+      }
+
       root.nested.values
         .flatMap(defn => flattenScopes(defn))
         .toList
-    }
-
-    private def flattenScopes(
-      current: NestedScope[FullRawDefn]
-    ): List[ScopedDefn] = {
-
-      current match {
-        case s: SubScope[FullRawDefn] =>
-          List(ScopedDefn(s)) ++ s.nested.toMap.values
-            .flatMap(n => flattenScopes(n))
-            .toList
-        case l: LeafScope[FullRawDefn] =>
-          List(ScopedDefn(l))
-      }
     }
 
     private def buildScopes(
