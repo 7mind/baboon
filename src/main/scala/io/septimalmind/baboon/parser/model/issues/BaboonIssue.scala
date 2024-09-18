@@ -64,7 +64,7 @@ object BaboonIssue {
 
   case class UnexpectedNonBuiltin(name: TypeName,
                                   pkg: Pkg,
-                                  path: NEList[Scope[FullRawDefn]],
+                                  path: Scope[FullRawDefn],
                                   meta: RawNodeMeta)
       extends TyperIssue
 

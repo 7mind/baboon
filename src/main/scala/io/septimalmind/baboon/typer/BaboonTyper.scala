@@ -313,7 +313,7 @@ object BaboonTyper {
         rawDefn <- Right(defn.thisScope.defn)
         id <- scopeSupport.resolveUserTypeId(
           rawDefn.defn.name,
-          defn.path,
+          defn.thisScope,
           pkg,
           rawDefn.defn.meta
         )
@@ -322,7 +322,7 @@ object BaboonTyper {
           .map(
             v =>
               scopeSupport
-                .resolveScopedRef(v, defn.path, pkg, rawDefn.defn.meta)
+                .resolveScopedRef(v, defn.path.last, pkg, rawDefn.defn.meta)
           )
           .biSequence
       } yield {
@@ -376,7 +376,6 @@ object BaboonTyper {
             s.parent = out
         }
 
-        //println(out.debugRepr(_.debugRepr))
         out
       }
 
