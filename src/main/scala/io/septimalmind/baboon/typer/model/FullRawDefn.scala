@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.typer.model
 
 import io.septimalmind.baboon.parser.model.*
-import io.septimalmind.baboon.typer.model.Scope.ScopeUID
+import io.septimalmind.baboon.typer.model.Scope.{NestedScope, ScopeUID}
 
 case class FullRawDefn(defn: RawDefn, gcRoot: Boolean)
 
@@ -30,4 +30,9 @@ case class ScopeContext(parents: Map[ScopeUID, ScopeUID],
 case class ExtendedRawDefn(origin: FullRawDefn, context: ScopeContext) {
   def defn: RawDefn = origin.defn
   def gcRoot: Boolean = origin.gcRoot
+
+  def parentOf(s: NestedScope[ExtendedRawDefn]): Scope[ExtendedRawDefn] =
+    s.defn.context
+      .index(s.defn.context.parents(s.id))
+      .map(d => ExtendedRawDefn(d, s.defn.context))
 }

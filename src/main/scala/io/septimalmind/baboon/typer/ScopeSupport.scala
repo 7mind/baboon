@@ -49,7 +49,7 @@ object ScopeSupport {
       pkg: Pkg,
       meta: RawNodeMeta
     ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User] = {
-      val found = findScope(NEList(ScopeName(name.path.head.name)), scope)
+      val found = findScope(NEList(ScopeName(name.path.head.name)), scope.scope)
       found match {
         case Some(found) =>
           for {
@@ -144,7 +144,7 @@ object ScopeSupport {
         needle = prefix.map(_.name).map(ScopeName.apply) ++: NEList(
           ScopeName(name.name)
         )
-        found = findScope(needle, scope)
+        found = findScope(needle, scope.scope)
         result <- found match {
           case Some(value) =>
             for {
@@ -243,7 +243,7 @@ object ScopeSupport {
         s match {
           case r: RootScope[ExtendedRawDefn] => NEList(r)
           case n: NestedScope[ExtendedRawDefn] =>
-            go(scope.parentOf(n).scope) ++ NEList(n)
+            go(n.defn.parentOf(n)) ++ NEList(n)
         }
 
       }
@@ -252,30 +252,30 @@ object ScopeSupport {
     }
 
     private def findScope(needles: NEList[ScopeName],
-                          scope: ScopeInContext,
+                          scope: Scope[ExtendedRawDefn],
     ): Option[NestedScope[ExtendedRawDefn]] = {
 
       val head = needles.head
 
-      val headScope = scope.scope match {
+      val headScope = scope match {
         case s: RootScope[ExtendedRawDefn] =>
           s.nested.get(head)
 
         case s: LeafScope[ExtendedRawDefn] =>
           Some(s)
             .filter(_.name == head)
-            .orElse(findScope(needles, scope.parentOf(s)))
+            .orElse(findScope(needles, s.defn.parentOf(s)))
 
         case s: SubScope[ExtendedRawDefn] =>
           s.nested.toMap
             .get(head)
             .orElse(Some(s).filter(_.name == head))
-            .orElse(findScope(needles, scope.parentOf(s)))
+            .orElse(findScope(needles, s.defn.parentOf(s)))
       }
 
       NEList.from(needles.tail) match {
         case Some(value) =>
-          headScope.flatMap(nested => findScope(value, CAnyScope(nested)))
+          headScope.flatMap(nested => findScope(value, nested))
         case None =>
           headScope
       }
