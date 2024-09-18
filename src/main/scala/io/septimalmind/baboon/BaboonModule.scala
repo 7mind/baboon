@@ -7,7 +7,6 @@ import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.*
-import io.septimalmind.baboon.typer.BaboonTyper.ScopedDefn
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BLogger
 import io.septimalmind.baboon.validator.BaboonValidator
@@ -44,7 +43,7 @@ class BaboonModule(options: CompilerOptions,
 
   makeSubcontext[BaboonTranslator]
     .localDependencies(
-      List(DIKey[Pkg], DIKey[ScopedDefn], DIKey[Map[TypeId, DomainMember]])
+      List(DIKey[Pkg], DIKey[CNestedScope], DIKey[Map[TypeId, DomainMember]])
     )
     .withSubmodule(new ModuleDef {
       make[BaboonTranslator]

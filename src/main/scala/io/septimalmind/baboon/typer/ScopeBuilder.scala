@@ -2,7 +2,6 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.typer.BaboonTyper.FullRawDefn
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.{NestedScope, *}
 import izumi.functional.IzEither.*
@@ -10,11 +9,6 @@ import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 
 import java.util
-
-case class ScopeTree(
-  root: RootScope[FullRawDefn],
-  parents: scala.collection.Map[NestedScope[FullRawDefn], Scope[FullRawDefn]]
-)
 
 class ScopeBuilder() {
   def buildScopes(

@@ -4,8 +4,6 @@ import fastparse.Parsed
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.translator.OutputFile
-import io.septimalmind.baboon.typer.BaboonTyper
-import io.septimalmind.baboon.typer.BaboonTyper.FullRawDefn
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.graphs.ToposortError
@@ -128,8 +126,8 @@ object BaboonIssue {
   case class BadTypeName(name: String, meta: RawNodeMeta) extends TyperIssue
 
   case class BadInheritance(
-    bad: Map[TypeId.User, List[(Set[TypeId.User], BaboonTyper.ScopedDefn)]],
-    meta: RawNodeMeta
+                             bad: Map[TypeId.User, List[(Set[TypeId.User], CNestedScope)]],
+                             meta: RawNodeMeta
   ) extends TyperIssue
       with BaboonBug
 

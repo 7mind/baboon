@@ -2,7 +2,6 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.typer.BaboonTyper.{FullRawDefn, ScopeInContext}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.{
   LeafScope,
@@ -58,7 +57,7 @@ object ScopeSupport {
             fullPath = List(found) ++ scopeOfFound.suffix
             resolved <- resolveUserTypeId(
               name.path.last,
-              ScopeInContext(fullPath.last, scope.tree),
+              CAnyScope(fullPath.last, scope.tree),
               pkg,
               meta
             )
@@ -142,7 +141,7 @@ object ScopeSupport {
     ): Either[NEList[BaboonIssue.TyperIssue], TypeId] = {
       for {
         typename <- convertTypename(name, meta)
-        needle = prefix.map(_.name).map(ScopeName) ++: NEList(
+        needle = prefix.map(_.name).map(ScopeName.apply) ++: NEList(
           ScopeName(name.name)
         )
         found = findScope(needle, scope)
@@ -150,7 +149,7 @@ object ScopeSupport {
           case Some(value) =>
             for {
               owner <- pathToOwner(
-                asPath(ScopeInContext(value, scope.tree)),
+                asPath(CAnyScope(value, scope.tree)),
                 pkg
               )
             } yield {
@@ -280,7 +279,7 @@ object ScopeSupport {
       NEList.from(needles.tail) match {
         case Some(value) =>
           headScope.flatMap(
-            nested => findScope(value, ScopeInContext(nested, scope.tree))
+            nested => findScope(value, CAnyScope(nested, scope.tree))
           )
         case None =>
           headScope

@@ -19,34 +19,6 @@ trait BaboonTyper {
 }
 
 object BaboonTyper {
-  case class FullRawDefn(defn: RawDefn, gcRoot: Boolean)
-  object FullRawDefn {
-    implicit class DebugExt(defn: FullRawDefn) {
-      def debugRepr: String = {
-        val n = defn.defn.name.name
-        val name = defn.defn match {
-          case _: RawDto       => s"dto"
-          case _: RawContract  => s"contract"
-          case _: RawEnum      => s"contract"
-          case _: RawAdt       => s"adt"
-          case _: RawForeign   => s"foreign"
-          case _: RawNamespace => s"namespace"
-        }
-
-        val root = if (defn.gcRoot) { "!" } else { "" }
-        s"$root$name $n"
-      }
-    }
-  }
-
-  case class ScopedDefn(thisScope: NestedScope[FullRawDefn], tree: ScopeTree) {
-    def sic: ScopeInContext = ScopeInContext(thisScope, tree)
-  }
-
-  case class ScopeInContext(scope: Scope[FullRawDefn], tree: ScopeTree) {
-    def parentOf(s: NestedScope[FullRawDefn]) =
-      ScopeInContext(tree.parents(s), tree)
-  }
 
   class BaboonTyperImpl(enquiries: BaboonEnquiries,
                         translator: Subcontext[BaboonTranslator],
@@ -289,10 +261,10 @@ object BaboonTyper {
     }
 
     private def order(
-      pkg: Pkg,
-      flattened: List[ScopedDefn],
-      meta: RawNodeMeta
-    ): Either[NEList[BaboonIssue.TyperIssue], List[ScopedDefn]] = {
+                       pkg: Pkg,
+                       flattened: List[CNestedScope],
+                       meta: RawNodeMeta
+    ): Either[NEList[BaboonIssue.TyperIssue], List[CNestedScope]] = {
       for {
         depmap <- flattened.map(d => deps(pkg, d)).biSequence
         asMap <- depmap.toUniqueMap(
@@ -312,23 +284,23 @@ object BaboonTyper {
 
     private def deps(
       pkg: Pkg,
-      defn: ScopedDefn
+      defn: CNestedScope
     ): Either[NEList[BaboonIssue.TyperIssue],
-              (TypeId.User, (Set[TypeId.User], ScopedDefn))] = {
+              (TypeId.User, (Set[TypeId.User], CNestedScope))] = {
       for {
-        rawDefn <- Right(defn.thisScope.defn)
+        rawDefn <- Right(defn.scope.defn)
         id <- scopeSupport.resolveUserTypeId(
           rawDefn.defn.name,
-          defn.sic,
+          defn,
           pkg,
           rawDefn.defn.meta
         )
         mappedDeps <- enquiries
-          .hardDepsOfRawDefn(defn.thisScope.defn.defn)
+          .hardDepsOfRawDefn(defn.scope.defn.defn)
           .map(
             v =>
               scopeSupport
-                .resolveScopedRef(v, defn.sic, pkg, rawDefn.defn.meta)
+                .resolveScopedRef(v, defn, pkg, rawDefn.defn.meta)
           )
           .biSequence
       } yield {
@@ -341,15 +313,15 @@ object BaboonTyper {
       }
     }
 
-    private def flattenScopes(root: ScopeTree): List[ScopedDefn] = {
-      def flattenScopes(current: NestedScope[FullRawDefn]): List[ScopedDefn] = {
+    private def flattenScopes(root: ScopeTree): List[CNestedScope] = {
+      def flattenScopes(current: NestedScope[FullRawDefn]): List[CNestedScope] = {
         current match {
           case s: SubScope[FullRawDefn] =>
-            List(ScopedDefn(s, root)) ++ s.nested.toMap.values
+            List(CNestedScope(s, root)) ++ s.nested.toMap.values
               .flatMap(n => flattenScopes(n))
               .toList
           case l: LeafScope[FullRawDefn] =>
-            List(ScopedDefn(l, root))
+            List(CNestedScope(l, root))
         }
       }
 
