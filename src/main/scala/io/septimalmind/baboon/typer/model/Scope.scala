@@ -10,7 +10,9 @@ sealed trait Scope[Def] {
 }
 
 object Scope {
-  case class ScopeUID(id: Int) extends AnyVal
+  case class ScopeUID(id: Int) extends AnyVal {
+    override def toString: String = s"[$id]"
+  }
 
   case class ScopeName(name: String) extends AnyVal
 
@@ -56,11 +58,50 @@ object Scope {
 
   implicit class RootScopeExt[Def](scope: RootScope[Def]) {
     def identifyParents: Map[ScopeUID, ScopeUID] = {
-      Scope.identifyParents(scope)
+      identifyParents(scope)
     }
 
     def index: Map[ScopeUID, Scope[Def]] = {
-      Scope.index(scope)
+      index(scope)
+    }
+
+    private def identifyParents(root: RootScope[?]): Map[ScopeUID, ScopeUID] = {
+      def identifySubParents(
+        scope: NestedScope[?],
+        currentParent: ScopeUID
+      ): List[(ScopeUID, ScopeUID)] = {
+        scope match {
+          case s: SubScope[_] =>
+            List((s.id, currentParent)) ++ s.nested.toIterable
+              .flatMap(n => identifySubParents(n._2, s.id))
+          case s: LeafScope[_] =>
+            List((s.id, currentParent))
+        }
+      }
+      val list = root.nested.toList
+        .flatMap(n => identifySubParents(n._2, root.id))
+
+      assert(list.map(_._1).toSet.size == list.size)
+      list.toMap
+    }
+
+    private def index[Def](root: RootScope[Def]): Map[ScopeUID, Scope[Def]] = {
+      def identifySubParents(
+        scope: NestedScope[Def]
+      ): List[(ScopeUID, Scope[Def])] = {
+        scope match {
+          case s: SubScope[_] =>
+            List((s.id, s: Scope[Def])) ++ s.nested.toIterable
+              .flatMap(n => identifySubParents(n._2))
+          case s: LeafScope[_] =>
+            List((s.id, s))
+        }
+      }
+      val list = List((root.id, root)) ++ root.nested.toList
+        .flatMap(n => identifySubParents(n._2))
+
+      assert(list.map(_._1).toSet.size == list.size)
+      list.toMap
     }
   }
 
@@ -69,51 +110,13 @@ object Scope {
       import izumi.fundamentals.platform.strings.IzString.*
       scope match {
         case s: RootScope[Def] =>
-          s"${s.pkg.toString}${s.nested.view.values.map(_.debugRepr(defnRepr)).niceList().shift(2)}"
+          s"${s.id}: ${s.pkg.toString}${s.nested.view.values.map(_.debugRepr(defnRepr)).niceList().shift(2)}"
         case s: SubScope[Def] =>
-          s"${s.name.name} <- ${defnRepr(s.defn)} ${s.nested.toMap.view.values.map(_.debugRepr(defnRepr)).niceList().shift(2)}"
+          s"${s.id}: ${s.name.name} <- ${defnRepr(s.defn)} ${s.nested.toMap.view.values.map(_.debugRepr(defnRepr)).niceList().shift(2)}"
         case s: LeafScope[Def] =>
-          s"${s.name.name} := ${defnRepr(s.defn)}"
+          s"${s.id}: ${s.name.name} := ${defnRepr(s.defn)}"
       }
     }
   }
 
-  private def identifyParents(root: RootScope[?]): Map[ScopeUID, ScopeUID] = {
-    def identifySubParents(
-      scope: NestedScope[?],
-      currentParent: ScopeUID
-    ): List[(ScopeUID, ScopeUID)] = {
-      scope match {
-        case s: SubScope[_] =>
-          List((s.id, currentParent)) ++ s.nested.toIterable
-            .flatMap(n => identifySubParents(n._2, s.id))
-        case s: LeafScope[_] =>
-          List((s.id, currentParent))
-      }
-    }
-    val list = root.nested.toList
-      .flatMap(n => identifySubParents(n._2, root.id))
-
-    assert(list.map(_._1).toSet.size == list.size)
-    list.toMap
-  }
-
-  private def index[Def](root: RootScope[Def]): Map[ScopeUID, Scope[Def]] = {
-    def identifySubParents(
-      scope: NestedScope[Def]
-    ): List[(ScopeUID, Scope[Def])] = {
-      scope match {
-        case s: SubScope[_] =>
-          List((s.id, s: Scope[Def])) ++ s.nested.toIterable
-            .flatMap(n => identifySubParents(n._2))
-        case s: LeafScope[_] =>
-          List((s.id, s))
-      }
-    }
-    val list = List((root.id, root)) ++ root.nested.toList
-      .flatMap(n => identifySubParents(n._2))
-
-    assert(list.map(_._1).toSet.size == list.size)
-    list.toMap
-  }
 }

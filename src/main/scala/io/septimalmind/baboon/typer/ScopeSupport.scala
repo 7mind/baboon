@@ -17,7 +17,7 @@ import scala.annotation.tailrec
 trait ScopeSupport {
   def resolveScopedRef(
     name: ScopedRef,
-    scope: ScopeInContext,
+    scope: Scope[ExtendedRawDefn],
     pkg: Pkg,
     meta: RawNodeMeta
   ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User]
@@ -25,14 +25,14 @@ trait ScopeSupport {
   def resolveTypeId(
     prefix: List[RawTypeName],
     name: RawTypeName,
-    scope: ScopeInContext,
+    scope: Scope[ExtendedRawDefn],
     pkg: Pkg,
     meta: RawNodeMeta
   ): Either[NEList[BaboonIssue.TyperIssue], TypeId]
 
   def resolveUserTypeId(
     name: RawTypeName,
-    scope: ScopeInContext,
+    scope: Scope[ExtendedRawDefn],
     pkg: Pkg,
     meta: RawNodeMeta
   ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User]
@@ -45,11 +45,11 @@ object ScopeSupport {
   class ScopeSupportImpl extends ScopeSupport {
     def resolveScopedRef(
       name: ScopedRef,
-      scope: ScopeInContext,
+      scope: Scope[ExtendedRawDefn],
       pkg: Pkg,
       meta: RawNodeMeta
     ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User] = {
-      val found = findScope(NEList(ScopeName(name.path.head.name)), scope.scope)
+      val found = findScope(NEList(ScopeName(name.path.head.name)), scope)
       found match {
         case Some(found) =>
           for {
@@ -57,7 +57,7 @@ object ScopeSupport {
             fullPath = List(found) ++ scopeOfFound.suffix
             resolved <- resolveUserTypeId(
               name.path.last,
-              CAnyScope(fullPath.last),
+              fullPath.last,
               pkg,
               meta
             )
@@ -103,7 +103,7 @@ object ScopeSupport {
 
     def resolveUserTypeId(
       name: RawTypeName,
-      scope: ScopeInContext,
+      scope: Scope[ExtendedRawDefn],
       pkg: Pkg,
       meta: RawNodeMeta
     ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User] = {
@@ -135,7 +135,7 @@ object ScopeSupport {
     def resolveTypeId(
       prefix: List[RawTypeName],
       name: RawTypeName,
-      scope: ScopeInContext,
+      scope: Scope[ExtendedRawDefn],
       pkg: Pkg,
       meta: RawNodeMeta
     ): Either[NEList[BaboonIssue.TyperIssue], TypeId] = {
@@ -144,11 +144,11 @@ object ScopeSupport {
         needle = prefix.map(_.name).map(ScopeName.apply) ++: NEList(
           ScopeName(name.name)
         )
-        found = findScope(needle, scope.scope)
+        found = findScope(needle, scope)
         result <- found match {
           case Some(value) =>
             for {
-              owner <- pathToOwner(asPath(CAnyScope(value)), pkg)
+              owner <- pathToOwner(asPath(value), pkg)
             } yield {
               val out = TypeId.User(pkg, owner, typename)
               out
@@ -157,7 +157,7 @@ object ScopeSupport {
             asBuiltin(typename).toRight(
               NEList(
                 BaboonIssue
-                  .UnexpectedNonBuiltin(typename, pkg, scope.scope, meta)
+                  .UnexpectedNonBuiltin(typename, pkg, scope, meta)
               )
             )
         }
@@ -237,7 +237,9 @@ object ScopeSupport {
       }
     }
 
-    private def asPath(scope: ScopeInContext): List[Scope[ExtendedRawDefn]] = {
+    private def asPath(
+      scope: Scope[ExtendedRawDefn]
+    ): List[Scope[ExtendedRawDefn]] = {
 
       def go(s: Scope[ExtendedRawDefn]): NEList[Scope[ExtendedRawDefn]] = {
         s match {
@@ -247,7 +249,7 @@ object ScopeSupport {
         }
 
       }
-      go(scope.scope).toList.init
+      go(scope).toList.init
 
     }
 

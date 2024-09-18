@@ -262,9 +262,11 @@ object BaboonTyper {
 
     private def order(
       pkg: Pkg,
-      flattened: List[CNestedScope],
+      flattened: List[NestedScope[ExtendedRawDefn]],
       meta: RawNodeMeta
-    ): Either[NEList[BaboonIssue.TyperIssue], List[CNestedScope]] = {
+    ): Either[NEList[BaboonIssue.TyperIssue], List[
+      NestedScope[ExtendedRawDefn]
+    ]] = {
       for {
         depmap <- flattened.map(d => deps(pkg, d)).biSequence
         asMap <- depmap.toUniqueMap(
@@ -282,13 +284,12 @@ object BaboonTyper {
       }
     }
 
-    private def deps(
-      pkg: Pkg,
-      defn: CNestedScope
-    ): Either[NEList[BaboonIssue.TyperIssue],
-              (TypeId.User, (Set[TypeId.User], CNestedScope))] = {
+    private def deps(pkg: Pkg,
+                     defn: NestedScope[ExtendedRawDefn]): Either[NEList[
+      BaboonIssue.TyperIssue
+    ], (TypeId.User, (Set[TypeId.User], NestedScope[ExtendedRawDefn]))] = {
       for {
-        rawDefn <- Right(defn.scope.defn)
+        rawDefn <- Right(defn.defn)
         id <- scopeSupport.resolveUserTypeId(
           rawDefn.defn.name,
           defn,
@@ -296,7 +297,7 @@ object BaboonTyper {
           rawDefn.defn.meta
         )
         mappedDeps <- enquiries
-          .hardDepsOfRawDefn(defn.scope.defn.defn)
+          .hardDepsOfRawDefn(defn.defn.defn)
           .map(
             v =>
               scopeSupport
@@ -315,17 +316,17 @@ object BaboonTyper {
 
     private def flattenScopes(
       root: RootScope[ExtendedRawDefn]
-    ): List[CNestedScope] = {
+    ): List[NestedScope[ExtendedRawDefn]] = {
       def flattenScopes(
         current: NestedScope[ExtendedRawDefn]
-      ): List[CNestedScope] = {
+      ): List[NestedScope[ExtendedRawDefn]] = {
         current match {
           case s: SubScope[ExtendedRawDefn] =>
-            List(CNestedScope(s)) ++ s.nested.toMap.values
+            List(s) ++ s.nested.toMap.values
               .flatMap(n => flattenScopes(n))
               .toList
           case l: LeafScope[ExtendedRawDefn] =>
-            List(CNestedScope(l))
+            List(l)
         }
       }
 

@@ -2,24 +2,22 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue.{
-  MissingContractFields,
-  ScopedRefToNamespacedGeneric
-}
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue.{MissingContractFields, ScopedRefToNamespacedGeneric}
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.Scope.NestedScope
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
 
 class BaboonTranslator(pkg: Pkg,
-                       defn: CNestedScope,
+                       defn: NestedScope[ExtendedRawDefn],
                        defined: Map[TypeId, DomainMember],
                        scopeSupport: ScopeSupport) {
   def translate()
     : Either[NEList[BaboonIssue.TyperIssue], List[DomainMember]] = {
 
     for {
-      rawDefn <- Right(defn.scope.defn)
+      rawDefn <- Right(defn.defn)
       id <- scopeSupport.resolveUserTypeId(
         rawDefn.defn.name,
         defn,
@@ -34,7 +32,7 @@ class BaboonTranslator(pkg: Pkg,
 
   private def convertMember(id: TypeId.User,
                             defn: ExtendedRawDefn,
-                            thisScope: ScopeInContext,
+                            thisScope: NestedScope[ExtendedRawDefn],
   ): Either[NEList[BaboonIssue.TyperIssue], List[DomainMember.User]] = {
     val root = defn.gcRoot
     defn.defn match {
@@ -266,7 +264,7 @@ class BaboonTranslator(pkg: Pkg,
   private def convertAdt(id: TypeId.User,
                          isRoot: Boolean,
                          adt: RawAdt,
-                         thisScope: ScopeInContext,
+                         thisScope: NestedScope[ExtendedRawDefn],
   ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
     for {
       converted <- adt.members

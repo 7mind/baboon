@@ -127,7 +127,7 @@ object BaboonIssue {
   case class BadTypeName(name: String, meta: RawNodeMeta) extends TyperIssue
 
   case class BadInheritance(
-    bad: Map[TypeId.User, List[(Set[TypeId.User], CNestedScope)]],
+    bad: Map[TypeId.User, List[(Set[TypeId.User], Scope[ExtendedRawDefn])]],
     meta: RawNodeMeta
   ) extends TyperIssue
       with BaboonBug
