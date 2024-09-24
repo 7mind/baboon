@@ -202,12 +202,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |    public $iBaboonGenerated Convert<TC>(TC? context, $abstractBaboonConversions conversions, $iBaboonGenerated from);
          |}
          |
-         |/*public interface IDynamicConversion<out TTo> : IConversion
-         |{
-         |     public TTo Convert<T>(T? context, $abstractBaboonConversions conversions, dynamic from);
-         |}*/
-         |
-         |public abstract class AbstractConversion<TFrom, TTo> : /*IDynamicConversion<TTo>,*/ IBaboonGeneratedConversion
+         |public abstract class AbstractConversion<TFrom, TTo> : IBaboonGeneratedConversion
          |{
          |    public abstract TTo Convert<TCtx>(TCtx? context, $abstractBaboonConversions conversions, TFrom from);
          |
@@ -386,27 +381,6 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |        var tconv = ((AbstractConversion<TFrom, TTo>)conv);
          |        return tconv.Convert(c, this, from);
          |    }
-         |
-         |    /*public TTo ConvertWithContextDynamic<T, TTo>(T? c, Type tFrom, dynamic from)
-         |    {
-         |        var tTo = typeof(TTo);
-         |
-         |        if (from is TTo direct)
-         |        {
-         |            return direct;
-         |        }
-         |        var key = new ConversionKey(tFrom, tTo);
-         |
-         |        var conv = _convs[key];
-         |        var tconv = ((IDynamicConversion<TTo>)conv);
-         |        return tconv.Convert(c, this, from);
-         |    }
-         |
-         |    public TTo ConvertDynamic<TTo>(dynamic from)
-         |        where TTo : IBaboonGenerated
-         |    {
-         |        return ConvertWithContextDynamic<Object, TTo>(null, from.GetType(), from);
-         |    }*/
          |
          |    public TTo Convert<TFrom, TTo>(TFrom from)
          |        where TFrom : IBaboonGenerated
