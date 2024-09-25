@@ -480,12 +480,12 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |    public $csTimeSpan TimeOfDay => Underlying.TimeOfDay;
          |    public $csDayOfWeek DayOfWeek => Underlying.DayOfWeek;
          |
-         |    public static RpDateTime operator -(RpDateTime left, TimeSpan delta)
+         |    public static RpDateTime operator -(RpDateTime left, $csTimeSpan delta)
          |    {
          |        return new RpDateTime(left.Underlying - delta);
          |    }
          |
-         |    public static RpDateTime operator +(RpDateTime left, TimeSpan delta)
+         |    public static RpDateTime operator +(RpDateTime left, $csTimeSpan delta)
          |    {
          |        return new RpDateTime(left.Underlying + delta);
          |    }
@@ -973,9 +973,9 @@ object CSBaboonTranslator {
   val csDateTime: CSType =
     CSType(csSystemPkg, "DateTime", fq = false)
   val csTimeSpan: CSType =
-    CSType(csSystemPkg, "DateTime", fq = false)
+    CSType(csSystemPkg, "TimeSpan", fq = false)
   val csDayOfWeek: CSType =
-    CSType(csSystemPkg, "DateTime", fq = false)
+    CSType(csSystemPkg, "DayOfWeek", fq = false)
   val rpDateTime: CSType =
     CSType(baboonTimePkg, "RpDateTime", fq = false)
   val csArgumentException: CSType =

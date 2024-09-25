@@ -145,3 +145,11 @@ object Baboon {
     }
   }
 }
+
+object Test extends App {
+  Baboon.main(Array(
+    "--model-dir", "/Users/caparow/git/baboon/src/test/resources/baboon",
+    "--output", "/Users/caparow/git/baboon/test/cs-stub/ConversionsTest/Generated",
+    "--test-output", "/Users/caparow/git/baboon/test/cs-stub/ConversionsTest/Generated",
+  ))
+}
