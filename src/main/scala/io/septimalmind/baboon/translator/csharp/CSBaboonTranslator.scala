@@ -215,7 +215,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |    {
          |        if (from is not TFrom fr)
          |        {
-         |            throw new Exception($$"Can't use IBaboonGeneratedConversion interface when from is not of type {typeof(from).FullName}");
+         |            throw new Exception($$"Can't use IBaboonGeneratedConversion interface when from is not of type {typeof(TFrom).FullName}");
          |        }
          |        var res = Convert(context, conversions, fr);
          |
