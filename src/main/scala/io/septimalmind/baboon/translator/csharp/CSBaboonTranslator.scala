@@ -206,11 +206,6 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |{
          |    public abstract TTo Convert<TCtx>(TCtx? context, $abstractBaboonConversions conversions, TFrom from);
          |
-         |    public TTo Convert<TCtx>(TCtx? context, $abstractBaboonConversions conversions, dynamic from)
-         |    {
-         |        return Convert<TCtx>(context, conversions, (TFrom)from);
-         |    }
-         |
          |    IBaboonGenerated IBaboonGeneratedConversion.Convert<TCtx>(TCtx? context, $abstractBaboonConversions conversions, $iBaboonGenerated from) where TCtx : default
          |    {
          |        if (from is not TFrom fr)
@@ -476,6 +471,24 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |    public static RpDateTime Epoch => new RpDateTime(1970, 1, 1, 0, 0, 0, 0, $csDateTimeKind.Utc);
          |    public static RpDateTime MinValue => new RpDateTime($csDateTime.MinValue);
          |    public static RpDateTime MaxValue => new RpDateTime($csDateTime.MaxValue);
+         |
+         |    public int Year => Underlying.Year;
+         |    public int Month => Underlying.Month;
+         |    public int Day => Underlying.Day;
+         |    public int DayOfYear => Underlying.DayOfYear;
+         |
+         |    public $csTimeSpan TimeOfDay => Underlying.TimeOfDay;
+         |    public $csDayOfWeek DayOfWeek => Underlying.DayOfWeek;
+         |
+         |    public static RpDateTime operator -(RpDateTime left, TimeSpan delta)
+         |    {
+         |        return new RpDateTime(left.Underlying - delta);
+         |    }
+         |
+         |    public static RpDateTime operator +(RpDateTime left, TimeSpan delta)
+         |    {
+         |        return new RpDateTime(left.Underlying + delta);
+         |    }
          |
          |    public static bool operator ==(RpDateTime left, RpDateTime right)
          |    {
@@ -958,6 +971,10 @@ object CSBaboonTranslator {
   val csEnum: CSType =
     CSType(csSystemPkg, "Enum", fq = false)
   val csDateTime: CSType =
+    CSType(csSystemPkg, "DateTime", fq = false)
+  val csTimeSpan: CSType =
+    CSType(csSystemPkg, "DateTime", fq = false)
+  val csDayOfWeek: CSType =
     CSType(csSystemPkg, "DateTime", fq = false)
   val rpDateTime: CSType =
     CSType(baboonTimePkg, "RpDateTime", fq = false)
