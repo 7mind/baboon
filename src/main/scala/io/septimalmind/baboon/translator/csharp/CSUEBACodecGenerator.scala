@@ -143,7 +143,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
       iName
     }
 
-    q"""public class $cName : ${parents.join(", ")}
+    q"""public class ${cName.asName} : ${parents.join(", ")}
        |{
        |    ${methods.join("\n\n").shift(4).trim}
        |
@@ -178,7 +178,9 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
         val branchName = m.name.name
         val fqBranch = q"$branchNs.$branchName"
 
-        val cName = codecName(trans.toCsTypeRefNoDeref(m, domain, evo))
+        val adtRef = trans.toCsTypeRefNoDeref(m, domain, evo)
+        val cName = codecName(adtRef)
+
         val castedName = branchName.toLowerCase
 
         val encBody = if (options.csWrappedAdtBranchCodecs) {

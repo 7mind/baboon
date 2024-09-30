@@ -15,6 +15,9 @@ object CSValue {
   case class CSType(pkg: CSValue.CSPackageId, name: String, fq: Boolean)
       extends CSValue {
     def fullyQualified: CSType = this.copy(fq = true)
+    def asName: CSTypeName = CSTypeName(name)
   }
+
+  case class CSTypeName(name: String) extends CSValue
 
 }

@@ -124,8 +124,15 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
         .join("\n\n")
 
     full.mapRender {
-      case t: CSValue.CSType if !t.fq =>
+      case t: CSValue.CSTypeName =>
         t.name
+      case t: CSValue.CSType if !t.fq =>
+        if (o.pkg == t.pkg || !t.pkg.parts.startsWith(o.pkg.parts)) {
+          t.name
+        } else {
+          (t.pkg.parts :+ t.name).mkString(".")
+        }
+
       case t: CSValue.CSType =>
         (t.pkg.parts :+ t.name).mkString(".")
     }

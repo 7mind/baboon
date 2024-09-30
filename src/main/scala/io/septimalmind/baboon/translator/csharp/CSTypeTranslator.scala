@@ -2,7 +2,11 @@ package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
-import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
+import io.septimalmind.baboon.translator.csharp.CSValue.{
+  CSPackageId,
+  CSType,
+  CSTypeName
+}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
@@ -204,7 +208,8 @@ class CSTypeTranslator(options: CompilerOptions) {
 
     if (fullyQualified) {
       out.map {
-        case t: CSType => t.fullyQualified
+        case t: CSType     => t.fullyQualified
+        case n: CSTypeName => n
       }
     } else {
       out
