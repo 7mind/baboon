@@ -5,6 +5,23 @@ version "3.0.0"
 include "pkg0/pkg03-inclusion.model"
 
 
+
+root data Clash {}
+
+ns clash {
+    root data Clash {}
+    ns clash1 {
+       root adt Clash {
+            data Branch1 {}
+       }
+    }
+}
+
+root data Clash1 {}
+root adt ADT {
+   data Clash1 {}
+}
+
 ns test {
     root data TEST_D1 {
        a: test.sub.TEST_SUB_A1

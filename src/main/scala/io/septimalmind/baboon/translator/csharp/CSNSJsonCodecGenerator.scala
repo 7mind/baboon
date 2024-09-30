@@ -120,7 +120,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
     }
 
     val cName = codecName(srcRef)
-    q"""public class $cName : ${parents.join(", ")}
+    q"""public class ${cName.asName} : ${parents.join(", ")}
        |{
        |    ${methods.join("\n\n").shift(4).trim}
        |

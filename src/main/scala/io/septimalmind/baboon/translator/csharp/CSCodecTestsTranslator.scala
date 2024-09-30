@@ -36,7 +36,9 @@ object CSCodecTestsTranslator {
       }
 
       val testClassName =
-        CSValue.CSType(srcRef.pkg, s"${codecTestName}__Codec_Test", srcRef.fq)
+        CSValue
+          .CSType(srcRef.pkg, s"${codecTestName}__Codec_Test", srcRef.fq)
+          .asName
 
       definition match {
         case d if enquiries.hasForeignType(d, domain)         => None
@@ -45,13 +47,13 @@ object CSCodecTestsTranslator {
         case _ =>
           val testClass =
             q"""[${nunitTestFixture}]
-               |public class $testClassName
+               |public class ${testClassName}
                |{
                |  #nullable disable
                |
                |  private ${autofixtureFixture} fixture;
                |
-               |  ${testFields(definition, srcRef, domain)}
+               |  ${testFields(definition, srcRef, domain, evo)}
                |
                |  public $testClassName()
                |  {
@@ -76,18 +78,22 @@ object CSCodecTestsTranslator {
 
     private def testFields(definition: DomainMember.User,
                            srcRef: CSValue.CSType,
-                           domain: Domain): TextTree[CSValue] = {
+                           domain: Domain,
+                           evo: BaboonEvolution): TextTree[CSValue] = {
       definition.defn match {
         case adt: Typedef.Adt =>
           adt
             .dataMembers(domain)
             .map(_.name.name)
-            .map(n => q"private ${adt.id.name.name} ${n.toLowerCase};")
+            .map(
+              n =>
+                q"private ${typeTranslator.asCsType(adt.id, domain, evo)} ${n.toLowerCase};"
+            )
             .toList
             .join("\n")
             .shift(2)
             .trim
-        case _ => q"private ${srcRef.name} ${srcRef.name.toLowerCase};"
+        case _ => q"private ${srcRef} ${srcRef.name.toLowerCase};"
       }
     }
 
@@ -99,16 +105,13 @@ object CSCodecTestsTranslator {
     ): TextTree[CSValue] = {
       definition.defn match {
         case adt: Typedef.Adt =>
-          val adtMembersNamespace = typeTranslator
-            .toCsPkg(domain.id, domain.version, evo)
-            .parts
-            .mkString(".") + s".${typeTranslator.adtNsName(adt.id)}"
-
           adt
             .dataMembers(domain)
             .map { member =>
-              q"""fixture.Register<${adt.id.name.name}>(() => fixture.Create<$adtMembersNamespace.${member.name.name}>());
-               |${member.name.name.toLowerCase} = fixture.Create<${adt.id.name.name}>();
+              val ref = typeTranslator.toCsTypeRefDeref(member, domain, evo)
+              val adtRef = typeTranslator.toCsTypeRefDeref(adt.id, domain, evo)
+              q"""fixture.Register<${adtRef}>(() => fixture.Create<$ref>());
+               |${member.name.name.toLowerCase} = fixture.Create<${adtRef}>();
                |""".stripMargin
             }
             .toList
@@ -116,7 +119,7 @@ object CSCodecTestsTranslator {
             .shift(4)
             .trim
         case _ =>
-          q"${srcRef.name.toLowerCase} = fixture.Create<${srcRef.name}>();"
+          q"${srcRef.name.toLowerCase} = fixture.Create<${srcRef}>();"
       }
     }
 

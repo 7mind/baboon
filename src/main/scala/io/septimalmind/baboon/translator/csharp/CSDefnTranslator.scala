@@ -222,7 +222,7 @@ object CSDefnTranslator {
 
           val parents = makeParents(refs)
 
-          (q"""public interface $name$parents  {
+          (q"""public interface ${name.asName}$parents  {
                |    ${methods.shift(4).trim}
                |}""".stripMargin, List.empty, List.empty)
 
@@ -300,7 +300,7 @@ object CSDefnTranslator {
 
           val members = eq ++ meta
           (q"""[$serializable]
-             |public sealed record $name(
+             |public sealed record ${name.asName}(
              |    ${constructorArgs.shift(4).trim}
              |)$parents {
              |    ${members.join("\n\n").shift(4).trim}
@@ -321,7 +321,7 @@ object CSDefnTranslator {
               .join(",\n")
 
           (q"""[$serializable]
-             |public enum $name {
+             |public enum ${name.asName} {
              |    ${branches.shift(4).trim}
              |}""".stripMargin, List.empty, List.empty)
 
@@ -362,7 +362,7 @@ object CSDefnTranslator {
             val members = meta
 
             (
-              q"""public abstract record $name$parents {
+              q"""public abstract record ${name.asName}$parents {
                   |    ${branches.shift(4).trim}
                   |    
                   |    ${members.join("\n\n").shift(4).trim}
@@ -372,7 +372,7 @@ object CSDefnTranslator {
             )
 
           } else {
-            (q"""public interface $name$parents {
+            (q"""public interface ${name.asName}$parents {
                  |
                  |}""".stripMargin, List.empty, List.empty)
           }
