@@ -181,7 +181,6 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
         val adtRef = trans.toCsTypeRefNoDeref(m, domain, evo)
         val cName = codecName(adtRef)
 
-        //println(s"${adtRef} ; $cName")
         val castedName = branchName.toLowerCase
 
         val encBody = if (options.csWrappedAdtBranchCodecs) {
