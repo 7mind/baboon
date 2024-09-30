@@ -256,7 +256,6 @@ object ScopeSupport {
     private def findScope(needles: NEList[ScopeName],
                           scope: Scope[ExtendedRawDefn],
     ): Option[NestedScope[ExtendedRawDefn]] = {
-
       val head = needles.head
 
       val headScope = scope match {

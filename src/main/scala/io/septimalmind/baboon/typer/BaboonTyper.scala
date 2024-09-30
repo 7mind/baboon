@@ -268,10 +268,13 @@ object BaboonTyper {
       NestedScope[ExtendedRawDefn]
     ]] = {
       for {
-        depmap <- flattened.map(d => deps(pkg, d)).biSequence
-        asMap <- depmap.toUniqueMap(
-          bad => NEList(BaboonIssue.BadInheritance(bad, meta))
-        )
+        depmap <- flattened
+          .filterNot(_.defn.defn.isInstanceOf[RawNamespace]) // cheapo fix for namespace id clashes caused by nested namespaces with identical names, namespaces have no deps anyway
+          .map(d => deps(pkg, d))
+          .biSequence
+        asMap <- depmap.toUniqueMap(bad => {
+          NEList(BaboonIssue.BadInheritance(bad, meta))
+        })
 
         predMatrix = IncidenceMatrix(asMap.view.mapValues(_._1).toMap)
         sorted <- Toposort
