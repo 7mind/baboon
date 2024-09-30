@@ -268,9 +268,12 @@ object ScopeSupport {
             .orElse(findScope(needles, s.defn.parentOf(s)))
 
         case s: SubScope[ExtendedRawDefn] =>
-          s.nested.toMap
-            .get(head)
-            .orElse(Some(s).filter(_.name == head))
+          Some(s)
+            .filter(_.name == head)
+            .orElse(
+              s.nested.toMap
+                .get(head)
+            )
             .orElse(findScope(needles, s.defn.parentOf(s)))
       }
 

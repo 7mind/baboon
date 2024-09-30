@@ -85,7 +85,7 @@ object Scope {
       list.toMap
     }
 
-    private def index[Def](root: RootScope[Def]): Map[ScopeUID, Scope[Def]] = {
+    private def index(root: RootScope[Def]): Map[ScopeUID, Scope[Def]] = {
       def identifySubParents(
         scope: NestedScope[Def]
       ): List[(ScopeUID, Scope[Def])] = {

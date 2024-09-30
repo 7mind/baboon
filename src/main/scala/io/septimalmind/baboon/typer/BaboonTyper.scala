@@ -269,7 +269,6 @@ object BaboonTyper {
     ]] = {
       for {
         depmap <- flattened
-          .filterNot(_.defn.defn.isInstanceOf[RawNamespace]) // cheapo fix for namespace id clashes caused by nested namespaces with identical names, namespaces have no deps anyway
           .map(d => deps(pkg, d))
           .biSequence
         asMap <- depmap.toUniqueMap(bad => {
