@@ -127,18 +127,13 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
       case t: CSValue.CSTypeName =>
         t.name
       case t: CSValue.CSType if !t.fq =>
-//        println(s"!fq: $t")
-        if (o.pkg == t.pkg) {
+        if (o.pkg == t.pkg || !t.pkg.parts.startsWith(o.pkg.parts)) {
           t.name
         } else {
           (t.pkg.parts :+ t.name).mkString(".")
         }
-        (t.pkg.parts :+ t.name).mkString(".")
 
-//        t.name
       case t: CSValue.CSType =>
-//        println(s" fq: $t")
-
         (t.pkg.parts :+ t.name).mkString(".")
     }
   }
