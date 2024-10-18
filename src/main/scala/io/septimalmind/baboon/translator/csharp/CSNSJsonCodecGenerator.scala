@@ -34,19 +34,19 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
       case (enc, dec) =>
         // plumbing reference leaks
         val insulatedEnc =
-          q"""if (this == instance.Value)
+          q"""if (this == LazyInstance.Value)
              |{
              |    ${enc.shift(4).trim}
              |}
              |
-             |return instance.Value.Encode(value);""".stripMargin
+             |return LazyInstance.Value.Encode(value);""".stripMargin
         val insulatedDec =
-          q"""if (this == instance.Value)
+          q"""if (this == LazyInstance.Value)
              |{
              |    ${dec.shift(4).trim}
              |}
              |
-             |return instance.Value.Decode(wire);""".stripMargin
+             |return LazyInstance.Value.Decode(wire);""".stripMargin
 
         genCodec(
           defn,
@@ -130,9 +130,9 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
          .shift(4)
          .trim}
        |
-       |    private static $csLazy<$iName> instance = new $csLazy<$iName>(() => new $cName());
+       |    internal static $csLazy<$iName> LazyInstance = new $csLazy<$iName>(() => new $cName());
        |
-       |    public static $iName Instance { get { return instance.Value; } set { instance = new $csLazy<$iName
+       |    public static $iName Instance { get { return LazyInstance.Value; } set { LazyInstance = new $csLazy<$iName
        |    >(() => value); } }
        |}
      """.stripMargin
@@ -497,6 +497,8 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
 
   }
 
+  def codecType(): CSValue.CSType = iBaboonCodecData
+
   def codecName(name: CSValue.CSType): CSValue.CSType = {
     CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq)
   }
@@ -505,12 +507,16 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
                          name: CSValue.CSType): CSCodecTranslator.CodecMeta = {
     val fix = tools.makeFix(defn, isCodec = false)
     val member =
-      q"""public${fix}IBaboonJsonCodec<$name> Codec_JSON()
+      q"""public$fix$iBaboonJsonCodec<$name> Codec_JSON()
          |{
          |    return ${codecName(name)}.Instance;
          |}""".stripMargin
     CodecMeta(member)
   }
 
-  def metaField(): TextTree[CSValue] = q"IBaboonCodecData Json";
+  def codecInterfaceProperty(): TextTree[CSValue] = q"public $iBaboonCodecData Json { get; }";
+
+  def codecImplProperty(): TextTree[CSValue] = q"public $iBaboonCodecData Json => LazyJson.Value;";
+
+  def codecImplField(): TextTree[CSValue] = q"Lazy<$iBaboonJsonCodec<T>> LazyJson";
 }

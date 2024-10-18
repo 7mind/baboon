@@ -97,11 +97,7 @@ object CSDefnTranslator {
         )
       )
 
-      val registrations = reg
-        .map { r =>
-          q"Register(new $baboonTypeCodecs($r));"
-        }
-        .join("\n")
+      val registrations = reg.map { case (srcRef, reg) => q"Register(new $baboonTypeCodecs<${srcRef.fullyQualified}>($reg));" }.join("\n")
 
       Right(
         List(
@@ -125,7 +121,7 @@ object CSDefnTranslator {
                              domain: Domain,
                              evo: BaboonEvolution,
                              inNs: Boolean): (TextTree[CSValue],
-                                              List[TextTree[CSValue]],
+                                              List[(CSType, TextTree[CSValue])],
                                               Option[TextTree[CSValue]]) = {
       val isLatestVersion = domain.version == evo.latest
 
@@ -141,15 +137,11 @@ object CSDefnTranslator {
       val csTypeRef = trans.toCsTypeRefDeref(defn.id, domain, evo)
       val srcRef = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
 
-      val (defnReprBase, extraRegs, tests) =
-        makeRepr(defn, domain, csTypeRef, isLatestVersion, evo)
+      val (defnReprBase, extraRegs, tests) = makeRepr(defn, domain, csTypeRef, isLatestVersion, evo)
 
-      val codecTrees =
-        codecs.toList
-          .flatMap(
-            t => t.translate(defn, csTypeRef, srcRef, domain, evo).toList
-          )
-          .map(obsoletePrevious)
+      val codecTrees = codecs.toList
+        .flatMap(t => t.translate(defn, csTypeRef, srcRef, domain, evo).toList)
+        .map(obsoletePrevious)
 
       val defnRepr = obsoletePrevious(defnReprBase)
 
@@ -165,16 +157,13 @@ object CSDefnTranslator {
       }
 
       val reg = defn.defn match {
-        case _: Typedef.NonDataTypedef => List.empty
+        case _: Typedef.NonDataTypedef =>
+          List.empty[(CSType, TextTree[CSValue])]
         case _ =>
-          List(
-            (List(q""""${defn.id.toString}"""") ++ codecs.toList
-              .sortBy(_.getClass.getName)
-              .map(
-                codec => q"${codec.codecName(srcRef).copy(fq = true)}.Instance"
-              ))
-              .join(", ")
-          )
+          val codecsReg = codecs.toList.sortBy(_.getClass.getName)
+            .map(codec => q"${codec.codecName(srcRef).copy(fq = true)}.LazyInstance")
+          val reg = (List(q"\"${defn.id.toString}\"") ++ codecsReg).join(", ")
+          List(csTypeRef -> reg)
       }
 
       val allRegs = reg ++ extraRegs
@@ -202,7 +191,7 @@ object CSDefnTranslator {
       name: CSValue.CSType,
       isLatestVersion: Boolean,
       evo: BaboonEvolution
-    ): (TextTree[CSValue], List[TextTree[CSValue]], List[TextTree[CSValue]]) = {
+    ): (TextTree[CSValue], List[(CSType, TextTree[CSValue])], List[TextTree[CSValue]]) = {
       val genMarker =
         if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
 

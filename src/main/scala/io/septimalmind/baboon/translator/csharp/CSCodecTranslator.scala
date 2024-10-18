@@ -12,11 +12,17 @@ trait CSCodecTranslator {
                 evo: BaboonEvolution,
                ): Option[TextTree[CSValue]]
 
+  def codecType(): CSValue.CSType
+
   def codecName(name: CSValue.CSType): CSValue.CSType
 
   def codecMeta(defn: DomainMember.User, name: CSValue.CSType): CodecMeta
 
-  def metaField(): TextTree[CSValue]
+  def codecInterfaceProperty(): TextTree[CSValue]
+
+  def codecImplProperty(): TextTree[CSValue]
+
+  def codecImplField(): TextTree[CSValue]
 
 }
 

@@ -182,9 +182,18 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
   }
 
   private def sharedRuntime(): Out[List[CSDefnTranslator.Output]] = {
-    val metaFields = (List(q"String Id") ++ codecs.toList
+    val codecInterfaceProperties = (List(q"public $csString Id { get; }") ++ codecs.toList
       .sortBy(_.getClass.getName)
-      .map(_.metaField())).join(", ")
+      .map(_.codecInterfaceProperty())).join("\n")
+
+    val codecImplFields = (List(q"$csString Id") ++ codecs.toList
+      .sortBy(_.getClass.getName)
+      .map(_.codecImplField())).join(", ")
+
+    val codecImplProperties = codecs.toList
+      .sortBy(_.getClass.getName)
+      .map(_.codecImplProperty())
+      .join("\n")
 
     val baseCodecsSource =
       q"""public interface IBaboonGenerated {
@@ -261,31 +270,37 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |
          |public interface IBaboonBinCodec<T> : $iBaboonStreamCodec<T, $binaryWriter, $binaryReader> {}
          |
-         |public record BaboonTypeCodecs($metaFields);
+         |public interface IBaboonTypeCodecs {
+         |${codecInterfaceProperties.shift(4)}
+         |}
+         |
+         |public sealed record BaboonTypeCodecs<T>($codecImplFields) : $iBaboonTypeCodecs {
+         |${codecImplProperties.shift(4)}
+         |};
          |
          |public abstract class AbstractBaboonCodecs
          |{
          |
-         |    private readonly Dictionary<$csString, $baboonTypeCodecs> _codecs = new ();
+         |    private readonly Dictionary<$csString, $iBaboonTypeCodecs> _codecs = new ();
          |
-         |    public void Register($baboonTypeCodecs impls)
+         |    public void Register($iBaboonTypeCodecs impls)
          |    {
          |        _codecs[impls.Id] = impls;
          |    }
          |
-         |    public $baboonTypeCodecs Find($csString id)
+         |    public $iBaboonTypeCodecs Find($csString id)
          |    {
          |        return _codecs[id];
          |    }
          |
-         |    public bool TryFind($csString id, out $baboonTypeCodecs? value)
+         |    public bool TryFind($csString id, out $iBaboonTypeCodecs? value)
          |    {
          |        return _codecs.TryGetValue(id, out value);
          |    }
          |}""".stripMargin
 
     val conversionKeySource =
-      q"""public class ConversionKey
+      q"""public sealed class ConversionKey
          |{
          |    protected bool Equals(ConversionKey other)
          |    {
@@ -394,7 +409,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |}""".stripMargin
 
     val baseToolsSource =
-      q"""public class BaboonTools {
+      q"""public static class BaboonTools {
          |    public static T? ReadNullableValue<T>(Boolean ifNot, Func<T> thenReturn) where T: struct
          |    {
          |        if (ifNot) return null;
@@ -785,7 +800,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
            |    ${missing.join("\n").shift(4).trim}
            |}
            |
-           |public class BaboonConversions : $abstractBaboonConversions
+           |public sealed class BaboonConversions : $abstractBaboonConversions
            |{
            |    public BaboonConversions(RequiredConversions requiredConversions)
            |    {
@@ -807,16 +822,16 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
            |}""".stripMargin
 
       val codecs =
-        q"""public class BaboonCodecs : $abstractBaboonCodecs
+        q"""public sealed class BaboonCodecs : $abstractBaboonCodecs
            |{
            |    private BaboonCodecs()
            |    {
            |        ${defnOut.map(_.codecReg).join("\n").shift(8).trim}
            |    }
            |
-           |    private static Lazy<BaboonCodecs> instance = new Lazy<BaboonCodecs>(() => new BaboonCodecs());
+           |    internal static $csLazy<BaboonCodecs> LazyInstance = new $csLazy<BaboonCodecs>(() => new BaboonCodecs());
            |
-           |    public static BaboonCodecs Instance { get { return instance.Value; } }
+           |    public static BaboonCodecs Instance { get { return LazyInstance.Value; } }
            |}""".stripMargin
 
       val basename = tools.basename(domain, lineage.evolution, options)
@@ -925,6 +940,8 @@ object CSBaboonTranslator {
     CSType(baboonRtPkg, "IBaboonJsonCodec", fq = false)
   val iBaboonBinCodec: CSType =
     CSType(baboonRtPkg, "IBaboonBinCodec", fq = false)
+  val iBaboonTypeCodecs: CSType =
+    CSType(baboonRtPkg, "IBaboonTypeCodecs", fq = false)
   val baboonTypeCodecs: CSType =
     CSType(baboonRtPkg, "BaboonTypeCodecs", fq = false)
   val abstractBaboonCodecs: CSType =
