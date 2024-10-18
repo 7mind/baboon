@@ -137,12 +137,6 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
 
     val cName = codecName(srcRef)
 
-    val abstractCodecName = if (options.csWrappedAdtBranchCodecs) {
-      q"$cName"
-    } else {
-      iName
-    }
-
     q"""public class ${cName.asName} : ${parents.join(", ")}
        |{
        |    ${methods.join("\n\n").shift(4).trim}
@@ -153,9 +147,9 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
          .shift(4)
          .trim}
        |
-       |    internal static $csLazy<$abstractCodecName> LazyInstance = new $csLazy<$abstractCodecName>(() => new $cName());
+       |    internal static $csLazy<$iName> LazyInstance = new $csLazy<$iName>(() => new $cName());
        |
-       |    public static $abstractCodecName Instance { get { return LazyInstance.Value; } set { LazyInstance = new $csLazy<$abstractCodecName>(() => value); } }
+       |    public static $iName Instance { get { return LazyInstance.Value; } set { LazyInstance = new $csLazy<$iName>(() => value); } }
        |}
      """.stripMargin
   }
@@ -192,7 +186,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
         }
 
         val decBody = if (options.csWrappedAdtBranchCodecs) {
-          q"""return $cName.Instance.DecodeBranch(wire);"""
+          q"""return (($cName)$cName.Instance).DecodeBranch(wire);"""
         } else {
           q"""return $cName.Instance.Decode(wire);"""
         }
