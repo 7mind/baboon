@@ -34,21 +34,21 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
         val insulatedEnc =
           q"""
              |#pragma warning disable CS0162
-             |if (this == instance.Value)
+             |if (this == LazyInstance.Value)
              |{
              |    ${enc.shift(4).trim}
              |    return;
              |}
              |#pragma warning disable CS0162
              |
-             |instance.Value.Encode(writer, value);""".stripMargin
+             |LazyInstance.Value.Encode(writer, value);""".stripMargin
         val insulatedDec =
-          q"""if (this == instance.Value)
+          q"""if (this == LazyInstance.Value)
              |{
              |    ${dec.shift(4).trim}
              |}
              |
-             |return instance.Value.Decode(wire);""".stripMargin
+             |return LazyInstance.Value.Decode(wire);""".stripMargin
 
         val branchDecoder = defn.defn match {
           case d: Typedef.Dto =>
@@ -137,12 +137,6 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
 
     val cName = codecName(srcRef)
 
-    val abstractCodecName = if (options.csWrappedAdtBranchCodecs) {
-      q"$cName"
-    } else {
-      iName
-    }
-
     q"""public class ${cName.asName} : ${parents.join(", ")}
        |{
        |    ${methods.join("\n\n").shift(4).trim}
@@ -153,9 +147,9 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
          .shift(4)
          .trim}
        |
-       |    private static $csLazy<$abstractCodecName> instance = new $csLazy<$abstractCodecName>(() => new $cName());
+       |    internal static $csLazy<$iName> LazyInstance = new $csLazy<$iName>(() => new $cName());
        |
-       |    public static $abstractCodecName Instance { get { return instance.Value; } set { instance = new $csLazy<$abstractCodecName>(() => value); } }
+       |    public static $iName Instance { get { return LazyInstance.Value; } set { LazyInstance = new $csLazy<$iName>(() => value); } }
        |}
      """.stripMargin
   }
@@ -192,7 +186,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
         }
 
         val decBody = if (options.csWrappedAdtBranchCodecs) {
-          q"""return $cName.Instance.DecodeBranch(wire);"""
+          q"""return (($cName)$cName.Instance).DecodeBranch(wire);"""
         } else {
           q"""return $cName.Instance.Decode(wire);"""
         }
@@ -513,6 +507,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
     }
   }
 
+  def codecType(): CSValue.CSType = iBaboonCodecData
+
   def codecName(name: CSValue.CSType): CSValue.CSType = {
     CSValue.CSType(name.pkg, s"${name.name}_UEBACodec", name.fq)
   }
@@ -522,12 +518,16 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
     val fix = tools.makeFix(defn, isCodec = false)
 
     val member =
-      q"""public${fix}IBaboonBinCodec<$name> Codec_UEBA()
+      q"""public$fix$iBaboonBinCodec<$name> Codec_UEBA()
          |{
          |    return ${codecName(name)}.Instance;
          |}""".stripMargin
     CodecMeta(member)
   }
 
-  def metaField(): TextTree[CSValue] = q"IBaboonCodecData Ueba";
+  def codecInterfaceProperty(): TextTree[CSValue] = q"public $iBaboonCodecData Ueba { get; }";
+
+  def codecImplProperty(): TextTree[CSValue] = q"public $iBaboonCodecData Ueba => LazyUeba.Value;";
+
+  def codecImplField(): TextTree[CSValue] = q"Lazy<$iBaboonBinCodec<T>> LazyUeba";
 }
