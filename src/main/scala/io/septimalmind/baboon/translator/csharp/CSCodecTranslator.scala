@@ -22,6 +22,8 @@ trait CSCodecTranslator {
 
   def codecImplProperty(): TextTree[CSValue]
 
+  def codecGenericImplField(): TextTree[CSValue]
+
   def codecImplField(): TextTree[CSValue]
 
 }
