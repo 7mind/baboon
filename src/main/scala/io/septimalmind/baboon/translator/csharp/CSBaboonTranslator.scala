@@ -186,14 +186,18 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
       .sortBy(_.getClass.getName)
       .map(_.codecInterfaceProperty())).join("\n")
 
-    val codecImplFields = (List(q"$csString Id") ++ codecs.toList
-      .sortBy(_.getClass.getName)
-      .map(_.codecImplField())).join(", ")
-
     val codecImplProperties = codecs.toList
       .sortBy(_.getClass.getName)
       .map(_.codecImplProperty())
       .join("\n")
+
+    val codecImplFields = (List(q"$csString Id") ++ codecs.toList
+      .sortBy(_.getClass.getName)
+      .map(_.codecImplField())).join(", ")
+
+    val codecGenericImplFields = (List(q"$csString Id") ++ codecs.toList
+      .sortBy(_.getClass.getName)
+      .map(_.codecGenericImplField())).join(", ")
 
     val baseCodecsSource =
       q"""public interface IBaboonGenerated {
@@ -274,7 +278,11 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |${codecInterfaceProperties.shift(4)}
          |}
          |
-         |public sealed record BaboonTypeCodecs<T>($codecImplFields) : $iBaboonTypeCodecs {
+         |public sealed record BaboonTypeCodecs($codecImplFields) : IBaboonTypeCodecs {
+         |${codecImplProperties.shift(4)}
+         |};
+         |
+         |public sealed record BaboonTypeCodecs<T>($codecGenericImplFields) : $iBaboonTypeCodecs {
          |${codecImplProperties.shift(4)}
          |};
          |

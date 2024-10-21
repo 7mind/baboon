@@ -518,5 +518,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
 
   def codecImplProperty(): TextTree[CSValue] = q"public $iBaboonCodecData Json => LazyJson.Value;";
 
-  def codecImplField(): TextTree[CSValue] = q"Lazy<$iBaboonJsonCodec<T>> LazyJson";
+  def codecGenericImplField(): TextTree[CSValue] = q"Lazy<$iBaboonJsonCodec<T>> LazyJson";
+
+  def codecImplField(): TextTree[CSValue] = q"Lazy<$iBaboonCodecData> LazyJson";
 }

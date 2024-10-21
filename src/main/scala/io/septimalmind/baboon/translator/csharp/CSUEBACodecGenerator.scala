@@ -529,5 +529,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
 
   def codecImplProperty(): TextTree[CSValue] = q"public $iBaboonCodecData Ueba => LazyUeba.Value;";
 
-  def codecImplField(): TextTree[CSValue] = q"Lazy<$iBaboonBinCodec<T>> LazyUeba";
+  def codecGenericImplField(): TextTree[CSValue] = q"Lazy<$iBaboonBinCodec<T>> LazyUeba";
+
+  def codecImplField(): TextTree[CSValue] = q"Lazy<$iBaboonCodecData> LazyUeba";
 }
