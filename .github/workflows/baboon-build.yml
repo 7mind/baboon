@@ -73,7 +73,7 @@ jobs:
         nix_path: nixpkgs=channel:nixos-unstable
     - name: Build NI (unix)
       if: matrix.notunix != true
-      run: nix-shell --pure ./shell.nix --run sbt GraalVMNativeImage/packageBin
+      run: nix-shell --pure ./shell.nix --run "sbt GraalVMNativeImage/packageBin"
     - name: Build NI (windows)
       if: matrix.notunix == true
       run: sbt GraalVMNativeImage/packageBin
