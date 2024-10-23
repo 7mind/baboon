@@ -16,12 +16,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # don't forget to update prepare-release and the includes below
-        # os: [ ubuntu-latest, macos-12, windows-2022, macos-14 ]
-        #graalvm-version: [ '22.3.1' ]
-#        target: [ linux-aarch64 linux-amd64 windows-amd64 macos-amd64-14  macos-aarch64-14 ]
-#        os: [ "" ]
-#        java-version: [ "" ]
+        # 1) don't forget about os entry in prepare-release
+        # 2) see : https://github.com/actions/runner-images
         include:
           - target: linux-aarch64
             os: self-hosted
@@ -40,16 +36,17 @@ jobs:
             #e2e: false
             native-build-args: --verbose -J-Xmx10g
             java-version: '17'
-          - target: macos-amd64-14
-            os: macos-14-large
+          - target: macos-amd64-13
+            os: macos-13
             #executable-suffix: ''
             native-build-args: --verbose -J-Xmx13g
           - target:  macos-aarch64-14
-            os: macos-14-xlarge
+            os: macos-14 # yes, this is ARM
             #executable-suffix: ''
             native-build-args: --verbose -J-Xmx13g
             java-version: '17'
     runs-on: ${{ matrix.os }}
+    name: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
     - name: Set up GraalVM (Java ${{ matrix.java-version }})
