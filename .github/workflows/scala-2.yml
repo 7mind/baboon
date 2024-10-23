@@ -20,7 +20,8 @@ jobs:
         # os: [ ubuntu-latest, macos-12, windows-2022, macos-14 ]
         #graalvm-version: [ '22.3.1' ]
         target: [ linux-aarch64 linux-amd64 windows-amd64 macos-amd64-14  macos-aarch64-14 ]
-        java-version: [ '17' ]
+        os: []
+        java-version: []
         include:
           - target: linux-aarch64
             os: self-hosted
@@ -31,12 +32,14 @@ jobs:
             os: ubuntu-latest
             #executable-suffix: ''
             native-build-args: --verbose -J-Xmx10g
+            java-version: '17'
           - target: windows-amd64
             os: windows-2022
             #executable-suffix: '.exe'
             # e2e is disabled due to unstable docker step
             #e2e: false
             native-build-args: --verbose -J-Xmx10g
+            java-version: '17'
           - target: macos-amd64-14
             os: macos-14-large
             #executable-suffix: ''
@@ -45,6 +48,7 @@ jobs:
             os: macos-14-xlarge
             #executable-suffix: ''
             native-build-args: --verbose -J-Xmx13g
+            java-version: '17'
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
