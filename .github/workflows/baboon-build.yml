@@ -54,10 +54,8 @@ jobs:
       uses: graalvm/setup-graalvm@v1
       if: matrix.preconfigured != true
       with:
-        #version: '${{ matrix.graalvm-version }}'
         java-version: '${{ matrix.java-version }}'
         distribution: 'graalvm-community'
-        components: 'native-image'
         github-token: ${{ secrets.GITHUB_TOKEN }}
         cache: 'sbt'
         native-image-job-reports: true
@@ -106,31 +104,35 @@ jobs:
 #          path: tmp/baboon-windows-x64
       - name: Prepare layout
         run: |
+          set -x
+          set -e
           pushd .
           ls -la
           cd binaries/
           ls -la
-          zip -r9 baboon-linux-x64.zip ./baboon-linux-x64/
-          zip -r9 baboon-mac-x64.zip ./baboon-mac-x64/
-          zip -r9 baboon-mac-arm64.zip ./baboon-mac-arm64/
-          zip -r9 baboon-windows-x64.zip ./baboon-windows-x64/
-          popd
+          tree
 
-          mkdir dist
-          mv ./tmp/baboon-linux-x64/baboon dist/baboon-linux-x64
-          mv ./tmp/baboon-mac-x64/baboon dist/baboon-mac-x64
-          mv ./tmp/baboon-mac-arm64/baboon dist/baboon-mac-arm64
-          mv ./tmp/baboon-windows-x64/baboon.exe dist/baboon-x64.exe
-
-          mkdir dist-zip
-          mv ./tmp/baboon-linux-x64.zip ./dist-zip/
-          mv ./tmp/baboon-mac-x64.zip ./dist-zip/
-          mv ./tmp/baboon-mac-arm64.zip ./dist-zip/
-          mv ./tmp/baboon-windows-x64.zip ./dist-zip/
-      - uses: softprops/action-gh-release@v2
-        id: create-release
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: |
-            dist/**
-            dist-zip/**
+#          zip -r9 baboon-linux-x64.zip ./baboon-linux-x64/
+#          zip -r9 baboon-mac-x64.zip ./baboon-mac-x64/
+#          zip -r9 baboon-mac-arm64.zip ./baboon-mac-arm64/
+#          zip -r9 baboon-windows-x64.zip ./baboon-windows-x64/
+#          popd
+#
+#          mkdir dist
+#          mv ./tmp/baboon-linux-x64/baboon dist/baboon-linux-x64
+#          mv ./tmp/baboon-mac-x64/baboon dist/baboon-mac-x64
+#          mv ./tmp/baboon-mac-arm64/baboon dist/baboon-mac-arm64
+#          mv ./tmp/baboon-windows-x64/baboon.exe dist/baboon-x64.exe
+#
+#          mkdir dist-zip
+#          mv ./tmp/baboon-linux-x64.zip ./dist-zip/
+#          mv ./tmp/baboon-mac-x64.zip ./dist-zip/
+#          mv ./tmp/baboon-mac-arm64.zip ./dist-zip/
+#          mv ./tmp/baboon-windows-x64.zip ./dist-zip/
+#      - uses: softprops/action-gh-release@v2
+#        id: create-release
+#        if: startsWith(github.ref, 'refs/tags/')
+#        with:
+#          files: |
+#            dist/**
+#            dist-zip/**
