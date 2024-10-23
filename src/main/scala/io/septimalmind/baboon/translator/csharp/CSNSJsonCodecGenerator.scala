@@ -322,7 +322,12 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
-            q"$ref == null ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, domain, trans.deNull(c.args.head, domain, ref), evo)}"
+            if (trans.isCSValueType(c.args.head, domain)) {
+              q"!$ref.HasValue ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, domain, trans.deNull(c.args.head, domain, ref), evo)}"
+            } else {
+              q"$ref == null ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, domain, trans.deNull(c.args.head, domain, ref), evo)}"
+            }
+
           case TypeId.Builtins.map =>
             val keyEnc = encodeKey(c.args.head, domain, q"e.Key")
             val valueEnc = mkEncoder(c.args.last, domain, q"e.Value", evo)
@@ -447,7 +452,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
       case TypeRef.Constructor(id, args) =>
         id match {
           case TypeId.Builtins.opt if trans.isCSValueType(args.head, domain) =>
-            q"""$BaboonTools.ReadNullableValue($ref, t => ${mkDecoder(
+            q"""$BaboonTools.ReadNullableValueType($ref, t => ${mkDecoder(
                  args.head,
                  domain,
                  q"t",
@@ -455,7 +460,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
                )})""".stripMargin
 
           case TypeId.Builtins.opt =>
-            q"""$BaboonTools.ReadValue($ref, t => ${mkDecoder(
+            q"""$BaboonTools.ReadNullableReferentialType($ref, t => ${mkDecoder(
               args.head,
               domain,
               q"t",
@@ -514,11 +519,14 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
     CodecMeta(member)
   }
 
-  def codecInterfaceProperty(): TextTree[CSValue] = q"public $iBaboonCodecData Json { get; }";
+  def codecInterfaceProperty(): TextTree[CSValue] =
+    q"public $iBaboonCodecData Json { get; }";
 
-  def codecImplProperty(): TextTree[CSValue] = q"public $iBaboonCodecData Json => LazyJson.Value;";
+  def codecImplProperty(): TextTree[CSValue] =
+    q"public $iBaboonCodecData Json => LazyJson.Value;";
 
-  def codecGenericImplField(): TextTree[CSValue] = q"Lazy<$iBaboonJsonCodec<T>> LazyJson";
+  def codecGenericImplField(): TextTree[CSValue] =
+    q"Lazy<$iBaboonJsonCodec<T>> LazyJson";
 
   def codecImplField(): TextTree[CSValue] = q"Lazy<$iBaboonCodecData> LazyJson";
 }

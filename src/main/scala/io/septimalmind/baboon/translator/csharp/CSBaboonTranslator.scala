@@ -182,9 +182,10 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
   }
 
   private def sharedRuntime(): Out[List[CSDefnTranslator.Output]] = {
-    val codecInterfaceProperties = (List(q"public $csString Id { get; }") ++ codecs.toList
-      .sortBy(_.getClass.getName)
-      .map(_.codecInterfaceProperty())).join("\n")
+    val codecInterfaceProperties =
+      (List(q"public $csString Id { get; }") ++ codecs.toList
+        .sortBy(_.getClass.getName)
+        .map(_.codecInterfaceProperty())).join("\n")
 
     val codecImplProperties = codecs.toList
       .sortBy(_.getClass.getName)
@@ -418,19 +419,19 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
 
     val baseToolsSource =
       q"""public static class BaboonTools {
-         |    public static T? ReadNullableValue<T>(Boolean ifNot, Func<T> thenReturn) where T: struct
+         |    public static T? ReadNullableValueType<T>(Boolean ifNot, Func<T> thenReturn) where T: struct
          |    {
          |        if (ifNot) return null;
          |        return thenReturn();
          |    }
          |
-         |    public static T? ReadNullableValue<T>($nsJToken? token, Func<$nsJToken, T> readValue) where T: struct
+         |    public static T? ReadNullableValueType<T>($nsJToken? token, Func<$nsJToken, T> readValue) where T: struct
          |    {
          |        if (token == null || token.Type == $nsJTokenType.Null) return null;
          |        return readValue(token);
          |    }
          |
-         |    public static T? ReadValue<T>($nsJToken? token, Func<$nsJToken, T> readValue) where T: class
+         |    public static T? ReadNullableReferentialType<T>($nsJToken? token, Func<$nsJToken, T> readValue) where T: class
          |    {
          |        if (token == null || token.Type == $nsJTokenType.Null) return null;
          |        return readValue(token);

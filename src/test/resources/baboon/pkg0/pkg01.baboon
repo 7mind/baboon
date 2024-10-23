@@ -3,8 +3,18 @@ model testpkg.pkg0
 version "1.0.0"
 
 foreign ObscureInt {
-  cs = "System.Int32" with { "nonref" = "yes" }
+  cs = "System.Int32"
   java = "java.lang.Integer"
+}
+
+foreign ForeignStruct {
+    cs = "ConversionsTest.Foreign.TestForeignStruct" with { "value-type" = "yes" }
+}
+
+
+root data F1 {
+   fld0: ForeignStruct
+   fld1: opt[ForeignStruct]
 }
 
 data NotReferenced {}

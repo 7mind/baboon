@@ -226,12 +226,15 @@ class CSTypeTranslator(options: CompilerOptions) {
         q"$ref.Value"
       case _ if isEnum(tpe, domain) =>
         q"$ref.Value"
+      case _ if isCSValueType(tpe, domain) =>
+        q"$ref.Value"
       case _ =>
         q"$ref!"
     }
   }
 
   def isCSValueType(tpe: TypeRef, domain: Domain): Boolean = {
+    // TODO: c# rules are complex, probably we have some issues here
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
@@ -271,8 +274,24 @@ class CSTypeTranslator(options: CompilerOptions) {
                 false
             }
           case _ =>
-            isEnum(tpe, domain)
+            isEnum(tpe, domain) || foreignTypeIsValueType(id, domain)
         }
+      case _ =>
+        foreignTypeIsValueType(tpe.id, domain)
+    }
+  }
+
+  private def foreignTypeIsValueType(id: TypeId, domain: Domain): Boolean = {
+    domain.defs.meta.nodes(id) match {
+      case DomainMember.User(_, defn: Typedef.Foreign, _) =>
+        defn
+          .bindings("cs")
+          .attrs
+          .attrs
+          .find(_.name == "value-type")
+          .exists(
+            a => a.value.toLowerCase == "yes" || a.value.toLowerCase == "true"
+          )
       case _ =>
         false
     }
