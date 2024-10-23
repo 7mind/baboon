@@ -23,23 +23,28 @@ jobs:
             os: ubuntu-latest
             runs-on: [ ]
             java-version: '23'
+          - target: linux-aarch64
+            os: self-hosted
+            runs-on: [ "ARM64" ]
+            preconfigured: true
+
           - target: windows-amd64
             os: windows-2022
             runs-on: [ ]
             java-version: '23'
             notunix: true
+
           - target: macos-aarch64-14
             runs-on: [ ]
             os: macos-14 # yes, this is aarch64
             java-version: '23'
+            nix-impure: true
           - target: macos-amd64-13
             os: macos-13 # this is amd64
             runs-on: [ ]
             java-version: '23'
-          - target: linux-aarch64
-            os: self-hosted
-            runs-on: [ "ARM64" ]
-            preconfigured: true
+            nix-impure: true
+
     name: ${{ matrix.target }}
     runs-on:
       - ${{ matrix.os }}
@@ -71,9 +76,12 @@ jobs:
       uses: cachix/install-nix-action@v27
       with:
         nix_path: nixpkgs=channel:nixos-unstable
-    - name: Build NI (unix)
-      if: matrix.notunix != true
+    - name: Build NI (linux)
+      if: matrix.notunix != true && matrix.nix-impure != true
       run: nix-shell --pure ./shell.nix --run "sbt GraalVMNativeImage/packageBin"
+    - name: Build NI (macos)
+      if: matrix.notunix != true && matrix.nix-impure == true
+      run: nix-shell --impure ./shell.nix --run "sbt GraalVMNativeImage/packageBin"
     - name: Build NI (windows)
       if: matrix.notunix == true
       run: sbt GraalVMNativeImage/packageBin
@@ -82,11 +90,13 @@ jobs:
         name: baboon-${{ matrix.target }}
         path: |
           target/graalvm-native-image/**
-    - name: Run test build (unix)
-      if: matrix.notunix != true
-      shell: bash
-      run: bash ./nixtest.sh
-    - name: Run test build (windows)
+    - name: Test (linux)
+      if: matrix.notunix != true && matrix.nix-impure != true
+      run: nix-shell --pure ./shell.nix --run ./test.sh
+    - name: Test (macos)
+      if: matrix.notunix != true && matrix.nix-impure == true
+      run: nix-shell --impure ./shell.nix --run ./test.sh
+    - name: Test (windows)
       if: matrix.notunix == true
       shell: bash
       run: bash ./test.sh
