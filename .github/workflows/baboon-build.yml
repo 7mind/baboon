@@ -20,8 +20,12 @@ jobs:
         run: |
           set -x
           echo $PATH
+          export PATH=`echo $PATH | tr ":" "\n" | grep -v "dotnet-runtime-6" | tr "\n" ":"`
           dotnet --info
-          bash test.sh 
+          cd ./test/cs-stub
+          dotnet build
+          dotnet test ConversionsTest/ConversionsTest.csproj
+
 
 #  build:
 #    strategy:
