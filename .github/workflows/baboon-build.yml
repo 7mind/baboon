@@ -22,31 +22,25 @@ jobs:
           - target: linux-aarch64
             os: self-hosted
             preconfigured: true
-            #executable-suffix: ''
             native-build-args: --verbose -J-Xmx10g
           - target: linux-amd64
             os: ubuntu-latest
-            #executable-suffix: ''
             native-build-args: --verbose -J-Xmx10g
-            java-version: '17'
+            java-version: '23'
           - target: windows-amd64
             os: windows-2022
-            #executable-suffix: '.exe'
-            # e2e is disabled due to unstable docker step
-            #e2e: false
             native-build-args: --verbose -J-Xmx10g
-            java-version: '17'
+            java-version: '23'
           - target: macos-amd64-13
-            os: macos-13
-            #executable-suffix: ''
+            os: macos-13 # this is amd64
             native-build-args: --verbose -J-Xmx13g
+            java-version: '23'
           - target:  macos-aarch64-14
-            os: macos-14 # yes, this is ARM
-            #executable-suffix: ''
+            os: macos-14 # yes, this is aarch64
             native-build-args: --verbose -J-Xmx13g
-            java-version: '17'
-    runs-on: ${{ matrix.os }}
+            java-version: '23'
     name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
     - name: Set up GraalVM (Java ${{ matrix.java-version }})
