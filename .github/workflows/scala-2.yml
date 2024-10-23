@@ -19,9 +19,9 @@ jobs:
         # don't forget to update prepare-release and the includes below
         # os: [ ubuntu-latest, macos-12, windows-2022, macos-14 ]
         #graalvm-version: [ '22.3.1' ]
-        target: [ linux-aarch64 linux-amd64 windows-amd64 macos-amd64-14  macos-aarch64-14 ]
-        os: [ "" ]
-        java-version: [ "" ]
+#        target: [ linux-aarch64 linux-amd64 windows-amd64 macos-amd64-14  macos-aarch64-14 ]
+#        os: [ "" ]
+#        java-version: [ "" ]
         include:
           - target: linux-aarch64
             os: self-hosted
