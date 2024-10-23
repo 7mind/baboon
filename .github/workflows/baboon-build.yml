@@ -81,21 +81,11 @@ jobs:
           pattern: baboon-*
       - name: Prepare layout
         run: |
-          set -e
-          set -x
-          
-          tree ./binaries       
-          
-          mkdir dist
-          mkdir dist-zip
-          
-          cd ./binaries
-          find . -name 'baboon-*' -type d -exec bash -e -x -c "zip -r9 ../dist-zip/{}.zip {}/baboon*" \;
-          find . -name 'baboon-*' -type d -exec bash -e -x -c "mv {} ../dist-zip/" \;
+          bash prepare-dist.sh ./binaries
       - uses: softprops/action-gh-release@v2
         id: create-release
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            dist/**
+            dist-bin/**
             dist-zip/**
