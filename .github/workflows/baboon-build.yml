@@ -18,9 +18,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: test
         run: |
-          which dotnet
-          dotnet --info
-          bash test.sh 
+          set -x
+          echo hi
+          #which dotnet
+          #dotnet --info
+          #bash test.sh 
 
 #  build:
 #    strategy:
