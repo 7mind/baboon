@@ -12,80 +12,90 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        # 1) don't forget about os entry in prepare-release
-        # 2) see : https://github.com/actions/runner-images
-        include:
-          - target: linux-amd64
-            os: ubuntu-latest
-            runs-on: [ ]
-            java-version: '23'
-          - target: windows-amd64
-            os: windows-2022
-            runs-on: [ ]
-            java-version: '23'
-          - target: macos-aarch64-14
-            runs-on: [ ]
-            os: macos-14 # yes, this is aarch64
-            java-version: '23'
-          - target: macos-amd64-13
-            os: macos-13 # this is amd64
-            runs-on: [ ]
-            java-version: '23'
+  test:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: test
+        run: |
+          which dotnet
+          dotnet --info
+          bash test.sh 
+
+#  build:
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        # 1) don't forget about os entry in prepare-release
+#        # 2) see : https://github.com/actions/runner-images
+#        include:
+#          - target: linux-amd64
+#            os: ubuntu-latest
+#            runs-on: [ ]
+#            java-version: '23'
+#          - target: windows-amd64
+#            os: windows-2022
+#            runs-on: [ ]
+#            java-version: '23'
+#          - target: macos-aarch64-14
+#            runs-on: [ ]
+#            os: macos-14 # yes, this is aarch64
+#            java-version: '23'
+#          - target: macos-amd64-13
+#            os: macos-13 # this is amd64
+#            runs-on: [ ]
+#            java-version: '23'
 #          - target: linux-aarch64
 #            os: self-hosted
 #            runs-on: [ "ARM64" ]
 #            preconfigured: true
-    name: ${{ matrix.target }}
-    runs-on:
-      - ${{ matrix.os }}
-      - ${{ matrix.runs-on }}
-    steps:
-    - uses: actions/checkout@v4
-    - name: Set up GraalVM (Java ${{ matrix.java-version }})
-      uses: graalvm/setup-graalvm@v1
-      if: matrix.preconfigured != true
-      with:
-        java-version: '${{ matrix.java-version }}'
-        distribution: 'graalvm-community'
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        cache: 'sbt'
-        native-image-job-reports: true
-    - if: startsWith( matrix.os, 'macos' )
-      run: |
-        brew install sbt
-    - name: Run tests
-      run: sbt test
-    - name: Build NI
-      run: sbt GraalVMNativeImage/packageBin
-    - uses: actions/upload-artifact@v4
-      with:
-        name: baboon-${{ matrix.target }}
-        path: |
-          target/graalvm-native-image/**
-    - name: Run test build
-      shell: bash
-      run: bash test.sh
-  prepare-release:
-    runs-on: ubuntu-latest
-    needs: [ build ]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download All Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: binaries
-          pattern: baboon-*
-      - name: Prepare layout
-        run: |
-          bash prepare-dist.sh ./binaries
-      - uses: softprops/action-gh-release@v2
-        id: create-release
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: |
-            dist-bin/**
-            dist-zip/**
+#    name: ${{ matrix.target }}
+#    runs-on:
+#      - ${{ matrix.os }}
+#      - ${{ matrix.runs-on }}
+#    steps:
+#    - uses: actions/checkout@v4
+#    - name: Set up GraalVM (Java ${{ matrix.java-version }})
+#      uses: graalvm/setup-graalvm@v1
+#      if: matrix.preconfigured != true
+#      with:
+#        java-version: '${{ matrix.java-version }}'
+#        distribution: 'graalvm-community'
+#        github-token: ${{ secrets.GITHUB_TOKEN }}
+#        cache: 'sbt'
+#        native-image-job-reports: true
+#    - if: startsWith( matrix.os, 'macos' )
+#      run: |
+#        brew install sbt
+#    - name: Run tests
+#      run: sbt test
+#    - name: Build NI
+#      run: sbt GraalVMNativeImage/packageBin
+#    - uses: actions/upload-artifact@v4
+#      with:
+#        name: baboon-${{ matrix.target }}
+#        path: |
+#          target/graalvm-native-image/**
+#    - name: Run test build
+#      shell: bash
+#      run: bash test.sh
+#  prepare-release:
+#    runs-on: ubuntu-latest
+#    needs: [ build ]
+#    steps:
+#      - uses: actions/checkout@v4
+#      - name: Download All Artifacts
+#        uses: actions/download-artifact@v4
+#        with:
+#          path: binaries
+#          pattern: baboon-*
+#      - name: Prepare layout
+#        run: |
+#          bash prepare-dist.sh ./binaries
+#      - uses: softprops/action-gh-release@v2
+#        id: create-release
+#        if: startsWith(github.ref, 'refs/tags/')
+#        with:
+#          files: |
+#            dist-bin/**
+#            dist-zip/**
