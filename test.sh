@@ -30,6 +30,9 @@ target/graalvm-native-image/baboon \
           --cs-wrapped-adt-branch-codecs true
 
 
+# workaround for https://github.com/NixOS/nixpkgs/issues/350806
+export PATH=`echo $PATH | tr ":" "\n" | grep -v "dotnet-runtime-6" | tr "\n" ":"`
+
 cd ./test/cs-stub
 dotnet build
 dotnet test ConversionsTest/ConversionsTest.csproj
