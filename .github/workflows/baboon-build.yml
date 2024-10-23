@@ -20,9 +20,9 @@ jobs:
         run: |
           set -x
           echo hi
-          #which dotnet
-          #dotnet --info
-          #bash test.sh 
+          which dotnet
+          dotnet --info
+          bash test.sh 
 
 #  build:
 #    strategy:
