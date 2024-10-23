@@ -54,7 +54,7 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         cache: 'sbt'
         native-image-job-reports: true
-    - if: matrix.os == 'macos-14'
+    - if: startsWith( matrix.os, 'macos' )
       run: |
         brew install sbt
     - name: Run tests
