@@ -54,9 +54,15 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         cache: 'sbt'
         native-image-job-reports: true
-    - if: startsWith( matrix.os, 'macos' )
+    - name: Install SBT
+      if: startsWith( matrix.os, 'macos' )
       run: |
         brew install sbt
+    - name: Install Nix
+      if: matrix.preconfigured != true
+      uses: cachix/install-nix-action@v27
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
     - name: Run tests
       run: sbt test
     - name: Build NI
@@ -68,7 +74,7 @@ jobs:
           target/graalvm-native-image/**
     - name: Run test build
       shell: bash
-      run: bash test.sh
+      run: bash ./nixtest.sh
   prepare-release:
     runs-on: ubuntu-latest
     needs: [ build ]
