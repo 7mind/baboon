@@ -19,7 +19,7 @@ jobs:
       - name: test
         run: |
           set -x
-          echo hi
+          echo $PATH
           dotnet --info
           bash test.sh 
 
