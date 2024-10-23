@@ -3,7 +3,8 @@ model testpkg.pkg0
 version "1.0.0"
 
 foreign ObscureInt {
-  cs = "System.Int32"
+  cs = "System.Int32" with { "nonref" = "yes" }
+  java = "java.lang.Integer"
 }
 
 data NotReferenced {}

@@ -146,6 +146,17 @@ object IssuePrinter {
        |""".stripMargin
   }
 
+  implicit val nonUniqueForeignEntriesPrinter
+    : IssuePrinter[NonUniqueForeignEntries] =
+    (issue: NonUniqueForeignEntries) => {
+      val stringProblems = issue.duplicateForeignEntries.values
+        .map(_.map(_.lang).niceList())
+        .mkString("\n")
+      s"""${extractLocation(issue.meta)}
+       |Foreign type ${issue.id.toString} has members with identical names:$stringProblems
+       |""".stripMargin
+    }
+
   implicit val emptyEnumPrinter: IssuePrinter[EmptyEnum] =
     (issue: EmptyEnum) => {
       s"""${extractLocation(issue.meta)}
@@ -678,6 +689,8 @@ object IssuePrinter {
     case i: UnexpectedNonBuiltin  => apply[UnexpectedNonBuiltin].stringify(i)
     case i: MissingTypeId         => apply[MissingTypeId].stringify(i)
     case i: NonUniqueEnumBranches => apply[NonUniqueEnumBranches].stringify(i)
+    case i: NonUniqueForeignEntries =>
+      apply[NonUniqueForeignEntries].stringify(i)
     case i: EmptyEnum             => apply[EmptyEnum].stringify(i)
     case i: NonUniqueFields       => apply[NonUniqueFields].stringify(i)
     case i: EmptyAdt              => apply[EmptyAdt].stringify(i)
@@ -699,7 +712,7 @@ object IssuePrinter {
     case i: DuplicatedTypes       => apply[DuplicatedTypes].stringify(i)
     case i: WrongParent           => apply[WrongParent].stringify(i)
     case i: MissingContractFields => apply[MissingContractFields].stringify(i)
-    case i: TodoTyperIssue                   => i.descr
+    case i: TodoTyperIssue        => i.descr
     case i: ScopedRefToNamespacedGeneric =>
       apply[ScopedRefToNamespacedGeneric].stringify(i)
   }

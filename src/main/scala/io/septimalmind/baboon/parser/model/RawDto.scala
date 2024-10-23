@@ -37,7 +37,7 @@ case class RawAdt(name: RawTypeName,
     extends RawDefn
 
 case class RawForeign(name: RawTypeName,
-                      defns: Map[String, String],
+                      defns: List[RawForeignEntry],
                       meta: RawNodeMeta)
     extends RawDefn
 
@@ -45,3 +45,16 @@ case class RawNamespace(name: RawTypeName,
                         defns: Seq[RawTLDef],
                         meta: RawNodeMeta)
     extends RawDefn
+
+case class RawForeignEntryAttr(name: String, value: String)
+case class RawForeignEntryAttrs(attrs: List[RawForeignEntryAttr])
+
+object RawForeignEntryAttrs {
+
+  def empty: RawForeignEntryAttrs = RawForeignEntryAttrs(List.empty)
+
+}
+
+case class RawForeignEntry(lang: String,
+                           decl: String,
+                           attrs: RawForeignEntryAttrs)

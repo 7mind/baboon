@@ -5,6 +5,7 @@ import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.translator.OutputFile
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.Typedef.ForeignEntry
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.graphs.ToposortError
 import izumi.fundamentals.graphs.tools.cycles.LoopDetector
@@ -71,6 +72,12 @@ object BaboonIssue {
 
   case class NonUniqueEnumBranches(
     duplicateEnumMembers: Map[String, List[EnumMember]],
+    id: TypeId.User,
+    meta: RawNodeMeta
+  ) extends TyperIssue
+
+  case class NonUniqueForeignEntries(
+    duplicateForeignEntries: Map[String, List[ForeignEntry]],
     id: TypeId.User,
     meta: RawNodeMeta
   ) extends TyperIssue

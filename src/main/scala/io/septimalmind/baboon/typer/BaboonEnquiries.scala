@@ -221,7 +221,13 @@ object BaboonEnquiries {
                 a.members.toList.map(id => wrap(id)).sorted.mkString(",")
               s"[adt;${wrap(a.id)};$members]"
             case f: Typedef.Foreign =>
-              val members = f.bindings.toSeq.sorted.mkString(":")
+              val members = f.bindings.values.toList
+                .sortBy(_.lang)
+                .map(
+                  e =>
+                    s"[${e.lang};${e.decl};${e.attrs.attrs.map(a => s"${a.name};${a.value}").sorted.mkString(":")}]"
+                )
+                .mkString(":")
               s"[foreign;${wrap(f.id)};$members]"
           }
       }

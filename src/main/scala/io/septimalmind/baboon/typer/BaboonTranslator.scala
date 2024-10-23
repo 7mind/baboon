@@ -2,9 +2,17 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue.{MissingContractFields, ScopedRefToNamespacedGeneric}
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue.{
+  MissingContractFields,
+  ScopedRefToNamespacedGeneric
+}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.NestedScope
+import io.septimalmind.baboon.typer.model.Typedef.{
+  ForeignEntry,
+  ForeignEntryAttr,
+  ForeignEntryAttrs
+}
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -58,9 +66,27 @@ class BaboonTranslator(pkg: Pkg,
                              isRoot: Boolean,
                              f: RawForeign,
   ): Either[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
-    Right(
-      NEList(DomainMember.User(isRoot, Typedef.Foreign(id, f.defns), f.meta))
-    )
+    for {
+      entries <- f.defns
+        .map(
+          e =>
+            (
+              e.lang,
+              ForeignEntry(
+                e.lang,
+                e.decl,
+                ForeignEntryAttrs(
+                  e.attrs.attrs.map(a => ForeignEntryAttr(a.name, a.value))
+                )
+              )
+          )
+        )
+        .toUniqueMap(
+          e => NEList(BaboonIssue.NonUniqueForeignEntries(e, id, f.meta))
+        )
+    } yield {
+      NEList(DomainMember.User(isRoot, Typedef.Foreign(id, entries), f.meta))
+    }
   }
 
   private def converEnum(

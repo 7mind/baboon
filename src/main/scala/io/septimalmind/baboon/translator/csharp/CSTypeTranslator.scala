@@ -44,8 +44,8 @@ class CSTypeTranslator(options: CompilerOptions) {
                        evolution: BaboonEvolution): CSType = {
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _) =>
-        val fid = defn.bindings("cs")
-        val parts = fid.split('.').toList
+        val fe = defn.bindings("cs")
+        val parts = fe.decl.split('.').toList
         assert(parts.length > 1)
         val pkg = parts.init
         val id = parts.last

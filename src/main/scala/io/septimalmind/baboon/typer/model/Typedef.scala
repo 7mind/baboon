@@ -66,7 +66,12 @@ object Typedef {
                  contracts: List[TypeId.User],
                  fields: List[Field],
   ) extends User
-  case class Foreign(id: TypeId.User, bindings: Map[String, String])
+
+  case class ForeignEntryAttr(name: String, value: String)
+  case class ForeignEntryAttrs(attrs: List[ForeignEntryAttr])
+  case class ForeignEntry(lang: String, decl: String, attrs: ForeignEntryAttrs)
+
+  case class Foreign(id: TypeId.User, bindings: Map[String, ForeignEntry])
       extends User
 
   object Adt {
