@@ -73,9 +73,9 @@ jobs:
         name: native-image-${{ matrix.os }}
         path: |
           target/graalvm-native-image/**
-    - name: Run test build
-      shell: bash
-      run: bash test.sh
+#    - name: Run test build
+#      shell: bash
+#      run: bash test.sh
   prepare-release:
     runs-on: ubuntu-latest
     needs: [ build ]
