@@ -22,30 +22,23 @@ jobs:
           - target: linux-amd64
             os: ubuntu-latest
             runs-on: [ ]
-#            native-build-args: --verbose -J-Xmx10g
-            java-version: '23'
-          - target: macos-aarch64-14
-            runs-on: [ ]
-            os: macos-14 # yes, this is aarch64
-#            native-build-args: --verbose -J-Xmx13g
             java-version: '23'
           - target: windows-amd64
             os: windows-2022
             runs-on: [ ]
-            native-build-args: --verbose -J-Xmx10g
             java-version: '23'
-            #bin-suffix: '.exe'
+#          - target: macos-aarch64-14
+#            runs-on: [ ]
+#            os: macos-14 # yes, this is aarch64
+#            java-version: '23'
 #          - target: macos-amd64-13
 #            os: macos-13 # this is amd64
 #            runs-on: [ ]
-#            native-build-args: --verbose -J-Xmx13g
 #            java-version: '23'
-
 #          - target: linux-aarch64
 #            os: self-hosted
 #            runs-on: [ "ARM64" ]
 #            preconfigured: true
-#            native-build-args: --verbose -J-Xmx10g
     name: ${{ matrix.target }}
     runs-on:
       - ${{ matrix.os }}
@@ -70,7 +63,7 @@ jobs:
       run: sbt GraalVMNativeImage/packageBin
     - uses: actions/upload-artifact@v4
       with:
-        name: baboon-${{ matrix.target }} #${{ matrix.bin-suffix || '' }}
+        name: baboon-${{ matrix.target }}
         path: |
           target/graalvm-native-image/**
 #    - name: Run test build
@@ -97,8 +90,8 @@ jobs:
           mkdir dist-zip
           
           cd ./binaries
-          find . -name 'baboon-*' -type d -exec bash -x -c "zip -r9 ../dist-zip/{}.zip {}/baboon*" \;
-          find . -type d -exec bash -x -c "mv {} ../dist-zip/" \;
+          find . -name 'baboon-*' -type d -exec bash -e -x -c "zip -r9 ../dist-zip/{}.zip {}/baboon*" \;
+          find . -name 'baboon-*' -type d -exec bash -e -x -c "mv {} ../dist-zip/" \;
       - uses: softprops/action-gh-release@v2
         id: create-release
         if: startsWith(github.ref, 'refs/tags/')
