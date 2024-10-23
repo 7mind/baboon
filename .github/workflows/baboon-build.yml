@@ -85,7 +85,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: binaries
-          pattern: native-image-*
+          pattern: baboon-*
       - name: Prepare layout
         run: |
           set -x
