@@ -34,7 +34,7 @@ jobs:
             runs-on: [ ]
             native-build-args: --verbose -J-Xmx10g
             java-version: '23'
-            bin-suffix: '.exe'
+            #bin-suffix: '.exe'
 #          - target: macos-amd64-13
 #            os: macos-13 # this is amd64
 #            runs-on: [ ]
@@ -70,7 +70,7 @@ jobs:
       run: sbt GraalVMNativeImage/packageBin
     - uses: actions/upload-artifact@v4
       with:
-        name: baboon-${{ matrix.target }}${{ matrix.bin-suffix || '' }}
+        name: baboon-${{ matrix.target }} #${{ matrix.bin-suffix || '' }}
         path: |
           target/graalvm-native-image/**
 #    - name: Run test build
@@ -88,17 +88,17 @@ jobs:
           pattern: baboon-*
       - name: Prepare layout
         run: |
-          set -x
           set -e
-          ls -la .
-          tree .       
+          set -x
+          
+          tree ./binaries       
           
           mkdir dist
           mkdir dist-zip
           
-          cd binaries
-          find . -name 'baboon-*' -type d -exec zip -r9 ../dist-zip/{}.zip {}/baboon \;
-          find . -name 'baboon-*' -type d -exec mv {}/baboon ../dist-zip/{} \;
+          cd ./binaries
+          find . -name 'baboon-*' -type d -exec zip -r9 ../dist-zip/{}.zip {}/'baboon*' \;
+          find . -name 'baboon-*' -type d -exec mv {}/'baboon*' ../dist-zip/{} \;
       - uses: softprops/action-gh-release@v2
         id: create-release
         if: startsWith(github.ref, 'refs/tags/')
