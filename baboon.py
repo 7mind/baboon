@@ -50,18 +50,20 @@ if __name__ == "__main__":
     suffix = None
     artifact = None
 
+    arch=platform.machine().replace('x86_64', 'amd64')
+
     if os.name == 'posix':
         defaultcachedir = None
         if osname == 'Darwin':
             defaultcachedir = os.path.expanduser('~/.cache')
-            artifact = "baboon-mac-x64"
+            artifact = "baboon-mac-{}".format(arch)
         elif osname == 'Linux':
             defaultcachedir = os.path.expanduser('~/.cache')
-            artifact = "baboon-linux-x64"
+            artifact = "baboon-linux-{}".format(arch)
         cache_dir = get_xdg_path('XDG_CACHE_HOME', defaultcachedir)
     elif os.name == 'nt':
         suffix = ".exe"
-        artifact = "baboon-x64.exe"
+        artifact = "baboon-windows-{}.exe".format(arch)
         cache_dir = os.path.expanduser('~/AppData/Local')
 
     assert(os.path.exists(cache_dir))
