@@ -84,8 +84,7 @@ jobs:
         with:
           path: binaries
           pattern: native-image-*
-          merge-multiple: true
-
+#          merge-multiple: true
 #      - uses: actions/download-artifact@v4
 #        with:
 #          name: native-image-ubuntu-latest
