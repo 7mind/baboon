@@ -19,31 +19,31 @@ jobs:
         # 1) don't forget about os entry in prepare-release
         # 2) see : https://github.com/actions/runner-images
         include:
-          - target: linux-aarch64
-            os: self-hosted
-            runs-on: [ "ARM64" ]
-            preconfigured: true
-            native-build-args: --verbose -J-Xmx10g
           - target: linux-amd64
             os: ubuntu-latest
             runs-on: [ ]
             native-build-args: --verbose -J-Xmx10g
-            java-version: '23'
-          - target: windows-amd64
-            os: windows-2022
-            runs-on: [ ]
-            native-build-args: --verbose -J-Xmx10g
-            java-version: '23'
-          - target: macos-amd64-13
-            os: macos-13 # this is amd64
-            runs-on: [ ]
-            native-build-args: --verbose -J-Xmx13g
             java-version: '23'
           - target: macos-aarch64-14
             runs-on: [ ]
             os: macos-14 # yes, this is aarch64
             native-build-args: --verbose -J-Xmx13g
             java-version: '23'
+#          - target: macos-amd64-13
+#            os: macos-13 # this is amd64
+#            runs-on: [ ]
+#            native-build-args: --verbose -J-Xmx13g
+#            java-version: '23'
+#          - target: windows-amd64
+#            os: windows-2022
+#            runs-on: [ ]
+#            native-build-args: --verbose -J-Xmx10g
+#            java-version: '23'
+#          - target: linux-aarch64
+#            os: self-hosted
+#            runs-on: [ "ARM64" ]
+#            preconfigured: true
+#            native-build-args: --verbose -J-Xmx10g
     name: ${{ matrix.target }}
     runs-on:
       - ${{ matrix.os }}
@@ -81,26 +81,35 @@ jobs:
     needs: [ build ]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: native-image-ubuntu-latest
-          path: tmp/baboon-linux-x64
-      - uses: actions/download-artifact@v4
-        with:
-          name: native-image-macos-12
-          path: tmp/baboon-mac-x64
-      - uses: actions/download-artifact@v4
-        with:
-          name: native-image-macos-14
-          path: tmp/baboon-mac-arm64
-      - uses: actions/download-artifact@v4
-        with:
-          name: native-image-windows-2022
-          path: tmp/baboon-windows-x64
+          path: binaries
+          pattern: native-image-*
+          merge-multiple: true
+
+#      - uses: actions/download-artifact@v4
+#        with:
+#          name: native-image-ubuntu-latest
+#          path: tmp/baboon-linux-x64
+#      - uses: actions/download-artifact@v4
+#        with:
+#          name: native-image-macos-12
+#          path: tmp/baboon-mac-x64
+#      - uses: actions/download-artifact@v4
+#        with:
+#          name: native-image-macos-14
+#          path: tmp/baboon-mac-arm64
+#      - uses: actions/download-artifact@v4
+#        with:
+#          name: native-image-windows-2022
+#          path: tmp/baboon-windows-x64
       - name: Prepare layout
         run: |
           pushd .
-          cd tmp/
+          ls -la
+          cd binaries/
+          ls -la
           zip -r9 baboon-linux-x64.zip ./baboon-linux-x64/
           zip -r9 baboon-mac-x64.zip ./baboon-mac-x64/
           zip -r9 baboon-mac-arm64.zip ./baboon-mac-arm64/
