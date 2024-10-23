@@ -35,10 +35,10 @@ jobs:
             os: macos-13 # this is amd64
             runs-on: [ ]
             java-version: '23'
-          - target: linux-aarch64
-            os: self-hosted
-            runs-on: [ "ARM64" ]
-            preconfigured: true
+#          - target: linux-aarch64
+#            os: self-hosted
+#            runs-on: [ "ARM64" ]
+#            preconfigured: true
     name: ${{ matrix.target }}
     runs-on:
       - ${{ matrix.os }}
