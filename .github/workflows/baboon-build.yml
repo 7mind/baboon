@@ -90,8 +90,8 @@ jobs:
         run: |
           set -x
           set -e
-          ls -la binaries/
-          tree binaries/       
+          ls -la .
+          tree .       
           
           mkdir dist
           mkdir dist-zip
