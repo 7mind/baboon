@@ -70,7 +70,7 @@ jobs:
       run: sbt GraalVMNativeImage/packageBin
     - uses: actions/upload-artifact@v4
       with:
-        name: baboon-${{ matrix.target }}${{ matrix.bin-suffix }}
+        name: baboon-${{ matrix.target }}${{ matrix.bin-suffix || '' }}
         path: |
           target/graalvm-native-image/**
 #    - name: Run test build
