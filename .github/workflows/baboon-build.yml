@@ -70,6 +70,7 @@ jobs:
       uses: cachix/install-nix-action@v27
       with:
         nix_path: nixpkgs=channel:nixos-unstable
+        key: nix-${{ matrix.target }}
     - name: Run tests
       run: sbt test
     - name: Build NI
