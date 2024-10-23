@@ -19,26 +19,32 @@ jobs:
         # don't forget to update prepare-release and the includes below
         # os: [ ubuntu-latest, macos-12, windows-2022, macos-14 ]
         #graalvm-version: [ '22.3.1' ]
+        target: [ linux-aarch64 linux-amd64 windows-amd64 macos-amd64-14  macos-aarch64-14 ]
         java-version: [ '17' ]
         include:
-          - os: self-hosted
+          - target: linux-aarch64
+            os: self-hosted
             preconfigured: true
-            executable-suffix: ''
+            #executable-suffix: ''
             native-build-args: --verbose -J-Xmx10g
-          - os: ubuntu-latest
-            executable-suffix: ''
+          - target: linux-amd64
+            os: ubuntu-latest
+            #executable-suffix: ''
             native-build-args: --verbose -J-Xmx10g
-          - os: macos-12
-            executable-suffix: ''
-            native-build-args: --verbose -J-Xmx13g
-          - os: macos-14
-            executable-suffix: ''
-            native-build-args: --verbose -J-Xmx13g
-          - os: windows-2022
-            executable-suffix: '.exe'
+          - target: windows-amd64
+            os: windows-2022
+            #executable-suffix: '.exe'
             # e2e is disabled due to unstable docker step
             #e2e: false
             native-build-args: --verbose -J-Xmx10g
+          - target: macos-amd64-14
+            os: macos-14-large
+            #executable-suffix: ''
+            native-build-args: --verbose -J-Xmx13g
+          - target:  macos-aarch64-14
+            os: macos-14-xlarge
+            #executable-suffix: ''
+            native-build-args: --verbose -J-Xmx13g
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
