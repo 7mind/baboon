@@ -46,7 +46,7 @@ jobs:
             native-build-args: --verbose -J-Xmx13g
             java-version: '17'
     runs-on: ${{ matrix.os }}
-    name: ${{ matrix.os }}
+    name: ${{ matrix.target }}
     steps:
     - uses: actions/checkout@v4
     - name: Set up GraalVM (Java ${{ matrix.java-version }})
