@@ -1,4 +1,4 @@
-name: Baboon Build
+name: Baboon Build (test)
 
 on:
   push:
@@ -21,6 +21,10 @@ jobs:
         #graalvm-version: [ '22.3.1' ]
         java-version: [ '17' ]
         include:
+          - os: self-hosted
+            preconfigured: true
+            executable-suffix: ''
+            native-build-args: --verbose -J-Xmx10g
           - os: ubuntu-latest
             executable-suffix: ''
             native-build-args: --verbose -J-Xmx10g
@@ -40,6 +44,7 @@ jobs:
     - uses: actions/checkout@v4
     - name: Set up GraalVM (Java ${{ matrix.java-version }})
       uses: graalvm/setup-graalvm@v1
+      if: matrix.preconfigured != true
       with:
         #version: '${{ matrix.graalvm-version }}'
         java-version: '${{ matrix.java-version }}'
