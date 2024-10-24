@@ -17,7 +17,8 @@ val niOptionsCommon = Seq(
 val niOptions = niOptionsCommon ++ (if (System
                                           .getProperty("os.name")
                                           .toLowerCase
-                                          .contains("mac")) {
+                                          .contains("mac") && System
+                                          .getProperty("os.arch") == "aarch64") {
                                       Seq(
                                         "-ENIX_CC_WRAPPER_TARGET_HOST_aarch64_apple_darwin",
                                         "-ENIX_BINTOOLS_WRAPPER_TARGET_HOST_aarch64_apple_darwin",
@@ -25,7 +26,7 @@ val niOptions = niOptionsCommon ++ (if (System
                                     } else if (System
                                                  .getProperty("os.name")
                                                  .toLowerCase
-                                                 .contains("linux")) {
+                                                 .contains("mac")) {
                                       Seq(
                                         "-ENIX_CC_WRAPPER_TARGET_HOST_x86_64_apple_darwin",
                                         "-ENIX_BINTOOLS_WRAPPER_TARGET_HOST_x86_64_apple_darwin",
