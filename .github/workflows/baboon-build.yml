@@ -52,7 +52,7 @@ jobs:
           path: |
             /nix/store
           key: nix-${{ matrix.target }}
-      - name: Build (linux)
+      - name: Build (unix)
         run: nix-shell --pure ./shell.nix --run ./local-rebuild.sh
       - uses: actions/upload-artifact@v4
         with:
