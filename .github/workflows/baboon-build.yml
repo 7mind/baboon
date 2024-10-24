@@ -34,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Cache Nix store
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             /nix/store
@@ -118,7 +118,7 @@ jobs:
 #        native-image-job-reports: true
 
     - name: Cache Nix store
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           /nix/store
@@ -144,11 +144,11 @@ jobs:
 #        name: baboon-${{ matrix.target }}
 #        path: |
 #          target/graalvm-native-image/**
-    - name: Install SBT
-      run: |
-        brew install sbt
+#    - name: Install SBT
+#      run: |
+#        brew install sbt
     - name: Build (macos)
-      run:
+      run: |
         export GRAALVM_OPTIONS="-H:-CheckToolchain"
         nix-shell --pure ./shell.nix --run ./build.sh
 #      shell: bash
