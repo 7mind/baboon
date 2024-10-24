@@ -2,6 +2,38 @@ import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations.*
 
 ThisBuild / scalaVersion := "2.13.14"
 
+val niOptionsCommon = Seq(
+  "-ENIX_BINTOOLS",
+  "-ENIX_CC",
+  "-ENIX_CFLAGS_COMPILE",
+  "-ENIX_LDFLAGS",
+  "-EbuildInputs",
+  "-EcmakeFlags",
+  "-EnativeBuildInputs",
+  "-EpropagatedBuildInputs",
+  "-EpropagatedNativeBuildInputs",
+)
+
+val niOptions = niOptionsCommon ++ (if (System
+                                          .getProperty("os.name")
+                                          .toLowerCase
+                                          .contains("mac")) {
+                                      Seq(
+                                        "-ENIX_CC_WRAPPER_TARGET_HOST_aarch64_apple_darwin",
+                                        "-ENIX_BINTOOLS_WRAPPER_TARGET_HOST_aarch64_apple_darwin",
+                                      )
+                                    } else if (System
+                                                 .getProperty("os.name")
+                                                 .toLowerCase
+                                                 .contains("linux")) {
+                                      Seq(
+                                        "-ENIX_CC_WRAPPER_TARGET_HOST_x86_64_apple_darwin",
+                                        "-ENIX_BINTOOLS_WRAPPER_TARGET_HOST_x86_64_apple_darwin",
+                                      )
+                                    } else {
+                                      Seq.empty
+                                    })
+
 lazy val root = (project in file("."))
   .settings(
     name := "baboon",
@@ -63,21 +95,9 @@ lazy val root = (project in file("."))
   .enablePlugins(GraalVMNativeImagePlugin, UniversalPlugin)
   .settings(
     GraalVMNativeImage / mainClass := Some("io.septimalmind.baboon.Baboon"),
+    graalVMNativeImageOptions ++= niOptions,
     graalVMNativeImageOptions ++= Seq(
       "-H:+UnlockExperimentalVMOptions",
-      "-ENIX_BINTOOLS",
-      "-ENIX_CC",
-      "-ENIX_CFLAGS_COMPILE",
-      "-ENIX_LDFLAGS",
-      "-EbuildInputs",
-      "-EcmakeFlags",
-      "-EnativeBuildInputs",
-      "-EpropagatedBuildInputs",
-      "-EpropagatedNativeBuildInputs",
-      "-ENIX_CC_WRAPPER_TARGET_HOST_aarch64_apple_darwin",
-      "-ENIX_BINTOOLS_WRAPPER_TARGET_HOST_aarch64_apple_darwin",
-      "-ENIX_CC_WRAPPER_TARGET_HOST_x86_64_apple_darwin",
-      "-ENIX_BINTOOLS_WRAPPER_TARGET_HOST_x86_64_apple_darwin",
       "-H:-CheckToolchain", // to allow clang compiler on mac (but it's broken anyway)
       "--no-fallback",
       "-H:+ReportExceptionStackTraces",
