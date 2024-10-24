@@ -40,7 +40,7 @@ jobs:
       - ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install Nix (Linux)
+#      - name: Install Nix (Linux)
 #        if: matrix.preconfigured != true
 #        uses: nixbuild/nix-quick-install-action@v28
       - name: Install Nix
