@@ -22,31 +22,78 @@ jobs:
           - target: linux-amd64
             os: ubuntu-latest
             runs-on: [ ]
-            java-version: '23'
           - target: linux-aarch64
             os: self-hosted
             runs-on: [ "ARM64" ]
             preconfigured: true
-            cache-disabled: true
     name: ${{ matrix.target }}
     runs-on:
       - ${{ matrix.os }}
       - ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
-      - name: Cache Nix store
-        if: matrix.cache-disabled != true
-        uses: actions/cache@v4
-        with:
-          path: |
-            /nix/store
-          key: nix-${{ matrix.target }}
       - name: Install Nix
         uses: cachix/install-nix-action@v27
         with:
           nix_path: nixpkgs=channel:nixos-unstable
       - name: Build (linux)
         run: nix-shell --pure ./shell-linux.nix --run ./local-build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: baboon-${{ matrix.target }}
+          path: |
+            target/graalvm-native-image/**
+
+  build-mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        # 1) don't forget about os entry in prepare-release
+        # 2) see : https://github.com/actions/runner-images
+        include:
+          - target: macos-aarch64-14
+            runs-on: [ ]
+            os: macos-14 # yes, this is aarch64
+            java-version: '23'
+          - target: macos-amd64-13
+            os: macos-13 # this is amd64
+            runs-on: [ ]
+            java-version: '23'
+
+    name: ${{ matrix.target }}
+    runs-on:
+      - ${{ matrix.os }}
+      - ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up GraalVM (Java ${{ matrix.java-version }})
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '${{ matrix.java-version }}'
+          distribution: 'graalvm-community'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: 'sbt'
+          native-image-job-reports: true
+      #
+      #    - name: Cache Nix store
+      #      uses: actions/cache@v4
+      #      if: matrix.cache-disabled != true
+      #      with:
+      #        path: |
+      #          /nix/store
+      #        key: nix-${{ matrix.target }}
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Build (macos)
+        run: |
+          brew install sbt
+          sbt GraalVMNativeImage/packageBin
+          #./local-build.sh # https://github.com/NixOS/nixpkgs/issues/350909
+          nix-shell --pure ./shell-mac.nix --run ./local-test.sh
+
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -86,60 +133,6 @@ jobs:
           name: baboon-${{ matrix.target }}
           path: |
             target/graalvm-native-image/**
-
-  build-mac:
-    strategy:
-      fail-fast: false
-      matrix:
-        # 1) don't forget about os entry in prepare-release
-        # 2) see : https://github.com/actions/runner-images
-        include:
-          - target: macos-aarch64-14
-            runs-on: [ ]
-            os: macos-14 # yes, this is aarch64
-            java-version: '23'
-          - target: macos-amd64-13
-            os: macos-13 # this is amd64
-            runs-on: [ ]
-            java-version: '23'
-
-    name: ${{ matrix.target }}
-    runs-on:
-      - ${{ matrix.os }}
-      - ${{ matrix.runs-on }}
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up GraalVM (Java ${{ matrix.java-version }})
-      uses: graalvm/setup-graalvm@v1
-      with:
-        java-version: '${{ matrix.java-version }}'
-        distribution: 'graalvm-community'
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        cache: 'sbt'
-        native-image-job-reports: true
-
-    - name: Cache Nix store
-      uses: actions/cache@v4
-      if: matrix.cache-disabled != true
-      with:
-        path: |
-          /nix/store
-        key: nix-${{ matrix.target }}
-    - name: Install Nix
-      uses: cachix/install-nix-action@v27
-      with:
-        nix_path: nixpkgs=channel:nixos-unstable
-    - name: Build (macos)
-      run: |
-        #./local-build.sh # https://github.com/NixOS/nixpkgs/issues/350909
-        nix-shell --pure ./shell-mac.nix --run ./local-build.sh
-
-    - uses: actions/upload-artifact@v4
-      with:
-        name: baboon-${{ matrix.target }}
-        path: |
-          target/graalvm-native-image/**
 
   prepare-release:
     runs-on: ubuntu-latest
