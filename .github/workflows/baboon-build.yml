@@ -13,7 +13,7 @@ permissions:
   actions: write
 
 jobs:
-  build-linux:
+  build-unix:
     strategy:
       fail-fast: false
       matrix:
@@ -28,6 +28,9 @@ jobs:
             runs-on: [ "ARM64" ]
             preconfigured: true
             nix-cache-disabled: true
+          - target: macos-amd64-13
+            os: macos-13 # this is amd64
+            runs-on: [ ]
     name: ${{ matrix.target }}
     runs-on:
       - ${{ matrix.os }}
@@ -36,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Nix (Linux)
         if: matrix.preconfigured != true
-        uses: nixbuild/nix-quick-install-action@v27
+        uses: nixbuild/nix-quick-install-action@v28
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v5
         if: matrix.preconfigured != true
@@ -57,7 +60,8 @@ jobs:
           path: |
             target/graalvm-native-image/**
 
-  build-mac:
+  # nix-quick-install is broken on aarch64 mac agents: https://github.com/nixbuild/nix-quick-install-action/issues/43
+  build-mac-arm:
     strategy:
       fail-fast: false
       matrix:
@@ -65,22 +69,19 @@ jobs:
           - target: macos-aarch64-14
             runs-on: [ ]
             os: macos-14 # yes, this is aarch64
-          - target: macos-amd64-13
-            os: macos-13 # this is amd64
-            runs-on: [ ]
     name: ${{ matrix.target }}
     runs-on:
       - ${{ matrix.os }}
       - ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
-      - uses: nixbuild/nix-quick-install-action@v28
-      - run: nix build --version
-#      - name: Install Nix (Mac)
-#        if: matrix.preconfigured != true
-#        uses: cachix/install-nix-action@v27
-#        with:
-#          nix_path: nixpkgs=channel:nixos-unstable
+#      - uses: nixbuild/nix-quick-install-action@v28
+#      - run: nix build --version
+      - name: Install Nix (Mac)
+        if: matrix.preconfigured != true
+        uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
       - name: Build (Mac)
         run: |
           ./nix-rebuild.sh
@@ -94,8 +95,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 1) don't forget about os entry in prepare-release
-        # 2) see : https://github.com/actions/runner-images
         include:
           - target: windows-amd64
             os: windows-2022
@@ -125,10 +124,11 @@ jobs:
             target/graalvm-native-image/**
 
   prepare-release:
-    runs-on: ubuntu-latest
+    runs-on:
+      - ubuntu-latest
     needs:
-      - build-linux
-      - build-mac
+      - build-unix
+      - build-mac-arm
       - build-windows
     steps:
       - uses: actions/checkout@v4
