@@ -3,4 +3,5 @@
 set -x
 set -e
 
-nix-shell --pure shell.nix --run ./local-rebuild.sh
+nix develop --command bash -c "./local-rebuild.sh"
+#nix-shell --pure shell.nix --run ./local-rebuild.sh
