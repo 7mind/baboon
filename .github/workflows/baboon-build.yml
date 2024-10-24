@@ -132,8 +132,8 @@ jobs:
         nix_path: nixpkgs=channel:nixos-unstable
     - name: Build (macos)
       run: |
-        ./local-build.sh # https://github.com/NixOS/nixpkgs/issues/350909
-        nix-shell --pure ./shell-mac.nix --run ./local-test.sh
+        #./local-build.sh # https://github.com/NixOS/nixpkgs/issues/350909
+        nix-shell --pure ./shell-mac.nix --run ./local-build.sh
 
     - uses: actions/upload-artifact@v4
       with:
