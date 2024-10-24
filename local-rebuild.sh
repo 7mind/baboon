@@ -3,4 +3,5 @@
 set -x
 set -e
 
-sbt GraalVMNativeImage/packageBin
+./local-build.sh
+./local-test.sh

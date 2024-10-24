@@ -37,7 +37,7 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
       - name: Build (linux)
-        run: nix-shell --pure ./shell-linux.nix --run ./local-build.sh
+        run: nix-shell --pure ./shell-linux.nix --run ./local-rebuild.sh
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -89,9 +89,9 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
       - name: Build (macos)
         run: |
+          # https://github.com/NixOS/nixpkgs/issues/350909
           brew install sbt
-          sbt GraalVMNativeImage/packageBin
-          #./local-build.sh # https://github.com/NixOS/nixpkgs/issues/350909
+          ./local-build.sh 
           nix-shell --pure ./shell-mac.nix --run ./local-test.sh
 
       - uses: actions/upload-artifact@v4
