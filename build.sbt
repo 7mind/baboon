@@ -98,6 +98,7 @@ lazy val root = (project in file("."))
     GraalVMNativeImage / mainClass := Some("io.septimalmind.baboon.Baboon"),
     graalVMNativeImageOptions ++= niOptions,
     graalVMNativeImageOptions ++= Seq(
+      "-H:-CheckToolchain", // fixes Darwin builds under Nix
       "-H:+UnlockExperimentalVMOptions",
       "--no-fallback",
       "-H:+ReportExceptionStackTraces",
