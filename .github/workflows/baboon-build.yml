@@ -46,7 +46,7 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
       - name: Build (linux)
-        run: nix-shell --pure ./shell-linux.nix --run ./build.sh
+        run: nix-shell --pure ./shell-linux.nix --run ./local-build.sh
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -80,7 +80,7 @@ jobs:
           native-image-job-reports: true
       - name: Build (windows)
         shell: bash
-        run: bash ./build.sh
+        run: bash ./local-build.sh
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -130,14 +130,10 @@ jobs:
       uses: cachix/install-nix-action@v27
       with:
         nix_path: nixpkgs=channel:nixos-unstable
-
-#    - name: Install SBT
-#      run: |
-#        brew install sbt
     - name: Build (macos)
-      run: nix-shell --impure ./shell-mac.nix --run ./build.sh
-#      shell: bash
-#      run: bash ./build.sh
+      run: |
+        ./local-build.sh # https://github.com/NixOS/nixpkgs/issues/350909
+        nix-shell --pure ./shell-mac.nix --run ./local-test.sh
 
     - uses: actions/upload-artifact@v4
       with:
