@@ -72,6 +72,7 @@ jobs:
 #        env:
 #          NIX_BUILD_SHELL: bash
         run: |
+          nix flake lock          
           nix flake info
           nix flake metadata
           ./nix-rebuild.sh
