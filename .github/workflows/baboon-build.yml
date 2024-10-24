@@ -148,9 +148,7 @@ jobs:
 #      run: |
 #        brew install sbt
     - name: Build (macos)
-      run: |
-        export GRAALVM_OPTIONS="-H:-CheckToolchain"
-        nix-shell --pure ./shell.nix --run ./build.sh
+      run: nix-shell --pure ./shell.nix --run ./build.sh
 #      shell: bash
 #      run: bash ./build.sh
 

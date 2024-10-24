@@ -64,6 +64,7 @@ lazy val root = (project in file("."))
   .settings(
     GraalVMNativeImage / mainClass := Some("io.septimalmind.baboon.Baboon"),
     graalVMNativeImageOptions ++= Seq(
+      "-H:-CheckToolchain", // to allow clang compiler on mac
       "--no-fallback",
       "-H:+ReportExceptionStackTraces",
       //"-H:+UnlockExperimentalVMOptions",
