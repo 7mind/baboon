@@ -57,7 +57,7 @@ jobs:
           path: |
             target/graalvm-native-image/**
 
-  build-unix:
+  build-mac:
     strategy:
       fail-fast: false
       matrix:
