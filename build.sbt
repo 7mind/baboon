@@ -65,6 +65,18 @@ lazy val root = (project in file("."))
     GraalVMNativeImage / mainClass := Some("io.septimalmind.baboon.Baboon"),
     graalVMNativeImageOptions ++= Seq(
       "-H:+UnlockExperimentalVMOptions",
+
+      "-ENIX_BINTOOLS",
+      "-ENIX_CC",
+      "-ENIX_CFLAGS_COMPILE",
+      "-ENIX_LDFLAGS",
+      "-EbuildInputs",
+      "-EcmakeFlags",
+      "-EnativeBuildInputs",
+      "-EpropagatedBuildInputs",
+      "-EpropagatedNativeBuildInputs",
+      "-ENIX_CC_WRAPPER_TARGET_HOST_aarch64_apple_darwin",
+      "-ENIX_BINTOOLS_WRAPPER_TARGET_HOST_aarch64_apple_darwin",
       "-H:-CheckToolchain", // to allow clang compiler on mac (but it's broken anyway)
       "--no-fallback",
       "-H:+ReportExceptionStackTraces",
