@@ -73,7 +73,7 @@ jobs:
 #          NIX_BUILD_SHELL: bash
         run: |
           nix flake info
-          nix flake lock
+          nix flake metadata
           ./nix-rebuild.sh
       - uses: actions/upload-artifact@v4
         with:
