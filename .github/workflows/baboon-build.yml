@@ -50,14 +50,14 @@ jobs:
         uses: nix-community/cache-nix-action@v5
         with:
           # restore and save a cache using this key
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
+          primary-key: nix-${{ matrix.target }}-${{ hashFiles('**/*.nix') }}
           # if there's no cache hit, restore a cache by this prefix
-          restore-prefixes-first-match: nix-${{ runner.os }}-
+          restore-prefixes-first-match: nix-${{ matrix.target }}-
           gc-max-store-size-linux: 1073741824
           # do purge caches
           purge: true
           # purge all versions of the cache
-          purge-prefixes: cache-${{ runner.os }}-
+          purge-prefixes: cache-${{ matrix.target }}-
           # created more than this number of seconds ago relative to the start of the `Post Restore` phase
           purge-created: 0
           # except the version with the `primary-key`, if it exists
