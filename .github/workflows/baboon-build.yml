@@ -108,15 +108,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up GraalVM (Java ${{ matrix.java-version }})
-      uses: graalvm/setup-graalvm@v1
-      with:
-        java-version: '${{ matrix.java-version }}'
-        distribution: 'graalvm-community'
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        cache: 'sbt'
-        native-image-job-reports: true
-
+#    - name: Set up GraalVM (Java ${{ matrix.java-version }})
+#      uses: graalvm/setup-graalvm@v1
+#      with:
+#        java-version: '${{ matrix.java-version }}'
+#        distribution: 'graalvm-community'
+#        github-token: ${{ secrets.GITHUB_TOKEN }}
+#        cache: 'sbt'
+#        native-image-job-reports: true
 
     - name: Cache Nix store
       uses: actions/cache@v3
@@ -149,9 +148,11 @@ jobs:
       run: |
         brew install sbt
     - name: Build (macos)
-      #run: nix-shell --impure ./shell.nix --run ./build.sh
-      shell: bash
-      run: bash ./build.sh
+      run:
+        export GRAALVM_OPTIONS="-H:-CheckToolchain"
+        nix-shell --pure ./shell.nix --run ./build.sh
+#      shell: bash
+#      run: bash ./build.sh
 
     - uses: actions/upload-artifact@v4
       with:
