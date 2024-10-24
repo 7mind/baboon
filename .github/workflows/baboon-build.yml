@@ -78,7 +78,7 @@ jobs:
           native-image-job-reports: true
       - name: Build (windows)
         shell: bash
-        run: bash ./test.sh
+        run: bash ./build.sh
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -145,11 +145,13 @@ jobs:
 #        name: baboon-${{ matrix.target }}
 #        path: |
 #          target/graalvm-native-image/**
-
+    - name: Install SBT
+      run: |
+        brew install sbt
     - name: Build (macos)
-      #run: nix-shell --impure ./shell.nix --run ./test.sh
+      #run: nix-shell --impure ./shell.nix --run ./build.sh
       shell: bash
-      run: bash ./test.sh
+      run: bash ./build.sh
 
     - uses: actions/upload-artifact@v4
       with:
