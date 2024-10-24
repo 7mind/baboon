@@ -71,7 +71,10 @@ jobs:
       - name: Build (unix)  # https://github.com/nixbuild/nix-quick-install-action/issues/3
 #        env:
 #          NIX_BUILD_SHELL: bash
-        run: ./nix-rebuild.sh
+        run: |
+          nix flake info
+          nix flake lock
+          ./nix-rebuild.sh
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
