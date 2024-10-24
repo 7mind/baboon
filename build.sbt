@@ -99,10 +99,8 @@ lazy val root = (project in file("."))
     graalVMNativeImageOptions ++= niOptions,
     graalVMNativeImageOptions ++= Seq(
       "-H:+UnlockExperimentalVMOptions",
-      "-H:-CheckToolchain", // to allow clang compiler on mac (but it's broken anyway)
       "--no-fallback",
       "-H:+ReportExceptionStackTraces",
-      //"-H:+UnlockExperimentalVMOptions",
       "--report-unsupported-elements-at-runtime",
       "--enable-https",
       "--enable-http",
