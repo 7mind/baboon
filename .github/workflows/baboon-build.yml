@@ -47,7 +47,7 @@ jobs:
         if: matrix.linux == true && matrix.preconfigured != true
         uses: nixbuild/nix-quick-install-action@v27
       - name: Install Nix (Mac)
-        if: matrix.linux == true && matrix.preconfigured != true
+        if: matrix.linux != true && matrix.preconfigured != true
         uses: cachix/install-nix-action@v27
         with:
           nix_path: nixpkgs=channel:nixos-unstable
