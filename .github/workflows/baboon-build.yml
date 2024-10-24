@@ -68,7 +68,9 @@ jobs:
           purge-created: 0
           # except the version with the `primary-key`, if it exists
           purge-primary-key: never
-      - name: Build (unix)
+      - name: Build (unix)  # https://github.com/nixbuild/nix-quick-install-action/issues/3
+        env:
+          NIX_BUILD_SHELL: bash
         run: ./nix-rebuild.sh
       - uses: actions/upload-artifact@v4
         with:
