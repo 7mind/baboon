@@ -12,28 +12,33 @@ case class Domain(id: Pkg,
                   shallowSchema: Map[TypeId, ShallowSchemaId],
                   deepSchema: Map[TypeId, DeepSchemaId],
                   loops: Set[LoopDetector.Cycles[TypeId]],
-) {
+                 ) {
+
   import izumi.fundamentals.platform.strings.IzString.*
+
   override def toString: String =
     s"""$id $version
        |  deps: ${defs.predecessors.links.toList.niceList().shift(4)}
        |  excluded: ${excludedIds.niceList().shift(4)}
-       |  defns: ${defs.meta.nodes.values
-         .map(
-           member =>
-             s"${shallowSchema(member.id)}, ${deepSchema(member.id)} = $member"
-         )
-         .niceList()
-         .shift(4)}""".stripMargin
+       |  defns: ${
+      defs.meta.nodes.values
+        .map(
+          member =>
+            s"${shallowSchema(member.id)}, ${deepSchema(member.id)} = $member"
+        )
+        .niceList()
+        .shift(4)
+    }""".stripMargin
 }
 
 sealed trait DomainMember {
   def id: TypeId
 }
+
 object DomainMember {
   case class Builtin(id: TypeId.Builtin) extends DomainMember
-  case class User(root: Boolean, defn: Typedef.User, meta: RawNodeMeta)
-      extends DomainMember {
+
+  case class User(root: Boolean, defn: Typedef.User, meta: RawNodeMeta) extends DomainMember {
     def id: TypeId.User = defn.id
   }
 }
@@ -54,37 +59,37 @@ object Typedef {
   case class Dto(id: TypeId.User,
                  fields: List[Field],
                  contracts: List[TypeId.User])
-      extends User
+    extends User
+
   case class Contract(id: TypeId.User,
                       fields: List[Field],
                       contracts: List[TypeId.User])
-      extends User
+    extends User
       with NonDataTypedef
+
   case class Enum(id: TypeId.User, members: NEList[EnumMember]) extends User
+
   case class Adt(id: TypeId.User,
                  members: NEList[TypeId.User],
                  contracts: List[TypeId.User],
                  fields: List[Field],
-  ) extends User
+                ) extends User
 
   case class ForeignEntryAttr(name: String, value: String)
   case class ForeignEntryAttrs(attrs: List[ForeignEntryAttr])
   case class ForeignEntry(lang: String, decl: String, attrs: ForeignEntryAttrs)
 
   case class Foreign(id: TypeId.User, bindings: Map[String, ForeignEntry])
-      extends User
+    extends User
 
   object Adt {
     implicit class AdtSyntax(val adt: Adt) extends AnyVal {
       def dataMembers(domain: Domain): Seq[TypeId.User] =
         adt.members.toList.filterNot { id =>
-          val a: DomainMember = domain.defs.meta.nodes(id)
-          a match {
-            case u: DomainMember.User =>
-              u.defn.isInstanceOf[Typedef.NonDataTypedef]
+          domain.defs.meta.nodes(id) match {
+            case u: DomainMember.User => u.defn.isInstanceOf[Typedef.NonDataTypedef]
             case _ => false
           }
-
         }
     }
   }
@@ -93,15 +98,17 @@ object Typedef {
 sealed trait TypeRef {
   def id: TypeId
 }
+
 object TypeRef {
   case class Scalar(id: TypeId.Scalar) extends TypeRef
-  case class Constructor(id: TypeId.BuiltinCollection, args: NEList[TypeRef])
-      extends TypeRef
+
+  case class Constructor(id: TypeId.BuiltinCollection, args: NEList[TypeRef]) extends TypeRef
 }
 
 sealed trait TypeId {
   def name: TypeName
 }
+
 object TypeId {
   sealed trait Builtin extends TypeId
 
@@ -115,9 +122,7 @@ object TypeId {
     override def toString: String = s"#${name.name}"
   }
 
-  case class User(pkg: Pkg, owner: Owner, name: TypeName)
-      extends TypeId
-      with Scalar {
+  case class User(pkg: Pkg, owner: Owner, name: TypeName) extends TypeId with Scalar {
     override def toString: String = {
       s"$pkg/$owner#${name.name}"
     }
@@ -208,35 +213,42 @@ object TypeId {
 
     def unpack(typeId: TypeId): Option[(String, Int)] = {
       typeId match {
-        case Builtins.i08  => Some(("int", 8))
-        case Builtins.i16  => Some(("int", 16))
-        case Builtins.i32  => Some(("int", 32))
-        case Builtins.i64  => Some(("int", 64))
-        case Builtins.u08  => Some(("uint", 8))
-        case Builtins.u16  => Some(("uint", 16))
-        case Builtins.u32  => Some(("uint", 32))
-        case Builtins.u64  => Some(("uint", 64))
-        case Builtins.f32  => Some(("float", 32))
-        case Builtins.f64  => Some(("float", 64))
+        case Builtins.i08 => Some(("int", 8))
+        case Builtins.i16 => Some(("int", 16))
+        case Builtins.i32 => Some(("int", 32))
+        case Builtins.i64 => Some(("int", 64))
+        case Builtins.u08 => Some(("uint", 8))
+        case Builtins.u16 => Some(("uint", 16))
+        case Builtins.u32 => Some(("uint", 32))
+        case Builtins.u64 => Some(("uint", 64))
+        case Builtins.f32 => Some(("float", 32))
+        case Builtins.f64 => Some(("float", 64))
         case Builtins.f128 => Some(("float", 128))
-        case _             => None
+        case _ => None
       }
     }
   }
 
   sealed trait ComparatorType
+
   object ComparatorType {
     sealed trait Basic extends ComparatorType
+
     case object Direct extends Basic
+
     case object ObjectEquals extends Basic
 
     sealed trait Complex extends ComparatorType
+
     case class OptionEquals(subComparator: ComparatorType) extends Complex
+
     case class SeqEquals(subComparator: ComparatorType) extends Complex
+
     case class SetEquals(subComparator: ComparatorType) extends Complex
+
     case class MapEquals(keyComparator: ComparatorType,
                          valComparator: ComparatorType)
-        extends Complex
+      extends Complex
   }
 
   def comparator(ref: TypeRef): ComparatorType = {
@@ -254,7 +266,7 @@ object TypeId {
           case TypeId.Builtins.opt =>
             comparator(arg1) match {
               case ComparatorType.Direct => ComparatorType.Direct
-              case out                   => ComparatorType.OptionEquals(out)
+              case out => ComparatorType.OptionEquals(out)
             }
           case TypeId.Builtins.set =>
             ComparatorType.SetEquals(comparator(arg1))
@@ -283,12 +295,14 @@ object Owner {
 
   case class Ns(path: Seq[TypeName]) extends Owner {
     override def asPseudoPkg: Seq[String] = path.map(_.name)
+
     override def toString: String = path.map(_.name).mkString("/")
   }
 
   case class Adt(id: TypeId.User) extends Owner {
     override def asPseudoPkg: Seq[String] =
       id.owner.asPseudoPkg ++ Seq(id.name.name)
+
     override def toString: String = s"[$id]"
   }
 }
@@ -296,6 +310,7 @@ object Owner {
 case class Pkg(path: NEList[String]) {
   override def toString: String = path.mkString(".")
 }
+
 case class TypeName(name: String)
 
 case class EnumMember(name: String, const: Option[Long])
@@ -303,6 +318,7 @@ case class EnumMember(name: String, const: Option[Long])
 case class FieldName(name: String) {
   override def toString: String = s"$name"
 }
+
 case class Field(name: FieldName, tpe: TypeRef) {
   override def toString: String = s"$name: $tpe"
 }

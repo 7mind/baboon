@@ -17,9 +17,7 @@ trait CSDefnTranslator {
   def translate(defn: DomainMember.User,
                 domain: Domain,
                 evo: BaboonEvolution,
-  ): Either[NEList[BaboonIssue.TranslationIssue], List[
-    CSDefnTranslator.OutputExt
-  ]]
+               ): Either[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.OutputExt]]
 }
 
 object CSDefnTranslator {
@@ -31,37 +29,38 @@ object CSDefnTranslator {
 
   case class OutputExt(output: Output, codecReg: TextTree[CSValue])
 
-  val obsolete: CSType =
+  private val obsolete: CSType =
     CSType(CSBaboonTranslator.csSystemPkg, "Obsolete", fq = false)
 
-  val serializable: CSType =
+  private val serializable: CSType =
     CSType(CSBaboonTranslator.csSystemPkg, "Serializable", fq = false)
 
-  class CSDefnTranslatorImpl(options: CompilerOptions,
-                             trans: CSTypeTranslator,
-                             tools: CSDefnTools,
-                             codecs: Set[CSCodecTranslator],
-                             codecsTests: CSCodecTestsTranslator,
-                             testOutput: Option[Path] @Id("test-output"))
-      extends CSDefnTranslator {
+  class CSDefnTranslatorImpl(
+                              options: CompilerOptions,
+                              trans: CSTypeTranslator,
+                              tools: CSDefnTools,
+                              codecs: Set[CSCodecTranslator],
+                              codecsTests: CSCodecTestsTranslator,
+                              randomMethodTranslator: CSRandomMethodTranslator,
+                              testOutput: Option[Path] @Id("test-output")
+                            )
+    extends CSDefnTranslator {
     type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
     override def translate(defn: DomainMember.User,
                            domain: Domain,
                            evo: BaboonEvolution,
-    ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
+                          ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
       defn.id.owner match {
-        case Owner.Adt(_) if options.csUseCompactAdtForm =>
-          Right(List.empty)
-        case _ =>
-          doTranslate(defn, domain, evo)
+        case Owner.Adt(_) if options.csUseCompactAdtForm => Right(List.empty)
+        case _ => doTranslate(defn, domain, evo)
       }
     }
 
     private def doTranslate(defn: DomainMember.User,
                             domain: Domain,
                             evo: BaboonEvolution,
-    ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
+                           ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
       def getOutputPath(tests: Boolean): String = {
         val fbase = tools.basename(domain, evo, options)
         val fsufix = if (tests) "_Tests" else ""
@@ -89,7 +88,7 @@ object CSDefnTranslator {
               isTest = true
             ),
             q""
-        )
+          )
       )
 
       val registrations = reg.map { case (_, reg) =>
@@ -121,8 +120,8 @@ object CSDefnTranslator {
                              domain: Domain,
                              evo: BaboonEvolution,
                              inNs: Boolean): (TextTree[CSValue],
-                                              List[(CSType, TextTree[CSValue])],
-                                              Option[TextTree[CSValue]]) = {
+      List[(CSType, TextTree[CSValue])],
+      Option[TextTree[CSValue]]) = {
       val isLatestVersion = domain.version == evo.latest
 
       def obsoletePrevious(tree: TextTree[CSValue]) = {
@@ -134,6 +133,7 @@ object CSDefnTranslator {
              |$tree""".stripMargin
         }
       }
+
       val csTypeRef = trans.toCsTypeRefDeref(defn.id, domain, evo)
       val srcRef = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
 
@@ -150,11 +150,7 @@ object CSDefnTranslator {
       val ns = srcRef.pkg.parts
 
       val allDefs = (defnRepr +: codecTrees).join("\n\n")
-      val content = if (inNs) {
-        tools.inNs(ns.toSeq, allDefs)
-      } else {
-        allDefs
-      }
+      val content = if (inNs) tools.inNs(ns.toSeq, allDefs) else allDefs
 
       val reg = defn.defn match {
         case _: Typedef.NonDataTypedef =>
@@ -181,24 +177,20 @@ object CSDefnTranslator {
             .toList ++ tests
         ).filterNot(_.isEmpty).map(_.join("\n\n"))
 
-      val codecTestWithNS = codecTestTrees.map { t =>
-        if (inNs) {
-          tools.inNs(ns.toSeq, t)
-        } else {
-          t
-        }
-      }
+      val codecTestWithNS = codecTestTrees.map(t =>
+        if (inNs) tools.inNs(ns.toSeq, t) else t
+      )
 
       (content, allRegs, codecTestWithNS)
     }
 
     private def makeRepr(
-      defn: DomainMember.User,
-      domain: Domain,
-      name: CSValue.CSType,
-      isLatestVersion: Boolean,
-      evo: BaboonEvolution
-    ): (TextTree[CSValue], List[(CSType, TextTree[CSValue])], List[TextTree[CSValue]]) = {
+                          defn: DomainMember.User,
+                          domain: Domain,
+                          name: CSValue.CSType,
+                          isLatestVersion: Boolean,
+                          evo: BaboonEvolution
+                        ): (TextTree[CSValue], List[(CSType, TextTree[CSValue])], List[TextTree[CSValue]]) = {
       val genMarker =
         if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
 
@@ -208,19 +200,21 @@ object CSDefnTranslator {
 
       defn.defn match {
         case contract: Typedef.Contract =>
-          val methods =
-            renderContractFields(domain, evo, contract.fields).join("\n")
+          val methods = renderContractFields(domain, evo, contract.fields).join("\n")
 
-          val refs =
-            (contract.contracts.map(t => trans.asCsType(t, domain, evo)) ++ List(
-              q"$genMarker"
-            )).toList
+          val refs = contract
+            .contracts
+            .map(t => trans.asCsType(t, domain, evo)) ++ List(
+            q"$genMarker"
+          )
 
           val parents = makeParents(refs)
 
-          (q"""public interface ${name.asName}$parents  {
+          (
+            q"""public interface ${name.asName}$parents  {
                |    ${methods.shift(4).trim}
-               |}""".stripMargin, List.empty, List.empty)
+               |}""".stripMargin, List.empty, List.empty
+          )
 
         case dto: Typedef.Dto =>
           val outs = dto.fields.map { f =>
@@ -229,18 +223,18 @@ object CSDefnTranslator {
             (mname, tpe, f)
           }
 
-          val constructorArgs =
-            outs.map { case (fname, tpe, _) => q"$tpe $fname" }.join(",\n")
+          val constructorArgs = outs.map { case (fname, tpe, _) => q"$tpe $fname" }.join(",\n")
 
-          val contractParents =
-            dto.contracts.toSeq.map(c => trans.asCsType(c, domain, evo))
+          val contractParents = dto
+            .contracts
+            .toSeq
+            .map(c => trans.asCsType(c, domain, evo))
 
           val adtParents = dto.id.owner match {
             case Owner.Adt(id) =>
               val parentId = trans.asCsType(id, domain, evo)
               Seq(parentId, q"$iBaboonAdtMemberMeta")
-            case _ =>
-              Seq.empty
+            case _ => Seq.empty
           }
 
           val allParents = adtParents ++ contractParents ++ Seq(q"$genMarker")
@@ -255,37 +249,34 @@ object CSDefnTranslator {
           }
 
           val renderedHcParts = comparators.map {
-            case (ref, _, cmp) =>
-              renderHashcode(ref, cmp, 0)
+            case (ref, _, cmp) => renderHashcode(ref, cmp, 0)
           }
 
           val hcGroups = renderedHcParts
             .grouped(8)
-            .map(group => q"""HashCode.Combine(
+            .map(group =>
+              q"""HashCode.Combine(
                  |    ${group.join(",\n").shift(4).trim}
-                 |)""".stripMargin)
+                 |)""".stripMargin
+            )
             .toList
 
-          val hc = if (hcGroups.isEmpty) {
-            q"0"
-          } else {
-            hcGroups.join(" ^\n")
-          }
+          val hc = if (hcGroups.isEmpty) q"0" else hcGroups.join(" ^\n")
 
           val renderedCmps = comparators.map {
-            case (ref, oref, cmp) =>
-              renderComparator(ref, oref, cmp)
+            case (ref, oref, cmp) => renderComparator(ref, oref, cmp)
           }
 
-          val cmp = if (renderedCmps.isEmpty) {
-            q"true"
-          } else {
-            renderedCmps.join(" &&\n")
-          }
-          val eq = Seq(q"""public override int GetHashCode()
+          val cmp = if (renderedCmps.isEmpty) q"true" else renderedCmps.join(" &&\n")
+
+          val random = if (testOutput.isDefined) randomMethodTranslator.translateDtoRandom(defn, dto, domain, evo) else None
+
+          val eq = Seq(
+            q"""public override int GetHashCode()
                |{
                |    return ${hc.shift(8).trim};
-               |}""".stripMargin, q"""#nullable enable
+               |}""".stripMargin,
+            q"""#nullable enable
                |public bool Equals($name? other) {
                |    if (other == null) {
                |        return false;
@@ -294,13 +285,15 @@ object CSDefnTranslator {
                |}
                |#nullable disable""".stripMargin)
 
-          val members = eq ++ meta
-          (q"""[$serializable]
-             |public sealed record ${name.asName}(
-             |    ${constructorArgs.shift(4).trim}
-             |)$parents {
-             |    ${members.join("\n\n").shift(4).trim}
-             |};""".stripMargin, List.empty, List.empty)
+          val members = eq ++ meta ++ random
+          (
+            q"""[$serializable]
+               |public sealed record ${name.asName}(
+               |    ${constructorArgs.shift(4).trim}
+               |)$parents {
+               |    ${members.join("\n\n").shift(4).trim}
+               |};""".stripMargin, List.empty, List.empty
+          )
 
         case e: Typedef.Enum =>
           val branches =
@@ -308,79 +301,74 @@ object CSDefnTranslator {
               .map { m =>
                 val base = q"""${m.name.capitalize}"""
                 m.const match {
-                  case Some(value) =>
-                    q"""$base = ${value.toString}"""
+                  case Some(value) => q"""$base = ${value.toString}"""
                   case None => base
                 }
               }
               .toSeq
               .join(",\n")
 
-          (q"""[$serializable]
-             |public enum ${name.asName} {
-             |    ${branches.shift(4).trim}
-             |}""".stripMargin, List.empty, List.empty)
+          (
+            q"""[$serializable]
+               |public enum ${name.asName} {
+               |    ${branches.shift(4).trim}
+               |}""".stripMargin, List.empty, List.empty
+          )
 
         case adt: Typedef.Adt =>
-//          val contractParents =
-//            adt.contracts.toSeq.map(c => trans.asCsType(c, domain, evo))
-          val allParents = /*contractParents ++*/ Seq(q"$genMarker")
+          val allParents = Seq(q"$genMarker")
           val parents = makeParents(allParents.toList)
-          //val methods = renderContractFields(domain, evo, adt.fields)
+          val random = if (testOutput.isDefined) randomMethodTranslator.translateAdtRandom(defn, adt, domain, evo) else None
 
           if (options.csUseCompactAdtForm) {
             val memberTrees = adt.members
               .map { mid =>
                 domain.defs.meta.nodes.get(mid) match {
                   case Some(mdefn: DomainMember.User) =>
-                    val (content, reg, codecTestWithNS) =
-                      makeFullRepr(mdefn, domain, evo, inNs = false)
-
-                    val tests = if (testOutput.isDefined) {
-                      codecTestWithNS.toList
-                    } else {
-                      List.empty
-                    }
+                    val (content, reg, codecTestWithNS) = makeFullRepr(mdefn, domain, evo, inNs = false)
+                    val tests = if (testOutput.isDefined) codecTestWithNS.toList else List.empty
                     (content, reg, tests)
-                  case m =>
-                    throw new RuntimeException(
-                      s"BUG: missing/wrong adt member: $mid => $m"
-                    )
+                  case m => throw new RuntimeException(s"BUG: missing/wrong adt member: $mid => $m")
                 }
-
               }
+
             val branches = memberTrees
               .map(_._1)
               .toSeq
               .join("\n\n")
 
             val regs = memberTrees.map(_._2)
-            val members = meta
+            val members = meta ++ random
 
             (
               q"""public abstract record ${name.asName}$parents {
-                  |    ${branches.shift(4).trim}
-                  |    
-                  |    ${members.join("\n\n").shift(4).trim}
-                  |}""".stripMargin,
+                 |    ${branches.shift(4).trim}
+                 |
+                 |    ${members.join("\n\n").shift(4).trim}
+                 |}""".stripMargin,
               regs.toList.flatten,
               memberTrees.toList.flatMap(_._3)
             )
 
           } else {
-            (q"""public interface ${name.asName}$parents {
-                 |
-                 |}""".stripMargin, List.empty, List.empty)
+            (
+              q"""public interface ${name.asName}$parents {
+                 |    ${random.getOrElse(q"")}
+                 |}""".stripMargin,
+              List.empty,
+              List.empty
+            )
           }
 
-        case _: Typedef.Foreign =>
-          (q"", List.empty, List.empty)
+        case _: Typedef.Foreign => (q"", List.empty, List.empty)
       }
     }
 
-    private def renderContractFields(domain: Domain,
-                                     evo: BaboonEvolution,
-                                     fields: List[Field]) = {
+    private def renderContractFields(
+                                      domain: Domain,
+                                      evo: BaboonEvolution,
+                                      fields: List[Field]
+                                    ): List[TextTree[CSValue]] = {
       fields.map { f =>
         val tpe = trans.asCsRef(f.tpe, domain, evo)
         val mname = s"${f.name.name.capitalize}"
@@ -389,13 +377,9 @@ object CSDefnTranslator {
     }
 
     private def makeParents(
-      refs: List[TextTree[CSValue]]
-    ): TextTree[CSValue] = {
-      if (refs.isEmpty) {
-        q""
-      } else {
-        q" : ${refs.join(", ")} "
-      }
+                             refs: List[TextTree[CSValue]]
+                           ): TextTree[CSValue] = {
+      if (refs.isEmpty) q"" else q" : ${refs.join(", ")} "
     }
 
     private def renderHashcode(ref: TextTree[CSValue],
@@ -403,13 +387,7 @@ object CSDefnTranslator {
                                depth: Int): TextTree[CSValue] = {
       val itemRef = q"item${depth.toString}"
       cmp match {
-        case _: ComparatorType.Basic =>
-          if (depth == 0) {
-            ref
-          } else {
-            q"HashCode.Combine($ref)"
-          }
-
+        case _: ComparatorType.Basic => if (depth == 0) ref else q"HashCode.Combine($ref)"
         case c: ComparatorType.Complex =>
           c match {
             case ComparatorType.OptionEquals(subComparator) =>
@@ -419,11 +397,13 @@ object CSDefnTranslator {
             case ComparatorType.SetEquals(subComparator) =>
               q"($ref.Select($itemRef => ${renderHashcode(itemRef, subComparator, depth + 1)}).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
             case ComparatorType.MapEquals(keyComparator, valComparator) =>
-              q"($ref.Select($itemRef => HashCode.Combine(${renderHashcode(
-                q"$itemRef.Key",
-                keyComparator,
-                depth + 1
-              )}, ${renderHashcode(q"$itemRef.Value", valComparator, depth + 1)})).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
+              q"($ref.Select($itemRef => HashCode.Combine(${
+                renderHashcode(
+                  q"$itemRef.Key",
+                  keyComparator,
+                  depth + 1
+                )
+              }, ${renderHashcode(q"$itemRef.Value", valComparator, depth + 1)})).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
           }
       }
     }

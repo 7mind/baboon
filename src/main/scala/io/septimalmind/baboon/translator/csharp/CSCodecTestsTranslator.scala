@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
+import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
@@ -20,13 +21,14 @@ object CSCodecTestsTranslator {
                    typeTranslator: CSTypeTranslator,
                    logger: BLogger,
                    enquiries: BaboonEnquiries,
-  ) extends CSCodecTestsTranslator {
+                   compilerOptions: CompilerOptions
+                  ) extends CSCodecTestsTranslator {
     override def translate(definition: DomainMember.User,
                            csRef: CSValue.CSType,
                            srcRef: CSValue.CSType,
                            domain: Domain,
                            evo: BaboonEvolution,
-    ): Option[TextTree[CSValue]] = {
+                          ): Option[TextTree[CSValue]] = {
 
       val codecTestName = definition.id.owner match {
         case Owner.Toplevel => srcRef.name
@@ -46,24 +48,13 @@ object CSCodecTestsTranslator {
         case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
         case _ =>
           val testClass =
-            q"""[${nunitTestFixture}]
-               |public class ${testClassName}
+            q"""[$nunitTestFixture]
+               |public class $testClassName
                |{
                |  #nullable disable
-               |
-               |  private ${autofixtureFixture} fixture;
-               |
                |  ${testFields(definition, srcRef, domain, evo)}
                |
-               |  public $testClassName()
-               |  {
-               |    fixture = new ${autofixtureFixture}();
-               |    fixture.Customize(new ${autofixtureImmutableCollectionsCustomization}());
-               |    fixture.Customizations.Add(new ${baboonTest_TruncatedRandomDateTimeSequenceGenerator}());
-               |    fixture.Customizations.Add(new ${baboonTest_EnumDictionaryBuilder}());
-               |  }
-               |
-               |  [${nunitOneTimeSetUp}]
+               |  [$nunitOneTimeSetUp]
                |  public void Setup()
                |  {
                |    ${fieldsInitialization(definition, srcRef, domain, evo)}
@@ -93,33 +84,35 @@ object CSCodecTestsTranslator {
             .join("\n")
             .shift(2)
             .trim
-        case _ => q"private ${srcRef} ${srcRef.name.toLowerCase};"
+        case _ => q"private $srcRef ${srcRef.name.toLowerCase};"
       }
     }
 
     private def fieldsInitialization(
-      definition: DomainMember.User,
-      srcRef: CSValue.CSType,
-      domain: Domain,
-      evo: BaboonEvolution
-    ): TextTree[CSValue] = {
+                                      definition: DomainMember.User,
+                                      srcRef: CSValue.CSType,
+                                      domain: Domain,
+                                      evolution: BaboonEvolution
+                                    ): TextTree[CSValue] = {
       definition.defn match {
         case adt: Typedef.Adt =>
           adt
             .dataMembers(domain)
             .map { member =>
-              val ref = typeTranslator.toCsTypeRefDeref(member, domain, evo)
-              val adtRef = typeTranslator.toCsTypeRefDeref(adt.id, domain, evo)
-              q"""fixture.Register<${adtRef}>(() => fixture.Create<$ref>());
-               |${member.name.name.toLowerCase} = fixture.Create<${adtRef}>();
-               |""".stripMargin
+              if (compilerOptions.csUseCompactAdtForm) {
+                q"${member.name.name.toLowerCase} = ${typeTranslator.asCsType(adt.id, domain, evolution)}.${member.name.name}.Random();"
+              } else {
+                q"${member.name.name.toLowerCase} =  ${typeTranslator.asCsType(member, domain, evolution)}.Random();"
+              }
             }
             .toList
             .join("\n")
             .shift(4)
             .trim
+        case enum: Typedef.Enum =>
+          q"${srcRef.name.toLowerCase} = $testValuesGenerator.NextRandomEnum<${enum.id.name.name}>();"
         case _ =>
-          q"${srcRef.name.toLowerCase} = fixture.Create<${srcRef}>();"
+          q"${srcRef.name.toLowerCase} = ${typeTranslator.asCsType(definition.id, domain, evolution)}.Random();"
       }
     }
 
@@ -127,35 +120,35 @@ object CSCodecTestsTranslator {
                       srcRef: CSValue.CSType,
                       domain: Domain,
                       evo: BaboonEvolution,
-    ): TextTree[CSValue] = {
+                     ): TextTree[CSValue] = {
       codecs
         .map {
           case jsonCodec: CSNSJsonCodecGenerator =>
             q"""[Test]
-             |public void jsonCodecTest()
-             |{
-             |    ${jsonCodecAssertions(
-                 jsonCodec,
-                 definition,
-                 srcRef,
-                 domain,
-                 evo
-               ).shift(4).trim}
-             |}
-             |""".stripMargin
+               |public void jsonCodecTest()
+               |{
+               |    ${jsonCodecAssertions(
+              jsonCodec,
+              definition,
+              srcRef,
+              domain,
+              evo
+            ).shift(4).trim}
+               |}
+               |""".stripMargin
           case uebaCodec: CSUEBACodecGenerator =>
             q"""[Test]
-             |public void uebaCodecTest()
-             |{
-             |    ${uebaCodecAssertions(
-                 uebaCodec,
-                 definition,
-                 srcRef,
-                 domain,
-                 evo
-               ).shift(4).trim}
-             |}
-             |""".stripMargin
+               |public void uebaCodecTest()
+               |{
+               |    ${uebaCodecAssertions(
+              uebaCodec,
+              definition,
+              srcRef,
+              domain,
+              evo
+            ).shift(4).trim}
+               |}
+               |""".stripMargin
           case unknown =>
             logger.message(
               s"Tests generating for ${unknown.codecName(srcRef)} codec of type $srcRef is not supported"
@@ -173,7 +166,7 @@ object CSCodecTestsTranslator {
                                     srcRef: CSValue.CSType,
                                     domain: Domain,
                                     evo: BaboonEvolution,
-    ): TextTree[CSValue] = {
+                                   ): TextTree[CSValue] = {
       definition.defn match {
         case adt: Typedef.Adt =>
           adt
@@ -186,9 +179,9 @@ object CSCodecTestsTranslator {
               val serialized = s"${fieldName}_json"
               val decoded = s"${fieldName}_decoded"
               q"""var $serialized = $codecName.Instance.Encode($fieldName);
-               |var $decoded = $codecName.Instance.Decode($serialized);
-               |Assert.AreEqual($fieldName, $decoded);
-               |""".stripMargin
+                 |var $decoded = $codecName.Instance.Decode($serialized);
+                 |Assert.AreEqual($fieldName, $decoded);
+                 |""".stripMargin
             }
             .toList
             .join("\n")
@@ -211,7 +204,7 @@ object CSCodecTestsTranslator {
                                     srcRef: CSValue.CSType,
                                     domain: Domain,
                                     evo: BaboonEvolution,
-    ): TextTree[CSValue] = {
+                                   ): TextTree[CSValue] = {
       definition.defn match {
         case adt: Typedef.Adt =>
           adt
@@ -225,20 +218,20 @@ object CSCodecTestsTranslator {
               val decoded = s"${fieldName}_decoded"
               val readStream = s"${fieldName}_readMemoryStream"
               val binaryReader = s"${fieldName}_binaryReader"
-              q"""using (${memoryStream} writeMemoryStream = new ${memoryStream}())
-               |{
-               |  using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))
-               |  {
-               |   $codecName.Instance.Encode(binaryWriter, $fieldName);
-               |  }
-               |  writeMemoryStream.Flush();
-               |  var $serialized = writeMemoryStream.GetBuffer();
-               |  var $readStream = new MemoryStream($serialized);
-               |  var $binaryReader = new BinaryReader($readStream);
-               |  var $decoded = $codecName.Instance.Decode($binaryReader);
-               |  Assert.AreEqual($fieldName, $decoded);
-               |}
-               |""".stripMargin
+              q"""using ($memoryStream writeMemoryStream = new $memoryStream())
+                 |{
+                 |  using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))
+                 |  {
+                 |   $codecName.Instance.Encode(binaryWriter, $fieldName);
+                 |  }
+                 |  writeMemoryStream.Flush();
+                 |  var $serialized = writeMemoryStream.GetBuffer();
+                 |  var $readStream = new MemoryStream($serialized);
+                 |  var $binaryReader = new BinaryReader($readStream);
+                 |  var $decoded = $codecName.Instance.Decode($binaryReader);
+                 |  Assert.AreEqual($fieldName, $decoded);
+                 |}
+                 |""".stripMargin
             }
             .toList
             .join("\n")
@@ -249,9 +242,9 @@ object CSCodecTestsTranslator {
           val fieldName = srcRef.name.toLowerCase
           val serialized = s"${fieldName}_bytes"
           val decoded = s"${fieldName}_decoded"
-          q"""using (${memoryStream} writeMemoryStream = new ${memoryStream}())
+          q"""using ($memoryStream writeMemoryStream = new $memoryStream())
              |{
-             |  using (${binaryWriter} binaryWriter = new ${binaryWriter}(writeMemoryStream))
+             |  using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))
              |  {
              |    $codecName.Instance.Encode(binaryWriter, $fieldName);
              |  }
@@ -266,6 +259,5 @@ object CSCodecTestsTranslator {
              |""".stripMargin.shift(2).trim
       }
     }
-
   }
 }
