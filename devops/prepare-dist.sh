@@ -3,8 +3,8 @@
 set -e
 set -x
 
-src=$1
-tgt=$2
+src="$(realpath "$1")"
+tgt="$(realpath "$2")"
 
 distbin="$tgt/dist-bin"
 distzip="$tgt/dist-zip"

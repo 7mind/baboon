@@ -39,13 +39,9 @@ jobs:
       - ${{ matrix.os }}
       - ${{ matrix.runs-on }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Nix
-        if: matrix.preconfigured != true
-        uses: DeterminateSystems/nix-installer-action@main
-      - name: Cache Nix
-        if: matrix.preconfigured != true
-        uses: DeterminateSystems/magic-nix-cache-action@main     
+      - uses: 7mind/github-env@minimal
+        with:
+          setup-nix: matrix.preconfigured != true
       - name: Build
         run: ./build.sh nix build test
       - uses: actions/upload-artifact@v4
@@ -68,7 +64,9 @@ jobs:
       - ${{ matrix.os }}
       - ${{ matrix.runs-on }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: 7mind/github-env@minimal
+        with:
+          setup-nix: false
       - name: Set up GraalVM (Java ${{ matrix.java-version }})
         uses: graalvm/setup-graalvm@v1
         with:
