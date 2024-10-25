@@ -4,7 +4,7 @@ set -e
 
 (for e in "$@"; do [[ "$e" == "nix" ]] && exit 0; done) && NIXIFY=1 || NIXIFY=0
 
-if [[ $NIXIFY == 1 && ! -v IN_NIX_SHELL ]]; then
+if [[ "$NIXIFY" == 1 && -z "${IN_NIX_SHELL+x}" ]]; then
     echo "Restarting in Nix..."
     self=$(realpath -s "$0")
     set -x
