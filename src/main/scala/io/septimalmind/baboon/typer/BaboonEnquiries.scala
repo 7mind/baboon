@@ -32,17 +32,15 @@ trait BaboonEnquiries {
   def hardDepsOfRawDefn(dd: RawDefn): Set[ScopedRef]
   def hasForeignType(definition: DomainMember.User, domain: Domain): Boolean
   def isRecursiveTypedef(definition: DomainMember.User, domain: Domain): Boolean
-  def loopsOf(
-    domain: Map[TypeId, DomainMember]
-  ): Set[LoopDetector.Cycles[TypeId]]
+  def loopsOf(domain: Map[TypeId, DomainMember]): Set[LoopDetector.Cycles[TypeId]]
 }
 
 object BaboonEnquiries {
 
-  class BaboonEnquiriesImpl() extends BaboonEnquiries {
+  class BaboonEnquiriesImpl extends BaboonEnquiries {
     def loopsOf(
-      domain: Map[TypeId, DomainMember]
-    ): Set[LoopDetector.Cycles[TypeId]] = {
+                 domain: Map[TypeId, DomainMember]
+               ): Set[LoopDetector.Cycles[TypeId]] = {
       val depMatrix = IncidenceMatrix(domain.view.mapValues { defn =>
         fullDepsOfDefn(defn)
       }.toMap)
@@ -58,7 +56,7 @@ object BaboonEnquiries {
       def processFields(foreignType: Option[TypeId],
                         tail: List[Typedef],
                         f: List[Field],
-                        seen: mutable.HashSet[TypeId]) = {
+                        seen: mutable.HashSet[TypeId]): Option[TypeId] = {
         val fieldsTypes = f.map(_.tpe)
         val moreToCheck = fieldsTypes.flatMap {
           case TypeRef.Scalar(id) =>
@@ -157,7 +155,7 @@ object BaboonEnquiries {
 
     private def depsOfDefn(defn: DomainMember,
                            explodeField: TypeRef => Set[TypeId],
-    ): Set[TypeId] = {
+                          ): Set[TypeId] = {
       def explodeFields(f: List[Field]) = {
         f.flatMap(f => explodeField(f.tpe)).toSet
       }

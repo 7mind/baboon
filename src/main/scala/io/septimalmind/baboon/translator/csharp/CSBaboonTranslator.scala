@@ -7,11 +7,7 @@ import io.septimalmind.baboon.RuntimeGenOpt
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
-import io.septimalmind.baboon.translator.{
-  BaboonAbstractTranslator,
-  OutputFile,
-  Sources
-}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
@@ -25,7 +21,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
                          options: CompilerOptions,
                          codecs: Set[CSCodecTranslator],
                          tools: CSDefnTools,
-) extends BaboonAbstractTranslator {
+                        ) extends BaboonAbstractTranslator {
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
@@ -36,8 +32,8 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
       testRuntime <- sharedTestRuntime
       meta <- buildMeta(family)
       toRender = options.runtime match {
-        case RuntimeGenOpt.Only    => rt
-        case RuntimeGenOpt.With    => rt ++ translated ++ testRuntime
+        case RuntimeGenOpt.Only => rt
+        case RuntimeGenOpt.With => rt ++ translated ++ testRuntime
         case RuntimeGenOpt.Without => translated
       }
       rendered = toRender.map { o =>
@@ -139,8 +135,8 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
   }
 
   private def doTranslate(
-    family: BaboonFamily
-  ): Out[List[CSDefnTranslator.Output]] = {
+                           family: BaboonFamily
+                         ): Out[List[CSDefnTranslator.Output]] = {
     // TODO: fix .toSeq.toList
 
     family.domains.toSeq.toList.map {
@@ -150,19 +146,18 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
   }
 
   private def translateLineage(
-    lineage: BaboonLineage
-  ): Out[List[CSDefnTranslator.Output]] = {
+                                lineage: BaboonLineage
+                              ): Out[List[CSDefnTranslator.Output]] = {
 
     lineage.versions.toSeq.toList.map {
       case (_, domain) =>
-        //val isLatest =
         translateDomain(domain, lineage)
     }.biFlatten
   }
 
   private def translateDomain(domain: Domain,
                               lineage: BaboonLineage,
-  ): Out[List[CSDefnTranslator.Output]] = {
+                             ): Out[List[CSDefnTranslator.Output]] = {
     val evo = lineage.evolution
     for {
       defnSources <- domain.defs.meta.nodes.toList.map {
@@ -682,81 +677,114 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
 
   private def sharedTestRuntime: Out[List[CSDefnTranslator.Output]] = {
     val sharedTestRuntime =
-      q"""
-         |using System;
-         |using System.Collections.Immutable;
-         |using System.Reflection;
-         |using AutoFixture.Kernel;
-         |using AutoFixture;
-         |using Baboon.Time;
-         |
-         |internal class TruncatedRandomDateTimeSequenceGenerator : ISpecimenBuilder
+      q"""// RandomValuesGenerator
+         |public static class RVG
          |{
-         |    private readonly ISpecimenBuilder innerRandomDateTimeSequenceGenerator;
+         |    private static readonly $csRandom Rnd = new $csRandom();
+         |    private const $csString Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
          |
-         |    internal TruncatedRandomDateTimeSequenceGenerator()
+         |    public static $csBoolean NextBoolean()
          |    {
-         |        this.innerRandomDateTimeSequenceGenerator = new RandomDateTimeSequenceGenerator();
+         |        return Rnd.Next(0, 2) == 1;
          |    }
          |
-         |    public object Create(object request, ISpecimenContext context)
+         |    public static $csSByte NextSByte()
          |    {
-         |        var result = this.innerRandomDateTimeSequenceGenerator.Create(request, context);
-         |        if (result is NoSpecimen) {
-         |            return result;
-         |        }
-         |        return BaboonDateTimeFormats.TruncateToMilliseconds((DateTime)result);
-         |    }
-         |}
-         |
-         |public class EnumDictionaryBuilder : ISpecimenBuilder
-         |{
-         |    public object? Create(object request, ISpecimenContext context)
-         |    {
-         |        var type = ExtractType(request);
-         |        if (
-         |          type == null ||
-         |          !type.IsGenericType ||
-         |          type.GetGenericTypeDefinition() != typeof(ImmutableDictionary<,>)
-         |        )
-         |        {
-         |            return new NoSpecimen();
-         |        }
-         |
-         |        var keyType = type.GetGenericArguments()[0];
-         |        var valueType = type.GetGenericArguments()[1];
-         |
-         |        if (keyType.IsEnum)
-         |        {
-         |            var key = Enum.GetValues(keyType).GetValue(0);
-         |            var value = context.Resolve(valueType);
-         |
-         |            Type immutableDictType = typeof(ImmutableDictionary<,>).MakeGenericType(keyType, valueType);
-         |
-         |            MethodInfo? createMethod = typeof(ImmutableDictionary)
-         |                .GetMethod("Create", BindingFlags.Public | BindingFlags.Static, Type.EmptyTypes)
-         |                ?.MakeGenericMethod(keyType, valueType);
-         |
-         |            var emptyImmutableDict = createMethod?.Invoke(null, null);
-         |
-         |            MethodInfo? addMethod = immutableDictType.GetMethod("Add", new[] { keyType, valueType });
-         |
-         |            return addMethod?.Invoke(emptyImmutableDict, new[] { key, value });
-         |        }
-         |
-         |        return new NoSpecimen();
+         |        return ($csSByte)Rnd.Next($csSByte.MinValue, $csSByte.MaxValue);
          |    }
          |
-         |    private static Type? ExtractType(object request)
+         |    public static $csInt16 NextInt16()
          |    {
-         |        return request switch
+         |        return ($csInt16)Rnd.Next($csInt16.MinValue, $csInt16.MaxValue);
+         |    }
+         |
+         |    public static $csInt32 NextInt32()
+         |    {
+         |        return Rnd.Next($csInt32.MinValue, $csInt32.MaxValue);
+         |    }
+         |
+         |    public static $csInt64 NextInt64()
+         |    {
+         |        return Rnd.NextInt64($csInt64.MinValue, $csInt64.MaxValue);
+         |    }
+         |
+         |    public static $csByte NextByte()
+         |    {
+         |        return ($csByte)Rnd.Next(0, $csByte.MaxValue);
+         |    }
+         |
+         |    public static $csUInt16 NextUInt16()
+         |    {
+         |        return ($csUInt16)Rnd.Next(0, $csUInt16.MaxValue);
+         |    }
+         |
+         |    public static $csUInt32 NextUInt32()
+         |    {
+         |        return ($csUInt32)Rnd.Next(0, $csInt32.MaxValue);
+         |    }
+         |
+         |    public static $csUInt64 NextUInt64()
+         |    {
+         |        return ($csUInt64)Rnd.Next(0, $csInt32.MaxValue);
+         |    }
+         |
+         |    public static $csSingle NextSingle()
+         |    {
+         |        return Rnd.NextSingle();
+         |    }
+         |
+         |    public static $csDouble NextDouble()
+         |    {
+         |        return Rnd.NextDouble();
+         |    }
+         |
+         |    public static $csDecimal NextDecimal()
+         |    {
+         |        return ($csDecimal)Rnd.NextDouble();
+         |    }
+         |
+         |    public static $csString NextString()
+         |    {
+         |        var length = Rnd.Next(0, 21);
+         |
+         |        var stringBuilder = new $csStringBuilder(length);
+         |
+         |        for (var i = 0; i < length; i++)
          |        {
-         |            Type type => type,
-         |            PropertyInfo propertyInfo => propertyInfo.PropertyType,
-         |            FieldInfo fieldInfo => fieldInfo.FieldType,
-         |            ParameterInfo parameterInfo => parameterInfo.ParameterType,
-         |            _ => null
-         |        };
+         |            var randomChar = Chars[Rnd.Next(Chars.Length)];
+         |            stringBuilder.Append(randomChar);
+         |        }
+         |
+         |        return stringBuilder.ToString();
+         |    }
+         |
+         |    public static $rpDateTime NextRpDateTime()
+         |    {
+         |        var minTicks = $csDateTime.MinValue.Ticks;
+         |        var maxTicks = $csDateTime.MaxValue.Ticks;
+         |
+         |        var randomTicks = ($csInt64)(Rnd.NextDouble() * (maxTicks - minTicks)) + minTicks;
+         |
+         |        return new $rpDateTime(new $csDateTime(randomTicks));
+         |    }
+         |
+         |    public static $csGuid NextGuid()
+         |    {
+         |        return $csGuid.NewGuid();
+         |    }
+         |
+         |    public static T NextRandomEnum<T>() where T : $csEnum
+         |    {
+         |        var values = $csEnum.GetValues(typeof(T));
+         |        return (T)values.GetValue(Rnd.Next(values.Length))!;
+         |    }
+         |
+         |    public static $csImmutableDictionary<TK, TV> CreateImmutableDictionary<TK, TV>($csList<KeyValuePair<TK, TV>> values) where TK : notnull
+         |    {
+         |        var map = new Dictionary<TK, TV>(values.Count);
+         |        values.ForEach(pair => map.TryAdd(pair.Key, pair.Value));
+         |
+         |        return map.ToImmutableDictionary();
          |    }
          |}
          |""".stripMargin
@@ -777,11 +805,11 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
   }
 
   private def generateConversions(
-    domain: Domain,
-    lineage: BaboonLineage,
-    toCurrent: Set[EvolutionStep],
-    defnOut: List[CSDefnTranslator.OutputExt]
-  ): Out[List[CSDefnTranslator.Output]] = {
+                                   domain: Domain,
+                                   lineage: BaboonLineage,
+                                   toCurrent: Set[EvolutionStep],
+                                   defnOut: List[CSDefnTranslator.OutputExt]
+                                 ): Out[List[CSDefnTranslator.Output]] = {
     val pkg = trans.toCsPkg(domain.id, domain.version, lineage.evolution)
 
     for {
@@ -818,10 +846,12 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
            |
            |    override public $csList<$csString> VersionsFrom()
            |    {
-           |        return new $csList<$csString> { ${toCurrent
-             .map(_.from.version)
-             .map(v => s"""\"$v\"""")
-             .mkString(", ")} };
+           |        return new $csList<$csString> { ${
+          toCurrent
+            .map(_.from.version)
+            .map(v => s"""\"$v\"""")
+            .mkString(", ")
+        } };
            |    }
            |
            |    override public $csString VersionTo()
@@ -870,26 +900,23 @@ object CSBaboonTranslator {
                                 conv: TextTree[CSValue],
                                 reg: Option[TextTree[CSValue]],
                                 missing: Option[TextTree[CSValue]],
-  )
+                               )
 
+  // Baboon packages
   val baboonRtPkg: CSPackageId = CSPackageId(
     NEList("Baboon", "Runtime", "Shared")
   )
   val baboonTestRtPkg: CSPackageId = CSPackageId(
     NEList("Baboon", "Test", "Runtime", "Shared")
   )
-  val baboonTest_TruncatedRandomDateTimeSequenceGenerator: CSType =
-    CSType(
-      baboonTestRtPkg,
-      "TruncatedRandomDateTimeSequenceGenerator",
-      fq = false
-    )
-  val baboonTest_EnumDictionaryBuilder: CSType =
-    CSType(baboonTestRtPkg, "EnumDictionaryBuilder", fq = false)
+  val baboonTimePkg: CSPackageId = CSPackageId(
+    NEList("Baboon", "Time")
+  )
 
-  val baboonTimePkg: CSPackageId = CSPackageId(NEList("Baboon", "Time"))
-
-  val csSystemPkg: CSPackageId = CSPackageId(NEList("System"))
+  // System packages
+  val csSystemPkg: CSPackageId = CSPackageId(
+    NEList("System")
+  )
   val csGlobalizationPkg: CSPackageId = CSPackageId(
     NEList("System", "Globalization")
   )
@@ -899,30 +926,39 @@ object CSBaboonTranslator {
   val csCollectionsImmutablePkg: CSPackageId = CSPackageId(
     NEList("System", "Collections", "Immutable")
   )
-  val csLinqPkg: CSPackageId = CSPackageId(NEList("System", "Linq"))
-  val csIoPkg: CSPackageId = CSPackageId(NEList("System", "IO"))
-
+  val csLinqPkg: CSPackageId = CSPackageId(
+    NEList("System", "Linq")
+  )
+  val csIoPkg: CSPackageId = CSPackageId(
+    NEList("System", "IO")
+  )
+  val csTextPkg: CSPackageId = CSPackageId(
+    NEList("System.Text")
+  )
   val csDiagnosticsPkg: CSPackageId = CSPackageId(
     NEList("System", "Diagnostics")
   )
-  val debug: CSType =
-    CSType(csDiagnosticsPkg, "Debug", fq = false)
 
-  val nsPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json"))
-  val nsLinqPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json", "Linq"))
+  // Newtonsoft packages
+  val nsPkg: CSPackageId = CSPackageId(
+    NEList("Newtonsoft", "Json")
+  )
+  val nsLinqPkg: CSPackageId = CSPackageId(
+    NEList("Newtonsoft", "Json", "Linq")
+  )
+  val nunitPkg: CSPackageId = CSPackageId(
+    NEList("NUnit", "Framework")
+  )
 
-  val nunitPkg: CSPackageId = CSPackageId(NEList("NUnit", "Framework"))
+  // Nunit types
   val nunitTestFixture: CSType =
     CSType(nunitPkg, "TestFixture", fq = false)
   val nunitOneTimeSetUp: CSType =
     CSType(nunitPkg, "OneTimeSetUp", fq = false)
+  val testValuesGenerator: CSType =
+    CSType(baboonTestRtPkg, "RVG", fq = false)
 
-  val autofixturePkg: CSPackageId = CSPackageId(NEList("AutoFixture"))
-  val autofixtureFixture: CSType =
-    CSType(autofixturePkg, "Fixture", fq = false)
-  val autofixtureImmutableCollectionsCustomization: CSType =
-    CSType(autofixturePkg, "ImmutableCollectionsCustomization", fq = false)
-
+  // Baboon conversions' types
   val abstractConversion: CSType =
     CSType(baboonRtPkg, "AbstractConversion", fq = false)
   val abstractBaboonConversions: CSType =
@@ -936,6 +972,7 @@ object CSBaboonTranslator {
   val BaboonTools: CSType =
     CSType(baboonRtPkg, "BaboonTools", fq = false)
 
+  // Baboon codec types
   val iBaboonCodecData: CSType =
     CSType(baboonRtPkg, "IBaboonCodecData", fq = false)
   val iBaboonCodec: CSType =
@@ -959,6 +996,11 @@ object CSBaboonTranslator {
   val baboonTimeFormats: CSType =
     CSType(baboonTimePkg, "BaboonDateTimeFormats", fq = false)
 
+  // Baboon type
+  val rpDateTime: CSType =
+    CSType(baboonTimePkg, "RpDateTime", fq = false)
+
+  // Newtonsoft types
   val nsJsonWriter: CSType =
     CSType(nsPkg, "JsonWriter", fq = false)
   val nsJsonReader: CSType =
@@ -989,6 +1031,41 @@ object CSBaboonTranslator {
   val memoryStream: CSType =
     CSType(csIoPkg, "MemoryStream", fq = false)
 
+  // C# types
+  val csString: CSType =
+    CSType(csSystemPkg, "String", fq = false)
+  val csGuid: CSType =
+    CSType(csSystemPkg, "Guid", fq = false)
+  val csBoolean: CSType =
+    CSType(csSystemPkg, "Boolean", fq = false)
+  val csStringBuilder: CSType =
+    CSType(csTextPkg, "StringBuilder", fq = false)
+
+  val csSByte: CSType =
+    CSType(csSystemPkg, "sbyte", fq = false)
+  val csInt16: CSType =
+    CSType(csSystemPkg, "Int16", fq = false)
+  val csInt32: CSType =
+    CSType(csSystemPkg, "Int32", fq = false)
+  val csInt64: CSType =
+    CSType(csSystemPkg, "Int64", fq = false)
+
+  val csByte: CSType =
+    CSType(csSystemPkg, "byte", fq = false)
+  val csUInt16: CSType =
+    CSType(csSystemPkg, "UInt16", fq = false)
+  val csUInt32: CSType =
+    CSType(csSystemPkg, "UInt32", fq = false)
+  val csUInt64: CSType =
+    CSType(csSystemPkg, "UInt64", fq = false)
+
+  val csSingle: CSType =
+    CSType(csSystemPkg, "Single", fq = false)
+  val csDouble: CSType =
+    CSType(csSystemPkg, "Double", fq = false)
+  val csDecimal: CSType =
+    CSType(csSystemPkg, "Decimal", fq = false)
+
   val csTpe: CSType =
     CSType(csSystemPkg, "Type", fq = false)
   val csLazy: CSType =
@@ -997,10 +1074,6 @@ object CSBaboonTranslator {
     CSType(csCollectionsGenericPkg, "List", fq = false)
   val csDict: CSType =
     CSType(csCollectionsGenericPkg, "Dictionary", fq = false)
-  val csString: CSType =
-    CSType(csSystemPkg, "String", fq = false)
-  val csGuid: CSType =
-    CSType(csSystemPkg, "Guid", fq = false)
   val csEnum: CSType =
     CSType(csSystemPkg, "Enum", fq = false)
   val csDateTime: CSType =
@@ -1009,13 +1082,15 @@ object CSBaboonTranslator {
     CSType(csSystemPkg, "TimeSpan", fq = false)
   val csDayOfWeek: CSType =
     CSType(csSystemPkg, "DayOfWeek", fq = false)
-  val rpDateTime: CSType =
-    CSType(baboonTimePkg, "RpDateTime", fq = false)
   val csArgumentException: CSType =
     CSType(csSystemPkg, "ArgumentException", fq = false)
   val csEnumerable: CSType =
     CSType(csLinqPkg, "Enumerable", fq = false)
+  val csRandom: CSType =
+    CSType(csSystemPkg, "Random", fq = false)
 
+  val csImmutableDictionary: CSType =
+    CSType(csCollectionsImmutablePkg, "ImmutableDictionary", fq = false)
   val csKeyValuePair: CSType =
     CSType(csCollectionsGenericPkg, "KeyValuePair", fq = false)
 
@@ -1028,10 +1103,6 @@ object CSBaboonTranslator {
   val csTimeZoneInfo: CSType =
     CSType(csSystemPkg, "TimeZoneInfo", fq = false)
 
-  val csNotImplementedException: CSType =
-    CSType(
-      CSPackageId("System.Runtime.Serialization"),
-      "NotImplementedException",
-      fq = false
-    )
+  val debug: CSType =
+    CSType(csDiagnosticsPkg, "Debug", fq = false)
 }

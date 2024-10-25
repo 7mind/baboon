@@ -1,8 +1,8 @@
 package io.septimalmind.baboon.parser.defns.base
 
-import fastparse._
-import fastparse.CharPredicates._
-import NoWhitespace._
+import fastparse.*
+import fastparse.CharPredicates.*
+import NoWhitespace.*
 
 object Basic {
   def UnicodeEscape[$: P]: P[Unit] =
@@ -43,11 +43,11 @@ object Basic {
 }
 
 /**
-  * Most keywords don't just require the correct characters to match,
-  * they have to ensure that subsequent characters *don't* match in
-  * order for it to be a keyword. This enforces that rule for key-words
-  * (W) and key-operators (O) which have different non-match criteria.
-  */
+ * Most keywords don't just require the correct characters to match,
+ * they have to ensure that subsequent characters *don't* match in
+ * order for it to be a keyword. This enforces that rule for key-words
+ * (W) and key-operators (O) which have different non-match criteria.
+ */
 object Key {
   def W[$: P](s: String): P[Unit] =
     P(s ~ !Basic.LetterDigitDollarUnderscore)(

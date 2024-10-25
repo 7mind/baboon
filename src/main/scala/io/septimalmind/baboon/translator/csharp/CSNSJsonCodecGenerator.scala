@@ -10,13 +10,13 @@ import izumi.fundamentals.platform.strings.TextTree.*
 class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
                              tools: CSDefnTools,
                              compilerOptions: CompilerOptions)
-    extends CSCodecTranslator {
+  extends CSCodecTranslator {
   override def translate(defn: DomainMember.User,
                          csRef: CSValue.CSType,
                          srcRef: CSValue.CSType,
                          domain: Domain,
                          evo: BaboonEvolution,
-  ): Option[TextTree[CSValue]] = {
+                        ): Option[TextTree[CSValue]] = {
 
     val version = domain.version
     (defn.defn match {
@@ -67,17 +67,17 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
                        enc: TextTree[CSValue],
                        dec: TextTree[CSValue],
                        addExtensions: Boolean,
-  ): TextTree[CSValue] = {
+                      ): TextTree[CSValue] = {
     val iName = q"$iBaboonJsonCodec<$name>"
     val baseMethods = List(q"""public virtual $nsJToken Encode($name value)
-         |{
-         |    ${enc.shift(4).trim}
-         |}
-         |
-         |public virtual $name Decode($nsJToken wire)
-         |{
-         |    ${dec.shift(4).trim}
-         |}""".stripMargin)
+                              |{
+                              |    ${enc.shift(4).trim}
+                              |}
+                              |
+                              |public virtual $name Decode($nsJToken wire)
+                              |{
+                              |    ${dec.shift(4).trim}
+                              |}""".stripMargin)
 
     val (parents, methods) = defn.defn match {
       case _: Typedef.Enum =>
@@ -125,10 +125,10 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
        |    ${methods.join("\n\n").shift(4).trim}
        |
        |    ${tools
-         .makeMeta(defn, version, isCodec = true)
-         .join("\n")
-         .shift(4)
-         .trim}
+      .makeMeta(defn, version, isCodec = true)
+      .join("\n")
+      .shift(4)
+      .trim}
        |
        |    internal static $csLazy<$iName> LazyInstance = new $csLazy<$iName>(() => new $cName());
        |
@@ -139,8 +139,8 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
   }
 
   private def genForeignBodies(
-    name: CSValue.CSType
-  ): (TextTree[Nothing], TextTree[Nothing]) = {
+                                name: CSValue.CSType
+                              ): (TextTree[Nothing], TextTree[Nothing]) = {
     (
       q"""throw new ArgumentException($$"${name.name} is a foreign type");""",
       q"""throw new ArgumentException($$"${name.name} is a foreign type");"""
@@ -148,16 +148,16 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
   }
 
   private def wrapAdtBranchEncoder(
-    branchName: String,
-    tree: TextTree[CSValue]
-  ): TextTree[CSValue] = {
+                                    branchName: String,
+                                    tree: TextTree[CSValue]
+                                  ): TextTree[CSValue] = {
     q"""new $nsJObject(new $nsJProperty("$branchName", $tree))"""
   }
 
   private def genAdtBodies(name: CSValue.CSType,
                            a: Typedef.Adt,
                            domain: Domain,
-  ): (TextTree[CSValue], TextTree[Nothing]) = {
+                          ): (TextTree[CSValue], TextTree[Nothing]) = {
 
     val branches = a.dataMembers(domain).map { m =>
       val branchNs = q"${trans.adtNsName(a.id)}"
@@ -179,34 +179,34 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
       }
 
       (q"""if (value is $fqBranch)
-           |{
-           |    return $branchEncoder;
-           |}""".stripMargin, q"""if (head.Name == "$branchName")
-           |{
-           |    return ${fqBranch}_JsonCodec.Instance.Decode($branchValue);
-           |}""".stripMargin)
+          |{
+          |    return $branchEncoder;
+          |}""".stripMargin, q"""if (head.Name == "$branchName")
+                                |{
+                                |    return ${fqBranch}_JsonCodec.Instance.Decode($branchValue);
+                                |}""".stripMargin)
 
     }
 
     (q"""${branches.map(_._1).join("\n")}
-         |
-         |throw new ${csArgumentException}($$"Cannot encode {value}: unexpected subclass");
+        |
+        |throw new $csArgumentException($$"Cannot encode {value}: unexpected subclass");
            """.stripMargin, q"""var asObject = wire.Value<JObject>();
-         |if (asObject == null)
-         |{
-         |    throw new ArgumentException($$"Cannot decode {wire} to ${name.name}: object expected");
-         |}
-         |var head = asObject.Properties().First();
-         |
-         |${branches.map(_._2).join("\n")}
-         |
-         |throw new ArgumentException($$"Cannot decode {wire} to ${name.name}: no matching value");
+                               |if (asObject == null)
+                               |{
+                               |    throw new ArgumentException($$"Cannot decode {wire} to ${name.name}: object expected");
+                               |}
+                               |var head = asObject.Properties().First();
+                               |
+                               |${branches.map(_._2).join("\n")}
+                               |
+                               |throw new ArgumentException($$"Cannot decode {wire} to ${name.name}: no matching value");
          """.stripMargin)
   }
 
   private def genEnumBodies(
-    name: CSValue.CSType
-  ): (TextTree[CSValue.CSType], TextTree[CSValue.CSType]) = {
+                             name: CSValue.CSType
+                           ): (TextTree[CSValue.CSType], TextTree[CSValue.CSType]) = {
     (
       q"return $nsJValue.CreateString(value.ToString());",
       q"""var asStr = wire.Value<String>()?.ToLower().Trim('"');
@@ -229,7 +229,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
                            domain: Domain,
                            d: Typedef.Dto,
                            evo: BaboonEvolution,
-  ): (TextTree[CSValue], TextTree[CSValue]) = {
+                          ): (TextTree[CSValue], TextTree[CSValue]) = {
     val fields = d.fields.map { f =>
       val fieldRef = q"value.${f.name.name.capitalize}"
       val enc = mkEncoder(f.tpe, domain, fieldRef, evo)
@@ -241,8 +241,8 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
     }
 
     val mainEnc = q"""new $nsJObject(
-                           |${fields.map(_._1).join(",\n").shift(4)}
-                           |)""".stripMargin
+                     |${fields.map(_._1).join(",\n").shift(4)}
+                     |)""".stripMargin
 
     val fullEnc = d.id.owner match {
       case Owner.Adt(_) if compilerOptions.csWrappedAdtBranchCodecs =>
@@ -317,7 +317,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
             q"new $nsJValue($ref)"
           case u: TypeId.User =>
             val targetTpe = codecName(trans.toCsTypeRefNoDeref(u, domain, evo))
-            q"""${targetTpe}.Instance.Encode($ref)"""
+            q"""$targetTpe.Instance.Encode($ref)"""
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -346,7 +346,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
                         domain: Domain,
                         ref: TextTree[CSValue],
                         evo: BaboonEvolution,
-  ): TextTree[CSValue] = {
+                       ): TextTree[CSValue] = {
     def mkReader(bs: TypeId.BuiltinScalar): TextTree[CSValue] = {
       val fref = q"$ref!"
       bs match {
@@ -453,11 +453,11 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
         id match {
           case TypeId.Builtins.opt if trans.isCSValueType(args.head, domain) =>
             q"""$BaboonTools.ReadNullableValueType($ref, t => ${mkDecoder(
-                 args.head,
-                 domain,
-                 q"t",
-                 evo
-               )})""".stripMargin
+              args.head,
+              domain,
+              q"t",
+              evo
+            )})""".stripMargin
 
           case TypeId.Builtins.opt =>
             q"""$BaboonTools.ReadNullableReferentialType($ref, t => ${mkDecoder(

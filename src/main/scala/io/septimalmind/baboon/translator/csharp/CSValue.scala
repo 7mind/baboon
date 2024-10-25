@@ -12,8 +12,7 @@ object CSValue {
       CSPackageId(NEList.unsafeFrom(pkg.split('.').toList))
   }
 
-  case class CSType(pkg: CSValue.CSPackageId, name: String, fq: Boolean)
-      extends CSValue {
+  case class CSType(pkg: CSValue.CSPackageId, name: String, fq: Boolean) extends CSValue {
     def fullyQualified: CSType = this.copy(fq = true)
     def asName: CSTypeName = CSTypeName(name)
   }
