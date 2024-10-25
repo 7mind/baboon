@@ -6,7 +6,7 @@ set -e
 
 if [[ "$NIXIFY" == 1 && -z "${IN_NIX_SHELL+x}" ]]; then
     echo "Restarting in Nix..."
-    self=$(realpath -s "$0")
+    self=$(realpath "$0")
     set -x
     nix flake lock
     nix flake metadata
