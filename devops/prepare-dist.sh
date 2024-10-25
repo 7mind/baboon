@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 
-set -x
 set -e
-
+set -x
 
 src=$1
+tgt=$2
 
-mkdir -p dist-bin
-mkdir -p dist-zip
+distbin="$tgt/dist-bin"
+distzip="$tgt/dist-zip"
 
-distbin="$(pwd)/dist-bin"
-distzip="$(pwd)/dist-zip"
+mkdir -p $distbin
+mkdir -p $distzip
 
 pushd .
 
@@ -28,3 +28,5 @@ do
     false
   fi
 done
+
+popd

@@ -47,8 +47,7 @@ jobs:
         if: matrix.preconfigured != true
         uses: DeterminateSystems/magic-nix-cache-action@main     
       - name: Build
-        run: |
-          ./nix-rebuild.sh
+        run: ./build.sh nix build test
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -80,7 +79,7 @@ jobs:
           native-image-job-reports: true
       - name: Build (windows)
         shell: bash
-        run: bash ./local-rebuild.sh
+        run: ./build.sh build test
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -101,8 +100,7 @@ jobs:
           path: binaries
           pattern: baboon-*
       - name: Prepare layout
-        run: |
-          bash prepare-dist.sh ./binaries
+        run: bash prepare-dist.sh . ./binaries
       - uses: softprops/action-gh-release@v2
         id: create-release
         if: startsWith(github.ref, 'refs/tags/')

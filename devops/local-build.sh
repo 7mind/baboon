@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -x
 set -e
+set -x
 
 sbt GraalVMNativeImage/packageBin
