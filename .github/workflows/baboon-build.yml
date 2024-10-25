@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: 7mind/github-env@minimal
         with:
-          setup-nix: matrix.preconfigured != true
+          setup-nix: ${{ matrix.preconfigured != true }}
       - name: Build
         run: ./build.sh nix build test
       - uses: actions/upload-artifact@v4
