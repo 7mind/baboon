@@ -31,7 +31,7 @@
                     "-ENIX_CC"
                     "-ENIX_CFLAGS_COMPILE"
                     "-ENIX_LDFLAGS"
-                    "-EbuildInputs"
+#                    "-EbuildInputs"
                     "-EcmakeFlags"
                     "-EnativeBuildInputs"
                     "-EpropagatedBuildInputs"
