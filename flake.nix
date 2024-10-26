@@ -19,7 +19,7 @@
                                 ];
 
                                   shellHook = ''
-                                    export NIX_CC_SUFFIX_SALT=${stdenv.cc.suffixSalt}
+                                    export NIX_CC_SUFFIX_SALT=${pkgs.stdenv.cc.suffixSalt}
                                   '';
                               };
         }
