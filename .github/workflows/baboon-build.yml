@@ -41,14 +41,6 @@ jobs:
       - uses: 7mind/github-env@minimal
         with:
           setup-nix: ${{ matrix.preconfigured != true }}
-      - uses: actions/cache@v4
-        name: Cache (SBT, Ivy, Coursier)
-        with:
-          path: |
-            ~/.sbt
-            ~/.cache/coursier
-            ~/.ivy2/cache
-          key: ${{ runner.os }}-scala
       - name: Build
         run: ./build.sh nix build test
       - uses: actions/upload-artifact@v4
@@ -82,14 +74,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache: 'sbt'
           native-image-job-reports: true
-      - uses: actions/cache@v4
-        name: Cache (SBT, Ivy, Coursier)
-        with:
-          path: |
-            ~/.sbt
-            ~/.cache/coursier
-            ~/.ivy2/cache
-          key: ${{ runner.os }}-scala
       - name: Build (windows)
         shell: bash
         run: ./build.sh build test
