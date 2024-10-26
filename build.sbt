@@ -2,25 +2,6 @@ import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations.*
 
 ThisBuild / scalaVersion := "2.13.14"
 
-val niOptions =
-  Option(System.getenv("NIX_CC_SUFFIX_SALT"))
-    .map { suffix =>
-      Seq(
-        "-ENIX_BINTOOLS",
-        "-ENIX_CC",
-        "-ENIX_CFLAGS_COMPILE",
-        "-ENIX_LDFLAGS",
-        "-EbuildInputs",
-        "-EcmakeFlags",
-        "-EnativeBuildInputs",
-        "-EpropagatedBuildInputs",
-        "-EpropagatedNativeBuildInputs",
-        s"-ENIX_CC_WRAPPER_TARGET_HOST_${suffix}",
-        s"-ENIX_BINTOOLS_WRAPPER_TARGET_HOST_${suffix}",
-      )
-    }
-    .getOrElse(Seq.empty)
-
 lazy val root = (project in file("."))
   .settings(
     name := "baboon",
@@ -82,7 +63,6 @@ lazy val root = (project in file("."))
   .enablePlugins(GraalVMNativeImagePlugin, UniversalPlugin)
   .settings(
     GraalVMNativeImage / mainClass := Some("io.septimalmind.baboon.Baboon"),
-    graalVMNativeImageOptions ++= niOptions,
     graalVMNativeImageOptions ++= Seq(
       "-H:-CheckToolchain", // fixes Darwin builds under Nix
       "-H:+UnlockExperimentalVMOptions",
