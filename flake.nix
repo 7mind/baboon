@@ -22,6 +22,7 @@
             ncurses
             #graalvm-ce
 
+            # https://github.com/NixOS/nixpkgs/issues/350909
             (graalvm-ce.overrideDerivation (oldAttrs: {
 
               postInstall =
@@ -31,11 +32,6 @@
                     "-ENIX_CC"
                     "-ENIX_CFLAGS_COMPILE"
                     "-ENIX_LDFLAGS"
-#                    "-EbuildInputs"
-                    "-EcmakeFlags"
-                    "-EnativeBuildInputs"
-                    "-EpropagatedBuildInputs"
-                    "-EpropagatedNativeBuildInputs"
                     "-ENIX_CC_WRAPPER_TARGET_HOST_${pkgs.stdenv.cc.suffixSalt}"
                     "-ENIX_BINTOOLS_WRAPPER_TARGET_HOST_${pkgs.stdenv.cc.suffixSalt}"
                   ];
