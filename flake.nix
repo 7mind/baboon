@@ -17,6 +17,10 @@
                                   sbt
                                   dotnet-sdk_7
                                 ];
+
+                                  shellHook = ''
+                                    export NIX_CC_SUFFIX_SALT=${stdenv.cc.suffixSalt}
+                                  '';
                               };
         }
       );

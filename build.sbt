@@ -2,38 +2,24 @@ import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations.*
 
 ThisBuild / scalaVersion := "2.13.14"
 
-val niOptionsCommon = Seq(
-  "-ENIX_BINTOOLS",
-  "-ENIX_CC",
-  "-ENIX_CFLAGS_COMPILE",
-  "-ENIX_LDFLAGS",
-  "-EbuildInputs",
-  "-EcmakeFlags",
-  "-EnativeBuildInputs",
-  "-EpropagatedBuildInputs",
-  "-EpropagatedNativeBuildInputs",
-)
-
-val niOptions = niOptionsCommon ++ (if (System
-                                          .getProperty("os.name")
-                                          .toLowerCase
-                                          .contains("mac") && System
-                                          .getProperty("os.arch") == "aarch64") {
-                                      Seq(
-                                        "-ENIX_CC_WRAPPER_TARGET_HOST_aarch64_apple_darwin",
-                                        "-ENIX_BINTOOLS_WRAPPER_TARGET_HOST_aarch64_apple_darwin",
-                                      )
-                                    } else if (System
-                                                 .getProperty("os.name")
-                                                 .toLowerCase
-                                                 .contains("mac")) {
-                                      Seq(
-                                        "-ENIX_CC_WRAPPER_TARGET_HOST_x86_64_apple_darwin",
-                                        "-ENIX_BINTOOLS_WRAPPER_TARGET_HOST_x86_64_apple_darwin",
-                                      )
-                                    } else {
-                                      Seq.empty
-                                    })
+val niOptions =
+  Option(System.getenv("NIX_CC_SUFFIX_SALT"))
+    .map { suffix =>
+      Seq(
+        "-ENIX_BINTOOLS",
+        "-ENIX_CC",
+        "-ENIX_CFLAGS_COMPILE",
+        "-ENIX_LDFLAGS",
+        "-EbuildInputs",
+        "-EcmakeFlags",
+        "-EnativeBuildInputs",
+        "-EpropagatedBuildInputs",
+        "-EpropagatedNativeBuildInputs",
+        s"-ENIX_CC_WRAPPER_TARGET_HOST_${suffix}",
+        s"-ENIX_BINTOOLS_WRAPPER_TARGET_HOST_${suffix}",
+      )
+    }
+    .getOrElse(Seq.empty)
 
 lazy val root = (project in file("."))
   .settings(
