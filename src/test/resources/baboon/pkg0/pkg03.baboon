@@ -2,7 +2,7 @@ model testpkg.pkg0
 
 version "3.0.0"
 
-include "pkg0/pkg03-inclusion.model"
+include "pkg0/pkg03-inclusion.bmo"
 
 
 
