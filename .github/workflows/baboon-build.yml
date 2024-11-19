@@ -22,11 +22,11 @@ jobs:
           - target: linux-amd64
             os: ubuntu-latest
             runs-on: [ ]
-          - target: linux-aarch64
-            os: self-hosted
-            runs-on: [ "ARM64" ]
-            preconfigured: true
-            nix-cache-disabled: true
+#          - target: linux-aarch64
+#            os: self-hosted
+#            runs-on: [ "ARM64" ]
+#            preconfigured: true
+#            nix-cache-disabled: true
           - target: macos-amd64-13
             os: macos-13 # this is amd64
             runs-on: [ ]
