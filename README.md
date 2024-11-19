@@ -4,6 +4,8 @@
 
 Stripped-down experimental DML with schema evolution support and garbage collection.
 
+[VSCode Extension](https://marketplace.visualstudio.com/items?itemName=SeptimalMind.baboon-vscode)
+
 ## Features
 
 1. Set-based structural inheritance with subtraction and intersections
