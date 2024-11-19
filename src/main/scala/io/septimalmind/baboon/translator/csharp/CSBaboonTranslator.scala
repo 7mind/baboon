@@ -437,60 +437,68 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
     val rpDateTimeSource =
       q"""/** Reduced to milliseconds precision DateTime */
          |[$nsJsonConverter(typeof(JsonConverter))]
-         |public readonly struct RpDateTime
+         |public readonly struct RpDateTime : $csIComparable, $csIComparable<RpDateTime>, $csIEquatable<RpDateTime>
          |{
-         |    internal readonly $csDateTime Underlying;
+         |    public readonly $csDateTime DateTime;
          |
          |    public RpDateTime(int year, int month, int day, int hour, int minute, int second, int millisecond, DateTimeKind kind)
          |    {
-         |        Underlying = new $csDateTime(year, month, day, hour, minute, second, millisecond, kind);
+         |        DateTime = new $csDateTime(year, month, day, hour, minute, second, millisecond, kind);
          |    }
          |
          |    public RpDateTime(long ticks, $csDateTimeKind kind)
          |    {
-         |        Underlying = $baboonTimeFormats.TruncateToMilliseconds(ticks, kind);
+         |        DateTime = $baboonTimeFormats.TruncateToMilliseconds(ticks, kind);
          |    }
          |
          |    public RpDateTime(DateTime dateTime)
          |    {
-         |        Underlying = $baboonTimeFormats.TruncateToMilliseconds(dateTime);
+         |        DateTime = $baboonTimeFormats.TruncateToMilliseconds(dateTime);
          |    }
          |
          |    public override int GetHashCode()
          |    {
-         |        return Underlying.GetHashCode();
+         |        return DateTime.GetHashCode();
          |    }
          |
          |    public override bool Equals(object? obj)
          |    {
-         |        if (obj is RpDateTime other)
-         |        {
-         |            return other.Underlying.ToUniversalTime() == Underlying.ToUniversalTime();
-         |        }
-         |
-         |        return false;
+         |        if (obj is not RpDateTime other) return false;
+         |        return other.DateTime.ToUniversalTime() == DateTime.ToUniversalTime();
          |    }
          |
-         |    public override string ToString() => $baboonTimeFormats.ToString(this);
+         |    public bool Equals(RpDateTime other)
+         |    {
+         |        if (other == null!) return false;
+         |        return other.DateTime.ToUniversalTime() == DateTime.ToUniversalTime();
+         |    }
          |
-         |    public long Ticks => Underlying.Ticks;
-         |    public DateTimeKind Kind => Underlying.Kind;
-         |    public RpDateTime ToUniversalTime() => new RpDateTime(Underlying.ToUniversalTime());
-         |    public RpDateTime ToLocalTime() => new RpDateTime(Underlying.ToLocalTime());
-         |    public RpDateTime LocalDate => new RpDateTime(Underlying.ToLocalTime().Date);
-         |    public RpDateTime Date => new RpDateTime(Underlying.Date);
-         |    public TimeSpan GetUtcOffset() => $csTimeZoneInfo.Local.GetUtcOffset(Underlying);
-         |    public TimeSpan Subtract(RpDateTime right) => Underlying.ToUniversalTime().Subtract(right.Underlying);
-         |    public RpDateTime Subtract(TimeSpan span) => new RpDateTime(Underlying.Subtract(span));
-         |    public RpDateTime Add(TimeSpan value) => new RpDateTime(Underlying.Add(value));
-         |    public RpDateTime AddTicks(long value) => new RpDateTime(Underlying.AddTicks(value));
-         |    public RpDateTime AddMilliseconds(double value) => new RpDateTime(Underlying.AddMilliseconds(value));
-         |    public RpDateTime AddSeconds(double value) => new RpDateTime(Underlying.AddSeconds(value));
-         |    public RpDateTime AddMinutes(double value) => new RpDateTime(Underlying.AddMinutes(value));
-         |    public RpDateTime AddHours(double value) => new RpDateTime(Underlying.AddHours(value));
-         |    public RpDateTime AddDays(double value) => new RpDateTime(Underlying.AddDays(value));
-         |    public RpDateTime AddMonths(int value) => new RpDateTime(Underlying.AddMonths(value));
-         |    public RpDateTime AddYears(int value) => new RpDateTime(Underlying.AddYears(value));
+         |    public override string ToString() => BaboonDateTimeFormats.ToString(this);
+         |
+         |    public long Ticks => DateTime.Ticks;
+         |    public DateTimeKind Kind => DateTime.Kind;
+         |    public RpDateTime ToUniversalTime() => new RpDateTime(DateTime.ToUniversalTime());
+         |    public RpDateTime ToLocalTime() => new RpDateTime(DateTime.ToLocalTime());
+         |    public RpDateTime LocalDate => new RpDateTime(DateTime.ToLocalTime().Date);
+         |    public RpDateTime Date => new RpDateTime(DateTime.Date);
+         |    public TimeSpan GetUtcOffset() => TimeZoneInfo.Local.GetUtcOffset(DateTime);
+         |    public TimeSpan Subtract(RpDateTime right) => DateTime.ToUniversalTime().Subtract(right.DateTime);
+         |    public RpDateTime Subtract(TimeSpan span) => new RpDateTime(DateTime.Subtract(span));
+         |    public RpDateTime Add(TimeSpan value) => new RpDateTime(DateTime.Add(value));
+         |    public RpDateTime AddTicks(long value) => new RpDateTime(DateTime.AddTicks(value));
+         |    public RpDateTime AddMilliseconds(double value) => new RpDateTime(DateTime.AddMilliseconds(value));
+         |    public RpDateTime AddSeconds(double value) => new RpDateTime(DateTime.AddSeconds(value));
+         |    public RpDateTime AddMinutes(double value) => new RpDateTime(DateTime.AddMinutes(value));
+         |    public RpDateTime AddHours(double value) => new RpDateTime(DateTime.AddHours(value));
+         |    public RpDateTime AddDays(double value) => new RpDateTime(DateTime.AddDays(value));
+         |    public RpDateTime AddMonths(int value) => new RpDateTime(DateTime.AddMonths(value));
+         |    public RpDateTime AddYears(int value) => new RpDateTime(DateTime.AddYears(value));
+         |
+         |    public int DiffInFullHours(RpDateTime other) => (int) (this - other).TotalHours;
+         |    public int DiffInFullDays(RpDateTime other) => (int) (this - other).TotalDays;
+         |    public int DiffInFullWeeks(RpDateTime other) => DiffInFullDays(other) / 7;
+         |    public int DiffInFullMonths(RpDateTime other) => Date == other.Date ? 0 : (Year - other.Year) * 12 + Month - other.Month + GetMonthsDiffByDays(other);
+         |    public int DiffInFullYears(RpDateTime other) => DiffInFullMonths(other) / 12;
          |
          |    public static RpDateTime Now => new RpDateTime($csDateTime.Now);
          |    public static RpDateTime UtcNow => new RpDateTime($csDateTime.UtcNow);
@@ -498,22 +506,33 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |    public static RpDateTime MinValue => new RpDateTime($csDateTime.MinValue);
          |    public static RpDateTime MaxValue => new RpDateTime($csDateTime.MaxValue);
          |
-         |    public int Year => Underlying.Year;
-         |    public int Month => Underlying.Month;
-         |    public int Day => Underlying.Day;
-         |    public int DayOfYear => Underlying.DayOfYear;
+         |    public int Year => DateTime.Year;
+         |    public int Month => DateTime.Month;
+         |    public int Day => DateTime.Day;
+         |    public int DayOfYear => DateTime.DayOfYear;
          |
-         |    public $csTimeSpan TimeOfDay => Underlying.TimeOfDay;
-         |    public $csDayOfWeek DayOfWeek => Underlying.DayOfWeek;
+         |    public $csTimeSpan TimeOfDay => DateTime.TimeOfDay;
+         |    public $csDayOfWeek DayOfWeek => DateTime.DayOfWeek;
+         |
+         |    public int CompareTo(object obj)
+         |    {
+         |        if (obj is RpDateTime dt) return DateTime.CompareTo(dt.DateTime);
+         |        throw new ArgumentException("Argument is not RpDateTime.");
+         |    }
+         |
+         |    public int CompareTo(RpDateTime other)
+         |    {
+         |        return other == null! ? DateTime.CompareTo(null) : DateTime.CompareTo(other.DateTime);
+         |    }
          |
          |    public static RpDateTime operator -(RpDateTime left, $csTimeSpan delta)
          |    {
-         |        return new RpDateTime(left.Underlying - delta);
+         |        return new RpDateTime(left.DateTime - delta);
          |    }
          |
          |    public static RpDateTime operator +(RpDateTime left, $csTimeSpan delta)
          |    {
-         |        return new RpDateTime(left.Underlying + delta);
+         |        return new RpDateTime(left.DateTime + delta);
          |    }
          |
          |    public static bool operator ==(RpDateTime left, RpDateTime right)
@@ -528,35 +547,57 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |
          |    public static TimeSpan operator -(RpDateTime left, RpDateTime right)
          |    {
-         |        return left.Underlying.ToUniversalTime() - right.Underlying.ToUniversalTime();
+         |        return left.DateTime.ToUniversalTime() - right.DateTime.ToUniversalTime();
          |    }
          |
          |    public static bool operator >(RpDateTime left, RpDateTime right)
          |    {
-         |        return left.Underlying.ToUniversalTime() > right.Underlying.ToUniversalTime();
+         |        return left.DateTime.ToUniversalTime() > right.DateTime.ToUniversalTime();
          |    }
          |
          |    public static bool operator <(RpDateTime left, RpDateTime right)
          |    {
-         |        return left.Underlying.ToUniversalTime() < right.Underlying.ToUniversalTime();
+         |        return left.DateTime.ToUniversalTime() < right.DateTime.ToUniversalTime();
          |    }
          |
          |    public static bool operator <=(RpDateTime left, RpDateTime right)
          |    {
-         |        return left.Underlying.ToUniversalTime() <= right.Underlying.ToUniversalTime();
+         |        return left.DateTime.ToUniversalTime() <= right.DateTime.ToUniversalTime();
          |    }
          |
          |    public static bool operator >=(RpDateTime left, RpDateTime right)
          |    {
-         |        return left.Underlying.ToUniversalTime() >= right.Underlying.ToUniversalTime();
+         |        return left.DateTime.ToUniversalTime() >= right.DateTime.ToUniversalTime();
          |    }
          |
          |    public static implicit operator RpDateTime($csDateTime dt) => new(dt);
-         |    public static implicit operator $csDateTime(RpDateTime dt) => dt.Underlying;
+         |    public static implicit operator $csDateTime(RpDateTime dt) => dt.DateTime;
          |
          |    public static RpDateTime Parse($csString dt) => $baboonTimeFormats.FromString(dt);
          |
-         |    private class JsonConverter : $nsJsonConverter<RpDateTime>
+         |    private int GetMonthsDiffByDays(RpDateTime other)
+         |    {
+         |        var thisDaysInMonth = DateTime.DaysInMonth(Year, Month);
+         |        var otherDaysInMonth = DateTime.DaysInMonth(other.Year, other.Month);
+         |
+         |        var thisDay = thisDaysInMonth < otherDaysInMonth ? Day : thisDaysInMonth == Day ? otherDaysInMonth : Day;
+         |        var otherDay = otherDaysInMonth < thisDaysInMonth ? other.Day : otherDaysInMonth == other.Day ? thisDaysInMonth : other.Day;
+         |
+         |        if (this < other)
+         |        {
+         |            if (thisDay > otherDay) return 1;
+         |            if (thisDay == otherDay && TimeOfDay > other.TimeOfDay) return 1;
+         |        }
+         |        else
+         |        {
+         |            if (thisDay < otherDay) return -1;
+         |            if (thisDay == otherDay && TimeOfDay < other.TimeOfDay) return -1;
+         |        }
+         |
+         |        return 0;
+         |    }
+         |
+         |    private sealed class JsonConverter : $nsJsonConverter<RpDateTime>
          |    {
          |        public override void WriteJson($nsJsonWriter writer, RpDateTime value, $nsJsonSerializer serializer)
          |        {
@@ -565,7 +606,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |
          |        public override RpDateTime ReadJson($nsJsonReader reader, $csTpe objectType, RpDateTime existingValue, bool hasExistingValue, $nsJsonSerializer serializer)
          |        {
-         |            return $baboonTimeFormats.FromString((string)reader.Value!);
+         |            return $baboonTimeFormats.FromString((string) reader.Value!);
          |        }
          |    }
          |}""".stripMargin
@@ -625,7 +666,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |
          |    public static String ToString(RpDateTime dt)
          |    {
-         |        return dt.Underlying.ToString(dt.Underlying.Kind == $csDateTimeKind.Utc ? TsuDefault : TszDefault, $csInvariantCulture.InvariantCulture);
+         |        return dt.DateTime.ToString(dt.DateTime.Kind == $csDateTimeKind.Utc ? TsuDefault : TszDefault, $csInvariantCulture.InvariantCulture);
          |    }
          |
          |    public static RpDateTime FromString(String dt)
@@ -1088,6 +1129,10 @@ object CSBaboonTranslator {
     CSType(csLinqPkg, "Enumerable", fq = false)
   val csRandom: CSType =
     CSType(csSystemPkg, "Random", fq = false)
+  val csIComparable: CSType =
+    CSType(csSystemPkg, "IComparable", fq = false)
+  val csIEquatable: CSType =
+    CSType(csSystemPkg, "IEquatable", fq = false)
 
   val csImmutableDictionary: CSType =
     CSType(csCollectionsImmutablePkg, "ImmutableDictionary", fq = false)
