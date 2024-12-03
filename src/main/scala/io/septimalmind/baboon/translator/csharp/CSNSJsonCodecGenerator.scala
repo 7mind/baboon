@@ -55,7 +55,8 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
           version,
           insulatedEnc,
           insulatedDec,
-          !defn.defn.isInstanceOf[Typedef.Foreign]
+          !defn.defn.isInstanceOf[Typedef.Foreign],
+          evo,
         )
     }
   }
@@ -67,6 +68,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
                        enc: TextTree[CSValue],
                        dec: TextTree[CSValue],
                        addExtensions: Boolean,
+                       evo: BaboonEvolution,
                       ): TextTree[CSValue] = {
     val iName = q"$iBaboonJsonCodec<$name>"
     val baseMethods = List(q"""public virtual $nsJToken Encode($name value)
@@ -125,7 +127,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
        |    ${methods.join("\n\n").shift(4).trim}
        |
        |    ${tools
-      .makeMeta(defn, version, isCodec = true)
+      .makeMeta(defn, version, evo, isCodec = true)
       .join("\n")
       .shift(4)
       .trim}

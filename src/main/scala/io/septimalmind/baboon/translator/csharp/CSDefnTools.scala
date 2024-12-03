@@ -22,6 +22,7 @@ trait CSDefnTools {
 
   def makeMeta(defn: DomainMember.User,
                version: Version,
+               evo: BaboonEvolution,
                isCodec: Boolean): Seq[TextTree[CSValue]]
 
   def makeFix(defn: DomainMember.User, isCodec: Boolean): String
@@ -55,6 +56,7 @@ object CSDefnTools {
 
     def makeMeta(defn: DomainMember.User,
                  version: Version,
+                 evo: BaboonEvolution,
                  isCodec: Boolean): Seq[TextTree[CSValue]] = {
       val fix = makeFix(defn, isCodec)
 
@@ -68,9 +70,14 @@ object CSDefnTools {
         case _ => List.empty
       }
 
+      val unmodifiedSince = evo.typesUnchangedSince(version)(defn.id)
+
       Seq(
         q"""public${fix}const String BaboonDomainVersionValue = "${version.version}";
            |public${fix}String BaboonDomainVersion() => BaboonDomainVersionValue;
+           |""".stripMargin,
+        q"""public${fix}const String BaboonUnmodifiedSinceVersionValue = "${unmodifiedSince.version}";
+           |public${fix}String BaboonUnmodifiedSinceVersion() => BaboonUnmodifiedSinceVersionValue;
            |""".stripMargin,
         q"""public${fix}const String BaboonDomainIdentifierValue = "${defn.id.pkg.toString}";
            |public${fix}String BaboonDomainIdentifier() => BaboonDomainIdentifierValue;

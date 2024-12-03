@@ -194,7 +194,7 @@ object CSDefnTranslator {
       val genMarker =
         if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
 
-      val mainMeta = tools.makeMeta(defn, domain.version, isCodec = false)
+      val mainMeta = tools.makeMeta(defn, domain.version, evo, isCodec = false)
       val codecMeta = codecs.map(_.codecMeta(defn, name).member)
       val meta = mainMeta ++ codecMeta
 

@@ -60,8 +60,66 @@ object BaboonComparator {
         rulesetMap <- rulesets.toUniqueMap(
           e => NEList(BaboonIssue.NonUniqueRuleset(e))
         )
+
+        previousVersions <- sortedVersions
+          .sliding(2)
+          .filter(_.size == 2).flatMap {
+            case n :: p :: Nil => List((n, p))
+            case _ => List.empty
+          }.toSeq
+          .toUniqueMap(e => NEList(BaboonIssue.NonUniquePrevVersions(e)))
+
+        minVersions <- computeMinVersions(versions, diffMap, previousVersions, sortedVersions.reverse)
       } yield {
-        BaboonEvolution(pkg, pinnacleVersion, diffMap, rulesetMap)
+        BaboonEvolution(pkg, pinnacleVersion, diffMap, rulesetMap, minVersions)
+      }
+    }
+
+    private def computeMinVersions(
+                                    domainVersions: NEMap[Version, Domain],
+                                    diffs: Map[EvolutionStep, BaboonDiff],
+                                    previousVersions: Map[Version, Version],
+                                    versions: Seq[Version],
+                                  ): Either[NEList[BaboonIssue.EvolutionIssue], Map[Version, Map[TypeId, Version]]] = {
+      import izumi.functional.IzEither.*
+
+      versions.biFoldLeft(Map.empty[Version, Map[TypeId, Version]]) {
+        case (acc, version) =>
+          minVersionsDiff(domainVersions, diffs, previousVersions, acc, version)
+      }
+    }
+
+    private def minVersionsDiff(
+                                    domainVersions: NEMap[Version, Domain],
+                                    diffs: Map[EvolutionStep, BaboonDiff],
+                                    previousVersions: Map[Version, Version],
+                                    minVersions: Map[Version, Map[TypeId, Version]],
+                                    current: Version,
+                       ): Either[NEList[BaboonIssue.EvolutionIssue], Map[Version, Map[TypeId, Version]]] = {
+      previousVersions.get(current) match {
+        case Some(prev) =>
+          val step = EvolutionStep(prev, current)
+          val diff = diffs(step)
+          val unmodified = diff.changes.unmodified
+
+          val update = domainVersions(current).defs.meta.nodes.map {
+            case (id, _) =>
+              if (unmodified.contains(id)) {
+                (id, minVersions(prev)(id))
+              } else {
+                (id, current)
+              }
+          }
+
+          Right(minVersions.updated(current, update))
+
+        case None =>
+          // initial version
+          Right(Map(current -> domainVersions(current).defs.meta.nodes.map {
+            case (id, _) =>
+              (id, current)
+          }))
+
       }
     }
 
@@ -83,7 +141,7 @@ object BaboonComparator {
 
       val changed = kept.diff(unmodified)
 
-      // different local structure and different dependencies
+      // different local structure or different dependencies
       val fullyModified = changed.filter { id =>
         last.shallowSchema(id) != prev.shallowSchema(id) &&
         last.deepSchema(id) != prev.deepSchema(id)

@@ -419,6 +419,22 @@ object IssuePrinter {
       }
     }
 
+  implicit val nonUniqueVersionsPrinter: IssuePrinter[NonUniquePrevVersions] =
+    new BugPrinter[NonUniquePrevVersions] {
+      override def errorMessage(bug: NonUniquePrevVersions): String = {
+        val versions = bug.versions
+          .map {
+            case (v, conflicts) =>
+              s"""Version: ${v}
+                 |Conflicts:${conflicts.niceList()}
+                 |""".stripMargin
+          }
+          .mkString("\n")
+        s"""Non unique versions in version chain:$versions
+           |""".stripMargin
+      }
+    }
+
   implicit val incomparableTypedefsPrinter: IssuePrinter[IncomparableTypedefs] =
     (issue: IncomparableTypedefs) => {
       s"""In order to compare two types for evolution they should be user defined
@@ -724,6 +740,7 @@ object IssuePrinter {
     case i: NonUniqueRuleset     => apply[NonUniqueRuleset].stringify(i)
     case i: IncomparableTypedefs => apply[IncomparableTypedefs].stringify(i)
     case i: NonUniqueDiffs       => apply[NonUniqueDiffs].stringify(i)
+    case i: NonUniquePrevVersions       => apply[NonUniquePrevVersions].stringify(i)
     case i: MismatchingTypedefs  => apply[MismatchingTypedefs].stringify(i)
   }
 

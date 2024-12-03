@@ -180,6 +180,11 @@ object BaboonIssue {
   ) extends EvolutionIssue
       with BaboonBug
 
+  case class NonUniquePrevVersions(versions: Map[Version, List[Version]])
+    extends EvolutionIssue
+    with BaboonBug
+
+
   case class IncomparableTypedefs(old: DomainMember, newMember: DomainMember)
       extends EvolutionIssue
 
@@ -300,4 +305,6 @@ object BaboonIssue {
       extends TranslationIssue
       with BaboonBug
       with Issue
+
+
 }

@@ -66,6 +66,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
           insulatedDec,
           !defn.defn.isInstanceOf[Typedef.Foreign],
           branchDecoder,
+          evo,
         )
     }
   }
@@ -78,7 +79,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
                         enc: TextTree[CSValue],
                         dec: TextTree[CSValue],
                         addExtensions: Boolean,
-                        branchDecoder: Option[TextTree[CSValue]]
+                        branchDecoder: Option[TextTree[CSValue]],
+                        evo: BaboonEvolution,
                       ): TextTree[CSValue] = {
     val iName = q"$iBaboonBinCodec<$name>"
 
@@ -142,7 +144,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
        |    ${methods.join("\n\n").shift(4).trim}
        |
        |    ${tools
-      .makeMeta(defn, version, isCodec = true)
+      .makeMeta(defn, version, evo, isCodec = true)
       .join("\n")
       .shift(4)
       .trim}
