@@ -199,6 +199,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
       q"""public interface IBaboonGenerated {
          |    public $csString BaboonDomainVersion();
          |    public $csString BaboonDomainIdentifier();
+         |    public $csString BaboonUnmodifiedSinceVersion();
          |    public $csString BaboonTypeIdentifier();
          |}
          |
