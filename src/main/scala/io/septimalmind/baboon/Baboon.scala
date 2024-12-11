@@ -38,6 +38,7 @@ case class Options(
     "Every ADT branch will encode ADT metadata and expect it in the decoder"
   )
   csWrappedAdtBranchCodecs: Option[Boolean],
+  metaWriteEvolutionJson: Option[String],
 )
 
 sealed trait RuntimeGenOpt
@@ -78,6 +79,7 @@ object Baboon {
           opts.omitMostRecentVersionSuffixFromNamespaces.getOrElse(true),
           opts.csUseCompactAdtForm.getOrElse(true),
           opts.csWrappedAdtBranchCodecs.getOrElse(false),
+          opts.metaWriteEvolutionJson.map(s => Paths.get(s)),
         )
         Injector
           .NoCycles()

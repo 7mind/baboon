@@ -1,21 +1,38 @@
 package io.septimalmind.baboon
 
+import io.circe.{Encoder, Json, KeyEncoder}
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.OutputFile
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.nonempty.NEList
+import izumi.fundamentals.platform.strings.TextTree.*
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, StandardOpenOption}
 import scala.util.Try
-import izumi.fundamentals.platform.strings.TextTree.*
 
 trait BaboonCompiler {
   def run(inputs: Set[Path],
           output: Path,
           testOutput: Option[Path]): Either[NEList[BaboonIssue], Unit]
+}
+
+object BaboonDomainCodecs {
+  import io.septimalmind.baboon.typer.model.*
+
+  implicit lazy val versonKeyEncoder: KeyEncoder[Version] =
+    KeyEncoder.encodeKeyString.contramap(_.version)
+  implicit lazy val versonEncoder: Encoder[Version] =
+    Encoder.encodeString.contramap(_.version)
+  implicit lazy val pkgKeyEncoder: KeyEncoder[Pkg] =
+    KeyEncoder.encodeKeyString.contramap(_.toString)
+  implicit lazy val typeIdKeyEncoder: KeyEncoder[TypeId] =
+    KeyEncoder.encodeKeyString.contramap(_.toString)
+
+//  implicit lazy val unmodifiedMetaencoder
+//    : Encoder[Map[Version, Map[TypeId, Version]]] = implicitly
 }
 
 object BaboonCompiler {
@@ -28,6 +45,7 @@ object BaboonCompiler {
                              omitMostRecentVersionSuffixFromNamespaces: Boolean,
                              csUseCompactAdtForm: Boolean,
                              csWrappedAdtBranchCodecs: Boolean,
+                             metaWriteEvolutionJsonTo: Option[Path],
   )
 
   class BaboonCompilerImpl(loader: BaboonLoader,
@@ -41,6 +59,28 @@ object BaboonCompiler {
     ): Either[NEList[BaboonIssue], Unit] = {
       for {
         loaded <- loader.load(inputs.toList)
+        _ <- Right(options.metaWriteEvolutionJsonTo.map { path =>
+          //val f = path.toFile
+          import BaboonDomainCodecs.*
+          import io.circe.syntax.*
+          import io.circe.generic.auto.*
+          path.getParent.toFile.mkdirs()
+
+          val out =
+            Json.obj(("unmodified" -> Json.obj(loaded.domains.toSeq.map {
+              case (pkg, line) =>
+                (pkg.toString, line.evolution.typesUnchangedSince.asJson)
+            } *)))
+          val result = out.toString()
+          Files.writeString(
+            path,
+            result,
+            StandardOpenOption.WRITE,
+            StandardOpenOption.TRUNCATE_EXISTING,
+            StandardOpenOption.CREATE
+          )
+
+        })
         translated <- translator.translate(loaded)
         _ <- translated.files.map {
           case (p, content) =>

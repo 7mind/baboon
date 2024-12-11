@@ -23,6 +23,7 @@ abstract class BaboonTest extends Spec1[Identity] {
           omitMostRecentVersionSuffixFromNamespaces = true,
           csUseCompactAdtForm = true,
           csWrappedAdtBranchCodecs = true,
+          metaWriteEvolutionJsonTo = None,
         ),
         Seq(Paths.get("./src/test/resources/baboon")),
         None,
