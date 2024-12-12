@@ -61,7 +61,6 @@ object BaboonCompiler {
       for {
         loaded <- loader.load(inputs.toList)
         _ <- Right(options.metaWriteEvolutionJsonTo.map { path =>
-          //val f = path.toFile
           import BaboonDomainCodecs.*
           import io.circe.syntax.*
           import io.circe.generic.auto.*

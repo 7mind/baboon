@@ -7,7 +7,11 @@ import io.septimalmind.baboon.RuntimeGenOpt
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
+import io.septimalmind.baboon.translator.{
+  BaboonAbstractTranslator,
+  OutputFile,
+  Sources
+}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
@@ -21,7 +25,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
                          options: CompilerOptions,
                          codecs: Set[CSCodecTranslator],
                          tools: CSDefnTools,
-                        ) extends BaboonAbstractTranslator {
+) extends BaboonAbstractTranslator {
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
@@ -32,8 +36,8 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
       testRuntime <- sharedTestRuntime
       meta <- buildMeta(family)
       toRender = options.runtime match {
-        case RuntimeGenOpt.Only => rt
-        case RuntimeGenOpt.With => rt ++ translated ++ testRuntime
+        case RuntimeGenOpt.Only    => rt
+        case RuntimeGenOpt.With    => rt ++ translated ++ testRuntime
         case RuntimeGenOpt.Without => translated
       }
       rendered = toRender.map { o =>
@@ -135,8 +139,8 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
   }
 
   private def doTranslate(
-                           family: BaboonFamily
-                         ): Out[List[CSDefnTranslator.Output]] = {
+    family: BaboonFamily
+  ): Out[List[CSDefnTranslator.Output]] = {
     // TODO: fix .toSeq.toList
 
     family.domains.toSeq.toList.map {
@@ -146,8 +150,8 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
   }
 
   private def translateLineage(
-                                lineage: BaboonLineage
-                              ): Out[List[CSDefnTranslator.Output]] = {
+    lineage: BaboonLineage
+  ): Out[List[CSDefnTranslator.Output]] = {
 
     lineage.versions.toSeq.toList.map {
       case (_, domain) =>
@@ -157,7 +161,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
 
   private def translateDomain(domain: Domain,
                               lineage: BaboonLineage,
-                             ): Out[List[CSDefnTranslator.Output]] = {
+  ): Out[List[CSDefnTranslator.Output]] = {
     val evo = lineage.evolution
     for {
       defnSources <- domain.defs.meta.nodes.toList.map {
@@ -171,8 +175,148 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
       } else {
         Right(List.empty)
       }
+      meta <- if (options.csWriteEvolutionDict) {
+        generateMeta(domain, lineage)
+      } else {
+        Right(List.empty)
+      }
     } yield {
-      defnSources.map(_.output) ++ conversionSources
+      defnSources.map(_.output) ++ conversionSources ++ meta
+    }
+  }
+
+  private def generateMeta(domain: Domain,
+                           lineage: BaboonLineage,
+  ): Out[List[CSDefnTranslator.Output]] = {
+    val basename = tools.basename(domain, lineage.evolution, options)
+    val pkg = trans.toCsPkg(domain.id, domain.version, lineage.evolution)
+
+    val entries = lineage.evolution
+      .typesUnchangedSince(domain.version)
+      .toList
+      .sortBy(_._1.toString)
+      .map {
+        case (tid, version) =>
+          q"""_unmodified.Add("${tid.toString}", "${version.version}");"""
+      }
+
+    val metaTree =
+      q"""public sealed class BaboonMeta : $iBaboonMeta
+         |{
+         |    private BaboonMeta()
+         |    {
+         |        ${entries.join("\n").shift(8).trim}
+         |    }
+         |
+         |    public String UnmodifiedSince(String typeIdString)
+         |    {
+         |        return _unmodified[typeIdString];
+         |    }
+         |
+         |    private readonly $csDict<$csString, $csString> _unmodified = new ();
+         |
+         |    internal static $csLazy<BaboonMeta> LazyInstance = new $csLazy<BaboonMeta>(() => new BaboonMeta());
+         |
+         |    public static BaboonMeta Instance { get { return LazyInstance.Value; } }
+         |}""".stripMargin
+
+    val metaSource = Seq(metaTree).join("\n\n")
+    val meta = tools.inNs(pkg.parts.toSeq, metaSource)
+
+    val metaOutput = CSDefnTranslator.Output(
+      s"$basename/BaboonMeta.cs",
+      meta,
+      pkg,
+      isTest = false
+    )
+
+    Right(List(metaOutput))
+  }
+
+  private def generateConversions(
+    domain: Domain,
+    lineage: BaboonLineage,
+    toCurrent: Set[EvolutionStep],
+    defnOut: List[CSDefnTranslator.OutputExt]
+  ): Out[List[CSDefnTranslator.Output]] = {
+    val pkg = trans.toCsPkg(domain.id, domain.version, lineage.evolution)
+
+    for {
+      convs <- lineage.evolution.rules
+        .filter(kv => toCurrent.contains(kv._1))
+        .map {
+          case (srcVer, rules) =>
+            handler
+              .provide(pkg)
+              .provide(srcVer.from)
+              .provide[Domain]("current")(domain)
+              .provide[Domain]("source")(lineage.versions(srcVer.from))
+              .provide(rules)
+              .provide(lineage.evolution)
+              .produce()
+              .use(_.makeConvs())
+        }
+        .biFlatten
+    } yield {
+      val conversionRegs = convs.flatMap(_.reg.iterator.toSeq).toSeq
+      val missing = convs.flatMap(_.missing.iterator.toSeq).toSeq
+
+      val converter =
+        q"""public interface RequiredConversions {
+           |    ${missing.join("\n").shift(4).trim}
+           |}
+           |
+           |public sealed class BaboonConversions : $abstractBaboonConversions
+           |{
+           |    public BaboonConversions(RequiredConversions requiredConversions)
+           |    {
+           |        ${conversionRegs.join("\n").shift(8).trim}
+           |    }
+           |
+           |    override public $csList<$csString> VersionsFrom()
+           |    {
+           |        return new $csList<$csString> { ${toCurrent
+             .map(_.from.version)
+             .map(v => s"""\"$v\"""")
+             .mkString(", ")} };
+           |    }
+           |
+           |    override public $csString VersionTo()
+           |    {
+           |        return "${domain.version.version}";
+           |    }
+           |}""".stripMargin
+
+      val codecs =
+        q"""public sealed class BaboonCodecs : $abstractBaboonCodecs
+           |{
+           |    private BaboonCodecs()
+           |    {
+           |        ${defnOut.map(_.codecReg).join("\n").shift(8).trim}
+           |    }
+           |
+           |    internal static $csLazy<BaboonCodecs> LazyInstance = new $csLazy<BaboonCodecs>(() => new BaboonCodecs());
+           |
+           |    public static BaboonCodecs Instance { get { return LazyInstance.Value; } }
+           |}""".stripMargin
+
+      val basename = tools.basename(domain, lineage.evolution, options)
+
+      val runtimeSource = Seq(converter, codecs).join("\n\n")
+      val runtime = tools.inNs(pkg.parts.toSeq, runtimeSource)
+      val runtimeOutput = CSDefnTranslator.Output(
+        s"$basename/BaboonRuntime.cs",
+        runtime,
+        pkg,
+        isTest = false
+      )
+
+      val convertersOutput = convs.map { conv =>
+        CSDefnTranslator
+          .Output(s"$basename/${conv.fname}", conv.conv, pkg, isTest = false)
+      }
+
+      List(runtimeOutput) ++ convertersOutput
     }
   }
 
@@ -205,6 +349,10 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |
          |public interface IBaboonAdtMemberMeta {
          |    public $csString BaboonAdtTypeIdentifier();
+         |}
+         |
+         |public interface IBaboonMeta {
+         |    public String UnmodifiedSince(String typeIdString);
          |}
          |
          |public interface IBaboonGeneratedLatest : IBaboonGenerated {}
@@ -720,116 +868,116 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
   private def sharedTestRuntime: Out[List[CSDefnTranslator.Output]] = {
     val sharedTestRuntime =
       q"""// RandomValuesGenerator
-         |public static class RVG
-         |{
-         |    private static readonly $csRandom Rnd = new $csRandom();
-         |    private const $csString Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-         |
-         |    public static $csBoolean NextBoolean()
-         |    {
-         |        return Rnd.Next(0, 2) == 1;
-         |    }
-         |
-         |    public static $csSByte NextSByte()
-         |    {
-         |        return ($csSByte)Rnd.Next($csSByte.MinValue, $csSByte.MaxValue);
-         |    }
-         |
-         |    public static $csInt16 NextInt16()
-         |    {
-         |        return ($csInt16)Rnd.Next($csInt16.MinValue, $csInt16.MaxValue);
-         |    }
-         |
-         |    public static $csInt32 NextInt32()
-         |    {
-         |        return Rnd.Next($csInt32.MinValue, $csInt32.MaxValue);
-         |    }
-         |
-         |    public static $csInt64 NextInt64()
-         |    {
-         |        return Rnd.NextInt64($csInt64.MinValue, $csInt64.MaxValue);
-         |    }
-         |
-         |    public static $csByte NextByte()
-         |    {
-         |        return ($csByte)Rnd.Next(0, $csByte.MaxValue);
-         |    }
-         |
-         |    public static $csUInt16 NextUInt16()
-         |    {
-         |        return ($csUInt16)Rnd.Next(0, $csUInt16.MaxValue);
-         |    }
-         |
-         |    public static $csUInt32 NextUInt32()
-         |    {
-         |        return ($csUInt32)Rnd.Next(0, $csInt32.MaxValue);
-         |    }
-         |
-         |    public static $csUInt64 NextUInt64()
-         |    {
-         |        return ($csUInt64)Rnd.Next(0, $csInt32.MaxValue);
-         |    }
-         |
-         |    public static $csSingle NextSingle()
-         |    {
-         |        return Rnd.NextSingle();
-         |    }
-         |
-         |    public static $csDouble NextDouble()
-         |    {
-         |        return Rnd.NextDouble();
-         |    }
-         |
-         |    public static $csDecimal NextDecimal()
-         |    {
-         |        return ($csDecimal)Rnd.NextDouble();
-         |    }
-         |
-         |    public static $csString NextString()
-         |    {
-         |        var length = Rnd.Next(0, 21);
-         |
-         |        var stringBuilder = new $csStringBuilder(length);
-         |
-         |        for (var i = 0; i < length; i++)
-         |        {
-         |            var randomChar = Chars[Rnd.Next(Chars.Length)];
-         |            stringBuilder.Append(randomChar);
-         |        }
-         |
-         |        return stringBuilder.ToString();
-         |    }
-         |
-         |    public static $rpDateTime NextRpDateTime()
-         |    {
-         |        var minTicks = $csDateTime.MinValue.Ticks;
-         |        var maxTicks = $csDateTime.MaxValue.Ticks;
-         |
-         |        var randomTicks = ($csInt64)(Rnd.NextDouble() * (maxTicks - minTicks)) + minTicks;
-         |
-         |        return new $rpDateTime(new $csDateTime(randomTicks));
-         |    }
-         |
-         |    public static $csGuid NextGuid()
-         |    {
-         |        return $csGuid.NewGuid();
-         |    }
-         |
-         |    public static T NextRandomEnum<T>() where T : $csEnum
-         |    {
-         |        var values = $csEnum.GetValues(typeof(T));
-         |        return (T)values.GetValue(Rnd.Next(values.Length))!;
-         |    }
-         |
-         |    public static $csImmutableDictionary<TK, TV> CreateImmutableDictionary<TK, TV>($csList<KeyValuePair<TK, TV>> values) where TK : notnull
-         |    {
-         |        var map = new Dictionary<TK, TV>(values.Count);
-         |        values.ForEach(pair => map.TryAdd(pair.Key, pair.Value));
-         |
-         |        return map.ToImmutableDictionary();
-         |    }
-         |}
-         |""".stripMargin
+        |public static class RVG
+        |{
+        |    private static readonly $csRandom Rnd = new $csRandom();
+        |    private const $csString Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+        |
+        |    public static $csBoolean NextBoolean()
+        |    {
+        |        return Rnd.Next(0, 2) == 1;
+        |    }
+        |
+        |    public static $csSByte NextSByte()
+        |    {
+        |        return ($csSByte)Rnd.Next($csSByte.MinValue, $csSByte.MaxValue);
+        |    }
+        |
+        |    public static $csInt16 NextInt16()
+        |    {
+        |        return ($csInt16)Rnd.Next($csInt16.MinValue, $csInt16.MaxValue);
+        |    }
+        |
+        |    public static $csInt32 NextInt32()
+        |    {
+        |        return Rnd.Next($csInt32.MinValue, $csInt32.MaxValue);
+        |    }
+        |
+        |    public static $csInt64 NextInt64()
+        |    {
+        |        return Rnd.NextInt64($csInt64.MinValue, $csInt64.MaxValue);
+        |    }
+        |
+        |    public static $csByte NextByte()
+        |    {
+        |        return ($csByte)Rnd.Next(0, $csByte.MaxValue);
+        |    }
+        |
+        |    public static $csUInt16 NextUInt16()
+        |    {
+        |        return ($csUInt16)Rnd.Next(0, $csUInt16.MaxValue);
+        |    }
+        |
+        |    public static $csUInt32 NextUInt32()
+        |    {
+        |        return ($csUInt32)Rnd.Next(0, $csInt32.MaxValue);
+        |    }
+        |
+        |    public static $csUInt64 NextUInt64()
+        |    {
+        |        return ($csUInt64)Rnd.Next(0, $csInt32.MaxValue);
+        |    }
+        |
+        |    public static $csSingle NextSingle()
+        |    {
+        |        return Rnd.NextSingle();
+        |    }
+        |
+        |    public static $csDouble NextDouble()
+        |    {
+        |        return Rnd.NextDouble();
+        |    }
+        |
+        |    public static $csDecimal NextDecimal()
+        |    {
+        |        return ($csDecimal)Rnd.NextDouble();
+        |    }
+        |
+        |    public static $csString NextString()
+        |    {
+        |        var length = Rnd.Next(0, 21);
+        |
+        |        var stringBuilder = new $csStringBuilder(length);
+        |
+        |        for (var i = 0; i < length; i++)
+        |        {
+        |            var randomChar = Chars[Rnd.Next(Chars.Length)];
+        |            stringBuilder.Append(randomChar);
+        |        }
+        |
+        |        return stringBuilder.ToString();
+        |    }
+        |
+        |    public static $rpDateTime NextRpDateTime()
+        |    {
+        |        var minTicks = $csDateTime.MinValue.Ticks;
+        |        var maxTicks = $csDateTime.MaxValue.Ticks;
+        |
+        |        var randomTicks = ($csInt64)(Rnd.NextDouble() * (maxTicks - minTicks)) + minTicks;
+        |
+        |        return new $rpDateTime(new $csDateTime(randomTicks));
+        |    }
+        |
+        |    public static $csGuid NextGuid()
+        |    {
+        |        return $csGuid.NewGuid();
+        |    }
+        |
+        |    public static T NextRandomEnum<T>() where T : $csEnum
+        |    {
+        |        var values = $csEnum.GetValues(typeof(T));
+        |        return (T)values.GetValue(Rnd.Next(values.Length))!;
+        |    }
+        |
+        |    public static $csImmutableDictionary<TK, TV> CreateImmutableDictionary<TK, TV>($csList<KeyValuePair<TK, TV>> values) where TK : notnull
+        |    {
+        |        var map = new Dictionary<TK, TV>(values.Count);
+        |        values.ForEach(pair => map.TryAdd(pair.Key, pair.Value));
+        |
+        |        return map.ToImmutableDictionary();
+        |    }
+        |}
+        |""".stripMargin
 
     Right(
       List(
@@ -846,95 +994,6 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
     )
   }
 
-  private def generateConversions(
-                                   domain: Domain,
-                                   lineage: BaboonLineage,
-                                   toCurrent: Set[EvolutionStep],
-                                   defnOut: List[CSDefnTranslator.OutputExt]
-                                 ): Out[List[CSDefnTranslator.Output]] = {
-    val pkg = trans.toCsPkg(domain.id, domain.version, lineage.evolution)
-
-    for {
-      convs <- lineage.evolution.rules
-        .filter(kv => toCurrent.contains(kv._1))
-        .map {
-          case (srcVer, rules) =>
-            handler
-              .provide(pkg)
-              .provide(srcVer.from)
-              .provide[Domain]("current")(domain)
-              .provide[Domain]("source")(lineage.versions(srcVer.from))
-              .provide(rules)
-              .provide(lineage.evolution)
-              .produce()
-              .use(_.makeConvs())
-        }
-        .biFlatten
-    } yield {
-      val conversionRegs = convs.flatMap(_.reg.iterator.toSeq).toSeq
-      val missing = convs.flatMap(_.missing.iterator.toSeq).toSeq
-
-      val converter =
-        q"""public interface RequiredConversions {
-           |    ${missing.join("\n").shift(4).trim}
-           |}
-           |
-           |public sealed class BaboonConversions : $abstractBaboonConversions
-           |{
-           |    public BaboonConversions(RequiredConversions requiredConversions)
-           |    {
-           |        ${conversionRegs.join("\n").shift(8).trim}
-           |    }
-           |
-           |    override public $csList<$csString> VersionsFrom()
-           |    {
-           |        return new $csList<$csString> { ${
-          toCurrent
-            .map(_.from.version)
-            .map(v => s"""\"$v\"""")
-            .mkString(", ")
-        } };
-           |    }
-           |
-           |    override public $csString VersionTo()
-           |    {
-           |        return "${domain.version.version}";
-           |    }
-           |}""".stripMargin
-
-      val codecs =
-        q"""public sealed class BaboonCodecs : $abstractBaboonCodecs
-           |{
-           |    private BaboonCodecs()
-           |    {
-           |        ${defnOut.map(_.codecReg).join("\n").shift(8).trim}
-           |    }
-           |
-           |    internal static $csLazy<BaboonCodecs> LazyInstance = new $csLazy<BaboonCodecs>(() => new BaboonCodecs());
-           |
-           |    public static BaboonCodecs Instance { get { return LazyInstance.Value; } }
-           |}""".stripMargin
-
-      val basename = tools.basename(domain, lineage.evolution, options)
-
-      val runtimeSource = Seq(converter, codecs).join("\n\n")
-      val runtime = tools.inNs(pkg.parts.toSeq, runtimeSource)
-      val runtimeOutput = CSDefnTranslator.Output(
-        s"$basename/BaboonRuntime.cs",
-        runtime,
-        pkg,
-        isTest = false
-      )
-
-      val convertersOutput = convs.map { conv =>
-        CSDefnTranslator
-          .Output(s"$basename/${conv.fname}", conv.conv, pkg, isTest = false)
-      }
-
-      List(runtimeOutput) ++ convertersOutput
-    }
-  }
-
 }
 
 object CSBaboonTranslator {
@@ -942,7 +1001,7 @@ object CSBaboonTranslator {
                                 conv: TextTree[CSValue],
                                 reg: Option[TextTree[CSValue]],
                                 missing: Option[TextTree[CSValue]],
-                               )
+  )
 
   // Baboon packages
   val baboonRtPkg: CSPackageId = CSPackageId(
@@ -951,14 +1010,10 @@ object CSBaboonTranslator {
   val baboonTestRtPkg: CSPackageId = CSPackageId(
     NEList("Baboon", "Test", "Runtime", "Shared")
   )
-  val baboonTimePkg: CSPackageId = CSPackageId(
-    NEList("Baboon", "Time")
-  )
+  val baboonTimePkg: CSPackageId = CSPackageId(NEList("Baboon", "Time"))
 
   // System packages
-  val csSystemPkg: CSPackageId = CSPackageId(
-    NEList("System")
-  )
+  val csSystemPkg: CSPackageId = CSPackageId(NEList("System"))
   val csGlobalizationPkg: CSPackageId = CSPackageId(
     NEList("System", "Globalization")
   )
@@ -968,29 +1023,17 @@ object CSBaboonTranslator {
   val csCollectionsImmutablePkg: CSPackageId = CSPackageId(
     NEList("System", "Collections", "Immutable")
   )
-  val csLinqPkg: CSPackageId = CSPackageId(
-    NEList("System", "Linq")
-  )
-  val csIoPkg: CSPackageId = CSPackageId(
-    NEList("System", "IO")
-  )
-  val csTextPkg: CSPackageId = CSPackageId(
-    NEList("System.Text")
-  )
+  val csLinqPkg: CSPackageId = CSPackageId(NEList("System", "Linq"))
+  val csIoPkg: CSPackageId = CSPackageId(NEList("System", "IO"))
+  val csTextPkg: CSPackageId = CSPackageId(NEList("System.Text"))
   val csDiagnosticsPkg: CSPackageId = CSPackageId(
     NEList("System", "Diagnostics")
   )
 
   // Newtonsoft packages
-  val nsPkg: CSPackageId = CSPackageId(
-    NEList("Newtonsoft", "Json")
-  )
-  val nsLinqPkg: CSPackageId = CSPackageId(
-    NEList("Newtonsoft", "Json", "Linq")
-  )
-  val nunitPkg: CSPackageId = CSPackageId(
-    NEList("NUnit", "Framework")
-  )
+  val nsPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json"))
+  val nsLinqPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json", "Linq"))
+  val nunitPkg: CSPackageId = CSPackageId(NEList("NUnit", "Framework"))
 
   // Nunit types
   val nunitTestFixture: CSType =
@@ -1037,6 +1080,9 @@ object CSBaboonTranslator {
 
   val baboonTimeFormats: CSType =
     CSType(baboonTimePkg, "BaboonDateTimeFormats", fq = false)
+
+  val iBaboonMeta: CSType =
+    CSType(baboonRtPkg, "IBaboonMeta", fq = false)
 
   // Baboon type
   val rpDateTime: CSType =
