@@ -46,6 +46,7 @@ object BaboonCompiler {
                              csUseCompactAdtForm: Boolean,
                              csWrappedAdtBranchCodecs: Boolean,
                              metaWriteEvolutionJsonTo: Option[Path],
+                             csWriteEvolutionDict: Boolean,
   )
 
   class BaboonCompilerImpl(loader: BaboonLoader,

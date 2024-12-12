@@ -39,6 +39,7 @@ case class Options(
   )
   csWrappedAdtBranchCodecs: Option[Boolean],
   metaWriteEvolutionJson: Option[String],
+  csWriteEvolutionDict: Option[Boolean],
 )
 
 sealed trait RuntimeGenOpt
@@ -80,6 +81,7 @@ object Baboon {
           opts.csUseCompactAdtForm.getOrElse(true),
           opts.csWrappedAdtBranchCodecs.getOrElse(false),
           opts.metaWriteEvolutionJson.map(s => Paths.get(s)),
+          opts.csWriteEvolutionDict.getOrElse(false),
         )
         Injector
           .NoCycles()

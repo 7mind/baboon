@@ -24,6 +24,7 @@ abstract class BaboonTest extends Spec1[Identity] {
           csUseCompactAdtForm = true,
           csWrappedAdtBranchCodecs = true,
           metaWriteEvolutionJsonTo = None,
+          csWriteEvolutionDict = true,
         ),
         Seq(Paths.get("./src/test/resources/baboon")),
         None,
