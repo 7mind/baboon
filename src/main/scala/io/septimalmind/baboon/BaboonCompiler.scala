@@ -71,6 +71,7 @@ object BaboonCompiler {
               case (pkg, line) =>
                 (pkg.toString, line.evolution.typesUnchangedSince.asJson)
             } *)))
+
           val result = out.toString()
           Files.writeString(
             path,

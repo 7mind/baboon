@@ -51,6 +51,15 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
       )).mkString("__")
     }
 
+    val versionsMeta =
+      q"""public override $csString VersionFrom() {
+          |  return "${srcVer.version}";
+          |}
+          |
+          |public override $csString VersionTo() {
+          |    return "${domain.version.version}";
+          |}""".stripMargin.shift(4).trim
+
     rules.conversions.map { conv =>
       val convname = makeName("Convert", conv)
 
@@ -77,6 +86,8 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
             q"""public abstract class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
                |    public abstract override ${tout} Convert<C>(C? context, $abstractBaboonConversions conversions, ${tin} from) where C: default;
+               |
+               |    $versionsMeta
                |}""".stripMargin
           val ctree = tools.inNs(pkg.parts.toSeq, cdefn)
 
@@ -112,21 +123,26 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
                |            throw new $csArgumentException($$"Bad input, this is a Baboon bug: {from}");
                |        }
                |    }
+               |
+               |    $versionsMeta
                |}""".stripMargin
           val ctree = tools.inNs(pkg.parts.toSeq, cdefn)
           val regtree = q"Register(new ${convname}());"
           Right(List(RenderedConversion(fname, ctree, Some(regtree), None)))
         case c: Conversion.CopyAdtBranchByName =>
-          val branches = c.oldDefn.dataMembers(srcDom).map { oldId =>
-            val oldFqid =
-              trans.toCsTypeRefDeref(oldId, srcDom, evo).fullyQualified
-            val typedRef = q"fromAs_${oldId.name.name}"
+          val branches = c.oldDefn
+            .dataMembers(srcDom)
+            .map { oldId =>
+              val oldFqid =
+                trans.toCsTypeRefDeref(oldId, srcDom, evo).fullyQualified
+              val typedRef = q"fromAs_${oldId.name.name}"
 
-            q"""if (from is ${oldFqid} $typedRef)
+              q"""if (from is ${oldFqid} $typedRef)
                |{
                |    return ${transferId(oldId, typedRef)};
                |}""".stripMargin
-          }.toSeq ++ Seq(q"""{
+            }
+            .toSeq ++ Seq(q"""{
                                                      |    throw new $csArgumentException($$"Bad input: {from}");
                                                      |}""".stripMargin)
 
@@ -136,6 +152,8 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
                |    public override ${tout} Convert<C>(C? context, $abstractBaboonConversions conversions, ${tin} from) where C: default {
                |        ${branches.join("\nelse\n").shift(8).trim}
                |    }
+               |
+               |    $versionsMeta
                |}""".stripMargin
           val ctree = tools.inNs(pkg.parts.toSeq, cdefn)
           val regtree = q"Register(new ${convname}());"
@@ -309,6 +327,8 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
                  |            ${consExprs.join(",\n").shift(12).trim}
                  |        );
                  |    }
+                 |
+                 |    $versionsMeta
                  |}""".stripMargin
 
             val ctree = tools.inNs(pkg.parts.toSeq, cdefn)

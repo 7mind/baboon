@@ -393,6 +393,10 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |     public $csTpe TypeTo() {
          |         return typeof(TTo);
          |     }
+         |
+         |     public abstract String VersionFrom();
+         |     
+         |     public abstract String VersionTo();
          |}
          |
          |public interface IBaboonCodecData {
