@@ -359,7 +359,9 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |
          |public interface IConversion {
          |    public $csTpe TypeFrom();
+         |    public $csString VersionFrom();
          |    public $csTpe TypeTo();
+         |    public $csString VersionTo();
          |}
          |
          |public interface IBaboonGeneratedConversion : IConversion
