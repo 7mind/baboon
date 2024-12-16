@@ -397,7 +397,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |     }
          |
          |     public abstract String VersionFrom();
-         |     
+         |
          |     public abstract String VersionTo();
          |}
          |
@@ -629,6 +629,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |    }
          |
          |    public override string ToString() => BaboonDateTimeFormats.ToString(this);
+         |    public string ToString(string format) => DateTime.ToString(format);
          |
          |    public long Ticks => DateTime.Ticks;
          |    public DateTimeKind Kind => DateTime.Kind;
@@ -637,7 +638,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |    public RpDateTime LocalDate => new RpDateTime(DateTime.ToLocalTime().Date);
          |    public RpDateTime Date => new RpDateTime(DateTime.Date);
          |    public TimeSpan GetUtcOffset() => TimeZoneInfo.Local.GetUtcOffset(DateTime);
-         |    public TimeSpan Subtract(RpDateTime right) => DateTime.ToUniversalTime().Subtract(right.DateTime);
+         |    public TimeSpan Subtract(RpDateTime right) => DateTime.ToUniversalTime().Subtract(right.DateTime.ToUniversalTime());
          |    public RpDateTime Subtract(TimeSpan span) => new RpDateTime(DateTime.Subtract(span));
          |    public RpDateTime Add(TimeSpan value) => new RpDateTime(DateTime.Add(value));
          |    public RpDateTime AddTicks(long value) => new RpDateTime(DateTime.AddTicks(value));
