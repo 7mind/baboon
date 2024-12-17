@@ -10,7 +10,9 @@ target/graalvm-native-image/baboon \
           --output ./test/cs-stub/ConversionsTest/Generated \
           --test-output ./test/cs-stub/ConversionsTest/Generated \
           --cs-use-compact-adt-form true \
-          --cs-wrapped-adt-branch-codecs false
+          --cs-wrapped-adt-branch-codecs false \
+          --meta-write-evolution-json baboon-meta.json \
+          --cs-write-evolution-dict true
 
 cd ./test/cs-stub
 dotnet build
@@ -25,7 +27,9 @@ target/graalvm-native-image/baboon \
           --output ./test/cs-stub/ConversionsTest/Generated \
           --test-output ./test/cs-stub/ConversionsTest/Generated \
           --cs-use-compact-adt-form false \
-          --cs-wrapped-adt-branch-codecs true
+          --cs-wrapped-adt-branch-codecs true \
+          --meta-write-evolution-json baboon-meta.json \
+          --cs-write-evolution-dict true
 
 
 # workaround for https://github.com/NixOS/nixpkgs/issues/350806

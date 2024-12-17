@@ -1,0 +1,5 @@
+{
+  "resources": [
+    {"pattern": "baboon-runtime/cs/*.cs"}
+  ]
+}
