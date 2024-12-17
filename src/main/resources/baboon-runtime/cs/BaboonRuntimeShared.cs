@@ -1,12 +1,8 @@
-#nullable enable
-
-#pragma warning disable 612,618
-
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using Newtonsoft.Json.Linq;
 using System;
+using System.Diagnostics;
 
 namespace Baboon.Runtime.Shared {
     public interface IBaboonGenerated {
@@ -41,7 +37,29 @@ namespace Baboon.Runtime.Shared {
 
     public abstract class AbstractConversion<TFrom, TTo> : IBaboonGeneratedConversion
     {
-        public abstract TTo Convert<TCtx>(TCtx? context, AbstractBaboonConversions conversions, TFrom from);
+        public TTo Convert<TCtx>(TCtx? context, AbstractBaboonConversions conversions, TFrom from) {
+            if (from is IBaboonGenerated bgf)
+            {
+                if (TypeId() != bgf.BaboonTypeIdentifier())
+                {
+                    throw new ArgumentException($"Provided instance is {bgf.BaboonTypeIdentifier()} but must be {TypeId()}");
+                }
+            }
+
+            var result = DoConvert(context, conversions, from);
+
+            if (result is IBaboonGenerated bgr)
+            {
+                if (TypeId() != bgr.BaboonTypeIdentifier())
+                {
+                    throw new ArgumentException($"Provided instance is {bgr.BaboonTypeIdentifier()} but must be {TypeId()}");
+                }
+            }
+
+            return result;
+        }
+
+        protected abstract TTo DoConvert<TCtx>(TCtx? context, AbstractBaboonConversions conversions, TFrom from);
 
         IBaboonGenerated IBaboonGeneratedConversion.Convert<TCtx>(TCtx? context, AbstractBaboonConversions conversions, IBaboonGenerated from) where TCtx : default
         {

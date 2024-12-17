@@ -93,7 +93,7 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
           val cdefn =
             q"""public abstract class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
-               |    public abstract override ${tout} Convert<C>(C? context, $abstractBaboonConversions conversions, ${tin} from) where C: default;
+               |    protected abstract override ${tout} DoConvert<C>(C? context, $abstractBaboonConversions conversions, ${tin} from) where C: default;
                |
                |    $fullMeta
                |}""".stripMargin
@@ -121,7 +121,7 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
           val cdefn =
             q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
-               |    public override ${tout} Convert<C>(C? context, $abstractBaboonConversions conversions, ${tin} from)  where C: default {
+               |    protected override ${tout} DoConvert<C>(C? context, $abstractBaboonConversions conversions, ${tin} from)  where C: default {
                |        if ($csEnum.TryParse(from.ToString(), out ${tout} parsed))
                |        {
                |            return parsed;
@@ -157,7 +157,7 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
           val cdefn =
             q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                |{
-               |    public override ${tout} Convert<C>(C? context, $abstractBaboonConversions conversions, ${tin} from) where C: default {
+               |    protected override ${tout} DoConvert<C>(C? context, $abstractBaboonConversions conversions, ${tin} from) where C: default {
                |        ${branches.join("\nelse\n").shift(8).trim}
                |    }
                |
@@ -329,7 +329,7 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
             val cdefn =
               q"""public sealed class ${convname} : $abstractConversion<${tin}, ${tout}>
                  |{
-                 |    public override ${tout} Convert<C>(C? context, $abstractBaboonConversions conversions, ${tin} _from) where C: default {
+                 |    protected override ${tout} DoConvert<C>(C? context, $abstractBaboonConversions conversions, ${tin} _from) where C: default {
                  |        ${initExprs.join(";\n").shift(8).trim}
                  |        return new ${tout}(
                  |            ${consExprs.join(",\n").shift(12).trim}

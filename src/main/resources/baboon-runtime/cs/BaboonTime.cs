@@ -1,10 +1,5 @@
-#nullable enable
-
-#pragma warning disable 612,618
-
 using System.Globalization;
 using Newtonsoft.Json;
-using System.Linq;
 using System;
 
 namespace Baboon.Time {
