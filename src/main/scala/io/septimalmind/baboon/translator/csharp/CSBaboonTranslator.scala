@@ -34,7 +34,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
       translated <- doTranslate(family)
       rt <- sharedRuntime()
       testRuntime <- sharedTestRuntime
-      meta <- buildMeta(family)
+//      meta <- buildMeta(family)
       toRender = options.runtime match {
         case RuntimeGenOpt.Only    => rt
         case RuntimeGenOpt.With    => rt ++ translated ++ testRuntime
@@ -44,29 +44,29 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
         val content = renderTree(o)
         (o.path, OutputFile(content, o.isTest))
       }
-      unique <- (rendered ++ meta.map {
+      unique <- (rendered /*++ meta.map {
         case (k, v) => (k, OutputFile(v, isTest = false))
-      }).toUniqueMap(c => NEList(BaboonIssue.NonUniqueOutputFiles(c)))
+      }*/ ).toUniqueMap(c => NEList(BaboonIssue.NonUniqueOutputFiles(c)))
     } yield {
       Sources(unique)
     }
   }
 
-  private def buildMeta(family: BaboonFamily): Out[List[(String, String)]] = {
-
-    val data = family.domains.toSeq.flatMap {
-      case (_, lineage) =>
-        lineage.versions.toSeq.map {
-          case (ver, _) =>
-            VersionMeta(lineage.pkg.path.mkString("."), ver.version)
-        }
-
-    }
-    val meta: OutputMeta = OutputMeta(data.toList)
-    val json = meta.asJson.spaces2
-
-    Right(List((s"baboon-meta.json", json)))
-  }
+//  private def buildMeta(family: BaboonFamily): Out[List[(String, String)]] = {
+//
+//    val data = family.domains.toSeq.flatMap {
+//      case (_, lineage) =>
+//        lineage.versions.toSeq.map {
+//          case (ver, _) =>
+//            VersionMeta(lineage.pkg.path.mkString("."), ver.version)
+//        }
+//
+//    }
+//    val meta: OutputMeta = OutputMeta(data.toList)
+//    val json = meta.asJson.spaces2
+//
+//    Right(List((s"baboon-meta.json", json)))
+//  }
 
   private def renderTree(o: CSDefnTranslator.Output): String = {
     val alwaysAvailable: Set[CSPackageId] =

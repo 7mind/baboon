@@ -3,7 +3,10 @@ package io.septimalmind.baboon
 import io.circe.{Encoder, Json, KeyEncoder}
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.OutputFile
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator
+import io.septimalmind.baboon.translator.csharp.{
+  CSBaboonTranslator,
+  VersionMeta
+}
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -30,9 +33,6 @@ object BaboonDomainCodecs {
     KeyEncoder.encodeKeyString.contramap(_.toString)
   implicit lazy val typeIdKeyEncoder: KeyEncoder[TypeId] =
     KeyEncoder.encodeKeyString.contramap(_.toString)
-
-//  implicit lazy val unmodifiedMetaencoder
-//    : Encoder[Map[Version, Map[TypeId, Version]]] = implicitly
 }
 
 object BaboonCompiler {
@@ -60,17 +60,33 @@ object BaboonCompiler {
     ): Either[NEList[BaboonIssue], Unit] = {
       for {
         loaded <- loader.load(inputs.toList)
-        _ <- Right(options.metaWriteEvolutionJsonTo.map { path =>
+        _ <- Right(options.metaWriteEvolutionJsonTo.map { maybePath =>
+          val path = Option(maybePath.getParent) match {
+            case Some(_) => maybePath
+            case None    => output.resolve(maybePath)
+          }
           import BaboonDomainCodecs.*
           import io.circe.syntax.*
           import io.circe.generic.auto.*
           path.getParent.toFile.mkdirs()
 
+          val data = loaded.domains.toSeq.flatMap {
+            case (_, lineage) =>
+              lineage.versions.toSeq.map {
+                case (ver, _) =>
+                  VersionMeta(lineage.pkg.path.mkString("."), ver.version)
+              }
+
+          }
+
           val out =
-            Json.obj(("unmodified" -> Json.obj(loaded.domains.toSeq.map {
-              case (pkg, line) =>
-                (pkg.toString, line.evolution.typesUnchangedSince.asJson)
-            } *)))
+            Json.obj(
+              "versions" -> data.asJson,
+              "unmodified" -> Json.obj(loaded.domains.toSeq.map {
+                case (pkg, line) =>
+                  (pkg.toString, line.evolution.typesUnchangedSince.asJson)
+              } *)
+            )
 
           val result = out.toString()
           Files.writeString(
