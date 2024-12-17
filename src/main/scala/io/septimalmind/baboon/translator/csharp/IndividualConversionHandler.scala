@@ -58,7 +58,7 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
           |
           |public override $csString VersionTo() {
           |    return "${domain.version.version}";
-          |}""".stripMargin.shift(4).trim
+          |}""".stripMargin
 
     rules.conversions.map { conv =>
       val convname = makeName("Convert", conv)
@@ -80,6 +80,14 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
         transfer(TypeRef.Scalar(tpe), ref)
       }
 
+      val fullMeta =
+        q"""|$versionsMeta
+            |
+            |public override $csString TypeId()
+            |{
+            |    return "${conv.sourceTpe.toString}";
+            |}""".stripMargin.shift(4).trim
+
       conv match {
         case _: Conversion.CustomConversionRequired =>
           val cdefn =
@@ -87,7 +95,7 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
                |{
                |    public abstract override ${tout} Convert<C>(C? context, $abstractBaboonConversions conversions, ${tin} from) where C: default;
                |
-               |    $versionsMeta
+               |    $fullMeta
                |}""".stripMargin
           val ctree = tools.inNs(pkg.parts.toSeq, cdefn)
 
@@ -124,7 +132,7 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
                |        }
                |    }
                |
-               |    $versionsMeta
+               |    $fullMeta
                |}""".stripMargin
           val ctree = tools.inNs(pkg.parts.toSeq, cdefn)
           val regtree = q"Register(new ${convname}());"
@@ -153,7 +161,7 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
                |        ${branches.join("\nelse\n").shift(8).trim}
                |    }
                |
-               |    $versionsMeta
+               |    $fullMeta
                |}""".stripMargin
           val ctree = tools.inNs(pkg.parts.toSeq, cdefn)
           val regtree = q"Register(new ${convname}());"
@@ -328,7 +336,7 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
                  |        );
                  |    }
                  |
-                 |    $versionsMeta
+                 |    $fullMeta
                  |}""".stripMargin
 
             val ctree = tools.inNs(pkg.parts.toSeq, cdefn)

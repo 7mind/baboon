@@ -362,6 +362,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |    public $csString VersionFrom();
          |    public $csTpe TypeTo();
          |    public $csString VersionTo();
+         |    public $csString TypeId();
          |}
          |
          |public interface IBaboonGeneratedConversion : IConversion
@@ -396,9 +397,11 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
          |         return typeof(TTo);
          |     }
          |
-         |     public abstract String VersionFrom();
+         |     public abstract $csString VersionFrom();
          |
-         |     public abstract String VersionTo();
+         |     public abstract $csString VersionTo();
+         |
+         |     public abstract $csString TypeId();
          |}
          |
          |public interface IBaboonCodecData {
