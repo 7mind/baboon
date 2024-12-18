@@ -12,7 +12,7 @@ case class Domain(id: Pkg,
                   shallowSchema: Map[TypeId, ShallowSchemaId],
                   deepSchema: Map[TypeId, DeepSchemaId],
                   loops: Set[LoopDetector.Cycles[TypeId]],
-                 ) {
+) {
 
   import izumi.fundamentals.platform.strings.IzString.*
 
@@ -20,15 +20,13 @@ case class Domain(id: Pkg,
     s"""$id $version
        |  deps: ${defs.predecessors.links.toList.niceList().shift(4)}
        |  excluded: ${excludedIds.niceList().shift(4)}
-       |  defns: ${
-      defs.meta.nodes.values
-        .map(
-          member =>
-            s"${shallowSchema(member.id)}, ${deepSchema(member.id)} = $member"
-        )
-        .niceList()
-        .shift(4)
-    }""".stripMargin
+       |  defns: ${defs.meta.nodes.values
+         .map(
+           member =>
+             s"${shallowSchema(member.id)}, ${deepSchema(member.id)} = $member"
+         )
+         .niceList()
+         .shift(4)}""".stripMargin
 }
 
 sealed trait DomainMember {
@@ -38,7 +36,8 @@ sealed trait DomainMember {
 object DomainMember {
   case class Builtin(id: TypeId.Builtin) extends DomainMember
 
-  case class User(root: Boolean, defn: Typedef.User, meta: RawNodeMeta) extends DomainMember {
+  case class User(root: Boolean, defn: Typedef.User, meta: RawNodeMeta)
+      extends DomainMember {
     def id: TypeId.User = defn.id
   }
 }
@@ -59,12 +58,12 @@ object Typedef {
   case class Dto(id: TypeId.User,
                  fields: List[Field],
                  contracts: List[TypeId.User])
-    extends User
+      extends User
 
   case class Contract(id: TypeId.User,
                       fields: List[Field],
                       contracts: List[TypeId.User])
-    extends User
+      extends User
       with NonDataTypedef
 
   case class Enum(id: TypeId.User, members: NEList[EnumMember]) extends User
@@ -73,21 +72,22 @@ object Typedef {
                  members: NEList[TypeId.User],
                  contracts: List[TypeId.User],
                  fields: List[Field],
-                ) extends User
+  ) extends User
 
   case class ForeignEntryAttr(name: String, value: String)
   case class ForeignEntryAttrs(attrs: List[ForeignEntryAttr])
   case class ForeignEntry(lang: String, decl: String, attrs: ForeignEntryAttrs)
 
   case class Foreign(id: TypeId.User, bindings: Map[String, ForeignEntry])
-    extends User
+      extends User
 
   object Adt {
     implicit class AdtSyntax(val adt: Adt) extends AnyVal {
       def dataMembers(domain: Domain): Seq[TypeId.User] =
         adt.members.toList.filterNot { id =>
           domain.defs.meta.nodes(id) match {
-            case u: DomainMember.User => u.defn.isInstanceOf[Typedef.NonDataTypedef]
+            case u: DomainMember.User =>
+              u.defn.isInstanceOf[Typedef.NonDataTypedef]
             case _ => false
           }
         }
@@ -102,7 +102,8 @@ sealed trait TypeRef {
 object TypeRef {
   case class Scalar(id: TypeId.Scalar) extends TypeRef
 
-  case class Constructor(id: TypeId.BuiltinCollection, args: NEList[TypeRef]) extends TypeRef
+  case class Constructor(id: TypeId.BuiltinCollection, args: NEList[TypeRef])
+      extends TypeRef
 }
 
 sealed trait TypeId {
@@ -122,7 +123,9 @@ object TypeId {
     override def toString: String = s"#${name.name}"
   }
 
-  case class User(pkg: Pkg, owner: Owner, name: TypeName) extends TypeId with Scalar {
+  case class User(pkg: Pkg, owner: Owner, name: TypeName)
+      extends TypeId
+      with Scalar {
     override def toString: String = {
       s"$pkg/$owner#${name.name}"
     }
@@ -163,7 +166,7 @@ object TypeId {
     final val varlens = Set(str)
 
     final val seqCollections = Set(lst, set)
-    final val iterableCollections = Set(map) ++ seqCollections
+    final val iterableCollections = (Set(map) ++ seqCollections)
     final val collections = Set(opt) ++ iterableCollections
 
     final val scalars = integers ++ floats ++ varlens ++ stringy ++ timestamps ++ Set(
@@ -213,20 +216,57 @@ object TypeId {
 
     def unpack(typeId: TypeId): Option[(String, Int)] = {
       typeId match {
-        case Builtins.i08 => Some(("int", 8))
-        case Builtins.i16 => Some(("int", 16))
-        case Builtins.i32 => Some(("int", 32))
-        case Builtins.i64 => Some(("int", 64))
-        case Builtins.u08 => Some(("uint", 8))
-        case Builtins.u16 => Some(("uint", 16))
-        case Builtins.u32 => Some(("uint", 32))
-        case Builtins.u64 => Some(("uint", 64))
-        case Builtins.f32 => Some(("float", 32))
-        case Builtins.f64 => Some(("float", 64))
+        case Builtins.i08  => Some(("int", 8))
+        case Builtins.i16  => Some(("int", 16))
+        case Builtins.i32  => Some(("int", 32))
+        case Builtins.i64  => Some(("int", 64))
+        case Builtins.u08  => Some(("uint", 8))
+        case Builtins.u16  => Some(("uint", 16))
+        case Builtins.u32  => Some(("uint", 32))
+        case Builtins.u64  => Some(("uint", 64))
+        case Builtins.f32  => Some(("float", 32))
+        case Builtins.f64  => Some(("float", 64))
         case Builtins.f128 => Some(("float", 128))
-        case _ => None
+        case _             => None
       }
     }
+  }
+
+  def isVarlenTypeRef(dom: Domain, tpe: TypeRef): Boolean = {
+    tpe match {
+      case TypeRef.Scalar(id) =>
+        isVarlenType(dom, dom.defs.meta.nodes(id))
+
+      case TypeRef.Constructor(id, args) =>
+        isVarlenType(dom, dom.defs.meta.nodes(id)) ||
+          (id == Builtins.opt && args.forall(ref => isVarlenTypeRef(dom, ref)))
+    }
+  }
+
+  def isVarlenType(dom: Domain, tpe: DomainMember): Boolean = {
+    tpe match {
+      case DomainMember.Builtin(id) =>
+        Builtins.varlens
+          .toSet[TypeId]
+          .contains(id) || Builtins.iterableCollections
+          .toSet[TypeId]
+          .contains(id)
+
+      case DomainMember.User(_, defn, _) =>
+        defn match {
+          case d: Typedef.Dto =>
+            d.fields.exists(f => isVarlenTypeRef(dom, f.tpe))
+          case d: Typedef.Contract =>
+            d.fields.exists(f => isVarlenTypeRef(dom, f.tpe))
+          case _: Typedef.Enum =>
+            false
+          case _: Typedef.Adt =>
+            false
+          case _: Typedef.Foreign =>
+            true
+        }
+    }
+
   }
 
   sealed trait ComparatorType
@@ -248,7 +288,7 @@ object TypeId {
 
     case class MapEquals(keyComparator: ComparatorType,
                          valComparator: ComparatorType)
-      extends Complex
+        extends Complex
   }
 
   def comparator(ref: TypeRef): ComparatorType = {
@@ -266,7 +306,7 @@ object TypeId {
           case TypeId.Builtins.opt =>
             comparator(arg1) match {
               case ComparatorType.Direct => ComparatorType.Direct
-              case out => ComparatorType.OptionEquals(out)
+              case out                   => ComparatorType.OptionEquals(out)
             }
           case TypeId.Builtins.set =>
             ComparatorType.SetEquals(comparator(arg1))

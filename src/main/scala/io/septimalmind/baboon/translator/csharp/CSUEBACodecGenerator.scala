@@ -67,6 +67,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
           !defn.defn.isInstanceOf[Typedef.Foreign],
           branchDecoder,
           evo,
+          domain,
         )
     }
   }
@@ -80,8 +81,40 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
                        addExtensions: Boolean,
                        branchDecoder: Option[TextTree[CSValue]],
                        evo: BaboonEvolution,
+                       domain: Domain,
   ): TextTree[CSValue] = {
     val iName = q"$iBaboonBinCodec<$name>"
+
+    val indexBody = defn.defn match {
+      case d: Typedef.Dto =>
+        val varlens = // XXX: it might be a good idea to cache/prepopulate this
+          d.fields.filter(f => TypeId.isVarlenTypeRef(domain, f.tpe))
+
+        val comment = varlens
+          .map(f => q"// ${f.toString}")
+          .join("\n")
+
+        q"""$comment
+           |return ${varlens.size.toString};""".stripMargin
+      case d: Typedef.Contract =>
+        throw new IllegalArgumentException(
+          s"BUG: contract should not be rendered: $d"
+        )
+      case _: Typedef.Enum =>
+        q"""return 0;"""
+      case _: Typedef.Adt =>
+        q"""return 0;"""
+      case _: Typedef.Foreign =>
+        q"""throw new ArgumentException($$"${name.name} is a foreign type");"""
+
+    }
+
+    val indexMethods = List(
+      q"""public UInt16 IndexElementsCount(BaboonCodecContext ctx)
+         |{
+         |    ${indexBody.shift(4).trim}
+         |}""".stripMargin
+    )
 
     val baseMethods = List(
       q"""public virtual void Encode($baboonCodecContext ctx, $binaryWriter writer, $name value)
@@ -95,7 +128,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
       q"""internal $name DecodeBranch($baboonCodecContext ctx, $binaryReader wire) {
          |    ${body.shift(4).trim}
          |}""".stripMargin
-    }.toList
+    }.toList ++ indexMethods
 
     val (parents, methods) = defn.defn match {
       case _: Typedef.Enum =>
@@ -126,7 +159,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
           baseMethods
         }
 
-        val baseParents = List(iName)
+        val baseParents = List(q"$iBaboonBinCodecIndexed", iName)
         val pp = if (addExtensions) {
           baseParents ++ extParents
         } else {
@@ -249,7 +282,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
     d.id.owner match {
       case Owner.Adt(_) if options.csWrappedAdtBranchCodecs =>
         val fields = fieldsOf(domain, d, evo)
-        Some(dtoDec(name, fields))
+        Some(dtoDec(name, fields.map({ case (a, b, _) => (a, b) })))
       case _ =>
         None
     }
@@ -262,12 +295,21 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
     val fields = fieldsOf(domain, d, evo)
 
     val fenc =
-      q"""${fields
-           .map(_._1)
-           .join(";\n")};""".stripMargin
+      q"""if (ctx.UseIndexes)
+         |{
+         |    using ($memoryStream writeMemoryStream = new $memoryStream())
+         |    {
+         |        using ($binaryWriter fakeWriter = new $binaryWriter(writeMemoryStream))
+         |        {
+         |            ${fields.map(_._3).join("\n").shift(12).trim}
+         |        }
+         |    }
+         |}
+         |
+         |${fields.map(_._1).join(";\n")};""".stripMargin
 
     val fdec =
-      dtoDec(name, fields)
+      dtoDec(name, fields.map { case (a, b, _) => (a, b) })
 
     def adtBranchIndex(id: TypeId.User) = {
       domain.defs.meta
@@ -306,7 +348,14 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
 
   private def dtoDec(name: CSValue.CSType,
                      fields: List[(TextTree[CSValue], TextTree[CSValue])]) = {
-    q"""return new $name(
+    q"""var index = ((IBaboonBinCodecIndexed)this).ReadIndex(ctx, wire);
+       |
+       |if (ctx.UseIndexes)
+       |{
+       |    ${debug}.Assert(index.Count == IndexElementsCount(ctx));
+       |}
+       |
+       |return new $name(
        |${fields.map(_._2).join(",\n").shift(4)}
        |);
        |""".stripMargin
@@ -315,9 +364,30 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
   private def fieldsOf(domain: Domain, d: Typedef.Dto, evo: BaboonEvolution) = {
     d.fields.map { f =>
       val fieldRef = q"value.${f.name.name.capitalize}"
-      val enc = mkEncoder(f.tpe, domain, fieldRef, evo)
+      val enc = mkEncoder(f.tpe, domain, fieldRef, evo, q"writer")
+      val fakeEnc = mkEncoder(f.tpe, domain, fieldRef, evo, q"fakeWriter")
       val dec = mkDecoder(f.tpe, domain, evo)
-      (enc, dec)
+      // XXX: it might be a good idea to cache/prepopulate this
+      val isVarlen = TypeId.isVarlenTypeRef(domain, f.tpe)
+
+      val w = if (isVarlen) {
+        q"""{
+           |    var before = (uint)fakeWriter.BaseStream.Position;
+           |    writer.Write(before);
+           |    ${fakeEnc.shift(4).trim};
+           |    var after = (uint)fakeWriter.BaseStream.Position;
+           |    writer.Write(after - before);
+           |    //Console.WriteLine($$"${d.id.toString} {before} {after} {after - before}");
+           |    fakeWriter.Flush();
+           |}""".stripMargin
+      } else {
+        q"""$fakeEnc;
+           |fakeWriter.Flush();""".stripMargin
+      }
+      val vle = q"""// ${f.toString}
+         |$w""".stripMargin
+
+      (enc, dec, vle)
     }
   }
 
@@ -420,6 +490,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
                         domain: Domain,
                         ref: TextTree[CSValue],
                         evo: BaboonEvolution,
+                        wref: TextTree[CSValue],
   ): TextTree[CSValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>
@@ -427,80 +498,85 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
           case s: TypeId.BuiltinScalar =>
             s match {
               case TypeId.Builtins.bit =>
-                q"writer.Write($ref)"
+                q"$wref.Write($ref)"
               case TypeId.Builtins.i08 =>
-                q"writer.Write($ref)"
+                q"$wref.Write($ref)"
               case TypeId.Builtins.i16 =>
-                q"writer.Write($ref)"
+                q"$wref.Write($ref)"
               case TypeId.Builtins.i32 =>
-                q"writer.Write($ref)"
+                q"$wref.Write($ref)"
               case TypeId.Builtins.i64 =>
-                q"writer.Write($ref)"
+                q"$wref.Write($ref)"
               case TypeId.Builtins.u08 =>
-                q"writer.Write($ref)"
+                q"$wref.Write($ref)"
               case TypeId.Builtins.u16 =>
-                q"writer.Write($ref)"
+                q"$wref.Write($ref)"
               case TypeId.Builtins.u32 =>
-                q"writer.Write($ref)"
+                q"$wref.Write($ref)"
               case TypeId.Builtins.u64 =>
-                q"writer.Write($ref)"
+                q"$wref.Write($ref)"
               case TypeId.Builtins.f32 =>
-                q"writer.Write($ref)"
+                q"$wref.Write($ref)"
               case TypeId.Builtins.f64 =>
-                q"writer.Write($ref)"
+                q"$wref.Write($ref)"
               case TypeId.Builtins.f128 =>
-                q"writer.Write($ref)"
+                q"$wref.Write($ref)"
               case TypeId.Builtins.str =>
-                q"writer.Write($ref)"
+                q"$wref.Write($ref)"
               case TypeId.Builtins.uid =>
-                q"writer.Write($ref.ToString())"
+                q"$wref.Write($ref.ToString())"
               case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-                q"writer.Write($baboonTimeFormats.ToString($ref))"
+                q"$wref.Write($baboonTimeFormats.ToString($ref))"
               case o =>
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
             val targetTpe = codecName(trans.toCsTypeRefNoDeref(u, domain, evo))
-            q"""$targetTpe.Instance.Encode(ctx, writer, $ref)"""
+            q"""$targetTpe.Instance.Encode(ctx, $wref, $ref)"""
         }
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
             q"""if ($ref == null)
                |{
-               |    writer.Write((byte)0);
+               |    $wref.Write((byte)0);
                |} else
                |{
-               |   writer.Write((byte)1);
+               |   $wref.Write((byte)1);
                |   ${mkEncoder(
                  c.args.head,
                  domain,
                  trans.deNull(c.args.head, domain, ref),
-                 evo
+                 evo,
+                 wref
                ).shift(4).trim};
                |}""".stripMargin
           case TypeId.Builtins.map =>
-            q"""writer.Write($ref.Count());
+            q"""$wref.Write($ref.Count());
                |foreach (var kv in $ref)
                |{
-               |    ${mkEncoder(c.args.head, domain, q"kv.Key", evo)
+               |    ${mkEncoder(c.args.head, domain, q"kv.Key", evo, wref)
                  .shift(4)
                  .trim};
-               |    ${mkEncoder(c.args.last, domain, q"kv.Value", evo)
+               |    ${mkEncoder(c.args.last, domain, q"kv.Value", evo, wref)
                  .shift(4)
                  .trim};
                |}""".stripMargin
           case TypeId.Builtins.lst =>
-            q"""writer.Write($ref.Count());
+            q"""$wref.Write($ref.Count());
                |foreach (var i in $ref)
                |{
-               |    ${mkEncoder(c.args.head, domain, q"i", evo).shift(4).trim};
+               |    ${mkEncoder(c.args.head, domain, q"i", evo, wref)
+                 .shift(4)
+                 .trim};
                |}""".stripMargin
           case TypeId.Builtins.set =>
-            q"""writer.Write($ref.Count());
+            q"""$wref.Write($ref.Count());
                |foreach (var i in $ref)
                |{
-               |    ${mkEncoder(c.args.head, domain, q"i", evo).shift(4).trim};
+               |    ${mkEncoder(c.args.head, domain, q"i", evo, wref)
+                 .shift(4)
+                 .trim};
                |}""".stripMargin
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")

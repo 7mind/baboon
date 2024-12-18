@@ -45,7 +45,7 @@
             }))
 
             sbt
-            dotnet-sdk_7
+            dotnet-sdk_8
           ];
         };
       }

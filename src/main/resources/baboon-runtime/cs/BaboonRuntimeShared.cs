@@ -4,6 +4,18 @@
 
 using System.Linq;
 
+#nullable enable
+
+#pragma warning disable 612,618
+
+using System.Linq;
+
+#nullable enable
+
+#pragma warning disable 612,618
+
+using System.Linq;
+
 using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json.Linq;
@@ -134,6 +146,35 @@ namespace Baboon.Runtime.Shared {
         T Decode(BaboonCodecContext ctx, TIn wire);
     }
 
+    public interface IBaboonBinCodecIndexed
+    {
+        UInt16 IndexElementsCount(BaboonCodecContext ctx);
+
+        List<BaboonIndexEntry> ReadIndex(BaboonCodecContext ctx, BinaryReader wire)
+        {
+            var result = new List<BaboonIndexEntry>();
+            uint prevoffset = 0;
+            uint prevlen = 0;
+            if (ctx.UseIndexes)
+            {
+                var left = IndexElementsCount(ctx);
+                while (left > 0)
+                {
+                    var offset = wire.ReadUInt32();
+                    var len = wire.ReadUInt32();
+                    Debug.Assert(offset >= 0);
+                    Debug.Assert(len > 0);
+                    Debug.Assert(offset >= prevoffset + prevlen);
+                    result.Add(new BaboonIndexEntry(offset, len));
+                    left = (ushort)(left - 1);
+                    prevoffset = offset;
+                    prevlen = len;
+                }
+            }
+            return result;
+        }
+    }
+
     public interface IBaboonBinCodec<T> : IBaboonStreamCodec<T, BinaryWriter, BinaryReader>
     {
         void EncodeMessage(BaboonCodecContext ctx, BinaryWriter writer, T instance)
@@ -151,6 +192,18 @@ namespace Baboon.Runtime.Shared {
             var header = wire.ReadByte();
             var ctx = new BaboonCodecContext((header & 0b0000001) != 0);
             return Decode(ctx, wire);
+        }
+    }
+
+    public class BaboonIndexEntry
+    {
+        public uint Offset { get; }
+        public uint Length { get; }
+
+        public BaboonIndexEntry(uint offset, uint length)
+        {
+            this.Offset = offset;
+            this.Length = length;
         }
     }
 

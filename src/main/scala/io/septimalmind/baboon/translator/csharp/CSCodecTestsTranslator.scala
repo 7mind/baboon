@@ -54,7 +54,6 @@ object CSCodecTestsTranslator {
                |{
                |  #nullable disable
                |  ${testFields(definition, srcRef, domain, evo).shift(2).trim}
-               |  private $baboonCodecContext context = $baboonCodecContext.Default;
                |
                |  [$nunitOneTimeSetUp]
                |  public void Setup()
@@ -126,29 +125,37 @@ object CSCodecTestsTranslator {
       codecs
         .map {
           case jsonCodec: CSNSJsonCodecGenerator =>
+            val body =
+              jsonCodecAssertions(jsonCodec, definition, srcRef, domain, evo)
+
             q"""[Test]
                |public void jsonCodecTest()
                |{
-               |    ${jsonCodecAssertions(
-                 jsonCodec,
-                 definition,
-                 srcRef,
-                 domain,
-                 evo
-               ).shift(4).trim}
+               |    jsonCodecTestImpl($baboonCodecContext.Default);
+               |}
+               |
+               |private void jsonCodecTestImpl($baboonCodecContext context) {
+               |   ${body.shift(4).trim}
                |}
                |""".stripMargin
           case uebaCodec: CSUEBACodecGenerator =>
+            val body =
+              uebaCodecAssertions(uebaCodec, definition, srcRef, domain, evo)
+
             q"""[Test]
-               |public void uebaCodecTest()
+               |public void uebaCodecTestNoIndex()
                |{
-               |    ${uebaCodecAssertions(
-                 uebaCodec,
-                 definition,
-                 srcRef,
-                 domain,
-                 evo
-               ).shift(4).trim}
+               |    uebaCodecTestImpl($baboonCodecContext.Compact);
+               |}
+               |
+               |[Test]
+               |public void uebaCodecTestIndexed()
+               |{
+               |    uebaCodecTestImpl($baboonCodecContext.Indexed);
+               |}
+               |
+               |private void uebaCodecTestImpl($baboonCodecContext context) {
+               |   ${body.shift(4).trim}
                |}
                |""".stripMargin
           case unknown =>
@@ -180,8 +187,8 @@ object CSCodecTestsTranslator {
               val fieldName = member.name.name.toLowerCase
               val serialized = s"${fieldName}_json"
               val decoded = s"${fieldName}_decoded"
-              q"""var $serialized = $codecName.Instance.Encode(this.context, $fieldName);
-                 |var $decoded = $codecName.Instance.Decode(this.context, $serialized);
+              q"""var $serialized = $codecName.Instance.Encode(context, $fieldName);
+                 |var $decoded = $codecName.Instance.Decode(context, $serialized);
                  |Assert.AreEqual($fieldName, $decoded);
                  |""".stripMargin
             }
@@ -192,8 +199,8 @@ object CSCodecTestsTranslator {
           val fieldName = srcRef.name.toLowerCase
           val serialized = s"${fieldName}_json"
           val decoded = s"${fieldName}_decoded"
-          q"""var $serialized = $codecName.Instance.Encode(this.context, $fieldName);
-             |var $decoded = $codecName.Instance.Decode(this.context, $serialized);
+          q"""var $serialized = $codecName.Instance.Encode(context, $fieldName);
+             |var $decoded = $codecName.Instance.Decode(context, $serialized);
              |Assert.AreEqual($fieldName, $decoded);
              |""".stripMargin
       }
@@ -222,19 +229,20 @@ object CSCodecTestsTranslator {
                  |{
                  |  using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))
                  |  {
-                 |    $codecName.Instance.Encode(this.context, binaryWriter, $fieldName);
+                 |    $codecName.Instance.Encode(context, binaryWriter, $fieldName);
                  |  }
                  |  writeMemoryStream.Flush();
                  |  var $serialized = writeMemoryStream.GetBuffer();
                  |  var $readStream = new MemoryStream($serialized);
                  |  var $binaryReader = new BinaryReader($readStream);
-                 |  var $decoded = $codecName.Instance.Decode(this.context, $binaryReader);
+                 |  var $decoded = $codecName.Instance.Decode(context, $binaryReader);
                  |  Assert.AreEqual($fieldName, $decoded);
                  |}
                  |""".stripMargin
             }
             .toList
             .join("\n")
+
         case _ =>
           val codecName = codec.codecName(srcRef)
           val fieldName = srcRef.name.toLowerCase
@@ -244,14 +252,14 @@ object CSCodecTestsTranslator {
              |{
              |  using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))
              |  {
-             |    $codecName.Instance.Encode(this.context, binaryWriter, $fieldName);
+             |    $codecName.Instance.Encode(context, binaryWriter, $fieldName);
              |  }
              |  writeMemoryStream.Flush();
              |
              |  var $serialized = writeMemoryStream.GetBuffer();
              |  var readMemoryStream = new MemoryStream($serialized);
              |  var binaryReader = new BinaryReader(readMemoryStream);
-             |  var $decoded = $codecName.Instance.Decode(this.context, binaryReader);
+             |  var $decoded = $codecName.Instance.Decode(context, binaryReader);
              |  Assert.AreEqual($fieldName, $decoded);
              |}
              |""".stripMargin
