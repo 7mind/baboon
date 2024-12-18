@@ -118,10 +118,10 @@ namespace Baboon.Runtime.Shared {
     public class BaboonCodecContext {
         public BaboonCodecContext(bool useIndexes)
         {
-            UseIndexes = useIndexes;
+            UseIndices = useIndexes;
         }
 
-        public Boolean UseIndexes { get; }
+        public Boolean UseIndices { get; }
 
         public static BaboonCodecContext Indexed { get; } = new BaboonCodecContext(true);
         public static BaboonCodecContext Compact { get; } = new BaboonCodecContext(false);
@@ -152,10 +152,12 @@ namespace Baboon.Runtime.Shared {
 
         List<BaboonIndexEntry> ReadIndex(BaboonCodecContext ctx, BinaryReader wire)
         {
+            var header = wire.ReadByte();
+            var isIndexed = (header & 0b0000001) != 0;
             var result = new List<BaboonIndexEntry>();
             uint prevoffset = 0;
             uint prevlen = 0;
-            if (ctx.UseIndexes)
+            if (isIndexed)
             {
                 var left = IndexElementsCount(ctx);
                 while (left > 0)
@@ -177,21 +179,16 @@ namespace Baboon.Runtime.Shared {
 
     public interface IBaboonBinCodec<T> : IBaboonStreamCodec<T, BinaryWriter, BinaryReader>
     {
-        void EncodeMessage(BaboonCodecContext ctx, BinaryWriter writer, T instance)
+        void EncodeIndexed(BinaryWriter writer, T instance)
         {
-            var header = 0b0000000;
-            if (ctx.UseIndexes)
-            {
-                header |= 0b0000001;
-            }
+            BaboonCodecContext ctx = BaboonCodecContext.Indexed;
             Encode(ctx, writer, instance);
         }
 
-        T DecodeMessage(BinaryReader wire)
+        void EncodeCompact(BinaryWriter writer, T instance)
         {
-            var header = wire.ReadByte();
-            var ctx = new BaboonCodecContext((header & 0b0000001) != 0);
-            return Decode(ctx, wire);
+            BaboonCodecContext ctx = BaboonCodecContext.Compact;
+            Encode(ctx, writer, instance);
         }
     }
 

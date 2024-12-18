@@ -232,7 +232,7 @@ object CSCodecTestsTranslator {
                  |    $codecName.Instance.Encode(context, binaryWriter, $fieldName);
                  |  }
                  |  writeMemoryStream.Flush();
-                 |  var $serialized = writeMemoryStream.GetBuffer();
+                 |  var $serialized = writeMemoryStream.ToArray();
                  |  var $readStream = new MemoryStream($serialized);
                  |  var $binaryReader = new BinaryReader($readStream);
                  |  var $decoded = $codecName.Instance.Decode(context, $binaryReader);
@@ -256,7 +256,7 @@ object CSCodecTestsTranslator {
              |  }
              |  writeMemoryStream.Flush();
              |
-             |  var $serialized = writeMemoryStream.GetBuffer();
+             |  var $serialized = writeMemoryStream.ToArray();
              |  var readMemoryStream = new MemoryStream($serialized);
              |  var binaryReader = new BinaryReader(readMemoryStream);
              |  var $decoded = $codecName.Instance.Decode(context, binaryReader);

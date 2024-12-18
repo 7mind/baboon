@@ -295,18 +295,26 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
     val fields = fieldsOf(domain, d, evo)
 
     val fenc =
-      q"""if (ctx.UseIndexes)
+      q"""byte header = 0b0000000;
+         |
+         |if (ctx.UseIndices)
          |{
+         |    header |= 0b0000001;
+         |    writer.Write(header);
          |    using ($memoryStream writeMemoryStream = new $memoryStream())
          |    {
          |        using ($binaryWriter fakeWriter = new $binaryWriter(writeMemoryStream))
          |        {
          |            ${fields.map(_._3).join("\n").shift(12).trim}
          |        }
+         |        writeMemoryStream.Flush();
+         |        writer.Write(writeMemoryStream.ToArray());
          |    }
+         |} else {
+         |    writer.Write(header);
+         |    ${fields.map(_._1).join(";\n").shift(4).trim};
          |}
-         |
-         |${fields.map(_._1).join(";\n")};""".stripMargin
+         |""".stripMargin
 
     val fdec =
       dtoDec(name, fields.map { case (a, b, _) => (a, b) })
@@ -350,7 +358,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
                      fields: List[(TextTree[CSValue], TextTree[CSValue])]) = {
     q"""var index = ((IBaboonBinCodecIndexed)this).ReadIndex(ctx, wire);
        |
-       |if (ctx.UseIndexes)
+       |if (ctx.UseIndices)
        |{
        |    ${debug}.Assert(index.Count == IndexElementsCount(ctx));
        |}
@@ -372,22 +380,19 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
 
       val w = if (isVarlen) {
         q"""{
+           |    // ${f.toString}
            |    var before = (uint)fakeWriter.BaseStream.Position;
            |    writer.Write(before);
            |    ${fakeEnc.shift(4).trim};
            |    var after = (uint)fakeWriter.BaseStream.Position;
            |    writer.Write(after - before);
            |    //Console.WriteLine($$"${d.id.toString} {before} {after} {after - before}");
-           |    fakeWriter.Flush();
            |}""".stripMargin
       } else {
-        q"""$fakeEnc;
-           |fakeWriter.Flush();""".stripMargin
+        q"""$fakeEnc;""".stripMargin
       }
-      val vle = q"""// ${f.toString}
-         |$w""".stripMargin
 
-      (enc, dec, vle)
+      (enc, dec, w)
     }
   }
 
