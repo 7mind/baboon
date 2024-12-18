@@ -1,3 +1,9 @@
+#nullable enable
+
+#pragma warning disable 612,618
+
+using System.Linq;
+
 using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json.Linq;
@@ -52,7 +58,7 @@ namespace Baboon.Runtime.Shared {
             {
                 if (TypeId() != bgr.BaboonTypeIdentifier())
                 {
-                    throw new ArgumentException($"Provided instance is {bgr.BaboonTypeIdentifier()} but must be {TypeId()}");
+                    throw new ArgumentException($"Produced instance is {bgr.BaboonTypeIdentifier()} but must be {TypeId()}");
                 }
             }
 
@@ -65,7 +71,7 @@ namespace Baboon.Runtime.Shared {
         {
             if (from is not TFrom fr)
             {
-                throw new Exception($"Can't use IBaboonGeneratedConversion interface when from is not of type {typeof(TFrom).FullName}");
+                throw new Exception($"Can't use IBaboonGeneratedConversion interface when 'from' is not of type {typeof(TFrom).FullName}");
             }
             var res = Convert(context, conversions, fr);
 
@@ -97,23 +103,56 @@ namespace Baboon.Runtime.Shared {
         public String BaboonTypeIdentifier();
     }
 
+    public class BaboonCodecContext {
+        public BaboonCodecContext(bool useIndexes)
+        {
+            UseIndexes = useIndexes;
+        }
+
+        public Boolean UseIndexes { get; }
+
+        public static BaboonCodecContext Indexed { get; } = new BaboonCodecContext(true);
+        public static BaboonCodecContext Compact { get; } = new BaboonCodecContext(false);
+        public static BaboonCodecContext Default { get; } = Compact;
+
+    }
+
     public interface IBaboonCodec<T> : IBaboonCodecData {}
 
     public interface IBaboonValueCodec<T, TWire> : IBaboonCodec<T>
     {
-        TWire Encode(T instance);
-        T Decode(TWire wire);
+        // json codec should always ignore context
+        TWire Encode(BaboonCodecContext ctx, T instance);
+        T Decode(BaboonCodecContext ctx, TWire wire);
     }
 
     public interface IBaboonJsonCodec<T> : IBaboonValueCodec<T, JToken> {}
 
     public interface IBaboonStreamCodec<T, in TOut, in TIn> : IBaboonCodec<T>
     {
-        void Encode(TOut writer, T instance);
-        T Decode(TIn wire);
+        void Encode(BaboonCodecContext ctx, TOut writer, T instance);
+        T Decode(BaboonCodecContext ctx, TIn wire);
     }
 
-    public interface IBaboonBinCodec<T> : IBaboonStreamCodec<T, BinaryWriter, BinaryReader> {}
+    public interface IBaboonBinCodec<T> : IBaboonStreamCodec<T, BinaryWriter, BinaryReader>
+    {
+        void EncodeMessage(BaboonCodecContext ctx, BinaryWriter writer, T instance)
+        {
+            var header = 0b0000000;
+            if (ctx.UseIndexes)
+            {
+                header |= 0b0000001;
+            }
+            Encode(ctx, writer, instance);
+        }
+
+        T DecodeMessage(BinaryReader wire)
+        {
+            var header = wire.ReadByte();
+            var ctx = new BaboonCodecContext((header & 0b0000001) != 0);
+            return Decode(ctx, wire);
+        }
+    }
 
     public interface IBaboonTypeCodecs {
         public String Id { get; }

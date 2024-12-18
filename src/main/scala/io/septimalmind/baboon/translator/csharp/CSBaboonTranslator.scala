@@ -426,6 +426,8 @@ object CSBaboonTranslator {
   // Baboon codec types
   val iBaboonCodecData: CSType =
     CSType(baboonRtPkg, "IBaboonCodecData", fq = false)
+  val baboonCodecContext: CSType =
+    CSType(baboonRtPkg, "BaboonCodecContext", fq = false)
   val iBaboonCodec: CSType =
     CSType(baboonRtPkg, "IBaboonCodec", fq = false)
   val iBaboonValueCodec: CSType =

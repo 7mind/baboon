@@ -10,7 +10,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 class CSUEBACodecGenerator(trans: CSTypeTranslator,
                            tools: CSDefnTools,
                            options: CompilerOptions)
-  extends CSCodecTranslator {
+    extends CSCodecTranslator {
   override def translate(defn: DomainMember.User,
                          csRef: CSValue.CSType,
                          srcRef: CSValue.CSType,
@@ -41,14 +41,14 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
              |}
              |#pragma warning disable CS0162
              |
-             |LazyInstance.Value.Encode(writer, value);""".stripMargin
+             |LazyInstance.Value.Encode(ctx, writer, value);""".stripMargin
         val insulatedDec =
           q"""if (this == LazyInstance.Value)
              |{
              |    ${dec.shift(4).trim}
              |}
              |
-             |return LazyInstance.Value.Decode(wire);""".stripMargin
+             |return LazyInstance.Value.Decode(ctx, wire);""".stripMargin
 
         val branchDecoder = defn.defn match {
           case d: Typedef.Dto =>
@@ -71,29 +71,28 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
     }
   }
 
-  private def genCodec(
-                        defn: DomainMember.User,
-                        name: CSValue.CSType,
-                        srcRef: CSValue.CSType,
-                        version: Version,
-                        enc: TextTree[CSValue],
-                        dec: TextTree[CSValue],
-                        addExtensions: Boolean,
-                        branchDecoder: Option[TextTree[CSValue]],
-                        evo: BaboonEvolution,
-                      ): TextTree[CSValue] = {
+  private def genCodec(defn: DomainMember.User,
+                       name: CSValue.CSType,
+                       srcRef: CSValue.CSType,
+                       version: Version,
+                       enc: TextTree[CSValue],
+                       dec: TextTree[CSValue],
+                       addExtensions: Boolean,
+                       branchDecoder: Option[TextTree[CSValue]],
+                       evo: BaboonEvolution,
+  ): TextTree[CSValue] = {
     val iName = q"$iBaboonBinCodec<$name>"
 
     val baseMethods = List(
-      q"""public virtual void Encode($binaryWriter writer, $name value)
+      q"""public virtual void Encode($baboonCodecContext ctx, $binaryWriter writer, $name value)
          |{
          |    ${enc.shift(4).trim}
          |}
-         |public virtual $name Decode($binaryReader wire) {
+         |public virtual $name Decode($baboonCodecContext ctx, $binaryReader wire) {
          |    ${dec.shift(4).trim}
          |}""".stripMargin
     ) ++ branchDecoder.map { body =>
-      q"""internal $name DecodeBranch($binaryReader wire) {
+      q"""internal $name DecodeBranch($baboonCodecContext ctx, $binaryReader wire) {
          |    ${body.shift(4).trim}
          |}""".stripMargin
     }.toList
@@ -103,15 +102,15 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
         (List(q"$iBaboonBinCodec<$name>"), baseMethods)
       case _ =>
         val extensions = List(
-          q"""public virtual void Encode($binaryWriter writer, $iBaboonGenerated value)
+          q"""public virtual void Encode($baboonCodecContext ctx,$binaryWriter writer, $iBaboonGenerated value)
              |{
              |    if (value is not $name dvalue)
              |        throw new Exception("Expected to have ${name.name} type");
-             |    Encode(writer, dvalue);
+             |    Encode(ctx, writer, dvalue);
              |}""".stripMargin,
-          q"""$iBaboonGenerated $iBaboonStreamCodec<$iBaboonGenerated, $binaryWriter, $binaryReader>.Decode($binaryReader wire)
+          q"""$iBaboonGenerated $iBaboonStreamCodec<$iBaboonGenerated, $binaryWriter, $binaryReader>.Decode($baboonCodecContext ctx, $binaryReader wire)
              |{
-             |    return Decode(wire);
+             |    return Decode(ctx, wire);
              |}""".stripMargin
         )
 
@@ -144,10 +143,10 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
        |    ${methods.join("\n\n").shift(4).trim}
        |
        |    ${tools
-      .makeMeta(defn, version, evo, isCodec = true)
-      .join("\n")
-      .shift(4)
-      .trim}
+         .makeMeta(defn, version, evo, isCodec = true)
+         .join("\n")
+         .shift(4)
+         .trim}
        |
        |    internal static $csLazy<$iName> LazyInstance = new $csLazy<$iName>(() => new $cName());
        |
@@ -167,7 +166,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
                            domain: Domain,
                            a: Typedef.Adt,
                            evo: BaboonEvolution,
-                          ) = {
+  ) = {
     val branches = a.dataMembers(domain).zipWithIndex.toList.map {
       case (m, idx) =>
         val branchNs = q"${trans.adtNsName(a.id)}"
@@ -180,17 +179,17 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
         val castedName = branchName.toLowerCase
 
         val encBody = if (options.csWrappedAdtBranchCodecs) {
-          q"""$cName.Instance.Encode(writer, $castedName);"""
+          q"""$cName.Instance.Encode(ctx, writer, $castedName);"""
         } else {
           q"""writer.Write((byte)${idx.toString});
-             |$cName.Instance.Encode(writer, $castedName);
+             |$cName.Instance.Encode(ctx, writer, $castedName);
            """.stripMargin
         }
 
         val decBody = if (options.csWrappedAdtBranchCodecs) {
-          q"""return (($cName)$cName.Instance).DecodeBranch(wire);"""
+          q"""return (($cName)$cName.Instance).DecodeBranch(ctx, wire);"""
         } else {
-          q"""return $cName.Instance.Decode(wire);"""
+          q"""return $cName.Instance.Decode(ctx, wire);"""
         }
 
         (q"""if (value is $fqBranch $castedName)
@@ -241,11 +240,11 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
   }
 
   private def genBranchDecoder(
-                                name: CSValue.CSType,
-                                domain: Domain,
-                                d: Typedef.Dto,
-                                evo: BaboonEvolution
-                              ): Option[TextTree[CSValue]] = {
+    name: CSValue.CSType,
+    domain: Domain,
+    d: Typedef.Dto,
+    evo: BaboonEvolution
+  ): Option[TextTree[CSValue]] = {
 
     d.id.owner match {
       case Owner.Adt(_) if options.csWrappedAdtBranchCodecs =>
@@ -264,8 +263,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
 
     val fenc =
       q"""${fields
-        .map(_._1)
-        .join(";\n")};""".stripMargin
+           .map(_._1)
+           .join(";\n")};""".stripMargin
 
     val fdec =
       dtoDec(name, fields)
@@ -298,7 +297,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
 
         q"""byte marker = wire.ReadByte();
            |${CSBaboonTranslator.debug}.Assert(marker == ${idx.toString});
-           |return DecodeBranch(wire);""".stripMargin
+           |return DecodeBranch(ctx, wire);""".stripMargin
       case _ => fdec
     }
 
@@ -365,24 +364,24 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
             }
           case u: TypeId.User =>
             val targetTpe = codecName(trans.toCsTypeRefNoDeref(u, domain, evo))
-            q"""$targetTpe.Instance.Decode(wire)"""
+            q"""$targetTpe.Instance.Decode(ctx, wire)"""
         }
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt
-            if trans.isCSValueType(c.args.head, domain) =>
+              if trans.isCSValueType(c.args.head, domain) =>
             q"""$BaboonTools.ReadNullableValueType(wire.ReadByte() == 0, () => ${mkDecoder(
-              c.args.head,
-              domain,
-              evo
-            )})""".stripMargin
+                 c.args.head,
+                 domain,
+                 evo
+               )})""".stripMargin
 
           case TypeId.Builtins.opt =>
             q"""(wire.ReadByte() == 0 ? null : ${mkDecoder(
-              c.args.head,
-              domain,
-              evo
-            )})""".stripMargin
+                 c.args.head,
+                 domain,
+                 evo
+               )})""".stripMargin
 
           case TypeId.Builtins.map =>
             val keyRef = c.args.head
@@ -421,7 +420,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
                         domain: Domain,
                         ref: TextTree[CSValue],
                         evo: BaboonEvolution,
-                       ): TextTree[CSValue] = {
+  ): TextTree[CSValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
@@ -462,7 +461,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
             }
           case u: TypeId.User =>
             val targetTpe = codecName(trans.toCsTypeRefNoDeref(u, domain, evo))
-            q"""$targetTpe.Instance.Encode(writer, $ref)"""
+            q"""$targetTpe.Instance.Encode(ctx, writer, $ref)"""
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -474,22 +473,22 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
                |{
                |   writer.Write((byte)1);
                |   ${mkEncoder(
-              c.args.head,
-              domain,
-              trans.deNull(c.args.head, domain, ref),
-              evo
-            ).shift(4).trim};
+                 c.args.head,
+                 domain,
+                 trans.deNull(c.args.head, domain, ref),
+                 evo
+               ).shift(4).trim};
                |}""".stripMargin
           case TypeId.Builtins.map =>
             q"""writer.Write($ref.Count());
                |foreach (var kv in $ref)
                |{
                |    ${mkEncoder(c.args.head, domain, q"kv.Key", evo)
-              .shift(4)
-              .trim};
+                 .shift(4)
+                 .trim};
                |    ${mkEncoder(c.args.last, domain, q"kv.Value", evo)
-              .shift(4)
-              .trim};
+                 .shift(4)
+                 .trim};
                |}""".stripMargin
           case TypeId.Builtins.lst =>
             q"""writer.Write($ref.Count());
@@ -527,11 +526,14 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
     CodecMeta(member)
   }
 
-  def codecInterfaceProperty(): TextTree[CSValue] = q"public $iBaboonCodecData Ueba { get; }";
+  def codecInterfaceProperty(): TextTree[CSValue] =
+    q"public $iBaboonCodecData Ueba { get; }";
 
-  def codecImplProperty(): TextTree[CSValue] = q"public $iBaboonCodecData Ueba => LazyUeba.Value;";
+  def codecImplProperty(): TextTree[CSValue] =
+    q"public $iBaboonCodecData Ueba => LazyUeba.Value;";
 
-  def codecGenericImplField(): TextTree[CSValue] = q"Lazy<$iBaboonBinCodec<T>> LazyUeba";
+  def codecGenericImplField(): TextTree[CSValue] =
+    q"Lazy<$iBaboonBinCodec<T>> LazyUeba";
 
   def codecImplField(): TextTree[CSValue] = q"Lazy<$iBaboonCodecData> LazyUeba";
 }

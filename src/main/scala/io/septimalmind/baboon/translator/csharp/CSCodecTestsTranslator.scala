@@ -21,14 +21,14 @@ object CSCodecTestsTranslator {
                    typeTranslator: CSTypeTranslator,
                    logger: BLogger,
                    enquiries: BaboonEnquiries,
-                   compilerOptions: CompilerOptions
-                  ) extends CSCodecTestsTranslator {
+                   compilerOptions: CompilerOptions)
+      extends CSCodecTestsTranslator {
     override def translate(definition: DomainMember.User,
                            csRef: CSValue.CSType,
                            srcRef: CSValue.CSType,
                            domain: Domain,
                            evo: BaboonEvolution,
-                          ): Option[TextTree[CSValue]] = {
+    ): Option[TextTree[CSValue]] = {
 
       val codecTestName = definition.id.owner match {
         case Owner.Toplevel => srcRef.name
@@ -47,17 +47,19 @@ object CSCodecTestsTranslator {
         case d if enquiries.isRecursiveTypedef(d, domain)     => None
         case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
         case _ =>
+          val init = fieldsInitialization(definition, srcRef, domain, evo)
           val testClass =
             q"""[$nunitTestFixture]
                |public class $testClassName
                |{
                |  #nullable disable
-               |  ${testFields(definition, srcRef, domain, evo)}
+               |  ${testFields(definition, srcRef, domain, evo).shift(2).trim}
+               |  private $baboonCodecContext context = $baboonCodecContext.Default;
                |
                |  [$nunitOneTimeSetUp]
                |  public void Setup()
                |  {
-               |    ${fieldsInitialization(definition, srcRef, domain, evo)}
+               |      ${init.shift(4).trim}
                |  }
                |
                |  ${tests(definition, srcRef, domain, evo)}
@@ -89,11 +91,11 @@ object CSCodecTestsTranslator {
     }
 
     private def fieldsInitialization(
-                                      definition: DomainMember.User,
-                                      srcRef: CSValue.CSType,
-                                      domain: Domain,
-                                      evolution: BaboonEvolution
-                                    ): TextTree[CSValue] = {
+      definition: DomainMember.User,
+      srcRef: CSValue.CSType,
+      domain: Domain,
+      evolution: BaboonEvolution
+    ): TextTree[CSValue] = {
       definition.defn match {
         case adt: Typedef.Adt =>
           adt
@@ -120,7 +122,7 @@ object CSCodecTestsTranslator {
                       srcRef: CSValue.CSType,
                       domain: Domain,
                       evo: BaboonEvolution,
-                     ): TextTree[CSValue] = {
+    ): TextTree[CSValue] = {
       codecs
         .map {
           case jsonCodec: CSNSJsonCodecGenerator =>
@@ -128,12 +130,12 @@ object CSCodecTestsTranslator {
                |public void jsonCodecTest()
                |{
                |    ${jsonCodecAssertions(
-              jsonCodec,
-              definition,
-              srcRef,
-              domain,
-              evo
-            ).shift(4).trim}
+                 jsonCodec,
+                 definition,
+                 srcRef,
+                 domain,
+                 evo
+               ).shift(4).trim}
                |}
                |""".stripMargin
           case uebaCodec: CSUEBACodecGenerator =>
@@ -141,12 +143,12 @@ object CSCodecTestsTranslator {
                |public void uebaCodecTest()
                |{
                |    ${uebaCodecAssertions(
-              uebaCodec,
-              definition,
-              srcRef,
-              domain,
-              evo
-            ).shift(4).trim}
+                 uebaCodec,
+                 definition,
+                 srcRef,
+                 domain,
+                 evo
+               ).shift(4).trim}
                |}
                |""".stripMargin
           case unknown =>
@@ -166,7 +168,7 @@ object CSCodecTestsTranslator {
                                     srcRef: CSValue.CSType,
                                     domain: Domain,
                                     evo: BaboonEvolution,
-                                   ): TextTree[CSValue] = {
+    ): TextTree[CSValue] = {
       definition.defn match {
         case adt: Typedef.Adt =>
           adt
@@ -178,22 +180,20 @@ object CSCodecTestsTranslator {
               val fieldName = member.name.name.toLowerCase
               val serialized = s"${fieldName}_json"
               val decoded = s"${fieldName}_decoded"
-              q"""var $serialized = $codecName.Instance.Encode($fieldName);
-                 |var $decoded = $codecName.Instance.Decode($serialized);
+              q"""var $serialized = $codecName.Instance.Encode(this.context, $fieldName);
+                 |var $decoded = $codecName.Instance.Decode(this.context, $serialized);
                  |Assert.AreEqual($fieldName, $decoded);
                  |""".stripMargin
             }
             .toList
             .join("\n")
-            .shift(6)
-            .trim
         case _ =>
           val codecName = codec.codecName(srcRef)
           val fieldName = srcRef.name.toLowerCase
           val serialized = s"${fieldName}_json"
           val decoded = s"${fieldName}_decoded"
-          q"""var $serialized = $codecName.Instance.Encode($fieldName);
-             |var $decoded = $codecName.Instance.Decode($serialized);
+          q"""var $serialized = $codecName.Instance.Encode(this.context, $fieldName);
+             |var $decoded = $codecName.Instance.Decode(this.context, $serialized);
              |Assert.AreEqual($fieldName, $decoded);
              |""".stripMargin
       }
@@ -204,7 +204,7 @@ object CSCodecTestsTranslator {
                                     srcRef: CSValue.CSType,
                                     domain: Domain,
                                     evo: BaboonEvolution,
-                                   ): TextTree[CSValue] = {
+    ): TextTree[CSValue] = {
       definition.defn match {
         case adt: Typedef.Adt =>
           adt
@@ -222,21 +222,19 @@ object CSCodecTestsTranslator {
                  |{
                  |  using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))
                  |  {
-                 |   $codecName.Instance.Encode(binaryWriter, $fieldName);
+                 |    $codecName.Instance.Encode(this.context, binaryWriter, $fieldName);
                  |  }
                  |  writeMemoryStream.Flush();
                  |  var $serialized = writeMemoryStream.GetBuffer();
                  |  var $readStream = new MemoryStream($serialized);
                  |  var $binaryReader = new BinaryReader($readStream);
-                 |  var $decoded = $codecName.Instance.Decode($binaryReader);
+                 |  var $decoded = $codecName.Instance.Decode(this.context, $binaryReader);
                  |  Assert.AreEqual($fieldName, $decoded);
                  |}
                  |""".stripMargin
             }
             .toList
             .join("\n")
-            .shift(4)
-            .trim
         case _ =>
           val codecName = codec.codecName(srcRef)
           val fieldName = srcRef.name.toLowerCase
@@ -246,17 +244,17 @@ object CSCodecTestsTranslator {
              |{
              |  using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))
              |  {
-             |    $codecName.Instance.Encode(binaryWriter, $fieldName);
+             |    $codecName.Instance.Encode(this.context, binaryWriter, $fieldName);
              |  }
              |  writeMemoryStream.Flush();
              |
              |  var $serialized = writeMemoryStream.GetBuffer();
              |  var readMemoryStream = new MemoryStream($serialized);
              |  var binaryReader = new BinaryReader(readMemoryStream);
-             |  var $decoded = $codecName.Instance.Decode(binaryReader);
+             |  var $decoded = $codecName.Instance.Decode(this.context, binaryReader);
              |  Assert.AreEqual($fieldName, $decoded);
              |}
-             |""".stripMargin.shift(2).trim
+             |""".stripMargin
       }
     }
   }
