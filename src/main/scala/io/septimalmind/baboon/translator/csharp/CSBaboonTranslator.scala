@@ -353,7 +353,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
               .get
           ),
           CSBaboonTranslator.baboonTestRtPkg,
-          isTest = true,
+          isTest = false, // TODO: a quirk, I guess we should exclude RNGs when tests are turned off
         )
       )
     )

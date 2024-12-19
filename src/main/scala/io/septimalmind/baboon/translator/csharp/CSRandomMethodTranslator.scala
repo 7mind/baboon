@@ -2,13 +2,12 @@ package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
-import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
 import scala.util.Random
-import scala.util.chaining.scalaUtilChainingOps
 
 trait CSRandomMethodTranslator {
   def translateDtoRandom(definition: DomainMember.User,
