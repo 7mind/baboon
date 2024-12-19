@@ -298,7 +298,7 @@ object BaboonEnquiries {
                                tpe: TypeRef,
                                visited: Set[TypeRef]): BinReprLen = {
       if (visited.contains(tpe)) {
-        BinReprLen.Variable
+        BinReprLen.Unknown()
       } else {
         tpe match {
           case id: TypeRef.Scalar =>
@@ -306,12 +306,24 @@ object BaboonEnquiries {
 
           case TypeRef.Constructor(id, args) =>
             id match {
-              case Builtins.map => BinReprLen.Variable
-              case Builtins.lst => BinReprLen.Variable
-              case Builtins.set => BinReprLen.Variable
+              case Builtins.map => BinReprLen.Range(4, None)
+              case Builtins.lst => BinReprLen.Range(4, None)
+              case Builtins.set => BinReprLen.Range(4, None)
               case Builtins.opt =>
-//                binReprLenImpl(dom, args.head, visited + tpe).add(1)
-                BinReprLen.Variable // N or 1...
+                binReprLenImpl(dom, args.head, visited + tpe) match {
+                  case BinReprLen.Fixed(bytes) =>
+                    BinReprLen.Alternatives(Set(1, 1 + bytes))
+                  case variable: Variable =>
+                    variable match {
+                      case BinReprLen.Unknown() => BinReprLen.Unknown()
+                      case BinReprLen.Alternatives(variants) =>
+                        BinReprLen.Alternatives(Set(1) ++ variants.map(_ + 1))
+
+                      case BinReprLen.Range(min, max) =>
+                        BinReprLen.Range(min + 1, max.map(_ + 1))
+                    }
+                }
+              //BinReprLen.Alternatives(Set(1, )) // N or 1...
               case u =>
                 throw new IllegalStateException(
                   s"BUG: unknown collection type $u"
@@ -340,10 +352,10 @@ object BaboonEnquiries {
             case Builtins.f32  => BinReprLen.Fixed(4)
             case Builtins.f64  => BinReprLen.Fixed(8)
             case Builtins.f128 => BinReprLen.Fixed(16)
-            case Builtins.str  => BinReprLen.Variable
+            case Builtins.str  => BinReprLen.Range(4, None)
             case Builtins.uid  => BinReprLen.Fixed(16)
-            case Builtins.tsu  => BinReprLen.Variable
-            case Builtins.tso  => BinReprLen.Variable
+            case Builtins.tsu  => BinReprLen.Range(4, Some(23))
+            case Builtins.tso  => BinReprLen.Range(4, Some(34))
             case u =>
               throw new IllegalStateException(s"BUG: unknown scalar type $u")
           }
@@ -373,10 +385,10 @@ object BaboonEnquiries {
                   if (nested.size == 1) {
                     nested.head.add(1)
                   } else {
-                    BinReprLen.Variable
+                    BinReprLen.Range(1, None)
                   }
-
-                case _: Typedef.Foreign => BinReprLen.Variable
+                case _: Typedef.Foreign =>
+                  BinReprLen.Unknown()
               }
           }
 
@@ -398,7 +410,7 @@ object BaboonEnquiries {
       if (fixed.size == fields.size) {
         BinReprLen.Fixed(fixed.sum).add(1) // header byte
       } else {
-        Variable
+        BinReprLen.Range(1, None) // we might consider more cases and use Alternatives when possible
       }
     }
 

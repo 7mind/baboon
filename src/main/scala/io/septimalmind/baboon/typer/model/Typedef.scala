@@ -16,9 +16,19 @@ object BinReprLen {
 
     override def add(len: Int): BinReprLen = Fixed(bytes + len)
   }
-  case object Variable extends BinReprLen {
+  sealed trait Variable extends BinReprLen {
     override def isVariable: Boolean = true
+  }
 
+  case class Unknown() extends Variable {
+    override def add(len: Int): BinReprLen = this
+  }
+
+  case class Alternatives(variants: Set[Int]) extends Variable {
+    override def add(len: Int): BinReprLen = this
+  }
+
+  case class Range(min: Int, max: Option[Int]) extends Variable {
     override def add(len: Int): BinReprLen = this
   }
 }

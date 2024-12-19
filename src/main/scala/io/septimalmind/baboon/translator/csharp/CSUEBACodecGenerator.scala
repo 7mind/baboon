@@ -386,7 +386,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
              |    $debug.Assert(after - before == ${bytes.toString});
              |}""".stripMargin
 
-        case BinReprLen.Variable =>
+        case _: BinReprLen.Variable =>
           q"""{
              |    // ${f.toString}
              |    var before = (uint)fakeWriter.BaseStream.Position;
