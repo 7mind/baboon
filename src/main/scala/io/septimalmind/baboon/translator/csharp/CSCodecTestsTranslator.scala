@@ -46,9 +46,7 @@ object CSCodecTestsTranslator {
         case d if enquiries.hasForeignType(d, domain)         => None
         case d if enquiries.isRecursiveTypedef(d, domain)     => None
         case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
-        case _                                                =>
-          //val init = fieldsInitialization(definition, srcRef, domain, evo)
-          //${testFields(definition, srcRef, domain, evo).shift(2).trim}
+        case _ =>
           val testClass =
             q"""[$nunitTestFixture]
                |public class $testClassName
@@ -60,27 +58,6 @@ object CSCodecTestsTranslator {
           Some(testClass)
       }
     }
-
-//    private def testFields(definition: DomainMember.User,
-//                           srcRef: CSValue.CSType,
-//                           domain: Domain,
-//                           evo: BaboonEvolution): TextTree[CSValue] = {
-//      definition.defn match {
-//        case adt: Typedef.Adt =>
-//          adt
-//            .dataMembers(domain)
-//            .map(_.name.name)
-//            .map(
-//              n =>
-//                q"private ${typeTranslator.asCsType(adt.id, domain, evo)} ${n.toLowerCase};"
-//            )
-//            .toList
-//            .join("\n")
-//            .shift(2)
-//            .trim
-//        case _ => q"private $srcRef ${srcRef.name.toLowerCase};"
-//      }
-//    }
 
     private def fieldsInitialization(
       definition: DomainMember.User,
@@ -125,7 +102,10 @@ object CSCodecTestsTranslator {
             q"""[Test]
                |public void jsonCodecTest()
                |{
-               |    jsonCodecTestImpl($baboonCodecContext.Default);
+               |    for (int i = 0; i < 500; i++)
+               |    {
+               |        jsonCodecTestImpl($baboonCodecContext.Default);
+               |    }
                |}
                |
                |private void jsonCodecTestImpl($baboonCodecContext context) {
@@ -140,13 +120,19 @@ object CSCodecTestsTranslator {
             q"""[Test]
                |public void uebaCodecTestNoIndex()
                |{
-               |    uebaCodecTestImpl($baboonCodecContext.Compact);
+               |    for (int i = 0; i < 500; i++)
+               |    {
+               |        uebaCodecTestImpl($baboonCodecContext.Compact);
+               |    }
                |}
                |
                |[Test]
                |public void uebaCodecTestIndexed()
                |{
-               |    uebaCodecTestImpl($baboonCodecContext.Indexed);
+               |    for (int i = 0; i < 500; i++)
+               |    {
+               |        uebaCodecTestImpl($baboonCodecContext.Indexed);
+               |    }
                |}
                |
                |private void uebaCodecTestImpl($baboonCodecContext context) {
