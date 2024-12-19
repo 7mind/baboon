@@ -192,14 +192,12 @@ root adt T5_A1 {
 
 data T7_D2 { // const size in ueba
     f1: i32
-    f2: opt[i32]
+    f2: uid
 
 }
 root data T7_D1 { // const size in ueba
     f1: i32
-    f2: opt[i32]
     f3: T7_D2
-    f4: opt[T7_D2]
 }
 
 //

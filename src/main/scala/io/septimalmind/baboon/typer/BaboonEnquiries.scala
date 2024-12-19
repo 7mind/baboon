@@ -310,7 +310,8 @@ object BaboonEnquiries {
               case Builtins.lst => BinReprLen.Variable
               case Builtins.set => BinReprLen.Variable
               case Builtins.opt =>
-                binReprLenImpl(dom, args.head, visited + tpe).add(1)
+//                binReprLenImpl(dom, args.head, visited + tpe).add(1)
+                BinReprLen.Variable // N or 1...
               case u =>
                 throw new IllegalStateException(
                   s"BUG: unknown collection type $u"
