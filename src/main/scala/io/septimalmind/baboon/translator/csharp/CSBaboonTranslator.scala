@@ -554,6 +554,11 @@ object CSBaboonTranslator {
 
   val csImmutableDictionary: CSType =
     CSType(csCollectionsImmutablePkg, "ImmutableDictionary", fq = false)
+  val csImmutableList: CSType =
+    CSType(csCollectionsImmutablePkg, "ImmutableList", fq = false)
+  val csImmutableHashSet: CSType =
+    CSType(csCollectionsImmutablePkg, "ImmutableHashSet", fq = false)
+
   val csKeyValuePair: CSType =
     CSType(csCollectionsGenericPkg, "KeyValuePair", fq = false)
 

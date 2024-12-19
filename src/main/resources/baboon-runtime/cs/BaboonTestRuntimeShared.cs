@@ -30,7 +30,12 @@ namespace Baboon.Test.Runtime.Shared {
         {
             return Rnd.Next(Int32.MinValue, Int32.MaxValue);
         }
-    
+
+        public static Int32 NextInt32(int max)
+        {
+            return Rnd.Next(0, max);
+        }
+
         public static Int64 NextInt64()
         {
             return Rnd.NextInt64(Int64.MinValue, Int64.MaxValue);
@@ -106,12 +111,24 @@ namespace Baboon.Test.Runtime.Shared {
             var values = Enum.GetValues(typeof(T));
             return (T)values.GetValue(Rnd.Next(values.Length))!;
         }
-    
-        public static ImmutableDictionary<TK, TV> CreateImmutableDictionary<TK, TV>(List<KeyValuePair<TK, TV>> values) where TK : notnull
+
+        public static ImmutableList<T> FillList<T>(int count, Func<T> action)
         {
-            var map = new Dictionary<TK, TV>(values.Count);
-            values.ForEach(pair => map.TryAdd(pair.Key, pair.Value));
-    
+            return Enumerable.Range(0, count).Select(i => action.Invoke()).ToImmutableList();
+        }
+
+        public static ImmutableHashSet<T> FillSet<T>(int count, Func<T> action)
+        {
+            return Enumerable.Range(0, count).Select(i => action.Invoke()).ToImmutableHashSet();
+        }
+
+        public static ImmutableDictionary<K, V> FillDict<K, V>(int count, Func<KeyValuePair<K, V>> action)
+        {
+            var entries= Enumerable.Range(0, count).Select(i => action.Invoke()).ToList();
+
+            var map = new Dictionary<K, V>(entries.Count);
+            entries.ForEach(pair => map.TryAdd(pair.Key, pair.Value));
+
             return map.ToImmutableDictionary();
         }
     }

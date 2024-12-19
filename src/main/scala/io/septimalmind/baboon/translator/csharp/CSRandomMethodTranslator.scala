@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.testValuesGenerator
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.*
@@ -49,7 +49,7 @@ object CSRandomMethodTranslator {
                |  );
                |}
                |#nullable disable
-               |""".stripMargin.shift(2).trim
+               |""".stripMargin
           Some(method)
       }
 
@@ -74,7 +74,7 @@ object CSRandomMethodTranslator {
             q"""public static ${adt.id.name.name} Random() {
                |  return ${translator.asCsType(toGenerate.id, domain, evo)}.Random();
                |}
-               |""".stripMargin.shift(2).trim
+               |""".stripMargin
           Some(method)
       }
     }
@@ -90,30 +90,25 @@ object CSRandomMethodTranslator {
               case Builtins.lst =>
                 val argTpe =
                   renderCollectionTypeArgument(args.head, domain, evo)
-                val listValues =
-                  (0 until rndSize).map(_ => gen(args.head)).join(", ")
-                q"ImmutableList.Create<$argTpe>($listValues)".shift(2).trim
+                q"""$testValuesGenerator.FillList<$argTpe>($testValuesGenerator.NextInt32(20), () => ${gen(
+                  args.head
+                )})"""
               case Builtins.set =>
                 val argTpe =
                   renderCollectionTypeArgument(args.head, domain, evo)
-                val setValues =
-                  (0 until rndSize).map(_ => gen(args.head)).join(", ")
-                q"ImmutableHashSet.Create<$argTpe>($setValues)".shift(2)
+                q"""$testValuesGenerator.FillSet<$argTpe>($testValuesGenerator.NextInt32(20), () => ${gen(
+                  args.head
+                )})"""
+
               case Builtins.map =>
                 val keyTpe = renderCollectionTypeArgument(args(0), domain, evo)
                 val valueTpe =
                   renderCollectionTypeArgument(args(1), domain, evo)
-                val mapValues = (0 until rndSize)
-                  .map(
-                    _ =>
-                      q"new KeyValuePair<$keyTpe, $valueTpe>(${gen(args(0))}, ${gen(args(1))})"
-                  )
-                  .pipe(
-                    values =>
-                      q"new List<KeyValuePair<$keyTpe, $valueTpe>> { ${values.join(", ")} }"
-                  )
-                q"$testValuesGenerator.CreateImmutableDictionary<$keyTpe, $valueTpe>($mapValues)"
-                  .shift(2)
+
+                val entry =
+                  q"new $csKeyValuePair<$keyTpe, $valueTpe>(${gen(args(0))}, ${gen(args(1))})"
+
+                q"$testValuesGenerator.FillDict<$keyTpe, $valueTpe>($testValuesGenerator.NextInt32(20), () => $entry)"
               case Builtins.opt => q"${gen(args.head)}"
               case t =>
                 throw new IllegalArgumentException(
