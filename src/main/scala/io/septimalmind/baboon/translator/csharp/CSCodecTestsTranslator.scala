@@ -46,21 +46,14 @@ object CSCodecTestsTranslator {
         case d if enquiries.hasForeignType(d, domain)         => None
         case d if enquiries.isRecursiveTypedef(d, domain)     => None
         case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
-        case _ =>
-          val init = fieldsInitialization(definition, srcRef, domain, evo)
+        case _                                                =>
+          //val init = fieldsInitialization(definition, srcRef, domain, evo)
+          //${testFields(definition, srcRef, domain, evo).shift(2).trim}
           val testClass =
             q"""[$nunitTestFixture]
                |public class $testClassName
                |{
                |  #nullable disable
-               |  ${testFields(definition, srcRef, domain, evo).shift(2).trim}
-               |
-               |  [$nunitOneTimeSetUp]
-               |  public void Setup()
-               |  {
-               |      ${init.shift(4).trim}
-               |  }
-               |
                |  ${tests(definition, srcRef, domain, evo)}
                |}
                |""".stripMargin
@@ -68,26 +61,26 @@ object CSCodecTestsTranslator {
       }
     }
 
-    private def testFields(definition: DomainMember.User,
-                           srcRef: CSValue.CSType,
-                           domain: Domain,
-                           evo: BaboonEvolution): TextTree[CSValue] = {
-      definition.defn match {
-        case adt: Typedef.Adt =>
-          adt
-            .dataMembers(domain)
-            .map(_.name.name)
-            .map(
-              n =>
-                q"private ${typeTranslator.asCsType(adt.id, domain, evo)} ${n.toLowerCase};"
-            )
-            .toList
-            .join("\n")
-            .shift(2)
-            .trim
-        case _ => q"private $srcRef ${srcRef.name.toLowerCase};"
-      }
-    }
+//    private def testFields(definition: DomainMember.User,
+//                           srcRef: CSValue.CSType,
+//                           domain: Domain,
+//                           evo: BaboonEvolution): TextTree[CSValue] = {
+//      definition.defn match {
+//        case adt: Typedef.Adt =>
+//          adt
+//            .dataMembers(domain)
+//            .map(_.name.name)
+//            .map(
+//              n =>
+//                q"private ${typeTranslator.asCsType(adt.id, domain, evo)} ${n.toLowerCase};"
+//            )
+//            .toList
+//            .join("\n")
+//            .shift(2)
+//            .trim
+//        case _ => q"private $srcRef ${srcRef.name.toLowerCase};"
+//      }
+//    }
 
     private def fieldsInitialization(
       definition: DomainMember.User,
@@ -100,20 +93,20 @@ object CSCodecTestsTranslator {
           adt
             .dataMembers(domain)
             .map { member =>
+              val tpe = typeTranslator
+                .asCsType(adt.id, domain, evolution)
               if (compilerOptions.csUseCompactAdtForm) {
-                q"${member.name.name.toLowerCase} = ${typeTranslator.asCsType(adt.id, domain, evolution)}.${member.name.name}.Random();"
+                q"$tpe fixture_${member.name.name.toLowerCase} = $tpe.${member.name.name}.Random();"
               } else {
-                q"${member.name.name.toLowerCase} =  ${typeTranslator.asCsType(member, domain, evolution)}.Random();"
+                q"$tpe fixture_${member.name.name.toLowerCase} = $tpe.Random();"
               }
             }
             .toList
             .join("\n")
-            .shift(4)
-            .trim
         case enum: Typedef.Enum =>
-          q"${srcRef.name.toLowerCase} = $testValuesGenerator.NextRandomEnum<${enum.id.name.name}>();"
+          q"var fixture = $testValuesGenerator.NextRandomEnum<${enum.id.name.name}>();"
         case _ =>
-          q"${srcRef.name.toLowerCase} = ${typeTranslator.asCsType(definition.id, domain, evolution)}.Random();"
+          q"var fixture = ${typeTranslator.asCsType(definition.id, domain, evolution)}.Random();"
       }
     }
 
@@ -122,6 +115,7 @@ object CSCodecTestsTranslator {
                       domain: Domain,
                       evo: BaboonEvolution,
     ): TextTree[CSValue] = {
+      val init = fieldsInitialization(definition, srcRef, domain, evo)
       codecs
         .map {
           case jsonCodec: CSNSJsonCodecGenerator =>
@@ -135,7 +129,8 @@ object CSCodecTestsTranslator {
                |}
                |
                |private void jsonCodecTestImpl($baboonCodecContext context) {
-               |   ${body.shift(4).trim}
+               |    ${init.shift(4).trim}
+               |    ${body.shift(4).trim}
                |}
                |""".stripMargin
           case uebaCodec: CSUEBACodecGenerator =>
@@ -155,7 +150,8 @@ object CSCodecTestsTranslator {
                |}
                |
                |private void uebaCodecTestImpl($baboonCodecContext context) {
-               |   ${body.shift(4).trim}
+               |    ${init.shift(4).trim}
+               |    ${body.shift(4).trim}
                |}
                |""".stripMargin
           case unknown =>
@@ -184,9 +180,9 @@ object CSCodecTestsTranslator {
               val typeRef =
                 typeTranslator.toCsTypeRefNoDeref(adt.id, domain, evo)
               val codecName = codec.codecName(typeRef)
-              val fieldName = member.name.name.toLowerCase
-              val serialized = s"${fieldName}_json"
-              val decoded = s"${fieldName}_decoded"
+              val fieldName = q"fixture_${member.name.name.toLowerCase}"
+              val serialized = q"${fieldName}_json"
+              val decoded = q"${fieldName}_decoded"
               q"""var $serialized = $codecName.Instance.Encode(context, $fieldName);
                  |var $decoded = $codecName.Instance.Decode(context, $serialized);
                  |Assert.AreEqual($fieldName, $decoded);
@@ -196,9 +192,9 @@ object CSCodecTestsTranslator {
             .join("\n")
         case _ =>
           val codecName = codec.codecName(srcRef)
-          val fieldName = srcRef.name.toLowerCase
-          val serialized = s"${fieldName}_json"
-          val decoded = s"${fieldName}_decoded"
+          val fieldName = q"fixture"
+          val serialized = q"${fieldName}_json"
+          val decoded = q"${fieldName}_decoded"
           q"""var $serialized = $codecName.Instance.Encode(context, $fieldName);
              |var $decoded = $codecName.Instance.Decode(context, $serialized);
              |Assert.AreEqual($fieldName, $decoded);
@@ -220,11 +216,11 @@ object CSCodecTestsTranslator {
               val typeRef =
                 typeTranslator.toCsTypeRefNoDeref(adt.id, domain, evo)
               val codecName = codec.codecName(typeRef)
-              val fieldName = member.name.name.toLowerCase
-              val serialized = s"${fieldName}_bytes"
-              val decoded = s"${fieldName}_decoded"
-              val readStream = s"${fieldName}_readMemoryStream"
-              val binaryReader = s"${fieldName}_binaryReader"
+              val fieldName = q"fixture_${member.name.name.toLowerCase}"
+              val serialized = q"${fieldName}_bytes"
+              val decoded = q"${fieldName}_decoded"
+              val readStream = q"${fieldName}_readMemoryStream"
+              val binaryReader = q"${fieldName}_binaryReader"
               q"""using ($memoryStream writeMemoryStream = new $memoryStream())
                  |{
                  |  using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))
@@ -245,9 +241,9 @@ object CSCodecTestsTranslator {
 
         case _ =>
           val codecName = codec.codecName(srcRef)
-          val fieldName = srcRef.name.toLowerCase
-          val serialized = s"${fieldName}_bytes"
-          val decoded = s"${fieldName}_decoded"
+          val fieldName = q"fixture"
+          val serialized = q"${fieldName}_bytes"
+          val decoded = q"${fieldName}_decoded"
           q"""using ($memoryStream writeMemoryStream = new $memoryStream())
              |{
              |  using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))
