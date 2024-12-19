@@ -531,6 +531,8 @@ object CSBaboonTranslator {
     CSType(csCollectionsGenericPkg, "List", fq = false)
   val csDict: CSType =
     CSType(csCollectionsGenericPkg, "Dictionary", fq = false)
+  val csSet: CSType =
+    CSType(csCollectionsGenericPkg, "HashSet", fq = false)
   val csEnum: CSType =
     CSType(csSystemPkg, "Enum", fq = false)
   val csDateTime: CSType =

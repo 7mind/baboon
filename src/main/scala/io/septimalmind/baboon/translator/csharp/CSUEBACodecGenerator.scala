@@ -383,18 +383,30 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
              |    var before = (uint)fakeWriter.BaseStream.Position;
              |    ${fakeEnc.shift(4).trim};
              |    var after = (uint)fakeWriter.BaseStream.Position;
-             |    $debug.Assert(after - before == ${bytes.toString});
+             |    var length = after - before;
+             |    $debug.Assert(length == ${bytes.toString});
              |}""".stripMargin
 
-        case _: BinReprLen.Variable =>
+        case v: BinReprLen.Variable =>
+          val sanityChecks = v match {
+            case BinReprLen.Unknown() => q"$debug.Assert(length >= 0, $$\"Got length={length}\")";
+            case BinReprLen.Alternatives(variants) =>
+              q"$debug.Assert(new $csSet<uint>() { ${variants.mkString(", ")} }.Contains(length), $$\"Got length={length}\")"
+            case BinReprLen.Range(min, max) =>
+              (Seq(q"$debug.Assert(length >= ${min.toString}, $$\"Got length={length}\")") ++ max.toSeq
+                .map(m => q"$debug.Assert(length <= ${m.toString}, $$\"Got length={length}\")"))
+                .join(";\n")
+          }
+
           q"""{
              |    // ${f.toString}
              |    var before = (uint)fakeWriter.BaseStream.Position;
              |    writer.Write(before);
              |    ${fakeEnc.shift(4).trim};
              |    var after = (uint)fakeWriter.BaseStream.Position;
-             |    writer.Write(after - before);
-             |    //Console.WriteLine($$"${d.id.toString} {before} {after} {after - before}");
+             |    var length = after - before;
+             |    writer.Write(length);
+             |    ${sanityChecks.shift(4).trim};
              |}""".stripMargin
       }
 
@@ -563,7 +575,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
                ).shift(4).trim};
                |}""".stripMargin
           case TypeId.Builtins.map =>
-            q"""$wref.Write($ref.Count());
+            q"""$wref.Write($ref.Count);
                |foreach (var kv in $ref)
                |{
                |    ${mkEncoder(c.args.head, domain, q"kv.Key", evo, wref)
@@ -574,7 +586,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
                  .trim};
                |}""".stripMargin
           case TypeId.Builtins.lst =>
-            q"""$wref.Write($ref.Count());
+            q"""$wref.Write($ref.Count);
                |foreach (var i in $ref)
                |{
                |    ${mkEncoder(c.args.head, domain, q"i", evo, wref)
@@ -582,7 +594,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
                  .trim};
                |}""".stripMargin
           case TypeId.Builtins.set =>
-            q"""$wref.Write($ref.Count());
+            q"""$wref.Write($ref.Count);
                |foreach (var i in $ref)
                |{
                |    ${mkEncoder(c.args.head, domain, q"i", evo, wref)

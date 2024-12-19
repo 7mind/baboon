@@ -1,35 +1,37 @@
 package io.septimalmind.baboon.typer.model
 
 import io.septimalmind.baboon.parser.model.RawNodeMeta
-import izumi.fundamentals.collections.nonempty.NEList
+import izumi.fundamentals.collections.nonempty.{NEList, NESet}
 import izumi.fundamentals.graphs.DG
 import izumi.fundamentals.graphs.tools.cycles.LoopDetector
 
 sealed trait BinReprLen {
   def isVariable: Boolean
-  def add(len: Int): BinReprLen
+  def prefixed(len: Int): BinReprLen
 }
 object BinReprLen {
   case class Fixed(bytes: Int) extends BinReprLen {
 
     override def isVariable: Boolean = false
 
-    override def add(len: Int): BinReprLen = Fixed(bytes + len)
+    override def prefixed(len: Int): BinReprLen = Fixed(bytes + len)
   }
   sealed trait Variable extends BinReprLen {
     override def isVariable: Boolean = true
   }
 
   case class Unknown() extends Variable {
-    override def add(len: Int): BinReprLen = this
+    override def prefixed(len: Int): BinReprLen = this
   }
 
-  case class Alternatives(variants: Set[Int]) extends Variable {
-    override def add(len: Int): BinReprLen = this
+  case class Alternatives(variants: NESet[Int]) extends Variable {
+    override def prefixed(len: Int): BinReprLen =
+      Alternatives(NESet(len) ++ variants.map(_ + len))
   }
 
   case class Range(min: Int, max: Option[Int]) extends Variable {
-    override def add(len: Int): BinReprLen = this
+    override def prefixed(len: Int): BinReprLen =
+      Range(min + len, max.map(_ + len))
   }
 }
 

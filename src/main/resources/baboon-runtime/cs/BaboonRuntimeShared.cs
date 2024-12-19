@@ -190,6 +190,12 @@ namespace Baboon.Runtime.Shared {
             BaboonCodecContext ctx = BaboonCodecContext.Compact;
             Encode(ctx, writer, instance);
         }
+
+        T DecodeAny(BinaryReader wire)
+        {
+            BaboonCodecContext ctx = BaboonCodecContext.Default;
+            return Decode(ctx, wire);
+        }
     }
 
     public class BaboonIndexEntry

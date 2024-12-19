@@ -20,6 +20,7 @@ import io.septimalmind.baboon.typer.model.{
   TypeRef,
   Typedef
 }
+import izumi.fundamentals.collections.nonempty.NESet
 import izumi.fundamentals.graphs.struct.IncidenceMatrix
 import izumi.fundamentals.graphs.tools.cycles.LoopDetector
 import izumi.fundamentals.platform.crypto.IzSha256Hash
@@ -306,21 +307,21 @@ object BaboonEnquiries {
 
           case TypeRef.Constructor(id, args) =>
             id match {
-              case Builtins.map => BinReprLen.Range(4, None)
-              case Builtins.lst => BinReprLen.Range(4, None)
-              case Builtins.set => BinReprLen.Range(4, None)
+              case Builtins.map => BinReprLen.Range(1, None)
+              case Builtins.lst => BinReprLen.Range(1, None)
+              case Builtins.set => BinReprLen.Range(1, None)
               case Builtins.opt =>
                 binReprLenImpl(dom, args.head, visited + tpe) match {
                   case BinReprLen.Fixed(bytes) =>
-                    BinReprLen.Alternatives(Set(1, 1 + bytes))
+                    BinReprLen.Alternatives(NESet(1, 1 + bytes))
                   case variable: Variable =>
                     variable match {
-                      case BinReprLen.Unknown() => BinReprLen.Unknown()
-                      case BinReprLen.Alternatives(variants) =>
-                        BinReprLen.Alternatives(Set(1) ++ variants.map(_ + 1))
-
-                      case BinReprLen.Range(min, max) =>
-                        BinReprLen.Range(min + 1, max.map(_ + 1))
+                      case BinReprLen.Unknown() =>
+                        BinReprLen.Unknown()
+                      case a: BinReprLen.Alternatives =>
+                        a.prefixed(1)
+                      case r: BinReprLen.Range =>
+                        r.prefixed(1)
                     }
                 }
               //BinReprLen.Alternatives(Set(1, )) // N or 1...
@@ -352,10 +353,10 @@ object BaboonEnquiries {
             case Builtins.f32  => BinReprLen.Fixed(4)
             case Builtins.f64  => BinReprLen.Fixed(8)
             case Builtins.f128 => BinReprLen.Fixed(16)
-            case Builtins.str  => BinReprLen.Range(4, None)
+            case Builtins.str  => BinReprLen.Range(1, None)
             case Builtins.uid  => BinReprLen.Fixed(16)
-            case Builtins.tsu  => BinReprLen.Range(4, Some(23))
-            case Builtins.tso  => BinReprLen.Range(4, Some(34))
+            case Builtins.tsu  => BinReprLen.Range(4, Some(39))
+            case Builtins.tso  => BinReprLen.Range(4, Some(39))
             case u =>
               throw new IllegalStateException(s"BUG: unknown scalar type $u")
           }
@@ -383,8 +384,9 @@ object BaboonEnquiries {
                     .map(id => binReprLenImpl(dom, TypeRef.Scalar(id), visited))
                     .toSet
                   if (nested.size == 1) {
-                    nested.head.add(1)
+                    nested.head.prefixed(1)
                   } else {
+                    // we might consider more cases and use Alternatives/define Max when possible
                     BinReprLen.Range(1, None)
                   }
                 case _: Typedef.Foreign =>
@@ -408,9 +410,10 @@ object BaboonEnquiries {
       }
 
       if (fixed.size == fields.size) {
-        BinReprLen.Fixed(fixed.sum).add(1) // header byte
+        BinReprLen.Fixed(fixed.sum).prefixed(1) // header byte
       } else {
-        BinReprLen.Range(1, None) // we might consider more cases and use Alternatives when possible
+        // we might consider more cases and use Alternatives/define Max when possible
+        BinReprLen.Range(1, None)
       }
     }
 
