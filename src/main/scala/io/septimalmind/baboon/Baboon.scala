@@ -134,6 +134,7 @@ object Baboon {
           val f = p.toFile
           !f.isDirectory && !(f.getName.endsWith(".cs") ||
             f.getName.endsWith(".json") ||
+            f.getName.endsWith(".meta") || // TODO: CLI parameter
             f.getName.startsWith("."))
         }
         .toSeq
