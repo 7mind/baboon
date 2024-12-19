@@ -37,7 +37,7 @@ namespace Baboon.Time
 
         public override int GetHashCode()
         {
-            return DateTime.GetHashCode();
+            return DateTime.ToUniversalTime().GetHashCode();
         }
 
         public override bool Equals(object? obj)
