@@ -53,16 +53,26 @@ object BaboonTyper {
           .toMap
         deepSchema <- computeDeepSchema(graph)
         loops = enquiries.loopsOf(graph.meta.nodes)
+        typeMeta = graph.meta.nodes.keySet.map { id =>
+          (id, TypeMeta(shallowSchema(id), deepSchema(id)))
+        }.toMap
+        refMeta <- makeRefMeta(graph.meta.nodes)
       } yield {
-        Domain(
-          id,
-          version,
-          graph,
-          excludedIds,
-          shallowSchema,
-          deepSchema,
-          loops
-        )
+        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta)
+      }
+    }
+
+    private def makeRefMeta(
+      defs: Map[TypeId, DomainMember],
+    ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeRef, RefMeta]] = {
+
+      for {
+        allRefs <- Right(defs.values.flatMap(enquiries.allRefs))
+        meta = allRefs.map { ref =>
+          (ref, RefMeta(enquiries.uebaLen(defs, ref)))
+        }.toMap
+      } yield {
+        meta
       }
     }
 

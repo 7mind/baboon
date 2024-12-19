@@ -63,24 +63,31 @@ object BaboonComparator {
 
         previousVersions <- sortedVersions
           .sliding(2)
-          .filter(_.size == 2).flatMap {
+          .filter(_.size == 2)
+          .flatMap {
             case n :: p :: Nil => List((n, p))
-            case _ => List.empty
-          }.toSeq
+            case _             => List.empty
+          }
+          .toSeq
           .toUniqueMap(e => NEList(BaboonIssue.NonUniquePrevVersions(e)))
 
-        minVersions <- computeMinVersions(versions, diffMap, previousVersions, sortedVersions.reverse)
+        minVersions <- computeMinVersions(
+          versions,
+          diffMap,
+          previousVersions,
+          sortedVersions.reverse
+        )
       } yield {
         BaboonEvolution(pkg, pinnacleVersion, diffMap, rulesetMap, minVersions)
       }
     }
 
-    private def computeMinVersions(
-                                    domainVersions: NEMap[Version, Domain],
-                                    diffs: Map[EvolutionStep, BaboonDiff],
-                                    previousVersions: Map[Version, Version],
-                                    versions: Seq[Version],
-                                  ): Either[NEList[BaboonIssue.EvolutionIssue], Map[Version, Map[TypeId, Version]]] = {
+    private def computeMinVersions(domainVersions: NEMap[Version, Domain],
+                                   diffs: Map[EvolutionStep, BaboonDiff],
+                                   previousVersions: Map[Version, Version],
+                                   versions: Seq[Version],
+    ): Either[NEList[BaboonIssue.EvolutionIssue], Map[Version,
+                                                      Map[TypeId, Version]]] = {
       import izumi.functional.IzEither.*
 
       versions.biFoldLeft(Map.empty[Version, Map[TypeId, Version]]) {
@@ -89,13 +96,13 @@ object BaboonComparator {
       }
     }
 
-    private def minVersionsDiff(
-                                    domainVersions: NEMap[Version, Domain],
-                                    diffs: Map[EvolutionStep, BaboonDiff],
-                                    previousVersions: Map[Version, Version],
-                                    minVersions: Map[Version, Map[TypeId, Version]],
-                                    current: Version,
-                       ): Either[NEList[BaboonIssue.EvolutionIssue], Map[Version, Map[TypeId, Version]]] = {
+    private def minVersionsDiff(domainVersions: NEMap[Version, Domain],
+                                diffs: Map[EvolutionStep, BaboonDiff],
+                                previousVersions: Map[Version, Version],
+                                minVersions: Map[Version, Map[TypeId, Version]],
+                                current: Version,
+    ): Either[NEList[BaboonIssue.EvolutionIssue], Map[Version,
+                                                      Map[TypeId, Version]]] = {
       previousVersions.get(current) match {
         case Some(prev) =>
           val step = EvolutionStep(prev, current)
@@ -135,28 +142,28 @@ object BaboonComparator {
       val removed = oldTypes.diff(newTypes)
 
       val unmodified = kept.filter { id =>
-        last.shallowSchema(id) == prev.shallowSchema(id) &&
-        last.deepSchema(id) == prev.deepSchema(id)
+        last.typeMeta(id).shallowId == prev.typeMeta(id).shallowId &&
+        last.typeMeta(id).deepId == prev.typeMeta(id).deepId
       }
 
       val changed = kept.diff(unmodified)
 
       // different local structure or different dependencies
       val fullyModified = changed.filter { id =>
-        last.shallowSchema(id) != prev.shallowSchema(id) &&
-        last.deepSchema(id) != prev.deepSchema(id)
+        last.typeMeta(id).shallowId != prev.typeMeta(id).shallowId &&
+        last.typeMeta(id).deepId != prev.typeMeta(id).deepId
       }
 
       val partiallyModified = changed.diff(fullyModified)
 
       // same dependencies, different local structure
       val shallowModified = partiallyModified.filter { id =>
-        last.shallowSchema(id) != prev.shallowSchema(id)
+        last.typeMeta(id).shallowId != prev.typeMeta(id).shallowId
       }
 
       // same local structure, different dependencies
       val deepModified = partiallyModified.filter { id =>
-        last.deepSchema(id) != prev.deepSchema(id)
+        last.typeMeta(id).deepId != prev.typeMeta(id).deepId
       }
 
       assert(shallowModified.intersect(deepModified).isEmpty)

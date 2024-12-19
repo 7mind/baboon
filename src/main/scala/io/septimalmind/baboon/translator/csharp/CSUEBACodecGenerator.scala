@@ -87,8 +87,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
 
     val indexBody = defn.defn match {
       case d: Typedef.Dto =>
-        val varlens = // XXX: it might be a good idea to cache/prepopulate this
-          d.fields.filter(f => TypeId.isVarlenTypeRef(domain, f.tpe))
+        val varlens =
+          d.fields.filter(f => domain.refMeta(f.tpe).len.isVariable)
 
         val comment = varlens
           .map(f => q"// ${f.toString}")
@@ -375,21 +375,27 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
       val enc = mkEncoder(f.tpe, domain, fieldRef, evo, q"writer")
       val fakeEnc = mkEncoder(f.tpe, domain, fieldRef, evo, q"fakeWriter")
       val dec = mkDecoder(f.tpe, domain, evo)
-      // XXX: it might be a good idea to cache/prepopulate this
-      val isVarlen = TypeId.isVarlenTypeRef(domain, f.tpe)
 
-      val w = if (isVarlen) {
-        q"""{
-           |    // ${f.toString}
-           |    var before = (uint)fakeWriter.BaseStream.Position;
-           |    writer.Write(before);
-           |    ${fakeEnc.shift(4).trim};
-           |    var after = (uint)fakeWriter.BaseStream.Position;
-           |    writer.Write(after - before);
-           |    //Console.WriteLine($$"${d.id.toString} {before} {after} {after - before}");
-           |}""".stripMargin
-      } else {
-        q"""$fakeEnc;""".stripMargin
+      val w = domain.refMeta(f.tpe).len match {
+        case BinReprLen.Fixed(bytes) =>
+          q"""{
+             |    // ${f.toString}
+             |    var before = (uint)fakeWriter.BaseStream.Position;
+             |    ${fakeEnc.shift(4).trim};
+             |    var after = (uint)fakeWriter.BaseStream.Position;
+             |    $debug.Assert(after - before == ${bytes.toString});
+             |}""".stripMargin
+
+        case BinReprLen.Variable =>
+          q"""{
+             |    // ${f.toString}
+             |    var before = (uint)fakeWriter.BaseStream.Position;
+             |    writer.Write(before);
+             |    ${fakeEnc.shift(4).trim};
+             |    var after = (uint)fakeWriter.BaseStream.Position;
+             |    writer.Write(after - before);
+             |    //Console.WriteLine($$"${d.id.toString} {before} {after} {after - before}");
+             |}""".stripMargin
       }
 
       (enc, dec, w)
@@ -431,7 +437,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
               case TypeId.Builtins.str =>
                 q"wire.ReadString()"
               case TypeId.Builtins.uid =>
-                q"$csGuid.Parse(wire.ReadString())"
+                q"new $csGuid(wire.ReadBytes(16))"
               case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
                 q"$baboonTimeFormats.FromString(wire.ReadString())"
               case o =>
@@ -529,7 +535,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
               case TypeId.Builtins.str =>
                 q"$wref.Write($ref)"
               case TypeId.Builtins.uid =>
-                q"$wref.Write($ref.ToString())"
+                q"$wref.Write($ref.ToByteArray())"
               case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
                 q"$wref.Write($baboonTimeFormats.ToString($ref))"
               case o =>

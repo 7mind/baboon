@@ -5,13 +5,34 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.graphs.DG
 import izumi.fundamentals.graphs.tools.cycles.LoopDetector
 
+sealed trait BinReprLen {
+  def isVariable: Boolean
+  def add(len: Int): BinReprLen
+}
+object BinReprLen {
+  case class Fixed(bytes: Int) extends BinReprLen {
+
+    override def isVariable: Boolean = false
+
+    override def add(len: Int): BinReprLen = Fixed(bytes + len)
+  }
+  case object Variable extends BinReprLen {
+    override def isVariable: Boolean = true
+
+    override def add(len: Int): BinReprLen = this
+  }
+}
+
+case class TypeMeta(shallowId: ShallowSchemaId, deepId: DeepSchemaId)
+case class RefMeta(len: BinReprLen)
+
 case class Domain(id: Pkg,
                   version: Version,
                   defs: DG[TypeId, DomainMember],
                   excludedIds: Set[TypeId],
-                  shallowSchema: Map[TypeId, ShallowSchemaId],
-                  deepSchema: Map[TypeId, DeepSchemaId],
+                  typeMeta: Map[TypeId, TypeMeta],
                   loops: Set[LoopDetector.Cycles[TypeId]],
+                  refMeta: Map[TypeRef, RefMeta],
 ) {
 
   import izumi.fundamentals.platform.strings.IzString.*
@@ -23,7 +44,7 @@ case class Domain(id: Pkg,
        |  defns: ${defs.meta.nodes.values
          .map(
            member =>
-             s"${shallowSchema(member.id)}, ${deepSchema(member.id)} = $member"
+             s"${typeMeta(member.id).shallowId}, ${typeMeta(member.id).deepId} = $member"
          )
          .niceList()
          .shift(4)}""".stripMargin
@@ -230,43 +251,6 @@ object TypeId {
         case _             => None
       }
     }
-  }
-
-  def isVarlenTypeRef(dom: Domain, tpe: TypeRef): Boolean = {
-    tpe match {
-      case TypeRef.Scalar(id) =>
-        isVarlenType(dom, dom.defs.meta.nodes(id))
-
-      case TypeRef.Constructor(id, args) =>
-        isVarlenType(dom, dom.defs.meta.nodes(id)) ||
-          (id == Builtins.opt && args.forall(ref => isVarlenTypeRef(dom, ref)))
-    }
-  }
-
-  def isVarlenType(dom: Domain, tpe: DomainMember): Boolean = {
-    tpe match {
-      case DomainMember.Builtin(id) =>
-        Builtins.varlens
-          .toSet[TypeId]
-          .contains(id) || Builtins.iterableCollections
-          .toSet[TypeId]
-          .contains(id)
-
-      case DomainMember.User(_, defn, _) =>
-        defn match {
-          case d: Typedef.Dto =>
-            d.fields.exists(f => isVarlenTypeRef(dom, f.tpe))
-          case d: Typedef.Contract =>
-            d.fields.exists(f => isVarlenTypeRef(dom, f.tpe))
-          case _: Typedef.Enum =>
-            false
-          case _: Typedef.Adt =>
-            false
-          case _: Typedef.Foreign =>
-            true
-        }
-    }
-
   }
 
   sealed trait ComparatorType

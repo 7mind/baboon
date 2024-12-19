@@ -1,7 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
 import distage.Subcontext
-import io.circe.syntax.*
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.RuntimeGenOpt
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue

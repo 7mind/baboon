@@ -7,7 +7,10 @@ import io.septimalmind.baboon.parser.model.{
   RawDtoid,
   ScopedRef
 }
+import io.septimalmind.baboon.typer.model.BinReprLen.Variable
+import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.{
+  BinReprLen,
   Domain,
   DomainMember,
   Field,
@@ -26,21 +29,25 @@ import scala.collection.mutable
 
 trait BaboonEnquiries {
   def fullDepsOfDefn(defn: DomainMember): Set[TypeId]
+  def allRefs(defn: DomainMember): Set[TypeRef]
   def wrap(id: TypeId): String
   def explode(tpe: TypeRef): Set[TypeId]
   def shallowId(defn: DomainMember): ShallowSchemaId
   def hardDepsOfRawDefn(dd: RawDefn): Set[ScopedRef]
   def hasForeignType(definition: DomainMember.User, domain: Domain): Boolean
   def isRecursiveTypedef(definition: DomainMember.User, domain: Domain): Boolean
-  def loopsOf(domain: Map[TypeId, DomainMember]): Set[LoopDetector.Cycles[TypeId]]
+  def loopsOf(
+    domain: Map[TypeId, DomainMember]
+  ): Set[LoopDetector.Cycles[TypeId]]
+  def uebaLen(dom: Map[TypeId, DomainMember], tpe: TypeRef): BinReprLen
 }
 
 object BaboonEnquiries {
 
   class BaboonEnquiriesImpl extends BaboonEnquiries {
     def loopsOf(
-                 domain: Map[TypeId, DomainMember]
-               ): Set[LoopDetector.Cycles[TypeId]] = {
+      domain: Map[TypeId, DomainMember]
+    ): Set[LoopDetector.Cycles[TypeId]] = {
       val depMatrix = IncidenceMatrix(domain.view.mapValues { defn =>
         fullDepsOfDefn(defn)
       }.toMap)
@@ -155,7 +162,7 @@ object BaboonEnquiries {
 
     private def depsOfDefn(defn: DomainMember,
                            explodeField: TypeRef => Set[TypeId],
-                          ): Set[TypeId] = {
+    ): Set[TypeId] = {
       def explodeFields(f: List[Field]) = {
         f.flatMap(f => explodeField(f.tpe)).toSet
       }
@@ -254,6 +261,144 @@ object BaboonEnquiries {
         s"{${wrap(s.id)}}"
       case c: TypeRef.Constructor =>
         s"{${wrap(c.id)}${c.args.toList.map(wrap).mkString("[", ",", "]")}"
+    }
+
+    override def allRefs(defn: DomainMember): Set[TypeRef] = {
+      defn match {
+        case bi: DomainMember.Builtin =>
+          bi.id match {
+            case s: TypeId.BuiltinScalar =>
+              Set(TypeRef.Scalar(s))
+            case _: TypeId.BuiltinCollection =>
+              Set.empty
+          }
+        case u: DomainMember.User =>
+          val selfref = Set(TypeRef.Scalar(u.id))
+          val content = u.defn match {
+            case d: Typedef.Dto =>
+              d.fields.map(_.tpe).toSet
+            case d: Typedef.Contract =>
+              d.fields.map(_.tpe).toSet
+            case _: Typedef.Enum =>
+              Set.empty
+            case _: Typedef.Adt =>
+              Set.empty
+            case _: Typedef.Foreign =>
+              Set.empty
+          }
+
+          selfref ++ content
+      }
+    }
+
+    def uebaLen(dom: Map[TypeId, DomainMember], tpe: TypeRef): BinReprLen = {
+      binReprLenImpl(dom, tpe, Set.empty)
+    }
+    private def binReprLenImpl(dom: Map[TypeId, DomainMember],
+                               tpe: TypeRef,
+                               visited: Set[TypeRef]): BinReprLen = {
+      if (visited.contains(tpe)) {
+        BinReprLen.Variable
+      } else {
+        tpe match {
+          case id: TypeRef.Scalar =>
+            scalarLen(dom, id, visited + tpe)
+
+          case TypeRef.Constructor(id, args) =>
+            id match {
+              case Builtins.map => BinReprLen.Variable
+              case Builtins.lst => BinReprLen.Variable
+              case Builtins.set => BinReprLen.Variable
+              case Builtins.opt =>
+                binReprLenImpl(dom, args.head, visited + tpe).add(1)
+              case u =>
+                throw new IllegalStateException(
+                  s"BUG: unknown collection type $u"
+                )
+            }
+        }
+      }
+
+    }
+
+    private def scalarLen(dom: Map[TypeId, DomainMember],
+                          id: TypeRef.Scalar,
+                          visited: Set[TypeRef]): BinReprLen = {
+      id.id match {
+        case id: TypeId.BuiltinScalar =>
+          id match {
+            case Builtins.bit  => BinReprLen.Fixed(1)
+            case Builtins.i08  => BinReprLen.Fixed(1)
+            case Builtins.i16  => BinReprLen.Fixed(2)
+            case Builtins.i32  => BinReprLen.Fixed(4)
+            case Builtins.i64  => BinReprLen.Fixed(8)
+            case Builtins.u08  => BinReprLen.Fixed(1)
+            case Builtins.u16  => BinReprLen.Fixed(2)
+            case Builtins.u32  => BinReprLen.Fixed(4)
+            case Builtins.u64  => BinReprLen.Fixed(8)
+            case Builtins.f32  => BinReprLen.Fixed(4)
+            case Builtins.f64  => BinReprLen.Fixed(8)
+            case Builtins.f128 => BinReprLen.Fixed(16)
+            case Builtins.str  => BinReprLen.Variable
+            case Builtins.uid  => BinReprLen.Fixed(16)
+            case Builtins.tsu  => BinReprLen.Variable
+            case Builtins.tso  => BinReprLen.Variable
+            case u =>
+              throw new IllegalStateException(s"BUG: unknown scalar type $u")
+          }
+
+        case uid: TypeId.User =>
+          dom(uid) match {
+            case DomainMember.Builtin(id) =>
+              throw new IllegalStateException(
+                s"BUG: user type id $uid returned builtin type $id"
+              )
+
+            case u: DomainMember.User =>
+              u.defn match {
+                case d: Typedef.Dto =>
+                  aggregateLen(dom, d.fields, visited)
+                case d: Typedef.Contract =>
+                  // contracts should never be serialized,
+                  // but if we imagine they do,
+                  // the logic will be the same as for dtos
+                  aggregateLen(dom, d.fields, visited)
+                case _: Typedef.Enum =>
+                  BinReprLen.Fixed(1)
+                case d: Typedef.Adt =>
+                  val nested = d.members
+                    .map(id => binReprLenImpl(dom, TypeRef.Scalar(id), visited))
+                    .toSet
+                  if (nested.size == 1) {
+                    nested.head.add(1)
+                  } else {
+                    BinReprLen.Variable
+                  }
+
+                case _: Typedef.Foreign => BinReprLen.Variable
+              }
+          }
+
+      }
+    }
+
+    private def aggregateLen(dom: Map[TypeId, DomainMember],
+                             fields: List[Field],
+                             visited: Set[TypeRef],
+    ): BinReprLen = {
+      val binLens = fields.map { f =>
+        binReprLenImpl(dom, f.tpe, visited)
+      }
+
+      val fixed = binLens.collect {
+        case BinReprLen.Fixed(s) => s
+      }
+
+      if (fixed.size == fields.size) {
+        BinReprLen.Fixed(fixed.sum).add(1) // header byte
+      } else {
+        Variable
+      }
     }
 
   }
