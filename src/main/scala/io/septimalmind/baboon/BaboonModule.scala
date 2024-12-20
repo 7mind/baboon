@@ -5,7 +5,7 @@ import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*
-import io.septimalmind.baboon.translator.csharp.CSRandomMethodTranslator.CSRandomMethodTranslatorImpl
+import io.septimalmind.baboon.translator.csharp.CSCodecFixtureTranslator.CSRandomMethodTranslatorImpl
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.model.*
@@ -39,7 +39,7 @@ class BaboonModule(options: CompilerOptions,
   make[CSTypeTranslator]
   make[ScopeSupport].from[ScopeSupport.ScopeSupportImpl]
   make[CSCodecTestsTranslator].from[CSCodecTestsTranslator.Impl]
-  make[CSRandomMethodTranslator].from[CSRandomMethodTranslatorImpl]
+  make[CSCodecFixtureTranslator].from[CSRandomMethodTranslatorImpl]
 
   make[Seq[Path]].named("inputs").fromValue(inputs)
   make[Option[Path]].named("test-output").fromValue(testOutDir)

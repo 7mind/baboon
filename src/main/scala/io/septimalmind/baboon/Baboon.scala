@@ -2,7 +2,7 @@ package io.septimalmind.baboon
 
 import caseapp.*
 import distage.Injector
-import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
+import io.septimalmind.baboon.BaboonCompiler.{CompilerOptions, CompilerTargets}
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
 import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzArtifactMaterializer
@@ -43,9 +43,12 @@ case class Options(
 )
 
 sealed trait RuntimeGenOpt
+
 object RuntimeGenOpt {
   case object Only extends RuntimeGenOpt
+
   case object With extends RuntimeGenOpt
+
   case object Without extends RuntimeGenOpt
 }
 
@@ -65,9 +68,9 @@ object Baboon {
         val testOutDir = opts.testOutput.map(o => Paths.get(o))
 
         val rtOpt = opts.runtime match {
-          case Some("only")    => RuntimeGenOpt.Only
+          case Some("only") => RuntimeGenOpt.Only
           case Some("without") => RuntimeGenOpt.Without
-          case _               => RuntimeGenOpt.With
+          case _ => RuntimeGenOpt.With
         }
 
         val options = CompilerOptions(
@@ -95,26 +98,24 @@ object Baboon {
                   .filter(_.toFile.getName.endsWith(".baboon"))
               }
               val outDir = Paths.get(opts.output)
-              println(
-                s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}"
-              )
+
+              println(s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}")
               println(s"Target: ${outDir.toFile.getCanonicalPath}")
-              testOutDir.foreach { t =>
-                println(s"Test target: ${t.toFile.getCanonicalPath}")
-              }
+              testOutDir.foreach(t => println(s"Test target: ${t.toFile.getCanonicalPath}"))
 
               cleanupTargetDir(outDir) match {
                 case Left(value) =>
-                  System.err.println(
-                    s"Refusing to remove target directory, there are unexpected files: ${value.niceList()}"
-                  )
+                  System.err.println(s"Refusing to remove target directory, there are unexpected files: ${value.niceList()}")
                   System.exit(2)
+
                 case Right(_) =>
-                  compiler.run(inputModels, outDir, testOutDir) match {
+                  val targets = CompilerTargets(outDir, testOutDir)
+                  compiler.run(inputModels, targets) match {
                     case Left(value) =>
                       System.err.println("Compiler failed")
                       System.err.println(value.toList.stringifyIssues)
                       System.exit(3)
+
                     case Right(_) =>
                       println("Done")
                       System.exit(0)

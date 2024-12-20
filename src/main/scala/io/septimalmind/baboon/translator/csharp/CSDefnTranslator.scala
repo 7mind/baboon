@@ -1,9 +1,8 @@
 package io.septimalmind.baboon.translator.csharp
 
-import distage.Id
 import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.{baboonTypeCodecs, iBaboonAdtMemberMeta, iBaboonCodecData, iBaboonGenerated, iBaboonGeneratedLatest}
+import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
@@ -11,13 +10,16 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-import java.nio.file.Path
-
 trait CSDefnTranslator {
   def translate(defn: DomainMember.User,
                 domain: Domain,
                 evo: BaboonEvolution,
                ): Either[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.OutputExt]]
+
+  def translateTests(defn: DomainMember.User,
+                     domain: Domain,
+                     evo: BaboonEvolution,
+                    ): Either[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.OutputExt]]
 }
 
 object CSDefnTranslator {
@@ -25,7 +27,8 @@ object CSDefnTranslator {
   case class Output(path: String,
                     tree: TextTree[CSValue],
                     pkg: CSPackageId,
-                    isTest: Boolean)
+                    isTest: Boolean
+                   )
 
   case class OutputExt(output: Output, codecReg: TextTree[CSValue])
 
@@ -41,8 +44,7 @@ object CSDefnTranslator {
                               tools: CSDefnTools,
                               codecs: Set[CSCodecTranslator],
                               codecsTests: CSCodecTestsTranslator,
-                              randomMethodTranslator: CSRandomMethodTranslator,
-                              testOutput: Option[Path] @Id("test-output")
+                              codecsFixture: CSCodecFixtureTranslator
                             )
     extends CSDefnTranslator {
     type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
@@ -57,32 +59,26 @@ object CSDefnTranslator {
       }
     }
 
-    private def doTranslate(defn: DomainMember.User,
-                            domain: Domain,
-                            evo: BaboonEvolution,
-                           ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
-      def getOutputPath(tests: Boolean): String = {
-        val fbase = tools.basename(domain, evo, options)
-        val fsufix = if (tests) "_Tests" else ""
-        val fname = s"${defn.id.name.name.capitalize}$fsufix.cs"
-        defn.defn.id.owner match {
-          case Owner.Toplevel =>
-            s"$fbase/$fname"
-          case Owner.Ns(path) =>
-            s"$fbase/${path.map(_.name.toLowerCase).mkString(".")}-$fname"
-          case Owner.Adt(id) =>
-            s"$fbase/${id.name.name.toLowerCase}-$fname"
-        }
+    override def translateTests(defn: DomainMember.User,
+                                domain: Domain,
+                                evo: BaboonEvolution
+                               ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
+      defn.id.owner match {
+        case Owner.Adt(_) if options.csUseCompactAdtForm => Right(List.empty)
+        case _ => doTranslateTest(defn, domain, evo)
       }
+    }
 
-      val (content, reg, codecTestWithNS) =
-        makeFullRepr(defn, domain, evo, inNs = true)
-
-      val codecTestOut = codecTestWithNS.map(
+    private def doTranslateTest(defn: DomainMember.User,
+                                domain: Domain,
+                                evo: BaboonEvolution,
+                               ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
+      val codecTreeWithNs = makeTestRepr(defn, domain, evo, inNs = true)
+      val codecTestOut = codecTreeWithNs.map(
         codecTestWithNS =>
           OutputExt(
             Output(
-              getOutputPath(tests = true),
+              getOutputPath(defn, domain, evo, suffix = Some("_Tests")),
               codecTestWithNS,
               trans.toCsPkg(domain.id, domain.version, evo),
               isTest = true
@@ -91,40 +87,59 @@ object CSDefnTranslator {
           )
       )
 
-      val registrations = reg.map { case (_, reg) =>
-        q"Register(new $baboonTypeCodecs($reg));"
-      }.join("\n")
+      Right(codecTestOut.toList)
+    }
+
+
+    private def getOutputPath(defn: DomainMember.User,
+                              domain: Domain,
+                              evo: BaboonEvolution,
+                              suffix: Option[String] = None): String = {
+      val fbase = tools.basename(domain, evo, options)
+      val fname = s"${defn.id.name.name.capitalize}${suffix.getOrElse("")}.cs"
+      defn.defn.id.owner match {
+        case Owner.Toplevel =>
+          s"$fbase/$fname"
+        case Owner.Ns(path) =>
+          s"$fbase/${path.map(_.name.toLowerCase).mkString(".")}-$fname"
+        case Owner.Adt(id) =>
+          s"$fbase/${id.name.name.toLowerCase}-$fname"
+      }
+    }
+
+    private def doTranslate(defn: DomainMember.User,
+                            domain: Domain,
+                            evo: BaboonEvolution,
+                           ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
+      val (content, reg) = makeFullRepr(defn, domain, evo, inNs = true)
+
 
       // Generic codec variant have poor performance on empty JIT and il2cpp (for some reason ._.)
       // val registrations = reg.map { case (srcRef, reg) => q"Register(new $baboonTypeCodecs<${srcRef.fullyQualified}>($reg));" }.join("\n")
+      val registrations = reg.map { case (_, reg) => q"Register(new $baboonTypeCodecs($reg));" }.join("\n")
 
       Right(
         List(
-          Some(
-            OutputExt(
-              Output(
-                getOutputPath(tests = false),
-                content,
-                trans.toCsPkg(domain.id, domain.version, evo),
-                isTest = false,
-              ),
-              registrations
-            )
-          ),
-          codecTestOut
-        ).flatten
+          OutputExt(
+            Output(
+              getOutputPath(defn, domain, evo),
+              content,
+              trans.toCsPkg(domain.id, domain.version, evo),
+              isTest = false
+            ),
+            registrations
+          )
+        )
       )
     }
 
     private def makeFullRepr(defn: DomainMember.User,
                              domain: Domain,
                              evo: BaboonEvolution,
-                             inNs: Boolean): (TextTree[CSValue],
-      List[(CSType, TextTree[CSValue])],
-      Option[TextTree[CSValue]]) = {
+                             inNs: Boolean): (TextTree[CSValue], List[(CSType, TextTree[CSValue])]) = {
       val isLatestVersion = domain.version == evo.latest
 
-      def obsoletePrevious(tree: TextTree[CSValue]) = {
+      def obsoletePrevious(tree: TextTree[CSValue]): TextTree[CSValue] = {
         val hackyIsEmpty = tree.mapRender(_ => "?").isEmpty
         if (isLatestVersion || hackyIsEmpty) {
           tree
@@ -137,7 +152,7 @@ object CSDefnTranslator {
       val csTypeRef = trans.toCsTypeRefDeref(defn.id, domain, evo)
       val srcRef = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
 
-      val (defnReprBase, extraRegs, tests) = makeRepr(defn, domain, csTypeRef, isLatestVersion, evo)
+      val (defnReprBase, extraRegs) = makeRepr(defn, domain, csTypeRef, isLatestVersion, evo)
 
       val codecTrees = codecs.toList
         .flatMap(t => t.translate(defn, csTypeRef, srcRef, domain, evo).toList)
@@ -170,18 +185,27 @@ object CSDefnTranslator {
       }
 
       val allRegs = reg ++ extraRegs
-      val codecTestTrees =
-        Some(
-          codecsTests
-            .translate(defn, csTypeRef, srcRef, domain, evo)
-            .toList ++ tests
-        ).filterNot(_.isEmpty).map(_.join("\n\n"))
 
-      val codecTestWithNS = codecTestTrees.map(t =>
-        if (inNs) tools.inNs(ns.toSeq, t) else t
-      )
+      (content, allRegs)
+    }
 
-      (content, allRegs, codecTestWithNS)
+    private def makeTestRepr(defn: DomainMember.User,
+                             domain: Domain,
+                             evo: BaboonEvolution,
+                             inNs: Boolean): Option[TextTree[CSValue]] = {
+      val csTypeRef = trans.toCsTypeRefDeref(defn.id, domain, evo)
+      val srcRef = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
+      val ns = srcRef.pkg.parts
+
+      val codecTestTrees = codecsTests.translate(defn, csTypeRef, srcRef, domain, evo).toList
+      val codecsFixtureTrees = codecsFixture.translate(defn, domain, evo).toList
+
+      val allTrees = codecTestTrees ++ codecsFixtureTrees
+
+      val allTree = Some(allTrees).filterNot(_.isEmpty).map(_.join("\n\n"))
+      val allTreeWithNs = allTree.map(t => if (inNs) tools.inNs(ns.toSeq, t) else t)
+
+      allTreeWithNs
     }
 
     private def makeRepr(
@@ -190,10 +214,8 @@ object CSDefnTranslator {
                           name: CSValue.CSType,
                           isLatestVersion: Boolean,
                           evo: BaboonEvolution
-                        ): (TextTree[CSValue], List[(CSType, TextTree[CSValue])], List[TextTree[CSValue]]) = {
-      val genMarker =
-        if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
-
+                        ): (TextTree[CSValue], List[(CSType, TextTree[CSValue])]) = {
+      val genMarker = if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
       val mainMeta = tools.makeMeta(defn, domain.version, evo, isCodec = false)
       val codecMeta = codecs.map(_.codecMeta(defn, name).member)
       val meta = mainMeta ++ codecMeta
@@ -213,7 +235,7 @@ object CSDefnTranslator {
           (
             q"""public interface ${name.asName}$parents  {
                |    ${methods.shift(4).trim}
-               |}""".stripMargin, List.empty, List.empty
+               |}""".stripMargin, List.empty
           )
 
         case dto: Typedef.Dto =>
@@ -269,8 +291,6 @@ object CSDefnTranslator {
 
           val cmp = if (renderedCmps.isEmpty) q"true" else renderedCmps.join(" &&\n")
 
-          val random = if (testOutput.isDefined) randomMethodTranslator.translateDtoRandom(defn, dto, domain, evo) else None
-
           val eq = Seq(
             q"""public override int GetHashCode()
                |{
@@ -285,14 +305,14 @@ object CSDefnTranslator {
                |}
                |#nullable disable""".stripMargin)
 
-          val members = eq ++ meta ++ random
+          val members = eq ++ meta
           (
             q"""[$serializable]
                |public sealed record ${name.asName}(
                |    ${constructorArgs.shift(4).trim}
                |)$parents {
                |    ${members.join("\n\n").shift(4).trim}
-               |};""".stripMargin, List.empty, List.empty
+               |};""".stripMargin, List.empty
           )
 
         case e: Typedef.Enum =>
@@ -312,25 +332,20 @@ object CSDefnTranslator {
             q"""[$serializable]
                |public enum ${name.asName} {
                |    ${branches.shift(4).trim}
-               |}""".stripMargin, List.empty, List.empty
+               |}""".stripMargin, List.empty
           )
 
         case adt: Typedef.Adt =>
           val allParents = Seq(q"$genMarker")
           val parents = makeParents(allParents.toList)
-          val random = if (testOutput.isDefined) randomMethodTranslator.translateAdtRandom(defn, adt, domain, evo) else None
 
           if (options.csUseCompactAdtForm) {
-            val memberTrees = adt.members
-              .map { mid =>
-                domain.defs.meta.nodes.get(mid) match {
-                  case Some(mdefn: DomainMember.User) =>
-                    val (content, reg, codecTestWithNS) = makeFullRepr(mdefn, domain, evo, inNs = false)
-                    val tests = if (testOutput.isDefined) codecTestWithNS.toList else List.empty
-                    (content, reg, tests)
-                  case m => throw new RuntimeException(s"BUG: missing/wrong adt member: $mid => $m")
-                }
+            val memberTrees = adt.members.map { mid =>
+              domain.defs.meta.nodes.get(mid) match {
+                case Some(mdefn: DomainMember.User) => makeFullRepr(mdefn, domain, evo, inNs = false)
+                case m => throw new RuntimeException(s"BUG: missing/wrong adt member: $mid => $m")
               }
+            }
 
             val branches = memberTrees
               .map(_._1)
@@ -338,7 +353,7 @@ object CSDefnTranslator {
               .join("\n\n")
 
             val regs = memberTrees.map(_._2)
-            val members = meta ++ random
+            val members = meta
 
             (
               q"""public abstract record ${name.asName}$parents {
@@ -346,21 +361,18 @@ object CSDefnTranslator {
                  |
                  |    ${members.join("\n\n").shift(4).trim}
                  |}""".stripMargin,
-              regs.toList.flatten,
-              memberTrees.toList.flatMap(_._3)
+              regs.toList.flatten
             )
 
           } else {
             (
               q"""public interface ${name.asName}$parents {
-                 |    ${random.getOrElse(q"")}
                  |}""".stripMargin,
-              List.empty,
               List.empty
             )
           }
 
-        case _: Typedef.Foreign => (q"", List.empty, List.empty)
+        case _: Typedef.Foreign => (q"", List.empty)
       }
     }
 

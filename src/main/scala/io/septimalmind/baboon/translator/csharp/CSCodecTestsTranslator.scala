@@ -22,17 +22,17 @@ object CSCodecTestsTranslator {
                    logger: BLogger,
                    enquiries: BaboonEnquiries,
                    compilerOptions: CompilerOptions)
-      extends CSCodecTestsTranslator {
+    extends CSCodecTestsTranslator {
     override def translate(definition: DomainMember.User,
                            csRef: CSValue.CSType,
                            srcRef: CSValue.CSType,
                            domain: Domain,
                            evo: BaboonEvolution,
-    ): Option[TextTree[CSValue]] = {
+                          ): Option[TextTree[CSValue]] = {
 
       val codecTestName = definition.id.owner match {
         case Owner.Toplevel => srcRef.name
-        case Owner.Adt(id)  => s"${id.name.name}__${srcRef.name}"
+        case Owner.Adt(id) => s"${id.name.name}__${srcRef.name}"
         case Owner.Ns(path) =>
           s"${path.map(_.name).mkString("_")}__${srcRef.name}"
       }
@@ -43,15 +43,19 @@ object CSCodecTestsTranslator {
           .asName
 
       definition match {
-        case d if enquiries.hasForeignType(d, domain)         => None
-        case d if enquiries.isRecursiveTypedef(d, domain)     => None
+        case d if enquiries.hasForeignType(d, domain) => None
+        case d if enquiries.isRecursiveTypedef(d, domain) => None
         case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
         case _ =>
           val testClass =
-            q"""[$nunitTestFixture]
+            q"""// ReSharper disable InconsistentNaming
+               |// ReSharper disable MemberHidesStaticFromOuterClass
+               |#pragma warning disable CS0108
+               |#nullable enable
+               |
+               |[$nunitTestFixture]
                |public class $testClassName
                |{
-               |  #nullable disable
                |  ${tests(definition, srcRef, domain, evo)}
                |}
                |""".stripMargin
@@ -60,30 +64,17 @@ object CSCodecTestsTranslator {
     }
 
     private def fieldsInitialization(
-      definition: DomainMember.User,
-      srcRef: CSValue.CSType,
-      domain: Domain,
-      evolution: BaboonEvolution
-    ): TextTree[CSValue] = {
+                                      definition: DomainMember.User,
+                                      domain: Domain,
+                                      evolution: BaboonEvolution
+                                    ): TextTree[CSValue] = {
       definition.defn match {
-        case adt: Typedef.Adt =>
-          adt
-            .dataMembers(domain)
-            .map { member =>
-              val tpe = typeTranslator
-                .asCsType(adt.id, domain, evolution)
-              if (compilerOptions.csUseCompactAdtForm) {
-                q"$tpe fixture_${member.name.name.toLowerCase} = $tpe.${member.name.name}.Random();"
-              } else {
-                q"$tpe fixture_${member.name.name.toLowerCase} = $tpe.Random();"
-              }
-            }
-            .toList
-            .join("\n")
         case enum: Typedef.Enum =>
           q"var fixture = $testValuesGenerator.NextRandomEnum<${enum.id.name.name}>();"
+        case _: Typedef.Adt =>
+          q"var fixtures = ${typeTranslator.asCsType(definition.id, domain, evolution)}_Fixture.RandomAll();"
         case _ =>
-          q"var fixture = ${typeTranslator.asCsType(definition.id, domain, evolution)}.Random();"
+          q"var fixture = ${typeTranslator.asCsType(definition.id, domain, evolution)}_Fixture.Random();"
       }
     }
 
@@ -91,8 +82,8 @@ object CSCodecTestsTranslator {
                       srcRef: CSValue.CSType,
                       domain: Domain,
                       evo: BaboonEvolution,
-    ): TextTree[CSValue] = {
-      val init = fieldsInitialization(definition, srcRef, domain, evo)
+                     ): TextTree[CSValue] = {
+      val init = fieldsInitialization(definition, domain, evo)
       codecs
         .map {
           case jsonCodec: CSNSJsonCodecGenerator =>
@@ -157,34 +148,26 @@ object CSCodecTestsTranslator {
                                     srcRef: CSValue.CSType,
                                     domain: Domain,
                                     evo: BaboonEvolution,
-    ): TextTree[CSValue] = {
+                                   ): TextTree[CSValue] = {
+      def jsonTest: TextTree[CSValue.CSType] = {
+        val codecName = codec.codecName(srcRef)
+        val fieldName = q"fixture"
+        val serialized = q"${fieldName}Json"
+        val decoded = q"${fieldName}Decoded"
+        q"""var $serialized = $codecName.Instance.Encode(context, $fieldName);
+           |var $decoded = $codecName.Instance.Decode(context, $serialized);
+           |Assert.That($fieldName, Is.EqualTo($decoded));
+           |""".stripMargin
+      }
+
       definition.defn match {
         case adt: Typedef.Adt =>
-          adt
-            .dataMembers(domain)
-            .map { member =>
-              val typeRef =
-                typeTranslator.toCsTypeRefNoDeref(adt.id, domain, evo)
-              val codecName = codec.codecName(typeRef)
-              val fieldName = q"fixture_${member.name.name.toLowerCase}"
-              val serialized = q"${fieldName}_json"
-              val decoded = q"${fieldName}_decoded"
-              q"""var $serialized = $codecName.Instance.Encode(context, $fieldName);
-                 |var $decoded = $codecName.Instance.Decode(context, $serialized);
-                 |Assert.AreEqual($fieldName, $decoded);
-                 |""".stripMargin
-            }
-            .toList
-            .join("\n")
-        case _ =>
-          val codecName = codec.codecName(srcRef)
-          val fieldName = q"fixture"
-          val serialized = q"${fieldName}_json"
-          val decoded = q"${fieldName}_decoded"
-          q"""var $serialized = $codecName.Instance.Encode(context, $fieldName);
-             |var $decoded = $codecName.Instance.Decode(context, $serialized);
-             |Assert.AreEqual($fieldName, $decoded);
+          q"""foreach (var fixture in fixtures) {
+             |    ${jsonTest.shift(4).trim}
+             |}
              |""".stripMargin
+        case _ =>
+          jsonTest
       }
     }
 
@@ -193,58 +176,37 @@ object CSCodecTestsTranslator {
                                     srcRef: CSValue.CSType,
                                     domain: Domain,
                                     evo: BaboonEvolution,
-    ): TextTree[CSValue] = {
-      definition.defn match {
-        case adt: Typedef.Adt =>
-          adt
-            .dataMembers(domain)
-            .map { member =>
-              val typeRef =
-                typeTranslator.toCsTypeRefNoDeref(adt.id, domain, evo)
-              val codecName = codec.codecName(typeRef)
-              val fieldName = q"fixture_${member.name.name.toLowerCase}"
-              val serialized = q"${fieldName}_bytes"
-              val decoded = q"${fieldName}_decoded"
-              val readStream = q"${fieldName}_readMemoryStream"
-              val binaryReader = q"${fieldName}_binaryReader"
-              q"""using ($memoryStream writeMemoryStream = new $memoryStream())
-                 |{
-                 |  using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))
-                 |  {
-                 |    $codecName.Instance.Encode(context, binaryWriter, $fieldName);
-                 |  }
-                 |  writeMemoryStream.Flush();
-                 |  var $serialized = writeMemoryStream.ToArray();
-                 |  var $readStream = new MemoryStream($serialized);
-                 |  var $binaryReader = new BinaryReader($readStream);
-                 |  var $decoded = $codecName.Instance.Decode(context, $binaryReader);
-                 |  Assert.AreEqual($fieldName, $decoded);
-                 |}
-                 |""".stripMargin
-            }
-            .toList
-            .join("\n")
+                                   ): TextTree[CSValue] = {
+      def binaryTest: TextTree[CSValue.CSType] = {
+        val codecName = codec.codecName(srcRef)
+        val fieldName = q"fixture"
+        val serialized = q"${fieldName}Bytes"
+        val decoded = q"${fieldName}Decoded"
+        q"""using ($memoryStream writeMemoryStream = new $memoryStream())
+           |{
+           |    using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))
+           |    {
+           |        $codecName.Instance.Encode(context, binaryWriter, $fieldName);
+           |    }
+           |    writeMemoryStream.Flush();
+           |
+           |    var $serialized = writeMemoryStream.ToArray();
+           |    var readMemoryStream = new MemoryStream($serialized);
+           |    var binaryReader = new BinaryReader(readMemoryStream);
+           |    var $decoded = $codecName.Instance.Decode(context, binaryReader);
+           |    Assert.That($fieldName, Is.EqualTo($decoded));
+           |}
+           |""".stripMargin
+      }
 
-        case _ =>
-          val codecName = codec.codecName(srcRef)
-          val fieldName = q"fixture"
-          val serialized = q"${fieldName}_bytes"
-          val decoded = q"${fieldName}_decoded"
-          q"""using ($memoryStream writeMemoryStream = new $memoryStream())
-             |{
-             |  using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))
-             |  {
-             |    $codecName.Instance.Encode(context, binaryWriter, $fieldName);
-             |  }
-             |  writeMemoryStream.Flush();
-             |
-             |  var $serialized = writeMemoryStream.ToArray();
-             |  var readMemoryStream = new MemoryStream($serialized);
-             |  var binaryReader = new BinaryReader(readMemoryStream);
-             |  var $decoded = $codecName.Instance.Decode(context, binaryReader);
-             |  Assert.AreEqual($fieldName, $decoded);
+      definition.defn match {
+        case _: Typedef.Adt =>
+          q"""foreach (var fixture in fixtures) {
+             |    ${binaryTest.shift(4).trim}
              |}
              |""".stripMargin
+        case _ =>
+          binaryTest
       }
     }
   }
