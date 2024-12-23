@@ -8,7 +8,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 import io.septimalmind.baboon.CompilerOptions
 
 class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
-                             tools: CSDefnTools,
+                             csDomTrees: CSDomainTreeTools,
                              compilerOptions: CompilerOptions,
                              domain: Domain,
                              evo: BaboonEvolution)
@@ -17,7 +17,6 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
                          csRef: CSValue.CSType,
                          srcRef: CSValue.CSType): Option[TextTree[CSValue]] = {
 
-    val version = domain.version
     (defn.defn match {
       case d: Typedef.Dto =>
         Some(genDtoBodies(csRef, d))
@@ -51,7 +50,6 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
           defn,
           csRef,
           srcRef,
-          version,
           insulatedEnc,
           insulatedDec,
           !defn.defn.isInstanceOf[Typedef.Foreign],
@@ -62,7 +60,6 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
   private def genCodec(defn: DomainMember.User,
                        name: CSValue.CSType,
                        srcRef: CSValue.CSType,
-                       version: Version,
                        enc: TextTree[CSValue],
                        dec: TextTree[CSValue],
                        addExtensions: Boolean,
@@ -125,8 +122,8 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
        |{
        |    ${methods.join("\n\n").shift(4).trim}
        |
-       |    ${tools
-         .makeMeta(defn, version, evo, isCodec = true)
+       |    ${csDomTrees
+         .makeMeta(defn, isCodec = true)
          .join("\n")
          .shift(4)
          .trim}
@@ -494,7 +491,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
 
   override def codecMeta(defn: DomainMember.User,
                          name: CSValue.CSType): CSCodecTranslator.CodecMeta = {
-    val fix = tools.makeFix(defn, isCodec = false)
+    val fix = csDomTrees.metaMethodFlags(defn, isCodec = false)
     val member =
       q"""public$fix$iBaboonJsonCodec<$name> Codec_JSON()
          |{

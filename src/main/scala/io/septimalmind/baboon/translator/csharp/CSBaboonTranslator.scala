@@ -22,7 +22,8 @@ import izumi.fundamentals.platform.strings.TextTree.*
 class CSBaboonTranslator(trans: CSTypeTranslator,
                          handler: Subcontext[IndividualConversionHandler],
                          options: CompilerOptions,
-                         tools: CSDefnTools,
+                         csTrees: CSTreeTools,
+                         csFiles: CSFileTools,
                          translator: Subcontext[CSDefnTranslator],
 ) extends BaboonAbstractTranslator {
 
@@ -34,7 +35,6 @@ class CSBaboonTranslator(trans: CSTypeTranslator,
       translated <- doTranslate(targets, family)
       runtime <- sharedRuntime()
       testRuntime <- sharedTestRuntime(targets)
-      //      meta <- buildMeta(family)
       toRender = options.csOptions.generic.runtime match {
         case RuntimeGenOpt.Only    => runtime
         case RuntimeGenOpt.With    => runtime ++ translated ++ testRuntime
@@ -44,40 +44,24 @@ class CSBaboonTranslator(trans: CSTypeTranslator,
         val content = renderTree(o)
         (o.path, OutputFile(content, isTest = o.isTest))
       }
-      unique <- (rendered /*++ meta.map {
-        case (k, v) => (k, OutputFile(v, isTest = false))
-      }*/ ).toUniqueMap(c => NEList(BaboonIssue.NonUniqueOutputFiles(c)))
+      unique <- rendered.toUniqueMap(
+        c => NEList(BaboonIssue.NonUniqueOutputFiles(c))
+      )
     } yield {
       Sources(unique)
     }
   }
 
-  //  private def buildMeta(family: BaboonFamily): Out[List[(String, String)]] = {
-  //
-  //    val data = family.domains.toSeq.flatMap {
-  //      case (_, lineage) =>
-  //        lineage.versions.toSeq.map {
-  //          case (ver, _) =>
-  //            VersionMeta(lineage.pkg.path.mkString("."), ver.version)
-  //        }
-  //
-  //    }
-  //    val meta: OutputMeta = OutputMeta(data.toList)
-  //    val json = meta.asJson.spaces2
-  //
-  //    Right(List((s"baboon-meta.json", json)))
-  //  }
-
   private def renderTree(o: CSDefnTranslator.Output): String = {
     val alwaysAvailable: Set[CSPackageId] =
-      if (options.csOptions.disregardImplicitUsings) {
+      if (options.csOptions.csDisregardImplicitUsings) {
         Set.empty
       } else {
         Set(csSystemPkg, csCollectionsGenericPkg, csLinqPkg)
       }
 
     val forcedUses: Set[CSPackageId] =
-      if (options.csOptions.disregardImplicitUsings) {
+      if (options.csOptions.csDisregardImplicitUsings) {
         Set(csLinqPkg)
       } else {
         Set.empty
@@ -209,7 +193,7 @@ class CSBaboonTranslator(trans: CSTypeTranslator,
   private def generateMeta(domain: Domain,
                            lineage: BaboonLineage,
   ): Out[List[CSDefnTranslator.Output]] = {
-    val basename = tools.basename(domain, lineage.evolution, options)
+    val basename = csFiles.basename(domain, lineage.evolution)
     val pkg = trans.toCsPkg(domain.id, domain.version, lineage.evolution)
 
     val entries = lineage.evolution
@@ -242,7 +226,7 @@ class CSBaboonTranslator(trans: CSTypeTranslator,
          |}""".stripMargin
 
     val metaSource = Seq(metaTree).join("\n\n")
-    val meta = tools.inNs(pkg.parts.toSeq, metaSource)
+    val meta = csTrees.inNs(pkg.parts.toSeq, metaSource)
 
     val metaOutput = CSDefnTranslator.Output(
       s"$basename/BaboonMeta.cs",
@@ -321,10 +305,10 @@ class CSBaboonTranslator(trans: CSTypeTranslator,
            |    public static BaboonCodecs Instance { get { return LazyInstance.Value; } }
            |}""".stripMargin
 
-      val basename = tools.basename(domain, lineage.evolution, options)
+      val basename = csFiles.basename(domain, lineage.evolution)
 
       val runtimeSource = Seq(converter, codecs).join("\n\n")
-      val runtime = tools.inNs(pkg.parts.toSeq, runtimeSource)
+      val runtime = csTrees.inNs(pkg.parts.toSeq, runtimeSource)
       val runtimeOutput = CSDefnTranslator.Output(
         s"$basename/BaboonRuntime.cs",
         runtime,

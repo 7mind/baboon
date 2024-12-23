@@ -17,7 +17,7 @@ class IndividualConversionHandler(trans: CSTypeTranslator,
                                   srcDom: Domain @Id("source"),
                                   domain: Domain @Id("current"),
                                   rules: BaboonRuleset,
-                                  tools: CSDefnTools,
+                                  tools: CSTreeTools,
                                   evo: BaboonEvolution,
 ) {
   private val srcVer = srcDom.version

@@ -26,7 +26,7 @@ abstract class BaboonTest extends Spec1[Identity] {
             csWriteEvolutionDict = true,
             csUseCompactAdtForm = true,
             csWrappedAdtBranchCodecs = true,
-            disregardImplicitUsings = true,
+            csDisregardImplicitUsings = true,
             omitMostRecentVersionSuffixFromPaths = true,
             omitMostRecentVersionSuffixFromNamespaces = true,
           )

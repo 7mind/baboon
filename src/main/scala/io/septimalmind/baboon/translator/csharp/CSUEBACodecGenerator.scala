@@ -9,7 +9,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 import io.septimalmind.baboon.CompilerOptions
 
 class CSUEBACodecGenerator(trans: CSTypeTranslator,
-                           tools: CSDefnTools,
+                           csDomTrees: CSDomainTreeTools,
                            options: CompilerOptions,
                            domain: Domain,
                            evo: BaboonEvolution)
@@ -17,7 +17,6 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
   override def translate(defn: DomainMember.User,
                          csRef: CSValue.CSType,
                          srcRef: CSValue.CSType): Option[TextTree[CSValue]] = {
-    val version = domain.version
     (defn.defn match {
       case d: Typedef.Dto =>
         Some(genDtoBodies(csRef, d))
@@ -62,7 +61,6 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
           defn,
           csRef,
           srcRef,
-          version,
           insulatedEnc,
           insulatedDec,
           !defn.defn.isInstanceOf[Typedef.Foreign],
@@ -74,7 +72,6 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
   private def genCodec(defn: DomainMember.User,
                        name: CSValue.CSType,
                        srcRef: CSValue.CSType,
-                       version: Version,
                        enc: TextTree[CSValue],
                        dec: TextTree[CSValue],
                        addExtensions: Boolean,
@@ -172,8 +169,8 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
        |{
        |    ${methods.join("\n\n").shift(4).trim}
        |
-       |    ${tools
-         .makeMeta(defn, version, evo, isCodec = true)
+       |    ${csDomTrees
+         .makeMeta(defn, isCodec = true)
          .join("\n")
          .shift(4)
          .trim}
@@ -592,7 +589,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
 
   override def codecMeta(defn: DomainMember.User,
                          name: CSValue.CSType): CSCodecTranslator.CodecMeta = {
-    val fix = tools.makeFix(defn, isCodec = false)
+    val fix = csDomTrees.metaMethodFlags(defn, isCodec = false)
 
     val member =
       q"""public$fix$iBaboonBinCodec<$name> Codec_UEBA()

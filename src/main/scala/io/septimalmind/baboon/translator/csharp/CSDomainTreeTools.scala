@@ -6,42 +6,20 @@ import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-trait CSDefnTools {
-  def inNs(nss: Seq[String], tree: TextTree[CSValue]): TextTree[CSValue]
-
-  def basename(dom: Domain,
-               evolution: BaboonEvolution,
-               options: CompilerOptions): String = {
-    basename(
-      dom,
-      options.csOptions.omitMostRecentVersionSuffixFromPaths && evolution.latest == dom.version
-    )
-  }
-
-  def basename(dom: Domain, omitVersion: Boolean): String
-
+trait CSDomainTreeTools {
   def makeMeta(defn: DomainMember.User,
-               version: Version,
-               evo: BaboonEvolution,
                isCodec: Boolean): Seq[TextTree[CSValue]]
 
-  def makeFix(defn: DomainMember.User, isCodec: Boolean): String
+  def metaMethodFlags(defn: DomainMember.User, isCodec: Boolean): String
 }
 
-object CSDefnTools {
-  class CSDefnToolsImpl(options: CompilerOptions) extends CSDefnTools {
-    def basename(dom: Domain, omitVersion: Boolean): String = {
-      val base = dom.id.path.map(_.capitalize)
-      val segments = if (omitVersion) {
-        base
-      } else {
-        base ++ Seq(dom.version.version)
-      }
+object CSDomainTreeTools {
+  class CSDomainTreeToolsImpl(options: CompilerOptions,
+                              domain: Domain,
+                              evo: BaboonEvolution)
+      extends CSDomainTreeTools {
 
-      segments.mkString("-")
-    }
-
-    def makeFix(defn: DomainMember.User, isCodec: Boolean): String = {
+    def metaMethodFlags(defn: DomainMember.User, isCodec: Boolean): String = {
       val isNested = defn.id.owner match {
         case Owner.Adt(_) => true
         case _            => false
@@ -56,10 +34,8 @@ object CSDefnTools {
     }
 
     def makeMeta(defn: DomainMember.User,
-                 version: Version,
-                 evo: BaboonEvolution,
                  isCodec: Boolean): Seq[TextTree[CSValue]] = {
-      val fix = makeFix(defn, isCodec)
+      val fix = metaMethodFlags(defn, isCodec)
 
       val adtMethods = defn.id.owner match {
         case Owner.Adt(id) =>
@@ -71,6 +47,7 @@ object CSDefnTools {
         case _ => List.empty
       }
 
+      val version = domain.version
       val unmodifiedSince = evo.typesUnchangedSince(version)(defn.id)
 
       Seq(
@@ -87,16 +64,6 @@ object CSDefnTools {
            |public${fix}String BaboonTypeIdentifier() => BaboonTypeIdentifierValue;
            |""".stripMargin
       ) ++ adtMethods
-    }
-
-    def inNs(nss: Seq[String], tree: TextTree[CSValue]): TextTree[CSValue] = {
-      if (nss.isEmpty) {
-        tree
-      } else {
-        q"""namespace ${nss.mkString(".")} {
-           |    ${tree.shift(4).trim}
-           |}""".stripMargin
-      }
     }
   }
 }

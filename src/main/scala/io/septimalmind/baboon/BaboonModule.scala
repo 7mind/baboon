@@ -49,6 +49,7 @@ class BaboonModule(options: CompilerOptions,
       make[CSDefnTranslator].from[CSDefnTranslator.CSDefnTranslatorImpl]
       make[CSCodecTestsTranslator].from[CSCodecTestsTranslator.Impl]
       make[CSCodecFixtureTranslator].from[CSRandomMethodTranslatorImpl]
+      make[CSDomainTreeTools].from[CSDomainTreeTools.CSDomainTreeToolsImpl]
       many[CSCodecTranslator]
         .add[CSNSJsonCodecGenerator]
         .add[CSUEBACodecGenerator]
@@ -65,7 +66,8 @@ class BaboonModule(options: CompilerOptions,
 
   make[CSBaboonTranslator]
 
-  make[CSDefnTools].from[CSDefnTools.CSDefnToolsImpl]
+  make[CSTreeTools].from[CSTreeTools.CSTreeToolsImpl]
+  make[CSFileTools].from[CSFileTools.CSFileToolsImpl]
   make[CSTypeTranslator]
 
   makeSubcontext[IndividualConversionHandler]

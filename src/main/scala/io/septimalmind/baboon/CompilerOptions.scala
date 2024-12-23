@@ -8,7 +8,7 @@ final case class CSOptions(generic: GenericOptions,
                            csUseCompactAdtForm: Boolean,
                            csWrappedAdtBranchCodecs: Boolean,
                            csWriteEvolutionDict: Boolean,
-                           disregardImplicitUsings: Boolean,
+                           csDisregardImplicitUsings: Boolean,
 )
 
 final case class GenericOptions(obsoleteErrors: Boolean,

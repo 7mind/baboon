@@ -52,7 +52,7 @@ object Baboon {
             omitMostRecentVersionSuffixFromNamespaces =
               opts.csOptions.generic.omitMostRecentVersionSuffixFromNamespaces
                 .getOrElse(true),
-            disregardImplicitUsings =
+            csDisregardImplicitUsings =
               !opts.csOptions.csExcludeGlobalUsings.getOrElse(false),
             csUseCompactAdtForm =
               opts.csOptions.csUseCompactAdtForm.getOrElse(true),

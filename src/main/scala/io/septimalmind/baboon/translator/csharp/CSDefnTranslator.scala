@@ -37,7 +37,9 @@ object CSDefnTranslator {
 
   class CSDefnTranslatorImpl(options: CompilerOptions,
                              trans: CSTypeTranslator,
-                             tools: CSDefnTools,
+                             csTrees: CSTreeTools,
+                             csDomTrees: CSDomainTreeTools,
+                             csFiles: CSFileTools,
                              codecs: Set[CSCodecTranslator],
                              codecsTests: CSCodecTestsTranslator,
                              codecsFixture: CSCodecFixtureTranslator,
@@ -88,7 +90,7 @@ object CSDefnTranslator {
 
     private def getOutputPath(defn: DomainMember.User,
                               suffix: Option[String] = None): String = {
-      val fbase = tools.basename(domain, evo, options)
+      val fbase = csFiles.basename(domain, evo)
       val fname = s"${defn.id.name.name.capitalize}${suffix.getOrElse("")}.cs"
       defn.defn.id.owner match {
         case Owner.Toplevel =>
@@ -159,7 +161,7 @@ object CSDefnTranslator {
       val ns = srcRef.pkg.parts
 
       val allDefs = (defnRepr +: codecTrees).join("\n\n")
-      val content = if (inNs) tools.inNs(ns.toSeq, allDefs) else allDefs
+      val content = if (inNs) csTrees.inNs(ns.toSeq, allDefs) else allDefs
 
       val reg = defn.defn match {
         case _: Typedef.NonDataTypedef =>
@@ -201,7 +203,7 @@ object CSDefnTranslator {
 
       val allTree = Some(allTrees).filterNot(_.isEmpty).map(_.join("\n\n"))
       val allTreeWithNs =
-        allTree.map(t => if (inNs) tools.inNs(ns.toSeq, t) else t)
+        allTree.map(t => if (inNs) csTrees.inNs(ns.toSeq, t) else t)
 
       allTreeWithNs
     }
@@ -212,7 +214,8 @@ object CSDefnTranslator {
     ): (TextTree[CSValue], List[(CSType, TextTree[CSValue])]) = {
       val genMarker =
         if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
-      val mainMeta = tools.makeMeta(defn, domain.version, evo, isCodec = false)
+      val mainMeta =
+        csDomTrees.makeMeta(defn, isCodec = false)
       val codecMeta = codecs.map(_.codecMeta(defn, name).member)
       val meta = mainMeta ++ codecMeta
 
