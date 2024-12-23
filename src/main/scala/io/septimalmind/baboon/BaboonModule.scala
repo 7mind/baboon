@@ -18,6 +18,7 @@ class BaboonModule(options: CompilerOptions,
                    inputs: Seq[Path],
                    testOutDir: Option[Path])
     extends ModuleDef {
+  make[BLogger].from[BLogger.BLoggerImpl]
   make[BaboonCompiler].from[BaboonCompiler.BaboonCompilerImpl]
   make[BaboonLoader].from[BaboonLoader.BaboonLoaderImpl]
   make[CompilerOptions].fromValue(options)
@@ -28,20 +29,6 @@ class BaboonModule(options: CompilerOptions,
   make[BaboonParser].from[BaboonParser.BaboonParserImpl]
   make[BaboonTyper].from[BaboonTyper.BaboonTyperImpl]
   make[BaboonComparator].from[BaboonComparator.BaboonComparatorImpl]
-
-  make[BLogger].from[BLogger.BLoggerImpl]
-
-  many[BaboonAbstractTranslator].ref[CSBaboonTranslator]
-  make[CSBaboonTranslator]
-  make[CSDefnTools].from[CSDefnTools.CSDefnToolsImpl]
-  make[CSDefnTranslator].from[CSDefnTranslator.CSDefnTranslatorImpl]
-  make[CSTypeTranslator]
-  make[ScopeSupport].from[ScopeSupport.ScopeSupportImpl]
-  make[CSCodecTestsTranslator].from[CSCodecTestsTranslator.Impl]
-  make[CSCodecFixtureTranslator].from[CSRandomMethodTranslatorImpl]
-
-  make[Seq[Path]].named("inputs").fromValue(inputs)
-  make[Option[Path]].named("test-output").fromValue(testOutDir)
 
   makeSubcontext[BaboonTranslator]
     .localDependencies(
@@ -54,9 +41,32 @@ class BaboonModule(options: CompilerOptions,
     .withSubmodule(new ModuleDef {
       make[BaboonTranslator]
     })
-    .extractWith { (translator: BaboonTranslator) =>
-      translator
-    }
+    .extractWith((t: BaboonTranslator) => t)
+
+  makeSubcontext[CSDefnTranslator]
+    .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
+    .withSubmodule(new ModuleDef {
+      make[CSDefnTranslator].from[CSDefnTranslator.CSDefnTranslatorImpl]
+      make[CSCodecTestsTranslator].from[CSCodecTestsTranslator.Impl]
+      make[CSCodecFixtureTranslator].from[CSRandomMethodTranslatorImpl]
+      many[CSCodecTranslator]
+        .add[CSNSJsonCodecGenerator]
+        .add[CSUEBACodecGenerator]
+    })
+    .extractWith((t: CSDefnTranslator) => t)
+
+  make[ScopeSupport].from[ScopeSupport.ScopeSupportImpl]
+
+  make[Seq[Path]].named("inputs").fromValue(inputs)
+  make[Option[Path]].named("test-output").fromValue(testOutDir)
+
+  many[BaboonAbstractTranslator]
+    .ref[CSBaboonTranslator]
+
+  make[CSBaboonTranslator]
+
+  make[CSDefnTools].from[CSDefnTools.CSDefnToolsImpl]
+  make[CSTypeTranslator]
 
   makeSubcontext[IndividualConversionHandler]
     .localDependencies(
@@ -76,7 +86,4 @@ class BaboonModule(options: CompilerOptions,
       handler
     }
 
-  many[CSCodecTranslator]
-    .add[CSNSJsonCodecGenerator]
-    .add[CSUEBACodecGenerator]
 }

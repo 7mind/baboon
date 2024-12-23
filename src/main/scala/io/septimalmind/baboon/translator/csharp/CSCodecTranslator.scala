@@ -8,8 +8,6 @@ trait CSCodecTranslator {
   def translate(defn: DomainMember.User,
                 csRef: CSValue.CSType,
                 srcRef: CSValue.CSType,
-                domain: Domain,
-                evo: BaboonEvolution,
                ): Option[TextTree[CSValue]]
 
   def codecType(): CSValue.CSType

@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
+import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
@@ -9,23 +9,22 @@ import io.septimalmind.baboon.CompilerOptions
 
 class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
                              tools: CSDefnTools,
-                             compilerOptions: CompilerOptions)
+                             compilerOptions: CompilerOptions,
+                             domain: Domain,
+                             evo: BaboonEvolution)
     extends CSCodecTranslator {
   override def translate(defn: DomainMember.User,
                          csRef: CSValue.CSType,
-                         srcRef: CSValue.CSType,
-                         domain: Domain,
-                         evo: BaboonEvolution,
-  ): Option[TextTree[CSValue]] = {
+                         srcRef: CSValue.CSType): Option[TextTree[CSValue]] = {
 
     val version = domain.version
     (defn.defn match {
       case d: Typedef.Dto =>
-        Some(genDtoBodies(csRef, domain, d, evo))
+        Some(genDtoBodies(csRef, d))
       case _: Typedef.Enum =>
         Some(genEnumBodies(csRef))
       case a: Typedef.Adt =>
-        Some(genAdtBodies(csRef, a, domain))
+        Some(genAdtBodies(csRef, a))
       case _: Typedef.Foreign =>
         Some(genForeignBodies(csRef))
       case _: Typedef.Contract =>
@@ -56,7 +55,6 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
           insulatedEnc,
           insulatedDec,
           !defn.defn.isInstanceOf[Typedef.Foreign],
-          evo,
         )
     }
   }
@@ -68,7 +66,6 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
                        enc: TextTree[CSValue],
                        dec: TextTree[CSValue],
                        addExtensions: Boolean,
-                       evo: BaboonEvolution,
   ): TextTree[CSValue] = {
     val iName = q"$iBaboonJsonCodec<$name>"
     val baseMethods = List(
@@ -160,7 +157,6 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
 
   private def genAdtBodies(name: CSValue.CSType,
                            a: Typedef.Adt,
-                           domain: Domain,
   ): (TextTree[CSValue], TextTree[Nothing]) = {
 
     val branches = a.dataMembers(domain).map { m =>
@@ -232,14 +228,12 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
   }
 
   private def genDtoBodies(name: CSValue.CSType,
-                           domain: Domain,
                            d: Typedef.Dto,
-                           evo: BaboonEvolution,
   ): (TextTree[CSValue], TextTree[CSValue]) = {
     val fields = d.fields.map { f =>
       val fieldRef = q"value.${f.name.name.capitalize}"
-      val enc = mkEncoder(f.tpe, domain, fieldRef, evo)
-      val dec = mkDecoder(f.tpe, domain, q"""asObject["${f.name.name}"]""", evo)
+      val enc = mkEncoder(f.tpe, fieldRef)
+      val dec = mkDecoder(f.tpe, q"""asObject["${f.name.name}"]""")
       (
         q"""new $nsJProperty("${f.name.name}", $enc)""",
         q"${f.name.name.capitalize}: $dec",
@@ -280,12 +274,8 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
   }
 
   private def mkEncoder(tpe: TypeRef,
-                        domain: Domain,
-                        ref: TextTree[CSValue],
-                        evo: BaboonEvolution): TextTree[CSValue] = {
-    def encodeKey(tpe: TypeRef,
-                  domain: Domain,
-                  ref: TextTree[CSValue]): TextTree[CSValue] = {
+                        ref: TextTree[CSValue]): TextTree[CSValue] = {
+    def encodeKey(tpe: TypeRef, ref: TextTree[CSValue]): TextTree[CSValue] = {
       tpe.id match {
         case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
           q"$baboonTimeFormats.ToString($ref)"
@@ -329,19 +319,19 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
         c.id match {
           case TypeId.Builtins.opt =>
             if (trans.isCSValueType(c.args.head, domain)) {
-              q"!$ref.HasValue ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, domain, trans.deNull(c.args.head, domain, ref), evo)}"
+              q"!$ref.HasValue ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref))}"
             } else {
-              q"$ref == null ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, domain, trans.deNull(c.args.head, domain, ref), evo)}"
+              q"$ref == null ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref))}"
             }
 
           case TypeId.Builtins.map =>
-            val keyEnc = encodeKey(c.args.head, domain, q"e.Key")
-            val valueEnc = mkEncoder(c.args.last, domain, q"e.Value", evo)
+            val keyEnc = encodeKey(c.args.head, q"e.Key")
+            val valueEnc = mkEncoder(c.args.last, q"e.Value")
             q"new $nsJObject($ref.Select(e => new $nsJProperty($keyEnc, $valueEnc)))"
           case TypeId.Builtins.lst =>
-            q"new $nsJArray($ref.Select(e => ${mkEncoder(c.args.head, domain, q"e", evo)}))"
+            q"new $nsJArray($ref.Select(e => ${mkEncoder(c.args.head, q"e")}))"
           case TypeId.Builtins.set =>
-            q"new $nsJArray($ref.Select(e => ${mkEncoder(c.args.head, domain, q"e", evo)}))"
+            q"new $nsJArray($ref.Select(e => ${mkEncoder(c.args.head, q"e")}))"
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
@@ -349,9 +339,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
   }
 
   private def mkDecoder(tpe: TypeRef,
-                        domain: Domain,
                         ref: TextTree[CSValue],
-                        evo: BaboonEvolution,
   ): TextTree[CSValue] = {
     def mkReader(bs: TypeId.BuiltinScalar): TextTree[CSValue] = {
       val fref = q"$ref!"
@@ -391,9 +379,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
       }
     }
 
-    def decodeKey(tpe: TypeRef,
-                  domain: Domain,
-                  ref: TextTree[CSValue]): TextTree[CSValue] = {
+    def decodeKey(tpe: TypeRef, ref: TextTree[CSValue]): TextTree[CSValue] = {
       tpe.id match {
         case TypeId.Builtins.bit =>
           q"Boolean.Parse($ref)"
@@ -460,24 +446,20 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
           case TypeId.Builtins.opt if trans.isCSValueType(args.head, domain) =>
             q"""$BaboonTools.ReadNullableValueType($ref, t => ${mkDecoder(
                  args.head,
-                 domain,
                  q"t",
-                 evo
                )})""".stripMargin
 
           case TypeId.Builtins.opt =>
             q"""$BaboonTools.ReadNullableReferentialType($ref, t => ${mkDecoder(
               args.head,
-              domain,
               q"t",
-              evo,
             )})"""
 
           case TypeId.Builtins.map =>
             val keyRef = args.head
             val valueRef = args.last
-            val keyDec = decodeKey(args.head, domain, q"kv.Name")
-            val valueDec = mkDecoder(args.last, domain, q"kv.Value", evo)
+            val keyDec = decodeKey(args.head, q"kv.Name")
+            val valueDec = mkDecoder(args.last, q"kv.Value")
             q"""$ref!.Value<$nsJObject>()!.Properties().Select(kv => new $csKeyValuePair<${trans
               .asCsRef(keyRef, domain, evo)}, ${trans.asCsRef(
               valueRef,
@@ -488,17 +470,13 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator,
           case TypeId.Builtins.lst =>
             q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(
               args.head,
-              domain,
               q"e",
-              evo
             )}).ToImmutableList()"""
 
           case TypeId.Builtins.set =>
             q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(
               args.head,
-              domain,
               q"e",
-              evo
             )}).ToImmutableHashSet()"""
 
           case o =>

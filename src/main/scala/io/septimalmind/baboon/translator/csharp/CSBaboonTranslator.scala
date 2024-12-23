@@ -2,16 +2,16 @@ package io.septimalmind.baboon.translator.csharp
 
 import distage.Subcontext
 import io.septimalmind.baboon.BaboonCompiler.CompilerTargets
-import io.septimalmind.baboon.{CompilerOptions, RuntimeGenOpt}
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
-import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
+import io.septimalmind.baboon.translator.csharp.CSTypes.*
+import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.translator.{
   BaboonAbstractTranslator,
   OutputFile,
   Sources
 }
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.{CompilerOptions, RuntimeGenOpt}
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -19,11 +19,11 @@ import izumi.fundamentals.platform.resources.IzResources
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
-                         trans: CSTypeTranslator,
+class CSBaboonTranslator(trans: CSTypeTranslator,
                          handler: Subcontext[IndividualConversionHandler],
                          options: CompilerOptions,
                          tools: CSDefnTools,
+                         translator: Subcontext[CSDefnTranslator],
 ) extends BaboonAbstractTranslator {
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
@@ -166,41 +166,44 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
                               lineage: BaboonLineage,
   ): Out[List[CSDefnTranslator.Output]] = {
     val evo = lineage.evolution
-    for {
-      defnSources <- domain.defs.meta.nodes.toList.map {
-        case (_, defn: DomainMember.User) =>
-          defnTranslator.translate(defn, domain, evo)
-        case _ => Right(List.empty)
-      }.biFlatten
-
-      defnTests <- if (targets.testOutput.nonEmpty) {
-        domain.defs.meta.nodes.toList.map {
+    translator.provide(domain).provide(evo).produce().use { defnTranslator =>
+      for {
+        defnSources <- domain.defs.meta.nodes.toList.map {
           case (_, defn: DomainMember.User) =>
-            defnTranslator.translateTests(defn, domain, evo)
+            defnTranslator.translate(defn)
           case _ => Right(List.empty)
         }.biFlatten
-      } else {
-        Right(List.empty)
-      }
 
-      evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
-      conversionSources <- if (options.csOptions.generic.generateConversions) {
-        generateConversions(domain, lineage, evosToCurrent, defnSources)
-      } else {
-        Right(List.empty)
-      }
+        defnTests <- if (targets.testOutput.nonEmpty) {
+          domain.defs.meta.nodes.toList.map {
+            case (_, defn: DomainMember.User) =>
+              defnTranslator.translateTests(defn)
+            case _ => Right(List.empty)
+          }.biFlatten
+        } else {
+          Right(List.empty)
+        }
 
-      meta <- if (options.csOptions.csWriteEvolutionDict) {
-        generateMeta(domain, lineage)
-      } else {
-        Right(List.empty)
+        evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
+        conversionSources <- if (options.csOptions.generic.generateConversions) {
+          generateConversions(domain, lineage, evosToCurrent, defnSources)
+        } else {
+          Right(List.empty)
+        }
+
+        meta <- if (options.csOptions.csWriteEvolutionDict) {
+          generateMeta(domain, lineage)
+        } else {
+          Right(List.empty)
+        }
+      } yield {
+        defnSources.map(_.output) ++
+          conversionSources ++
+          meta ++
+          defnTests.map(_.output)
       }
-    } yield {
-      defnSources.map(_.output) ++
-        conversionSources ++
-        meta ++
-        defnTests.map(_.output)
     }
+
   }
 
   private def generateMeta(domain: Domain,
@@ -348,7 +351,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
       TextTree.text(
         IzResources.readAsString("baboon-runtime/cs/BaboonRuntimeShared.cs").get
       ),
-      CSBaboonTranslator.baboonRtPkg,
+      CSTypes.baboonRtPkg,
       isTest = false
     )
 
@@ -357,7 +360,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
       TextTree.text(
         IzResources.readAsString("baboon-runtime/cs/BaboonTime.cs").get
       ),
-      CSBaboonTranslator.baboonTimePkg,
+      CSTypes.baboonTimePkg,
       isTest = false
     )
 
@@ -378,7 +381,7 @@ class CSBaboonTranslator(defnTranslator: CSDefnTranslator,
               .readAsString("baboon-runtime/cs/BaboonTestRuntimeShared.cs")
               .get
           ),
-          CSBaboonTranslator.baboonTestRtPkg,
+          CSTypes.baboonTestRtPkg,
           isTest = true
         )
       )
@@ -394,209 +397,4 @@ object CSBaboonTranslator {
                                 missing: Option[TextTree[CSValue]],
   )
 
-  // Baboon packages
-  val baboonRtPkg: CSPackageId = CSPackageId(
-    NEList("Baboon", "Runtime", "Shared")
-  )
-  val baboonTestRtPkg: CSPackageId = CSPackageId(
-    NEList("Baboon", "Test", "Runtime", "Shared")
-  )
-  val baboonTimePkg: CSPackageId = CSPackageId(NEList("Baboon", "Time"))
-
-  // System packages
-  val csSystemPkg: CSPackageId = CSPackageId(NEList("System"))
-  val csGlobalizationPkg: CSPackageId = CSPackageId(
-    NEList("System", "Globalization")
-  )
-  val csCollectionsGenericPkg: CSPackageId = CSPackageId(
-    NEList("System", "Collections", "Generic")
-  )
-  val csCollectionsImmutablePkg: CSPackageId = CSPackageId(
-    NEList("System", "Collections", "Immutable")
-  )
-  val csLinqPkg: CSPackageId = CSPackageId(NEList("System", "Linq"))
-  val csIoPkg: CSPackageId = CSPackageId(NEList("System", "IO"))
-  val csTextPkg: CSPackageId = CSPackageId(NEList("System.Text"))
-  val csDiagnosticsPkg: CSPackageId = CSPackageId(
-    NEList("System", "Diagnostics")
-  )
-
-  // Newtonsoft packages
-  val nsPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json"))
-  val nsLinqPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json", "Linq"))
-  val nunitPkg: CSPackageId = CSPackageId(NEList("NUnit", "Framework"))
-
-  // Nunit types
-  val nunitTestFixture: CSType =
-    CSType(nunitPkg, "TestFixture", fq = false)
-  val nunitOneTimeSetUp: CSType =
-    CSType(nunitPkg, "OneTimeSetUp", fq = false)
-  val testValuesGenerator: CSType =
-    CSType(baboonTestRtPkg, "RVG", fq = false)
-
-  // Baboon conversions' types
-  val abstractConversion: CSType =
-    CSType(baboonRtPkg, "AbstractConversion", fq = false)
-  val abstractBaboonConversions: CSType =
-    CSType(baboonRtPkg, "AbstractBaboonConversions", fq = false)
-  val iBaboonGenerated: CSType =
-    CSType(baboonRtPkg, "IBaboonGenerated", fq = false)
-  val iBaboonAdtMemberMeta: CSType =
-    CSType(baboonRtPkg, "IBaboonAdtMemberMeta", fq = false)
-  val iBaboonGeneratedLatest: CSType =
-    CSType(baboonRtPkg, "IBaboonGeneratedLatest", fq = false)
-  val BaboonTools: CSType =
-    CSType(baboonRtPkg, "BaboonTools", fq = false)
-
-  // Baboon codec types
-  val iBaboonCodecData: CSType =
-    CSType(baboonRtPkg, "IBaboonCodecData", fq = false)
-  val iBaboonBinCodecIndexed: CSType =
-    CSType(baboonRtPkg, "IBaboonBinCodecIndexed", fq = false)
-  val baboonCodecContext: CSType =
-    CSType(baboonRtPkg, "BaboonCodecContext", fq = false)
-  val iBaboonCodec: CSType =
-    CSType(baboonRtPkg, "IBaboonCodec", fq = false)
-  val iBaboonValueCodec: CSType =
-    CSType(baboonRtPkg, "IBaboonValueCodec", fq = false)
-  val iBaboonStreamCodec: CSType =
-    CSType(baboonRtPkg, "IBaboonStreamCodec", fq = false)
-
-  val iBaboonJsonCodec: CSType =
-    CSType(baboonRtPkg, "IBaboonJsonCodec", fq = false)
-  val iBaboonBinCodec: CSType =
-    CSType(baboonRtPkg, "IBaboonBinCodec", fq = false)
-  val iBaboonTypeCodecs: CSType =
-    CSType(baboonRtPkg, "IBaboonTypeCodecs", fq = false)
-  val baboonTypeCodecs: CSType =
-    CSType(baboonRtPkg, "BaboonTypeCodecs", fq = false)
-  val abstractBaboonCodecs: CSType =
-    CSType(baboonRtPkg, "AbstractBaboonCodecs", fq = false)
-
-  val baboonTimeFormats: CSType =
-    CSType(baboonTimePkg, "BaboonDateTimeFormats", fq = false)
-
-  val iBaboonMeta: CSType =
-    CSType(baboonRtPkg, "IBaboonMeta", fq = false)
-
-  // Baboon type
-  val rpDateTime: CSType =
-    CSType(baboonTimePkg, "RpDateTime", fq = false)
-
-  // Newtonsoft types
-  val nsJsonWriter: CSType =
-    CSType(nsPkg, "JsonWriter", fq = false)
-  val nsJsonReader: CSType =
-    CSType(nsPkg, "JsonReader", fq = false)
-  val nsJsonSerializer: CSType =
-    CSType(nsPkg, "JsonSerializer", fq = false)
-  val nsJsonConverter: CSType =
-    CSType(nsPkg, "JsonConverter", fq = false)
-  val nsFormatting: CSType =
-    CSType(nsPkg, "Formatting", fq = false)
-  val nsJToken: CSType =
-    CSType(nsLinqPkg, "JToken", fq = false)
-  val nsJValue: CSType =
-    CSType(nsLinqPkg, "JValue", fq = false)
-  val nsJArray: CSType =
-    CSType(nsLinqPkg, "JArray", fq = false)
-  val nsJObject: CSType =
-    CSType(nsLinqPkg, "JObject", fq = false)
-  val nsJProperty: CSType =
-    CSType(nsLinqPkg, "JProperty", fq = false)
-  val nsJTokenType: CSType =
-    CSType(nsLinqPkg, "JTokenType", fq = false)
-
-  val binaryReader: CSType =
-    CSType(csIoPkg, "BinaryReader", fq = false)
-  val binaryWriter: CSType =
-    CSType(csIoPkg, "BinaryWriter", fq = false)
-  val memoryStream: CSType =
-    CSType(csIoPkg, "MemoryStream", fq = false)
-
-  // C# types
-  val csString: CSType =
-    CSType(csSystemPkg, "String", fq = false)
-  val csGuid: CSType =
-    CSType(csSystemPkg, "Guid", fq = false)
-  val csBoolean: CSType =
-    CSType(csSystemPkg, "Boolean", fq = false)
-  val csStringBuilder: CSType =
-    CSType(csTextPkg, "StringBuilder", fq = false)
-
-  val csSByte: CSType =
-    CSType(csSystemPkg, "sbyte", fq = false)
-  val csInt16: CSType =
-    CSType(csSystemPkg, "Int16", fq = false)
-  val csInt32: CSType =
-    CSType(csSystemPkg, "Int32", fq = false)
-  val csInt64: CSType =
-    CSType(csSystemPkg, "Int64", fq = false)
-
-  val csByte: CSType =
-    CSType(csSystemPkg, "byte", fq = false)
-  val csUInt16: CSType =
-    CSType(csSystemPkg, "UInt16", fq = false)
-  val csUInt32: CSType =
-    CSType(csSystemPkg, "UInt32", fq = false)
-  val csUInt64: CSType =
-    CSType(csSystemPkg, "UInt64", fq = false)
-
-  val csSingle: CSType =
-    CSType(csSystemPkg, "Single", fq = false)
-  val csDouble: CSType =
-    CSType(csSystemPkg, "Double", fq = false)
-  val csDecimal: CSType =
-    CSType(csSystemPkg, "Decimal", fq = false)
-
-  val csTpe: CSType =
-    CSType(csSystemPkg, "Type", fq = false)
-  val csLazy: CSType =
-    CSType(csSystemPkg, "Lazy", fq = false)
-  val csList: CSType =
-    CSType(csCollectionsGenericPkg, "List", fq = false)
-  val csDict: CSType =
-    CSType(csCollectionsGenericPkg, "Dictionary", fq = false)
-  val csSet: CSType =
-    CSType(csCollectionsGenericPkg, "HashSet", fq = false)
-  val csEnum: CSType =
-    CSType(csSystemPkg, "Enum", fq = false)
-  val csDateTime: CSType =
-    CSType(csSystemPkg, "DateTime", fq = false)
-  val csTimeSpan: CSType =
-    CSType(csSystemPkg, "TimeSpan", fq = false)
-  val csDayOfWeek: CSType =
-    CSType(csSystemPkg, "DayOfWeek", fq = false)
-  val csArgumentException: CSType =
-    CSType(csSystemPkg, "ArgumentException", fq = false)
-  val csEnumerable: CSType =
-    CSType(csLinqPkg, "Enumerable", fq = false)
-  val csRandom: CSType =
-    CSType(csSystemPkg, "Random", fq = false)
-  val csIComparable: CSType =
-    CSType(csSystemPkg, "IComparable", fq = false)
-  val csIEquatable: CSType =
-    CSType(csSystemPkg, "IEquatable", fq = false)
-
-  val csImmutableDictionary: CSType =
-    CSType(csCollectionsImmutablePkg, "ImmutableDictionary", fq = false)
-  val csImmutableList: CSType =
-    CSType(csCollectionsImmutablePkg, "ImmutableList", fq = false)
-  val csImmutableHashSet: CSType =
-    CSType(csCollectionsImmutablePkg, "ImmutableHashSet", fq = false)
-
-  val csKeyValuePair: CSType =
-    CSType(csCollectionsGenericPkg, "KeyValuePair", fq = false)
-
-  val csInvariantCulture: CSType =
-    CSType(csGlobalizationPkg, "CultureInfo", fq = false)
-  val csDateTimeStyles: CSType =
-    CSType(csGlobalizationPkg, "DateTimeStyles", fq = false)
-  val csDateTimeKind: CSType =
-    CSType(csSystemPkg, "DateTimeKind", fq = false)
-  val csTimeZoneInfo: CSType =
-    CSType(csSystemPkg, "TimeZoneInfo", fq = false)
-
-  val debug: CSType =
-    CSType(csDiagnosticsPkg, "Debug", fq = false)
 }

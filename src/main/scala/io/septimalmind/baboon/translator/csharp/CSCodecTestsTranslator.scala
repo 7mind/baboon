@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerOptions
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
+import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BLogger
@@ -11,9 +11,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 trait CSCodecTestsTranslator {
   def translate(definition: DomainMember.User,
                 csRef: CSValue.CSType,
-                srcRef: CSValue.CSType,
-                domain: Domain,
-                evo: BaboonEvolution): Option[TextTree[CSValue]]
+                srcRef: CSValue.CSType): Option[TextTree[CSValue]]
 }
 
 object CSCodecTestsTranslator {
@@ -21,13 +19,13 @@ object CSCodecTestsTranslator {
                    typeTranslator: CSTypeTranslator,
                    logger: BLogger,
                    enquiries: BaboonEnquiries,
-                   compilerOptions: CompilerOptions)
-      extends CSCodecTestsTranslator {
+                   compilerOptions: CompilerOptions,
+                   domain: Domain,
+                   evo: BaboonEvolution,
+  ) extends CSCodecTestsTranslator {
     override def translate(definition: DomainMember.User,
                            csRef: CSValue.CSType,
                            srcRef: CSValue.CSType,
-                           domain: Domain,
-                           evo: BaboonEvolution,
     ): Option[TextTree[CSValue]] = {
 
       val codecTestName = definition.id.owner match {
@@ -56,7 +54,7 @@ object CSCodecTestsTranslator {
                |[$nunitTestFixture]
                |public class $testClassName
                |{
-               |  ${tests(definition, srcRef, domain, evo)}
+               |  ${tests(definition, srcRef)}
                |}
                |""".stripMargin
           Some(testClass)
@@ -79,10 +77,7 @@ object CSCodecTestsTranslator {
     }
 
     private def tests(definition: DomainMember.User,
-                      srcRef: CSValue.CSType,
-                      domain: Domain,
-                      evo: BaboonEvolution,
-    ): TextTree[CSValue] = {
+                      srcRef: CSValue.CSType): TextTree[CSValue] = {
       val init = fieldsInitialization(definition, domain, evo)
       codecs
         .map {

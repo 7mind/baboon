@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerOptions
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.csString
+import io.septimalmind.baboon.translator.csharp.CSTypes.csString
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -46,11 +46,12 @@ object CSDefnTools {
         case Owner.Adt(_) => true
         case _            => false
       }
-      val fix = if (options.csOptions.csUseCompactAdtForm && !isCodec && isNested) {
-        " new "
-      } else {
-        " "
-      }
+      val fix =
+        if (options.csOptions.csUseCompactAdtForm && !isCodec && isNested) {
+          " new "
+        } else {
+          " "
+        }
       fix
     }
 
