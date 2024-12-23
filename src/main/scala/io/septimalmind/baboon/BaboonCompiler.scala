@@ -66,7 +66,6 @@ object BaboonCompiler {
                   case (ver, _) =>
                     VersionMeta(lineage.pkg.path.mkString("."), ver.version)
                 }
-
             }
 
             val out =

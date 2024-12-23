@@ -2,8 +2,9 @@ package io.septimalmind.baboon
 
 import caseapp.*
 import distage.Injector
-import io.septimalmind.baboon.BaboonCompiler.{CompilerTargets}
+import io.septimalmind.baboon.BaboonCompiler.CompilerTargets
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
+import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzArtifactMaterializer
 import izumi.fundamentals.platform.strings.IzString.*
@@ -63,6 +64,13 @@ object Baboon {
           )
         )
 
+        val safeToRemove = NEList.from(opts.extAllowCleanup) match {
+          case Some(value) =>
+            value.toSet
+          case None =>
+            Set("meta", "cs", "json")
+        }
+
         Injector
           .NoCycles()
           .produceRun(new BaboonModule(options, inputPaths, testOutDir)) {
@@ -84,10 +92,13 @@ object Baboon {
                 t => println(s"Test target: ${t.toFile.getCanonicalPath}")
               )
 
-              cleanupTargetDir(outDir) match {
+              cleanupTargetDir(safeToRemove, outDir) match {
                 case Left(value) =>
                   System.err.println(
                     s"Refusing to remove target directory, there are unexpected files: ${value.niceList()}"
+                  )
+                  System.err.println(
+                    s"Extensions allowed for removal: ${safeToRemove.mkString(", ")}"
                   )
                   System.exit(2)
 
@@ -110,16 +121,16 @@ object Baboon {
     }
   }
 
-  private def cleanupTargetDir(outDir: Path): Either[Seq[Path], Unit] = {
+  private def cleanupTargetDir(safeToRemove: Set[String], outDir: Path) = {
     if (outDir.toFile.exists()) {
       val unexpectedFiles = IzFiles
         .walk(outDir.toFile)
         .filter { p =>
           val f = p.toFile
-          !f.isDirectory && !(f.getName.endsWith(".cs") ||
-            f.getName.endsWith(".json") ||
-            f.getName.endsWith(".meta") || // TODO: CLI parameter
-            f.getName.startsWith("."))
+          !f.isDirectory && !(
+            f.getName.startsWith(".") ||
+              safeToRemove.exists(ext => f.getName.endsWith(s".$ext"))
+          )
         }
         .toSeq
 
