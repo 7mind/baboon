@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
+import io.septimalmind.baboon.CompilerOptions
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.csString
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
@@ -14,7 +14,7 @@ trait CSDefnTools {
                options: CompilerOptions): String = {
     basename(
       dom,
-      options.omitMostRecentVersionSuffixFromPaths && evolution.latest == dom.version
+      options.csOptions.omitMostRecentVersionSuffixFromPaths && evolution.latest == dom.version
     )
   }
 
@@ -46,7 +46,7 @@ object CSDefnTools {
         case Owner.Adt(_) => true
         case _            => false
       }
-      val fix = if (options.csUseCompactAdtForm && !isCodec && isNested) {
+      val fix = if (options.csOptions.csUseCompactAdtForm && !isCodec && isNested) {
         " new "
       } else {
         " "

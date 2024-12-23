@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
+import io.septimalmind.baboon.CompilerOptions
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
@@ -22,17 +22,17 @@ object CSCodecTestsTranslator {
                    logger: BLogger,
                    enquiries: BaboonEnquiries,
                    compilerOptions: CompilerOptions)
-    extends CSCodecTestsTranslator {
+      extends CSCodecTestsTranslator {
     override def translate(definition: DomainMember.User,
                            csRef: CSValue.CSType,
                            srcRef: CSValue.CSType,
                            domain: Domain,
                            evo: BaboonEvolution,
-                          ): Option[TextTree[CSValue]] = {
+    ): Option[TextTree[CSValue]] = {
 
       val codecTestName = definition.id.owner match {
         case Owner.Toplevel => srcRef.name
-        case Owner.Adt(id) => s"${id.name.name}__${srcRef.name}"
+        case Owner.Adt(id)  => s"${id.name.name}__${srcRef.name}"
         case Owner.Ns(path) =>
           s"${path.map(_.name).mkString("_")}__${srcRef.name}"
       }
@@ -43,8 +43,8 @@ object CSCodecTestsTranslator {
           .asName
 
       definition match {
-        case d if enquiries.hasForeignType(d, domain) => None
-        case d if enquiries.isRecursiveTypedef(d, domain) => None
+        case d if enquiries.hasForeignType(d, domain)         => None
+        case d if enquiries.isRecursiveTypedef(d, domain)     => None
         case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
         case _ =>
           val testClass =
@@ -64,10 +64,10 @@ object CSCodecTestsTranslator {
     }
 
     private def fieldsInitialization(
-                                      definition: DomainMember.User,
-                                      domain: Domain,
-                                      evolution: BaboonEvolution
-                                    ): TextTree[CSValue] = {
+      definition: DomainMember.User,
+      domain: Domain,
+      evolution: BaboonEvolution
+    ): TextTree[CSValue] = {
       definition.defn match {
         case enum: Typedef.Enum =>
           q"var fixture = $testValuesGenerator.NextRandomEnum<${enum.id.name.name}>();"
@@ -82,18 +82,18 @@ object CSCodecTestsTranslator {
                       srcRef: CSValue.CSType,
                       domain: Domain,
                       evo: BaboonEvolution,
-                     ): TextTree[CSValue] = {
+    ): TextTree[CSValue] = {
       val init = fieldsInitialization(definition, domain, evo)
       codecs
         .map {
           case jsonCodec: CSNSJsonCodecGenerator =>
             val body =
-              jsonCodecAssertions(jsonCodec, definition, srcRef, domain, evo)
+              jsonCodecAssertions(jsonCodec, definition, srcRef)
 
             q"""[Test]
                |public void jsonCodecTest()
                |{
-               |    for (int i = 0; i < 500; i++)
+               |    for (int i = 0; i < ${compilerOptions.csOptions.generic.codecTestIterations.toString}; i++)
                |    {
                |        jsonCodecTestImpl($baboonCodecContext.Default);
                |    }
@@ -106,12 +106,12 @@ object CSCodecTestsTranslator {
                |""".stripMargin
           case uebaCodec: CSUEBACodecGenerator =>
             val body =
-              uebaCodecAssertions(uebaCodec, definition, srcRef, domain, evo)
+              uebaCodecAssertions(uebaCodec, definition, srcRef)
 
             q"""[Test]
                |public void uebaCodecTestNoIndex()
                |{
-               |    for (int i = 0; i < 500; i++)
+               |    for (int i = 0; i < ${compilerOptions.csOptions.generic.codecTestIterations.toString}; i++)
                |    {
                |        uebaCodecTestImpl($baboonCodecContext.Compact);
                |    }
@@ -120,7 +120,7 @@ object CSCodecTestsTranslator {
                |[Test]
                |public void uebaCodecTestIndexed()
                |{
-               |    for (int i = 0; i < 500; i++)
+               |    for (int i = 0; i < ${compilerOptions.csOptions.generic.codecTestIterations.toString}; i++)
                |    {
                |        uebaCodecTestImpl($baboonCodecContext.Indexed);
                |    }
@@ -146,9 +146,7 @@ object CSCodecTestsTranslator {
     private def jsonCodecAssertions(codec: CSNSJsonCodecGenerator,
                                     definition: DomainMember.User,
                                     srcRef: CSValue.CSType,
-                                    domain: Domain,
-                                    evo: BaboonEvolution,
-                                   ): TextTree[CSValue] = {
+    ): TextTree[CSValue] = {
       def jsonTest: TextTree[CSValue.CSType] = {
         val codecName = codec.codecName(srcRef)
         val fieldName = q"fixture"
@@ -161,7 +159,7 @@ object CSCodecTestsTranslator {
       }
 
       definition.defn match {
-        case adt: Typedef.Adt =>
+        case _: Typedef.Adt =>
           q"""foreach (var fixture in fixtures) {
              |    ${jsonTest.shift(4).trim}
              |}
@@ -174,9 +172,7 @@ object CSCodecTestsTranslator {
     private def uebaCodecAssertions(codec: CSUEBACodecGenerator,
                                     definition: DomainMember.User,
                                     srcRef: CSValue.CSType,
-                                    domain: Domain,
-                                    evo: BaboonEvolution,
-                                   ): TextTree[CSValue] = {
+    ): TextTree[CSValue] = {
       def binaryTest: TextTree[CSValue.CSType] = {
         val codecName = codec.codecName(srcRef)
         val fieldName = q"fixture"

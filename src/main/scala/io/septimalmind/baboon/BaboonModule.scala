@@ -1,7 +1,6 @@
 package io.septimalmind.baboon
 
 import distage.{DIKey, ModuleDef}
-import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*
@@ -18,7 +17,7 @@ import java.nio.file.Path
 class BaboonModule(options: CompilerOptions,
                    inputs: Seq[Path],
                    testOutDir: Option[Path])
-  extends ModuleDef {
+    extends ModuleDef {
   make[BaboonCompiler].from[BaboonCompiler.BaboonCompilerImpl]
   make[BaboonLoader].from[BaboonLoader.BaboonLoaderImpl]
   make[CompilerOptions].fromValue(options)

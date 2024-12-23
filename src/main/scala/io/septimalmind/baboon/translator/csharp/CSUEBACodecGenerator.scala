@@ -1,11 +1,12 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
+
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+import io.septimalmind.baboon.CompilerOptions
 
 class CSUEBACodecGenerator(trans: CSTypeTranslator,
                            tools: CSDefnTools,
@@ -211,7 +212,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
 
         val castedName = branchName.toLowerCase
 
-        val encBody = if (options.csWrappedAdtBranchCodecs) {
+        val encBody = if (options.csOptions.csWrappedAdtBranchCodecs) {
           q"""$cName.Instance.Encode(ctx, writer, $castedName);"""
         } else {
           q"""writer.Write((byte)${idx.toString});
@@ -219,7 +220,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
            """.stripMargin
         }
 
-        val decBody = if (options.csWrappedAdtBranchCodecs) {
+        val decBody = if (options.csOptions.csWrappedAdtBranchCodecs) {
           q"""return (($cName)$cName.Instance).DecodeBranch(ctx, wire);"""
         } else {
           q"""return $cName.Instance.Decode(ctx, wire);"""
@@ -280,7 +281,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
   ): Option[TextTree[CSValue]] = {
 
     d.id.owner match {
-      case Owner.Adt(_) if options.csWrappedAdtBranchCodecs =>
+      case Owner.Adt(_) if options.csOptions.csWrappedAdtBranchCodecs =>
         val fields = fieldsOf(domain, d, evo)
         Some(dtoDec(name, fields.map({ case (a, b, _) => (a, b) })))
       case _ =>
@@ -333,7 +334,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
     }
 
     val enc = d.id.owner match {
-      case Owner.Adt(id) if options.csWrappedAdtBranchCodecs =>
+      case Owner.Adt(id) if options.csOptions.csWrappedAdtBranchCodecs =>
         val idx = adtBranchIndex(id)
 
         q"""writer.Write((byte)${idx.toString});
@@ -342,7 +343,7 @@ class CSUEBACodecGenerator(trans: CSTypeTranslator,
     }
 
     val dec = d.id.owner match {
-      case Owner.Adt(id) if options.csWrappedAdtBranchCodecs =>
+      case Owner.Adt(id) if options.csOptions.csWrappedAdtBranchCodecs =>
         val idx = adtBranchIndex(id)
 
         q"""byte marker = wire.ReadByte();

@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.tests
 
 import distage.plugins.PluginBase
-import io.septimalmind.baboon.{BaboonCompiler, BaboonModule, RuntimeGenOpt}
+import io.septimalmind.baboon.*
 import izumi.distage.plugins.PluginConfig
 import izumi.distage.testkit.model.TestConfig
 import izumi.distage.testkit.scalatest.Spec1
@@ -13,18 +13,23 @@ abstract class BaboonTest extends Spec1[Identity] {
   override protected def config: TestConfig = super.config.copy(
     pluginConfig = PluginConfig.const(
       new BaboonModule(
-        BaboonCompiler.CompilerOptions(
+        CompilerOptions(
           debug = false,
-          obsoleteErrors = false,
-          runtime = RuntimeGenOpt.With,
-          generateConversions = true,
-          disregardImplicitUsings = true,
-          omitMostRecentVersionSuffixFromPaths = true,
-          omitMostRecentVersionSuffixFromNamespaces = true,
-          csUseCompactAdtForm = true,
-          csWrappedAdtBranchCodecs = true,
-          metaWriteEvolutionJsonTo = None,
-          csWriteEvolutionDict = true,
+          csOptions = CSOptions(
+            generic = GenericOptions(
+              obsoleteErrors = false,
+              runtime = RuntimeGenOpt.With,
+              generateConversions = true,
+              codecTestIterations = 500,
+              metaWriteEvolutionJsonTo = None,
+            ),
+            csWriteEvolutionDict = true,
+            csUseCompactAdtForm = true,
+            csWrappedAdtBranchCodecs = true,
+            disregardImplicitUsings = true,
+            omitMostRecentVersionSuffixFromPaths = true,
+            omitMostRecentVersionSuffixFromNamespaces = true,
+          )
         ),
         Seq(Paths.get("./src/test/resources/baboon")),
         None,

@@ -2,7 +2,7 @@ package io.septimalmind.baboon
 
 import caseapp.*
 import distage.Injector
-import io.septimalmind.baboon.BaboonCompiler.{CompilerOptions, CompilerTargets}
+import io.septimalmind.baboon.BaboonCompiler.{CompilerTargets}
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
 import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzArtifactMaterializer
@@ -10,82 +10,59 @@ import izumi.fundamentals.platform.strings.IzString.*
 
 import java.nio.file.{Path, Paths}
 
-case class Options(
-  model: List[String],
-  modelDir: List[String],
-  output: String,
-  testOutput: Option[String],
-  debug: Option[Boolean],
-  @HelpMessage(
-    "generate shared runtime classes and evolution registrations, default is `with`"
-  )
-  @ValueDescription("with|only|without")
-  runtime: Option[String],
-  @HelpMessage("disable conversions (default is `false`)")
-  disableConversions: Option[Boolean],
-  @HelpMessage(
-    "generate obsolete errors instead of deprecations (default is `false`)"
-  )
-  csObsoleteErrors: Option[Boolean],
-  @HelpMessage(
-    "do not generate usings for System, System.Collections.Generic and System.Linq (see ImplicitUsings)"
-  )
-  csExcludeGlobalUsings: Option[Boolean],
-  omitMostRecentVersionSuffixFromPaths: Option[Boolean],
-  omitMostRecentVersionSuffixFromNamespaces: Option[Boolean],
-  csUseCompactAdtForm: Option[Boolean],
-  @HelpMessage(
-    "Every ADT branch will encode ADT metadata and expect it in the decoder"
-  )
-  csWrappedAdtBranchCodecs: Option[Boolean],
-  metaWriteEvolutionJson: Option[String],
-  csWriteEvolutionDict: Option[Boolean],
-)
-
-sealed trait RuntimeGenOpt
-
-object RuntimeGenOpt {
-  case object Only extends RuntimeGenOpt
-
-  case object With extends RuntimeGenOpt
-
-  case object Without extends RuntimeGenOpt
-}
-
 object Baboon {
   def main(args: Array[String]): Unit = {
     val artifact = implicitly[IzArtifactMaterializer]
     println(s"Baboon ${artifact.get.shortInfo}")
 
-    CaseApp.parse[Options](args.toSeq) match {
+    CaseApp.parse[CLIOptions](args.toSeq) match {
       case Left(value) =>
         System.err.println(value.message)
-        CaseApp.printHelp[Options]()
+        CaseApp.printHelp[CLIOptions]()
         System.exit(1)
       case Right(value) =>
         val opts = value._1
         val inputPaths = opts.modelDir.map(s => Paths.get(s))
-        val testOutDir = opts.testOutput.map(o => Paths.get(o))
+        val testOutDir =
+          opts.csOptions.generic.testOutput.map(o => Paths.get(o))
 
-        val rtOpt = opts.runtime match {
-          case Some("only") => RuntimeGenOpt.Only
+        val rtOpt = opts.csOptions.generic.runtime match {
+          case Some("only")    => RuntimeGenOpt.Only
           case Some("without") => RuntimeGenOpt.Without
-          case _ => RuntimeGenOpt.With
+          case _               => RuntimeGenOpt.With
         }
 
         val options = CompilerOptions(
-          opts.debug.getOrElse(false),
-          opts.csObsoleteErrors.getOrElse(false),
-          rtOpt,
-          !opts.disableConversions.getOrElse(false),
-          !opts.csExcludeGlobalUsings.getOrElse(false),
-          opts.omitMostRecentVersionSuffixFromPaths.getOrElse(true),
-          opts.omitMostRecentVersionSuffixFromNamespaces.getOrElse(true),
-          opts.csUseCompactAdtForm.getOrElse(true),
-          opts.csWrappedAdtBranchCodecs.getOrElse(false),
-          opts.metaWriteEvolutionJson.map(s => Paths.get(s)),
-          opts.csWriteEvolutionDict.getOrElse(false),
+          debug = opts.debug.getOrElse(false),
+          csOptions = CSOptions(
+            GenericOptions(
+              obsoleteErrors = opts.csOptions.csObsoleteErrors.getOrElse(false),
+              runtime = rtOpt,
+              generateConversions =
+                !opts.csOptions.generic.disableConversions.getOrElse(false),
+              metaWriteEvolutionJsonTo =
+                opts.csOptions.generic.metaWriteEvolutionJson
+                  .map(s => Paths.get(s)),
+              codecTestIterations =
+                opts.csOptions.generic.codecTestIterations.getOrElse(500),
+            ),
+            omitMostRecentVersionSuffixFromPaths =
+              opts.csOptions.generic.omitMostRecentVersionSuffixFromPaths
+                .getOrElse(true),
+            omitMostRecentVersionSuffixFromNamespaces =
+              opts.csOptions.generic.omitMostRecentVersionSuffixFromNamespaces
+                .getOrElse(true),
+            disregardImplicitUsings =
+              !opts.csOptions.csExcludeGlobalUsings.getOrElse(false),
+            csUseCompactAdtForm =
+              opts.csOptions.csUseCompactAdtForm.getOrElse(true),
+            csWrappedAdtBranchCodecs =
+              opts.csOptions.csWrappedAdtBranchCodecs.getOrElse(false),
+            csWriteEvolutionDict =
+              opts.csOptions.csWriteEvolutionDict.getOrElse(false),
+          )
         )
+
         Injector
           .NoCycles()
           .produceRun(new BaboonModule(options, inputPaths, testOutDir)) {
@@ -97,15 +74,21 @@ object Baboon {
                   .walk(dir.toFile)
                   .filter(_.toFile.getName.endsWith(".baboon"))
               }
-              val outDir = Paths.get(opts.output)
+              val outDir = Paths.get(opts.csOptions.generic.output)
 
-              println(s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}")
+              println(
+                s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}"
+              )
               println(s"Target: ${outDir.toFile.getCanonicalPath}")
-              testOutDir.foreach(t => println(s"Test target: ${t.toFile.getCanonicalPath}"))
+              testOutDir.foreach(
+                t => println(s"Test target: ${t.toFile.getCanonicalPath}")
+              )
 
               cleanupTargetDir(outDir) match {
                 case Left(value) =>
-                  System.err.println(s"Refusing to remove target directory, there are unexpected files: ${value.niceList()}")
+                  System.err.println(
+                    s"Refusing to remove target directory, there are unexpected files: ${value.niceList()}"
+                  )
                   System.exit(2)
 
                 case Right(_) =>

@@ -1,12 +1,9 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
+
+import io.septimalmind.baboon.CompilerOptions
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
-import io.septimalmind.baboon.translator.csharp.CSValue.{
-  CSPackageId,
-  CSType,
-  CSTypeName
-}
+import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType, CSTypeName}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
@@ -20,7 +17,7 @@ class CSTypeTranslator(options: CompilerOptions) {
     toCsPkg(
       p,
       version,
-      options.omitMostRecentVersionSuffixFromNamespaces && version == evolution.latest
+      options.csOptions.omitMostRecentVersionSuffixFromNamespaces && version == evolution.latest
     )
   }
 
@@ -66,7 +63,7 @@ class CSTypeTranslator(options: CompilerOptions) {
 
     val fullPkg = tid.owner match {
       case Owner.Adt(_) =>
-        val static = if (options.csUseCompactAdtForm) true else false
+        val static = if (options.csOptions.csUseCompactAdtForm) true else false
         CSPackageId(pkg.parts ++ ownerAsPrefix, isStatic = static)
       case _ =>
         CSPackageId(fullPrefix)
@@ -75,7 +72,7 @@ class CSTypeTranslator(options: CompilerOptions) {
   }
 
   def adtNsName(id: TypeId.User): String = {
-    if (options.csUseCompactAdtForm) {
+    if (options.csOptions.csUseCompactAdtForm) {
       id.name.name
     } else {
       id.name.name.toLowerCase

@@ -4,7 +4,10 @@ import io.circe.{Encoder, Json, KeyEncoder}
 import io.septimalmind.baboon.BaboonCompiler.CompilerTargets
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.OutputFile
-import io.septimalmind.baboon.translator.csharp.{CSBaboonTranslator, VersionMeta}
+import io.septimalmind.baboon.translator.csharp.{
+  CSBaboonTranslator,
+  VersionMeta
+}
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -15,7 +18,8 @@ import java.nio.file.{Files, Path, StandardOpenOption}
 import scala.util.Try
 
 trait BaboonCompiler {
-  def run(inputs: Set[Path], targets: CompilerTargets): Either[NEList[BaboonIssue], Unit]
+  def run(inputs: Set[Path],
+          targets: CompilerTargets): Either[NEList[BaboonIssue], Unit]
 }
 
 object BaboonDomainCodecs {
@@ -33,66 +37,55 @@ object BaboonDomainCodecs {
 }
 
 object BaboonCompiler {
-  final case class CompilerTargets(output: Path,
-                                   testOutput: Option[Path],
-                                  )
-
-  final case class CompilerOptions(debug: Boolean,
-                                   obsoleteErrors: Boolean,
-                                   runtime: RuntimeGenOpt,
-                                   generateConversions: Boolean,
-                                   disregardImplicitUsings: Boolean,
-                                   omitMostRecentVersionSuffixFromPaths: Boolean,
-                                   omitMostRecentVersionSuffixFromNamespaces: Boolean,
-                                   csUseCompactAdtForm: Boolean,
-                                   csWrappedAdtBranchCodecs: Boolean,
-                                   metaWriteEvolutionJsonTo: Option[Path],
-                                   csWriteEvolutionDict: Boolean,
-                                  )
+  final case class CompilerTargets(output: Path, testOutput: Option[Path])
 
   class BaboonCompilerImpl(loader: BaboonLoader,
                            translator: CSBaboonTranslator,
                            options: CompilerOptions,
                            logger: BLogger,
-                          ) extends BaboonCompiler {
-    override def run(inputs: Set[Path], targets: CompilerTargets): Either[NEList[BaboonIssue], Unit] = {
+  ) extends BaboonCompiler {
+    override def run(
+      inputs: Set[Path],
+      targets: CompilerTargets
+    ): Either[NEList[BaboonIssue], Unit] = {
       for {
         loaded <- loader.load(inputs.toList)
-        _ <- Right(options.metaWriteEvolutionJsonTo.map { maybePath =>
-          val path = Option(maybePath.getParent) match {
-            case Some(_) => maybePath
-            case None => targets.output.resolve(maybePath)
-          }
-          import BaboonDomainCodecs.*
-          import io.circe.syntax.*
-          path.getParent.toFile.mkdirs()
+        _ <- Right(options.csOptions.generic.metaWriteEvolutionJsonTo.map {
+          maybePath =>
+            val path = Option(maybePath.getParent) match {
+              case Some(_) => maybePath
+              case None    => targets.output.resolve(maybePath)
+            }
+            import BaboonDomainCodecs.*
+            import io.circe.syntax.*
+            path.getParent.toFile.mkdirs()
 
-          val data = loaded.domains.toSeq.flatMap {
-            case (_, lineage) =>
-              lineage.versions.toSeq.map {
-                case (ver, _) =>
-                  VersionMeta(lineage.pkg.path.mkString("."), ver.version)
-              }
+            val data = loaded.domains.toSeq.flatMap {
+              case (_, lineage) =>
+                lineage.versions.toSeq.map {
+                  case (ver, _) =>
+                    VersionMeta(lineage.pkg.path.mkString("."), ver.version)
+                }
 
-          }
+            }
 
-          val out =
-            Json.obj(
-              "versions" -> data.asJson,
-              "unmodified" -> Json.obj(loaded.domains.toSeq.map {
-                case (pkg, line) =>
-                  (pkg.toString, line.evolution.typesUnchangedSince.asJson)
-              } *)
+            val out =
+              Json.obj(
+                "versions" -> data.asJson,
+                "unmodified" -> Json.obj(loaded.domains.toSeq.map {
+                  case (pkg, line) =>
+                    (pkg.toString, line.evolution.typesUnchangedSince.asJson)
+                } *)
+              )
+
+            val result = out.toString()
+            Files.writeString(
+              path,
+              result,
+              StandardOpenOption.WRITE,
+              StandardOpenOption.TRUNCATE_EXISTING,
+              StandardOpenOption.CREATE
             )
-
-          val result = out.toString()
-          Files.writeString(
-            path,
-            result,
-            StandardOpenOption.WRITE,
-            StandardOpenOption.TRUNCATE_EXISTING,
-            StandardOpenOption.CREATE
-          )
 
         })
         translated <- translator.translate(targets, loaded)

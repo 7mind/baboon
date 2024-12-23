@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.BaboonCompiler.CompilerOptions
+import io.septimalmind.baboon.CompilerOptions
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
@@ -18,41 +18,45 @@ object CSCodecFixtureTranslator {
   final class CSRandomMethodTranslatorImpl(options: CompilerOptions,
                                            translator: CSTypeTranslator,
                                            enquiries: BaboonEnquiries)
-    extends CSCodecFixtureTranslator {
+      extends CSCodecFixtureTranslator {
 
-    override def translate(definition: DomainMember.User, domain: Domain, evo: BaboonEvolution): Option[TextTree[CSValue]] = {
+    override def translate(definition: DomainMember.User,
+                           domain: Domain,
+                           evo: BaboonEvolution): Option[TextTree[CSValue]] = {
       definition.defn match {
-        case dto: Typedef.Dto => doTranslateDto(definition, dto, domain, evo, None)
-        case adt: Typedef.Adt => doTranslateAdt(definition, adt, domain, evo)
+        case dto: Typedef.Dto =>
+          doTranslateDto(definition, dto, domain, evo, None)
+        case adt: Typedef.Adt    => doTranslateAdt(definition, adt, domain, evo)
         case _: Typedef.Contract => None
-        case _: Typedef.Enum => None
-        case _: Typedef.Foreign => None
+        case _: Typedef.Enum     => None
+        case _: Typedef.Foreign  => None
       }
     }
 
-    private def doTranslateDto(
-                                definition: DomainMember.User,
-                                dto: Typedef.Dto,
-                                domain: Domain,
-                                evo: BaboonEvolution,
-                                adt: Option[TypeId],
-                              ): Option[TextTree[CSValue]] = {
+    private def doTranslateDto(definition: DomainMember.User,
+                               dto: Typedef.Dto,
+                               domain: Domain,
+                               evo: BaboonEvolution,
+                               adt: Option[TypeId],
+    ): Option[TextTree[CSValue]] = {
 
       definition match {
-        case d if enquiries.hasForeignType(d, domain) => None
+        case d if enquiries.hasForeignType(d, domain)     => None
         case d if enquiries.isRecursiveTypedef(d, domain) => None
         case _ =>
           val generatedFields = dto.fields.map(f => genType(f.tpe, domain, evo))
 
           // adt member full type is different for compact and non-compact forms
-          val fullType = if (options.csUseCompactAdtForm) {
+          val fullType = if (options.csOptions.csUseCompactAdtForm) {
             s"${adt.map(t => s"${t.name.name}.").getOrElse("")}${dto.id.name.name}"
           } else {
             dto.id.name.name
           }
 
           val fixture =
-            q"""public static class ${adt.map(t => s"${t.name.name}_").getOrElse("")}${dto.id.name.name}_Fixture
+            q"""public static class ${adt
+                 .map(t => s"${t.name.name}_")
+                 .getOrElse("")}${dto.id.name.name}_Fixture
                |{
                |    public static $fullType Random()
                |    {
@@ -68,37 +72,43 @@ object CSCodecFixtureTranslator {
     }
 
     private def doTranslateAdt(
-                                definition: DomainMember.User,
-                                adt: Typedef.Adt,
-                                domain: Domain,
-                                evo: BaboonEvolution
-                              ): Option[TextTree[CSValue]] = {
+      definition: DomainMember.User,
+      adt: Typedef.Adt,
+      domain: Domain,
+      evo: BaboonEvolution
+    ): Option[TextTree[CSValue]] = {
       definition match {
-        case d if enquiries.hasForeignType(d, domain) => None
+        case d if enquiries.hasForeignType(d, domain)     => None
         case d if enquiries.isRecursiveTypedef(d, domain) => None
         case _ =>
           val members = adt.members.toList
             .flatMap(m => domain.defs.meta.nodes.get(m))
             .collect { case DomainMember.User(_, d: Typedef.Dto, _) => d }
 
-          val membersFixtures = if (options.csUseCompactAdtForm) {
-            members.sortBy(_.id.toString).flatMap(dto => doTranslateDto(definition, dto, domain, evo, Some(adt.id)))
+          val membersFixtures = if (options.csOptions.csUseCompactAdtForm) {
+            members
+              .sortBy(_.id.toString)
+              .flatMap(
+                dto =>
+                  doTranslateDto(definition, dto, domain, evo, Some(adt.id))
+              )
           } else {
             List.empty[TextTree[CSValue]]
           }
 
-          val membersGenerators = members.sortBy(_.id.toString).map[TextTree[CSValue]] {
-            dto =>
-              val memberFixture = if (options.csUseCompactAdtForm) {
+          val membersGenerators =
+            members.sortBy(_.id.toString).map[TextTree[CSValue]] { dto =>
+              val memberFixture = if (options.csOptions.csUseCompactAdtForm) {
                 q"${adt.id.name.name}_${dto.id.name.name}"
               } else {
                 q"${translator.toCsTypeRefNoDeref(dto.id, domain, evo)}"
               }
               q"${memberFixture}_Fixture.Random()"
-          }
+            }
 
-          val membersBranches = membersGenerators.zipWithIndex.map{case (generator, idx) =>
-            q"""if (rnd == ${idx.toString}) {
+          val membersBranches = membersGenerators.zipWithIndex.map {
+            case (generator, idx) =>
+              q"""if (rnd == ${idx.toString}) {
                |    return $generator;
                |}
                |""".stripMargin
@@ -137,22 +147,33 @@ object CSCodecFixtureTranslator {
           case TypeRef.Constructor(id, args) =>
             id match {
               case Builtins.lst =>
-                val argTpe = renderCollectionTypeArgument(args.head, domain, evo)
-                q"""$testValuesGenerator.FillList<$argTpe>($testValuesGenerator.NextInt32(20), () => ${gen(args.head)})"""
+                val argTpe =
+                  renderCollectionTypeArgument(args.head, domain, evo)
+                q"""$testValuesGenerator.FillList<$argTpe>($testValuesGenerator.NextInt32(20), () => ${gen(
+                  args.head
+                )})"""
 
               case Builtins.set =>
-                val argTpe = renderCollectionTypeArgument(args.head, domain, evo)
-                q"""$testValuesGenerator.FillSet<$argTpe>($testValuesGenerator.NextInt32(20), () => ${gen(args.head)})"""
+                val argTpe =
+                  renderCollectionTypeArgument(args.head, domain, evo)
+                q"""$testValuesGenerator.FillSet<$argTpe>($testValuesGenerator.NextInt32(20), () => ${gen(
+                  args.head
+                )})"""
 
               case Builtins.map =>
                 val keyTpe = renderCollectionTypeArgument(args(0), domain, evo)
-                val valueTpe = renderCollectionTypeArgument(args(1), domain, evo)
-                val entry = q"new $csKeyValuePair<$keyTpe, $valueTpe>(${gen(args(0))}, ${gen(args(1))})"
+                val valueTpe =
+                  renderCollectionTypeArgument(args(1), domain, evo)
+                val entry =
+                  q"new $csKeyValuePair<$keyTpe, $valueTpe>(${gen(args(0))}, ${gen(args(1))})"
                 q"$testValuesGenerator.FillDict<$keyTpe, $valueTpe>($testValuesGenerator.NextInt32(20), () => $entry)"
 
               case Builtins.opt => q"${gen(args.head)}"
 
-              case t => throw new IllegalArgumentException(s"Unexpected collection type: $t")
+              case t =>
+                throw new IllegalArgumentException(
+                  s"Unexpected collection type: $t"
+                )
             }
         }
       }
@@ -161,10 +182,10 @@ object CSCodecFixtureTranslator {
     }
 
     private def renderCollectionTypeArgument(
-                                              tpe: TypeRef,
-                                              domain: Domain,
-                                              evo: BaboonEvolution
-                                            ): TextTree[CSValue] = {
+      tpe: TypeRef,
+      domain: Domain,
+      evo: BaboonEvolution
+    ): TextTree[CSValue] = {
       def render(tpe: TypeRef): TextTree[CSValue] = {
         tpe match {
           case TypeRef.Constructor(Builtins.opt, args) =>
@@ -193,8 +214,8 @@ object CSCodecFixtureTranslator {
         case TypeId.Builtins.u32 => q"$testValuesGenerator.NextUInt32()"
         case TypeId.Builtins.u64 => q"$testValuesGenerator.NextUInt64()"
 
-        case TypeId.Builtins.f32 => q"$testValuesGenerator.NextSingle()"
-        case TypeId.Builtins.f64 => q"$testValuesGenerator.NextDouble()"
+        case TypeId.Builtins.f32  => q"$testValuesGenerator.NextSingle()"
+        case TypeId.Builtins.f64  => q"$testValuesGenerator.NextDouble()"
         case TypeId.Builtins.f128 => q"$testValuesGenerator.NextDecimal()"
 
         case TypeId.Builtins.str => q"$testValuesGenerator.NextString()"
