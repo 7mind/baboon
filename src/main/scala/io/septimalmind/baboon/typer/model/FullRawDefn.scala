@@ -18,17 +18,17 @@ object FullRawDefn {
         case _: RawNamespace => s"namespace"
       }
 
-      val root = if (defn.gcRoot) { "!" } else { "" }
+      val root = if (defn.gcRoot) { "!" }
+      else { "" }
       s"$root$name $n"
     }
   }
 }
 
-case class ScopeContext(parents: Map[ScopeUID, ScopeUID],
-                        index: Map[ScopeUID, Scope[FullRawDefn]])
+case class ScopeContext(parents: Map[ScopeUID, ScopeUID], index: Map[ScopeUID, Scope[FullRawDefn]])
 
 case class ExtendedRawDefn(origin: FullRawDefn, context: ScopeContext) {
-  def defn: RawDefn = origin.defn
+  def defn: RawDefn   = origin.defn
   def gcRoot: Boolean = origin.gcRoot
 
   def parentOf(s: NestedScope[ExtendedRawDefn]): Scope[ExtendedRawDefn] =

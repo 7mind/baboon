@@ -32,8 +32,7 @@ class TxtTreeTest extends AnyWordSpec {
       assert(t3.dump == "t1: TestVal(1), t2: test, t3: TestVal(3)")
       assert(t3.dump == t3.flatten.dump)
       assert(
-        t3.map(v => TestVal2(v.value))
-          .dump == "t1: TestVal2(1), t2: test, t3: TestVal2(3)"
+        t3.map(v => TestVal2(v.value)).dump == "t1: TestVal2(1), t2: test, t3: TestVal2(3)"
       )
     }
 
@@ -48,7 +47,7 @@ class TxtTreeTest extends AnyWordSpec {
 
       assert(
         t3.dump ==
-          """ t1: TestVal(1),
+        """ t1: TestVal(1),
           | t2: test,
           | t3: TestVal(3)""".stripMargin
       )

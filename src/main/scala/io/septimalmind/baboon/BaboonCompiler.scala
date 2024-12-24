@@ -4,10 +4,7 @@ import io.circe.{Encoder, Json, KeyEncoder}
 import io.septimalmind.baboon.BaboonCompiler.CompilerTargets
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.OutputFile
-import io.septimalmind.baboon.translator.csharp.{
-  CSBaboonTranslator,
-  VersionMeta
-}
+import io.septimalmind.baboon.translator.csharp.{CSBaboonTranslator, VersionMeta}
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -18,8 +15,7 @@ import java.nio.file.{Files, Path, StandardOpenOption}
 import scala.util.Try
 
 trait BaboonCompiler {
-  def run(inputs: Set[Path],
-          targets: CompilerTargets): Either[NEList[BaboonIssue], Unit]
+  def run(inputs: Set[Path], targets: CompilerTargets): Either[NEList[BaboonIssue], Unit]
 }
 
 object BaboonDomainCodecs {
@@ -39,14 +35,10 @@ object BaboonDomainCodecs {
 object BaboonCompiler {
   final case class CompilerTargets(output: Path, testOutput: Option[Path])
 
-  class BaboonCompilerImpl(loader: BaboonLoader,
-                           translator: CSBaboonTranslator,
-                           options: CompilerOptions,
-                           logger: BLogger,
-  ) extends BaboonCompiler {
+  class BaboonCompilerImpl(loader: BaboonLoader, translator: CSBaboonTranslator, options: CompilerOptions, logger: BLogger) extends BaboonCompiler {
     override def run(
       inputs: Set[Path],
-      targets: CompilerTargets
+      targets: CompilerTargets,
     ): Either[NEList[BaboonIssue], Unit] = {
       for {
         loaded <- loader.load(inputs.toList)
@@ -74,7 +66,7 @@ object BaboonCompiler {
                 "unmodified" -> Json.obj(loaded.domains.toSeq.map {
                   case (pkg, line) =>
                     (pkg.toString, line.evolution.typesUnchangedSince.asJson)
-                } *)
+                }*),
               )
 
             val result = out.toString()
@@ -83,7 +75,7 @@ object BaboonCompiler {
               result,
               StandardOpenOption.WRITE,
               StandardOpenOption.TRUNCATE_EXISTING,
-              StandardOpenOption.CREATE
+              StandardOpenOption.CREATE,
             )
 
         })
@@ -92,9 +84,10 @@ object BaboonCompiler {
           case (p, content) =>
             Try {
               if (content.isTest) {
-                targets.testOutput.foreach { testTarget =>
-                  val tgt = testTarget.resolve(p)
-                  writeFile(content, tgt)
+                targets.testOutput.foreach {
+                  testTarget =>
+                    val tgt = testTarget.resolve(p)
+                    writeFile(content, tgt)
                 }
               } else {
                 val tgt = targets.output.resolve(p)
@@ -117,7 +110,7 @@ object BaboonCompiler {
         content.content,
         StandardCharsets.UTF_8,
         StandardOpenOption.CREATE,
-        StandardOpenOption.TRUNCATE_EXISTING
+        StandardOpenOption.TRUNCATE_EXISTING,
       )
       ()
     }

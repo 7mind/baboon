@@ -35,18 +35,19 @@ object BLogger {
     }
 
     private def renderTree(msg: TextTree[Any]) = {
-      msg.mapRender { v =>
-        if (IzPlatform.terminalColorsEnabled) {
-          s"${AnsiColor.GREEN}$v${AnsiColor.RESET}"
-        } else {
-          v.toString
-        }
+      msg.mapRender {
+        v =>
+          if (IzPlatform.terminalColorsEnabled) {
+            s"${AnsiColor.GREEN}$v${AnsiColor.RESET}"
+          } else {
+            v.toString
+          }
       }
     }
 
     private def doMessage(msg: String): Unit = {
       val uptime = ManagementFactory.getRuntimeMXBean.getUptime
-      val d = FiniteDuration(uptime, TimeUnit.MILLISECONDS)
+      val d      = FiniteDuration(uptime, TimeUnit.MILLISECONDS)
       val cd = if (IzPlatform.terminalColorsEnabled) {
         s"${AnsiColor.CYAN}${d.toMillis}ms${AnsiColor.RESET}"
       } else {

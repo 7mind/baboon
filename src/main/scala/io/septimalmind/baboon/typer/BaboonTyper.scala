@@ -20,17 +20,14 @@ trait BaboonTyper {
 
 object BaboonTyper {
 
-  class BaboonTyperImpl(enquiries: BaboonEnquiries,
-                        translator: Subcontext[BaboonTranslator],
-                        scopeSupport: ScopeSupport)
-      extends BaboonTyper {
+  class BaboonTyperImpl(enquiries: BaboonEnquiries, translator: Subcontext[BaboonTranslator], scopeSupport: ScopeSupport) extends BaboonTyper {
     override def process(
       model: RawDomain
     ): Either[NEList[BaboonIssue.TyperIssue], Domain] = {
       for {
-        id <- parsePkg(model.header)
+        id      <- parsePkg(model.header)
         version <- parseVersion(model.version)
-        defs <- runTyper(id, model.members.defs, model.header.meta)
+        defs    <- runTyper(id, model.members.defs, model.header.meta)
         indexedDefs <- defs
           .map(d => (d.id, d))
           .toUniqueMap(e => NEList(BaboonIssue.DuplicatedTypedefs(model, e)))
@@ -41,20 +38,24 @@ object BaboonTyper {
         predecessors <- buildDependencies(
           indexedDefs,
           roots,
-          roots.keySet.map(t => (t, None)).toList
+          roots.keySet.map(t => (t, None)).toList,
         )
         predMatrix = IncidenceMatrix(predecessors)
-        graph = DG.fromPred(predMatrix, GraphMeta(indexedDefs.filter {
-          case (k, _) => predMatrix.links.contains(k)
-        }))
+        graph = DG.fromPred(
+          predMatrix,
+          GraphMeta(indexedDefs.filter {
+            case (k, _) => predMatrix.links.contains(k)
+          }),
+        )
         excludedIds = indexedDefs.keySet.diff(graph.meta.nodes.keySet)
         shallowSchema = graph.meta.nodes.view
           .mapValues(enquiries.shallowId)
           .toMap
         deepSchema <- computeDeepSchema(graph)
-        loops = enquiries.loopsOf(graph.meta.nodes)
-        typeMeta = graph.meta.nodes.keySet.map { id =>
-          (id, TypeMeta(shallowSchema(id), deepSchema(id)))
+        loops       = enquiries.loopsOf(graph.meta.nodes)
+        typeMeta = graph.meta.nodes.keySet.map {
+          id =>
+            (id, TypeMeta(shallowSchema(id), deepSchema(id)))
         }.toMap
         refMeta <- makeRefMeta(graph.meta.nodes)
       } yield {
@@ -63,22 +64,21 @@ object BaboonTyper {
     }
 
     private def makeRefMeta(
-      defs: Map[TypeId, DomainMember],
+      defs: Map[TypeId, DomainMember]
     ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeRef, RefMeta]] = {
 
       for {
         allRefs <- Right(defs.values.flatMap(enquiries.allRefs))
-        meta = allRefs.map { ref =>
-          (ref, RefMeta(enquiries.uebaLen(defs, ref)))
+        meta = allRefs.map {
+          ref =>
+            (ref, RefMeta(enquiries.uebaLen(defs, ref)))
         }.toMap
       } yield {
         meta
       }
     }
 
-    private def deepSchemaRepr(id: TypeId,
-                               defs: Map[TypeId, DomainMember],
-                               seen: List[TypeId]): List[String] = {
+    private def deepSchemaRepr(id: TypeId, defs: Map[TypeId, DomainMember], seen: List[TypeId]): List[String] = {
       val self = enquiries.wrap(id)
 
       val nseen = seen :+ id
@@ -93,35 +93,36 @@ object BaboonTyper {
           case u: DomainMember.User =>
             u.defn match {
               case d: Typedef.Dto =>
-                val content = d.fields.flatMap { m =>
-                  val exploded = enquiries
-                    .explode(m.tpe)
-                    .toList
-                    .flatMap(id => deepSchemaRepr(id, defs, nseen))
-                    .sorted
-                  List(s"{", m.name.name) ++ exploded ++ List("}")
+                val content = d.fields.flatMap {
+                  m =>
+                    val exploded = enquiries
+                      .explode(m.tpe)
+                      .toList
+                      .flatMap(id => deepSchemaRepr(id, defs, nseen))
+                      .sorted
+                    List(s"{", m.name.name) ++ exploded ++ List("}")
                 }
                 List(s"[dto:$self]") ++ content ++ List(s"/[dto:$self]")
               case d: Typedef.Contract =>
-                val content = d.fields.flatMap { m =>
-                  val exploded = enquiries
-                    .explode(m.tpe)
-                    .toList
-                    .flatMap(id => deepSchemaRepr(id, defs, nseen))
-                    .sorted
-                  List(s"{", m.name.name) ++ exploded ++ List("}")
+                val content = d.fields.flatMap {
+                  m =>
+                    val exploded = enquiries
+                      .explode(m.tpe)
+                      .toList
+                      .flatMap(id => deepSchemaRepr(id, defs, nseen))
+                      .sorted
+                    List(s"{", m.name.name) ++ exploded ++ List("}")
                 }
-                List(s"[contract:$self]") ++ content ++ List(
-                  s"/[contract:$self]"
-                )
+                List(s"[contract:$self]") ++ content ++ List(s"/[contract:$self]")
               case d: Typedef.Adt =>
-                val content = d.fields.flatMap { m =>
-                  val exploded = enquiries
-                    .explode(m.tpe)
-                    .toList
-                    .flatMap(id => deepSchemaRepr(id, defs, nseen))
-                    .sorted
-                  List(s"{", m.name.name) ++ exploded ++ List("}")
+                val content = d.fields.flatMap {
+                  m =>
+                    val exploded = enquiries
+                      .explode(m.tpe)
+                      .toList
+                      .flatMap(id => deepSchemaRepr(id, defs, nseen))
+                      .sorted
+                    List(s"{", m.name.name) ++ exploded ++ List("}")
                 }
                 val branches = List("{", "branches") ++ d.members.toList
                   .flatMap(id => deepSchemaRepr(id, defs, nseen)) ++
@@ -134,13 +135,10 @@ object BaboonTyper {
                 )
 
               case d: Typedef.Enum =>
-                List(s"[enum:$self]") ++ d.members.map(
-                  m =>
-                    s"${m.name}/${m.const.map(_.toString).getOrElse("NoVal")}"
-                ) ++ List(s"/[enum:$self]")
+                List(s"[enum:$self]") ++ d.members.map(m => s"${m.name}/${m.const.map(_.toString).getOrElse("NoVal")}") ++ List(s"/[enum:$self]")
               case d: Typedef.Foreign =>
                 List(
-                  s"[foreign:$self:${d.bindings.map({ case (k, v) => s"$k->$v" }).mkString(",")}]"
+                  s"[foreign:$self:${d.bindings.map { case (k, v) => s"$k->$v" }.mkString(",")}]"
                 )
 
             }
@@ -149,18 +147,18 @@ object BaboonTyper {
     }
     private def deepSchemaOf(
       id: TypeId,
-      defs: Map[TypeId, DomainMember]
+      defs: Map[TypeId, DomainMember],
     ): Either[NEList[BaboonIssue.TyperIssue], DeepSchemaId] = {
       for {
         repr <- Right(deepSchemaRepr(id, defs, List.empty))
       } yield {
         DeepSchemaId(s"[${enquiries.wrap(id)};${repr
-          .mkString(",")}]")
+            .mkString(",")}]")
       }
     }
 
     private def computeDeepSchema(
-      graph: DG[TypeId, DomainMember],
+      graph: DG[TypeId, DomainMember]
     ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, DeepSchemaId]] = {
 
       for {
@@ -174,10 +172,8 @@ object BaboonTyper {
     }
 
     @tailrec
-    private def buildDependencies(defs: Map[TypeId, DomainMember],
-                                  current: Map[TypeId, DomainMember],
-                                  predecessors: List[(TypeId, Option[TypeId])],
-    ): Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, Set[TypeId]]] = {
+    private def buildDependencies(defs: Map[TypeId, DomainMember], current: Map[TypeId, DomainMember], predecessors: List[(TypeId, Option[TypeId])])
+      : Either[NEList[BaboonIssue.TyperIssue], Map[TypeId, Set[TypeId]]] = {
       val nextDepMap = current.toList.flatMap {
         case (id, defn) =>
           enquiries.fullDepsOfDefn(defn).toList.map(dep => (id, Some(dep)))
@@ -193,7 +189,7 @@ object BaboonTyper {
 
       // here we may extract circular dependencies, that is fine
       val newPredecessors = predecessors ++ nextDepMap
-      val todo = defs.removedAll(nextDepMap.map(_._1))
+      val todo            = defs.removedAll(nextDepMap.map(_._1))
 
       if (next.isEmpty) {
         Right(
@@ -233,16 +229,16 @@ object BaboonTyper {
     private def runTyper(
       pkg: Pkg,
       members: Seq[RawTLDef],
-      meta: RawNodeMeta
+      meta: RawNodeMeta,
     ): Either[NEList[BaboonIssue.TyperIssue], List[DomainMember]] = {
       for {
         initial <- Right(
           TypeId.Builtins.all.map(id => DomainMember.Builtin(id))
         )
-        builder = new ScopeBuilder()
-        scopes <- builder.buildScopes(pkg, members, meta)
+        builder   = new ScopeBuilder()
+        scopes   <- builder.buildScopes(pkg, members, meta)
         flattened = flattenScopes(scopes)
-        ordered <- order(pkg, flattened, meta)
+        ordered  <- order(pkg, flattened, meta)
 
         out <- ordered.biFoldLeft(Map.empty[TypeId, DomainMember]) {
           case (acc, defn) =>
@@ -254,7 +250,7 @@ object BaboonTyper {
                 .produce()
                 .use(_.translate())
               mapped = next.map(m => (m.id, m))
-              dupes = acc.keySet.intersect(mapped.map(_._1).toSet)
+              dupes  = acc.keySet.intersect(mapped.map(_._1).toSet)
               _ <- Either.ifThenFail(dupes.nonEmpty)(
                 NEList(BaboonIssue.DuplicatedTypes(dupes, meta))
               )
@@ -273,7 +269,7 @@ object BaboonTyper {
     private def order(
       pkg: Pkg,
       flattened: List[NestedScope[ExtendedRawDefn]],
-      meta: RawNodeMeta
+      meta: RawNodeMeta,
     ): Either[NEList[BaboonIssue.TyperIssue], List[
       NestedScope[ExtendedRawDefn]
     ]] = {
@@ -281,9 +277,11 @@ object BaboonTyper {
         depmap <- flattened
           .map(d => deps(pkg, d))
           .biSequence
-        asMap <- depmap.toUniqueMap(bad => {
-          NEList(BaboonIssue.BadInheritance(bad, meta))
-        })
+        asMap <- depmap.toUniqueMap(
+          bad => {
+            NEList(BaboonIssue.BadInheritance(bad, meta))
+          }
+        )
 
         predMatrix = IncidenceMatrix(asMap.view.mapValues(_._1).toMap)
         sorted <- Toposort
@@ -296,8 +294,7 @@ object BaboonTyper {
       }
     }
 
-    private def deps(pkg: Pkg,
-                     defn: NestedScope[ExtendedRawDefn]): Either[NEList[
+    private def deps(pkg: Pkg, defn: NestedScope[ExtendedRawDefn]): Either[NEList[
       BaboonIssue.TyperIssue
     ], (TypeId.User, (Set[TypeId.User], NestedScope[ExtendedRawDefn]))] = {
       for {
@@ -306,7 +303,7 @@ object BaboonTyper {
           rawDefn.defn.name,
           defn,
           pkg,
-          rawDefn.defn.meta
+          rawDefn.defn.meta,
         )
         mappedDeps <- enquiries
           .hardDepsOfRawDefn(defn.defn.defn)
@@ -317,10 +314,10 @@ object BaboonTyper {
           )
           .biSequence
       } yield {
-        val adtMemberDependsOnAdt = (id.owner match {
+        val adtMemberDependsOnAdt = id.owner match {
           case Owner.Adt(id) => Set(id)
           case _             => Set.empty
-        })
+        }
 
         (id, (mappedDeps ++ adtMemberDependsOnAdt, defn))
       }

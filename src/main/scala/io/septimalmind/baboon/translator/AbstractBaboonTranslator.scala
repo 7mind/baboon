@@ -10,7 +10,7 @@ case class Sources(files: Map[String, OutputFile])
 
 trait BaboonAbstractTranslator {
   def translate(
-                 targets: CompilerTargets,
-                 family: BaboonFamily
+    targets: CompilerTargets,
+    family: BaboonFamily,
   ): Either[NEList[BaboonIssue.TranslationIssue], Sources]
 }

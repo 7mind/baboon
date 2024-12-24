@@ -4,19 +4,10 @@ import fastparse.*
 import io.septimalmind.baboon.parser.{ParserContext, model}
 import io.septimalmind.baboon.parser.defns.base.{kw, struct}
 import io.septimalmind.baboon.parser.model.RawDtoMember.ContractRef
-import io.septimalmind.baboon.parser.model.{
-  RawAdt,
-  RawAdtMember,
-  RawAdtMemberContract,
-  RawAdtMemberDto,
-  RawTypeName
-}
+import io.septimalmind.baboon.parser.model.{RawAdt, RawAdtMember, RawAdtMemberContract, RawAdtMemberDto, RawTypeName}
 import izumi.fundamentals.platform.language.Quirks.Discarder
 
-class DefAdt(context: ParserContext,
-             meta: DefMeta,
-             defDto: DefDto,
-             defContract: DefContract) {
+class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto, defContract: DefContract) {
   context.discard()
 
   def adtMember[$: P]: P[RawAdtMemberDto] =
@@ -42,9 +33,8 @@ class DefAdt(context: ParserContext,
   def adtEnclosed[$: P]: P[RawAdt] = {
     P(meta.member(kw.adt, struct.enclosed(adt))).map {
       case (meta, name, members) =>
-
-        val typeMembers = members.collect { case Right(m) => m}
-        val contractMembers = members.collect { case Left(m) => m}
+        val typeMembers     = members.collect { case Right(m) => m }
+        val contractMembers = members.collect { case Left(m) => m }
 
         model.RawAdt(RawTypeName(name), typeMembers, contractMembers, meta)
     }

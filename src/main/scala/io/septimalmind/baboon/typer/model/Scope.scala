@@ -16,10 +16,7 @@ object Scope {
 
   case class ScopeName(name: String) extends AnyVal
 
-  case class RootScope[Def](id: ScopeUID,
-                            pkg: Pkg,
-                            nested: Map[ScopeName, NestedScope[Def]])
-      extends Scope[Def] {
+  case class RootScope[Def](id: ScopeUID, pkg: Pkg, nested: Map[ScopeName, NestedScope[Def]]) extends Scope[Def] {
 
     def map[Def2](defnMap: Def => Def2): RootScope[Def2] = {
       copy(
@@ -36,21 +33,19 @@ object Scope {
     def defn: Def
   }
 
-  case class SubScope[Def](id: ScopeUID,
-                           name: ScopeName,
-                           defn: Def,
-                           nested: NEMap[ScopeName, NestedScope[Def]])
-      extends NestedScope[Def] {
+  case class SubScope[Def](id: ScopeUID, name: ScopeName, defn: Def, nested: NEMap[ScopeName, NestedScope[Def]]) extends NestedScope[Def] {
     def map[Def2](defnMap: Def => Def2): SubScope[Def2] = {
-      copy(defn = defnMap(defn), nested = nested.map {
-        case (n, v) => (n, v.map(defnMap).asInstanceOf[NestedScope[Def2]])
-      })
+      copy(
+        defn = defnMap(defn),
+        nested = nested.map {
+          case (n, v) => (n, v.map(defnMap).asInstanceOf[NestedScope[Def2]])
+        },
+      )
     }
 
   }
 
-  case class LeafScope[Def](id: ScopeUID, name: ScopeName, defn: Def)
-      extends NestedScope[Def] {
+  case class LeafScope[Def](id: ScopeUID, name: ScopeName, defn: Def) extends NestedScope[Def] {
     def map[Def2](defnMap: Def => Def2): LeafScope[Def2] = {
       copy(defn = defnMap(defn))
     }
@@ -68,7 +63,7 @@ object Scope {
     private def identifyParents(root: RootScope[?]): Map[ScopeUID, ScopeUID] = {
       def identifySubParents(
         scope: NestedScope[?],
-        currentParent: ScopeUID
+        currentParent: ScopeUID,
       ): List[(ScopeUID, ScopeUID)] = {
         scope match {
           case s: SubScope[_] =>

@@ -12,7 +12,7 @@ object CSFileTools {
     def basename(dom: Domain, evolution: BaboonEvolution): String = {
       basename(
         dom,
-        options.csOptions.omitMostRecentVersionSuffixFromPaths && evolution.latest == dom.version
+        options.csOptions.omitMostRecentVersionSuffixFromPaths && evolution.latest == dom.version,
       )
     }
 

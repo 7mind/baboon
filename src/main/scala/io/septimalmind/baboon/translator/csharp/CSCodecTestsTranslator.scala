@@ -9,23 +9,27 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 trait CSCodecTestsTranslator {
-  def translate(definition: DomainMember.User,
-                csRef: CSValue.CSType,
-                srcRef: CSValue.CSType): Option[TextTree[CSValue]]
+  def translate(
+    definition: DomainMember.User,
+    csRef: CSValue.CSType,
+    srcRef: CSValue.CSType,
+  ): Option[TextTree[CSValue]]
 }
 
 object CSCodecTestsTranslator {
-  final class Impl(codecs: Set[CSCodecTranslator],
-                   typeTranslator: CSTypeTranslator,
-                   logger: BLogger,
-                   enquiries: BaboonEnquiries,
-                   compilerOptions: CompilerOptions,
-                   domain: Domain,
-                   evo: BaboonEvolution,
+  final class Impl(
+    codecs: Set[CSCodecTranslator],
+    typeTranslator: CSTypeTranslator,
+    logger: BLogger,
+    enquiries: BaboonEnquiries,
+    compilerOptions: CompilerOptions,
+    domain: Domain,
+    evo: BaboonEvolution,
   ) extends CSCodecTestsTranslator {
-    override def translate(definition: DomainMember.User,
-                           csRef: CSValue.CSType,
-                           srcRef: CSValue.CSType,
+    override def translate(
+      definition: DomainMember.User,
+      csRef: CSValue.CSType,
+      srcRef: CSValue.CSType,
     ): Option[TextTree[CSValue]] = {
 
       val codecTestName = definition.id.owner match {
@@ -64,89 +68,76 @@ object CSCodecTestsTranslator {
     private def fieldsInitialization(
       definition: DomainMember.User,
       domain: Domain,
-      evolution: BaboonEvolution
+      evolution: BaboonEvolution,
     ): TextTree[CSValue] = {
       definition.defn match {
-        case enum: Typedef.Enum =>
-          q"var fixture = $testValuesGenerator.NextRandomEnum<${enum.id.name.name}>();"
-        case _: Typedef.Adt =>
-          q"var fixtures = ${typeTranslator.asCsType(definition.id, domain, evolution)}_Fixture.RandomAll();"
-        case _ =>
-          q"var fixture = ${typeTranslator.asCsType(definition.id, domain, evolution)}_Fixture.Random();"
+        case e: Typedef.Enum => q"var fixture = $testValuesGenerator.NextRandomEnum<${e.id.name.name}>();"
+        case _: Typedef.Adt  => q"var fixtures = ${typeTranslator.asCsType(definition.id, domain, evolution)}_Fixture.RandomAll();"
+        case _               => q"var fixture = ${typeTranslator.asCsType(definition.id, domain, evolution)}_Fixture.Random();"
       }
     }
 
-    private def tests(definition: DomainMember.User,
-                      srcRef: CSValue.CSType): TextTree[CSValue] = {
+    private def tests(definition: DomainMember.User, srcRef: CSValue.CSType): TextTree[CSValue] = {
       val init = fieldsInitialization(definition, domain, evo)
-      codecs
-        .map {
-          case jsonCodec: CSNSJsonCodecGenerator =>
-            val body =
-              jsonCodecAssertions(jsonCodec, definition, srcRef)
+      codecs.map {
+        case jsonCodec: CSNSJsonCodecGenerator =>
+          val body = jsonCodecAssertions(jsonCodec, definition, srcRef)
 
-            q"""[Test]
-               |public void jsonCodecTest()
-               |{
-               |    for (int i = 0; i < ${compilerOptions.csOptions.generic.codecTestIterations.toString}; i++)
-               |    {
-               |        jsonCodecTestImpl($baboonCodecContext.Default);
-               |    }
-               |}
-               |
-               |private void jsonCodecTestImpl($baboonCodecContext context) {
-               |    ${init.shift(4).trim}
-               |    ${body.shift(4).trim}
-               |}
-               |""".stripMargin
-          case uebaCodec: CSUEBACodecGenerator =>
-            val body =
-              uebaCodecAssertions(uebaCodec, definition, srcRef)
+          q"""[Test]
+             |public void jsonCodecTest()
+             |{
+             |    for (int i = 0; i < ${compilerOptions.csOptions.generic.codecTestIterations.toString}; i++)
+             |    {
+             |        jsonCodecTestImpl($baboonCodecContext.Default);
+             |    }
+             |}
+             |
+             |private void jsonCodecTestImpl($baboonCodecContext context) {
+             |    ${init.shift(4).trim}
+             |    ${body.shift(4).trim}
+             |}
+             |""".stripMargin
+        case uebaCodec: CSUEBACodecGenerator =>
+          val body = uebaCodecAssertions(uebaCodec, definition, srcRef)
 
-            q"""[Test]
-               |public void uebaCodecTestNoIndex()
-               |{
-               |    for (int i = 0; i < ${compilerOptions.csOptions.generic.codecTestIterations.toString}; i++)
-               |    {
-               |        uebaCodecTestImpl($baboonCodecContext.Compact);
-               |    }
-               |}
-               |
-               |[Test]
-               |public void uebaCodecTestIndexed()
-               |{
-               |    for (int i = 0; i < ${compilerOptions.csOptions.generic.codecTestIterations.toString}; i++)
-               |    {
-               |        uebaCodecTestImpl($baboonCodecContext.Indexed);
-               |    }
-               |}
-               |
-               |private void uebaCodecTestImpl($baboonCodecContext context) {
-               |    ${init.shift(4).trim}
-               |    ${body.shift(4).trim}
-               |}
-               |""".stripMargin
-          case unknown =>
-            logger.message(
-              s"Tests generating for ${unknown.codecName(srcRef)} codec of type $srcRef is not supported"
-            )
-            q""
-        }
-        .toList
+          q"""[Test]
+             |public void uebaCodecTestNoIndex()
+             |{
+             |    for (int i = 0; i < ${compilerOptions.csOptions.generic.codecTestIterations.toString}; i++)
+             |    {
+             |        uebaCodecTestImpl($baboonCodecContext.Compact);
+             |    }
+             |}
+             |
+             |[Test]
+             |public void uebaCodecTestIndexed()
+             |{
+             |    for (int i = 0; i < ${compilerOptions.csOptions.generic.codecTestIterations.toString}; i++)
+             |    {
+             |        uebaCodecTestImpl($baboonCodecContext.Indexed);
+             |    }
+             |}
+             |
+             |private void uebaCodecTestImpl($baboonCodecContext context) {
+             |    ${init.shift(4).trim}
+             |    ${body.shift(4).trim}
+             |}
+             |""".stripMargin
+        case unknown =>
+          logger.message(s"Tests generating for ${unknown.codecName(srcRef)} codec of type $srcRef is not supported")
+          q""
+      }.toList
         .join("\n")
         .shift(2)
         .trim
     }
 
-    private def jsonCodecAssertions(codec: CSNSJsonCodecGenerator,
-                                    definition: DomainMember.User,
-                                    srcRef: CSValue.CSType,
-    ): TextTree[CSValue] = {
+    private def jsonCodecAssertions(codec: CSNSJsonCodecGenerator, definition: DomainMember.User, srcRef: CSValue.CSType): TextTree[CSValue] = {
       def jsonTest: TextTree[CSValue.CSType] = {
-        val codecName = codec.codecName(srcRef)
-        val fieldName = q"fixture"
+        val codecName  = codec.codecName(srcRef)
+        val fieldName  = q"fixture"
         val serialized = q"${fieldName}Json"
-        val decoded = q"${fieldName}Decoded"
+        val decoded    = q"${fieldName}Decoded"
         q"""var $serialized = $codecName.Instance.Encode(context, $fieldName);
            |var $decoded = $codecName.Instance.Decode(context, $serialized);
            |Assert.That($fieldName, Is.EqualTo($decoded));
@@ -164,15 +155,12 @@ object CSCodecTestsTranslator {
       }
     }
 
-    private def uebaCodecAssertions(codec: CSUEBACodecGenerator,
-                                    definition: DomainMember.User,
-                                    srcRef: CSValue.CSType,
-    ): TextTree[CSValue] = {
+    private def uebaCodecAssertions(codec: CSUEBACodecGenerator, definition: DomainMember.User, srcRef: CSValue.CSType): TextTree[CSValue] = {
       def binaryTest: TextTree[CSValue.CSType] = {
-        val codecName = codec.codecName(srcRef)
-        val fieldName = q"fixture"
+        val codecName  = codec.codecName(srcRef)
+        val fieldName  = q"fixture"
         val serialized = q"${fieldName}Bytes"
-        val decoded = q"${fieldName}Decoded"
+        val decoded    = q"${fieldName}Decoded"
         q"""using ($memoryStream writeMemoryStream = new $memoryStream())
            |{
            |    using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))

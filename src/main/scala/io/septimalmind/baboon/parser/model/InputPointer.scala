@@ -9,7 +9,7 @@ object InputPointer {
         case (x1: StartOffsetKnown, y1: StartOffsetKnown) =>
           implicitly[Ordering[(String, Int)]].compare(
             (x1.file.asString, x1.start.offset),
-            (y1.file.asString, y1.start.offset)
+            (y1.file.asString, y1.start.offset),
           )
         case (x1: JustFile, y1: JustFile) =>
           implicitly[Ordering[String]]
@@ -55,8 +55,7 @@ object InputPointer {
 
   case class Offset(file: FSPath, start: InputOffset) extends StartOffsetKnown
 
-  case class Full(file: FSPath, start: InputOffset, stop: InputOffset)
-      extends StartOffsetKnown
+  case class Full(file: FSPath, start: InputOffset, stop: InputOffset) extends StartOffsetKnown
 
   def from(path: FSPath, pos: Option[InputOffset]): InputPointer = {
     pos.map(p => Offset(path, p)).getOrElse(JustFile(path))

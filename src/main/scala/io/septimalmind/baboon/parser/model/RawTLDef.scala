@@ -24,6 +24,6 @@ object RawTLDef {
   }
   case class Namespace(value: RawNamespace) extends RawTLDef {
     override def setRoot(root: Boolean): Namespace = this
-    override def root: Boolean = false
+    override def root: Boolean                     = false
   }
 }

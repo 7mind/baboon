@@ -38,13 +38,14 @@ object BinReprLen {
 case class TypeMeta(shallowId: ShallowSchemaId, deepId: DeepSchemaId)
 case class RefMeta(len: BinReprLen)
 
-case class Domain(id: Pkg,
-                  version: Version,
-                  defs: DG[TypeId, DomainMember],
-                  excludedIds: Set[TypeId],
-                  typeMeta: Map[TypeId, TypeMeta],
-                  loops: Set[LoopDetector.Cycles[TypeId]],
-                  refMeta: Map[TypeRef, RefMeta],
+case class Domain(
+  id: Pkg,
+  version: Version,
+  defs: DG[TypeId, DomainMember],
+  excludedIds: Set[TypeId],
+  typeMeta: Map[TypeId, TypeMeta],
+  loops: Set[LoopDetector.Cycles[TypeId]],
+  refMeta: Map[TypeRef, RefMeta],
 ) {
 
   import izumi.fundamentals.platform.strings.IzString.*
@@ -54,12 +55,9 @@ case class Domain(id: Pkg,
        |  deps: ${defs.predecessors.links.toList.niceList().shift(4)}
        |  excluded: ${excludedIds.niceList().shift(4)}
        |  defns: ${defs.meta.nodes.values
-         .map(
-           member =>
-             s"${typeMeta(member.id).shallowId}, ${typeMeta(member.id).deepId} = $member"
-         )
-         .niceList()
-         .shift(4)}""".stripMargin
+        .map(member => s"${typeMeta(member.id).shallowId}, ${typeMeta(member.id).deepId} = $member")
+        .niceList()
+        .shift(4)}""".stripMargin
 }
 
 sealed trait DomainMember {
@@ -69,8 +67,7 @@ sealed trait DomainMember {
 object DomainMember {
   case class Builtin(id: TypeId.Builtin) extends DomainMember
 
-  case class User(root: Boolean, defn: Typedef.User, meta: RawNodeMeta)
-      extends DomainMember {
+  case class User(root: Boolean, defn: Typedef.User, meta: RawNodeMeta) extends DomainMember {
     def id: TypeId.User = defn.id
   }
 }
@@ -88,41 +85,30 @@ object Typedef {
     this: Typedef =>
   }
 
-  case class Dto(id: TypeId.User,
-                 fields: List[Field],
-                 contracts: List[TypeId.User])
-      extends User
+  case class Dto(id: TypeId.User, fields: List[Field], contracts: List[TypeId.User]) extends User
 
-  case class Contract(id: TypeId.User,
-                      fields: List[Field],
-                      contracts: List[TypeId.User])
-      extends User
-      with NonDataTypedef
+  case class Contract(id: TypeId.User, fields: List[Field], contracts: List[TypeId.User]) extends User with NonDataTypedef
 
   case class Enum(id: TypeId.User, members: NEList[EnumMember]) extends User
 
-  case class Adt(id: TypeId.User,
-                 members: NEList[TypeId.User],
-                 contracts: List[TypeId.User],
-                 fields: List[Field],
-  ) extends User
+  case class Adt(id: TypeId.User, members: NEList[TypeId.User], contracts: List[TypeId.User], fields: List[Field]) extends User
 
   case class ForeignEntryAttr(name: String, value: String)
   case class ForeignEntryAttrs(attrs: List[ForeignEntryAttr])
   case class ForeignEntry(lang: String, decl: String, attrs: ForeignEntryAttrs)
 
-  case class Foreign(id: TypeId.User, bindings: Map[String, ForeignEntry])
-      extends User
+  case class Foreign(id: TypeId.User, bindings: Map[String, ForeignEntry]) extends User
 
   object Adt {
     implicit class AdtSyntax(val adt: Adt) extends AnyVal {
       def dataMembers(domain: Domain): Seq[TypeId.User] =
-        adt.members.toList.filterNot { id =>
-          domain.defs.meta.nodes(id) match {
-            case u: DomainMember.User =>
-              u.defn.isInstanceOf[Typedef.NonDataTypedef]
-            case _ => false
-          }
+        adt.members.toList.filterNot {
+          id =>
+            domain.defs.meta.nodes(id) match {
+              case u: DomainMember.User =>
+                u.defn.isInstanceOf[Typedef.NonDataTypedef]
+              case _ => false
+            }
         }
     }
   }
@@ -135,8 +121,7 @@ sealed trait TypeRef {
 object TypeRef {
   case class Scalar(id: TypeId.Scalar) extends TypeRef
 
-  case class Constructor(id: TypeId.BuiltinCollection, args: NEList[TypeRef])
-      extends TypeRef
+  case class Constructor(id: TypeId.BuiltinCollection, args: NEList[TypeRef]) extends TypeRef
 }
 
 sealed trait TypeId {
@@ -156,9 +141,7 @@ object TypeId {
     override def toString: String = s"#${name.name}"
   }
 
-  case class User(pkg: Pkg, owner: Owner, name: TypeName)
-      extends TypeId
-      with Scalar {
+  case class User(pkg: Pkg, owner: Owner, name: TypeName) extends TypeId with Scalar {
     override def toString: String = {
       s"$pkg/$owner#${name.name}"
     }
@@ -178,8 +161,8 @@ object TypeId {
     final val u32 = BuiltinScalar(TypeName("u32"))
     final val u64 = BuiltinScalar(TypeName("u64"))
 
-    final val f32 = BuiltinScalar(TypeName("f32"))
-    final val f64 = BuiltinScalar(TypeName("f64"))
+    final val f32  = BuiltinScalar(TypeName("f32"))
+    final val f64  = BuiltinScalar(TypeName("f64"))
     final val f128 = BuiltinScalar(TypeName("f128"))
 
     final val str = BuiltinScalar(TypeName("str"))
@@ -192,39 +175,37 @@ object TypeId {
     final val lst = BuiltinCollection(TypeName("lst"))
     final val set = BuiltinCollection(TypeName("set"))
 
-    final val integers = Set(i08, i16, i32, i64, u08, u16, u32, u64)
-    final val floats = Set(f32, f64, f128)
+    final val integers   = Set(i08, i16, i32, i64, u08, u16, u32, u64)
+    final val floats     = Set(f32, f64, f128)
     final val timestamps = Set(tsu, tso)
-    final val stringy = Set(uid)
-    final val varlens = Set(str)
+    final val stringy    = Set(uid)
+    final val varlens    = Set(str)
 
-    final val seqCollections = Set(lst, set)
-    final val iterableCollections = (Set(map) ++ seqCollections)
-    final val collections = Set(opt) ++ iterableCollections
+    final val seqCollections      = Set(lst, set)
+    final val iterableCollections = Set(map) ++ seqCollections
+    final val collections         = Set(opt) ++ iterableCollections
 
     final val scalars = integers ++ floats ++ varlens ++ stringy ++ timestamps ++ Set(
       bit
     )
     final val all = scalars ++ collections
 
-    private final val collIds = TypeId.Builtins.collections.toSet[TypeId]
-    private final val seqColls = TypeId.Builtins.seqCollections.toSet[TypeId]
+    private final val collIds     = TypeId.Builtins.collections.toSet[TypeId]
+    private final val seqColls    = TypeId.Builtins.seqCollections.toSet[TypeId]
     private final val safeSources = seqColls ++ Set(TypeId.Builtins.opt)
 
     def hasDefaultValue(id: TypeRef.Constructor): Boolean =
       collIds.contains(id.id)
 
-    def canBeWrappedIntoCollection(o: TypeRef.Scalar,
-                                   n: TypeRef.Constructor): Boolean = {
+    def canBeWrappedIntoCollection(o: TypeRef.Scalar, n: TypeRef.Constructor): Boolean = {
       safeSources.contains(n.id) && n.args == NEList(o)
     }
 
-    def canChangeCollectionType(o: TypeRef.Constructor,
-                                n: TypeRef.Constructor): Boolean = {
+    def canChangeCollectionType(o: TypeRef.Constructor, n: TypeRef.Constructor): Boolean = {
       // we can safely change collection types between list <-> set, opt -> (list | set)
       val isSwap = safeSources.contains(o.id) && seqColls.contains(n.id)
 
-      val isSimpleSwap = (o.args == n.args && isSwap)
+      val isSimpleSwap = o.args == n.args && isSwap
 
       val isPrecex = o.args.length == n.args.length && o.args.toSeq
         .zip(n.args.toSeq)
@@ -233,7 +214,7 @@ object TypeId {
         }
       val isSimplePrecex = (o.id == n.id) && isPrecex
 
-      val isSwapPrecex = (isSwap && isPrecex)
+      val isSwapPrecex = isSwap && isPrecex
 
       isSimpleSwap || isSimplePrecex || isSwapPrecex
     }
@@ -282,9 +263,7 @@ object TypeId {
 
     case class SetEquals(subComparator: ComparatorType) extends Complex
 
-    case class MapEquals(keyComparator: ComparatorType,
-                         valComparator: ComparatorType)
-        extends Complex
+    case class MapEquals(keyComparator: ComparatorType, valComparator: ComparatorType) extends Complex
   }
 
   def comparator(ref: TypeRef): ComparatorType = {
@@ -360,5 +339,5 @@ case class Field(name: FieldName, tpe: TypeRef) {
 }
 
 case class Version(version: String) {
-  override def toString: String = s"{${version}}"
+  override def toString: String = s"{$version}"
 }

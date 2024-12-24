@@ -13,38 +13,17 @@ sealed trait RawDtoid {
   def members: Seq[RawDtoMember]
   def meta: RawNodeMeta
 }
-case class RawDto(name: RawTypeName,
-                  members: Seq[RawDtoMember],
-                  meta: RawNodeMeta)
-    extends RawDefn
-    with RawDtoid
+case class RawDto(name: RawTypeName, members: Seq[RawDtoMember], meta: RawNodeMeta) extends RawDefn with RawDtoid
 
-case class RawContract(name: RawTypeName,
-                       members: Seq[RawDtoMember],
-                       meta: RawNodeMeta)
-    extends RawDefn
-    with RawDtoid
+case class RawContract(name: RawTypeName, members: Seq[RawDtoMember], meta: RawNodeMeta) extends RawDefn with RawDtoid
 
-case class RawEnum(name: RawTypeName,
-                   members: Seq[RawEnumMember],
-                   meta: RawNodeMeta)
-    extends RawDefn
+case class RawEnum(name: RawTypeName, members: Seq[RawEnumMember], meta: RawNodeMeta) extends RawDefn
 
-case class RawAdt(name: RawTypeName,
-                  members: Seq[RawAdtMember],
-                  contracts: Seq[ContractRef],
-                  meta: RawNodeMeta)
-    extends RawDefn
+case class RawAdt(name: RawTypeName, members: Seq[RawAdtMember], contracts: Seq[ContractRef], meta: RawNodeMeta) extends RawDefn
 
-case class RawForeign(name: RawTypeName,
-                      defns: List[RawForeignEntry],
-                      meta: RawNodeMeta)
-    extends RawDefn
+case class RawForeign(name: RawTypeName, defns: List[RawForeignEntry], meta: RawNodeMeta) extends RawDefn
 
-case class RawNamespace(name: RawTypeName,
-                        defns: Seq[RawTLDef],
-                        meta: RawNodeMeta)
-    extends RawDefn
+case class RawNamespace(name: RawTypeName, defns: Seq[RawTLDef], meta: RawNodeMeta) extends RawDefn
 
 case class RawForeignEntryAttr(name: String, value: String)
 case class RawForeignEntryAttrs(attrs: List[RawForeignEntryAttr])
@@ -55,6 +34,4 @@ object RawForeignEntryAttrs {
 
 }
 
-case class RawForeignEntry(lang: String,
-                           decl: String,
-                           attrs: RawForeignEntryAttrs)
+case class RawForeignEntry(lang: String, decl: String, attrs: RawForeignEntryAttrs)

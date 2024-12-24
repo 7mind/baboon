@@ -38,8 +38,5 @@ sealed trait AdtOp extends AbstractOp
 object AdtOp {
   case class AddBranch(id: TypeId.User) extends AdtOp
   case class RemoveBranch(id: TypeId.User) extends AdtOp
-  case class KeepBranch(id: TypeId.User, modification: RefModification)
-      extends AdtOp
+  case class KeepBranch(id: TypeId.User, modification: RefModification) extends AdtOp
 }
-
-

@@ -14,10 +14,7 @@ import io.septimalmind.baboon.validator.BaboonValidator
 
 import java.nio.file.Path
 
-class BaboonModule(options: CompilerOptions,
-                   inputs: Seq[Path],
-                   testOutDir: Option[Path])
-    extends ModuleDef {
+class BaboonModule(options: CompilerOptions, inputs: Seq[Path], testOutDir: Option[Path]) extends ModuleDef {
   make[BLogger].from[BLogger.BLoggerImpl]
   make[BaboonCompiler].from[BaboonCompiler.BaboonCompilerImpl]
   make[BaboonLoader].from[BaboonLoader.BaboonLoaderImpl]
@@ -35,7 +32,7 @@ class BaboonModule(options: CompilerOptions,
       List(
         DIKey[Pkg],
         DIKey[NestedScope[ExtendedRawDefn]],
-        DIKey[Map[TypeId, DomainMember]]
+        DIKey[Map[TypeId, DomainMember]],
       )
     )
     .withSubmodule(new ModuleDef {
@@ -84,8 +81,9 @@ class BaboonModule(options: CompilerOptions,
     .withSubmodule(new ModuleDef {
       make[IndividualConversionHandler]
     })
-    .extractWith { (handler: IndividualConversionHandler) =>
-      handler
+    .extractWith {
+      (handler: IndividualConversionHandler) =>
+        handler
     }
 
 }

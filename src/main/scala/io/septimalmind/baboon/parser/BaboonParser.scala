@@ -3,12 +3,7 @@ package io.septimalmind.baboon.parser
 import distage.Id
 import fastparse.Parsed
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.model.{
-  FSPath,
-  RawDomain,
-  RawInclude,
-  RawTLDef
-}
+import io.septimalmind.baboon.parser.model.{FSPath, RawDomain, RawInclude, RawTLDef}
 import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 import izumi.functional.IzEither.*
 import izumi.fundamentals.platform.files.IzFiles
@@ -36,7 +31,7 @@ object BaboonParser {
             value.copy(
               members = value.members.copy(
                 includes = Seq.empty,
-                defs = included ++ value.members.defs
+                defs     = included ++ value.members.defs,
               )
             )
           }
@@ -50,32 +45,33 @@ object BaboonParser {
       includes: Seq[RawInclude]
     ): Either[NEList[BaboonIssue], Seq[RawTLDef]] = {
       if (includes.nonEmpty) {
-        includes.map { inc =>
-          val inclusion = inputs
-            .map(_.resolve(inc.value).toFile)
-            .find(f => f.exists() && f.isFile)
-          inclusion match {
-            case Some(incFile) =>
-              val content = IzFiles.readString(incFile)
-              val context = ParserContext(
-                FSPath.parse(NEString.unsafeFrom(incFile.getCanonicalPath)),
-                content
-              )
-              fastparse.parse(context.content, context.defModel.content(_)) match {
-                case Parsed.Success(value, _) =>
-                  for {
-                    sub <- processIncludes(value.includes)
-                  } yield {
-                    sub ++ value.defs
-                  }
-                case failure: Parsed.Failure =>
-                  Left(NEList(BaboonIssue.ParserFailed(failure, context.file)))
+        includes.map {
+          inc =>
+            val inclusion = inputs
+              .map(_.resolve(inc.value).toFile)
+              .find(f => f.exists() && f.isFile)
+            inclusion match {
+              case Some(incFile) =>
+                val content = IzFiles.readString(incFile)
+                val context = ParserContext(
+                  FSPath.parse(NEString.unsafeFrom(incFile.getCanonicalPath)),
+                  content,
+                )
+                fastparse.parse(context.content, context.defModel.content(_)) match {
+                  case Parsed.Success(value, _) =>
+                    for {
+                      sub <- processIncludes(value.includes)
+                    } yield {
+                      sub ++ value.defs
+                    }
+                  case failure: Parsed.Failure =>
+                    Left(NEList(BaboonIssue.ParserFailed(failure, context.file)))
 
-              }
+                }
 
-            case None =>
-              Left(NEList(BaboonIssue.IncludeNotFound(inc.value)))
-          }
+              case None =>
+                Left(NEList(BaboonIssue.IncludeNotFound(inc.value)))
+            }
         }.biFlatten
       } else {
         Right(Seq.empty)

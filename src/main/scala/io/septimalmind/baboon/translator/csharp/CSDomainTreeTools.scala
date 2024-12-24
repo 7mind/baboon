@@ -7,34 +7,29 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 trait CSDomainTreeTools {
-  def makeMeta(defn: DomainMember.User,
-               isCodec: Boolean): Seq[TextTree[CSValue]]
+  def makeMeta(defn: DomainMember.User, isCodec: Boolean): Seq[TextTree[CSValue]]
 
   def metaMethodFlags(defn: DomainMember.User, isCodec: Boolean): String
 }
 
 object CSDomainTreeTools {
-  class CSDomainTreeToolsImpl(options: CompilerOptions,
-                              domain: Domain,
-                              evo: BaboonEvolution)
-      extends CSDomainTreeTools {
+  class CSDomainTreeToolsImpl(options: CompilerOptions, domain: Domain, evo: BaboonEvolution) extends CSDomainTreeTools {
 
     def metaMethodFlags(defn: DomainMember.User, isCodec: Boolean): String = {
       val isNested = defn.id.owner match {
         case Owner.Adt(_) => true
         case _            => false
       }
-      val fix =
-        if (options.csOptions.csUseCompactAdtForm && !isCodec && isNested) {
-          " new "
-        } else {
-          " "
-        }
+      val fix = if (options.csOptions.csUseCompactAdtForm && !isCodec && isNested) {
+        " new "
+      } else {
+        " "
+      }
+
       fix
     }
 
-    def makeMeta(defn: DomainMember.User,
-                 isCodec: Boolean): Seq[TextTree[CSValue]] = {
+    def makeMeta(defn: DomainMember.User, isCodec: Boolean): Seq[TextTree[CSValue]] = {
       val fix = metaMethodFlags(defn, isCodec)
 
       val adtMethods = defn.id.owner match {
@@ -42,12 +37,12 @@ object CSDomainTreeTools {
           List(
             q"""public const String BaboonAdtTypeIdentifierValue = "${id.toString}";
                |public $csString BaboonAdtTypeIdentifier() => BaboonAdtTypeIdentifierValue;
-               |""".stripMargin,
+               |""".stripMargin
           )
         case _ => List.empty
       }
 
-      val version = domain.version
+      val version         = domain.version
       val unmodifiedSince = evo.typesUnchangedSince(version)(defn.id)
 
       Seq(
@@ -62,7 +57,7 @@ object CSDomainTreeTools {
            |""".stripMargin,
         q"""public${fix}const String BaboonTypeIdentifierValue = "${defn.id.toString}";
            |public${fix}String BaboonTypeIdentifier() => BaboonTypeIdentifierValue;
-           |""".stripMargin
+           |""".stripMargin,
       ) ++ adtMethods
     }
   }

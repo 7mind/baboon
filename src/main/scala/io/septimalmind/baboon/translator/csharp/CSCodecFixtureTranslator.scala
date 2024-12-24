@@ -13,19 +13,14 @@ trait CSCodecFixtureTranslator {
 }
 
 object CSCodecFixtureTranslator {
-  final class CSRandomMethodTranslatorImpl(options: CompilerOptions,
-                                           translator: CSTypeTranslator,
-                                           enquiries: BaboonEnquiries,
-                                           domain: Domain,
-                                           evo: BaboonEvolution)
-      extends CSCodecFixtureTranslator {
+  final class CSRandomMethodTranslatorImpl(options: CompilerOptions, translator: CSTypeTranslator, enquiries: BaboonEnquiries, domain: Domain, evo: BaboonEvolution)
+    extends CSCodecFixtureTranslator {
 
     override def translate(
       definition: DomainMember.User
     ): Option[TextTree[CSValue]] = {
       definition.defn match {
-        case dto: Typedef.Dto =>
-          doTranslateDto(definition, dto, None)
+        case dto: Typedef.Dto    => doTranslateDto(definition, dto, None)
         case adt: Typedef.Adt    => doTranslateAdt(definition, adt)
         case _: Typedef.Contract => None
         case _: Typedef.Enum     => None
@@ -33,11 +28,7 @@ object CSCodecFixtureTranslator {
       }
     }
 
-    private def doTranslateDto(definition: DomainMember.User,
-                               dto: Typedef.Dto,
-                               adt: Option[TypeId],
-    ): Option[TextTree[CSValue]] = {
-
+    private def doTranslateDto(definition: DomainMember.User, dto: Typedef.Dto, adt: Option[TypeId]): Option[TextTree[CSValue]] = {
       definition match {
         case d if enquiries.hasForeignType(d, domain)     => None
         case d if enquiries.isRecursiveTypedef(d, domain) => None
@@ -52,9 +43,7 @@ object CSCodecFixtureTranslator {
           }
 
           val fixture =
-            q"""public static class ${adt
-                 .map(t => s"${t.name.name}_")
-                 .getOrElse("")}${dto.id.name.name}_Fixture
+            q"""public static class ${adt.map(t => s"${t.name.name}_").getOrElse("")}${dto.id.name.name}_Fixture
                |{
                |    public static $fullType Random()
                |    {
@@ -64,14 +53,13 @@ object CSCodecFixtureTranslator {
                |    }
                |}
                |""".stripMargin
+
           Some(fixture)
       }
 
     }
 
-    private def doTranslateAdt(definition: DomainMember.User,
-                               adt: Typedef.Adt,
-    ): Option[TextTree[CSValue]] = {
+    private def doTranslateAdt(definition: DomainMember.User, adt: Typedef.Adt): Option[TextTree[CSValue]] = {
       definition match {
         case d if enquiries.hasForeignType(d, domain)     => None
         case d if enquiries.isRecursiveTypedef(d, domain) => None
@@ -89,21 +77,23 @@ object CSCodecFixtureTranslator {
           }
 
           val membersGenerators =
-            members.sortBy(_.id.toString).map[TextTree[CSValue]] { dto =>
-              val memberFixture = if (options.csOptions.csUseCompactAdtForm) {
-                q"${adt.id.name.name}_${dto.id.name.name}"
-              } else {
-                q"${translator.toCsTypeRefNoDeref(dto.id, domain, evo)}"
-              }
-              q"${memberFixture}_Fixture.Random()"
+            members.sortBy(_.id.toString).map[TextTree[CSValue]] {
+              dto =>
+                val memberFixture = if (options.csOptions.csUseCompactAdtForm) {
+                  q"${adt.id.name.name}_${dto.id.name.name}"
+                } else {
+                  q"${translator.toCsTypeRefNoDeref(dto.id, domain, evo)}"
+                }
+                q"${memberFixture}_Fixture.Random()"
             }
 
           val membersBranches = membersGenerators.zipWithIndex.map {
             case (generator, idx) =>
-              q"""if (rnd == ${idx.toString}) {
-               |    return $generator;
-               |}
-               |""".stripMargin
+              q"""if (rnd == ${idx.toString})
+                 |{
+                 |    return $generator;
+                 |}
+                 |""".stripMargin
           }
 
           val fixture: TextTree[CSValue] =
@@ -137,33 +127,24 @@ object CSCodecFixtureTranslator {
           case TypeRef.Constructor(id, args) =>
             id match {
               case Builtins.lst =>
-                val argTpe =
-                  renderCollectionTypeArgument(args.head)
-                q"""$testValuesGenerator.FillList<$argTpe>($testValuesGenerator.NextInt32(20), () => ${gen(
-                  args.head
-                )})"""
+                val argTpe = renderCollectionTypeArgument(args.head)
+                q"""$testValuesGenerator.FillList<$argTpe>($testValuesGenerator.NextInt32(20), () => ${gen(args.head)})"""
 
               case Builtins.set =>
-                val argTpe =
-                  renderCollectionTypeArgument(args.head)
-                q"""$testValuesGenerator.FillSet<$argTpe>($testValuesGenerator.NextInt32(20), () => ${gen(
-                  args.head
-                )})"""
+                val argTpe = renderCollectionTypeArgument(args.head)
+                q"""$testValuesGenerator.FillSet<$argTpe>($testValuesGenerator.NextInt32(20), () => ${gen(args.head)})"""
 
               case Builtins.map =>
-                val keyTpe = renderCollectionTypeArgument(args(0))
-                val valueTpe =
-                  renderCollectionTypeArgument(args(1))
-                val entry =
-                  q"new $csKeyValuePair<$keyTpe, $valueTpe>(${gen(args(0))}, ${gen(args(1))})"
+                val keyTpe   = renderCollectionTypeArgument(args(0))
+                val valueTpe = renderCollectionTypeArgument(args(1))
+                val entry    = q"new $csKeyValuePair<$keyTpe, $valueTpe>(${gen(args(0))}, ${gen(args(1))})"
                 q"$testValuesGenerator.FillDict<$keyTpe, $valueTpe>($testValuesGenerator.NextInt32(20), () => $entry)"
 
-              case Builtins.opt => q"${gen(args.head)}"
+              case Builtins.opt =>
+                q"${gen(args.head)}"
 
               case t =>
-                throw new IllegalArgumentException(
-                  s"Unexpected collection type: $t"
-                )
+                throw new IllegalArgumentException(s"Unexpected collection type: $t")
             }
         }
       }
@@ -172,17 +153,14 @@ object CSCodecFixtureTranslator {
     }
 
     private def renderCollectionTypeArgument(
-      tpe: TypeRef,
+      tpe: TypeRef
     ): TextTree[CSValue] = {
       def render(tpe: TypeRef): TextTree[CSValue] = {
         tpe match {
-          case TypeRef.Constructor(Builtins.opt, args) =>
-            q"${render(args.head)}?"
-          case TypeRef.Constructor(Builtins.map, args) =>
-            q"${translator.asCsType(Builtins.map, domain, evo)}<${render(args(0))}, ${render(args(1))}>"
-          case TypeRef.Constructor(id, args) =>
-            q"${translator.asCsType(id, domain, evo)}<${render(args.head)}>"
-          case TypeRef.Scalar(id) => translator.asCsType(id, domain, evo)
+          case TypeRef.Constructor(Builtins.opt, args) => q"${render(args.head)}?"
+          case TypeRef.Constructor(Builtins.map, args) => q"${translator.asCsType(Builtins.map, domain, evo)}<${render(args.head)}, ${render(args.last)}>"
+          case TypeRef.Constructor(id, args)           => q"${translator.asCsType(id, domain, evo)}<${render(args.head)}>"
+          case TypeRef.Scalar(id)                      => q"${translator.asCsType(id, domain, evo)}"
         }
       }
 
@@ -212,12 +190,11 @@ object CSCodecFixtureTranslator {
 
         case TypeId.Builtins.bit => q"$testValuesGenerator.NextBoolean()"
 
+        case TypeId.User(_, _, name) if translator.isEnum(tpe, domain) =>
+          q"$testValuesGenerator.NextRandomEnum<${name.name}>()"
+
         case TypeId.User(_, _, name) =>
-          if (translator.isEnum(tpe, domain)) {
-            q"$testValuesGenerator.NextRandomEnum<${name.name}>()"
-          } else {
-            q"${name.name}_Fixture.Random()"
-          }
+          q"${name.name}_Fixture.Random()"
 
         case t =>
           throw new IllegalArgumentException(s"Unexpected scalar type: $t")

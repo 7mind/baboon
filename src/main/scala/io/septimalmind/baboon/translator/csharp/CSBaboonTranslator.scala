@@ -5,11 +5,7 @@ import io.septimalmind.baboon.BaboonCompiler.CompilerTargets
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
-import io.septimalmind.baboon.translator.{
-  BaboonAbstractTranslator,
-  OutputFile,
-  Sources
-}
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.{CompilerOptions, RuntimeGenOpt}
 import izumi.functional.IzEither.*
@@ -19,97 +15,74 @@ import izumi.fundamentals.platform.resources.IzResources
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSBaboonTranslator(trans: CSTypeTranslator,
-                         handler: Subcontext[IndividualConversionHandler],
-                         options: CompilerOptions,
-                         csTrees: CSTreeTools,
-                         csFiles: CSFileTools,
-                         translator: Subcontext[CSDefnTranslator],
+class CSBaboonTranslator(
+  trans: CSTypeTranslator,
+  handler: Subcontext[IndividualConversionHandler],
+  options: CompilerOptions,
+  csTrees: CSTreeTools,
+  csFiles: CSFileTools,
+  translator: Subcontext[CSDefnTranslator],
 ) extends BaboonAbstractTranslator {
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
-  override def translate(targets: CompilerTargets,
-                         family: BaboonFamily): Out[Sources] = {
+  override def translate(targets: CompilerTargets, family: BaboonFamily): Out[Sources] = {
     for {
-      translated <- doTranslate(targets, family)
-      runtime <- sharedRuntime()
+      translated  <- doTranslate(targets, family)
+      runtime     <- sharedRuntime()
       testRuntime <- sharedTestRuntime(targets)
       toRender = options.csOptions.generic.runtime match {
         case RuntimeGenOpt.Only    => runtime
         case RuntimeGenOpt.With    => runtime ++ translated ++ testRuntime
         case RuntimeGenOpt.Without => translated
       }
-      rendered = toRender.map { o =>
-        val content = renderTree(o)
-        (o.path, OutputFile(content, isTest = o.isTest))
+      rendered = toRender.map {
+        o =>
+          val content = renderTree(o)
+          (o.path, OutputFile(content, isTest = o.isTest))
       }
-      unique <- rendered.toUniqueMap(
-        c => NEList(BaboonIssue.NonUniqueOutputFiles(c))
-      )
+      unique <- rendered.toUniqueMap(c => NEList(BaboonIssue.NonUniqueOutputFiles(c)))
     } yield {
       Sources(unique)
     }
   }
 
   private def renderTree(o: CSDefnTranslator.Output): String = {
-    val alwaysAvailable: Set[CSPackageId] =
-      if (options.csOptions.csDisregardImplicitUsings) {
-        Set.empty
-      } else {
-        Set(csSystemPkg, csCollectionsGenericPkg, csLinqPkg)
-      }
+    val alwaysAvailable: Set[CSPackageId] = if (options.csOptions.csDisregardImplicitUsings) {
+      Set.empty
+    } else {
+      Set(csSystemPkg, csCollectionsGenericPkg, csLinqPkg)
+    }
 
-    val forcedUses: Set[CSPackageId] =
-      if (options.csOptions.csDisregardImplicitUsings) {
-        Set(csLinqPkg)
-      } else {
-        Set.empty
-      }
+    val forcedUses: Set[CSPackageId] = if (options.csOptions.csDisregardImplicitUsings) {
+      Set(csLinqPkg)
+    } else {
+      Set.empty
+    }
 
-    val usedPackages = o.tree.values
-      .collect {
-        case t: CSValue.CSType => t
-      }
-      .flatMap { t =>
-        if (!t.fq) {
-          Seq(t.pkg)
-        } else {
-          Seq.empty
-        }
-      }
-      .distinct
+    val usedPackages = o.tree.values.collect { case t: CSValue.CSType if !t.fq => t.pkg }.distinct
       .sortBy(_.parts.mkString("."))
 
-    val available = Set(o.pkg)
+    val available        = Set(o.pkg)
     val requiredPackages = Set.empty
-    val allPackages =
-      (requiredPackages ++ usedPackages ++ forcedUses)
-        .diff(available ++ alwaysAvailable)
+    val allPackages      = (requiredPackages ++ usedPackages ++ forcedUses).diff(available ++ alwaysAvailable)
 
-    val imports = allPackages.toSeq
-      .map { p =>
-        if (p.isStatic) {
-          q"using static ${p.parts.mkString(".")};"
-        } else {
-          q"using ${p.parts.mkString(".")};"
-        }
+    val imports = allPackages.toSeq.map {
+      case p if p.isStatic => q"using static ${p.parts.mkString(".")};"
+      case p               => q"using ${p.parts.mkString(".")};"
+    }.join("\n")
 
-      }
-      .join("\n")
-
-    val full =
-      Seq(
-        Seq(q"#nullable enable"),
-        Seq(q"#pragma warning disable 612,618"), // deprecation warnings
-        Seq(imports),
-        Seq(o.tree)
-      ).flatten
-        .join("\n\n")
+    val full = Seq(
+      Seq(q"#nullable enable"),
+      Seq(q"#pragma warning disable 612,618"), // deprecation warnings
+      Seq(imports),
+      Seq(o.tree),
+    ).flatten.join("\n\n")
 
     full.mapRender {
       case t: CSValue.CSTypeName =>
         t.name
+
       case t: CSValue.CSType if !t.fq =>
         if (o.pkg == t.pkg || !t.pkg.parts.startsWith(o.pkg.parts)) {
           t.name
@@ -124,77 +97,69 @@ class CSBaboonTranslator(trans: CSTypeTranslator,
 
   private def doTranslate(
     targets: CompilerTargets,
-    family: BaboonFamily
+    family: BaboonFamily,
   ): Out[List[CSDefnTranslator.Output]] = {
     // TODO: fix .toSeq.toList
-
-    family.domains.toSeq.toList.map {
-      case (_, lineage) =>
-        translateLineage(targets, lineage)
-    }.biFlatten
+    family.domains.iterator.map { case (_, lineage) => translateLineage(targets, lineage) }.toList.biFlatten
   }
 
   private def translateLineage(
     targets: CompilerTargets,
-    lineage: BaboonLineage
+    lineage: BaboonLineage,
   ): Out[List[CSDefnTranslator.Output]] = {
-
-    lineage.versions.toSeq.toList.map {
-      case (_, domain) =>
-        translateDomain(domain, targets, lineage)
-    }.biFlatten
+    lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, targets, lineage) }.toList.biFlatten
   }
 
-  private def translateDomain(domain: Domain,
-                              targets: CompilerTargets,
-                              lineage: BaboonLineage,
-  ): Out[List[CSDefnTranslator.Output]] = {
+  private def translateDomain(domain: Domain, targets: CompilerTargets, lineage: BaboonLineage): Out[List[CSDefnTranslator.Output]] = {
     val evo = lineage.evolution
-    translator.provide(domain).provide(evo).produce().use { defnTranslator =>
-      for {
-        defnSources <- domain.defs.meta.nodes.toList.map {
-          case (_, defn: DomainMember.User) =>
-            defnTranslator.translate(defn)
-          case _ => Right(List.empty)
-        }.biFlatten
-
-        defnTests <- if (targets.testOutput.nonEmpty) {
-          domain.defs.meta.nodes.toList.map {
-            case (_, defn: DomainMember.User) =>
-              defnTranslator.translateTests(defn)
-            case _ => Right(List.empty)
+    translator.provide(domain).provide(evo).produce().use {
+      defnTranslator =>
+        for {
+          defnSources <- domain.defs.meta.nodes.toList.map {
+            case (_, defn: DomainMember.User) => defnTranslator.translate(defn)
+            case _                            => Right(List.empty)
           }.biFlatten
-        } else {
-          Right(List.empty)
-        }
 
-        evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
-        conversionSources <- if (options.csOptions.generic.generateConversions) {
-          generateConversions(domain, lineage, evosToCurrent, defnSources)
-        } else {
-          Right(List.empty)
-        }
+          defnTests <- {
+            if (targets.testOutput.nonEmpty) {
+              domain.defs.meta.nodes.toList.map {
+                case (_, defn: DomainMember.User) => defnTranslator.translateTests(defn)
+                case _                            => Right(List.empty)
+              }.biFlatten
+            } else {
+              Right(List.empty)
+            }
+          }
 
-        meta <- if (options.csOptions.csWriteEvolutionDict) {
-          generateMeta(domain, lineage)
-        } else {
-          Right(List.empty)
-        }
-      } yield {
-        defnSources.map(_.output) ++
+          evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
+          conversionSources <- {
+            if (options.csOptions.generic.generateConversions) {
+              generateConversions(domain, lineage, evosToCurrent, defnSources)
+            } else {
+              Right(List.empty)
+            }
+          }
+
+          meta <- {
+            if (options.csOptions.csWriteEvolutionDict) {
+              generateMeta(domain, lineage)
+            } else {
+              Right(List.empty)
+            }
+          }
+        } yield {
+          defnSources.map(_.output) ++
           conversionSources ++
           meta ++
           defnTests.map(_.output)
-      }
+        }
     }
 
   }
 
-  private def generateMeta(domain: Domain,
-                           lineage: BaboonLineage,
-  ): Out[List[CSDefnTranslator.Output]] = {
+  private def generateMeta(domain: Domain, lineage: BaboonLineage): Out[List[CSDefnTranslator.Output]] = {
     val basename = csFiles.basename(domain, lineage.evolution)
-    val pkg = trans.toCsPkg(domain.id, domain.version, lineage.evolution)
+    val pkg      = trans.toCsPkg(domain.id, domain.version, lineage.evolution)
 
     val entries = lineage.evolution
       .typesUnchangedSince(domain.version)
@@ -226,13 +191,13 @@ class CSBaboonTranslator(trans: CSTypeTranslator,
          |}""".stripMargin
 
     val metaSource = Seq(metaTree).join("\n\n")
-    val meta = csTrees.inNs(pkg.parts.toSeq, metaSource)
+    val meta       = csTrees.inNs(pkg.parts.toSeq, metaSource)
 
     val metaOutput = CSDefnTranslator.Output(
       s"$basename/BaboonMeta.cs",
       meta,
       pkg,
-      isTest = false
+      isTest = false,
     )
 
     Right(List(metaOutput))
@@ -242,7 +207,7 @@ class CSBaboonTranslator(trans: CSTypeTranslator,
     domain: Domain,
     lineage: BaboonLineage,
     toCurrent: Set[EvolutionStep],
-    defnOut: List[CSDefnTranslator.OutputExt]
+    defnOut: List[CSDefnTranslator.OutputExt],
   ): Out[List[CSDefnTranslator.Output]] = {
     val pkg = trans.toCsPkg(domain.id, domain.version, lineage.evolution)
 
@@ -264,7 +229,7 @@ class CSBaboonTranslator(trans: CSTypeTranslator,
         .biFlatten
     } yield {
       val conversionRegs = convs.flatMap(_.reg.iterator.toSeq).toSeq
-      val missing = convs.flatMap(_.missing.iterator.toSeq).toSeq
+      val missing        = convs.flatMap(_.missing.iterator.toSeq).toSeq
 
       val converter =
         q"""public interface RequiredConversions {
@@ -281,9 +246,9 @@ class CSBaboonTranslator(trans: CSTypeTranslator,
            |    override public $csList<$csString> VersionsFrom()
            |    {
            |        return new $csList<$csString> { ${toCurrent
-             .map(_.from.version)
-             .map(v => s"""\"$v\"""")
-             .mkString(", ")} };
+            .map(_.from.version)
+            .map(v => s"""\"$v\"""")
+            .mkString(", ")} };
            |    }
            |
            |    override public $csString VersionTo()
@@ -308,21 +273,22 @@ class CSBaboonTranslator(trans: CSTypeTranslator,
       val basename = csFiles.basename(domain, lineage.evolution)
 
       val runtimeSource = Seq(converter, codecs).join("\n\n")
-      val runtime = csTrees.inNs(pkg.parts.toSeq, runtimeSource)
+      val runtime       = csTrees.inNs(pkg.parts.toSeq, runtimeSource)
       val runtimeOutput = CSDefnTranslator.Output(
         s"$basename/BaboonRuntime.cs",
         runtime,
         pkg,
-        isTest = false
+        isTest = false,
       )
 
-      val convertersOutput = convs.map { conv =>
-        CSDefnTranslator.Output(
-          s"$basename/${conv.fname}",
-          conv.conv,
-          pkg,
-          isTest = false
-        )
+      val convertersOutput = convs.map {
+        conv =>
+          CSDefnTranslator.Output(
+            s"$basename/${conv.fname}",
+            conv.conv,
+            pkg,
+            isTest = false,
+          )
       }
 
       List(runtimeOutput) ++ convertersOutput
@@ -332,20 +298,16 @@ class CSBaboonTranslator(trans: CSTypeTranslator,
   private def sharedRuntime(): Out[List[CSDefnTranslator.Output]] = {
     val sharedOutput = CSDefnTranslator.Output(
       s"BaboonRuntimeShared.cs",
-      TextTree.text(
-        IzResources.readAsString("baboon-runtime/cs/BaboonRuntimeShared.cs").get
-      ),
+      TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonRuntimeShared.cs").get),
       CSTypes.baboonRtPkg,
-      isTest = false
+      isTest = false,
     )
 
     val timeOutput = CSDefnTranslator.Output(
       s"BaboonTime.cs",
-      TextTree.text(
-        IzResources.readAsString("baboon-runtime/cs/BaboonTime.cs").get
-      ),
+      TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonTime.cs").get),
       CSTypes.baboonTimePkg,
-      isTest = false
+      isTest = false,
     )
 
     Right(List(sharedOutput, timeOutput))
@@ -360,13 +322,9 @@ class CSBaboonTranslator(trans: CSTypeTranslator,
       List(
         CSDefnTranslator.Output(
           "BaboonTestRuntimeShared.cs",
-          TextTree.text(
-            IzResources
-              .readAsString("baboon-runtime/cs/BaboonTestRuntimeShared.cs")
-              .get
-          ),
+          TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonTestRuntimeShared.cs").get),
           CSTypes.baboonTestRtPkg,
-          isTest = true
+          isTest = true,
         )
       )
     }
@@ -375,10 +333,10 @@ class CSBaboonTranslator(trans: CSTypeTranslator,
 }
 
 object CSBaboonTranslator {
-  case class RenderedConversion(fname: String,
-                                conv: TextTree[CSValue],
-                                reg: Option[TextTree[CSValue]],
-                                missing: Option[TextTree[CSValue]],
+  case class RenderedConversion(
+    fname: String,
+    conv: TextTree[CSValue],
+    reg: Option[TextTree[CSValue]],
+    missing: Option[TextTree[CSValue]],
   )
-
 }

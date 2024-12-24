@@ -6,14 +6,7 @@ import io.septimalmind.baboon.parser.defns.base.{Literals, idt, kw, struct}
 import io.septimalmind.baboon.parser.model.*
 import izumi.fundamentals.platform.language.Quirks.Discarder
 
-class DefModel(context: ParserContext,
-               meta: DefMeta,
-               defEnum: DefEnum,
-               defDto: DefDto,
-               defAdt: DefAdt,
-               defForeign: DefForeign,
-               defContract: DefContract,
-) {
+class DefModel(context: ParserContext, meta: DefMeta, defEnum: DefEnum, defDto: DefDto, defAdt: DefAdt, defForeign: DefForeign, defContract: DefContract) {
   context.discard()
 
   def model[$: P]: P[RawDomain] = {

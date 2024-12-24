@@ -11,40 +11,28 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 trait CSDefnTranslator {
-  def translate(defn: DomainMember.User): Either[NEList[
-    BaboonIssue.TranslationIssue
-  ], List[CSDefnTranslator.OutputExt]]
-
-  def translateTests(defn: DomainMember.User): Either[NEList[
-    BaboonIssue.TranslationIssue
-  ], List[CSDefnTranslator.OutputExt]]
+  def translate(defn: DomainMember.User): Either[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.OutputExt]]
+  def translateTests(defn: DomainMember.User): Either[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.OutputExt]]
 }
 
 object CSDefnTranslator {
-
-  case class Output(path: String,
-                    tree: TextTree[CSValue],
-                    pkg: CSPackageId,
-                    isTest: Boolean)
-
+  case class Output(path: String, tree: TextTree[CSValue], pkg: CSPackageId, isTest: Boolean)
   case class OutputExt(output: Output, codecReg: TextTree[CSValue])
 
-  private val obsolete: CSType =
-    CSType(CSTypes.csSystemPkg, "Obsolete", fq = false)
+  private val obsolete: CSType     = CSType(CSTypes.csSystemPkg, "Obsolete", fq = false)
+  private val serializable: CSType = CSType(CSTypes.csSystemPkg, "Serializable", fq = false)
 
-  private val serializable: CSType =
-    CSType(CSTypes.csSystemPkg, "Serializable", fq = false)
-
-  class CSDefnTranslatorImpl(options: CompilerOptions,
-                             trans: CSTypeTranslator,
-                             csTrees: CSTreeTools,
-                             csDomTrees: CSDomainTreeTools,
-                             csFiles: CSFileTools,
-                             codecs: Set[CSCodecTranslator],
-                             codecsTests: CSCodecTestsTranslator,
-                             codecsFixture: CSCodecFixtureTranslator,
-                             domain: Domain,
-                             evo: BaboonEvolution,
+  class CSDefnTranslatorImpl(
+    options: CompilerOptions,
+    trans: CSTypeTranslator,
+    csTrees: CSTreeTools,
+    csDomTrees: CSDomainTreeTools,
+    csFiles: CSFileTools,
+    codecs: Set[CSCodecTranslator],
+    codecsTests: CSCodecTestsTranslator,
+    codecsFixture: CSCodecFixtureTranslator,
+    domain: Domain,
+    evo: BaboonEvolution,
   ) extends CSDefnTranslator {
     type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
@@ -52,24 +40,22 @@ object CSDefnTranslator {
       defn: DomainMember.User
     ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
       defn.id.owner match {
-        case Owner.Adt(_) if options.csOptions.csUseCompactAdtForm =>
-          Right(List.empty)
-        case _ => doTranslate(defn)
+        case Owner.Adt(_) if options.csOptions.csUseCompactAdtForm => Right(List.empty)
+        case _                                                     => doTranslate(defn)
       }
     }
 
     override def translateTests(
-      defn: DomainMember.User,
+      defn: DomainMember.User
     ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
       defn.id.owner match {
-        case Owner.Adt(_) if options.csOptions.csUseCompactAdtForm =>
-          Right(List.empty)
-        case _ => doTranslateTest(defn)
+        case Owner.Adt(_) if options.csOptions.csUseCompactAdtForm => Right(List.empty)
+        case _                                                     => doTranslateTest(defn)
       }
     }
 
     private def doTranslateTest(
-      defn: DomainMember.User,
+      defn: DomainMember.User
     ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
       val codecTreeWithNs = makeTestRepr(defn, inNs = true)
       val codecTestOut = codecTreeWithNs.map(
@@ -79,26 +65,22 @@ object CSDefnTranslator {
               getOutputPath(defn, suffix = Some("_Tests")),
               codecTestWithNS,
               trans.toCsPkg(domain.id, domain.version, evo),
-              isTest = true
+              isTest = true,
             ),
-            q""
-        )
+            q"",
+          )
       )
 
       Right(codecTestOut.toList)
     }
 
-    private def getOutputPath(defn: DomainMember.User,
-                              suffix: Option[String] = None): String = {
+    private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
       val fbase = csFiles.basename(domain, evo)
       val fname = s"${defn.id.name.name.capitalize}${suffix.getOrElse("")}.cs"
       defn.defn.id.owner match {
-        case Owner.Toplevel =>
-          s"$fbase/$fname"
-        case Owner.Ns(path) =>
-          s"$fbase/${path.map(_.name.toLowerCase).mkString(".")}-$fname"
-        case Owner.Adt(id) =>
-          s"$fbase/${id.name.name.toLowerCase}-$fname"
+        case Owner.Toplevel => s"$fbase/$fname"
+        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString(".")}-$fname"
+        case Owner.Adt(id)  => s"$fbase/${id.name.name.toLowerCase}-$fname"
       }
     }
 
@@ -109,9 +91,7 @@ object CSDefnTranslator {
 
       // Generic codec variant have poor performance on empty JIT and il2cpp (for some reason ._.)
       // val registrations = reg.map { case (srcRef, reg) => q"Register(new $baboonTypeCodecs<${srcRef.fullyQualified}>($reg));" }.join("\n")
-      val registrations = reg
-        .map { case (_, reg) => q"Register(new $baboonTypeCodecs($reg));" }
-        .join("\n")
+      val registrations = reg.map { case (_, reg) => q"Register(new $baboonTypeCodecs($reg));" }.join("\n")
 
       Right(
         List(
@@ -120,9 +100,9 @@ object CSDefnTranslator {
               getOutputPath(defn),
               content,
               trans.toCsPkg(domain.id, domain.version, evo),
-              isTest = false
+              isTest = false,
             ),
-            registrations
+            registrations,
           )
         )
       )
@@ -130,7 +110,7 @@ object CSDefnTranslator {
 
     private def makeFullRepr(
       defn: DomainMember.User,
-      inNs: Boolean
+      inNs: Boolean,
     ): (TextTree[CSValue], List[(CSType, TextTree[CSValue])]) = {
       val isLatestVersion = domain.version == evo.latest
 
@@ -145,7 +125,7 @@ object CSDefnTranslator {
       }
 
       val csTypeRef = trans.toCsTypeRefDeref(defn.id, domain, evo)
-      val srcRef = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
+      val srcRef    = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
 
       val (defnReprBase, extraRegs) =
         makeRepr(defn, csTypeRef, isLatestVersion)
@@ -171,10 +151,7 @@ object CSDefnTranslator {
           // generic types are possible, but have bad JIT and il2cpp performance for generic constructors
           val codecsReg = codecs.toList
             .sortBy(_.getClass.getName)
-            .map(
-              codec =>
-                q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(srcRef).copy(fq = true)}.Instance)"
-            )
+            .map(codec => q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(srcRef).copy(fq = true)}.Instance)")
           // Generic codec variant have poor performance on empty JIT and il2cpp (for some reason ._.)
           // val codecsReg = codecs.toList
           //   .sortBy(_.getClass.getName)
@@ -189,14 +166,12 @@ object CSDefnTranslator {
       (content, allRegs)
     }
 
-    private def makeTestRepr(defn: DomainMember.User,
-                             inNs: Boolean): Option[TextTree[CSValue]] = {
+    private def makeTestRepr(defn: DomainMember.User, inNs: Boolean): Option[TextTree[CSValue]] = {
       val csTypeRef = trans.toCsTypeRefDeref(defn.id, domain, evo)
-      val srcRef = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
-      val ns = srcRef.pkg.parts
+      val srcRef    = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
+      val ns        = srcRef.pkg.parts
 
-      val codecTestTrees =
-        codecsTests.translate(defn, csTypeRef, srcRef).toList
+      val codecTestTrees     = codecsTests.translate(defn, csTypeRef, srcRef).toList
       val codecsFixtureTrees = codecsFixture.translate(defn).toList
 
       val allTrees = codecTestTrees ++ codecsFixtureTrees
@@ -208,58 +183,49 @@ object CSDefnTranslator {
       allTreeWithNs
     }
 
-    private def makeRepr(defn: DomainMember.User,
-                         name: CSValue.CSType,
-                         isLatestVersion: Boolean,
-    ): (TextTree[CSValue], List[(CSType, TextTree[CSValue])]) = {
-      val genMarker =
-        if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
-      val mainMeta =
-        csDomTrees.makeMeta(defn, isCodec = false)
+    private def makeRepr(defn: DomainMember.User, name: CSValue.CSType, isLatestVersion: Boolean): (TextTree[CSValue], List[(CSType, TextTree[CSValue])]) = {
+      val genMarker = if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
+      val mainMeta  = csDomTrees.makeMeta(defn, isCodec = false)
       val codecMeta = codecs.map(_.codecMeta(defn, name).member)
-      val meta = mainMeta ++ codecMeta
+      val meta      = mainMeta ++ codecMeta
 
       defn.defn match {
         case contract: Typedef.Contract =>
-          val methods =
-            renderContractFields(contract.fields).join("\n")
-
-          val refs = contract.contracts
-            .map(t => trans.asCsType(t, domain, evo)) ++ List(q"$genMarker")
-
+          val methods = renderContractFields(contract.fields).join("\n")
+          val refs    = contract.contracts.map(t => q"${trans.asCsType(t, domain, evo)}") ++ List(q"$genMarker")
           val parents = makeParents(refs)
 
-          (q"""public interface ${name.asName}$parents  {
+          (
+            q"""public interface ${name.asName}$parents  {
                |    ${methods.shift(4).trim}
-               |}""".stripMargin, List.empty)
+               |}""".stripMargin,
+            List.empty,
+          )
 
         case dto: Typedef.Dto =>
-          val outs = dto.fields.map { f =>
-            val tpe = trans.asCsRef(f.tpe, domain, evo)
-            val mname = s"${f.name.name.capitalize}"
-            (mname, tpe, f)
+          val outs = dto.fields.map {
+            f =>
+              val tpe   = trans.asCsRef(f.tpe, domain, evo)
+              val mname = s"${f.name.name.capitalize}"
+              (mname, tpe, f)
           }
 
-          val constructorArgs =
-            outs.map { case (fname, tpe, _) => q"$tpe $fname" }.join(",\n")
+          val constructorArgs = outs.map { case (fname, tpe, _) => q"$tpe $fname" }.join(",\n")
 
-          val contractParents = dto.contracts.toSeq
-            .map(c => trans.asCsType(c, domain, evo))
+          val contractParents = dto.contracts.toSeq.map(c => q"${trans.asCsType(c, domain, evo)}")
 
           val adtParents = dto.id.owner match {
-            case Owner.Adt(id) =>
-              val parentId = trans.asCsType(id, domain, evo)
-              Seq(parentId, q"$iBaboonAdtMemberMeta")
-            case _ => Seq.empty
+            case Owner.Adt(id) => Seq(q"${trans.asCsType(id, domain, evo)}", q"$iBaboonAdtMemberMeta")
+            case _             => Seq.empty
           }
 
           val allParents = adtParents ++ contractParents ++ Seq(q"$genMarker")
-          val parents = makeParents(allParents.toList)
+          val parents    = makeParents(allParents.toList)
 
           val comparators = outs.map {
             case (name, _, f) =>
-              val ref = q"$name"
-              val oref = q"other.$ref"
+              val ref        = q"$name"
+              val oref       = q"other.$ref"
               val comparator = TypeId.comparator(f.tpe)
               (ref, oref, comparator)
           }
@@ -269,11 +235,12 @@ object CSDefnTranslator {
           }
 
           val hcGroups = renderedHcParts
-            .grouped(8)
-            .map(group => q"""HashCode.Combine(
-                 |    ${group.join(",\n").shift(4).trim}
-                 |)""".stripMargin)
-            .toList
+            .grouped(8).map {
+              group =>
+                q"""HashCode.Combine(
+                   |    ${group.join(",\n").shift(4).trim}
+                   |)""".stripMargin
+            }.toList
 
           val hc = if (hcGroups.isEmpty) q"0" else hcGroups.join(" ^\n")
 
@@ -284,58 +251,67 @@ object CSDefnTranslator {
           val cmp =
             if (renderedCmps.isEmpty) q"true" else renderedCmps.join(" &&\n")
 
-          val eq = Seq(q"""public override int GetHashCode()
+          val eq = Seq(
+            q"""public override int GetHashCode()
                |{
                |    return ${hc.shift(8).trim};
-               |}""".stripMargin, q"""#nullable enable
+               |}""".stripMargin,
+            q"""#nullable enable
                |public bool Equals($name? other) {
                |    if (other == null) {
                |        return false;
                |    }
                |    return ${cmp.shift(8).trim};
                |}
-               |#nullable disable""".stripMargin)
+               |#nullable disable""".stripMargin,
+          )
 
           val members = eq ++ meta
-          (q"""[$serializable]
+          (
+            q"""[$serializable]
                |public sealed record ${name.asName}(
                |    ${constructorArgs.shift(4).trim}
                |)$parents {
                |    ${members.join("\n\n").shift(4).trim}
-               |};""".stripMargin, List.empty)
+               |};""".stripMargin,
+            List.empty,
+          )
 
         case e: Typedef.Enum =>
           val branches =
-            e.members
-              .map { m =>
+            e.members.map {
+              m =>
                 val base = q"""${m.name.capitalize}"""
                 m.const match {
                   case Some(value) => q"""$base = ${value.toString}"""
                   case None        => base
                 }
-              }
-              .toSeq
+            }.toSeq
               .join(",\n")
 
-          (q"""[$serializable]
+          (
+            q"""[$serializable]
                |public enum ${name.asName} {
                |    ${branches.shift(4).trim}
-               |}""".stripMargin, List.empty)
+               |}""".stripMargin,
+            List.empty,
+          )
 
         case adt: Typedef.Adt =>
           val allParents = Seq(q"$genMarker")
-          val parents = makeParents(allParents.toList)
+          val parents    = makeParents(allParents.toList)
 
           if (options.csOptions.csUseCompactAdtForm) {
-            val memberTrees = adt.members.map { mid =>
-              domain.defs.meta.nodes.get(mid) match {
-                case Some(mdefn: DomainMember.User) =>
-                  makeFullRepr(mdefn, inNs = false)
-                case m =>
-                  throw new RuntimeException(
-                    s"BUG: missing/wrong adt member: $mid => $m"
-                  )
-              }
+            val memberTrees = adt.members.map {
+              mid =>
+                domain.defs.meta.nodes.get(mid) match {
+                  case Some(mdefn: DomainMember.User) =>
+                    makeFullRepr(mdefn, inNs = false)
+                  case m =>
+                    throw new RuntimeException(
+                      s"BUG: missing/wrong adt member: $mid => $m"
+                    )
+                }
             }
 
             val branches = memberTrees
@@ -343,18 +319,24 @@ object CSDefnTranslator {
               .toSeq
               .join("\n\n")
 
-            val regs = memberTrees.map(_._2)
+            val regs    = memberTrees.map(_._2)
             val members = meta
 
-            (q"""public abstract record ${name.asName}$parents {
+            (
+              q"""public abstract record ${name.asName}$parents {
                  |    ${branches.shift(4).trim}
                  |
                  |    ${members.join("\n\n").shift(4).trim}
-                 |}""".stripMargin, regs.toList.flatten)
+                 |}""".stripMargin,
+              regs.toList.flatten,
+            )
 
           } else {
-            (q"""public interface ${name.asName}$parents {
-                 |}""".stripMargin, List.empty)
+            (
+              q"""public interface ${name.asName}$parents {
+                 |}""".stripMargin,
+              List.empty,
+            )
           }
 
         case _: Typedef.Foreign => (q"", List.empty)
@@ -364,10 +346,11 @@ object CSDefnTranslator {
     private def renderContractFields(
       fields: List[Field]
     ): List[TextTree[CSValue]] = {
-      fields.map { f =>
-        val tpe = trans.asCsRef(f.tpe, domain, evo)
-        val mname = s"${f.name.name.capitalize}"
-        q"public $tpe $mname { get; }"
+      fields.map {
+        f =>
+          val tpe   = trans.asCsRef(f.tpe, domain, evo)
+          val mname = s"${f.name.name.capitalize}"
+          q"public $tpe $mname { get; }"
       }
     }
 
@@ -377,9 +360,7 @@ object CSDefnTranslator {
       if (refs.isEmpty) q"" else q" : ${refs.join(", ")} "
     }
 
-    private def renderHashcode(ref: TextTree[CSValue],
-                               cmp: ComparatorType,
-                               depth: Int): TextTree[CSValue] = {
+    private def renderHashcode(ref: TextTree[CSValue], cmp: ComparatorType, depth: Int): TextTree[CSValue] = {
       val itemRef = q"item${depth.toString}"
       cmp match {
         case _: ComparatorType.Basic =>
@@ -394,17 +375,15 @@ object CSDefnTranslator {
               q"($ref.Select($itemRef => ${renderHashcode(itemRef, subComparator, depth + 1)}).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
             case ComparatorType.MapEquals(keyComparator, valComparator) =>
               q"($ref.Select($itemRef => HashCode.Combine(${renderHashcode(
-                q"$itemRef.Key",
-                keyComparator,
-                depth + 1
-              )}, ${renderHashcode(q"$itemRef.Value", valComparator, depth + 1)})).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
+                  q"$itemRef.Key",
+                  keyComparator,
+                  depth + 1,
+                )}, ${renderHashcode(q"$itemRef.Value", valComparator, depth + 1)})).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
           }
       }
     }
 
-    private def renderComparator(ref: TextTree[CSValue],
-                                 oref: TextTree[CSValue],
-                                 cmp: ComparatorType): TextTree[CSValue] = {
+    private def renderComparator(ref: TextTree[CSValue], oref: TextTree[CSValue], cmp: ComparatorType): TextTree[CSValue] = {
       cmp match {
         case ComparatorType.Direct =>
           q"$ref == $oref"
@@ -430,7 +409,7 @@ object CSDefnTranslator {
           q"$ref.SetEquals($oref)"
 
         case ComparatorType.MapEquals(_, valComp) =>
-          val vref = q"$oref[key]"
+          val vref  = q"$oref[key]"
           val ovref = q"$ref[key]"
 
           val cmp = renderComparator(vref, ovref, valComp)

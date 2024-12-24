@@ -22,7 +22,7 @@ object Baboon {
         CaseApp.printHelp[CLIOptions]()
         System.exit(1)
       case Right(value) =>
-        val opts = value._1
+        val opts       = value._1
         val inputPaths = opts.modelDir.map(s => Paths.get(s))
         val testOutDir =
           opts.csOptions.generic.testOutput.map(o => Paths.get(o))
@@ -37,31 +37,22 @@ object Baboon {
           debug = opts.debug.getOrElse(false),
           csOptions = CSOptions(
             GenericOptions(
-              obsoleteErrors = opts.csOptions.csObsoleteErrors.getOrElse(false),
-              runtime = rtOpt,
-              generateConversions =
-                !opts.csOptions.generic.disableConversions.getOrElse(false),
-              metaWriteEvolutionJsonTo =
-                opts.csOptions.generic.metaWriteEvolutionJson
-                  .map(s => Paths.get(s)),
-              codecTestIterations =
-                opts.csOptions.generic.codecTestIterations.getOrElse(500),
+              obsoleteErrors      = opts.csOptions.csObsoleteErrors.getOrElse(false),
+              runtime             = rtOpt,
+              generateConversions = !opts.csOptions.generic.disableConversions.getOrElse(false),
+              metaWriteEvolutionJsonTo = opts.csOptions.generic.metaWriteEvolutionJson
+                .map(s => Paths.get(s)),
+              codecTestIterations = opts.csOptions.generic.codecTestIterations.getOrElse(500),
             ),
-            omitMostRecentVersionSuffixFromPaths =
-              opts.csOptions.generic.omitMostRecentVersionSuffixFromPaths
-                .getOrElse(true),
-            omitMostRecentVersionSuffixFromNamespaces =
-              opts.csOptions.generic.omitMostRecentVersionSuffixFromNamespaces
-                .getOrElse(true),
-            csDisregardImplicitUsings =
-              !opts.csOptions.csExcludeGlobalUsings.getOrElse(false),
-            csUseCompactAdtForm =
-              opts.csOptions.csUseCompactAdtForm.getOrElse(true),
-            csWrappedAdtBranchCodecs =
-              opts.csOptions.csWrappedAdtBranchCodecs.getOrElse(false),
-            csWriteEvolutionDict =
-              opts.csOptions.csWriteEvolutionDict.getOrElse(false),
-          )
+            omitMostRecentVersionSuffixFromPaths = opts.csOptions.generic.omitMostRecentVersionSuffixFromPaths
+              .getOrElse(true),
+            omitMostRecentVersionSuffixFromNamespaces = opts.csOptions.generic.omitMostRecentVersionSuffixFromNamespaces
+              .getOrElse(true),
+            csDisregardImplicitUsings = !opts.csOptions.csExcludeGlobalUsings.getOrElse(false),
+            csUseCompactAdtForm       = opts.csOptions.csUseCompactAdtForm.getOrElse(true),
+            csWrappedAdtBranchCodecs  = opts.csOptions.csWrappedAdtBranchCodecs.getOrElse(false),
+            csWriteEvolutionDict      = opts.csOptions.csWriteEvolutionDict.getOrElse(false),
+          ),
         )
 
         val safeToRemove = NEList.from(opts.extAllowCleanup) match {
@@ -77,10 +68,11 @@ object Baboon {
             (compiler: BaboonCompiler) =>
               val inputModels = opts.model
                 .map(s => Paths.get(s))
-                .toSet ++ inputPaths.flatMap { dir =>
-                IzFiles
-                  .walk(dir.toFile)
-                  .filter(_.toFile.getName.endsWith(".baboon"))
+                .toSet ++ inputPaths.flatMap {
+                dir =>
+                  IzFiles
+                    .walk(dir.toFile)
+                    .filter(_.toFile.getName.endsWith(".baboon"))
               }
               val outDir = Paths.get(opts.csOptions.generic.output)
 
@@ -88,9 +80,7 @@ object Baboon {
                 s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}"
               )
               println(s"Target: ${outDir.toFile.getCanonicalPath}")
-              testOutDir.foreach(
-                t => println(s"Test target: ${t.toFile.getCanonicalPath}")
-              )
+              testOutDir.foreach(t => println(s"Test target: ${t.toFile.getCanonicalPath}"))
 
               cleanupTargetDir(safeToRemove, outDir) match {
                 case Left(value) =>
@@ -125,12 +115,13 @@ object Baboon {
     if (outDir.toFile.exists()) {
       val unexpectedFiles = IzFiles
         .walk(outDir.toFile)
-        .filter { p =>
-          val f = p.toFile
-          !f.isDirectory && !(
-            f.getName.startsWith(".") ||
+        .filter {
+          p =>
+            val f = p.toFile
+            !f.isDirectory && !(
+              f.getName.startsWith(".") ||
               safeToRemove.exists(ext => f.getName.endsWith(s".$ext"))
-          )
+            )
         }
         .toSeq
 

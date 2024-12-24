@@ -20,11 +20,11 @@ object Literals {
     * This is the default for most things
     */
   def WL0[$: P]: P[Unit] =
-    P(NoTrace((Basic.WSChars | Literals.Comment | Basic.Newline).rep)) //(sourcecode.Name("WL"))
+    P(NoTrace((Basic.WSChars | Literals.Comment | Basic.Newline).rep)) // (sourcecode.Name("WL"))
   def WL[$: P]: P[Unit] = P(NoCut(WL0))
 
-  def Semi[$: P]: P[Unit] = P(WS ~ Basic.Semi)
-  def Semis[$: P]: P[Unit] = P(Semi.rep(1) ~ WS)
+  def Semi[$: P]: P[Unit]    = P(WS ~ Basic.Semi)
+  def Semis[$: P]: P[Unit]   = P(Semi.rep(1) ~ WS)
   def Newline[$: P]: P[Unit] = P(WL ~ Basic.Newline)
 
   def NotNewline[$: P]: P0 = P(&(WS ~ !Basic.Newline))
@@ -94,7 +94,7 @@ object Literals {
     def NonTripleQuoteChar[$: P]: P[Unit] =
       P("\"" ~ "\"".? ~ !"\"" | CharIn("\\$\n"))
     def TripleChars[$: P]: P[Unit] = P((StringChars | NonTripleQuoteChar).rep)
-    def TripleTail[$: P]: P[Unit] = P(TQ ~ "\"".rep)
+    def TripleTail[$: P]: P[Unit]  = P(TQ ~ "\"".rep)
     def SingleChars[$: P](allowSlash: Boolean): P[Unit] = {
       def LiteralSlash = P(if (allowSlash) "\\" else Fail)
       def NonStringEnd = P(!CharIn("\n\"") ~ AnyChar)
@@ -103,13 +103,13 @@ object Literals {
     def Str[$: P]: P[String] = {
       P {
         (TQ ~/ TripleChars.! ~ TripleTail) |
-          ("\"" ~/ SingleChars(false).! ~ "\"")
+        ("\"" ~/ SingleChars(false).! ~ "\"")
       }
     }
 
     def SimpleStr[$: P]: P[String] = {
       P {
-        ("\"" ~/ SingleChars(false).! ~ "\"")
+        "\"" ~/ SingleChars(false).! ~ "\""
       }
     }
 

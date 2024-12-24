@@ -10,12 +10,13 @@ import scala.util.parsing.input.OffsetPosition
 class DefMeta(context: ParserContext) {
   def positioned[T](
     defparser: => P[T]
-  )(implicit v: P[_]): P[(InputPointer, T)] = {
+  )(implicit v: P[_]
+  ): P[(InputPointer, T)] = {
     import fastparse.ScalaWhitespace.whitespace
     (Index ~ defparser ~ Index).map {
       case (start, value, stop) =>
         val begin = DefMeta.makePos(context.content, start)
-        val end = DefMeta.makePos(context.content, stop)
+        val end   = DefMeta.makePos(context.content, stop)
         (InputPointer.Full(context.file, begin, end), value)
     }
   }
@@ -27,8 +28,10 @@ class DefMeta(context: ParserContext) {
     }
   }
 
-  def member[T](keyword: => P[Unit], defparser: => P[T])(
-    implicit
+  def member[T](
+    keyword: => P[Unit],
+    defparser: => P[T],
+  )(implicit
     v: P[_]
   ): P[(RawNodeMeta, String, T)] = {
     import fastparse.ScalaWhitespace.whitespace

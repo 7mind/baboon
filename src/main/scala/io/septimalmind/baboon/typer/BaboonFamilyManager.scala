@@ -16,30 +16,28 @@ trait BaboonFamilyManager {
 }
 
 object BaboonFamilyManager {
-  class BaboonFamilyManagerImpl(parser: BaboonParser,
-                                typer: BaboonTyper,
-                                comparator: BaboonComparator,
-                                logger: BLogger)
-      extends BaboonFamilyManager {
+  class BaboonFamilyManagerImpl(parser: BaboonParser, typer: BaboonTyper, comparator: BaboonComparator, logger: BLogger) extends BaboonFamilyManager {
     override def load(
       definitions: List[BaboonParser.Input]
     ): Either[NEList[BaboonIssue], BaboonFamily] = {
       for {
-        domains <- definitions.biTraverse { input =>
-          for {
-            parsed <- parser.parse(input)
-            typed <- typer.process(parsed)
-          } yield {
-            typed
-          }
+        domains <- definitions.biTraverse {
+          input =>
+            for {
+              parsed <- parser.parse(input)
+              typed  <- typer.process(parsed)
+            } yield {
+              typed
+            }
         }
 
         _ <- Right(
-          domains.sortBy(d => (d.id.toString, d.version.version)).foreach { d =>
-            logger.message(
-              d.id.toString,
-              q"${d.version}: retained definitions: ${d.defs.meta.nodes.size}, unreachable definitions: ${d.excludedIds.size}"
-            )
+          domains.sortBy(d => (d.id.toString, d.version.version)).foreach {
+            d =>
+              logger.message(
+                d.id.toString,
+                q"${d.version}: retained definitions: ${d.defs.meta.nodes.size}, unreachable definitions: ${d.excludedIds.size}",
+              )
           }
         )
 
@@ -52,9 +50,7 @@ object BaboonFamilyManager {
               for {
                 uniqueVersions <- domains
                   .map(d => (d.version, d))
-                  .toUniqueMap(
-                    v => NEList(BaboonIssue.NonUniqueDomainVersions(v))
-                  )
+                  .toUniqueMap(v => NEList(BaboonIssue.NonUniqueDomainVersions(v)))
                 nel <- NEMap
                   .from(uniqueVersions)
                   .toRight(NEList(BaboonIssue.EmptyDomainFamily(pkg)))

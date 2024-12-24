@@ -1,25 +1,9 @@
 package io.septimalmind.baboon.typer
 
-import io.septimalmind.baboon.parser.model.{
-  RawAdt,
-  RawDefn,
-  RawDtoMember,
-  RawDtoid,
-  ScopedRef
-}
+import io.septimalmind.baboon.parser.model.{RawAdt, RawDefn, RawDtoMember, RawDtoid, ScopedRef}
 import io.septimalmind.baboon.typer.model.BinReprLen.Variable
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
-import io.septimalmind.baboon.typer.model.{
-  BinReprLen,
-  Domain,
-  DomainMember,
-  Field,
-  Owner,
-  ShallowSchemaId,
-  TypeId,
-  TypeRef,
-  Typedef
-}
+import io.septimalmind.baboon.typer.model.{BinReprLen, Domain, DomainMember, Field, Owner, ShallowSchemaId, TypeId, TypeRef, Typedef}
 import izumi.fundamentals.collections.nonempty.NESet
 import izumi.fundamentals.graphs.struct.IncidenceMatrix
 import izumi.fundamentals.graphs.tools.cycles.LoopDetector
@@ -49,8 +33,9 @@ object BaboonEnquiries {
     def loopsOf(
       domain: Map[TypeId, DomainMember]
     ): Set[LoopDetector.Cycles[TypeId]] = {
-      val depMatrix = IncidenceMatrix(domain.view.mapValues { defn =>
-        fullDepsOfDefn(defn)
+      val depMatrix = IncidenceMatrix(domain.view.mapValues {
+        defn =>
+          fullDepsOfDefn(defn)
       }.toMap)
 
       val loops =
@@ -59,12 +44,8 @@ object BaboonEnquiries {
       loops
     }
 
-    def hasForeignType(definition: DomainMember.User,
-                       domain: Domain): Boolean = {
-      def processFields(foreignType: Option[TypeId],
-                        tail: List[Typedef],
-                        f: List[Field],
-                        seen: mutable.HashSet[TypeId]): Option[TypeId] = {
+    def hasForeignType(definition: DomainMember.User, domain: Domain): Boolean = {
+      def processFields(foreignType: Option[TypeId], tail: List[Typedef], f: List[Field], seen: mutable.HashSet[TypeId]): Option[TypeId] = {
         val fieldsTypes = f.map(_.tpe)
         val moreToCheck = fieldsTypes.flatMap {
           case TypeRef.Scalar(id) =>
@@ -86,9 +67,7 @@ object BaboonEnquiries {
       }
 
       @tailrec
-      def collectForeignType(toCheck: List[Typedef],
-                             foreignType: Option[TypeId],
-                             seen: mutable.HashSet[TypeId]): Option[TypeId] = {
+      def collectForeignType(toCheck: List[Typedef], foreignType: Option[TypeId], seen: mutable.HashSet[TypeId]): Option[TypeId] = {
         (toCheck.filterNot(d => seen.contains(d.id)), foreignType) match {
           case (_, Some(tpe)) =>
             seen += tpe
@@ -123,33 +102,29 @@ object BaboonEnquiries {
       collectForeignType(
         List(definition.defn),
         None,
-        mutable.HashSet.empty[TypeId]
+        mutable.HashSet.empty[TypeId],
       ).nonEmpty
     }
 
-    override def isRecursiveTypedef(definition: DomainMember.User,
-                                    domain: Domain): Boolean = {
+    override def isRecursiveTypedef(definition: DomainMember.User, domain: Domain): Boolean = {
       domain.loops.exists(_.loops.exists(_.loop.contains(definition.id)))
     }
 
     def hardDepsOfRawDefn(dd: RawDefn): Set[ScopedRef] = {
       dd match {
         case d: RawDtoid =>
-          d.members
-            .collect {
-              case d: RawDtoMember.ParentDef =>
-                Seq(d.parent)
-              case d: RawDtoMember.UnparentDef =>
-                Seq(d.parent)
-              case d: RawDtoMember.IntersectionDef =>
-                Seq(d.parent)
-              case d: RawDtoMember.ContractRef =>
-                Seq(d.contract.tpe)
-              case _ =>
-                Seq.empty
-            }
-            .flatten
-            .toSet
+          d.members.collect {
+            case d: RawDtoMember.ParentDef =>
+              Seq(d.parent)
+            case d: RawDtoMember.UnparentDef =>
+              Seq(d.parent)
+            case d: RawDtoMember.IntersectionDef =>
+              Seq(d.parent)
+            case d: RawDtoMember.ContractRef =>
+              Seq(d.contract.tpe)
+            case _ =>
+              Seq.empty
+          }.flatten.toSet
         case a: RawAdt =>
           a.contracts.map(_.contract.tpe).toSet
         case _ =>
@@ -161,9 +136,7 @@ object BaboonEnquiries {
       depsOfDefn(defn, explode)
     }
 
-    private def depsOfDefn(defn: DomainMember,
-                           explodeField: TypeRef => Set[TypeId],
-    ): Set[TypeId] = {
+    private def depsOfDefn(defn: DomainMember, explodeField: TypeRef => Set[TypeId]): Set[TypeId] = {
       def explodeFields(f: List[Field]) = {
         f.flatMap(f => explodeField(f.tpe)).toSet
       }
@@ -207,14 +180,16 @@ object BaboonEnquiries {
         case u: DomainMember.User =>
           u.defn match {
             case d: Typedef.Dto =>
-              val members = d.fields.map { f =>
-                s"${f.name}:${wrap(f.tpe)}"
+              val members = d.fields.map {
+                f =>
+                  s"${f.name}:${wrap(f.tpe)}"
               }.sorted
 
               s"[dto;${wrap(d.id)};$members]"
             case d: Typedef.Contract =>
-              val members = d.fields.map { f =>
-                s"${f.name}:${wrap(f.tpe)}"
+              val members = d.fields.map {
+                f =>
+                  s"${f.name}:${wrap(f.tpe)}"
               }.sorted
 
               s"[contract;${wrap(d.id)};$members]"
@@ -229,10 +204,7 @@ object BaboonEnquiries {
             case f: Typedef.Foreign =>
               val members = f.bindings.values.toList
                 .sortBy(_.lang)
-                .map(
-                  e =>
-                    s"[${e.lang};${e.decl};${e.attrs.attrs.map(a => s"${a.name};${a.value}").sorted.mkString(":")}]"
-                )
+                .map(e => s"[${e.lang};${e.decl};${e.attrs.attrs.map(a => s"${a.name};${a.value}").sorted.mkString(":")}]")
                 .mkString(":")
               s"[foreign;${wrap(f.id)};$members]"
           }
@@ -251,7 +223,7 @@ object BaboonEnquiries {
             case Owner.Ns(path) => s"//${path.map(_.name).mkString("/")}/"
             case Owner.Adt(id)  => s"/${wrap(id)}/"
           }
-          s"${u.pkg.path.mkString(".")}#${owner}#${u.name.name}"
+          s"${u.pkg.path.mkString(".")}#$owner#${u.name.name}"
 
       }
 
@@ -295,9 +267,7 @@ object BaboonEnquiries {
     def uebaLen(dom: Map[TypeId, DomainMember], tpe: TypeRef): BinReprLen = {
       binReprLenImpl(dom, tpe, Set.empty)
     }
-    private def binReprLenImpl(dom: Map[TypeId, DomainMember],
-                               tpe: TypeRef,
-                               visited: Set[TypeRef]): BinReprLen = {
+    private def binReprLenImpl(dom: Map[TypeId, DomainMember], tpe: TypeRef, visited: Set[TypeRef]): BinReprLen = {
       if (visited.contains(tpe)) {
         BinReprLen.Unknown()
       } else {
@@ -324,7 +294,7 @@ object BaboonEnquiries {
                         r.prefixed(1)
                     }
                 }
-              //BinReprLen.Alternatives(Set(1, )) // N or 1...
+              // BinReprLen.Alternatives(Set(1, )) // N or 1...
               case u =>
                 throw new IllegalStateException(
                   s"BUG: unknown collection type $u"
@@ -335,9 +305,7 @@ object BaboonEnquiries {
 
     }
 
-    private def scalarLen(dom: Map[TypeId, DomainMember],
-                          id: TypeRef.Scalar,
-                          visited: Set[TypeRef]): BinReprLen = {
+    private def scalarLen(dom: Map[TypeId, DomainMember], id: TypeRef.Scalar, visited: Set[TypeRef]): BinReprLen = {
       id.id match {
         case id: TypeId.BuiltinScalar =>
           id match {
@@ -397,12 +365,10 @@ object BaboonEnquiries {
       }
     }
 
-    private def aggregateLen(dom: Map[TypeId, DomainMember],
-                             fields: List[Field],
-                             visited: Set[TypeRef],
-    ): BinReprLen = {
-      val binLens = fields.map { f =>
-        binReprLenImpl(dom, f.tpe, visited)
+    private def aggregateLen(dom: Map[TypeId, DomainMember], fields: List[Field], visited: Set[TypeRef]): BinReprLen = {
+      val binLens = fields.map {
+        f =>
+          binReprLenImpl(dom, f.tpe, visited)
       }
 
       val fixed = binLens.collect {

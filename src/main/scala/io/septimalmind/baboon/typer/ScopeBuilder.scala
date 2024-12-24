@@ -22,7 +22,7 @@ class ScopeBuilder() {
   def buildScopes(
     pkg: Pkg,
     members: Seq[RawTLDef],
-    meta: RawNodeMeta
+    meta: RawNodeMeta,
   ): Either[NEList[BaboonIssue.TyperIssue], RootScope[ExtendedRawDefn]] = {
 
     val gen = new UIDGen {}
@@ -33,22 +33,22 @@ class ScopeBuilder() {
         .map(s => (s.name, s))
         .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, meta)))
     } yield {
-      val out = RootScope(gen.next(), pkg, asMap)
+      val out     = RootScope(gen.next(), pkg, asMap)
       val parents = out.identifyParents
-      val index = out.index
+      val index   = out.index
 
       out.map(defn => ExtendedRawDefn(defn, ScopeContext(parents, index)))
     }
 
   }
 
-  private def buildScope(member: RawDefn,
-                         isRoot: Boolean,
-                         //parents: util.IdentityHashMap[NestedScope[FullRawDefn], Scope[FullRawDefn]],
-                         gen: UIDGen,
+  private def buildScope(
+    member: RawDefn,
+    isRoot: Boolean,
+    // parents: util.IdentityHashMap[NestedScope[FullRawDefn], Scope[FullRawDefn]],
+    gen: UIDGen,
   ): Either[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
-    def finish(defn: RawDefn,
-               asNEMap: NEMap[ScopeName, NestedScope[FullRawDefn]]) = {
+    def finish(defn: RawDefn, asNEMap: NEMap[ScopeName, NestedScope[FullRawDefn]]) = {
       SubScope(
         gen.next(),
         ScopeName(defn.name.name),
@@ -65,9 +65,7 @@ class ScopeBuilder() {
             .biSequence
           asMap <- sub
             .map(s => (s.name, s))
-            .toUniqueMap(
-              nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta))
-            )
+            .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta)))
           asNEMap <- NEMap
             .from(asMap)
             .toRight(NEList(BaboonIssue.ScopeCannotBeEmpty(member)))
@@ -77,15 +75,12 @@ class ScopeBuilder() {
 
       case adt: RawAdt =>
         for {
-          sub <- adt.members
-            .collect { case d: RawAdtMember => d }
+          sub <- adt.members.collect { case d: RawAdtMember => d }
             .map(m => buildScope(m.defn, isRoot = false, gen))
             .biSequence
           asMap <- sub
             .map(s => (s.name, s))
-            .toUniqueMap(
-              nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta))
-            )
+            .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta)))
           asNEMap <- NEMap
             .from(asMap)
             .toRight(NEList(BaboonIssue.ScopeCannotBeEmpty(member)))
@@ -98,7 +93,7 @@ class ScopeBuilder() {
           LeafScope(
             gen.next(),
             ScopeName(dto.name.name),
-            FullRawDefn(dto, isRoot)
+            FullRawDefn(dto, isRoot),
           )
         )
 
@@ -107,7 +102,7 @@ class ScopeBuilder() {
           LeafScope(
             gen.next(),
             ScopeName(contract.name.name),
-            FullRawDefn(contract, isRoot)
+            FullRawDefn(contract, isRoot),
           )
         )
 

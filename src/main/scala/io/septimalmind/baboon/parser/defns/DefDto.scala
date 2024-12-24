@@ -4,16 +4,7 @@ import fastparse.*
 import io.septimalmind.baboon.parser.{ParserContext, model}
 import io.septimalmind.baboon.parser.defns.base.{idt, kw, struct}
 import io.septimalmind.baboon.parser.model.RawDtoMember.ContractRef
-import io.septimalmind.baboon.parser.model.{
-  RawContractRef,
-  RawDto,
-  RawDtoMember,
-  RawField,
-  RawFieldName,
-  RawTypeName,
-  RawTypeRef,
-  ScopedRef
-}
+import io.septimalmind.baboon.parser.model.{RawContractRef, RawDto, RawDtoMember, RawField, RawFieldName, RawTypeName, RawTypeRef, ScopedRef}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.language.Quirks.Discarder
 
@@ -27,16 +18,14 @@ class DefDto(context: ParserContext, meta: DefMeta) {
   }
 
   def nonGenericTypeRef[$: P]: P[ScopedRef] = {
-    idt.symbolSeq.map(
-      s => ScopedRef(NEList.unsafeFrom(s.map(p => RawTypeName(p)).toList))
-    )
+    idt.symbolSeq.map(s => ScopedRef(NEList.unsafeFrom(s.map(p => RawTypeName(p)).toList)))
   }
 
   def typeRef[$: P]: P[RawTypeRef] = {
     import fastparse.SingleLineWhitespace.whitespace
     (nonGenericTypeRef ~ typeParams.?).map {
       case (ref, params) =>
-        val name = ref.path.last.name
+        val name   = ref.path.last.name
         val prefix = ref.path.toList.init
 
         params match {
@@ -53,7 +42,7 @@ class DefDto(context: ParserContext, meta: DefMeta) {
 
   def contractDef[$: P]: P[RawContractRef] = {
     import fastparse.ScalaWhitespace.whitespace
-    ("is" ~ nonGenericTypeRef).map { case (t) => model.RawContractRef(t) }
+    ("is" ~ nonGenericTypeRef).map { case t => model.RawContractRef(t) }
   }
 
   def extendedContractRef[$: P]: P[ContractRef] = {
@@ -69,26 +58,26 @@ class DefDto(context: ParserContext, meta: DefMeta) {
 
   def parentDef[$: P]: P[ScopedRef] = {
     import fastparse.ScalaWhitespace.whitespace
-    ("+" ~ nonGenericTypeRef)
+    "+" ~ nonGenericTypeRef
   }
 
   def unparentDef[$: P]: P[ScopedRef] = {
     import fastparse.ScalaWhitespace.whitespace
-    ("-" ~ nonGenericTypeRef)
+    "-" ~ nonGenericTypeRef
   }
 
   def intersectionDef[$: P]: P[ScopedRef] = {
     import fastparse.ScalaWhitespace.whitespace
-    ("^" ~ nonGenericTypeRef)
+    "^" ~ nonGenericTypeRef
   }
 
   def unfieldDef[$: P]: P[RawField] = {
     import fastparse.ScalaWhitespace.whitespace
-    ("-" ~ fieldDef)
+    "-" ~ fieldDef
   }
 
   def dtoMember[$: P]: P[RawDtoMember] =
-    (P(meta.withMeta(fieldDef)).map {
+    P(meta.withMeta(fieldDef)).map {
       case (meta, field) =>
         model.RawDtoMember.FieldDef(field, meta)
     } | P(meta.withMeta(parentDef)).map {
@@ -103,7 +92,7 @@ class DefDto(context: ParserContext, meta: DefMeta) {
     } | P(meta.withMeta(intersectionDef)).map {
       case (meta, parent) =>
         model.RawDtoMember.IntersectionDef(parent, meta)
-    } | extendedContractRef)
+    } | extendedContractRef
 
   def dto[$: P]: P[Seq[RawDtoMember]] = {
     import fastparse.ScalaWhitespace.whitespace

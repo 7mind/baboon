@@ -10,7 +10,7 @@ import izumi.functional.IzEither.*
 object SymbolNames {
   def validEnumMemberName(
     name: String,
-    meta: RawNodeMeta
+    meta: RawNodeMeta,
   ): Either[NEList[TyperIssue], Unit] = {
     for {
       _ <- Either.ifThenFail(
@@ -22,8 +22,7 @@ object SymbolNames {
     } yield {}
   }
 
-  def validFieldName(name: FieldName,
-                     meta: RawNodeMeta): Either[NEList[TyperIssue], Unit] = {
+  def validFieldName(name: FieldName, meta: RawNodeMeta): Either[NEList[TyperIssue], Unit] = {
     for {
       _ <- Either.ifThenFail(
         !(name.name
@@ -37,8 +36,7 @@ object SymbolNames {
       )
     } yield {}
   }
-  def validTypeName(name: TypeName,
-                    meta: RawNodeMeta): Either[NEList[TyperIssue], Unit] = {
+  def validTypeName(name: TypeName, meta: RawNodeMeta): Either[NEList[TyperIssue], Unit] = {
     for {
       _ <- Either.ifThenFail(
         !(name.name

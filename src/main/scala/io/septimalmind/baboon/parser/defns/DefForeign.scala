@@ -3,13 +3,7 @@ package io.septimalmind.baboon.parser.defns
 import fastparse.P
 import io.septimalmind.baboon.parser.{ParserContext, model}
 import io.septimalmind.baboon.parser.defns.base.{Literals, idt, kw, struct}
-import io.septimalmind.baboon.parser.model.{
-  RawForeign,
-  RawForeignEntry,
-  RawForeignEntryAttr,
-  RawForeignEntryAttrs,
-  RawTypeName
-}
+import io.septimalmind.baboon.parser.model.{RawForeign, RawForeignEntry, RawForeignEntryAttr, RawForeignEntryAttrs, RawTypeName}
 
 class DefForeign(context: ParserContext, meta: DefMeta) {
   def kvPair[$: P]: P[RawForeignEntryAttr] = {
@@ -22,8 +16,9 @@ class DefForeign(context: ParserContext, meta: DefMeta) {
 
   def foreignAttrs[$: P]: P[RawForeignEntryAttrs] = {
     import fastparse.ScalaWhitespace.whitespace
-    (P("with") ~ "{" ~ kvPair.rep() ~ "}").map { a =>
-      RawForeignEntryAttrs(a.toList)
+    (P("with") ~ "{" ~ kvPair.rep() ~ "}").map {
+      a =>
+        RawForeignEntryAttrs(a.toList)
     }
   }
 

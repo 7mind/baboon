@@ -3,12 +3,7 @@ package io.septimalmind.baboon.parser.defns
 import fastparse.P
 import io.septimalmind.baboon.parser.ParserContext
 import io.septimalmind.baboon.parser.defns.base.{Literals, idt, kw, sep, struct}
-import io.septimalmind.baboon.parser.model.{
-  RawEnum,
-  RawEnumConst,
-  RawEnumMember,
-  RawTypeName
-}
+import io.septimalmind.baboon.parser.model.{RawEnum, RawEnumConst, RawEnumMember, RawTypeName}
 
 class DefEnum(context: ParserContext, meta: DefMeta) {
   def enumMemberName[$: P]: P[String] = idt.symbol
@@ -16,15 +11,17 @@ class DefEnum(context: ParserContext, meta: DefMeta) {
   def constInt[$: P]: P[Int] = {
     import fastparse.NoWhitespace.noWhitespaceImplicit
 
-    (P("-").? ~ Literals.Literals.Int).!.map { v =>
-      // todo: .endsWith("L")
-      v.toInt
+    (P("-").? ~ Literals.Literals.Int).!.map {
+      v =>
+        // todo: .endsWith("L")
+        v.toInt
     }
   }
   def enumVal[$: P]: P[RawEnumConst] = {
     import fastparse.ScalaWhitespace.whitespace
-    (P("=") ~ constInt).map { v =>
-      RawEnumConst.RawInt(v)
+    (P("=") ~ constInt).map {
+      v =>
+        RawEnumConst.RawInt(v)
     }
   }
   def enumMember[$: P]: P[RawEnumMember] = {
@@ -40,7 +37,7 @@ class DefEnum(context: ParserContext, meta: DefMeta) {
     P(enumMember.rep())
   }
 
-  //def sepEnumFreeForm[$: P]: P[Unit] = P("|" | ";" | ",")
+  // def sepEnumFreeForm[$: P]: P[Unit] = P("|" | ";" | ",")
 
   def sepEnum[$: P]: P[Unit] = {
     import fastparse.ScalaWhitespace.whitespace
