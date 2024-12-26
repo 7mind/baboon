@@ -1,6 +1,10 @@
+#nullable enable
+
+#pragma warning disable 612,618
+
+using System;
 using System.Globalization;
 using Newtonsoft.Json;
-using System;
 
 namespace Baboon.Time
 {
@@ -8,74 +12,90 @@ namespace Baboon.Time
     [JsonConverter(typeof(JsonConverter))]
     public readonly struct RpDateTime : IComparable, IComparable<RpDateTime>, IEquatable<RpDateTime>
     {
-        public readonly DateTime DateTime;
+        public readonly DateTimeOffset DateTimeOffset;
+
+        public readonly DateTimeKind Kind;
+        public DateTime DateTime => DateTime.SpecifyKind(DateTimeOffset.UtcDateTime, Kind);
+        public long Ticks => DateTime.Ticks;
+
+        public RpDateTime(DateTimeOffset dateTimeOffset, DateTimeKind kind)
+        {
+            DateTimeOffset = BaboonDateTimeFormats.TruncateToMilliseconds(dateTimeOffset);
+            Kind = kind;
+        }
 
         public RpDateTime(int year, int month, int day)
         {
-            DateTime = new DateTime(year, month, day);
+            DateTimeOffset = new DateTimeOffset(new DateTime(year, month, day));
+            Kind = DateTimeKind.Local;
         }
 
         public RpDateTime(int year, int month, int day, int hour, int minute, int second)
         {
-            DateTime = new DateTime(year, month, day, hour, minute, second);
+            DateTimeOffset = new DateTimeOffset(new DateTime(year, month, day, hour, minute, second));
+            Kind = DateTimeKind.Local;
         }
 
         public RpDateTime(int year, int month, int day, int hour, int minute, int second, int millisecond, DateTimeKind kind)
         {
-            DateTime = new DateTime(year, month, day, hour, minute, second, millisecond, kind);
+            DateTimeOffset = new DateTimeOffset(new DateTime(year, month, day, hour, minute, second, millisecond, kind));
+            Kind = kind;
         }
 
         public RpDateTime(long ticks, DateTimeKind kind)
         {
-            DateTime = BaboonDateTimeFormats.TruncateToMilliseconds(ticks, kind);
+            DateTimeOffset = new DateTimeOffset(BaboonDateTimeFormats.TruncateToMilliseconds(ticks, kind));
+            Kind = kind;
         }
 
         public RpDateTime(DateTime dateTime)
         {
-            DateTime = BaboonDateTimeFormats.TruncateToMilliseconds(dateTime);
+            DateTimeOffset = new DateTimeOffset(BaboonDateTimeFormats.TruncateToMilliseconds(dateTime));
+            Kind = dateTime.Kind;
         }
 
         public override int GetHashCode()
         {
-            return DateTime.ToUniversalTime().GetHashCode();
+            return DateTimeOffset.GetHashCode();
         }
 
         public override bool Equals(object? obj)
         {
             if (obj is not RpDateTime other) return false;
-            return other.DateTime.ToUniversalTime() == DateTime.ToUniversalTime();
+            return other.DateTimeOffset == DateTimeOffset;
         }
 
         public bool Equals(RpDateTime other)
         {
             if (other == null!) return false;
-            return other.DateTime.ToUniversalTime() == DateTime.ToUniversalTime();
+            return other.DateTimeOffset == DateTimeOffset;
         }
 
         public override string ToString() => BaboonDateTimeFormats.ToString(this);
-        public string ToString(string format) => DateTime.ToString(format);
+        public string ToString(string format) => DateTimeOffset.ToString(format);
 
-        public long Ticks => DateTime.Ticks;
-        public DateTimeKind Kind => DateTime.Kind;
-        public RpDateTime ToUniversalTime() => new RpDateTime(DateTime.ToUniversalTime());
-        public RpDateTime ToLocalTime() => new RpDateTime(DateTime.ToLocalTime());
+        public TimeSpan Offset => DateTimeOffset.Offset;
+        public TimeSpan GetUtcOffset() => DateTimeOffset.Offset;
+
+        public RpDateTime ToUniversalTime() => new RpDateTime(DateTimeOffset.ToUniversalTime(), DateTimeKind.Utc);
+        public RpDateTime ToLocalTime() => new RpDateTime(DateTimeOffset.ToLocalTime(), DateTimeKind.Local);
         public RpDateTime LocalDate => new RpDateTime(DateTime.ToLocalTime().Date);
         public RpDateTime Date => new RpDateTime(DateTime.Date);
-        public TimeSpan GetUtcOffset() => TimeZoneInfo.Local.GetUtcOffset(DateTime);
-        public TimeSpan Subtract(RpDateTime right) => DateTime.ToUniversalTime().Subtract(right.DateTime.ToUniversalTime());
-        public RpDateTime Subtract(TimeSpan span) => new RpDateTime(DateTime.Subtract(span));
-        public RpDateTime Add(TimeSpan value) => new RpDateTime(DateTime.Add(value));
-        public RpDateTime AddTicks(long value) => new RpDateTime(DateTime.AddTicks(value));
-        public RpDateTime AddMilliseconds(double value) => new RpDateTime(DateTime.AddMilliseconds(value));
-        public RpDateTime AddSeconds(double value) => new RpDateTime(DateTime.AddSeconds(value));
-        public RpDateTime AddMinutes(double value) => new RpDateTime(DateTime.AddMinutes(value));
-        public RpDateTime AddHours(double value) => new RpDateTime(DateTime.AddHours(value));
-        public RpDateTime AddDays(double value) => new RpDateTime(DateTime.AddDays(value));
-        public RpDateTime AddMonths(int value) => new RpDateTime(DateTime.AddMonths(value));
-        public RpDateTime AddYears(int value) => new RpDateTime(DateTime.AddYears(value));
 
-        public int DiffInFullHours(RpDateTime other) => (int) (this - other).TotalHours;
-        public int DiffInFullDays(RpDateTime other) => (int) (this - other).TotalDays;
+        public TimeSpan Subtract(RpDateTime right) => DateTimeOffset - right.DateTimeOffset;
+        public RpDateTime Subtract(TimeSpan span) => new RpDateTime(DateTimeOffset.Subtract(span), Kind);
+        public RpDateTime Add(TimeSpan value) => new RpDateTime(DateTimeOffset.Add(value), Kind);
+        public RpDateTime AddTicks(long value) => new RpDateTime(DateTimeOffset.AddTicks(value), Kind);
+        public RpDateTime AddMilliseconds(double value) => new RpDateTime(DateTimeOffset.AddMilliseconds(value), Kind);
+        public RpDateTime AddSeconds(double value) => new RpDateTime(DateTimeOffset.AddSeconds(value), Kind);
+        public RpDateTime AddMinutes(double value) => new RpDateTime(DateTimeOffset.AddMinutes(value), Kind);
+        public RpDateTime AddHours(double value) => new RpDateTime(DateTimeOffset.AddHours(value), Kind);
+        public RpDateTime AddDays(double value) => new RpDateTime(DateTimeOffset.AddDays(value), Kind);
+        public RpDateTime AddMonths(int value) => new RpDateTime(DateTimeOffset.AddMonths(value), Kind);
+        public RpDateTime AddYears(int value) => new RpDateTime(DateTimeOffset.AddYears(value), Kind);
+
+        public int DiffInFullHours(RpDateTime other) => (int)(this - other).TotalHours;
+        public int DiffInFullDays(RpDateTime other) => (int)(this - other).TotalDays;
         public int DiffInFullWeeks(RpDateTime other) => DiffInFullDays(other) / 7;
         public int DiffInFullMonths(RpDateTime other) => Date == other.Date ? 0 : (Year - other.Year) * 12 + Month - other.Month + GetMonthsDiffByDays(other);
         public int DiffInFullYears(RpDateTime other) => DiffInFullMonths(other) / 12;
@@ -99,23 +119,23 @@ namespace Baboon.Time
 
         public int CompareTo(object obj)
         {
-            if (obj is RpDateTime dt) return DateTime.CompareTo(dt.DateTime);
+            if (obj is RpDateTime dt) return DateTimeOffset.CompareTo(dt.DateTimeOffset);
             throw new ArgumentException("Argument is not RpDateTime.");
         }
 
         public int CompareTo(RpDateTime other)
         {
-            return other == null! ? DateTime.CompareTo(null) : DateTime.CompareTo(other.DateTime);
+            return other == null! ? DateTime.CompareTo(null) : DateTimeOffset.CompareTo(other.DateTimeOffset);
         }
 
         public static RpDateTime operator -(RpDateTime left, TimeSpan delta)
         {
-            return new RpDateTime(left.DateTime - delta);
+            return new RpDateTime(left.DateTimeOffset - delta, left.Kind);
         }
 
         public static RpDateTime operator +(RpDateTime left, TimeSpan delta)
         {
-            return new RpDateTime(left.DateTime + delta);
+            return new RpDateTime(left.DateTimeOffset + delta, left.Kind);
         }
 
         public static bool operator ==(RpDateTime left, RpDateTime right)
@@ -130,31 +150,32 @@ namespace Baboon.Time
 
         public static TimeSpan operator -(RpDateTime left, RpDateTime right)
         {
-            return left.DateTime.ToUniversalTime() - right.DateTime.ToUniversalTime();
+            return left.DateTimeOffset - right.DateTimeOffset;
         }
 
         public static bool operator >(RpDateTime left, RpDateTime right)
         {
-            return left.DateTime.ToUniversalTime() > right.DateTime.ToUniversalTime();
+            return left.DateTimeOffset > right.DateTimeOffset;
         }
 
         public static bool operator <(RpDateTime left, RpDateTime right)
         {
-            return left.DateTime.ToUniversalTime() < right.DateTime.ToUniversalTime();
+            return left.DateTimeOffset < right.DateTimeOffset;
         }
 
         public static bool operator <=(RpDateTime left, RpDateTime right)
         {
-            return left.DateTime.ToUniversalTime() <= right.DateTime.ToUniversalTime();
+            return left.DateTimeOffset <= right.DateTimeOffset;
         }
 
         public static bool operator >=(RpDateTime left, RpDateTime right)
         {
-            return left.DateTime.ToUniversalTime() >= right.DateTime.ToUniversalTime();
+            return left.DateTimeOffset >= right.DateTimeOffset;
         }
 
         public static implicit operator RpDateTime(DateTime dt) => new(dt);
         public static implicit operator DateTime(RpDateTime dt) => dt.DateTime;
+        public static implicit operator DateTimeOffset(RpDateTime dt) => dt.DateTimeOffset;
 
         public static RpDateTime Parse(String dt) => BaboonDateTimeFormats.FromString(dt);
 
@@ -189,16 +210,16 @@ namespace Baboon.Time
 
             public override RpDateTime ReadJson(JsonReader reader, Type objectType, RpDateTime existingValue, bool hasExistingValue, JsonSerializer serializer)
             {
-                return BaboonDateTimeFormats.FromString((string) reader.Value!);
+                return BaboonDateTimeFormats.FromString((string)reader.Value!);
             }
         }
     }
 
     public static class BaboonDateTimeFormats
     {
-        public static readonly String TslDefault = "yyyy-MM-ddTHH:mm:ss.fff";
+        public static readonly string TslDefault = "yyyy-MM-ddTHH:mm:ss.fff";
 
-        public static readonly String[] Tsl = new string[]
+        public static readonly string[] Tsl = new string[]
         {
             "yyyy-MM-ddTHH:mm:ss",
             "yyyy-MM-ddTHH:mm:ss.f",
@@ -212,9 +233,9 @@ namespace Baboon.Time
             "yyyy-MM-ddTHH:mm:ss.fffffffff"
         };
 
-        public static readonly String TszDefault = "yyyy-MM-ddTHH:mm:ss.fffzzz";
+        public static readonly string TszDefault = "yyyy-MM-ddTHH:mm:ss.fffzzz";
 
-        public static readonly String[] Tsz = new string[]
+        public static readonly string[] Tsz = new string[]
         {
             "yyyy-MM-ddTHH:mm:ssZ",
             "yyyy-MM-ddTHH:mm:ss.fZ",
@@ -238,32 +259,38 @@ namespace Baboon.Time
             "yyyy-MM-ddTHH:mm:ss.fffffffffzzz"
         };
 
-        public static readonly String TsuDefault = "yyyy-MM-ddTHH:mm:ss.fffZ";
-        public static readonly String[] Tsu = Tsz;
+        public static readonly string TsuDefault = "yyyy-MM-ddTHH:mm:ss.fffZ";
+        public static readonly string[] Tsu = Tsz;
 
-        public static String ToString(DateTime dt)
+        public static string ToString(DateTime dt)
         {
             return dt.ToString(dt.Kind == DateTimeKind.Utc ? TsuDefault : TszDefault, CultureInfo.InvariantCulture);
         }
 
-        public static String ToString(RpDateTime dt)
+        public static string ToString(RpDateTime dt)
         {
-            return dt.DateTime.ToString(dt.DateTime.Kind == DateTimeKind.Utc ? TsuDefault : TszDefault, CultureInfo.InvariantCulture);
+            return dt.DateTimeOffset.ToString(dt.Kind == DateTimeKind.Utc ? TsuDefault : TszDefault, CultureInfo.InvariantCulture);
         }
 
         public static RpDateTime FromString(String dt)
         {
-            return DateTime.ParseExact(dt, Tsz, CultureInfo.InvariantCulture, DateTimeStyles.None);
+            var dateTimeOffset = DateTimeOffset.ParseExact(dt, Tsz, CultureInfo.InvariantCulture, DateTimeStyles.None);
+            return new RpDateTime(dateTimeOffset, DateTimeKind.Utc);
         }
 
         public static DateTime TruncateToMilliseconds(long ticks, DateTimeKind kind)
         {
-            return new DateTime(ticks - (ticks % TimeSpan.TicksPerMillisecond), kind);
+            return new DateTime(ticks - ticks % TimeSpan.TicksPerMillisecond, kind);
         }
 
         public static DateTime TruncateToMilliseconds(DateTime dateTime)
         {
             return TruncateToMilliseconds(dateTime.Ticks, dateTime.Kind);
+        }
+
+        public static DateTimeOffset TruncateToMilliseconds(DateTimeOffset dateTimeOffset)
+        {
+            return new DateTimeOffset(dateTimeOffset.Ticks - dateTimeOffset.Ticks % TimeSpan.TicksPerMillisecond, dateTimeOffset.Offset);
         }
     }
 }
