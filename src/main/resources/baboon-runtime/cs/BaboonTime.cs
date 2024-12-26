@@ -119,20 +119,20 @@ namespace Baboon.Time
             return new RpDateTime(new DateTimeOffset(localTicks, utcOffset), DateTimeKind.Local);
         }
 
-        public RpDateTime LocalDate => new RpDateTime(BaboonDateTimeFormats.TruncateToDays(ToLocalTime().DateTimeOffset), DateTimeKind.Local);
-        public RpDateTime Date => new RpDateTime(BaboonDateTimeFormats.TruncateToDays(DateTimeOffset), Kind);
+        public RpDateTime LocalDate => new(BaboonDateTimeFormats.TruncateToDays(ToLocalTime().DateTimeOffset), DateTimeKind.Local);
+        public RpDateTime Date => new(BaboonDateTimeFormats.TruncateToDays(DateTimeOffset), Kind);
 
         public TimeSpan Subtract(RpDateTime right) => DateTimeOffset - right.DateTimeOffset;
-        public RpDateTime Subtract(TimeSpan span) => new RpDateTime(DateTimeOffset.Subtract(span), Kind);
-        public RpDateTime Add(TimeSpan value) => new RpDateTime(DateTimeOffset.Add(value), Kind);
-        public RpDateTime AddTicks(long value) => new RpDateTime(DateTimeOffset.AddTicks(value), Kind);
-        public RpDateTime AddMilliseconds(double value) => new RpDateTime(DateTimeOffset.AddMilliseconds(value), Kind);
-        public RpDateTime AddSeconds(double value) => new RpDateTime(DateTimeOffset.AddSeconds(value), Kind);
-        public RpDateTime AddMinutes(double value) => new RpDateTime(DateTimeOffset.AddMinutes(value), Kind);
-        public RpDateTime AddHours(double value) => new RpDateTime(DateTimeOffset.AddHours(value), Kind);
-        public RpDateTime AddDays(double value) => new RpDateTime(DateTimeOffset.AddDays(value), Kind);
-        public RpDateTime AddMonths(int value) => new RpDateTime(DateTimeOffset.AddMonths(value), Kind);
-        public RpDateTime AddYears(int value) => new RpDateTime(DateTimeOffset.AddYears(value), Kind);
+        public RpDateTime Subtract(TimeSpan span) => new(DateTimeOffset.Subtract(span), Kind);
+        public RpDateTime Add(TimeSpan value) => new(DateTimeOffset.Add(value), Kind);
+        public RpDateTime AddTicks(long value) => new(DateTimeOffset.AddTicks(value), Kind);
+        public RpDateTime AddMilliseconds(double value) => new(DateTimeOffset.AddMilliseconds(value), Kind);
+        public RpDateTime AddSeconds(double value) => new(DateTimeOffset.AddSeconds(value), Kind);
+        public RpDateTime AddMinutes(double value) => new(DateTimeOffset.AddMinutes(value), Kind);
+        public RpDateTime AddHours(double value) => new(DateTimeOffset.AddHours(value), Kind);
+        public RpDateTime AddDays(double value) => new(DateTimeOffset.AddDays(value), Kind);
+        public RpDateTime AddMonths(int value) => new(DateTimeOffset.AddMonths(value), Kind);
+        public RpDateTime AddYears(int value) => new(DateTimeOffset.AddYears(value), Kind);
 
         public int DiffInFullHours(RpDateTime other) => (int)(this - other).TotalHours;
         public int DiffInFullDays(RpDateTime other) => (int)(this - other).TotalDays;
@@ -140,11 +140,11 @@ namespace Baboon.Time
         public int DiffInFullMonths(RpDateTime other) => Date == other.Date ? 0 : (Year - other.Year) * 12 + Month - other.Month + GetMonthsDiffByDays(other);
         public int DiffInFullYears(RpDateTime other) => DiffInFullMonths(other) / 12;
 
-        public static RpDateTime Now => new RpDateTime(DateTime.Now);
-        public static RpDateTime UtcNow => new RpDateTime(DateTime.UtcNow);
-        public static RpDateTime Epoch => new RpDateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
-        public static RpDateTime MinValue => new RpDateTime(DateTime.MinValue);
-        public static RpDateTime MaxValue => new RpDateTime(DateTime.MaxValue);
+        public static RpDateTime Now => new(DateTime.Now);
+        public static RpDateTime UtcNow => new(DateTime.UtcNow);
+        public static RpDateTime Epoch => new(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
+        public static RpDateTime MinValue => new(DateTime.MinValue);
+        public static RpDateTime MaxValue => new(DateTime.MaxValue);
 
         public int Year => DateTime.Year;
         public int Month => DateTime.Month;

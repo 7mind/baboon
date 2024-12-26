@@ -115,7 +115,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
        |
        |    ${csDomTrees.makeMeta(defn, isCodec = true).join("\n").shift(4).trim}
        |
-       |    internal static $csLazy<$iName> LazyInstance = new $csLazy<$iName>(() => new $cName());
+       |    private static $csLazy<$iName> LazyInstance = new $csLazy<$iName>(() => new $cName());
        |
        |    public static $iName Instance { get { return LazyInstance.Value; } set { LazyInstance = new $csLazy<$iName
        |    >(() => value); } }
@@ -127,8 +127,8 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
     name: CSValue.CSType
   ): (TextTree[Nothing], TextTree[Nothing]) = {
     (
-      q"""throw new ArgumentException($$"${name.name} is a foreign type");""",
-      q"""throw new ArgumentException($$"${name.name} is a foreign type");""",
+      q"""throw new ArgumentException("${name.name} is a foreign type");""",
+      q"""throw new ArgumentException("${name.name} is a foreign type");""",
     )
   }
 
@@ -146,7 +146,8 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
         val branchNs            = q"${trans.adtNsName(a.id)}"
         val branchName          = m.name.name
         val fqBranch            = q"$branchNs.$branchName"
-        val routedBranchEncoder = q"${fqBranch}_JsonCodec.Instance.Encode(ctx, ($fqBranch)value)"
+        val branchNameRef       = q"${branchName.toLowerCase}"
+        val routedBranchEncoder = q"${fqBranch}_JsonCodec.Instance.Encode(ctx, $branchNameRef)"
 
         val branchEncoder = if (compilerOptions.csOptions.wrappedAdtBranchCodecs) {
           routedBranchEncoder
@@ -161,7 +162,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
         }
 
         (
-          q"""if (value is $fqBranch)
+          q"""if (value is $fqBranch $branchNameRef)
              |{
              |    return $branchEncoder;
              |}""".stripMargin,
@@ -203,8 +204,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
          |    throw new $csArgumentException($$"Cannot decode {wire} to ${name.name}: string expected");
          |}
          |
-         |$name result;
-         |if ($name.TryParse(asStr, true, out result))
+         |if ($name.TryParse(asStr, true, out $name result))
          |{
          |    return result;
          |}

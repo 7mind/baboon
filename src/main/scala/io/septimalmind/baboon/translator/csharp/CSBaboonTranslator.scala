@@ -70,14 +70,51 @@ class CSBaboonTranslator(
       o.tree
     } else {
       Seq(
-        Seq(q"#nullable enable"),
-        Seq(q"""#pragma warning disable 612,618
-               |#pragma warning disable CS0108""".stripMargin), // deprecation warnings
         Seq(q"""// ReSharper disable InconsistentNaming
                |// ReSharper disable CheckNamespace
                |// ReSharper disable IdentifierTypo
                |// ReSharper disable ClassWithVirtualMembersNeverInherited.Global
-               |// ReSharper disable MemberHidesStaticFromOuterClass""".stripMargin),
+               |// ReSharper disable MemberHidesStaticFromOuterClass
+               |// ReSharper disable BuiltInTypeReferenceStyle
+               |// ReSharper disable RedundantNameQualifier
+               |// ReSharper disable ArrangeObjectCreationWhenTypeEvident
+               |// ReSharper disable ArrangeAccessorOwnerBody
+               |// ReSharper disable RedundantExtendsListEntry
+               |// ReSharper disable ConvertToUsingDeclaration
+               |// ReSharper disable RedundantSuppressNullableWarningExpression
+               |// ReSharper disable RedundantNullableDirective
+               |// ReSharper disable EmptyStatement
+               |// ReSharper disable ArrangeNamespaceBody
+               |// ReSharper disable RedundantUsingDirective
+               |// ReSharper disable UnusedMemberInSuper.Global
+               |// ReSharper disable UnusedType.Global
+               |// ReSharper disable RedundantTypeArgumentsOfMethod
+               |// ReSharper disable SuggestVarOrType_Elsewhere
+               |// ReSharper disable SuggestVarOrType_SimpleTypes
+               |// ReSharper disable SuggestVarOrType_BuiltInTypes
+               |// ReSharper disable UseCollectionExpression
+               |// ReSharper disable UnusedMember.Global
+               |// ReSharper disable MemberCanBePrivate.Global
+               |// ReSharper disable ArrangeRedundantParentheses
+               |// ReSharper disable ConvertClosureToMethodGroup
+               |// ReSharper disable MemberCanBeMadeStatic.Local
+               |// ReSharper disable MemberCanBeMadeStatic.Global
+               |// ReSharper disable RedundantEmptyObjectOrCollectionInitializer
+               |// ReSharper disable RedundantTypeDeclarationBody
+               |// ReSharper disable RedundantEmptyObjectCreationArgumentList
+               |// ReSharper disable ConvertIfStatementToSwitchStatement
+               |// ReSharper disable InvertIf
+               |// ReSharper disable RedundantCast
+               |// ReSharper disable EmptyConstructor
+               |// ReSharper disable ConvertIfStatementToReturnStatement
+               |// ReSharper disable AccessToStaticMemberViaDerivedType
+               |// ReSharper disable VariableHidesOuterVariable
+               |// ReSharper disable MergeConditionalExpression
+               |""".stripMargin.trim),
+        Seq(q"""#pragma warning disable 612,618
+               |#pragma warning disable CS0108,CA1822
+               """.stripMargin.trim), // deprecation warnings
+        Seq(q"#nullable enable"),
         Seq(imports),
         Seq(o.tree),
       ).flatten.join("\n\n")
@@ -205,7 +242,7 @@ class CSBaboonTranslator(
          |
          |    private readonly $csDict<$csString, $csString> _unmodified = new ();
          |
-         |    internal static $csLazy<BaboonMeta> LazyInstance = new $csLazy<BaboonMeta>(() => new BaboonMeta());
+         |    private static readonly $csLazy<BaboonMeta> LazyInstance = new $csLazy<BaboonMeta>(() => new BaboonMeta());
          |
          |    public static BaboonMeta Instance { get { return LazyInstance.Value; } }
          |}""".stripMargin
@@ -252,17 +289,18 @@ class CSBaboonTranslator(
            |
            |public sealed class BaboonConversions : $abstractBaboonConversions
            |{
+           |    // ReSharper disable once UnusedParameter.Local
            |    public BaboonConversions(RequiredConversions requiredConversions)
            |    {
            |        ${conversionRegs.join("\n").shift(8).trim}
            |    }
            |
-           |    override public $csList<$csString> VersionsFrom()
+           |    public override $csList<$csString> VersionsFrom()
            |    {
            |        return new $csList<$csString> { ${toCurrent.map(_.from.version).map(v => s"\"$v\"").mkString(", ")} };
            |    }
            |
-           |    override public $csString VersionTo()
+           |    public override $csString VersionTo()
            |    {
            |        return "${domain.version.version}";
            |    }
@@ -276,7 +314,7 @@ class CSBaboonTranslator(
            |        ${defnOut.map(_.codecReg).join("\n").shift(8).trim}
            |    }
            |
-           |    internal static $csLazy<BaboonCodecs> LazyInstance = new $csLazy<BaboonCodecs>(() => new BaboonCodecs());
+           |    private static readonly $csLazy<BaboonCodecs> LazyInstance = new $csLazy<BaboonCodecs>(() => new BaboonCodecs());
            |
            |    public static BaboonCodecs Instance { get { return LazyInstance.Value; } }
            |}""".stripMargin

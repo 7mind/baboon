@@ -55,7 +55,7 @@ object CSCodecTestsTranslator {
           q"""[Test]
              |public void jsonCodecTest()
              |{
-             |    for (int i = 0; i < ${compilerOptions.generic.codecTestIterations.toString}; i++)
+             |    for (var i = 0; i < ${compilerOptions.generic.codecTestIterations.toString}; i++)
              |    {
              |        jsonCodecTestImpl($baboonCodecContext.Default);
              |    }
@@ -72,7 +72,7 @@ object CSCodecTestsTranslator {
           q"""[Test]
              |public void uebaCodecTestNoIndex()
              |{
-             |    for (int i = 0; i < ${compilerOptions.generic.codecTestIterations.toString}; i++)
+             |    for (var i = 0; i < ${compilerOptions.generic.codecTestIterations.toString}; i++)
              |    {
              |        uebaCodecTestImpl($baboonCodecContext.Compact);
              |    }
@@ -81,7 +81,7 @@ object CSCodecTestsTranslator {
              |[Test]
              |public void uebaCodecTestIndexed()
              |{
-             |    for (int i = 0; i < ${compilerOptions.generic.codecTestIterations.toString}; i++)
+             |    for (var i = 0; i < ${compilerOptions.generic.codecTestIterations.toString}; i++)
              |    {
              |        uebaCodecTestImpl($baboonCodecContext.Indexed);
              |    }
@@ -140,9 +140,9 @@ object CSCodecTestsTranslator {
         val fieldName  = q"fixture"
         val serialized = q"${fieldName}Bytes"
         val decoded    = q"${fieldName}Decoded"
-        q"""using ($memoryStream writeMemoryStream = new $memoryStream())
+        q"""using (var writeMemoryStream = new $memoryStream())
            |{
-           |    using ($binaryWriter binaryWriter = new $binaryWriter(writeMemoryStream))
+           |    using (var binaryWriter = new $binaryWriter(writeMemoryStream))
            |    {
            |        $codecName.Instance.Encode(context, binaryWriter, $fieldName);
            |    }

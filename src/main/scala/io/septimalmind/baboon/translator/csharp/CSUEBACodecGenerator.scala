@@ -35,7 +35,6 @@ class CSUEBACodecGenerator(
              |if (this == LazyInstance.Value)
              |{
              |    ${enc.shift(4).trim}
-             |    return;
              |}
              |#pragma warning disable CS0162
              |
@@ -74,8 +73,6 @@ class CSUEBACodecGenerator(
     addExtensions: Boolean,
     branchDecoder: Option[TextTree[CSValue]],
   ): TextTree[CSValue] = {
-    val iName = q"$iBaboonBinCodec<$name>"
-
     val indexBody = defn.defn match {
       case d: Typedef.Dto =>
         val varlens = d.fields.filter(f => domain.refMeta(f.tpe).len.isVariable)
@@ -85,7 +82,7 @@ class CSUEBACodecGenerator(
 
       case _: Typedef.Enum    => q"""return 0;"""
       case _: Typedef.Adt     => q"""return 0;"""
-      case _: Typedef.Foreign => q"""throw new ArgumentException($$"${name.name} is a foreign type");"""
+      case _: Typedef.Foreign => q"""throw new ArgumentException("${name.name} is a foreign type");"""
 
       case d: Typedef.Contract =>
         throw new IllegalArgumentException(s"BUG: contract should not be rendered: $d")
@@ -113,9 +110,10 @@ class CSUEBACodecGenerator(
            |}""".stripMargin
     }.toList ++ indexMethods
 
+    val codecIface = q"$iBaboonBinCodec<$name>"
     val (parents, methods) = defn.defn match {
       case _: Typedef.Enum =>
-        (List(q"$iBaboonBinCodec<$name>"), baseMethods)
+        (List(q"$iBaboonBinCodec<$name>", q"$iBaboonBinCodecIndexed"), baseMethods)
       case _ =>
         val extensions = List(
           q"""public virtual void Encode($baboonCodecContext ctx, $binaryWriter writer, $iBaboonGenerated value)
@@ -142,7 +140,8 @@ class CSUEBACodecGenerator(
           baseMethods
         }
 
-        val baseParents = List(q"$iBaboonBinCodecIndexed", iName)
+        val baseParents = List(codecIface, q"$iBaboonBinCodecIndexed")
+
         val pp = if (addExtensions) {
           baseParents ++ extParents
         } else {
@@ -164,17 +163,17 @@ class CSUEBACodecGenerator(
         .shift(4)
         .trim}
        |
-       |    internal static $csLazy<$iName> LazyInstance = new $csLazy<$iName>(() => new $cName());
+       |    private static $csLazy<$codecIface> LazyInstance = new $csLazy<$codecIface>(() => new $cName());
        |
-       |    public static $iName Instance { get { return LazyInstance.Value; } set { LazyInstance = new $csLazy<$iName>(() => value); } }
+       |    public static $codecIface Instance { get { return LazyInstance.Value; } set { LazyInstance = new $csLazy<$codecIface>(() => value); } }
        |}
      """.stripMargin
   }
 
   private def genForeignBodies(name: CSValue.CSType) = {
     (
-      q"""throw new ArgumentException($$"${name.name} is a foreign type");""",
-      q"""throw new ArgumentException($$"${name.name} is a foreign type");""",
+      q"""throw new ArgumentException("${name.name} is a foreign type");""",
+      q"""throw new ArgumentException("${name.name} is a foreign type");""",
     )
   }
 
@@ -221,7 +220,7 @@ class CSUEBACodecGenerator(
       q"""${branches.map(_._1).join("\n")}
          |
          |throw new $csArgumentException($$"Cannot encode {value} to ${name.name}: no matching value");""".stripMargin,
-      q"""byte asByte = wire.ReadByte();
+      q"""var asByte = wire.ReadByte();
          |
          |${branches.map(_._2).join("\n")}
          |
@@ -249,7 +248,7 @@ class CSUEBACodecGenerator(
       q"""${branches.map(_._1).join("\n")}
          |
          |throw new $csArgumentException($$"Cannot encode {value} to ${name.name}: no matching value");""".stripMargin,
-      q"""byte asByte = wire.ReadByte();
+      q"""var asByte = wire.ReadByte();
          |
          |${branches.map(_._2).join("\n")}
          |
@@ -281,9 +280,10 @@ class CSUEBACodecGenerator(
          |{
          |    header |= 0b0000001;
          |    writer.Write(header);
-         |    using ($memoryStream writeMemoryStream = new $memoryStream())
+         |    using (var writeMemoryStream = new $memoryStream())
          |    {
-         |        using ($binaryWriter fakeWriter = new $binaryWriter(writeMemoryStream))
+         |        // ReSharper disable once UnusedVariable
+         |        using (var fakeWriter = new $binaryWriter(writeMemoryStream))
          |        {
          |            ${fields.map(_._3).join("\n").shift(12).trim}
          |        }
@@ -325,7 +325,7 @@ class CSUEBACodecGenerator(
       case Owner.Adt(id) if options.csOptions.wrappedAdtBranchCodecs =>
         val idx = adtBranchIndex(id)
 
-        q"""byte marker = wire.ReadByte();
+        q"""var marker = wire.ReadByte();
            |$debug.Assert(marker == ${idx.toString});
            |return DecodeBranch(ctx, wire);""".stripMargin
       case _ => fdec
@@ -370,7 +370,7 @@ class CSUEBACodecGenerator(
           case v: BinReprLen.Variable =>
             val sanityChecks = v match {
               case BinReprLen.Unknown() =>
-                q"$debug.Assert(length >= 0, $$\"Got length={length}\")";
+                q"$debug.Assert(after >= before, $$\"Got after={after}, before={before}\")";
               case BinReprLen.Alternatives(variants) =>
                 q"$debug.Assert(new $csSet<uint>() { ${variants.mkString(", ")} }.Contains(length), $$\"Got length={length}\")"
               case BinReprLen.Range(min, max) =>
@@ -436,13 +436,13 @@ class CSUEBACodecGenerator(
             val keyType      = trans.asCsRef(c.args.head, domain, evo)
             val valueDecoder = mkDecoder(c.args.last)
             val valueType    = trans.asCsRef(c.args.last, domain, evo)
-            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(idx => new $csKeyValuePair<$keyType, $valueType>($keyDecoder, $valueDecoder)).ToImmutableDictionary()"""
+            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(_ => new $csKeyValuePair<$keyType, $valueType>($keyDecoder, $valueDecoder)).ToImmutableDictionary()"""
 
           case TypeId.Builtins.lst =>
-            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(idx => ${mkDecoder(c.args.head)}).ToImmutableList()"""
+            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(_ => ${mkDecoder(c.args.head)}).ToImmutableList()"""
 
           case TypeId.Builtins.set =>
-            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(idx => ${mkDecoder(c.args.head)}).ToImmutableHashSet()"""
+            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(_ => ${mkDecoder(c.args.head)}).ToImmutableHashSet()"""
 
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")

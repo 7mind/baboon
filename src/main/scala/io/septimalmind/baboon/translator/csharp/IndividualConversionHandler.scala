@@ -127,10 +127,7 @@ class IndividualConversionHandler(
                  |        {
                  |            return parsed;
                  |        }
-                 |        else
-                 |        {
-                 |            throw new $csArgumentException($$"Bad input, this is a Baboon bug: {from}");
-                 |        }
+                 |        throw new $csArgumentException($$"Bad input, this is a Baboon bug: {from}");
                  |    }
                  |
                  |    $fullMeta
@@ -160,7 +157,7 @@ class IndividualConversionHandler(
               q"""public sealed class $convname : $abstractConversion<$tin, $tout>
                  |{
                  |    protected override $tout DoConvert<C>(C? context, $abstractBaboonConversions conversions, $tin from) where C: default {
-                 |        ${branches.join("\nelse\n").shift(8).trim}
+                 |        ${branches.join("\n").shift(8).trim}
                  |    }
                  |
                  |    $fullMeta

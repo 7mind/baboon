@@ -264,7 +264,7 @@ object CSDefnTranslator {
                |    ${constructorArgs.shift(4).trim}
                |)$parents {
                |    ${members.join("\n\n").shift(4).trim}
-               |};""".stripMargin,
+               |}""".stripMargin,
             List.empty,
           )
 

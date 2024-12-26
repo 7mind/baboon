@@ -5,109 +5,111 @@ using System;
 using System.Linq;
 
 using Baboon.Time;
+// ReSharper disable CheckNamespace
+// ReSharper disable ArrangeNamespaceBody
 
 namespace Baboon.Fixture {
     // RandomValuesGenerator
     public static class BaboonFixture
     {
-        private static readonly Random Rnd = new Random();
-        private const String Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    
-        public static Boolean NextBoolean()
+        private static readonly Random Rnd = new();
+        private const string Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+        public static bool NextBoolean()
         {
             return Rnd.Next(0, 2) == 1;
         }
-    
+
         public static sbyte NextSByte()
         {
             return (sbyte)Rnd.Next(sbyte.MinValue, sbyte.MaxValue);
         }
-    
-        public static Int16 NextInt16()
+
+        public static short NextInt16()
         {
-            return (Int16)Rnd.Next(Int16.MinValue, Int16.MaxValue);
-        }
-    
-        public static Int32 NextInt32()
-        {
-            return Rnd.Next(Int32.MinValue, Int32.MaxValue);
+            return (short)Rnd.Next(short.MinValue, short.MaxValue);
         }
 
-        public static Int32 NextInt32(int max)
+        public static int NextInt32()
+        {
+            return Rnd.Next(int.MinValue, int.MaxValue);
+        }
+
+        public static int NextInt32(int max)
         {
             return Rnd.Next(0, max);
         }
 
-        public static Int64 NextInt64()
+        public static long NextInt64()
         {
-            return Rnd.NextInt64(Int64.MinValue, Int64.MaxValue);
+            return Rnd.NextInt64(long.MinValue, long.MaxValue);
         }
-    
+
         public static byte NextByte()
         {
             return (byte)Rnd.Next(0, byte.MaxValue);
         }
-    
-        public static UInt16 NextUInt16()
+
+        public static ushort NextUInt16()
         {
-            return (UInt16)Rnd.Next(0, UInt16.MaxValue);
+            return (ushort)Rnd.Next(0, ushort.MaxValue);
         }
-    
-        public static UInt32 NextUInt32()
+
+        public static uint NextUInt32()
         {
-            return (UInt32)Rnd.Next(0, Int32.MaxValue);
+            return (uint)Rnd.Next(0, int.MaxValue);
         }
-    
-        public static UInt64 NextUInt64()
+
+        public static ulong NextUInt64()
         {
-            return (UInt64)Rnd.Next(0, Int32.MaxValue);
+            return (ulong)Rnd.Next(0, int.MaxValue);
         }
-    
-        public static Single NextSingle()
+
+        public static float NextSingle()
         {
             return Rnd.NextSingle();
         }
-    
-        public static Double NextDouble()
+
+        public static double NextDouble()
         {
             return Rnd.NextDouble();
         }
-    
-        public static Decimal NextDecimal()
+
+        public static decimal NextDecimal()
         {
-            return (Decimal)Rnd.NextDouble();
+            return (decimal)Rnd.NextDouble();
         }
-    
-        public static String NextString()
+
+        public static string NextString()
         {
             var length = Rnd.Next(0, 21);
-    
+
             var stringBuilder = new StringBuilder(length);
-    
+
             for (var i = 0; i < length; i++)
             {
                 var randomChar = Chars[Rnd.Next(Chars.Length)];
                 stringBuilder.Append(randomChar);
             }
-    
+
             return stringBuilder.ToString();
         }
-    
+
         public static RpDateTime NextRpDateTime()
         {
             var minTicks = DateTime.MinValue.Ticks;
             var maxTicks = DateTime.MaxValue.Ticks;
-    
-            var randomTicks = (Int64)(Rnd.NextDouble() * (maxTicks - minTicks)) + minTicks;
-    
+
+            var randomTicks = (long)(Rnd.NextDouble() * (maxTicks - minTicks)) + minTicks;
+
             return new RpDateTime(new DateTime(randomTicks));
         }
-    
+
         public static Guid NextGuid()
         {
             return Guid.NewGuid();
         }
-    
+
         public static T NextRandomEnum<T>() where T : Enum
         {
             var values = Enum.GetValues(typeof(T));
@@ -116,19 +118,19 @@ namespace Baboon.Fixture {
 
         public static ImmutableList<T> FillList<T>(int count, Func<T> action)
         {
-            return Enumerable.Range(0, count).Select(i => action.Invoke()).ToImmutableList();
+            return Enumerable.Range(0, count).Select(_ => action.Invoke()).ToImmutableList();
         }
 
         public static ImmutableHashSet<T> FillSet<T>(int count, Func<T> action)
         {
-            return Enumerable.Range(0, count).Select(i => action.Invoke()).ToImmutableHashSet();
+            return Enumerable.Range(0, count).Select(_ => action.Invoke()).ToImmutableHashSet();
         }
 
-        public static ImmutableDictionary<K, V> FillDict<K, V>(int count, Func<KeyValuePair<K, V>> action) where K: notnull
+        public static ImmutableDictionary<TK, TV> FillDict<TK, TV>(int count, Func<KeyValuePair<TK, TV>> action) where TK: notnull
         {
-            var entries= Enumerable.Range(0, count).Select(i => action.Invoke()).ToList();
+            var entries= Enumerable.Range(0, count).Select(_ => action.Invoke()).ToList();
 
-            var map = new Dictionary<K, V>(entries.Count);
+            var map = new Dictionary<TK, TV>(entries.Count);
             entries.ForEach(pair => map.TryAdd(pair.Key, pair.Value));
 
             return map.ToImmutableDictionary();

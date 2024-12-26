@@ -1,6 +1,7 @@
 namespace ConversionsTest.Foreign;
+// ReSharper disable RedundantTypeDeclarationBody
 
-public struct TestForeignStruct
+public record struct TestForeignStruct
 {
     
 }

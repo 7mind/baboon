@@ -1,5 +1,3 @@
-using System;
-using System.Diagnostics;
 using Baboon.Time;
 using NUnit.Framework;
 
