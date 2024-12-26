@@ -148,13 +148,13 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
         val fqBranch            = q"$branchNs.$branchName"
         val routedBranchEncoder = q"${fqBranch}_JsonCodec.Instance.Encode(ctx, ($fqBranch)value)"
 
-        val branchEncoder = if (compilerOptions.csOptions.csWrappedAdtBranchCodecs) {
+        val branchEncoder = if (compilerOptions.csOptions.wrappedAdtBranchCodecs) {
           routedBranchEncoder
         } else {
           wrapAdtBranchEncoder(branchName, routedBranchEncoder)
         }
 
-        val branchValue = if (compilerOptions.csOptions.csWrappedAdtBranchCodecs) {
+        val branchValue = if (compilerOptions.csOptions.wrappedAdtBranchCodecs) {
           q"wire"
         } else {
           q"head.Value"
@@ -231,7 +231,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
                      |)""".stripMargin
 
     val fullEnc = d.id.owner match {
-      case Owner.Adt(_) if compilerOptions.csOptions.csWrappedAdtBranchCodecs =>
+      case Owner.Adt(_) if compilerOptions.csOptions.wrappedAdtBranchCodecs =>
         wrapAdtBranchEncoder(d.id.name.name, mainEnc)
       case _ => mainEnc
     }
@@ -239,8 +239,8 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
     val encBody = q"""return $fullEnc;"""
 
     val fullDec = d.id.owner match {
-      case Owner.Adt(_) if compilerOptions.csOptions.csWrappedAdtBranchCodecs => q"wire.Value<JObject>()!.Properties().First().Value.Value<JObject>()"
-      case _                                                                  => q"wire.Value<JObject>()"
+      case Owner.Adt(_) if compilerOptions.csOptions.wrappedAdtBranchCodecs => q"wire.Value<JObject>()!.Properties().First().Value.Value<JObject>()"
+      case _                                                                => q"wire.Value<JObject>()"
     }
 
     val decBody =

@@ -20,7 +20,7 @@ object CSDomainTreeTools {
         case Owner.Adt(_) => true
         case _            => false
       }
-      val fix = if (options.csOptions.csUseCompactAdtForm && !isCodec && isNested) {
+      val fix = if (options.csOptions.useCompactAdtForm && !isCodec && isNested) {
         " new "
       } else {
         " "

@@ -4,9 +4,9 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System;
 
-namespace Baboon.Test.Runtime.Shared {
+namespace Baboon.Fixture {
     // RandomValuesGenerator
-    public static class RVG
+    public static class BaboonFixture
     {
         private static readonly Random Rnd = new Random();
         private const String Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";

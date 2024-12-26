@@ -14,7 +14,7 @@ import io.septimalmind.baboon.validator.BaboonValidator
 
 import java.nio.file.Path
 
-class BaboonModule(options: CompilerOptions, inputs: Seq[Path], testOutDir: Option[Path]) extends ModuleDef {
+class BaboonModule(options: CompilerOptions, inputs: Seq[Path]) extends ModuleDef {
   make[BLogger].from[BLogger.BLoggerImpl]
   make[BaboonCompiler].from[BaboonCompiler.BaboonCompilerImpl]
   make[BaboonLoader].from[BaboonLoader.BaboonLoaderImpl]
@@ -56,7 +56,6 @@ class BaboonModule(options: CompilerOptions, inputs: Seq[Path], testOutDir: Opti
   make[ScopeSupport].from[ScopeSupport.ScopeSupportImpl]
 
   make[Seq[Path]].named("inputs").fromValue(inputs)
-  make[Option[Path]].named("test-output").fromValue(testOutDir)
 
   many[BaboonAbstractTranslator]
     .ref[CSBaboonTranslator]

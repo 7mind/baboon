@@ -1,13 +1,12 @@
 package io.septimalmind.baboon.translator.csharp
 
 import distage.Subcontext
-import io.septimalmind.baboon.BaboonCompiler.CompilerTargets
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.{CompilerOptions, RuntimeGenOpt}
+import io.septimalmind.baboon.{CompilerOptions, CompilerProduct}
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -26,20 +25,15 @@ class CSBaboonTranslator(
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
-  override def translate(targets: CompilerTargets, family: BaboonFamily): Out[Sources] = {
+  override def translate(family: BaboonFamily): Out[Sources] = {
     for {
-      translated  <- doTranslate(targets, family)
-      runtime     <- sharedRuntime()
-      testRuntime <- sharedTestRuntime(targets)
-      toRender = options.csOptions.generic.runtime match {
-        case RuntimeGenOpt.Only    => runtime
-        case RuntimeGenOpt.With    => runtime ++ translated ++ testRuntime
-        case RuntimeGenOpt.Without => translated
-      }
-      rendered = toRender.map {
+      translated <- translateFamily(family)
+      runtime    <- sharedRuntime()
+      fixture    <- sharedFixture()
+      rendered = (translated ++ runtime ++ fixture).map {
         o =>
           val content = renderTree(o)
-          (o.path, OutputFile(content, isTest = o.isTest))
+          (o.path, OutputFile(content, o.product))
       }
       unique <- rendered.toUniqueMap(c => NEList(BaboonIssue.NonUniqueOutputFiles(c)))
     } yield {
@@ -48,13 +42,13 @@ class CSBaboonTranslator(
   }
 
   private def renderTree(o: CSDefnTranslator.Output): String = {
-    val alwaysAvailable: Set[CSPackageId] = if (options.csOptions.csDisregardImplicitUsings) {
+    val alwaysAvailable: Set[CSPackageId] = if (options.csOptions.disregardImplicitUsings) {
       Set.empty
     } else {
       Set(csSystemPkg, csCollectionsGenericPkg, csLinqPkg)
     }
 
-    val forcedUses: Set[CSPackageId] = if (options.csOptions.csDisregardImplicitUsings) {
+    val forcedUses: Set[CSPackageId] = if (options.csOptions.disregardImplicitUsings) {
       Set(csLinqPkg)
     } else {
       Set.empty
@@ -95,33 +89,48 @@ class CSBaboonTranslator(
     }
   }
 
-  private def doTranslate(
-    targets: CompilerTargets,
-    family: BaboonFamily,
+  private def translateFamily(
+    family: BaboonFamily
   ): Out[List[CSDefnTranslator.Output]] = {
     // TODO: fix .toSeq.toList
-    family.domains.iterator.map { case (_, lineage) => translateLineage(targets, lineage) }.toList.biFlatten
+    family.domains.iterator.map { case (_, lineage) => translateLineage(lineage) }.toList.biFlatten
   }
 
   private def translateLineage(
-    targets: CompilerTargets,
-    lineage: BaboonLineage,
+    lineage: BaboonLineage
   ): Out[List[CSDefnTranslator.Output]] = {
-    lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, targets, lineage) }.toList.biFlatten
+    lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList.biFlatten
   }
 
-  private def translateDomain(domain: Domain, targets: CompilerTargets, lineage: BaboonLineage): Out[List[CSDefnTranslator.Output]] = {
+  private def translateDomain(domain: Domain, lineage: BaboonLineage): Out[List[CSDefnTranslator.Output]] = {
     val evo = lineage.evolution
     translator.provide(domain).provide(evo).produce().use {
       defnTranslator =>
         for {
-          defnSources <- domain.defs.meta.nodes.toList.map {
-            case (_, defn: DomainMember.User) => defnTranslator.translate(defn)
-            case _                            => Right(List.empty)
-          }.biFlatten
+          defnSources <- {
+            if (options.target.products.contains(CompilerProduct.Definition)) {
+              domain.defs.meta.nodes.toList.map {
+                case (_, defn: DomainMember.User) => defnTranslator.translate(defn)
+                case _                            => Right(List.empty)
+              }.biFlatten
+            } else {
+              Right(List.empty)
+            }
+          }
 
-          defnTests <- {
-            if (targets.testOutput.nonEmpty) {
+          fixturesSources <- {
+            if (options.target.products.contains(CompilerProduct.Fixture)) {
+              domain.defs.meta.nodes.toList.map {
+                case (_, defn: DomainMember.User) => defnTranslator.translateFixtures(defn)
+                case _                            => Right(List.empty)
+              }.biFlatten
+            } else {
+              Right(List.empty)
+            }
+          }
+
+          testsSources <- {
+            if (options.target.products.contains(CompilerProduct.Test)) {
               domain.defs.meta.nodes.toList.map {
                 case (_, defn: DomainMember.User) => defnTranslator.translateTests(defn)
                 case _                            => Right(List.empty)
@@ -131,9 +140,9 @@ class CSBaboonTranslator(
             }
           }
 
-          evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
           conversionSources <- {
-            if (options.csOptions.generic.generateConversions) {
+            if (options.target.products.contains(CompilerProduct.Conversion)) {
+              val evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
               generateConversions(domain, lineage, evosToCurrent, defnSources)
             } else {
               Right(List.empty)
@@ -141,7 +150,7 @@ class CSBaboonTranslator(
           }
 
           meta <- {
-            if (options.csOptions.csWriteEvolutionDict) {
+            if (options.csOptions.writeEvolutionDict) {
               generateMeta(domain, lineage)
             } else {
               Right(List.empty)
@@ -150,8 +159,9 @@ class CSBaboonTranslator(
         } yield {
           defnSources.map(_.output) ++
           conversionSources ++
-          meta ++
-          defnTests.map(_.output)
+          fixturesSources ++
+          testsSources ++
+          meta
         }
     }
 
@@ -192,13 +202,7 @@ class CSBaboonTranslator(
 
     val metaSource = Seq(metaTree).join("\n\n")
     val meta       = csTrees.inNs(pkg.parts.toSeq, metaSource)
-
-    val metaOutput = CSDefnTranslator.Output(
-      s"$basename/BaboonMeta.cs",
-      meta,
-      pkg,
-      isTest = false,
-    )
+    val metaOutput = CSDefnTranslator.Output(s"$basename/BaboonMeta.cs", meta, pkg, CompilerProduct.Definition)
 
     Right(List(metaOutput))
   }
@@ -245,10 +249,7 @@ class CSBaboonTranslator(
            |
            |    override public $csList<$csString> VersionsFrom()
            |    {
-           |        return new $csList<$csString> { ${toCurrent
-            .map(_.from.version)
-            .map(v => s"""\"$v\"""")
-            .mkString(", ")} };
+           |        return new $csList<$csString> { ${toCurrent.map(_.from.version).map(v => s"\"$v\"").mkString(", ")} };
            |    }
            |
            |    override public $csString VersionTo()
@@ -278,7 +279,7 @@ class CSBaboonTranslator(
         s"$basename/BaboonRuntime.cs",
         runtime,
         pkg,
-        isTest = false,
+        CompilerProduct.Conversion,
       )
 
       val convertersOutput = convs.map {
@@ -287,7 +288,7 @@ class CSBaboonTranslator(
             s"$basename/${conv.fname}",
             conv.conv,
             pkg,
-            isTest = false,
+            CompilerProduct.Conversion,
           )
       }
 
@@ -299,37 +300,30 @@ class CSBaboonTranslator(
     val sharedOutput = CSDefnTranslator.Output(
       s"BaboonRuntimeShared.cs",
       TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonRuntimeShared.cs").get),
-      CSTypes.baboonRtPkg,
-      isTest = false,
+      CSTypes.baboonRuntimePkg,
+      CompilerProduct.Runtime,
     )
 
     val timeOutput = CSDefnTranslator.Output(
       s"BaboonTime.cs",
       TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonTime.cs").get),
       CSTypes.baboonTimePkg,
-      isTest = false,
+      CompilerProduct.Runtime,
     )
 
     Right(List(sharedOutput, timeOutput))
   }
 
-  private def sharedTestRuntime(
-    targets: CompilerTargets
-  ): Out[List[CSDefnTranslator.Output]] = Right {
-    if (targets.testOutput.isEmpty) {
-      List()
-    } else {
-      List(
-        CSDefnTranslator.Output(
-          "BaboonTestRuntimeShared.cs",
-          TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonTestRuntimeShared.cs").get),
-          CSTypes.baboonTestRtPkg,
-          isTest = true,
-        )
-      )
-    }
-  }
+  private def sharedFixture(): Out[List[CSDefnTranslator.Output]] = {
+    val testRuntime = CSDefnTranslator.Output(
+      "BaboonFixtureShared.cs",
+      TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonFixtureShared.cs").get),
+      CSTypes.baboonFixturePkg,
+      CompilerProduct.FixtureRuntime,
+    )
 
+    Right(List(testRuntime))
+  }
 }
 
 object CSBaboonTranslator {

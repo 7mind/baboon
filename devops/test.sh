@@ -8,7 +8,8 @@ pushd .
 target/graalvm-native-image/baboon \
           --model-dir ./src/test/resources/baboon/ \
           --output ./test/cs-stub/ConversionsTest/Generated \
-          --test-output ./test/cs-stub/ConversionsTest/Generated \
+          --test-output ./test/cs-stub/ConversionsTest/GeneratedTests \
+          --fixture-output ./test/cs-stub/ConversionsTest/GeneratedFixtures \
           --cs-use-compact-adt-form true \
           --cs-wrapped-adt-branch-codecs false \
           --meta-write-evolution-json baboon-meta.json \
@@ -25,7 +26,8 @@ pushd .
 target/graalvm-native-image/baboon \
           --model-dir ./src/test/resources/baboon/ \
           --output ./test/cs-stub/ConversionsTest/Generated \
-          --test-output ./test/cs-stub/ConversionsTest/Generated \
+          --test-output ./test/cs-stub/ConversionsTest/GeneratedTests \
+          --fixture-output ./test/cs-stub/ConversionsTest/GeneratedFixtures \
           --cs-use-compact-adt-form false \
           --cs-wrapped-adt-branch-codecs true \
           --meta-write-evolution-json baboon-meta.json \

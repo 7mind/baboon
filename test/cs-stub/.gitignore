@@ -1,4 +1,6 @@
 Generated/
+GeneratedFixtures/
+GeneratedTests/
 
 global.json
 

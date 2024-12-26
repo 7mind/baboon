@@ -31,19 +31,6 @@ object CSCodecTestsTranslator {
       csRef: CSValue.CSType,
       srcRef: CSValue.CSType,
     ): Option[TextTree[CSValue]] = {
-
-      val codecTestName = definition.id.owner match {
-        case Owner.Toplevel => srcRef.name
-        case Owner.Adt(id)  => s"${id.name.name}__${srcRef.name}"
-        case Owner.Ns(path) =>
-          s"${path.map(_.name).mkString("_")}__${srcRef.name}"
-      }
-
-      val testClassName =
-        CSValue
-          .CSType(srcRef.pkg, s"${codecTestName}__Codec_Test", srcRef.fq)
-          .asName
-
       definition match {
         case d if enquiries.hasForeignType(d, domain)         => None
         case d if enquiries.isRecursiveTypedef(d, domain)     => None
@@ -56,54 +43,41 @@ object CSCodecTestsTranslator {
                |#nullable enable
                |
                |[$nunitTestFixture]
-               |public class $testClassName
+               |public class ${srcRef.name}_Tests
                |{
-               |  ${tests(definition, srcRef)}
+               |  ${makeTest(definition, srcRef)}
                |}
                |""".stripMargin
           Some(testClass)
       }
     }
 
-    private def fieldsInitialization(
-      definition: DomainMember.User,
-      domain: Domain,
-      evolution: BaboonEvolution,
-    ): TextTree[CSValue] = {
-      definition.defn match {
-        case e: Typedef.Enum => q"var fixture = $testValuesGenerator.NextRandomEnum<${e.id.name.name}>();"
-        case _: Typedef.Adt  => q"var fixtures = ${typeTranslator.asCsType(definition.id, domain, evolution)}_Fixture.RandomAll();"
-        case _               => q"var fixture = ${typeTranslator.asCsType(definition.id, domain, evolution)}_Fixture.Random();"
-      }
-    }
-
-    private def tests(definition: DomainMember.User, srcRef: CSValue.CSType): TextTree[CSValue] = {
-      val init = fieldsInitialization(definition, domain, evo)
+    private def makeTest(definition: DomainMember.User, srcRef: CSValue.CSType): TextTree[CSValue] = {
+      val fixture = makeFixture(definition, domain, evo)
       codecs.map {
         case jsonCodec: CSNSJsonCodecGenerator =>
           val body = jsonCodecAssertions(jsonCodec, definition, srcRef)
-
           q"""[Test]
              |public void jsonCodecTest()
              |{
-             |    for (int i = 0; i < ${compilerOptions.csOptions.generic.codecTestIterations.toString}; i++)
+             |    for (int i = 0; i < ${compilerOptions.generic.codecTestIterations.toString}; i++)
              |    {
              |        jsonCodecTestImpl($baboonCodecContext.Default);
              |    }
              |}
              |
              |private void jsonCodecTestImpl($baboonCodecContext context) {
-             |    ${init.shift(4).trim}
+             |    ${fixture.shift(4).trim}
              |    ${body.shift(4).trim}
              |}
              |""".stripMargin
+
         case uebaCodec: CSUEBACodecGenerator =>
           val body = uebaCodecAssertions(uebaCodec, definition, srcRef)
-
           q"""[Test]
              |public void uebaCodecTestNoIndex()
              |{
-             |    for (int i = 0; i < ${compilerOptions.csOptions.generic.codecTestIterations.toString}; i++)
+             |    for (int i = 0; i < ${compilerOptions.generic.codecTestIterations.toString}; i++)
              |    {
              |        uebaCodecTestImpl($baboonCodecContext.Compact);
              |    }
@@ -112,24 +86,34 @@ object CSCodecTestsTranslator {
              |[Test]
              |public void uebaCodecTestIndexed()
              |{
-             |    for (int i = 0; i < ${compilerOptions.csOptions.generic.codecTestIterations.toString}; i++)
+             |    for (int i = 0; i < ${compilerOptions.generic.codecTestIterations.toString}; i++)
              |    {
              |        uebaCodecTestImpl($baboonCodecContext.Indexed);
              |    }
              |}
              |
              |private void uebaCodecTestImpl($baboonCodecContext context) {
-             |    ${init.shift(4).trim}
+             |    ${fixture.shift(4).trim}
              |    ${body.shift(4).trim}
              |}
              |""".stripMargin
+
         case unknown =>
           logger.message(s"Tests generating for ${unknown.codecName(srcRef)} codec of type $srcRef is not supported")
           q""
-      }.toList
-        .join("\n")
-        .shift(2)
-        .trim
+      }.toList.join("\n").shift(2).trim
+    }
+
+    private def makeFixture(
+      definition: DomainMember.User,
+      domain: Domain,
+      evolution: BaboonEvolution,
+    ): TextTree[CSValue] = {
+      definition.defn match {
+        case e: Typedef.Enum => q"var fixture = $baboonFixture.NextRandomEnum<${e.id.name.name}>();"
+        case _: Typedef.Adt  => q"var fixtures = ${typeTranslator.asCsType(definition.id, domain, evolution)}_Fixture.RandomAll();"
+        case _               => q"var fixture = ${typeTranslator.asCsType(definition.id, domain, evolution)}_Fixture.Random();"
+      }
     }
 
     private def jsonCodecAssertions(codec: CSNSJsonCodecGenerator, definition: DomainMember.User, srcRef: CSValue.CSType): TextTree[CSValue] = {

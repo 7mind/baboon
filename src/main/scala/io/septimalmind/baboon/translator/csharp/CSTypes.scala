@@ -5,9 +5,9 @@ import izumi.fundamentals.collections.nonempty.NEList
 
 object CSTypes {
   // Baboon packages
-  val baboonRtPkg: CSPackageId     = CSPackageId(NEList("Baboon", "Runtime", "Shared"))
-  val baboonTestRtPkg: CSPackageId = CSPackageId(NEList("Baboon", "Test", "Runtime", "Shared"))
-  val baboonTimePkg: CSPackageId   = CSPackageId(NEList("Baboon", "Time"))
+  val baboonRuntimePkg: CSPackageId = CSPackageId(NEList("Baboon", "Runtime", "Shared"))
+  val baboonFixturePkg: CSPackageId = CSPackageId(NEList("Baboon", "Fixture"))
+  val baboonTimePkg: CSPackageId    = CSPackageId(NEList("Baboon", "Time"))
 
   // System packages
   val csSystemPkg: CSPackageId               = CSPackageId(NEList("System"))
@@ -25,38 +25,40 @@ object CSTypes {
   val nunitPkg: CSPackageId  = CSPackageId(NEList("NUnit", "Framework"))
 
   // Nunit types
-  val nunitTestFixture: CSType    = CSType(nunitPkg, "TestFixture", fq = false)
-  val nunitOneTimeSetUp: CSType   = CSType(nunitPkg, "OneTimeSetUp", fq = false)
-  val testValuesGenerator: CSType = CSType(baboonTestRtPkg, "RVG", fq = false)
+  val nunitTestFixture: CSType  = CSType(nunitPkg, "TestFixture", fq = false)
+  val nunitOneTimeSetUp: CSType = CSType(nunitPkg, "OneTimeSetUp", fq = false)
 
   // Baboon conversions' types
-  val abstractConversion: CSType        = CSType(baboonRtPkg, "AbstractConversion", fq = false)
-  val abstractBaboonConversions: CSType = CSType(baboonRtPkg, "AbstractBaboonConversions", fq = false)
-  val iBaboonGenerated: CSType          = CSType(baboonRtPkg, "IBaboonGenerated", fq = false)
-  val iBaboonAdtMemberMeta: CSType      = CSType(baboonRtPkg, "IBaboonAdtMemberMeta", fq = false)
-  val iBaboonGeneratedLatest: CSType    = CSType(baboonRtPkg, "IBaboonGeneratedLatest", fq = false)
-  val BaboonTools: CSType               = CSType(baboonRtPkg, "BaboonTools", fq = false)
+  val abstractConversion: CSType        = CSType(baboonRuntimePkg, "AbstractConversion", fq = false)
+  val abstractBaboonConversions: CSType = CSType(baboonRuntimePkg, "AbstractBaboonConversions", fq = false)
+  val iBaboonGenerated: CSType          = CSType(baboonRuntimePkg, "IBaboonGenerated", fq = false)
+  val iBaboonAdtMemberMeta: CSType      = CSType(baboonRuntimePkg, "IBaboonAdtMemberMeta", fq = false)
+  val iBaboonGeneratedLatest: CSType    = CSType(baboonRuntimePkg, "IBaboonGeneratedLatest", fq = false)
+  val BaboonTools: CSType               = CSType(baboonRuntimePkg, "BaboonTools", fq = false)
 
   // Baboon codec types
-  val iBaboonCodecData: CSType       = CSType(baboonRtPkg, "IBaboonCodecData", fq = false)
-  val iBaboonBinCodecIndexed: CSType = CSType(baboonRtPkg, "IBaboonBinCodecIndexed", fq = false)
-  val baboonCodecContext: CSType     = CSType(baboonRtPkg, "BaboonCodecContext", fq = false)
-  val iBaboonCodec: CSType           = CSType(baboonRtPkg, "IBaboonCodec", fq = false)
-  val iBaboonValueCodec: CSType      = CSType(baboonRtPkg, "IBaboonValueCodec", fq = false)
-  val iBaboonStreamCodec: CSType     = CSType(baboonRtPkg, "IBaboonStreamCodec", fq = false)
+  val iBaboonCodecData: CSType       = CSType(baboonRuntimePkg, "IBaboonCodecData", fq = false)
+  val iBaboonBinCodecIndexed: CSType = CSType(baboonRuntimePkg, "IBaboonBinCodecIndexed", fq = false)
+  val baboonCodecContext: CSType     = CSType(baboonRuntimePkg, "BaboonCodecContext", fq = false)
+  val iBaboonCodec: CSType           = CSType(baboonRuntimePkg, "IBaboonCodec", fq = false)
+  val iBaboonValueCodec: CSType      = CSType(baboonRuntimePkg, "IBaboonValueCodec", fq = false)
+  val iBaboonStreamCodec: CSType     = CSType(baboonRuntimePkg, "IBaboonStreamCodec", fq = false)
 
-  val iBaboonJsonCodec: CSType     = CSType(baboonRtPkg, "IBaboonJsonCodec", fq = false)
-  val iBaboonBinCodec: CSType      = CSType(baboonRtPkg, "IBaboonBinCodec", fq = false)
-  val iBaboonTypeCodecs: CSType    = CSType(baboonRtPkg, "IBaboonTypeCodecs", fq = false)
-  val baboonTypeCodecs: CSType     = CSType(baboonRtPkg, "BaboonTypeCodecs", fq = false)
-  val abstractBaboonCodecs: CSType = CSType(baboonRtPkg, "AbstractBaboonCodecs", fq = false)
+  val iBaboonJsonCodec: CSType     = CSType(baboonRuntimePkg, "IBaboonJsonCodec", fq = false)
+  val iBaboonBinCodec: CSType      = CSType(baboonRuntimePkg, "IBaboonBinCodec", fq = false)
+  val iBaboonTypeCodecs: CSType    = CSType(baboonRuntimePkg, "IBaboonTypeCodecs", fq = false)
+  val baboonTypeCodecs: CSType     = CSType(baboonRuntimePkg, "BaboonTypeCodecs", fq = false)
+  val abstractBaboonCodecs: CSType = CSType(baboonRuntimePkg, "AbstractBaboonCodecs", fq = false)
 
   val baboonTimeFormats: CSType = CSType(baboonTimePkg, "BaboonDateTimeFormats", fq = false)
 
-  val iBaboonMeta: CSType = CSType(baboonRtPkg, "IBaboonMeta", fq = false)
+  val iBaboonMeta: CSType = CSType(baboonRuntimePkg, "IBaboonMeta", fq = false)
 
   // Baboon type
   val rpDateTime: CSType = CSType(baboonTimePkg, "RpDateTime", fq = false)
+
+  // Baboon fixture
+  val baboonFixture: CSType = CSType(baboonFixturePkg, "BaboonFixture", fq = false)
 
   // Newtonsoft types
   val nsJsonWriter: CSType     = CSType(nsPkg, "JsonWriter", fq = false)

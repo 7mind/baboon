@@ -1,7 +1,6 @@
 package io.septimalmind.baboon
 
 import io.circe.{Encoder, Json, KeyEncoder}
-import io.septimalmind.baboon.BaboonCompiler.CompilerTargets
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.OutputFile
 import io.septimalmind.baboon.translator.csharp.{CSBaboonTranslator, VersionMeta}
@@ -15,38 +14,34 @@ import java.nio.file.{Files, Path, StandardOpenOption}
 import scala.util.Try
 
 trait BaboonCompiler {
-  def run(inputs: Set[Path], targets: CompilerTargets): Either[NEList[BaboonIssue], Unit]
+  def run(inputs: Set[Path]): Either[NEList[BaboonIssue], Unit]
 }
 
 object BaboonDomainCodecs {
 
   import io.septimalmind.baboon.typer.model.*
 
-  implicit lazy val versonKeyEncoder: KeyEncoder[Version] =
-    KeyEncoder.encodeKeyString.contramap(_.version)
-  implicit lazy val versonEncoder: Encoder[Version] =
-    Encoder.encodeString.contramap(_.version)
-  implicit lazy val pkgKeyEncoder: KeyEncoder[Pkg] =
-    KeyEncoder.encodeKeyString.contramap(_.toString)
-  implicit lazy val typeIdKeyEncoder: KeyEncoder[TypeId] =
-    KeyEncoder.encodeKeyString.contramap(_.toString)
+  implicit lazy val versionKeyEncoder: KeyEncoder[Version] = KeyEncoder.encodeKeyString.contramap(_.version)
+  implicit lazy val versionEncoder: Encoder[Version]       = Encoder.encodeString.contramap(_.version)
+  implicit lazy val pkgKeyEncoder: KeyEncoder[Pkg]         = KeyEncoder.encodeKeyString.contramap(_.toString)
+  implicit lazy val typeIdKeyEncoder: KeyEncoder[TypeId]   = KeyEncoder.encodeKeyString.contramap(_.toString)
 }
 
 object BaboonCompiler {
-  final case class CompilerTargets(output: Path, testOutput: Option[Path])
-
-  class BaboonCompilerImpl(loader: BaboonLoader, translator: CSBaboonTranslator, options: CompilerOptions, logger: BLogger) extends BaboonCompiler {
-    override def run(
-      inputs: Set[Path],
-      targets: CompilerTargets,
-    ): Either[NEList[BaboonIssue], Unit] = {
+  class BaboonCompilerImpl(
+    loader: BaboonLoader,
+    translator: CSBaboonTranslator,
+    options: CompilerOptions,
+    logger: BLogger,
+  ) extends BaboonCompiler {
+    override def run(inputs: Set[Path]): Either[NEList[BaboonIssue], Unit] = {
       for {
         loaded <- loader.load(inputs.toList)
-        _ <- Right(options.csOptions.generic.metaWriteEvolutionJsonTo.map {
+        _ <- Right(options.generic.metaWriteEvolutionJsonTo.map {
           maybePath =>
             val path = Option(maybePath.getParent) match {
               case Some(_) => maybePath
-              case None    => targets.output.resolve(maybePath)
+              case None    => options.target.output.resolve(maybePath)
             }
             import BaboonDomainCodecs.*
             import io.circe.syntax.*
@@ -79,21 +74,16 @@ object BaboonCompiler {
             )
 
         })
-        translated <- translator.translate(targets, loaded)
+        translated <- translator.translate(loaded)
         _ <- translated.files.map {
-          case (p, content) =>
+          case (relativePath, output) =>
             Try {
-              if (content.isTest) {
-                targets.testOutput.foreach {
-                  testTarget =>
-                    val tgt = testTarget.resolve(p)
-                    writeFile(content, tgt)
-                }
-              } else {
-                val tgt = targets.output.resolve(p)
-                writeFile(content, tgt)
+              options.target.targetPathFor(output).foreach {
+                targetDirectory =>
+                  val targetPath = targetDirectory.resolve(relativePath)
+                  writeFile(output, targetPath)
               }
-            }.toEither.left.map(t => NEList(BaboonIssue.CantWriteOutput(p, t)))
+            }.toEither.left.map(t => NEList(BaboonIssue.CantWriteOutput(relativePath, t)))
         }.biSequence_
       } yield {}
     }

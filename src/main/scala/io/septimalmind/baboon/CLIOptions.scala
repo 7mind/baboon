@@ -15,7 +15,12 @@ object RuntimeGenOpt {
 case class GenericTranspilerCLIOptions(
   @HelpMessage("Path to directory where generated code should be placed")
   output: String,
-  @HelpMessage("Path to directory where generated tests should be placed")
+  @HelpMessage("Path to directory where generated fixtures should be placed")
+  fixtureOutput: Option[String],
+  @HelpMessage(
+    "Path to directory where generated tests should be placed " +
+    "(requires generated fixtures, if no '--fixtures-output' is specified, fixtures would be generated automatically into tests directory)"
+  )
   testOutput: Option[String],
   @HelpMessage("Generate shared runtime classes and evolution registrations, default is `with`")
   @ValueDescription("with|only|without")

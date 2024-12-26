@@ -20,104 +20,102 @@ object CSCodecFixtureTranslator {
       definition: DomainMember.User
     ): Option[TextTree[CSValue]] = {
       definition.defn match {
-        case dto: Typedef.Dto    => doTranslateDto(definition, dto, None)
-        case adt: Typedef.Adt    => doTranslateAdt(definition, adt)
-        case _: Typedef.Contract => None
-        case _: Typedef.Enum     => None
-        case _: Typedef.Foreign  => None
+        case _ if enquiries.hasForeignType(definition, domain)     => None
+        case _ if enquiries.isRecursiveTypedef(definition, domain) => None
+        case _: Typedef.Contract                                   => None
+        case _: Typedef.Enum                                       => None
+        case _: Typedef.Foreign                                    => None
+
+        case dto: Typedef.Dto =>
+          Some {
+            q"""
+               |// ReSharper disable InconsistentNaming
+               |// ReSharper disable MemberHidesStaticFromOuterClass
+               |#pragma warning disable CS0108
+               |#nullable enable
+               |
+               |${doTranslateDto(dto)}
+               |""".stripMargin
+          }
+
+        case adt: Typedef.Adt =>
+          Some {
+            q"""
+               |// ReSharper disable InconsistentNaming
+               |// ReSharper disable MemberHidesStaticFromOuterClass
+               |#pragma warning disable CS0108
+               |#nullable enable
+               |
+               |${doTranslateAdt(adt)}
+               |""".stripMargin
+          }
       }
     }
 
-    private def doTranslateDto(definition: DomainMember.User, dto: Typedef.Dto, adt: Option[TypeId]): Option[TextTree[CSValue]] = {
-      definition match {
-        case d if enquiries.hasForeignType(d, domain)     => None
-        case d if enquiries.isRecursiveTypedef(d, domain) => None
-        case _ =>
-          val generatedFields = dto.fields.map(f => genType(f.tpe))
+    private def doTranslateDto(dto: Typedef.Dto): TextTree[CSValue] = {
+      val generatedFields = dto.fields.map(f => genType(f.tpe))
+      val fullType        = translator.toCsTypeRefNoDeref(dto.id, domain, evo)
 
-          // adt member full type is different for compact and non-compact forms
-          val fullType = if (options.csOptions.csUseCompactAdtForm) {
-            s"${adt.map(t => s"${t.name.name}.").getOrElse("")}${dto.id.name.name}"
-          } else {
-            dto.id.name.name
-          }
-
-          val fixture =
-            q"""public static class ${adt.map(t => s"${t.name.name}_").getOrElse("")}${dto.id.name.name}_Fixture
-               |{
-               |    public static $fullType Random()
-               |    {
-               |        return new $fullType(
-               |            ${generatedFields.join(",\n").shift(12).trim}
-               |        );
-               |    }
-               |}
-               |""".stripMargin
-
-          Some(fixture)
-      }
-
+      q"""public static class ${dto.id.name.name}_Fixture
+         |{
+         |    public static $fullType Random()
+         |    {
+         |        return new $fullType(
+         |            ${generatedFields.join(",\n").shift(12).trim}
+         |        );
+         |    }
+         |}
+         |""".stripMargin
     }
 
-    private def doTranslateAdt(definition: DomainMember.User, adt: Typedef.Adt): Option[TextTree[CSValue]] = {
-      definition match {
-        case d if enquiries.hasForeignType(d, domain)     => None
-        case d if enquiries.isRecursiveTypedef(d, domain) => None
-        case _ =>
-          val members = adt.members.toList
-            .flatMap(m => domain.defs.meta.nodes.get(m))
-            .collect { case DomainMember.User(_, d: Typedef.Dto, _) => d }
+    private def doTranslateAdt(adt: Typedef.Adt): TextTree[CSValue] = {
+      val members = adt.members.toList
+        .flatMap(m => domain.defs.meta.nodes.get(m))
+        .collect { case DomainMember.User(_, d: Typedef.Dto, _) => d }
 
-          val membersFixtures = if (options.csOptions.csUseCompactAdtForm) {
-            members
-              .sortBy(_.id.toString)
-              .flatMap(dto => doTranslateDto(definition, dto, Some(adt.id)))
-          } else {
-            List.empty[TextTree[CSValue]]
-          }
-
-          val membersGenerators =
-            members.sortBy(_.id.toString).map[TextTree[CSValue]] {
-              dto =>
-                val memberFixture = if (options.csOptions.csUseCompactAdtForm) {
-                  q"${adt.id.name.name}_${dto.id.name.name}"
-                } else {
-                  q"${translator.toCsTypeRefNoDeref(dto.id, domain, evo)}"
-                }
-                q"${memberFixture}_Fixture.Random()"
-            }
-
-          val membersBranches = membersGenerators.zipWithIndex.map {
-            case (generator, idx) =>
-              q"""if (rnd == ${idx.toString})
-                 |{
-                 |    return $generator;
-                 |}
-                 |""".stripMargin
-          }
-
-          val fixture: TextTree[CSValue] =
-            q"""public static class ${adt.id.name.name}_Fixture
-               |{
-               |    public static ${adt.id.name.name} Random() {
-               |        var rnd = $testValuesGenerator.NextInt32(${members.size.toString});
-               |        ${membersBranches.join("\n").shift(8).trim}
-               |        throw new $csArgumentException();
-               |    }
-               |
-               |    public static $csList<${adt.id.name.name}> RandomAll() {
-               |        return new $csList<${adt.id.name.name}>
-               |        {
-               |            ${membersGenerators.join(",\n").shift(12).trim}
-               |        };
-               |    }
-               |
-               |    ${membersFixtures.join("\n").shift(4).trim}
-               |}
-               |""".stripMargin
-
-          Some(fixture)
+      val membersFixtures = if (options.csOptions.useCompactAdtForm) {
+        members.sortBy(_.id.toString).map(dto => doTranslateDto(dto))
+      } else {
+        List.empty[TextTree[CSValue]]
       }
+
+      val membersGenerators = members.sortBy(_.id.toString).map[TextTree[CSValue]] {
+        dto =>
+          val memberFixture = if (options.csOptions.useCompactAdtForm) {
+            q"${dto.id.name.name}"
+          } else {
+            q"${translator.toCsTypeRefNoDeref(dto.id, domain, evo)}"
+          }
+          q"${memberFixture}_Fixture.Random()"
+      }
+
+      val membersBranches = membersGenerators.zipWithIndex.map {
+        case (generator, idx) =>
+          q"""if (rnd == ${idx.toString})
+             |{
+             |    return $generator;
+             |}
+             |""".stripMargin
+      }
+
+      q"""public static class ${adt.id.name.name}_Fixture
+         |{
+         |    public static ${adt.id.name.name} Random() {
+         |        var rnd = $baboonFixture.NextInt32(${members.size.toString});
+         |        ${membersBranches.join("\n").shift(8).trim}
+         |        throw new $csArgumentException();
+         |    }
+         |
+         |    public static $csList<${adt.id.name.name}> RandomAll() {
+         |        return new $csList<${adt.id.name.name}>
+         |        {
+         |            ${membersGenerators.join(",\n").shift(12).trim}
+         |        };
+         |    }
+         |
+         |    ${membersFixtures.join("\n").shift(4).trim}
+         |}
+         |""".stripMargin
     }
 
     private def genType(tpe: TypeRef): TextTree[CSValue] = {
@@ -128,17 +126,17 @@ object CSCodecFixtureTranslator {
             id match {
               case Builtins.lst =>
                 val argTpe = renderCollectionTypeArgument(args.head)
-                q"""$testValuesGenerator.FillList<$argTpe>($testValuesGenerator.NextInt32(20), () => ${gen(args.head)})"""
+                q"""$baboonFixture.FillList<$argTpe>($baboonFixture.NextInt32(20), () => ${gen(args.head)})"""
 
               case Builtins.set =>
                 val argTpe = renderCollectionTypeArgument(args.head)
-                q"""$testValuesGenerator.FillSet<$argTpe>($testValuesGenerator.NextInt32(20), () => ${gen(args.head)})"""
+                q"""$baboonFixture.FillSet<$argTpe>($baboonFixture.NextInt32(20), () => ${gen(args.head)})"""
 
               case Builtins.map =>
                 val keyTpe   = renderCollectionTypeArgument(args(0))
                 val valueTpe = renderCollectionTypeArgument(args(1))
                 val entry    = q"new $csKeyValuePair<$keyTpe, $valueTpe>(${gen(args(0))}, ${gen(args(1))})"
-                q"$testValuesGenerator.FillDict<$keyTpe, $valueTpe>($testValuesGenerator.NextInt32(20), () => $entry)"
+                q"$baboonFixture.FillDict<$keyTpe, $valueTpe>($baboonFixture.NextInt32(20), () => $entry)"
 
               case Builtins.opt =>
                 q"${gen(args.head)}"
@@ -169,32 +167,29 @@ object CSCodecFixtureTranslator {
 
     private def genScalar(tpe: TypeRef.Scalar): TextTree[CSValue] = {
       tpe.id match {
-        case TypeId.Builtins.i08 => q"$testValuesGenerator.NextSByte()"
-        case TypeId.Builtins.i16 => q"$testValuesGenerator.NextInt16()"
-        case TypeId.Builtins.i32 => q"$testValuesGenerator.NextInt32()"
-        case TypeId.Builtins.i64 => q"$testValuesGenerator.NextInt64()"
+        case TypeId.Builtins.i08 => q"$baboonFixture.NextSByte()"
+        case TypeId.Builtins.i16 => q"$baboonFixture.NextInt16()"
+        case TypeId.Builtins.i32 => q"$baboonFixture.NextInt32()"
+        case TypeId.Builtins.i64 => q"$baboonFixture.NextInt64()"
 
-        case TypeId.Builtins.u08 => q"$testValuesGenerator.NextByte()"
-        case TypeId.Builtins.u16 => q"$testValuesGenerator.NextUInt16()"
-        case TypeId.Builtins.u32 => q"$testValuesGenerator.NextUInt32()"
-        case TypeId.Builtins.u64 => q"$testValuesGenerator.NextUInt64()"
+        case TypeId.Builtins.u08 => q"$baboonFixture.NextByte()"
+        case TypeId.Builtins.u16 => q"$baboonFixture.NextUInt16()"
+        case TypeId.Builtins.u32 => q"$baboonFixture.NextUInt32()"
+        case TypeId.Builtins.u64 => q"$baboonFixture.NextUInt64()"
 
-        case TypeId.Builtins.f32  => q"$testValuesGenerator.NextSingle()"
-        case TypeId.Builtins.f64  => q"$testValuesGenerator.NextDouble()"
-        case TypeId.Builtins.f128 => q"$testValuesGenerator.NextDecimal()"
+        case TypeId.Builtins.f32  => q"$baboonFixture.NextSingle()"
+        case TypeId.Builtins.f64  => q"$baboonFixture.NextDouble()"
+        case TypeId.Builtins.f128 => q"$baboonFixture.NextDecimal()"
 
-        case TypeId.Builtins.str => q"$testValuesGenerator.NextString()"
-        case TypeId.Builtins.uid => q"$testValuesGenerator.NextGuid()"
-        case TypeId.Builtins.tsu => q"$testValuesGenerator.NextRpDateTime()"
-        case TypeId.Builtins.tso => q"$testValuesGenerator.NextRpDateTime()"
+        case TypeId.Builtins.str => q"$baboonFixture.NextString()"
+        case TypeId.Builtins.uid => q"$baboonFixture.NextGuid()"
+        case TypeId.Builtins.tsu => q"$baboonFixture.NextRpDateTime()"
+        case TypeId.Builtins.tso => q"$baboonFixture.NextRpDateTime()"
 
-        case TypeId.Builtins.bit => q"$testValuesGenerator.NextBoolean()"
+        case TypeId.Builtins.bit => q"$baboonFixture.NextBoolean()"
 
-        case TypeId.User(_, _, name) if translator.isEnum(tpe, domain) =>
-          q"$testValuesGenerator.NextRandomEnum<${name.name}>()"
-
-        case TypeId.User(_, _, name) =>
-          q"${name.name}_Fixture.Random()"
+        case TypeId.User(_, _, name) if translator.isEnum(tpe, domain) => q"$baboonFixture.NextRandomEnum<${name.name}>()"
+        case TypeId.User(_, _, name)                                   => q"${name.name}_Fixture.Random()"
 
         case t =>
           throw new IllegalArgumentException(s"Unexpected scalar type: $t")

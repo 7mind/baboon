@@ -15,24 +15,29 @@ abstract class BaboonTest extends Spec1[Identity] {
       new BaboonModule(
         CompilerOptions(
           debug = false,
+          target = TargetOptions(
+            runtime             = RuntimeGenOpt.With,
+            generateConversions = true,
+            // dummy path (should be unused)
+            output         = Paths.get("./src/test/resources/baboon"),
+            fixturesOutput = None,
+            testsOutput    = None,
+          ),
+          generic = GenericOptions(
+            obsoleteErrors           = false,
+            codecTestIterations      = 500,
+            metaWriteEvolutionJsonTo = None,
+          ),
           csOptions = CSOptions(
-            generic = GenericOptions(
-              obsoleteErrors           = false,
-              runtime                  = RuntimeGenOpt.With,
-              generateConversions      = true,
-              codecTestIterations      = 500,
-              metaWriteEvolutionJsonTo = None,
-            ),
-            csWriteEvolutionDict                      = true,
-            csUseCompactAdtForm                       = true,
-            csWrappedAdtBranchCodecs                  = true,
-            csDisregardImplicitUsings                 = true,
+            writeEvolutionDict                        = true,
+            useCompactAdtForm                         = true,
+            wrappedAdtBranchCodecs                    = true,
+            disregardImplicitUsings                   = true,
             omitMostRecentVersionSuffixFromPaths      = true,
             omitMostRecentVersionSuffixFromNamespaces = true,
           ),
         ),
         Seq(Paths.get("./src/test/resources/baboon")),
-        None,
       ).morph[PluginBase]
     )
   )

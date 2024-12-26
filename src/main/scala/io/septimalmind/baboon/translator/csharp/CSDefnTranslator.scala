@@ -1,22 +1,23 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
+import io.septimalmind.baboon.{CompilerOptions, CompilerProduct}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 trait CSDefnTranslator {
   def translate(defn: DomainMember.User): Either[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.OutputExt]]
-  def translateTests(defn: DomainMember.User): Either[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.OutputExt]]
+  def translateFixtures(defn: DomainMember.User): Either[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]]
+  def translateTests(defn: DomainMember.User): Either[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]]
 }
 
 object CSDefnTranslator {
-  case class Output(path: String, tree: TextTree[CSValue], pkg: CSPackageId, isTest: Boolean)
+  case class Output(path: String, tree: TextTree[CSValue], pkg: CSPackageId, product: CompilerProduct)
   case class OutputExt(output: Output, codecReg: TextTree[CSValue])
 
   private val obsolete: CSType     = CSType(CSTypes.csSystemPkg, "Obsolete", fq = false)
@@ -36,57 +37,14 @@ object CSDefnTranslator {
   ) extends CSDefnTranslator {
     type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
-    override def translate(
-      defn: DomainMember.User
-    ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
+    override def translate(defn: DomainMember.User): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
       defn.id.owner match {
-        case Owner.Adt(_) if options.csOptions.csUseCompactAdtForm => Right(List.empty)
-        case _                                                     => doTranslate(defn)
+        case Owner.Adt(_) if options.csOptions.useCompactAdtForm => Right(List.empty)
+        case _                                                   => doTranslate(defn)
       }
     }
 
-    override def translateTests(
-      defn: DomainMember.User
-    ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
-      defn.id.owner match {
-        case Owner.Adt(_) if options.csOptions.csUseCompactAdtForm => Right(List.empty)
-        case _                                                     => doTranslateTest(defn)
-      }
-    }
-
-    private def doTranslateTest(
-      defn: DomainMember.User
-    ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
-      val codecTreeWithNs = makeTestRepr(defn, inNs = true)
-      val codecTestOut = codecTreeWithNs.map(
-        codecTestWithNS =>
-          OutputExt(
-            Output(
-              getOutputPath(defn, suffix = Some("_Tests")),
-              codecTestWithNS,
-              trans.toCsPkg(domain.id, domain.version, evo),
-              isTest = true,
-            ),
-            q"",
-          )
-      )
-
-      Right(codecTestOut.toList)
-    }
-
-    private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
-      val fbase = csFiles.basename(domain, evo)
-      val fname = s"${defn.id.name.name.capitalize}${suffix.getOrElse("")}.cs"
-      defn.defn.id.owner match {
-        case Owner.Toplevel => s"$fbase/$fname"
-        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString(".")}-$fname"
-        case Owner.Adt(id)  => s"$fbase/${id.name.name.toLowerCase}-$fname"
-      }
-    }
-
-    private def doTranslate(
-      defn: DomainMember.User
-    ): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
+    private def doTranslate(defn: DomainMember.User): Either[NEList[BaboonIssue.TranslationIssue], List[OutputExt]] = {
       val (content, reg) = makeFullRepr(defn, inNs = true)
 
       // Generic codec variant have poor performance on empty JIT and il2cpp (for some reason ._.)
@@ -100,12 +58,64 @@ object CSDefnTranslator {
               getOutputPath(defn),
               content,
               trans.toCsPkg(domain.id, domain.version, evo),
-              isTest = false,
+              CompilerProduct.Definition,
             ),
             registrations,
           )
         )
       )
+    }
+
+    override def translateFixtures(defn: DomainMember.User): Either[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+      defn.id.owner match {
+        case Owner.Adt(_) if options.csOptions.useCompactAdtForm => Right(List.empty)
+        case _                                                   => doTranslateFixtures(defn)
+      }
+    }
+
+    private def doTranslateFixtures(defn: DomainMember.User): Either[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+      val fixtureTreeOut = makeFixtureRepr(defn).map {
+        fixtureTreeWithNs =>
+          Output(
+            getOutputPath(defn, suffix = Some(".Fixture")),
+            fixtureTreeWithNs,
+            trans.toCsPkg(domain.id, domain.version, evo),
+            CompilerProduct.Fixture,
+          )
+      }
+
+      Right(fixtureTreeOut.toList)
+    }
+
+    override def translateTests(defn: DomainMember.User): Either[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+      defn.id.owner match {
+        case Owner.Adt(_) if options.csOptions.useCompactAdtForm => Right(List.empty)
+        case _                                                   => doTranslateTest(defn)
+      }
+    }
+
+    private def doTranslateTest(defn: DomainMember.User): Either[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+      val codecTestOut = makeTestRepr(defn).map {
+        codecTestWithNS =>
+          Output(
+            getOutputPath(defn, suffix = Some(".Tests")),
+            codecTestWithNS,
+            trans.toCsPkg(domain.id, domain.version, evo),
+            CompilerProduct.Test,
+          )
+      }
+
+      Right(codecTestOut.toList)
+    }
+
+    private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
+      val fbase = csFiles.basename(domain, evo)
+      val fname = s"${defn.id.name.name.capitalize}${suffix.getOrElse("")}.cs"
+      defn.defn.id.owner match {
+        case Owner.Toplevel => s"$fbase/$fname"
+        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString(".")}.$fname"
+        case Owner.Adt(id)  => s"$fbase/${id.name.name.toLowerCase}.$fname"
+      }
     }
 
     private def makeFullRepr(
@@ -119,7 +129,7 @@ object CSDefnTranslator {
         if (isLatestVersion || hackyIsEmpty) {
           tree
         } else {
-          q"""[$obsolete("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${options.csOptions.generic.obsoleteErrors.toString})]
+          q"""[$obsolete("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${options.generic.obsoleteErrors.toString})]
              |$tree""".stripMargin
         }
       }
@@ -164,23 +174,6 @@ object CSDefnTranslator {
       val allRegs = reg ++ extraRegs
 
       (content, allRegs)
-    }
-
-    private def makeTestRepr(defn: DomainMember.User, inNs: Boolean): Option[TextTree[CSValue]] = {
-      val csTypeRef = trans.toCsTypeRefDeref(defn.id, domain, evo)
-      val srcRef    = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
-      val ns        = srcRef.pkg.parts
-
-      val codecTestTrees     = codecsTests.translate(defn, csTypeRef, srcRef).toList
-      val codecsFixtureTrees = codecsFixture.translate(defn).toList
-
-      val allTrees = codecTestTrees ++ codecsFixtureTrees
-
-      val allTree = Some(allTrees).filterNot(_.isEmpty).map(_.join("\n\n"))
-      val allTreeWithNs =
-        allTree.map(t => if (inNs) csTrees.inNs(ns.toSeq, t) else t)
-
-      allTreeWithNs
     }
 
     private def makeRepr(defn: DomainMember.User, name: CSValue.CSType, isLatestVersion: Boolean): (TextTree[CSValue], List[(CSType, TextTree[CSValue])]) = {
@@ -301,7 +294,7 @@ object CSDefnTranslator {
           val allParents = Seq(q"$genMarker")
           val parents    = makeParents(allParents.toList)
 
-          if (options.csOptions.csUseCompactAdtForm) {
+          if (options.csOptions.useCompactAdtForm) {
             val memberTrees = adt.members.map {
               mid =>
                 domain.defs.meta.nodes.get(mid) match {
@@ -341,6 +334,27 @@ object CSDefnTranslator {
 
         case _: Typedef.Foreign => (q"", List.empty)
       }
+    }
+
+    private def makeFixtureRepr(defn: DomainMember.User): Option[TextTree[CSValue]] = {
+      val srcRef = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
+      val ns     = srcRef.pkg.parts
+
+      val fixtureTree       = codecsFixture.translate(defn)
+      val fixtureTreeWithNs = fixtureTree.map(t => csTrees.inNs(ns.toSeq, t))
+
+      fixtureTreeWithNs
+    }
+
+    private def makeTestRepr(defn: DomainMember.User): Option[TextTree[CSValue]] = {
+      val csTypeRef = trans.toCsTypeRefDeref(defn.id, domain, evo)
+      val srcRef    = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
+      val ns        = srcRef.pkg.parts
+
+      val testTree       = codecsTests.translate(defn, csTypeRef, srcRef)
+      val testTreeWithNs = testTree.map(t => csTrees.inNs(ns.toSeq, t))
+
+      testTreeWithNs
     }
 
     private def renderContractFields(

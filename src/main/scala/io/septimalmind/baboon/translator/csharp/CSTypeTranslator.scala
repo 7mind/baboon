@@ -56,7 +56,7 @@ class CSTypeTranslator(options: CompilerOptions) {
 
     val fullPkg = tid.owner match {
       case Owner.Adt(_) =>
-        val static = if (options.csOptions.csUseCompactAdtForm) true else false
+        val static = if (options.csOptions.useCompactAdtForm) true else false
         CSPackageId(pkg.parts ++ ownerAsPrefix, isStatic = static)
       case _ =>
         CSPackageId(fullPrefix)
@@ -65,7 +65,7 @@ class CSTypeTranslator(options: CompilerOptions) {
   }
 
   def adtNsName(id: TypeId.User): String = {
-    if (options.csOptions.csUseCompactAdtForm) {
+    if (options.csOptions.useCompactAdtForm) {
       id.name.name
     } else {
       id.name.name.toLowerCase

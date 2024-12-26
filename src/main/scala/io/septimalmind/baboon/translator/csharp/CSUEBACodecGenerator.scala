@@ -190,7 +190,7 @@ class CSUEBACodecGenerator(
 
         val castedName = branchName.toLowerCase
 
-        val encBody = if (options.csOptions.csWrappedAdtBranchCodecs) {
+        val encBody = if (options.csOptions.wrappedAdtBranchCodecs) {
           q"""$cName.Instance.Encode(ctx, writer, $castedName);"""
         } else {
           q"""writer.Write((byte)${idx.toString});
@@ -198,7 +198,7 @@ class CSUEBACodecGenerator(
            """.stripMargin
         }
 
-        val decBody = if (options.csOptions.csWrappedAdtBranchCodecs) {
+        val decBody = if (options.csOptions.wrappedAdtBranchCodecs) {
           q"""return (($cName)$cName.Instance).DecodeBranch(ctx, wire);"""
         } else {
           q"""return $cName.Instance.Decode(ctx, wire);"""
@@ -263,7 +263,7 @@ class CSUEBACodecGenerator(
   ): Option[TextTree[CSValue]] = {
 
     d.id.owner match {
-      case Owner.Adt(_) if options.csOptions.csWrappedAdtBranchCodecs =>
+      case Owner.Adt(_) if options.csOptions.wrappedAdtBranchCodecs =>
         val fields = fieldsOf(d)
         Some(dtoDec(name, fields.map { case (a, b, _) => (a, b) }))
       case _ =>
@@ -313,7 +313,7 @@ class CSUEBACodecGenerator(
     }
 
     val enc = d.id.owner match {
-      case Owner.Adt(id) if options.csOptions.csWrappedAdtBranchCodecs =>
+      case Owner.Adt(id) if options.csOptions.wrappedAdtBranchCodecs =>
         val idx = adtBranchIndex(id)
 
         q"""writer.Write((byte)${idx.toString});
@@ -322,7 +322,7 @@ class CSUEBACodecGenerator(
     }
 
     val dec = d.id.owner match {
-      case Owner.Adt(id) if options.csOptions.csWrappedAdtBranchCodecs =>
+      case Owner.Adt(id) if options.csOptions.wrappedAdtBranchCodecs =>
         val idx = adtBranchIndex(id)
 
         q"""byte marker = wire.ReadByte();
