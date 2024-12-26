@@ -3,6 +3,7 @@ package io.septimalmind.baboon.typer
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.*
+import io.septimalmind.baboon.typer.model.DerivationFailure.Foreign
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -51,13 +52,13 @@ object BaboonRules {
                 Right(CopyAdtBranchByName(id, oldDefn))
 
               case _: Typedef.Foreign if sameLocalStruct =>
-                Right(CustomConversionRequired(id))
+                Right(CustomConversionRequired(id, DerivationFailure.Foreign))
 
               case _ if diff.changes.removed.contains(id) =>
                 Right(RemovedTypeNoConversion(id))
 
               case _: Typedef.Foreign =>
-                Right(CustomConversionRequired(id))
+                Right(CustomConversionRequired(id, DerivationFailure.Foreign))
 
               case _: Typedef.Dto =>
                 assert(shallowChanged)
@@ -139,7 +140,7 @@ object BaboonRules {
                       .isEmpty
                   )
                   if (incompatibleChanges.nonEmpty || incompatibleAdditions.nonEmpty) {
-                    CustomConversionRequired(id)
+                    CustomConversionRequired(id, DerivationFailure.IncompatibleFields(incompatibleChanges, incompatibleAdditions))
                   } else {
                     DtoConversion(
                       id,
@@ -162,7 +163,7 @@ object BaboonRules {
                   }
                 } yield {
                   if (incompatible) {
-                    CustomConversionRequired(id)
+                    CustomConversionRequired(id, DerivationFailure.EnumBranchRemoved)
                   } else {
                     CopyEnumByName(id)
                   }
@@ -181,7 +182,7 @@ object BaboonRules {
                   }
                 } yield {
                   if (incompatible) {
-                    CustomConversionRequired(id)
+                    CustomConversionRequired(id, DerivationFailure.AdtBranchRemoved)
                   } else {
                     CopyAdtBranchByName(id, a)
                   }

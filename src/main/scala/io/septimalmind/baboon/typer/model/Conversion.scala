@@ -1,11 +1,20 @@
 package io.septimalmind.baboon.typer.model
 
+sealed trait DerivationFailure
+
+object DerivationFailure {
+  case object Foreign extends DerivationFailure
+  case object EnumBranchRemoved extends DerivationFailure
+  case object AdtBranchRemoved extends DerivationFailure
+  case class IncompatibleFields(incompatibleChanges: Set[DtoOp.ChangeField], incompatibleAdditions: Set[DtoOp.AddField]) extends DerivationFailure
+}
+
 sealed trait Conversion {
   def sourceTpe: TypeId.User
 }
 
 object Conversion {
-  case class CustomConversionRequired(sourceTpe: TypeId.User) extends Conversion
+  case class CustomConversionRequired(sourceTpe: TypeId.User, reason: DerivationFailure) extends Conversion
 
   case class RemovedTypeNoConversion(sourceTpe: TypeId.User) extends Conversion
 
