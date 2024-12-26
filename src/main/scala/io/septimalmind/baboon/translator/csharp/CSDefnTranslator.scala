@@ -17,7 +17,7 @@ trait CSDefnTranslator {
 }
 
 object CSDefnTranslator {
-  case class Output(path: String, tree: TextTree[CSValue], pkg: CSPackageId, product: CompilerProduct)
+  case class Output(path: String, tree: TextTree[CSValue], pkg: CSPackageId, product: CompilerProduct, doNotModify: Boolean = false)
   case class OutputExt(output: Output, codecReg: TextTree[CSValue])
 
   private val obsolete: CSType     = CSType(CSTypes.csSystemPkg, "Obsolete", fq = false)

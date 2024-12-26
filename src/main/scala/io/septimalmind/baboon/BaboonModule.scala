@@ -38,7 +38,6 @@ class BaboonModule(options: CompilerOptions, inputs: Seq[Path]) extends ModuleDe
     .withSubmodule(new ModuleDef {
       make[BaboonTranslator]
     })
-    .extractWith((t: BaboonTranslator) => t)
 
   makeSubcontext[CSDefnTranslator]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
@@ -51,7 +50,6 @@ class BaboonModule(options: CompilerOptions, inputs: Seq[Path]) extends ModuleDe
         .add[CSNSJsonCodecGenerator]
         .add[CSUEBACodecGenerator]
     })
-    .extractWith((t: CSDefnTranslator) => t)
 
   make[ScopeSupport].from[ScopeSupport.ScopeSupportImpl]
 

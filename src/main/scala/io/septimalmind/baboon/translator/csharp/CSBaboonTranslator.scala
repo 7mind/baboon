@@ -66,12 +66,16 @@ class CSBaboonTranslator(
       case p               => q"using ${p.parts.mkString(".")};"
     }.join("\n")
 
-    val full = Seq(
-      Seq(q"#nullable enable"),
-      Seq(q"#pragma warning disable 612,618"), // deprecation warnings
-      Seq(imports),
-      Seq(o.tree),
-    ).flatten.join("\n\n")
+    val full = if (o.doNotModify) {
+      o.tree
+    } else {
+      Seq(
+        Seq(q"#nullable enable"),
+        Seq(q"#pragma warning disable 612,618"), // deprecation warnings
+        Seq(imports),
+        Seq(o.tree),
+      ).flatten.join("\n\n")
+    }
 
     full.mapRender {
       case t: CSValue.CSTypeName =>
@@ -302,6 +306,7 @@ class CSBaboonTranslator(
       TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonRuntimeShared.cs").get),
       CSTypes.baboonRuntimePkg,
       CompilerProduct.Runtime,
+      doNotModify = true,
     )
 
     val timeOutput = CSDefnTranslator.Output(
@@ -309,6 +314,7 @@ class CSBaboonTranslator(
       TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonTime.cs").get),
       CSTypes.baboonTimePkg,
       CompilerProduct.Runtime,
+      doNotModify = true,
     )
 
     Right(List(sharedOutput, timeOutput))
@@ -320,6 +326,7 @@ class CSBaboonTranslator(
       TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonFixtureShared.cs").get),
       CSTypes.baboonFixturePkg,
       CompilerProduct.FixtureRuntime,
+      doNotModify = true,
     )
 
     Right(List(testRuntime))

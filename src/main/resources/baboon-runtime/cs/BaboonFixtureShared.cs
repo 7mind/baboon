@@ -1,8 +1,10 @@
 using System.Text;
-using Baboon.Time;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System;
+using System.Linq;
+
+using Baboon.Time;
 
 namespace Baboon.Fixture {
     // RandomValuesGenerator
@@ -122,7 +124,7 @@ namespace Baboon.Fixture {
             return Enumerable.Range(0, count).Select(i => action.Invoke()).ToImmutableHashSet();
         }
 
-        public static ImmutableDictionary<K, V> FillDict<K, V>(int count, Func<KeyValuePair<K, V>> action)
+        public static ImmutableDictionary<K, V> FillDict<K, V>(int count, Func<KeyValuePair<K, V>> action) where K: notnull
         {
             var entries= Enumerable.Range(0, count).Select(i => action.Invoke()).ToList();
 

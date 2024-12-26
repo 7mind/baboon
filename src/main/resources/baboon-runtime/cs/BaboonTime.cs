@@ -1,9 +1,7 @@
-#nullable enable
-
-#pragma warning disable 612,618
-
 using System;
 using System.Globalization;
+using System.Linq;
+
 using Newtonsoft.Json;
 
 namespace Baboon.Time
@@ -74,7 +72,6 @@ namespace Baboon.Time
 
         public bool Equals(RpDateTime other)
         {
-            if (other == null!) return false;
             return other.DateTimeOffset == DateTimeOffset;
         }
 
@@ -160,15 +157,16 @@ namespace Baboon.Time
         public TimeSpan TimeOfDay => DateTime.TimeOfDay;
         public DayOfWeek DayOfWeek => DateTime.DayOfWeek;
 
-        public int CompareTo(object obj)
+        public int CompareTo(object? obj)
         {
+            if (obj == null) return 1; // same as in DateTimeOffset.CompareTo
             if (obj is RpDateTime dt) return DateTimeOffset.CompareTo(dt.DateTimeOffset);
             throw new ArgumentException("Argument is not RpDateTime.");
         }
 
         public int CompareTo(RpDateTime other)
         {
-            return other == null! ? DateTime.CompareTo(null) : DateTimeOffset.CompareTo(other.DateTimeOffset);
+            return DateTimeOffset.CompareTo(other.DateTimeOffset);
         }
 
         public static RpDateTime operator -(RpDateTime left, TimeSpan delta)

@@ -1,26 +1,10 @@
-#nullable enable
-
-#pragma warning disable 612,618
-
-using System.Linq;
-
-#nullable enable
-
-#pragma warning disable 612,618
-
-using System.Linq;
-
-#nullable enable
-
-#pragma warning disable 612,618
-
-using System.Linq;
-
 using System.Collections.Generic;
 using System.IO;
-using Newtonsoft.Json.Linq;
+using System.Linq;
 using System;
 using System.Diagnostics;
+
+using Newtonsoft.Json.Linq;
 
 namespace Baboon.Runtime.Shared {
     public interface IBaboonGenerated {
@@ -270,7 +254,7 @@ namespace Baboon.Runtime.Shared {
 
     public sealed class ConversionKey
     {
-        protected bool Equals(ConversionKey other)
+        private bool Equals(ConversionKey other)
         {
             return TypeFrom.Equals(other.TypeFrom) && TypeTo.Equals(other.TypeTo);
         }
