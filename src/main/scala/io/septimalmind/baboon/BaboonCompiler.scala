@@ -82,8 +82,8 @@ object BaboonCompiler {
                       line.evolution.rules.map {
                         case (s, r) =>
                           Json.obj(
-                            "from" -> s.to.asJson,
-                            "to"   -> s.from.asJson,
+                            "to"   -> s.to.asJson,
+                            "from" -> s.from.asJson,
                             "failures" -> r.conversions.collect {
                               case c: Conversion.CustomConversionRequired => Json.obj("type" -> c.sourceTpe.toString.asJson, "reason" -> c.reason.asJson)
                             }.asJson,
