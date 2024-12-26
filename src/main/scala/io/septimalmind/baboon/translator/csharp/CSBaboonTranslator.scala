@@ -113,8 +113,12 @@ class CSBaboonTranslator(
                |// ReSharper disable MergeConditionalExpression
                |#endregion
                |""".stripMargin.trim),
-        Seq(q"""#pragma warning disable 612,618
-               |#pragma warning disable CS0108,CA1822
+        Seq(q"""#region warnings
+               |#pragma warning disable CS0612 // do not warn on obsolete attr
+               |#pragma warning disable CS0618 // do not warn on obsolete attr with message
+               |#pragma warning disable CS0108 // do not warn about hiding inherited member
+               |#pragma warning disable CA1822 // do not warn about members which may be made static
+               |#endregion
                """.stripMargin.trim), // deprecation warnings
         Seq(q"#nullable enable"),
         Seq(imports),
