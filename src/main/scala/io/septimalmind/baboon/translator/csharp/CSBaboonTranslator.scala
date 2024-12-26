@@ -70,7 +70,8 @@ class CSBaboonTranslator(
       o.tree
     } else {
       Seq(
-        Seq(q"""// ReSharper disable InconsistentNaming
+        Seq(q"""#region resharper
+               |// ReSharper disable InconsistentNaming
                |// ReSharper disable CheckNamespace
                |// ReSharper disable IdentifierTypo
                |// ReSharper disable ClassWithVirtualMembersNeverInherited.Global
@@ -110,6 +111,7 @@ class CSBaboonTranslator(
                |// ReSharper disable AccessToStaticMemberViaDerivedType
                |// ReSharper disable VariableHidesOuterVariable
                |// ReSharper disable MergeConditionalExpression
+               |#endregion
                |""".stripMargin.trim),
         Seq(q"""#pragma warning disable 612,618
                |#pragma warning disable CS0108,CA1822
