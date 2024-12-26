@@ -18,6 +18,13 @@ namespace Baboon.Time
         public DateTime DateTime => DateTime.SpecifyKind(DateTimeOffset.UtcDateTime, Kind);
         public long Ticks => DateTime.Ticks;
 
+        public RpDateTime(DateTimeOffset dateTimeOffset)
+        {
+            DateTimeOffset = BaboonDateTimeFormats.TruncateToMilliseconds(dateTimeOffset);
+            Kind = dateTimeOffset.Offset == TimeSpan.Zero ? DateTimeKind.Utc :
+                dateTimeOffset.Offset == TimeZoneInfo.Local.BaseUtcOffset ? DateTimeKind.Local : DateTimeKind.Unspecified;
+        }
+
         public RpDateTime(DateTimeOffset dateTimeOffset, DateTimeKind kind)
         {
             DateTimeOffset = BaboonDateTimeFormats.TruncateToMilliseconds(dateTimeOffset);
@@ -77,10 +84,46 @@ namespace Baboon.Time
         public TimeSpan Offset => DateTimeOffset.Offset;
         public TimeSpan GetUtcOffset() => DateTimeOffset.Offset;
 
-        public RpDateTime ToUniversalTime() => new RpDateTime(DateTimeOffset.ToUniversalTime(), DateTimeKind.Utc);
-        public RpDateTime ToLocalTime() => new RpDateTime(DateTimeOffset.ToLocalTime(), DateTimeKind.Local);
-        public RpDateTime LocalDate => new RpDateTime(DateTime.ToLocalTime().Date);
-        public RpDateTime Date => new RpDateTime(DateTime.Date);
+        public RpDateTime ToUniversalTime()
+        {
+            if (Offset == TimeSpan.Zero)
+            {
+                return new RpDateTime(DateTimeOffset, DateTimeKind.Utc);
+            }
+
+            // compute local from utc
+            var localTicks = DateTimeOffset.Ticks - DateTimeOffset.Offset.Ticks;
+
+            // adjust ticks count, ignoring overflow
+            if (localTicks < DateTime.MinValue.Ticks) localTicks = DateTime.MinValue.Ticks;
+            if (localTicks > DateTime.MaxValue.Ticks) localTicks = DateTime.MaxValue.Ticks;
+
+            return new RpDateTime(new DateTimeOffset(localTicks, TimeSpan.Zero), DateTimeKind.Utc);
+        }
+
+        public RpDateTime ToLocalTime()
+        {
+            // using base utc offset to ignore DST
+            var utcOffset = TimeZoneInfo.Local.BaseUtcOffset;
+
+            // already local
+            if (Offset.Ticks == utcOffset.Ticks)
+            {
+                return new RpDateTime(DateTimeOffset, DateTimeKind.Local);
+            }
+
+            // compute local from utc
+            var localTicks = DateTimeOffset.Ticks - DateTimeOffset.Offset.Ticks + utcOffset.Ticks;
+
+            // adjust ticks count, ignoring overflow
+            if (localTicks < DateTime.MinValue.Ticks) localTicks = DateTime.MinValue.Ticks;
+            if (localTicks > DateTime.MaxValue.Ticks) localTicks = DateTime.MaxValue.Ticks;
+
+            return new RpDateTime(new DateTimeOffset(localTicks, utcOffset), DateTimeKind.Local);
+        }
+
+        public RpDateTime LocalDate => new RpDateTime(BaboonDateTimeFormats.TruncateToDays(ToLocalTime().DateTimeOffset), DateTimeKind.Local);
+        public RpDateTime Date => new RpDateTime(BaboonDateTimeFormats.TruncateToDays(DateTimeOffset), Kind);
 
         public TimeSpan Subtract(RpDateTime right) => DateTimeOffset - right.DateTimeOffset;
         public RpDateTime Subtract(TimeSpan span) => new RpDateTime(DateTimeOffset.Subtract(span), Kind);
@@ -269,13 +312,18 @@ namespace Baboon.Time
 
         public static string ToString(RpDateTime dt)
         {
-            return dt.DateTimeOffset.ToString(dt.Kind == DateTimeKind.Utc ? TsuDefault : TszDefault, CultureInfo.InvariantCulture);
+            if (dt.DateTimeOffset.Offset == TimeSpan.Zero && dt.Kind == DateTimeKind.Utc)
+            {
+                return dt.DateTimeOffset.ToString(TsuDefault, CultureInfo.InvariantCulture);
+            }
+
+            return dt.DateTimeOffset.ToString(TszDefault, CultureInfo.InvariantCulture);
         }
 
-        public static RpDateTime FromString(String dt)
+        public static RpDateTime FromString(string dt)
         {
             var dateTimeOffset = DateTimeOffset.ParseExact(dt, Tsz, CultureInfo.InvariantCulture, DateTimeStyles.None);
-            return new RpDateTime(dateTimeOffset, DateTimeKind.Utc);
+            return new RpDateTime(dateTimeOffset);
         }
 
         public static DateTime TruncateToMilliseconds(long ticks, DateTimeKind kind)
@@ -291,6 +339,11 @@ namespace Baboon.Time
         public static DateTimeOffset TruncateToMilliseconds(DateTimeOffset dateTimeOffset)
         {
             return new DateTimeOffset(dateTimeOffset.Ticks - dateTimeOffset.Ticks % TimeSpan.TicksPerMillisecond, dateTimeOffset.Offset);
+        }
+
+        public static DateTimeOffset TruncateToDays(DateTimeOffset dateTimeOffset)
+        {
+            return new DateTimeOffset(dateTimeOffset.Ticks - dateTimeOffset.Ticks % TimeSpan.TicksPerDay, dateTimeOffset.Offset);
         }
     }
 }
