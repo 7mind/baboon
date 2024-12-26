@@ -341,7 +341,6 @@ object BaboonComparator {
       directRefs: Set[TypeId],
     ): RefModification = {
       if (directRefs.exists(id => changes.changed.contains(id))) {
-
         if (directRefs.exists(id => changes.fullyModified.contains(id))) {
           RefModification.Full
         } else if (directRefs.exists(id => changes.shallowModified.contains(id))) {

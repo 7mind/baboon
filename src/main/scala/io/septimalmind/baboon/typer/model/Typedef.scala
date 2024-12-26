@@ -198,7 +198,7 @@ object TypeId {
       collIds.contains(id.id)
 
     def canBeWrappedIntoCollection(o: TypeRef.Scalar, n: TypeRef.Constructor): Boolean = {
-      safeSources.contains(n.id) && n.args == NEList(o)
+      safeSources.contains(n.id) && n.args.length == 1 && isCompatibleChange(o, n.args.head)
     }
 
     def canChangeCollectionType(o: TypeRef.Constructor, n: TypeRef.Constructor): Boolean = {
@@ -212,11 +212,39 @@ object TypeId {
         .forall {
           case (o, n) => isPrecisionExpansion(o.id, n.id)
         }
+      val compatibleUpgrage = (o.args.length == n.args.length) && (o.args.toList.zip(n.args).forall {
+        case (ao, an) =>
+          val r = isCompatibleChange(ao, an)
+          r
+      })
+
       val isSimplePrecex = (o.id == n.id) && isPrecex
+      val isSwapPrecex   = isSwap && isPrecex
 
-      val isSwapPrecex = isSwap && isPrecex
+      val isSimpleUpgrade = (o.id == n.id) && compatibleUpgrage
+      val isSwapUpgrade   = isSwap && compatibleUpgrage
 
-      isSimpleSwap || isSimplePrecex || isSwapPrecex
+      val r = isSimpleSwap || isSimplePrecex || isSwapPrecex || isSimpleUpgrade || isSwapUpgrade
+      r
+    }
+
+    def isCompatibleChange(ro: TypeRef, rn: TypeRef): Boolean = {
+      if (ro == rn) {
+        true
+      } else {
+        (ro, rn) match {
+          case (_: TypeRef.Constructor, _: TypeRef.Scalar) =>
+            false
+          case (o: TypeRef.Scalar, n: TypeRef.Scalar) =>
+            // TODO: precex in collections
+            TypeId.Builtins.isPrecisionExpansion(o.id, n.id)
+          case (o: TypeRef.Scalar, n: TypeRef.Constructor) =>
+            TypeId.Builtins.canBeWrappedIntoCollection(o, n)
+          case (o: TypeRef.Constructor, n: TypeRef.Constructor) =>
+            TypeId.Builtins.canChangeCollectionType(o, n)
+        }
+      }
+
     }
 
     def isPrecisionExpansion(o: TypeId, n: TypeId): Boolean = {

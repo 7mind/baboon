@@ -90,18 +90,9 @@ object BaboonRules {
                   incompatibleChanges = changes.filter {
                     op =>
                       assert(op.f.tpe != op.newType)
-                      (op.f.tpe, op.newType) match {
-                        case (_: TypeRef.Constructor, _: TypeRef.Scalar) =>
-                          true
-                        case (o: TypeRef.Scalar, n: TypeRef.Scalar) =>
-                          // TODO: precex in collections
-                          !TypeId.Builtins.isPrecisionExpansion(o.id, n.id)
-                        case (o: TypeRef.Scalar, n: TypeRef.Constructor) =>
-                          !TypeId.Builtins.canBeWrappedIntoCollection(o, n)
-                        case (o: TypeRef.Constructor, n: TypeRef.Constructor) =>
-                          !TypeId.Builtins.canChangeCollectionType(o, n)
-                      }
+                      !TypeId.Builtins.isCompatibleChange(op.f.tpe, op.newType)
                   }
+//                  _               <- Right(if (incompatibleChanges.nonEmpty) println(s"!! ${defn.id}: $incompatibleChanges"))
                   initWithDefaults = compatibleAdditions.map(a => FieldOp.InitializeWithDefault(a.f))
 
                   wrap = changes

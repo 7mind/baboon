@@ -252,10 +252,14 @@ root data T6_D1 {
     fNewLst: lst[i32]
     fNewMap: map[str, i32]
 
-    fPrecex0: u16
-    fPrecex1: opt[u16]
-    fPrecex2: lst[u16]
-    fPrecex3: set[u16]
+    fPrecex0: u32
+    fPrecex1: opt[u32]
+    fPrecex2: lst[u32]
+    fPrecex3: set[u32]
+    fPrecex4: map[u32, u32]
+    fPrecex5: lst[opt[u32]]
+    fPrecex6: lst[opt[u32]]
+
 
     fSwapPrecex0: lst[u32]
     fSwapPrecex1: set[u32]
