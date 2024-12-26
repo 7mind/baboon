@@ -27,28 +27,10 @@ object CSCodecFixtureTranslator {
         case _: Typedef.Foreign                                    => None
 
         case dto: Typedef.Dto =>
-          Some {
-            q"""
-               |// ReSharper disable InconsistentNaming
-               |// ReSharper disable MemberHidesStaticFromOuterClass
-               |#pragma warning disable CS0108
-               |#nullable enable
-               |
-               |${doTranslateDto(dto)}
-               |""".stripMargin
-          }
+          Some(doTranslateDto(dto))
 
         case adt: Typedef.Adt =>
-          Some {
-            q"""
-               |// ReSharper disable InconsistentNaming
-               |// ReSharper disable MemberHidesStaticFromOuterClass
-               |#pragma warning disable CS0108
-               |#nullable enable
-               |
-               |${doTranslateAdt(adt)}
-               |""".stripMargin
-          }
+          Some(doTranslateAdt(adt))
       }
     }
 

@@ -71,7 +71,13 @@ class CSBaboonTranslator(
     } else {
       Seq(
         Seq(q"#nullable enable"),
-        Seq(q"#pragma warning disable 612,618"), // deprecation warnings
+        Seq(q"""#pragma warning disable 612,618
+               |#pragma warning disable CS0108""".stripMargin), // deprecation warnings
+        Seq(q"""// ReSharper disable InconsistentNaming
+               |// ReSharper disable CheckNamespace
+               |// ReSharper disable IdentifierTypo
+               |// ReSharper disable ClassWithVirtualMembersNeverInherited.Global
+               |// ReSharper disable MemberHidesStaticFromOuterClass""".stripMargin),
         Seq(imports),
         Seq(o.tree),
       ).flatten.join("\n\n")

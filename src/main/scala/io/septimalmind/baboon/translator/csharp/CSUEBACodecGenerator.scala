@@ -118,7 +118,7 @@ class CSUEBACodecGenerator(
         (List(q"$iBaboonBinCodec<$name>"), baseMethods)
       case _ =>
         val extensions = List(
-          q"""public virtual void Encode($baboonCodecContext ctx,$binaryWriter writer, $iBaboonGenerated value)
+          q"""public virtual void Encode($baboonCodecContext ctx, $binaryWriter writer, $iBaboonGenerated value)
              |{
              |    if (value is not $name dvalue)
              |        throw new Exception("Expected to have ${name.name} type");

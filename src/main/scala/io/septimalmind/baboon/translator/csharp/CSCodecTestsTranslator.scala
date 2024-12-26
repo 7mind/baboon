@@ -37,12 +37,7 @@ object CSCodecTestsTranslator {
         case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
         case _ =>
           val testClass =
-            q"""// ReSharper disable InconsistentNaming
-               |// ReSharper disable MemberHidesStaticFromOuterClass
-               |#pragma warning disable CS0108
-               |#nullable enable
-               |
-               |[$nunitTestFixture]
+            q"""[$nunitTestFixture]
                |public class ${srcRef.name}_Tests
                |{
                |  ${makeTest(definition, srcRef)}

@@ -249,14 +249,12 @@ object CSDefnTranslator {
                |{
                |    return ${hc.shift(8).trim};
                |}""".stripMargin,
-            q"""#nullable enable
-               |public bool Equals($name? other) {
+            q"""public bool Equals($name? other) {
                |    if (other == null) {
                |        return false;
                |    }
                |    return ${cmp.shift(8).trim};
-               |}
-               |#nullable disable""".stripMargin,
+               |}""".stripMargin,
           )
 
           val members = eq ++ meta

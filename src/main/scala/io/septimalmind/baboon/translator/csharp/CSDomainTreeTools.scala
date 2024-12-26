@@ -35,7 +35,7 @@ object CSDomainTreeTools {
       val adtMethods = defn.id.owner match {
         case Owner.Adt(id) =>
           List(
-            q"""public const String BaboonAdtTypeIdentifierValue = "${id.toString}";
+            q"""private const String BaboonAdtTypeIdentifierValue = "${id.toString}";
                |public $csString BaboonAdtTypeIdentifier() => BaboonAdtTypeIdentifierValue;
                |""".stripMargin
           )
@@ -46,16 +46,16 @@ object CSDomainTreeTools {
       val unmodifiedSince = evo.typesUnchangedSince(version)(defn.id)
 
       Seq(
-        q"""public${fix}const String BaboonDomainVersionValue = "${version.version}";
+        q"""private${fix}const String BaboonDomainVersionValue = "${version.version}";
            |public${fix}String BaboonDomainVersion() => BaboonDomainVersionValue;
            |""".stripMargin,
-        q"""public${fix}const String BaboonUnmodifiedSinceVersionValue = "${unmodifiedSince.version}";
+        q"""private${fix}const String BaboonUnmodifiedSinceVersionValue = "${unmodifiedSince.version}";
            |public${fix}String BaboonUnmodifiedSinceVersion() => BaboonUnmodifiedSinceVersionValue;
            |""".stripMargin,
-        q"""public${fix}const String BaboonDomainIdentifierValue = "${defn.id.pkg.toString}";
+        q"""private${fix}const String BaboonDomainIdentifierValue = "${defn.id.pkg.toString}";
            |public${fix}String BaboonDomainIdentifier() => BaboonDomainIdentifierValue;
            |""".stripMargin,
-        q"""public${fix}const String BaboonTypeIdentifierValue = "${defn.id.toString}";
+        q"""private${fix}const String BaboonTypeIdentifierValue = "${defn.id.toString}";
            |public${fix}String BaboonTypeIdentifier() => BaboonTypeIdentifierValue;
            |""".stripMargin,
       ) ++ adtMethods
