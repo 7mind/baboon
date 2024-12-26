@@ -1,8 +1,14 @@
 using System;
 using System.Globalization;
-using System.Linq;
 
 using Newtonsoft.Json;
+// ReSharper disable UnusedMember.Global
+// ReSharper disable UseCollectionExpression
+// ReSharper disable ConvertIfStatementToSwitchStatement
+// ReSharper disable RedundantExplicitArrayCreation
+// ReSharper disable CheckNamespace
+// ReSharper disable ArrangeNamespaceBody
+// ReSharper disable MemberCanBePrivate.Global
 
 namespace Baboon.Time
 {
@@ -218,7 +224,7 @@ namespace Baboon.Time
         public static implicit operator DateTime(RpDateTime dt) => dt.DateTime;
         public static implicit operator DateTimeOffset(RpDateTime dt) => dt.DateTimeOffset;
 
-        public static RpDateTime Parse(String dt) => BaboonDateTimeFormats.FromString(dt);
+        public static RpDateTime Parse(string dt) => BaboonDateTimeFormats.FromString(dt);
 
         private int GetMonthsDiffByDays(RpDateTime other)
         {
@@ -274,7 +280,7 @@ namespace Baboon.Time
             "yyyy-MM-ddTHH:mm:ss.fffffffff"
         };
 
-        public static readonly string TszDefault = "yyyy-MM-ddTHH:mm:ss.fffzzz";
+        public const string TszDefault = "yyyy-MM-ddTHH:mm:ss.fffzzz";
 
         public static readonly string[] Tsz = new string[]
         {
@@ -300,7 +306,7 @@ namespace Baboon.Time
             "yyyy-MM-ddTHH:mm:ss.fffffffffzzz"
         };
 
-        public static readonly string TsuDefault = "yyyy-MM-ddTHH:mm:ss.fffZ";
+        public const string TsuDefault = "yyyy-MM-ddTHH:mm:ss.fffZ";
         public static readonly string[] Tsu = Tsz;
 
         public static string ToString(DateTime dt)
