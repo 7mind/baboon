@@ -18,7 +18,9 @@ trait BaboonRules {
 
 object BaboonRules {
 
-  class BaboonRulesImpl(logger: BLogger) extends BaboonRules {
+  class BaboonRulesImpl(logger: BLogger,
+                        types: TypeInfo,
+                       ) extends BaboonRules {
     override def compute(prev: Domain, last: Domain, diff: BaboonDiff): Either[NEList[BaboonIssue.EvolutionIssue], BaboonRuleset] = {
       for {
         conversions <- prev.defs.meta.nodes.collect {
@@ -82,7 +84,7 @@ object BaboonRules {
                         case _: TypeRef.Scalar =>
                           true
                         case c: TypeRef.Constructor =>
-                          !TypeId.Builtins.hasDefaultValue(c)
+                          !types.hasDefaultValue(c)
                       }
                   }
                   compatibleAdditions = additions.diff(incompatibleAdditions)
@@ -90,7 +92,7 @@ object BaboonRules {
                   incompatibleChanges = changes.filter {
                     op =>
                       assert(op.f.tpe != op.newType)
-                      !TypeId.Builtins.isCompatibleChange(op.f.tpe, op.newType)
+                      !types.isCompatibleChange(op.f.tpe, op.newType)
                   }
 //                  _               <- Right(if (incompatibleChanges.nonEmpty) println(s"!! ${defn.id}: $incompatibleChanges"))
                   initWithDefaults = compatibleAdditions.map(a => FieldOp.InitializeWithDefault(a.f))
@@ -99,7 +101,7 @@ object BaboonRules {
                     .map(op => (op.f.tpe, op.newType, op.f.name))
                     .collect {
                       case (o: TypeRef.Scalar, n: TypeRef.Constructor, name)
-                          if TypeId.Builtins.canBeWrappedIntoCollection(
+                          if types.canBeWrappedIntoCollection(
                             o,
                             n,
                           ) =>
@@ -110,7 +112,7 @@ object BaboonRules {
                     .map(op => (op.f.tpe, op.newType, op.f.name))
                     .collect {
                       case (o: TypeRef.Scalar, n: TypeRef.Scalar, name)
-                          if TypeId.Builtins.isPrecisionExpansion(
+                          if types.isPrecisionExpansion(
                             o.id,
                             n.id,
                           ) =>
@@ -124,7 +126,7 @@ object BaboonRules {
                             o: TypeRef.Constructor,
                             n: TypeRef.Constructor,
                             name,
-                          ) if TypeId.Builtins.canChangeCollectionType(o, n) =>
+                          ) if types.canChangeCollectionType(o, n) =>
                         FieldOp.SwapCollectionType(name, o, n)
                     }
 

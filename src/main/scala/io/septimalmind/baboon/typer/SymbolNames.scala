@@ -4,8 +4,8 @@ import io.septimalmind.baboon.parser.model.RawNodeMeta
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue.TyperIssue
 import io.septimalmind.baboon.typer.model.{FieldName, TypeName}
-import izumi.fundamentals.collections.nonempty.NEList
 import izumi.functional.IzEither.*
+import izumi.fundamentals.collections.nonempty.NEList
 
 object SymbolNames {
   def validEnumMemberName(

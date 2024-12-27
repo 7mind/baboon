@@ -27,6 +27,7 @@ class BaboonModule(options: CompilerOptions, inputs: Seq[Path]) extends ModuleDe
   make[BaboonTyper].from[BaboonTyper.BaboonTyperImpl]
   make[BaboonComparator].from[BaboonComparator.BaboonComparatorImpl]
   make[BaboonMetagen].from[BaboonMetagen.BaboonMetagenImpl]
+  make[TypeInfo].from[TypeInfo.TypeInfoImpl]
 
   makeSubcontext[BaboonTranslator]
     .localDependencies(
