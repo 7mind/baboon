@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
+import io.septimalmind.baboon.typer.TypeInfo
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
 import io.septimalmind.baboon.{CompilerOptions, CompilerProduct}
@@ -34,6 +35,7 @@ object CSDefnTranslator {
     codecsFixture: CSCodecFixtureTranslator,
     domain: Domain,
     evo: BaboonEvolution,
+    types: TypeInfo,
   ) extends CSDefnTranslator {
     type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
 
@@ -219,7 +221,7 @@ object CSDefnTranslator {
             case (name, _, f) =>
               val ref        = q"$name"
               val oref       = q"other.$ref"
-              val comparator = TypeId.comparator(f.tpe)
+              val comparator = types.comparator(f.tpe)
               (ref, oref, comparator)
           }
 

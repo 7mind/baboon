@@ -180,20 +180,9 @@ object TypeId {
     final val lst = BuiltinCollection(TypeName("lst"))
     final val set = BuiltinCollection(TypeName("set"))
 
-    final val integers   = Set(i08, i16, i32, i64, u08, u16, u32, u64)
-    final val floats     = Set(f32, f64, f128)
-    final val timestamps = Set(tsu, tso)
-    final val stringy    = Set(uid)
-    final val varlens    = Set(str)
 
-    final val seqCollections      = Set(lst, set)
-    final val iterableCollections = Set(map) ++ seqCollections
-    final val collections         = Set(opt) ++ iterableCollections
 
-    final val scalars = integers ++ floats ++ varlens ++ stringy ++ timestamps ++ Set(
-      bit
-    )
-    final val all = scalars ++ collections
+
   }
 
   sealed trait ComparatorType
@@ -216,35 +205,7 @@ object TypeId {
     case class MapEquals(keyComparator: ComparatorType, valComparator: ComparatorType) extends Complex
   }
 
-  def comparator(ref: TypeRef): ComparatorType = {
-    ref match {
-      case TypeRef.Scalar(id) =>
-        if (TypeId.Builtins.scalars.toSet[TypeId].contains(id)) {
-          ComparatorType.Direct
-        } else {
-          ComparatorType.ObjectEquals
-        }
-      case c: TypeRef.Constructor =>
-        val arg1 = c.args.head
 
-        c.id match {
-          case TypeId.Builtins.opt =>
-            comparator(arg1) match {
-              case ComparatorType.Direct => ComparatorType.Direct
-              case out                   => ComparatorType.OptionEquals(out)
-            }
-          case TypeId.Builtins.set =>
-            ComparatorType.SetEquals(comparator(arg1))
-
-          case TypeId.Builtins.map =>
-            ComparatorType.MapEquals(comparator(arg1), comparator(c.args.last))
-          case TypeId.Builtins.lst =>
-            ComparatorType.SeqEquals(comparator(arg1))
-          case _ =>
-            ComparatorType.ObjectEquals
-        }
-    }
-  }
 }
 
 sealed trait Owner {

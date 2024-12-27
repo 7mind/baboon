@@ -20,7 +20,12 @@ trait BaboonTyper {
 
 object BaboonTyper {
 
-  class BaboonTyperImpl(enquiries: BaboonEnquiries, translator: Subcontext[BaboonTranslator], scopeSupport: ScopeSupport) extends BaboonTyper {
+  class BaboonTyperImpl(
+    enquiries: BaboonEnquiries,
+    translator: Subcontext[BaboonTranslator],
+    scopeSupport: ScopeSupport,
+    types: TypeInfo,
+  ) extends BaboonTyper {
     override def process(
       model: RawDomain
     ): Either[NEList[BaboonIssue.TyperIssue], Domain] = {
@@ -233,7 +238,7 @@ object BaboonTyper {
     ): Either[NEList[BaboonIssue.TyperIssue], List[DomainMember]] = {
       for {
         initial <- Right(
-          TypeId.Builtins.all.map(id => DomainMember.Builtin(id))
+          types.allBuiltins.map(id => DomainMember.Builtin(id))
         )
         builder   = new ScopeBuilder()
         scopes   <- builder.buildScopes(pkg, members, meta)

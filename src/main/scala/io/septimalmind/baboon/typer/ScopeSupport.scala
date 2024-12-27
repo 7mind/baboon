@@ -35,7 +35,9 @@ trait ScopeSupport {
 object ScopeSupport {
   case class LookupResult(suffix: List[Scope[ExtendedRawDefn]], scope: LeafScope[ExtendedRawDefn])
 
-  class ScopeSupportImpl extends ScopeSupport {
+  class ScopeSupportImpl(
+    types: TypeInfo
+  ) extends ScopeSupport {
     def resolveScopedRef(
       name: ScopedRef,
       scope: Scope[ExtendedRawDefn],
@@ -276,9 +278,9 @@ object ScopeSupport {
     }
 
     private def asBuiltin(name: TypeName): Option[TypeId.Builtin] = {
-      if (TypeId.Builtins.collections.map(_.name).contains(name)) {
+      if (types.isBultinCollection(TypeId.BuiltinCollection(name))) {
         Some(TypeId.BuiltinCollection(name))
-      } else if (TypeId.Builtins.scalars.map(_.name).contains(name)) {
+      } else if (types.isBultinScalar(TypeId.BuiltinScalar(name))) {
         Some(TypeId.BuiltinScalar(name))
       } else {
         None

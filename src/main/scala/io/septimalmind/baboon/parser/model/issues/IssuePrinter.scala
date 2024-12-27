@@ -3,7 +3,7 @@ package io.septimalmind.baboon.parser.model.issues
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue.*
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.issuesUrl
-import io.septimalmind.baboon.typer.model.{DomainMember, TypeId}
+import io.septimalmind.baboon.typer.model.DomainMember
 import izumi.fundamentals.graphs.ToposortError
 import izumi.fundamentals.platform.exceptions.IzThrowable.*
 import izumi.fundamentals.platform.strings.IzString.toRichIterable
@@ -120,11 +120,7 @@ object IssuePrinter {
     (issue: UnexpectedNonBuiltin) => {
       s"""${extractLocation(issue.meta)}
          |Model: ${issue.pkg.toString}
-         |The type ${issue.name.name} is not supported
-         |Consider using one of our builtin types: ${TypeId.Builtins.all
-          .map(_.name.name)
-          .mkString(" ")}
-         |""".stripMargin
+         |The type ${issue.name.name} takes a builtin position but there is no such builtin type""".stripMargin
     }
 
   implicit val missingTypeIdPrinter: IssuePrinter[MissingTypeId] =
