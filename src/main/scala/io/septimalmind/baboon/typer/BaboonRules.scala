@@ -3,7 +3,6 @@ package io.septimalmind.baboon.typer
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.*
-import io.septimalmind.baboon.typer.model.DerivationFailure.Foreign
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.IzEither.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -155,18 +154,14 @@ object BaboonRules {
                 for {
                   incompatible <- diff.diffs(id) match {
                     case TypedefDiff.EnumDiff(ops) =>
-                      Right(ops.exists(_.isInstanceOf[EnumOp.RemoveBranch]))
+                      Right(ops.collect { case r: EnumOp.RemoveBranch => r })
                     case o =>
                       Left(
                         NEList(BaboonIssue.UnexpectedDiffType(o, "EnumDiff"))
                       )
                   }
                 } yield {
-                  if (incompatible) {
-                    CustomConversionRequired(id, DerivationFailure.EnumBranchRemoved)
-                  } else {
-                    CopyEnumByName(id)
-                  }
+                  Either.ifThenElse(incompatible.isEmpty)(CopyEnumByName(id))(CustomConversionRequired(id, DerivationFailure.EnumBranchRemoved(incompatible))).merge
                 }
 
               case a: Typedef.Adt =>
@@ -174,18 +169,15 @@ object BaboonRules {
                 for {
                   incompatible <- diff.diffs(id) match {
                     case TypedefDiff.AdtDiff(ops) =>
-                      Right(ops.exists(_.isInstanceOf[AdtOp.RemoveBranch]))
+                      Right(ops.collect { case r: AdtOp.RemoveBranch => r })
                     case o =>
                       Left(
                         NEList(BaboonIssue.UnexpectedDiffType(o, "ADTDiff"))
                       )
                   }
                 } yield {
-                  if (incompatible) {
-                    CustomConversionRequired(id, DerivationFailure.AdtBranchRemoved)
-                  } else {
-                    CopyAdtBranchByName(id, a)
-                  }
+                  Either
+                    .ifThenElse(incompatible.isEmpty)(CopyAdtBranchByName(id, a))(CustomConversionRequired(id, DerivationFailure.AdtBranchRemoved(incompatible))).merge
                 }
 
             }

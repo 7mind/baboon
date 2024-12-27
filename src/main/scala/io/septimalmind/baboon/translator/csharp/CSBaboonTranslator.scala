@@ -15,12 +15,12 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 class CSBaboonTranslator(
-  trans: CSTypeTranslator,
-  handler: Subcontext[IndividualConversionHandler],
-  options: CompilerOptions,
-  csTrees: CSTreeTools,
-  csFiles: CSFileTools,
-  translator: Subcontext[CSDefnTranslator],
+                          trans: CSTypeTranslator,
+                          handler: Subcontext[CSConversionTranslator],
+                          options: CompilerOptions,
+                          csTrees: CSTreeTools,
+                          csFiles: CSFileTools,
+                          translator: Subcontext[CSDefnTranslator],
 ) extends BaboonAbstractTranslator {
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]

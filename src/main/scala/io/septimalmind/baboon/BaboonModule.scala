@@ -9,7 +9,7 @@ import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.NestedScope
-import io.septimalmind.baboon.util.BLogger
+import io.septimalmind.baboon.util.{BLogger, BaboonMetagen}
 import io.septimalmind.baboon.validator.BaboonValidator
 
 import java.nio.file.Path
@@ -26,6 +26,7 @@ class BaboonModule(options: CompilerOptions, inputs: Seq[Path]) extends ModuleDe
   make[BaboonParser].from[BaboonParser.BaboonParserImpl]
   make[BaboonTyper].from[BaboonTyper.BaboonTyperImpl]
   make[BaboonComparator].from[BaboonComparator.BaboonComparatorImpl]
+  make[BaboonMetagen].from[BaboonMetagen.BaboonMetagenImpl]
 
   makeSubcontext[BaboonTranslator]
     .localDependencies(
@@ -64,7 +65,7 @@ class BaboonModule(options: CompilerOptions, inputs: Seq[Path]) extends ModuleDe
   make[CSFileTools].from[CSFileTools.CSFileToolsImpl]
   make[CSTypeTranslator]
 
-  makeSubcontext[IndividualConversionHandler]
+  makeSubcontext[CSConversionTranslator]
     .localDependencies(
       List(
         DIKey[CSPackageId],
@@ -76,10 +77,10 @@ class BaboonModule(options: CompilerOptions, inputs: Seq[Path]) extends ModuleDe
       )
     )
     .withSubmodule(new ModuleDef {
-      make[IndividualConversionHandler]
+      make[CSConversionTranslator]
     })
     .extractWith {
-      (handler: IndividualConversionHandler) =>
+      (handler: CSConversionTranslator) =>
         handler
     }
 

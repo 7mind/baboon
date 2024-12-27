@@ -119,9 +119,14 @@ sealed trait TypeRef {
 }
 
 object TypeRef {
-  case class Scalar(id: TypeId.Scalar) extends TypeRef
+  case class Scalar(id: TypeId.Scalar) extends TypeRef {
+    override def toString: String = id.toString
+  }
 
-  case class Constructor(id: TypeId.BuiltinCollection, args: NEList[TypeRef]) extends TypeRef
+  case class Constructor(id: TypeId.BuiltinCollection, args: NEList[TypeRef]) extends TypeRef {
+    override def toString: String = s"""${id.toString}${args.mkString("[", ",", "]")}"""
+  }
+
 }
 
 sealed trait TypeId {

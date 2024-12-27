@@ -4,8 +4,8 @@ sealed trait DerivationFailure
 
 object DerivationFailure {
   case object Foreign extends DerivationFailure
-  case object EnumBranchRemoved extends DerivationFailure
-  case object AdtBranchRemoved extends DerivationFailure
+  case class EnumBranchRemoved(op: List[EnumOp.RemoveBranch]) extends DerivationFailure
+  case class AdtBranchRemoved(op: List[AdtOp.RemoveBranch]) extends DerivationFailure
   case class IncompatibleFields(incompatibleChanges: Set[DtoOp.ChangeField], incompatibleAdditions: Set[DtoOp.AddField]) extends DerivationFailure
 }
 

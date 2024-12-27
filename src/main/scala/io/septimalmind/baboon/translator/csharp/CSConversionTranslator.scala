@@ -12,7 +12,7 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class IndividualConversionHandler(
+class CSConversionTranslator(
   trans: CSTypeTranslator,
   pkg: CSPackageId,
   srcDom: Domain @Id("source"),

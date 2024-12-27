@@ -22,7 +22,9 @@ case class BaboonEvolution(
   }
 }
 
-case class EvolutionStep(from: Version, to: Version)
+case class EvolutionStep(from: Version, to: Version) {
+  override def toString: String = s"$from->$to"
+}
 
 case class BaboonDiff(id: EvolutionStep, changes: BaboonChanges, diffs: Map[TypeId, TypedefDiff])
 
