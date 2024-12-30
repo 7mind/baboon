@@ -15,12 +15,12 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 class CSBaboonTranslator(
-                          trans: CSTypeTranslator,
-                          handler: Subcontext[CSConversionTranslator],
-                          options: CompilerOptions,
-                          csTrees: CSTreeTools,
-                          csFiles: CSFileTools,
-                          translator: Subcontext[CSDefnTranslator],
+  trans: CSTypeTranslator,
+  handler: Subcontext[CSConversionTranslator],
+  options: CompilerOptions,
+  csTrees: CSTreeTools,
+  csFiles: CSFileTools,
+  translator: Subcontext[CSDefnTranslator],
 ) extends BaboonAbstractTranslator {
 
   type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
@@ -84,7 +84,7 @@ class CSBaboonTranslator(
                |// ReSharper disable ConvertToUsingDeclaration
                |// ReSharper disable RedundantSuppressNullableWarningExpression
                |// ReSharper disable RedundantNullableDirective
-               |// ReSharper disable EmptyStatement
+               |// Re-Sharper disable EmptyStatement
                |// ReSharper disable ArrangeNamespaceBody
                |// ReSharper disable RedundantUsingDirective
                |// ReSharper disable UnusedMemberInSuper.Global

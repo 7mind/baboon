@@ -6,6 +6,7 @@ import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
+import io.septimalmind.baboon.util.TODO.*
 
 class CSUEBACodecGenerator(
   trans: CSTypeTranslator,
@@ -273,6 +274,11 @@ class CSUEBACodecGenerator(
   private def genDtoBodies(name: CSValue.CSType, d: Typedef.Dto) = {
     val fields = fieldsOf(d)
 
+    val noIndex = Seq(
+      q"writer.Write(header);",
+      fields.map(_._1).joinCN().endC(),
+    ).filterNot(_.isEmpty).join("\n")
+
     val fenc =
       q"""byte header = 0b0000000;
          |
@@ -291,8 +297,7 @@ class CSUEBACodecGenerator(
          |        writer.Write(writeMemoryStream.ToArray());
          |    }
          |} else {
-         |    writer.Write(header);
-         |    ${fields.map(_._1).join(";\n").shift(4).trim};
+         |    ${noIndex.shift(4).trim}
          |}
          |""".stripMargin
 
@@ -361,7 +366,7 @@ class CSUEBACodecGenerator(
             q"""{
                |    // ${f.toString}
                |    var before = (uint)fakeWriter.BaseStream.Position;
-               |    ${fakeEnc.shift(4).trim};
+               |    ${fakeEnc.endC().shift(4).trim}
                |    var after = (uint)fakeWriter.BaseStream.Position;
                |    var length = after - before;
                |    $debug.Assert(length == ${bytes.toString});
@@ -377,14 +382,14 @@ class CSUEBACodecGenerator(
                 (
                   Seq(q"$debug.Assert(length >= ${min.toString}, $$\"Got length={length}\")") ++
                   max.toSeq.map(m => q"$debug.Assert(length <= ${m.toString}, $$\"Got length={length}\")")
-                ).join(";\n")
+                ).joinCN()
             }
 
             q"""{
                |    // ${f.toString}
                |    var before = (uint)fakeWriter.BaseStream.Position;
                |    writer.Write(before);
-               |    ${fakeEnc.shift(4).trim};
+               |    ${fakeEnc.endC().shift(4).trim}
                |    var after = (uint)fakeWriter.BaseStream.Position;
                |    var length = after - before;
                |    writer.Write(length);
@@ -485,32 +490,33 @@ class CSUEBACodecGenerator(
             q"""if ($ref == null)
                |{
                |    $wref.Write((byte)0);
-               |} else
+               |}
+               |else
                |{
-               |   $wref.Write((byte)1);
-               |   ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref), wref).shift(4).trim};
+               |    $wref.Write((byte)1);
+               |    ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref), wref).endC().shift(4).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.map =>
             q"""$wref.Write($ref.Count);
                |foreach (var kv in $ref)
                |{
-               |    ${mkEncoder(c.args.head, q"kv.Key", wref).shift(4).trim};
-               |    ${mkEncoder(c.args.last, q"kv.Value", wref).shift(4).trim};
+               |    ${mkEncoder(c.args.head, q"kv.Key", wref).endC().shift(4).trim}
+               |    ${mkEncoder(c.args.last, q"kv.Value", wref).endC().shift(4).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.lst =>
             q"""$wref.Write($ref.Count);
                |foreach (var i in $ref)
                |{
-               |    ${mkEncoder(c.args.head, q"i", wref).shift(4).trim};
+               |    ${mkEncoder(c.args.head, q"i", wref).endC().shift(4).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.set =>
             q"""$wref.Write($ref.Count);
                |foreach (var i in $ref)
                |{
-               |    ${mkEncoder(c.args.head, q"i", wref).shift(4).trim};
+               |    ${mkEncoder(c.args.head, q"i", wref).endC().shift(4).trim}
                |}""".stripMargin
 
           case o =>
