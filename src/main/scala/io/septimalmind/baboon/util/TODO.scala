@@ -7,15 +7,17 @@ import TextTree.*
 
 object TODO {
 
-  implicit class TextTreeOps1[T](target: TextTree[T]) {
+  implicit class TextTreeGenericOps1[T](target: TextTree[T]) {
     def last: Option[Char] = target match {
       case ValueNode(_)      => None
       case StringNode(value) => value.lastOption
-      case Node(chunks)      => chunks.last.last
+      case Node(chunks)      => chunks.toList.filter(_.nonEmpty).lastOption.flatMap(_.last)
       case Shift(nested, _)  => nested.last
       case Trim(nested)      => nested.last
     }
+  }
 
+  implicit class TextTreeCStyleOps[T](target: TextTree[T]) {
     def endC(): TextTree[T] = {
       target.last match {
         case Some('}') => target
@@ -25,7 +27,15 @@ object TODO {
     }
   }
 
-  implicit class TextTreeSeqOps1[T](target: Seq[TextTree[T]]) {
+  implicit class TextTreeSeqCStyleOps[T](target: Seq[TextTree[T]]) {
+    def joinN(): TextTree[T] = {
+      target.join("\n")
+    }
+
+    def joinNN(): TextTree[T] = {
+      target.join("\n\n")
+    }
+
     def joinCN(): TextTree[T] = {
       if (target.isEmpty) {
         StringNode("")
