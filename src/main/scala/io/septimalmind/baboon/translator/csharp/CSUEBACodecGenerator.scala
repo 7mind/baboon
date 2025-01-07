@@ -31,22 +31,23 @@ class CSUEBACodecGenerator(
       case (enc, dec) =>
         // plumbing reference leaks
         val insulatedEnc =
-          q"""
-             |#pragma warning disable CS0162
-             |if (this == LazyInstance.Value)
+          q"""if (this != LazyInstance.Value)
              |{
-             |    ${enc.shift(4).trim}
+             |    LazyInstance.Value.Encode(ctx, writer, value);
              |}
-             |#pragma warning disable CS0162
              |
-             |LazyInstance.Value.Encode(ctx, writer, value);""".stripMargin
+             |#pragma warning disable CS0162
+             |${enc.shift(4).trim}
+             |#pragma warning disable CS0162
+             |""".stripMargin.trim
         val insulatedDec =
-          q"""if (this == LazyInstance.Value)
+          q"""if (this != LazyInstance.Value)
              |{
-             |    ${dec.shift(4).trim}
+             |    return LazyInstance.Value.Decode(ctx, wire);
              |}
              |
-             |return LazyInstance.Value.Decode(ctx, wire);""".stripMargin
+             |${dec.shift(4).trim}
+             |""".stripMargin.trim
 
         val branchDecoder = defn.defn match {
           case d: Typedef.Dto => genBranchDecoder(csRef, d)

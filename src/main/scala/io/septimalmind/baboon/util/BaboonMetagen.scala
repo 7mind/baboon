@@ -43,6 +43,19 @@ object BaboonMetagen {
               }.asJson,
             )
         }*),
+        "recursive" -> Json.obj(family.domains.toSeq.map {
+          case (pkg, line) =>
+            (
+              pkg.toString,
+              Json
+                .obj(line.versions.map {
+                  case (v, d) =>
+                    v.version -> Json.obj(
+                      d.loops.toSeq.map(l => l.node.toString -> l.loops.map(_.loop.map(_.asJson)).asJson)*
+                    )
+                }.toSeq*),
+            )
+        }*),
       )
     }
   }

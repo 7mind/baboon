@@ -26,19 +26,23 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
       case (enc, dec) =>
         // plumbing reference leaks
         val insulatedEnc =
-          q"""if (this == LazyInstance.Value)
+          q"""if (this != LazyInstance.Value)
              |{
-             |    ${enc.shift(4).trim}
+             |    return LazyInstance.Value.Encode(ctx, value);
+             |
              |}
              |
-             |return LazyInstance.Value.Encode(ctx, value);""".stripMargin
+             |${enc.shift(4).trim}
+             |""".stripMargin.trim
+
         val insulatedDec =
-          q"""if (this == LazyInstance.Value)
+          q"""if (this != LazyInstance.Value)
              |{
-             |    ${dec.shift(4).trim}
+             |    return LazyInstance.Value.Decode(ctx, wire);
              |}
              |
-             |return LazyInstance.Value.Decode(ctx, wire);""".stripMargin
+             |${dec.shift(4).trim}
+             |""".stripMargin.trim
 
         genCodec(
           defn,
