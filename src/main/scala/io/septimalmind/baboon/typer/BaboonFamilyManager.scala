@@ -5,6 +5,7 @@ import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage}
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.IzEither.*
+import izumi.functional.quasi.QuasiAsync
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 import izumi.fundamentals.platform.strings.TextTree.Quote
@@ -21,15 +22,16 @@ object BaboonFamilyManager {
       definitions: List[BaboonParser.Input]
     ): Either[NEList[BaboonIssue], BaboonFamily] = {
       for {
-        domains <- definitions.biTraverse {
-          input =>
-            for {
-              parsed <- parser.parse(input)
-              typed  <- typer.process(parsed)
-            } yield {
-              typed
-            }
-        }
+        domains <- QuasiAsync.quasiAsyncIdentity
+          .parTraverse(definitions) {
+            input =>
+              for {
+                parsed <- parser.parse(input)
+                typed  <- typer.process(parsed)
+              } yield {
+                typed
+              }
+          }.biSequence
 
         _ <- Right(
           domains.sortBy(d => (d.id.toString, d.version.version)).foreach {
@@ -41,11 +43,13 @@ object BaboonFamilyManager {
           }
         )
 
-        lineages <- domains
-          .map(d => (d.id, d))
-          .toMultimap
-          .toSeq
-          .biTraverse {
+        lineages <- QuasiAsync.quasiAsyncIdentity
+          .parTraverse(
+            domains
+              .map(d => (d.id, d))
+              .toMultimap
+              .toSeq
+          ) {
             case (pkg, domains) =>
               for {
                 uniqueVersions <- domains
@@ -58,7 +62,7 @@ object BaboonFamilyManager {
               } yield {
                 BaboonLineage(pkg, nel, evo)
               }
-          }
+          }.biSequence
 
         uniqueLineages <- lineages
           .map(l => (l.pkg, l))

@@ -7,6 +7,7 @@ import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.FieldOp
 import izumi.functional.IzEither.*
+import izumi.functional.quasi.QuasiAsync
 import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 
 trait BaboonValidator {
@@ -20,10 +21,11 @@ object BaboonValidator {
     override def validate(
       family: BaboonFamily
     ): Either[NEList[BaboonIssue.VerificationIssue], Unit] = {
-      family.domains.toSeq.map {
-        case (pkg, lineage) =>
-          validateLineage(pkg, lineage)
-      }.biSequence_
+      QuasiAsync.quasiAsyncIdentity
+        .parTraverse(family.domains.toSeq) {
+          case (pkg, lineage) =>
+            validateLineage(pkg, lineage)
+        }.biSequence_
     }
 
     private def validateLineage(
@@ -33,10 +35,11 @@ object BaboonValidator {
       assert(lineage.pkg == pkg)
 
       for {
-        _ <- lineage.versions.toSeq.map {
-          case (v, domain) =>
-            validateDomain(v, domain)
-        }.biSequence_
+        _ <- QuasiAsync.quasiAsyncIdentity
+          .parTraverse(lineage.versions.toSeq) {
+            case (v, domain) =>
+              validateDomain(v, domain)
+          }.biSequence_
         _ <- validateEvolution(lineage.evolution, lineage.versions)
       } yield {}
 

@@ -7,6 +7,7 @@ import io.septimalmind.baboon.typer.BaboonFamilyManager
 import io.septimalmind.baboon.typer.model.BaboonFamily
 import io.septimalmind.baboon.validator.BaboonValidator
 import izumi.functional.IzEither.*
+import izumi.functional.quasi.QuasiAsync
 import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 import izumi.fundamentals.platform.files.IzFiles
 
@@ -23,18 +24,19 @@ object BaboonLoader {
       paths: List[Path]
     ): Either[NEList[BaboonIssue], BaboonFamily] = {
       for {
-        inputs <- paths.biTraverse {
-          path =>
-            for {
-              content <- Try(IzFiles.readString(path.toFile)).toEither.left
-                .map(e => NEList(BaboonIssue.CantReadInput(path.toString, e)))
-            } yield {
-              BaboonParser.Input(
-                FSPath.parse(NEString.unsafeFrom(path.toString)),
-                content,
-              )
-            }
-        }
+        inputs <- QuasiAsync.quasiAsyncIdentity
+          .parTraverse(paths) {
+            path =>
+              for {
+                content <- Try(IzFiles.readString(path.toFile)).toEither.left
+                  .map(e => NEList(BaboonIssue.CantReadInput(path.toString, e)))
+              } yield {
+                BaboonParser.Input(
+                  FSPath.parse(NEString.unsafeFrom(path.toString)),
+                  content,
+                )
+              }
+          }.biSequence
         out <- manager.load(inputs)
         _   <- validator.validate(out)
       } yield {
