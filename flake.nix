@@ -1,6 +1,7 @@
 {
   description = "baboon build environment";
 
+  # this version contains essential graalvm fixes, but we will have to pin to a better tag once available
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/8c9fd3e564728e90829ee7dbac6edc972971cd0f";
 
   inputs.flake-utils.url = "github:numtide/flake-utils";
@@ -29,29 +30,6 @@
             depsSha256 = "sha256-aHR00f3o1CgW7ciqUmzF2AWhSRQvh2vz94EUTWQvTBA=";
             nativeBuildInputs = with pkgs; [
               graalvm-ce
-
-              # https://github.com/NixOS/nixpkgs/issues/350909
-              # (graalvm-ce.overrideDerivation (oldAttrs: {
-
-              #   postInstall =
-              #     let
-              #       darwinArgs = pkgs.lib.optionals stdenv.hostPlatform.isDarwin [
-              #         "-ENIX_BINTOOLS"
-              #         "-ENIX_CC"
-              #         "-ENIX_CFLAGS_COMPILE"
-              #         "-ENIX_LDFLAGS"
-              #         "-ENIX_CC_WRAPPER_TARGET_HOST_${pkgs.stdenv.cc.suffixSalt}"
-              #         "-ENIX_BINTOOLS_WRAPPER_TARGET_HOST_${pkgs.stdenv.cc.suffixSalt}"
-              #       ];
-
-              #       darwinFlags = (map (f: "--add-flags '${f}'") darwinArgs);
-              #     in
-
-              #     pkgs.lib.replaceStrings [ "/bin/native-image" ] [
-              #       "/bin/native-image ${toString (darwinFlags)}"
-              #     ]
-              #       oldAttrs.postInstall;
-              # }))
             ];
             depsWarmupCommand = ''
               sbt update
@@ -72,29 +50,6 @@
             ncurses
             gitMinimal
             graalvm-ce
-
-            # https://github.com/NixOS/nixpkgs/issues/350909
-            # (graalvm-ce.overrideDerivation (oldAttrs: {
-
-            #   postInstall =
-            #     let
-            #       darwinArgs = pkgs.lib.optionals stdenv.hostPlatform.isDarwin [
-            #         "-ENIX_BINTOOLS"
-            #         "-ENIX_CC"
-            #         "-ENIX_CFLAGS_COMPILE"
-            #         "-ENIX_LDFLAGS"
-            #         "-ENIX_CC_WRAPPER_TARGET_HOST_${pkgs.stdenv.cc.suffixSalt}"
-            #         "-ENIX_BINTOOLS_WRAPPER_TARGET_HOST_${pkgs.stdenv.cc.suffixSalt}"
-            #       ];
-
-            #       darwinFlags = (map (f: "--add-flags '${f}'") darwinArgs);
-            #     in
-
-            #     pkgs.lib.replaceStrings [ "/bin/native-image" ] [
-            #       "/bin/native-image ${toString (darwinFlags)}"
-            #     ]
-            #       oldAttrs.postInstall;
-            # }))
 
             pkgs.sbt
             dotnet-sdk_8
