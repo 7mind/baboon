@@ -43,13 +43,19 @@ final case class TargetOptions(
     targetPathFor(out.product)
   }
 
-  def targetPathFor(product: CompilerProduct): Option[Path] = product match {
-    case CompilerProduct.Definition     => Some(output)
-    case CompilerProduct.Runtime        => Some(output)
-    case CompilerProduct.Conversion     => Some(output)
-    case CompilerProduct.Fixture        => fixturesOutput
-    case CompilerProduct.FixtureRuntime => fixturesOutput
-    case CompilerProduct.Test           => testsOutput
+  def targetPathFor(product: CompilerProduct): Option[Path] = {
+    if (products.contains(product)) {
+      product match {
+        case CompilerProduct.Definition     => Some(output)
+        case CompilerProduct.Runtime        => Some(output)
+        case CompilerProduct.Conversion     => Some(output)
+        case CompilerProduct.Fixture        => fixturesOutput
+        case CompilerProduct.FixtureRuntime => fixturesOutput
+        case CompilerProduct.Test           => testsOutput
+      }
+    } else {
+      None
+    }
   }
 
   def targetPaths: Map[CompilerProduct, Path] = {
