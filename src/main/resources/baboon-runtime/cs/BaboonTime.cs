@@ -20,14 +20,22 @@ namespace Baboon.Time
         public readonly DateTimeOffset DateTimeOffset;
 
         public readonly DateTimeKind Kind;
-        public DateTime DateTime => DateTime.SpecifyKind(DateTimeOffset.UtcDateTime, Kind);
-        public long Ticks => DateTime.Ticks;
+
+        public DateTime DateTime => Kind switch
+        {
+            DateTimeKind.Utc => DateTimeOffset.UtcDateTime,
+            DateTimeKind.Local => DateTimeOffset.LocalDateTime,
+            DateTimeKind.Unspecified => DateTimeOffset.DateTime,
+            _ => throw new ArgumentOutOfRangeException()
+        };
+
+        public long Ticks => DateTimeOffset.Ticks;
 
         public RpDateTime(DateTimeOffset dateTimeOffset)
         {
             DateTimeOffset = dateTimeOffset.TruncateToMillis();
-            Kind = dateTimeOffset.Offset == TimeSpan.Zero ? DateTimeKind.Utc :
-                dateTimeOffset.Offset == TimeZoneInfo.Local.BaseUtcOffset ? DateTimeKind.Local : DateTimeKind.Unspecified;
+            Kind = dateTimeOffset.Offset.Ticks == 0 ? DateTimeKind.Utc :
+                dateTimeOffset.Offset == TimeZoneInfo.Local.GetUtcOffset(dateTimeOffset) ? DateTimeKind.Local : DateTimeKind.Unspecified;
         }
 
         public RpDateTime(DateTimeOffset dateTimeOffset, DateTimeKind kind)
@@ -94,9 +102,15 @@ namespace Baboon.Time
         public TimeSpan Offset => DateTimeOffset.Offset;
         public TimeSpan GetUtcOffset() => DateTimeOffset.Offset;
 
-        public RpDateTime ToUniversalTime()
+        public RpDateTime ToUniversalTime(bool ignoreDaylightSavingTime = false)
         {
-            if (Offset == TimeSpan.Zero)
+            if (!ignoreDaylightSavingTime)
+            {
+                // convert to UTC time with system converter
+                return new RpDateTime(DateTimeOffset.ToUniversalTime(), DateTimeKind.Utc);
+            }
+
+            if (DateTimeOffset.Offset.Ticks == 0)
             {
                 return new RpDateTime(DateTimeOffset, DateTimeKind.Utc);
             }
@@ -111,9 +125,15 @@ namespace Baboon.Time
             return new RpDateTime(new DateTimeOffset(localTicks, TimeSpan.Zero), DateTimeKind.Utc);
         }
 
-        public RpDateTime ToLocalTime()
+        public RpDateTime ToLocalTime(bool ignoreDaylightSavingTime = false)
         {
-            // using base utc offset to ignore DST
+            if (!ignoreDaylightSavingTime)
+            {
+                // convert to local time with system converter
+                return new RpDateTime(DateTimeOffset.ToLocalTime(), DateTimeKind.Local);
+            }
+
+            // using base utc offset
             var utcOffset = TimeZoneInfo.Local.BaseUtcOffset;
 
             // already local
@@ -132,8 +152,16 @@ namespace Baboon.Time
             return new RpDateTime(new DateTimeOffset(localTicks, utcOffset), DateTimeKind.Local);
         }
 
-        public RpDateTime LocalDate => new(BaboonDateTimeFormats.TruncateToDays(ToLocalTime().DateTimeOffset), DateTimeKind.Local);
-        public RpDateTime Date => new(BaboonDateTimeFormats.TruncateToDays(DateTimeOffset), Kind);
+        /**
+         * Forcefully convert this DateTime to a local time.
+         */
+        public RpDateTime ForceLocalTime(bool ignoreDaylightSavingTime = false)
+        {
+            return ignoreDaylightSavingTime ? new RpDateTime(Ticks, TimeZoneInfo.Local.BaseUtcOffset, DateTimeKind.Local) : new RpDateTime(new DateTime(Ticks, DateTimeKind.Local));
+        }
+
+        public RpDateTime LocalDate => ToLocalTime().TruncateToDays();
+        public RpDateTime Date => this.TruncateToDays();
 
         public TimeSpan Subtract(RpDateTime right) => DateTimeOffset - right.DateTimeOffset;
         public RpDateTime Subtract(TimeSpan span) => new(DateTimeOffset.Subtract(span), Kind);
@@ -153,11 +181,11 @@ namespace Baboon.Time
         public int DiffInFullMonths(RpDateTime other) => Date == other.Date ? 0 : (Year - other.Year) * 12 + Month - other.Month + GetMonthsDiffByDays(other);
         public int DiffInFullYears(RpDateTime other) => DiffInFullMonths(other) / 12;
 
-        public static RpDateTime Now => new(DateTime.Now);
-        public static RpDateTime UtcNow => new(DateTime.UtcNow);
+        public static RpDateTime Now => new(DateTimeOffset.Now);
+        public static RpDateTime UtcNow => new(DateTimeOffset.UtcNow);
         public static RpDateTime Epoch => new(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
-        public static RpDateTime MinValue => new(DateTime.MinValue);
-        public static RpDateTime MaxValue => new(DateTime.MaxValue);
+        public static RpDateTime MinValue => new(DateTimeOffset.MinValue);
+        public static RpDateTime MaxValue => new(DateTimeOffset.MaxValue);
 
         public int Year => DateTime.Year;
         public int Month => DateTime.Month;
@@ -318,17 +346,14 @@ namespace Baboon.Time
 
         public static string ToString(DateTime dt)
         {
-            return dt.ToString(dt.Kind == DateTimeKind.Utc ? TsuDefault : TszDefault, CultureInfo.InvariantCulture);
+            var format = dt.Kind == DateTimeKind.Utc ? TsuDefault : TszDefault;
+            return dt.ToString(format, CultureInfo.InvariantCulture);
         }
 
         public static string ToString(RpDateTime dt)
         {
-            if (dt.DateTimeOffset.Offset == TimeSpan.Zero && dt.Kind == DateTimeKind.Utc)
-            {
-                return dt.DateTimeOffset.ToString(TsuDefault, CultureInfo.InvariantCulture);
-            }
-
-            return dt.DateTimeOffset.ToString(TszDefault, CultureInfo.InvariantCulture);
+            var format = dt.DateTimeOffset.Offset.Ticks == 0 && dt.Kind == DateTimeKind.Utc ? TsuDefault : TszDefault;
+            return dt.DateTimeOffset.ToString(format, CultureInfo.InvariantCulture);
         }
 
         public static RpDateTime FromString(string dt)
