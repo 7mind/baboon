@@ -5,6 +5,7 @@ self="$(realpath "$0")"
 path="$(dirname "$self")"
 echo "Working in $path"
 cd "$path"
+
 export LANG="C.UTF-8"
 
 function nixify() {
@@ -34,6 +35,10 @@ do
 case $i in
     nix) shift && nixify "$@" ;;
     env) exec bash -norc ;;
-    *) "./devops/$i.sh" ;;
+    *)  if [[ -f "./devops/mods/$i.sh" ]]; then
+          source "./devops/mods/$i.sh"
+        else
+          "./devops/$i.sh"
+        fi ;;
 esac
 done

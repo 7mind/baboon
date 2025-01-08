@@ -1,6 +1,9 @@
 import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations.*
 
-ThisBuild / scalaVersion := "2.13.14"
+import scala.sys.process._
+lazy val refreshFlakeTask = taskKey[Unit]("Refresh flake.nix")
+
+ThisBuild / scalaVersion := "2.13.15"
 
 lazy val root = (project in file("."))
   .settings(
@@ -81,19 +84,27 @@ lazy val root = (project in file("."))
       s"-Xmacro-settings:scala-version=${scalaVersion.value}",
       s"-Xmacro-settings:scala-versions=${crossScalaVersions.value.mkString(":")}"
     ),
+    refreshFlakeTask := {
+              val log = streams.value.log
+              val result = "./build.sh nix flake-refresh flake-validate" ! log
+              if (result != 0) {
+                throw new MessageOnlyException("flake.nix update failed!")
+              }
+            },
     releaseProcess := Seq[ReleaseStep](
-      checkSnapshotDependencies, // : ReleaseStep
-      inquireVersions, // : ReleaseStep
-      runClean, // : ReleaseStep
-      runTest, // : ReleaseStep
-      setReleaseVersion, // : ReleaseStep
-      commitReleaseVersion, // : ReleaseStep, performs the initial git checks
-      tagRelease, // : ReleaseStep
-      //publishArtifacts,                       // : ReleaseStep, checks whether `publishTo` is properly set up
-      setNextVersion, // : ReleaseStep
-      commitNextVersion, // : ReleaseStep
-      pushChanges // : ReleaseStep, also checks that an upstream branch is properly configured
-    )
+      checkSnapshotDependencies,
+      inquireVersions,
+      runClean,
+      runTest,
+      setReleaseVersion,
+      releaseStepTask(refreshFlakeTask),
+      commitReleaseVersion,
+      tagRelease,
+      //publishArtifacts,
+      setNextVersion,
+      commitNextVersion,
+      pushChanges
+    ),
   )
 
 ThisBuild / scalacOptions ++= Seq(
