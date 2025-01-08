@@ -46,37 +46,37 @@ namespace Baboon.Time
 
         public RpDateTime(int year, int month, int day)
         {
-            DateTimeOffset = new DateTimeOffset(new DateTime(year, month, day));
+            DateTimeOffset = new DateTime(year, month, day).ToDateTimeOffset();
             Kind = DateTimeKind.Local;
         }
 
         public RpDateTime(int year, int month, int day, int hour, int minute, int second)
         {
-            DateTimeOffset = new DateTimeOffset(new DateTime(year, month, day, hour, minute, second));
+            DateTimeOffset = new DateTime(year, month, day, hour, minute, second).ToDateTimeOffset();
             Kind = DateTimeKind.Local;
         }
 
         public RpDateTime(int year, int month, int day, int hour, int minute, int second, int millisecond, DateTimeKind kind)
         {
-            DateTimeOffset = new DateTimeOffset(new DateTime(year, month, day, hour, minute, second, millisecond, kind));
+            DateTimeOffset = new DateTime(year, month, day, hour, minute, second, millisecond, kind).ToDateTimeOffset();
             Kind = kind;
         }
 
         public RpDateTime(long ticks, DateTimeKind kind)
         {
-            DateTimeOffset = new DateTimeOffset(new DateTime(BaboonDateTimeFormats.TruncateToMillis(ticks), kind));
+            DateTimeOffset = new DateTime(BaboonDateTimeFormats.TruncateToMillis(ticks), kind).ToDateTimeOffset();
             Kind = kind;
         }
 
         public RpDateTime(long ticks, TimeSpan offset, DateTimeKind kind)
         {
-            DateTimeOffset = new DateTimeOffset(BaboonDateTimeFormats.TruncateToMillis(ticks), offset);
+            DateTimeOffset = new DateTimeOffset(AdjustTicksOverflow(BaboonDateTimeFormats.TruncateToMillis(ticks)), offset);
             Kind = kind;
         }
 
         public RpDateTime(DateTime dateTime)
         {
-            DateTimeOffset = new DateTimeOffset(dateTime).TruncateToMillis();
+            DateTimeOffset = dateTime.ToDateTimeOffset().TruncateToMillis();
             Kind = dateTime.Kind;
         }
 
@@ -116,11 +116,7 @@ namespace Baboon.Time
             }
 
             // compute local from utc
-            var localTicks = DateTimeOffset.Ticks - DateTimeOffset.Offset.Ticks;
-
-            // adjust ticks count, ignoring overflow
-            if (localTicks < DateTime.MinValue.Ticks) localTicks = DateTime.MinValue.Ticks;
-            if (localTicks > DateTime.MaxValue.Ticks) localTicks = DateTime.MaxValue.Ticks;
+            var localTicks = AdjustTicksOverflow(DateTimeOffset.Ticks - DateTimeOffset.Offset.Ticks);
 
             return new RpDateTime(new DateTimeOffset(localTicks, TimeSpan.Zero), DateTimeKind.Utc);
         }
@@ -143,13 +139,25 @@ namespace Baboon.Time
             }
 
             // compute local from utc
-            var localTicks = DateTimeOffset.Ticks - DateTimeOffset.Offset.Ticks + utcOffset.Ticks;
-
-            // adjust ticks count, ignoring overflow
-            if (localTicks < DateTime.MinValue.Ticks) localTicks = DateTime.MinValue.Ticks;
-            if (localTicks > DateTime.MaxValue.Ticks) localTicks = DateTime.MaxValue.Ticks;
+            var localTicks = AdjustTicksOverflow(DateTimeOffset.Ticks - DateTimeOffset.Offset.Ticks + utcOffset.Ticks);
 
             return new RpDateTime(new DateTimeOffset(localTicks, utcOffset), DateTimeKind.Local);
+        }
+
+        private static long AdjustTicksOverflow(long ticks)
+        {
+            // adjust ticks count, ignoring overflow
+            if (ticks < DateTime.MinValue.Ticks)
+            {
+                return DateTime.MinValue.Ticks;
+            }
+
+            if (ticks > DateTime.MaxValue.Ticks)
+            {
+                return DateTime.MaxValue.Ticks;
+            }
+
+            return ticks;
         }
 
         /**
@@ -390,6 +398,21 @@ namespace Baboon.Time
                 var other => throw new ArgumentOutOfRangeException(message: $"Unknown DateTimeKind: {other}.", null)
             };
             return new RpDateTime(ticks, offset, kind);
+        }
+
+        public static DateTimeOffset ToDateTimeOffset(this DateTime dateTime)
+        {
+            if (dateTime.ToUniversalTime() <= DateTimeOffset.MinValue.UtcDateTime)
+            {
+                return DateTimeOffset.MinValue;
+            }
+
+            if (dateTime.ToUniversalTime() >= DateTimeOffset.MaxValue.UtcDateTime)
+            {
+                return DateTimeOffset.MaxValue;
+            }
+
+            return new DateTimeOffset(dateTime);
         }
 
         private static long TruncateTo(long ticks, long unitTicks) => ticks - ticks % unitTicks;

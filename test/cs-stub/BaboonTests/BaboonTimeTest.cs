@@ -128,5 +128,12 @@ namespace Baboon.Time
             Assert.That(rpDateTime, Is.EqualTo(new RpDateTime(dateTimeOffset)));
             Assert.That(new RpDateTime(rpDateTime.Ticks, DateTimeKind.Local), Is.EqualTo(new RpDateTime(dateTimeOffset.DateTime.Ticks, DateTimeKind.Local)));
         }
+
+        [Test]
+        public void MinMaxTest()
+        {
+            TestContext.Out.WriteLine(new RpDateTime(DateTime.MinValue));
+            TestContext.Out.WriteLine(new RpDateTime(DateTime.MaxValue));
+        }
     }
 }
