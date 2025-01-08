@@ -404,13 +404,13 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
             val keyType   = trans.asCsRef(args.head, domain, evo)
             val valueDec  = mkDecoder(args.last, q"kv.Value")
             val valueType = trans.asCsRef(args.last, domain, evo)
-            q"""$ref!.Value<$nsJObject>()!.Properties().Select(kv => new $csKeyValuePair<$keyType, $valueType>($keyDec, $valueDec)).${CSTypes.mkDict}(v => v.Key, v => v.Value)"""
+            q"""$ref!.Value<$nsJObject>()!.Properties().Select(kv => new $csKeyValuePair<$keyType, $valueType>($keyDec, $valueDec)).${CSTypes.mkDict}"""
 
           case TypeId.Builtins.lst =>
-            q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(args.head, q"e")}).${CSTypes.mkList}()"""
+            q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(args.head, q"e")}).${CSTypes.mkList}"""
 
           case TypeId.Builtins.set =>
-            q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(args.head, q"e")}).${CSTypes.mkSet}()"""
+            q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(args.head, q"e")}).${CSTypes.mkSet}"""
 
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
