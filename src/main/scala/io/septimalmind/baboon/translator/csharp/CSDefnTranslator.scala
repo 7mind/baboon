@@ -416,7 +416,7 @@ object CSDefnTranslator {
             case _: ComparatorType.Basic =>
               q"$ref.SequenceEqual($oref)"
             case c: ComparatorType.Complex =>
-              q"($ref.SequenceEqual($oref) || ($ref.Count == $oref.Count && ($ref.Zip($oref).All(p => ${renderComparator(q"p.First", q"p.Second", c)}))))"
+              q"($ref.SequenceEqual($oref) || ($ref.Count == $oref.Count && ($ref.Zip($oref, (r, l) => (r, l)).All(t => ${renderComparator(q"t.Item1", q"t.Item2", c)}))))"
           }
 
         case ComparatorType.SetEquals(_) =>

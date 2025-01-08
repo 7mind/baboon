@@ -3,12 +3,13 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System;
 using System.Linq;
-
 using Baboon.Time;
+
 // ReSharper disable CheckNamespace
 // ReSharper disable ArrangeNamespaceBody
 
-namespace Baboon.Fixture {
+namespace Baboon.Fixture
+{
     // RandomValuesGenerator
     public static class BaboonFixture
     {
@@ -95,14 +96,26 @@ namespace Baboon.Fixture {
             return stringBuilder.ToString();
         }
 
-        public static RpDateTime NextRpDateTime()
+        public static DateTimeOffset NextDateTimeOffset()
         {
+            const long maxOffsetTicks = TimeSpan.TicksPerHour * 14;
+
             var minTicks = DateTime.MinValue.Ticks;
             var maxTicks = DateTime.MaxValue.Ticks;
 
-            var randomTicks = (long)(Rnd.NextDouble() * (maxTicks - minTicks)) + minTicks;
+            var randomOffset = (long)(Rnd.NextDouble() * maxOffsetTicks * 2) - maxOffsetTicks;
+            var randomTicks = (long)(Rnd.NextDouble() * (maxTicks - minTicks)) + minTicks + randomOffset;
 
-            return new RpDateTime(new DateTime(randomTicks));
+            // adjust ticks count, ignoring overflow
+            if (randomTicks + randomOffset < DateTime.MinValue.Ticks) randomOffset = 0;
+            if (randomTicks + randomOffset > DateTime.MaxValue.Ticks) randomOffset = 0;
+
+            return new DateTimeOffset(randomTicks, new TimeSpan(BaboonDateTimeFormats.TruncateToMinutes(randomOffset)));
+        }
+
+        public static RpDateTime NextRpDateTime()
+        {
+            return new RpDateTime(NextDateTimeOffset());
         }
 
         public static Guid NextGuid()

@@ -34,7 +34,9 @@ namespace Baboon.Runtime.Shared {
         public string UnmodifiedSince(string typeIdString);
     }
 
-    public interface IBaboonGeneratedLatest : IBaboonGenerated;
+    public interface IBaboonGeneratedLatest : IBaboonGenerated
+    {
+    }
 
     public interface IConversion {
         public Type TypeFrom();
@@ -123,7 +125,9 @@ namespace Baboon.Runtime.Shared {
 
     }
 
-    public interface IBaboonCodec<T> : IBaboonCodecData;
+    public interface IBaboonCodec<T> : IBaboonCodecData
+    {
+    }
 
     public interface IBaboonValueCodec<T, TWire> : IBaboonCodec<T>
     {
@@ -132,7 +136,9 @@ namespace Baboon.Runtime.Shared {
         T Decode(BaboonCodecContext ctx, TWire wire);
     }
 
-    public interface IBaboonJsonCodec<T> : IBaboonValueCodec<T, JToken>;
+    public interface IBaboonJsonCodec<T> : IBaboonValueCodec<T, JToken>
+    {
+    }
 
     public interface IBaboonStreamCodec<T, in TOut, in TIn> : IBaboonCodec<T>
     {

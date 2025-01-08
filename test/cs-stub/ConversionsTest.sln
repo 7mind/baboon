@@ -1,6 +1,8 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConversionsTest", "ConversionsTest\ConversionsTest.csproj", "{5DFBB7B1-5992-44B3-B75E-C228BB133718}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BaboonTests", "BaboonTests\BaboonTests.csproj", "{5DFBB7B1-5992-44B3-B75E-C228BB133718}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BaboonDefinitions", "BaboonDefinitions\BaboonDefinitions.csproj", "{2A158F54-564F-4130-894D-9665B70BF3EC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -12,5 +14,9 @@ Global
 		{5DFBB7B1-5992-44B3-B75E-C228BB133718}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5DFBB7B1-5992-44B3-B75E-C228BB133718}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5DFBB7B1-5992-44B3-B75E-C228BB133718}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2A158F54-564F-4130-894D-9665B70BF3EC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2A158F54-564F-4130-894D-9665B70BF3EC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2A158F54-564F-4130-894D-9665B70BF3EC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2A158F54-564F-4130-894D-9665B70BF3EC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

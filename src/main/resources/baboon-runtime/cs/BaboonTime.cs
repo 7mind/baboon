@@ -1,7 +1,8 @@
 using System;
 using System.Globalization;
-
+using System.IO;
 using Newtonsoft.Json;
+
 // ReSharper disable UnusedMember.Global
 // ReSharper disable UseCollectionExpression
 // ReSharper disable ConvertIfStatementToSwitchStatement
@@ -24,14 +25,14 @@ namespace Baboon.Time
 
         public RpDateTime(DateTimeOffset dateTimeOffset)
         {
-            DateTimeOffset = BaboonDateTimeFormats.TruncateToMilliseconds(dateTimeOffset);
+            DateTimeOffset = dateTimeOffset.TruncateToMillis();
             Kind = dateTimeOffset.Offset == TimeSpan.Zero ? DateTimeKind.Utc :
                 dateTimeOffset.Offset == TimeZoneInfo.Local.BaseUtcOffset ? DateTimeKind.Local : DateTimeKind.Unspecified;
         }
 
         public RpDateTime(DateTimeOffset dateTimeOffset, DateTimeKind kind)
         {
-            DateTimeOffset = BaboonDateTimeFormats.TruncateToMilliseconds(dateTimeOffset);
+            DateTimeOffset = dateTimeOffset.TruncateToMillis();
             Kind = kind;
         }
 
@@ -55,13 +56,19 @@ namespace Baboon.Time
 
         public RpDateTime(long ticks, DateTimeKind kind)
         {
-            DateTimeOffset = new DateTimeOffset(BaboonDateTimeFormats.TruncateToMilliseconds(ticks, kind));
+            DateTimeOffset = new DateTimeOffset(new DateTime(BaboonDateTimeFormats.TruncateToMillis(ticks), kind));
+            Kind = kind;
+        }
+
+        public RpDateTime(long ticks, TimeSpan offset, DateTimeKind kind)
+        {
+            DateTimeOffset = new DateTimeOffset(BaboonDateTimeFormats.TruncateToMillis(ticks), offset);
             Kind = kind;
         }
 
         public RpDateTime(DateTime dateTime)
         {
-            DateTimeOffset = new DateTimeOffset(BaboonDateTimeFormats.TruncateToMilliseconds(dateTime));
+            DateTimeOffset = new DateTimeOffset(dateTime).TruncateToMillis();
             Kind = dateTime.Kind;
         }
 
@@ -330,24 +337,59 @@ namespace Baboon.Time
             return new RpDateTime(dateTimeOffset);
         }
 
-        public static DateTime TruncateToMilliseconds(long ticks, DateTimeKind kind)
+        public static void EncodeToBin(RpDateTime dt, BinaryWriter writer)
         {
-            return new DateTime(ticks - ticks % TimeSpan.TicksPerMillisecond, kind);
+            // store not ticks, but milliseconds component for easier compatibility
+            writer.Write(dt.DateTimeOffset.Ticks / TimeSpan.TicksPerMillisecond);
+            writer.Write(dt.DateTimeOffset.Offset.Ticks / TimeSpan.TicksPerMillisecond);
+            byte kindByte = dt.Kind switch
+            {
+                DateTimeKind.Unspecified => 0,
+                DateTimeKind.Utc => 1,
+                DateTimeKind.Local => 2,
+                _ => throw new ArgumentOutOfRangeException(message: $"Unknown DateTimeKind: {Enum.GetName(dt.Kind.GetType(), dt.Kind)}.", null)
+            };
+            writer.Write(kindByte);
         }
 
-        public static DateTime TruncateToMilliseconds(DateTime dateTime)
+        public static RpDateTime DecodeFromBin(BinaryReader reader)
         {
-            return TruncateToMilliseconds(dateTime.Ticks, dateTime.Kind);
+            // store not ticks, but milliseconds component for easier compatibility
+            var ticks = reader.ReadInt64() * TimeSpan.TicksPerMillisecond;
+            var offset = new TimeSpan(reader.ReadInt64() * TimeSpan.TicksPerMillisecond);
+            var kind = reader.ReadByte() switch
+            {
+                0 => DateTimeKind.Unspecified,
+                1 => DateTimeKind.Utc,
+                2 => DateTimeKind.Local,
+                var other => throw new ArgumentOutOfRangeException(message: $"Unknown DateTimeKind: {other}.", null)
+            };
+            return new RpDateTime(ticks, offset, kind);
         }
 
-        public static DateTimeOffset TruncateToMilliseconds(DateTimeOffset dateTimeOffset)
-        {
-            return new DateTimeOffset(dateTimeOffset.Ticks - dateTimeOffset.Ticks % TimeSpan.TicksPerMillisecond, dateTimeOffset.Offset);
-        }
+        private static long TruncateTo(long ticks, long unitTicks) => ticks - ticks % unitTicks;
+        public static long TruncateToMillis(long ticks) => TruncateTo(ticks, TimeSpan.TicksPerMillisecond);
+        public static long TruncateToSeconds(long ticks) => TruncateTo(ticks, TimeSpan.TicksPerSecond);
+        public static long TruncateToMinutes(long ticks) => TruncateTo(ticks, TimeSpan.TicksPerMinute);
+        public static long TruncateToHours(long ticks) => TruncateTo(ticks, TimeSpan.TicksPerHour);
+        public static long TruncateToDays(long ticks) => TruncateTo(ticks, TimeSpan.TicksPerDay);
 
-        public static DateTimeOffset TruncateToDays(DateTimeOffset dateTimeOffset)
-        {
-            return new DateTimeOffset(dateTimeOffset.Ticks - dateTimeOffset.Ticks % TimeSpan.TicksPerDay, dateTimeOffset.Offset);
-        }
+        public static DateTime TruncateToMillis(this DateTime dt) => new DateTime(TruncateToMillis(dt.Ticks), dt.Kind);
+        public static DateTime TruncateToSeconds(this DateTime dt) => new DateTime(TruncateToSeconds(dt.Ticks), dt.Kind);
+        public static DateTime TruncateToMinutes(this DateTime dt) => new DateTime(TruncateToMinutes(dt.Ticks), dt.Kind);
+        public static DateTime TruncateToHours(this DateTime dt) => new DateTime(TruncateToHours(dt.Ticks), dt.Kind);
+        public static DateTime TruncateToDays(this DateTime dt) => new DateTime(TruncateToDays(dt.Ticks), dt.Kind);
+
+        public static DateTimeOffset TruncateToMillis(this DateTimeOffset dt) => new DateTimeOffset(TruncateToMillis(dt.Ticks), dt.Offset);
+        public static DateTimeOffset TruncateToSeconds(this DateTimeOffset dt) => new DateTimeOffset(TruncateToSeconds(dt.Ticks), dt.Offset);
+        public static DateTimeOffset TruncateToMinutes(this DateTimeOffset dt) => new DateTimeOffset(TruncateToMinutes(dt.Ticks), dt.Offset);
+        public static DateTimeOffset TruncateToHours(this DateTimeOffset dt) => new DateTimeOffset(TruncateToHours(dt.Ticks), dt.Offset);
+        public static DateTimeOffset TruncateToDays(this DateTimeOffset dt) => new DateTimeOffset(TruncateToDays(dt.Ticks), dt.Offset);
+
+        public static RpDateTime TruncateToMillis(this RpDateTime dt) => new RpDateTime(dt.DateTimeOffset.TruncateToMillis(), dt.Kind);
+        public static RpDateTime TruncateToSeconds(this RpDateTime dt) => new RpDateTime(dt.DateTimeOffset.TruncateToSeconds(), dt.Kind);
+        public static RpDateTime TruncateToMinutes(this RpDateTime dt) => new RpDateTime(dt.DateTimeOffset.TruncateToMinutes(), dt.Kind);
+        public static RpDateTime TruncateToHours(this RpDateTime dt) => new RpDateTime(dt.DateTimeOffset.TruncateToHours(), dt.Kind);
+        public static RpDateTime TruncateToDays(this RpDateTime dt) => new RpDateTime(dt.DateTimeOffset.TruncateToDays(), dt.Kind);
     }
 }

@@ -7,9 +7,9 @@ pushd .
 
 target/graalvm-native-image/baboon \
           --model-dir ./src/test/resources/baboon/ \
-          --output ./test/cs-stub/ConversionsTest/Generated \
-          --test-output ./test/cs-stub/ConversionsTest/GeneratedTests \
-          --fixture-output ./test/cs-stub/ConversionsTest/GeneratedFixtures \
+          --output ./test/cs-stub/BaboonDefinitions/Generated \
+          --test-output ./test/cs-stub/BaboonTests/GeneratedTests \
+          --fixture-output ./test/cs-stub/BaboonTests/GeneratedFixtures \
           --cs-use-compact-adt-form true \
           --cs-wrapped-adt-branch-codecs false \
           --meta-write-evolution-json baboon-meta.json \
@@ -17,7 +17,7 @@ target/graalvm-native-image/baboon \
 
 cd ./test/cs-stub
 dotnet build
-dotnet test ConversionsTest/ConversionsTest.csproj
+dotnet test ConversionsTest/ConversionsTest.sln
 
 popd
 
@@ -25,9 +25,9 @@ pushd .
 
 target/graalvm-native-image/baboon \
           --model-dir ./src/test/resources/baboon/ \
-          --output ./test/cs-stub/ConversionsTest/Generated \
-          --test-output ./test/cs-stub/ConversionsTest/GeneratedTests \
-          --fixture-output ./test/cs-stub/ConversionsTest/GeneratedFixtures \
+          --output ./test/cs-stub/BaboonDefinitions/Generated \
+          --test-output ./test/cs-stub/BaboonTests/GeneratedTests \
+          --fixture-output ./test/cs-stub/BaboonTests/GeneratedFixtures \
           --cs-use-compact-adt-form false \
           --cs-wrapped-adt-branch-codecs true \
           --meta-write-evolution-json baboon-meta.json \
@@ -39,6 +39,6 @@ target/graalvm-native-image/baboon \
 
 cd ./test/cs-stub
 dotnet build
-dotnet test ConversionsTest/ConversionsTest.csproj
+dotnet test ConversionsTest/ConversionsTest.sln
 
 popd
