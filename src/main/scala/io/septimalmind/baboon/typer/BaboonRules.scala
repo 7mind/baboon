@@ -18,9 +18,7 @@ trait BaboonRules {
 
 object BaboonRules {
 
-  class BaboonRulesImpl(logger: BLogger,
-                        types: TypeInfo,
-                       ) extends BaboonRules {
+  class BaboonRulesImpl(logger: BLogger, types: TypeInfo) extends BaboonRules {
     override def compute(prev: Domain, last: Domain, diff: BaboonDiff): Either[NEList[BaboonIssue.EvolutionIssue], BaboonRuleset] = {
       for {
         conversions <- prev.defs.meta.nodes.collect {

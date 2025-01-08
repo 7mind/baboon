@@ -180,9 +180,6 @@ object TypeId {
     final val lst = BuiltinCollection(TypeName("lst"))
     final val set = BuiltinCollection(TypeName("set"))
 
-
-
-
   }
 
   sealed trait ComparatorType
@@ -204,7 +201,6 @@ object TypeId {
 
     case class MapEquals(keyComparator: ComparatorType, valComparator: ComparatorType) extends Complex
   }
-
 
 }
 
