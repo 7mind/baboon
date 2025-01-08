@@ -26,7 +26,7 @@
             version = "0.0.89";
             pname = "baboon";
             src = ./.;
-            depsSha256 = "sha256-zkXAh5hPQVKYgG3g4Zj7Y8uDJ198698EFUUErxk0z5U=";
+            depsSha256 = "sha256-aHR00f3o1CgW7ciqUmzF2AWhSRQvh2vz94EUTWQvTBA=";
             nativeBuildInputs = with pkgs; [
               graalvm-ce
             ];
