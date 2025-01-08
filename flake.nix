@@ -23,7 +23,7 @@
         packages = rec {
           baboon = sbt.lib.mkSbtDerivation {
             pkgs = pkgs;
-            version = "0.0.89";
+            version = "0.0.90";
             pname = "baboon";
             src = ./.;
             depsSha256 = "sha256-aHR00f3o1CgW7ciqUmzF2AWhSRQvh2vz94EUTWQvTBA=";

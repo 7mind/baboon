@@ -2,7 +2,7 @@ import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations.*
 
 import scala.sys.process._
 lazy val refreshFlakeTask = taskKey[Unit]("Refresh flake.nix")
-lazy val isMacOS: Boolean = System.getProperty("os.name").toLowerCase.contains("mac")
+// lazy val isMacOS: Boolean = System.getProperty("os.name").toLowerCase.contains("mac")
 
 ThisBuild / scalaVersion := "2.13.15"
 
@@ -77,10 +77,10 @@ lazy val root = (project in file("."))
       "--enable-http",
       "-march=compatibility"
     ),
-    graalVMNativeImageOptions ++= {
-      if (isMacOS) Seq("-H:CCompilerOption=-mmacosx-version-min=11.0")
-      else Seq.empty
-    },
+    // graalVMNativeImageOptions ++= {
+    //   if (isMacOS) Seq("-H:CCompilerOption=-mmacosx-version-min=11.0")
+    //   else Seq.empty
+    // },
     run / fork := true,
     scalacOptions ++= Seq(
       s"-Xmacro-settings:product-name=${name.value}",
