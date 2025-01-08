@@ -323,8 +323,8 @@ object BaboonEnquiries {
             case Builtins.f128 => BinReprLen.Fixed(16)
             case Builtins.str  => BinReprLen.Range(1, None)
             case Builtins.uid  => BinReprLen.Fixed(16)
-            case Builtins.tsu  => BinReprLen.Range(4, Some(39))
-            case Builtins.tso  => BinReprLen.Range(4, Some(39))
+            case Builtins.tsu  => BinReprLen.Fixed(17)
+            case Builtins.tso  => BinReprLen.Fixed(17)
             case u =>
               throw new IllegalStateException(s"BUG: unknown scalar type $u")
           }

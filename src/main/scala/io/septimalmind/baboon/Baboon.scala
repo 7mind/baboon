@@ -118,34 +118,3 @@ object Baboon {
     }
   }
 }
-
-object test extends App {
-  Baboon.main(
-    Array(
-      "--model-dir",
-      "/Users/caparow/git/FireSDK/FireSdk.Models/ModelsSources",
-      "--output",
-      "/Users/caparow/git/FireSDK/FireSdk.Models/ModelsGenerated",
-      "--omit-most-recent-version-suffix-from-paths=false",
-      "--omit-most-recent-version-suffix-from-namespaces=true",
-      "--cs-write-evolution-dict=true",
-      "--test-output",
-      "/Users/caparow/git/FireSDK/FireSdk.Test/Tests/Baboon",
-    )
-  )
-}
-
-object test2 extends App {
-  Baboon.main(
-    Array(
-      "--model-dir", "/Users/caparow/git/baboon/src/test/resources/baboon",
-      "--output", "/Users/caparow/git/baboon/test/cs-stub/BaboonDefinitions/Generated",
-      "--omit-most-recent-version-suffix-from-paths=false",
-      "--omit-most-recent-version-suffix-from-namespaces=true",
-      "--cs-write-evolution-dict=true",
-      "--test-output", "/Users/caparow/git/baboon/test/cs-stub/BaboonTests/GeneratedTests",
-      "--fixture-output", "/Users/caparow/git/baboon/test/cs-stub/BaboonTests/GeneratedFixtures",
-      "--cs-use-compact-adt-form=true",
-    )
-  )
-}
