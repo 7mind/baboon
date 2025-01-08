@@ -17,7 +17,7 @@ target/graalvm-native-image/baboon \
 
 cd ./test/cs-stub
 dotnet build
-dotnet test ConversionsTest/ConversionsTest.sln
+dotnet test BaboonTests/BaboonTests.csproj
 
 popd
 
@@ -39,6 +39,6 @@ target/graalvm-native-image/baboon \
 
 cd ./test/cs-stub
 dotnet build
-dotnet test ConversionsTest/ConversionsTest.sln
+dotnet test BaboonTests/BaboonTests.csproj
 
 popd
