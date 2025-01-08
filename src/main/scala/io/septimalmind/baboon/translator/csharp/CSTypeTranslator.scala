@@ -1,7 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerOptions
-import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType, CSTypeName}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -85,25 +84,25 @@ class CSTypeTranslator(options: CompilerOptions) {
   }
 
   private def asCsTypeScalar(scalar: TypeId.BuiltinScalar): CSType = scalar match {
-    case TypeId.Builtins.bit => CSValue.CSType(csSystemPkg, "Boolean", fq = false)
+    case TypeId.Builtins.bit => CSTypes.csBoolean
 
-    case TypeId.Builtins.i08 => CSValue.CSType(csSystemPkg, "SByte", fq = false)
-    case TypeId.Builtins.i16 => CSValue.CSType(csSystemPkg, "Int16", fq = false)
-    case TypeId.Builtins.i32 => CSValue.CSType(csSystemPkg, "Int32", fq = false)
-    case TypeId.Builtins.i64 => CSValue.CSType(csSystemPkg, "Int64", fq = false)
+    case TypeId.Builtins.i08 => CSTypes.csSByte
+    case TypeId.Builtins.i16 => CSTypes.csInt16
+    case TypeId.Builtins.i32 => CSTypes.csInt32
+    case TypeId.Builtins.i64 => CSTypes.csInt64
 
-    case TypeId.Builtins.u08 => CSValue.CSType(csSystemPkg, "Byte", fq = false)
-    case TypeId.Builtins.u16 => CSValue.CSType(csSystemPkg, "UInt16", fq = false)
-    case TypeId.Builtins.u32 => CSValue.CSType(csSystemPkg, "UInt32", fq = false)
-    case TypeId.Builtins.u64 => CSValue.CSType(csSystemPkg, "UInt64", fq = false)
+    case TypeId.Builtins.u08 => CSTypes.csByte
+    case TypeId.Builtins.u16 => CSTypes.csUInt16
+    case TypeId.Builtins.u32 => CSTypes.csUInt32
+    case TypeId.Builtins.u64 => CSTypes.csUInt64
 
-    case TypeId.Builtins.f32  => CSValue.CSType(csSystemPkg, "Single", fq = false)
-    case TypeId.Builtins.f64  => CSValue.CSType(csSystemPkg, "Double", fq = false)
-    case TypeId.Builtins.f128 => CSValue.CSType(csSystemPkg, "Decimal", fq = false)
+    case TypeId.Builtins.f32  => CSTypes.csSingle
+    case TypeId.Builtins.f64  => CSTypes.csDouble
+    case TypeId.Builtins.f128 => CSTypes.csDecimal
 
-    case TypeId.Builtins.str                       => CSValue.CSType(csSystemPkg, "String", fq = false)
-    case TypeId.Builtins.uid                       => CSValue.CSType(csSystemPkg, "Guid", fq = false)
-    case TypeId.Builtins.tso | TypeId.Builtins.tsu => CSValue.CSType(baboonTimePkg, "RpDateTime", fq = false)
+    case TypeId.Builtins.str                       => CSTypes.csString
+    case TypeId.Builtins.uid                       => CSTypes.csGuid
+    case TypeId.Builtins.tso | TypeId.Builtins.tsu => CSTypes.rpDateTime
 
     case other => throw new IllegalArgumentException(s"Unexpected: $other")
   }
@@ -111,14 +110,14 @@ class CSTypeTranslator(options: CompilerOptions) {
   def asCsType(tpe: TypeId, domain: Domain, evolution: BaboonEvolution, mut: Boolean = false): CSType = tpe match {
     case scalar: TypeId.BuiltinScalar => asCsTypeScalar(scalar)
 
-    case TypeId.Builtins.map if mut => CSValue.CSType(csCollectionsGenericPkg, "Dictionary", fq = false)
-    case TypeId.Builtins.map        => CSValue.CSType(csCollectionsImmutablePkg, "ImmutableDictionary", fq = false)
+    case TypeId.Builtins.map if mut => CSTypes.csDictionary
+    case TypeId.Builtins.map        => CSTypes.csIReadOnlyDictionary
 
-    case TypeId.Builtins.lst if mut => CSValue.CSType(csCollectionsGenericPkg, "List", fq = false)
-    case TypeId.Builtins.lst        => CSValue.CSType(csCollectionsImmutablePkg, "ImmutableList", fq = false)
+    case TypeId.Builtins.lst if mut => CSTypes.csList
+    case TypeId.Builtins.lst        => CSTypes.csIReadOnlyList
 
-    case TypeId.Builtins.set if mut => CSValue.CSType(csCollectionsGenericPkg, "HashSet", fq = false)
-    case TypeId.Builtins.set        => CSValue.CSType(csCollectionsImmutablePkg, "ImmutableHashSet", fq = false)
+    case TypeId.Builtins.set if mut => CSTypes.csSet
+    case TypeId.Builtins.set        => CSTypes.csImmutableHashSet // IReadonlySet not available on netstandard2.1
 
     case user: TypeId.User => toCsTypeRefDeref(user, domain, evolution)
 

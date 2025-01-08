@@ -197,7 +197,7 @@ class CSConversionTranslator(
                         case c: TypeRef.Constructor if c.id == TypeId.Builtins.lst =>
                           Right(
                             Seq(
-                              q"(from e in $fieldRef select ${transfer(c.args.head, q"e")}).ToImmutableList()"
+                              q"(from e in $fieldRef select ${transfer(c.args.head, q"e")}).${CSTypes.mkList}()"
                             )
                           )
                         case c: TypeRef.Constructor if c.id == TypeId.Builtins.map =>
@@ -210,13 +210,13 @@ class CSConversionTranslator(
                                   .asCsRef(valueRef, domain, evo)}>(${transfer(
                                   c.args.head,
                                   q"e.Key",
-                                )}, ${transfer(c.args.last, q"e.Value")})).ToImmutableDictionary(v => v.Key, v => v.Value)"
+                                )}, ${transfer(c.args.last, q"e.Value")})).${CSTypes.mkDict}(v => v.Key, v => v.Value)"
                             )
                           )
                         case c: TypeRef.Constructor if c.id == TypeId.Builtins.set =>
                           Right(
                             Seq(
-                              q"(from e in $fieldRef select ${transfer(c.args.head, q"e")}).ToImmutableHashSet()"
+                              q"(from e in $fieldRef select ${transfer(c.args.head, q"e")}).${CSTypes.mkSet}()"
                             )
                           )
                         case c: TypeRef.Constructor if c.id == TypeId.Builtins.opt =>
@@ -244,12 +244,12 @@ class CSConversionTranslator(
                               Right(Seq(q"null"))
                             case TypeId.Builtins.set =>
                               // this is a safe assumption for now, we know there would be collections only
-                              Right(Seq(q"(new $ftNewInit()).ToImmutableHashSet()"))
+                              Right(Seq(q"(new $ftNewInit()).${CSTypes.mkSet}()"))
                             case TypeId.Builtins.lst =>
-                              Right(Seq(q"(new $ftNewInit()).ToImmutableList()"))
+                              Right(Seq(q"(new $ftNewInit()).${CSTypes.mkList}()"))
                             case TypeId.Builtins.map =>
                               Right(
-                                Seq(q"(new $ftNewInit()).ToImmutableDictionary()")
+                                Seq(q"(new $ftNewInit()).${CSTypes.mkDict}(v => v.Key, v => v.Value)")
                               )
 
                             case _ =>
@@ -266,12 +266,12 @@ class CSConversionTranslator(
                         case TypeId.Builtins.set =>
                           Right(
                             Seq(
-                              q"(new $ftNewInit { $fieldRef }).ToImmutableHashSet()"
+                              q"(new $ftNewInit { $fieldRef }).${CSTypes.mkSet}()"
                             )
                           )
                         case TypeId.Builtins.lst =>
                           Right(
-                            Seq(q"(new $ftNewInit { $fieldRef }).ToImmutableList()")
+                            Seq(q"(new $ftNewInit { $fieldRef }).${CSTypes.mkList}()")
                           )
                         case _ =>
                           Left(NEList(BaboonIssue.TranslationBug()))
@@ -370,14 +370,14 @@ class CSConversionTranslator(
             Right(
               Seq(
                 q"var $tmp = $fieldRef",
-                q"( ($tmp != null) ? new $ftNewInit { $recConv } : new $ftNewInit() ).ToImmutableList()",
+                q"( ($tmp != null) ? new $ftNewInit { $recConv } : new $ftNewInit() ).${CSTypes.mkList}()",
               )
             )
           case TypeId.Builtins.set =>
             Right(
               Seq(
                 q"var $tmp = $fieldRef",
-                q"( ($tmp != null) ? new $ftNewInit { $recConv } : new $ftNewInit() ).ToImmutableHashSet()",
+                q"( ($tmp != null) ? new $ftNewInit { $recConv } : new $ftNewInit() ).${CSTypes.mkSet}()",
               )
             )
           case TypeId.Builtins.opt =>
@@ -393,19 +393,19 @@ class CSConversionTranslator(
       case TypeId.Builtins.lst =>
         newId match {
           case TypeId.Builtins.set =>
-            Right(Seq(q"$collInit.ToImmutableHashSet()"))
+            Right(Seq(q"$collInit.${CSTypes.mkSet}()"))
 
           case TypeId.Builtins.lst =>
-            Right(Seq(q"$collInit.ToImmutableList()"))
+            Right(Seq(q"$collInit.${CSTypes.mkList}()"))
           case _ =>
             Left(NEList(BaboonIssue.TranslationBug()))
         }
       case TypeId.Builtins.set =>
         newId match {
           case TypeId.Builtins.set =>
-            Right(Seq(q"$collInit.ToImmutableHashSet()"))
+            Right(Seq(q"$collInit.${CSTypes.mkSet}()"))
           case TypeId.Builtins.lst =>
-            Right(Seq(q"$collInit.ToImmutableList()"))
+            Right(Seq(q"$collInit.${CSTypes.mkList}()"))
           case _ =>
             Left(NEList(BaboonIssue.TranslationBug()))
         }
@@ -416,7 +416,7 @@ class CSConversionTranslator(
             val vt = trans.asCsRef(newCollArgs.last, domain, evo)
             Right(
               Seq(
-                q"(from e in $fieldRef select new $csKeyValuePair<$kt, $vt>(($kt)e.Key, ($vt)e.Value)).ToImmutableDictionary(v => v.Key, v => v.Value)"
+                q"(from e in $fieldRef select new $csKeyValuePair<$kt, $vt>(($kt)e.Key, ($vt)e.Value)).${CSTypes.mkDict}(v => v.Key, v => v.Value)"
               )
             )
           case _ =>

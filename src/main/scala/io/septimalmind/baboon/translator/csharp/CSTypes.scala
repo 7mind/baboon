@@ -2,6 +2,7 @@ package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
 import izumi.fundamentals.collections.nonempty.NEList
+import izumi.fundamentals.platform.strings.TextTree.Quote
 
 object CSTypes {
   // Baboon packages
@@ -97,11 +98,9 @@ object CSTypes {
   val csDouble: CSType  = CSType(csSystemPkg, "Double", fq = false)
   val csDecimal: CSType = CSType(csSystemPkg, "Decimal", fq = false)
 
-  val csTpe: CSType               = CSType(csSystemPkg, "Type", fq = false)
-  val csLazy: CSType              = CSType(csSystemPkg, "Lazy", fq = false)
-  val csList: CSType              = CSType(csCollectionsGenericPkg, "List", fq = false)
-  val csDict: CSType              = CSType(csCollectionsGenericPkg, "Dictionary", fq = false)
-  val csSet: CSType               = CSType(csCollectionsGenericPkg, "HashSet", fq = false)
+  val csTpe: CSType  = CSType(csSystemPkg, "Type", fq = false)
+  val csLazy: CSType = CSType(csSystemPkg, "Lazy", fq = false)
+
   val csEnum: CSType              = CSType(csSystemPkg, "Enum", fq = false)
   val csDateTime: CSType          = CSType(csSystemPkg, "DateTime", fq = false)
   val csTimeSpan: CSType          = CSType(csSystemPkg, "TimeSpan", fq = false)
@@ -111,6 +110,18 @@ object CSTypes {
   val csRandom: CSType            = CSType(csSystemPkg, "Random", fq = false)
   val csIComparable: CSType       = CSType(csSystemPkg, "IComparable", fq = false)
   val csIEquatable: CSType        = CSType(csSystemPkg, "IEquatable", fq = false)
+
+  val csIReadOnlyDictionary: CSType = CSType(csCollectionsGenericPkg, "IReadOnlyDictionary", fq = false)
+  val csIReadOnlyList: CSType       = CSType(csCollectionsGenericPkg, "IReadOnlyList", fq = false)
+  val csIReadOnlySet: CSType        = CSType(csCollectionsGenericPkg, "IReadOnlySet", fq = false)
+
+  val csIDictionary: CSType = CSType(csCollectionsGenericPkg, "IDictionary", fq = false)
+  val csIList: CSType       = CSType(csCollectionsGenericPkg, "IList", fq = false)
+  val csISet: CSType        = CSType(csCollectionsGenericPkg, "ISet", fq = false)
+
+  val csList: CSType       = CSType(csCollectionsGenericPkg, "List", fq = false)
+  val csSet: CSType        = CSType(csCollectionsGenericPkg, "HashSet", fq = false)
+  val csDictionary: CSType = CSType(csCollectionsGenericPkg, "Dictionary", fq = false)
 
   val csImmutableDictionary: CSType = CSType(csCollectionsImmutablePkg, "ImmutableDictionary", fq = false)
   val csImmutableList: CSType       = CSType(csCollectionsImmutablePkg, "ImmutableList", fq = false)
@@ -124,4 +135,8 @@ object CSTypes {
   val csTimeZoneInfo: CSType     = CSType(csSystemPkg, "TimeZoneInfo", fq = false)
 
   val debug: CSType = CSType(csDiagnosticsPkg, "Debug", fq = false)
+
+  val mkDict = q"ToDictionary"
+  val mkList = q"ToList"
+  val mkSet  = q"ToImmutableHashSet"
 }

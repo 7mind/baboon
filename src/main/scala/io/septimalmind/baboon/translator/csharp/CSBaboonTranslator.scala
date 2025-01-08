@@ -49,9 +49,9 @@ class CSBaboonTranslator(
     }
 
     val forcedUses: Set[CSPackageId] = if (options.csOptions.disregardImplicitUsings) {
-      Set(csLinqPkg)
+      Set(csLinqPkg, csCollectionsImmutablePkg, csCollectionsGenericPkg)
     } else {
-      Set.empty
+      Set(csCollectionsImmutablePkg, csCollectionsGenericPkg)
     }
 
     val usedPackages = o.tree.values.collect { case t: CSValue.CSType if !t.fq => t.pkg }.distinct
@@ -246,7 +246,7 @@ class CSBaboonTranslator(
          |        return _unmodified[typeIdString];
          |    }
          |
-         |    private readonly $csDict<$csString, $csString> _unmodified = new ();
+         |    private readonly $csIDictionary<$csString, $csString> _unmodified = new $csDictionary<$csString, $csString>();
          |
          |    private static readonly $csLazy<BaboonMeta> LazyInstance = new $csLazy<BaboonMeta>(() => new BaboonMeta());
          |
