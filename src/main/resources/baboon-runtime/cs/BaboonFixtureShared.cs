@@ -104,13 +104,13 @@ namespace Baboon.Fixture
             var maxTicks = DateTime.MaxValue.Ticks;
 
             var randomOffset = (long)(Rnd.NextDouble() * maxOffsetTicks * 2) - maxOffsetTicks;
-            var randomTicks = (long)(Rnd.NextDouble() * (maxTicks - minTicks)) + minTicks + randomOffset;
+            var randomTicks = (long)(Rnd.NextDouble() * (maxTicks - minTicks)) + minTicks;
 
             // adjust ticks count, ignoring overflow
             if (randomTicks + randomOffset < DateTime.MinValue.Ticks) randomOffset = 0;
             if (randomTicks + randomOffset > DateTime.MaxValue.Ticks) randomOffset = 0;
 
-            return new DateTimeOffset(randomTicks, new TimeSpan(BaboonDateTimeFormats.TruncateToMinutes(randomOffset)));
+            return new DateTimeOffset(randomTicks + randomOffset, new TimeSpan(BaboonDateTimeFormats.TruncateToMinutes(randomOffset)));
         }
 
         public static RpDateTime NextRpDateTime()
