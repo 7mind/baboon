@@ -136,7 +136,7 @@ object CSTypes {
 
   val debug: CSType = CSType(csDiagnosticsPkg, "Debug", fq = false)
 
-  val mkDict = q"ToDictionary(v => v.Key, v => v.Value)"
-  val mkList = q"ToList()"
+  val mkDict = q"BbnToDictionary()"
+  val mkList = q"BbnToList()"
   val mkSet  = q"ToImmutableHashSet()"
 }

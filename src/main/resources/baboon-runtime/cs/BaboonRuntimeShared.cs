@@ -19,6 +19,31 @@ using Newtonsoft.Json.Linq;
 // ReSharper disable UnusedType.Global
 
 namespace Baboon.Runtime.Shared {
+    public static class BaboonEnumerable
+    {
+        public static List<TSource> BbnToList<TSource>(this IEnumerable<TSource> source)
+        {
+            if (source is List<TSource> l)
+            {
+                return l;
+            }
+
+            return source.ToList();
+        }
+
+        public static Dictionary<TKey, TElement> BbnToDictionary<TKey, TElement>(
+            this IEnumerable<KeyValuePair<TKey, TElement>> source)
+            where TKey : notnull
+        {
+            if (source is Dictionary<TKey, TElement> d)
+            {
+                return d;
+            }
+
+            return new Dictionary<TKey, TElement>(source);
+        }
+    }
+
     public interface IBaboonGenerated {
         public string BaboonDomainVersion();
         public string BaboonDomainIdentifier();
