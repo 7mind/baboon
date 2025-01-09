@@ -19,7 +19,7 @@ abstract class BaboonTest extends Spec1[Identity] {
             runtime             = RuntimeGenOpt.With,
             generateConversions = true,
             // dummy path (should be unused)
-            output         = Paths.get("./src/test/resources/baboon"),
+            output         = Paths.get("./target/baboon-scalatests/"),
             fixturesOutput = None,
             testsOutput    = None,
           ),
