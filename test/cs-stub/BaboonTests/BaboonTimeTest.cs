@@ -130,10 +130,16 @@ namespace Baboon.Time
         }
 
         [Test]
-        public void MinMaxTest()
+        public void DateTimeConvertersTest()
         {
             TestContext.Out.WriteLine(new RpDateTime(DateTime.MinValue));
             TestContext.Out.WriteLine(new RpDateTime(DateTime.MaxValue));
+
+            var now = DateTime.Now;
+            Assert.That(new RpDateTime(now).DateTime == new DateTimeOffset(now).DateTime.TruncateToMillis());
+
+            var utcNow = DateTime.Now;
+            Assert.That(new RpDateTime(utcNow).DateTime == new DateTimeOffset(utcNow).DateTime.TruncateToMillis());
         }
     }
 }
