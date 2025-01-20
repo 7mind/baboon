@@ -11,25 +11,40 @@ import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.NestedScope
 import io.septimalmind.baboon.util.{BLogger, BaboonMetagen}
 import io.septimalmind.baboon.validator.BaboonValidator
+import izumi.functional.bio.{Applicative2, ApplicativeError2, Bifunctor2, Error2, Guarantee2, Monad2}
+import izumi.reflect.TagKK
 
 import java.nio.file.Path
 
-class BaboonModule(options: CompilerOptions, inputs: Seq[Path]) extends ModuleDef {
-  make[BLogger].from[BLogger.BLoggerImpl]
-  make[BaboonCompiler].from[BaboonCompiler.BaboonCompilerImpl]
-  make[BaboonLoader].from[BaboonLoader.BaboonLoaderImpl]
+class BaboonModule[F[+_, +_]: Error2: TagKK](
+  options: CompilerOptions,
+  inputs: Seq[Path],
+) extends ModuleDef {
   make[CompilerOptions].fromValue(options)
-  make[BaboonFamilyManager].from[BaboonFamilyManager.BaboonFamilyManagerImpl]
-  make[BaboonValidator].from[BaboonValidator.BaboonValidatorImpl]
+  make[Seq[Path]].named("inputs").fromValue(inputs)
+  addImplicit[Error2[F]]
+    .aliased[Monad2[F]]
+    .aliased[Applicative2[F]]
+    .aliased[ApplicativeError2[F]]
+    .aliased[Guarantee2[F]]
+    .aliased[Bifunctor2[F]]
+
+  make[BLogger].from[BLogger.BLoggerImpl]
+
+  make[BaboonCompiler[F]].from[BaboonCompiler.BaboonCompilerImpl[F]]
+  make[BaboonLoader[F]].from[BaboonLoader.BaboonLoaderImpl[F]]
+  make[BaboonFamilyManager[F]].from[BaboonFamilyManager.BaboonFamilyManagerImpl[F]]
+  make[BaboonValidator[F]].from[BaboonValidator.BaboonValidatorImpl[F]]
+  make[BaboonRules[F]].from[BaboonRules.BaboonRulesImpl[F]]
+  make[BaboonParser[F]].from[BaboonParser.BaboonParserImpl[F]]
+  make[BaboonTyper[F]].from[BaboonTyper.BaboonTyperImpl[F]]
+  make[BaboonComparator[F]].from[BaboonComparator.BaboonComparatorImpl[F]]
+
   make[BaboonEnquiries].from[BaboonEnquiries.BaboonEnquiriesImpl]
-  make[BaboonRules].from[BaboonRules.BaboonRulesImpl]
-  make[BaboonParser].from[BaboonParser.BaboonParserImpl]
-  make[BaboonTyper].from[BaboonTyper.BaboonTyperImpl]
-  make[BaboonComparator].from[BaboonComparator.BaboonComparatorImpl]
   make[BaboonMetagen].from[BaboonMetagen.BaboonMetagenImpl]
   make[TypeInfo].from[TypeInfo.TypeInfoImpl]
 
-  makeSubcontext[BaboonTranslator]
+  makeSubcontext[BaboonTranslator[F]]
     .localDependencies(
       List(
         DIKey[Pkg],
@@ -38,13 +53,13 @@ class BaboonModule(options: CompilerOptions, inputs: Seq[Path]) extends ModuleDe
       )
     )
     .withSubmodule(new ModuleDef {
-      make[BaboonTranslator]
+      make[BaboonTranslator[F]]
     })
 
-  makeSubcontext[CSDefnTranslator]
+  makeSubcontext[CSDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
-      make[CSDefnTranslator].from[CSDefnTranslator.CSDefnTranslatorImpl]
+      make[CSDefnTranslator[F]].from[CSDefnTranslator.CSDefnTranslatorImpl[F]]
       make[CSCodecTestsTranslator].from[CSCodecTestsTranslator.Impl]
       make[CSCodecFixtureTranslator].from[CSRandomMethodTranslatorImpl]
       make[CSDomainTreeTools].from[CSDomainTreeTools.CSDomainTreeToolsImpl]
@@ -53,20 +68,18 @@ class BaboonModule(options: CompilerOptions, inputs: Seq[Path]) extends ModuleDe
         .add[CSUEBACodecGenerator]
     })
 
-  make[ScopeSupport].from[ScopeSupport.ScopeSupportImpl]
+  make[ScopeSupport[F]].from[ScopeSupport.ScopeSupportImpl[F]]
 
-  make[Seq[Path]].named("inputs").fromValue(inputs)
+  many[BaboonAbstractTranslator[F]]
+    .ref[CSBaboonTranslator[F]]
 
-  many[BaboonAbstractTranslator]
-    .ref[CSBaboonTranslator]
-
-  make[CSBaboonTranslator]
+  make[CSBaboonTranslator[F]]
 
   make[CSTreeTools].from[CSTreeTools.CSTreeToolsImpl]
   make[CSFileTools].from[CSFileTools.CSFileToolsImpl]
   make[CSTypeTranslator]
 
-  makeSubcontext[CSConversionTranslator]
+  makeSubcontext[CSConversionTranslator[F]]
     .localDependencies(
       List(
         DIKey[CSPackageId],
@@ -78,11 +91,7 @@ class BaboonModule(options: CompilerOptions, inputs: Seq[Path]) extends ModuleDe
       )
     )
     .withSubmodule(new ModuleDef {
-      make[CSConversionTranslator]
+      make[CSConversionTranslator[F]]
     })
-    .extractWith {
-      (handler: CSConversionTranslator) =>
-        handler
-    }
 
 }

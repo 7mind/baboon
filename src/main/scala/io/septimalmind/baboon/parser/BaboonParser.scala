@@ -5,22 +5,25 @@ import fastparse.Parsed
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.parser.model.{FSPath, RawDomain, RawInclude, RawTLDef}
 import izumi.fundamentals.collections.nonempty.{NEList, NEString}
-import izumi.functional.IzEither.*
+import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.platform.files.IzFiles
 
 import java.nio.file.Path
 
-trait BaboonParser {
-  def parse(input: BaboonParser.Input): Either[NEList[BaboonIssue], RawDomain]
+trait BaboonParser[F[+_, +_]] {
+  def parse(input: BaboonParser.Input): F[NEList[BaboonIssue], RawDomain]
 }
 
 object BaboonParser {
   case class Input(path: FSPath, content: String)
 
-  class BaboonParserImpl(inputs: Seq[Path] @Id("inputs")) extends BaboonParser {
+  class BaboonParserImpl[F[+_, +_]: Error2](
+    inputs: Seq[Path] @Id("inputs")
+  ) extends BaboonParser[F] {
+
     def parse(
       input: BaboonParser.Input
-    ): Either[NEList[BaboonIssue], RawDomain] = {
+    ): F[NEList[BaboonIssue], RawDomain] = {
       val context = ParserContext(input.path, input.content)
 
       fastparse.parse(context.content, context.defModel.model(_)) match {
@@ -37,15 +40,15 @@ object BaboonParser {
           }
 
         case failure: Parsed.Failure =>
-          Left(NEList(BaboonIssue.ParserFailed(failure, input.path)))
+          F.fail(NEList(BaboonIssue.ParserFailed(failure, input.path)))
       }
     }
 
     def processIncludes(
       includes: Seq[RawInclude]
-    ): Either[NEList[BaboonIssue], Seq[RawTLDef]] = {
+    ): F[NEList[BaboonIssue], Seq[RawTLDef]] = {
       if (includes.nonEmpty) {
-        includes.map {
+        F.flatTraverseAccumErrors(includes) {
           inc =>
             val inclusion = inputs
               .map(_.resolve(inc.value).toFile)
@@ -65,18 +68,19 @@ object BaboonParser {
                       sub ++ value.defs
                     }
                   case failure: Parsed.Failure =>
-                    Left(NEList(BaboonIssue.ParserFailed(failure, context.file)))
+                    F.fail(NEList(BaboonIssue.ParserFailed(failure, context.file)))
 
                 }
 
               case None =>
-                Left(NEList(BaboonIssue.IncludeNotFound(inc.value)))
+                F.fail(NEList(BaboonIssue.IncludeNotFound(inc.value)))
             }
-        }.biFlatten
+        }
       } else {
-        Right(Seq.empty)
+        F.pure(Seq.empty)
       }
     }
+
   }
 
 }

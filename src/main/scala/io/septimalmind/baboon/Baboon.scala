@@ -3,6 +3,7 @@ package io.septimalmind.baboon
 import caseapp.*
 import distage.Injector
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
+import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzArtifactMaterializer
@@ -63,8 +64,8 @@ object Baboon {
           case None        => Set("meta", "cs", "json")
         }
 
-        Injector.NoCycles().produceRun(new BaboonModule(options, inputPaths)) {
-          (compiler: BaboonCompiler) =>
+        Injector.NoCycles().produceRun(new BaboonModule[Either](options, inputPaths)) {
+          (compiler: BaboonCompiler[Either]) =>
             val inputModels = opts.model.map(s => Paths.get(s)).toSet ++ inputPaths.flatMap {
               dir =>
                 IzFiles
@@ -75,29 +76,26 @@ object Baboon {
             println(s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}")
             println(s"Targets: ${options.target.targetPaths.map { case (t, p) => s"$t: $p" }.toList.sorted.niceList()}")
 
-            cleanupTargetPaths(options.target, safeToRemove) match {
-              case Left(value) =>
-                System.err.println(s"Refusing to remove target directory, there are unexpected files: ${value.niceList()}")
-                System.err.println(s"Extensions allowed for removal: ${safeToRemove.mkString(", ")}")
-                System.exit(2)
-
-              case Right(_) =>
-                compiler.run(inputModels) match {
-                  case Left(value) =>
-                    System.err.println("Compiler failed")
-                    System.err.println(value.toList.stringifyIssues)
-                    System.exit(3)
-
-                  case Right(_) =>
-                    println("Done")
-                    System.exit(0)
-                }
-            }
+            val res: Either[Nothing, Unit] = for {
+              _ <- cleanupTargetPaths[Either](options.target, safeToRemove).catchAll {
+                value =>
+                  System.err.println(s"Refusing to remove target directory, there are unexpected files: ${value.niceList()}")
+                  System.err.println(s"Extensions allowed for removal: ${safeToRemove.mkString(", ")}")
+                  sys.exit(2)
+              }
+              _ <- compiler.run(inputModels).catchAll {
+                value =>
+                  System.err.println("Compiler failed")
+                  System.err.println(value.toList.stringifyIssues)
+                  sys.exit(3)
+              }
+            } yield ()
+            res.merge
         }
     }
   }
 
-  private def cleanupTargetPaths(targetOptions: TargetOptions, safeToRemove: Set[String]): Either[Seq[Path], Unit] = {
+  private def cleanupTargetPaths[F[+_, +_]: Error2](targetOptions: TargetOptions, safeToRemove: Set[String]): F[Seq[Path], Unit] = {
     val targetPaths = targetOptions.targetPaths.values.toList.distinct.filter(_.toFile.exists())
     val unexpectedFiles = targetPaths.flatMap {
       IzFiles.walk(_).filter {
@@ -112,9 +110,9 @@ object Baboon {
 
     if (unexpectedFiles.isEmpty) {
       targetPaths.foreach(path => IzFiles.erase(path))
-      Right(())
+      F.pure(())
     } else {
-      Left(unexpectedFiles)
+      F.fail(unexpectedFiles)
     }
   }
 }

@@ -7,23 +7,23 @@ import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.{CompilerOptions, CompilerProduct}
-import izumi.functional.IzEither.*
+import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.resources.IzResources
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSBaboonTranslator(
+class CSBaboonTranslator[F[+_, +_]: Error2](
   trans: CSTypeTranslator,
-  handler: Subcontext[CSConversionTranslator],
+  handler: Subcontext[CSConversionTranslator[F]],
   options: CompilerOptions,
   csTrees: CSTreeTools,
   csFiles: CSFileTools,
-  translator: Subcontext[CSDefnTranslator],
-) extends BaboonAbstractTranslator {
+  translator: Subcontext[CSDefnTranslator[F]],
+) extends BaboonAbstractTranslator[F] {
 
-  type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
+  type Out[T] = F[NEList[BaboonIssue.TranslationIssue], T]
 
   override def translate(family: BaboonFamily): Out[Sources] = {
     for {
@@ -35,7 +35,7 @@ class CSBaboonTranslator(
           val content = renderTree(o)
           (o.path, OutputFile(content, o.product))
       }
-      unique <- rendered.toUniqueMap(c => NEList(BaboonIssue.NonUniqueOutputFiles(c)))
+      unique <- F.fromEither(rendered.toUniqueMap(c => NEList(BaboonIssue.NonUniqueOutputFiles(c))))
     } yield {
       Sources(unique)
     }
@@ -145,14 +145,18 @@ class CSBaboonTranslator(
   private def translateFamily(
     family: BaboonFamily
   ): Out[List[CSDefnTranslator.Output]] = {
-    // TODO: fix .toSeq.toList
-    family.domains.iterator.map { case (_, lineage) => translateLineage(lineage) }.toList.biFlatten
+    F.flatSequenceAccumErrors {
+      // TODO: fix .toSeq.toList
+      family.domains.iterator.map { case (_, lineage) => translateLineage(lineage) }.toList
+    }
   }
 
   private def translateLineage(
     lineage: BaboonLineage
   ): Out[List[CSDefnTranslator.Output]] = {
-    lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList.biFlatten
+    F.flatSequenceAccumErrors {
+      lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList
+    }
   }
 
   private def translateDomain(domain: Domain, lineage: BaboonLineage): Out[List[CSDefnTranslator.Output]] = {
@@ -162,34 +166,34 @@ class CSBaboonTranslator(
         for {
           defnSources <- {
             if (options.target.products.contains(CompilerProduct.Definition)) {
-              domain.defs.meta.nodes.toList.map {
+              F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
                 case (_, defn: DomainMember.User) => defnTranslator.translate(defn)
-                case _                            => Right(List.empty)
-              }.biFlatten
+                case _                            => F.pure(List.empty)
+              }
             } else {
-              Right(List.empty)
+              F.pure(List.empty)
             }
           }
 
           fixturesSources <- {
             if (options.target.products.contains(CompilerProduct.Fixture)) {
-              domain.defs.meta.nodes.toList.map {
+              F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
                 case (_, defn: DomainMember.User) => defnTranslator.translateFixtures(defn)
-                case _                            => Right(List.empty)
-              }.biFlatten
+                case _                            => F.pure(List.empty)
+              }
             } else {
-              Right(List.empty)
+              F.pure(List.empty)
             }
           }
 
           testsSources <- {
             if (options.target.products.contains(CompilerProduct.Test)) {
-              domain.defs.meta.nodes.toList.map {
+              F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
                 case (_, defn: DomainMember.User) => defnTranslator.translateTests(defn)
-                case _                            => Right(List.empty)
-              }.biFlatten
+                case _                            => F.pure(List.empty)
+              }
             } else {
-              Right(List.empty)
+              F.pure(List.empty)
             }
           }
 
@@ -198,7 +202,7 @@ class CSBaboonTranslator(
               val evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
               generateConversions(domain, lineage, evosToCurrent, defnSources)
             } else {
-              Right(List.empty)
+              F.pure(List.empty)
             }
           }
 
@@ -206,7 +210,7 @@ class CSBaboonTranslator(
             if (options.csOptions.writeEvolutionDict) {
               generateMeta(domain, lineage)
             } else {
-              Right(List.empty)
+              F.pure(List.empty)
             }
           }
         } yield {
@@ -257,7 +261,7 @@ class CSBaboonTranslator(
     val meta       = csTrees.inNs(pkg.parts.toSeq, metaSource)
     val metaOutput = CSDefnTranslator.Output(s"$basename/BaboonMeta.cs", meta, pkg, CompilerProduct.Definition)
 
-    Right(List(metaOutput))
+    F.pure(List(metaOutput))
   }
 
   private def generateConversions(
@@ -269,21 +273,23 @@ class CSBaboonTranslator(
     val pkg = trans.toCsPkg(domain.id, domain.version, lineage.evolution)
 
     for {
-      convs <- lineage.evolution.rules
-        .filter(kv => toCurrent.contains(kv._1))
-        .map {
-          case (srcVer, rules) =>
-            handler
-              .provide(pkg)
-              .provide(srcVer.from)
-              .provide[Domain]("current")(domain)
-              .provide[Domain]("source")(lineage.versions(srcVer.from))
-              .provide(rules)
-              .provide(lineage.evolution)
-              .produce()
-              .use(_.makeConvs())
+      convs <-
+        F.flatSequenceAccumErrors {
+          lineage.evolution.rules
+            .filter(kv => toCurrent.contains(kv._1))
+            .map {
+              case (srcVer, rules) =>
+                handler
+                  .provide(pkg)
+                  .provide(srcVer.from)
+                  .provide[Domain]("current")(domain)
+                  .provide[Domain]("source")(lineage.versions(srcVer.from))
+                  .provide(rules)
+                  .provide(lineage.evolution)
+                  .produce()
+                  .use(_.makeConvs())
+            }
         }
-        .biFlatten
     } yield {
       val conversionRegs = convs.flatMap(_.reg.iterator.toSeq).toSeq
       val missing        = convs.flatMap(_.missing.iterator.toSeq).toSeq
@@ -368,9 +374,9 @@ class CSBaboonTranslator(
         doNotModify = true,
       )
 
-      Right(List(sharedOutput, timeOutput))
+      F.pure(List(sharedOutput, timeOutput))
     } else {
-      Right(List.empty)
+      F.pure(List.empty)
     }
   }
 
@@ -384,9 +390,9 @@ class CSBaboonTranslator(
         doNotModify = true,
       )
 
-      Right(List(testRuntime))
+      F.pure(List(testRuntime))
     } else {
-      Right(List.empty)
+      F.pure(List.empty)
     }
   }
 }

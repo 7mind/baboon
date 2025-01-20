@@ -8,6 +8,6 @@ import izumi.fundamentals.collections.nonempty.NEList
 case class OutputFile(content: String, product: CompilerProduct)
 case class Sources(files: Map[String, OutputFile])
 
-trait BaboonAbstractTranslator {
-  def translate(family: BaboonFamily): Either[NEList[BaboonIssue.TranslationIssue], Sources]
+trait BaboonAbstractTranslator[F[+_, +_]] {
+  def translate(family: BaboonFamily): F[NEList[BaboonIssue.TranslationIssue], Sources]
 }

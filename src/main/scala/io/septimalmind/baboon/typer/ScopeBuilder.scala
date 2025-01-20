@@ -4,13 +4,13 @@ import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.{NestedScope, *}
-import izumi.functional.IzEither.*
+import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 
 import java.util.concurrent.atomic.AtomicInteger
 
-class ScopeBuilder() {
+class ScopeBuilder[F[+_, +_]: Error2] {
   trait UIDGen {
     val uidGen = new AtomicInteger(0)
 
@@ -23,15 +23,17 @@ class ScopeBuilder() {
     pkg: Pkg,
     members: Seq[RawTLDef],
     meta: RawNodeMeta,
-  ): Either[NEList[BaboonIssue.TyperIssue], RootScope[ExtendedRawDefn]] = {
+  ): F[NEList[BaboonIssue.TyperIssue], RootScope[ExtendedRawDefn]] = {
 
     val gen = new UIDGen {}
 
     for {
-      sub <- members.map(m => buildScope(m.value, m.root, gen)).biSequence
-      asMap <- sub
-        .map(s => (s.name, s))
-        .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, meta)))
+      sub <- F.traverseAccumErrors(members)(m => buildScope(m.value, m.root, gen))
+      asMap <- F.fromEither {
+        sub
+          .map(s => (s.name, s))
+          .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, meta)))
+      }
     } yield {
       val out     = RootScope(gen.next(), pkg, asMap)
       val parents = out.identifyParents
@@ -47,7 +49,7 @@ class ScopeBuilder() {
     isRoot: Boolean,
     // parents: util.IdentityHashMap[NestedScope[FullRawDefn], Scope[FullRawDefn]],
     gen: UIDGen,
-  ): Either[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
+  ): F[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
     def finish(defn: RawDefn, asNEMap: NEMap[ScopeName, NestedScope[FullRawDefn]]) = {
       SubScope(
         gen.next(),
@@ -60,36 +62,39 @@ class ScopeBuilder() {
     member match {
       case namespace: RawNamespace =>
         for {
-          sub <- namespace.defns
-            .map(m => buildScope(m.value, isRoot = m.root, gen))
-            .biSequence
-          asMap <- sub
-            .map(s => (s.name, s))
-            .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta)))
-          asNEMap <- NEMap
-            .from(asMap)
-            .toRight(NEList(BaboonIssue.ScopeCannotBeEmpty(member)))
+          sub <- F.traverseAccumErrors(namespace.defns)(m => buildScope(m.value, isRoot = m.root, gen))
+          asMap <- F.fromEither {
+            sub
+              .map(s => (s.name, s))
+              .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta)))
+          }
+          asNEMap <- F.fromOption(NEList(BaboonIssue.ScopeCannotBeEmpty(member))) {
+            NEMap.from(asMap)
+          }
         } yield {
           finish(namespace, asNEMap)
         }
 
       case adt: RawAdt =>
         for {
-          sub <- adt.members.collect { case d: RawAdtMember => d }
-            .map(m => buildScope(m.defn, isRoot = false, gen))
-            .biSequence
-          asMap <- sub
-            .map(s => (s.name, s))
-            .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta)))
-          asNEMap <- NEMap
-            .from(asMap)
-            .toRight(NEList(BaboonIssue.ScopeCannotBeEmpty(member)))
+          sub <- F.sequenceAccumErrors {
+            adt.members.collect { case d: RawAdtMember => d }
+              .map(m => buildScope(m.defn, isRoot = false, gen))
+          }
+          asMap <- F.fromEither {
+            sub
+              .map(s => (s.name, s))
+              .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta)))
+          }
+          asNEMap <- F.fromOption(NEList(BaboonIssue.ScopeCannotBeEmpty(member))) {
+            NEMap.from(asMap)
+          }
         } yield {
           finish(adt, asNEMap)
         }
 
       case dto: RawDto =>
-        Right(
+        F.pure(
           LeafScope(
             gen.next(),
             ScopeName(dto.name.name),
@@ -98,7 +103,7 @@ class ScopeBuilder() {
         )
 
       case contract: RawContract =>
-        Right(
+        F.pure(
           LeafScope(
             gen.next(),
             ScopeName(contract.name.name),
@@ -107,12 +112,12 @@ class ScopeBuilder() {
         )
 
       case e: RawEnum =>
-        Right(
+        F.pure(
           LeafScope(gen.next(), ScopeName(e.name.name), FullRawDefn(e, isRoot))
         )
 
       case f: RawForeign =>
-        Right(
+        F.pure(
           LeafScope(gen.next(), ScopeName(f.name.name), FullRawDefn(f, isRoot))
         )
 
