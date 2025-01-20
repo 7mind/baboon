@@ -5,9 +5,9 @@ import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.BaboonFamilyManager
 import io.septimalmind.baboon.typer.model.BaboonFamily
+import io.septimalmind.baboon.util.functional.ParallelAccumulatingOps2
 import io.septimalmind.baboon.validator.BaboonValidator
 import izumi.functional.bio.{Error2, F}
-import izumi.functional.quasi.QuasiAsync
 import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 import izumi.fundamentals.platform.files.IzFiles
 
@@ -19,7 +19,7 @@ trait BaboonLoader[F[+_, +_]] {
 }
 
 object BaboonLoader {
-  class BaboonLoaderImpl[F[+_, +_]: Error2](
+  class BaboonLoaderImpl[F[+_, +_]: Error2: ParallelAccumulatingOps2](
     manager: BaboonFamilyManager[F],
     validator: BaboonValidator[F],
   ) extends BaboonLoader[F] {
@@ -28,20 +28,17 @@ object BaboonLoader {
       paths: List[Path]
     ): F[NEList[BaboonIssue], BaboonFamily] = {
       for {
-        inputs <- F.sequenceAccumErrors {
-          QuasiAsync.quasiAsyncIdentity
-            .parTraverse(paths) {
-              path =>
-                for {
-                  content <- F.fromTry {
-                    Try(IzFiles.readString(path.toFile))
-                  }.leftMap(e => NEList(BaboonIssue.CantReadInput(path.toString, e)))
-                } yield {
-                  BaboonParser.Input(
-                    FSPath.parse(NEString.unsafeFrom(path.toString)),
-                    content,
-                  )
-                }
+        inputs <- F.parTraverseAccumErrors(paths) {
+          path =>
+            for {
+              content <- F.fromTry {
+                Try(IzFiles.readString(path.toFile))
+              }.leftMap(e => NEList(BaboonIssue.CantReadInput(path.toString, e)))
+            } yield {
+              BaboonParser.Input(
+                FSPath.parse(NEString.unsafeFrom(path.toString)),
+                content,
+              )
             }
         }
         out <- manager.load(inputs)

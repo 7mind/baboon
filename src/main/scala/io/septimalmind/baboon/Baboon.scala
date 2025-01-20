@@ -3,6 +3,7 @@ package io.septimalmind.baboon
 import caseapp.*
 import distage.Injector
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
+import io.septimalmind.baboon.util.functional.ParallelAccumulatingOpsInstances
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.files.IzFiles
@@ -64,7 +65,7 @@ object Baboon {
           case None        => Set("meta", "cs", "json")
         }
 
-        Injector.NoCycles().produceRun(new BaboonModule[Either](options, inputPaths)) {
+        Injector.NoCycles().produceRun(new BaboonModule[Either](options, inputPaths, ParallelAccumulatingOpsInstances.Lawless_ParallelAccumulatingOpsEither)) {
           (compiler: BaboonCompiler[Either]) =>
             val inputModels = opts.model.map(s => Paths.get(s)).toSet ++ inputPaths.flatMap {
               dir =>

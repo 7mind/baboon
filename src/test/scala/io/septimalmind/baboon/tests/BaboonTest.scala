@@ -4,6 +4,7 @@ import distage.plugins.PluginBase
 import distage.{DefaultModule, ModuleDef}
 import io.septimalmind.baboon.*
 import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
+import io.septimalmind.baboon.util.functional.ParallelAccumulatingOpsInstances
 import izumi.distage.modules.DefaultModule2
 import izumi.distage.plugins.PluginConfig
 import izumi.distage.testkit.model.TestConfig
@@ -44,6 +45,7 @@ abstract class BaboonTest[F[+_, +_]: TagKK](implicit baboonTestModule: BaboonTes
           ),
         ),
         Seq(Paths.get("./src/test/resources/baboon")),
+        ParallelAccumulatingOpsInstances.Lawless_ParallelAccumulatingOpsEither,
       ).morph[PluginBase]
     )
   )

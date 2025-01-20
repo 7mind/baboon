@@ -9,6 +9,7 @@ import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.NestedScope
+import io.septimalmind.baboon.util.functional.ParallelAccumulatingOps2
 import io.septimalmind.baboon.util.{BLogger, BaboonMetagen}
 import io.septimalmind.baboon.validator.BaboonValidator
 import izumi.functional.bio.{Applicative2, ApplicativeError2, Bifunctor2, Error2, Guarantee2, Monad2}
@@ -19,6 +20,7 @@ import java.nio.file.Path
 class BaboonModule[F[+_, +_]: Error2: TagKK](
   options: CompilerOptions,
   inputs: Seq[Path],
+  parallelAccumulatingOps2: ParallelAccumulatingOps2[F],
 ) extends ModuleDef {
   make[CompilerOptions].fromValue(options)
   make[Seq[Path]].named("inputs").fromValue(inputs)
@@ -28,6 +30,7 @@ class BaboonModule[F[+_, +_]: Error2: TagKK](
     .aliased[ApplicativeError2[F]]
     .aliased[Guarantee2[F]]
     .aliased[Bifunctor2[F]]
+  make[ParallelAccumulatingOps2[F]].fromValue(parallelAccumulatingOps2)
 
   make[BLogger].from[BLogger.BLoggerImpl]
 

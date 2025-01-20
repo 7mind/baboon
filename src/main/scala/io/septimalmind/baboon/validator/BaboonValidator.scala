@@ -6,8 +6,8 @@ import io.septimalmind.baboon.parser.model.issues.BaboonIssue.ConversionIssue
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.FieldOp
+import io.septimalmind.baboon.util.functional.ParallelAccumulatingOps2
 import izumi.functional.bio.{Error2, F}
-import izumi.functional.quasi.QuasiAsync
 import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 
 trait BaboonValidator[F[+_, +_]] {
@@ -17,19 +17,16 @@ trait BaboonValidator[F[+_, +_]] {
 }
 
 object BaboonValidator {
-  class BaboonValidatorImpl[F[+_, +_]: Error2](
+  class BaboonValidatorImpl[F[+_, +_]: Error2: ParallelAccumulatingOps2](
     enquiries: BaboonEnquiries
   ) extends BaboonValidator[F] {
 
     override def validate(
       family: BaboonFamily
     ): F[NEList[BaboonIssue.VerificationIssue], Unit] = {
-      F.sequenceAccumErrors_ {
-        QuasiAsync.quasiAsyncIdentity
-          .parTraverse(family.domains.toSeq) {
-            case (pkg, lineage) =>
-              validateLineage(pkg, lineage)
-          }
+      F.parTraverseAccumErrors_(family.domains.toSeq) {
+        case (pkg, lineage) =>
+          validateLineage(pkg, lineage)
       }
     }
 
@@ -40,16 +37,12 @@ object BaboonValidator {
       assert(lineage.pkg == pkg)
 
       for {
-        _ <- F.sequenceAccumErrors_ {
-          QuasiAsync.quasiAsyncIdentity
-            .parTraverse(lineage.versions.toSeq) {
-              case (v, domain) =>
-                validateDomain(v, domain)
-            }
+        _ <- F.parTraverseAccumErrors_(lineage.versions.toSeq) {
+          case (v, domain) =>
+            validateDomain(v, domain)
         }
         _ <- validateEvolution(lineage.evolution, lineage.versions)
       } yield {}
-
     }
 
     private def validateDomain(
