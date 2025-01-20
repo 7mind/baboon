@@ -7,7 +7,7 @@ import io.septimalmind.baboon.typer.model.{BinReprLen, Domain, DomainMember, Fie
 import izumi.fundamentals.collections.nonempty.NESet
 import izumi.fundamentals.graphs.struct.IncidenceMatrix
 import izumi.fundamentals.graphs.tools.cycles.LoopDetector
-import izumi.fundamentals.platform.crypto.IzSha256Hash
+import izumi.fundamentals.platform.crypto.IzSha256HashFunction
 
 import scala.annotation.tailrec
 import scala.collection.mutable
@@ -210,7 +210,7 @@ object BaboonEnquiries {
           }
       }
 
-      ShallowSchemaId(IzSha256Hash.hash(normalizedRepr))
+      ShallowSchemaId(IzSha256HashFunction.hash(normalizedRepr))
     }
 
     def wrap(id: TypeId): String = {

@@ -10,7 +10,7 @@ class ParserTest extends BaboonTest {
       (parser: BaboonParser) =>
         val parsed = parser.parse(
           BaboonParser.Input(
-            FSPath.Name(NEString.unsafeFrom("testfile.baboon")),
+            FSPath.parse(NEString.unsafeFrom("testfile.baboon")),
             """/* test comment */
               |model my.test.model
               |

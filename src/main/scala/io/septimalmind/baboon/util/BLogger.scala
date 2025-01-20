@@ -34,7 +34,7 @@ object BLogger {
       doMessage(renderTree(msg))
     }
 
-    private def renderTree(msg: TextTree[Any]) = {
+    private def renderTree(msg: TextTree[Any]): String = {
       msg.mapRender {
         v =>
           if (IzPlatform.terminalColorsEnabled) {
