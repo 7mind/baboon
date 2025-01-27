@@ -16,7 +16,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class CSBaboonTranslator[F[+_, +_]: Error2](
   trans: CSTypeTranslator,
-  handler: Subcontext[CSConversionTranslator[F]],
+  handler: CSConversionTranslator.Factory[F],
   options: CompilerOptions,
   csTrees: CSTreeTools,
   csFiles: CSFileTools,
@@ -279,15 +279,13 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             .filter(kv => toCurrent.contains(kv._1))
             .map {
               case (srcVer, rules) =>
-                handler
-                  .provide(pkg)
-                  .provide(srcVer.from)
-                  .provide[Domain]("current")(domain)
-                  .provide[Domain]("source")(lineage.versions(srcVer.from))
-                  .provide(rules)
-                  .provide(lineage.evolution)
-                  .produce()
-                  .use(_.makeConvs())
+                handler(
+                  pkg    = pkg,
+                  srcDom = lineage.versions(srcVer.from),
+                  domain = domain,
+                  rules  = rules,
+                  evo    = lineage.evolution,
+                ).makeConvs()
             }
         }
     } yield {

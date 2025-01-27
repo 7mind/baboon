@@ -12,6 +12,18 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
+object CSConversionTranslator {
+  trait Factory[F[+_, +_]] {
+    def apply(
+      pkg: CSPackageId,
+      srcDom: Domain @Id("source"),
+      domain: Domain @Id("current"),
+      rules: BaboonRuleset,
+      evo: BaboonEvolution,
+    ): CSConversionTranslator[F]
+  }
+}
+
 class CSConversionTranslator[F[+_, +_]: Error2](
   trans: CSTypeTranslator,
   pkg: CSPackageId,

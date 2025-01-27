@@ -5,10 +5,8 @@ import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*
 import io.septimalmind.baboon.translator.csharp.CSCodecFixtureTranslator.CSRandomMethodTranslatorImpl
-import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.typer.model.Scope.NestedScope
 import io.septimalmind.baboon.util.functional.ParallelAccumulatingOps2
 import io.septimalmind.baboon.util.{BLogger, BaboonMetagen}
 import io.septimalmind.baboon.validator.BaboonValidator
@@ -47,17 +45,7 @@ class BaboonModule[F[+_, +_]: Error2: TagKK](
   make[BaboonMetagen].from[BaboonMetagen.BaboonMetagenImpl]
   make[TypeInfo].from[TypeInfo.TypeInfoImpl]
 
-  makeSubcontext[BaboonTranslator[F]]
-    .localDependencies(
-      List(
-        DIKey[Pkg],
-        DIKey[NestedScope[ExtendedRawDefn]],
-        DIKey[Map[TypeId, DomainMember]],
-      )
-    )
-    .withSubmodule(new ModuleDef {
-      make[BaboonTranslator[F]]
-    })
+  makeFactory[BaboonTranslator.Factory[F]]
 
   makeSubcontext[CSDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
@@ -82,19 +70,6 @@ class BaboonModule[F[+_, +_]: Error2: TagKK](
   make[CSFileTools].from[CSFileTools.CSFileToolsImpl]
   make[CSTypeTranslator]
 
-  makeSubcontext[CSConversionTranslator[F]]
-    .localDependencies(
-      List(
-        DIKey[CSPackageId],
-        DIKey[Version],
-        DIKey.get[Domain].named("current"),
-        DIKey.get[Domain].named("source"),
-        DIKey.get[BaboonRuleset],
-        DIKey.get[BaboonEvolution],
-      )
-    )
-    .withSubmodule(new ModuleDef {
-      make[CSConversionTranslator[F]]
-    })
+  makeFactory[CSConversionTranslator.Factory[F]]
 
 }
