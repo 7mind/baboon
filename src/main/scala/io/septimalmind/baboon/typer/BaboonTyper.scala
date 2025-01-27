@@ -22,7 +22,7 @@ object BaboonTyper {
 
   class BaboonTyperImpl[F[+_, +_]: Error2](
     enquiries: BaboonEnquiries,
-    translator: Subcontext[BaboonTranslator[F]],
+    translator: BaboonTranslator.Factory[F],
     scopeSupport: ScopeSupport[F],
     types: TypeInfo,
   ) extends BaboonTyper[F] {
@@ -253,12 +253,7 @@ object BaboonTyper {
         out <- F.foldLeft(ordered)(Map.empty[TypeId, DomainMember]) {
           case (acc, defn) =>
             for {
-              next <- translator
-                .provide(pkg)
-                .provide(defn)
-                .provide(acc)
-                .produce()
-                .use(_.translate())
+              next  <- translator(pkg, defn, acc).translate()
               mapped = next.map(m => (m.id, m))
               dupes  = acc.keySet.intersect(mapped.map(_._1).toSet)
               _ <- F.when(dupes.nonEmpty)(

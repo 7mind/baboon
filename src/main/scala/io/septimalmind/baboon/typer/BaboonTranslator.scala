@@ -10,6 +10,14 @@ import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
 
+object BaboonTranslator {
+  type Factory[F[+_, +_]] = (
+    Pkg,
+    NestedScope[ExtendedRawDefn],
+    Map[TypeId, DomainMember],
+  ) => BaboonTranslator[F]
+}
+
 class BaboonTranslator[F[+_, +_]: Error2](
   pkg: Pkg,
   defn: NestedScope[ExtendedRawDefn],
