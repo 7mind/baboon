@@ -7,12 +7,12 @@ import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.FieldOp
-import izumi.functional.IzEither.*
+import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSConversionTranslator(
+class CSConversionTranslator[F[+_, +_]: Error2](
   trans: CSTypeTranslator,
   pkg: CSPackageId,
   srcDom: Domain @Id("source"),
@@ -22,7 +22,7 @@ class CSConversionTranslator(
   evo: BaboonEvolution,
 ) {
   private val srcVer = srcDom.version
-  type Out[T] = Either[NEList[BaboonIssue.TranslationIssue], T]
+  type Out[T] = F[NEList[BaboonIssue.TranslationIssue], T]
 
   private def transfer(tpe: TypeRef, ref: TextTree[CSValue]): TextTree[CSValue] = {
     val cnew =
@@ -61,7 +61,7 @@ class CSConversionTranslator(
          |    return "${domain.version.version}";
          |}""".stripMargin
 
-    rules.conversions.map {
+    F.flatTraverseAccumErrors(rules.conversions) {
       conv =>
         val convname = makeName("Convert", conv)
 
@@ -102,7 +102,7 @@ class CSConversionTranslator(
 
             val convMethodName = makeName("Conversion", conv)
 
-            Right(
+            F.pure(
               List(
                 RenderedConversion(
                   fname,
@@ -115,9 +115,9 @@ class CSConversionTranslator(
               )
             )
           case _: Conversion.RemovedTypeNoConversion =>
-            Right(List.empty)
+            F.pure(List.empty)
           case _: Conversion.NonDataTypeTypeNoConversion =>
-            Right(List.empty)
+            F.pure(List.empty)
           case _: Conversion.CopyEnumByName =>
             val cdefn =
               q"""public sealed class $convname : $abstractConversion<$tin, $tout>
@@ -134,7 +134,7 @@ class CSConversionTranslator(
                  |}""".stripMargin
             val ctree   = tools.inNs(pkg.parts.toSeq, cdefn)
             val regtree = q"Register(new $convname());"
-            Right(List(RenderedConversion(fname, ctree, Some(regtree), None)))
+            F.pure(List(RenderedConversion(fname, ctree, Some(regtree), None)))
           case c: Conversion.CopyAdtBranchByName =>
             val branches = c.oldDefn
               .dataMembers(srcDom)
@@ -164,16 +164,16 @@ class CSConversionTranslator(
                  |}""".stripMargin
             val ctree   = tools.inNs(pkg.parts.toSeq, cdefn)
             val regtree = q"Register(new $convname());"
-            Right(List(RenderedConversion(fname, ctree, Some(regtree), None)))
+            F.pure(List(RenderedConversion(fname, ctree, Some(regtree), None)))
           case c: Conversion.DtoConversion =>
             for {
               newDefn <- domain.defs.meta.nodes(c.sourceTpe) match {
                 case DomainMember.User(_, defn: Typedef.Dto, _) =>
-                  Right(defn)
-                case _ => Left(NEList(BaboonIssue.TranslationBug()))
+                  F.pure(defn)
+                case _ => F.fail(NEList(BaboonIssue.TranslationBug()))
               }
               opIndex = c.ops.map(op => (op.targetField, op)).toMap
-              exprs <- newDefn.fields.map {
+              exprs <- F.traverseAccumErrors(newDefn.fields) {
                 f =>
                   val op = opIndex(f)
                   val ftNew =
@@ -190,12 +190,12 @@ class CSConversionTranslator(
                         case s: TypeRef.Scalar =>
                           s.id match {
                             case _: TypeId.Builtin =>
-                              Right(Seq(fieldRef))
+                              F.pure(Seq(fieldRef))
                             case _: TypeId.User =>
-                              Right(Seq(recConv))
+                              F.pure(Seq(recConv))
                           }
                         case c: TypeRef.Constructor if c.id == TypeId.Builtins.lst =>
-                          Right(
+                          F.pure(
                             Seq(
                               q"(from e in $fieldRef select ${transfer(c.args.head, q"e")}).${CSTypes.mkList}"
                             )
@@ -203,7 +203,7 @@ class CSConversionTranslator(
                         case c: TypeRef.Constructor if c.id == TypeId.Builtins.map =>
                           val keyRef   = c.args.head
                           val valueRef = c.args.last
-                          Right(
+                          F.pure(
                             Seq(
                               q"(from e in $fieldRef select new $csKeyValuePair<${trans
                                   .asCsRef(keyRef, domain, evo)}, ${trans
@@ -214,7 +214,7 @@ class CSConversionTranslator(
                             )
                           )
                         case c: TypeRef.Constructor if c.id == TypeId.Builtins.set =>
-                          Right(
+                          F.pure(
                             Seq(
                               q"(from e in $fieldRef select ${transfer(c.args.head, q"e")}).${CSTypes.mkSet}"
                             )
@@ -225,7 +225,7 @@ class CSConversionTranslator(
                           val recConv =
                             transfer(c.args.head, tmp)
 
-                          Right(
+                          F.pure(
                             Seq(
                               q"var $tmp = $fieldRef",
                               q"($tmp == null ? null : $recConv)",
@@ -233,7 +233,7 @@ class CSConversionTranslator(
                           )
 
                         case _ =>
-                          Right(Seq(recConv))
+                          F.pure(Seq(recConv))
                       }
 
                     case o: FieldOp.InitializeWithDefault =>
@@ -241,40 +241,40 @@ class CSConversionTranslator(
                         case c: TypeRef.Constructor =>
                           c.id match {
                             case TypeId.Builtins.opt =>
-                              Right(Seq(q"null"))
+                              F.pure(Seq(q"null"))
                             case TypeId.Builtins.set =>
                               // this is a safe assumption for now, we know there would be collections only
-                              Right(Seq(q"(new $ftNewInit()).${CSTypes.mkSet}"))
+                              F.pure(Seq(q"(new $ftNewInit()).${CSTypes.mkSet}"))
                             case TypeId.Builtins.lst =>
-                              Right(Seq(q"(new $ftNewInit()).${CSTypes.mkList}"))
+                              F.pure(Seq(q"(new $ftNewInit()).${CSTypes.mkList}"))
                             case TypeId.Builtins.map =>
-                              Right(
+                              F.pure(
                                 Seq(q"(new $ftNewInit()).${CSTypes.mkDict}")
                               )
 
                             case _ =>
-                              Left(NEList(BaboonIssue.TranslationBug()))
+                              F.fail(NEList(BaboonIssue.TranslationBug()))
                           }
                         case _: TypeRef.Scalar =>
-                          Left(NEList(BaboonIssue.TranslationBug()))
+                          F.fail(NEList(BaboonIssue.TranslationBug()))
                       }
 
                     case o: FieldOp.WrapIntoCollection =>
                       o.newTpe.id match {
                         case TypeId.Builtins.opt =>
-                          Right(Seq(fieldRef))
+                          F.pure(Seq(fieldRef))
                         case TypeId.Builtins.set =>
-                          Right(
+                          F.pure(
                             Seq(
                               q"(new $ftNewInit { $fieldRef }).${CSTypes.mkSet}"
                             )
                           )
                         case TypeId.Builtins.lst =>
-                          Right(
+                          F.pure(
                             Seq(q"(new $ftNewInit { $fieldRef }).${CSTypes.mkList}")
                           )
                         case _ =>
-                          Left(NEList(BaboonIssue.TranslationBug()))
+                          F.fail(NEList(BaboonIssue.TranslationBug()))
                       }
 
                     case o: FieldOp.ExpandPrecision =>
@@ -289,9 +289,9 @@ class CSConversionTranslator(
                             n.args,
                           )
                         case (_: TypeRef.Scalar, _: TypeRef.Scalar) =>
-                          Right(Seq(fieldRef))
+                          F.pure(Seq(fieldRef))
                         case _ =>
-                          Left(NEList(BaboonIssue.TranslationBug()))
+                          F.fail(NEList(BaboonIssue.TranslationBug()))
                       }
 
                     case o: FieldOp.SwapCollectionType =>
@@ -317,7 +317,7 @@ class CSConversionTranslator(
                     val full       = (init.init ++ Seq(assignment)).join(";\n")
                     (full, localName)
                   }
-              }.biSequence
+              }
             } yield {
               val initExprs = exprs.map(_._1) ++ Seq(q"")
               val consExprs = exprs.map(_._2)
@@ -341,8 +341,7 @@ class CSConversionTranslator(
             }
 
         }
-    }.biFlatten
-
+    }
   }
 
   private def swapCollType(
@@ -352,7 +351,7 @@ class CSConversionTranslator(
     oldId: TypeId.BuiltinCollection,
     newId: TypeId.BuiltinCollection,
     newCollArgs: NEList[TypeRef],
-  ): Either[NEList[BaboonIssue.TranslationBug], Seq[TextTree[CSValue]]] = {
+  ): F[NEList[BaboonIssue.TranslationBug], Seq[TextTree[CSValue]]] = {
     val collCsType = trans.asCsRef(newCollArgs.head, domain, evo)
 
     val collInit =
@@ -367,63 +366,63 @@ class CSConversionTranslator(
 
         newId match {
           case TypeId.Builtins.lst =>
-            Right(
+            F.pure(
               Seq(
                 q"var $tmp = $fieldRef",
                 q"( ($tmp != null) ? new $ftNewInit { $recConv } : new $ftNewInit() ).${CSTypes.mkList}",
               )
             )
           case TypeId.Builtins.set =>
-            Right(
+            F.pure(
               Seq(
                 q"var $tmp = $fieldRef",
                 q"( ($tmp != null) ? new $ftNewInit { $recConv } : new $ftNewInit() ).${CSTypes.mkSet}",
               )
             )
           case TypeId.Builtins.opt =>
-            Right(
+            F.pure(
               Seq(
                 q"var $tmp = $fieldRef",
                 q"( ($tmp != null) ? $recConv : null )",
               )
             )
           case _ =>
-            Left(NEList(BaboonIssue.TranslationBug()))
+            F.fail(NEList(BaboonIssue.TranslationBug()))
         }
       case TypeId.Builtins.lst =>
         newId match {
           case TypeId.Builtins.set =>
-            Right(Seq(q"$collInit.${CSTypes.mkSet}"))
+            F.pure(Seq(q"$collInit.${CSTypes.mkSet}"))
 
           case TypeId.Builtins.lst =>
-            Right(Seq(q"$collInit.${CSTypes.mkList}"))
+            F.pure(Seq(q"$collInit.${CSTypes.mkList}"))
           case _ =>
-            Left(NEList(BaboonIssue.TranslationBug()))
+            F.fail(NEList(BaboonIssue.TranslationBug()))
         }
       case TypeId.Builtins.set =>
         newId match {
           case TypeId.Builtins.set =>
-            Right(Seq(q"$collInit.${CSTypes.mkSet}"))
+            F.pure(Seq(q"$collInit.${CSTypes.mkSet}"))
           case TypeId.Builtins.lst =>
-            Right(Seq(q"$collInit.${CSTypes.mkList}"))
+            F.pure(Seq(q"$collInit.${CSTypes.mkList}"))
           case _ =>
-            Left(NEList(BaboonIssue.TranslationBug()))
+            F.fail(NEList(BaboonIssue.TranslationBug()))
         }
       case TypeId.Builtins.map =>
         newId match {
           case TypeId.Builtins.map =>
             val kt = trans.asCsRef(newCollArgs.head, domain, evo)
             val vt = trans.asCsRef(newCollArgs.last, domain, evo)
-            Right(
+            F.pure(
               Seq(
                 q"(from e in $fieldRef select new $csKeyValuePair<$kt, $vt>(($kt)e.Key, ($vt)e.Value)).${CSTypes.mkDict}"
               )
             )
           case _ =>
-            Left(NEList(BaboonIssue.TranslationBug()))
+            F.fail(NEList(BaboonIssue.TranslationBug()))
         }
       case _ =>
-        Left(NEList(BaboonIssue.TranslationBug()))
+        F.fail(NEList(BaboonIssue.TranslationBug()))
     }
   }
 

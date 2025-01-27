@@ -18,17 +18,17 @@ class DefModel(context: ParserContext, meta: DefMeta, defEnum: DefEnum, defDto: 
   }
 
   def header[$: P]: P[RawHeader] =
-    meta.withMeta(P(kw(kw.model, idt.symbolSeq))).map(RawHeader.tupled)
+    meta.withMeta(P(kw(kw.model, idt.symbolSeq))).map(RawHeader.apply.tupled)
 
   def version[$: P]: P[RawVersion] =
     meta
       .withMeta(P(kw(kw.version, Literals.Literals.SimpleStr)))
-      .map(RawVersion.tupled)
+      .map(RawVersion.apply.tupled)
 
   def include[$: P]: P[RawInclude] =
     meta
       .withMeta(P(kw(kw.include, Literals.Literals.SimpleStr)))
-      .map(RawInclude.tupled)
+      .map(RawInclude.apply.tupled)
 
   def member[$: P]: P[RawTLDef] = {
     import fastparse.ScalaWhitespace.whitespace
@@ -43,7 +43,7 @@ class DefModel(context: ParserContext, meta: DefMeta, defEnum: DefEnum, defDto: 
 
   def content[$: P]: P[RawContent] = {
     import fastparse.ScalaWhitespace.whitespace
-    (include.rep() ~ member.rep()).map(RawContent.tupled)
+    (include.rep() ~ member.rep()).map(RawContent.apply.tupled)
   }
 
   def namespaceDef[$: P]: P[RawNamespace] = {

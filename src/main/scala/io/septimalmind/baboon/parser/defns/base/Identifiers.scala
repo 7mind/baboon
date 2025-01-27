@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.parser.defns.base
 
-import fastparse.{CharPred, P}
+import fastparse.{ByNameOps, CharPred, EagerOps, LiteralStr, P}
 
 trait Identifiers {
   import fastparse.CharPredicates.{isDigit, isLetter}
@@ -14,5 +14,5 @@ trait Identifiers {
   }
 
   def symbolSeq[$: P]: P[Seq[String]] =
-    P(symbol.rep(sep = ".", min = 1))
+    P(symbol.rep(sep = LiteralStr("."), min = 1))
 }

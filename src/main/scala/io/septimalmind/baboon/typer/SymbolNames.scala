@@ -4,46 +4,45 @@ import io.septimalmind.baboon.parser.model.RawNodeMeta
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue.TyperIssue
 import io.septimalmind.baboon.typer.model.{FieldName, TypeName}
-import izumi.functional.IzEither.*
+import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 
 object SymbolNames {
-  def validEnumMemberName(
-    name: String,
-    meta: RawNodeMeta,
-  ): Either[NEList[TyperIssue], Unit] = {
+
+  def validEnumMemberName[F[+_, +_]: Error2](name: String, meta: RawNodeMeta): F[NEList[TyperIssue], Unit] = {
     for {
-      _ <- Either.ifThenFail(
+      _ <- F.when(
         !(name.forall(l => l.isLetterOrDigit || l == '_') && name.head.isLetter)
-      )(NEList(BaboonIssue.BadEnumName(name, meta)))
-      _ <- Either.ifThenFail(name.toLowerCase.startsWith("baboon"))(
-        NEList(BaboonIssue.BadEnumName(name, meta))
+      )(F.fail(NEList(BaboonIssue.BadEnumName(name, meta))))
+      _ <- F.when(name.toLowerCase.startsWith("baboon"))(
+        F.fail(NEList(BaboonIssue.BadEnumName(name, meta)))
       )
     } yield {}
   }
 
-  def validFieldName(name: FieldName, meta: RawNodeMeta): Either[NEList[TyperIssue], Unit] = {
+  def validFieldName[F[+_, +_]: Error2](name: FieldName, meta: RawNodeMeta): F[NEList[TyperIssue], Unit] = {
     for {
-      _ <- Either.ifThenFail(
+      _ <- F.when(
         !(name.name
           .forall(l => l.isLetterOrDigit || l == '_') && name.name.head.isLetter)
-      )(NEList(BaboonIssue.BadFieldName(name.name, meta)))
-      _ <- Either.ifThenFail(!name.name.head.isLower)(
-        NEList(BaboonIssue.BadFieldName(name.name, meta))
+      )(F.fail(NEList(BaboonIssue.BadFieldName(name.name, meta))))
+      _ <- F.when(!name.name.head.isLower)(
+        F.fail(NEList(BaboonIssue.BadFieldName(name.name, meta)))
       )
-      _ <- Either.ifThenFail(name.name.toLowerCase.startsWith("baboon"))(
-        NEList(BaboonIssue.BadFieldName(name.name, meta))
+      _ <- F.when(name.name.toLowerCase.startsWith("baboon"))(
+        F.fail(NEList(BaboonIssue.BadFieldName(name.name, meta)))
       )
     } yield {}
   }
-  def validTypeName(name: TypeName, meta: RawNodeMeta): Either[NEList[TyperIssue], Unit] = {
+
+  def validTypeName[F[+_, +_]: Error2](name: TypeName, meta: RawNodeMeta): F[NEList[TyperIssue], Unit] = {
     for {
-      _ <- Either.ifThenFail(
+      _ <- F.when(
         !(name.name
           .forall(l => l.isLetterOrDigit || l == '_') && (name.name.head.isLetter || name.name.head == '_'))
-      )(NEList(BaboonIssue.BadTypeName(name.name, meta)))
-      _ <- Either.ifThenFail(name.name.toLowerCase.startsWith("baboon"))(
-        NEList(BaboonIssue.BadFieldName(name.name, meta))
+      )(F.fail(NEList(BaboonIssue.BadTypeName(name.name, meta))))
+      _ <- F.when(name.name.toLowerCase.startsWith("baboon"))(
+        F.fail(NEList(BaboonIssue.BadFieldName(name.name, meta)))
       )
     } yield {}
   }

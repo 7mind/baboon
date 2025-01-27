@@ -4,27 +4,31 @@ import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.*
 import io.septimalmind.baboon.util.BLogger
-import izumi.functional.IzEither.*
+import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree.*
 
-trait BaboonRules {
+trait BaboonRules[F[+_, +_]] {
   def compute(
     prev: Domain,
     last: Domain,
     diff: BaboonDiff,
-  ): Either[NEList[BaboonIssue.EvolutionIssue], BaboonRuleset]
+  ): F[NEList[BaboonIssue.EvolutionIssue], BaboonRuleset]
 }
 
 object BaboonRules {
 
-  class BaboonRulesImpl(logger: BLogger, types: TypeInfo) extends BaboonRules {
-    override def compute(prev: Domain, last: Domain, diff: BaboonDiff): Either[NEList[BaboonIssue.EvolutionIssue], BaboonRuleset] = {
+  class BaboonRulesImpl[F[+_, +_]: Error2](
+    logger: BLogger,
+    types: TypeInfo,
+  ) extends BaboonRules[F] {
+
+    override def compute(prev: Domain, last: Domain, diff: BaboonDiff): F[NEList[BaboonIssue.EvolutionIssue], BaboonRuleset] = {
       for {
-        conversions <- prev.defs.meta.nodes.collect {
+        conversions <- F.traverseAccumErrors(prev.defs.meta.nodes.collect {
           case (id: TypeId.User, DomainMember.User(_, defn, _)) =>
             (id, defn)
-        }.toList.map {
+        }.toList) {
           case (id, defn) =>
             val unmodified  = diff.changes.unmodified.contains(id)
             val deepChanged = diff.changes.deepModified.contains(id)
@@ -36,7 +40,7 @@ object BaboonRules {
 
             defn match {
               case d: Typedef.Dto if sameLocalStruct =>
-                Right(
+                F.pure(
                   DtoConversion(
                     id,
                     d.fields.map(f => FieldOp.Transfer(f)),
@@ -44,29 +48,29 @@ object BaboonRules {
                   )
                 )
               case _: Typedef.Contract =>
-                Right(NonDataTypeTypeNoConversion(id))
+                F.pure(NonDataTypeTypeNoConversion(id))
               case _: Typedef.Enum if sameLocalStruct =>
-                Right(CopyEnumByName(id))
+                F.pure(CopyEnumByName(id))
               case oldDefn: Typedef.Adt if sameLocalStruct =>
-                Right(CopyAdtBranchByName(id, oldDefn))
+                F.pure(CopyAdtBranchByName(id, oldDefn))
 
               case _: Typedef.Foreign if sameLocalStruct =>
-                Right(CustomConversionRequired(id, DerivationFailure.Foreign))
+                F.pure(CustomConversionRequired(id, DerivationFailure.Foreign))
 
               case _ if diff.changes.removed.contains(id) =>
-                Right(RemovedTypeNoConversion(id))
+                F.pure(RemovedTypeNoConversion(id))
 
               case _: Typedef.Foreign =>
-                Right(CustomConversionRequired(id, DerivationFailure.Foreign))
+                F.pure(CustomConversionRequired(id, DerivationFailure.Foreign))
 
               case _: Typedef.Dto =>
                 assert(shallowChanged)
                 for {
                   ops <- diff.diffs(id) match {
                     case TypedefDiff.DtoDiff(ops) =>
-                      Right(ops)
+                      F.pure(ops)
                     case o =>
-                      Left(
+                      F.fail(
                         NEList(BaboonIssue.UnexpectedDiffType(o, "DTODiff"))
                       )
                   }
@@ -92,7 +96,7 @@ object BaboonRules {
                       assert(op.f.tpe != op.newType)
                       !types.isCompatibleChange(op.f.tpe, op.newType)
                   }
-//                  _               <- Right(if (incompatibleChanges.nonEmpty) println(s"!! ${defn.id}: $incompatibleChanges"))
+//                  _               <- F.pure(if (incompatibleChanges.nonEmpty) println(s"!! ${defn.id}: $incompatibleChanges"))
                   initWithDefaults = compatibleAdditions.map(a => FieldOp.InitializeWithDefault(a.f))
 
                   wrap = changes
@@ -154,14 +158,18 @@ object BaboonRules {
                 for {
                   incompatible <- diff.diffs(id) match {
                     case TypedefDiff.EnumDiff(ops) =>
-                      Right(ops.collect { case r: EnumOp.RemoveBranch => r })
+                      F.pure(ops.collect { case r: EnumOp.RemoveBranch => r })
                     case o =>
-                      Left(
+                      F.fail(
                         NEList(BaboonIssue.UnexpectedDiffType(o, "EnumDiff"))
                       )
                   }
                 } yield {
-                  Either.ifThenElse(incompatible.isEmpty)(CopyEnumByName(id))(CustomConversionRequired(id, DerivationFailure.EnumBranchRemoved(incompatible))).merge
+                  if (incompatible.isEmpty) {
+                    CopyEnumByName(id)
+                  } else {
+                    CustomConversionRequired(id, DerivationFailure.EnumBranchRemoved(incompatible))
+                  }
                 }
 
               case a: Typedef.Adt =>
@@ -169,19 +177,22 @@ object BaboonRules {
                 for {
                   incompatible <- diff.diffs(id) match {
                     case TypedefDiff.AdtDiff(ops) =>
-                      Right(ops.collect { case r: AdtOp.RemoveBranch => r })
+                      F.pure(ops.collect { case r: AdtOp.RemoveBranch => r })
                     case o =>
-                      Left(
+                      F.fail(
                         NEList(BaboonIssue.UnexpectedDiffType(o, "ADTDiff"))
                       )
                   }
                 } yield {
-                  Either
-                    .ifThenElse(incompatible.isEmpty)(CopyAdtBranchByName(id, a))(CustomConversionRequired(id, DerivationFailure.AdtBranchRemoved(incompatible))).merge
+                  if (incompatible.isEmpty) {
+                    CopyAdtBranchByName(id, a)
+                  } else {
+                    CustomConversionRequired(id, DerivationFailure.AdtBranchRemoved(incompatible))
+                  }
                 }
 
             }
-        }.biSequence
+        }
       } yield {
 
         val total = conversions.size

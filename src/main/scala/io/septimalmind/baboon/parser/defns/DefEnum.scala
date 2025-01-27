@@ -1,11 +1,13 @@
 package io.septimalmind.baboon.parser.defns
 
-import fastparse.P
+import fastparse.{ByNameOps, EagerOps, LiteralStr, P}
 import io.septimalmind.baboon.parser.ParserContext
 import io.septimalmind.baboon.parser.defns.base.{Literals, idt, kw, sep, struct}
 import io.septimalmind.baboon.parser.model.{RawEnum, RawEnumConst, RawEnumMember, RawTypeName}
 
-class DefEnum(context: ParserContext, meta: DefMeta) {
+import scala.annotation.unused
+
+class DefEnum(@unused context: ParserContext, meta: DefMeta) {
   def enumMemberName[$: P]: P[String] = idt.symbol
 
   def constInt[$: P]: P[Int] = {
@@ -21,7 +23,7 @@ class DefEnum(context: ParserContext, meta: DefMeta) {
     import fastparse.ScalaWhitespace.whitespace
     (P("=") ~ constInt).map {
       v =>
-        RawEnumConst.RawInt(v)
+        RawEnumConst.RawInt(v.toLong)
     }
   }
   def enumMember[$: P]: P[RawEnumMember] = {

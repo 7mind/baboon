@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.parser.defns
 
-import fastparse.{Index, P}
+import fastparse.{Index, P, EagerOps}
 import io.septimalmind.baboon.parser.ParserContext
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.defns.base.{idt, kw}

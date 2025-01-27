@@ -4,7 +4,7 @@ import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.OutputFile
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator
 import io.septimalmind.baboon.util.{BLogger, BaboonMetagen}
-import izumi.functional.IzEither.*
+import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -12,22 +12,24 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, StandardOpenOption}
 import scala.util.Try
 
-trait BaboonCompiler {
-  def run(inputs: Set[Path]): Either[NEList[BaboonIssue], Unit]
+trait BaboonCompiler[F[+_, +_]] {
+  def run(inputs: Set[Path]): F[NEList[BaboonIssue], Unit]
 }
 
 object BaboonCompiler {
-  class BaboonCompilerImpl(
-    loader: BaboonLoader,
-    translator: CSBaboonTranslator,
+  class BaboonCompilerImpl[F[+_, +_]: Error2](
+    loader: BaboonLoader[F],
+    translator: CSBaboonTranslator[F],
     options: CompilerOptions,
     logger: BLogger,
     metagen: BaboonMetagen,
-  ) extends BaboonCompiler {
-    override def run(inputs: Set[Path]): Either[NEList[BaboonIssue], Unit] = {
+  ) extends BaboonCompiler[F] {
+
+    override def run(inputs: Set[Path]): F[NEList[BaboonIssue], Unit] = {
       for {
         loaded <- loader.load(inputs.toList)
-        _ <- Right(options.generic.metaWriteEvolutionJsonTo.map {
+        // io
+        _ = options.generic.metaWriteEvolutionJsonTo.foreach {
           maybePath =>
             val path = Option(maybePath.getParent) match {
               case Some(_) => maybePath
@@ -45,19 +47,19 @@ object BaboonCompiler {
               StandardOpenOption.TRUNCATE_EXISTING,
               StandardOpenOption.CREATE,
             )
-
-        })
+        }
         translated <- translator.translate(loaded)
-        _ <- translated.files.map {
+        // io
+        _ <- F.traverseAccumErrors_(translated.files.iterator) {
           case (relativePath, output) =>
-            Try {
+            F.fromTry(Try {
               options.target.targetPathFor(output).foreach {
                 targetDirectory =>
                   val targetPath = targetDirectory.resolve(relativePath)
                   writeFile(output, targetPath)
               }
-            }.toEither.left.map(t => NEList(BaboonIssue.CantWriteOutput(relativePath, t)))
-        }.biSequence_
+            }).leftMap(t => NEList(BaboonIssue.CantWriteOutput(relativePath, t)))
+        }
       } yield {}
     }
 

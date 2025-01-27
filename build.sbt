@@ -1,15 +1,16 @@
 import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations.*
 
-import scala.sys.process._
+import scala.sys.process.*
+
 lazy val refreshFlakeTask = taskKey[Unit]("Refresh flake.nix")
 // lazy val isMacOS: Boolean = System.getProperty("os.name").toLowerCase.contains("mac")
 
-ThisBuild / scalaVersion := "2.13.15"
+ThisBuild / scalaVersion := "2.13.16"
 
 lazy val root = (project in file("."))
   .settings(
     name := "baboon",
-    libraryDependencies ++= Seq("com.lihaoyi" %% "fastparse" % "3.1.0"),
+    libraryDependencies ++= Seq("com.lihaoyi" %% "fastparse" % "3.1.1"),
     libraryDependencies ++= Seq(
       "fundamentals-platform",
       "fundamentals-functional",
@@ -17,12 +18,12 @@ lazy val root = (project in file("."))
       "fundamentals-collections",
       "distage-core",
       "distage-testkit-scalatest",
-    ).map("io.7mind.izumi" %% _ % "1.2.8"),
+    ).map("io.7mind.izumi" %% _ % "1.2.16"),
     libraryDependencies ++= Seq(
-      "org.scala-lang.modules" %% "scala-parser-combinators" % "2.3.0"
+      "org.scala-lang.modules" %% "scala-parser-combinators" % "2.4.0"
     ),
     libraryDependencies ++= Seq(
-      "org.scalatest" %% "scalatest" % "3.2.18" % Test,
+      "org.scalatest" %% "scalatest" % "3.2.19" % Test,
     ),
     libraryDependencies ++= Seq(
       "com.github.alexarchambault" %% "case-app" % "2.1.0-M29"
@@ -47,7 +48,7 @@ lazy val root = (project in file("."))
       "-language:higherKinds",
       "-language:implicitConversions",
       "-explaintypes",
-      "-Xsource:3",
+      "-Xsource:3-cross",
       "-Wdead-code",
       "-Wextra-implicit",
       "-Wnumeric-widen",

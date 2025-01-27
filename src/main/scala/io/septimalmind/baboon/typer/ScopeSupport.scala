@@ -4,17 +4,18 @@ import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.{LeafScope, NestedScope, RootScope, ScopeName, SubScope}
+import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 
 import scala.annotation.tailrec
 
-trait ScopeSupport {
+trait ScopeSupport[F[+_, +_]] {
   def resolveScopedRef(
     name: ScopedRef,
     scope: Scope[ExtendedRawDefn],
     pkg: Pkg,
     meta: RawNodeMeta,
-  ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User]
+  ): F[NEList[BaboonIssue.TyperIssue], TypeId.User]
 
   def resolveTypeId(
     prefix: List[RawTypeName],
@@ -22,28 +23,29 @@ trait ScopeSupport {
     scope: Scope[ExtendedRawDefn],
     pkg: Pkg,
     meta: RawNodeMeta,
-  ): Either[NEList[BaboonIssue.TyperIssue], TypeId]
+  ): F[NEList[BaboonIssue.TyperIssue], TypeId]
 
   def resolveUserTypeId(
     name: RawTypeName,
     scope: Scope[ExtendedRawDefn],
     pkg: Pkg,
     meta: RawNodeMeta,
-  ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User]
+  ): F[NEList[BaboonIssue.TyperIssue], TypeId.User]
 }
 
 object ScopeSupport {
   case class LookupResult(suffix: List[Scope[ExtendedRawDefn]], scope: LeafScope[ExtendedRawDefn])
 
-  class ScopeSupportImpl(
+  class ScopeSupportImpl[F[+_, +_]: Error2](
     types: TypeInfo
-  ) extends ScopeSupport {
+  ) extends ScopeSupport[F] {
+
     def resolveScopedRef(
       name: ScopedRef,
       scope: Scope[ExtendedRawDefn],
       pkg: Pkg,
       meta: RawNodeMeta,
-    ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User] = {
+    ): F[NEList[BaboonIssue.TyperIssue], TypeId.User] = {
       val found = findScope(NEList(ScopeName(name.path.head.name)), scope)
       found match {
         case Some(found) =>
@@ -61,7 +63,7 @@ object ScopeSupport {
           }
 
         case None =>
-          Left(NEList(BaboonIssue.NameNotFound(pkg, name, meta)))
+          F.fail(NEList(BaboonIssue.NameNotFound(pkg, name, meta)))
       }
     }
 
@@ -71,7 +73,7 @@ object ScopeSupport {
       in: Scope[ExtendedRawDefn],
       suffix: List[Scope[ExtendedRawDefn]],
       meta: RawNodeMeta,
-    ): Either[NEList[BaboonIssue.TyperIssue], LookupResult] = {
+    ): F[NEList[BaboonIssue.TyperIssue], LookupResult] = {
       names.headOption match {
         case Some(value) =>
           in match {
@@ -80,17 +82,17 @@ object ScopeSupport {
                 case Some(value) =>
                   lookupName(names.tail, value, suffix :+ value, meta)
                 case None =>
-                  Left(NEList(BaboonIssue.NamSeqeNotFound(names, s, meta)))
+                  F.fail(NEList(BaboonIssue.NamSeqeNotFound(names, s, meta)))
               }
             case _ =>
-              Left(NEList(BaboonIssue.UnexpectedScoping(List(in), meta)))
+              F.fail(NEList(BaboonIssue.UnexpectedScoping(List(in), meta)))
           }
         case None =>
           in match {
             case s: LeafScope[ExtendedRawDefn] =>
-              Right(LookupResult(suffix, s))
+              F.pure(LookupResult(suffix, s))
             case b =>
-              Left(NEList(BaboonIssue.UnexpectedScopeLookup(b, meta)))
+              F.fail(NEList(BaboonIssue.UnexpectedScopeLookup(b, meta)))
           }
       }
 
@@ -101,14 +103,14 @@ object ScopeSupport {
       scope: Scope[ExtendedRawDefn],
       pkg: Pkg,
       meta: RawNodeMeta,
-    ): Either[NEList[BaboonIssue.TyperIssue], TypeId.User] = {
+    ): F[NEList[BaboonIssue.TyperIssue], TypeId.User] = {
       for {
         id <- resolveTypeId(List.empty, name, scope, pkg, meta)
         userId <- id match {
           case id: TypeId.Builtin =>
-            Left(NEList(BaboonIssue.UnexpectedBuiltin(id, pkg, meta)))
+            F.fail(NEList(BaboonIssue.UnexpectedBuiltin(id, pkg, meta)))
           case u: TypeId.User =>
-            Right(u)
+            F.pure(u)
         }
       } yield {
         userId
@@ -118,9 +120,9 @@ object ScopeSupport {
     def convertTypename(
       raw: RawTypeName,
       meta: RawNodeMeta,
-    ): Either[NEList[BaboonIssue.TyperIssue], TypeName] = {
+    ): F[NEList[BaboonIssue.TyperIssue], TypeName] = {
       for {
-        typename <- Right(TypeName(raw.name))
+        typename <- F.pure(TypeName(raw.name))
         _        <- SymbolNames.validTypeName(typename, meta)
       } yield {
         typename
@@ -133,7 +135,7 @@ object ScopeSupport {
       scope: Scope[ExtendedRawDefn],
       pkg: Pkg,
       meta: RawNodeMeta,
-    ): Either[NEList[BaboonIssue.TyperIssue], TypeId] = {
+    ): F[NEList[BaboonIssue.TyperIssue], TypeId] = {
       for {
         typename <- convertTypename(name, meta)
         needle = prefix.map(_.name).map(ScopeName.apply) ++: NEList(
@@ -149,27 +151,24 @@ object ScopeSupport {
               out
             }
           case None =>
-            asBuiltin(typename).toRight(
-              NEList(
-                BaboonIssue
-                  .UnexpectedNonBuiltin(typename, pkg, scope, meta)
-              )
-            )
+            F.fromOption(NEList(BaboonIssue.UnexpectedNonBuiltin(typename, pkg, scope, meta))) {
+              asBuiltin(typename)
+            }
         }
       } yield {
         result
       }
     }
 
-    private def pathToOwner(defnPath: List[Scope[ExtendedRawDefn]], pkg: Pkg): Either[NEList[BaboonIssue.TyperIssue], Owner] = {
+    private def pathToOwner(defnPath: List[Scope[ExtendedRawDefn]], pkg: Pkg): F[NEList[BaboonIssue.TyperIssue], Owner] = {
 
       for {
         ns <- namespaceOf(defnPath)
         nsOwner =
           if (ns.isEmpty) {
-            Right(Owner.Toplevel)
+            F.pure(Owner.Toplevel)
           } else {
-            Right(Owner.Ns(ns))
+            F.pure(Owner.Ns(ns))
           }
         out <- defnPath.lastOption match {
           case Some(value: SubScope[ExtendedRawDefn]) =>
@@ -190,7 +189,7 @@ object ScopeSupport {
             nsOwner
           case None =>
             assert(ns.isEmpty)
-            Right(Owner.Toplevel)
+            F.pure(Owner.Toplevel)
         }
       } yield {
         out
@@ -199,35 +198,35 @@ object ScopeSupport {
 
     private def namespaceOf(
       path: List[Scope[ExtendedRawDefn]]
-    ): Either[NEList[BaboonIssue.TyperIssue], List[TypeName]] = {
+    ): F[NEList[BaboonIssue.TyperIssue], List[TypeName]] = {
       path match {
         case head :: tail =>
           for {
             next <- namespaceOf(tail)
             out <- head match {
               case _: RootScope[_] =>
-                Right(next)
+                F.pure(next)
 
               case scope: Scope.SubScope[_] =>
                 assert(
                   scope.defn.defn.isInstanceOf[RawAdt] || scope.defn.defn
                     .isInstanceOf[RawNamespace]
                 )
-                Right(List(TypeName(scope.name.name)) ++ next)
+                F.pure(List(TypeName(scope.name.name)) ++ next)
               case scope: Scope.LeafScope[_] =>
                 assert(
                   !scope.defn.defn.isInstanceOf[RawAdt] && !scope.defn.defn
                     .isInstanceOf[RawNamespace]
                 )
                 assert(tail.isEmpty, "typedefs must terminate type path")
-                Right(List.empty)
+                F.pure(List.empty)
             }
           } yield {
             out
           }
 
         case Nil =>
-          Right(List.empty)
+          F.pure(List.empty)
       }
     }
 

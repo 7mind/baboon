@@ -4,36 +4,41 @@ import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage}
 import io.septimalmind.baboon.util.BLogger
-import izumi.functional.IzEither.*
-import izumi.functional.quasi.QuasiAsync
+import io.septimalmind.baboon.util.functional.ParallelAccumulatingOps2
+import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
-trait BaboonFamilyManager {
+trait BaboonFamilyManager[F[+_, +_]] {
   def load(
     definitions: List[BaboonParser.Input]
-  ): Either[NEList[BaboonIssue], BaboonFamily]
+  ): F[NEList[BaboonIssue], BaboonFamily]
 }
 
 object BaboonFamilyManager {
-  class BaboonFamilyManagerImpl(parser: BaboonParser, typer: BaboonTyper, comparator: BaboonComparator, logger: BLogger) extends BaboonFamilyManager {
+  class BaboonFamilyManagerImpl[F[+_, +_]: Error2: ParallelAccumulatingOps2](
+    parser: BaboonParser[F],
+    typer: BaboonTyper[F],
+    comparator: BaboonComparator[F],
+    logger: BLogger,
+  ) extends BaboonFamilyManager[F] {
+
     override def load(
       definitions: List[BaboonParser.Input]
-    ): Either[NEList[BaboonIssue], BaboonFamily] = {
+    ): F[NEList[BaboonIssue], BaboonFamily] = {
       for {
-        domains <- QuasiAsync.quasiAsyncIdentity
-          .parTraverse(definitions) {
-            input =>
-              for {
-                parsed <- parser.parse(input)
-                typed  <- typer.process(parsed)
-              } yield {
-                typed
-              }
-          }.biSequence
+        domains <- F.parTraverseAccumErrors(definitions) {
+          input =>
+            for {
+              parsed <- parser.parse(input)
+              typed  <- typer.process(parsed)
+            } yield {
+              typed
+            }
+        }
 
-        _ <- Right(
+        _ <- F.pure(
           domains.sortBy(d => (d.id.toString, d.version.version)).foreach {
             d =>
               logger.message(
@@ -43,38 +48,42 @@ object BaboonFamilyManager {
           }
         )
 
-        lineages <- QuasiAsync.quasiAsyncIdentity
-          .parTraverse(
-            domains
-              .map(d => (d.id, d))
-              .toMultimap
-              .toSeq
-          ) {
-            case (pkg, domains) =>
-              for {
-                uniqueVersions <- domains
+        lineages <- F.parTraverseAccumErrors(
+          domains
+            .map(d => (d.id, d))
+            .toMultimap
+            .toSeq
+        ) {
+          case (pkg, domains) =>
+            for {
+              uniqueVersions <- F.fromEither {
+                domains
                   .map(d => (d.version, d))
                   .toUniqueMap(v => NEList(BaboonIssue.NonUniqueDomainVersions(v)))
-                nel <- NEMap
-                  .from(uniqueVersions)
-                  .toRight(NEList(BaboonIssue.EmptyDomainFamily(pkg)))
-                evo <- comparator.evolve(pkg, nel)
-              } yield {
-                BaboonLineage(pkg, nel, evo)
               }
-          }.biSequence
+              nel <- F.fromOption(NEList(BaboonIssue.EmptyDomainFamily(pkg))) {
+                NEMap.from(uniqueVersions)
+              }
+              evo <- comparator.evolve(pkg, nel)
+            } yield {
+              BaboonLineage(pkg, nel, evo)
+            }
+        }
 
-        uniqueLineages <- lineages
-          .map(l => (l.pkg, l))
-          .toUniqueMap(e => NEList(BaboonIssue.NonUniqueLineages(e)))
+        uniqueLineages <- F.fromEither {
+          lineages
+            .map(l => (l.pkg, l))
+            .toUniqueMap(e => NEList(BaboonIssue.NonUniqueLineages(e)))
+        }
 
-        nem <- NEMap
-          .from(uniqueLineages)
-          .toRight(NEList(BaboonIssue.EmptyFamily(definitions)))
+        nem <- F.fromOption(NEList(BaboonIssue.EmptyFamily(definitions))) {
+          NEMap.from(uniqueLineages)
+        }
       } yield {
         BaboonFamily(nem)
       }
 
     }
+
   }
 }
