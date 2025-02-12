@@ -24,10 +24,10 @@
         packages = rec {
           baboon = sbt.lib.mkSbtDerivation {
             pkgs = pkgs;
-            version = "0.0.97";
+            version = "0.0.98";
             pname = "baboon";
             src = ./.;
-            depsSha256 = "sha256-aHR00f3o1CgW7ciqUmzF2AWhSRQvh2vz94EUTWQvTBA=";
+            depsSha256 = "sha256-GemB9LkGFprzZ885VkiTrgVh9bpE1ttwf9g3qRsy6mQ=";
             nativeBuildInputs = with pkgs; [
               graalvm-ce
             ];
