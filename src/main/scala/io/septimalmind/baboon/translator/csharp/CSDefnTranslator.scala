@@ -302,7 +302,8 @@ object CSDefnTranslator {
             parents ++ direct.flatMap(_.fields)
           }
 
-          val allFields = unfold(adt.contracts)
+          val allFields = unfold(adt.contracts).distinct
+
           val abstractFields = allFields.map {
             f =>
               val tpe   = trans.asCsRef(f.tpe, domain, evo)
