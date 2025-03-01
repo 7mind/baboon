@@ -46,6 +46,11 @@ class DefModel(context: ParserContext, meta: DefMeta, defEnum: DefEnum, defDto: 
     (include.rep() ~ member.rep()).map(RawContent.apply.tupled)
   }
 
+  def contentEof[$: P]: P[RawContent] = {
+    import fastparse.ScalaWhitespace.whitespace
+    content ~ End
+  }
+
   def namespaceDef[$: P]: P[RawNamespace] = {
     P(meta.member(kw.namespace, struct.enclosed(content))).map {
       case (meta, name, members) =>

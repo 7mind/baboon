@@ -60,7 +60,7 @@ object BaboonParser {
                   FSPath.parse(NEString.unsafeFrom(incFile.getCanonicalPath)),
                   content,
                 )
-                fastparse.parse(context.content, context.defModel.content(_)) match {
+                fastparse.parse(context.content, context.defModel.contentEof(_)) match {
                   case Parsed.Success(value, _) =>
                     for {
                       sub <- processIncludes(value.includes)
