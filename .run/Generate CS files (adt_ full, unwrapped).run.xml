@@ -1,0 +1,16 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Generate CS files (adt: full, unwrapped)" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="io.septimalmind.baboon.Baboon" />
+    <module name="baboon" />
+    <option name="PROGRAM_PARAMETERS" value="--model-dir ./src/test/resources/baboon/ --output ./test/cs-stub/BaboonDefinitions/generated --test-output ./test/cs-stub/BaboonTests/generated --cs-write-evolution-dict " />
+    <extension name="coverage">
+      <pattern>
+        <option name="PATTERN" value="io.septimalmind.baboon.*" />
+        <option name="ENABLED" value="false" />
+      </pattern>
+    </extension>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
