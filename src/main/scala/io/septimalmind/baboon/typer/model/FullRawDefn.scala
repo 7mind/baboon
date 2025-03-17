@@ -16,6 +16,7 @@ object FullRawDefn {
         case _: RawAdt       => s"adt"
         case _: RawForeign   => s"foreign"
         case _: RawNamespace => s"namespace"
+        case _: RawService   => s"service"
       }
 
       val root = if (defn.gcRoot) { "!" }

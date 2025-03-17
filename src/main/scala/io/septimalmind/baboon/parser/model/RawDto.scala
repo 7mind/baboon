@@ -25,6 +25,8 @@ case class RawForeign(name: RawTypeName, defns: List[RawForeignEntry], meta: Raw
 
 case class RawNamespace(name: RawTypeName, defns: Seq[RawTLDef], meta: RawNodeMeta) extends RawDefn
 
+case class RawService(name: RawTypeName, meta: RawNodeMeta) extends RawDefn
+
 case class RawForeignEntryAttr(name: String, value: String)
 case class RawForeignEntryAttrs(attrs: List[RawForeignEntryAttr])
 

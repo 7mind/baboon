@@ -271,3 +271,24 @@ root data T6_D1 {
 root data T7_Empty {
 
 }
+
+root service I1 {
+    def testCall (
+        data IN {
+        }
+        
+        data OUT {
+          i00: i32
+        }
+        
+        data ERR {
+          msg: str
+        }
+    )
+    
+    def testCall2 (
+        in = T7_Empty
+        out = T7_Empty
+        err = T7_Empty
+    )
+}

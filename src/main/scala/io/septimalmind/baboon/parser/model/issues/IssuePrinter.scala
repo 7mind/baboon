@@ -232,6 +232,7 @@ object IssuePrinter {
         case _: RawForeign   => "Foreign"
         case _: RawContract  => "Contract"
         case _: RawNamespace => "Namespace"
+        case _: RawService   => "Service"
       }
       s"""${extractLocation(issue.member.meta)}
          |Found an empty $memberType: ${issue.member.name.name}

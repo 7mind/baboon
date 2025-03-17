@@ -14,5 +14,4 @@ class DefContract(context: ParserContext, meta: DefMeta, dto: DefDto) {
         RawContract(RawTypeName(name), members, meta)
     }
   }
-
 }

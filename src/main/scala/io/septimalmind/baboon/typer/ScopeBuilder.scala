@@ -111,6 +111,15 @@ class ScopeBuilder[F[+_, +_]: Error2] {
           )
         )
 
+      case service: RawService =>
+        F.pure(
+          LeafScope(
+            gen.next(),
+            ScopeName(service.name.name),
+            FullRawDefn(service, isRoot),
+          )
+        )
+
       case e: RawEnum =>
         F.pure(
           LeafScope(gen.next(), ScopeName(e.name.name), FullRawDefn(e, isRoot))
