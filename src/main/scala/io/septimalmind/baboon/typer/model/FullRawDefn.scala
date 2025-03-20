@@ -10,13 +10,14 @@ object FullRawDefn {
     def debugRepr: String = {
       val n = defn.defn.name.name
       val name = defn.defn match {
-        case _: RawDto       => s"dto"
-        case _: RawContract  => s"contract"
-        case _: RawEnum      => s"contract"
-        case _: RawAdt       => s"adt"
-        case _: RawForeign   => s"foreign"
-        case _: RawNamespace => s"namespace"
-        case _: RawService   => s"service"
+        case _: RawDto                    => s"dto"
+        case _: RawContract               => s"contract"
+        case _: RawEnum                   => s"contract"
+        case _: RawAdt                    => s"adt"
+        case _: RawForeign                => s"foreign"
+        case _: RawNamespace              => s"namespace"
+        case _: RawService                => s"service"
+        case _: RawServiceMethodNamespace => s"servicemethodnamespace"
       }
 
       val root = if (defn.gcRoot) { "!" }

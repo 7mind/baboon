@@ -274,14 +274,14 @@ root data T7_Empty {
 
 root service I1 {
     def testCall (
-        data IN {
+        data in {
         }
         
-        data OUT {
+        data out {
           i00: i32
         }
         
-        data ERR {
+        data err {
           msg: str
         }
     )

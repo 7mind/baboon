@@ -60,6 +60,8 @@ class ScopeBuilder[F[+_, +_]: Error2] {
     }
 
     member match {
+      case _: RawServiceMethodNamespace =>
+        F.fail(NEList(???))
       case namespace: RawNamespace =>
         for {
           sub <- F.traverseAccumErrors(namespace.defns)(m => buildScope(m.value, isRoot = m.root, gen))
@@ -112,14 +114,46 @@ class ScopeBuilder[F[+_, +_]: Error2] {
         )
 
       case service: RawService =>
-        F.pure(
-          LeafScope(
+        for {
+          inlineDefns <- F.pure(service.defns.map(defn => (defn, defn.sig.collect { case s: RawFuncSig.Struct => s.defn })).filterNot(_._2.isEmpty))
+          sub <- F.traverseAccumErrors(inlineDefns) {
+            case (func, defns) =>
+              for {
+                sub <- F.traverseAccumErrors(defns)(m => buildScope(m, isRoot = isRoot, gen))
+                asMap <- F.fromEither {
+                  sub
+                    .map(s => (s.name, s))
+                    .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta)))
+                }
+                asNEMap <- F.fromOption(NEList(BaboonIssue.ScopeCannotBeEmpty(member))) {
+                  NEMap.from(asMap)
+                }
+              } yield {
+                SubScope(
+                  gen.next(),
+                  ScopeName(func.name),
+                  FullRawDefn(RawServiceMethodNamespace(RawTypeName(func.name), func.meta), isRoot),
+                  asNEMap,
+                )
+              }
+          }
+          asMap <- F.fromEither {
+            sub
+              .map(s => (s.name, s))
+              .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta)))
+          }
+          asNEMap <- F.fromOption(NEList(BaboonIssue.ScopeCannotBeEmpty(member))) {
+            NEMap.from(asMap)
+          }
+        } yield {
+          SubScope(
             gen.next(),
             ScopeName(service.name.name),
             FullRawDefn(service, isRoot),
+            asNEMap,
           )
-        )
-
+        }
+        
       case e: RawEnum =>
         F.pure(
           LeafScope(gen.next(), ScopeName(e.name.name), FullRawDefn(e, isRoot))

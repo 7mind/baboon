@@ -56,7 +56,8 @@ class BaboonTranslator[F[+_, +_]: Error2](
       // namespace itself is not a typedef :3
       case _: RawNamespace => F.pure(List.empty)
       // TODO:
-      case _: RawService => F.pure(List.empty)
+      case _: RawService                => F.pure(List.empty)
+      case _: RawServiceMethodNamespace => F.pure(List.empty)
     }
   }
 

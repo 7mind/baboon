@@ -25,7 +25,8 @@ case class RawForeign(name: RawTypeName, defns: List[RawForeignEntry], meta: Raw
 
 case class RawNamespace(name: RawTypeName, defns: Seq[RawTLDef], meta: RawNodeMeta) extends RawDefn
 
-case class RawService(name: RawTypeName, meta: RawNodeMeta) extends RawDefn
+case class RawService(name: RawTypeName, defns: Seq[RawFunc], meta: RawNodeMeta) extends RawDefn
+case class RawServiceMethodNamespace(name: RawTypeName, meta: RawNodeMeta) extends RawDefn
 
 case class RawForeignEntryAttr(name: String, value: String)
 case class RawForeignEntryAttrs(attrs: List[RawForeignEntryAttr])
@@ -37,3 +38,15 @@ object RawForeignEntryAttrs {
 }
 
 case class RawForeignEntry(lang: String, decl: String, attrs: RawForeignEntryAttrs)
+
+case class RawFunc(
+  name: String,
+  sig: Seq[RawFuncSig],
+  meta: RawNodeMeta,
+)
+
+sealed trait RawFuncSig
+object RawFuncSig {
+  case class Ref(ref: RawTypeRef, marker: String, meta: RawNodeMeta) extends RawFuncSig
+  case class Struct(defn: RawDefn) extends RawFuncSig
+}
