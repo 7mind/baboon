@@ -2,7 +2,7 @@
   <configuration default="false" name="Generate CS files (adt: full, unwrapped)" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="io.septimalmind.baboon.Baboon" />
     <module name="baboon" />
-    <option name="PROGRAM_PARAMETERS" value="--model-dir ./src/test/resources/baboon/ --output ./test/cs-stub/BaboonDefinitions/generated --test-output ./test/cs-stub/BaboonTests/generated --cs-write-evolution-dict " />
+    <option name="PROGRAM_PARAMETERS" value="--model-dir ./src/test/resources/baboon/ --output ./test/cs-stub/BaboonDefinitions/Generated --fixture-output ./test/cs-stub/BaboonTests/GeneratedFixtures --test-output ./test/cs-stub/BaboonTests/GeneratedTests --cs-write-evolution-dict" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="io.septimalmind.baboon.*" />

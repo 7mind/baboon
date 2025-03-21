@@ -55,6 +55,8 @@ class BaboonTranslator[F[+_, +_]: Error2](
 
       // namespace itself is not a typedef :3
       case _: RawNamespace => F.pure(List.empty)
+      case s: RawService =>
+        convertService(id, root, s, thisScope).map(_.toList)
     }
   }
 
@@ -320,6 +322,22 @@ class BaboonTranslator[F[+_, +_]: Error2](
       NEList(
         DomainMember
           .User(isRoot, Typedef.Adt(id, nel, contracts, fields), adt.meta)
+      )
+    }
+  }
+
+  private def convertService(
+    id: TypeId.User,
+    isRoot: Boolean,
+    svc: RawService,
+    thisScope: NestedScope[ExtendedRawDefn],
+  ): F[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
+    for {
+      _ <- F.unit
+    } yield {
+      NEList(
+        DomainMember
+          .User(isRoot, Typedef.Service(id), svc.meta)
       )
     }
   }

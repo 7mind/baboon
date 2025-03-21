@@ -209,14 +209,16 @@ object ScopeSupport {
 
               case scope: Scope.SubScope[_] =>
                 assert(
-                  scope.defn.defn.isInstanceOf[RawAdt] || scope.defn.defn
-                    .isInstanceOf[RawNamespace]
+                  scope.defn.defn.isInstanceOf[RawAdt] ||
+                  scope.defn.defn.isInstanceOf[RawNamespace] ||
+                  scope.defn.defn.isInstanceOf[RawService]
                 )
                 F.pure(List(TypeName(scope.name.name)) ++ next)
               case scope: Scope.LeafScope[_] =>
                 assert(
-                  !scope.defn.defn.isInstanceOf[RawAdt] && !scope.defn.defn
-                    .isInstanceOf[RawNamespace]
+                  !scope.defn.defn.isInstanceOf[RawAdt] &&
+                  !scope.defn.defn.isInstanceOf[RawNamespace] &&
+                  !scope.defn.defn.isInstanceOf[RawService]
                 )
                 assert(tail.isEmpty, "typedefs must terminate type path")
                 F.pure(List.empty)

@@ -6,7 +6,16 @@ import io.septimalmind.baboon.parser.defns.base.{Literals, idt, kw, struct}
 import io.septimalmind.baboon.parser.model.*
 import izumi.fundamentals.platform.language.Quirks.Discarder
 
-class DefModel(context: ParserContext, meta: DefMeta, defEnum: DefEnum, defDto: DefDto, defAdt: DefAdt, defForeign: DefForeign, defContract: DefContract) {
+class DefModel(
+  context: ParserContext,
+  meta: DefMeta,
+  defEnum: DefEnum,
+  defDto: DefDto,
+  defAdt: DefAdt,
+  defForeign: DefForeign,
+  defContract: DefContract,
+  defService: DefService,
+) {
   context.discard()
 
   def model[$: P]: P[RawDomain] = {
@@ -33,7 +42,7 @@ class DefModel(context: ParserContext, meta: DefMeta, defEnum: DefEnum, defDto: 
   def member[$: P]: P[RawTLDef] = {
     import fastparse.ScalaWhitespace.whitespace
 
-    val main = P(kw.root.!.? ~ (choice | dto | adt | foreign | contract)).map {
+    val main = P(kw.root.!.? ~ (choice | dto | adt | foreign | contract | service)).map {
       case (root, defn) =>
         defn.setRoot(root.nonEmpty)
     }
@@ -68,6 +77,8 @@ class DefModel(context: ParserContext, meta: DefMeta, defEnum: DefEnum, defDto: 
     defForeign.foreignEnclosed.map(RawTLDef.Foreign(false, _))
   def contract[$: P]: P[RawTLDef.Contract] =
     defContract.contractEnclosed.map(RawTLDef.Contract(false, _))
+  def service[$: P]: P[RawTLDef.Service] =
+    defService.service.map(RawTLDef.Service(false, _))
   def namespace[$: P]: P[RawTLDef.Namespace] =
     namespaceDef.map(RawTLDef.Namespace(_))
 }

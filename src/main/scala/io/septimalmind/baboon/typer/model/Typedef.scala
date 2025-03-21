@@ -81,13 +81,7 @@ object Typedef {
     def id: TypeId.User
   }
 
-  sealed trait NonDataTypedef {
-    this: Typedef =>
-  }
-
   case class Dto(id: TypeId.User, fields: List[Field], contracts: List[TypeId.User]) extends User
-
-  case class Contract(id: TypeId.User, fields: List[Field], contracts: List[TypeId.User]) extends User with NonDataTypedef
 
   case class Enum(id: TypeId.User, members: NEList[EnumMember]) extends User
 
@@ -98,6 +92,14 @@ object Typedef {
   case class ForeignEntry(lang: String, decl: String, attrs: ForeignEntryAttrs)
 
   case class Foreign(id: TypeId.User, bindings: Map[String, ForeignEntry]) extends User
+
+  sealed trait NonDataTypedef {
+    this: Typedef =>
+  }
+
+  case class Service(id: TypeId.User) extends User with NonDataTypedef
+
+  case class Contract(id: TypeId.User, fields: List[Field], contracts: List[TypeId.User]) extends User with NonDataTypedef
 
   object Adt {
     implicit class AdtSyntax(val adt: Adt) extends AnyVal {
