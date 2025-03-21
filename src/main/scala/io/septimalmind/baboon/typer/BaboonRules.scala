@@ -49,6 +49,8 @@ object BaboonRules {
                 )
               case _: Typedef.Contract =>
                 F.pure(NonDataTypeTypeNoConversion(id))
+              case _: Typedef.Service =>
+                F.pure(NonDataTypeTypeNoConversion(id))
               case _: Typedef.Enum if sameLocalStruct =>
                 F.pure(CopyEnumByName(id))
               case oldDefn: Typedef.Adt if sameLocalStruct =>

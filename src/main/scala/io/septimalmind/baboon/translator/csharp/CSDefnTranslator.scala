@@ -187,6 +187,15 @@ object CSDefnTranslator {
       val meta      = mainMeta ++ codecMeta
 
       defn.defn match {
+        case service: Typedef.Service =>
+          (
+            q"""namespace ${name.asName} {
+               |    public interface ${name.asName}  {
+               |    }
+               |}""".stripMargin,
+            List.empty,
+          )
+
         case contract: Typedef.Contract =>
           val methods = renderContractFields(contract.fields).join("\n")
           val refs    = contract.contracts.map(t => q"${trans.asCsType(t, domain, evo)}") ++ List(q"$genMarker")

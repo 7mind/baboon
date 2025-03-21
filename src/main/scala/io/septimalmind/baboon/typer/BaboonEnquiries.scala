@@ -95,6 +95,8 @@ object BaboonEnquiries {
                 collectForeignType(tail, Some(f.id), seen)
               case _: Typedef.Enum =>
                 collectForeignType(tail, foreignType, seen)
+              case _: Typedef.Service =>
+                None // TODO:
             }
         }
       }
@@ -154,6 +156,7 @@ object BaboonEnquiries {
             case _: Typedef.Enum    => Set.empty
             case t: Typedef.Adt     => t.members.toSet ++ t.contracts
             case _: Typedef.Foreign => Set.empty
+            case _: Typedef.Service => Set.empty // TODO
           }
       }
     }
@@ -191,12 +194,13 @@ object BaboonEnquiries {
                 f =>
                   s"${f.name}:${wrap(f.tpe)}"
               }.sorted
-
               s"[contract;${wrap(d.id)};$members]"
-
             case c: Typedef.Enum =>
               val members = c.members.toList.map(_.name).sorted.mkString(",")
               s"[enum;${wrap(c.id)};$members]"
+            case c: Typedef.Service =>
+              val members = Seq.empty[String].sorted.mkString(",") // TODO:
+              s"[service;${wrap(c.id)};$members]"
             case a: Typedef.Adt =>
               val members =
                 a.members.toList.map(id => wrap(id)).sorted.mkString(",")
@@ -258,6 +262,8 @@ object BaboonEnquiries {
               Set.empty
             case _: Typedef.Foreign =>
               Set.empty
+            case _: Typedef.Service =>
+              Set.empty // TODO
           }
 
           selfref ++ content
@@ -357,6 +363,9 @@ object BaboonEnquiries {
                     // we might consider more cases and use Alternatives/define Max when possible
                     BinReprLen.Range(1, None)
                   }
+                case _: Typedef.Service =>
+                  // services cannot be serialized at all
+                  BinReprLen.Unknown()
                 case _: Typedef.Foreign =>
                   BinReprLen.Unknown()
               }

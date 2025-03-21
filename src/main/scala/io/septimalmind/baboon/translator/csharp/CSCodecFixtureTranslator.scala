@@ -25,6 +25,7 @@ object CSCodecFixtureTranslator {
         case _: Typedef.Contract                                   => None
         case _: Typedef.Enum                                       => None
         case _: Typedef.Foreign                                    => None
+        case _: Typedef.Service                                    => None
 
         case dto: Typedef.Dto =>
           Some(doTranslateDto(dto))
@@ -38,7 +39,7 @@ object CSCodecFixtureTranslator {
       val generatedFields = dto.fields.map(f => genType(f.tpe))
       val fullType        = translator.toCsTypeRefNoDeref(dto.id, domain, evo)
 
-      q"""public static class ${dto.id.name.name}_Fixture
+      q"""public static class ${dto.id.name.name.capitalize}_Fixture
          |{
          |    public static $fullType Random()
          |    {

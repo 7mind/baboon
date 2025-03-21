@@ -120,6 +120,10 @@ object BaboonTyper {
                     List(s"{", m.name.name) ++ exploded ++ List("}")
                 }
                 List(s"[contract:$self]") ++ content ++ List(s"/[contract:$self]")
+              case c: Typedef.Service =>
+                val content = Seq.empty[String] // TODO
+                List(s"[service:$self]") ++ content ++ List(s"/[service:$self]")
+
               case d: Typedef.Adt =>
                 val content = d.fields.flatMap {
                   m =>

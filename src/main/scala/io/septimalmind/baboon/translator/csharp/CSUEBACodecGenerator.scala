@@ -27,6 +27,7 @@ class CSUEBACodecGenerator(
       case a: Typedef.Adt      => Some(genAdtBodies(csRef, a))
       case _: Typedef.Foreign  => Some(genForeignBodies(csRef))
       case _: Typedef.Contract => None
+      case _: Typedef.Service  => None
     }).map {
       case (enc, dec) =>
         // plumbing reference leaks
@@ -85,9 +86,11 @@ class CSUEBACodecGenerator(
       case _: Typedef.Enum    => q"""return 0;"""
       case _: Typedef.Adt     => q"""return 0;"""
       case _: Typedef.Foreign => q"""throw new ArgumentException("${name.name} is a foreign type");"""
-
+      
       case d: Typedef.Contract =>
-        throw new IllegalArgumentException(s"BUG: contract should not be rendered: $d")
+        throw new IllegalArgumentException(s"BUG: contract codec should not be rendered: $d")
+      case d: Typedef.Service =>
+        throw new IllegalArgumentException(s"BUG: service codec should not be rendered: $d")
     }
 
     val indexMethods = List(

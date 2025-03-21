@@ -22,6 +22,8 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
         Some(genForeignBodies(csRef))
       case _: Typedef.Contract =>
         None
+      case _: Typedef.Service =>
+        None
     }).map {
       case (enc, dec) =>
         // plumbing reference leaks

@@ -98,7 +98,8 @@ object BaboonValidator {
                 allFieldsTerminal(domain, npath, d.fields)
               case d: Typedef.Adt =>
                 d.members.exists(terminatesLoop(_, domain, npath))
-
+              case d: Typedef.Service =>
+                false // TODO
               case _: Typedef.Enum    => true
               case _: Typedef.Foreign => true
             }
@@ -190,6 +191,8 @@ object BaboonValidator {
                 F.unit
               case c: Typedef.Contract =>
                 validateFields(u, c.fields)
+              case _: Typedef.Service =>
+                F.unit // TODO:
             }
         }
       } yield {}
@@ -348,6 +351,8 @@ object BaboonValidator {
 
             case _: Typedef.Foreign =>
               F.unit
+            case _: Typedef.Service =>
+              F.unit // TODO
           }
       }
     }
