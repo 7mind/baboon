@@ -97,7 +97,12 @@ object Typedef {
     this: Typedef =>
   }
 
-  case class Service(id: TypeId.User) extends User with NonDataTypedef
+//  case class FuncArgName(name: String) extends AnyVal
+//  case class FuncArgDef(name: FuncArgName, ref: TypeRef)
+  case class MethodName(name: String) extends AnyVal
+  case class MethodDef(name: MethodName, sig: TypeRef, out: Option[TypeRef], err: Option[TypeRef])
+
+  case class Service(id: TypeId.User, methods: List[MethodDef]) extends User with NonDataTypedef
 
   case class Contract(id: TypeId.User, fields: List[Field], contracts: List[TypeId.User]) extends User with NonDataTypedef
 

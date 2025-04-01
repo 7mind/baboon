@@ -41,12 +41,12 @@ case class RawForeignEntry(lang: String, decl: String, attrs: RawForeignEntryAtt
 
 case class RawFunc(
   name: String,
-  sig: Seq[RawFuncSig],
+  sig: Seq[RawFuncArg],
   meta: RawNodeMeta,
 )
 
-sealed trait RawFuncSig
-object RawFuncSig {
-  case class Ref(ref: RawTypeRef, marker: String, meta: RawNodeMeta) extends RawFuncSig
-  case class Struct(defn: RawDefn) extends RawFuncSig
+sealed trait RawFuncArg
+object RawFuncArg {
+  case class Ref(ref: RawTypeRef, marker: String, meta: RawNodeMeta) extends RawFuncArg
+  case class Struct(defn: RawDefn) extends RawFuncArg
 }

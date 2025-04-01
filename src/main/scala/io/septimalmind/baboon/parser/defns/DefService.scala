@@ -3,7 +3,7 @@ package io.septimalmind.baboon.parser.defns
 import fastparse.*
 import io.septimalmind.baboon.parser.ParserContext
 import io.septimalmind.baboon.parser.defns.base.{kw, struct}
-import io.septimalmind.baboon.parser.model.{RawFunc, RawFuncSig, RawService, RawTypeName}
+import io.septimalmind.baboon.parser.model.{RawFunc, RawFuncArg, RawService, RawTypeName}
 import izumi.fundamentals.platform.language.Quirks
 
 class DefService(
@@ -34,21 +34,21 @@ class DefService(
     }
   }
 
-  def sigpart[$: P]: P[RawFuncSig] = {
+  def sigpart[$: P]: P[RawFuncArg] = {
     sigstruct | inlineSigpart
   }
 
-  def sigstruct[$: P]: P[RawFuncSig.Ref] = {
+  def sigstruct[$: P]: P[RawFuncArg.Ref] = {
     import fastparse.ScalaWhitespace.whitespace
 
     meta.withMeta(marker ~ "=" ~ dto.typeRef).map {
       case (meta, (marker, ref)) =>
-        RawFuncSig.Ref(ref, marker, meta)
+        RawFuncArg.Ref(ref, marker, meta)
     }
   }
 
-  def inlineSigpart[$: P]: P[RawFuncSig.Struct] = {
-    (dto.dtoEnclosed | adt.adtEnclosed | enm.enumEnclosed).map(defn => RawFuncSig.Struct(defn))
+  def inlineSigpart[$: P]: P[RawFuncArg.Struct] = {
+    (dto.dtoEnclosed | adt.adtEnclosed | enm.enumEnclosed).map(defn => RawFuncArg.Struct(defn))
   }
 
   def marker[$: P]: P[String] = {

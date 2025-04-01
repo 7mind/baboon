@@ -103,7 +103,7 @@ class ScopeBuilder[F[+_, +_]: Error2] {
 
       case service: RawService =>
         for {
-          inlineDefns <- F.pure(service.defns.map(defn => (defn, defn.sig.collect { case s: RawFuncSig.Struct => s.defn })).filterNot(_._2.isEmpty))
+          inlineDefns <- F.pure(service.defns.map(defn => (defn, defn.sig.collect { case s: RawFuncArg.Struct => s.defn })).filterNot(_._2.isEmpty))
           sub <- F.traverseAccumErrors(inlineDefns) {
             case (func, defns) =>
               for {
