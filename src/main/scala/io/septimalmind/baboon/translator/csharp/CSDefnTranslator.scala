@@ -334,6 +334,8 @@ object CSDefnTranslator {
 
             (
               q"""public abstract record ${name.asName}$parents {
+                 |    private ${name.asName}() {}
+                 |    
                  |    ${abstractFields.shift(4).trim}
                  |    
                  |    ${branches.shift(4).trim}
