@@ -51,6 +51,9 @@ object CSTypes {
   val baboonTypeCodecs: CSType     = CSType(baboonRuntimePkg, "BaboonTypeCodecs", fq = false)
   val abstractBaboonCodecs: CSType = CSType(baboonRuntimePkg, "AbstractBaboonCodecs", fq = false)
 
+  val either: CSType = CSType(baboonRuntimePkg, "Either", fq = false)
+  val unit: CSType = CSType(baboonRuntimePkg, "Unit", fq = false)
+
   val baboonTimeFormats: CSType = CSType(baboonTimePkg, "BaboonDateTimeFormats", fq = false)
 
   val iBaboonMeta: CSType = CSType(baboonRuntimePkg, "IBaboonMeta", fq = false)

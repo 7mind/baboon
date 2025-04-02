@@ -5,10 +5,11 @@ import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue.{MissingContractFields, ScopedRefToNamespacedGeneric}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.NestedScope
-import io.septimalmind.baboon.typer.model.Typedef.{ForeignEntry, ForeignEntryAttr, ForeignEntryAttrs}
+import io.septimalmind.baboon.typer.model.Typedef.{ForeignEntry, ForeignEntryAttr, ForeignEntryAttrs, MethodDef, MethodName}
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
+import izumi.fundamentals.platform.cli.model.schema.ParserDef.ArgDef
 
 object BaboonTranslator {
   type Factory[F[+_, +_]] = (
@@ -55,6 +56,8 @@ class BaboonTranslator[F[+_, +_]: Error2](
 
       // namespace itself is not a typedef :3
       case _: RawNamespace => F.pure(List.empty)
+      case s: RawService =>
+        convertService(id, root, s, thisScope).map(_.toList)
     }
   }
 
@@ -321,6 +324,64 @@ class BaboonTranslator[F[+_, +_]: Error2](
         DomainMember
           .User(isRoot, Typedef.Adt(id, nel, contracts, fields), adt.meta)
       )
+    }
+  }
+
+  private def convertService(
+    id: TypeId.User,
+    isRoot: Boolean,
+    svc: RawService,
+    thisScope: NestedScope[ExtendedRawDefn],
+  ): F[NEList[BaboonIssue.TyperIssue], NEList[DomainMember.User]] = {
+
+    for {
+      defs <- F.traverseAccumErrors(svc.defns)(f => convertMethod(svc, f))
+      _ <- F.fromEither {
+        defs
+          .map(m => (m.name.name.toLowerCase, m))
+          .toUniqueMap(e => NEList(???))
+      }
+    } yield {
+      NEList(
+        DomainMember
+          .User(isRoot, Typedef.Service(id, defs.toList), svc.meta)
+      )
+    }
+  }
+
+  private def convertArg(svc: RawService, fn: RawFunc, f: RawFuncArg): F[NEList[BaboonIssue.TyperIssue], (String, TypeRef)] = {
+
+    f match {
+      case RawFuncArg.Ref(ref, marker, meta) =>
+        for {
+          tpe <- convertTpe(ref, meta)
+        } yield {
+          (marker, tpe)
+        }
+      case RawFuncArg.Struct(defn) =>
+        for {
+          tpe <- convertTpe(RawTypeRef.Simple(defn.name, List(svc.name, RawTypeName(fn.name))), defn.meta)
+        } yield {
+          (defn.name.name, tpe)
+        }
+
+    }
+
+  }
+
+  private def convertMethod(svc: RawService, f: RawFunc): F[NEList[BaboonIssue.TyperIssue], MethodDef] = {
+
+    for {
+      args   <- F.traverseAccumErrors(f.sig)(arg => convertArg(svc, f, arg))
+      inargs  = args.filter(_._1.toLowerCase == "in").map(_._2)
+      outargs = args.filter(_._1.toLowerCase == "out").map(_._2)
+      errargs = args.filter(_._1.toLowerCase == "err").map(_._2)
+
+      _ <- F.when(outargs.size != 1)(F.fail(???))
+      _ <- F.when(outargs.size > 1)(F.fail(???))
+      _ <- F.when(errargs.size > 1)(F.fail(???))
+    } yield {
+      MethodDef(MethodName(f.name), inargs.head, outargs.headOption, errargs.headOption)
     }
   }
 

@@ -352,6 +352,34 @@ object CSDefnTranslator {
           }
 
         case _: Typedef.Foreign => (q"", List.empty)
+
+        case service: Typedef.Service =>
+          val methods = service.methods.map {
+            m =>
+              val out = m.out.map(r => trans.asCsRef(r, domain, evo))
+              val err = m.err.map(r => trans.asCsRef(r, domain, evo))
+
+              val ret = (out, err) match {
+                case (Some(o), Some(e)) =>
+                  q"${CSTypes.either}<$e, $o>"
+                case (None, Some(e)) =>
+                  q"${CSTypes.either}<$e, ${CSTypes.unit}>"
+                case (Some(o), None) =>
+                  o
+                case (None, None) =>
+                  q"void"
+              }
+              q"""public $ret ${m.name.name}(${trans.asCsRef(m.sig, domain, evo)} arg);"""
+          }.join("\n")
+
+          (
+            q"""namespace ${name.asName} {
+               |    public interface ${name.asName}  {
+               |        ${methods.shift(8).trim}
+               |    }
+               |}""".stripMargin,
+            List.empty,
+          )
       }
     }
 

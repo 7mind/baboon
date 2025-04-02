@@ -47,32 +47,47 @@ class ScopeBuilder[F[+_, +_]: Error2] {
   private def buildScope(
     member: RawDefn,
     isRoot: Boolean,
-    // parents: util.IdentityHashMap[NestedScope[FullRawDefn], Scope[FullRawDefn]],
     gen: UIDGen,
   ): F[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
-    def finish(defn: RawDefn, asNEMap: NEMap[ScopeName, NestedScope[FullRawDefn]]) = {
+    def mkSub(defn: RawDefn, nested: NEMap[ScopeName, NestedScope[FullRawDefn]]) = {
       SubScope(
         gen.next(),
         ScopeName(defn.name.name),
         FullRawDefn(defn, isRoot),
-        asNEMap,
+        nested,
       )
+    }
+
+    def mkLeaf(defn: RawDefn) = {
+      LeafScope(
+        gen.next(),
+        ScopeName(defn.name.name),
+        FullRawDefn(defn, isRoot),
+      )
+    }
+
+    def wrapScope(defn: RawDefn, nested: Seq[NestedScope[FullRawDefn]]) = {
+      for {
+        asMap <- F.fromEither {
+          nested
+            .map(s => (s.name, s))
+            .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta)))
+        }
+        asNEMap <- F.fromOption(NEList(BaboonIssue.ScopeCannotBeEmpty(member))) {
+          NEMap.from(asMap)
+        }
+      } yield {
+        mkSub(defn, asNEMap)
+      }
     }
 
     member match {
       case namespace: RawNamespace =>
         for {
           sub <- F.traverseAccumErrors(namespace.defns)(m => buildScope(m.value, isRoot = m.root, gen))
-          asMap <- F.fromEither {
-            sub
-              .map(s => (s.name, s))
-              .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta)))
-          }
-          asNEMap <- F.fromOption(NEList(BaboonIssue.ScopeCannotBeEmpty(member))) {
-            NEMap.from(asMap)
-          }
+          out <- wrapScope(namespace, sub)
         } yield {
-          finish(namespace, asNEMap)
+          out
         }
 
       case adt: RawAdt =>
@@ -81,46 +96,39 @@ class ScopeBuilder[F[+_, +_]: Error2] {
             adt.members.collect { case d: RawAdtMember => d }
               .map(m => buildScope(m.defn, isRoot = false, gen))
           }
-          asMap <- F.fromEither {
-            sub
-              .map(s => (s.name, s))
-              .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta)))
-          }
-          asNEMap <- F.fromOption(NEList(BaboonIssue.ScopeCannotBeEmpty(member))) {
-            NEMap.from(asMap)
-          }
+          out <- wrapScope(adt, sub)
         } yield {
-          finish(adt, asNEMap)
+          out
+        }
+
+      case service: RawService =>
+        for {
+          inlineDefns <- F.pure(service.defns.map(defn => (defn, defn.sig.collect { case s: RawFuncArg.Struct => s.defn })).filterNot(_._2.isEmpty))
+          sub <- F.traverseAccumErrors(inlineDefns) {
+            case (func, defns) =>
+              for {
+                sub <- F.traverseAccumErrors(defns)(m => buildScope(m, isRoot = isRoot, gen))
+                out <- wrapScope(RawNamespace(RawTypeName(func.name), Seq.empty, func.meta), sub)
+              } yield {
+                out
+              }
+          }
+          out <- wrapScope(service, sub)
+        } yield {
+          out
         }
 
       case dto: RawDto =>
-        F.pure(
-          LeafScope(
-            gen.next(),
-            ScopeName(dto.name.name),
-            FullRawDefn(dto, isRoot),
-          )
-        )
+        F.pure(mkLeaf(dto))
 
       case contract: RawContract =>
-        F.pure(
-          LeafScope(
-            gen.next(),
-            ScopeName(contract.name.name),
-            FullRawDefn(contract, isRoot),
-          )
-        )
+        F.pure(mkLeaf(contract))
 
       case e: RawEnum =>
-        F.pure(
-          LeafScope(gen.next(), ScopeName(e.name.name), FullRawDefn(e, isRoot))
-        )
+        F.pure(mkLeaf(e))
 
       case f: RawForeign =>
-        F.pure(
-          LeafScope(gen.next(), ScopeName(f.name.name), FullRawDefn(f, isRoot))
-        )
-
+        F.pure(mkLeaf(f))
     }
   }
 
