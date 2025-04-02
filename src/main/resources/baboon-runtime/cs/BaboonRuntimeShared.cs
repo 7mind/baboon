@@ -400,6 +400,31 @@ namespace Baboon.Runtime.Shared {
         {
             return ConvertWithContext<object, TFrom, TTo>(null, from);
         }
-
+    }
+    
+    public abstract record Either<TLeft, TRight>
+    {
+        private Either() {}
+    
+        public sealed record Left(TLeft Value) : Either<TLeft, TRight>;
+    
+        public sealed record Right(TRight Value) : Either<TLeft, TRight>;
+    }
+    
+    public static class Either
+    {
+        public static Either<TLeft, TRight> Left<TLeft, TRight>(TLeft value) => new Either<TLeft, TRight>.Left(value);
+        public static Either<TLeft, TRight> Right<TLeft, TRight>(TRight value) => new Either<TLeft, TRight>.Right(value);
+    }
+    
+    public class Unit
+    {
+        private Unit() { }
+        public static readonly Unit Default = new Unit();
+    
+        public override string ToString()
+        {
+            return "()";
+        }
     }
 }
