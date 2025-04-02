@@ -191,7 +191,7 @@ object BaboonValidator {
                 F.unit
               case c: Typedef.Contract =>
                 validateFields(u, c.fields)
-              case _: Typedef.Service =>
+              case s: Typedef.Service =>
                 F.unit // TODO:
             }
         }
@@ -351,7 +351,7 @@ object BaboonValidator {
 
             case _: Typedef.Foreign =>
               F.unit
-            case _: Typedef.Service =>
+            case s: Typedef.Service =>
               F.unit // TODO
           }
       }

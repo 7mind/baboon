@@ -45,9 +45,8 @@ object BaboonEnquiries {
     }
 
     def hasForeignType(definition: DomainMember.User, domain: Domain): Boolean = {
-      def processFields(foreignType: Option[TypeId], tail: List[Typedef], f: List[Field], seen: mutable.HashSet[TypeId]): Option[TypeId] = {
-        val fieldsTypes = f.map(_.tpe)
-        val moreToCheck = fieldsTypes.flatMap {
+      def processRefs(foreignType: Option[TypeId], tail: List[Typedef], refs: List[TypeRef], seen: mutable.HashSet[TypeId]): Option[TypeId] = {
+        val moreToCheck = refs.flatMap {
           case TypeRef.Scalar(id) =>
             List(domain.defs.meta.nodes(id) match {
               case _: DomainMember.Builtin => None
@@ -79,9 +78,9 @@ object BaboonEnquiries {
             seen += head.id
             head match {
               case dto: Typedef.Dto =>
-                processFields(foreignType, tail, dto.fields, seen)
+                processRefs(foreignType, tail, dto.fields.map(_.tpe), seen)
               case c: Typedef.Contract =>
-                processFields(foreignType, tail, c.fields, seen)
+                processRefs(foreignType, tail, c.fields.map(_.tpe), seen)
               case adt: Typedef.Adt =>
                 val dtos = adt.members
                   .map(tpeId => domain.defs.meta.nodes(tpeId))
@@ -95,8 +94,8 @@ object BaboonEnquiries {
                 collectForeignType(tail, Some(f.id), seen)
               case _: Typedef.Enum =>
                 collectForeignType(tail, foreignType, seen)
-              case _: Typedef.Service =>
-                None // TODO:
+              case s: Typedef.Service =>
+                processRefs(foreignType, tail, s.methods.flatMap(m => Set(m.sig) ++ m.out ++ m.err), seen)
             }
         }
       }
@@ -138,9 +137,9 @@ object BaboonEnquiries {
       depsOfDefn(defn, explode)
     }
 
-    private def depsOfDefn(defn: DomainMember, explodeField: TypeRef => Set[TypeId]): Set[TypeId] = {
+    private def depsOfDefn(defn: DomainMember, explodeRef: TypeRef => Set[TypeId]): Set[TypeId] = {
       def explodeFields(f: List[Field]) = {
-        f.flatMap(f => explodeField(f.tpe)).toSet
+        f.flatMap(f => explodeRef(f.tpe)).toSet
       }
 
       // TODO: do we REALLY need to consider field types as dependencies?
@@ -156,7 +155,8 @@ object BaboonEnquiries {
             case _: Typedef.Enum    => Set.empty
             case t: Typedef.Adt     => t.members.toSet ++ t.contracts
             case _: Typedef.Foreign => Set.empty
-            case _: Typedef.Service => Set.empty // TODO
+            case s: Typedef.Service =>
+              s.methods.flatMap(m => Set(m.sig) ++ m.out.toSet ++ m.err.toSet).flatMap(explodeRef).toSet
           }
       }
     }
@@ -199,7 +199,7 @@ object BaboonEnquiries {
               val members = c.members.toList.map(_.name).sorted.mkString(",")
               s"[enum;${wrap(c.id)};$members]"
             case c: Typedef.Service =>
-              val members = Seq.empty[String].sorted.mkString(",") // TODO:
+              val members = c.methods.map(m => s"[${m.name.name}:${wrap(m.sig)}:${m.out.map(wrap).getOrElse("")}:${m.err.map(wrap).getOrElse("")}]").sorted.mkString(",")
               s"[service;${wrap(c.id)};$members]"
             case a: Typedef.Adt =>
               val members =
@@ -262,8 +262,8 @@ object BaboonEnquiries {
               Set.empty
             case _: Typedef.Foreign =>
               Set.empty
-            case _: Typedef.Service =>
-              Set.empty // TODO
+            case s: Typedef.Service =>
+              s.methods.flatMap(m => Set(m.sig) ++ m.out.toSet ++ m.err.toSet)
           }
 
           selfref ++ content

@@ -361,9 +361,9 @@ object CSDefnTranslator {
 
               val ret = (out, err) match {
                 case (Some(o), Some(e)) =>
-                  q"${CSTypes.either}<$o, $e>"
+                  q"${CSTypes.either}<$e, $o>"
                 case (None, Some(e)) =>
-                  q"${CSTypes.either}<${CSTypes.unit}, $e>"
+                  q"${CSTypes.either}<$e, ${CSTypes.unit}>"
                 case (Some(o), None) =>
                   o
                 case (None, None) =>
