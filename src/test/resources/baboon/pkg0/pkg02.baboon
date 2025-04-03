@@ -13,6 +13,7 @@ root data T1_E1_RET {
 
 data T1_D2 {
     f: str
+    f1: opt[T1_E1]    
 }
 
 root data T1_D1 {

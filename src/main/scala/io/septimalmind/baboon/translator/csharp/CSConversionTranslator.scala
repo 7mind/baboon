@@ -39,16 +39,19 @@ class CSConversionTranslator[F[+_, +_]: Error2](
   private def transfer(tpe: TypeRef, ref: TextTree[CSValue]): TextTree[CSValue] = {
     val cnew =
       trans.asCsRef(tpe, domain, evo)
+
     val cold = trans.asCsRef(tpe, srcDom, evo, fullyQualified = true)
 
     val conv =
-      q"conversions.ConvertWithContext<C, $cold, $cnew>(context, $ref)"
+      q"conversions.ConvertWithContext<C, $cold, $cnew>(context, ($cold) $ref)"
+
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
           case _: TypeId.Builtin =>
             q"(($cnew) $ref)"
-          case _ => conv
+          case _ =>
+            conv
         }
       case _: TypeRef.Constructor =>
         conv
@@ -234,8 +237,9 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                         case c: TypeRef.Constructor if c.id == TypeId.Builtins.opt =>
                           val tmp = q"_${base.toLowerCase}_tmp"
 
+                          val underlyingTpe = c.args.head
                           val recConv =
-                            transfer(c.args.head, tmp)
+                            transfer(underlyingTpe, tmp)
 
                           F.pure(
                             Seq(
