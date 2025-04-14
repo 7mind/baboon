@@ -45,6 +45,12 @@ export MOBALA_ENV=${MOBALA_ENV:-"${MOBALA_PATH}/${MOBALA_SUBDIR}/env.sh"}
 export MOBALA_MODS=${MOBALA_MODS:-"${MOBALA_PATH}/${MOBALA_SUBDIR}/mods"}
 export MOBALA_PARAMS=${MOBALA_PARAMS:-"${MOBALA_PATH}/${MOBALA_SUBDIR}/params"}
 
+function update-self(){
+    download-file "${script_path}"
+}
+
+trap 'update-self' EXIT
+
 check-cache
 update-cache
 verify-cache
