@@ -24,7 +24,7 @@ function download-file() {
     cache_name="$(basename "$target")"
     cache_tmp="${CACHE_DIR}/${cache_name}.tmp"
     rm -rf "${cache_tmp}"
-    download_response=$(curl -sLJ0 -o "${cache_tmp}" -w "%{response_code}" "${origin}" || true)
+    download_response=$(curl -sLJ0 -H 'Cache-Control: no-cache, no-store' -o "${cache_tmp}" -w "%{response_code}" "${origin}" || true)
     if [[ "${download_response}" == "200" ]]; then
         rm -rf "${target}"
         mv "${cache_tmp}" "${target}"
