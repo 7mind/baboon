@@ -9,6 +9,16 @@ export MOBALA_VERSION="develop"
 export MOBALA_BASE="https://raw.githubusercontent.com/7mind/mobala/refs/heads/${MOBALA_VERSION}"
 export MOBALA_FILE="${MOBALA_BASE}/mobala.sh"
 
+script_path="$(realpath "$0")"
+script_dirname="$(dirname "$script_path")"
+
+export MOBALA_PATH="${script_dirname}"
+export MOBALA_SUBDIR=${MOBALA_SUBDIR:-".mobala"}
+export MOBALA_KEEP=${MOBALA_KEEP:-"${MOBALA_PATH}/${MOBALA_SUBDIR}/keep.env"}
+export MOBALA_ENV=${MOBALA_ENV:-"${MOBALA_PATH}/${MOBALA_SUBDIR}/env.sh"}
+export MOBALA_MODS=${MOBALA_MODS:-"${MOBALA_PATH}/${MOBALA_SUBDIR}/mods"}
+export MOBALA_PARAMS=${MOBALA_PARAMS:-"${MOBALA_PATH}/${MOBALA_SUBDIR}/params"}
+
 function check-cache() {
     if [[ -f "${MOBALA_CACHE}" ]]; then
         echo "[info] Mobala.sh cache found at '${MOBALA_CACHE}'"
@@ -28,9 +38,9 @@ function download-file() {
     if [[ "${download_response}" == "200" ]]; then
         rm -rf "${target}"
         mv "${cache_tmp}" "${target}"
-        echo "[info] Mobala.sh cache updated."
+        echo "[info] cache updated: ${target}"
     else
-        echo "[warn] Mobala.sh download failed with ${download_response} status code."
+        echo "[warn] download failed with ${download_response} status code for ${target}"
         rm "${cache_tmp}"
     fi
 }
@@ -47,18 +57,9 @@ function verify-cache() {
     fi
 }
 
-script_path="$(realpath "$0")"
-script_dirname="$(dirname "$script_path")"
-
-export MOBALA_PATH="${script_dirname}"
-export MOBALA_SUBDIR=${MOBALA_SUBDIR:-".mobala"}
-export MOBALA_KEEP=${MOBALA_KEEP:-"${MOBALA_PATH}/${MOBALA_SUBDIR}/keep.env"}
-export MOBALA_ENV=${MOBALA_ENV:-"${MOBALA_PATH}/${MOBALA_SUBDIR}/env.sh"}
-export MOBALA_MODS=${MOBALA_MODS:-"${MOBALA_PATH}/${MOBALA_SUBDIR}/mods"}
-export MOBALA_PARAMS=${MOBALA_PARAMS:-"${MOBALA_PATH}/${MOBALA_SUBDIR}/params"}
-
 function update-self(){
   if [[ "${CI:-false}" == "false" ]] ; then
+    set -xe
     download-file "${MOBALA_BASE}/mobala-resolver.sh" "${script_path}"
     sed -i '0,/export MOBALA_VERSION=/{s/.*export MOBALA_VERSION=.*/export MOBALA_VERSION="'${MOBALA_VERSION}'"/}' "${script_path}"
   fi
@@ -69,6 +70,5 @@ trap 'update-self' EXIT
 check-cache
 update-cache
 verify-cache
-
 
 bash "${MOBALA_CACHE}" "$@"

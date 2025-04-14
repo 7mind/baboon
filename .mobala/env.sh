@@ -36,8 +36,8 @@ export DO_FMT="${DO_FMT:-0}"
 export DO_BUILD="${DO_BUILD:-0}"
 export DO_TEST="${DO_TEST:-0}"
 export DO_MKDIST="${DO_MKDIST:-0}"
-  export MKDIST_SOURCE=./target/graalvm-native-image
-  export MKDIST_TARGET=./target/dist
+#  export MKDIST_SOURCE=./target/graalvm-native-image
+#  export MKDIST_TARGET=./target/dist
 export DO_FLAKE_REFRESH="${DO_FLAKE_REFRESH:-0}"
 export DO_FLAKE_VALIDATE="${DO_FLAKE_VALIDATE:-0}"
 
