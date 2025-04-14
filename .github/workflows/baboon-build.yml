@@ -43,7 +43,7 @@ jobs:
         with:
           setup-nix: ${{ matrix.preconfigured != true }}
       - name: Build
-        run: ./build.sh nix build test
+        run: ./run --nix :flake-refresh --validate :build :test
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -77,7 +77,7 @@ jobs:
           native-image-job-reports: true
       - name: Build (windows)
         shell: bash
-        run: ./build.sh build test
+        run: ./run :build :test
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -98,7 +98,7 @@ jobs:
           path: binaries
           pattern: baboon-*
       - name: Prepare layout
-        run: bash ./devops/prepare-dist.sh ./binaries .
+        run: ./run --nix :mkdist --source=./binaries --target=.
       - uses: softprops/action-gh-release@v2
         id: create-release
         if: startsWith(github.ref, 'refs/tags/')

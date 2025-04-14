@@ -86,7 +86,7 @@ class CSUEBACodecGenerator(
       case _: Typedef.Enum    => q"""return 0;"""
       case _: Typedef.Adt     => q"""return 0;"""
       case _: Typedef.Foreign => q"""throw new ArgumentException("${name.name} is a foreign type");"""
-      
+
       case d: Typedef.Contract =>
         throw new IllegalArgumentException(s"BUG: contract codec should not be rendered: $d")
       case d: Typedef.Service =>

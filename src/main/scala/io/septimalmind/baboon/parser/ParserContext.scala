@@ -11,18 +11,9 @@ case class ParserContext(file: FSPath, content: String) {
   val defAdt      = new DefAdt(this, defMeta, defDto, defContract)
   val defForeign  = new DefForeign(this, defMeta)
 
-  val defService      = new DefService(this, defMeta, defDto, defAdt, defEnum)
-  
-  
+  val defService = new DefService(this, defMeta, defDto, defAdt, defEnum)
+
   val defModel =
-    new DefModel(this, 
-      defMeta, 
-      defEnum, 
-      defDto, 
-      defAdt, 
-      defForeign, 
-      defContract,
-      defService,
-    )
+    new DefModel(this, defMeta, defEnum, defDto, defAdt, defForeign, defContract, defService)
 
 }

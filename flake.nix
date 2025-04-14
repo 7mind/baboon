@@ -24,7 +24,7 @@
         packages = rec {
           baboon = sbt.lib.mkSbtDerivation {
             pkgs = pkgs;
-            version = "0.0.102";
+            version = "0.0.103";
             pname = "baboon";
             src = ./.;
             depsSha256 = "sha256-GemB9LkGFprzZ885VkiTrgVh9bpE1ttwf9g3qRsy6mQ=";
@@ -50,6 +50,7 @@
             ncurses
             gitMinimal
             graalvm-ce
+            coursier
 
             pkgs.sbt
             dotnet-sdk_8
