@@ -26,7 +26,7 @@ function download-file() {
     rm -rf "${cache_tmp}"
     download_response=$(curl -sLJ0 -o "${cache_tmp}" -w "%{response_code}" "${origin}" || true)
     if [[ "${download_response}" == "200" ]]; then
-        rm -rf "${MOBALA_CACHE}"
+        rm -rf "${target}"
         mv "${cache_tmp}" "${target}"
         echo "[info] Mobala.sh cache updated."
     else
