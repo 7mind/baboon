@@ -4,7 +4,10 @@ set -euo pipefail
 
 export CACHE_DIR="${XDG_CACHE_HOME:-"${HOME}/.cache"}"
 export MOBALA_CACHE="${CACHE_DIR}/mobala.sh"
-export MOBALA_FILE="https://raw.githubusercontent.com/7mind/mobala/refs/heads/develop/mobala.sh"
+export MOBALA_CACHE_TMP="${CACHE_DIR}/mobala.sh.tmp"
+export MOBALA_VERSION="develop"
+export MOBALA_BASE="https://raw.githubusercontent.com/7mind/mobala/refs/heads/${MOBALA_VERSION}"
+export MOBALA_FILE="${MOBALA_BASE}/mobala.sh"
 
 function check-cache() {
     if [[ -f "${MOBALA_CACHE}" ]]; then
@@ -14,19 +17,27 @@ function check-cache() {
     fi
 }
 
-function update-cache() {
+function download-file() {
+    origin="${1}"
+    target="${2}"
     mkdir -p "${CACHE_DIR}"
-    MOBALA_CACHE_TMP="${CACHE_DIR}/mobala.sh.tmp"
-    rm -rf "${MOBALA_CACHE_TMP}" 
-    download_response=$(curl -sLJ0 -o "${MOBALA_CACHE_TMP}" -w "%{response_code}" "${MOBALA_FILE}" || true)
+    cache_name="$(basename "$target")"
+    cache_tmp="${CACHE_DIR}/${cache_name}.tmp"
+    rm -rf "${cache_tmp}"
+    download_response=$(curl -sLJ0 -o "${cache_tmp}" -w "%{response_code}" "${origin}" || true)
     if [[ "${download_response}" == "200" ]]; then
         rm -rf "${MOBALA_CACHE}"
-        mv "${MOBALA_CACHE_TMP}" "${MOBALA_CACHE}"
+        mv "${cache_tmp}" "${target}"
         echo "[info] Mobala.sh cache updated."
     else
         echo "[warn] Mobala.sh download failed with ${download_response} status code."
-        rm "${MOBALA_CACHE_TMP}"
+        rm "${cache_tmp}"
     fi
+}
+
+
+function update-cache() {
+    download-file "${MOBALA_FILE}" "${MOBALA_CACHE}"
 }
 
 function verify-cache() {
@@ -38,15 +49,17 @@ function verify-cache() {
 
 script_path="$(realpath "$0")"
 script_dirname="$(dirname "$script_path")"
-export MOBALA_SUBDIR=${MOBALA_SUBDIR:-".mobala"}
+
 export MOBALA_PATH="${script_dirname}"
+export MOBALA_SUBDIR=${MOBALA_SUBDIR:-".mobala"}
 export MOBALA_KEEP=${MOBALA_KEEP:-"${MOBALA_PATH}/${MOBALA_SUBDIR}/keep.env"}
 export MOBALA_ENV=${MOBALA_ENV:-"${MOBALA_PATH}/${MOBALA_SUBDIR}/env.sh"}
 export MOBALA_MODS=${MOBALA_MODS:-"${MOBALA_PATH}/${MOBALA_SUBDIR}/mods"}
 export MOBALA_PARAMS=${MOBALA_PARAMS:-"${MOBALA_PATH}/${MOBALA_SUBDIR}/params"}
 
 function update-self(){
-    download-file "${script_path}"
+    download-file "${MOBALA_BASE}/mobala-resolver.sh" "${script_path}"
+    sed -i '0,/export MOBALA_VERSION=/{s/.*export MOBALA_VERSION=.*/export MOBALA_VERSION="'${MOBALA_VERSION}'"/}' "${script_path}"
 }
 
 trap 'update-self' EXIT
@@ -54,5 +67,6 @@ trap 'update-self' EXIT
 check-cache
 update-cache
 verify-cache
+
 
 bash "${MOBALA_CACHE}" "$@"
