@@ -17,6 +17,7 @@ function cleanup-cache() {
 }
 
 function update-cache() {
+    mkdir -p "${CACHE_DIR}" 
     download_response=$(curl -sLJ0 -o "${MOBALA_CACHE_TMP}" -w "%{response_code}" "${MOBALA_FILE}" || true)
     if [[ "${download_response}" == "200" ]]; then
         rm -rf "${MOBALA_CACHE}"
