@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-step_enable run-test
+step_enable run-fmt
 
 for arg in "$@" ; do case $arg in
     *)

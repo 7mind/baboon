@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
-if [[ "${DO_VERBOSE}" == 1 ]] ; then set -x ; fi
 
 function do_update() {
   escaped="${2//[\/&]/\\&}"
@@ -14,8 +13,6 @@ function do_update() {
 
 
 function run-flake-refresh() {
-if [[ "$DO_FLAKE_REFRESH" == 1  ]]; then
-  
   if [[ "$DO_FLAKE_VALIDATE" == 1  ]]; then
     hash_before=$(cat flake.nix| md5sum)
   fi
@@ -40,5 +37,4 @@ if [[ "$DO_FLAKE_REFRESH" == 1  ]]; then
   fi 
   
   git add . || true
-fi
 }

@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
-if [[ "${DO_VERBOSE}" == 1 ]] ; then set -x ; fi
 
-export DO_BUILD=1
+step_enable run-build
 
 for arg in "$@" ; do case $arg in
     *)

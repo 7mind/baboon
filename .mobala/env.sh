@@ -43,7 +43,7 @@ export DO_FLAKE_VALIDATE="${DO_FLAKE_VALIDATE:-0}"
 
 source ./.mobala/scripts/run.sh
 
-if [[ "${DO_VERBOSE}" == 1 ]] ; then
+if [[ "${DO_VERBOSE}" == 1 && "${VERBOSE_LEVEL}" -gt 1 ]] ; then
   environment=$(env)
   environment=$(echo "$environment" | grep -v '^\s*$' | sed "s/^/[verbose:env] /;s/$/ /")
   echo "[verbose] Environment set:"

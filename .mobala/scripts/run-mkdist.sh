@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
-if [[ "${DO_VERBOSE}" == 1 ]] ; then set -x ; fi
 
 function run-mkdist() {
-if [[ "$DO_MKDIST" == 1  ]]; then  
   src="$(realpath "${MKDIST_SOURCE}")"
   tgt="$(realpath "${MKDIST_TARGET}")"
   
@@ -32,5 +30,4 @@ if [[ "$DO_MKDIST" == 1  ]]; then
   done
   
   popd   
-fi 
 }

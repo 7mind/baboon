@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
-if [[ "${DO_VERBOSE}" == 1 ]] ; then set -x ; fi
 
 function run-test() {
-if [[ "$DO_TEST" == 1  ]]; then  
   pushd .
   
   target/graalvm-native-image/baboon \
@@ -44,5 +42,4 @@ if [[ "$DO_TEST" == 1  ]]; then
   dotnet test BaboonTests/BaboonTests.csproj
   
   popd
-fi  
 }
