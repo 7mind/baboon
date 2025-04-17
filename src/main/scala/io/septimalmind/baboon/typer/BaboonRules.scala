@@ -56,11 +56,11 @@ object BaboonRules {
               case oldDefn: Typedef.Adt if sameLocalStruct =>
                 F.pure(CopyAdtBranchByName(id, oldDefn))
 
-              case _: Typedef.Foreign if sameLocalStruct =>
-                F.pure(CustomConversionRequired(id, DerivationFailure.Foreign))
-
               case _ if diff.changes.removed.contains(id) =>
                 F.pure(RemovedTypeNoConversion(id))
+
+              case _: Typedef.Foreign if sameLocalStruct =>
+                F.pure(NonDataTypeTypeNoConversion(id))
 
               case _: Typedef.Foreign =>
                 F.pure(CustomConversionRequired(id, DerivationFailure.Foreign))

@@ -45,13 +45,19 @@ class CSConversionTranslator[F[+_, +_]: Error2](
     val conv =
       q"conversions.ConvertWithContext<C, $cold, $cnew>(context, ($cold) $ref)"
 
+    val direct = q"(($cnew) $ref)"
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
           case _: TypeId.Builtin =>
-            q"(($cnew) $ref)"
-          case _ =>
-            conv
+            direct
+          case id: TypeId.User =>
+            domain.defs.meta.nodes(id) match {
+              case DomainMember.User(_, _: Typedef.Foreign, _) =>
+                direct
+              case _ =>
+                conv
+            }
         }
       case _: TypeRef.Constructor =>
         conv
@@ -202,13 +208,8 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                       val recConv = transfer(o.targetField.tpe, fieldRef)
 
                       o.targetField.tpe match {
-                        case s: TypeRef.Scalar =>
-                          s.id match {
-                            case _: TypeId.Builtin =>
-                              F.pure(Seq(fieldRef))
-                            case _: TypeId.User =>
-                              F.pure(Seq(recConv))
-                          }
+                        case _: TypeRef.Scalar =>
+                          F.pure(Seq(recConv))
                         case c: TypeRef.Constructor if c.id == TypeId.Builtins.lst =>
                           F.pure(
                             Seq(
@@ -331,7 +332,10 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                     val actualExpr = init.last;
                     val assignment = q"$ftNew $localName = $actualExpr"
                     val full       = (init.init ++ Seq(assignment)).join(";\n")
-                    (full, localName)
+                    (
+                      full,
+                      localName,
+                    )
                   }
               }
             } yield {

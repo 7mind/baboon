@@ -40,6 +40,10 @@ root data T1_D1 {
  fm: map[ObscureInt, ObscureInt]
 }
 
+root data T1_Foreign_DTO {
+ ft: ObscureInt
+ fm: map[ObscureInt, ObscureInt]
+}
 //
 
 data T2_D2 {
