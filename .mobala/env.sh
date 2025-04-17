@@ -47,3 +47,6 @@ if [[ "${DO_VERBOSE}" == 1 && "${VERBOSE_LEVEL}" -gt 1 ]] ; then
   echo "[verbose] Environment set:"
   echo "$environment"
 fi
+
+# this script receives all the CLI args from the main script and may decide which flows should be enabled
+flow_enable do-build
