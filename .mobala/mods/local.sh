@@ -6,8 +6,3 @@ step_enable run-fmt
 step_enable run-build
 step_enable run-test
 step_enable run-flake-refresh
-
-for arg in "$@" ; do case $arg in
-    *)
-        ;;
-esac done
