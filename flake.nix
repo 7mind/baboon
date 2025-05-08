@@ -28,36 +28,36 @@
             tag = "${baboon.version}";
 
             config = {
-              Entrypoint = [ "${baboon}/bin/baboon" ]; # Replace with your binary
+              Entrypoint = [ "${baboon}/bin/baboon" ];
             };
-            
+
             created = "now";
           };
 
           baboon = sbt.lib.mkSbtDerivation {
             pname = "baboon";
-          
+
             version = "0.0.105";
             depsSha256 = "sha256-vgBlprxDQDq5Qo7wgDnqNzeh3Nj9qGdgCq77/b+e6vI=";
-          
-            pkgs = pkgs;                       
+
+            pkgs = pkgs;
             src = ./.;
-            
-           
+
+
             nativeBuildInputs = with pkgs; [
               graalvm-ce
               curl
             ];
-            
+
             # sbt update doesn't download everything, sbt compile seems to be the only safe option
             depsWarmupCommand = ''
               sbt compile
             '';
-            
+
             buildPhase = ''
               sbt GraalVMNativeImage/packageBin
             '';
-            
+
             installPhase = ''
               mkdir -p $out/bin
               cp target/graalvm-native-image/baboon $out/bin/baboon
