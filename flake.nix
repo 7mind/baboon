@@ -22,6 +22,15 @@
       in
       {
         packages = rec {
+          baboon-container = pkgs.dockerTools.buildImage {
+            name = "baboon-docker";
+            tag = "0.1.0";
+            config = {
+              Cmd = [ "${baboon}/bin/baboon" ]; # Replace with your binary
+            };
+            created = "now";
+          };
+
           baboon = sbt.lib.mkSbtDerivation {
             pkgs = pkgs;
             version = "0.0.105";
@@ -30,12 +39,14 @@
             depsSha256 = "sha256-GemB9LkGFprzZ885VkiTrgVh9bpE1ttwf9g3qRsy6mQ=";
             nativeBuildInputs = with pkgs; [
               graalvm-ce
+              curl
             ];
             depsWarmupCommand = ''
               sbt update
             '';
             buildPhase = ''
-              ./build.sh build
+              #XDG_CACHE_HOME="$(pwd)" ./run :build
+              sbt GraalVMNativeImage/packageBin
             '';
             installPhase = ''
               mkdir -p $out/bin
