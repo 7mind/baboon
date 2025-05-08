@@ -23,31 +23,41 @@
       {
         packages = rec {
           baboon-container = pkgs.dockerTools.buildImage {
-            name = "baboon-docker";
-            tag = "0.1.0";
+            # see https://ryantm.github.io/nixpkgs/builders/images/dockertools/
+            name = "7mind/baboon-docker";
+            tag = "${baboon.version}";
+
             config = {
-              Cmd = [ "${baboon}/bin/baboon" ]; # Replace with your binary
+              Entrypoint = [ "${baboon}/bin/baboon" ]; # Replace with your binary
             };
+            
             created = "now";
           };
 
           baboon = sbt.lib.mkSbtDerivation {
-            pkgs = pkgs;
-            version = "0.0.105";
             pname = "baboon";
+          
+            version = "0.0.105";
+            depsSha256 = "sha256-vgBlprxDQDq5Qo7wgDnqNzeh3Nj9qGdgCq77/b+e6vI=";
+          
+            pkgs = pkgs;                       
             src = ./.;
-            depsSha256 = "sha256-GemB9LkGFprzZ885VkiTrgVh9bpE1ttwf9g3qRsy6mQ=";
+            
+           
             nativeBuildInputs = with pkgs; [
               graalvm-ce
               curl
             ];
+            
+            # sbt update doesn't download everything, sbt compile seems to be the only safe option
             depsWarmupCommand = ''
-              sbt update
+              sbt compile
             '';
+            
             buildPhase = ''
-              #XDG_CACHE_HOME="$(pwd)" ./run :build
               sbt GraalVMNativeImage/packageBin
             '';
+            
             installPhase = ''
               mkdir -p $out/bin
               cp target/graalvm-native-image/baboon $out/bin/baboon
