@@ -78,23 +78,27 @@ namespace Baboon.Runtime.Shared {
 
     public abstract class AbstractConversion<TFrom, TTo> : IBaboonGeneratedConversion
     {
-        public TTo Convert<TCtx>(TCtx? context, AbstractBaboonConversions conversions, TFrom from) {
-            if (from is IBaboonGenerated bgf)
+        protected void ValidateBaboonType(object obj) {
+            if (obj is IBaboonAdtMemberMeta bga) {
+                if (TypeId() != bga.BaboonAdtTypeIdentifier())
+                {
+                    throw new ArgumentException($"Provided instance is {bga.BaboonAdtTypeIdentifier()} but must be {TypeId()}");
+                }
+            }        
+            else
+            if (obj is IBaboonGenerated bgf)
             {
                 if (TypeId() != bgf.BaboonTypeIdentifier())
                 {
                     throw new ArgumentException($"Provided instance is {bgf.BaboonTypeIdentifier()} but must be {TypeId()}");
                 }
             }
-
+        
+        }
+        public TTo Convert<TCtx>(TCtx? context, AbstractBaboonConversions conversions, TFrom from) {
+            ValidateBaboonType(from);            
             var result = DoConvert(context, conversions, from);
-
-            if (result is not IBaboonGenerated bgr) return result;
-            if (TypeId() != bgr.BaboonTypeIdentifier())
-            {
-                throw new ArgumentException($"Produced instance is {bgr.BaboonTypeIdentifier()} but must be {TypeId()}");
-            }
-
+            ValidateBaboonType(result);
             return result;
         }
 
