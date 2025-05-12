@@ -42,7 +42,7 @@ object BaboonCompiler {
 
             Files.writeString(
               path,
-              result,
+              result.replace("\r", ""),
               StandardOpenOption.WRITE,
               StandardOpenOption.TRUNCATE_EXISTING,
               StandardOpenOption.CREATE,
@@ -72,7 +72,7 @@ object BaboonCompiler {
 
       Files.writeString(
         tgt,
-        content.content,
+        content.content.replace("\r", ""),
         StandardCharsets.UTF_8,
         StandardOpenOption.CREATE,
         StandardOpenOption.TRUNCATE_EXISTING,
