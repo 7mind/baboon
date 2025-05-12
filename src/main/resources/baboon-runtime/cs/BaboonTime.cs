@@ -154,7 +154,9 @@ namespace Baboon.Time
          */
         public RpDateTime ForceLocalTime(bool ignoreDaylightSavingTime = false)
         {
-            return ignoreDaylightSavingTime ? new RpDateTime(Ticks, TimeZoneInfo.Local.BaseUtcOffset, DateTimeKind.Local) : new RpDateTime(new DateTime(Ticks, DateTimeKind.Local));
+            return ignoreDaylightSavingTime ?
+                new RpDateTime(Ticks, TimeZoneInfo.Local.BaseUtcOffset, DateTimeKind.Local) :
+                new RpDateTime(new DateTime(Ticks, DateTimeKind.Local));
         }
 
         public RpDateTime LocalDate => ToLocalTime().TruncateToDays();
@@ -172,8 +174,8 @@ namespace Baboon.Time
         public RpDateTime AddMonths(int value) => new(DateTimeOffset.AddMonths(value), Kind);
         public RpDateTime AddYears(int value) => new(DateTimeOffset.AddYears(value), Kind);
 
-        public int DiffInFullHours(RpDateTime other) => (int)(this - other).TotalHours;
-        public int DiffInFullDays(RpDateTime other) => (int)(this - other).TotalDays;
+        public int DiffInFullHours(RpDateTime other) => (int) (this - other).TotalHours;
+        public int DiffInFullDays(RpDateTime other) => (int) (this - other).TotalDays;
         public int DiffInFullWeeks(RpDateTime other) => DiffInFullDays(other) / 7;
         public int DiffInFullMonths(RpDateTime other) => Date == other.Date ? 0 : (Year - other.Year) * 12 + Month - other.Month + GetMonthsDiffByDays(other);
         public int DiffInFullYears(RpDateTime other) => DiffInFullMonths(other) / 12;
@@ -257,6 +259,7 @@ namespace Baboon.Time
         public static implicit operator DateTimeOffset(RpDateTime dt) => dt.DateTimeOffset;
 
         public static RpDateTime Parse(string dt) => BaboonDateTimeFormats.FromString(dt);
+        public static bool TryParse(string dt, out RpDateTime value) => BaboonDateTimeFormats.TryFromString(dt, out value);
 
         private int GetMonthsDiffByDays(RpDateTime other)
         {
@@ -279,7 +282,6 @@ namespace Baboon.Time
 
             return 0;
         }
-
 
         private static long AdjustTicksOverflow(long ticks)
         {
@@ -321,7 +323,7 @@ namespace Baboon.Time
 
             public override RpDateTime ReadJson(JsonReader reader, Type objectType, RpDateTime existingValue, bool hasExistingValue, JsonSerializer serializer)
             {
-                return BaboonDateTimeFormats.FromString((string)reader.Value!);
+                return BaboonDateTimeFormats.FromString((string) reader.Value!);
             }
         }
     }
@@ -389,6 +391,18 @@ namespace Baboon.Time
         {
             var dateTimeOffset = DateTimeOffset.ParseExact(dt, Tsz, CultureInfo.InvariantCulture, DateTimeStyles.None);
             return new RpDateTime(dateTimeOffset);
+        }
+
+        public static bool TryFromString(string dt, out RpDateTime value)
+        {
+            if (!DateTimeOffset.TryParseExact(dt, Tsz, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dateTimeOffset))
+            {
+                value = default;
+                return false;
+            }
+
+            value = new RpDateTime(dateTimeOffset);
+            return true;
         }
 
         public static void EncodeToBin(RpDateTime dt, BinaryWriter writer)
