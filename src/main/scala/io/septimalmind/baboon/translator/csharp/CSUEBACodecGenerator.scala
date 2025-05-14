@@ -33,7 +33,7 @@ class CSUEBACodecGenerator(
     }).map {
       case (enc, dec) =>
         if (!isLatestVersion && !compilerOptions.csOptions.enableDeprecatedEncoders) {
-          (q"""throw new Exception("Type ${defn.id.toString} is deprecated, encoder was not generated");""", dec)
+          (q"""throw new Exception("Type ${defn.id.toString}@${domain.version.toString} is deprecated, encoder was not generated");""", dec)
         } else {
           (enc, dec)
         }
