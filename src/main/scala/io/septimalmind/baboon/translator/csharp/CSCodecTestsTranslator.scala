@@ -31,10 +31,13 @@ object CSCodecTestsTranslator {
       csRef: CSValue.CSType,
       srcRef: CSValue.CSType,
     ): Option[TextTree[CSValue]] = {
+      val isLatestVersion = domain.version == evo.latest
+
       definition match {
-        case d if enquiries.hasForeignType(d, domain)         => None
-        case d if enquiries.isRecursiveTypedef(d, domain)     => None
-        case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
+        case d if enquiries.hasForeignType(d, domain)                                   => None
+        case d if enquiries.isRecursiveTypedef(d, domain)                               => None
+        case d if d.defn.isInstanceOf[Typedef.NonDataTypedef]                           => None
+        case _ if !compilerOptions.csOptions.enableDeprecatedEncoders && !isLatestVersion => None
         case _ =>
           val testClass =
             q"""[$nunitTestFixture]
@@ -94,7 +97,7 @@ object CSCodecTestsTranslator {
              |""".stripMargin
 
         case unknown =>
-          logger.message(s"Tests generating for ${unknown.codecName(srcRef)} codec of type $srcRef is not supported")
+          logger.message(s"Cannot create codec tests (${unknown.codecName(srcRef)}) for unsupported type $srcRef")
           q""
       }.toList.join("\n").shift(2).trim
     }

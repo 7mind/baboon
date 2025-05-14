@@ -10,6 +10,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTools, compilerOptions: CompilerOptions, domain: Domain, evo: BaboonEvolution)
   extends CSCodecTranslator {
   override def translate(defn: DomainMember.User, csRef: CSValue.CSType, srcRef: CSValue.CSType): Option[TextTree[CSValue]] = {
+    val isLatestVersion = domain.version == evo.latest
 
     (defn.defn match {
       case d: Typedef.Dto =>
@@ -25,6 +26,13 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
       case _: Typedef.Service =>
         None
     }).map {
+      case (enc, dec) =>
+        if (!isLatestVersion && !compilerOptions.csOptions.enableDeprecatedEncoders) {
+          (q"""throw new Exception("Type ${defn.id.toString} is deprecated, encoder was not generated");""", dec)
+        } else {
+          (enc, dec)
+        }
+    }.map {
       case (enc, dec) =>
         // plumbing reference leaks
         val insulatedEnc =

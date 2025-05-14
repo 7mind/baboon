@@ -11,6 +11,7 @@ final case class CSOptions(
   wrappedAdtBranchCodecs: Boolean,
   writeEvolutionDict: Boolean,
   disregardImplicitUsings: Boolean,
+  enableDeprecatedEncoders: Boolean,
 )
 
 final case class GenericOptions(

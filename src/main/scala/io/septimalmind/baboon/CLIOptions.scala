@@ -53,6 +53,8 @@ case class CsCLIOptions(
   csWrappedAdtBranchCodecs: Option[Boolean],
   @HelpMessage("Adds evolution metadata as a C# dictionary")
   csWriteEvolutionDict: Option[Boolean],
+  @HelpMessage("Do not generate encoders for deprecated versions")
+  enableDeprecatedEncoders: Option[Boolean],
 )
 
 case class CLIOptions(

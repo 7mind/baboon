@@ -11,7 +11,7 @@ import io.septimalmind.baboon.util.TODO.*
 class CSUEBACodecGenerator(
   trans: CSTypeTranslator,
   csDomTrees: CSDomainTreeTools,
-  options: CompilerOptions,
+  compilerOptions: CompilerOptions,
   domain: Domain,
   evo: BaboonEvolution,
 ) extends CSCodecTranslator {
@@ -21,6 +21,8 @@ class CSUEBACodecGenerator(
     csRef: CSValue.CSType,
     srcRef: CSValue.CSType,
   ): Option[TextTree[CSValue]] = {
+    val isLatestVersion = domain.version == evo.latest
+
     (defn.defn match {
       case d: Typedef.Dto      => Some(genDtoBodies(csRef, d))
       case e: Typedef.Enum     => Some(genEnumBodies(csRef, e))
@@ -29,6 +31,13 @@ class CSUEBACodecGenerator(
       case _: Typedef.Contract => None
       case _: Typedef.Service  => None
     }).map {
+      case (enc, dec) =>
+        if (!isLatestVersion && !compilerOptions.csOptions.enableDeprecatedEncoders) {
+          (q"""throw new Exception("Type ${defn.id.toString} is deprecated, encoder was not generated");""", dec)
+        } else {
+          (enc, dec)
+        }
+    }.map {
       case (enc, dec) =>
         // plumbing reference leaks
         val insulatedEnc =
@@ -194,7 +203,7 @@ class CSUEBACodecGenerator(
 
         val castedName = branchName.toLowerCase
 
-        val encBody = if (options.csOptions.wrappedAdtBranchCodecs) {
+        val encBody = if (compilerOptions.csOptions.wrappedAdtBranchCodecs) {
           q"""$cName.Instance.Encode(ctx, writer, $castedName);"""
         } else {
           q"""writer.Write((byte)${idx.toString});
@@ -202,7 +211,7 @@ class CSUEBACodecGenerator(
            """.stripMargin
         }
 
-        val decBody = if (options.csOptions.wrappedAdtBranchCodecs) {
+        val decBody = if (compilerOptions.csOptions.wrappedAdtBranchCodecs) {
           q"""return (($cName)$cName.Instance).DecodeBranch(ctx, wire);"""
         } else {
           q"""return $cName.Instance.Decode(ctx, wire);"""
@@ -267,7 +276,7 @@ class CSUEBACodecGenerator(
   ): Option[TextTree[CSValue]] = {
 
     d.id.owner match {
-      case Owner.Adt(_) if options.csOptions.wrappedAdtBranchCodecs =>
+      case Owner.Adt(_) if compilerOptions.csOptions.wrappedAdtBranchCodecs =>
         val fields = fieldsOf(d)
         Some(dtoDec(name, fields.map { case (a, b, _) => (a, b) }))
       case _ =>
@@ -322,7 +331,7 @@ class CSUEBACodecGenerator(
     }
 
     val enc = d.id.owner match {
-      case Owner.Adt(id) if options.csOptions.wrappedAdtBranchCodecs =>
+      case Owner.Adt(id) if compilerOptions.csOptions.wrappedAdtBranchCodecs =>
         val idx = adtBranchIndex(id)
 
         q"""writer.Write((byte)${idx.toString});
@@ -331,7 +340,7 @@ class CSUEBACodecGenerator(
     }
 
     val dec = d.id.owner match {
-      case Owner.Adt(id) if options.csOptions.wrappedAdtBranchCodecs =>
+      case Owner.Adt(id) if compilerOptions.csOptions.wrappedAdtBranchCodecs =>
         val idx = adtBranchIndex(id)
 
         q"""var marker = wire.ReadByte();

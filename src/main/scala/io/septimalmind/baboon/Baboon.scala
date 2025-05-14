@@ -57,6 +57,7 @@ object Baboon {
             useCompactAdtForm                         = opts.csOptions.csUseCompactAdtForm.getOrElse(true),
             wrappedAdtBranchCodecs                    = opts.csOptions.csWrappedAdtBranchCodecs.getOrElse(false),
             writeEvolutionDict                        = opts.csOptions.csWriteEvolutionDict.getOrElse(false),
+            enableDeprecatedEncoders                  = opts.csOptions.enableDeprecatedEncoders.getOrElse(false),
           ),
         )
 
