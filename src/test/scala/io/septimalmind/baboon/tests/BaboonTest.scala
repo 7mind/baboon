@@ -42,6 +42,7 @@ abstract class BaboonTest[F[+_, +_]: TagKK](implicit baboonTestModule: BaboonTes
             disregardImplicitUsings                   = true,
             omitMostRecentVersionSuffixFromPaths      = true,
             omitMostRecentVersionSuffixFromNamespaces = true,
+            enableDeprecatedEncoders                  = false,
           ),
         ),
         Seq(Paths.get("./src/test/resources/baboon")),

@@ -5,11 +5,10 @@ import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue.{MissingContractFields, ScopedRefToNamespacedGeneric}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.NestedScope
-import io.septimalmind.baboon.typer.model.Typedef.{ForeignEntry, ForeignEntryAttr, ForeignEntryAttrs, MethodDef, MethodName}
+import io.septimalmind.baboon.typer.model.Typedef.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
-import izumi.fundamentals.platform.cli.model.schema.ParserDef.ArgDef
 
 object BaboonTranslator {
   type Factory[F[+_, +_]] = (
