@@ -60,9 +60,6 @@ class CSConversionTranslator[F[+_, +_]: Error2](
             }
         }
       case c: TypeRef.Constructor =>
-//        val convarg =
-//          q"conversions.ConvertWithContext<C, $cold, $cnew>(context, ($cold) $ref)"
-
         val tmp = q"e${depth.toString}"
         c match {
           case c: TypeRef.Constructor if c.id == TypeId.Builtins.lst =>
@@ -80,18 +77,9 @@ class CSConversionTranslator[F[+_, +_]: Error2](
           case c: TypeRef.Constructor if c.id == TypeId.Builtins.set =>
             q"(from $tmp in $ref select ${transfer(c.args.head, tmp, depth + 1)}).${CSTypes.mkSet}"
           case c: TypeRef.Constructor if c.id == TypeId.Builtins.opt =>
-//            val tmp = q"_${base.toLowerCase}_tmp"
-
             val underlyingTpe = c.args.head
             val recConv =
               transfer(underlyingTpe, ref, depth + 1)
-
-//            F.pure(
-//              Seq(
-//                q"var $tmp = $ref",
-//                ,
-//              )
-//            )
 
             q"($ref == null ? null : $recConv)"
 
