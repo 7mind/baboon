@@ -328,6 +328,11 @@ namespace Baboon.Runtime.Shared {
             TypeFrom = typeFrom;
             TypeTo = typeTo;
         }
+        
+        public override string ToString()
+        {
+            return $"{TypeFrom}=>{TypeTo}";
+        }
 
         public Type TypeFrom { get; }
         public Type TypeTo {get; }
