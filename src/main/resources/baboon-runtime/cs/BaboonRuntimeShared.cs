@@ -407,6 +407,31 @@ namespace Baboon.Runtime.Shared {
         {
             return ConvertWithContext<object, TFrom, TTo>(null, from);
         }
+        
+        public sealed class ConvertDslFrom<TFrom>
+            where TFrom : IBaboonGenerated
+        {
+            private readonly TFrom _from;
+            private readonly AbstractBaboonConversions _convs;
+
+            public ConvertDslFrom(TFrom from, AbstractBaboonConversions convs)
+            {
+                this._from = from;
+                this._convs = convs;
+            }
+
+            public TTo To<TTo>() 
+                where TTo : IBaboonGenerated
+            {
+                return _convs.Convert<TFrom, TTo>(_from);
+            }
+        }
+
+        public ConvertDslFrom<TFrom> Convert<TFrom>(TFrom from)
+            where TFrom : IBaboonGenerated
+        {
+            return new ConvertDslFrom<TFrom>(from, this);
+        }
     }
     
     public abstract record Either<TLeft, TRight>
