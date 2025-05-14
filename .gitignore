@@ -3,6 +3,25 @@ mobala.sh
 baboon.json
 .idea
 *.DotSettings.user
+
+
+Generated/
+GeneratedFixtures/
+GeneratedTests/
+generated/
+generatedFixtures/
+generatedTests/
+
+
+global.json
+
+bin/
+obj/
+/packages/
+riderModule.iml
+/_ReSharper.Caches/
+
+
 # Created by https://www.toptal.com/developers/gitignore/api/java,scala,jetbrains+all,sbt,maven,bloop
 # Edit at https://www.toptal.com/developers/gitignore?templates=java,scala,jetbrains+all,sbt,maven,bloop
 

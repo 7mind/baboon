@@ -42,4 +42,17 @@ function run-test() {
   dotnet test BaboonTests/BaboonTests.csproj
   
   popd
+  
+  pushd .
+  rm -rf ./test/conv-test-cs/ConvTest/Generated 
+  
+  target/graalvm-native-image/baboon  \
+    --model-dir ./test/conv-test \
+    --output ./test/conv-test-cs/ConvTest/Generated
+      
+  cd ./test/conv-test-cs
+  dotnet build
+  dotnet test 
+  
+  popd 
 }

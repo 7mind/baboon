@@ -1,0 +1,13 @@
+model convtest.testpkg
+
+version "2.0.0"
+
+root adt Adt0 {
+   data B1 {
+       f: str
+   }
+   
+  data B2 {
+      f: i32
+  }
+}

@@ -78,7 +78,7 @@ namespace Baboon.Runtime.Shared {
 
     public abstract class AbstractConversion<TFrom, TTo> : IBaboonGeneratedConversion
     {
-        protected void ValidateBaboonType(object obj) {
+        protected void ValidateBaboonType(object? obj) {
             if (obj is IBaboonGenerated bgf)
             {
                 var tid = TypeId();
