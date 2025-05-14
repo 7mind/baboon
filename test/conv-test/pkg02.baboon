@@ -15,4 +15,5 @@ root adt Adt0 {
 root data TransferOpt {
   u: uid
   ol: opt[lst[Adt0]]
+  ml: map[str, lst[Adt0]]
 }
