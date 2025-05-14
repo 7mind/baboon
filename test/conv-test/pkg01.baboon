@@ -7,3 +7,9 @@ root adt Adt0 {
        f: str
    }
 }
+
+
+root data TransferOpt {
+  u: uid
+  ol: opt[lst[Adt0]]
+}

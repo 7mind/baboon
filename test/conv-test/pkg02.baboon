@@ -11,3 +11,8 @@ root adt Adt0 {
       f: i32
   }
 }
+
+root data TransferOpt {
+  u: uid
+  ol: opt[lst[Adt0]]
+}
