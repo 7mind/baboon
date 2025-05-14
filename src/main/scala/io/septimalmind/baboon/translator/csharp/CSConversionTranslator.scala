@@ -63,7 +63,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
 //        val convarg =
 //          q"conversions.ConvertWithContext<C, $cold, $cnew>(context, ($cold) $ref)"
 
-        var tmp = q"e${depth.toString}"
+        val tmp = q"e${depth.toString}"
         c match {
           case c: TypeRef.Constructor if c.id == TypeId.Builtins.lst =>
             q"(from $tmp in $ref select ${transfer(c.args.head, tmp, depth + 1)}).${CSTypes.mkList}"
