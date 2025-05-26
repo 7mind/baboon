@@ -37,6 +37,13 @@ object IssuePrinter {
          |""".stripMargin
     }
 
+  implicit val cantCleanupTarget: IssuePrinter[CantCleanupTarget] =
+    (issue: CantCleanupTarget) => {
+      s"""Refusing to remove target directory, there are unexpected files: ${issue.paths.niceList()}
+         |Extensions allowed for removal: ${issue.safeToRemoveExtensions.mkString(", ")}
+         |""".stripMargin
+    }
+
   implicit val cantWriteOutputPrinter: IssuePrinter[CantWriteOutput] =
     (issue: CantWriteOutput) => {
       s"""Can't write to file: $issue.path
@@ -660,8 +667,9 @@ object IssuePrinter {
   }
 
   implicit val IOIssuePrinter: IssuePrinter[IOIssue] = {
-    case i: CantReadInput   => apply[CantReadInput].stringify(i)
-    case i: CantWriteOutput => apply[CantWriteOutput].stringify(i)
+    case i: CantReadInput     => apply[CantReadInput].stringify(i)
+    case i: CantWriteOutput   => apply[CantWriteOutput].stringify(i)
+    case i: CantCleanupTarget => apply[CantCleanupTarget].stringify(i)
   }
 
   implicit val parserIssuePrinter: IssuePrinter[ParserIssue] = {

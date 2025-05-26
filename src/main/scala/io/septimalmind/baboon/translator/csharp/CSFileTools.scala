@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerOptions
+import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.typer.model.{BaboonEvolution, Domain}
 
 trait CSFileTools {
@@ -8,11 +9,11 @@ trait CSFileTools {
 }
 
 object CSFileTools {
-  class CSFileToolsImpl(options: CompilerOptions) extends CSFileTools {
+  class CSFileToolsImpl(target: CSTarget) extends CSFileTools {
     def basename(dom: Domain, evolution: BaboonEvolution): String = {
       basename(
         dom,
-        options.csOptions.omitMostRecentVersionSuffixFromPaths && evolution.latest == dom.version,
+        target.language.omitMostRecentVersionSuffixFromPaths && evolution.latest == dom.version,
       )
     }
 

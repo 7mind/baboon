@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerOptions
+import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.translator.csharp.CSTypes.csString
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
@@ -13,14 +14,14 @@ trait CSDomainTreeTools {
 }
 
 object CSDomainTreeTools {
-  class CSDomainTreeToolsImpl(options: CompilerOptions, domain: Domain, evo: BaboonEvolution) extends CSDomainTreeTools {
+  class CSDomainTreeToolsImpl(target: CSTarget, domain: Domain, evo: BaboonEvolution) extends CSDomainTreeTools {
 
     def metaMethodFlags(defn: DomainMember.User, isCodec: Boolean): String = {
       val isNested = defn.id.owner match {
         case Owner.Adt(_) => true
         case _            => false
       }
-      val fix = if (options.csOptions.useCompactAdtForm && !isCodec && isNested) {
+      val fix = if (target.language.useCompactAdtForm && !isCodec && isNested) {
         " new "
       } else {
         " "

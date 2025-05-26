@@ -4,6 +4,22 @@ import io.septimalmind.baboon.translator.OutputFile
 
 import java.nio.file.Path
 
+sealed trait CompilerTarget {
+  def id: String
+  def output: OutputOptions
+  def generic: GenericOptions
+
+}
+
+object CompilerTarget {
+  case class CSTarget(
+    id: String,
+    output: OutputOptions,
+    generic: GenericOptions,
+    language: CSOptions,
+  ) extends CompilerTarget
+}
+
 final case class CSOptions(
   omitMostRecentVersionSuffixFromPaths: Boolean,
   omitMostRecentVersionSuffixFromNamespaces: Boolean,
@@ -20,7 +36,8 @@ final case class GenericOptions(
   codecTestIterations: Int,
 )
 
-final case class TargetOptions(
+final case class OutputOptions(
+  safeToRemoveExtensions: Set[String],
   runtime: RuntimeGenOpt,
   generateConversions: Boolean,
   output: Path,
@@ -65,10 +82,10 @@ final case class TargetOptions(
 }
 
 final case class CompilerOptions(
+  individualInputs: Set[Path],
+  directoryInputs: Set[Path],
   debug: Boolean,
-  target: TargetOptions,
-  generic: GenericOptions,
-  csOptions: CSOptions,
+  targets: Seq[CompilerTarget],
 )
 
 sealed trait CompilerProduct

@@ -1,14 +1,12 @@
 package io.septimalmind.baboon.parser
 
-import distage.Id
 import fastparse.Parsed
+import io.septimalmind.baboon.CompilerOptions
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.parser.model.{FSPath, RawDomain, RawInclude, RawTLDef}
-import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 import izumi.functional.bio.{Error2, F}
+import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 import izumi.fundamentals.platform.files.IzFiles
-
-import java.nio.file.Path
 
 trait BaboonParser[F[+_, +_]] {
   def parse(input: BaboonParser.Input): F[NEList[BaboonIssue], RawDomain]
@@ -18,7 +16,7 @@ object BaboonParser {
   case class Input(path: FSPath, content: String)
 
   class BaboonParserImpl[F[+_, +_]: Error2](
-    inputs: Seq[Path] @Id("inputs")
+    options: CompilerOptions
   ) extends BaboonParser[F] {
 
     def parse(
@@ -50,7 +48,8 @@ object BaboonParser {
       if (includes.nonEmpty) {
         F.flatTraverseAccumErrors(includes) {
           inc =>
-            val inclusion = inputs
+            // indiv
+            val inclusion = options.directoryInputs
               .map(_.resolve(inc.value).toFile)
               .find(f => f.exists() && f.isFile)
             inclusion match {

@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerOptions
+import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
@@ -13,8 +14,13 @@ trait CSCodecFixtureTranslator {
 }
 
 object CSCodecFixtureTranslator {
-  final class CSRandomMethodTranslatorImpl(options: CompilerOptions, translator: CSTypeTranslator, enquiries: BaboonEnquiries, domain: Domain, evo: BaboonEvolution)
-    extends CSCodecFixtureTranslator {
+  final class CSRandomMethodTranslatorImpl(
+    target: CSTarget,
+    translator: CSTypeTranslator,
+    enquiries: BaboonEnquiries,
+    domain: Domain,
+    evo: BaboonEvolution,
+  ) extends CSCodecFixtureTranslator {
 
     override def translate(
       definition: DomainMember.User
@@ -56,7 +62,7 @@ object CSCodecFixtureTranslator {
         .flatMap(m => domain.defs.meta.nodes.get(m))
         .collect { case DomainMember.User(_, d: Typedef.Dto, _) => d }
 
-      val membersFixtures = if (options.csOptions.useCompactAdtForm) {
+      val membersFixtures = if (target.language.useCompactAdtForm) {
         members.sortBy(_.id.toString).map(dto => doTranslateDto(dto))
       } else {
         List.empty[TextTree[CSValue]]
@@ -64,7 +70,7 @@ object CSCodecFixtureTranslator {
 
       val membersGenerators = members.sortBy(_.id.toString).map[TextTree[CSValue]] {
         dto =>
-          val memberFixture = if (options.csOptions.useCompactAdtForm) {
+          val memberFixture = if (target.language.useCompactAdtForm) {
             q"${dto.id.name.name}"
           } else {
             q"${translator.toCsTypeRefNoDeref(dto.id, domain, evo)}"

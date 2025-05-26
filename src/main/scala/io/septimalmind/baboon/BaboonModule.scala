@@ -1,6 +1,7 @@
 package io.septimalmind.baboon
 
 import distage.{DIKey, ModuleDef}
+import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*
@@ -13,26 +14,30 @@ import io.septimalmind.baboon.validator.BaboonValidator
 import izumi.functional.bio.{Applicative2, ApplicativeError2, Bifunctor2, Error2, Guarantee2, Monad2}
 import izumi.reflect.TagKK
 
-import java.nio.file.Path
+class BaboonSharedModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
+  // not all the definitions are required for parent locator, so it's easier to double-include
+  addImplicit[Error2[F]].exposed
+    .aliased[Monad2[F]].exposed
+    .aliased[Applicative2[F]].exposed
+    .aliased[ApplicativeError2[F]].exposed
+    .aliased[Guarantee2[F]].exposed
+    .aliased[Bifunctor2[F]].exposed
+
+}
 
 class BaboonModule[F[+_, +_]: Error2: TagKK](
   options: CompilerOptions,
-  inputs: Seq[Path],
   parallelAccumulatingOps2: ParallelAccumulatingOps2[F],
 ) extends ModuleDef {
+  include(new BaboonSharedModule[F])
   make[CompilerOptions].fromValue(options)
-  make[Seq[Path]].named("inputs").fromValue(inputs)
-  addImplicit[Error2[F]]
-    .aliased[Monad2[F]]
-    .aliased[Applicative2[F]]
-    .aliased[ApplicativeError2[F]]
-    .aliased[Guarantee2[F]]
-    .aliased[Bifunctor2[F]]
-  make[ParallelAccumulatingOps2[F]].fromValue(parallelAccumulatingOps2)
+
+//  make[Seq[Path]].named("inputs").fromValue(inputs)
+
+  make[ParallelAccumulatingOps2[F]].fromValue(parallelAccumulatingOps2).exposed
 
   make[BLogger].from[BLogger.BLoggerImpl]
 
-  make[BaboonCompiler[F]].from[BaboonCompiler.BaboonCompilerImpl[F]]
   make[BaboonLoader[F]].from[BaboonLoader.BaboonLoaderImpl[F]]
   make[BaboonFamilyManager[F]].from[BaboonFamilyManager.BaboonFamilyManagerImpl[F]]
   make[BaboonValidator[F]].from[BaboonValidator.BaboonValidatorImpl[F]]
@@ -42,10 +47,19 @@ class BaboonModule[F[+_, +_]: Error2: TagKK](
   make[BaboonComparator[F]].from[BaboonComparator.BaboonComparatorImpl[F]]
 
   make[BaboonEnquiries].from[BaboonEnquiries.BaboonEnquiriesImpl]
-  make[BaboonMetagen].from[BaboonMetagen.BaboonMetagenImpl]
   make[TypeInfo].from[TypeInfo.TypeInfoImpl]
 
+  make[ScopeSupport[F]].from[ScopeSupport.ScopeSupportImpl[F]]
+
   makeFactory[BaboonTranslator.Factory[F]]
+}
+
+class BaboonCSModule[F[+_, +_]: Error2: TagKK](target: CSTarget) extends ModuleDef {
+  include(new BaboonSharedModule[F])
+
+  make[CSTarget].fromValue(target)
+  make[BaboonCompiler[F]].from[BaboonCompiler.BaboonCompilerImpl[F]]
+  make[BaboonMetagen].from[BaboonMetagen.BaboonMetagenImpl]
 
   makeSubcontext[CSDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
@@ -59,8 +73,6 @@ class BaboonModule[F[+_, +_]: Error2: TagKK](
         .add[CSUEBACodecGenerator]
     })
 
-  make[ScopeSupport[F]].from[ScopeSupport.ScopeSupportImpl[F]]
-
   many[BaboonAbstractTranslator[F]]
     .ref[CSBaboonTranslator[F]]
 
@@ -71,5 +83,4 @@ class BaboonModule[F[+_, +_]: Error2: TagKK](
   make[CSTypeTranslator]
 
   makeFactory[CSConversionTranslator.Factory[F]]
-
 }

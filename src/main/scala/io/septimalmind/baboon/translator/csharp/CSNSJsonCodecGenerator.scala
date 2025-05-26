@@ -1,14 +1,20 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerOptions
+import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTools, compilerOptions: CompilerOptions, domain: Domain, evo: BaboonEvolution)
-  extends CSCodecTranslator {
+class CSNSJsonCodecGenerator(
+  trans: CSTypeTranslator,
+  csDomTrees: CSDomainTreeTools,
+  target: CSTarget,
+  domain: Domain,
+  evo: BaboonEvolution,
+) extends CSCodecTranslator {
   override def translate(defn: DomainMember.User, csRef: CSValue.CSType, srcRef: CSValue.CSType): Option[TextTree[CSValue]] = {
     val isLatestVersion = domain.version == evo.latest
 
@@ -27,7 +33,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
         None
     }).map {
       case (enc, dec) =>
-        if (!isLatestVersion && !compilerOptions.csOptions.enableDeprecatedEncoders) {
+        if (!isLatestVersion && !target.language.enableDeprecatedEncoders) {
           (q"""throw new Exception("Type ${defn.id.toString}@${domain.version.toString} is deprecated, encoder was not generated");""", dec)
         } else {
           (enc, dec)
@@ -163,13 +169,13 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
         val branchNameRef       = q"${branchName.toLowerCase}"
         val routedBranchEncoder = q"${fqBranch}_JsonCodec.Instance.Encode(ctx, $branchNameRef)"
 
-        val branchEncoder = if (compilerOptions.csOptions.wrappedAdtBranchCodecs) {
+        val branchEncoder = if (target.language.wrappedAdtBranchCodecs) {
           routedBranchEncoder
         } else {
           wrapAdtBranchEncoder(branchName, routedBranchEncoder)
         }
 
-        val branchValue = if (compilerOptions.csOptions.wrappedAdtBranchCodecs) {
+        val branchValue = if (target.language.wrappedAdtBranchCodecs) {
           q"wire"
         } else {
           q"head.Value"
@@ -245,7 +251,7 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
                      |)""".stripMargin
 
     val fullEnc = d.id.owner match {
-      case Owner.Adt(_) if compilerOptions.csOptions.wrappedAdtBranchCodecs =>
+      case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs =>
         wrapAdtBranchEncoder(d.id.name.name, mainEnc)
       case _ => mainEnc
     }
@@ -253,8 +259,8 @@ class CSNSJsonCodecGenerator(trans: CSTypeTranslator, csDomTrees: CSDomainTreeTo
     val encBody = q"""return $fullEnc;"""
 
     val fullDec = d.id.owner match {
-      case Owner.Adt(_) if compilerOptions.csOptions.wrappedAdtBranchCodecs => q"wire.Value<JObject>()!.Properties().First().Value.Value<JObject>()"
-      case _                                                                => q"wire.Value<JObject>()"
+      case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs => q"wire.Value<JObject>()!.Properties().First().Value.Value<JObject>()"
+      case _                                                      => q"wire.Value<JObject>()"
     }
 
     val decBody =

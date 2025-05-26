@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
+import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
@@ -27,7 +28,7 @@ object CSDefnTranslator {
   private val serializable: CSType = CSType(CSTypes.csSystemPkg, "Serializable", fq = false)
 
   class CSDefnTranslatorImpl[F[+_, +_]: Applicative2 /* This impl has no errors right now */ ](
-    options: CompilerOptions,
+    target: CSTarget,
     trans: CSTypeTranslator,
     csTrees: CSTreeTools,
     csDomTrees: CSDomainTreeTools,
@@ -43,8 +44,8 @@ object CSDefnTranslator {
 
     override def translate(defn: DomainMember.User): Out[List[OutputExt]] = {
       defn.id.owner match {
-        case Owner.Adt(_) if options.csOptions.useCompactAdtForm => F.pure(List.empty)
-        case _                                                   => doTranslate(defn)
+        case Owner.Adt(_) if target.language.useCompactAdtForm => F.pure(List.empty)
+        case _                                                 => doTranslate(defn)
       }
     }
 
@@ -72,8 +73,8 @@ object CSDefnTranslator {
 
     override def translateFixtures(defn: DomainMember.User): Out[List[Output]] = {
       defn.id.owner match {
-        case Owner.Adt(_) if options.csOptions.useCompactAdtForm => F.pure(List.empty)
-        case _                                                   => doTranslateFixtures(defn)
+        case Owner.Adt(_) if target.language.useCompactAdtForm => F.pure(List.empty)
+        case _                                                 => doTranslateFixtures(defn)
       }
     }
 
@@ -93,8 +94,8 @@ object CSDefnTranslator {
 
     override def translateTests(defn: DomainMember.User): Out[List[Output]] = {
       defn.id.owner match {
-        case Owner.Adt(_) if options.csOptions.useCompactAdtForm => F.pure(List.empty)
-        case _                                                   => doTranslateTest(defn)
+        case Owner.Adt(_) if target.language.useCompactAdtForm => F.pure(List.empty)
+        case _                                                 => doTranslateTest(defn)
       }
     }
 
@@ -133,7 +134,7 @@ object CSDefnTranslator {
         if (isLatestVersion || hackyIsEmpty) {
           tree
         } else {
-          q"""[$obsolete("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${options.generic.obsoleteErrors.toString})]
+          q"""[$obsolete("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${target.generic.obsoleteErrors.toString})]
              |$tree""".stripMargin
         }
       }
@@ -311,7 +312,7 @@ object CSDefnTranslator {
               q"public abstract $tpe $mname { get; init; }"
           }.join("\n")
 
-          if (options.csOptions.useCompactAdtForm) {
+          if (target.language.useCompactAdtForm) {
             val memberTrees = adt.members.map {
               mid =>
                 domain.defs.meta.nodes.get(mid) match {

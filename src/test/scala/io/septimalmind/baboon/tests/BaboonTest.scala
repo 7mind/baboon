@@ -3,6 +3,7 @@ package io.septimalmind.baboon.tests
 import distage.plugins.PluginBase
 import distage.{DefaultModule, ModuleDef}
 import io.septimalmind.baboon.*
+import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
 import io.septimalmind.baboon.util.functional.ParallelAccumulatingOpsInstances
 import izumi.distage.modules.DefaultModule2
@@ -21,31 +22,38 @@ abstract class BaboonTest[F[+_, +_]: TagKK](implicit baboonTestModule: BaboonTes
     pluginConfig = PluginConfig.const(
       new BaboonModule[Either](
         CompilerOptions(
-          debug = false,
-          target = TargetOptions(
-            runtime             = RuntimeGenOpt.With,
-            generateConversions = true,
-            // dummy path (should be unused)
-            output         = Paths.get("./target/baboon-scalatests/"),
-            fixturesOutput = None,
-            testsOutput    = None,
-          ),
-          generic = GenericOptions(
-            obsoleteErrors           = false,
-            codecTestIterations      = 500,
-            metaWriteEvolutionJsonTo = None,
-          ),
-          csOptions = CSOptions(
-            writeEvolutionDict                        = true,
-            useCompactAdtForm                         = true,
-            wrappedAdtBranchCodecs                    = true,
-            disregardImplicitUsings                   = true,
-            omitMostRecentVersionSuffixFromPaths      = true,
-            omitMostRecentVersionSuffixFromNamespaces = true,
-            enableDeprecatedEncoders                  = false,
+          debug            = false,
+          individualInputs = Set.empty,
+          directoryInputs  = Set(Paths.get("./src/test/resources/baboon")),
+          targets = Seq(
+            CSTarget(
+              id = "C#",
+              output = OutputOptions(
+                safeToRemoveExtensions = Set.empty,
+                runtime                = RuntimeGenOpt.With,
+                generateConversions    = true,
+                // dummy path (should be unused)
+                output         = Paths.get("./target/baboon-scalatests/"),
+                fixturesOutput = None,
+                testsOutput    = None,
+              ),
+              generic = GenericOptions(
+                obsoleteErrors           = false,
+                codecTestIterations      = 500,
+                metaWriteEvolutionJsonTo = None,
+              ),
+              language = CSOptions(
+                writeEvolutionDict                        = true,
+                useCompactAdtForm                         = true,
+                wrappedAdtBranchCodecs                    = true,
+                disregardImplicitUsings                   = true,
+                omitMostRecentVersionSuffixFromPaths      = true,
+                omitMostRecentVersionSuffixFromNamespaces = true,
+                enableDeprecatedEncoders                  = false,
+              ),
+            )
           ),
         ),
-        Seq(Paths.get("./src/test/resources/baboon")),
         ParallelAccumulatingOpsInstances.Lawless_ParallelAccumulatingOpsEither,
       ).morph[PluginBase]
     )

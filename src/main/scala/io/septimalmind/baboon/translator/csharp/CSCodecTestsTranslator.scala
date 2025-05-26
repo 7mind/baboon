@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerOptions
+import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
@@ -22,7 +23,7 @@ object CSCodecTestsTranslator {
     typeTranslator: CSTypeTranslator,
     logger: BLogger,
     enquiries: BaboonEnquiries,
-    compilerOptions: CompilerOptions,
+    target: CSTarget,
     domain: Domain,
     evo: BaboonEvolution,
   ) extends CSCodecTestsTranslator {
@@ -34,10 +35,10 @@ object CSCodecTestsTranslator {
       val isLatestVersion = domain.version == evo.latest
 
       definition match {
-        case d if enquiries.hasForeignType(d, domain)                                   => None
-        case d if enquiries.isRecursiveTypedef(d, domain)                               => None
-        case d if d.defn.isInstanceOf[Typedef.NonDataTypedef]                           => None
-        case _ if !compilerOptions.csOptions.enableDeprecatedEncoders && !isLatestVersion => None
+        case d if enquiries.hasForeignType(d, domain)                           => None
+        case d if enquiries.isRecursiveTypedef(d, domain)                       => None
+        case d if d.defn.isInstanceOf[Typedef.NonDataTypedef]                   => None
+        case _ if !target.language.enableDeprecatedEncoders && !isLatestVersion => None
         case _ =>
           val testClass =
             q"""[$nunitTestFixture]
@@ -58,7 +59,7 @@ object CSCodecTestsTranslator {
           q"""[Test]
              |public void jsonCodecTest()
              |{
-             |    for (var i = 0; i < ${compilerOptions.generic.codecTestIterations.toString}; i++)
+             |    for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++)
              |    {
              |        jsonCodecTestImpl($baboonCodecContext.Default);
              |    }
@@ -75,7 +76,7 @@ object CSCodecTestsTranslator {
           q"""[Test]
              |public void uebaCodecTestNoIndex()
              |{
-             |    for (var i = 0; i < ${compilerOptions.generic.codecTestIterations.toString}; i++)
+             |    for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++)
              |    {
              |        uebaCodecTestImpl($baboonCodecContext.Compact);
              |    }
@@ -84,7 +85,7 @@ object CSCodecTestsTranslator {
              |[Test]
              |public void uebaCodecTestIndexed()
              |{
-             |    for (var i = 0; i < ${compilerOptions.generic.codecTestIterations.toString}; i++)
+             |    for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++)
              |    {
              |        uebaCodecTestImpl($baboonCodecContext.Indexed);
              |    }

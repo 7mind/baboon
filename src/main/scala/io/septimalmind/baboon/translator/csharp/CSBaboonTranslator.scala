@@ -1,12 +1,13 @@
 package io.septimalmind.baboon.translator.csharp
 
 import distage.Subcontext
+import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.{CompilerOptions, CompilerProduct}
+import io.septimalmind.baboon.{CSOptions, CompilerOptions, CompilerProduct}
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -17,7 +18,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 class CSBaboonTranslator[F[+_, +_]: Error2](
   trans: CSTypeTranslator,
   handler: CSConversionTranslator.Factory[F],
-  options: CompilerOptions,
+  target: CSTarget,
   csTrees: CSTreeTools,
   csFiles: CSFileTools,
   translator: Subcontext[CSDefnTranslator[F]],
@@ -42,13 +43,13 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def renderTree(o: CSDefnTranslator.Output): String = {
-    val alwaysAvailable: Set[CSPackageId] = if (options.csOptions.disregardImplicitUsings) {
+    val alwaysAvailable: Set[CSPackageId] = if (target.language.disregardImplicitUsings) {
       Set.empty
     } else {
       Set(csSystemPkg, csCollectionsGenericPkg, csLinqPkg)
     }
 
-    val forcedUses: Set[CSPackageId] = if (options.csOptions.disregardImplicitUsings) {
+    val forcedUses: Set[CSPackageId] = if (target.language.disregardImplicitUsings) {
       Set(csLinqPkg, csCollectionsImmutablePkg, csCollectionsGenericPkg)
     } else {
       Set(csCollectionsImmutablePkg, csCollectionsGenericPkg)
@@ -165,7 +166,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
       defnTranslator =>
         for {
           defnSources <- {
-            if (options.target.products.contains(CompilerProduct.Definition)) {
+            if (target.output.products.contains(CompilerProduct.Definition)) {
               F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
                 case (_, defn: DomainMember.User) => defnTranslator.translate(defn)
                 case _                            => F.pure(List.empty)
@@ -176,7 +177,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
           }
 
           fixturesSources <- {
-            if (options.target.products.contains(CompilerProduct.Fixture)) {
+            if (target.output.products.contains(CompilerProduct.Fixture)) {
               F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
                 case (_, defn: DomainMember.User) => defnTranslator.translateFixtures(defn)
                 case _                            => F.pure(List.empty)
@@ -187,7 +188,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
           }
 
           testsSources <- {
-            if (options.target.products.contains(CompilerProduct.Test)) {
+            if (target.output.products.contains(CompilerProduct.Test)) {
               F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
                 case (_, defn: DomainMember.User) => defnTranslator.translateTests(defn)
                 case _                            => F.pure(List.empty)
@@ -198,7 +199,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
           }
 
           conversionSources <- {
-            if (options.target.products.contains(CompilerProduct.Conversion)) {
+            if (target.output.products.contains(CompilerProduct.Conversion)) {
               val evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
               generateConversions(domain, lineage, evosToCurrent, defnSources)
             } else {
@@ -207,7 +208,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
           }
 
           meta <- {
-            if (options.csOptions.writeEvolutionDict) {
+            if (target.language.writeEvolutionDict) {
               generateMeta(domain, lineage)
             } else {
               F.pure(List.empty)
@@ -355,7 +356,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def sharedRuntime(): Out[List[CSDefnTranslator.Output]] = {
-    if (options.target.products.contains(CompilerProduct.Runtime)) {
+    if (target.output.products.contains(CompilerProduct.Runtime)) {
       val sharedOutput = CSDefnTranslator.Output(
         s"BaboonRuntimeShared.cs",
         TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonRuntimeShared.cs").get),
@@ -379,7 +380,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def sharedFixture(): Out[List[CSDefnTranslator.Output]] = {
-    if (options.target.products.contains(CompilerProduct.FixtureRuntime)) {
+    if (target.output.products.contains(CompilerProduct.FixtureRuntime)) {
       val testRuntime = CSDefnTranslator.Output(
         "BaboonFixtureShared.cs",
         TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonFixtureShared.cs").get),
