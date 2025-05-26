@@ -1,7 +1,7 @@
 package io.septimalmind.baboon
 
 import caseapp.*
-import distage.{DIKey, DefaultModule, Injector, Locator, Roots, TagKK}
+import distage.*
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
 import io.septimalmind.baboon.typer.model.BaboonFamily
 import io.septimalmind.baboon.util.BLogger
@@ -11,7 +11,6 @@ import izumi.functional.bio.{Error2, F}
 import izumi.functional.quasi.QuasiIO
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.files.IzFiles
-import izumi.fundamentals.platform.functional.Identity
 import izumi.fundamentals.platform.resources.IzArtifactMaterializer
 import izumi.fundamentals.platform.strings.IzString.*
 
