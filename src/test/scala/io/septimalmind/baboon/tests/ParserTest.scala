@@ -1,8 +1,8 @@
 package io.septimalmind.baboon.tests
 
+import io.septimalmind.baboon.QuasiIOEither.BaboonTestModule
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.{FSPath, RawDomain}
-import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
 import izumi.functional.bio.Error2
 import izumi.fundamentals.collections.nonempty.NEString
 import izumi.reflect.TagKK

@@ -1,14 +1,17 @@
 package io.septimalmind.baboon
 
 import caseapp.*
-import distage.{DIKey, Injector, Locator, Roots}
+import distage.{DIKey, DefaultModule, Injector, Locator, Roots, TagKK}
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
 import io.septimalmind.baboon.typer.model.BaboonFamily
+import io.septimalmind.baboon.util.BLogger
 import io.septimalmind.baboon.util.functional.ParallelAccumulatingOpsInstances
 import izumi.functional.IzEither.*
-import izumi.functional.bio.Error2
+import izumi.functional.bio.{Error2, F}
+import izumi.functional.quasi.QuasiIO
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.files.IzFiles
+import izumi.fundamentals.platform.functional.Identity
 import izumi.fundamentals.platform.resources.IzArtifactMaterializer
 import izumi.fundamentals.platform.strings.IzString.*
 
@@ -86,52 +89,61 @@ object Baboon {
     options
   }
 
-  private def processTarget(loc: Locator, model: BaboonFamily, target: CompilerTarget): Either[Nothing, Unit] = {
+  private def processTarget[F[+_, +_]: Error2: TagKK](
+    loc: Locator,
+    model: BaboonFamily,
+    target: CompilerTarget,
+  )(implicit
+    q: QuasiIO[F[Throwable, _]],
+    m: DefaultModule[F[Throwable, _]],
+  ): F[Throwable, Unit] = { // dirty, I/O happens there
     val module = target match {
       case t: CompilerTarget.CSTarget =>
-        new BaboonCSModule[Either](t)
+        new BaboonCSModule[F](t)
     }
 
+    val logger = loc.get[BLogger]
+
     Injector
-      .NoCycles(parent = Some(loc))
+      .NoCycles[F[Throwable, _]](parent = Some(loc))
       .produceRun(module) {
-        compiler: BaboonCompiler[Either] =>
-          val res: Either[Nothing, Unit] = for {
-            _ <- Right(println(s"Working on ${target.id}..."))
-            _ <- Right(println(s"Outputs: ${target.output.targetPaths.map { case (t, p) => s"$t: $p" }.toList.sorted.niceList()}"))
+        (compiler: BaboonCompiler[F]) =>
+          for {
+            _ <- F.pure(())
+            _  = logger.message(s"${target.id}: output configuration: ${target.output.targetPaths.map { case (t, p) => s"$t: $p" }.toList.sorted.niceList()}")
+
             _ <- compiler.run(target, model).catchAll {
               value =>
                 System.err.println("Compiler failed")
                 System.err.println(value.toList.stringifyIssues)
                 sys.exit(3)
             }
-            _ <- Right(println(s"Done: ${target.id}"))
-
           } yield ()
-          res.merge
       }
-    Right(())
-
   }
 
   private def entrypoint(options: CompilerOptions): Unit = {
     val m = new BaboonModule[Either](options, ParallelAccumulatingOpsInstances.Lawless_ParallelAccumulatingOpsEither)
 
+    import QuasiIO.*
+    import QuasiIOEither.*
+
     Injector
       .NoCycles()
-      .produce(m, Roots(DIKey.get[BaboonLoader[Either]]))
+      .produce(m, Roots(DIKey.get[BaboonLoader[Either]], DIKey.get[BLogger]))
       .use(
         loc =>
           for {
+            loader <- F.pure(loc.get[BaboonLoader[Either]])
+            logger <- F.pure(loc.get[BLogger])
+
             inputModels <- Right(options.individualInputs ++ options.directoryInputs.flatMap {
               dir =>
                 IzFiles
                   .walk(dir.toFile)
                   .filter(_.toFile.getName.endsWith(".baboon"))
             })
-            _ <- Right(println(s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}"))
-
-            loader = loc.get[BaboonLoader[Either]]
+            _ = logger.message(s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}")
 
             loadedModels <- loader.load(inputModels.toList).catchAll {
               value =>
@@ -140,45 +152,10 @@ object Baboon {
                 sys.exit(4)
             }
 
-            out <- options.targets.map(processTarget(loc, loadedModels, _)).biSequenceScalar
-
+            _ <- options.targets.map(processTarget[Either](loc, loadedModels, _)).biSequenceScalar
           } yield {}
       )
     ()
-
-//      .produceRun() {
-//        (loader: BaboonLoader[Either]) =>
-//      }
-
-//    ???
-//    Injector.NoCycles().produceRun(new BaboonModule[Either](options, ParallelAccumulatingOpsInstances.Lawless_ParallelAccumulatingOpsEither)) {
-//      (compiler: BaboonCompiler[Either]) =>
-//        val inputModels = options.individualInputs ++ options.directoryInputs.flatMap {
-//          dir =>
-//            IzFiles
-//              .walk(dir.toFile)
-//              .filter(_.toFile.getName.endsWith(".baboon"))
-//        }
-//
-//        println(s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}")
-//        println(s"Targets: ${options.target.targetPaths.map { case (t, p) => s"$t: $p" }.toList.sorted.niceList()}")
-//
-//        val res: Either[Nothing, Unit] = for {
-//          _ <- cleanupTargetPaths[Either](options.target, options.safeToRemoveExtensions).catchAll {
-//            value =>
-//              System.err.println(s"Refusing to remove target directory, there are unexpected files: ${value.niceList()}")
-//              System.err.println(s"Extensions allowed for removal: ${options.safeToRemoveExtensions.mkString(", ")}")
-//              sys.exit(2)
-//          }
-//          _ <- compiler.run(inputModels).catchAll {
-//            value =>
-//              System.err.println("Compiler failed")
-//              System.err.println(value.toList.stringifyIssues)
-//              sys.exit(3)
-//          }
-//        } yield ()
-//        res.merge
-//    }
   }
 
 }

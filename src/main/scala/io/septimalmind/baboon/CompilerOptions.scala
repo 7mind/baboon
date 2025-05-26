@@ -70,6 +70,7 @@ final case class OutputOptions(
         case CompilerProduct.Fixture        => fixturesOutput
         case CompilerProduct.FixtureRuntime => fixturesOutput
         case CompilerProduct.Test           => testsOutput
+        case CompilerProduct.CustomMeta     => None
       }
     } else {
       None
@@ -96,4 +97,5 @@ object CompilerProduct {
   case object Conversion extends CompilerProduct
   case object Fixture extends CompilerProduct
   case object Test extends CompilerProduct
+  case object CustomMeta extends CompilerProduct
 }

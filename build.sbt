@@ -64,6 +64,8 @@ lazy val root = (project in file("."))
       "-Wconf:cat=other-match-analysis:error",
       "-Vtype-diffs",
     ),
+    addCompilerPlugin("org.typelevel" % "kind-projector" % "0.13.3" cross CrossVersion.full),
+    ThisBuild / scalacOptions += "-P:kind-projector:underscore-placeholders"
   )
   .enablePlugins(GraalVMNativeImagePlugin, UniversalPlugin)
   .settings(

@@ -10,7 +10,7 @@ import scala.util.parsing.input.OffsetPosition
 class DefMeta(context: ParserContext) {
   def positioned[T](
     defparser: => P[T]
-  )(implicit v: P[_]
+  )(implicit v: P[?]
   ): P[(InputPointer, T)] = {
     import fastparse.ScalaWhitespace.whitespace
     (Index ~ defparser ~ Index).map {
@@ -21,7 +21,7 @@ class DefMeta(context: ParserContext) {
     }
   }
 
-  def withMeta[T](defparser: => P[T])(implicit v: P[_]): P[(RawNodeMeta, T)] = {
+  def withMeta[T](defparser: => P[T])(implicit v: P[?]): P[(RawNodeMeta, T)] = {
     P(positioned(defparser)).map {
       case (pos, r) =>
         (RawNodeMeta(pos), r)
@@ -32,7 +32,7 @@ class DefMeta(context: ParserContext) {
     keyword: => P[Unit],
     defparser: => P[T],
   )(implicit
-    v: P[_]
+    v: P[?]
   ): P[(RawNodeMeta, String, T)] = {
     import fastparse.ScalaWhitespace.whitespace
     withMeta(kw(keyword, idt.symbol ~ defparser)).map {

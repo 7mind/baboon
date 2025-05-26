@@ -16,12 +16,11 @@ import java.nio.file.{Files, Path, StandardOpenOption}
 import scala.util.Try
 
 trait BaboonCompiler[F[+_, +_]] {
-//  def run(inputs: Set[Path]): F[NEList[BaboonIssue], Unit]
   def run(target: CompilerTarget, model: BaboonFamily): F[NEList[BaboonIssue], Unit]
 }
 
 object BaboonCompiler {
-  class BaboonCompilerImpl[F[+_, +_]: Error2](
+  class BaboonCompilerImpl[F[+_, +_]: Error2]( // dirty, I/O happens there
     translator: CSBaboonTranslator[F],
     options: CompilerOptions,
     logger: BLogger,
@@ -32,101 +31,81 @@ object BaboonCompiler {
 
       for {
         _ <- cleanupTargetPaths(target.output)
-//          .catchAll {
-//          value =>
-//            System.err.println(s"Refusing to remove target directory, there are unexpected files: ${value.niceList()}")
-//            System.err.println(s"Extensions allowed for removal: ${options.safeToRemoveExtensions.mkString(", ")}")
-//            sys.exit(2)
-//        }
-        _ = target.generic.metaWriteEvolutionJsonTo.foreach {
-          maybePath =>
-            val path = Option(maybePath.getParent) match {
-              case Some(_) => maybePath
-              case None    => target.output.output.resolve(maybePath)
-            }
+        _ <- writeEvolutionJson(target, model)
 
-            path.getParent.toFile.mkdirs()
-
-            val result = metagen.meta(model).toString()
-
-            Files.writeString(
-              path,
-              result.replace("\r", ""),
-              StandardOpenOption.WRITE,
-              StandardOpenOption.TRUNCATE_EXISTING,
-              StandardOpenOption.CREATE,
-            )
-        }
+        _           = logger.message( s"${target.id}: generating output...")
         translated <- translator.translate(model)
-        // io
+
         _ <- F.traverseAccumErrors_(translated.files.iterator) {
           case (relativePath, output) =>
-            F.fromTry(Try {
-              target.output.targetPathFor(output).foreach {
-                targetDirectory =>
-                  val targetPath = targetDirectory.resolve(relativePath)
-                  writeFile(output, targetPath)
-              }
-            }).leftMap(t => NEList(BaboonIssue.CantWriteOutput(relativePath, t)))
+            F.traverse_(target.output.targetPathFor(output)) {
+              targetDirectory =>
+                val targetPath = targetDirectory.resolve(relativePath)
+                writeFile(output, targetPath)
+            }
+        }
+        _ = logger.message( s"${target.id}: done")
+
+      } yield {}
+    }
+
+    private def writeFile(content: OutputFile, tgt: Path): F[NEList[BaboonIssue], Unit] = {
+      F.fromTry(Try {
+        tgt.getParent.toFile.mkdirs()
+
+        if (options.debug) {
+          logger.message("debug", s"$tgt\n$content")
         }
 
-//        _ <- compiler.run(inputModels).catchAll {
-//          value =>
-//            System.err.println("Compiler failed")
-//            System.err.println(value.toList.stringifyIssues)
-//            sys.exit(3)
-//        }
-      } yield {}
-
-    }
-//
-//    override def run(inputs: Set[Path]): F[NEList[BaboonIssue], Unit] = {
-//      for {
-//        loaded <- loader.load(inputs.toList)
-//        // io
-//
-//
-//      } yield {}
-//    }
-
-    private def writeFile(content: OutputFile, tgt: Path): Unit = {
-      tgt.getParent.toFile.mkdirs()
-
-      if (options.debug) {
-        logger.message("debug", q"$tgt\n$content")
-      }
-
-      Files.writeString(
-        tgt,
-        content.content.replace("\r", ""),
-        StandardCharsets.UTF_8,
-        StandardOpenOption.CREATE,
-        StandardOpenOption.TRUNCATE_EXISTING,
-      )
-      ()
+        Files.writeString(
+          tgt,
+          content.content.replace("\r", ""),
+          StandardCharsets.UTF_8,
+          StandardOpenOption.CREATE,
+          StandardOpenOption.TRUNCATE_EXISTING,
+        )
+        ()
+      }).leftMap(t => NEList(BaboonIssue.CantWriteOutput(tgt.toString, t)))
     }
 
     private def cleanupTargetPaths(targetOptions: OutputOptions): F[NEList[BaboonIssue], Unit] = {
-      val targetPaths = targetOptions.targetPaths.values.toList.distinct.filter(_.toFile.exists())
-      val unexpectedFiles = targetPaths.flatMap {
-        IzFiles.walk(_).filter {
-          p =>
-            val f = p.toFile
-            !f.isDirectory && !(
-              f.getName.startsWith(".") ||
-              targetOptions.safeToRemoveExtensions.exists(ext => f.getName.endsWith(s".$ext"))
-            )
-        }
-      }
+      for {
+        targetPaths <- F.pure(targetOptions.targetPaths.values.toList.distinct.filter(_.toFile.exists()))
+        unexpectedFiles <- F
+          .fromTry(Try(targetPaths.flatMap {
+            IzFiles.walk(_).filter {
+              p =>
+                val f = p.toFile
+                !f.isDirectory && !(
+                  f.getName.startsWith(".") ||
+                  targetOptions.safeToRemoveExtensions.exists(ext => f.getName.endsWith(s".$ext"))
+                )
+            }
+          }))
+          .catchAll(t => F.fail(NEList(CantCleanupTarget(Seq.empty, targetOptions.safeToRemoveExtensions.toSeq, Some(t)))))
+        _ <- F
+          .ifThenElse(unexpectedFiles.isEmpty)(
+            F.fromTry(Try(targetPaths.foreach(path => IzFiles.erase(path))))
+              .catchAll(t => F.fail(NEList(CantCleanupTarget(unexpectedFiles.map(_.toString), targetOptions.safeToRemoveExtensions.toSeq, Some(t))))),
+            F.fail(NEList(CantCleanupTarget(unexpectedFiles.map(_.toString), targetOptions.safeToRemoveExtensions.toSeq, None))),
+          )
 
-      if (unexpectedFiles.isEmpty) {
-        targetPaths.foreach(path => IzFiles.erase(path))
-        F.pure(())
-      } else {
-        F.fail(NEList(CantCleanupTarget(unexpectedFiles.map(_.toString), targetOptions.safeToRemoveExtensions.toSeq)))
-      }
+      } yield {}
     }
 
+    private def writeEvolutionJson(target: CompilerTarget, model: BaboonFamily): F[NEList[BaboonIssue], Unit] = {
+      F.traverse_(target.generic.metaWriteEvolutionJsonTo) {
+        maybePath =>
+          val path = Option(maybePath.getParent) match {
+            case Some(_) => maybePath
+            case None    => target.output.output.resolve(maybePath)
+          }
+
+          val result = metagen.meta(model).toString()
+
+          writeFile(OutputFile(result.replace("\r", ""), CompilerProduct.CustomMeta), path)
+      }
+    }
   }
 
 }

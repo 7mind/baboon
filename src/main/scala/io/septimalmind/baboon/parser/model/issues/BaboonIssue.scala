@@ -27,7 +27,7 @@ object BaboonIssue {
 
   case class CantWriteOutput(path: String, throwable: Throwable) extends IOIssue
 
-  case class CantCleanupTarget(paths: Seq[String], safeToRemoveExtensions: Seq[String]) extends IOIssue
+  case class CantCleanupTarget(paths: Seq[String], safeToRemoveExtensions: Seq[String], error: Option[Throwable]) extends IOIssue
 
   //
   sealed trait ParserIssue extends BaboonIssue
