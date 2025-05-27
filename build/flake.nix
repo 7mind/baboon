@@ -27,6 +27,7 @@
                 "BABOON_DIR=${baboon-bin}"
                 # I don't know a way to make substitutions work globally, but we may just explicitly create correct PATH
                 "PATH=${baboon-bin}/bin/baboon:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
               ];
 
               Entrypoint = [ "${baboon-bin}/bin/baboon" ];
@@ -35,22 +36,34 @@
             copyToRoot = (with pkgs.dockerTools; [
               # no magic, see https://github.com/NixOS/nixpkgs/blob/8e177b1a5d868d67e086d6fc137ffcc1ad51db04/pkgs/build-support/docker/default.nix#L957
               binSh
+              pkgs.coreutils
+
+              # an alternative to binSh + pkgs.coreUtils              
+              # pkgs.busybox
+
               usrBinEnv
               caCertificates
               fakeNss
-              pkgs.busybox
-            ]) ++ (with pkgs; [
-              (buildEnv {
-                name = "baboon-container-env";
-                paths = [
-                  coreutils
 
-                  # replaces both binSh and coreutils
-                  # busybox
-                ];
-                pathsToLink = [ "/bin" "/etc" "/var" ];
-              })
+              # won't work, there is no way to make bash unconditionally source a file  
+              #              (pkgs.runCommand "etc-profile" { } ''
+              #                   mkdir -p $out/etc
+              #                   echo "export PATH=${baboon-bin}/bin/baboon:\$PATH" > $out/etc/profile
+              #                   chmod 555 $out/etc/profile
+              #                 '')
+
             ]);
+            
+            # may be useful for extended setup (also see other helpers) but not needed for just binary utilities
+            #             ++ (with pkgs; [
+            #              (buildEnv {
+            #                name = "baboon-container-env";
+            #                paths = [
+
+            #                ];
+            #                pathsToLink = [ "/bin" "/etc" "/var" ];
+            #              })
+            #            ]);
 
             created = "now";
           };
