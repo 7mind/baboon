@@ -22,8 +22,35 @@
             tag = "${baboon-bin.version}";
 
             config = {
+              # here we may reference other packages  
+              Env = [
+                "BABOON_DIR=${baboon-bin}"
+                # I don't know a way to make substitutions work globally, but we may just explicitly create correct PATH
+                "PATH=${baboon-bin}/bin/baboon:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+              ];
+
               Entrypoint = [ "${baboon-bin}/bin/baboon" ];
             };
+
+            copyToRoot = (with pkgs.dockerTools; [
+              # no magic, see https://github.com/NixOS/nixpkgs/blob/8e177b1a5d868d67e086d6fc137ffcc1ad51db04/pkgs/build-support/docker/default.nix#L957
+              binSh
+              usrBinEnv
+              caCertificates
+              fakeNss
+              pkgs.busybox
+            ]) ++ (with pkgs; [
+              (buildEnv {
+                name = "baboon-container-env";
+                paths = [
+                  coreutils
+
+                  # replaces both binSh and coreutils
+                  # busybox
+                ];
+                pathsToLink = [ "/bin" "/etc" "/var" ];
+              })
+            ]);
 
             created = "now";
           };
@@ -34,13 +61,13 @@
 
             src = ./.;
 
-              builder = pkgs.writeText "builder.sh" ''
-                export PATH=${pkgs.coreutils}/bin:$PATH
-                set -xe
-                mkdir -p $out/bin
-                cp $src/baboon $out/bin/baboon
-                chmod +x $out/bin/baboon
-                '';
+            builder = pkgs.writeText "builder.sh" ''
+              export PATH=${pkgs.coreutils}/bin:$PATH
+              set -xe
+              mkdir -p $out/bin
+              cp $src/baboon $out/bin/baboon
+              chmod +x $out/bin/baboon
+            '';
 
             meta = with pkgs.lib; {
               description = "Baboon standalone build demo";
