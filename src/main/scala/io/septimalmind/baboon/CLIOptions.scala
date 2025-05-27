@@ -55,6 +55,8 @@ case class CsCLIOptions(
   csWriteEvolutionDict: Option[Boolean],
   @HelpMessage("Do not generate encoders for deprecated versions")
   enableDeprecatedEncoders: Option[Boolean],
+  @HelpMessage("Allow to erase target directory even if files with these extensions exist there. Default: cs,json,meta")
+  extAllowCleanup: List[String],
 )
 
 case class CLIOptions(
@@ -64,8 +66,4 @@ case class CLIOptions(
   modelDir: List[String],
   @HelpMessage("Produces additional debug messages. Do not use.")
   debug: Option[Boolean],
-  @HelpMessage("Allow to erase target directory even if files with these extensions exist there. Default: cs,json,meta")
-  extAllowCleanup: List[String],
-  @Recurse
-  csOptions: CsCLIOptions,
 )

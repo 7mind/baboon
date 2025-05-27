@@ -10,6 +10,8 @@ import izumi.functional.IzEither.*
 import izumi.functional.bio.{Error2, F}
 import izumi.functional.quasi.QuasiIO
 import izumi.fundamentals.collections.nonempty.NEList
+import izumi.fundamentals.platform.cli.CLIParser.ParserError
+import izumi.fundamentals.platform.cli.{CLIParser, CLIParserImpl}
 import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzArtifactMaterializer
 import izumi.fundamentals.platform.strings.IzString.*
@@ -21,71 +23,87 @@ object Baboon {
     val artifact = implicitly[IzArtifactMaterializer]
     println(s"Baboon ${artifact.get.shortInfo}")
 
-    CaseApp.parse[CLIOptions](args.toSeq) match {
+    new CLIParserImpl().parse(args) match {
       case Left(value) =>
-        System.err.println(value.message)
-        CaseApp.printHelp[CLIOptions]()
+        System.err.println("Cannot parse multimodal commandline ([ARGS] [:role [role-args]] [:role1 [role1-args]] ...")
+        System.err.println(value.toString)
         System.exit(1)
 
       case Right(value) =>
-        entrypoint(convertOptions(value))
+        val generalArgs = value.globalParameters.values.flatMap(v => Seq(s"--${v.name}", v.value)) ++
+          value.globalParameters.flags.map(f => s"${f.name}")
+
+        import izumi.functional.IzEither.*
+
+        for {
+          generalOptions <- CaseApp.parse[CLIOptions](generalArgs).leftMap(e => s"Can't parse generic CLI: $e")
+          launchArgs <- value.roles.map {
+            r =>
+              r.role match {
+                case "cs" =>
+                  val roleArgs = r.roleParameters.values.flatMap(v => Seq(s"--${v.name}", v.value)) ++
+                    r.roleParameters.flags.map(f => s"${f.name}") ++ r.freeArgs
+
+                  CaseApp.parse[CsCLIOptions](roleArgs).leftMap(e => s"Can't parse cs CLI: $e").map {
+                    case (opts, _) =>
+                      val rtOpt = opts.generic.runtime match {
+                        case Some("only")    => RuntimeGenOpt.Only
+                        case Some("without") => RuntimeGenOpt.Without
+                        case _               => RuntimeGenOpt.With
+                      }
+
+                      val outDir         = Paths.get(opts.generic.output)
+                      val testOutDir     = opts.generic.testOutput.map(o => Paths.get(o))
+                      val fixturesOutDir = opts.generic.fixtureOutput.map(o => Paths.get(o)).orElse(testOutDir)
+
+                      val safeToRemove = NEList.from(opts.extAllowCleanup) match {
+                        case Some(value) => value.toSet
+                        case None        => Set("meta", "cs", "json")
+                      }
+
+                      CompilerTarget.CSTarget(
+                        id = "C#",
+                        output = OutputOptions(
+                          safeToRemoveExtensions = safeToRemove,
+                          runtime                = rtOpt,
+                          generateConversions    = !opts.generic.disableConversions.getOrElse(false),
+                          output                 = outDir,
+                          fixturesOutput         = fixturesOutDir,
+                          testsOutput            = testOutDir,
+                        ),
+                        generic = GenericOptions(
+                          obsoleteErrors           = opts.csObsoleteErrors.getOrElse(false),
+                          metaWriteEvolutionJsonTo = opts.generic.metaWriteEvolutionJson.map(s => Paths.get(s)),
+                          codecTestIterations      = opts.generic.codecTestIterations.getOrElse(500),
+                        ),
+                        language = CSOptions(
+                          omitMostRecentVersionSuffixFromPaths      = opts.generic.omitMostRecentVersionSuffixFromPaths.getOrElse(true),
+                          omitMostRecentVersionSuffixFromNamespaces = opts.generic.omitMostRecentVersionSuffixFromNamespaces.getOrElse(true),
+                          disregardImplicitUsings                   = !opts.csExcludeGlobalUsings.getOrElse(false),
+                          useCompactAdtForm                         = opts.csUseCompactAdtForm.getOrElse(true),
+                          wrappedAdtBranchCodecs                    = opts.csWrappedAdtBranchCodecs.getOrElse(false),
+                          writeEvolutionDict                        = opts.csWriteEvolutionDict.getOrElse(false),
+                          enableDeprecatedEncoders                  = opts.enableDeprecatedEncoders.getOrElse(false),
+                        ),
+                      )
+                  }
+                case r => Left(s"Unknown role id: $r")
+              }
+          }.biSequenceScalar
+        } yield {
+          val directoryInputs  = generalOptions._1.modelDir.map(s => Paths.get(s)).toSet
+          val individualInputs = generalOptions._1.model.map(s => Paths.get(s)).toSet
+
+          val options = CompilerOptions(
+            debug            = generalOptions._1.debug.getOrElse(false),
+            individualInputs = individualInputs,
+            directoryInputs  = directoryInputs,
+            targets          = launchArgs,
+          )
+
+          entrypoint(options)
+        }
     }
-  }
-
-  private def convertOptions(value: (CLIOptions, Seq[String])) = {
-    val opts = value._1
-
-    val directoryInputs  = opts.modelDir.map(s => Paths.get(s)).toSet
-    val individualInputs = opts.model.map(s => Paths.get(s)).toSet
-
-    val rtOpt = opts.csOptions.generic.runtime match {
-      case Some("only")    => RuntimeGenOpt.Only
-      case Some("without") => RuntimeGenOpt.Without
-      case _               => RuntimeGenOpt.With
-    }
-
-    val outDir         = Paths.get(opts.csOptions.generic.output)
-    val testOutDir     = opts.csOptions.generic.testOutput.map(o => Paths.get(o))
-    val fixturesOutDir = opts.csOptions.generic.fixtureOutput.map(o => Paths.get(o)).orElse(testOutDir)
-
-    val safeToRemove = NEList.from(opts.extAllowCleanup) match {
-      case Some(value) => value.toSet
-      case None        => Set("meta", "cs", "json")
-    }
-
-    val options = CompilerOptions(
-      debug            = opts.debug.getOrElse(false),
-      individualInputs = individualInputs,
-      directoryInputs  = directoryInputs,
-      targets = Seq(
-        CompilerTarget.CSTarget(
-          id = "C#",
-          output = OutputOptions(
-            safeToRemoveExtensions = safeToRemove,
-            runtime                = rtOpt,
-            generateConversions    = !opts.csOptions.generic.disableConversions.getOrElse(false),
-            output                 = outDir,
-            fixturesOutput         = fixturesOutDir,
-            testsOutput            = testOutDir,
-          ),
-          generic = GenericOptions(
-            obsoleteErrors           = opts.csOptions.csObsoleteErrors.getOrElse(false),
-            metaWriteEvolutionJsonTo = opts.csOptions.generic.metaWriteEvolutionJson.map(s => Paths.get(s)),
-            codecTestIterations      = opts.csOptions.generic.codecTestIterations.getOrElse(500),
-          ),
-          language = CSOptions(
-            omitMostRecentVersionSuffixFromPaths      = opts.csOptions.generic.omitMostRecentVersionSuffixFromPaths.getOrElse(true),
-            omitMostRecentVersionSuffixFromNamespaces = opts.csOptions.generic.omitMostRecentVersionSuffixFromNamespaces.getOrElse(true),
-            disregardImplicitUsings                   = !opts.csOptions.csExcludeGlobalUsings.getOrElse(false),
-            useCompactAdtForm                         = opts.csOptions.csUseCompactAdtForm.getOrElse(true),
-            wrappedAdtBranchCodecs                    = opts.csOptions.csWrappedAdtBranchCodecs.getOrElse(false),
-            writeEvolutionDict                        = opts.csOptions.csWriteEvolutionDict.getOrElse(false),
-            enableDeprecatedEncoders                  = opts.csOptions.enableDeprecatedEncoders.getOrElse(false),
-          ),
-        )
-      ),
-    )
-    options
   }
 
   private def processTarget[F[+_, +_]: Error2: TagKK](
