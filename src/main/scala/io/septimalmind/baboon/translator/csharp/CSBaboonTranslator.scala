@@ -160,43 +160,30 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
     }
   }
 
+  private def translateProduct(
+    domain: Domain,
+    p: CompilerProduct,
+    translate: (DomainMember.User) => F[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]],
+  ): F[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]] = {
+    if (target.output.products.contains(CompilerProduct.Definition)) {
+      F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
+        case (_, defn: DomainMember.User) => translate(defn)
+        case _                            => F.pure(List.empty)
+      }
+    } else {
+      F.pure(List.empty)
+    }
+
+  }
+
   private def translateDomain(domain: Domain, lineage: BaboonLineage): Out[List[CSDefnTranslator.Output]] = {
     val evo = lineage.evolution
     translator.provide(domain).provide(evo).produce().use {
       defnTranslator =>
         for {
-          defnSources <- {
-            if (target.output.products.contains(CompilerProduct.Definition)) {
-              F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
-                case (_, defn: DomainMember.User) => defnTranslator.translate(defn)
-                case _                            => F.pure(List.empty)
-              }
-            } else {
-              F.pure(List.empty)
-            }
-          }
-
-          fixturesSources <- {
-            if (target.output.products.contains(CompilerProduct.Fixture)) {
-              F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
-                case (_, defn: DomainMember.User) => defnTranslator.translateFixtures(defn)
-                case _                            => F.pure(List.empty)
-              }
-            } else {
-              F.pure(List.empty)
-            }
-          }
-
-          testsSources <- {
-            if (target.output.products.contains(CompilerProduct.Test)) {
-              F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
-                case (_, defn: DomainMember.User) => defnTranslator.translateTests(defn)
-                case _                            => F.pure(List.empty)
-              }
-            } else {
-              F.pure(List.empty)
-            }
-          }
+          defnSources <- translateProduct(domain, CompilerProduct.Definition, defnTranslator.translate)
+          fixturesSources <- translateProduct(domain, CompilerProduct.Fixture, defnTranslator.translateFixtures)
+          testsSources <- translateProduct(domain, CompilerProduct.Test, defnTranslator.translateTests)
 
           conversionSources <- {
             if (target.output.products.contains(CompilerProduct.Conversion)) {
@@ -215,7 +202,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             }
           }
         } yield {
-          defnSources.map(_.output) ++
+          defnSources ++
           conversionSources ++
           fixturesSources ++
           testsSources ++
@@ -269,7 +256,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
     domain: Domain,
     lineage: BaboonLineage,
     toCurrent: Set[EvolutionStep],
-    defnOut: List[CSDefnTranslator.OutputExt],
+    defnOut: List[CSDefnTranslator.Output],
   ): Out[List[CSDefnTranslator.Output]] = {
     val pkg = trans.toCsPkg(domain.id, domain.version, lineage.evolution)
 
@@ -322,7 +309,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
            |{
            |    private BaboonCodecs()
            |    {
-           |        ${defnOut.map(_.codecReg).join("\n").shift(8).trim}
+           |        ${defnOut.flatMap(_.codecReg).join("\n").shift(8).trim}
            |    }
            |
            |    private static readonly $csLazy<BaboonCodecs> LazyInstance = new $csLazy<BaboonCodecs>(() => new BaboonCodecs());

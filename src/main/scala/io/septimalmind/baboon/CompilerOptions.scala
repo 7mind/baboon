@@ -30,6 +30,7 @@ object CompilerTarget {
 final case class ScOptions()
 
 final case class CSOptions(
+  obsoleteErrors: Boolean,
   omitMostRecentVersionSuffixFromPaths: Boolean,
   omitMostRecentVersionSuffixFromNamespaces: Boolean,
   useCompactAdtForm: Boolean,
@@ -40,7 +41,6 @@ final case class CSOptions(
 )
 
 final case class GenericOptions(
-  obsoleteErrors: Boolean,
   metaWriteEvolutionJsonTo: Option[Path],
   codecTestIterations: Int,
 )

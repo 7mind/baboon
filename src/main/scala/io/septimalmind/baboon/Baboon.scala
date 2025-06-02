@@ -10,8 +10,7 @@ import izumi.functional.IzEither.*
 import izumi.functional.bio.{Error2, F}
 import izumi.functional.quasi.QuasiIO
 import izumi.fundamentals.collections.nonempty.NEList
-import izumi.fundamentals.platform.cli.CLIParser.ParserError
-import izumi.fundamentals.platform.cli.{CLIParser, CLIParserImpl}
+import izumi.fundamentals.platform.cli.CLIParserImpl
 import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzArtifactMaterializer
 import izumi.fundamentals.platform.strings.IzString.*
@@ -39,44 +38,21 @@ object Baboon {
           generalOptions <- CaseApp.parse[CLIOptions](generalArgs).leftMap(e => s"Can't parse generic CLI: $e")
           launchArgs <- value.roles.map {
             r =>
+              val roleArgs = r.roleParameters.values.flatMap(v => Seq(s"--${v.name}", v.value)) ++
+                r.roleParameters.flags.map(f => s"${f.name}") ++ r.freeArgs
+
               r.role match {
                 case "cs" =>
-                  val roleArgs = r.roleParameters.values.flatMap(v => Seq(s"--${v.name}", v.value)) ++
-                    r.roleParameters.flags.map(f => s"${f.name}") ++ r.freeArgs
-
                   CaseApp.parse[CsCLIOptions](roleArgs).leftMap(e => s"Can't parse cs CLI: $e").map {
                     case (opts, _) =>
-                      val rtOpt = opts.generic.runtime match {
-                        case Some("only")    => RuntimeGenOpt.Only
-                        case Some("without") => RuntimeGenOpt.Without
-                        case _               => RuntimeGenOpt.With
-                      }
-
-                      val outDir         = Paths.get(opts.generic.output)
-                      val testOutDir     = opts.generic.testOutput.map(o => Paths.get(o))
-                      val fixturesOutDir = opts.generic.fixtureOutput.map(o => Paths.get(o)).orElse(testOutDir)
-
-                      val safeToRemove = NEList.from(opts.extAllowCleanup) match {
-                        case Some(value) => value.toSet
-                        case None        => Set("meta", "cs", "json")
-                      }
+                      val shopts = mkGenericOpts(opts)
 
                       CompilerTarget.CSTarget(
-                        id = "C#",
-                        output = OutputOptions(
-                          safeToRemoveExtensions = safeToRemove,
-                          runtime                = rtOpt,
-                          generateConversions    = !opts.generic.disableConversions.getOrElse(false),
-                          output                 = outDir,
-                          fixturesOutput         = fixturesOutDir,
-                          testsOutput            = testOutDir,
-                        ),
-                        generic = GenericOptions(
-                          obsoleteErrors           = opts.csObsoleteErrors.getOrElse(false),
-                          metaWriteEvolutionJsonTo = opts.generic.metaWriteEvolutionJson.map(s => Paths.get(s)),
-                          codecTestIterations      = opts.generic.codecTestIterations.getOrElse(500),
-                        ),
+                        id      = "C#",
+                        output  = shopts.outOpts,
+                        generic = shopts.genericOpts,
                         language = CSOptions(
+                          obsoleteErrors                            = opts.csObsoleteErrors.getOrElse(false),
                           omitMostRecentVersionSuffixFromPaths      = opts.generic.omitMostRecentVersionSuffixFromPaths.getOrElse(true),
                           omitMostRecentVersionSuffixFromNamespaces = opts.generic.omitMostRecentVersionSuffixFromNamespaces.getOrElse(true),
                           disregardImplicitUsings                   = !opts.csExcludeGlobalUsings.getOrElse(false),
@@ -88,41 +64,14 @@ object Baboon {
                       )
                   }
                 case "scala" =>
-                  val roleArgs = r.roleParameters.values.flatMap(v => Seq(s"--${v.name}", v.value)) ++
-                    r.roleParameters.flags.map(f => s"${f.name}") ++ r.freeArgs
-
-                  CaseApp.parse[CsCLIOptions](roleArgs).leftMap(e => s"Can't parse cs CLI: $e").map {
+                  CaseApp.parse[ScCLIOptions](roleArgs).leftMap(e => s"Can't parse cs CLI: $e").map {
                     case (opts, _) =>
-                      val rtOpt = opts.generic.runtime match {
-                        case Some("only")    => RuntimeGenOpt.Only
-                        case Some("without") => RuntimeGenOpt.Without
-                        case _               => RuntimeGenOpt.With
-                      }
-
-                      val outDir         = Paths.get(opts.generic.output)
-                      val testOutDir     = opts.generic.testOutput.map(o => Paths.get(o))
-                      val fixturesOutDir = opts.generic.fixtureOutput.map(o => Paths.get(o)).orElse(testOutDir)
-
-                      val safeToRemove = NEList.from(opts.extAllowCleanup) match {
-                        case Some(value) => value.toSet
-                        case None        => Set("meta", "cs", "json")
-                      }
+                      val shopts = mkGenericOpts(opts)
 
                       CompilerTarget.ScTarget(
-                        id = "Scala",
-                        output = OutputOptions(
-                          safeToRemoveExtensions = safeToRemove,
-                          runtime                = rtOpt,
-                          generateConversions    = !opts.generic.disableConversions.getOrElse(false),
-                          output                 = outDir,
-                          fixturesOutput         = fixturesOutDir,
-                          testsOutput            = testOutDir,
-                        ),
-                        generic = GenericOptions(
-                          obsoleteErrors           = opts.csObsoleteErrors.getOrElse(false),
-                          metaWriteEvolutionJsonTo = opts.generic.metaWriteEvolutionJson.map(s => Paths.get(s)),
-                          codecTestIterations      = opts.generic.codecTestIterations.getOrElse(500),
-                        ),
+                        id       = "Scala",
+                        output   = shopts.outOpts,
+                        generic  = shopts.genericOpts,
                         language = ScOptions(),
                       )
                   }
@@ -143,6 +92,39 @@ object Baboon {
           entrypoint(options)
         }
     }
+  }
+
+  case class SharedOpts(outOpts: OutputOptions, genericOpts: GenericOptions)
+
+  private def mkGenericOpts(opts: SharedCLIOptions): SharedOpts = {
+    val rtOpt = opts.generic.runtime match {
+      case Some("only")    => RuntimeGenOpt.Only
+      case Some("without") => RuntimeGenOpt.Without
+      case _               => RuntimeGenOpt.With
+    }
+
+    val outDir         = Paths.get(opts.generic.output)
+    val testOutDir     = opts.generic.testOutput.map(o => Paths.get(o))
+    val fixturesOutDir = opts.generic.fixtureOutput.map(o => Paths.get(o)).orElse(testOutDir)
+
+    val safeToRemove = NEList.from(opts.extAllowCleanup) match {
+      case Some(value) => value.toSet
+      case None        => Set("meta", "cs", "json")
+    }
+
+    val outOpts = OutputOptions(
+      safeToRemoveExtensions = safeToRemove,
+      runtime                = rtOpt,
+      generateConversions    = !opts.generic.disableConversions.getOrElse(false),
+      output                 = outDir,
+      fixturesOutput         = fixturesOutDir,
+      testsOutput            = testOutDir,
+    )
+    val genericOpts = GenericOptions(
+      metaWriteEvolutionJsonTo = opts.generic.metaWriteEvolutionJson.map(s => Paths.get(s)),
+      codecTestIterations      = opts.generic.codecTestIterations.getOrElse(500),
+    )
+    SharedOpts(outOpts, genericOpts)
   }
 
   private def processTarget[F[+_, +_]: Error2: TagKK](

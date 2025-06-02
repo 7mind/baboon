@@ -15,14 +15,21 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 trait CSDefnTranslator[F[+_, +_]] {
-  def translate(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.OutputExt]]
+  def translate(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]]
   def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]]
   def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]]
 }
 
 object CSDefnTranslator {
-  case class Output(path: String, tree: TextTree[CSValue], pkg: CSPackageId, product: CompilerProduct, doNotModify: Boolean = false)
-  case class OutputExt(output: Output, codecReg: TextTree[CSValue])
+  case class Output(
+    path: String,
+    tree: TextTree[CSValue],
+    pkg: CSPackageId,
+    product: CompilerProduct,
+    doNotModify: Boolean                = false,
+    codecReg: Option[TextTree[CSValue]] = None,
+  )
+//  case class OutputExt(output: Output, codecReg: TextTree[CSValue])
 
   private val obsolete: CSType     = CSType(CSTypes.csSystemPkg, "Obsolete", fq = false)
   private val serializable: CSType = CSType(CSTypes.csSystemPkg, "Serializable", fq = false)
@@ -42,14 +49,14 @@ object CSDefnTranslator {
   ) extends CSDefnTranslator[F] {
     type Out[T] = F[NEList[BaboonIssue.TranslationIssue], T]
 
-    override def translate(defn: DomainMember.User): Out[List[OutputExt]] = {
+    override def translate(defn: DomainMember.User): Out[List[Output]] = {
       defn.id.owner match {
         case Owner.Adt(_) if target.language.useCompactAdtForm => F.pure(List.empty)
         case _                                                 => doTranslate(defn)
       }
     }
 
-    private def doTranslate(defn: DomainMember.User): Out[List[OutputExt]] = {
+    private def doTranslate(defn: DomainMember.User): Out[List[Output]] = {
       val (content, reg) = makeFullRepr(defn, inNs = true)
 
       // Generic codec variant have poor performance on empty JIT and il2cpp (for some reason ._.)
@@ -58,14 +65,12 @@ object CSDefnTranslator {
 
       F.pure(
         List(
-          OutputExt(
-            Output(
-              getOutputPath(defn),
-              content,
-              trans.toCsPkg(domain.id, domain.version, evo),
-              CompilerProduct.Definition,
-            ),
-            registrations,
+          Output(
+            getOutputPath(defn),
+            content,
+            trans.toCsPkg(domain.id, domain.version, evo),
+            CompilerProduct.Definition,
+            codecReg = Some(registrations),
           )
         )
       )
@@ -134,7 +139,7 @@ object CSDefnTranslator {
         if (isLatestVersion || hackyIsEmpty) {
           tree
         } else {
-          q"""[$obsolete("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${target.generic.obsoleteErrors.toString})]
+          q"""[$obsolete("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${target.language.obsoleteErrors.toString})]
              |$tree""".stripMargin
         }
       }

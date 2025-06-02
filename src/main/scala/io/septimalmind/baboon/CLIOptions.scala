@@ -37,6 +37,11 @@ case class GenericTranspilerCLIOptions(
   codecTestIterations: Option[Int],
 )
 
+trait SharedCLIOptions {
+  def generic: GenericTranspilerCLIOptions
+  def extAllowCleanup: List[String]
+}
+
 case class CsCLIOptions(
   @Recurse
   generic: GenericTranspilerCLIOptions,
@@ -57,7 +62,14 @@ case class CsCLIOptions(
   enableDeprecatedEncoders: Option[Boolean],
   @HelpMessage("Allow to erase target directory even if files with these extensions exist there. Default: cs,json,meta")
   extAllowCleanup: List[String],
-)
+) extends SharedCLIOptions
+
+case class ScCLIOptions(
+  @Recurse
+  generic: GenericTranspilerCLIOptions,
+  @HelpMessage("Allow to erase target directory even if files with these extensions exist there. Default: cs,json,meta")
+  extAllowCleanup: List[String],
+) extends SharedCLIOptions
 
 case class CLIOptions(
   @HelpMessage("A list of *.baboon files to process (can be combined with --model-dir)")

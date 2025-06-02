@@ -33,11 +33,11 @@ abstract class BaboonTest[F[+_, +_]: TagKK](implicit baboonTestModule: BaboonTes
                 testsOutput    = None,
               ),
               generic = GenericOptions(
-                obsoleteErrors           = false,
                 codecTestIterations      = 500,
                 metaWriteEvolutionJsonTo = None,
               ),
               language = CSOptions(
+                obsoleteErrors                            = false,
                 writeEvolutionDict                        = true,
                 useCompactAdtForm                         = true,
                 wrappedAdtBranchCodecs                    = true,
