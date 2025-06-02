@@ -173,7 +173,6 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
     } else {
       F.pure(List.empty)
     }
-
   }
 
   private def translateDomain(domain: Domain, lineage: BaboonLineage): Out[List[CSDefnTranslator.Output]] = {

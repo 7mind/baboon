@@ -61,7 +61,7 @@ object CSDefnTranslator {
 
       // Generic codec variant have poor performance on empty JIT and il2cpp (for some reason ._.)
       // val registrations = reg.map { case (srcRef, reg) => q"Register(new $baboonTypeCodecs<${srcRef.fullyQualified}>($reg));" }.join("\n")
-      val registrations = reg.map { case (_, reg) => q"Register(new $baboonTypeCodecs($reg));" }.join("\n")
+      val registrations = Option(reg.map { case (_, reg) => q"Register(new $baboonTypeCodecs($reg));" }).filterNot(_.isEmpty).map(_.join("\n"))
 
       F.pure(
         List(
@@ -70,7 +70,7 @@ object CSDefnTranslator {
             content,
             trans.toCsPkg(domain.id, domain.version, evo),
             CompilerProduct.Definition,
-            codecReg = Some(registrations),
+            codecReg = registrations,
           )
         )
       )
@@ -135,8 +135,7 @@ object CSDefnTranslator {
       val isLatestVersion = domain.version == evo.latest
 
       def obsoletePrevious(tree: TextTree[CSValue]): TextTree[CSValue] = {
-        val hackyIsEmpty = tree.mapRender(_ => "?").isEmpty
-        if (isLatestVersion || hackyIsEmpty) {
+        if (isLatestVersion || tree.isEmpty) {
           tree
         } else {
           q"""[$obsolete("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${target.language.obsoleteErrors.toString})]

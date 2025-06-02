@@ -6,7 +6,7 @@ import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*
 import io.septimalmind.baboon.translator.csharp.CSCodecFixtureTranslator.CSRandomMethodTranslatorImpl
-import io.septimalmind.baboon.translator.scl.{ScBaboonTranslator, ScDefnTranslator}
+import io.septimalmind.baboon.translator.scl.{ScBaboonTranslator, ScDefnTranslator, ScFileTools, ScTreeTools, ScTypeTranslator}
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.functional.ParallelAccumulatingOps2
@@ -103,5 +103,7 @@ class BaboonScModule[F[+_, +_]: Error2: TagKK](target: ScTarget) extends ModuleD
     })
 
   make[ScBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
-
+  make[ScFileTools].from[ScFileTools.ScFileToolsImpl]
+  make[ScTypeTranslator]
+  make[ScTreeTools].from[ScTreeTools.ScTreeToolsImpl]
 }
