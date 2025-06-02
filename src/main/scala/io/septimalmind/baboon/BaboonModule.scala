@@ -1,11 +1,12 @@
 package io.septimalmind.baboon
 
 import distage.{DIKey, ModuleDef}
-import io.septimalmind.baboon.CompilerTarget.CSTarget
+import io.septimalmind.baboon.CompilerTarget.{CSTarget, ScTarget}
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*
 import io.septimalmind.baboon.translator.csharp.CSCodecFixtureTranslator.CSRandomMethodTranslatorImpl
+import io.septimalmind.baboon.translator.scl.{ScBaboonTranslator, ScDefnTranslator}
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.functional.ParallelAccumulatingOps2
@@ -54,12 +55,16 @@ class BaboonModule[F[+_, +_]: Error2: TagKK](
   makeFactory[BaboonTranslator.Factory[F]]
 }
 
-class BaboonCSModule[F[+_, +_]: Error2: TagKK](target: CSTarget) extends ModuleDef {
+class SharedTranspilerModule[F[+_, +_]: Error2: TagKK]() extends ModuleDef {
   include(new BaboonSharedModule[F])
-
-  make[CSTarget].fromValue(target)
   make[BaboonCompiler[F]].from[BaboonCompiler.BaboonCompilerImpl[F]]
   make[BaboonMetagen].from[BaboonMetagen.BaboonMetagenImpl]
+
+}
+class BaboonCSModule[F[+_, +_]: Error2: TagKK](target: CSTarget) extends ModuleDef {
+  include(new SharedTranspilerModule[F])
+
+  make[CSTarget].fromValue(target)
 
   makeSubcontext[CSDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
@@ -76,11 +81,27 @@ class BaboonCSModule[F[+_, +_]: Error2: TagKK](target: CSTarget) extends ModuleD
   many[BaboonAbstractTranslator[F]]
     .ref[CSBaboonTranslator[F]]
 
-  make[CSBaboonTranslator[F]]
+  make[CSBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
 
   make[CSTreeTools].from[CSTreeTools.CSTreeToolsImpl]
   make[CSFileTools].from[CSFileTools.CSFileToolsImpl]
   make[CSTypeTranslator]
 
   makeFactory[CSConversionTranslator.Factory[F]]
+}
+
+class BaboonScModule[F[+_, +_]: Error2: TagKK](target: ScTarget) extends ModuleDef {
+  include(new SharedTranspilerModule[F])
+
+  make[ScTarget].fromValue(target)
+
+  makeSubcontext[ScDefnTranslator[F]]
+    .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
+    .withSubmodule(new ModuleDef {
+      make[ScDefnTranslator[F]].from[ScDefnTranslator.CSDefnTranslatorImpl[F]]
+
+    })
+
+  make[ScBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
+
 }

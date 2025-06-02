@@ -18,7 +18,16 @@ object CompilerTarget {
     generic: GenericOptions,
     language: CSOptions,
   ) extends CompilerTarget
+
+  case class ScTarget(
+    id: String,
+    output: OutputOptions,
+    generic: GenericOptions,
+    language: ScOptions,
+  ) extends CompilerTarget
 }
+
+final case class ScOptions()
 
 final case class CSOptions(
   omitMostRecentVersionSuffixFromPaths: Boolean,

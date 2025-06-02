@@ -2,7 +2,7 @@ package io.septimalmind.baboon
 
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue.CantCleanupTarget
-import io.septimalmind.baboon.translator.OutputFile
+import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile}
 import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator
 import io.septimalmind.baboon.typer.model.BaboonFamily
 import io.septimalmind.baboon.util.{BLogger, BaboonMetagen}
@@ -21,7 +21,7 @@ trait BaboonCompiler[F[+_, +_]] {
 
 object BaboonCompiler {
   class BaboonCompilerImpl[F[+_, +_]: Error2]( // dirty, I/O happens there
-    translator: CSBaboonTranslator[F],
+    translator: BaboonAbstractTranslator[F],
     options: CompilerOptions,
     logger: BLogger,
     metagen: BaboonMetagen,
