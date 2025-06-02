@@ -4,11 +4,12 @@ version "1.0.0"
 
 foreign ObscureInt {
   cs = "System.Int32"
-  java = "java.lang.Integer"
+  scala = "java.lang.Integer"
 }
 
 foreign ForeignStruct {
-    cs = "BaboonDefinitions.Foreign.TestForeignStruct" with { "value-type" = "yes" }
+  cs = "BaboonDefinitions.Foreign.TestForeignStruct" with { "value-type" = "yes" }
+  scala = "java.lang.Integer"
 }
 
 

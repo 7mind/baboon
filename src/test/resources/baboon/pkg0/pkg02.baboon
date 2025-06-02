@@ -9,7 +9,7 @@ enum T1_E1 {
 
 foreign ObscureInt {
   cs = "System.Int32"
-  java = "java.lang.Integer"
+  scala = "java.lang.Integer"
 }
 
 root data T1_E1_RET {

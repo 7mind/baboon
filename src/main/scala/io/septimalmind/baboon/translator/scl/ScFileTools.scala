@@ -12,12 +12,12 @@ object ScFileTools {
     def basename(dom: Domain, evolution: BaboonEvolution): String = {
       basename(
         dom,
-        omitVersion = true,
+        evolution.latest == dom.version,
       )
     }
 
     private def basename(dom: Domain, omitVersion: Boolean): String = {
-      val base = dom.id.path.map(_.capitalize)
+      val base = dom.id.path.map(_.toLowerCase)
       val segments = if (omitVersion) {
         base
       } else {

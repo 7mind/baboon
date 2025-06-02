@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.scl
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.scl.ScValue.{ScPackageId, ScType}
+import io.septimalmind.baboon.translator.scl.ScValue.ScType
 import io.septimalmind.baboon.typer.TypeInfo
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Applicative2, F}
@@ -114,12 +114,27 @@ object ScDefnTranslator {
     }
 
     private def makeRepr(defn: DomainMember.User, name: ScValue.ScType, isLatestVersion: Boolean): (TextTree[ScValue], List[(ScType, TextTree[ScValue])]) = {
-      ???
+      val genMarker = if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
+      val mainMeta  = Set.empty[TextTree[ScValue]] // csDomTrees.makeMeta(defn, isCodec = false)
+      val codecMeta = Set.empty[TextTree[ScValue]] // codecs.map(_.codecMeta(defn, name).member)
+      val meta      = mainMeta ++ codecMeta
+
+      defn.defn match {
+        case contract: Typedef.Dto => (q"", List.empty)
+        case enum: Typedef.Enum    => (q"", List.empty)
+        case adt: Typedef.Adt      => (q"", List.empty)
+        case _: Typedef.Foreign    => (q"", List.empty)
+        case _: Typedef.Service    => (q"", List.empty)
+        case _: Typedef.Contract   => (q"", List.empty)
+      }
+
+      (q" // ${defn.toString}", List.empty)
     }
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
       val fbase = scFiles.basename(domain, evo)
       val fname = s"${defn.id.name.name.capitalize}${suffix.getOrElse("")}.scala"
+
       defn.defn.id.owner match {
         case Owner.Toplevel => s"$fbase/$fname"
         case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString(".")}.$fname"
