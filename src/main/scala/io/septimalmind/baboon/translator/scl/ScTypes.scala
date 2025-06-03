@@ -23,7 +23,6 @@ object ScTypes {
   val scFloat: ScType      = ScType(scalaPkg, "Float")
   val scDouble: ScType     = ScType(scalaPkg, "Double")
   val scBigDecimal: ScType = ScType(scalaPkg, "BigDecimal")
-  val scString: ScType     = ScType(scalaPkg, "String")
   val scUnit: ScType       = ScType(scalaPkg, "Unit")
 
   // Scala collection types
@@ -39,6 +38,9 @@ object ScTypes {
 
   val javaUtilPkg: ScPackageId = ScPackageId(NEList("_root_", "java", "util"))
   val scUid: ScType            = ScType(javaUtilPkg, "UUID")
+
+  val javaLangPkg: ScPackageId = ScPackageId(NEList("_root_", "java", "lang"))
+  val scString: ScType         = ScType(javaLangPkg, "String")
 
   val javaTimePkg: ScPackageId = ScPackageId(NEList("_root_", "java", "time"))
   val scTime: ScType           = ScType(javaTimePkg, "OffsetDateTime")

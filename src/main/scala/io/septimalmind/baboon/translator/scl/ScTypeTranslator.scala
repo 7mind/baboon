@@ -52,7 +52,7 @@ class ScTypeTranslator(
     toScPkg(
       p,
       version,
-      omitVersion = true,
+      omitVersion = version == evolution.latest,
     )
   }
   def toScPkg(p: Pkg, version: Version, omitVersion: Boolean): ScPackageId = {

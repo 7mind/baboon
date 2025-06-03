@@ -4,12 +4,17 @@ import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.csharp.CSDefnTranslator
+import io.septimalmind.baboon.translator.csharp.CSTypes.{csCollectionsGenericPkg, csCollectionsImmutablePkg, csLinqPkg, csSystemPkg}
+import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
+import io.septimalmind.baboon.translator.csharp.{CSDefnTranslator, CSTypes, CSValue}
+import io.septimalmind.baboon.translator.scl.ScValue.ScPackageId
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources, scl}
 import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage, Domain, DomainMember}
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
+import izumi.fundamentals.platform.resources.IzResources
+import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 class ScBaboonTranslator[F[+_, +_]: Error2](
@@ -79,16 +84,40 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
     }
   }
 
-  private def sharedRuntime(): Out[List[ScDefnTranslator.Output]] = {
-    F.pure(List.empty)
-  }
   private def sharedFixture(): Out[List[ScDefnTranslator.Output]] = {
     F.pure(List.empty)
 
   }
 
   private def renderTree(o: ScDefnTranslator.Output): String = {
-    val full = o.tree
+//    val alwaysAvailable: Set[ScPackageId] = Set.empty
+//    val forcedUses: Set[ScPackageId]      = Set.empty
+
+    val usedTypes = o.tree.values.collect { case t: ScValue.ScType => t }.distinct
+      .sortBy(_.toString) // TODO: dirty
+
+//    val available = Set(o.pkg)
+//    val requiredPackages = Set.empty
+//    val allPackages      =  //(requiredPackages ++ usedPackages ++ forcedUses).diff(available ++ alwaysAvailable)
+
+    val imports = usedTypes.toSeq.map {
+      p => q"import ${p.pkg.parts.mkString(".")}.${p.name}"
+    }.join("\n")
+
+//    println(s"${o.path}: ${usedTypes.size} / ${o.doNotModify}")
+//    if (o.path.contains("Clash.scala")) {
+//      println(imports)
+//    }
+
+    val full = if (o.doNotModify) {
+      o.tree
+    } else {
+      Seq(
+        Seq(imports),
+        Seq(o.tree),
+      ).flatten.join("\n\n")
+    }
+
     full.mapRender {
       case t: ScValue.ScTypeName =>
         t.name
@@ -102,6 +131,21 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
 
       case t: ScValue.ScType =>
         (t.pkg.parts :+ t.name).mkString(".")
+    }
+  }
+
+  private def sharedRuntime(): Out[List[scl.ScDefnTranslator.Output]] = {
+    if (target.output.products.contains(CompilerProduct.Runtime)) {
+      val sharedOutput = ScDefnTranslator.Output(
+        s"BaboonRuntimeShared.scala",
+        TextTree.text(IzResources.readAsString("baboon-runtime/scala/BaboonRuntimeShared.scala").get),
+        ScTypes.baboonRuntimePkg,
+        CompilerProduct.Runtime,
+        doNotModify = true,
+      )
+      F.pure(List(sharedOutput))
+    } else {
+      F.pure(List.empty)
     }
   }
 }

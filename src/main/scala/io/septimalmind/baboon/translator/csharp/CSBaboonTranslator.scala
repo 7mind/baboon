@@ -55,7 +55,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
       Set(csCollectionsImmutablePkg, csCollectionsGenericPkg)
     }
 
-    val usedPackages = o.tree.values.collect { case t: CSValue.CSType if !t.fq => t.pkg }.distinct
+    val usedPackages = o.tree.values.collect { case t: CSValue.CSType => t.pkg }.distinct
       .sortBy(_.parts.mkString("."))
 
     val available        = Set(o.pkg)
@@ -180,9 +180,9 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
     translator.provide(domain).provide(evo).produce().use {
       defnTranslator =>
         for {
-          defnSources <- translateProduct(domain, CompilerProduct.Definition, defnTranslator.translate)
+          defnSources     <- translateProduct(domain, CompilerProduct.Definition, defnTranslator.translate)
           fixturesSources <- translateProduct(domain, CompilerProduct.Fixture, defnTranslator.translateFixtures)
-          testsSources <- translateProduct(domain, CompilerProduct.Test, defnTranslator.translateTests)
+          testsSources    <- translateProduct(domain, CompilerProduct.Test, defnTranslator.translateTests)
 
           conversionSources <- {
             if (target.output.products.contains(CompilerProduct.Conversion)) {
