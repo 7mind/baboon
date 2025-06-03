@@ -109,7 +109,7 @@ object Baboon {
 
     val safeToRemove = NEList.from(opts.extAllowCleanup) match {
       case Some(value) => value.toSet
-      case None        => Set("meta", "cs", "json")
+      case None        => Set("meta", "cs", "json", "scala")
     }
 
     val outOpts = OutputOptions(

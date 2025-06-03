@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.scl
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.csharp.CSDefnTranslator.Output
 import io.septimalmind.baboon.translator.scl.ScValue.ScType
 import io.septimalmind.baboon.typer.TypeInfo
 import io.septimalmind.baboon.typer.model.*
@@ -27,7 +28,7 @@ object ScDefnTranslator {
     codecReg: Option[TextTree[ScValue]] = None,
   )
 
-  class CSDefnTranslatorImpl[F[+_, +_]: Applicative2 /* This impl has no errors right now */ ](
+  class ScDefnTranslatorImpl[F[+_, +_]: Applicative2](
     target: ScTarget,
     domain: Domain,
     evo: BaboonEvolution,
@@ -39,6 +40,13 @@ object ScDefnTranslator {
     import ScTypes.*
 
     override def translate(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+      defn.id.owner match {
+        case Owner.Adt(_) => F.pure(List.empty)
+        case _            => doTranslate(defn)
+      }
+    }
+
+    private def doTranslate(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
       val (content, reg) = makeFullRepr(defn, inNs = true)
 
       val registrations = Option(reg.map { case (_, reg) => q"register(new $baboonTypeCodecs($reg))" }).filterNot(_.isEmpty).map(_.join("\n"))
@@ -115,20 +123,93 @@ object ScDefnTranslator {
 
     private def makeRepr(defn: DomainMember.User, name: ScValue.ScType, isLatestVersion: Boolean): (TextTree[ScValue], List[(ScType, TextTree[ScValue])]) = {
       val genMarker = if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
-      val mainMeta  = Set.empty[TextTree[ScValue]] // csDomTrees.makeMeta(defn, isCodec = false)
-      val codecMeta = Set.empty[TextTree[ScValue]] // codecs.map(_.codecMeta(defn, name).member)
-      val meta      = mainMeta ++ codecMeta
 
-      defn.defn match {
-        case contract: Typedef.Dto => (q"", List.empty)
-        case enum: Typedef.Enum    => (q"", List.empty)
-        case adt: Typedef.Adt      => (q"", List.empty)
-        case _: Typedef.Foreign    => (q"", List.empty)
-        case _: Typedef.Service    => (q"", List.empty)
-        case _: Typedef.Contract   => (q"", List.empty)
+      val tree: TextTree[ScValue] = defn.defn match {
+        case contract: Typedef.Contract =>
+          val methods = contract.fields.map {
+            f =>
+              val t = trans.asScType(f.tpe)
+              q"def ${f.name.name}: $t"
+          }
+          val parents       = contract.contracts.map(c => trans.toScTypeRefNoDeref(c, domain, evo)) :+ genMarker
+          val extendsClause = if (parents.nonEmpty) q" extends ${parents.map(t => q"$t").join(" with ")}" else q""
+          val body          = if (methods.nonEmpty) methods.join("\n") else q""
+          q"""trait ${name.asName}$extendsClause {
+             |    ${body.shift(4).trim}
+             |}""".stripMargin
+
+        case dto: Typedef.Dto =>
+          val params = dto.fields.map {
+            f =>
+              val t = trans.asScType(f.tpe)
+              q"${f.name.name}: $t"
+          }
+          val paramsList      = if (params.nonEmpty) params.join(",\n") else q""
+          val contractParents = dto.contracts.map(c => trans.toScTypeRefNoDeref(c, domain, evo))
+          val adtParents = dto.id.owner match {
+            case Owner.Adt(id) => Seq(trans.toScTypeRefNoDeref(id, domain, evo), iBaboonAdtMemberMeta)
+            case _             => Seq.empty
+          }
+          val parents          = adtParents ++ contractParents :+ genMarker
+          val extendsClauseDto = if (parents.nonEmpty) q" extends ${parents.map(t => q"$t").join(" with ")}" else q""
+          q"""case class ${name.asName}(
+             |    ${paramsList.shift(4).trim}
+             |)$extendsClauseDto""".stripMargin
+
+        case e: Typedef.Enum =>
+          val traitTree = q"sealed trait ${name.asName}"
+          val cases = e.members.map {
+            m =>
+              val obj = m.name.capitalize
+              q"case object $obj extends ${name.asName}"
+          }.toList
+          val companion = q"""object ${name.asName} {
+                             |    ${cases.join("\n").shift(4).trim}
+                             |}""".stripMargin
+          Seq(traitTree, companion).join("\n\n")
+
+        case adt: Typedef.Adt =>
+          val parents          = adt.contracts.map(c => trans.toScTypeRefNoDeref(c, domain, evo)) :+ genMarker
+          val extendsClauseAdt = if (parents.nonEmpty) q" extends ${parents.map(t => q"$t").join(" with ")}" else q""
+          val sealedTrait      = q"""sealed trait ${name.asName}$extendsClauseAdt""".stripMargin
+          val memberTrees = adt.members.map {
+            mid =>
+              domain.defs.meta.nodes(mid) match {
+                case mdefn: DomainMember.User => makeFullRepr(mdefn, inNs = false)
+                case other                    => throw new RuntimeException(s"BUG: missing/wrong adt member: $mid => $other")
+              }
+          }
+          val fullTree =
+            q"""$sealedTrait
+               |
+               |object ${name.asName} {
+               |  ${memberTrees.map(_._1).toList.join("\n\n").shift(2).trim}
+               |}""".stripMargin
+//          val regs = memberTrees.flatMap(_._2)
+          fullTree
+        case _: Typedef.Foreign =>
+          q""
+
+        case service: Typedef.Service =>
+          val methods = service.methods.map {
+            m =>
+              val in  = trans.asScType(m.sig)
+              val out = m.out.map(trans.asScType)
+              val err = m.err.map(trans.asScType)
+              val ret = (out, err) match {
+                case (Some(o), Some(e)) => q"$scEither[$e, $o]"
+                case (None, Some(e))    => q"$scEither[$e, $scUnit]"
+                case (Some(o), None)    => o
+                case _                  => q"$scUnit"
+              }
+              q"def ${m.name.name}(arg: $in): $ret"
+          }
+          val body = if (methods.nonEmpty) methods.join("\n") else q""
+          q"""trait ${name.asName} {
+             |    ${body.shift(4).trim}
+             |}""".stripMargin
       }
-
-      (q" // ${defn.toString}", List.empty)
+      (tree, List.empty)
     }
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {

@@ -1,11 +1,53 @@
 package io.septimalmind.baboon.translator.scl
 
 import io.septimalmind.baboon.CompilerTarget.ScTarget
+import io.septimalmind.baboon.translator.csharp.CSTypes
+import io.septimalmind.baboon.translator.scl.ScTypes.*
 import io.septimalmind.baboon.translator.scl.ScValue.{ScPackageId, ScType}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.collections.nonempty.NEList
+import izumi.fundamentals.platform.strings.TextTree
+import izumi.fundamentals.platform.strings.TextTree.Quote
 
-class ScTypeTranslator(target: ScTarget) {
+class ScTypeTranslator(
+  target: ScTarget,
+  domain: Domain,
+  evo: BaboonEvolution,
+) {
+
+  def asScType(tpe: TypeRef): TextTree[ScValue] = tpe match {
+    case TypeRef.Scalar(id: TypeId.User) =>
+      q"${toScTypeRefDeref(id, domain, evo)}"
+    case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
+      b match {
+        case TypeId.Builtins.i08 | TypeId.Builtins.u08 => q"$scByte"
+        case TypeId.Builtins.i16 | TypeId.Builtins.u16 => q"$scShort"
+        case TypeId.Builtins.i32 | TypeId.Builtins.u32 => q"$scInt"
+        case TypeId.Builtins.i64 | TypeId.Builtins.u64 => q"$scLong"
+        case TypeId.Builtins.f32                       => q"$scFloat"
+        case TypeId.Builtins.f64                       => q"$scDouble"
+        case TypeId.Builtins.f128                      => q"$scBigDecimal"
+        case TypeId.Builtins.str                       => q"$scString"
+        case TypeId.Builtins.uid                       => q"$scUid"
+        case TypeId.Builtins.tso | TypeId.Builtins.tsu => q"$scTime"
+        case TypeId.Builtins.bit                       => q"$scBoolean"
+
+        case other => throw new IllegalArgumentException(s"Unexpected: $other")
+      }
+    case TypeRef.Constructor(id, args) if id == TypeId.Builtins.opt =>
+      q"$scOption[${asScType(args.head)}]"
+    case TypeRef.Constructor(id, args) if id == TypeId.Builtins.lst =>
+      q"$scList[${args.map(asScType).toSeq.join(", ")}]"
+    case TypeRef.Constructor(id, args) if id == TypeId.Builtins.set =>
+      q"$scSet[${asScType(args.head)}]"
+    case TypeRef.Constructor(id, args) if id == TypeId.Builtins.map =>
+      q"$scMap[${asScType(args.head)}, ${asScType(args.tail.head)}]"
+    case other =>
+      other.id match {
+        case uid: TypeId.User => q"${toScTypeRefDeref(uid, domain, evo)}"
+        case _                => q"${other.toString}"
+      }
+  }
   def toScPkg(p: Pkg, version: Version, evolution: BaboonEvolution): ScPackageId = {
     toScPkg(
       p,
@@ -18,7 +60,7 @@ class ScTypeTranslator(target: ScTarget) {
       .split('.')
       .mkString("_")
 
-    val base = p.path.map(_.capitalize)
+    val base = p.path.map(_.toLowerCase)
     val segments = if (omitVersion) {
       base
     } else {

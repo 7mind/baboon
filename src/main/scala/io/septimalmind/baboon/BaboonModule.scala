@@ -98,12 +98,12 @@ class BaboonScModule[F[+_, +_]: Error2: TagKK](target: ScTarget) extends ModuleD
   makeSubcontext[ScDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
-      make[ScDefnTranslator[F]].from[ScDefnTranslator.CSDefnTranslatorImpl[F]]
+      make[ScDefnTranslator[F]].from[ScDefnTranslator.ScDefnTranslatorImpl[F]]
+      make[ScTypeTranslator]
 
     })
 
   make[ScBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   make[ScFileTools].from[ScFileTools.ScFileToolsImpl]
-  make[ScTypeTranslator]
   make[ScTreeTools].from[ScTreeTools.ScTreeToolsImpl]
 }
