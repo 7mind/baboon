@@ -17,7 +17,7 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class CSBaboonTranslator[F[+_, +_]: Error2](
   trans: CSTypeTranslator,
-  handler: CSConversionTranslator.Factory[F],
+  convTransFac: CSConversionTranslator.Factory[F],
   target: CSTarget,
   csTrees: CSTreeTools,
   csFiles: CSFileTools,
@@ -266,7 +266,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             .filter(kv => toCurrent.contains(kv._1))
             .map {
               case (srcVer, rules) =>
-                handler(
+                convTransFac(
                   pkg    = pkg,
                   srcDom = lineage.versions(srcVer.from),
                   domain = domain,

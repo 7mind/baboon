@@ -15,7 +15,11 @@ class ScTypeTranslator(
   evo: BaboonEvolution,
 ) {
 
-  def asScType(tpe: TypeRef): TextTree[ScValue] = tpe match {
+  def asScRef(tpe: TypeRef, anotherDom: Domain, fullyQualified: Boolean): TextTree[ScValue] = {
+    ???
+  }
+
+  def asScRef(tpe: TypeRef): TextTree[ScValue] = tpe match {
     case TypeRef.Scalar(id: TypeId.User) =>
       q"${toScTypeRefDeref(id, domain, evo)}"
     case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
@@ -35,19 +39,20 @@ class ScTypeTranslator(
         case other => throw new IllegalArgumentException(s"Unexpected: $other")
       }
     case TypeRef.Constructor(id, args) if id == TypeId.Builtins.opt =>
-      q"$scOption[${asScType(args.head)}]"
+      q"$scOption[${asScRef(args.head)}]"
     case TypeRef.Constructor(id, args) if id == TypeId.Builtins.lst =>
-      q"$scList[${args.map(asScType).toSeq.join(", ")}]"
+      q"$scList[${args.map(asScRef).toSeq.join(", ")}]"
     case TypeRef.Constructor(id, args) if id == TypeId.Builtins.set =>
-      q"$scSet[${asScType(args.head)}]"
+      q"$scSet[${asScRef(args.head)}]"
     case TypeRef.Constructor(id, args) if id == TypeId.Builtins.map =>
-      q"$scMap[${asScType(args.head)}, ${asScType(args.tail.head)}]"
+      q"$scMap[${asScRef(args.head)}, ${asScRef(args.tail.head)}]"
     case other =>
       other.id match {
         case uid: TypeId.User => q"${toScTypeRefDeref(uid, domain, evo)}"
         case _                => q"${other.toString}"
       }
   }
+
   def toScPkg(p: Pkg, version: Version, evolution: BaboonEvolution): ScPackageId = {
     toScPkg(
       p,

@@ -4,12 +4,10 @@ import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.csharp.CSTypes.{csCollectionsGenericPkg, csCollectionsImmutablePkg, csLinqPkg, csSystemPkg}
-import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
-import io.septimalmind.baboon.translator.csharp.{CSDefnTranslator, CSTypes, CSValue}
-import io.septimalmind.baboon.translator.scl.ScValue.ScPackageId
+import io.septimalmind.baboon.translator.csharp.CSDefnTranslator
+import io.septimalmind.baboon.translator.scl.ScTypes.*
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources, scl}
-import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage, Domain, DomainMember}
+import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -18,8 +16,12 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 class ScBaboonTranslator[F[+_, +_]: Error2](
-  translator: Subcontext[ScDefnTranslator[F]],
+  trans: ScTypeTranslator,
+  convTransFac: ScConversionTranslator.Factory[F],
+  defnTranslator: Subcontext[ScDefnTranslator[F]],
   target: ScTarget,
+  tools: ScTreeTools,
+  scFiles: ScFileTools,
 ) extends BaboonAbstractTranslator[F] {
 
   type Out[T] = F[NEList[BaboonIssue.TranslationIssue], T]
@@ -73,13 +75,29 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
 
   private def translateDomain(domain: Domain, lineage: BaboonLineage): Out[List[ScDefnTranslator.Output]] = {
     val evo = lineage.evolution
-    translator.provide(domain).provide(evo).produce().use {
+    defnTranslator.provide(domain).provide(evo).produce().use {
       defnTranslator =>
         // TODO:
         for {
           defnSources <- translateProduct(domain, CompilerProduct.Definition, defnTranslator.translate)
+
+          fixturesSources <- F.pure(List.empty) // TODO
+          testsSources    <- F.pure(List.empty) // TODO
+          conversionSources <- {
+            if (target.output.products.contains(CompilerProduct.Conversion)) {
+              val evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
+              generateConversions(domain, lineage, evosToCurrent, defnSources)
+            } else {
+              F.pure(List.empty)
+            }
+          }
+          meta <- F.pure(List.empty) // TODO
         } yield {
-          defnSources
+          defnSources ++
+          conversionSources ++
+          fixturesSources ++
+          testsSources ++
+          meta
         }
     }
   }
@@ -90,24 +108,14 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def renderTree(o: ScDefnTranslator.Output): String = {
-//    val alwaysAvailable: Set[ScPackageId] = Set.empty
-//    val forcedUses: Set[ScPackageId]      = Set.empty
-
+    // TODO: better representation
+    // TODO: omit predef
     val usedTypes = o.tree.values.collect { case t: ScValue.ScType => t }.distinct
       .sortBy(_.toString) // TODO: dirty
-
-//    val available = Set(o.pkg)
-//    val requiredPackages = Set.empty
-//    val allPackages      =  //(requiredPackages ++ usedPackages ++ forcedUses).diff(available ++ alwaysAvailable)
 
     val imports = usedTypes.toSeq.map {
       p => q"import ${p.pkg.parts.mkString(".")}.${p.name}"
     }.join("\n")
-
-//    println(s"${o.path}: ${usedTypes.size} / ${o.doNotModify}")
-//    if (o.path.contains("Clash.scala")) {
-//      println(imports)
-//    }
 
     val full = if (o.doNotModify) {
       o.tree
@@ -148,4 +156,103 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       F.pure(List.empty)
     }
   }
+
+  private def generateConversions(
+    domain: Domain,
+    lineage: BaboonLineage,
+    toCurrent: Set[EvolutionStep],
+    defnOut: List[ScDefnTranslator.Output],
+  ): Out[List[scl.ScDefnTranslator.Output]] = {
+    val pkg = trans.toScPkg(domain.id, domain.version, lineage.evolution)
+
+    for {
+      convs <-
+        F.flatSequenceAccumErrors {
+          lineage.evolution.rules
+            .filter(kv => toCurrent.contains(kv._1))
+            .map {
+              case (srcVer, rules) =>
+                convTransFac(
+                  pkg    = pkg,
+                  srcDom = lineage.versions(srcVer.from),
+                  domain = domain,
+                  rules  = rules,
+                  evo    = lineage.evolution,
+                ).makeConvs()
+            }
+        }
+    } yield {
+      val conversionRegs = convs.flatMap(_.reg.iterator.toSeq).toSeq
+      val missing        = convs.flatMap(_.missing.iterator.toSeq).toSeq
+
+      val converter =
+        q"""public interface RequiredConversions {
+           |    ${missing.join("\n").shift(4).trim}
+           |}
+           |
+           |public sealed class BaboonConversions : $abstractBaboonConversions
+           |{
+           |    // ReSharper disable once UnusedParameter.Local
+           |    public BaboonConversions(RequiredConversions requiredConversions)
+           |    {
+           |        ${conversionRegs.join("\n").shift(8).trim}
+           |    }
+           |
+           |    public override $scList<$scString> VersionsFrom()
+           |    {
+           |        return new $scList<$scString> { ${toCurrent.map(_.from.version).map(v => s"\"$v\"").mkString(", ")} };
+           |    }
+           |
+           |    public override $scString VersionTo()
+           |    {
+           |        return "${domain.version.version}";
+           |    }
+           |}""".stripMargin
+
+      val codecs =
+        q"""public sealed class BaboonCodecs : $abstractBaboonCodecs
+           |{
+           |    private BaboonCodecs()
+           |    {
+           |        ${defnOut.flatMap(_.codecReg).join("\n").shift(8).trim}
+           |    }
+           |
+           |    private static readonly $csLazy<BaboonCodecs> LazyInstance = new $csLazy<BaboonCodecs>(() => new BaboonCodecs());
+           |
+           |    public static BaboonCodecs Instance { get { return LazyInstance.Value; } }
+           |}""".stripMargin
+
+      val basename = scFiles.basename(domain, lineage.evolution)
+
+      val runtimeSource = Seq(converter, codecs).join("\n\n")
+      val runtime       = tools.inNs(pkg.parts.toSeq, runtimeSource)
+      val runtimeOutput = ScDefnTranslator.Output(
+        s"$basename/BaboonRuntime.cs",
+        runtime,
+        pkg,
+        CompilerProduct.Conversion,
+      )
+
+      val convertersOutput = convs.map {
+        conv =>
+          ScDefnTranslator.Output(
+            s"$basename/${conv.fname}",
+            conv.conv,
+            pkg,
+            CompilerProduct.Conversion,
+          )
+      }
+
+      List(runtimeOutput) ++ convertersOutput
+    }
+  }
+}
+
+object ScBaboonTranslator {
+  case class RenderedConversion(
+    fname: String,
+    conv: TextTree[ScValue],
+    reg: Option[TextTree[ScValue]],
+    missing: Option[TextTree[ScValue]],
+  )
 }

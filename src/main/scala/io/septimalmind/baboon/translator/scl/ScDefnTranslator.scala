@@ -128,7 +128,7 @@ object ScDefnTranslator {
         case contract: Typedef.Contract =>
           val methods = contract.fields.map {
             f =>
-              val t = trans.asScType(f.tpe)
+              val t = trans.asScRef(f.tpe)
               q"def ${f.name.name}: $t"
           }
           val parents       = contract.contracts.map(c => trans.toScTypeRefNoDeref(c, domain, evo)) :+ genMarker
@@ -141,7 +141,7 @@ object ScDefnTranslator {
         case dto: Typedef.Dto =>
           val params = dto.fields.map {
             f =>
-              val t = trans.asScType(f.tpe)
+              val t = trans.asScRef(f.tpe)
               q"${f.name.name}: $t"
           }
           val paramsList      = if (params.nonEmpty) params.join(",\n") else q""
@@ -193,9 +193,9 @@ object ScDefnTranslator {
         case service: Typedef.Service =>
           val methods = service.methods.map {
             m =>
-              val in  = trans.asScType(m.sig)
-              val out = m.out.map(trans.asScType)
-              val err = m.err.map(trans.asScType)
+              val in  = trans.asScRef(m.sig)
+              val out = m.out.map(trans.asScRef)
+              val err = m.err.map(trans.asScRef)
               val ret = (out, err) match {
                 case (Some(o), Some(e)) => q"$scEither[$e, $o]"
                 case (None, Some(e))    => q"$scEither[$e, $scUnit]"

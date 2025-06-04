@@ -6,7 +6,7 @@ import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*
 import io.septimalmind.baboon.translator.csharp.CSCodecFixtureTranslator.CSRandomMethodTranslatorImpl
-import io.septimalmind.baboon.translator.scl.{ScBaboonTranslator, ScDefnTranslator, ScFileTools, ScTreeTools, ScTypeTranslator}
+import io.septimalmind.baboon.translator.scl.{ScBaboonTranslator, ScConversionTranslator, ScDefnTranslator, ScFileTools, ScTreeTools, ScTypeTranslator}
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.functional.ParallelAccumulatingOps2
@@ -73,21 +73,20 @@ class BaboonCSModule[F[+_, +_]: Error2: TagKK](target: CSTarget) extends ModuleD
       make[CSCodecTestsTranslator].from[CSCodecTestsTranslator.Impl]
       make[CSCodecFixtureTranslator].from[CSRandomMethodTranslatorImpl]
       make[CSDomainTreeTools].from[CSDomainTreeTools.CSDomainTreeToolsImpl]
+
       many[CSCodecTranslator]
         .add[CSNSJsonCodecGenerator]
         .add[CSUEBACodecGenerator]
+
+      make[CSTreeTools].from[CSTreeTools.CSTreeToolsImpl]
+      make[CSFileTools].from[CSFileTools.CSFileToolsImpl]
+      make[CSTypeTranslator]
+      makeFactory[CSConversionTranslator.Factory[F]]
     })
 
+  make[CSBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[CSBaboonTranslator[F]]
-
-  make[CSBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
-
-  make[CSTreeTools].from[CSTreeTools.CSTreeToolsImpl]
-  make[CSFileTools].from[CSFileTools.CSFileToolsImpl]
-  make[CSTypeTranslator]
-
-  makeFactory[CSConversionTranslator.Factory[F]]
 }
 
 class BaboonScModule[F[+_, +_]: Error2: TagKK](target: ScTarget) extends ModuleDef {
@@ -100,10 +99,14 @@ class BaboonScModule[F[+_, +_]: Error2: TagKK](target: ScTarget) extends ModuleD
     .withSubmodule(new ModuleDef {
       make[ScDefnTranslator[F]].from[ScDefnTranslator.ScDefnTranslatorImpl[F]]
       make[ScTypeTranslator]
+      make[ScFileTools].from[ScFileTools.ScFileToolsImpl]
+      make[ScTreeTools].from[ScTreeTools.ScTreeToolsImpl]
+      makeFactory[ScConversionTranslator.Factory[F]]
 
     })
 
   make[ScBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
-  make[ScFileTools].from[ScFileTools.ScFileToolsImpl]
-  make[ScTreeTools].from[ScTreeTools.ScTreeToolsImpl]
+  many[BaboonAbstractTranslator[F]]
+    .ref[ScBaboonTranslator[F]]
+
 }

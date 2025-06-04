@@ -10,6 +10,9 @@ object ScTypes {
   val iBaboonGenerated: ScType       = ScType(baboonRuntimePkg, "BaboonGenerated")
   val iBaboonAdtMemberMeta: ScType   = ScType(baboonRuntimePkg, "BaboonAdtMemberMeta")
   val iBaboonGeneratedLatest: ScType = ScType(baboonRuntimePkg, "BaboonGeneratedLatest")
+  val abstractBaboonConversion: ScType = ScType(baboonRuntimePkg, "BaboonAbstractConversion")
+  val abstractBaboonConversions: ScType = ScType(baboonRuntimePkg, "BaboonAbstractConversions")
+  val abstractBaboonCodecs: ScType = ScType(baboonRuntimePkg, "BaboonAbstractCodecs")
 
   val scalaPkg: ScPackageId = ScPackageId(NEList("_root_", "scala"))
 
