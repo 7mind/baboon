@@ -8,7 +8,7 @@ trait ScFileTools {
 }
 
 object ScFileTools {
-  class ScFileToolsImpl(target: ScTarget) extends ScFileTools {
+  class ScFileToolsImpl() extends ScFileTools {
     def basename(dom: Domain, evolution: BaboonEvolution): String = {
       basename(
         dom,

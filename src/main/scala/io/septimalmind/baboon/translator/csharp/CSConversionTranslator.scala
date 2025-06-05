@@ -40,7 +40,9 @@ class CSConversionTranslator[F[+_, +_]: Error2](
     val cnew =
       trans.asCsRef(tpe, domain, evo)
 
-    val cold = trans.asCsRef(tpe, srcDom, evo, fullyQualified = true)
+    import io.septimalmind.baboon.translator.FQNSymbol.*
+
+    val cold = trans.asCsRef(tpe, srcDom, evo).fullyQualified
 
     val direct = q"(($cnew) $ref)"
     tpe match {
@@ -116,12 +118,12 @@ class CSConversionTranslator[F[+_, +_]: Error2](
             s"${conv.sourceTpe.name.name}.cs"
           )).mkString("-")
         val tin = trans
-          .toCsTypeRefDeref(conv.sourceTpe, srcDom, evo)
+          .asCsType(conv.sourceTpe, srcDom, evo)
           .fullyQualified
 
         // This would fail if `sourceTpe` had been removed from `domain`. It's inconvenient to have this defined in each branch of the match below, so we use `def`
         def tout =
-          trans.toCsTypeRefDeref(conv.sourceTpe, domain, evo)
+          trans.asCsType(conv.sourceTpe, domain, evo)
 
         def transferId(tpe: TypeId.Scalar, ref: TextTree[CSValue]): TextTree[CSValue] = {
           transfer(TypeRef.Scalar(tpe), ref, 0)
@@ -187,7 +189,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
               .map {
                 oldId =>
                   val oldFqid =
-                    trans.toCsTypeRefDeref(oldId, srcDom, evo).fullyQualified
+                    trans.asCsType(oldId, srcDom, evo).fullyQualified
                   val typedRef = q"fromAs_${oldId.name.name}"
 
                   q"""if (from is $oldFqid $typedRef)
@@ -225,7 +227,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                   val ftNew =
                     trans.asCsRef(op.targetField.tpe, domain, evo)
                   val ftNewInit =
-                    trans.asCsRef(op.targetField.tpe, domain, evo, mut = true)
+                    trans.asCsRef(op.targetField.tpe, domain, evo, mutableCollections = true)
                   val base     = op.targetField.name.name.capitalize
                   val fieldRef = q"_from.$base"
                   val initExpr = op match {

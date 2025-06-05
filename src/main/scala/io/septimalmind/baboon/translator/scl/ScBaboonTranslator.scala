@@ -4,7 +4,6 @@ import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.csharp.CSDefnTranslator
 import io.septimalmind.baboon.translator.scl.ScTypes.*
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources, scl}
 import io.septimalmind.baboon.typer.model.*
@@ -63,7 +62,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
     p: CompilerProduct,
     translate: (DomainMember.User) => F[NEList[BaboonIssue.TranslationIssue], List[ScDefnTranslator.Output]],
   ): F[NEList[BaboonIssue.TranslationIssue], List[ScDefnTranslator.Output]] = {
-    if (target.output.products.contains(CompilerProduct.Definition)) {
+    if (target.output.products.contains(p)) {
       F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
         case (_, defn: DomainMember.User) => translate(defn)
         case _                            => F.pure(List.empty)
@@ -185,41 +184,25 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       val conversionRegs = convs.flatMap(_.reg.iterator.toSeq).toSeq
       val missing        = convs.flatMap(_.missing.iterator.toSeq).toSeq
 
+      // Scala converter definitions (stub syntax)
       val converter =
-        q"""public interface RequiredConversions {
+        q"""trait RequiredConversions {
            |    ${missing.join("\n").shift(4).trim}
            |}
            |
-           |public sealed class BaboonConversions : $abstractBaboonConversions
-           |{
-           |    // ReSharper disable once UnusedParameter.Local
-           |    public BaboonConversions(RequiredConversions requiredConversions)
-           |    {
-           |        ${conversionRegs.join("\n").shift(8).trim}
-           |    }
+           |class BaboonConversions(required: RequiredConversions) extends $abstractBaboonConversions {
+           |    // register conversions
+           |    ${conversionRegs.join("\n").shift(4).trim}
            |
-           |    public override $scList<$scString> VersionsFrom()
-           |    {
-           |        return new $scList<$scString> { ${toCurrent.map(_.from.version).map(v => s"\"$v\"").mkString(", ")} };
-           |    }
-           |
-           |    public override $scString VersionTo()
-           |    {
-           |        return "${domain.version.version}";
-           |    }
+           |    override def versionsFrom: $scList[$scString] = $scList(${toCurrent.map(_.from.version).map(v => s"\"$v\"").mkString(", ")})
+           |    override def versionTo: $scString = "${domain.version.version}"
            |}""".stripMargin
 
+      // Scala codecs definitions (stub syntax)
       val codecs =
-        q"""public sealed class BaboonCodecs : $abstractBaboonCodecs
-           |{
-           |    private BaboonCodecs()
-           |    {
-           |        ${defnOut.flatMap(_.codecReg).join("\n").shift(8).trim}
-           |    }
-           |
-           |    private static readonly $csLazy<BaboonCodecs> LazyInstance = new $csLazy<BaboonCodecs>(() => new BaboonCodecs());
-           |
-           |    public static BaboonCodecs Instance { get { return LazyInstance.Value; } }
+        q"""object BaboonCodecs extends $abstractBaboonCodecs {
+           |    // register codecs
+           |    ${defnOut.flatMap(_.codecReg).join("\n").shift(4).trim}
            |}""".stripMargin
 
       val basename = scFiles.basename(domain, lineage.evolution)
@@ -227,7 +210,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       val runtimeSource = Seq(converter, codecs).join("\n\n")
       val runtime       = tools.inNs(pkg.parts.toSeq, runtimeSource)
       val runtimeOutput = ScDefnTranslator.Output(
-        s"$basename/BaboonRuntime.cs",
+        s"$basename/BaboonRuntime.scala",
         runtime,
         pkg,
         CompilerProduct.Conversion,

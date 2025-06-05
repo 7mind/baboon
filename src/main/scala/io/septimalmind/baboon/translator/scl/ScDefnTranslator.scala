@@ -3,7 +3,6 @@ package io.septimalmind.baboon.translator.scl
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.csharp.CSDefnTranslator.Output
 import io.septimalmind.baboon.translator.scl.ScValue.ScType
 import io.septimalmind.baboon.typer.TypeInfo
 import io.septimalmind.baboon.typer.model.*
@@ -83,8 +82,8 @@ object ScDefnTranslator {
         }
       }
 
-      val csTypeRef = trans.toScTypeRefDeref(defn.id, domain, evo)
-      val srcRef    = trans.toScTypeRefNoDeref(defn.id, domain, evo)
+      val csTypeRef = trans.asScType(defn.id, domain, evo)
+      val srcRef    = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
 
       val (defnReprBase, extraRegs) =
         makeRepr(defn, csTypeRef, isLatestVersion)
@@ -128,10 +127,10 @@ object ScDefnTranslator {
         case contract: Typedef.Contract =>
           val methods = contract.fields.map {
             f =>
-              val t = trans.asScRef(f.tpe)
+              val t = trans.asScRef(f.tpe, domain, evo)
               q"def ${f.name.name}: $t"
           }
-          val parents       = contract.contracts.map(c => trans.toScTypeRefNoDeref(c, domain, evo)) :+ genMarker
+          val parents       = contract.contracts.map(c => trans.toScTypeRefKeepForeigns(c, domain, evo)) :+ genMarker
           val extendsClause = if (parents.nonEmpty) q" extends ${parents.map(t => q"$t").join(" with ")}" else q""
           val body          = if (methods.nonEmpty) methods.join("\n") else q""
           q"""trait ${name.asName}$extendsClause {
@@ -141,13 +140,13 @@ object ScDefnTranslator {
         case dto: Typedef.Dto =>
           val params = dto.fields.map {
             f =>
-              val t = trans.asScRef(f.tpe)
+              val t = trans.asScRef(f.tpe, domain, evo)
               q"${f.name.name}: $t"
           }
           val paramsList      = if (params.nonEmpty) params.join(",\n") else q""
-          val contractParents = dto.contracts.map(c => trans.toScTypeRefNoDeref(c, domain, evo))
+          val contractParents = dto.contracts.map(c => trans.toScTypeRefKeepForeigns(c, domain, evo))
           val adtParents = dto.id.owner match {
-            case Owner.Adt(id) => Seq(trans.toScTypeRefNoDeref(id, domain, evo), iBaboonAdtMemberMeta)
+            case Owner.Adt(id) => Seq(trans.toScTypeRefKeepForeigns(id, domain, evo), iBaboonAdtMemberMeta)
             case _             => Seq.empty
           }
           val parents          = adtParents ++ contractParents :+ genMarker
@@ -169,7 +168,7 @@ object ScDefnTranslator {
           Seq(traitTree, companion).join("\n\n")
 
         case adt: Typedef.Adt =>
-          val parents          = adt.contracts.map(c => trans.toScTypeRefNoDeref(c, domain, evo)) :+ genMarker
+          val parents          = adt.contracts.map(c => trans.toScTypeRefKeepForeigns(c, domain, evo)) :+ genMarker
           val extendsClauseAdt = if (parents.nonEmpty) q" extends ${parents.map(t => q"$t").join(" with ")}" else q""
           val sealedTrait      = q"""sealed trait ${name.asName}$extendsClauseAdt""".stripMargin
           val memberTrees = adt.members.map {
@@ -193,9 +192,9 @@ object ScDefnTranslator {
         case service: Typedef.Service =>
           val methods = service.methods.map {
             m =>
-              val in  = trans.asScRef(m.sig)
-              val out = m.out.map(trans.asScRef)
-              val err = m.err.map(trans.asScRef)
+              val in  = trans.asScRef(m.sig, domain, evo)
+              val out = m.out.map(trans.asScRef(_, domain, evo))
+              val err = m.err.map(trans.asScRef(_, domain, evo))
               val ret = (out, err) match {
                 case (Some(o), Some(e)) => q"$scEither[$e, $o]"
                 case (None, Some(e))    => q"$scEither[$e, $scUnit]"

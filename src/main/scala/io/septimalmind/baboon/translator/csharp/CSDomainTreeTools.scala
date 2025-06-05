@@ -1,6 +1,5 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.CompilerOptions
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.translator.csharp.CSTypes.csString
 import io.septimalmind.baboon.typer.model.*

@@ -1,6 +1,5 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.CompilerOptions
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
@@ -43,7 +42,7 @@ object CSCodecFixtureTranslator {
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[CSValue] = {
       val generatedFields = dto.fields.map(f => genType(f.tpe))
-      val fullType        = translator.toCsTypeRefNoDeref(dto.id, domain, evo)
+      val fullType        = translator.asCsTypeKeepForeigns(dto.id, domain, evo)
 
       q"""public static class ${dto.id.name.name.capitalize}_Fixture
          |{
@@ -73,7 +72,7 @@ object CSCodecFixtureTranslator {
           val memberFixture = if (target.language.useCompactAdtForm) {
             q"${dto.id.name.name}"
           } else {
-            q"${translator.toCsTypeRefNoDeref(dto.id, domain, evo)}"
+            q"${translator.asCsTypeKeepForeigns(dto.id, domain, evo)}"
           }
           q"${memberFixture}_Fixture.Random()"
       }
@@ -177,8 +176,8 @@ object CSCodecFixtureTranslator {
 
         case TypeId.Builtins.bit => q"$baboonFixture.NextBoolean()"
 
-        case TypeId.User(_, _, name) if translator.isEnum(tpe, domain) => q"$baboonFixture.NextRandomEnum<${name.name}>()"
-        case TypeId.User(_, _, name)                                   => q"${name.name}_Fixture.Random()"
+        case TypeId.User(_, _, name) if enquiries.isEnum(tpe, domain) => q"$baboonFixture.NextRandomEnum<${name.name}>()"
+        case TypeId.User(_, _, name)                                  => q"${name.name}_Fixture.Random()"
 
         case t =>
           throw new IllegalArgumentException(s"Unexpected scalar type: $t")

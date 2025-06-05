@@ -1,13 +1,13 @@
 package io.septimalmind.baboon.translator.csharp
 
 import distage.Subcontext
+import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.{CSOptions, CompilerOptions, CompilerProduct}
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -165,7 +165,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
     p: CompilerProduct,
     translate: (DomainMember.User) => F[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]],
   ): F[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]] = {
-    if (target.output.products.contains(CompilerProduct.Definition)) {
+    if (target.output.products.contains(p)) {
       F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
         case (_, defn: DomainMember.User) => translate(defn)
         case _                            => F.pure(List.empty)

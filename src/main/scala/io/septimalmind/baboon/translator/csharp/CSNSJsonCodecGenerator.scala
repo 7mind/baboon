@@ -1,6 +1,5 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.CompilerOptions
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
@@ -14,6 +13,7 @@ class CSNSJsonCodecGenerator(
   target: CSTarget,
   domain: Domain,
   evo: BaboonEvolution,
+  csTypeInfo: CSTypeInfo,
 ) extends CSCodecTranslator {
   override def translate(defn: DomainMember.User, csRef: CSValue.CSType, srcRef: CSValue.CSType): Option[TextTree[CSValue]] = {
     val isLatestVersion = domain.version == evo.latest
@@ -163,7 +163,7 @@ class CSNSJsonCodecGenerator(
 
     val branches = a.dataMembers(domain).map {
       m =>
-        val branchNs            = q"${trans.adtNsName(a.id)}"
+        val branchNs            = q"${csTypeInfo.adtNsName(a.id)}"
         val branchName          = m.name.name
         val fqBranch            = q"$branchNs.$branchName"
         val branchNameRef       = q"${branchName.toLowerCase}"
@@ -289,7 +289,7 @@ class CSNSJsonCodecGenerator(
             case u: DomainMember.User =>
               u.defn match {
                 case _: Typedef.Enum | _: Typedef.Foreign =>
-                  val targetTpe = trans.toCsTypeRefNoDeref(uid, domain, evo)
+                  val targetTpe = trans.asCsTypeKeepForeigns(uid, domain, evo)
                   q"""${targetTpe}_JsonCodec.Instance.Encode(ctx, $ref).ToString($nsFormatting.None)"""
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
@@ -312,13 +312,13 @@ class CSNSJsonCodecGenerator(
           case _: TypeId.BuiltinScalar =>
             q"new $nsJValue($ref)"
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toCsTypeRefNoDeref(u, domain, evo))
+            val targetTpe = codecName(trans.asCsTypeKeepForeigns(u, domain, evo))
             q"""$targetTpe.Instance.Encode(ctx, $ref)"""
         }
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
-            if (trans.isCSValueType(c.args.head, domain)) {
+            if (csTypeInfo.isCSValueType(c.args.head, domain)) {
               q"!$ref.HasValue ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref))}"
             } else {
               q"$ref == null ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref))}"
@@ -384,7 +384,7 @@ class CSNSJsonCodecGenerator(
               u.defn match {
                 case _: Typedef.Enum | _: Typedef.Foreign =>
                   val targetTpe =
-                    trans.toCsTypeRefNoDeref(uid, domain, evo)
+                    trans.asCsTypeKeepForeigns(uid, domain, evo)
                   q"""${targetTpe}_JsonCodec.Instance.Decode(ctx, new $nsJValue($ref!))"""
                 case o =>
                   throw new RuntimeException(
@@ -404,12 +404,12 @@ class CSNSJsonCodecGenerator(
         mkReader(bs)
 
       case TypeRef.Scalar(u: TypeId.User) =>
-        val targetTpe = trans.toCsTypeRefNoDeref(u, domain, evo)
+        val targetTpe = trans.asCsTypeKeepForeigns(u, domain, evo)
         q"""${targetTpe}_JsonCodec.Instance.Decode(ctx, $ref!)"""
 
       case TypeRef.Constructor(id, args) =>
         id match {
-          case TypeId.Builtins.opt if trans.isCSValueType(args.head, domain) =>
+          case TypeId.Builtins.opt if csTypeInfo.isCSValueType(args.head, domain) =>
             q"""$BaboonTools.ReadNullableValueType($ref, t => ${mkDecoder(args.head, q"t")})""".stripMargin
 
           case TypeId.Builtins.opt =>

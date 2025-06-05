@@ -91,6 +91,7 @@ object Baboon {
 
           entrypoint(options)
         }
+        ()
     }
   }
 

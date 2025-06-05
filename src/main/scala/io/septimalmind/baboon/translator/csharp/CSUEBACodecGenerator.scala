@@ -1,13 +1,12 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.CompilerOptions
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.util.TODO.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
-import io.septimalmind.baboon.util.TODO.*
 
 class CSUEBACodecGenerator(
   trans: CSTypeTranslator,
@@ -15,6 +14,7 @@ class CSUEBACodecGenerator(
   target: CSTarget,
   domain: Domain,
   evo: BaboonEvolution,
+  csTypeInfo: CSTypeInfo,
 ) extends CSCodecTranslator {
 
   override def translate(
@@ -195,11 +195,11 @@ class CSUEBACodecGenerator(
   private def genAdtBodies(name: CSValue.CSType, a: Typedef.Adt) = {
     val branches = a.dataMembers(domain).zipWithIndex.toList.map {
       case (m, idx) =>
-        val branchNs   = q"${trans.adtNsName(a.id)}"
+        val branchNs   = q"${csTypeInfo.adtNsName(a.id)}"
         val branchName = m.name.name
         val fqBranch   = q"$branchNs.$branchName"
 
-        val adtRef = trans.toCsTypeRefNoDeref(m, domain, evo)
+        val adtRef = trans.asCsTypeKeepForeigns(m, domain, evo)
         val cName  = codecName(adtRef)
 
         val castedName = branchName.toLowerCase
@@ -439,12 +439,12 @@ class CSUEBACodecGenerator(
               case o                                         => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toCsTypeRefNoDeref(u, domain, evo))
+            val targetTpe = codecName(trans.asCsTypeKeepForeigns(u, domain, evo))
             q"""$targetTpe.Instance.Decode(ctx, wire)"""
         }
       case c: TypeRef.Constructor =>
         c.id match {
-          case TypeId.Builtins.opt if trans.isCSValueType(c.args.head, domain) =>
+          case TypeId.Builtins.opt if csTypeInfo.isCSValueType(c.args.head, domain) =>
             q"""$BaboonTools.ReadNullableValueType(wire.ReadByte() == 0, () => ${mkDecoder(c.args.head)})""".stripMargin
 
           case TypeId.Builtins.opt =>
@@ -495,7 +495,7 @@ class CSUEBACodecGenerator(
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toCsTypeRefNoDeref(u, domain, evo))
+            val targetTpe = codecName(trans.asCsTypeKeepForeigns(u, domain, evo))
             q"""$targetTpe.Instance.Encode(ctx, $wref, $ref)"""
         }
       case c: TypeRef.Constructor =>

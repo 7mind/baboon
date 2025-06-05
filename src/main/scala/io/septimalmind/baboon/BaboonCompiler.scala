@@ -3,13 +3,11 @@ package io.septimalmind.baboon
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue.CantCleanupTarget
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile}
-import io.septimalmind.baboon.translator.csharp.CSBaboonTranslator
 import io.septimalmind.baboon.typer.model.BaboonFamily
 import io.septimalmind.baboon.util.{BLogger, BaboonMetagen}
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.files.IzFiles
-import izumi.fundamentals.platform.strings.TextTree.*
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, StandardOpenOption}

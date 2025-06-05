@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
+import io.septimalmind.baboon.translator.FQNSymbol
 import izumi.fundamentals.collections.nonempty.NEList
 
 sealed trait CSValue
@@ -19,4 +20,12 @@ object CSValue {
 
   case class CSTypeName(name: String) extends CSValue
 
+  implicit object FQNCSValue extends FQNSymbol[CSValue] {
+    override def fullyQualified(value: CSValue): CSValue = value match {
+      case t: CSType     => t.fullyQualified
+      case n: CSTypeName => n
+    }
+  }
 }
+
+

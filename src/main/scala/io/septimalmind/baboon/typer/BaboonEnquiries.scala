@@ -25,6 +25,7 @@ trait BaboonEnquiries {
     domain: Map[TypeId, DomainMember]
   ): Set[LoopDetector.Cycles[TypeId]]
   def uebaLen(dom: Map[TypeId, DomainMember], tpe: TypeRef): BinReprLen
+  def isEnum(tpe: TypeRef, domain: Domain): Boolean
 }
 
 object BaboonEnquiries {
@@ -392,6 +393,12 @@ object BaboonEnquiries {
       }
     }
 
+    def isEnum(tpe: TypeRef, domain: Domain): Boolean = {
+      domain.defs.meta.nodes.get(tpe.id).exists {
+        case DomainMember.User(_, _: Typedef.Enum, _) => true
+        case _                                        => false
+      }
+    }
   }
 
 }

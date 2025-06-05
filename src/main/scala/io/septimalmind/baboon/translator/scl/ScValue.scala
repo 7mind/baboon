@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.scl
 
+import io.septimalmind.baboon.translator.FQNSymbol
 import izumi.fundamentals.collections.nonempty.NEList
 
 sealed trait ScValue
@@ -19,4 +20,10 @@ object ScValue {
 
   case class ScTypeName(name: String) extends ScValue
 
+  implicit object FQNScValue extends FQNSymbol[ScValue] {
+    override def fullyQualified(value: ScValue): ScValue = value match {
+      case t: ScType     => t.fullyQualified
+      case n: ScTypeName => n
+    }
+  }
 }

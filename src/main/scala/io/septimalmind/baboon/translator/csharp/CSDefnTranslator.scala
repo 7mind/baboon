@@ -1,5 +1,6 @@
 package io.septimalmind.baboon.translator.csharp
 
+import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
@@ -8,7 +9,6 @@ import io.septimalmind.baboon.typer.TypeInfo
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
 import io.septimalmind.baboon.typer.model.Typedef.Contract
-import io.septimalmind.baboon.{CompilerOptions, CompilerProduct}
 import izumi.functional.bio.{Applicative2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
@@ -143,8 +143,8 @@ object CSDefnTranslator {
         }
       }
 
-      val csTypeRef = trans.toCsTypeRefDeref(defn.id, domain, evo)
-      val srcRef    = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
+      val csTypeRef = trans.asCsType(defn.id, domain, evo)
+      val srcRef    = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
 
       val (defnReprBase, extraRegs) =
         makeRepr(defn, csTypeRef, isLatestVersion)
@@ -391,7 +391,7 @@ object CSDefnTranslator {
     }
 
     private def makeFixtureRepr(defn: DomainMember.User): Option[TextTree[CSValue]] = {
-      val srcRef = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
+      val srcRef = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
       val ns     = srcRef.pkg.parts
 
       val fixtureTree       = codecsFixture.translate(defn)
@@ -401,8 +401,8 @@ object CSDefnTranslator {
     }
 
     private def makeTestRepr(defn: DomainMember.User): Option[TextTree[CSValue]] = {
-      val csTypeRef = trans.toCsTypeRefDeref(defn.id, domain, evo)
-      val srcRef    = trans.toCsTypeRefNoDeref(defn.id, domain, evo)
+      val csTypeRef = trans.asCsType(defn.id, domain, evo)
+      val srcRef    = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
       val ns        = srcRef.pkg.parts
 
       val testTree       = codecsTests.translate(defn, csTypeRef, srcRef)
