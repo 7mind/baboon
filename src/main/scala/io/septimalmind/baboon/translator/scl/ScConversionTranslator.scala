@@ -42,12 +42,11 @@ class ScConversionTranslator[F[+_, +_]: Error2](
     import io.septimalmind.baboon.translator.FQNSymbol.*
     val cold = trans.asScRef(tpe, srcDom, evo).fullyQualified
 
-    val direct = q"(($cnew) $ref)"
+    val direct = q"($ref.asInstanceOf[$cnew])"
     tpe match {
       case TypeRef.Scalar(id) =>
         val conv =
-          q"conversions.ConvertWithContext<C, $cold, $cnew>(context, ($cold) $ref)"
-
+          q"conversions.convertWithContext[C, $cold, $cnew](context, $ref.asInstanceOf[$cold])"
         id match {
           case _: TypeId.Builtin =>
             direct
@@ -59,30 +58,24 @@ class ScConversionTranslator[F[+_, +_]: Error2](
                 conv
             }
         }
+
       case c: TypeRef.Constructor =>
         val tmp = q"e${depth.toString}"
         c match {
           case c: TypeRef.Constructor if c.id == TypeId.Builtins.lst =>
-            q"(from $tmp in $ref select ${transfer(c.args.head, tmp, depth + 1)}).toList"
+            q"$ref.map($tmp => ${transfer(c.args.head, tmp, depth + 1)}).toList"
+
           case c: TypeRef.Constructor if c.id == TypeId.Builtins.map =>
             val keyRef   = c.args.head
             val valueRef = c.args.last
-            q"(from $tmp in $ref select new TODO<${trans
-                .asScRef(keyRef, domain, evo)}, ${trans
-                .asScRef(valueRef, domain, evo)}>(${transfer(
-                c.args.head,
-                q"$tmp.Key",
-                depth + 1,
-              )}, ${transfer(c.args.last, q"$tmp.Value", depth + 1)})).toMap"
+            val kv       = q"$tmp._1"
+            val vv       = q"$tmp._2"
+
+            q"$ref.map($tmp => (${transfer(keyRef, kv, depth + 1)}, ${transfer(valueRef, vv, depth + 1)})).toMap"
           case c: TypeRef.Constructor if c.id == TypeId.Builtins.set =>
-            q"(from $tmp in $ref select ${transfer(c.args.head, tmp, depth + 1)}).toSet"
+            q"$ref.map($tmp => ${transfer(c.args.head, tmp, depth + 1)}).toSet"
           case c: TypeRef.Constructor if c.id == TypeId.Builtins.opt =>
-            val underlyingTpe = c.args.head
-            val recConv =
-              transfer(underlyingTpe, ref, depth + 1)
-
-            q"($ref == null ? null : $recConv)"
-
+            q"$ref.map($tmp => ${transfer(c.args.head, tmp, depth + 1)})"
           case _ =>
             ???
         }
@@ -90,7 +83,6 @@ class ScConversionTranslator[F[+_, +_]: Error2](
   }
 
   def makeConvs(): Out[List[RenderedConversion]] = {
-    // build a unique class name for each conversion rule
     def makeName(prefix: String, conv: Conversion): String =
       (Seq(prefix) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
         conv.sourceTpe.name.name,
@@ -104,31 +96,31 @@ class ScConversionTranslator[F[+_, +_]: Error2](
         val fname = (Seq("from", srcVer.version) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
           s"${conv.sourceTpe.name.name}.scala"
         )).mkString("-")
+
         val tin  = trans.asScType(conv.sourceTpe, srcDom, evo).fullyQualified
         def tout = trans.asScType(conv.sourceTpe, domain, evo)
 
         // common version/typeId metadata block
-        val meta = q"""
-                override def versionFrom: String = \"${srcVer.version}\"
-                override def versionTo:   String = \"${domain.version.version}\"
-                override def typeId:      String = \"${conv.sourceTpe.toString}\"
-              """
+        val meta = q"""override def versionFrom: String = "${srcVer.version}"
+                      |override def versionTo:   String = "${domain.version.version}"
+                      |override def typeId:      String = "${conv.sourceTpe.toString}"
+                      """.stripMargin.trim
 
         // render each case
         val rendered = conv match {
           // 1) Custom conversion: abstract stub
           case _: Conversion.CustomConversionRequired =>
-            val classDef = q"""
-                    abstract class $className
-                      extends $abstractBaboonConversion[$tin, $tout] {
-                        def doConvert[C](
-                          context: C,
-                          conversions: $abstractBaboonConversions,
-                          from: $tin
-                        ): $tout
-                        $meta
-                    }
-                  """
+            val classDef = q"""|abstract class $className
+                               |  extends $abstractBaboonConversion[$tin, $tout] {
+                               |    def doConvert[C](
+                               |      context: C,
+                               |      conversions: $abstractBaboonConversions,
+                               |      from: $tin
+                               |    ): $tout
+                               |    ${meta.shift(4).trim}
+                               |}
+                  """.stripMargin.trim
+
             List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), None, None))
 
           // 2) Removed/no‐op conversions
@@ -139,17 +131,16 @@ class ScConversionTranslator[F[+_, +_]: Error2](
 
           // 3) Enum‐by‐name conversion
           case _: Conversion.CopyEnumByName =>
-            val classDef = q"""
-                    final class $className
-                      extends $abstractBaboonConversion[$tin, $tout] {
-                        override def doConvert[C](
-                          context: C,
-                          conversions: $abstractBaboonConversions,
-                          from: $tin
-                        ): $tout = $tout.withName(from.toString)
-                        $meta
-                    }
-                  """
+            val classDef = q"""|final class $className
+                               |  extends $abstractBaboonConversion[$tin, $tout] {
+                               |    override def doConvert[C](
+                               |      context: C,
+                               |      conversions: $abstractBaboonConversions,
+                               |      from: $tin
+                               |    ): $tout = $tout.parse(from.toString).get
+                               |    ${meta.shift(4).trim}
+                               |}
+                  """.stripMargin.trim
             List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), None, None))
 
           // 4) ADT‐branch conversion
@@ -161,18 +152,18 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             } :+ q"case other => throw new IllegalArgumentException(s\"Bad input: $$other\")"
 
             val classDef = q"""
-                    final class $className
-                      extends $abstractBaboonConversion[$tin, $tout] {
-                        override def doConvert[C](
-                          context: C,
-                          conversions: $abstractBaboonConversions,
-                          from: $tin
-                        ): $tout = from match {
-                          ${cases.join("\n")}
-                        }
-                        $meta
-                    }
-                  """
+                              |final class $className
+                              |  extends $abstractBaboonConversion[$tin, $tout] {
+                              |    override def doConvert[C](
+                              |      context: C,
+                              |      conversions: $abstractBaboonConversions,
+                              |      from: $tin
+                              |    ): $tout = from match {
+                              |      ${cases.join("\n").shift(6).trim}
+                              |    }
+                              |    ${meta.shift(4).trim}
+                              |}
+                  """.stripMargin.trim
             List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), None, None))
 
           // 5) DTO conversion
@@ -185,31 +176,47 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             val assigns = dto.fields.map {
               f =>
                 val op  = ops(f)
-                val fld = f.name.name.capitalize
+                val fld = f.name.name
                 val expr = op match {
-                  case o: FieldOp.Transfer              => transfer(o.targetField.tpe, q"_from.$fld", 1)
-                  case _: FieldOp.InitializeWithDefault => q"default[${trans.asScRef(f.tpe, domain, evo)}]"
-                  case _: FieldOp.WrapIntoCollection    => q"List(_from.$fld).asInstanceOf[${trans.asScRef(f.tpe, domain, evo)}]"
-                  case o: FieldOp.ExpandPrecision       => transfer(o.newTpe, q"_from.$fld", 1)
-                  case o: FieldOp.SwapCollectionType    => transfer(o.newTpe, q"_from.$fld", 1)
+                  case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"_from.$fld", 1)
+                  case o: FieldOp.InitializeWithDefault =>
+                    o.targetField.tpe match {
+                      case TypeRef.Constructor(id, args) =>
+                        id match {
+                          case TypeId.Builtins.lst =>
+                            q"$scList.empty[${trans.asScRef(args.head, domain, evo)}]"
+                          case TypeId.Builtins.set =>
+                            q"$scSet.empty[${trans.asScRef(args.head, domain, evo)}]"
+                          case TypeId.Builtins.map =>
+                            q"$scMap.empty[${trans.asScRef(args.head, domain, evo)}, ${trans.asScRef(args.last, domain, evo)}]"
+                          case TypeId.Builtins.opt =>
+                            q"$scOption.empty[${trans.asScRef(args.head, domain, evo)}]"
+                          case _ => ???
+                        }
+                      case _ => ???
+                    }
+
+                  case _: FieldOp.WrapIntoCollection => q"$scList(_from.$fld).asInstanceOf[${trans.asScRef(f.tpe, domain, evo)}]"
+                  case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"_from.$fld", 1)
+                  case o: FieldOp.SwapCollectionType => transfer(o.newTpe, q"_from.$fld", 1)
                 }
                 q"val ${f.name.name.toLowerCase}: ${trans.asScRef(f.tpe, domain, evo)} = $expr"
             }
             val ctorArgs = dto.fields.map(f => q"${f.name.name.toLowerCase}")
             val classDef = q"""
-                    final class $className
-                      extends $abstractBaboonConversion[$tin, $tout] {
-                        override def doConvert[C](
-                          context: C,
-                          conversions: $abstractBaboonConversions,
-                          _from: $tin
-                        ): $tout = {
-                          ${assigns.join("\n")}
-                          new $tout(${ctorArgs.join(", ")})
-                        }
-                        $meta
-                    }
-                  """
+                              |final class $className
+                              |  extends $abstractBaboonConversion[$tin, $tout] {
+                              |    override def doConvert[C](
+                              |      context: C,
+                              |      conversions: $abstractBaboonConversions,
+                              |      _from: $tin
+                              |    ): $tout = {
+                              |      ${assigns.join("\n").shift(6).trim}
+                              |      $tout(${ctorArgs.join(", ").shift(6).trim})
+                              |    }
+                              |    ${meta.shift(4).trim}
+                              |}
+                  """.stripMargin.trim
             List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), None, None))
         }
 
@@ -220,87 +227,4 @@ class ScConversionTranslator[F[+_, +_]: Error2](
         }
     }
   }
-
-//  private def swapCollType(
-//    ftNewInit: TextTree[ScValue],
-//    base: String,
-//    fieldRef: TextTree[Nothing],
-//    oldId: TypeId.BuiltinCollection,
-//    newId: TypeId.BuiltinCollection,
-//    newCollArgs: NEList[TypeRef],
-//  ): F[NEList[BaboonIssue.TranslationBug], Seq[TextTree[ScValue]]] = {
-//    val collCsType = trans.asScRef(newCollArgs.head)
-//
-//    val collInit =
-//      q"(new $ftNewInit(from e in $fieldRef select ($collCsType)e))"
-//
-//    oldId match {
-//      case TypeId.Builtins.opt =>
-//        val tmp = q"_${base.toLowerCase}_tmp"
-//
-//        val recConv =
-//          transfer(newCollArgs.head, tmp, 0)
-//
-//        newId match {
-//          case TypeId.Builtins.lst =>
-//            F.pure(
-//              Seq(
-//                q"var $tmp = $fieldRef",
-//                q"( ($tmp != null) ? new $ftNewInit { $recConv } : new $ftNewInit() ).toList",
-//              )
-//            )
-//          case TypeId.Builtins.set =>
-//            F.pure(
-//              Seq(
-//                q"var $tmp = $fieldRef",
-//                q"( ($tmp != null) ? new $ftNewInit { $recConv } : new $ftNewInit() ).toSet",
-//              )
-//            )
-//          case TypeId.Builtins.opt =>
-//            F.pure(
-//              Seq(
-//                q"var $tmp = $fieldRef",
-//                q"( ($tmp != null) ? $recConv : null )",
-//              )
-//            )
-//          case _ =>
-//            F.fail(NEList(BaboonIssue.TranslationBug()))
-//        }
-//      case TypeId.Builtins.lst =>
-//        newId match {
-//          case TypeId.Builtins.set =>
-//            F.pure(Seq(q"$collInit.toSet"))
-//
-//          case TypeId.Builtins.lst =>
-//            F.pure(Seq(q"$collInit.toList"))
-//          case _ =>
-//            F.fail(NEList(BaboonIssue.TranslationBug()))
-//        }
-//      case TypeId.Builtins.set =>
-//        newId match {
-//          case TypeId.Builtins.set =>
-//            F.pure(Seq(q"$collInit.toSet"))
-//          case TypeId.Builtins.lst =>
-//            F.pure(Seq(q"$collInit.toList"))
-//          case _ =>
-//            F.fail(NEList(BaboonIssue.TranslationBug()))
-//        }
-//      case TypeId.Builtins.map =>
-//        newId match {
-//          case TypeId.Builtins.map =>
-//            val kt = trans.asScRef(newCollArgs.head)
-//            val vt = trans.asScRef(newCollArgs.last)
-//            F.pure(
-//              Seq(
-//                q"(from e in $fieldRef select new $csKeyValuePair<$kt, $vt>(($kt)e.Key, ($vt)e.Value)).toMap"
-//              )
-//            )
-//          case _ =>
-//            F.fail(NEList(BaboonIssue.TranslationBug()))
-//        }
-//      case _ =>
-//        F.fail(NEList(BaboonIssue.TranslationBug()))
-//    }
-//  }
-
 }

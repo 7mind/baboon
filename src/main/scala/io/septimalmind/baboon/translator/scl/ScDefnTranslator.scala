@@ -157,13 +157,28 @@ object ScDefnTranslator {
 
         case e: Typedef.Enum =>
           val traitTree = q"sealed trait ${name.asName}"
+
           val cases = e.members.map {
             m =>
               val obj = m.name.capitalize
               q"case object $obj extends ${name.asName}"
           }.toList
-          val companion = q"""object ${name.asName} {
-                             |    ${cases.join("\n").shift(4).trim}
+
+          val parseCases = e.members.map {
+            m =>
+              val obj = m.name.capitalize
+              q"case \"$obj\" => Some($obj)"
+          }.toList
+
+          val companion = q"""object ${name.asName} extends $baboonEnum[${name.asName}] {
+                             |  ${cases.join("\n").shift(4).trim}
+                             |
+                             |  def parse(s: String): Option[${name.asName}] = {
+                             |    s match {
+                             |      ${parseCases.join("\n").shift(6).trim}
+                             |      case _ => None
+                             |    }
+                             |  }
                              |}""".stripMargin
           Seq(traitTree, companion).join("\n\n")
 

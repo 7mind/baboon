@@ -32,7 +32,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       fixture    <- sharedFixture()
       rendered = (translated ++ runtime ++ fixture).map {
         o =>
-          val content = renderTree(o)
+          val content = renderTree(o, family)
           (o.path, OutputFile(content, o.product))
       }
       unique <- F.fromEither(rendered.toUniqueMap(c => NEList(BaboonIssue.NonUniqueOutputFiles(c))))
@@ -106,10 +106,12 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
 
   }
 
-  private def renderTree(o: ScDefnTranslator.Output): String = {
+  private def renderTree(o: ScDefnTranslator.Output, family: BaboonFamily): String = {
     // TODO: better representation
     // TODO: omit predef
     val usedTypes = o.tree.values.collect { case t: ScValue.ScType => t }.distinct
+      .filterNot(_.fq)
+      .filterNot(_.pkg == o.pkg)
       .sortBy(_.toString) // TODO: dirty
 
     val imports = usedTypes.toSeq.map {
@@ -202,7 +204,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       val codecs =
         q"""object BaboonCodecs extends $abstractBaboonCodecs {
            |    // register codecs
-           |    ${defnOut.flatMap(_.codecReg).join("\n").shift(4).trim}
+           |    /*${defnOut.flatMap(_.codecReg).join("\n").shift(4).trim}*/
            |}""".stripMargin
 
       val basename = scFiles.basename(domain, lineage.evolution)

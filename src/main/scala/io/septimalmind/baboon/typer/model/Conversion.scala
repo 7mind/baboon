@@ -33,6 +33,7 @@ object Conversion {
   object FieldOp {
     case class Transfer(targetField: Field) extends FieldOp
 
+    // should applicable to collections only, don't break that
     case class InitializeWithDefault(targetField: Field) extends FieldOp
 
     case class WrapIntoCollection(fieldName: FieldName, oldTpe: TypeRef.Scalar, newTpe: TypeRef.Constructor) extends FieldOp {

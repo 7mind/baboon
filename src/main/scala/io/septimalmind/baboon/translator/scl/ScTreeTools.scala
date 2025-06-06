@@ -14,7 +14,7 @@ object ScTreeTools {
         tree
       } else {
         q"""package ${nss.mkString(".")} {
-           |    ${tree.shift(4).trim}
+           |  ${tree.shift(2).trim}
            |}""".stripMargin
       }
     }
