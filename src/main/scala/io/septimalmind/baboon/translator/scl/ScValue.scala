@@ -16,6 +16,8 @@ object ScValue {
   case class ScType(pkg: ScValue.ScPackageId, name: String, fq: Boolean = false) extends ScValue {
     def fullyQualified: ScType = this.copy(fq = true)
     def asName: ScTypeName     = ScTypeName(name)
+
+    override def toString: String = s"${pkg.parts.mkString(".")}#$name"
   }
 
   case class ScTypeName(name: String) extends ScValue
