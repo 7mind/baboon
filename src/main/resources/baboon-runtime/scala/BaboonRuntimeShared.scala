@@ -16,10 +16,13 @@ package baboon.runtime.shared {
   }
 
   trait BaboonAbstractConversions {
+    def register[F, T](conversion: BaboonAbstractConversion[F, T]): Unit = ???
+
     def convertWithContext[C, F, T](
       context: C,
       from: F,
     ): T = ???
+
     def versionsFrom: List[String]
     def versionTo: String
   }

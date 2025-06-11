@@ -84,7 +84,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
         q"$oldRef.map($tmp => ${transfer(c.args.head, tmp, depth + 1, Some(co.args.head))}).toSet"
       case c: TypeRef.Constructor if c.id == TypeId.Builtins.opt =>
         q"$oldRef.map($tmp => ${transfer(c.args.head, tmp, depth + 1, Some(co.args.head))})"
-      case _ =>
+      case c =>
         throw new IllegalStateException(s"Unsupported constructor type: ${c.id}")
     }
   }
@@ -148,7 +148,16 @@ class ScConversionTranslator[F[+_, +_]: Error2](
                                |}
                   """.stripMargin.trim
 
-            List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), None, None))
+            val convMethodName = makeName("conversion", conv)
+
+            List(
+              RenderedConversion(
+                fname,
+                tools.inNs(pkg.parts.toSeq, classDef),
+                Some(q"register(required.$convMethodName())"),
+                Some(q"def $convMethodName(): $abstractBaboonConversion[$tin, $tout]"),
+              )
+            )
 
           case _: Conversion.RemovedTypeNoConversion =>
             Nil
@@ -156,7 +165,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             Nil
 
           case _: Conversion.CopyEnumByName =>
-            val classDef = q"""|final class $className
+            val classDef = q"""|object $className
                                |  extends $abstractBaboonConversion[$tin, $tout] {
                                |    override def doConvert[C](
                                |      context: C,
@@ -166,7 +175,8 @@ class ScConversionTranslator[F[+_, +_]: Error2](
                                |    ${meta.shift(4).trim}
                                |}
                   """.stripMargin.trim
-            List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), None, None))
+            val regtree = q"register($className)"
+            List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), Some(regtree), None))
 
           case c: Conversion.CopyAdtBranchByName =>
             val cases = c.oldDefn.dataMembers(srcDom).map {
@@ -176,7 +186,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             } :+ q"case other => throw new IllegalArgumentException(s\"Bad input: $$other\")"
 
             val classDef = q"""
-                              |final class $className
+                              |object $className
                               |  extends $abstractBaboonConversion[$tin, $tout] {
                               |    override def doConvert[C](
                               |      context: C,
@@ -188,7 +198,8 @@ class ScConversionTranslator[F[+_, +_]: Error2](
                               |    ${meta.shift(4).trim}
                               |}
                   """.stripMargin.trim
-            List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), None, None))
+            val regtree = q"register($className)"
+            List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), Some(regtree), None))
 
           case c: Conversion.DtoConversion =>
             val dto = domain.defs.meta.nodes(c.sourceTpe) match {
@@ -227,7 +238,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             }
             val ctorArgs = dto.fields.map(f => q"${f.name.name.toLowerCase}")
             val classDef = q"""
-                              |final class $className
+                              |object $className
                               |  extends $abstractBaboonConversion[$tin, $tout] {
                               |    override def doConvert[C](
                               |      context: C,
@@ -242,7 +253,8 @@ class ScConversionTranslator[F[+_, +_]: Error2](
                               |    ${meta.shift(4).trim}
                               |}
                   """.stripMargin.trim
-            List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), None, None))
+            val regtree = q"register($className)"
+            List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), Some(regtree), None))
         }
 
         if (false) {

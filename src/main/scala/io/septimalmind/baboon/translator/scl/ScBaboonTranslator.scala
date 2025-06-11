@@ -193,7 +193,6 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
            |}
            |
            |class BaboonConversions(required: RequiredConversions) extends $abstractBaboonConversions {
-           |    // register conversions
            |    ${conversionRegs.join("\n").shift(4).trim}
            |
            |    override def versionsFrom: $scList[$scString] = $scList(${toCurrent.map(_.from.version).map(v => s"\"$v\"").mkString(", ")})
