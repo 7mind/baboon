@@ -54,13 +54,13 @@ class ScConversionTranslator[F[+_, +_]: Error2](
           case TypeId.Builtins.set =>
             q"$scSet($headTransfer)"
           case _ =>
-            ???
+            throw new IllegalStateException(s"Unsupported constructor type: ${c.id}")
         }
 
       case (ns: TypeRef.Scalar, os: TypeRef.Scalar) =>
         transferScalar(oldRef, newTypeRefTree, oldTypeRefTree, ns, os)
       case (TypeRef.Scalar(_), c: TypeRef.Constructor) =>
-        ???
+        throw new IllegalStateException(s"Unsupported scalar to constructor conversion: ${c.id}")
       case (cn: TypeRef.Constructor, co: TypeRef.Constructor) =>
         transferConstructor(oldRef, depth, cn, co)
 
@@ -85,7 +85,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
       case c: TypeRef.Constructor if c.id == TypeId.Builtins.opt =>
         q"$oldRef.map($tmp => ${transfer(c.args.head, tmp, depth + 1, Some(co.args.head))})"
       case _ =>
-        ???
+        throw new IllegalStateException(s"Unsupported constructor type: ${c.id}")
     }
   }
 
@@ -214,9 +214,9 @@ class ScConversionTranslator[F[+_, +_]: Error2](
                             q"$scMap.empty[${trans.asScRef(args.head, domain, evo)}, ${trans.asScRef(args.last, domain, evo)}]"
                           case TypeId.Builtins.opt =>
                             q"$scOption.empty[${trans.asScRef(args.head, domain, evo)}]"
-                          case _ => ???
+                          case _ => throw new IllegalStateException(s"Unsupported constructor type: $id")
                         }
-                      case _ => ???
+                      case _ => throw new IllegalStateException("Unsupported target field type")
                     }
 
                   case _: FieldOp.WrapIntoCollection => q"$scList(_from.$fld).asInstanceOf[${trans.asScRef(f.tpe, domain, evo)}]"
@@ -287,7 +287,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             Some(oldArgs.last),
           )}) }.toMap"""
       case _ =>
-        ??? // unsupported collection swap
+        throw new IllegalStateException("Unsupported collection swap")
     }
   }
 }
