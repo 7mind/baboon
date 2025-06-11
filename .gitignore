@@ -186,3 +186,4 @@ project/plugins/project/
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 
 # End of https://www.toptal.com/developers/gitignore/api/java,scala,jetbrains+all,sbt,maven,bloop
+.aider*
