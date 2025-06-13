@@ -188,20 +188,9 @@ object ScDefnTranslator {
       // TODO:
       val meta = mainMeta ++ codecMeta
 
-      val tree: TextTree[ScValue] = defn.defn match {
-        case contract: Typedef.Contract =>
-          val methods = contract.fields.map {
-            f =>
-              val t = trans.asScRef(f.tpe, domain, evo)
-              q"def ${f.name.name}: $t"
-          }
-          val parents       = contract.contracts.map(c => trans.toScTypeRefKeepForeigns(c, domain, evo)) :+ genMarker
-          val extendsClause = if (parents.nonEmpty) q" extends ${parents.map(t => q"$t").join(" with ")}" else q""
-          val body          = if (methods.nonEmpty) methods.join("\n") else q""
-          q"""trait ${name.asName}$extendsClause {
-             |    ${body.shift(4).trim}
-             |}""".stripMargin
+      val fixtureRef = codecsFixture.fixtureTpe(defn).map(id => q"implicit def fixture: $baboonFixture[${name.asName}] = $id").getOrElse(q"")
 
+      val tree: TextTree[ScValue] = defn.defn match {
         case dto: Typedef.Dto =>
           val params = dto.fields.map {
             f =>
@@ -216,9 +205,14 @@ object ScDefnTranslator {
           }
           val parents          = adtParents ++ contractParents :+ genMarker
           val extendsClauseDto = if (parents.nonEmpty) q" extends ${parents.map(t => q"$t").join(" with ")}" else q""
-          q"""case class ${name.asName}(
-             |    ${paramsList.shift(4).trim}
-             |)$extendsClauseDto""".stripMargin
+
+          q"""final case class ${name.asName}(
+             |  ${paramsList.shift(2).trim}
+             |)$extendsClauseDto
+             |
+             |object ${name.asName} {
+             |  $fixtureRef
+             |}""".stripMargin
 
         case e: Typedef.Enum =>
           val traitTree = q"sealed trait ${name.asName}"
@@ -235,15 +229,27 @@ object ScDefnTranslator {
               q"case \"$obj\" => Some($obj)"
           }.toList
 
+          val names = e.members.map {
+            m =>
+              val obj = m.name.capitalize
+              q"$obj"
+          }.toList
+
           val companion = q"""object ${name.asName} extends $baboonEnum[${name.asName}] {
-                             |  ${cases.join("\n").shift(4).trim}
+                             |  ${cases.join("\n").shift(2).trim}
+                             |  
+                             |  $fixtureRef
                              |
-                             |  def parse(s: String): Option[${name.asName}] = {
+                             |  def parse(s: $scString): $scOption[${name.asName}] = {
                              |    s match {
                              |      ${parseCases.join("\n").shift(6).trim}
                              |      case _ => None
                              |    }
                              |  }
+                             |  
+                             |  def all: $scList[${name.asName}] = $scList(
+                             |    ${names.join(",\n").shift(4).trim}
+                             |  ) 
                              |}""".stripMargin
           Seq(traitTree, companion).join("\n\n")
 
@@ -258,16 +264,31 @@ object ScDefnTranslator {
                 case other                    => throw new RuntimeException(s"BUG: missing/wrong adt member: $mid => $other")
               }
           }
+
+          val adtFixtureRef = codecsFixture.fixtureTpe(defn).map(id => q"implicit def fixture: $baboonAdtFixture[${name.asName}] = $id").getOrElse(q"")
+
           val fullTree =
             q"""$sealedTrait
                |
                |object ${name.asName} {
                |  ${memberTrees.map(_._1).toList.join("\n\n").shift(2).trim}
+               |  $adtFixtureRef
                |}""".stripMargin
 //          val regs = memberTrees.flatMap(_._2)
           fullTree
-        case _: Typedef.Foreign =>
-          q""
+
+        case contract: Typedef.Contract =>
+          val methods = contract.fields.map {
+            f =>
+              val t = trans.asScRef(f.tpe, domain, evo)
+              q"def ${f.name.name}: $t"
+          }
+          val parents       = contract.contracts.map(c => trans.toScTypeRefKeepForeigns(c, domain, evo)) :+ genMarker
+          val extendsClause = if (parents.nonEmpty) q" extends ${parents.map(t => q"$t").join(" with ")}" else q""
+          val body          = if (methods.nonEmpty) methods.join("\n") else q""
+          q"""trait ${name.asName}$extendsClause {
+             |    ${body.shift(4).trim}
+             |}""".stripMargin
 
         case service: Typedef.Service =>
           val methods = service.methods.map {
@@ -287,6 +308,9 @@ object ScDefnTranslator {
           q"""trait ${name.asName} {
              |    ${body.shift(4).trim}
              |}""".stripMargin
+
+        case _: Typedef.Foreign =>
+          q""
       }
       (tree, List.empty)
     }
