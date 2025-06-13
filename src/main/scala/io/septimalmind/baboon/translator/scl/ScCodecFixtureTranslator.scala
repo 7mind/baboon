@@ -17,6 +17,6 @@ object ScCodecFixtureTranslator {
     domain: Domain,
     evo: BaboonEvolution,
   ) extends ScCodecFixtureTranslator {
-    override def translate(definition: DomainMember.User): Option[TextTree[ScValue]] = ???
+    override def translate(definition: DomainMember.User): Option[TextTree[ScValue]] = None
   }
 }

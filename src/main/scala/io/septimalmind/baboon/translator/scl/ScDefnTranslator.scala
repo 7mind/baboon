@@ -3,6 +3,8 @@ package io.septimalmind.baboon.translator.scl
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.csharp.CSDefnTranslator.Output
+import io.septimalmind.baboon.translator.csharp.CSValue
 import io.septimalmind.baboon.translator.scl.ScValue.ScType
 import io.septimalmind.baboon.typer.TypeInfo
 import io.septimalmind.baboon.typer.model.*
@@ -66,9 +68,66 @@ object ScDefnTranslator {
       )
     }
 
-    override def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = F.pure(List.empty)
+    override def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+      defn.id.owner match {
+        case Owner.Adt(_) => F.pure(List.empty)
+        case _            => doTranslateFixtures(defn)
+      }
+    }
 
-    override def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = F.pure(List.empty)
+    private def doTranslateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+      val fixtureTreeOut = makeFixtureRepr(defn).map {
+        fixtureTreeWithNs =>
+          Output(
+            getOutputPath(defn, suffix = Some(".fixture")),
+            fixtureTreeWithNs,
+            trans.toScPkg(domain.id, domain.version, evo),
+            CompilerProduct.Fixture,
+          )
+      }
+
+      F.pure(fixtureTreeOut.toList)
+    }
+    private def makeFixtureRepr(defn: DomainMember.User): Option[TextTree[ScValue]] = {
+      val srcRef = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
+      val ns     = srcRef.pkg.parts
+
+      val fixtureTree       = codecsFixture.translate(defn)
+      val fixtureTreeWithNs = fixtureTree.map(t => scTrees.inNs(ns.toSeq, t))
+
+      fixtureTreeWithNs
+    }
+
+    override def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+      defn.id.owner match {
+        case Owner.Adt(_) => F.pure(List.empty)
+        case _            => doTranslateTest(defn)
+      }
+    }
+    private def doTranslateTest(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+      val codecTestOut = makeTestRepr(defn).map {
+        codecTestWithNS =>
+          Output(
+            getOutputPath(defn, suffix = Some(".tests")),
+            codecTestWithNS,
+            trans.toScPkg(domain.id, domain.version, evo),
+            CompilerProduct.Test,
+          )
+      }
+
+      F.pure(codecTestOut.toList)
+    }
+
+    private def makeTestRepr(defn: DomainMember.User): Option[TextTree[ScValue]] = {
+      val csTypeRef = trans.asScType(defn.id, domain, evo)
+      val srcRef    = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
+      val ns        = srcRef.pkg.parts
+
+      val testTree       = codecTests.translate(defn, csTypeRef, srcRef)
+      val testTreeWithNs = testTree.map(t => scTrees.inNs(ns.toSeq, t))
+
+      testTreeWithNs
+    }
 
     private def makeFullRepr(
       defn: DomainMember.User,
@@ -91,10 +150,10 @@ object ScDefnTranslator {
       val (defnReprBase, extraRegs) =
         makeRepr(defn, csTypeRef, isLatestVersion)
 
-      val codecTrees = Seq.empty[TextTree[ScValue]]
-//        codecs.toList
-//        .flatMap(t => t.translate(defn, csTypeRef, srcRef).toList)
-//        .map(obsoletePrevious)
+      val codecTrees =
+        codecs.toList
+          .flatMap(t => t.translate(defn, csTypeRef, srcRef).toList)
+          .map(obsoletePrevious)
 
       val defnRepr = obsoletePrevious(defnReprBase)
 
@@ -109,10 +168,9 @@ object ScDefnTranslator {
         case _: Typedef.NonDataTypedef =>
           List.empty[(ScType, TextTree[ScValue])]
         case _ =>
-          val codecsReg = Seq.empty[TextTree[ScType]]
-//          codecs.toList
-//            .sortBy(_.getClass.getName)
-//            .map(codec => q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(srcRef).copy(fq = true)}.Instance)")
+          val codecsReg = codecs.toList
+            .sortBy(_.getClass.getName)
+            .map(codec => q"( /*TODO*/ ${codec.codecName(srcRef).copy(fq = true)} )")
           val reg =
             (List(q"""\"${defn.id.toString}\"""") ++ codecsReg).join(", ")
           List(csTypeRef -> reg)
@@ -125,6 +183,10 @@ object ScDefnTranslator {
 
     private def makeRepr(defn: DomainMember.User, name: ScValue.ScType, isLatestVersion: Boolean): (TextTree[ScValue], List[(ScType, TextTree[ScValue])]) = {
       val genMarker = if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
+      val mainMeta  = List.empty[TextTree[ScValue]] // csDomTrees.makeMeta(defn, isCodec = false)
+      val codecMeta = codecs.map(_.codecMeta(defn, name).member)
+      // TODO:
+      val meta = mainMeta ++ codecMeta
 
       val tree: TextTree[ScValue] = defn.defn match {
         case contract: Typedef.Contract =>

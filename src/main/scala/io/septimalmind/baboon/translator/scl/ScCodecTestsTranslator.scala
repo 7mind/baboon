@@ -24,6 +24,6 @@ object ScCodecTestsTranslator {
     domain: Domain,
     evo: BaboonEvolution,
   ) extends ScCodecTestsTranslator {
-    override def translate(definition: DomainMember.User, csRef: ScValue.ScType, srcRef: ScValue.ScType): Option[TextTree[ScValue]] = ???
+    override def translate(definition: DomainMember.User, csRef: ScValue.ScType, srcRef: ScValue.ScType): Option[TextTree[ScValue]] = None
   }
 }
