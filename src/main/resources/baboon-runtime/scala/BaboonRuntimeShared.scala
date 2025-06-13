@@ -109,7 +109,7 @@ package baboon.runtime.shared {
     def mkEnum[T](meta: BaboonEnum[T]): T = rnd.shuffle(meta.all).head
 
     def oneOf[T](elements: List[BaboonRandom => T]): T = {
-      elements(rnd.nextInt(elements.size))(rnd)
+      elements(rnd.nextInt(elements.size))(this)
     }
   }
 }
