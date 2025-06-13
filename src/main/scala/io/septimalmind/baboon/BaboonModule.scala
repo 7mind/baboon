@@ -6,7 +6,7 @@ import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*
 import io.septimalmind.baboon.translator.csharp.CSCodecFixtureTranslator.CSRandomMethodTranslatorImpl
-import io.septimalmind.baboon.translator.scl.{ScBaboonTranslator, ScConversionTranslator, ScDefnTranslator, ScFileTools, ScTreeTools, ScTypeInfo, ScTypeTranslator}
+import io.septimalmind.baboon.translator.scl.{ScBaboonTranslator, ScCodecFixtureTranslator, ScCodecTestsTranslator, ScCodecTranslator, ScConversionTranslator, ScDefnTranslator, ScFileTools, ScJsonCodecGenerator, ScTreeTools, ScTypeInfo, ScTypeTranslator, ScUEBACodecGenerator}
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.functional.ParallelAccumulatingOps2
@@ -75,7 +75,7 @@ class BaboonCSModule[F[+_, +_]: Error2: TagKK](target: CSTarget) extends ModuleD
       make[CSDomainTreeTools].from[CSDomainTreeTools.CSDomainTreeToolsImpl]
 
       many[CSCodecTranslator]
-        .add[CSNSJsonCodecGenerator]
+        .add[CSJsonCodecGenerator]
         .add[CSUEBACodecGenerator]
 
     })
@@ -115,4 +115,9 @@ class BaboonScModule[F[+_, +_]: Error2: TagKK](target: ScTarget) extends ModuleD
   many[BaboonAbstractTranslator[F]]
     .ref[ScBaboonTranslator[F]]
 
+  make[ScCodecFixtureTranslator].from[ScCodecFixtureTranslator.ScRandomMethodTranslatorImpl]
+  make[ScCodecTestsTranslator].from[ScCodecTestsTranslator.Impl]
+  many[ScCodecTranslator]
+    .add[ScJsonCodecGenerator]
+    .add[ScUEBACodecGenerator]
 }

@@ -7,7 +7,7 @@ import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-class CSNSJsonCodecGenerator(
+class CSJsonCodecGenerator(
   trans: CSTypeTranslator,
   csDomTrees: CSDomainTreeTools,
   target: CSTarget,

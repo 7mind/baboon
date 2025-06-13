@@ -186,7 +186,6 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       val conversionRegs = convs.flatMap(_.reg.iterator.toSeq).toSeq
       val missing        = convs.flatMap(_.missing.iterator.toSeq).toSeq
 
-      // Scala converter definitions (stub syntax)
       val converter =
         q"""trait RequiredConversions {
            |    ${missing.join("\n").shift(4).trim}
