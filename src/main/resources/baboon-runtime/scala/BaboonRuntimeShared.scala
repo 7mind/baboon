@@ -32,4 +32,6 @@ package baboon.runtime.shared {
   trait BaboonEnum[T] {
     def parse(s: String): Option[T]
   }
+
+  trait BaboonMeta {}
 }

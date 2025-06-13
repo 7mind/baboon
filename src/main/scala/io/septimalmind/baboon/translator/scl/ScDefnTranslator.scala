@@ -63,9 +63,9 @@ object ScDefnTranslator {
       )
     }
 
-    override def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = ???
+    override def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = F.pure(List.empty)
 
-    override def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = ???
+    override def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = F.pure(List.empty)
 
     private def makeFullRepr(
       defn: DomainMember.User,

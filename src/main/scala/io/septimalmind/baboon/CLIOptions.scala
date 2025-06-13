@@ -69,6 +69,8 @@ case class ScCLIOptions(
   generic: GenericTranspilerCLIOptions,
   @HelpMessage("Allow to erase target directory even if files with these extensions exist there. Default: cs,json,meta")
   extAllowCleanup: List[String],
+  @HelpMessage("Adds evolution metadata as a Scala dictionary")
+  scWriteEvolutionDict: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class CLIOptions(

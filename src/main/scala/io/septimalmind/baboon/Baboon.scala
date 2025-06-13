@@ -72,7 +72,7 @@ object Baboon {
                         id       = "Scala",
                         output   = shopts.outOpts,
                         generic  = shopts.genericOpts,
-                        language = ScOptions(),
+                        language = ScOptions(writeEvolutionDict = opts.scWriteEvolutionDict.getOrElse(false)),
                       )
                   }
                 case r => Left(s"Unknown role id: $r")

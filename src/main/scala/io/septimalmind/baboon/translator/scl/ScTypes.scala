@@ -14,6 +14,7 @@ object ScTypes {
   val abstractBaboonConversions: ScType = ScType(baboonRuntimePkg, "BaboonAbstractConversions")
   val abstractBaboonCodecs: ScType      = ScType(baboonRuntimePkg, "BaboonAbstractCodecs")
   val baboonEnum: ScType                = ScType(baboonRuntimePkg, "BaboonEnum")
+  val baboonMeta: ScType                = ScType(baboonRuntimePkg, "BaboonMeta")
 
   val scalaPkg: ScPackageId = ScPackageId(NEList("_root_", "scala"))
 
@@ -37,6 +38,11 @@ object ScTypes {
   val scSet: ScType                 = ScType(scalaCollImmuPkg, "Set")
   val scMap: ScType                 = ScType(scalaCollImmuPkg, "Map")
 
+  val scalaCollMutPkg: ScPackageId = ScPackageId(NEList("_root_", "scala", "collection", "mutable"))
+  val scMutMap: ScType                 = ScType(scalaCollMutPkg, "Map")
+  
+  
+  
   val scalaUtilPkg: ScPackageId = ScPackageId(NEList("_root_", "scala", "util"))
   val scEither: ScType          = ScType(scalaUtilPkg, "Either")
 

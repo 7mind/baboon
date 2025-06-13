@@ -4,6 +4,8 @@ import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.csharp.CSDefnTranslator
+import io.septimalmind.baboon.translator.csharp.CSTypes.{csDictionary, csIDictionary, csLazy, csString, iBaboonMeta}
 import io.septimalmind.baboon.translator.scl.ScTypes.*
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources, scl}
 import io.septimalmind.baboon.typer.model.*
@@ -19,7 +21,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
   convTransFac: ScConversionTranslator.Factory[F],
   defnTranslator: Subcontext[ScDefnTranslator[F]],
   target: ScTarget,
-  tools: ScTreeTools,
+  scTreeTools: ScTreeTools,
   scFiles: ScFileTools,
 ) extends BaboonAbstractTranslator[F] {
 
@@ -76,12 +78,11 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
     val evo = lineage.evolution
     defnTranslator.provide(domain).provide(evo).produce().use {
       defnTranslator =>
-        // TODO:
         for {
-          defnSources <- translateProduct(domain, CompilerProduct.Definition, defnTranslator.translate)
+          defnSources     <- translateProduct(domain, CompilerProduct.Definition, defnTranslator.translate)
+          fixturesSources <- translateProduct(domain, CompilerProduct.Fixture, defnTranslator.translateFixtures)
+          testsSources    <- translateProduct(domain, CompilerProduct.Test, defnTranslator.translateTests)
 
-          fixturesSources <- F.pure(List.empty) // TODO
-          testsSources    <- F.pure(List.empty) // TODO
           conversionSources <- {
             if (target.output.products.contains(CompilerProduct.Conversion)) {
               val evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
@@ -90,7 +91,13 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
               F.pure(List.empty)
             }
           }
-          meta <- F.pure(List.empty) // TODO
+          meta <- {
+            if (target.language.writeEvolutionDict) {
+              generateMeta(domain, lineage)
+            } else {
+              F.pure(List.empty)
+            }
+          }
         } yield {
           defnSources ++
           conversionSources ++
@@ -99,6 +106,38 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
           meta
         }
     }
+  }
+
+  private def generateMeta(domain: Domain, lineage: BaboonLineage): Out[List[ScDefnTranslator.Output]] = {
+    val basename = scFiles.basename(domain, lineage.evolution)
+    val pkg      = trans.toScPkg(domain.id, domain.version, lineage.evolution)
+
+    val entries = lineage.evolution
+      .typesUnchangedSince(domain.version)
+      .toList
+      .sortBy(_._1.toString)
+      .map {
+        case (tid, version) =>
+          q"""unmodified.put("${tid.toString}", "${version.version}")"""
+      }
+
+    scala.collection.mutable.Map.empty[String, String]
+    val metaTree =
+      q"""object BaboonMetadata extends $baboonMeta {
+         |  private val unmodified = ${scMutMap.fullyQualified}.empty[$scString, $scString]
+         |  
+         |  ${entries.join("\n").shift(2).trim}
+         |
+         |  def unmodifiedSince(typeIdString: $scString): $scOption[$scString] = {
+         |    unmodified.get(typeIdString);
+         |  }
+         |}""".stripMargin
+
+    val metaSource = Seq(metaTree).join("\n\n")
+    val meta       = scTreeTools.inNs(pkg.parts.toSeq, metaSource)
+    val metaOutput = ScDefnTranslator.Output(s"$basename/BaboonMetadata.scala", meta, pkg, CompilerProduct.Definition)
+
+    F.pure(List(metaOutput))
   }
 
   private def sharedFixture(): Out[List[ScDefnTranslator.Output]] = {
@@ -208,7 +247,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       val basename = scFiles.basename(domain, lineage.evolution)
 
       val runtimeSource = Seq(converter, codecs).join("\n\n")
-      val runtime       = tools.inNs(pkg.parts.toSeq, runtimeSource)
+      val runtime       = scTreeTools.inNs(pkg.parts.toSeq, runtimeSource)
       val runtimeOutput = ScDefnTranslator.Output(
         s"$basename/BaboonRuntime.scala",
         runtime,

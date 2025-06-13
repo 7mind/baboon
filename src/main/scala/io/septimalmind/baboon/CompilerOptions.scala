@@ -27,7 +27,9 @@ object CompilerTarget {
   ) extends CompilerTarget
 }
 
-final case class ScOptions()
+final case class ScOptions(
+  writeEvolutionDict: Boolean
+)
 
 final case class CSOptions(
   obsoleteErrors: Boolean,
