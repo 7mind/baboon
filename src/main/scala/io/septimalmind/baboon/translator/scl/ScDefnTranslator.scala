@@ -35,6 +35,9 @@ object ScDefnTranslator {
     scFiles: ScFileTools,
     scTrees: ScTreeTools,
     trans: ScTypeTranslator,
+    codecs: Set[ScCodecTranslator],
+    codecTests: ScCodecTestsTranslator,
+    codecsFixture: ScCodecFixtureTranslator,
   ) extends ScDefnTranslator[F] {
     import ScTypes.*
 

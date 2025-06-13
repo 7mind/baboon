@@ -101,7 +101,11 @@ class BaboonScModule[F[+_, +_]: Error2: TagKK](target: ScTarget) extends ModuleD
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
       make[ScDefnTranslator[F]].from[ScDefnTranslator.ScDefnTranslatorImpl[F]]
-
+      make[ScCodecFixtureTranslator].from[ScCodecFixtureTranslator.ScRandomMethodTranslatorImpl]
+      make[ScCodecTestsTranslator].from[ScCodecTestsTranslator.Impl]
+      many[ScCodecTranslator]
+        .add[ScJsonCodecGenerator]
+        .add[ScUEBACodecGenerator]
     })
 
   make[ScFileTools].from[ScFileTools.ScFileToolsImpl]
@@ -115,9 +119,4 @@ class BaboonScModule[F[+_, +_]: Error2: TagKK](target: ScTarget) extends ModuleD
   many[BaboonAbstractTranslator[F]]
     .ref[ScBaboonTranslator[F]]
 
-  make[ScCodecFixtureTranslator].from[ScCodecFixtureTranslator.ScRandomMethodTranslatorImpl]
-  make[ScCodecTestsTranslator].from[ScCodecTestsTranslator.Impl]
-  many[ScCodecTranslator]
-    .add[ScJsonCodecGenerator]
-    .add[ScUEBACodecGenerator]
 }
