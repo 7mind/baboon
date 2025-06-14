@@ -71,6 +71,8 @@ case class ScCLIOptions(
   extAllowCleanup: List[String],
   @HelpMessage("Adds evolution metadata as a Scala dictionary")
   scWriteEvolutionDict: Option[Boolean],
+  @HelpMessage("Every ADT branch will encode ADT metadata and expect it in the decoder")
+  scWrappedAdtBranchCodecs: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class CLIOptions(

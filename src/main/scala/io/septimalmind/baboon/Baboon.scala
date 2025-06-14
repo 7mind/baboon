@@ -57,10 +57,13 @@ object Baboon {
                       val shopts = mkGenericOpts(opts)
 
                       CompilerTarget.ScTarget(
-                        id       = "Scala",
-                        output   = shopts.outOpts,
-                        generic  = shopts.genericOpts,
-                        language = ScOptions(writeEvolutionDict = opts.scWriteEvolutionDict.getOrElse(false)),
+                        id      = "Scala",
+                        output  = shopts.outOpts,
+                        generic = shopts.genericOpts,
+                        language = ScOptions(
+                          writeEvolutionDict     = opts.scWriteEvolutionDict.getOrElse(false),
+                          wrappedAdtBranchCodecs = opts.scWrappedAdtBranchCodecs.getOrElse(false),
+                        ),
                       )
                   }
                 case r => Left(s"Unknown role id: $r")

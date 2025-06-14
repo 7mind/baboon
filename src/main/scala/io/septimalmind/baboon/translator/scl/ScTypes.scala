@@ -2,6 +2,8 @@ package io.septimalmind.baboon.translator.scl
 import io.septimalmind.baboon.translator.scl.ScValue.{ScPackageId, ScType}
 import izumi.fundamentals.collections.nonempty.NEList
 
+import java.util.concurrent.atomic.AtomicReference
+
 object ScTypes {
   val baboonRuntimePkg: ScPackageId = ScPackageId(NEList("_root_", "baboon", "runtime", "shared"))
 
@@ -18,6 +20,11 @@ object ScTypes {
   val baboonFixture: ScType             = ScType(baboonRuntimePkg, "BaboonFixture")
   val baboonAdtFixture: ScType          = ScType(baboonRuntimePkg, "BaboonAdtFixture")
   val baboonRandom: ScType              = ScType(baboonRuntimePkg, "BaboonRandom")
+  val baboonJsonCodec: ScType           = ScType(baboonRuntimePkg, "BaboonJsonCodec")
+  val baboonTimeFormats: ScType         = ScType(baboonRuntimePkg, "BaboonTimeFormats")
+  val baboonTools: ScType               = ScType(baboonRuntimePkg, "BaboonTools")
+  val baboonCodecContext: ScType        = ScType(baboonRuntimePkg, "BaboonCodecContext")
+  val baboonLazy: ScType                = ScType(baboonRuntimePkg, "Lazy")
 
   val scalaPkg: ScPackageId = ScPackageId(NEList("_root_", "scala"))
 

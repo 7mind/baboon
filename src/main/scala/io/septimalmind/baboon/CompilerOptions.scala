@@ -28,7 +28,8 @@ object CompilerTarget {
 }
 
 final case class ScOptions(
-  writeEvolutionDict: Boolean
+  writeEvolutionDict: Boolean,
+  wrappedAdtBranchCodecs: Boolean,
 )
 
 final case class CSOptions(

@@ -1,6 +1,7 @@
 package baboon.runtime.shared {
 
   import java.time.OffsetDateTime
+  import java.util.concurrent.atomic.AtomicReference
 
   trait BaboonGenerated {}
   trait BaboonAdtMemberMeta {}
@@ -112,4 +113,36 @@ package baboon.runtime.shared {
       elements(rnd.nextInt(elements.size))(this)
     }
   }
+
+  trait BaboonCodecContext {}
+
+  trait BaboonJsonCodec[T] {
+    def encode(ctx: BaboonCodecContext, value: T): io.circe.Json
+    def decode(ctx: BaboonCodecContext, wire: io.circe.Json): Either[String, T]
+  }
+
+  final class Lazy[T](private val initializer: () => T) {
+    private val valueRef = new AtomicReference[Option[T]](None)
+
+    def value: T = valueRef.get() match {
+      case Some(existing) => existing
+      case None =>
+        val computed = initializer()
+        if (valueRef.compareAndSet(None, Some(computed))) computed
+        else valueRef.get().get
+    }
+
+    def isValueCreated: Boolean = valueRef.get().isDefined
+  }
+
+  object Lazy {
+    def apply[T](initializer: => T): Lazy[T] =
+      new Lazy(() => initializer)
+  }
+
+  object BaboonTimeFormats {
+    def parse(s: String): Option[OffsetDateTime] = ???
+    def format(s: OffsetDateTime): String        = ???
+  }
+
 }
