@@ -1,6 +1,5 @@
 package io.septimalmind.baboon.translator.scl
 
-import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.typer.model.{BaboonEvolution, Domain}
 
 trait ScFileTools {

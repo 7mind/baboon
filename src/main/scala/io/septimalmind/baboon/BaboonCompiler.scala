@@ -5,20 +5,20 @@ import io.septimalmind.baboon.parser.model.issues.BaboonIssue.CantCleanupTarget
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile}
 import io.septimalmind.baboon.typer.model.BaboonFamily
 import io.septimalmind.baboon.util.{BLogger, BaboonMetagen}
+import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.files.IzFiles
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, StandardOpenOption}
-import scala.util.Try
 
 trait BaboonCompiler[F[+_, +_]] {
   def run(target: CompilerTarget, model: BaboonFamily): F[NEList[BaboonIssue], Unit]
 }
 
 object BaboonCompiler {
-  class BaboonCompilerImpl[F[+_, +_]: Error2]( // dirty, I/O happens there
+  class BaboonCompilerImpl[F[+_, +_]: Error2: MaybeSuspend2]( // dirty, I/O happens there
     translator: BaboonAbstractTranslator[F],
     options: CompilerOptions,
     logger: BLogger,
@@ -31,7 +31,7 @@ object BaboonCompiler {
         _ <- cleanupTargetPaths(target.output)
         _ <- writeEvolutionJson(target, model)
 
-        _           = logger.message( s"${target.id}: generating output...")
+        _          <- F.maybeSuspend(logger.message(s"${target.id}: generating output..."))
         translated <- translator.translate(model)
 
         _ <- F.traverseAccumErrors_(translated.files.iterator) {
@@ -42,13 +42,13 @@ object BaboonCompiler {
                 writeFile(output, targetPath)
             }
         }
-        _ = logger.message( s"${target.id}: done")
+        _ <- F.maybeSuspend(logger.message(s"${target.id}: done"))
 
       } yield {}
     }
 
     private def writeFile(content: OutputFile, tgt: Path): F[NEList[BaboonIssue], Unit] = {
-      F.fromTry(Try {
+      F.fromAttempt {
         tgt.getParent.toFile.mkdirs()
 
         if (options.debug) {
@@ -63,14 +63,14 @@ object BaboonCompiler {
           StandardOpenOption.TRUNCATE_EXISTING,
         )
         ()
-      }).leftMap(t => NEList(BaboonIssue.CantWriteOutput(tgt.toString, t)))
+      }.leftMap(t => NEList(BaboonIssue.CantWriteOutput(tgt.toString, t)))
     }
 
     private def cleanupTargetPaths(targetOptions: OutputOptions): F[NEList[BaboonIssue], Unit] = {
       for {
         targetPaths <- F.pure(targetOptions.targetPaths.values.toList.distinct.filter(_.toFile.exists()))
-        unexpectedFiles <- F
-          .fromTry(Try(targetPaths.flatMap {
+        unexpectedFiles <- F.fromAttempt {
+          targetPaths.flatMap {
             IzFiles.walk(_).filter {
               p =>
                 val f = p.toFile
@@ -79,11 +79,11 @@ object BaboonCompiler {
                   targetOptions.safeToRemoveExtensions.exists(ext => f.getName.endsWith(s".$ext"))
                 )
             }
-          }))
-          .catchAll(t => F.fail(NEList(CantCleanupTarget(Seq.empty, targetOptions.safeToRemoveExtensions.toSeq, Some(t)))))
+          }
+        }.catchAll(t => F.fail(NEList(CantCleanupTarget(Seq.empty, targetOptions.safeToRemoveExtensions.toSeq, Some(t)))))
         _ <- F
           .ifThenElse(unexpectedFiles.isEmpty)(
-            F.fromTry(Try(targetPaths.foreach(path => IzFiles.erase(path))))
+            F.fromAttempt(targetPaths.foreach(path => IzFiles.erase(path)))
               .catchAll(t => F.fail(NEList(CantCleanupTarget(unexpectedFiles.map(_.toString), targetOptions.safeToRemoveExtensions.toSeq, Some(t))))),
             F.fail(NEList(CantCleanupTarget(unexpectedFiles.map(_.toString), targetOptions.safeToRemoveExtensions.toSeq, None))),
           )

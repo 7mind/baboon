@@ -3,8 +3,6 @@ package io.septimalmind.baboon.translator.scl
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.csharp.CSDefnTranslator.Output
-import io.septimalmind.baboon.translator.csharp.CSValue
 import io.septimalmind.baboon.translator.scl.ScValue.ScType
 import io.septimalmind.baboon.typer.TypeInfo
 import io.septimalmind.baboon.typer.model.*

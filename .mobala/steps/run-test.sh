@@ -7,6 +7,7 @@ function run-test() {
 
   target/graalvm-native-image/baboon \
             --model-dir ./src/test/resources/baboon/ \
+            :cs \
             --output ./test/cs-stub/BaboonDefinitions/Generated \
             --test-output ./test/cs-stub/BaboonTests/GeneratedTests \
             --fixture-output ./test/cs-stub/BaboonTests/GeneratedFixtures \
@@ -25,6 +26,7 @@ function run-test() {
 
   target/graalvm-native-image/baboon \
             --model-dir ./src/test/resources/baboon/ \
+            :cs \
             --output ./test/cs-stub/BaboonDefinitions/Generated \
             --test-output ./test/cs-stub/BaboonTests/GeneratedTests \
             --fixture-output ./test/cs-stub/BaboonTests/GeneratedFixtures \
@@ -50,6 +52,7 @@ function run-test() {
   
   target/graalvm-native-image/baboon  \
     --model-dir ./test/conv-test \
+    :cs \
     --output ./test/conv-test-cs/ConvTest/Generated
 
 

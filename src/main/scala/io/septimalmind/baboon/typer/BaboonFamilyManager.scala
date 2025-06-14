@@ -4,8 +4,8 @@ import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage}
 import io.septimalmind.baboon.util.BLogger
-import io.septimalmind.baboon.util.functional.ParallelAccumulatingOps2
-import izumi.functional.bio.{Error2, F}
+import izumi.functional.bio.unsafe.MaybeSuspend2
+import izumi.functional.bio.{Error2, F, ParallelErrorAccumulatingOps2}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 import izumi.fundamentals.platform.strings.TextTree.Quote
@@ -17,7 +17,7 @@ trait BaboonFamilyManager[F[+_, +_]] {
 }
 
 object BaboonFamilyManager {
-  class BaboonFamilyManagerImpl[F[+_, +_]: Error2: ParallelAccumulatingOps2](
+  class BaboonFamilyManagerImpl[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2](
     parser: BaboonParser[F],
     typer: BaboonTyper[F],
     comparator: BaboonComparator[F],
@@ -38,7 +38,7 @@ object BaboonFamilyManager {
             }
         }
 
-        _ <- F.pure(
+        _ <- F.maybeSuspend {
           domains.sortBy(d => (d.id.toString, d.version.version)).foreach {
             d =>
               logger.message(
@@ -46,7 +46,7 @@ object BaboonFamilyManager {
                 q"${d.version}: retained definitions: ${d.defs.meta.nodes.size}, unreachable definitions: ${d.excludedIds.size}",
               )
           }
-        )
+        }
 
         lineages <- F.parTraverseAccumErrors(
           domains

@@ -18,7 +18,7 @@ lazy val root = (project in file("."))
       "fundamentals-collections",
       "distage-core",
       "distage-testkit-scalatest",
-    ).map("io.7mind.izumi" %% _ % "1.2.16"),
+    ).map("io.7mind.izumi" %% _ % "1.2.19"),
     libraryDependencies ++= Seq(
       "org.scala-lang.modules" %% "scala-parser-combinators" % "2.4.0"
     ),
@@ -26,7 +26,7 @@ lazy val root = (project in file("."))
       "org.scalatest" %% "scalatest" % "3.2.19" % Test,
     ),
     libraryDependencies ++= Seq(
-      "com.github.alexarchambault" %% "case-app" % "2.1.0-M29"
+      "com.github.alexarchambault" %% "case-app" % "2.1.0-M30"
     ),
 //    libraryDependencies ++= Seq(
 //      "org.graalvm.buildtools" % "graalvm-reachability-metadata" % "0.10.2"

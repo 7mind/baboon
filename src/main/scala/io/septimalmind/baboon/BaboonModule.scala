@@ -9,13 +9,13 @@ import io.septimalmind.baboon.translator.csharp.CSCodecFixtureTranslator.CSRando
 import io.septimalmind.baboon.translator.scl.{ScBaboonTranslator, ScCodecFixtureTranslator, ScCodecTestsTranslator, ScCodecTranslator, ScConversionTranslator, ScDefnTranslator, ScFileTools, ScJsonCodecGenerator, ScTreeTools, ScTypeInfo, ScTypeTranslator, ScUEBACodecGenerator}
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.util.functional.ParallelAccumulatingOps2
 import io.septimalmind.baboon.util.{BLogger, BaboonMetagen}
 import io.septimalmind.baboon.validator.BaboonValidator
-import izumi.functional.bio.{Applicative2, ApplicativeError2, Bifunctor2, Error2, Guarantee2, Monad2}
+import izumi.functional.bio.unsafe.MaybeSuspend2
+import izumi.functional.bio.{Applicative2, ApplicativeError2, Bifunctor2, Error2, Guarantee2, Monad2, ParallelErrorAccumulatingOps2}
 import izumi.reflect.TagKK
 
-class BaboonSharedModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
+class BaboonSharedModule[F[+_, +_]: Error2: MaybeSuspend2: TagKK] extends ModuleDef {
   // not all the definitions are required for parent locator, so it's easier to double-include
   addImplicit[Error2[F]].exposed
     .aliased[Monad2[F]].exposed
@@ -23,19 +23,19 @@ class BaboonSharedModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
     .aliased[ApplicativeError2[F]].exposed
     .aliased[Guarantee2[F]].exposed
     .aliased[Bifunctor2[F]].exposed
-
+  addImplicit[MaybeSuspend2[F]]
 }
 
-class BaboonModule[F[+_, +_]: Error2: TagKK](
+class BaboonModule[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
   options: CompilerOptions,
-  parallelAccumulatingOps2: ParallelAccumulatingOps2[F],
+  parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[F],
 ) extends ModuleDef {
   include(new BaboonSharedModule[F])
   make[CompilerOptions].fromValue(options)
 
 //  make[Seq[Path]].named("inputs").fromValue(inputs)
 
-  make[ParallelAccumulatingOps2[F]].fromValue(parallelAccumulatingOps2).exposed
+  make[ParallelErrorAccumulatingOps2[F]].fromValue(parallelAccumulatingOps2).exposed
 
   make[BLogger].from[BLogger.BLoggerImpl]
 
@@ -118,5 +118,4 @@ class BaboonScModule[F[+_, +_]: Error2: TagKK](target: ScTarget) extends ModuleD
   make[ScBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[ScBaboonTranslator[F]]
-
 }

@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.tests
 
 import io.septimalmind.baboon.BaboonLoader
-import io.septimalmind.baboon.QuasiIOEither.BaboonTestModule
+import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
 import io.septimalmind.baboon.typer.model.BaboonFamily
 import izumi.functional.bio.Error2
 import izumi.fundamentals.platform.files.IzFiles
