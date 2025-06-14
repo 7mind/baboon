@@ -19,17 +19,7 @@ class ScJsonCodecGenerator(
 
   override def codecMeta(defn: DomainMember.User, name: ScValue.ScType): CodecMeta = CodecMeta(q"")
 
-  override def codecType(): ScValue.ScType = ???
-
   override def codecName(name: ScValue.ScType): ScValue.ScType = {
     ScValue.ScType(name.pkg, s"${name.name}_JSONCodec", name.fq)
   }
-
-  override def codecInterfaceProperty(): TextTree[ScValue] = ???
-
-  override def codecImplProperty(): TextTree[ScValue] = ???
-
-  override def codecGenericImplField(): TextTree[ScValue] = ???
-
-  override def codecImplField(): TextTree[ScValue] = ???
 }

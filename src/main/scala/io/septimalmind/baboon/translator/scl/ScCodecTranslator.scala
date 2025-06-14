@@ -7,20 +7,9 @@ import izumi.fundamentals.platform.strings.TextTree
 trait ScCodecTranslator {
   def translate(defn: DomainMember.User, csRef: ScValue.ScType, srcRef: ScValue.ScType): Option[TextTree[ScValue]]
 
-  def codecType(): ScValue.ScType
-
   def codecName(name: ScValue.ScType): ScValue.ScType
 
   def codecMeta(defn: DomainMember.User, name: ScValue.ScType): CodecMeta
-
-  def codecInterfaceProperty(): TextTree[ScValue]
-
-  def codecImplProperty(): TextTree[ScValue]
-
-  def codecGenericImplField(): TextTree[ScValue]
-
-  def codecImplField(): TextTree[ScValue]
-
 }
 
 object ScCodecTranslator {

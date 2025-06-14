@@ -435,7 +435,6 @@ class CSJsonCodecGenerator(
 
   }
 
-  def codecType(): CSValue.CSType = iBaboonCodecData
 
   def codecName(name: CSValue.CSType): CSValue.CSType = {
     CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq)
@@ -450,9 +449,4 @@ class CSJsonCodecGenerator(
          |}""".stripMargin
     CodecMeta(member)
   }
-
-  def codecInterfaceProperty(): TextTree[CSValue] = q"public $iBaboonCodecData Json { get; }";
-  def codecImplProperty(): TextTree[CSValue]      = q"public $iBaboonCodecData Json => LazyJson.Value;";
-  def codecGenericImplField(): TextTree[CSValue]  = q"Lazy<$iBaboonJsonCodec<T>> LazyJson";
-  def codecImplField(): TextTree[CSValue]         = q"Lazy<$iBaboonCodecData> LazyJson";
 }

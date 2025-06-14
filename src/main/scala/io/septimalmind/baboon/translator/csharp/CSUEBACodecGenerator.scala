@@ -539,8 +539,6 @@ class CSUEBACodecGenerator(
     }
   }
 
-  def codecType(): CSValue.CSType = iBaboonCodecData
-
   def codecName(name: CSValue.CSType): CSValue.CSType = {
     CSValue.CSType(name.pkg, s"${name.name}_UEBACodec", name.fq)
   }
@@ -555,9 +553,4 @@ class CSUEBACodecGenerator(
          |}""".stripMargin
     )
   }
-
-  def codecInterfaceProperty(): TextTree[CSValue] = q"public $iBaboonCodecData Ueba { get; }";
-  def codecImplProperty(): TextTree[CSValue]      = q"public $iBaboonCodecData Ueba => LazyUeba.Value;";
-  def codecGenericImplField(): TextTree[CSValue]  = q"Lazy<$iBaboonBinCodec<T>> LazyUeba";
-  def codecImplField(): TextTree[CSValue]         = q"Lazy<$iBaboonCodecData> LazyUeba";
 }
