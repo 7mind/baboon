@@ -142,9 +142,11 @@ package baboon.runtime.shared {
   }
 
   object BaboonTimeFormats {
-    def parse(s: String): Option[OffsetDateTime]          = ???
-    def format(s: OffsetDateTime): String                 = ???
-    def decodeFromBin(s: DataInputStream): OffsetDateTime = ???
+    def parse(s: String): Option[OffsetDateTime]                             = ???
+    def format(s: OffsetDateTime): String                                    = ???
+    def decodeFromBin(s: DataInputStream): OffsetDateTime                    = ???
+    def encodeToBin(f09: OffsetDateTime, fakeWriter: DataOutputStream): Unit = ???
+
   }
 
   trait BaboonBinCodec[T] {

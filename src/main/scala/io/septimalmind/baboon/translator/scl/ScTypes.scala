@@ -72,5 +72,6 @@ object ScTypes {
 
   val binaryInput: ScType  = ScType(javaIoPkg, "DataInputStream")
   val binaryOutput: ScType = ScType(javaIoPkg, "DataOutputStream")
+  val byteArrayOutputStream: ScType = ScType(javaIoPkg, "ByteArrayOutputStream")
 
 }

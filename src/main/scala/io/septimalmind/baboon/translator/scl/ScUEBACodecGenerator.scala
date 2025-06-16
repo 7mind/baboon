@@ -48,9 +48,7 @@ class ScUEBACodecGenerator(
              |  return
              |}
              |
-             |/*
              |$enc
-             |*/
              |""".stripMargin.trim
 
         val insulatedDec =
@@ -212,7 +210,7 @@ class ScUEBACodecGenerator(
         val encBody = if (target.language.wrappedAdtBranchCodecs) {
           q"""$cName.instance.encode(ctx, writer, $castedName)"""
         } else {
-          q"""writer.Write((byte)${idx.toString});
+          q"""writer.writeByte(${idx.toString});
              |$cName.instance.encode(ctx, writer, $castedName)
            """.stripMargin
         }
@@ -224,14 +222,15 @@ class ScUEBACodecGenerator(
         }
 
         (
-          q"""if (value is $fqBranch $castedName)
-             |{
-             |    ${encBody.shift(2).trim}
-             |    return;
+          q"""if (value.isInstanceOf[$fqBranch])
+             |{   
+             |  val $castedName = value.asInstanceOf[$fqBranch]
+             |  ${encBody.shift(2).trim}
+             |  return;
              |}""".stripMargin,
           q"""if (asByte == ${idx.toString})
              |{
-             |    ${decBody.shift(2).trim}
+             |  ${decBody.shift(2).trim}
              |}""".stripMargin,
         )
     }
@@ -254,7 +253,7 @@ class ScUEBACodecGenerator(
         (
           q"""if (value == $name.${m.name})
              |{
-             |   writer.Write((byte)${idx.toString})
+             |   writer.writeByte(${idx.toString})
              |   return
              |}""".stripMargin,
           q"""if (asByte == ${idx.toString})
@@ -294,26 +293,29 @@ class ScUEBACodecGenerator(
     val fields = fieldsOf(d)
 
     val noIndex = Seq(
-      q"writer.Write(header)",
+      q"writer.writeByte(header)",
       fields.map(_._1).joinN(),
     ).filterNot(_.isEmpty).join("\n")
 
     val fenc =
-      q"""byte header = 0b0000000;
+      q"""var header: $scByte = 0b0000000;
          |
-         |if (ctx.UseIndices)
+         |if (true)
          |{
-         |  header |= 0b0000001
-         |  writer.Write(header)
-         |  using (var writeMemoryStream = new memoryStream())
-         |  {
-         |    // ReSharper disable once UnusedVariable
-         |    using (var fakeWriter = new $binaryOutput(writeMemoryStream))
-         |    {
+         |  header = (header | 0b0000001).toByte
+         |  writer.writeByte(header)
+         |  val writeMemoryStream = new $byteArrayOutputStream()
+         |  try  {
+         |    val fakeWriter = new $binaryOutput(writeMemoryStream)
+         |    try {
          |      ${fields.map(_._3).join("\n").shift(6).trim}
+         |    } finally {
+         |      fakeWriter.close()
          |    }
-         |    writeMemoryStream.Flush()
-         |    writer.Write(writeMemoryStream.ToArray())
+         |    writeMemoryStream.flush()
+         |    writer.write(writeMemoryStream.toByteArray)
+         |  } finally {
+         |      writeMemoryStream.close()
          |  }
          |} else {
          |  ${noIndex.shift(2).trim}
@@ -340,7 +342,7 @@ class ScUEBACodecGenerator(
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
         val idx = adtBranchIndex(id)
 
-        q"""writer.Write((byte)${idx.toString})
+        q"""writer.writeByte(${idx.toString})
            |$fenc""".stripMargin
       case _ => fenc
     }
@@ -375,7 +377,7 @@ class ScUEBACodecGenerator(
   private def fieldsOf(d: Typedef.Dto) = {
     d.fields.map {
       f =>
-        val fieldRef = q"value.${f.name.name.capitalize}"
+        val fieldRef = q"value.${f.name.name}"
         val enc      = mkEncoder(f.tpe, fieldRef, q"writer")
         val fakeEnc  = mkEncoder(f.tpe, fieldRef, q"fakeWriter")
         val dec      = mkDecoder(f.tpe)
@@ -384,9 +386,9 @@ class ScUEBACodecGenerator(
           case BinReprLen.Fixed(bytes) =>
             q"""{
                |  // ${f.toString}
-               |  val before = (uint)fakeWriter.BaseStream.Position
+               |  val before = writeMemoryStream.size()
                |  ${fakeEnc.shift(2).trim}
-               |  val after = (uint)fakeWriter.BaseStream.Position
+               |  val after = writeMemoryStream.size()
                |  val length = after - before
                |  assert(length == ${bytes.toString})
                |}""".stripMargin
@@ -394,27 +396,27 @@ class ScUEBACodecGenerator(
           case v: BinReprLen.Variable =>
             val sanityChecks = v match {
               case BinReprLen.Unknown() =>
-                q"assert(after >= before, $$\"Got after={after}, before={before}\")"
+                q"assert(after >= before, s\"Got after={after}, before={before}\")"
 
               case BinReprLen.Alternatives(variants) =>
-                q"assert($scSet(${variants.mkString(", ")}).contains(length), $$\"Got length={length}\")"
+                q"assert($scSet(${variants.mkString(", ")}).contains(length), s\"Got length={length}\")"
 
               case BinReprLen.Range(min, max) =>
                 (
-                  Seq(q"assert(length >= ${min.toString}, $$\"Got length={length}\")") ++
+                  Seq(q"assert(length >= ${min.toString}, s\"Got length={length}\")") ++
                   max.toSeq.map(m => q"assert(length <= ${m.toString}, $$\"Got length={length}\")")
                 ).joinN()
             }
 
             q"""{
-               |    // ${f.toString}
-               |    val before = (uint)fakeWriter.BaseStream.Position
-               |    writer.Write(before)
-               |    ${fakeEnc.shift(2).trim}
-               |    val after = (uint)fakeWriter.BaseStream.Position
-               |    val length = after - before
-               |    writer.Write(length)
-               |    ${sanityChecks.shift(2).trim};
+               |  // ${f.toString}
+               |  val before = writeMemoryStream.size()
+               |  writer.writeInt(before)
+               |  ${fakeEnc.shift(2).trim}
+               |  val after = writeMemoryStream.size()
+               |  val length = after - before
+               |  writer.writeInt(length)
+               |  ${sanityChecks.shift(2).trim};
                |}""".stripMargin
         }
 
@@ -477,20 +479,20 @@ class ScUEBACodecGenerator(
         id match {
           case s: TypeId.BuiltinScalar =>
             s match {
-              case TypeId.Builtins.bit                       => q"$wref.Write($ref)"
-              case TypeId.Builtins.i08                       => q"$wref.Write($ref)"
-              case TypeId.Builtins.i16                       => q"$wref.Write($ref)"
-              case TypeId.Builtins.i32                       => q"$wref.Write($ref)"
-              case TypeId.Builtins.i64                       => q"$wref.Write($ref)"
-              case TypeId.Builtins.u08                       => q"$wref.Write($ref)"
-              case TypeId.Builtins.u16                       => q"$wref.Write($ref)"
-              case TypeId.Builtins.u32                       => q"$wref.Write($ref)"
-              case TypeId.Builtins.u64                       => q"$wref.Write($ref)"
-              case TypeId.Builtins.f32                       => q"$wref.Write($ref)"
-              case TypeId.Builtins.f64                       => q"$wref.Write($ref)"
-              case TypeId.Builtins.f128                      => q"$wref.Write($ref)"
-              case TypeId.Builtins.str                       => q"$wref.Write($ref)"
-              case TypeId.Builtins.uid                       => q"$wref.Write($ref.ToByteArray())"
+              case TypeId.Builtins.bit                       => q"$wref.writeBoolean($ref)"
+              case TypeId.Builtins.i08                       => q"$wref.writeByte($ref)"
+              case TypeId.Builtins.i16                       => q"$wref.writeShort($ref)"
+              case TypeId.Builtins.i32                       => q"$wref.writeInt($ref)"
+              case TypeId.Builtins.i64                       => q"$wref.writeLong($ref)"
+              case TypeId.Builtins.u08                       => q"$wref.writeByte($ref)"
+              case TypeId.Builtins.u16                       => q"$wref.writeShort($ref)"
+              case TypeId.Builtins.u32                       => q"$wref.writeInt($ref)"
+              case TypeId.Builtins.u64                       => q"$wref.writeLong($ref)"
+              case TypeId.Builtins.f32                       => q"$wref.writeFloat($ref)"
+              case TypeId.Builtins.f64                       => q"$wref.writeDouble($ref)"
+              case TypeId.Builtins.f128                      => q"???" // q"$wref.Write($ref)"
+              case TypeId.Builtins.str                       => q"???" // q"$wref.Write($ref)"
+              case TypeId.Builtins.uid                       => q"???" // q"$wref.Write($ref.ToByteArray())"
               case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.encodeToBin($ref, $wref)"
               case o =>
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
@@ -504,34 +506,35 @@ class ScUEBACodecGenerator(
           case TypeId.Builtins.opt =>
             q"""if ($ref == null)
                |{
-               |  $wref.Write((byte)0);
+               |  $wref.writeByte(0);
                |}
                |else
                |{
-               |  $wref.Write((byte)1);
-               |  ${mkEncoder(c.args.head, ref, wref).shift(2).trim}
+               |  $wref.writeByte(1);
+               |  ${mkEncoder(c.args.head, q"$ref.get", wref).shift(2).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.map =>
-            q"""$wref.Write($ref.Count);
-               |foreach (var kv in $ref)
-               |{
-               |  ${mkEncoder(c.args.head, q"kv.Key", wref).shift(2).trim}
-               |  ${mkEncoder(c.args.last, q"kv.Value", wref).shift(2).trim}
+            q"""$wref.writeInt($ref.size)
+               |$ref.foreach {
+               |  case (k, v) =>
+               |  ${mkEncoder(c.args.head, q"k", wref).shift(2).trim}
+               |  ${mkEncoder(c.args.last, q"v", wref).shift(2).trim}
+               |
                |}""".stripMargin
 
           case TypeId.Builtins.lst =>
-            q"""$wref.Write($ref.Count);
-               |foreach (var i in $ref)
-               |{
-               |  ${mkEncoder(c.args.head, q"i", wref).shift(2).trim}
+            q"""$wref.writeInt($ref.size)
+               |$ref.foreach {
+               |  i =>
+               |    ${mkEncoder(c.args.head, q"i", wref).shift(4).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.set =>
-            q"""$wref.Write($ref.Count);
-               |foreach (var i in $ref)
-               |{
-               |  ${mkEncoder(c.args.head, q"i", wref).shift(2).trim}
+            q"""$wref.writeInt($ref.size)
+               |$ref.foreach {
+               |  i =>
+               |    ${mkEncoder(c.args.head, q"i", wref).shift(4).trim}
                |}""".stripMargin
 
           case o =>
