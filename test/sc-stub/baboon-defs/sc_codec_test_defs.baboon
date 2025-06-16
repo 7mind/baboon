@@ -1,0 +1,52 @@
+model scstub.codectests
+
+version "1.0.0"
+
+root enum MyTestEnum {
+    ALPHA
+    BETA
+    GAMMA
+}
+
+root data MyTestDto {
+    fieldStr: str
+    fieldI08: i08
+    fieldI16: i16
+    fieldI32: i32
+    fieldI64: i64
+    fieldU08: u08
+    fieldU16: u16
+    fieldU32: u32
+    fieldU64: u64
+    fieldF32: f32
+    fieldF64: f64
+    // fieldF128: f128 // Depending on support
+    fieldBool: bit
+    fieldUid: uid
+    fieldTsu: tsu
+    fieldTso: tso
+
+    optField: opt[str]
+    listField: lst[MyTestEnum]
+    mapField: map[str, i32]
+}
+
+root adt MyTestAdt {
+    BranchA {
+        valueA: str
+    }
+    BranchB {
+        valueB: i32
+        common: opt[MyTestEnum]
+    }
+}
+
+// A DTO that includes the ADT and Enum
+root data MyComplexDto {
+    id: uid
+    enumVal: MyTestEnum
+    adtVal: MyTestAdt
+    optAdtVal: opt[MyTestAdt]
+    listAdt: lst[MyTestAdt]
+    mapEnumToAdt: map[MyTestEnum, MyTestAdt]
+}
