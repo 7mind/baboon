@@ -300,11 +300,28 @@ class ScJsonCodecGenerator(
             q"""io.circe.Json.fromString($ref.toString())"""
           case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
             q"""io.circe.Json.fromString($baboonTimeFormats.format($ref))"""
-          case _: TypeId.BuiltinScalar =>
-            q"""io.circe.Json.fromString($ref.toString())"""
+
+          case TypeId.Builtins.bit => q"""io.circe.Json.fromBoolean($ref)"""
+          case TypeId.Builtins.i08 => q"""io.circe.Json.fromInt($ref)"""
+          case TypeId.Builtins.i16 => q"""io.circe.Json.fromInt($ref)"""
+          case TypeId.Builtins.i32 => q"""io.circe.Json.fromInt($ref)"""
+          case TypeId.Builtins.i64 => q"""io.circe.Json.fromLong($ref)"""
+          case TypeId.Builtins.u08 => q"""io.circe.Json.fromInt($ref)"""
+          case TypeId.Builtins.u16 => q"""io.circe.Json.fromInt($ref)"""
+          case TypeId.Builtins.u32 => q"""io.circe.Json.fromInt($ref)"""
+          case TypeId.Builtins.u64 => q"""io.circe.Json.fromLong($ref)"""
+
+          case TypeId.Builtins.f32  => q"""io.circe.Json.fromFloat($ref).get"""
+          case TypeId.Builtins.f64  => q"""io.circe.Json.fromDouble($ref).get"""
+          case TypeId.Builtins.f128 => q"""io.circe.Json.fromBigDecimal($ref)"""
+
+          case TypeId.Builtins.str =>
+            q"""io.circe.Json.fromString($ref)"""
           case u: TypeId.User =>
             val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
             q"""$targetTpe.instance.encode(ctx, $ref)"""
+          case o =>
+            throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
       case c: TypeRef.Constructor =>
         c.id match {
