@@ -456,22 +456,14 @@ class ScUEBACodecGenerator(
         c.id match {
           case TypeId.Builtins.opt =>
             q"""( if (wire.read() == 0) $scOption.empty else $scOption(${mkDecoder(c.args.head)}) )""".stripMargin
-
           case TypeId.Builtins.map =>
             val keyDecoder   = mkDecoder(c.args.head)
-            val keyType      = trans.asScRef(c.args.head, domain, evo)
             val valueDecoder = mkDecoder(c.args.last)
-            val valueType    = trans.asScRef(c.args.last, domain, evo)
-//            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(_ => new $csKeyValuePair<$keyType, $valueType>($keyDecoder, $valueDecoder)).${ScTypes.mkDict}"""
-            q"/*map*/ ???"
-
+            q"(0 until wire.readInt()).map(_ => ($keyDecoder -> $valueDecoder)).toMap"
           case TypeId.Builtins.lst =>
-            q"/*list*/ ???"
-//            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(_ => ${mkDecoder(c.args.head)}).${ScTypes.mkList}"""
-
+            q"(0 until wire.readInt()).map(_ => ${mkDecoder(c.args.head)}).toList"
           case TypeId.Builtins.set =>
-//            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(_ => ${mkDecoder(c.args.head)}).${ScTypes.mkSet}"""
-            q"/*set*/ ???"
+            q"(0 until wire.readInt()).map(_ => ${mkDecoder(c.args.head)}).toSet"
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
