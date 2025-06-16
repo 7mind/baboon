@@ -1,5 +1,6 @@
 package baboon.runtime.shared {
 
+  import java.io.{DataInputStream, DataOutputStream}
   import java.time.OffsetDateTime
   import java.util.concurrent.atomic.AtomicReference
 
@@ -141,8 +142,23 @@ package baboon.runtime.shared {
   }
 
   object BaboonTimeFormats {
-    def parse(s: String): Option[OffsetDateTime] = ???
-    def format(s: OffsetDateTime): String        = ???
+    def parse(s: String): Option[OffsetDateTime]          = ???
+    def format(s: OffsetDateTime): String                 = ???
+    def decodeFromBin(s: DataInputStream): OffsetDateTime = ???
   }
 
+  trait BaboonBinCodec[T] {
+    def encode(ctx: BaboonCodecContext, writer: DataOutputStream, value: T): Unit
+    def decode(ctx: BaboonCodecContext, wire: DataInputStream): T
+  }
+  trait BaboonBinCodecIndexed {
+    def readIndex(ctx: BaboonCodecContext, wire: DataInputStream): BaboonIndex = ???
+  }
+
+  object BaboonBinTools {
+    def readString(s: DataInputStream): String         = ???
+    def readBigDecimal(s: DataInputStream): BigDecimal = ???
+  }
+
+  case class BaboonIndex(count: Int)
 }

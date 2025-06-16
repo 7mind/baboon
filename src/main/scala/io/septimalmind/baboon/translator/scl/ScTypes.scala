@@ -21,10 +21,13 @@ object ScTypes {
   val baboonAdtFixture: ScType          = ScType(baboonRuntimePkg, "BaboonAdtFixture")
   val baboonRandom: ScType              = ScType(baboonRuntimePkg, "BaboonRandom")
   val baboonJsonCodec: ScType           = ScType(baboonRuntimePkg, "BaboonJsonCodec")
+  val baboonBinCodec: ScType            = ScType(baboonRuntimePkg, "BaboonBinCodec")
+  val baboonBinCodecIndexed: ScType     = ScType(baboonRuntimePkg, "BaboonBinCodecIndexed")
   val baboonTimeFormats: ScType         = ScType(baboonRuntimePkg, "BaboonTimeFormats")
   val baboonTools: ScType               = ScType(baboonRuntimePkg, "BaboonTools")
   val baboonCodecContext: ScType        = ScType(baboonRuntimePkg, "BaboonCodecContext")
   val baboonLazy: ScType                = ScType(baboonRuntimePkg, "Lazy")
+  val baboonBinTools: ScType            = ScType(baboonRuntimePkg, "BaboonBinTools")
 
   val scalaPkg: ScPackageId = ScPackageId(NEList("_root_", "scala"))
 
@@ -60,8 +63,14 @@ object ScTypes {
 
   val javaLangPkg: ScPackageId = ScPackageId(NEList("_root_", "java", "lang"))
   val scString: ScType         = ScType(javaLangPkg, "String")
+  val genericException: ScType = ScType(javaLangPkg, "RuntimeException")
 
   val javaTimePkg: ScPackageId = ScPackageId(NEList("_root_", "java", "time"))
   val scTime: ScType           = ScType(javaTimePkg, "OffsetDateTime")
+
+  val javaIoPkg: ScPackageId = ScPackageId(NEList("_root_", "java", "io"))
+
+  val binaryInput: ScType  = ScType(javaIoPkg, "DataInputStream")
+  val binaryOutput: ScType = ScType(javaIoPkg, "DataOutputStream")
 
 }
