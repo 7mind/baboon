@@ -7,42 +7,72 @@ function run-test() {
 
   target/graalvm-native-image/baboon \
             --model-dir ./src/test/resources/baboon/ \
+            --meta-write-evolution-json baboon-meta.json \
+            \
             :cs \
             --output ./test/cs-stub/BaboonDefinitions/Generated \
             --test-output ./test/cs-stub/BaboonTests/GeneratedTests \
             --fixture-output ./test/cs-stub/BaboonTests/GeneratedFixtures \
             --cs-use-compact-adt-form true \
             --cs-wrapped-adt-branch-codecs false \
-            --meta-write-evolution-json baboon-meta.json \
-            --cs-write-evolution-dict true
-
+            --cs-write-evolution-dict true \
+            \
+            :scala \
+            --output=./test/sc-stub/src/main/scala/generated-main \
+            --test-output=./test/sc-stub/src/test/scala/generated-tests \
+            --fixture-output=./test/sc-stub/src/main/scala/generated-fixtures \
+            --sc-write-evolution-dict true \
+            --sc-wrapped-adt-branch-codecs false
+             
+  pushd .
   cd ./test/cs-stub
   dotnet build
   dotnet test BaboonTests/BaboonTests.csproj
-
+  popd
+  
+  pushd .
+  cd ./test/sc-stub
+  sbt +clean +test
+  popd
+  
   popd
 
   pushd .
 
   target/graalvm-native-image/baboon \
             --model-dir ./src/test/resources/baboon/ \
+            --meta-write-evolution-json baboon-meta.json \
+            \
             :cs \
             --output ./test/cs-stub/BaboonDefinitions/Generated \
             --test-output ./test/cs-stub/BaboonTests/GeneratedTests \
             --fixture-output ./test/cs-stub/BaboonTests/GeneratedFixtures \
             --cs-use-compact-adt-form false \
             --cs-wrapped-adt-branch-codecs true \
-            --meta-write-evolution-json baboon-meta.json \
-            --cs-write-evolution-dict true
+            --cs-write-evolution-dict true \
+            \
+            :scala \
+            --output=./test/sc-stub/src/main/scala/generated-main \
+            --test-output=./test/sc-stub/src/test/scala/generated-tests \
+            --fixture-output=./test/sc-stub/src/main/scala/generated-fixtures \
+            --sc-write-evolution-dict true \
+            --sc-wrapped-adt-branch-codecs true
 
 
   # workaround for https://github.com/NixOS/nixpkgs/issues/350806
   # export PATH=`echo $PATH | tr ":" "\n" | grep -v "dotnet-runtime-6" | tr "\n" ":"`
 
+  pushd .
   cd ./test/cs-stub
   dotnet build
   dotnet test BaboonTests/BaboonTests.csproj
-
+  popd 
+  
+  pushd .
+  cd ./test/sc-stub
+  sbt +clean +test
+  popd
+  
   popd
   
   pushd .
