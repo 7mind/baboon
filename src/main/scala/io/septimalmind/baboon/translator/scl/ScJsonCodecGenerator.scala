@@ -192,9 +192,11 @@ class ScJsonCodecGenerator(
     (
       q"""value match {
          |  ${branches.map(_._1).join("\n").shift(2).trim}
+         |  case _ => 
+         |    throw new IllegalArgumentException(s"Cannot encode $$value: unexpected subclass")
          |}
          |
-         |throw new IllegalArgumentException(s"Cannot encode $$value: unexpected subclass")
+         |
          |""".stripMargin,
       q"""val asObject = wire.asObject
          |if (asObject.isEmpty) {
@@ -258,9 +260,9 @@ class ScJsonCodecGenerator(
     val decBody =
       q"""val asObject = $fullDec
          |
-         |if (asObject.isEmpty) {
+         |/*if (asObject.isEmpty) {
          |  throw new IllegalArgumentException(s"Cannot decode $$wire to ${name.name}: object expected")
-         |}
+         |}*/
          |
          |Right($name(
          |  ${fields.map(_._2).join(",\n").shift(2).trim}

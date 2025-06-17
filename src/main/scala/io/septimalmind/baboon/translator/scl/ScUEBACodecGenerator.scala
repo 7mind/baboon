@@ -365,7 +365,7 @@ class ScUEBACodecGenerator(
        |
        |if (true)
        |{
-       |  assert(index.count == indexElementsCount(ctx))
+       |  assert(index.size == indexElementsCount(ctx))
        |}
        |
        |$name(
@@ -445,7 +445,7 @@ class ScUEBACodecGenerator(
               case TypeId.Builtins.f128 => q"$baboonBinTools.readBigDecimal(wire)"
               case TypeId.Builtins.str  => q"$baboonBinTools.readString(wire)"
 
-              case TypeId.Builtins.uid                       => q"new $scUid(wire.readLong(), wire.readLong())"
+              case TypeId.Builtins.uid                       => q"$baboonBinTools.readUid(wire)"
               case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.decodeFromBin(wire)"
 
               case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
@@ -490,9 +490,9 @@ class ScUEBACodecGenerator(
               case TypeId.Builtins.u64                       => q"$wref.writeLong($ref)"
               case TypeId.Builtins.f32                       => q"$wref.writeFloat($ref)"
               case TypeId.Builtins.f64                       => q"$wref.writeDouble($ref)"
-              case TypeId.Builtins.f128                      => q"???" // q"$wref.Write($ref)"
-              case TypeId.Builtins.str                       => q"???" // q"$wref.Write($ref)"
-              case TypeId.Builtins.uid                       => q"???" // q"$wref.Write($ref.ToByteArray())"
+              case TypeId.Builtins.f128                      => q"$baboonBinTools.writeBigDecimal($wref, $ref)"
+              case TypeId.Builtins.str                       => q"$baboonBinTools.writeString($wref, $ref)"
+              case TypeId.Builtins.uid                       => q"$baboonBinTools.writeUid($wref, $ref)"
               case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.encodeToBin($ref, $wref)"
               case o =>
                 throw new RuntimeException(s"BUG: Unexpected type: $o")

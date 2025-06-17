@@ -70,8 +70,13 @@ object ScTypes {
 
   val javaIoPkg: ScPackageId = ScPackageId(NEList("_root_", "java", "io"))
 
-  val binaryInput: ScType  = ScType(javaIoPkg, "DataInputStream")
-  val binaryOutput: ScType = ScType(javaIoPkg, "DataOutputStream")
+  val binaryInput: ScType           = ScType(javaIoPkg, "DataInputStream")
+  val binaryOutput: ScType          = ScType(javaIoPkg, "DataOutputStream")
   val byteArrayOutputStream: ScType = ScType(javaIoPkg, "ByteArrayOutputStream")
 
+  val scalatestPkg: ScPackageId = parseScPkg("org.scalatest.flatspec")
+  val anyFlatSpec: ScType       = ScType(scalatestPkg, "AnyFlatSpec")
+
+  def parsePkg(pkg: String): NEList[String] = NEList.unsafeFrom(pkg.split('.').toList)
+  def parseScPkg(pkg: String): ScPackageId  = ScPackageId(parsePkg(pkg))
 }

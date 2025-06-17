@@ -8,8 +8,10 @@ ThisBuild / organizationName := "example"
 lazy val root = (project in file("."))
   .settings(
     name := "sc-stub",
-    libraryDependencies += munit % Test,
-    libraryDependencies ++=  Seq(
+//    libraryDependencies += munit % Test,
+    libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.19" % "test",
+
+      libraryDependencies ++=  Seq(
       "io.circe" %% "circe-core",
       "io.circe" %% "circe-generic",
       "io.circe" %% "circe-parser",

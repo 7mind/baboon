@@ -77,7 +77,7 @@ object ScDefnTranslator {
       val fixtureTreeOut = makeFixtureRepr(defn).map {
         fixtureTreeWithNs =>
           Output(
-            getOutputPath(defn, suffix = Some(".fixture")),
+            getOutputPath(defn, suffix = Some("_Fixture")),
             fixtureTreeWithNs,
             trans.toScPkg(domain.id, domain.version, evo),
             CompilerProduct.Fixture,
@@ -106,7 +106,7 @@ object ScDefnTranslator {
       val codecTestOut = makeTestRepr(defn).map {
         codecTestWithNS =>
           Output(
-            getOutputPath(defn, suffix = Some(".tests")),
+            getOutputPath(defn, suffix = Some("_Tests")),
             codecTestWithNS,
             trans.toScPkg(domain.id, domain.version, evo),
             CompilerProduct.Test,
@@ -315,11 +315,11 @@ object ScDefnTranslator {
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
       val fbase = scFiles.basename(domain, evo)
-      val fname = s"${defn.id.name.name.capitalize}${suffix.getOrElse("")}.scala"
+      val fname = s"${defn.id.name.name}${suffix.getOrElse("")}.scala"
 
       defn.defn.id.owner match {
         case Owner.Toplevel => s"$fbase/$fname"
-        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString(".")}.$fname"
+        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString("_")}.$fname"
         case Owner.Adt(id)  => s"$fbase/${id.name.name.toLowerCase}.$fname"
       }
     }

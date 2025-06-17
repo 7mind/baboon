@@ -2,7 +2,13 @@ package baboon.runtime.shared {
 
   import java.io.{DataInputStream, DataOutputStream}
   import java.time.OffsetDateTime
+  import java.util.UUID
   import java.util.concurrent.atomic.AtomicReference
+  import java.nio.charset.StandardCharsets
+  import java.math.BigDecimal
+  import java.math.BigDecimal._
+  import java.nio.ByteBuffer
+  import scala.math.BigInt
 
   trait BaboonGenerated {}
   trait BaboonAdtMemberMeta {}
@@ -79,6 +85,13 @@ package baboon.runtime.shared {
     def mkMap[K, V](k: => K, v: => V): Map[K, V]
 
     def oneOf[T](elements: List[BaboonRandom => T]): T
+    def randomElement[T](elements: List[T]): T
+  }
+
+  object BaboonRandom {
+    def default(): BaboonRandom = {
+      new BaboonRandomImpl(scala.util.Random)
+    }
   }
 
   class BaboonRandomImpl(rnd: scala.util.Random) extends BaboonRandom {
@@ -96,7 +109,7 @@ package baboon.runtime.shared {
 
     def nextF32(): Float       = rnd.nextFloat()
     def nextF64(): Double      = rnd.nextDouble()
-    def nextF128(): BigDecimal = scala.math.BigDecimal(rnd.nextDouble())
+    def nextF128(): BigDecimal = scala.math.BigDecimal(rnd.nextDouble()).bigDecimal
 
     def nextTsu(): OffsetDateTime = java.time.OffsetDateTime.MIN.plusNanos(rnd.nextLong())
     def nextTso(): OffsetDateTime = java.time.OffsetDateTime.MIN.plusNanos(rnd.nextLong())
@@ -113,9 +126,16 @@ package baboon.runtime.shared {
     def oneOf[T](elements: List[BaboonRandom => T]): T = {
       elements(rnd.nextInt(elements.size))(this)
     }
+
+    def randomElement[T](elements: List[T]): T = {
+      elements(rnd.nextInt(elements.size))
+    }
   }
 
   trait BaboonCodecContext {}
+  object BaboonCodecContext {
+    object Default extends BaboonCodecContext {}
+  }
 
   trait BaboonJsonCodec[T] {
     def encode(ctx: BaboonCodecContext, value: T): io.circe.Json
@@ -153,14 +173,137 @@ package baboon.runtime.shared {
     def encode(ctx: BaboonCodecContext, writer: DataOutputStream, value: T): Unit
     def decode(ctx: BaboonCodecContext, wire: DataInputStream): T
   }
+
+  case class BaboonIndexEntry(offset: Long, length: Long)
+
   trait BaboonBinCodecIndexed {
-    def readIndex(ctx: BaboonCodecContext, wire: DataInputStream): BaboonIndex = ???
+    def indexElementsCount(ctx: BaboonCodecContext): Short
+
+    def readIndex(ctx: BaboonCodecContext, wire: DataInputStream): List[BaboonIndexEntry] = {
+      val header           = wire.readByte()
+      val isIndexed        = (header & 0x01) != 0
+      val result           = scala.collection.mutable.ListBuffer.empty[BaboonIndexEntry]
+      var prevOffset: Long = 0L
+      var prevLen: Long    = 0L
+
+      if (isIndexed) {
+        var left = indexElementsCount(ctx).toInt
+        while (left > 0) {
+          val offset = wire.readInt()
+          val len    = wire.readInt()
+
+          require(len > 0, "Length must be positive")
+          require(offset >= prevOffset + prevLen, s"Offset violation: $offset not >= ${prevOffset + prevLen}")
+
+          result += BaboonIndexEntry(offset, len)
+          left       = left - 1
+          prevOffset = offset
+          prevLen    = len
+        }
+      }
+
+      result.toList
+    }
   }
 
   object BaboonBinTools {
     def readString(s: DataInputStream): String         = ???
     def readBigDecimal(s: DataInputStream): BigDecimal = ???
+    def readUid(s: DataInputStream): UUID              = new UUID(s.readLong(), s.readLong())
+
+    def writeString(fakeWriter: DataOutputStream, v: String): Unit = ???
+    def writeUid(fakeWriter: DataOutputStream, v: UUID): Unit = {
+      fakeWriter.writeLong(v.getMostSignificantBits)
+      fakeWriter.writeLong(v.getLeastSignificantBits)
+    }
+    def writeBigDecimal(fakeWriter: DataOutputStream, v: scala.math.BigDecimal): Unit = ???
+
+    def read7BitEncodedInt(bytes: Array[Byte], offset: Int): (Int, Int) = {
+      var count = 0
+      var shift = 0
+      var pos   = offset
+      var b     = 0
+      do {
+        b = bytes(pos) & 0xFF
+        count |= (b & 0x7F) << shift
+        shift += 7
+        pos += 1
+      } while ((b & 0x80) != 0)
+      (count, pos)
+    }
+
+    def readCSharpBinaryWriterString(bytes: Array[Byte], offset: Int = 0): (String, Int) = {
+      // Step 1: Read the length prefix
+      val (length, stringStart) = read7BitEncodedInt(bytes, offset)
+      // Step 2: Read the UTF-8 bytes
+      val strBytes = bytes.slice(stringStart, stringStart + length)
+      val str      = new String(strBytes, StandardCharsets.UTF_8)
+      (str, stringStart + length)
+    }
+
+    import java.nio.charset.StandardCharsets
+
+    def write7BitEncodedInt(value: Int): Array[Byte] = {
+      var buffer = List[Byte]()
+      var v      = value
+      do {
+        var currentByte = (v & 0x7F).toByte
+        v                       = v >>> 7
+        if (v != 0) currentByte = (currentByte | 0x80).toByte
+        buffer                  = currentByte :: buffer
+      } while (v != 0)
+      buffer.reverse.toArray
+    }
+
+    def writeCSharpBinaryWriterString(s: String): Array[Byte] = {
+      val utf8Bytes   = s.getBytes(StandardCharsets.UTF_8)
+      val lengthBytes = write7BitEncodedInt(utf8Bytes.length)
+      lengthBytes ++ utf8Bytes
+    }
+
+    def cSharpDecimalBytesToBigDecimal(bytes: Array[Byte]): BigDecimal = {
+      require(bytes.length == 16, "C# Decimal byte array must be 16 bytes")
+
+      val buffer = ByteBuffer.wrap(bytes)
+      val lo     = buffer.getInt()
+      val mid    = buffer.getInt()
+      val hi     = buffer.getInt()
+      val flags  = buffer.getInt()
+
+      val scale      = (flags >> 16) & 0xFF
+      val isNegative = (flags & 0x80000000) != 0
+
+      // Compose 96-bit mantissa
+      val mantissa       = (BigInt(hi) << 64) | (BigInt(mid) << 32) | (BigInt(lo) & 0xFFFFFFFFL)
+      val signedMantissa = if (isNegative) -mantissa else mantissa
+
+      new java.math.BigDecimal(signedMantissa.bigInteger, scale)
+    }
+
+    def bigDecimalToCSharpDecimalBytes(value: BigDecimal): Array[Byte] = {
+      val unscaled = value.unscaledValue()
+      val scale    = value.scale
+      require(scale >= 0 && scale <= 28, "C# Decimal supports scale 0 to 28")
+      require(unscaled.bitLength <= 96, "C# Decimal mantissa must fit in 96 bits")
+
+      val sign  = if (value.signum < 0) 0x80000000 else 0x00000000
+      val flags = (scale << 16) | sign
+
+      val mantissa       = unscaled.abs().toByteArray
+      val mantissaPadded = Array.fill[Byte](12 - mantissa.length)(0) ++ mantissa.takeRight(12)
+
+      val buffer = ByteBuffer.allocate(16)
+      // lo (4 bytes)
+      buffer.putInt(mantissaPadded.slice(8, 12).foldLeft(0)((acc, b) => (acc << 8) | (b & 0xFF)))
+      // mid (4 bytes)
+      buffer.putInt(mantissaPadded.slice(4, 8).foldLeft(0)((acc, b) => (acc << 8) | (b & 0xFF)))
+      // hi (4 bytes)
+      buffer.putInt(mantissaPadded.slice(0, 4).foldLeft(0)((acc, b) => (acc << 8) | (b & 0xFF)))
+      // flags (4 bytes)
+      buffer.putInt(flags)
+      buffer.array()
+    }
+
   }
 
-  case class BaboonIndex(count: Int)
 }

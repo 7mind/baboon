@@ -107,7 +107,7 @@ class ScTypeTranslator(
       case Owner.Toplevel =>
         Seq.empty
       case Owner.Ns(path) =>
-        path.map(_.name)
+        path.map(_.name.toLowerCase)
       case Owner.Adt(id) =>
         val sub = renderOwner(id.owner) :+ scTypeInfo.adtNsName(id)
         sub

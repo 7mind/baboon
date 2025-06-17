@@ -23,7 +23,7 @@ object ScFileTools {
         base ++ Seq(dom.version.version)
       }
 
-      segments.mkString("-")
+      segments.mkString("/")
     }
 
   }
