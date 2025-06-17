@@ -300,9 +300,10 @@ class ScJsonCodecGenerator(
         id match {
           case TypeId.Builtins.uid =>
             q"""io.circe.Json.fromString($ref.toString())"""
-          case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-            q"""io.circe.Json.fromString($baboonTimeFormats.format($ref))"""
-
+          case TypeId.Builtins.tsu =>
+            q"""io.circe.Json.fromString($baboonTimeFormats.formatTsu($ref))"""
+          case TypeId.Builtins.tso =>
+            q"""io.circe.Json.fromString($baboonTimeFormats.formatTso($ref))"""
           case TypeId.Builtins.bit => q"""io.circe.Json.fromBoolean($ref)"""
           case TypeId.Builtins.i08 => q"""io.circe.Json.fromInt($ref)"""
           case TypeId.Builtins.i16 => q"""io.circe.Json.fromInt($ref)"""
@@ -358,33 +359,35 @@ class ScJsonCodecGenerator(
         case TypeId.Builtins.u32 => q"""$fref.flatMap(_.asNumber).flatMap(_.toInt).get"""
         case TypeId.Builtins.u64 => q"""$fref.flatMap(_.asNumber).flatMap(_.toLong).get"""
 
-        case TypeId.Builtins.f32                       => q"""$fref.flatMap(_.asNumber).map(_.toFloat).get"""
-        case TypeId.Builtins.f64                       => q"""$fref.flatMap(_.asNumber).map(_.toDouble).get"""
-        case TypeId.Builtins.f128                      => q"""$fref.flatMap(_.asNumber).flatMap(_.toBigDecimal).get"""
-        case TypeId.Builtins.str                       => q"""$fref.flatMap(_.asString).get"""
-        case TypeId.Builtins.uid                       => q"""$fref.flatMap(_.asString).map(java.util.UUID.fromString).get"""
-        case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"""$fref.flatMap(_.asString).flatMap($baboonTimeFormats.parse).get"""
-        case other                                     => throw new RuntimeException(s"BUG: Unexpected type: $other")
+        case TypeId.Builtins.f32  => q"""$fref.flatMap(_.asNumber).map(_.toFloat).get"""
+        case TypeId.Builtins.f64  => q"""$fref.flatMap(_.asNumber).map(_.toDouble).get"""
+        case TypeId.Builtins.f128 => q"""$fref.flatMap(_.asNumber).flatMap(_.toBigDecimal).get"""
+        case TypeId.Builtins.str  => q"""$fref.flatMap(_.asString).get"""
+        case TypeId.Builtins.uid  => q"""$fref.flatMap(_.asString).map(java.util.UUID.fromString).get"""
+        case TypeId.Builtins.tsu  => q"""$fref.flatMap(_.asString).flatMap($baboonTimeFormats.parseTsu).get"""
+        case TypeId.Builtins.tso  => q"""$fref.flatMap(_.asString).flatMap($baboonTimeFormats.parseTso).get"""
+        case other                => throw new RuntimeException(s"BUG: Unexpected type: $other")
       }
     }
 
     def decodeKey(tpe: TypeRef, ref: TextTree[ScValue]): TextTree[ScValue] = {
       tpe.id match {
-        case TypeId.Builtins.bit                       => q"""$ref.toBoolean"""
-        case TypeId.Builtins.i08                       => q"""$ref.toByte"""
-        case TypeId.Builtins.i16                       => q"""$ref.toShort"""
-        case TypeId.Builtins.i32                       => q"""$ref.toInt"""
-        case TypeId.Builtins.i64                       => q"""$ref.toLong"""
-        case TypeId.Builtins.u08                       => q"""$ref.toByte"""
-        case TypeId.Builtins.u16                       => q"""$ref.toShort"""
-        case TypeId.Builtins.u32                       => q"""$ref.toInt"""
-        case TypeId.Builtins.u64                       => q"""$ref.toLong"""
-        case TypeId.Builtins.f32                       => q"""$ref.toFloat"""
-        case TypeId.Builtins.f64                       => q"""$ref.toDouble"""
-        case TypeId.Builtins.f128                      => q"""$ref.toBigDecimal"""
-        case TypeId.Builtins.str                       => ref
-        case TypeId.Builtins.uid                       => q"""java.util.UUID.fromString($ref.toString)"""
-        case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"""$baboonTimeFormats.parse($ref).get"""
+        case TypeId.Builtins.bit  => q"""$ref.toBoolean"""
+        case TypeId.Builtins.i08  => q"""$ref.toByte"""
+        case TypeId.Builtins.i16  => q"""$ref.toShort"""
+        case TypeId.Builtins.i32  => q"""$ref.toInt"""
+        case TypeId.Builtins.i64  => q"""$ref.toLong"""
+        case TypeId.Builtins.u08  => q"""$ref.toByte"""
+        case TypeId.Builtins.u16  => q"""$ref.toShort"""
+        case TypeId.Builtins.u32  => q"""$ref.toInt"""
+        case TypeId.Builtins.u64  => q"""$ref.toLong"""
+        case TypeId.Builtins.f32  => q"""$ref.toFloat"""
+        case TypeId.Builtins.f64  => q"""$ref.toDouble"""
+        case TypeId.Builtins.f128 => q"""$ref.toBigDecimal"""
+        case TypeId.Builtins.str  => ref
+        case TypeId.Builtins.uid  => q"""java.util.UUID.fromString($ref.toString)"""
+        case TypeId.Builtins.tsu  => q"""$baboonTimeFormats.parseTsu($ref).get"""
+        case TypeId.Builtins.tso  => q"""$baboonTimeFormats.parseTso($ref).get"""
 
         case uid: TypeId.User =>
           domain.defs.meta.nodes(uid) match {

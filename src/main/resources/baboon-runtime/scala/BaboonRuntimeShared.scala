@@ -3,7 +3,8 @@ package baboon.runtime.shared {
   import java.io.{DataInputStream, DataOutputStream}
   import java.math.BigDecimal
   import java.nio.charset.StandardCharsets
-  import java.time.OffsetDateTime
+  import java.time.{Instant, OffsetDateTime, ZoneOffset}
+  import java.time.format.DateTimeFormatter
   import java.util.UUID
   import java.util.concurrent.atomic.AtomicReference
 
@@ -108,8 +109,22 @@ package baboon.runtime.shared {
     def nextF64(): Double      = rnd.nextDouble()
     def nextF128(): BigDecimal = scala.math.BigDecimal(rnd.nextDouble()).bigDecimal
 
-    def nextTsu(): OffsetDateTime = java.time.OffsetDateTime.MIN.plusNanos(rnd.nextLong())
-    def nextTso(): OffsetDateTime = java.time.OffsetDateTime.MIN.plusNanos(rnd.nextLong())
+    val earliest: OffsetDateTime = OffsetDateTime.parse("2020-01-01T00:00:00Z")
+    val latest: OffsetDateTime   = OffsetDateTime.parse("2099-12-31T23:59:59Z")
+
+    def generateRandomOffsetDateTime(startInclusive: OffsetDateTime, endInclusive: OffsetDateTime): OffsetDateTime = {
+      val minSeconds    = startInclusive.toEpochSecond
+      val maxSeconds    = endInclusive.toEpochSecond
+      val randomSeconds = minSeconds + rnd.nextLong(maxSeconds - minSeconds)
+      OffsetDateTime.ofInstant(Instant.ofEpochSecond(randomSeconds), ZoneOffset.UTC)
+    }
+    def nextTsu(): OffsetDateTime = {
+      generateRandomOffsetDateTime(earliest, latest).withOffsetSameInstant(ZoneOffset.UTC)
+    }
+    def nextTso(): OffsetDateTime = {
+      generateRandomOffsetDateTime(earliest, latest).withOffsetSameInstant(ZoneOffset.ofHours(rnd.nextInt(36) - 18))
+    }
+
     def nextUid(): java.util.UUID = java.util.UUID.randomUUID()
     def nextString(): String      = rnd.alphanumeric.take(10).mkString
 
@@ -159,8 +174,16 @@ package baboon.runtime.shared {
   }
 
   object BaboonTimeFormats {
-    def parse(s: String): Option[OffsetDateTime]                             = ???
-    def format(s: OffsetDateTime): String                                    = ???
+
+    val tsuFormat: DateTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME // DateTimeFormatter.ofPattern("yyyy-MM-ddTHH:mm:ss.fffZ")
+    val tsoFormat: DateTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME // DateTimeFormatter.ofPattern("yyyy-MM-ddTHH:mm:ss.fffzzz")
+
+    def parseTso(s: String): Option[OffsetDateTime] = Some(OffsetDateTime.parse(s, tsoFormat))
+    def parseTsu(s: String): Option[OffsetDateTime] = Some(OffsetDateTime.parse(s, tsuFormat))
+
+    def formatTsu(s: OffsetDateTime): String = s.format(tsuFormat)
+    def formatTso(s: OffsetDateTime): String = s.format(tsoFormat)
+
     def decodeFromBin(s: DataInputStream): OffsetDateTime                    = ???
     def encodeToBin(f09: OffsetDateTime, fakeWriter: DataOutputStream): Unit = ???
 
