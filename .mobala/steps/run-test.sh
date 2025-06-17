@@ -83,8 +83,9 @@ function run-test() {
   target/graalvm-native-image/baboon  \
     --model-dir ./test/conv-test \
     :cs \
-    --output ./test/conv-test-cs/ConvTest/Generated
-
+    --output ./test/conv-test-cs/ConvTest/Generated \
+    :scala \
+    --output=./test/conv-test-sc/src/main/scala/generated-main
 
       
   cd ./test/conv-test-cs
