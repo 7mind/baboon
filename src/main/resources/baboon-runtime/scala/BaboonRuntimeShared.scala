@@ -184,8 +184,35 @@ package baboon.runtime.shared {
     def formatTsu(s: OffsetDateTime): String = s.format(tsuFormat)
     def formatTso(s: OffsetDateTime): String = s.format(tsoFormat)
 
-    def decodeFromBin(s: DataInputStream): OffsetDateTime                    = ???
-    def encodeToBin(f09: OffsetDateTime, fakeWriter: DataOutputStream): Unit = ???
+    def decodeTsuFromBin(s: DataInputStream): OffsetDateTime = decodeFromBin(s)
+    def decodeTsoFromBin(s: DataInputStream): OffsetDateTime = decodeFromBin(s)
+
+    def decodeFromBin(s: DataInputStream): OffsetDateTime = {
+      val millis       = s.readLong()
+      val offsetMillis = s.readLong()
+      val kind         = s.readByte()
+
+      val instant = Instant.ofEpochMilli(millis)
+      val offset  = ZoneOffset.ofTotalSeconds((offsetMillis / 1000).toInt)
+
+      OffsetDateTime.ofInstant(instant, offset)
+    }
+
+    def encodeTsuToBin(dt: OffsetDateTime, writer: DataOutputStream): Unit = {
+      encodeToBin(dt, writer, 1)
+    }
+
+    def encodeTsoToBin(dt: OffsetDateTime, writer: DataOutputStream): Unit = {
+      encodeToBin(dt, writer, 0)
+    }
+
+    def encodeToBin(dt: OffsetDateTime, writer: DataOutputStream, kind: Byte): Unit = {
+      val millis       = dt.toInstant.toEpochMilli
+      val offsetMillis = dt.getOffset.getTotalSeconds * 1000L
+      writer.writeLong(millis)
+      writer.writeLong(offsetMillis)
+      writer.writeByte(kind)
+    }
 
   }
 

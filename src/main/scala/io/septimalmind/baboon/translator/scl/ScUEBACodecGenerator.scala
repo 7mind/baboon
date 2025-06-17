@@ -445,8 +445,9 @@ class ScUEBACodecGenerator(
               case TypeId.Builtins.f128 => q"$baboonBinTools.readBigDecimal(wire)"
               case TypeId.Builtins.str  => q"$baboonBinTools.readString(wire)"
 
-              case TypeId.Builtins.uid                       => q"$baboonBinTools.readUid(wire)"
-              case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.decodeFromBin(wire)"
+              case TypeId.Builtins.uid => q"$baboonBinTools.readUid(wire)"
+              case TypeId.Builtins.tsu => q"$baboonTimeFormats.decodeTsuFromBin(wire)"
+              case TypeId.Builtins.tso => q"$baboonTimeFormats.decodeTsoFromBin(wire)"
 
               case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
@@ -479,21 +480,22 @@ class ScUEBACodecGenerator(
         id match {
           case s: TypeId.BuiltinScalar =>
             s match {
-              case TypeId.Builtins.bit                       => q"$wref.writeBoolean($ref)"
-              case TypeId.Builtins.i08                       => q"$wref.writeByte($ref)"
-              case TypeId.Builtins.i16                       => q"$wref.writeShort($ref)"
-              case TypeId.Builtins.i32                       => q"$wref.writeInt($ref)"
-              case TypeId.Builtins.i64                       => q"$wref.writeLong($ref)"
-              case TypeId.Builtins.u08                       => q"$wref.writeByte($ref)"
-              case TypeId.Builtins.u16                       => q"$wref.writeShort($ref)"
-              case TypeId.Builtins.u32                       => q"$wref.writeInt($ref)"
-              case TypeId.Builtins.u64                       => q"$wref.writeLong($ref)"
-              case TypeId.Builtins.f32                       => q"$wref.writeFloat($ref)"
-              case TypeId.Builtins.f64                       => q"$wref.writeDouble($ref)"
-              case TypeId.Builtins.f128                      => q"$baboonBinTools.writeBigDecimal($wref, $ref)"
-              case TypeId.Builtins.str                       => q"$baboonBinTools.writeString($wref, $ref)"
-              case TypeId.Builtins.uid                       => q"$baboonBinTools.writeUid($wref, $ref)"
-              case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.encodeToBin($ref, $wref)"
+              case TypeId.Builtins.bit  => q"$wref.writeBoolean($ref)"
+              case TypeId.Builtins.i08  => q"$wref.writeByte($ref)"
+              case TypeId.Builtins.i16  => q"$wref.writeShort($ref)"
+              case TypeId.Builtins.i32  => q"$wref.writeInt($ref)"
+              case TypeId.Builtins.i64  => q"$wref.writeLong($ref)"
+              case TypeId.Builtins.u08  => q"$wref.writeByte($ref)"
+              case TypeId.Builtins.u16  => q"$wref.writeShort($ref)"
+              case TypeId.Builtins.u32  => q"$wref.writeInt($ref)"
+              case TypeId.Builtins.u64  => q"$wref.writeLong($ref)"
+              case TypeId.Builtins.f32  => q"$wref.writeFloat($ref)"
+              case TypeId.Builtins.f64  => q"$wref.writeDouble($ref)"
+              case TypeId.Builtins.f128 => q"$baboonBinTools.writeBigDecimal($wref, $ref)"
+              case TypeId.Builtins.str  => q"$baboonBinTools.writeString($wref, $ref)"
+              case TypeId.Builtins.uid  => q"$baboonBinTools.writeUid($wref, $ref)"
+              case TypeId.Builtins.tsu  => q"$baboonTimeFormats.encodeTsuToBin($ref, $wref)"
+              case TypeId.Builtins.tso  => q"$baboonTimeFormats.encodeTsoToBin($ref, $wref)"
               case o =>
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
