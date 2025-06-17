@@ -1,14 +1,11 @@
 package baboon.runtime.shared {
 
   import java.io.{DataInputStream, DataOutputStream}
+  import java.math.BigDecimal
+  import java.nio.charset.StandardCharsets
   import java.time.OffsetDateTime
   import java.util.UUID
   import java.util.concurrent.atomic.AtomicReference
-  import java.nio.charset.StandardCharsets
-  import java.math.BigDecimal
-  import java.math.BigDecimal._
-  import java.nio.ByteBuffer
-  import scala.math.BigInt
 
   trait BaboonGenerated {}
   trait BaboonAdtMemberMeta {}
@@ -207,83 +204,61 @@ package baboon.runtime.shared {
   }
 
   object BaboonBinTools {
-    def readString(s: DataInputStream): String         = ???
-    def readBigDecimal(s: DataInputStream): BigDecimal = ???
-    def readUid(s: DataInputStream): UUID              = new UUID(s.readLong(), s.readLong())
-
-    def writeString(fakeWriter: DataOutputStream, v: String): Unit = ???
+    def readUid(s: DataInputStream): UUID = new UUID(s.readLong(), s.readLong())
     def writeUid(fakeWriter: DataOutputStream, v: UUID): Unit = {
       fakeWriter.writeLong(v.getMostSignificantBits)
       fakeWriter.writeLong(v.getLeastSignificantBits)
     }
-    def writeBigDecimal(fakeWriter: DataOutputStream, v: scala.math.BigDecimal): Unit = ???
 
-    def read7BitEncodedInt(bytes: Array[Byte], offset: Int): (Int, Int) = {
-      var count = 0
-      var shift = 0
-      var pos   = offset
-      var b     = 0
+    def readString(input: DataInputStream): String = {
+      var length   = 0
+      var shift    = 0
+      var byteRead = 0
+
       do {
-        b = bytes(pos) & 0xFF
-        count |= (b & 0x7F) << shift
+        byteRead = input.readByte() & 0xFF // Read unsigned byte
+        length |= (byteRead & 0x7F) << shift
         shift += 7
-        pos += 1
-      } while ((b & 0x80) != 0)
-      (count, pos)
+      } while ((byteRead & 0x80) != 0)
+
+      val buffer = new Array[Byte](length)
+      input.readFully(buffer)
+      new String(buffer, StandardCharsets.UTF_8)
     }
+    def writeString(output: DataOutputStream, s: String): Unit = {
+      val bytes = s.getBytes(StandardCharsets.UTF_8)
+      var value = bytes.length
 
-    def readCSharpBinaryWriterString(bytes: Array[Byte], offset: Int = 0): (String, Int) = {
-      // Step 1: Read the length prefix
-      val (length, stringStart) = read7BitEncodedInt(bytes, offset)
-      // Step 2: Read the UTF-8 bytes
-      val strBytes = bytes.slice(stringStart, stringStart + length)
-      val str      = new String(strBytes, StandardCharsets.UTF_8)
-      (str, stringStart + length)
-    }
-
-    import java.nio.charset.StandardCharsets
-
-    def write7BitEncodedInt(value: Int): Array[Byte] = {
-      var buffer = List[Byte]()
-      var v      = value
       do {
-        var currentByte = (v & 0x7F).toByte
-        v                       = v >>> 7
-        if (v != 0) currentByte = (currentByte | 0x80).toByte
-        buffer                  = currentByte :: buffer
-      } while (v != 0)
-      buffer.reverse.toArray
+        var currentByte = (value & 0x7F).toByte
+        value >>>= 7
+        if (value != 0) currentByte = (currentByte | 0x80).toByte
+        output.writeByte(currentByte)
+      } while (value != 0)
+
+      output.write(bytes)
     }
 
-    def writeCSharpBinaryWriterString(s: String): Array[Byte] = {
-      val utf8Bytes   = s.getBytes(StandardCharsets.UTF_8)
-      val lengthBytes = write7BitEncodedInt(utf8Bytes.length)
-      lengthBytes ++ utf8Bytes
-    }
-
-    def cSharpDecimalBytesToBigDecimal(bytes: Array[Byte]): BigDecimal = {
-      require(bytes.length == 16, "C# Decimal byte array must be 16 bytes")
-
-      val buffer = ByteBuffer.wrap(bytes)
-      val lo     = buffer.getInt()
-      val mid    = buffer.getInt()
-      val hi     = buffer.getInt()
-      val flags  = buffer.getInt()
+    def readBigDecimal(input: DataInputStream): BigDecimal = {
+      val lo    = input.readInt()
+      val mid   = input.readInt()
+      val hi    = input.readInt()
+      val flags = input.readInt()
 
       val scale      = (flags >> 16) & 0xFF
       val isNegative = (flags & 0x80000000) != 0
 
-      // Compose 96-bit mantissa
+      // Reconstruct 96-bit mantissa
       val mantissa       = (BigInt(hi) << 64) | (BigInt(mid) << 32) | (BigInt(lo) & 0xFFFFFFFFL)
       val signedMantissa = if (isNegative) -mantissa else mantissa
 
       new java.math.BigDecimal(signedMantissa.bigInteger, scale)
     }
 
-    def bigDecimalToCSharpDecimalBytes(value: BigDecimal): Array[Byte] = {
-      val unscaled = value.unscaledValue()
+    def writeBigDecimal(output: DataOutputStream, value: scala.math.BigDecimal): Unit = {
+      val unscaled = value.bigDecimal.unscaledValue()
       val scale    = value.scale
-      require(scale >= 0 && scale <= 28, "C# Decimal supports scale 0 to 28")
+      require(scale >= 0 && scale <= 28, "C# Decimal supports scale 0–28")
       require(unscaled.bitLength <= 96, "C# Decimal mantissa must fit in 96 bits")
 
       val sign  = if (value.signum < 0) 0x80000000 else 0x00000000
@@ -292,16 +267,15 @@ package baboon.runtime.shared {
       val mantissa       = unscaled.abs().toByteArray
       val mantissaPadded = Array.fill[Byte](12 - mantissa.length)(0) ++ mantissa.takeRight(12)
 
-      val buffer = ByteBuffer.allocate(16)
-      // lo (4 bytes)
-      buffer.putInt(mantissaPadded.slice(8, 12).foldLeft(0)((acc, b) => (acc << 8) | (b & 0xFF)))
-      // mid (4 bytes)
-      buffer.putInt(mantissaPadded.slice(4, 8).foldLeft(0)((acc, b) => (acc << 8) | (b & 0xFF)))
-      // hi (4 bytes)
-      buffer.putInt(mantissaPadded.slice(0, 4).foldLeft(0)((acc, b) => (acc << 8) | (b & 0xFF)))
-      // flags (4 bytes)
-      buffer.putInt(flags)
-      buffer.array()
+      // Split into 32-bit chunks (big-endian byte order)
+      val lo  = mantissaPadded.slice(8, 12).foldLeft(0)((acc, b) => (acc << 8) | (b & 0xFF))
+      val mid = mantissaPadded.slice(4, 8).foldLeft(0)((acc, b) => (acc << 8) | (b & 0xFF))
+      val hi  = mantissaPadded.slice(0, 4).foldLeft(0)((acc, b) => (acc << 8) | (b & 0xFF))
+
+      output.writeInt(lo)
+      output.writeInt(mid)
+      output.writeInt(hi)
+      output.writeInt(flags)
     }
 
   }
