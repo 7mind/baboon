@@ -5,7 +5,7 @@ import izumi.fundamentals.collections.nonempty.NEList
 import java.util.concurrent.atomic.AtomicReference
 
 object ScTypes {
-  val baboonRuntimePkg: ScPackageId = ScPackageId(NEList("_root_", "baboon", "runtime", "shared"))
+  val baboonRuntimePkg: ScPackageId = parseScPkg("_root_.baboon.runtime.shared")
 
   val baboonTypeCodecs: ScType = ScType(baboonRuntimePkg, "BaboonTypeCodecs")
 
@@ -29,7 +29,7 @@ object ScTypes {
   val baboonLazy: ScType                = ScType(baboonRuntimePkg, "Lazy")
   val baboonBinTools: ScType            = ScType(baboonRuntimePkg, "BaboonBinTools")
 
-  val scalaPkg: ScPackageId = ScPackageId(NEList("_root_", "scala"))
+  val scalaPkg: ScPackageId = parseScPkg("_root_.scala")
 
   val deprecated: ScType = ScType(scalaPkg, "deprecated")
 
@@ -46,29 +46,29 @@ object ScTypes {
   // Scala collection types
   val scOption: ScType = ScType(scalaPkg, "Option")
 
-  val scalaCollImmuPkg: ScPackageId = ScPackageId(NEList("_root_", "scala", "collection", "immutable"))
+  val scalaCollImmuPkg: ScPackageId = parseScPkg("_root_.scala.collection.immutable")
   val scList: ScType                = ScType(scalaCollImmuPkg, "List")
   val scSet: ScType                 = ScType(scalaCollImmuPkg, "Set")
   val scMap: ScType                 = ScType(scalaCollImmuPkg, "Map")
 
-  val scalaCollMutPkg: ScPackageId = ScPackageId(NEList("_root_", "scala", "collection", "mutable"))
+  val scalaCollMutPkg: ScPackageId = parseScPkg("_root_.scala.collection.mutable")
   val scMutMap: ScType             = ScType(scalaCollMutPkg, "Map")
 
-  val scalaUtilPkg: ScPackageId = ScPackageId(NEList("_root_", "scala", "util"))
+  val scalaUtilPkg: ScPackageId = parseScPkg("_root_.scala.util")
   val scEither: ScType          = ScType(scalaUtilPkg, "Either")
   val scRandom: ScType          = ScType(scalaUtilPkg, "Random")
 
-  val javaUtilPkg: ScPackageId = ScPackageId(NEList("_root_", "java", "util"))
+  val javaUtilPkg: ScPackageId = parseScPkg("_root_.java.util")
   val scUid: ScType            = ScType(javaUtilPkg, "UUID")
 
-  val javaLangPkg: ScPackageId = ScPackageId(NEList("_root_", "java", "lang"))
+  val javaLangPkg: ScPackageId = parseScPkg("_root_.java.lang")
   val scString: ScType         = ScType(javaLangPkg, "String")
   val genericException: ScType = ScType(javaLangPkg, "RuntimeException")
 
-  val javaTimePkg: ScPackageId = ScPackageId(NEList("_root_", "java", "time"))
+  val javaTimePkg: ScPackageId = parseScPkg("_root_.java.time")
   val scTime: ScType           = ScType(javaTimePkg, "OffsetDateTime")
 
-  val javaIoPkg: ScPackageId = ScPackageId(NEList("_root_", "java", "io"))
+  val javaIoPkg: ScPackageId = parseScPkg("_root_.java.io")
 
   val binaryInput: ScType           = ScType(javaIoPkg, "DataInputStream")
   val binaryOutput: ScType          = ScType(javaIoPkg, "DataOutputStream")
