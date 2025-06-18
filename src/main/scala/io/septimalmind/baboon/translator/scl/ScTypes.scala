@@ -29,6 +29,9 @@ object ScTypes {
   val baboonLazy: ScType                = ScType(baboonRuntimePkg, "Lazy")
   val baboonBinTools: ScType            = ScType(baboonRuntimePkg, "BaboonBinTools")
 
+  val binaryInput: ScType  = ScType(baboonRuntimePkg, "LEDataInputStream")
+  val binaryOutput: ScType = ScType(baboonRuntimePkg, "LEDataOutputStream")
+
   val scalaPkg: ScPackageId = parseScPkg("_root_.scala")
 
   val deprecated: ScType = ScType(scalaPkg, "deprecated")
@@ -70,12 +73,17 @@ object ScTypes {
 
   val javaIoPkg: ScPackageId = parseScPkg("_root_.java.io")
 
-  val binaryInput: ScType           = ScType(javaIoPkg, "DataInputStream")
-  val binaryOutput: ScType          = ScType(javaIoPkg, "DataOutputStream")
   val byteArrayOutputStream: ScType = ScType(javaIoPkg, "ByteArrayOutputStream")
+  val javaFile: ScType              = ScType(javaIoPkg, "File")
 
   val scalatestPkg: ScPackageId = parseScPkg("org.scalatest.flatspec")
   val anyFlatSpec: ScType       = ScType(scalatestPkg, "AnyFlatSpec")
+
+  val javaNioFilePkg = parseScPkg("java.nio.file")
+  val javaNioFiles   = ScType(javaNioFilePkg, "Files")
+
+  val javaNioCharsetPkg       = parseScPkg("java.nio.charset")
+  val javaNioStandardCharsets = ScType(javaNioCharsetPkg, "StandardCharsets")
 
   def parsePkg(pkg: String): NEList[String] = NEList.unsafeFrom(pkg.split('.').toList)
   def parseScPkg(pkg: String): ScPackageId  = ScPackageId(parsePkg(pkg))

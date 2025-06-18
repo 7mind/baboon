@@ -60,11 +60,11 @@ object CSCodecTestsTranslator {
              |{
              |    for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++)
              |    {
-             |        jsonCodecTestImpl($baboonCodecContext.Default);
+             |        jsonCodecTestImpl($baboonCodecContext.Default, "default");
              |    }
              |}
              |
-             |private void jsonCodecTestImpl($baboonCodecContext context) {
+             |private void jsonCodecTestImpl($baboonCodecContext context, $csString clue) {
              |    ${fixture.shift(4).trim}
              |    ${body.shift(4).trim}
              |}
@@ -77,7 +77,7 @@ object CSCodecTestsTranslator {
              |{
              |    for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++)
              |    {
-             |        uebaCodecTestImpl($baboonCodecContext.Compact);
+             |        uebaCodecTestImpl($baboonCodecContext.Compact, "compact");
              |    }
              |}
              |
@@ -86,11 +86,11 @@ object CSCodecTestsTranslator {
              |{
              |    for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++)
              |    {
-             |        uebaCodecTestImpl($baboonCodecContext.Indexed);
+             |        uebaCodecTestImpl($baboonCodecContext.Indexed, "indexed");
              |    }
              |}
              |
-             |private void uebaCodecTestImpl($baboonCodecContext context) {
+             |private void uebaCodecTestImpl($baboonCodecContext context, $csString clue) {
              |    ${fixture.shift(4).trim}
              |    ${body.shift(4).trim}
              |}
@@ -120,10 +120,12 @@ object CSCodecTestsTranslator {
         val fieldName  = q"fixture"
         val serialized = q"${fieldName}Json"
         val decoded    = q"${fieldName}Decoded"
+
         q"""var $serialized = $codecName.Instance.Encode(context, $fieldName);
            |var $decoded = $codecName.Instance.Decode(context, $serialized);
            |Assert.That($fieldName, Is.EqualTo($decoded));
-           |""".stripMargin
+           |$BaboonTestTools.WriteBinaryFile($$"./../../../../../target/cs/json-{clue}/${definition.id.render}.json", $csEncoding.UTF8.GetBytes($nsJsonConvert.SerializeObject($serialized)));
+           |""".stripMargin.trim
       }
 
       definition.defn match {
@@ -143,6 +145,7 @@ object CSCodecTestsTranslator {
         val fieldName  = q"fixture"
         val serialized = q"${fieldName}Bytes"
         val decoded    = q"${fieldName}Decoded"
+
         q"""using (var writeMemoryStream = new $memoryStream())
            |{
            |    using (var binaryWriter = new $binaryWriter(writeMemoryStream))
@@ -156,6 +159,8 @@ object CSCodecTestsTranslator {
            |    var binaryReader = new BinaryReader(readMemoryStream);
            |    var $decoded = $codecName.Instance.Decode(context, binaryReader);
            |    Assert.That($fieldName, Is.EqualTo($decoded));
+           |    
+           |    $BaboonTestTools.WriteBinaryFile($$"./../../../../../target/cs/ueba-{clue}/${definition.id.render}.uebin", $serialized);
            |}
            |""".stripMargin
       }

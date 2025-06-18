@@ -52,41 +52,92 @@ object ScCodecTestsTranslator {
       val fixture = makeFixture(definition, domain, evo)
       codecs.map {
         case jsonCodec: ScJsonCodecGenerator =>
-          val body = jsonCodecAssertions(jsonCodec, definition, srcRef)
+          val body      = jsonCodecAssertions(definition, srcRef)
+          val codecName = jsonCodec.codecName(srcRef)
+
           q"""
              |"${srcRef.toString}" should "support JSON codec" in {
              |  (0 to ${target.generic.codecTestIterations.toString}).foreach {
              |    _ =>
-             |    jsonCodecTestImpl($baboonCodecContext.Default, $baboonRandom.default())  
+             |    jsonCodecTestImpl($baboonCodecContext.Default, $baboonRandom.default(), "default")  
              |  }
              |}
              |
-             |def jsonCodecTestImpl(context: $baboonCodecContext, rnd: $baboonRandom): $scUnit = {
+             |"${srcRef.toString}" should "load JSON produced by C# codecs" in {
+             |  testCsJson($baboonCodecContext.Default, "default")
+             |}
+             |
+             |def jsonCodecTestImpl(context: $baboonCodecContext, rnd: $baboonRandom, clue: $scString): $scUnit = {
              |  ${fixture.shift(2).trim}
              |  ${body.shift(2).trim}
              |}
-             |""".stripMargin.trim
+             |
+             |def jsonCompare(context: $baboonCodecContext, fixture: $srcRef): $scUnit = {
+             |  val fixtureJson    = $codecName.instance.encode(context, fixture)
+             |  val fixtureDecoded = $codecName.instance.decode(context, fixtureJson).toOption.get
+             |  assert(fixture == fixtureDecoded)
+             |}
+             |
+             |def testCsJson(context: $baboonCodecContext, clue: $scString): $scUnit = {
+             |  val tpeid = "${definition.id.render}"
+             |  val f     = new $javaFile(s"./../target/cs/json-$$clue/$$tpeid.json")
+             |  assert(f.exists())
+             |  val b = $javaNioFiles.readAllBytes(f.toPath)
+             |  import io.circe.parser.parse
+             |  val dec = $codecName.instance.decode(context, parse(new $scString(b, $javaNioStandardCharsets.UTF_8)).toOption.get).toOption
+             |  assert(dec.nonEmpty)
+             |  jsonCompare(context, dec.get)
+             |}
+             |"""
 
         case uebaCodec: ScUEBACodecGenerator =>
-          val body = uebaCodecAssertions(uebaCodec, definition, srcRef)
+          val body      = uebaCodecAssertions(uebaCodec, definition, srcRef)
+          val codecName = uebaCodec.codecName(srcRef)
           q"""
              |"${srcRef.toString}" should "support UEBA codec" in {
              |  (0 to ${target.generic.codecTestIterations.toString}).foreach {
              |    _ =>
-             |    uebaCodecTestImpl($baboonCodecContext.Default, $baboonRandom.default())  
+             |    uebaCodecTestImpl($baboonCodecContext.Default, $baboonRandom.default(), "default")  
              |  }
              |}
              |
-             |def uebaCodecTestImpl(context: $baboonCodecContext, rnd: $baboonRandom): $scUnit = {
+             |def uebaCodecTestImpl(context: $baboonCodecContext, rnd: $baboonRandom, clue: $scString): $scUnit = {
              |  ${fixture.shift(2).trim}
              |  ${body.shift(2).trim}
              |}
-             |""".stripMargin
+             |
+             |"${srcRef.toString}" should "load UEBA produced by C# codecs" in {
+             |  testCsUeba($baboonCodecContext.Indexed, "indexed")
+             |  testCsUeba($baboonCodecContext.Compact, "compact")
+             |}
+             |
+             |def testCsUeba(context: $baboonCodecContext, clue: $scString): $scUnit = {
+             |  val tpeid = "${definition.id.render}"
+             |  val f     = new $javaFile(s"./../target/cs/ueba-$$clue/$$tpeid.uebin")
+             |  assert(f.exists())
+             |  val b = $javaNioFiles.readAllBytes(f.toPath)
+             |  val bais = new java.io.ByteArrayInputStream(b)
+             |  val dis = new $binaryInput(bais)
+             |  val dec = $codecName.instance.decode(context, dis)
+             |  uebaCompare(context, dec)
+             |}
+             |
+             |def uebaCompare(context: $baboonCodecContext, fixture: $srcRef): $scUnit = {
+             |  val baos = new java.io.ByteArrayOutputStream()
+             |  val dos = new $binaryOutput(baos)
+             |  $codecName.instance.encode(context, dos, fixture)
+             |  val bytes = baos.toByteArray
+             |  val bais = new java.io.ByteArrayInputStream(bytes)
+             |  val dis = new $binaryInput(bais)
+             |  val dec = $codecName.instance.decode(context, dis)
+             |  assert(fixture == dec)
+             |}
+             |"""
 
         case unknown =>
           logger.message(s"Cannot create codec tests (${unknown.codecName(srcRef)}) for unsupported type $srcRef")
           q""
-      }.toList.join("\n").shift(2).trim
+      }.toList.map(_.stripMargin.trim).join("\n\n").shift(2).trim
     }
 
     private def makeFixture(
@@ -101,57 +152,29 @@ object ScCodecTestsTranslator {
       }
     }
 
-    private def jsonCodecAssertions(codec: ScJsonCodecGenerator, definition: DomainMember.User, srcRef: ScValue.ScType): TextTree[ScValue] = {
-      def jsonTest: TextTree[ScValue.ScType] = {
-        val codecName  = codec.codecName(srcRef)
-        val fieldName  = q"fixture"
-        val serialized = q"${fieldName}Json"
-        val decoded    = q"${fieldName}Decoded"
-        q"""val $serialized = $codecName.instance.encode(context, $fieldName)
-           |val $decoded = $codecName.instance.decode(context, $serialized).toOption.get
-           |assert($fieldName == $decoded)
-           |""".stripMargin.trim
-      }
-
+    private def jsonCodecAssertions(definition: DomainMember.User, srcRef: ScValue.ScType): TextTree[ScValue] = {
       definition.defn match {
         case _: Typedef.Adt =>
           q"""fixtures.foreach {
              |  fixture =>
-             |    ${jsonTest.shift(4).trim}
+             |    jsonCompare(context, fixture)
              |}
              |""".stripMargin.trim
         case _ =>
-          jsonTest
+          q"jsonCompare(context, fixture)"
       }
     }
 
     private def uebaCodecAssertions(codec: ScUEBACodecGenerator, definition: DomainMember.User, srcRef: ScValue.ScType): TextTree[ScValue] = {
-      def binaryTest: TextTree[ScValue.ScType] = {
-        val codecName  = codec.codecName(srcRef)
-        val fieldName  = q"fixture"
-        val serialized = q"${fieldName}Bytes"
-        val decoded    = q"${fieldName}Decoded"
-
-        q"""val baos = new java.io.ByteArrayOutputStream()
-           |val dos = new java.io.DataOutputStream(baos)
-           |$codecName.instance.encode(context, dos, $fieldName);
-           |val $serialized = baos.toByteArray
-           |val bais = new java.io.ByteArrayInputStream($serialized)
-           |val dis = new java.io.DataInputStream(bais)
-           |val $decoded = $codecName.instance.decode(context, dis)
-           |assert($fieldName == $decoded)
-           |""".stripMargin.trim
-      }
-
       definition.defn match {
         case _: Typedef.Adt =>
           q"""fixtures.foreach {
              |  fixture =>
-             |    ${binaryTest.shift(4).trim}
+             |    uebaCompare(context, fixture)
              |}
              |""".stripMargin.trim
         case _ =>
-          binaryTest
+          q"uebaCompare(context, fixture)"
       }
     }
   }

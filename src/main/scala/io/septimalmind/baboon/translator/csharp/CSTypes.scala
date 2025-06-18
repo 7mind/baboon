@@ -70,6 +70,7 @@ object CSTypes {
   val nsJsonReader: CSType     = CSType(nsPkg, "JsonReader", fq = false)
   val nsJsonSerializer: CSType = CSType(nsPkg, "JsonSerializer", fq = false)
   val nsJsonConverter: CSType  = CSType(nsPkg, "JsonConverter", fq = false)
+  val nsJsonConvert: CSType  = CSType(nsPkg, "JsonConvert", fq = false)
   val nsFormatting: CSType     = CSType(nsPkg, "Formatting", fq = false)
   val nsJToken: CSType         = CSType(nsLinqPkg, "JToken", fq = false)
   val nsJValue: CSType         = CSType(nsLinqPkg, "JValue", fq = false)
@@ -87,6 +88,7 @@ object CSTypes {
   val csGuid: CSType          = CSType(csSystemPkg, "Guid", fq = false)
   val csBoolean: CSType       = CSType(csSystemPkg, "Boolean", fq = false)
   val csStringBuilder: CSType = CSType(csTextPkg, "StringBuilder", fq = false)
+  val csEncoding: CSType = CSType(csTextPkg, "Encoding", fq = false)
 
   val csSByte: CSType = CSType(csSystemPkg, "sbyte", fq = false)
   val csInt16: CSType = CSType(csSystemPkg, "Int16", fq = false)

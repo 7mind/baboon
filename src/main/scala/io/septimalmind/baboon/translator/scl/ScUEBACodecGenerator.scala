@@ -300,7 +300,7 @@ class ScUEBACodecGenerator(
     val fenc =
       q"""var header: $scByte = 0b0000000;
          |
-         |if (true)
+         |if (ctx.useIndices)
          |{
          |  header = (header | 0b0000001).toByte
          |  writer.writeByte(header)
@@ -363,7 +363,7 @@ class ScUEBACodecGenerator(
   private def dtoDec(name: ScValue.ScType, fields: List[(TextTree[ScValue], TextTree[ScValue])]) = {
     q"""val index = this.readIndex(ctx, wire)
        |
-       |if (true)
+       |if (ctx.useIndices)
        |{
        |  assert(index.size == indexElementsCount(ctx))
        |}

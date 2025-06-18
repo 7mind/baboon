@@ -1,12 +1,13 @@
 package baboon.runtime.shared {
 
-  import java.io.{DataInputStream, DataOutputStream}
+  import java.io.{DataInput, DataInputStream, DataOutput, DataOutputStream, IOException, InputStream, OutputStream}
   import java.math.BigDecimal
   import java.nio.charset.StandardCharsets
   import java.time.{Instant, OffsetDateTime, ZoneOffset}
   import java.time.format.DateTimeFormatter
   import java.util.UUID
   import java.util.concurrent.atomic.AtomicReference
+  import java.nio.{ByteBuffer, ByteOrder}
 
   trait BaboonGenerated {}
   trait BaboonAdtMemberMeta {}
@@ -144,9 +145,19 @@ package baboon.runtime.shared {
     }
   }
 
-  trait BaboonCodecContext {}
+  trait BaboonCodecContext {
+    def useIndices: Boolean
+  }
   object BaboonCodecContext {
-    object Default extends BaboonCodecContext {}
+    val Default: BaboonCodecContext = Compact
+
+    object Indexed extends BaboonCodecContext {
+      override def useIndices: Boolean = true
+    }
+
+    object Compact extends BaboonCodecContext {
+      override def useIndices: Boolean = false
+    }
   }
 
   trait BaboonJsonCodec[T] {
@@ -184,10 +195,10 @@ package baboon.runtime.shared {
     def formatTsu(s: OffsetDateTime): String = s.format(tsuFormat)
     def formatTso(s: OffsetDateTime): String = s.format(tsoFormat)
 
-    def decodeTsuFromBin(s: DataInputStream): OffsetDateTime = decodeFromBin(s)
-    def decodeTsoFromBin(s: DataInputStream): OffsetDateTime = decodeFromBin(s)
+    def decodeTsuFromBin(s: LEDataInputStream): OffsetDateTime = decodeFromBin(s)
+    def decodeTsoFromBin(s: LEDataInputStream): OffsetDateTime = decodeFromBin(s)
 
-    def decodeFromBin(s: DataInputStream): OffsetDateTime = {
+    def decodeFromBin(s: LEDataInputStream): OffsetDateTime = {
       val millis       = s.readLong()
       val offsetMillis = s.readLong()
       val kind         = s.readByte()
@@ -198,15 +209,15 @@ package baboon.runtime.shared {
       OffsetDateTime.ofInstant(instant, offset)
     }
 
-    def encodeTsuToBin(dt: OffsetDateTime, writer: DataOutputStream): Unit = {
+    def encodeTsuToBin(dt: OffsetDateTime, writer: LEDataOutputStream): Unit = {
       encodeToBin(dt, writer, 1)
     }
 
-    def encodeTsoToBin(dt: OffsetDateTime, writer: DataOutputStream): Unit = {
+    def encodeTsoToBin(dt: OffsetDateTime, writer: LEDataOutputStream): Unit = {
       encodeToBin(dt, writer, 0)
     }
 
-    def encodeToBin(dt: OffsetDateTime, writer: DataOutputStream, kind: Byte): Unit = {
+    def encodeToBin(dt: OffsetDateTime, writer: LEDataOutputStream, kind: Byte): Unit = {
       val millis       = dt.toInstant.toEpochMilli
       val offsetMillis = dt.getOffset.getTotalSeconds * 1000L
       writer.writeLong(millis)
@@ -217,8 +228,8 @@ package baboon.runtime.shared {
   }
 
   trait BaboonBinCodec[T] {
-    def encode(ctx: BaboonCodecContext, writer: DataOutputStream, value: T): Unit
-    def decode(ctx: BaboonCodecContext, wire: DataInputStream): T
+    def encode(ctx: BaboonCodecContext, writer: LEDataOutputStream, value: T): Unit
+    def decode(ctx: BaboonCodecContext, wire: LEDataInputStream): T
   }
 
   case class BaboonIndexEntry(offset: Long, length: Long)
@@ -226,7 +237,7 @@ package baboon.runtime.shared {
   trait BaboonBinCodecIndexed {
     def indexElementsCount(ctx: BaboonCodecContext): Short
 
-    def readIndex(ctx: BaboonCodecContext, wire: DataInputStream): List[BaboonIndexEntry] = {
+    def readIndex(ctx: BaboonCodecContext, wire: LEDataInputStream): List[BaboonIndexEntry] = {
       val header           = wire.readByte()
       val isIndexed        = (header & 0x01) != 0
       val result           = scala.collection.mutable.ListBuffer.empty[BaboonIndexEntry]
@@ -254,13 +265,13 @@ package baboon.runtime.shared {
   }
 
   object BaboonBinTools {
-    def readUid(s: DataInputStream): UUID = new UUID(s.readLong(), s.readLong())
-    def writeUid(fakeWriter: DataOutputStream, v: UUID): Unit = {
+    def readUid(s: LEDataInputStream): UUID = new UUID(s.readLong(), s.readLong())
+    def writeUid(fakeWriter: LEDataOutputStream, v: UUID): Unit = {
       fakeWriter.writeLong(v.getMostSignificantBits)
       fakeWriter.writeLong(v.getLeastSignificantBits)
     }
 
-    def readString(input: DataInputStream): String = {
+    def readString(input: LEDataInputStream): String = {
       var length   = 0
       var shift    = 0
       var byteRead = 0
@@ -275,7 +286,7 @@ package baboon.runtime.shared {
       input.readFully(buffer)
       new String(buffer, StandardCharsets.UTF_8)
     }
-    def writeString(output: DataOutputStream, s: String): Unit = {
+    def writeString(output: LEDataOutputStream, s: String): Unit = {
       val bytes = s.getBytes(StandardCharsets.UTF_8)
       var value = bytes.length
 
@@ -289,7 +300,7 @@ package baboon.runtime.shared {
       output.write(bytes)
     }
 
-    def readBigDecimal(input: DataInputStream): BigDecimal = {
+    def readBigDecimal(input: LEDataInputStream): BigDecimal = {
       val lo    = input.readInt()
       val mid   = input.readInt()
       val hi    = input.readInt()
@@ -305,7 +316,7 @@ package baboon.runtime.shared {
       new java.math.BigDecimal(signedMantissa.bigInteger, scale)
     }
 
-    def writeBigDecimal(output: DataOutputStream, value: scala.math.BigDecimal): Unit = {
+    def writeBigDecimal(output: LEDataOutputStream, value: scala.math.BigDecimal): Unit = {
       val unscaled = value.bigDecimal.unscaledValue()
       val scale    = value.scale
       require(scale >= 0 && scale <= 28, "C# Decimal supports scale 0–28")
@@ -327,7 +338,180 @@ package baboon.runtime.shared {
       output.writeInt(hi)
       output.writeInt(flags)
     }
+  }
 
+  class LEDataInputStream(stream: InputStream) extends InputStream with DataInput {
+    private val dataIn           = new DataInputStream(stream)
+    private val buffer           = ByteBuffer.allocate(8)
+    private var order: ByteOrder = ByteOrder.LITTLE_ENDIAN
+
+    @throws[IOException]
+    override def read(b: Array[Byte]): Int = dataIn.read(b)
+
+    @throws[IOException]
+    override def read(b: Array[Byte], off: Int, len: Int): Int = dataIn.read(b, off, len)
+
+    @throws[IOException]
+    override def readLine(): String = dataIn.readLine()
+
+    @throws[IOException]
+    override def readBoolean(): Boolean = dataIn.readBoolean()
+
+    @throws[IOException]
+    override def readByte(): Byte = dataIn.readByte()
+
+    @throws[IOException]
+    override def read(): Int = readByte()
+
+    override def markSupported(): Boolean = dataIn.markSupported()
+
+    override def mark(readlimit: Int): Unit = dataIn.mark(readlimit)
+
+    @throws[IOException]
+    override def reset(): Unit = dataIn.reset()
+
+    @throws[IOException]
+    override def readChar(): Char = dataIn.readChar()
+
+    @throws[IOException]
+    override def readFully(b: Array[Byte]): Unit = dataIn.readFully(b)
+
+    @throws[IOException]
+    override def readFully(b: Array[Byte], off: Int, len: Int): Unit = dataIn.readFully(b, off, len)
+
+    @throws[IOException]
+    override def readUTF(): String = dataIn.readUTF()
+
+    @throws[IOException]
+    override def skipBytes(n: Int): Int = dataIn.skipBytes(n)
+
+    @throws[IOException]
+    override def readDouble(): Double = {
+      val tmp = readLong()
+      java.lang.Double.longBitsToDouble(tmp)
+    }
+
+    @throws[IOException]
+    override def readFloat(): Float = {
+      val tmp = readInt()
+      java.lang.Float.intBitsToFloat(tmp)
+    }
+
+    @throws[IOException]
+    override def readInt(): Int = {
+      buffer.clear()
+      buffer
+        .order(ByteOrder.BIG_ENDIAN)
+        .putInt(dataIn.readInt())
+        .flip()
+      buffer.order(order).getInt()
+    }
+
+    @throws[IOException]
+    override def readLong(): Long = {
+      buffer.clear()
+      buffer
+        .order(ByteOrder.BIG_ENDIAN)
+        .putLong(dataIn.readLong())
+        .flip()
+      buffer.order(order).getLong()
+    }
+
+    @throws[IOException]
+    override def readShort(): Short = {
+      buffer.clear()
+      buffer
+        .order(ByteOrder.BIG_ENDIAN)
+        .putShort(dataIn.readShort())
+        .flip()
+      buffer.order(order).getShort()
+    }
+
+    @throws[IOException]
+    override def readUnsignedByte(): Int = dataIn.readByte() & 0xFF
+
+    @throws[IOException]
+    override def readUnsignedShort(): Int = readShort() & 0xFFFF
+  }
+
+  class LEDataOutputStream(stream: OutputStream) extends OutputStream with DataOutput {
+    private val dataOut          = new DataOutputStream(stream)
+    private val buffer           = ByteBuffer.allocate(8)
+    private val order: ByteOrder = ByteOrder.LITTLE_ENDIAN
+
+    // OutputStream implementation
+    @throws[IOException]
+    override def write(b: Int): Unit = dataOut.write(b)
+
+    @throws[IOException]
+    override def write(b: Array[Byte]): Unit = dataOut.write(b)
+
+    @throws[IOException]
+    override def write(b: Array[Byte], off: Int, len: Int): Unit =
+      dataOut.write(b, off, len)
+
+    @throws[IOException]
+    override def flush(): Unit = dataOut.flush()
+
+    @throws[IOException]
+    override def close(): Unit = dataOut.close()
+
+    // DataOutput implementation
+    @throws[IOException]
+    override def writeBoolean(v: Boolean): Unit = dataOut.writeBoolean(v)
+
+    @throws[IOException]
+    override def writeByte(v: Int): Unit = dataOut.writeByte(v)
+
+    @throws[IOException]
+    override def writeBytes(s: String): Unit = dataOut.writeBytes(s)
+
+    @throws[IOException]
+    override def writeChar(v: Int): Unit = {
+      buffer.clear()
+      buffer.order(order).putChar(v.toChar)
+      buffer.flip()
+      dataOut.write(buffer.array(), 0, 2)
+    }
+
+    @throws[IOException]
+    override def writeChars(s: String): Unit =
+      s.foreach(c => writeChar(c))
+
+    @throws[IOException]
+    override def writeDouble(v: Double): Unit =
+      writeLong(java.lang.Double.doubleToLongBits(v))
+
+    @throws[IOException]
+    override def writeFloat(v: Float): Unit =
+      writeInt(java.lang.Float.floatToIntBits(v))
+
+    @throws[IOException]
+    override def writeInt(v: Int): Unit = {
+      buffer.clear()
+      buffer.order(order).putInt(v)
+      buffer.flip()
+      dataOut.write(buffer.array(), 0, 4)
+    }
+
+    @throws[IOException]
+    override def writeLong(v: Long): Unit = {
+      buffer.clear()
+      buffer.order(order).putLong(v)
+      buffer.flip()
+      dataOut.write(buffer.array(), 0, 8)
+    }
+
+    @throws[IOException]
+    override def writeShort(v: Int): Unit = {
+      buffer.clear()
+      buffer.order(order).putShort(v.toShort)
+      buffer.flip()
+      dataOut.write(buffer.array(), 0, 2)
+    }
+
+    @throws[IOException]
+    override def writeUTF(s: String): Unit = dataOut.writeUTF(s)
   }
 
 }

@@ -157,6 +157,10 @@ object TypeId {
     override def toString: String = {
       s"$pkg/$owner#${name.name}"
     }
+
+    def render: String = {
+      (pkg.path ++ owner.asPseudoPkg ++ Seq(name.name)).mkString(".")
+    }
   }
 
   object Builtins {
