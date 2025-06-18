@@ -464,4 +464,17 @@ namespace Baboon.Runtime.Shared {
             return "()";
         }
     }
+    
+    public static class BaboonTestTools {
+        public static void WriteBinaryFile(string filePath, byte[] data)
+        {
+            string directoryPath = Path.GetDirectoryName(filePath);
+            if (!string.IsNullOrEmpty(directoryPath) && !Directory.Exists(directoryPath))
+            {
+                Directory.CreateDirectory(directoryPath);
+            }
+            File.WriteAllBytes(filePath, data);
+        }
+    }
+
 }

@@ -36,6 +36,7 @@ object CSTypes {
   val iBaboonAdtMemberMeta: CSType      = CSType(baboonRuntimePkg, "IBaboonAdtMemberMeta", fq = false)
   val iBaboonGeneratedLatest: CSType    = CSType(baboonRuntimePkg, "IBaboonGeneratedLatest", fq = false)
   val BaboonTools: CSType               = CSType(baboonRuntimePkg, "BaboonTools", fq = false)
+  val BaboonTestTools: CSType           = CSType(baboonRuntimePkg, "BaboonTestTools", fq = false)
 
   // Baboon codec types
   val iBaboonCodecData: CSType       = CSType(baboonRuntimePkg, "IBaboonCodecData", fq = false)
