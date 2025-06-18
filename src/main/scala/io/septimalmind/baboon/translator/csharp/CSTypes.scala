@@ -143,4 +143,7 @@ object CSTypes {
   val mkDict = q"BbnToDictionary()"
   val mkList = q"BbnToList()"
   val mkSet  = q"ToImmutableHashSet()"
+
+  def parsePkg(pkg: String): NEList[String] = NEList.unsafeFrom(pkg.split('.').toList)
+  def parseCsPkg(pkg: String): CSPackageId  = CSPackageId(parsePkg(pkg))
 }
