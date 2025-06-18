@@ -6,24 +6,24 @@ import izumi.fundamentals.platform.strings.TextTree.Quote
 
 object CSTypes {
   // Baboon packages
-  val baboonRuntimePkg: CSPackageId = CSPackageId(NEList("Baboon", "Runtime", "Shared"))
-  val baboonFixturePkg: CSPackageId = CSPackageId(NEList("Baboon", "Fixture"))
-  val baboonTimePkg: CSPackageId    = CSPackageId(NEList("Baboon", "Time"))
+  val baboonRuntimePkg: CSPackageId = parseCsPkg("Baboon.Runtime.Shared")
+  val baboonFixturePkg: CSPackageId = parseCsPkg("Baboon.Fixture")
+  val baboonTimePkg: CSPackageId    = parseCsPkg("Baboon.Time")
 
   // System packages
-  val csSystemPkg: CSPackageId               = CSPackageId(NEList("System"))
-  val csGlobalizationPkg: CSPackageId        = CSPackageId(NEList("System", "Globalization"))
-  val csCollectionsGenericPkg: CSPackageId   = CSPackageId(NEList("System", "Collections", "Generic"))
-  val csCollectionsImmutablePkg: CSPackageId = CSPackageId(NEList("System", "Collections", "Immutable"))
-  val csLinqPkg: CSPackageId                 = CSPackageId(NEList("System", "Linq"))
-  val csIoPkg: CSPackageId                   = CSPackageId(NEList("System", "IO"))
-  val csTextPkg: CSPackageId                 = CSPackageId(NEList("System.Text"))
-  val csDiagnosticsPkg: CSPackageId          = CSPackageId(NEList("System", "Diagnostics"))
+  val csSystemPkg: CSPackageId               = parseCsPkg("System")
+  val csGlobalizationPkg: CSPackageId        = parseCsPkg("System.Globalization")
+  val csCollectionsGenericPkg: CSPackageId   = parseCsPkg("System.Collections.Generic")
+  val csCollectionsImmutablePkg: CSPackageId = parseCsPkg("System.Collections.Immutable")
+  val csLinqPkg: CSPackageId                 = parseCsPkg("System.Linq")
+  val csIoPkg: CSPackageId                   = parseCsPkg("System.IO")
+  val csTextPkg: CSPackageId                 = parseCsPkg("System.Text")
+  val csDiagnosticsPkg: CSPackageId          = parseCsPkg("System.Diagnostics")
 
   // Newtonsoft packages
-  val nsPkg: CSPackageId     = CSPackageId(NEList("Newtonsoft", "Json"))
-  val nsLinqPkg: CSPackageId = CSPackageId(NEList("Newtonsoft", "Json", "Linq"))
-  val nunitPkg: CSPackageId  = CSPackageId(NEList("NUnit", "Framework"))
+  val nsPkg: CSPackageId     = parseCsPkg("Newtonsoft.Json")
+  val nsLinqPkg: CSPackageId = parseCsPkg("Newtonsoft.Json.Linq")
+  val nunitPkg: CSPackageId  = parseCsPkg("NUnit.Framework")
 
   // Nunit types
   val nunitTestFixture: CSType  = CSType(nunitPkg, "TestFixture", fq = false)
