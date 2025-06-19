@@ -16,7 +16,7 @@ Stripped-down experimental DML with schema evolution support and garbage collect
 6. Namespaces
 7. Inclusions (at syntax tree level)
 8. Lists, sets, dictionaries and optional types.
-9. Codegen targets: C#
+9. Codegen targets: C#, Scala
 
 ## Limitations
 
@@ -36,13 +36,7 @@ Points marked with (*) will/may be improved in the future.
 
 ## CLI
 
-```bash
-baboon \
-    --model-dir ./src/test/resources/baboon/ \
-    --model ./src/test/resources/baboon/pkg0/pkg01.baboon \
-    --model ./src/test/resources/baboon/pkg0/pkg02.baboon \
-    --output /path/to/directory
-```
+See [tests](https://github.com/7mind/baboon/blob/main/.mobala/steps/run-test.sh).
 
 ## Notes
 
