@@ -88,7 +88,8 @@ object ScCodecTestsTranslator {
              |  val csJson = parse(new $scString(b, $javaNioStandardCharsets.UTF_8)).toOption.get
              |  val dec = $codecName.instance.decode(context, csJson).toOption
              |  assert(dec.nonEmpty)
-             |  //val sclJson = jsonCompare(context, dec.get)
+             |  val sclJson = jsonCompare(context, dec.get)
+             |  // this is be broken for unordered collections and timestamps, but is suitable for manual tests
              |  //assert(csJson == sclJson)
              |}
              |"""

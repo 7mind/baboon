@@ -2,11 +2,12 @@ package io.septimalmind.baboon.translator.scl
 
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.translator.scl.ScCodecTranslator.CodecMeta
-import io.septimalmind.baboon.translator.scl.ScTypes.{baboonCodecContext, baboonJsonCodec, baboonLazy, baboonTimeFormats, baboonTools, iBaboonAdtMemberMeta, iBaboonGenerated}
+import io.septimalmind.baboon.translator.scl.ScTypes.{baboonBinTools, baboonCodecContext, baboonJsonCodec, baboonLazy, baboonTimeFormats, baboonTools, iBaboonAdtMemberMeta, iBaboonGenerated}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
+import java.math.BigInteger
 import java.util.concurrent.atomic.AtomicReference
 
 class ScJsonCodecGenerator(
@@ -308,11 +309,12 @@ class ScJsonCodecGenerator(
           case TypeId.Builtins.i08 => q"""io.circe.Json.fromInt($ref)"""
           case TypeId.Builtins.i16 => q"""io.circe.Json.fromInt($ref)"""
           case TypeId.Builtins.i32 => q"""io.circe.Json.fromInt($ref)"""
+
           case TypeId.Builtins.i64 => q"""io.circe.Json.fromLong($ref)"""
-          case TypeId.Builtins.u08 => q"""io.circe.Json.fromInt($ref)"""
-          case TypeId.Builtins.u16 => q"""io.circe.Json.fromInt($ref)"""
-          case TypeId.Builtins.u32 => q"""io.circe.Json.fromInt($ref)"""
-          case TypeId.Builtins.u64 => q"""io.circe.Json.fromLong($ref)"""
+          case TypeId.Builtins.u08 => q"""io.circe.Json.fromInt(java.lang.Byte.toUnsignedInt($ref))"""
+          case TypeId.Builtins.u16 => q"""io.circe.Json.fromInt(java.lang.Short.toUnsignedInt($ref))"""
+          case TypeId.Builtins.u32 => q"""io.circe.Json.fromLong(java.lang.Integer.toUnsignedLong($ref))"""
+          case TypeId.Builtins.u64 => q"""io.circe.Json.fromBigInt($baboonBinTools.toUnsignedBigInt($ref))"""
 
           case TypeId.Builtins.f32  => q"""io.circe.Json.fromFloat($ref).get"""
           case TypeId.Builtins.f64  => q"""io.circe.Json.fromDouble($ref).get"""
@@ -357,7 +359,7 @@ class ScJsonCodecGenerator(
         case TypeId.Builtins.u08 => q"""$fref.flatMap(_.asNumber).flatMap(_.toLong).map(_.toByte).get"""
         case TypeId.Builtins.u16 => q"""$fref.flatMap(_.asNumber).flatMap(_.toLong).map(_.toShort).get"""
         case TypeId.Builtins.u32 => q"""$fref.flatMap(_.asNumber).flatMap(_.toLong).map(_.toInt).get"""
-        case TypeId.Builtins.u64 => q"""$fref.flatMap(_.asNumber).flatMap(_.toLong).get"""
+        case TypeId.Builtins.u64 => q"""$fref.flatMap(_.asNumber).flatMap(_.toBigInt).map(_.longValue).get"""
 
         case TypeId.Builtins.f32  => q"""$fref.flatMap(_.asNumber).map(_.toFloat).get"""
         case TypeId.Builtins.f64  => q"""$fref.flatMap(_.asNumber).map(_.toDouble).get"""

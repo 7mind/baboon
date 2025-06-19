@@ -1,7 +1,7 @@
 package baboon.runtime.shared {
 
   import java.io.{DataInput, DataInputStream, DataOutput, DataOutputStream, IOException, InputStream, OutputStream}
-  import java.math.BigDecimal
+  import java.math.{BigDecimal, BigInteger}
   import java.nio.charset.StandardCharsets
   import java.time.{Instant, OffsetDateTime, ZoneOffset}
   import java.time.format.DateTimeFormatter
@@ -279,6 +279,19 @@ package baboon.runtime.shared {
   }
 
   object BaboonBinTools {
+    def toUnsignedBigInt(l: Long): BigInt = {
+      if (l >= 0) {
+        BigInt(l)
+      } else {
+        val upper = (l >>> 32).toInt
+        val lower = l.toInt
+        BigInteger
+          .valueOf(java.lang.Integer.toUnsignedLong(upper))
+          .shiftLeft(32)
+          .add(BigInteger.valueOf(java.lang.Integer.toUnsignedLong(lower)))
+      }
+    }
+
     def readUid(s: LEDataInputStream): UUID = new UUID(s.readLong(), s.readLong())
     def writeUid(fakeWriter: LEDataOutputStream, v: UUID): Unit = {
       fakeWriter.writeLong(v.getMostSignificantBits)
