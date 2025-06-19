@@ -43,16 +43,19 @@ object ScCodecFixtureTranslator {
     }
 
     override def fixtureTpe(definition: DomainMember.User): Option[TextTree[ScValue]] = {
-      definition.defn.id.owner match {
-        case o: Owner.Adt =>
-          for {
-            did <- defnFixtureId(definition)
-            oid <- defnFixtureId(domain.defs.meta.nodes(o.id))
-          } yield {
-            q"$oid.$did"
+      target.output.fixturesOutput.flatMap {
+        _ =>
+          definition.defn.id.owner match {
+            case o: Owner.Adt =>
+              for {
+                did <- defnFixtureId(definition)
+                oid <- defnFixtureId(domain.defs.meta.nodes(o.id))
+              } yield {
+                q"$oid.$did"
+              }
+            case _ =>
+              defnFixtureId(definition)
           }
-        case _ =>
-          defnFixtureId(definition)
       }
 
     }

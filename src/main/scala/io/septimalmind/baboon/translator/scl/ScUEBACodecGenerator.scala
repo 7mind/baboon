@@ -119,8 +119,8 @@ class ScUEBACodecGenerator(
          |}""".stripMargin
     ) ++ branchDecoder.map {
       body =>
-        q"""private $name DecodeBranch(ctx: $baboonCodecContext, wire: $binaryInput) = {
-           |    ${body.shift(2).trim}
+        q"""def decodeBranch(ctx: $baboonCodecContext, wire: $binaryInput): $name = {
+           |  ${body.shift(2).trim}
            |}""".stripMargin
     }.toList ++ indexMethods
 
@@ -216,7 +216,7 @@ class ScUEBACodecGenerator(
         }
 
         val decBody = if (target.language.wrappedAdtBranchCodecs) {
-          q"""return (($cName)$cName.instance).decodeBranch(ctx, wire)"""
+          q"""return $cName.instance.asInstanceOf[$cName.type].decodeBranch(ctx, wire)"""
         } else {
           q"""return $cName.instance.decode(ctx, wire)"""
         }
@@ -353,7 +353,7 @@ class ScUEBACodecGenerator(
 
         q"""val marker = wire.readByte()
            |assert(marker == ${idx.toString})
-           |return DecodeBranch(ctx, wire)""".stripMargin
+           |decodeBranch(ctx, wire)""".stripMargin
       case _ => fdec
     }
 

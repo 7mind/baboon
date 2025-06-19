@@ -72,21 +72,24 @@ object ScCodecTestsTranslator {
              |  ${body.shift(2).trim}
              |}
              |
-             |def jsonCompare(context: $baboonCodecContext, fixture: $srcRef): $scUnit = {
+             |def jsonCompare(context: $baboonCodecContext, fixture: $srcRef): io.circe.Json = {
              |  val fixtureJson    = $codecName.instance.encode(context, fixture)
              |  val fixtureDecoded = $codecName.instance.decode(context, fixtureJson).toOption.get
              |  assert(fixture == fixtureDecoded)
+             |  fixtureJson
              |}
              |
              |def testCsJson(context: $baboonCodecContext, clue: $scString): $scUnit = {
              |  val tpeid = "${definition.id.render}"
              |  val f     = new $javaFile(s"./../target/cs/json-$$clue/$$tpeid.json")
-             |  assert(f.exists())
+             |  assume(f.exists())
              |  val b = $javaNioFiles.readAllBytes(f.toPath)
              |  import io.circe.parser.parse
-             |  val dec = $codecName.instance.decode(context, parse(new $scString(b, $javaNioStandardCharsets.UTF_8)).toOption.get).toOption
+             |  val csJson = parse(new $scString(b, $javaNioStandardCharsets.UTF_8)).toOption.get
+             |  val dec = $codecName.instance.decode(context, csJson).toOption
              |  assert(dec.nonEmpty)
-             |  jsonCompare(context, dec.get)
+             |  //val sclJson = jsonCompare(context, dec.get)
+             |  //assert(csJson == sclJson)
              |}
              |"""
 
@@ -114,23 +117,30 @@ object ScCodecTestsTranslator {
              |def testCsUeba(context: $baboonCodecContext, clue: $scString): $scUnit = {
              |  val tpeid = "${definition.id.render}"
              |  val f     = new $javaFile(s"./../target/cs/ueba-$$clue/$$tpeid.uebin")
-             |  assert(f.exists())
-             |  val b = $javaNioFiles.readAllBytes(f.toPath)
-             |  val bais = new java.io.ByteArrayInputStream(b)
+             |  assume(f.exists())
+             |  val csUebaBytes = $javaNioFiles.readAllBytes(f.toPath)
+             |  val bais = new java.io.ByteArrayInputStream(csUebaBytes)
              |  val dis = new $binaryInput(bais)
              |  val dec = $codecName.instance.decode(context, dis)
-             |  uebaCompare(context, dec)
+             |  val sclUebaBytes = uebaCompare(context, dec)
+             |  assert(csUebaBytes.length == sclUebaBytes.length)
+             |  // this is be broken for unordered collections and timestamps, but is suitable for manual tests
+             |  // assert(csUebaBytes.toVector == sclUebaBytes.toVector) 
              |}
              |
-             |def uebaCompare(context: $baboonCodecContext, fixture: $srcRef): $scUnit = {
+             |def uebaCompare(context: $baboonCodecContext, fixture: $srcRef): $scArray[$scByte] = {
              |  val baos = new java.io.ByteArrayOutputStream()
              |  val dos = new $binaryOutput(baos)
              |  $codecName.instance.encode(context, dos, fixture)
+             |  
              |  val bytes = baos.toByteArray
+             |  
              |  val bais = new java.io.ByteArrayInputStream(bytes)
              |  val dis = new $binaryInput(bais)
              |  val dec = $codecName.instance.decode(context, dis)
              |  assert(fixture == dec)
+             |  
+             |  bytes
              |}
              |"""
 

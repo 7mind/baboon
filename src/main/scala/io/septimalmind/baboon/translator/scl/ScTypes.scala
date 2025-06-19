@@ -45,6 +45,7 @@ object ScTypes {
   val scDouble: ScType     = ScType(scalaPkg, "Double")
   val scBigDecimal: ScType = ScType(scalaPkg, "BigDecimal")
   val scUnit: ScType       = ScType(scalaPkg, "Unit")
+  val scArray: ScType       = ScType(scalaPkg, "Array")
 
   // Scala collection types
   val scOption: ScType = ScType(scalaPkg, "Option")

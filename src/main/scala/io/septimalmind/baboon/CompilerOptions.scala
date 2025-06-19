@@ -44,8 +44,7 @@ final case class CSOptions(
 )
 
 final case class GenericOptions(
-  metaWriteEvolutionJsonTo: Option[Path],
-  codecTestIterations: Int,
+  codecTestIterations: Int
 )
 
 final case class OutputOptions(
@@ -99,6 +98,7 @@ final case class CompilerOptions(
   directoryInputs: Set[Path],
   debug: Boolean,
   targets: Seq[CompilerTarget],
+  metaWriteEvolutionJsonTo: Option[Path],
 )
 
 sealed trait CompilerProduct

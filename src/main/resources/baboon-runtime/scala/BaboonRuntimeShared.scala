@@ -8,12 +8,16 @@ package baboon.runtime.shared {
   import java.util.UUID
   import java.util.concurrent.atomic.AtomicReference
   import java.nio.{ByteBuffer, ByteOrder}
+  import scala.reflect.ClassTag
 
   trait BaboonGenerated {}
   trait BaboonAdtMemberMeta {}
   trait BaboonGeneratedLatest {}
   trait BaboonTypeCodecs {}
-  trait BaboonAbstractConversion[F, T] {
+
+  trait GenericConversion {}
+
+  trait BaboonAbstractConversion[F, T] extends GenericConversion {
     def doConvert[C](
       context: C,
       conversions: BaboonAbstractConversions,
@@ -25,13 +29,23 @@ package baboon.runtime.shared {
     def typeId: String
   }
 
-  trait BaboonAbstractConversions {
-    def register[F, T](conversion: BaboonAbstractConversion[F, T]): Unit = ???
+  case class ConversionKey(from: Class[?], to: Class[?])
 
-    def convertWithContext[C, F, T](
+  trait BaboonAbstractConversions {
+    private val registry = scala.collection.mutable.Map.empty[ConversionKey, GenericConversion]
+
+    def register[F: ClassTag, T: ClassTag](conversion: BaboonAbstractConversion[F, T]): Unit = {
+      val key = ConversionKey(implicitly[ClassTag[F]].runtimeClass, implicitly[ClassTag[T]].runtimeClass)
+      registry.put(key, conversion)
+    }
+
+    def convertWithContext[C, F: ClassTag, T: ClassTag](
       context: C,
       from: F,
-    ): T = ???
+    ): T = {
+      val key = ConversionKey(implicitly[ClassTag[F]].runtimeClass, implicitly[ClassTag[T]].runtimeClass)
+      registry(key).asInstanceOf[BaboonAbstractConversion[F, T]].doConvert[C](context, this, from).asInstanceOf[T]
+    }
 
     def versionsFrom: List[String]
     def versionTo: String

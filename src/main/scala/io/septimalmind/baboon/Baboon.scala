@@ -25,8 +25,8 @@ object Baboon {
 
     new MultiModalArgsParserImpl().parse(args).merge match {
       case MultiModalArgs(generalArgs, modalities) =>
-        for {
-          generalOptions <- CaseApp.parse[CLIOptions](generalArgs).leftMap(e => s"Can't parse generic CLI: $e")
+        val out = for {
+          generalOptions <- CaseApp.parse[CLIOptions](generalArgs).leftMap(e => NEList(s"Can't parse generic CLI: $e"))
           launchArgs <- BioEither.traverseAccumErrorsNEList(modalities) {
             case ModalityArgs(roleId, roleArgs) =>
               roleId match {
@@ -74,10 +74,11 @@ object Baboon {
           val individualInputs = generalOptions._1.model.map(s => Paths.get(s)).toSet
 
           val options = CompilerOptions(
-            debug            = generalOptions._1.debug.getOrElse(false),
-            individualInputs = individualInputs,
-            directoryInputs  = directoryInputs,
-            targets          = launchArgs,
+            debug                    = generalOptions._1.debug.getOrElse(false),
+            individualInputs         = individualInputs,
+            directoryInputs          = directoryInputs,
+            targets                  = launchArgs,
+            metaWriteEvolutionJsonTo = generalOptions._1.metaWriteEvolutionJson.map(s => Paths.get(s)),
           )
 
           import izumi.distage.modules.support.unsafe.EitherSupport.{defaultModuleEither, quasiIOEither, quasiIORunnerEither}
@@ -85,7 +86,16 @@ object Baboon {
 
           entrypoint(options)
         }
-        ()
+        out match {
+          case Left(value) =>
+            System.err.println(value.toList.niceList())
+            System.exit(1)
+            ()
+          case Right(value) =>
+            System.exit(0)
+            ()
+        }
+
     }
   }
 
@@ -116,8 +126,7 @@ object Baboon {
       testsOutput            = testOutDir,
     )
     val genericOpts = GenericOptions(
-      metaWriteEvolutionJsonTo = opts.generic.metaWriteEvolutionJson.map(s => Paths.get(s)),
-      codecTestIterations      = opts.generic.codecTestIterations.getOrElse(500),
+      codecTestIterations = opts.generic.codecTestIterations.getOrElse(500)
     )
     SharedOpts(outOpts, genericOpts)
   }

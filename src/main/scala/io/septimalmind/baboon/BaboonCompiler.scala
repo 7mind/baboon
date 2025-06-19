@@ -92,7 +92,7 @@ object BaboonCompiler {
     }
 
     private def writeEvolutionJson(target: CompilerTarget, model: BaboonFamily): F[NEList[BaboonIssue], Unit] = {
-      F.traverse_(target.generic.metaWriteEvolutionJsonTo) {
+      F.traverse_(options.metaWriteEvolutionJsonTo) {
         maybePath =>
           val path = Option(maybePath.getParent) match {
             case Some(_) => maybePath

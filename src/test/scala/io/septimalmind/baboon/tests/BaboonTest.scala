@@ -19,9 +19,10 @@ abstract class BaboonTest[F[+_, +_]: TagKK: BaboonTestModule] extends Spec2[F]()
     pluginConfig = PluginConfig.const(
       new BaboonModule[Either](
         CompilerOptions(
-          debug            = false,
-          individualInputs = Set.empty,
-          directoryInputs  = Set(Paths.get("./src/test/resources/baboon")),
+          debug                    = false,
+          individualInputs         = Set.empty,
+          directoryInputs          = Set(Paths.get("./src/test/resources/baboon")),
+          metaWriteEvolutionJsonTo = None,
           targets = Seq(
             CSTarget(
               id = "C#",
@@ -35,8 +36,7 @@ abstract class BaboonTest[F[+_, +_]: TagKK: BaboonTestModule] extends Spec2[F]()
                 testsOutput    = None,
               ),
               generic = GenericOptions(
-                codecTestIterations      = 500,
-                metaWriteEvolutionJsonTo = None,
+                codecTestIterations = 500
               ),
               language = CSOptions(
                 obsoleteErrors                            = false,

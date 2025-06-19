@@ -31,8 +31,6 @@ case class GenericTranspilerCLIOptions(
   omitMostRecentVersionSuffixFromPaths: Option[Boolean],
   @HelpMessage("Most recent versions will not have version segment in its namespace")
   omitMostRecentVersionSuffixFromNamespaces: Option[Boolean],
-  @HelpMessage("Path to a file to which the compiler will write evolution metadata as a JSON")
-  metaWriteEvolutionJson: Option[String],
   @HelpMessage("How many iterations the generated codec tests should perform")
   codecTestIterations: Option[Int],
 )
@@ -82,4 +80,6 @@ case class CLIOptions(
   modelDir: List[String],
   @HelpMessage("Produces additional debug messages. Do not use.")
   debug: Option[Boolean],
+  @HelpMessage("Path to a file to which the compiler will write evolution metadata as a JSON")
+  metaWriteEvolutionJson: Option[String],
 )

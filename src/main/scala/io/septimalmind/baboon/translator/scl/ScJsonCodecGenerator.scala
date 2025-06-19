@@ -253,7 +253,7 @@ class ScJsonCodecGenerator(
     val encBody = q"""return $fullEnc"""
 
     val fullDec = d.id.owner match {
-      case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs => q"wire.asObject.get.head.value.asObject.get"
+      case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs => q"wire.asObject.get.toList.head._2.asObject.get"
       case _                                                      => q"wire.asObject.get"
     }
 

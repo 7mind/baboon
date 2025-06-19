@@ -8,7 +8,6 @@ function run-test() {
   target/graalvm-native-image/baboon \
             --model-dir ./src/test/resources/baboon/ \
             --meta-write-evolution-json baboon-meta.json \
-            \
             :cs \
             --output ./test/cs-stub/BaboonDefinitions/Generated \
             --test-output ./test/cs-stub/BaboonTests/GeneratedTests \
@@ -16,11 +15,10 @@ function run-test() {
             --cs-use-compact-adt-form true \
             --cs-wrapped-adt-branch-codecs false \
             --cs-write-evolution-dict true \
-            \
             :scala \
-            --output=./test/sc-stub/src/main/scala/generated-main \
-            --test-output=./test/sc-stub/src/test/scala/generated-tests \
-            --fixture-output=./test/sc-stub/src/main/scala/generated-fixtures \
+            --output ./test/sc-stub/src/main/scala/generated-main \
+            --test-output ./test/sc-stub/src/test/scala/generated-tests \
+            --fixture-output ./test/sc-stub/src/main/scala/generated-fixtures \
             --sc-write-evolution-dict true \
             --sc-wrapped-adt-branch-codecs false
              
@@ -52,9 +50,9 @@ function run-test() {
             --cs-write-evolution-dict true \
             \
             :scala \
-            --output=./test/sc-stub/src/main/scala/generated-main \
-            --test-output=./test/sc-stub/src/test/scala/generated-tests \
-            --fixture-output=./test/sc-stub/src/main/scala/generated-fixtures \
+            --output ./test/sc-stub/src/main/scala/generated-main \
+            --test-output ./test/sc-stub/src/test/scala/generated-tests \
+            --fixture-output ./test/sc-stub/src/main/scala/generated-fixtures \
             --sc-write-evolution-dict true \
             --sc-wrapped-adt-branch-codecs true
 
@@ -85,12 +83,18 @@ function run-test() {
     :cs \
     --output ./test/conv-test-cs/ConvTest/Generated \
     :scala \
-    --output=./test/conv-test-sc/src/main/scala/generated-main
+    --output ./test/conv-test-sc/src/main/scala/generated-main    
 
-      
+  pushd .
   cd ./test/conv-test-cs
   dotnet build
   dotnet test 
+  popd 
   
+  pushd . 
+  cd ./test/conv-test-sc
+  sbt +clean +test
+  popd
+    
   popd 
 }
