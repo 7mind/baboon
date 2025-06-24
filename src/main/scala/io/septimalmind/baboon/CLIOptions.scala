@@ -58,6 +58,8 @@ case class CsCLIOptions(
   csWriteEvolutionDict: Option[Boolean],
   @HelpMessage("Do not generate encoders for deprecated versions")
   enableDeprecatedEncoders: Option[Boolean],
+  @HelpMessage("Generate UEBA index writers")
+  generateIndexWriters: Option[Boolean],
   @HelpMessage("Allow to erase target directory even if files with these extensions exist there. Default: cs,json,meta")
   extAllowCleanup: List[String],
 ) extends SharedCLIOptions

@@ -293,23 +293,31 @@ class CSUEBACodecGenerator(
       fields.map(_._1).joinCN().endC(),
     ).filterNot(_.isEmpty).join("\n")
 
+    val index = if (target.language.generateIndexWriters) {
+      q"""header |= 0b0000001;
+         |writer.Write(header);
+         |using (var writeMemoryStream = new $memoryStream())
+         |{
+         |    // ReSharper disable once UnusedVariable
+         |    // ReSharper disable AccessToDisposedClosure
+         |    using (var fakeWriter = new $binaryWriter(writeMemoryStream))
+         |    {
+         |        var w = ($iBaboonBinCodecIndexed)this;
+         |        ${fields.map(_._3).join("\n").shift(8).trim}
+         |    }
+         |    writeMemoryStream.Flush();
+         |    writer.Write(writeMemoryStream.ToArray());
+         |}""".stripMargin
+    } else {
+      q"""throw new Exception("Index support wasn't enable during Baboon code generation");"""
+    }
+
     val fenc =
       q"""byte header = 0b0000000;
          |
          |if (ctx.UseIndices)
          |{
-         |    header |= 0b0000001;
-         |    writer.Write(header);
-         |    using (var writeMemoryStream = new $memoryStream())
-         |    {
-         |        // ReSharper disable once UnusedVariable
-         |        using (var fakeWriter = new $binaryWriter(writeMemoryStream))
-         |        {
-         |            ${fields.map(_._3).join("\n").shift(12).trim}
-         |        }
-         |        writeMemoryStream.Flush();
-         |        writer.Write(writeMemoryStream.ToArray());
-         |    }
+         |    ${index.shift(4).trim}
          |} else {
          |    ${noIndex.shift(4).trim}
          |}
@@ -377,38 +385,35 @@ class CSUEBACodecGenerator(
 
         val w = domain.refMeta(f.tpe).len match {
           case BinReprLen.Fixed(bytes) =>
-            q"""{
-               |    // ${f.toString}
-               |    var before = (uint)fakeWriter.BaseStream.Position;
-               |    ${fakeEnc.endC().shift(4).trim}
-               |    var after = (uint)fakeWriter.BaseStream.Position;
-               |    var length = after - before;
-               |    $debug.Assert(length == ${bytes.toString});
-               |}""".stripMargin
+            q"""// ${f.toString}
+               |w.WriteIndexFixedLenField(fakeWriter, ${bytes.toString}, () =>
+               |{
+               |    ${fakeEnc.endC().shift(4).trim}        
+               |});
+             """.stripMargin
 
           case v: BinReprLen.Variable =>
             val sanityChecks = v match {
               case BinReprLen.Unknown() =>
-                q"$debug.Assert(after >= before, $$\"Got after={after}, before={before}\")";
+                q"$debug.Assert(after >= before, $$\"Got after={after}, before={before}\");";
               case BinReprLen.Alternatives(variants) =>
-                q"$debug.Assert(new $csSet<uint>() { ${variants.mkString(", ")} }.Contains(length), $$\"Got length={length}\")"
+                q"$debug.Assert(new $csSet<uint>() { ${variants.mkString(", ")} }.Contains(length), $$\"Got length={length}\");"
               case BinReprLen.Range(min, max) =>
                 (
-                  Seq(q"$debug.Assert(length >= ${min.toString}, $$\"Got length={length}\")") ++
-                  max.toSeq.map(m => q"$debug.Assert(length <= ${m.toString}, $$\"Got length={length}\")")
+                  Seq(q"$debug.Assert(length >= ${min.toString}, $$\"Got length={length}\");") ++
+                  max.toSeq.map(m => q"$debug.Assert(length <= ${m.toString}, $$\"Got length={length}\");")
                 ).joinCN()
             }
 
-            q"""{
-               |    // ${f.toString}
-               |    var before = (uint)fakeWriter.BaseStream.Position;
-               |    writer.Write(before);
-               |    ${fakeEnc.endC().shift(4).trim}
-               |    var after = (uint)fakeWriter.BaseStream.Position;
-               |    var length = after - before;
-               |    writer.Write(length);
-               |    ${sanityChecks.shift(4).trim};
-               |}""".stripMargin
+            q"""// ${f.toString}
+               |{
+               |    var length = w.WriteIndexVarLenField(fakeWriter, () =>
+               |    {
+               |        ${fakeEnc.endC().shift(4).trim}        
+               |    });
+               |    ${sanityChecks.shift(4).trim}
+               |}
+               |""".stripMargin
         }
 
         (enc, dec, w)

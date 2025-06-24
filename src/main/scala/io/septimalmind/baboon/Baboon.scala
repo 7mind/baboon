@@ -48,6 +48,7 @@ object Baboon {
                           wrappedAdtBranchCodecs                    = opts.csWrappedAdtBranchCodecs.getOrElse(false),
                           writeEvolutionDict                        = opts.csWriteEvolutionDict.getOrElse(false),
                           enableDeprecatedEncoders                  = opts.enableDeprecatedEncoders.getOrElse(false),
+                          generateIndexWriters = opts.generateIndexWriters.getOrElse(true)
                         ),
                       )
                   }

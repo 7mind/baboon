@@ -208,6 +208,28 @@ namespace Baboon.Runtime.Shared {
             }
             return result;
         }
+        
+        void WriteIndexFixedLenField(BinaryWriter writer, int expected, Action doWrite)
+        {
+            var before = (uint)writer.BaseStream.Position;
+            writer.Write(before);
+            doWrite();
+            var after = (uint)writer.BaseStream.Position;
+            var length = after - before;
+            writer.Write(length);
+            Debug.Assert(length == expected);
+        }
+        
+        uint WriteIndexVarLenField(BinaryWriter writer, Action doWrite)
+        {
+            var before = (uint)writer.BaseStream.Position;
+            writer.Write(before);
+            doWrite();
+            var after = (uint)writer.BaseStream.Position;
+            var length = after - before;
+            writer.Write(length);
+            return length;
+        }
     }
 
     public interface IBaboonBinCodec<T> : IBaboonStreamCodec<T, BinaryWriter, BinaryReader>

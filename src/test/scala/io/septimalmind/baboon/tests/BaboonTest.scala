@@ -47,6 +47,7 @@ abstract class BaboonTest[F[+_, +_]: TagKK: BaboonTestModule] extends Spec2[F]()
                 omitMostRecentVersionSuffixFromPaths      = true,
                 omitMostRecentVersionSuffixFromNamespaces = true,
                 enableDeprecatedEncoders                  = false,
+                generateIndexWriters                      = true,
               ),
             )
           ),

@@ -41,6 +41,7 @@ final case class CSOptions(
   writeEvolutionDict: Boolean,
   disregardImplicitUsings: Boolean,
   enableDeprecatedEncoders: Boolean,
+  generateIndexWriters: Boolean,
 )
 
 final case class GenericOptions(
