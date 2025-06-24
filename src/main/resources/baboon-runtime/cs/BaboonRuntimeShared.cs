@@ -212,21 +212,19 @@ namespace Baboon.Runtime.Shared {
         void WriteIndexFixedLenField(BinaryWriter writer, int expected, Action doWrite)
         {
             var before = (uint)writer.BaseStream.Position;
-            writer.Write(before);
             doWrite();
             var after = (uint)writer.BaseStream.Position;
             var length = after - before;
-            writer.Write(length);
             Debug.Assert(length == expected);
         }
         
-        uint WriteIndexVarLenField(BinaryWriter writer, Action doWrite)
+        uint WriteIndexVarLenField(BinaryWriter writer, BinaryWriter fakeWriter, Action doWrite)
         {
-            var before = (uint)writer.BaseStream.Position;
-            writer.Write(before);
+            var before = (uint)fakeWriter.BaseStream.Position;
             doWrite();
-            var after = (uint)writer.BaseStream.Position;
+            var after = (uint)fakeWriter.BaseStream.Position;
             var length = after - before;
+            writer.Write(before);            
             writer.Write(length);
             return length;
         }

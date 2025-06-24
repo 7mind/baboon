@@ -407,9 +407,9 @@ class CSUEBACodecGenerator(
 
             q"""// ${f.toString}
                |{
-               |    var length = w.WriteIndexVarLenField(fakeWriter, () =>
+               |    var length = w.WriteIndexVarLenField(writer, fakeWriter, () =>
                |    {
-               |        ${fakeEnc.endC().shift(4).trim}        
+               |        ${fakeEnc.endC().shift(8).trim}        
                |    });
                |    ${sanityChecks.shift(4).trim}
                |}
