@@ -499,4 +499,8 @@ namespace Baboon.Runtime.Shared {
         }
     }
 
+    public abstract class BaboonSingleton<T>  where T : new() {
+        protected static Lazy<T> LazyInstance = new Lazy<T>(() => new T());
+        public static T Instance { get { return LazyInstance.Value; } set { LazyInstance = new Lazy<T>(() => value); } }
+    }
 }

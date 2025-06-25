@@ -89,9 +89,12 @@ class CSJsonCodecGenerator(
          |}""".stripMargin
     )
 
+    val cName = codecName(srcRef)
+
+    val sharedParents = List(q"$baboonSingleton<${cName.asName}>", iName)
     val (parents, methods) = defn.defn match {
       case _: Typedef.Enum =>
-        (List(q"$iBaboonJsonCodec<$name>"), baseMethods)
+        (sharedParents, baseMethods)
       case _ =>
         val extensions = List(
           q"""public virtual $nsJToken Encode($baboonCodecContext ctx, $iBaboonGenerated value)
@@ -121,27 +124,20 @@ class CSJsonCodecGenerator(
           baseMethods
         }
 
-        val baseParents = List(iName)
         val pp = if (addExtensions) {
-          baseParents ++ extParents
+          sharedParents ++ extParents
         } else {
-          baseParents
+          sharedParents
         }
 
         (pp, mm)
     }
 
-    val cName = codecName(srcRef)
     q"""public class ${cName.asName} : ${parents.join(", ")}
        |{
        |    ${methods.join("\n\n").shift(4).trim}
        |
        |    ${csDomTrees.makeCodecMeta(defn).join("\n").shift(4).trim}
-       |
-       |    private static $csLazy<$iName> LazyInstance = new $csLazy<$iName>(() => new $cName());
-       |
-       |    public static $iName Instance { get { return LazyInstance.Value; } set { LazyInstance = new $csLazy<$iName
-       |    >(() => value); } }
        |}
        |""".stripMargin
   }

@@ -129,10 +129,13 @@ class CSUEBACodecGenerator(
            |}""".stripMargin
     }.toList ++ indexMethods
 
-    val codecIface = q"$iBaboonBinCodec<$name>"
+    val cName         = codecName(srcRef)
+    val codecIface    = q"$iBaboonBinCodec<$name>"
+    val sharedParents = List(q"$baboonSingleton<${cName.asName}>", codecIface, q"$iBaboonBinCodecIndexed")
+
     val (parents, methods) = defn.defn match {
       case _: Typedef.Enum =>
-        (List(q"$iBaboonBinCodec<$name>", q"$iBaboonBinCodecIndexed"), baseMethods)
+        (sharedParents, baseMethods)
       case _ =>
         val extensions = List(
           q"""public virtual void Encode($baboonCodecContext ctx, $binaryWriter writer, $iBaboonGenerated value)
@@ -159,28 +162,20 @@ class CSUEBACodecGenerator(
           baseMethods
         }
 
-        val baseParents = List(codecIface, q"$iBaboonBinCodecIndexed")
-
         val pp = if (addExtensions) {
-          baseParents ++ extParents
+          sharedParents ++ extParents
         } else {
-          baseParents
+          sharedParents
         }
 
         (pp, mm)
     }
-
-    val cName = codecName(srcRef)
 
     q"""public class ${cName.asName} : ${parents.join(", ")}
        |{
        |    ${methods.join("\n\n").shift(4).trim}
        |
        |    ${csDomTrees.makeCodecMeta(defn).join("\n").shift(4).trim}
-       |
-       |    private static $csLazy<$codecIface> LazyInstance = new $csLazy<$codecIface>(() => new $cName());
-       |
-       |    public static $codecIface Instance { get { return LazyInstance.Value; } set { LazyInstance = new $csLazy<$codecIface>(() => value); } }
        |}
      """.stripMargin
   }
