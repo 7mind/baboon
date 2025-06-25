@@ -443,8 +443,9 @@ object CSDefnTranslator {
         case c: ComparatorType.Complex =>
           c match {
             case ComparatorType.OptionEquals(subComparator) =>
-              // q"($ref == null ? 0 : ${renderHashcode(ref, subComparator, depth + 1)})"
-              q"$BaboonTools.OptionHashcode($ref, ($itemRef) => ${renderHashcode(itemRef, subComparator, depth + 1)})"
+              q"($ref == null ? 0 : ${renderHashcode(ref, subComparator, depth + 1)})"
+//              q"$BaboonTools.OptionHashcode($ref, ($itemRef) => ${renderHashcode(itemRef, subComparator, depth + 1)})"
+
             case ComparatorType.SeqEquals(subComparator) =>
 //              q"($ref.Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ ${renderHashcode(itemRef, subComparator, depth + 1)}))"
               q"$BaboonTools.SeqHashcode($ref, ($itemRef) => ${renderHashcode(itemRef, subComparator, depth + 1)})"
@@ -479,7 +480,9 @@ object CSDefnTranslator {
             case _: ComparatorType.Basic =>
               q"Equals($ref, $oref)"
             case c: ComparatorType.Complex =>
-              q"(Equals($ref, $oref) || ($ref != null && $oref != null && ${renderComparator(ref, oref, c)}))"
+              q"$BaboonTools.OptionEquals($ref, $oref, (left, right) => ${renderComparator(q"left", q"right", c)})"
+
+//              q"(Equals($ref, $oref) || ($ref != null && $oref != null && ))"
           }
 
         case ComparatorType.SeqEquals(subComparator) =>
@@ -487,19 +490,20 @@ object CSDefnTranslator {
             case _: ComparatorType.Basic =>
               q"$ref.SequenceEqual($oref)"
             case c: ComparatorType.Complex =>
-              q"($ref.SequenceEqual($oref) || ($ref.Count == $oref.Count && ($ref.Zip($oref, (r, l) => (r, l)).All(t => ${renderComparator(q"t.Item1", q"t.Item2", c)}))))"
+              q"$BaboonTools.SeqEquals($ref, $oref, (left, right) => ${renderComparator(q"left", q"right", c)})"
+//              q"($ref.SequenceEqual($oref) || ($ref.Count == $oref.Count && ($ref.Zip($oref, (r, l) => (r, l)).All(t => ${renderComparator(q"t.Item1", q"t.Item2", c)}))))"
           }
 
         case ComparatorType.SetEquals(_) =>
           q"$ref.SetEquals($oref)"
 
         case ComparatorType.MapEquals(_, valComp) =>
-          val vref  = q"$oref[key]"
-          val ovref = q"$ref[key]"
+          val cmp = renderComparator(q"left", q"right", valComp)
+          q"$BaboonTools.MapEquals($ref, $oref, (left, right) => $cmp)"
 
-          val cmp = renderComparator(vref, ovref, valComp)
-
-          q"($ref.Count == $oref.Count && $ref.Keys.All(key => $oref.ContainsKey(key)) && $ref.Keys.All(key => $cmp))"
+        //          val vref  = q"$oref[key]"
+        //          val ovref = q"$ref[key]"
+        //          q"($ref.Count == $oref.Count && $ref.Keys.All(key => $oref.ContainsKey(key)) && $ref.Keys.All(key => $cmp))"
       }
     }
   }

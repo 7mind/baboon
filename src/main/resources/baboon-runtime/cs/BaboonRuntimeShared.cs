@@ -339,6 +339,33 @@ namespace Baboon.Runtime.Shared {
         public static int MapHashcode<TKey, TValue>(IEnumerable<KeyValuePair<TKey, TValue>> value, Func<TKey, int> mkk, Func<TValue, int> mkv) {
             return (value.Select(item0 => HashCode.Combine(mkk(item0.Key), mkv(item0.Value))).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, item0) => current ^ item0));
         }
+        
+        public static bool MapEquals<TKey, TValue>(IReadOnlyDictionary<TKey, TValue> left, IReadOnlyDictionary<TKey, TValue> right, Func<TValue, TValue, bool> cmp)
+        {
+            return (left.Count == right.Count && left.Keys.All(right.ContainsKey) &&
+                    left.Keys.All(key => cmp(left[key], right[key])));
+        }
+        
+        public static bool MapEquals<TKey, TValue>(IDictionary<TKey, TValue> left, IDictionary<TKey, TValue> right, Func<TValue, TValue, bool> cmp)
+        {
+            return (left.Count == right.Count && left.Keys.All(right.ContainsKey) &&
+                    left.Keys.All(key => cmp(left[key], right[key])));
+        }
+        
+        public static bool OptionEquals<T>(T? left, T? right, Func<T, T, bool> cmp)
+        {
+            return Equals(left, right) || (left != null && right != null && cmp(left, right));
+        }
+        
+        public static bool SeqEquals<T>(IList<T> left, IList<T> right, Func<T, T, bool> cmp)
+        {
+            return left.SequenceEqual(right) || (left.Count == right.Count && (left.Zip(right, (r, l) => (r, l)).All(t => cmp(t.Item1, t.Item2))));
+        }
+        
+        public static bool SeqEquals<T>(IReadOnlyList<T> left, IReadOnlyList<T> right, Func<T, T, bool> cmp)
+        {
+            return left.SequenceEqual(right) || (left.Count == right.Count && (left.Zip(right, (r, l) => (r, l)).All(t => cmp(t.Item1, t.Item2))));
+        }
     }
 
 
