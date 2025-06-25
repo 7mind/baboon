@@ -443,17 +443,27 @@ object CSDefnTranslator {
         case c: ComparatorType.Complex =>
           c match {
             case ComparatorType.OptionEquals(subComparator) =>
-              q"($ref == null ? 0 : ${renderHashcode(ref, subComparator, depth + 1)})"
+              // q"($ref == null ? 0 : ${renderHashcode(ref, subComparator, depth + 1)})"
+              q"$BaboonTools.OptionHashcode($ref, ($itemRef) => ${renderHashcode(itemRef, subComparator, depth + 1)})"
             case ComparatorType.SeqEquals(subComparator) =>
-              q"($ref.Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ ${renderHashcode(itemRef, subComparator, depth + 1)}))"
+//              q"($ref.Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ ${renderHashcode(itemRef, subComparator, depth + 1)}))"
+              q"$BaboonTools.SeqHashcode($ref, ($itemRef) => ${renderHashcode(itemRef, subComparator, depth + 1)})"
+
             case ComparatorType.SetEquals(subComparator) =>
-              q"($ref.Select($itemRef => ${renderHashcode(itemRef, subComparator, depth + 1)}).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
+//              q"($ref.Select($itemRef => ${renderHashcode(itemRef, subComparator, depth + 1)}).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
+              q"$BaboonTools.SetHashcode($ref, ($itemRef) => ${renderHashcode(itemRef, subComparator, depth + 1)})"
+
             case ComparatorType.MapEquals(keyComparator, valComparator) =>
-              q"($ref.Select($itemRef => HashCode.Combine(${renderHashcode(
-                  q"$itemRef.Key",
-                  keyComparator,
-                  depth + 1,
-                )}, ${renderHashcode(q"$itemRef.Value", valComparator, depth + 1)})).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
+              val hk = renderHashcode(
+                q"$itemRef",
+                keyComparator,
+                depth + 1,
+              )
+
+              val hv = renderHashcode(q"$itemRef", valComparator, depth + 1)
+              q"$BaboonTools.MapHashcode($ref, ($itemRef) => $hk, ($itemRef) => $hv)"
+
+            // q"($ref.Select($itemRef => HashCode.Combine(${hk}, ${hv})).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
           }
       }
     }
