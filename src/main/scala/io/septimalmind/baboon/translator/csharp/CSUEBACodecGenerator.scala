@@ -50,7 +50,7 @@ class CSUEBACodecGenerator(
                |
                |#pragma warning disable CS0162
                |$enc
-               |#pragma warning enable CS0162
+               |#pragma warning restore CS0162
                |""".stripMargin.trim
           val insulatedDec =
             q"""if (this != LazyInstance.Value)
@@ -456,13 +456,18 @@ class CSUEBACodecGenerator(
             val keyType      = trans.asCsRef(c.args.head, domain, evo)
             val valueDecoder = mkDecoder(c.args.last)
             val valueType    = trans.asCsRef(c.args.last, domain, evo)
-            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(_ => new $csKeyValuePair<$keyType, $valueType>($keyDecoder, $valueDecoder)).${CSTypes.mkDict}"""
+            q"""$BaboonTools.ReadDict<$keyType, $valueType>(wire, (wire) => $keyDecoder, (wire) => $valueDecoder)"""
+//            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(_ => new $csKeyValuePair<$keyType, $valueType>($keyDecoder, $valueDecoder)).${CSTypes.mkDict}"""
 
           case TypeId.Builtins.lst =>
-            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(_ => ${mkDecoder(c.args.head)}).${CSTypes.mkList}"""
+            q"""$BaboonTools.ReadList(wire, (wire) => ${mkDecoder(c.args.head)})"""
+
+//            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(_ => ${mkDecoder(c.args.head)}).${CSTypes.mkList}"""
 
           case TypeId.Builtins.set =>
-            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(_ => ${mkDecoder(c.args.head)}).${CSTypes.mkSet}"""
+            q"""$BaboonTools.ReadSet(wire, (wire) => ${mkDecoder(c.args.head)})"""
+
+//            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(_ => ${mkDecoder(c.args.head)}).${CSTypes.mkSet}"""
 
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")

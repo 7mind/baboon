@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System;
+using System.Collections.Immutable;
 using System.Diagnostics;
 
 using Newtonsoft.Json.Linq;
@@ -366,6 +367,27 @@ namespace Baboon.Runtime.Shared {
         {
             return left.SequenceEqual(right) || (left.Count == right.Count && (left.Zip(right, (r, l) => (r, l)).All(t => cmp(t.Item1, t.Item2))));
         }
+        
+        public static Dictionary<TKey, TValue> ReadDict<TKey, TValue>(BinaryReader wire, Func<BinaryReader, TKey> kd, Func<BinaryReader, TValue> vd) where TKey : notnull
+        {
+            return Enumerable.Range(0, wire.ReadInt32())
+                .Select(_ => new KeyValuePair<TKey, TValue>(kd(wire), vd(wire)))
+                .BbnToDictionary();
+        }
+                
+        public static List<T> ReadList<T>(BinaryReader wire, Func<BinaryReader, T> d)
+        {
+            return Enumerable.Range(0, wire.ReadInt32())
+                .Select(_ => d(wire))
+                .BbnToList();
+        }
+        
+        public static ImmutableHashSet<T> ReadSet<T>(BinaryReader wire, Func<BinaryReader, T> d)
+        {
+            return Enumerable.Range(0, wire.ReadInt32())
+                .Select(_ => d(wire))
+                .ToImmutableHashSet();
+        }            
     }
 
 
