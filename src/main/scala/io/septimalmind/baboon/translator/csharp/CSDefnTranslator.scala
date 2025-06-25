@@ -194,7 +194,7 @@ object CSDefnTranslator {
 
     private def makeRepr(defn: DomainMember.User, name: CSValue.CSType, isLatestVersion: Boolean): (TextTree[CSValue], List[(CSType, TextTree[CSValue])]) = {
       val genMarker = if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
-      val mainMeta  = csDomTrees.makeMeta(defn, isCodec = false)
+      val mainMeta  = csDomTrees.makeDataMeta(defn)
       val codecMeta = codecs.map(_.codecMeta(defn, name).member)
       val meta      = mainMeta ++ codecMeta
 

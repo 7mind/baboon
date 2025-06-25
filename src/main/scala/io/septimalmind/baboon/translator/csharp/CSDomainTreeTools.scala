@@ -7,13 +7,19 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 trait CSDomainTreeTools {
-  def makeMeta(defn: DomainMember.User, isCodec: Boolean): Seq[TextTree[CSValue]]
+  def makeDataMeta(defn: DomainMember.User): Seq[TextTree[CSValue]]
+  def makeCodecMeta(defn: DomainMember.User): Seq[TextTree[CSValue]]
 
   def metaMethodFlags(defn: DomainMember.User, isCodec: Boolean): String
 }
 
 object CSDomainTreeTools {
-  class CSDomainTreeToolsImpl(target: CSTarget, domain: Domain, evo: BaboonEvolution) extends CSDomainTreeTools {
+  class CSDomainTreeToolsImpl(
+    trans: CSTypeTranslator,
+    target: CSTarget,
+    domain: Domain,
+    evo: BaboonEvolution,
+  ) extends CSDomainTreeTools {
 
     def metaMethodFlags(defn: DomainMember.User, isCodec: Boolean): String = {
       val isNested = defn.id.owner match {
@@ -29,13 +35,25 @@ object CSDomainTreeTools {
       fix
     }
 
-    def makeMeta(defn: DomainMember.User, isCodec: Boolean): Seq[TextTree[CSValue]] = {
-      val fix = metaMethodFlags(defn, isCodec)
+    def makeDataMeta(defn: DomainMember.User): Seq[TextTree[CSValue]] = {
+      makeFullMeta(defn, isCodec = false)
+    }
+
+    def makeCodecMeta(defn: DomainMember.User): Seq[TextTree[CSValue]] = {
+      defn.defn match {
+        case _: Typedef.Enum    => makeFullMeta(defn, isCodec = true)
+        case _: Typedef.Foreign => makeFullMeta(defn, isCodec = true)
+        case _                  => makeRefMeta(defn)
+      }
+    }
+
+    private def makeFullMeta(defn: DomainMember.User, isCodec: Boolean): Seq[TextTree[CSValue.CSType]] = {
+      val fix = metaMethodFlags(defn, isCodec = false)
 
       val adtMethods = defn.id.owner match {
         case Owner.Adt(id) =>
           List(
-            q"""private const String BaboonAdtTypeIdentifierValue = "${id.toString}";
+            q"""public const $csString BaboonAdtTypeIdentifierValue = "${id.toString}";
                |public $csString BaboonAdtTypeIdentifier() => BaboonAdtTypeIdentifierValue;
                |""".stripMargin
           )
@@ -46,17 +64,41 @@ object CSDomainTreeTools {
       val unmodifiedSince = evo.typesUnchangedSince(version)(defn.id)
 
       Seq(
-        q"""private${fix}const String BaboonDomainVersionValue = "${version.version}";
-           |public${fix}String BaboonDomainVersion() => BaboonDomainVersionValue;
+        q"""public${fix}const $csString BaboonDomainVersionValue = "${version.version}";
+           |public$fix$csString BaboonDomainVersion() => BaboonDomainVersionValue;
            |""".stripMargin,
-        q"""private${fix}const String BaboonUnmodifiedSinceVersionValue = "${unmodifiedSince.version}";
-           |public${fix}String BaboonUnmodifiedSinceVersion() => BaboonUnmodifiedSinceVersionValue;
+        q"""public${fix}const $csString BaboonUnmodifiedSinceVersionValue = "${unmodifiedSince.version}";
+           |public$fix$csString BaboonUnmodifiedSinceVersion() => BaboonUnmodifiedSinceVersionValue;
            |""".stripMargin,
-        q"""private${fix}const String BaboonDomainIdentifierValue = "${defn.id.pkg.toString}";
-           |public${fix}String BaboonDomainIdentifier() => BaboonDomainIdentifierValue;
+        q"""public${fix}const $csString BaboonDomainIdentifierValue = "${defn.id.pkg.toString}";
+           |public$fix$csString BaboonDomainIdentifier() => BaboonDomainIdentifierValue;
            |""".stripMargin,
-        q"""private${fix}const String BaboonTypeIdentifierValue = "${defn.id.toString}";
-           |public${fix}String BaboonTypeIdentifier() => BaboonTypeIdentifierValue;
+        q"""public${fix}const $csString BaboonTypeIdentifierValue = "${defn.id.toString}";
+           |public$fix$csString BaboonTypeIdentifier() => BaboonTypeIdentifierValue;
+           |""".stripMargin,
+      ) ++ adtMethods
+    }
+
+    private def makeRefMeta(defn: DomainMember.User): Seq[TextTree[CSValue.CSType]] = {
+      val csType = trans.asCsType(defn.id, domain, evo)
+
+      val adtMethods = defn.id.owner match {
+        case Owner.Adt(_) =>
+          List(
+            q"""public $csString BaboonAdtTypeIdentifier() => $csType.BaboonAdtTypeIdentifierValue;
+               |""".stripMargin
+          )
+        case _ => List.empty
+      }
+
+      Seq(
+        q"""public $csString BaboonDomainVersion() => $csType.BaboonDomainVersionValue;
+           |""".stripMargin,
+        q"""public $csString BaboonUnmodifiedSinceVersion() => $csType.BaboonUnmodifiedSinceVersionValue;
+           |""".stripMargin,
+        q"""public $csString BaboonDomainIdentifier() => $csType.BaboonDomainIdentifierValue;
+           |""".stripMargin,
+        q"""public $csString BaboonTypeIdentifier() => $csType.BaboonTypeIdentifierValue;
            |""".stripMargin,
       ) ++ adtMethods
     }

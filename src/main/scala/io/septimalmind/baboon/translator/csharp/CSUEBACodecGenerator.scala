@@ -176,11 +176,7 @@ class CSUEBACodecGenerator(
        |{
        |    ${methods.join("\n\n").shift(4).trim}
        |
-       |    ${csDomTrees
-        .makeMeta(defn, isCodec = true)
-        .join("\n")
-        .shift(4)
-        .trim}
+       |    ${csDomTrees.makeCodecMeta(defn).join("\n").shift(4).trim}
        |
        |    private static $csLazy<$codecIface> LazyInstance = new $csLazy<$codecIface>(() => new $cName());
        |

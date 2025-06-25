@@ -136,7 +136,7 @@ class CSJsonCodecGenerator(
        |{
        |    ${methods.join("\n\n").shift(4).trim}
        |
-       |    ${csDomTrees.makeMeta(defn, isCodec = true).join("\n").shift(4).trim}
+       |    ${csDomTrees.makeCodecMeta(defn).join("\n").shift(4).trim}
        |
        |    private static $csLazy<$iName> LazyInstance = new $csLazy<$iName>(() => new $cName());
        |
