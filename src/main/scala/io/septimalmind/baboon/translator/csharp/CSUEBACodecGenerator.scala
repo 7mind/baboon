@@ -49,8 +49,8 @@ class CSUEBACodecGenerator(
                |}
                |
                |#pragma warning disable CS0162
-               |${enc.shift(4).trim}
-               |#pragma warning disable CS0162
+               |$enc
+               |#pragma warning enable CS0162
                |""".stripMargin.trim
           val insulatedDec =
             q"""if (this != LazyInstance.Value)
@@ -58,7 +58,7 @@ class CSUEBACodecGenerator(
                |    return LazyInstance.Value.Decode(ctx, wire);
                |}
                |
-               |${dec.shift(4).trim}
+               |$dec
                |""".stripMargin.trim
 
           val branchDecoder = defn.defn match {
