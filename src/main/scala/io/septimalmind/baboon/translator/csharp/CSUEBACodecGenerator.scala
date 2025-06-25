@@ -456,16 +456,16 @@ class CSUEBACodecGenerator(
             val keyType      = trans.asCsRef(c.args.head, domain, evo)
             val valueDecoder = mkDecoder(c.args.last)
             val valueType    = trans.asCsRef(c.args.last, domain, evo)
-            q"""$BaboonTools.ReadDict<$keyType, $valueType>(wire, (wire) => $keyDecoder, (wire) => $valueDecoder)"""
+            q"""$BaboonTools.ReadDict<$keyType, $valueType>(wire, wire => $keyDecoder, wire => $valueDecoder)"""
 //            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(_ => new $csKeyValuePair<$keyType, $valueType>($keyDecoder, $valueDecoder)).${CSTypes.mkDict}"""
 
           case TypeId.Builtins.lst =>
-            q"""$BaboonTools.ReadList(wire, (wire) => ${mkDecoder(c.args.head)})"""
+            q"""$BaboonTools.ReadList(wire, wire => ${mkDecoder(c.args.head)})"""
 
 //            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(_ => ${mkDecoder(c.args.head)}).${CSTypes.mkList}"""
 
           case TypeId.Builtins.set =>
-            q"""$BaboonTools.ReadSet(wire, (wire) => ${mkDecoder(c.args.head)})"""
+            q"""$BaboonTools.ReadSet(wire, wire => ${mkDecoder(c.args.head)})"""
 
 //            q"""$csEnumerable.Range(0, wire.ReadInt32()).Select(_ => ${mkDecoder(c.args.head)}).${CSTypes.mkSet}"""
 

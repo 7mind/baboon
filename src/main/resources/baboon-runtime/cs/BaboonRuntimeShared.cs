@@ -404,7 +404,27 @@ namespace Baboon.Runtime.Shared {
             return token!.Value<JObject>()!.Properties().Select(kv =>
                     new KeyValuePair<TKey, TValue>(dk(kv.Name), dv(kv.Value)))
                 .BbnToDictionary();
-        }        
+        }
+              
+        public static JToken WriteOptionVal<T>(T? value, Func<T, JToken> e) where T:struct
+        {
+            return !value.HasValue ? JValue.CreateNull() : e(value.Value);
+        }
+        
+        public static JToken WriteOptionRef<T>(T? value, Func<T, JToken> e)
+        {
+            return value == null ? JValue.CreateNull() : e(value);
+        }  
+        
+        public static JToken WriteSeq<T>(IEnumerable<T> value, Func<T, JToken> enc)
+        {
+            return new JArray(value.Select(e => enc(e)));
+        }              
+        
+        public static JToken WriteMap<TKey, TValue>(IEnumerable<KeyValuePair<TKey, TValue>> value, Func<KeyValuePair<TKey, TValue>, JProperty> enc)
+        { 
+            return new JObject(value.Select(enc));
+        }           
     }
 
 

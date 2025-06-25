@@ -318,19 +318,25 @@ class CSJsonCodecGenerator(
         c.id match {
           case TypeId.Builtins.opt =>
             if (csTypeInfo.isCSValueType(c.args.head, domain)) {
-              q"!$ref.HasValue ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref))}"
+              q"$BaboonTools.WriteOptionVal($ref, v => ${mkEncoder(c.args.head, q"v")})"
+
+              // q"!$ref.HasValue ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref))}"
             } else {
-              q"$ref == null ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref))}"
+              q"$BaboonTools.WriteOptionRef($ref, v => ${mkEncoder(c.args.head, q"v")})"
+//              q"$ref == null ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref))}"
             }
 
           case TypeId.Builtins.map =>
             val keyEnc   = encodeKey(c.args.head, q"e.Key")
             val valueEnc = mkEncoder(c.args.last, q"e.Value")
-            q"new $nsJObject($ref.Select(e => new $nsJProperty($keyEnc, $valueEnc)))"
+//            q"new $nsJObject($ref.Select(e => new $nsJProperty($keyEnc, $valueEnc)))"
+            q"$BaboonTools.WriteMap($ref, e => new $nsJProperty($keyEnc, $valueEnc))"
+
           case TypeId.Builtins.lst =>
-            q"new $nsJArray($ref.Select(e => ${mkEncoder(c.args.head, q"e")}))"
+//            q"new $nsJArray($ref.Select(e => ${mkEncoder(c.args.head, q"e")}))"
+            q"$BaboonTools.WriteSeq($ref, e => ${mkEncoder(c.args.head, q"e")})"
           case TypeId.Builtins.set =>
-            q"new $nsJArray($ref.Select(e => ${mkEncoder(c.args.head, q"e")}))"
+            q"$BaboonTools.WriteSeq($ref, e => ${mkEncoder(c.args.head, q"e")})"
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }

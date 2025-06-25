@@ -448,11 +448,11 @@ object CSDefnTranslator {
 
             case ComparatorType.SeqEquals(subComparator) =>
 //              q"($ref.Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ ${renderHashcode(itemRef, subComparator, depth + 1)}))"
-              q"$BaboonTools.SeqHashcode($ref, ($itemRef) => ${renderHashcode(itemRef, subComparator, depth + 1)})"
+              q"$BaboonTools.SeqHashcode($ref, $itemRef => ${renderHashcode(itemRef, subComparator, depth + 1)})"
 
             case ComparatorType.SetEquals(subComparator) =>
 //              q"($ref.Select($itemRef => ${renderHashcode(itemRef, subComparator, depth + 1)}).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
-              q"$BaboonTools.SetHashcode($ref, ($itemRef) => ${renderHashcode(itemRef, subComparator, depth + 1)})"
+              q"$BaboonTools.SetHashcode($ref, $itemRef => ${renderHashcode(itemRef, subComparator, depth + 1)})"
 
             case ComparatorType.MapEquals(keyComparator, valComparator) =>
               val hk = renderHashcode(
@@ -462,7 +462,7 @@ object CSDefnTranslator {
               )
 
               val hv = renderHashcode(q"$itemRef", valComparator, depth + 1)
-              q"$BaboonTools.MapHashcode($ref, ($itemRef) => $hk, ($itemRef) => $hv)"
+              q"$BaboonTools.MapHashcode($ref, $itemRef => $hk, $itemRef => $hv)"
 
             // q"($ref.Select($itemRef => HashCode.Combine(${hk}, ${hv})).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, $itemRef) => current ^ $itemRef))"
           }
