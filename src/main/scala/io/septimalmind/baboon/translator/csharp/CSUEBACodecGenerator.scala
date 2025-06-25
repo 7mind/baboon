@@ -554,13 +554,19 @@ class CSUEBACodecGenerator(
   }
 
   override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): CSCodecTranslator.CodecMeta = {
-    val fix = csDomTrees.metaMethodFlags(defn, isCodec = false)
+    if (target.language.generateJsonCodecs) {
+      val fix = csDomTrees.metaMethodFlags(defn, isCodec = false)
 
-    CodecMeta(
-      q"""public$fix$iBaboonBinCodec<$name> Codec_UEBA()
-         |{
-         |    return ${codecName(name)}.Instance;
-         |}""".stripMargin
-    )
+      CodecMeta(
+        q"""public$fix$iBaboonBinCodec<$name> Codec_UEBA()
+           |{
+           |    return ${codecName(name)}.Instance;
+           |}""".stripMargin
+      )
+    } else {
+      CodecMeta(q"")
+    }
   }
+
+  override def isActive: Boolean = target.language.generateUebaCodecs
 }

@@ -52,54 +52,55 @@ object CSCodecTestsTranslator {
 
     private def makeTest(definition: DomainMember.User, srcRef: CSValue.CSType): TextTree[CSValue] = {
       val fixture = makeFixture(definition, domain, evo)
-      codecs.map {
-        case jsonCodec: CSJsonCodecGenerator =>
-          val body = jsonCodecAssertions(jsonCodec, definition, srcRef)
-          q"""[Test]
-             |public void jsonCodecTest()
-             |{
-             |    for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++)
-             |    {
-             |        jsonCodecTestImpl($baboonCodecContext.Default, "default");
-             |    }
-             |}
-             |
-             |private void jsonCodecTestImpl($baboonCodecContext context, $csString clue) {
-             |    ${fixture.shift(4).trim}
-             |    ${body.shift(4).trim}
-             |}
-             |""".stripMargin
+      codecs
+        .filter(_.isActive).map {
+          case jsonCodec: CSJsonCodecGenerator =>
+            val body = jsonCodecAssertions(jsonCodec, definition, srcRef)
+            q"""[Test]
+               |public void jsonCodecTest()
+               |{
+               |    for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++)
+               |    {
+               |        jsonCodecTestImpl($baboonCodecContext.Default, "default");
+               |    }
+               |}
+               |
+               |private void jsonCodecTestImpl($baboonCodecContext context, $csString clue) {
+               |    ${fixture.shift(4).trim}
+               |    ${body.shift(4).trim}
+               |}
+               |""".stripMargin
 
-        case uebaCodec: CSUEBACodecGenerator =>
-          val body = uebaCodecAssertions(uebaCodec, definition, srcRef)
-          q"""[Test]
-             |public void uebaCodecTestNoIndex()
-             |{
-             |    for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++)
-             |    {
-             |        uebaCodecTestImpl($baboonCodecContext.Compact, "compact");
-             |    }
-             |}
-             |
-             |[Test]
-             |public void uebaCodecTestIndexed()
-             |{
-             |    for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++)
-             |    {
-             |        uebaCodecTestImpl($baboonCodecContext.Indexed, "indexed");
-             |    }
-             |}
-             |
-             |private void uebaCodecTestImpl($baboonCodecContext context, $csString clue) {
-             |    ${fixture.shift(4).trim}
-             |    ${body.shift(4).trim}
-             |}
-             |""".stripMargin
+          case uebaCodec: CSUEBACodecGenerator =>
+            val body = uebaCodecAssertions(uebaCodec, definition, srcRef)
+            q"""[Test]
+               |public void uebaCodecTestNoIndex()
+               |{
+               |    for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++)
+               |    {
+               |        uebaCodecTestImpl($baboonCodecContext.Compact, "compact");
+               |    }
+               |}
+               |
+               |[Test]
+               |public void uebaCodecTestIndexed()
+               |{
+               |    for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++)
+               |    {
+               |        uebaCodecTestImpl($baboonCodecContext.Indexed, "indexed");
+               |    }
+               |}
+               |
+               |private void uebaCodecTestImpl($baboonCodecContext context, $csString clue) {
+               |    ${fixture.shift(4).trim}
+               |    ${body.shift(4).trim}
+               |}
+               |""".stripMargin
 
-        case unknown =>
-          logger.message(s"Cannot create codec tests (${unknown.codecName(srcRef)}) for unsupported type $srcRef")
-          q""
-      }.toList.join("\n").shift(2).trim
+          case unknown =>
+            logger.message(s"Cannot create codec tests (${unknown.codecName(srcRef)}) for unsupported type $srcRef")
+            q""
+        }.toList.join("\n").shift(2).trim
     }
 
     private def makeFixture(

@@ -170,7 +170,14 @@ object CSDefnTranslator {
           // generic types are possible, but have bad JIT and il2cpp performance for generic constructors
           val codecsReg = codecs.toList
             .sortBy(_.getClass.getName)
-            .map(codec => q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(srcRef).copy(fq = true)}.Instance)")
+            .map {
+              codec =>
+                if (codec.isActive) {
+                  q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(srcRef).copy(fq = true)}.Instance)"
+                } else {
+                  q"null"
+                }
+            }
           // Generic codec variant have poor performance on empty JIT and il2cpp (for some reason ._.)
           // val codecsReg = codecs.toList
           //   .sortBy(_.getClass.getName)

@@ -443,12 +443,18 @@ class CSJsonCodecGenerator(
   }
 
   override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): CSCodecTranslator.CodecMeta = {
-    val fix = csDomTrees.metaMethodFlags(defn, isCodec = false)
-    val member =
-      q"""public$fix$iBaboonJsonCodec<$name> Codec_JSON()
-         |{
-         |    return ${codecName(name)}.Instance;
-         |}""".stripMargin
-    CodecMeta(member)
+    if (target.language.generateJsonCodecs) {
+      val fix = csDomTrees.metaMethodFlags(defn, isCodec = false)
+      val member =
+        q"""public$fix$iBaboonJsonCodec<$name> Codec_JSON()
+           |{
+           |    return ${codecName(name)}.Instance;
+           |}""".stripMargin
+      CodecMeta(member)
+    } else {
+      CodecMeta(q"")
+    }
   }
+
+  override def isActive: Boolean = target.language.generateJsonCodecs
 }
