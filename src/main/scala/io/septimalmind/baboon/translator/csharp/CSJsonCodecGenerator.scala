@@ -18,56 +18,59 @@ class CSJsonCodecGenerator(
   override def translate(defn: DomainMember.User, csRef: CSValue.CSType, srcRef: CSValue.CSType): Option[TextTree[CSValue]] = {
     val isLatestVersion = domain.version == evo.latest
 
-    (defn.defn match {
-      case d: Typedef.Dto =>
-        Some(genDtoBodies(csRef, d))
-      case _: Typedef.Enum =>
-        Some(genEnumBodies(csRef))
-      case a: Typedef.Adt =>
-        Some(genAdtBodies(csRef, a))
-      case _: Typedef.Foreign =>
-        Some(genForeignBodies(csRef))
-      case _: Typedef.Contract =>
-        None
-      case _: Typedef.Service =>
-        None
-    }).map {
-      case (enc, dec) =>
-        if (!isLatestVersion && !target.language.enableDeprecatedEncoders) {
-          (q"""throw new Exception("Type ${defn.id.toString}@${domain.version.toString} is deprecated, encoder was not generated");""", dec)
-        } else {
-          (enc, dec)
-        }
-    }.map {
-      case (enc, dec) =>
-        // plumbing reference leaks
-        val insulatedEnc =
-          q"""if (this != LazyInstance.Value)
-             |{
-             |    return LazyInstance.Value.Encode(ctx, value);
-             |
-             |}
-             |
-             |${enc.shift(4).trim}
-             |""".stripMargin.trim
+    if (target.language.generateJsonCodecs) {
+      (defn.defn match {
+        case d: Typedef.Dto =>
+          Some(genDtoBodies(csRef, d))
+        case _: Typedef.Enum =>
+          Some(genEnumBodies(csRef))
+        case a: Typedef.Adt =>
+          Some(genAdtBodies(csRef, a))
+        case _: Typedef.Foreign =>
+          Some(genForeignBodies(csRef))
+        case _: Typedef.Contract =>
+          None
+        case _: Typedef.Service =>
+          None
+      }).map {
+        case (enc, dec) =>
+          if (!isLatestVersion && !target.language.enableDeprecatedEncoders) {
+            (q"""throw new Exception("Type ${defn.id.toString}@${domain.version.toString} is deprecated, encoder was not generated");""", dec)
+          } else {
+            (enc, dec)
+          }
+      }.map {
+        case (enc, dec) =>
+          // plumbing reference leaks
+          val insulatedEnc =
+            q"""if (this != LazyInstance.Value)
+               |{
+               |    return LazyInstance.Value.Encode(ctx, value);
+               |}
+               |
+               |$enc
+               |""".stripMargin.trim
 
-        val insulatedDec =
-          q"""if (this != LazyInstance.Value)
-             |{
-             |    return LazyInstance.Value.Decode(ctx, wire);
-             |}
-             |
-             |${dec.shift(4).trim}
-             |""".stripMargin.trim
+          val insulatedDec =
+            q"""if (this != LazyInstance.Value)
+               |{
+               |    return LazyInstance.Value.Decode(ctx, wire);
+               |}
+               |
+               |$dec
+               |""".stripMargin.trim
 
-        genCodec(
-          defn,
-          csRef,
-          srcRef,
-          insulatedEnc,
-          insulatedDec,
-          !defn.defn.isInstanceOf[Typedef.Foreign],
-        )
+          genCodec(
+            defn,
+            csRef,
+            srcRef,
+            insulatedEnc,
+            insulatedDec,
+            !defn.defn.isInstanceOf[Typedef.Foreign],
+          )
+      }
+    } else {
+      None
     }
   }
 
@@ -434,7 +437,6 @@ class CSJsonCodecGenerator(
     }
 
   }
-
 
   def codecName(name: CSValue.CSType): CSValue.CSType = {
     CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq)

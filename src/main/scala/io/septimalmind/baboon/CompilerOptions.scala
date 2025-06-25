@@ -42,6 +42,8 @@ final case class CSOptions(
   disregardImplicitUsings: Boolean,
   enableDeprecatedEncoders: Boolean,
   generateIndexWriters: Boolean,
+  generateJsonCodecs: Boolean,
+  generateUebaCodecs: Boolean,
 )
 
 final case class GenericOptions(

@@ -24,8 +24,8 @@ function run-test() {
              
   pushd .
   cd ./test/cs-stub
-  dotnet build
-  dotnet test BaboonTests/BaboonTests.csproj
+  dotnet build -c Release
+  dotnet test -c Release BaboonTests/BaboonTests.csproj
   popd
   
   pushd .
@@ -62,8 +62,8 @@ function run-test() {
 
   pushd .
   cd ./test/cs-stub
-  dotnet build
-  dotnet test BaboonTests/BaboonTests.csproj
+  dotnet build -c Debug
+  dotnet test -c Debug BaboonTests/BaboonTests.csproj
   popd 
   
   pushd .

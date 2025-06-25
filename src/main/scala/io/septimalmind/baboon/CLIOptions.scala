@@ -60,6 +60,10 @@ case class CsCLIOptions(
   enableDeprecatedEncoders: Option[Boolean],
   @HelpMessage("Generate UEBA index writers")
   generateIndexWriters: Option[Boolean],
+  @HelpMessage("Generate JSON codecs")
+  generateJsonCodecs: Option[Boolean],
+  @HelpMessage("Generate UEBA codecs")
+  generateUebaCodecs: Option[Boolean],
   @HelpMessage("Allow to erase target directory even if files with these extensions exist there. Default: cs,json,meta")
   extAllowCleanup: List[String],
 ) extends SharedCLIOptions

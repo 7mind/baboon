@@ -216,6 +216,7 @@ namespace Baboon.Runtime.Shared {
             var after = (uint)writer.BaseStream.Position;
             var length = after - before;
             Debug.Assert(length == expected);
+            Debug.Assert(after >= before, $"Got after={after}, before={before}");
         }
         
         uint WriteIndexVarLenField(BinaryWriter writer, BinaryWriter fakeWriter, Action doWrite)
@@ -226,6 +227,7 @@ namespace Baboon.Runtime.Shared {
             var length = after - before;
             writer.Write(before);            
             writer.Write(length);
+            Debug.Assert(after >= before, $"Got after={after}, before={before}");
             return length;
         }
     }

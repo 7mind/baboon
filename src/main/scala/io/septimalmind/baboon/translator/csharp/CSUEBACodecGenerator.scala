@@ -24,56 +24,60 @@ class CSUEBACodecGenerator(
   ): Option[TextTree[CSValue]] = {
     val isLatestVersion = domain.version == evo.latest
 
-    (defn.defn match {
-      case d: Typedef.Dto      => Some(genDtoBodies(csRef, d))
-      case e: Typedef.Enum     => Some(genEnumBodies(csRef, e))
-      case a: Typedef.Adt      => Some(genAdtBodies(csRef, a))
-      case _: Typedef.Foreign  => Some(genForeignBodies(csRef))
-      case _: Typedef.Contract => None
-      case _: Typedef.Service  => None
-    }).map {
-      case (enc, dec) =>
-        if (!isLatestVersion && !target.language.enableDeprecatedEncoders) {
-          (q"""throw new Exception("Type ${defn.id.toString}@${domain.version.toString} is deprecated, encoder was not generated");""", dec)
-        } else {
-          (enc, dec)
-        }
-    }.map {
-      case (enc, dec) =>
-        // plumbing reference leaks
-        val insulatedEnc =
-          q"""if (this != LazyInstance.Value)
-             |{
-             |    LazyInstance.Value.Encode(ctx, writer, value);
-             |}
-             |
-             |#pragma warning disable CS0162
-             |${enc.shift(4).trim}
-             |#pragma warning disable CS0162
-             |""".stripMargin.trim
-        val insulatedDec =
-          q"""if (this != LazyInstance.Value)
-             |{
-             |    return LazyInstance.Value.Decode(ctx, wire);
-             |}
-             |
-             |${dec.shift(4).trim}
-             |""".stripMargin.trim
+    if (target.language.generateUebaCodecs) {
+      (defn.defn match {
+        case d: Typedef.Dto      => Some(genDtoBodies(csRef, d))
+        case e: Typedef.Enum     => Some(genEnumBodies(csRef, e))
+        case a: Typedef.Adt      => Some(genAdtBodies(csRef, a))
+        case _: Typedef.Foreign  => Some(genForeignBodies(csRef))
+        case _: Typedef.Contract => None
+        case _: Typedef.Service  => None
+      }).map {
+        case (enc, dec) =>
+          if (!isLatestVersion && !target.language.enableDeprecatedEncoders) {
+            (q"""throw new Exception("Type ${defn.id.toString}@${domain.version.toString} is deprecated, encoder was not generated");""", dec)
+          } else {
+            (enc, dec)
+          }
+      }.map {
+        case (enc, dec) =>
+          // plumbing reference leaks
+          val insulatedEnc =
+            q"""if (this != LazyInstance.Value)
+               |{
+               |    LazyInstance.Value.Encode(ctx, writer, value);
+               |}
+               |
+               |#pragma warning disable CS0162
+               |${enc.shift(4).trim}
+               |#pragma warning disable CS0162
+               |""".stripMargin.trim
+          val insulatedDec =
+            q"""if (this != LazyInstance.Value)
+               |{
+               |    return LazyInstance.Value.Decode(ctx, wire);
+               |}
+               |
+               |${dec.shift(4).trim}
+               |""".stripMargin.trim
 
-        val branchDecoder = defn.defn match {
-          case d: Typedef.Dto => genBranchDecoder(csRef, d)
-          case _              => None
-        }
+          val branchDecoder = defn.defn match {
+            case d: Typedef.Dto => genBranchDecoder(csRef, d)
+            case _              => None
+          }
 
-        genCodec(
-          defn,
-          csRef,
-          srcRef,
-          insulatedEnc,
-          insulatedDec,
-          !defn.defn.isInstanceOf[Typedef.Foreign],
-          branchDecoder,
-        )
+          genCodec(
+            defn,
+            csRef,
+            srcRef,
+            insulatedEnc,
+            insulatedDec,
+            !defn.defn.isInstanceOf[Typedef.Foreign],
+            branchDecoder,
+          )
+      }
+    } else {
+      None
     }
   }
 
@@ -395,7 +399,8 @@ class CSUEBACodecGenerator(
           case v: BinReprLen.Variable =>
             val sanityChecks = v match {
               case BinReprLen.Unknown() =>
-                q"$debug.Assert(after >= before, $$\"Got after={after}, before={before}\");";
+                q"$debug.Assert(length > 0, $$\"Got length={length}\");"
+
               case BinReprLen.Alternatives(variants) =>
                 q"$debug.Assert(new $csSet<uint>() { ${variants.mkString(", ")} }.Contains(length), $$\"Got length={length}\");"
               case BinReprLen.Range(min, max) =>
