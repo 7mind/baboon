@@ -131,7 +131,7 @@ class CSUEBACodecGenerator(
 
     val cName         = codecName(srcRef)
     val codecIface    = q"$iBaboonBinCodec<$name>"
-    val sharedParents = List(q"$baboonSingleton<${cName.asName}>", codecIface, q"$iBaboonBinCodecIndexed")
+    val sharedParents = List(q"$baboonSingleton<$codecIface, ${cName.asName}>", codecIface, q"$iBaboonBinCodecIndexed")
 
     val (parents, methods) = defn.defn match {
       case _: Typedef.Enum =>

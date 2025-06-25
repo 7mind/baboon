@@ -91,7 +91,7 @@ class CSJsonCodecGenerator(
 
     val cName = codecName(srcRef)
 
-    val sharedParents = List(q"$baboonSingleton<${cName.asName}>", iName)
+    val sharedParents = List(q"$baboonSingleton<$iName, ${cName.asName}>", iName)
     val (parents, methods) = defn.defn match {
       case _: Typedef.Enum =>
         (sharedParents, baseMethods)
