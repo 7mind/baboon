@@ -415,17 +415,20 @@ class CSJsonCodecGenerator(
             q"""$BaboonTools.ReadNullableReferentialType($ref, t => ${mkDecoder(args.head, q"t")})"""
 
           case TypeId.Builtins.map =>
-            val keyDec    = decodeKey(args.head, q"kv.Name")
+            val keyDec    = decodeKey(args.head, q"t")
             val keyType   = trans.asCsRef(args.head, domain, evo)
-            val valueDec  = mkDecoder(args.last, q"kv.Value")
+            val valueDec  = mkDecoder(args.last, q"t")
             val valueType = trans.asCsRef(args.last, domain, evo)
-            q"""$ref!.Value<$nsJObject>()!.Properties().Select(kv => new $csKeyValuePair<$keyType, $valueType>($keyDec, $valueDec)).${CSTypes.mkDict}"""
+//            q"""$ref!.Value<$nsJObject>()!.Properties().Select(kv => new $csKeyValuePair<$keyType, $valueType>($keyDec, $valueDec)).${CSTypes.mkDict}"""
+            q"""$BaboonTools.ReadJsonDict<$keyType, $valueType>($ref, t => $keyDec, t => $valueDec)"""
 
           case TypeId.Builtins.lst =>
-            q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(args.head, q"e")}).${CSTypes.mkList}"""
+            // q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(args.head, q"e")}).${CSTypes.mkList}"""
+            q"""$BaboonTools.ReadJsonList($ref, e => ${mkDecoder(args.head, q"e")})"""
 
           case TypeId.Builtins.set =>
-            q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(args.head, q"e")}).${CSTypes.mkSet}"""
+//            q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(args.head, q"e")}).${CSTypes.mkSet}"""
+            q"""$BaboonTools.ReadJsonSet($ref, e => ${mkDecoder(args.head, q"e")})"""
 
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")

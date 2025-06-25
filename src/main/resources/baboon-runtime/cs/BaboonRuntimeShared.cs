@@ -387,7 +387,24 @@ namespace Baboon.Runtime.Shared {
             return Enumerable.Range(0, wire.ReadInt32())
                 .Select(_ => d(wire))
                 .ToImmutableHashSet();
+        }
+        
+        public static List<T> ReadJsonList<T>(JToken? token, Func<JToken, T> d)
+        {
+            return token!.Value<JArray>()!.Select(e => d(e)).BbnToList();
         }            
+        
+        public static ImmutableHashSet<T> ReadJsonSet<T>(JToken? token, Func<JToken, T> d)
+        {
+            return token!.Value<JArray>()!.Select(e => d(e)).ToImmutableHashSet();
+        }
+                   
+        public static Dictionary<TKey, TValue> ReadJsonDict<TKey, TValue>(JToken? token, Func<string, TKey> dk, Func<JToken, TValue> dv) where TKey : notnull
+        {
+            return token!.Value<JObject>()!.Properties().Select(kv =>
+                    new KeyValuePair<TKey, TValue>(dk(kv.Name), dv(kv.Value)))
+                .BbnToDictionary();
+        }        
     }
 
 
