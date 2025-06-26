@@ -46,11 +46,10 @@ class CSUEBACodecGenerator(
             q"""if (this != LazyInstance.Value)
                |{
                |    LazyInstance.Value.Encode(ctx, writer, value);
+               |    return;
                |}
                |
-               |#pragma warning disable CS0162
                |$enc
-               |#pragma warning restore CS0162
                |""".stripMargin.trim
           val insulatedDec =
             q"""if (this != LazyInstance.Value)
