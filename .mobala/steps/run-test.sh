@@ -8,6 +8,7 @@ function run-test() {
   target/graalvm-native-image/baboon \
             --model-dir ./src/test/resources/baboon/ \
             --meta-write-evolution-json baboon-meta.json \
+            \
             :cs \
             --output ./test/cs-stub/BaboonDefinitions/Generated \
             --test-output ./test/cs-stub/BaboonTests/GeneratedTests \
@@ -15,6 +16,7 @@ function run-test() {
             --cs-use-compact-adt-form true \
             --cs-wrapped-adt-branch-codecs false \
             --cs-write-evolution-dict true \
+            \
             :scala \
             --output ./test/sc-stub/src/main/scala/generated-main \
             --test-output ./test/sc-stub/src/test/scala/generated-tests \
@@ -49,7 +51,7 @@ function run-test() {
             --cs-wrapped-adt-branch-codecs true \
             --cs-write-evolution-dict true \
             --generate-ueba-codecs-by-default=true \
-            --generate-json-codecs-by-default=true \          
+            --generate-json-codecs-by-default=true \
             \
             :scala \
             --output ./test/sc-stub/src/main/scala/generated-main \
