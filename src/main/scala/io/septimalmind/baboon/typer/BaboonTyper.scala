@@ -12,6 +12,7 @@ import izumi.fundamentals.graphs.tools.{Toposort, ToposortLoopBreaker}
 import izumi.fundamentals.graphs.{DG, GraphMeta}
 
 import scala.annotation.tailrec
+import scala.collection.mutable
 
 trait BaboonTyper[F[+_, +_]] {
   def process(model: RawDomain): F[NEList[BaboonIssue.TyperIssue], Domain]
@@ -64,10 +65,28 @@ object BaboonTyper {
           id =>
             (id, TypeMeta(shallowSchema(id), deepSchema(id)))
         }.toMap
-        refMeta <- makeRefMeta(graph.meta.nodes)
+        refMeta     <- makeRefMeta(graph.meta.nodes)
+        derivations <- computeDerivations(graph.meta.nodes)
       } yield {
-        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta)
+        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations)
       }
+    }
+
+    private def computeDerivations(
+      defs: Map[TypeId, DomainMember]
+    ): F[NEList[BaboonIssue.TyperIssue], Map[DerivationDecl, Set[TypeId]]] = {
+      import izumi.fundamentals.collections.IzCollections.*
+
+      // extremely inefficient
+      val out = defs.values.collect { case u: DomainMember.User => u }.flatMap {
+        td =>
+          td.derivations.flatMap {
+            d =>
+              enquiries.fullDepsOfDefn(td).map(tid => (d, tid))
+          }
+      }.toMultimap
+
+      F.pure(out)
     }
 
     private def makeRefMeta(

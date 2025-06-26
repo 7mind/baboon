@@ -59,7 +59,7 @@ object CSCodecFixtureTranslator {
     private def doTranslateAdt(adt: Typedef.Adt): TextTree[CSValue] = {
       val members = adt.members.toList
         .flatMap(m => domain.defs.meta.nodes.get(m))
-        .collect { case DomainMember.User(_, d: Typedef.Dto, _) => d }
+        .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
       val membersFixtures = if (target.language.useCompactAdtForm) {
         members.sortBy(_.id.toString).map(dto => doTranslateDto(dto))

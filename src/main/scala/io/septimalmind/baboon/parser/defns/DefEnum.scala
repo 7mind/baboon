@@ -47,8 +47,9 @@ class DefEnum(@unused context: ParserContext, meta: DefMeta) {
   }
 
   def enumEnclosed[$: P]: P[RawEnum] = {
-    P(meta.member(kw.choice, struct.enclosed(defEnum(sepEnum)))).map {
-      case (meta, name, members) => RawEnum(RawTypeName(name), members, meta)
+    import fastparse.ScalaWhitespace.whitespace
+    P(meta.member(kw.choice, meta.derived ~ struct.enclosed(defEnum(sepEnum)))).map {
+      case (meta, name, (derived, members)) => RawEnum(RawTypeName(name), members, derived, meta)
     }
   }
 }

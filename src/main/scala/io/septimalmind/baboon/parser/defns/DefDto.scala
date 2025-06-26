@@ -100,8 +100,9 @@ class DefDto(context: ParserContext, meta: DefMeta) {
   }
 
   def dtoEnclosed[$: P]: P[RawDto] = {
-    P(meta.member(kw.data, struct.enclosed(dto))).map {
-      case (meta, name, members) => RawDto(RawTypeName(name), members, meta)
+    import fastparse.ScalaWhitespace.whitespace
+    P(meta.member(kw.data, meta.derived ~ struct.enclosed(dto))).map {
+      case (meta, name, (derived, members)) => RawDto(RawTypeName(name), members, derived, meta)
     }
   }
 

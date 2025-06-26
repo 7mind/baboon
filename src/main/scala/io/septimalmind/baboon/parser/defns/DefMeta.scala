@@ -1,9 +1,9 @@
 package io.septimalmind.baboon.parser.defns
 
-import fastparse.{EagerOps, Index, P}
+import fastparse.*
 import io.septimalmind.baboon.parser.ParserContext
-import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.defns.base.{idt, kw}
+import io.septimalmind.baboon.parser.model.*
 
 import scala.util.parsing.input.OffsetPosition
 
@@ -39,6 +39,17 @@ class DefMeta(context: ParserContext) {
       case (m, (i, t)) => (m, i, t)
     }
   }
+
+  def derived[T](
+    implicit
+    v: P[?]
+  ): P[Set[DerivationDecl]] = {
+    import fastparse.ScalaWhitespace.whitespace
+    P(LiteralStr(":") ~ (kw.derived ~ LiteralStr("[") ~ idt.symbol ~ LiteralStr("]")).rep(sep = ",")).?.map {
+      s => s.map(s1 => s1.map(DerivationDecl.apply).toSet).getOrElse(Set.empty)
+    }
+  }
+
 }
 
 object DefMeta {

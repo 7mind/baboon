@@ -38,9 +38,10 @@ class DefForeign(@unused context: ParserContext, meta: DefMeta) {
   }
 
   def foreignEnclosed[$: P]: P[RawForeign] = {
-    P(meta.member(kw.foreign, struct.enclosed(foreign))).map {
-      case (meta, name, members) =>
-        model.RawForeign(RawTypeName(name), members.toList, meta)
+    import fastparse.ScalaWhitespace.whitespace
+    P(meta.member(kw.foreign, meta.derived ~ struct.enclosed(foreign))).map {
+      case (meta, name, (derived, members)) =>
+        model.RawForeign(RawTypeName(name), members.toList, derived, meta)
     }
   }
 }

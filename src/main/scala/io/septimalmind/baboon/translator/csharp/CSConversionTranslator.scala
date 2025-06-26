@@ -55,7 +55,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
             direct
           case id: TypeId.User =>
             domain.defs.meta.nodes(id) match {
-              case DomainMember.User(_, _: Typedef.Foreign, _) =>
+              case DomainMember.User(_, _: Typedef.Foreign, _, _) =>
                 direct
               case _ =>
                 conv
@@ -216,7 +216,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
           case c: Conversion.DtoConversion =>
             for {
               newDefn <- domain.defs.meta.nodes(c.sourceTpe) match {
-                case DomainMember.User(_, defn: Typedef.Dto, _) =>
+                case DomainMember.User(_, defn: Typedef.Dto, _, _) =>
                   F.pure(defn)
                 case _ => F.fail(NEList(BaboonIssue.TranslationBug()))
               }

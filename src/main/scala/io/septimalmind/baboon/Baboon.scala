@@ -51,6 +51,8 @@ object Baboon {
                           generateIndexWriters                      = opts.generateIndexWriters.getOrElse(true),
                           generateJsonCodecs                        = opts.generateJsonCodecs.getOrElse(true),
                           generateUebaCodecs                        = opts.generateUebaCodecs.getOrElse(true),
+                          generateJsonCodecsByDefault               = opts.generateJsonCodecsByDefault.getOrElse(false),
+                          generateUebaCodecsByDefault               = opts.generateUebaCodecsByDefault.getOrElse(false),
                         ),
                       )
                   }

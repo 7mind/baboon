@@ -53,7 +53,7 @@ object CSCodecTestsTranslator {
     private def makeTest(definition: DomainMember.User, srcRef: CSValue.CSType): TextTree[CSValue] = {
       val fixture = makeFixture(definition, domain, evo)
       codecs
-        .filter(_.isActive).map {
+        .filter(_.isActive(definition.id)).map {
           case jsonCodec: CSJsonCodecGenerator =>
             val body = jsonCodecAssertions(jsonCodec, definition, srcRef)
             q"""[Test]

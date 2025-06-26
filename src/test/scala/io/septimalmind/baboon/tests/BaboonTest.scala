@@ -50,6 +50,8 @@ abstract class BaboonTest[F[+_, +_]: TagKK: BaboonTestModule] extends Spec2[F]()
                 generateIndexWriters                      = true,
                 generateJsonCodecs                        = true,
                 generateUebaCodecs                        = true,
+                generateJsonCodecsByDefault               = true,
+                generateUebaCodecsByDefault               = true,
               ),
             )
           ),

@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerTarget.CSTarget
+import io.septimalmind.baboon.parser.model.DerivationDecl
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.typer.model.*
@@ -24,7 +25,7 @@ class CSUEBACodecGenerator(
   ): Option[TextTree[CSValue]] = {
     val isLatestVersion = domain.version == evo.latest
 
-    if (target.language.generateUebaCodecs) {
+    if (isActive(defn.id)) {
       (defn.defn match {
         case d: Typedef.Dto      => Some(genDtoBodies(csRef, d))
         case e: Typedef.Enum     => Some(genEnumBodies(csRef, e))
@@ -145,17 +146,17 @@ class CSUEBACodecGenerator(
     val cName = codecName(srcRef)
     val cParent = if (isEncoderEnabled) {
       defn match {
-        case DomainMember.User(_, _: Typedef.Enum, _)    => q"$baboonBinCodecBase<$name, $cName>"
-        case DomainMember.User(_, _: Typedef.Foreign, _) => q"$baboonBinCodecBase<$name, $cName>"
-        case _ if isAdtMember                            => q"$baboonBinCodecBaseGeneratedAdt<$name, $cName>"
-        case _                                           => q"$baboonBinCodecBaseGenerated<$name, $cName>"
+        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonBinCodecBase<$name, $cName>"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonBinCodecBase<$name, $cName>"
+        case _ if isAdtMember                               => q"$baboonBinCodecBaseGeneratedAdt<$name, $cName>"
+        case _                                              => q"$baboonBinCodecBaseGenerated<$name, $cName>"
       }
     } else {
       defn match {
-        case DomainMember.User(_, _: Typedef.Enum, _)    => q"$baboonBinCodecNoEncoder<$name, $cName>"
-        case DomainMember.User(_, _: Typedef.Foreign, _) => q"$baboonBinCodecNoEncoder<$name, $cName>"
-        case _ if isAdtMember                            => q"$baboonBinCodecNoEncoderGeneratedAdt<$name, $cName>"
-        case _                                           => q"$baboonBinCodecNoEncoderGenerated<$name, $cName>"
+        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonBinCodecNoEncoder<$name, $cName>"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonBinCodecNoEncoder<$name, $cName>"
+        case _ if isAdtMember                               => q"$baboonBinCodecNoEncoderGeneratedAdt<$name, $cName>"
+        case _                                              => q"$baboonBinCodecNoEncoderGenerated<$name, $cName>"
       }
     }
 
@@ -537,20 +538,26 @@ class CSUEBACodecGenerator(
     CSValue.CSType(name.pkg, s"${name.name}_UEBACodec", name.fq)
   }
 
-  override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): CSCodecTranslator.CodecMeta = {
-    if (target.language.generateJsonCodecs) {
+  override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): Option[CSCodecTranslator.CodecMeta] = {
+    if (isActive(defn.id)) {
       val fix = csDomTrees.metaMethodFlags(defn, isCodec = false)
 
-      CodecMeta(
-        q"""public$fix$iBaboonBinCodec<$name> Codec_UEBA()
-           |{
-           |    return ${codecName(name)}.Instance;
-           |}""".stripMargin
+      Some(
+        CodecMeta(
+          q"""public$fix$iBaboonBinCodec<$name> Codec_UEBA()
+             |{
+             |    return ${codecName(name)}.Instance;
+             |}""".stripMargin
+        )
       )
     } else {
-      CodecMeta(q"")
+      None
     }
   }
 
-  override def isActive: Boolean = target.language.generateUebaCodecs
+  def isActive(id: TypeId): Boolean = {
+    target.language.generateUebaCodecs &&
+    (target.language.generateUebaCodecsByDefault || domain.derivationRequests.getOrElse(DerivationDecl("ueba"), Set.empty[TypeId]).contains(id))
+  }
+
 }

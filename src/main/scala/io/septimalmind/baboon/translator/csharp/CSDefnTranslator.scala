@@ -165,14 +165,14 @@ object CSDefnTranslator {
       val reg = defn.defn match {
         case _: Typedef.NonDataTypedef =>
           List.empty[(CSType, TextTree[CSValue])]
-        case _ =>
+        case d =>
           // wrap Lazy<Child> -> Lazy<Parent> as C# Lazy do not support type variance
           // generic types are possible, but have bad JIT and il2cpp performance for generic constructors
           val codecsReg = codecs.toList
             .sortBy(_.getClass.getName)
             .map {
               codec =>
-                if (codec.isActive) {
+                if (codec.isActive(d.id)) {
                   q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(srcRef).copy(fq = true)}.Instance)"
                 } else {
                   q"null"
@@ -195,7 +195,7 @@ object CSDefnTranslator {
     private def makeRepr(defn: DomainMember.User, name: CSValue.CSType, isLatestVersion: Boolean): (TextTree[CSValue], List[(CSType, TextTree[CSValue])]) = {
       val genMarker = if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
       val mainMeta  = csDomTrees.makeDataMeta(defn)
-      val codecMeta = codecs.map(_.codecMeta(defn, name).member)
+      val codecMeta = codecs.flatMap(_.codecMeta(defn, name)).map(_.member)
       val meta      = mainMeta ++ codecMeta
 
       defn.defn match {

@@ -29,7 +29,7 @@ root data T1_E1_RET {
     f: T1_E1
 }
 
-data T1_D2 {
+data T1_D2 : derived[json], derived[ueba] {
     f: T1_E1
 }
 

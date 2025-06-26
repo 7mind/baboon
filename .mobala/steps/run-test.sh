@@ -48,6 +48,8 @@ function run-test() {
             --cs-use-compact-adt-form false \
             --cs-wrapped-adt-branch-codecs true \
             --cs-write-evolution-dict true \
+            --generate-ueba-codecs-by-default=true \
+            --generate-json-codecs-by-default=true \          
             \
             :scala \
             --output ./test/sc-stub/src/main/scala/generated-main \

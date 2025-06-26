@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.typer.model
 
-import io.septimalmind.baboon.parser.model.RawNodeMeta
+import io.septimalmind.baboon.parser.model.{DerivationDecl, RawNodeMeta}
 import izumi.fundamentals.collections.nonempty.{NEList, NESet}
 import izumi.fundamentals.graphs.DG
 import izumi.fundamentals.graphs.tools.cycles.LoopDetector
@@ -46,6 +46,7 @@ case class Domain(
   typeMeta: Map[TypeId, TypeMeta],
   loops: Set[LoopDetector.Cycles[TypeId]],
   refMeta: Map[TypeRef, RefMeta],
+  derivationRequests: Map[DerivationDecl, Set[TypeId]],
 ) {
 
   import izumi.fundamentals.platform.strings.IzString.*
@@ -67,7 +68,7 @@ sealed trait DomainMember {
 object DomainMember {
   case class Builtin(id: TypeId.Builtin) extends DomainMember
 
-  case class User(root: Boolean, defn: Typedef.User, meta: RawNodeMeta) extends DomainMember {
+  case class User(root: Boolean, defn: Typedef.User, derivations: Set[DerivationDecl], meta: RawNodeMeta) extends DomainMember {
     def id: TypeId.User = defn.id
   }
 }

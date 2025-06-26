@@ -64,6 +64,10 @@ case class CsCLIOptions(
   generateJsonCodecs: Option[Boolean],
   @HelpMessage("Generate UEBA codecs")
   generateUebaCodecs: Option[Boolean],
+  @HelpMessage("Generate JSON codecs even for types without derived[json]")
+  generateJsonCodecsByDefault: Option[Boolean],
+  @HelpMessage("Generate UEBA codecs even for types without derived[ueba]")
+  generateUebaCodecsByDefault: Option[Boolean],
   @HelpMessage("Allow to erase target directory even if files with these extensions exist there. Default: cs,json,meta")
   extAllowCleanup: List[String],
 ) extends SharedCLIOptions

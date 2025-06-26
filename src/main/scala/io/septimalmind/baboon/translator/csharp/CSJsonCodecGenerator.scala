@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerTarget.CSTarget
+import io.septimalmind.baboon.parser.model.DerivationDecl
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.typer.model.*
@@ -16,9 +17,7 @@ class CSJsonCodecGenerator(
   csTypeInfo: CSTypeInfo,
 ) extends CSCodecTranslator {
   override def translate(defn: DomainMember.User, csRef: CSValue.CSType, srcRef: CSValue.CSType): Option[TextTree[CSValue]] = {
-    val isLatestVersion = domain.version == evo.latest
-
-    if (target.language.generateJsonCodecs) {
+    if (isActive(defn.id)) {
       (defn.defn match {
         case d: Typedef.Dto =>
           Some(genDtoBodies(csRef, d))
@@ -101,17 +100,17 @@ class CSJsonCodecGenerator(
     val cName = codecName(srcRef)
     val cParent = if (isEncoderEnabled) {
       defn match {
-        case DomainMember.User(_, _: Typedef.Enum, _)    => q"$baboonJsonCodecBase<$name, $cName>"
-        case DomainMember.User(_, _: Typedef.Foreign, _) => q"$baboonJsonCodecBase<$name, $cName>"
-        case _ if isAdtMember                            => q"$baboonJsonCodecBaseGeneratedAdt<$name, $cName>"
-        case _                                           => q"$baboonJsonCodecBaseGenerated<$name, $cName>"
+        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecBase<$name, $cName>"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecBase<$name, $cName>"
+        case _ if isAdtMember                               => q"$baboonJsonCodecBaseGeneratedAdt<$name, $cName>"
+        case _                                              => q"$baboonJsonCodecBaseGenerated<$name, $cName>"
       }
     } else {
       defn match {
-        case DomainMember.User(_, _: Typedef.Enum, _)    => q"$baboonJsonCodecNoEncoder<$name, $cName>"
-        case DomainMember.User(_, _: Typedef.Foreign, _) => q"$baboonJsonCodecNoEncoder<$name, $cName>"
-        case _ if isAdtMember                            => q"$baboonJsonCodecNoEncoderGeneratedAdt<$name, $cName>"
-        case _                                           => q"$baboonJsonCodecNoEncoderGenerated<$name, $cName>"
+        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecNoEncoder<$name, $cName>"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecNoEncoder<$name, $cName>"
+        case _ if isAdtMember                               => q"$baboonJsonCodecNoEncoderGeneratedAdt<$name, $cName>"
+        case _                                              => q"$baboonJsonCodecNoEncoderGenerated<$name, $cName>"
       }
     }
 
@@ -431,19 +430,22 @@ class CSJsonCodecGenerator(
     CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq)
   }
 
-  override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): CSCodecTranslator.CodecMeta = {
-    if (target.language.generateJsonCodecs) {
+  override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): Option[CSCodecTranslator.CodecMeta] = {
+    if (isActive(defn.id)) {
       val fix = csDomTrees.metaMethodFlags(defn, isCodec = false)
       val member =
         q"""public$fix$iBaboonJsonCodec<$name> Codec_JSON()
            |{
            |    return ${codecName(name)}.Instance;
            |}""".stripMargin
-      CodecMeta(member)
+      Some(CodecMeta(member))
     } else {
-      CodecMeta(q"")
+      None
     }
   }
 
-  override def isActive: Boolean = target.language.generateJsonCodecs
+  def isActive(id: TypeId): Boolean = {
+    target.language.generateJsonCodecs && (target.language.generateJsonCodecsByDefault || domain.derivationRequests
+      .getOrElse(DerivationDecl("json"), Set.empty[TypeId]).contains(id))
+  }
 }

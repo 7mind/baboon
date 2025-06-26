@@ -44,6 +44,8 @@ final case class CSOptions(
   generateIndexWriters: Boolean,
   generateJsonCodecs: Boolean,
   generateUebaCodecs: Boolean,
+  generateUebaCodecsByDefault: Boolean,
+  generateJsonCodecsByDefault: Boolean,
 )
 
 final case class GenericOptions(

@@ -26,7 +26,7 @@ object BaboonRules {
     override def compute(prev: Domain, last: Domain, diff: BaboonDiff): F[NEList[BaboonIssue.EvolutionIssue], BaboonRuleset] = {
       for {
         conversions <- F.traverseAccumErrors(prev.defs.meta.nodes.collect {
-          case (id: TypeId.User, DomainMember.User(_, defn, _)) =>
+          case (id: TypeId.User, DomainMember.User(_, defn, _, _)) =>
             (id, defn)
         }.toList) {
           case (id, defn) =>
@@ -202,7 +202,7 @@ object BaboonRules {
           case c: CustomConversionRequired => c
         }.size
         val trivial = total - user
-
+        
         logger.message(
           last.id.toString,
           q"${prev.version}->${last.version}: conversions: $total, derived: $trivial, to be implemented: $user",
