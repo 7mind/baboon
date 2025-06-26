@@ -88,7 +88,7 @@ object CSDomainTreeTools {
     }
 
     private def makeRefMeta(defn: DomainMember.User): Seq[TextTree[CSValue.CSType]] = {
-      val csType = trans.asCsType(defn.id, domain, evo)
+      val csType = trans.asCsType(defn.id, domain, evo).fullyQualified
 
       val adtMethods = defn.id.owner match {
         case Owner.Adt(_) =>
