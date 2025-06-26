@@ -343,23 +343,45 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
 
   private def sharedRuntime(): Out[List[CSDefnTranslator.Output]] = {
     if (target.output.products.contains(CompilerProduct.Runtime)) {
-      val sharedOutput = CSDefnTranslator.Output(
-        s"BaboonRuntimeShared.cs",
-        TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonRuntimeShared.cs").get),
-        CSTypes.baboonRuntimePkg,
-        CompilerProduct.Runtime,
-        doNotModify = true,
+      F.pure(
+        List(
+          CSDefnTranslator.Output(
+            s"BaboonRuntimeShared.cs",
+            TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonRuntimeShared.cs").get),
+            CSTypes.baboonRuntimePkg,
+            CompilerProduct.Runtime,
+            doNotModify = true,
+          ),
+          CSDefnTranslator.Output(
+            s"BaboonCodecs.cs",
+            TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonCodecs.cs").get),
+            CSTypes.baboonRuntimePkg,
+            CompilerProduct.Runtime,
+            doNotModify = true,
+          ),
+          CSDefnTranslator.Output(
+            s"BaboonConversions.cs",
+            TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonConversions.cs").get),
+            CSTypes.baboonRuntimePkg,
+            CompilerProduct.Runtime,
+            doNotModify = true,
+          ),
+          CSDefnTranslator.Output(
+            s"BaboonTools.cs",
+            TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonTools.cs").get),
+            CSTypes.baboonRuntimePkg,
+            CompilerProduct.Runtime,
+            doNotModify = true,
+          ),
+          CSDefnTranslator.Output(
+            s"BaboonTime.cs",
+            TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonTime.cs").get),
+            CSTypes.baboonTimePkg,
+            CompilerProduct.Runtime,
+            doNotModify = true,
+          ),
+        )
       )
-
-      val timeOutput = CSDefnTranslator.Output(
-        s"BaboonTime.cs",
-        TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonTime.cs").get),
-        CSTypes.baboonTimePkg,
-        CompilerProduct.Runtime,
-        doNotModify = true,
-      )
-
-      F.pure(List(sharedOutput, timeOutput))
     } else {
       F.pure(List.empty)
     }
