@@ -302,21 +302,14 @@ class CSJsonCodecGenerator(
           case TypeId.Builtins.opt =>
             if (csTypeInfo.isCSValueType(c.args.head, domain)) {
               q"$BaboonTools.WriteOptionVal($ref, v => ${mkEncoder(c.args.head, q"v")})"
-
-              // q"!$ref.HasValue ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref))}"
             } else {
               q"$BaboonTools.WriteOptionRef($ref, v => ${mkEncoder(c.args.head, q"v")})"
-//              q"$ref == null ? $nsJValue.CreateNull() : ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref))}"
             }
-
           case TypeId.Builtins.map =>
             val keyEnc   = encodeKey(c.args.head, q"e.Key")
             val valueEnc = mkEncoder(c.args.last, q"e.Value")
-//            q"new $nsJObject($ref.Select(e => new $nsJProperty($keyEnc, $valueEnc)))"
             q"$BaboonTools.WriteMap($ref, e => new $nsJProperty($keyEnc, $valueEnc))"
-
           case TypeId.Builtins.lst =>
-//            q"new $nsJArray($ref.Select(e => ${mkEncoder(c.args.head, q"e")}))"
             q"$BaboonTools.WriteSeq($ref, e => ${mkEncoder(c.args.head, q"e")})"
           case TypeId.Builtins.set =>
             q"$BaboonTools.WriteSeq($ref, e => ${mkEncoder(c.args.head, q"e")})"
@@ -408,15 +401,12 @@ class CSJsonCodecGenerator(
             val keyType   = trans.asCsRef(args.head, domain, evo)
             val valueDec  = mkDecoder(args.last, q"t")
             val valueType = trans.asCsRef(args.last, domain, evo)
-//            q"""$ref!.Value<$nsJObject>()!.Properties().Select(kv => new $csKeyValuePair<$keyType, $valueType>($keyDec, $valueDec)).${CSTypes.mkDict}"""
             q"""$BaboonTools.ReadJsonDict<$keyType, $valueType>($ref, t => $keyDec, t => $valueDec)"""
 
           case TypeId.Builtins.lst =>
-            // q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(args.head, q"e")}).${CSTypes.mkList}"""
             q"""$BaboonTools.ReadJsonList($ref, e => ${mkDecoder(args.head, q"e")})"""
 
           case TypeId.Builtins.set =>
-//            q"""$ref!.Value<$nsJArray>()!.Select(e => ${mkDecoder(args.head, q"e")}).${CSTypes.mkSet}"""
             q"""$BaboonTools.ReadJsonSet($ref, e => ${mkDecoder(args.head, q"e")})"""
 
           case o =>
