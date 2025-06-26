@@ -1,3 +1,5 @@
+#nullable enable
+
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -18,6 +20,8 @@ using Newtonsoft.Json.Linq;
 // ReSharper disable ReplaceAutoPropertyWithComputedProperty
 // ReSharper disable ArrangeNamespaceBody
 // ReSharper disable UnusedType.Global
+// ReSharper disable InconsistentNaming
+// ReSharper disable ClassCanBeSealed.Global
 
 namespace Baboon.Runtime.Shared {
     public static class BaboonEnumerable
@@ -83,9 +87,9 @@ namespace Baboon.Runtime.Shared {
             if (obj is IBaboonGenerated bgf)
             {
                 var tid = TypeId();
-                var conversionTypeIsExactType = tid == bgf.BaboonTypeIdentifier(); 
+                var conversionTypeIsExactType = tid == bgf.BaboonTypeIdentifier();
                 if (obj is IBaboonAdtMemberMeta bga) {
-                    var conversionTypeIsAdtType = tid == bga.BaboonAdtTypeIdentifier(); 
+                    var conversionTypeIsAdtType = tid == bga.BaboonAdtTypeIdentifier();
                     if (!conversionTypeIsAdtType && !conversionTypeIsExactType)
                     {
                         throw new ArgumentException($"Provided instance is adt={bga.BaboonAdtTypeIdentifier()} exact={bgf.BaboonTypeIdentifier()} one of which must be {tid}");
@@ -97,10 +101,10 @@ namespace Baboon.Runtime.Shared {
                     throw new ArgumentException($"Provided instance is {bgf.BaboonTypeIdentifier()} but must be {tid}");
                 }
             }
-        
+
         }
         public TTo Convert<TCtx>(TCtx? context, AbstractBaboonConversions conversions, TFrom from) {
-            ValidateBaboonType(from);            
+            ValidateBaboonType(from);
             var result = DoConvert(context, conversions, from);
             ValidateBaboonType(result);
             return result;
@@ -173,6 +177,75 @@ namespace Baboon.Runtime.Shared {
     {
     }
 
+    public static class IBaboonJsonCodec
+    {
+        public abstract class Base<T, TCodec> : BaboonSingleton<IBaboonJsonCodec<T>, TCodec>, IBaboonJsonCodec<T>
+            where TCodec : IBaboonJsonCodec<T>, new()
+        {
+            public abstract string BaboonDomainVersion();
+            public abstract string BaboonDomainIdentifier();
+            public abstract string BaboonTypeIdentifier();
+
+            public abstract JToken Encode(BaboonCodecContext ctx, T instance);
+            public abstract T Decode(BaboonCodecContext ctx, JToken wire);
+        }
+
+        public abstract class BaseGenerated<T, TCodec> : Base<T, TCodec>, IBaboonJsonCodec<IBaboonGenerated>
+            where T : IBaboonGenerated
+            where TCodec : IBaboonJsonCodec<T>, new()
+        {
+            public virtual JToken Encode(BaboonCodecContext ctx, IBaboonGenerated value)
+            {
+                if (value is not T cast) throw new Exception($"Expected to have {(typeof(T)).Name} type");
+                return Encode(ctx, cast);
+            }
+
+            IBaboonGenerated IBaboonValueCodec<IBaboonGenerated, JToken>.Decode(BaboonCodecContext ctx, JToken wire)
+            {
+                return Decode(ctx, wire);
+            }
+        }
+
+        public abstract class BaseGeneratedAdt<T, TCodec> : BaseGenerated<T, TCodec>, IBaboonAdtMemberMeta
+            where T : IBaboonGenerated
+            where TCodec : IBaboonJsonCodec<T>, new()
+        {
+            public abstract string BaboonAdtTypeIdentifier();
+        }
+
+        public abstract class NoEncoder<T, TCodec> : Base<T, TCodec>
+            where TCodec : IBaboonJsonCodec<T>, new()
+        {
+            public override JToken Encode(BaboonCodecContext ctx, T instance)
+            {
+                if (this != LazyInstance.Value) return LazyInstance.Value.Encode(ctx, instance);
+                throw new Exception($"Type {BaboonTypeIdentifier()}@{{{BaboonDomainVersion()}}} is deprecated, encoder was not generated.");
+            }
+        }
+
+        public abstract class NoEncoderGenerated<T, TCodec> : BaseGenerated<T, TCodec>
+            where T : IBaboonGenerated
+            where TCodec : IBaboonJsonCodec<T>, new()
+        {
+            public override JToken Encode(BaboonCodecContext ctx, T instance)
+            {
+                if (this != LazyInstance.Value) return LazyInstance.Value.Encode(ctx, instance);
+                throw new Exception($"Type {BaboonTypeIdentifier()}@{{{BaboonDomainVersion()}}} is deprecated, encoder was not generated.");
+            }
+        }
+
+        public abstract class NoEncoderGeneratedAdt<T, TCodec> : BaseGeneratedAdt<T, TCodec>
+            where T : IBaboonGenerated
+            where TCodec : IBaboonJsonCodec<T>, new()
+        {
+            public override JToken Encode(BaboonCodecContext ctx, T instance)
+            {
+                if (this != LazyInstance.Value) return LazyInstance.Value.Encode(ctx, instance);
+                throw new Exception($"Type {BaboonTypeIdentifier()}@{{{BaboonDomainVersion()}}} is deprecated, encoder was not generated.");
+            }
+        }
+    }
+
     public interface IBaboonStreamCodec<T, in TOut, in TIn> : IBaboonCodec<T>
     {
         void Encode(BaboonCodecContext ctx, TOut writer, T instance);
@@ -209,7 +282,7 @@ namespace Baboon.Runtime.Shared {
             }
             return result;
         }
-        
+
         void WriteIndexFixedLenField(BinaryWriter writer, int expected, Action doWrite)
         {
             var before = (uint)writer.BaseStream.Position;
@@ -219,14 +292,14 @@ namespace Baboon.Runtime.Shared {
             Debug.Assert(length == expected);
             Debug.Assert(after >= before, $"Got after={after}, before={before}");
         }
-        
+
         uint WriteIndexVarLenField(BinaryWriter writer, BinaryWriter fakeWriter, Action doWrite)
         {
             var before = (uint)fakeWriter.BaseStream.Position;
             doWrite();
             var after = (uint)fakeWriter.BaseStream.Position;
             var length = after - before;
-            writer.Write(before);            
+            writer.Write(before);
             writer.Write(length);
             Debug.Assert(after >= before, $"Got after={after}, before={before}");
             return length;
@@ -251,6 +324,88 @@ namespace Baboon.Runtime.Shared {
         {
             var ctx = BaboonCodecContext.Default;
             return Decode(ctx, wire);
+        }
+    }
+
+    public static class IBaboonBinCodec
+    {
+        public abstract class Base<T, TCodec> : BaboonSingleton<IBaboonBinCodec<T>, TCodec>, IBaboonBinCodec<T>, IBaboonBinCodecIndexed
+            where TCodec : IBaboonBinCodec<T>, new()
+        {
+            public abstract string BaboonDomainVersion();
+            public abstract string BaboonDomainIdentifier();
+            public abstract string BaboonTypeIdentifier();
+
+            public abstract void Encode(BaboonCodecContext ctx, BinaryWriter writer, T instance);
+            public abstract T Decode(BaboonCodecContext ctx, BinaryReader wire);
+            public abstract ushort IndexElementsCount(BaboonCodecContext ctx);
+
+            public virtual void Encode(BaboonCodecContext ctx, BinaryWriter writer, IBaboonGenerated value)
+            {
+                if (value is not T cast) throw new Exception($"Expected to have {typeof(T).Name} type");
+                Encode(ctx, writer, cast);
+            }
+        }
+
+        public abstract class BaseGenerated<T, TCodec> : Base<T, TCodec>, IBaboonBinCodec<IBaboonGenerated>
+            where T : IBaboonGenerated
+            where TCodec : IBaboonBinCodec<T>, new()
+        {
+            IBaboonGenerated IBaboonStreamCodec<IBaboonGenerated, BinaryWriter, BinaryReader>.Decode(BaboonCodecContext ctx, BinaryReader wire)
+            {
+                return Decode(ctx, wire);
+            }
+        }
+
+        public abstract class BaseGeneratedAdt<T, TCodec> : BaseGenerated<T, TCodec>, IBaboonAdtMemberMeta
+            where T : IBaboonGenerated
+            where TCodec : IBaboonBinCodec<T>, new()
+        {
+            public abstract string BaboonAdtTypeIdentifier();
+        }
+
+        public abstract class NoEncoder<T, TCodec> : Base<T, TCodec>
+            where TCodec : IBaboonBinCodec<T>, new()
+        {
+            public override void Encode(BaboonCodecContext ctx, BinaryWriter writer, T instance)
+            {
+                if (this == LazyInstance.Value)
+                {
+                    throw new Exception($"Type {BaboonTypeIdentifier()}@{{{BaboonDomainVersion()}}} is deprecated, encoder was not generated.");
+                }
+
+                LazyInstance.Value.Encode(ctx, writer, instance);
+            }
+        }
+
+        public abstract class NoEncoderGenerated<T, TCodec> : BaseGenerated<T, TCodec>
+            where T : IBaboonGenerated
+            where TCodec : IBaboonBinCodec<T>, new()
+        {
+            public override void Encode(BaboonCodecContext ctx, BinaryWriter writer, T instance)
+            {
+                if (this == LazyInstance.Value)
+                {
+                    throw new Exception($"Type {BaboonTypeIdentifier()}@{{{BaboonDomainVersion()}}} is deprecated, encoder was not generated.");
+                }
+
+                LazyInstance.Value.Encode(ctx, writer, instance);
+            }
+        }
+
+        public abstract class NoEncoderGeneratedAdt<T, TCodec> : BaseGeneratedAdt<T, TCodec>
+            where T : IBaboonGenerated
+            where TCodec : IBaboonBinCodec<T>, new()
+        {
+            public override void Encode(BaboonCodecContext ctx, BinaryWriter writer, T instance)
+            {
+                if (this == LazyInstance.Value)
+                {
+                    throw new Exception($"Type {BaboonTypeIdentifier()}@{{{BaboonDomainVersion()}}} is deprecated, encoder was not generated.");
+                }
+
+                LazyInstance.Value.Encode(ctx, writer, instance);
+            }
         }
     }
 
@@ -321,110 +476,110 @@ namespace Baboon.Runtime.Shared {
             if (token == null || token.Type == JTokenType.Null) return null;
             return readValue(token);
         }
-        
+
         public static int OptionHashcode<T>(T? value, Func<T, int> mk)
         {
             return value == null ? 0 : mk(value);
         }
-        
+
         public static int SeqHashcode<T>(IEnumerable<T> value, Func<T, int> mk)
         {
              return value.Aggregate(0x1EAFDEAD, (current, item) => current ^ mk(item));
         }
-        
+
         public static int SetHashcode<T>(ISet<T> value, Func<T, int> mk)
         {
              return value.Select(item => mk(item)).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, item) => current ^ item);
         }
-        
+
         public static int MapHashcode<TKey, TValue>(IEnumerable<KeyValuePair<TKey, TValue>> value, Func<TKey, int> mkk, Func<TValue, int> mkv) {
             return (value.Select(item0 => HashCode.Combine(mkk(item0.Key), mkv(item0.Value))).OrderBy(c => c).Aggregate(0x1EAFDEAD, (current, item0) => current ^ item0));
         }
-        
+
         public static bool MapEquals<TKey, TValue>(IReadOnlyDictionary<TKey, TValue> left, IReadOnlyDictionary<TKey, TValue> right, Func<TValue, TValue, bool> cmp)
         {
             return (left.Count == right.Count && left.Keys.All(right.ContainsKey) &&
                     left.Keys.All(key => cmp(left[key], right[key])));
         }
-        
+
         public static bool MapEquals<TKey, TValue>(IDictionary<TKey, TValue> left, IDictionary<TKey, TValue> right, Func<TValue, TValue, bool> cmp)
         {
             return (left.Count == right.Count && left.Keys.All(right.ContainsKey) &&
                     left.Keys.All(key => cmp(left[key], right[key])));
         }
-        
+
         public static bool OptionEquals<T>(T? left, T? right, Func<T, T, bool> cmp)
         {
             return Equals(left, right) || (left != null && right != null && cmp(left, right));
         }
-        
+
         public static bool SeqEquals<T>(IList<T> left, IList<T> right, Func<T, T, bool> cmp)
         {
             return left.SequenceEqual(right) || (left.Count == right.Count && (left.Zip(right, (r, l) => (r, l)).All(t => cmp(t.Item1, t.Item2))));
         }
-        
+
         public static bool SeqEquals<T>(IReadOnlyList<T> left, IReadOnlyList<T> right, Func<T, T, bool> cmp)
         {
             return left.SequenceEqual(right) || (left.Count == right.Count && (left.Zip(right, (r, l) => (r, l)).All(t => cmp(t.Item1, t.Item2))));
         }
-        
+
         public static Dictionary<TKey, TValue> ReadDict<TKey, TValue>(BinaryReader wire, Func<BinaryReader, TKey> kd, Func<BinaryReader, TValue> vd) where TKey : notnull
         {
             return Enumerable.Range(0, wire.ReadInt32())
                 .Select(_ => new KeyValuePair<TKey, TValue>(kd(wire), vd(wire)))
                 .BbnToDictionary();
         }
-                
+
         public static List<T> ReadList<T>(BinaryReader wire, Func<BinaryReader, T> d)
         {
             return Enumerable.Range(0, wire.ReadInt32())
                 .Select(_ => d(wire))
                 .BbnToList();
         }
-        
+
         public static ImmutableHashSet<T> ReadSet<T>(BinaryReader wire, Func<BinaryReader, T> d)
         {
             return Enumerable.Range(0, wire.ReadInt32())
                 .Select(_ => d(wire))
                 .ToImmutableHashSet();
         }
-        
+
         public static List<T> ReadJsonList<T>(JToken? token, Func<JToken, T> d)
         {
             return token!.Value<JArray>()!.Select(e => d(e)).BbnToList();
-        }            
-        
+        }
+
         public static ImmutableHashSet<T> ReadJsonSet<T>(JToken? token, Func<JToken, T> d)
         {
             return token!.Value<JArray>()!.Select(e => d(e)).ToImmutableHashSet();
         }
-                   
+
         public static Dictionary<TKey, TValue> ReadJsonDict<TKey, TValue>(JToken? token, Func<string, TKey> dk, Func<JToken, TValue> dv) where TKey : notnull
         {
             return token!.Value<JObject>()!.Properties().Select(kv =>
                     new KeyValuePair<TKey, TValue>(dk(kv.Name), dv(kv.Value)))
                 .BbnToDictionary();
         }
-              
+
         public static JToken WriteOptionVal<T>(T? value, Func<T, JToken> e) where T:struct
         {
             return !value.HasValue ? JValue.CreateNull() : e(value.Value);
         }
-        
+
         public static JToken WriteOptionRef<T>(T? value, Func<T, JToken> e)
         {
             return value == null ? JValue.CreateNull() : e(value);
-        }  
-        
+        }
+
         public static JToken WriteSeq<T>(IEnumerable<T> value, Func<T, JToken> enc)
         {
             return new JArray(value.Select(e => enc(e)));
-        }              
-        
+        }
+
         public static JToken WriteMap<TKey, TValue>(IEnumerable<KeyValuePair<TKey, TValue>> value, Func<KeyValuePair<TKey, TValue>, JProperty> enc)
-        { 
+        {
             return new JObject(value.Select(enc));
-        }           
+        }
     }
 
 
@@ -455,7 +610,7 @@ namespace Baboon.Runtime.Shared {
             TypeFrom = typeFrom;
             TypeTo = typeTo;
         }
-        
+
         public override string ToString()
         {
             return $"{TypeFrom}=>{TypeTo}";
@@ -539,7 +694,7 @@ namespace Baboon.Runtime.Shared {
         {
             return ConvertWithContext<object, TFrom, TTo>(null, from);
         }
-        
+
         public sealed class ConvertDslFrom<TFrom>
             where TFrom : IBaboonGenerated
         {
@@ -548,11 +703,11 @@ namespace Baboon.Runtime.Shared {
 
             public ConvertDslFrom(TFrom from, AbstractBaboonConversions convs)
             {
-                this._from = from;
-                this._convs = convs;
+                _from = from;
+                _convs = convs;
             }
 
-            public TTo To<TTo>() 
+            public TTo To<TTo>()
                 where TTo : IBaboonGenerated
             {
                 return _convs.Convert<TFrom, TTo>(_from);
@@ -565,37 +720,37 @@ namespace Baboon.Runtime.Shared {
             return new ConvertDslFrom<TFrom>(from, this);
         }
     }
-    
+
     public abstract record Either<TLeft, TRight>
     {
         private Either() {}
-    
+
         public sealed record Left(TLeft Value) : Either<TLeft, TRight>;
-    
+
         public sealed record Right(TRight Value) : Either<TLeft, TRight>;
     }
-    
+
     public static class Either
     {
         public static Either<TLeft, TRight> Left<TLeft, TRight>(TLeft value) => new Either<TLeft, TRight>.Left(value);
         public static Either<TLeft, TRight> Right<TLeft, TRight>(TRight value) => new Either<TLeft, TRight>.Right(value);
     }
-    
+
     public class Unit
     {
         private Unit() { }
         public static readonly Unit Default = new Unit();
-    
+
         public override string ToString()
         {
             return "()";
         }
     }
-    
+
     public static class BaboonTestTools {
         public static void WriteBinaryFile(string filePath, byte[] data)
         {
-            string directoryPath = Path.GetDirectoryName(filePath);
+            var directoryPath = Path.GetDirectoryName(filePath);
             if (!string.IsNullOrEmpty(directoryPath) && !Directory.Exists(directoryPath))
             {
                 Directory.CreateDirectory(directoryPath);
@@ -604,8 +759,14 @@ namespace Baboon.Runtime.Shared {
         }
     }
 
-    public abstract class BaboonSingleton<T, IMPL>  where IMPL : T, new() {
+    public abstract class BaboonSingleton<T, IMPL> where IMPL : T, new()
+    {
         protected static Lazy<T> LazyInstance = new Lazy<T>(() => new IMPL());
-        public static T Instance { get { return LazyInstance.Value; } set { LazyInstance = new Lazy<T>(() => value); } }
+
+        public static T Instance
+        {
+            get => LazyInstance.Value;
+            set { LazyInstance = new Lazy<T>(() => value); }
+        }
     }
 }

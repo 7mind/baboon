@@ -48,7 +48,8 @@ object CSDomainTreeTools {
     }
 
     private def makeFullMeta(defn: DomainMember.User, isCodec: Boolean): Seq[TextTree[CSValue.CSType]] = {
-      val fix = metaMethodFlags(defn, isCodec = false)
+      val propFix = metaMethodFlags(defn, isCodec)
+      val methodFix = propFix + (if (isCodec) "override " else "")
 
       val adtMethods = defn.id.owner match {
         case Owner.Adt(id) =>
@@ -61,22 +62,29 @@ object CSDomainTreeTools {
       }
 
       val version         = domain.version
-      val unmodifiedSince = evo.typesUnchangedSince(version)(defn.id)
+
+      val unmodifiedMethods = if (!isCodec) {
+        val unmodifiedSince = evo.typesUnchangedSince(version)(defn.id)
+        List(
+          q"""public${propFix}const $csString BaboonUnmodifiedSinceVersionValue = "${unmodifiedSince.version}";
+             |public$methodFix$csString BaboonUnmodifiedSinceVersion() => BaboonUnmodifiedSinceVersionValue;
+             |""".stripMargin,
+        )
+      } else {
+        List.empty
+      }
 
       Seq(
-        q"""public${fix}const $csString BaboonDomainVersionValue = "${version.version}";
-           |public$fix$csString BaboonDomainVersion() => BaboonDomainVersionValue;
+        q"""public${propFix}const $csString BaboonDomainVersionValue = "${version.version}";
+           |public$methodFix$csString BaboonDomainVersion() => BaboonDomainVersionValue;
            |""".stripMargin,
-        q"""public${fix}const $csString BaboonUnmodifiedSinceVersionValue = "${unmodifiedSince.version}";
-           |public$fix$csString BaboonUnmodifiedSinceVersion() => BaboonUnmodifiedSinceVersionValue;
+        q"""public${propFix}const $csString BaboonDomainIdentifierValue = "${defn.id.pkg.toString}";
+           |public$methodFix$csString BaboonDomainIdentifier() => BaboonDomainIdentifierValue;
            |""".stripMargin,
-        q"""public${fix}const $csString BaboonDomainIdentifierValue = "${defn.id.pkg.toString}";
-           |public$fix$csString BaboonDomainIdentifier() => BaboonDomainIdentifierValue;
+        q"""public${propFix}const $csString BaboonTypeIdentifierValue = "${defn.id.toString}";
+           |public$methodFix$csString BaboonTypeIdentifier() => BaboonTypeIdentifierValue;
            |""".stripMargin,
-        q"""public${fix}const $csString BaboonTypeIdentifierValue = "${defn.id.toString}";
-           |public$fix$csString BaboonTypeIdentifier() => BaboonTypeIdentifierValue;
-           |""".stripMargin,
-      ) ++ adtMethods
+      ) ++ unmodifiedMethods ++ adtMethods
     }
 
     private def makeRefMeta(defn: DomainMember.User): Seq[TextTree[CSValue.CSType]] = {
@@ -85,20 +93,18 @@ object CSDomainTreeTools {
       val adtMethods = defn.id.owner match {
         case Owner.Adt(_) =>
           List(
-            q"""public $csString BaboonAdtTypeIdentifier() => $csType.BaboonAdtTypeIdentifierValue;
+            q"""public override $csString BaboonAdtTypeIdentifier() => $csType.BaboonAdtTypeIdentifierValue;
                |""".stripMargin
           )
         case _ => List.empty
       }
 
       Seq(
-        q"""public $csString BaboonDomainVersion() => $csType.BaboonDomainVersionValue;
+        q"""public override $csString BaboonDomainVersion() => $csType.BaboonDomainVersionValue;
            |""".stripMargin,
-        q"""public $csString BaboonUnmodifiedSinceVersion() => $csType.BaboonUnmodifiedSinceVersionValue;
+        q"""public override $csString BaboonDomainIdentifier() => $csType.BaboonDomainIdentifierValue;
            |""".stripMargin,
-        q"""public $csString BaboonDomainIdentifier() => $csType.BaboonDomainIdentifierValue;
-           |""".stripMargin,
-        q"""public $csString BaboonTypeIdentifier() => $csType.BaboonTypeIdentifierValue;
+        q"""public override $csString BaboonTypeIdentifier() => $csType.BaboonTypeIdentifierValue;
            |""".stripMargin,
       ) ++ adtMethods
     }

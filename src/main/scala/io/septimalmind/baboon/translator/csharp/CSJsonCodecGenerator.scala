@@ -34,13 +34,6 @@ class CSJsonCodecGenerator(
           None
       }).map {
         case (enc, dec) =>
-          if (!isLatestVersion && !target.language.enableDeprecatedEncoders) {
-            (q"""throw new Exception("Type ${defn.id.toString}@${domain.version.toString} is deprecated, encoder was not generated");""", dec)
-          } else {
-            (enc, dec)
-          }
-      }.map {
-        case (enc, dec) =>
           // plumbing reference leaks
           val insulatedEnc =
             q"""if (this != LazyInstance.Value)
@@ -66,7 +59,6 @@ class CSJsonCodecGenerator(
             srcRef,
             insulatedEnc,
             insulatedDec,
-            !defn.defn.isInstanceOf[Typedef.Foreign],
           )
       }
     } else {
@@ -74,66 +66,58 @@ class CSJsonCodecGenerator(
     }
   }
 
-  private def genCodec(defn: DomainMember.User, name: CSValue.CSType, srcRef: CSValue.CSType, enc: TextTree[CSValue], dec: TextTree[CSValue], addExtensions: Boolean)
-    : TextTree[CSValue] = {
-    val iName = q"$iBaboonJsonCodec<$name>"
-    val baseMethods = List(
-      q"""public virtual $nsJToken Encode($baboonCodecContext ctx, $name value)
-         |{
-         |    ${enc.shift(4).trim}
-         |}
-         |
-         |public virtual $name Decode($baboonCodecContext ctx, $nsJToken wire)
+  private def genCodec(
+    defn: DomainMember.User,
+    name: CSValue.CSType,
+    srcRef: CSValue.CSType,
+    enc: TextTree[CSValue],
+    dec: TextTree[CSValue],
+  ): TextTree[CSValue] = {
+    val isEncoderEnabled = target.language.enableDeprecatedEncoders || domain.version == evo.latest
+    val isAdtMember = defn.id.owner match {
+      case Owner.Adt(_) => true
+      case _            => false
+    }
+
+    val encoderMethods = if (isEncoderEnabled) {
+      List(
+        q"""public override $nsJToken Encode($baboonCodecContext ctx, $name value)
+           |{
+           |    ${enc.shift(4).trim}
+           |}
+           |""".stripMargin
+      )
+    } else {
+      List.empty
+    }
+
+    val decoderMethods = List(
+      q"""public override $name Decode($baboonCodecContext ctx, $nsJToken wire)
          |{
          |    ${dec.shift(4).trim}
          |}""".stripMargin
     )
 
     val cName = codecName(srcRef)
-
-    val sharedParents = List(q"$baboonSingleton<$iName, ${cName.asName}>", iName)
-    val (parents, methods) = defn.defn match {
-      case _: Typedef.Enum =>
-        (sharedParents, baseMethods)
-      case _ =>
-        val extensions = List(
-          q"""public virtual $nsJToken Encode($baboonCodecContext ctx, $iBaboonGenerated value)
-             |{
-             |    if (value is not $name dvalue)
-             |    {
-             |        throw new Exception("Expected to have ${name.name} type");
-             |    }
-             |    return Encode(ctx, dvalue);
-             |}""".stripMargin,
-          q"""$iBaboonGenerated IBaboonValueCodec<$iBaboonGenerated, $nsJToken>.Decode($baboonCodecContext ctx, $nsJToken wire)
-             |{
-             |    return Decode(ctx, wire);
-             |}""".stripMargin,
-        )
-
-        val adtParents = defn.id.owner match {
-          case Owner.Adt(_) => List(q"$iBaboonAdtMemberMeta")
-          case _            => List.empty
-
-        }
-        val extParents = List(q"$iBaboonJsonCodec<$iBaboonGenerated>") ++ adtParents
-
-        val mm = if (addExtensions) {
-          baseMethods ++ extensions
-        } else {
-          baseMethods
-        }
-
-        val pp = if (addExtensions) {
-          sharedParents ++ extParents
-        } else {
-          sharedParents
-        }
-
-        (pp, mm)
+    val cParent = if (isEncoderEnabled) {
+      defn match {
+        case DomainMember.User(_, _: Typedef.Enum, _)    => q"$baboonJsonCodecBase<$name, $cName>"
+        case DomainMember.User(_, _: Typedef.Foreign, _) => q"$baboonJsonCodecBase<$name, $cName>"
+        case _ if isAdtMember                            => q"$baboonJsonCodecBaseGeneratedAdt<$name, $cName>"
+        case _                                           => q"$baboonJsonCodecBaseGenerated<$name, $cName>"
+      }
+    } else {
+      defn match {
+        case DomainMember.User(_, _: Typedef.Enum, _)    => q"$baboonJsonCodecNoEncoder<$name, $cName>"
+        case DomainMember.User(_, _: Typedef.Foreign, _) => q"$baboonJsonCodecNoEncoder<$name, $cName>"
+        case _ if isAdtMember                            => q"$baboonJsonCodecNoEncoderGeneratedAdt<$name, $cName>"
+        case _                                           => q"$baboonJsonCodecNoEncoderGenerated<$name, $cName>"
+      }
     }
 
-    q"""public class ${cName.asName} : ${parents.join(", ")}
+    val methods = encoderMethods ++ decoderMethods
+
+    q"""public class ${cName.asName} : $cParent
        |{
        |    ${methods.join("\n\n").shift(4).trim}
        |

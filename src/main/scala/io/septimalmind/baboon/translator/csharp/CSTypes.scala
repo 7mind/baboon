@@ -53,6 +53,20 @@ object CSTypes {
   val abstractBaboonCodecs: CSType = CSType(baboonRuntimePkg, "AbstractBaboonCodecs", fq = false)
   val baboonSingleton: CSType      = CSType(baboonRuntimePkg, "BaboonSingleton", fq = false)
 
+  val baboonJsonCodecBase: CSType                  = CSType(baboonRuntimePkg, "IBaboonJsonCodec.Base", fq = false)
+  val baboonJsonCodecBaseGenerated: CSType         = CSType(baboonRuntimePkg, "IBaboonJsonCodec.BaseGenerated", fq = false)
+  val baboonJsonCodecBaseGeneratedAdt: CSType      = CSType(baboonRuntimePkg, "IBaboonJsonCodec.BaseGeneratedAdt", fq = false)
+  val baboonJsonCodecNoEncoder: CSType             = CSType(baboonRuntimePkg, "IBaboonJsonCodec.NoEncoder", fq = false)
+  val baboonJsonCodecNoEncoderGenerated: CSType    = CSType(baboonRuntimePkg, "IBaboonJsonCodec.NoEncoderGenerated", fq = false)
+  val baboonJsonCodecNoEncoderGeneratedAdt: CSType = CSType(baboonRuntimePkg, "IBaboonJsonCodec.NoEncoderGeneratedAdt", fq = false)
+
+  val baboonBinCodecBase: CSType                  = CSType(baboonRuntimePkg, "IBaboonBinCodec.Base", fq = false)
+  val baboonBinCodecBaseGenerated: CSType         = CSType(baboonRuntimePkg, "IBaboonBinCodec.BaseGenerated", fq = false)
+  val baboonBinCodecBaseGeneratedAdt: CSType      = CSType(baboonRuntimePkg, "IBaboonBinCodec.BaseGeneratedAdt", fq = false)
+  val baboonBinCodecNoEncoder: CSType             = CSType(baboonRuntimePkg, "IBaboonBinCodec.NoEncoder", fq = false)
+  val baboonBinCodecNoEncoderGenerated: CSType    = CSType(baboonRuntimePkg, "IBaboonBinCodec.NoEncoderGenerated", fq = false)
+  val baboonBinCodecNoEncoderGeneratedAdt: CSType = CSType(baboonRuntimePkg, "IBaboonBinCodec.NoEncoderGeneratedAdt", fq = false)
+
   val either: CSType = CSType(baboonRuntimePkg, "Either", fq = false)
   val unit: CSType   = CSType(baboonRuntimePkg, "Unit", fq = false)
 
