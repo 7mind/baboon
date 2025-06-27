@@ -24,8 +24,7 @@ Stripped-down experimental DML with schema evolution support and garbage collect
 2. Only Enums, DTOs and ADTs
 3. Nominal inheritance support is limited to trait model
 4. Generic/type constructor support is limited to builtin collections
-5. (*) This is a DML, not an IDL, it does not support service/interface definitions
-6. (*) Currently only C# cogen target is supported
+5. (*) This is a DML, not an IDL, service/interface definitions support is extremely limited at the moment
 7. (*) Comments are not preserved in the cogen output
 8. (*) No structural inheritance information is preserved in the transpiler output
 9. (*) Only integer constants may be associated with enum members
