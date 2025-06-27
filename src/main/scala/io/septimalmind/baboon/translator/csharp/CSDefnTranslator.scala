@@ -22,6 +22,7 @@ trait CSDefnTranslator[F[+_, +_]] {
 
 object CSDefnTranslator {
   case class CodecReg(
+    typeId: TypeId,
     tpe: CSType,
     tpeKeepForeigns: CSType,
     tpeId: TextTree[CSValue],
@@ -73,10 +74,17 @@ object CSDefnTranslator {
       // Generic codec variant have poor performance on empty JIT and il2cpp (for some reason ._.)
       // val registrations = reg.map { case (srcRef, reg) => q"Register(new $baboonTypeCodecs<${srcRef.fullyQualified}>($reg));" }.join("\n")
       val registrations = Option(repr.codecs.map {
-        case CodecReg(_, tpeKeepForeigns, tpeid, reg) =>
+        case CodecReg(i, _, tpeKeepForeigns, tpeid, reg) =>
           val codecsReg = codecs.toList
             .sortBy(_.getClass.getName)
-            .map(codec => q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(tpeKeepForeigns).copy(fq = true)}.LazyInstance)")
+            .flatMap {
+              codec =>
+                if (codec.isActive(i)) {
+                  List(q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(tpeKeepForeigns).copy(fq = true)}.Instance)")
+                } else {
+                  List(q"null")
+                }
+            }
 
           val regcall =
             (List(q"""\"${defn.id.toString}\"""") ++ codecsReg).join(", ")
@@ -205,7 +213,7 @@ object CSDefnTranslator {
           //   .map(codec => q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(srcRef).copy(fq = true)}.LazyInstance)")
 //          val reg =
 //            (List(q"""\"${defn.id.toString}\"""") ++ codecsReg).join(", ")
-          List(CodecReg(csTypeRef, srcRef, q"""\"${defn.id.toString}\"""", codecsReg.toMap))
+          List(CodecReg(defn.id, csTypeRef, srcRef, q"""\"${defn.id.toString}\"""", codecsReg.toMap))
       }
 
       val allRegs = reg ++ repr.codecs
