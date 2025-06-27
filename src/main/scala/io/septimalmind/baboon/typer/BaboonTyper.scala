@@ -97,10 +97,8 @@ object BaboonTyper {
       // extremely inefficient
       val out = defs.values.collect { case u: DomainMember.User => u }.flatMap {
         td =>
-          td.derivations.flatMap {
-            d =>
-              recursiveDepsOfDefn(defs,td).map(tid => (d, tid))
-          }
+          val deps = Set(td.id) ++ recursiveDepsOfDefn(defs, td)
+          td.derivations.flatMap(d => deps.map(tid => (d, tid)))
       }.toMultimap
 
       F.pure(out)

@@ -21,7 +21,7 @@ data T1_D2 {
     f1: opt[T1_E1]    
 }
 
-root data T1_D1 {
+root data T1_D1 : derived[json] {
  f0: T1_D2
  f1: i08
  f3: str
@@ -53,7 +53,7 @@ root data T3_D1 {
 
 //
 
-root adt T4_A1 {
+root adt T4_A1 : derived[json] {
    data B1 {
        f: T3_D1
    }

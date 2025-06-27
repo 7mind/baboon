@@ -106,7 +106,7 @@ root adt VaultState {
     }
 }
 
-root data T1_D1 {
+root data T1_D1 : derived[json] {
  f0: T1_D2
  f1: i08
  f3: str
@@ -141,7 +141,7 @@ contract S1 {
   f1: str
 }
 
-root adt T4_A1 {
+root adt T4_A1 : derived[json] {
    is S1
 
    contract S2 {
