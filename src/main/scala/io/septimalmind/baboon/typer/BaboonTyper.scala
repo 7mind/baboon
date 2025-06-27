@@ -72,6 +72,23 @@ object BaboonTyper {
       }
     }
 
+    def recursiveDepsOfDefn(defs: Map[TypeId, DomainMember], defn: DomainMember): Set[TypeId] = {
+      val out = mutable.HashSet.empty[TypeId]
+      doRrecursiveDepsOfDefn(defs, defn, out)
+      out.toSet
+    }
+
+    def doRrecursiveDepsOfDefn(defs: Map[TypeId, DomainMember], defn: DomainMember, seen: mutable.Set[TypeId]): Unit = {
+      val notYetSeen = enquiries.fullDepsOfDefn(defn).diff(seen)
+      seen.addAll(notYetSeen)
+
+      notYetSeen.foreach {
+        id =>
+          doRrecursiveDepsOfDefn(defs, defs(id), seen)
+      }
+
+    }
+
     private def computeDerivations(
       defs: Map[TypeId, DomainMember]
     ): F[NEList[BaboonIssue.TyperIssue], Map[DerivationDecl, Set[TypeId]]] = {
@@ -82,7 +99,7 @@ object BaboonTyper {
         td =>
           td.derivations.flatMap {
             d =>
-              enquiries.fullDepsOfDefn(td).map(tid => (d, tid))
+              recursiveDepsOfDefn(defs,td).map(tid => (d, tid))
           }
       }.toMultimap
 
