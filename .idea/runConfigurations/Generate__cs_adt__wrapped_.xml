@@ -1,0 +1,16 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Generate (cs/adt: wrapped)" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="io.septimalmind.baboon.Baboon" />
+    <module name="baboon" />
+    <option name="PROGRAM_PARAMETERS" value="--model-dir=./src/test/resources/baboon/ --meta-write-evolution-json=baboon-meta.json :cs --output=./test/cs-stub/BaboonDefinitions/Generated --test-output=./test/cs-stub/BaboonTests/GeneratedTests --fixture-output=./test/cs-stub/BaboonTests/GeneratedFixtures --cs-wrapped-adt-branch-codecs=true --cs-write-evolution-dict=true --generate-ueba-codecs-by-default=true --generate-json-codecs-by-default=true :scala --output=./test/sc-stub/src/main/scala/generated-main --test-output=./test/sc-stub/src/test/scala/generated-tests --fixture-output=./test/sc-stub/src/main/scala/generated-fixtures --sc-write-evolution-dict=true --sc-wrapped-adt-branch-codecs=false" />
+    <extension name="coverage">
+      <pattern>
+        <option name="PATTERN" value="io.septimalmind.baboon.*" />
+        <option name="ENABLED" value="false" />
+      </pattern>
+    </extension>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
