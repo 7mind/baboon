@@ -438,4 +438,6 @@ class CSJsonCodecGenerator(
     target.language.generateJsonCodecs && (target.language.generateJsonCodecsByDefault || domain.derivationRequests
       .getOrElse(DerivationDecl("json"), Set.empty[TypeId]).contains(id))
   }
+
+  override def id: String = "json"
 }

@@ -21,9 +21,15 @@ trait CSDefnTranslator[F[+_, +_]] {
 }
 
 object CSDefnTranslator {
+  case class CodecReg(
+    tpe: CSType,
+    tpeKeepForeigns: CSType,
+    tpeId: TextTree[CSValue],
+    trees: Map[String, TextTree[CSValue]],
+  )
   case class DefnRepr(
     defn: TextTree[CSValue],
-    codecs: List[(CSType, TextTree[CSValue])],
+    codecs: List[CodecReg],
   )
 
   case class Output(
@@ -66,7 +72,17 @@ object CSDefnTranslator {
 
       // Generic codec variant have poor performance on empty JIT and il2cpp (for some reason ._.)
       // val registrations = reg.map { case (srcRef, reg) => q"Register(new $baboonTypeCodecs<${srcRef.fullyQualified}>($reg));" }.join("\n")
-      val registrations = Option(repr.codecs.map { case (_, reg) => q"Register(new $baboonTypeCodecs($reg));" }).filterNot(_.isEmpty).map(_.join("\n"))
+      val registrations = Option(repr.codecs.map {
+        case CodecReg(_, tpeKeepForeigns, tpeid, reg) =>
+          val codecsReg = codecs.toList
+            .sortBy(_.getClass.getName)
+            .map(codec => q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(tpeKeepForeigns).copy(fq = true)}.LazyInstance)")
+
+          val regcall =
+            (List(q"""\"${defn.id.toString}\"""") ++ codecsReg).join(", ")
+
+          q"Register(new $baboonTypeCodecs($regcall));"
+      }).filterNot(_.isEmpty).map(_.join("\n"))
 
       F.pure(
         List(
@@ -169,27 +185,27 @@ object CSDefnTranslator {
 
       val reg = defn.defn match {
         case _: Typedef.NonDataTypedef =>
-          List.empty[(CSType, TextTree[CSValue])]
+          List.empty[CodecReg]
         case d =>
           // wrap Lazy<Child> -> Lazy<Parent> as C# Lazy do not support type variance
           // generic types are possible, but have bad JIT and il2cpp performance for generic constructors
           val codecsReg = codecs.toList
             .sortBy(_.getClass.getName)
-            .map {
+            .flatMap {
               codec =>
                 if (codec.isActive(d.id)) {
-                  q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(srcRef).copy(fq = true)}.Instance)"
+                  List(codec.id -> q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(srcRef).copy(fq = true)}.Instance)")
                 } else {
-                  q"null"
+                  List.empty
                 }
             }
           // Generic codec variant have poor performance on empty JIT and il2cpp (for some reason ._.)
           // val codecsReg = codecs.toList
           //   .sortBy(_.getClass.getName)
           //   .map(codec => q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(srcRef).copy(fq = true)}.LazyInstance)")
-          val reg =
-            (List(q"""\"${defn.id.toString}\"""") ++ codecsReg).join(", ")
-          List(csTypeRef -> reg)
+//          val reg =
+//            (List(q"""\"${defn.id.toString}\"""") ++ codecsReg).join(", ")
+          List(CodecReg(csTypeRef, srcRef, q"""\"${defn.id.toString}\"""", codecsReg.toMap))
       }
 
       val allRegs = reg ++ repr.codecs

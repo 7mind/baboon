@@ -552,4 +552,5 @@ class CSUEBACodecGenerator(
     (target.language.generateUebaCodecsByDefault || domain.derivationRequests.getOrElse(DerivationDecl("ueba"), Set.empty[TypeId]).contains(id))
   }
 
+  override def id: String = "ueba"
 }
