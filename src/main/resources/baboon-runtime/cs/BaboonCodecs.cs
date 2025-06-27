@@ -309,29 +309,21 @@ namespace Baboon.Runtime.Shared
     public interface IBaboonTypeCodecs
     {
         public string Id { get; }
-        public IBaboonCodecData Json { get; }
-        public IBaboonCodecData Ueba { get; }
+        public IBaboonCodecData Impl { get; }
     }
 
-    public sealed record BaboonTypeCodecs(string Id, Lazy<IBaboonCodecData> LazyJson, Lazy<IBaboonCodecData> LazyUeba) : IBaboonTypeCodecs
+    public sealed record BaboonTypeCodecs(string Id, Lazy<IBaboonCodecData> LazyValue) : IBaboonTypeCodecs
     {
-        public IBaboonCodecData Json => LazyJson.Value;
-        public IBaboonCodecData Ueba => LazyUeba.Value;
-    }
-
-    public sealed record BaboonTypeCodecs<T>(string Id, Lazy<IBaboonJsonCodec<T>> LazyJson, Lazy<IBaboonBinCodec<T>> LazyUeba) : IBaboonTypeCodecs
-    {
-        public IBaboonCodecData Json => LazyJson.Value;
-        public IBaboonCodecData Ueba => LazyUeba.Value;
+        public IBaboonCodecData Impl => LazyValue.Value;
     }
 
     public abstract class AbstractBaboonCodecs
     {
         private readonly Dictionary<string, IBaboonTypeCodecs> _codecs = new();
 
-        public void Register(IBaboonTypeCodecs impls)
+        public void Register(string id, Lazy<IBaboonCodecData> impl)
         {
-            _codecs[impls.Id] = impls;
+            _codecs[id] = new BaboonTypeCodecs(id, impl);
         }
 
         public IBaboonTypeCodecs Find(string id)

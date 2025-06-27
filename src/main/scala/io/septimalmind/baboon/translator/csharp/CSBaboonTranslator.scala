@@ -303,19 +303,26 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
            |    }
            |}""".stripMargin
 
-      val codecs =
-        q"""public sealed class BaboonCodecs : $abstractBaboonCodecs
-           |{
-           |    private BaboonCodecs()
-           |    {
-           |        ${defnOut.flatMap(_.codecReg).join("\n").shift(8).trim}
-           |    }
-           |
-           |    private static readonly $csLazy<BaboonCodecs> LazyInstance = new $csLazy<BaboonCodecs>(() => new BaboonCodecs());
-           |
-           |    public static BaboonCodecs Instance { get { return LazyInstance.Value; } }
-           |}""".stripMargin
+      import izumi.fundamentals.collections.IzCollections.*
 
+      val regsMap = defnOut.flatMap(_.codecReg).toMultimap.view.mapValues(_.flatten).toMap
+
+      val codecs = regsMap.map {
+        case (codecid, regs) =>
+          val nme = q"BaboonCodecs${codecid.capitalize}"
+          q"""public sealed class $nme : $abstractBaboonCodecs
+             |{
+             |    private $nme()
+             |    {
+             |        ${regs.toList.map(r => q"Register($r);").join("\n").shift(8).trim}
+             |    }
+             |
+             |    private static readonly $csLazy<$nme> LazyInstance = new $csLazy<$nme>(() => new $nme());
+             |
+             |    public static $nme Instance { get { return LazyInstance.Value; } }
+             |}""".stripMargin
+      }.toList.join("\n\n")
+      
       val basename = csFiles.basename(domain, lineage.evolution)
 
       val runtimeSource = Seq(converter, codecs).join("\n\n")

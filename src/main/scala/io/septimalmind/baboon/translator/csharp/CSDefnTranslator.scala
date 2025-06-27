@@ -38,8 +38,8 @@ object CSDefnTranslator {
     tree: TextTree[CSValue],
     pkg: CSPackageId,
     product: CompilerProduct,
-    doNotModify: Boolean                = false,
-    codecReg: Option[TextTree[CSValue]] = None,
+    doNotModify: Boolean                              = false,
+    codecReg: List[(String, List[TextTree[CSValue]])] = List.empty,
   )
 //  case class OutputExt(output: Output, codecReg: TextTree[CSValue])
 
@@ -70,16 +70,15 @@ object CSDefnTranslator {
 
     private def doTranslate(defn: DomainMember.User): Out[List[Output]] = {
       val repr = makeFullRepr(defn, inNs = true)
-
-      // Generic codec variant have poor performance on empty JIT and il2cpp (for some reason ._.)
-      // val registrations = reg.map { case (srcRef, reg) => q"Register(new $baboonTypeCodecs<${srcRef.fullyQualified}>($reg));" }.join("\n")
-      val registrations = Option(repr.codecs.map {
-        case CodecReg(i, _, tpeKeepForeigns, tpeid, reg) =>
-          val jsonCodec = reg.getOrElse("json", q"null")
-          val uebaCodec = reg.getOrElse("ueba", q"null")
-          val regcall   = q"$tpeid, $jsonCodec, $uebaCodec"
-          q"Register(new $baboonTypeCodecs($regcall));"
-      }).filterNot(_.isEmpty).map(_.join("\n"))
+      
+      val regsPerCodec = codecs.toList.map {
+        c =>
+          val regs = repr.codecs.flatMap {
+            reg =>
+              reg.trees.get(c.id).map(expr => q"${reg.tpeId}, $expr")
+          }
+          (c.id, regs)
+      }
 
       F.pure(
         List(
@@ -88,7 +87,7 @@ object CSDefnTranslator {
             repr.defn,
             trans.toCsPkg(domain.id, domain.version, evo),
             CompilerProduct.Definition,
-            codecReg = registrations,
+            codecReg = regsPerCodec,
           )
         )
       )
