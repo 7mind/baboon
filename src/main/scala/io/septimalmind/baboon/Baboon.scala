@@ -44,7 +44,6 @@ object Baboon {
                           omitMostRecentVersionSuffixFromPaths      = opts.generic.omitMostRecentVersionSuffixFromPaths.getOrElse(true),
                           omitMostRecentVersionSuffixFromNamespaces = opts.generic.omitMostRecentVersionSuffixFromNamespaces.getOrElse(true),
                           disregardImplicitUsings                   = !opts.csExcludeGlobalUsings.getOrElse(false),
-                          useCompactAdtForm                         = opts.csUseCompactAdtForm.getOrElse(true),
                           wrappedAdtBranchCodecs                    = opts.csWrappedAdtBranchCodecs.getOrElse(false),
                           writeEvolutionDict                        = opts.csWriteEvolutionDict.getOrElse(false),
                           enableDeprecatedEncoders                  = opts.enableDeprecatedEncoders.getOrElse(false),

@@ -6,11 +6,7 @@ import io.septimalmind.baboon.typer.model.*
 
 class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
   def adtNsName(id: TypeId.User): String = {
-    if (target.language.useCompactAdtForm) {
-      id.name.name
-    } else {
-      id.name.name.toLowerCase
-    }
+    id.name.name
   }
 
   def isCSValueType(tpe: TypeRef, domain: Domain): Boolean = {

@@ -61,19 +61,11 @@ object CSCodecFixtureTranslator {
         .flatMap(m => domain.defs.meta.nodes.get(m))
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
-      val membersFixtures = if (target.language.useCompactAdtForm) {
-        members.sortBy(_.id.toString).map(dto => doTranslateDto(dto))
-      } else {
-        List.empty[TextTree[CSValue]]
-      }
+      val membersFixtures = members.sortBy(_.id.toString).map(dto => doTranslateDto(dto))
 
       val membersGenerators = members.sortBy(_.id.toString).map[TextTree[CSValue]] {
         dto =>
-          val memberFixture = if (target.language.useCompactAdtForm) {
-            q"${dto.id.name.name}"
-          } else {
-            q"${translator.asCsTypeKeepForeigns(dto.id, domain, evo)}"
-          }
+          val memberFixture = q"${dto.id.name.name}"
           q"${memberFixture}_Fixture.Random()"
       }
 

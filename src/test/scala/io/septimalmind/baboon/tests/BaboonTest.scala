@@ -41,7 +41,6 @@ abstract class BaboonTest[F[+_, +_]: TagKK: BaboonTestModule] extends Spec2[F]()
               language = CSOptions(
                 obsoleteErrors                            = false,
                 writeEvolutionDict                        = true,
-                useCompactAdtForm                         = true,
                 wrappedAdtBranchCodecs                    = true,
                 disregardImplicitUsings                   = true,
                 omitMostRecentVersionSuffixFromPaths      = true,

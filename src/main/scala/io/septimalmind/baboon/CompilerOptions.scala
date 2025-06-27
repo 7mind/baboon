@@ -36,7 +36,6 @@ final case class CSOptions(
   obsoleteErrors: Boolean,
   omitMostRecentVersionSuffixFromPaths: Boolean,
   omitMostRecentVersionSuffixFromNamespaces: Boolean,
-  useCompactAdtForm: Boolean,
   wrappedAdtBranchCodecs: Boolean,
   writeEvolutionDict: Boolean,
   disregardImplicitUsings: Boolean,

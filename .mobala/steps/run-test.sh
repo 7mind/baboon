@@ -13,9 +13,10 @@ function run-test() {
             --output ./test/cs-stub/BaboonDefinitions/Generated \
             --test-output ./test/cs-stub/BaboonTests/GeneratedTests \
             --fixture-output ./test/cs-stub/BaboonTests/GeneratedFixtures \
-            --cs-use-compact-adt-form true \
             --cs-wrapped-adt-branch-codecs false \
             --cs-write-evolution-dict true \
+            --generate-ueba-codecs-by-default=true \
+            --generate-json-codecs-by-default=true \            
             \
             :scala \
             --output ./test/sc-stub/src/main/scala/generated-main \
@@ -47,7 +48,6 @@ function run-test() {
             --output ./test/cs-stub/BaboonDefinitions/Generated \
             --test-output ./test/cs-stub/BaboonTests/GeneratedTests \
             --fixture-output ./test/cs-stub/BaboonTests/GeneratedFixtures \
-            --cs-use-compact-adt-form false \
             --cs-wrapped-adt-branch-codecs true \
             --cs-write-evolution-dict true \
             --generate-ueba-codecs-by-default=true \

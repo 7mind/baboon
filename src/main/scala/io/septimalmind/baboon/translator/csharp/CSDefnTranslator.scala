@@ -63,14 +63,14 @@ object CSDefnTranslator {
 
     override def translate(defn: DomainMember.User): Out[List[Output]] = {
       defn.id.owner match {
-        case Owner.Adt(_) if target.language.useCompactAdtForm => F.pure(List.empty)
-        case _                                                 => doTranslate(defn)
+        case Owner.Adt(_) => F.pure(List.empty)
+        case _            => doTranslate(defn)
       }
     }
 
     private def doTranslate(defn: DomainMember.User): Out[List[Output]] = {
       val repr = makeFullRepr(defn, inNs = true)
-      
+
       val regsPerCodec = codecs.toList.map {
         c =>
           val regs = repr.codecs.flatMap {
@@ -95,8 +95,8 @@ object CSDefnTranslator {
 
     override def translateFixtures(defn: DomainMember.User): Out[List[Output]] = {
       defn.id.owner match {
-        case Owner.Adt(_) if target.language.useCompactAdtForm => F.pure(List.empty)
-        case _                                                 => doTranslateFixtures(defn)
+        case Owner.Adt(_) => F.pure(List.empty)
+        case _            => doTranslateFixtures(defn)
       }
     }
 
@@ -116,8 +116,8 @@ object CSDefnTranslator {
 
     override def translateTests(defn: DomainMember.User): Out[List[Output]] = {
       defn.id.owner match {
-        case Owner.Adt(_) if target.language.useCompactAdtForm => F.pure(List.empty)
-        case _                                                 => doTranslateTest(defn)
+        case Owner.Adt(_) => F.pure(List.empty)
+        case _            => doTranslateTest(defn)
       }
     }
 
@@ -332,47 +332,38 @@ object CSDefnTranslator {
               q"public abstract $tpe $mname { get; init; }"
           }.join("\n")
 
-          if (target.language.useCompactAdtForm) {
-            val memberTrees = adt.members.map {
-              mid =>
-                domain.defs.meta.nodes.get(mid) match {
-                  case Some(mdefn: DomainMember.User) =>
-                    makeFullRepr(mdefn, inNs = false)
-                  case m =>
-                    throw new RuntimeException(
-                      s"BUG: missing/wrong adt member: $mid => $m"
-                    )
-                }
-            }
-
-            val branches = memberTrees
-              .map(_.defn)
-              .toSeq
-              .join("\n\n")
-
-            val regs    = memberTrees.map(_.codecs)
-            val members = meta
-
-            DefnRepr(
-              q"""public abstract record ${name.asName}$parents {
-                 |    private ${name.asName}() {}
-                 |    
-                 |    ${abstractFields.shift(4).trim}
-                 |    
-                 |    ${branches.shift(4).trim}
-                 |
-                 |    ${members.join("\n\n").shift(4).trim}
-                 |}""".stripMargin,
-              regs.toList.flatten,
-            )
-
-          } else {
-            DefnRepr(
-              q"""public interface ${name.asName}$parents {
-                 |}""".stripMargin,
-              List.empty,
-            )
+          val memberTrees = adt.members.map {
+            mid =>
+              domain.defs.meta.nodes.get(mid) match {
+                case Some(mdefn: DomainMember.User) =>
+                  makeFullRepr(mdefn, inNs = false)
+                case m =>
+                  throw new RuntimeException(
+                    s"BUG: missing/wrong adt member: $mid => $m"
+                  )
+              }
           }
+
+          val branches = memberTrees
+            .map(_.defn)
+            .toSeq
+            .join("\n\n")
+
+          val regs    = memberTrees.map(_.codecs)
+          val members = meta
+
+          DefnRepr(
+            q"""public abstract record ${name.asName}$parents {
+               |    private ${name.asName}() {}
+               |    
+               |    ${abstractFields.shift(4).trim}
+               |    
+               |    ${branches.shift(4).trim}
+               |
+               |    ${members.join("\n\n").shift(4).trim}
+               |}""".stripMargin,
+            regs.toList.flatten,
+          )
 
         case _: Typedef.Foreign => DefnRepr(q"", List.empty)
 

@@ -87,8 +87,7 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
 
     val fullPkg = tid.owner match {
       case Owner.Adt(_) =>
-        val static = if (target.language.useCompactAdtForm) true else false
-        CSPackageId(pkg.parts ++ ownerAsPrefix, isStatic = static)
+        CSPackageId(pkg.parts ++ ownerAsPrefix, isStatic = true)
       case _ =>
         CSPackageId(fullPrefix)
     }

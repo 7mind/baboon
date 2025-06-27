@@ -26,7 +26,7 @@ object CSDomainTreeTools {
         case Owner.Adt(_) => true
         case _            => false
       }
-      val fix = if (target.language.useCompactAdtForm && !isCodec && isNested) {
+      val fix = if (!isCodec && isNested) {
         " new "
       } else {
         " "
@@ -48,7 +48,7 @@ object CSDomainTreeTools {
     }
 
     private def makeFullMeta(defn: DomainMember.User, isCodec: Boolean): Seq[TextTree[CSValue.CSType]] = {
-      val propFix = metaMethodFlags(defn, isCodec)
+      val propFix   = metaMethodFlags(defn, isCodec)
       val methodFix = propFix + (if (isCodec) "override " else "")
 
       val adtMethods = defn.id.owner match {
@@ -61,14 +61,14 @@ object CSDomainTreeTools {
         case _ => List.empty
       }
 
-      val version         = domain.version
+      val version = domain.version
 
       val unmodifiedMethods = if (!isCodec) {
         val unmodifiedSince = evo.typesUnchangedSince(version)(defn.id)
         List(
           q"""public${propFix}const $csString BaboonUnmodifiedSinceVersionValue = "${unmodifiedSince.version}";
              |public$methodFix$csString BaboonUnmodifiedSinceVersion() => BaboonUnmodifiedSinceVersionValue;
-             |""".stripMargin,
+             |""".stripMargin
         )
       } else {
         List.empty

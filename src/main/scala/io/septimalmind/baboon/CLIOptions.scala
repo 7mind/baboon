@@ -47,11 +47,6 @@ case class CsCLIOptions(
   csObsoleteErrors: Option[Boolean],
   @HelpMessage("Do not generate usings for System, System.Collections.Generic and System.Linq (see ImplicitUsings)")
   csExcludeGlobalUsings: Option[Boolean],
-  @HelpMessage(
-    "When defined, ADTs will be rendered as abstract record and members will be nested. " +
-    "Otherwise ADTS will be rendered as interfaces with members defined at the same level."
-  )
-  csUseCompactAdtForm: Option[Boolean],
   @HelpMessage("Every ADT branch will encode ADT metadata and expect it in the decoder")
   csWrappedAdtBranchCodecs: Option[Boolean],
   @HelpMessage("Adds evolution metadata as a C# dictionary")
