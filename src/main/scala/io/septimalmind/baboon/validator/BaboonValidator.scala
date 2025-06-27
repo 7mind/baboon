@@ -131,7 +131,7 @@ object BaboonValidator {
     ): F[NEList[BaboonIssue.VerificationIssue], Unit] = {
       val allDeps = domain.defs.meta.nodes.values.flatMap {
         defn =>
-          enquiries.fullDepsOfDefn(defn)
+          enquiries.fullDepsOfDefn(domain.defs.meta.nodes, defn)
       }.toSet
 
       val allDefs = domain.defs.meta.nodes.keySet

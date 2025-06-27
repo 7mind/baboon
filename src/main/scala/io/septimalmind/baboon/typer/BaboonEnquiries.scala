@@ -1,9 +1,9 @@
 package io.septimalmind.baboon.typer
 
-import io.septimalmind.baboon.parser.model.{RawAdt, RawDefn, RawDtoMember, RawDtoid, ScopedRef}
+import io.septimalmind.baboon.parser.model.*
+import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.BinReprLen.Variable
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
-import io.septimalmind.baboon.typer.model.{BinReprLen, Domain, DomainMember, Field, Owner, ShallowSchemaId, TypeId, TypeRef, Typedef}
 import izumi.fundamentals.collections.nonempty.NESet
 import izumi.fundamentals.graphs.struct.IncidenceMatrix
 import izumi.fundamentals.graphs.tools.cycles.LoopDetector
@@ -13,7 +13,7 @@ import scala.annotation.tailrec
 import scala.collection.mutable
 
 trait BaboonEnquiries {
-  def fullDepsOfDefn(defn: DomainMember): Set[TypeId]
+  def fullDepsOfDefn(domain: Map[TypeId, DomainMember], defn: DomainMember): Set[TypeId]
   def allRefs(defn: DomainMember): Set[TypeRef]
   def wrap(id: TypeId): String
   def explode(tpe: TypeRef): Set[TypeId]
@@ -21,9 +21,7 @@ trait BaboonEnquiries {
   def hardDepsOfRawDefn(dd: RawDefn): Set[ScopedRef]
   def hasForeignType(definition: DomainMember.User, domain: Domain): Boolean
   def isRecursiveTypedef(definition: DomainMember.User, domain: Domain): Boolean
-  def loopsOf(
-    domain: Map[TypeId, DomainMember]
-  ): Set[LoopDetector.Cycles[TypeId]]
+  def loopsOf(domain: Map[TypeId, DomainMember]): Set[LoopDetector.Cycles[TypeId]]
   def uebaLen(dom: Map[TypeId, DomainMember], tpe: TypeRef): BinReprLen
   def isEnum(tpe: TypeRef, domain: Domain): Boolean
 }
@@ -36,7 +34,7 @@ object BaboonEnquiries {
     ): Set[LoopDetector.Cycles[TypeId]] = {
       val depMatrix = IncidenceMatrix(domain.view.mapValues {
         defn =>
-          fullDepsOfDefn(defn)
+          fullDepsOfDefn(domain, defn)
       }.toMap)
 
       val loops =
@@ -134,32 +132,38 @@ object BaboonEnquiries {
       }
     }
 
-    def fullDepsOfDefn(defn: DomainMember): Set[TypeId] = {
-      depsOfDefn(defn, explode)
+    def fullDepsOfDefn(domain: Map[TypeId, DomainMember], defn: DomainMember): Set[TypeId] = {
+      depsOfDefn(domain, defn, explode)
     }
 
-    private def depsOfDefn(defn: DomainMember, explodeRef: TypeRef => Set[TypeId]): Set[TypeId] = {
+    private def depsOfDefn(domain: Map[TypeId, DomainMember], defn: DomainMember, explodeRef: TypeRef => Set[TypeId]): Set[TypeId] = {
       def explodeFields(f: List[Field]) = {
         f.flatMap(f => explodeRef(f.tpe)).toSet
       }
 
-      // TODO: do we REALLY need to consider field types as dependencies?
-      defn match {
-        case _: DomainMember.Builtin =>
-          Set.empty
-        case u: DomainMember.User =>
-          u.defn match {
-            case t: Typedef.Dto =>
-              explodeFields(t.fields) ++ t.contracts
-            case t: Typedef.Contract =>
-              explodeFields(t.fields) ++ t.contracts
-            case _: Typedef.Enum    => Set.empty
-            case t: Typedef.Adt     => t.members.toSet ++ t.contracts
-            case _: Typedef.Foreign => Set.empty
-            case s: Typedef.Service =>
-              s.methods.flatMap(m => Set(m.sig) ++ m.out.toSet ++ m.err.toSet).flatMap(explodeRef).toSet
-          }
+      val tid     = mutable.HashSet.empty[TypeId]
+      val members = mutable.Queue[DomainMember](defn)
+
+      while (members.nonEmpty) members.dequeue() match {
+        case _: DomainMember.Builtin                        => ()
+        case DomainMember.User(_, _: Typedef.Enum, _, _)    => ()
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => ()
+
+        case DomainMember.User(_, s: Typedef.Service, _, _) =>
+          tid.addAll(s.methods.flatMap(m => Set(m.sig) ++ m.out.toSet ++ m.err.toSet).flatMap(explodeRef).toSet)
+
+        case DomainMember.User(_, t: Typedef.Dto, _, _) =>
+          tid.addAll(explodeFields(t.fields) ++ t.contracts)
+
+        case DomainMember.User(_, t: Typedef.Contract, _, _) =>
+          tid.addAll(explodeFields(t.fields) ++ t.contracts)
+
+        case DomainMember.User(_, t: Typedef.Adt, _, _) =>
+          members.enqueueAll(t.members.map(domain(_)))
+          tid.addAll(t.members.toSet ++ t.contracts)
       }
+
+      tid.toSet
     }
 
     def explode(tpe: TypeRef): Set[TypeId] = {

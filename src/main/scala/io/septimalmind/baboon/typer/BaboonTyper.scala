@@ -12,7 +12,6 @@ import izumi.fundamentals.graphs.tools.{Toposort, ToposortLoopBreaker}
 import izumi.fundamentals.graphs.{DG, GraphMeta}
 
 import scala.annotation.tailrec
-import scala.collection.mutable
 
 trait BaboonTyper[F[+_, +_]] {
   def process(model: RawDomain): F[NEList[BaboonIssue.TyperIssue], Domain]
@@ -80,10 +79,8 @@ object BaboonTyper {
       // extremely inefficient
       val out = defs.values.collect { case u: DomainMember.User => u }.flatMap {
         td =>
-          td.derivations.flatMap {
-            d =>
-              enquiries.fullDepsOfDefn(td).map(tid => (d, tid))
-          }
+          val deps = Set(td.id) ++ enquiries.fullDepsOfDefn(defs, td)
+          td.derivations.flatMap(d => deps.map(tid => (d, tid)))
       }.toMultimap
 
       F.pure(out)
@@ -220,7 +217,7 @@ object BaboonTyper {
     ): F[NEList[BaboonIssue.TyperIssue], Map[TypeId, Set[TypeId]]] = {
       val nextDepMap = current.toList.flatMap {
         case (id, defn) =>
-          enquiries.fullDepsOfDefn(defn).toList.map(dep => (id, Some(dep)))
+          enquiries.fullDepsOfDefn(defs, defn).toList.map(dep => (id, Some(dep)))
       }
       val nextDeps = nextDepMap.map(_._2).toSet
 
