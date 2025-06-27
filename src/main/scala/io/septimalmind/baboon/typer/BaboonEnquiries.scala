@@ -145,6 +145,8 @@ object BaboonEnquiries {
       val members = mutable.Queue[DomainMember](defn)
 
       while (members.nonEmpty) members.dequeue() match {
+        case d if tid.contains(d.id) => ()
+
         case _: DomainMember.Builtin                        => ()
         case DomainMember.User(_, _: Typedef.Enum, _, _)    => ()
         case DomainMember.User(_, _: Typedef.Foreign, _, _) => ()
