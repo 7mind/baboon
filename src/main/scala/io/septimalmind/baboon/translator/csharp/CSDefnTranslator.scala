@@ -75,20 +75,9 @@ object CSDefnTranslator {
       // val registrations = reg.map { case (srcRef, reg) => q"Register(new $baboonTypeCodecs<${srcRef.fullyQualified}>($reg));" }.join("\n")
       val registrations = Option(repr.codecs.map {
         case CodecReg(i, _, tpeKeepForeigns, tpeid, reg) =>
-          val codecsReg = codecs.toList
-            .sortBy(_.getClass.getName)
-            .flatMap {
-              codec =>
-                if (codec.isActive(i)) {
-                  List(q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(tpeKeepForeigns).copy(fq = true)}.Instance)")
-                } else {
-                  List(q"null")
-                }
-            }
-
-          val regcall =
-            (List(q"""\"${defn.id.toString}\"""") ++ codecsReg).join(", ")
-
+          val jsonCodec = reg.getOrElse("json", q"null")
+          val uebaCodec = reg.getOrElse("ueba", q"null")
+          val regcall   = q"$tpeid, $jsonCodec, $uebaCodec"
           q"Register(new $baboonTypeCodecs($regcall));"
       }).filterNot(_.isEmpty).map(_.join("\n"))
 
@@ -195,8 +184,6 @@ object CSDefnTranslator {
         case _: Typedef.NonDataTypedef =>
           List.empty[CodecReg]
         case d =>
-          // wrap Lazy<Child> -> Lazy<Parent> as C# Lazy do not support type variance
-          // generic types are possible, but have bad JIT and il2cpp performance for generic constructors
           val codecsReg = codecs.toList
             .sortBy(_.getClass.getName)
             .flatMap {
@@ -207,12 +194,6 @@ object CSDefnTranslator {
                   List.empty
                 }
             }
-          // Generic codec variant have poor performance on empty JIT and il2cpp (for some reason ._.)
-          // val codecsReg = codecs.toList
-          //   .sortBy(_.getClass.getName)
-          //   .map(codec => q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(srcRef).copy(fq = true)}.LazyInstance)")
-//          val reg =
-//            (List(q"""\"${defn.id.toString}\"""") ++ codecsReg).join(", ")
           List(CodecReg(defn.id, csTypeRef, srcRef, q"""\"${defn.id.toString}\"""", codecsReg.toMap))
       }
 
