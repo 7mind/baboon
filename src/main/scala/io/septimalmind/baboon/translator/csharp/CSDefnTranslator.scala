@@ -21,6 +21,11 @@ trait CSDefnTranslator[F[+_, +_]] {
 }
 
 object CSDefnTranslator {
+  case class DefnRepr(
+    defn: TextTree[CSValue],
+    codecs: List[(CSType, TextTree[CSValue])],
+  )
+
   case class Output(
     path: String,
     tree: TextTree[CSValue],
@@ -57,17 +62,17 @@ object CSDefnTranslator {
     }
 
     private def doTranslate(defn: DomainMember.User): Out[List[Output]] = {
-      val (content, reg) = makeFullRepr(defn, inNs = true)
+      val repr = makeFullRepr(defn, inNs = true)
 
       // Generic codec variant have poor performance on empty JIT and il2cpp (for some reason ._.)
       // val registrations = reg.map { case (srcRef, reg) => q"Register(new $baboonTypeCodecs<${srcRef.fullyQualified}>($reg));" }.join("\n")
-      val registrations = Option(reg.map { case (_, reg) => q"Register(new $baboonTypeCodecs($reg));" }).filterNot(_.isEmpty).map(_.join("\n"))
+      val registrations = Option(repr.codecs.map { case (_, reg) => q"Register(new $baboonTypeCodecs($reg));" }).filterNot(_.isEmpty).map(_.join("\n"))
 
       F.pure(
         List(
           Output(
             getOutputPath(defn),
-            content,
+            repr.defn,
             trans.toCsPkg(domain.id, domain.version, evo),
             CompilerProduct.Definition,
             codecReg = registrations,
@@ -131,7 +136,7 @@ object CSDefnTranslator {
     private def makeFullRepr(
       defn: DomainMember.User,
       inNs: Boolean,
-    ): (TextTree[CSValue], List[(CSType, TextTree[CSValue])]) = {
+    ): DefnRepr = {
       val isLatestVersion = domain.version == evo.latest
 
       def obsoletePrevious(tree: TextTree[CSValue]): TextTree[CSValue] = {
@@ -146,14 +151,14 @@ object CSDefnTranslator {
       val csTypeRef = trans.asCsType(defn.id, domain, evo)
       val srcRef    = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
 
-      val (defnReprBase, extraRegs) =
+      val repr =
         makeRepr(defn, csTypeRef, isLatestVersion)
 
       val codecTrees = codecs.toList
         .flatMap(t => t.translate(defn, csTypeRef, srcRef).toList)
         .map(obsoletePrevious)
 
-      val defnRepr = obsoletePrevious(defnReprBase)
+      val defnRepr = obsoletePrevious(repr.defn)
 
       assert(defn.id.pkg == domain.id)
 
@@ -187,12 +192,12 @@ object CSDefnTranslator {
           List(csTypeRef -> reg)
       }
 
-      val allRegs = reg ++ extraRegs
+      val allRegs = reg ++ repr.codecs
 
-      (content, allRegs)
+      DefnRepr(content, allRegs)
     }
 
-    private def makeRepr(defn: DomainMember.User, name: CSValue.CSType, isLatestVersion: Boolean): (TextTree[CSValue], List[(CSType, TextTree[CSValue])]) = {
+    private def makeRepr(defn: DomainMember.User, name: CSValue.CSType, isLatestVersion: Boolean): DefnRepr = {
       val genMarker = if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
       val mainMeta  = csDomTrees.makeDataMeta(defn)
       val codecMeta = codecs.flatMap(_.codecMeta(defn, name)).map(_.member)
@@ -204,7 +209,7 @@ object CSDefnTranslator {
           val refs    = contract.contracts.map(t => q"${trans.asCsType(t, domain, evo)}") ++ List(q"$genMarker")
           val parents = makeParents(refs)
 
-          (
+          DefnRepr(
             q"""public interface ${name.asName}$parents  {
                |    ${methods.shift(4).trim}
                |}""".stripMargin,
@@ -274,7 +279,7 @@ object CSDefnTranslator {
           )
 
           val members = eq ++ meta
-          (
+          DefnRepr(
             q"""[$serializable]
                |public sealed record ${name.asName}(
                |    ${constructorArgs.shift(4).trim}
@@ -296,7 +301,7 @@ object CSDefnTranslator {
             }.toSeq
               .join(",\n")
 
-          (
+          DefnRepr(
             q"""[$serializable]
                |public enum ${name.asName} {
                |    ${branches.shift(4).trim}
@@ -337,14 +342,14 @@ object CSDefnTranslator {
             }
 
             val branches = memberTrees
-              .map(_._1)
+              .map(_.defn)
               .toSeq
               .join("\n\n")
 
-            val regs    = memberTrees.map(_._2)
+            val regs    = memberTrees.map(_.codecs)
             val members = meta
 
-            (
+            DefnRepr(
               q"""public abstract record ${name.asName}$parents {
                  |    private ${name.asName}() {}
                  |    
@@ -358,14 +363,14 @@ object CSDefnTranslator {
             )
 
           } else {
-            (
+            DefnRepr(
               q"""public interface ${name.asName}$parents {
                  |}""".stripMargin,
               List.empty,
             )
           }
 
-        case _: Typedef.Foreign => (q"", List.empty)
+        case _: Typedef.Foreign => DefnRepr(q"", List.empty)
 
         case service: Typedef.Service =>
           val methods = service.methods.map {
@@ -386,7 +391,7 @@ object CSDefnTranslator {
               q"""public $ret ${m.name.name}(${trans.asCsRef(m.sig, domain, evo)} arg);"""
           }.join("\n")
 
-          (
+          DefnRepr(
             q"""namespace ${name.asName} {
                |    public interface ${name.asName}  {
                |        ${methods.shift(8).trim}
