@@ -116,13 +116,13 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       .sortBy(_._1.toString)
       .map {
         case (tid, version) =>
-          q"""unmodified.put("${tid.toString}", "${version.version}")"""
+          q"""unmodified.put("${tid.toString}", new $scList(${version.sameIn.map(_.version).map(s => q"\"$s\"").mkString(", ")}))"""
       }
 
     scala.collection.mutable.Map.empty[String, String]
     val metaTree =
       q"""object BaboonMetadata extends $baboonMeta {
-         |  private val unmodified = ${scMutMap.fullyQualified}.empty[$scString, $scString]
+         |  private val unmodified = ${scMutMap.fullyQualified}.empty[$scString, $scList[$scString]]
          |  
          |  ${entries.join("\n").shift(2).trim}
          |

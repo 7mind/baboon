@@ -221,7 +221,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
       .sortBy(_._1.toString)
       .map {
         case (tid, version) =>
-          q"""_unmodified.Add("${tid.toString}", "${version.version}");"""
+          q"""_unmodified.Add("${tid.toString}", new $csList<$csString> { ${version.sameIn.map(_.version).map(s => q"\"$s\"").toList.join(", ")} });"""
       }
 
     val metaTree =
@@ -232,12 +232,12 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
          |        ${entries.join("\n").shift(8).trim}
          |    }
          |
-         |    public String UnmodifiedSince(String typeIdString)
+         |    public $csList<$csString> UnmodifiedSince($csString typeIdString)
          |    {
          |        return _unmodified[typeIdString];
          |    }
          |
-         |    private readonly $csIDictionary<$csString, $csString> _unmodified = new $csDictionary<$csString, $csString>();
+         |    private readonly $csIDictionary<$csString, $csList<$csString>> _unmodified = new $csDictionary<$csString, $csList<$csString>>();
          |
          |    private static readonly $csLazy<BaboonMeta> LazyInstance = new $csLazy<BaboonMeta>(() => new BaboonMeta());
          |
@@ -322,7 +322,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
              |    public static $nme Instance { get { return LazyInstance.Value; } }
              |}""".stripMargin
       }.toList.join("\n\n")
-      
+
       val basename = csFiles.basename(domain, lineage.evolution)
 
       val runtimeSource = Seq(converter, codecs).join("\n\n")

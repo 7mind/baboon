@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerTarget.CSTarget
-import io.septimalmind.baboon.translator.csharp.CSTypes.csString
+import io.septimalmind.baboon.translator.csharp.CSTypes.{csList, csString}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -66,8 +66,9 @@ object CSDomainTreeTools {
       val unmodifiedMethods = if (!isCodec) {
         val unmodifiedSince = evo.typesUnchangedSince(version)(defn.id)
         List(
-          q"""public${propFix}const $csString BaboonUnmodifiedSinceVersionValue = "${unmodifiedSince.version}";
-             |public$methodFix$csString BaboonUnmodifiedSinceVersion() => BaboonUnmodifiedSinceVersionValue;
+          q"""public${propFix}static readonly $csList<$csString> BaboonUnmodifiedSinceVersionValue = new $csList<$csString> { ${unmodifiedSince.sameIn
+              .map(_.version).map(s => q"\"$s\"").toList.join(", ")} };
+             |public$methodFix$csList<$csString> BaboonUnmodifiedSinceVersions() => BaboonUnmodifiedSinceVersionValue;
              |""".stripMargin
         )
       } else {
@@ -75,13 +76,13 @@ object CSDomainTreeTools {
       }
 
       Seq(
-        q"""public${propFix}const $csString BaboonDomainVersionValue = "${version.version}";
+        q"""public${propFix}static readonly $csString BaboonDomainVersionValue = "${version.version}";
            |public$methodFix$csString BaboonDomainVersion() => BaboonDomainVersionValue;
            |""".stripMargin,
-        q"""public${propFix}const $csString BaboonDomainIdentifierValue = "${defn.id.pkg.toString}";
+        q"""public${propFix}static readonly $csString BaboonDomainIdentifierValue = "${defn.id.pkg.toString}";
            |public$methodFix$csString BaboonDomainIdentifier() => BaboonDomainIdentifierValue;
            |""".stripMargin,
-        q"""public${propFix}const $csString BaboonTypeIdentifierValue = "${defn.id.toString}";
+        q"""public${propFix}static readonly $csString BaboonTypeIdentifierValue = "${defn.id.toString}";
            |public$methodFix$csString BaboonTypeIdentifier() => BaboonTypeIdentifierValue;
            |""".stripMargin,
       ) ++ unmodifiedMethods ++ adtMethods

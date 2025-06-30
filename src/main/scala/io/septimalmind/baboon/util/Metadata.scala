@@ -2,6 +2,7 @@ package io.septimalmind.baboon.util
 
 import io.circe.*
 import io.circe.syntax.*
+import izumi.fundamentals.collections.nonempty.NEList
 
 case class VersionMeta(model: String, version: String)
 
@@ -15,8 +16,10 @@ object BaboonDomainCodecs {
   import io.circe.generic.semiauto.deriveEncoder
   import io.septimalmind.baboon.typer.model.*
 
-  implicit lazy val versionKeyEncoder: KeyEncoder[Version] = KeyEncoder.encodeKeyString.contramap(_.version)
-  implicit lazy val versionEncoder: Encoder[Version]       = Encoder.encodeString.contramap(_.version)
+  implicit lazy val versionKeyEncoder: KeyEncoder[Version]    = KeyEncoder.encodeKeyString.contramap(_.version)
+  implicit lazy val versionEncoder: Encoder[Version]          = Encoder.encodeString.contramap(_.version)
+  implicit lazy val unmodifiedSince: Encoder[UnmodifiedSince] = Encoder.encodeList[String].contramap(_.sameIn.toList.map(_.version))
+  implicit def nelist[T: Encoder]: Encoder[NEList[T]]         = Encoder.encodeList[T].contramap(_.toList)
 
   implicit lazy val fieldEncoder: Encoder[Field] = Encoder.encodeJson.contramap {
     f =>

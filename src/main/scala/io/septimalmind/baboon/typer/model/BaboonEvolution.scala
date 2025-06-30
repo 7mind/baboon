@@ -7,7 +7,7 @@ case class BaboonEvolution(
   latest: Version,
   diffs: Map[EvolutionStep, BaboonDiff],
   rules: Map[EvolutionStep, BaboonRuleset],
-  typesUnchangedSince: Map[Version, Map[TypeId, Version]],
+  typesUnchangedSince: Map[Version, Map[TypeId, UnmodifiedSince]],
 ) {
   override def toString: String = {
     diffs.map {

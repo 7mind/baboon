@@ -93,9 +93,9 @@ object BaboonComparator {
       diffs: Map[EvolutionStep, BaboonDiff],
       previousVersions: Map[Version, Version],
       versions: Seq[Version],
-    ): F[NEList[BaboonIssue.EvolutionIssue], Map[Version, Map[TypeId, Version]]] = {
+    ): F[NEList[BaboonIssue.EvolutionIssue], Map[Version, Map[TypeId, UnmodifiedSince]]] = {
 
-      F.foldLeft(versions)(Map.empty[Version, Map[TypeId, Version]]) {
+      F.foldLeft(versions)(Map.empty[Version, Map[TypeId, UnmodifiedSince]]) {
         case (acc, version) =>
           minVersionsDiff(domainVersions, diffs, previousVersions, acc, version)
       }
@@ -105,31 +105,32 @@ object BaboonComparator {
       domainVersions: NEMap[Version, Domain],
       diffs: Map[EvolutionStep, BaboonDiff],
       previousVersions: Map[Version, Version],
-      minVersions: Map[Version, Map[TypeId, Version]],
-      current: Version,
-    ): F[NEList[BaboonIssue.EvolutionIssue], Map[Version, Map[TypeId, Version]]] = {
-      previousVersions.get(current) match {
-        case Some(prev) =>
-          val step       = EvolutionStep(prev, current)
+      minVersions: Map[Version, Map[TypeId, UnmodifiedSince]],
+      currVersion: Version,
+    ): F[NEList[BaboonIssue.EvolutionIssue], Map[Version, Map[TypeId, UnmodifiedSince]]] = {
+      previousVersions.get(currVersion) match {
+        case Some(prevVersion) =>
+          val step       = EvolutionStep(prevVersion, currVersion)
           val diff       = diffs(step)
           val unmodified = diff.changes.unmodified
 
-          val update = domainVersions(current).defs.meta.nodes.map {
+          val update = domainVersions(currVersion).defs.meta.nodes.map {
             case (id, _) =>
               if (unmodified.contains(id)) {
-                (id, minVersions(prev)(id))
+                val prevrecord = minVersions(prevVersion)(id)
+                (id, prevrecord.copy(sameIn = prevrecord.sameIn :+ currVersion))
               } else {
-                (id, current)
+                (id, UnmodifiedSince(id, NEList(currVersion)))
               }
           }
 
-          F.pure(minVersions.updated(current, update))
+          F.pure(minVersions.updated(currVersion, update))
 
         case None =>
           // initial version
-          F.pure(Map(current -> domainVersions(current).defs.meta.nodes.map {
+          F.pure(Map(currVersion -> domainVersions(currVersion).defs.meta.nodes.map {
             case (id, _) =>
-              (id, current)
+              (id, UnmodifiedSince(id, NEList(currVersion)))
           }))
 
       }
