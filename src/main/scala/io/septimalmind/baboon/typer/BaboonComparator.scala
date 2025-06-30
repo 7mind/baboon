@@ -8,6 +8,8 @@ import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
+import scala.collection.mutable
+
 trait BaboonComparator[F[+_, +_]] {
   def evolve(
     pkg: Pkg,
@@ -95,19 +97,37 @@ object BaboonComparator {
       versions: Seq[Version],
     ): F[NEList[BaboonIssue.EvolutionIssue], Map[Version, Map[TypeId, UnmodifiedSince]]] = {
 
-      F.foldLeft(versions)(Map.empty[Version, Map[TypeId, UnmodifiedSince]]) {
-        case (acc, version) =>
-          minVersionsDiff(domainVersions, diffs, previousVersions, acc, version)
+      for {
+        out <- F.foldLeft(versions)(Map.empty[Version, Map[TypeId, UnmodifiedSinceMut]]) {
+          case (acc, version) =>
+            minVersionsDiff(domainVersions, diffs, previousVersions, acc, version)
+        }
+      } yield {
+        out.map {
+          case (v, tv) =>
+            (
+              v,
+              tv.map {
+                case (t, u) =>
+                  (t, u.freeze)
+              },
+            )
+        }
       }
+
+    }
+
+    case class UnmodifiedSinceMut(typeId: TypeId, in: Version, sameIn: mutable.ArrayBuffer[Version]) {
+      def freeze: UnmodifiedSince = UnmodifiedSince(typeId, in, NEList.unsafeFrom(sameIn.toList))
     }
 
     private def minVersionsDiff(
       domainVersions: NEMap[Version, Domain],
       diffs: Map[EvolutionStep, BaboonDiff],
       previousVersions: Map[Version, Version],
-      minVersions: Map[Version, Map[TypeId, UnmodifiedSince]],
+      minVersions: Map[Version, Map[TypeId, UnmodifiedSinceMut]],
       currVersion: Version,
-    ): F[NEList[BaboonIssue.EvolutionIssue], Map[Version, Map[TypeId, UnmodifiedSince]]] = {
+    ): F[NEList[BaboonIssue.EvolutionIssue], Map[Version, Map[TypeId, UnmodifiedSinceMut]]] = {
       previousVersions.get(currVersion) match {
         case Some(prevVersion) =>
           val step       = EvolutionStep(prevVersion, currVersion)
@@ -118,9 +138,10 @@ object BaboonComparator {
             case (id, _) =>
               if (unmodified.contains(id)) {
                 val prevrecord = minVersions(prevVersion)(id)
-                (id, prevrecord.copy(sameIn = prevrecord.sameIn :+ currVersion))
+                prevrecord.sameIn.addOne(currVersion)
+                (id, UnmodifiedSinceMut(id, currVersion, prevrecord.sameIn))
               } else {
-                (id, UnmodifiedSince(id, NEList(currVersion)))
+                (id, UnmodifiedSinceMut(id, currVersion, mutable.ArrayBuffer(currVersion)))
               }
           }
 
@@ -130,7 +151,7 @@ object BaboonComparator {
           // initial version
           F.pure(Map(currVersion -> domainVersions(currVersion).defs.meta.nodes.map {
             case (id, _) =>
-              (id, UnmodifiedSince(id, NEList(currVersion)))
+              (id, UnmodifiedSinceMut(id, currVersion, mutable.ArrayBuffer(currVersion)))
           }))
 
       }

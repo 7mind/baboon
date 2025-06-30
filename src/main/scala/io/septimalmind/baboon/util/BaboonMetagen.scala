@@ -25,7 +25,7 @@ object BaboonMetagen {
         "versions" -> data.asJson,
         "unmodified" -> Json.obj(family.domains.toSeq.map {
           case (pkg, line) =>
-            (pkg.toString, line.evolution.typesUnchangedSince.asJson)
+            (pkg.toString, line.evolution.typesUnchangedSince.flatMap(_._2.values).asJson)
         }*),
         "underivable" -> Json.obj(family.domains.toSeq.map {
           case (pkg, line) =>

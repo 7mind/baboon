@@ -2,7 +2,7 @@ package io.septimalmind.baboon.typer.model
 
 import izumi.fundamentals.collections.nonempty.NEList
 
-case class UnmodifiedSince(typeId: TypeId, sameIn: NEList[Version])
+case class UnmodifiedSince(typeId: TypeId, in: Version, sameIn: NEList[Version])
 
 case class TypeMeta(shallowId: ShallowSchemaId, deepId: DeepSchemaId)
 case class RefMeta(len: BinReprLen)
