@@ -527,7 +527,7 @@ class CSUEBACodecGenerator(
   }
 
   def codecName(name: CSValue.CSType): CSValue.CSType = {
-    CSValue.CSType(name.pkg, s"${name.name}_UEBACodec", name.fq)
+    CSValue.CSType(name.pkg, s"${name.name}_UEBACodec", name.fq, None)
   }
 
   override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): Option[CSCodecTranslator.CodecMeta] = {

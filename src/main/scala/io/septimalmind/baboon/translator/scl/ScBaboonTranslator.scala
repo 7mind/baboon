@@ -116,7 +116,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       .sortBy(_._1.toString)
       .map {
         case (tid, version) =>
-          q"""unmodified.put("${tid.toString}", new $scList(${version.sameIn.map(_.version).map(s => q"\"$s\"").mkString(", ")}))"""
+          q"""unmodified.put("${tid.toString}", $scList(${version.sameIn.map(_.version).map(s => q"\"$s\"").toList.join(", ")}))"""
       }
 
     scala.collection.mutable.Map.empty[String, String]
@@ -126,8 +126,8 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
          |  
          |  ${entries.join("\n").shift(2).trim}
          |
-         |  def unmodifiedSince(typeIdString: $scString): $scOption[$scString] = {
-         |    unmodified.get(typeIdString);
+         |  def unmodifiedSince(typeIdString: $scString): $scList[$scString] = {
+         |    unmodified(typeIdString);
          |  }
          |}""".stripMargin
 

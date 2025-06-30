@@ -417,7 +417,7 @@ class CSJsonCodecGenerator(
   }
 
   def codecName(name: CSValue.CSType): CSValue.CSType = {
-    CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq)
+    CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq, None)
   }
 
   override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): Option[CSCodecTranslator.CodecMeta] = {

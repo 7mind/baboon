@@ -43,8 +43,8 @@ object CSDefnTranslator {
   )
 //  case class OutputExt(output: Output, codecReg: TextTree[CSValue])
 
-  private val obsolete: CSType     = CSType(CSTypes.csSystemPkg, "Obsolete", fq = false)
-  private val serializable: CSType = CSType(CSTypes.csSystemPkg, "Serializable", fq = false)
+  private val obsolete: CSType     = CSType(CSTypes.csSystemPkg, "Obsolete", fq = false, None)
+  private val serializable: CSType = CSType(CSTypes.csSystemPkg, "Serializable", fq = false, None)
 
   class CSDefnTranslatorImpl[F[+_, +_]: Applicative2 /* This impl has no errors right now */ ](
     target: CSTarget,

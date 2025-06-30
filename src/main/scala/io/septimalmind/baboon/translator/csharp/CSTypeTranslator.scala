@@ -72,7 +72,7 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
         assert(parts.length > 1)
         val pkg = parts.init
         val id  = parts.last
-        CSType(CSPackageId(NEList.unsafeFrom(pkg)), id, fq = false)
+        CSType(CSPackageId(NEList.unsafeFrom(pkg)), id, fq = false, Some(tid))
       case _ =>
         asCsTypeKeepForeigns(tid, domain, evolution)
     }
@@ -91,7 +91,7 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
       case _ =>
         CSPackageId(fullPrefix)
     }
-    CSType(fullPkg, tid.name.name.capitalize, fq = false)
+    CSType(fullPkg, tid.name.name.capitalize, fq = false, Some(tid))
   }
 
   def toCsPkg(p: Pkg, version: Version, evolution: BaboonEvolution): CSPackageId = {
