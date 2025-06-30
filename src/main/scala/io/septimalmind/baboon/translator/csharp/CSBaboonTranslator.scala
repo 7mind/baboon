@@ -4,8 +4,9 @@ import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.csharp.CSDefnTranslator.OutputOrigin
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
-import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
+import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSTypeOrigin}
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
@@ -33,7 +34,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
       fixture    <- sharedFixture()
       rendered = (translated ++ runtime ++ fixture).map {
         o =>
-          val content = renderTree(o)
+          val content = renderTree(o, family)
           (o.path, OutputFile(content, o.product))
       }
       unique <- F.fromEither(rendered.toUniqueMap(c => NEList(BaboonIssue.NonUniqueOutputFiles(c))))
@@ -42,7 +43,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
     }
   }
 
-  private def renderTree(o: CSDefnTranslator.Output): String = {
+  private def renderTree(o: CSDefnTranslator.Output, family: BaboonFamily): String = {
     val alwaysAvailable: Set[CSPackageId] = if (target.language.disregardImplicitUsings) {
       Set.empty
     } else {
@@ -131,6 +132,39 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
       case t: CSValue.CSTypeName =>
         t.name
 
+      case t: CSValue.CSType =>
+        renderType(t, o, family)
+    }
+  }
+
+  def renderType(tpe: CSValue.CSType, o: CSDefnTranslator.Output, family: BaboonFamily): String = {
+    tpe.origin match {
+      case CSTypeOrigin.TypeInDomain(typeId, pkg, version) =>
+        val lineage        = family.domains(pkg)
+        val evo            = lineage.evolution
+        val u              = evo.typesUnchangedSince(version)(typeId)
+        val higherVersions = u.sameIn.toList.filter(_.version > version.version)
+
+        higherVersions.lastOption match {
+          case Some(value) =>
+            val higherDom          = lineage.versions(value)
+            val higherTwin         = trans.asCsType(typeId, higherDom, evo).fullyQualified
+            val higherTwinRendered = renderSimpleType(higherTwin, o)
+
+            println(s"type ${renderSimpleType(tpe.fullyQualified, o)} has unmodified twin in higher version $value: $higherTwinRendered")
+
+            higherTwinRendered
+          case None =>
+            renderSimpleType(tpe, o)
+        }
+
+      case CSTypeOrigin.Other =>
+        renderSimpleType(tpe, o)
+    }
+  }
+
+  private def renderSimpleType(tpe: CSValue.CSType, o: CSDefnTranslator.Output) = {
+    tpe match {
       case t: CSValue.CSType if !t.fq =>
         if (o.pkg == t.pkg || !t.pkg.parts.startsWith(o.pkg.parts)) {
           t.name
@@ -246,7 +280,13 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
 
     val metaSource = Seq(metaTree).join("\n\n")
     val meta       = csTrees.inNs(pkg.parts.toSeq, metaSource)
-    val metaOutput = CSDefnTranslator.Output(s"$basename/BaboonMeta.cs", meta, pkg, CompilerProduct.Definition)
+    val metaOutput = CSDefnTranslator.Output(
+      s"$basename/BaboonMeta.cs",
+      meta,
+      pkg,
+      CompilerProduct.Definition,
+      origin = OutputOrigin.Runtime,
+    )
 
     F.pure(List(metaOutput))
   }
@@ -332,6 +372,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
         runtime,
         pkg,
         CompilerProduct.Conversion,
+        origin = OutputOrigin.Runtime,
       )
 
       val convertersOutput = convs.map {
@@ -341,6 +382,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             conv.conv,
             pkg,
             CompilerProduct.Conversion,
+            origin = OutputOrigin.Runtime,
           )
       }
 
@@ -358,6 +400,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             CSTypes.baboonRuntimePkg,
             CompilerProduct.Runtime,
             doNotModify = true,
+            origin      = OutputOrigin.Runtime,
           ),
           CSDefnTranslator.Output(
             s"BaboonCodecs.cs",
@@ -365,6 +408,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             CSTypes.baboonRuntimePkg,
             CompilerProduct.Runtime,
             doNotModify = true,
+            origin      = OutputOrigin.Runtime,
           ),
           CSDefnTranslator.Output(
             s"BaboonConversions.cs",
@@ -372,6 +416,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             CSTypes.baboonRuntimePkg,
             CompilerProduct.Runtime,
             doNotModify = true,
+            origin      = OutputOrigin.Runtime,
           ),
           CSDefnTranslator.Output(
             s"BaboonTools.cs",
@@ -379,6 +424,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             CSTypes.baboonRuntimePkg,
             CompilerProduct.Runtime,
             doNotModify = true,
+            origin      = OutputOrigin.Runtime,
           ),
           CSDefnTranslator.Output(
             s"BaboonTime.cs",
@@ -386,6 +432,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             CSTypes.baboonTimePkg,
             CompilerProduct.Runtime,
             doNotModify = true,
+            origin      = OutputOrigin.Runtime,
           ),
         )
       )
@@ -402,6 +449,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
         CSTypes.baboonFixturePkg,
         CompilerProduct.FixtureRuntime,
         doNotModify = true,
+        origin      = OutputOrigin.Runtime,
       )
 
       F.pure(List(testRuntime))

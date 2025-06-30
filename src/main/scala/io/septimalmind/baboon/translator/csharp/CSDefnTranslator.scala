@@ -4,7 +4,7 @@ import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
-import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
+import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType, CSTypeOrigin}
 import io.septimalmind.baboon.typer.TypeInfo
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
@@ -33,18 +33,26 @@ object CSDefnTranslator {
     codecs: List[CodecReg],
   )
 
+  sealed trait OutputOrigin
+
+  object OutputOrigin {
+    case class TypeInDomain(id: TypeId, pkg: Pkg, version: Version) extends OutputOrigin
+    case object Runtime extends OutputOrigin
+  }
+
   case class Output(
     path: String,
     tree: TextTree[CSValue],
     pkg: CSPackageId,
     product: CompilerProduct,
+    origin: OutputOrigin,
     doNotModify: Boolean                              = false,
     codecReg: List[(String, List[TextTree[CSValue]])] = List.empty,
   )
 //  case class OutputExt(output: Output, codecReg: TextTree[CSValue])
 
-  private val obsolete: CSType     = CSType(CSTypes.csSystemPkg, "Obsolete", fq = false, None)
-  private val serializable: CSType = CSType(CSTypes.csSystemPkg, "Serializable", fq = false, None)
+  private val obsolete: CSType     = CSType(CSTypes.csSystemPkg, "Obsolete", fq = false, CSTypeOrigin.Other)
+  private val serializable: CSType = CSType(CSTypes.csSystemPkg, "Serializable", fq = false, CSTypeOrigin.Other)
 
   class CSDefnTranslatorImpl[F[+_, +_]: Applicative2 /* This impl has no errors right now */ ](
     target: CSTarget,
@@ -88,6 +96,7 @@ object CSDefnTranslator {
             trans.toCsPkg(domain.id, domain.version, evo),
             CompilerProduct.Definition,
             codecReg = regsPerCodec,
+            origin   = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
           )
         )
       )
@@ -108,6 +117,7 @@ object CSDefnTranslator {
             fixtureTreeWithNs,
             trans.toCsPkg(domain.id, domain.version, evo),
             CompilerProduct.Fixture,
+            origin = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
           )
       }
 
@@ -129,6 +139,7 @@ object CSDefnTranslator {
             codecTestWithNS,
             trans.toCsPkg(domain.id, domain.version, evo),
             CompilerProduct.Test,
+            origin = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
           )
       }
 

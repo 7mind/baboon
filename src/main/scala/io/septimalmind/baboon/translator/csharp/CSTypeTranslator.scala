@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerTarget.CSTarget
-import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType}
+import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType, CSTypeOrigin}
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -72,7 +72,7 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
         assert(parts.length > 1)
         val pkg = parts.init
         val id  = parts.last
-        CSType(CSPackageId(NEList.unsafeFrom(pkg)), id, fq = false, Some(tid))
+        CSType(CSPackageId(NEList.unsafeFrom(pkg)), id, fq = false, CSTypeOrigin.TypeInDomain(tid, domain.id, domain.version))
       case _ =>
         asCsTypeKeepForeigns(tid, domain, evolution)
     }
@@ -91,7 +91,7 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
       case _ =>
         CSPackageId(fullPrefix)
     }
-    CSType(fullPkg, tid.name.name.capitalize, fq = false, Some(tid))
+    CSType(fullPkg, tid.name.name.capitalize, fq = false, CSTypeOrigin.TypeInDomain(tid, domain.id, domain.version))
   }
 
   def toCsPkg(p: Pkg, version: Version, evolution: BaboonEvolution): CSPackageId = {

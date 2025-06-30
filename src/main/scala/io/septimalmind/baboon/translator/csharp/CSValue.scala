@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.translator.FQNSymbol
-import io.septimalmind.baboon.typer.model.TypeId
+import io.septimalmind.baboon.typer.model.{Pkg, TypeId, Version}
 import izumi.fundamentals.collections.nonempty.NEList
 
 sealed trait CSValue
@@ -14,7 +14,13 @@ object CSValue {
       CSPackageId(NEList.unsafeFrom(pkg.split('.').toList))
   }
 
-  case class CSType(pkg: CSValue.CSPackageId, name: String, fq: Boolean, origin: Option[TypeId]) extends CSValue {
+  sealed trait CSTypeOrigin
+  object CSTypeOrigin {
+    case class TypeInDomain(typeId: TypeId, pkg: Pkg, version: Version) extends CSTypeOrigin
+    case object Other extends CSTypeOrigin
+  }
+
+  case class CSType(pkg: CSValue.CSPackageId, name: String, fq: Boolean, origin: CSTypeOrigin) extends CSValue {
     def fullyQualified: CSType = this.copy(fq = true)
     def asName: CSTypeName     = CSTypeName(name)
   }

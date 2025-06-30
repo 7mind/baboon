@@ -4,6 +4,7 @@ import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.DerivationDecl
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
+import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -417,7 +418,7 @@ class CSJsonCodecGenerator(
   }
 
   def codecName(name: CSValue.CSType): CSValue.CSType = {
-    CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq, None)
+    CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq, CSTypeOrigin.Other)
   }
 
   override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): Option[CSCodecTranslator.CodecMeta] = {
