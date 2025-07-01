@@ -10,6 +10,27 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
   }
 
   def canBeUpgradedTo(id: TypeId.User, version: Version, lineage: BaboonLineage): Option[Version] = {
+    def canBeUpgraded(id: TypeId.User, dom: Domain): Boolean = {
+      (id.owner match {
+        case Owner.Toplevel => true
+        case _: Owner.Ns    => true
+        case o: Owner.Adt   =>
+          // TODO: is it safe?
+          canBeUpgradedTo(o.id, version, lineage).nonEmpty
+      }) && (dom.defs.meta.nodes(id) match {
+        case _: DomainMember.Builtin => false
+        case u: DomainMember.User =>
+          u.defn match {
+            case _: Typedef.Dto      => true
+            case _: Typedef.Enum     => true
+            case _: Typedef.Adt      => true
+            case _: Typedef.Foreign  => false
+            case _: Typedef.Service  => false
+            case _: Typedef.Contract => false
+          }
+      })
+    }
+
     val evo = lineage.evolution
     val u   = evo.typesUnchangedSince(version)(id)
 
@@ -19,25 +40,6 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
       case _ =>
         None
     }
-  }
-
-  private def canBeUpgraded(id: TypeId.User, dom: Domain): Boolean = {
-    (id.owner match {
-      case Owner.Toplevel => true
-      case _: Owner.Ns    => true
-      case _: Owner.Adt   => false
-    }) && (dom.defs.meta.nodes(id) match {
-      case DomainMember.Builtin(id) => false
-      case DomainMember.User(root, defn, derivations, meta) =>
-        defn match {
-          case Typedef.Dto(id, fields, contracts)          => true
-          case Typedef.Enum(id, members)                   => true
-          case Typedef.Adt(id, members, contracts, fields) => false
-          case Typedef.Foreign(id, bindings)               => false
-          case Typedef.Service(id, methods)                => false
-          case Typedef.Contract(id, fields, contracts)     => false
-        }
-    })
   }
 
   def isCSValueType(tpe: TypeRef, domain: Domain): Boolean = {

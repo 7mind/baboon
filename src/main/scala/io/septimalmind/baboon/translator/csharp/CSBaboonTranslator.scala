@@ -58,7 +58,8 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
       Set(csCollectionsImmutablePkg, csCollectionsGenericPkg)
     }
 
-    val usedPackages = o.tree.values.collect { case t: CSValue.CSType => t.pkg }.distinct
+    val usedPackages = o.tree.values.collect { case t: CSValue.CSType => t }
+      .filterNot(t => isUpgradeable(t, family).nonEmpty).map(_.pkg).distinct
       .sortBy(_.parts.mkString("."))
 
     val available        = Set(o.pkg)
@@ -139,7 +140,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
     }
   }
 
-  def renderType(tpe: CSValue.CSType, o: CSDefnTranslator.Output, family: BaboonFamily): String = {
+  def isUpgradeable(tpe: CSValue.CSType, family: BaboonFamily): Option[CSValue.CSType] = {
     tpe.origin match {
       case CSTypeOrigin.TypeInDomain(typeId: TypeId.User, pkg, version) =>
         val lineage = family.domains(pkg)
@@ -147,20 +148,27 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
 
         csTypeInfo.canBeUpgradedTo(typeId, version, lineage) match {
           case Some(value) =>
-            val higherDom          = lineage.versions(value)
-            val higherTwin         = trans.asCsType(typeId, higherDom, evo).fullyQualified
-            val higherTwinRendered = renderSimpleType(higherTwin, o)
-
-            println(s"type ${renderSimpleType(tpe.fullyQualified, o)} has unmodified twin in higher version $value: $higherTwinRendered")
-
-            higherTwinRendered
+            val higherDom  = lineage.versions(value)
+            val higherTwin = trans.asCsType(typeId, higherDom, evo).fullyQualified
+            Some(higherTwin)
 
           case None =>
-            renderSimpleType(tpe, o)
+            None
         }
 
       case _ =>
-        renderSimpleType(tpe, o)
+        None
+    }
+  }
+
+  def renderType(tpe: CSValue.CSType, o: CSDefnTranslator.Output, family: BaboonFamily): String = {
+    isUpgradeable(tpe, family) match {
+      case Some(higherTwin) =>
+        val higherTwinRendered = renderSimpleType(higherTwin, o)
+        println(s"type ${renderSimpleType(tpe.fullyQualified, o)} has unmodified twin in higher version: $higherTwinRendered")
+        higherTwinRendered
+
+      case None => renderSimpleType(tpe, o)
     }
   }
 
