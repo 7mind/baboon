@@ -168,8 +168,8 @@ object CSCodecFixtureTranslator {
 
         case TypeId.Builtins.bit => q"$baboonFixture.NextBoolean()"
 
-        case TypeId.User(_, _, name) if enquiries.isEnum(tpe, domain) => q"$baboonFixture.NextRandomEnum<${name.name}>()"
-        case TypeId.User(_, _, name)                                  => q"${name.name}_Fixture.Random()"
+        case id: TypeId.User if enquiries.isEnum(tpe, domain) => q"$baboonFixture.NextRandomEnum<${translator.asCsType(id, domain, evo).fullyQualified}>()"
+        case TypeId.User(_, _, name)                          => q"${name.name}_Fixture.Random()"
 
         case t =>
           throw new IllegalArgumentException(s"Unexpected scalar type: $t")

@@ -9,6 +9,7 @@ import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSTypeOrigin}
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.Owner.Toplevel
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -22,6 +23,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
   target: CSTarget,
   csTrees: CSTreeTools,
   csFiles: CSFileTools,
+  csTypeInfo: CSTypeInfo,
   translator: Subcontext[CSDefnTranslator[F]],
 ) extends BaboonAbstractTranslator[F] {
 
@@ -139,13 +141,13 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
 
   def renderType(tpe: CSValue.CSType, o: CSDefnTranslator.Output, family: BaboonFamily): String = {
     tpe.origin match {
-      case CSTypeOrigin.TypeInDomain(typeId, pkg, version) =>
+      case CSTypeOrigin.TypeInDomain(typeId: TypeId.User, pkg, version) =>
         val lineage = family.domains(pkg)
         val evo     = lineage.evolution
         val u       = evo.typesUnchangedSince(version)(typeId)
 
         u.maybeHigherTwin(version) match {
-          case Some(value) =>
+          case Some(value) if csTypeInfo.canBeUpgraded(typeId, lineage.versions(version)) =>
             val higherDom          = lineage.versions(value)
             val higherTwin         = trans.asCsType(typeId, higherDom, evo).fullyQualified
             val higherTwinRendered = renderSimpleType(higherTwin, o)
@@ -153,11 +155,11 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             println(s"type ${renderSimpleType(tpe.fullyQualified, o)} has unmodified twin in higher version $value: $higherTwinRendered")
 
             higherTwinRendered
-          case None =>
+          case _ =>
             renderSimpleType(tpe, o)
         }
 
-      case CSTypeOrigin.Other =>
+      case _ =>
         renderSimpleType(tpe, o)
     }
   }

@@ -9,6 +9,25 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
     id.name.name
   }
 
+  def canBeUpgraded(id: TypeId.User, dom: Domain): Boolean = {
+    (id.owner match {
+      case Owner.Toplevel => true
+      case _: Owner.Ns    => true
+      case _: Owner.Adt   => false
+    }) && (dom.defs.meta.nodes(id) match {
+      case DomainMember.Builtin(id) => false
+      case DomainMember.User(root, defn, derivations, meta) =>
+        defn match {
+          case Typedef.Dto(id, fields, contracts)          => true
+          case Typedef.Enum(id, members)                   => true
+          case Typedef.Adt(id, members, contracts, fields) => false
+          case Typedef.Foreign(id, bindings)               => false
+          case Typedef.Service(id, methods)                => false
+          case Typedef.Contract(id, fields, contracts)     => false
+        }
+    })
+  }
+
   def isCSValueType(tpe: TypeRef, domain: Domain): Boolean = {
     // TODO: c# rules are complex, probably we have some issues here
     tpe match {
