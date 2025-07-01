@@ -53,7 +53,7 @@ namespace Baboon.Runtime.Shared
     {
         public string BaboonDomainVersion();
         public string BaboonDomainIdentifier();
-        public List<string> BaboonUnmodifiedSinceVersions();
+        public IReadOnlyList<string> BaboonUnmodifiedSinceVersions();
         public string BaboonTypeIdentifier();
     }
 

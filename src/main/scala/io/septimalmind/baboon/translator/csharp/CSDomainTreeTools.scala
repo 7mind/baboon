@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerTarget.CSTarget
-import io.septimalmind.baboon.translator.csharp.CSTypes.{csList, csString}
+import io.septimalmind.baboon.translator.csharp.CSTypes.{csIReadOnlyList, csList, csString}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -66,9 +66,9 @@ object CSDomainTreeTools {
       val unmodifiedMethods = if (!isCodec) {
         val unmodifiedSince = evo.typesUnchangedSince(version)(defn.id)
         List(
-          q"""public${propFix}static readonly $csList<$csString> BaboonUnmodifiedSinceVersionValue = new $csList<$csString> { ${unmodifiedSince.sameIn
+          q"""public${propFix}static readonly $csIReadOnlyList<$csString> BaboonUnmodifiedSinceVersionValue = new $csList<$csString> { ${unmodifiedSince.sameIn
               .map(_.version).map(s => q"\"$s\"").toList.join(", ")} };
-             |public$methodFix$csList<$csString> BaboonUnmodifiedSinceVersions() => BaboonUnmodifiedSinceVersionValue;
+             |public$methodFix$csIReadOnlyList<$csString> BaboonUnmodifiedSinceVersions() => BaboonUnmodifiedSinceVersionValue;
              |""".stripMargin
         )
       } else {
