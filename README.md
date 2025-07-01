@@ -16,7 +16,8 @@ Stripped-down experimental DML with schema evolution support and garbage collect
 6. Namespaces
 7. Inclusions (at syntax tree level)
 8. Lists, sets, dictionaries and optional types.
-9. Codegen targets: C#, Scala
+9. Advanced deduplication for generated C# code.   
+10. Codegen targets: C#, Scala
 
 ## Limitations
 
