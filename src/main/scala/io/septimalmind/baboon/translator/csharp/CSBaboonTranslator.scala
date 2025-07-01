@@ -321,11 +321,11 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             .map {
               case (srcVer, rules) =>
                 convTransFac(
-                  pkg    = pkg,
-                  srcDom = lineage.versions(srcVer.from),
-                  domain = domain,
-                  rules  = rules,
-                  evo    = lineage.evolution,
+                  pkg     = pkg,
+                  srcDom  = lineage.versions(srcVer.from),
+                  domain  = domain,
+                  rules   = rules,
+                  lineage = lineage,
                 ).makeConvs()
             }
         }

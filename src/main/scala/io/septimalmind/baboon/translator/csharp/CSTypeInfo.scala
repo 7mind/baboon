@@ -31,14 +31,17 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
     }
 
     val evo = lineage.evolution
-    val u   = evo.typesUnchangedSince(version)(id)
 
-    u.maybeHigherTwin(version) match {
-      case Some(higherTwinVersion) if target.language.deduplicate && canBeUpgraded(id, lineage.versions(version), higherTwinVersion) =>
-        Some(higherTwinVersion)
-      case _ =>
-        None
+    evo.typesUnchangedSince(version).get(id).flatMap {
+      u =>
+        u.maybeHigherTwin(version) match {
+          case Some(higherTwinVersion) if target.language.deduplicate && canBeUpgraded(id, lineage.versions(version), higherTwinVersion) =>
+            Some(higherTwinVersion)
+          case _ =>
+            None
+        }
     }
+
   }
 
   def isCSValueType(tpe: TypeRef, domain: Domain): Boolean = {

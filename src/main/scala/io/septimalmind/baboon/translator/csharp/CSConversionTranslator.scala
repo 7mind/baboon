@@ -19,7 +19,7 @@ object CSConversionTranslator {
       srcDom: Domain @Id("source"),
       domain: Domain @Id("current"),
       rules: BaboonRuleset,
-      evo: BaboonEvolution,
+      lineage: BaboonLineage,
     ): CSConversionTranslator[F]
   }
 }
@@ -31,18 +31,19 @@ class CSConversionTranslator[F[+_, +_]: Error2](
   domain: Domain @Id("current"),
   rules: BaboonRuleset,
   tools: CSTreeTools,
-  evo: BaboonEvolution,
+  csTypeInfo: CSTypeInfo,
+  lineage: BaboonLineage,
 ) {
   private val srcVer = srcDom.version
   type Out[T] = F[NEList[BaboonIssue.TranslationIssue], T]
 
   private def transfer(tpe: TypeRef, ref: TextTree[CSValue], depth: Int): TextTree[CSValue] = {
     val cnew =
-      trans.asCsRef(tpe, domain, evo)
+      trans.asCsRef(tpe, domain, lineage.evolution)
 
     import io.septimalmind.baboon.translator.FQNSymbol.*
 
-    val cold = trans.asCsRef(tpe, srcDom, evo).fullyQualified
+    val cold = trans.asCsRef(tpe, srcDom, lineage.evolution).fullyQualified
 
     val direct = q"(($cnew) $ref)"
     tpe match {
@@ -70,8 +71,8 @@ class CSConversionTranslator[F[+_, +_]: Error2](
             val keyRef   = c.args.head
             val valueRef = c.args.last
             q"(from $tmp in $ref select new $csKeyValuePair<${trans
-                .asCsRef(keyRef, domain, evo)}, ${trans
-                .asCsRef(valueRef, domain, evo)}>(${transfer(
+                .asCsRef(keyRef, domain, lineage.evolution)}, ${trans
+                .asCsRef(valueRef, domain, lineage.evolution)}>(${transfer(
                 c.args.head,
                 q"$tmp.Key",
                 depth + 1,
@@ -109,7 +110,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
          |    return "${domain.version.version}";
          |}""".stripMargin
 
-    F.flatTraverseAccumErrors(rules.conversions) {
+    F.flatTraverseAccumErrors(rules.conversions.filterNot(c => csTypeInfo.canBeUpgradedTo(c.sourceTpe, domain.version, lineage).nonEmpty)) {
       conv =>
         val convname = makeName("Convert", conv)
 
@@ -118,12 +119,12 @@ class CSConversionTranslator[F[+_, +_]: Error2](
             s"${conv.sourceTpe.name.name}.cs"
           )).mkString("-")
         val tin = trans
-          .asCsType(conv.sourceTpe, srcDom, evo)
+          .asCsType(conv.sourceTpe, srcDom, lineage.evolution)
           .fullyQualified
 
         // This would fail if `sourceTpe` had been removed from `domain`. It's inconvenient to have this defined in each branch of the match below, so we use `def`
         def tout =
-          trans.asCsType(conv.sourceTpe, domain, evo)
+          trans.asCsType(conv.sourceTpe, domain, lineage.evolution)
 
         def transferId(tpe: TypeId.Scalar, ref: TextTree[CSValue]): TextTree[CSValue] = {
           transfer(TypeRef.Scalar(tpe), ref, 0)
@@ -189,7 +190,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
               .map {
                 oldId =>
                   val oldFqid =
-                    trans.asCsType(oldId, srcDom, evo).fullyQualified
+                    trans.asCsType(oldId, srcDom, lineage.evolution).fullyQualified
                   val typedRef = q"fromAs_${oldId.name.name}"
 
                   q"""if (from is $oldFqid $typedRef)
@@ -225,9 +226,9 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                 f =>
                   val op = opIndex(f)
                   val ftNew =
-                    trans.asCsRef(op.targetField.tpe, domain, evo)
+                    trans.asCsRef(op.targetField.tpe, domain, lineage.evolution)
                   val ftNewInit =
-                    trans.asCsRef(op.targetField.tpe, domain, evo, mutableCollections = true)
+                    trans.asCsRef(op.targetField.tpe, domain, lineage.evolution, mutableCollections = true)
                   val base     = op.targetField.name.name.capitalize
                   val fieldRef = q"_from.$base"
                   val initExpr = op match {
@@ -362,7 +363,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
     newId: TypeId.BuiltinCollection,
     newCollArgs: NEList[TypeRef],
   ): F[NEList[BaboonIssue.TranslationBug], Seq[TextTree[CSValue]]] = {
-    val collCsType = trans.asCsRef(newCollArgs.head, domain, evo)
+    val collCsType = trans.asCsRef(newCollArgs.head, domain, lineage.evolution)
 
     val collInit =
       q"(new $ftNewInit(from e in $fieldRef select ($collCsType)e))"
@@ -421,8 +422,8 @@ class CSConversionTranslator[F[+_, +_]: Error2](
       case TypeId.Builtins.map =>
         newId match {
           case TypeId.Builtins.map =>
-            val kt = trans.asCsRef(newCollArgs.head, domain, evo)
-            val vt = trans.asCsRef(newCollArgs.last, domain, evo)
+            val kt = trans.asCsRef(newCollArgs.head, domain, lineage.evolution)
+            val vt = trans.asCsRef(newCollArgs.last, domain, lineage.evolution)
             F.pure(
               Seq(
                 q"(from e in $fieldRef select new $csKeyValuePair<$kt, $vt>(($kt)e.Key, ($vt)e.Value)).${CSTypes.mkDict}"
