@@ -140,12 +140,11 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
   def renderType(tpe: CSValue.CSType, o: CSDefnTranslator.Output, family: BaboonFamily): String = {
     tpe.origin match {
       case CSTypeOrigin.TypeInDomain(typeId, pkg, version) =>
-        val lineage        = family.domains(pkg)
-        val evo            = lineage.evolution
-        val u              = evo.typesUnchangedSince(version)(typeId)
-        val higherVersions = u.sameIn.toList.filter(_.version > version.version)
+        val lineage = family.domains(pkg)
+        val evo     = lineage.evolution
+        val u       = evo.typesUnchangedSince(version)(typeId)
 
-        higherVersions.lastOption match {
+        u.maybeHigherTwin(version) match {
           case Some(value) =>
             val higherDom          = lineage.versions(value)
             val higherTwin         = trans.asCsType(typeId, higherDom, evo).fullyQualified

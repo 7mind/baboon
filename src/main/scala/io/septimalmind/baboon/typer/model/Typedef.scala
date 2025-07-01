@@ -2,7 +2,11 @@ package io.septimalmind.baboon.typer.model
 
 import izumi.fundamentals.collections.nonempty.NEList
 
-case class UnmodifiedSince(typeId: TypeId, in: Version, sameIn: NEList[Version])
+case class UnmodifiedSince(typeId: TypeId, in: Version, sameIn: NEList[Version]) {
+  def maybeHigherTwin(version: Version): Option[Version] = {
+    sameIn.toList.filter(_.version > version.version).lastOption
+  }
+}
 
 case class TypeMeta(shallowId: ShallowSchemaId, deepId: DeepSchemaId)
 case class RefMeta(len: BinReprLen)
