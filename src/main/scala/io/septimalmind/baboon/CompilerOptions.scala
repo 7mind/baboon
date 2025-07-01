@@ -45,6 +45,7 @@ final case class CSOptions(
   generateUebaCodecs: Boolean,
   generateUebaCodecsByDefault: Boolean,
   generateJsonCodecsByDefault: Boolean,
+  deduplicate: Boolean,
 )
 
 final case class GenericOptions(

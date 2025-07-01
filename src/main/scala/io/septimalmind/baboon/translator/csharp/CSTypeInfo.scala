@@ -10,13 +10,12 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
   }
 
   def canBeUpgradedTo(id: TypeId.User, version: Version, lineage: BaboonLineage): Option[Version] = {
-    def canBeUpgraded(id: TypeId.User, dom: Domain): Boolean = {
+    def canBeUpgraded(id: TypeId.User, dom: Domain, higherTwinVersion: Version): Boolean = {
       (id.owner match {
         case Owner.Toplevel => true
         case _: Owner.Ns    => true
-        case o: Owner.Adt   =>
-          // TODO: is it safe?
-          canBeUpgradedTo(o.id, version, lineage).nonEmpty
+        case o: Owner.Adt =>
+          canBeUpgradedTo(o.id, version, lineage).contains(higherTwinVersion)
       }) && (dom.defs.meta.nodes(id) match {
         case _: DomainMember.Builtin => false
         case u: DomainMember.User =>
@@ -35,8 +34,8 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
     val u   = evo.typesUnchangedSince(version)(id)
 
     u.maybeHigherTwin(version) match {
-      case Some(value) if canBeUpgraded(id, lineage.versions(version)) =>
-        Some(value)
+      case Some(higherTwinVersion) if target.language.deduplicate && canBeUpgraded(id, lineage.versions(version), higherTwinVersion) =>
+        Some(higherTwinVersion)
       case _ =>
         None
     }

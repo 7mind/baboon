@@ -52,6 +52,7 @@ object Baboon {
                           generateUebaCodecs                        = opts.generateUebaCodecs.getOrElse(true),
                           generateJsonCodecsByDefault               = opts.generateJsonCodecsByDefault.getOrElse(false),
                           generateUebaCodecsByDefault               = opts.generateUebaCodecsByDefault.getOrElse(false),
+                          deduplicate                               = opts.deduplicate.getOrElse(true),
                         ),
                       )
                   }
