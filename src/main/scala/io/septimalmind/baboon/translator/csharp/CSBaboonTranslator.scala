@@ -144,10 +144,9 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
       case CSTypeOrigin.TypeInDomain(typeId: TypeId.User, pkg, version) =>
         val lineage = family.domains(pkg)
         val evo     = lineage.evolution
-        val u       = evo.typesUnchangedSince(version)(typeId)
 
-        u.maybeHigherTwin(version) match {
-          case Some(value) if csTypeInfo.canBeUpgraded(typeId, lineage.versions(version)) =>
+        csTypeInfo.canBeUpgradedTo(typeId, version, lineage) match {
+          case Some(value) =>
             val higherDom          = lineage.versions(value)
             val higherTwin         = trans.asCsType(typeId, higherDom, evo).fullyQualified
             val higherTwinRendered = renderSimpleType(higherTwin, o)
@@ -155,7 +154,8 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             println(s"type ${renderSimpleType(tpe.fullyQualified, o)} has unmodified twin in higher version $value: $higherTwinRendered")
 
             higherTwinRendered
-          case _ =>
+
+          case None =>
             renderSimpleType(tpe, o)
         }
 
@@ -212,37 +212,42 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
 
   private def translateDomain(domain: Domain, lineage: BaboonLineage): Out[List[CSDefnTranslator.Output]] = {
     val evo = lineage.evolution
-    translator.provide(domain).provide(evo).produce().use {
-      defnTranslator =>
-        for {
-          defnSources     <- translateProduct(domain, CompilerProduct.Definition, defnTranslator.translate)
-          fixturesSources <- translateProduct(domain, CompilerProduct.Fixture, defnTranslator.translateFixtures)
-          testsSources    <- translateProduct(domain, CompilerProduct.Test, defnTranslator.translateTests)
+    translator
+      .provide(domain)
+      .provide(evo)
+      .provide(lineage)
+      .produce()
+      .use {
+        defnTranslator =>
+          for {
+            defnSources     <- translateProduct(domain, CompilerProduct.Definition, defnTranslator.translate)
+            fixturesSources <- translateProduct(domain, CompilerProduct.Fixture, defnTranslator.translateFixtures)
+            testsSources    <- translateProduct(domain, CompilerProduct.Test, defnTranslator.translateTests)
 
-          conversionSources <- {
-            if (target.output.products.contains(CompilerProduct.Conversion)) {
-              val evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
-              generateConversions(domain, lineage, evosToCurrent, defnSources)
-            } else {
-              F.pure(List.empty)
+            conversionSources <- {
+              if (target.output.products.contains(CompilerProduct.Conversion)) {
+                val evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
+                generateConversions(domain, lineage, evosToCurrent, defnSources)
+              } else {
+                F.pure(List.empty)
+              }
             }
-          }
 
-          meta <- {
-            if (target.language.writeEvolutionDict) {
-              generateMeta(domain, lineage)
-            } else {
-              F.pure(List.empty)
+            meta <- {
+              if (target.language.writeEvolutionDict) {
+                generateMeta(domain, lineage)
+              } else {
+                F.pure(List.empty)
+              }
             }
+          } yield {
+            defnSources ++
+            conversionSources ++
+            fixturesSources ++
+            testsSources ++
+            meta
           }
-        } yield {
-          defnSources ++
-          conversionSources ++
-          fixturesSources ++
-          testsSources ++
-          meta
-        }
-    }
+      }
 
   }
 

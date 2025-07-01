@@ -65,15 +65,22 @@ object CSDefnTranslator {
     codecsFixture: CSCodecFixtureTranslator,
     domain: Domain,
     evo: BaboonEvolution,
+    lineage: BaboonLineage,
     types: TypeInfo,
+    csTypeInfo: CSTypeInfo,
   ) extends CSDefnTranslator[F] {
     type Out[T] = F[NEList[BaboonIssue.TranslationIssue], T]
 
     override def translate(defn: DomainMember.User): Out[List[Output]] = {
-      defn.id.owner match {
-        case Owner.Adt(_) => F.pure(List.empty)
-        case _            => doTranslate(defn)
+      if (csTypeInfo.canBeUpgradedTo(defn.id, domain.version, lineage).nonEmpty) {
+        F.pure(List.empty)
+      } else {
+        defn.id.owner match {
+          case Owner.Adt(_) => F.pure(List.empty)
+          case _            => doTranslate(defn)
+        }
       }
+
     }
 
     private def doTranslate(defn: DomainMember.User): Out[List[Output]] = {

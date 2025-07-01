@@ -9,7 +9,19 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
     id.name.name
   }
 
-  def canBeUpgraded(id: TypeId.User, dom: Domain): Boolean = {
+  def canBeUpgradedTo(id: TypeId.User, version: Version, lineage: BaboonLineage): Option[Version] = {
+    val evo = lineage.evolution
+    val u   = evo.typesUnchangedSince(version)(id)
+
+    u.maybeHigherTwin(version) match {
+      case Some(value) if canBeUpgraded(id, lineage.versions(version)) =>
+        Some(value)
+      case _ =>
+        None
+    }
+  }
+
+  private def canBeUpgraded(id: TypeId.User, dom: Domain): Boolean = {
     (id.owner match {
       case Owner.Toplevel => true
       case _: Owner.Ns    => true
