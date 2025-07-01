@@ -83,6 +83,7 @@ object BaboonTyper {
       }
     }
 
+    // TODO: predMatrix from above can be reused here, currently the job is done twice
     private def computeDerivations(
       defs: Map[TypeId, DomainMember]
     ): F[NEList[BaboonIssue.TyperIssue], Map[DerivationDecl, Set[TypeId]]] = {
