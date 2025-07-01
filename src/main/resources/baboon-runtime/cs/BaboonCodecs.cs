@@ -306,35 +306,32 @@ namespace Baboon.Runtime.Shared
         }
     }
 
-    public interface IBaboonTypeCodecs
-    {
-        public string Id { get; }
-        public IBaboonCodecData Impl { get; }
-    }
-
-    public sealed record BaboonTypeCodecs(string Id, Lazy<IBaboonCodecData> LazyValue) : IBaboonTypeCodecs
-    {
-        public IBaboonCodecData Impl => LazyValue.Value;
-    }
-
     public abstract class AbstractBaboonCodecs
     {
-        private readonly Dictionary<string, IBaboonTypeCodecs> _codecs = new();
+        private readonly Dictionary<string, Lazy<IBaboonCodecData>> _codecs = new();
 
         public void Register(string id, Lazy<IBaboonCodecData> impl)
         {
-            _codecs[id] = new BaboonTypeCodecs(id, impl);
+            _codecs[id] = impl;
         }
 
-        public IBaboonTypeCodecs Find(string id)
+        public Lazy<IBaboonCodecData> Find(string id)
         {
             return _codecs[id];
         }
 
-        public bool TryFind(string id, out IBaboonTypeCodecs? value)
+        public bool TryFind(string id, out Lazy<IBaboonCodecData>? value)
         {
             return _codecs.TryGetValue(id, out value);
         }
     }
+    
+    public abstract class AbstractBaboonJsonCodecs : AbstractBaboonCodecs
+    {
+    }
 
+    public abstract class AbstractBaboonUebaCodecs : AbstractBaboonCodecs
+    {
+    }
+   
 }

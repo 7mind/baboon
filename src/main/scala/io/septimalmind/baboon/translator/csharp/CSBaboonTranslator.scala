@@ -310,7 +310,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
       val codecs = regsMap.map {
         case (codecid, regs) =>
           val nme = q"BaboonCodecs${codecid.capitalize}"
-          q"""public sealed class $nme : $abstractBaboonCodecs
+          q"""public sealed class $nme : ${abstractBaboonCodecs(codecid)}
              |{
              |    private $nme()
              |    {
