@@ -29,7 +29,7 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
         case Owner.Toplevel => true
         case _: Owner.Ns    => true
         case o: Owner.Adt =>
-          canBeUpgradedTo(o.id, version, lineage).contains(higherTwinVersion)
+          canBeUpgradedTo(o.id, version, lineage).nonEmpty // .contains(higherTwinVersion)
       }) && (dom.defs.meta.nodes(id) match {
         case _: DomainMember.Builtin => false
         case u: DomainMember.User =>
