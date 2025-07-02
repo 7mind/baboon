@@ -25,11 +25,19 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
 
   def canBeUpgradedTo(id: TypeId.User, version: Version, lineage: BaboonLineage): Option[Version] = {
     def canBeUpgraded(id: TypeId.User, dom: Domain, higherTwinVersion: Version): Boolean = {
+      assert(version == dom.version)
+
       (id.owner match {
         case Owner.Toplevel => true
         case _: Owner.Ns    => true
         case o: Owner.Adt =>
-          canBeUpgradedTo(o.id, version, lineage).nonEmpty // .contains(higherTwinVersion)
+          val upgradeVersion = canBeUpgradedTo(o.id, version, lineage)
+
+          val hardCriterion = upgradeVersion.exists(_.version <= higherTwinVersion.version)
+          val weakCriterion = upgradeVersion.nonEmpty
+          assert(hardCriterion == weakCriterion, s"upgrade conditions diverged: $id in $version has upgrade to $upgradeVersion, higher twin=$higherTwinVersion")
+          hardCriterion
+
       }) && (dom.defs.meta.nodes(id) match {
         case _: DomainMember.Builtin => false
         case u: DomainMember.User =>

@@ -55,16 +55,16 @@ class CSConversionTranslator[F[+_, +_]: Error2](
          |    return "${domain.version.version}";
          |}""".stripMargin
 
-    import izumi.fundamentals.collections.IzCollections.*
-    val (convsToIgnore, convsToTranslate) = rules.conversions.partition(c => csTypeInfo.canBeUpgradedTo(c.sourceTpe, srcDom.version, lineage).nonEmpty)
-    import izumi.fundamentals.platform.strings.IzString.*
-    println(
-      s"eliminated conversions ${srcDom.version}->${domain.version}: ${rules.conversions.map(c => (c.sourceTpe, csTypeInfo.canBeUpgradedTo(c.sourceTpe, srcDom.version, lineage))).niceList()}"
-    )
+//    import izumi.fundamentals.collections.IzCollections.*
+    val (_, convsToTranslate) = rules.conversions.partition(c => csTypeInfo.canBeUpgradedTo(c.sourceTpe, srcDom.version, lineage).nonEmpty)
 
-    println(s"ignored: ${convsToIgnore.niceList()}")
+//    import izumi.fundamentals.platform.strings.IzString.*
+//    println(
+//      s"eliminated conversions ${srcDom.version}->${domain.version}: ${rules.conversions.map(c => (c.sourceTpe, csTypeInfo.canBeUpgradedTo(c.sourceTpe, srcDom.version, lineage))).niceList()}"
+//    )
+//    println(s"ignored: ${convsToIgnore.niceList()}")
+//    println(convsToTranslate.niceList())
 
-    println(convsToTranslate.niceList())
     F.flatTraverseAccumErrors(convsToTranslate) {
       conv =>
         val convname = makeName("Convert", conv)
