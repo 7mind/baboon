@@ -12,8 +12,10 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
   def eliminated(id: TypeId.User, version: Version, lineage: BaboonLineage): Boolean = {
     val thisCanBeUpgraded = canBeUpgradedTo(id, version, lineage).nonEmpty
 
-    val dom                        = lineage.versions(version)
-    val dependsOnThis              = dom.defs.successors.links(id)
+    val dom           = lineage.versions(version)
+    val dependsOnThis = dom.defs.successors.links(id)
+
+    // see BaboonComparator.compare, a type can be upgraded ONLY when it's schema hash is completely unchanged, so this should be safe
     val allDependantsCanBeUpgraded = dependsOnThis.forall(d => canBeUpgradedTo(d.asInstanceOf[TypeId.User], version, lineage).nonEmpty)
 
     thisCanBeUpgraded || (allDependantsCanBeUpgraded && !dom.roots.contains(id))
