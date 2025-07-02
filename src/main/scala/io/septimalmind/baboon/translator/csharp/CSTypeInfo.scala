@@ -23,7 +23,11 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
     thisCanBeUpgraded || (allDependantsCanBeUpgraded && !dom.roots.contains(id))
   }
 
-  def canBeUpgradedTo(id: TypeId.User, version: Version, lineage: BaboonLineage, checkOwner: Boolean = true): Option[Version] = {
+  def canBeUpgradedTo(id: TypeId.User, version: Version, lineage: BaboonLineage): Option[Version] = {
+    canBeUpgradedTo1(id, version, lineage).lastOption
+  }
+
+  def canBeUpgradedTo1(id: TypeId.User, version: Version, lineage: BaboonLineage, checkOwner: Boolean = true): List[Version] = {
     def canBeUpgraded(id: TypeId.User, dom: Domain, higherTwinVersion: Version): Boolean = {
       assert(version == dom.version)
 
@@ -64,35 +68,48 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
     val dom = lineage.versions(version)
 
     evo
-      .typesUnchangedSince(version).get(id).flatMap {
+      .typesUnchangedSince(version).get(id).toList.flatMap {
         u =>
           val higher = u.higherTwins(version)
           if (higher.isEmpty) {
             None
           } else {
             val defn = dom.defs.meta.nodes(id)
+
             defn match {
-              case _: DomainMember.Builtin =>
-                Some(higher.last)
               case u: DomainMember.User =>
-                u.defn match {
+                def regularUpgrade = u.defn match {
                   case a: Typedef.Adt =>
                     // maximum version to which EVERY branch can be upgraded
-                    higher.filter(mh => a.members.map(m => canBeUpgradedTo(m, version, lineage, checkOwner = false)).forall(_.contains(mh))).lastOption
-
-                  case _ => Some(higher.last)
+                    maxAdtUpgrade(a, id, version, lineage, higher)
+                  case _ => higher
                 }
+
+                u.id.owner match {
+                  case Owner.Toplevel => regularUpgrade
+                  case _: Owner.Ns    => regularUpgrade
+                  case o: Owner.Adt =>
+                    if (checkOwner) {
+                      maxAdtUpgrade(dom.defs.meta.nodes(o.id).asInstanceOf[DomainMember.User].defn.asInstanceOf[Typedef.Adt], id, version, lineage, higher)
+                    } else {
+                      regularUpgrade
+                    }
+
+                }
+
+              case _: DomainMember.Builtin =>
+                higher
             }
           }
-
-//        u.maybeHigherTwin(version) match {
-//          case Some(higherTwinVersion) if canBeUpgraded(id, dom, higherTwinVersion) =>
-//            Some(higherTwinVersion)
-//          case _ =>
-//            None
-//        }
       }.filter(v => canBeUpgraded(id, dom, v))
 
+  }
+
+  private def maxAdtUpgrade(adt: Typedef.Adt, id: TypeId.User, version: Version, lineage: BaboonLineage, higher: List[Version]) = {
+    val maxUpgrade = higher.filter(mh => adt.members.map(m => canBeUpgradedTo1(m, version, lineage, checkOwner = false)).forall(_.contains(mh))).lastOption
+
+    println(s"$id@$version, $higher, ${higher.map(mh => adt.members.map(m => canBeUpgradedTo1(m, version, lineage, checkOwner = false)))} -> $maxUpgrade")
+    maxUpgrade
   }
 
   def isCSValueType(tpe: TypeRef, domain: Domain): Boolean = {
