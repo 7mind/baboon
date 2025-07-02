@@ -24,13 +24,8 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
   }
 
   def canBeUpgradedTo(id: TypeId.User, version: Version, lineage: BaboonLineage): Option[Version] = {
-    canBeUpgradedTo1(id, version, lineage).lastOption
-  }
-
-  def canBeUpgradedTo1(id: TypeId.User, version: Version, lineage: BaboonLineage, checkOwner: Boolean = true): List[Version] = {
-    def canBeUpgraded(id: TypeId.User, dom: Domain, higherTwinVersion: Version): Boolean = {
-      assert(version == dom.version)
-
+    if (target.language.deduplicate) {
+      val dom = lineage.versions(version)
       val upgradeAllowed = dom.defs.meta.nodes(id) match {
         case _: DomainMember.Builtin =>
           false
@@ -44,25 +39,23 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
             case _: Typedef.Service  => false
           }
       }
-
-      val ownerAllowsUpgrade = !checkOwner || (id.owner match {
-        case o: Owner.Adt =>
-          val upgradeVersion = canBeUpgradedTo(o.id, version, lineage)
-          val hardCriterion  = upgradeVersion.exists(_.version <= higherTwinVersion.version)
-          val weakCriterion  = upgradeVersion.nonEmpty
-          assert(hardCriterion == weakCriterion, s"upgrade conditions diverged: $id in $version has upgrade to $upgradeVersion, higher twin=$higherTwinVersion")
-          hardCriterion
-        case _ => true
-      })
-
-      target.language.deduplicate && upgradeAllowed && ownerAllowsUpgrade
+      if (upgradeAllowed) {
+        possibleUpgrades(id, version, lineage).lastOption
+      } else {
+        None
+      }
+    } else {
+      None
     }
+  }
 
+  def possibleUpgrades(id: TypeId.User, version: Version, lineage: BaboonLineage, checkOwner: Boolean = true): List[Version] = {
     val evo = lineage.evolution
     val dom = lineage.versions(version)
 
     evo
-      .typesUnchangedSince(version).get(id).toList.flatMap {
+      .typesUnchangedSince(version).get(id)
+      .toList.flatMap {
         u =>
           val higher = u.higherTwins(version)
           if (higher.isEmpty) {
@@ -72,33 +65,44 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
 
             defn match {
               case u: DomainMember.User =>
-                def regularUpgrade: Seq[Version] = u.defn match {
+                def regularUpgrade(td: Typedef.User): Seq[Version] = td match {
                   case a: Typedef.Adt =>
-                    // maximum version to which EVERY branch can be upgraded
-                    maxAdtUpgrade(a, id, version, lineage, higher).toList
-                  case _ => higher
+                    possibleAdtUpgrades(a, version, lineage, higher)
+                  case _ =>
+                    higher
                 }
 
                 u.id.owner match {
                   case o: Owner.Adt =>
                     if (checkOwner) {
-                      maxAdtUpgrade(dom.defs.meta.nodes(o.id).asInstanceOf[DomainMember.User].defn.asInstanceOf[Typedef.Adt], id, version, lineage, higher)
+                      val ownerAdt = dom.defs.meta.nodes(o.id).asInstanceOf[DomainMember.User].defn.asInstanceOf[Typedef.Adt]
+                      val allowedUpgrades =
+                        possibleAdtUpgrades(ownerAdt, version, lineage, higher)
+
+                      allowedUpgrades.filter {
+                        higherTwinVersion =>
+                          val upgradeVersions = possibleUpgrades(o.id, version, lineage)
+                          val hardCriterion   = upgradeVersions.exists(_.version == higherTwinVersion.version)
+                          hardCriterion
+                      }
                     } else {
-                      regularUpgrade
+                      regularUpgrade(u.defn)
                     }
-                  case _ => regularUpgrade
+                  case _ =>
+                    regularUpgrade(u.defn)
                 }
 
               case _: DomainMember.Builtin =>
                 higher
             }
           }
-      }.filter(v => canBeUpgraded(id, dom, v))
+      }
 
   }
 
-  private def maxAdtUpgrade(adt: Typedef.Adt, id: TypeId.User, version: Version, lineage: BaboonLineage, higher: List[Version]): Option[Version] = {
-    val maxUpgrade = higher.filter(mh => adt.members.map(m => canBeUpgradedTo1(m, version, lineage, checkOwner = false)).forall(_.contains(mh))).lastOption
+  private def possibleAdtUpgrades(adt: Typedef.Adt, version: Version, lineage: BaboonLineage, higher: List[Version]): List[Version] = {
+    // maximum version to which EVERY branch can be upgraded
+    val maxUpgrade = higher.filter(mh => adt.members.map(m => possibleUpgrades(m, version, lineage, checkOwner = false)).forall(_.contains(mh)))
     maxUpgrade
   }
 
