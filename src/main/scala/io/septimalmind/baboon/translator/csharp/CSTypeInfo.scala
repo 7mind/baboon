@@ -46,19 +46,13 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
       }
 
       val ownerAllowsUpgrade = !checkOwner || (id.owner match {
-        case Owner.Toplevel => true
-        case _: Owner.Ns    => true
         case o: Owner.Adt =>
           val upgradeVersion = canBeUpgradedTo(o.id, version, lineage)
-//          upgradeVersion.nonEmpty
-
-          val hardCriterion = upgradeVersion.exists(_.version <= higherTwinVersion.version)
-          val weakCriterion = upgradeVersion.nonEmpty
+          val hardCriterion  = upgradeVersion.exists(_.version <= higherTwinVersion.version)
+          val weakCriterion  = upgradeVersion.nonEmpty
           assert(hardCriterion == weakCriterion, s"upgrade conditions diverged: $id in $version has upgrade to $upgradeVersion, higher twin=$higherTwinVersion")
-//          hardCriterion
-//          upgradeVersion.contains(higherTwinVersion)
           hardCriterion
-
+        case _ => true
       })
 
       target.language.deduplicate && upgradeAllowed && ownerAllowsUpgrade
@@ -78,23 +72,21 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
 
             defn match {
               case u: DomainMember.User =>
-                def regularUpgrade = u.defn match {
+                def regularUpgrade: Seq[Version] = u.defn match {
                   case a: Typedef.Adt =>
                     // maximum version to which EVERY branch can be upgraded
-                    maxAdtUpgrade(a, id, version, lineage, higher)
+                    maxAdtUpgrade(a, id, version, lineage, higher).toList
                   case _ => higher
                 }
 
                 u.id.owner match {
-                  case Owner.Toplevel => regularUpgrade
-                  case _: Owner.Ns    => regularUpgrade
                   case o: Owner.Adt =>
                     if (checkOwner) {
                       maxAdtUpgrade(dom.defs.meta.nodes(o.id).asInstanceOf[DomainMember.User].defn.asInstanceOf[Typedef.Adt], id, version, lineage, higher)
                     } else {
                       regularUpgrade
                     }
-
+                  case _ => regularUpgrade
                 }
 
               case _: DomainMember.Builtin =>
@@ -105,10 +97,8 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
 
   }
 
-  private def maxAdtUpgrade(adt: Typedef.Adt, id: TypeId.User, version: Version, lineage: BaboonLineage, higher: List[Version]) = {
+  private def maxAdtUpgrade(adt: Typedef.Adt, id: TypeId.User, version: Version, lineage: BaboonLineage, higher: List[Version]): Option[Version] = {
     val maxUpgrade = higher.filter(mh => adt.members.map(m => canBeUpgradedTo1(m, version, lineage, checkOwner = false)).forall(_.contains(mh))).lastOption
-
-    println(s"$id@$version, $higher, ${higher.map(mh => adt.members.map(m => canBeUpgradedTo1(m, version, lineage, checkOwner = false)))} -> $maxUpgrade")
     maxUpgrade
   }
 

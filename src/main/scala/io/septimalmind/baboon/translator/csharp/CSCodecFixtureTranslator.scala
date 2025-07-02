@@ -5,6 +5,7 @@ import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
+import izumi.functional.bio.F
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
@@ -18,25 +19,31 @@ object CSCodecFixtureTranslator {
     translator: CSTypeTranslator,
     enquiries: BaboonEnquiries,
     domain: Domain,
+    lineage: BaboonLineage,
     evo: BaboonEvolution,
+    csTypeInfo: CSTypeInfo,
   ) extends CSCodecFixtureTranslator {
 
     override def translate(
       definition: DomainMember.User
     ): Option[TextTree[CSValue]] = {
-      definition.defn match {
-        case _ if enquiries.hasForeignType(definition, domain)     => None
-        case _ if enquiries.isRecursiveTypedef(definition, domain) => None
-        case _: Typedef.Contract                                   => None
-        case _: Typedef.Enum                                       => None
-        case _: Typedef.Foreign                                    => None
-        case _: Typedef.Service                                    => None
+      if (csTypeInfo.eliminated(definition.id, domain.version, lineage)) {
+        None
+      } else {
+        definition.defn match {
+          case _ if enquiries.hasForeignType(definition, domain)     => None
+          case _ if enquiries.isRecursiveTypedef(definition, domain) => None
+          case _: Typedef.Contract                                   => None
+          case _: Typedef.Enum                                       => None
+          case _: Typedef.Foreign                                    => None
+          case _: Typedef.Service                                    => None
 
-        case dto: Typedef.Dto =>
-          Some(doTranslateDto(dto))
+          case dto: Typedef.Dto =>
+            Some(doTranslateDto(dto))
 
-        case adt: Typedef.Adt =>
-          Some(doTranslateAdt(adt))
+          case adt: Typedef.Adt =>
+            Some(doTranslateAdt(adt))
+        }
       }
     }
 
