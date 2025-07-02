@@ -110,7 +110,10 @@ class CSConversionTranslator[F[+_, +_]: Error2](
          |    return "${domain.version.version}";
          |}""".stripMargin
 
-    F.flatTraverseAccumErrors(rules.conversions.filterNot(c => csTypeInfo.canBeUpgradedTo(c.sourceTpe, domain.version, lineage).nonEmpty)) {
+    println("removed conversions:")
+    println(rules.conversions.filter(c => csTypeInfo.canBeUpgradedTo(c.sourceTpe, domain.version, lineage).nonEmpty))
+
+    F.flatTraverseAccumErrors(rules.conversions.filterNot(c => csTypeInfo.canBeUpgradedTo(c.sourceTpe, srcDom.version, lineage).nonEmpty)) {
       conv =>
         val convname = makeName("Convert", conv)
 
