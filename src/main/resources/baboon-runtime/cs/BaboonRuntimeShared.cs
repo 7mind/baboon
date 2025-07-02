@@ -64,7 +64,7 @@ namespace Baboon.Runtime.Shared
 
     public interface IBaboonMeta
     {
-        public List<string> SameInVersions(string typeIdString);
+        public IReadOnlyList<string> SameInVersions(string typeIdString);
     }
 
     public interface IBaboonGeneratedLatest : IBaboonGenerated

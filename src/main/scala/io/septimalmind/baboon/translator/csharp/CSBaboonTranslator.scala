@@ -277,7 +277,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
          |        ${entries.join("\n").shift(8).trim}
          |    }
          |
-         |    public $csList<$csString> SameInVersions($csString typeIdString)
+         |    public $csIReadOnlyList<$csString> SameInVersions($csString typeIdString)
          |    {
          |        return _unmodified[typeIdString];
          |    }
