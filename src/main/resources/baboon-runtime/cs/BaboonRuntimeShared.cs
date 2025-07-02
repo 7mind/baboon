@@ -53,7 +53,7 @@ namespace Baboon.Runtime.Shared
     {
         public string BaboonDomainVersion();
         public string BaboonDomainIdentifier();
-        public IReadOnlyList<string> BaboonUnmodifiedSinceVersions();
+        public IReadOnlyList<string> BaboonSameInVersions();
         public string BaboonTypeIdentifier();
     }
 
@@ -64,7 +64,7 @@ namespace Baboon.Runtime.Shared
 
     public interface IBaboonMeta
     {
-        public List<string> UnmodifiedSince(string typeIdString);
+        public List<string> SameInVersions(string typeIdString);
     }
 
     public interface IBaboonGeneratedLatest : IBaboonGenerated

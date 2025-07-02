@@ -164,10 +164,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
   def renderType(tpe: CSValue.CSType, o: CSDefnTranslator.Output, family: BaboonFamily): String = {
     isUpgradeable(tpe, family) match {
       case Some(higherTwin) =>
-        val higherTwinRendered = renderSimpleType(higherTwin, o)
-        println(s"type ${renderSimpleType(tpe.fullyQualified, o)} has unmodified twin in higher version: $higherTwinRendered")
-        higherTwinRendered
-
+        renderSimpleType(higherTwin, o)
       case None => renderSimpleType(tpe, o)
     }
   }
@@ -280,7 +277,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
          |        ${entries.join("\n").shift(8).trim}
          |    }
          |
-         |    public $csList<$csString> UnmodifiedSince($csString typeIdString)
+         |    public $csList<$csString> SameInVersions($csString typeIdString)
          |    {
          |        return _unmodified[typeIdString];
          |    }

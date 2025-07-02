@@ -66,9 +66,9 @@ object CSDomainTreeTools {
       val unmodifiedMethods = if (!isCodec) {
         val unmodifiedSince = evo.typesUnchangedSince(version)(defn.id)
         List(
-          q"""public${propFix}static readonly $csIReadOnlyList<$csString> BaboonUnmodifiedSinceVersionValue = new $csList<$csString> { ${unmodifiedSince.sameIn
+          q"""public${propFix}static readonly $csIReadOnlyList<$csString> BaboonSameInVersionsValue = new $csList<$csString> { ${unmodifiedSince.sameIn
               .map(_.version).map(s => q"\"$s\"").toList.join(", ")} };
-             |public$methodFix$csIReadOnlyList<$csString> BaboonUnmodifiedSinceVersions() => BaboonUnmodifiedSinceVersionValue;
+             |public$methodFix$csIReadOnlyList<$csString> BaboonSameInVersions() => BaboonSameInVersionsValue;
              |""".stripMargin
         )
       } else {
