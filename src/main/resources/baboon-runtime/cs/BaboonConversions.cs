@@ -193,8 +193,22 @@ namespace Baboon.Runtime.Shared
 
         public IReadOnlyList<IConversion> FindConversions(IBaboonGenerated value)
         {
-            return !_convsWild.TryGetValue(value.GetType(), out var res) ? new List<IConversion>() : res;
+            if (_convsWild.TryGetValue(value.GetType(), out var tpeConv))
+            {
+                return tpeConv;
+            }
+
+            if (value is IBaboonAdtMemberMeta branch)
+            {
+                if (_convsWild.TryGetValue(branch.BaboonAdtType(), out var branchConv))
+                {
+                    return branchConv;
+                }   
+            }
+            
+            return new List<IConversion>();
         }
+
 
         public TTo ConvertWithContext<T, TFrom, TTo>(T? c, TFrom from)
         {

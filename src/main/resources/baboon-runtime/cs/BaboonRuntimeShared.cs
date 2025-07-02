@@ -60,6 +60,7 @@ namespace Baboon.Runtime.Shared
     public interface IBaboonAdtMemberMeta
     {
         public string BaboonAdtTypeIdentifier();
+        public Type BaboonAdtType();
     }
 
     public interface IBaboonMeta
