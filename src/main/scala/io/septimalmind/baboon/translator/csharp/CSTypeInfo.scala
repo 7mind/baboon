@@ -9,6 +9,16 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
     id.name.name
   }
 
+  def eliminated(id: TypeId.User, version: Version, lineage: BaboonLineage): Boolean = {
+    val thisCanBeUpgraded = canBeUpgradedTo(id, version, lineage).nonEmpty
+
+    val dom                        = lineage.versions(version)
+    val dependsOnThis              = dom.defs.successors.links(id)
+    val allDependantsCanBeUpgraded = dependsOnThis.forall(d => canBeUpgradedTo(d.asInstanceOf[TypeId.User], version, lineage).nonEmpty)
+
+    thisCanBeUpgraded || (allDependantsCanBeUpgraded && !dom.roots.contains(id))
+  }
+
   def canBeUpgradedTo(id: TypeId.User, version: Version, lineage: BaboonLineage): Option[Version] = {
     def canBeUpgraded(id: TypeId.User, dom: Domain, higherTwinVersion: Version): Boolean = {
       (id.owner match {
@@ -23,9 +33,9 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
             case _: Typedef.Dto      => true
             case _: Typedef.Enum     => true
             case _: Typedef.Adt      => true
+            case _: Typedef.Contract => true
             case _: Typedef.Foreign  => false
             case _: Typedef.Service  => false
-            case _: Typedef.Contract => false
           }
       })
     }
@@ -87,4 +97,5 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
         false
     }
   }
+
 }

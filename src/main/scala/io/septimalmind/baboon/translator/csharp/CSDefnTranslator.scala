@@ -72,7 +72,7 @@ object CSDefnTranslator {
     type Out[T] = F[NEList[BaboonIssue.TranslationIssue], T]
 
     override def translate(defn: DomainMember.User): Out[List[Output]] = {
-      if (csTypeInfo.canBeUpgradedTo(defn.id, domain.version, lineage).nonEmpty) {
+      if (csTypeInfo.eliminated(defn.id, domain.version, lineage)) {
         F.pure(List.empty)
       } else {
         defn.id.owner match {

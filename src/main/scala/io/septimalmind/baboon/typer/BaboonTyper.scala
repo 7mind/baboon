@@ -68,7 +68,7 @@ object BaboonTyper {
         refMeta     <- makeRefMeta(graph.meta.nodes)
         derivations <- computeDerivations(graph.meta.nodes)
       } yield {
-        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations)
+        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations, roots.keySet)
       }
     }
 

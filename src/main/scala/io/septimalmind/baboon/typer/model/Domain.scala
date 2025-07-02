@@ -13,6 +13,7 @@ case class Domain(
   loops: Set[LoopDetector.Cycles[TypeId]],
   refMeta: Map[TypeRef, RefMeta],
   derivationRequests: Map[DerivationDecl, Set[TypeId]],
+  roots: Set[TypeId],
 ) {
 
   import izumi.fundamentals.platform.strings.IzString.*
