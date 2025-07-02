@@ -311,15 +311,15 @@ class CSConversionTranslator[F[+_, +_]: Error2](
   }
 
   private def transfer(tpe: TypeRef, ref: TextTree[CSValue], depth: Int): TextTree[CSValue] = {
+    import io.septimalmind.baboon.translator.FQNSymbol.*
+
     val cnew =
       trans.asCsRef(tpe, domain, lineage.evolution)
-
-    import io.septimalmind.baboon.translator.FQNSymbol.*
 
     val cold = trans.asCsRef(tpe, srcDom, lineage.evolution).fullyQualified
 
     val direct = q"(($cnew) $ref)"
-    tpe match {
+    val out = tpe match {
       case TypeRef.Scalar(id) =>
         val conv =
           q"conversions.ConvertWithContext<C, $cold, $cnew>(context, ($cold) $ref)"
@@ -363,6 +363,8 @@ class CSConversionTranslator[F[+_, +_]: Error2](
             ???
         }
     }
+    out
+//    q"/* ${srcDom.version.toString} -> ${domain.version.toString} ${cold.mapRender(_.toString)} -> ${cnew.mapRender(_.toString)} */ $out"
   }
 
   private def swapCollType(

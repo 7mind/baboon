@@ -23,23 +23,13 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
     thisCanBeUpgraded || (allDependantsCanBeUpgraded && !dom.roots.contains(id))
   }
 
-  def canBeUpgradedTo(id: TypeId.User, version: Version, lineage: BaboonLineage): Option[Version] = {
+  def canBeUpgradedTo(id: TypeId.User, version: Version, lineage: BaboonLineage, checkOwner: Boolean = true): Option[Version] = {
     def canBeUpgraded(id: TypeId.User, dom: Domain, higherTwinVersion: Version): Boolean = {
       assert(version == dom.version)
 
-      (id.owner match {
-        case Owner.Toplevel => true
-        case _: Owner.Ns    => true
-        case o: Owner.Adt =>
-          val upgradeVersion = canBeUpgradedTo(o.id, version, lineage)
-
-          val hardCriterion = upgradeVersion.exists(_.version <= higherTwinVersion.version)
-          val weakCriterion = upgradeVersion.nonEmpty
-          assert(hardCriterion == weakCriterion, s"upgrade conditions diverged: $id in $version has upgrade to $upgradeVersion, higher twin=$higherTwinVersion")
-          hardCriterion
-
-      }) && (dom.defs.meta.nodes(id) match {
-        case _: DomainMember.Builtin => false
+      val upgradeAllowed = dom.defs.meta.nodes(id) match {
+        case _: DomainMember.Builtin =>
+          false
         case u: DomainMember.User =>
           u.defn match {
             case _: Typedef.Dto      => true
@@ -49,20 +39,59 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
             case _: Typedef.Foreign  => false
             case _: Typedef.Service  => false
           }
+      }
+
+      val ownerAllowsUpgrade = !checkOwner || (id.owner match {
+        case Owner.Toplevel => true
+        case _: Owner.Ns    => true
+        case o: Owner.Adt =>
+          val upgradeVersion = canBeUpgradedTo(o.id, version, lineage)
+//          upgradeVersion.nonEmpty
+
+          val hardCriterion = upgradeVersion.exists(_.version <= higherTwinVersion.version)
+          val weakCriterion = upgradeVersion.nonEmpty
+          assert(hardCriterion == weakCriterion, s"upgrade conditions diverged: $id in $version has upgrade to $upgradeVersion, higher twin=$higherTwinVersion")
+//          hardCriterion
+//          upgradeVersion.contains(higherTwinVersion)
+          hardCriterion
+
       })
+
+      target.language.deduplicate && upgradeAllowed && ownerAllowsUpgrade
     }
 
     val evo = lineage.evolution
+    val dom = lineage.versions(version)
 
-    evo.typesUnchangedSince(version).get(id).flatMap {
-      u =>
-        u.maybeHigherTwin(version) match {
-          case Some(higherTwinVersion) if target.language.deduplicate && canBeUpgraded(id, lineage.versions(version), higherTwinVersion) =>
-            Some(higherTwinVersion)
-          case _ =>
+    evo
+      .typesUnchangedSince(version).get(id).flatMap {
+        u =>
+          val higher = u.higherTwins(version)
+          if (higher.isEmpty) {
             None
-        }
-    }
+          } else {
+            val defn = dom.defs.meta.nodes(id)
+            defn match {
+              case _: DomainMember.Builtin =>
+                Some(higher.last)
+              case u: DomainMember.User =>
+                u.defn match {
+                  case a: Typedef.Adt =>
+                    // maximum version to which EVERY branch can be upgraded
+                    higher.filter(mh => a.members.map(m => canBeUpgradedTo(m, version, lineage, checkOwner = false)).forall(_.contains(mh))).lastOption
+
+                  case _ => Some(higher.last)
+                }
+            }
+          }
+
+//        u.maybeHigherTwin(version) match {
+//          case Some(higherTwinVersion) if canBeUpgraded(id, dom, higherTwinVersion) =>
+//            Some(higherTwinVersion)
+//          case _ =>
+//            None
+//        }
+      }.filter(v => canBeUpgraded(id, dom, v))
 
   }
 

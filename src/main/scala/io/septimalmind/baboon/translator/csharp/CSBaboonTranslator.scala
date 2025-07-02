@@ -147,8 +147,9 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
         val evo     = lineage.evolution
 
         csTypeInfo.canBeUpgradedTo(typeId, version, lineage) match {
-          case Some(value) =>
-            val higherDom  = lineage.versions(value)
+          case Some(higherTwinVersion) =>
+//            println(s"$typeId@$version ==> $higherTwinVersion")
+            val higherDom  = lineage.versions(higherTwinVersion)
             val higherTwin = trans.asCsType(typeId, higherDom, evo).fullyQualified
             Some(higherTwin)
 
@@ -164,6 +165,8 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
   def renderType(tpe: CSValue.CSType, o: CSDefnTranslator.Output, family: BaboonFamily): String = {
     isUpgradeable(tpe, family) match {
       case Some(higherTwin) =>
+//        println(s"${renderSimpleType(tpe, o)} --> ${renderSimpleType(higherTwin, o)}")
+
         renderSimpleType(higherTwin, o)
       case None => renderSimpleType(tpe, o)
     }

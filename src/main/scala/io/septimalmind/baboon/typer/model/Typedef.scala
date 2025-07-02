@@ -3,8 +3,8 @@ package io.septimalmind.baboon.typer.model
 import izumi.fundamentals.collections.nonempty.NEList
 
 case class UnmodifiedSince(typeId: TypeId, in: Version, sameIn: NEList[Version]) {
-  def maybeHigherTwin(version: Version): Option[Version] = {
-    sameIn.toList.filter(_.version > version.version).lastOption
+  def higherTwins(version: Version): List[Version] = {
+    sameIn.toList.filter(_.version > version.version)
   }
 }
 
