@@ -8,4 +8,5 @@ function do-build() {
   step_run_cond run-build
   step_run_cond run-test
   step_run_cond run-mkdist
+  step_run_cond run-cache-update
 }
