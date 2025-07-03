@@ -3,6 +3,9 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
+import izumi.fundamentals.platform.strings.TextTree.Quote
+
+import java.util.concurrent.atomic.AtomicInteger
 
 trait CSCodecTranslator {
   def translate(defn: DomainMember.User, csRef: CSValue.CSType, srcRef: CSValue.CSType): Option[TextTree[CSValue]]
@@ -16,4 +19,8 @@ trait CSCodecTranslator {
 
 object CSCodecTranslator {
   case class CodecMeta(member: TextTree[CSValue])
+  final class CodecArguments {
+    private val atomic                    = new AtomicInteger(0)
+    def arg(v: String): TextTree[CSValue] = q"$v${atomic.incrementAndGet().toString}"
+  }
 }

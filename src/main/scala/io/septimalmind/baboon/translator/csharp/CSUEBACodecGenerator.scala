@@ -2,7 +2,7 @@ package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.DerivationDecl
-import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
+import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.{CodecArguments, CodecMeta}
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
 import io.septimalmind.baboon.typer.model.*
@@ -366,7 +366,7 @@ class CSUEBACodecGenerator(
         val fieldRef = q"value.${f.name.name.capitalize}"
         val enc      = mkEncoder(f.tpe, fieldRef, q"writer")
         val fakeEnc  = mkEncoder(f.tpe, fieldRef, q"fakeWriter")
-        val dec      = mkDecoder(f.tpe)
+        val dec      = mkDecoder(f.tpe, q"wire")
 
         val w = domain.refMeta(f.tpe).len match {
           case BinReprLen.Fixed(bytes) =>
@@ -406,51 +406,55 @@ class CSUEBACodecGenerator(
     }
   }
 
-  private def mkDecoder(tpe: TypeRef): TextTree[CSValue] = {
+  private def mkDecoder(tpe: TypeRef, wref: TextTree[CSValue], codecArgs: CodecArguments = new CodecArguments): TextTree[CSValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
           case s: TypeId.BuiltinScalar =>
             s match {
-              case TypeId.Builtins.bit                       => q"wire.ReadBoolean()"
-              case TypeId.Builtins.i08                       => q"wire.ReadSByte()"
-              case TypeId.Builtins.i16                       => q"wire.ReadInt16()"
-              case TypeId.Builtins.i32                       => q"wire.ReadInt32()"
-              case TypeId.Builtins.i64                       => q"wire.ReadInt64()"
-              case TypeId.Builtins.u08                       => q"wire.ReadByte()"
-              case TypeId.Builtins.u16                       => q"wire.ReadUInt16()"
-              case TypeId.Builtins.u32                       => q"wire.ReadUInt32()"
-              case TypeId.Builtins.u64                       => q"wire.ReadUInt64()"
-              case TypeId.Builtins.f32                       => q"wire.ReadSingle()"
-              case TypeId.Builtins.f64                       => q"wire.ReadDouble()"
-              case TypeId.Builtins.f128                      => q"wire.ReadDecimal()"
-              case TypeId.Builtins.str                       => q"wire.ReadString()"
-              case TypeId.Builtins.uid                       => q"new $csGuid(wire.ReadBytes(16))"
-              case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.DecodeFromBin(wire)"
+              case TypeId.Builtins.bit                       => q"$wref.ReadBoolean()"
+              case TypeId.Builtins.i08                       => q"$wref.ReadSByte()"
+              case TypeId.Builtins.i16                       => q"$wref.ReadInt16()"
+              case TypeId.Builtins.i32                       => q"$wref.ReadInt32()"
+              case TypeId.Builtins.i64                       => q"$wref.ReadInt64()"
+              case TypeId.Builtins.u08                       => q"$wref.ReadByte()"
+              case TypeId.Builtins.u16                       => q"$wref.ReadUInt16()"
+              case TypeId.Builtins.u32                       => q"$wref.ReadUInt32()"
+              case TypeId.Builtins.u64                       => q"$wref.ReadUInt64()"
+              case TypeId.Builtins.f32                       => q"$wref.ReadSingle()"
+              case TypeId.Builtins.f64                       => q"$wref.ReadDouble()"
+              case TypeId.Builtins.f128                      => q"$wref.ReadDecimal()"
+              case TypeId.Builtins.str                       => q"$wref.ReadString()"
+              case TypeId.Builtins.uid                       => q"new $csGuid($wref.ReadBytes(16))"
+              case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.DecodeFromBin($wref)"
               case o                                         => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
             val targetTpe = codecName(trans.asCsTypeKeepForeigns(u, domain, evo))
-            q"""$targetTpe.Instance.Decode(ctx, wire)"""
+            q"""$targetTpe.Instance.Decode(ctx, $wref)"""
         }
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt if csTypeInfo.isCSValueType(c.args.head, domain) =>
-            q"""$BaboonTools.ReadNullableValueType(wire.ReadByte() == 0, () => ${mkDecoder(c.args.head)})""".stripMargin
+            q"""$BaboonTools.ReadNullableValueType($wref.ReadByte() == 0, () => ${mkDecoder(c.args.head, wref)})""".stripMargin
 
           case TypeId.Builtins.opt =>
-            q"""(wire.ReadByte() == 0 ? null : ${mkDecoder(c.args.head)})""".stripMargin
+            q"""($wref.ReadByte() == 0 ? null : ${mkDecoder(c.args.head, wref)})""".stripMargin
 
           case TypeId.Builtins.map =>
-            val keyDecoder   = mkDecoder(c.args.head)
+            val keyArg       = codecArgs.arg("wk")
+            val keyDecoder   = mkDecoder(c.args.head, keyArg, codecArgs)
             val keyType      = trans.asCsRef(c.args.head, domain, evo)
-            val valueDecoder = mkDecoder(c.args.last)
+            val valueArg     = codecArgs.arg("wv")
+            val valueDecoder = mkDecoder(c.args.last, valueArg, codecArgs)
             val valueType    = trans.asCsRef(c.args.last, domain, evo)
-            q"""$BaboonTools.ReadDict<$keyType, $valueType>(wire, wire => $keyDecoder, wire => $valueDecoder)"""
+            q"""$BaboonTools.ReadDict<$keyType, $valueType>($wref, $keyArg => $keyDecoder, $valueArg => $valueDecoder)"""
           case TypeId.Builtins.lst =>
-            q"""$BaboonTools.ReadList(wire, wire => ${mkDecoder(c.args.head)})"""
+            val arg = codecArgs.arg("wi")
+            q"""$BaboonTools.ReadList($wref, $arg => ${mkDecoder(c.args.head, arg, codecArgs)})"""
           case TypeId.Builtins.set =>
-            q"""$BaboonTools.ReadSet(wire, wire => ${mkDecoder(c.args.head)})"""
+            val arg = codecArgs.arg("wi")
+            q"""$BaboonTools.ReadSet($wref, $arg => ${mkDecoder(c.args.head, arg, codecArgs)})"""
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
@@ -458,7 +462,7 @@ class CSUEBACodecGenerator(
 
   }
 
-  private def mkEncoder(tpe: TypeRef, ref: TextTree[CSValue], wref: TextTree[CSValue]): TextTree[CSValue] = {
+  private def mkEncoder(tpe: TypeRef, ref: TextTree[CSValue], wref: TextTree[CSValue], codecArgs: CodecArguments = new CodecArguments): TextTree[CSValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
@@ -496,29 +500,32 @@ class CSUEBACodecGenerator(
                |else
                |{
                |    $wref.Write((byte)1);
-               |    ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref), wref).endC().shift(4).trim}
+               |    ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref), wref, codecArgs).endC().shift(4).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.map =>
+            val arg = codecArgs.arg("kv")
             q"""$wref.Write($ref.Count);
-               |foreach (var kv in $ref)
+               |foreach (var $arg in $ref)
                |{
-               |    ${mkEncoder(c.args.head, q"kv.Key", wref).endC().shift(4).trim}
-               |    ${mkEncoder(c.args.last, q"kv.Value", wref).endC().shift(4).trim}
+               |    ${mkEncoder(c.args.head, q"$arg.Key", wref, codecArgs).endC().shift(4).trim}
+               |    ${mkEncoder(c.args.last, q"$arg.Value", wref, codecArgs).endC().shift(4).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.lst =>
+            val arg = codecArgs.arg("i")
             q"""$wref.Write($ref.Count);
-               |foreach (var i in $ref)
+               |foreach (var $arg in $ref)
                |{
-               |    ${mkEncoder(c.args.head, q"i", wref).endC().shift(4).trim}
+               |    ${mkEncoder(c.args.head, arg, wref, codecArgs).endC().shift(4).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.set =>
+            val arg = codecArgs.arg("i")
             q"""$wref.Write($ref.Count);
-               |foreach (var i in $ref)
+               |foreach (var $arg in $ref)
                |{
-               |    ${mkEncoder(c.args.head, q"i", wref).endC().shift(4).trim}
+               |    ${mkEncoder(c.args.head, arg, wref, codecArgs).endC().shift(4).trim}
                |}""".stripMargin
 
           case o =>
