@@ -262,7 +262,7 @@ class CSJsonCodecGenerator(
     (encBody, decBody)
   }
 
-  private def mkEncoder(tpe: TypeRef, ref: TextTree[CSValue], codecArgs: CodecArguments = new CodecArguments): TextTree[CSValue] = {
+  private def mkEncoder(tpe: TypeRef, ref: TextTree[CSValue], codecArgs: CodecArguments = CodecArguments.empty): TextTree[CSValue] = {
     def encodeKey(tpe: TypeRef, ref: TextTree[CSValue]): TextTree[CSValue] = {
       tpe.id match {
         case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.ToString($ref)"
@@ -303,28 +303,28 @@ class CSJsonCodecGenerator(
           case TypeId.Builtins.opt =>
             val arg = codecArgs.arg("v")
             if (csTypeInfo.isCSValueType(c.args.head, domain)) {
-              q"$BaboonTools.WriteOptionVal($ref, $arg => ${mkEncoder(c.args.head, arg, codecArgs)})"
+              q"$BaboonTools.WriteOptionVal($ref, $arg => ${mkEncoder(c.args.head, arg, codecArgs.next)})"
             } else {
-              q"$BaboonTools.WriteOptionRef($ref, $arg => ${mkEncoder(c.args.head, arg, codecArgs)})"
+              q"$BaboonTools.WriteOptionRef($ref, $arg => ${mkEncoder(c.args.head, arg, codecArgs.next)})"
             }
           case TypeId.Builtins.map =>
             val arg      = codecArgs.arg("kv")
             val keyEnc   = encodeKey(c.args.head, q"$arg.Key")
-            val valueEnc = mkEncoder(c.args.last, q"$arg.Value", codecArgs)
+            val valueEnc = mkEncoder(c.args.last, q"$arg.Value", codecArgs.next)
             q"$BaboonTools.WriteMap($ref, $arg => new $nsJProperty($keyEnc, $valueEnc))"
           case TypeId.Builtins.lst =>
             val arg = codecArgs.arg("i")
-            q"$BaboonTools.WriteSeq($ref, $arg => ${mkEncoder(c.args.head, arg, codecArgs)})"
+            q"$BaboonTools.WriteSeq($ref, $arg => ${mkEncoder(c.args.head, arg, codecArgs.next)})"
           case TypeId.Builtins.set =>
             val arg = codecArgs.arg("i")
-            q"$BaboonTools.WriteSeq($ref, $arg => ${mkEncoder(c.args.head, arg, codecArgs)})"
+            q"$BaboonTools.WriteSeq($ref, $arg => ${mkEncoder(c.args.head, arg, codecArgs.next)})"
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
     }
   }
 
-  private def mkDecoder(tpe: TypeRef, ref: TextTree[CSValue], codecArgs: CodecArguments = new CodecArguments): TextTree[CSValue] = {
+  private def mkDecoder(tpe: TypeRef, ref: TextTree[CSValue], codecArgs: CodecArguments = CodecArguments.empty): TextTree[CSValue] = {
     def mkReader(bs: TypeId.BuiltinScalar): TextTree[CSValue] = {
       val fref = q"$ref!"
       bs match {
@@ -394,27 +394,27 @@ class CSJsonCodecGenerator(
         id match {
           case TypeId.Builtins.opt if csTypeInfo.isCSValueType(args.head, domain) =>
             val arg = codecArgs.arg("v")
-            q"""$BaboonTools.ReadNullableValueType($ref, $arg => ${mkDecoder(args.head, arg, codecArgs)})""".stripMargin
+            q"""$BaboonTools.ReadNullableValueType($ref, $arg => ${mkDecoder(args.head, arg, codecArgs.next)})""".stripMargin
 
           case TypeId.Builtins.opt =>
             val arg = codecArgs.arg("v")
-            q"""$BaboonTools.ReadNullableReferentialType($ref, $arg => ${mkDecoder(args.head, arg, codecArgs)})"""
+            q"""$BaboonTools.ReadNullableReferentialType($ref, $arg => ${mkDecoder(args.head, arg, codecArgs.next)})"""
 
           case TypeId.Builtins.map =>
             val arg       = codecArgs.arg("kv")
             val keyDec    = decodeKey(args.head, arg)
             val keyType   = trans.asCsRef(args.head, domain, evo)
-            val valueDec  = mkDecoder(args.last, arg, codecArgs)
+            val valueDec  = mkDecoder(args.last, arg, codecArgs.next)
             val valueType = trans.asCsRef(args.last, domain, evo)
             q"""$BaboonTools.ReadJsonDict<$keyType, $valueType>($ref, $arg => $keyDec, $arg => $valueDec)"""
 
           case TypeId.Builtins.lst =>
             val arg = codecArgs.arg("i")
-            q"""$BaboonTools.ReadJsonList($ref, $arg => ${mkDecoder(args.head, arg, codecArgs)})"""
+            q"""$BaboonTools.ReadJsonList($ref, $arg => ${mkDecoder(args.head, arg, codecArgs.next)})"""
 
           case TypeId.Builtins.set =>
             val arg = codecArgs.arg("i")
-            q"""$BaboonTools.ReadJsonSet($ref, $arg => ${mkDecoder(args.head, arg, codecArgs)})"""
+            q"""$BaboonTools.ReadJsonSet($ref, $arg => ${mkDecoder(args.head, arg, codecArgs.next)})"""
 
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")

@@ -406,7 +406,7 @@ class CSUEBACodecGenerator(
     }
   }
 
-  private def mkDecoder(tpe: TypeRef, wref: TextTree[CSValue], codecArgs: CodecArguments = new CodecArguments): TextTree[CSValue] = {
+  private def mkDecoder(tpe: TypeRef, wref: TextTree[CSValue], codecArgs: CodecArguments = CodecArguments.empty): TextTree[CSValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
@@ -436,25 +436,25 @@ class CSUEBACodecGenerator(
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt if csTypeInfo.isCSValueType(c.args.head, domain) =>
-            q"""$BaboonTools.ReadNullableValueType($wref.ReadByte() == 0, () => ${mkDecoder(c.args.head, wref)})""".stripMargin
+            q"""$BaboonTools.ReadNullableValueType($wref.ReadByte() == 0, () => ${mkDecoder(c.args.head, wref, codecArgs)})""".stripMargin
 
           case TypeId.Builtins.opt =>
-            q"""($wref.ReadByte() == 0 ? null : ${mkDecoder(c.args.head, wref)})""".stripMargin
+            q"""($wref.ReadByte() == 0 ? null : ${mkDecoder(c.args.head, wref, codecArgs)})""".stripMargin
 
           case TypeId.Builtins.map =>
             val keyArg       = codecArgs.arg("wk")
-            val keyDecoder   = mkDecoder(c.args.head, keyArg, codecArgs)
+            val keyDecoder   = mkDecoder(c.args.head, keyArg, codecArgs.next)
             val keyType      = trans.asCsRef(c.args.head, domain, evo)
             val valueArg     = codecArgs.arg("wv")
-            val valueDecoder = mkDecoder(c.args.last, valueArg, codecArgs)
+            val valueDecoder = mkDecoder(c.args.last, valueArg, codecArgs.next)
             val valueType    = trans.asCsRef(c.args.last, domain, evo)
             q"""$BaboonTools.ReadDict<$keyType, $valueType>($wref, $keyArg => $keyDecoder, $valueArg => $valueDecoder)"""
           case TypeId.Builtins.lst =>
             val arg = codecArgs.arg("wi")
-            q"""$BaboonTools.ReadList($wref, $arg => ${mkDecoder(c.args.head, arg, codecArgs)})"""
+            q"""$BaboonTools.ReadList($wref, $arg => ${mkDecoder(c.args.head, arg, codecArgs.next)})"""
           case TypeId.Builtins.set =>
             val arg = codecArgs.arg("wi")
-            q"""$BaboonTools.ReadSet($wref, $arg => ${mkDecoder(c.args.head, arg, codecArgs)})"""
+            q"""$BaboonTools.ReadSet($wref, $arg => ${mkDecoder(c.args.head, arg, codecArgs.next)})"""
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
@@ -462,7 +462,7 @@ class CSUEBACodecGenerator(
 
   }
 
-  private def mkEncoder(tpe: TypeRef, ref: TextTree[CSValue], wref: TextTree[CSValue], codecArgs: CodecArguments = new CodecArguments): TextTree[CSValue] = {
+  private def mkEncoder(tpe: TypeRef, ref: TextTree[CSValue], wref: TextTree[CSValue], codecArgs: CodecArguments = CodecArguments.empty): TextTree[CSValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
@@ -500,7 +500,7 @@ class CSUEBACodecGenerator(
                |else
                |{
                |    $wref.Write((byte)1);
-               |    ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref), wref, codecArgs).endC().shift(4).trim}
+               |    ${mkEncoder(c.args.head, trans.deNull(c.args.head, domain, ref), wref, codecArgs.next).endC().shift(4).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.map =>
@@ -508,8 +508,8 @@ class CSUEBACodecGenerator(
             q"""$wref.Write($ref.Count);
                |foreach (var $arg in $ref)
                |{
-               |    ${mkEncoder(c.args.head, q"$arg.Key", wref, codecArgs).endC().shift(4).trim}
-               |    ${mkEncoder(c.args.last, q"$arg.Value", wref, codecArgs).endC().shift(4).trim}
+               |    ${mkEncoder(c.args.head, q"$arg.Key", wref, codecArgs.next).endC().shift(4).trim}
+               |    ${mkEncoder(c.args.last, q"$arg.Value", wref, codecArgs.next).endC().shift(4).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.lst =>
@@ -517,7 +517,7 @@ class CSUEBACodecGenerator(
             q"""$wref.Write($ref.Count);
                |foreach (var $arg in $ref)
                |{
-               |    ${mkEncoder(c.args.head, arg, wref, codecArgs).endC().shift(4).trim}
+               |    ${mkEncoder(c.args.head, arg, wref, codecArgs.next).endC().shift(4).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.set =>
@@ -525,7 +525,7 @@ class CSUEBACodecGenerator(
             q"""$wref.Write($ref.Count);
                |foreach (var $arg in $ref)
                |{
-               |    ${mkEncoder(c.args.head, arg, wref, codecArgs).endC().shift(4).trim}
+               |    ${mkEncoder(c.args.head, arg, wref, codecArgs.next).endC().shift(4).trim}
                |}""".stripMargin
 
           case o =>
