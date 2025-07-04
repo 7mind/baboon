@@ -277,7 +277,7 @@ class CSJsonCodecGenerator(
               u.defn match {
                 case _: Typedef.Enum | _: Typedef.Foreign =>
                   val targetTpe = trans.asCsTypeKeepForeigns(uid, domain, evo)
-                  q"""${codecName(targetTpe, targetTpe.origin.asInstanceOf[TypeInDomain])}.Instance.Encode(ctx, $ref).ToString($nsFormatting.None)"""
+                  q"""${codecName(targetTpe, targetTpe.origin)}.Instance.Encode(ctx, $ref).ToString($nsFormatting.None)"""
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -374,7 +374,7 @@ class CSJsonCodecGenerator(
               u.defn match {
                 case _: Typedef.Enum | _: Typedef.Foreign =>
                   val targetTpe = trans.asCsTypeKeepForeigns(uid, domain, evo)
-                  q"""${codecName(targetTpe, targetTpe.origin.asInstanceOf[TypeInDomain])}.Instance.Decode(ctx, new $nsJValue($ref!))"""
+                  q"""${codecName(targetTpe, targetTpe.origin)}.Instance.Decode(ctx, new $nsJValue($ref!))"""
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -393,7 +393,7 @@ class CSJsonCodecGenerator(
       case TypeRef.Scalar(u: TypeId.User) =>
         val targetTpe = trans.asCsTypeKeepForeigns(u, domain, evo)
 
-        q"""${codecName(targetTpe, targetTpe.origin.asInstanceOf[TypeInDomain])}.Instance.Decode(ctx, $ref!)"""
+        q"""${codecName(targetTpe, targetTpe.origin)}.Instance.Decode(ctx, $ref!)"""
 
       case TypeRef.Constructor(id, args) =>
         id match {
@@ -428,8 +428,8 @@ class CSJsonCodecGenerator(
 
   }
 
-  def codecName(name: CSValue.CSType, origin: CSTypeOrigin.TypeInDomain): CSValue.CSType = {
-    CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq, origin.copy(derived = true))
+  def codecName(name: CSValue.CSType, origin: CSTypeOrigin): CSValue.CSType = {
+    CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq, origin.asDerived)
   }
 
   override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): Option[CSCodecTranslator.CodecMeta] = {

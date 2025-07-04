@@ -14,14 +14,23 @@ object CSValue {
       CSPackageId(NEList.unsafeFrom(pkg.split('.').toList))
   }
 
-  sealed trait CSTypeOrigin
+  sealed trait CSTypeOrigin {
+    def asDerived: CSTypeOrigin
+  }
+
   object CSTypeOrigin {
     def apply(typeId: TypeId, domain: Domain): TypeInDomain = {
       TypeInDomain(typeId, domain.id, domain.version)
     }
-    case class TypeInDomain(typeId: TypeId, pkg: Pkg, version: Version, derived: Boolean = false) extends CSTypeOrigin
+    case class TypeInDomain(typeId: TypeId, pkg: Pkg, version: Version, derived: Boolean = false) extends CSTypeOrigin {
+      override def asDerived: CSTypeOrigin = {
+        copy(derived = true)
+      }
+    }
 
-    case object Other extends CSTypeOrigin
+    case object Other extends CSTypeOrigin {
+      override def asDerived: CSTypeOrigin = ???
+    }
   }
 
   case class CSType(pkg: CSValue.CSPackageId, name: String, fq: Boolean, origin: CSTypeOrigin) extends CSValue {
