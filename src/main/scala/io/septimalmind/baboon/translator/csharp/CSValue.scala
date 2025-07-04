@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.translator.FQNSymbol
-import io.septimalmind.baboon.typer.model.{Pkg, TypeId, Version}
+import io.septimalmind.baboon.typer.model.{Domain, Pkg, TypeId, Version}
 import izumi.fundamentals.collections.nonempty.NEList
 
 sealed trait CSValue
@@ -16,7 +16,11 @@ object CSValue {
 
   sealed trait CSTypeOrigin
   object CSTypeOrigin {
-    case class TypeInDomain(typeId: TypeId, pkg: Pkg, version: Version) extends CSTypeOrigin
+    def apply(typeId: TypeId, domain: Domain): TypeInDomain = {
+      TypeInDomain(typeId, domain.id, domain.version)
+    }
+    case class TypeInDomain(typeId: TypeId, pkg: Pkg, version: Version, derived: Boolean = false) extends CSTypeOrigin
+
     case object Other extends CSTypeOrigin
   }
 

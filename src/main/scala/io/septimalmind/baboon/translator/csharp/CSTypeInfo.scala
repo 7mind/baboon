@@ -12,15 +12,19 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries, translator: CSTyp
 
   def isUpgradeable(tpe: CSValue.CSType, family: BaboonFamily): Option[CSValue.CSType] = {
     tpe.origin match {
-      case CSTypeOrigin.TypeInDomain(typeId: TypeId.User, pkg, version) =>
+      case CSTypeOrigin.TypeInDomain(typeId: TypeId.User, pkg, version, derived) =>
         val lineage = family.domains(pkg)
         val evo     = lineage.evolution
 
         canBeUpgradedTo(typeId, version, lineage) match {
           case Some(higherTwinVersion) =>
             //            println(s"$typeId@$version ==> $higherTwinVersion")
-            val higherDom  = lineage.versions(higherTwinVersion)
-            val higherTwin = translator.asCsType(typeId, higherDom, evo).fullyQualified
+            val higherDom = lineage.versions(higherTwinVersion)
+            val higherTwin = if (derived) {
+              translator.asCsTypeKeepForeigns(typeId, higherDom, evo).fullyQualified
+            } else {
+              translator.asCsType(typeId, higherDom, evo).fullyQualified
+            }
             // Codecs/fixtures do not exist in the typespace and origin is their main type, origin != codec type, so we have to patch that
             Some(higherTwin.copy(name = tpe.name))
 

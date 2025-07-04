@@ -208,7 +208,7 @@ object CSDefnTranslator {
               codec =>
                 if (codec.isActive(d.id)) {
                   List(
-                    codec.id -> q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(srcRef, CSTypeOrigin.TypeInDomain(d.id, domain.id, domain.version)).copy(fq = true)}.Instance)"
+                    codec.id -> q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(srcRef, CSTypeOrigin(d.id, domain)).copy(fq = true)}.Instance)"
                   )
                 } else {
                   List.empty

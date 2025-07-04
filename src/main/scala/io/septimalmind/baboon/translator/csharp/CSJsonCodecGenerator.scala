@@ -99,7 +99,7 @@ class CSJsonCodecGenerator(
          |}""".stripMargin
     )
 
-    val cName = codecName(srcRef, TypeInDomain(defn.id, domain.id, domain.version))
+    val cName = codecName(srcRef, CSTypeOrigin(defn.id, domain))
     val cParent = if (isEncoderEnabled) {
       defn match {
         case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecBase<$name, $cName>"
@@ -147,11 +147,14 @@ class CSJsonCodecGenerator(
 
     val branches = a.dataMembers(domain).map {
       m =>
-        val branchNs            = q"${csTypeInfo.adtNsName(a.id)}"
-        val branchName          = m.name.name
-        val fqBranch            = q"$branchNs.$branchName"
-        val branchNameRef       = q"${branchName.toLowerCase}"
-        val routedBranchEncoder = q"${fqBranch}_JsonCodec.Instance.Encode(ctx, $branchNameRef)"
+        val branchNs      = q"${csTypeInfo.adtNsName(a.id)}"
+        val branchName    = m.name.name
+        val fqBranch      = q"$branchNs.$branchName"
+        val branchNameRef = q"${branchName.toLowerCase}"
+
+        val branchTpe           = trans.asCsType(m, domain, evo)
+        val branchCodec         = codecName(branchTpe, CSTypeOrigin(m, domain))
+        val routedBranchEncoder = q"$branchCodec.Instance.Encode(ctx, $branchNameRef)"
 
         val branchEncoder = if (target.language.wrappedAdtBranchCodecs) {
           routedBranchEncoder
@@ -274,7 +277,7 @@ class CSJsonCodecGenerator(
               u.defn match {
                 case _: Typedef.Enum | _: Typedef.Foreign =>
                   val targetTpe = trans.asCsTypeKeepForeigns(uid, domain, evo)
-                  q"""${targetTpe}_JsonCodec.Instance.Encode(ctx, $ref).ToString($nsFormatting.None)"""
+                  q"""${codecName(targetTpe, targetTpe.origin.asInstanceOf[TypeInDomain])}.Instance.Encode(ctx, $ref).ToString($nsFormatting.None)"""
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -296,7 +299,7 @@ class CSJsonCodecGenerator(
           case _: TypeId.BuiltinScalar =>
             q"new $nsJValue($ref)"
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.asCsTypeKeepForeigns(u, domain, evo), TypeInDomain(u, domain.id, domain.version))
+            val targetTpe = codecName(trans.asCsTypeKeepForeigns(u, domain, evo), CSTypeOrigin(u, domain))
             q"""$targetTpe.Instance.Encode(ctx, $ref)"""
         }
       case c: TypeRef.Constructor =>
@@ -371,7 +374,7 @@ class CSJsonCodecGenerator(
               u.defn match {
                 case _: Typedef.Enum | _: Typedef.Foreign =>
                   val targetTpe = trans.asCsTypeKeepForeigns(uid, domain, evo)
-                  q"""${targetTpe}_JsonCodec.Instance.Decode(ctx, new $nsJValue($ref!))"""
+                  q"""${codecName(targetTpe, targetTpe.origin.asInstanceOf[TypeInDomain])}.Instance.Decode(ctx, new $nsJValue($ref!))"""
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -389,7 +392,8 @@ class CSJsonCodecGenerator(
 
       case TypeRef.Scalar(u: TypeId.User) =>
         val targetTpe = trans.asCsTypeKeepForeigns(u, domain, evo)
-        q"""${targetTpe}_JsonCodec.Instance.Decode(ctx, $ref!)"""
+
+        q"""${codecName(targetTpe, targetTpe.origin.asInstanceOf[TypeInDomain])}.Instance.Decode(ctx, $ref!)"""
 
       case TypeRef.Constructor(id, args) =>
         id match {
@@ -425,7 +429,7 @@ class CSJsonCodecGenerator(
   }
 
   def codecName(name: CSValue.CSType, origin: CSTypeOrigin.TypeInDomain): CSValue.CSType = {
-    CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq, origin)
+    CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq, origin.copy(derived = true))
   }
 
   override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): Option[CSCodecTranslator.CodecMeta] = {
@@ -434,7 +438,7 @@ class CSJsonCodecGenerator(
       val member =
         q"""public$fix$iBaboonJsonCodec<$name> Codec_JSON()
            |{
-           |    return ${codecName(name, TypeInDomain(defn.id, domain.id, domain.version))}.Instance;
+           |    return ${codecName(name, CSTypeOrigin(defn.id, domain))}.Instance;
            |}""".stripMargin
       Some(CodecMeta(member))
     } else {

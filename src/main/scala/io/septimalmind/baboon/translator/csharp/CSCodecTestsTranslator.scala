@@ -2,6 +2,7 @@ package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
+import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
 import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin.TypeInDomain
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
@@ -118,7 +119,7 @@ object CSCodecTestsTranslator {
 
     private def jsonCodecAssertions(codec: CSJsonCodecGenerator, definition: DomainMember.User, srcRef: CSValue.CSType): TextTree[CSValue] = {
       def jsonTest: TextTree[CSValue.CSType] = {
-        val codecName  = codec.codecName(srcRef, TypeInDomain(definition.id, domain.id, domain.version))
+        val codecName  = codec.codecName(srcRef, CSTypeOrigin(definition.id, domain))
         val fieldName  = q"fixture"
         val serialized = q"${fieldName}Json"
         val decoded    = q"${fieldName}Decoded"
@@ -143,7 +144,7 @@ object CSCodecTestsTranslator {
 
     private def uebaCodecAssertions(codec: CSUEBACodecGenerator, definition: DomainMember.User, srcRef: CSValue.CSType): TextTree[CSValue] = {
       def binaryTest: TextTree[CSValue.CSType] = {
-        val codecName  = codec.codecName(srcRef, TypeInDomain(definition.id, domain.id, domain.version))
+        val codecName  = codec.codecName(srcRef, CSTypeOrigin(definition.id, domain))
         val fieldName  = q"fixture"
         val serialized = q"${fieldName}Bytes"
         val decoded    = q"${fieldName}Decoded"

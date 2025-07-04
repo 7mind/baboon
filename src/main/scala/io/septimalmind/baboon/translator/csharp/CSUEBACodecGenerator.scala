@@ -145,7 +145,7 @@ class CSUEBACodecGenerator(
 
     val methods = indexMethods ++ encoderMethods ++ decoderMethods
 
-    val cName = codecName(srcRef, TypeInDomain(defn.id, domain.id, domain.version))
+    val cName = codecName(srcRef, CSTypeOrigin(defn.id, domain))
     val cParent = if (isEncoderEnabled) {
       defn match {
         case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonBinCodecBase<$name, $cName>"
@@ -186,7 +186,7 @@ class CSUEBACodecGenerator(
         val fqBranch   = q"$branchNs.$branchName"
 
         val adtRef = trans.asCsTypeKeepForeigns(m, domain, evo)
-        val cName  = codecName(adtRef, TypeInDomain(a.id, domain.id, domain.version))
+        val cName  = codecName(adtRef, CSTypeOrigin(a.id, domain))
 
         val castedName = branchName.toLowerCase
 
@@ -431,7 +431,7 @@ class CSUEBACodecGenerator(
               case o                                         => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.asCsTypeKeepForeigns(u, domain, evo), TypeInDomain(u, domain.id, domain.version))
+            val targetTpe = codecName(trans.asCsTypeKeepForeigns(u, domain, evo), CSTypeOrigin(u, domain))
             q"""$targetTpe.Instance.Decode(ctx, $wref)"""
         }
       case c: TypeRef.Constructor =>
@@ -488,7 +488,7 @@ class CSUEBACodecGenerator(
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.asCsTypeKeepForeigns(u, domain, evo), TypeInDomain(u, domain.id, domain.version))
+            val targetTpe = codecName(trans.asCsTypeKeepForeigns(u, domain, evo), CSTypeOrigin(u, domain))
             q"""$targetTpe.Instance.Encode(ctx, $wref, $ref)"""
         }
       case c: TypeRef.Constructor =>
@@ -536,7 +536,7 @@ class CSUEBACodecGenerator(
   }
 
   def codecName(name: CSValue.CSType, origin: CSTypeOrigin.TypeInDomain): CSValue.CSType = {
-    CSValue.CSType(name.pkg, s"${name.name}_UEBACodec", name.fq, origin)
+    CSValue.CSType(name.pkg, s"${name.name}_UEBACodec", name.fq, origin.copy(derived = true))
   }
 
   override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): Option[CSCodecTranslator.CodecMeta] = {
@@ -547,7 +547,7 @@ class CSUEBACodecGenerator(
         CodecMeta(
           q"""public$fix$iBaboonBinCodec<$name> Codec_UEBA()
              |{
-             |    return ${codecName(name, TypeInDomain(defn.id, domain.id, domain.version))}.Instance;
+             |    return ${codecName(name, CSTypeOrigin(defn.id, domain))}.Instance;
              |}""".stripMargin
         )
       )
