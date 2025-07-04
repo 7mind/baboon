@@ -143,10 +143,9 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
   def renderType(tpe: CSValue.CSType, o: CSDefnTranslator.Output, family: BaboonFamily): String = {
     csTypeInfo.isUpgradeable(tpe, family) match {
       case Some(higherTwin) =>
-//        println(s"${renderSimpleType(tpe, o)} --> ${renderSimpleType(higherTwin, o)}")
-
         renderSimpleType(higherTwin, o)
-      case None => renderSimpleType(tpe, o)
+      case None =>
+        renderSimpleType(tpe, o)
     }
   }
 

@@ -5,7 +5,6 @@ import io.septimalmind.baboon.parser.model.DerivationDecl
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.{CodecArguments, CodecMeta}
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
-import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin.TypeInDomain
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -535,7 +534,7 @@ class CSUEBACodecGenerator(
     }
   }
 
-  def codecName(name: CSValue.CSType, origin: CSTypeOrigin): CSValue.CSType = {
+  def codecName(name: CSValue.CSType, origin: CSTypeOrigin.TypeInDomain): CSValue.CSType = {
     CSValue.CSType(name.pkg, s"${name.name}_UEBACodec", name.fq, origin.asDerived)
   }
 

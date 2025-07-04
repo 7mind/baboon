@@ -5,7 +5,6 @@ import io.septimalmind.baboon.parser.model.DerivationDecl
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.{CodecArguments, CodecMeta}
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
-import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin.TypeInDomain
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -277,7 +276,7 @@ class CSJsonCodecGenerator(
               u.defn match {
                 case _: Typedef.Enum | _: Typedef.Foreign =>
                   val targetTpe = trans.asCsTypeKeepForeigns(uid, domain, evo)
-                  q"""${codecName(targetTpe, targetTpe.origin)}.Instance.Encode(ctx, $ref).ToString($nsFormatting.None)"""
+                  q"""${codecName(targetTpe, CSTypeOrigin(u.defn.id, domain))}.Instance.Encode(ctx, $ref).ToString($nsFormatting.None)"""
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -374,7 +373,7 @@ class CSJsonCodecGenerator(
               u.defn match {
                 case _: Typedef.Enum | _: Typedef.Foreign =>
                   val targetTpe = trans.asCsTypeKeepForeigns(uid, domain, evo)
-                  q"""${codecName(targetTpe, targetTpe.origin)}.Instance.Decode(ctx, new $nsJValue($ref!))"""
+                  q"""${codecName(targetTpe, CSTypeOrigin(u.id, domain))}.Instance.Decode(ctx, new $nsJValue($ref!))"""
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -392,8 +391,7 @@ class CSJsonCodecGenerator(
 
       case TypeRef.Scalar(u: TypeId.User) =>
         val targetTpe = trans.asCsTypeKeepForeigns(u, domain, evo)
-
-        q"""${codecName(targetTpe, targetTpe.origin)}.Instance.Decode(ctx, $ref!)"""
+        q"""${codecName(targetTpe, CSTypeOrigin(u, domain))}.Instance.Decode(ctx, $ref!)"""
 
       case TypeRef.Constructor(id, args) =>
         id match {
@@ -428,7 +426,7 @@ class CSJsonCodecGenerator(
 
   }
 
-  def codecName(name: CSValue.CSType, origin: CSTypeOrigin): CSValue.CSType = {
+  def codecName(name: CSValue.CSType, origin: CSTypeOrigin.TypeInDomain): CSValue.CSType = {
     CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq, origin.asDerived)
   }
 

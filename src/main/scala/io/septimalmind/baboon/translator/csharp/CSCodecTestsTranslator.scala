@@ -3,7 +3,6 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
-import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin.TypeInDomain
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BLogger
