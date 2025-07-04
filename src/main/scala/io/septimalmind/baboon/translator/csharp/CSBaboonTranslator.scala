@@ -151,6 +151,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
 //            println(s"$typeId@$version ==> $higherTwinVersion")
             val higherDom  = lineage.versions(higherTwinVersion)
             val higherTwin = trans.asCsType(typeId, higherDom, evo).fullyQualified
+            // Codecs/fixtures do not exist in the typespace and origin is their main type, origin != codec type, so we have to patch that
             Some(higherTwin.copy(name = tpe.name))
 
           case None =>

@@ -11,7 +11,7 @@ GeneratedTests/
 generated/
 generatedFixtures/
 generatedTests/
-
+src/test/resources/internal
 
 global.json
 
