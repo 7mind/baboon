@@ -184,8 +184,7 @@ class CSUEBACodecGenerator(
         val branchName = m.name.name
         val fqBranch   = q"$branchNs.$branchName"
 
-        val adtRef = trans.asCsTypeKeepForeigns(m, domain, evo)
-        val cName  = codecName(adtRef, CSTypeOrigin(a.id, domain))
+        val cName = codecName(m)
 
         val castedName = branchName.toLowerCase
 
@@ -430,8 +429,7 @@ class CSUEBACodecGenerator(
               case o                                         => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.asCsTypeKeepForeigns(u, domain, evo), CSTypeOrigin(u, domain))
-            q"""$targetTpe.Instance.Decode(ctx, $wref)"""
+            q"""${codecName(u)}.Instance.Decode(ctx, $wref)"""
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -487,8 +485,7 @@ class CSUEBACodecGenerator(
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.asCsTypeKeepForeigns(u, domain, evo), CSTypeOrigin(u, domain))
-            q"""$targetTpe.Instance.Encode(ctx, $wref, $ref)"""
+            q"""${codecName(u)}.Instance.Encode(ctx, $wref, $ref)"""
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -532,6 +529,10 @@ class CSUEBACodecGenerator(
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
     }
+  }
+
+  def codecName(id: TypeId.User): CSValue.CSType = {
+    codecName(trans.asCsTypeKeepForeigns(id, domain, evo), CSTypeOrigin(id, domain))
   }
 
   def codecName(name: CSValue.CSType, origin: CSTypeOrigin.TypeInDomain): CSValue.CSType = {

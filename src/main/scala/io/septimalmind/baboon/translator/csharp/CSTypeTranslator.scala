@@ -17,7 +17,6 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
 
         info.canBeUpgradedTo(typeId, version, lineage) match {
           case Some(higherTwinVersion) =>
-            //            println(s"$typeId@$version ==> $higherTwinVersion")
             val higherDom = lineage.versions(higherTwinVersion)
             val higherTwin = if (derived) {
               asCsTypeKeepForeigns(typeId, higherDom, evo).fullyQualified

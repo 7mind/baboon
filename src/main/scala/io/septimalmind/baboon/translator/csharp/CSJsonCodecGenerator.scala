@@ -275,8 +275,7 @@ class CSJsonCodecGenerator(
             case u: DomainMember.User =>
               u.defn match {
                 case _: Typedef.Enum | _: Typedef.Foreign =>
-                  val targetTpe = trans.asCsTypeKeepForeigns(uid, domain, evo)
-                  q"""${codecName(targetTpe, CSTypeOrigin(u.defn.id, domain))}.Instance.Encode(ctx, $ref).ToString($nsFormatting.None)"""
+                  q"""${codecName(uid)}.Instance.Encode(ctx, $ref).ToString($nsFormatting.None)"""
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -298,7 +297,7 @@ class CSJsonCodecGenerator(
           case _: TypeId.BuiltinScalar =>
             q"new $nsJValue($ref)"
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.asCsTypeKeepForeigns(u, domain, evo), CSTypeOrigin(u, domain))
+            val targetTpe = codecName(u)
             q"""$targetTpe.Instance.Encode(ctx, $ref)"""
         }
       case c: TypeRef.Constructor =>
@@ -372,8 +371,7 @@ class CSJsonCodecGenerator(
             case u: DomainMember.User =>
               u.defn match {
                 case _: Typedef.Enum | _: Typedef.Foreign =>
-                  val targetTpe = trans.asCsTypeKeepForeigns(uid, domain, evo)
-                  q"""${codecName(targetTpe, CSTypeOrigin(u.id, domain))}.Instance.Decode(ctx, new $nsJValue($ref!))"""
+                  q"""${codecName(uid)}.Instance.Decode(ctx, new $nsJValue($ref!))"""
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -390,8 +388,7 @@ class CSJsonCodecGenerator(
         mkReader(bs)
 
       case TypeRef.Scalar(u: TypeId.User) =>
-        val targetTpe = trans.asCsTypeKeepForeigns(u, domain, evo)
-        q"""${codecName(targetTpe, CSTypeOrigin(u, domain))}.Instance.Decode(ctx, $ref!)"""
+        q"""${codecName(u)}.Instance.Decode(ctx, $ref!)"""
 
       case TypeRef.Constructor(id, args) =>
         id match {
@@ -424,6 +421,10 @@ class CSJsonCodecGenerator(
         }
     }
 
+  }
+
+  def codecName(id: TypeId.User): CSValue.CSType = {
+    codecName(trans.asCsTypeKeepForeigns(id, domain, evo), CSTypeOrigin(id, domain))
   }
 
   def codecName(name: CSValue.CSType, origin: CSTypeOrigin.TypeInDomain): CSValue.CSType = {

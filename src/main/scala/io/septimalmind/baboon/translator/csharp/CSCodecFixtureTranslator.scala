@@ -46,7 +46,7 @@ object CSCodecFixtureTranslator {
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[CSValue] = {
       val generatedFields = dto.fields.map(f => genType(f.tpe))
-      val fullType        = translator.asCsTypeKeepForeigns(dto.id, domain, evo)
+      val fullType        = translator.asCsType(dto.id, domain, evo)
 
       q"""public static class ${dto.id.name.name.capitalize}_Fixture
          |{
