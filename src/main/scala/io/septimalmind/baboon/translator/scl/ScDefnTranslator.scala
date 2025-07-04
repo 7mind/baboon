@@ -1,10 +1,8 @@
 package io.septimalmind.baboon.translator.scl
 
 import io.septimalmind.baboon.CompilerProduct
-import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.scl.ScValue.ScType
-import io.septimalmind.baboon.typer.TypeInfo
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Applicative2, F}
 import izumi.fundamentals.collections.nonempty.NEList
@@ -28,10 +26,8 @@ object ScDefnTranslator {
   )
 
   class ScDefnTranslatorImpl[F[+_, +_]: Applicative2](
-    target: ScTarget,
     domain: Domain,
     evo: BaboonEvolution,
-    types: TypeInfo,
     scFiles: ScFileTools,
     scTrees: ScTreeTools,
     trans: ScTypeTranslator,

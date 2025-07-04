@@ -1,11 +1,9 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
-import izumi.functional.bio.F
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
@@ -15,7 +13,6 @@ trait CSCodecFixtureTranslator {
 
 object CSCodecFixtureTranslator {
   final class CSRandomMethodTranslatorImpl(
-    target: CSTarget,
     translator: CSTypeTranslator,
     enquiries: BaboonEnquiries,
     domain: Domain,

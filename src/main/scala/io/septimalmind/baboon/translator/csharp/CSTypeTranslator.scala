@@ -9,6 +9,33 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTypeInfo) {
+  def isUpgradeable(tpe: CSValue.CSType, family: BaboonFamily): Option[CSValue.CSType] = {
+    tpe.origin match {
+      case CSTypeOrigin.TypeInDomain(typeId: TypeId.User, pkg, version, derived) =>
+        val lineage = family.domains(pkg)
+        val evo     = lineage.evolution
+
+        info.canBeUpgradedTo(typeId, version, lineage) match {
+          case Some(higherTwinVersion) =>
+            //            println(s"$typeId@$version ==> $higherTwinVersion")
+            val higherDom = lineage.versions(higherTwinVersion)
+            val higherTwin = if (derived) {
+              asCsTypeKeepForeigns(typeId, higherDom, evo).fullyQualified
+            } else {
+              asCsType(typeId, higherDom, evo).fullyQualified
+            }
+            // Codecs/fixtures do not exist in the typespace and origin is their main type, origin != codec type, so we have to patch that
+            Some(higherTwin.copy(name = tpe.name))
+
+          case None =>
+            None
+        }
+
+      case _ =>
+        None
+    }
+  }
+
   def asCsRef(tpe: TypeRef, domain: Domain, evolution: BaboonEvolution, mutableCollections: Boolean = false): TextTree[CSValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>

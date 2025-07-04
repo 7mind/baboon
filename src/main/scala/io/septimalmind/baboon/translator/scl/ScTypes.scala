@@ -2,8 +2,6 @@ package io.septimalmind.baboon.translator.scl
 import io.septimalmind.baboon.translator.scl.ScValue.{ScPackageId, ScType}
 import izumi.fundamentals.collections.nonempty.NEList
 
-import java.util.concurrent.atomic.AtomicReference
-
 object ScTypes {
   val baboonRuntimePkg: ScPackageId = parseScPkg("_root_.baboon.runtime.shared")
 

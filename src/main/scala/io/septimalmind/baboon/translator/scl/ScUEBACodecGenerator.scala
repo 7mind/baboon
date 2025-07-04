@@ -10,7 +10,6 @@ import izumi.fundamentals.platform.strings.TextTree.*
 
 class ScUEBACodecGenerator(
   trans: ScTypeTranslator,
-  csDomTrees: ScTreeTools,
   target: ScTarget,
   domain: Domain,
   evo: BaboonEvolution,

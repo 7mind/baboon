@@ -1,6 +1,5 @@
 package io.septimalmind.baboon.translator.csharp
 
-import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.translator.csharp.CSTypes.{csIReadOnlyList, csList, csString, csTpe}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
@@ -16,7 +15,6 @@ trait CSDomainTreeTools {
 object CSDomainTreeTools {
   class CSDomainTreeToolsImpl(
     trans: CSTypeTranslator,
-    target: CSTarget,
     domain: Domain,
     evo: BaboonEvolution,
   ) extends CSDomainTreeTools {

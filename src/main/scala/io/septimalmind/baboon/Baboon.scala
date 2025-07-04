@@ -152,7 +152,8 @@ object Baboon {
         new BaboonScModule[F](t)
     }
 
-    Injector(parent = Some(loc))
+    Injector
+      .NoCycles(parent = Some(loc))
       .produceRun(module) {
         (compiler: BaboonCompiler[F]) =>
           for {
@@ -179,7 +180,8 @@ object Baboon {
     val m = new BaboonModule[F](options, ParallelErrorAccumulatingOps2[F])
 
     runner.run {
-      Injector[F[Throwable, _]]()
+      Injector
+        .NoCycles[F[Throwable, _]]()
         .produceRun(m) {
           (loader: BaboonLoader[F], logger: BLogger, loc: Locator) =>
             for {

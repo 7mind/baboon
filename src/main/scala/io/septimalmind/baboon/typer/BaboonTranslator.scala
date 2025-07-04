@@ -344,7 +344,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
       _ <- F.fromEither {
         defs
           .map(m => (m.name.name.toLowerCase, m))
-          .toUniqueMap(e => NEList(???))
+          .toUniqueMap(_ => NEList(???))
       }
     } yield {
       NEList(

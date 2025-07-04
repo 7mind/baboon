@@ -22,7 +22,6 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
   target: CSTarget,
   csTrees: CSTreeTools,
   csFiles: CSFileTools,
-  csTypeInfo: CSTypeInfo,
   translator: Subcontext[CSDefnTranslator[F]],
 ) extends BaboonAbstractTranslator[F] {
 
@@ -59,7 +58,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
 
     val usedPackages = o.tree.toList
       .flatMap(_.values).collect { case t: CSValue.CSType => t }
-      .filterNot(t => csTypeInfo.isUpgradeable(t, family).nonEmpty).map(_.pkg).distinct
+      .filterNot(t => trans.isUpgradeable(t, family).nonEmpty).map(_.pkg).distinct
       .sortBy(_.parts.mkString("."))
 
     val available        = Set(o.pkg)
@@ -141,7 +140,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
   }
 
   def renderType(tpe: CSValue.CSType, o: CSDefnTranslator.Output, family: BaboonFamily): String = {
-    csTypeInfo.isUpgradeable(tpe, family) match {
+    trans.isUpgradeable(tpe, family) match {
       case Some(higherTwin) =>
         renderSimpleType(higherTwin, o)
       case None =>

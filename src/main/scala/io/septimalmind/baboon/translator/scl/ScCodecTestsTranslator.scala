@@ -52,7 +52,7 @@ object ScCodecTestsTranslator {
       val fixture = makeFixture(definition, domain, evo)
       codecs.map {
         case jsonCodec: ScJsonCodecGenerator =>
-          val body      = jsonCodecAssertions(definition, srcRef)
+          val body      = jsonCodecAssertions(definition)
           val codecName = jsonCodec.codecName(srcRef)
 
           q"""
@@ -95,7 +95,7 @@ object ScCodecTestsTranslator {
              |"""
 
         case uebaCodec: ScUEBACodecGenerator =>
-          val body      = uebaCodecAssertions(uebaCodec, definition, srcRef)
+          val body      = uebaCodecAssertions(definition)
           val codecName = uebaCodec.codecName(srcRef)
           q"""
              |"${srcRef.toString}" should "support UEBA codec" in {
@@ -163,7 +163,7 @@ object ScCodecTestsTranslator {
       }
     }
 
-    private def jsonCodecAssertions(definition: DomainMember.User, srcRef: ScValue.ScType): TextTree[ScValue] = {
+    private def jsonCodecAssertions(definition: DomainMember.User): TextTree[ScValue] = {
       definition.defn match {
         case _: Typedef.Adt =>
           q"""fixtures.foreach {
@@ -176,7 +176,7 @@ object ScCodecTestsTranslator {
       }
     }
 
-    private def uebaCodecAssertions(codec: ScUEBACodecGenerator, definition: DomainMember.User, srcRef: ScValue.ScType): TextTree[ScValue] = {
+    private def uebaCodecAssertions(definition: DomainMember.User): TextTree[ScValue] = {
       definition.defn match {
         case _: Typedef.Adt =>
           q"""fixtures.foreach {

@@ -2,17 +2,13 @@ package io.septimalmind.baboon.translator.scl
 
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.translator.scl.ScCodecTranslator.CodecMeta
-import io.septimalmind.baboon.translator.scl.ScTypes.{baboonBinTools, baboonCodecContext, baboonJsonCodec, baboonLazy, baboonTimeFormats, baboonTools, iBaboonAdtMemberMeta, iBaboonGenerated}
+import io.septimalmind.baboon.translator.scl.ScTypes.*
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
-import java.math.BigInteger
-import java.util.concurrent.atomic.AtomicReference
-
 class ScJsonCodecGenerator(
   trans: ScTypeTranslator,
-  csDomTrees: ScTreeTools,
   target: ScTarget,
   domain: Domain,
   evo: BaboonEvolution,

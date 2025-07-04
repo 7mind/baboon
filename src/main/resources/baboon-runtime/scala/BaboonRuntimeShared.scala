@@ -216,6 +216,7 @@ package baboon.runtime.shared {
       val millis       = s.readLong()
       val offsetMillis = s.readLong()
       val kind         = s.readByte()
+      assert(kind >= 0 && kind <= 2)
 
       val instant = Instant.ofEpochMilli(millis)
       val offset  = ZoneOffset.ofTotalSeconds((offsetMillis / 1000).toInt)
