@@ -151,7 +151,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
 //            println(s"$typeId@$version ==> $higherTwinVersion")
             val higherDom  = lineage.versions(higherTwinVersion)
             val higherTwin = trans.asCsType(typeId, higherDom, evo).fullyQualified
-            Some(higherTwin)
+            Some(higherTwin.copy(name = tpe.name))
 
           case None =>
             None

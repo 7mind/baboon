@@ -5,6 +5,7 @@ import io.septimalmind.baboon.parser.model.DerivationDecl
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.{CodecArguments, CodecMeta}
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
+import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin.TypeInDomain
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -98,7 +99,7 @@ class CSJsonCodecGenerator(
          |}""".stripMargin
     )
 
-    val cName = codecName(srcRef)
+    val cName = codecName(srcRef, TypeInDomain(defn.id, domain.id, domain.version))
     val cParent = if (isEncoderEnabled) {
       defn match {
         case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecBase<$name, $cName>"
@@ -295,7 +296,7 @@ class CSJsonCodecGenerator(
           case _: TypeId.BuiltinScalar =>
             q"new $nsJValue($ref)"
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.asCsTypeKeepForeigns(u, domain, evo))
+            val targetTpe = codecName(trans.asCsTypeKeepForeigns(u, domain, evo), TypeInDomain(u, domain.id, domain.version))
             q"""$targetTpe.Instance.Encode(ctx, $ref)"""
         }
       case c: TypeRef.Constructor =>
@@ -423,8 +424,8 @@ class CSJsonCodecGenerator(
 
   }
 
-  def codecName(name: CSValue.CSType): CSValue.CSType = {
-    CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq, CSTypeOrigin.Other)
+  def codecName(name: CSValue.CSType, origin: CSTypeOrigin.TypeInDomain): CSValue.CSType = {
+    CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq, origin)
   }
 
   override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): Option[CSCodecTranslator.CodecMeta] = {
@@ -433,7 +434,7 @@ class CSJsonCodecGenerator(
       val member =
         q"""public$fix$iBaboonJsonCodec<$name> Codec_JSON()
            |{
-           |    return ${codecName(name)}.Instance;
+           |    return ${codecName(name, TypeInDomain(defn.id, domain.id, domain.version))}.Instance;
            |}""".stripMargin
       Some(CodecMeta(member))
     } else {

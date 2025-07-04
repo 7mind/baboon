@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.csharp.CSDefnTranslator.OutputOrigin.TypeInDomain
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType, CSTypeOrigin}
 import io.septimalmind.baboon.typer.TypeInfo
@@ -206,7 +207,9 @@ object CSDefnTranslator {
             .flatMap {
               codec =>
                 if (codec.isActive(d.id)) {
-                  List(codec.id -> q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(srcRef).copy(fq = true)}.Instance)")
+                  List(
+                    codec.id -> q"new Lazy<$iBaboonCodecData>(() => ${codec.codecName(srcRef, CSTypeOrigin.TypeInDomain(d.id, domain.id, domain.version)).copy(fq = true)}.Instance)"
+                  )
                 } else {
                   List.empty
                 }

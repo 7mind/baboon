@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
+import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
@@ -11,7 +12,7 @@ trait CSCodecTranslator {
   def isActive(id: TypeId): Boolean
   def id: String
 
-  def codecName(name: CSValue.CSType): CSValue.CSType
+  def codecName(name: CSValue.CSType, origin: CSTypeOrigin.TypeInDomain): CSValue.CSType
   def codecMeta(defn: DomainMember.User, name: CSValue.CSType): Option[CodecMeta]
 }
 
