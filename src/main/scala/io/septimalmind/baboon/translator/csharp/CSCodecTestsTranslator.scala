@@ -118,7 +118,7 @@ object CSCodecTestsTranslator {
 
     private def jsonCodecAssertions(codec: CSJsonCodecGenerator, definition: DomainMember.User, srcRef: CSValue.CSType): TextTree[CSValue] = {
       def jsonTest: TextTree[CSValue.CSType] = {
-        val codecName  = codec.codecName(srcRef, TypeInDomain(definition.id, domain.id, domain.version)).fullyQualified
+        val codecName  = codec.codecName(srcRef, TypeInDomain(definition.id, domain.id, domain.version))
         val fieldName  = q"fixture"
         val serialized = q"${fieldName}Json"
         val decoded    = q"${fieldName}Decoded"

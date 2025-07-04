@@ -3,7 +3,6 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.csharp.CSDefnTranslator.OutputOrigin.TypeInDomain
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType, CSTypeOrigin}
 import io.septimalmind.baboon.typer.TypeInfo
@@ -43,7 +42,7 @@ object CSDefnTranslator {
 
   case class Output(
     path: String,
-    tree: TextTree[CSValue],
+    tree: Option[TextTree[CSValue]],
     pkg: CSPackageId,
     product: CompilerProduct,
     origin: OutputOrigin,
@@ -73,15 +72,10 @@ object CSDefnTranslator {
     type Out[T] = F[NEList[BaboonIssue.TranslationIssue], T]
 
     override def translate(defn: DomainMember.User): Out[List[Output]] = {
-      if (csTypeInfo.eliminated(defn.id, domain.version, lineage)) {
-        F.pure(List.empty)
-      } else {
-        defn.id.owner match {
-          case Owner.Adt(_) => F.pure(List.empty)
-          case _            => doTranslate(defn)
-        }
+      defn.id.owner match {
+        case Owner.Adt(_) => F.pure(List.empty)
+        case _            => doTranslate(defn)
       }
-
     }
 
     private def doTranslate(defn: DomainMember.User): Out[List[Output]] = {
@@ -96,11 +90,17 @@ object CSDefnTranslator {
           (c.id, regs)
       }
 
+      val reprOut = if (csTypeInfo.eliminated(defn.id, domain.version, lineage)) {
+        None
+      } else {
+        Some(repr.defn)
+      }
+
       F.pure(
         List(
           Output(
             getOutputPath(defn),
-            repr.defn,
+            reprOut,
             trans.toCsPkg(domain.id, domain.version, evo),
             CompilerProduct.Definition,
             codecReg = regsPerCodec,
@@ -122,7 +122,7 @@ object CSDefnTranslator {
         fixtureTreeWithNs =>
           Output(
             getOutputPath(defn, suffix = Some(".Fixture")),
-            fixtureTreeWithNs,
+            Some(fixtureTreeWithNs),
             trans.toCsPkg(domain.id, domain.version, evo),
             CompilerProduct.Fixture,
             origin = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
@@ -144,7 +144,7 @@ object CSDefnTranslator {
         codecTestWithNS =>
           Output(
             getOutputPath(defn, suffix = Some(".Tests")),
-            codecTestWithNS,
+            Some(codecTestWithNS),
             trans.toCsPkg(domain.id, domain.version, evo),
             CompilerProduct.Test,
             origin = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),

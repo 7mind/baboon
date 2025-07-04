@@ -1,12 +1,36 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerTarget.CSTarget
+import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 
-class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
+class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries, translator: CSTypeTranslator) {
   def adtNsName(id: TypeId.User): String = {
     id.name.name
+  }
+
+  def isUpgradeable(tpe: CSValue.CSType, family: BaboonFamily): Option[CSValue.CSType] = {
+    tpe.origin match {
+      case CSTypeOrigin.TypeInDomain(typeId: TypeId.User, pkg, version) =>
+        val lineage = family.domains(pkg)
+        val evo     = lineage.evolution
+
+        canBeUpgradedTo(typeId, version, lineage) match {
+          case Some(higherTwinVersion) =>
+            //            println(s"$typeId@$version ==> $higherTwinVersion")
+            val higherDom  = lineage.versions(higherTwinVersion)
+            val higherTwin = translator.asCsType(typeId, higherDom, evo).fullyQualified
+            // Codecs/fixtures do not exist in the typespace and origin is their main type, origin != codec type, so we have to patch that
+            Some(higherTwin.copy(name = tpe.name))
+
+          case None =>
+            None
+        }
+
+      case _ =>
+        None
+    }
   }
 
   def eliminated(id: TypeId.User, version: Version, lineage: BaboonLineage): Boolean = {
@@ -35,7 +59,7 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
             case _: Typedef.Enum     => true
             case _: Typedef.Adt      => true
             case _: Typedef.Contract => true
-            case _: Typedef.Foreign  => false
+            case _: Typedef.Foreign  => true
             case _: Typedef.Service  => false
           }
       }
