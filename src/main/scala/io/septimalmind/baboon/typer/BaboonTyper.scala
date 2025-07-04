@@ -68,7 +68,7 @@ object BaboonTyper {
         refMeta     <- makeRefMeta(graph.meta.nodes)
         derivations <- computeDerivations(graph.meta.nodes)
       } yield {
-        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations)
+        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations, roots.keySet)
       }
     }
 
@@ -83,6 +83,7 @@ object BaboonTyper {
       }
     }
 
+    // TODO: predMatrix from above can be reused here, currently the job is done twice
     private def computeDerivations(
       defs: Map[TypeId, DomainMember]
     ): F[NEList[BaboonIssue.TyperIssue], Map[DerivationDecl, Set[TypeId]]] = {

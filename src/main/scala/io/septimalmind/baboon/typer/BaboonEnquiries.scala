@@ -134,6 +134,9 @@ object BaboonEnquiries {
       }
     }
 
+    /**
+      * Includes soft dependencies (fields)
+      */
     def fullDepsOfDefn(defn: DomainMember): Set[TypeId] = {
       depsOfDefn(defn, explode)
     }
@@ -399,6 +402,7 @@ object BaboonEnquiries {
         case _                                           => false
       }
     }
+
   }
 
 }

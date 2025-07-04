@@ -2,8 +2,9 @@ package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.DerivationDecl
-import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.CodecMeta
+import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.{CodecArguments, CodecMeta}
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
+import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -261,7 +262,7 @@ class CSJsonCodecGenerator(
     (encBody, decBody)
   }
 
-  private def mkEncoder(tpe: TypeRef, ref: TextTree[CSValue]): TextTree[CSValue] = {
+  private def mkEncoder(tpe: TypeRef, ref: TextTree[CSValue], codecArgs: CodecArguments = CodecArguments.empty): TextTree[CSValue] = {
     def encodeKey(tpe: TypeRef, ref: TextTree[CSValue]): TextTree[CSValue] = {
       tpe.id match {
         case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.ToString($ref)"
@@ -300,26 +301,30 @@ class CSJsonCodecGenerator(
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
+            val arg = codecArgs.arg("v")
             if (csTypeInfo.isCSValueType(c.args.head, domain)) {
-              q"$BaboonTools.WriteOptionVal($ref, v => ${mkEncoder(c.args.head, q"v")})"
+              q"$BaboonTools.WriteOptionVal($ref, $arg => ${mkEncoder(c.args.head, arg, codecArgs.next)})"
             } else {
-              q"$BaboonTools.WriteOptionRef($ref, v => ${mkEncoder(c.args.head, q"v")})"
+              q"$BaboonTools.WriteOptionRef($ref, $arg => ${mkEncoder(c.args.head, arg, codecArgs.next)})"
             }
           case TypeId.Builtins.map =>
-            val keyEnc   = encodeKey(c.args.head, q"e.Key")
-            val valueEnc = mkEncoder(c.args.last, q"e.Value")
-            q"$BaboonTools.WriteMap($ref, e => new $nsJProperty($keyEnc, $valueEnc))"
+            val arg      = codecArgs.arg("kv")
+            val keyEnc   = encodeKey(c.args.head, q"$arg.Key")
+            val valueEnc = mkEncoder(c.args.last, q"$arg.Value", codecArgs.next)
+            q"$BaboonTools.WriteMap($ref, $arg => new $nsJProperty($keyEnc, $valueEnc))"
           case TypeId.Builtins.lst =>
-            q"$BaboonTools.WriteSeq($ref, e => ${mkEncoder(c.args.head, q"e")})"
+            val arg = codecArgs.arg("i")
+            q"$BaboonTools.WriteSeq($ref, $arg => ${mkEncoder(c.args.head, arg, codecArgs.next)})"
           case TypeId.Builtins.set =>
-            q"$BaboonTools.WriteSeq($ref, e => ${mkEncoder(c.args.head, q"e")})"
+            val arg = codecArgs.arg("i")
+            q"$BaboonTools.WriteSeq($ref, $arg => ${mkEncoder(c.args.head, arg, codecArgs.next)})"
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
     }
   }
 
-  private def mkDecoder(tpe: TypeRef, ref: TextTree[CSValue]): TextTree[CSValue] = {
+  private def mkDecoder(tpe: TypeRef, ref: TextTree[CSValue], codecArgs: CodecArguments = CodecArguments.empty): TextTree[CSValue] = {
     def mkReader(bs: TypeId.BuiltinScalar): TextTree[CSValue] = {
       val fref = q"$ref!"
       bs match {
@@ -364,13 +369,10 @@ class CSJsonCodecGenerator(
             case u: DomainMember.User =>
               u.defn match {
                 case _: Typedef.Enum | _: Typedef.Foreign =>
-                  val targetTpe =
-                    trans.asCsTypeKeepForeigns(uid, domain, evo)
+                  val targetTpe = trans.asCsTypeKeepForeigns(uid, domain, evo)
                   q"""${targetTpe}_JsonCodec.Instance.Decode(ctx, new $nsJValue($ref!))"""
                 case o =>
-                  throw new RuntimeException(
-                    s"BUG: Unexpected key usertype: $o"
-                  )
+                  throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
             case o =>
               throw new RuntimeException(s"BUG: Type/usertype mismatch: $o")
@@ -391,23 +393,28 @@ class CSJsonCodecGenerator(
       case TypeRef.Constructor(id, args) =>
         id match {
           case TypeId.Builtins.opt if csTypeInfo.isCSValueType(args.head, domain) =>
-            q"""$BaboonTools.ReadNullableValueType($ref, t => ${mkDecoder(args.head, q"t")})""".stripMargin
+            val arg = codecArgs.arg("v")
+            q"""$BaboonTools.ReadNullableValueType($ref, $arg => ${mkDecoder(args.head, arg, codecArgs.next)})""".stripMargin
 
           case TypeId.Builtins.opt =>
-            q"""$BaboonTools.ReadNullableReferentialType($ref, t => ${mkDecoder(args.head, q"t")})"""
+            val arg = codecArgs.arg("v")
+            q"""$BaboonTools.ReadNullableReferentialType($ref, $arg => ${mkDecoder(args.head, arg, codecArgs.next)})"""
 
           case TypeId.Builtins.map =>
-            val keyDec    = decodeKey(args.head, q"t")
+            val arg       = codecArgs.arg("kv")
+            val keyDec    = decodeKey(args.head, arg)
             val keyType   = trans.asCsRef(args.head, domain, evo)
-            val valueDec  = mkDecoder(args.last, q"t")
+            val valueDec  = mkDecoder(args.last, arg, codecArgs.next)
             val valueType = trans.asCsRef(args.last, domain, evo)
-            q"""$BaboonTools.ReadJsonDict<$keyType, $valueType>($ref, t => $keyDec, t => $valueDec)"""
+            q"""$BaboonTools.ReadJsonDict<$keyType, $valueType>($ref, $arg => $keyDec, $arg => $valueDec)"""
 
           case TypeId.Builtins.lst =>
-            q"""$BaboonTools.ReadJsonList($ref, e => ${mkDecoder(args.head, q"e")})"""
+            val arg = codecArgs.arg("i")
+            q"""$BaboonTools.ReadJsonList($ref, $arg => ${mkDecoder(args.head, arg, codecArgs.next)})"""
 
           case TypeId.Builtins.set =>
-            q"""$BaboonTools.ReadJsonSet($ref, e => ${mkDecoder(args.head, q"e")})"""
+            val arg = codecArgs.arg("i")
+            q"""$BaboonTools.ReadJsonSet($ref, $arg => ${mkDecoder(args.head, arg, codecArgs.next)})"""
 
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
@@ -417,7 +424,7 @@ class CSJsonCodecGenerator(
   }
 
   def codecName(name: CSValue.CSType): CSValue.CSType = {
-    CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq, None)
+    CSValue.CSType(name.pkg, s"${name.name}_JsonCodec", name.fq, CSTypeOrigin.Other)
   }
 
   override def codecMeta(defn: DomainMember.User, name: CSValue.CSType): Option[CSCodecTranslator.CodecMeta] = {

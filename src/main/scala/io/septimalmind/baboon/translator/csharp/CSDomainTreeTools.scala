@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerTarget.CSTarget
-import io.septimalmind.baboon.translator.csharp.CSTypes.{csList, csString}
+import io.septimalmind.baboon.translator.csharp.CSTypes.{csIReadOnlyList, csList, csString, csTpe}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -56,6 +56,7 @@ object CSDomainTreeTools {
           List(
             q"""public const $csString BaboonAdtTypeIdentifierValue = "${id.toString}";
                |public $csString BaboonAdtTypeIdentifier() => BaboonAdtTypeIdentifierValue;
+               |public $csTpe BaboonAdtType() => typeof(${trans.asCsType(id, domain, evo)});
                |""".stripMargin
           )
         case _ => List.empty
@@ -66,9 +67,9 @@ object CSDomainTreeTools {
       val unmodifiedMethods = if (!isCodec) {
         val unmodifiedSince = evo.typesUnchangedSince(version)(defn.id)
         List(
-          q"""public${propFix}static readonly $csList<$csString> BaboonUnmodifiedSinceVersionValue = new $csList<$csString> { ${unmodifiedSince.sameIn
+          q"""public${propFix}static readonly $csIReadOnlyList<$csString> BaboonSameInVersionsValue = new $csList<$csString> { ${unmodifiedSince.sameIn
               .map(_.version).map(s => q"\"$s\"").toList.join(", ")} };
-             |public$methodFix$csList<$csString> BaboonUnmodifiedSinceVersions() => BaboonUnmodifiedSinceVersionValue;
+             |public$methodFix$csIReadOnlyList<$csString> BaboonSameInVersions() => BaboonSameInVersionsValue;
              |""".stripMargin
         )
       } else {
@@ -92,9 +93,10 @@ object CSDomainTreeTools {
       val csType = trans.asCsType(defn.id, domain, evo).fullyQualified
 
       val adtMethods = defn.id.owner match {
-        case Owner.Adt(_) =>
+        case Owner.Adt(id) =>
           List(
             q"""public override $csString BaboonAdtTypeIdentifier() => $csType.BaboonAdtTypeIdentifierValue;
+               |public override $csTpe BaboonAdtType() => typeof(${trans.asCsType(id, domain, evo)});
                |""".stripMargin
           )
         case _ => List.empty

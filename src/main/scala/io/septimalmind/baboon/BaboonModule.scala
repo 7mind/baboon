@@ -67,7 +67,7 @@ class BaboonCSModule[F[+_, +_]: Error2: TagKK](target: CSTarget) extends ModuleD
   make[CSTarget].fromValue(target)
 
   makeSubcontext[CSDefnTranslator[F]]
-    .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
+    .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution], DIKey[BaboonLineage]))
     .withSubmodule(new ModuleDef {
       make[CSDefnTranslator[F]].from[CSDefnTranslator.CSDefnTranslatorImpl[F]]
       make[CSCodecTestsTranslator].from[CSCodecTestsTranslator.Impl]

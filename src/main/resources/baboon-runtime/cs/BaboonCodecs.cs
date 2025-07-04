@@ -95,6 +95,7 @@ namespace Baboon.Runtime.Shared
             where TCodec : IBaboonJsonCodec<T>, new()
         {
             public abstract string BaboonAdtTypeIdentifier();
+            public abstract Type BaboonAdtType();
         }
 
         public abstract class NoEncoder<T, TCodec> : Base<T, TCodec>
@@ -247,6 +248,7 @@ namespace Baboon.Runtime.Shared
             where TCodec : IBaboonBinCodec<T>, new()
         {
             public abstract string BaboonAdtTypeIdentifier();
+            public abstract Type BaboonAdtType();
         }
 
         public abstract class NoEncoder<T, TCodec> : Base<T, TCodec>

@@ -4,10 +4,12 @@ import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.csharp.CSDefnTranslator.OutputOrigin
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
-import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
+import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSTypeOrigin}
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.Owner.Toplevel
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
@@ -21,6 +23,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
   target: CSTarget,
   csTrees: CSTreeTools,
   csFiles: CSFileTools,
+  csTypeInfo: CSTypeInfo,
   translator: Subcontext[CSDefnTranslator[F]],
 ) extends BaboonAbstractTranslator[F] {
 
@@ -33,7 +36,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
       fixture    <- sharedFixture()
       rendered = (translated ++ runtime ++ fixture).map {
         o =>
-          val content = renderTree(o)
+          val content = renderTree(o, family)
           (o.path, OutputFile(content, o.product))
       }
       unique <- F.fromEither(rendered.toUniqueMap(c => NEList(BaboonIssue.NonUniqueOutputFiles(c))))
@@ -42,7 +45,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
     }
   }
 
-  private def renderTree(o: CSDefnTranslator.Output): String = {
+  private def renderTree(o: CSDefnTranslator.Output, family: BaboonFamily): String = {
     val alwaysAvailable: Set[CSPackageId] = if (target.language.disregardImplicitUsings) {
       Set.empty
     } else {
@@ -55,7 +58,8 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
       Set(csCollectionsImmutablePkg, csCollectionsGenericPkg)
     }
 
-    val usedPackages = o.tree.values.collect { case t: CSValue.CSType => t.pkg }.distinct
+    val usedPackages = o.tree.values.collect { case t: CSValue.CSType => t }
+      .filterNot(t => isUpgradeable(t, family).nonEmpty).map(_.pkg).distinct
       .sortBy(_.parts.mkString("."))
 
     val available        = Set(o.pkg)
@@ -131,6 +135,45 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
       case t: CSValue.CSTypeName =>
         t.name
 
+      case t: CSValue.CSType =>
+        renderType(t, o, family)
+    }
+  }
+
+  def isUpgradeable(tpe: CSValue.CSType, family: BaboonFamily): Option[CSValue.CSType] = {
+    tpe.origin match {
+      case CSTypeOrigin.TypeInDomain(typeId: TypeId.User, pkg, version) =>
+        val lineage = family.domains(pkg)
+        val evo     = lineage.evolution
+
+        csTypeInfo.canBeUpgradedTo(typeId, version, lineage) match {
+          case Some(higherTwinVersion) =>
+//            println(s"$typeId@$version ==> $higherTwinVersion")
+            val higherDom  = lineage.versions(higherTwinVersion)
+            val higherTwin = trans.asCsType(typeId, higherDom, evo).fullyQualified
+            Some(higherTwin)
+
+          case None =>
+            None
+        }
+
+      case _ =>
+        None
+    }
+  }
+
+  def renderType(tpe: CSValue.CSType, o: CSDefnTranslator.Output, family: BaboonFamily): String = {
+    isUpgradeable(tpe, family) match {
+      case Some(higherTwin) =>
+//        println(s"${renderSimpleType(tpe, o)} --> ${renderSimpleType(higherTwin, o)}")
+
+        renderSimpleType(higherTwin, o)
+      case None => renderSimpleType(tpe, o)
+    }
+  }
+
+  private def renderSimpleType(tpe: CSValue.CSType, o: CSDefnTranslator.Output) = {
+    tpe match {
       case t: CSValue.CSType if !t.fq =>
         if (o.pkg == t.pkg || !t.pkg.parts.startsWith(o.pkg.parts)) {
           t.name
@@ -177,37 +220,42 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
 
   private def translateDomain(domain: Domain, lineage: BaboonLineage): Out[List[CSDefnTranslator.Output]] = {
     val evo = lineage.evolution
-    translator.provide(domain).provide(evo).produce().use {
-      defnTranslator =>
-        for {
-          defnSources     <- translateProduct(domain, CompilerProduct.Definition, defnTranslator.translate)
-          fixturesSources <- translateProduct(domain, CompilerProduct.Fixture, defnTranslator.translateFixtures)
-          testsSources    <- translateProduct(domain, CompilerProduct.Test, defnTranslator.translateTests)
+    translator
+      .provide(domain)
+      .provide(evo)
+      .provide(lineage)
+      .produce()
+      .use {
+        defnTranslator =>
+          for {
+            defnSources     <- translateProduct(domain, CompilerProduct.Definition, defnTranslator.translate)
+            fixturesSources <- translateProduct(domain, CompilerProduct.Fixture, defnTranslator.translateFixtures)
+            testsSources    <- translateProduct(domain, CompilerProduct.Test, defnTranslator.translateTests)
 
-          conversionSources <- {
-            if (target.output.products.contains(CompilerProduct.Conversion)) {
-              val evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
-              generateConversions(domain, lineage, evosToCurrent, defnSources)
-            } else {
-              F.pure(List.empty)
+            conversionSources <- {
+              if (target.output.products.contains(CompilerProduct.Conversion)) {
+                val evosToCurrent = evo.diffs.keySet.filter(_.to == domain.version)
+                generateConversions(domain, lineage, evosToCurrent, defnSources)
+              } else {
+                F.pure(List.empty)
+              }
             }
-          }
 
-          meta <- {
-            if (target.language.writeEvolutionDict) {
-              generateMeta(domain, lineage)
-            } else {
-              F.pure(List.empty)
+            meta <- {
+              if (target.language.writeEvolutionDict) {
+                generateMeta(domain, lineage)
+              } else {
+                F.pure(List.empty)
+              }
             }
+          } yield {
+            defnSources ++
+            conversionSources ++
+            fixturesSources ++
+            testsSources ++
+            meta
           }
-        } yield {
-          defnSources ++
-          conversionSources ++
-          fixturesSources ++
-          testsSources ++
-          meta
-        }
-    }
+      }
 
   }
 
@@ -232,7 +280,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
          |        ${entries.join("\n").shift(8).trim}
          |    }
          |
-         |    public $csList<$csString> UnmodifiedSince($csString typeIdString)
+         |    public $csIReadOnlyList<$csString> SameInVersions($csString typeIdString)
          |    {
          |        return _unmodified[typeIdString];
          |    }
@@ -246,7 +294,13 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
 
     val metaSource = Seq(metaTree).join("\n\n")
     val meta       = csTrees.inNs(pkg.parts.toSeq, metaSource)
-    val metaOutput = CSDefnTranslator.Output(s"$basename/BaboonMeta.cs", meta, pkg, CompilerProduct.Definition)
+    val metaOutput = CSDefnTranslator.Output(
+      s"$basename/BaboonMeta.cs",
+      meta,
+      pkg,
+      CompilerProduct.Definition,
+      origin = OutputOrigin.Runtime,
+    )
 
     F.pure(List(metaOutput))
   }
@@ -267,11 +321,11 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             .map {
               case (srcVer, rules) =>
                 convTransFac(
-                  pkg    = pkg,
-                  srcDom = lineage.versions(srcVer.from),
-                  domain = domain,
-                  rules  = rules,
-                  evo    = lineage.evolution,
+                  pkg     = pkg,
+                  srcDom  = lineage.versions(srcVer.from),
+                  domain  = domain,
+                  rules   = rules,
+                  lineage = lineage,
                 ).makeConvs()
             }
         }
@@ -332,6 +386,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
         runtime,
         pkg,
         CompilerProduct.Conversion,
+        origin = OutputOrigin.Runtime,
       )
 
       val convertersOutput = convs.map {
@@ -341,6 +396,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             conv.conv,
             pkg,
             CompilerProduct.Conversion,
+            origin = OutputOrigin.Runtime,
           )
       }
 
@@ -358,6 +414,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             CSTypes.baboonRuntimePkg,
             CompilerProduct.Runtime,
             doNotModify = true,
+            origin      = OutputOrigin.Runtime,
           ),
           CSDefnTranslator.Output(
             s"BaboonCodecs.cs",
@@ -365,6 +422,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             CSTypes.baboonRuntimePkg,
             CompilerProduct.Runtime,
             doNotModify = true,
+            origin      = OutputOrigin.Runtime,
           ),
           CSDefnTranslator.Output(
             s"BaboonConversions.cs",
@@ -372,6 +430,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             CSTypes.baboonRuntimePkg,
             CompilerProduct.Runtime,
             doNotModify = true,
+            origin      = OutputOrigin.Runtime,
           ),
           CSDefnTranslator.Output(
             s"BaboonTools.cs",
@@ -379,6 +438,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             CSTypes.baboonRuntimePkg,
             CompilerProduct.Runtime,
             doNotModify = true,
+            origin      = OutputOrigin.Runtime,
           ),
           CSDefnTranslator.Output(
             s"BaboonTime.cs",
@@ -386,6 +446,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
             CSTypes.baboonTimePkg,
             CompilerProduct.Runtime,
             doNotModify = true,
+            origin      = OutputOrigin.Runtime,
           ),
         )
       )
@@ -402,6 +463,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
         CSTypes.baboonFixturePkg,
         CompilerProduct.FixtureRuntime,
         doNotModify = true,
+        origin      = OutputOrigin.Runtime,
       )
 
       F.pure(List(testRuntime))

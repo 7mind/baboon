@@ -117,8 +117,8 @@ object BaboonComparator {
 
     }
 
-    case class UnmodifiedSinceMut(typeId: TypeId, in: Version, sameIn: mutable.ArrayBuffer[Version]) {
-      def freeze: UnmodifiedSince = UnmodifiedSince(typeId, in, NEList.unsafeFrom(sameIn.toList))
+    case class UnmodifiedSinceMut(typeId: TypeId, in: Version, sameInAfter: mutable.ArrayBuffer[Version]) {
+      def freeze: UnmodifiedSince = UnmodifiedSince(typeId, in, NEList.unsafeFrom(sameInAfter.toList))
     }
 
     private def minVersionsDiff(
@@ -138,8 +138,8 @@ object BaboonComparator {
             case (id, _) =>
               if (unmodified.contains(id)) {
                 val prevrecord = minVersions(prevVersion)(id)
-                prevrecord.sameIn.addOne(currVersion)
-                (id, UnmodifiedSinceMut(id, currVersion, prevrecord.sameIn))
+                prevrecord.sameInAfter.addOne(currVersion)
+                (id, UnmodifiedSinceMut(id, currVersion, prevrecord.sameInAfter))
               } else {
                 (id, UnmodifiedSinceMut(id, currVersion, mutable.ArrayBuffer(currVersion)))
               }
