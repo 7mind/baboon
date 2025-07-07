@@ -153,6 +153,8 @@ object BaboonIssue {
   //
   sealed trait VerificationIssue extends BaboonIssue
 
+  case class LockedVersionModified(pkg: Pkg, version: Version) extends VerificationIssue
+
   case class MissingTypeDef(domain: Domain, missing: Set[TypeId]) extends VerificationIssue
 
   case class ReferentialCyclesFound(domain: Domain, loops: Set[LoopDetector.Cycles[TypeId]]) extends VerificationIssue

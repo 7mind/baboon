@@ -101,6 +101,7 @@ final case class OutputOptions(
 final case class CompilerOptions(
   individualInputs: Set[Path],
   directoryInputs: Set[Path],
+  lockFile: Option[Path],
   debug: Boolean,
   targets: Seq[CompilerTarget],
   metaWriteEvolutionJsonTo: Option[Path],

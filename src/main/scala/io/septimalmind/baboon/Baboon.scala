@@ -84,6 +84,7 @@ object Baboon {
             directoryInputs          = directoryInputs,
             targets                  = launchArgs,
             metaWriteEvolutionJsonTo = generalOptions._1.metaWriteEvolutionJson.map(s => Paths.get(s)),
+            lockFile                 = generalOptions._1.lockFile.map(s => Paths.get(s)),
           )
 
           import izumi.distage.modules.support.unsafe.EitherSupport.{defaultModuleEither, quasiIOEither, quasiIORunnerEither}

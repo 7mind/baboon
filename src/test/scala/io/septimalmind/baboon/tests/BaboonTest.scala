@@ -23,6 +23,7 @@ abstract class BaboonTest[F[+_, +_]: TagKK: BaboonTestModule] extends Spec2[F]()
           individualInputs         = Set.empty,
           directoryInputs          = Set(Paths.get("./src/test/resources/baboon")),
           metaWriteEvolutionJsonTo = None,
+          lockFile                 = Some(Paths.get("./target/baboon.lock")),
           targets = Seq(
             CSTarget(
               id = "C#",

@@ -8,6 +8,7 @@ function run-test() {
   target/graalvm-native-image/baboon \
             --model-dir ./src/test/resources/baboon/ \
             --meta-write-evolution-json baboon-meta.json \
+            --lock-file=./target/baboon.lock \
             :cs \
             --output ./test/cs-stub/BaboonDefinitions/Generated \
             --test-output ./test/cs-stub/BaboonTests/GeneratedTests \
@@ -22,18 +23,18 @@ function run-test() {
             --fixture-output ./test/sc-stub/src/main/scala/generated-fixtures \
             --sc-write-evolution-dict true \
             --sc-wrapped-adt-branch-codecs false
-             
+
   pushd .
   cd ./test/cs-stub
   dotnet build -c Release
   dotnet test -c Release BaboonTests/BaboonTests.csproj
   popd
-  
+
   pushd .
   cd ./test/sc-stub
   sbt +clean +test
   popd
-  
+
   popd
 
   pushd .
@@ -41,6 +42,7 @@ function run-test() {
   target/graalvm-native-image/baboon \
             --model-dir ./src/test/resources/baboon/ \
             --meta-write-evolution-json baboon-meta.json \
+            --lock-file=./target/baboon.lock \
             :cs \
             --output ./test/cs-stub/BaboonDefinitions/Generated \
             --test-output ./test/cs-stub/BaboonTests/GeneratedTests \
@@ -64,37 +66,37 @@ function run-test() {
   cd ./test/cs-stub
   dotnet build -c Debug
   dotnet test -c Debug BaboonTests/BaboonTests.csproj
-  popd 
-  
+  popd
+
   pushd .
   cd ./test/sc-stub
   sbt +clean +test
   popd
-  
+
   popd
-  
+
   pushd .
-  rm -rf ./test/conv-test-cs/ConvTest/Generated 
+  rm -rf ./test/conv-test-cs/ConvTest/Generated
 
 #  sbt "run --model-dir ./test/conv-test  --output ./test/conv-test-cs/ConvTest/Generated"
-  
+
   target/graalvm-native-image/baboon  \
     --model-dir ./test/conv-test \
     :cs \
     --output ./test/conv-test-cs/ConvTest/Generated \
     :scala \
-    --output ./test/conv-test-sc/src/main/scala/generated-main    
+    --output ./test/conv-test-sc/src/main/scala/generated-main
 
   pushd .
   cd ./test/conv-test-cs
   dotnet build
-  dotnet test 
-  popd 
-  
-  pushd . 
+  dotnet test
+  popd
+
+  pushd .
   cd ./test/conv-test-sc
   sbt +clean +test
   popd
-    
-  popd 
+
+  popd
 }

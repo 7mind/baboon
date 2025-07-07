@@ -83,6 +83,8 @@ case class ScCLIOptions(
 case class CLIOptions(
   @HelpMessage("A list of *.baboon files to process (can be combined with --model-dir)")
   model: List[String],
+  @HelpMessage("A file used to track model signatures")
+  lockFile: Option[String],
   @HelpMessage("A directory to recursively read all the *.baboon files from")
   modelDir: List[String],
   @HelpMessage("Produces additional debug messages. Do not use.")

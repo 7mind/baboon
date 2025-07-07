@@ -468,6 +468,11 @@ object IssuePrinter {
          |""".stripMargin
     }
 
+  implicit val lockedVersionModified: IssuePrinter[LockedVersionModified] =
+    (issue: LockedVersionModified) => {
+      s"""Model ${issue.pkg.toString}@${issue.version} was modified but it's not the latest version so it's locked with the lockfile""".stripMargin
+    }
+
   implicit val referentialCyclesFoundPrinter: IssuePrinter[ReferentialCyclesFound] =
     (issue: ReferentialCyclesFound) => {
       val stringLoops = issue.loops.toList
@@ -729,6 +734,7 @@ object IssuePrinter {
   }
 
   implicit val verificationIssuePrinter: IssuePrinter[VerificationIssue] = {
+    case i: LockedVersionModified  => apply[LockedVersionModified].stringify(i)
     case i: MissingTypeDef         => apply[MissingTypeDef].stringify(i)
     case i: ReferentialCyclesFound => apply[ReferentialCyclesFound].stringify(i)
     case i: IncorrectRootFound     => apply[IncorrectRootFound].stringify(i)

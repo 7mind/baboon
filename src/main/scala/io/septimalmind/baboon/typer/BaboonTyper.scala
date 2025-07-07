@@ -10,6 +10,7 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.graphs.struct.IncidenceMatrix
 import izumi.fundamentals.graphs.tools.{Toposort, ToposortLoopBreaker}
 import izumi.fundamentals.graphs.{DG, GraphMeta}
+import izumi.fundamentals.platform.crypto.{IzHash, IzSha256HashFunction}
 
 import scala.annotation.tailrec
 import scala.collection.mutable
@@ -208,9 +209,10 @@ object BaboonTyper {
     ): F[NEList[BaboonIssue.TyperIssue], DeepSchemaId] = {
       for {
         repr <- F.pure(deepSchemaRepr(id, defs, List.empty))
+        fullRepr = s"[${enquiries.wrap(id)};${repr
+            .mkString(",")}]"
       } yield {
-        DeepSchemaId(s"[${enquiries.wrap(id)};${repr
-            .mkString(",")}]")
+        DeepSchemaId(IzSha256HashFunction.hash(fullRepr))
       }
     }
 
