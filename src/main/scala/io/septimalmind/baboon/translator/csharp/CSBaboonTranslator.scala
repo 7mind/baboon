@@ -32,7 +32,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
       translated <- translateFamily(family)
       runtime    <- sharedRuntime()
       fixture    <- sharedFixture()
-      rendered = (translated ++ runtime ++ fixture).map {
+      rendered = (translated ++ runtime ++ fixture).filterNot(_.tree.isEmpty).map {
         o =>
           val content = renderTree(o, family)
           (o.path, OutputFile(content, o.product))
