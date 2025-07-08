@@ -93,6 +93,9 @@ object BaboonFamilyManager {
     case class Key(id: String, version: String)
 
     private def resolveImports(parsed: List[RawDomain]): F[NEList[BaboonIssue], List[RawDomain]] = {
+      import MapTools.*
+      import izumi.fundamentals.collections.IzCollections.*
+
       for {
         indexed   <- F.fromEither(parsed.map(d => (Key(d.header.name.mkString("."), d.version.value), d)).toUniqueMap(e => NEList(???)))
         graphNodes = GraphMeta(indexed)
@@ -110,15 +113,21 @@ object BaboonFamilyManager {
             val current = wip(id)
             assert(current.members.includes.isEmpty)
 
-            // TODO: here we silently drop all double definitions
-            val updatedMembers = (current.imported
-              .foldLeft(Map.empty[RawTypeName, RawTLDef]) {
+            val importedMembers = current.imported
+              .foldLeft(List.empty[(RawTypeName, RawTLDef)]) {
                 case (acc, v) =>
-                  val imported = wip(Key(id.id, v.value)).members.defs.map(d => (d.value.name, d)).filterNot { case (n, _) => v.without.contains(n) }
-                  acc ++ imported
-              } ++ current.members.defs.map(d => (d.value.name, d)).toMap).values
+                  val imported = wip(Key(id.id, v.value)).members.defs
+                    .map(d => (d.value.name, d))
+                    .filterNot { case (n, _) => v.without.contains(n) }
 
-            wip.put(id, RawDomain(current.header, current.version, None, RawContent(Seq.empty, updatedMembers.toList)))
+                  acc ++ imported
+              }.toMultimap
+
+            val currentMembers = current.members.defs.map(d => (d.value.name, d)).toMultimap
+
+            val fullMembers = (importedMembers ++ currentMembers).unwrap.map(_._2)
+
+            wip.put(id, RawDomain(current.header, current.version, None, RawContent(Seq.empty, fullMembers)))
         }
 
         wip.values.toList
@@ -126,5 +135,18 @@ object BaboonFamilyManager {
 
     }
 
+  }
+}
+
+// TODO: move to izumi
+object MapTools {
+  implicit class MapSetOps[K, V](val map: Map[K, Set[V]]) extends AnyVal {
+    def unwrap: List[(K, V)] =
+      map.toList.flatMap { case (k, vs) => vs.toList.map(v => (k, v)) }
+  }
+
+  implicit class MutableMapSetOps[K, V](val map: mutable.Map[K, mutable.Set[V]]) extends AnyVal {
+    def unwrap: List[(K, V)] =
+      map.toList.flatMap { case (k, vs) => vs.toList.map(v => (k, v)) }
   }
 }
