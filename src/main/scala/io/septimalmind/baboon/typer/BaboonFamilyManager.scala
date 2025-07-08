@@ -98,7 +98,7 @@ object BaboonFamilyManager {
         graphNodes = GraphMeta(indexed)
         deps       = indexed.view.mapValues(d => d.imported.map(i => Key(d.header.name.mkString("."), i.value)).toSet).toMap
         preds      = IncidenceMatrix(deps)
-        // BUG in fromPred, it same as fromSucc but should be transposed
+        // TODO: BUG in fromPred, it same as fromSucc but should be transposed
         graph <- F.fromEither(DAG.fromPred(preds.transposed, graphNodes).left.map(e => NEList(???)))
         sorted = toposorted(graph)
       } yield {
@@ -110,6 +110,7 @@ object BaboonFamilyManager {
             val current = wip(id)
             assert(current.members.includes.isEmpty)
 
+            // TODO: here we silently drop all double definitions
             val updatedMembers = (current.imported
               .foldLeft(Map.empty[RawTypeName, RawTLDef]) {
                 case (acc, v) =>
