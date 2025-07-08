@@ -310,7 +310,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
     }
   }
 
-  private def transfer(tpe: TypeRef, ref: TextTree[CSValue], depth: Int): TextTree[CSValue] = {
+  private def transfer(tpe: TypeRef, ref: TextTree[CSValue], depth: Int, nullable: Boolean = false): TextTree[CSValue] = {
     import io.septimalmind.baboon.translator.FQNSymbol.*
 
     val cnew =
@@ -318,7 +318,11 @@ class CSConversionTranslator[F[+_, +_]: Error2](
 
     val cold = trans.asCsRef(tpe, srcDom, lineage.evolution).fullyQualified
 
-    val direct = q"(($cnew) $ref)"
+    val direct = if (nullable) {
+      q"(($cnew?) $ref)"
+    } else {
+      q"(($cnew) $ref)"
+    }
     val out = tpe match {
       case TypeRef.Scalar(id) =>
         val conv =
@@ -355,7 +359,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
           case c: TypeRef.Constructor if c.id == TypeId.Builtins.opt =>
             val underlyingTpe = c.args.head
             val recConv =
-              transfer(underlyingTpe, ref, depth + 1)
+              transfer(underlyingTpe, ref, depth + 1, nullable = true)
 
             q"($ref == null ? null : $recConv)"
 
