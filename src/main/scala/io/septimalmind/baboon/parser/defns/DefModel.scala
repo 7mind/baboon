@@ -20,9 +20,9 @@ class DefModel(
 
   def model[$: P]: P[RawDomain] = {
     import fastparse.ScalaWhitespace.whitespace
-    P(Start ~ header ~ version ~ content ~ End).map {
-      case (decl, version, members) =>
-        RawDomain(decl, version, members)
+    P(Start ~ header ~ version ~ `import`.? ~ content ~ End).map {
+      case (decl, version, imp, members) =>
+        RawDomain(decl, version, imp, members)
     }
   }
 
@@ -33,6 +33,17 @@ class DefModel(
     meta
       .withMeta(P(kw(kw.version, Literals.Literals.SimpleStr)))
       .map(RawVersion.apply.tupled)
+
+  def `import`[$: P]: P[RawImport] = {
+    import fastparse.ScalaWhitespace.whitespace
+
+    meta
+      .withMeta(P(kw(kw.`import`, Literals.Literals.SimpleStr) ~ "{" ~ "*" ~ "}" ~ ("without" ~ struct.enclosed(idt.symbol.rep())).?))
+      .map {
+        case (meta, (id, drop)) =>
+          RawImport(meta, id, drop.toSeq.flatten.map(s => RawTypeName(s)).toSet)
+      }
+  }
 
   def include[$: P]: P[RawInclude] =
     meta

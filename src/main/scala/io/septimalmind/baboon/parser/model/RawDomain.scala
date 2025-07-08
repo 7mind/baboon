@@ -1,3 +1,3 @@
 package io.septimalmind.baboon.parser.model
 
-case class RawDomain(header: RawHeader, version: RawVersion, members: RawContent)
+case class RawDomain(header: RawHeader, version: RawVersion, imported: Option[RawImport], members: RawContent)
