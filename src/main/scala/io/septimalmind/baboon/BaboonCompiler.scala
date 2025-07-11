@@ -1,12 +1,12 @@
 package io.septimalmind.baboon
 
-import io.circe.generic.semiauto.{deriveCodec, deriveEncoder}
-import io.circe.{Codec, Decoder, Encoder, KeyDecoder, KeyEncoder}
+import io.circe.generic.semiauto.deriveCodec
+import io.circe.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue.{CantCleanupTarget, CantReadInput, LockedVersionModified}
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile}
 import io.septimalmind.baboon.typer.BaboonEnquiries
-import io.septimalmind.baboon.typer.model.{BaboonFamily, Domain, Pkg, UnmodifiedSince, Version}
+import io.septimalmind.baboon.typer.model.{BaboonFamily, Domain, Pkg, Version}
 import io.septimalmind.baboon.util.{BLogger, BaboonMetagen}
 import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Error2, F}

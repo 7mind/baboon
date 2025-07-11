@@ -10,7 +10,7 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.graphs.struct.IncidenceMatrix
 import izumi.fundamentals.graphs.tools.{Toposort, ToposortLoopBreaker}
 import izumi.fundamentals.graphs.{DG, GraphMeta}
-import izumi.fundamentals.platform.crypto.{IzHash, IzSha256HashFunction}
+import izumi.fundamentals.platform.crypto.IzSha256HashFunction
 
 import scala.annotation.tailrec
 import scala.collection.mutable

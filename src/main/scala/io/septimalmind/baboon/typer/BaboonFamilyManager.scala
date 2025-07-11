@@ -1,16 +1,16 @@
 package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.BaboonParser
-import io.septimalmind.baboon.parser.model.{RawContent, RawDomain, RawTLDef, RawTypeName, RawVersion}
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.parser.model.{RawContent, RawDomain, RawTLDef, RawTypeName}
 import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage}
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Error2, F, ParallelErrorAccumulatingOps2}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
-import izumi.fundamentals.graphs.{DAG, DG, GraphMeta}
 import izumi.fundamentals.graphs.struct.IncidenceMatrix
+import izumi.fundamentals.graphs.{DAG, GraphMeta}
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
 import scala.collection.mutable
@@ -92,8 +92,34 @@ object BaboonFamilyManager {
     }
     case class Key(id: String, version: String)
 
-    private def resolveImports(parsed: List[RawDomain]): F[NEList[BaboonIssue], List[RawDomain]] = {
+    def withImports(id: Key, idx: collection.Map[Key, RawDomain]): RawDomain = {
       import MapTools.*
+
+      val current = idx(id)
+      assert(current.members.includes.isEmpty)
+
+      val importedMembers = current.imported
+        .foldLeft(List.empty[(RawTypeName, RawTLDef)]) {
+          case (acc, v) =>
+            val importedDom = idx(Key(id.id, v.value))
+
+            val imported = importedDom.members.defs
+
+            val recursivelyImported = importedDom.imported.toSeq.flatMap(i => withImports(Key(id.id, i.value), idx).members.defs)
+
+            val allImported = (imported ++ recursivelyImported).map(d => (d.value.name, d)).filterNot { case (n, _) => v.without.contains(n) }
+
+            acc ++ allImported
+        }.toMultimap
+
+      val currentMembers = current.members.defs.map(d => (d.value.name, d)).toMultimap
+
+      val fullMembers = (importedMembers ++ currentMembers).unwrap.map(_._2)
+
+      RawDomain(current.header, current.version, None, RawContent(Seq.empty, fullMembers))
+    }
+
+    private def resolveImports(parsed: List[RawDomain]): F[NEList[BaboonIssue], List[RawDomain]] = {
       import izumi.fundamentals.collections.IzCollections.*
 
       for {
@@ -110,24 +136,7 @@ object BaboonFamilyManager {
 
         sorted.foreach {
           id =>
-            val current = wip(id)
-            assert(current.members.includes.isEmpty)
-
-            val importedMembers = current.imported
-              .foldLeft(List.empty[(RawTypeName, RawTLDef)]) {
-                case (acc, v) =>
-                  val imported = wip(Key(id.id, v.value)).members.defs
-                    .map(d => (d.value.name, d))
-                    .filterNot { case (n, _) => v.without.contains(n) }
-
-                  acc ++ imported
-              }.toMultimap
-
-            val currentMembers = current.members.defs.map(d => (d.value.name, d)).toMultimap
-
-            val fullMembers = (importedMembers ++ currentMembers).unwrap.map(_._2)
-
-            wip.put(id, RawDomain(current.header, current.version, None, RawContent(Seq.empty, fullMembers)))
+            wip.put(id, withImports(id, wip))
         }
 
         wip.values.toList
