@@ -344,7 +344,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
       _ <- F.fromEither {
         defs
           .map(m => (m.name.name.toLowerCase, m))
-          .toUniqueMap(_ => NEList(???))
+          .toUniqueMap(dupes => NEList(BaboonIssue.NonUniqueMethodNames(svc.name.name, dupes.view.mapValues(_.map(_.name.name).toList).toMap, svc.meta)))
       }
     } yield {
       NEList(
@@ -382,9 +382,9 @@ class BaboonTranslator[F[+_, +_]: Error2](
       outargs = args.filter(_._1.toLowerCase == "out").map(_._2)
       errargs = args.filter(_._1.toLowerCase == "err").map(_._2)
 
-      _ <- F.when(outargs.size != 1)(F.fail(???))
-      _ <- F.when(outargs.size > 1)(F.fail(???))
-      _ <- F.when(errargs.size > 1)(F.fail(???))
+      _ <- F.when(outargs.size != 1)(F.fail(NEList(BaboonIssue.ServiceMissingOutput(svc.name.name, f.name, f.meta))))
+      _ <- F.when(outargs.size > 1)(F.fail(NEList(BaboonIssue.ServiceMultipleOutputs(svc.name.name, f.name, outargs.size, f.meta))))
+      _ <- F.when(errargs.size > 1)(F.fail(NEList(BaboonIssue.ServiceMultipleErrors(svc.name.name, f.name, errargs.size, f.meta))))
     } yield {
       MethodDef(MethodName(f.name), inargs.head, outargs.headOption, errargs.headOption)
     }

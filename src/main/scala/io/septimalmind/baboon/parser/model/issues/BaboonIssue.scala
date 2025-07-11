@@ -102,6 +102,14 @@ object BaboonIssue {
 
   case class TodoTyperIssue(descr: String) extends TyperIssue
 
+  case class NonUniqueMethodNames(serviceName: String, duplicateMethods: Map[String, List[String]], meta: RawNodeMeta) extends TyperIssue
+
+  case class ServiceMissingOutput(serviceName: String, methodName: String, meta: RawNodeMeta) extends TyperIssue
+
+  case class ServiceMultipleOutputs(serviceName: String, methodName: String, count: Int, meta: RawNodeMeta) extends TyperIssue
+
+  case class ServiceMultipleErrors(serviceName: String, methodName: String, count: Int, meta: RawNodeMeta) extends TyperIssue
+
   case class ScopeCannotBeEmpty(member: RawDefn) extends TyperIssue
 
   case class BadEnumName(name: String, meta: RawNodeMeta) extends TyperIssue

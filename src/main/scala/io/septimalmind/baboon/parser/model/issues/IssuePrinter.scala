@@ -647,6 +647,35 @@ object IssuePrinter {
     s"""Enum constants must be within Int.MinValue..Int.MaxValue range ${issue.e.id.toString}""".stripMargin
   }
 
+  implicit val nonUniqueMethodNamesPrinter: IssuePrinter[NonUniqueMethodNames] = (issue: NonUniqueMethodNames) => {
+    val duplicatesString = issue.duplicateMethods.map {
+      case (methodName, occurrences) =>
+        s"method: $methodName => occurrences: ${occurrences.mkString(", ")}"
+    }.mkString("\n")
+    s"""${extractLocation(issue.meta)}
+       |Service ${issue.serviceName} has methods with identical names:
+       |$duplicatesString
+       |""".stripMargin
+  }
+
+  implicit val serviceMissingOutputPrinter: IssuePrinter[ServiceMissingOutput] = (issue: ServiceMissingOutput) => {
+    s"""${extractLocation(issue.meta)}
+       |Service ${issue.serviceName}, method ${issue.methodName}: missing output type definition
+       |""".stripMargin
+  }
+
+  implicit val serviceMultipleOutputsPrinter: IssuePrinter[ServiceMultipleOutputs] = (issue: ServiceMultipleOutputs) => {
+    s"""${extractLocation(issue.meta)}
+       |Service ${issue.serviceName}, method ${issue.methodName}: has ${issue.count} output type definitions, expected exactly 1
+       |""".stripMargin
+  }
+
+  implicit val serviceMultipleErrorsPrinter: IssuePrinter[ServiceMultipleErrors] = (issue: ServiceMultipleErrors) => {
+    s"""${extractLocation(issue.meta)}
+       |Service ${issue.serviceName}, method ${issue.methodName}: has ${issue.count} error type definitions, expected at most 1
+       |""".stripMargin
+  }
+
   private def extractLocation(meta: RawNodeMeta): String = {
     meta.pos match {
       case full: InputPointer.Full =>
@@ -720,6 +749,14 @@ object IssuePrinter {
     case i: TodoTyperIssue        => i.descr
     case i: ScopedRefToNamespacedGeneric =>
       apply[ScopedRefToNamespacedGeneric].stringify(i)
+    case i: NonUniqueMethodNames =>
+      apply[NonUniqueMethodNames].stringify(i)
+    case i: ServiceMissingOutput =>
+      apply[ServiceMissingOutput].stringify(i)
+    case i: ServiceMultipleOutputs =>
+      apply[ServiceMultipleOutputs].stringify(i)
+    case i: ServiceMultipleErrors =>
+      apply[ServiceMultipleErrors].stringify(i)
   }
 
   implicit val evolutionIssuePrinter: IssuePrinter[EvolutionIssue] = {
