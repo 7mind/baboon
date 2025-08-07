@@ -30,7 +30,7 @@ object BaboonComparator {
       versions: NEMap[Version, Domain],
     ): F[NEList[BaboonIssue], BaboonEvolution] = {
       val sortedVersions =
-        versions.keySet.toList.sortBy(_.version)(Ordering.String.reverse)
+        versions.keySet.toList.sorted(Version.ordering.reverse)
       val pinnacleVersion = sortedVersions.head
 
       val toCompare = sortedVersions.sliding(2).toList

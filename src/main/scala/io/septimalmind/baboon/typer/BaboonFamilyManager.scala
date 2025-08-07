@@ -37,7 +37,7 @@ object BaboonFamilyManager {
         resolvedImports <- resolveImports(parsed)
         domains         <- F.parTraverseAccumErrors(resolvedImports)(typer.process)
         _ <- F.maybeSuspend {
-          domains.sortBy(d => (d.id.toString, d.version.version)).foreach {
+          domains.sortBy(d => (d.id.toString, d.version)).foreach {
             d =>
               logger.message(
                 d.id.toString,

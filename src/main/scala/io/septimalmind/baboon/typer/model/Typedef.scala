@@ -4,7 +4,7 @@ import izumi.fundamentals.collections.nonempty.NEList
 
 case class UnmodifiedSince(typeId: TypeId, in: Version, sameIn: NEList[Version]) {
   def higherTwins(version: Version): List[Version] = {
-    sameIn.toList.filter(_.version > version.version)
+    sameIn.toList.filter(_ > version)
   }
 }
 
@@ -112,8 +112,4 @@ case class FieldName(name: String) {
 
 case class Field(name: FieldName, tpe: TypeRef) {
   override def toString: String = s"$name: $tpe"
-}
-
-case class Version(version: String) {
-  override def toString: String = s"{$version}"
 }
