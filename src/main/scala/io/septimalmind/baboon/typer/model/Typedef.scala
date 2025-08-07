@@ -251,7 +251,3 @@ case class FieldName(name: String) {
 case class Field(name: FieldName, tpe: TypeRef) {
   override def toString: String = s"$name: $tpe"
 }
-
-case class Version(version: String) {
-  override def toString: String = s"{$version}"
-}
