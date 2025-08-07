@@ -84,7 +84,7 @@ object BaboonFamilyManager {
     }
 
     def toposorted[N, M](g: DAG[N, M]): Seq[N] = {
-      val roots = g.predecessors.links.view.filter(_._2.isEmpty).keys.toSeq
+      val roots = g.noPredcessors.toSeq
       def go(out: Seq[N]): Seq[N] = {
         out ++ out.flatMap(n => go(g.successors.links(n).toSeq))
       }
@@ -149,13 +149,8 @@ object BaboonFamilyManager {
 
 // TODO: move to izumi
 object MapTools {
-  implicit class MapSetOps[K, V](val map: Map[K, Set[V]]) extends AnyVal {
+  implicit class MapSetOps[K, V](val map: scala.collection.Map[K, Set[V]]) extends AnyVal {
     def unwrap: List[(K, V)] =
-      map.toList.flatMap { case (k, vs) => vs.toList.map(v => (k, v)) }
-  }
-
-  implicit class MutableMapSetOps[K, V](val map: mutable.Map[K, mutable.Set[V]]) extends AnyVal {
-    def unwrap: List[(K, V)] =
-      map.toList.flatMap { case (k, vs) => vs.toList.map(v => (k, v)) }
+      map.view.flatMap { case (k, vs) => vs.map(v => (k, v)) }.toList
   }
 }
