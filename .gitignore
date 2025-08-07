@@ -11,7 +11,7 @@ GeneratedTests/
 generated/
 generatedFixtures/
 generatedTests/
-
+src/test/resources/internal
 
 global.json
 
@@ -186,3 +186,8 @@ project/plugins/project/
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 
 # End of https://www.toptal.com/developers/gitignore/api/java,scala,jetbrains+all,sbt,maven,bloop
+.aider*
+
+#convenience for the 0.0.110 maintenance branch
+test/conv-test-sc/
+test/sc-stub/
