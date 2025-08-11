@@ -33,7 +33,7 @@ class ScopeBuilder[F[+_, +_]: Error2] {
       asMap <- F.fromEither {
         sub
           .map(s => (s.name, s))
-          .toUniqueMap(nus => NEList(TyperIssue.NonUniqueScope(nus, meta): BaboonIssue))
+          .toUniqueMap(nus => BaboonIssue.of(TyperIssue.NonUniqueScope(nus, meta)))
       }
     } yield {
       val out     = RootScope(gen.next(), pkg, asMap)
@@ -72,9 +72,9 @@ class ScopeBuilder[F[+_, +_]: Error2] {
         asMap <- F.fromEither {
           nested
             .map(s => (s.name, s))
-            .toUniqueMap(nus => NEList(TyperIssue.NonUniqueScope(nus, member.meta): BaboonIssue))
+            .toUniqueMap(nus => BaboonIssue.of(TyperIssue.NonUniqueScope(nus, member.meta)))
         }
-        asNEMap <- F.fromOption(NEList(TyperIssue.ScopeCannotBeEmpty(member): BaboonIssue)) {
+        asNEMap <- F.fromOption(BaboonIssue.of(TyperIssue.ScopeCannotBeEmpty(member))) {
           NEMap.from(asMap)
         }
       } yield {

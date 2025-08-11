@@ -79,7 +79,7 @@ object BaboonValidator {
         .filterNot(_.loops.isEmpty)
 
       F.when(filtered.nonEmpty)(
-        F.fail(NEList(VerificationIssue.ReferentialCyclesFound(domain, filtered): BaboonIssue))
+        F.fail(BaboonIssue.of(VerificationIssue.ReferentialCyclesFound(domain, filtered)))
       )
     }
 
@@ -123,7 +123,7 @@ object BaboonValidator {
       val badRoots = roots.collect { case d: Typedef.Enum => d.id }
 
       F.when(badRoots.nonEmpty)(
-        F.fail(NEList(VerificationIssue.IncorrectRootFound(domain, badRoots): BaboonIssue))
+        F.fail(BaboonIssue.of(VerificationIssue.IncorrectRootFound(domain, badRoots)))
       )
     }
 
@@ -138,7 +138,7 @@ object BaboonValidator {
       val allDefs = domain.defs.meta.nodes.keySet
       val missing = allDeps.diff(allDefs)
       F.when(missing.nonEmpty)(
-        F.fail(NEList(VerificationIssue.MissingTypeDef(domain, missing): BaboonIssue))
+        F.fail(BaboonIssue.of(VerificationIssue.MissingTypeDef(domain, missing)))
       )
     }
 
@@ -163,7 +163,7 @@ object BaboonValidator {
             }
               .filter(_._2.size > 1)
           F.when(dupes.nonEmpty)(
-            F.fail(NEList(VerificationIssue.ConflictingTypeIds(domain, dupes): BaboonIssue))
+            F.fail(BaboonIssue.of(VerificationIssue.ConflictingTypeIds(domain, dupes)))
           )
         }
         _ <- F.traverseAccumErrors_(domain.defs.meta.nodes.values) {
@@ -177,7 +177,7 @@ object BaboonValidator {
                 val dupes =
                   e.members.groupBy(_.name.toLowerCase).filter(_._2.size > 1)
                 F.when(dupes.nonEmpty)(
-                  F.fail(NEList(VerificationIssue.ConflictingEnumBranches(e, dupes, u.meta): BaboonIssue))
+                  F.fail(BaboonIssue.of(VerificationIssue.ConflictingEnumBranches(e, dupes, u.meta)))
                 )
               case a: Typedef.Adt =>
                 val dupes =
@@ -185,7 +185,7 @@ object BaboonValidator {
                     .groupBy(_.name.name.toLowerCase)
                     .filter(_._2.size > 1)
                 F.when(dupes.nonEmpty)(
-                  F.fail(NEList(VerificationIssue.ConflictingAdtBranches(a, dupes, u.meta): BaboonIssue))
+                  F.fail(BaboonIssue.of(VerificationIssue.ConflictingAdtBranches(a, dupes, u.meta)))
                 )
               case _: Typedef.Foreign =>
                 F.unit
@@ -207,7 +207,7 @@ object BaboonValidator {
           .filter(_._2.size > 1)
 
       F.when(dupes.nonEmpty)(
-        F.fail(NEList(VerificationIssue.ConflictingDtoFields(u.id, dupes, u.meta): BaboonIssue))
+        F.fail(BaboonIssue.of(VerificationIssue.ConflictingDtoFields(u.id, dupes, u.meta)))
       )
     }
 
@@ -256,7 +256,7 @@ object BaboonValidator {
       val badFields = dto.fields.filter(f => isDoubleOption(f.tpe, Seq.empty))
 
       F.when(badFields.nonEmpty)(
-        F.fail(NEList(VerificationIssue.PathologicGenerics(dto, badFields, meta): BaboonIssue))
+        F.fail(BaboonIssue.of(VerificationIssue.PathologicGenerics(dto, badFields, meta)))
       )
     }
 
@@ -279,7 +279,7 @@ object BaboonValidator {
       val badFields = dto.fields.filter(f => isDoubleOption(f.tpe))
 
       F.when(badFields.nonEmpty)(
-        F.fail(NEList(VerificationIssue.SetsCantContainGenerics(dto, badFields, meta): BaboonIssue))
+        F.fail(BaboonIssue.of(VerificationIssue.SetsCantContainGenerics(dto, badFields, meta)))
       )
     }
 
@@ -302,7 +302,7 @@ object BaboonValidator {
       val badFields = dto.fields.filter(f => isDoubleOption(f.tpe))
 
       F.when(badFields.nonEmpty)(
-        F.fail(NEList(VerificationIssue.MapKeysShouldNotBeGeneric(dto, badFields, meta): BaboonIssue))
+        F.fail(BaboonIssue.of(VerificationIssue.MapKeysShouldNotBeGeneric(dto, badFields, meta)))
       )
     }
 
@@ -321,7 +321,7 @@ object BaboonValidator {
             case e: Typedef.Enum =>
               for {
                 _ <- F.when(e.members.isEmpty)(
-                  F.fail(NEList(VerificationIssue.EmptyEnumDef(e, u.meta): BaboonIssue))
+                  F.fail(BaboonIssue.of(VerificationIssue.EmptyEnumDef(e, u.meta)))
                 )
                 consts = e.members.toList.flatMap(_.const.toSeq).toSet
                 _ <- F.when(
@@ -346,7 +346,7 @@ object BaboonValidator {
 
             case a: Typedef.Adt =>
               F.when(a.members.isEmpty)(
-                F.fail(NEList(VerificationIssue.EmptyAdtDef(a, u.meta): BaboonIssue))
+                F.fail(BaboonIssue.of(VerificationIssue.EmptyAdtDef(a, u.meta)))
               )
 
             case _: Typedef.Foreign =>
@@ -364,7 +364,7 @@ object BaboonValidator {
             .filter(_ == u.id.name.name.toLowerCase)
         )
         _ <- F.when(badFields.nonEmpty)(
-          F.fail(NEList(VerificationIssue.BadFieldNames(u.id, badFields, u.meta): BaboonIssue))
+          F.fail(BaboonIssue.of(VerificationIssue.BadFieldNames(u.id, badFields, u.meta)))
         )
       } yield {}
     }
@@ -377,7 +377,7 @@ object BaboonValidator {
           F.unit
         case u: DomainMember.User =>
           F.when(u.id.name.name.head == '_')(
-            F.fail(NEList(VerificationIssue.UnderscoredDefinitionRetained(u, u.meta)))
+            F.fail(BaboonIssue.of(VerificationIssue.UnderscoredDefinitionRetained(u, u.meta)))
           )
       }
     }
@@ -421,19 +421,19 @@ object BaboonValidator {
 
       for {
         _ <- F.when(missingDiffs.isEmpty)(
-          F.fail(NEList(VerificationIssue.MissingEvoDiff(prev, next, missingDiffs): BaboonIssue))
+          F.fail(BaboonIssue.of(VerificationIssue.MissingEvoDiff(prev, next, missingDiffs)))
         )
         _ <- F.when(
           missingConversions.nonEmpty || extraConversions.nonEmpty
         )(
           F.fail(
-            NEList(
-              (VerificationIssue.MissingEvoConversion(
+            BaboonIssue.of(
+              VerificationIssue.MissingEvoConversion(
                 prev,
                 next,
                 missingConversions,
                 extraConversions,
-              ): BaboonIssue)
+              )
             )
           )
         )
@@ -444,7 +444,7 @@ object BaboonValidator {
             F.unit
           case c: Conversion.RemovedTypeNoConversion =>
             F.when(!diff.changes.removed.contains(c.sourceTpe))(
-              F.fail(NEList(VerificationIssue.BrokenConversion(c): BaboonIssue))
+              F.fail(BaboonIssue.of(VerificationIssue.BrokenConversion(c)))
             )
           case c: Conversion.CopyEnumByName =>
             val o = prev.defs.meta.nodes(c.sourceTpe)
@@ -458,25 +458,25 @@ object BaboonValidator {
                   oe.members.toSet.diff(ne.members.toSet).nonEmpty
                 )(
                   F.fail(
-                    NEList(
-                      (VerificationIssue.IncorrectConversionApplication(
+                    BaboonIssue.of(
+                      VerificationIssue.IncorrectConversionApplication(
                         c,
                         o,
                         n,
                         ConversionIssue.RemovedEnumBranches,
-                      ): BaboonIssue)
+                      )
                     )
                   )
                 )
               case _ =>
                 F.fail(
-                  NEList(
-                    (VerificationIssue.IncorrectConversionApplication(
+                  BaboonIssue.of(
+                    VerificationIssue.IncorrectConversionApplication(
                       c,
                       o,
                       n,
                       ConversionIssue.TypeMismatch,
-                    ): BaboonIssue)
+                    )
                   )
                 )
             }
@@ -496,13 +496,13 @@ object BaboonValidator {
                   removals       = oldFieldNames.diff(newFieldNames)
                   _ <- F.when(removals != removedFields)(
                     F.fail(
-                      NEList(
-                        (VerificationIssue.IncorrectConversionApplication(
+                      BaboonIssue.of(
+                        VerificationIssue.IncorrectConversionApplication(
                           c,
                           o,
                           n,
                           ConversionIssue.RemovedDtoFields,
-                        ): BaboonIssue)
+                        )
                       )
                     )
                   )
@@ -525,13 +525,13 @@ object BaboonValidator {
                   all = transfer ++ defaults ++ swap ++ wrap ++ precex
                   _ <- F.when(newFieldNames != all) {
                     F.fail(
-                      NEList(
-                        (VerificationIssue.IncorrectConversionApplication(
+                      BaboonIssue.of(
+                        VerificationIssue.IncorrectConversionApplication(
                           c,
                           o,
                           n,
                           ConversionIssue.IncorrectFields,
-                        ): BaboonIssue)
+                        )
                       )
                     )
                   }
@@ -544,13 +544,13 @@ object BaboonValidator {
                   )
                   _ <- F.when(conflicts.exists(_.nonEmpty))(
                     F.fail(
-                      NEList(
-                        (VerificationIssue.IncorrectConversionApplication(
+                      BaboonIssue.of(
+                        VerificationIssue.IncorrectConversionApplication(
                           c,
                           o,
                           n,
                           ConversionIssue.ConflictingFields,
-                        ): BaboonIssue)
+                        )
                       )
                     )
                   )
@@ -558,13 +558,13 @@ object BaboonValidator {
 
               case _ =>
                 F.fail(
-                  NEList(
-                    (VerificationIssue.IncorrectConversionApplication(
+                  BaboonIssue.of(
+                    VerificationIssue.IncorrectConversionApplication(
                       c,
                       o,
                       n,
                       ConversionIssue.TypeMismatch,
-                    ): BaboonIssue)
+                    )
                   )
                 )
             }
@@ -584,25 +584,25 @@ object BaboonValidator {
                     .nonEmpty
                 )(
                   F.fail(
-                    NEList(
-                      (VerificationIssue.IncorrectConversionApplication(
+                    BaboonIssue.of(
+                      VerificationIssue.IncorrectConversionApplication(
                         c,
                         o,
                         n,
                         ConversionIssue.RemovedAdtBranches,
-                      ): BaboonIssue)
+                      )
                     )
                   )
                 )
               case _ =>
                 F.fail(
-                  NEList(
-                    (VerificationIssue.IncorrectConversionApplication(
+                  BaboonIssue.of(
+                    VerificationIssue.IncorrectConversionApplication(
                       c,
                       o,
                       n,
                       ConversionIssue.TypeMismatch,
-                    ): BaboonIssue)
+                    )
                   )
                 )
             }

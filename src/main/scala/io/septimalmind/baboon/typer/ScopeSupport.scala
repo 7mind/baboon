@@ -64,7 +64,7 @@ object ScopeSupport {
           }
 
         case None =>
-          F.fail(NEList(TyperIssue.NameNotFound(pkg, name, meta): BaboonIssue))
+          F.fail(BaboonIssue.of(TyperIssue.NameNotFound(pkg, name, meta)))
       }
     }
 
@@ -83,17 +83,17 @@ object ScopeSupport {
                 case Some(value) =>
                   lookupName(names.tail, value, suffix :+ value, meta)
                 case None =>
-                  F.fail(NEList(TyperIssue.NamSeqeNotFound(names, s, meta): BaboonIssue))
+                  F.fail(BaboonIssue.of(TyperIssue.NamSeqeNotFound(names, s, meta)))
               }
             case _ =>
-              F.fail(NEList(TyperIssue.UnexpectedScoping(List(in), meta): BaboonIssue))
+              F.fail(BaboonIssue.of(TyperIssue.UnexpectedScoping(List(in), meta)))
           }
         case None =>
           in match {
             case s: LeafScope[ExtendedRawDefn] =>
               F.pure(LookupResult(suffix, s))
             case b =>
-              F.fail(NEList(TyperIssue.UnexpectedScopeLookup(b, meta): BaboonIssue))
+              F.fail(BaboonIssue.of(TyperIssue.UnexpectedScopeLookup(b, meta)))
           }
       }
 
@@ -109,7 +109,7 @@ object ScopeSupport {
         id <- resolveTypeId(List.empty, name, scope, pkg, meta)
         userId <- id match {
           case id: TypeId.Builtin =>
-            F.fail(NEList(TyperIssue.UnexpectedBuiltin(id, pkg, meta): BaboonIssue))
+            F.fail(BaboonIssue.of(TyperIssue.UnexpectedBuiltin(id, pkg, meta)))
           case u: TypeId.User =>
             F.pure(u)
         }
@@ -152,7 +152,7 @@ object ScopeSupport {
               out
             }
           case None =>
-            F.fromOption(NEList(TyperIssue.UnexpectedNonBuiltin(typename, pkg, scope, meta): BaboonIssue)) {
+            F.fromOption(BaboonIssue.of(TyperIssue.UnexpectedNonBuiltin(typename, pkg, scope, meta))) {
               asBuiltin(typename)
             }
         }

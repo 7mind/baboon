@@ -258,7 +258,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
         }
 
         if (false) {
-          F.fail(NEList(TranslationIssue.TranslationBug(): BaboonIssue))
+          F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
         } else {
           F.pure(rendered)
         }

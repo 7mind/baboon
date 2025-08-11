@@ -58,9 +58,9 @@ object BaboonFamilyManager {
               uniqueVersions <- F.fromEither {
                 domains
                   .map(d => (d.version, d))
-                  .toUniqueMap(v => NEList(TyperIssue.NonUniqueDomainVersions(v): BaboonIssue))
+                  .toUniqueMap(v => BaboonIssue.of(TyperIssue.NonUniqueDomainVersions(v)))
               }
-              nel <- F.fromOption(NEList(TyperIssue.EmptyDomainFamily(pkg): BaboonIssue)) {
+              nel <- F.fromOption(BaboonIssue.of(TyperIssue.EmptyDomainFamily(pkg))) {
                 NEMap.from(uniqueVersions)
               }
               evo <- comparator.evolve(pkg, nel)
@@ -72,10 +72,10 @@ object BaboonFamilyManager {
         uniqueLineages <- F.fromEither {
           lineages
             .map(l => (l.pkg, l))
-            .toUniqueMap(e => NEList(TyperIssue.NonUniqueLineages(e): BaboonIssue))
+            .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueLineages(e)))
         }
 
-        nem <- F.fromOption(NEList(TyperIssue.EmptyFamily(definitions): BaboonIssue)) {
+        nem <- F.fromOption(BaboonIssue.of(TyperIssue.EmptyFamily(definitions))) {
           NEMap.from(uniqueLineages)
         }
       } yield {

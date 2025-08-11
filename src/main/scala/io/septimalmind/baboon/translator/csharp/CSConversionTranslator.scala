@@ -174,7 +174,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
               newDefn <- domain.defs.meta.nodes(c.sourceTpe) match {
                 case DomainMember.User(_, defn: Typedef.Dto, _, _) =>
                   F.pure(defn)
-                case _ => F.fail(NEList(TranslationIssue.TranslationBug(): BaboonIssue))
+                case _ => F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
               }
               opIndex = c.ops.map(op => (op.targetField, op)).toMap
               exprs <- F.traverseAccumErrors(newDefn.fields) {
@@ -216,10 +216,10 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                               )
 
                             case _ =>
-                              F.fail(NEList(TranslationIssue.TranslationBug(): BaboonIssue))
+                              F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
                           }
                         case _: TypeRef.Scalar =>
-                          F.fail(NEList(TranslationIssue.TranslationBug(): BaboonIssue))
+                          F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
                       }
 
                     case o: FieldOp.WrapIntoCollection =>
@@ -237,7 +237,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                             Seq(q"(new $ftNewInit { $fieldRef }).${CSTypes.mkList}")
                           )
                         case _ =>
-                          F.fail(NEList(TranslationIssue.TranslationBug(): BaboonIssue))
+                          F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
                       }
 
                     case o: FieldOp.ExpandPrecision =>
@@ -254,7 +254,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                         case (_: TypeRef.Scalar, _: TypeRef.Scalar) =>
                           F.pure(Seq(fieldRef))
                         case _ =>
-                          F.fail(NEList(TranslationIssue.TranslationBug(): BaboonIssue))
+                          F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
                       }
 
                     case o: FieldOp.SwapCollectionType =>
@@ -414,7 +414,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
               )
             )
           case _ =>
-            F.fail(NEList(TranslationIssue.TranslationBug(): BaboonIssue))
+            F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
         }
       case TypeId.Builtins.lst =>
         newId match {
@@ -424,7 +424,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
           case TypeId.Builtins.lst =>
             F.pure(Seq(q"$collInit.${CSTypes.mkList}"))
           case _ =>
-            F.fail(NEList(TranslationIssue.TranslationBug(): BaboonIssue))
+            F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
         }
       case TypeId.Builtins.set =>
         newId match {
@@ -433,7 +433,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
           case TypeId.Builtins.lst =>
             F.pure(Seq(q"$collInit.${CSTypes.mkList}"))
           case _ =>
-            F.fail(NEList(TranslationIssue.TranslationBug(): BaboonIssue))
+            F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
         }
       case TypeId.Builtins.map =>
         newId match {
@@ -446,10 +446,10 @@ class CSConversionTranslator[F[+_, +_]: Error2](
               )
             )
           case _ =>
-            F.fail(NEList(TranslationIssue.TranslationBug(): BaboonIssue))
+            F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
         }
       case _ =>
-        F.fail(NEList(TranslationIssue.TranslationBug(): BaboonIssue))
+        F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
     }
   }
 

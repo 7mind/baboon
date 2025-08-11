@@ -39,7 +39,7 @@ object BaboonTyper {
         indexedDefs <- F.fromEither {
           defs
             .map(d => (d.id, d))
-            .toUniqueMap(e => NEList(TyperIssue.DuplicatedTypedefs(model, e): BaboonIssue))
+            .toUniqueMap(e => BaboonIssue.of(TyperIssue.DuplicatedTypedefs(model, e)))
         }
         roots = indexedDefs.collect {
           case (k, v: DomainMember.User) if v.root =>
@@ -269,7 +269,7 @@ object BaboonTyper {
       header: RawHeader
     ): F[NEList[BaboonIssue], Pkg] = {
       for {
-        nel <- F.fromOption(NEList(TyperIssue.EmptyPackageId(header): BaboonIssue)) {
+        nel <- F.fromOption(BaboonIssue.of(TyperIssue.EmptyPackageId(header))) {
           NEList.from(header.name)
         }
         // TODO: validate format
@@ -283,7 +283,7 @@ object BaboonTyper {
     ): F[NEList[BaboonIssue], Version] = {
       for {
         v <- F.pure(version.value)
-        _ <- F.fromOption(NEList(TyperIssue.GenericTyperIssue(s"Bad version format in '$v'", version.meta): BaboonIssue))(ParsedVersion.parse(v))
+        _ <- F.fromOption(BaboonIssue.of(TyperIssue.GenericTyperIssue(s"Bad version format in '$v'", version.meta)))(ParsedVersion.parse(v))
       } yield {
         Version(v)
       }
@@ -310,7 +310,7 @@ object BaboonTyper {
               mapped = next.map(m => (m.id, m))
               dupes  = acc.keySet.intersect(mapped.map(_._1).toSet)
               _ <- F.when(dupes.nonEmpty)(
-                F.fail(NEList(TyperIssue.DuplicatedTypes(dupes, meta): BaboonIssue))
+                F.fail(BaboonIssue.of(TyperIssue.DuplicatedTypes(dupes, meta)))
               )
             } yield {
               acc ++ mapped
@@ -319,7 +319,7 @@ object BaboonTyper {
 
         indexed <- F.fromEither {
           (initial.map(m => (m.id, m)) ++ out.toSeq)
-            .toUniqueMap(e => NEList(TyperIssue.NonUniqueTypedefs(e, meta): BaboonIssue))
+            .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueTypedefs(e, meta)))
         }
       } yield {
         indexed.values.toList
@@ -336,7 +336,7 @@ object BaboonTyper {
         asMap <- F.fromEither {
           depmap.toUniqueMap(
             bad => {
-              NEList(TyperIssue.BadInheritance(bad, meta): BaboonIssue)
+              BaboonIssue.of(TyperIssue.BadInheritance(bad, meta))
             }
           )
         }
@@ -344,7 +344,7 @@ object BaboonTyper {
         predMatrix = IncidenceMatrix(asMap.view.mapValues(_._1).toMap)
         sorted <- F.fromEither {
           Toposort.cycleBreaking(predMatrix, ToposortLoopBreaker.dontBreak)
-        }.leftMap(e => NEList(TyperIssue.CircularInheritance(e, meta): BaboonIssue))
+        }.leftMap(e => BaboonIssue.of(TyperIssue.CircularInheritance(e, meta)))
 
       } yield {
         sorted.map(id => asMap(id)._2).toList

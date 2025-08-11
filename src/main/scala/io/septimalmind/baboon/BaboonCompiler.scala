@@ -97,7 +97,7 @@ object BaboonCompiler {
               out     <- F.fromEither(parsed.as[Locks])
             } yield {
               out
-            }).catchAll(e => F.fail(NEList(IOIssue.CantReadInput(lockfilePath.toString, e): BaboonIssue)))
+            }).catchAll(e => F.fail(BaboonIssue.of(IOIssue.CantReadInput(lockfilePath.toString, e))))
             _ <- compareSigs(model, currentSigs, existingSigs)
           } yield {}
 
@@ -146,7 +146,7 @@ object BaboonCompiler {
           StandardOpenOption.TRUNCATE_EXISTING,
         )
         ()
-      }.leftMap(t => NEList(IOIssue.CantWriteOutput(tgt.toString, t): BaboonIssue))
+      }.leftMap(t => BaboonIssue.of(IOIssue.CantWriteOutput(tgt.toString, t)))
     }
 
     private def cleanupTargetPaths(targetOptions: OutputOptions): F[NEList[BaboonIssue], Unit] = {
@@ -163,14 +163,14 @@ object BaboonCompiler {
                 )
             }
           }
-        }.catchAll(t => F.fail(NEList(IOIssue.CantCleanupTarget(Seq.empty, targetOptions.safeToRemoveExtensions.toSeq, Some(t)): BaboonIssue)))
+        }.catchAll(t => F.fail(BaboonIssue.of(IOIssue.CantCleanupTarget(Seq.empty, targetOptions.safeToRemoveExtensions.toSeq, Some(t)))))
         _ <- F
           .ifThenElse(unexpectedFiles.isEmpty)(
             F.fromAttempt(targetPaths.foreach(path => IzFiles.erase(path)))
               .catchAll(
-                t => F.fail(NEList(IOIssue.CantCleanupTarget(unexpectedFiles.map(_.toString), targetOptions.safeToRemoveExtensions.toSeq, Some(t)): BaboonIssue))
+                t => F.fail(BaboonIssue.of(IOIssue.CantCleanupTarget(unexpectedFiles.map(_.toString), targetOptions.safeToRemoveExtensions.toSeq, Some(t))))
               ),
-            F.fail(NEList(IOIssue.CantCleanupTarget(unexpectedFiles.map(_.toString), targetOptions.safeToRemoveExtensions.toSeq, None): BaboonIssue)),
+            F.fail(BaboonIssue.of(IOIssue.CantCleanupTarget(unexpectedFiles.map(_.toString), targetOptions.safeToRemoveExtensions.toSeq, None))),
           )
 
       } yield {}

@@ -31,7 +31,7 @@ object BaboonLoader {
             for {
               content <- F.fromAttempt {
                 IzFiles.readString(path.toFile)
-              }.leftMap(e => NEList(IOIssue.CantReadInput(path.toString, e): BaboonIssue))
+              }.leftMap(e => BaboonIssue.of(IOIssue.CantReadInput(path.toString, e)))
             } yield {
               BaboonParser.Input(
                 FSPath.parse(NEString.unsafeFrom(path.toString)),

@@ -50,11 +50,11 @@ object BaboonComparator {
                   .map(diff => (diff.id, diff))
 
               case o =>
-                F.fail(NEList(EvolutionIssue.BrokenComparison(o): BaboonIssue))
+                F.fail(BaboonIssue.of(EvolutionIssue.BrokenComparison(o)))
             }
           }
         diffMap <- F.fromEither {
-          indexedDiffs.toUniqueMap(e => NEList(EvolutionIssue.NonUniqueDiff(e): BaboonIssue))
+          indexedDiffs.toUniqueMap(e => BaboonIssue.of(EvolutionIssue.NonUniqueDiff(e)))
         }
 
         rulesets <- F.sequenceAccumErrors(diffMap.map {
@@ -64,7 +64,7 @@ object BaboonComparator {
               .map(rs => (v, rs))
         })
         rulesetMap <- F.fromEither {
-          rulesets.toUniqueMap(e => NEList(EvolutionIssue.NonUniqueRuleset(e): BaboonIssue))
+          rulesets.toUniqueMap(e => BaboonIssue.of(EvolutionIssue.NonUniqueRuleset(e)))
         }
 
         previousVersions <- F.fromEither {
@@ -76,7 +76,7 @@ object BaboonComparator {
               case _             => List.empty
             }
             .toSeq
-            .toUniqueMap(e => NEList(EvolutionIssue.NonUniquePrevVersions(e): BaboonIssue))
+            .toUniqueMap(e => BaboonIssue.of(EvolutionIssue.NonUniquePrevVersions(e)))
         }
 
         minVersions <- computeMinVersions(
@@ -246,10 +246,10 @@ object BaboonComparator {
                 diff(changes, uold.defn, unew.defn).map(diff => (id, diff))
 
               case (o, n) =>
-                F.fail(NEList(EvolutionIssue.IncomparableTypedefs(o, n): BaboonIssue))
+                F.fail(BaboonIssue.of(EvolutionIssue.IncomparableTypedefs(o, n)))
             }
         }
-        indexedDiffs <- F.fromEither(diffs.toUniqueMap(e => NEList(EvolutionIssue.NonUniqueDiffs(e): BaboonIssue)))
+        indexedDiffs <- F.fromEither(diffs.toUniqueMap(e => BaboonIssue.of(EvolutionIssue.NonUniqueDiffs(e))))
       } yield {
         BaboonDiff(
           EvolutionStep(prev.version, last.version),
@@ -272,7 +272,7 @@ object BaboonComparator {
         case (d1: Typedef.Dto, d2: Typedef.Dto) =>
           diffDtos(changes, d1, d2)
         case (o1, o2) =>
-          F.fail(NEList(EvolutionIssue.MismatchingTypedefs(o1, o2): BaboonIssue))
+          F.fail(BaboonIssue.of(EvolutionIssue.MismatchingTypedefs(o1, o2)))
       }
     }
 

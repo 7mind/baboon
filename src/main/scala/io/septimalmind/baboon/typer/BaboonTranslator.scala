@@ -76,7 +76,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
                 ),
               )
           )
-          .toUniqueMap(e => NEList(TyperIssue.NonUniqueForeignEntries(e, id, f.meta): BaboonIssue))
+          .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueForeignEntries(e, id, f.meta)))
       }
     } yield {
       NEList(DomainMember.User(isRoot, Typedef.Foreign(id, entries), f.derived, f.meta))
@@ -106,9 +106,9 @@ class BaboonTranslator[F[+_, +_]: Error2](
       _ <- F.fromEither {
         converted
           .map(m => (m.name.toLowerCase, m))
-          .toUniqueMap(e => NEList(TyperIssue.NonUniqueEnumBranches(e, id, choice.meta): BaboonIssue))
+          .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueEnumBranches(e, id, choice.meta)))
       }
-      nel <- F.fromOption(NEList(TyperIssue.EmptyEnum(id, choice.meta): BaboonIssue)) {
+      nel <- F.fromOption(BaboonIssue.of(TyperIssue.EmptyEnum(id, choice.meta))) {
         NEList.from(converted)
       }
     } yield {
@@ -141,7 +141,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
         case DomainMember.User(_, defn: Typedef.Dto, _, _) =>
           F.pure(defn.fields)
         case o =>
-          F.fail(NEList(TyperIssue.WrongParent(id, o.id, meta): BaboonIssue))
+          F.fail(BaboonIssue.of(TyperIssue.WrongParent(id, o.id, meta)))
       }
     } yield {
       out
@@ -163,7 +163,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
             parents ++ Set(ContractContent(defn.fields, Set(id)))
           }
         case o =>
-          F.fail(NEList(TyperIssue.WrongParent(id, o.id, meta): BaboonIssue))
+          F.fail(BaboonIssue.of(TyperIssue.WrongParent(id, o.id, meta)))
       }
     } yield {
       fields
@@ -229,7 +229,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
                     c => readContractContent(c, dto.meta)
                   }
                 case o =>
-                  F.fail(NEList(TyperIssue.WrongParent(id, o.id, dto.meta): BaboonIssue))
+                  F.fail(BaboonIssue.of(TyperIssue.WrongParent(id, o.id, dto.meta)))
               }
             case _ =>
               F.pure(List.empty)
@@ -265,7 +265,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
       _ <- dto match {
         case _: RawDto =>
           F.when(missingIrremovable.nonEmpty)(
-            F.fail(NEList(TyperIssue.MissingContractFields(id, missingIrremovable, dto.meta): BaboonIssue))
+            F.fail(BaboonIssue.of(TyperIssue.MissingContractFields(id, missingIrremovable, dto.meta)))
           )
         case _: RawContract =>
           F.pure(())
@@ -274,7 +274,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
       _ <- F.fromEither {
         finalFields
           .map(m => (m.name.name.toLowerCase, m))
-          .toUniqueMap(e => NEList(TyperIssue.NonUniqueFields(id, e, dto.meta): BaboonIssue))
+          .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueFields(id, e, dto.meta)))
       }
       contractRefs = contracts.flatMap(_.refs).distinct
     } yield {
@@ -307,7 +307,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
                 .resolveUserTypeId(member.defn.name, thisScope, pkg, member.meta)
           )
       }
-      nel <- F.fromOption(NEList(TyperIssue.EmptyAdt(id, adt.meta): BaboonIssue)) {
+      nel <- F.fromOption(BaboonIssue.of(TyperIssue.EmptyAdt(id, adt.meta))) {
         NEList.from(converted)
       }
       contracts <- F
@@ -343,7 +343,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
       _ <- F.fromEither {
         defs
           .map(m => (m.name.name.toLowerCase, m))
-          .toUniqueMap(dupes => NEList(TyperIssue.NonUniqueMethodNames(svc.name.name, dupes.view.mapValues(_.map(_.name.name).toList).toMap, svc.meta): BaboonIssue))
+          .toUniqueMap(dupes => BaboonIssue.of(TyperIssue.NonUniqueMethodNames(svc.name.name, dupes.view.mapValues(_.map(_.name.name).toList).toMap, svc.meta)))
       }
     } yield {
       NEList(
@@ -381,9 +381,9 @@ class BaboonTranslator[F[+_, +_]: Error2](
       outargs = args.filter(_._1.toLowerCase == "out").map(_._2)
       errargs = args.filter(_._1.toLowerCase == "err").map(_._2)
 
-      _ <- F.when(outargs.size != 1)(F.fail(NEList(TyperIssue.ServiceMissingOutput(svc.name.name, f.name, f.meta): BaboonIssue)))
-      _ <- F.when(outargs.size > 1)(F.fail(NEList(TyperIssue.ServiceMultipleOutputs(svc.name.name, f.name, outargs.size, f.meta): BaboonIssue)))
-      _ <- F.when(errargs.size > 1)(F.fail(NEList(TyperIssue.ServiceMultipleErrors(svc.name.name, f.name, errargs.size, f.meta): BaboonIssue)))
+      _ <- F.when(outargs.size != 1)(F.fail(BaboonIssue.of(TyperIssue.ServiceMissingOutput(svc.name.name, f.name, f.meta))))
+      _ <- F.when(outargs.size > 1)(F.fail(BaboonIssue.of(TyperIssue.ServiceMultipleOutputs(svc.name.name, f.name, outargs.size, f.meta))))
+      _ <- F.when(errargs.size > 1)(F.fail(BaboonIssue.of(TyperIssue.ServiceMultipleErrors(svc.name.name, f.name, errargs.size, f.meta))))
     } yield {
       MethodDef(MethodName(f.name), inargs.head, outargs.headOption, errargs.headOption)
     }
@@ -401,7 +401,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
             case scalar: TypeId.Scalar =>
               F.pure(scalar)
             case _ =>
-              F.fail(NEList(TyperIssue.ScalarExpected(id, meta): BaboonIssue))
+              F.fail(BaboonIssue.of(TyperIssue.ScalarExpected(id, meta)))
           }
         } yield {
           TypeRef.Scalar(asScalar)
@@ -409,17 +409,17 @@ class BaboonTranslator[F[+_, +_]: Error2](
       case RawTypeRef.Constructor(name, params, prefix) =>
         for {
           _ <- F.when(prefix.nonEmpty)(
-            F.fail(NEList(TyperIssue.ScopedRefToNamespacedGeneric(prefix, meta): BaboonIssue))
+            F.fail(BaboonIssue.of(TyperIssue.ScopedRefToNamespacedGeneric(prefix, meta)))
           )
           id <- scopeSupport.resolveTypeId(prefix, name, defn, pkg, meta)
           asCollection <- id match {
             case coll: TypeId.BuiltinCollection =>
               F.pure(coll)
             case _ =>
-              F.fail(NEList(TyperIssue.CollectionExpected(id, meta): BaboonIssue))
+              F.fail(BaboonIssue.of(TyperIssue.CollectionExpected(id, meta)))
           }
           args <- F.traverseAccumErrors(params.toList)(convertTpe(_, meta))
-          nel <- F.fromOption(NEList(TyperIssue.EmptyGenericArgs(id, meta): BaboonIssue)) {
+          nel <- F.fromOption(BaboonIssue.of(TyperIssue.EmptyGenericArgs(id, meta))) {
             NEList.from(args)
           }
         } yield {

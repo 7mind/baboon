@@ -12,9 +12,9 @@ object SymbolNames {
     for {
       _ <- F.when(
         !(name.forall(l => l.isLetterOrDigit || l == '_') && name.head.isLetter)
-      )(F.fail(NEList(TyperIssue.BadEnumName(name, meta): BaboonIssue)))
+      )(F.fail(BaboonIssue.of(TyperIssue.BadEnumName(name, meta))))
       _ <- F.when(name.toLowerCase.startsWith("baboon"))(
-        F.fail(NEList(TyperIssue.BadEnumName(name, meta): BaboonIssue))
+        F.fail(BaboonIssue.of(TyperIssue.BadEnumName(name, meta)))
       )
     } yield {}
   }
@@ -24,12 +24,12 @@ object SymbolNames {
       _ <- F.when(
         !(name.name
           .forall(l => l.isLetterOrDigit || l == '_') && name.name.head.isLetter)
-      )(F.fail(NEList(TyperIssue.BadFieldName(name.name, meta): BaboonIssue)))
+      )(F.fail(BaboonIssue.of(TyperIssue.BadFieldName(name.name, meta))))
       _ <- F.when(!name.name.head.isLower)(
-        F.fail(NEList(TyperIssue.BadFieldName(name.name, meta): BaboonIssue))
+        F.fail(BaboonIssue.of(TyperIssue.BadFieldName(name.name, meta)))
       )
       _ <- F.when(name.name.toLowerCase.startsWith("baboon"))(
-        F.fail(NEList(TyperIssue.BadFieldName(name.name, meta): BaboonIssue))
+        F.fail(BaboonIssue.of(TyperIssue.BadFieldName(name.name, meta)))
       )
     } yield {}
   }
@@ -39,9 +39,9 @@ object SymbolNames {
       _ <- F.when(
         !(name.name
           .forall(l => l.isLetterOrDigit || l == '_') && (name.name.head.isLetter || name.name.head == '_'))
-      )(F.fail(NEList(TyperIssue.BadTypeName(name.name, meta): BaboonIssue)))
+      )(F.fail(BaboonIssue.of(TyperIssue.BadTypeName(name.name, meta))))
       _ <- F.when(name.name.toLowerCase.startsWith("baboon"))(
-        F.fail(NEList(TyperIssue.BadFieldName(name.name, meta): BaboonIssue))
+        F.fail(BaboonIssue.of(TyperIssue.BadFieldName(name.name, meta)))
       )
     } yield {}
   }

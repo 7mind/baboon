@@ -29,14 +29,14 @@ object EvolutionIssue {
   case class MismatchingTypedefs(o1: Typedef.User, o2: Typedef.User) extends EvolutionIssue with BaboonBug
 
   implicit val evolutionIssuePrinter: IssuePrinter[EvolutionIssue] = {
-    case issue: BrokenComparison       => brokenComparisonPrinter.stringify(issue)
-    case issue: UnexpectedDiffType      => unexpectedDiffTypePrinter.stringify(issue)
-    case issue: NonUniqueDiff           => nonUniqueDiffPrinter.stringify(issue)
-    case issue: NonUniqueRuleset        => nonUniqueRulesetPrinter.stringify(issue)
-    case issue: NonUniquePrevVersions   => nonUniqueVersionsPrinter.stringify(issue)
-    case issue: IncomparableTypedefs    => incomparableTypedefsPrinter.stringify(issue)
-    case issue: NonUniqueDiffs          => nonUniqueDiffsPrinter.stringify(issue)
-    case issue: MismatchingTypedefs     => mismatchingTypedefsPrinter.stringify(issue)
+    case issue: BrokenComparison      => brokenComparisonPrinter.stringify(issue)
+    case issue: UnexpectedDiffType    => unexpectedDiffTypePrinter.stringify(issue)
+    case issue: NonUniqueDiff         => nonUniqueDiffPrinter.stringify(issue)
+    case issue: NonUniqueRuleset      => nonUniqueRulesetPrinter.stringify(issue)
+    case issue: NonUniquePrevVersions => nonUniqueVersionsPrinter.stringify(issue)
+    case issue: IncomparableTypedefs  => incomparableTypedefsPrinter.stringify(issue)
+    case issue: NonUniqueDiffs        => nonUniqueDiffsPrinter.stringify(issue)
+    case issue: MismatchingTypedefs   => mismatchingTypedefsPrinter.stringify(issue)
   }
 
   implicit val brokenComparisonPrinter: IssuePrinter[BrokenComparison] =

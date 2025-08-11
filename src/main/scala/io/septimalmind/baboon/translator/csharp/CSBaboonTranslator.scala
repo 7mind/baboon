@@ -37,7 +37,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
           val content = renderTree(o, family)
           (o.path, OutputFile(content, o.product))
       }
-      unique <- F.fromEither(rendered.toUniqueMap(c => NEList(TranslationIssue.NonUniqueOutputFiles(c): BaboonIssue)))
+      unique <- F.fromEither(rendered.toUniqueMap(c => BaboonIssue.of(TranslationIssue.NonUniqueOutputFiles(c))))
     } yield {
       Sources(unique)
     }

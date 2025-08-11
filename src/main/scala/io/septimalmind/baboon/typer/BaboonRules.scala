@@ -73,7 +73,7 @@ object BaboonRules {
                       F.pure(ops)
                     case o =>
                       F.fail(
-                        NEList(EvolutionIssue.UnexpectedDiffType(o, "DTODiff"): BaboonIssue)
+                        BaboonIssue.of(EvolutionIssue.UnexpectedDiffType(o, "DTODiff"))
                       )
                   }
 
@@ -163,7 +163,7 @@ object BaboonRules {
                       F.pure(ops.collect { case r: EnumOp.RemoveBranch => r })
                     case o =>
                       F.fail(
-                        NEList(EvolutionIssue.UnexpectedDiffType(o, "EnumDiff"): BaboonIssue)
+                        BaboonIssue.of(EvolutionIssue.UnexpectedDiffType(o, "EnumDiff"))
                       )
                   }
                 } yield {
@@ -182,7 +182,7 @@ object BaboonRules {
                       F.pure(ops.collect { case r: AdtOp.RemoveBranch => r })
                     case o =>
                       F.fail(
-                        NEList(EvolutionIssue.UnexpectedDiffType(o, "ADTDiff"): BaboonIssue)
+                        BaboonIssue.of(EvolutionIssue.UnexpectedDiffType(o, "ADTDiff"))
                       )
                   }
                 } yield {

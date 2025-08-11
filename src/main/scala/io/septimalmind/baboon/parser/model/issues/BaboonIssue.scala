@@ -1,5 +1,7 @@
 package io.septimalmind.baboon.parser.model.issues
 
+import izumi.fundamentals.collections.nonempty.NEList
+
 trait BaboonBug {
   this: IssueGroup =>
 }
@@ -7,6 +9,9 @@ trait BaboonBug {
 sealed trait BaboonIssue
 
 object BaboonIssue {
+  trait Wrap[-T] {
+    def wrap(issue: T): BaboonIssue
+  }
 
   case class Parser(issue: ParserIssue) extends BaboonIssue
 
@@ -19,6 +24,32 @@ object BaboonIssue {
   case class Translation(issue: TranslationIssue) extends BaboonIssue
 
   case class Evolution(issue: EvolutionIssue) extends BaboonIssue
+
+  def of[T](issue: T, more: T*)(implicit w: Wrap[T]): NEList[BaboonIssue] = NEList(w.wrap(issue), more.map(w.wrap))
+
+  implicit object WEvolutionIssue extends Wrap[EvolutionIssue] {
+    override def wrap(issue: EvolutionIssue): BaboonIssue = EvolutionIssue.wrap(issue)
+  }
+
+  implicit object WParserIssue extends Wrap[ParserIssue] {
+    override def wrap(issue: ParserIssue): BaboonIssue = ParserIssue.wrap(issue)
+  }
+
+  implicit object WIOIssue extends Wrap[IOIssue] {
+    override def wrap(issue: IOIssue): BaboonIssue = IOIssue.wrap(issue)
+  }
+
+  implicit object WVerificationIssue extends Wrap[VerificationIssue] {
+    override def wrap(issue: VerificationIssue): BaboonIssue = VerificationIssue.wrap(issue)
+  }
+
+  implicit object WTyperIssue extends Wrap[TyperIssue] {
+    override def wrap(issue: TyperIssue): BaboonIssue = TyperIssue.wrap(issue)
+  }
+  
+  implicit object WTranslationIssue extends Wrap[TranslationIssue] {
+    override def wrap(issue: TranslationIssue): BaboonIssue = TranslationIssue.wrap(issue)
+  }
 
   implicit val wTranslationIssuePrinter: IssuePrinter[Translation] = {
     case i: Translation => IssuePrinter[TranslationIssue].stringify(i.issue)
