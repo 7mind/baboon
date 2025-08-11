@@ -10,9 +10,9 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 trait ScDefnTranslator[F[+_, +_]] {
-  def translate(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[ScDefnTranslator.Output]]
-  def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[ScDefnTranslator.Output]]
-  def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[ScDefnTranslator.Output]]
+  def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[ScDefnTranslator.Output]]
+  def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[ScDefnTranslator.Output]]
+  def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue], List[ScDefnTranslator.Output]]
 }
 
 object ScDefnTranslator {
@@ -37,14 +37,14 @@ object ScDefnTranslator {
   ) extends ScDefnTranslator[F] {
     import ScTypes.*
 
-    override def translate(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+    override def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       defn.id.owner match {
         case Owner.Adt(_) => F.pure(List.empty)
         case _            => doTranslate(defn)
       }
     }
 
-    private def doTranslate(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+    private def doTranslate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       val (content, reg) = makeFullRepr(defn, inNs = true)
 
       val registrations = Option(reg.map { case (_, reg) => q"register(new $baboonTypeCodecs($reg))" }).filterNot(_.isEmpty).map(_.join("\n"))
@@ -62,14 +62,14 @@ object ScDefnTranslator {
       )
     }
 
-    override def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+    override def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       defn.id.owner match {
         case Owner.Adt(_) => F.pure(List.empty)
         case _            => doTranslateFixtures(defn)
       }
     }
 
-    private def doTranslateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+    private def doTranslateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       val fixtureTreeOut = makeFixtureRepr(defn).map {
         fixtureTreeWithNs =>
           Output(
@@ -92,13 +92,13 @@ object ScDefnTranslator {
       fixtureTreeWithNs
     }
 
-    override def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+    override def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       defn.id.owner match {
         case Owner.Adt(_) => F.pure(List.empty)
         case _            => doTranslateTest(defn)
       }
     }
-    private def doTranslateTest(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[Output]] = {
+    private def doTranslateTest(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       val codecTestOut = makeTestRepr(defn).map {
         codecTestWithNS =>
           Output(

@@ -2,6 +2,7 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.parser.model.issues.TyperIssue
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.{NestedScope, *}
 import izumi.functional.bio.{Error2, F}
@@ -23,7 +24,7 @@ class ScopeBuilder[F[+_, +_]: Error2] {
     pkg: Pkg,
     members: Seq[RawTLDef],
     meta: RawNodeMeta,
-  ): F[NEList[BaboonIssue.TyperIssue], RootScope[ExtendedRawDefn]] = {
+  ): F[NEList[BaboonIssue], RootScope[ExtendedRawDefn]] = {
 
     val gen = new UIDGen {}
 
@@ -32,7 +33,7 @@ class ScopeBuilder[F[+_, +_]: Error2] {
       asMap <- F.fromEither {
         sub
           .map(s => (s.name, s))
-          .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, meta)))
+          .toUniqueMap(nus => NEList(TyperIssue.NonUniqueScope(nus, meta): BaboonIssue))
       }
     } yield {
       val out     = RootScope(gen.next(), pkg, asMap)
@@ -48,7 +49,7 @@ class ScopeBuilder[F[+_, +_]: Error2] {
     member: RawDefn,
     isRoot: Boolean,
     gen: UIDGen,
-  ): F[NEList[BaboonIssue.TyperIssue], NestedScope[FullRawDefn]] = {
+  ): F[NEList[BaboonIssue], NestedScope[FullRawDefn]] = {
     def mkSub(defn: RawDefn, nested: NEMap[ScopeName, NestedScope[FullRawDefn]]) = {
       SubScope(
         gen.next(),
@@ -71,9 +72,9 @@ class ScopeBuilder[F[+_, +_]: Error2] {
         asMap <- F.fromEither {
           nested
             .map(s => (s.name, s))
-            .toUniqueMap(nus => NEList(BaboonIssue.NonUniqueScope(nus, member.meta)))
+            .toUniqueMap(nus => NEList(TyperIssue.NonUniqueScope(nus, member.meta): BaboonIssue))
         }
-        asNEMap <- F.fromOption(NEList(BaboonIssue.ScopeCannotBeEmpty(member))) {
+        asNEMap <- F.fromOption(NEList(TyperIssue.ScopeCannotBeEmpty(member): BaboonIssue)) {
           NEMap.from(asMap)
         }
       } yield {

@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.csharp
 import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.CSTarget
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.csharp.CSDefnTranslator.OutputOrigin
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSPackageId
@@ -25,7 +25,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
   translator: Subcontext[CSDefnTranslator[F]],
 ) extends BaboonAbstractTranslator[F] {
 
-  type Out[T] = F[NEList[BaboonIssue.TranslationIssue], T]
+  type Out[T] = F[NEList[BaboonIssue], T]
 
   override def translate(family: BaboonFamily): Out[Sources] = {
     for {
@@ -37,7 +37,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
           val content = renderTree(o, family)
           (o.path, OutputFile(content, o.product))
       }
-      unique <- F.fromEither(rendered.toUniqueMap(c => NEList(BaboonIssue.NonUniqueOutputFiles(c))))
+      unique <- F.fromEither(rendered.toUniqueMap(c => NEList(TranslationIssue.NonUniqueOutputFiles(c): BaboonIssue)))
     } yield {
       Sources(unique)
     }
@@ -181,8 +181,8 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
   private def translateProduct(
     domain: Domain,
     p: CompilerProduct,
-    translate: (DomainMember.User) => F[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]],
-  ): F[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]] = {
+    translate: (DomainMember.User) => F[NEList[BaboonIssue], List[CSDefnTranslator.Output]],
+  ): F[NEList[BaboonIssue], List[CSDefnTranslator.Output]] = {
     if (target.output.products.contains(p)) {
       F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
         case (_, defn: DomainMember.User) => translate(defn)

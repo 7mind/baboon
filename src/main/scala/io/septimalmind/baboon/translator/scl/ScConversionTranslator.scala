@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.scl
 
 import distage.Id
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.scl.ScBaboonTranslator.RenderedConversion
 import io.septimalmind.baboon.translator.scl.ScTypes.*
 import io.septimalmind.baboon.translator.scl.ScValue.ScPackageId
@@ -34,7 +34,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
   evo: BaboonEvolution,
 ) {
   private val srcVer = srcDom.version
-  type Out[T] = F[NEList[BaboonIssue.TranslationIssue], T]
+  type Out[T] = F[NEList[BaboonIssue], T]
 
   private def transfer(newTpe: TypeRef, oldRef: TextTree[ScValue], depth: Int, maybeOldTpe: Option[TypeRef] = None): TextTree[ScValue] = {
     import io.septimalmind.baboon.translator.FQNSymbol.*
@@ -258,7 +258,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
         }
 
         if (false) {
-          F.fail(NEList(BaboonIssue.TranslationBug()))
+          F.fail(NEList(TranslationIssue.TranslationBug(): BaboonIssue))
         } else {
           F.pure(rendered)
         }

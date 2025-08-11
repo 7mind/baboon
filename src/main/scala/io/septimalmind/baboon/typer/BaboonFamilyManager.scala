@@ -2,6 +2,7 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.parser.model.issues.TyperIssue
 import io.septimalmind.baboon.parser.model.{RawContent, RawDomain, RawTLDef, RawTypeName}
 import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage}
 import io.septimalmind.baboon.util.BLogger
@@ -57,9 +58,9 @@ object BaboonFamilyManager {
               uniqueVersions <- F.fromEither {
                 domains
                   .map(d => (d.version, d))
-                  .toUniqueMap(v => NEList(BaboonIssue.NonUniqueDomainVersions(v)))
+                  .toUniqueMap(v => NEList(TyperIssue.NonUniqueDomainVersions(v): BaboonIssue))
               }
-              nel <- F.fromOption(NEList(BaboonIssue.EmptyDomainFamily(pkg))) {
+              nel <- F.fromOption(NEList(TyperIssue.EmptyDomainFamily(pkg): BaboonIssue)) {
                 NEMap.from(uniqueVersions)
               }
               evo <- comparator.evolve(pkg, nel)
@@ -71,10 +72,10 @@ object BaboonFamilyManager {
         uniqueLineages <- F.fromEither {
           lineages
             .map(l => (l.pkg, l))
-            .toUniqueMap(e => NEList(BaboonIssue.NonUniqueLineages(e)))
+            .toUniqueMap(e => NEList(TyperIssue.NonUniqueLineages(e): BaboonIssue))
         }
 
-        nem <- F.fromOption(NEList(BaboonIssue.EmptyFamily(definitions))) {
+        nem <- F.fromOption(NEList(TyperIssue.EmptyFamily(definitions): BaboonIssue)) {
           NEMap.from(uniqueLineages)
         }
       } yield {

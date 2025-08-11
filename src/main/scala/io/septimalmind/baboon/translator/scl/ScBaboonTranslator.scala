@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.scl
 import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.scl.ScTypes.*
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources, scl}
 import io.septimalmind.baboon.typer.model.*
@@ -23,9 +23,9 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
   scFiles: ScFileTools,
 ) extends BaboonAbstractTranslator[F] {
 
-  type Out[T] = F[NEList[BaboonIssue.TranslationIssue], T]
+  type Out[T] = F[NEList[BaboonIssue], T]
 
-  override def translate(family: BaboonFamily): F[NEList[BaboonIssue.TranslationIssue], Sources] = {
+  override def translate(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
     for {
       translated <- translateFamily(family)
       runtime    <- sharedRuntime()
@@ -35,7 +35,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
           val content = renderTree(o)
           (o.path, OutputFile(content, o.product))
       }
-      unique <- F.fromEither(rendered.toUniqueMap(c => NEList(BaboonIssue.NonUniqueOutputFiles(c))))
+      unique <- F.fromEither(rendered.toUniqueMap(c => NEList(TranslationIssue.NonUniqueOutputFiles(c): BaboonIssue)))
     } yield {
       Sources(unique)
     }
@@ -60,8 +60,8 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
   private def translateProduct(
     domain: Domain,
     p: CompilerProduct,
-    translate: (DomainMember.User) => F[NEList[BaboonIssue.TranslationIssue], List[ScDefnTranslator.Output]],
-  ): F[NEList[BaboonIssue.TranslationIssue], List[ScDefnTranslator.Output]] = {
+    translate: (DomainMember.User) => F[NEList[BaboonIssue], List[ScDefnTranslator.Output]],
+  ): F[NEList[BaboonIssue], List[ScDefnTranslator.Output]] = {
     if (target.output.products.contains(p)) {
       F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
         case (_, defn: DomainMember.User) => translate(defn)

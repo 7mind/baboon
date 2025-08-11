@@ -2,6 +2,7 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.parser.model.issues.TyperIssue
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.*
 import izumi.functional.bio.{Error2, F}
@@ -16,7 +17,7 @@ import scala.annotation.tailrec
 import scala.collection.mutable
 
 trait BaboonTyper[F[+_, +_]] {
-  def process(model: RawDomain): F[NEList[BaboonIssue.TyperIssue], Domain]
+  def process(model: RawDomain): F[NEList[BaboonIssue], Domain]
 }
 
 object BaboonTyper {
@@ -30,7 +31,7 @@ object BaboonTyper {
 
     override def process(
       model: RawDomain
-    ): F[NEList[BaboonIssue.TyperIssue], Domain] = {
+    ): F[NEList[BaboonIssue], Domain] = {
       for {
         id      <- parsePkg(model.header)
         version <- parseVersion(model.version)
@@ -38,7 +39,7 @@ object BaboonTyper {
         indexedDefs <- F.fromEither {
           defs
             .map(d => (d.id, d))
-            .toUniqueMap(e => NEList(BaboonIssue.DuplicatedTypedefs(model, e)))
+            .toUniqueMap(e => NEList(TyperIssue.DuplicatedTypedefs(model, e): BaboonIssue))
         }
         roots = indexedDefs.collect {
           case (k, v: DomainMember.User) if v.root =>
@@ -87,7 +88,7 @@ object BaboonTyper {
     // TODO: predMatrix from above can be reused here, currently the job is done twice
     private def computeDerivations(
       defs: Map[TypeId, DomainMember]
-    ): F[NEList[BaboonIssue.TyperIssue], Map[DerivationDecl, Set[TypeId]]] = {
+    ): F[NEList[BaboonIssue], Map[DerivationDecl, Set[TypeId]]] = {
       import izumi.fundamentals.collections.IzCollections.*
 
       val out = defs.values.collect { case u: DomainMember.User => u }.flatMap {
@@ -108,7 +109,7 @@ object BaboonTyper {
 
     private def makeRefMeta(
       defs: Map[TypeId, DomainMember]
-    ): F[NEList[BaboonIssue.TyperIssue], Map[TypeRef, RefMeta]] = {
+    ): F[NEList[BaboonIssue], Map[TypeRef, RefMeta]] = {
       for {
         allRefs <- F.pure(defs.values.flatMap(enquiries.allRefs))
         meta = allRefs.map {
@@ -206,7 +207,7 @@ object BaboonTyper {
     private def deepSchemaOf(
       id: TypeId,
       defs: Map[TypeId, DomainMember],
-    ): F[NEList[BaboonIssue.TyperIssue], DeepSchemaId] = {
+    ): F[NEList[BaboonIssue], DeepSchemaId] = {
       for {
         repr <- F.pure(deepSchemaRepr(id, defs, List.empty))
         fullRepr = s"[${enquiries.wrap(id)};${repr
@@ -218,7 +219,7 @@ object BaboonTyper {
 
     private def computeDeepSchema(
       graph: DG[TypeId, DomainMember]
-    ): F[NEList[BaboonIssue.TyperIssue], Map[TypeId, DeepSchemaId]] = {
+    ): F[NEList[BaboonIssue], Map[TypeId, DeepSchemaId]] = {
 
       for {
         out <- F.sequenceAccumErrors(graph.meta.nodes.map {
@@ -235,7 +236,7 @@ object BaboonTyper {
       defs: Map[TypeId, DomainMember],
       current: Map[TypeId, DomainMember],
       predecessors: List[(TypeId, Option[TypeId])],
-    ): F[NEList[BaboonIssue.TyperIssue], Map[TypeId, Set[TypeId]]] = {
+    ): F[NEList[BaboonIssue], Map[TypeId, Set[TypeId]]] = {
       val nextDepMap = current.toList.flatMap {
         case (id, defn) =>
           enquiries.fullDepsOfDefn(defn).toList.map(dep => (id, Some(dep)))
@@ -266,9 +267,9 @@ object BaboonTyper {
 
     private def parsePkg(
       header: RawHeader
-    ): F[NEList[BaboonIssue.TyperIssue], Pkg] = {
+    ): F[NEList[BaboonIssue], Pkg] = {
       for {
-        nel <- F.fromOption(NEList(BaboonIssue.EmptyPackageId(header))) {
+        nel <- F.fromOption(NEList(TyperIssue.EmptyPackageId(header): BaboonIssue)) {
           NEList.from(header.name)
         }
         // TODO: validate format
@@ -279,10 +280,10 @@ object BaboonTyper {
 
     private def parseVersion(
       version: RawVersion
-    ): F[NEList[BaboonIssue.TyperIssue], Version] = {
+    ): F[NEList[BaboonIssue], Version] = {
       for {
         v <- F.pure(version.value)
-        _ <- F.fromOption(NEList(BaboonIssue.GenericTyperIssue(s"Bad version format in '$v'", version.meta)))(ParsedVersion.parse(v))
+        _ <- F.fromOption(NEList(TyperIssue.GenericTyperIssue(s"Bad version format in '$v'", version.meta): BaboonIssue))(ParsedVersion.parse(v))
       } yield {
         Version(v)
       }
@@ -292,7 +293,7 @@ object BaboonTyper {
       pkg: Pkg,
       members: Seq[RawTLDef],
       meta: RawNodeMeta,
-    ): F[NEList[BaboonIssue.TyperIssue], List[DomainMember]] = {
+    ): F[NEList[BaboonIssue], List[DomainMember]] = {
       for {
         initial <- F.pure(
           types.allBuiltins.map(id => DomainMember.Builtin(id))
@@ -309,7 +310,7 @@ object BaboonTyper {
               mapped = next.map(m => (m.id, m))
               dupes  = acc.keySet.intersect(mapped.map(_._1).toSet)
               _ <- F.when(dupes.nonEmpty)(
-                F.fail(NEList(BaboonIssue.DuplicatedTypes(dupes, meta)))
+                F.fail(NEList(TyperIssue.DuplicatedTypes(dupes, meta): BaboonIssue))
               )
             } yield {
               acc ++ mapped
@@ -318,7 +319,7 @@ object BaboonTyper {
 
         indexed <- F.fromEither {
           (initial.map(m => (m.id, m)) ++ out.toSeq)
-            .toUniqueMap(e => NEList(BaboonIssue.NonUniqueTypedefs(e, meta)))
+            .toUniqueMap(e => NEList(TyperIssue.NonUniqueTypedefs(e, meta): BaboonIssue))
         }
       } yield {
         indexed.values.toList
@@ -329,13 +330,13 @@ object BaboonTyper {
       pkg: Pkg,
       flattened: List[NestedScope[ExtendedRawDefn]],
       meta: RawNodeMeta,
-    ): F[NEList[BaboonIssue.TyperIssue], List[NestedScope[ExtendedRawDefn]]] = {
+    ): F[NEList[BaboonIssue], List[NestedScope[ExtendedRawDefn]]] = {
       for {
         depmap <- F.traverseAccumErrors(flattened)(d => deps(pkg, d))
         asMap <- F.fromEither {
           depmap.toUniqueMap(
             bad => {
-              NEList(BaboonIssue.BadInheritance(bad, meta))
+              NEList(TyperIssue.BadInheritance(bad, meta): BaboonIssue)
             }
           )
         }
@@ -343,7 +344,7 @@ object BaboonTyper {
         predMatrix = IncidenceMatrix(asMap.view.mapValues(_._1).toMap)
         sorted <- F.fromEither {
           Toposort.cycleBreaking(predMatrix, ToposortLoopBreaker.dontBreak)
-        }.leftMap(e => NEList(BaboonIssue.CircularInheritance(e, meta)))
+        }.leftMap(e => NEList(TyperIssue.CircularInheritance(e, meta): BaboonIssue))
 
       } yield {
         sorted.map(id => asMap(id)._2).toList
@@ -353,7 +354,7 @@ object BaboonTyper {
     private def deps(
       pkg: Pkg,
       defn: NestedScope[ExtendedRawDefn],
-    ): F[NEList[BaboonIssue.TyperIssue], (TypeId.User, (Set[TypeId.User], NestedScope[ExtendedRawDefn]))] = {
+    ): F[NEList[BaboonIssue], (TypeId.User, (Set[TypeId.User], NestedScope[ExtendedRawDefn]))] = {
       val rawDefn = defn.defn
       for {
         id <- scopeSupport.resolveUserTypeId(

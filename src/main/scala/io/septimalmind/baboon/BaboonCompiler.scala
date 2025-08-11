@@ -2,8 +2,8 @@ package io.septimalmind.baboon
 
 import io.circe.generic.semiauto.deriveCodec
 import io.circe.*
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue.{CantCleanupTarget, CantReadInput, LockedVersionModified}
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, IOIssue, VerificationIssue}
+import io.septimalmind.baboon.parser.model.issues.VerificationIssue.LockedVersionModified
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile}
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.{BaboonFamily, Domain, Pkg, Version}
@@ -97,7 +97,7 @@ object BaboonCompiler {
               out     <- F.fromEither(parsed.as[Locks])
             } yield {
               out
-            }).catchAll(e => F.fail(NEList(CantReadInput(lockfilePath.toString, e))))
+            }).catchAll(e => F.fail(NEList(IOIssue.CantReadInput(lockfilePath.toString, e): BaboonIssue)))
             _ <- compareSigs(model, currentSigs, existingSigs)
           } yield {}
 
@@ -112,7 +112,7 @@ object BaboonCompiler {
       val ci        = index(currentSigs)
       val ei        = index(existingSigs)
       val different = ci.filter { case (k, id) => ei.contains(k) && !ei.get(k).contains(id) }.filterNot { case ((pkg, v), _) => model.domains(pkg).evolution.latest == v }
-      F.ifThenFail(different.nonEmpty)(NEList.unsafeFrom(different.map { case ((pkg, v), _) => LockedVersionModified(pkg, v) }.toList))
+      F.ifThenFail(different.nonEmpty)(NEList.unsafeFrom(different.map { case ((pkg, v), _) => LockedVersionModified(pkg, v): BaboonIssue }.toList))
     }
 
     private def index(currentSigs: Locks): Map[(Pkg, Version), SigId] = {
@@ -146,7 +146,7 @@ object BaboonCompiler {
           StandardOpenOption.TRUNCATE_EXISTING,
         )
         ()
-      }.leftMap(t => NEList(BaboonIssue.CantWriteOutput(tgt.toString, t)))
+      }.leftMap(t => NEList(IOIssue.CantWriteOutput(tgt.toString, t): BaboonIssue))
     }
 
     private def cleanupTargetPaths(targetOptions: OutputOptions): F[NEList[BaboonIssue], Unit] = {
@@ -163,12 +163,14 @@ object BaboonCompiler {
                 )
             }
           }
-        }.catchAll(t => F.fail(NEList(CantCleanupTarget(Seq.empty, targetOptions.safeToRemoveExtensions.toSeq, Some(t)))))
+        }.catchAll(t => F.fail(NEList(IOIssue.CantCleanupTarget(Seq.empty, targetOptions.safeToRemoveExtensions.toSeq, Some(t)): BaboonIssue)))
         _ <- F
           .ifThenElse(unexpectedFiles.isEmpty)(
             F.fromAttempt(targetPaths.foreach(path => IzFiles.erase(path)))
-              .catchAll(t => F.fail(NEList(CantCleanupTarget(unexpectedFiles.map(_.toString), targetOptions.safeToRemoveExtensions.toSeq, Some(t))))),
-            F.fail(NEList(CantCleanupTarget(unexpectedFiles.map(_.toString), targetOptions.safeToRemoveExtensions.toSeq, None))),
+              .catchAll(
+                t => F.fail(NEList(IOIssue.CantCleanupTarget(unexpectedFiles.map(_.toString), targetOptions.safeToRemoveExtensions.toSeq, Some(t)): BaboonIssue))
+              ),
+            F.fail(NEList(IOIssue.CantCleanupTarget(unexpectedFiles.map(_.toString), targetOptions.safeToRemoveExtensions.toSeq, None): BaboonIssue)),
           )
 
       } yield {}

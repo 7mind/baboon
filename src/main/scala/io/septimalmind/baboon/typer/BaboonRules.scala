@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.typer
 
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, EvolutionIssue}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.*
 import io.septimalmind.baboon.util.BLogger
@@ -13,7 +13,7 @@ trait BaboonRules[F[+_, +_]] {
     prev: Domain,
     last: Domain,
     diff: BaboonDiff,
-  ): F[NEList[BaboonIssue.EvolutionIssue], BaboonRuleset]
+  ): F[NEList[BaboonIssue], BaboonRuleset]
 }
 
 object BaboonRules {
@@ -23,7 +23,7 @@ object BaboonRules {
     types: TypeInfo,
   ) extends BaboonRules[F] {
 
-    override def compute(prev: Domain, last: Domain, diff: BaboonDiff): F[NEList[BaboonIssue.EvolutionIssue], BaboonRuleset] = {
+    override def compute(prev: Domain, last: Domain, diff: BaboonDiff): F[NEList[BaboonIssue], BaboonRuleset] = {
       for {
         conversions <- F.traverseAccumErrors(prev.defs.meta.nodes.collect {
           case (id: TypeId.User, DomainMember.User(_, defn, _, _)) =>
@@ -73,7 +73,7 @@ object BaboonRules {
                       F.pure(ops)
                     case o =>
                       F.fail(
-                        NEList(BaboonIssue.UnexpectedDiffType(o, "DTODiff"))
+                        NEList(EvolutionIssue.UnexpectedDiffType(o, "DTODiff"): BaboonIssue)
                       )
                   }
 
@@ -163,7 +163,7 @@ object BaboonRules {
                       F.pure(ops.collect { case r: EnumOp.RemoveBranch => r })
                     case o =>
                       F.fail(
-                        NEList(BaboonIssue.UnexpectedDiffType(o, "EnumDiff"))
+                        NEList(EvolutionIssue.UnexpectedDiffType(o, "EnumDiff"): BaboonIssue)
                       )
                   }
                 } yield {
@@ -182,7 +182,7 @@ object BaboonRules {
                       F.pure(ops.collect { case r: AdtOp.RemoveBranch => r })
                     case o =>
                       F.fail(
-                        NEList(BaboonIssue.UnexpectedDiffType(o, "ADTDiff"))
+                        NEList(EvolutionIssue.UnexpectedDiffType(o, "ADTDiff"): BaboonIssue)
                       )
                   }
                 } yield {

@@ -14,9 +14,9 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 trait CSDefnTranslator[F[+_, +_]] {
-  def translate(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]]
-  def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]]
-  def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue.TranslationIssue], List[CSDefnTranslator.Output]]
+  def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[CSDefnTranslator.Output]]
+  def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[CSDefnTranslator.Output]]
+  def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue], List[CSDefnTranslator.Output]]
 }
 
 object CSDefnTranslator {
@@ -69,7 +69,7 @@ object CSDefnTranslator {
     csTypeInfo: CSTypeInfo,
     enquiries: BaboonEnquiries,
   ) extends CSDefnTranslator[F] {
-    type Out[T] = F[NEList[BaboonIssue.TranslationIssue], T]
+    type Out[T] = F[NEList[BaboonIssue], T]
 
     override def translate(defn: DomainMember.User): Out[List[Output]] = {
       defn.id.owner match {

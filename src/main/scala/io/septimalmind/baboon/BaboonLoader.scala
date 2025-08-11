@@ -2,7 +2,7 @@ package io.septimalmind.baboon
 
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.FSPath
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, IOIssue}
 import io.septimalmind.baboon.typer.BaboonFamilyManager
 import io.septimalmind.baboon.typer.model.BaboonFamily
 import io.septimalmind.baboon.validator.BaboonValidator
@@ -31,7 +31,7 @@ object BaboonLoader {
             for {
               content <- F.fromAttempt {
                 IzFiles.readString(path.toFile)
-              }.leftMap(e => NEList(BaboonIssue.CantReadInput(path.toString, e)))
+              }.leftMap(e => NEList(IOIssue.CantReadInput(path.toString, e): BaboonIssue))
             } yield {
               BaboonParser.Input(
                 FSPath.parse(NEString.unsafeFrom(path.toString)),

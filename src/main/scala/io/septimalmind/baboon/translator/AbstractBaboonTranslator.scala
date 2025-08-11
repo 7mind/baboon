@@ -9,5 +9,5 @@ case class OutputFile(content: String, product: CompilerProduct)
 case class Sources(files: Map[String, OutputFile])
 
 trait BaboonAbstractTranslator[F[+_, +_]] {
-  def translate(family: BaboonFamily): F[NEList[BaboonIssue.TranslationIssue], Sources]
+  def translate(family: BaboonFamily): F[NEList[BaboonIssue], Sources]
 }
