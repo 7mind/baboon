@@ -38,6 +38,8 @@ object BaboonIssue {
   //
   sealed trait TyperIssue extends BaboonIssue
 
+  case class GenericTyperIssue(message: String, meta: RawNodeMeta) extends TyperIssue
+
   case class ScalarExpected(id: TypeId, meta: RawNodeMeta) extends TyperIssue with BaboonBug
 
   case class CollectionExpected(id: TypeId, meta: RawNodeMeta) extends TyperIssue with BaboonBug

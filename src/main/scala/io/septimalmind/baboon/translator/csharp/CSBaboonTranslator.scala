@@ -166,7 +166,6 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
     family: BaboonFamily
   ): Out[List[CSDefnTranslator.Output]] = {
     F.flatSequenceAccumErrors {
-      // TODO: fix .toSeq.toList
       family.domains.iterator.map { case (_, lineage) => translateLineage(lineage) }.toList
     }
   }

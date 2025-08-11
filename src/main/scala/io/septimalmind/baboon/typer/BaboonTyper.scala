@@ -282,7 +282,7 @@ object BaboonTyper {
     ): F[NEList[BaboonIssue.TyperIssue], Version] = {
       for {
         v <- F.pure(version.value)
-        // TODO: validate format
+        _ <- F.fromOption(NEList(BaboonIssue.GenericTyperIssue(s"Bad version format in '$v'", version.meta)))(ParsedVersion.parse(v))
       } yield {
         Version(v)
       }

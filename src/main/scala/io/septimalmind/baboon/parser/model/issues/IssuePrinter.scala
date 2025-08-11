@@ -676,6 +676,10 @@ object IssuePrinter {
        |""".stripMargin
   }
 
+  implicit val genericTyperIssue: IssuePrinter[GenericTyperIssue] = (issue: GenericTyperIssue) => {
+    s"""${extractLocation(issue.meta)}: ${issue.message}""".stripMargin
+  }
+
   private def extractLocation(meta: RawNodeMeta): String = {
     meta.pos match {
       case full: InputPointer.Full =>
@@ -712,6 +716,7 @@ object IssuePrinter {
   }
 
   implicit val typerIssue: IssuePrinter[TyperIssue] = {
+    case i: GenericTyperIssue  => apply[GenericTyperIssue].stringify(i)
     case i: ScalarExpected     => apply[ScalarExpected].stringify(i)
     case i: CollectionExpected => apply[CollectionExpected].stringify(i)
     case i: NonUniqueDomainVersions =>

@@ -3,6 +3,7 @@ package io.septimalmind.baboon.typer
 import io.septimalmind.baboon.parser.model.{RawAdt, RawDefn, RawDtoMember, RawDtoid, ScopedRef}
 import io.septimalmind.baboon.typer.model.BinReprLen.Variable
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
+import io.septimalmind.baboon.typer.model.Typedef.Contract
 import io.septimalmind.baboon.typer.model.{BinReprLen, Domain, DomainMember, Field, Owner, ShallowSchemaId, TypeId, TypeRef, Typedef}
 import izumi.fundamentals.collections.nonempty.NESet
 import izumi.fundamentals.graphs.struct.IncidenceMatrix
@@ -26,11 +27,22 @@ trait BaboonEnquiries {
   ): Set[LoopDetector.Cycles[TypeId]]
   def uebaLen(dom: Map[TypeId, DomainMember], tpe: TypeRef): BinReprLen
   def isEnum(tpe: TypeRef, domain: Domain): Boolean
+
+  def unfold(dom: Domain, contracts: List[TypeId.User]): List[Field]
 }
 
 object BaboonEnquiries {
 
   class BaboonEnquiriesImpl extends BaboonEnquiries {
+    def unfold(dom: Domain, contracts: List[TypeId.User]): List[Field] = {
+      val direct = contracts
+        .map(id => dom.defs.meta.nodes(id))
+        .collect { case c: DomainMember.User => c.defn }
+        .collect { case c: Contract => c }
+      val parents = direct.flatMap(c => unfold(dom, c.contracts))
+      (parents ++ direct.flatMap(_.fields)).distinct
+    }
+
     def loopsOf(
       domain: Map[TypeId, DomainMember]
     ): Set[LoopDetector.Cycles[TypeId]] = {

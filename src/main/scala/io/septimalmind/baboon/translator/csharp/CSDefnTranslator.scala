@@ -5,10 +5,9 @@ import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType, CSTypeOrigin}
-import io.septimalmind.baboon.typer.TypeInfo
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
-import io.septimalmind.baboon.typer.model.Typedef.Contract
+import io.septimalmind.baboon.typer.{BaboonEnquiries, TypeInfo}
 import izumi.functional.bio.{Applicative2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
@@ -68,6 +67,7 @@ object CSDefnTranslator {
     lineage: BaboonLineage,
     types: TypeInfo,
     csTypeInfo: CSTypeInfo,
+    enquiries: BaboonEnquiries,
   ) extends CSDefnTranslator[F] {
     type Out[T] = F[NEList[BaboonIssue.TranslationIssue], T]
 
@@ -338,13 +338,7 @@ object CSDefnTranslator {
           val allParents = Seq(q"$genMarker") ++ adt.contracts.map(t => q"${trans.asCsType(t, domain, evo)}")
           val parents    = makeParents(allParents.toList)
 
-          def unfold(contracts: List[TypeId.User]): List[Field] = { // todo: move to enquiries
-            val direct  = contracts.map(id => domain.defs.meta.nodes(id)).collect { case c: DomainMember.User => c.defn }.collect { case c: Contract => c }
-            val parents = direct.flatMap(c => unfold(c.contracts))
-            parents ++ direct.flatMap(_.fields)
-          }
-
-          val allFields = unfold(adt.contracts).distinct
+          val allFields = enquiries.unfold(domain, adt.contracts)
 
           val abstractFields = allFields.map {
             f =>
@@ -376,9 +370,9 @@ object CSDefnTranslator {
           DefnRepr(
             q"""public abstract record ${name.asName}$parents {
                |    private ${name.asName}() {}
-               |    
+               |
                |    ${abstractFields.shift(4).trim}
-               |    
+               |
                |    ${branches.shift(4).trim}
                |
                |    ${members.join("\n\n").shift(4).trim}
