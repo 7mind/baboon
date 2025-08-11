@@ -2,7 +2,7 @@ package io.septimalmind.baboon.parser
 
 import fastparse.Parsed
 import io.septimalmind.baboon.CompilerOptions
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, ParserIssue}
 import io.septimalmind.baboon.parser.model.{FSPath, RawDomain, RawInclude, RawTLDef}
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.{NEList, NEString}
@@ -38,7 +38,7 @@ object BaboonParser {
           }
 
         case failure: Parsed.Failure =>
-          F.fail(NEList(BaboonIssue.ParserFailed(failure, input.path)))
+          F.fail(NEList(ParserIssue.ParserFailed(failure, input.path)))
       }
     }
 
@@ -67,12 +67,12 @@ object BaboonParser {
                       sub ++ value.defs
                     }
                   case failure: Parsed.Failure =>
-                    F.fail(NEList(BaboonIssue.ParserFailed(failure, context.file)))
+                    F.fail(NEList(ParserIssue.ParserFailed(failure, context.file)))
 
                 }
 
               case None =>
-                F.fail(NEList(BaboonIssue.IncludeNotFound(inc.value)))
+                F.fail(NEList(ParserIssue.IncludeNotFound(inc.value)))
             }
         }
       } else {

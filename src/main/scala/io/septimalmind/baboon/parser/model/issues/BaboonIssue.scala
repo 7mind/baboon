@@ -12,9 +12,44 @@ import izumi.fundamentals.graphs.tools.cycles.LoopDetector
 import izumi.fundamentals.platform.exceptions.Issue
 import izumi.fundamentals.platform.exceptions.Issue.IssueContext
 
+//
+sealed trait ParserIssue
+
+object ParserIssue {
+  implicit def wrap(issue: ParserIssue): BaboonIssue = BaboonIssue.Parser(issue)
+
+  case class ParserFailed(error: Parsed.Failure, path: FSPath) extends ParserIssue
+
+  case class IncludeNotFound(path: String) extends ParserIssue
+
+  implicit val parserIssuePrinter: IssuePrinter[ParserIssue] = {
+    case i: ParserFailed    => IssuePrinter[ParserFailed].stringify(i)
+    case i: IncludeNotFound => IssuePrinter[IncludeNotFound].stringify(i)
+  }
+
+  implicit val parserFailedPrinter: IssuePrinter[ParserFailed] =
+    (issue: ParserFailed) => {
+      val Array(line, character, _*) =
+        issue.error.extra.input.prettyIndex(issue.error.index).split(":")
+      s"Parser error occurred in ${issue.path} @ line:$line position:$character".stripMargin
+    }
+
+  implicit val includeNotFoundPrinter: IssuePrinter[IncludeNotFound] =
+    (issue: IncludeNotFound) => {
+      s"Failed to find inclusion `${issue.path}``".stripMargin
+    }
+
+}
+
 sealed trait BaboonIssue
 
 object BaboonIssue {
+
+  case class Parser(issue: ParserIssue) extends BaboonIssue
+
+  implicit val wParserIssuePrinter: IssuePrinter[Parser] = {
+    case i: Parser => IssuePrinter[ParserIssue].stringify(i.issue)
+  }
 
   sealed trait BaboonBug {
     this: BaboonIssue =>
@@ -28,12 +63,6 @@ object BaboonIssue {
   case class CantWriteOutput(path: String, throwable: Throwable) extends IOIssue
 
   case class CantCleanupTarget(paths: Seq[String], safeToRemoveExtensions: Seq[String], error: Option[Throwable]) extends IOIssue
-
-  //
-  sealed trait ParserIssue extends BaboonIssue
-
-  case class ParserFailed(error: Parsed.Failure, path: FSPath) extends ParserIssue
-  case class IncludeNotFound(path: String) extends ParserIssue
 
   //
   sealed trait TyperIssue extends BaboonIssue

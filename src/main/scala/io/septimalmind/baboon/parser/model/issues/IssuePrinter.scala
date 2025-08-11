@@ -3,12 +3,13 @@ package io.septimalmind.baboon.parser.model.issues
 import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue.*
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.issuesUrl
+import io.septimalmind.baboon.parser.model.issues.ParserIssue.{IncludeNotFound, ParserFailed}
 import io.septimalmind.baboon.typer.model.DomainMember
 import izumi.fundamentals.graphs.ToposortError
 import izumi.fundamentals.platform.exceptions.IzThrowable.*
 import izumi.fundamentals.platform.strings.IzString.toRichIterable
 
-trait IssuePrinter[T <: BaboonIssue] {
+trait IssuePrinter[T] {
   def stringify(issue: T): String
 }
 
@@ -26,7 +27,7 @@ trait BugPrinter[T <: BaboonBug & BaboonIssue] extends IssuePrinter[T] {
 object IssuePrinter {
   private[issues] val issuesUrl = "https://github.com/7mind/baboon/issues"
 
-  def apply[T <: BaboonIssue](
+  def apply[T](
     implicit printer: IssuePrinter[T]
   ): IssuePrinter[T] = printer
 
@@ -49,18 +50,6 @@ object IssuePrinter {
       s"""Can't write to file: $issue.path
          |Due to: ${issue.throwable.stacktraceString}
          |""".stripMargin
-    }
-
-  implicit val parserFailedPrinter: IssuePrinter[ParserFailed] =
-    (issue: ParserFailed) => {
-      val Array(line, character, _*) =
-        issue.error.extra.input.prettyIndex(issue.error.index).split(":")
-      s"Parser error occurred in ${issue.path} @ line:$line position:$character".stripMargin
-    }
-
-  implicit val includeNotFoundPrinter: IssuePrinter[IncludeNotFound] =
-    (issue: IncludeNotFound) => {
-      s"Failed to find inclusion `${issue.path}``".stripMargin
     }
 
   implicit val scalaExpectedPrinter: IssuePrinter[ScalarExpected] =
@@ -697,7 +686,7 @@ object IssuePrinter {
 
   implicit val baboonIssuePrinter: IssuePrinter[BaboonIssue] = {
     case issue: IOIssue           => apply[IOIssue].stringify(issue)
-    case issue: ParserIssue       => apply[ParserIssue].stringify(issue)
+    case issue: Parser            => apply[Parser].stringify(issue)
     case issue: TyperIssue        => apply[TyperIssue].stringify(issue)
     case issue: EvolutionIssue    => apply[EvolutionIssue].stringify(issue)
     case issue: VerificationIssue => apply[VerificationIssue].stringify(issue)
@@ -708,11 +697,6 @@ object IssuePrinter {
     case i: CantReadInput     => apply[CantReadInput].stringify(i)
     case i: CantWriteOutput   => apply[CantWriteOutput].stringify(i)
     case i: CantCleanupTarget => apply[CantCleanupTarget].stringify(i)
-  }
-
-  implicit val parserIssuePrinter: IssuePrinter[ParserIssue] = {
-    case i: ParserFailed    => apply[ParserFailed].stringify(i)
-    case i: IncludeNotFound => apply[IncludeNotFound].stringify(i)
   }
 
   implicit val typerIssue: IssuePrinter[TyperIssue] = {
