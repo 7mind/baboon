@@ -4,7 +4,11 @@
 
 Stripped-down experimental DML with schema evolution support and garbage collection.
 
-[VSCode Extension](https://marketplace.visualstudio.com/items?itemName=SeptimalMind.baboon-vscode) [VSCodium Extension](https://open-vsx.org/extension/SeptimalMind/baboon-vscode) [Intellij Idea Plugin](https://plugins.jetbrains.com/plugin/28203-baboon-support)
+#### Editor Support:
+
+* [Intellij Idea Plugin](https://plugins.jetbrains.com/plugin/28203-baboon-support)
+* [VSCode Extension](https://marketplace.visualstudio.com/items?itemName=SeptimalMind.baboon-vscode)
+* [VSCodium Extension](https://open-vsx.org/extension/SeptimalMind/baboon-vscode)
 
 ## Features
 
