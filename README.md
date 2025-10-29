@@ -2,7 +2,9 @@
 
 *Let the Baboon do the monkey job*.
 
-Stripped-down experimental DML with schema evolution support and garbage collection.
+Stripped-down experimental Data Modeling Language and its compiler, with schema evolution support and garbage collection.
+
+Te compiler design is an unconventional, based on DAG manipulations and multiple phases. That gives it efficiency and extreme simplicity.
 
 #### Editor Support:
 
