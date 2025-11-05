@@ -24,7 +24,23 @@ object CompilerTarget {
     generic: GenericOptions,
     language: ScOptions,
   ) extends CompilerTarget
+
+  case class PyTarget(
+    id: String,
+    output: OutputOptions,
+    generic: GenericOptions,
+    language: PyOptions,
+  ) extends CompilerTarget
 }
+
+final case class PyOptions(
+  writeEvolutionDict: Boolean,
+  wrappedAdtBranchCodecs: Boolean,
+  generateJsonCodecs: Boolean,
+  generateUebaCodecs: Boolean,
+  generateUebaCodecsByDefault: Boolean,
+  generateJsonCodecsByDefault: Boolean,
+)
 
 final case class ScOptions(
   writeEvolutionDict: Boolean,

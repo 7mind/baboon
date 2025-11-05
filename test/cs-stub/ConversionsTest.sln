@@ -1,4 +1,3 @@
-﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BaboonTests", "BaboonTests\BaboonTests.csproj", "{5DFBB7B1-5992-44B3-B75E-C228BB133718}"
 EndProject

@@ -119,7 +119,6 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
           q"""unmodified.put("${tid.toString}", $scList(${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")}))"""
       }
 
-    scala.collection.mutable.Map.empty[String, String]
     val metaTree =
       q"""object BaboonMetadata extends $baboonMeta {
          |  private val unmodified = ${scMutMap.fullyQualified}.empty[$scString, $scList[$scString]]
