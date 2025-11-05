@@ -1,7 +1,7 @@
 package io.septimalmind.baboon
 
 import distage.ModuleDef
-import io.septimalmind.baboon.CompilerTarget.{CSTarget, ScTarget}
+import io.septimalmind.baboon.CompilerTarget.{CSTarget, PyTarget, ScTarget}
 import io.septimalmind.baboon.parser.{BaboonInclusionResolver, BaboonInclusionResolverImpl}
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.bio.unsafe.MaybeSuspend2
@@ -23,6 +23,12 @@ class BaboonJvmScModule[F[+_, +_]: Error2: TagKK](target: ScTarget) extends Modu
   include(new SharedTranspilerJvmModule[F]())
   include(new BaboonCommonScModule[F]())
   make[ScTarget].fromValue(target)
+}
+
+class BaboonJvmPyModule[F[+_, +_]: Error2: TagKK](target: PyTarget) extends ModuleDef {
+  include(new SharedTranspilerJvmModule[F]())
+  include(new BaboonCommonPyModule[F]())
+  make[PyTarget].fromValue(target)
 }
 
 class BaboonModuleJvm[F[+_, +_]: Error2: MaybeSuspend2: TagKK](

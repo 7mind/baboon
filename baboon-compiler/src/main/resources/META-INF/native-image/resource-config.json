@@ -1,6 +1,7 @@
 {
   "resources": [
     {"pattern": "baboon-runtime/cs/.*\\.cs"},
-    {"pattern": "baboon-runtime/scala/.*\\.scala"}
+    {"pattern": "baboon-runtime/scala/.*\\.scala"},
+    {"pattern": "baboon-runtime/python/.*\\.py"}
   ]
 }
