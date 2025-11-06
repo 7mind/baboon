@@ -1,9 +1,9 @@
 package io.septimalmind.baboon
 
-import io.circe.generic.semiauto.deriveCodec
 import io.circe.*
-import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, IOIssue, VerificationIssue}
+import io.circe.generic.semiauto.deriveCodec
 import io.septimalmind.baboon.parser.model.issues.VerificationIssue.LockedVersionModified
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, IOIssue}
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile}
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.{BaboonFamily, Domain, Pkg, Version}

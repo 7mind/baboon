@@ -6,7 +6,7 @@ import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.Typedef.Contract
 import io.septimalmind.baboon.typer.model.{BinReprLen, Domain, DomainMember, Field, Owner, ShallowSchemaId, TypeId, TypeRef, Typedef}
 import izumi.fundamentals.collections.nonempty.NESet
-import izumi.fundamentals.graphs.struct.IncidenceMatrix
+import izumi.fundamentals.graphs.struct.AdjacencyList
 import izumi.fundamentals.graphs.tools.cycles.LoopDetector
 import izumi.fundamentals.platform.crypto.IzSha256HashFunction
 
@@ -46,7 +46,7 @@ object BaboonEnquiries {
     def loopsOf(
       domain: Map[TypeId, DomainMember]
     ): Set[LoopDetector.Cycles[TypeId]] = {
-      val depMatrix = IncidenceMatrix(domain.view.mapValues {
+      val depMatrix = AdjacencyList(domain.view.mapValues {
         defn =>
           fullDepsOfDefn(defn)
       }.toMap)

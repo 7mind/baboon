@@ -14,12 +14,6 @@ object IOIssue {
 
   case class CantCleanupTarget(paths: Seq[String], safeToRemoveExtensions: Seq[String], error: Option[Throwable]) extends IOIssue
 
-  implicit val ioIssuePrinter: IssuePrinter[IOIssue] = {
-    case i: CantReadInput     => IssuePrinter[CantReadInput].stringify(i)
-    case i: CantWriteOutput   => IssuePrinter[CantWriteOutput].stringify(i)
-    case i: CantCleanupTarget => IssuePrinter[CantCleanupTarget].stringify(i)
-  }
-
   implicit val cantReadInputPrinter: IssuePrinter[CantReadInput] =
     (issue: CantReadInput) => {
       s"""Can't read form file: ${issue.path}

@@ -14,14 +14,16 @@ object TranslationIssue {
 
   case class TranslationBug()(implicit val context: IssueContext) extends TranslationIssue with BaboonBug with Issue
 
-  implicit val translationIssuePrinter: IssuePrinter[TranslationIssue] = {
-    case i: NonUniqueOutputFiles => IssuePrinter[NonUniqueOutputFiles].stringify(i)
-    case i: TranslationBug       => i.toString()
-  }
-
   implicit val nonUniqueOutputFilesPrinter: IssuePrinter[NonUniqueOutputFiles] =
     (issue: NonUniqueOutputFiles) => {
       s"""Non unique output files:${issue.c.niceList()}
          |""".stripMargin
     }
+
+  implicit val bugPrinter: IssuePrinter[TranslationBug] =
+    (issue: TranslationBug) => {
+      import izumi.fundamentals.platform.exceptions.IzThrowable.*
+      s"""Tranlation BUG at ${issue.context.sourceFilePosition}, ${issue.context.stackTrace.shortTrace}""".stripMargin
+    }
+
 }

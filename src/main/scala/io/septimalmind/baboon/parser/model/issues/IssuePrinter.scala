@@ -1,6 +1,8 @@
 package io.septimalmind.baboon.parser.model.issues
 
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue.*
+import magnolia1.Magnolia
+import magnolia1.*
 
 trait IssuePrinter[T] {
   def stringify(issue: T): String
@@ -44,4 +46,17 @@ object IssuePrinter {
       issues.map(_.stringify).mkString("\n")
     }
   }
+
+  type Typeclass[T] = IssuePrinter[T]
+
+  def split[T](ctx: SealedTrait[Typeclass, T]): Typeclass[T] =
+    new IssuePrinter[T] {
+      def stringify(t: T): String =
+        ctx.split(t) {
+          sub =>
+            sub.typeclass.stringify(sub.cast(t))
+        }
+    }
+
+  implicit def gen[T]: IssuePrinter[T] = macro Magnolia.gen[T]
 }

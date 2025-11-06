@@ -1,8 +1,7 @@
 package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.BaboonParser
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.parser.model.issues.TyperIssue
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TyperIssue}
 import io.septimalmind.baboon.parser.model.{RawContent, RawDomain, RawTLDef, RawTypeName}
 import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage}
 import io.septimalmind.baboon.util.BLogger
@@ -10,7 +9,7 @@ import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Error2, F, ParallelErrorAccumulatingOps2}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
-import izumi.fundamentals.graphs.struct.IncidenceMatrix
+import izumi.fundamentals.graphs.struct.AdjacencyPredList
 import izumi.fundamentals.graphs.{DAG, GraphMeta}
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
@@ -23,6 +22,8 @@ trait BaboonFamilyManager[F[+_, +_]] {
 }
 
 object BaboonFamilyManager {
+  case class Key(id: String, version: String)
+
   class BaboonFamilyManagerImpl[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2](
     parser: BaboonParser[F],
     typer: BaboonTyper[F],
@@ -91,11 +92,8 @@ object BaboonFamilyManager {
       }
       go(roots)
     }
-    case class Key(id: String, version: String)
 
     def withImports(id: Key, idx: collection.Map[Key, RawDomain]): RawDomain = {
-      import MapTools.*
-
       val current = idx(id)
       assert(current.members.includes.isEmpty)
 
@@ -124,12 +122,16 @@ object BaboonFamilyManager {
       import izumi.fundamentals.collections.IzCollections.*
 
       for {
-        indexed   <- F.fromEither(parsed.map(d => (Key(d.header.name.mkString("."), d.version.value), d)).toUniqueMap(e => NEList(???)))
+        indexed <- F.fromEither(
+          parsed
+            .map(d => (Key(d.header.name.mkString("."), d.version.value), d))
+            .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueRawDomainVersion(e)))
+        )
         graphNodes = GraphMeta(indexed)
         deps       = indexed.view.mapValues(d => d.imported.map(i => Key(d.header.name.mkString("."), i.value)).toSet).toMap
-        preds      = IncidenceMatrix(deps)
+        preds      = AdjacencyPredList(deps)
         // TODO: BUG in fromPred, it same as fromSucc but should be transposed
-        graph <- F.fromEither(DAG.fromPred(preds.transposed, graphNodes).left.map(e => NEList(???)))
+        graph <- F.fromEither(DAG.fromPred(preds, graphNodes).left.map(e => BaboonIssue.of(TyperIssue.DagError(e, parsed.head.header.meta))))
         sorted = toposorted(graph)
       } yield {
 
@@ -145,13 +147,5 @@ object BaboonFamilyManager {
 
     }
 
-  }
-}
-
-// TODO: move to izumi
-object MapTools {
-  implicit class MapSetOps[K, V](val map: scala.collection.Map[K, Set[V]]) extends AnyVal {
-    def unwrap: List[(K, V)] =
-      map.view.flatMap { case (k, vs) => vs.map(v => (k, v)) }.toList
   }
 }

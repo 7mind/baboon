@@ -2,9 +2,10 @@ package io.septimalmind.baboon.parser.model.issues
 
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.*
+import io.septimalmind.baboon.typer.BaboonFamilyManager
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Typedef.ForeignEntry
-import izumi.fundamentals.graphs.ToposortError
+import izumi.fundamentals.graphs.{DAGError, ToposortError}
 import izumi.fundamentals.platform.strings.IzString.toRichIterable
 
 sealed trait TyperIssue extends IssueGroup
@@ -25,6 +26,8 @@ object TyperIssue {
   case class EmptyDomainFamily(pkg: Pkg) extends TyperIssue with BaboonBug
 
   case class NonUniqueLineages(nonUniqueLineages: Map[Pkg, List[BaboonLineage]]) extends TyperIssue
+
+  case class NonUniqueRawDomainVersion(conflicts: Map[BaboonFamilyManager.Key, List[RawDomain]]) extends TyperIssue
 
   case class EmptyFamily(input: List[BaboonParser.Input]) extends TyperIssue with BaboonBug
 
@@ -113,72 +116,36 @@ object TyperIssue {
 
   case class WrongParent(id: TypeId.User, id1: TypeId, meta: RawNodeMeta) extends TyperIssue
 
-  implicit val typerIssuePrinter: IssuePrinter[TyperIssue] = {
-    case i: GenericTyperIssue  => IssuePrinter[GenericTyperIssue].stringify(i)
-    case i: ScalarExpected     => IssuePrinter[ScalarExpected].stringify(i)
-    case i: CollectionExpected => IssuePrinter[CollectionExpected].stringify(i)
-    case i: NonUniqueDomainVersions =>
-      IssuePrinter[NonUniqueDomainVersions].stringify(i)
-    case i: EmptyDomainFamily     => IssuePrinter[EmptyDomainFamily].stringify(i)
-    case i: NonUniqueLineages     => IssuePrinter[NonUniqueLineages].stringify(i)
-    case i: EmptyFamily           => IssuePrinter[EmptyFamily].stringify(i)
-    case i: UnexpectedBuiltin     => IssuePrinter[UnexpectedBuiltin].stringify(i)
-    case i: UnexpectedNonBuiltin  => IssuePrinter[UnexpectedNonBuiltin].stringify(i)
-    case i: MissingTypeId         => IssuePrinter[MissingTypeId].stringify(i)
-    case i: NonUniqueEnumBranches => IssuePrinter[NonUniqueEnumBranches].stringify(i)
-    case i: NonUniqueForeignEntries =>
-      IssuePrinter[NonUniqueForeignEntries].stringify(i)
-    case i: EmptyEnum             => IssuePrinter[EmptyEnum].stringify(i)
-    case i: NonUniqueFields       => IssuePrinter[NonUniqueFields].stringify(i)
-    case i: EmptyAdt              => IssuePrinter[EmptyAdt].stringify(i)
-    case i: EmptyGenericArgs      => IssuePrinter[EmptyGenericArgs].stringify(i)
-    case i: DuplicatedTypedefs    => IssuePrinter[DuplicatedTypedefs].stringify(i)
-    case i: EmptyPackageId        => IssuePrinter[EmptyPackageId].stringify(i)
-    case i: NonUniqueTypedefs     => IssuePrinter[NonUniqueTypedefs].stringify(i)
-    case i: NonUniqueScope        => IssuePrinter[NonUniqueScope].stringify(i)
-    case i: UnexpectedScoping     => IssuePrinter[UnexpectedScoping].stringify(i)
-    case i: ScopeCannotBeEmpty    => IssuePrinter[ScopeCannotBeEmpty].stringify(i)
-    case i: BadEnumName           => IssuePrinter[BadEnumName].stringify(i)
-    case i: BadFieldName          => IssuePrinter[BadFieldName].stringify(i)
-    case i: BadTypeName           => IssuePrinter[BadTypeName].stringify(i)
-    case i: BadInheritance        => IssuePrinter[BadInheritance].stringify(i)
-    case i: CircularInheritance   => IssuePrinter[CircularInheritance].stringify(i)
-    case i: NameNotFound          => IssuePrinter[NameNotFound].stringify(i)
-    case i: UnexpectedScopeLookup => IssuePrinter[UnexpectedScopeLookup].stringify(i)
-    case i: NamSeqeNotFound       => IssuePrinter[NamSeqeNotFound].stringify(i)
-    case i: DuplicatedTypes       => IssuePrinter[DuplicatedTypes].stringify(i)
-    case i: WrongParent           => IssuePrinter[WrongParent].stringify(i)
-    case i: MissingContractFields => IssuePrinter[MissingContractFields].stringify(i)
-    case i: TodoTyperIssue        => i.descr
-    case i: ScopedRefToNamespacedGeneric =>
-      IssuePrinter[ScopedRefToNamespacedGeneric].stringify(i)
-    case i: NonUniqueMethodNames =>
-      IssuePrinter[NonUniqueMethodNames].stringify(i)
-    case i: ServiceMissingOutput =>
-      IssuePrinter[ServiceMissingOutput].stringify(i)
-    case i: ServiceMultipleOutputs =>
-      IssuePrinter[ServiceMultipleOutputs].stringify(i)
-    case i: ServiceMultipleErrors =>
-      IssuePrinter[ServiceMultipleErrors].stringify(i)
-  }
+  implicit val todoPrinter: IssuePrinter[TodoTyperIssue] =
+    (issue: TodoTyperIssue) => {
+      issue.descr
+    }
+
+  implicit val dagErrorPrinter: IssuePrinter[DagError] =
+    (issue: DagError) => {
+      val repr = issue.e match {
+        case DAGError.LoopBreakerFailed(loopMember) => s"Loop at (${loopMember.id}, ${loopMember.version})"
+        case DAGError.UnexpectedLoops()             => "Unexpected loops (BUG)"
+      }
+
+      s"""${extractLocation(issue.meta)}
+         |Import loops found: $repr
+         |""".stripMargin
+    }
 
   implicit val scalaExpectedPrinter: IssuePrinter[ScalarExpected] =
-    new BugPrinter[ScalarExpected] {
-      override def errorMessage(bug: ScalarExpected): String = {
-        s"""${extractLocation(bug.meta)}
-           |Scalar type is expected, instead provided: ${bug.id.toString}
-           |""".stripMargin
-      }
+    (bug: ScalarExpected) => {
+      s"""${extractLocation(bug.meta)}
+         |Scalar type is expected, instead provided: ${bug.id.toString}
+         |""".stripMargin
     }
 
   implicit val collectionExpectedPrinter: IssuePrinter[CollectionExpected] =
-    new BugPrinter[CollectionExpected] {
-      override def errorMessage(bug: CollectionExpected): String = {
-        s"""${extractLocation(bug.meta)}
-           |One of collection types expected: map, opt, list, set
-           |Instead provided: ${bug.id.toString}
-           |""".stripMargin
-      }
+    (bug: CollectionExpected) => {
+      s"""${extractLocation(bug.meta)}
+         |One of collection types expected: map, opt, list, set
+         |Instead provided: ${bug.id.toString}
+         |""".stripMargin
     }
 
   implicit val nonUniqueDomainVersionsPrinter: IssuePrinter[NonUniqueDomainVersions] =
@@ -197,10 +164,8 @@ object TyperIssue {
     }
 
   implicit val emptyDomainFamilyPrinter: IssuePrinter[EmptyDomainFamily] =
-    new BugPrinter[EmptyDomainFamily] {
-      override def errorMessage(bug: EmptyDomainFamily): String = {
-        s"Empty model: ${bug.pkg.toString}"
-      }
+    (bug: EmptyDomainFamily) => {
+      s"Empty model: ${bug.pkg.toString}"
     }
 
   implicit val nonUniqueLineagesPrinter: IssuePrinter[NonUniqueLineages] =
@@ -209,10 +174,20 @@ object TyperIssue {
     }
 
   implicit val emptyFamilyPrinter: IssuePrinter[EmptyFamily] =
-    new BugPrinter[EmptyFamily] {
-      override def errorMessage(bug: EmptyFamily): String = {
-        s"Empty models in files:${bug.input.niceList()}"
+    (bug: EmptyFamily) => {
+      s"Empty models in files:${bug.input.niceList()}"
+    }
+
+  implicit val nonUniqueRawDomainVersionPrinter: IssuePrinter[NonUniqueRawDomainVersion] =
+    (issue: NonUniqueRawDomainVersion) => {
+      val stringProblems = issue.conflicts.map {
+        case (key, _) =>
+          s"""Version: ${key.version} in ${key.id}""".stripMargin
       }
+        .mkString("\n")
+      s"""Domains with duplicated versions were found (import resolution phase)
+         |$stringProblems
+         |""".stripMargin
     }
 
   implicit val unexpectedBuiltinPrinter: IssuePrinter[UnexpectedBuiltin] =
@@ -321,12 +296,10 @@ object TyperIssue {
     }
 
   implicit val unexpectedScopingPrinter: IssuePrinter[UnexpectedScoping] =
-    new BugPrinter[UnexpectedScoping] {
-      override def errorMessage(bug: UnexpectedScoping): String = {
-        s"""${extractLocation(bug.meta)}
-           |Unexpected scoping: ${bug.e.niceList()}
-           |""".stripMargin
-      }
+    (bug: UnexpectedScoping) => {
+      s"""${extractLocation(bug.meta)}
+         |Unexpected scoping: ${bug.e.niceList()}
+         |""".stripMargin
     }
 
   implicit val scopeCannotBeEmptyPrinter: IssuePrinter[ScopeCannotBeEmpty] =
@@ -367,28 +340,26 @@ object TyperIssue {
     }
 
   implicit val badInheritancePrinter: IssuePrinter[BadInheritance] =
-    new BugPrinter[BadInheritance] {
-      override def errorMessage(bug: BadInheritance): String = {
-        val badStr = bug.bad.map {
-          case (id, deps) =>
-            val depsStr = deps.map {
-              case (deps, scope) =>
-                s"""Scope: ${scope.toString}
-                   |Dependencies: ${deps.map(_.toString).mkString(", ")}
-                   |""".stripMargin
-            }
-              .niceList()
+    (bug: BadInheritance) => {
+      val badStr = bug.bad.map {
+        case (id, deps) =>
+          val depsStr = deps.map {
+            case (deps, scope) =>
+              s"""Scope: ${scope.toString}
+                 |Dependencies: ${deps.map(_.toString).mkString(", ")}
+                 |""".stripMargin
+          }
+            .niceList()
 
-            s"""Type: ${id.toString}
-               |$depsStr
-               |""".stripMargin
-        }
-          .niceList("\t")
-        s"""${extractLocation(bug.meta)}
-           |Bad inheritance:
-           |$badStr
-           |""".stripMargin
+          s"""Type: ${id.toString}
+             |$depsStr
+             |""".stripMargin
       }
+        .niceList("\t")
+      s"""${extractLocation(bug.meta)}
+         |Bad inheritance:
+         |$badStr
+         |""".stripMargin
     }
 
   implicit val circularInheritancePrinter: IssuePrinter[CircularInheritance] =
@@ -509,4 +480,6 @@ object TyperIssue {
       case InputPointer.Undefined => ""
     }
   }
+
+  case class DagError(e: DAGError[BaboonFamilyManager.Key], meta: RawNodeMeta) extends TyperIssue
 }

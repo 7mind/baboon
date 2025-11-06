@@ -62,31 +62,6 @@ object VerificationIssue {
 
   case class MapKeysShouldNotBeGeneric(dto: Typedef.Dto, badFields: List[Field], meta: RawNodeMeta) extends VerificationIssue
 
-  implicit val verificationIssuePrinter: IssuePrinter[VerificationIssue] = {
-    case i: LockedVersionModified                       => IssuePrinter[LockedVersionModified].stringify(i)
-    case i: MissingTypeDef                              => IssuePrinter[MissingTypeDef].stringify(i)
-    case i: ReferentialCyclesFound                      => IssuePrinter[ReferentialCyclesFound].stringify(i)
-    case i: IncorrectRootFound                          => IssuePrinter[IncorrectRootFound].stringify(i)
-    case i: ConflictingDtoFields                        => IssuePrinter[ConflictingDtoFields].stringify(i)
-    case i: ConflictingEnumBranches                     => IssuePrinter[ConflictingEnumBranches].stringify(i)
-    case i: ConflictingAdtBranches                      => IssuePrinter[ConflictingAdtBranches].stringify(i)
-    case i: ConflictingTypeIds                          => IssuePrinter[ConflictingTypeIds].stringify(i)
-    case i: EmptyEnumDef                                => IssuePrinter[EmptyEnumDef].stringify(i)
-    case i: EmptyAdtDef                                 => IssuePrinter[EmptyAdtDef].stringify(i)
-    case i: PathologicGenerics                          => IssuePrinter[PathologicGenerics].stringify(i)
-    case i: SetsCantContainGenerics                     => IssuePrinter[SetsCantContainGenerics].stringify(i)
-    case i: MapKeysShouldNotBeGeneric                   => IssuePrinter[MapKeysShouldNotBeGeneric].stringify(i)
-    case i: BadFieldNames                               => IssuePrinter[BadFieldNames].stringify(i)
-    case i: EitherAllOrNoneEnumMembersMustHaveConstants => IssuePrinter[EitherAllOrNoneEnumMembersMustHaveConstants].stringify(i)
-    case i: UnderscoredDefinitionRetained               => IssuePrinter[UnderscoredDefinitionRetained].stringify(i)
-    case i: WrongEnumConstant                           => IssuePrinter[WrongEnumConstant].stringify(i)
-    // BaboonBug cases
-    case i: MissingEvoDiff                 => IssuePrinter[MissingEvoDiff].stringify(i)
-    case i: MissingEvoConversion           => IssuePrinter[MissingEvoConversion].stringify(i)
-    case i: IncorrectConversionApplication => IssuePrinter[IncorrectConversionApplication].stringify(i)
-    case i: BrokenConversion               => IssuePrinter[BrokenConversion].stringify(i)
-  }
-
   implicit val lockedVersionModifiedPrinter: IssuePrinter[LockedVersionModified] =
     (issue: LockedVersionModified) => {
       s"""Model ${issue.pkg.toString}@${issue.version} was modified but it's not the latest version so it's locked with the lockfile""".stripMargin

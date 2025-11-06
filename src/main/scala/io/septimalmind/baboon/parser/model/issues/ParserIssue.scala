@@ -12,11 +12,6 @@ object ParserIssue {
 
   case class IncludeNotFound(path: String) extends ParserIssue
 
-  implicit val parserIssuePrinter: IssuePrinter[ParserIssue] = {
-    case i: ParserFailed    => IssuePrinter[ParserFailed].stringify(i)
-    case i: IncludeNotFound => IssuePrinter[IncludeNotFound].stringify(i)
-  }
-
   implicit val parserFailedPrinter: IssuePrinter[ParserFailed] =
     (issue: ParserFailed) => {
       val Array(line, character, _*) =

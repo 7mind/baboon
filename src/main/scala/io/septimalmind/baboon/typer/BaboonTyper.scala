@@ -8,7 +8,7 @@ import io.septimalmind.baboon.typer.model.Scope.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
-import izumi.fundamentals.graphs.struct.IncidenceMatrix
+import izumi.fundamentals.graphs.struct.{AdjacencyList, AdjacencyPredList}
 import izumi.fundamentals.graphs.tools.{Toposort, ToposortLoopBreaker}
 import izumi.fundamentals.graphs.{DG, GraphMeta}
 import izumi.fundamentals.platform.crypto.IzSha256HashFunction
@@ -50,7 +50,7 @@ object BaboonTyper {
           roots,
           roots.keySet.map(t => (t, None)).toList,
         )
-        predMatrix = IncidenceMatrix(predecessors)
+        predMatrix = AdjacencyPredList(predecessors)
         graph = DG.fromPred(
           predMatrix,
           GraphMeta(indexedDefs.filter {
@@ -341,7 +341,7 @@ object BaboonTyper {
           )
         }
 
-        predMatrix = IncidenceMatrix(asMap.view.mapValues(_._1).toMap)
+        predMatrix = AdjacencyList(asMap.view.mapValues(_._1).toMap)
         sorted <- F.fromEither {
           Toposort.cycleBreaking(predMatrix, ToposortLoopBreaker.dontBreak)
         }.leftMap(e => BaboonIssue.of(TyperIssue.CircularInheritance(e, meta)))

@@ -46,7 +46,7 @@ object BaboonIssue {
   implicit object WTyperIssue extends Wrap[TyperIssue] {
     override def wrap(issue: TyperIssue): BaboonIssue = TyperIssue.wrap(issue)
   }
-  
+
   implicit object WTranslationIssue extends Wrap[TranslationIssue] {
     override def wrap(issue: TranslationIssue): BaboonIssue = TranslationIssue.wrap(issue)
   }
