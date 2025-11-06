@@ -364,7 +364,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
             q"($ref == null ? null : $recConv)"
 
           case o =>
-            throw new IllegalStateException(s"BUG: unsupported conversion transfer $o, ref=$ref, depth=$depth")
+            throw new IllegalStateException(s"BUG: unsupported conversion $o, ref=$ref, depth=$depth")
         }
     }
     out
