@@ -79,6 +79,9 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
   .in(file("."))
   .settings(sharedSettings)
   .jvmSettings(
+    Compile / unmanagedSourceDirectories += (ThisBuild / baseDirectory).value / "src" / "main" / "scala-jvm",
+    Test / unmanagedSourceDirectories += (ThisBuild / baseDirectory).value / "src" / "test" / "scala-jvm",
+    Compile / unmanagedResourceDirectories += (ThisBuild / baseDirectory).value / "src" / "main" / "resources",
     libraryDependencies ++= Seq(
       "com.github.alexarchambault" %% "case-app" % "2.1.0-M30",
       "io.7mind.izumi" %% "distage-testkit-scalatest" % "1.2.20" % Test
@@ -121,6 +124,8 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
     )
   )
   .jsSettings(
+    Compile / unmanagedSourceDirectories += (ThisBuild / baseDirectory).value / "src" / "main" / "scala-js",
+    Test / unmanagedSourceDirectories += (ThisBuild / baseDirectory).value / "src" / "test" / "scala-js",
     // Scala.js specific settings
     scalaJSLinkerConfig ~= {
       _.withModuleKind(ModuleKind.ESModule)
@@ -133,11 +138,13 @@ lazy val baboonJVM = baboon.jvm
 lazy val baboonJS = baboon.js
 
 // Root aggregate project
-lazy val root = (project in file(".root"))
+lazy val root = (project in file("."))
   .aggregate(baboonJVM, baboonJS)
   .settings(
     publish / skip := true,
-    publishLocal / skip := true
+    publishLocal / skip := true,
+    Compile / sources := Seq.empty,
+    Test / sources := Seq.empty
   )
 
 ThisBuild / scalacOptions ++= Seq(
