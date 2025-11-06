@@ -2,16 +2,6 @@ package io.septimalmind.baboon
 
 import caseapp.*
 
-sealed trait RuntimeGenOpt
-
-object RuntimeGenOpt {
-  case object Only extends RuntimeGenOpt
-
-  case object With extends RuntimeGenOpt
-
-  case object Without extends RuntimeGenOpt
-}
-
 case class GenericTranspilerCLIOptions(
   @HelpMessage("Path to directory where generated code should be placed")
   output: String,
