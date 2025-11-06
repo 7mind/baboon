@@ -73,15 +73,14 @@ lazy val sharedSettings = Seq(
   )
 )
 
-// Cross-platform project with Pure type (shares the same directory structure)
+// Cross-platform project with CrossType.Pure
 lazy val baboon = crossProject(JSPlatform, JVMPlatform)
   .crossType(CrossType.Pure)
   .in(file("."))
   .settings(sharedSettings)
   .jvmSettings(
-    Compile / unmanagedSourceDirectories += (ThisBuild / baseDirectory).value / "src" / "main" / "scala-jvm",
-    Test / unmanagedSourceDirectories += (ThisBuild / baseDirectory).value / "src" / "test" / "scala-jvm",
-    Compile / unmanagedResourceDirectories += (ThisBuild / baseDirectory).value / "src" / "main" / "resources",
+    name := "baboon",
+    Compile / unmanagedResourceDirectories += baseDirectory.value / "src" / "main" / "resources",
     libraryDependencies ++= Seq(
       "com.github.alexarchambault" %% "case-app" % "2.1.0-M30",
       "io.7mind.izumi" %% "distage-testkit-scalatest" % "1.2.20" % Test
@@ -124,9 +123,7 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
     )
   )
   .jsSettings(
-    Compile / unmanagedSourceDirectories += (ThisBuild / baseDirectory).value / "src" / "main" / "scala-js",
-    Test / unmanagedSourceDirectories += (ThisBuild / baseDirectory).value / "src" / "test" / "scala-js",
-    // Scala.js specific settings
+    name := "baboon",
     scalaJSLinkerConfig ~= {
       _.withModuleKind(ModuleKind.ESModule)
        .withModuleSplitStyle(ModuleSplitStyle.SmallestModules)
@@ -134,13 +131,16 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
     scalaJSUseMainModuleInitializer := false
   )
 
+// Define JVM and JS projects
 lazy val baboonJVM = baboon.jvm
 lazy val baboonJS = baboon.js
 
 // Root aggregate project
-lazy val root = (project in file("."))
+lazy val root = project
+  .in(file("."))
   .aggregate(baboonJVM, baboonJS)
   .settings(
+    name := "baboon-root",
     publish / skip := true,
     publishLocal / skip := true,
     Compile / sources := Seq.empty,
