@@ -76,10 +76,9 @@ lazy val sharedSettings = Seq(
 // Cross-platform project with CrossType.Pure
 lazy val baboon = crossProject(JSPlatform, JVMPlatform)
   .crossType(CrossType.Pure)
-  .in(file("."))
+  .in(file("baboon-compiler"))
   .settings(sharedSettings)
   .jvmSettings(
-    name := "baboon",
     Compile / unmanagedResourceDirectories += baseDirectory.value / "src" / "main" / "resources",
     libraryDependencies ++= Seq(
       "com.github.alexarchambault" %% "case-app" % "2.1.0-M30",
@@ -123,7 +122,6 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
     )
   )
   .jsSettings(
-    name := "baboon",
     scalaJSLinkerConfig ~= {
       _.withModuleKind(ModuleKind.ESModule)
        .withModuleSplitStyle(ModuleSplitStyle.SmallestModules)
