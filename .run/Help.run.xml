@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Help" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="io.septimalmind.baboon.Baboon" />
-    <module name="baboon" />
+    <module name="baboon-root.baboon.baboonJVM.main" />
     <option name="PROGRAM_PARAMETERS" value="--help" />
     <extension name="coverage">
       <pattern>

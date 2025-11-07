@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Generate CS files (adt: compact, wrapped)" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="io.septimalmind.baboon.Baboon" />
-    <module name="baboon" />
+    <module name="baboon-root.baboon.baboonJVM.main" />
     <option name="PROGRAM_PARAMETERS" value="--model-dir ./src/test/resources/baboon/ --output ./test/cs-stub/BaboonDefinitions/Generated --fixture-output ./test/cs-stub/BaboonTests/GeneratedFixtures --test-output ./test/cs-stub/BaboonTests/GeneratedTests --cs-use-compact-adt-form --cs-write-evolution-dict --cs-wrapped-adt-branch-codecs" />
     <extension name="coverage">
       <pattern>

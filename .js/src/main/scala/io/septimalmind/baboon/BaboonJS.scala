@@ -259,7 +259,7 @@ object BaboonJS {
     runner: QuasiIORunner[F[Throwable, _]],
   ): Future[Seq[OutputFileWithPath]] = {
     val logger = new BLoggerJS(debug)
-    val m      = new BaboonModuleJS[F](targets, logger, ParallelErrorAccumulatingOps2[F])
+    val m      = new BaboonModuleJS[F](inputs, targets, logger, ParallelErrorAccumulatingOps2[F])
 
     runner.runFuture(
       Injector

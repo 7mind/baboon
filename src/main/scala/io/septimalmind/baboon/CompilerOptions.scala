@@ -1,8 +1,7 @@
 package io.septimalmind.baboon
 
+import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.translator.OutputFile
-
-import java.nio.file.Path
 
 sealed trait CompilerTarget {
   def id: String
@@ -56,9 +55,9 @@ final case class OutputOptions(
   safeToRemoveExtensions: Set[String],
   runtime: RuntimeGenOpt,
   generateConversions: Boolean,
-  output: Path,
-  fixturesOutput: Option[Path],
-  testsOutput: Option[Path],
+  output: FSPath,
+  fixturesOutput: Option[FSPath],
+  testsOutput: Option[FSPath],
 ) {
   lazy val products: Set[CompilerProduct] = {
     val defaultProducts = runtime match {
@@ -73,11 +72,11 @@ final case class OutputOptions(
     defaultProducts ++ conversionProducts ++ fixturesProducts ++ testProducts
   }
 
-  def targetPathFor(out: OutputFile): Option[Path] = {
+  def targetPathFor(out: OutputFile): Option[FSPath] = {
     targetPathFor(out.product)
   }
 
-  def targetPathFor(product: CompilerProduct): Option[Path] = {
+  def targetPathFor(product: CompilerProduct): Option[FSPath] = {
     if (products.contains(product)) {
       product match {
         case CompilerProduct.Definition     => Some(output)
@@ -93,18 +92,18 @@ final case class OutputOptions(
     }
   }
 
-  def targetPaths: Map[CompilerProduct, Path] = {
+  def targetPaths: Map[CompilerProduct, FSPath] = {
     products.flatMap(t => targetPathFor(t).map(p => (t, p))).toMap
   }
 }
 
 final case class CompilerOptions(
-  individualInputs: Set[Path],
-  directoryInputs: Set[Path],
-  lockFile: Option[Path],
+  individualInputs: Set[FSPath],
+  directoryInputs: Set[FSPath],
+  lockFile: Option[FSPath],
   debug: Boolean,
   targets: Seq[CompilerTarget],
-  metaWriteEvolutionJsonTo: Option[Path],
+  metaWriteEvolutionJsonTo: Option[FSPath],
 )
 
 sealed trait CompilerProduct

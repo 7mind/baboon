@@ -128,7 +128,8 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
       _.withModuleKind(ModuleKind.ESModule)
        .withModuleSplitStyle(ModuleSplitStyle.SmallestModules)
     },
-    scalaJSUseMainModuleInitializer := false
+    scalaJSUseMainModuleInitializer := false,
+    //libraryDependencies += "io.github.cquiroz" %%% "scala-java-time" % "2.6.0",
   )
 
 // Define JVM and JS projects

@@ -2,6 +2,7 @@ package io.septimalmind.baboon
 
 import caseapp.*
 import distage.*
+import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
 import io.septimalmind.baboon.typer.model.BaboonFamily
 import io.septimalmind.baboon.util.BLogger
@@ -9,7 +10,7 @@ import izumi.functional.bio.impl.BioEither
 import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Error2, F, ParallelErrorAccumulatingOps2}
 import izumi.functional.quasi.{QuasiIO, QuasiIORunner}
-import izumi.fundamentals.collections.nonempty.NEList
+import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 import izumi.fundamentals.platform.cli.MultiModalArgsParserImpl
 import izumi.fundamentals.platform.cli.model.{ModalityArgs, MultiModalArgs}
 import izumi.fundamentals.platform.files.IzFiles
@@ -75,16 +76,16 @@ object Baboon {
               }
           }
         } yield {
-          val directoryInputs  = generalOptions._1.modelDir.map(s => Paths.get(s)).toSet
-          val individualInputs = generalOptions._1.model.map(s => Paths.get(s)).toSet
+          val directoryInputs  = generalOptions._1.modelDir.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+          val individualInputs = generalOptions._1.model.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
 
           val options = CompilerOptions(
             debug                    = generalOptions._1.debug.getOrElse(false),
             individualInputs         = individualInputs,
             directoryInputs          = directoryInputs,
             targets                  = launchArgs,
-            metaWriteEvolutionJsonTo = generalOptions._1.metaWriteEvolutionJson.map(s => Paths.get(s)),
-            lockFile                 = generalOptions._1.lockFile.map(s => Paths.get(s)),
+            metaWriteEvolutionJsonTo = generalOptions._1.metaWriteEvolutionJson.map(s => FSPath.parse(NEString.unsafeFrom(s))),
+            lockFile                 = generalOptions._1.lockFile.map(s => FSPath.parse(NEString.unsafeFrom(s))),
           )
 
           import izumi.distage.modules.support.unsafe.EitherSupport.{defaultModuleEither, quasiIOEither, quasiIORunnerEither}
@@ -114,9 +115,9 @@ object Baboon {
       case _               => RuntimeGenOpt.With
     }
 
-    val outDir         = Paths.get(opts.generic.output)
-    val testOutDir     = opts.generic.testOutput.map(o => Paths.get(o))
-    val fixturesOutDir = opts.generic.fixtureOutput.map(o => Paths.get(o)).orElse(testOutDir)
+    val outDir         = FSPath.parse(NEString.unsafeFrom(opts.generic.output))
+    val testOutDir     = opts.generic.testOutput.map(o => FSPath.parse(NEString.unsafeFrom(o)))
+    val fixturesOutDir = opts.generic.fixtureOutput.map(o => FSPath.parse(NEString.unsafeFrom(o))).orElse(testOutDir)
 
     val safeToRemove = NEList.from(opts.extAllowCleanup) match {
       case Some(value) => value.toSet
@@ -179,6 +180,7 @@ object Baboon {
     runner: QuasiIORunner[F[Throwable, _]],
   ): Unit = {
     val m = new BaboonModule[F](options, ParallelErrorAccumulatingOps2[F])
+    import PathTools.*
 
     runner.run {
       Injector
@@ -186,7 +188,7 @@ object Baboon {
         .produceRun(m) {
           (loader: BaboonLoader[F], logger: BLogger, loc: Locator) =>
             for {
-              inputModels <- F.maybeSuspend(options.individualInputs ++ options.directoryInputs.flatMap {
+              inputModels <- F.maybeSuspend(options.individualInputs.map(_.toPath) ++ options.directoryInputs.flatMap {
                 dir =>
                   IzFiles
                     .walk(dir.toFile)

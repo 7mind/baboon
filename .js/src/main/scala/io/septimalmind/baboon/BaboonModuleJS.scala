@@ -1,7 +1,8 @@
 package io.septimalmind.baboon
 
 import distage.{DIKey, Module, ModuleDef, TagKK}
-import io.septimalmind.baboon.parser.BaboonParser
+import io.septimalmind.baboon.parser.model.RawInclude
+import io.septimalmind.baboon.parser.{BaboonInclusionResolver, BaboonInclusionResolverImpl, BaboonParser}
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*
 import io.septimalmind.baboon.translator.scl.*
@@ -18,11 +19,14 @@ class BaboonSharedModuleJS[F[+_, +_]: Error2: MaybeSuspend2: TagKK] extends Modu
 }
 
 class BaboonModuleJS[F[+_, +_]: TagKK](
+  inputs: Seq[BaboonParser.Input],
   targets: Seq[CompilerTargetJS],
   logger: BLogger,
   parOps: ParallelErrorAccumulatingOps2[F],
-)(implicit val F: Error2[F], val MS: MaybeSuspend2[F])
-    extends ModuleDef {
+)(implicit
+  val F: Error2[F],
+  val MS: MaybeSuspend2[F],
+) extends ModuleDef {
 
   include(new BaboonSharedModuleJS[F])
 
@@ -43,6 +47,9 @@ class BaboonModuleJS[F[+_, +_]: TagKK](
   make[Error2[F]].fromValue(F)
   make[MaybeSuspend2[F]].fromValue(MS)
   make[ParallelErrorAccumulatingOps2[F]].fromValue(parOps)
+  make[Seq[BaboonParser.Input]].fromValue(inputs)
+
+  make[BaboonInclusionResolver[F]].from[BaboonInclusionResolverImpl[F]]
 }
 
 class BaboonCSModuleJS[F[+_, +_]: Error2: MaybeSuspend2: TagKK](target: CompilerTargetJS.CSTarget)(implicit val Q: QuasiIO[F[Throwable, _]]) extends ModuleDef {

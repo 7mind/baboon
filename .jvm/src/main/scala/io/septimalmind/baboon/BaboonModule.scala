@@ -2,11 +2,11 @@ package io.septimalmind.baboon
 
 import distage.{DIKey, ModuleDef}
 import io.septimalmind.baboon.CompilerTarget.{CSTarget, ScTarget}
-import io.septimalmind.baboon.parser.BaboonParser
+import io.septimalmind.baboon.parser.{BaboonInclusionResolver, BaboonInclusionResolverImpl, BaboonParser}
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*
 import io.septimalmind.baboon.translator.csharp.CSCodecFixtureTranslator.CSRandomMethodTranslatorImpl
-import io.septimalmind.baboon.translator.scl.{ScBaboonTranslator, ScCodecFixtureTranslator, ScCodecTestsTranslator, ScCodecTranslator, ScConversionTranslator, ScDefnTranslator, ScFileTools, ScJsonCodecGenerator, ScTreeTools, ScTypeInfo, ScTypeTranslator, ScUEBACodecGenerator}
+import io.septimalmind.baboon.translator.scl.*
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.{BLogger, BaboonMetagen}
@@ -51,6 +51,8 @@ class BaboonModule[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
   make[TypeInfo].from[TypeInfo.TypeInfoImpl]
 
   make[ScopeSupport[F]].from[ScopeSupport.ScopeSupportImpl[F]]
+  make[LockfileManager[F]].from[LockfileManagerImpl[F]]
+  make[BaboonInclusionResolver[F]].from[BaboonInclusionResolverImpl[F]]
 
   makeFactory[BaboonTranslator.Factory[F]]
 }
