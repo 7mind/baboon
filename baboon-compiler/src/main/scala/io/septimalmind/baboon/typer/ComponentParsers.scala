@@ -3,7 +3,7 @@ package io.septimalmind.baboon.typer
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TyperIssue}
 import io.septimalmind.baboon.parser.model.{RawHeader, RawVersion}
 import io.septimalmind.baboon.typer.model.{ParsedVersion, Pkg, Version}
-import izumi.functional.bio.{Error2, F}
+import izumi.functional.bio.*
 import izumi.fundamentals.collections.nonempty.NEList
 
 trait ComponentParsers[F[+_, +_]] {

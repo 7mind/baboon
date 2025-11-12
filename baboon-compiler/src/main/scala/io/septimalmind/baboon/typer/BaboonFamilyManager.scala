@@ -5,6 +5,7 @@ import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TyperIssue}
 import io.septimalmind.baboon.parser.model.{RawContent, RawDomain, RawTLDef, RawTypeName}
 import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage}
 import io.septimalmind.baboon.util.BLogger
+import io.septimalmind.baboon.validator.BaboonValidator
 import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Error2, F, ParallelErrorAccumulatingOps2}
 import izumi.fundamentals.collections.IzCollections.*
@@ -29,6 +30,7 @@ object BaboonFamilyManager {
     typer: BaboonTyper[F],
     comparator: BaboonComparator[F],
     logger: BLogger,
+    validator: BaboonValidator[F],
   ) extends BaboonFamilyManager[F] {
 
     override def load(
@@ -79,8 +81,11 @@ object BaboonFamilyManager {
         nem <- F.fromOption(BaboonIssue.of(TyperIssue.EmptyFamily(definitions))) {
           NEMap.from(uniqueLineages)
         }
+        fam = BaboonFamily(nem)
+        _  <- validator.validate(fam)
+
       } yield {
-        BaboonFamily(nem)
+        fam
       }
 
     }

@@ -18,6 +18,8 @@ class BaboonInclusionResolverMapImpl[F[+_, +_]](
     baseDir match {
       case FSPath.Full(location, name) =>
         FSPath((location :+ name) ++ relativeNESegments)
+      case FSPath.Relative(location, name) =>
+        FSPath((location :+ name) ++ relativeNESegments)
       case FSPath.Name(name) =>
         FSPath(Seq(name) ++ relativeNESegments)
     }

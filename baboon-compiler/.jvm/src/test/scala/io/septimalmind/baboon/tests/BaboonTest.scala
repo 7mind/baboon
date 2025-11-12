@@ -4,14 +4,18 @@ import distage.plugins.PluginBase
 import io.septimalmind.baboon.*
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.FSPath
+import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
+import io.septimalmind.baboon.typer.model.BaboonFamily
 import izumi.distage.modules.DefaultModule2
 import izumi.distage.modules.support.unsafe.EitherSupport
 import izumi.distage.plugins.PluginConfig
 import izumi.distage.testkit.model.TestConfig
 import izumi.distage.testkit.scalatest.Spec2
 import izumi.functional.bio.unsafe.UnsafeInstances
-import izumi.fundamentals.collections.nonempty.NEString
+import izumi.fundamentals.collections.nonempty.{NEList, NEString}
+import izumi.fundamentals.platform.files.IzFiles
+import izumi.fundamentals.platform.resources.IzResources
 import izumi.reflect.TagKK
 
 import java.nio.file.Paths
@@ -23,7 +27,7 @@ abstract class BaboonTest[F[+_, +_]: TagKK: BaboonTestModule] extends Spec2[F]()
         CompilerOptions(
           debug                    = false,
           individualInputs         = Set.empty,
-          directoryInputs          = Set(FSPath.parse(NEString.unsafeFrom("./src/test/resources/baboon"))),
+          directoryInputs          = Set(FSPath.parse(NEString.unsafeFrom("./baboon-compiler/src/test/resources/baboon"))),
           metaWriteEvolutionJsonTo = None,
           lockFile                 = Some(FSPath.parse(NEString.unsafeFrom("./target/baboon.lock"))),
           targets = Seq(
@@ -63,6 +67,19 @@ abstract class BaboonTest[F[+_, +_]: TagKK: BaboonTestModule] extends Spec2[F]()
       ).morph[PluginBase]
     )
   )
+
+  def loadPkg(loader: BaboonLoader[F]): F[NEList[BaboonIssue], BaboonFamily] = {
+    val root = IzResources
+      .getPath("baboon/pkg0")
+      .get
+      .asInstanceOf[IzResources.LoadablePathReference]
+      .path
+    val baboons = IzFiles
+      .walk(root.toFile)
+      .toList
+      .filter(p => p.toFile.isFile && p.toFile.getName.endsWith(".baboon"))
+    loader.load(baboons)
+  }
 }
 
 object BaboonTest {
@@ -79,4 +96,5 @@ object BaboonTest {
   sealed trait BaboonTestModuleLowPriorityInstances {
     implicit final def anyOtherDefaultModule[F[+_, +_]: DefaultModule2]: BaboonTestModule[F] = new BaboonTestModule[F]()
   }
+
 }

@@ -16,6 +16,8 @@ sealed trait FSPath extends Product with CachedProductHashcode {
     this match {
       case FSPath.Full(location, name) =>
         FSPath(update(location) :+ name)
+      case FSPath.Relative(location, name) =>
+        FSPath(update(location) :+ name)
       case FSPath.Name(name) =>
         FSPath(update(Seq.empty) :+ name)
     }
@@ -28,12 +30,19 @@ object FSPath {
     override def segments: Seq[NEString] = location :+ name
 
     override def asString: String = {
-      if (location.head.theString == "." || location.head.theString == "..") {
-        (location :+ name).map(_.theString).mkString("/")
-      } else {
-        (location :+ name).map(_.theString).mkString("/", "/", "")
-      }
+      (location :+ name).map(_.theString).mkString("/", "/", "")
+    }
 
+    override def rename(update: NEString => NEString): FSPath =
+      Full(location, update(name))
+    override def toString: String = asString
+  }
+
+  final case class Relative private[FSPath] (location: Seq[NEString], name: NEString) extends FSPath {
+    override def segments: Seq[NEString] = location :+ name
+
+    override def asString: String = {
+      (location :+ name).map(_.theString).mkString("/")
     }
 
     override def rename(update: NEString => NEString): FSPath =
@@ -55,11 +64,17 @@ object FSPath {
   def apply(pkg: Seq[NEString]): FSPath = {
     val path = pkg.init
     val name = pkg.last
-    assert(path.forall(p => p.nonEmpty && !p.theString.contains("/")))
+
     assert(name.nonEmpty)
 
     if (path.nonEmpty) {
-      FSPath.Full(path, name)
+      assert(path.tail.forall(p => p.nonEmpty && !p.theString.contains("/")))
+
+      if (path.head.isEmpty) {
+        FSPath.Full(path, name)
+      } else {
+        FSPath.Relative(path, name)
+      }
     } else {
       FSPath.Name(name)
     }

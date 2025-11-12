@@ -5,7 +5,6 @@ import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, IOIssue}
 import io.septimalmind.baboon.typer.BaboonFamilyManager
 import io.septimalmind.baboon.typer.model.BaboonFamily
-import io.septimalmind.baboon.validator.BaboonValidator
 import izumi.functional.bio.{Error2, F, ParallelErrorAccumulatingOps2}
 import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 import izumi.fundamentals.platform.files.IzFiles
@@ -19,7 +18,6 @@ trait BaboonLoader[F[+_, +_]] {
 object BaboonLoader {
   class BaboonLoaderImpl[F[+_, +_]: Error2: ParallelErrorAccumulatingOps2](
     manager: BaboonFamilyManager[F],
-    validator: BaboonValidator[F],
   ) extends BaboonLoader[F] {
 
     override def load(
@@ -40,7 +38,6 @@ object BaboonLoader {
             }
         }
         out <- manager.load(inputs)
-        _   <- validator.validate(out)
       } yield {
         out
       }
