@@ -9,10 +9,9 @@ import izumi.fundamentals.platform.language.SourceFilePosition
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream, DataOutputStream}
 import java.nio.charset.StandardCharsets
-import java.nio.{ByteBuffer, ByteOrder}
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, OffsetDateTime, ZoneOffset}
-import java.util.{Base64, UUID}
+import java.util.UUID
 import scala.util.Try
 
 trait BaboonRuntimeCodec[F[+_, +_]] {
@@ -24,6 +23,7 @@ object BaboonRuntimeCodec {
 
   class BaboonRuntimeCodecImpl[F[+_, +_]: Error2]() extends BaboonRuntimeCodec[F] {
     private val F = Error2[F]
+    private val enquiries = new BaboonEnquiries.BaboonEnquiriesImpl()
 
     // .NET epoch is 0001-01-01T00:00:00, Unix epoch is 1970-01-01T00:00:00
     // Difference in milliseconds: 62135596800000L
@@ -158,31 +158,6 @@ object BaboonRuntimeCodec {
       }
     }
 
-    // Helper to determine if a type requires variable-length encoding
-    private def isVariableLength(dom: Domain, tpe: TypeRef): Boolean = tpe match {
-      case TypeRef.Scalar(id) =>
-        id match {
-          case TypeId.Builtins.str => true
-          case TypeId.Builtins.lst => true
-          case TypeId.Builtins.set => true
-          case TypeId.Builtins.map => true
-          case TypeId.Builtins.opt => true
-          case userId: TypeId.User =>
-            // Look up the user type and check if it's variable-length
-            val userType = dom.defs.meta.nodes(userId).asInstanceOf[DomainMember.User].defn
-            userType match {
-              case _: Typedef.Enum => false // Enums are fixed-length (1 byte)
-              case _: Typedef.Adt  => true  // ADTs are variable-length (discriminator + branch)
-              case dto: Typedef.Dto =>
-                // DTO is variable-length if it has any variable-length fields
-                dto.fields.exists(f => isVariableLength(dom, f.tpe))
-              case _ => false
-            }
-          case _ => false
-        }
-      case _: TypeRef.Constructor => true // Collections are variable
-    }
-
     // DTO encoding/decoding
     private def encodeDto(dom: Domain, dto: Typedef.Dto, json: Json, writer: DataOutputStream, indexed: Boolean): Unit = {
       val obj = json.asObject.getOrElse(
@@ -206,7 +181,7 @@ object BaboonRuntimeCodec {
           field =>
             val fieldJson = obj(field.name.name).getOrElse(Json.Null)
 
-            if (isVariableLength(dom, field.tpe)) {
+            if (enquiries.uebaLen(dom.defs.meta.nodes, field.tpe).isVariable) {
               // Variable-length field: record position, write to buffer, record length
               val before = fieldDataBuffer.size()
               encodeTypeRef(dom, field.tpe, fieldJson, fieldDataWriter, indexed)
@@ -252,7 +227,7 @@ object BaboonRuntimeCodec {
 
       if (useIndices) {
         // Read and skip index entries
-        val varLenFieldCount = dto.fields.count(f => isVariableLength(dom, f.tpe))
+        val varLenFieldCount = dto.fields.count(f => enquiries.uebaLen(dom.defs.meta.nodes, f.tpe).isVariable)
         (0 until varLenFieldCount).foreach {
           _ =>
             readIntLE(reader) // offset (ignore)
