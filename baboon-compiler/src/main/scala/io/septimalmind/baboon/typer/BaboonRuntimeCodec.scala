@@ -1,14 +1,16 @@
 package io.septimalmind.baboon.typer
 
 import io.circe.Json
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.typer.model.{BaboonFamily, Domain, DomainMember, Pkg, TypeId, TypeRef, Typedef, Version}
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
+import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.Error2
+import izumi.fundamentals.platform.exceptions.Issue
+import izumi.fundamentals.platform.language.SourceFilePosition
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream, DataOutputStream}
 import java.nio.charset.StandardCharsets
 import java.util.UUID
-import scala.util.{Failure, Success, Try}
+import scala.util.Try
 
 trait BaboonRuntimeCodec[F[+_, +_]] {
   def decode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, data: Vector[Byte]): F[BaboonIssue, Json]
@@ -23,21 +25,22 @@ object BaboonRuntimeCodec {
     override def decode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, data: Vector[Byte]): F[BaboonIssue, Json] = {
       F.fromEither {
         Try {
-          val dom = getDom(family, pkg, version)
+          val dom     = getDom(family, pkg, version)
           val typedef = getDef(dom, idString)
-          val input = new DataInputStream(new ByteArrayInputStream(data.toArray))
+          val input   = new DataInputStream(new ByteArrayInputStream(data.toArray))
 
           typedef match {
             case u: DomainMember.User => decodeUserType(dom, u.defn, input)
-            case _ => throw new IllegalArgumentException(s"Unexpected domain member type: $typedef")
+            case _                    => throw new IllegalArgumentException(s"Unexpected domain member type: $typedef")
           }
-        }.toEither.left.map { ex =>
-          implicit val ctx: izumi.fundamentals.platform.exceptions.Issue.IssueContext =
-            izumi.fundamentals.platform.exceptions.Issue.IssueContext(
-              izumi.fundamentals.platform.language.SourceFilePosition.unknown,
-              ex
+        }.toEither.left.map {
+          ex =>
+            TranslationIssue.TranslationBug()(
+              Issue.IssueContext(
+                SourceFilePosition.unknown,
+                ex,
+              )
             )
-          BaboonIssue.Translation(io.septimalmind.baboon.parser.model.issues.TranslationIssue.TranslationBug())
         }
       }
     }
@@ -45,10 +48,10 @@ object BaboonRuntimeCodec {
     override def encode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, json: Json): F[BaboonIssue, Vector[Byte]] = {
       F.fromEither {
         Try {
-          val dom = getDom(family, pkg, version)
+          val dom     = getDom(family, pkg, version)
           val typedef = getDef(dom, idString)
-          val output = new ByteArrayOutputStream()
-          val writer = new DataOutputStream(output)
+          val output  = new ByteArrayOutputStream()
+          val writer  = new DataOutputStream(output)
 
           typedef match {
             case u: DomainMember.User =>
@@ -57,13 +60,14 @@ object BaboonRuntimeCodec {
               Vector.from(output.toByteArray)
             case _ => throw new IllegalArgumentException(s"Unexpected domain member type: $typedef")
           }
-        }.toEither.left.map { ex =>
-          implicit val ctx: izumi.fundamentals.platform.exceptions.Issue.IssueContext =
-            izumi.fundamentals.platform.exceptions.Issue.IssueContext(
-              izumi.fundamentals.platform.language.SourceFilePosition.unknown,
-              ex
-            )
-          BaboonIssue.Translation(io.septimalmind.baboon.parser.model.issues.TranslationIssue.TranslationBug())
+        }.toEither.left.map {
+          ex =>
+            implicit val ctx: Issue.IssueContext =
+              Issue.IssueContext(
+                SourceFilePosition.unknown,
+                ex,
+              )
+            BaboonIssue.Translation(io.septimalmind.baboon.parser.model.issues.TranslationIssue.TranslationBug())
         }
       }
     }
@@ -79,11 +83,11 @@ object BaboonRuntimeCodec {
     // Encode user-defined types
     private def encodeUserType(dom: Domain, typedef: Typedef.User, json: Json, writer: DataOutputStream): Unit = {
       typedef match {
-        case dto: Typedef.Dto => encodeDto(dom, dto, json, writer)
-        case enum: Typedef.Enum => encodeEnum(dom, enum, json, writer)
-        case adt: Typedef.Adt => encodeAdt(dom, adt, json, writer)
-        case _: Typedef.Foreign => throw new IllegalArgumentException(s"Foreign types cannot be encoded: ${typedef.id}")
-        case _: Typedef.Service => throw new IllegalArgumentException(s"Service types cannot be encoded: ${typedef.id}")
+        case dto: Typedef.Dto    => encodeDto(dom, dto, json, writer)
+        case enum: Typedef.Enum  => encodeEnum(dom, enum, json, writer)
+        case adt: Typedef.Adt    => encodeAdt(dom, adt, json, writer)
+        case _: Typedef.Foreign  => throw new IllegalArgumentException(s"Foreign types cannot be encoded: ${typedef.id}")
+        case _: Typedef.Service  => throw new IllegalArgumentException(s"Service types cannot be encoded: ${typedef.id}")
         case _: Typedef.Contract => throw new IllegalArgumentException(s"Contract types cannot be encoded: ${typedef.id}")
       }
     }
@@ -91,11 +95,11 @@ object BaboonRuntimeCodec {
     // Decode user-defined types
     private def decodeUserType(dom: Domain, typedef: Typedef.User, reader: DataInputStream): Json = {
       typedef match {
-        case dto: Typedef.Dto => decodeDto(dom, dto, reader)
-        case enum: Typedef.Enum => decodeEnum(dom, enum, reader)
-        case adt: Typedef.Adt => decodeAdt(dom, adt, reader)
-        case _: Typedef.Foreign => throw new IllegalArgumentException(s"Foreign types cannot be decoded: ${typedef.id}")
-        case _: Typedef.Service => throw new IllegalArgumentException(s"Service types cannot be decoded: ${typedef.id}")
+        case dto: Typedef.Dto    => decodeDto(dom, dto, reader)
+        case enum: Typedef.Enum  => decodeEnum(dom, enum, reader)
+        case adt: Typedef.Adt    => decodeAdt(dom, adt, reader)
+        case _: Typedef.Foreign  => throw new IllegalArgumentException(s"Foreign types cannot be decoded: ${typedef.id}")
+        case _: Typedef.Service  => throw new IllegalArgumentException(s"Service types cannot be decoded: ${typedef.id}")
         case _: Typedef.Contract => throw new IllegalArgumentException(s"Contract types cannot be decoded: ${typedef.id}")
       }
     }
@@ -111,9 +115,10 @@ object BaboonRuntimeCodec {
       writer.writeByte(header)
 
       // Encode each field
-      dto.fields.foreach { field =>
-        val fieldJson = obj(field.name.name).getOrElse(Json.Null)
-        encodeTypeRef(dom, field.tpe, fieldJson, writer)
+      dto.fields.foreach {
+        field =>
+          val fieldJson = obj(field.name.name).getOrElse(Json.Null)
+          encodeTypeRef(dom, field.tpe, fieldJson, writer)
       }
     }
 
@@ -129,9 +134,10 @@ object BaboonRuntimeCodec {
       }
 
       // Decode each field
-      val fields = dto.fields.map { field =>
-        val value = decodeTypeRef(dom, field.tpe, reader)
-        (field.name.name, value)
+      val fields = dto.fields.map {
+        field =>
+          val value = decodeTypeRef(dom, field.tpe, reader)
+          (field.name.name, value)
       }
 
       Json.obj(fields: _*)
@@ -139,9 +145,10 @@ object BaboonRuntimeCodec {
 
     // Enum encoding/decoding
     private def encodeEnum(dom: Domain, enum: Typedef.Enum, json: Json, writer: DataOutputStream): Unit = {
-      val str = json.asString.getOrElse(
-        throw new IllegalArgumentException(s"Expected JSON string for enum ${enum.id}, got: $json")
-      ).toLowerCase.trim
+      val str = json.asString
+        .getOrElse(
+          throw new IllegalArgumentException(s"Expected JSON string for enum ${enum.id}, got: $json")
+        ).toLowerCase.trim
 
       val idx = enum.members.toList.indexWhere(_.name.toLowerCase == str)
       if (idx < 0) {
@@ -174,7 +181,7 @@ object BaboonRuntimeCodec {
       }
 
       val (branchName, branchValue) = branches.head
-      val dataMembers = adt.dataMembers(dom)
+      val dataMembers               = adt.dataMembers(dom)
 
       val branchIdx = dataMembers.indexWhere(_.name.name == branchName)
       if (branchIdx < 0) {
@@ -185,21 +192,21 @@ object BaboonRuntimeCodec {
       writer.writeByte(branchIdx)
 
       // Encode the branch value
-      val branchId = dataMembers(branchIdx)
+      val branchId  = dataMembers(branchIdx)
       val branchDef = dom.defs.meta.nodes(branchId).asInstanceOf[DomainMember.User].defn
       encodeUserType(dom, branchDef, branchValue, writer)
     }
 
     private def decodeAdt(dom: Domain, adt: Typedef.Adt, reader: DataInputStream): Json = {
       val discriminator = reader.readByte() & 0xFF
-      val dataMembers = adt.dataMembers(dom)
+      val dataMembers   = adt.dataMembers(dom)
 
       if (discriminator >= dataMembers.size) {
         throw new IllegalArgumentException(s"Invalid ADT discriminator $discriminator for ${adt.id}, max is ${dataMembers.size - 1}")
       }
 
-      val branchId = dataMembers(discriminator)
-      val branchDef = dom.defs.meta.nodes(branchId).asInstanceOf[DomainMember.User].defn
+      val branchId    = dataMembers(discriminator)
+      val branchDef   = dom.defs.meta.nodes(branchId).asInstanceOf[DomainMember.User].defn
       val branchValue = decodeUserType(dom, branchDef, reader)
 
       Json.obj(branchId.name.name -> branchValue)
@@ -208,14 +215,14 @@ object BaboonRuntimeCodec {
     // TypeRef encoding/decoding
     private def encodeTypeRef(dom: Domain, tpe: TypeRef, json: Json, writer: DataOutputStream): Unit = {
       tpe match {
-        case TypeRef.Scalar(id) => encodeScalar(dom, id, json, writer)
+        case TypeRef.Scalar(id)            => encodeScalar(dom, id, json, writer)
         case TypeRef.Constructor(id, args) => encodeConstructor(dom, id, args.toList, json, writer)
       }
     }
 
     private def decodeTypeRef(dom: Domain, tpe: TypeRef, reader: DataInputStream): Json = {
       tpe match {
-        case TypeRef.Scalar(id) => decodeScalar(dom, id, reader)
+        case TypeRef.Scalar(id)            => decodeScalar(dom, id, reader)
         case TypeRef.Constructor(id, args) => decodeConstructor(dom, id, args.toList, reader)
       }
     }
@@ -289,7 +296,7 @@ object BaboonRuntimeCodec {
         case TypeId.Builtins.f128 =>
           val value = json.asNumber.flatMap(_.toBigDecimal).getOrElse(throw new IllegalArgumentException(s"Expected f128, got: $json"))
           // Encode BigDecimal as string length + UTF-8 bytes (similar to str)
-          val str = value.toString
+          val str   = value.toString
           val bytes = str.getBytes(StandardCharsets.UTF_8)
           writer.writeInt(bytes.length)
           writer.write(bytes)
@@ -336,13 +343,13 @@ object BaboonRuntimeCodec {
         case TypeId.Builtins.f64 => Json.fromDoubleOrString(reader.readDouble())
         case TypeId.Builtins.f128 =>
           val length = reader.readInt()
-          val bytes = new Array[Byte](length)
+          val bytes  = new Array[Byte](length)
           reader.readFully(bytes)
           val str = new String(bytes, StandardCharsets.UTF_8)
           Json.fromBigDecimal(BigDecimal(str))
         case TypeId.Builtins.str =>
           val length = reader.readInt()
-          val bytes = new Array[Byte](length)
+          val bytes  = new Array[Byte](length)
           reader.readFully(bytes)
           Json.fromString(new String(bytes, StandardCharsets.UTF_8))
         case TypeId.Builtins.uid =>
@@ -351,7 +358,7 @@ object BaboonRuntimeCodec {
           Json.fromString(fromBytes(bytes).toString)
         case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
           val length = reader.readInt()
-          val bytes = new Array[Byte](length)
+          val bytes  = new Array[Byte](length)
           reader.readFully(bytes)
           Json.fromString(new String(bytes, StandardCharsets.UTF_8))
         case other => throw new IllegalArgumentException(s"Unsupported builtin scalar: $other")
@@ -382,10 +389,11 @@ object BaboonRuntimeCodec {
         case TypeId.Builtins.map =>
           val obj = json.asObject.getOrElse(throw new IllegalArgumentException(s"Expected object for map, got: $json"))
           writer.writeInt(obj.size)
-          obj.toList.foreach { case (key, value) =>
-            // Encode key - for now assume keys can be encoded as strings
-            encodeMapKey(dom, args.head, key, writer)
-            encodeTypeRef(dom, args.last, value, writer)
+          obj.toList.foreach {
+            case (key, value) =>
+              // Encode key - for now assume keys can be encoded as strings
+              encodeMapKey(dom, args.head, key, writer)
+              encodeTypeRef(dom, args.last, value, writer)
           }
 
         case other => throw new IllegalArgumentException(s"Unsupported collection type: $other")
@@ -403,21 +411,22 @@ object BaboonRuntimeCodec {
           }
 
         case TypeId.Builtins.lst =>
-          val count = reader.readInt()
+          val count    = reader.readInt()
           val elements = (0 until count).map(_ => decodeTypeRef(dom, args.head, reader))
           Json.arr(elements: _*)
 
         case TypeId.Builtins.set =>
-          val count = reader.readInt()
+          val count    = reader.readInt()
           val elements = (0 until count).map(_ => decodeTypeRef(dom, args.head, reader))
           Json.arr(elements: _*)
 
         case TypeId.Builtins.map =>
           val count = reader.readInt()
-          val pairs = (0 until count).map { _ =>
-            val key = decodeMapKey(dom, args.head, reader)
-            val value = decodeTypeRef(dom, args.last, reader)
-            (key, value)
+          val pairs = (0 until count).map {
+            _ =>
+              val key   = decodeMapKey(dom, args.head, reader)
+              val value = decodeTypeRef(dom, args.last, reader)
+              (key, value)
           }
           Json.obj(pairs: _*)
 
@@ -464,7 +473,7 @@ object BaboonRuntimeCodec {
           id match {
             case TypeId.Builtins.str =>
               val length = reader.readInt()
-              val bytes = new Array[Byte](length)
+              val bytes  = new Array[Byte](length)
               reader.readFully(bytes)
               new String(bytes, StandardCharsets.UTF_8)
             case TypeId.Builtins.i32 =>
@@ -504,9 +513,9 @@ object BaboonRuntimeCodec {
     }
 
     private def fromBytes(bytes: Array[Byte]): UUID = {
-      val bb = java.nio.ByteBuffer.wrap(bytes)
+      val bb   = java.nio.ByteBuffer.wrap(bytes)
       val high = bb.getLong
-      val low = bb.getLong
+      val low  = bb.getLong
       new UUID(high, low)
     }
   }
