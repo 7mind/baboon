@@ -2,14 +2,14 @@ package io.septimalmind.baboon
 
 import distage.{DIKey, ModuleDef}
 import io.septimalmind.baboon.CompilerTarget.{CSTarget, ScTarget}
-import io.septimalmind.baboon.parser.{BaboonInclusionResolver, BaboonInclusionResolverImpl, BaboonParser}
+import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*
 import io.septimalmind.baboon.translator.csharp.CSCodecFixtureTranslator.CSRandomMethodTranslatorImpl
 import io.septimalmind.baboon.translator.scl.*
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.model.*
-import io.septimalmind.baboon.util.{BLogger, BaboonMetagen}
+import io.septimalmind.baboon.util.BaboonMetagen
 import io.septimalmind.baboon.validator.BaboonValidator
 import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Applicative2, ApplicativeError2, Bifunctor2, Error2, Guarantee2, Monad2, ParallelErrorAccumulatingOps2}
@@ -26,20 +26,12 @@ class BaboonSharedModule[F[+_, +_]: Error2: MaybeSuspend2: TagKK] extends Module
   addImplicit[MaybeSuspend2[F]]
 }
 
-class BaboonModule[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
-  options: CompilerOptions,
-  parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[F],
+class BaboonModuleLogicModule[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
+  parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[F]
 ) extends ModuleDef {
   include(new BaboonSharedModule[F])
-  make[CompilerOptions].fromValue(options)
-
-//  make[Seq[Path]].named("inputs").fromValue(inputs)
-
   make[ParallelErrorAccumulatingOps2[F]].fromValue(parallelAccumulatingOps2).exposed
 
-  make[BLogger].from[BLogger.BLoggerImpl]
-
-  make[BaboonLoader[F]].from[BaboonLoader.BaboonLoaderImpl[F]]
   make[BaboonFamilyManager[F]].from[BaboonFamilyManager.BaboonFamilyManagerImpl[F]]
   make[BaboonValidator[F]].from[BaboonValidator.BaboonValidatorImpl[F]]
   make[BaboonRules[F]].from[BaboonRules.BaboonRulesImpl[F]]
@@ -51,22 +43,17 @@ class BaboonModule[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
   make[TypeInfo].from[TypeInfo.TypeInfoImpl]
 
   make[ScopeSupport[F]].from[ScopeSupport.ScopeSupportImpl[F]]
-  make[LockfileManager[F]].from[LockfileManagerImpl[F]]
-  make[BaboonInclusionResolver[F]].from[BaboonInclusionResolverImpl[F]]
-
+  make[ComponentParsers[F]].from[ComponentParsers.ComponentParsersImpl[F]]
   makeFactory[BaboonTranslator.Factory[F]]
 }
 
 class SharedTranspilerModule[F[+_, +_]: Error2: TagKK]() extends ModuleDef {
   include(new BaboonSharedModule[F])
-  make[BaboonCompiler[F]].from[BaboonCompiler.BaboonCompilerImpl[F]]
   make[BaboonMetagen].from[BaboonMetagen.BaboonMetagenImpl]
-
 }
-class BaboonCSModule[F[+_, +_]: Error2: TagKK](target: CSTarget) extends ModuleDef {
-  include(new SharedTranspilerModule[F])
 
-  make[CSTarget].fromValue(target)
+class BaboonCommonCSModule[F[+_, +_]: Error2: TagKK]() extends ModuleDef {
+  include(new SharedTranspilerModule[F])
 
   makeSubcontext[CSDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution], DIKey[BaboonLineage]))
@@ -94,10 +81,8 @@ class BaboonCSModule[F[+_, +_]: Error2: TagKK](target: CSTarget) extends ModuleD
     .ref[CSBaboonTranslator[F]]
 }
 
-class BaboonScModule[F[+_, +_]: Error2: TagKK](target: ScTarget) extends ModuleDef {
+class BaboonCommonScModule[F[+_, +_]: Error2: TagKK]() extends ModuleDef {
   include(new SharedTranspilerModule[F])
-
-  make[ScTarget].fromValue(target)
 
   makeSubcontext[ScDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))

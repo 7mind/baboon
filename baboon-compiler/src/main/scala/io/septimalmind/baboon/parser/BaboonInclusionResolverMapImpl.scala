@@ -2,10 +2,9 @@ package io.septimalmind.baboon.parser
 
 import io.septimalmind.baboon.CompilerOptions
 import io.septimalmind.baboon.parser.model.{FSPath, RawInclude}
-import izumi.functional.bio.Error2
 import izumi.fundamentals.collections.nonempty.NEString
 
-class BaboonInclusionResolverImpl[F[+_, +_]](
+class BaboonInclusionResolverMapImpl[F[+_, +_]](
   options: CompilerOptions,
   inputs: Seq[BaboonParser.Input],
 ) extends BaboonInclusionResolver[F] {

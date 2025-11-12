@@ -16,6 +16,12 @@ import izumi.fundamentals.platform.crypto.IzSha256HashFunction
 import scala.annotation.tailrec
 import scala.collection.mutable
 
+import izumi.functional.bio._
+
+
+
+
+
 trait BaboonTyper[F[+_, +_]] {
   def process(model: RawDomain): F[NEList[BaboonIssue], Domain]
 }
@@ -26,6 +32,7 @@ object BaboonTyper {
     enquiries: BaboonEnquiries,
     translator: BaboonTranslator.Factory[F],
     scopeSupport: ScopeSupport[F],
+    componentParsers: ComponentParsers[F],
     types: TypeInfo,
   ) extends BaboonTyper[F] {
 
@@ -33,8 +40,8 @@ object BaboonTyper {
       model: RawDomain
     ): F[NEList[BaboonIssue], Domain] = {
       for {
-        id      <- parsePkg(model.header)
-        version <- parseVersion(model.version)
+        id      <- componentParsers.parsePkg(model.header)
+        version <- componentParsers.parseVersion(model.version)
         defs    <- runTyper(id, model.members.defs, model.header.meta)
         indexedDefs <- F.fromEither {
           defs
@@ -262,30 +269,6 @@ object BaboonTyper {
         )
       } else {
         buildDependencies(todo, next, newPredecessors)
-      }
-    }
-
-    private def parsePkg(
-      header: RawHeader
-    ): F[NEList[BaboonIssue], Pkg] = {
-      for {
-        nel <- F.fromOption(BaboonIssue.of(TyperIssue.EmptyPackageId(header))) {
-          NEList.from(header.name)
-        }
-        // TODO: validate format
-      } yield {
-        Pkg(nel)
-      }
-    }
-
-    private def parseVersion(
-      version: RawVersion
-    ): F[NEList[BaboonIssue], Version] = {
-      for {
-        v <- F.pure(version.value)
-        _ <- F.fromOption(BaboonIssue.of(TyperIssue.GenericTyperIssue(s"Bad version format in '$v'", version.meta)))(ParsedVersion.parse(v))
-      } yield {
-        Version(v)
       }
     }
 

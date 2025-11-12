@@ -149,9 +149,9 @@ object Baboon {
   ): F[Throwable, Unit] = { // dirty, I/O happens there
     val module = target match {
       case t: CompilerTarget.CSTarget =>
-        new BaboonCSModule[F](t)
+        new BaboonJvmCSModule[F](t)
       case t: CompilerTarget.ScTarget =>
-        new BaboonScModule[F](t)
+        new BaboonJvmScModule[F](t)
     }
 
     Injector
@@ -179,7 +179,7 @@ object Baboon {
     quasiIO: QuasiIO[F[Throwable, _]],
     runner: QuasiIORunner[F[Throwable, _]],
   ): Unit = {
-    val m = new BaboonModule[F](options, ParallelErrorAccumulatingOps2[F])
+    val m = new BaboonModuleJvm[F](options, ParallelErrorAccumulatingOps2[F])
     import PathTools.*
 
     runner.run {

@@ -19,7 +19,7 @@ import java.nio.file.Paths
 abstract class BaboonTest[F[+_, +_]: TagKK: BaboonTestModule] extends Spec2[F]()(using BaboonTestModule[F].defaultModule, implicitly[TagKK[F]]) {
   override protected def config: TestConfig = super.config.copy(
     pluginConfig = PluginConfig.const(
-      new BaboonModule[Either](
+      new BaboonModuleJvm[Either](
         CompilerOptions(
           debug                    = false,
           individualInputs         = Set.empty,

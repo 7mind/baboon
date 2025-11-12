@@ -1,12 +1,12 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Generate CS files (adt: full, unwrapped)" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="io.septimalmind.baboon.Baboon" />
-    <module name="baboon-root.baboon.baboonJVM.main" />
-    <option name="PROGRAM_PARAMETERS" value="--model-dir ./src/test/resources/baboon/ --output ./test/cs-stub/BaboonDefinitions/Generated --fixture-output ./test/cs-stub/BaboonTests/GeneratedFixtures --test-output ./test/cs-stub/BaboonTests/GeneratedTests --cs-write-evolution-dict" />
+    <module name="baboon-root.baboon.baboonJVM~1.main" />
+    <option name="PROGRAM_PARAMETERS" value="--model-dir ./baboon-compiler/.jvm/src/test/resources/baboon/ --output ./baboon-compiler/.jvm/test/cs-stub/BaboonDefinitions/Generated --fixture-output ./baboon-compiler/.jvm/test/cs-stub/BaboonTests/GeneratedFixtures --test-output ./baboon-compiler/.jvm/test/cs-stub/BaboonTests/GeneratedTests --cs-write-evolution-dict" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="io.septimalmind.baboon.*" />
-        <option name="ENABLED" value="false" />
+        <option name="ENABLED" value="true" />
       </pattern>
     </extension>
     <method v="2">

@@ -27,8 +27,14 @@ object FSPath {
   final case class Full private[FSPath] (location: Seq[NEString], name: NEString) extends FSPath {
     override def segments: Seq[NEString] = location :+ name
 
-    override def asString: String =
-      (location :+ name).map(_.theString).mkString("/", "/", "")
+    override def asString: String = {
+      if (location.head.theString == "." || location.head.theString == "..") {
+        (location :+ name).map(_.theString).mkString("/")
+      } else {
+        (location :+ name).map(_.theString).mkString("/", "/", "")
+      }
+
+    }
 
     override def rename(update: NEString => NEString): FSPath =
       Full(location, update(name))
