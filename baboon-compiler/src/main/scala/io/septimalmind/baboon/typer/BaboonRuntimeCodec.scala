@@ -140,7 +140,7 @@ object BaboonRuntimeCodec {
           (field.name.name, value)
       }
 
-      Json.obj(fields: _*)
+      Json.obj(fields *)
     }
 
     // Enum encoding/decoding
@@ -413,12 +413,12 @@ object BaboonRuntimeCodec {
         case TypeId.Builtins.lst =>
           val count    = reader.readInt()
           val elements = (0 until count).map(_ => decodeTypeRef(dom, args.head, reader))
-          Json.arr(elements: _*)
+          Json.arr(elements *)
 
         case TypeId.Builtins.set =>
           val count    = reader.readInt()
           val elements = (0 until count).map(_ => decodeTypeRef(dom, args.head, reader))
-          Json.arr(elements: _*)
+          Json.arr(elements *)
 
         case TypeId.Builtins.map =>
           val count = reader.readInt()
@@ -428,7 +428,7 @@ object BaboonRuntimeCodec {
               val value = decodeTypeRef(dom, args.last, reader)
               (key, value)
           }
-          Json.obj(pairs: _*)
+          Json.obj(pairs *)
 
         case other => throw new IllegalArgumentException(s"Unsupported collection type: $other")
       }
