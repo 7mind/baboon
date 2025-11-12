@@ -17,7 +17,7 @@ import scala.util.Try
 
 trait BaboonRuntimeCodec[F[+_, +_]] {
   def decode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, data: Vector[Byte]): F[BaboonIssue, Json]
-  def encode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, json: Json): F[BaboonIssue, Vector[Byte]]
+  def encode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, json: Json, indexed: Boolean): F[BaboonIssue, Vector[Byte]]
 }
 
 object BaboonRuntimeCodec {
@@ -99,7 +99,7 @@ object BaboonRuntimeCodec {
       }
     }
 
-    override def encode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, json: Json): F[BaboonIssue, Vector[Byte]] = {
+    override def encode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, json: Json, indexed: Boolean): F[BaboonIssue, Vector[Byte]] = {
       F.fromEither {
         Try {
           val dom     = getDom(family, pkg, version)
@@ -109,7 +109,7 @@ object BaboonRuntimeCodec {
 
           typedef match {
             case u: DomainMember.User =>
-              encodeUserType(dom, u.defn, json, writer)
+              encodeUserType(dom, u.defn, json, writer, indexed)
               writer.flush()
               Vector.from(output.toByteArray)
             case _ => throw new IllegalArgumentException(s"Unexpected domain member type: $typedef")
@@ -135,11 +135,11 @@ object BaboonRuntimeCodec {
     }
 
     // Encode user-defined types
-    private def encodeUserType(dom: Domain, typedef: Typedef.User, json: Json, writer: DataOutputStream): Unit = {
+    private def encodeUserType(dom: Domain, typedef: Typedef.User, json: Json, writer: DataOutputStream, indexed: Boolean): Unit = {
       typedef match {
-        case dto: Typedef.Dto    => encodeDto(dom, dto, json, writer)
+        case dto: Typedef.Dto    => encodeDto(dom, dto, json, writer, indexed)
         case enum: Typedef.Enum  => encodeEnum(dom, enum, json, writer)
-        case adt: Typedef.Adt    => encodeAdt(dom, adt, json, writer)
+        case adt: Typedef.Adt    => encodeAdt(dom, adt, json, writer, indexed)
         case _: Typedef.Foreign  => throw new IllegalArgumentException(s"Foreign types cannot be encoded: ${typedef.id}")
         case _: Typedef.Service  => throw new IllegalArgumentException(s"Service types cannot be encoded: ${typedef.id}")
         case _: Typedef.Contract => throw new IllegalArgumentException(s"Contract types cannot be encoded: ${typedef.id}")
@@ -158,21 +158,88 @@ object BaboonRuntimeCodec {
       }
     }
 
+    // Helper to determine if a type requires variable-length encoding
+    private def isVariableLength(dom: Domain, tpe: TypeRef): Boolean = tpe match {
+      case TypeRef.Scalar(id) =>
+        id match {
+          case TypeId.Builtins.str => true
+          case TypeId.Builtins.lst => true
+          case TypeId.Builtins.set => true
+          case TypeId.Builtins.map => true
+          case TypeId.Builtins.opt => true
+          case userId: TypeId.User =>
+            // Look up the user type and check if it's variable-length
+            val userType = dom.defs.meta.nodes(userId).asInstanceOf[DomainMember.User].defn
+            userType match {
+              case _: Typedef.Enum => false // Enums are fixed-length (1 byte)
+              case _: Typedef.Adt  => true  // ADTs are variable-length (discriminator + branch)
+              case dto: Typedef.Dto =>
+                // DTO is variable-length if it has any variable-length fields
+                dto.fields.exists(f => isVariableLength(dom, f.tpe))
+              case _ => false
+            }
+          case _ => false
+        }
+      case _: TypeRef.Constructor => true // Collections are variable
+    }
+
     // DTO encoding/decoding
-    private def encodeDto(dom: Domain, dto: Typedef.Dto, json: Json, writer: DataOutputStream): Unit = {
+    private def encodeDto(dom: Domain, dto: Typedef.Dto, json: Json, writer: DataOutputStream, indexed: Boolean): Unit = {
       val obj = json.asObject.getOrElse(
         throw new IllegalArgumentException(s"Expected JSON object for DTO ${dto.id}, got: $json")
       )
 
-      // Write header byte (no index support for now)
-      val header: Byte = 0
+      // Write header byte
+      val header: Byte = if (indexed) 1 else 0
       writer.writeByte(header)
 
-      // Encode each field
-      dto.fields.foreach {
-        field =>
-          val fieldJson = obj(field.name.name).getOrElse(Json.Null)
-          encodeTypeRef(dom, field.tpe, fieldJson, writer)
+      if (indexed) {
+        // In indexed mode: collect field data in buffer, write index, then data
+        val fieldDataBuffer = new ByteArrayOutputStream()
+        val fieldDataWriter = new DataOutputStream(fieldDataBuffer)
+
+        // Track variable-length fields for index
+        val indexEntries = scala.collection.mutable.ArrayBuffer[(Int, Int)]()
+        var offset      = 0
+
+        dto.fields.foreach {
+          field =>
+            val fieldJson = obj(field.name.name).getOrElse(Json.Null)
+
+            if (isVariableLength(dom, field.tpe)) {
+              // Variable-length field: record position, write to buffer, record length
+              val before = fieldDataBuffer.size()
+              encodeTypeRef(dom, field.tpe, fieldJson, fieldDataWriter, indexed)
+              val after  = fieldDataBuffer.size()
+              val length = after - before
+
+              indexEntries += ((offset, length))
+              offset = after
+            } else {
+              // Fixed-length field: just write to buffer
+              encodeTypeRef(dom, field.tpe, fieldJson, fieldDataWriter, indexed)
+              offset = fieldDataBuffer.size()
+            }
+        }
+
+        fieldDataWriter.flush()
+
+        // Write index entries (offset and length for each variable-length field)
+        indexEntries.foreach {
+          case (off, len) =>
+            writeIntLE(off, writer)
+            writeIntLE(len, writer)
+        }
+
+        // Write all field data
+        writer.write(fieldDataBuffer.toByteArray)
+      } else {
+        // Compact mode: write fields directly
+        dto.fields.foreach {
+          field =>
+            val fieldJson = obj(field.name.name).getOrElse(Json.Null)
+            encodeTypeRef(dom, field.tpe, fieldJson, writer, indexed)
+        }
       }
     }
 
@@ -184,10 +251,16 @@ object BaboonRuntimeCodec {
       val useIndices = (header & 1) != 0
 
       if (useIndices) {
-        throw new UnsupportedOperationException("Index-based decoding is not yet supported")
+        // Read and skip index entries
+        val varLenFieldCount = dto.fields.count(f => isVariableLength(dom, f.tpe))
+        (0 until varLenFieldCount).foreach {
+          _ =>
+            readIntLE(reader) // offset (ignore)
+            readIntLE(reader) // length (ignore)
+        }
       }
 
-      // Decode each field
+      // Decode each field (data is in the same order regardless of indexed mode)
       val fields = dto.fields.map {
         field =>
           val value = decodeTypeRef(dom, field.tpe, reader)
@@ -223,7 +296,7 @@ object BaboonRuntimeCodec {
     }
 
     // ADT encoding/decoding
-    private def encodeAdt(dom: Domain, adt: Typedef.Adt, json: Json, writer: DataOutputStream): Unit = {
+    private def encodeAdt(dom: Domain, adt: Typedef.Adt, json: Json, writer: DataOutputStream, indexed: Boolean): Unit = {
       val obj = json.asObject.getOrElse(
         throw new IllegalArgumentException(s"Expected JSON object for ADT ${adt.id}, got: $json")
       )
@@ -248,7 +321,7 @@ object BaboonRuntimeCodec {
       // Encode the branch value
       val branchId  = dataMembers(branchIdx)
       val branchDef = dom.defs.meta.nodes(branchId).asInstanceOf[DomainMember.User].defn
-      encodeUserType(dom, branchDef, branchValue, writer)
+      encodeUserType(dom, branchDef, branchValue, writer, indexed)
     }
 
     private def decodeAdt(dom: Domain, adt: Typedef.Adt, reader: DataInputStream): Json = {
@@ -267,10 +340,10 @@ object BaboonRuntimeCodec {
     }
 
     // TypeRef encoding/decoding
-    private def encodeTypeRef(dom: Domain, tpe: TypeRef, json: Json, writer: DataOutputStream): Unit = {
+    private def encodeTypeRef(dom: Domain, tpe: TypeRef, json: Json, writer: DataOutputStream, indexed: Boolean): Unit = {
       tpe match {
-        case TypeRef.Scalar(id)            => encodeScalar(dom, id, json, writer)
-        case TypeRef.Constructor(id, args) => encodeConstructor(dom, id, args.toList, json, writer)
+        case TypeRef.Scalar(id)            => encodeScalar(dom, id, json, writer, indexed)
+        case TypeRef.Constructor(id, args) => encodeConstructor(dom, id, args.toList, json, writer, indexed)
       }
     }
 
@@ -282,12 +355,12 @@ object BaboonRuntimeCodec {
     }
 
     // Scalar encoding/decoding
-    private def encodeScalar(dom: Domain, id: TypeId.Scalar, json: Json, writer: DataOutputStream): Unit = {
+    private def encodeScalar(dom: Domain, id: TypeId.Scalar, json: Json, writer: DataOutputStream, indexed: Boolean): Unit = {
       id match {
         case s: TypeId.BuiltinScalar => encodeBuiltinScalar(s, json, writer)
         case u: TypeId.User =>
           val typedef = dom.defs.meta.nodes(u).asInstanceOf[DomainMember.User].defn
-          encodeUserType(dom, typedef, json, writer)
+          encodeUserType(dom, typedef, json, writer, indexed)
       }
     }
 
@@ -426,25 +499,25 @@ object BaboonRuntimeCodec {
     }
 
     // Constructor (collection) encoding/decoding
-    private def encodeConstructor(dom: Domain, id: TypeId.BuiltinCollection, args: List[TypeRef], json: Json, writer: DataOutputStream): Unit = {
+    private def encodeConstructor(dom: Domain, id: TypeId.BuiltinCollection, args: List[TypeRef], json: Json, writer: DataOutputStream, indexed: Boolean): Unit = {
       id match {
         case TypeId.Builtins.opt =>
           if (json.isNull) {
             writer.writeByte(0)
           } else {
             writer.writeByte(1)
-            encodeTypeRef(dom, args.head, json, writer)
+            encodeTypeRef(dom, args.head, json, writer, indexed)
           }
 
         case TypeId.Builtins.lst =>
           val arr = json.asArray.getOrElse(throw new IllegalArgumentException(s"Expected array for list, got: $json"))
           writeIntLE(arr.size, writer)
-          arr.foreach(elem => encodeTypeRef(dom, args.head, elem, writer))
+          arr.foreach(elem => encodeTypeRef(dom, args.head, elem, writer, indexed))
 
         case TypeId.Builtins.set =>
           val arr = json.asArray.getOrElse(throw new IllegalArgumentException(s"Expected array for set, got: $json"))
           writeIntLE(arr.size, writer)
-          arr.foreach(elem => encodeTypeRef(dom, args.head, elem, writer))
+          arr.foreach(elem => encodeTypeRef(dom, args.head, elem, writer, indexed))
 
         case TypeId.Builtins.map =>
           val obj = json.asObject.getOrElse(throw new IllegalArgumentException(s"Expected object for map, got: $json"))
@@ -453,7 +526,7 @@ object BaboonRuntimeCodec {
             case (key, value) =>
               // Encode key - for now assume keys can be encoded as strings
               encodeMapKey(dom, args.head, key, writer)
-              encodeTypeRef(dom, args.last, value, writer)
+              encodeTypeRef(dom, args.last, value, writer, indexed)
           }
 
         case other => throw new IllegalArgumentException(s"Unsupported collection type: $other")
