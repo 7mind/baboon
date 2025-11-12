@@ -19,8 +19,8 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
         for {
           fam       <- loadPkg(loader)
           data: Json = io.circe.parser.parse("""{"B2":{"f":135983116}}""").toOption.get
-          encoded   <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), "testpkg.pkg0/[testpkg.pkg0/:#T5_A1]#B1", data)
-          decoded   <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), "testpkg.pkg0/[testpkg.pkg0/:#T5_A1]#B1", encoded)
+          encoded   <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), "testpkg.pkg0/:#T5_A1", data)
+          decoded   <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), "testpkg.pkg0/:#T5_A1", encoded)
         } yield {
           assert(data == decoded)
         }
