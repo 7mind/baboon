@@ -8,6 +8,8 @@ import io.septimalmind.baboon.typer.model.{Pkg, Version}
 import io.septimalmind.baboon.typer.BaboonRuntimeCodec
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.NEList
+import izumi.fundamentals.platform.exceptions.Issue
+import izumi.fundamentals.platform.language.SourceFilePosition
 import izumi.reflect.TagKK
 
 import java.nio.file.{Files, Paths}
@@ -161,16 +163,18 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
                 for {
                   // Read UEBA file
                   uebaBytes <- F.pure {
-                    val bytes = Vector.from(Files.readAllBytes(uebaFile))
-                    println(s"Processing UEBA file: $fileName (typeId=$typeId, ${bytes.size} bytes)")
-                    bytes
+                    Vector.from(Files.readAllBytes(uebaFile))
                   }
 
                   // Decode to JSON
-                  jsonContent <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, uebaBytes)
+                  jsonContent <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, uebaBytes).leftMap { err =>
+                    BaboonIssue.Translation(TranslationIssue.TranslationBug()(Issue.IssueContext(SourceFilePosition.unknown, new RuntimeException(s"Decode failed for $fileName (typeId=$typeId): $err"))))
+                  }
 
                   // Encode back to UEBA
-                  reEncodedBytes <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, jsonContent)
+                  reEncodedBytes <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, jsonContent).leftMap { err =>
+                    BaboonIssue.Translation(TranslationIssue.TranslationBug()(Issue.IssueContext(SourceFilePosition.unknown, new RuntimeException(s"Encode failed for $fileName (typeId=$typeId): $err"))))
+                  }
 
                   // Compare
                   _ <- F.fromEither {

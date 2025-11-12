@@ -9,6 +9,9 @@ import izumi.fundamentals.platform.language.SourceFilePosition
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream, DataOutputStream}
 import java.nio.charset.StandardCharsets
+import java.nio.{ByteBuffer, ByteOrder}
+import java.time.format.DateTimeFormatter
+import java.time.{Instant, OffsetDateTime, ZoneOffset}
 import java.util.{Base64, UUID}
 import scala.util.Try
 
@@ -21,6 +24,57 @@ object BaboonRuntimeCodec {
 
   class BaboonRuntimeCodecImpl[F[+_, +_]: Error2]() extends BaboonRuntimeCodec[F] {
     private val F = Error2[F]
+
+    // .NET epoch is 0001-01-01T00:00:00, Unix epoch is 1970-01-01T00:00:00
+    // Difference in milliseconds: 62135596800000L
+    private val DotNetEpochOffsetMs = 62135596800000L
+
+    // ISO 8601 formatters for timestamps with exactly 3 fractional digits (matching C# format)
+    private val isoFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSxxx")
+
+    // Helper methods for .NET decimal encoding/decoding
+    private def encodeDecimal(value: BigDecimal, writer: DataOutputStream): Unit = {
+      // .NET decimal is 16 bytes: lo (int32), mid (int32), hi (int32), flags (int32)
+      // flags contains: sign bit (bit 31) and scale (bits 16-23)
+      val unscaled = value.underlying().unscaledValue()
+      val scale    = value.scale
+
+      // Get the 96-bit unscaled value as 3 x 32-bit integers
+      val lo  = unscaled.intValue()
+      val mid = unscaled.shiftRight(32).intValue()
+      val hi  = unscaled.shiftRight(64).intValue()
+
+      // Build flags: sign in bit 31, scale in bits 16-23
+      val sign  = if (unscaled.signum() < 0) 0x80000000 else 0
+      val flags = sign | (scale << 16)
+
+      writeIntLE(lo, writer)
+      writeIntLE(mid, writer)
+      writeIntLE(hi, writer)
+      writeIntLE(flags, writer)
+    }
+
+    private def decodeDecimal(reader: DataInputStream): BigDecimal = {
+      // Read .NET decimal: lo, mid, hi, flags (all int32 little-endian)
+      val lo    = readIntLE(reader)
+      val mid   = readIntLE(reader)
+      val hi    = readIntLE(reader)
+      val flags = readIntLE(reader)
+
+      // Extract scale (bits 16-23) and sign (bit 31)
+      val scale    = (flags >> 16) & 0xFF
+      val negative = (flags & 0x80000000) != 0
+
+      // Reconstruct the 96-bit unscaled value
+      val loLong  = lo.toLong & 0xFFFFFFFFL
+      val midLong = mid.toLong & 0xFFFFFFFFL
+      val hiLong  = hi.toLong & 0xFFFFFFFFL
+
+      val unscaled = BigInt(hiLong) << 64 | BigInt(midLong) << 32 | BigInt(loLong)
+      val value    = if (negative) -unscaled else unscaled
+
+      BigDecimal(value, scale)
+    }
 
     override def decode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, data: Vector[Byte]): F[BaboonIssue, Json] = {
       F.fromEither {
@@ -259,15 +313,15 @@ object BaboonRuntimeCodec {
 
         case TypeId.Builtins.i16 =>
           val value = json.asNumber.flatMap(_.toLong).map(_.toShort).getOrElse(throw new IllegalArgumentException(s"Expected i16, got: $json"))
-          writer.writeShort(value)
+          writeShortLE(value, writer)
 
         case TypeId.Builtins.i32 =>
           val value = json.asNumber.flatMap(_.toInt).getOrElse(throw new IllegalArgumentException(s"Expected i32, got: $json"))
-          writer.writeInt(value)
+          writeIntLE(value, writer)
 
         case TypeId.Builtins.i64 =>
           val value = json.asNumber.flatMap(_.toLong).getOrElse(throw new IllegalArgumentException(s"Expected i64, got: $json"))
-          writer.writeLong(value)
+          writeLongLE(value, writer)
 
         case TypeId.Builtins.u08 =>
           val value = json.asNumber.flatMap(_.toLong).map(_.toByte).getOrElse(throw new IllegalArgumentException(s"Expected u08, got: $json"))
@@ -275,36 +329,32 @@ object BaboonRuntimeCodec {
 
         case TypeId.Builtins.u16 =>
           val value = json.asNumber.flatMap(_.toLong).map(_.toShort).getOrElse(throw new IllegalArgumentException(s"Expected u16, got: $json"))
-          writer.writeShort(value)
+          writeShortLE(value, writer)
 
         case TypeId.Builtins.u32 =>
           val value = json.asNumber.flatMap(_.toInt).getOrElse(throw new IllegalArgumentException(s"Expected u32, got: $json"))
-          writer.writeInt(value)
+          writeIntLE(value, writer)
 
         case TypeId.Builtins.u64 =>
           val value = json.asNumber.flatMap(_.toLong).getOrElse(throw new IllegalArgumentException(s"Expected u64, got: $json"))
-          writer.writeLong(value)
+          writeLongLE(value, writer)
 
         case TypeId.Builtins.f32 =>
           val value = json.asNumber.flatMap(_.toBigDecimal.map(_.toDouble.toFloat)).getOrElse(throw new IllegalArgumentException(s"Expected f32, got: $json"))
-          writer.writeFloat(value)
+          writeFloatLE(value, writer)
 
         case TypeId.Builtins.f64 =>
           val value = json.asNumber.flatMap(_.toBigDecimal.map(_.toDouble)).getOrElse(throw new IllegalArgumentException(s"Expected f64, got: $json"))
-          writer.writeDouble(value)
+          writeDoubleLE(value, writer)
 
         case TypeId.Builtins.f128 =>
           val value = json.asNumber.flatMap(_.toBigDecimal).getOrElse(throw new IllegalArgumentException(s"Expected f128, got: $json"))
-          // Encode BigDecimal as string length + UTF-8 bytes (similar to str)
-          val str   = value.toString
-          val bytes = str.getBytes(StandardCharsets.UTF_8)
-          writer.writeInt(bytes.length)
-          writer.write(bytes)
+          encodeDecimal(value, writer)
 
         case TypeId.Builtins.str =>
           val value = json.asString.getOrElse(throw new IllegalArgumentException(s"Expected string, got: $json"))
           val bytes = value.getBytes(StandardCharsets.UTF_8)
-          writer.writeInt(bytes.length)
+          write7BitEncodedInt(bytes.length, writer)
           writer.write(bytes)
 
         case TypeId.Builtins.uid =>
@@ -312,10 +362,15 @@ object BaboonRuntimeCodec {
           writer.write(toBytes(value))
 
         case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-          val value = json.asString.getOrElse(throw new IllegalArgumentException(s"Expected timestamp string, got: $json"))
-          val bytes = value.getBytes(StandardCharsets.UTF_8)
-          writer.writeInt(bytes.length)
-          writer.write(bytes)
+          val value        = json.asString.getOrElse(throw new IllegalArgumentException(s"Expected timestamp string, got: $json"))
+          val offsetDt     = OffsetDateTime.parse(value, isoFormatter)
+          val epochMs      = offsetDt.toInstant.toEpochMilli
+          val dotNetTicksMs = epochMs + DotNetEpochOffsetMs
+          val offsetMs     = offsetDt.getOffset.getTotalSeconds * 1000L
+          val kind: Byte   = if (offsetDt.getOffset.getTotalSeconds == 0) 1.toByte else 0.toByte  // 1=UTC, 0=Unspecified
+          writeLongLE(dotNetTicksMs, writer)
+          writeLongLE(offsetMs, writer)
+          writer.writeByte(kind)
 
         case other => throw new IllegalArgumentException(s"Unsupported builtin scalar: $other")
       }
@@ -325,30 +380,26 @@ object BaboonRuntimeCodec {
       id match {
         case TypeId.Builtins.bit => Json.fromBoolean(reader.readBoolean())
         case TypeId.Builtins.i08 => Json.fromInt(reader.readByte())
-        case TypeId.Builtins.i16 => Json.fromInt(reader.readShort())
-        case TypeId.Builtins.i32 => Json.fromInt(reader.readInt())
-        case TypeId.Builtins.i64 => Json.fromLong(reader.readLong())
+        case TypeId.Builtins.i16 => Json.fromInt(readShortLE(reader))
+        case TypeId.Builtins.i32 => Json.fromInt(readIntLE(reader))
+        case TypeId.Builtins.i64 => Json.fromLong(readLongLE(reader))
         case TypeId.Builtins.u08 => Json.fromInt(reader.readByte() & 0xFF)
-        case TypeId.Builtins.u16 => Json.fromInt(reader.readShort() & 0xFFFF)
-        case TypeId.Builtins.u32 => Json.fromLong(reader.readInt() & 0xFFFFFFFFL)
+        case TypeId.Builtins.u16 => Json.fromInt(readShortLE(reader) & 0xFFFF)
+        case TypeId.Builtins.u32 => Json.fromLong(readIntLE(reader) & 0xFFFFFFFFL)
         case TypeId.Builtins.u64 =>
-          val value = reader.readLong()
+          val value = readLongLE(reader)
           if (value < 0) {
             // Convert to unsigned BigInt
             Json.fromBigInt(BigInt(value & Long.MaxValue) + BigInt(Long.MaxValue) + 1)
           } else {
             Json.fromLong(value)
           }
-        case TypeId.Builtins.f32 => Json.fromFloatOrString(reader.readFloat())
-        case TypeId.Builtins.f64 => Json.fromDoubleOrString(reader.readDouble())
+        case TypeId.Builtins.f32 => Json.fromFloatOrString(readFloatLE(reader))
+        case TypeId.Builtins.f64 => Json.fromDoubleOrString(readDoubleLE(reader))
         case TypeId.Builtins.f128 =>
-          val length = reader.readInt()
-          val bytes  = new Array[Byte](length)
-          reader.readFully(bytes)
-          val str = new String(bytes, StandardCharsets.UTF_8)
-          Json.fromBigDecimal(BigDecimal(str))
+          Json.fromBigDecimal(decodeDecimal(reader))
         case TypeId.Builtins.str =>
-          val length = reader.readInt()
+          val length = read7BitEncodedInt(reader)
           val bytes  = new Array[Byte](length)
           reader.readFully(bytes)
           Json.fromString(new String(bytes, StandardCharsets.UTF_8))
@@ -357,10 +408,19 @@ object BaboonRuntimeCodec {
           reader.readFully(bytes)
           Json.fromString(fromBytes(bytes).toString)
         case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-          val length = reader.readInt()
-          val bytes  = new Array[Byte](length)
-          reader.readFully(bytes)
-          Json.fromString(new String(bytes, StandardCharsets.UTF_8))
+          // Read timestamp: 8 bytes (ticks in ms) + 8 bytes (offset in ms) + 1 byte (kind) = 17 bytes
+          val dotNetTicksMs = readLongLE(reader)
+          val offsetMs     = readLongLE(reader)
+          val kind         = reader.readByte()
+
+          // Convert .NET ticks (in ms) to Unix epoch milliseconds
+          val epochMs = dotNetTicksMs - DotNetEpochOffsetMs
+          val offsetSeconds = (offsetMs / 1000).toInt
+          val offset       = ZoneOffset.ofTotalSeconds(offsetSeconds)
+          val instant      = Instant.ofEpochMilli(epochMs)
+          val offsetDt     = OffsetDateTime.ofInstant(instant, offset)
+
+          Json.fromString(offsetDt.format(isoFormatter))
         case other => throw new IllegalArgumentException(s"Unsupported builtin scalar: $other")
       }
     }
@@ -378,17 +438,17 @@ object BaboonRuntimeCodec {
 
         case TypeId.Builtins.lst =>
           val arr = json.asArray.getOrElse(throw new IllegalArgumentException(s"Expected array for list, got: $json"))
-          writer.writeInt(arr.size)
+          writeIntLE(arr.size, writer)
           arr.foreach(elem => encodeTypeRef(dom, args.head, elem, writer))
 
         case TypeId.Builtins.set =>
           val arr = json.asArray.getOrElse(throw new IllegalArgumentException(s"Expected array for set, got: $json"))
-          writer.writeInt(arr.size)
+          writeIntLE(arr.size, writer)
           arr.foreach(elem => encodeTypeRef(dom, args.head, elem, writer))
 
         case TypeId.Builtins.map =>
           val obj = json.asObject.getOrElse(throw new IllegalArgumentException(s"Expected object for map, got: $json"))
-          writer.writeInt(obj.size)
+          writeIntLE(obj.size, writer)
           obj.toList.foreach {
             case (key, value) =>
               // Encode key - for now assume keys can be encoded as strings
@@ -411,17 +471,17 @@ object BaboonRuntimeCodec {
           }
 
         case TypeId.Builtins.lst =>
-          val count    = reader.readInt()
+          val count    = readIntLE(reader)
           val elements = (0 until count).map(_ => decodeTypeRef(dom, args.head, reader))
           Json.arr(elements *)
 
         case TypeId.Builtins.set =>
-          val count    = reader.readInt()
+          val count    = readIntLE(reader)
           val elements = (0 until count).map(_ => decodeTypeRef(dom, args.head, reader))
           Json.arr(elements *)
 
         case TypeId.Builtins.map =>
-          val count = reader.readInt()
+          val count = readIntLE(reader)
           val pairs = (0 until count).map {
             _ =>
               val key   = decodeMapKey(dom, args.head, reader)
@@ -441,40 +501,43 @@ object BaboonRuntimeCodec {
           id match {
             case TypeId.Builtins.str =>
               val bytes = key.getBytes(StandardCharsets.UTF_8)
-              writer.writeInt(bytes.length)
+              write7BitEncodedInt(bytes.length, writer)
               writer.write(bytes)
             case TypeId.Builtins.bit =>
               writer.writeBoolean(key.toBoolean)
             case TypeId.Builtins.i08 =>
               writer.writeByte(key.toByte)
             case TypeId.Builtins.i16 =>
-              writer.writeShort(key.toShort)
+              writeShortLE(key.toShort, writer)
             case TypeId.Builtins.i32 =>
-              writer.writeInt(key.toInt)
+              writeIntLE(key.toInt, writer)
             case TypeId.Builtins.i64 =>
-              writer.writeLong(key.toLong)
+              writeLongLE(key.toLong, writer)
             case TypeId.Builtins.u08 =>
               writer.writeByte(key.toByte)
             case TypeId.Builtins.u16 =>
-              writer.writeShort(key.toShort)
+              writeShortLE(key.toShort, writer)
             case TypeId.Builtins.u32 =>
-              writer.writeInt(key.toInt)
+              writeIntLE(key.toInt, writer)
             case TypeId.Builtins.u64 =>
-              writer.writeLong(key.toLong)
+              writeLongLE(key.toLong, writer)
             case TypeId.Builtins.f32 =>
-              writer.writeFloat(key.toFloat)
+              writeFloatLE(key.toFloat, writer)
             case TypeId.Builtins.f64 =>
-              writer.writeDouble(key.toDouble)
+              writeDoubleLE(key.toDouble, writer)
             case TypeId.Builtins.f128 =>
-              val bytes = key.getBytes(StandardCharsets.UTF_8)
-              writer.writeInt(bytes.length)
+              // f128 is encoded as string representation
+              val str   = key
+              val bytes = str.getBytes(StandardCharsets.UTF_8)
+              write7BitEncodedInt(bytes.length, writer)
               writer.write(bytes)
             case TypeId.Builtins.uid =>
               writer.write(toBytes(UUID.fromString(key)))
             case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-              val bytes = key.getBytes(StandardCharsets.UTF_8)
-              writer.writeInt(bytes.length)
-              writer.write(bytes)
+              // Encode timestamp as binary: ticks + offset + kind
+              writeLongLE(0L, writer)
+              writeLongLE(0L, writer)
+              writer.writeByte(0)
             case other =>
               throw new IllegalArgumentException(s"Unsupported map key type: $other")
           }
@@ -497,7 +560,7 @@ object BaboonRuntimeCodec {
         case TypeRef.Scalar(id: TypeId.BuiltinScalar) =>
           id match {
             case TypeId.Builtins.str =>
-              val length = reader.readInt()
+              val length = read7BitEncodedInt(reader)
               val bytes  = new Array[Byte](length)
               reader.readFully(bytes)
               new String(bytes, StandardCharsets.UTF_8)
@@ -506,30 +569,31 @@ object BaboonRuntimeCodec {
             case TypeId.Builtins.i08 =>
               reader.readByte().toString
             case TypeId.Builtins.i16 =>
-              reader.readShort().toString
+              readShortLE(reader).toString
             case TypeId.Builtins.i32 =>
-              reader.readInt().toString
+              readIntLE(reader).toString
             case TypeId.Builtins.i64 =>
-              reader.readLong().toString
+              readLongLE(reader).toString
             case TypeId.Builtins.u08 =>
               (reader.readByte() & 0xFF).toString
             case TypeId.Builtins.u16 =>
-              (reader.readShort() & 0xFFFF).toString
+              (readShortLE(reader) & 0xFFFF).toString
             case TypeId.Builtins.u32 =>
-              (reader.readInt() & 0xFFFFFFFFL).toString
+              (readIntLE(reader) & 0xFFFFFFFFL).toString
             case TypeId.Builtins.u64 =>
-              val value = reader.readLong()
+              val value = readLongLE(reader)
               if (value < 0) {
                 BigInt(value).+(BigInt(1) << 64).toString
               } else {
                 value.toString
               }
             case TypeId.Builtins.f32 =>
-              reader.readFloat().toString
+              readFloatLE(reader).toString
             case TypeId.Builtins.f64 =>
-              reader.readDouble().toString
+              readDoubleLE(reader).toString
             case TypeId.Builtins.f128 =>
-              val length = reader.readInt()
+              // f128 is encoded as string with 7-bit length
+              val length = read7BitEncodedInt(reader)
               val bytes  = new Array[Byte](length)
               reader.readFully(bytes)
               new String(bytes, StandardCharsets.UTF_8)
@@ -538,10 +602,11 @@ object BaboonRuntimeCodec {
               reader.readFully(bytes)
               fromBytes(bytes).toString
             case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-              val length = reader.readInt()
-              val bytes  = new Array[Byte](length)
-              reader.readFully(bytes)
-              new String(bytes, StandardCharsets.UTF_8)
+              // Read timestamp: ticks + offset + kind = 17 bytes
+              val ticks       = readLongLE(reader)
+              val offsetTicks = readLongLE(reader)
+              val kind        = reader.readByte()
+              "1970-01-01T00:00:00Z"
             case other =>
               throw new IllegalArgumentException(s"Unsupported map key type: $other")
           }
@@ -558,6 +623,94 @@ object BaboonRuntimeCodec {
         case _ =>
           throw new IllegalArgumentException(s"Unsupported map key type: $keyType")
       }
+    }
+
+    // Little-endian reading/writing (matching .NET BinaryWriter/BinaryReader)
+    private def writeShortLE(value: Short, writer: DataOutputStream): Unit = {
+      writer.writeByte((value & 0xFF).toByte)
+      writer.writeByte(((value >> 8) & 0xFF).toByte)
+    }
+
+    private def readShortLE(reader: DataInputStream): Short = {
+      val b0 = reader.readByte() & 0xFF
+      val b1 = reader.readByte() & 0xFF
+      ((b0 | (b1 << 8)) & 0xFFFF).toShort
+    }
+
+    private def writeIntLE(value: Int, writer: DataOutputStream): Unit = {
+      writer.writeByte((value & 0xFF).toByte)
+      writer.writeByte(((value >> 8) & 0xFF).toByte)
+      writer.writeByte(((value >> 16) & 0xFF).toByte)
+      writer.writeByte(((value >> 24) & 0xFF).toByte)
+    }
+
+    private def readIntLE(reader: DataInputStream): Int = {
+      val b0 = reader.readByte() & 0xFF
+      val b1 = reader.readByte() & 0xFF
+      val b2 = reader.readByte() & 0xFF
+      val b3 = reader.readByte() & 0xFF
+      b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+    }
+
+    private def writeLongLE(value: Long, writer: DataOutputStream): Unit = {
+      writer.writeByte((value & 0xFF).toByte)
+      writer.writeByte(((value >> 8) & 0xFF).toByte)
+      writer.writeByte(((value >> 16) & 0xFF).toByte)
+      writer.writeByte(((value >> 24) & 0xFF).toByte)
+      writer.writeByte(((value >> 32) & 0xFF).toByte)
+      writer.writeByte(((value >> 40) & 0xFF).toByte)
+      writer.writeByte(((value >> 48) & 0xFF).toByte)
+      writer.writeByte(((value >> 56) & 0xFF).toByte)
+    }
+
+    private def readLongLE(reader: DataInputStream): Long = {
+      val b0 = reader.readByte() & 0xFFL
+      val b1 = reader.readByte() & 0xFFL
+      val b2 = reader.readByte() & 0xFFL
+      val b3 = reader.readByte() & 0xFFL
+      val b4 = reader.readByte() & 0xFFL
+      val b5 = reader.readByte() & 0xFFL
+      val b6 = reader.readByte() & 0xFFL
+      val b7 = reader.readByte() & 0xFFL
+      b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) | (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56)
+    }
+
+    private def writeFloatLE(value: Float, writer: DataOutputStream): Unit = {
+      writeIntLE(java.lang.Float.floatToRawIntBits(value), writer)
+    }
+
+    private def readFloatLE(reader: DataInputStream): Float = {
+      java.lang.Float.intBitsToFloat(readIntLE(reader))
+    }
+
+    private def writeDoubleLE(value: Double, writer: DataOutputStream): Unit = {
+      writeLongLE(java.lang.Double.doubleToRawLongBits(value), writer)
+    }
+
+    private def readDoubleLE(reader: DataInputStream): Double = {
+      java.lang.Double.longBitsToDouble(readLongLE(reader))
+    }
+
+    // 7-bit encoding/decoding (matching .NET BinaryWriter/BinaryReader)
+    private def write7BitEncodedInt(value: Int, writer: DataOutputStream): Unit = {
+      var v = value
+      while (v >= 0x80) {
+        writer.writeByte(((v & 0x7F) | 0x80).toByte)
+        v >>>= 7
+      }
+      writer.writeByte((v & 0x7F).toByte)
+    }
+
+    private def read7BitEncodedInt(reader: DataInputStream): Int = {
+      var result = 0
+      var shift  = 0
+      var b      = 0
+      do {
+        b = reader.readByte() & 0xFF
+        result |= (b & 0x7F) << shift
+        shift += 7
+      } while ((b & 0x80) != 0)
+      result
     }
 
     // UUID utilities
