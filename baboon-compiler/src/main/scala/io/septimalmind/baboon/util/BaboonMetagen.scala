@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.util
 
 import io.circe.Json
-import io.septimalmind.baboon.typer.model.{BaboonFamily, Conversion}
+import io.septimalmind.baboon.typer.model.{BaboonFamily, Conversion, TypeId}
 import io.circe.syntax.*
 import io.septimalmind.baboon.util.BaboonDomainCodecs.*
 
@@ -48,6 +48,13 @@ object BaboonMetagen {
             (
               pkg.toString,
               line.versions.toSeq.map(_._2.defs.predecessors.links).asJson,
+            )
+        }*),
+        "identifiers" -> Json.obj(family.domains.toSeq.map {
+          case (pkg, line) =>
+            (
+              pkg.toString,
+              line.versions.toSeq.map(v => (v._1, v._2.defs.meta.nodes.keys.toList.collect { case u: TypeId.User => (u.toString, u.render) }.toMap)).toMap.asJson,
             )
         }*),
         "recursive" -> Json.obj(family.domains.toSeq.map {

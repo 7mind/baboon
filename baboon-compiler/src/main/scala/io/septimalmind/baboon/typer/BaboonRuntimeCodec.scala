@@ -9,7 +9,7 @@ import izumi.fundamentals.platform.language.SourceFilePosition
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream, DataOutputStream}
 import java.nio.charset.StandardCharsets
-import java.util.UUID
+import java.util.{Base64, UUID}
 import scala.util.Try
 
 trait BaboonRuntimeCodec[F[+_, +_]] {
@@ -443,15 +443,40 @@ object BaboonRuntimeCodec {
               val bytes = key.getBytes(StandardCharsets.UTF_8)
               writer.writeInt(bytes.length)
               writer.write(bytes)
+            case TypeId.Builtins.bit =>
+              writer.writeBoolean(key.toBoolean)
+            case TypeId.Builtins.i08 =>
+              writer.writeByte(key.toByte)
+            case TypeId.Builtins.i16 =>
+              writer.writeShort(key.toShort)
             case TypeId.Builtins.i32 =>
               writer.writeInt(key.toInt)
             case TypeId.Builtins.i64 =>
               writer.writeLong(key.toLong)
+            case TypeId.Builtins.u08 =>
+              writer.writeByte(key.toByte)
+            case TypeId.Builtins.u16 =>
+              writer.writeShort(key.toShort)
+            case TypeId.Builtins.u32 =>
+              writer.writeInt(key.toInt)
+            case TypeId.Builtins.u64 =>
+              writer.writeLong(key.toLong)
+            case TypeId.Builtins.f32 =>
+              writer.writeFloat(key.toFloat)
+            case TypeId.Builtins.f64 =>
+              writer.writeDouble(key.toDouble)
+            case TypeId.Builtins.f128 =>
+              val bytes = key.getBytes(StandardCharsets.UTF_8)
+              writer.writeInt(bytes.length)
+              writer.write(bytes)
             case TypeId.Builtins.uid =>
               writer.write(toBytes(UUID.fromString(key)))
-            case _ =>
-              // For other types, encode as JSON then encode that
-              encodeBuiltinScalar(id, Json.fromString(key), writer)
+            case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
+              val bytes = key.getBytes(StandardCharsets.UTF_8)
+              writer.writeInt(bytes.length)
+              writer.write(bytes)
+            case other =>
+              throw new IllegalArgumentException(s"Unsupported map key type: $other")
           }
         case TypeRef.Scalar(u: TypeId.User) =>
           // Assume enum or foreign type that can be represented as string
@@ -476,18 +501,49 @@ object BaboonRuntimeCodec {
               val bytes  = new Array[Byte](length)
               reader.readFully(bytes)
               new String(bytes, StandardCharsets.UTF_8)
+            case TypeId.Builtins.bit =>
+              reader.readBoolean().toString
+            case TypeId.Builtins.i08 =>
+              reader.readByte().toString
+            case TypeId.Builtins.i16 =>
+              reader.readShort().toString
             case TypeId.Builtins.i32 =>
               reader.readInt().toString
             case TypeId.Builtins.i64 =>
               reader.readLong().toString
+            case TypeId.Builtins.u08 =>
+              (reader.readByte() & 0xFF).toString
+            case TypeId.Builtins.u16 =>
+              (reader.readShort() & 0xFFFF).toString
+            case TypeId.Builtins.u32 =>
+              (reader.readInt() & 0xFFFFFFFFL).toString
+            case TypeId.Builtins.u64 =>
+              val value = reader.readLong()
+              if (value < 0) {
+                BigInt(value).+(BigInt(1) << 64).toString
+              } else {
+                value.toString
+              }
+            case TypeId.Builtins.f32 =>
+              reader.readFloat().toString
+            case TypeId.Builtins.f64 =>
+              reader.readDouble().toString
+            case TypeId.Builtins.f128 =>
+              val length = reader.readInt()
+              val bytes  = new Array[Byte](length)
+              reader.readFully(bytes)
+              new String(bytes, StandardCharsets.UTF_8)
             case TypeId.Builtins.uid =>
               val bytes = new Array[Byte](16)
               reader.readFully(bytes)
               fromBytes(bytes).toString
-            case _ =>
-              decodeBuiltinScalar(id, reader).asString.getOrElse(
-                throw new IllegalArgumentException(s"Failed to decode map key as string")
-              )
+            case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
+              val length = reader.readInt()
+              val bytes  = new Array[Byte](length)
+              reader.readFully(bytes)
+              new String(bytes, StandardCharsets.UTF_8)
+            case other =>
+              throw new IllegalArgumentException(s"Unsupported map key type: $other")
           }
         case TypeRef.Scalar(u: TypeId.User) =>
           val typedef = dom.defs.meta.nodes(u).asInstanceOf[DomainMember.User].defn

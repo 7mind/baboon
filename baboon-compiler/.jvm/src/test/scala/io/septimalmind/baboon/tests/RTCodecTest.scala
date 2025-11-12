@@ -2,13 +2,16 @@ package io.septimalmind.baboon.tests
 
 import io.circe.Json
 import io.septimalmind.baboon.BaboonLoader
-import io.septimalmind.baboon.parser.model.RawHeader
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
-import io.septimalmind.baboon.typer.model.{Pkg, TypeId, Version}
-import io.septimalmind.baboon.typer.{BaboonRuntimeCodec, ComponentParsers}
-import izumi.functional.bio.Error2
+import io.septimalmind.baboon.typer.model.{Pkg, Version}
+import io.septimalmind.baboon.typer.BaboonRuntimeCodec
+import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.reflect.TagKK
+
+import java.nio.file.{Files, Paths}
+import scala.jdk.CollectionConverters.*
 
 final class RTCodecTest extends RTCodecTestBase[Either]
 
@@ -23,6 +26,169 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
           decoded   <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), "testpkg.pkg0/:#T5_A1", encoded)
         } yield {
           assert(data == decoded)
+        }
+    }
+
+    "roundtrip JSON files through UEBA" in {
+      (loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F]) =>
+        val metaPath = Paths.get("test/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
+
+        if (!Files.exists(metaPath)) {
+          pending
+        }
+
+        for {
+          fam <- loadPkg(loader)
+
+          // Read and parse baboon-meta.json
+          metaJson <- F.fromEither {
+            val metaContent = Files.readString(metaPath)
+            io.circe.parser.parse(metaContent).left.map(_ => new RuntimeException("Failed to parse baboon-meta.json"))
+          }
+
+          // Extract identifiers for version 3.0.0
+          typeIdMap: Map[String, String] <- F.fromOption(new RuntimeException("Failed to extract identifiers from baboon-meta.json")) {
+            for {
+              identifiers <- metaJson.hcursor.downField("identifiers").focus
+              pkg <- identifiers.hcursor.downField("testpkg.pkg0").focus
+              version <- pkg.hcursor.downField("3.0.0").focus.flatMap(_.asObject)
+            } yield {
+              // Invert the mapping: filename -> typeId
+              version.toMap.map { case (typeId, fileNameJson) =>
+                fileNameJson.asString.getOrElse("") -> typeId
+              }
+            }
+          }
+
+          // Process JSON files
+          jsonDir: java.nio.file.Path = Paths.get("test/target/cs/json-default")
+          _ <- F.fromEither {
+            if (!Files.exists(jsonDir)) {
+              Left(new RuntimeException(s"JSON test directory not found: $jsonDir"))
+            } else {
+              Right(())
+            }
+          }
+
+          jsonFiles: List[java.nio.file.Path] = Files.list(jsonDir).iterator().asScala.toList.filter(_.toString.endsWith(".json"))
+
+          _ <- F.traverse(jsonFiles) { jsonFile =>
+            val fileName = jsonFile.getFileName.toString.stripSuffix(".json")
+
+            typeIdMap.get(fileName) match {
+              case Some(typeId) =>
+                for {
+                  // Read JSON file
+                  jsonContent <- F.fromEither {
+                    val content = Files.readString(jsonFile)
+                    io.circe.parser.parse(content).left.map(e => new RuntimeException(s"Failed to parse $jsonFile: ${e.getMessage}"))
+                  }
+
+                  // Encode to UEBA
+                  uebaBytes <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, jsonContent)
+
+                  // Decode back to JSON
+                  decodedJson <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, uebaBytes)
+
+                  // Compare
+                  _ <- F.fromEither {
+                    if (jsonContent == decodedJson) {
+                      Right(())
+                    } else {
+                      Left(new RuntimeException(s"Roundtrip failed for $fileName:\nExpected: $jsonContent\nGot: $decodedJson"))
+                    }
+                  }
+                } yield ()
+
+              case None =>
+                // Skip files without type ID mapping
+                F.unit
+            }
+          }
+        } yield {
+          assert(jsonFiles.nonEmpty, "No JSON files found to test")
+        }
+    }
+
+    "roundtrip UEBA files through JSON" in {
+      (loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F]) =>
+        val metaPath = Paths.get("test/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
+
+        if (!Files.exists(metaPath)) {
+          pending
+        }
+
+        for {
+          fam <- loadPkg(loader)
+
+          // Read and parse baboon-meta.json
+          metaJson <- F.fromEither {
+            val metaContent = Files.readString(metaPath)
+            io.circe.parser.parse(metaContent).left.map(_ => new RuntimeException("Failed to parse baboon-meta.json"))
+          }
+
+          // Extract identifiers for version 3.0.0
+          typeIdMap: Map[String, String] <- F.fromOption(new RuntimeException("Failed to extract identifiers from baboon-meta.json")) {
+            for {
+              identifiers <- metaJson.hcursor.downField("identifiers").focus
+              pkg <- identifiers.hcursor.downField("testpkg.pkg0").focus
+              version <- pkg.hcursor.downField("3.0.0").focus.flatMap(_.asObject)
+            } yield {
+              // Invert the mapping: filename -> typeId
+              version.toMap.map { case (typeId, fileNameJson) =>
+                fileNameJson.asString.getOrElse("") -> typeId
+              }
+            }
+          }
+
+          // Process UEBA files
+          uebaDir: java.nio.file.Path = Paths.get("test/target/cs/ueba-compact")
+          _ <- F.fromEither {
+            if (!Files.exists(uebaDir)) {
+              Left(new RuntimeException(s"UEBA test directory not found: $uebaDir"))
+            } else {
+              Right(())
+            }
+          }
+
+          uebaFiles: List[java.nio.file.Path] = Files.list(uebaDir).iterator().asScala.toList.filter(_.toString.endsWith(".uebin"))
+
+          _ <- F.traverse(uebaFiles) { uebaFile =>
+            val fileName = uebaFile.getFileName.toString.stripSuffix(".uebin")
+
+            typeIdMap.get(fileName) match {
+              case Some(typeId) =>
+                for {
+                  // Read UEBA file
+                  uebaBytes <- F.pure {
+                    val bytes = Vector.from(Files.readAllBytes(uebaFile))
+                    println(s"Processing UEBA file: $fileName (typeId=$typeId, ${bytes.size} bytes)")
+                    bytes
+                  }
+
+                  // Decode to JSON
+                  jsonContent <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, uebaBytes)
+
+                  // Encode back to UEBA
+                  reEncodedBytes <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, jsonContent)
+
+                  // Compare
+                  _ <- F.fromEither {
+                    if (uebaBytes == reEncodedBytes) {
+                      Right(())
+                    } else {
+                      Left(new RuntimeException(s"Roundtrip failed for $fileName: byte arrays differ"))
+                    }
+                  }
+                } yield ()
+
+              case None =>
+                // Skip files without type ID mapping
+                F.unit
+            }
+          }
+        } yield {
+          assert(uebaFiles.nonEmpty, "No UEBA files found to test")
         }
     }
   }
