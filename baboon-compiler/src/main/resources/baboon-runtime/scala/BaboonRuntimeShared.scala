@@ -200,8 +200,10 @@ package baboon.runtime.shared {
 
   object BaboonTimeFormats {
 
-    val tsuFormat: DateTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME // DateTimeFormatter.ofPattern("yyyy-MM-ddTHH:mm:ss.fffZ")
-    val tsoFormat: DateTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME // DateTimeFormatter.ofPattern("yyyy-MM-ddTHH:mm:ss.fffzzz")
+    // Use 3 fractional digits (milliseconds) to match C# DateTime precision
+    // Use XXX (uppercase) to handle both '+00:00' and 'Z' for UTC
+    val tsuFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
+    val tsoFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
 
     def parseTso(s: String): Option[OffsetDateTime] = Some(OffsetDateTime.parse(s, tsoFormat))
     def parseTsu(s: String): Option[OffsetDateTime] = Some(OffsetDateTime.parse(s, tsuFormat))

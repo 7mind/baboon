@@ -445,8 +445,35 @@ class ScUEBACodecGenerator(
               case TypeId.Builtins.str  => q"$baboonBinTools.readString(wire)"
 
               case TypeId.Builtins.uid => q"$baboonBinTools.readUid(wire)"
-              case TypeId.Builtins.tsu => q"$baboonTimeFormats.decodeTsuFromBin(wire)"
-              case TypeId.Builtins.tso => q"$baboonTimeFormats.decodeTsoFromBin(wire)"
+              case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
+                q"""({
+                   |  // Read timestamp: 8 bytes (ticks in ms) + 8 bytes (offset in ms) + 1 byte (kind) = 17 bytes
+                   |  val b0 = wire.readByte() & 0xFFL
+                   |  val b1 = wire.readByte() & 0xFFL
+                   |  val b2 = wire.readByte() & 0xFFL
+                   |  val b3 = wire.readByte() & 0xFFL
+                   |  val b4 = wire.readByte() & 0xFFL
+                   |  val b5 = wire.readByte() & 0xFFL
+                   |  val b6 = wire.readByte() & 0xFFL
+                   |  val b7 = wire.readByte() & 0xFFL
+                   |  val dotNetTicksMs = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) | (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56)
+                   |  val b8 = wire.readByte() & 0xFFL
+                   |  val b9 = wire.readByte() & 0xFFL
+                   |  val b10 = wire.readByte() & 0xFFL
+                   |  val b11 = wire.readByte() & 0xFFL
+                   |  val b12 = wire.readByte() & 0xFFL
+                   |  val b13 = wire.readByte() & 0xFFL
+                   |  val b14 = wire.readByte() & 0xFFL
+                   |  val b15 = wire.readByte() & 0xFFL
+                   |  val offsetMs = b8 | (b9 << 8) | (b10 << 16) | (b11 << 24) | (b12 << 32) | (b13 << 40) | (b14 << 48) | (b15 << 56)
+                   |  val kind = wire.readByte()
+                   |  // Convert .NET ticks (in ms) to Unix epoch milliseconds
+                   |  val epochMs = dotNetTicksMs - 62135596800000L
+                   |  val offsetSeconds = (offsetMs / 1000).toInt
+                   |  val offset = java.time.ZoneOffset.ofTotalSeconds(offsetSeconds)
+                   |  val instant = java.time.Instant.ofEpochMilli(epochMs)
+                   |  java.time.OffsetDateTime.ofInstant(instant, offset)
+                   |})""".stripMargin
 
               case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
@@ -493,8 +520,35 @@ class ScUEBACodecGenerator(
               case TypeId.Builtins.f128 => q"$baboonBinTools.writeBigDecimal($wref, $ref)"
               case TypeId.Builtins.str  => q"$baboonBinTools.writeString($wref, $ref)"
               case TypeId.Builtins.uid  => q"$baboonBinTools.writeUid($wref, $ref)"
-              case TypeId.Builtins.tsu  => q"$baboonTimeFormats.encodeTsuToBin($ref, $wref)"
-              case TypeId.Builtins.tso  => q"$baboonTimeFormats.encodeTsoToBin($ref, $wref)"
+              case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
+                q""";{
+                   |  // Write timestamp: 8 bytes (ticks in ms) + 8 bytes (offset in ms) + 1 byte (kind) = 17 bytes
+                   |  val ts_offsetDt = $ref
+                   |  val ts_epochMs = ts_offsetDt.toInstant.toEpochMilli
+                   |  val ts_dotNetTicksMs = ts_epochMs + 62135596800000L
+                   |  val ts_offsetMs = ts_offsetDt.getOffset.getTotalSeconds * 1000L
+                   |  val ts_kind: Byte = if (ts_offsetDt.getOffset.getTotalSeconds == 0) 1.toByte else 0.toByte
+                   |  // Write dotNetTicksMs (8 bytes, little-endian)
+                   |  $wref.writeByte((ts_dotNetTicksMs & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_dotNetTicksMs >> 8) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_dotNetTicksMs >> 16) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_dotNetTicksMs >> 24) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_dotNetTicksMs >> 32) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_dotNetTicksMs >> 40) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_dotNetTicksMs >> 48) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_dotNetTicksMs >> 56) & 0xFF).toByte)
+                   |  // Write offsetMs (8 bytes, little-endian)
+                   |  $wref.writeByte((ts_offsetMs & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_offsetMs >> 8) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_offsetMs >> 16) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_offsetMs >> 24) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_offsetMs >> 32) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_offsetMs >> 40) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_offsetMs >> 48) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_offsetMs >> 56) & 0xFF).toByte)
+                   |  // Write kind (1 byte)
+                   |  $wref.writeByte(ts_kind)
+                   |}""".stripMargin
               case o =>
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
