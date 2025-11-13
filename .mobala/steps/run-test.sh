@@ -64,11 +64,13 @@ function run-test() {
 
   pushd .
   cd ./test/cs-stub
+  echo "ABOUT TO RUN GENERATED C# TESTS"
   dotnet build -c Debug
   dotnet test -c Debug BaboonTests/BaboonTests.csproj
   popd
 
   pushd .
+  echo "ABOUT TO RUN GENERATED SCALA TESTS"
   cd ./test/sc-stub
   sbt +clean +test
   popd
@@ -89,11 +91,13 @@ function run-test() {
 
   pushd .
   cd ./test/conv-test-cs
+  echo "ABOUT TO RUN MANUAL C# TESTS"
   dotnet build
   dotnet test
   popd
 
   pushd .
+  echo "ABOUT TO RUN MANUAL SCALA TESTS"
   cd ./test/conv-test-sc
   sbt +clean +test
   popd
