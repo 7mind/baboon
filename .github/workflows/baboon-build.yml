@@ -44,10 +44,10 @@ jobs:
           setup-nix: ${{ matrix.preconfigured != true }}
       - name: Check deps and build
         if: startsWith(github.ref, 'refs/tags/')
-        run: bash ./run -v --nix :flake-refresh --validate :build :test
+        run: nix run nixpkgs#bash -- ./run -v --nix :flake-refresh --validate :build :test
       - name: Refresh deps and build
         if: !startsWith(github.ref, 'refs/tags/')
-        run: bash ./run -v --nix :flake-refresh :build :test
+        run: nix run nixpkgs#bash -- ./run -v --nix :flake-refresh :build :test
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
