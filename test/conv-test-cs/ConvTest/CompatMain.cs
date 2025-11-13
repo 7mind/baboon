@@ -33,7 +33,8 @@ namespace ConvTest
             var settings = new JsonSerializerSettings { DateTimeZoneHandling = DateTimeZoneHandling.Utc };
             var jsonStr = JsonConvert.SerializeObject(jsonToken, Formatting.Indented, settings);
             var jsonPath = Path.Combine(csJsonDir, "all-basic-types.json");
-            File.WriteAllText(jsonPath, jsonStr, Encoding.UTF8);
+            // Use UTF8 without BOM to ensure compatibility with other parsers
+            File.WriteAllText(jsonPath, jsonStr, new UTF8Encoding(false));
             Console.WriteLine($"Written JSON to {jsonPath}");
 
             // Serialize to UEBA

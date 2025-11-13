@@ -419,7 +419,10 @@ class ScJsonCodecGenerator(
       case TypeRef.Constructor(id, args) =>
         id match {
           case TypeId.Builtins.opt =>
-            q"""$ref.map(e => ${mkDecoder(args.head, q"Option(e)")})"""
+            // Handle JSON null specially: if e is null, return None; otherwise decode the value
+            // Use flatMap with Option() to ensure type compatibility: Option[T] from both branches
+            val innerDecoder = mkDecoder(args.head, q"Option(e)")
+            q"""$ref.flatMap(e => if (e.isNull) None else Option($innerDecoder))"""
 
           case TypeId.Builtins.map =>
             val keyDec   = decodeKey(args.head, q"kv._1")
