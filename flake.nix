@@ -53,7 +53,7 @@
             coursier
 
             pkgs.sbt
-            dotnet-sdk_8
+            dotnet-sdk_9
 
             coreutils
             shellspec

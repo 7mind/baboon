@@ -42,8 +42,12 @@ jobs:
       - uses: 7mind/github-env@minimal
         with:
           setup-nix: ${{ matrix.preconfigured != true }}
-      - name: Build
+      - name: Check deps and build
+        if: startsWith(github.ref, 'refs/tags/')
         run: bash ./run -v --nix :flake-refresh --validate :build :test
+      - name: Refresh deps and build
+        if: !startsWith(github.ref, 'refs/tags/')
+        run: bash ./run -v --nix :flake-refresh :build :test
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
