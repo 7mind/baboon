@@ -447,7 +447,8 @@ class ScUEBACodecGenerator(
               case TypeId.Builtins.uid => q"$baboonBinTools.readUid(wire)"
               case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
                 q"""({
-                   |  // Read timestamp: 8 bytes (ticks in ms) + 8 bytes (offset in ms) + 1 byte (kind) = 17 bytes
+                   |  // Read timestamp: 8 bytes (local ticks in ms) + 8 bytes (offset in ms) + 1 byte (kind) = 17 bytes
+                   |  // C# writes DateTimeOffset.Ticks which is LOCAL time, not UTC!
                    |  val b0 = wire.readByte() & 0xFFL
                    |  val b1 = wire.readByte() & 0xFFL
                    |  val b2 = wire.readByte() & 0xFFL
@@ -456,7 +457,7 @@ class ScUEBACodecGenerator(
                    |  val b5 = wire.readByte() & 0xFFL
                    |  val b6 = wire.readByte() & 0xFFL
                    |  val b7 = wire.readByte() & 0xFFL
-                   |  val dotNetTicksMs = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) | (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56)
+                   |  val dotNetLocalTicksMs = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) | (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56)
                    |  val b8 = wire.readByte() & 0xFFL
                    |  val b9 = wire.readByte() & 0xFFL
                    |  val b10 = wire.readByte() & 0xFFL
@@ -467,8 +468,10 @@ class ScUEBACodecGenerator(
                    |  val b15 = wire.readByte() & 0xFFL
                    |  val offsetMs = b8 | (b9 << 8) | (b10 << 16) | (b11 << 24) | (b12 << 32) | (b13 << 40) | (b14 << 48) | (b15 << 56)
                    |  val kind = wire.readByte()
-                   |  // Convert .NET ticks (in ms) to Unix epoch milliseconds
-                   |  val epochMs = dotNetTicksMs - 62135596800000L
+                   |  // Convert local time to UTC by subtracting offset
+                   |  val dotNetUtcTicksMs = dotNetLocalTicksMs - offsetMs
+                   |  // Convert from .NET epoch to Unix epoch
+                   |  val epochMs = dotNetUtcTicksMs - 62135596800000L
                    |  val offsetSeconds = (offsetMs / 1000).toInt
                    |  val offset = java.time.ZoneOffset.ofTotalSeconds(offsetSeconds)
                    |  val instant = java.time.Instant.ofEpochMilli(epochMs)
@@ -522,21 +525,24 @@ class ScUEBACodecGenerator(
               case TypeId.Builtins.uid  => q"$baboonBinTools.writeUid($wref, $ref)"
               case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
                 q""";{
-                   |  // Write timestamp: 8 bytes (ticks in ms) + 8 bytes (offset in ms) + 1 byte (kind) = 17 bytes
+                   |  // Write timestamp: 8 bytes (local ticks in ms) + 8 bytes (offset in ms) + 1 byte (kind) = 17 bytes
+                   |  // C# expects DateTimeOffset.Ticks which is LOCAL time, not UTC!
                    |  val ts_offsetDt = $ref
                    |  val ts_epochMs = ts_offsetDt.toInstant.toEpochMilli
-                   |  val ts_dotNetTicksMs = ts_epochMs + 62135596800000L
+                   |  val ts_dotNetUtcTicksMs = ts_epochMs + 62135596800000L
                    |  val ts_offsetMs = ts_offsetDt.getOffset.getTotalSeconds * 1000L
+                   |  // Convert UTC to local time by adding offset (C# expects local ticks)
+                   |  val ts_dotNetLocalTicksMs = ts_dotNetUtcTicksMs + ts_offsetMs
                    |  val ts_kind: Byte = if (ts_offsetDt.getOffset.getTotalSeconds == 0) 1.toByte else 0.toByte
-                   |  // Write dotNetTicksMs (8 bytes, little-endian)
-                   |  $wref.writeByte((ts_dotNetTicksMs & 0xFF).toByte)
-                   |  $wref.writeByte(((ts_dotNetTicksMs >> 8) & 0xFF).toByte)
-                   |  $wref.writeByte(((ts_dotNetTicksMs >> 16) & 0xFF).toByte)
-                   |  $wref.writeByte(((ts_dotNetTicksMs >> 24) & 0xFF).toByte)
-                   |  $wref.writeByte(((ts_dotNetTicksMs >> 32) & 0xFF).toByte)
-                   |  $wref.writeByte(((ts_dotNetTicksMs >> 40) & 0xFF).toByte)
-                   |  $wref.writeByte(((ts_dotNetTicksMs >> 48) & 0xFF).toByte)
-                   |  $wref.writeByte(((ts_dotNetTicksMs >> 56) & 0xFF).toByte)
+                   |  // Write dotNetLocalTicksMs (8 bytes, little-endian)
+                   |  $wref.writeByte((ts_dotNetLocalTicksMs & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_dotNetLocalTicksMs >> 8) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_dotNetLocalTicksMs >> 16) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_dotNetLocalTicksMs >> 24) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_dotNetLocalTicksMs >> 32) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_dotNetLocalTicksMs >> 40) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_dotNetLocalTicksMs >> 48) & 0xFF).toByte)
+                   |  $wref.writeByte(((ts_dotNetLocalTicksMs >> 56) & 0xFF).toByte)
                    |  // Write offsetMs (8 bytes, little-endian)
                    |  $wref.writeByte((ts_offsetMs & 0xFF).toByte)
                    |  $wref.writeByte(((ts_offsetMs >> 8) & 0xFF).toByte)
