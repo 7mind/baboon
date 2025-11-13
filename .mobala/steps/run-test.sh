@@ -24,16 +24,20 @@ function run-test() {
             --sc-write-evolution-dict true \
             --sc-wrapped-adt-branch-codecs false
 
+  echo "::group::ABOUT TO RUN GENERATED C# TESTS"
   pushd .
   cd ./test/cs-stub
   dotnet build -c Release
   dotnet test -c Release BaboonTests/BaboonTests.csproj
   popd
+  echo "::endgroup::"
 
+  echo "::group::ABOUT TO RUN GENERATED SCALA TESTS"
   pushd .
   cd ./test/sc-stub
   sbt +clean +test
   popd
+  echo "::endgroup::"
 
   popd
 
@@ -62,18 +66,20 @@ function run-test() {
   # workaround for https://github.com/NixOS/nixpkgs/issues/350806
   # export PATH=`echo $PATH | tr ":" "\n" | grep -v "dotnet-runtime-6" | tr "\n" ":"`
 
+  echo "::group::ABOUT TO RUN GENERATED C# TESTS"
   pushd .
   cd ./test/cs-stub
-  echo "ABOUT TO RUN GENERATED C# TESTS"
   dotnet build -c Debug
   dotnet test -c Debug BaboonTests/BaboonTests.csproj
   popd
+  echo "::endgroup::"
 
+  echo "::group::ABOUT TO RUN GENERATED SCALA TESTS"
   pushd .
-  echo "ABOUT TO RUN GENERATED SCALA TESTS"
   cd ./test/sc-stub
   sbt +clean +test
   popd
+  echo "::endgroup::"
 
   popd
 
@@ -89,18 +95,20 @@ function run-test() {
     :scala \
     --output ./test/conv-test-sc/src/main/scala/generated-main
 
+  echo "::group::ABOUT TO RUN MANUAL C# TESTS"
   pushd .
   cd ./test/conv-test-cs
-  echo "ABOUT TO RUN MANUAL C# TESTS"
   dotnet build
   dotnet test
   popd
+  echo "::endgroup::"
 
+  echo "::group::ABOUT TO RUN MANUAL SCALA TESTS"
   pushd .
-  echo "ABOUT TO RUN MANUAL SCALA TESTS"
   cd ./test/conv-test-sc
   sbt +clean +test
   popd
+  echo "::endgroup::"
 
   popd
 }
