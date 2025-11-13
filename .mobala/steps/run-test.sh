@@ -5,6 +5,7 @@ set -euo pipefail
 function run-test() {
   pushd .
 
+  echo "::group::GENERATE CODE (regular ADT)"
   baboon-compiler/.jvm/target/graalvm-native-image/baboon \
             --model-dir ./baboon-compiler/src/test/resources/baboon/ \
             --meta-write-evolution-json baboon-meta.json \
@@ -23,8 +24,9 @@ function run-test() {
             --fixture-output ./test/sc-stub/src/main/scala/generated-fixtures \
             --sc-write-evolution-dict true \
             --sc-wrapped-adt-branch-codecs false
+  echo "::endgroup::"
 
-  echo "::group::ABOUT TO RUN GENERATED C# TESTS"
+  echo "::group::RUN GENERATED C# TESTS"
   pushd .
   cd ./test/cs-stub
   dotnet build -c Release
@@ -32,7 +34,7 @@ function run-test() {
   popd
   echo "::endgroup::"
 
-  echo "::group::ABOUT TO RUN GENERATED SCALA TESTS"
+  echo "::group::RUN GENERATED SCALA TESTS"
   pushd .
   cd ./test/sc-stub
   sbt +clean +test
@@ -41,8 +43,9 @@ function run-test() {
 
   popd
 
-  pushd .
 
+  pushd .
+  echo "::group::GENERATE CODE (wrapped ADT)"
   baboon-compiler/.jvm/target/graalvm-native-image/baboon \
             --model-dir ./baboon-compiler/src/test/resources/baboon/ \
             --meta-write-evolution-json baboon-meta.json \
@@ -61,12 +64,13 @@ function run-test() {
             --fixture-output ./test/sc-stub/src/main/scala/generated-fixtures \
             --sc-write-evolution-dict true \
             --sc-wrapped-adt-branch-codecs true
+  echo "::endgroup::"
 
 
   # workaround for https://github.com/NixOS/nixpkgs/issues/350806
   # export PATH=`echo $PATH | tr ":" "\n" | grep -v "dotnet-runtime-6" | tr "\n" ":"`
 
-  echo "::group::ABOUT TO RUN GENERATED C# TESTS"
+  echo "::group::RUN GENERATED C# TESTS"
   pushd .
   cd ./test/cs-stub
   dotnet build -c Debug
@@ -74,7 +78,7 @@ function run-test() {
   popd
   echo "::endgroup::"
 
-  echo "::group::ABOUT TO RUN GENERATED SCALA TESTS"
+  echo "::group::RUN GENERATED SCALA TESTS"
   pushd .
   cd ./test/sc-stub
   sbt +clean +test
@@ -88,14 +92,16 @@ function run-test() {
 
 #  sbt "run --model-dir ./test/conv-test  --output ./test/conv-test-cs/ConvTest/Generated"
 
+  echo "::group::GENERATE CODE (manual test project)"
   baboon-compiler/.jvm/target/graalvm-native-image/baboon  \
     --model-dir ./test/conv-test \
     :cs \
     --output ./test/conv-test-cs/ConvTest/Generated \
     :scala \
     --output ./test/conv-test-sc/src/main/scala/generated-main
+  echo "::endgroup::"
 
-  echo "::group::ABOUT TO RUN MANUAL C# TESTS"
+  echo "::group::RUN MANUAL C# TESTS"
   pushd .
   cd ./test/conv-test-cs
   dotnet build
@@ -103,7 +109,7 @@ function run-test() {
   popd
   echo "::endgroup::"
 
-  echo "::group::ABOUT TO RUN MANUAL SCALA TESTS"
+  echo "::group::RUN MANUAL SCALA TESTS"
   pushd .
   cd ./test/conv-test-sc
   sbt +clean +test

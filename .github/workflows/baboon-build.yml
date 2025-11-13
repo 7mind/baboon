@@ -52,7 +52,7 @@ jobs:
         with:
           name: baboon-${{ matrix.target }}
           path: |
-            target/graalvm-native-image/**
+            baboon-compiler/.jvm/target/graalvm-native-image/**
 
   build-windows:
     strategy:
@@ -86,7 +86,7 @@ jobs:
         with:
           name: baboon-${{ matrix.target }}
           path: |
-            target/graalvm-native-image/**
+            baboon-compiler/.jvm/target/graalvm-native-image/**
 
   prepare-release:
     runs-on:
