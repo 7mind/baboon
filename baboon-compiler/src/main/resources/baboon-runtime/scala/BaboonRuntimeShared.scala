@@ -295,10 +295,88 @@ package baboon.runtime.shared {
       }
     }
 
-    def readUid(s: LEDataInputStream): UUID = new UUID(s.readLong(), s.readLong())
+    def readUid(s: LEDataInputStream): UUID = {
+      // Read 16 bytes in .NET GUID format (mixed-endian)
+      val bytes = new Array[Byte](16)
+      s.readFully(bytes)
+
+      // Convert from .NET GUID byte order to Java UUID byte order
+      // .NET uses little-endian for first 8 bytes (Data1, Data2, Data3),
+      // then big-endian for last 8 bytes (Data4)
+      // We need to reverse the byte order of the first 3 fields
+
+      // Reverse bytes 0-3 (Data1 - 4 bytes)
+      val b0 = bytes(0); bytes(0) = bytes(3); bytes(3) = b0
+      val b1 = bytes(1); bytes(1) = bytes(2); bytes(2) = b1
+
+      // Reverse bytes 4-5 (Data2 - 2 bytes)
+      val b4 = bytes(4); bytes(4) = bytes(5); bytes(5) = b4
+
+      // Reverse bytes 6-7 (Data3 - 2 bytes)
+      val b6 = bytes(6); bytes(6) = bytes(7); bytes(7) = b6
+
+      // Bytes 8-15 (Data4) are already in the correct order (big-endian)
+
+      // Now construct UUID from the corrected big-endian bytes
+      val msb = ((bytes(0) & 0xFFL) << 56) |
+                ((bytes(1) & 0xFFL) << 48) |
+                ((bytes(2) & 0xFFL) << 40) |
+                ((bytes(3) & 0xFFL) << 32) |
+                ((bytes(4) & 0xFFL) << 24) |
+                ((bytes(5) & 0xFFL) << 16) |
+                ((bytes(6) & 0xFFL) << 8) |
+                (bytes(7) & 0xFFL)
+
+      val lsb = ((bytes(8) & 0xFFL) << 56) |
+                ((bytes(9) & 0xFFL) << 48) |
+                ((bytes(10) & 0xFFL) << 40) |
+                ((bytes(11) & 0xFFL) << 32) |
+                ((bytes(12) & 0xFFL) << 24) |
+                ((bytes(13) & 0xFFL) << 16) |
+                ((bytes(14) & 0xFFL) << 8) |
+                (bytes(15) & 0xFFL)
+
+      new UUID(msb, lsb)
+    }
     def writeUid(fakeWriter: LEDataOutputStream, v: UUID): Unit = {
-      fakeWriter.writeLong(v.getMostSignificantBits)
-      fakeWriter.writeLong(v.getLeastSignificantBits)
+      // Convert Java UUID (big-endian) to .NET GUID format (mixed-endian)
+      val msb = v.getMostSignificantBits
+      val lsb = v.getLeastSignificantBits
+
+      // Extract bytes in big-endian order
+      val bytes = new Array[Byte](16)
+      bytes(0) = ((msb >> 56) & 0xFF).toByte
+      bytes(1) = ((msb >> 48) & 0xFF).toByte
+      bytes(2) = ((msb >> 40) & 0xFF).toByte
+      bytes(3) = ((msb >> 32) & 0xFF).toByte
+      bytes(4) = ((msb >> 24) & 0xFF).toByte
+      bytes(5) = ((msb >> 16) & 0xFF).toByte
+      bytes(6) = ((msb >> 8) & 0xFF).toByte
+      bytes(7) = (msb & 0xFF).toByte
+      bytes(8) = ((lsb >> 56) & 0xFF).toByte
+      bytes(9) = ((lsb >> 48) & 0xFF).toByte
+      bytes(10) = ((lsb >> 40) & 0xFF).toByte
+      bytes(11) = ((lsb >> 32) & 0xFF).toByte
+      bytes(12) = ((lsb >> 24) & 0xFF).toByte
+      bytes(13) = ((lsb >> 16) & 0xFF).toByte
+      bytes(14) = ((lsb >> 8) & 0xFF).toByte
+      bytes(15) = (lsb & 0xFF).toByte
+
+      // Convert to .NET GUID byte order by reversing the first 3 fields
+      // Reverse bytes 0-3 (Data1 - 4 bytes)
+      val b0 = bytes(0); bytes(0) = bytes(3); bytes(3) = b0
+      val b1 = bytes(1); bytes(1) = bytes(2); bytes(2) = b1
+
+      // Reverse bytes 4-5 (Data2 - 2 bytes)
+      val b4 = bytes(4); bytes(4) = bytes(5); bytes(5) = b4
+
+      // Reverse bytes 6-7 (Data3 - 2 bytes)
+      val b6 = bytes(6); bytes(6) = bytes(7); bytes(7) = b6
+
+      // Bytes 8-15 (Data4) stay in big-endian order
+
+      // Write all 16 bytes in .NET GUID format
+      fakeWriter.write(bytes)
     }
 
     def readString(input: LEDataInputStream): String = {
