@@ -36,7 +36,6 @@ export MOBALA_REMOTE_LATEST_COMMIT
 if [[ "${MOBALA_UPDATE}" == 0 && -f ".mobala/version-commit.lock" ]]; then
   MOBALA_LOCK_COMMIT="$(cat ".mobala/version-commit.lock")"
   export MOBALA_LOCK_COMMIT
-  export MOBALA_REMOTE_VERSION="${MOBALA_LOCK_COMMIT}"
   echo "[info] running mobala branch \`${MOBALA_REMOTE_LOCK_SOURCE_REF}\` commit ${MOBALA_LOCK_COMMIT}"
   if [[ "${MOBALA_REMOTE_LATEST_COMMIT}" != 0 && "${MOBALA_REMOTE_LATEST_COMMIT}" != "${MOBALA_LOCK_COMMIT}" ]]; then
     echo "[info] new version of mobala is available. run with MOBALA_UPDATE=1 to update to latest commit ${MOBALA_REMOTE_LATEST_COMMIT}"
