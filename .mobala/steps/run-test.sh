@@ -5,8 +5,8 @@ set -euo pipefail
 function run-test() {
   pushd .
 
-  target/graalvm-native-image/baboon \
-            --model-dir ./src/test/resources/baboon/ \
+  baboon-compiler/.jvm/target/graalvm-native-image/baboon \
+            --model-dir ./baboon-compiler/src/test/resources/baboon/ \
             --meta-write-evolution-json baboon-meta.json \
             --lock-file=./target/baboon.lock \
             :cs \
@@ -39,8 +39,8 @@ function run-test() {
 
   pushd .
 
-  target/graalvm-native-image/baboon \
-            --model-dir ./src/test/resources/baboon/ \
+  baboon-compiler/.jvm/target/graalvm-native-image/baboon \
+            --model-dir ./baboon-compiler/src/test/resources/baboon/ \
             --meta-write-evolution-json baboon-meta.json \
             --lock-file=./target/baboon.lock \
             :cs \
@@ -80,7 +80,7 @@ function run-test() {
 
 #  sbt "run --model-dir ./test/conv-test  --output ./test/conv-test-cs/ConvTest/Generated"
 
-  target/graalvm-native-image/baboon  \
+  baboon-compiler/.jvm/target/graalvm-native-image/baboon  \
     --model-dir ./test/conv-test \
     :cs \
     --output ./test/conv-test-cs/ConvTest/Generated \
