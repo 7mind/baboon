@@ -29,7 +29,9 @@ namespace ConvTest
             var ctx = BaboonCodecContext.Default;
             var jsonCodec = AllBasicTypes_JsonCodec.Instance;
             var jsonToken = jsonCodec.Encode(ctx, sampleData);
-            var jsonStr = JsonConvert.SerializeObject(jsonToken, Formatting.Indented);
+            // Use DateTimeZoneHandling.Utc to preserve timezone info in the output
+            var settings = new JsonSerializerSettings { DateTimeZoneHandling = DateTimeZoneHandling.Utc };
+            var jsonStr = JsonConvert.SerializeObject(jsonToken, Formatting.Indented, settings);
             var jsonPath = Path.Combine(csJsonDir, "all-basic-types.json");
             File.WriteAllText(jsonPath, jsonStr, Encoding.UTF8);
             Console.WriteLine($"Written JSON to {jsonPath}");

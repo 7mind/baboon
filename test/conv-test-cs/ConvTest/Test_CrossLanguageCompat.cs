@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using Convtest.Testpkg;
 using Baboon.Runtime.Shared;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace ConvTest
@@ -29,7 +30,8 @@ namespace ConvTest
         public void CSharp_JSON_Deserialization_Should_Read_Scala_Generated_JSON()
         {
             var jsonStr = File.ReadAllText(scalaJsonFile, Encoding.UTF8);
-            var jsonToken = JToken.Parse(jsonStr);
+            using var reader = new JsonTextReader(new StringReader(jsonStr)) { DateParseHandling = DateParseHandling.None };
+            var jsonToken = JToken.Load(reader);
 
             var ctx = BaboonCodecContext.Default;
             var decoded = AllBasicTypes_JsonCodec.Instance.Decode(ctx, jsonToken);
@@ -44,7 +46,8 @@ namespace ConvTest
         public void CSharp_JSON_Deserialization_Should_Read_CSharp_Generated_JSON()
         {
             var jsonStr = File.ReadAllText(csJsonFile, Encoding.UTF8);
-            var jsonToken = JToken.Parse(jsonStr);
+            using var reader = new JsonTextReader(new StringReader(jsonStr)) { DateParseHandling = DateParseHandling.None };
+            var jsonToken = JToken.Load(reader);
 
             var ctx = BaboonCodecContext.Default;
             var decoded = AllBasicTypes_JsonCodec.Instance.Decode(ctx, jsonToken);
@@ -93,10 +96,18 @@ namespace ConvTest
         public void CrossLanguage_Comparison_Should_Verify_Scala_And_CSharp_JSON_Produce_Equivalent_Data()
         {
             var scalaJsonStr = File.ReadAllText(scalaJsonFile, Encoding.UTF8);
-            var scalaJson = JToken.Parse(scalaJsonStr);
+            JToken scalaJson;
+            using (var reader = new JsonTextReader(new StringReader(scalaJsonStr)) { DateParseHandling = DateParseHandling.None })
+            {
+                scalaJson = JToken.Load(reader);
+            }
 
             var csJsonStr = File.ReadAllText(csJsonFile, Encoding.UTF8);
-            var csJson = JToken.Parse(csJsonStr);
+            JToken csJson;
+            using (var reader = new JsonTextReader(new StringReader(csJsonStr)) { DateParseHandling = DateParseHandling.None })
+            {
+                csJson = JToken.Load(reader);
+            }
 
             var ctx = BaboonCodecContext.Default;
             var scalaDecoded = AllBasicTypes_JsonCodec.Instance.Decode(ctx, scalaJson);
