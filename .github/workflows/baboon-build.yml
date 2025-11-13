@@ -46,7 +46,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: nix run nixpkgs#bash -- ./run -v --nix :flake-refresh --validate :build :test
       - name: Refresh deps and build
-        if: !startsWith(github.ref, 'refs/tags/')
+        if: ${{ not startsWith(github.ref, 'refs/tags/') }}
         run: nix run nixpkgs#bash -- ./run -v --nix :flake-refresh :build :test
       - uses: actions/upload-artifact@v4
         with:
