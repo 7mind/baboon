@@ -101,6 +101,20 @@ function run-test() {
     --output ./test/conv-test-sc/src/main/scala/generated-main
   echo "::endgroup::"
 
+  echo "::group::GENERATE COMPAT TEST FILES (Scala)"
+  pushd .
+  cd ./test/conv-test-sc
+  sbt "runMain example.CompatMain"
+  popd
+  echo "::endgroup::"
+
+  echo "::group::GENERATE COMPAT TEST FILES (C#)"
+  pushd .
+  cd ./test/conv-test-cs
+  dotnet run --project ConvTest/ConvTest.csproj
+  popd
+  echo "::endgroup::"
+
   echo "::group::RUN MANUAL C# TESTS"
   pushd .
   cd ./test/conv-test-cs

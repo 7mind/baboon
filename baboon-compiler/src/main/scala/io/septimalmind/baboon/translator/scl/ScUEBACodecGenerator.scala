@@ -505,7 +505,7 @@ class ScUEBACodecGenerator(
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
-            q"""if ($ref == null)
+            q"""if ($ref.isEmpty)
                |{
                |  $wref.writeByte(0);
                |}
