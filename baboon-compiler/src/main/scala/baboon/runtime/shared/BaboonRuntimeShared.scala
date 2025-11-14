@@ -417,29 +417,34 @@ package baboon.runtime.shared {
       val scale      = (flags >> 16) & 0xFF
       val isNegative = (flags & 0x80000000) != 0
 
-      // Reconstruct 96-bit mantissa
-      val mantissa       = (BigInt(hi) << 64) | (BigInt(mid) << 32) | (BigInt(lo) & 0xFFFFFFFFL)
+      // Reconstruct 96-bit mantissa - properly mask all values to unsigned
+      val loLong  = lo.toLong & 0xFFFFFFFFL
+      val midLong = mid.toLong & 0xFFFFFFFFL
+      val hiLong  = hi.toLong & 0xFFFFFFFFL
+
+      val mantissa       = (BigInt(hiLong) << 64) | (BigInt(midLong) << 32) | BigInt(loLong)
       val signedMantissa = if (isNegative) -mantissa else mantissa
 
       new java.math.BigDecimal(signedMantissa.bigInteger, scale)
     }
 
     def writeBigDecimal(output: LEDataOutputStream, value: scala.math.BigDecimal): Unit = {
+      // .NET decimal is 16 bytes: lo (int32), mid (int32), hi (int32), flags (int32)
+      // flags contains: sign bit (bit 31) and scale (bits 16-23)
       val unscaled = value.bigDecimal.unscaledValue()
       val scale    = value.scale
       require(scale >= 0 && scale <= 28, "C# Decimal supports scale 0–28")
-      require(unscaled.bitLength <= 96, "C# Decimal mantissa must fit in 96 bits")
+      require(unscaled.bitLength() <= 96, "C# Decimal mantissa must fit in 96 bits")
 
-      val sign  = if (value.signum < 0) 0x80000000 else 0x00000000
-      val flags = (scale << 16) | sign
+      // Get the 96-bit unscaled value as 3 x 32-bit integers using bit shifting
+      val absUnscaled = unscaled.abs()
+      val lo  = absUnscaled.intValue()
+      val mid = absUnscaled.shiftRight(32).intValue()
+      val hi  = absUnscaled.shiftRight(64).intValue()
 
-      val mantissa       = unscaled.abs().toByteArray
-      val mantissaPadded = Array.fill[Byte](12 - mantissa.length)(0) ++ mantissa.takeRight(12)
-
-      // Split into 32-bit chunks (big-endian byte order)
-      val lo  = mantissaPadded.slice(8, 12).foldLeft(0)((acc, b) => (acc << 8) | (b & 0xFF))
-      val mid = mantissaPadded.slice(4, 8).foldLeft(0)((acc, b) => (acc << 8) | (b & 0xFF))
-      val hi  = mantissaPadded.slice(0, 4).foldLeft(0)((acc, b) => (acc << 8) | (b & 0xFF))
+      // Build flags: sign in bit 31, scale in bits 16-23
+      val sign  = if (unscaled.signum() < 0) 0x80000000 else 0
+      val flags = sign | (scale << 16)
 
       output.writeInt(lo)
       output.writeInt(mid)
