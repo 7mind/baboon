@@ -4,7 +4,7 @@ import org.scalatest.wordspec.AnyWordSpec
 import org.scalatest.matchers.should.Matchers
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
-import java.time.{OffsetDateTime, ZoneOffset}
+import java.time.OffsetDateTime
 import java.util.UUID
 
 class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
@@ -230,7 +230,7 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
 
       val output = new ByteArrayOutputStream()
       val writer = new LEDataOutputStream(output)
-      writer.writeByte(value)
+      writer.writeByte(value.toInt)
       writer.flush()
 
       val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
@@ -245,7 +245,7 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
       values.foreach { value =>
         val output = new ByteArrayOutputStream()
         val writer = new LEDataOutputStream(output)
-        writer.writeShort(value)
+        writer.writeShort(value.toInt)
         writer.flush()
 
         val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))

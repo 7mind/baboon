@@ -1,9 +1,9 @@
 package io.septimalmind.baboon
 
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile}
+import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.typer.model.BaboonFamily
-import izumi.functional.bio.{Error2, F}
+import izumi.functional.bio.Error2
 import izumi.fundamentals.collections.nonempty.NEList
 
 case class OutputFileWithPath(path: String, content: String, product: CompilerProduct)

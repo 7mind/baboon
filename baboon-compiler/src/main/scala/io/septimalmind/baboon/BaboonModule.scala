@@ -1,7 +1,6 @@
 package io.septimalmind.baboon
 
 import distage.{DIKey, ModuleDef}
-import io.septimalmind.baboon.CompilerTarget.{CSTarget, ScTarget}
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*

@@ -8,7 +8,7 @@ import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Error2, ParallelErrorAccumulatingOps2}
 import izumi.reflect.TagKK
 
-class SharedTranspilerJvmModule[F[+_, +_]: Error2: TagKK]() extends ModuleDef {
+class SharedTranspilerJvmModule[F[+_, +_]: TagKK](implicit @annotation.unused evidence: Error2[F]) extends ModuleDef {
   make[BaboonCompiler[F]].from[BaboonCompiler.BaboonCompilerImpl[F]]
   make[LockfileManager[F]].from[LockfileManagerImpl[F]]
 }

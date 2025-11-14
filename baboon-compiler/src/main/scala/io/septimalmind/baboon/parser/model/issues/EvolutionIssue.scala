@@ -1,7 +1,6 @@
 package io.septimalmind.baboon.parser.model.issues
 
 import io.septimalmind.baboon.typer.model.*
-import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.platform.strings.IzString.toRichIterable
 
 sealed trait EvolutionIssue extends IssueGroup

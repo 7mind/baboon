@@ -107,7 +107,7 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
             }
           }
           } yield {
-            assert(jsonFiles.nonEmpty, "No JSON files found to test")
+            val _ = assert(jsonFiles.nonEmpty, "No JSON files found to test")
           }
         }): F[Any, Unit]
     }

@@ -17,8 +17,6 @@ import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzArtifactMaterializer
 import izumi.fundamentals.platform.strings.IzString.*
 
-import java.nio.file.Paths
-
 object Baboon {
   def main(args: Array[String]): Unit = {
     val artifact = implicitly[IzArtifactMaterializer]

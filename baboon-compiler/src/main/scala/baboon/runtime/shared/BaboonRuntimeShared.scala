@@ -36,7 +36,7 @@ package baboon.runtime.shared {
 
     def register[F: ClassTag, T: ClassTag](conversion: BaboonAbstractConversion[F, T]): Unit = {
       val key = ConversionKey(implicitly[ClassTag[F]].runtimeClass, implicitly[ClassTag[T]].runtimeClass)
-      registry.put(key, conversion)
+      val _ = registry.put(key, conversion)
     }
 
     def convertWithContext[C, F: ClassTag, T: ClassTag](
@@ -239,7 +239,7 @@ package baboon.runtime.shared {
       val offsetMillis = dt.getOffset.getTotalSeconds * 1000L
       writer.writeLong(millis)
       writer.writeLong(offsetMillis)
-      writer.writeByte(kind)
+      writer.writeByte(kind.toInt)
     }
 
   }
@@ -270,10 +270,10 @@ package baboon.runtime.shared {
           require(len > 0, "Length must be positive")
           require(offset >= prevOffset + prevLen, s"Offset violation: $offset not >= ${prevOffset + prevLen}")
 
-          result += BaboonIndexEntry(offset, len)
+          result += BaboonIndexEntry(offset.toLong, len.toLong)
           left       = left - 1
-          prevOffset = offset
-          prevLen    = len
+          prevOffset = offset.toLong
+          prevLen    = len.toLong
         }
       }
 
@@ -402,7 +402,7 @@ package baboon.runtime.shared {
         var currentByte = (value & 0x7F).toByte
         value >>>= 7
         if (value != 0) currentByte = (currentByte | 0x80).toByte
-        output.writeByte(currentByte)
+        output.writeByte(currentByte.toInt)
       } while (value != 0)
 
       output.write(bytes)
@@ -475,7 +475,7 @@ package baboon.runtime.shared {
       val b15 = wire.readByte() & 0xFFL
       val offsetMs = b8 | (b9 << 8) | (b10 << 16) | (b11 << 24) | (b12 << 32) | (b13 << 40) | (b14 << 48) | (b15 << 56)
 
-      val kind = wire.readByte()
+      @annotation.unused val kind = wire.readByte()
 
       // Convert local time to UTC by subtracting offset
       val dotNetUtcTicksMs = dotNetLocalTicksMs - offsetMs
@@ -499,34 +499,34 @@ package baboon.runtime.shared {
       val ts_kind: Byte = if (ts_offsetDt.getOffset.getTotalSeconds == 0) 1.toByte else 0.toByte
 
       // Write dotNetLocalTicksMs (8 bytes, little-endian)
-      wref.writeByte((ts_dotNetLocalTicksMs & 0xFF).toByte)
-      wref.writeByte(((ts_dotNetLocalTicksMs >> 8) & 0xFF).toByte)
-      wref.writeByte(((ts_dotNetLocalTicksMs >> 16) & 0xFF).toByte)
-      wref.writeByte(((ts_dotNetLocalTicksMs >> 24) & 0xFF).toByte)
-      wref.writeByte(((ts_dotNetLocalTicksMs >> 32) & 0xFF).toByte)
-      wref.writeByte(((ts_dotNetLocalTicksMs >> 40) & 0xFF).toByte)
-      wref.writeByte(((ts_dotNetLocalTicksMs >> 48) & 0xFF).toByte)
-      wref.writeByte(((ts_dotNetLocalTicksMs >> 56) & 0xFF).toByte)
+      wref.writeByte((ts_dotNetLocalTicksMs & 0xFF).toInt)
+      wref.writeByte(((ts_dotNetLocalTicksMs >> 8) & 0xFF).toInt)
+      wref.writeByte(((ts_dotNetLocalTicksMs >> 16) & 0xFF).toInt)
+      wref.writeByte(((ts_dotNetLocalTicksMs >> 24) & 0xFF).toInt)
+      wref.writeByte(((ts_dotNetLocalTicksMs >> 32) & 0xFF).toInt)
+      wref.writeByte(((ts_dotNetLocalTicksMs >> 40) & 0xFF).toInt)
+      wref.writeByte(((ts_dotNetLocalTicksMs >> 48) & 0xFF).toInt)
+      wref.writeByte(((ts_dotNetLocalTicksMs >> 56) & 0xFF).toInt)
 
       // Write offsetMs (8 bytes, little-endian)
-      wref.writeByte((ts_offsetMs & 0xFF).toByte)
-      wref.writeByte(((ts_offsetMs >> 8) & 0xFF).toByte)
-      wref.writeByte(((ts_offsetMs >> 16) & 0xFF).toByte)
-      wref.writeByte(((ts_offsetMs >> 24) & 0xFF).toByte)
-      wref.writeByte(((ts_offsetMs >> 32) & 0xFF).toByte)
-      wref.writeByte(((ts_offsetMs >> 40) & 0xFF).toByte)
-      wref.writeByte(((ts_offsetMs >> 48) & 0xFF).toByte)
-      wref.writeByte(((ts_offsetMs >> 56) & 0xFF).toByte)
+      wref.writeByte((ts_offsetMs & 0xFF).toInt)
+      wref.writeByte(((ts_offsetMs >> 8) & 0xFF).toInt)
+      wref.writeByte(((ts_offsetMs >> 16) & 0xFF).toInt)
+      wref.writeByte(((ts_offsetMs >> 24) & 0xFF).toInt)
+      wref.writeByte(((ts_offsetMs >> 32) & 0xFF).toInt)
+      wref.writeByte(((ts_offsetMs >> 40) & 0xFF).toInt)
+      wref.writeByte(((ts_offsetMs >> 48) & 0xFF).toInt)
+      wref.writeByte(((ts_offsetMs >> 56) & 0xFF).toInt)
 
       // Write kind (1 byte)
-      wref.writeByte(ts_kind)
+      wref.writeByte(ts_kind.toInt)
     }
   }
 
   class LEDataInputStream(stream: InputStream) extends InputStream with DataInput {
     private val dataIn           = new DataInputStream(stream)
     private val buffer           = ByteBuffer.allocate(8)
-    private var order: ByteOrder = ByteOrder.LITTLE_ENDIAN
+    private val order: ByteOrder = ByteOrder.LITTLE_ENDIAN
 
     @throws[IOException]
     override def read(b: Array[Byte]): Int = dataIn.read(b)
@@ -535,6 +535,7 @@ package baboon.runtime.shared {
     override def read(b: Array[Byte], off: Int, len: Int): Int = dataIn.read(b, off, len)
 
     @throws[IOException]
+    @deprecated("readLine() is deprecated", "1.0")
     override def readLine(): String = dataIn.readLine()
 
     @throws[IOException]
@@ -544,7 +545,7 @@ package baboon.runtime.shared {
     override def readByte(): Byte = dataIn.readByte()
 
     @throws[IOException]
-    override def read(): Int = readByte()
+    override def read(): Int = readByte().toInt
 
     override def markSupported(): Boolean = dataIn.markSupported()
 
@@ -659,7 +660,7 @@ package baboon.runtime.shared {
 
     @throws[IOException]
     override def writeChars(s: String): Unit =
-      s.foreach(c => writeChar(c))
+      s.foreach(c => writeChar(c.toInt))
 
     @throws[IOException]
     override def writeDouble(v: Double): Unit =

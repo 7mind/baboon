@@ -57,7 +57,7 @@ class ParsedVersionTest extends AnyWordSpec {
       def compareVersions(v1: String, v2: String): Unit = {
         (ParsedVersion.parse(v1), ParsedVersion.parse(v2)) match {
           case (Some(pv1), Some(pv2)) =>
-            assert(pv1.compare(pv2) > 0, s"$v1 > $v2")
+            val _ = assert(pv1.compare(pv2) > 0, s"$v1 > $v2")
           case _ =>
             fail(s"failed to parse $v1 / $v2 pair")
         }

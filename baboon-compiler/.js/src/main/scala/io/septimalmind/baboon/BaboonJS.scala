@@ -5,7 +5,6 @@ import io.circe.Json
 import io.circe.parser.parse as parseJson
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.FSPath
-import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.typer.BaboonRuntimeCodec
 import io.septimalmind.baboon.typer.model.{BaboonFamily, Pkg, Version}

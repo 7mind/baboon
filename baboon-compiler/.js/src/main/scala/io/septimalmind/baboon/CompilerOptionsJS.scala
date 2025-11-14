@@ -1,7 +1,5 @@
 package io.septimalmind.baboon
 
-import io.septimalmind.baboon.translator.OutputFile
-
 sealed trait CompilerTargetJS {
   def id: String
   def output: OutputOptionsJS

@@ -7,9 +7,8 @@ import izumi.functional.bio.Error2
 import baboon.runtime.shared.{BaboonBinTools, LEDataInputStream, LEDataOutputStream}
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
-import java.nio.charset.StandardCharsets
 import java.time.format.DateTimeFormatter
-import java.time.{Instant, OffsetDateTime, ZoneOffset}
+import java.time.OffsetDateTime
 import java.util.UUID
 import scala.util.Try
 
@@ -95,7 +94,7 @@ object BaboonRuntimeCodec {
         case Some(obj) =>
           // Write header byte
           val header: Byte = if (indexed) 1 else 0
-          writer.writeByte(header)
+          writer.writeByte(header.toInt)
 
           if (indexed) {
             // In indexed mode: collect field data in buffer, write index, then data
@@ -176,7 +175,7 @@ object BaboonRuntimeCodec {
     }
 
     // Enum encoding/decoding
-    private def encodeEnum(@annotation.unused dom: Domain, enum: Typedef.Enum, json: Json, writer: LEDataOutputStream): F[BaboonIssue, Unit] = {
+    private def encodeEnum(@annotation.unused dom: Domain, `enum`: Typedef.Enum, json: Json, writer: LEDataOutputStream): F[BaboonIssue, Unit] = {
       json.asString match {
         case None => F.fail(RuntimeCodecIssue.ExpectedJsonString(enum.id.toString, json))
         case Some(s) =>
@@ -191,7 +190,7 @@ object BaboonRuntimeCodec {
       }
     }
 
-    private def decodeEnum(@annotation.unused dom: Domain, enum: Typedef.Enum, reader: LEDataInputStream): F[BaboonIssue, Json] = {
+    private def decodeEnum(@annotation.unused dom: Domain, `enum`: Typedef.Enum, reader: LEDataInputStream): F[BaboonIssue, Json] = {
       val idx = reader.readByte() & 0xFF
 
       if (idx >= enum.members.size) {
@@ -293,7 +292,7 @@ object BaboonRuntimeCodec {
         case TypeId.Builtins.i08 =>
           json.asNumber.flatMap(_.toLong).map(_.toByte) match {
             case Some(value) =>
-              writer.writeByte(value)
+              writer.writeByte(value.toInt)
               F.unit
             case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("i08", json))
           }
@@ -301,7 +300,7 @@ object BaboonRuntimeCodec {
         case TypeId.Builtins.i16 =>
           json.asNumber.flatMap(_.toLong).map(_.toShort) match {
             case Some(value) =>
-              writer.writeShort(value)
+              writer.writeShort(value.toInt)
               F.unit
             case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("i16", json))
           }
@@ -325,7 +324,7 @@ object BaboonRuntimeCodec {
         case TypeId.Builtins.u08 =>
           json.asNumber.flatMap(_.toLong).map(_.toByte) match {
             case Some(value) =>
-              writer.writeByte(value)
+              writer.writeByte(value.toInt)
               F.unit
             case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("u08", json))
           }
@@ -333,7 +332,7 @@ object BaboonRuntimeCodec {
         case TypeId.Builtins.u16 =>
           json.asNumber.flatMap(_.toLong).map(_.toShort) match {
             case Some(value) =>
-              writer.writeShort(value)
+              writer.writeShort(value.toInt)
               F.unit
             case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("u16", json))
           }
@@ -413,8 +412,8 @@ object BaboonRuntimeCodec {
     private def decodeBuiltinScalar(id: TypeId.BuiltinScalar, reader: LEDataInputStream): F[BaboonIssue, Json] = {
       id match {
         case TypeId.Builtins.bit => F.pure(Json.fromBoolean(reader.readBoolean()))
-        case TypeId.Builtins.i08 => F.pure(Json.fromInt(reader.readByte()))
-        case TypeId.Builtins.i16 => F.pure(Json.fromInt(reader.readShort()))
+        case TypeId.Builtins.i08 => F.pure(Json.fromInt(reader.readByte().toInt))
+        case TypeId.Builtins.i16 => F.pure(Json.fromInt(reader.readShort().toInt))
         case TypeId.Builtins.i32 => F.pure(Json.fromInt(reader.readInt()))
         case TypeId.Builtins.i64 => F.pure(Json.fromLong(reader.readLong()))
         case TypeId.Builtins.u08 => F.pure(Json.fromInt(reader.readByte() & 0xFF))
@@ -534,10 +533,10 @@ object BaboonRuntimeCodec {
               writer.writeBoolean(key.toBoolean)
               F.unit
             case TypeId.Builtins.i08 =>
-              writer.writeByte(key.toByte)
+              writer.writeByte(key.toByte.toInt)
               F.unit
             case TypeId.Builtins.i16 =>
-              writer.writeShort(key.toShort)
+              writer.writeShort(key.toShort.toInt)
               F.unit
             case TypeId.Builtins.i32 =>
               writer.writeInt(key.toInt)
@@ -546,10 +545,10 @@ object BaboonRuntimeCodec {
               writer.writeLong(key.toLong)
               F.unit
             case TypeId.Builtins.u08 =>
-              writer.writeByte(key.toByte)
+              writer.writeByte(key.toByte.toInt)
               F.unit
             case TypeId.Builtins.u16 =>
-              writer.writeShort(key.toShort)
+              writer.writeShort(key.toShort.toInt)
               F.unit
             case TypeId.Builtins.u32 =>
               writer.writeInt(key.toInt)

@@ -335,7 +335,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
     id: TypeId.User,
     isRoot: Boolean,
     svc: RawService,
-    thisScope: NestedScope[ExtendedRawDefn],
+    @annotation.unused thisScope: NestedScope[ExtendedRawDefn],
   ): F[NEList[BaboonIssue], NEList[DomainMember.User]] = {
 
     for {

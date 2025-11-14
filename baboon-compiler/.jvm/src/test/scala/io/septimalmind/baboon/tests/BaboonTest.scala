@@ -18,8 +18,6 @@ import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzResources
 import izumi.reflect.TagKK
 
-import java.nio.file.Paths
-
 abstract class BaboonTest[F[+_, +_]: TagKK: BaboonTestModule] extends Spec2[F]()(using BaboonTestModule[F].defaultModule, implicitly[TagKK[F]]) {
   override protected def config: TestConfig = super.config.copy(
     pluginConfig = PluginConfig.const(
