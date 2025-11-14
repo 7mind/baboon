@@ -180,7 +180,7 @@ object ScDefnTranslator {
       val mainMeta  = List.empty[TextTree[ScValue]] // csDomTrees.makeMeta(defn, isCodec = false)
       val codecMeta = codecs.map(_.codecMeta(defn, name).member)
       // TODO:
-      @annotation.unused val meta = mainMeta ++ codecMeta
+      val meta = mainMeta ++ codecMeta
 
       val fixtureRef = codecsFixture.fixtureTpe(defn).map(id => q"implicit def fixture: $baboonFixture[${name.asName}] = $id").getOrElse(q"")
 
