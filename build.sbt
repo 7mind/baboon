@@ -1,4 +1,6 @@
 import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations.*
+import org.scalajs.linker.interface.ModuleSplitStyle
+import sbtcrossproject.CrossPlugin.autoImport.{crossProject, CrossType}
 
 import scala.sys.process.*
 
@@ -7,68 +9,84 @@ lazy val refreshFlakeTask = taskKey[Unit]("Refresh flake.nix")
 
 ThisBuild / scalaVersion := "2.13.16"
 
-lazy val root = (project in file("."))
-  .settings(
-    name := "baboon",
-    libraryDependencies ++= Seq("com.lihaoyi" %% "fastparse" % "3.1.1"),
-    libraryDependencies ++= Seq(
-      "fundamentals-platform",
-      "fundamentals-functional",
-      "fundamentals-language",
-      "fundamentals-collections",
-      "distage-core",
-      "distage-testkit-scalatest",
-    ).map("io.7mind.izumi" %% _ % "1.2.20"),
-    libraryDependencies ++= Seq(
-      "org.scala-lang.modules" %% "scala-parser-combinators" % "2.4.0"
-    ),
-    libraryDependencies ++= Seq(
-      "org.scalatest" %% "scalatest" % "3.2.19" % Test,
-    ),
-    libraryDependencies ++= Seq(
-      "com.github.alexarchambault" %% "case-app" % "2.1.0-M30"
-    ),
-//    libraryDependencies ++= Seq(
-//      "org.graalvm.buildtools" % "graalvm-reachability-metadata" % "0.10.2"
-//    ),
-    libraryDependencies ++= Seq(
-      "io.circe" %% "circe-core",
-      "io.circe" %% "circe-generic",
-      "io.circe" %% "circe-parser"
-    ).map(_ % "0.14.1"),
-//    idePackagePrefix := Some("io.septimalmind.baboon"),
-    scalacOptions ++= Seq(
-      "-Wconf:cat=other-match-analysis:error",
-      "-encoding",
-      "utf8",
-      "-deprecation",
-      "-feature",
-      "-unchecked",
-      "-language:experimental.macros",
-      "-language:higherKinds",
-      "-language:implicitConversions",
-      "-explaintypes",
-      "-Xsource:3-cross",
-      "-Wdead-code",
-      "-Wextra-implicit",
-      "-Wnumeric-widen",
-      "-Woctal-literal",
-      "-Wvalue-discard",
-      "-Wunused:_",
-      "-Wmacros:after",
-      "-Ycache-plugin-class-loader:always",
-      "-Ycache-macro-class-loader:last-modified",
-      "-Wconf:msg=nowarn:silent",
-      "-Wconf:any:warning",
-      "-Wconf:cat=optimizer:warning",
-      "-Wconf:cat=other-match-analysis:error",
-      "-Vtype-diffs",
-    ),
-    addCompilerPlugin("org.typelevel" % "kind-projector" % "0.13.3" cross CrossVersion.full),
-    ThisBuild / scalacOptions += "-P:kind-projector:underscore-placeholders"
+// Shared settings for both JVM and JS
+lazy val sharedSettings = Seq(
+  name := "baboon",
+  libraryDependencies ++= Seq("com.lihaoyi" %%% "fastparse" % "3.1.1"),
+  libraryDependencies ++= Seq(
+    "fundamentals-platform",
+    "fundamentals-functional",
+    "fundamentals-language",
+    "fundamentals-collections",
+    "distage-core",
+  ).map("io.7mind.izumi" %%% _ % "1.2.20"),
+  libraryDependencies ++= Seq(
+    "org.scala-lang.modules" %%% "scala-parser-combinators" % "2.4.0"
+  ),
+  libraryDependencies ++= Seq(
+    "org.scalatest" %%% "scalatest" % "3.2.19" % Test,
+  ),
+  libraryDependencies ++= Seq(
+    "io.circe" %%% "circe-core",
+    "io.circe" %%% "circe-generic",
+    "io.circe" %%% "circe-parser"
+  ).map(_ % "0.14.1"),
+  libraryDependencies ++= Seq(
+    "com.softwaremill.magnolia1_2" %%% "magnolia" % "1.1.10",
+    "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided"
+  ),
+  addCompilerPlugin("org.typelevel" % "kind-projector" % "0.13.3" cross CrossVersion.full),
+  scalacOptions ++= Seq(
+    s"-Xmacro-settings:product-name=${name.value}",
+    s"-Xmacro-settings:product-version=${version.value}",
+    s"-Xmacro-settings:product-group=${organization.value}",
+    s"-Xmacro-settings:scala-version=${scalaVersion.value}",
+    s"-Xmacro-settings:scala-versions=${crossScalaVersions.value.mkString(":")}"
+  ),
+  scalacOptions ++= Seq(
+    "-Wconf:cat=other-match-analysis:error",
+    "-encoding",
+    "utf8",
+    "-deprecation",
+    "-feature",
+    "-unchecked",
+    "-language:experimental.macros",
+    "-language:higherKinds",
+    "-language:implicitConversions",
+    "-explaintypes",
+    "-Xsource:3-cross",
+    "-Wdead-code",
+    "-Wextra-implicit",
+    "-Wnumeric-widen",
+    "-Woctal-literal",
+    "-Wvalue-discard",
+    "-Wunused:_",
+    "-Wmacros:after",
+    "-Ycache-plugin-class-loader:always",
+    "-Ycache-macro-class-loader:last-modified",
+    "-Wconf:msg=nowarn:silent",
+    "-Wconf:any:warning",
+    "-Wconf:cat=optimizer:warning",
+    "-Wconf:cat=other-match-analysis:error",
+    "-Vtype-diffs",
+    "-P:kind-projector:underscore-placeholders"
   )
-  .enablePlugins(GraalVMNativeImagePlugin, UniversalPlugin)
-  .settings(
+)
+
+// Cross-platform project with CrossType.Pure
+lazy val baboon = crossProject(JSPlatform, JVMPlatform)
+  .crossType(CrossType.Pure)
+  .in(file("baboon-compiler"))
+  .settings(sharedSettings)
+  .jvmSettings(
+    Compile / unmanagedResourceDirectories += baseDirectory.value / "src" / "main" / "resources",
+    libraryDependencies ++= Seq(
+      "com.github.alexarchambault" %% "case-app" % "2.1.0-M30",
+      "io.7mind.izumi" %% "distage-testkit-scalatest" % "1.2.20" % Test
+    )
+  )
+  .jvmConfigure(_.enablePlugins(GraalVMNativeImagePlugin, UniversalPlugin))
+  .jvmSettings(
     GraalVMNativeImage / mainClass := Some("io.septimalmind.baboon.Baboon"),
     graalVMNativeImageOptions ++= Seq(
       "-H:-CheckToolchain", // fixes Darwin builds under Nix
@@ -80,25 +98,14 @@ lazy val root = (project in file("."))
       "--enable-http",
       "-march=compatibility"
     ),
-    // graalVMNativeImageOptions ++= {
-    //   if (isMacOS) Seq("-H:CCompilerOption=-mmacosx-version-min=11.0")
-    //   else Seq.empty
-    // },
     run / fork := true,
-    scalacOptions ++= Seq(
-      s"-Xmacro-settings:product-name=${name.value}",
-      s"-Xmacro-settings:product-version=${version.value}",
-      s"-Xmacro-settings:product-group=${organization.value}",
-      s"-Xmacro-settings:scala-version=${scalaVersion.value}",
-      s"-Xmacro-settings:scala-versions=${crossScalaVersions.value.mkString(":")}"
-    ),
     refreshFlakeTask := {
-              val log = streams.value.log
-              val result = "./run --nix :flake-refresh" ! log
-              if (result != 0) {
-                throw new MessageOnlyException("flake.nix update failed!")
-              }
-            },
+      val log = streams.value.log
+      val result = "./run --nix :flake-refresh" ! log
+      if (result != 0) {
+        throw new MessageOnlyException("flake.nix update failed!")
+      }
+    },
     releaseProcess := Seq[ReleaseStep](
       checkSnapshotDependencies,
       inquireVersions,
@@ -112,7 +119,31 @@ lazy val root = (project in file("."))
       setNextVersion,
       commitNextVersion,
       pushChanges
-    ),
+    )
+  )
+  .jsSettings(
+    scalaJSLinkerConfig ~= {
+      _.withModuleKind(ModuleKind.ESModule)
+       .withModuleSplitStyle(ModuleSplitStyle.SmallestModules)
+    },
+    scalaJSUseMainModuleInitializer := false,
+    libraryDependencies += "io.github.cquiroz" %%% "scala-java-time" % "2.6.0",
+  )
+
+// Define JVM and JS projects
+lazy val baboonJVM = baboon.jvm
+lazy val baboonJS = baboon.js
+
+// Root aggregate project
+lazy val root = project
+  .in(file("."))
+  .aggregate(baboonJVM, baboonJS)
+  .settings(
+    name := "baboon-root",
+    publish / skip := true,
+    publishLocal / skip := true,
+    Compile / sources := Seq.empty,
+    Test / sources := Seq.empty
   )
 
 ThisBuild / scalacOptions ++= Seq(

@@ -3,5 +3,5 @@
 set -euo pipefail
 
 function run-build() {
-  sbt GraalVMNativeImage/packageBin
+  sbt baboonJVM/GraalVMNativeImage/packageBin
 }

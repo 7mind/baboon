@@ -5,12 +5,9 @@ baboon.json
 *.DotSettings.user
 
 
-Generated/
-GeneratedFixtures/
-GeneratedTests/
-generated/
-generatedFixtures/
-generatedTests/
+Generated*/
+generated-*/
+
 src/test/resources/internal
 
 global.json

@@ -6,7 +6,7 @@ root adt Adt0 {
    data B1 {
        f: str
    }
-   
+
   data B2 {
       f: i32
   }
@@ -16,4 +16,37 @@ root data TransferOpt {
   u: uid
   ol: opt[lst[Adt0]]
   ml: map[str, lst[Adt0]]
+}
+
+root data AllBasicTypes: derived[json], derived[ueba] {
+  vi8: i08
+  vi16: i16
+  vi32: i32
+  vi64: i64
+
+  vu8: u08
+  vu16: u16
+  vu32: u32
+  vu64: u64
+
+  vf32: f32
+  vf64: f64
+  vf128: f128
+
+  vstr: str
+  vuid: uid
+
+  vbit: bit
+
+  vtsu: tsu
+  vtso: tso
+
+  voptStr: opt[str]
+  vlstI32: lst[i32]
+  vsetStr: set[str]
+  vmapStrI32: map[str, i32]
+
+  voptLst: opt[lst[str]]
+  vlstOpt: lst[opt[i32]]
+  vmapLst: map[str, lst[i64]]
 }

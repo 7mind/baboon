@@ -24,10 +24,10 @@
         packages = rec {
           baboon = sbt.lib.mkSbtDerivation {
             pkgs = pkgs;
-            version = "0.0.133";
+            version = "0.0.134";
             pname = "baboon";
             src = ./.;
-            depsSha256 = "sha256-rwsZ4QlHHw3SEpM3sBhSvyxugd6z+JOXKrmv7g8l9mE=";
+            depsSha256 = "";
             nativeBuildInputs = with pkgs; [
               graalvm-ce
             ];
@@ -53,7 +53,7 @@
             coursier
 
             pkgs.sbt
-            dotnet-sdk_8
+            dotnet-sdk_9
 
             coreutils
             shellspec
