@@ -1,11 +1,9 @@
 package io.septimalmind.baboon.typer
 
 import io.circe.Json
-import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, RuntimeCodecIssue}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.Error2
-import izumi.fundamentals.platform.exceptions.Issue
-import izumi.fundamentals.platform.language.SourceFilePosition
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream, DataOutputStream}
 import java.nio.charset.StandardCharsets
@@ -77,52 +75,30 @@ object BaboonRuntimeCodec {
     }
 
     override def decode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, data: Vector[Byte]): F[BaboonIssue, Json] = {
-      F.fromEither {
-        Try {
-          val dom     = getDom(family, pkg, version)
-          val typedef = getDef(dom, idString)
-          val input   = new DataInputStream(new ByteArrayInputStream(data.toArray))
+      val dom     = getDom(family, pkg, version)
+      val typedef = getDef(dom, idString)
+      val input   = new DataInputStream(new ByteArrayInputStream(data.toArray))
 
-          typedef match {
-            case u: DomainMember.User => decodeUserType(dom, u.defn, input)
-            case _                    => throw new IllegalArgumentException(s"Unexpected domain member type: $typedef")
-          }
-        }.toEither.left.map {
-          ex =>
-            TranslationIssue.TranslationBug()(
-              Issue.IssueContext(
-                SourceFilePosition.unknown,
-                ex,
-              )
-            )
-        }
+      typedef match {
+        case u: DomainMember.User => decodeUserType(dom, u.defn, input)
+        case _ => F.fail(RuntimeCodecIssue.UnexpectedDomainMemberType(typedef.id, s"Expected User type, got: ${typedef.getClass.getSimpleName}"))
       }
     }
 
     override def encode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, json: Json, indexed: Boolean): F[BaboonIssue, Vector[Byte]] = {
-      F.fromEither {
-        Try {
-          val dom     = getDom(family, pkg, version)
-          val typedef = getDef(dom, idString)
-          val output  = new ByteArrayOutputStream()
-          val writer  = new DataOutputStream(output)
+      val dom     = getDom(family, pkg, version)
+      val typedef = getDef(dom, idString)
+      val output  = new ByteArrayOutputStream()
+      val writer  = new DataOutputStream(output)
 
-          typedef match {
-            case u: DomainMember.User =>
-              encodeUserType(dom, u.defn, json, writer, indexed)
+      typedef match {
+        case u: DomainMember.User =>
+          encodeUserType(dom, u.defn, json, writer, indexed).map {
+            _ =>
               writer.flush()
               Vector.from(output.toByteArray)
-            case _ => throw new IllegalArgumentException(s"Unexpected domain member type: $typedef")
           }
-        }.toEither.left.map {
-          ex =>
-            implicit val ctx: Issue.IssueContext =
-              Issue.IssueContext(
-                SourceFilePosition.unknown,
-                ex,
-              )
-            BaboonIssue.Translation(io.septimalmind.baboon.parser.model.issues.TranslationIssue.TranslationBug())
-        }
+        case _ => F.fail(RuntimeCodecIssue.UnexpectedDomainMemberType(typedef.id, s"Expected User type, got: ${typedef.getClass.getSimpleName}"))
       }
     }
 
@@ -135,90 +111,91 @@ object BaboonRuntimeCodec {
     }
 
     // Encode user-defined types
-    private def encodeUserType(dom: Domain, typedef: Typedef.User, json: Json, writer: DataOutputStream, indexed: Boolean): Unit = {
+    private def encodeUserType(dom: Domain, typedef: Typedef.User, json: Json, writer: DataOutputStream, indexed: Boolean): F[BaboonIssue, Unit] = {
       typedef match {
         case dto: Typedef.Dto    => encodeDto(dom, dto, json, writer, indexed)
         case enum: Typedef.Enum  => encodeEnum(dom, enum, json, writer)
         case adt: Typedef.Adt    => encodeAdt(dom, adt, json, writer, indexed)
-        case _: Typedef.Foreign  => throw new IllegalArgumentException(s"Foreign types cannot be encoded: ${typedef.id}")
-        case _: Typedef.Service  => throw new IllegalArgumentException(s"Service types cannot be encoded: ${typedef.id}")
-        case _: Typedef.Contract => throw new IllegalArgumentException(s"Contract types cannot be encoded: ${typedef.id}")
+        case _: Typedef.Foreign  => F.fail(RuntimeCodecIssue.CannotEncodeType(typedef.id, "Foreign types cannot be encoded"))
+        case _: Typedef.Service  => F.fail(RuntimeCodecIssue.CannotEncodeType(typedef.id, "Service types cannot be encoded"))
+        case _: Typedef.Contract => F.fail(RuntimeCodecIssue.CannotEncodeType(typedef.id, "Contract types cannot be encoded"))
       }
     }
 
     // Decode user-defined types
-    private def decodeUserType(dom: Domain, typedef: Typedef.User, reader: DataInputStream): Json = {
+    private def decodeUserType(dom: Domain, typedef: Typedef.User, reader: DataInputStream): F[BaboonIssue, Json] = {
       typedef match {
         case dto: Typedef.Dto    => decodeDto(dom, dto, reader)
         case enum: Typedef.Enum  => decodeEnum(dom, enum, reader)
         case adt: Typedef.Adt    => decodeAdt(dom, adt, reader)
-        case _: Typedef.Foreign  => throw new IllegalArgumentException(s"Foreign types cannot be decoded: ${typedef.id}")
-        case _: Typedef.Service  => throw new IllegalArgumentException(s"Service types cannot be decoded: ${typedef.id}")
-        case _: Typedef.Contract => throw new IllegalArgumentException(s"Contract types cannot be decoded: ${typedef.id}")
+        case _: Typedef.Foreign  => F.fail(RuntimeCodecIssue.CannotDecodeType(typedef.id, "Foreign types cannot be decoded"))
+        case _: Typedef.Service  => F.fail(RuntimeCodecIssue.CannotDecodeType(typedef.id, "Service types cannot be decoded"))
+        case _: Typedef.Contract => F.fail(RuntimeCodecIssue.CannotDecodeType(typedef.id, "Contract types cannot be decoded"))
       }
     }
 
     // DTO encoding/decoding
-    private def encodeDto(dom: Domain, dto: Typedef.Dto, json: Json, writer: DataOutputStream, indexed: Boolean): Unit = {
-      val obj = json.asObject.getOrElse(
-        throw new IllegalArgumentException(s"Expected JSON object for DTO ${dto.id}, got: $json")
-      )
+    private def encodeDto(dom: Domain, dto: Typedef.Dto, json: Json, writer: DataOutputStream, indexed: Boolean): F[BaboonIssue, Unit] = {
+      json.asObject match {
+        case None => F.fail(RuntimeCodecIssue.ExpectedJsonObject(dto.id.toString, json))
+        case Some(obj) =>
+          // Write header byte
+          val header: Byte = if (indexed) 1 else 0
+          writer.writeByte(header)
 
-      // Write header byte
-      val header: Byte = if (indexed) 1 else 0
-      writer.writeByte(header)
+          if (indexed) {
+            // In indexed mode: collect field data in buffer, write index, then data
+            val fieldDataBuffer = new ByteArrayOutputStream()
+            val fieldDataWriter = new DataOutputStream(fieldDataBuffer)
+            val indexEntries = scala.collection.mutable.ArrayBuffer[(Int, Int)]()
 
-      if (indexed) {
-        // In indexed mode: collect field data in buffer, write index, then data
-        val fieldDataBuffer = new ByteArrayOutputStream()
-        val fieldDataWriter = new DataOutputStream(fieldDataBuffer)
+            F.foldLeft(dto.fields)(0) {
+              case (offset, field) =>
+                val fieldJson = obj(field.name.name).getOrElse(Json.Null)
 
-        // Track variable-length fields for index
-        val indexEntries = scala.collection.mutable.ArrayBuffer[(Int, Int)]()
-        var offset      = 0
+                if (enquiries.uebaLen(dom.defs.meta.nodes, field.tpe).isVariable) {
+                  // Variable-length field: record position, write to buffer, record length
+                  val before = fieldDataBuffer.size()
+                  encodeTypeRef(dom, field.tpe, fieldJson, fieldDataWriter, indexed).map {
+                    _ =>
+                      val after  = fieldDataBuffer.size()
+                      val length = after - before
+                      indexEntries += ((offset, length))
+                      after
+                  }
+                } else {
+                  // Fixed-length field: just write to buffer
+                  encodeTypeRef(dom, field.tpe, fieldJson, fieldDataWriter, indexed).map {
+                    _ => fieldDataBuffer.size()
+                  }
+                }
+            }.flatMap {
+              _ =>
+                fieldDataWriter.flush()
 
-        dto.fields.foreach {
-          field =>
-            val fieldJson = obj(field.name.name).getOrElse(Json.Null)
+                // Write index entries (offset and length for each variable-length field)
+                indexEntries.foreach {
+                  case (off, len) =>
+                    writeIntLE(off, writer)
+                    writeIntLE(len, writer)
+                }
 
-            if (enquiries.uebaLen(dom.defs.meta.nodes, field.tpe).isVariable) {
-              // Variable-length field: record position, write to buffer, record length
-              val before = fieldDataBuffer.size()
-              encodeTypeRef(dom, field.tpe, fieldJson, fieldDataWriter, indexed)
-              val after  = fieldDataBuffer.size()
-              val length = after - before
-
-              indexEntries += ((offset, length))
-              offset = after
-            } else {
-              // Fixed-length field: just write to buffer
-              encodeTypeRef(dom, field.tpe, fieldJson, fieldDataWriter, indexed)
-              offset = fieldDataBuffer.size()
+                // Write all field data
+                writer.write(fieldDataBuffer.toByteArray)
+                F.unit
             }
-        }
-
-        fieldDataWriter.flush()
-
-        // Write index entries (offset and length for each variable-length field)
-        indexEntries.foreach {
-          case (off, len) =>
-            writeIntLE(off, writer)
-            writeIntLE(len, writer)
-        }
-
-        // Write all field data
-        writer.write(fieldDataBuffer.toByteArray)
-      } else {
-        // Compact mode: write fields directly
-        dto.fields.foreach {
-          field =>
-            val fieldJson = obj(field.name.name).getOrElse(Json.Null)
-            encodeTypeRef(dom, field.tpe, fieldJson, writer, indexed)
-        }
+          } else {
+            // Compact mode: write fields directly
+            F.traverse_(dto.fields) {
+              field =>
+                val fieldJson = obj(field.name.name).getOrElse(Json.Null)
+                encodeTypeRef(dom, field.tpe, fieldJson, writer, indexed)
+            }
+          }
       }
     }
 
-    private def decodeDto(dom: Domain, dto: Typedef.Dto, reader: DataInputStream): Json = {
+    private def decodeDto(dom: Domain, dto: Typedef.Dto, reader: DataInputStream): F[BaboonIssue, Json] = {
       // Read header byte
       val header = reader.readByte()
 
@@ -236,93 +213,93 @@ object BaboonRuntimeCodec {
       }
 
       // Decode each field (data is in the same order regardless of indexed mode)
-      val fields = dto.fields.map {
+      F.traverse(dto.fields) {
         field =>
-          val value = decodeTypeRef(dom, field.tpe, reader)
-          (field.name.name, value)
-      }
-
-      Json.obj(fields *)
+          decodeTypeRef(dom, field.tpe, reader).map {
+            value => (field.name.name, value)
+          }
+      }.map(fields => Json.obj(fields *))
     }
 
     // Enum encoding/decoding
-    private def encodeEnum(dom: Domain, enum: Typedef.Enum, json: Json, writer: DataOutputStream): Unit = {
-      val str = json.asString
-        .getOrElse(
-          throw new IllegalArgumentException(s"Expected JSON string for enum ${enum.id}, got: $json")
-        ).toLowerCase.trim
-
-      val idx = enum.members.toList.indexWhere(_.name.toLowerCase == str)
-      if (idx < 0) {
-        throw new IllegalArgumentException(s"Unknown enum value '$str' for ${enum.id}")
+    private def encodeEnum(@annotation.unused dom: Domain, enum: Typedef.Enum, json: Json, writer: DataOutputStream): F[BaboonIssue, Unit] = {
+      json.asString match {
+        case None => F.fail(RuntimeCodecIssue.ExpectedJsonString(enum.id.toString, json))
+        case Some(s) =>
+          val str = s.toLowerCase.trim
+          val idx = enum.members.toList.indexWhere(_.name.toLowerCase == str)
+          if (idx < 0) {
+            F.fail(RuntimeCodecIssue.UnknownEnumValue(enum.id, str, enum.members.toList.map(_.name)))
+          } else {
+            writer.writeByte(idx)
+            F.unit
+          }
       }
-
-      writer.writeByte(idx)
     }
 
-    private def decodeEnum(dom: Domain, enum: Typedef.Enum, reader: DataInputStream): Json = {
+    private def decodeEnum(@annotation.unused dom: Domain, enum: Typedef.Enum, reader: DataInputStream): F[BaboonIssue, Json] = {
       val idx = reader.readByte() & 0xFF
 
       if (idx >= enum.members.size) {
-        throw new IllegalArgumentException(s"Invalid enum index $idx for ${enum.id}, max is ${enum.members.size - 1}")
+        F.fail(RuntimeCodecIssue.InvalidEnumIndex(enum.id, idx, enum.members.size - 1))
+      } else {
+        F.pure(Json.fromString(enum.members.toList(idx).name))
       }
-
-      Json.fromString(enum.members.toList(idx).name)
     }
 
     // ADT encoding/decoding
-    private def encodeAdt(dom: Domain, adt: Typedef.Adt, json: Json, writer: DataOutputStream, indexed: Boolean): Unit = {
-      val obj = json.asObject.getOrElse(
-        throw new IllegalArgumentException(s"Expected JSON object for ADT ${adt.id}, got: $json")
-      )
+    private def encodeAdt(dom: Domain, adt: Typedef.Adt, json: Json, writer: DataOutputStream, indexed: Boolean): F[BaboonIssue, Unit] = {
+      json.asObject match {
+        case None => F.fail(RuntimeCodecIssue.ExpectedJsonObject(adt.id.toString, json))
+        case Some(obj) =>
+          // Find the branch - the object should have exactly one key
+          val branches = obj.toList
+          if (branches.length != 1) {
+            F.fail(RuntimeCodecIssue.InvalidAdtStructure(adt.id, branches.map(_._1)))
+          } else {
+            val (branchName, branchValue) = branches.head
+            val dataMembers               = adt.dataMembers(dom)
 
-      // Find the branch - the object should have exactly one key
-      val branches = obj.toList
-      if (branches.length != 1) {
-        throw new IllegalArgumentException(s"Expected exactly one branch for ADT ${adt.id}, got: ${branches.map(_._1)}")
+            val branchIdx = dataMembers.indexWhere(_.name.name == branchName)
+            if (branchIdx < 0) {
+              F.fail(RuntimeCodecIssue.UnknownAdtBranch(adt.id, branchName, dataMembers.toList.map(_.name.name)))
+            } else {
+              // Write discriminator
+              writer.writeByte(branchIdx)
+
+              // Encode the branch value
+              val branchId  = dataMembers(branchIdx)
+              val branchDef = dom.defs.meta.nodes(branchId).asInstanceOf[DomainMember.User].defn
+              encodeUserType(dom, branchDef, branchValue, writer, indexed)
+            }
+          }
       }
-
-      val (branchName, branchValue) = branches.head
-      val dataMembers               = adt.dataMembers(dom)
-
-      val branchIdx = dataMembers.indexWhere(_.name.name == branchName)
-      if (branchIdx < 0) {
-        throw new IllegalArgumentException(s"Unknown ADT branch '$branchName' for ${adt.id}")
-      }
-
-      // Write discriminator
-      writer.writeByte(branchIdx)
-
-      // Encode the branch value
-      val branchId  = dataMembers(branchIdx)
-      val branchDef = dom.defs.meta.nodes(branchId).asInstanceOf[DomainMember.User].defn
-      encodeUserType(dom, branchDef, branchValue, writer, indexed)
     }
 
-    private def decodeAdt(dom: Domain, adt: Typedef.Adt, reader: DataInputStream): Json = {
+    private def decodeAdt(dom: Domain, adt: Typedef.Adt, reader: DataInputStream): F[BaboonIssue, Json] = {
       val discriminator = reader.readByte() & 0xFF
       val dataMembers   = adt.dataMembers(dom)
 
       if (discriminator >= dataMembers.size) {
-        throw new IllegalArgumentException(s"Invalid ADT discriminator $discriminator for ${adt.id}, max is ${dataMembers.size - 1}")
+        F.fail(RuntimeCodecIssue.InvalidAdtDiscriminator(adt.id, discriminator, dataMembers.size - 1))
+      } else {
+        val branchId  = dataMembers(discriminator)
+        val branchDef = dom.defs.meta.nodes(branchId).asInstanceOf[DomainMember.User].defn
+        decodeUserType(dom, branchDef, reader).map {
+          branchValue => Json.obj(branchId.name.name -> branchValue)
+        }
       }
-
-      val branchId    = dataMembers(discriminator)
-      val branchDef   = dom.defs.meta.nodes(branchId).asInstanceOf[DomainMember.User].defn
-      val branchValue = decodeUserType(dom, branchDef, reader)
-
-      Json.obj(branchId.name.name -> branchValue)
     }
 
     // TypeRef encoding/decoding
-    private def encodeTypeRef(dom: Domain, tpe: TypeRef, json: Json, writer: DataOutputStream, indexed: Boolean): Unit = {
+    private def encodeTypeRef(dom: Domain, tpe: TypeRef, json: Json, writer: DataOutputStream, indexed: Boolean): F[BaboonIssue, Unit] = {
       tpe match {
         case TypeRef.Scalar(id)            => encodeScalar(dom, id, json, writer, indexed)
         case TypeRef.Constructor(id, args) => encodeConstructor(dom, id, args.toList, json, writer, indexed)
       }
     }
 
-    private def decodeTypeRef(dom: Domain, tpe: TypeRef, reader: DataInputStream): Json = {
+    private def decodeTypeRef(dom: Domain, tpe: TypeRef, reader: DataInputStream): F[BaboonIssue, Json] = {
       tpe match {
         case TypeRef.Scalar(id)            => decodeScalar(dom, id, reader)
         case TypeRef.Constructor(id, args) => decodeConstructor(dom, id, args.toList, reader)
@@ -330,7 +307,7 @@ object BaboonRuntimeCodec {
     }
 
     // Scalar encoding/decoding
-    private def encodeScalar(dom: Domain, id: TypeId.Scalar, json: Json, writer: DataOutputStream, indexed: Boolean): Unit = {
+    private def encodeScalar(dom: Domain, id: TypeId.Scalar, json: Json, writer: DataOutputStream, indexed: Boolean): F[BaboonIssue, Unit] = {
       id match {
         case s: TypeId.BuiltinScalar => encodeBuiltinScalar(s, json, writer)
         case u: TypeId.User =>
@@ -339,7 +316,7 @@ object BaboonRuntimeCodec {
       }
     }
 
-    private def decodeScalar(dom: Domain, id: TypeId.Scalar, reader: DataInputStream): Json = {
+    private def decodeScalar(dom: Domain, id: TypeId.Scalar, reader: DataInputStream): F[BaboonIssue, Json] = {
       id match {
         case s: TypeId.BuiltinScalar => decodeBuiltinScalar(s, reader)
         case u: TypeId.User =>
@@ -349,201 +326,273 @@ object BaboonRuntimeCodec {
     }
 
     // Builtin scalar encoding/decoding
-    private def encodeBuiltinScalar(id: TypeId.BuiltinScalar, json: Json, writer: DataOutputStream): Unit = {
+    private def encodeBuiltinScalar(id: TypeId.BuiltinScalar, json: Json, writer: DataOutputStream): F[BaboonIssue, Unit] = {
       id match {
         case TypeId.Builtins.bit =>
-          val value = json.asBoolean.getOrElse(throw new IllegalArgumentException(s"Expected boolean, got: $json"))
-          writer.writeBoolean(value)
+          json.asBoolean match {
+            case Some(value) =>
+              writer.writeBoolean(value)
+              F.unit
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonBoolean(json))
+          }
 
         case TypeId.Builtins.i08 =>
-          val value = json.asNumber.flatMap(_.toLong).map(_.toByte).getOrElse(throw new IllegalArgumentException(s"Expected i08, got: $json"))
-          writer.writeByte(value)
+          json.asNumber.flatMap(_.toLong).map(_.toByte) match {
+            case Some(value) =>
+              writer.writeByte(value)
+              F.unit
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("i08", json))
+          }
 
         case TypeId.Builtins.i16 =>
-          val value = json.asNumber.flatMap(_.toLong).map(_.toShort).getOrElse(throw new IllegalArgumentException(s"Expected i16, got: $json"))
-          writeShortLE(value, writer)
+          json.asNumber.flatMap(_.toLong).map(_.toShort) match {
+            case Some(value) =>
+              writeShortLE(value, writer)
+              F.unit
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("i16", json))
+          }
 
         case TypeId.Builtins.i32 =>
-          val value = json.asNumber.flatMap(_.toInt).getOrElse(throw new IllegalArgumentException(s"Expected i32, got: $json"))
-          writeIntLE(value, writer)
+          json.asNumber.flatMap(_.toInt) match {
+            case Some(value) =>
+              writeIntLE(value, writer)
+              F.unit
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("i32", json))
+          }
 
         case TypeId.Builtins.i64 =>
-          val value = json.asNumber.flatMap(_.toLong).getOrElse(throw new IllegalArgumentException(s"Expected i64, got: $json"))
-          writeLongLE(value, writer)
+          json.asNumber.flatMap(_.toLong) match {
+            case Some(value) =>
+              writeLongLE(value, writer)
+              F.unit
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("i64", json))
+          }
 
         case TypeId.Builtins.u08 =>
-          val value = json.asNumber.flatMap(_.toLong).map(_.toByte).getOrElse(throw new IllegalArgumentException(s"Expected u08, got: $json"))
-          writer.writeByte(value)
+          json.asNumber.flatMap(_.toLong).map(_.toByte) match {
+            case Some(value) =>
+              writer.writeByte(value)
+              F.unit
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("u08", json))
+          }
 
         case TypeId.Builtins.u16 =>
-          val value = json.asNumber.flatMap(_.toLong).map(_.toShort).getOrElse(throw new IllegalArgumentException(s"Expected u16, got: $json"))
-          writeShortLE(value, writer)
+          json.asNumber.flatMap(_.toLong).map(_.toShort) match {
+            case Some(value) =>
+              writeShortLE(value, writer)
+              F.unit
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("u16", json))
+          }
 
         case TypeId.Builtins.u32 =>
-          val value = json.asNumber.flatMap(_.toInt).getOrElse(throw new IllegalArgumentException(s"Expected u32, got: $json"))
-          writeIntLE(value, writer)
+          json.asNumber.flatMap(_.toInt) match {
+            case Some(value) =>
+              writeIntLE(value, writer)
+              F.unit
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("u32", json))
+          }
 
         case TypeId.Builtins.u64 =>
-          val value = json.asNumber.flatMap(_.toLong).getOrElse(throw new IllegalArgumentException(s"Expected u64, got: $json"))
-          writeLongLE(value, writer)
+          json.asNumber.flatMap(_.toLong) match {
+            case Some(value) =>
+              writeLongLE(value, writer)
+              F.unit
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("u64", json))
+          }
 
         case TypeId.Builtins.f32 =>
-          val value = json.asNumber.flatMap(_.toBigDecimal.map(_.toDouble.toFloat)).getOrElse(throw new IllegalArgumentException(s"Expected f32, got: $json"))
-          writeFloatLE(value, writer)
+          json.asNumber.flatMap(_.toBigDecimal.map(_.toDouble.toFloat)) match {
+            case Some(value) =>
+              writeFloatLE(value, writer)
+              F.unit
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("f32", json))
+          }
 
         case TypeId.Builtins.f64 =>
-          val value = json.asNumber.flatMap(_.toBigDecimal.map(_.toDouble)).getOrElse(throw new IllegalArgumentException(s"Expected f64, got: $json"))
-          writeDoubleLE(value, writer)
+          json.asNumber.flatMap(_.toBigDecimal.map(_.toDouble)) match {
+            case Some(value) =>
+              writeDoubleLE(value, writer)
+              F.unit
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("f64", json))
+          }
 
         case TypeId.Builtins.f128 =>
-          val value = json.asNumber.flatMap(_.toBigDecimal).getOrElse(throw new IllegalArgumentException(s"Expected f128, got: $json"))
-          encodeDecimal(value, writer)
+          json.asNumber.flatMap(_.toBigDecimal) match {
+            case Some(value) =>
+              encodeDecimal(value, writer)
+              F.unit
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonNumber("f128", json))
+          }
 
         case TypeId.Builtins.str =>
-          val value = json.asString.getOrElse(throw new IllegalArgumentException(s"Expected string, got: $json"))
-          val bytes = value.getBytes(StandardCharsets.UTF_8)
-          write7BitEncodedInt(bytes.length, writer)
-          writer.write(bytes)
+          json.asString match {
+            case Some(value) =>
+              val bytes = value.getBytes(StandardCharsets.UTF_8)
+              write7BitEncodedInt(bytes.length, writer)
+              writer.write(bytes)
+              F.unit
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonString("str", json))
+          }
 
         case TypeId.Builtins.uid =>
-          val value = json.asString.map(UUID.fromString).getOrElse(throw new IllegalArgumentException(s"Expected UUID string, got: $json"))
-          writer.write(toBytes(value))
+          json.asString match {
+            case Some(str) =>
+              F.fromEither(Try(UUID.fromString(str)).toEither.left.map(_ => RuntimeCodecIssue.InvalidUuidString(str): BaboonIssue)).map {
+                uuid =>
+                  writer.write(toBytes(uuid))
+              }
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonString("uid", json))
+          }
 
         case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-          val value        = json.asString.getOrElse(throw new IllegalArgumentException(s"Expected timestamp string, got: $json"))
-          val offsetDt     = OffsetDateTime.parse(value, isoFormatter)
-          val epochMs      = offsetDt.toInstant.toEpochMilli
-          val dotNetTicksMs = epochMs + DotNetEpochOffsetMs
-          val offsetMs     = offsetDt.getOffset.getTotalSeconds * 1000L
-          val kind: Byte   = if (offsetDt.getOffset.getTotalSeconds == 0) 1.toByte else 0.toByte  // 1=UTC, 0=Unspecified
-          writeLongLE(dotNetTicksMs, writer)
-          writeLongLE(offsetMs, writer)
-          writer.writeByte(kind)
+          json.asString match {
+            case Some(value) =>
+              F.fromEither(Try(OffsetDateTime.parse(value, isoFormatter)).toEither.left.map(_ => RuntimeCodecIssue.InvalidTimestampString(value): BaboonIssue)).map {
+                offsetDt =>
+                  val epochMs       = offsetDt.toInstant.toEpochMilli
+                  val dotNetTicksMs = epochMs + DotNetEpochOffsetMs
+                  val offsetMs      = offsetDt.getOffset.getTotalSeconds * 1000L
+                  val kind          = if (offsetDt.getOffset.getTotalSeconds == 0) 1.toByte else 0.toByte
+                  writeLongLE(dotNetTicksMs, writer)
+                  writeLongLE(offsetMs, writer)
+                  writer.writeByte(kind)
+              }
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonString("timestamp", json))
+          }
 
-        case other => throw new IllegalArgumentException(s"Unsupported builtin scalar: $other")
+        case other => F.fail(RuntimeCodecIssue.UnsupportedBuiltinScalar(other))
       }
     }
 
-    private def decodeBuiltinScalar(id: TypeId.BuiltinScalar, reader: DataInputStream): Json = {
+    private def decodeBuiltinScalar(id: TypeId.BuiltinScalar, reader: DataInputStream): F[BaboonIssue, Json] = {
       id match {
-        case TypeId.Builtins.bit => Json.fromBoolean(reader.readBoolean())
-        case TypeId.Builtins.i08 => Json.fromInt(reader.readByte())
-        case TypeId.Builtins.i16 => Json.fromInt(readShortLE(reader))
-        case TypeId.Builtins.i32 => Json.fromInt(readIntLE(reader))
-        case TypeId.Builtins.i64 => Json.fromLong(readLongLE(reader))
-        case TypeId.Builtins.u08 => Json.fromInt(reader.readByte() & 0xFF)
-        case TypeId.Builtins.u16 => Json.fromInt(readShortLE(reader) & 0xFFFF)
-        case TypeId.Builtins.u32 => Json.fromLong(readIntLE(reader) & 0xFFFFFFFFL)
+        case TypeId.Builtins.bit => F.pure(Json.fromBoolean(reader.readBoolean()))
+        case TypeId.Builtins.i08 => F.pure(Json.fromInt(reader.readByte()))
+        case TypeId.Builtins.i16 => F.pure(Json.fromInt(readShortLE(reader)))
+        case TypeId.Builtins.i32 => F.pure(Json.fromInt(readIntLE(reader)))
+        case TypeId.Builtins.i64 => F.pure(Json.fromLong(readLongLE(reader)))
+        case TypeId.Builtins.u08 => F.pure(Json.fromInt(reader.readByte() & 0xFF))
+        case TypeId.Builtins.u16 => F.pure(Json.fromInt(readShortLE(reader) & 0xFFFF))
+        case TypeId.Builtins.u32 => F.pure(Json.fromLong(readIntLE(reader) & 0xFFFFFFFFL))
         case TypeId.Builtins.u64 =>
           val value = readLongLE(reader)
-          if (value < 0) {
-            // Convert to unsigned BigInt
-            Json.fromBigInt(BigInt(value & Long.MaxValue) + BigInt(Long.MaxValue) + 1)
-          } else {
-            Json.fromLong(value)
-          }
-        case TypeId.Builtins.f32 => Json.fromFloatOrString(readFloatLE(reader))
-        case TypeId.Builtins.f64 => Json.fromDoubleOrString(readDoubleLE(reader))
-        case TypeId.Builtins.f128 =>
-          Json.fromBigDecimal(decodeDecimal(reader))
+          F.pure(
+            if (value < 0) {
+              // Convert to unsigned BigInt
+              Json.fromBigInt(BigInt(value & Long.MaxValue) + BigInt(Long.MaxValue) + 1)
+            } else {
+              Json.fromLong(value)
+            }
+          )
+        case TypeId.Builtins.f32 => F.pure(Json.fromFloatOrString(readFloatLE(reader)))
+        case TypeId.Builtins.f64 => F.pure(Json.fromDoubleOrString(readDoubleLE(reader)))
+        case TypeId.Builtins.f128 => F.pure(Json.fromBigDecimal(decodeDecimal(reader)))
         case TypeId.Builtins.str =>
           val length = read7BitEncodedInt(reader)
           val bytes  = new Array[Byte](length)
           reader.readFully(bytes)
-          Json.fromString(new String(bytes, StandardCharsets.UTF_8))
+          F.pure(Json.fromString(new String(bytes, StandardCharsets.UTF_8)))
         case TypeId.Builtins.uid =>
           val bytes = new Array[Byte](16)
           reader.readFully(bytes)
-          Json.fromString(fromBytes(bytes).toString)
+          F.pure(Json.fromString(fromBytes(bytes).toString))
         case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
           // Read timestamp: 8 bytes (ticks in ms) + 8 bytes (offset in ms) + 1 byte (kind) = 17 bytes
           val dotNetTicksMs = readLongLE(reader)
-          val offsetMs     = readLongLE(reader)
-          val kind         = reader.readByte()
+          val offsetMs      = readLongLE(reader)
+          reader.readByte() // kind (unused)
 
           // Convert .NET ticks (in ms) to Unix epoch milliseconds
-          val epochMs = dotNetTicksMs - DotNetEpochOffsetMs
+          val epochMs       = dotNetTicksMs - DotNetEpochOffsetMs
           val offsetSeconds = (offsetMs / 1000).toInt
-          val offset       = ZoneOffset.ofTotalSeconds(offsetSeconds)
-          val instant      = Instant.ofEpochMilli(epochMs)
-          val offsetDt     = OffsetDateTime.ofInstant(instant, offset)
-
-          Json.fromString(offsetDt.format(isoFormatter))
-        case other => throw new IllegalArgumentException(s"Unsupported builtin scalar: $other")
+          val offset        = ZoneOffset.ofTotalSeconds(offsetSeconds)
+          val instant       = Instant.ofEpochMilli(epochMs)
+          val offsetDt      = OffsetDateTime.ofInstant(instant, offset)
+          F.pure(Json.fromString(offsetDt.format(isoFormatter)))
+        case other => F.fail(RuntimeCodecIssue.UnsupportedBuiltinScalar(other))
       }
     }
 
     // Constructor (collection) encoding/decoding
-    private def encodeConstructor(dom: Domain, id: TypeId.BuiltinCollection, args: List[TypeRef], json: Json, writer: DataOutputStream, indexed: Boolean): Unit = {
+    private def encodeConstructor(dom: Domain, id: TypeId.BuiltinCollection, args: List[TypeRef], json: Json, writer: DataOutputStream, indexed: Boolean): F[BaboonIssue, Unit] = {
       id match {
         case TypeId.Builtins.opt =>
           if (json.isNull) {
             writer.writeByte(0)
+            F.unit
           } else {
             writer.writeByte(1)
             encodeTypeRef(dom, args.head, json, writer, indexed)
           }
 
         case TypeId.Builtins.lst =>
-          val arr = json.asArray.getOrElse(throw new IllegalArgumentException(s"Expected array for list, got: $json"))
-          writeIntLE(arr.size, writer)
-          arr.foreach(elem => encodeTypeRef(dom, args.head, elem, writer, indexed))
-
-        case TypeId.Builtins.set =>
-          val arr = json.asArray.getOrElse(throw new IllegalArgumentException(s"Expected array for set, got: $json"))
-          writeIntLE(arr.size, writer)
-          arr.foreach(elem => encodeTypeRef(dom, args.head, elem, writer, indexed))
-
-        case TypeId.Builtins.map =>
-          val obj = json.asObject.getOrElse(throw new IllegalArgumentException(s"Expected object for map, got: $json"))
-          writeIntLE(obj.size, writer)
-          obj.toList.foreach {
-            case (key, value) =>
-              // Encode key - for now assume keys can be encoded as strings
-              encodeMapKey(dom, args.head, key, writer)
-              encodeTypeRef(dom, args.last, value, writer, indexed)
+          json.asArray match {
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonArray("list", json))
+            case Some(arr) =>
+              writeIntLE(arr.size, writer)
+              F.traverse_(arr)(elem => encodeTypeRef(dom, args.head, elem, writer, indexed))
           }
 
-        case other => throw new IllegalArgumentException(s"Unsupported collection type: $other")
+        case TypeId.Builtins.set =>
+          json.asArray match {
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonArray("set", json))
+            case Some(arr) =>
+              writeIntLE(arr.size, writer)
+              F.traverse_(arr)(elem => encodeTypeRef(dom, args.head, elem, writer, indexed))
+          }
+
+        case TypeId.Builtins.map =>
+          json.asObject match {
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonObject("map", json))
+            case Some(obj) =>
+              writeIntLE(obj.size, writer)
+              F.traverse_(obj.toList) {
+                case (key, value) =>
+                  for {
+                    _ <- encodeMapKey(dom, args.head, key, writer)
+                    _ <- encodeTypeRef(dom, args.last, value, writer, indexed)
+                  } yield ()
+              }
+          }
+
+        case other => F.fail(RuntimeCodecIssue.UnsupportedCollectionType(other))
       }
     }
 
-    private def decodeConstructor(dom: Domain, id: TypeId.BuiltinCollection, args: List[TypeRef], reader: DataInputStream): Json = {
+    private def decodeConstructor(dom: Domain, id: TypeId.BuiltinCollection, args: List[TypeRef], reader: DataInputStream): F[BaboonIssue, Json] = {
       id match {
         case TypeId.Builtins.opt =>
           val flag = reader.readByte()
           if (flag == 0) {
-            Json.Null
+            F.pure(Json.Null)
           } else {
             decodeTypeRef(dom, args.head, reader)
           }
 
         case TypeId.Builtins.lst =>
-          val count    = readIntLE(reader)
-          val elements = (0 until count).map(_ => decodeTypeRef(dom, args.head, reader))
-          Json.arr(elements *)
+          val count = readIntLE(reader)
+          F.traverse(0 until count)(_ => decodeTypeRef(dom, args.head, reader)).map(elements => Json.arr(elements *))
 
         case TypeId.Builtins.set =>
-          val count    = readIntLE(reader)
-          val elements = (0 until count).map(_ => decodeTypeRef(dom, args.head, reader))
-          Json.arr(elements *)
+          val count = readIntLE(reader)
+          F.traverse(0 until count)(_ => decodeTypeRef(dom, args.head, reader)).map(elements => Json.arr(elements *))
 
         case TypeId.Builtins.map =>
           val count = readIntLE(reader)
-          val pairs = (0 until count).map {
+          F.traverse(0 until count) {
             _ =>
-              val key   = decodeMapKey(dom, args.head, reader)
-              val value = decodeTypeRef(dom, args.last, reader)
-              (key, value)
-          }
-          Json.obj(pairs *)
+              for {
+                key   <- decodeMapKey(dom, args.head, reader)
+                value <- decodeTypeRef(dom, args.last, reader)
+              } yield (key, value)
+          }.map(pairs => Json.obj(pairs *))
 
-        case other => throw new IllegalArgumentException(s"Unsupported collection type: $other")
+        case other => F.fail(RuntimeCodecIssue.UnsupportedCollectionType(other))
       }
     }
 
     // Map key encoding/decoding - keys need special handling
-    private def encodeMapKey(dom: Domain, keyType: TypeRef, key: String, writer: DataOutputStream): Unit = {
+    private def encodeMapKey(dom: Domain, keyType: TypeRef, key: String, writer: DataOutputStream): F[BaboonIssue, Unit] = {
       keyType match {
         case TypeRef.Scalar(id: TypeId.BuiltinScalar) =>
           id match {
@@ -551,43 +600,57 @@ object BaboonRuntimeCodec {
               val bytes = key.getBytes(StandardCharsets.UTF_8)
               write7BitEncodedInt(bytes.length, writer)
               writer.write(bytes)
+              F.unit
             case TypeId.Builtins.bit =>
               writer.writeBoolean(key.toBoolean)
+              F.unit
             case TypeId.Builtins.i08 =>
               writer.writeByte(key.toByte)
+              F.unit
             case TypeId.Builtins.i16 =>
               writeShortLE(key.toShort, writer)
+              F.unit
             case TypeId.Builtins.i32 =>
               writeIntLE(key.toInt, writer)
+              F.unit
             case TypeId.Builtins.i64 =>
               writeLongLE(key.toLong, writer)
+              F.unit
             case TypeId.Builtins.u08 =>
               writer.writeByte(key.toByte)
+              F.unit
             case TypeId.Builtins.u16 =>
               writeShortLE(key.toShort, writer)
+              F.unit
             case TypeId.Builtins.u32 =>
               writeIntLE(key.toInt, writer)
+              F.unit
             case TypeId.Builtins.u64 =>
               writeLongLE(key.toLong, writer)
+              F.unit
             case TypeId.Builtins.f32 =>
               writeFloatLE(key.toFloat, writer)
+              F.unit
             case TypeId.Builtins.f64 =>
               writeDoubleLE(key.toDouble, writer)
+              F.unit
             case TypeId.Builtins.f128 =>
-              // f128 is encoded as string representation
-              val str   = key
-              val bytes = str.getBytes(StandardCharsets.UTF_8)
+              val bytes = key.getBytes(StandardCharsets.UTF_8)
               write7BitEncodedInt(bytes.length, writer)
               writer.write(bytes)
+              F.unit
             case TypeId.Builtins.uid =>
-              writer.write(toBytes(UUID.fromString(key)))
+              F.fromEither(Try(UUID.fromString(key)).toEither.left.map(_ => RuntimeCodecIssue.InvalidUuidString(key): BaboonIssue)).map {
+                uuid => writer.write(toBytes(uuid))
+              }
             case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
               // Encode timestamp as binary: ticks + offset + kind
               writeLongLE(0L, writer)
               writeLongLE(0L, writer)
               writer.writeByte(0)
+              F.unit
             case other =>
-              throw new IllegalArgumentException(s"Unsupported map key type: $other")
+              F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(TypeRef.Scalar(other)))
           }
         case TypeRef.Scalar(u: TypeId.User) =>
           // Assume enum or foreign type that can be represented as string
@@ -596,14 +659,14 @@ object BaboonRuntimeCodec {
             case enum: Typedef.Enum =>
               encodeEnum(dom, enum, Json.fromString(key), writer)
             case _ =>
-              throw new IllegalArgumentException(s"Unsupported map key type: $u")
+              F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(TypeRef.Scalar(u)))
           }
         case _ =>
-          throw new IllegalArgumentException(s"Unsupported map key type: $keyType")
+          F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(keyType))
       }
     }
 
-    private def decodeMapKey(dom: Domain, keyType: TypeRef, reader: DataInputStream): String = {
+    private def decodeMapKey(dom: Domain, keyType: TypeRef, reader: DataInputStream): F[BaboonIssue, String] = {
       keyType match {
         case TypeRef.Scalar(id: TypeId.BuiltinScalar) =>
           id match {
@@ -611,65 +674,70 @@ object BaboonRuntimeCodec {
               val length = read7BitEncodedInt(reader)
               val bytes  = new Array[Byte](length)
               reader.readFully(bytes)
-              new String(bytes, StandardCharsets.UTF_8)
+              F.pure(new String(bytes, StandardCharsets.UTF_8))
             case TypeId.Builtins.bit =>
-              reader.readBoolean().toString
+              F.pure(reader.readBoolean().toString)
             case TypeId.Builtins.i08 =>
-              reader.readByte().toString
+              F.pure(reader.readByte().toString)
             case TypeId.Builtins.i16 =>
-              readShortLE(reader).toString
+              F.pure(readShortLE(reader).toString)
             case TypeId.Builtins.i32 =>
-              readIntLE(reader).toString
+              F.pure(readIntLE(reader).toString)
             case TypeId.Builtins.i64 =>
-              readLongLE(reader).toString
+              F.pure(readLongLE(reader).toString)
             case TypeId.Builtins.u08 =>
-              (reader.readByte() & 0xFF).toString
+              F.pure((reader.readByte() & 0xFF).toString)
             case TypeId.Builtins.u16 =>
-              (readShortLE(reader) & 0xFFFF).toString
+              F.pure((readShortLE(reader) & 0xFFFF).toString)
             case TypeId.Builtins.u32 =>
-              (readIntLE(reader) & 0xFFFFFFFFL).toString
+              F.pure((readIntLE(reader) & 0xFFFFFFFFL).toString)
             case TypeId.Builtins.u64 =>
               val value = readLongLE(reader)
-              if (value < 0) {
-                BigInt(value).+(BigInt(1) << 64).toString
-              } else {
-                value.toString
-              }
+              F.pure(
+                if (value < 0) {
+                  BigInt(value).+(BigInt(1) << 64).toString
+                } else {
+                  value.toString
+                }
+              )
             case TypeId.Builtins.f32 =>
-              readFloatLE(reader).toString
+              F.pure(readFloatLE(reader).toString)
             case TypeId.Builtins.f64 =>
-              readDoubleLE(reader).toString
+              F.pure(readDoubleLE(reader).toString)
             case TypeId.Builtins.f128 =>
-              // f128 is encoded as string with 7-bit length
               val length = read7BitEncodedInt(reader)
               val bytes  = new Array[Byte](length)
               reader.readFully(bytes)
-              new String(bytes, StandardCharsets.UTF_8)
+              F.pure(new String(bytes, StandardCharsets.UTF_8))
             case TypeId.Builtins.uid =>
               val bytes = new Array[Byte](16)
               reader.readFully(bytes)
-              fromBytes(bytes).toString
+              F.pure(fromBytes(bytes).toString)
             case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
               // Read timestamp: ticks + offset + kind = 17 bytes
-              val ticks       = readLongLE(reader)
-              val offsetTicks = readLongLE(reader)
-              val kind        = reader.readByte()
-              "1970-01-01T00:00:00Z"
+              readLongLE(reader) // ticks (unused)
+              readLongLE(reader) // offsetTicks (unused)
+              reader.readByte()  // kind (unused)
+              F.pure("1970-01-01T00:00:00Z")
             case other =>
-              throw new IllegalArgumentException(s"Unsupported map key type: $other")
+              F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(TypeRef.Scalar(other)))
           }
         case TypeRef.Scalar(u: TypeId.User) =>
           val typedef = dom.defs.meta.nodes(u).asInstanceOf[DomainMember.User].defn
           typedef match {
             case enum: Typedef.Enum =>
-              decodeEnum(dom, enum, reader).asString.getOrElse(
-                throw new IllegalArgumentException(s"Failed to decode enum key as string")
-              )
+              decodeEnum(dom, enum, reader).flatMap {
+                json =>
+                  json.asString match {
+                    case Some(s) => F.pure(s)
+                    case None    => F.fail(RuntimeCodecIssue.CannotDecodeType(u, "Failed to decode enum key as string"))
+                  }
+              }
             case _ =>
-              throw new IllegalArgumentException(s"Unsupported map key type: $u")
+              F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(TypeRef.Scalar(u)))
           }
         case _ =>
-          throw new IllegalArgumentException(s"Unsupported map key type: $keyType")
+          F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(keyType))
       }
     }
 

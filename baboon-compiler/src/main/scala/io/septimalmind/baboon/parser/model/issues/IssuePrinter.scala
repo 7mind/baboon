@@ -33,6 +33,7 @@ object IssuePrinter {
     case issue: Evolution    => apply[Evolution].stringify(issue)
     case issue: Verification => apply[Verification].stringify(issue)
     case issue: Translation  => apply[Translation].stringify(issue)
+    case issue: RuntimeCodec => apply[RuntimeCodec].stringify(issue)
   }
 
   implicit class IssuePrinterOps[T <: BaboonIssue: IssuePrinter](issue: T) {

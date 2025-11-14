@@ -25,6 +25,8 @@ object BaboonIssue {
 
   case class Evolution(issue: EvolutionIssue) extends BaboonIssue
 
+  case class RuntimeCodec(issue: RuntimeCodecIssue) extends BaboonIssue
+
   def of[T](issue: T, more: T*)(implicit w: Wrap[T]): NEList[BaboonIssue] = NEList(w.wrap(issue), more.map(w.wrap))
 
   implicit object WEvolutionIssue extends Wrap[EvolutionIssue] {
@@ -51,8 +53,16 @@ object BaboonIssue {
     override def wrap(issue: TranslationIssue): BaboonIssue = TranslationIssue.wrap(issue)
   }
 
+  implicit object WRuntimeCodecIssue extends Wrap[RuntimeCodecIssue] {
+    override def wrap(issue: RuntimeCodecIssue): BaboonIssue = RuntimeCodecIssue.wrap(issue)
+  }
+
   implicit val wTranslationIssuePrinter: IssuePrinter[Translation] = {
     case i: Translation => IssuePrinter[TranslationIssue].stringify(i.issue)
+  }
+
+  implicit val wRuntimeCodecIssuePrinter: IssuePrinter[RuntimeCodec] = {
+    case i: RuntimeCodec => IssuePrinter[RuntimeCodecIssue].stringify(i.issue)
   }
 
   implicit val wParserIssuePrinter: IssuePrinter[Parser] = {
