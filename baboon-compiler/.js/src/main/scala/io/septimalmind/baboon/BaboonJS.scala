@@ -1,11 +1,14 @@
 package io.septimalmind.baboon
 
 import distage.*
+import io.circe.Json
+import io.circe.parser.parse as parseJson
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
-import io.septimalmind.baboon.typer.model.BaboonFamily
+import io.septimalmind.baboon.typer.BaboonRuntimeCodec
+import io.septimalmind.baboon.typer.model.{BaboonFamily, Pkg, Version}
 import io.septimalmind.baboon.util.{BLogger, BLoggerJS}
 import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Error2, F, ParallelErrorAccumulatingOps2}
@@ -74,6 +77,60 @@ object BaboonJS {
           success = false,
           errors  = errors,
         ).asInstanceOf[JSCompilationResult]
+    }
+  }
+
+  /**
+    * Codec encode result
+    */
+  trait JSEncodeResult extends js.Object {
+    val success: Boolean
+    val data: js.UndefOr[js.typedarray.Uint8Array]
+    val error: js.UndefOr[String]
+  }
+
+  object JSEncodeResult {
+    def success(data: js.typedarray.Uint8Array): JSEncodeResult = {
+      js.Dynamic
+        .literal(
+          success = true,
+          data    = data,
+        ).asInstanceOf[JSEncodeResult]
+    }
+
+    def failure(error: String): JSEncodeResult = {
+      js.Dynamic
+        .literal(
+          success = false,
+          error   = error,
+        ).asInstanceOf[JSEncodeResult]
+    }
+  }
+
+  /**
+    * Codec decode result
+    */
+  trait JSDecodeResult extends js.Object {
+    val success: Boolean
+    val json: js.UndefOr[String]
+    val error: js.UndefOr[String]
+  }
+
+  object JSDecodeResult {
+    def success(json: String): JSDecodeResult = {
+      js.Dynamic
+        .literal(
+          success = true,
+          json    = json,
+        ).asInstanceOf[JSDecodeResult]
+    }
+
+    def failure(error: String): JSDecodeResult = {
+      js.Dynamic
+        .literal(
+          success = false,
+          error   = error,
+        ).asInstanceOf[JSDecodeResult]
     }
   }
 
@@ -311,5 +368,178 @@ object BaboonJS {
           } yield files).leftMap(issues => new RuntimeException(s"Failure: $issues"))
       }
 
+  }
+
+  /**
+    * Encode JSON to binary format using runtime codec (async)
+    *
+    * @param files Map of baboon files (path -> content)
+    * @param pkg Package name (e.g., "io.example.models")
+    * @param version Version string (e.g., "1.0.0")
+    * @param idString Type identifier
+    * @param json JSON string to encode
+    * @param indexed Whether to use indexed encoding
+    * @return JS Promise that resolves to encode result with binary data or error
+    */
+  @JSExport
+  def encode(
+    files: js.Dictionary[String],
+    pkg: String,
+    version: String,
+    idString: String,
+    json: String,
+    indexed: Boolean,
+  ): js.Promise[JSEncodeResult] = {
+    implicit val ec: ExecutionContext = scala.scalajs.concurrent.JSExecutionContext.queue
+
+    try {
+      val inputs = files.toSeq.map {
+        case (path, content) =>
+          BaboonParser.Input(
+            FSPath.parse(NEString.unsafeFrom(path)),
+            content,
+          )
+      }
+
+      import izumi.distage.modules.support.unsafe.EitherSupport.*
+      import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+      type F[+E, +A] = Either[E, A]
+
+      val resultFuture = encodeInternal[F](inputs, pkg, version, idString, json, indexed)
+
+      resultFuture.map {
+        data =>
+          val jsArray = js.Array[Short](data.map(b => (b & 0xFF).toShort)*)
+          val uint8Array = new js.typedarray.Uint8Array(jsArray.length)
+          jsArray.indices.foreach(i => uint8Array(i) = jsArray(i))
+          JSEncodeResult.success(uint8Array)
+      }.recover {
+        case e: Throwable =>
+          JSEncodeResult.failure(s"Encoding failed: ${e.getMessage}")
+      }.toJSPromise
+    } catch {
+      case e: Throwable =>
+        Future
+          .successful(
+            JSEncodeResult.failure(s"Encoding failed: ${e.getMessage}")
+          ).toJSPromise
+    }
+  }
+
+  /**
+    * Decode binary data to JSON using runtime codec (async)
+    *
+    * @param files Map of baboon files (path -> content)
+    * @param pkg Package name (e.g., "io.example.models")
+    * @param version Version string (e.g., "1.0.0")
+    * @param idString Type identifier
+    * @param data Binary data to decode
+    * @return JS Promise that resolves to decode result with JSON string or error
+    */
+  @JSExport
+  def decode(
+    files: js.Dictionary[String],
+    pkg: String,
+    version: String,
+    idString: String,
+    data: js.typedarray.Uint8Array,
+  ): js.Promise[JSDecodeResult] = {
+    implicit val ec: ExecutionContext = scala.scalajs.concurrent.JSExecutionContext.queue
+
+    try {
+      val inputs = files.toSeq.map {
+        case (path, content) =>
+          BaboonParser.Input(
+            FSPath.parse(NEString.unsafeFrom(path)),
+            content,
+          )
+      }
+
+      import izumi.distage.modules.support.unsafe.EitherSupport.*
+      import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+      type F[+E, +A] = Either[E, A]
+
+      val dataVector = Vector.from((0 until data.length).map(i => data(i).toByte))
+      val resultFuture = decodeInternal[F](inputs, pkg, version, idString, dataVector)
+
+      resultFuture.map {
+        json =>
+          JSDecodeResult.success(json.noSpaces)
+      }.recover {
+        case e: Throwable =>
+          JSDecodeResult.failure(s"Decoding failed: ${e.getMessage}")
+      }.toJSPromise
+    } catch {
+      case e: Throwable =>
+        Future
+          .successful(
+            JSDecodeResult.failure(s"Decoding failed: ${e.getMessage}")
+          ).toJSPromise
+    }
+  }
+
+  private def encodeInternal[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2: TagKK: DefaultModule2](
+    inputs: Seq[BaboonParser.Input],
+    pkgString: String,
+    versionString: String,
+    idString: String,
+    jsonString: String,
+    indexed: Boolean,
+  )(implicit
+    quasiIO: QuasiIO[F[Throwable, _]],
+    runner: QuasiIORunner[F[Throwable, _]],
+  ): Future[Vector[Byte]] = {
+    val logger = new BLoggerJS(false)
+    val m      = new BaboonModuleJS[F](inputs.toList, logger, ParallelErrorAccumulatingOps2[F])
+
+    runner.runFuture(
+      Injector
+        .NoCycles[F[Throwable, _]]()
+        .produceRun(m) {
+          (loader: BaboonLoaderJS[F], codec: BaboonRuntimeCodec[F]) =>
+            (for {
+              family <- loader.load(inputs.toList)
+              pkg = parsePkg(pkgString)
+              version = Version(versionString)
+              json <- Error2[F].fromEither(parseJson(jsonString).left.map(e => new RuntimeException(s"Invalid JSON: ${e.getMessage}")))
+              result <- codec.encode(family, pkg, version, idString, json, indexed)
+            } yield result).leftMap(issues => new RuntimeException(s"Encoding failure: $issues"))
+        }
+    )
+  }
+
+  private def decodeInternal[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2: TagKK: DefaultModule2](
+    inputs: Seq[BaboonParser.Input],
+    pkgString: String,
+    versionString: String,
+    idString: String,
+    data: Vector[Byte],
+  )(implicit
+    quasiIO: QuasiIO[F[Throwable, _]],
+    runner: QuasiIORunner[F[Throwable, _]],
+  ): Future[Json] = {
+    val logger = new BLoggerJS(false)
+    val m      = new BaboonModuleJS[F](inputs.toList, logger, ParallelErrorAccumulatingOps2[F])
+
+    runner.runFuture(
+      Injector
+        .NoCycles[F[Throwable, _]]()
+        .produceRun(m) {
+          (loader: BaboonLoaderJS[F], codec: BaboonRuntimeCodec[F]) =>
+            (for {
+              family <- loader.load(inputs.toList)
+              pkg = parsePkg(pkgString)
+              version = Version(versionString)
+              result <- codec.decode(family, pkg, version, idString, data)
+            } yield result).leftMap(issues => new RuntimeException(s"Decoding failure: $issues"))
+        }
+    )
+  }
+
+  private def parsePkg(pkgString: String): Pkg = {
+    val parts = pkgString.split("\\.").toList
+    Pkg(NEList.unsafeFrom(parts))
   }
 }
