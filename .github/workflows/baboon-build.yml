@@ -97,7 +97,7 @@ jobs:
     steps:
       - uses: 7mind/github-env@minimal
         with:
-          setup-nix: false
+          setup-nix: true
       - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
