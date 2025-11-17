@@ -164,7 +164,7 @@ object ScDefnTranslator {
         case _ =>
           val codecsReg = codecs.toList
             .sortBy(_.getClass.getName)
-            .map(codec => q"( /*TODO*/ ${codec.codecName(srcRef).copy(fq = true)} )")
+            .map(codec => q"${codec.codecName(srcRef).copy(fq = true)}")
           val reg =
             (List(q"""\"${defn.id.toString}\"""") ++ codecsReg).join(", ")
           List(csTypeRef -> reg)

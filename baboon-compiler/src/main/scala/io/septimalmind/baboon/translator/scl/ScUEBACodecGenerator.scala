@@ -482,11 +482,11 @@ class ScUEBACodecGenerator(
             s match {
               case TypeId.Builtins.bit   => q"$wref.writeBoolean($ref)"
               case TypeId.Builtins.i08   => q"$wref.writeByte($ref.toInt)"
-              case TypeId.Builtins.i16   => q"$wref.writeShort($ref)"
+              case TypeId.Builtins.i16   => q"$wref.writeShort($ref.toInt)"
               case TypeId.Builtins.i32   => q"$wref.writeInt($ref)"
               case TypeId.Builtins.i64   => q"$wref.writeLong($ref)"
               case TypeId.Builtins.u08   => q"$wref.writeByte($ref.toInt)"
-              case TypeId.Builtins.u16   => q"$wref.writeShort($ref)"
+              case TypeId.Builtins.u16   => q"$wref.writeShort($ref.toInt)"
               case TypeId.Builtins.u32   => q"$wref.writeInt($ref)"
               case TypeId.Builtins.u64   => q"$wref.writeLong($ref)"
               case TypeId.Builtins.f32   => q"$wref.writeFloat($ref)"

@@ -1,8 +1,8 @@
 package example
 
 import convtest.testpkg.{AllBasicTypes, AllBasicTypes_JsonCodec, AllBasicTypes_UEBACodec}
-import baboon.runtime.shared.{BaboonCodecContext, LEDataOutputStream, LEDataInputStream, ByteString}
-import java.io.{File, FileOutputStream, FileInputStream, ByteArrayOutputStream}
+import baboon.runtime.shared.{BaboonCodecContext, LEDataOutputStream, ByteString}
+import java.io.ByteArrayOutputStream
 import java.nio.file.{Files, Paths}
 import java.time.{OffsetDateTime, ZoneOffset}
 import java.util.UUID

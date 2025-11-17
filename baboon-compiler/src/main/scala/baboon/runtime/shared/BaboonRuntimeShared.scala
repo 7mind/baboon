@@ -15,7 +15,8 @@ package baboon.runtime.shared {
   trait BaboonGenerated {}
   trait BaboonAdtMemberMeta {}
   trait BaboonGeneratedLatest {}
-  trait BaboonTypeCodecs {}
+
+  case class BaboonTypeCodecs[T](id: String, jsonCodec: BaboonJsonCodec[T], uebaCodec: BaboonBinCodec[T])
 
   trait GenericConversion {}
 
@@ -53,7 +54,11 @@ package baboon.runtime.shared {
     def versionTo: String
   }
 
-  trait BaboonAbstractCodecs {}
+  trait BaboonAbstractCodecs {
+    def register[T](baboonTypeCodecs: BaboonTypeCodecs[T]): Unit = {
+      // TODO
+    }
+  }
 
   trait BaboonEnum[T] {
     def parse(s: String): Option[T]

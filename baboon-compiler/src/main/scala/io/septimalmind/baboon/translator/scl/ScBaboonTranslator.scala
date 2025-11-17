@@ -149,8 +149,11 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
     val usedTypes = o.tree.values.collect { case t: ScValue.ScType => t }.distinct
       .filterNot(_.fq)
       .filterNot(_.pkg == o.pkg)
-      .sortBy(_.toString) // TODO: dirty
+      .filterNot(t => t.pkg.parts.startsWith(o.pkg.parts))
+      .sortBy(_.toString)
 
+//    println((o.path, o.pkg))
+//    println(usedTypes.map(t => (t, t.fq)))
     val imports = usedTypes.toSeq.map {
       p => q"import ${p.pkg.parts.mkString(".")}.${p.name}"
     }.join("\n")
@@ -245,7 +248,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       val codecs =
         q"""object BaboonCodecs extends $abstractBaboonCodecs {
            |    // register codecs
-           |    /*${defnOut.flatMap(_.codecReg).join("\n").shift(4).trim}*/
+           |    ${defnOut.flatMap(_.codecReg).join("\n").shift(4).trim}
            |}""".stripMargin
 
       val basename = scFiles.basename(domain, lineage.evolution)
