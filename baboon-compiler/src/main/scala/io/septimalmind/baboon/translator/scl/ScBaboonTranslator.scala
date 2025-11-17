@@ -182,11 +182,15 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
 
   private def sharedRuntime(): Out[List[scl.ScDefnTranslator.Output]] = {
     if (target.output.products.contains(CompilerProduct.Runtime)) {
-      val test = IzResources.readAsString("baboon-runtime/scala/BaboonRuntimeShared.scala").get
 
       val sharedOutput = ScDefnTranslator.Output(
         s"BaboonRuntimeShared.scala",
-        TextTree.text(IzResources.readAsString("baboon-runtime/scala/BaboonRuntimeShared.scala").get),
+        TextTree.text(
+          IzResources
+            .readAsString("baboon-runtime/scala/BaboonRuntimeShared.scala").get
+            // TODO: hack, we always force escape processing in text tree
+            .replace("""[\\s:-]""", """[\\\\s:-]""")
+        ),
         ScTypes.baboonRuntimePkg,
         CompilerProduct.Runtime,
         doNotModify = true,

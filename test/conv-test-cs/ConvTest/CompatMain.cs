@@ -74,6 +74,7 @@ namespace ConvTest
                 Vf128: 123456789.987654321m,
 
                 Vstr: "Hello, Baboon!",
+                Vbstr: new ByteString(new byte[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x42, 0x79, 0x74, 0x65, 0x73 }), // "Hello Bytes"
                 Vuid: Guid.Parse("12345678-1234-5678-1234-567812345678"),
 
                 Vbit: true,

@@ -616,4 +616,27 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
       sum shouldBe 15
     }
   }
+
+  "BaboonRandom.nextByteString" should {
+    "generate random ByteStrings" in {
+      val random = BaboonRandom.default()
+
+      // Generate multiple ByteStrings
+      val byteStrings = (1 to 10).map(_ => random.nextByteString())
+
+      // All should have length between 0 and 20
+      byteStrings.foreach { bs =>
+        bs.length should be >= 0
+        bs.length should be <= 20
+      }
+    }
+
+    "generate ByteStrings with random content" in {
+      val random = BaboonRandom.default()
+      val bs = random.nextByteString()
+
+      // Should be a valid ByteString
+      bs should not be null
+    }
+  }
 }

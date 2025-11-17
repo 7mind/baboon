@@ -292,7 +292,7 @@ class ScUEBACodecGenerator(
     val fields = fieldsOf(d)
 
     val noIndex = Seq(
-      q"writer.writeByte(header)",
+      q"writer.writeByte(header.toInt)",
       fields.map(_._1).joinN(),
     ).filterNot(_.isEmpty).join("\n")
 
@@ -302,7 +302,7 @@ class ScUEBACodecGenerator(
          |if (ctx.useIndices)
          |{
          |  header = (header | 0b0000001).toByte
-         |  writer.writeByte(header)
+         |  writer.writeByte(header.toInt)
          |  val writeMemoryStream = new $byteArrayOutputStream()
          |  try  {
          |    val fakeWriter = new $binaryOutput(writeMemoryStream)
@@ -481,11 +481,11 @@ class ScUEBACodecGenerator(
           case s: TypeId.BuiltinScalar =>
             s match {
               case TypeId.Builtins.bit   => q"$wref.writeBoolean($ref)"
-              case TypeId.Builtins.i08   => q"$wref.writeByte($ref)"
+              case TypeId.Builtins.i08   => q"$wref.writeByte($ref.toInt)"
               case TypeId.Builtins.i16   => q"$wref.writeShort($ref)"
               case TypeId.Builtins.i32   => q"$wref.writeInt($ref)"
               case TypeId.Builtins.i64   => q"$wref.writeLong($ref)"
-              case TypeId.Builtins.u08   => q"$wref.writeByte($ref)"
+              case TypeId.Builtins.u08   => q"$wref.writeByte($ref.toInt)"
               case TypeId.Builtins.u16   => q"$wref.writeShort($ref)"
               case TypeId.Builtins.u32   => q"$wref.writeInt($ref)"
               case TypeId.Builtins.u64   => q"$wref.writeLong($ref)"

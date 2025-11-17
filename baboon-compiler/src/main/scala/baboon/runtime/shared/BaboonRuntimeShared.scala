@@ -92,6 +92,7 @@ package baboon.runtime.shared {
 
     def nextUid(): java.util.UUID
     def nextString(): String
+    def nextByteString(): ByteString
 
     def mkOption[T](element: => T): Option[T]
     def mkEnum[T](meta: BaboonEnum[T]): T
@@ -144,6 +145,12 @@ package baboon.runtime.shared {
 
     def nextUid(): java.util.UUID = java.util.UUID.randomUUID()
     def nextString(): String      = rnd.alphanumeric.take(10).mkString
+    def nextByteString(): ByteString = {
+      val length = rnd.nextInt(21)
+      val bytes  = new Array[Byte](length)
+      rnd.nextBytes(bytes)
+      ByteString(bytes)
+    }
 
     def mkList[T](element: => T): List[T]        = rnd.shuffle(List.fill(rnd.nextInt(20))(element))
     def mkSet[T](element: => T): Set[T]          = rnd.shuffle(Set.fill(rnd.nextInt(20))(element))

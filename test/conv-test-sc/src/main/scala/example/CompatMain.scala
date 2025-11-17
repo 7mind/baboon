@@ -1,7 +1,7 @@
 package example
 
 import convtest.testpkg.{AllBasicTypes, AllBasicTypes_JsonCodec, AllBasicTypes_UEBACodec}
-import baboon.runtime.shared.{BaboonCodecContext, LEDataOutputStream, LEDataInputStream}
+import baboon.runtime.shared.{BaboonCodecContext, LEDataOutputStream, LEDataInputStream, ByteString}
 import java.io.{File, FileOutputStream, FileInputStream, ByteArrayOutputStream}
 import java.nio.file.{Files, Paths}
 import java.time.{OffsetDateTime, ZoneOffset}
@@ -61,6 +61,7 @@ object CompatMain {
       vf128 = BigDecimal("123456789.987654321"),
 
       vstr = "Hello, Baboon!",
+      vbstr = ByteString(Array[Byte](0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x42, 0x79, 0x74, 0x65, 0x73)), // "Hello Bytes"
       vuid = UUID.fromString("12345678-1234-5678-1234-567812345678"),
 
       vbit = true,

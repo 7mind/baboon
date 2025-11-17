@@ -64,7 +64,7 @@ object ScCodecTestsTranslator {
              |}
              |
              |"${srcRef.toString}" should "load JSON produced by C# codecs" in {
-             |  testCsJson($baboonCodecContext.Default, "default")
+             |  testScJson($baboonCodecContext.Default, "default")
              |}
              |
              |def jsonCodecTestImpl(context: $baboonCodecContext, rnd: $baboonRandom, clue: $scString): $scUnit = {
@@ -72,14 +72,14 @@ object ScCodecTestsTranslator {
              |  ${body.shift(2).trim}
              |}
              |
-             |def jsonCompare(context: $baboonCodecContext, fixture: $srcRef): io.circe.Json = {
+             |def jsonCompare(context: $baboonCodecContext, fixture: $srcRef, clue: $scString): io.circe.Json = {
              |  val fixtureJson    = $codecName.instance.encode(context, fixture)
              |  val fixtureDecoded = $codecName.instance.decode(context, fixtureJson).toOption.get
-             |  assert(fixture == fixtureDecoded)
+             |  assert(fixture == fixtureDecoded, s"$$clue")
              |  fixtureJson
              |}
              |
-             |def testCsJson(context: $baboonCodecContext, clue: $scString): $scUnit = {
+             |def testScJson(context: $baboonCodecContext, clue: $scString): $scUnit = {
              |  val tpeid = "${definition.id.render}"
              |  val f     = new $javaFile(s"./../target/cs/json-$$clue/$$tpeid.json")
              |  assume(f.exists())
@@ -88,7 +88,7 @@ object ScCodecTestsTranslator {
              |  val csJson = parse(new $scString(b, $javaNioStandardCharsets.UTF_8)).toOption.get
              |  val dec = $codecName.instance.decode(context, csJson).toOption
              |  assert(dec.nonEmpty)
-             |  val sclJson = jsonCompare(context, dec.get)
+             |  val sclJson = jsonCompare(context, dec.get, clue)
              |  // this is be broken for unordered collections and timestamps, but is suitable for manual tests
              |  //assert(csJson == sclJson)
              |}
@@ -111,11 +111,11 @@ object ScCodecTestsTranslator {
              |}
              |
              |"${srcRef.toString}" should "load UEBA produced by C# codecs" in {
-             |  testCsUeba($baboonCodecContext.Indexed, "indexed")
-             |  testCsUeba($baboonCodecContext.Compact, "compact")
+             |  testScUeba($baboonCodecContext.Indexed, "indexed")
+             |  testScUeba($baboonCodecContext.Compact, "compact")
              |}
              |
-             |def testCsUeba(context: $baboonCodecContext, clue: $scString): $scUnit = {
+             |def testScUeba(context: $baboonCodecContext, clue: $scString): $scUnit = {
              |  val tpeid = "${definition.id.render}"
              |  val f     = new $javaFile(s"./../target/cs/ueba-$$clue/$$tpeid.uebin")
              |  assume(f.exists())
@@ -123,13 +123,13 @@ object ScCodecTestsTranslator {
              |  val bais = new java.io.ByteArrayInputStream(csUebaBytes)
              |  val dis = new $binaryInput(bais)
              |  val dec = $codecName.instance.decode(context, dis)
-             |  val sclUebaBytes = uebaCompare(context, dec)
-             |  assert(csUebaBytes.length == sclUebaBytes.length)
+             |  val sclUebaBytes = uebaCompare(context, dec, clue)
+             |  assert(csUebaBytes.length == sclUebaBytes.length, s"$$clue")
              |  // this is be broken for unordered collections and timestamps, but is suitable for manual tests
              |  // assert(csUebaBytes.toVector == sclUebaBytes.toVector) 
              |}
              |
-             |def uebaCompare(context: $baboonCodecContext, fixture: $srcRef): $scArray[$scByte] = {
+             |def uebaCompare(context: $baboonCodecContext, fixture: $srcRef, clue: $scString): $scArray[$scByte] = {
              |  val baos = new java.io.ByteArrayOutputStream()
              |  val dos = new $binaryOutput(baos)
              |  $codecName.instance.encode(context, dos, fixture)
@@ -139,7 +139,7 @@ object ScCodecTestsTranslator {
              |  val bais = new java.io.ByteArrayInputStream(bytes)
              |  val dis = new $binaryInput(bais)
              |  val dec = $codecName.instance.decode(context, dis)
-             |  assert(fixture == dec)
+             |  assert(fixture == dec, s"$$clue")
              |  
              |  bytes
              |}
@@ -168,11 +168,11 @@ object ScCodecTestsTranslator {
         case _: Typedef.Adt =>
           q"""fixtures.foreach {
              |  fixture =>
-             |    jsonCompare(context, fixture)
+             |    jsonCompare(context, fixture, clue)
              |}
              |""".stripMargin.trim
         case _ =>
-          q"jsonCompare(context, fixture)"
+          q"jsonCompare(context, fixture, clue)"
       }
     }
 
@@ -181,11 +181,11 @@ object ScCodecTestsTranslator {
         case _: Typedef.Adt =>
           q"""fixtures.foreach {
              |  fixture =>
-             |    uebaCompare(context, fixture)
+             |    uebaCompare(context, fixture, clue)
              |}
              |""".stripMargin.trim
         case _ =>
-          q"uebaCompare(context, fixture)"
+          q"uebaCompare(context, fixture, clue)"
       }
     }
   }

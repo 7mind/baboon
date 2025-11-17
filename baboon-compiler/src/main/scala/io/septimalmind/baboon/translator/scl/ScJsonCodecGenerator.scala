@@ -302,8 +302,8 @@ class ScJsonCodecGenerator(
           case TypeId.Builtins.tso =>
             q"""io.circe.Json.fromString($baboonTimeFormats.formatTso($ref))"""
           case TypeId.Builtins.bit => q"""io.circe.Json.fromBoolean($ref)"""
-          case TypeId.Builtins.i08 => q"""io.circe.Json.fromInt($ref)"""
-          case TypeId.Builtins.i16 => q"""io.circe.Json.fromInt($ref)"""
+          case TypeId.Builtins.i08 => q"""io.circe.Json.fromInt($ref.toInt)"""
+          case TypeId.Builtins.i16 => q"""io.circe.Json.fromInt($ref.toInt)"""
           case TypeId.Builtins.i32 => q"""io.circe.Json.fromInt($ref)"""
 
           case TypeId.Builtins.i64 => q"""io.circe.Json.fromLong($ref)"""
@@ -319,7 +319,7 @@ class ScJsonCodecGenerator(
           case TypeId.Builtins.str =>
             q"""io.circe.Json.fromString($ref)"""
           case TypeId.Builtins.bytes =>
-            q"""io.circe.Json.fromString($ref.encode())"""
+            q"""io.circe.Json.fromString($ref.toHexString)"""
           case u: TypeId.User =>
             val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
             q"""$targetTpe.instance.encode(ctx, $ref)"""
@@ -363,7 +363,7 @@ class ScJsonCodecGenerator(
         case TypeId.Builtins.f64   => q"""$fref.flatMap(_.asNumber).map(_.toDouble).get"""
         case TypeId.Builtins.f128  => q"""$fref.flatMap(_.asNumber).flatMap(_.toBigDecimal).get"""
         case TypeId.Builtins.str   => q"""$fref.flatMap(_.asString).get"""
-        case TypeId.Builtins.bytes => q"""$fref.flatMap(_.asString).flatMap($scByteString.parse).get"""
+        case TypeId.Builtins.bytes => q"""$fref.flatMap(_.asString).map($scByteString.parseHex).get"""
         case TypeId.Builtins.uid   => q"""$fref.flatMap(_.asString).map(java.util.UUID.fromString).get"""
         case TypeId.Builtins.tsu   => q"""$fref.flatMap(_.asString).flatMap($baboonTimeFormats.parseTsu).get"""
         case TypeId.Builtins.tso   => q"""$fref.flatMap(_.asString).flatMap($baboonTimeFormats.parseTso).get"""
@@ -386,7 +386,7 @@ class ScJsonCodecGenerator(
         case TypeId.Builtins.f64   => q"""$ref.toDouble"""
         case TypeId.Builtins.f128  => q"""$ref.toBigDecimal"""
         case TypeId.Builtins.str   => ref
-        case TypeId.Builtins.bytes => q"""ref.encode()"""
+        case TypeId.Builtins.bytes => q"""ref.toHexString"""
         case TypeId.Builtins.uid   => q"""java.util.UUID.fromString($ref.toString)"""
         case TypeId.Builtins.tsu   => q"""$baboonTimeFormats.parseTsu($ref).get"""
         case TypeId.Builtins.tso   => q"""$baboonTimeFormats.parseTso($ref).get"""
