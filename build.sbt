@@ -162,4 +162,41 @@ ThisBuild / scmInfo := Some(
   )
 )
 
-ThisBuild / organization := "io.7mind"
+ThisBuild / organization := "io.7mind.izumi"
+
+ThisBuild / publishTo := {
+  if (isSnapshot.value) {
+    Some(
+      "central-snapshots" at "https://central.sonatype.com/repository/maven-snapshots/"
+    )
+  } else {
+    localStaging.value
+  }
+}
+
+ThisBuild / credentials ++= Seq(
+  Path.userHome / ".sbt" / "secrets" / "credentials.sonatype-new.properties",
+  Path.userHome / ".sbt" / "secrets" / "credentials.sonatype-nexus.properties",
+  file(".") / ".secrets" / "credentials.sonatype-nexus.properties",
+)
+  .filter(_.exists())
+  .map(Credentials.apply)
+
+ThisBuild / homepage := Some(url("https://github.com/7mind/baboon"))
+ThisBuild / licenses := Seq(
+  "BSD-style" -> url("http://www.opensource.org/licenses/mit-license.php")
+)
+ThisBuild / developers := List(
+  Developer(
+    id = "7mind",
+    name = "Septimal Mind",
+    url = url("https://github.com/7mind"),
+    email = "team@7mind.io",
+  )
+)
+ThisBuild / scmInfo := Some(
+  ScmInfo(
+    url("https://github.com/7mind/baboon"),
+    "scm:git:https://github.com/7mind/baboon.git",
+  )
+)

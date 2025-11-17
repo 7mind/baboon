@@ -95,7 +95,9 @@ jobs:
       - build-unix
       - build-windows
     steps:
-      - uses: actions/checkout@v4
+      - uses: 7mind/github-env@minimal
+        with:
+          setup-nix: false
       - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -110,3 +112,22 @@ jobs:
           files: |
             ./dist-bin/**
             ./dist-zip/**
+      - uses: bitwarden/sm-action@v2
+        with:
+          access_token: ${{ secrets.TOKEN_BITWARDEN_SM }}
+          secrets: |
+            994f97a2-97a4-4fe1-806a-b1930104435f > SONATYPE_CREDENTIALS_FILE
+            749f4227-9f11-4ceb-9121-b1930110c3a9 > OPENSSL_KEY
+            a2fe5b5b-5f3f-47f8-961c-b1930110cea7 > OPENSSL_IV
+      - name: Build and Publish to Sonatype
+        env:
+          SCALA_VERSION: ${{ matrix.scala }}
+          JAVA_VERSION: ${{ matrix.java }}
+          SONATYPE_SECRET: .secrets/credentials.sonatype-nexus.properties
+        run: |
+          mkdir .secrets
+          echo "$SONATYPE_CREDENTIALS_FILE" > "$SONATYPE_SECRET"
+          openssl aes-256-cbc -K ${OPENSSL_KEY} -iv ${OPENSSL_IV} -in secrets.tar.enc -out secrets.tar -d
+          tar xvf secrets.tar
+          
+          ./run --nix :gen-js :publish-scala
