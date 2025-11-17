@@ -290,6 +290,8 @@ class CSJsonCodecGenerator(
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
+          case TypeId.Builtins.bytes =>
+            q"new $nsJValue($ref.Encode())"
           case TypeId.Builtins.uid =>
             q"new $nsJValue($ref.ToString())"
           case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
@@ -330,19 +332,20 @@ class CSJsonCodecGenerator(
     def mkReader(bs: TypeId.BuiltinScalar): TextTree[CSValue] = {
       val fref = q"$ref!"
       bs match {
-        case TypeId.Builtins.bit                       => q"$fref.Value<Boolean>()!"
-        case TypeId.Builtins.i08                       => q"$fref.Value<SByte>()!"
-        case TypeId.Builtins.i16                       => q"$fref.Value<Int16>()!"
-        case TypeId.Builtins.i32                       => q"$fref.Value<Int32>()!"
-        case TypeId.Builtins.i64                       => q"$fref.Value<Int64>()!"
-        case TypeId.Builtins.u08                       => q"$fref.Value<Byte>()!"
-        case TypeId.Builtins.u16                       => q"$fref.Value<UInt16>()!"
-        case TypeId.Builtins.u32                       => q"$fref.Value<UInt32>()!"
-        case TypeId.Builtins.u64                       => q"$fref.Value<UInt64>()!"
-        case TypeId.Builtins.f32                       => q"$fref.Value<Single>()!"
-        case TypeId.Builtins.f64                       => q"$fref.Value<Double>()!"
-        case TypeId.Builtins.f128                      => q"$fref.Value<Decimal>()!"
+        case TypeId.Builtins.bit                       => q"$fref.Value<$csBoolean>()!"
+        case TypeId.Builtins.i08                       => q"$fref.Value<$csSByte>()!"
+        case TypeId.Builtins.i16                       => q"$fref.Value<$csInt16>()!"
+        case TypeId.Builtins.i32                       => q"$fref.Value<$csInt32>()!"
+        case TypeId.Builtins.i64                       => q"$fref.Value<$csInt64>()!"
+        case TypeId.Builtins.u08                       => q"$fref.Value<$csByte>()!"
+        case TypeId.Builtins.u16                       => q"$fref.Value<$csUInt16>()!"
+        case TypeId.Builtins.u32                       => q"$fref.Value<$csUInt32>()!"
+        case TypeId.Builtins.u64                       => q"$fref.Value<$csUInt64>()!"
+        case TypeId.Builtins.f32                       => q"$fref.Value<$csSingle>()!"
+        case TypeId.Builtins.f64                       => q"$fref.Value<$csDouble>()!"
+        case TypeId.Builtins.f128                      => q"$fref.Value<$csDecimal>()!"
         case TypeId.Builtins.str                       => q"$fref.Value<$csString>()!"
+        case TypeId.Builtins.bytes                     => q"$csByteString.Parse($fref.Value<$csString>()!)"
         case TypeId.Builtins.uid                       => q"$csGuid.Parse($fref.Value<$csString>()!)"
         case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.FromString($fref.Value<$csString>()!)"
         case other                                     => throw new RuntimeException(s"BUG: Unexpected type: $other")
@@ -364,6 +367,7 @@ class CSJsonCodecGenerator(
         case TypeId.Builtins.f64                       => q"Double.Parse($ref)"
         case TypeId.Builtins.f128                      => q"Decimal.Parse($ref)"
         case TypeId.Builtins.str                       => ref
+        case TypeId.Builtins.bytes                     => q"$csByteString.Parse($ref)"
         case TypeId.Builtins.uid                       => q"$csGuid.Parse($ref)"
         case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.FromString($ref)"
         case uid: TypeId.User =>

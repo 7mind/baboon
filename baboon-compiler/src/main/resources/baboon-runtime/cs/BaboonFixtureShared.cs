@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System;
 using System.Linq;
 using Baboon.Time;
+using Baboon.Runtime.Shared;
 
 // ReSharper disable CheckNamespace
 // ReSharper disable ArrangeNamespaceBody
@@ -94,6 +95,13 @@ namespace Baboon.Fixture
             }
 
             return stringBuilder.ToString();
+        }
+
+        public static ByteString NextByteString() {
+            var length = Rnd.Next(0, 21);
+            var bytes = new byte[length];
+            Rnd.NextBytes(bytes);
+            return new ByteString(bytes);
         }
 
         public static DateTimeOffset NextDateTimeOffset()

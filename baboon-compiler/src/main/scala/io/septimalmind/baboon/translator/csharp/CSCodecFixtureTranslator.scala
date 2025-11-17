@@ -165,10 +165,11 @@ object CSCodecFixtureTranslator {
         case TypeId.Builtins.f64  => q"$baboonFixture.NextDouble()"
         case TypeId.Builtins.f128 => q"$baboonFixture.NextDecimal()"
 
-        case TypeId.Builtins.str => q"$baboonFixture.NextString()"
-        case TypeId.Builtins.uid => q"$baboonFixture.NextGuid()"
-        case TypeId.Builtins.tsu => q"$baboonFixture.NextRpDateTime()"
-        case TypeId.Builtins.tso => q"$baboonFixture.NextRpDateTime()"
+        case TypeId.Builtins.str   => q"$baboonFixture.NextString()"
+        case TypeId.Builtins.bytes => q"$baboonFixture.NextByteString()"
+        case TypeId.Builtins.uid   => q"$baboonFixture.NextGuid()"
+        case TypeId.Builtins.tsu   => q"$baboonFixture.NextRpDateTime()"
+        case TypeId.Builtins.tso   => q"$baboonFixture.NextRpDateTime()"
 
         case TypeId.Builtins.bit => q"$baboonFixture.NextBoolean()"
 

@@ -34,6 +34,7 @@ root data AllBasicTypes: derived[json], derived[ueba] {
   vf128: f128
 
   vstr: str
+  vbstr: bytes
   vuid: uid
 
   vbit: bit

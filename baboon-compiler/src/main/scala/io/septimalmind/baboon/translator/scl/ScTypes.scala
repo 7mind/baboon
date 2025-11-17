@@ -26,6 +26,7 @@ object ScTypes {
   val baboonCodecContext: ScType        = ScType(baboonRuntimePkg, "BaboonCodecContext")
   val baboonLazy: ScType                = ScType(baboonRuntimePkg, "Lazy")
   val baboonBinTools: ScType            = ScType(baboonRuntimePkg, "BaboonBinTools")
+  val scByteString: ScType            = ScType(baboonRuntimePkg, "ByteString")
 
   val binaryInput: ScType  = ScType(baboonRuntimePkg, "LEDataInputStream")
   val binaryOutput: ScType = ScType(baboonRuntimePkg, "LEDataOutputStream")
@@ -43,7 +44,7 @@ object ScTypes {
   val scDouble: ScType     = ScType(scalaPkg, "Double")
   val scBigDecimal: ScType = ScType(scalaPkg, "BigDecimal")
   val scUnit: ScType       = ScType(scalaPkg, "Unit")
-  val scArray: ScType       = ScType(scalaPkg, "Array")
+  val scArray: ScType      = ScType(scalaPkg, "Array")
 
   // Scala collection types
   val scOption: ScType = ScType(scalaPkg, "Option")

@@ -36,7 +36,7 @@ object TypeInfo {
     private final val floats     = Set(f32, f64, f128)
     private final val timestamps = Set(tsu, tso)
     private final val stringy    = Set(uid)
-    private final val varlens    = Set(str)
+    private final val varlens    = Set(str, bytes)
 
     private final val seqCollections      = Set(lst, set)
     private final val iterableCollections = Set(map) ++ seqCollections

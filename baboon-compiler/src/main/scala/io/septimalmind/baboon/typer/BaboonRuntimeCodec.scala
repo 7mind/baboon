@@ -4,7 +4,7 @@ import io.circe.Json
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, RuntimeCodecIssue}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.Error2
-import baboon.runtime.shared.{BaboonBinTools, LEDataInputStream, LEDataOutputStream}
+import baboon.runtime.shared.{BaboonBinTools, ByteString, LEDataInputStream, LEDataOutputStream}
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 import java.time.format.DateTimeFormatter
@@ -20,12 +20,11 @@ trait BaboonRuntimeCodec[F[+_, +_]] {
 object BaboonRuntimeCodec {
 
   class BaboonRuntimeCodecImpl[F[+_, +_]: Error2]() extends BaboonRuntimeCodec[F] {
-    private val F = Error2[F]
+    private val F         = Error2[F]
     private val enquiries = new BaboonEnquiries.BaboonEnquiriesImpl()
 
     // ISO 8601 formatters for timestamps with exactly 3 fractional digits (matching C# format)
     private val isoFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSxxx")
-
 
     override def decode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, data: Vector[Byte]): F[BaboonIssue, Json] = {
       val dom     = getDom(family, pkg, version)
@@ -34,7 +33,7 @@ object BaboonRuntimeCodec {
 
       typedef match {
         case u: DomainMember.User => decodeUserType(dom, u.defn, input)
-        case _ => F.fail(RuntimeCodecIssue.UnexpectedDomainMemberType(typedef.id, s"Expected User type, got: ${typedef.getClass.getSimpleName}"))
+        case _                    => F.fail(RuntimeCodecIssue.UnexpectedDomainMemberType(typedef.id, s"Expected User type, got: ${typedef.getClass.getSimpleName}"))
       }
     }
 
@@ -90,7 +89,7 @@ object BaboonRuntimeCodec {
     // DTO encoding/decoding
     private def encodeDto(dom: Domain, dto: Typedef.Dto, json: Json, writer: LEDataOutputStream, indexed: Boolean): F[BaboonIssue, Unit] = {
       json.asObject match {
-        case None => F.fail(RuntimeCodecIssue.ExpectedJsonObject(dto.id.toString, json))
+        case None      => F.fail(RuntimeCodecIssue.ExpectedJsonObject(dto.id.toString, json))
         case Some(obj) =>
           // Write header byte
           val header: Byte = if (indexed) 1 else 0
@@ -100,7 +99,7 @@ object BaboonRuntimeCodec {
             // In indexed mode: collect field data in buffer, write index, then data
             val fieldDataBuffer = new ByteArrayOutputStream()
             val fieldDataWriter = new LEDataOutputStream(fieldDataBuffer)
-            val indexEntries = scala.collection.mutable.ArrayBuffer[(Int, Int)]()
+            val indexEntries    = scala.collection.mutable.ArrayBuffer[(Int, Int)]()
 
             F.foldLeft(dto.fields)(0) {
               case (offset, field) =>
@@ -123,20 +122,20 @@ object BaboonRuntimeCodec {
                   }
                 }
             }.flatMap {
-              _ =>
-                fieldDataWriter.flush()
+                _ =>
+                  fieldDataWriter.flush()
 
-                // Write index entries (offset and length for each variable-length field)
-                indexEntries.foreach {
-                  case (off, len) =>
-                    writer.writeInt(off)
-                    writer.writeInt(len)
-                }
+                  // Write index entries (offset and length for each variable-length field)
+                  indexEntries.foreach {
+                    case (off, len) =>
+                      writer.writeInt(off)
+                      writer.writeInt(len)
+                  }
 
-                // Write all field data
-                writer.write(fieldDataBuffer.toByteArray)
-                F.unit
-            }
+                  // Write all field data
+                  writer.write(fieldDataBuffer.toByteArray)
+                  F.unit
+              }
           } else {
             // Compact mode: write fields directly
             F.traverse_(dto.fields) {
@@ -171,7 +170,7 @@ object BaboonRuntimeCodec {
           decodeTypeRef(dom, field.tpe, reader).map {
             value => (field.name.name, value)
           }
-      }.map(fields => Json.obj(fields *))
+      }.map(fields => Json.obj(fields*))
     }
 
     // Enum encoding/decoding
@@ -203,7 +202,7 @@ object BaboonRuntimeCodec {
     // ADT encoding/decoding
     private def encodeAdt(dom: Domain, adt: Typedef.Adt, json: Json, writer: LEDataOutputStream, indexed: Boolean): F[BaboonIssue, Unit] = {
       json.asObject match {
-        case None => F.fail(RuntimeCodecIssue.ExpectedJsonObject(adt.id.toString, json))
+        case None      => F.fail(RuntimeCodecIssue.ExpectedJsonObject(adt.id.toString, json))
         case Some(obj) =>
           // Find the branch - the object should have exactly one key
           val branches = obj.toList
@@ -385,6 +384,14 @@ object BaboonRuntimeCodec {
             case None => F.fail(RuntimeCodecIssue.ExpectedJsonString("str", json))
           }
 
+        case TypeId.Builtins.bytes =>
+          json.asString match {
+            case Some(value) =>
+              BaboonBinTools.writeByteString(writer, ByteString.parseHex(value))
+              F.unit
+            case None => F.fail(RuntimeCodecIssue.ExpectedJsonString("bytes", json))
+          }
+
         case TypeId.Builtins.uid =>
           json.asString match {
             case Some(str) =>
@@ -429,11 +436,13 @@ object BaboonRuntimeCodec {
               Json.fromLong(value)
             }
           )
-        case TypeId.Builtins.f32 => F.pure(Json.fromFloatOrString(reader.readFloat()))
-        case TypeId.Builtins.f64 => F.pure(Json.fromDoubleOrString(reader.readDouble()))
+        case TypeId.Builtins.f32  => F.pure(Json.fromFloatOrString(reader.readFloat()))
+        case TypeId.Builtins.f64  => F.pure(Json.fromDoubleOrString(reader.readDouble()))
         case TypeId.Builtins.f128 => F.pure(Json.fromBigDecimal(BaboonBinTools.readBigDecimal(reader)))
         case TypeId.Builtins.str =>
           F.pure(Json.fromString(BaboonBinTools.readString(reader)))
+        case TypeId.Builtins.bytes =>
+          F.pure(Json.fromString(BaboonBinTools.readByteString(reader).toHexString))
         case TypeId.Builtins.uid =>
           F.pure(Json.fromString(BaboonBinTools.readUid(reader).toString))
         case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
@@ -444,7 +453,8 @@ object BaboonRuntimeCodec {
     }
 
     // Constructor (collection) encoding/decoding
-    private def encodeConstructor(dom: Domain, id: TypeId.BuiltinCollection, args: List[TypeRef], json: Json, writer: LEDataOutputStream, indexed: Boolean): F[BaboonIssue, Unit] = {
+    private def encodeConstructor(dom: Domain, id: TypeId.BuiltinCollection, args: List[TypeRef], json: Json, writer: LEDataOutputStream, indexed: Boolean)
+      : F[BaboonIssue, Unit] = {
       id match {
         case TypeId.Builtins.opt =>
           if (json.isNull) {
@@ -501,11 +511,11 @@ object BaboonRuntimeCodec {
 
         case TypeId.Builtins.lst =>
           val count = reader.readInt()
-          F.traverse(0 until count)(_ => decodeTypeRef(dom, args.head, reader)).map(elements => Json.arr(elements *))
+          F.traverse(0 until count)(_ => decodeTypeRef(dom, args.head, reader)).map(elements => Json.arr(elements*))
 
         case TypeId.Builtins.set =>
           val count = reader.readInt()
-          F.traverse(0 until count)(_ => decodeTypeRef(dom, args.head, reader)).map(elements => Json.arr(elements *))
+          F.traverse(0 until count)(_ => decodeTypeRef(dom, args.head, reader)).map(elements => Json.arr(elements*))
 
         case TypeId.Builtins.map =>
           val count = reader.readInt()
@@ -515,7 +525,7 @@ object BaboonRuntimeCodec {
                 key   <- decodeMapKey(dom, args.head, reader)
                 value <- decodeTypeRef(dom, args.last, reader)
               } yield (key, value)
-          }.map(pairs => Json.obj(pairs *))
+          }.map(pairs => Json.obj(pairs*))
 
         case other => F.fail(RuntimeCodecIssue.UnsupportedCollectionType(other))
       }
@@ -528,6 +538,9 @@ object BaboonRuntimeCodec {
           id match {
             case TypeId.Builtins.str =>
               BaboonBinTools.writeString(writer, key)
+              F.unit
+            case TypeId.Builtins.bytes =>
+              BaboonBinTools.writeByteString(writer, ByteString.parseHex(key))
               F.unit
             case TypeId.Builtins.bit =>
               writer.writeBoolean(key.toBoolean)
@@ -598,6 +611,8 @@ object BaboonRuntimeCodec {
           id match {
             case TypeId.Builtins.str =>
               F.pure(BaboonBinTools.readString(reader))
+            case TypeId.Builtins.bytes =>
+              F.pure(BaboonBinTools.readByteString(reader).toHexString)
             case TypeId.Builtins.bit =>
               F.pure(reader.readBoolean().toString)
             case TypeId.Builtins.i08 =>
@@ -635,7 +650,7 @@ object BaboonRuntimeCodec {
               // Read timestamp: ticks + offset + kind = 17 bytes
               reader.readLong() // ticks (unused)
               reader.readLong() // offsetTicks (unused)
-              reader.readByte()  // kind (unused)
+              reader.readByte() // kind (unused)
               F.pure("1970-01-01T00:00:00Z")
             case other =>
               F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(TypeRef.Scalar(other)))

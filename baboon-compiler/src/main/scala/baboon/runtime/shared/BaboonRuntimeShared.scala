@@ -2,13 +2,15 @@ package baboon.runtime.shared {
 
   import java.io.*
   import java.math.{BigDecimal, BigInteger}
-  import java.nio.charset.StandardCharsets
+  import java.nio.charset.{Charset, StandardCharsets}
   import java.nio.{ByteBuffer, ByteOrder}
   import java.time.format.DateTimeFormatter
   import java.time.{Instant, OffsetDateTime, ZoneOffset}
   import java.util.UUID
   import java.util.concurrent.atomic.AtomicReference
+  import scala.annotation.tailrec
   import scala.reflect.ClassTag
+  import scala.util.Try
 
   trait BaboonGenerated {}
   trait BaboonAdtMemberMeta {}
@@ -36,7 +38,7 @@ package baboon.runtime.shared {
 
     def register[F: ClassTag, T: ClassTag](conversion: BaboonAbstractConversion[F, T]): Unit = {
       val key = ConversionKey(implicitly[ClassTag[F]].runtimeClass, implicitly[ClassTag[T]].runtimeClass)
-      val _ = registry.put(key, conversion)
+      val _   = registry.put(key, conversion)
     }
 
     def convertWithContext[C, F: ClassTag, T: ClassTag](
@@ -198,6 +200,275 @@ package baboon.runtime.shared {
       new Lazy(() => initializer)
   }
 
+  /**
+    * Minimal immutable ByteString implementation with comparison and concatenation
+    */
+  class ByteString private (private val bytes: Array[Byte]) extends Ordered[ByteString] {
+
+    // Properties
+    def length: Int       = bytes.length
+    def isEmpty: Boolean  = bytes.isEmpty
+    def nonEmpty: Boolean = bytes.nonEmpty
+
+    // Indexed access
+    def apply(index: Int): Byte = bytes(index)
+
+    // Get a safe copy of the bytes
+    def toArray: Array[Byte] = bytes.clone()
+
+    // Direct access to underlying bytes - USE WITH CAUTION!
+    // Modifying the returned array will break immutability
+    def underlyingUnsafe: Array[Byte] = bytes
+
+    // Concatenation
+    def concat(other: ByteString): ByteString = {
+      if (other == null) throw new NullPointerException("Cannot concatenate with null")
+      val result = new Array[Byte](bytes.length + other.bytes.length)
+      System.arraycopy(bytes, 0, result, 0, bytes.length)
+      System.arraycopy(other.bytes, 0, result, bytes.length, other.bytes.length)
+      new ByteString(result)
+    }
+
+    def concat(others: ByteString*): ByteString = {
+      val totalLength = bytes.length + others.map(_.length).sum
+      val result      = new Array[Byte](totalLength)
+      var offset      = 0
+
+      System.arraycopy(bytes, 0, result, offset, bytes.length)
+      offset += bytes.length
+
+      others.foreach {
+        other =>
+          if (other != null) {
+            System.arraycopy(other.bytes, 0, result, offset, other.bytes.length)
+            offset += other.bytes.length
+          }
+      }
+
+      new ByteString(result)
+    }
+
+    // Operator for concatenation
+    def +(other: ByteString): ByteString  = concat(other)
+    def ++(other: ByteString): ByteString = concat(other)
+
+    // Comparison (for Ordered trait)
+    override def compare(that: ByteString): Int = {
+      if (that == null) return 1
+
+      val minLength = Math.min(bytes.length, that.bytes.length)
+      var i         = 0
+      while (i < minLength) {
+        val cmp = (bytes(i) & 0xFF) - (that.bytes(i) & 0xFF) // Unsigned comparison
+        if (cmp != 0) return cmp
+        i += 1
+      }
+      bytes.length - that.bytes.length
+    }
+
+    // Equality
+    override def equals(obj: Any): Boolean = obj match {
+      case null => false
+      case that: ByteString =>
+        if (this.bytes.length != that.bytes.length) false
+        else bytes.sameElements(that.bytes)
+      case _ => false
+    }
+
+    override def hashCode(): Int = {
+      var hash = 17
+      bytes.foreach {
+        b =>
+          hash = hash * 31 + b
+      }
+      hash
+    }
+
+    // String conversions
+    def toString(charset: Charset): String = new String(bytes, charset)
+    override def toString: String          = toString(StandardCharsets.UTF_8)
+
+    def toHexString: String = bytes.map("%02X".format(_)).mkString
+
+    // Substring operations
+    def substring(startIndex: Int, length: Int): ByteString = {
+      if (startIndex < 0 || startIndex >= bytes.length)
+        throw new IndexOutOfBoundsException(s"Start index: $startIndex")
+      if (length < 0 || startIndex + length > bytes.length)
+        throw new IndexOutOfBoundsException(s"Length: $length")
+
+      val result = new Array[Byte](length)
+      System.arraycopy(bytes, startIndex, result, 0, length)
+      new ByteString(result)
+    }
+
+    def slice(from: Int, until: Int): ByteString = {
+      substring(from, until - from)
+    }
+
+    def take(n: Int): ByteString = substring(0, Math.min(n, bytes.length))
+    def drop(n: Int): ByteString = substring(Math.min(n, bytes.length), Math.max(0, bytes.length - n))
+
+    def startsWith(other: ByteString): Boolean = {
+      if (other == null || other.length > length) false
+      else {
+        var i = 0
+        while (i < other.length) {
+          if (bytes(i) != other.bytes(i)) return false
+          i += 1
+        }
+        true
+      }
+    }
+
+    def endsWith(other: ByteString): Boolean = {
+      if (other == null || other.length > length) false
+      else {
+        val offset = length - other.length
+        var i      = 0
+        while (i < other.length) {
+          if (bytes(offset + i) != other.bytes(i)) return false
+          i += 1
+        }
+        true
+      }
+    }
+
+    // Functional operations
+    def map(f: Byte => Byte): ByteString = {
+      new ByteString(bytes.map(f))
+    }
+
+    def filter(f: Byte => Boolean): ByteString = {
+      new ByteString(bytes.filter(f))
+    }
+
+    def foreach(f: Byte => Unit): Unit = {
+      bytes.foreach(f)
+    }
+
+    def foldLeft[B](z: B)(f: (B, Byte) => B): B = {
+      bytes.foldLeft(z)(f)
+    }
+
+    def foldRight[B](z: B)(f: (Byte, B) => B): B = {
+      bytes.foldRight(z)(f)
+    }
+  }
+
+  /**
+    * ByteString companion object with factory methods
+    */
+  object ByteString {
+
+    // Factory methods
+    def apply(bytes: Array[Byte]): ByteString = {
+      if (bytes == null) throw new NullPointerException("bytes cannot be null")
+      new ByteString(bytes.clone()) // Clone to ensure immutability
+    }
+
+    def apply(bytes: Byte*): ByteString = {
+      new ByteString(bytes.toArray)
+    }
+
+    def apply(string: String, charset: Charset = StandardCharsets.UTF_8): ByteString = {
+      new ByteString(string.getBytes(charset))
+    }
+
+    def fromString(string: String, charset: Charset = StandardCharsets.UTF_8): ByteString = {
+      apply(string, charset)
+    }
+
+    // Static method to parse hex-encoded string into ByteString
+    def parseHex(hexString: String): ByteString = {
+      if (hexString == null)
+        throw new NullPointerException("hexString cannot be null")
+
+      // Remove common separators and whitespace
+      val cleanHex = hexString.replaceAll("[\\s:-]", "").trim
+
+      if (cleanHex.isEmpty)
+        return empty
+
+      if (cleanHex.length % 2 != 0)
+        throw new IllegalArgumentException(
+          s"Invalid hex string length: ${cleanHex.length}. Hex string must have even length."
+        )
+
+      try {
+        val bytes = cleanHex
+          .grouped(2).map {
+            byteStr =>
+              Integer.parseInt(byteStr, 16).toByte
+          }.toArray
+        new ByteString(bytes)
+      } catch {
+        case e: NumberFormatException =>
+          throw new IllegalArgumentException(s"Invalid hex characters in string: ${e.getMessage}", e)
+      }
+    }
+
+    // Try version that returns Try[ByteString]
+    def tryParse(hexString: String): Try[ByteString] = {
+      Try(parseHex(hexString))
+    }
+
+    // Empty ByteString singleton
+    val empty: ByteString = new ByteString(Array.empty[Byte])
+
+    // Builder for efficient concatenation
+    class Builder {
+      private val buffer = scala.collection.mutable.ArrayBuffer[Byte]()
+
+      def +=(b: Byte): this.type = {
+        buffer += b
+        this
+      }
+
+      def +=(bs: ByteString): this.type = {
+        buffer ++= bs.bytes
+        this
+      }
+
+      def ++=(bytes: Array[Byte]): this.type = {
+        buffer ++= bytes
+        this
+      }
+
+      def result(): ByteString = new ByteString(buffer.toArray)
+      def clear(): Unit        = buffer.clear()
+    }
+
+    def newBuilder: Builder = new Builder
+
+    // Implicit conversions (optional, use with care)
+    implicit class ByteStringOps(val sc: StringContext) extends AnyVal {
+      def bs(args: Any*): ByteString = {
+        val strings     = sc.parts.iterator
+        val expressions = args.iterator
+        val buf         = new StringBuilder(strings.next())
+
+        while (strings.hasNext) {
+          buf.append(expressions.next())
+          buf.append(strings.next())
+        }
+
+        ByteString(buf.toString())
+      }
+    }
+
+    // Utility methods
+    @tailrec
+    def concat(first: ByteString, others: ByteString*): ByteString = {
+      if (first == null) {
+        if (others.isEmpty) empty
+        else concat(others.head, others.tail: _*)
+      } else {
+        first.concat(others: _*)
+      }
+    }
+  }
+
   object BaboonTimeFormats {
 
     // Use 3 fractional digits (milliseconds) to match C# DateTime precision
@@ -319,22 +590,22 @@ package baboon.runtime.shared {
 
       // Now construct UUID from the corrected big-endian bytes
       val msb = ((bytes(0) & 0xFFL) << 56) |
-                ((bytes(1) & 0xFFL) << 48) |
-                ((bytes(2) & 0xFFL) << 40) |
-                ((bytes(3) & 0xFFL) << 32) |
-                ((bytes(4) & 0xFFL) << 24) |
-                ((bytes(5) & 0xFFL) << 16) |
-                ((bytes(6) & 0xFFL) << 8) |
-                (bytes(7) & 0xFFL)
+        ((bytes(1) & 0xFFL) << 48) |
+        ((bytes(2) & 0xFFL) << 40) |
+        ((bytes(3) & 0xFFL) << 32) |
+        ((bytes(4) & 0xFFL) << 24) |
+        ((bytes(5) & 0xFFL) << 16) |
+        ((bytes(6) & 0xFFL) << 8) |
+        (bytes(7) & 0xFFL)
 
       val lsb = ((bytes(8) & 0xFFL) << 56) |
-                ((bytes(9) & 0xFFL) << 48) |
-                ((bytes(10) & 0xFFL) << 40) |
-                ((bytes(11) & 0xFFL) << 32) |
-                ((bytes(12) & 0xFFL) << 24) |
-                ((bytes(13) & 0xFFL) << 16) |
-                ((bytes(14) & 0xFFL) << 8) |
-                (bytes(15) & 0xFFL)
+        ((bytes(9) & 0xFFL) << 48) |
+        ((bytes(10) & 0xFFL) << 40) |
+        ((bytes(11) & 0xFFL) << 32) |
+        ((bytes(12) & 0xFFL) << 24) |
+        ((bytes(13) & 0xFFL) << 16) |
+        ((bytes(14) & 0xFFL) << 8) |
+        (bytes(15) & 0xFFL)
 
       new UUID(msb, lsb)
     }
@@ -345,16 +616,16 @@ package baboon.runtime.shared {
 
       // Extract bytes in big-endian order
       val bytes = new Array[Byte](16)
-      bytes(0) = ((msb >> 56) & 0xFF).toByte
-      bytes(1) = ((msb >> 48) & 0xFF).toByte
-      bytes(2) = ((msb >> 40) & 0xFF).toByte
-      bytes(3) = ((msb >> 32) & 0xFF).toByte
-      bytes(4) = ((msb >> 24) & 0xFF).toByte
-      bytes(5) = ((msb >> 16) & 0xFF).toByte
-      bytes(6) = ((msb >> 8) & 0xFF).toByte
-      bytes(7) = (msb & 0xFF).toByte
-      bytes(8) = ((lsb >> 56) & 0xFF).toByte
-      bytes(9) = ((lsb >> 48) & 0xFF).toByte
+      bytes(0)  = ((msb >> 56) & 0xFF).toByte
+      bytes(1)  = ((msb >> 48) & 0xFF).toByte
+      bytes(2)  = ((msb >> 40) & 0xFF).toByte
+      bytes(3)  = ((msb >> 32) & 0xFF).toByte
+      bytes(4)  = ((msb >> 24) & 0xFF).toByte
+      bytes(5)  = ((msb >> 16) & 0xFF).toByte
+      bytes(6)  = ((msb >> 8) & 0xFF).toByte
+      bytes(7)  = (msb & 0xFF).toByte
+      bytes(8)  = ((lsb >> 56) & 0xFF).toByte
+      bytes(9)  = ((lsb >> 48) & 0xFF).toByte
       bytes(10) = ((lsb >> 40) & 0xFF).toByte
       bytes(11) = ((lsb >> 32) & 0xFF).toByte
       bytes(12) = ((lsb >> 24) & 0xFF).toByte
@@ -379,6 +650,18 @@ package baboon.runtime.shared {
       fakeWriter.write(bytes)
     }
 
+    def readByteString(input: LEDataInputStream): ByteString = {
+      val length = input.readInt()
+      val bytes  = new Array[Byte](length)
+      input.readFully(bytes)
+      ByteString(bytes)
+    }
+
+    def writeByteString(output: LEDataOutputStream, bs: ByteString): Unit = {
+      output.writeInt(bs.length)
+      output.write(bs.underlyingUnsafe)
+    }
+
     def readString(input: LEDataInputStream): String = {
       var length   = 0
       var shift    = 0
@@ -394,6 +677,7 @@ package baboon.runtime.shared {
       input.readFully(buffer)
       new String(buffer, StandardCharsets.UTF_8)
     }
+
     def writeString(output: LEDataOutputStream, s: String): Unit = {
       val bytes = s.getBytes(StandardCharsets.UTF_8)
       var value = bytes.length
@@ -438,9 +722,9 @@ package baboon.runtime.shared {
 
       // Get the 96-bit unscaled value as 3 x 32-bit integers using bit shifting
       val absUnscaled = unscaled.abs()
-      val lo  = absUnscaled.intValue()
-      val mid = absUnscaled.shiftRight(32).intValue()
-      val hi  = absUnscaled.shiftRight(64).intValue()
+      val lo          = absUnscaled.intValue()
+      val mid         = absUnscaled.shiftRight(32).intValue()
+      val hi          = absUnscaled.shiftRight(64).intValue()
 
       // Build flags: sign in bit 31, scale in bits 16-23
       val sign  = if (unscaled.signum() < 0) 0x80000000 else 0
@@ -455,48 +739,49 @@ package baboon.runtime.shared {
     def readTimestamp(wire: LEDataInputStream): OffsetDateTime = {
       // Read timestamp: 8 bytes (local ticks in ms) + 8 bytes (offset in ms) + 1 byte (kind) = 17 bytes
       // C# writes DateTimeOffset.Ticks which is LOCAL time, not UTC!
-      val b0 = wire.readByte() & 0xFFL
-      val b1 = wire.readByte() & 0xFFL
-      val b2 = wire.readByte() & 0xFFL
-      val b3 = wire.readByte() & 0xFFL
-      val b4 = wire.readByte() & 0xFFL
-      val b5 = wire.readByte() & 0xFFL
-      val b6 = wire.readByte() & 0xFFL
-      val b7 = wire.readByte() & 0xFFL
+      val b0                 = wire.readByte() & 0xFFL
+      val b1                 = wire.readByte() & 0xFFL
+      val b2                 = wire.readByte() & 0xFFL
+      val b3                 = wire.readByte() & 0xFFL
+      val b4                 = wire.readByte() & 0xFFL
+      val b5                 = wire.readByte() & 0xFFL
+      val b6                 = wire.readByte() & 0xFFL
+      val b7                 = wire.readByte() & 0xFFL
       val dotNetLocalTicksMs = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) | (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56)
 
-      val b8 = wire.readByte() & 0xFFL
-      val b9 = wire.readByte() & 0xFFL
-      val b10 = wire.readByte() & 0xFFL
-      val b11 = wire.readByte() & 0xFFL
-      val b12 = wire.readByte() & 0xFFL
-      val b13 = wire.readByte() & 0xFFL
-      val b14 = wire.readByte() & 0xFFL
-      val b15 = wire.readByte() & 0xFFL
+      val b8       = wire.readByte() & 0xFFL
+      val b9       = wire.readByte() & 0xFFL
+      val b10      = wire.readByte() & 0xFFL
+      val b11      = wire.readByte() & 0xFFL
+      val b12      = wire.readByte() & 0xFFL
+      val b13      = wire.readByte() & 0xFFL
+      val b14      = wire.readByte() & 0xFFL
+      val b15      = wire.readByte() & 0xFFL
       val offsetMs = b8 | (b9 << 8) | (b10 << 16) | (b11 << 24) | (b12 << 32) | (b13 << 40) | (b14 << 48) | (b15 << 56)
 
-      @annotation.unused val kind = wire.readByte()
+      @annotation.unused
+      val kind = wire.readByte()
 
       // Convert local time to UTC by subtracting offset
       val dotNetUtcTicksMs = dotNetLocalTicksMs - offsetMs
       // Convert from .NET epoch to Unix epoch
-      val epochMs = dotNetUtcTicksMs - 62135596800000L
+      val epochMs       = dotNetUtcTicksMs - 62135596800000L
       val offsetSeconds = (offsetMs / 1000).toInt
-      val offset = ZoneOffset.ofTotalSeconds(offsetSeconds)
-      val instant = Instant.ofEpochMilli(epochMs)
+      val offset        = ZoneOffset.ofTotalSeconds(offsetSeconds)
+      val instant       = Instant.ofEpochMilli(epochMs)
       OffsetDateTime.ofInstant(instant, offset)
     }
 
     def writeTimestamp(wref: LEDataOutputStream, ref: OffsetDateTime): Unit = {
       // Write timestamp: 8 bytes (local ticks in ms) + 8 bytes (offset in ms) + 1 byte (kind) = 17 bytes
       // C# expects DateTimeOffset.Ticks which is LOCAL time, not UTC!
-      val ts_offsetDt = ref
-      val ts_epochMs = ts_offsetDt.toInstant.toEpochMilli
+      val ts_offsetDt         = ref
+      val ts_epochMs          = ts_offsetDt.toInstant.toEpochMilli
       val ts_dotNetUtcTicksMs = ts_epochMs + 62135596800000L
-      val ts_offsetMs = ts_offsetDt.getOffset.getTotalSeconds * 1000L
+      val ts_offsetMs         = ts_offsetDt.getOffset.getTotalSeconds * 1000L
       // Convert UTC to local time by adding offset (C# expects local ticks)
       val ts_dotNetLocalTicksMs = ts_dotNetUtcTicksMs + ts_offsetMs
-      val ts_kind: Byte = if (ts_offsetDt.getOffset.getTotalSeconds == 0) 1.toByte else 0.toByte
+      val ts_kind: Byte         = if (ts_offsetDt.getOffset.getTotalSeconds == 0) 1.toByte else 0.toByte
 
       // Write dotNetLocalTicksMs (8 bytes, little-endian)
       wref.writeByte((ts_dotNetLocalTicksMs & 0xFF).toInt)

@@ -361,4 +361,259 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
       result shouldBe BigInt(0)
     }
   }
+
+  "ByteString construction" should {
+    "create from byte array" in {
+      val bytes = Array[Byte](1, 2, 3, 4, 5)
+      val bs = ByteString(bytes)
+      bs.length shouldBe 5
+      bs(0) shouldBe 1.toByte
+      bs(4) shouldBe 5.toByte
+    }
+
+    "create from string" in {
+      val bs = ByteString("hello")
+      bs.toString shouldBe "hello"
+      bs.length shouldBe 5
+    }
+
+    "create from hex string" in {
+      val bs = ByteString.parseHex("48656C6C6F")
+      bs.toString shouldBe "Hello"
+    }
+
+    "create empty ByteString" in {
+      val bs = ByteString.empty
+      bs.length shouldBe 0
+      bs.isEmpty shouldBe true
+    }
+
+    "parse hex string with separators" in {
+      val bs = ByteString.parseHex("48-65-6C-6C-6F")
+      bs.toString shouldBe "Hello"
+    }
+
+    "fail on odd-length hex string" in {
+      assertThrows[IllegalArgumentException] {
+        ByteString.parseHex("ABC")
+      }
+    }
+  }
+
+  "ByteString equality and comparison" should {
+    "equal identical ByteStrings" in {
+      val bs1 = ByteString(Array[Byte](1, 2, 3))
+      val bs2 = ByteString(Array[Byte](1, 2, 3))
+      bs1 shouldBe bs2
+      bs1.hashCode shouldBe bs2.hashCode
+    }
+
+    "not equal different ByteStrings" in {
+      val bs1 = ByteString(Array[Byte](1, 2, 3))
+      val bs2 = ByteString(Array[Byte](1, 2, 4))
+      bs1 should not be bs2
+    }
+
+    "compare ByteStrings lexicographically" in {
+      val bs1 = ByteString(Array[Byte](1, 2, 3))
+      val bs2 = ByteString(Array[Byte](1, 2, 4))
+      (bs1 < bs2) shouldBe true
+      (bs2 > bs1) shouldBe true
+      (bs1 <= bs2) shouldBe true
+      (bs1 >= bs1) shouldBe true
+    }
+
+    "compare different lengths" in {
+      val bs1 = ByteString(Array[Byte](1, 2))
+      val bs2 = ByteString(Array[Byte](1, 2, 3))
+      (bs1 < bs2) shouldBe true
+    }
+  }
+
+  "ByteString concatenation" should {
+    "concatenate two ByteStrings" in {
+      val bs1 = ByteString("Hello")
+      val bs2 = ByteString(" World")
+      val result = bs1.concat(bs2)
+      result.toString shouldBe "Hello World"
+    }
+
+    "concatenate using + operator" in {
+      val bs1 = ByteString("Hello")
+      val bs2 = ByteString(" World")
+      val result = bs1 + bs2
+      result.toString shouldBe "Hello World"
+    }
+
+    "concatenate multiple ByteStrings" in {
+      val bs1 = ByteString("A")
+      val bs2 = ByteString("B")
+      val bs3 = ByteString("C")
+      val result = bs1.concat(bs2, bs3)
+      result.toString shouldBe "ABC"
+    }
+  }
+
+  "ByteString encoding" should {
+    "encode to hex string" in {
+      val bs = ByteString("Hello")
+      bs.toHexString shouldBe "48656C6C6F"
+    }
+
+    "encode empty ByteString" in {
+      val bs = ByteString.empty
+      bs.toHexString shouldBe ""
+    }
+
+    "round-trip through hex encoding" in {
+      val original = ByteString(Array[Byte](0, 15, 255.toByte, 127, -128))
+      val hex = original.toHexString
+      val decoded = ByteString.parseHex(hex)
+      decoded shouldBe original
+    }
+  }
+
+  "ByteString substring operations" should {
+    "extract substring" in {
+      val bs = ByteString("Hello World")
+      val sub = bs.substring(0, 5)
+      sub.toString shouldBe "Hello"
+    }
+
+    "slice ByteString" in {
+      val bs = ByteString("Hello World")
+      val sliced = bs.slice(6, 11)
+      sliced.toString shouldBe "World"
+    }
+
+    "take first n bytes" in {
+      val bs = ByteString("Hello World")
+      bs.take(5).toString shouldBe "Hello"
+    }
+
+    "drop first n bytes" in {
+      val bs = ByteString("Hello World")
+      bs.drop(6).toString shouldBe "World"
+    }
+
+    "check startsWith" in {
+      val bs = ByteString("Hello World")
+      val prefix = ByteString("Hello")
+      bs.startsWith(prefix) shouldBe true
+    }
+
+    "check endsWith" in {
+      val bs = ByteString("Hello World")
+      val suffix = ByteString("World")
+      bs.endsWith(suffix) shouldBe true
+    }
+  }
+
+  "ByteString binary serialization" should {
+    "round-trip empty ByteString" in {
+      val value = ByteString.empty
+
+      val output = new ByteArrayOutputStream()
+      val writer = new LEDataOutputStream(output)
+
+      BaboonBinTools.writeByteString(writer, value)
+      writer.flush()
+
+      val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+      val result = BaboonBinTools.readByteString(input)
+
+      result shouldBe value
+    }
+
+    "round-trip simple ByteString" in {
+      val value = ByteString("Hello World")
+
+      val output = new ByteArrayOutputStream()
+      val writer = new LEDataOutputStream(output)
+
+      BaboonBinTools.writeByteString(writer, value)
+      writer.flush()
+
+      val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+      val result = BaboonBinTools.readByteString(input)
+
+      result shouldBe value
+      result.toString shouldBe "Hello World"
+    }
+
+    "round-trip ByteString with arbitrary bytes" in {
+      val value = ByteString(Array[Byte](0, 1, 127, -128, -1, 42, 255.toByte))
+
+      val output = new ByteArrayOutputStream()
+      val writer = new LEDataOutputStream(output)
+
+      BaboonBinTools.writeByteString(writer, value)
+      writer.flush()
+
+      val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+      val result = BaboonBinTools.readByteString(input)
+
+      result shouldBe value
+      result.toArray shouldBe value.toArray
+    }
+
+    "round-trip large ByteString" in {
+      val largeBytes = Array.fill[Byte](10000)(42.toByte)
+      val value = ByteString(largeBytes)
+
+      val output = new ByteArrayOutputStream()
+      val writer = new LEDataOutputStream(output)
+
+      BaboonBinTools.writeByteString(writer, value)
+      writer.flush()
+
+      val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+      val result = BaboonBinTools.readByteString(input)
+
+      result shouldBe value
+      result.length shouldBe 10000
+    }
+
+    "encode length as uint32" in {
+      val value = ByteString("test")
+
+      val output = new ByteArrayOutputStream()
+      val writer = new LEDataOutputStream(output)
+
+      BaboonBinTools.writeByteString(writer, value)
+      writer.flush()
+
+      val bytes = output.toByteArray
+      // First 4 bytes should be the length (4) in little-endian
+      bytes(0) shouldBe 4.toByte
+      bytes(1) shouldBe 0.toByte
+      bytes(2) shouldBe 0.toByte
+      bytes(3) shouldBe 0.toByte
+      // Next 4 bytes should be "test"
+      bytes(4) shouldBe 't'.toByte
+      bytes(5) shouldBe 'e'.toByte
+      bytes(6) shouldBe 's'.toByte
+      bytes(7) shouldBe 't'.toByte
+    }
+  }
+
+  "ByteString functional operations" should {
+    "map over bytes" in {
+      val bs = ByteString(Array[Byte](1, 2, 3))
+      val mapped = bs.map(b => (b + 1).toByte)
+      mapped.toArray shouldBe Array[Byte](2, 3, 4)
+    }
+
+    "filter bytes" in {
+      val bs = ByteString(Array[Byte](1, 2, 3, 4, 5))
+      val filtered = bs.filter(_ > 2)
+      filtered.toArray shouldBe Array[Byte](3, 4, 5)
+    }
+
+    "fold bytes" in {
+      val bs = ByteString(Array[Byte](1, 2, 3, 4, 5))
+      val sum = bs.foldLeft(0)(_ + _)
+      sum shouldBe 15
+    }
+  }
 }

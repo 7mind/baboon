@@ -424,6 +424,7 @@ class CSUEBACodecGenerator(
               case TypeId.Builtins.f64                       => q"$wref.ReadDouble()"
               case TypeId.Builtins.f128                      => q"$wref.ReadDecimal()"
               case TypeId.Builtins.str                       => q"$wref.ReadString()"
+              case TypeId.Builtins.bytes                     => q"$csByteString.ReadBytes($wref)"
               case TypeId.Builtins.uid                       => q"new $csGuid($wref.ReadBytes(16))"
               case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.DecodeFromBin($wref)"
               case o                                         => throw new RuntimeException(s"BUG: Unexpected type: $o")
@@ -479,6 +480,7 @@ class CSUEBACodecGenerator(
               case TypeId.Builtins.f64                       => q"$wref.Write($ref)"
               case TypeId.Builtins.f128                      => q"$wref.Write($ref)"
               case TypeId.Builtins.str                       => q"$wref.Write($ref)"
+              case TypeId.Builtins.bytes                     => q"$csByteString.WriteBytes($ref, $wref)"
               case TypeId.Builtins.uid                       => q"$wref.Write($ref.ToByteArray())"
               case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.EncodeToBin($ref, $wref)"
               case o =>

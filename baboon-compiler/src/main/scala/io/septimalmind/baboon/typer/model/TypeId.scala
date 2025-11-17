@@ -45,10 +45,11 @@ object TypeId {
     final val f64  = BuiltinScalar(TypeName("f64"))
     final val f128 = BuiltinScalar(TypeName("f128"))
 
-    final val str = BuiltinScalar(TypeName("str"))
-    final val uid = BuiltinScalar(TypeName("uid"))
-    final val tsu = BuiltinScalar(TypeName("tsu"))
-    final val tso = BuiltinScalar(TypeName("tso"))
+    final val str   = BuiltinScalar(TypeName("str"))
+    final val uid   = BuiltinScalar(TypeName("uid"))
+    final val tsu   = BuiltinScalar(TypeName("tsu"))
+    final val tso   = BuiltinScalar(TypeName("tso"))
+    final val bytes = BuiltinScalar(TypeName("bytes"))
 
     final val map = BuiltinCollection(TypeName("map"))
     final val opt = BuiltinCollection(TypeName("opt"))

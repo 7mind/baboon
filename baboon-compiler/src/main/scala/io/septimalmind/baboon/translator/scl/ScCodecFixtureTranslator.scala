@@ -182,8 +182,9 @@ object ScCodecFixtureTranslator {
         case TypeId.Builtins.f64  => q"rnd.nextF64()"
         case TypeId.Builtins.f128 => q"rnd.nextF128()"
 
-        case TypeId.Builtins.str => q"rnd.nextString()"
-        case TypeId.Builtins.uid => q"rnd.nextUid()"
+        case TypeId.Builtins.str   => q"rnd.nextString()"
+        case TypeId.Builtins.bytes => q"rnd.nextByteString()"
+        case TypeId.Builtins.uid   => q"rnd.nextUid()"
 
         case TypeId.Builtins.tsu => q"rnd.nextTsu()"
         case TypeId.Builtins.tso => q"rnd.nextTso()"

@@ -398,6 +398,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
           rt(s"BaboonConversions.cs", "baboon-runtime/cs/BaboonConversions.cs"),
           rt(s"BaboonTools.cs", "baboon-runtime/cs/BaboonTools.cs"),
           rt(s"BaboonTime.cs", "baboon-runtime/cs/BaboonTime.cs"),
+          rt(s"BaboonByteString.cs", "baboon-runtime/cs/BaboonByteString.cs"),
         )
       )
     } else {

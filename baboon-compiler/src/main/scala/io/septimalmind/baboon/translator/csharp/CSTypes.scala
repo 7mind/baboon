@@ -61,6 +61,7 @@ object CSTypes {
   val baboonBinCodecNoEncoder: CSType             = CSType(baboonRuntimePkg, "IBaboonBinCodec.NoEncoder", fq = false, CSTypeOrigin.Other)
   val baboonBinCodecNoEncoderGenerated: CSType    = CSType(baboonRuntimePkg, "IBaboonBinCodec.NoEncoderGenerated", fq = false, CSTypeOrigin.Other)
   val baboonBinCodecNoEncoderGeneratedAdt: CSType = CSType(baboonRuntimePkg, "IBaboonBinCodec.NoEncoderGeneratedAdt", fq = false, CSTypeOrigin.Other)
+  val csByteString: CSType                        = CSType(baboonRuntimePkg, "ByteString", fq = false, CSTypeOrigin.Other)
 
   val either: CSType = CSType(baboonRuntimePkg, "Either", fq = false, CSTypeOrigin.Other)
   val unit: CSType   = CSType(baboonRuntimePkg, "Unit", fq = false, CSTypeOrigin.Other)

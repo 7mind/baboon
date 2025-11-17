@@ -110,6 +110,7 @@ root data T1_D1 : derived[json] {
  f0: T1_D2
  f1: i08
  f3: str
+ f4: bytes
 }
 
 //

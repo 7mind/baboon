@@ -70,6 +70,7 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
         case TypeId.Builtins.f128 => CSTypes.csDecimal
 
         case TypeId.Builtins.str                       => CSTypes.csString
+        case TypeId.Builtins.bytes                     => CSTypes.csByteString
         case TypeId.Builtins.uid                       => CSTypes.csGuid
         case TypeId.Builtins.tso | TypeId.Builtins.tsu => CSTypes.rpDateTime
 
@@ -158,6 +159,7 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
   def deNull(tpe: TypeRef, domain: Domain, ref: TextTree[CSValue]): TextTree[CSValue] = {
     tpe match {
       case TypeRef.Scalar(TypeId.Builtins.str)     => ref
+      case TypeRef.Scalar(TypeId.Builtins.bytes)   => ref
       case TypeRef.Scalar(_: TypeId.BuiltinScalar) => q"$ref.Value"
       case _ if enquiries.isEnum(tpe, domain)      => q"$ref.Value"
       case _ if info.isCSValueType(tpe, domain)    => q"$ref.Value"

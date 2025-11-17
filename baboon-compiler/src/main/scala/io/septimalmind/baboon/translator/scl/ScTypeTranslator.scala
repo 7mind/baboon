@@ -34,6 +34,7 @@ class ScTypeTranslator(
           case TypeId.Builtins.f64                       => scDouble
           case TypeId.Builtins.f128                      => scBigDecimal
           case TypeId.Builtins.str                       => scString
+          case TypeId.Builtins.bytes                     => scByteString
           case TypeId.Builtins.uid                       => scUid
           case TypeId.Builtins.tso | TypeId.Builtins.tsu => scTime
           case TypeId.Builtins.bit                       => scBoolean
