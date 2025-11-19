@@ -44,7 +44,7 @@ jobs:
           setup-nix: ${{ matrix.preconfigured != true }}
       - name: Check deps and build
         if: startsWith(github.ref, 'refs/tags/')
-        run: nix run nixpkgs#bash -- ./run -v --nix :flake-refresh --validate :build :test
+        run: nix run nixpkgs#bash -- ./run -v --nix :build :test
       - name: Refresh deps and build
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: nix run nixpkgs#bash -- ./run -v --nix :flake-refresh :build :test

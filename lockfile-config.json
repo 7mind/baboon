@@ -1,0 +1,5 @@
+{
+  "sbt_runs": [
+    {"args": ["+test:compile"]}
+  ]
+}

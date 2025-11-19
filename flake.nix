@@ -3,40 +3,51 @@
 
   # this version contains essential graalvm fixes, but we will have to pin to a better tag once available
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/8c9fd3e564728e90829ee7dbac6edc972971cd0f";
-
   inputs.flake-utils.url = "github:numtide/flake-utils";
 
-  inputs.sbt.url = "github:zaninime/sbt-derivation";
-  inputs.sbt.inputs.nixpkgs.follows = "nixpkgs";
+  inputs.sbt-nix.url = "github:7mind/sbt-nix";
+  inputs.sbt-nix.inputs.nixpkgs.follows = "nixpkgs";
+  inputs.sbt-nix.inputs.flake-utils.follows = "flake-utils";
 
   outputs =
     { self
     , nixpkgs
     , flake-utils
-    , sbt
+    , sbt-nix
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = nixpkgs.legacyPackages.${system};
+        pkgs = import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+        };
+
+        coursierCache = sbt-nix.lib.mkCoursierCache {
+          inherit pkgs;
+          lockfilePath = ./deps.lock.json;
+        };
+
+        sbtSetup = sbt-nix.lib.mkSbtSetup {
+          inherit pkgs coursierCache;
+          jdk = pkgs.graalvm-ce;
+        };
       in
       {
         packages = rec {
-          baboon = sbt.lib.mkSbtDerivation {
+          baboon = pkgs.stdenv.mkDerivation {
             pkgs = pkgs;
-            version = "0.0.137";
+            version = "0.0.139";
             pname = "baboon";
             src = ./.;
-            depsSha256 = "sha256-+8NTjYpFaJ9Ylshp4O8CuaXBya2/Apx4pgJRjitIdzE=";
-            nativeBuildInputs = with pkgs; [
-              graalvm-ce
-            ];
-            depsWarmupCommand = ''
-              sbt compile
-            '';
+            nativeBuildInputs = sbtSetup.nativeBuildInputs;
+            inherit (sbtSetup) JAVA_HOME;
+
             buildPhase = ''
+              ${sbtSetup.setupScript}
               ./build.sh build
             '';
+
             installPhase = ''
               mkdir -p $out/bin
               cp target/graalvm-native-image/baboon $out/bin/baboon
