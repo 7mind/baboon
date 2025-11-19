@@ -44,12 +44,12 @@
 
             buildPhase = ''
               ${sbtSetup.setupScript}
-              ./build.sh build
+              ./run -v --nix :build
             '';
 
             installPhase = ''
               mkdir -p $out/bin
-              cp target/graalvm-native-image/baboon $out/bin/baboon
+              cp baboon-compiler/target/graalvm-native-image/baboon $out/bin/baboon
             '';
           };
           default = baboon;
