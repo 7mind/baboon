@@ -20,13 +20,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Allow direnv
-        run: direnv allow .
-
       - name: Refresh deps.lock.json
         run: |
           set -euo pipefail
-          direnv exec . bash -c 'nix run github:7mind/squish-find-the-brains -- lockfile-config.json > deps.lock.json'
+          nix run github:7mind/squish-find-the-brains -- lockfile-config.json > deps.lock.json
 
       - name: Commit lockfile update
         id: commit_lockfile
