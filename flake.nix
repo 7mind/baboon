@@ -44,7 +44,7 @@
 
             buildPhase = ''
               ${sbtSetup.setupScript}
-              ./run -v --nix :build
+              ${pkgs.bash} ./run -v --nix :build
             '';
 
             installPhase = ''
