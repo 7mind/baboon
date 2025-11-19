@@ -23,7 +23,7 @@ jobs:
       - name: Refresh deps.lock.json
         run: |
           set -euo pipefail
-          nix run github:7mind/squish-find-the-brains -- lockfile-config.json > deps.lock.json
+          nix run nixpkgs#bash -- ./run -v --nix :flake-refresh
 
       - name: Commit lockfile update
         id: commit_lockfile
