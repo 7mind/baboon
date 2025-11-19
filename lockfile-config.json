@@ -1,5 +1,6 @@
 {
   "sbt_runs": [
-    {"args": ["baboonJVM/GraalVMNativeImage/packageBin"]}
+    {"args": [";reload plugins; update; reload return"]},
+    {"args": ["+update", "+compile"]}
   ]
 }

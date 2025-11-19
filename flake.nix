@@ -5,15 +5,15 @@
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/8c9fd3e564728e90829ee7dbac6edc972971cd0f";
   inputs.flake-utils.url = "github:numtide/flake-utils";
 
-  inputs.sbt-nix.url = "github:7mind/sbt-nix";
-  inputs.sbt-nix.inputs.nixpkgs.follows = "nixpkgs";
-  inputs.sbt-nix.inputs.flake-utils.follows = "flake-utils";
+  inputs.squish-find-the-brains.url = "github:7mind/squish-find-the-brains";
+  inputs.squish-find-the-brains.inputs.nixpkgs.follows = "nixpkgs";
+  inputs.squish-find-the-brains.inputs.flake-utils.follows = "flake-utils";
 
   outputs =
     { self
     , nixpkgs
     , flake-utils
-    , sbt-nix
+    , squish-find-the-brains
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -23,12 +23,12 @@
           config.allowUnfree = true;
         };
 
-        coursierCache = sbt-nix.lib.mkCoursierCache {
+        coursierCache = squish-find-the-brains.lib.mkCoursierCache {
           inherit pkgs;
           lockfilePath = ./deps.lock.json;
         };
 
-        sbtSetup = sbt-nix.lib.mkSbtSetup {
+        sbtSetup = squish-find-the-brains.lib.mkSbtSetup {
           inherit pkgs coursierCache;
           jdk = pkgs.graalvm-ce;
         };
@@ -44,14 +44,12 @@
 
             buildPhase = ''
               ${sbtSetup.setupScript}
-              #ls -la $HOME/.cache/coursier/https/repo1.maven.org/maven2/com/google/guava/guava
-              #exit 1
               sbt baboonJVM/GraalVMNativeImage/packageBin
             '';
 
             installPhase = ''
               mkdir -p $out/bin
-              cp baboon-compiler/target/graalvm-native-image/baboon $out/bin/baboon
+              cp baboon-compiler/.jvm/target/graalvm-native-image/baboon $out/bin/baboon
             '';
           };
           default = baboon;

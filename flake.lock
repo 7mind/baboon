@@ -38,10 +38,10 @@
       "inputs": {
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs",
-        "sbt-nix": "sbt-nix"
+        "squish-find-the-brains": "squish-find-the-brains"
       }
     },
-    "sbt-nix": {
+    "squish-find-the-brains": {
       "inputs": {
         "flake-utils": [
           "flake-utils"
@@ -54,13 +54,13 @@
         "lastModified": 1763582334,
         "narHash": "sha256-wHtedZ/rmPPtILhGCymjKW7i5eMaijkxI/YAjs9j3ns=",
         "owner": "7mind",
-        "repo": "sbt-nix",
+        "repo": "squish-find-the-brains",
         "rev": "3c13b7b1d02af87b2271b070f813f30ad6848765",
         "type": "github"
       },
       "original": {
         "owner": "7mind",
-        "repo": "sbt-nix",
+        "repo": "squish-find-the-brains",
         "type": "github"
       }
     },

@@ -14,7 +14,7 @@ function run-flake-refresh() {
 
   do_update "$PKG_VERSION" ./flake.nix
 
-  nix run github:7mind/sbt-nix -- lockfile-config.json > deps.lock.json
+  nix run github:7mind/squish-find-the-brains -- lockfile-config.json > deps.lock.json
 
   git add . || true
 }
