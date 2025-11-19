@@ -36,7 +36,6 @@
       {
         packages = rec {
           baboon = pkgs.stdenv.mkDerivation {
-            pkgs = pkgs;
             version = "0.0.139";
             pname = "baboon";
             src = ./.;
