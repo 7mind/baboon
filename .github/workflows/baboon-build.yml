@@ -54,6 +54,25 @@ jobs:
           path: |
             baboon-compiler/.jvm/target/graalvm-native-image/**
 
+  validate-flake:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-aarch64
+            os: ubuntu-24.04-arm
+            runs-on: [ ]
+    name: ${{ matrix.target }}
+    runs-on:
+      - ${{ matrix.os }}
+      - ${{ matrix.runs-on }}
+    steps:
+      - uses: 7mind/github-env@minimal
+        with:
+          setup-nix: ${{ matrix.preconfigured != true }}
+      - name: Check deps and build
+        run: nix run . -- --model-dir ./test/conv-test :cs --output ./test/conv-test-cs/ConvTest/Generated :scala --output ./test/conv-test-sc/src/main/scala/generated-main
+
   build-windows:
     strategy:
       fail-fast: false
