@@ -1,0 +1,52 @@
+name: Lockfile Maintenance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: 7mind/github-env@minimal
+        with:
+          setup-nix: true
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Allow direnv
+        run: direnv allow .
+
+      - name: Refresh deps.lock.json
+        run: |
+          set -euo pipefail
+          direnv exec . bash -c 'nix run github:7mind/squish-find-the-brains -- lockfile-config.json > deps.lock.json'
+
+      - name: Commit lockfile update
+        id: commit_lockfile
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- deps.lock.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name "Baboon Lockfile Bot"
+          git config user.email "lockfile-bot@users.noreply.github.com"
+          git add deps.lock.json
+          git commit -m "chore: refresh deps.lock.json"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push changes
+        if: steps.commit_lockfile.outputs.changed == 'true'
+        env:
+          TARGET_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git push origin "HEAD:${TARGET_BRANCH}"
