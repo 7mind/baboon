@@ -1,5 +1,5 @@
 {
   "sbt_runs": [
-    {"args": ["+test:compile"]}
+    {"args": ["baboonJVM/GraalVMNativeImage/packageBin"]}
   ]
 }

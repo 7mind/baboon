@@ -39,12 +39,14 @@
             version = "0.0.139";
             pname = "baboon";
             src = ./.;
-            nativeBuildInputs = sbtSetup.nativeBuildInputs;
+            nativeBuildInputs = sbtSetup.nativeBuildInputs ++ [pkgs.curl];
             inherit (sbtSetup) JAVA_HOME;
 
             buildPhase = ''
               ${sbtSetup.setupScript}
-              ${pkgs.bash} ./run -v --nix :build
+              #ls -la $HOME/.cache/coursier/https/repo1.maven.org/maven2/com/google/guava/guava
+              #exit 1
+              sbt baboonJVM/GraalVMNativeImage/packageBin
             '';
 
             installPhase = ''
