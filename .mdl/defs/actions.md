@@ -14,16 +14,6 @@ This file defines the build orchestration for the Baboon project using mudyla.
 - `USER`
 - `SONATYPE_SECRET`
 
-# action: fmt
-
-Format Scala code using scalafmt.
-
-```bash
-cs launch scalafmt -- --non-interactive || true
-git add . || true
-ret success:bool=true
-```
-
 # action: build
 
 Build the Baboon compiler as a GraalVM native image.
@@ -69,18 +59,6 @@ done
 popd
 
 ret dist_dir:directory=$tgt
-```
-
-# action: flake-refresh
-
-Refresh Nix flake configuration.
-
-```bash
-if [[ "${DO_FLAKE_VALIDATE:-0}" == "1" ]]; then
-  nix flake update
-  nix flake check
-fi
-ret success:bool=true
 ```
 
 # action: gen-js

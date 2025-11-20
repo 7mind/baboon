@@ -44,11 +44,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1763675720,
-        "narHash": "sha256-mOZ1bin46yn13pjeD1bDtKGaZzr4xlYtgfBAa95qJFo=",
+        "lastModified": 1763676767,
+        "narHash": "sha256-olEmv0ISCOnHhfaIpfHpu/HpENlmizQWZpC3wOO8LAY=",
         "owner": "7mind",
         "repo": "mudyla",
-        "rev": "6d062e16cc4519d57161e2e3b74871364b73843d",
+        "rev": "8113286c8a16722e792e57045c3dc752a38d26a8",
         "type": "github"
       },
       "original": {
