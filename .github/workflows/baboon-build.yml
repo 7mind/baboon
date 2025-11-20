@@ -44,10 +44,10 @@ jobs:
           setup-nix: ${{ matrix.preconfigured != true }}
       - name: Check deps and build
         if: startsWith(github.ref, 'refs/tags/')
-        run: nix develop --command mdl :build :test
+        run: nix develop --command mdl --github-actions :build :test
       - name: Refresh deps and build
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        run: nix develop --command mdl :flake-refresh :build :test
+        run: nix develop --command mdl --github-actions :flake-refresh :build :test
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -107,7 +107,7 @@ jobs:
         run: pip install git+https://github.com/7mind/mudyla.git
       - name: Build (windows)
         shell: bash
-        run: mdl --without-nix :build :test
+        run: mdl --github-actions --without-nix :build :test
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -130,7 +130,7 @@ jobs:
           path: binaries
           pattern: baboon-*
       - name: Prepare layout
-        run: nix develop --command mdl --mkdist-source=./binaries --mkdist-target=. :build :mkdist
+        run: nix develop --command mdl --github-actions --mkdist-source=./binaries --mkdist-target=. :build :mkdist
       - uses: softprops/action-gh-release@v2
         id: create-release
         if: startsWith(github.ref, 'refs/tags/')
@@ -156,4 +156,4 @@ jobs:
           openssl aes-256-cbc -K ${OPENSSL_KEY} -iv ${OPENSSL_IV} -in secrets.tar.enc -out secrets.tar -d
           tar xvf secrets.tar
           
-          nix develop --command mdl :gen-js :publish-scala
+          nix develop --command mdl --github-actions :gen-js :publish-scala
