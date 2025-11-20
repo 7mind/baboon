@@ -40,6 +40,9 @@ Run C# tests with regular ADT codecs (Release configuration).
 ```bash
 set -euo pipefail
 
+# Ensure code is generated first
+echo "Dependency: ${action.test-gen-regular-adt.success}"
+
 pushd ./test/cs-stub
 dotnet build -c Release
 dotnet test -c Release BaboonTests/BaboonTests.csproj
@@ -54,6 +57,9 @@ Run Scala tests with regular ADT codecs.
 
 ```bash
 set -euo pipefail
+
+# Ensure code is generated first
+echo "Dependency: ${action.test-gen-regular-adt.success}"
 
 pushd ./test/sc-stub
 sbt +clean +test
@@ -100,6 +106,9 @@ Run C# tests with wrapped ADT codecs (Debug configuration).
 ```bash
 set -euo pipefail
 
+# Ensure code is generated first
+echo "Dependency: ${action.test-gen-wrapped-adt.success}"
+
 pushd ./test/cs-stub
 dotnet build -c Debug
 dotnet test -c Debug BaboonTests/BaboonTests.csproj
@@ -114,6 +123,9 @@ Run Scala tests with wrapped ADT codecs.
 
 ```bash
 set -euo pipefail
+
+# Ensure code is generated first
+echo "Dependency: ${action.test-gen-wrapped-adt.success}"
 
 pushd ./test/sc-stub
 sbt +clean +test
@@ -150,6 +162,9 @@ Generate compatibility test files using Scala.
 ```bash
 set -euo pipefail
 
+# Ensure manual code is generated first
+echo "Dependency: ${action.test-gen-manual.success}"
+
 pushd ./test/conv-test-sc
 sbt "runMain example.CompatMain"
 popd
@@ -163,6 +178,9 @@ Generate compatibility test files using C#.
 
 ```bash
 set -euo pipefail
+
+# Ensure manual code is generated first
+echo "Dependency: ${action.test-gen-manual.success}"
 
 pushd ./test/conv-test-cs
 dotnet run --project ConvTest/ConvTest.csproj
@@ -178,6 +196,9 @@ Run manual C# compatibility tests.
 ```bash
 set -euo pipefail
 
+# Ensure compat files are generated first
+echo "Dependencies: ${action.test-gen-compat-scala.success}, ${action.test-gen-compat-cs.success}"
+
 pushd ./test/conv-test-cs
 dotnet build
 dotnet test
@@ -192,6 +213,9 @@ Run manual Scala compatibility tests.
 
 ```bash
 set -euo pipefail
+
+# Ensure compat files are generated first
+echo "Dependencies: ${action.test-gen-compat-scala.success}, ${action.test-gen-compat-cs.success}"
 
 pushd ./test/conv-test-sc
 sbt +clean +test
