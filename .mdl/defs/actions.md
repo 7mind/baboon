@@ -7,9 +7,12 @@ This file defines the build orchestration for the Baboon project using mudyla.
 - `args.mkdist-source`: directory="./baboon-compiler/.jvm/target/graalvm-native-image"; Source directory for distribution
 - `args.mkdist-target`: directory="./target/dist"; Target directory for distribution
 
-# passthrough
+# environment
 
-- `LC_ALL`
+- `LANG=C.UTF-8`
+
+## passthrough
+
 - `HOME`
 - `USER`
 - `SONATYPE_SECRET`
@@ -83,12 +86,9 @@ ret success:bool=true
 Publish Scala artifacts.
 
 ```bash
-if [[ -n "${SONATYPE_SECRET:-}" ]]; then
-  echo "Publishing Scala artifacts..."
-  sbt +publishSigned
-else
-  echo "Skipping publish - SONATYPE_SECRET not set"
-fi
+[[ -n "${env.SONATYPE_SECRET}" ]] || exit 1
+echo "Publishing Scala artifacts..."
+sbt +publishSigned
 ret success:bool=true
 ```
 

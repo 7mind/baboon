@@ -44,11 +44,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1763678687,
-        "narHash": "sha256-MhCvaZoGbk+zC995xj1Ya2LG2mGxn2KFmeLWbK9UviI=",
+        "lastModified": 1763680444,
+        "narHash": "sha256-v1LhYDUbIisyj1XmDXV7d2Is47EwAt1xlDXi2JBgObg=",
         "owner": "7mind",
         "repo": "mudyla",
-        "rev": "b8940e013b30097c7088b6e8569298a459e3b4bd",
+        "rev": "3d6d48a4b76b453032b6d3af45600eb2df4ad7ff",
         "type": "github"
       },
       "original": {
@@ -59,17 +59,17 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1736241350,
-        "narHash": "sha256-CHd7yhaDigUuJyDeX0SADbTM9FXfiWaeNyY34FL1wQU=",
+        "lastModified": 1748026580,
+        "narHash": "sha256-rWtXrcIzU5wm/C8F9LWvUfBGu5U5E7cFzPYT1pHIJaQ=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "8c9fd3e564728e90829ee7dbac6edc972971cd0f",
+        "rev": "11cb3517b3af6af300dd6c055aeda73c9bf52c48",
         "type": "github"
       },
       "original": {
         "owner": "NixOS",
+        "ref": "25.05",
         "repo": "nixpkgs",
-        "rev": "8c9fd3e564728e90829ee7dbac6edc972971cd0f",
         "type": "github"
       }
     },

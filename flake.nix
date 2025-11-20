@@ -2,7 +2,7 @@
   description = "baboon build environment";
 
   # this version contains essential graalvm fixes, but we will have to pin to a better tag once available
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/8c9fd3e564728e90829ee7dbac6edc972971cd0f";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/25.05";
   inputs.flake-utils.url = "github:numtide/flake-utils";
 
   inputs.squish-find-the-brains.url = "github:7mind/squish-find-the-brains";
