@@ -7,6 +7,10 @@ This file defines the build orchestration for the Baboon project using mudyla.
 - `args.mkdist-source`: directory="./baboon-compiler/.jvm/target/graalvm-native-image"; Source directory for distribution
 - `args.mkdist-target`: directory="./target/dist"; Target directory for distribution
 
+# passthrough
+
+- `LANG`
+
 # action: fmt
 
 Format Scala code using scalafmt.
