@@ -7,8 +7,6 @@ This file defines test-related actions for the Baboon project.
 Generate code with regular (non-wrapped) ADT branch codecs.
 
 ```bash
-set -euo pipefail
-
 BABOON_BIN="${action.build.binary}"
 
 $BABOON_BIN \
@@ -38,10 +36,7 @@ ret success:bool=true
 Run C# tests with regular ADT codecs (Release configuration).
 
 ```bash
-set -euo pipefail
-
-# Ensure code is generated first
-echo "Dependency: ${action.test-gen-regular-adt.success}"
+dep action.test-gen-regular-adt
 
 pushd ./test/cs-stub
 dotnet build -c Release
@@ -56,10 +51,7 @@ ret success:bool=true
 Run Scala tests with regular ADT codecs.
 
 ```bash
-set -euo pipefail
-
-# Ensure code is generated first
-echo "Dependency: ${action.test-gen-regular-adt.success}"
+dep action.test-gen-regular-adt
 
 pushd ./test/sc-stub
 sbt +clean +test
@@ -73,8 +65,6 @@ ret success:bool=true
 Generate code with wrapped ADT branch codecs.
 
 ```bash
-set -euo pipefail
-
 BABOON_BIN="${action.build.binary}"
 
 $BABOON_BIN \
@@ -104,10 +94,7 @@ ret success:bool=true
 Run C# tests with wrapped ADT codecs (Debug configuration).
 
 ```bash
-set -euo pipefail
-
-# Ensure code is generated first
-echo "Dependency: ${action.test-gen-wrapped-adt.success}"
+dep action.test-gen-wrapped-adt
 
 pushd ./test/cs-stub
 dotnet build -c Debug
@@ -122,10 +109,7 @@ ret success:bool=true
 Run Scala tests with wrapped ADT codecs.
 
 ```bash
-set -euo pipefail
-
-# Ensure code is generated first
-echo "Dependency: ${action.test-gen-wrapped-adt.success}"
+dep action.test-gen-wrapped-adt
 
 pushd ./test/sc-stub
 sbt +clean +test
@@ -139,8 +123,6 @@ ret success:bool=true
 Generate code for manual test projects.
 
 ```bash
-set -euo pipefail
-
 BABOON_BIN="${action.build.binary}"
 
 rm -rf ./test/conv-test-cs/ConvTest/Generated
@@ -160,10 +142,7 @@ ret success:bool=true
 Generate compatibility test files using Scala.
 
 ```bash
-set -euo pipefail
-
-# Ensure manual code is generated first
-echo "Dependency: ${action.test-gen-manual.success}"
+dep action.test-gen-manual
 
 pushd ./test/conv-test-sc
 sbt "runMain example.CompatMain"
@@ -177,10 +156,7 @@ ret success:bool=true
 Generate compatibility test files using C#.
 
 ```bash
-set -euo pipefail
-
-# Ensure manual code is generated first
-echo "Dependency: ${action.test-gen-manual.success}"
+dep action.test-gen-manual
 
 pushd ./test/conv-test-cs
 dotnet run --project ConvTest/ConvTest.csproj
@@ -194,10 +170,8 @@ ret success:bool=true
 Run manual C# compatibility tests.
 
 ```bash
-set -euo pipefail
-
-# Ensure compat files are generated first
-echo "Dependencies: ${action.test-gen-compat-scala.success}, ${action.test-gen-compat-cs.success}"
+dep action.test-gen-compat-scala
+dep action.test-gen-compat-cs
 
 pushd ./test/conv-test-cs
 dotnet build
@@ -212,10 +186,8 @@ ret success:bool=true
 Run manual Scala compatibility tests.
 
 ```bash
-set -euo pipefail
-
-# Ensure compat files are generated first
-echo "Dependencies: ${action.test-gen-compat-scala.success}, ${action.test-gen-compat-cs.success}"
+dep action.test-gen-compat-scala
+dep action.test-gen-compat-cs
 
 pushd ./test/conv-test-sc
 sbt +clean +test
@@ -229,11 +201,17 @@ ret success:bool=true
 Run complete test suite (orchestrator action).
 
 ```bash
-# All tests completed successfully via dependencies
-echo "Test suite completed:"
-echo "  Regular ADT: ${action.test-scala-regular.success} (Scala), ${action.test-cs-regular.success} (C#)"
-echo "  Wrapped ADT: ${action.test-scala-wrapped.success} (Scala), ${action.test-cs-wrapped.success} (C#)"
-echo "  Manual tests: ${action.test-manual-scala.success} (Scala), ${action.test-manual-cs.success} (C#)"
+dep action.test-gen-regular-adt
+dep action.test-cs-regular
+dep action.test-scala-regular
+dep action.test-gen-wrapped-adt
+dep action.test-cs-wrapped
+dep action.test-scala-wrapped
+dep action.test-gen-manual
+dep action.test-gen-compat-scala
+dep action.test-gen-compat-cs
+dep action.test-manual-cs
+dep action.test-manual-scala
 
 ret success:bool=true
 ```

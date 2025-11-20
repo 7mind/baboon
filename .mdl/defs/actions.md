@@ -39,8 +39,6 @@ ret binary:file=baboon-compiler/.jvm/target/graalvm-native-image/baboon.exe
 Create distribution packages from built binaries.
 
 ```bash
-set -euo pipefail
-
 BABOON_BIN="${action.build.binary}"
 SRC="${args.mkdist-source}"
 TGT="${args.mkdist-target}"
@@ -99,10 +97,9 @@ ret success:bool=true
 Complete build pipeline with all steps.
 
 ```bash
-# This action orchestrates the complete build by depending on other actions
-echo "Full build completed successfully"
-echo "- Formatting: ${action.fmt.success}"
-echo "- Build: ${action.build.binary}"
-echo "- Tests: ${action.test.success}"
+dep action.fmt
+dep action.build
+dep action.test
+
 ret success:bool=true
 ```
