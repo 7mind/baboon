@@ -9,7 +9,10 @@ This file defines the build orchestration for the Baboon project using mudyla.
 
 # passthrough
 
-- `LANG`
+- `LC_ALL`
+- `HOME`
+- `USER`
+- `SONATYPE_SECRET`
 
 # action: fmt
 
