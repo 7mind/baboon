@@ -86,7 +86,7 @@ ret success:bool=true
 Publish Scala artifacts.
 
 ```bash
-[[ -n "${env.SONATYPE_SECRET}" ]] || exit 1
+dep env.SONATYPE_SECRET
 echo "Publishing Scala artifacts..."
 sbt +publishSigned
 ret success:bool=true
