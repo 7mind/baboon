@@ -72,6 +72,7 @@
             coreutils
             shellspec
             nix
+            zip
 
             squish-find-the-brains.packages.${system}.generate-lockfile
             mudyla.packages.${system}.default
