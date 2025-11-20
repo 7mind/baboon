@@ -11,13 +11,13 @@ import io.circe.parser.parse
 class Test_CrossLanguageCompat extends AnyFlatSpec {
 
   private val baseDir = Paths.get("../../target/compat-test").toAbsolutePath.normalize()
-  private val ctx = BaboonCodecContext.Default
+  private val ctx     = BaboonCodecContext.Default
 
   // Helper methods
   private def readJsonFile(source: String, format: String): AllBasicTypes = {
-    val file = baseDir.resolve(s"$source-json/all-basic-types.json")
+    val file    = baseDir.resolve(s"$source-json/all-basic-types.json")
     val jsonStr = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
-    val json = parse(jsonStr).getOrElse(fail(s"Failed to parse $format JSON from $file"))
+    val json    = parse(jsonStr).getOrElse(fail(s"Failed to parse $format JSON from $file"))
     AllBasicTypes_JsonCodec.instance.decode(ctx, json) match {
       case Right(data) => data
       case Left(error) => fail(s"Failed to decode $format JSON: $error")
@@ -26,7 +26,7 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
 
   private def readUebaFile(source: String, format: String): AllBasicTypes = {
     val file = baseDir.resolve(s"$source-ueba/all-basic-types.ueba")
-    val fis = new FileInputStream(file.toFile)
+    val fis  = new FileInputStream(file.toFile)
     try {
       val reader = new LEDataInputStream(fis)
       AllBasicTypes_UEBACodec.instance.decode(ctx, reader)
@@ -73,14 +73,14 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
   // Cross-language comparison
   "Cross-language comparison" should "verify Scala and C# JSON produce equivalent data" in {
     val scalaData = readJsonFile("scala", "Scala JSON")
-    val csData = readJsonFile("cs", "C# JSON")
+    val csData    = readJsonFile("cs", "C# JSON")
     printComparison("JSON", scalaData, csData)
     assert(scalaData == csData, "Scala and C# JSON data should be equal")
   }
 
   it should "verify Scala and C# UEBA produce equivalent data" in {
     val scalaData = readUebaFile("scala", "Scala UEBA")
-    val csData = readUebaFile("cs", "C# UEBA")
+    val csData    = readUebaFile("cs", "C# UEBA")
     printComparison("UEBA", scalaData, csData)
     assert(scalaData == csData, "Scala and C# UEBA data should be equal")
   }

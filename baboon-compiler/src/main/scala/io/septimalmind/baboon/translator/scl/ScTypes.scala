@@ -26,7 +26,7 @@ object ScTypes {
   val baboonCodecContext: ScType        = ScType(baboonRuntimePkg, "BaboonCodecContext")
   val baboonLazy: ScType                = ScType(baboonRuntimePkg, "Lazy")
   val baboonBinTools: ScType            = ScType(baboonRuntimePkg, "BaboonBinTools")
-  val scByteString: ScType            = ScType(baboonRuntimePkg, "ByteString")
+  val scByteString: ScType              = ScType(baboonRuntimePkg, "ByteString")
 
   val binaryInput: ScType  = ScType(baboonRuntimePkg, "LEDataInputStream")
   val binaryOutput: ScType = ScType(baboonRuntimePkg, "LEDataOutputStream")

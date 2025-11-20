@@ -17,21 +17,22 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
         BigDecimal("123.456"),
         BigDecimal("999999999.999999"),
         BigDecimal("0.001"),
-        BigDecimal("1234567890.123456789")
+        BigDecimal("1234567890.123456789"),
       )
 
-      values.foreach { value =>
-        val output = new ByteArrayOutputStream()
-        val writer = new LEDataOutputStream(output)
+      values.foreach {
+        value =>
+          val output = new ByteArrayOutputStream()
+          val writer = new LEDataOutputStream(output)
 
-        BaboonBinTools.writeBigDecimal(writer, value)
-        writer.flush()
+          BaboonBinTools.writeBigDecimal(writer, value)
+          writer.flush()
 
-        val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
-        val result = BaboonBinTools.readBigDecimal(input)
+          val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+          val result = BaboonBinTools.readBigDecimal(input)
 
-        // Compare using compareTo to handle scale differences
-        result.compareTo(value) shouldBe 0
+          // Compare using compareTo to handle scale differences
+          result.compareTo(value) shouldBe 0
       }
     }
 
@@ -40,21 +41,22 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
         BigDecimal("-1"),
         BigDecimal("-123.456"),
         BigDecimal("-999999999.999999"),
-        BigDecimal("-0.001")
+        BigDecimal("-0.001"),
       )
 
-      values.foreach { value =>
-        val output = new ByteArrayOutputStream()
-        val writer = new LEDataOutputStream(output)
+      values.foreach {
+        value =>
+          val output = new ByteArrayOutputStream()
+          val writer = new LEDataOutputStream(output)
 
-        BaboonBinTools.writeBigDecimal(writer, value)
-        writer.flush()
+          BaboonBinTools.writeBigDecimal(writer, value)
+          writer.flush()
 
-        val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
-        val result = BaboonBinTools.readBigDecimal(input)
+          val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+          val result = BaboonBinTools.readBigDecimal(input)
 
-        // Compare using compareTo to handle scale differences
-        result.compareTo(value) shouldBe 0
+          // Compare using compareTo to handle scale differences
+          result.compareTo(value) shouldBe 0
       }
     }
 
@@ -68,7 +70,7 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
       BaboonBinTools.writeBigDecimal(writer, value)
       writer.flush()
 
-      val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+      val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
       val result = BaboonBinTools.readBigDecimal(input)
 
       // Compare using compareTo to handle scale differences
@@ -86,7 +88,7 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
       BaboonBinTools.writeString(writer, value)
       writer.flush()
 
-      val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+      val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
       val result = BaboonBinTools.readString(input)
 
       result shouldBe value
@@ -97,20 +99,21 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
         "hello",
         "world",
         "test",
-        "The quick brown fox jumps over the lazy dog"
+        "The quick brown fox jumps over the lazy dog",
       )
 
-      values.foreach { value =>
-        val output = new ByteArrayOutputStream()
-        val writer = new LEDataOutputStream(output)
+      values.foreach {
+        value =>
+          val output = new ByteArrayOutputStream()
+          val writer = new LEDataOutputStream(output)
 
-        BaboonBinTools.writeString(writer, value)
-        writer.flush()
+          BaboonBinTools.writeString(writer, value)
+          writer.flush()
 
-        val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
-        val result = BaboonBinTools.readString(input)
+          val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+          val result = BaboonBinTools.readString(input)
 
-        result shouldBe value
+          result shouldBe value
       }
     }
 
@@ -119,20 +122,21 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
         "Hello, 世界!",
         "Привет мир",
         "مرحبا بالعالم",
-        "🚀🎉✨"
+        "🚀🎉✨",
       )
 
-      values.foreach { value =>
-        val output = new ByteArrayOutputStream()
-        val writer = new LEDataOutputStream(output)
+      values.foreach {
+        value =>
+          val output = new ByteArrayOutputStream()
+          val writer = new LEDataOutputStream(output)
 
-        BaboonBinTools.writeString(writer, value)
-        writer.flush()
+          BaboonBinTools.writeString(writer, value)
+          writer.flush()
 
-        val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
-        val result = BaboonBinTools.readString(input)
+          val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+          val result = BaboonBinTools.readString(input)
 
-        result shouldBe value
+          result shouldBe value
       }
     }
 
@@ -145,7 +149,7 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
       BaboonBinTools.writeString(writer, value)
       writer.flush()
 
-      val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+      val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
       val result = BaboonBinTools.readString(input)
 
       result shouldBe value
@@ -160,20 +164,21 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
         UUID.randomUUID(),
         UUID.fromString("00000000-0000-0000-0000-000000000000"),
         UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff"),
-        UUID.fromString("12345678-1234-5678-1234-567812345678")
+        UUID.fromString("12345678-1234-5678-1234-567812345678"),
       )
 
-      values.foreach { value =>
-        val output = new ByteArrayOutputStream()
-        val writer = new LEDataOutputStream(output)
+      values.foreach {
+        value =>
+          val output = new ByteArrayOutputStream()
+          val writer = new LEDataOutputStream(output)
 
-        BaboonBinTools.writeUid(writer, value)
-        writer.flush()
+          BaboonBinTools.writeUid(writer, value)
+          writer.flush()
 
-        val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
-        val result = BaboonBinTools.readUid(input)
+          val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+          val result = BaboonBinTools.readUid(input)
 
-        result shouldBe value
+          result shouldBe value
       }
     }
   }
@@ -184,20 +189,21 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
         OffsetDateTime.parse("2025-01-01T00:00:00Z"),
         OffsetDateTime.parse("2025-11-14T12:34:56.789Z"),
         OffsetDateTime.parse("1970-01-01T00:00:00Z"),
-        OffsetDateTime.parse("2099-12-31T23:59:59.999Z")
+        OffsetDateTime.parse("2099-12-31T23:59:59.999Z"),
       )
 
-      values.foreach { value =>
-        val output = new ByteArrayOutputStream()
-        val writer = new LEDataOutputStream(output)
+      values.foreach {
+        value =>
+          val output = new ByteArrayOutputStream()
+          val writer = new LEDataOutputStream(output)
 
-        BaboonBinTools.writeTimestamp(writer, value)
-        writer.flush()
+          BaboonBinTools.writeTimestamp(writer, value)
+          writer.flush()
 
-        val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
-        val result = BaboonBinTools.readTimestamp(input)
+          val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+          val result = BaboonBinTools.readTimestamp(input)
 
-        result shouldBe value
+          result shouldBe value
       }
     }
 
@@ -206,20 +212,21 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
         OffsetDateTime.parse("2025-01-01T00:00:00+01:00"),
         OffsetDateTime.parse("2025-01-01T00:00:00-05:00"),
         OffsetDateTime.parse("2025-01-01T00:00:00+05:30"),
-        OffsetDateTime.parse("2025-01-01T00:00:00-10:00")
+        OffsetDateTime.parse("2025-01-01T00:00:00-10:00"),
       )
 
-      values.foreach { value =>
-        val output = new ByteArrayOutputStream()
-        val writer = new LEDataOutputStream(output)
+      values.foreach {
+        value =>
+          val output = new ByteArrayOutputStream()
+          val writer = new LEDataOutputStream(output)
 
-        BaboonBinTools.writeTimestamp(writer, value)
-        writer.flush()
+          BaboonBinTools.writeTimestamp(writer, value)
+          writer.flush()
 
-        val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
-        val result = BaboonBinTools.readTimestamp(input)
+          val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+          val result = BaboonBinTools.readTimestamp(input)
 
-        result shouldBe value
+          result shouldBe value
       }
     }
   }
@@ -233,7 +240,7 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
       writer.writeByte(value.toInt)
       writer.flush()
 
-      val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+      val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
       val result = input.readByte()
 
       result shouldBe value
@@ -242,121 +249,127 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
     "round-trip short values in little-endian" in {
       val values = Seq[Short](0, 1, -1, 127, -128, 255, 256, Short.MaxValue, Short.MinValue)
 
-      values.foreach { value =>
-        val output = new ByteArrayOutputStream()
-        val writer = new LEDataOutputStream(output)
-        writer.writeShort(value.toInt)
-        writer.flush()
+      values.foreach {
+        value =>
+          val output = new ByteArrayOutputStream()
+          val writer = new LEDataOutputStream(output)
+          writer.writeShort(value.toInt)
+          writer.flush()
 
-        val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
-        val result = input.readShort()
+          val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+          val result = input.readShort()
 
-        result shouldBe value
+          result shouldBe value
       }
     }
 
     "round-trip int values in little-endian" in {
       val values = Seq(0, 1, -1, 127, -128, 255, 256, 65535, 65536, Int.MaxValue, Int.MinValue)
 
-      values.foreach { value =>
-        val output = new ByteArrayOutputStream()
-        val writer = new LEDataOutputStream(output)
-        writer.writeInt(value)
-        writer.flush()
+      values.foreach {
+        value =>
+          val output = new ByteArrayOutputStream()
+          val writer = new LEDataOutputStream(output)
+          writer.writeInt(value)
+          writer.flush()
 
-        val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
-        val result = input.readInt()
+          val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+          val result = input.readInt()
 
-        result shouldBe value
+          result shouldBe value
       }
     }
 
     "round-trip long values in little-endian" in {
       val values = Seq(0L, 1L, -1L, Long.MaxValue, Long.MinValue)
 
-      values.foreach { value =>
-        val output = new ByteArrayOutputStream()
-        val writer = new LEDataOutputStream(output)
-        writer.writeLong(value)
-        writer.flush()
+      values.foreach {
+        value =>
+          val output = new ByteArrayOutputStream()
+          val writer = new LEDataOutputStream(output)
+          writer.writeLong(value)
+          writer.flush()
 
-        val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
-        val result = input.readLong()
+          val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+          val result = input.readLong()
 
-        result shouldBe value
+          result shouldBe value
       }
     }
 
     "round-trip float values in little-endian" in {
       val values = Seq(0.0f, 1.0f, -1.0f, Float.MaxValue, Float.MinValue, Float.MinPositiveValue, 3.14159f)
 
-      values.foreach { value =>
-        val output = new ByteArrayOutputStream()
-        val writer = new LEDataOutputStream(output)
-        writer.writeFloat(value)
-        writer.flush()
+      values.foreach {
+        value =>
+          val output = new ByteArrayOutputStream()
+          val writer = new LEDataOutputStream(output)
+          writer.writeFloat(value)
+          writer.flush()
 
-        val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
-        val result = input.readFloat()
+          val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+          val result = input.readFloat()
 
-        result shouldBe value
+          result shouldBe value
       }
     }
 
     "round-trip double values in little-endian" in {
       val values = Seq(0.0, 1.0, -1.0, Double.MaxValue, Double.MinValue, Double.MinPositiveValue, 3.141592653589793)
 
-      values.foreach { value =>
-        val output = new ByteArrayOutputStream()
-        val writer = new LEDataOutputStream(output)
-        writer.writeDouble(value)
-        writer.flush()
+      values.foreach {
+        value =>
+          val output = new ByteArrayOutputStream()
+          val writer = new LEDataOutputStream(output)
+          writer.writeDouble(value)
+          writer.flush()
 
-        val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
-        val result = input.readDouble()
+          val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+          val result = input.readDouble()
 
-        result shouldBe value
+          result shouldBe value
       }
     }
 
     "round-trip boolean values" in {
       val values = Seq(true, false)
 
-      values.foreach { value =>
-        val output = new ByteArrayOutputStream()
-        val writer = new LEDataOutputStream(output)
-        writer.writeBoolean(value)
-        writer.flush()
+      values.foreach {
+        value =>
+          val output = new ByteArrayOutputStream()
+          val writer = new LEDataOutputStream(output)
+          writer.writeBoolean(value)
+          writer.flush()
 
-        val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
-        val result = input.readBoolean()
+          val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+          val result = input.readBoolean()
 
-        result shouldBe value
+          result shouldBe value
       }
     }
   }
 
   "BaboonBinTools.toUnsignedBigInt" should {
     "convert positive long to BigInt" in {
-      val value = 123456789L
+      val value  = 123456789L
       val result = BaboonBinTools.toUnsignedBigInt(value)
       result shouldBe BigInt(123456789L)
     }
 
     "convert negative long to unsigned BigInt" in {
-      val value = -1L
+      val value  = -1L
       val result = BaboonBinTools.toUnsignedBigInt(value)
       result shouldBe BigInt("18446744073709551615") // 2^64 - 1
     }
 
     "convert Long.MinValue to unsigned BigInt" in {
-      val value = Long.MinValue
+      val value  = Long.MinValue
       val result = BaboonBinTools.toUnsignedBigInt(value)
       result shouldBe BigInt("9223372036854775808") // 2^63
     }
 
     "convert zero to BigInt" in {
-      val value = 0L
+      val value  = 0L
       val result = BaboonBinTools.toUnsignedBigInt(value)
       result shouldBe BigInt(0)
     }
@@ -365,7 +378,7 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
   "ByteString construction" should {
     "create from byte array" in {
       val bytes = Array[Byte](1, 2, 3, 4, 5)
-      val bs = ByteString(bytes)
+      val bs    = ByteString(bytes)
       bs.length shouldBe 5
       bs(0) shouldBe 1.toByte
       bs(4) shouldBe 5.toByte
@@ -432,23 +445,23 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
 
   "ByteString concatenation" should {
     "concatenate two ByteStrings" in {
-      val bs1 = ByteString("Hello")
-      val bs2 = ByteString(" World")
+      val bs1    = ByteString("Hello")
+      val bs2    = ByteString(" World")
       val result = bs1.concat(bs2)
       result.toString shouldBe "Hello World"
     }
 
     "concatenate using + operator" in {
-      val bs1 = ByteString("Hello")
-      val bs2 = ByteString(" World")
+      val bs1    = ByteString("Hello")
+      val bs2    = ByteString(" World")
       val result = bs1 + bs2
       result.toString shouldBe "Hello World"
     }
 
     "concatenate multiple ByteStrings" in {
-      val bs1 = ByteString("A")
-      val bs2 = ByteString("B")
-      val bs3 = ByteString("C")
+      val bs1    = ByteString("A")
+      val bs2    = ByteString("B")
+      val bs3    = ByteString("C")
       val result = bs1.concat(bs2, bs3)
       result.toString shouldBe "ABC"
     }
@@ -467,21 +480,21 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
 
     "round-trip through hex encoding" in {
       val original = ByteString(Array[Byte](0, 15, 255.toByte, 127, -128))
-      val hex = original.toHexString
-      val decoded = ByteString.parseHex(hex)
+      val hex      = original.toHexString
+      val decoded  = ByteString.parseHex(hex)
       decoded shouldBe original
     }
   }
 
   "ByteString substring operations" should {
     "extract substring" in {
-      val bs = ByteString("Hello World")
+      val bs  = ByteString("Hello World")
       val sub = bs.substring(0, 5)
       sub.toString shouldBe "Hello"
     }
 
     "slice ByteString" in {
-      val bs = ByteString("Hello World")
+      val bs     = ByteString("Hello World")
       val sliced = bs.slice(6, 11)
       sliced.toString shouldBe "World"
     }
@@ -497,13 +510,13 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
     }
 
     "check startsWith" in {
-      val bs = ByteString("Hello World")
+      val bs     = ByteString("Hello World")
       val prefix = ByteString("Hello")
       bs.startsWith(prefix) shouldBe true
     }
 
     "check endsWith" in {
-      val bs = ByteString("Hello World")
+      val bs     = ByteString("Hello World")
       val suffix = ByteString("World")
       bs.endsWith(suffix) shouldBe true
     }
@@ -519,7 +532,7 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
       BaboonBinTools.writeByteString(writer, value)
       writer.flush()
 
-      val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+      val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
       val result = BaboonBinTools.readByteString(input)
 
       result shouldBe value
@@ -534,7 +547,7 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
       BaboonBinTools.writeByteString(writer, value)
       writer.flush()
 
-      val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+      val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
       val result = BaboonBinTools.readByteString(input)
 
       result shouldBe value
@@ -550,7 +563,7 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
       BaboonBinTools.writeByteString(writer, value)
       writer.flush()
 
-      val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+      val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
       val result = BaboonBinTools.readByteString(input)
 
       result shouldBe value
@@ -559,7 +572,7 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
 
     "round-trip large ByteString" in {
       val largeBytes = Array.fill[Byte](10000)(42.toByte)
-      val value = ByteString(largeBytes)
+      val value      = ByteString(largeBytes)
 
       val output = new ByteArrayOutputStream()
       val writer = new LEDataOutputStream(output)
@@ -567,7 +580,7 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
       BaboonBinTools.writeByteString(writer, value)
       writer.flush()
 
-      val input = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
+      val input  = new LEDataInputStream(new ByteArrayInputStream(output.toByteArray))
       val result = BaboonBinTools.readByteString(input)
 
       result shouldBe value
@@ -599,19 +612,19 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
 
   "ByteString functional operations" should {
     "map over bytes" in {
-      val bs = ByteString(Array[Byte](1, 2, 3))
+      val bs     = ByteString(Array[Byte](1, 2, 3))
       val mapped = bs.map(b => (b + 1).toByte)
       mapped.toArray shouldBe Array[Byte](2, 3, 4)
     }
 
     "filter bytes" in {
-      val bs = ByteString(Array[Byte](1, 2, 3, 4, 5))
+      val bs       = ByteString(Array[Byte](1, 2, 3, 4, 5))
       val filtered = bs.filter(_ > 2)
       filtered.toArray shouldBe Array[Byte](3, 4, 5)
     }
 
     "fold bytes" in {
-      val bs = ByteString(Array[Byte](1, 2, 3, 4, 5))
+      val bs  = ByteString(Array[Byte](1, 2, 3, 4, 5))
       val sum = bs.foldLeft(0)(_ + _)
       sum shouldBe 15
     }
@@ -625,15 +638,16 @@ class BaboonRuntimeSharedTest extends AnyWordSpec with Matchers {
       val byteStrings = (1 to 10).map(_ => random.nextByteString())
 
       // All should have length between 0 and 20
-      byteStrings.foreach { bs =>
-        bs.length should be >= 0
-        bs.length should be <= 20
+      byteStrings.foreach {
+        bs =>
+          bs.length should be >= 0
+          bs.length should be <= 20
       }
     }
 
     "generate ByteStrings with random content" in {
       val random = BaboonRandom.default()
-      val bs = random.nextByteString()
+      val bs     = random.nextByteString()
 
       // Should be a valid ByteString
       bs should not be null

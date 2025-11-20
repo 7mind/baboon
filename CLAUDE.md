@@ -8,7 +8,35 @@ Baboon is a Domain Modeling Language (DML) compiler with schema evolution suppor
 
 ## Essential Commands
 
+This project uses [mudyla](https://github.com/7mind/mudyla) for build orchestration.
+
 ### Build Commands
+```bash
+# Format code
+mdl :fmt
+
+# Build the compiler native executable
+mdl :build
+
+# Run the full test suite
+mdl :build :test
+
+# Run specific test suites independently:
+# - Regular ADT tests
+mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular
+# - Wrapped ADT tests
+mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped
+# - Manual/compatibility tests
+mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-manual-cs :test-manual-scala
+
+# Run complete build pipeline (format, build, test)
+mdl :full-build
+
+# Create distribution packages
+mdl :build :mkdist
+```
+
+### Direct SBT Commands (for development)
 ```bash
 # Compile the project
 sbt compile
@@ -18,10 +46,7 @@ sbt GraalVMNativeImage/packageBin
 
 # Clean build
 sbt clean compile
-```
 
-### Testing Commands
-```bash
 # Run all tests
 sbt test
 

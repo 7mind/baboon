@@ -101,7 +101,7 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
     run / fork := true,
     refreshFlakeTask := {
       val log = streams.value.log
-      val result = "./run --nix :flake-refresh" ! log
+      val result = "nix develop --command mdl :flake-refresh" ! log
       if (result != 0) {
         throw new MessageOnlyException("flake.nix update failed!")
       }

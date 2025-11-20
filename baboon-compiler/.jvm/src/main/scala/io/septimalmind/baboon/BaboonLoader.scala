@@ -17,7 +17,7 @@ trait BaboonLoader[F[+_, +_]] {
 
 object BaboonLoader {
   class BaboonLoaderImpl[F[+_, +_]: Error2: ParallelErrorAccumulatingOps2](
-    manager: BaboonFamilyManager[F],
+    manager: BaboonFamilyManager[F]
   ) extends BaboonLoader[F] {
 
     override def load(

@@ -18,25 +18,65 @@
         "type": "github"
       }
     },
+    "flake-utils_2": {
+      "inputs": {
+        "systems": "systems_2"
+      },
+      "locked": {
+        "lastModified": 1731533236,
+        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
+    "mudyla": {
+      "inputs": {
+        "flake-utils": "flake-utils_2",
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1763680444,
+        "narHash": "sha256-v1LhYDUbIisyj1XmDXV7d2Is47EwAt1xlDXi2JBgObg=",
+        "owner": "7mind",
+        "repo": "mudyla",
+        "rev": "3d6d48a4b76b453032b6d3af45600eb2df4ad7ff",
+        "type": "github"
+      },
+      "original": {
+        "owner": "7mind",
+        "repo": "mudyla",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1736241350,
-        "narHash": "sha256-CHd7yhaDigUuJyDeX0SADbTM9FXfiWaeNyY34FL1wQU=",
+        "lastModified": 1748026580,
+        "narHash": "sha256-rWtXrcIzU5wm/C8F9LWvUfBGu5U5E7cFzPYT1pHIJaQ=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "8c9fd3e564728e90829ee7dbac6edc972971cd0f",
+        "rev": "11cb3517b3af6af300dd6c055aeda73c9bf52c48",
         "type": "github"
       },
       "original": {
         "owner": "NixOS",
+        "ref": "25.05",
         "repo": "nixpkgs",
-        "rev": "8c9fd3e564728e90829ee7dbac6edc972971cd0f",
         "type": "github"
       }
     },
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
+        "mudyla": "mudyla",
         "nixpkgs": "nixpkgs",
         "squish-find-the-brains": "squish-find-the-brains"
       }
@@ -51,11 +91,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1763589295,
-        "narHash": "sha256-/rOXb4YMPqQtOgs8l18eSJABAMtBnFLG9z6CJJzADGU=",
+        "lastModified": 1763677058,
+        "narHash": "sha256-HcoyrnojloWonSyl2MXgBCpjJQlZpOlJdlRFeab6CtE=",
         "owner": "7mind",
         "repo": "squish-find-the-brains",
-        "rev": "e541ba409c1f956d4af1d218693e2a2285774fec",
+        "rev": "210184b9a96b38196977f0b0d74e91e21e5b5374",
         "type": "github"
       },
       "original": {
@@ -65,6 +105,21 @@
       }
     },
     "systems": {
+      "locked": {
+        "lastModified": 1681028828,
+        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
+        "owner": "nix-systems",
+        "repo": "default",
+        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-systems",
+        "repo": "default",
+        "type": "github"
+      }
+    },
+    "systems_2": {
       "locked": {
         "lastModified": 1681028828,
         "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",

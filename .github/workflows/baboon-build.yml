@@ -34,7 +34,7 @@ jobs:
           - target: macos-aarch64-14
             runs-on: [ ]
             os: macos-14 # yes, this is aarch64
-    name: ${{ matrix.target }}
+    name: build-${{ matrix.target }}
     runs-on:
       - ${{ matrix.os }}
       - ${{ matrix.runs-on }}
@@ -44,10 +44,10 @@ jobs:
           setup-nix: ${{ matrix.preconfigured != true }}
       - name: Check deps and build
         if: startsWith(github.ref, 'refs/tags/')
-        run: nix run nixpkgs#bash -- ./run -v --nix :build :test
+        run: nix develop --command mdl --github-actions :build :test
       - name: Refresh deps and build
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        run: nix run nixpkgs#bash -- ./run -v --nix :flake-refresh :build :test
+        run: nix develop --command mdl --github-actions :flake-refresh :build :test
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -62,7 +62,7 @@ jobs:
           - target: linux-aarch64
             os: ubuntu-24.04-arm
             runs-on: [ ]
-    name: ${{ matrix.target }}
+    name: validate-${{ matrix.target }}
     runs-on:
       - ${{ matrix.os }}
       - ${{ matrix.runs-on }}
@@ -82,7 +82,7 @@ jobs:
             os: windows-2022
             runs-on: [ ]
             java-version: '23'
-    name: ${{ matrix.target }}
+    name: build-${{ matrix.target }}
     runs-on:
       - ${{ matrix.os }}
       - ${{ matrix.runs-on }}
@@ -90,6 +90,10 @@ jobs:
       - uses: 7mind/github-env@minimal
         with:
           setup-nix: false
+      - name: Set up Python 3.11+
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Set up GraalVM (Java ${{ matrix.java-version }})
         uses: graalvm/setup-graalvm@v1
         with:
@@ -98,9 +102,12 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache: 'sbt'
           native-image-job-reports: true
+      - name: Install mudyla
+        shell: bash
+        run: pip install git+https://github.com/7mind/mudyla.git
       - name: Build (windows)
         shell: bash
-        run: bash ./run -v :build :test
+        run: mdl --github-actions --without-nix :build :test
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -123,7 +130,7 @@ jobs:
           path: binaries
           pattern: baboon-*
       - name: Prepare layout
-        run: bash ./run -v :mkdist --source=./binaries --target=.
+        run: nix develop --command mdl --github-actions --mkdist-source=./binaries --mkdist-target=. :build :mkdist
       - uses: softprops/action-gh-release@v2
         id: create-release
         if: startsWith(github.ref, 'refs/tags/')
@@ -149,4 +156,4 @@ jobs:
           openssl aes-256-cbc -K ${OPENSSL_KEY} -iv ${OPENSSL_IV} -in secrets.tar.enc -out secrets.tar -d
           tar xvf secrets.tar
           
-          ./run --nix :gen-js :publish-scala
+          nix develop --command mdl --github-actions :gen-js :publish-scala

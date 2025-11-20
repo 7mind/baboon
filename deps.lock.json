@@ -1086,12 +1086,24 @@
       "sha256": "0vmh8m4p19x8vik6xk8j4yvczrb2il91krnz80w6zjc83l18li2z"
     },
     {
+      "url": "https://repo1.maven.org/maven2/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar",
+      "sha256": "0kp9qwqmqp45axxddf9h8ai9yap2j86dl4il366py0vc902dj6fr"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.pom",
+      "sha256": "0nn88m7xjgmhs72kyqnadgw4p9kdn5jr35sffkyyz0s5rhfizlw2"
+    },
+    {
       "url": "https://repo1.maven.org/maven2/org/apache/commons/commons-lang3/3.14.0/commons-lang3-3.14.0.jar",
       "sha256": "0g71vlcc83l9vzyj6id3dxcm218f4yn5jma6pjssnjc9wqzbz5kv"
     },
     {
       "url": "https://repo1.maven.org/maven2/org/apache/commons/commons-lang3/3.14.0/commons-lang3-3.14.0.pom",
       "sha256": "17p7m1ij6nnw26fy08d3idsqqylcwcb71y3bj27w4dxd7f33h10i"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/org/apache/commons/commons-parent/52/commons-parent-52.pom",
+      "sha256": "0bjhnkdhdsdcc12daiqhbwxwvjxlkqplmbns8bzw7r4q9vryinvm"
     },
     {
       "url": "https://repo1.maven.org/maven2/org/apache/commons/commons-parent/64/commons-parent-64.pom",
@@ -1272,6 +1284,10 @@
     {
       "url": "https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-io/3.4.1/plexus-io-3.4.1.pom",
       "sha256": "11ws5dcx9rvf5xi1izp430zhrcddr7s8y6jc1m6lpj7f1dx09mkw"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-utils/3.5.1/plexus-utils-3.5.1.jar",
+      "sha256": "0yx097fvfzbf68kv3svxyjfngfz84hqz3mryhfs637479ifjbq46"
     },
     {
       "url": "https://repo1.maven.org/maven2/org/codehaus/plexus/plexus-utils/3.5.1/plexus-utils-3.5.1.pom",
@@ -1504,6 +1520,10 @@
     {
       "url": "https://repo1.maven.org/maven2/org/junit/junit-bom/5.10.1/junit-bom-5.10.1.pom",
       "sha256": "1wn3gcrspfigcz4g3dj6ian01hc5iabj0jzzfyahc82bdwlb1i11"
+    },
+    {
+      "url": "https://repo1.maven.org/maven2/org/junit/junit-bom/5.7.1/junit-bom-5.7.1.pom",
+      "sha256": "113phnv43yh47isinicrb1l1ibc7gfw1g9v8ikzgl1i1ssii96qb"
     },
     {
       "url": "https://repo1.maven.org/maven2/org/junit/junit-bom/5.9.2/junit-bom-5.9.2.pom",

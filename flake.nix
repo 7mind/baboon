@@ -2,18 +2,22 @@
   description = "baboon build environment";
 
   # this version contains essential graalvm fixes, but we will have to pin to a better tag once available
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/8c9fd3e564728e90829ee7dbac6edc972971cd0f";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/25.05";
   inputs.flake-utils.url = "github:numtide/flake-utils";
 
   inputs.squish-find-the-brains.url = "github:7mind/squish-find-the-brains";
   inputs.squish-find-the-brains.inputs.nixpkgs.follows = "nixpkgs";
   inputs.squish-find-the-brains.inputs.flake-utils.follows = "flake-utils";
 
+  inputs.mudyla.url = "github:7mind/mudyla";
+  inputs.mudyla.inputs.nixpkgs.follows = "nixpkgs";
+
   outputs =
     { self
     , nixpkgs
     , flake-utils
     , squish-find-the-brains
+    , mudyla
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -68,6 +72,10 @@
             coreutils
             shellspec
             nix
+            zip
+
+            squish-find-the-brains.packages.${system}.generate-lockfile
+            mudyla.packages.${system}.default
           ];
         };
       }
