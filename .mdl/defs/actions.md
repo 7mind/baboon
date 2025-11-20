@@ -18,10 +18,29 @@ This file defines the build orchestration for the Baboon project using mudyla.
 
 Build the Baboon compiler as a GraalVM native image.
 
+## definition when `sys.platform: linux`
+
 ```bash
 env
 sbt baboonJVM/GraalVMNativeImage/packageBin
 ret binary:file=baboon-compiler/.jvm/target/graalvm-native-image/baboon
+```
+
+
+## definition when `sys.platform: macos`
+
+```bash
+env
+sbt baboonJVM/GraalVMNativeImage/packageBin
+ret binary:file=baboon-compiler/.jvm/target/graalvm-native-image/baboon
+```
+
+## definition when `sys.platform: windows`
+
+```bash
+env
+sbt baboonJVM/GraalVMNativeImage/packageBin
+ret binary:file=baboon-compiler/.jvm/target/graalvm-native-image/baboon.exe
 ```
 
 # action: mkdist

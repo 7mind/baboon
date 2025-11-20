@@ -30,7 +30,7 @@ nix flake update
 
 do_update "$PKG_VERSION" ./flake.nix
 
-sbt-nix-lockfile lockfile-config.json > deps.lock.json
+squish-lockfile lockfile-config.json > deps.lock.json
 
 git add . || true
 
