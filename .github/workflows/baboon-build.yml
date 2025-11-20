@@ -34,7 +34,7 @@ jobs:
           - target: macos-aarch64-14
             runs-on: [ ]
             os: macos-14 # yes, this is aarch64
-    name: ${{ matrix.target }}
+    name: build-${{ matrix.target }}
     runs-on:
       - ${{ matrix.os }}
       - ${{ matrix.runs-on }}
@@ -62,7 +62,7 @@ jobs:
           - target: linux-aarch64
             os: ubuntu-24.04-arm
             runs-on: [ ]
-    name: ${{ matrix.target }}
+    name: validate-${{ matrix.target }}
     runs-on:
       - ${{ matrix.os }}
       - ${{ matrix.runs-on }}
@@ -82,7 +82,7 @@ jobs:
             os: windows-2022
             runs-on: [ ]
             java-version: '23'
-    name: ${{ matrix.target }}
+    name: build-${{ matrix.target }}
     runs-on:
       - ${{ matrix.os }}
       - ${{ matrix.runs-on }}
