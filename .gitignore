@@ -1,9 +1,8 @@
-mobala.sh
 .direnv
 baboon.json
 .idea
 *.DotSettings.user
-
+.mdl/runs
 
 Generated*/
 generated-*/

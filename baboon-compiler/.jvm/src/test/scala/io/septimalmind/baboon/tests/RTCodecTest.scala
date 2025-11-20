@@ -36,80 +36,82 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
         val metaPath = Paths.get("test/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
 
         (if (!Files.exists(metaPath)) {
-          F.pure { pending; () }
-        } else {
-          for {
-          fam <- loadPkg(loader)
+           F.pure { pending; () }
+         } else {
+           for {
+             fam <- loadPkg(loader)
 
-          // Read and parse baboon-meta.json
-          metaJson <- F.fromEither {
-            val metaContent = Files.readString(metaPath)
-            io.circe.parser.parse(metaContent).left.map(e => new RuntimeException(s"Failed to parse baboon-meta.json: ${e.getMessage}"))
-          }
+             // Read and parse baboon-meta.json
+             metaJson <- F.fromEither {
+               val metaContent = Files.readString(metaPath)
+               io.circe.parser.parse(metaContent).left.map(e => new RuntimeException(s"Failed to parse baboon-meta.json: ${e.getMessage}"))
+             }
 
-          // Extract identifiers for version 3.0.0
-          typeIdMap: Map[String, String] <- F.fromOption(new RuntimeException("Failed to extract identifiers from baboon-meta.json")) {
-            for {
-              identifiers <- metaJson.hcursor.downField("identifiers").focus
-              pkg <- identifiers.hcursor.downField("testpkg.pkg0").focus
-              version <- pkg.hcursor.downField("3.0.0").focus.flatMap(_.asObject)
-            } yield {
-              // Invert the mapping: filename -> typeId
-              version.toMap.map { case (typeId, fileNameJson) =>
-                fileNameJson.asString.getOrElse("") -> typeId
-              }
-            }
-          }
+             // Extract identifiers for version 3.0.0
+             typeIdMap: Map[String, String] <- F.fromOption(new RuntimeException("Failed to extract identifiers from baboon-meta.json")) {
+               for {
+                 identifiers <- metaJson.hcursor.downField("identifiers").focus
+                 pkg         <- identifiers.hcursor.downField("testpkg.pkg0").focus
+                 version     <- pkg.hcursor.downField("3.0.0").focus.flatMap(_.asObject)
+               } yield {
+                 // Invert the mapping: filename -> typeId
+                 version.toMap.map {
+                   case (typeId, fileNameJson) =>
+                     fileNameJson.asString.getOrElse("") -> typeId
+                 }
+               }
+             }
 
-          // Process JSON files
-          jsonDir: java.nio.file.Path = Paths.get("test/target/cs/json-default")
-          _ <- F.fromEither {
-            if (!Files.exists(jsonDir)) {
-              Left(new RuntimeException(s"JSON test directory not found: $jsonDir"))
-            } else {
-              Right(())
-            }
-          }
+             // Process JSON files
+             jsonDir: java.nio.file.Path = Paths.get("test/target/cs/json-default")
+             _ <- F.fromEither {
+               if (!Files.exists(jsonDir)) {
+                 Left(new RuntimeException(s"JSON test directory not found: $jsonDir"))
+               } else {
+                 Right(())
+               }
+             }
 
-          jsonFiles: List[java.nio.file.Path] = Files.list(jsonDir).iterator().asScala.toList.filter(_.toString.endsWith(".json"))
+             jsonFiles: List[java.nio.file.Path] = Files.list(jsonDir).iterator().asScala.toList.filter(_.toString.endsWith(".json"))
 
-          _ <- F.traverse(jsonFiles) { jsonFile =>
-            val fileName = jsonFile.getFileName.toString.stripSuffix(".json")
+             _ <- F.traverse(jsonFiles) {
+               jsonFile =>
+                 val fileName = jsonFile.getFileName.toString.stripSuffix(".json")
 
-            typeIdMap.get(fileName) match {
-              case Some(typeId) =>
-                for {
-                  // Read JSON file
-                  jsonContent <- F.fromEither {
-                    val content = Files.readString(jsonFile)
-                    io.circe.parser.parse(content).left.map(e => new RuntimeException(s"Failed to parse $jsonFile: ${e.getMessage}"))
-                  }
+                 typeIdMap.get(fileName) match {
+                   case Some(typeId) =>
+                     for {
+                       // Read JSON file
+                       jsonContent <- F.fromEither {
+                         val content = Files.readString(jsonFile)
+                         io.circe.parser.parse(content).left.map(e => new RuntimeException(s"Failed to parse $jsonFile: ${e.getMessage}"))
+                       }
 
-                  // Encode to UEBA
-                  uebaBytes <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, jsonContent, indexed = false)
+                       // Encode to UEBA
+                       uebaBytes <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, jsonContent, indexed = false)
 
-                  // Decode back to JSON
-                  decodedJson <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, uebaBytes)
+                       // Decode back to JSON
+                       decodedJson <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, uebaBytes)
 
-                  // Compare
-                  _ <- F.fromEither {
-                    if (jsonContent == decodedJson) {
-                      Right(())
-                    } else {
-                      Left(new RuntimeException(s"Roundtrip failed for $fileName:\nExpected: $jsonContent\nGot: $decodedJson"))
-                    }
-                  }
-                } yield ()
+                       // Compare
+                       _ <- F.fromEither {
+                         if (jsonContent == decodedJson) {
+                           Right(())
+                         } else {
+                           Left(new RuntimeException(s"Roundtrip failed for $fileName:\nExpected: $jsonContent\nGot: $decodedJson"))
+                         }
+                       }
+                     } yield ()
 
-              case None =>
-                // Skip files without type ID mapping
-                F.unit
-            }
-          }
-          } yield {
-            val _ = assert(jsonFiles.nonEmpty, "No JSON files found to test")
-          }
-        }): F[Any, Unit]
+                   case None =>
+                     // Skip files without type ID mapping
+                     F.unit
+                 }
+             }
+           } yield {
+             val _ = assert(jsonFiles.nonEmpty, "No JSON files found to test")
+           }
+         }): F[Any, Unit]
     }
 
     def testUebaRoundtrip(loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F], uebaDir: String, indexed: Boolean) = {
@@ -128,12 +130,13 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
         typeIdMap: Map[String, String] <- F.fromOption(new RuntimeException("Failed to extract identifiers from baboon-meta.json")) {
           for {
             identifiers <- metaJson.hcursor.downField("identifiers").focus
-            pkg <- identifiers.hcursor.downField("testpkg.pkg0").focus
-            version <- pkg.hcursor.downField("3.0.0").focus.flatMap(_.asObject)
+            pkg         <- identifiers.hcursor.downField("testpkg.pkg0").focus
+            version     <- pkg.hcursor.downField("3.0.0").focus.flatMap(_.asObject)
           } yield {
             // Invert the mapping: filename -> typeId
-            version.toMap.map { case (typeId, fileNameJson) =>
-              fileNameJson.asString.getOrElse("") -> typeId
+            version.toMap.map {
+              case (typeId, fileNameJson) =>
+                fileNameJson.asString.getOrElse("") -> typeId
             }
           }
         }
@@ -142,47 +145,57 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
         uebaDirPath: java.nio.file.Path = Paths.get(uebaDir)
 
         // Check if directory exists, skip test if not
-        uebaFiles: List[java.nio.file.Path] = if (!Files.exists(uebaDirPath)) {
-          List.empty
-        } else {
-          Files.list(uebaDirPath).iterator().asScala.toList.filter(_.toString.endsWith(".uebin"))
-        }
-
-        _ <- F.traverse(uebaFiles) { uebaFile =>
-          val fileName = uebaFile.getFileName.toString.stripSuffix(".uebin")
-
-          typeIdMap.get(fileName) match {
-            case Some(typeId) =>
-              for {
-                // Read UEBA file
-                uebaBytes <- F.pure {
-                  Vector.from(Files.readAllBytes(uebaFile))
-                }
-
-                // Decode to JSON
-                jsonContent <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, uebaBytes).leftMap { err =>
-                  BaboonIssue.Translation(TranslationIssue.TranslationBug()(Issue.IssueContext(SourceFilePosition.unknown, new RuntimeException(s"Decode failed for $fileName (typeId=$typeId): $err"))))
-                }
-
-                // Encode back to UEBA
-                reEncodedBytes <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, jsonContent, indexed).leftMap { err =>
-                  BaboonIssue.Translation(TranslationIssue.TranslationBug()(Issue.IssueContext(SourceFilePosition.unknown, new RuntimeException(s"Encode failed for $fileName (typeId=$typeId): $err"))))
-                }
-
-                // Compare
-                _ <- F.fromEither {
-                  if (uebaBytes == reEncodedBytes) {
-                    Right(())
-                  } else {
-                    Left(new RuntimeException(s"Roundtrip failed for $fileName: byte arrays differ"))
-                  }
-                }
-              } yield ()
-
-            case None =>
-              // Skip files without type ID mapping
-              F.unit
+        uebaFiles: List[java.nio.file.Path] =
+          if (!Files.exists(uebaDirPath)) {
+            List.empty
+          } else {
+            Files.list(uebaDirPath).iterator().asScala.toList.filter(_.toString.endsWith(".uebin"))
           }
+
+        _ <- F.traverse(uebaFiles) {
+          uebaFile =>
+            val fileName = uebaFile.getFileName.toString.stripSuffix(".uebin")
+
+            typeIdMap.get(fileName) match {
+              case Some(typeId) =>
+                for {
+                  // Read UEBA file
+                  uebaBytes <- F.pure {
+                    Vector.from(Files.readAllBytes(uebaFile))
+                  }
+
+                  // Decode to JSON
+                  jsonContent <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, uebaBytes).leftMap {
+                    err =>
+                      BaboonIssue.Translation(
+                        TranslationIssue
+                          .TranslationBug()(Issue.IssueContext(SourceFilePosition.unknown, new RuntimeException(s"Decode failed for $fileName (typeId=$typeId): $err")))
+                      )
+                  }
+
+                  // Encode back to UEBA
+                  reEncodedBytes <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, jsonContent, indexed).leftMap {
+                    err =>
+                      BaboonIssue.Translation(
+                        TranslationIssue
+                          .TranslationBug()(Issue.IssueContext(SourceFilePosition.unknown, new RuntimeException(s"Encode failed for $fileName (typeId=$typeId): $err")))
+                      )
+                  }
+
+                  // Compare
+                  _ <- F.fromEither {
+                    if (uebaBytes == reEncodedBytes) {
+                      Right(())
+                    } else {
+                      Left(new RuntimeException(s"Roundtrip failed for $fileName: byte arrays differ"))
+                    }
+                  }
+                } yield ()
+
+              case None =>
+                // Skip files without type ID mapping
+                F.unit
+            }
         }
       } yield {
         // If no files found, it's okay (directory might not exist or be empty)
@@ -195,10 +208,10 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
         val metaPath = Paths.get("test/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
 
         (if (!Files.exists(metaPath)) {
-          F.pure { pending; () }
-        } else {
-          testUebaRoundtrip(loader, codec, "test/target/cs/ueba-compact", indexed = false)
-        }): F[Any, Unit]
+           F.pure { pending; () }
+         } else {
+           testUebaRoundtrip(loader, codec, "test/target/cs/ueba-compact", indexed = false)
+         }): F[Any, Unit]
     }
 
     "roundtrip indexed UEBA files through JSON" in {
@@ -206,10 +219,10 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
         val metaPath = Paths.get("test/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
 
         (if (!Files.exists(metaPath)) {
-          F.pure { pending; () }
-        } else {
-          testUebaRoundtrip(loader, codec, "test/target/cs/ueba-indexed", indexed = true)
-        }): F[Any, Unit]
+           F.pure { pending; () }
+         } else {
+           testUebaRoundtrip(loader, codec, "test/target/cs/ueba-indexed", indexed = true)
+         }): F[Any, Unit]
     }
   }
 

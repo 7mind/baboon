@@ -13,7 +13,7 @@ trait BaboonCompilerJS[F[+_, +_]] {
 }
 
 class BaboonCompilerJSImpl[F[+_, +_]: Error2](
-  translator: BaboonAbstractTranslator[F],
+  translator: BaboonAbstractTranslator[F]
 ) extends BaboonCompilerJS[F] {
 
   override def run(target: CompilerTargetJS, model: BaboonFamily): F[NEList[BaboonIssue], Seq[OutputFileWithPath]] = {
@@ -21,10 +21,9 @@ class BaboonCompilerJSImpl[F[+_, +_]: Error2](
       sources <- translator.translate(model)
     } yield {
       // Filter files based on what products are enabled and convert to OutputFileWithPath
-      sources.files
-        .filter { case (_, file) => target.output.products.contains(file.product) }
-        .map { case (path, file) => OutputFileWithPath(path, file.content, file.product) }
-        .toSeq
+      sources.files.filter { case (_, file) => target.output.products.contains(file.product) }.map {
+        case (path, file) => OutputFileWithPath(path, file.content, file.product)
+      }.toSeq
     }
   }
 }

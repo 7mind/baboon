@@ -7,7 +7,8 @@ import izumi.fundamentals.platform.files.IzFiles
 
 class BaboonInclusionResolverImpl[F[+_, +_]](
   options: CompilerOptions
-)(implicit @annotation.unused evidence: Error2[F]) extends BaboonInclusionResolver[F] {
+)(implicit @annotation.unused evidence: Error2[F]
+) extends BaboonInclusionResolver[F] {
   def getIclusionContent(inc: RawInclude): Option[String] = {
     import io.septimalmind.baboon.PathTools.*
     options.directoryInputs

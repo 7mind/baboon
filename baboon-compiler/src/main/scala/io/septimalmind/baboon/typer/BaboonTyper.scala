@@ -18,10 +18,6 @@ import scala.collection.mutable
 
 import izumi.functional.bio._
 
-
-
-
-
 trait BaboonTyper[F[+_, +_]] {
   def process(model: RawDomain): F[NEList[BaboonIssue], Domain]
 }

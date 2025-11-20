@@ -202,7 +202,7 @@ object BaboonRules {
           case c: CustomConversionRequired => c
         }.size
         val trivial = total - user
-        
+
         logger.message(
           last.id.toString,
           q"${prev.version}->${last.version}: conversions: $total, derived: $trivial, to be implemented: $user",

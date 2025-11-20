@@ -42,7 +42,43 @@ Points marked with (*) will/may be improved in the future.
 
 ## CLI
 
-See [tests](https://github.com/7mind/baboon/blob/main/.mobala/steps/run-test.sh).
+See [tests](.mdl/defs/actions.md) for test configuration.
+
+## Build Commands
+
+This project uses [mudyla](https://github.com/7mind/mudyla) for build orchestration.
+
+### Common Commands
+
+```bash
+# Format code
+mdl :fmt
+
+# Build the compiler
+mdl :build
+
+# Run tests
+mdl :build :test
+
+# Run full build pipeline
+mdl :full-build
+
+# Create distribution packages
+mdl :build :mkdist
+
+# Build with custom distribution paths
+mdl --mkdist-source=./custom/path --mkdist-target=./output :build :mkdist
+```
+
+### Setting up the environment
+
+```bash
+# Enter the nix development shell
+nix develop
+
+# Or use direnv for automatic shell activation
+direnv allow
+```
 
 ## Notes
 

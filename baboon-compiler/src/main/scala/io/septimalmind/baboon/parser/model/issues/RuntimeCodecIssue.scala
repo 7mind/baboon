@@ -50,24 +50,19 @@ object RuntimeCodecIssue {
     (issue: ExpectedJsonNumber) => s"Expected ${issue.expectedType}, got: ${issue.actual}"
 
   implicit val unknownEnumValuePrinter: IssuePrinter[UnknownEnumValue] =
-    (issue: UnknownEnumValue) =>
-      s"Unknown enum value '${issue.value}' for ${issue.enumId}. Valid values: ${issue.validValues.mkString(", ")}"
+    (issue: UnknownEnumValue) => s"Unknown enum value '${issue.value}' for ${issue.enumId}. Valid values: ${issue.validValues.mkString(", ")}"
 
   implicit val invalidEnumIndexPrinter: IssuePrinter[InvalidEnumIndex] =
-    (issue: InvalidEnumIndex) =>
-      s"Invalid enum index ${issue.index} for ${issue.enumId}, max is ${issue.maxIndex}"
+    (issue: InvalidEnumIndex) => s"Invalid enum index ${issue.index} for ${issue.enumId}, max is ${issue.maxIndex}"
 
   implicit val invalidAdtStructurePrinter: IssuePrinter[InvalidAdtStructure] =
-    (issue: InvalidAdtStructure) =>
-      s"Expected exactly one branch for ADT ${issue.adtId}, got: ${issue.branches.mkString(", ")}"
+    (issue: InvalidAdtStructure) => s"Expected exactly one branch for ADT ${issue.adtId}, got: ${issue.branches.mkString(", ")}"
 
   implicit val unknownAdtBranchPrinter: IssuePrinter[UnknownAdtBranch] =
-    (issue: UnknownAdtBranch) =>
-      s"Unknown ADT branch '${issue.branchName}' for ${issue.adtId}. Valid branches: ${issue.validBranches.mkString(", ")}"
+    (issue: UnknownAdtBranch) => s"Unknown ADT branch '${issue.branchName}' for ${issue.adtId}. Valid branches: ${issue.validBranches.mkString(", ")}"
 
   implicit val invalidAdtDiscriminatorPrinter: IssuePrinter[InvalidAdtDiscriminator] =
-    (issue: InvalidAdtDiscriminator) =>
-      s"Invalid ADT discriminator ${issue.discriminator} for ${issue.adtId}, max is ${issue.maxDiscriminator}"
+    (issue: InvalidAdtDiscriminator) => s"Invalid ADT discriminator ${issue.discriminator} for ${issue.adtId}, max is ${issue.maxDiscriminator}"
 
   implicit val unsupportedBuiltinScalarPrinter: IssuePrinter[UnsupportedBuiltinScalar] =
     (issue: UnsupportedBuiltinScalar) => s"Unsupported builtin scalar: ${issue.scalarType}"

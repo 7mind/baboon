@@ -409,7 +409,7 @@ object BaboonJS {
 
       resultFuture.map {
         data =>
-          val jsArray = js.Array[Short](data.map(b => (b & 0xFF).toShort)*)
+          val jsArray    = js.Array[Short](data.map(b => (b & 0xFF).toShort)*)
           val uint8Array = new js.typedarray.Uint8Array(jsArray.length)
           jsArray.indices.foreach(i => uint8Array(i) = jsArray(i))
           JSEncodeResult.success(uint8Array)
@@ -460,7 +460,7 @@ object BaboonJS {
 
       type F[+E, +A] = Either[E, A]
 
-      val dataVector = Vector.from((0 until data.length).map(i => data(i).toByte))
+      val dataVector   = Vector.from((0 until data.length).map(i => data(i).toByte))
       val resultFuture = decodeInternal[F](inputs, pkg, version, idString, dataVector)
 
       resultFuture.map {
@@ -500,9 +500,9 @@ object BaboonJS {
           (loader: BaboonLoaderJS[F], codec: BaboonRuntimeCodec[F]) =>
             (for {
               family <- loader.load(inputs.toList)
-              pkg = parsePkg(pkgString)
+              pkg     = parsePkg(pkgString)
               version = Version(versionString)
-              json <- Error2[F].fromEither(parseJson(jsonString).left.map(e => new RuntimeException(s"Invalid JSON: ${e.getMessage}")))
+              json   <- Error2[F].fromEither(parseJson(jsonString).left.map(e => new RuntimeException(s"Invalid JSON: ${e.getMessage}")))
               result <- codec.encode(family, pkg, version, idString, json, indexed)
             } yield result).leftMap(issues => new RuntimeException(s"Encoding failure: $issues"))
         }
@@ -529,7 +529,7 @@ object BaboonJS {
           (loader: BaboonLoaderJS[F], codec: BaboonRuntimeCodec[F]) =>
             (for {
               family <- loader.load(inputs.toList)
-              pkg = parsePkg(pkgString)
+              pkg     = parsePkg(pkgString)
               version = Version(versionString)
               result <- codec.decode(family, pkg, version, idString, data)
             } yield result).leftMap(issues => new RuntimeException(s"Decoding failure: $issues"))
