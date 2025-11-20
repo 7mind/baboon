@@ -21,6 +21,14 @@ mdl :build
 # Run the full test suite
 mdl :build :test
 
+# Run specific test suites independently:
+# - Regular ADT tests
+mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular
+# - Wrapped ADT tests
+mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped
+# - Manual/compatibility tests
+mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-manual-cs :test-manual-scala
+
 # Run complete build pipeline (format, build, test)
 mdl :full-build
 

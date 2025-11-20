@@ -42,7 +42,7 @@ Points marked with (*) will/may be improved in the future.
 
 ## CLI
 
-See [tests](.mdl/defs/actions.md) for test configuration.
+See build configuration in [.mdl/defs/actions.md](.mdl/defs/actions.md) and test configuration in [.mdl/defs/tests.md](.mdl/defs/tests.md).
 
 ## Build Commands
 
@@ -57,11 +57,16 @@ mdl :fmt
 # Build the compiler
 mdl :build
 
-# Run tests
+# Run complete test suite
 mdl :build :test
 
-# Run full build pipeline
+# Run full build pipeline (format, build, test)
 mdl :full-build
+
+# Run specific test suites
+mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular
+mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped
+mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-manual-cs :test-manual-scala
 
 # Create distribution packages
 mdl :build :mkdist
