@@ -32,7 +32,6 @@ ret binary:file=baboon-compiler/.jvm/target/graalvm-native-image/baboon
 ## definition when `sys.platform: windows`
 
 ```bash
-env
 sbt baboonJVM/GraalVMNativeImage/packageBin
 ret binary:file=baboon-compiler/.jvm/target/graalvm-native-image/baboon.exe
 ```

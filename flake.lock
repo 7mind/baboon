@@ -44,11 +44,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1763681962,
-        "narHash": "sha256-IZMXyFHkUT7W3F8bmfeNlFJyQvpSUfrwoUtJEN9MpUw=",
+        "lastModified": 1763757533,
+        "narHash": "sha256-3nR4jAAmsavaA0e9+gWeIx2TUzUjiCuLeywCSFRu3Rk=",
         "owner": "7mind",
         "repo": "mudyla",
-        "rev": "94831d3a831c4074617b104066a5f0163acf6a08",
+        "rev": "53d0fb69fcbb577850e01fa0727f034838c5955c",
         "type": "github"
       },
       "original": {
@@ -91,11 +91,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1763677058,
-        "narHash": "sha256-HcoyrnojloWonSyl2MXgBCpjJQlZpOlJdlRFeab6CtE=",
+        "lastModified": 1763722937,
+        "narHash": "sha256-kd4a05c6wPOqT89+G01EEVSQpXEqLur52U+rioBPy3M=",
         "owner": "7mind",
         "repo": "squish-find-the-brains",
-        "rev": "210184b9a96b38196977f0b0d74e91e21e5b5374",
+        "rev": "af1943c259bfe6a132c25ceb6dbe3648a6856b42",
         "type": "github"
       },
       "original": {
