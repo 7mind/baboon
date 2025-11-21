@@ -102,6 +102,9 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache: 'sbt'
           native-image-job-reports: true
+      - name: Install rsync
+        shell: pwsh
+        run: choco install rsync -y
       - name: Install mudyla
         shell: bash
         run: pip install git+https://github.com/7mind/mudyla.git
