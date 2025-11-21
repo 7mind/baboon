@@ -1,5 +1,11 @@
 # baboon
 
+[![Build Status](https://github.com/7mind/baboon/actions/workflows/baboon-build.yml/badge.svg)](https://github.com/7mind/baboon/actions/workflows/baboon-build.yml)
+[![License](https://img.shields.io/github/license/7mind/baboon)](https://github.com/7mind/baboon/blob/main/LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/7mind/baboon)](https://github.com/7mind/baboon/releases/latest)
+[![IntelliJ Plugin](https://img.shields.io/badge/IntelliJ-Plugin-blue)](https://plugins.jetbrains.com/plugin/28203-baboon-support)
+[![VSCode Extension](https://img.shields.io/badge/VSCode-Extension-blue)](https://marketplace.visualstudio.com/items?itemName=SeptimalMind.baboon-vscode)
+
 *Let the Baboon do the monkey job*.
 
 Stripped-down experimental Data Modeling Language and its compiler, with schema evolution support and garbage collection.
