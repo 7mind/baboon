@@ -40,6 +40,7 @@ $BABOON_BIN \
   --sc-wrapped-adt-branch-codecs false
 
 ret success:bool=true
+ret test_dir:string="$TEST_DIR"
 ```
 
 # action: test-cs-regular
@@ -47,9 +48,8 @@ ret success:bool=true
 Run C# tests with regular ADT codecs (Release configuration).
 
 ```bash
-dep action.test-gen-regular-adt
-
-pushd ./target/test-regular/cs-stub
+TEST_DIR="${action.test-gen-regular-adt.test_dir}"
+pushd "$TEST_DIR/cs-stub"
 dotnet build -c Release
 dotnet test -c Release BaboonTests/BaboonTests.csproj
 popd
@@ -62,9 +62,8 @@ ret success:bool=true
 Run Scala tests with regular ADT codecs.
 
 ```bash
-dep action.test-gen-regular-adt
-
-pushd ./target/test-regular/sc-stub
+TEST_DIR="${action.test-gen-regular-adt.test_dir}"
+pushd "$TEST_DIR/sc-stub"
 sbt +clean +test
 popd
 
@@ -109,6 +108,7 @@ $BABOON_BIN \
   --sc-wrapped-adt-branch-codecs true
 
 ret success:bool=true
+ret test_dir:string="$TEST_DIR"
 ```
 
 # action: test-cs-wrapped
@@ -116,9 +116,8 @@ ret success:bool=true
 Run C# tests with wrapped ADT codecs (Debug configuration).
 
 ```bash
-dep action.test-gen-wrapped-adt
-
-pushd ./target/test-wrapped/cs-stub
+TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
+pushd "$TEST_DIR/cs-stub"
 dotnet build -c Debug
 dotnet test -c Debug BaboonTests/BaboonTests.csproj
 popd
@@ -131,9 +130,8 @@ ret success:bool=true
 Run Scala tests with wrapped ADT codecs.
 
 ```bash
-dep action.test-gen-wrapped-adt
-
-pushd ./target/test-wrapped/sc-stub
+TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
+pushd "$TEST_DIR/sc-stub"
 sbt +clean +test
 popd
 
@@ -223,15 +221,10 @@ ret success:bool=true
 Run complete test suite (orchestrator action).
 
 ```bash
-dep action.test-gen-regular-adt
 dep action.test-cs-regular
 dep action.test-scala-regular
-dep action.test-gen-wrapped-adt
 dep action.test-cs-wrapped
 dep action.test-scala-wrapped
-dep action.test-gen-manual
-dep action.test-gen-compat-scala
-dep action.test-gen-compat-cs
 dep action.test-manual-cs
 dep action.test-manual-scala
 

@@ -90,10 +90,10 @@ jobs:
       - uses: 7mind/github-env@minimal
         with:
           setup-nix: false
-      - name: Set up Python 3.11+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
       - name: Set up GraalVM (Java ${{ matrix.java-version }})
         uses: graalvm/setup-graalvm@v1
         with:
