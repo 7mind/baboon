@@ -129,6 +129,12 @@ Baboon files support:
 - Generated code tests in `test/cs-stub/` and `test/sc-stub/`
 - Evolution tests validating schema migration
 
+**Parallel Test Execution**: Test actions `test-gen-regular-adt` and `test-gen-wrapped-adt` can run in parallel. Each action:
+1. Creates an isolated temporary directory under `target/` (`test-regular/` or `test-wrapped/`)
+2. Copies stub projects (excluding generated files and build artifacts) via rsync
+3. Generates code into the isolated directory
+4. Subsequent test actions run in these isolated directories
+
 ### Important Considerations
 
 1. **Root Types**: Only types marked with `@root` or transitively referenced by roots are included in output

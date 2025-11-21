@@ -7,6 +7,10 @@ baboon.json
 Generated*/
 generated-*/
 
+# Temporary test directories for parallel test execution
+target/test-regular/
+target/test-wrapped/
+
 src/test/resources/internal
 
 global.json

@@ -8,23 +8,34 @@ Generate code with regular (non-wrapped) ADT branch codecs.
 
 ```bash
 BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-regular"
+
+# Create temporary test directories
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub"
+
+# Copy stub projects, excluding generated and build artifacts
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
+  ./test/cs-stub/ "$TEST_DIR/cs-stub/"
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
+  ./test/sc-stub/ "$TEST_DIR/sc-stub/"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
   --lock-file=./target/baboon.lock \
   :cs \
-  --output ./test/cs-stub/BaboonDefinitions/Generated \
-  --test-output ./test/cs-stub/BaboonTests/GeneratedTests \
-  --fixture-output ./test/cs-stub/BaboonTests/GeneratedFixtures \
+  --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
+  --test-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedTests" \
+  --fixture-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedFixtures" \
   --cs-wrapped-adt-branch-codecs false \
   --cs-write-evolution-dict true \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :scala \
-  --output ./test/sc-stub/src/main/scala/generated-main \
-  --test-output ./test/sc-stub/src/test/scala/generated-tests \
-  --fixture-output ./test/sc-stub/src/main/scala/generated-fixtures \
+  --output "$TEST_DIR/sc-stub/src/main/scala/generated-main" \
+  --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
+  --fixture-output "$TEST_DIR/sc-stub/src/main/scala/generated-fixtures" \
   --sc-write-evolution-dict true \
   --sc-wrapped-adt-branch-codecs false
 
@@ -38,7 +49,7 @@ Run C# tests with regular ADT codecs (Release configuration).
 ```bash
 dep action.test-gen-regular-adt
 
-pushd ./test/cs-stub
+pushd ./target/test-regular/cs-stub
 dotnet build -c Release
 dotnet test -c Release BaboonTests/BaboonTests.csproj
 popd
@@ -53,7 +64,7 @@ Run Scala tests with regular ADT codecs.
 ```bash
 dep action.test-gen-regular-adt
 
-pushd ./test/sc-stub
+pushd ./target/test-regular/sc-stub
 sbt +clean +test
 popd
 
@@ -66,23 +77,34 @@ Generate code with wrapped ADT branch codecs.
 
 ```bash
 BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-wrapped"
+
+# Create temporary test directories
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub"
+
+# Copy stub projects, excluding generated and build artifacts
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
+  ./test/cs-stub/ "$TEST_DIR/cs-stub/"
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
+  ./test/sc-stub/ "$TEST_DIR/sc-stub/"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
   --meta-write-evolution-json baboon-meta.json \
   --lock-file=./target/baboon.lock \
   :cs \
-  --output ./test/cs-stub/BaboonDefinitions/Generated \
-  --test-output ./test/cs-stub/BaboonTests/GeneratedTests \
-  --fixture-output ./test/cs-stub/BaboonTests/GeneratedFixtures \
+  --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
+  --test-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedTests" \
+  --fixture-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedFixtures" \
   --cs-wrapped-adt-branch-codecs true \
   --cs-write-evolution-dict true \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :scala \
-  --output ./test/sc-stub/src/main/scala/generated-main \
-  --test-output ./test/sc-stub/src/test/scala/generated-tests \
-  --fixture-output ./test/sc-stub/src/main/scala/generated-fixtures \
+  --output "$TEST_DIR/sc-stub/src/main/scala/generated-main" \
+  --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
+  --fixture-output "$TEST_DIR/sc-stub/src/main/scala/generated-fixtures" \
   --sc-write-evolution-dict true \
   --sc-wrapped-adt-branch-codecs true
 
@@ -96,7 +118,7 @@ Run C# tests with wrapped ADT codecs (Debug configuration).
 ```bash
 dep action.test-gen-wrapped-adt
 
-pushd ./test/cs-stub
+pushd ./target/test-wrapped/cs-stub
 dotnet build -c Debug
 dotnet test -c Debug BaboonTests/BaboonTests.csproj
 popd
@@ -111,7 +133,7 @@ Run Scala tests with wrapped ADT codecs.
 ```bash
 dep action.test-gen-wrapped-adt
 
-pushd ./test/sc-stub
+pushd ./target/test-wrapped/sc-stub
 sbt +clean +test
 popd
 
