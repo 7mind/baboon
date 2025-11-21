@@ -5,6 +5,8 @@
 [![Latest Release](https://img.shields.io/github/v/release/7mind/baboon)](https://github.com/7mind/baboon/releases/latest)
 [![IntelliJ Plugin](https://img.shields.io/badge/IntelliJ-Plugin-blue)](https://plugins.jetbrains.com/plugin/28203-baboon-support)
 [![VSCode Extension](https://img.shields.io/badge/VSCode-Extension-blue)](https://marketplace.visualstudio.com/items?itemName=SeptimalMind.baboon-vscode)
+[![Nix](https://img.shields.io/badge/Built%20with-Nix-5277C3.svg?logo=nixos&logoColor=white)](https://builtwithnix.org)
+[![Nix Flake](https://img.shields.io/badge/Nix-Flake-blue.svg)](https://nixos.wiki/wiki/Flakes)
 
 *Let the Baboon do the monkey job*.
 
