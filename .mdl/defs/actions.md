@@ -24,7 +24,6 @@ Build the Baboon compiler as a GraalVM native image.
 ## definition 
 
 ```bash
-env
 sbt baboonJVM/GraalVMNativeImage/packageBin
 ret binary:file=baboon-compiler/.jvm/target/graalvm-native-image/baboon
 ```
@@ -96,7 +95,6 @@ ret success:bool=true
 Complete build pipeline with all steps.
 
 ```bash
-dep action.fmt
 dep action.build
 dep action.test
 

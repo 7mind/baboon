@@ -30,8 +30,10 @@ object IOIssue {
 
   implicit val cantCleanupTargetPrinter: IssuePrinter[CantCleanupTarget] =
     (issue: CantCleanupTarget) => {
+      import izumi.fundamentals.platform.exceptions.IzThrowable.*
       s"""Refusing to remove target directory, there are unexpected files: ${issue.paths.niceList()}
          |Extensions allowed for removal: ${issue.safeToRemoveExtensions.mkString(", ")}
+         |Error: ${issue.error.map(_.stacktraceString).getOrElse("N/A")}
          |""".stripMargin
     }
 }
