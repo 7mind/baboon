@@ -21,6 +21,14 @@ This file defines the build orchestration for the Baboon project using mudyla.
 - `USER`
 - `SONATYPE_SECRET`
 
+# action: clean
+
+Clean all the junk
+
+```bash
+sbt +clean
+```
+
 # action: build
 
 Build the Baboon compiler as a GraalVM native image.
@@ -28,6 +36,7 @@ Build the Baboon compiler as a GraalVM native image.
 ## definition 
 
 ```bash
+weak action.clean
 sbt baboonJVM/GraalVMNativeImage/packageBin
 ret binary:file=baboon-compiler/.jvm/target/graalvm-native-image/baboon
 ```
@@ -35,6 +44,7 @@ ret binary:file=baboon-compiler/.jvm/target/graalvm-native-image/baboon
 ## definition when `sys.platform: windows`
 
 ```bash
+weak action.clean
 sbt baboonJVM/GraalVMNativeImage/packageBin
 ret binary:file=baboon-compiler/.jvm/target/graalvm-native-image/baboon.exe
 ```
