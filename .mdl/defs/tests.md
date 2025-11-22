@@ -2,11 +2,30 @@
 
 This file defines test-related actions for the Baboon project.
 
+# action: restore-dotnet
+
+Restore all .NET dependencies once to avoid parallel restores.
+
+```bash
+pushd ./test/cs-stub
+dotnet restore BaboonDefinitions/BaboonDefinitions.csproj
+dotnet restore BaboonTests/BaboonTests.csproj
+popd
+
+pushd ./test/conv-test-cs
+dotnet restore ConvTest/ConvTest.csproj
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-regular-adt
 
 Generate code with regular (non-wrapped) ADT branch codecs.
 
 ```bash
+dep action.restore-dotnet
+
 BABOON_BIN="${action.build.binary}"
 TEST_DIR="./target/test-regular"
 
@@ -50,8 +69,8 @@ Run C# tests with regular ADT codecs (Release configuration).
 ```bash
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/cs-stub"
-dotnet build -c Release
-dotnet test -c Release BaboonTests/BaboonTests.csproj
+dotnet build -c Release --no-restore
+dotnet test -c Release --no-build --no-restore BaboonTests/BaboonTests.csproj
 popd
 
 ret success:bool=true
@@ -75,6 +94,8 @@ ret success:bool=true
 Generate code with wrapped ADT branch codecs.
 
 ```bash
+dep action.restore-dotnet
+
 BABOON_BIN="${action.build.binary}"
 TEST_DIR="./target/test-wrapped"
 
@@ -118,8 +139,8 @@ Run C# tests with wrapped ADT codecs (Debug configuration).
 ```bash
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
 pushd "$TEST_DIR/cs-stub"
-dotnet build -c Debug
-dotnet test -c Debug BaboonTests/BaboonTests.csproj
+dotnet build -c Debug --no-restore
+dotnet test -c Debug --no-build --no-restore BaboonTests/BaboonTests.csproj
 popd
 
 ret success:bool=true
@@ -143,6 +164,8 @@ ret success:bool=true
 Generate code for manual test projects.
 
 ```bash
+dep action.restore-dotnet
+
 BABOON_BIN="${action.build.binary}"
 
 rm -rf ./test/conv-test-cs/ConvTest/Generated
@@ -179,7 +202,7 @@ Generate compatibility test files using C#.
 dep action.test-gen-manual
 
 pushd ./test/conv-test-cs
-dotnet run --project ConvTest/ConvTest.csproj
+dotnet run --project ConvTest/ConvTest.csproj --no-restore
 popd
 
 ret success:bool=true
@@ -194,8 +217,8 @@ dep action.test-gen-compat-scala
 dep action.test-gen-compat-cs
 
 pushd ./test/conv-test-cs
-dotnet build
-dotnet test
+dotnet build --no-restore
+dotnet test --no-build --no-restore
 popd
 
 ret success:bool=true
