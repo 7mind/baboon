@@ -69,8 +69,8 @@ Run C# tests with regular ADT codecs (Release configuration).
 ```bash
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/cs-stub"
-dotnet build -c Release --no-restore
-dotnet test -c Release --no-build --no-restore BaboonTests/BaboonTests.csproj
+dotnet build -c Release
+dotnet test -c Release BaboonTests/BaboonTests.csproj
 popd
 
 ret success:bool=true
@@ -139,8 +139,8 @@ Run C# tests with wrapped ADT codecs (Debug configuration).
 ```bash
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
 pushd "$TEST_DIR/cs-stub"
-dotnet build -c Debug --no-restore
-dotnet test -c Debug --no-build --no-restore BaboonTests/BaboonTests.csproj
+dotnet build -c Debug
+dotnet test -c Debug BaboonTests/BaboonTests.csproj
 popd
 
 ret success:bool=true
@@ -202,7 +202,7 @@ Generate compatibility test files using C#.
 dep action.test-gen-manual
 
 pushd ./test/conv-test-cs
-dotnet run --project ConvTest/ConvTest.csproj --no-restore
+dotnet run --project ConvTest/ConvTest.csproj
 popd
 
 ret success:bool=true
@@ -217,8 +217,8 @@ dep action.test-gen-compat-scala
 dep action.test-gen-compat-cs
 
 pushd ./test/conv-test-cs
-dotnet build --no-restore
-dotnet test --no-build --no-restore
+dotnet build
+dotnet test
 popd
 
 ret success:bool=true
