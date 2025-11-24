@@ -10,7 +10,7 @@ This file defines the build orchestration for the Baboon project using mudyla.
 - `args.mkdist-target`:  Target directory for distribution
    - type: `directory`
    - default: `"./target/dist"`
- 
+
 # environment
 
 - `LANG=C.UTF-8`
@@ -33,7 +33,7 @@ sbt +clean
 
 Build the Baboon compiler as a GraalVM native image.
 
-## definition 
+## definition
 
 ```bash
 weak action.clean
@@ -41,7 +41,7 @@ sbt baboonJVM/GraalVMNativeImage/packageBin
 ret binary:file=baboon-compiler/.jvm/target/graalvm-native-image/baboon
 ```
 
-## definition when `sys.platform: windows`
+## definition when `platform: windows`
 
 ```bash
 weak action.clean
