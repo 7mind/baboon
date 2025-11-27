@@ -43,7 +43,7 @@
             version = "0.0.139";
             pname = "baboon";
             src = ./.;
-            nativeBuildInputs = sbtSetup.nativeBuildInputs ++ [pkgs.curl];
+            nativeBuildInputs = sbtSetup.nativeBuildInputs ++ [ pkgs.curl ];
             inherit (sbtSetup) JAVA_HOME;
 
             buildPhase = ''
@@ -73,11 +73,12 @@
             shellspec
             nix
             zip
-            
+
             rsync
 
             squish-find-the-brains.packages.${system}.generate-lockfile
             mudyla.packages.${system}.default
+            nodejs
           ];
         };
       }
