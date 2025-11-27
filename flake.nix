@@ -58,6 +58,7 @@
             coreutils
             shellspec
             nix
+            nodejs
           ];
         };
       }

@@ -19,7 +19,7 @@ lazy val sharedSettings = Seq(
     "fundamentals-language",
     "fundamentals-collections",
     "distage-core",
-  ).map("io.7mind.izumi" %%% _ % "1.2.20"),
+  ).map("io.7mind.izumi" %%% _ % "1.2.21"),
   libraryDependencies ++= Seq(
     "org.scala-lang.modules" %%% "scala-parser-combinators" % "2.4.0"
   ),
@@ -82,7 +82,7 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
     Compile / unmanagedResourceDirectories += baseDirectory.value / "src" / "main" / "resources",
     libraryDependencies ++= Seq(
       "com.github.alexarchambault" %% "case-app" % "2.1.0-M30",
-      "io.7mind.izumi" %% "distage-testkit-scalatest" % "1.2.20" % Test
+      "io.7mind.izumi" %% "distage-testkit-scalatest" % "1.2.21" % Test
     )
   )
   .jvmConfigure(_.enablePlugins(GraalVMNativeImagePlugin, UniversalPlugin))
