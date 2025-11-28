@@ -50,3 +50,58 @@ Map keys are always strings in JSON. The string form depends on the key type:
 ## Foreign types
 
 Generated codecs contain placeholder instances for foreign types; you must override them (`BaboonCodecs#Register` in C#, `BaboonCodecs.register` in Scala) with real implementations that follow these conventions.
+
+## Examples
+
+### DTO
+
+Schema:
+```
+data User { id: uid, name: str, age: opt[i32], tags: lst[str] }
+```
+
+Value:
+```
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Ada",
+  "age": 42,
+  "tags": ["core","beta"]
+}
+```
+
+If `age` is missing/`null`, it decodes to `None`/`null` depending on target.
+
+### ADT branch wrapping
+
+Schema:
+```
+adt PaymentMethod {
+  data Card { pan: str }
+  data Wallet { provider: str }
+}
+```
+
+- Default (no wrapping): encode a `Card` branch as `{ "pan": "1234" }`.
+- With `wrappedAdtBranchCodecs=true`: encode as `{ "Card": { "pan": "1234" } }`.
+
+### Unsigned and map keys
+
+Schema:
+```
+data Inventory {
+  stock: map[u64, u32]
+}
+```
+
+Value:
+```
+{
+  "stock": {
+    "18446744073709551615": 10,
+    "42": 5
+  }
+}
+```
+
+`u64` keys and values are stringified when needed to preserve precision.

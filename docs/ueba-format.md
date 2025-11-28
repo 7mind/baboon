@@ -42,3 +42,64 @@ When `BaboonCodecContext.Indexed` is used and a codec implements `BaboonBinCodec
 - Strings and `ByteString` differ: `str` uses varint length; `bytes`/`ByteString` use fixed `i32` length.
 - UUIDs follow .NET GUID layout; convert when interoperating with big‑endian UUIDs.
 - Foreign types rely on user‑provided UEBA codecs; generated stubs must be replaced.
+
+## Worked examples
+
+### Simple DTO
+
+Schema:
+```
+data Payment {
+  amount: i32
+  note: opt[str]
+  tags: lst[u08]
+}
+```
+
+Encoding of `{ amount = 42, note = Some("ok"), tags = [1,2] }`:
+
+```
+00          2A 00 00 00        ; i32 amount = 42
+04          01                 ; opt tag = present
+05          02                 ; varint len("ok") = 2
+06          6F 6B              ; "ok"
+08          02 00 00 00        ; lst count = 2
+0C          01 02              ; elements
+```
+
+Field order is declaration order; there is no extra envelope.
+
+### Map
+
+```
+data M { m: map[str, i32] }
+```
+
+`{ m = { "a" -> 7, "b" -> 9 } }`:
+```
+00          02 00 00 00        ; count = 2
+04          01 61              ; key "a" length=1, bytes=61
+06          07 00 00 00        ; value 7
+0A          01 62              ; key "b" length=1, bytes=62
+0C          09 00 00 00        ; value 9
+```
+
+### Index header (when enabled)
+
+```
+data R { left: lst[u08], right: lst[u08] }
+```
+
+Indexed encoding layout (example):
+```
+00          01                 ; header: index present (bit0)
+01          02 00              ; index elements count (short)
+03          05 00 00 00        ; offset of left payload
+07          03 00 00 00        ; length of left payload
+0B          08 00 00 00        ; offset of right payload
+0F          02 00 00 00        ; length of right payload
+13          ...left payload...
+16          ...right payload...
+```
+
+Offsets are relative to the start of the payload (after the index section) and must be monotonically increasing.
