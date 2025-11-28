@@ -22,7 +22,7 @@ Baboon is a minimal Data Modeling Language and compiler that favors explicit, de
 - Collections (`opt`, `lst`, `set`, `map`) and timestamps/UID primitives
 - Deduplicated C# output plus Scala codegen targets
 
-Detailed language walkthrough with copy-paste examples: `docs/drafts/20251128131354-language-features.md`.
+Detailed language walkthrough with copy-paste examples: `docs/language-features.md`.
 
 ## Quick start
 

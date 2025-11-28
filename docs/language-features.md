@@ -219,13 +219,31 @@ Service definitions are scoped like other members and can live inside namespaces
 
 ## Imports
 
-Use imports to re-export another model wholesale while optionally excluding specific definitions.
+Imports inline definitions from another *version of the same model*. The imported version is used only as a source of declarations—once merged, the current file’s `model`/`version` stay in effect.
 
 ```baboon
-import "acme.common:1.0.0" { * } without { LegacyId DebugStub }
+import "1.0.0" { * } without { LegacyId DebugStub }
 ```
 
-The imported symbols join your local model namespace; excluded names are removed. Definitions are whitespace-separated (no commas).
+- The string literal points to another version of the current `model` (e.g., pulling in `model acme.checkout` version `1.0.0` while editing `2.0.0`).
+- All definitions from that version are copied in, then filtered by the `without` list. Names are whitespace-separated; `without` accepts `{ ... }` or `( ... )`.
+- The referenced version must be discoverable via `--model` / `--model-dir`.
+
+## Inclusions
+
+`include "<path>"` splices raw definitions from another file into the current model before typing. Included files contain only content (namespaces/defs) without repeating `model`/`version`.
+
+```baboon
+model acme.checkout
+version "2.3.0"
+
+include "./shared-addresses.baboon"
+
+root data Order { shipping: ShippingAddress }
+```
+
+- Paths are resolved relative to provided model directories; includes are resolved recursively.
+- Because the header comes from the current file, the included content inherits the same `model` and `version`.
 
 ## Evolution workflow
 
