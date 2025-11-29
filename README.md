@@ -16,10 +16,10 @@ Essentially, you define your data structures and Baboon generates implementation
 
 ## Highlights
 
-- Set-based structural inheritance with `+`, `-`, and `^` operators
 - Automatic codec derivation for [JSON](docs/json-codecs.md) and [UEBA](docs/ueba-format.md) (Ultra-Efficient Binary Aggregate, a custom tagless binary format) 
 - Evolution-aware codegen: derives migrations when possible, emits stubs when manual work is required
-- Structural *and* nominal inheritance (contracts)
+- Set-based structural inheritance with `+`, `-`, and `^` operators
+- Basic form of nominal inheritance (contracts)
 - Namespaces, includes, and imports
 - Collections (`opt`, `lst`, `set`, `map`) and timestamps/UID primitives
 - Codegen targets: C#, Scala, will be more.
