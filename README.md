@@ -10,34 +10,20 @@
 
 *Let the Baboon do the monkey job.*
 
-Baboon is a minimal Data Modeling Language and compiler that favors explicit, declarative schemas and predictable evolution. The compiler runs as a fast multi-phase DAG transform, so adding features stays simple.
+Baboon is a minimal Data Modeling Language and compiler that provides ergonomic, declarative schemas and enforces reliable schema evolution. The compiler runs as a fast immutable multi-phase DAG transform, and is easy to understand and maintain.
 
 ## Highlights
 
 - Set-based structural inheritance with `+`, `-`, and `^` operators
 - Automatic JSON and UEBA (Ultra-Efficient Binary Aggregate) codec derivation
 - Evolution-aware codegen: derives migrations when possible, emits stubs when manual work is required
-- Structural and nominal inheritance (contracts)
-- Namespaces, includes, and imports for modular schemas
+- Structural *and* nominal inheritance (contracts)
+- Namespaces, includes, and imports
 - Collections (`opt`, `lst`, `set`, `map`) and timestamps/UID primitives
-- Deduplicated C# output plus Scala codegen targets
+- Codegen targets: C#, Scala, will be more.
+- Deduplicated C# output (reuse as many code as possible for lower binary footprint)
 
 Detailed language walkthrough with copy-paste examples: [docs/language-features.md](docs/language-features.md).
-
-## Quick start
-
-```bash
-# Enter the dev shell
-nix develop
-
-# or auto-activate
-direnv allow
-
-# Run a full format + build + test cycle
-direnv exec . mdl :full-build
-```
-
-The CLI actions are defined in `.mdl/defs/actions.md`; tests live in `.mdl/defs/tests.md`.
 
 ## Editor support
 
@@ -64,11 +50,29 @@ Points marked with (*) will/may be improved in the future.
 
 See build configuration in [.mdl/defs/actions.md](.mdl/defs/actions.md) and test configuration in [.mdl/defs/tests.md](.mdl/defs/tests.md).
 
-## Build commands
+## Notes
+
+1. All the types which are not transitively referenced by `root` types will be eliminated from the compiler output.
+2. Usages in structural inheritance are not considered references, so structural parents which are not directly referenced as fields and not marked as `root`s will be eliminated 
+
+## Foreign types
+
+Be careful about foreign types. It is your responsibility to wire codecs correctly.
+
+For every foreign type:
+
+1) Create a custom codec
+2) Override the generated dummy codec with `BaboonCodecs#Register`
+3) Override the generated dummy codec using the setter on `${Foreign_Type_Name}_UEBACodec#Instance`
+4) Override the generated dummy codec using the setter on `${Foreign_Type_Name}_JsonCodec#Instance`
+
+## Development
+
+### Build commands
 
 This project uses [mudyla](https://github.com/7mind/mudyla) for build orchestration.
 
-### Common Commands
+#### Common Commands
 
 ```bash
 # Format code
@@ -95,7 +99,7 @@ direnv exec . mdl :build :mkdist
 direnv exec . mdl --mkdist-source=./custom/path --mkdist-target=./output :build :mkdist
 ```
 
-### Setting up the environment
+#### Setting up the environment
 
 ```bash
 # Enter the nix development shell
@@ -105,21 +109,7 @@ nix develop
 direnv allow
 ```
 
-## Notes
 
-1. All the types which are not transitively referenced by `root` types will be eliminated from the compiler output.
-2. Usages in structural inheritance are not considered references, so structural parents which are not directly referenced as fields and not marked as `root`s will be eliminated 
-
-## Foreign types
-
-Be careful about foreign types. It is your responsibility to wire codecs correctly.
-
-For every foreign type:
-
-1) Create a custom codec
-2) Override the generated dummy codec with `BaboonCodecs#Register`
-3) Override the generated dummy codec using the setter on `${Foreign_Type_Name}_UEBACodec#Instance`
-4) Override the generated dummy codec using the setter on `${Foreign_Type_Name}_JsonCodec#Instance`
 
 Make sure your foreign types are NOT primitive types or other generated types. It's a funny idea, but it will explode in runtime.
 
