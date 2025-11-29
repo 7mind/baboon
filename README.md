@@ -12,6 +12,8 @@
 
 Baboon is a minimal Data Modeling Language and compiler that provides ergonomic, declarative schemas and enforces reliable schema evolution. The compiler runs as a fast immutable multi-phase DAG transform, and is easy to understand and maintain.
 
+Essentially, you define your data structures and Baboon generates implementations for you. Then you define new versions, Baboon generates new versions of the structures, the conversions from old structure versions to new ones and forces your to provide conversions which cannot be derived automatically. Also it comes with extremely efficient tagless binary encoding for all your structures.
+
 ## Highlights
 
 - Set-based structural inheritance with `+`, `-`, and `^` operators
