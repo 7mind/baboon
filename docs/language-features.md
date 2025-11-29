@@ -129,7 +129,7 @@ Structural operations are resolved as set operations during typing, keeping defi
 
 ## Nominal contracts
 
-Contracts act like interfaces: they define fields that must appear in implementors and parents.
+Contracts act like interfaces: they define fields that must appear in implementors.
 
 ```baboon
 contract Identified { id: uid }
