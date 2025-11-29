@@ -86,7 +86,7 @@ Detailed language walkthrough with copy-paste examples: [docs/language-features.
 3. Nominal inheritance support is limited to trait model
 4. Generic/type constructor support is limited to builtin collections
 5. (*) This is a DML, not an IDL, service/interface definitions support is extremely limited at the moment
-7. (*) Comments are not preserved in the cogen output
+7. (*) Comments are not preserved in the transpiler output
 8. (*) No structural inheritance information is preserved in the transpiler output
 9. (*) Only integer constants may be associated with enum members
 10. (*) No newtypes/type aliases
