@@ -1,6 +1,8 @@
 # UEBA (Ultra‑Efficient Binary Aggregate) format
 
-This document captures the UEBA wire conventions used by generated Baboon codecs. Everything is little‑endian and intentionally simple so C# and Scala implementations stay identical.
+This document captures the UEBA wire conventions used by generated Baboon codecs. Everything is little‑endian and intentionally simple so C# and Scala implementations stay identical. 
+
+UEBA has a sister format, [SICK](https://github.com/7mind/sick), which is an indexed binary storage for JSON.
 
 ## Framing
 
