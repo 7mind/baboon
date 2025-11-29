@@ -174,7 +174,7 @@ foreign Money: derived[json], derived[ueba] {
 ```
 
 - Each entry maps a language tag (`cs`, `sc`, `ts`, etc.) to a fully qualified type name.
-- Optional `with { key = "value" }` attributes annotate hints for the backend.
+- Optional `with { key = "value" }` attributes are implementation hints for the backend.
 
 ## Built-in types and collections
 
@@ -199,7 +199,7 @@ Attach derivations on any type to request generated typeclass instances:
 root data AllBasicTypes: derived[json], derived[ueba] { ... }
 ```
 
-The compiler currently ships JSON and UEBA codec derivation. Additional derivations can be added with the same `derived[...]` syntax. Baboon will also produce C# and Scala classes from the same model and aggressively deduplicates shared shapes in generated C#.
+The compiler currently ships JSON and UEBA codec derivation. Additional derivations can be added with the same `derived[...]` syntax. Baboon will produce C# and Scala classes from the same model and aggressively deduplicates shared shapes in generated C#.
 
 ## Services
 
@@ -216,6 +216,8 @@ root service BillingApi {
 ```
 
 Service definitions are scoped like other members and can live inside namespaces (`ns` blocks). Method bodies accept `in`, `out`, and optional `err` markers, or inline DTO/ADT/enum definitions using the same braces/parentheses form.
+
+Currently, service support is limited: Baboon does not provide transport runtime and does not generate all the necessary metadata.
 
 ## Imports
 
