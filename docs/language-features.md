@@ -249,7 +249,7 @@ root data Order { shipping: ShippingAddress }
 
 ## Evolution workflow
 
-Versioned files can be diffed by Baboon to emit migration code. When a change is obviously compatible (e.g., adding `data B2` to an ADT), Baboon derives conversions. Breaking changes (e.g., removing required fields) produce explicit stubs so you fail fast and implement the conversion manually.
+Versioned files can be diffed by Baboon to emit migration code. When a change is obviously compatible (e.g., adding `data BankTransfer` to an ADT in the example above), Baboon derives conversions. Breaking changes (e.g., removing required fields) produce explicit stubs so you fail fast and implement the conversion manually.
 
 ## Code generation targets
 
