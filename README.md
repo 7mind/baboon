@@ -25,6 +25,7 @@ Essentially, you define your data structures and Baboon generates implementation
 - Codegen targets: C#, Scala, will be more.
 - Deduplicated C# output (reuse as much code as possible for lower binary footprint)
 
+You define your data model:
 
 ```
 model acme.billing
@@ -41,6 +42,8 @@ root adt PaymentMethod {
   }
 }
 ```
+
+Then you refactor and extend it:
 
 ```
 model acme.billing
@@ -64,6 +67,8 @@ root adt PaymentMethod {
   data BankTransfer { iban: str }
 }
 ```
+
+Baboon generates conversions (migrations) from version `1.0.0` to `2.0.0`. In this particular case all the conversions will be done automatically.
 
 Detailed language walkthrough with copy-paste examples: [docs/language-features.md](docs/language-features.md).
 
