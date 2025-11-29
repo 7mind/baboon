@@ -25,6 +25,46 @@ Essentially, you define your data structures and Baboon generates implementation
 - Codegen targets: C#, Scala, will be more.
 - Deduplicated C# output (reuse as much code as possible for lower binary footprint)
 
+
+```
+model acme.billing
+version "1.0.0"
+
+root adt PaymentMethod {
+  data Card {
+    pan: str
+    holder: str
+  }
+  data Wallet {
+    provider: str
+    token: str
+  }
+}
+```
+
+```
+model acme.billing
+version "2.0.0"
+
+data Token {
+    token: str
+}
+
+root adt PaymentMethod {
+  data Card {
+    pan: str
+    holder: str
+  }
+  data Wallet { // same structure as before
+    provider: str
+    + Token
+  }
+
+  // new ADT member
+  data BankTransfer { iban: str }
+}
+```
+
 Detailed language walkthrough with copy-paste examples: [docs/language-features.md](docs/language-features.md).
 
 ## Editor support
