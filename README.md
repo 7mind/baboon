@@ -8,30 +8,28 @@
 [![Nix](https://img.shields.io/badge/Built%20with-Nix-5277C3.svg?logo=nixos&logoColor=white)](https://builtwithnix.org)
 [![Nix Flake](https://img.shields.io/badge/Nix-Flake-blue.svg)](https://nixos.wiki/wiki/Flakes)
 
-*Let the Baboon do the monkey job*.
+*Let the Baboon do the monkey job.*
 
-Stripped-down experimental Data Modeling Language and its compiler, with schema evolution support and garbage collection.
+Baboon is a minimal Data Modeling Language and compiler that provides ergonomic, declarative schemas and enforces reliable schema evolution. The compiler runs as a fast immutable multi-phase DAG transform, and is easy to understand and maintain.
 
-Te compiler design is an unconventional, based on DAG manipulations and multiple phases. That gives it efficiency and extreme simplicity.
+## Highlights
 
-#### Editor Support:
+- Set-based structural inheritance with `+`, `-`, and `^` operators
+- Automatic JSON and UEBA (Ultra-Efficient Binary Aggregate) codec derivation
+- Evolution-aware codegen: derives migrations when possible, emits stubs when manual work is required
+- Structural *and* nominal inheritance (contracts)
+- Namespaces, includes, and imports
+- Collections (`opt`, `lst`, `set`, `map`) and timestamps/UID primitives
+- Codegen targets: C#, Scala, will be more.
+- Deduplicated C# output (reuse as many code as possible for lower binary footprint)
 
-* [Intellij Idea Plugin](https://plugins.jetbrains.com/plugin/28203-baboon-support) ([baboon-intellij](https://github.com/7mind/baboon-intellij))
-* [VSCode Extension](https://marketplace.visualstudio.com/items?itemName=SeptimalMind.baboon-vscode)
-* [VSCodium Extension](https://open-vsx.org/extension/SeptimalMind/baboon-vscode)
+Detailed language walkthrough with copy-paste examples: [docs/language-features.md](docs/language-features.md).
 
-## Features
+## Editor support
 
-1. Set-based structural inheritance with subtraction and intersections
-2. Automatic JSON codec derivation
-3. Automatic UEBA (Ultra-Efficient Binary Aggregate, a custom tagless binary format) codec derivation
-4. Automatic evolution derivation where possible, stubs where manual conversion is required
-5. Structural *and* nominal inheritance
-6. Namespaces
-7. Inclusions (at syntax tree level)
-8. Lists, sets, dictionaries and optional types.
-9. Advanced deduplication for generated C# code.   
-10. Codegen targets: C#, Scala
+- [Intellij Idea Plugin](https://plugins.jetbrains.com/plugin/28203-baboon-support) ([baboon-intellij](https://github.com/7mind/baboon-intellij))
+- [VSCode Extension](https://marketplace.visualstudio.com/items?itemName=SeptimalMind.baboon-vscode)
+- [VSCodium Extension](https://open-vsx.org/extension/SeptimalMind/baboon-vscode)
 
 ## Limitations
 
@@ -52,38 +50,60 @@ Points marked with (*) will/may be improved in the future.
 
 See build configuration in [.mdl/defs/actions.md](.mdl/defs/actions.md) and test configuration in [.mdl/defs/tests.md](.mdl/defs/tests.md).
 
-## Build Commands
+## Notes
+
+1. All the types which are not transitively referenced by `root` types will be eliminated from the compiler output.
+2. Usages in structural inheritance are not considered references, so structural parents which are not directly referenced as fields and not marked as `root`s will be eliminated 
+
+## Foreign types
+
+Be careful about foreign types. It is your responsibility to wire codecs correctly.
+
+For every foreign type:
+
+1) Create a custom codec
+2) Override the generated dummy codec with `BaboonCodecs#Register`
+3) Override the generated dummy codec using the setter on `${Foreign_Type_Name}_UEBACodec#Instance`
+4) Override the generated dummy codec using the setter on `${Foreign_Type_Name}_JsonCodec#Instance`
+
+Make sure your foreign types are NOT primitive types or other generated types. It's a funny idea, but it will explode in runtime.
+
+Foreign types may hold any position in generics but it's up to you to ensure correctness.
+
+## Development
+
+### Build commands
 
 This project uses [mudyla](https://github.com/7mind/mudyla) for build orchestration.
 
-### Common Commands
+#### Common Commands
 
 ```bash
 # Format code
-mdl :fmt
+direnv exec . mdl :fmt
 
 # Build the compiler
-mdl :build
+direnv exec . mdl :build
 
 # Run complete test suite
-mdl :build :test
+direnv exec . mdl :build :test
 
 # Run full build pipeline (format, build, test)
-mdl :full-build
+direnv exec . mdl :full-build
 
 # Run specific test suites
-mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular
-mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped
-mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-manual-cs :test-manual-scala
+direnv exec . mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular
+direnv exec . mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped
+direnv exec . mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-manual-cs :test-manual-scala
 
 # Create distribution packages
-mdl :build :mkdist
+direnv exec . mdl :build :mkdist
 
 # Build with custom distribution paths
-mdl --mkdist-source=./custom/path --mkdist-target=./output :build :mkdist
+direnv exec . mdl --mkdist-source=./custom/path --mkdist-target=./output :build :mkdist
 ```
 
-### Setting up the environment
+#### Setting up the environment
 
 ```bash
 # Enter the nix development shell
@@ -92,23 +112,3 @@ nix develop
 # Or use direnv for automatic shell activation
 direnv allow
 ```
-
-## Notes
-
-1. All the types which are not transitively referenced by `root` types will be eliminated from the compiler output.
-2. Usages in structural inheritance are not considered references, so structural parents which are not directly referenced as fields and not marked as `root`s will be eliminated 
-
-## Foreign types
-
-Be very careful about foreign types. It's your responsibility to make sure everything is set properly.
-
-At the bare minimum you will have to do the following for each foreign type you use:
-
-1) Create a custom codec for your FT
-2) Override generated dummy codec instance with `BaboonCodecs#Register`
-3) Override generated dummy codec instance using setter on `${Foreign_Type_Name}_UEBACodec#Instance` field
-4) Override generated dummy codec instance using setter on `${Foreign_Type_Name}_JsonCodec#Instance` field
-
-Make sure your foreign types are NOT primitive types or other generated types. It's a funny idea, but it will explode in runtime.
-
-Foreign types may hold any position in generics but it's up to you to ensure correctness.
