@@ -51,7 +51,7 @@ model acme.billing
 version "2.0.0"
 
 data Token {
-    token: str
+  token: str
 }
 
 root adt PaymentMethod {
@@ -59,7 +59,8 @@ root adt PaymentMethod {
     pan: str
     holder: str
   }
-  data Wallet { // same structure as before
+  // refactored, but same structure as before
+  data Wallet {
     provider: str
     + Token
   }
@@ -69,7 +70,7 @@ root adt PaymentMethod {
 }
 ```
 
-Baboon generates conversions (migrations) from version `1.0.0` to `2.0.0`. In this particular case all the conversions will be done automatically.
+Baboon generates conversions (migrations) from version `1.0.0` to `2.0.0`. In this particular case all the migrations will be generated automatically.
 
 Detailed language walkthrough with copy-paste examples: [docs/language-features.md](docs/language-features.md).
 
