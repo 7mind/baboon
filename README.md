@@ -20,7 +20,7 @@ Essentially, you define your data structures and Baboon generates implementation
 - Evolution-aware codegen: derives migrations when possible, emits stubs when manual work is required
 - Set-based structural inheritance with `+`, `-`, and `^` operators
 - Basic form of nominal inheritance (contracts)
-- Algebraic data types (ADTs)
+- Algebraic data types (`adt`), DTOs (`data`) and enums.
 - Namespaces, includes, and imports
 - Collections (`opt`, `lst`, `set`, `map`) and timestamps/UID primitives
 - Codegen targets: C#, Scala, will be more.
