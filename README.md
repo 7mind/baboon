@@ -14,6 +14,8 @@ Baboon is a minimal Data Modeling Language and compiler that provides ergonomic,
 
 Essentially, you define your data structures and Baboon generates implementations for you. Then you define new versions, Baboon generates new versions of the structures, the conversions from old structure versions to new ones and forces your to provide conversions which cannot be derived automatically. Also it comes with extremely efficient tagless binary encoding for all your structures.
 
+Currently generates **C#** and **Scala**, more backends are on the way.
+
 ## Highlights
 
 - Automatic codec derivation for [JSON](docs/json-codecs.md) and [UEBA](docs/ueba-format.md) (Ultra-Efficient Binary Aggregate, a custom tagless binary format) 
@@ -23,7 +25,6 @@ Essentially, you define your data structures and Baboon generates implementation
 - Basic form of nominal inheritance (`contract`)
 - Namespaces, includes, and imports
 - Collections (`opt`, `lst`, `set`, `map`) and timestamps/UID primitives
-- Codegen targets: C#, Scala, will be more.
 - Deduplicated C# output (reuses as much code as possible to lower binary footprint)
 
 You define your data model:
