@@ -15,7 +15,7 @@ Baboon is a minimal Data Modeling Language and compiler that provides ergonomic,
 ## Highlights
 
 - Set-based structural inheritance with `+`, `-`, and `^` operators
-- Automatic JSON and UEBA (Ultra-Efficient Binary Aggregate) codec derivation
+- Automatic [JSON](docs/json-codecs.md) and [UEBA](docs/ueba-format.md) (Ultra-Efficient Binary Aggregate) codec derivation
 - Evolution-aware codegen: derives migrations when possible, emits stubs when manual work is required
 - Structural *and* nominal inheritance (contracts)
 - Namespaces, includes, and imports
