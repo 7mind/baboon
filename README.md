@@ -27,8 +27,8 @@ Detailed language walkthrough with copy-paste examples: [docs/language-features.
 
 ## Editor support
 
-- [Intellij Idea Plugin](https://plugins.jetbrains.com/plugin/28203-baboon-support) ([baboon-intellij](https://github.com/7mind/baboon-intellij))
-- [VSCode Extension](https://marketplace.visualstudio.com/items?itemName=SeptimalMind.baboon-vscode)
+- [Intellij Idea Plugin](https://plugins.jetbrains.com/plugin/28203-baboon-support) (source: [baboon-intellij](https://github.com/7mind/baboon-intellij))
+- [VSCode Extension](https://marketplace.visualstudio.com/items?itemName=SeptimalMind.baboon-vscode) (source: [baboon-vscode](https://github.com/7mind/baboon-vscode))
 - [VSCodium Extension](https://open-vsx.org/extension/SeptimalMind/baboon-vscode)
 
 ## Limitations
