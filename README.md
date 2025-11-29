@@ -66,6 +66,10 @@ For every foreign type:
 3) Override the generated dummy codec using the setter on `${Foreign_Type_Name}_UEBACodec#Instance`
 4) Override the generated dummy codec using the setter on `${Foreign_Type_Name}_JsonCodec#Instance`
 
+Make sure your foreign types are NOT primitive types or other generated types. It's a funny idea, but it will explode in runtime.
+
+Foreign types may hold any position in generics but it's up to you to ensure correctness.
+
 ## Development
 
 ### Build commands
@@ -108,9 +112,3 @@ nix develop
 # Or use direnv for automatic shell activation
 direnv allow
 ```
-
-
-
-Make sure your foreign types are NOT primitive types or other generated types. It's a funny idea, but it will explode in runtime.
-
-Foreign types may hold any position in generics but it's up to you to ensure correctness.
