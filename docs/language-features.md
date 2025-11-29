@@ -89,11 +89,11 @@ root adt PaymentMethod {
 }
 ```
 
-This mirrors the `Adt0` evolution in `pkg01.baboon` → `pkg02.baboon`, where constructor `B2` is added. Baboon will generate evolution stubs for manual migrations where data cannot be derived automatically.
+This mirrors the `PaymentMethod` evolution in `pkg01.baboon` → `pkg02.baboon`, where constructor `BankTransfer` is added. Baboon will generate evolution stubs for manual migrations where data cannot be derived automatically.
 
 ## Structural inheritance with set algebra
 
-Records can reuse and reshape fields via parents (`+`), removals (`-`), and intersections (`^`).
+Records can reuse and reshape fields via addition (`+`), removals (`-`), and intersections (`^`).
 
 ```baboon
 data Address {
@@ -120,7 +120,7 @@ data MinimalAddress {
 }
 ```
 
-- `+ TypeName` inlines every field from the parent type.
+- `+ TypeName` inlines every field from the added type.
 - `- fieldName: Type` erases an inherited or local field (type is required in the declaration).
 - `- ParentType` drops every field from that parent.
 - `^ ParentType` keeps only the fields shared with the specified parent selection.
