@@ -19,7 +19,7 @@ The language is completely formal and platform/implementation-agnostic. Unlike e
 Use cases:
   - Serializable application state with safe and automatic version upgrades
   - Efficient data transfer with custom tagless binary format
-  - Quick data model design with an extremely concise, expressive and formal language
+  - Quick data model design with an extremely concise and expressive language
 
 Generates:
   - **C#**
