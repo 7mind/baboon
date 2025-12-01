@@ -19,6 +19,8 @@ This file defines the build orchestration for the Baboon project using mudyla.
 
 - `HOME`
 - `USER`
+- `CI_PULL_REQUEST`
+- `CI_BRANCH_TAG`
 - `SONATYPE_SECRET`
 
 # action: clean
@@ -93,8 +95,17 @@ set -euo pipefail
 
 JS_DIST_DIR="./baboon-compiler/.js/target/scala-2.13/baboon-opt"
 
-CI_PULL_REQUEST_VAL="${CI_PULL_REQUEST:-true}"
-if [[ "$CI_PULL_REQUEST_VAL" != "false" ]]; then
+if [[ -z "${CI_PULL_REQUEST:-}" ]]; then
+  echo "CI_PULL_REQUEST must be explicitly provided as 'true' or 'false'." >&2
+  exit 1
+fi
+
+if [[ "$CI_PULL_REQUEST" != "true" && "$CI_PULL_REQUEST" != "false" ]]; then
+  echo "CI_PULL_REQUEST must be either 'true' or 'false', got '$CI_PULL_REQUEST'." >&2
+  exit 1
+fi
+
+if [[ "$CI_PULL_REQUEST" != "false" ]]; then
   echo "Skipping BaboonJS build because this is a pull request."
   mkdir -p "$JS_DIST_DIR"
   ret skipped:bool=true
@@ -133,10 +144,22 @@ dep action.gen-js
 
 set -euo pipefail
 
-CI_PULL_REQUEST_VAL="${CI_PULL_REQUEST:-true}"
-CI_BRANCH_TAG_VAL="${CI_BRANCH_TAG:-}"
+if [[ -z "${CI_PULL_REQUEST:-}" ]]; then
+  echo "CI_PULL_REQUEST must be explicitly provided as 'true' or 'false'." >&2
+  exit 1
+fi
 
-if [[ "$CI_PULL_REQUEST_VAL" != "false" ]]; then
+if [[ "$CI_PULL_REQUEST" != "true" && "$CI_PULL_REQUEST" != "false" ]]; then
+  echo "CI_PULL_REQUEST must be either 'true' or 'false', got '$CI_PULL_REQUEST'." >&2
+  exit 1
+fi
+
+if [[ -z "${CI_BRANCH_TAG:-}" ]]; then
+  echo "CI_BRANCH_TAG must be provided to derive the npm version." >&2
+  exit 1
+fi
+
+if [[ "$CI_PULL_REQUEST" != "false" ]]; then
   echo "Skipping npm publish because this is a pull request."
   ret skipped:bool=true
   exit 0
@@ -176,7 +199,7 @@ if [[ ! -f "$VERSION_FILE" ]]; then
   exit 1
 fi
 
-VERSION_FROM_TAG="$CI_BRANCH_TAG_VAL"
+VERSION_FROM_TAG="$CI_BRANCH_TAG"
 
 if [[ "$VERSION_FROM_TAG" =~ ^v(.*)$ ]]; then
   VERSION_FROM_TAG="${BASH_REMATCH[1]}"
