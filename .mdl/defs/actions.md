@@ -22,6 +22,9 @@ This file defines the build orchestration for the Baboon project using mudyla.
 - `CI_PULL_REQUEST`
 - `CI_BRANCH_TAG`
 - `SONATYPE_SECRET`
+- `NODE_AUTH_TOKEN`
+- `ACTIONS_ID_TOKEN_REQUEST_URL`
+- `ACTIONS_ID_TOKEN_REQUEST_TOKEN`
 
 # action: clean
 
