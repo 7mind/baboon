@@ -1,0 +1,51 @@
+{
+  "name": "@7mind.io/baboon",
+  "version": "VERSION_PLACEHOLDER",
+  "description": "Baboon compiler and runtime bindings for JavaScript consumers.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "types": "./index.d.ts"
+    },
+    "./main.js": "./main.js"
+  },
+  "types": "index.d.ts",
+  "files": [
+    "*.js",
+    "*.js.map",
+    "index.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "test": "ava"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/7mind/baboon.git"
+  },
+  "keywords": [
+    "baboon",
+    "codegen",
+    "schemas",
+    "compiler",
+    "scala",
+    "csharp"
+  ],
+  "author": "Septimal Mind <team@7mind.io>",
+  "license": "BSD-2-Clause",
+  "bugs": {
+    "url": "https://github.com/7mind/baboon/issues"
+  },
+  "homepage": "https://github.com/7mind/baboon#readme",
+  "devDependencies": {
+    "ava": "^6.1.2"
+  }
+}

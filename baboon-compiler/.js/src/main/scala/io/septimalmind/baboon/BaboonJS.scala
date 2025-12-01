@@ -255,6 +255,77 @@ object BaboonJS {
     }
   }
 
+  private def collectInputDirectories(inputs: Seq[BaboonParser.Input]): Set[FSPath] = {
+    inputs.flatMap {
+      input =>
+        val parentSegments = input.path.segments.dropRight(1)
+        if (parentSegments.nonEmpty) {
+          Some(FSPath(parentSegments))
+        } else {
+          None
+        }
+    }.toSet
+  }
+
+  private def buildOutputPaths(output: OutputOptionsJS): (FSPath, Option[FSPath], Option[FSPath]) = {
+    val mainOut     = FSPath.parse(NEString.unsafeFrom("generated"))
+    val fixturesOut = if (output.generateFixtures) Some(FSPath.parse(NEString.unsafeFrom("generated-fixtures"))) else None
+    val testsOut    = if (output.generateTests) Some(FSPath.parse(NEString.unsafeFrom("generated-tests"))) else None
+    (mainOut, fixturesOut, testsOut)
+  }
+
+  private def toOutputOptions(output: OutputOptionsJS): OutputOptions = {
+    val (mainOut, fixturesOut, testsOut) = buildOutputPaths(output)
+    OutputOptions(
+      safeToRemoveExtensions = output.safeToRemoveExtensions,
+      runtime = output.runtime,
+      generateConversions = output.generateConversions,
+      output = mainOut,
+      fixturesOutput = fixturesOut,
+      testsOutput = testsOut,
+    )
+  }
+
+  private def toCSTarget(target: CompilerTargetJS.CSTarget): CompilerTarget.CSTarget = {
+    CompilerTarget.CSTarget(
+      id      = target.id,
+      output  = toOutputOptions(target.output),
+      generic = target.generic,
+      language = target.language,
+    )
+  }
+
+  private def toScTarget(target: CompilerTargetJS.ScTarget): CompilerTarget.ScTarget = {
+    CompilerTarget.ScTarget(
+      id      = target.id,
+      output  = toOutputOptions(target.output),
+      generic = target.generic,
+      language = target.language,
+    )
+  }
+
+  private def toCompilerTargets(targets: Seq[CompilerTargetJS]): Seq[CompilerTarget] = {
+    targets.map {
+      case t: CompilerTargetJS.CSTarget => toCSTarget(t)
+      case t: CompilerTargetJS.ScTarget => toScTarget(t)
+    }
+  }
+
+  private def createCompilerOptions(
+    inputs: Seq[BaboonParser.Input],
+    targets: Seq[CompilerTargetJS],
+    debug: Boolean,
+  ): CompilerOptions = {
+    CompilerOptions(
+      individualInputs = inputs.map(_.path).toSet,
+      directoryInputs = collectInputDirectories(inputs),
+      lockFile = None,
+      debug = debug,
+      targets = toCompilerTargets(targets),
+      metaWriteEvolutionJsonTo = None,
+    )
+  }
+
   /**
     * Compile Baboon models (async)
     *
@@ -315,7 +386,8 @@ object BaboonJS {
     runner: QuasiIORunner[F[Throwable, _]],
   ): Future[Seq[OutputFileWithPath]] = {
     val logger = new BLoggerJS(debug)
-    val m      = new BaboonModuleJS[F](inputs, logger, ParallelErrorAccumulatingOps2[F])
+    val compilerOptions = createCompilerOptions(inputs, targets, debug)
+    val m = new BaboonModuleJS[F](inputs, logger, ParallelErrorAccumulatingOps2[F], compilerOptions)
 
     runner.runFuture(
       Injector
@@ -344,9 +416,9 @@ object BaboonJS {
   ): F[Throwable, Seq[OutputFileWithPath]] = {
     val module = target match {
       case t: CompilerTargetJS.CSTarget =>
-        new BaboonJsCSModule[F](t)
+        new BaboonJsCSModule[F](toCSTarget(t))
       case t: CompilerTargetJS.ScTarget =>
-        new BaboonJsScModule[F](t)
+        new BaboonJsScModule[F](toScTarget(t))
     }
 
     Injector
@@ -491,7 +563,8 @@ object BaboonJS {
     runner: QuasiIORunner[F[Throwable, _]],
   ): Future[Vector[Byte]] = {
     val logger = new BLoggerJS(false)
-    val m      = new BaboonModuleJS[F](inputs.toList, logger, ParallelErrorAccumulatingOps2[F])
+    val compilerOptions = createCompilerOptions(inputs, Seq.empty, debug = false)
+    val m               = new BaboonModuleJS[F](inputs.toList, logger, ParallelErrorAccumulatingOps2[F], compilerOptions)
 
     runner.runFuture(
       Injector
@@ -520,7 +593,8 @@ object BaboonJS {
     runner: QuasiIORunner[F[Throwable, _]],
   ): Future[Json] = {
     val logger = new BLoggerJS(false)
-    val m      = new BaboonModuleJS[F](inputs.toList, logger, ParallelErrorAccumulatingOps2[F])
+    val compilerOptions = createCompilerOptions(inputs, Seq.empty, debug = false)
+    val m               = new BaboonModuleJS[F](inputs.toList, logger, ParallelErrorAccumulatingOps2[F], compilerOptions)
 
     runner.runFuture(
       Injector
