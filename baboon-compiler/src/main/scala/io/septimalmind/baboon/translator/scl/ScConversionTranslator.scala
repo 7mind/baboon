@@ -117,21 +117,21 @@ class ScConversionTranslator[F[+_, +_]: Error2](
       (Seq(prefix) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
         conv.sourceTpe.name.name,
         "From",
-        srcVer.version.replace('.', '_'),
+        srcVer.v.toString.replace('.', '_'),
       )).mkString("__")
 
     F.flatTraverseAccumErrors(rules.conversions) {
       conv =>
         val className = makeName("Convert", conv)
-        val fname = (Seq("from", srcVer.version) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
+        val fname = (Seq("from", srcVer.v.toString) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
           s"${conv.sourceTpe.name.name}.scala"
         )).mkString("-")
 
         val tin  = trans.asScType(conv.sourceTpe, srcDom, evo).fullyQualified
         def tout = trans.asScType(conv.sourceTpe, domain, evo)
 
-        val meta = q"""override def versionFrom: String = "${srcVer.version}"
-                      |override def versionTo:   String = "${domain.version.version}"
+        val meta = q"""override def versionFrom: String = "${srcVer.v.toString}"
+                      |override def versionTo:   String = "${domain.version.v.toString}"
                       |override def typeId:      String = "${conv.sourceTpe.toString}"
                       """.stripMargin.trim
 

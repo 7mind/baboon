@@ -2,7 +2,7 @@ package io.septimalmind.baboon.typer
 
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TyperIssue}
 import io.septimalmind.baboon.parser.model.{RawHeader, RawVersion}
-import io.septimalmind.baboon.typer.model.{ParsedVersion, Pkg, Version}
+import io.septimalmind.baboon.typer.model.{Pkg, Version}
 import izumi.functional.bio.*
 import izumi.fundamentals.collections.nonempty.NEList
 
@@ -38,9 +38,16 @@ object ComponentParsers {
     ): F[NEList[BaboonIssue], Version] = {
       for {
         v <- F.pure(version.value)
-        _ <- F.fromOption(BaboonIssue.of(TyperIssue.GenericTyperIssue(s"Bad version format in '$v'", version.meta)))(ParsedVersion.parse(v))
+        ret <- izumi.fundamentals.platform.versions.Version.parse(version.value) match {
+          case c: izumi.fundamentals.platform.versions.Version.Canonical =>
+            F.pure(c)
+          case s: izumi.fundamentals.platform.versions.Version.Semver =>
+            F.pure(s)
+          case u: izumi.fundamentals.platform.versions.Version.Unknown =>
+            F.fail(BaboonIssue.of(TyperIssue.GenericTyperIssue(s"Bad version format in '${u.version}'", version.meta)))
+        }
       } yield {
-        Version(v)
+        Version(ret)
       }
     }
   }

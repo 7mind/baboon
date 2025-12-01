@@ -116,7 +116,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       .sortBy(_._1.toString)
       .map {
         case (tid, version) =>
-          q"""unmodified.put("${tid.toString}", $scList(${version.sameIn.map(_.version).map(s => q"\"$s\"").toList.join(", ")}))"""
+          q"""unmodified.put("${tid.toString}", $scList(${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")}))"""
       }
 
     scala.collection.mutable.Map.empty[String, String]
@@ -191,7 +191,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
         TextTree.text(
           IzResources
             .readAsString("baboon-runtime/scala/BaboonRuntimeShared.scala").get
-            // TODO: hack, we always force escape processing in text tree
+            // TODO: fixed in izumi, hack, we always force escape processing in text tree
             .replace("""[\\s:-]""", """[\\\\s:-]""")
         ),
         ScTypes.baboonRuntimePkg,
@@ -240,8 +240,8 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
            |class BaboonConversions(required: RequiredConversions) extends $abstractBaboonConversions {
            |    ${conversionRegs.join("\n").shift(4).trim}
            |
-           |    override def versionsFrom: $scList[$scString] = $scList(${toCurrent.map(_.from.version).map(v => s"\"$v\"").mkString(", ")})
-           |    override def versionTo: $scString = "${domain.version.version}"
+           |    override def versionsFrom: $scList[$scString] = $scList(${toCurrent.map(_.from.v.toString).map(v => s"\"$v\"").mkString(", ")})
+           |    override def versionTo: $scString = "${domain.version.v.toString}"
            |}""".stripMargin
 
       // Scala codecs definitions (stub syntax)

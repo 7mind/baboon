@@ -174,7 +174,7 @@ object CSDefnTranslator {
         if (isLatestVersion || tree.isEmpty) {
           tree
         } else {
-          q"""[$obsolete("Version ${domain.version.version} is obsolete, you should migrate to ${evo.latest.version}", ${target.language.obsoleteErrors.toString})]
+          q"""[$obsolete("Version ${domain.version.v.toString} is obsolete, you should migrate to ${evo.latest.v.toString}", ${target.language.obsoleteErrors.toString})]
              |$tree""".stripMargin
         }
       }

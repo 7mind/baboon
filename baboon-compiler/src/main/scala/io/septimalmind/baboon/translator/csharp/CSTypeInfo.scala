@@ -82,7 +82,7 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
                       allowedUpgrades.filter {
                         higherTwinVersion =>
                           val upgradeVersions = possibleUpgrades(o.id, version, lineage)
-                          val hardCriterion   = upgradeVersions.exists(_.version == higherTwinVersion.version)
+                          val hardCriterion   = upgradeVersions.contains(higherTwinVersion)
                           hardCriterion
                       }
                     } else {

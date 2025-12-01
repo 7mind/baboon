@@ -17,7 +17,7 @@ object BaboonMetagen {
         case (_, lineage) =>
           lineage.versions.toSeq.map {
             case (ver, _) =>
-              VersionMeta(lineage.pkg.path.mkString("."), ver.version)
+              VersionMeta(lineage.pkg.path.mkString("."), ver.v.toString)
           }
       }
 
@@ -64,7 +64,7 @@ object BaboonMetagen {
               Json
                 .obj(line.versions.map {
                   case (v, d) =>
-                    v.version -> Json.obj(
+                    v.v.toString -> Json.obj(
                       d.loops.toSeq.map(l => l.node.toString -> l.loops.map(_.loop.map(_.asJson)).asJson)*
                     )
                 }.toSeq*),

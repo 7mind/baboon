@@ -137,8 +137,8 @@ lazy val baboonJS = baboon.js
 // Root aggregate project
 lazy val root = project
   .in(file("."))
-//  .aggregate(baboonJVM, baboonJS)
-  .aggregate(baboonJVM)
+  .aggregate(baboonJVM, baboonJS)
+//  .aggregate(baboonJVM)
   .settings(
     name := "baboon-root",
     publish / skip := true,

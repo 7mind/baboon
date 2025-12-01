@@ -24,8 +24,8 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
         for {
           fam       <- loadPkg(loader)
           data: Json = io.circe.parser.parse("""{"B2":{"f":135983116}}""").toOption.get
-          encoded   <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), "testpkg.pkg0/:#T5_A1", data, indexed = false)
-          decoded   <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), "testpkg.pkg0/:#T5_A1", encoded)
+          encoded   <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("3.0.0"), "testpkg.pkg0/:#T5_A1", data, indexed = false)
+          decoded   <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("3.0.0"), "testpkg.pkg0/:#T5_A1", encoded)
         } yield {
           assert(data == decoded)
         }
@@ -88,10 +88,10 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
                        }
 
                        // Encode to UEBA
-                       uebaBytes <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, jsonContent, indexed = false)
+                       uebaBytes <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("3.0.0"), typeId, jsonContent, indexed = false)
 
                        // Decode back to JSON
-                       decodedJson <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, uebaBytes)
+                       decodedJson <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("3.0.0"), typeId, uebaBytes)
 
                        // Compare
                        _ <- F.fromEither {
@@ -165,7 +165,7 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
                   }
 
                   // Decode to JSON
-                  jsonContent <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, uebaBytes).leftMap {
+                  jsonContent <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("3.0.0"), typeId, uebaBytes).leftMap {
                     err =>
                       BaboonIssue.Translation(
                         TranslationIssue
@@ -174,7 +174,7 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
                   }
 
                   // Encode back to UEBA
-                  reEncodedBytes <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version("3.0.0"), typeId, jsonContent, indexed).leftMap {
+                  reEncodedBytes <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("3.0.0"), typeId, jsonContent, indexed).leftMap {
                     err =>
                       BaboonIssue.Translation(
                         TranslationIssue

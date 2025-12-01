@@ -42,17 +42,17 @@ class CSConversionTranslator[F[+_, +_]: Error2](
       (Seq(prefix) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
         conv.sourceTpe.name.name,
         "From",
-        srcVer.version.replace(".", "_"),
+        srcVer.v.toString.replace(".", "_"),
       )).mkString("__")
     }
 
     val versionsMeta =
       q"""public override $csString VersionFrom() {
-         |  return "${srcVer.version}";
+         |  return "${srcVer.v.toString}";
          |}
          |
          |public override $csString VersionTo() {
-         |    return "${domain.version.version}";
+         |    return "${domain.version.v.toString}";
          |}""".stripMargin
 
 //    import izumi.fundamentals.collections.IzCollections.*
@@ -70,7 +70,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
         val convname = makeName("Convert", conv)
 
         val fname =
-          (Seq("from", srcVer.version) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
+          (Seq("from", srcVer.v.toString) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
             s"${conv.sourceTpe.name.name}.cs"
           )).mkString("-")
         val tin = trans

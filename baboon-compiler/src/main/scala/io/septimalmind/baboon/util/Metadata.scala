@@ -16,8 +16,8 @@ object BaboonDomainCodecs {
   import io.circe.generic.semiauto.deriveEncoder
   import io.septimalmind.baboon.typer.model.*
 
-  implicit lazy val versionKeyEncoder: KeyEncoder[Version] = KeyEncoder.encodeKeyString.contramap(_.version)
-  implicit lazy val versionEncoder: Encoder[Version]       = Encoder.encodeString.contramap(_.version)
+  implicit lazy val versionKeyEncoder: KeyEncoder[Version] = KeyEncoder.encodeKeyString.contramap(_.v.toString)
+  implicit lazy val versionEncoder: Encoder[Version]       = Encoder.encodeString.contramap(_.v.toString)
 
 //  implicit lazy val unmodifiedSince: Encoder[UnmodifiedSince] = Encoder.encodeList[String].contramap(_.sameIn.toList.map(_.version))
   implicit lazy val unmodifiedSince: Encoder[UnmodifiedSince] = deriveEncoder

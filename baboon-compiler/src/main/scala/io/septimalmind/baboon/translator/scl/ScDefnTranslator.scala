@@ -133,7 +133,7 @@ object ScDefnTranslator {
         if (isLatestVersion || tree.isEmpty) {
           tree
         } else {
-          q"""@${ScTypes.deprecated}("Version ${domain.version.version} is deprecated, you should migrate to ${evo.latest.version}")
+          q"""@${ScTypes.deprecated}("Version ${domain.version.v.toString} is deprecated, you should migrate to ${evo.latest.v.toString}")
              |$tree""".stripMargin
         }
       }

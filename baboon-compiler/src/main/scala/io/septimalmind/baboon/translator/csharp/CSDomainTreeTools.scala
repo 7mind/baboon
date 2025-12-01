@@ -66,7 +66,7 @@ object CSDomainTreeTools {
         val unmodifiedSince = evo.typesUnchangedSince(version)(defn.id)
         List(
           q"""public${propFix}static readonly $csIReadOnlyList<$csString> BaboonSameInVersionsValue = new $csList<$csString> { ${unmodifiedSince.sameIn
-              .map(_.version).map(s => q"\"$s\"").toList.join(", ")} };
+              .map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")} };
              |public$methodFix$csIReadOnlyList<$csString> BaboonSameInVersions() => BaboonSameInVersionsValue;
              |""".stripMargin
         )
@@ -75,7 +75,7 @@ object CSDomainTreeTools {
       }
 
       Seq(
-        q"""public${propFix}static readonly $csString BaboonDomainVersionValue = "${version.version}";
+        q"""public${propFix}static readonly $csString BaboonDomainVersionValue = "${version.v.toString}";
            |public$methodFix$csString BaboonDomainVersion() => BaboonDomainVersionValue;
            |""".stripMargin,
         q"""public${propFix}static readonly $csString BaboonDomainIdentifierValue = "${defn.id.pkg.toString}";

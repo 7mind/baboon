@@ -29,7 +29,7 @@ case class Locks(
 object LockCodecs {
   implicit lazy val pkgKeyEncoder: KeyEncoder[Pkg]       = KeyEncoder.encodeKeyString.contramap(_.toString)
   implicit lazy val pkgKeyDecoder: KeyDecoder[Pkg]       = KeyDecoder.decodeKeyString.map(s => Pkg(NEList.unsafeFrom(s.split('.').toList)))
-  implicit lazy val versionCodec: Codec[Version]         = Codec.from(Decoder.decodeString.map(s => Version(s)), Encoder.encodeString.contramap(_.version))
+  implicit lazy val versionCodec: Codec[Version]         = Codec.from(Decoder.decodeString.map(s => Version.parse(s)), Encoder.encodeString.contramap(_.v.toString))
   implicit lazy val sigidCodec: Codec[SigId]             = Codec.from(Decoder.decodeString.map(s => SigId(s)), Encoder.encodeString.contramap(_.value))
   implicit lazy val versionLockCodec: Codec[VersionLock] = deriveCodec
   implicit lazy val lockscodec: Codec[Locks]             = deriveCodec

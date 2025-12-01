@@ -130,7 +130,7 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
   }
 
   private def toCsPkg(p: Pkg, version: Version, omitVersion: Boolean): CSPackageId = {
-    val verString = "v" + version.version
+    val verString = "v" + version.v.toString
       .split('.')
       .mkString("_")
 

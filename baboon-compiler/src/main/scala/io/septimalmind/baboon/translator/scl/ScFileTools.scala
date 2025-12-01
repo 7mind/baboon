@@ -20,7 +20,7 @@ object ScFileTools {
       val segments = if (omitVersion) {
         base
       } else {
-        base ++ Seq(dom.version.version)
+        base ++ Seq(dom.version.v.toString)
       }
 
       segments.mkString("/")

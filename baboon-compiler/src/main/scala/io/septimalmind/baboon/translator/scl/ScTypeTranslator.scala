@@ -59,7 +59,7 @@ class ScTypeTranslator(
   }
 
   def toScPkg(p: Pkg, version: Version, omitVersion: Boolean): ScPackageId = {
-    val verString = "v" + version.version
+    val verString = "v" + version.v.toString
       .split('.')
       .mkString("_")
 

@@ -501,7 +501,7 @@ object BaboonJS {
             (for {
               family <- loader.load(inputs.toList)
               pkg     = parsePkg(pkgString)
-              version = Version(versionString)
+              version = Version.parse(versionString)
               json   <- Error2[F].fromEither(parseJson(jsonString).left.map(e => new RuntimeException(s"Invalid JSON: ${e.getMessage}")))
               result <- codec.encode(family, pkg, version, idString, json, indexed)
             } yield result).leftMap(issues => new RuntimeException(s"Encoding failure: $issues"))
@@ -530,7 +530,7 @@ object BaboonJS {
             (for {
               family <- loader.load(inputs.toList)
               pkg     = parsePkg(pkgString)
-              version = Version(versionString)
+              version = Version.parse(versionString)
               result <- codec.decode(family, pkg, version, idString, data)
             } yield result).leftMap(issues => new RuntimeException(s"Decoding failure: $issues"))
         }

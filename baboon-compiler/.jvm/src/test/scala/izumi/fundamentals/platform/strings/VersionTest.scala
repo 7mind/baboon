@@ -1,13 +1,15 @@
 package izumi.fundamentals.platform.strings
 
-import io.septimalmind.baboon.typer.model.{ParsedVersion, Version}
+import io.septimalmind.baboon.typer.model.Version
 import org.scalatest.wordspec.AnyWordSpec
+
+import scala.math.Ordered.orderingToOrdered
 
 class VersionTest extends AnyWordSpec {
   "Version comparison" should {
     "properly handle >, <, >=, <=" in {
-      val v1 = Version("3.8.0")
-      val v2 = Version("3.10.0")
+      val v1 = Version.parse("3.8.0")
+      val v2 = Version.parse("3.10.0")
       assert(v1 < v2)
       assert(v1 <= v2)
       assert(v2 > v1)
@@ -18,7 +20,7 @@ class VersionTest extends AnyWordSpec {
       val versions = List(
         "1.0.0",
         "2.0.0",
-      ).map(Version.apply)
+      ).map(Version.parse)
 
       assert(versions.sorted == versions)
       assert(versions.sorted(Version.ordering.reverse) == versions.reverse)
@@ -47,16 +49,21 @@ class ParsedVersionTest extends AnyWordSpec {
 
       versions.foreach {
         v =>
-          assert(ParsedVersion.parse(v).isDefined, v)
+          Version.parse(v).v match {
+            case _: izumi.fundamentals.platform.versions.Version.Unknown =>
+              fail(s"Failed to parse $v")
+            case _ =>
+
+          }
       }
 
-      val parsedVersions = versions.flatMap(ParsedVersion.parse)
+      val parsedVersions = versions.map(Version.parse)
       val sorted         = parsedVersions.sorted
       assert(sorted.map(_.toString) == versions)
 
       def compareVersions(v1: String, v2: String): Unit = {
-        (ParsedVersion.parse(v1), ParsedVersion.parse(v2)) match {
-          case (Some(pv1), Some(pv2)) =>
+        (Version.parse(v1), Version.parse(v2)) match {
+          case (pv1, pv2) =>
             val _ = assert(pv1.compare(pv2) > 0, s"$v1 > $v2")
           case _ =>
             fail(s"failed to parse $v1 / $v2 pair")

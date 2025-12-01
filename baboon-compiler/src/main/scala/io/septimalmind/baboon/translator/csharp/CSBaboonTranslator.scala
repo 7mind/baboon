@@ -244,7 +244,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
       .sortBy(_._1.toString)
       .map {
         case (tid, version) =>
-          q"""_unmodified.Add("${tid.toString}", new $csList<$csString> { ${version.sameIn.map(_.version).map(s => q"\"$s\"").toList.join(", ")} });"""
+          q"""_unmodified.Add("${tid.toString}", new $csList<$csString> { ${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")} });"""
       }
 
     val metaTree =
@@ -323,12 +323,12 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
            |
            |    public override $csList<$csString> VersionsFrom()
            |    {
-           |        return new $csList<$csString> { ${toCurrent.map(_.from.version).map(v => s"\"$v\"").mkString(", ")} };
+           |        return new $csList<$csString> { ${toCurrent.map(_.from.v.toString).map(v => s"\"$v\"").mkString(", ")} };
            |    }
            |
            |    public override $csString VersionTo()
            |    {
-           |        return "${domain.version.version}";
+           |        return "${domain.version.v.toString}";
            |    }
            |}""".stripMargin
 
