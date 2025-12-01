@@ -7,7 +7,7 @@ import izumi.functional.bio.Error2
 import baboon.runtime.shared.{BaboonBinTools, ByteString, LEDataInputStream, LEDataOutputStream}
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
-import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeFormatterBuilder
 import java.time.OffsetDateTime
 import java.util.UUID
 import scala.util.Try
@@ -24,7 +24,10 @@ object BaboonRuntimeCodec {
     private val enquiries = new BaboonEnquiries.BaboonEnquiriesImpl()
 
     // ISO 8601 formatters for timestamps with exactly 3 fractional digits (matching C# format)
-    private val isoFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSxxx")
+    private val isoFormatter = new DateTimeFormatterBuilder()
+      .appendPattern("yyyy-MM-dd'T'HH:mm:ss.SSS")
+      .appendOffset("+HH:MM", "Z")
+      .toFormatter()
 
     override def decode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, data: Vector[Byte]): F[BaboonIssue, Json] = {
       val dom     = getDom(family, pkg, version)

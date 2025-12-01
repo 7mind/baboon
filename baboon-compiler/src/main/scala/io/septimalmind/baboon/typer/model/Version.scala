@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.typer.model
 
 case class Version(v: izumi.fundamentals.platform.versions.Version) {
-  override def toString: String = s"{$v}"
+  override def toString: String = v.toString
 
   def compareTo(o: Version)(implicit ord: Ordering[izumi.fundamentals.platform.versions.Version]): Int = {
     ord.compare(v, o.v)
