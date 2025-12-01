@@ -25,6 +25,15 @@ This file defines the build orchestration for the Baboon project using mudyla.
 - `NODE_AUTH_TOKEN`
 - `ACTIONS_ID_TOKEN_REQUEST_URL`
 - `ACTIONS_ID_TOKEN_REQUEST_TOKEN`
+- `GITHUB_SERVER_URL`
+- `GITHUB_REPOSITORY`
+- `GITHUB_RUN_ID`
+- `GITHUB_RUN_ATTEMPT`
+- `GITHUB_SHA`
+- `GITHUB_REF`
+- `GITHUB_ACTOR`
+- `GITHUB_WORKFLOW`
+- `GITHUB_WORKFLOW_REF`
 
 # action: clean
 
