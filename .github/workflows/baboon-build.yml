@@ -171,7 +171,7 @@ jobs:
       - build-unix
     env:
       CI_BRANCH_TAG: ${{ github.ref_name }}
-      CI_PULL_REQUEST: ${{ github.event_name == 'pull_request' ? 'true' : 'false' }}
+      CI_PULL_REQUEST: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
     permissions:
       contents: write
       id-token: write
