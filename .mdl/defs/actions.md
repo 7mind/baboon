@@ -113,7 +113,7 @@ if [[ "$CI_PULL_REQUEST" != "false" ]]; then
   exit 0
 fi
 
-direnv exec . sbt '++2.13 baboonJS/fullLinkJS'
+sbt '++2.13 baboonJS/fullLinkJS'
 
 if [[ ! -f "${JS_DIST_DIR}/main.js" ]]; then
   echo "Scala.js output is missing at ${JS_DIST_DIR}/main.js" >&2
