@@ -108,11 +108,11 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
     },
     releaseProcess := Seq[ReleaseStep](
       checkSnapshotDependencies,
+      releaseStepTask(refreshFlakeTask),
       inquireVersions,
       runClean,
       runTest,
       setReleaseVersion,
-      releaseStepTask(refreshFlakeTask),
       commitReleaseVersion,
       tagRelease,
       //publishArtifacts,

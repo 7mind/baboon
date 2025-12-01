@@ -40,7 +40,7 @@
       {
         packages = rec {
           baboon = pkgs.stdenv.mkDerivation {
-            version = "0.0.139";
+            version = "0.0.141";
             pname = "baboon";
             src = ./.;
             nativeBuildInputs = sbtSetup.nativeBuildInputs ++ [ pkgs.curl ];
