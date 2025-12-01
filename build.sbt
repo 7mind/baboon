@@ -101,25 +101,18 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
     run / fork := true,
     refreshFlakeTask := {
       val log = streams.value.log
-      val result = "nix develop --command mdl :flake-refresh" ! log
+      val rootDir = (ThisBuild / baseDirectory).value
+      val lockfileConfig = rootDir / "lockfile-config.json"
+      val lockfileOutput = rootDir / "deps.lock.json"
+      val refreshCommand = Process(
+        Seq("nix", "develop", "--command", "squish-lockfile", lockfileConfig.getPath),
+        rootDir
+      )
+      val result = (refreshCommand #> lockfileOutput).!(log)
       if (result != 0) {
-        throw new MessageOnlyException("flake.nix update failed!")
+        throw new MessageOnlyException(s"flake.nix update failed: squish-lockfile exited with $result")
       }
-    },
-    releaseProcess := Seq[ReleaseStep](
-      checkSnapshotDependencies,
-      releaseStepTask(refreshFlakeTask),
-      inquireVersions,
-      runClean,
-      runTest,
-      setReleaseVersion,
-      commitReleaseVersion,
-      tagRelease,
-      //publishArtifacts,
-      setNextVersion,
-      commitNextVersion,
-      pushChanges
-    )
+    }
   )
   .jsSettings(
     scalaJSLinkerConfig ~= {
@@ -144,8 +137,25 @@ lazy val root = project
     publish / skip := true,
     publishLocal / skip := true,
     Compile / sources := Seq.empty,
-    Test / sources := Seq.empty
+    Test / sources := Seq.empty,
+    releaseProcess := releaseSteps
   )
+
+lazy val releaseSteps: Seq[ReleaseStep] = Seq(
+  checkSnapshotDependencies,
+  releaseStepTask(baboonJVM / refreshFlakeTask),
+  inquireVersions,
+  runClean,
+  runTest,
+  setReleaseVersion,
+  commitReleaseVersion,
+  tagRelease,
+  setNextVersion,
+  commitNextVersion,
+  pushChanges
+)
+
+ThisBuild / releaseProcess := releaseSteps
 
 ThisBuild / scalacOptions ++= Seq(
   s"-Xmacro-settings:sbt-version=${sbtVersion.value}",
