@@ -1,6 +1,8 @@
 name: Baboon Build
 
 on:
+  workflow_dispatch:
+    inputs: {}
   push:
     branches: [ "main" ]
     tags:
@@ -177,8 +179,6 @@ jobs:
       id-token: write
     steps:
       - uses: 7mind/github-env@minimal
-        with:
-          setup-nix: true
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
