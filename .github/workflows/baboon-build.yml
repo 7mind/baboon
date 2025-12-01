@@ -184,5 +184,6 @@ jobs:
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
+          always-auth: true
       - name: Publish npm package
         run: nix develop --command mdl --github-actions :publish-npm
