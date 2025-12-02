@@ -187,16 +187,4 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
       - name: Publish npm package
-        #run: nix develop --command mdl --github-actions :publish-npm
-        run: |
-          echo "env outside of mdl"
-          env
-          nix develop --command mdl --github-actions :publish-npm
-#          cd target/npm-publish
-#          npm publish
-#      - name: Dump npm logs on failure
-#        if: failure()
-#        run: |
-#          echo "=== npm debug logs ==="
-#          ls -R ~/.npm/_logs || echo "no logs directory"
-#          cat ~/.npm/_logs/*-debug-0.log || true
+        run: nix develop --command mdl --github-actions :publish-npm
