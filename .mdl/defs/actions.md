@@ -45,6 +45,8 @@ This file defines the build orchestration for the Baboon project using mudyla.
 - `GITHUB_WORKFLOW_SHA`
 - `NODE_AUTH_TOKEN`
 - `NPM_CONFIG_USERCONFIG`
+- `GITHUB_ACTIONS`
+- `CI`
 
 # action: clean
 
