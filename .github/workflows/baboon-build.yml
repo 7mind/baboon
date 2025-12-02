@@ -189,6 +189,7 @@ jobs:
       - name: Publish npm package
         #run: nix develop --command mdl --github-actions :publish-npm
         run: |
+          nix develop --command mdl --github-actions :publish-npm
           cd target/npm-publish
           env
           npm publish

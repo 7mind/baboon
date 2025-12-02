@@ -143,7 +143,7 @@ lazy val root = project
 
 lazy val releaseSteps: Seq[ReleaseStep] = Seq(
   checkSnapshotDependencies,
-  releaseStepTask(baboonJVM / refreshFlakeTask),
+  //releaseStepTask(baboonJVM / refreshFlakeTask),
   inquireVersions,
   runClean,
   runTest,

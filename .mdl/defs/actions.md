@@ -248,7 +248,7 @@ env
 npm install
 npm test
 #npm publish --provenance --access public
-npm publish
+#npm publish
 
 ret success:bool=true
 ret publish_dir:directory="$(realpath "$PUBLISH_DIR")"
