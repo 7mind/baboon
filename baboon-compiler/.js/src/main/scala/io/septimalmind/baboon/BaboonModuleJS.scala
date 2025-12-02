@@ -2,7 +2,6 @@ package io.septimalmind.baboon
 
 import distage.{ModuleDef, TagKK}
 import io.septimalmind.baboon.parser.{BaboonInclusionResolver, BaboonInclusionResolverMapImpl, BaboonParser}
-import io.septimalmind.baboon.typer.BaboonRuntimeCodec
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Error2, ParallelErrorAccumulatingOps2}
@@ -38,10 +37,5 @@ class BaboonJsScModule[F[+_, +_]: Error2: TagKK](compilerTarget: CompilerTarget.
 class BaboonCodecModuleJS[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
   parOps: ParallelErrorAccumulatingOps2[F]
 ) extends ModuleDef {
-
-  include(new BaboonSharedModule[F])
-
-  make[ParallelErrorAccumulatingOps2[F]].fromValue(parOps).exposed
-  make[BaboonRuntimeCodec[F]].from[BaboonRuntimeCodec.BaboonRuntimeCodecImpl[F]]
-
+  include(new BaboonModuleLogicModule[F](parOps))
 }
