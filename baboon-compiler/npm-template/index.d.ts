@@ -73,8 +73,15 @@ export interface BaboonCompilerOptions {
   debug?: boolean;
 }
 
+export interface BaboonLoadedModel {
+  // Opaque handle
+}
+
 export interface BaboonCompilerAPI {
   compile(options: BaboonCompilerOptions): Promise<BaboonCompilationResult>;
+  
+  load(files: Record<string, string>): Promise<BaboonLoadedModel>;
+
   encode(
     files: Record<string, string>,
     pkg: string,
@@ -83,8 +90,26 @@ export interface BaboonCompilerAPI {
     json: string,
     indexed: boolean
   ): Promise<BaboonEncodeResult>;
+
+  encodeLoaded(
+    model: BaboonLoadedModel,
+    pkg: string,
+    version: string,
+    idString: string,
+    json: string,
+    indexed: boolean
+  ): Promise<BaboonEncodeResult>;
+
   decode(
     files: Record<string, string>,
+    pkg: string,
+    version: string,
+    idString: string,
+    data: Uint8Array
+  ): Promise<BaboonDecodeResult>;
+
+  decodeLoaded(
+    model: BaboonLoadedModel,
     pkg: string,
     version: string,
     idString: string,

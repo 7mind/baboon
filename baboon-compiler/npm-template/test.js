@@ -85,3 +85,38 @@ test("Encodes and decodes data", async t => {
   const payload = JSON.parse(decoded.json);
   t.deepEqual(payload, { name: "Ada", age: 42 });
 });
+
+test("Encodes and decodes data using loaded model", async t => {
+  const model = await BaboonCompiler.load(FILES_MAP);
+  t.truthy(model, "Model should be loaded");
+
+  const encoded = await BaboonCompiler.encodeLoaded(
+    model,
+    "example.npm",
+    "1.0.0",
+    TYPE_ID,
+    JSON.stringify({ name: "Ada", age: 42 }),
+    false
+  );
+
+  if (!encoded.success || !encoded.data) {
+    t.fail(encoded.error ?? "Encoding failed");
+    return;
+  }
+
+  const decoded = await BaboonCompiler.decodeLoaded(
+    model,
+    "example.npm",
+    "1.0.0",
+    TYPE_ID,
+    encoded.data
+  );
+
+  if (!decoded.success || !decoded.json) {
+    t.fail(decoded.error ?? "Decoding failed");
+    return;
+  }
+
+  const payload = JSON.parse(decoded.json);
+  t.deepEqual(payload, { name: "Ada", age: 42 });
+});

@@ -80,6 +80,13 @@ object BaboonJS {
   }
 
   /**
+    * Opaque handle for loaded Baboon model
+    */
+  trait BaboonLoadedModel extends js.Object
+
+  class BaboonLoadedModelImpl(val family: BaboonFamily) extends BaboonLoadedModel
+
+  /**
     * Codec encode result
     */
   trait JSEncodeResult extends js.Object {
@@ -327,6 +334,41 @@ object BaboonJS {
   }
 
   /**
+    * Load Baboon model from files (async)
+    */
+  @JSExport
+  def load(files: js.Dictionary[String]): js.Promise[BaboonLoadedModel] = {
+    implicit val ec: ExecutionContext = scala.scalajs.concurrent.JSExecutionContext.queue
+    try {
+      val inputs = files.toSeq.map {
+        case (path, content) =>
+          BaboonParser.Input(
+            FSPath.parse(NEString.unsafeFrom(path)),
+            content,
+          )
+      }
+
+      import izumi.distage.modules.support.unsafe.EitherSupport.*
+      import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+      type F[+E, +A] = Either[E, A]
+
+      val resultFuture = loadInternal[F](inputs)
+
+      resultFuture.map {
+        family =>
+          new BaboonLoadedModelImpl(family)
+      }.recover {
+        case e: Throwable =>
+          throw new RuntimeException(s"Loading failed: ${e.getMessage}")
+      }.toJSPromise
+    } catch {
+      case e: Throwable =>
+        Future.failed(new RuntimeException(s"Loading failed: ${e.getMessage}")).toJSPromise
+    }
+  }
+
+  /**
     * Compile Baboon models (async)
     *
     * @param options Compilation options as JS object
@@ -376,6 +418,28 @@ object BaboonJS {
   }
 
   case class OutputFileWithPath(path: String, content: String, product: CompilerProduct)
+
+  private def loadInternal[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2: TagKK: DefaultModule2](
+    inputs: Seq[BaboonParser.Input]
+  )(implicit
+    quasiIO: QuasiIO[F[Throwable, _]],
+    runner: QuasiIORunner[F[Throwable, _]],
+  ): Future[BaboonFamily] = {
+    val logger = new BLoggerJS(false)
+    val compilerOptions = createCompilerOptions(inputs, Seq.empty, debug = false)
+    val m = new BaboonModuleJS[F](inputs.toList, logger, ParallelErrorAccumulatingOps2[F], compilerOptions)
+
+    runner.runFuture(
+      Injector
+        .NoCycles[F[Throwable, _]]()
+        .produceRun(m) {
+          (loader: BaboonLoaderJS[F]) =>
+            (for {
+              family <- loader.load(inputs.toList)
+            } yield family).leftMap(issues => new RuntimeException(s"Loading failure: $issues"))
+        }
+    )
+  }
 
   private def compileInternal[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2: TagKK: DefaultModule2](
     inputs: Seq[BaboonParser.Input],
@@ -477,7 +541,58 @@ object BaboonJS {
 
       type F[+E, +A] = Either[E, A]
 
-      val resultFuture = encodeInternal[F](inputs, pkg, version, idString, json, indexed)
+      val resultFuture = encodeInternal[F](Left(inputs), pkg, version, idString, json, indexed)
+
+      resultFuture.map {
+        data =>
+          val jsArray    = js.Array[Short](data.map(b => (b & 0xFF).toShort)*)
+          val uint8Array = new js.typedarray.Uint8Array(jsArray.length)
+          jsArray.indices.foreach(i => uint8Array(i) = jsArray(i))
+          JSEncodeResult.success(uint8Array)
+      }.recover {
+        case e: Throwable =>
+          JSEncodeResult.failure(s"Encoding failed: ${e.getMessage}")
+      }.toJSPromise
+    } catch {
+      case e: Throwable =>
+        Future
+          .successful(
+            JSEncodeResult.failure(s"Encoding failed: ${e.getMessage}")
+          ).toJSPromise
+    }
+  }
+
+  /**
+    * Encode JSON to binary format using runtime codec with loaded model (async)
+    *
+    * @param model Loaded Baboon model
+    * @param pkg Package name (e.g., "io.example.models")
+    * @param version Version string (e.g., "1.0.0")
+    * @param idString Type identifier
+    * @param json JSON string to encode
+    * @param indexed Whether to use indexed encoding
+    * @return JS Promise that resolves to encode result with binary data or error
+    */
+  @JSExport
+  def encodeLoaded(
+    model: BaboonLoadedModel,
+    pkg: String,
+    version: String,
+    idString: String,
+    json: String,
+    indexed: Boolean,
+  ): js.Promise[JSEncodeResult] = {
+    implicit val ec: ExecutionContext = scala.scalajs.concurrent.JSExecutionContext.queue
+
+    try {
+      val family = model.asInstanceOf[BaboonLoadedModelImpl].family
+
+      import izumi.distage.modules.support.unsafe.EitherSupport.*
+      import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+      type F[+E, +A] = Either[E, A]
+
+      val resultFuture = encodeInternal[F](Right(family), pkg, version, idString, json, indexed)
 
       resultFuture.map {
         data =>
@@ -533,7 +648,54 @@ object BaboonJS {
       type F[+E, +A] = Either[E, A]
 
       val dataVector   = Vector.from((0 until data.length).map(i => data(i).toByte))
-      val resultFuture = decodeInternal[F](inputs, pkg, version, idString, dataVector)
+      val resultFuture = decodeInternal[F](Left(inputs), pkg, version, idString, dataVector)
+
+      resultFuture.map {
+        json =>
+          JSDecodeResult.success(json.noSpaces)
+      }.recover {
+        case e: Throwable =>
+          JSDecodeResult.failure(s"Decoding failed: ${e.getMessage}")
+      }.toJSPromise
+    } catch {
+      case e: Throwable =>
+        Future
+          .successful(
+            JSDecodeResult.failure(s"Decoding failed: ${e.getMessage}")
+          ).toJSPromise
+    }
+  }
+
+  /**
+    * Decode binary data to JSON using runtime codec with loaded model (async)
+    *
+    * @param model Loaded Baboon model
+    * @param pkg Package name (e.g., "io.example.models")
+    * @param version Version string (e.g., "1.0.0")
+    * @param idString Type identifier
+    * @param data Binary data to decode
+    * @return JS Promise that resolves to decode result with JSON string or error
+    */
+  @JSExport
+  def decodeLoaded(
+    model: BaboonLoadedModel,
+    pkg: String,
+    version: String,
+    idString: String,
+    data: js.typedarray.Uint8Array,
+  ): js.Promise[JSDecodeResult] = {
+    implicit val ec: ExecutionContext = scala.scalajs.concurrent.JSExecutionContext.queue
+
+    try {
+      val family = model.asInstanceOf[BaboonLoadedModelImpl].family
+
+      import izumi.distage.modules.support.unsafe.EitherSupport.*
+      import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+      type F[+E, +A] = Either[E, A]
+
+      val dataVector   = Vector.from((0 until data.length).map(i => data(i).toByte))
+      val resultFuture = decodeInternal[F](Right(family), pkg, version, idString, dataVector)
 
       resultFuture.map {
         json =>
@@ -552,7 +714,7 @@ object BaboonJS {
   }
 
   private def encodeInternal[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2: TagKK: DefaultModule2](
-    inputs: Seq[BaboonParser.Input],
+    input: Either[Seq[BaboonParser.Input], BaboonFamily],
     pkgString: String,
     versionString: String,
     idString: String,
@@ -562,28 +724,44 @@ object BaboonJS {
     quasiIO: QuasiIO[F[Throwable, _]],
     runner: QuasiIORunner[F[Throwable, _]],
   ): Future[Vector[Byte]] = {
-    val logger = new BLoggerJS(false)
-    val compilerOptions = createCompilerOptions(inputs, Seq.empty, debug = false)
-    val m               = new BaboonModuleJS[F](inputs.toList, logger, ParallelErrorAccumulatingOps2[F], compilerOptions)
+    val pkg     = parsePkg(pkgString)
+    val version = Version.parse(versionString)
 
-    runner.runFuture(
-      Injector
-        .NoCycles[F[Throwable, _]]()
-        .produceRun(m) {
-          (loader: BaboonLoaderJS[F], codec: BaboonRuntimeCodec[F]) =>
-            (for {
-              family <- loader.load(inputs.toList)
-              pkg     = parsePkg(pkgString)
-              version = Version.parse(versionString)
-              json   <- Error2[F].fromEither(parseJson(jsonString).left.map(e => new RuntimeException(s"Invalid JSON: ${e.getMessage}")))
-              result <- codec.encode(family, pkg, version, idString, json, indexed)
-            } yield result).leftMap(issues => new RuntimeException(s"Encoding failure: $issues"))
-        }
-    )
+    input match {
+      case Left(inputs) =>
+        val logger          = new BLoggerJS(false)
+        val compilerOptions = createCompilerOptions(inputs, Seq.empty, debug = false)
+        val m               = new BaboonModuleJS[F](inputs.toList, logger, ParallelErrorAccumulatingOps2[F], compilerOptions)
+        runner.runFuture(
+          Injector
+            .NoCycles[F[Throwable, _]]()
+            .produceRun(m) {
+              (loader: BaboonLoaderJS[F], codec: BaboonRuntimeCodec[F]) =>
+                (for {
+                  family <- loader.load(inputs.toList)
+                  json   <- Error2[F].fromEither(parseJson(jsonString).left.map(e => new RuntimeException(s"Invalid JSON: ${e.getMessage}")))
+                  result <- codec.encode(family, pkg, version, idString, json, indexed)
+                } yield result).leftMap(issues => new RuntimeException(s"Encoding failure: $issues"))
+            }
+        )
+      case Right(family) =>
+        val m = new BaboonCodecModuleJS[F](ParallelErrorAccumulatingOps2[F])
+        runner.runFuture(
+          Injector
+            .NoCycles[F[Throwable, _]]()
+            .produceRun(m) {
+              (codec: BaboonRuntimeCodec[F]) =>
+                (for {
+                  json   <- Error2[F].fromEither(parseJson(jsonString).left.map(e => new RuntimeException(s"Invalid JSON: ${e.getMessage}")))
+                  result <- codec.encode(family, pkg, version, idString, json, indexed)
+                } yield result).leftMap(issues => new RuntimeException(s"Encoding failure: $issues"))
+            }
+        )
+    }
   }
 
   private def decodeInternal[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2: TagKK: DefaultModule2](
-    inputs: Seq[BaboonParser.Input],
+    input: Either[Seq[BaboonParser.Input], BaboonFamily],
     pkgString: String,
     versionString: String,
     idString: String,
@@ -592,23 +770,38 @@ object BaboonJS {
     quasiIO: QuasiIO[F[Throwable, _]],
     runner: QuasiIORunner[F[Throwable, _]],
   ): Future[Json] = {
-    val logger = new BLoggerJS(false)
-    val compilerOptions = createCompilerOptions(inputs, Seq.empty, debug = false)
-    val m               = new BaboonModuleJS[F](inputs.toList, logger, ParallelErrorAccumulatingOps2[F], compilerOptions)
+    val pkg     = parsePkg(pkgString)
+    val version = Version.parse(versionString)
 
-    runner.runFuture(
-      Injector
-        .NoCycles[F[Throwable, _]]()
-        .produceRun(m) {
-          (loader: BaboonLoaderJS[F], codec: BaboonRuntimeCodec[F]) =>
-            (for {
-              family <- loader.load(inputs.toList)
-              pkg     = parsePkg(pkgString)
-              version = Version.parse(versionString)
-              result <- codec.decode(family, pkg, version, idString, data)
-            } yield result).leftMap(issues => new RuntimeException(s"Decoding failure: $issues"))
-        }
-    )
+    input match {
+      case Left(inputs) =>
+        val logger          = new BLoggerJS(false)
+        val compilerOptions = createCompilerOptions(inputs, Seq.empty, debug = false)
+        val m               = new BaboonModuleJS[F](inputs.toList, logger, ParallelErrorAccumulatingOps2[F], compilerOptions)
+        runner.runFuture(
+          Injector
+            .NoCycles[F[Throwable, _]]()
+            .produceRun(m) {
+              (loader: BaboonLoaderJS[F], codec: BaboonRuntimeCodec[F]) =>
+                (for {
+                  family <- loader.load(inputs.toList)
+                  result <- codec.decode(family, pkg, version, idString, data)
+                } yield result).leftMap(issues => new RuntimeException(s"Decoding failure: $issues"))
+            }
+        )
+      case Right(family) =>
+        val m = new BaboonCodecModuleJS[F](ParallelErrorAccumulatingOps2[F])
+        runner.runFuture(
+          Injector
+            .NoCycles[F[Throwable, _]]()
+            .produceRun(m) {
+              (codec: BaboonRuntimeCodec[F]) =>
+                (for {
+                  result <- codec.decode(family, pkg, version, idString, data)
+                } yield result).leftMap(issues => new RuntimeException(s"Decoding failure: $issues"))
+            }
+        )
+    }
   }
 
   private def parsePkg(pkgString: String): Pkg = {

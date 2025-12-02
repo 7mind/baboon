@@ -90,8 +90,38 @@ The entrypoint installs a small SHA-256 shim using Node's built-in `crypto` modu
 ## API surface
 
 - `BaboonCompiler.compile(options)` → `Promise<{ success, files?, errors? }>`
+- `BaboonCompiler.load(files)` → `Promise<BaboonLoadedModel>`
 - `BaboonCompiler.encode(files, pkg, version, idString, json, indexed)` → `Promise<{ success, data?, error? }>`
+- `BaboonCompiler.encodeLoaded(model, pkg, version, idString, json, indexed)` → `Promise<{ success, data?, error? }>`
 - `BaboonCompiler.decode(files, pkg, version, idString, data)` → `Promise<{ success, json?, error? }>`
+- `BaboonCompiler.decodeLoaded(model, pkg, version, idString, data)` → `Promise<{ success, json?, error? }>`
+
+### Performance Optimization
+
+For repeated operations, load the model once and reuse it. This skips parsing and validation steps on each call:
+
+```javascript
+// 1. Load model once
+const model = await BaboonCompiler.load(files);
+
+// 2. Encode/Decode multiple times efficiently
+const encoded = await BaboonCompiler.encodeLoaded(
+  model,
+  "example.npm",
+  "1.0.0",
+  typeId,
+  jsonPayload,
+  false
+);
+
+const decoded = await BaboonCompiler.decodeLoaded(
+  model,
+  "example.npm",
+  "1.0.0",
+  typeId,
+  encoded.data
+);
+```
 
 ## License
 
