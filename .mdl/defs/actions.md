@@ -36,6 +36,7 @@ This file defines the build orchestration for the Baboon project using mudyla.
 - `GITHUB_RUN_ID`
 - `GITHUB_WORKFLOW_REF`
 - `GITHUB_WORKFLOW_SHA`
+- `GITHUB_EVENT_NAME`
 
 # action: clean
 
