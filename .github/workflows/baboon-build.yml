@@ -190,12 +190,12 @@ jobs:
         #run: nix develop --command mdl --github-actions :publish-npm
         run: |
           nix develop --command mdl --github-actions :publish-npm
-          cd target/npm-publish
-          env
-          npm publish
-      - name: Dump npm logs on failure
-        if: failure()
-        run: |
-          echo "=== npm debug logs ==="
-          ls -R ~/.npm/_logs || echo "no logs directory"
-          cat ~/.npm/_logs/*-debug-0.log || true
+#          cd target/npm-publish
+#          env
+#          npm publish
+#      - name: Dump npm logs on failure
+#        if: failure()
+#        run: |
+#          echo "=== npm debug logs ==="
+#          ls -R ~/.npm/_logs || echo "no logs directory"
+#          cat ~/.npm/_logs/*-debug-0.log || true

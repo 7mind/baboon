@@ -43,7 +43,9 @@ This file defines the build orchestration for the Baboon project using mudyla.
 - `GITHUB_SHA`
 - `GITHUB_WORKFLOW_REF`
 - `GITHUB_WORKFLOW_SHA`
-- 
+- `NODE_AUTH_TOKEN`
+- `NPM_CONFIG_USERCONFIG`
+
 # action: clean
 
 Clean all the junk
@@ -248,7 +250,7 @@ env
 npm install
 npm test
 #npm publish --provenance --access public
-#npm publish
+npm publish
 
 ret success:bool=true
 ret publish_dir:directory="$(realpath "$PUBLISH_DIR")"
