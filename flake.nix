@@ -34,7 +34,7 @@
 
         sbtSetup = squish-find-the-brains.lib.mkSbtSetup {
           inherit pkgs coursierCache;
-          jdk = pkgs.graalvm-ce;
+          jdk = pkgs.graalvmPackages.graalvm-ce;
         };
       in
       {
