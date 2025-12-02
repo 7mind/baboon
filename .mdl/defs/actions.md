@@ -242,6 +242,9 @@ cd "$PUBLISH_DIR"
 
 export NPM_CONFIG_LOGLEVEL="verbose"
 
+set -x
+env
+
 npm install
 npm test
 #npm publish --provenance --access public

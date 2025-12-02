@@ -168,7 +168,7 @@ jobs:
     name: publish-npm
     if: startsWith(github.ref, 'refs/tags/')
     runs-on:
-      - linux-aarch64
+      - ubuntu-24.04-arm
 #    needs:
 #      - build-unix
 #      - build-windows
@@ -190,6 +190,7 @@ jobs:
         #run: nix develop --command mdl --github-actions :publish-npm
         run: |
           cd target/npm-publish
+          env
           npm publish
       - name: Dump npm logs on failure
         if: failure()
