@@ -31,7 +31,7 @@ jobs:
             #preconfigured: true
             #nix-cache-disabled: true
           - target: macos-amd64-13
-            os: macos-13 # this is amd64
+            os: macos-15-intel
             runs-on: [ ]
           - target: macos-aarch64-14
             runs-on: [ ]
