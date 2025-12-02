@@ -47,6 +47,9 @@ This file defines the build orchestration for the Baboon project using mudyla.
 - `NPM_CONFIG_USERCONFIG`
 - `GITHUB_ACTIONS`
 - `CI`
+- `ACTIONS_RUNTIME_TOKEN`
+- `ACTIONS_RUNTIME_URL`
+- `NPM_CONFIG_PROVENANCE`
 
 # action: clean
 
@@ -247,6 +250,7 @@ cd "$PUBLISH_DIR"
 export NPM_CONFIG_LOGLEVEL="verbose"
 
 set -x
+echo "env within mdl"
 env
 
 npm install

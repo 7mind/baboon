@@ -189,9 +189,10 @@ jobs:
       - name: Publish npm package
         #run: nix develop --command mdl --github-actions :publish-npm
         run: |
+          echo "env outside of mdl"
+          env
           nix develop --command mdl --github-actions :publish-npm
 #          cd target/npm-publish
-#          env
 #          npm publish
 #      - name: Dump npm logs on failure
 #        if: failure()
