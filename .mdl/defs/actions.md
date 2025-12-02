@@ -22,26 +22,28 @@ This file defines the build orchestration for the Baboon project using mudyla.
 - `CI_PULL_REQUEST`
 - `CI_BRANCH_TAG`
 - `SONATYPE_SECRET`
-- `NODE_AUTH_TOKEN`
 - `ACTIONS_ID_TOKEN_REQUEST_URL`
 - `ACTIONS_ID_TOKEN_REQUEST_TOKEN`
 - `GITHUB_SERVER_URL`
-- `GITHUB_REPOSITORY`
-- `GITHUB_RUN_ID`
-- `GITHUB_RUN_ATTEMPT`
-- `GITHUB_SHA`
-- `GITHUB_REF`
 - `GITHUB_ACTOR`
 - `GITHUB_WORKFLOW`
-- `GITHUB_WORKFLOW_REF`
-- `GITHUB_EVENT_NAME`
 - `GITHUB_HEAD_REF`
 - `GITHUB_BASE_REF`
 - `GITHUB_REF_NAME`
 - `GITHUB_REF_TYPE`
 - `RUNNER_OS`
 - `RUNNER_ARCH`
-
+- `GITHUB_REF`
+- `GITHUB_REPOSITORY`
+- `GITHUB_REPOSITORY_ID`
+- `GITHUB_EVENT_NAME`
+- `GITHUB_REPOSITORY_OWNER_ID`
+- `GITHUB_RUN_ATTEMPT`
+- `GITHUB_RUN_ID`
+- `GITHUB_SHA`
+- `GITHUB_WORKFLOW_REF`
+- `GITHUB_WORKFLOW_SHA`
+- 
 # action: clean
 
 Clean all the junk
@@ -238,9 +240,12 @@ sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" "$PUBLISH_DIR/package.json"
 
 cd "$PUBLISH_DIR"
 
+export NPM_CONFIG_LOGLEVEL="verbose"
+
 npm install
 npm test
-npm publish --provenance --access public
+#npm publish --provenance --access public
+npm publish
 
 ret success:bool=true
 ret publish_dir:directory="$(realpath "$PUBLISH_DIR")"

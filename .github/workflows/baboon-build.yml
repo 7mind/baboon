@@ -184,6 +184,11 @@ jobs:
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
-          always-auth: true
       - name: Publish npm package
         run: nix develop --command mdl --github-actions :publish-npm
+      - name: Dump npm logs on failure
+        if: failure()
+        run: |
+          echo "=== npm debug logs ==="
+          ls -R ~/.npm/_logs || echo "no logs directory"
+          cat ~/.npm/_logs/*-debug-0.log || true
