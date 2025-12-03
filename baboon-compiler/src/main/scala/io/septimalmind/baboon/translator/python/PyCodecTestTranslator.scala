@@ -112,7 +112,7 @@ object PyCodecTestTranslator {
              |
              |""".stripMargin
         case unknown =>
-          logger.message(s"Cannot create codec tests () for unsupported type $srcRef")
+          logger.message(s"Cannot create codec tests (${unknown.id}) for unsupported type $srcRef")
           q""
       }.toList.map(_.stripMargin.trim).joinNN().shift(4).trim
     }
