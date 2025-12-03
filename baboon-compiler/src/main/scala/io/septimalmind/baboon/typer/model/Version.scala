@@ -16,6 +16,10 @@ case class Version(v: izumi.fundamentals.platform.versions.Version) {
   def <=(o: Version)(implicit ord: Ordering[izumi.fundamentals.platform.versions.Version]): Boolean = !(this > o)
 
   def >=(o: Version)(implicit ord: Ordering[izumi.fundamentals.platform.versions.Version]): Boolean = !(this < o)
+
+  def format(prefix: String = "", delimiter: String): String = {
+    s"$prefix${toString.replace(".", delimiter)}"
+  }
 }
 
 object Version {

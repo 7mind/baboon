@@ -29,6 +29,8 @@ trait BaboonEnquiries {
   def isEnum(tpe: TypeRef, domain: Domain): Boolean
 
   def unfold(dom: Domain, contracts: List[TypeId.User]): List[Field]
+
+  def collectParents(domain: Domain, definitions: List[DomainMember.User]): List[TypeId.User]
 }
 
 object BaboonEnquiries {
@@ -416,6 +418,40 @@ object BaboonEnquiries {
       }
     }
 
+    override def collectParents(domain: Domain, definitions: List[DomainMember.User]): List[TypeId.User] = {
+      def collectUserDefinitions(ids: List[TypeId.User]): List[DomainMember.User] = {
+        ids.flatMap(domain.defs.meta.nodes.get).collect { case u: DomainMember.User => u }
+      }
+
+      @tailrec
+      def loop(acc: List[TypeId.User], toProcess: List[DomainMember.User]): List[TypeId.User] = {
+        toProcess match {
+          case Nil => acc
+          case head :: tail =>
+            head.defn match {
+              case d: Typedef.Dto =>
+                val adtParent = d.id.owner match {
+                  case Owner.Adt(id) => collectUserDefinitions(List(id))
+                  case _             => List.empty
+                }
+                val contractsDefs = collectUserDefinitions(d.contracts)
+                val all           = adtParent.map(_.id) ++ contractsDefs.map(_.id)
+                loop(acc ++ all, tail ++ adtParent ++ contractsDefs)
+
+              case adt: Typedef.Adt =>
+                val contractsDefs = collectUserDefinitions(adt.contracts)
+                loop(acc ++ contractsDefs.map(_.id), tail ++ contractsDefs)
+
+              case c: Typedef.Contract =>
+                val contractsDefs = collectUserDefinitions(c.contracts)
+                loop(acc ++ contractsDefs.map(_.id), tail ++ contractsDefs)
+
+              case _ => loop(acc, tail)
+            }
+        }
+      }
+      loop(Nil, definitions)
+    }
   }
 
 }
