@@ -29,8 +29,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
     for {
       translated <- translateFamily(family)
       runtime    <- sharedRuntime()
-      fixture    <- sharedFixture()
-      rendered = (translated ++ runtime ++ fixture).map {
+      rendered = (translated ++ runtime).map {
         o =>
           val content = renderTree(o)
           (o.path, OutputFile(content, o.product))
@@ -128,9 +127,6 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
     } else F.pure(Nil)
   }
 
-  private def sharedFixture(): Out[List[PyDefnTranslator.Output]] = {
-    F.pure(Nil)
-  }
 
   private def renderTree(o: PyDefnTranslator.Output): String = {
     val usedTypes = o.tree.values.collect { case t: PyValue.PyType => t }
@@ -147,10 +143,10 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           q"from ${path.mkString(".")} import ${module.moduleVersionString.getOrElse("")}"
       }.toList
 
-    val usualImportsByModule = usual
-      .groupBy(_.moduleId).toList.sortBy { case (moduleId, types) => moduleId.path.size + types.size }.reverse.map {
+      val usualImportsByModule = usual.groupBy(_.moduleId).toList
+        .sortBy { case (moduleId, types) => moduleId.path.size + types.size }.reverse.map {
         case (module, types) =>
-          if (module.isBaboonModule) {
+          if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule) {
             val baseString  = pyFileTools.definitionsBasePkg.mkString(".")
             val typesString = types.map(_.name).mkString(", ")
             q"from $baseString.${module.module} import $typesString"
