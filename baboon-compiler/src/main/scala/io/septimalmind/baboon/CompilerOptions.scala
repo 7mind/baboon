@@ -29,6 +29,11 @@ object CompilerTarget {
 final case class ScOptions(
   writeEvolutionDict: Boolean,
   wrappedAdtBranchCodecs: Boolean,
+  enableDeprecatedEncoders: Boolean,
+  generateJsonCodecs: Boolean,
+  generateUebaCodecs: Boolean,
+  generateUebaCodecsByDefault: Boolean,
+  generateJsonCodecsByDefault: Boolean,
 )
 
 final case class CSOptions(

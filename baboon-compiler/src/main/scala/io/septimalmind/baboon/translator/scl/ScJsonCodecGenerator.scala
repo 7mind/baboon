@@ -1,7 +1,9 @@
 package io.septimalmind.baboon.translator.scl
 
 import io.septimalmind.baboon.CompilerTarget.ScTarget
+import io.septimalmind.baboon.parser.model.DerivationDecl
 import io.septimalmind.baboon.translator.scl.ScCodecTranslator.CodecMeta
+import io.septimalmind.baboon.translator.scl.ScDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.scl.ScTypes.*
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
@@ -12,127 +14,99 @@ class ScJsonCodecGenerator(
   target: ScTarget,
   domain: Domain,
   evo: BaboonEvolution,
-  csTypeInfo: ScTypeInfo,
+  scTypeInfo: ScTypeInfo,
+  scDomainTreeTools: ScDomainTreeTools,
 ) extends ScCodecTranslator {
 
   override def translate(defn: DomainMember.User, csRef: ScValue.ScType, srcRef: ScValue.ScType): Option[TextTree[ScValue]] = {
-    val isLatestVersion = domain.version == evo.latest
+    if (isActive(defn.id)) {
+      (defn.defn match {
+        case d: Typedef.Dto      => Some(genDtoBodies(csRef, d))
+        case _: Typedef.Enum     => Some(genEnumBodies(csRef))
+        case a: Typedef.Adt      => Some(genAdtBodies(csRef, a))
+        case _: Typedef.Foreign  => Some(genForeignBodies(csRef))
+        case _: Typedef.Contract => None
+        case _: Typedef.Service  => None
+      }).map {
+        case (enc, dec) =>
+          val insulatedEnc =
+            q"""if (this ne LazyInstance.value) {
+               |  return LazyInstance.value.encode(ctx, value)
+               |}
+               |
+               |$enc
+               |""".stripMargin.trim
 
-    (defn.defn match {
-      case d: Typedef.Dto =>
-        Some(genDtoBodies(csRef, d))
-      case _: Typedef.Enum =>
-        Some(genEnumBodies(csRef))
-      case a: Typedef.Adt =>
-        Some(genAdtBodies(csRef, a))
-      case _: Typedef.Foreign =>
-        Some(genForeignBodies(csRef))
-      case _: Typedef.Contract =>
-        None
-      case _: Typedef.Service =>
-        None
-    }).map {
-      case (enc, dec) =>
-        if (!isLatestVersion) {
-          (q"""throw new Exception("Type ${defn.id.toString}@${domain.version.toString} is deprecated, encoder was not generated");""", dec)
-        } else {
-          (enc, dec)
-        }
-    }.map {
-      case (enc, dec) =>
-        val insulatedEnc =
-          q"""if (this ne LazyInstance.value)
-             |{
-             |  return LazyInstance.value.encode(ctx, value);
-             |}
-             |
-             |$enc
-             |""".stripMargin.trim
+          val insulatedDec =
+            q"""if (this ne LazyInstance.value) {
+               |  return LazyInstance.value.decode(ctx, wire)
+               |}
+               |
+               |$dec
+               |""".stripMargin.trim
 
-        val insulatedDec =
-          q"""if (this ne LazyInstance.value)
-             |{
-             |  return LazyInstance.value.decode(ctx, wire);
-             |}
-             |
-             |$dec
-             |""".stripMargin.trim
-
-        genCodec(
-          defn,
-          csRef,
-          srcRef,
-          insulatedEnc,
-          insulatedDec,
-          !defn.defn.isInstanceOf[Typedef.Foreign],
-        )
-    }
+          genCodec(
+            defn,
+            csRef,
+            srcRef,
+            insulatedEnc,
+            insulatedDec,
+          )
+      }
+    } else None
   }
 
-  private def genCodec(defn: DomainMember.User, name: ScValue.ScType, srcRef: ScValue.ScType, enc: TextTree[ScValue], dec: TextTree[ScValue], addExtensions: Boolean)
-    : TextTree[ScValue] = {
-    val iName = q"$baboonJsonCodec[$name]"
-    val baseMethods = List(
-      q"""def encode(ctx: $baboonCodecContext, value: $name): io.circe.Json = {
-         |  ${enc.shift(2).trim}
-         |}
-         |
-         |def decode(ctx: $baboonCodecContext, wire: io.circe.Json): Either[String, $name] = {
-         |  ${dec.shift(2).trim}
-         |}""".stripMargin.trim
-    )
+  private def genCodec(
+    defn: DomainMember.User,
+    name: ScValue.ScType,
+    srcRef: ScValue.ScType,
+    enc: TextTree[ScValue],
+    dec: TextTree[ScValue],
+  ): TextTree[ScValue] = {
+    val isEncoderEnabled = target.language.enableDeprecatedEncoders || domain.version == evo.latest
+    val iName            = q"$baboonJsonCodec[$name]"
+    val encodeMethod =
+      if (isEncoderEnabled) {
+        List(
+          q"""def encode(ctx: $baboonCodecContext, value: $name): io.circe.Json = {
+             |  ${enc.shift(2).trim}
+             |}
+             |""".stripMargin.trim
+        )
+      } else Nil
+    val decodeMethod =
+      List(
+        q"""def decode(ctx: $baboonCodecContext, wire: io.circe.Json): Either[String, $name] = {
+           |  ${dec.shift(2).trim}
+           |}""".stripMargin.trim
+      )
 
-    val (parents, methods) = defn.defn match {
-      case _: Typedef.Enum =>
-        (List(q"$baboonJsonCodec[$name]"), baseMethods)
-      case _ =>
-//        val extensions = List(
-//          q"""def encode(ctx: $baboonCodecContext, value: $iBaboonGenerated): io.circe.Json = {
-//             |  if (value.isInstanceOf[$name]) {
-//             |    encode(ctx, value.asInstanceOf[$name])
-//             |  } else {
-//             |    throw new Exception(s"Expected to have ${name.name} type")
-//             |  }
-//             |}
-//             |
-//             |def decode(ctx: $baboonCodecContext, wire: io.circe.Json): Either[String, $iBaboonGenerated] = {
-//             |  decode(ctx, wire).map(Right(_)).left.map(Left.apply)
-//             |}""".stripMargin
-//        )
-
-        val adtParents = defn.id.owner match {
-          case Owner.Adt(_) => List(q"$iBaboonAdtMemberMeta")
-          case _            => List.empty
-
-        }
-        val extParents = adtParents
-
-        val mm = if (addExtensions) {
-          baseMethods // ++ extensions
-        } else {
-          baseMethods
-        }
-
-        val baseParents = List(iName)
-        val pp = if (addExtensions) {
-          baseParents ++ extParents
-        } else {
-          baseParents
-        }
-
-        (pp, mm)
+    val baseMethods = encodeMethod ++ decodeMethod
+    val cName       = codecName(srcRef)
+    val cParent = if (isEncoderEnabled) {
+      defn match {
+        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecBase[$name, $iName]"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecBase[$name, $iName]"
+        case _ if defn.isAdt                                => q"$baboonJsonCodecBaseGeneratedAdt[$name, $iName]"
+        case _                                              => q"$baboonJsonCodecBaseGenerated[$name, $iName]"
+      }
+    } else {
+      defn match {
+        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecNoEncoder[$name, $iName]"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecNoEncoder[$name, $iName]"
+        case _ if defn.isAdt                                => q"$baboonJsonCodecNoEncoderGeneratedAdt[$name, $iName]"
+        case _                                              => q"$baboonJsonCodecNoEncoderGenerated[$name, $iName]"
+      }
     }
 
-    val cName = codecName(srcRef)
-    val meta  = q"" // csDomTrees.makeMeta(defn, isCodec = true).join("\n")
-    q"""object ${cName.asName} extends ${parents.join(" with ")} {
-       |  ${methods.join("\n\n").shift(2).trim}
+    val meta = renderMeta(defn, scDomainTreeTools.makeCodecMeta(defn))
+    q"""object ${cName.asName} extends $cParent {
+       |  ${baseMethods.joinNN().shift(2).trim}
        |
-       |  ${meta.shift(2).trim}
+       |  ${meta.joinN().shift(2).trim}
        |
-       |  private val LazyInstance: $baboonLazy[$iName] = $baboonLazy($cName)
-       |
-       |  def instance: $iName = LazyInstance.value
+       |  override protected def LazyInstance: $baboonLazy[$iName] = $baboonLazy($cName)
+       |  override def instance: $iName = LazyInstance.value
        |}
        |""".stripMargin
   }
@@ -154,10 +128,9 @@ class ScJsonCodecGenerator(
   }
 
   private def genAdtBodies(name: ScValue.ScType, a: Typedef.Adt): (TextTree[ScValue], TextTree[Nothing]) = {
-
     val branches = a.dataMembers(domain).map {
       m =>
-        val branchNs            = q"${csTypeInfo.adtNsName(a.id)}"
+        val branchNs            = q"${scTypeInfo.adtNsName(a.id)}"
         val branchName          = m.name.name
         val fqBranch            = q"$branchNs.$branchName"
         val branchNameRef       = q"${branchName.toLowerCase}"
@@ -169,28 +142,24 @@ class ScJsonCodecGenerator(
           wrapAdtBranchEncoder(branchName, routedBranchEncoder)
         }
 
-        val branchValue = if (target.language.wrappedAdtBranchCodecs) {
-          q"wire"
-        } else {
-          q"head._2"
-        }
+        val branchValue = if (target.language.wrappedAdtBranchCodecs) q"wire" else q"head._2"
 
         (
-          q"""case $branchNameRef: $fqBranch => {
+          q"""case $branchNameRef: $fqBranch => 
              |  $branchEncoder
-             |}""".stripMargin,
-          q"""if (head._1 == "$branchName") {
-             |  return ${fqBranch}_JsonCodec.instance.decode(ctx, $branchValue)
-             |}""".stripMargin,
+             |""".stripMargin,
+          q"""case "$branchName" =>
+             |  ${fqBranch}_JsonCodec.instance.decode(ctx, $branchValue)
+             |""".stripMargin,
         )
 
     }
 
     (
       q"""value match {
-         |  ${branches.map(_._1).join("\n").shift(2).trim}
-         |  case _ => 
-         |    throw new IllegalArgumentException(s"Cannot encode $$value: unexpected subclass")
+         |  ${branches.map(_._1).joinN().shift(2).trim}
+         |  
+         |  case _ => throw new IllegalArgumentException(s"Cannot encode $$value: unexpected subclass")
          |}
          |
          |
@@ -201,9 +170,11 @@ class ScJsonCodecGenerator(
          |}
          |val head = asObject.get.toList.head
          |
-         |${branches.map(_._2).join("\n")}
+         |head._1 match {
+         |  ${branches.map(_._2).joinN().shift(2).trim}
          |
-         |throw new IllegalArgumentException(s"Cannot decode $$wire to ${name.name}: no matching value")
+         |  case _ =>  throw new IllegalArgumentException(s"Cannot decode $$wire to ${name.name}: no matching value")
+         |}
          |""".stripMargin,
     )
   }
@@ -232,7 +203,7 @@ class ScJsonCodecGenerator(
         val enc      = mkEncoder(f.tpe, fieldRef)
         val dec      = mkDecoder(f.tpe, q"""asObject("${f.name.name}")""")
         (
-          q"""("${f.name.name}" -> $enc)""",
+          q""""${f.name.name}" -> $enc""",
           q"${f.name.name} = $dec",
         )
     }
@@ -241,13 +212,10 @@ class ScJsonCodecGenerator(
                      |  ${fields.map(_._1).join(",\n").shift(2).trim}
                      |)""".stripMargin
 
-    val fullEnc = d.id.owner match {
-      case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs =>
-        wrapAdtBranchEncoder(d.id.name.name, mainEnc)
-      case _ => mainEnc
+    val encBody = d.id.owner match {
+      case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs => wrapAdtBranchEncoder(d.id.name.name, mainEnc)
+      case _                                                      => mainEnc
     }
-
-    val encBody = q"""return $fullEnc"""
 
     val fullDec = d.id.owner match {
       case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs => q"wire.asObject.get.toList.head._2.asObject.get"
@@ -256,10 +224,6 @@ class ScJsonCodecGenerator(
 
     val decBody =
       q"""val asObject = $fullDec
-         |
-         |/*if (asObject.isEmpty) {
-         |  throw new IllegalArgumentException(s"Cannot decode $$wire to ${name.name}: object expected")
-         |}*/
          |
          |Right($name(
          |  ${fields.map(_._2).join(",\n").shift(2).trim}
@@ -446,17 +410,27 @@ class ScJsonCodecGenerator(
 
   }
 
+  private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[ScValue]] = {
+    defn.defn match {
+      case _: Typedef.Enum | _: Typedef.Foreign => meta.map(_.valueField)
+      case _                                    => meta.map(_.refValueField)
+    }
+  }
+
   def codecName(name: ScValue.ScType): ScValue.ScType = {
     ScValue.ScType(name.pkg, s"${name.name}_JsonCodec", name.fq)
   }
 
-  override def codecMeta(defn: DomainMember.User, name: ScValue.ScType): CodecMeta = {
-//    val fix = csDomTrees.metaMethodFlags(defn, isCodec = false)
-    val fix = q""
-    val member =
-      q"""def $fix$baboonJsonCodec[$name] codec_JSON(): $name = {
-         |  ${codecName(name)}.instance
-         |}""".stripMargin
-    CodecMeta(member)
+  override def codecMeta(defn: DomainMember.User, name: ScValue.ScType): Option[CodecMeta] = {
+    if (isActive(defn.id)) {
+      Some(CodecMeta(q"def codecJson: $baboonJsonCodec[$name] = ${codecName(name)}.instance"))
+    } else None
   }
+
+  override def isActive(id: TypeId): Boolean = {
+    target.language.generateJsonCodecs && (target.language.generateJsonCodecsByDefault || domain.derivationRequests
+      .getOrElse(DerivationDecl("json"), Set.empty[TypeId]).contains(id))
+  }
+
+  override def id: String = "Json"
 }
