@@ -1,10 +1,11 @@
 package io.septimalmind.baboon.translator.scl
 
 import io.septimalmind.baboon.CompilerTarget.ScTarget
-import io.septimalmind.baboon.translator.scl
+import io.septimalmind.baboon.parser.model.DerivationDecl
 import io.septimalmind.baboon.translator.scl.ScCodecTranslator.CodecMeta
+import io.septimalmind.baboon.translator.scl.ScDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.scl.ScTypes.*
-import io.septimalmind.baboon.typer.model.{BaboonEvolution, BinReprLen, Domain, DomainMember, Owner, TypeId, TypeRef, Typedef}
+import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -14,6 +15,7 @@ class ScUEBACodecGenerator(
   domain: Domain,
   evo: BaboonEvolution,
   csTypeInfo: ScTypeInfo,
+  scDomainTreeTools: ScDomainTreeTools,
 ) extends ScCodecTranslator {
 
   override def translate(
@@ -21,59 +23,49 @@ class ScUEBACodecGenerator(
     csRef: ScValue.ScType,
     srcRef: ScValue.ScType,
   ): Option[TextTree[ScValue]] = {
-    val isLatestVersion = domain.version == evo.latest
+    if (isActive(defn.id)) {
+      (defn.defn match {
+        case d: Typedef.Dto      => Some(genDtoBodies(csRef, d))
+        case e: Typedef.Enum     => Some(genEnumBodies(csRef, e))
+        case a: Typedef.Adt      => Some(genAdtBodies(csRef, a))
+        case _: Typedef.Foreign  => Some(genForeignBodies(csRef))
+        case _: Typedef.Contract => None
+        case _: Typedef.Service  => None
+      }).map {
+        case (enc, dec) =>
+          // plumbing reference leaks
+          val insulatedEnc =
+            q"""if (this ne LazyInstance.value) {
+               |  LazyInstance.value.encode(ctx, writer, value)
+               |  return
+               |}
+               |
+               |$enc
+               |""".stripMargin.trim
 
-    (defn.defn match {
-      case d: Typedef.Dto      => Some(genDtoBodies(csRef, d))
-      case e: Typedef.Enum     => Some(genEnumBodies(csRef, e))
-      case a: Typedef.Adt      => Some(genAdtBodies(csRef, a))
-      case _: Typedef.Foreign  => Some(genForeignBodies(csRef))
-      case _: Typedef.Contract => None
-      case _: Typedef.Service  => None
-    }).map {
-      case (enc, dec) =>
-        if (!isLatestVersion) {
-          (q"""throw new RuntimeException("Type ${defn.id.toString}@${domain.version.toString} is deprecated, encoder was not generated")""", dec)
-        } else {
-          (enc, dec)
-        }
-    }.map {
-      case (enc, dec) =>
-        // plumbing reference leaks
-        val insulatedEnc =
-          q"""if (this ne LazyInstance.value)
-             |{
-             |  LazyInstance.value.encode(ctx, writer, value)
-             |  return
-             |}
-             |
-             |$enc
-             |""".stripMargin.trim
+          val insulatedDec =
+            q"""if (this ne LazyInstance.value) {
+               |  return LazyInstance.value.decode(ctx, wire)
+               |}
+               |
+               |$dec
+               |""".stripMargin.trim
 
-        val insulatedDec =
-          q"""if (this ne LazyInstance.value)
-             |{
-             |  return LazyInstance.value.decode(ctx, wire)
-             |}
-             |
-             |$dec
-             |""".stripMargin.trim
+          val branchDecoder = defn.defn match {
+            case d: Typedef.Dto => genBranchDecoder(csRef, d)
+            case _              => None
+          }
 
-        val branchDecoder = defn.defn match {
-          case d: Typedef.Dto => genBranchDecoder(csRef, d)
-          case _              => None
-        }
-
-        genCodec(
-          defn,
-          csRef,
-          srcRef,
-          insulatedEnc,
-          insulatedDec,
-          !defn.defn.isInstanceOf[Typedef.Foreign],
-          branchDecoder,
-        )
-    }
+          genCodec(
+            defn,
+            csRef,
+            srcRef,
+            insulatedEnc,
+            insulatedDec,
+            branchDecoder,
+          )
+      }
+    } else None
   }
 
   private def genCodec(
@@ -82,13 +74,13 @@ class ScUEBACodecGenerator(
     srcRef: ScValue.ScType,
     enc: TextTree[ScValue],
     dec: TextTree[ScValue],
-    addExtensions: Boolean,
     branchDecoder: Option[TextTree[ScValue]],
   ): TextTree[ScValue] = {
+    val isEncoderEnabled = target.language.enableDeprecatedEncoders || domain.version == evo.latest
     val indexBody = defn.defn match {
       case d: Typedef.Dto =>
         val varlens = d.fields.filter(f => domain.refMeta(f.tpe).len.isVariable)
-        val comment = varlens.map(f => q"// ${f.toString}").join("\n")
+        val comment = varlens.map(f => q"// ${f.toString}").joinN()
         q"""$comment
            |${varlens.size.toString}""".stripMargin
 
@@ -108,93 +100,68 @@ class ScUEBACodecGenerator(
          |}""".stripMargin
     )
 
-    val baseMethods = List(
-      q"""def encode(ctx: $baboonCodecContext, writer: $binaryOutput, value: $name): $scUnit = {
-         |  ${enc.shift(2).trim}
-         |}
-         |
-         |def decode(ctx: $baboonCodecContext, wire: $binaryInput): $name = {
+    val encoderMethods = if (isEncoderEnabled) {
+      List(
+        q"""def encode(ctx: $baboonCodecContext, writer: $binaryOutput, value: $name): $scUnit = {
+           |  ${enc.shift(2).trim}
+           |}
+           |""".stripMargin
+      )
+    } else Nil
+
+    val decoderMethods = List(
+      q"""def decode(ctx: $baboonCodecContext, wire: $binaryInput): $name = {
          |  ${dec.shift(2).trim}
          |}""".stripMargin
-    ) ++ branchDecoder.map {
-      body =>
-        q"""def decodeBranch(ctx: $baboonCodecContext, wire: $binaryInput): $name = {
-           |  ${body.shift(2).trim}
-           |}""".stripMargin
-    }.toList ++ indexMethods
+    )
+
+    val baseMethods = encoderMethods ++ decoderMethods
+      ++ branchDecoder.map {
+        body =>
+          q"""def decodeBranch(ctx: $baboonCodecContext, wire: $binaryInput): $name = {
+             |  ${body.shift(2).trim}
+             |}""".stripMargin
+      }.toList ++ indexMethods
 
     val codecIface = q"$baboonBinCodec[$name]"
-    val (parents, methods) = defn.defn match {
-      case _: Typedef.Enum =>
-        (List(q"$baboonBinCodec[$name]", q"$baboonBinCodecIndexed"), baseMethods)
-      case _ =>
-        val extensions = List(
-//          q"""def encode(ctx: $baboonCodecContext, writer: $binaryOutput, value: $iBaboonGenerated) = {
-//             |  if (!value.isInstanceOf[$name])
-//             |      throw new Exception("Expected to have ${name.name} type")
-//             |
-//             |  encode(ctx, writer, dvalue)
-//             |}""".stripMargin
-//          q"""$iBaboonGenerated $iBaboonStreamCodec<$iBaboonGenerated, $binaryOutput, $binaryInput>.decode($baboonCodecContext ctx, $binaryInput wire)
-//             |{
-//             |    return Decode(ctx, wire);
-//             |}""".stripMargin,
-        )
-
-        val adtParents = defn.id.owner match {
-          case Owner.Adt(_) => List(q"$iBaboonAdtMemberMeta")
-          case _            => List.empty
-        }
-        val extParents = /*List(q"$baboonBinCodec[$iBaboonGenerated]") ++*/ adtParents
-
-        val mm = if (addExtensions) {
-          baseMethods ++ extensions
-        } else {
-          baseMethods
-        }
-
-        val baseParents = List(codecIface, q"$baboonBinCodecIndexed")
-
-        val pp = if (addExtensions) {
-          baseParents ++ extParents
-        } else {
-          baseParents
-        }
-
-        (pp, mm)
+    val cName      = codecName(srcRef)
+    val cParent = if (isEncoderEnabled) {
+      defn match {
+        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonBinCodecBase[$name, $codecIface]"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonBinCodecBase[$name, $codecIface]"
+        case _ if defn.isAdt                                => q"$baboonBinCodecBaseGeneratedAdt[$name, $codecIface]"
+        case _                                              => q"$baboonBinCodecBaseGenerated[$name, $codecIface]"
+      }
+    } else {
+      defn match {
+        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonBinCodecNoEncoder[$name, $codecIface]"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonBinCodecNoEncoder[$name, $codecIface]"
+        case _ if defn.isAdt                                => q"$baboonBinCodecNoEncoderGeneratedAdt[$name, $codecIface]"
+        case _                                              => q"$baboonBinCodecNoEncoderGenerated[$name, $codecIface]"
+      }
     }
-
-    val cName = codecName(srcRef)
-
-    val meta = q""
-    /**
-      * csDomTrees
-      * .makeMeta(defn, isCodec = true)
-      * .join("\n")
-      * .shift(2)
-      * .trim
-      */
+    val parents = List(cParent, q"$baboonBinCodecIndexed")
+    val meta    = renderMeta(defn, scDomainTreeTools.makeCodecMeta(defn))
 
     q"""object ${cName.asName} extends ${parents.join(" with ")} {
-       |  ${methods.join("\n\n").shift(2).trim}
+       |  ${baseMethods.joinNN().shift(2).trim}
        |
-       |  ${meta.shift(2).trim}
+       |  ${meta.joinN().shift(2).trim}
        |
-       |  private val LazyInstance: $baboonLazy[$codecIface] = $baboonLazy($cName)
-       |
-       |  def instance: $codecIface = LazyInstance.value
+       |  override protected def LazyInstance: $baboonLazy[$codecIface] = $baboonLazy($cName)
+       |  override def instance: $codecIface = LazyInstance.value
        |}
      """.stripMargin
   }
 
-  private def genForeignBodies(name: ScValue.ScType) = {
+  private def genForeignBodies(name: ScValue.ScType): (TextTree[Nothing], TextTree[Nothing]) = {
     (
       q"""throw new IllegalArgumentException("${name.name} is a foreign type")""",
       q"""throw new IllegalArgumentException("${name.name} is a foreign type")""",
     )
   }
 
-  private def genAdtBodies(name: ScValue.ScType, a: Typedef.Adt) = {
+  private def genAdtBodies(name: ScValue.ScType, a: Typedef.Adt): (TextTree[ScValue.ScType], TextTree[ScValue.ScType]) = {
     val branches = a.dataMembers(domain).zipWithIndex.toList.map {
       case (m, idx) =>
         val branchNs   = q"${csTypeInfo.adtNsName(a.id)}"
@@ -209,7 +176,7 @@ class ScUEBACodecGenerator(
         val encBody = if (target.language.wrappedAdtBranchCodecs) {
           q"""$cName.instance.encode(ctx, writer, $castedName)"""
         } else {
-          q"""writer.writeByte(${idx.toString});
+          q"""writer.writeByte(${idx.toString})
              |$cName.instance.encode(ctx, writer, $castedName)
            """.stripMargin
         }
@@ -221,32 +188,31 @@ class ScUEBACodecGenerator(
         }
 
         (
-          q"""if (value.isInstanceOf[$fqBranch])
-             |{   
-             |  val $castedName = value.asInstanceOf[$fqBranch]
+          q"""case $castedName: $fqBranch => 
              |  ${encBody.shift(2).trim}
-             |  return;
-             |}""".stripMargin,
-          q"""if (asByte == ${idx.toString})
-             |{
+             |""".stripMargin,
+          q"""if (asByte == ${idx.toString}) {
              |  ${decBody.shift(2).trim}
              |}""".stripMargin,
         )
     }
 
     (
-      q"""${branches.map(_._1).join("\n")}
+      q"""value match {
+         |  ${branches.map(_._1).joinN().shift(2).trim}
          |
-         |throw new $genericException(s"Cannot encode {value} to ${name.name}: no matching value")""".stripMargin,
+         |  case _ => throw new $genericException(s"Cannot encode {value} to ${name.name}: no matching value")
+         |}
+         |""".stripMargin,
       q"""val asByte = wire.readByte();
          |
-         |${branches.map(_._2).join("\n")}
+         |${branches.map(_._2).joinN()}
          |
          |throw new $genericException(s"Cannot decode {wire} to ${name.name}: no matching value")""".stripMargin,
     )
   }
 
-  private def genEnumBodies(name: ScValue.ScType, e: Typedef.Enum) = {
+  private def genEnumBodies(name: ScValue.ScType, e: Typedef.Enum): (TextTree[ScValue.ScType], TextTree[ScValue.ScType]) = {
     val branches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
         (
@@ -263,12 +229,12 @@ class ScUEBACodecGenerator(
     }
 
     (
-      q"""${branches.map(_._1).join("\n")}
+      q"""${branches.map(_._1).joinN()}
          |
          |throw new $genericException(s"Cannot encode {value} to ${name.name}: no matching value")""".stripMargin,
       q"""val asByte = wire.readByte()
          |
-         |${branches.map(_._2).join("\n")}
+         |${branches.map(_._2).joinN()}
          |
          |throw new $genericException(s"Cannot decode {wire} to ${name.name}: no matching value")""".stripMargin,
     )
@@ -294,7 +260,7 @@ class ScUEBACodecGenerator(
     val noIndex = Seq(
       q"writer.writeByte(header.toInt)",
       fields.map(_._1).joinN(),
-    ).filterNot(_.isEmpty).join("\n")
+    ).filterNot(_.isEmpty).joinN()
 
     val fenc =
       q"""var header: $scByte = 0b0000000;
@@ -307,7 +273,7 @@ class ScUEBACodecGenerator(
          |  try  {
          |    val fakeWriter = new $binaryOutput(writeMemoryStream)
          |    try {
-         |      ${fields.map(_._3).join("\n").shift(6).trim}
+         |      ${fields.map(_._3).joinN().shift(6).trim}
          |    } finally {
          |      fakeWriter.close()
          |    }
@@ -415,7 +381,7 @@ class ScUEBACodecGenerator(
                |  val after = writeMemoryStream.size()
                |  val length = after - before
                |  writer.writeInt(length)
-               |  ${sanityChecks.shift(2).trim};
+               |  ${sanityChecks.shift(2).trim}
                |}""".stripMargin
         }
 
@@ -546,16 +512,27 @@ class ScUEBACodecGenerator(
     }
   }
 
+  private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[ScValue]] = {
+    defn.defn match {
+      case _: Typedef.Enum | _: Typedef.Foreign => meta.map(_.valueField)
+      case _                                    => meta.map(_.refValueField)
+    }
+  }
+
   def codecName(name: ScValue.ScType): ScValue.ScType = {
     ScValue.ScType(name.pkg, s"${name.name}_UEBACodec", name.fq)
   }
 
-  override def codecMeta(defn: DomainMember.User, name: ScValue.ScType): scl.ScCodecTranslator.CodecMeta = {
-    CodecMeta(
-      q"""public $baboonBinCodec[$name] Codec_UEBA()
-         |{
-         |  return ${codecName(name)}.instance
-         |}""".stripMargin
-    )
+  override def codecMeta(defn: DomainMember.User, name: ScValue.ScType): Option[CodecMeta] = {
+    if (isActive(defn.id)) {
+      Some(CodecMeta(q"def codecUeba: $baboonBinCodec[$name] = ${codecName(name)}.instance"))
+    } else None
   }
+
+  override def isActive(id: TypeId): Boolean = {
+    target.language.generateUebaCodecs && (target.language.generateUebaCodecsByDefault || domain.derivationRequests
+      .getOrElse(DerivationDecl("ueba"), Set.empty[TypeId]).contains(id))
+  }
+
+  override def id: String = "Ueba"
 }

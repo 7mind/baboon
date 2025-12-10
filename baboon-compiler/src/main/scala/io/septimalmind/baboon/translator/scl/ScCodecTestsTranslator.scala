@@ -50,7 +50,7 @@ object ScCodecTestsTranslator {
 
     private def makeTest(definition: DomainMember.User, srcRef: ScValue.ScType): TextTree[ScValue] = {
       val fixture = makeFixture(definition, domain, evo)
-      codecs.map {
+      codecs.filter(_.isActive(definition.id)).map {
         case jsonCodec: ScJsonCodecGenerator =>
           val body      = jsonCodecAssertions(definition)
           val codecName = jsonCodec.codecName(srcRef)
@@ -88,9 +88,7 @@ object ScCodecTestsTranslator {
              |  val csJson = parse(new $scString(b, $javaNioStandardCharsets.UTF_8)).toOption.get
              |  val dec = $codecName.instance.decode(context, csJson).toOption
              |  assert(dec.nonEmpty)
-             |  val sclJson = jsonCompare(context, dec.get, clue)
-             |  // this is be broken for unordered collections and timestamps, but is suitable for manual tests
-             |  //assert(csJson == sclJson)
+             |  jsonCompare(context, dec.get, clue)
              |}
              |"""
 
@@ -125,8 +123,6 @@ object ScCodecTestsTranslator {
              |  val dec = $codecName.instance.decode(context, dis)
              |  val sclUebaBytes = uebaCompare(context, dec, clue)
              |  assert(csUebaBytes.length == sclUebaBytes.length, s"$$clue")
-             |  // this is be broken for unordered collections and timestamps, but is suitable for manual tests
-             |  // assert(csUebaBytes.toVector == sclUebaBytes.toVector) 
              |}
              |
              |def uebaCompare(context: $baboonCodecContext, fixture: $srcRef, clue: $scString): $scArray[$scByte] = {
@@ -148,7 +144,7 @@ object ScCodecTestsTranslator {
         case unknown =>
           logger.message(s"Cannot create codec tests (${unknown.codecName(srcRef)}) for unsupported type $srcRef")
           q""
-      }.toList.map(_.stripMargin.trim).join("\n\n").shift(2).trim
+      }.toList.map(_.stripMargin.trim).joinNN().shift(2).trim
     }
 
     private def makeFixture(
@@ -171,8 +167,7 @@ object ScCodecTestsTranslator {
              |    jsonCompare(context, fixture, clue)
              |}
              |""".stripMargin.trim
-        case _ =>
-          q"jsonCompare(context, fixture, clue)"
+        case _ => q"jsonCompare(context, fixture, clue)"
       }
     }
 
@@ -184,8 +179,7 @@ object ScCodecTestsTranslator {
              |    uebaCompare(context, fixture, clue)
              |}
              |""".stripMargin.trim
-        case _ =>
-          q"uebaCompare(context, fixture, clue)"
+        case _ => q"uebaCompare(context, fixture, clue)"
       }
     }
   }

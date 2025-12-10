@@ -81,7 +81,7 @@ class ScTypeTranslator(
         assert(parts.length > 1)
         val pkg = parts.init
         val id  = parts.last
-        ScType(ScPackageId(NEList.unsafeFrom(pkg)), id, fq = false)
+        ScType(ScPackageId(NEList.unsafeFrom(pkg)), id)
       case _ =>
         toScTypeRefKeepForeigns(tid, domain, evolution)
     }
@@ -100,7 +100,7 @@ class ScTypeTranslator(
       case _ =>
         ScPackageId(fullPrefix)
     }
-    ScType(fullPkg, tid.name.name.capitalize, fq = false)
+    ScType(fullPkg, tid.name.name.capitalize)
   }
 
   private def renderOwner(owner: Owner): Seq[String] = {

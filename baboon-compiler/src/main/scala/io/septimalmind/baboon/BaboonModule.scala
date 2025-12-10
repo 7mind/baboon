@@ -87,6 +87,7 @@ class BaboonCommonScModule[F[+_, +_]: Error2: TagKK]() extends ModuleDef {
   makeSubcontext[ScDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
+      make[ScDomainTreeTools].from[ScDomainTreeTools.ScDomainTreeToolsImpl]
       make[ScDefnTranslator[F]].from[ScDefnTranslator.ScDefnTranslatorImpl[F]]
       make[ScCodecFixtureTranslator].from[ScCodecFixtureTranslator.ScRandomMethodTranslatorImpl]
       make[ScCodecTestsTranslator].from[ScCodecTestsTranslator.Impl]

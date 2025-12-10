@@ -16,13 +16,26 @@ trait ScDefnTranslator[F[+_, +_]] {
 }
 
 object ScDefnTranslator {
-  case class Output(
+  final case class CodecReg(
+    typeId: TypeId,
+    tpe: ScType,
+    tpeKeepForeigns: ScType,
+    tpeId: TextTree[ScValue],
+    trees: Map[String, TextTree[ScValue]],
+  )
+
+  final case class DefnRepr(
+    defn: TextTree[ScValue],
+    codecs: List[CodecReg],
+  )
+
+  final case class Output(
     path: String,
     tree: TextTree[ScValue],
     pkg: ScValue.ScPackageId,
     product: CompilerProduct,
-    doNotModify: Boolean                = false,
-    codecReg: Option[TextTree[ScValue]] = None,
+    doNotModify: Boolean                              = false,
+    codecReg: List[(String, List[TextTree[ScValue]])] = Nil,
   )
 
   class ScDefnTranslatorImpl[F[+_, +_]: Applicative2](
@@ -34,6 +47,7 @@ object ScDefnTranslator {
     codecs: Set[ScCodecTranslator],
     codecTests: ScCodecTestsTranslator,
     codecsFixture: ScCodecFixtureTranslator,
+    scDomainTreeTools: ScDomainTreeTools,
   ) extends ScDefnTranslator[F] {
     import ScTypes.*
 
@@ -45,15 +59,15 @@ object ScDefnTranslator {
     }
 
     private def doTranslate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val (content, reg) = makeFullRepr(defn, inNs = true)
+      val repr = makeFullRepr(defn, inNs = true)
 
-      val registrations = Option(reg.map { case (_, reg) => q"register(new $baboonTypeCodecs($reg))" }).filterNot(_.isEmpty).map(_.join("\n"))
+      val registrations = codecs.toList.map(codec => codec.id -> repr.codecs.flatMap(reg => reg.trees.get(codec.id).map(expr => q"${reg.tpeId}, $expr")))
 
       F.pure(
         List(
           Output(
             getOutputPath(defn),
-            content,
+            repr.defn,
             trans.toScPkg(domain.id, domain.version, evo),
             CompilerProduct.Definition,
             codecReg = registrations,
@@ -126,7 +140,7 @@ object ScDefnTranslator {
     private def makeFullRepr(
       defn: DomainMember.User,
       inNs: Boolean,
-    ): (TextTree[ScValue], List[(ScType, TextTree[ScValue])]) = {
+    ): DefnRepr = {
       val isLatestVersion = domain.version == evo.latest
 
       def obsoletePrevious(tree: TextTree[ScValue]): TextTree[ScValue] = {
@@ -138,53 +152,53 @@ object ScDefnTranslator {
         }
       }
 
-      val csTypeRef = trans.asScType(defn.id, domain, evo)
+      val scTypeRef = trans.asScType(defn.id, domain, evo)
       val srcRef    = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
 
-      val (defnReprBase, extraRegs) =
-        makeRepr(defn, csTypeRef, isLatestVersion)
+      val repr = makeRepr(defn, scTypeRef, isLatestVersion)
 
       val codecTrees =
         codecs.toList
-          .flatMap(t => t.translate(defn, csTypeRef, srcRef).toList)
+          .flatMap(t => t.translate(defn, scTypeRef, srcRef).toList)
           .map(obsoletePrevious)
 
-      val defnRepr = obsoletePrevious(defnReprBase)
+      val defnRepr = obsoletePrevious(repr.defn)
 
       assert(defn.id.pkg == domain.id)
 
       val ns = srcRef.pkg.parts
 
-      val allDefs = (defnRepr +: codecTrees).join("\n\n")
+      val allDefs = (defnRepr +: codecTrees).joinNN()
       val content = if (inNs) scTrees.inNs(ns.toSeq, allDefs) else allDefs
 
       val reg = defn.defn match {
-        case _: Typedef.NonDataTypedef =>
-          List.empty[(ScType, TextTree[ScValue])]
-        case _ =>
+        case _: Typedef.NonDataTypedef => Nil
+        case d =>
           val codecsReg = codecs.toList
             .sortBy(_.getClass.getName)
-            .map(codec => q"${codec.codecName(srcRef).copy(fq = true)}")
-          val reg =
-            (List(q"""\"${defn.id.toString}\"""") ++ codecsReg).join(", ")
-          List(csTypeRef -> reg)
+            .flatMap(
+              codec =>
+                if (codec.isActive(d.id)) List(codec.id -> q"$baboonLazy(${codec.codecName(srcRef).copy(fq = true)})")
+                else Nil
+            )
+          List(CodecReg(defn.id, scTypeRef, srcRef, q"\"${defn.id.toString}\"", codecsReg.toMap))
       }
 
-      val allRegs = reg ++ extraRegs
+      val allRegs = reg ++ repr.codecs
 
-      (content, allRegs)
+      DefnRepr(content, allRegs)
     }
 
-    private def makeRepr(defn: DomainMember.User, name: ScValue.ScType, isLatestVersion: Boolean): (TextTree[ScValue], List[(ScType, TextTree[ScValue])]) = {
+    private def makeRepr(
+      defn: DomainMember.User,
+      name: ScValue.ScType,
+      isLatestVersion: Boolean,
+    ): DefnRepr = {
       val genMarker = if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
-      val mainMeta  = List.empty[TextTree[ScValue]] // csDomTrees.makeMeta(defn, isCodec = false)
-      val codecMeta = codecs.map(_.codecMeta(defn, name).member)
-      // TODO:
-      val meta = mainMeta ++ codecMeta
+      val mainMeta  = scDomainTreeTools.makeDataMeta(defn)
+      val codecMeta = codecs.flatMap(_.codecMeta(defn, name).map(_.member))
 
-      val fixtureRef = codecsFixture.fixtureTpe(defn).map(id => q"implicit def fixture: $baboonFixture[${name.asName}] = $id").getOrElse(q"")
-
-      val tree: TextTree[ScValue] = defn.defn match {
+      defn.defn match {
         case dto: Typedef.Dto =>
           val params = dto.fields.map {
             f =>
@@ -200,13 +214,21 @@ object ScDefnTranslator {
           val parents          = adtParents ++ contractParents :+ genMarker
           val extendsClauseDto = if (parents.nonEmpty) q" extends ${parents.map(t => q"$t").join(" with ")}" else q""
 
-          q"""final case class ${name.asName}(
-             |  ${paramsList.shift(2).trim}
-             |)$extendsClauseDto
-             |
-             |object ${name.asName} {
-             |  $fixtureRef
-             |}""".stripMargin
+          val objectMetaFields = mainMeta.map(_.valueField) ++ codecMeta
+          val classMetaFields  = mainMeta.map(mt => q"override ${mt.refValueField}")
+
+          DefnRepr(
+            q"""final case class ${name.asName}(
+               |  ${paramsList.shift(2).trim}
+               |)$extendsClauseDto {
+               |  ${classMetaFields.joinN().shift(2).trim}
+               |}
+               |
+               |object ${name.asName} {
+               |  ${objectMetaFields.joinN().shift(2).trim}
+               |}""".stripMargin,
+            Nil,
+          )
 
         case e: Typedef.Enum =>
           val traitTree = q"sealed trait ${name.asName}"
@@ -229,23 +251,22 @@ object ScDefnTranslator {
               q"$obj"
           }.toList
 
-          val companion = q"""object ${name.asName} extends $baboonEnum[${name.asName}] {
-                             |  ${cases.join("\n").shift(2).trim}
-                             |  
-                             |  $fixtureRef
-                             |
-                             |  def parse(s: $scString): $scOption[${name.asName}] = {
-                             |    s match {
-                             |      ${parseCases.join("\n").shift(6).trim}
-                             |      case _ => None
-                             |    }
-                             |  }
-                             |  
-                             |  def all: $scList[${name.asName}] = $scList(
-                             |    ${names.join(",\n").shift(4).trim}
-                             |  ) 
-                             |}""".stripMargin
-          Seq(traitTree, companion).join("\n\n")
+          val companion =
+            q"""object ${name.asName} extends $baboonEnum[${name.asName}] {
+               |  ${cases.joinN().shift(2).trim}
+               |  
+               |  def parse(s: $scString): $scOption[${name.asName}] = {
+               |    s match {
+               |      ${parseCases.joinN().shift(6).trim}
+               |      case _ => None
+               |    }
+               |  }
+               |  
+               |  def all: $scList[${name.asName}] = $scList(
+               |    ${names.join(",\n").shift(4).trim}
+               |  ) 
+               |}""".stripMargin
+          DefnRepr(Seq(traitTree, companion).joinNN(), Nil)
 
         case adt: Typedef.Adt =>
           val parents          = adt.contracts.map(c => trans.toScTypeRefKeepForeigns(c, domain, evo)) :+ genMarker
@@ -259,17 +280,20 @@ object ScDefnTranslator {
               }
           }
 
-          val adtFixtureRef = codecsFixture.fixtureTpe(defn).map(id => q"implicit def fixture: $baboonAdtFixture[${name.asName}] = $id").getOrElse(q"")
+          val objectMetaFields = mainMeta.map(_.valueField) ++ codecMeta
+          val classMetaFields  = mainMeta.map(mt => q"override ${mt.refValueField}")
 
-          val fullTree =
-            q"""$sealedTrait
+          DefnRepr(
+            q"""$sealedTrait {
+               |  ${classMetaFields.joinN().shift(2).trim}
+               |}
                |
                |object ${name.asName} {
-               |  ${memberTrees.map(_._1).toList.join("\n\n").shift(2).trim}
-               |  $adtFixtureRef
-               |}""".stripMargin
-//          val regs = memberTrees.flatMap(_._2)
-          fullTree
+               |  ${memberTrees.map(_.defn).toList.joinNN().shift(2).trim}
+               |  ${objectMetaFields.joinN().shift(2).trim}
+               |}""".stripMargin,
+            Nil,
+          )
 
         case contract: Typedef.Contract =>
           val methods = contract.fields.map {
@@ -279,10 +303,13 @@ object ScDefnTranslator {
           }
           val parents       = contract.contracts.map(c => trans.toScTypeRefKeepForeigns(c, domain, evo)) :+ genMarker
           val extendsClause = if (parents.nonEmpty) q" extends ${parents.map(t => q"$t").join(" with ")}" else q""
-          val body          = if (methods.nonEmpty) methods.join("\n") else q""
-          q"""trait ${name.asName}$extendsClause {
-             |    ${body.shift(4).trim}
-             |}""".stripMargin
+          val body          = if (methods.nonEmpty) methods.joinN() else q""
+          DefnRepr(
+            q"""trait ${name.asName}$extendsClause {
+               |    ${body.shift(4).trim}
+               |}""".stripMargin,
+            Nil,
+          )
 
         case service: Typedef.Service =>
           val methods = service.methods.map {
@@ -298,15 +325,17 @@ object ScDefnTranslator {
               }
               q"def ${m.name.name}(arg: $in): $ret"
           }
-          val body = if (methods.nonEmpty) methods.join("\n") else q""
-          q"""trait ${name.asName} {
-             |    ${body.shift(4).trim}
-             |}""".stripMargin
+          val body = if (methods.nonEmpty) methods.joinN() else q""
+          DefnRepr(
+            q"""trait ${name.asName} {
+               |    ${body.shift(4).trim}
+               |}""".stripMargin,
+            Nil,
+          )
 
-        case _: Typedef.Foreign =>
-          q""
+        case _: Typedef.Foreign => DefnRepr(q"", Nil)
+
       }
-      (tree, List.empty)
     }
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
@@ -320,5 +349,4 @@ object ScDefnTranslator {
       }
     }
   }
-
 }
