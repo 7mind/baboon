@@ -13,7 +13,7 @@ object ScValue {
       ScPackageId(NEList.unsafeFrom(pkg.split('.').toList))
   }
 
-  case class ScType(pkg: ScValue.ScPackageId, name: String, fq: Boolean = false) extends ScValue {
+  case class ScType(pkg: ScValue.ScPackageId, name: String, fq: Boolean = false, predef: Boolean = false) extends ScValue {
     def fullyQualified: ScType = this.copy(fq = true)
     def asName: ScTypeName     = ScTypeName(name)
 

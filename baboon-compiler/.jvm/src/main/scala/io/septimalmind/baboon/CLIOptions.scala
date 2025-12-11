@@ -68,6 +68,16 @@ case class ScCLIOptions(
   scWriteEvolutionDict: Option[Boolean],
   @HelpMessage("Every ADT branch will encode ADT metadata and expect it in the decoder")
   scWrappedAdtBranchCodecs: Option[Boolean],
+  @HelpMessage("Do not generate encoders for deprecated versions")
+  enableDeprecatedEncoders: Option[Boolean],
+  @HelpMessage("Generate JSON codecs")
+  generateJsonCodecs: Option[Boolean],
+  @HelpMessage("Generate UEBA codecs")
+  generateUebaCodecs: Option[Boolean],
+  @HelpMessage("Generate JSON codecs even for types without derived[json]")
+  generateJsonCodecsByDefault: Option[Boolean],
+  @HelpMessage("Generate UEBA codecs even for types without derived[ueba]")
+  generateUebaCodecsByDefault: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class CLIOptions(
