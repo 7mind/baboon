@@ -5,6 +5,7 @@ package baboon.runtime.shared {
   import java.time.format.DateTimeFormatter
   import java.time.{Instant, OffsetDateTime, ZoneOffset}
   import java.util.UUID
+  import scala.util.Try
 
   object BaboonTimeFormats {
 
@@ -13,8 +14,8 @@ package baboon.runtime.shared {
     val tsuFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
     val tsoFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
 
-    def parseTso(s: String): Option[OffsetDateTime] = Some(OffsetDateTime.parse(s, tsoFormat))
-    def parseTsu(s: String): Option[OffsetDateTime] = Some(OffsetDateTime.parse(s, tsuFormat))
+    def parseTso(s: String): Try[OffsetDateTime] = Try(OffsetDateTime.parse(s, tsoFormat))
+    def parseTsu(s: String): Try[OffsetDateTime] = Try(OffsetDateTime.parse(s, tsuFormat))
 
     def formatTsu(s: OffsetDateTime): String = s.format(tsuFormat)
     def formatTso(s: OffsetDateTime): String = s.format(tsoFormat)

@@ -78,7 +78,7 @@ object ScDomainTreeTools {
       val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id).sameIn.map(v => s"\"${v.v.toString}\"")
       val sameInVersion = MetaField(
         q"def baboonSameInVersions: $scList[$scString]",
-        q"List(${unmodifiedSince.mkString(", ")})",
+        q"$scList(${unmodifiedSince.mkString(", ")})",
         q"$ref.baboonSameInVersions",
       )
       List(sameInVersion)

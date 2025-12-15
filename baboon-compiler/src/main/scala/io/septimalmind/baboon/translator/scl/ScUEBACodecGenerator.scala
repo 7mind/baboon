@@ -14,7 +14,6 @@ class ScUEBACodecGenerator(
   target: ScTarget,
   domain: Domain,
   evo: BaboonEvolution,
-  csTypeInfo: ScTypeInfo,
   scDomainTreeTools: ScDomainTreeTools,
 ) extends ScCodecTranslator {
 
@@ -86,7 +85,7 @@ class ScUEBACodecGenerator(
 
       case _: Typedef.Enum    => q"""0"""
       case _: Typedef.Adt     => q"""0"""
-      case _: Typedef.Foreign => q"""throw new IllegalArgumentException("${name.name} is a foreign type")"""
+      case _: Typedef.Foreign => q"""throw new $javaIllegalArgumentException("${name.name} is a foreign type")"""
 
       case d: Typedef.Contract =>
         throw new IllegalArgumentException(s"BUG: contract codec should not be rendered: $d")
@@ -110,7 +109,7 @@ class ScUEBACodecGenerator(
     } else Nil
 
     val decoderMethods = List(
-      q"""def decode(ctx: $baboonCodecContext, wire: $binaryInput): $name = {
+      q"""def decode(ctx: $baboonCodecContext, wire: $binaryInput): $scEither[$javaThrowable, $name] = {
          |  ${dec.shift(2).trim}
          |}""".stripMargin
     )
@@ -154,17 +153,17 @@ class ScUEBACodecGenerator(
      """.stripMargin
   }
 
-  private def genForeignBodies(name: ScValue.ScType): (TextTree[Nothing], TextTree[Nothing]) = {
+  private def genForeignBodies(name: ScValue.ScType): (TextTree[ScValue], TextTree[ScValue]) = {
     (
-      q"""throw new IllegalArgumentException("${name.name} is a foreign type")""",
-      q"""throw new IllegalArgumentException("${name.name} is a foreign type")""",
+      q"""throw new $javaIllegalArgumentException("${name.name} is a foreign type")""",
+      q"""throw new $javaIllegalArgumentException("${name.name} is a foreign type")""",
     )
   }
 
-  private def genAdtBodies(name: ScValue.ScType, a: Typedef.Adt): (TextTree[ScValue.ScType], TextTree[ScValue.ScType]) = {
-    val branches = a.dataMembers(domain).zipWithIndex.toList.map {
+  private def genAdtBodies(name: ScValue.ScType, adt: Typedef.Adt): (TextTree[ScValue.ScType], TextTree[ScValue.ScType]) = {
+    val branches = adt.dataMembers(domain).zipWithIndex.toList.map {
       case (m, idx) =>
-        val branchNs   = q"${csTypeInfo.adtNsName(a.id)}"
+        val branchNs   = q"${adt.id.name.name}"
         val branchName = m.name.name
         val fqBranch   = q"$branchNs.$branchName"
 
@@ -182,33 +181,33 @@ class ScUEBACodecGenerator(
         }
 
         val decBody = if (target.language.wrappedAdtBranchCodecs) {
-          q"""return $cName.instance.asInstanceOf[$cName.type].decodeBranch(ctx, wire)"""
+          q"""$cName.instance.asInstanceOf[$cName.type].decodeBranch(ctx, wire)"""
         } else {
-          q"""return $cName.instance.decode(ctx, wire)"""
+          q"""$cName.instance.decode(ctx, wire)"""
         }
 
         (
           q"""case $castedName: $fqBranch => 
              |  ${encBody.shift(2).trim}
              |""".stripMargin,
-          q"""if (asByte == ${idx.toString}) {
-             |  ${decBody.shift(2).trim}
-             |}""".stripMargin,
+          q"""case ${idx.toString} => $decBody
+             |""".stripMargin,
         )
     }
 
     (
       q"""value match {
          |  ${branches.map(_._1).joinN().shift(2).trim}
-         |
-         |  case _ => throw new $genericException(s"Cannot encode {value} to ${name.name}: no matching value")
          |}
          |""".stripMargin,
       q"""val asByte = wire.readByte();
          |
-         |${branches.map(_._2).joinN()}
+         |asByte match {
+         |  ${branches.map(_._2).joinN().shift(2).trim}
          |
-         |throw new $genericException(s"Cannot decode {wire} to ${name.name}: no matching value")""".stripMargin,
+         |  case _ => Left(new $genericException(s"Cannot decode {wire} to ${name.name}: no matching value"))
+         |}
+         |""".stripMargin,
     )
   }
 
@@ -216,27 +215,23 @@ class ScUEBACodecGenerator(
     val branches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
         (
-          q"""if (value == $name.${m.name})
-             |{
-             |   writer.writeByte(${idx.toString})
-             |   return
-             |}""".stripMargin,
-          q"""if (asByte == ${idx.toString})
-             |{
-             |   return $name.${m.name}
-             |}""".stripMargin,
+          q"case $name.${m.name} => writer.writeByte(${idx.toString})",
+          q"case ${idx.toString} => Right($name.${m.name})",
         )
     }
 
     (
-      q"""${branches.map(_._1).joinN()}
-         |
-         |throw new $genericException(s"Cannot encode {value} to ${name.name}: no matching value")""".stripMargin,
+      q"""value match {
+         |  ${branches.map(_._1).joinN().shift(2)}
+         |}
+         """.stripMargin,
       q"""val asByte = wire.readByte()
          |
-         |${branches.map(_._2).joinN()}
-         |
-         |throw new $genericException(s"Cannot decode {wire} to ${name.name}: no matching value")""".stripMargin,
+         |asByte match {
+         |  ${branches.map(_._2).joinN().shift(2)}
+         |  case _ => Left(new $genericException(s"Cannot decode {wire} to ${name.name}: no matching value"))
+         |}
+         |""".stripMargin,
     )
   }
 
@@ -244,18 +239,17 @@ class ScUEBACodecGenerator(
     name: ScValue.ScType,
     d: Typedef.Dto,
   ): Option[TextTree[ScValue]] = {
-
     d.id.owner match {
       case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs =>
         val fields = fieldsOf(d)
-        Some(dtoDec(name, fields.map { case (a, b, _) => (a, b) }))
+        Some(dtoDec(name, fields.map(_._2)))
       case _ =>
         None
     }
   }
 
-  private def genDtoBodies(name: ScValue.ScType, d: Typedef.Dto) = {
-    val fields = fieldsOf(d)
+  private def genDtoBodies(name: ScValue.ScType, dto: Typedef.Dto): (TextTree[ScValue], TextTree[ScValue]) = {
+    val fields = fieldsOf(dto)
 
     val noIndex = Seq(
       q"writer.writeByte(header.toInt)",
@@ -265,8 +259,7 @@ class ScUEBACodecGenerator(
     val fenc =
       q"""var header: $scByte = 0b0000000;
          |
-         |if (ctx.useIndices)
-         |{
+         |if (ctx.useIndices) {
          |  header = (header | 0b0000001).toByte
          |  writer.writeByte(header.toInt)
          |  val writeMemoryStream = new $byteArrayOutputStream()
@@ -287,8 +280,7 @@ class ScUEBACodecGenerator(
          |}
          |""".stripMargin
 
-    val fdec =
-      dtoDec(name, fields.map { case (a, b, _) => (a, b) })
+    val fdec = dtoDec(name, fields.map(_._2))
 
     def adtBranchIndex(id: TypeId.User) = {
       domain.defs.meta
@@ -298,12 +290,12 @@ class ScUEBACodecGenerator(
         .asInstanceOf[Typedef.Adt]
         .dataMembers(domain)
         .zipWithIndex
-        .find(_._1 == d.id)
+        .find(_._1 == dto.id)
         .get
         ._2
     }
 
-    val enc = d.id.owner match {
+    val enc = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
         val idx = adtBranchIndex(id)
 
@@ -312,45 +304,43 @@ class ScUEBACodecGenerator(
       case _ => fenc
     }
 
-    val dec = d.id.owner match {
+    val dec = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
         val idx = adtBranchIndex(id)
-
         q"""val marker = wire.readByte()
            |assert(marker == ${idx.toString})
            |decodeBranch(ctx, wire)""".stripMargin
       case _ => fdec
     }
-
     (enc, dec)
   }
 
-  private def dtoDec(name: ScValue.ScType, fields: List[(TextTree[ScValue], TextTree[ScValue])]) = {
-    q"""val index = this.readIndex(ctx, wire)
-       |
-       |if (ctx.useIndices)
-       |{
-       |  assert(index.size == indexElementsCount(ctx))
-       |}
-       |
-       |$name(
-       |${fields.map(_._2).join(",\n").shift(2)}
-       |);
+  private def dtoDec(name: ScValue.ScType, fields: List[TextTree[ScValue]]): TextTree[ScValue] = {
+    q"""for {
+       |  index  <- this.readIndex(ctx, wire)
+       |  _      <- $scTry(if (ctx.useIndices) assert(index.size == indexElementsCount(ctx)) else ()).toEither
+       |  result <- $scTry {
+       |    $name(
+       |      ${fields.join(",\n").shift(6).trim}
+       |    )
+       |  }.toEither
+       |} yield result
        |""".stripMargin
   }
 
-  private def fieldsOf(d: Typedef.Dto) = {
-    d.fields.map {
-      f =>
-        val fieldRef = q"value.${f.name.name}"
-        val enc      = mkEncoder(f.tpe, fieldRef, q"writer")
-        val fakeEnc  = mkEncoder(f.tpe, fieldRef, q"fakeWriter")
-        val dec      = mkDecoder(f.tpe)
+  private def fieldsOf(dto: Typedef.Dto): List[(TextTree[ScValue], TextTree[ScValue], TextTree[ScValue])] = {
+    dto.fields.map {
+      field =>
+        val fieldRef   = q"value.${field.name.name}"
+        val enc        = mkEncoder(field.tpe, fieldRef, q"writer")
+        val fakeEnc    = mkEncoder(field.tpe, fieldRef, q"fakeWriter")
+        val decoder    = mkDecoder(field.tpe)
+        val decodeTree = q"${field.name.name} = $decoder"
 
-        val w = domain.refMeta(f.tpe).len match {
+        val w = domain.refMeta(field.tpe).len match {
           case BinReprLen.Fixed(bytes) =>
             q"""{
-               |  // ${f.toString}
+               |  // ${field.toString}
                |  val before = writeMemoryStream.size()
                |  ${fakeEnc.shift(2).trim}
                |  val after = writeMemoryStream.size()
@@ -374,7 +364,7 @@ class ScUEBACodecGenerator(
             }
 
             q"""{
-               |  // ${f.toString}
+               |  // ${field.toString}
                |  val before = writeMemoryStream.size()
                |  writer.writeInt(before)
                |  ${fakeEnc.shift(2).trim}
@@ -385,7 +375,7 @@ class ScUEBACodecGenerator(
                |}""".stripMargin
         }
 
-        (enc, dec, w)
+        (enc, decodeTree, w)
     }
   }
 
@@ -419,12 +409,12 @@ class ScUEBACodecGenerator(
             }
           case u: TypeId.User =>
             val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
-            q"""$targetTpe.instance.decode(ctx, wire)"""
+            q"""$targetTpe.instance.decode(ctx, wire).toTry.get"""
         }
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
-            q"""( if (wire.read() == 0) $scOption.empty else $scOption(${mkDecoder(c.args.head)}) )""".stripMargin
+            q"""(if (wire.read() == 0) $scOption.empty else $scOption(${mkDecoder(c.args.head)}))""".stripMargin
           case TypeId.Builtins.map =>
             val keyDecoder   = mkDecoder(c.args.head)
             val valueDecoder = mkDecoder(c.args.last)
@@ -473,12 +463,10 @@ class ScUEBACodecGenerator(
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
-            q"""if ($ref.isEmpty)
-               |{
+            q"""if ($ref.isEmpty) {
                |  $wref.writeByte(0);
                |}
-               |else
-               |{
+               |else {
                |  $wref.writeByte(1);
                |  ${mkEncoder(c.args.head, q"$ref.get", wref).shift(2).trim}
                |}""".stripMargin
@@ -489,7 +477,6 @@ class ScUEBACodecGenerator(
                |  case (k, v) =>
                |  ${mkEncoder(c.args.head, q"k", wref).shift(2).trim}
                |  ${mkEncoder(c.args.last, q"v", wref).shift(2).trim}
-               |
                |}""".stripMargin
 
           case TypeId.Builtins.lst =>

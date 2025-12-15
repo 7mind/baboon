@@ -60,7 +60,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
   private def translateProduct(
     domain: Domain,
     p: CompilerProduct,
-    translate: (DomainMember.User) => F[NEList[BaboonIssue], List[ScDefnTranslator.Output]],
+    translate: DomainMember.User => F[NEList[BaboonIssue], List[ScDefnTranslator.Output]],
   ): F[NEList[BaboonIssue], List[ScDefnTranslator.Output]] = {
     if (target.output.products.contains(p)) {
       F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
@@ -233,7 +233,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
                   domain = domain,
                   rules  = rules,
                   evo    = lineage.evolution,
-                ).makeConvs()
+                ).makeConvs
             }
         }
     } yield {

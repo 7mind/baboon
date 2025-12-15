@@ -1,11 +1,14 @@
 package baboon.runtime.shared {
 
-  import io.circe.Json
+  import io.circe.numbers.BiggerDecimal
+  import io.circe.{Decoder, Json, JsonObject, KeyDecoder}
 
   import java.io.*
   import java.nio.{ByteBuffer, ByteOrder}
+  import java.time.OffsetDateTime
   import scala.collection.mutable
   import scala.reflect.ClassTag
+  import scala.util.Try
 
   trait BaboonCodecData {
     def baboonDomainVersion: String
@@ -32,16 +35,39 @@ package baboon.runtime.shared {
 
   trait BaboonValueCodec[T, TWire] extends BaboonCodec[T] {
     def encode(ctx: BaboonCodecContext, instance: T): TWire
-    def decode(ctx: BaboonCodecContext, wire: TWire): Either[String, T]
+    def decode(ctx: BaboonCodecContext, wire: TWire): Either[Throwable, T]
   }
   trait BaboonStreamCodec[T, TOut, TIn] extends BaboonCodec[T] {
     def encode(ctx: BaboonCodecContext, writer: TOut, instance: T): Unit
-    def decode(ctx: BaboonCodecContext, wire: TIn): T
+    def decode(ctx: BaboonCodecContext, wire: TIn): Either[Throwable, T]
   }
 
-  trait BaboonJsonCodec[T] extends BaboonValueCodec[T, Json]
+  trait BaboonJsonCodec[T] extends BaboonValueCodec[T, Json] {
+    protected final def getField(jsonObject: JsonObject, name: String): Either[Exception, Json] = {
+      jsonObject(name).toRight(new RuntimeException(s"Cannot decode $jsonObject to $baboonTypeIdentifier: missing fields $name"))
+    }
+
+    final def circeDecoder: Decoder[T] = {
+      Decoder.instanceTry(cursor => this.decode(BaboonCodecContext.Compact, cursor.value).toTry)
+    }
+  }
 
   object BaboonJsonCodec {
+    val decodeTsu: Decoder[OffsetDateTime]    = Decoder.instanceTry(cursor => cursor.as[String].toTry.flatMap(BaboonTimeFormats.parseTsu))
+    val decodeTso: Decoder[OffsetDateTime]    = Decoder.instanceTry(cursor => cursor.as[String].toTry.flatMap(BaboonTimeFormats.parseTso))
+    val decodeByteString: Decoder[ByteString] = Decoder.instanceTry(cursor => cursor.as[String].toTry.flatMap(ByteString.tryParse))
+    val decodeByte: Decoder[Byte]             = Decoder.instance(cursor => Decoder.decodeLong(cursor).map(_.toByte))
+    val decodeShort: Decoder[Short]           = Decoder.instance(cursor => Decoder.decodeLong(cursor).map(_.toShort))
+    val decodeInt: Decoder[Int]               = Decoder.instance(cursor => Decoder.decodeLong(cursor).map(_.toInt))
+    val decodeLong: Decoder[Long]             = Decoder.instance(cursor => Decoder.decodeBigInt(cursor).map(_.longValue))
+
+    val decodeKeyBoolean: KeyDecoder[Boolean]        = _.toBooleanOption
+    val decodeKeyFloat: KeyDecoder[Float]            = _.toFloatOption
+    val keyDecoderBigDecimal: KeyDecoder[BigDecimal] = KeyDecoder.instance(s => BiggerDecimal.parseBiggerDecimal(s).flatMap(_.toBigDecimal).map(new BigDecimal(_)))
+    val decodeKeyTso: KeyDecoder[OffsetDateTime]     = BaboonTimeFormats.parseTso(_).toOption
+    val decodeKeyTsu: KeyDecoder[OffsetDateTime]     = BaboonTimeFormats.parseTsu(_).toOption
+    val decodeKeyByteString: KeyDecoder[ByteString]  = ByteString.tryParse(_).toOption
+
     trait BaboonGeneratedJsonCodec[T <: BaboonGenerated, TCodec <: BaboonJsonCodec[T]] {
       self: Base[T, TCodec] =>
       final def encode(ctx: BaboonCodecContext, instance: BaboonGenerated)(implicit t: ClassTag[T]): Json = {
@@ -57,25 +83,28 @@ package baboon.runtime.shared {
     trait NoEncoder[T, TCodec <: BaboonJsonCodec[T]] extends Base[T, TCodec] {
       override def encode(ctx: BaboonCodecContext, instance: T): Json = {
         if (this ne LazyInstance.value) {
-          return LazyInstance.value.encode(ctx, instance)
+          LazyInstance.value.encode(ctx, instance)
+        } else {
+          throw new RuntimeException(s"Type $baboonTypeIdentifier@$baboonDomainVersion is deprecated, encoder was not generated")
         }
-        throw new RuntimeException(s"Type $baboonTypeIdentifier@$baboonDomainVersion is deprecated, encoder was not generated")
       }
     }
     trait NoEncoderGenerated[T <: BaboonGenerated, TCodec <: BaboonJsonCodec[T]] extends BaseGenerated[T, TCodec] {
       override def encode(ctx: BaboonCodecContext, instance: T): Json = {
         if (this ne LazyInstance.value) {
-          return LazyInstance.value.encode(ctx, instance)
+          LazyInstance.value.encode(ctx, instance)
+        } else {
+          throw new RuntimeException(s"Type $baboonTypeIdentifier@$baboonDomainVersion is deprecated, encoder was not generated")
         }
-        throw new RuntimeException(s"Type $baboonTypeIdentifier@$baboonDomainVersion is deprecated, encoder was not generated")
       }
     }
     trait NoEncoderGeneratedAdt[T <: BaboonGenerated, TCodec <: BaboonJsonCodec[T]] extends BaseGeneratedAdt[T, TCodec] {
       override def encode(ctx: BaboonCodecContext, instance: T): Json = {
         if (this ne LazyInstance.value) {
-          return LazyInstance.value.encode(ctx, instance)
+          LazyInstance.value.encode(ctx, instance)
+        } else {
+          throw new RuntimeException(s"Type $baboonTypeIdentifier@$baboonDomainVersion is deprecated, encoder was not generated")
         }
-        throw new RuntimeException(s"Type $baboonTypeIdentifier@$baboonDomainVersion is deprecated, encoder was not generated")
       }
     }
   }
@@ -126,37 +155,37 @@ package baboon.runtime.shared {
   trait BaboonBinCodecIndexed {
     def indexElementsCount(ctx: BaboonCodecContext): Short
 
-    def readIndex(ctx: BaboonCodecContext, wire: LEDataInputStream): List[BaboonIndexEntry] = {
-      val header           = wire.readByte()
-      val isIndexed        = (header & 0x01) != 0
-      val result           = scala.collection.mutable.ListBuffer.empty[BaboonIndexEntry]
-      var prevOffset: Long = 0L
-      var prevLen: Long    = 0L
+    def readIndex(ctx: BaboonCodecContext, wire: LEDataInputStream): Either[Throwable, List[BaboonIndexEntry]] = {
+      Try {
+        val header           = wire.readByte()
+        val isIndexed        = (header & 0x01) != 0
+        val result           = scala.collection.mutable.ListBuffer.empty[BaboonIndexEntry]
+        var prevOffset: Long = 0L
+        var prevLen: Long    = 0L
+        if (isIndexed) {
+          var left = indexElementsCount(ctx).toInt
+          while (left > 0) {
+            val offset = wire.readInt()
+            val len    = wire.readInt()
 
-      if (isIndexed) {
-        var left = indexElementsCount(ctx).toInt
-        while (left > 0) {
-          val offset = wire.readInt()
-          val len    = wire.readInt()
+            require(len > 0, "Length must be positive")
+            require(offset >= prevOffset + prevLen, s"Offset violation: $offset not >= ${prevOffset + prevLen}")
 
-          require(len > 0, "Length must be positive")
-          require(offset >= prevOffset + prevLen, s"Offset violation: $offset not >= ${prevOffset + prevLen}")
-
-          result += BaboonIndexEntry(offset.toLong, len.toLong)
-          left       = left - 1
-          prevOffset = offset.toLong
-          prevLen    = len.toLong
+            result += BaboonIndexEntry(offset.toLong, len.toLong)
+            left       = left - 1
+            prevOffset = offset.toLong
+            prevLen    = len.toLong
+          }
         }
-      }
-
-      result.toList
+        result.toList
+      }.toEither
     }
   }
 
   trait AbstractBaboonCodecs {
     private val registry = mutable.Map.empty[String, Lazy[BaboonCodecData]]
 
-    def register[T](id: String, codec: Lazy[BaboonCodecData]): Unit = {
+    def register(id: String, codec: Lazy[BaboonCodecData]): Unit = {
       registry.put(id, codec)
     }
 

@@ -48,8 +48,7 @@ object ScCodecFixtureTranslator {
               } yield {
                 q"$oid.$did"
               }
-            case _ =>
-              defnFixtureId(definition)
+            case _ => defnFixtureId(definition)
           }
       }
 
@@ -91,21 +90,22 @@ object ScCodecFixtureTranslator {
     }
 
     private def doTranslateAdt(adt: Typedef.Adt): TextTree[ScValue] = {
+      val adtName = adt.id.name.name
       val members = adt.members.toList
-        .flatMap(m => domain.defs.meta.nodes.get(m))
+        .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
-      val membersFixtures   = members.sortBy(_.id.toString).map(dto => doTranslateDto(dto))
+      val membersFixtures   = members.sortBy(_.id.toString).map(doTranslateDto)
       val membersGenerators = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name}_Fixture.random")
 
       q"""object ${fixtureTpe(adt.id)} {
-         |  def random(rnd: $baboonRandom): ${adt.id.name.name} = {
+         |  def random(rnd: $baboonRandom): $adtName = {
          |    rnd.oneOf($scList(
          |      ${membersGenerators.join(",\n").shift(6).trim}
          |    ))
          |  }
          |
-         |  def randomAll(rnd: $baboonRandom): $scList[${adt.id.name.name}] = {
+         |  def randomAll(rnd: $baboonRandom): $scList[$adtName] = {
          |    $scList(
          |      ${membersGenerators.map(g => q"$g(rnd)").join(",\n").shift(6).trim}
          |    )

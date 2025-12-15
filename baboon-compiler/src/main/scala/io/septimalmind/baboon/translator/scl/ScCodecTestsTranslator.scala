@@ -120,7 +120,7 @@ object ScCodecTestsTranslator {
              |  val csUebaBytes = $javaNioFiles.readAllBytes(f.toPath)
              |  val bais = new java.io.ByteArrayInputStream(csUebaBytes)
              |  val dis = new $binaryInput(bais)
-             |  val dec = $codecName.instance.decode(context, dis)
+             |  val dec = $codecName.instance.decode(context, dis).toOption.get
              |  val sclUebaBytes = uebaCompare(context, dec, clue)
              |  assert(csUebaBytes.length == sclUebaBytes.length, s"$$clue")
              |}
@@ -134,7 +134,7 @@ object ScCodecTestsTranslator {
              |  
              |  val bais = new java.io.ByteArrayInputStream(bytes)
              |  val dis = new $binaryInput(bais)
-             |  val dec = $codecName.instance.decode(context, dis)
+             |  val dec = $codecName.instance.decode(context, dis).toOption.get
              |  assert(fixture == dec, s"$$clue")
              |  
              |  bytes

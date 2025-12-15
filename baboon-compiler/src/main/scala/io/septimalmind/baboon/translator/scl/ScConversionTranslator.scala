@@ -101,29 +101,24 @@ class ScConversionTranslator[F[+_, +_]: Error2](
     s: TypeRef.Scalar,
     os: TypeRef.Scalar,
   ): TextTree[ScValue] = {
-    val direct = if (s == os) {
-      oldRef
-    } else {
-      q"($oldRef.asInstanceOf[$newTypeRefTree])"
-    }
+    val direct =
+      if (s == os) oldRef
+      else q"($oldRef.asInstanceOf[$newTypeRefTree])"
 
     val conv =
       q"conversions.convertWithContext[C, $oldTypeRefTree, $newTypeRefTree](context, $oldRef)"
 
     s.id match {
-      case _: TypeId.Builtin =>
-        direct
+      case _: TypeId.Builtin => direct
       case id: TypeId.User =>
         domain.defs.meta.nodes(id) match {
-          case DomainMember.User(_, _: Typedef.Foreign, _, _) =>
-            direct
-          case _ =>
-            conv
+          case DomainMember.User(_, _: Typedef.Foreign, _, _) => direct
+          case _                                              => conv
         }
     }
   }
 
-  def makeConvs(): Out[List[RenderedConversion]] = {
+  def makeConvs: Out[List[RenderedConversion]] = {
     def makeName(prefix: String, conv: Conversion): String =
       (Seq(prefix) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
         conv.sourceTpe.name.name,
@@ -143,9 +138,9 @@ class ScConversionTranslator[F[+_, +_]: Error2](
         val tin  = trans.asScType(conv.sourceTpe, srcDom, evo).fullyQualified
         def tout = trans.asScType(conv.targetTpe, domain, evo)
 
-        val meta = q"""override def versionFrom: String = "${srcVer.v.toString}"
-                      |override def versionTo: String = "${domain.version.v.toString}"
-                      |override def typeId: String = "${conv.sourceTpe.toString}"
+        val meta = q"""override def versionFrom: $scString = "${srcVer.v.toString}"
+                      |override def versionTo: $scString = "${domain.version.v.toString}"
+                      |override def typeId: $scString = "${conv.sourceTpe.toString}"
                       """.stripMargin.trim
 
         val rendered = conv match {
@@ -153,7 +148,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             val classDef = q"""|abstract class $className
                                |  extends $baboonAbstractConversion[$tin, $tout] {
                                |    def doConvert[C](
-                               |      context: Option[C],
+                               |      context: $scOption[C],
                                |      conversions: $baboonAbstractConversions,
                                |      from: $tin
                                |    ): $tout
@@ -176,7 +171,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             val classDef = q"""|object $className
                                |  extends $baboonAbstractConversion[$tin, $tout] {
                                |    override def doConvert[C](
-                               |      context: Option[C],
+                               |      context: $scOption[C],
                                |      conversions: $baboonAbstractConversions,
                                |      from: $tin
                                |    ): $tout = $tout.parse(from.toString).get
@@ -192,13 +187,13 @@ class ScConversionTranslator[F[+_, +_]: Error2](
                 val oldT  = trans.asScType(oldId, srcDom, evo).fullyQualified
                 val newId = c.branchMapping.getOrElse(oldId.name.name, oldId)
                 q"case x: $oldT => ${transfer(TypeRef.Scalar(newId), q"x", 1, Some(TypeRef.Scalar(oldId)))}"
-            } :+ q"case other => throw new IllegalArgumentException(s\"Bad input: $$other\")"
+            } :+ q"case other => throw new $javaIllegalArgumentException(s\"Bad input: $$other\")"
 
             val classDef = q"""
                               |object $className
                               |  extends $baboonAbstractConversion[$tin, $tout] {
                               |    override def doConvert[C](
-                              |      context: Option[C],
+                              |      context: $scOption[C],
                               |      conversions: $baboonAbstractConversions,
                               |      from: $tin
                               |    ): $tout = from match {
@@ -251,7 +246,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
                               |object $className
                               |  extends $baboonAbstractConversion[$tin, $tout] {
                               |    override def doConvert[C](
-                              |      context: Option[C],
+                              |      context: $scOption[C],
                               |      conversions: $baboonAbstractConversions,
                               |      _from: $tin
                               |    ): $tout = {

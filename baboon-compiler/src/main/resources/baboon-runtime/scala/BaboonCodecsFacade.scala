@@ -173,13 +173,14 @@ package baboon.runtime.shared {
           .toRight(BaboonCodecException.DecoderFailure("Cannot decode binary type meta"))
 
         codec <- getBinCodec(typeMeta, exact = false)
-        baboon <- Try(codec.decode(BaboonCodecContext.Compact, reader)).toEither.left.map(
-          e =>
-            BaboonCodecException.DecoderFailure(
-              s"Can not decode BIN form type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
-              e,
-            )
-        )
+        baboon <- codec
+          .decode(BaboonCodecContext.Compact, reader).left.map(
+            e =>
+              BaboonCodecException.DecoderFailure(
+                s"Can not decode BIN form type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
+                e,
+              )
+          )
       } yield baboon
     }
 
@@ -235,10 +236,6 @@ package baboon.runtime.shared {
       val maybeContentToken = value.hcursor.downField(CONTENT_JSON_KEY).as[Json].toOption
       (maybeTypeMeta, maybeContentToken) match {
         case (Some(typeMeta), Some(contentToken)) =>
-          for {
-            jsonCodec <- getJsonCodec(typeMeta, exact = false)
-            baboon    <- jsonCodec.decode(BaboonCodecContext.Compact, contentToken)
-          } yield baboon
           Try(getJsonCodec(typeMeta, exact = false).flatMap(_.decode(BaboonCodecContext.Compact, contentToken))).toEither.left
             .map(
               e =>
