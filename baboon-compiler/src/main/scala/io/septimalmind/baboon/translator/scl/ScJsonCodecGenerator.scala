@@ -138,13 +138,11 @@ class ScJsonCodecGenerator(
           wrapAdtBranchEncoder(branchName, routedBranchEncoder)
         }
 
-        val branchValue = if (target.language.wrappedAdtBranchCodecs) q"wire" else q"json"
-
         (
           q"""case $branchNameRef: $fqBranch => $branchEncoder
              |""".stripMargin,
           q"""case "$branchName" =>
-             |  ${fqBranch}_JsonCodec.instance.decode(ctx, $branchValue)
+             |  ${fqBranch}_JsonCodec.instance.decode(ctx, json)
              |""".stripMargin,
         )
 
