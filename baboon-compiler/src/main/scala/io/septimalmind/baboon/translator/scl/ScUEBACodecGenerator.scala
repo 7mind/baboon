@@ -117,7 +117,7 @@ class ScUEBACodecGenerator(
     val baseMethods = encoderMethods ++ decoderMethods
       ++ branchDecoder.map {
         body =>
-          q"""def decodeBranch(ctx: $baboonCodecContext, wire: $binaryInput): $name = {
+          q"""def decodeBranch(ctx: $baboonCodecContext, wire: $binaryInput): $scEither[$javaThrowable, $name] = {
              |  ${body.shift(2).trim}
              |}""".stripMargin
       }.toList ++ indexMethods
