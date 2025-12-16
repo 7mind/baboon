@@ -74,7 +74,7 @@ object ScCodecTestsTranslator {
              |
              |def jsonCompare(context: $baboonCodecContext, fixture: $srcRef, clue: $scString): io.circe.Json = {
              |  val fixtureJson    = $codecName.instance.encode(context, fixture)
-             |  val fixtureDecoded = $codecName.instance.decode(context, fixtureJson).toOption.get
+             |  val fixtureDecoded = $codecName.instance.decode(context, fixtureJson).toTry.get
              |  assert(fixture == fixtureDecoded, s"$$clue")
              |  fixtureJson
              |}
@@ -85,7 +85,7 @@ object ScCodecTestsTranslator {
              |  assume(f.exists())
              |  val b = $javaNioFiles.readAllBytes(f.toPath)
              |  import io.circe.parser.parse
-             |  val csJson = parse(new $scString(b, $javaNioStandardCharsets.UTF_8)).toOption.get
+             |  val csJson = parse(new $scString(b, $javaNioStandardCharsets.UTF_8)).toTry.get
              |  val dec = $codecName.instance.decode(context, csJson).toOption
              |  assert(dec.nonEmpty)
              |  jsonCompare(context, dec.get, clue)
@@ -120,7 +120,7 @@ object ScCodecTestsTranslator {
              |  val csUebaBytes = $javaNioFiles.readAllBytes(f.toPath)
              |  val bais = new java.io.ByteArrayInputStream(csUebaBytes)
              |  val dis = new $binaryInput(bais)
-             |  val dec = $codecName.instance.decode(context, dis).toOption.get
+             |  val dec = $codecName.instance.decode(context, dis).toTry.get
              |  val sclUebaBytes = uebaCompare(context, dec, clue)
              |  assert(csUebaBytes.length == sclUebaBytes.length, s"$$clue")
              |}
@@ -134,7 +134,7 @@ object ScCodecTestsTranslator {
              |  
              |  val bais = new java.io.ByteArrayInputStream(bytes)
              |  val dis = new $binaryInput(bais)
-             |  val dec = $codecName.instance.decode(context, dis).toOption.get
+             |  val dec = $codecName.instance.decode(context, dis).toTry.get
              |  assert(fixture == dec, s"$$clue")
              |  
              |  bytes
