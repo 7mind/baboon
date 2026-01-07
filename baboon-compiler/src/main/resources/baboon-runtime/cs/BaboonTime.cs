@@ -177,7 +177,12 @@ namespace Baboon.Time
         public int DiffInFullHours(RpDateTime other) => (int) (this - other).TotalHours;
         public int DiffInFullDays(RpDateTime other) => (int) (this - other).TotalDays;
         public int DiffInFullWeeks(RpDateTime other) => DiffInFullDays(other) / 7;
-        public int DiffInFullMonths(RpDateTime other) => Date == other.Date ? 0 : (Year - other.Year) * 12 + Month - other.Month + GetMonthsDiffByDays(other);
+        public int DiffInFullMonths(RpDateTime other)
+        {
+            var thisDt = ToUniversalTime();
+            var otherDt = other.ToUniversalTime();
+            return thisDt.Date == otherDt.Date ? 0 : (thisDt.Year - otherDt.Year) * 12 + thisDt.Month - otherDt.Month + thisDt.GetMonthsDiffByDays(otherDt);
+        }
         public int DiffInFullYears(RpDateTime other) => DiffInFullMonths(other) / 12;
 
         public static RpDateTime Now => new(DateTimeOffset.Now, DateTimeKind.Local);
@@ -263,21 +268,24 @@ namespace Baboon.Time
 
         private int GetMonthsDiffByDays(RpDateTime other)
         {
-            var thisDaysInMonth = DateTime.DaysInMonth(Year, Month);
-            var otherDaysInMonth = DateTime.DaysInMonth(other.Year, other.Month);
+            var thisDt = ToUniversalTime();
+            var otherDt = other.ToUniversalTime();
 
-            var thisDay = thisDaysInMonth < otherDaysInMonth ? Day : thisDaysInMonth == Day ? otherDaysInMonth : Day;
-            var otherDay = otherDaysInMonth < thisDaysInMonth ? other.Day : otherDaysInMonth == other.Day ? thisDaysInMonth : other.Day;
+            var thisDaysInMonth = DateTime.DaysInMonth(thisDt.Year, thisDt.Month);
+            var otherDaysInMonth = DateTime.DaysInMonth(otherDt.Year, otherDt.Month);
 
-            if (this < other)
+            var thisDay = thisDaysInMonth < otherDaysInMonth ? thisDt.Day : thisDaysInMonth == thisDt.Day ? otherDaysInMonth : thisDt.Day;
+            var otherDay = otherDaysInMonth < thisDaysInMonth ? otherDt.Day : otherDaysInMonth == otherDt.Day ? thisDaysInMonth : otherDt.Day;
+
+            if (thisDt < other)
             {
                 if (thisDay > otherDay) return 1;
-                if (thisDay == otherDay && TimeOfDay > other.TimeOfDay) return 1;
+                if (thisDay == otherDay && thisDt.TimeOfDay > otherDt.TimeOfDay) return 1;
             }
             else
             {
                 if (thisDay < otherDay) return -1;
-                if (thisDay == otherDay && TimeOfDay < other.TimeOfDay) return -1;
+                if (thisDay == otherDay && thisDt.TimeOfDay < otherDt.TimeOfDay) return -1;
             }
 
             return 0;
