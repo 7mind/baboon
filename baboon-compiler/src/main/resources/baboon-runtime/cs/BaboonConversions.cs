@@ -41,6 +41,22 @@ namespace Baboon.Runtime.Shared
 
     public abstract class AbstractConversion<TFrom, TTo> : IBaboonGeneratedConversion
     {
+        public abstract string VersionFrom();
+
+        public abstract string VersionTo();
+
+        public abstract string TypeId();
+
+        public Type TypeFrom()
+        {
+            return typeof(TFrom);
+        }
+
+        public Type TypeTo()
+        {
+            return typeof(TTo);
+        }
+
         protected void ValidateBaboonType(object? obj)
         {
             if (obj is IBaboonGenerated bgf)
@@ -63,11 +79,19 @@ namespace Baboon.Runtime.Shared
             }
         }
 
+        protected virtual bool ConversionValidationEnabled()
+        {
+            return true;
+        }
+
         public TTo Convert<TCtx>(TCtx? context, AbstractBaboonConversions conversions, TFrom from)
         {
-            ValidateBaboonType(from);
             var result = DoConvert(context, conversions, from);
-            ValidateBaboonType(result);
+            if (ConversionValidationEnabled())
+            {
+              ValidateBaboonType(from);
+              ValidateBaboonType(result);
+            }
             return result;
         }
 
@@ -89,22 +113,6 @@ namespace Baboon.Runtime.Shared
 
             return bg;
         }
-
-        public Type TypeFrom()
-        {
-            return typeof(TFrom);
-        }
-
-        public Type TypeTo()
-        {
-            return typeof(TTo);
-        }
-
-        public abstract string VersionFrom();
-
-        public abstract string VersionTo();
-
-        public abstract string TypeId();
     }
 
     public sealed class ConversionKey
