@@ -72,8 +72,9 @@ object BaboonTyper {
         }.toMap
         refMeta     <- makeRefMeta(graph.meta.nodes)
         derivations <- computeDerivations(graph.meta.nodes)
+        renames      = computeRenames(id, graph.meta.nodes)
       } yield {
-        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations, roots.keySet)
+        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations, roots.keySet, renames)
       }
     }
 
@@ -108,6 +109,25 @@ object BaboonTyper {
       }.toMap
 
       F.pure(out)
+    }
+
+    private def computeRenames(
+      pkg: Pkg,
+      defs: Map[TypeId, DomainMember],
+    ): Map[TypeId.User, TypeId.User] = {
+      defs.values.collect { case u: DomainMember.User => u }.flatMap {
+        td =>
+          td.derivations.collect {
+            case RawMemberMeta.Was(ref: RawTypeRef.Simple) =>
+              val oldOwner = if (ref.prefix.isEmpty) {
+                td.id.owner
+              } else {
+                Owner.Ns(ref.prefix.map(n => TypeName(n.name)))
+              }
+              val oldTypeId = TypeId.User(pkg, oldOwner, TypeName(ref.name.name))
+              (td.id, oldTypeId)
+          }
+      }.toMap
     }
 
     private def makeRefMeta(

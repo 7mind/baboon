@@ -14,6 +14,7 @@ case class Domain(
   refMeta: Map[TypeRef, RefMeta],
   derivationRequests: Map[RawMemberMeta, Set[TypeId]],
   roots: Set[TypeId],
+  renames: Map[TypeId.User, TypeId.User],
 ) {
 
   import izumi.fundamentals.platform.strings.IzString.*

@@ -51,3 +51,29 @@ root data AllBasicTypes: derived[json], derived[ueba] {
   vlstOpt: lst[opt[i32]]
   vmapLst: map[str, lst[i64]]
 }
+
+// Renamed types from v1.0.0
+root data NewTypeName : was[OldTypeName] {
+  value: str
+}
+
+enum NewEnumName : was[OldEnumName] {
+  A
+  B
+}
+
+root data NewEnumHolder {
+  e: NewEnumName
+}
+
+root adt NewAdtName : was[OldAdtName] {
+  data Branch1 {
+    f: str
+  }
+}
+
+ns newns {
+  root data NewNamespacedType : was[oldns.OldNamespacedType] {
+    x: i32
+  }
+}

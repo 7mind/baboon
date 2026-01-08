@@ -128,7 +128,9 @@ class ScConversionTranslator[F[+_, +_]: Error2](
         )).mkString("-")
 
         val tin  = trans.asScType(conv.sourceTpe, srcDom, evo).fullyQualified
-        def tout = trans.asScType(conv.sourceTpe, domain, evo)
+        // For renamed types, use the target type; otherwise use source type in the target domain
+        val targetTypeId = conv.targetTpe.getOrElse(conv.sourceTpe)
+        def tout = trans.asScType(targetTypeId, domain, evo)
 
         val meta = q"""override def versionFrom: String = "${srcVer.v.toString}"
                       |override def versionTo:   String = "${domain.version.v.toString}"
@@ -179,10 +181,23 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), Some(regtree), None))
 
           case c: Conversion.CopyAdtBranchByName =>
+            // For renamed ADTs, we need to map old branch TypeIds to new branch TypeIds by name
+            val newAdtId = c.targetTpe.getOrElse(c.sourceTpe)
+            val newAdt = domain.defs.meta.nodes(newAdtId) match {
+              case DomainMember.User(_, a: Typedef.Adt, _, _) => a
+              case _                                          => throw new IllegalStateException("ADT expected")
+            }
+            val newBranchesByName = newAdt.members.map(m => (m.name.name, m)).toMap
+
             val cases = c.oldDefn.dataMembers(srcDom).map {
               oldId =>
                 val oldT = trans.asScType(oldId, srcDom, evo).fullyQualified
-                q"case x: $oldT => ${transfer(TypeRef.Scalar(oldId), q"x", 1)}"
+                // Map old branch to new branch by name
+                val newId = newBranchesByName.get(oldId.name.name) match {
+                  case Some(newBranchId) => newBranchId
+                  case None              => oldId // Fallback for safety
+                }
+                q"case x: $oldT => ${transfer(TypeRef.Scalar(newId), q"x", 1, Some(TypeRef.Scalar(oldId)))}"
             } :+ q"case other => throw new IllegalArgumentException(s\"Bad input: $$other\")"
 
             val classDef = q"""
@@ -202,7 +217,9 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), Some(regtree), None))
 
           case c: Conversion.DtoConversion =>
-            val dto = domain.defs.meta.nodes(c.sourceTpe) match {
+            // For renamed types, look up by target type; otherwise by source type
+            val defnTypeId = c.targetTpe.getOrElse(c.sourceTpe)
+            val dto = domain.defs.meta.nodes(defnTypeId) match {
               case DomainMember.User(_, d: Typedef.Dto, _, _) => d
               case _                                          => throw new IllegalStateException("DTO expected")
             }

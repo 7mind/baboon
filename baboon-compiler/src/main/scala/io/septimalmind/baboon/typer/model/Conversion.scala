@@ -11,20 +11,25 @@ object DerivationFailure {
 
 sealed trait Conversion {
   def sourceTpe: TypeId.User
+  def targetTpe: Option[TypeId.User]
 }
 
 object Conversion {
-  case class CustomConversionRequired(sourceTpe: TypeId.User, reason: DerivationFailure) extends Conversion
+  case class CustomConversionRequired(sourceTpe: TypeId.User, reason: DerivationFailure, targetTpe: Option[TypeId.User] = None) extends Conversion
 
-  case class RemovedTypeNoConversion(sourceTpe: TypeId.User) extends Conversion
+  case class RemovedTypeNoConversion(sourceTpe: TypeId.User) extends Conversion {
+    def targetTpe: Option[TypeId.User] = None
+  }
 
-  case class NonDataTypeTypeNoConversion(sourceTpe: TypeId.User) extends Conversion
+  case class NonDataTypeTypeNoConversion(sourceTpe: TypeId.User) extends Conversion {
+    def targetTpe: Option[TypeId.User] = None
+  }
 
-  case class CopyEnumByName(sourceTpe: TypeId.User) extends Conversion
+  case class CopyEnumByName(sourceTpe: TypeId.User, targetTpe: Option[TypeId.User] = None) extends Conversion
 
-  case class DtoConversion(sourceTpe: TypeId.User, ops: List[FieldOp], removed: Set[Field]) extends Conversion
+  case class DtoConversion(sourceTpe: TypeId.User, ops: List[FieldOp], removed: Set[Field], targetTpe: Option[TypeId.User] = None) extends Conversion
 
-  case class CopyAdtBranchByName(sourceTpe: TypeId.User, oldDefn: Typedef.Adt) extends Conversion
+  case class CopyAdtBranchByName(sourceTpe: TypeId.User, oldDefn: Typedef.Adt, targetTpe: Option[TypeId.User] = None) extends Conversion
 
   sealed trait FieldOp {
     def targetField: Field

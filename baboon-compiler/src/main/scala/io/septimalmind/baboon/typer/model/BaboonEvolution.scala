@@ -35,6 +35,7 @@ case class BaboonChanges(
   shallowModified: Set[TypeId],
   deepModified: Set[TypeId],
   fullyModified: Set[TypeId],
+  renamed: Map[TypeId.User, TypeId.User],
 ) {
   def changed: Set[TypeId] = shallowModified ++ deepModified ++ fullyModified
 
@@ -46,6 +47,7 @@ case class BaboonChanges(
       s"Modified (shallow): ${shallowModified.niceList()}",
       s"Modified (deep): ${deepModified.niceList()}",
       s"Modified (full): ${fullyModified.niceList()}",
+      s"Renamed: ${renamed.map { case (n, o) => s"$o -> $n" }.niceList()}",
     ).mkString("\n")
   }
 }

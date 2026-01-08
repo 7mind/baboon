@@ -24,19 +24,28 @@ object BaboonRules {
   ) extends BaboonRules[F] {
 
     override def compute(prev: Domain, last: Domain, diff: BaboonDiff): F[NEList[BaboonIssue], BaboonRuleset] = {
+      // Build reverse lookup: old ID -> new ID for renames
+      val renameTargets: Map[TypeId.User, TypeId.User] = diff.changes.renamed.map { case (newId, oldId) => (oldId, newId) }
+
       for {
         conversions <- F.traverseAccumErrors(prev.defs.meta.nodes.collect {
           case (id: TypeId.User, DomainMember.User(_, defn, _, _)) =>
             (id, defn)
         }.toList) {
           case (id, defn) =>
+            // Check if this type was renamed to a new type
+            val maybeTargetTpe = renameTargets.get(id)
+            val isRenamed      = maybeTargetTpe.isDefined
+
             val unmodified  = diff.changes.unmodified.contains(id)
             val deepChanged = diff.changes.deepModified.contains(id)
 
-            val sameLocalStruct = unmodified || deepChanged
+            // For renamed types, check if there's a diff entry (structure may have changed along with rename)
+            val hasDiff          = diff.diffs.contains(id)
+            val sameLocalStruct  = (unmodified || deepChanged) && !isRenamed || (isRenamed && !hasDiff)
 
             val shallowChanged = diff.changes.shallowModified.contains(id) || diff.changes.fullyModified
-              .contains(id)
+              .contains(id) || (isRenamed && hasDiff)
 
             defn match {
               case d: Typedef.Dto if sameLocalStruct =>
@@ -45,6 +54,7 @@ object BaboonRules {
                     id,
                     d.fields.map(f => FieldOp.Transfer(f)),
                     Set.empty,
+                    maybeTargetTpe,
                   )
                 )
               case _: Typedef.Contract =>
@@ -52,28 +62,36 @@ object BaboonRules {
               case _: Typedef.Service =>
                 F.pure(NonDataTypeTypeNoConversion(id))
               case _: Typedef.Enum if sameLocalStruct =>
-                F.pure(CopyEnumByName(id))
+                F.pure(CopyEnumByName(id, maybeTargetTpe))
               case oldDefn: Typedef.Adt if sameLocalStruct =>
-                F.pure(CopyAdtBranchByName(id, oldDefn))
+                F.pure(CopyAdtBranchByName(id, oldDefn, maybeTargetTpe))
 
-              case _ if diff.changes.removed.contains(id) =>
+              case _ if diff.changes.removed.contains(id) && !isRenamed =>
                 F.pure(RemovedTypeNoConversion(id))
 
               case _: Typedef.Foreign if sameLocalStruct =>
                 F.pure(NonDataTypeTypeNoConversion(id))
 
               case _: Typedef.Foreign =>
-                F.pure(CustomConversionRequired(id, DerivationFailure.Foreign))
+                F.pure(CustomConversionRequired(id, DerivationFailure.Foreign, maybeTargetTpe))
 
               case _: Typedef.Dto =>
-                assert(shallowChanged)
+                assert(shallowChanged || isRenamed)
                 for {
-                  ops <- diff.diffs(id) match {
-                    case TypedefDiff.DtoDiff(ops) =>
+                  ops <- diff.diffs.get(id) match {
+                    case Some(TypedefDiff.DtoDiff(ops)) =>
                       F.pure(ops)
-                    case o =>
+                    case Some(o) =>
                       F.fail(
                         BaboonIssue.of(EvolutionIssue.UnexpectedDiffType(o, "DTODiff"))
+                      )
+                    case None if isRenamed =>
+                      // Renamed without structural changes - treat all fields as transfers
+                      val newDefn = last.defs.meta.nodes(maybeTargetTpe.get).asInstanceOf[DomainMember.User].defn.asInstanceOf[Typedef.Dto]
+                      F.pure(newDefn.fields.map(f => DtoOp.KeepField(f, RefModification.Unchanged)).toList)
+                    case None =>
+                      F.fail(
+                        BaboonIssue.of(EvolutionIssue.UnexpectedDiffType(TypedefDiff.DtoDiff(List.empty), "DTODiff"))
                       )
                   }
 
@@ -98,7 +116,6 @@ object BaboonRules {
                       assert(op.f.tpe != op.newType)
                       !types.isCompatibleChange(op.f.tpe, op.newType)
                   }
-//                  _               <- F.pure(if (incompatibleChanges.nonEmpty) println(s"!! ${defn.id}: $incompatibleChanges"))
                   initWithDefaults = compatibleAdditions.map(a => FieldOp.InitializeWithDefault(a.f))
 
                   wrap = changes
@@ -145,51 +162,64 @@ object BaboonRules {
                       .isEmpty
                   )
                   if (incompatibleChanges.nonEmpty || incompatibleAdditions.nonEmpty) {
-                    CustomConversionRequired(id, DerivationFailure.IncompatibleFields(incompatibleChanges, incompatibleAdditions))
+                    CustomConversionRequired(id, DerivationFailure.IncompatibleFields(incompatibleChanges, incompatibleAdditions), maybeTargetTpe)
                   } else {
                     DtoConversion(
                       id,
                       keepFields ++ (wrap ++ precex ++ swap ++ initWithDefaults).toList,
                       removals,
+                      maybeTargetTpe,
                     )
                   }
                 }
 
               case _: Typedef.Enum =>
-                assert(shallowChanged)
+                assert(shallowChanged || isRenamed)
                 for {
-                  incompatible <- diff.diffs(id) match {
-                    case TypedefDiff.EnumDiff(ops) =>
+                  incompatible <- diff.diffs.get(id) match {
+                    case Some(TypedefDiff.EnumDiff(ops)) =>
                       F.pure(ops.collect { case r: EnumOp.RemoveBranch => r })
-                    case o =>
+                    case Some(o) =>
                       F.fail(
                         BaboonIssue.of(EvolutionIssue.UnexpectedDiffType(o, "EnumDiff"))
+                      )
+                    case None if isRenamed =>
+                      F.pure(List.empty[EnumOp.RemoveBranch])
+                    case None =>
+                      F.fail(
+                        BaboonIssue.of(EvolutionIssue.UnexpectedDiffType(TypedefDiff.EnumDiff(List.empty), "EnumDiff"))
                       )
                   }
                 } yield {
                   if (incompatible.isEmpty) {
-                    CopyEnumByName(id)
+                    CopyEnumByName(id, maybeTargetTpe)
                   } else {
-                    CustomConversionRequired(id, DerivationFailure.EnumBranchRemoved(incompatible))
+                    CustomConversionRequired(id, DerivationFailure.EnumBranchRemoved(incompatible), maybeTargetTpe)
                   }
                 }
 
               case a: Typedef.Adt =>
-                assert(shallowChanged)
+                assert(shallowChanged || isRenamed)
                 for {
-                  incompatible <- diff.diffs(id) match {
-                    case TypedefDiff.AdtDiff(ops) =>
+                  incompatible <- diff.diffs.get(id) match {
+                    case Some(TypedefDiff.AdtDiff(ops)) =>
                       F.pure(ops.collect { case r: AdtOp.RemoveBranch => r })
-                    case o =>
+                    case Some(o) =>
                       F.fail(
                         BaboonIssue.of(EvolutionIssue.UnexpectedDiffType(o, "ADTDiff"))
+                      )
+                    case None if isRenamed =>
+                      F.pure(List.empty[AdtOp.RemoveBranch])
+                    case None =>
+                      F.fail(
+                        BaboonIssue.of(EvolutionIssue.UnexpectedDiffType(TypedefDiff.AdtDiff(List.empty), "ADTDiff"))
                       )
                   }
                 } yield {
                   if (incompatible.isEmpty) {
-                    CopyAdtBranchByName(id, a)
+                    CopyAdtBranchByName(id, a, maybeTargetTpe)
                   } else {
-                    CustomConversionRequired(id, DerivationFailure.AdtBranchRemoved(incompatible))
+                    CustomConversionRequired(id, DerivationFailure.AdtBranchRemoved(incompatible), maybeTargetTpe)
                   }
                 }
 

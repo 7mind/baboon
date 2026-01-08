@@ -14,3 +14,29 @@ root data TransferOpt {
   ol: opt[lst[Adt0]]
   ml: map[str, lst[Adt0]]
 }
+
+// Types that will be renamed in v2.0.0
+root data OldTypeName {
+  value: str
+}
+
+enum OldEnumName {
+  A
+  B
+}
+
+root data OldEnumHolder {
+  e: OldEnumName
+}
+
+root adt OldAdtName {
+  data Branch1 {
+    f: str
+  }
+}
+
+ns oldns {
+  root data OldNamespacedType {
+    x: i32
+  }
+}

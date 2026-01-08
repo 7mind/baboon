@@ -77,12 +77,13 @@ class CSConversionTranslator[F[+_, +_]: Error2](
           .asCsType(conv.sourceTpe, srcDom, lineage.evolution)
           .fullyQualified
 
-        // This would fail if `sourceTpe` had been removed from `domain`. It's inconvenient to have this defined in each branch of the match below, so we use `def`
+        // For renamed types, use the target type; otherwise use source type in the target domain
+        val targetTypeId = conv.targetTpe.getOrElse(conv.sourceTpe)
         def tout =
-          trans.asCsType(conv.sourceTpe, domain, lineage.evolution)
+          trans.asCsType(targetTypeId, domain, lineage.evolution)
 
-        def transferId(tpe: TypeId.Scalar, ref: TextTree[CSValue]): TextTree[CSValue] = {
-          transfer(TypeRef.Scalar(tpe), ref, 0)
+        def transferId(tpe: TypeId.Scalar, ref: TextTree[CSValue], maybeOldTpe: Option[TypeId.Scalar] = None): TextTree[CSValue] = {
+          transfer(TypeRef.Scalar(tpe), ref, 0, maybeOldTpe = maybeOldTpe.map(TypeRef.Scalar.apply))
         }
 
         val fullMeta =
@@ -140,6 +141,14 @@ class CSConversionTranslator[F[+_, +_]: Error2](
             val regtree = q"Register(new $convname());"
             F.pure(List(RenderedConversion(fname, ctree, Some(regtree), None)))
           case c: Conversion.CopyAdtBranchByName =>
+            // For renamed ADTs, we need to map old branch TypeIds to new branch TypeIds by name
+            val newAdtId = c.targetTpe.getOrElse(c.sourceTpe)
+            val newAdt = domain.defs.meta.nodes(newAdtId) match {
+              case DomainMember.User(_, a: Typedef.Adt, _, _) => a
+              case _                                          => throw new IllegalStateException("ADT expected")
+            }
+            val newBranchesByName = newAdt.members.map(m => (m.name.name, m)).toMap
+
             val branches = c.oldDefn
               .dataMembers(srcDom)
               .map {
@@ -147,10 +156,15 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                   val oldFqid =
                     trans.asCsType(oldId, srcDom, lineage.evolution).fullyQualified
                   val typedRef = q"fromAs_${oldId.name.name}"
+                  // Map old branch to new branch by name
+                  val newId = newBranchesByName.get(oldId.name.name) match {
+                    case Some(newBranchId) => newBranchId
+                    case None              => oldId // Fallback for safety
+                  }
 
                   q"""if (from is $oldFqid $typedRef)
                      |{
-                     |    return ${transferId(oldId, typedRef)};
+                     |    return ${transferId(newId, typedRef, Some(oldId))};
                      |}""".stripMargin
               }
               .toSeq ++ Seq(q"""{
@@ -170,8 +184,10 @@ class CSConversionTranslator[F[+_, +_]: Error2](
             val regtree = q"Register(new $convname());"
             F.pure(List(RenderedConversion(fname, ctree, Some(regtree), None)))
           case c: Conversion.DtoConversion =>
+            // For renamed types, look up by target type; otherwise by source type
+            val defnTypeId = c.targetTpe.getOrElse(c.sourceTpe)
             for {
-              newDefn <- domain.defs.meta.nodes(c.sourceTpe) match {
+              newDefn <- domain.defs.meta.nodes(defnTypeId) match {
                 case DomainMember.User(_, defn: Typedef.Dto, _, _) =>
                   F.pure(defn)
                 case _ => F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
@@ -310,13 +326,15 @@ class CSConversionTranslator[F[+_, +_]: Error2](
     }
   }
 
-  private def transfer(tpe: TypeRef, ref: TextTree[CSValue], depth: Int, nullable: Boolean = false): TextTree[CSValue] = {
+  private def transfer(tpe: TypeRef, ref: TextTree[CSValue], depth: Int, nullable: Boolean = false, maybeOldTpe: Option[TypeRef] = None): TextTree[CSValue] = {
     import io.septimalmind.baboon.translator.FQNSymbol.*
+
+    val oldTpe = maybeOldTpe.getOrElse(tpe)
 
     val cnew =
       trans.asCsRef(tpe, domain, lineage.evolution)
 
-    val cold = trans.asCsRef(tpe, srcDom, lineage.evolution).fullyQualified
+    val cold = trans.asCsRef(oldTpe, srcDom, lineage.evolution).fullyQualified
 
     val direct = if (nullable) {
       q"(($cnew?) $ref)"

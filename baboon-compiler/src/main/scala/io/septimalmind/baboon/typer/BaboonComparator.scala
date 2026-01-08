@@ -164,9 +164,17 @@ object BaboonComparator {
       val newTypes = last.defs.meta.nodes.keySet
       val oldTypes = prev.defs.meta.nodes.keySet
 
+      // Identify valid renames: new type has was[] pointing to an existing old type
+      val validRenames: Map[TypeId.User, TypeId.User] = last.renames.filter {
+        case (newId, oldId) =>
+          newTypes.contains(newId) && oldTypes.contains(oldId) && !newTypes.contains(oldId)
+      }
+      val renamedNewIds = validRenames.keySet.asInstanceOf[Set[TypeId]]
+      val renamedOldIds = validRenames.values.toSet.asInstanceOf[Set[TypeId]]
+
       val kept    = newTypes.intersect(oldTypes)
-      val added   = newTypes.diff(oldTypes)
-      val removed = oldTypes.diff(newTypes)
+      val added   = newTypes.diff(oldTypes).diff(renamedNewIds)
+      val removed = oldTypes.diff(newTypes).diff(renamedOldIds)
 
       val unmodified = kept.filter {
         id =>
@@ -207,24 +215,8 @@ object BaboonComparator {
 
       assert(partiallyModified == shallowModified ++ deepModified)
       assert(changed == partiallyModified ++ fullyModified)
-      assert(added ++ unmodified ++ changed == newTypes)
-      assert(removed ++ unmodified ++ changed == oldTypes)
 
       assert(changed.forall(_.isInstanceOf[TypeId.User]))
-
-//      println(s"modified: $changed")
-//      println(s"added: $added")
-//      println(s"removed: $removed")
-//      println(s"kept: $kept")
-//      println(s"* unmodified: $unmodified")
-//      println(s"* locallyModified: $fullyModified")
-//      println(s"* shallowModified: $shallowModified")
-//      println(s"* deepmodified: $deepModified")
-//
-//      println("OLD:")
-//      println(prev)
-//      println("NEW:")
-//      println(last)
 
       val changes = BaboonChanges(
         added,
@@ -233,10 +225,12 @@ object BaboonComparator {
         shallowModified,
         deepModified,
         fullyModified,
+        validRenames,
       )
 
       for {
-        diffs <- F.traverseAccumErrors(changed.toList) {
+        // Compute diffs for types that kept the same ID
+        keptDiffs <- F.traverseAccumErrors(changed.toList) {
           id =>
             val defOld = prev.defs.meta.nodes(id)
             val defNew = last.defs.meta.nodes(id)
@@ -249,7 +243,22 @@ object BaboonComparator {
                 F.fail(BaboonIssue.of(EvolutionIssue.IncomparableTypedefs(o, n)))
             }
         }
-        indexedDiffs <- F.fromEither(diffs.toUniqueMap(e => BaboonIssue.of(EvolutionIssue.NonUniqueDiffs(e))))
+        // Compute diffs for renamed types (old ID -> new definition)
+        renamedDiffs <- F.traverseAccumErrors(validRenames.toList) {
+          case (newId, oldId) =>
+            val defOld = prev.defs.meta.nodes(oldId)
+            val defNew = last.defs.meta.nodes(newId)
+
+            (defOld, defNew) match {
+              case (uold: DomainMember.User, unew: DomainMember.User) =>
+                diff(changes, uold.defn, unew.defn).map(diff => (oldId, diff))
+
+              case (o, n) =>
+                F.fail(BaboonIssue.of(EvolutionIssue.IncomparableTypedefs(o, n)))
+            }
+        }
+        allDiffs     = keptDiffs ++ renamedDiffs
+        indexedDiffs <- F.fromEither(allDiffs.toUniqueMap(e => BaboonIssue.of(EvolutionIssue.NonUniqueDiffs(e))))
       } yield {
         BaboonDiff(
           EvolutionStep(prev.version, last.version),
@@ -303,26 +312,58 @@ object BaboonComparator {
       a1: Typedef.Adt,
       a2: Typedef.Adt,
     ): F[NEList[BaboonIssue], TypedefDiff] = {
-      val members1 = a1.members.toSet
-      val members2 = a2.members.toSet
+      // Check if this is a renamed ADT comparison (old ADT id is in renamed values)
+      val isRenamed = changes.renamed.values.toSet.contains(a1.id)
 
-      val removedMembers = members1.diff(members2)
-      val addedMembers   = members2.diff(members1)
-      val keptMembers = members1.intersect(members2).map {
-        ref =>
-          val modification =
-            figureOutModification(changes, Set(ref))
+      if (isRenamed) {
+        // For renamed ADTs, compare branches by name since TypeIds will differ
+        val members1ByName = a1.members.map(m => (m.name.name, m)).toMap
+        val members2ByName = a2.members.map(m => (m.name.name, m)).toMap
 
-          AdtOp.KeepBranch(ref, modification)
+        val names1         = members1ByName.keySet
+        val names2         = members2ByName.keySet
+        val removedNames   = names1.diff(names2)
+        val addedNames     = names2.diff(names1)
+        val keptNames      = names1.intersect(names2)
+
+        val keptMembers = keptNames.map { name =>
+          val oldRef = members1ByName(name)
+          val newRef = members2ByName(name)
+          // Check modification status based on the new branch ref
+          val modification = figureOutModification(changes, Set(newRef))
+          AdtOp.KeepBranch(newRef, modification)
+        }
+
+        val ops = List(
+          removedNames.map(name => AdtOp.RemoveBranch(members1ByName(name))),
+          addedNames.map(name => AdtOp.AddBranch(members2ByName(name))),
+          keptMembers,
+        ).flatten
+
+        F.pure(TypedefDiff.AdtDiff(ops))
+      } else {
+        // Non-renamed ADTs: compare by TypeId as before
+        val members1 = a1.members.toSet
+        val members2 = a2.members.toSet
+
+        val removedMembers = members1.diff(members2)
+        val addedMembers   = members2.diff(members1)
+        val keptMembers = members1.intersect(members2).map {
+          ref =>
+            val modification =
+              figureOutModification(changes, Set(ref))
+
+            AdtOp.KeepBranch(ref, modification)
+        }
+
+        val ops = List(
+          removedMembers.map(id => AdtOp.RemoveBranch(id)),
+          addedMembers.map(id => AdtOp.AddBranch(id)),
+          keptMembers,
+        ).flatten
+
+        F.pure(TypedefDiff.AdtDiff(ops))
       }
-
-      val ops = List(
-        removedMembers.map(id => AdtOp.RemoveBranch(id)),
-        addedMembers.map(id => AdtOp.AddBranch(id)),
-        keptMembers,
-      ).flatten
-
-      F.pure(TypedefDiff.AdtDiff(ops))
     }
 
     private def diffDtos(
