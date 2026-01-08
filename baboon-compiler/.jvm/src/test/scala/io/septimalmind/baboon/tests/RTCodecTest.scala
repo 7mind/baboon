@@ -33,7 +33,7 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
 
     "roundtrip JSON files through UEBA" in {
       (loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F]) =>
-        val metaPath = Paths.get("test/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
+        val metaPath = Paths.get("target/test-regular/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
 
         (if (!Files.exists(metaPath)) {
            F.pure { assume(false, "baboon-meta.json not found"); () }
@@ -63,7 +63,7 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
              }
 
              // Process JSON files
-             jsonDir: java.nio.file.Path = Paths.get("test/target/cs/json-default")
+             jsonDir: java.nio.file.Path = Paths.get("target/test-regular/target/cs/json-default")
              _ <- F.fromEither {
                if (!Files.exists(jsonDir)) {
                  Left(new RuntimeException(s"JSON test directory not found: $jsonDir"))
@@ -115,7 +115,7 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
     }
 
     def testUebaRoundtrip(loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F], uebaDir: String, indexed: Boolean) = {
-      val metaPath = Paths.get("test/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
+      val metaPath = Paths.get("target/test-regular/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
 
       for {
         fam <- loadPkg(loader)
@@ -205,7 +205,7 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
 
     "roundtrip compact UEBA files through JSON" in {
       (loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F]) =>
-        val metaPath = Paths.get("test/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
+        val metaPath = Paths.get("target/test-regular/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
 
         (if (!Files.exists(metaPath)) {
            F.pure { assume(false, "baboon-meta.json not found"); () }
@@ -216,7 +216,7 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
 
     "roundtrip indexed UEBA files through JSON" in {
       (loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F]) =>
-        val metaPath = Paths.get("test/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
+        val metaPath = Paths.get("target/test-regular/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
 
         (if (!Files.exists(metaPath)) {
            F.pure { assume(false, "baboon-meta.json not found"); () }
