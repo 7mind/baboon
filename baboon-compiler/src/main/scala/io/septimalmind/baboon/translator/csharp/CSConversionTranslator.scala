@@ -56,7 +56,9 @@ class CSConversionTranslator[F[+_, +_]: Error2](
          |}""".stripMargin
 
 //    import izumi.fundamentals.collections.IzCollections.*
-    val (_, convsToTranslate) = rules.conversions.partition(c => csTypeInfo.canBeUpgradedTo(c.sourceTpe, srcDom.version, lineage).nonEmpty)
+    val (_, convsToTranslate) = rules.conversions
+      .collect { case tc: TargetedConversion => tc }
+      .partition(c => csTypeInfo.canBeUpgradedTo(c.sourceTpe, srcDom.version, lineage).nonEmpty)
 
 //    import izumi.fundamentals.platform.strings.IzString.*
 //    println(
@@ -77,10 +79,8 @@ class CSConversionTranslator[F[+_, +_]: Error2](
           .asCsType(conv.sourceTpe, srcDom, lineage.evolution)
           .fullyQualified
 
-        // For renamed types, use the target type; otherwise use source type in the target domain
-        val targetTypeId = conv.targetTpe.getOrElse(conv.sourceTpe)
         def tout =
-          trans.asCsType(targetTypeId, domain, lineage.evolution)
+          trans.asCsType(conv.targetTpe, domain, lineage.evolution)
 
         def transferId(tpe: TypeId.Scalar, ref: TextTree[CSValue], maybeOldTpe: Option[TypeId.Scalar] = None): TextTree[CSValue] = {
           transfer(TypeRef.Scalar(tpe), ref, 0, maybeOldTpe = maybeOldTpe.map(TypeRef.Scalar.apply))
@@ -119,10 +119,6 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                 )
               )
             )
-          case _: Conversion.RemovedTypeNoConversion =>
-            F.pure(List.empty)
-          case _: Conversion.NonDataTypeTypeNoConversion =>
-            F.pure(List.empty)
           case _: Conversion.CopyEnumByName =>
             val cdefn =
               q"""public sealed class $convname : $abstractConversion<$tin, $tout>
@@ -141,14 +137,6 @@ class CSConversionTranslator[F[+_, +_]: Error2](
             val regtree = q"Register(new $convname());"
             F.pure(List(RenderedConversion(fname, ctree, Some(regtree), None)))
           case c: Conversion.CopyAdtBranchByName =>
-            // For renamed ADTs, we need to map old branch TypeIds to new branch TypeIds by name
-            val newAdtId = c.targetTpe.getOrElse(c.sourceTpe)
-            val newAdt = domain.defs.meta.nodes(newAdtId) match {
-              case DomainMember.User(_, a: Typedef.Adt, _, _) => a
-              case _                                          => throw new IllegalStateException("ADT expected")
-            }
-            val newBranchesByName = newAdt.members.map(m => (m.name.name, m)).toMap
-
             val branches = c.oldDefn
               .dataMembers(srcDom)
               .map {
@@ -156,11 +144,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                   val oldFqid =
                     trans.asCsType(oldId, srcDom, lineage.evolution).fullyQualified
                   val typedRef = q"fromAs_${oldId.name.name}"
-                  // Map old branch to new branch by name
-                  val newId = newBranchesByName.get(oldId.name.name) match {
-                    case Some(newBranchId) => newBranchId
-                    case None              => oldId // Fallback for safety
-                  }
+                  val newId    = c.branchMapping.getOrElse(oldId.name.name, oldId)
 
                   q"""if (from is $oldFqid $typedRef)
                      |{
@@ -184,8 +168,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
             val regtree = q"Register(new $convname());"
             F.pure(List(RenderedConversion(fname, ctree, Some(regtree), None)))
           case c: Conversion.DtoConversion =>
-            // For renamed types, look up by target type; otherwise by source type
-            val defnTypeId = c.targetTpe.getOrElse(c.sourceTpe)
+            val defnTypeId = c.targetTpe
             for {
               newDefn <- domain.defs.meta.nodes(defnTypeId) match {
                 case DomainMember.User(_, defn: Typedef.Dto, _, _) =>

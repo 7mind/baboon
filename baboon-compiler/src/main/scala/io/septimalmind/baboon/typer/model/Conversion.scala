@@ -11,25 +11,30 @@ object DerivationFailure {
 
 sealed trait Conversion {
   def sourceTpe: TypeId.User
-  def targetTpe: Option[TypeId.User]
+}
+
+sealed trait TargetedConversion extends Conversion {
+  def targetTpe: TypeId.User
 }
 
 object Conversion {
-  case class CustomConversionRequired(sourceTpe: TypeId.User, reason: DerivationFailure, targetTpe: Option[TypeId.User] = None) extends Conversion
+  case class CustomConversionRequired(sourceTpe: TypeId.User, reason: DerivationFailure, targetTpe: TypeId.User) extends TargetedConversion
 
-  case class RemovedTypeNoConversion(sourceTpe: TypeId.User) extends Conversion {
-    def targetTpe: Option[TypeId.User] = None
-  }
+  case class RemovedTypeNoConversion(sourceTpe: TypeId.User) extends Conversion
 
-  case class NonDataTypeTypeNoConversion(sourceTpe: TypeId.User) extends Conversion {
-    def targetTpe: Option[TypeId.User] = None
-  }
+  case class NonDataTypeTypeNoConversion(sourceTpe: TypeId.User) extends Conversion
 
-  case class CopyEnumByName(sourceTpe: TypeId.User, targetTpe: Option[TypeId.User] = None) extends Conversion
+  case class CopyEnumByName(sourceTpe: TypeId.User, targetTpe: TypeId.User) extends TargetedConversion
 
-  case class DtoConversion(sourceTpe: TypeId.User, ops: List[FieldOp], removed: Set[Field], targetTpe: Option[TypeId.User] = None) extends Conversion
+  case class DtoConversion(sourceTpe: TypeId.User, ops: List[FieldOp], removed: Set[Field], targetTpe: TypeId.User) extends TargetedConversion
 
-  case class CopyAdtBranchByName(sourceTpe: TypeId.User, oldDefn: Typedef.Adt, targetTpe: Option[TypeId.User] = None) extends Conversion
+  /** @param branchMapping Maps old branch name to new branch TypeId */
+  case class CopyAdtBranchByName(
+    sourceTpe: TypeId.User,
+    oldDefn: Typedef.Adt,
+    targetTpe: TypeId.User,
+    branchMapping: Map[String, TypeId.User],
+  ) extends TargetedConversion
 
   sealed trait FieldOp {
     def targetField: Field

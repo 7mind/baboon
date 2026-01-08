@@ -448,7 +448,7 @@ object BaboonValidator {
             )
           case c: Conversion.CopyEnumByName =>
             val o = prev.defs.meta.nodes(c.sourceTpe)
-            val n = next.defs.meta.nodes(c.targetTpe.getOrElse(c.sourceTpe))
+            val n = next.defs.meta.nodes(c.targetTpe)
             (o, n) match {
               case (
                     DomainMember.User(_, oe: Typedef.Enum, _, _),
@@ -483,7 +483,7 @@ object BaboonValidator {
 
           case c: Conversion.DtoConversion =>
             val o = prev.defs.meta.nodes(c.sourceTpe)
-            val n = next.defs.meta.nodes(c.targetTpe.getOrElse(c.sourceTpe))
+            val n = next.defs.meta.nodes(c.targetTpe)
             (o, n) match {
               case (
                     DomainMember.User(_, od: Typedef.Dto, _, _),
@@ -570,7 +570,7 @@ object BaboonValidator {
             }
           case c: Conversion.CopyAdtBranchByName =>
             val o = prev.defs.meta.nodes(c.sourceTpe)
-            val n = next.defs.meta.nodes(c.targetTpe.getOrElse(c.sourceTpe))
+            val n = next.defs.meta.nodes(c.targetTpe)
             (o, n) match {
               case (
                     DomainMember.User(_, oa: Typedef.Adt, _, _),

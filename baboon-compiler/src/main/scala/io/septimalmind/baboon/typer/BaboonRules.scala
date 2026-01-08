@@ -27,6 +27,15 @@ object BaboonRules {
       // Build reverse lookup: old ID -> new ID for renames
       val renameTargets: Map[TypeId.User, TypeId.User] = diff.changes.renamed.map { case (newId, oldId) => (oldId, newId) }
 
+      def computeBranchMapping(targetAdtId: TypeId.User): Map[String, TypeId.User] = {
+        last.defs.meta.nodes(targetAdtId) match {
+          case DomainMember.User(_, adt: Typedef.Adt, _, _) =>
+            adt.members.map(m => (m.name.name, m)).toMap
+          case _ =>
+            Map.empty
+        }
+      }
+
       for {
         conversions <- F.traverseAccumErrors(prev.defs.meta.nodes.collect {
           case (id: TypeId.User, DomainMember.User(_, defn, _, _)) =>
@@ -36,6 +45,7 @@ object BaboonRules {
             // Check if this type was renamed to a new type
             val maybeTargetTpe = renameTargets.get(id)
             val isRenamed      = maybeTargetTpe.isDefined
+            val targetTpe      = maybeTargetTpe.getOrElse(id)
 
             val unmodified  = diff.changes.unmodified.contains(id)
             val deepChanged = diff.changes.deepModified.contains(id)
@@ -54,7 +64,7 @@ object BaboonRules {
                     id,
                     d.fields.map(f => FieldOp.Transfer(f)),
                     Set.empty,
-                    maybeTargetTpe,
+                    targetTpe,
                   )
                 )
               case _: Typedef.Contract =>
@@ -62,9 +72,9 @@ object BaboonRules {
               case _: Typedef.Service =>
                 F.pure(NonDataTypeTypeNoConversion(id))
               case _: Typedef.Enum if sameLocalStruct =>
-                F.pure(CopyEnumByName(id, maybeTargetTpe))
+                F.pure(CopyEnumByName(id, targetTpe))
               case oldDefn: Typedef.Adt if sameLocalStruct =>
-                F.pure(CopyAdtBranchByName(id, oldDefn, maybeTargetTpe))
+                F.pure(CopyAdtBranchByName(id, oldDefn, targetTpe, computeBranchMapping(targetTpe)))
 
               case _ if diff.changes.removed.contains(id) && !isRenamed =>
                 F.pure(RemovedTypeNoConversion(id))
@@ -73,7 +83,7 @@ object BaboonRules {
                 F.pure(NonDataTypeTypeNoConversion(id))
 
               case _: Typedef.Foreign =>
-                F.pure(CustomConversionRequired(id, DerivationFailure.Foreign, maybeTargetTpe))
+                F.pure(CustomConversionRequired(id, DerivationFailure.Foreign, targetTpe))
 
               case _: Typedef.Dto =>
                 assert(shallowChanged || isRenamed)
@@ -87,7 +97,7 @@ object BaboonRules {
                       )
                     case None if isRenamed =>
                       // Renamed without structural changes - treat all fields as transfers
-                      val newDefn = last.defs.meta.nodes(maybeTargetTpe.get).asInstanceOf[DomainMember.User].defn.asInstanceOf[Typedef.Dto]
+                      val newDefn = last.defs.meta.nodes(targetTpe).asInstanceOf[DomainMember.User].defn.asInstanceOf[Typedef.Dto]
                       F.pure(newDefn.fields.map(f => DtoOp.KeepField(f, RefModification.Unchanged)).toList)
                     case None =>
                       F.fail(
@@ -162,13 +172,13 @@ object BaboonRules {
                       .isEmpty
                   )
                   if (incompatibleChanges.nonEmpty || incompatibleAdditions.nonEmpty) {
-                    CustomConversionRequired(id, DerivationFailure.IncompatibleFields(incompatibleChanges, incompatibleAdditions), maybeTargetTpe)
+                    CustomConversionRequired(id, DerivationFailure.IncompatibleFields(incompatibleChanges, incompatibleAdditions), targetTpe)
                   } else {
                     DtoConversion(
                       id,
                       keepFields ++ (wrap ++ precex ++ swap ++ initWithDefaults).toList,
                       removals,
-                      maybeTargetTpe,
+                      targetTpe,
                     )
                   }
                 }
@@ -192,9 +202,9 @@ object BaboonRules {
                   }
                 } yield {
                   if (incompatible.isEmpty) {
-                    CopyEnumByName(id, maybeTargetTpe)
+                    CopyEnumByName(id, targetTpe)
                   } else {
-                    CustomConversionRequired(id, DerivationFailure.EnumBranchRemoved(incompatible), maybeTargetTpe)
+                    CustomConversionRequired(id, DerivationFailure.EnumBranchRemoved(incompatible), targetTpe)
                   }
                 }
 
@@ -217,9 +227,9 @@ object BaboonRules {
                   }
                 } yield {
                   if (incompatible.isEmpty) {
-                    CopyAdtBranchByName(id, a, maybeTargetTpe)
+                    CopyAdtBranchByName(id, a, targetTpe, computeBranchMapping(targetTpe))
                   } else {
-                    CustomConversionRequired(id, DerivationFailure.AdtBranchRemoved(incompatible), maybeTargetTpe)
+                    CustomConversionRequired(id, DerivationFailure.AdtBranchRemoved(incompatible), targetTpe)
                   }
                 }
 
