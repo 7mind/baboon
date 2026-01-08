@@ -40,13 +40,33 @@ class DefMeta(context: ParserContext) {
     }
   }
 
-  def derived[T](
-    implicit
-    v: P[?]
-  ): P[Set[DerivationDecl]] = {
+  private def simpleTypeRef[$: P]: P[RawTypeRef.Simple] = {
+    idt.symbolSeq.map { seq =>
+      val parts  = seq.map(RawTypeName.apply).toList
+      val name   = parts.last
+      val prefix = parts.init
+      RawTypeRef.Simple(name, prefix)
+    }
+  }
+
+  private def derivedAnnotation[$: P]: P[RawMemberMeta.Derived] = {
+    import fastparse.SingleLineWhitespace.whitespace
+    (kw.derived ~ LiteralStr("[") ~ idt.symbol ~ LiteralStr("]")).map(RawMemberMeta.Derived.apply)
+  }
+
+  private def wasAnnotation[$: P]: P[RawMemberMeta.Was] = {
+    import fastparse.SingleLineWhitespace.whitespace
+    (kw.was ~ LiteralStr("[") ~ simpleTypeRef ~ LiteralStr("]")).map(RawMemberMeta.Was.apply)
+  }
+
+  private def memberMeta[$: P]: P[RawMemberMeta] = {
+    P(derivedAnnotation | wasAnnotation)
+  }
+
+  def derived[$: P]: P[Set[RawMemberMeta]] = {
     import fastparse.ScalaWhitespace.whitespace
-    P(LiteralStr(":") ~ (kw.derived ~ LiteralStr("[") ~ idt.symbol ~ LiteralStr("]")).rep(sep = ",")).?.map {
-      s => s.map(s1 => s1.map(DerivationDecl.apply).toSet).getOrElse(Set.empty)
+    P(LiteralStr(":") ~ memberMeta.rep(sep = ",", min = 1)).?.map {
+      s => s.map(_.toSet).getOrElse(Set.empty)
     }
   }
 

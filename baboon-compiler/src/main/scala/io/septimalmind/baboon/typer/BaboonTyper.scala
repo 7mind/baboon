@@ -91,7 +91,7 @@ object BaboonTyper {
     // TODO: predMatrix from above can be reused here, currently the job is done twice
     private def computeDerivations(
       defs: Map[TypeId, DomainMember]
-    ): F[NEList[BaboonIssue], Map[DerivationDecl, Set[TypeId]]] = {
+    ): F[NEList[BaboonIssue], Map[RawMemberMeta, Set[TypeId]]] = {
       import izumi.fundamentals.collections.IzCollections.*
 
       val out = defs.values.collect { case u: DomainMember.User => u }.flatMap {

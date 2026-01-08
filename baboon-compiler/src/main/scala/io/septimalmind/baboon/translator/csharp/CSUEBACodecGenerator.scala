@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerTarget.CSTarget
-import io.septimalmind.baboon.parser.model.DerivationDecl
+import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.{CodecArguments, CodecMeta}
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
@@ -560,7 +560,7 @@ class CSUEBACodecGenerator(
 
   def isActive(id: TypeId): Boolean = {
     target.language.generateUebaCodecs &&
-    (target.language.generateUebaCodecsByDefault || domain.derivationRequests.getOrElse(DerivationDecl("ueba"), Set.empty[TypeId]).contains(id))
+    (target.language.generateUebaCodecsByDefault || domain.derivationRequests.getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId]).contains(id))
   }
 
   override def id: String = "ueba"

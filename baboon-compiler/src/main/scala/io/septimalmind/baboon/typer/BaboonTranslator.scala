@@ -280,7 +280,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
     } yield {
       val decls = dto match {
         case d: RawDto      => d.derived
-        case _: RawContract => Set.empty[DerivationDecl]
+        case _: RawContract => Set.empty[RawMemberMeta]
       }
 
       DomainMember.User(

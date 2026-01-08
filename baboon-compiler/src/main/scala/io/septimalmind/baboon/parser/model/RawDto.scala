@@ -13,15 +13,15 @@ sealed trait RawDtoid {
   def members: Seq[RawDtoMember]
   def meta: RawNodeMeta
 }
-case class RawDto(name: RawTypeName, members: Seq[RawDtoMember], derived: Set[DerivationDecl], meta: RawNodeMeta) extends RawDefn with RawDtoid
+case class RawDto(name: RawTypeName, members: Seq[RawDtoMember], derived: Set[RawMemberMeta], meta: RawNodeMeta) extends RawDefn with RawDtoid
 
 case class RawContract(name: RawTypeName, members: Seq[RawDtoMember], meta: RawNodeMeta) extends RawDefn with RawDtoid
 
-case class RawEnum(name: RawTypeName, members: Seq[RawEnumMember], derived: Set[DerivationDecl], meta: RawNodeMeta) extends RawDefn
+case class RawEnum(name: RawTypeName, members: Seq[RawEnumMember], derived: Set[RawMemberMeta], meta: RawNodeMeta) extends RawDefn
 
-case class RawAdt(name: RawTypeName, members: Seq[RawAdtMember], contracts: Seq[ContractRef], derived: Set[DerivationDecl], meta: RawNodeMeta) extends RawDefn
+case class RawAdt(name: RawTypeName, members: Seq[RawAdtMember], contracts: Seq[ContractRef], derived: Set[RawMemberMeta], meta: RawNodeMeta) extends RawDefn
 
-case class RawForeign(name: RawTypeName, defns: List[RawForeignEntry], derived: Set[DerivationDecl], meta: RawNodeMeta) extends RawDefn
+case class RawForeign(name: RawTypeName, defns: List[RawForeignEntry], derived: Set[RawMemberMeta], meta: RawNodeMeta) extends RawDefn
 
 case class RawNamespace(name: RawTypeName, defns: Seq[RawTLDef], meta: RawNodeMeta) extends RawDefn
 
@@ -51,4 +51,8 @@ object RawFuncArg {
   case class Struct(defn: RawDefn) extends RawFuncArg
 }
 
-case class DerivationDecl(id: String)
+sealed trait RawMemberMeta
+object RawMemberMeta {
+  case class Derived(id: String) extends RawMemberMeta
+  case class Was(id: RawTypeRef) extends RawMemberMeta
+}

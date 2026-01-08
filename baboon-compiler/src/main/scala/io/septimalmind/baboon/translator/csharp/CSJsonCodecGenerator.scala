@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.csharp
 
 import io.septimalmind.baboon.CompilerTarget.CSTarget
-import io.septimalmind.baboon.parser.model.DerivationDecl
+import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.{CodecArguments, CodecMeta}
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
@@ -451,7 +451,7 @@ class CSJsonCodecGenerator(
 
   def isActive(id: TypeId): Boolean = {
     target.language.generateJsonCodecs && (target.language.generateJsonCodecsByDefault || domain.derivationRequests
-      .getOrElse(DerivationDecl("json"), Set.empty[TypeId]).contains(id))
+      .getOrElse(RawMemberMeta.Derived("json"), Set.empty[TypeId]).contains(id))
   }
 
   override def id: String = "json"

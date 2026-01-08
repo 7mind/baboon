@@ -23,6 +23,7 @@ trait Keywords {
   def include[$: P]: P[Unit]   = kw("include")
   def namespace[$: P]: P[Unit] = kw("ns")
   def derived[$: P]: P[Unit]   = kw("derived")
+  def was[$: P]: P[Unit]       = kw("was")
   def drop[$: P]: P[Unit]      = kw("drop")
 
   def apply[T](kw: => P[Unit], defparser: => P[T])(implicit v: P[?]): P[T] = {

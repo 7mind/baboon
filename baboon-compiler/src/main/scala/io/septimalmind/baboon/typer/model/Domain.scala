@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.typer.model
 
-import io.septimalmind.baboon.parser.model.DerivationDecl
+import io.septimalmind.baboon.parser.model.RawMemberMeta
 import izumi.fundamentals.graphs.DG
 import izumi.fundamentals.graphs.tools.cycles.LoopDetector
 
@@ -12,7 +12,7 @@ case class Domain(
   typeMeta: Map[TypeId, TypeMeta],
   loops: Set[LoopDetector.Cycles[TypeId]],
   refMeta: Map[TypeRef, RefMeta],
-  derivationRequests: Map[DerivationDecl, Set[TypeId]],
+  derivationRequests: Map[RawMemberMeta, Set[TypeId]],
   roots: Set[TypeId],
 ) {
 
