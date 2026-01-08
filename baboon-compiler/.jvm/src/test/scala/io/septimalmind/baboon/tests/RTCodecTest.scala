@@ -36,7 +36,7 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
         val metaPath = Paths.get("test/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
 
         (if (!Files.exists(metaPath)) {
-           F.pure { pending; () }
+           F.pure { assume(false, "baboon-meta.json not found"); () }
          } else {
            for {
              fam <- loadPkg(loader)
@@ -208,7 +208,7 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
         val metaPath = Paths.get("test/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
 
         (if (!Files.exists(metaPath)) {
-           F.pure { pending; () }
+           F.pure { assume(false, "baboon-meta.json not found"); () }
          } else {
            testUebaRoundtrip(loader, codec, "test/target/cs/ueba-compact", indexed = false)
          }): F[Any, Unit]
@@ -219,7 +219,7 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
         val metaPath = Paths.get("test/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")
 
         (if (!Files.exists(metaPath)) {
-           F.pure { pending; () }
+           F.pure { assume(false, "baboon-meta.json not found"); () }
          } else {
            testUebaRoundtrip(loader, codec, "test/target/cs/ueba-indexed", indexed = true)
          }): F[Any, Unit]
