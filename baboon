@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+set -e
+
+BABOON_BIN="$(nix build .#baboon --print-out-paths --no-link 2>/dev/null)/bin/baboon"
+
+exec $BABOON_BIN baboon $*

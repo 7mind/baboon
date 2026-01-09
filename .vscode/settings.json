@@ -1,0 +1,10 @@
+{
+    "files.watcherExclude": {
+        "**/target": true
+    },
+    "baboon.modelDirs": [
+        "${workspaceFolder}/baboon-compiler/src/test/resources/baboon"
+    ],
+    //"baboon.serverPath": "${workspaceFolder}/baboon"
+    "baboon.serverPath": "${workspaceFolder}/baboon-compiler/.jvm/target/graalvm-native-image/baboon"
+}

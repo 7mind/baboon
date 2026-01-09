@@ -27,6 +27,11 @@
           config.allowUnfree = true;
         };
 
+        # Read version from version.sbt
+        versionSbt = builtins.readFile ./version.sbt;
+        versionMatch = builtins.match ''.*"([0-9]+\.[0-9]+\.[0-9]+)(-SNAPSHOT)?".*'' versionSbt;
+        version = builtins.elemAt versionMatch 0;
+
         coursierCache = squish-find-the-brains.lib.mkCoursierCache {
           inherit pkgs;
           lockfilePath = ./deps.lock.json;
@@ -40,7 +45,7 @@
       {
         packages = rec {
           baboon = pkgs.stdenv.mkDerivation {
-            version = "0.0.141";
+            inherit version;
             pname = "baboon";
             src = ./.;
             nativeBuildInputs = sbtSetup.nativeBuildInputs ++ [ pkgs.curl ];

@@ -28,6 +28,7 @@ class BaboonJvmScModule[F[+_, +_]: Error2: TagKK](target: ScTarget) extends Modu
 class BaboonModuleJvm[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
   options: CompilerOptions,
   parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[F],
+  silentMode: Boolean = false,
 ) extends ModuleDef {
   include(new BaboonModuleLogicModule[F](parallelAccumulatingOps2))
 
@@ -35,7 +36,11 @@ class BaboonModuleJvm[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
 
 //  make[Seq[Path]].named("inputs").fromValue(inputs)
 
-  make[BLogger].from[BLogger.BLoggerImpl]
+  if (silentMode) {
+    make[BLogger].fromValue(BLogger.Noop)
+  } else {
+    make[BLogger].from[BLogger.BLoggerImpl]
+  }
 
   make[BaboonLoader[F]].from[BaboonLoader.BaboonLoaderImpl[F]]
   make[BaboonInclusionResolver[F]].from[BaboonInclusionResolverImpl[F]]

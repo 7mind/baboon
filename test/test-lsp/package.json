@@ -1,0 +1,13 @@
+{
+  "name": "baboon-lsp-test",
+  "version": "1.0.0",
+  "description": "LSP integration tests for Baboon language server",
+  "main": "test-lsp.js",
+  "scripts": {
+    "test": "node test-lsp.js",
+    "build-server": "cd ../.. && sbt 'baboonJVM/GraalVMNativeImage/packageBin'"
+  },
+  "dependencies": {
+    "vscode-jsonrpc": "^8.2.0"
+  }
+}

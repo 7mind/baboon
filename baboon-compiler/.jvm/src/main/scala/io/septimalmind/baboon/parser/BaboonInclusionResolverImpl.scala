@@ -9,12 +9,12 @@ class BaboonInclusionResolverImpl[F[+_, +_]](
   options: CompilerOptions
 )(implicit @annotation.unused evidence: Error2[F]
 ) extends BaboonInclusionResolver[F] {
+  import io.septimalmind.baboon.PathTools.*
+
   def getIclusionContent(inc: RawInclude): Option[String] = {
-    import io.septimalmind.baboon.PathTools.*
     options.directoryInputs
       .map(_.resolve(inc.value).toFile)
       .find(f => f.exists() && f.isFile)
       .map(IzFiles.readString)
-
   }
 }

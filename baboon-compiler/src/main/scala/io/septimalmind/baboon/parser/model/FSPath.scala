@@ -30,7 +30,7 @@ object FSPath {
     override def segments: Seq[NEString] = location :+ name
 
     override def asString: String = {
-      (location :+ name).map(_.theString).mkString("/", "/", "")
+      "/" + (location :+ name).map(_.theString).mkString("/")
     }
 
     override def rename(update: NEString => NEString): FSPath =
@@ -81,7 +81,19 @@ object FSPath {
   }
 
   def parse(path: NEString): FSPath = {
-    val parts = path.theString.split("/").toIndexedSeq.dropWhile(_.isEmpty)
-    apply(parts.map(NEString.unsafeFrom))
+    val pathStr = path.theString
+    val isAbsolute = pathStr.startsWith("/")
+    val parts = pathStr.split("/").toIndexedSeq.filter(_.nonEmpty).map(NEString.unsafeFrom)
+
+    if (parts.isEmpty) {
+      Name(path)
+    } else if (parts.size == 1) {
+      Name(parts.head)
+    } else if (isAbsolute) {
+      Full(parts.init, parts.last)
+    } else {
+      Relative(parts.init, parts.last)
+    }
   }
 }
+

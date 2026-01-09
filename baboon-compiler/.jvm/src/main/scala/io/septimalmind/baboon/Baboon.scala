@@ -2,9 +2,15 @@ package io.septimalmind.baboon
 
 import caseapp.*
 import distage.*
+import io.septimalmind.baboon.explore.{ExploreContext, ExploreShell}
+import io.septimalmind.baboon.lsp._
+import io.septimalmind.baboon.lsp.features._
+import io.septimalmind.baboon.lsp.state._
+import io.septimalmind.baboon.lsp.util._
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
 import io.septimalmind.baboon.typer.model.BaboonFamily
+import io.septimalmind.baboon.typer.{BaboonEnquiries, BaboonRuntimeCodec}
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.bio.impl.BioEither
 import izumi.functional.bio.unsafe.MaybeSuspend2
@@ -17,93 +23,201 @@ import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzArtifactMaterializer
 import izumi.fundamentals.platform.strings.IzString.*
 
+import java.nio.file.Paths
+
 object Baboon {
+  private val helpText: String =
+    """Usage: baboon [options] [:cs [cs-options] | :scala [scala-options] | :lsp [lsp-options] | :explore]
+      |
+      |Global options:
+      |  --model <file>           A *.baboon file to process (can be repeated)
+      |  --model-dir <dir>        A directory to recursively read *.baboon files from (can be repeated)
+      |  --lock-file <file>       A file used to track model signatures
+      |  --meta-write-evolution-json <file>  Write evolution metadata as JSON
+      |  --debug                  Enable debug output
+      |  --help                   Show this help message
+      |
+      |Modalities:
+      |  :cs                      Generate C# code
+      |  :scala                   Generate Scala code
+      |  :lsp                     Start LSP server
+      |  :explore                 Start interactive explorer
+      |
+      |C# options (:cs):
+      |  --output <dir>           Output directory for generated code
+      |  --fixture-output <dir>   Output directory for generated fixtures
+      |  --runtime <only|with|without>  Runtime generation mode
+      |  --cs-obsolete-errors     Generate obsolete errors instead of deprecations
+      |  --cs-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
+      |  --deduplicate            Apply code deduplication (default: true)
+      |
+      |Scala options (:scala):
+      |  --output <dir>           Output directory for generated code
+      |  --fixture-output <dir>   Output directory for generated fixtures
+      |  --runtime <only|with|without>  Runtime generation mode
+      |  --sc-write-evolution-dict  Add evolution metadata as Scala dictionary
+      |  --sc-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
+      |
+      |LSP options (:lsp):
+      |  --port <port>            TCP port to listen on (default: stdio)
+      |
+      |Examples:
+      |  baboon --model-dir ./models :cs --output ./out/cs :scala --output ./out/scala
+      |  baboon --model-dir ./models :lsp
+      |  baboon --model-dir ./models :lsp --port 5007
+      |  baboon --model-dir ./models :explore
+      |""".stripMargin
+
   def main(args: Array[String]): Unit = {
     val artifact = implicitly[IzArtifactMaterializer]
-    println(s"Baboon ${artifact.get.shortInfo}")
+    val isLspMode = args.contains(":lsp") || args.contains("lsp")
+
+    // Print banner to stderr in LSP mode to avoid breaking the protocol
+    val bannerOut = if (isLspMode) System.err else System.out
+    bannerOut.println(s"Baboon ${artifact.get.shortInfo}")
+
+    if (args.contains("--help") || args.contains("-h")) {
+      println(helpText)
+      System.exit(0)
+    }
 
     new MultiModalArgsParserImpl().parse(args).merge match {
       case MultiModalArgs(generalArgs, modalities) =>
-        val out = for {
-          generalOptions <- CaseApp.parse[CLIOptions](generalArgs).leftMap(e => NEList(s"Can't parse generic CLI: $e"))
-          launchArgs <- BioEither.traverseAccumErrorsNEList(modalities) {
-            case ModalityArgs(roleId, roleArgs) =>
-              roleId match {
-                case "cs" =>
-                  CaseApp.parse[CsCLIOptions](roleArgs).leftMap(e => s"Can't parse cs CLI: $e").map {
-                    case (opts, _) =>
-                      val shopts = mkGenericOpts(opts)
+        val isExploreMode = modalities.exists { case ModalityArgs(id, _) => id == "explore" }
+        val _ = isLspMode || modalities.exists { case ModalityArgs(id, _) => id == "lsp" }
 
-                      CompilerTarget.CSTarget(
-                        id      = "C#",
-                        output  = shopts.outOpts,
-                        generic = shopts.genericOpts,
-                        language = CSOptions(
-                          obsoleteErrors                            = opts.csObsoleteErrors.getOrElse(false),
-                          omitMostRecentVersionSuffixFromPaths      = opts.generic.omitMostRecentVersionSuffixFromPaths.getOrElse(true),
-                          omitMostRecentVersionSuffixFromNamespaces = opts.generic.omitMostRecentVersionSuffixFromNamespaces.getOrElse(true),
-                          disregardImplicitUsings                   = !opts.csExcludeGlobalUsings.getOrElse(false),
-                          wrappedAdtBranchCodecs                    = opts.csWrappedAdtBranchCodecs.getOrElse(false),
-                          writeEvolutionDict                        = opts.csWriteEvolutionDict.getOrElse(false),
-                          enableDeprecatedEncoders                  = opts.enableDeprecatedEncoders.getOrElse(false),
-                          generateIndexWriters                      = opts.generateIndexWriters.getOrElse(true),
-                          generateJsonCodecs                        = opts.generateJsonCodecs.getOrElse(true),
-                          generateUebaCodecs                        = opts.generateUebaCodecs.getOrElse(true),
-                          generateJsonCodecsByDefault               = opts.generateJsonCodecsByDefault.getOrElse(false),
-                          generateUebaCodecsByDefault               = opts.generateUebaCodecsByDefault.getOrElse(false),
-                          deduplicate                               = opts.deduplicate.getOrElse(true),
-                        ),
-                      )
-                  }
-                case "scala" =>
-                  CaseApp.parse[ScCLIOptions](roleArgs).leftMap(e => s"Can't parse cs CLI: $e").map {
-                    case (opts, _) =>
-                      val shopts = mkGenericOpts(opts)
-
-                      CompilerTarget.ScTarget(
-                        id      = "Scala",
-                        output  = shopts.outOpts,
-                        generic = shopts.genericOpts,
-                        language = ScOptions(
-                          writeEvolutionDict          = opts.scWriteEvolutionDict.getOrElse(false),
-                          wrappedAdtBranchCodecs      = opts.scWrappedAdtBranchCodecs.getOrElse(false),
-                          enableDeprecatedEncoders    = opts.enableDeprecatedEncoders.getOrElse(false),
-                          generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
-                          generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
-                          generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
-                          generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                        ),
-                      )
-                  }
-                case r => Left(s"Unknown role id: $r")
-              }
+        if (isLspMode) {
+          val lspModality = modalities.find(_.id == "lsp")
+          val lspPort = lspModality.flatMap { m =>
+            val args = m.args.toSeq
+            args.sliding(2).collectFirst {
+              case Seq("--port", p) => scala.util.Try(p.toInt).toOption
+            }.flatten
           }
-        } yield {
-          val directoryInputs  = generalOptions._1.modelDir.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
-          val individualInputs = generalOptions._1.model.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
 
-          val options = CompilerOptions(
-            debug                    = generalOptions._1.debug.getOrElse(false),
-            individualInputs         = individualInputs,
-            directoryInputs          = directoryInputs,
-            targets                  = launchArgs,
-            metaWriteEvolutionJsonTo = generalOptions._1.metaWriteEvolutionJson.map(s => FSPath.parse(NEString.unsafeFrom(s))),
-            lockFile                 = generalOptions._1.lockFile.map(s => FSPath.parse(NEString.unsafeFrom(s))),
-          )
+          val out = for {
+            generalOptions <- CaseApp.parse[CLIOptions](generalArgs).leftMap(e => NEList(s"Can't parse generic CLI: $e"))
+          } yield {
+            val directoryInputs  = generalOptions._1.modelDir.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+            val individualInputs = generalOptions._1.model.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
 
-          import izumi.distage.modules.support.unsafe.EitherSupport.{defaultModuleEither, quasiIOEither, quasiIORunnerEither}
-          import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+            import izumi.distage.modules.support.unsafe.EitherSupport.{defaultModuleEither, quasiIOEither, quasiIORunnerEither}
+            import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
 
-          entrypoint(options)
-        }
-        out match {
-          case Left(value) =>
-            System.err.println(value.toList.niceList())
-            System.exit(1)
-            ()
-          case Right(value) =>
-            System.exit(0)
-            ()
+            lspEntrypoint(directoryInputs, individualInputs, lspPort)
+          }
+          out match {
+            case Left(value) =>
+              System.err.println(value.toList.niceList())
+              System.exit(1)
+              ()
+            case Right(_) =>
+              System.exit(0)
+              ()
+          }
+        } else if (isExploreMode) {
+          val out = for {
+            generalOptions <- CaseApp.parse[CLIOptions](generalArgs).leftMap(e => NEList(s"Can't parse generic CLI: $e"))
+          } yield {
+            val directoryInputs  = generalOptions._1.modelDir.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+            val individualInputs = generalOptions._1.model.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+
+            import izumi.distage.modules.support.unsafe.EitherSupport.{defaultModuleEither, quasiIOEither, quasiIORunnerEither}
+            import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+            exploreEntrypoint(directoryInputs, individualInputs)
+          }
+          out match {
+            case Left(value) =>
+              System.err.println(value.toList.niceList())
+              System.exit(1)
+              ()
+            case Right(_) =>
+              System.exit(0)
+              ()
+          }
+        } else {
+          val out = for {
+            generalOptions <- CaseApp.parse[CLIOptions](generalArgs).leftMap(e => NEList(s"Can't parse generic CLI: $e"))
+            launchArgs <- BioEither.traverseAccumErrorsNEList(modalities) {
+              case ModalityArgs(roleId, roleArgs) =>
+                roleId match {
+                  case "cs" =>
+                    CaseApp.parse[CsCLIOptions](roleArgs).leftMap(e => s"Can't parse cs CLI: $e").map {
+                      case (opts, _) =>
+                        val shopts = mkGenericOpts(opts)
+
+                        CompilerTarget.CSTarget(
+                          id      = "C#",
+                          output  = shopts.outOpts,
+                          generic = shopts.genericOpts,
+                          language = CSOptions(
+                            obsoleteErrors                            = opts.csObsoleteErrors.getOrElse(false),
+                            omitMostRecentVersionSuffixFromPaths      = opts.generic.omitMostRecentVersionSuffixFromPaths.getOrElse(true),
+                            omitMostRecentVersionSuffixFromNamespaces = opts.generic.omitMostRecentVersionSuffixFromNamespaces.getOrElse(true),
+                            disregardImplicitUsings                   = !opts.csExcludeGlobalUsings.getOrElse(false),
+                            wrappedAdtBranchCodecs                    = opts.csWrappedAdtBranchCodecs.getOrElse(false),
+                            writeEvolutionDict                        = opts.csWriteEvolutionDict.getOrElse(false),
+                            enableDeprecatedEncoders                  = opts.enableDeprecatedEncoders.getOrElse(false),
+                            generateIndexWriters                      = opts.generateIndexWriters.getOrElse(true),
+                            generateJsonCodecs                        = opts.generateJsonCodecs.getOrElse(true),
+                            generateUebaCodecs                        = opts.generateUebaCodecs.getOrElse(true),
+                            generateJsonCodecsByDefault               = opts.generateJsonCodecsByDefault.getOrElse(false),
+                            generateUebaCodecsByDefault               = opts.generateUebaCodecsByDefault.getOrElse(false),
+                            deduplicate                               = opts.deduplicate.getOrElse(true),
+                          ),
+                        )
+                    }
+                  case "scala" =>
+                    CaseApp.parse[ScCLIOptions](roleArgs).leftMap(e => s"Can't parse cs CLI: $e").map {
+                      case (opts, _) =>
+                        val shopts = mkGenericOpts(opts)
+
+                        CompilerTarget.ScTarget(
+                          id      = "Scala",
+                          output  = shopts.outOpts,
+                          generic = shopts.genericOpts,
+                          language = ScOptions(
+                            writeEvolutionDict          = opts.scWriteEvolutionDict.getOrElse(false),
+                            wrappedAdtBranchCodecs      = opts.scWrappedAdtBranchCodecs.getOrElse(false),
+                            enableDeprecatedEncoders    = opts.enableDeprecatedEncoders.getOrElse(false),
+                            generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
+                            generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
+                            generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
+                            generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                          ),
+                        )
+                    }
+                  case r => Left(s"Unknown role id: $r")
+                }
+            }
+          } yield {
+            val directoryInputs  = generalOptions._1.modelDir.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+            val individualInputs = generalOptions._1.model.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+
+            val options = CompilerOptions(
+              debug                    = generalOptions._1.debug.getOrElse(false),
+              individualInputs         = individualInputs,
+              directoryInputs          = directoryInputs,
+              targets                  = launchArgs,
+              metaWriteEvolutionJsonTo = generalOptions._1.metaWriteEvolutionJson.map(s => FSPath.parse(NEString.unsafeFrom(s))),
+              lockFile                 = generalOptions._1.lockFile.map(s => FSPath.parse(NEString.unsafeFrom(s))),
+            )
+
+            import izumi.distage.modules.support.unsafe.EitherSupport.{defaultModuleEither, quasiIOEither, quasiIORunnerEither}
+            import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+            entrypoint(options)
+          }
+          out match {
+            case Left(value) =>
+              System.err.println(value.toList.niceList())
+              System.exit(1)
+              ()
+            case Right(_) =>
+              System.exit(0)
+              ()
+          }
         }
 
     }
@@ -210,6 +324,124 @@ object Baboon {
 
               _ <- F.traverse_(options.targets)(processTarget[F](loc, logger, loadedModels, _))
             } yield {}
+        }
+    }
+  }
+
+  private def exploreEntrypoint[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2: TagKK: DefaultModule2](
+    directoryInputs: Set[FSPath],
+    individualInputs: Set[FSPath]
+  )(implicit
+    quasiIO: QuasiIO[F[Throwable, _]],
+    runner: QuasiIORunner[F[Throwable, _]],
+  ): Unit = {
+    val options = CompilerOptions(
+      debug = false,
+      individualInputs = individualInputs,
+      directoryInputs = directoryInputs,
+      targets = Seq.empty,
+      metaWriteEvolutionJsonTo = None,
+      lockFile = None,
+    )
+    val m = new BaboonModuleJvm[F](options, ParallelErrorAccumulatingOps2[F])
+    import PathTools.*
+
+    runner.run {
+      Injector
+        .NoCycles[F[Throwable, _]]()
+        .produceRun(m) {
+          (loader: BaboonLoader[F], logger: BLogger, enquiries: BaboonEnquiries) =>
+            for {
+              inputModels <- F.maybeSuspend(individualInputs.map(_.toPath) ++ directoryInputs.flatMap {
+                dir =>
+                  IzFiles
+                    .walk(dir.toFile)
+                    .filter(_.toFile.getName.endsWith(".baboon"))
+              })
+              _ <- F.maybeSuspend {
+                logger.message(s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}")
+              }
+
+              loadedModels <- loader.load(inputModels.toList).catchAll {
+                value =>
+                  System.err.println("Loader failed")
+                  System.err.println(value.toList.stringifyIssues)
+                  sys.exit(4)
+              }
+
+              _ <- F.maybeSuspend {
+                implicit val eitherError2: izumi.functional.bio.Error2[Lambda[(`+e`, `+a`) => Either[e, a]]] =
+                  new izumi.functional.bio.impl.BioEither
+                val runtimeCodec = new BaboonRuntimeCodec.BaboonRuntimeCodecImpl[Lambda[(`+e`, `+a`) => Either[e, a]]]()
+                val ctx = new ExploreContext(loadedModels, enquiries, runtimeCodec)
+                val shell = new ExploreShell(ctx)
+                shell.run()
+              }
+            } yield {}
+        }
+    }
+  }
+
+  private def lspEntrypoint[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2: TagKK: DefaultModule2](
+    directoryInputs: Set[FSPath],
+    individualInputs: Set[FSPath],
+    port: Option[Int]
+  )(implicit
+    quasiIO: QuasiIO[F[Throwable, _]],
+    runner: QuasiIORunner[F[Throwable, _]],
+  ): Unit = {
+    val options = CompilerOptions(
+      debug = false,
+      individualInputs = individualInputs,
+      directoryInputs = directoryInputs,
+      targets = Seq.empty,
+      metaWriteEvolutionJsonTo = None,
+      lockFile = None,
+    )
+    // Use silentMode=true for LSP to avoid stdout pollution
+    val m = new BaboonModuleJvm[F](options, ParallelErrorAccumulatingOps2[F], silentMode = true)
+
+    runner.run {
+      Injector
+        .NoCycles[F[Throwable, _]]()
+        .produceRun(m) {
+          (loader: BaboonLoader[F]) =>
+            F.maybeSuspend {
+              // Type-erase the loader for LSP use - convert F[E, A] to F[Nothing, Either[E, A]]
+              type LoadResult = Either[izumi.fundamentals.collections.nonempty.NEList[io.septimalmind.baboon.parser.model.issues.BaboonIssue], io.septimalmind.baboon.typer.model.BaboonFamily]
+              val Error2F = implicitly[izumi.functional.bio.Error2[F]]
+              val eitherLoader = new BaboonLoader[Lambda[(`+e`, `+a`) => Either[e, a]]] {
+                override def load(inputs: List[java.nio.file.Path]): LoadResult = {
+                  runner.run(Error2F.catchAll(Error2F.map(loader.load(inputs))(r => Right(r): LoadResult))(e => Error2F.pure(Left(e): LoadResult)))
+                }
+              }
+
+              val documentState = new DocumentState()
+              val cliModelDirs = directoryInputs.map(dir => Paths.get(dir.asString))
+              val workspaceState = new WorkspaceState(documentState, eitherLoader, cliModelDirs)
+
+              val positionConverter = new PositionConverter()
+
+              val diagnosticsProvider = new DiagnosticsProvider(positionConverter)
+              val definitionProvider = new DefinitionProvider(documentState, workspaceState, positionConverter)
+              val hoverProvider = new HoverProvider(documentState, workspaceState)
+              val completionProvider = new CompletionProvider(documentState, workspaceState)
+              val documentSymbolProvider = new DocumentSymbolProvider(workspaceState, positionConverter)
+
+              val server = new BaboonLanguageServer(
+                documentState,
+                workspaceState,
+                diagnosticsProvider,
+                definitionProvider,
+                hoverProvider,
+                completionProvider,
+                documentSymbolProvider
+              )
+              val launcher = new LspLauncher(server, port)
+
+              System.err.println("Starting Baboon LSP server...")
+              launcher.launch()
+            }
         }
     }
   }
