@@ -3,6 +3,10 @@ package io.septimalmind.baboon
 import caseapp.*
 import distage.*
 import io.septimalmind.baboon.explore.{ExploreContext, ExploreShell}
+import io.septimalmind.baboon.lsp._
+import io.septimalmind.baboon.lsp.features._
+import io.septimalmind.baboon.lsp.state._
+import io.septimalmind.baboon.lsp.util._
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
 import io.septimalmind.baboon.typer.model.BaboonFamily
@@ -27,8 +31,38 @@ object Baboon {
     new MultiModalArgsParserImpl().parse(args).merge match {
       case MultiModalArgs(generalArgs, modalities) =>
         val isExploreMode = modalities.exists { case ModalityArgs(id, _) => id == "explore" }
+        val isLspMode     = modalities.exists { case ModalityArgs(id, _) => id == "lsp" }
 
-        if (isExploreMode) {
+        if (isLspMode) {
+          val lspModality = modalities.find(_.id == "lsp")
+          val lspPort = lspModality.flatMap { m =>
+            val args = m.args.toSeq
+            args.sliding(2).collectFirst {
+              case Seq("--port", p) => scala.util.Try(p.toInt).toOption
+            }.flatten
+          }
+
+          val out = for {
+            generalOptions <- CaseApp.parse[CLIOptions](generalArgs).leftMap(e => NEList(s"Can't parse generic CLI: $e"))
+          } yield {
+            val directoryInputs  = generalOptions._1.modelDir.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+            val individualInputs = generalOptions._1.model.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+
+            import izumi.distage.modules.support.unsafe.EitherSupport.{defaultModuleEither, quasiIOEither, quasiIORunnerEither}
+            import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+            lspEntrypoint(directoryInputs, individualInputs, lspPort)
+          }
+          out match {
+            case Left(value) =>
+              System.err.println(value.toList.niceList())
+              System.exit(1)
+              ()
+            case Right(_) =>
+              System.exit(0)
+              ()
+          }
+        } else if (isExploreMode) {
           val out = for {
             generalOptions <- CaseApp.parse[CLIOptions](generalArgs).leftMap(e => NEList(s"Can't parse generic CLI: $e"))
           } yield {
@@ -286,6 +320,70 @@ object Baboon {
                 shell.run()
               }
             } yield {}
+        }
+    }
+  }
+
+  private def lspEntrypoint[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2: TagKK: DefaultModule2](
+    directoryInputs: Set[FSPath],
+    individualInputs: Set[FSPath],
+    port: Option[Int]
+  )(implicit
+    quasiIO: QuasiIO[F[Throwable, _]],
+    runner: QuasiIORunner[F[Throwable, _]],
+  ): Unit = {
+    val options = CompilerOptions(
+      debug = false,
+      individualInputs = individualInputs,
+      directoryInputs = directoryInputs,
+      targets = Seq.empty,
+      metaWriteEvolutionJsonTo = None,
+      lockFile = None,
+    )
+    val m = new BaboonModuleJvm[F](options, ParallelErrorAccumulatingOps2[F])
+
+    runner.run {
+      Injector
+        .NoCycles[F[Throwable, _]]()
+        .produceRun(m) {
+          (loader: BaboonLoader[F]) =>
+            F.maybeSuspend {
+              // Type-erase the loader for LSP use - convert F[E, A] to F[Nothing, Either[E, A]]
+              type LoadResult = Either[izumi.fundamentals.collections.nonempty.NEList[io.septimalmind.baboon.parser.model.issues.BaboonIssue], io.septimalmind.baboon.typer.model.BaboonFamily]
+              val Error2F = implicitly[izumi.functional.bio.Error2[F]]
+              val eitherLoader = new BaboonLoader[Lambda[(`+e`, `+a`) => Either[e, a]]] {
+                override def load(inputs: List[java.nio.file.Path]): LoadResult = {
+                  runner.run(Error2F.catchAll(Error2F.map(loader.load(inputs))(r => Right(r): LoadResult))(e => Error2F.pure(Left(e): LoadResult)))
+                }
+              }
+
+              val documentState = new DocumentState()
+              val workspaceState = new WorkspaceState(documentState, eitherLoader)
+              val positionConverter = new PositionConverter()
+
+              val diagnosticsProvider = new DiagnosticsProvider(positionConverter)
+              val definitionProvider = new DefinitionProvider(documentState, workspaceState, positionConverter)
+              val hoverProvider = new HoverProvider(documentState, workspaceState)
+              val completionProvider = new CompletionProvider(documentState, workspaceState)
+              val documentSymbolProvider = new DocumentSymbolProvider(workspaceState, positionConverter)
+
+              val textDocumentService = new BaboonTextDocumentService(
+                documentState,
+                workspaceState,
+                diagnosticsProvider,
+                definitionProvider,
+                hoverProvider,
+                completionProvider,
+                documentSymbolProvider
+              )
+              val workspaceService = new BaboonWorkspaceService(workspaceState)
+
+              val server = new BaboonLanguageServer(textDocumentService, workspaceService, workspaceState)
+              val launcher = new LspLauncher(server, port)
+
+              System.err.println("Starting Baboon LSP server...")
+              launcher.launch()
+            }
         }
     }
   }

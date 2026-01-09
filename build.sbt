@@ -83,6 +83,8 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
     libraryDependencies ++= Seq(
       "com.github.alexarchambault" %% "case-app" % "2.1.0-M30",
       "org.jline" % "jline" % "3.26.3",
+      "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.23.1",
+      "org.eclipse.lsp4j" % "org.eclipse.lsp4j.jsonrpc" % "0.23.1",
       "io.7mind.izumi" %% "distage-testkit-scalatest" % "1.2.21" % Test
     )
   )
