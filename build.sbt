@@ -82,6 +82,7 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
     Compile / unmanagedResourceDirectories += baseDirectory.value / "src" / "main" / "resources",
     libraryDependencies ++= Seq(
       "com.github.alexarchambault" %% "case-app" % "2.1.0-M30",
+      "org.jline" % "jline" % "3.26.3",
       "io.7mind.izumi" %% "distage-testkit-scalatest" % "1.2.21" % Test
     )
   )
