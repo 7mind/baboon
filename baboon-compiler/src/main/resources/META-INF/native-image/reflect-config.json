@@ -34,5 +34,190 @@
 {
   "name":"sun.security.provider.SHA2$SHA256",
   "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name": "org.eclipse.lsp4j.services.LanguageServer",
+  "allPublicMethods": true
+},
+{
+  "name": "org.eclipse.lsp4j.services.TextDocumentService",
+  "allPublicMethods": true
+},
+{
+  "name": "org.eclipse.lsp4j.services.WorkspaceService",
+  "allPublicMethods": true
+},
+{
+  "name": "io.septimalmind.baboon.lsp.BaboonLanguageServer",
+  "methods": [
+    {"name": "initialize", "parameterTypes": ["org.eclipse.lsp4j.InitializeParams"]},
+    {"name": "initialized", "parameterTypes": ["org.eclipse.lsp4j.InitializedParams"]},
+    {"name": "shutdown", "parameterTypes": []},
+    {"name": "exit", "parameterTypes": []},
+    {"name": "getTextDocumentService", "parameterTypes": []},
+    {"name": "getWorkspaceService", "parameterTypes": []},
+    {"name": "connect", "parameterTypes": ["org.eclipse.lsp4j.services.LanguageClient"]}
+  ]
+},
+{
+  "name": "io.septimalmind.baboon.lsp.BaboonTextDocumentService",
+  "methods": [
+    {"name": "didOpen", "parameterTypes": ["org.eclipse.lsp4j.DidOpenTextDocumentParams"]},
+    {"name": "didChange", "parameterTypes": ["org.eclipse.lsp4j.DidChangeTextDocumentParams"]},
+    {"name": "didClose", "parameterTypes": ["org.eclipse.lsp4j.DidCloseTextDocumentParams"]},
+    {"name": "didSave", "parameterTypes": ["org.eclipse.lsp4j.DidSaveTextDocumentParams"]},
+    {"name": "completion", "parameterTypes": ["org.eclipse.lsp4j.CompletionParams"]},
+    {"name": "hover", "parameterTypes": ["org.eclipse.lsp4j.HoverParams"]},
+    {"name": "definition", "parameterTypes": ["org.eclipse.lsp4j.DefinitionParams"]},
+    {"name": "documentSymbol", "parameterTypes": ["org.eclipse.lsp4j.DocumentSymbolParams"]}
+  ]
+},
+{
+  "name": "io.septimalmind.baboon.lsp.BaboonWorkspaceService",
+  "allPublicMethods": true
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.CodeActionResponseAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.DocumentDiagnosticReportTypeAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.LocationLinkListAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.CompletionListAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.HoverAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.SymbolInformationListAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.WorkspaceEditAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.PrepareRenameResponseAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.DocumentSymbolListAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.FoldingRangeListAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.LocationAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.LocationListAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.LocationLinkAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.MarkupContentAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.SemanticTokensAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.SemanticTokensFullDeltaResponseAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.SemanticTokensFullResponseAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.SemanticTokensResponseAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.SignatureHelpAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.WorkspaceSymbolListAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.InlineValueResponseAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.TypeHierarchyAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.TypeHierarchyListAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.CallHierarchyAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.CallHierarchyListAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.MonikerListAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.LinkedEditingRangesAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.ColorInformationListAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.SelectionRangeListAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.DocumentSymbolResponseAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.WorkspaceSymbolResponseAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.DocumentLinkListAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.adapters.CodeLensListAdapter",
+  "methods": [{"name":"<init>","parameterTypes":[]}]
+},
+{
+  "name": "org.eclipse.lsp4j.jsonrpc.services.JsonRequest",
+  "allPublicMethods": true
+},
+{
+  "name": "org.eclipse.lsp4j.jsonrpc.services.JsonNotification",
+  "allPublicMethods": true
+},
+{
+  "name": "org.eclipse.lsp4j.jsonrpc.services.JsonSegment",
+  "allPublicMethods": true
 }
 ]
