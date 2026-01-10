@@ -115,16 +115,27 @@ Shows outline of the current document:
 
 ### VS Code
 
-Create a VS Code extension or use a generic LSP client extension. Configuration example for a custom extension:
+Install the [Baboon VS Code extension](https://marketplace.visualstudio.com/items?itemName=SeptimalMind.baboon-vscode).
+
+The extension can be configured via standard VS Code settings (`settings.json`):
 
 ```json
 {
-  "languageServerExample.serverCommand": "baboon",
-  "languageServerExample.serverArgs": ["--model-dir", "${workspaceFolder}", ":lsp"]
+  "baboon.serverPath": "baboon",
+  "baboon.modelDirs": ["${workspaceFolder}/models"],
+  "baboon.serverOptions": ["--debug"]
 }
 ```
 
-For development, you can use the "Language Server Protocol" extension category from the VS Code marketplace and configure it to use the baboon command.
+#### Settings Reference
+
+- `baboon.serverPath`: Path to the `baboon` executable. Defaults to `baboon` (assumes it's in your PATH).
+- `baboon.modelDirs`: List of directories containing `.baboon` files. If empty, the workspace root is used.
+- `baboon.serverOptions`: Extra arguments to pass to the compiler before the `:lsp` command.
+- `baboon.serverArgsOverride`: Replace all arguments passed to the server. If this is set, `baboon.modelDirs` and `baboon.serverOptions` are ignored.
+
+For development, you can point `baboon.serverPath` to your local build:
+`"baboon.serverPath": "${workspaceFolder}/baboon-compiler/.jvm/target/graalvm-native-image/baboon"`
 
 ### Neovim (nvim-lspconfig)
 
