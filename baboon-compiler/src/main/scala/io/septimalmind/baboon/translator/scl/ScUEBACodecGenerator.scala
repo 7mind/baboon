@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.scl
 
 import io.septimalmind.baboon.CompilerTarget.ScTarget
-import io.septimalmind.baboon.parser.model.DerivationDecl
+import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.scl.ScCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.scl.ScDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.scl.ScTypes.*
@@ -518,7 +518,7 @@ class ScUEBACodecGenerator(
 
   override def isActive(id: TypeId): Boolean = {
     target.language.generateUebaCodecs && (target.language.generateUebaCodecsByDefault || domain.derivationRequests
-      .getOrElse(DerivationDecl("ueba"), Set.empty[TypeId]).contains(id))
+      .getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId]).contains(id))
   }
 
   override def id: String = "Ueba"

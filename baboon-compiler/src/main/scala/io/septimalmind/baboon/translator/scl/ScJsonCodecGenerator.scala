@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.scl
 
 import io.septimalmind.baboon.CompilerTarget.ScTarget
-import io.septimalmind.baboon.parser.model.DerivationDecl
+import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.scl.ScCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.scl.ScDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.scl.ScTypes.*
@@ -408,7 +408,7 @@ class ScJsonCodecGenerator(
 
   override def isActive(id: TypeId): Boolean = {
     target.language.generateJsonCodecs && (target.language.generateJsonCodecsByDefault || domain.derivationRequests
-      .getOrElse(DerivationDecl("json"), Set.empty[TypeId]).contains(id))
+      .getOrElse(RawMemberMeta.Derived("json"), Set.empty[TypeId]).contains(id))
   }
 
   override def id: String = "Json"
