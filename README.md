@@ -28,7 +28,7 @@ Generates:
 
 ## Highlights
 
-- Automatic codec derivation for [JSON](docs/json-codecs.md) and [UEBA](docs/ueba-format.md) (Ultra-Efficient Binary Aggregate, a custom tagless binary format) 
+- Automatic codec derivation for [JSON](docs/json-codecs.md) and [UEBA](docs/ueba-format.md) (Ultra-Efficient Binary Aggregate, a custom tagless binary format)
 - Evolution-aware codegen: derives migrations when possible, emits stubs when manual work is required
 - Set-based structural inheritance with `+`, `-`, and `^` operators
 - Algebraic data types (`adt`), DTOs (`data`) and enums.
@@ -36,6 +36,10 @@ Generates:
 - Namespaces, includes, and imports
 - Collections (`opt`, `lst`, `set`, `map`) and timestamps/UID primitives
 - Deduplicated C# output (reuses as much code as possible to lower binary footprint)
+- Interactive Explorer: REPL-style shell for browsing types, evolution, and debugging codecs.
+- LSP support
+
+# TLDR
 
 You define your data model:
 
@@ -90,6 +94,17 @@ Detailed language walkthrough with copy-paste examples: [docs/language-features.
 - [Intellij Idea Plugin](https://plugins.jetbrains.com/plugin/28203-baboon-support) (source: [baboon-intellij](https://github.com/7mind/baboon-intellij))
 - [VSCode Extension](https://marketplace.visualstudio.com/items?itemName=SeptimalMind.baboon-vscode) (source: [baboon-vscode](https://github.com/7mind/baboon-vscode))
 - [VSCodium Extension](https://open-vsx.org/extension/SeptimalMind/baboon-vscode)
+- **LSP Server**: Baboon includes a built-in Language Server Protocol (LSP) implementation for integration with any LSP-compatible editor (Neovim, Emacs, etc.). See [docs/lsp-integration.md](docs/lsp-integration.md) for details.
+
+## Interactive Explorer
+
+Baboon includes an interactive explorer for browsing and debugging domain models. It provides a REPL-style shell to explore types, dependencies, evolution history, and test codecs.
+
+```bash
+baboon --model-dir ./src/models :explore
+```
+
+See [docs/explorer-mode.md](docs/explorer-mode.md) for a full command reference.
 
 ## Limitations
 
@@ -108,12 +123,18 @@ Points marked with (*) will/may be improved in the future.
 
 ## CLI
 
+The `baboon` CLI supports multiple commands for compilation, exploration, and IDE integration:
+
+- `:cs`, `:scala` - Code generation for target languages
+- `:explore` - Launch [Interactive Explorer](docs/explorer-mode.md)
+- `:lsp` - Start [LSP Server](docs/lsp-integration.md)
+
 See build configuration in [.mdl/defs/actions.md](.mdl/defs/actions.md) and test configuration in [.mdl/defs/tests.md](.mdl/defs/tests.md).
 
 ## Notes
 
 1. All the types which are not transitively referenced by `root` types will be eliminated from the compiler output.
-2. Usages in structural inheritance are not considered references, so structural parents which are not directly referenced as fields and not marked as `root`s will be eliminated 
+2. Usages in structural inheritance are not considered references, so structural parents which are not directly referenced as fields and not marked as `root`s will be eliminated
 
 ## Foreign types
 
