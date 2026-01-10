@@ -63,6 +63,7 @@
           nativeBuildInputs = with pkgs.buildPackages; [
             ncurses
             gitMinimal
+            nix
             graalvmPackages.graalvm-ce
             coursier
 
@@ -71,7 +72,6 @@
 
             coreutils
             shellspec
-            nix
             zip
 
             rsync
