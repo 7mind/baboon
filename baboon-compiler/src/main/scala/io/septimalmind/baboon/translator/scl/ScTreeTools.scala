@@ -8,7 +8,7 @@ trait ScTreeTools {
 }
 
 object ScTreeTools {
-  class ScTreeToolsImpl() extends ScTreeTools {
+  class ScTreeToolsImpl extends ScTreeTools {
     def inNs(nss: Seq[String], tree: TextTree[ScValue]): TextTree[ScValue] = {
       if (nss.isEmpty) {
         tree

@@ -56,7 +56,9 @@ $BABOON_BIN \
   --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
   --fixture-output "$TEST_DIR/sc-stub/src/main/scala/generated-fixtures" \
   --sc-write-evolution-dict true \
-  --sc-wrapped-adt-branch-codecs false
+  --sc-wrapped-adt-branch-codecs false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true
 
 ret success:bool=true
 ret test_dir:string="$TEST_DIR"
@@ -126,7 +128,9 @@ $BABOON_BIN \
   --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
   --fixture-output "$TEST_DIR/sc-stub/src/main/scala/generated-fixtures" \
   --sc-write-evolution-dict true \
-  --sc-wrapped-adt-branch-codecs true
+  --sc-wrapped-adt-branch-codecs true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true
 
 ret success:bool=true
 ret test_dir:string="$TEST_DIR"

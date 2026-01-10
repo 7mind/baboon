@@ -164,6 +164,11 @@ object BaboonJS {
   trait JSScOptions extends js.Object {
     val writeEvolutionDict: js.UndefOr[Boolean]
     val wrappedAdtBranchCodecs: js.UndefOr[Boolean]
+    val enableDeprecatedEncoders: js.UndefOr[Boolean]
+    val generateJsonCodecs: js.UndefOr[Boolean]
+    val generateUebaCodecs: js.UndefOr[Boolean]
+    val generateUebaCodecsByDefault: js.UndefOr[Boolean]
+    val generateJsonCodecsByDefault: js.UndefOr[Boolean]
   }
 
   @js.native
@@ -253,8 +258,13 @@ object BaboonJS {
               output  = createOutputOptions(target.generic),
               generic = createGenericOptions(target.generic),
               language = ScOptions(
-                writeEvolutionDict     = opts.writeEvolutionDict.getOrElse(false),
-                wrappedAdtBranchCodecs = opts.wrappedAdtBranchCodecs.getOrElse(false),
+                writeEvolutionDict          = opts.writeEvolutionDict.getOrElse(false),
+                wrappedAdtBranchCodecs      = opts.wrappedAdtBranchCodecs.getOrElse(false),
+                enableDeprecatedEncoders    = opts.enableDeprecatedEncoders.getOrElse(false),
+                generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
+                generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
+                generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
+                generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
               ),
             )
           case other => throw new IllegalArgumentException(s"Unknown target language: $other")
