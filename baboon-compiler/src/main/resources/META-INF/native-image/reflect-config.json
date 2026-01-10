@@ -209,15 +209,12 @@
   "methods": [{"name":"<init>","parameterTypes":[]}]
 },
 {
-  "name": "org.eclipse.lsp4j.jsonrpc.services.JsonRequest",
-  "allPublicMethods": true
+  "name": "org.eclipse.lsp4j.jsonrpc.services.JsonRequest"
 },
 {
-  "name": "org.eclipse.lsp4j.jsonrpc.services.JsonNotification",
-  "allPublicMethods": true
+  "name": "org.eclipse.lsp4j.jsonrpc.services.JsonNotification"
 },
 {
-  "name": "org.eclipse.lsp4j.jsonrpc.services.JsonSegment",
-  "allPublicMethods": true
+  "name": "org.eclipse.lsp4j.jsonrpc.services.JsonSegment"
 }
 ]
