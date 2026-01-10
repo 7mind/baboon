@@ -26,10 +26,13 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
 
   private def readUebaFile(source: String, format: String): AllBasicTypes = {
     val file = baseDir.resolve(s"$source-ueba/all-basic-types.ueba")
-    val fis  = new FileInputStream(file.toFile)
+    val fis = new FileInputStream(file.toFile)
     try {
       val reader = new LEDataInputStream(fis)
-      AllBasicTypes_UEBACodec.instance.decode(ctx, reader)
+      AllBasicTypes_UEBACodec.instance.decode(ctx, reader) match {
+        case Right(data) => data
+        case Left(error) => fail(s"Failed to decode $format UEBA: $error")
+      }
     } finally {
       fis.close()
     }

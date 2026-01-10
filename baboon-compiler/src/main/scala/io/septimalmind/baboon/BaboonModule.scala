@@ -1,6 +1,7 @@
 package io.septimalmind.baboon
 
-import distage.{DIKey, ModuleDef}
+import distage.DIKey
+import distage.ModuleDef
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*
@@ -11,7 +12,13 @@ import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BaboonMetagen
 import io.septimalmind.baboon.validator.BaboonValidator
 import izumi.functional.bio.unsafe.MaybeSuspend2
-import izumi.functional.bio.{Applicative2, ApplicativeError2, Bifunctor2, Error2, Guarantee2, Monad2, ParallelErrorAccumulatingOps2}
+import izumi.functional.bio.Applicative2
+import izumi.functional.bio.ApplicativeError2
+import izumi.functional.bio.Bifunctor2
+import izumi.functional.bio.Error2
+import izumi.functional.bio.Guarantee2
+import izumi.functional.bio.Monad2
+import izumi.functional.bio.ParallelErrorAccumulatingOps2
 import izumi.reflect.TagKK
 
 class BaboonSharedModule[F[+_, +_]: Error2: MaybeSuspend2: TagKK] extends ModuleDef {
@@ -87,6 +94,7 @@ class BaboonCommonScModule[F[+_, +_]: Error2: TagKK]() extends ModuleDef {
   makeSubcontext[ScDefnTranslator[F]]
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
+      make[ScDomainTreeTools].from[ScDomainTreeTools.ScDomainTreeToolsImpl]
       make[ScDefnTranslator[F]].from[ScDefnTranslator.ScDefnTranslatorImpl[F]]
       make[ScCodecFixtureTranslator].from[ScCodecFixtureTranslator.ScRandomMethodTranslatorImpl]
       make[ScCodecTestsTranslator].from[ScCodecTestsTranslator.Impl]
@@ -99,7 +107,6 @@ class BaboonCommonScModule[F[+_, +_]: Error2: TagKK]() extends ModuleDef {
   make[ScTreeTools].from[ScTreeTools.ScTreeToolsImpl]
 
   make[ScTypeTranslator]
-  make[ScTypeInfo]
   makeFactory[ScConversionTranslator.Factory[F]]
 
   make[ScBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]

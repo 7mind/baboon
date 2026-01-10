@@ -37,7 +37,6 @@ object ComponentParsers {
       version: RawVersion
     ): F[NEList[BaboonIssue], Version] = {
       for {
-        v <- F.pure(version.value)
         ret <- izumi.fundamentals.platform.versions.Version.parse(version.value) match {
           case c: izumi.fundamentals.platform.versions.Version.Canonical =>
             F.pure(c)

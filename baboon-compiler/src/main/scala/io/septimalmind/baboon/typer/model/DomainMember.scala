@@ -11,5 +11,11 @@ object DomainMember {
 
   case class User(root: Boolean, defn: Typedef.User, derivations: Set[RawMemberMeta], meta: RawNodeMeta) extends DomainMember {
     def id: TypeId.User = defn.id
+    def isAdt: Boolean = {
+      defn.id.owner match {
+        case _: Owner.Adt => true
+        case _            => false
+      }
+    }
   }
 }

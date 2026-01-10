@@ -50,7 +50,7 @@ object ScCodecTestsTranslator {
 
     private def makeTest(definition: DomainMember.User, srcRef: ScValue.ScType): TextTree[ScValue] = {
       val fixture = makeFixture(definition, domain, evo)
-      codecs.map {
+      codecs.filter(_.isActive(definition.id)).map {
         case jsonCodec: ScJsonCodecGenerator =>
           val body      = jsonCodecAssertions(definition)
           val codecName = jsonCodec.codecName(srcRef)
@@ -74,7 +74,7 @@ object ScCodecTestsTranslator {
              |
              |def jsonCompare(context: $baboonCodecContext, fixture: $srcRef, clue: $scString): io.circe.Json = {
              |  val fixtureJson    = $codecName.instance.encode(context, fixture)
-             |  val fixtureDecoded = $codecName.instance.decode(context, fixtureJson).toOption.get
+             |  val fixtureDecoded = $codecName.instance.decode(context, fixtureJson).toTry.get
              |  assert(fixture == fixtureDecoded, s"$$clue")
              |  fixtureJson
              |}
@@ -85,12 +85,10 @@ object ScCodecTestsTranslator {
              |  assume(f.exists())
              |  val b = $javaNioFiles.readAllBytes(f.toPath)
              |  import io.circe.parser.parse
-             |  val csJson = parse(new $scString(b, $javaNioStandardCharsets.UTF_8)).toOption.get
+             |  val csJson = parse(new $scString(b, $javaNioStandardCharsets.UTF_8)).toTry.get
              |  val dec = $codecName.instance.decode(context, csJson).toOption
              |  assert(dec.nonEmpty)
-             |  val sclJson = jsonCompare(context, dec.get, clue)
-             |  // this is be broken for unordered collections and timestamps, but is suitable for manual tests
-             |  //assert(csJson == sclJson)
+             |  jsonCompare(context, dec.get, clue)
              |}
              |"""
 
@@ -122,11 +120,9 @@ object ScCodecTestsTranslator {
              |  val csUebaBytes = $javaNioFiles.readAllBytes(f.toPath)
              |  val bais = new java.io.ByteArrayInputStream(csUebaBytes)
              |  val dis = new $binaryInput(bais)
-             |  val dec = $codecName.instance.decode(context, dis)
+             |  val dec = $codecName.instance.decode(context, dis).toTry.get
              |  val sclUebaBytes = uebaCompare(context, dec, clue)
              |  assert(csUebaBytes.length == sclUebaBytes.length, s"$$clue")
-             |  // this is be broken for unordered collections and timestamps, but is suitable for manual tests
-             |  // assert(csUebaBytes.toVector == sclUebaBytes.toVector) 
              |}
              |
              |def uebaCompare(context: $baboonCodecContext, fixture: $srcRef, clue: $scString): $scArray[$scByte] = {
@@ -138,7 +134,7 @@ object ScCodecTestsTranslator {
              |  
              |  val bais = new java.io.ByteArrayInputStream(bytes)
              |  val dis = new $binaryInput(bais)
-             |  val dec = $codecName.instance.decode(context, dis)
+             |  val dec = $codecName.instance.decode(context, dis).toTry.get
              |  assert(fixture == dec, s"$$clue")
              |  
              |  bytes
@@ -148,7 +144,7 @@ object ScCodecTestsTranslator {
         case unknown =>
           logger.message(s"Cannot create codec tests (${unknown.codecName(srcRef)}) for unsupported type $srcRef")
           q""
-      }.toList.map(_.stripMargin.trim).join("\n\n").shift(2).trim
+      }.toList.map(_.stripMargin.trim).joinNN().shift(2).trim
     }
 
     private def makeFixture(
@@ -171,8 +167,7 @@ object ScCodecTestsTranslator {
              |    jsonCompare(context, fixture, clue)
              |}
              |""".stripMargin.trim
-        case _ =>
-          q"jsonCompare(context, fixture, clue)"
+        case _ => q"jsonCompare(context, fixture, clue)"
       }
     }
 
@@ -184,8 +179,7 @@ object ScCodecTestsTranslator {
              |    uebaCompare(context, fixture, clue)
              |}
              |""".stripMargin.trim
-        case _ =>
-          q"uebaCompare(context, fixture, clue)"
+        case _ => q"uebaCompare(context, fixture, clue)"
       }
     }
   }

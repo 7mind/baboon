@@ -7,7 +7,7 @@ trait ScFileTools {
 }
 
 object ScFileTools {
-  class ScFileToolsImpl() extends ScFileTools {
+  class ScFileToolsImpl extends ScFileTools {
     def basename(dom: Domain, evolution: BaboonEvolution): String = {
       basename(
         dom,
@@ -17,14 +17,10 @@ object ScFileTools {
 
     private def basename(dom: Domain, omitVersion: Boolean): String = {
       val base = dom.id.path.map(_.toLowerCase)
-      val segments = if (omitVersion) {
-        base
-      } else {
-        base ++ Seq(dom.version.v.toString)
-      }
-
+      val segments =
+        if (omitVersion) base
+        else base ++ Seq(dom.version.v.toString)
       segments.mkString("/")
     }
-
   }
 }

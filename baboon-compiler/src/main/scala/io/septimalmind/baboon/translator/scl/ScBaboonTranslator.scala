@@ -60,7 +60,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
   private def translateProduct(
     domain: Domain,
     p: CompilerProduct,
-    translate: (DomainMember.User) => F[NEList[BaboonIssue], List[ScDefnTranslator.Output]],
+    translate: DomainMember.User => F[NEList[BaboonIssue], List[ScDefnTranslator.Output]],
   ): F[NEList[BaboonIssue], List[ScDefnTranslator.Output]] = {
     if (target.output.products.contains(p)) {
       F.flatTraverseAccumErrors(domain.defs.meta.nodes.toList) {
@@ -119,44 +119,49 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
           q"""unmodified.put("${tid.toString}", $scList(${version.sameIn.map(_.v.toString).map(s => q"\"$s\"").toList.join(", ")}))"""
       }
 
-    scala.collection.mutable.Map.empty[String, String]
     val metaTree =
       q"""object BaboonMetadata extends $baboonMeta {
          |  private val unmodified = ${scMutMap.fullyQualified}.empty[$scString, $scList[$scString]]
          |  
-         |  ${entries.join("\n").shift(2).trim}
+         |  ${entries.joinN().shift(2).trim}
          |
-         |  def unmodifiedSince(typeIdString: $scString): $scList[$scString] = {
-         |    unmodified(typeIdString);
+         |  def sameInVersions(typeId: String): List[String] = {
+         |      unmodified(typeId)
          |  }
          |}""".stripMargin
 
-    val metaSource = Seq(metaTree).join("\n\n")
-    val meta       = scTreeTools.inNs(pkg.parts.toSeq, metaSource)
+    val meta       = scTreeTools.inNs(pkg.parts.toSeq, metaTree)
     val metaOutput = ScDefnTranslator.Output(s"$basename/BaboonMetadata.scala", meta, pkg, CompilerProduct.Definition)
 
     F.pure(List(metaOutput))
   }
 
   private def sharedFixture(): Out[List[ScDefnTranslator.Output]] = {
-    F.pure(List.empty)
-
+    if (target.output.products.contains(CompilerProduct.FixtureRuntime)) {
+      F.pure(
+        List(
+          ScDefnTranslator.Output(
+            "BaboonFixtureShared.scala",
+            TextTree.text(IzResources.readAsString("baboon-runtime/scala/BaboonFixtureShared.scala").get),
+            ScTypes.baboonFixturePkg,
+            CompilerProduct.FixtureRuntime,
+            doNotModify = true,
+          )
+        )
+      )
+    } else F.pure(Nil)
   }
 
   private def renderTree(o: ScDefnTranslator.Output): String = {
     // TODO: better representation
-    // TODO: omit predef
     val usedTypes = o.tree.values.collect { case t: ScValue.ScType => t }.distinct
+      .filterNot(_.predef)
       .filterNot(_.fq)
       .filterNot(_.pkg == o.pkg)
       .filterNot(t => t.pkg.parts.startsWith(o.pkg.parts))
       .sortBy(_.toString)
 
-//    println((o.path, o.pkg))
-//    println(usedTypes.map(t => (t, t.fq)))
-    val imports = usedTypes.toSeq.map {
-      p => q"import ${p.pkg.parts.mkString(".")}.${p.name}"
-    }.join("\n")
+    val imports = usedTypes.map(p => q"import ${p.pkg.parts.mkString(".")}.${p.name}").joinN()
 
     val full = if (o.doNotModify) {
       o.tree
@@ -164,41 +169,44 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       Seq(
         Seq(imports),
         Seq(o.tree),
-      ).flatten.join("\n\n")
+      ).flatten.joinNN()
     }
 
     full.mapRender {
-      case t: ScValue.ScTypeName =>
-        t.name
-
+      case t: ScValue.ScTypeName => t.name
       case t: ScValue.ScType if !t.fq =>
         if (o.pkg == t.pkg || !t.pkg.parts.startsWith(o.pkg.parts)) {
           t.name
         } else {
           (t.pkg.parts :+ t.name).mkString(".")
         }
-
-      case t: ScValue.ScType =>
-        (t.pkg.parts :+ t.name).mkString(".")
+      case t: ScValue.ScType => (t.pkg.parts :+ t.name).mkString(".")
     }
   }
 
   private def sharedRuntime(): Out[List[scl.ScDefnTranslator.Output]] = {
-    if (target.output.products.contains(CompilerProduct.Runtime)) {
-
-      val sharedOutput = ScDefnTranslator.Output(
-        s"BaboonRuntimeShared.scala",
-        TextTree.text(
-          IzResources
-            .readAsString("baboon-runtime/scala/BaboonRuntimeShared.scala").get
-            // TODO: fixed in izumi, hack, we always force escape processing in text tree
-            .replace("""[\\s:-]""", """[\\\\s:-]""")
-        ),
+    def rt(path: String, resource: String, preprocessResource: String => String = identity): ScDefnTranslator.Output = {
+      ScDefnTranslator.Output(
+        path,
+        TextTree.text(IzResources.readAsString(resource).map(preprocessResource).get),
         ScTypes.baboonRuntimePkg,
         CompilerProduct.Runtime,
         doNotModify = true,
       )
-      F.pure(List(sharedOutput))
+    }
+    // TODO: fix in izumi, hack, we always force escape processing in text tree
+    if (target.output.products.contains(CompilerProduct.Runtime)) {
+      F.pure(
+        List(
+          rt("BaboonByteString.scala", "baboon-runtime/scala/BaboonByteString.scala", _.replace("""[\\s:-]""", """[\\\\s:-]""")),
+          rt("BaboonCodecs.scala", "baboon-runtime/scala/BaboonCodecs.scala"),
+          rt("BaboonCodecsFacade.scala", "baboon-runtime/scala/BaboonCodecsFacade.scala"),
+          rt("BaboonConversions.scala", "baboon-runtime/scala/BaboonConversions.scala"),
+          rt("BaboonExceptions.scala", "baboon-runtime/scala/BaboonExceptions.scala"),
+          rt("BaboonRuntimeShared.scala", "baboon-runtime/scala/BaboonRuntimeShared.scala", _.replace("""\\.""", """\\\\.""")),
+          rt("BaboonTools.scala", "baboon-runtime/scala/BaboonTools.scala"),
+        )
+      )
     } else {
       F.pure(List.empty)
     }
@@ -225,7 +233,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
                   domain = domain,
                   rules  = rules,
                   evo    = lineage.evolution,
-                ).makeConvs()
+                ).makeConvs
             }
         }
     } yield {
@@ -234,26 +242,29 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
 
       val converter =
         q"""trait RequiredConversions {
-           |    ${missing.join("\n").shift(4).trim}
+           |    ${missing.joinN().shift(4).trim}
            |}
            |
-           |class BaboonConversions(required: RequiredConversions) extends $abstractBaboonConversions {
-           |    ${conversionRegs.join("\n").shift(4).trim}
+           |class BaboonConversions(required: RequiredConversions) extends $baboonAbstractConversions {
+           |    ${conversionRegs.joinN().shift(4).trim}
            |
            |    override def versionsFrom: $scList[$scString] = $scList(${toCurrent.map(_.from.v.toString).map(v => s"\"$v\"").mkString(", ")})
            |    override def versionTo: $scString = "${domain.version.v.toString}"
            |}""".stripMargin
 
-      // Scala codecs definitions (stub syntax)
-      val codecs =
-        q"""object BaboonCodecs extends $abstractBaboonCodecs {
-           |    // register codecs
-           |    ${defnOut.flatMap(_.codecReg).join("\n").shift(4).trim}
-           |}""".stripMargin
+      import izumi.fundamentals.collections.IzCollections.*
+      val regsMap = defnOut.flatMap(_.codecReg).toMultimap.view.mapValues(_.flatten).toMap
+
+      val codecs = regsMap.map {
+        case (codecId, regs) =>
+          q"""object BaboonCodecs${codecId.capitalize} extends ${abstractBaboonCodec(codecId)}{
+             |  ${regs.toList.map(c => q"register($c)").joinN().shift(2).trim}
+             |}""".stripMargin
+      }.toList.joinNN()
 
       val basename = scFiles.basename(domain, lineage.evolution)
 
-      val runtimeSource = Seq(converter, codecs).join("\n\n")
+      val runtimeSource = Seq(converter, codecs).joinNN()
       val runtime       = scTreeTools.inNs(pkg.parts.toSeq, runtimeSource)
       val runtimeOutput = ScDefnTranslator.Output(
         s"$basename/BaboonRuntime.scala",

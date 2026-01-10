@@ -7,9 +7,7 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
-class ScTypeTranslator(
-  scTypeInfo: ScTypeInfo
-) {
+class ScTypeTranslator {
   def asScRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[ScValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>
@@ -81,7 +79,7 @@ class ScTypeTranslator(
         assert(parts.length > 1)
         val pkg = parts.init
         val id  = parts.last
-        ScType(ScPackageId(NEList.unsafeFrom(pkg)), id, fq = false)
+        ScType(ScPackageId(NEList.unsafeFrom(pkg)), id)
       case _ =>
         toScTypeRefKeepForeigns(tid, domain, evolution)
     }
@@ -100,18 +98,14 @@ class ScTypeTranslator(
       case _ =>
         ScPackageId(fullPrefix)
     }
-    ScType(fullPkg, tid.name.name.capitalize, fq = false)
+    ScType(fullPkg, tid.name.name.capitalize)
   }
 
   private def renderOwner(owner: Owner): Seq[String] = {
     owner match {
-      case Owner.Toplevel =>
-        Seq.empty
-      case Owner.Ns(path) =>
-        path.map(_.name.toLowerCase)
-      case Owner.Adt(id) =>
-        val sub = renderOwner(id.owner) :+ scTypeInfo.adtNsName(id)
-        sub
+      case Owner.Toplevel => Seq.empty
+      case Owner.Ns(path) => path.map(_.name.toLowerCase)
+      case Owner.Adt(id)  => renderOwner(id.owner) :+ id.name.name
     }
   }
 }

@@ -28,17 +28,12 @@ object ScCodecFixtureTranslator {
       definition.defn match {
         case _ if enquiries.hasForeignType(definition, domain)     => None
         case _ if enquiries.isRecursiveTypedef(definition, domain) => None
-
-        case dto: Typedef.Dto =>
-          Some(doTranslateDto(dto))
-
-        case adt: Typedef.Adt =>
-          Some(doTranslateAdt(adt))
-
-        case _: Typedef.Contract => None
-        case _: Typedef.Enum     => None
-        case _: Typedef.Foreign  => None
-        case _: Typedef.Service  => None
+        case dto: Typedef.Dto                                      => Some(doTranslateDto(dto))
+        case adt: Typedef.Adt                                      => Some(doTranslateAdt(adt))
+        case _: Typedef.Contract                                   => None
+        case _: Typedef.Enum                                       => None
+        case _: Typedef.Foreign                                    => None
+        case _: Typedef.Service                                    => None
       }
     }
 
@@ -53,8 +48,7 @@ object ScCodecFixtureTranslator {
               } yield {
                 q"$oid.$did"
               }
-            case _ =>
-              defnFixtureId(definition)
+            case _ => defnFixtureId(definition)
           }
       }
 
@@ -71,12 +65,8 @@ object ScCodecFixtureTranslator {
             case _: Typedef.Enum                              => None
             case _: Typedef.Foreign                           => None
             case _: Typedef.Service                           => None
-
-            case dto: Typedef.Dto =>
-              Some(fixtureTpe(dto.id))
-
-            case adt: Typedef.Adt =>
-              Some(fixtureTpe(adt.id))
+            case dto: Typedef.Dto                             => Some(fixtureTpe(dto.id))
+            case adt: Typedef.Adt                             => Some(fixtureTpe(adt.id))
           }
       }
 
@@ -90,7 +80,7 @@ object ScCodecFixtureTranslator {
       val generatedFields = dto.fields.map(f => genType(f.tpe))
       val fullType        = translator.toScTypeRefKeepForeigns(dto.id, domain, evo)
 
-      q"""object ${fixtureTpe(dto.id)} extends $baboonFixture[$fullType] {
+      q"""object ${fixtureTpe(dto.id)} {
          |  def random(rnd: $baboonRandom): $fullType =
          |    $fullType(
          |      ${generatedFields.join(",\n").shift(6).trim}
@@ -100,40 +90,28 @@ object ScCodecFixtureTranslator {
     }
 
     private def doTranslateAdt(adt: Typedef.Adt): TextTree[ScValue] = {
+      val adtName = adt.id.name.name
       val members = adt.members.toList
-        .flatMap(m => domain.defs.meta.nodes.get(m))
+        .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
-      val membersFixtures =
-        members.sortBy(_.id.toString).map(dto => doTranslateDto(dto))
+      val membersFixtures   = members.sortBy(_.id.toString).map(doTranslateDto)
+      val membersGenerators = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name}_Fixture.random")
 
-      val membersGenerators = members.sortBy(_.id.toString).map[TextTree[ScValue]] {
-        dto =>
-          val memberFixture =
-            q"${dto.id.name.name}"
-
-          q"${memberFixture}_Fixture.random"
-      }
-
-//      val membersBranches = membersGenerators.zipWithIndex.map {
-//        case (generator, idx) =>
-//          q"""case ${idx.toString} => $generator""".stripMargin
-//      }
-
-      q"""object ${fixtureTpe(adt.id)} extends $baboonAdtFixture[${adt.id.name.name}] {
-         |  def random(rnd: $baboonRandom): ${adt.id.name.name} = {
+      q"""object ${fixtureTpe(adt.id)} {
+         |  def random(rnd: $baboonRandom): $adtName = {
          |    rnd.oneOf($scList(
          |      ${membersGenerators.join(",\n").shift(6).trim}
          |    ))
          |  }
          |
-         |  def randomAll(rnd: $baboonRandom): $scList[${adt.id.name.name}] = {
+         |  def randomAll(rnd: $baboonRandom): $scList[$adtName] = {
          |    $scList(
          |      ${membersGenerators.map(g => q"$g(rnd)").join(",\n").shift(6).trim}
          |    )
          |  }
          |  
-         |  ${membersFixtures.join("\n").shift(2).trim}
+         |  ${membersFixtures.joinN().shift(2).trim}
          |}
          |""".stripMargin
     }
@@ -144,20 +122,11 @@ object ScCodecFixtureTranslator {
           case tpe: TypeRef.Scalar => genScalar(tpe)
           case TypeRef.Constructor(id, args) =>
             id match {
-              case Builtins.lst =>
-                q"""rnd.mkList(${gen(args.head)})"""
-
-              case Builtins.set =>
-                q"""rnd.mkSet(${gen(args.head)})"""
-
-              case Builtins.map =>
-                q"""rnd.mkMap(${gen(args(0))}, ${gen(args(1))})"""
-
-              case Builtins.opt =>
-                q"""rnd.mkOption(${gen(args.head)})"""
-
-              case t =>
-                throw new IllegalArgumentException(s"Unexpected collection type: $t")
+              case Builtins.lst => q"rnd.mkList(${gen(args.head)})"
+              case Builtins.set => q"rnd.mkSet(${gen(args.head)})"
+              case Builtins.map => q"rnd.mkMap(${gen(args(0))}, ${gen(args(1))})"
+              case Builtins.opt => q"rnd.mkOption(${gen(args.head)})"
+              case t            => throw new IllegalArgumentException(s"Unexpected collection type: $t")
             }
         }
       }
@@ -166,7 +135,6 @@ object ScCodecFixtureTranslator {
     }
 
     private def genScalar(tpe: TypeRef.Scalar): TextTree[ScValue] = {
-
       tpe.id match {
         case TypeId.Builtins.i08 => q"rnd.nextI08()"
         case TypeId.Builtins.i16 => q"rnd.nextI16()"
@@ -194,11 +162,8 @@ object ScCodecFixtureTranslator {
         case TypeId.User(_, _, name) if enquiries.isEnum(tpe, domain) => q"rnd.mkEnum(${name.name})"
         case u: TypeId.User                                           => q"${u.name.name}_Fixture.random(rnd)"
 
-        case t =>
-          throw new IllegalArgumentException(s"Unexpected scalar type: $t")
+        case t => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
       }
     }
-
   }
-
 }

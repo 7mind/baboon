@@ -125,8 +125,13 @@ object Baboon {
                           output  = shopts.outOpts,
                           generic = shopts.genericOpts,
                           language = ScOptions(
-                            writeEvolutionDict     = opts.scWriteEvolutionDict.getOrElse(false),
-                            wrappedAdtBranchCodecs = opts.scWrappedAdtBranchCodecs.getOrElse(false),
+                            writeEvolutionDict          = opts.scWriteEvolutionDict.getOrElse(false),
+                            wrappedAdtBranchCodecs      = opts.scWrappedAdtBranchCodecs.getOrElse(false),
+                            enableDeprecatedEncoders    = opts.enableDeprecatedEncoders.getOrElse(false),
+                            generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
+                            generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
+                            generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
+                            generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
                           ),
                         )
                     }
