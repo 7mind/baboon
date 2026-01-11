@@ -2,6 +2,14 @@
 
 set -e
 
-BABOON_BIN="$(nix build .#baboon --print-out-paths --no-link 2>/dev/null)/bin/baboon"
+# development script for easy vscode extension testing.
+# pairs with .vscode/settings.json
 
-exec $BABOON_BIN baboon $*
+LOCAL_BABOON="./baboon-compiler/src/test/resources/baboon"
+
+if [[ -x "$LOCAL_BABOON" ]]; then
+    exec "$LOCAL_BABOON" "$@"
+else
+    BABOON_BIN="$(nix build .#baboon --print-out-paths --no-link 2>/dev/null)/bin/baboon"
+    exec "$BABOON_BIN" baboon "$@"
+fi
