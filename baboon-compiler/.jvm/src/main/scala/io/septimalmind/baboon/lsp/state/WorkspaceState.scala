@@ -16,6 +16,7 @@ class WorkspaceState(
 ) {
   private val workspaceFolders = TrieMap.empty[String, Path]
   @volatile private var lastCompilationResult: CompilationResult = CompilationResult.empty
+  @volatile private var lastSuccessfulFamily: Option[BaboonFamily] = None
 
   // Initialize with CLI model directories - these are the ONLY source of .baboon files
   cliModelDirs.foreach { path =>
@@ -56,9 +57,10 @@ class WorkspaceState(
       loader.load(inputPaths) match {
         case Right(family) =>
           System.err.println(s"[LSP] recompile: SUCCESS - ${family.domains.size} domains")
+          lastSuccessfulFamily = Some(family)
           CompilationResult(Some(family), Seq.empty, Map.empty)
         case Left(issues) =>
-          System.err.println(s"[LSP] recompile: FAILED - ${issues.size} issues")
+          System.err.println(s"[LSP] recompile: FAILED - ${issues.size} issues (using cached family for completions)")
           issues.toList.take(5).foreach { issue =>
             val formatted = formatIssue(issue)
             System.err.println(s"[LSP] recompile: $formatted")
@@ -77,7 +79,7 @@ class WorkspaceState(
 
   def getLastCompilationResult: CompilationResult = lastCompilationResult
 
-  def getFamily: Option[BaboonFamily] = lastCompilationResult.family
+  def getFamily: Option[BaboonFamily] = lastCompilationResult.family.orElse(lastSuccessfulFamily)
 
   private def groupIssuesByFile(issues: Seq[BaboonIssue]): Map[String, Seq[BaboonIssue]] = {
     issues.groupBy(extractFileUri).collect {

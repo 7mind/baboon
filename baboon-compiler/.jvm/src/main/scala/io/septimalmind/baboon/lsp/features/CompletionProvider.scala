@@ -37,11 +37,15 @@ class CompletionProvider(
         getKeywordCompletions ++ getTypeCompletions ++ getBuiltinCompletions
     }
 
-    // Filter by prefix if one exists
+    // Filter by prefix - match against both filterText (simple name) and label (full path)
     prefix match {
       case Some(p) if p.nonEmpty =>
         val lowerPrefix = p.toLowerCase
-        candidates.filter(_.label.toLowerCase.startsWith(lowerPrefix))
+        candidates.filter { item =>
+          val labelMatches      = item.label.toLowerCase.startsWith(lowerPrefix)
+          val filterTextMatches = item.filterText.exists(_.toLowerCase.startsWith(lowerPrefix))
+          labelMatches || filterTextMatches
+        }
       case _ =>
         candidates
     }
@@ -101,7 +105,12 @@ class CompletionProvider(
 
   private def getBuiltinCompletions: Seq[CompletionItem] = {
     builtinTypes.map { bt =>
-      CompletionItem(bt, Some(CompletionItemKind.TypeParameter), Some("builtin type"))
+      CompletionItem(
+        label = bt,
+        kind = Some(CompletionItemKind.TypeParameter),
+        detail = Some("builtin type"),
+        sortText = Some(s"1_$bt")
+      )
     }
   }
 
@@ -122,7 +131,18 @@ class CompletionProvider(
                 case _: Typedef.Contract => CompletionItemKind.Interface
                 case _: Typedef.Service  => CompletionItemKind.Module
               }
-              CompletionItem(u.id.name.name, Some(kind), Some(u.id.pkg.toString))
+              val simpleName = u.id.name.name
+              // Use owner (namespace path) + name, without the package prefix
+              val pathParts  = u.id.owner.asPseudoPkg :+ simpleName
+              val typePath   = pathParts.mkString(".")
+              CompletionItem(
+                label = typePath,
+                kind = Some(kind),
+                detail = Some(u.id.pkg.toString),
+                insertText = Some(typePath),
+                sortText = Some(s"0_$simpleName"),
+                filterText = Some(simpleName)
+              )
             }
           }
         }.toSeq

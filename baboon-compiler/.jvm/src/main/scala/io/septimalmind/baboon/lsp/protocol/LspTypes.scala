@@ -107,7 +107,9 @@ final case class CompletionItem(
   kind: Option[Int] = None,
   detail: Option[String] = None,
   documentation: Option[MarkupContent] = None,
-  insertText: Option[String] = None
+  insertText: Option[String] = None,
+  sortText: Option[String] = None,
+  filterText: Option[String] = None
 )
 
 object CompletionItem {
