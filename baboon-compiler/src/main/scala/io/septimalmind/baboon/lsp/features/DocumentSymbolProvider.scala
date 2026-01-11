@@ -2,16 +2,16 @@ package io.septimalmind.baboon.lsp.features
 
 import io.septimalmind.baboon.lsp.protocol.{DocumentSymbol, Range, SymbolKind}
 import io.septimalmind.baboon.lsp.state.WorkspaceState
-import io.septimalmind.baboon.lsp.util.PositionConverter
+import io.septimalmind.baboon.lsp.util.{PathOps, PositionConverter}
 import io.septimalmind.baboon.parser.model.InputPointer
 import io.septimalmind.baboon.typer.model._
 
-import java.nio.file.Paths
 import scala.util.Try
 
 class DocumentSymbolProvider(
   workspaceState: WorkspaceState,
-  positionConverter: PositionConverter
+  positionConverter: PositionConverter,
+  pathOps: PathOps
 ) {
 
   def getSymbols(uri: String): Seq[DocumentSymbol] = {
@@ -51,8 +51,8 @@ class DocumentSymbolProvider(
   private def isInFile(pos: InputPointer, filePath: String): Boolean = {
     pos match {
       case fk: InputPointer.FileKnown =>
-        val posPath = Try(Paths.get(fk.file.asString).toAbsolutePath.normalize().toString).getOrElse(fk.file.asString)
-        val reqPath = Try(Paths.get(filePath).toAbsolutePath.normalize().toString).getOrElse(filePath)
+        val posPath = Try(pathOps.normalizePath(fk.file.asString)).getOrElse(fk.file.asString)
+        val reqPath = Try(pathOps.normalizePath(filePath)).getOrElse(filePath)
         posPath == reqPath
       case InputPointer.Undefined => false
     }

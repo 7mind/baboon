@@ -1,18 +1,20 @@
 package io.septimalmind.baboon.lsp.state
 
 import io.septimalmind.baboon.BaboonLoader
+import io.septimalmind.baboon.lsp.util.PathOps
 import io.septimalmind.baboon.parser.model.{FSPath, InputPointer}
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.BaboonFamily
 import izumi.fundamentals.platform.files.IzFiles
 
-import java.nio.file.{Files, Path, Paths}
+import java.nio.file.{Files, Path}
 import scala.collection.concurrent.TrieMap
 
 class WorkspaceState(
   documentState: DocumentState,
   loader: BaboonLoader[Lambda[(`+e`, `+a`) => Either[e, a]]],
-  cliModelDirs: Set[Path]
+  cliModelDirs: Set[Path],
+  pathOps: PathOps
 ) {
   private val workspaceFolders = TrieMap.empty[String, Path]
   @volatile private var lastCompilationResult: CompilationResult = CompilationResult.empty
@@ -90,7 +92,7 @@ class WorkspaceState(
   private def extractFileUri(issue: BaboonIssue): Option[String] = {
     extractInputPointer(issue).flatMap {
       case fk: InputPointer.FileKnown =>
-        Some(Paths.get(fk.file.asString).toUri.toString)
+        Some(pathOps.pathToUri(fk.file.asString))
       case InputPointer.Undefined =>
         None
     }
@@ -248,14 +250,4 @@ class WorkspaceState(
     case file: InputPointer.JustFile => Some(file.file.name.theString)
     case InputPointer.Undefined      => None
   }
-}
-
-case class CompilationResult(
-  family: Option[BaboonFamily],
-  issues: Seq[BaboonIssue],
-  fileIssues: Map[String, Seq[BaboonIssue]]
-)
-
-object CompilationResult {
-  def empty: CompilationResult = CompilationResult(None, Seq.empty, Map.empty)
 }

@@ -1,9 +1,10 @@
 package io.septimalmind.baboon.lsp.state
 
-import java.net.URI
+import io.septimalmind.baboon.lsp.util.PathOps
+
 import scala.collection.concurrent.TrieMap
 
-class DocumentState {
+class DocumentState(pathOps: PathOps) {
   private val documents = TrieMap.empty[String, DocumentInfo]
 
   case class DocumentInfo(
@@ -40,10 +41,10 @@ class DocumentState {
   }
 
   def uriToPath(uri: String): String = {
-    new URI(uri).getPath
+    pathOps.uriToPath(uri)
   }
 
   def pathToUri(path: String): String = {
-    new java.io.File(path).toURI.toString
+    pathOps.pathToUri(path)
   }
 }

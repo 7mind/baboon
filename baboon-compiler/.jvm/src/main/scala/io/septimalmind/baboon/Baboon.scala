@@ -416,17 +416,19 @@ object Baboon {
                 }
               }
 
-              val documentState = new DocumentState()
-              val cliModelDirs = directoryInputs.map(dir => Paths.get(dir.asString))
-              val workspaceState = new WorkspaceState(documentState, eitherLoader, cliModelDirs)
+              val pathOps = io.septimalmind.baboon.lsp.util.JvmPathOps
 
-              val positionConverter = new PositionConverter()
+              val documentState = new DocumentState(pathOps)
+              val cliModelDirs = directoryInputs.map(dir => Paths.get(dir.asString))
+              val workspaceState = new WorkspaceState(documentState, eitherLoader, cliModelDirs, pathOps)
+
+              val positionConverter = new PositionConverter(pathOps)
 
               val diagnosticsProvider = new DiagnosticsProvider(positionConverter)
               val definitionProvider = new DefinitionProvider(documentState, workspaceState, positionConverter)
               val hoverProvider = new HoverProvider(documentState, workspaceState)
               val completionProvider = new CompletionProvider(documentState, workspaceState)
-              val documentSymbolProvider = new DocumentSymbolProvider(workspaceState, positionConverter)
+              val documentSymbolProvider = new DocumentSymbolProvider(workspaceState, positionConverter, pathOps)
 
               val server = new BaboonLanguageServer(
                 documentState,
@@ -435,7 +437,8 @@ object Baboon {
                 definitionProvider,
                 hoverProvider,
                 completionProvider,
-                documentSymbolProvider
+                documentSymbolProvider,
+                () => System.exit(0)
               )
               val launcher = new LspLauncher(server, port)
 

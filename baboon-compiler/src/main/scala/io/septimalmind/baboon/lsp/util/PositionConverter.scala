@@ -3,10 +3,7 @@ package io.septimalmind.baboon.lsp.util
 import io.septimalmind.baboon.lsp.protocol.{Position, Range}
 import io.septimalmind.baboon.parser.model.{InputOffset, InputPointer, RawNodeMeta}
 
-import java.net.URI
-import java.nio.file.Paths
-
-class PositionConverter {
+class PositionConverter(pathOps: PathOps) {
 
   /** InputOffset uses 1-based line/column, LSP uses 0-based */
   def fromInputOffset(offset: InputOffset): Position = {
@@ -32,11 +29,11 @@ class PositionConverter {
   }
 
   def pathToUri(path: String): String = {
-    Paths.get(path).toUri.toString
+    pathOps.pathToUri(path)
   }
 
   def uriToPath(uri: String): String = {
-    new URI(uri).getPath
+    pathOps.uriToPath(uri)
   }
 
   def defaultRange: Range = Range(Position(0, 0), Position(0, 1))

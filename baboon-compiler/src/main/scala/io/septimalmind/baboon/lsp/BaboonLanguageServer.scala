@@ -13,12 +13,13 @@ class BaboonLanguageServer(
   definitionProvider: DefinitionProvider,
   hoverProvider: HoverProvider,
   completionProvider: CompletionProvider,
-  documentSymbolProvider: DocumentSymbolProvider
+  documentSymbolProvider: DocumentSymbolProvider,
+  exitCallback: () => Unit
 ) {
 
-  private var transport: JsonRpcTransport = _
+  private var transport: LspTransport = _
 
-  def setTransport(t: JsonRpcTransport): Unit = {
+  def setTransport(t: LspTransport): Unit = {
     transport = t
   }
 
@@ -99,7 +100,7 @@ class BaboonLanguageServer(
         publishAllDiagnostics()
 
       case "exit" =>
-        System.exit(0)
+        exitCallback()
 
       case "textDocument/didOpen" =>
         params.flatMap(_.as[DidOpenTextDocumentParams].toOption).foreach { p =>
