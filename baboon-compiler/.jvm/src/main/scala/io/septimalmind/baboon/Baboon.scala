@@ -405,22 +405,16 @@ object Baboon {
       Injector
         .NoCycles[F[Throwable, _]]()
         .produceRun(m) {
-          (loader: BaboonLoader[F]) =>
+          (manager: io.septimalmind.baboon.typer.BaboonFamilyManager[F]) =>
             F.maybeSuspend {
-              // Type-erase the loader for LSP use - convert F[E, A] to F[Nothing, Either[E, A]]
-              type LoadResult = Either[izumi.fundamentals.collections.nonempty.NEList[io.septimalmind.baboon.parser.model.issues.BaboonIssue], io.septimalmind.baboon.typer.model.BaboonFamily]
-              val Error2F = implicitly[izumi.functional.bio.Error2[F]]
-              val eitherLoader = new BaboonLoader[Lambda[(`+e`, `+a`) => Either[e, a]]] {
-                override def load(inputs: List[java.nio.file.Path]): LoadResult = {
-                  runner.run(Error2F.catchAll(Error2F.map(loader.load(inputs))(r => Right(r): LoadResult))(e => Error2F.pure(Left(e): LoadResult)))
-                }
-              }
-
               val pathOps = io.septimalmind.baboon.lsp.util.JvmPathOps
+              val cliModelDirs = directoryInputs.map(dir => Paths.get(dir.asString))
+
+              val compiler = new io.septimalmind.baboon.lsp.state.JvmBaboonCompiler[F](manager, runner)
+              val inputProvider = new io.septimalmind.baboon.lsp.state.JvmInputProvider(cliModelDirs, pathOps)
 
               val documentState = new DocumentState(pathOps)
-              val cliModelDirs = directoryInputs.map(dir => Paths.get(dir.asString))
-              val workspaceState = new WorkspaceState(documentState, eitherLoader, cliModelDirs, pathOps)
+              val workspaceState = new WorkspaceState(documentState, compiler, inputProvider, pathOps)
 
               val positionConverter = new PositionConverter(pathOps)
 

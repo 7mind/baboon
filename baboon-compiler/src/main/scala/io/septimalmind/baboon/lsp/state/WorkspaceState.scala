@@ -1,30 +1,18 @@
 package io.septimalmind.baboon.lsp.state
 
-import io.septimalmind.baboon.BaboonLoader
 import io.septimalmind.baboon.lsp.util.PathOps
 import io.septimalmind.baboon.parser.model.{FSPath, InputPointer}
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.BaboonFamily
-import izumi.fundamentals.platform.files.IzFiles
-
-import java.nio.file.{Files, Path}
-import scala.collection.concurrent.TrieMap
 
 class WorkspaceState(
   documentState: DocumentState,
-  loader: BaboonLoader[Lambda[(`+e`, `+a`) => Either[e, a]]],
-  cliModelDirs: Set[Path],
+  compiler: LspCompiler,
+  inputProvider: InputProvider,
   pathOps: PathOps
 ) {
-  private val workspaceFolders = TrieMap.empty[String, Path]
   @volatile private var lastCompilationResult: CompilationResult = CompilationResult.empty
   @volatile private var lastSuccessfulFamily: Option[BaboonFamily] = None
-
-  // Initialize with CLI model directories - these are the ONLY source of .baboon files
-  cliModelDirs.foreach { path =>
-    val normalizedKey = path.toAbsolutePath.normalize().toString
-    workspaceFolders.put(normalizedKey, path)
-  }
 
   /** VSCode workspace folders are ignored - model dirs must be specified via CLI */
   def addWorkspaceFolder(uri: String): Unit = {
@@ -38,25 +26,11 @@ class WorkspaceState(
   }
 
   def recompile(): CompilationResult = {
-    System.err.println(s"[LSP] recompile: workspaceFolders=${workspaceFolders.keys.mkString(", ")}")
+    val inputs = inputProvider.getWorkspaceInputs
+    System.err.println(s"[LSP] recompile: found ${inputs.size} .baboon files")
 
-    // Collect all .baboon files from workspace
-    val workspaceFiles = workspaceFolders.values.flatMap { folder =>
-      if (Files.exists(folder)) {
-        IzFiles.walk(folder.toFile).filter(_.toFile.getName.endsWith(".baboon"))
-      } else {
-        Seq.empty
-      }
-    }.toSeq
-
-    System.err.println(s"[LSP] recompile: found ${workspaceFiles.size} .baboon files")
-
-    // Build file paths for compilation
-    val inputPaths = workspaceFiles.map(_.toAbsolutePath).toList
-
-    // Compile using the loader
-    val result = if (inputPaths.nonEmpty) {
-      loader.load(inputPaths) match {
+    val result = if (inputs.nonEmpty) {
+      compiler.compile(inputs) match {
         case Right(family) =>
           System.err.println(s"[LSP] recompile: SUCCESS - ${family.domains.size} domains")
           lastSuccessfulFamily = Some(family)
