@@ -38,12 +38,12 @@ class CompletionProvider(
     }
 
     // Filter by prefix - match against both filterText (simple name) and label (full path)
+    // Supports: prefix match, camel hump match (e.g., "PaSta" matches "PaymentState")
     prefix match {
       case Some(p) if p.nonEmpty =>
-        val lowerPrefix = p.toLowerCase
         candidates.filter { item =>
-          val labelMatches      = item.label.toLowerCase.startsWith(lowerPrefix)
-          val filterTextMatches = item.filterText.exists(_.toLowerCase.startsWith(lowerPrefix))
+          val labelMatches      = matchesCamelCase(p, item.label)
+          val filterTextMatches = item.filterText.exists(matchesCamelCase(p, _))
           labelMatches || filterTextMatches
         }
       case _ =>
@@ -150,5 +150,73 @@ class CompletionProvider(
         types
       }
       .getOrElse(Seq.empty)
+  }
+
+  private def matchesCamelCase(query: String, candidate: String): Boolean =
+    CamelCaseMatcher.matches(query, candidate)
+}
+
+/** IntelliJ-style camel case matching.
+  * "PaSta" matches "PaymentState" because:
+  * - P matches P (start of hump)
+  * - a matches a (within hump)
+  * - S matches S (start of next hump)
+  * - ta matches ta (within hump)
+  *
+  * Also supports plain prefix matching and dot-separated paths.
+  */
+object CamelCaseMatcher {
+  def matches(query: String, candidate: String): Boolean = {
+    if (query.isEmpty) return true
+    if (candidate.isEmpty) return false
+
+    // Plain lowercase prefix match (most common case)
+    if (candidate.toLowerCase.startsWith(query.toLowerCase)) return true
+
+    // Camel hump matching
+    matchCamelHumps(query, 0, candidate, 0)
+  }
+
+  private def matchCamelHumps(query: String, qi: Int, candidate: String, ci: Int): Boolean = {
+    if (qi >= query.length) return true
+    if (ci >= candidate.length) return false
+
+    val qc = query.charAt(qi)
+    val cc = candidate.charAt(ci)
+
+    if (qc.toLower == cc.toLower) {
+      // Characters match - if query char is uppercase, candidate char should also be uppercase (hump start)
+      // or we're at the start of the candidate
+      val humpMatch = !qc.isUpper || cc.isUpper || ci == 0
+      if (humpMatch) {
+        matchCamelHumps(query, qi + 1, candidate, ci + 1)
+      } else {
+        // Query has uppercase but candidate doesn't - skip to next hump in candidate
+        skipToNextHump(query, qi, candidate, ci + 1)
+      }
+    } else if (qc.isUpper) {
+      // Query char is uppercase, skip to next hump in candidate
+      skipToNextHump(query, qi, candidate, ci + 1)
+    } else {
+      // No match, try skipping candidate char (within current hump)
+      if (cc.isUpper && ci > 0) {
+        // We hit a new hump without matching - fail this path
+        false
+      } else {
+        matchCamelHumps(query, qi, candidate, ci + 1)
+      }
+    }
+  }
+
+  private def skipToNextHump(query: String, qi: Int, candidate: String, ci: Int): Boolean = {
+    if (ci >= candidate.length) return false
+
+    val cc = candidate.charAt(ci)
+    if (cc.isUpper || cc == '.' || cc == '_') {
+      // Found a hump boundary, try matching from here
+      matchCamelHumps(query, qi, candidate, ci)
+    } else {
+      skipToNextHump(query, qi, candidate, ci + 1)
+    }
   }
 }
