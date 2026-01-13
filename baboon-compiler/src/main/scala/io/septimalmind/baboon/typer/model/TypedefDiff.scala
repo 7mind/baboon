@@ -24,6 +24,7 @@ object DtoOp {
   case class RemoveField(f: Field) extends DtoOp
   case class ChangeField(f: Field, newType: TypeRef) extends DtoOp
   case class KeepField(f: Field, modification: RefModification) extends DtoOp
+  case class RenameField(oldField: Field, newField: Field, modification: RefModification) extends DtoOp
 }
 
 sealed trait RefModification

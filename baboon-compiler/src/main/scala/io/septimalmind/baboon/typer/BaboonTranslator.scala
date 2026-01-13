@@ -121,11 +121,12 @@ class BaboonTranslator[F[+_, +_]: Error2](
     meta: RawNodeMeta,
   ): F[NEList[BaboonIssue], Seq[Field]] = {
     for {
-      name <- F.pure(FieldName(field.name.name))
-      _    <- SymbolNames.validFieldName(name, meta)
-      tpe  <- convertTpe(field.tpe, meta)
+      name     <- F.pure(FieldName(field.name.name))
+      _        <- SymbolNames.validFieldName(name, meta)
+      tpe      <- convertTpe(field.tpe, meta)
+      prevName  = field.prevName.map(pn => FieldName(pn.name))
     } yield {
-      Seq(Field(name, tpe))
+      Seq(Field(name, tpe, prevName))
     }
   }
 

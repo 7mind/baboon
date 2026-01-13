@@ -110,6 +110,9 @@ case class FieldName(name: String) {
   override def toString: String = s"$name"
 }
 
-case class Field(name: FieldName, tpe: TypeRef) {
-  override def toString: String = s"$name: $tpe"
+case class Field(name: FieldName, tpe: TypeRef, prevName: Option[FieldName]) {
+  override def toString: String = prevName match {
+    case Some(prev) => s"$name: $tpe was $prev"
+    case None       => s"$name: $tpe"
+  }
 }

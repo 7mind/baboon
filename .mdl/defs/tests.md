@@ -243,11 +243,23 @@ popd
 ret success:bool=true
 ```
 
+# action: test-sbt-basic
+
+Run manual Scala compatibility tests.
+
+```bash
+dep action.build
+sbt +test
+
+ret success:bool=true
+```
+
 # action: test
 
 Run complete test suite (orchestrator action).
 
 ```bash
+dep action.test-sbt-basic
 dep action.test-cs-regular
 dep action.test-scala-regular
 dep action.test-cs-wrapped

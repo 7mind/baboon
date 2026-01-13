@@ -103,6 +103,19 @@ object EvoCommand extends Command {
         case RefModification.Full => s"${Colors.YELLOW}full change${Colors.RESET}"
       }
       s"${Colors.DIM}= ${f.name.name}${Colors.RESET}: ${formatTypeRef(f.tpe)} ($modStr)"
+    case DtoOp.RenameField(oldField, newField, modification) =>
+      val modStr = modification match {
+        case RefModification.Unchanged => s"${Colors.DIM}unchanged${Colors.RESET}"
+        case RefModification.Shallow   => s"${Colors.CYAN}shallow change${Colors.RESET}"
+        case RefModification.Deep      => s"${Colors.CYAN}deep change${Colors.RESET}"
+        case RefModification.Full      => s"${Colors.YELLOW}full change${Colors.RESET}"
+      }
+      val typeChangeStr = if (oldField.tpe != newField.tpe) {
+        s" (${formatTypeRef(oldField.tpe)} -> ${formatTypeRef(newField.tpe)})"
+      } else {
+        s": ${formatTypeRef(newField.tpe)}"
+      }
+      s"${Colors.MAGENTA}* ${oldField.name.name} -> ${newField.name.name}${Colors.RESET}$typeChangeStr ($modStr)"
     case EnumOp.AddBranch(m) =>
       s"${Colors.GREEN}+ ${m.name}${Colors.RESET}"
     case EnumOp.RemoveBranch(m) =>
@@ -138,6 +151,8 @@ object EvoCommand extends Command {
           s"removed branches: ${ops.map(_.id.name.name).mkString(", ")}"
         case DerivationFailure.EnumBranchRemoved(ops) =>
           s"removed members: ${ops.map(_.m.name).mkString(", ")}"
+        case DerivationFailure.IncompatibleRenames(renames) =>
+          s"incompatible renames: ${renames.map(r => s"${r.oldField.name.name}->${r.newField.name.name}").mkString(", ")}"
         case DerivationFailure.Foreign =>
           "foreign type"
       }

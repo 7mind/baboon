@@ -51,9 +51,14 @@ class DefDto(context: ParserContext, meta: DefMeta) {
       .map { case (meta, ref) => ContractRef(ref, meta) }
   }
 
+  private def fieldWas[$: P]: P[RawFieldName] = {
+    import fastparse.ScalaWhitespace.whitespace
+    kw.was ~ fieldName
+  }
+
   def fieldDef[$: P]: P[RawField] = {
     import fastparse.ScalaWhitespace.whitespace
-    (fieldName ~ ":" ~ typeRef).map { case (n, t) => model.RawField(n, t) }
+    (fieldName ~ ":" ~ typeRef ~ fieldWas.?).map { case (n, t, prev) => model.RawField(n, t, prev) }
   }
 
   def parentDef[$: P]: P[ScopedRef] = {

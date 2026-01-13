@@ -248,3 +248,13 @@ root data T13_2 {
   f: map[T13_1, i32]
   f1: map[uid, i32]
 }
+
+root data T14_FieldRename {
+  oldName: str
+  unchanged: i32
+}
+
+root data T15_FieldRenameWithTypeChange {
+  oldField: i08
+  keepField: str
+}

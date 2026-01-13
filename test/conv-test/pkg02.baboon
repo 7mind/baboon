@@ -77,3 +77,8 @@ ns newns {
     x: i32
   }
 }
+
+root data FieldRenameTest {
+  newFieldName: str was oldFieldName
+  keepField: i32
+}

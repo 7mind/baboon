@@ -7,6 +7,7 @@ object DerivationFailure {
   case class EnumBranchRemoved(op: List[EnumOp.RemoveBranch]) extends DerivationFailure
   case class AdtBranchRemoved(op: List[AdtOp.RemoveBranch]) extends DerivationFailure
   case class IncompatibleFields(incompatibleChanges: Set[DtoOp.ChangeField], incompatibleAdditions: Set[DtoOp.AddField]) extends DerivationFailure
+  case class IncompatibleRenames(incompatibleRenames: Set[DtoOp.RenameField]) extends DerivationFailure
 }
 
 sealed trait Conversion {
@@ -43,24 +44,42 @@ object Conversion {
   object FieldOp {
     case class Transfer(targetField: Field) extends FieldOp
 
-    // should applicable to collections only, don't break that
     case class InitializeWithDefault(targetField: Field) extends FieldOp
 
-    case class WrapIntoCollection(fieldName: FieldName, oldTpe: TypeRef.Scalar, newTpe: TypeRef.Constructor) extends FieldOp {
-      def targetField: Field = Field(fieldName, newTpe)
-      def sourceField: Field = Field(fieldName, oldTpe)
+    case class Rename(sourceFieldName: FieldName, targetFieldDef: Field) extends FieldOp {
+      def targetField: Field = targetFieldDef
+
+      def sourceField: Field = Field(sourceFieldName, targetFieldDef.tpe, None)
     }
 
-    case class SwapCollectionType(fieldName: FieldName, oldTpe: TypeRef.Constructor, newTpe: TypeRef.Constructor) extends FieldOp {
-      def targetField: Field = Field(fieldName, newTpe)
+    case class Redef(sourceFieldName: FieldName, targetFieldDef: Field, modify: Modify) extends FieldOp {
+      def targetField: Field = targetFieldDef
 
-      def sourceField: Field = Field(fieldName, oldTpe)
+      def sourceField: Field = Field(sourceFieldName, modify.oldTpe, None)
     }
 
-    case class ExpandPrecision(fieldName: FieldName, oldTpe: TypeRef, newTpe: TypeRef) extends FieldOp {
-      def targetField: Field = Field(fieldName, newTpe)
+    sealed trait Modify extends FieldOp {
+      def fieldName: FieldName
+      def oldTpe: TypeRef
+      def newTpe: TypeRef
+      def sourceField: Field
+    }
 
-      def sourceField: Field = Field(fieldName, oldTpe)
+    case class WrapIntoCollection(fieldName: FieldName, oldTpe: TypeRef.Scalar, newTpe: TypeRef.Constructor) extends Modify {
+      def targetField: Field = Field(fieldName, newTpe, None)
+      def sourceField: Field = Field(fieldName, oldTpe, None)
+    }
+
+    case class SwapCollectionType(fieldName: FieldName, oldTpe: TypeRef.Constructor, newTpe: TypeRef.Constructor) extends Modify {
+      def targetField: Field = Field(fieldName, newTpe, None)
+
+      def sourceField: Field = Field(fieldName, oldTpe, None)
+    }
+
+    case class ExpandPrecision(fieldName: FieldName, oldTpe: TypeRef, newTpe: TypeRef) extends Modify {
+      def targetField: Field = Field(fieldName, newTpe, None)
+
+      def sourceField: Field = Field(fieldName, oldTpe, None)
     }
   }
 }

@@ -238,6 +238,17 @@ class ScConversionTranslator[F[+_, +_]: Error2](
                   case _: FieldOp.WrapIntoCollection => q"$scList(_from.$fld).asInstanceOf[${trans.asScRef(f.tpe, domain, evo)}]"
                   case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"_from.$fld", 1)
                   case o: FieldOp.SwapCollectionType => swapCollType(q"_from.$fld", o, 0)
+                  case o: FieldOp.Rename             => transfer(o.targetField.tpe, q"_from.${o.sourceFieldName.name}", 1)
+                  case o: FieldOp.Redef =>
+                    val srcFieldRef = q"_from.${o.sourceFieldName.name}"
+                    o.modify match {
+                      case _: FieldOp.WrapIntoCollection =>
+                        q"$scList($srcFieldRef).asInstanceOf[${trans.asScRef(f.tpe, domain, evo)}]"
+                      case m: FieldOp.ExpandPrecision =>
+                        transfer(m.newTpe, srcFieldRef, 1)
+                      case m: FieldOp.SwapCollectionType =>
+                        swapCollType(srcFieldRef, m, 0)
+                    }
                 }
                 q"val ${f.name.name.toLowerCase}: ${trans.asScRef(f.tpe, domain, evo)} = $expr"
             }

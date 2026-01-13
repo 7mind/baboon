@@ -210,7 +210,7 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
         (if (!Files.exists(metaPath)) {
            F.pure { assume(false, "baboon-meta.json not found"); () }
          } else {
-           testUebaRoundtrip(loader, codec, "test/target/cs/ueba-compact", indexed = false)
+           testUebaRoundtrip(loader, codec, "target/test-regular/target/cs/ueba-compact", indexed = false)
          }): F[Any, Unit]
     }
 
@@ -221,7 +221,7 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
         (if (!Files.exists(metaPath)) {
            F.pure { assume(false, "baboon-meta.json not found"); () }
          } else {
-           testUebaRoundtrip(loader, codec, "test/target/cs/ueba-indexed", indexed = true)
+           testUebaRoundtrip(loader, codec, "target/test-regular/target/cs/ueba-indexed", indexed = true)
          }): F[Any, Unit]
     }
   }

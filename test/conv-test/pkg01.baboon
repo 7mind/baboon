@@ -40,3 +40,8 @@ ns oldns {
     x: i32
   }
 }
+
+root data FieldRenameTest {
+  oldFieldName: str
+  keepField: i32
+}

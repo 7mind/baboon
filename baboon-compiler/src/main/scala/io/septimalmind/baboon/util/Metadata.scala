@@ -41,6 +41,19 @@ object BaboonDomainCodecs {
       )
   }
 
+  implicit lazy val derivationFailure_IncompatibleRenames: Encoder[DerivationFailure.IncompatibleRenames] = new Encoder[DerivationFailure.IncompatibleRenames] {
+    override def apply(a: DerivationFailure.IncompatibleRenames): Json =
+      Json.obj(
+        "renames" -> a.incompatibleRenames
+          .map(r =>
+            Json.obj(
+              "oldField" -> r.oldField.asJson,
+              "newField" -> r.newField.asJson,
+            )
+          ).asJson
+      )
+  }
+
   implicit lazy val derivationFailure_Foreign: Encoder[DerivationFailure.Foreign.type] = deriveEncoder
   implicit lazy val derivationFailureEncoder: Encoder[DerivationFailure]               = deriveEncoder
 

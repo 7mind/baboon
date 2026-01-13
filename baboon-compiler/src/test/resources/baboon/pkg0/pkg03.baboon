@@ -111,6 +111,7 @@ root data T1_D1 : derived[json] {
  f1: i08
  f3: str
  f4: bytes
+ f5: opt[bytes]
 }
 
 //
@@ -292,4 +293,14 @@ root service I1 {
         out = T7_Empty
         err = T7_Empty
     )
+}
+
+root data T14_FieldRename {
+  newName: str was oldName
+  unchanged: i32
+}
+
+root data T15_FieldRenameWithTypeChange {
+  newField: i32 was oldField
+  keepField: str
 }

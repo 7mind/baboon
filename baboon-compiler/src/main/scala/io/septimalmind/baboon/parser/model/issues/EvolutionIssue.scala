@@ -27,6 +27,8 @@ object EvolutionIssue {
 
   case class MismatchingTypedefs(o1: Typedef.User, o2: Typedef.User) extends EvolutionIssue with BaboonBug
 
+  case class InvalidFieldRename(typeId: TypeId, newFieldName: FieldName, prevFieldName: FieldName) extends EvolutionIssue
+
   implicit val brokenComparisonPrinter: IssuePrinter[BrokenComparison] =
     new BugPrinter[BrokenComparison] {
       override def errorMessage(bug: BrokenComparison): String = {
@@ -124,5 +126,13 @@ object EvolutionIssue {
            |   ${bug.o2.toString}
            |""".stripMargin
       }
+    }
+
+  implicit val invalidFieldRenamePrinter: IssuePrinter[InvalidFieldRename] =
+    (issue: InvalidFieldRename) => {
+      s"""Invalid field rename in type ${issue.typeId.toString}:
+         |   Field '${issue.newFieldName.name}' was declared as renamed from '${issue.prevFieldName.name}',
+         |   but '${issue.prevFieldName.name}' does not exist in the previous version.
+         |""".stripMargin
     }
 }

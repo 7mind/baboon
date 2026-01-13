@@ -493,7 +493,11 @@ object BaboonValidator {
                   newFieldNames <- F.pure(nd.fields.map(_.name).toSet)
                   oldFieldNames <- F.pure(od.fields.map(_.name).toSet)
                   removedFields <- F.pure(c.removed.map(_.name))
-                  removals       = oldFieldNames.diff(newFieldNames)
+                  renamedSources = c.ops.collect {
+                    case f: FieldOp.Rename => f.sourceFieldName
+                    case f: FieldOp.Redef  => f.sourceFieldName
+                  }.toSet
+                  removals = oldFieldNames.diff(newFieldNames).diff(renamedSources)
                   _ <- F.when(removals != removedFields)(
                     F.fail(
                       BaboonIssue.of(
@@ -522,7 +526,13 @@ object BaboonValidator {
                   wrap = c.ops.collect {
                     case f: FieldOp.WrapIntoCollection => f.fieldName
                   }.toSet
-                  all = transfer ++ defaults ++ swap ++ wrap ++ precex
+                  renamed = c.ops.collect {
+                    case f: FieldOp.Rename => f.targetField.name
+                  }.toSet
+                  redef = c.ops.collect {
+                    case f: FieldOp.Redef => f.targetField.name
+                  }.toSet
+                  all = transfer ++ defaults ++ swap ++ wrap ++ precex ++ renamed ++ redef
                   _ <- F.when(newFieldNames != all) {
                     F.fail(
                       BaboonIssue.of(

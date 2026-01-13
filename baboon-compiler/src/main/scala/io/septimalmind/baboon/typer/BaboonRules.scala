@@ -164,6 +164,57 @@ object BaboonRules {
                   keepFields = ops.collect {
                     case op: DtoOp.KeepField => FieldOp.Transfer(op.f)
                   }
+
+                  renames = ops.collect { case op: DtoOp.RenameField => op }.toSet
+
+                  pureRenames = renames.filter(op => op.oldField.tpe == op.newField.tpe)
+                  renamesWithTypeChange = renames.diff(pureRenames)
+
+                  incompatibleRenames = renamesWithTypeChange.filter { op =>
+                    !types.isCompatibleChange(op.oldField.tpe, op.newField.tpe)
+                  }
+
+                  pureRenameOps = pureRenames.map { op =>
+                    FieldOp.Rename(op.oldField.name, op.newField)
+                  }
+
+                  redefWrap = renamesWithTypeChange
+                    .map(op => (op.oldField.tpe, op.newField.tpe, op))
+                    .collect {
+                      case (o: TypeRef.Scalar, n: TypeRef.Constructor, op)
+                          if types.canBeWrappedIntoCollection(o, n) =>
+                        FieldOp.Redef(
+                          op.oldField.name,
+                          op.newField,
+                          FieldOp.WrapIntoCollection(op.newField.name, o, n),
+                        )
+                    }
+
+                  redefPrecex = renamesWithTypeChange
+                    .map(op => (op.oldField.tpe, op.newField.tpe, op))
+                    .collect {
+                      case (o: TypeRef.Scalar, n: TypeRef.Scalar, op)
+                          if types.isPrecisionExpansion(o.id, n.id) =>
+                        FieldOp.Redef(
+                          op.oldField.name,
+                          op.newField,
+                          FieldOp.ExpandPrecision(op.newField.name, o, n),
+                        )
+                    }
+
+                  redefSwap = renamesWithTypeChange
+                    .map(op => (op.oldField.tpe, op.newField.tpe, op))
+                    .collect {
+                      case (o: TypeRef.Constructor, n: TypeRef.Constructor, op)
+                          if types.canChangeCollectionType(o, n) =>
+                        FieldOp.Redef(
+                          op.oldField.name,
+                          op.newField,
+                          FieldOp.SwapCollectionType(op.newField.name, o, n),
+                        )
+                    }
+
+                  redefOps = redefWrap ++ redefPrecex ++ redefSwap
                 } yield {
                   assert(
                     wrap
@@ -173,10 +224,12 @@ object BaboonRules {
                   )
                   if (incompatibleChanges.nonEmpty || incompatibleAdditions.nonEmpty) {
                     CustomConversionRequired(id, DerivationFailure.IncompatibleFields(incompatibleChanges, incompatibleAdditions), targetTpe)
+                  } else if (incompatibleRenames.nonEmpty) {
+                    CustomConversionRequired(id, DerivationFailure.IncompatibleRenames(incompatibleRenames), targetTpe)
                   } else {
                     DtoConversion(
                       id,
-                      keepFields ++ (wrap ++ precex ++ swap ++ initWithDefaults).toList,
+                      keepFields ++ pureRenameOps.toList ++ redefOps.toList ++ (wrap ++ precex ++ swap ++ initWithDefaults).toList,
                       removals,
                       targetTpe,
                     )

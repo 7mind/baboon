@@ -374,38 +374,70 @@ object BaboonComparator {
       val members1 = d1.fields.map(m => (m.name, m)).toMap
       val members2 = d2.fields.map(m => (m.name, m)).toMap
 
-      val names1         = members1.keySet
-      val names2         = members2.keySet
-      val removedMembers = names1.diff(names2)
-      val addedMembers   = names2.diff(names1)
+      val names1 = members1.keySet
+      val names2 = members2.keySet
 
-      val keptMembers = names1.intersect(names2)
-
-      val keptFields = keptMembers.map(name => (members1(name), members2(name)))
-      val changedFields = keptFields.filter {
-        case (f1, f2) =>
-          f1.tpe != f2.tpe
-      }
-      val unchangedFields = keptFields.filter {
-        case (f1, f2) =>
-          f1.tpe == f2.tpe
-      }.map {
-        case (_, f2) =>
-          val directRefs = enquiries.explode(f2.tpe)
-          val modification =
-            figureOutModification(changes, directRefs)
-
-          DtoOp.KeepField(f2, modification)
+      val invalidRenames = d2.fields.flatMap { newField =>
+        newField.prevName.flatMap { prevName =>
+          if (!members1.contains(prevName)) {
+            Some(EvolutionIssue.InvalidFieldRename(d2.id, newField.name, prevName))
+          } else {
+            None
+          }
+        }
       }
 
-      val ops = List(
-        removedMembers.map(id => DtoOp.RemoveField(members1(id))),
-        addedMembers.map(id => DtoOp.AddField(members2(id))),
-        changedFields.map(id => DtoOp.ChangeField(id._1, id._2.tpe)),
-        unchangedFields,
-      ).flatten
+      for {
+        _ <- F.traverseAccumErrors(invalidRenames)(issue => F.fail(BaboonIssue.of(issue)))
+      } yield {
+        val renamedFields: Map[FieldName, (Field, Field)] = d2.fields.flatMap { newField =>
+          newField.prevName.flatMap { prevName =>
+            members1.get(prevName).map(oldField => (newField.name, (oldField, newField)))
+          }
+        }.toMap
 
-      F.pure(TypedefDiff.DtoDiff(ops))
+        val renamedNewNames = renamedFields.keySet
+        val renamedOldNames = renamedFields.values.map(_._1.name).toSet
+
+        val removedMembers = names1.diff(names2).diff(renamedOldNames)
+        val addedMembers   = names2.diff(names1).diff(renamedNewNames)
+
+        val keptMembers = names1.intersect(names2)
+
+        val keptFields = keptMembers.map(name => (members1(name), members2(name)))
+        val changedFields = keptFields.filter {
+          case (f1, f2) =>
+            f1.tpe != f2.tpe
+        }
+        val unchangedFields = keptFields.filter {
+          case (f1, f2) =>
+            f1.tpe == f2.tpe
+        }.map {
+          case (_, f2) =>
+            val directRefs = enquiries.explode(f2.tpe)
+            val modification =
+              figureOutModification(changes, directRefs)
+
+            DtoOp.KeepField(f2, modification)
+        }
+
+        val renamedFieldOps = renamedFields.values.map {
+          case (oldField, newField) =>
+            val directRefs   = enquiries.explode(newField.tpe)
+            val modification = figureOutModification(changes, directRefs)
+            DtoOp.RenameField(oldField, newField, modification)
+        }
+
+        val ops = List(
+          removedMembers.map(id => DtoOp.RemoveField(members1(id))),
+          addedMembers.map(id => DtoOp.AddField(members2(id))),
+          changedFields.map(id => DtoOp.ChangeField(id._1, id._2.tpe)),
+          unchangedFields,
+          renamedFieldOps,
+        ).flatten
+
+        TypedefDiff.DtoDiff(ops)
+      }
     }
 
     private def figureOutModification(

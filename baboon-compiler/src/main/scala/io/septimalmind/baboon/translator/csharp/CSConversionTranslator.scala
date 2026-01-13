@@ -268,6 +268,65 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                         o.newTpe.args,
                       )
 
+                    case o: FieldOp.Rename =>
+                      val srcField = q"_from.${o.sourceFieldName.name.capitalize}"
+                      val recConv  = transfer(o.targetField.tpe, srcField, 0)
+                      o.targetField.tpe match {
+                        case _: TypeRef.Scalar =>
+                          F.pure(Seq(recConv))
+                        case c: TypeRef.Constructor =>
+                          F.pure(Seq(transfer(c, srcField, 0)))
+                        case _ =>
+                          F.pure(Seq(recConv))
+                      }
+
+                    case o: FieldOp.Redef =>
+                      val srcField = q"_from.${o.sourceFieldName.name.capitalize}"
+                      o.modify match {
+                        case m: FieldOp.WrapIntoCollection =>
+                          m.newTpe.id match {
+                            case TypeId.Builtins.opt =>
+                              F.pure(Seq(srcField))
+                            case TypeId.Builtins.set =>
+                              F.pure(
+                                Seq(q"new $ftNewInit { $srcField }")
+                              )
+                            case TypeId.Builtins.lst =>
+                              F.pure(
+                                Seq(q"new $ftNewInit { $srcField }")
+                              )
+                            case _ =>
+                              F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
+                          }
+
+                        case m: FieldOp.ExpandPrecision =>
+                          (m.oldTpe, m.newTpe) match {
+                            case (oldC: TypeRef.Constructor, newC: TypeRef.Constructor) =>
+                              swapCollType(
+                                ftNewInit,
+                                base,
+                                srcField,
+                                oldC.id,
+                                newC.id,
+                                newC.args,
+                              )
+                            case (_: TypeRef.Scalar, _: TypeRef.Scalar) =>
+                              F.pure(Seq(srcField))
+                            case _ =>
+                              F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
+                          }
+
+                        case m: FieldOp.SwapCollectionType =>
+                          swapCollType(
+                            ftNewInit,
+                            base,
+                            srcField,
+                            m.oldTpe.id,
+                            m.newTpe.id,
+                            m.newTpe.args,
+                          )
+                      }
+
                   }
 
                   for {

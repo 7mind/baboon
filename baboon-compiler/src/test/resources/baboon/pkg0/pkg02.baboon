@@ -169,3 +169,13 @@ root data T8_Removed_Fields {
 }
 
 //
+
+root data T14_FieldRename {
+  newName: str was oldName
+  unchanged: i32
+}
+
+root data T15_FieldRenameWithTypeChange {
+  newField: i32 was oldField
+  keepField: str
+}
