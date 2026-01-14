@@ -113,6 +113,11 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
       if (result != 0) {
         throw new MessageOnlyException(s"flake.nix update failed: squish-lockfile exited with $result")
       }
+      val gitAdd = Process(Seq("git", "add", lockfileOutput.getPath), rootDir)
+      val gitResult = gitAdd.!(log)
+      if (gitResult != 0) {
+        throw new MessageOnlyException(s"git add failed with exit code $gitResult")
+      }
     }
   )
   .jsSettings(
@@ -142,9 +147,11 @@ lazy val root = project
     releaseProcess := releaseSteps
   )
 
+lazy val refreshFlake: ReleaseStep = releaseStepTask(baboonJVM / refreshFlakeTask)
+
 lazy val releaseSteps: Seq[ReleaseStep] = Seq(
   checkSnapshotDependencies,
-  releaseStepTask(baboonJVM / refreshFlakeTask),
+  refreshFlake,
   inquireVersions,
   runClean,
   runTest,
