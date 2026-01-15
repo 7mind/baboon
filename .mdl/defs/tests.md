@@ -109,7 +109,7 @@ Run Python tests with regular adt codecs.
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/py-stub"
 python3 -m venv .venv
-source .venv/bin/activate
+if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
 python3 -m pip install -r requirements.txt
 python3 -m unittest discover -s BaboonTests/GeneratedTests/testpkg/pkg0
 popd
@@ -207,7 +207,7 @@ Run Python tests with wrapped ADT codecs
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/py-stub"
 python3 -m venv .venv
-source .venv/bin/activate
+if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
 python3 -m pip install -r requirements.txt
 python3 -m unittest discover -s BaboonTests/GeneratedTests/testpkg/pkg0
 popd
@@ -247,7 +247,7 @@ dep action.test-gen-manual
 
 pushd ./test/conv-test-py
 python3 -m venv .venv
-source .venv/bin/activate
+if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
 python3 -m pip install -r requirements.txt
 python3 compat_main.py
 popd
@@ -333,7 +333,7 @@ Run Python conversion test
 ```bash
 dep action.test-gen-compat-python
 pushd ./test/conv-test-py
-source .venv/bin/activate
+if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
 python3 -m unittest discover -s .
 popd
 
