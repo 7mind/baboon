@@ -5,11 +5,13 @@ version "1.0.0"
 foreign ObscureInt {
   cs = "System.Int32"
   scala = "java.lang.Integer"
+  py = "builtins.int"
 }
 
 foreign ForeignStruct {
   cs = "BaboonDefinitions.Foreign.TestForeignStruct" with { "value-type" = "yes" }
   scala = "java.lang.Integer"
+  py = "typing.NamedTuple"
 }
 
 
@@ -248,7 +250,6 @@ root data T13_2 {
   f: map[T13_1, i32]
   f1: map[uid, i32]
 }
-
 root data T14_FieldRename {
   oldName: str
   unchanged: i32

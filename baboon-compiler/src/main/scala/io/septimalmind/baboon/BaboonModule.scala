@@ -6,6 +6,8 @@ import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*
 import io.septimalmind.baboon.translator.csharp.CSCodecFixtureTranslator.CSRandomMethodTranslatorImpl
+import io.septimalmind.baboon.translator.python.*
+import io.septimalmind.baboon.translator.python.PyDefnTranslator.PyDefnTranslatorImpl
 import io.septimalmind.baboon.translator.scl.*
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.model.*
@@ -54,12 +56,12 @@ class BaboonModuleLogicModule[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
   make[BaboonRuntimeCodec[F]].from[BaboonRuntimeCodec.BaboonRuntimeCodecImpl[F]]
 }
 
-class SharedTranspilerModule[F[+_, +_]: Error2: TagKK]() extends ModuleDef {
+class SharedTranspilerModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   include(new BaboonSharedModule[F])
   make[BaboonMetagen].from[BaboonMetagen.BaboonMetagenImpl]
 }
 
-class BaboonCommonCSModule[F[+_, +_]: Error2: TagKK]() extends ModuleDef {
+class BaboonCommonCSModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   include(new SharedTranspilerModule[F])
 
   makeSubcontext[CSDefnTranslator[F]]
@@ -88,7 +90,7 @@ class BaboonCommonCSModule[F[+_, +_]: Error2: TagKK]() extends ModuleDef {
     .ref[CSBaboonTranslator[F]]
 }
 
-class BaboonCommonScModule[F[+_, +_]: Error2: TagKK]() extends ModuleDef {
+class BaboonCommonScModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   include(new SharedTranspilerModule[F])
 
   makeSubcontext[ScDefnTranslator[F]]
@@ -112,4 +114,30 @@ class BaboonCommonScModule[F[+_, +_]: Error2: TagKK]() extends ModuleDef {
   make[ScBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[ScBaboonTranslator[F]]
+}
+
+class BaboonCommonPyModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
+  include(new SharedTranspilerModule[F])
+
+  makeSubcontext[PyDefnTranslator[F]]
+    .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
+    .withSubmodule(new ModuleDef {
+      make[PyDefnTranslator[F]].from[PyDefnTranslatorImpl[F]]
+      make[PyDomainTreeTools].from[PyDomainTreeTools.PyDomainTreeToolsImpl]
+      make[PyCodecFixtureTranslator].from[PyCodecFixtureTranslator.PyCodecFixtureTranslatorImpl]
+      make[PyCodecTestTranslator].from[PyCodecTestTranslator.PyCodecTestTranslatorImpl]
+      make[PyJsonCodecGenerator]
+      many[PyCodecTranslator]
+        .add[PyJsonCodecGenerator]
+        .add[PyUEBACodecGenerator]
+    })
+
+  make[PyFileTools].from[PyFileTools.ScFileToolsImpl]
+
+  make[PyTypeTranslator]
+  makeFactory[PyConversionTranslator.Factory[F]]
+
+  make[PyBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
+  many[BaboonAbstractTranslator[F]]
+    .ref[PyBaboonTranslator[F]]
 }

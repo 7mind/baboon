@@ -188,6 +188,25 @@ object Baboon {
                           ),
                         )
                     }
+                  case "python" =>
+                    CaseApp.parse[PyCLIOptions](roleArgs).leftMap(e => s"Can't parse cs CLI: $e").map {
+                      case (opts, _) =>
+                        val shopts = mkGenericOpts(opts)
+
+                        CompilerTarget.PyTarget(
+                          id      = "Python",
+                          output  = shopts.outOpts,
+                          generic = shopts.genericOpts,
+                          language = PyOptions(
+                            writeEvolutionDict          = opts.pyWriteEvolutionDict.getOrElse(true),
+                            wrappedAdtBranchCodecs      = opts.pyWrappedAdtBranchCodecs.getOrElse(false),
+                            generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
+                            generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
+                            generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
+                            generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                          ),
+                        )
+                    }
                   case r => Left(s"Unknown role id: $r")
                 }
             }
@@ -238,7 +257,7 @@ object Baboon {
 
     val safeToRemove = NEList.from(opts.extAllowCleanup) match {
       case Some(value) => value.toSet
-      case None        => Set("meta", "cs", "json", "scala")
+      case None        => Set("meta", "cs", "json", "scala", "py", "pyc")
     }
 
     val outOpts = OutputOptions(
@@ -269,6 +288,8 @@ object Baboon {
         new BaboonJvmCSModule[F](t)
       case t: CompilerTarget.ScTarget =>
         new BaboonJvmScModule[F](t)
+      case t: CompilerTarget.PyTarget =>
+        new BaboonJvmPyModule[F](t)
     }
 
     Injector
