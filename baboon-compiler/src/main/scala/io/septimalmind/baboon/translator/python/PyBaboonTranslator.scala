@@ -91,14 +91,25 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def genInitPy(definitions: List[PyDefnTranslator.Output], domain: Domain): PyDefnTranslator.Output = {
-    val modules = definitions.map(o => q"${o.module.module}")
-    val importTree = q"""from . import (
-                        |   ${modules.join(",\n").shift(4)}
-                        |)""".stripMargin
     val initPyModule = typeTranslator.toPyModule(domain.id)
     val versionStr   = domain.version.format(prefix = "v", delimiter = "_")
     val fileName     = "__init__.py"
-    val path         = initPyModule.path ++ List(versionStr, fileName)
+    val initPyDir    = initPyModule.path.toList :+ versionStr
+    val expectedDepth = initPyDir.size + 1
+
+    val sameLevelModules = definitions
+      .filter(o => o.path.split("/").length == expectedDepth)
+      .map(o => q"${o.module.module}")
+
+    val importTree = if (sameLevelModules.nonEmpty) {
+      q"""from . import (
+         |   ${sameLevelModules.join(",\n").shift(4)}
+         |)""".stripMargin
+    } else {
+      q""
+    }
+
+    val path = initPyDir :+ fileName
     PyDefnTranslator.Output(
       path.mkString("/"),
       importTree,
@@ -143,6 +154,24 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           q"from ${path.mkString(".")} import ${module.moduleVersionString.getOrElse("")}"
       }.toList
 
+    val namespaceImports = versioned
+      .filter { t =>
+        val parts = t.name.split('.')
+        parts.length > 3
+      }
+      .flatMap { t =>
+        val parts = t.name.split('.')
+        val versionPart = parts.head
+        val namespacePart = parts(1)
+        val modulePart = parts(2)
+        val pathToVersion = t.moduleId.pathToVersion
+        val nsImport = q"from ${(pathToVersion :+ versionPart).mkString(".")} import $namespacePart"
+        val moduleImport = q"from ${(pathToVersion :+ versionPart :+ namespacePart).mkString(".")} import $modulePart"
+        List(nsImport, moduleImport)
+      }
+      .distinct
+      .toList
+
       val usualImportsByModule = usual.groupBy(_.moduleId).toList
         .sortBy { case (moduleId, types) => moduleId.path.size + types.size }.reverse.map {
         case (module, types) =>
@@ -156,7 +185,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           }
       }
 
-    val allImports = (usualImportsByModule ++ versionPkgImports).joinN()
+    val allImports = (usualImportsByModule ++ versionPkgImports ++ namespaceImports).joinN()
 
     val full = Seq(allImports, o.tree).joinNN()
 

@@ -45,12 +45,12 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
     F.flatTraverseAccumErrors(rules.conversions) {
       case _: Conversion.RemovedTypeNoConversion     => F.pure(Nil)
       case _: Conversion.NonDataTypeTypeNoConversion => F.pure(Nil)
-      case conversion =>
+      case conversion: TargetedConversion =>
         val convType = conversionType(conversion)
         val fileName = s"${convType.moduleId.module}.py"
 
         val typeFrom = typeTranslator.asPyTypeVersioned(conversion.sourceTpe, srcDom, evolution, pyFileTools.definitionsBasePkg)
-        def typeTo   = typeTranslator.asPyType(conversion.sourceTpe, domain, evolution, pyFileTools.definitionsBasePkg)
+        def typeTo   = typeTranslator.asPyType(conversion.targetTpe, domain, evolution, pyFileTools.definitionsBasePkg)
 
         val meta =
           q"""@$pyStaticMethod
@@ -121,7 +121,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
   ): Option[TextTree[PyValue]] = {
     conversion match {
       case _: Conversion.CopyEnumByName =>
-        Some(q"""class ${convType.name}($pyABC, $baboonAbstractConversion[$typeFrom, $typeTo]):
+        Some(q"""class ${convType.name}($baboonAbstractConversion[$typeFrom, $typeTo]):
                 |    @$pyOverride
                 |    def do_convert(self, ctx, conversions, _from: $typeFrom) -> $typeTo:
                 |        return $typeTo[_from.name]
@@ -135,8 +135,9 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
           .map(tid => tid -> typeTranslator.asPyTypeVersioned(tid, srcDom, evolution, pyFileTools.definitionsBasePkg))
           .map {
             case (oldTypeId, oldType) =>
+              val newTypeId = c.branchMapping.getOrElse(oldTypeId.name.name, oldTypeId)
               q"""case $oldType():
-                 |    return ${transfer(TypeRef.Scalar(oldTypeId), q"_from")}
+                 |    return ${transfer(TypeRef.Scalar(newTypeId), q"_from", Some(TypeRef.Scalar(oldTypeId)))}
                  |""".stripMargin
           }
         val defaultCase = q"""case other:
@@ -155,7 +156,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
                 |""".stripMargin)
 
       case c: Conversion.DtoConversion =>
-        val dtoDefn = domain.defs.meta.nodes(c.sourceTpe) match {
+        val dtoDefn = domain.defs.meta.nodes(c.targetTpe) match {
           case DomainMember.User(_, d: Typedef.Dto, _, _) => d
           case _                                          => throw new IllegalStateException("DTO expected")
         }
@@ -195,6 +196,24 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
               case o: FieldOp.ExpandPrecision => transfer(o.newTpe, q"$fieldRef")
 
               case o: FieldOp.SwapCollectionType => swapCollType(q"$fieldRef", o)
+
+              case o: FieldOp.Rename =>
+                val srcFieldRef = q"_from.${o.sourceFieldName.name}"
+                transfer(o.targetField.tpe, srcFieldRef)
+
+              case o: FieldOp.Redef =>
+                val srcFieldRef = q"_from.${o.sourceFieldName.name}"
+                o.modify match {
+                  case m: FieldOp.WrapIntoCollection =>
+                    m.newTpe.id match {
+                      case TypeId.Builtins.opt => srcFieldRef
+                      case TypeId.Builtins.set => q"{$srcFieldRef}"
+                      case TypeId.Builtins.lst => q"[$srcFieldRef]"
+                      case _                   => throw new IllegalStateException(s"Unsupported collection type: ${m.newTpe.id}")
+                    }
+                  case m: FieldOp.ExpandPrecision    => transfer(m.newTpe, srcFieldRef)
+                  case m: FieldOp.SwapCollectionType => swapCollType(srcFieldRef, m)
+                }
             }
             val fieldType = asVersionedIfUserTpe(field.tpe)
             q"${field.name.name.toLowerCase}: $fieldType = $expr"

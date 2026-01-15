@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.python
 
 import io.septimalmind.baboon.CompilerTarget.PyTarget
-import io.septimalmind.baboon.parser.model.DerivationDecl
+import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.python.PyTypes.*
 import io.septimalmind.baboon.translator.python.PyValue.PyType
 import io.septimalmind.baboon.typer.model.{BaboonEvolution, Domain, DomainMember, TypeId, Typedef}
@@ -98,7 +98,7 @@ final class PyJsonCodecGenerator(
 
   override def isActive(id: TypeId): Boolean = {
     pyTarget.language.generateJsonCodecs && (pyTarget.language.generateJsonCodecsByDefault || domain.derivationRequests
-      .getOrElse(DerivationDecl("json"), Set.empty[TypeId]).contains(id))
+      .getOrElse(RawMemberMeta.Derived("json"), Set.empty[TypeId]).contains(id))
   }
 
   override def id: String = "json"
