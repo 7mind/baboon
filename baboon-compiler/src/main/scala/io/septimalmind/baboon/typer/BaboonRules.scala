@@ -29,7 +29,7 @@ object BaboonRules {
 
       def computeBranchMapping(targetAdtId: TypeId.User): Map[String, TypeId.User] = {
         last.defs.meta.nodes(targetAdtId) match {
-          case DomainMember.User(_, adt: Typedef.Adt, _, _) =>
+          case DomainMember.User(_, adt: Typedef.Adt, _, _, _) =>
             adt.members.map(m => (m.name.name, m)).toMap
           case _ =>
             Map.empty
@@ -38,7 +38,7 @@ object BaboonRules {
 
       for {
         conversions <- F.traverseAccumErrors(prev.defs.meta.nodes.collect {
-          case (id: TypeId.User, DomainMember.User(_, defn, _, _)) =>
+          case (id: TypeId.User, DomainMember.User(_, defn, _, _, _)) =>
             (id, defn)
         }.toList) {
           case (id, defn) =>

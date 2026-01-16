@@ -9,7 +9,13 @@ sealed trait DomainMember {
 object DomainMember {
   case class Builtin(id: TypeId.Builtin) extends DomainMember
 
-  case class User(root: Boolean, defn: Typedef.User, derivations: Set[RawMemberMeta], meta: RawNodeMeta) extends DomainMember {
+  case class User(
+    root: Boolean,
+    defn: Typedef.User,
+    derivations: Set[RawMemberMeta],
+    wasCandidates: List[TypeId.User],
+    meta: RawNodeMeta,
+  ) extends DomainMember {
     def id: TypeId.User = defn.id
     def isAdt: Boolean = {
       defn.id.owner match {

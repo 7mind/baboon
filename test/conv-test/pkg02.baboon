@@ -113,3 +113,24 @@ ns samens {
     value: i32
   }
 }
+
+// Test relative resolution: type moved from outer to inner namespace
+// was[TypeAtOuterLevel] should resolve to outer.TypeAtOuterLevel via scope traversal
+ns outer {
+  ns inner {
+    root data TypeMovedDeeper : was[TypeAtOuterLevel] {
+      x: i32
+    }
+  }
+}
+
+// Test relative resolution: type moved from toplevel to deeply nested namespace
+// was[ToplevelTypeToNest] should resolve to toplevel via scope traversal
+ns deeply {
+  ns nested {
+    root data NestedFromToplevel : was[ToplevelTypeToNest] {
+      value: str
+    }
+  }
+}
+

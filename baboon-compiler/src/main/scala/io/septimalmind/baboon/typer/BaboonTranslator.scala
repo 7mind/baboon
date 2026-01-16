@@ -59,6 +59,47 @@ class BaboonTranslator[F[+_, +_]: Error2](
     }
   }
 
+  private def resolveWasAnnotation(
+    currentOwner: Owner,
+    derivations: Set[RawMemberMeta],
+  ): List[TypeId.User] = {
+    val wasAnnotations = derivations.collect { case w: RawMemberMeta.Was => w }
+    wasAnnotations.headOption.toList.flatMap {
+      case RawMemberMeta.Was(ref: RawTypeRef.Simple) =>
+        if (ref.prefix.nonEmpty) {
+          // Explicit prefix - use it directly (absolute reference to old namespace)
+          val oldOwner = Owner.Ns(ref.prefix.map(n => TypeName(n.name)))
+          List(TypeId.User(pkg, oldOwner, TypeName(ref.name.name)))
+        } else {
+          // No prefix - generate candidates by walking up the namespace hierarchy
+          // E.g., if current type is in ns outer.inner, was[OldType] will try:
+          // 1. outer.inner.OldType (same namespace)
+          // 2. outer.OldType (parent namespace)
+          // 3. OldType (toplevel)
+          val typeName = TypeName(ref.name.name)
+          generateOwnerCandidates(currentOwner).map(owner => TypeId.User(pkg, owner, typeName))
+        }
+      case _ => List.empty
+    }
+  }
+
+  private def generateOwnerCandidates(owner: Owner): List[Owner] = {
+    owner match {
+      case Owner.Toplevel =>
+        List(Owner.Toplevel)
+      case Owner.Ns(path) =>
+        // Generate candidates from most specific to most general
+        val candidates = (0 to path.length).map { i =>
+          if (i == path.length) Owner.Toplevel
+          else Owner.Ns(path.take(path.length - i))
+        }.toList
+        candidates
+      case Owner.Adt(adtId) =>
+        // For ADT members, start with the ADT's owner
+        List(Owner.Adt(adtId)) ++ generateOwnerCandidates(adtId.owner)
+    }
+  }
+
   private def convertForeign(id: TypeId.User, isRoot: Boolean, f: RawForeign): F[NEList[BaboonIssue], NEList[DomainMember.User]] = {
     for {
       entries <- F.fromEither {
@@ -78,8 +119,9 @@ class BaboonTranslator[F[+_, +_]: Error2](
           )
           .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueForeignEntries(e, id, f.meta)))
       }
+      wasCandidates = resolveWasAnnotation(id.owner, f.derived)
     } yield {
-      NEList(DomainMember.User(isRoot, Typedef.Foreign(id, entries), f.derived, f.meta))
+      NEList(DomainMember.User(isRoot, Typedef.Foreign(id, entries), f.derived, wasCandidates, f.meta))
     }
   }
 
@@ -112,8 +154,9 @@ class BaboonTranslator[F[+_, +_]: Error2](
       nel <- F.fromOption(BaboonIssue.of(TyperIssue.EmptyEnum(id, choice.meta))) {
         NEList.from(converted)
       }
+      wasCandidates = resolveWasAnnotation(id.owner, choice.derived)
     } yield {
-      DomainMember.User(isRoot, Typedef.Enum(id, nel), choice.derived, choice.meta)
+      DomainMember.User(isRoot, Typedef.Enum(id, nel), choice.derived, wasCandidates, choice.meta)
     }
   }
 
@@ -140,7 +183,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
       id       <- scopeSupport.resolveScopedRef(parent, defn, pkg, refMeta)
       parentDef = defined(id)
       out <- parentDef match {
-        case DomainMember.User(_, defn: Typedef.Dto, _, _) =>
+        case DomainMember.User(_, defn: Typedef.Dto, _, _, _) =>
           F.pure(defn.fields)
         case o =>
           F.fail(BaboonIssue.of(TyperIssue.WrongParent(id, o.id, meta)))
@@ -154,7 +197,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
     for {
       parentDef <- F.pure(defined(id))
       fields <- parentDef match {
-        case DomainMember.User(_, defn: Typedef.Contract, _, _) =>
+        case DomainMember.User(_, defn: Typedef.Contract, _, _, _) =>
           for {
             parents <- F.flatTraverseAccumErrors(defn.contracts) {
               c =>
@@ -226,7 +269,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
           id.owner match {
             case Owner.Adt(xid) =>
               defined(xid) match {
-                case DomainMember.User(_, defn: Typedef.Adt, _, _) =>
+                case DomainMember.User(_, defn: Typedef.Adt, _, _, _) =>
                   F.flatTraverseAccumErrors(defn.contracts) {
                     c => readContractContent(c, dto.meta)
                   }
@@ -279,16 +322,18 @@ class BaboonTranslator[F[+_, +_]: Error2](
           .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueFields(id, e, dto.meta)))
       }
       contractRefs = contracts.flatMap(_.refs).distinct
-    } yield {
-      val decls = dto match {
+
+      decls = dto match {
         case d: RawDto      => d.derived
         case _: RawContract => Set.empty[RawMemberMeta]
       }
-
+      wasCandidates = resolveWasAnnotation(id.owner, decls)
+    } yield {
       DomainMember.User(
         isRoot,
         produce(id, finalFields, contractRefs),
         decls,
+        wasCandidates,
         dto.meta,
       )
     }
@@ -325,10 +370,11 @@ class BaboonTranslator[F[+_, +_]: Error2](
               .map(_.flatMap(_.fields))
         }
         .map(_.toList)
+      wasCandidates = resolveWasAnnotation(id.owner, adt.derived)
     } yield {
       NEList(
         DomainMember
-          .User(isRoot, Typedef.Adt(id, nel, contracts, fields), adt.derived, adt.meta)
+          .User(isRoot, Typedef.Adt(id, nel, contracts, fields), adt.derived, wasCandidates, adt.meta)
       )
     }
   }
@@ -350,7 +396,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
     } yield {
       NEList(
         DomainMember
-          .User(isRoot, Typedef.Service(id, defs.toList), Set.empty, svc.meta)
+          .User(isRoot, Typedef.Service(id, defs.toList), Set.empty, List.empty, svc.meta)
       )
     }
   }

@@ -178,7 +178,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
 
       case c: Conversion.DtoConversion =>
         val dtoDefn = domain.defs.meta.nodes(c.targetTpe) match {
-          case DomainMember.User(_, d: Typedef.Dto, _, _) => d
+          case DomainMember.User(_, d: Typedef.Dto, _, _, _) => d
           case _                                          => throw new IllegalStateException("DTO expected")
         }
         val ops = c.ops.map(o => o.targetField -> o).toMap
@@ -361,7 +361,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
       case _: TypeId.Builtin => direct
       case id: TypeId.User =>
         domain.defs.meta.nodes(id) match {
-          case DomainMember.User(_, _: Typedef.Foreign, _, _) => direct
+          case DomainMember.User(_, _: Typedef.Foreign, _, _, _) => direct
           case _                                              => conv
         }
     }

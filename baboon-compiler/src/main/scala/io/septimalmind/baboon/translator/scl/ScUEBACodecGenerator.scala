@@ -126,15 +126,15 @@ class ScUEBACodecGenerator(
     val cName      = codecName(srcRef)
     val cParent = if (isEncoderEnabled) {
       defn match {
-        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonBinCodecBase[$name, $codecIface]"
-        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonBinCodecBase[$name, $codecIface]"
+        case DomainMember.User(_, _: Typedef.Enum, _, _, _)    => q"$baboonBinCodecBase[$name, $codecIface]"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _, _) => q"$baboonBinCodecBase[$name, $codecIface]"
         case _ if defn.isAdt                                => q"$baboonBinCodecBaseGeneratedAdt[$name, $codecIface]"
         case _                                              => q"$baboonBinCodecBaseGenerated[$name, $codecIface]"
       }
     } else {
       defn match {
-        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonBinCodecNoEncoder[$name, $codecIface]"
-        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonBinCodecNoEncoder[$name, $codecIface]"
+        case DomainMember.User(_, _: Typedef.Enum, _, _, _)    => q"$baboonBinCodecNoEncoder[$name, $codecIface]"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _, _) => q"$baboonBinCodecNoEncoder[$name, $codecIface]"
         case _ if defn.isAdt                                => q"$baboonBinCodecNoEncoderGeneratedAdt[$name, $codecIface]"
         case _                                              => q"$baboonBinCodecNoEncoderGenerated[$name, $codecIface]"
       }

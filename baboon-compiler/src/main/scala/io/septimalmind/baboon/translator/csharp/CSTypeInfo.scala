@@ -140,7 +140,7 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
 
   private def foreignTypeIsValueType(id: TypeId, domain: Domain): Boolean = {
     domain.defs.meta.nodes(id) match {
-      case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
+      case DomainMember.User(_, defn: Typedef.Foreign, _, _, _) =>
         defn
           .bindings("cs").attrs.attrs
           .find(_.name == "value-type")

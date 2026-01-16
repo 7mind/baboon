@@ -93,7 +93,7 @@ object ScCodecFixtureTranslator {
       val adtName = adt.id.name.name
       val members = adt.members.toList
         .flatMap(domain.defs.meta.nodes.get)
-        .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
+        .collect { case DomainMember.User(_, d: Typedef.Dto, _, _, _) => d }
 
       val membersFixtures   = members.sortBy(_.id.toString).map(doTranslateDto)
       val membersGenerators = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name}_Fixture.random")

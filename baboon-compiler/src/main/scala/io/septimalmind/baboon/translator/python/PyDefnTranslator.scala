@@ -173,7 +173,7 @@ object PyDefnTranslator {
       defn.defn match {
         case dto: Typedef.Dto =>
           val dtoContracts     = dto.contracts
-          val dtoContractsDefs = dtoContracts.flatMap(domain.defs.meta.nodes.get).collect { case DomainMember.User(_, c: Typedef.Contract, _, _) => c }
+          val dtoContractsDefs = dtoContracts.flatMap(domain.defs.meta.nodes.get).collect { case DomainMember.User(_, c: Typedef.Contract, _, _, _) => c }
           val contractsFields  = dtoContractsDefs.flatMap(_.fields)
 
           val dtoFieldsTrees = genDtoFields(dto.fields, contractsFields.toSet)

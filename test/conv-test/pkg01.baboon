@@ -76,3 +76,16 @@ ns samens {
     value: i32
   }
 }
+
+// Test relative resolution: type at outer namespace level
+ns outer {
+  root data TypeAtOuterLevel {
+    x: i32
+  }
+}
+
+// Test relative resolution: type at toplevel that will move to nested namespace
+root data ToplevelTypeToNest {
+  value: str
+}
+

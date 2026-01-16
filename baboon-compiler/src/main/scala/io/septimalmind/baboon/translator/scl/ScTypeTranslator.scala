@@ -73,7 +73,7 @@ class ScTypeTranslator {
 
   private def asScTypeDerefForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): ScType = {
     domain.defs.meta.nodes(tid) match {
-      case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
+      case DomainMember.User(_, defn: Typedef.Foreign, _, _, _) =>
         val fe    = defn.bindings("scala")
         val parts = fe.decl.split('.').toList
         assert(parts.length > 1)

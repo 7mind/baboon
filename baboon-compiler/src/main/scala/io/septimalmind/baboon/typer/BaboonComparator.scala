@@ -164,8 +164,15 @@ object BaboonComparator {
       val newTypes = last.defs.meta.nodes.keySet
       val oldTypes = prev.defs.meta.nodes.keySet
 
-      // Identify valid renames: new type has was[] pointing to an existing old type
-      val validRenames: Map[TypeId.User, TypeId.User] = last.renames.filter {
+      // Resolve rename candidates: for each new type, find the first candidate that exists in old types
+      // This enables relative resolution where was[OldType] can find OldType at parent namespaces
+      val resolvedRenames: Map[TypeId.User, TypeId.User] = last.renameCandidates.flatMap {
+        case (newId, candidates) =>
+          candidates.find(oldId => oldTypes.contains(oldId) && !newTypes.contains(oldId)).map(oldId => (newId, oldId))
+      }
+
+      // Identify valid renames: new type exists in new version and old type exists in old version
+      val validRenames: Map[TypeId.User, TypeId.User] = resolvedRenames.filter {
         case (newId, oldId) =>
           newTypes.contains(newId) && oldTypes.contains(oldId) && !newTypes.contains(oldId)
       }

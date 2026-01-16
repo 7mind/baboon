@@ -70,11 +70,11 @@ object BaboonTyper {
           id =>
             (id, TypeMeta(shallowSchema(id), deepSchema(id)))
         }.toMap
-        refMeta     <- makeRefMeta(graph.meta.nodes)
-        derivations <- computeDerivations(graph.meta.nodes)
-        renames      = computeRenames(id, graph.meta.nodes)
+        refMeta           <- makeRefMeta(graph.meta.nodes)
+        derivations       <- computeDerivations(graph.meta.nodes)
+        renameCandidates   = computeRenameCandidates(graph.meta.nodes)
       } yield {
-        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations, roots.keySet, renames)
+        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations, roots.keySet, renameCandidates)
       }
     }
 
@@ -111,22 +111,13 @@ object BaboonTyper {
       F.pure(out)
     }
 
-    private def computeRenames(
-      pkg: Pkg,
+    private def computeRenameCandidates(
       defs: Map[TypeId, DomainMember],
-    ): Map[TypeId.User, TypeId.User] = {
+    ): Map[TypeId.User, List[TypeId.User]] = {
       defs.values.collect { case u: DomainMember.User => u }.flatMap {
         td =>
-          td.derivations.collect {
-            case RawMemberMeta.Was(ref: RawTypeRef.Simple) =>
-              val oldOwner = if (ref.prefix.isEmpty) {
-                td.id.owner
-              } else {
-                Owner.Ns(ref.prefix.map(n => TypeName(n.name)))
-              }
-              val oldTypeId = TypeId.User(pkg, oldOwner, TypeName(ref.name.name))
-              (td.id, oldTypeId)
-          }
+          if (td.wasCandidates.nonEmpty) Some((td.id, td.wasCandidates))
+          else None
       }.toMap
     }
 

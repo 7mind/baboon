@@ -93,7 +93,7 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
 
   private def asCsTypeDerefForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): CSType = {
     domain.defs.meta.nodes(tid) match {
-      case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
+      case DomainMember.User(_, defn: Typedef.Foreign, _, _, _) =>
         val fe    = defn.bindings("cs")
         val parts = fe.decl.split('.').toList
         assert(parts.length > 1)

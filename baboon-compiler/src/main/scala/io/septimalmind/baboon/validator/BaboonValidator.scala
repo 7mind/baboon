@@ -150,7 +150,7 @@ object BaboonValidator {
           val dupes =
             domain.defs.meta.nodes.values.groupBy {
               case DomainMember.Builtin(id) => id.name.name
-              case DomainMember.User(_, defn, _, _) =>
+              case DomainMember.User(_, defn, _, _, _) =>
                 defn.id.owner match {
                   case Owner.Toplevel =>
                     defn.id.name.name
@@ -451,8 +451,8 @@ object BaboonValidator {
             val n = next.defs.meta.nodes(c.targetTpe)
             (o, n) match {
               case (
-                    DomainMember.User(_, oe: Typedef.Enum, _, _),
-                    DomainMember.User(_, ne: Typedef.Enum, _, _),
+                    DomainMember.User(_, oe: Typedef.Enum, _, _, _),
+                    DomainMember.User(_, ne: Typedef.Enum, _, _, _),
                   ) =>
                 F.when(
                   oe.members.toSet.diff(ne.members.toSet).nonEmpty
@@ -486,8 +486,8 @@ object BaboonValidator {
             val n = next.defs.meta.nodes(c.targetTpe)
             (o, n) match {
               case (
-                    DomainMember.User(_, oe: Typedef.Enum, _, _),
-                    DomainMember.User(_, ne: Typedef.Enum, _, _),
+                    DomainMember.User(_, oe: Typedef.Enum, _, _, _),
+                    DomainMember.User(_, ne: Typedef.Enum, _, _, _),
                   ) =>
                 val oldMemberNames = oe.members.map(_.name).toSet
                 val newMemberNames = ne.members.map(_.name).toSet
@@ -524,8 +524,8 @@ object BaboonValidator {
             val n = next.defs.meta.nodes(c.targetTpe)
             (o, n) match {
               case (
-                    DomainMember.User(_, od: Typedef.Dto, _, _),
-                    DomainMember.User(_, nd: Typedef.Dto, _, _),
+                    DomainMember.User(_, od: Typedef.Dto, _, _, _),
+                    DomainMember.User(_, nd: Typedef.Dto, _, _, _),
                   ) =>
                 for {
                   newFieldNames <- F.pure(nd.fields.map(_.name).toSet)
@@ -621,8 +621,8 @@ object BaboonValidator {
             val n = next.defs.meta.nodes(c.targetTpe)
             (o, n) match {
               case (
-                    DomainMember.User(_, oa: Typedef.Adt, _, _),
-                    DomainMember.User(_, na: Typedef.Adt, _, _),
+                    DomainMember.User(_, oa: Typedef.Adt, _, _, _),
+                    DomainMember.User(_, na: Typedef.Adt, _, _, _),
                   ) =>
                 val oldBranchNames = oa.members.map(_.name.name).toSet
                 val newBranchNames = na.members.map(_.name.name).toSet

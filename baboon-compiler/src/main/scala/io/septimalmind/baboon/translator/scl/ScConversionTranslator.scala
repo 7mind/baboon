@@ -112,7 +112,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
       case _: TypeId.Builtin => direct
       case id: TypeId.User =>
         domain.defs.meta.nodes(id) match {
-          case DomainMember.User(_, _: Typedef.Foreign, _, _) => direct
+          case DomainMember.User(_, _: Typedef.Foreign, _, _, _) => direct
           case _                                              => conv
         }
     }
@@ -235,7 +235,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
           case c: Conversion.DtoConversion =>
             val defnTypeId = c.targetTpe
             val dto = domain.defs.meta.nodes(defnTypeId) match {
-              case DomainMember.User(_, d: Typedef.Dto, _, _) => d
+              case DomainMember.User(_, d: Typedef.Dto, _, _, _) => d
               case _                                          => throw new IllegalStateException("DTO expected")
             }
             val ops = c.ops.map(o => o.targetField -> o).toMap

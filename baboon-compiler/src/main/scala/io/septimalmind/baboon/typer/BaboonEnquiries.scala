@@ -101,8 +101,8 @@ object BaboonEnquiries {
                   .map(tpeId => domain.defs.meta.nodes(tpeId))
                   .toList
                   .collect {
-                    case DomainMember.User(_, dto: Typedef.Dto, _, _)      => dto
-                    case DomainMember.User(_, dto: Typedef.Contract, _, _) => dto
+                    case DomainMember.User(_, dto: Typedef.Dto, _, _, _)      => dto
+                    case DomainMember.User(_, dto: Typedef.Contract, _, _, _) => dto
                   }
                 collectForeignType(tail ++ dtos, foreignType, seen)
               case f: Typedef.Foreign =>
@@ -413,7 +413,7 @@ object BaboonEnquiries {
 
     def isEnum(tpe: TypeRef, domain: Domain): Boolean = {
       domain.defs.meta.nodes.get(tpe.id).exists {
-        case DomainMember.User(_, _: Typedef.Enum, _, _) => true
+        case DomainMember.User(_, _: Typedef.Enum, _, _, _) => true
         case _                                           => false
       }
     }

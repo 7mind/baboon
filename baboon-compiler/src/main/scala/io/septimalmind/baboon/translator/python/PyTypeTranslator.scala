@@ -119,7 +119,7 @@ final class PyTypeTranslator {
     domain: Domain,
   ): Option[PyType] = {
     domain.defs.meta.nodes(tid) match {
-      case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
+      case DomainMember.User(_, defn: Typedef.Foreign, _, _, _) =>
         val foreign = defn.bindings("py")
         val parts   = foreign.decl.split('.').toList
         assert(parts.length > 1)

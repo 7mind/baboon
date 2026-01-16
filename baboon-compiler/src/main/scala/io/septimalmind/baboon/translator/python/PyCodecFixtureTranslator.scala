@@ -51,7 +51,7 @@ object PyCodecFixtureTranslator {
     private def doTranslateAdt(adt: Typedef.Adt): TextTree[PyValue] = {
       val members = adt.members.toList
         .flatMap(m => domain.defs.meta.nodes.get(m))
-        .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
+        .collect { case DomainMember.User(_, d: Typedef.Dto, _, _, _) => d }
 
       val membersFixtures   = members.sortBy(_.id.toString).map(dto => doTranslateDto(dto))
       val membersGenerators = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name}_Fixture.random()")

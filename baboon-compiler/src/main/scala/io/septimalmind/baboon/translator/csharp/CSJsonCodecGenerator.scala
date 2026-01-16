@@ -101,15 +101,15 @@ class CSJsonCodecGenerator(
     val cName = codecName(srcRef, CSTypeOrigin(defn.id, domain))
     val cParent = if (isEncoderEnabled) {
       defn match {
-        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecBase<$name, $cName>"
-        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecBase<$name, $cName>"
+        case DomainMember.User(_, _: Typedef.Enum, _, _, _)    => q"$baboonJsonCodecBase<$name, $cName>"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _, _) => q"$baboonJsonCodecBase<$name, $cName>"
         case _ if isAdtMember                               => q"$baboonJsonCodecBaseGeneratedAdt<$name, $cName>"
         case _                                              => q"$baboonJsonCodecBaseGenerated<$name, $cName>"
       }
     } else {
       defn match {
-        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecNoEncoder<$name, $cName>"
-        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecNoEncoder<$name, $cName>"
+        case DomainMember.User(_, _: Typedef.Enum, _, _, _)    => q"$baboonJsonCodecNoEncoder<$name, $cName>"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _, _) => q"$baboonJsonCodecNoEncoder<$name, $cName>"
         case _ if isAdtMember                               => q"$baboonJsonCodecNoEncoderGeneratedAdt<$name, $cName>"
         case _                                              => q"$baboonJsonCodecNoEncoderGenerated<$name, $cName>"
       }
