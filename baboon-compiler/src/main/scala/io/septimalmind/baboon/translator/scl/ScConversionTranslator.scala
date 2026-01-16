@@ -181,6 +181,33 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             val regtree = q"register($className)"
             List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), Some(regtree), None))
 
+          case c: Conversion.CopyEnumByNameWithRenames =>
+            val mappingEntries = c.memberMapping.map {
+              case (oldName, newName) =>
+                q""""$oldName" -> "$newName""""
+            }.toSeq
+            val mappingTree =
+              if (mappingEntries.isEmpty) q"$scMap.empty[$scString, $scString]"
+              else q"$scMap(${mappingEntries.join(", ")})"
+
+            val classDef = q"""|object $className
+                               |  extends $baboonAbstractConversion[$tin, $tout] {
+                               |    private val memberMapping: $scMap[$scString, $scString] = $mappingTree
+                               |    override def doConvert[C](
+                               |      context: $scOption[C],
+                               |      conversions: $baboonAbstractConversions,
+                               |      from: $tin
+                               |    ): $tout = {
+                               |      val oldName = from.toString
+                               |      val newName = memberMapping.getOrElse(oldName, oldName)
+                               |      $tout.parse(newName).get
+                               |    }
+                               |    ${meta.shift(4).trim}
+                               |}
+                  """.stripMargin.trim
+            val regtree = q"register($className)"
+            List(RenderedConversion(fname, tools.inNs(pkg.parts.toSeq, classDef), Some(regtree), None))
+
           case c: Conversion.CopyAdtBranchByName =>
             val cases = c.oldDefn.dataMembers(srcDom).map {
               oldId =>

@@ -16,6 +16,7 @@ object EnumOp {
   case class AddBranch(m: EnumMember) extends EnumOp
   case class RemoveBranch(m: EnumMember) extends EnumOp
   case class KeepBranch(m: EnumMember) extends EnumOp
+  case class RenameBranch(oldMember: EnumMember, newMember: EnumMember) extends EnumOp
 }
 
 sealed trait DtoOp extends AbstractOp
@@ -40,4 +41,5 @@ object AdtOp {
   case class AddBranch(id: TypeId.User) extends AdtOp
   case class RemoveBranch(id: TypeId.User) extends AdtOp
   case class KeepBranch(id: TypeId.User, modification: RefModification) extends AdtOp
+  case class RenameBranch(oldId: TypeId.User, newId: TypeId.User, modification: RefModification) extends AdtOp
 }

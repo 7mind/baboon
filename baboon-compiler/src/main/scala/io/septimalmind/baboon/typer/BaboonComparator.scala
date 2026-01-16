@@ -292,19 +292,49 @@ object BaboonComparator {
       val members1 = e1.members.map(m => (m.name, m)).toMap
       val members2 = e2.members.map(m => (m.name, m)).toMap
 
-      val names1         = members1.keySet
-      val names2         = members2.keySet
-      val removedMembers = names1.diff(names2)
-      val addedMembers   = names2.diff(names1)
-      val keptMembers    = names1.intersect(names2)
+      val names1 = members1.keySet
+      val names2 = members2.keySet
 
-      val ops = List(
-        removedMembers.map(id => EnumOp.RemoveBranch(members1(id))),
-        addedMembers.map(id => EnumOp.AddBranch(members2(id))),
-        keptMembers.map(id => EnumOp.KeepBranch(members2(id))),
-      ).flatten
+      val invalidRenames = e2.members.toList.flatMap { newMember =>
+        newMember.prevName.flatMap { prevName =>
+          if (!members1.contains(prevName)) {
+            Some(EvolutionIssue.InvalidEnumMemberRename(e2.id, newMember.name, prevName))
+          } else {
+            None
+          }
+        }
+      }
 
-      F.pure(TypedefDiff.EnumDiff(ops))
+      for {
+        _ <- F.traverseAccumErrors(invalidRenames)(issue => F.fail(BaboonIssue.of(issue)))
+      } yield {
+        val renamedMembers: Map[String, (EnumMember, EnumMember)] = e2.members.toList.flatMap { newMember =>
+          newMember.prevName.flatMap { prevName =>
+            members1.get(prevName).map(oldMember => (newMember.name, (oldMember, newMember)))
+          }
+        }.toMap
+
+        val renamedNewNames = renamedMembers.keySet
+        val renamedOldNames = renamedMembers.values.map(_._1.name).toSet
+
+        val removedMembers = names1.diff(names2).diff(renamedOldNames)
+        val addedMembers   = names2.diff(names1).diff(renamedNewNames)
+        val keptMembers    = names1.intersect(names2)
+
+        val renamedOps = renamedMembers.values.map {
+          case (oldMember, newMember) =>
+            EnumOp.RenameBranch(oldMember, newMember)
+        }
+
+        val ops = List(
+          removedMembers.map(id => EnumOp.RemoveBranch(members1(id))),
+          addedMembers.map(id => EnumOp.AddBranch(members2(id))),
+          keptMembers.map(id => EnumOp.KeepBranch(members2(id))),
+          renamedOps,
+        ).flatten
+
+        TypedefDiff.EnumDiff(ops)
+      }
     }
 
     private def diffAdts(
@@ -313,53 +343,95 @@ object BaboonComparator {
       a2: Typedef.Adt,
     ): F[NEList[BaboonIssue], TypedefDiff] = {
       // Check if this is a renamed ADT comparison (old ADT id is in renamed values)
-      val isRenamed = changes.renamed.values.toSet.contains(a1.id)
+      val isAdtRenamed = changes.renamed.values.toSet.contains(a1.id)
 
-      if (isRenamed) {
+      // Identify branch-level renames: new branch has was[OldName] pointing to old branch
+      // changes.renamed contains newId -> oldId for all types, including branches
+      val branchRenames: Map[TypeId.User, TypeId.User] = changes.renamed.filter {
+        case (newId, oldId) =>
+          // Branch must belong to new ADT and old must belong to old ADT
+          newId.owner == Owner.Adt(a2.id) &&
+          (oldId.owner == Owner.Adt(a1.id) || (isAdtRenamed && oldId.owner.asPseudoPkg.lastOption == a1.id.owner.asPseudoPkg.lastOption))
+      }
+
+      // Reverse map: old branch id -> new branch id
+      val branchRenamesByOld: Map[TypeId.User, TypeId.User] = branchRenames.map { case (newId, oldId) => (oldId, newId) }
+
+      val members1 = a1.members.toSet
+      val members2 = a2.members.toSet
+
+      // For renamed ADT, we also need to handle branches by name
+      val members1ByName = a1.members.map(m => (m.name.name, m)).toMap
+      val members2ByName = a2.members.map(m => (m.name.name, m)).toMap
+
+      val renamedOldIds = branchRenamesByOld.keySet
+      val renamedNewIds = branchRenames.keySet
+
+      if (isAdtRenamed) {
         // For renamed ADTs, compare branches by name since TypeIds will differ
-        val members1ByName = a1.members.map(m => (m.name.name, m)).toMap
-        val members2ByName = a2.members.map(m => (m.name.name, m)).toMap
+        val names1 = members1ByName.keySet
+        val names2 = members2ByName.keySet
 
-        val names1         = members1ByName.keySet
-        val names2         = members2ByName.keySet
-        val removedNames   = names1.diff(names2)
-        val addedNames     = names2.diff(names1)
-        val keptNames      = names1.intersect(names2)
+        // Find explicit branch renames declared via was[OldName]
+        val explicitRenames: Map[TypeId.User, TypeId.User] = members2.flatMap { newBranchId =>
+          changes.renamed.get(newBranchId).flatMap { oldBranchId =>
+            // Check if oldBranchId.name.name exists in members1ByName
+            if (members1ByName.contains(oldBranchId.name.name)) {
+              Some((newBranchId, members1ByName(oldBranchId.name.name)))
+            } else {
+              None
+            }
+          }
+        }.toMap
 
-        val keptMembers = keptNames.map { name =>
-          val oldRef = members1ByName(name)
+        val explicitRenamedOldNames = explicitRenames.values.map(_.name.name).toSet
+        val explicitRenamedNewNames = explicitRenames.keySet.map(_.name.name)
+
+        val removedNames = names1.diff(names2).diff(explicitRenamedOldNames)
+        val addedNames   = names2.diff(names1).diff(explicitRenamedNewNames)
+        val keptNames    = names1.intersect(names2)
+
+        val keptOps = keptNames.map { name =>
           val newRef = members2ByName(name)
-          // Check modification status based on the new branch ref
           val modification = figureOutModification(changes, Set(newRef))
           AdtOp.KeepBranch(newRef, modification)
+        }
+
+        val renamedOps = explicitRenames.map {
+          case (newBranchId, oldBranchId) =>
+            val modification = figureOutModification(changes, Set(newBranchId))
+            AdtOp.RenameBranch(oldBranchId, newBranchId, modification)
         }
 
         val ops = List(
           removedNames.map(name => AdtOp.RemoveBranch(members1ByName(name))),
           addedNames.map(name => AdtOp.AddBranch(members2ByName(name))),
-          keptMembers,
+          keptOps,
+          renamedOps,
         ).flatten
 
         F.pure(TypedefDiff.AdtDiff(ops))
       } else {
-        // Non-renamed ADTs: compare by TypeId as before
-        val members1 = a1.members.toSet
-        val members2 = a2.members.toSet
-
-        val removedMembers = members1.diff(members2)
-        val addedMembers   = members2.diff(members1)
+        // Non-renamed ADTs: compare by TypeId, but account for branch renames
+        val removedMembers = members1.diff(members2).diff(renamedOldIds)
+        val addedMembers   = members2.diff(members1).diff(renamedNewIds)
         val keptMembers = members1.intersect(members2).map {
           ref =>
-            val modification =
-              figureOutModification(changes, Set(ref))
-
+            val modification = figureOutModification(changes, Set(ref))
             AdtOp.KeepBranch(ref, modification)
+        }
+
+        val renamedOps = branchRenamesByOld.map {
+          case (oldId, newId) =>
+            val modification = figureOutModification(changes, Set(newId))
+            AdtOp.RenameBranch(oldId, newId, modification)
         }
 
         val ops = List(
           removedMembers.map(id => AdtOp.RemoveBranch(id)),
           addedMembers.map(id => AdtOp.AddBranch(id)),
           keptMembers,
+          renamedOps,
         ).flatten
 
         F.pure(TypedefDiff.AdtDiff(ops))

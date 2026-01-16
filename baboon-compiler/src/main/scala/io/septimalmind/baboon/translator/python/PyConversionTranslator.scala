@@ -92,7 +92,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
   ): Option[TextTree[PyType]] = {
     conversion match {
       case _: Conversion.CustomConversionRequired => Some(q"self.register(required.${convType.name}(), $typeFrom, $typeTo)")
-      case _: Conversion.CopyEnumByName | _: Conversion.CopyAdtBranchByName | _: Conversion.DtoConversion =>
+      case _: Conversion.CopyEnumByName | _: Conversion.CopyEnumByNameWithRenames | _: Conversion.CopyAdtBranchByName | _: Conversion.DtoConversion =>
         Some(q"self.register($convType.instance(), $typeFrom, $typeTo)")
 
       case _ => None
@@ -125,6 +125,27 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
                 |    @$pyOverride
                 |    def do_convert(self, ctx, conversions, _from: $typeFrom) -> $typeTo:
                 |        return $typeTo[_from.name]
+                |
+                |    ${meta.shift(4).trim}
+                |""".stripMargin)
+
+      case c: Conversion.CopyEnumByNameWithRenames =>
+        val mappingEntries = c.memberMapping.map {
+          case (oldName, newName) =>
+            q""""$oldName": "$newName""""
+        }.toSeq
+        val mappingTree =
+          if (mappingEntries.isEmpty) q"{}"
+          else q"{${mappingEntries.join(", ")}}"
+
+        Some(q"""class ${convType.name}($baboonAbstractConversion[$typeFrom, $typeTo]):
+                |    _member_mapping: dict[str, str] = $mappingTree
+                |
+                |    @$pyOverride
+                |    def do_convert(self, ctx, conversions, _from: $typeFrom) -> $typeTo:
+                |        old_name = _from.name
+                |        new_name = self._member_mapping.get(old_name, old_name)
+                |        return $typeTo[new_name]
                 |
                 |    ${meta.shift(4).trim}
                 |""".stripMargin)

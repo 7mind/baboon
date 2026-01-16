@@ -136,6 +136,37 @@ class CSConversionTranslator[F[+_, +_]: Error2](
             val ctree   = tools.inNs(pkg.parts.toSeq, cdefn)
             val regtree = q"Register(new $convname());"
             F.pure(List(RenderedConversion(fname, ctree, Some(regtree), None)))
+          case c: Conversion.CopyEnumByNameWithRenames =>
+            val mappingEntries = c.memberMapping.map {
+              case (oldName, newName) =>
+                q"""{ "$oldName", "$newName" }"""
+            }.toSeq
+            val mappingTree =
+              if (mappingEntries.isEmpty)
+                q"new $csDictionary<$csString, $csString>()"
+              else
+                q"new $csDictionary<$csString, $csString> { ${mappingEntries.join(", ")} }"
+
+            val cdefn =
+              q"""public sealed class $convname : $abstractConversion<$tin, $tout>
+                 |{
+                 |    private static readonly $csDictionary<$csString, $csString> _memberMapping = $mappingTree;
+                 |
+                 |    protected override $tout DoConvert<C>(C? context, $abstractBaboonConversions conversions, $tin from) where C: default {
+                 |        var oldName = from.ToString();
+                 |        var newName = _memberMapping.TryGetValue(oldName!, out var mapped) ? mapped : oldName;
+                 |        if ($csEnum.TryParse(newName, out $tout parsed))
+                 |        {
+                 |            return parsed;
+                 |        }
+                 |        throw new $csArgumentException($$"Bad input, this is a Baboon bug: {from}");
+                 |    }
+                 |
+                 |    $fullMeta
+                 |}""".stripMargin
+            val ctree   = tools.inNs(pkg.parts.toSeq, cdefn)
+            val regtree = q"Register(new $convname());"
+            F.pure(List(RenderedConversion(fname, ctree, Some(regtree), None)))
           case c: Conversion.CopyAdtBranchByName =>
             val branches = c.oldDefn
               .dataMembers(srcDom)

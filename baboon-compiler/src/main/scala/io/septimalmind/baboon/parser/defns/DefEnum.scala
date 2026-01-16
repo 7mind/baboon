@@ -26,11 +26,17 @@ class DefEnum(@unused context: ParserContext, meta: DefMeta) {
         RawEnumConst.RawInt(v.toLong)
     }
   }
+
+  private def enumMemberWas[$: P]: P[String] = {
+    import fastparse.ScalaWhitespace.whitespace
+    kw.was ~ enumMemberName
+  }
+
   def enumMember[$: P]: P[RawEnumMember] = {
     import fastparse.ScalaWhitespace.whitespace
-    P(meta.withMeta(enumMemberName ~ enumVal.?)).map {
-      case (meta, (name, enumVal)) =>
-        RawEnumMember(name, enumVal, meta)
+    P(meta.withMeta(enumMemberName ~ enumVal.? ~ enumMemberWas.?)).map {
+      case (meta, (name, enumVal, prevName)) =>
+        RawEnumMember(name, enumVal, prevName, meta)
     }
   }
 

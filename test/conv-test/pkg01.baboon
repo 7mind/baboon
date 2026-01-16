@@ -45,3 +45,34 @@ root data FieldRenameTest {
   oldFieldName: str
   keepField: i32
 }
+
+// Enum with members that will be renamed in v2.0.0
+enum EnumMemberRenameTest {
+  OldMemberA
+  OldMemberB
+  KeepMember
+}
+
+root data EnumMemberRenameHolder {
+  e: EnumMemberRenameTest
+}
+
+// ADT with branches that will be renamed in v2.0.0
+root adt AdtBranchRenameTest {
+  data OldBranchA {
+    x: i32
+  }
+  data OldBranchB {
+    y: str
+  }
+  data KeepBranch {
+    z: bit
+  }
+}
+
+// Same-namespace type rename test
+ns samens {
+  root data OldInSameNs {
+    value: i32
+  }
+}

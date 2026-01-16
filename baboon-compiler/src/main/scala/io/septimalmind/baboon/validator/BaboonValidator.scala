@@ -481,6 +481,44 @@ object BaboonValidator {
                 )
             }
 
+          case c: Conversion.CopyEnumByNameWithRenames =>
+            val o = prev.defs.meta.nodes(c.sourceTpe)
+            val n = next.defs.meta.nodes(c.targetTpe)
+            (o, n) match {
+              case (
+                    DomainMember.User(_, oe: Typedef.Enum, _, _),
+                    DomainMember.User(_, ne: Typedef.Enum, _, _),
+                  ) =>
+                val oldMemberNames = oe.members.map(_.name).toSet
+                val newMemberNames = ne.members.map(_.name).toSet
+                val renamedOldNames = c.memberMapping.keySet
+                val renamedNewNames = c.memberMapping.values.toSet
+                val effectiveOldNames = oldMemberNames.diff(renamedOldNames) ++ renamedNewNames
+                F.when(effectiveOldNames.diff(newMemberNames).nonEmpty)(
+                  F.fail(
+                    BaboonIssue.of(
+                      VerificationIssue.IncorrectConversionApplication(
+                        c,
+                        o,
+                        n,
+                        ConversionIssue.RemovedEnumBranches,
+                      )
+                    )
+                  )
+                )
+              case _ =>
+                F.fail(
+                  BaboonIssue.of(
+                    VerificationIssue.IncorrectConversionApplication(
+                      c,
+                      o,
+                      n,
+                      ConversionIssue.TypeMismatch,
+                    )
+                  )
+                )
+            }
+
           case c: Conversion.DtoConversion =>
             val o = prev.defs.meta.nodes(c.sourceTpe)
             val n = next.defs.meta.nodes(c.targetTpe)
@@ -586,13 +624,12 @@ object BaboonValidator {
                     DomainMember.User(_, oa: Typedef.Adt, _, _),
                     DomainMember.User(_, na: Typedef.Adt, _, _),
                   ) =>
-                F.when(
-                  oa.members
-                    .map(_.name)
-                    .toSet
-                    .diff(na.members.map(_.name).toSet)
-                    .nonEmpty
-                )(
+                val oldBranchNames = oa.members.map(_.name.name).toSet
+                val newBranchNames = na.members.map(_.name.name).toSet
+                val mappedOldNames = c.branchMapping.keySet
+                val mappedNewNames = c.branchMapping.values.map(_.name.name).toSet
+                val effectiveOldNames = oldBranchNames.diff(mappedOldNames) ++ mappedNewNames
+                F.when(effectiveOldNames.diff(newBranchNames).nonEmpty)(
                   F.fail(
                     BaboonIssue.of(
                       VerificationIssue.IncorrectConversionApplication(

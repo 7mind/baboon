@@ -82,3 +82,34 @@ root data FieldRenameTest {
   newFieldName: str was oldFieldName
   keepField: i32
 }
+
+// Enum with renamed members from v1.0.0
+enum EnumMemberRenameTest {
+  NewMemberA was OldMemberA
+  NewMemberB was OldMemberB
+  KeepMember
+}
+
+root data EnumMemberRenameHolder {
+  e: EnumMemberRenameTest
+}
+
+// ADT with renamed branches from v1.0.0
+root adt AdtBranchRenameTest {
+  data NewBranchA: was[OldBranchA] {
+    x: i32
+  }
+  data NewBranchB: was[OldBranchB] {
+    y: str
+  }
+  data KeepBranch {
+    z: bit
+  }
+}
+
+// Same-namespace type rename test (should resolve OldInSameNs in the same ns)
+ns samens {
+  root data NewInSameNs : was[OldInSameNs] {
+    value: i32
+  }
+}

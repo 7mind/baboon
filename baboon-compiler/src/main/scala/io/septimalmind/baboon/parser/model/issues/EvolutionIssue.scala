@@ -29,6 +29,10 @@ object EvolutionIssue {
 
   case class InvalidFieldRename(typeId: TypeId, newFieldName: FieldName, prevFieldName: FieldName) extends EvolutionIssue
 
+  case class InvalidEnumMemberRename(typeId: TypeId.User, newMemberName: String, prevMemberName: String) extends EvolutionIssue
+
+  case class InvalidAdtBranchRename(typeId: TypeId.User, newBranchId: TypeId.User, prevBranchName: String) extends EvolutionIssue
+
   implicit val brokenComparisonPrinter: IssuePrinter[BrokenComparison] =
     new BugPrinter[BrokenComparison] {
       override def errorMessage(bug: BrokenComparison): String = {
@@ -133,6 +137,22 @@ object EvolutionIssue {
       s"""Invalid field rename in type ${issue.typeId.toString}:
          |   Field '${issue.newFieldName.name}' was declared as renamed from '${issue.prevFieldName.name}',
          |   but '${issue.prevFieldName.name}' does not exist in the previous version.
+         |""".stripMargin
+    }
+
+  implicit val invalidEnumMemberRenamePrinter: IssuePrinter[InvalidEnumMemberRename] =
+    (issue: InvalidEnumMemberRename) => {
+      s"""Invalid enum member rename in type ${issue.typeId.toString}:
+         |   Member '${issue.newMemberName}' was declared as renamed from '${issue.prevMemberName}',
+         |   but '${issue.prevMemberName}' does not exist in the previous version.
+         |""".stripMargin
+    }
+
+  implicit val invalidAdtBranchRenamePrinter: IssuePrinter[InvalidAdtBranchRename] =
+    (issue: InvalidAdtBranchRename) => {
+      s"""Invalid ADT branch rename in type ${issue.typeId.toString}:
+         |   Branch '${issue.newBranchId.name.name}' was declared as renamed from '${issue.prevBranchName}',
+         |   but '${issue.prevBranchName}' does not exist in the previous version.
          |""".stripMargin
     }
 }

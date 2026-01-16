@@ -239,50 +239,60 @@ object BaboonRules {
               case _: Typedef.Enum =>
                 assert(shallowChanged || isRenamed)
                 for {
-                  incompatible <- diff.diffs.get(id) match {
+                  opsResult <- diff.diffs.get(id) match {
                     case Some(TypedefDiff.EnumDiff(ops)) =>
-                      F.pure(ops.collect { case r: EnumOp.RemoveBranch => r })
+                      F.pure(ops)
                     case Some(o) =>
                       F.fail(
                         BaboonIssue.of(EvolutionIssue.UnexpectedDiffType(o, "EnumDiff"))
                       )
                     case None if isRenamed =>
-                      F.pure(List.empty[EnumOp.RemoveBranch])
+                      F.pure(List.empty[EnumOp])
                     case None =>
                       F.fail(
                         BaboonIssue.of(EvolutionIssue.UnexpectedDiffType(TypedefDiff.EnumDiff(List.empty), "EnumDiff"))
                       )
                   }
+                  incompatible = opsResult.collect { case r: EnumOp.RemoveBranch => r }
+                  renames      = opsResult.collect { case r: EnumOp.RenameBranch => r }
                 } yield {
-                  if (incompatible.isEmpty) {
-                    CopyEnumByName(id, targetTpe)
-                  } else {
+                  if (incompatible.nonEmpty) {
                     CustomConversionRequired(id, DerivationFailure.EnumBranchRemoved(incompatible), targetTpe)
+                  } else if (renames.nonEmpty) {
+                    val memberMapping = renames.map(r => (r.oldMember.name, r.newMember.name)).toMap
+                    CopyEnumByNameWithRenames(id, targetTpe, memberMapping)
+                  } else {
+                    CopyEnumByName(id, targetTpe)
                   }
                 }
 
               case a: Typedef.Adt =>
                 assert(shallowChanged || isRenamed)
                 for {
-                  incompatible <- diff.diffs.get(id) match {
+                  opsResult <- diff.diffs.get(id) match {
                     case Some(TypedefDiff.AdtDiff(ops)) =>
-                      F.pure(ops.collect { case r: AdtOp.RemoveBranch => r })
+                      F.pure(ops)
                     case Some(o) =>
                       F.fail(
                         BaboonIssue.of(EvolutionIssue.UnexpectedDiffType(o, "ADTDiff"))
                       )
                     case None if isRenamed =>
-                      F.pure(List.empty[AdtOp.RemoveBranch])
+                      F.pure(List.empty[AdtOp])
                     case None =>
                       F.fail(
                         BaboonIssue.of(EvolutionIssue.UnexpectedDiffType(TypedefDiff.AdtDiff(List.empty), "ADTDiff"))
                       )
                   }
+                  incompatible = opsResult.collect { case r: AdtOp.RemoveBranch => r }
+                  renames      = opsResult.collect { case r: AdtOp.RenameBranch => r }
                 } yield {
-                  if (incompatible.isEmpty) {
-                    CopyAdtBranchByName(id, a, targetTpe, computeBranchMapping(targetTpe))
-                  } else {
+                  if (incompatible.nonEmpty) {
                     CustomConversionRequired(id, DerivationFailure.AdtBranchRemoved(incompatible), targetTpe)
+                  } else {
+                    val baseBranchMapping = computeBranchMapping(targetTpe)
+                    val renameMapping = renames.map(r => (r.oldId.name.name, r.newId)).toMap
+                    val fullBranchMapping = baseBranchMapping ++ renameMapping
+                    CopyAdtBranchByName(id, a, targetTpe, fullBranchMapping)
                   }
                 }
 
