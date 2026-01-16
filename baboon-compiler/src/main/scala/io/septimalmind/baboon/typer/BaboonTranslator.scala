@@ -100,6 +100,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
               raw.associated.map {
                 case RawEnumConst.RawInt(int) => int
               },
+              raw.prevName,
             )
           }
       }

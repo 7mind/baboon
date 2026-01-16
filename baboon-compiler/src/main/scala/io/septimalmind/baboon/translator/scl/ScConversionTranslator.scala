@@ -167,14 +167,25 @@ class ScConversionTranslator[F[+_, +_]: Error2](
               )
             )
 
-          case _: Conversion.CopyEnumByName =>
+          case c: Conversion.CopyEnumByName =>
+            val mappingEntries = c.memberMapping.map {
+              case (fromName, toName) =>
+                s""""$fromName" -> "$toName""""
+            }
+            val mappedExpr =
+              if (mappingEntries.isEmpty) {
+                q"from.toString"
+              } else {
+                val mappingLiteral = s"Map(${mappingEntries.mkString(", ")})"
+                q"$mappingLiteral.getOrElse(from.toString, from.toString)"
+              }
             val classDef = q"""|object $className
                                |  extends $baboonAbstractConversion[$tin, $tout] {
                                |    override def doConvert[C](
                                |      context: $scOption[C],
                                |      conversions: $baboonAbstractConversions,
                                |      from: $tin
-                               |    ): $tout = $tout.parse(from.toString).get
+                               |    ): $tout = $tout.parse($mappedExpr).get
                                |    ${meta.shift(4).trim}
                                |}
                   """.stripMargin.trim

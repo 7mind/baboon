@@ -294,17 +294,41 @@ object BaboonComparator {
 
       val names1         = members1.keySet
       val names2         = members2.keySet
-      val removedMembers = names1.diff(names2)
-      val addedMembers   = names2.diff(names1)
-      val keptMembers    = names1.intersect(names2)
+      val invalidRenames = e2.members.toList.flatMap { newMember =>
+        newMember.prevName.flatMap { prevName =>
+          if (!members1.contains(prevName)) {
+            Some(EvolutionIssue.InvalidEnumMemberRename(e2.id, newMember.name, prevName))
+          } else {
+            None
+          }
+        }.toList
+      }
 
-      val ops = List(
-        removedMembers.map(id => EnumOp.RemoveBranch(members1(id))),
-        addedMembers.map(id => EnumOp.AddBranch(members2(id))),
-        keptMembers.map(id => EnumOp.KeepBranch(members2(id))),
-      ).flatten
+      for {
+        _ <- F.traverseAccumErrors(invalidRenames)(issue => F.fail(BaboonIssue.of(issue)))
+      } yield {
+        val renamedMembers = e2.members.toList.flatMap { newMember =>
+          newMember.prevName.flatMap { prevName =>
+            members1.get(prevName).map(oldMember => (newMember.name, (oldMember, newMember)))
+          }.toList
+        }.toMap
 
-      F.pure(TypedefDiff.EnumDiff(ops))
+        val renamedNewNames = renamedMembers.keySet
+        val renamedOldNames = renamedMembers.values.map(_._1.name).toSet
+
+        val removedMembers = names1.diff(names2).diff(renamedOldNames)
+        val addedMembers   = names2.diff(names1).diff(renamedNewNames)
+        val keptMembers    = names1.intersect(names2)
+
+        val ops = List(
+          removedMembers.map(id => EnumOp.RemoveBranch(members1(id))),
+          addedMembers.map(id => EnumOp.AddBranch(members2(id))),
+          keptMembers.map(id => EnumOp.KeepBranch(members2(id))),
+          renamedMembers.values.map { case (_, newMember) => EnumOp.KeepBranch(newMember) },
+        ).flatten
+
+        TypedefDiff.EnumDiff(ops)
+      }
     }
 
     private def diffAdts(
@@ -314,16 +338,21 @@ object BaboonComparator {
     ): F[NEList[BaboonIssue], TypedefDiff] = {
       // Check if this is a renamed ADT comparison (old ADT id is in renamed values)
       val isRenamed = changes.renamed.values.toSet.contains(a1.id)
+      val branchRenames = changes.renamed.collect {
+        case (newId, oldId) if a2.members.contains(newId) && a1.members.contains(oldId) =>
+          (newId, oldId)
+      }
 
       if (isRenamed) {
         // For renamed ADTs, compare branches by name since TypeIds will differ
         val members1ByName = a1.members.map(m => (m.name.name, m)).toMap
         val members2ByName = a2.members.map(m => (m.name.name, m)).toMap
+        val renamedByName = branchRenames.map { case (newId, oldId) => (oldId.name.name, newId.name.name) }
 
         val names1         = members1ByName.keySet
         val names2         = members2ByName.keySet
-        val removedNames   = names1.diff(names2)
-        val addedNames     = names2.diff(names1)
+        val removedNames   = names1.diff(names2).diff(renamedByName.keySet)
+        val addedNames     = names2.diff(names1).diff(renamedByName.values.toSet)
         val keptNames      = names1.intersect(names2)
 
         val keptMembers = keptNames.map { name =>
@@ -333,11 +362,18 @@ object BaboonComparator {
           val modification = figureOutModification(changes, Set(newRef))
           AdtOp.KeepBranch(newRef, modification)
         }
+        val renamedMembers = renamedByName.map {
+          case (_, newName) =>
+            val newRef = members2ByName(newName)
+            val modification = figureOutModification(changes, Set(newRef))
+            AdtOp.KeepBranch(newRef, modification)
+        }
 
         val ops = List(
           removedNames.map(name => AdtOp.RemoveBranch(members1ByName(name))),
           addedNames.map(name => AdtOp.AddBranch(members2ByName(name))),
           keptMembers,
+          renamedMembers,
         ).flatten
 
         F.pure(TypedefDiff.AdtDiff(ops))
@@ -346,8 +382,10 @@ object BaboonComparator {
         val members1 = a1.members.toSet
         val members2 = a2.members.toSet
 
-        val removedMembers = members1.diff(members2)
-        val addedMembers   = members2.diff(members1)
+        val renamedOld = branchRenames.values.toSet
+        val renamedNew = branchRenames.keySet
+        val removedMembers = members1.diff(members2).diff(renamedOld)
+        val addedMembers   = members2.diff(members1).diff(renamedNew)
         val keptMembers = members1.intersect(members2).map {
           ref =>
             val modification =
@@ -355,11 +393,17 @@ object BaboonComparator {
 
             AdtOp.KeepBranch(ref, modification)
         }
+        val renamedMembers = branchRenames.map {
+          case (newId, _) =>
+            val modification = figureOutModification(changes, Set(newId))
+            AdtOp.KeepBranch(newId, modification)
+        }
 
         val ops = List(
           removedMembers.map(id => AdtOp.RemoveBranch(id)),
           addedMembers.map(id => AdtOp.AddBranch(id)),
           keptMembers,
+          renamedMembers,
         ).flatten
 
         F.pure(TypedefDiff.AdtDiff(ops))

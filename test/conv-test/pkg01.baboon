@@ -45,3 +45,26 @@ root data FieldRenameTest {
   oldFieldName: str
   keepField: i32
 }
+
+enum EnumMemberRename {
+  OldValue
+  KeepValue
+}
+
+root data EnumMemberRenameHolder {
+  v: EnumMemberRename
+}
+
+root adt AdtBranchRename {
+  data OldBranch {
+    f: str
+  }
+}
+
+ns ns1 {
+  ns ns2 {
+    root data D1 {
+      x: i32
+    }
+  }
+}

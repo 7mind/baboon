@@ -120,11 +120,22 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
     meta: TextTree[PyType],
   ): Option[TextTree[PyValue]] = {
     conversion match {
-      case _: Conversion.CopyEnumByName =>
+      case c: Conversion.CopyEnumByName =>
+        val mappingEntries = c.memberMapping.map {
+          case (fromName, toName) =>
+            s""""$fromName": "$toName""""
+        }
+        val mappedExpr =
+          if (mappingEntries.isEmpty) {
+            q"_from.name"
+          } else {
+            val mappingLiteral = s"{${mappingEntries.mkString(", ")}}"
+            q"$mappingLiteral.get(_from.name, _from.name)"
+          }
         Some(q"""class ${convType.name}($baboonAbstractConversion[$typeFrom, $typeTo]):
                 |    @$pyOverride
                 |    def do_convert(self, ctx, conversions, _from: $typeFrom) -> $typeTo:
-                |        return $typeTo[_from.name]
+                |        return $typeTo[$mappedExpr]
                 |
                 |    ${meta.shift(4).trim}
                 |""".stripMargin)

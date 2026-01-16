@@ -25,7 +25,8 @@ object Conversion {
 
   case class NonDataTypeTypeNoConversion(sourceTpe: TypeId.User) extends Conversion
 
-  case class CopyEnumByName(sourceTpe: TypeId.User, targetTpe: TypeId.User) extends TargetedConversion
+  /** @param memberMapping Maps old member name to new member name */
+  case class CopyEnumByName(sourceTpe: TypeId.User, targetTpe: TypeId.User, memberMapping: Map[String, String]) extends TargetedConversion
 
   case class DtoConversion(sourceTpe: TypeId.User, ops: List[FieldOp], removed: Set[Field], targetTpe: TypeId.User) extends TargetedConversion
 

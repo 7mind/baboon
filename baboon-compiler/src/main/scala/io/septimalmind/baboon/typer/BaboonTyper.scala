@@ -32,13 +32,16 @@ object BaboonTyper {
     types: TypeInfo,
   ) extends BaboonTyper[F] {
 
+    private case class TyperOutput(defs: List[DomainMember], renames: Map[TypeId.User, TypeId.User])
+
     override def process(
       model: RawDomain
     ): F[NEList[BaboonIssue], Domain] = {
       for {
         id      <- componentParsers.parsePkg(model.header)
         version <- componentParsers.parseVersion(model.version)
-        defs    <- runTyper(id, model.members.defs, model.header.meta)
+        typed   <- runTyper(id, model.members.defs, model.header.meta)
+        defs     = typed.defs
         indexedDefs <- F.fromEither {
           defs
             .map(d => (d.id, d))
@@ -72,7 +75,7 @@ object BaboonTyper {
         }.toMap
         refMeta     <- makeRefMeta(graph.meta.nodes)
         derivations <- computeDerivations(graph.meta.nodes)
-        renames      = computeRenames(id, graph.meta.nodes)
+        renames      = typed.renames
       } yield {
         Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations, roots.keySet, renames)
       }
@@ -113,21 +116,103 @@ object BaboonTyper {
 
     private def computeRenames(
       pkg: Pkg,
-      defs: Map[TypeId, DomainMember],
-    ): Map[TypeId.User, TypeId.User] = {
-      defs.values.collect { case u: DomainMember.User => u }.flatMap {
-        td =>
-          td.derivations.collect {
-            case RawMemberMeta.Was(ref: RawTypeRef.Simple) =>
-              val oldOwner = if (ref.prefix.isEmpty) {
-                td.id.owner
-              } else {
-                Owner.Ns(ref.prefix.map(n => TypeName(n.name)))
-              }
-              val oldTypeId = TypeId.User(pkg, oldOwner, TypeName(ref.name.name))
-              (td.id, oldTypeId)
+      flattened: List[NestedScope[ExtendedRawDefn]],
+    ): F[NEList[BaboonIssue], Map[TypeId.User, TypeId.User]] = {
+      def asPath(scope: Scope[ExtendedRawDefn]): List[Scope[ExtendedRawDefn]] = {
+        def go(s: Scope[ExtendedRawDefn]): NEList[Scope[ExtendedRawDefn]] = {
+          s match {
+            case r: RootScope[ExtendedRawDefn] => NEList(r)
+            case n: NestedScope[ExtendedRawDefn] =>
+              go(n.defn.parentOf(n)) ++ NEList(n)
           }
-      }.toMap
+        }
+        go(scope).toList
+      }
+
+      def findScope(needles: NEList[ScopeName], scope: Scope[ExtendedRawDefn]): Option[NestedScope[ExtendedRawDefn]] = {
+        val head = needles.head
+
+        val headScope = scope match {
+          case s: RootScope[ExtendedRawDefn] =>
+            s.nested.get(head)
+
+          case s: LeafScope[ExtendedRawDefn] =>
+            Some(s)
+              .filter(_.name == head)
+              .orElse(findScope(needles, s.defn.parentOf(s)))
+
+          case s: SubScope[ExtendedRawDefn] =>
+            Some(s)
+              .filter(_.name == head)
+              .orElse(s.nested.toMap.get(head))
+              .orElse(findScope(needles, s.defn.parentOf(s)))
+        }
+
+        NEList.from(needles.tail) match {
+          case Some(value) =>
+            headScope.flatMap(nested => findScope(value, nested))
+          case None =>
+            headScope
+        }
+      }
+
+      def ownerForPrefix(
+        prefix: List[RawTypeName],
+        scope: NestedScope[ExtendedRawDefn],
+      ): F[NEList[BaboonIssue], Owner] = {
+        val pathNames = NEList.unsafeFrom(prefix.map(p => ScopeName(p.name)))
+        findScope(pathNames, scope) match {
+          case Some(found) =>
+            found.defn.defn match {
+              case adt: RawAdt =>
+                scopeSupport
+                  .resolveUserTypeId(adt.name, found, pkg, adt.meta)
+                  .map(adtId => Owner.Adt(adtId))
+              case _ =>
+                val ns = asPath(found).collect {
+                  case s: SubScope[ExtendedRawDefn]
+                      if s.defn.defn.isInstanceOf[RawNamespace] || s.defn.defn.isInstanceOf[RawService] =>
+                    TypeName(s.name.name)
+                }
+                F.pure {
+                  if (ns.isEmpty) Owner.Toplevel else Owner.Ns(ns)
+                }
+            }
+          case None =>
+            F.pure(Owner.Ns(prefix.map(p => TypeName(p.name))))
+        }
+      }
+
+      val renameRefs = flattened.flatMap {
+        scope =>
+          val rawDefn = scope.defn.defn
+          val derived = rawDefn match {
+            case d: RawDto     => d.derived
+            case e: RawEnum    => e.derived
+            case a: RawAdt     => a.derived
+            case f: RawForeign => f.derived
+            case _             => Set.empty[RawMemberMeta]
+          }
+          derived.collect {
+            case RawMemberMeta.Was(ref: RawTypeRef.Simple) =>
+              (scope, rawDefn, ref)
+          }
+      }
+
+      F.traverseAccumErrors(renameRefs) {
+        case (scope, rawDefn, ref) =>
+          for {
+            newId <- scopeSupport.resolveUserTypeId(rawDefn.name, scope, pkg, rawDefn.meta)
+            oldOwner <- if (ref.prefix.isEmpty) {
+              F.pure(newId.owner)
+            } else {
+              ownerForPrefix(ref.prefix, scope)
+            }
+            oldId = TypeId.User(pkg, oldOwner, TypeName(ref.name.name))
+          } yield {
+            (newId, oldId)
+          }
+      }.map(_.toMap)
     }
 
     private def makeRefMeta(
@@ -292,7 +377,7 @@ object BaboonTyper {
       pkg: Pkg,
       members: Seq[RawTLDef],
       meta: RawNodeMeta,
-    ): F[NEList[BaboonIssue], List[DomainMember]] = {
+    ): F[NEList[BaboonIssue], TyperOutput] = {
       for {
         initial <- F.pure(
           types.allBuiltins.map(id => DomainMember.Builtin(id))
@@ -300,6 +385,7 @@ object BaboonTyper {
         builder   = new ScopeBuilder[F]()
         scopes   <- builder.buildScopes(pkg, members, meta)
         flattened = flattenScopes(scopes)
+        renames  <- computeRenames(pkg, flattened)
         ordered  <- order(pkg, flattened, meta)
 
         out <- F.foldLeft(ordered)(Map.empty[TypeId, DomainMember]) {
@@ -321,7 +407,7 @@ object BaboonTyper {
             .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueTypedefs(e, meta)))
         }
       } yield {
-        indexed.values.toList
+        TyperOutput(indexed.values.toList, renames)
       }
     }
 
