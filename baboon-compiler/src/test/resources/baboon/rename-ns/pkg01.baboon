@@ -1,0 +1,15 @@
+model rename.ns
+
+version "1.0.0"
+
+ns outer {
+  root data OldTypeAbs {
+    x: i32
+  }
+
+  ns inner {
+    root data OldTypeRel {
+      x: i32
+    }
+  }
+}
