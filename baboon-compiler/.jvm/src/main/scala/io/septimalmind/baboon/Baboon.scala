@@ -2,7 +2,7 @@ package io.septimalmind.baboon
 
 import caseapp.*
 import distage.*
-import io.septimalmind.baboon.explore.{ExploreContext, ExploreShell}
+import io.septimalmind.baboon.explore.{ExploreContext, ExploreInputs, ExploreShell}
 import io.septimalmind.baboon.lsp._
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
@@ -395,6 +395,7 @@ object Baboon {
 
               _ <- exploreContext
                 .provide(loadedModels)
+                .provide(ExploreInputs(directoryInputs, individualInputs))
                 .produce()
                 .use { ctx =>
                   F.maybeSuspend {

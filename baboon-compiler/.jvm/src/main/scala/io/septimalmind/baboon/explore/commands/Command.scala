@@ -23,6 +23,7 @@ class CommandRegistry(ctx: ExploreContext[EitherF]) {
     DepsOfCommand,
     DeptreeCommand,
     EvoCommand,
+    ReloadCommand,
     HelpCommand,
   )
 

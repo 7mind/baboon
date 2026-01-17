@@ -1,16 +1,27 @@
 package io.septimalmind.baboon.explore
 
 import io.circe.Json
+import io.septimalmind.baboon.{BaboonLoader, PathTools}
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.{BaboonEnquiries, BaboonRuntimeCodec}
+import izumi.functional.bio.Error2
+import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.fundamentals.collections.nonempty.NEList
+import izumi.fundamentals.platform.files.IzFiles
+import PathTools.*
 
-class ExploreContext[F[+_, +_]](
-  val family: BaboonFamily,
+class ExploreContext[F[+_, +_]: Error2: MaybeSuspend2](
+  initialFamily: BaboonFamily,
   val enquiries: BaboonEnquiries,
-  private val codec: BaboonRuntimeCodec[F]
+  private val codec: BaboonRuntimeCodec[F],
+  loader: BaboonLoader[F],
+  inputs: ExploreInputs,
 ) {
+  private var _family: BaboonFamily = initialFamily
+
+  def family: BaboonFamily = _family
+
   def encode(pkg: Pkg, version: Version, idString: String, json: Json, indexed: Boolean): F[BaboonIssue, Vector[Byte]] =
     codec.encode(family, pkg, version, idString, json, indexed)
 
@@ -81,5 +92,40 @@ class ExploreContext[F[+_, +_]](
 
   def parseVersion(verStr: String): Option[Version] = {
     scala.util.Try(Version.parse(verStr)).toOption
+  }
+
+  def reload(): F[NEList[BaboonIssue], BaboonFamily] = {
+    val F = implicitly[Error2[F]]
+    F.flatMap(F.maybeSuspend {
+      val fromFiles = inputs.individualInputs.map(_.toPath)
+      val fromDirs = inputs.directoryInputs.flatMap { dir =>
+        IzFiles.walk(dir.toFile)
+          .filter(_.toFile.getName.endsWith(".baboon"))
+          .map(_.toPath)
+      }
+      (fromFiles ++ fromDirs).toList
+    }) { inputModels =>
+      F.map(loader.load(inputModels)) { newFamily =>
+        updateFamily(newFamily)
+        newFamily
+      }
+    }
+  }
+
+  private def updateFamily(newFamily: BaboonFamily): Unit = {
+    _family = newFamily
+    val domains = newFamily.domains.toMap
+    _currentPkg match {
+      case Some(pkg) if domains.contains(pkg) =>
+        val lineage = domains(pkg)
+        _currentVersion match {
+          case Some(version) if lineage.versions.toMap.contains(version) =>
+          case _ =>
+            _currentVersion = Some(lineage.evolution.latest)
+        }
+      case _ =>
+        _currentPkg = None
+        _currentVersion = None
+    }
   }
 }

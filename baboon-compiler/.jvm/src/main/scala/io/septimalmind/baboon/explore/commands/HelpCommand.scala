@@ -22,6 +22,7 @@ object HelpCommand extends Command {
       ("depsof <type>", "Show types this type depends on"),
       ("deptree <type>", "Show dependency tree"),
       ("evo [-v] <type>", "Show evolution history. -v=verbose"),
+      ("reload", "Reload models from disk"),
       ("help", "Show this help message"),
       ("exit / quit", "Exit the explorer"),
     )
