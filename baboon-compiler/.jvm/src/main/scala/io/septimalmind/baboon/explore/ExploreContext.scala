@@ -5,6 +5,7 @@ import io.septimalmind.baboon.{BaboonLoader, PathTools}
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.{BaboonEnquiries, BaboonRuntimeCodec}
+import izumi.functional.bio.F
 import izumi.functional.bio.Error2
 import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.fundamentals.collections.nonempty.NEList
@@ -95,13 +96,11 @@ class ExploreContext[F[+_, +_]: Error2: MaybeSuspend2](
   }
 
   def reload(): F[NEList[BaboonIssue], BaboonFamily] = {
-    val F = implicitly[Error2[F]]
     F.flatMap(F.maybeSuspend {
       val fromFiles = inputs.individualInputs.map(_.toPath)
       val fromDirs = inputs.directoryInputs.flatMap { dir =>
         IzFiles.walk(dir.toFile)
           .filter(_.toFile.getName.endsWith(".baboon"))
-          .map(_.toPath)
       }
       (fromFiles ++ fromDirs).toList
     }) { inputModels =>

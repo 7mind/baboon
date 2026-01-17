@@ -11,7 +11,7 @@ object ReloadCommand extends Command {
     if (args.nonEmpty) {
       Left("reload does not accept arguments")
     } else {
-      ctx.reload match {
+      ctx.reload() match {
         case Right(family) =>
           Right(s"Reloaded ${family.domains.size} domain(s)")
         case Left(issues) =>
