@@ -93,6 +93,7 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
       case NonUniqueLineages(lineages)                    => (None, s"Non-unique lineages: ${lineages.keys.mkString(", ")}")
       case NonUniqueRawDomainVersion(conflicts)           => (None, s"Non-unique raw domain versions: ${conflicts.keys.mkString(", ")}")
       case EmptyFamily(_)                                 => (None, "Empty family")
+      case EmptyFamilyReload(_)                           => (None, "Empty family")
       case TodoTyperIssue(descr)                          => (None, s"TODO: $descr")
     }
   }

@@ -30,6 +30,7 @@ object TyperIssue {
   case class NonUniqueRawDomainVersion(conflicts: Map[BaboonFamilyManager.Key, List[RawDomain]]) extends TyperIssue
 
   case class EmptyFamily(input: List[BaboonParser.Input]) extends TyperIssue with BaboonBug
+  case class EmptyFamilyReload(input: List[BaboonParser.ReloadInput]) extends TyperIssue with BaboonBug
 
   case class UnexpectedBuiltin(id: TypeId.Builtin, pkg: Pkg, meta: RawNodeMeta) extends TyperIssue
 
@@ -176,6 +177,12 @@ object TyperIssue {
   implicit val emptyFamilyPrinter: IssuePrinter[EmptyFamily] =
     (bug: EmptyFamily) => {
       s"Empty models in files:${bug.input.niceList()}"
+    }
+
+  implicit val emptyFamilyReloadPrinter: IssuePrinter[EmptyFamilyReload] =
+    (bug: EmptyFamilyReload) => {
+      val inputs = bug.input.map(_.path).niceList()
+      s"Empty models in files:$inputs"
     }
 
   implicit val nonUniqueRawDomainVersionPrinter: IssuePrinter[NonUniqueRawDomainVersion] =

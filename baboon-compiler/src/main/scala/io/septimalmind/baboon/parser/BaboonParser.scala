@@ -17,6 +17,14 @@ trait BaboonInclusionResolver[F[+_, +_]] {
 object BaboonParser {
   case class Input(path: FSPath, content: String)
 
+  sealed trait ReloadInput {
+    def path: FSPath
+  }
+  object ReloadInput {
+    case class Unparsed(path: FSPath, content: String) extends ReloadInput
+    case class Parsed(path: FSPath, content: RawDomain) extends ReloadInput
+  }
+
   class BaboonParserImpl[F[+_, +_]: Error2](
     resolver: BaboonInclusionResolver[F]
   ) extends BaboonParser[F] {

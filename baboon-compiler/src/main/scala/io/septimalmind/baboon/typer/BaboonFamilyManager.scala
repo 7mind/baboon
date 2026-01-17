@@ -20,6 +20,10 @@ trait BaboonFamilyManager[F[+_, +_]] {
   def load(
     definitions: List[BaboonParser.Input]
   ): F[NEList[BaboonIssue], BaboonFamily]
+
+  def reload(
+    definitions: List[BaboonParser.ReloadInput]
+  ): F[NEList[BaboonIssue], BaboonFamily]
 }
 
 object BaboonFamilyManager {
@@ -38,6 +42,35 @@ object BaboonFamilyManager {
     ): F[NEList[BaboonIssue], BaboonFamily] = {
       for {
         parsed          <- F.parTraverseAccumErrors(definitions)(parser.parse)
+        family          <- buildFamily(parsed, BaboonIssue.of(TyperIssue.EmptyFamily(definitions)))
+      } yield family
+    }
+
+    override def reload(
+      definitions: List[BaboonParser.ReloadInput]
+    ): F[NEList[BaboonIssue], BaboonFamily] = {
+      val (unparsed, parsed) = definitions.foldLeft((List.empty[BaboonParser.Input], List.empty[RawDomain])) {
+        case ((unparsedAcc, parsedAcc), input) =>
+          input match {
+            case BaboonParser.ReloadInput.Unparsed(path, content) =>
+              (BaboonParser.Input(path, content) :: unparsedAcc, parsedAcc)
+            case BaboonParser.ReloadInput.Parsed(_, content) =>
+              (unparsedAcc, content :: parsedAcc)
+          }
+      }
+
+      for {
+        newlyParsed <- F.parTraverseAccumErrors(unparsed.reverse)(parser.parse)
+        combined     = parsed.reverse ++ newlyParsed
+        family      <- buildFamily(combined, BaboonIssue.of(TyperIssue.EmptyFamilyReload(definitions)))
+      } yield family
+    }
+
+    private def buildFamily(
+      parsed: List[RawDomain],
+      emptyFamilyIssue: NEList[BaboonIssue],
+    ): F[NEList[BaboonIssue], BaboonFamily] = {
+      for {
         resolvedImports <- resolveImports(parsed)
         domains         <- F.parTraverseAccumErrors(resolvedImports)(typer.process)
         _ <- F.maybeSuspend {
@@ -78,7 +111,7 @@ object BaboonFamilyManager {
             .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueLineages(e)))
         }
 
-        nem <- F.fromOption(BaboonIssue.of(TyperIssue.EmptyFamily(definitions))) {
+        nem <- F.fromOption(emptyFamilyIssue) {
           NEMap.from(uniqueLineages)
         }
         fam = BaboonFamily(nem)
@@ -87,7 +120,6 @@ object BaboonFamilyManager {
       } yield {
         fam
       }
-
     }
 
     def toposorted[N, M](g: DAG[N, M]): Seq[N] = {
