@@ -106,3 +106,45 @@ ns ns1 {
     }
   }
 }
+
+ns rel {
+  ns core {
+    ns deeper {
+      root data NewRelData : was[core.OldRelData] {
+        v: str
+      }
+
+      enum NewRelEnum : was[core.OldRelEnum] {
+        A
+        B
+      }
+
+      root adt NewRelAdt : was[core.OldRelAdt] {
+        data BranchRel {
+          v: str
+        }
+      }
+    }
+  }
+}
+
+ns abs {
+  ns core {
+    ns deeper {
+      root data NewAbsData : was[abs.core.OldAbsData] {
+        v: str
+      }
+
+      enum NewAbsEnum : was[abs.core.OldAbsEnum] {
+        A
+        B
+      }
+
+      root adt NewAbsAdt : was[abs.core.OldAbsAdt] {
+        data BranchAbs {
+          v: str
+        }
+      }
+    }
+  }
+}
