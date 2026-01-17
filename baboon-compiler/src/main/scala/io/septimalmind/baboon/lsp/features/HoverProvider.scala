@@ -1,30 +1,33 @@
 package io.septimalmind.baboon.lsp.features
 
+import io.septimalmind.baboon.lsp.LspLogging
 import io.septimalmind.baboon.lsp.protocol.{Hover, MarkupContent, MarkupKind, Position}
 import io.septimalmind.baboon.lsp.state.{DocumentState, WorkspaceState}
 import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.typer.model._
+import io.septimalmind.baboon.util.BLogger
 
 class HoverProvider(
   documentState: DocumentState,
-  workspaceState: WorkspaceState
+  workspaceState: WorkspaceState,
+  logger: BLogger
 ) {
 
   def getHover(uri: String, position: Position): Option[Hover] = {
-    System.err.println(s"[LSP] getHover: uri=$uri, position=$position")
+    logger.message(LspLogging.Context, s"getHover: uri=$uri, position=$position")
 
     val hasContent = documentState.getContent(uri).isDefined
-    System.err.println(s"[LSP] getHover: hasContent=$hasContent")
+    logger.message(LspLogging.Context, s"getHover: hasContent=$hasContent")
 
     val wordAtCursor = getWordAtPosition(uri, position)
-    System.err.println(s"[LSP] getHover: wordAtCursor=$wordAtCursor")
+    logger.message(LspLogging.Context, s"getHover: wordAtCursor=$wordAtCursor")
 
     val hasFamily = workspaceState.getFamily.isDefined
-    System.err.println(s"[LSP] getHover: hasFamily=$hasFamily")
+    logger.message(LspLogging.Context, s"getHover: hasFamily=$hasFamily")
 
     wordAtCursor.flatMap { typeName =>
       findTypeInfo(typeName).map { info =>
-        System.err.println(s"[LSP] getHover: found type info for '$typeName'")
+        logger.message(LspLogging.Context, s"getHover: found type info for '$typeName'")
         val content = MarkupContent(MarkupKind.Markdown, info)
         Hover(content)
       }

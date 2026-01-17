@@ -419,14 +419,14 @@ object Baboon {
       metaWriteEvolutionJsonTo = None,
       lockFile = None,
     )
-    // Use silentMode=true for LSP to avoid stdout pollution
-    val m = new BaboonModuleJvm[F](options, ParallelErrorAccumulatingOps2[F], silentMode = true)
+    // Use stderrOutMode=true for LSP to avoid stdout pollution
+    val m = new BaboonModuleJvm[F](options, ParallelErrorAccumulatingOps2[F], stderrOutMode = true)
 
     runner.run {
       Injector
         .NoCycles[F[Throwable, _]]()
         .produceRun(m) {
-          (manager: io.septimalmind.baboon.typer.BaboonFamilyManager[F]) =>
+          (manager: io.septimalmind.baboon.typer.BaboonFamilyManager[F], logger: BLogger) =>
             F.maybeSuspend {
               val pathOps = io.septimalmind.baboon.lsp.util.JvmPathOps
               val cliModelDirs = directoryInputs.map(dir => Paths.get(dir.asString))
@@ -435,15 +435,15 @@ object Baboon {
               val inputProvider = new io.septimalmind.baboon.lsp.state.JvmInputProvider(cliModelDirs, pathOps)
 
               val documentState = new DocumentState(pathOps)
-              val workspaceState = new WorkspaceState(documentState, compiler, inputProvider, pathOps)
+              val workspaceState = new WorkspaceState(documentState, compiler, inputProvider, pathOps, logger)
 
               val positionConverter = new PositionConverter(pathOps)
 
               val diagnosticsProvider = new DiagnosticsProvider(positionConverter)
               val definitionProvider = new DefinitionProvider(documentState, workspaceState, positionConverter)
-              val hoverProvider = new HoverProvider(documentState, workspaceState)
-              val completionProvider = new CompletionProvider(documentState, workspaceState)
-              val documentSymbolProvider = new DocumentSymbolProvider(workspaceState, positionConverter, pathOps)
+              val hoverProvider = new HoverProvider(documentState, workspaceState, logger)
+              val completionProvider = new CompletionProvider(documentState, workspaceState, logger)
+              val documentSymbolProvider = new DocumentSymbolProvider(workspaceState, positionConverter, pathOps, logger)
 
               val server = new BaboonLanguageServer(
                 documentState,
@@ -455,9 +455,9 @@ object Baboon {
                 documentSymbolProvider,
                 () => System.exit(0)
               )
-              val launcher = new LspLauncher(server, port)
+              val launcher = new LspLauncher(server, port, logger)
 
-              System.err.println("Starting Baboon LSP server...")
+              logger.message(LspLogging.Context, "Starting Baboon LSP server...")
               launcher.launch()
             }
         }

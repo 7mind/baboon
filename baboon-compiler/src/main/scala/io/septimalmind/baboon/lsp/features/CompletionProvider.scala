@@ -1,12 +1,15 @@
 package io.septimalmind.baboon.lsp.features
 
+import io.septimalmind.baboon.lsp.LspLogging
 import io.septimalmind.baboon.lsp.protocol.{CompletionItem, CompletionItemKind, Position}
 import io.septimalmind.baboon.lsp.state.{DocumentState, WorkspaceState}
 import io.septimalmind.baboon.typer.model._
+import io.septimalmind.baboon.util.BLogger
 
 class CompletionProvider(
   documentState: DocumentState,
-  workspaceState: WorkspaceState
+  workspaceState: WorkspaceState,
+  logger: BLogger
 ) {
 
   private val keywords = Seq(
@@ -116,7 +119,7 @@ class CompletionProvider(
 
   private def getTypeCompletions: Seq[CompletionItem] = {
     val hasFamily = workspaceState.getFamily.isDefined
-    System.err.println(s"[LSP] getTypeCompletions: hasFamily=$hasFamily")
+    logger.message(LspLogging.Context, s"getTypeCompletions: hasFamily=$hasFamily")
 
     workspaceState.getFamily
       .map { family =>
@@ -146,7 +149,7 @@ class CompletionProvider(
             }
           }
         }.toSeq
-        System.err.println(s"[LSP] getTypeCompletions: found ${types.size} types")
+        logger.message(LspLogging.Context, s"getTypeCompletions: found ${types.size} types")
         types
       }
       .getOrElse(Seq.empty)

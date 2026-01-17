@@ -1,15 +1,18 @@
 package io.septimalmind.baboon.lsp.state
 
+import io.septimalmind.baboon.lsp.LspLogging
 import io.septimalmind.baboon.lsp.util.PathOps
 import io.septimalmind.baboon.parser.model.{FSPath, InputPointer}
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.BaboonFamily
+import io.septimalmind.baboon.util.BLogger
 
 class WorkspaceState(
   documentState: DocumentState,
   compiler: LspCompiler,
   inputProvider: InputProvider,
-  pathOps: PathOps
+  pathOps: PathOps,
+  logger: BLogger
 ) {
   @volatile private var lastCompilationResult: CompilationResult = CompilationResult.empty
   @volatile private var lastSuccessfulFamily: Option[BaboonFamily] = None
@@ -27,25 +30,25 @@ class WorkspaceState(
 
   def recompile(): CompilationResult = {
     val inputs = inputProvider.getWorkspaceInputs
-    System.err.println(s"[LSP] recompile: found ${inputs.size} .baboon files")
+    logger.message(LspLogging.Context, s"recompile: found ${inputs.size} .baboon files")
 
     val result = if (inputs.nonEmpty) {
       compiler.compile(inputs) match {
         case Right(family) =>
-          System.err.println(s"[LSP] recompile: SUCCESS - ${family.domains.size} domains")
+          logger.message(LspLogging.Context, s"recompile: SUCCESS - ${family.domains.size} domains")
           lastSuccessfulFamily = Some(family)
           CompilationResult(Some(family), Seq.empty, Map.empty)
         case Left(issues) =>
-          System.err.println(s"[LSP] recompile: FAILED - ${issues.size} issues (using cached family for completions)")
+          logger.message(LspLogging.Context, s"recompile: FAILED - ${issues.size} issues (using cached family for completions)")
           issues.toList.take(5).foreach { issue =>
             val formatted = formatIssue(issue)
-            System.err.println(s"[LSP] recompile: $formatted")
+            logger.message(LspLogging.Context, s"recompile: $formatted")
           }
           val fileIssues = groupIssuesByFile(issues.toList)
           CompilationResult(None, issues.toList, fileIssues)
       }
     } else {
-      System.err.println(s"[LSP] recompile: NO FILES TO COMPILE")
+      logger.message(LspLogging.Context, "recompile: NO FILES TO COMPILE")
       CompilationResult.empty
     }
 

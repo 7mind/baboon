@@ -1,26 +1,29 @@
 package io.septimalmind.baboon.lsp.features
 
+import io.septimalmind.baboon.lsp.LspLogging
 import io.septimalmind.baboon.lsp.protocol.{DocumentSymbol, Range, SymbolKind}
 import io.septimalmind.baboon.lsp.state.WorkspaceState
 import io.septimalmind.baboon.lsp.util.{PathOps, PositionConverter}
 import io.septimalmind.baboon.parser.model.InputPointer
 import io.septimalmind.baboon.typer.model._
+import io.septimalmind.baboon.util.BLogger
 
 import scala.util.Try
 
 class DocumentSymbolProvider(
   workspaceState: WorkspaceState,
   positionConverter: PositionConverter,
-  pathOps: PathOps
+  pathOps: PathOps,
+  logger: BLogger
 ) {
 
   def getSymbols(uri: String): Seq[DocumentSymbol] = {
     val filePath = positionConverter.uriToPath(uri)
-    System.err.println(s"[LSP] getSymbols: uri=$uri, filePath=$filePath")
+    logger.message(LspLogging.Context, s"getSymbols: uri=$uri, filePath=$filePath")
 
     workspaceState.getFamily match {
       case None =>
-        System.err.println(s"[LSP] getSymbols: NO FAMILY - compilation failed or not run")
+        logger.message(LspLogging.Context, "getSymbols: NO FAMILY - compilation failed or not run")
         Seq.empty
       case Some(family) =>
         val allTypes = family.domains.toMap.values.flatMap { lineage =>
@@ -28,17 +31,17 @@ class DocumentSymbolProvider(
             domain.defs.meta.nodes.values.collect { case u: DomainMember.User => u }
           }
         }.toSeq
-        System.err.println(s"[LSP] getSymbols: found ${allTypes.size} total types in family")
+        logger.message(LspLogging.Context, s"getSymbols: found ${allTypes.size} total types in family")
 
         val inFile = allTypes.filter(u => isInFile(u.meta.pos, filePath))
-        System.err.println(s"[LSP] getSymbols: ${inFile.size} types in file $filePath")
+        logger.message(LspLogging.Context, s"getSymbols: ${inFile.size} types in file $filePath")
 
         if (inFile.isEmpty && allTypes.nonEmpty) {
           // Debug: show first few type paths
           allTypes.take(3).foreach { u =>
             u.meta.pos match {
               case fk: InputPointer.FileKnown =>
-                System.err.println(s"[LSP] getSymbols: type ${u.id.name.name} is in ${fk.file.asString}")
+                logger.message(LspLogging.Context, s"getSymbols: type ${u.id.name.name} is in ${fk.file.asString}")
               case _ =>
             }
           }
@@ -102,7 +105,7 @@ class DocumentSymbolProvider(
     }
 
     val symbol = DocumentSymbol(name, kind, range, range, if (children.nonEmpty) Some(children) else None)
-    System.err.println(s"[LSP] createSymbol: $name, range=$range, children=${children.size}")
+    logger.message(LspLogging.Context, s"createSymbol: $name, range=$range, children=${children.size}")
     symbol
   }
 }

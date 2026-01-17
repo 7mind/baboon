@@ -1,13 +1,15 @@
 package io.septimalmind.baboon.lsp
 
 import io.septimalmind.baboon.lsp.protocol._
+import io.septimalmind.baboon.util.BLogger
 
 import java.net.ServerSocket
 import scala.annotation.tailrec
 
 class LspLauncher(
   server: BaboonLanguageServer,
-  port: Option[Int]
+  port: Option[Int],
+  logger: BLogger
 ) {
 
   def launch(): Unit = {
@@ -25,10 +27,10 @@ class LspLauncher(
 
   private def launchTcp(port: Int): Unit = {
     val serverSocket = new ServerSocket(port)
-    System.err.println(s"Baboon LSP server listening on port $port")
+    logger.message(LspLogging.Context, s"Baboon LSP server listening on port $port")
 
     val socket = serverSocket.accept()
-    System.err.println("Client connected")
+    logger.message(LspLogging.Context, "Client connected")
 
     val transport = new JsonRpcTransport(socket.getInputStream, socket.getOutputStream)
     server.setTransport(transport)
@@ -50,13 +52,13 @@ class LspLauncher(
           case Right(msg) =>
             server.handleMessage(msg)
           case Left(error) =>
-            System.err.println(s"Failed to parse JSON-RPC message: $error")
+            logger.message(LspLogging.Context, s"Failed to parse JSON-RPC message: $error")
         }
         runMessageLoop(transport)
 
       case None =>
         // End of stream or read error - exit
-        System.err.println("Connection closed")
+        logger.message(LspLogging.Context, "Connection closed")
     }
   }
 }

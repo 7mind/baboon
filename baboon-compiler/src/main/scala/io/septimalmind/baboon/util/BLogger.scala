@@ -24,7 +24,7 @@ object BLogger {
     override def message(context: String, msg: TextTree[Any]): Unit = ()
   }
 
-  class BLoggerImpl extends BLogger {
+  abstract class BaseLogger extends BLogger {
     override def message(msg: String): Unit = {
       doMessage(msg)
     }
@@ -40,6 +40,12 @@ object BLogger {
     override def message(msg: TextTree[Any]): Unit = {
       doMessage(renderTree(msg))
     }
+
+    override def message(context: String, msg: TextTree[Any]): Unit = {
+      message(context, renderTree(msg))
+    }
+
+    protected def writeLine(msg: String): Unit
 
     private def renderTree(msg: TextTree[Any]): String = {
       msg.mapRender {
@@ -61,11 +67,19 @@ object BLogger {
         d
       }
 
-      Console.println(s"$cd: $msg")
+      writeLine(s"$cd: $msg")
     }
+  }
 
-    override def message(context: String, msg: TextTree[Any]): Unit = {
-      message(context, renderTree(msg))
+  final class BLoggerImpl extends BaseLogger {
+    override protected def writeLine(msg: String): Unit = {
+      Console.println(msg)
+    }
+  }
+
+  final class BLoggerErrImpl extends BaseLogger {
+    override protected def writeLine(msg: String): Unit = {
+      System.err.println(msg)
     }
   }
 }
