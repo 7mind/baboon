@@ -1,12 +1,12 @@
 package io.septimalmind.baboon.explore.commands
 
-import io.septimalmind.baboon.explore.{Colors, ExploreContext, UebaDecodeRenderer}
+import io.septimalmind.baboon.explore.{Colors, EitherF, ExploreContext, UebaDecodeRenderer}
 
 object DecodeCommand extends Command {
   def name: String = "decode"
   def help: String = "decode <type> <ueba-hex> - Decode UEBA hex to JSON with offset map (hex can be space-separated)"
 
-  def execute(args: Seq[String], ctx: ExploreContext): Either[String, String] = {
+  def execute(args: Seq[String], ctx: ExploreContext[EitherF]): Either[String, String] = {
     args match {
       case typeName +: hexParts if hexParts.nonEmpty =>
         ctx.currentDomain match {
@@ -52,7 +52,7 @@ object DecodeCommand extends Command {
     }
   }
 
-  def complete(args: Seq[String], ctx: ExploreContext): Seq[String] = {
+  def complete(args: Seq[String], ctx: ExploreContext[EitherF]): Seq[String] = {
     args match {
       case Seq(partial) =>
         ctx.allTypeIds

@@ -1,12 +1,12 @@
 package io.septimalmind.baboon.explore.commands
 
-import io.septimalmind.baboon.explore.{Colors, ExploreContext}
+import io.septimalmind.baboon.explore.{Colors, EitherF, ExploreContext}
 
 object SwitchCommand extends Command {
   def name: String = "switch"
   def help: String = "switch <domain> [version] - Switch to domain (and optionally version)"
 
-  def execute(args: Seq[String], ctx: ExploreContext): Either[String, String] = {
+  def execute(args: Seq[String], ctx: ExploreContext[EitherF]): Either[String, String] = {
     args match {
       case Seq() =>
         Left("Usage: switch <domain> [version]")
@@ -42,7 +42,7 @@ object SwitchCommand extends Command {
     }
   }
 
-  def complete(args: Seq[String], ctx: ExploreContext): Seq[String] = {
+  def complete(args: Seq[String], ctx: ExploreContext[EitherF]): Seq[String] = {
     args match {
       case Seq(partial) =>
         ctx.allDomains

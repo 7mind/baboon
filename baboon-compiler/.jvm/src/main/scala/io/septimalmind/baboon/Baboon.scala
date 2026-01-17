@@ -4,13 +4,9 @@ import caseapp.*
 import distage.*
 import io.septimalmind.baboon.explore.{ExploreContext, ExploreShell}
 import io.septimalmind.baboon.lsp._
-import io.septimalmind.baboon.lsp.features._
-import io.septimalmind.baboon.lsp.state._
-import io.septimalmind.baboon.lsp.util._
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
 import io.septimalmind.baboon.typer.model.BaboonFamily
-import io.septimalmind.baboon.typer.{BaboonEnquiries, BaboonRuntimeCodec}
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.bio.impl.BioEither
 import izumi.functional.bio.unsafe.MaybeSuspend2
@@ -26,6 +22,8 @@ import izumi.fundamentals.platform.strings.IzString.*
 import java.nio.file.Paths
 
 object Baboon {
+  private type EitherF[+e, +a] = Either[e, a]
+
   private val helpText: String =
     """Usage: baboon [options] [:cs [cs-options] | :scala [scala-options] | :lsp [lsp-options] | :explore]
       |
@@ -349,12 +347,17 @@ object Baboon {
     }
   }
 
-  private def exploreEntrypoint[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2: TagKK: DefaultModule2](
+  private def exploreEntrypoint(
     directoryInputs: Set[FSPath],
     individualInputs: Set[FSPath]
   )(implicit
-    quasiIO: QuasiIO[F[Throwable, _]],
-    runner: QuasiIORunner[F[Throwable, _]],
+    quasiIO: QuasiIO[Either[Throwable, _]],
+    runner: QuasiIORunner[Either[Throwable, _]],
+    error2: Error2[EitherF],
+    maybeSuspend2: MaybeSuspend2[EitherF],
+    parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[EitherF],
+    tag: TagKK[EitherF],
+    defaultModule2: DefaultModule2[EitherF],
   ): Unit = {
     val options = CompilerOptions(
       debug = false,
@@ -364,14 +367,14 @@ object Baboon {
       metaWriteEvolutionJsonTo = None,
       lockFile = None,
     )
-    val m = new BaboonModuleJvm[F](options, ParallelErrorAccumulatingOps2[F])
+    val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
     import PathTools.*
 
     runner.run {
       Injector
-        .NoCycles[F[Throwable, _]]()
+        .NoCycles[EitherF[Throwable, _]]()
         .produceRun(m) {
-          (loader: BaboonLoader[F], logger: BLogger, enquiries: BaboonEnquiries) =>
+          (loader: BaboonLoader[EitherF], logger: BLogger, exploreContext: Subcontext[ExploreContext[EitherF]]) =>
             for {
               inputModels <- F.maybeSuspend(individualInputs.map(_.toPath) ++ directoryInputs.flatMap {
                 dir =>
@@ -390,14 +393,15 @@ object Baboon {
                   sys.exit(4)
               }
 
-              _ <- F.maybeSuspend {
-                implicit val eitherError2: izumi.functional.bio.Error2[Lambda[(`+e`, `+a`) => Either[e, a]]] =
-                  new izumi.functional.bio.impl.BioEither
-                val runtimeCodec = new BaboonRuntimeCodec.BaboonRuntimeCodecImpl[Lambda[(`+e`, `+a`) => Either[e, a]]]()
-                val ctx = new ExploreContext(loadedModels, enquiries, runtimeCodec)
-                val shell = new ExploreShell(ctx)
-                shell.run()
-              }
+              _ <- exploreContext
+                .provide(loadedModels)
+                .produce()
+                .use { ctx =>
+                  F.maybeSuspend {
+                    val shell = new ExploreShell(ctx)
+                    shell.run()
+                  }
+                }
             } yield {}
         }
     }
@@ -423,40 +427,22 @@ object Baboon {
     val m = new BaboonModuleJvm[F](options, ParallelErrorAccumulatingOps2[F], stderrOutMode = true)
 
     runner.run {
+      val cliModelDirs = directoryInputs.map(dir => Paths.get(dir.asString))
+      val lspModule = new BaboonLspModuleJvm[F](
+        modelDirs = cliModelDirs,
+        port = port,
+        runner = runner,
+        exitCallback = () => System.exit(0),
+      )
+
       Injector
         .NoCycles[F[Throwable, _]]()
-        .produceRun(m) {
-          (manager: io.septimalmind.baboon.typer.BaboonFamilyManager[F], logger: BLogger) =>
+        .produceRun(new ModuleDef {
+          include(m)
+          include(lspModule)
+        }) {
+          (launcher: LspLauncher, logger: BLogger) =>
             F.maybeSuspend {
-              val pathOps = io.septimalmind.baboon.lsp.util.JvmPathOps
-              val cliModelDirs = directoryInputs.map(dir => Paths.get(dir.asString))
-
-              val compiler = new io.septimalmind.baboon.lsp.state.JvmBaboonCompiler[F](manager, runner)
-              val inputProvider = new io.septimalmind.baboon.lsp.state.JvmInputProvider(cliModelDirs, pathOps)
-
-              val documentState = new DocumentState(pathOps)
-              val workspaceState = new WorkspaceState(documentState, compiler, inputProvider, pathOps, logger)
-
-              val positionConverter = new PositionConverter(pathOps)
-
-              val diagnosticsProvider = new DiagnosticsProvider(positionConverter)
-              val definitionProvider = new DefinitionProvider(documentState, workspaceState, positionConverter)
-              val hoverProvider = new HoverProvider(documentState, workspaceState, logger)
-              val completionProvider = new CompletionProvider(documentState, workspaceState, logger)
-              val documentSymbolProvider = new DocumentSymbolProvider(workspaceState, positionConverter, pathOps, logger)
-
-              val server = new BaboonLanguageServer(
-                documentState,
-                workspaceState,
-                diagnosticsProvider,
-                definitionProvider,
-                hoverProvider,
-                completionProvider,
-                documentSymbolProvider,
-                () => System.exit(0)
-              )
-              val launcher = new LspLauncher(server, port, logger)
-
               logger.message(LspLogging.Context, "Starting Baboon LSP server...")
               launcher.launch()
             }

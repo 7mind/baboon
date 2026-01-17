@@ -6,15 +6,15 @@ import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.{BaboonEnquiries, BaboonRuntimeCodec}
 import izumi.fundamentals.collections.nonempty.NEList
 
-class ExploreContext(
+class ExploreContext[F[+_, +_]](
   val family: BaboonFamily,
   val enquiries: BaboonEnquiries,
-  private val codec: BaboonRuntimeCodec[Lambda[(`+e`, `+a`) => Either[e, a]]]
+  private val codec: BaboonRuntimeCodec[F]
 ) {
-  def encode(pkg: Pkg, version: Version, idString: String, json: Json, indexed: Boolean): Either[BaboonIssue, Vector[Byte]] =
+  def encode(pkg: Pkg, version: Version, idString: String, json: Json, indexed: Boolean): F[BaboonIssue, Vector[Byte]] =
     codec.encode(family, pkg, version, idString, json, indexed)
 
-  def decode(pkg: Pkg, version: Version, idString: String, data: Vector[Byte]): Either[BaboonIssue, Json] =
+  def decode(pkg: Pkg, version: Version, idString: String, data: Vector[Byte]): F[BaboonIssue, Json] =
     codec.decode(family, pkg, version, idString, data)
 
   private var _currentPkg: Option[Pkg] = None

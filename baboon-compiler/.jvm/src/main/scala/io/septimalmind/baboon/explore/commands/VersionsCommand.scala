@@ -1,12 +1,12 @@
 package io.septimalmind.baboon.explore.commands
 
-import io.septimalmind.baboon.explore.{Colors, ExploreContext}
+import io.septimalmind.baboon.explore.{Colors, EitherF, ExploreContext}
 
 object VersionsCommand extends Command {
   def name: String = "versions"
   def help: String = "List versions in current domain"
 
-  def execute(args: Seq[String], ctx: ExploreContext): Either[String, String] = {
+  def execute(args: Seq[String], ctx: ExploreContext[EitherF]): Either[String, String] = {
     ctx.currentLineage match {
       case None =>
         Left("No domain selected. Use 'switch <domain>' first.")
@@ -26,5 +26,5 @@ object VersionsCommand extends Command {
     }
   }
 
-  def complete(args: Seq[String], ctx: ExploreContext): Seq[String] = Seq.empty
+  def complete(args: Seq[String], ctx: ExploreContext[EitherF]): Seq[String] = Seq.empty
 }

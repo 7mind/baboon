@@ -1,12 +1,12 @@
 package io.septimalmind.baboon.explore.commands
 
-import io.septimalmind.baboon.explore.{Colors, ExploreContext, RandomJsonGenerator, UebaDecodeRenderer}
+import io.septimalmind.baboon.explore.{Colors, EitherF, ExploreContext, RandomJsonGenerator, UebaDecodeRenderer}
 
 object ExampleCommand extends Command {
   def name: String = "example"
   def help: String = "example <type> - Generate random instance (JSON + UEBA hex)"
 
-  def execute(args: Seq[String], ctx: ExploreContext): Either[String, String] = {
+  def execute(args: Seq[String], ctx: ExploreContext[EitherF]): Either[String, String] = {
     args.headOption match {
       case None =>
         Left("Usage: example <type>")
@@ -57,7 +57,7 @@ object ExampleCommand extends Command {
     }
   }
 
-  def complete(args: Seq[String], ctx: ExploreContext): Seq[String] = {
+  def complete(args: Seq[String], ctx: ExploreContext[EitherF]): Seq[String] = {
     val partial = args.lastOption.getOrElse("")
     ctx.allTypeIds
       .map(_.name.name)

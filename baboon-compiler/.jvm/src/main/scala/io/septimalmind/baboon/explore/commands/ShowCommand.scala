@@ -1,12 +1,12 @@
 package io.septimalmind.baboon.explore.commands
 
-import io.septimalmind.baboon.explore.{ExploreContext, TypeRenderer}
+import io.septimalmind.baboon.explore.{EitherF, ExploreContext, TypeRenderer}
 
 object ShowCommand extends Command {
   def name: String = "show"
   def help: String = "show <type> - Print type structure in baboon syntax"
 
-  def execute(args: Seq[String], ctx: ExploreContext): Either[String, String] = {
+  def execute(args: Seq[String], ctx: ExploreContext[EitherF]): Either[String, String] = {
     args.headOption match {
       case None =>
         Left("Usage: show <type>")
@@ -27,7 +27,7 @@ object ShowCommand extends Command {
     }
   }
 
-  def complete(args: Seq[String], ctx: ExploreContext): Seq[String] = {
+  def complete(args: Seq[String], ctx: ExploreContext[EitherF]): Seq[String] = {
     val partial = args.lastOption.getOrElse("")
     ctx.allTypeIds
       .map(_.name.name)

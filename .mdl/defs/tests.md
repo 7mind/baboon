@@ -106,6 +106,8 @@ ret success:bool=true
 Run Python tests with regular adt codecs. 
 
 ```bash
+dep action.test-cs-regular
+
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/py-stub"
 python3 -m venv .venv
@@ -204,7 +206,9 @@ ret success:bool=true
 Run Python tests with wrapped ADT codecs
 
 ```bash
-TEST_DIR="${action.test-gen-regular-adt.test_dir}"
+dep action.test-cs-wrapped
+
+TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
 pushd "$TEST_DIR/py-stub"
 python3 -m venv .venv
 if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi

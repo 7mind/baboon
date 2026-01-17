@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.explore.commands
 
-import io.septimalmind.baboon.explore.{Colors, ExploreContext, TypeRenderer}
+import io.septimalmind.baboon.explore.{Colors, EitherF, ExploreContext, TypeRenderer}
 import io.septimalmind.baboon.typer.model.DomainMember
 
 import scala.util.matching.Regex
@@ -9,7 +9,7 @@ object TypesCommand extends Command {
   def name: String = "types"
   def help: String = "types [-a] [-r] [filter] - List types. -a=all domains/versions, -r=regex filter"
 
-  def execute(args: Seq[String], ctx: ExploreContext): Either[String, String] = {
+  def execute(args: Seq[String], ctx: ExploreContext[EitherF]): Either[String, String] = {
     val searchAll = args.contains("-a")
     val useRegex = args.contains("-r")
     val filterArgs = args.filterNot(_.startsWith("-"))
@@ -80,7 +80,7 @@ object TypesCommand extends Command {
     }.sortBy(_.id.name.name)
   }
 
-  def complete(args: Seq[String], ctx: ExploreContext): Seq[String] = {
+  def complete(args: Seq[String], ctx: ExploreContext[EitherF]): Seq[String] = {
     val nonFlags = args.filterNot(_.startsWith("-"))
     val lastArg = nonFlags.lastOption.getOrElse("")
 

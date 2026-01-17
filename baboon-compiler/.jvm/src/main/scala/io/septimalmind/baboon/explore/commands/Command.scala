@@ -1,16 +1,16 @@
 package io.septimalmind.baboon.explore.commands
 
-import io.septimalmind.baboon.explore.ExploreContext
+import io.septimalmind.baboon.explore.{EitherF, ExploreContext}
 
 trait Command {
   def name: String
   def aliases: Seq[String] = Seq.empty
   def help: String
-  def execute(args: Seq[String], ctx: ExploreContext): Either[String, String]
-  def complete(args: Seq[String], ctx: ExploreContext): Seq[String]
+  def execute(args: Seq[String], ctx: ExploreContext[EitherF]): Either[String, String]
+  def complete(args: Seq[String], ctx: ExploreContext[EitherF]): Seq[String]
 }
 
-class CommandRegistry(ctx: ExploreContext) {
+class CommandRegistry(ctx: ExploreContext[EitherF]) {
   private val commandList: Seq[Command] = Seq(
     DomainsCommand,
     VersionsCommand,

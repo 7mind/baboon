@@ -5,7 +5,7 @@ import org.jline.reader.{EndOfFileException, LineReaderBuilder, UserInterruptExc
 import org.jline.reader.LineReader
 import org.jline.terminal.TerminalBuilder
 
-class ExploreShell(ctx: ExploreContext) {
+class ExploreShell(ctx: ExploreContext[EitherF]) {
   private val terminal = TerminalBuilder.builder()
     .system(true)
     .build()

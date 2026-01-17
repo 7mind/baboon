@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.explore.commands
 
-import io.septimalmind.baboon.explore.{Colors, ExploreContext}
+import io.septimalmind.baboon.explore.{Colors, EitherF, ExploreContext}
 import io.septimalmind.baboon.typer.model.{Domain, DomainMember, TypeId}
 
 import scala.collection.mutable
@@ -9,7 +9,7 @@ object DeptreeCommand extends Command {
   def name: String = "deptree"
   def help: String = "deptree <type> - Show dependency tree"
 
-  def execute(args: Seq[String], ctx: ExploreContext): Either[String, String] = {
+  def execute(args: Seq[String], ctx: ExploreContext[EitherF]): Either[String, String] = {
     args.headOption match {
       case None =>
         Left("Usage: deptree <type>")
@@ -34,7 +34,7 @@ object DeptreeCommand extends Command {
 
   private def printTree(
     dom: Domain,
-    ctx: ExploreContext,
+    ctx: ExploreContext[EitherF],
     typeId: TypeId,
     sb: StringBuilder,
     indent: Int,
@@ -88,7 +88,7 @@ object DeptreeCommand extends Command {
     }
   }
 
-  def complete(args: Seq[String], ctx: ExploreContext): Seq[String] = {
+  def complete(args: Seq[String], ctx: ExploreContext[EitherF]): Seq[String] = {
     val partial = args.lastOption.getOrElse("")
     ctx.allTypeIds
       .map(_.name.name)

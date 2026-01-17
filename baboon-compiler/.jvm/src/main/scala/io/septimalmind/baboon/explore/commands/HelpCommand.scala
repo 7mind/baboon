@@ -1,12 +1,12 @@
 package io.septimalmind.baboon.explore.commands
 
-import io.septimalmind.baboon.explore.{Colors, ExploreContext}
+import io.septimalmind.baboon.explore.{Colors, EitherF, ExploreContext}
 
 object HelpCommand extends Command {
   def name: String = "help"
   def help: String = "Show this help message"
 
-  def execute(args: Seq[String], ctx: ExploreContext): Either[String, String] = {
+  def execute(args: Seq[String], ctx: ExploreContext[EitherF]): Either[String, String] = {
     val sb = new StringBuilder
     sb.append(s"${Colors.CYAN}Available commands:${Colors.RESET}\n\n")
 
@@ -36,5 +36,5 @@ object HelpCommand extends Command {
     Right(sb.toString())
   }
 
-  def complete(args: Seq[String], ctx: ExploreContext): Seq[String] = Seq.empty
+  def complete(args: Seq[String], ctx: ExploreContext[EitherF]): Seq[String] = Seq.empty
 }

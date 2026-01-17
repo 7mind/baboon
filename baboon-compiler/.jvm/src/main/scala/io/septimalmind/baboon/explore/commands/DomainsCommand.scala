@@ -1,12 +1,12 @@
 package io.septimalmind.baboon.explore.commands
 
-import io.septimalmind.baboon.explore.{Colors, ExploreContext}
+import io.septimalmind.baboon.explore.{Colors, EitherF, ExploreContext}
 
 object DomainsCommand extends Command {
   def name: String = "domains"
   def help: String = "List all available domain packages"
 
-  def execute(args: Seq[String], ctx: ExploreContext): Either[String, String] = {
+  def execute(args: Seq[String], ctx: ExploreContext[EitherF]): Either[String, String] = {
     val sb = new StringBuilder
     val domains = ctx.allDomains
 
@@ -25,5 +25,5 @@ object DomainsCommand extends Command {
     Right(sb.toString().stripSuffix("\n"))
   }
 
-  def complete(args: Seq[String], ctx: ExploreContext): Seq[String] = Seq.empty
+  def complete(args: Seq[String], ctx: ExploreContext[EitherF]): Seq[String] = Seq.empty
 }

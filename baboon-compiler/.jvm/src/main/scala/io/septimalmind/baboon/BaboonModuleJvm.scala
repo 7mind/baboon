@@ -1,8 +1,10 @@
 package io.septimalmind.baboon
 
-import distage.ModuleDef
+import distage.{DIKey, ModuleDef}
 import io.septimalmind.baboon.CompilerTarget.{CSTarget, PyTarget, ScTarget}
+import io.septimalmind.baboon.explore.ExploreContext
 import io.septimalmind.baboon.parser.{BaboonInclusionResolver, BaboonInclusionResolverImpl}
+import io.septimalmind.baboon.typer.model.BaboonFamily
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Error2, ParallelErrorAccumulatingOps2}
@@ -50,5 +52,11 @@ class BaboonModuleJvm[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
 
   make[BaboonLoader[F]].from[BaboonLoader.BaboonLoaderImpl[F]]
   make[BaboonInclusionResolver[F]].from[BaboonInclusionResolverImpl[F]]
+
+  makeSubcontext[ExploreContext[F]]
+    .localDependencies(List(DIKey[BaboonFamily]))
+    .withSubmodule(new ModuleDef {
+      make[ExploreContext[F]]
+    })
 
 }

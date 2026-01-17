@@ -1,13 +1,13 @@
 package io.septimalmind.baboon.explore.commands
 
-import io.septimalmind.baboon.explore.{Colors, ExploreContext}
+import io.septimalmind.baboon.explore.{Colors, EitherF, ExploreContext}
 import io.septimalmind.baboon.typer.model.{DomainMember, TypeId}
 
 object DepsCommand extends Command {
   def name: String = "deps"
   def help: String = "deps <type> - Show types that depend on this type"
 
-  def execute(args: Seq[String], ctx: ExploreContext): Either[String, String] = {
+  def execute(args: Seq[String], ctx: ExploreContext[EitherF]): Either[String, String] = {
     args.headOption match {
       case None =>
         Left("Usage: deps <type>")
@@ -57,7 +57,7 @@ object DepsCommand extends Command {
     }
   }
 
-  def complete(args: Seq[String], ctx: ExploreContext): Seq[String] = {
+  def complete(args: Seq[String], ctx: ExploreContext[EitherF]): Seq[String] = {
     val partial = args.lastOption.getOrElse("")
     ctx.allTypeIds
       .map(_.name.name)
