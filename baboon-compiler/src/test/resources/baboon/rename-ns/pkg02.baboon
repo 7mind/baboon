@@ -1,0 +1,19 @@
+model rename.ns
+
+version "2.0.0"
+
+ns outer {
+  ns inner {
+    ns deep {
+      ns deeper {
+        root data NewTypeAbs : was[outer.OldTypeAbs] {
+          x: i32
+        }
+
+        root data NewTypeRel : was[inner.OldTypeRel] {
+          x: i32
+        }
+      }
+    }
+  }
+}

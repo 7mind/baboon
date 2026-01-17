@@ -45,3 +45,64 @@ root data FieldRenameTest {
   oldFieldName: str
   keepField: i32
 }
+
+enum EnumMemberRename {
+  OldValue
+  KeepValue
+}
+
+root data EnumMemberRenameHolder {
+  v: EnumMemberRename
+}
+
+root adt AdtBranchRename {
+  data OldBranch {
+    f: str
+  }
+}
+
+ns ns1 {
+  ns ns2 {
+    root data D1 {
+      x: i32
+    }
+  }
+}
+
+ns rel {
+  ns core {
+    root data OldRelData {
+      v: str
+    }
+
+    enum OldRelEnum {
+      A
+      B
+    }
+
+    root adt OldRelAdt {
+      data BranchRel {
+        v: str
+      }
+    }
+  }
+}
+
+ns abs {
+  ns core {
+    root data OldAbsData {
+      v: str
+    }
+
+    enum OldAbsEnum {
+      A
+      B
+    }
+
+    root adt OldAbsAdt {
+      data BranchAbs {
+        v: str
+      }
+    }
+  }
+}

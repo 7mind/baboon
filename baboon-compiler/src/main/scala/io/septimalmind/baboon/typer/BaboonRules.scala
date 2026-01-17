@@ -28,9 +28,27 @@ object BaboonRules {
       val renameTargets: Map[TypeId.User, TypeId.User] = diff.changes.renamed.map { case (newId, oldId) => (oldId, newId) }
 
       def computeBranchMapping(targetAdtId: TypeId.User): Map[String, TypeId.User] = {
+        val oldAdtId = renameTargets.find { case (_, newId) => newId == targetAdtId }.map(_._1).getOrElse(targetAdtId)
         last.defs.meta.nodes(targetAdtId) match {
           case DomainMember.User(_, adt: Typedef.Adt, _, _) =>
-            adt.members.map(m => (m.name.name, m)).toMap
+            val renamed = diff.changes.renamed.collect {
+              case (newId, oldId)
+                  if newId.owner == Owner.Adt(targetAdtId) &&
+                    oldId.owner == Owner.Adt(oldAdtId) =>
+                (oldId.name.name, newId)
+            }
+            adt.members.map(m => (m.name.name, m)).toMap ++ renamed
+          case _ =>
+            Map.empty
+        }
+      }
+      def computeEnumMapping(targetEnumId: TypeId.User): Map[String, String] = {
+        last.defs.meta.nodes(targetEnumId) match {
+          case DomainMember.User(_, enumDef: Typedef.Enum, _, _) =>
+            enumDef.members.toList.flatMap {
+              m =>
+                m.prevName.map(prev => (prev, m.name))
+            }.toMap
           case _ =>
             Map.empty
         }
@@ -72,7 +90,7 @@ object BaboonRules {
               case _: Typedef.Service =>
                 F.pure(NonDataTypeTypeNoConversion(id))
               case _: Typedef.Enum if sameLocalStruct =>
-                F.pure(CopyEnumByName(id, targetTpe))
+                F.pure(CopyEnumByName(id, targetTpe, computeEnumMapping(targetTpe)))
               case oldDefn: Typedef.Adt if sameLocalStruct =>
                 F.pure(CopyAdtBranchByName(id, oldDefn, targetTpe, computeBranchMapping(targetTpe)))
 
@@ -255,7 +273,7 @@ object BaboonRules {
                   }
                 } yield {
                   if (incompatible.isEmpty) {
-                    CopyEnumByName(id, targetTpe)
+                    CopyEnumByName(id, targetTpe, computeEnumMapping(targetTpe))
                   } else {
                     CustomConversionRequired(id, DerivationFailure.EnumBranchRemoved(incompatible), targetTpe)
                   }

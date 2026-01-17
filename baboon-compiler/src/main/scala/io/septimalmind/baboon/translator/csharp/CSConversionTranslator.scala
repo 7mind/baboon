@@ -119,12 +119,30 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                 )
               )
             )
-          case _: Conversion.CopyEnumByName =>
+          case c: Conversion.CopyEnumByName =>
+            val mappingCases = c.memberMapping.map {
+              case (fromName, toName) =>
+                s"""case "$fromName":
+                   |    name = "$toName";
+                   |    break;""".stripMargin
+            }
+            val mappingBlock =
+              if (mappingCases.isEmpty) {
+                q""
+              } else {
+                val casesLiteral = mappingCases.mkString("\n").trim
+                q"""switch (name)
+                   |{
+                   |    $casesLiteral
+                   |}""".stripMargin
+              }
             val cdefn =
               q"""public sealed class $convname : $abstractConversion<$tin, $tout>
                  |{
                  |    protected override $tout DoConvert<C>(C? context, $abstractBaboonConversions conversions, $tin from)  where C: default {
-                 |        if ($csEnum.TryParse(from.ToString(), out $tout parsed))
+                 |        var name = from.ToString();
+                 |        ${mappingBlock.shift(8).trim}
+                 |        if ($csEnum.TryParse(name, out $tout parsed))
                  |        {
                  |            return parsed;
                  |        }
