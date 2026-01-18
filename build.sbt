@@ -189,7 +189,7 @@ ThisBuild / publishTo := {
       "central-snapshots" at "https://central.sonatype.com/repository/maven-snapshots/"
     )
   } else {
-    None
+    localStaging.value
   }
 }
 
