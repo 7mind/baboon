@@ -33,7 +33,7 @@ class WorkspaceState(
     logger.message(LspLogging.Context, s"recompile: found ${inputs.size} .baboon files")
 
     val result = if (inputs.nonEmpty) {
-      compiler.reload(inputs) match {
+      compiler.reload(inputs, lastSuccessfulFamily) match {
         case Right(family) =>
           logger.message(LspLogging.Context, s"recompile: SUCCESS - ${family.domains.size} domains")
           lastSuccessfulFamily = Some(family)
