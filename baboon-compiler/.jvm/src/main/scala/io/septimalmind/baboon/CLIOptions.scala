@@ -97,6 +97,8 @@ case class PyCLIOptions(
   generateJsonCodecsByDefault: Option[Boolean],
   @HelpMessage("Generate UEBA codecs even for types without derived[ueba]")
   generateUebaCodecsByDefault: Option[Boolean],
+  @HelpMessage("Do not generate encoders for deprecated versions")
+  enableDeprecatedEncoders: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class CLIOptions(

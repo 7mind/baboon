@@ -63,7 +63,7 @@ object PyCodecTestTranslator {
              |    tpeid = "${defn.id.render}"
              |    with open(f"../target/cs/json-{clue}/{tpeid}.json", encoding="utf-8") as f:
              |        cs_json = f.read()
-             |        decoded = $codec.instance().decode(cs_json)
+             |        decoded = $codec.instance().decode($baboonCodecContext.default(), cs_json)
              |        self.json_compare(decoded)
              |    
              |def json_codec_test_impl(self):
@@ -71,8 +71,8 @@ object PyCodecTestTranslator {
              |    ${body.shift(4).trim}    
              |
              |def json_compare(self, fixture):
-             |    fixtureJson    = $codec.instance().encode(fixture)
-             |    fixtureDecoded = $codec.instance().decode(fixtureJson)
+             |    fixtureJson    = $codec.instance().encode($baboonCodecContext.default(), fixture)
+             |    fixtureDecoded = $codec.instance().decode($baboonCodecContext.default(), fixtureJson)
              |    self.assertEqual(fixture, fixtureDecoded)
              |""".stripMargin
         case uebaCodec: PyUEBACodecGenerator =>

@@ -31,30 +31,52 @@ final class PyJsonCodecGenerator(
 
   private def genCodec(
     defn: DomainMember.User,
-    pyRef: PyType,
+    name: PyType,
     srcRef: PyType,
     enc: TextTree[PyValue],
     dec: TextTree[PyValue],
   ): TextTree[PyValue] = {
-    val baseMethods =
-      q"""def encode(self, value: $pyRef) -> $pyStr:
-         |    ${enc.shift(4).trim}
-         |    
-         |def decode(self, wire: $pyStr) -> $pyRef:
-         |    ${dec.shift(4).trim}
-         |""".stripMargin
+    val isEncoderEnabled = pyTarget.language.enableDeprecatedEncoders || domain.version == evolution.latest
+    val encodeMethod = if (isEncoderEnabled) {
+      List(
+        q"""def encode(self, context: $baboonCodecContext, value: $name) -> $pyStr:
+           |    ${enc.shift(4).trim}
+           |""".stripMargin.trim
+      )
+    } else Nil
+    val decodeMethod =
+      List(q"""def decode(self, context: $baboonCodecContext, wire: $pyStr) -> $name:
+              |    ${dec.shift(4).trim}
+              |""".stripMargin)
+    val baseMethods = encodeMethod ++ decodeMethod
+    val cName   = q"${srcRef.name}_JsonCodec"
+    val cType = q"'${codecType(defn.id)}'"
 
-    val codecParent = q"$baboonJsonCodec[$pyRef]"
-    val codecName   = q"${srcRef.name}_JsonCodec"
-    q"""class $codecName($codecParent):
-       |    ${baseMethods.shift(4).trim}
-       |    
+    val cParent = if (isEncoderEnabled) {
+      defn match {
+        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecBase[$name, $cType]"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecBase[$name, $cType]"
+        case _ if defn.isAdt                                => q"$baboonJsonCodecBaseGeneratedAdt[$name, $cType]"
+        case _                                              => q"$baboonJsonCodecBaseGenerated[$name, $cType]"
+      }
+    } else {
+      defn match {
+        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecNoEncoder[$name, $cType]"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecNoEncoder[$name, $cType]"
+        case _ if defn.isAdt                                => q"$baboonJsonCodecNoEncoderGeneratedAdt[$name, $cType]"
+        case _                                              => q"$baboonJsonCodecNoEncoderGenerated[$name, $cType]"
+      }
+    }
+
+    q"""class $cName($cParent):
+       |    ${baseMethods.joinN().shift(4).trim}
+       |
        |    ${treeTools.makeCodecMeta(defn).joinN().shift(4).trim}
        |
-       |    @$pyClassMethod
-       |    @$pyCache
-       |    def instance (cls):
-       |        return cls()
+       |    def target_type(self) -> $pyType:
+       |        return $name
+       |
+       |    _lazy_instance: $baboonLazy['$cName'] = $baboonLazy(lambda: $cName())
        |""".stripMargin
   }
 

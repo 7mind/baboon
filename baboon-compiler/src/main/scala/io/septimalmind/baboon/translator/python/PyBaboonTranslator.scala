@@ -91,10 +91,10 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def genInitPy(definitions: List[PyDefnTranslator.Output], domain: Domain): PyDefnTranslator.Output = {
-    val initPyModule = typeTranslator.toPyModule(domain.id)
-    val versionStr   = domain.version.format(prefix = "v", delimiter = "_")
-    val fileName     = "__init__.py"
-    val initPyDir    = initPyModule.path.toList :+ versionStr
+    val initPyModule  = typeTranslator.toPyModule(domain.id)
+    val versionStr    = domain.version.format(prefix = "v", delimiter = "_")
+    val fileName      = "__init__.py"
+    val initPyDir     = initPyModule.path.toList :+ versionStr
     val expectedDepth = initPyDir.size + 1
 
     val sameLevelModules = definitions
@@ -132,12 +132,14 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
       F.pure(
         List(
           rt("baboon_runtime_shared.py", "baboon-runtime/python/baboon_runtime_shared.py"),
+          rt("baboon_codecs_facade.py", "baboon-runtime/python/baboon_codecs_facade.py"),
+          rt("baboon_conversions.py", "baboon-runtime/python/baboon_conversions.py"),
+          rt("baboon_exceptions.py", "baboon-runtime/python/baboon_exceptions.py"),
           rt("baboon_codecs.py", "baboon-runtime/python/baboon_codecs.py"),
         )
       )
     } else F.pure(Nil)
   }
-
 
   private def renderTree(o: PyDefnTranslator.Output): String = {
     val usedTypes = o.tree.values.collect { case t: PyValue.PyType => t }
@@ -154,36 +156,33 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           q"from ${path.mkString(".")} import ${module.moduleVersionString.getOrElse("")}"
       }.toList
 
-    val namespaceImports = versioned
-      .filter { t =>
+    val namespaceImports = versioned.filter {
+      t =>
         val parts = t.name.split('.')
         parts.length > 3
-      }
-      .flatMap { t =>
-        val parts = t.name.split('.')
-        val versionPart = parts.head
+    }.flatMap {
+      t =>
+        val parts         = t.name.split('.')
+        val versionPart   = parts.head
         val namespacePart = parts(1)
-        val modulePart = parts(2)
+        val modulePart    = parts(2)
         val pathToVersion = t.moduleId.pathToVersion
-        val nsImport = q"from ${(pathToVersion :+ versionPart).mkString(".")} import $namespacePart"
-        val moduleImport = q"from ${(pathToVersion :+ versionPart :+ namespacePart).mkString(".")} import $modulePart"
+        val nsImport      = q"from ${(pathToVersion :+ versionPart).mkString(".")} import $namespacePart"
+        val moduleImport  = q"from ${(pathToVersion :+ versionPart :+ namespacePart).mkString(".")} import $modulePart"
         List(nsImport, moduleImport)
-      }
-      .distinct
-      .toList
+    }.distinct.toList
 
-      val usualImportsByModule = usual.groupBy(_.moduleId).toList
-        .sortBy { case (moduleId, types) => moduleId.path.size + types.size }.reverse.map {
-        case (module, types) =>
-          if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule) {
-            val baseString  = pyFileTools.definitionsBasePkg.mkString(".")
-            val typesString = types.map(_.name).mkString(", ")
-            q"from $baseString.${module.module} import $typesString"
-          } else {
-            val typesString = types.map(_.name).mkString(", ")
-            q"from ${module.path.mkString(".")} import $typesString"
-          }
-      }
+    val usualImportsByModule = usual.groupBy(_.moduleId).toList.sortBy { case (moduleId, types) => moduleId.path.size + types.size }.reverse.map {
+      case (module, types) =>
+        if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule) {
+          val baseString  = pyFileTools.definitionsBasePkg.mkString(".")
+          val typesString = types.map(_.name).mkString(", ")
+          q"from $baseString.${module.module} import $typesString"
+        } else {
+          val typesString = types.map(_.name).mkString(", ")
+          q"from ${module.path.mkString(".")} import $typesString"
+        }
+    }
 
     val allImports = (usualImportsByModule ++ versionPkgImports ++ namespaceImports).joinN()
 
@@ -220,7 +219,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
       val conversionRegs = conversions.map(_.register).toList
       val missing        = conversions.flatMap(_.missing.iterator.toSeq).toSeq
 
-      val missingTree = if (missing.isEmpty) q"pass" else missing.join("\n")
+      val missingTree = if (missing.isEmpty) q"pass" else missing.joinN()
 
       val converter =
         q"""class RequiredConversions($pyABC):
@@ -230,7 +229,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
            |    def __init__(self, required: RequiredConversions):
            |        super().__init__()
            |        self.required = required
-           |        ${conversionRegs.join("\n").shift(8).trim}
+           |        ${conversionRegs.joinN().shift(8).trim}
            |
            |    def versions_from(self) -> $pyList[$pyStr]:
            |        return [${toCurrent.map(_.from.v.toString).map(v => s"\"$v\"").mkString(", ")}]
@@ -246,18 +245,18 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           q"""class $nme (${abstractBaboonCodecs(codecid)}):
              |    def __init__(self):
              |        super().__init__()
-             |        ${regs.toList.map(r => q"self.register($r)").join("\n").shift(8).trim}
+             |        ${regs.toList.map(r => q"self.register($r)").joinN().shift(8).trim}
              |
              |    @$pyClassMethod
              |    @$pyCache
              |    def instance (cls):
              |        return cls()
              |""".stripMargin
-      }.toList.join("\n\n")
+      }.toList.joinNN()
 
       val basename = pyFileTools.basename(domain, lineage.evolution)
 
-      val runtimeSource = Seq(converter, codecs).join("\n\n")
+      val runtimeSource = Seq(converter, codecs).joinNN()
       val runtimeOutput = PyDefnTranslator.Output(
         s"$basename/baboon_runtime.py",
         runtimeSource,

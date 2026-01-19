@@ -45,7 +45,7 @@ object PyDomainTreeTools {
       val unmodifiedMethods = if (!isCodec) {
         val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id)
         List(
-          q"""baboon_same_in_version: $pyClassVar[$pyList[$pyStr]] = [${unmodifiedSince.sameIn.map(v => q"\"${v.v.toString}\"").toList.join(", ")}]""".stripMargin
+          q"""baboon_same_in_versions: $pyClassVar[$pyList[$pyStr]] = [${unmodifiedSince.sameIn.map(v => q"\"${v.v.toString}\"").toList.join(", ")}]""".stripMargin
         )
       } else Nil
 

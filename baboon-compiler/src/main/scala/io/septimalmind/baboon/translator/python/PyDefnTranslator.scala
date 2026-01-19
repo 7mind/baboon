@@ -151,7 +151,7 @@ object PyDefnTranslator {
             .flatMap {
               codec =>
                 if (codec.isActive(d.id)) {
-                  List(codec.id -> q"${codec.codecType(defn.id)}.instance()")
+                  List(codec.id -> q"${codec.codecType(defn.id)}.instance")
                 } else {
                   List.empty
                 }

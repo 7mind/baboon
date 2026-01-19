@@ -1,45 +1,139 @@
-from datetime import datetime, timedelta, timezone
+
+
 from abc import ABC, abstractmethod
 from typing import TypeVar, Generic
-from decimal import Decimal
-from io import BytesIO
-from uuid import UUID
-import struct
 
 from pydantic import BaseModel
 
-T = TypeVar("T")
+from BaboonDefinitions.Generated.baboon_runtime_shared import BaboonSingleton, BaboonGenerated, BaboonAdtMemberMeta
 
-class IBaboonCodecData(ABC):
+T = TypeVar("T")
+TWire = TypeVar("TWire")
+TIn = TypeVar("TIn")
+TOut = TypeVar("TOut")
+TCodec = TypeVar("TCodec")
+
+class BaboonCodecData(ABC):
+    @property
     @abstractmethod
     def baboon_domain_version(self) -> str:
         raise NotImplementedError
 
+    @property
     @abstractmethod
     def baboon_domain_identifier(self) -> str:
         raise NotImplementedError
 
+    @property
     @abstractmethod
     def baboon_type_identifier(self) -> str:
         raise NotImplementedError
 
-class BaboonJsonCodec(IBaboonCodecData, Generic[T]):
+class BaboonCodec(BaboonCodecData, Generic[T]):
+    @property
     @abstractmethod
-    def encode(self, obj: T) -> str:
+    def target_type(self) -> type:
         raise NotImplementedError
 
-    @abstractmethod
-    def decode(self, json_str: str) -> T:
+class BaboonValueCodec(BaboonCodec[T], Generic[T, TWire]):
+    def encode(self, context: 'BaboonCodecContext', value: T) -> TWire:
         raise NotImplementedError
 
-class BaboonUEBACodec(IBaboonCodecData, Generic[T]):
-    @abstractmethod
-    def encode(self, ctx: 'BaboonCodecContext', wire: 'LEDataOutputStream', obj: T):
+    def decode(self, context: 'BaboonCodecContext', wire: TWire) -> T:
         raise NotImplementedError
 
-    @abstractmethod
-    def decode(self, ctx: 'BaboonCodecContext', wire: 'LEDataInputStream') -> T:
+class BaboonStreamCodec(BaboonCodec[T], Generic[T, TIn, TOut]):
+    def encode(self, context: 'BaboonCodecContext', writer: TOut, instance: T):
         raise NotImplementedError
+
+    def decode(self, context: 'BaboonCodecContext', wire: TIn) -> T:
+        raise NotImplementedError
+
+class BaboonJsonCodec(BaboonValueCodec[T, TCodec], BaboonSingleton[TCodec]):
+    pass
+
+class BaboonBinCodec(BaboonStreamCodec[T, 'LEDataInputStream', 'LEDataOutputStream'], BaboonSingleton[TCodec]):
+    pass
+
+class BaboonJsonCodecBase(BaboonJsonCodec[T, TCodec]):
+    pass
+
+class BaboonJsonCodecGenerated(BaboonJsonCodecBase[T, TCodec]):
+    def encode_baboon(self, ctx: 'BaboonCodecContext', value: BaboonGenerated) -> str:
+        if type(value) == self.target_type:
+            return self.encode(ctx, value)
+        else:
+            raise ValueError(f"Expected to have {self.target_type} but got {type(value)}")
+
+class BaboonJsonCodecGeneratedAdt(BaboonJsonCodecGenerated[T, TCodec], BaboonAdtMemberMeta):
+    pass
+
+class NoJsonEncoder(BaboonJsonCodecBase[T, TCodec]):
+    def encode(self, ctx: 'BaboonCodecContext', instance: T) -> str:
+        if self is not self.instance:
+            return self.instance.encode(ctx, instance)
+        raise RuntimeError(
+            f"Type {self.baboon_type_identifier}@{self.baboon_domain_version} "
+            f"is deprecated, encoder was not generated"
+        )
+
+class NoJsonEncoderGenerated(BaboonJsonCodecGenerated[T, TCodec]):
+    def encode(self, ctx: 'BaboonCodecContext', instance: T) -> str:
+        if self is not self.instance:
+            return self.instance.encode(ctx, instance)
+        raise RuntimeError(
+            f"Type {self.baboon_type_identifier}@{self.baboon_domain_version} "
+            f"is deprecated, encoder was not generated"
+        )
+
+class NoJsonEncoderGeneratedAdt(BaboonJsonCodecGeneratedAdt[T, TCodec]):
+    def encode(self, ctx: 'BaboonCodecContext', instance: T) -> str:
+        if self is not self.instance:
+            return self.instance.encode(ctx, instance)
+        raise RuntimeError(
+            f"Type {self.baboon_type_identifier}@{self.baboon_domain_version} "
+            f"is deprecated, encoder was not generated"
+        )
+
+class BaboonBinCodecBase(BaboonBinCodec[T, TCodec], BaboonSingleton[TCodec], Generic[T, TCodec]):
+    pass
+
+class BaboonBinCodecGenerated(BaboonBinCodecBase[T, TCodec]):
+    def encode_baboon(self, ctx: 'BaboonCodecContext', writer: 'LEDataOutputStream', value: BaboonGenerated):
+        if type(value) == self.target_type:
+            return self.encode(ctx, writer, value)
+        else:
+            raise ValueError(f"Expected to have {self.target_type} but got {type(value)}")
+
+class BaboonBinCodecGeneratedAdt(BaboonBinCodecGenerated[T, TCodec], BaboonAdtMemberMeta):
+    pass
+
+class NoBinEncoder(BaboonBinCodecBase[T, TCodec]):
+    def encode(self, ctx: 'BaboonCodecContext', writer: 'LEDataOutputStream', instance: T):
+        if self is not self.instance:
+            return self.instance.encode(ctx, instance)
+        raise RuntimeError(
+            f"Type {self.baboon_type_identifier}@{self.baboon_domain_version} "
+            f"is deprecated, encoder was not generated"
+        )
+
+class NoBinEncoderGenerated(BaboonBinCodecGenerated[T, TCodec]):
+    def encode(self, ctx: 'BaboonCodecContext', writer: 'LEDataOutputStream', instance: T):
+        if self is not self.instance:
+            return self.instance.encode(ctx, instance)
+        raise RuntimeError(
+            f"Type {self.baboon_type_identifier}@{self.baboon_domain_version} "
+            f"is deprecated, encoder was not generated"
+        )
+
+class NoBinEncoderGeneratedAdt(BaboonBinCodecGeneratedAdt[T, TCodec]):
+    def encode(self, ctx: 'BaboonCodecContext', writer: 'LEDataOutputStream', instance: T):
+        if self is not self.instance:
+            return self.instance.encode(ctx, instance)
+        raise RuntimeError(
+            f"Type {self.baboon_type_identifier}@{self.baboon_domain_version} "
+            f"is deprecated, encoder was not generated"
+        )
 
 class BaboonCodecContext:
     def __init__(self, use_indices: bool):
@@ -89,243 +183,20 @@ class BaboonBinCodecIndexed(ABC):
 
         return result
 
-CS_EPOCH_DIFF_MS = 62_135_596_800_000
-
-class LEDataOutputStream:
-    def __init__(self, stream: BytesIO):
-        self.stream = stream
-
-    def write(self, b: bytes):
-        self.stream.write(b)
-
-    def write_byte(self, b: int):
-        self.stream.write(struct.pack("<b", b))
-
-    def write_ubyte(self, b: int):
-        self.stream.write(struct.pack("<B", b))
-
-    def write_i16(self, i: int):
-        self.stream.write(struct.pack("<h", i))
-
-    def write_u16(self, i: int):
-        self.stream.write(struct.pack("<H", i))
-
-    def write_i32(self, i: int):
-        self.stream.write(struct.pack("<i", i))
-
-    def write_u32(self, i: int):
-        self.stream.write(struct.pack("<I", i))
-
-    def write_i64(self, i: int):
-        self.stream.write(struct.pack("<q", i))
-
-    def write_u64(self, i: int):
-        self.stream.write(struct.pack("<Q", i))
-
-    def write_f32(self, f: float):
-        self.stream.write(struct.pack("<f", f))
-
-    def write_f64(self, f: float):
-        self.stream.write(struct.pack("<d", f))
-
-    def write_f128(self, f: Decimal):
-        if abs(f.as_tuple().exponent) > 28:
-            f = f.quantize(Decimal("1.0000000000000000000000000000"))
-
-        sign, digits_tuple, exponent = f.as_tuple()
-        mantissa = 0
-        for d in digits_tuple:
-            mantissa = mantissa * 10 + d
-
-        scale = 0
-        if exponent < 0:
-            scale = -exponent
-        elif exponent > 0:
-            mantissa *= (10 ** exponent)
-            scale = 0
-
-        if mantissa >= (1 << 96):
-            raise ValueError(f"Decimal value {f} is too large for C# Decimal (96-bit limit).")
-
-        flags = (scale << 16)
-        if sign == 1:
-            flags |= 0x80000000
-
-        lo = mantissa & 0xFFFFFFFF
-        mid = (mantissa >> 32) & 0xFFFFFFFF
-        hi = (mantissa >> 64) & 0xFFFFFFFF
-
-        self.write_u32(lo)
-        self.write_u32(mid)
-        self.write_u32(hi)
-        self.write_u32(flags)
-
-    def write_bool(self, b: bool):
-        self.stream.write(struct.pack("?", b))
-
-    def write_uuid(self, u: UUID):
-        self.stream.write(u.bytes_le)
-
-    def write_str(self, s: str):
-        bytes_data = s.encode("utf-8")
-        value = len(bytes_data)
-        while True:
-            current_byte = value & 0x7F
-            value >>= 7
-            if value != 0:
-                current_byte |= 0x80
-            self.write_byte(current_byte)
-            if value == 0:
-                break
-        self.stream.write(bytes_data)
-
-    def write_datetime(self, d: datetime):
-        if d.tzinfo is None:
-            d = d.replace(tzinfo=timezone.utc)
-
-        off = d.utcoffset()
-        offset_ms = 0
-        if off:
-            offset_ms = (off.days * 86400 + off.seconds) * 1000 + off.microseconds // 1000
-
-        unix_epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
-        delta = d - unix_epoch
-
-        unix_utc_ms = (
-                (delta.days * 86_400 * 1000) +
-                (delta.seconds * 1000) +
-                (delta.microseconds // 1000)
-        )
-
-        cs_utc_millis_0001 = unix_utc_ms + CS_EPOCH_DIFF_MS
-        cs_local_millis_0001 = cs_utc_millis_0001 + offset_ms
-
-        self.write_i64(cs_local_millis_0001)
-        self.write_i64(offset_ms)
-
-        kind = 1 if offset_ms == 0 else 2
-        self.write_byte(kind)
-
-    def write_bytes(self, b: bytes):
-        self.write_u32(len(b))
-        self.stream.write(b)
-
-    def write_optional(self, o, f):
-        if o is None:
-            self.write_byte(0)
-        else:
-            self.write_byte(1)
-            f(o)
-
-    def write_seq(self, c, f):
-        self.write_i32(len(c))
-        for i in c:
-            f(i)
-
-    def write_dict(self, d, kf, vf):
-        self.write_i32(len(d))
-        for k,v in d.items():
-            kf(k)
-            vf(v)
-
-class LEDataInputStream:
-    def __init__(self, stream : BytesIO):
-        self.stream = stream
-
-    def read_byte(self) -> int:
-        return struct.unpack("<b", self.stream.read(1))[0]
-
-    def read_ubyte(self) -> int:
-        return struct.unpack("<B", self.stream.read(1))[0]
-
-    def read_i16(self) -> int:
-        return struct.unpack("<h", self.stream.read(2))[0]
-
-    def read_u16(self) -> int:
-        return struct.unpack("<H", self.stream.read(2))[0]
-
-    def read_i32(self) -> int:
-        return struct.unpack("<i", self.stream.read(4))[0]
-
-    def read_u32(self) -> int:
-        return struct.unpack("<I", self.stream.read(4))[0]
-
-    def read_i64(self) -> int:
-        return struct.unpack("<q", self.stream.read(8))[0]
-
-    def read_u64(self) -> int:
-        return struct.unpack("<Q", self.stream.read(8))[0]
-
-    def read_f32(self) -> float:
-        return struct.unpack("<f", self.stream.read(4))[0]
-
-    def read_f64(self) -> float:
-        return struct.unpack("<d", self.stream.read(8))[0]
-
-    def read_f128(self) -> Decimal:
-        lo = self.read_u32()
-        mid = self.read_u32()
-        hi = self.read_u32()
-        flags = self.read_u32()
-
-        # combine into 96-bit integer
-        mantissa = lo | (mid << 32) | (hi << 64)
-
-        scale = (flags >> 16) & 0xFF
-        sign = (flags >> 31) & 1
-
-        value = Decimal(mantissa) / (Decimal(10) ** scale)
-        return -value if sign else value
-
-    def read_bool(self) -> bool:
-        return struct.unpack("?", self.stream.read(1))[0]
-
-    def read_uuid(self) -> UUID:
-        return UUID(bytes_le = self.stream.read(16))
-
-    def read_str(self) -> str:
-        length = 0
-        shift = 0
-        while True:
-            byte_read = self.read_byte() & 0xFF
-            length |= (byte_read & 0x7F) << shift
-            if (byte_read & 0x80) == 0:
-                break
-            shift += 7
-        buffer = self.stream.read(length)
-        return buffer.decode("utf-8")
-
-    def read_datetime(self) -> datetime:
-        cs_local_millis_0001 = self.read_i64()
-        offset_millis = self.read_i64()
-        kind = self.read_byte()
-
-        cs_utc_millis_0001 = cs_local_millis_0001 - offset_millis
-        unix_utc_millis = cs_utc_millis_0001 - CS_EPOCH_DIFF_MS
-        tz = timezone(timedelta(milliseconds=offset_millis))
-        unix_epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
-        dt_utc = unix_epoch + timedelta(milliseconds=unix_utc_millis)
-
-        return dt_utc.astimezone(tz)
-
-    def read_bytes(self) -> bytes:
-        length = self.read_u32()
-        return self.stream.read(length)
-
 class AbstractBaboonCodecs:
     def __init__(self):
         self._codecs = {}
 
-    def register(self, codec_id: str, impl: IBaboonCodecData):
+    def register(self, codec_id: str, impl):
         self._codecs[codec_id] = impl
 
-    def find(self, codec_id: str) -> IBaboonCodecData:
-        return self._codecs[codec_id]
+    def find(self, codec_id: str) -> BaboonCodecData:
+        return self._codecs[codec_id]()
 
-    def try_find(self, codec_id: str) -> tuple[bool, object | None]:
+    def try_find(self, codec_id: str) -> tuple[bool, BaboonCodecData | None]:
         value = self._codecs.get(codec_id)
         if value is not None:
-            return True, value
+            return True, value()
         else:
             return False, None
 
