@@ -38,7 +38,6 @@ class BaboonJvmPyModule[F[+_, +_]: Error2: TagKK](target: PyTarget) extends Modu
 class BaboonModuleJvm[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
   options: CompilerOptions,
   parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[F],
-  stderrOutMode: Boolean = false,
 ) extends ModuleDef {
   include(new BaboonModuleLogicModule[F](parallelAccumulatingOps2))
 
@@ -46,11 +45,9 @@ class BaboonModuleJvm[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
 
 //  make[Seq[Path]].named("inputs").fromValue(inputs)
 
-  if (stderrOutMode) {
-    make[BLogger].from[BLogger.BLoggerErrImpl]
-  } else {
-    make[BLogger].from[BLogger.BLoggerImpl]
-  }
+  make[BLogger].from[BLogger.BLoggerImpl].tagged(BaboonModeAxis.Compiler)
+  make[BLogger].from[BLogger.BLoggerErrImpl].tagged(BaboonModeAxis.Lsp)
+  make[BLogger].fromValue(BLogger.Noop).tagged(BaboonModeAxis.Explorer)
 
   make[FileContentProvider].from[JvmFileContentProvider]
 

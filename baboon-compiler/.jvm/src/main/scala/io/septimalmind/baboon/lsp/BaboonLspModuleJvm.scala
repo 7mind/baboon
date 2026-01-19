@@ -7,7 +7,8 @@ import io.septimalmind.baboon.lsp.util.{JvmPathOps, PathOps, PositionConverter}
 import izumi.functional.bio.Error2
 import izumi.functional.quasi.QuasiIORunner
 import izumi.reflect.TagKK
-import io.septimalmind.baboon.typer.{RootExtractor, RootSelectionAxis}
+import io.septimalmind.baboon.BaboonModeAxis
+import io.septimalmind.baboon.typer.RootExtractor
 
 import java.nio.file.Path
 
@@ -23,7 +24,7 @@ class BaboonLspModuleJvm[F[+_, +_]: Error2: TagKK](
   make[QuasiIORunner[F[Throwable, _]]].fromValue(runner)
   make[() => Unit].fromValue(exitCallback)
 
-  make[RootExtractor].from[RootExtractor.AllRootsExtractor].tagged(RootSelectionAxis.Lsp)
+  make[RootExtractor].from[RootExtractor.AllRootsExtractor].tagged(BaboonModeAxis.Lsp)
 
   make[LspCompiler].from[JvmBaboonCompiler[F]]
   make[InputProvider].from[JvmInputProvider]
