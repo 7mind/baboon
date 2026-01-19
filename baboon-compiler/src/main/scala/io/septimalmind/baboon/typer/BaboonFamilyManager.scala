@@ -4,7 +4,7 @@ import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TyperIssue}
 import io.septimalmind.baboon.parser.model.{FSPath, RawContent, RawDomain, RawNodeMeta, RawTLDef, RawTypeName}
 import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonFamilyCache, BaboonLineage, Domain, DomainKey}
-import io.septimalmind.baboon.util.BLogger
+import io.septimalmind.baboon.util.{BLogger, FileContentProvider}
 import io.septimalmind.baboon.validator.BaboonValidator
 import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Error2, F, ParallelErrorAccumulatingOps2}
@@ -34,6 +34,7 @@ object BaboonFamilyManager {
     comparator: BaboonComparator[F],
     logger: BLogger,
     validator: BaboonValidator[F],
+    fileContentProvider: FileContentProvider,
   ) extends BaboonFamilyManager[F] {
 
     private case class DomainEntry(
@@ -54,8 +55,9 @@ object BaboonFamilyManager {
       for {
         parsed          <- F.parTraverseAccumErrors(definitions)(parser.parse)
         parsedByPath     = definitions.zip(parsed).map { case (input, domain) => input.path -> domain }.toMap
-        contentsByPath   = definitions.map(input => input.path -> input.content).toMap
+        baseContentsByPath = definitions.map(input => input.path -> input.content).toMap
         domainIndex      = buildDomainIndex(parsed)
+        contentsByPath   = expandContents(baseContentsByPath, domainIndex)
         buildResult     <- buildFamily(
                              parsed,
                              BaboonIssue.of(TyperIssue.EmptyFamily(definitions)),
@@ -84,11 +86,13 @@ object BaboonFamilyManager {
       val unparsedInputs = unparsed.reverse
       val parsedInputs = parsed.reverse
       val parsedPaths = parsedInputs.map(_._1).toSet
-      val inputContents = unparsedInputs.map(input => input.path -> input.content).toMap
+      val inputContents = buildInputContents(snapshot, unparsedInputs, parsedInputs)
       val inputPaths = (unparsedInputs.map(_.path) ++ parsedInputs.map(_._1)).toSet
-      val removedFiles = snapshot.fileContents.keySet.diff(inputPaths)
-      val newFiles = inputPaths.diff(snapshot.fileContents.keySet)
-      val modifiedFiles = inputContents.collect {
+      val knownFiles = snapshot.domainFiles.values.flatten.toSet ++ inputPaths
+      val (currentContents, missingFiles) = readKnownContents(inputContents, knownFiles)
+      val removedFiles = snapshot.fileContents.keySet.diff(knownFiles) ++ missingFiles
+      val newFiles = currentContents.keySet.diff(snapshot.fileContents.keySet)
+      val modifiedFiles = currentContents.collect {
         case (path, content) if snapshot.fileContents.get(path).exists(_ != content) => path
       }.toSet
       val changedFiles = removedFiles ++ newFiles ++ modifiedFiles ++ parsedPaths
@@ -105,9 +109,7 @@ object BaboonFamilyManager {
         inputPaths.contains(path) && !toParsePaths.contains(path) && !parsedPaths.contains(path)
       }
 
-      val updatedContents = snapshot.fileContents.filter { case (path, _) =>
-        inputPaths.contains(path)
-      } ++ inputContents
+      val updatedContents = currentContents
 
       for {
         newlyParsed <- F.parTraverseAccumErrors(toParse)(parser.parse)
@@ -153,6 +155,65 @@ object BaboonFamilyManager {
                        )
         cache = buildCache(updatedContents, combinedByPath, domainIndex, buildResult.domains)
       } yield buildResult.family.copy(cache = cache)
+    }
+
+    private def expandContents(
+      baseContents: Map[FSPath, String],
+      domainIndex: DomainIndex
+    ): Map[FSPath, String] = {
+      val knownFiles = domainIndex.domainFiles.values.flatten.toSet
+      val missing = knownFiles.diff(baseContents.keySet)
+      if (missing.isEmpty) {
+        baseContents
+      } else {
+        val loaded = missing.map { path =>
+          val content = fileContentProvider.read(path).getOrElse {
+            throw new IllegalStateException(s"Missing content for $path")
+          }
+          path -> content
+        }.toMap
+        baseContents ++ loaded
+      }
+    }
+
+    private def buildInputContents(
+      snapshot: BaboonFamilyCache,
+      unparsedInputs: List[BaboonParser.Input],
+      parsedInputs: List[(FSPath, RawDomain)],
+    ): Map[FSPath, String] = {
+      val contents = mutable.Map.empty[FSPath, String]
+      unparsedInputs.foreach { input =>
+        contents.put(input.path, input.content)
+      }
+      val missingParsed = mutable.ListBuffer.empty[FSPath]
+      parsedInputs.foreach { case (path, _) =>
+        snapshot.fileContents.get(path) match {
+          case Some(content) => contents.put(path, content)
+          case None          => missingParsed += path
+        }
+      }
+      if (missingParsed.nonEmpty) {
+        throw new IllegalStateException(s"Missing cached contents for parsed inputs: ${missingParsed.mkString(", ")}")
+      }
+      contents.toMap
+    }
+
+    private def readKnownContents(
+      inputContents: Map[FSPath, String],
+      knownFiles: Set[FSPath],
+    ): (Map[FSPath, String], Set[FSPath]) = {
+      val contents = mutable.Map.empty[FSPath, String]
+      contents ++= inputContents
+      val missing = mutable.Set.empty[FSPath]
+      knownFiles.foreach { path =>
+        if (!contents.contains(path)) {
+          fileContentProvider.read(path) match {
+            case Some(content) => contents.put(path, content)
+            case None          => missing.add(path)
+          }
+        }
+      }
+      (contents.toMap, missing.toSet)
     }
 
     private def buildFamily(

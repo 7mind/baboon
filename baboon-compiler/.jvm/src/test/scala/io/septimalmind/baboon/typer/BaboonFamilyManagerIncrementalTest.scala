@@ -4,7 +4,7 @@ import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model._
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model._
-import io.septimalmind.baboon.util.BLogger
+import io.septimalmind.baboon.util.{BLogger, FileContentProvider}
 import io.septimalmind.baboon.validator.BaboonValidator
 import izumi.functional.bio.Error2
 import izumi.functional.bio.ParallelErrorAccumulatingOps2
@@ -50,6 +50,7 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
         comparator,
         BLogger.Noop,
         validator,
+        FileContentProviderNoop,
       )
 
       val inputV1 = input("/test/foo-1.baboon", "foo|1.0.0")
@@ -83,6 +84,7 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
         comparator,
         BLogger.Noop,
         validator,
+        FileContentProviderNoop,
       )
 
       val inputV1 = input("/test/foo-1.baboon", "foo|1.0.0")
@@ -104,6 +106,10 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
 
   private def input(path: String, content: String): BaboonParser.Input = {
     BaboonParser.Input(FSPath.parse(NEString.unsafeFrom(path)), content)
+  }
+
+  private object FileContentProviderNoop extends FileContentProvider {
+    override def read(path: FSPath): Option[String] = None
   }
 
   private final class TestParser[F[+_, +_]: Error2] extends BaboonParser[F] {
