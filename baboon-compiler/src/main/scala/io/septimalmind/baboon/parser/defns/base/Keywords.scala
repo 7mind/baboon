@@ -1,13 +1,22 @@
 package io.septimalmind.baboon.parser.defns.base
 
 import fastparse.*
+import fastparse.CharPredicates.{isDigit, isLetter}
 
 trait Keywords {
-  def kw[$: P](s: String): P[Unit] = P(s)
+  private def identChar[$: P]: P[Unit] = {
+    P(CharPred(c => isLetter(c) | isDigit(c) | c == '_'))
+  }
+
+  def kw[$: P](s: String): P[Unit] = {
+    import fastparse.NoWhitespace.noWhitespaceImplicit
+    P(s ~ !identChar)
+  }
 
   def kw[$: P](s: String, alt: String*): P[Unit] = {
+    import fastparse.NoWhitespace.noWhitespaceImplicit
     def alts = alt.foldLeft(P(s)) { case (acc, v) => acc | v }
-    P(alts)
+    P(alts ~ !identChar)
   }
 
   def model[$: P]: P[Unit]     = kw("model")

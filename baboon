@@ -5,7 +5,7 @@ set -e
 # development script for easy vscode extension testing.
 # pairs with .vscode/settings.json
 
-LOCAL_BABOON="./baboon-compiler/src/test/resources/baboon"
+LOCAL_BABOON="./baboon-compiler/.jvm/target/graalvm-native-image/baboon"
 
 if [[ -x "$LOCAL_BABOON" ]]; then
     exec "$LOCAL_BABOON" "$@"

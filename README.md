@@ -195,3 +195,9 @@ nix develop
 direnv allow
 ```
 
+#### Quick testing
+
+```bash
+sbt baboonJVM/GraalVMNativeImage/packageBin
+./baboon --help
+```

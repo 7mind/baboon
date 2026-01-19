@@ -52,5 +52,25 @@ abstract class ParserTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] extend
           _       = assert(parsed.isInstanceOf[RawDomain])
         } yield ()
     }
+
+    "parse field names that start with keyword prefixes" in {
+      (parser: BaboonParser[F]) =>
+        val input = BaboonParser.Input(
+          FSPath.parse(NEString.unsafeFrom("keyword-prefix.baboon")),
+          """model keyword.prefix
+            |
+            |version "1.0.0"
+            |
+            |data MysticVaultsProfileDetails {
+            |  wasOpenedDuringFinishState: bit
+            |}
+            |""".stripMargin,
+        )
+
+        for {
+          parsed <- parser.parse(input)
+          _       = assert(parsed.isInstanceOf[RawDomain])
+        } yield ()
+    }
   }
 }
