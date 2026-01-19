@@ -151,7 +151,7 @@ object PyDefnTranslator {
             .flatMap {
               codec =>
                 if (codec.isActive(d.id)) {
-                  List(codec.id -> q"${codec.codecType(defn.id)}.instance()")
+                  List(codec.id -> q"${codec.codecType(defn.id)}.instance")
                 } else {
                   List.empty
                 }
@@ -166,7 +166,7 @@ object PyDefnTranslator {
     }
 
     private def mkRepr(defn: DomainMember.User, isLatestVersion: Boolean): PyDefnRepr = {
-      val genMarker       = if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
+      val genMarker       = if (isLatestVersion) baboonGeneratedLatest else baboonGenerated
       val codecMeta       = codecs.map(_.codecMeta(defn.id).member)
       val mainMeta        = pyDomTrees.makeDataMeta(defn) ++ codecMeta
       val jsonCodecActive = codecs.collectFirst { case jsonCodec: PyJsonCodecGenerator => jsonCodec }.exists(_.isActive(defn.id))
@@ -189,7 +189,7 @@ object PyDefnTranslator {
           val superclasses        = baboonEnquiries.collectParents(domain, directParentsDefs).toSet
           val uniqueContracts     = dtoContracts.filterNot(c1 => superclasses.contains(c1))
           val genMarkerParent     = if (adtParent.nonEmpty || contractParents.nonEmpty) Nil else List(genMarker)
-          val adtMemberMetaParent = if (adtParent.isEmpty) Nil else List(iBaboonAdtMemberMeta)
+          val adtMemberMetaParent = if (adtParent.isEmpty) Nil else List(baboonAdtMemberMeta)
 
           val superclassesTypes = (adtParent ++ uniqueContracts).map(c => typeTranslator.asPyType(c, domain, evolution, fileTools.definitionsBasePkg))
 

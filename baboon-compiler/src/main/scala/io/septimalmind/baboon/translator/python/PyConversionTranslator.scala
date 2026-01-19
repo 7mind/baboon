@@ -132,7 +132,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
             val mappingLiteral = s"{${mappingEntries.mkString(", ")}}"
             q"$mappingLiteral.get(_from.name, _from.name)"
           }
-        Some(q"""class ${convType.name}($baboonAbstractConversion[$typeFrom, $typeTo]):
+        Some(q"""class ${convType.name}($abstractConversion[$typeFrom, $typeTo]):
                 |    @$pyOverride
                 |    def do_convert(self, ctx, conversions, _from: $typeFrom) -> $typeTo:
                 |        return $typeTo[$mappedExpr]
@@ -157,7 +157,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
 
         val cases = memberCases :+ defaultCase
 
-        Some(q"""class ${convType.name}($baboonAbstractConversion[$typeFrom, $typeTo]):
+        Some(q"""class ${convType.name}($abstractConversion[$typeFrom, $typeTo]):
                 |    @$pyOverride
                 |    def do_convert(self, ctx, conversions: $baboonAbstractConversions, _from: $typeFrom) -> $typeTo:
                 |        match _from:
@@ -230,7 +230,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
             q"${field.name.name.toLowerCase}: $fieldType = $expr"
         }
         val ctorArgs = dtoDefn.fields.map(f => q"${f.name.name.toLowerCase}")
-        Some(q"""class ${convType.name}($baboonAbstractConversion[$typeFrom, $typeTo]):
+        Some(q"""class ${convType.name}($abstractConversion[$typeFrom, $typeTo]):
                 |    @$pyOverride
                 |    def do_convert(self, ctx, conversions: $baboonAbstractConversions, _from: $typeFrom) -> $typeTo:
                 |        ${assigns.join("\n").shift(8).trim}
@@ -242,7 +242,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
                 |""".stripMargin.trim)
 
       case _: Conversion.CustomConversionRequired =>
-        Some(q"""class ${convType.name}($baboonAbstractConversion[$typeFrom, $typeTo]):
+        Some(q"""class ${convType.name}($abstractConversion[$typeFrom, $typeTo]):
                 |
                 |    ${meta.shift(4).trim}
                 |""".stripMargin)
@@ -345,7 +345,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
     oldScalar: TypeRef.Scalar,
   ): TextTree[PyValue] = {
     val direct = if (newScalar == oldScalar) oldRef else q"$newTypeRefTree($oldRef)"
-    val conv   = q"conversions.convert_with_context(ctx, $oldRef, $oldTypeRefTree, $newTypeRefTree)"
+    val conv   = q"conversions.convert_by_type(ctx, $oldRef, $oldTypeRefTree, $newTypeRefTree)"
 
     newScalar.id match {
       case _: TypeId.Builtin => direct

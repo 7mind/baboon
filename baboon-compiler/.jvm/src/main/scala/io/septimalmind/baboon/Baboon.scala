@@ -69,7 +69,7 @@ object Baboon {
       |""".stripMargin
 
   def main(args: Array[String]): Unit = {
-    val artifact = implicitly[IzArtifactMaterializer]
+    val artifact  = implicitly[IzArtifactMaterializer]
     val isLspMode = args.contains(":lsp") || args.contains("lsp")
 
     // Print banner to stderr in LSP mode to avoid breaking the protocol
@@ -84,15 +84,17 @@ object Baboon {
     new MultiModalArgsParserImpl().parse(args).merge match {
       case MultiModalArgs(generalArgs, modalities) =>
         val isExploreMode = modalities.exists { case ModalityArgs(id, _) => id == "explore" }
-        val _ = isLspMode || modalities.exists { case ModalityArgs(id, _) => id == "lsp" }
+        val _             = isLspMode || modalities.exists { case ModalityArgs(id, _) => id == "lsp" }
 
         if (isLspMode) {
           val lspModality = modalities.find(_.id == "lsp")
-          val lspPort = lspModality.flatMap { m =>
-            val args = m.args.toSeq
-            args.sliding(2).collectFirst {
-              case Seq("--port", p) => scala.util.Try(p.toInt).toOption
-            }.flatten
+          val lspPort = lspModality.flatMap {
+            m =>
+              val args = m.args.toSeq
+              args
+                .sliding(2).collectFirst {
+                  case Seq("--port", p) => scala.util.Try(p.toInt).toOption
+                }.flatten
           }
 
           val out = for {
@@ -204,6 +206,7 @@ object Baboon {
                             generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                             generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                             generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                            enableDeprecatedEncoders    = opts.enableDeprecatedEncoders.getOrElse(false),
                           ),
                         )
                     }
@@ -351,7 +354,7 @@ object Baboon {
 
   private def exploreEntrypoint(
     directoryInputs: Set[FSPath],
-    individualInputs: Set[FSPath]
+    individualInputs: Set[FSPath],
   )(implicit
     quasiIO: QuasiIO[Either[Throwable, _]],
     runner: QuasiIORunner[Either[Throwable, _]],
@@ -362,12 +365,12 @@ object Baboon {
     defaultModule2: DefaultModule2[EitherF],
   ): Unit = {
     val options = CompilerOptions(
-      debug = false,
-      individualInputs = individualInputs,
-      directoryInputs = directoryInputs,
-      targets = Seq.empty,
+      debug                    = false,
+      individualInputs         = individualInputs,
+      directoryInputs          = directoryInputs,
+      targets                  = Seq.empty,
       metaWriteEvolutionJsonTo = None,
-      lockFile = None,
+      lockFile                 = None,
     )
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
     import PathTools.*
@@ -399,11 +402,12 @@ object Baboon {
                 .provide(loadedModels)
                 .provide(ExploreInputs(directoryInputs, individualInputs))
                 .produce()
-                .use { ctx =>
-                  F.maybeSuspend {
-                    val shell = new ExploreShell(ctx)
-                    shell.run()
-                  }
+                .use {
+                  ctx =>
+                    F.maybeSuspend {
+                      val shell = new ExploreShell(ctx)
+                      shell.run()
+                    }
                 }
             } yield {}
         }
@@ -413,18 +417,18 @@ object Baboon {
   private def lspEntrypoint[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2: TagKK: DefaultModule2](
     directoryInputs: Set[FSPath],
     individualInputs: Set[FSPath],
-    port: Option[Int]
+    port: Option[Int],
   )(implicit
     quasiIO: QuasiIO[F[Throwable, _]],
     runner: QuasiIORunner[F[Throwable, _]],
   ): Unit = {
     val options = CompilerOptions(
-      debug = false,
-      individualInputs = individualInputs,
-      directoryInputs = directoryInputs,
-      targets = Seq.empty,
+      debug                    = false,
+      individualInputs         = individualInputs,
+      directoryInputs          = directoryInputs,
+      targets                  = Seq.empty,
       metaWriteEvolutionJsonTo = None,
-      lockFile = None,
+      lockFile                 = None,
     )
     // Use stderrOutMode=true for LSP to avoid stdout pollution
     val m = new BaboonModuleJvm[F](options, ParallelErrorAccumulatingOps2[F], stderrOutMode = true)
@@ -432,9 +436,9 @@ object Baboon {
     runner.run {
       val cliModelDirs = directoryInputs.map(dir => Paths.get(dir.asString))
       val lspModule = new BaboonLspModuleJvm[F](
-        modelDirs = cliModelDirs,
-        port = port,
-        runner = runner,
+        modelDirs    = cliModelDirs,
+        port         = port,
+        runner       = runner,
         exitCallback = () => System.exit(0),
       )
 

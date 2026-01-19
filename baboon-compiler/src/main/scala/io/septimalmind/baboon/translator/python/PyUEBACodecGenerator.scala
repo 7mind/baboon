@@ -40,12 +40,13 @@ class PyUEBACodecGenerator(
 
   private def genCodec(
     defn: DomainMember.User,
-    pyRef: PyType,
+    name: PyType,
     srcRef: PyType,
     enc: TextTree[PyValue],
     dec: TextTree[PyValue],
     branchDecoder: Option[TextTree[PyValue]],
   ): TextTree[PyValue] = {
+    val isEncoderEnabled = pyTarget.language.enableDeprecatedEncoders || domain.version == evolution.latest
     val indexBody = defn.defn match {
       case d: Typedef.Dto =>
         val varlens = d.fields.filter(f => domain.refMeta(f.tpe).len.isVariable)
@@ -55,7 +56,7 @@ class PyUEBACodecGenerator(
 
       case _: Typedef.Enum    => q"return 0"
       case _: Typedef.Adt     => q"return 0"
-      case _: Typedef.Foreign => q"""raise ValueError("$pyRef is a foreign type")"""
+      case _: Typedef.Foreign => q"""raise ValueError("$name is a foreign type")"""
 
       case d: Typedef.Contract => throw new IllegalArgumentException(s"BUG: contract codec should not be rendered: $d")
       case d: Typedef.Service  => throw new IllegalArgumentException(s"BUG: service codec should not be rendered: $d")
@@ -67,44 +68,58 @@ class PyUEBACodecGenerator(
          |""".stripMargin
     )
 
-    val methods =
-      List(q"""def encode(self, ctx: $baboonCodecContext, wire: $baboonLEDataOutputStream, value: $pyRef):
-              |    ${enc.shift(4).trim}
-              |
-              |def decode(self, ctx: $baboonCodecContext, wire: $baboonLEDataInputStream) -> $pyRef:
-              |    ${dec.shift(4).trim}
-              |""".stripMargin) ++ branchDecoder.map {
+    val encoderMethod = if (isEncoderEnabled) {
+      List(
+        q"""def encode(self, ctx: $baboonCodecContext, wire: $baboonLEDataOutputStream, value: $name):
+           |    ${enc.shift(4).trim}
+           |""".stripMargin
+      )
+    } else Nil
+
+    val decoderMethod = List(
+      q"""def decode(self, ctx: $baboonCodecContext, wire: $baboonLEDataInputStream) -> $name:
+         |    ${dec.shift(4).trim}
+         |""".stripMargin
+    )
+
+    val baseMethods = encoderMethod ++ decoderMethod ++
+      branchDecoder.map {
         body =>
-          q"""def decode_branch(self, ctx: $baboonCodecContext, wire: $baboonLEDataInputStream) -> $pyRef:
+          q"""def decode_branch(self, ctx: $baboonCodecContext, wire: $baboonLEDataInputStream) -> $name: 
              |    ${body.shift(4).trim}
              |""".stripMargin
-      }.toList ++ indexMethods
+      } ++ indexMethods
 
-    val parents = defn.defn match {
-      case _: Typedef.Enum => List(q"$baboonUEBACodec[${pyRef.name}]", q"$baboonUEBACodecIndexed")
-      case _ =>
-        val adtParents: List[TextTree[PyValue]] = defn.id.owner match {
-          case Owner.Adt(_) => List(q"$iBaboonAdtMemberMeta")
-          case _            => List.empty
-        }
+    val cName = q"${srcRef.name}_UEBACodec"
+    val cType = q"'${codecType(defn.id)}'"
 
-        List(
-          q"$baboonUEBACodec[$pyRef]",
-          q"$baboonUEBACodecIndexed",
-        ) ++ adtParents
+    val cParent = if (isEncoderEnabled) {
+      defn match {
+        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonBinCodecBase[$name, $cType]"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonBinCodecBase[$name, $cType]"
+        case _ if defn.isAdt                                => q"$baboonBinCodecGeneratedAdt[$name, $cType]"
+        case _                                              => q"$baboonBinCodecGenerated[$name, $cType]"
+      }
+    } else {
+      defn match {
+        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonBinCodecNoEncoder[$name, $cType]"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonBinCodecNoEncoder[$name, $cType]"
+        case _ if defn.isAdt                                => q"$baboonBinCodecNoEncoderGeneratedAdt[$name, $cType]"
+        case _                                              => q"$baboonBinCodecNoEncoderGenerated[$name, $cType]"
+      }
     }
 
-    val name = q"${srcRef.name}_UEBACodec"
+    val parents = List(cParent, q"$baboonBinCodecIndexed")
 
-    q"""class $name(${parents.join(", ")}):
-       |    ${methods.joinNN().shift(4).trim}
+    q"""class $cName(${parents.join(", ")}):
+       |    ${baseMethods.joinNN().shift(4).trim}
        |
        |    ${treeTools.makeCodecMeta(defn).joinN().shift(4).trim}
        |
-       |    @$pyClassMethod
-       |    @$pyCache
-       |    def instance (cls):
-       |        return cls()
+       |    def target_type(self) -> $pyType:
+       |        return $name
+       |
+       |    _lazy_instance: $baboonLazy['$cName'] = $baboonLazy(lambda: $cName())
        |""".stripMargin
   }
 
@@ -375,7 +390,7 @@ class PyUEBACodecGenerator(
               case TypeId.Builtins.f64 => q"wire.read_f64()"
 
               case TypeId.Builtins.f128 => q"wire.read_f128()"
-              case TypeId.Builtins.str  => q"wire.read_str()"
+              case TypeId.Builtins.str  => q"wire.read_string()"
 
               case TypeId.Builtins.uid => q"wire.read_uuid()"
               case TypeId.Builtins.tsu => q"wire.read_datetime()"

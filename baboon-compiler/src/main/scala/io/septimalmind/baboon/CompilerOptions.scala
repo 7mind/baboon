@@ -40,6 +40,7 @@ final case class PyOptions(
   generateUebaCodecs: Boolean,
   generateUebaCodecsByDefault: Boolean,
   generateJsonCodecsByDefault: Boolean,
+  enableDeprecatedEncoders: Boolean,
 )
 
 final case class ScOptions(
