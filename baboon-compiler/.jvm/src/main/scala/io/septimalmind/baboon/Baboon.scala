@@ -6,6 +6,7 @@ import io.septimalmind.baboon.explore.{ExploreContext, ExploreInputs, ExploreShe
 import io.septimalmind.baboon.lsp._
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
+import io.septimalmind.baboon.typer.RootSelectionAxis
 import io.septimalmind.baboon.typer.model.BaboonFamily
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.bio.impl.BioEither
@@ -18,6 +19,7 @@ import izumi.fundamentals.platform.cli.model.{ModalityArgs, MultiModalArgs}
 import izumi.fundamentals.platform.files.IzFiles
 import izumi.fundamentals.platform.resources.IzArtifactMaterializer
 import izumi.fundamentals.platform.strings.IzString.*
+import izumi.distage.model.definition.Activation
 
 import java.nio.file.Paths
 
@@ -321,7 +323,7 @@ object Baboon {
     runner.run {
       Injector
         .NoCycles[F[Throwable, _]]()
-        .produceRun(m) {
+        .produceRun(m, Activation(RootSelectionAxis.Default)) {
           (loader: BaboonLoader[F], logger: BLogger, loc: Locator) =>
             for {
               inputModels <- F.maybeSuspend(options.individualInputs.map(_.toPath) ++ options.directoryInputs.flatMap {
@@ -373,7 +375,7 @@ object Baboon {
     runner.run {
       Injector
         .NoCycles[EitherF[Throwable, _]]()
-        .produceRun(m) {
+        .produceRun(m, Activation(RootSelectionAxis.Default)) {
           (loader: BaboonLoader[EitherF], logger: BLogger, exploreContext: Subcontext[ExploreContext[EitherF]]) =>
             for {
               inputModels <- F.maybeSuspend(individualInputs.map(_.toPath) ++ directoryInputs.flatMap {
@@ -441,7 +443,7 @@ object Baboon {
         .produceRun(new ModuleDef {
           include(m)
           include(lspModule)
-        }) {
+        }, Activation(RootSelectionAxis.Lsp)) {
           (launcher: LspLauncher, logger: BLogger) =>
             F.maybeSuspend {
               logger.message(LspLogging.Context, "Starting Baboon LSP server...")

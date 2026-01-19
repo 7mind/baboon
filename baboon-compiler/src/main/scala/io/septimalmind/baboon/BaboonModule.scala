@@ -45,7 +45,7 @@ class BaboonModuleLogicModule[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
   make[BaboonRules[F]].from[BaboonRules.BaboonRulesImpl[F]]
   make[BaboonParser[F]].from[BaboonParser.BaboonParserImpl[F]]
   make[BaboonTyper[F]].from[BaboonTyper.BaboonTyperImpl[F]]
-  make[RootExtractor].from[RootExtractor.DeclaredRootExtractor]
+  make[RootExtractor].from[RootExtractor.DeclaredRootExtractor].tagged(RootSelectionAxis.Default)
   make[BaboonComparator[F]].from[BaboonComparator.BaboonComparatorImpl[F]]
 
   make[BaboonEnquiries].from[BaboonEnquiries.BaboonEnquiriesImpl]
