@@ -1,12 +1,11 @@
 import io
 from datetime import datetime, timezone, timedelta
-
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
 
+from Generated.baboon_codecs import BaboonCodecContext, LEDataOutputStream
 from Generated.convtest.testpkg.AllBasicTypes import AllBasicTypes, AllBasicTypes_JsonCodec, AllBasicTypes_UEBACodec
-from Generated.baboon_codecs import BaboonCodecContext, LEDataInputStream, LEDataOutputStream
 
 
 def create_sample_data():
