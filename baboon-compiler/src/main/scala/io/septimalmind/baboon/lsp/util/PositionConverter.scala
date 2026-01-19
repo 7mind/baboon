@@ -29,7 +29,7 @@ class PositionConverter(pathOps: PathOps) {
   }
 
   def pathToUri(path: String): String = {
-    pathOps.pathToUri(path)
+    pathOps.pathToUri(pathOps.normalizePath(path))
   }
 
   def uriToPath(uri: String): String = {

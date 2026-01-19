@@ -6,6 +6,7 @@ import io.septimalmind.baboon.explore.{ExploreContext, ExploreInputs}
 import io.septimalmind.baboon.parser.{BaboonInclusionResolver, BaboonInclusionResolverImpl}
 import io.septimalmind.baboon.typer.model.BaboonFamily
 import io.septimalmind.baboon.util.BLogger
+import io.septimalmind.baboon.util.{FileContentProvider, JvmFileContentProvider}
 import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Error2, ParallelErrorAccumulatingOps2}
 import izumi.reflect.TagKK
@@ -50,6 +51,8 @@ class BaboonModuleJvm[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
   } else {
     make[BLogger].from[BLogger.BLoggerImpl]
   }
+
+  make[FileContentProvider].from[JvmFileContentProvider]
 
   make[BaboonLoader[F]].from[BaboonLoader.BaboonLoaderImpl[F]]
   make[BaboonInclusionResolver[F]].from[BaboonInclusionResolverImpl[F]]

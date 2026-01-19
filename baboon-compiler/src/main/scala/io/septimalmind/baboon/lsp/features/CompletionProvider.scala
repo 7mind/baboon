@@ -42,7 +42,7 @@ class CompletionProvider(
 
     // Filter by prefix - match against both filterText (simple name) and label (full path)
     // Supports: prefix match, camel hump match (e.g., "PaSta" matches "PaymentState")
-    prefix match {
+    val filtered = prefix match {
       case Some(p) if p.nonEmpty =>
         candidates.filter { item =>
           val labelMatches      = matchesCamelCase(p, item.label)
@@ -52,6 +52,8 @@ class CompletionProvider(
       case _ =>
         candidates
     }
+
+    deduplicateCompletions(filtered)
   }
 
   private sealed trait CompletionContext
@@ -157,6 +159,29 @@ class CompletionProvider(
 
   private def matchesCamelCase(query: String, candidate: String): Boolean =
     CamelCaseMatcher.matches(query, candidate)
+
+  private final case class CompletionKey(
+    label: String,
+    kind: Option[Int],
+    detail: Option[String],
+    insertText: Option[String],
+    filterText: Option[String]
+  )
+
+  private def deduplicateCompletions(items: Seq[CompletionItem]): Seq[CompletionItem] = {
+    val seen = scala.collection.mutable.LinkedHashSet.empty[CompletionKey]
+    val out  = scala.collection.mutable.ArrayBuffer.empty[CompletionItem]
+
+    items.foreach { item =>
+      val key = CompletionKey(item.label, item.kind, item.detail, item.insertText, item.filterText)
+      if (!seen.contains(key)) {
+        seen.add(key)
+        out += item
+      }
+    }
+
+    out.toSeq
+  }
 }
 
 /** IntelliJ-style camel case matching.

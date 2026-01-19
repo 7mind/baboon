@@ -2,7 +2,7 @@ package io.septimalmind.baboon.parser.model.issues
 
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.*
-import io.septimalmind.baboon.typer.BaboonFamilyManager
+import io.septimalmind.baboon.typer.model.DomainKey
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Typedef.ForeignEntry
 import izumi.fundamentals.graphs.{DAGError, ToposortError}
@@ -27,7 +27,7 @@ object TyperIssue {
 
   case class NonUniqueLineages(nonUniqueLineages: Map[Pkg, List[BaboonLineage]]) extends TyperIssue
 
-  case class NonUniqueRawDomainVersion(conflicts: Map[BaboonFamilyManager.Key, List[RawDomain]]) extends TyperIssue
+  case class NonUniqueRawDomainVersion(conflicts: Map[DomainKey, List[RawDomain]]) extends TyperIssue
 
   case class EmptyFamily(input: List[BaboonParser.Input]) extends TyperIssue with BaboonBug
   case class EmptyFamilyReload(input: List[BaboonParser.ReloadInput]) extends TyperIssue with BaboonBug
@@ -488,5 +488,5 @@ object TyperIssue {
     }
   }
 
-  case class DagError(e: DAGError[BaboonFamilyManager.Key], meta: RawNodeMeta) extends TyperIssue
+  case class DagError(e: DAGError[DomainKey], meta: RawNodeMeta) extends TyperIssue
 }

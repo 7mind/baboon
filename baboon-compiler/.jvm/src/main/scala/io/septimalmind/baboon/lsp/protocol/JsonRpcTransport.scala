@@ -20,6 +20,14 @@ class JsonRpcTransport(in: InputStream, out: OutputStream) extends LspTransport 
       var contentLength = -1
       var line = reader.readLine()
 
+      while (line != null && line.isEmpty) {
+        line = reader.readLine()
+      }
+
+      if (line == null) {
+        return None
+      }
+
       while (line != null && line.nonEmpty) {
         if (line.startsWith("Content-Length:")) {
           contentLength = line.substring(15).trim.toInt
@@ -38,7 +46,7 @@ class JsonRpcTransport(in: InputStream, out: OutputStream) extends LspTransport 
         val content = new String(buffer)
         parse(content).toOption
       } else {
-        None
+        throw new IllegalStateException("Missing Content-Length header")
       }
     }.toOption.flatten
   }

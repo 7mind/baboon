@@ -4,14 +4,14 @@ import fastparse.Parsed
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, ParserIssue}
 import io.septimalmind.baboon.parser.model.{FSPath, RawDomain, RawInclude, RawTLDef}
 import izumi.functional.bio.{Error2, F}
-import izumi.fundamentals.collections.nonempty.{NEList, NEString}
+import izumi.fundamentals.collections.nonempty.NEList
 
 trait BaboonParser[F[+_, +_]] {
   def parse(input: BaboonParser.Input): F[NEList[BaboonIssue], RawDomain]
 }
 
 trait BaboonInclusionResolver[F[+_, +_]] {
-  def getIclusionContent(inc: RawInclude): Option[String]
+  def resolveInclude(inc: RawInclude): Option[(FSPath, String)]
 }
 
 object BaboonParser {
@@ -59,11 +59,11 @@ object BaboonParser {
         F.flatTraverseAccumErrors(includes) {
           inc =>
             // indiv
-            val content = resolver.getIclusionContent(inc)
-            content match {
-              case Some(content) =>
+            val resolved = resolver.resolveInclude(inc)
+            resolved match {
+              case Some((file, content)) =>
                 val context = ParserContext(
-                  FSPath.parse(NEString.unsafeFrom(inc.value)),
+                  file,
                   content,
                 )
                 fastparse.parse(context.content, context.defModel.contentEof(_)) match {
