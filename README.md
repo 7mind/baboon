@@ -24,7 +24,8 @@ Use cases:
 Generates:
   - **C#**
   - **Scala**
-  - Python, Typescript and more backends are on the way.
+  - **Python**
+  - Typescript and more backends are on the way.
 
 ## Highlights
 
