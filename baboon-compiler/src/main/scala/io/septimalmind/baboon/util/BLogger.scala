@@ -30,7 +30,7 @@ object BLogger {
     }
 
     override def message(context: String, msg: String): Unit = {
-      if (IzPlatform.terminalColorsEnabled) {
+      if (colorsEnabled) {
         doMessage(s"${AnsiColor.MAGENTA}[ $context ]${AnsiColor.RESET} $msg")
       } else {
         doMessage(s"[ $context ] $msg")
@@ -46,11 +46,12 @@ object BLogger {
     }
 
     protected def writeLine(msg: String): Unit
+    protected def colorsEnabled: Boolean = IzPlatform.terminalColorsEnabled
 
     private def renderTree(msg: TextTree[Any]): String = {
       msg.mapRender {
         v =>
-          if (IzPlatform.terminalColorsEnabled) {
+          if (colorsEnabled) {
             s"${AnsiColor.GREEN}$v${AnsiColor.RESET}"
           } else {
             v.toString
@@ -61,7 +62,7 @@ object BLogger {
     private def doMessage(msg: String): Unit = {
       val uptime = ManagementFactory.getRuntimeMXBean.getUptime
       val d      = FiniteDuration(uptime, TimeUnit.MILLISECONDS)
-      val cd = if (IzPlatform.terminalColorsEnabled) {
+      val cd = if (colorsEnabled) {
         s"${AnsiColor.CYAN}${d.toMillis}ms${AnsiColor.RESET}"
       } else {
         d
@@ -78,6 +79,8 @@ object BLogger {
   }
 
   final class BLoggerErrImpl extends BaseLogger {
+    override protected def colorsEnabled: Boolean = false
+
     override protected def writeLine(msg: String): Unit = {
       System.err.println(msg)
     }

@@ -132,6 +132,19 @@ object BaboonFamilyManager {
           newKeys,
         )
         retypeKeys = (affectedKeys ++ versionAffectedKeys) ++ newKeys.diff(snapshot.typedByKey.keySet)
+        _ <- F.maybeSuspend {
+          val parsedCount = parsedFromInputs.size
+          val reusedCount = retained.size + parsedProvided.size
+          val uniqueDomainKeys = parsedList.map(keyOf).distinct
+          val typedCount = uniqueDomainKeys.count { key =>
+            retypeKeys.contains(key) || !snapshot.typedByKey.contains(key)
+          }
+          val domainReusedCount = uniqueDomainKeys.size - typedCount
+          logger.message(
+            "reload",
+            s"files parsed=$parsedCount, reused=$reusedCount; domains typed=$typedCount, reused=$domainReusedCount"
+          )
+        }
         buildResult <- buildFamily(
                          parsedList,
                          BaboonIssue.of(TyperIssue.EmptyFamilyReload(definitions)),
