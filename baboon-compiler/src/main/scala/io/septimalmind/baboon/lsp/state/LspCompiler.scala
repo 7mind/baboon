@@ -11,5 +11,5 @@ import izumi.fundamentals.collections.nonempty.NEList
   * This avoids filesystem dependencies in the compilation pipeline.
   */
 trait LspCompiler {
-  def reload(inputs: Seq[BaboonParser.Input]): Either[NEList[BaboonIssue], BaboonFamily]
+  def reload(inputs: Seq[BaboonParser.Input], previous: Option[BaboonFamily]): Either[NEList[BaboonIssue], BaboonFamily]
 }

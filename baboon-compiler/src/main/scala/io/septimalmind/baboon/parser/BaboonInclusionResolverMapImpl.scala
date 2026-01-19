@@ -25,10 +25,10 @@ class BaboonInclusionResolverMapImpl[F[+_, +_]](
     }
   }
 
-  def getIclusionContent(inc: RawInclude): Option[String] = {
+  def resolveInclude(inc: RawInclude): Option[(FSPath, String)] = {
     options.directoryInputs.iterator
       .map(dir => resolvePath(dir, inc.value))
-      .flatMap(resolvedPath => inputsCache.get(resolvedPath))
+      .flatMap(resolvedPath => inputsCache.get(resolvedPath).map(content => resolvedPath -> content))
       .nextOption()
   }
 }
