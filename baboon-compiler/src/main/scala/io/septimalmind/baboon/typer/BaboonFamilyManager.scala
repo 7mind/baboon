@@ -89,10 +89,7 @@ object BaboonFamilyManager {
       val removedFiles = snapshot.fileContents.keySet.diff(inputPaths)
       val newFiles = inputPaths.diff(snapshot.fileContents.keySet)
       val modifiedFiles = inputContents.collect {
-        case (path, content) if snapshot.fileContents.get(path) match {
-          case Some(oldContent) => oldContent != content
-          case None             => false
-        } => path
+        case (path, content) if snapshot.fileContents.get(path).exists(_ != content) => path
       }.toSet
       val changedFiles = removedFiles ++ newFiles ++ modifiedFiles ++ parsedPaths
       val affectedByFileChange = changedFiles.flatMap(path => snapshot.fileToDomains.getOrElse(path, Set.empty))
@@ -253,11 +250,8 @@ object BaboonFamilyManager {
             .map(d => (DomainKey(d.header.name.mkString("."), d.version.value), d))
             .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueRawDomainVersion(e)))
         )
-        graphNodes = GraphMeta(indexed)
-        deps       = indexed.view.mapValues(d => d.imported.map(i => DomainKey(d.header.name.mkString("."), i.value)).toSet).toMap
-        preds      = AdjacencyPredList(deps)
-        // TODO: BUG in fromPred, it same as fromSucc but should be transposed
-        graph <- F.fromEither(DAG.fromPred(preds, graphNodes).left.map(e => BaboonIssue.of(TyperIssue.DagError(e, parsed.head.header.meta))))
+        deps  = indexed.view.mapValues(d => d.imported.map(i => DomainKey(d.header.name.mkString("."), i.value)).toSet).toMap
+        graph <- buildDomainDag(indexed, deps, parsed.head.header.meta)
         sorted = toposorted(graph)
       } yield {
 
@@ -311,7 +305,7 @@ object BaboonFamilyManager {
         case Some(imported) =>
           Set(DomainKey(key.id, imported.value))
         case None =>
-          Set.empty
+          Set.empty[DomainKey]
       }
       DomainEntry(key, primary, files, deps)
     }
@@ -432,10 +426,8 @@ object BaboonFamilyManager {
       previousDepsByKey: Map[DomainKey, Set[DomainKey]],
       currentKeys: Set[DomainKey],
     ): Set[DomainKey] = {
-      val reverseDeps = reverseDependencies(depsByKey)
-      val reverseDepsOld = reverseDependencies(previousDepsByKey)
-      val affectedFromCurrent = collectDependents(reverseDeps, directlyAffected.intersect(currentKeys))
-      val affectedFromRemoved = collectDependents(reverseDepsOld, removedKeys)
+      val affectedFromCurrent = collectDependents(depsByKey, directlyAffected.intersect(currentKeys))
+      val affectedFromRemoved = collectDependents(previousDepsByKey, removedKeys)
       directlyAffected ++ affectedFromCurrent ++ affectedFromRemoved
     }
 
@@ -454,30 +446,24 @@ object BaboonFamilyManager {
     }
 
     private def collectDependents(
-      reverseDeps: Map[DomainKey, Set[DomainKey]],
+      depsByKey: Map[DomainKey, Set[DomainKey]],
       start: Set[DomainKey],
     ): Set[DomainKey] = {
+      if (start.isEmpty) {
+        return Set.empty
+      }
+      val graph = buildDependencyDag(depsByKey ++ start.map(_ -> Set.empty[DomainKey]).toMap)
+
       @annotation.tailrec
       def loop(frontier: Set[DomainKey], acc: Set[DomainKey]): Set[DomainKey] = {
         if (frontier.isEmpty) {
           acc
         } else {
-          val next = frontier.flatMap(key => reverseDeps.getOrElse(key, Set.empty)).diff(acc)
+          val next = frontier.flatMap(key => graph.successors.links(key).toSet).diff(acc)
           loop(next, acc ++ next)
         }
       }
       loop(start, start)
-    }
-
-    private def reverseDependencies(deps: Map[DomainKey, Set[DomainKey]]): Map[DomainKey, Set[DomainKey]] = {
-      deps.toSeq
-        .flatMap { case (key, parents) =>
-          parents.map(parent => parent -> key)
-        }
-        .groupBy(_._1)
-        .map { case (key, pairs) =>
-          key -> pairs.map(_._2).toSet
-        }
     }
 
     private def buildCache(
@@ -495,6 +481,26 @@ object BaboonFamilyManager {
         domainIndex.fileToDomains,
         domainIndex.depsByKey,
       )
+    }
+
+    private def buildDomainDag(
+      indexed: Map[DomainKey, RawDomain],
+      deps: Map[DomainKey, Set[DomainKey]],
+      meta: RawNodeMeta,
+    ): F[NEList[BaboonIssue], DAG[DomainKey, RawDomain]] = {
+      val graphNodes = GraphMeta(indexed)
+      val preds = AdjacencyPredList(deps)
+      // TODO: BUG in fromPred, it same as fromSucc but should be transposed
+      F.fromEither(DAG.fromPred(preds, graphNodes).left.map(e => BaboonIssue.of(TyperIssue.DagError(e, meta))))
+    }
+
+    private def buildDependencyDag(
+      deps: Map[DomainKey, Set[DomainKey]]
+    ): DAG[DomainKey, DomainKey] = {
+      val nodes = GraphMeta((deps.keySet ++ deps.valuesIterator.flatten.toSet).map(k => k -> k).toMap)
+      val preds = AdjacencyPredList(deps)
+      DAG.fromPred(preds, nodes)
+        .fold(e => throw new IllegalStateException(s"Invalid dependency graph: $e"), identity)
     }
 
   }
