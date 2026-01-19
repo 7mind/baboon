@@ -1,16 +1,10 @@
-
-
 import json
-from io import BytesIO
-from typing import Dict, List, Optional, Callable, TypeVar, Type, Tuple, Any
+from typing import Dict, List, Type, Tuple
 
-from BaboonDefinitions.Generated.baboon_codecs import AbstractBaboonJsonCodecs, AbstractBaboonUebaCodecs,
-    LEDataOutputStream, LEDataInputStream, BaboonCodecContext, BaboonBinCodec, BaboonJsonCodec, BaboonCodecData
-from BaboonDefinitions.Generated.baboon_conversions import AbstractBaboonConversions
-from BaboonDefinitions.Generated.baboon_exceptions import BaboonCodecException
-from BaboonDefinitions.Generated.baboon_runtime_shared import BaboonDomainVersion, Lazy,
-    BaboonMeta, Version, BaboonGenerated, BaboonTypeMeta, BaboonGeneratedLatest, BaboonTypeMetaCodec,
-    BaboonAdtMemberMeta
+from .baboon_codecs import *
+from .baboon_conversions import *
+from .baboon_runtime_shared import *
+from baboon_exceptions import *
 
 TI = TypeVar("TI", bound=BaboonGenerated)
 TO = TypeVar("TO", bound=BaboonGeneratedLatest)

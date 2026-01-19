@@ -5,8 +5,8 @@ import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.python.PyTypes.*
 import io.septimalmind.baboon.translator.python.PyValue.PyModuleId
-import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
-import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage, Domain, DomainMember, EvolutionStep}
+import io.septimalmind.baboon.translator.{OutputFile, Sources, BaboonAbstractTranslator}
+import io.septimalmind.baboon.typer.model.{EvolutionStep, DomainMember, BaboonLineage, BaboonFamily, Domain}
 import izumi.distage.Subcontext
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.NEList
@@ -136,6 +136,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           rt("baboon_conversions.py", "baboon-runtime/python/baboon_conversions.py"),
           rt("baboon_exceptions.py", "baboon-runtime/python/baboon_exceptions.py"),
           rt("baboon_codecs.py", "baboon-runtime/python/baboon_codecs.py"),
+          PyDefnTranslator.Output("__init__.py", TextTree.text(""), pyBaboonSharedRuntimeModule, CompilerProduct.Runtime)
         )
       )
     } else F.pure(Nil)

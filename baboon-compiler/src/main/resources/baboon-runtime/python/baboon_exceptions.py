@@ -1,5 +1,3 @@
-
-
 class BaboonCodecException(Exception):
     @staticmethod
     def ConversionNotFound(msg: str) -> 'BaboonCodecException':

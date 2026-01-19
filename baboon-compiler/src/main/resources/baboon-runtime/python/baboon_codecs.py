@@ -1,11 +1,13 @@
 
 
+
+
 from abc import ABC, abstractmethod
 from typing import TypeVar, Generic
 
 from pydantic import BaseModel
 
-from BaboonDefinitions.Generated.baboon_runtime_shared import BaboonSingleton, BaboonGenerated, BaboonAdtMemberMeta
+from .baboon_runtime_shared import BaboonSingleton, BaboonGenerated, BaboonAdtMemberMeta
 
 T = TypeVar("T")
 TWire = TypeVar("TWire")

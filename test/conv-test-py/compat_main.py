@@ -4,7 +4,8 @@ from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
 
-from Generated.baboon_codecs import BaboonCodecContext, LEDataOutputStream
+from Generated.baboon_codecs import BaboonCodecContext
+from Generated.baboon_runtime_shared import LEDataOutputStream
 from Generated.convtest.testpkg.AllBasicTypes import AllBasicTypes, AllBasicTypes_JsonCodec, AllBasicTypes_UEBACodec
 
 
@@ -49,7 +50,7 @@ json_dir.mkdir(parents=True, exist_ok=True)
 ueba_dir.mkdir(parents=True, exist_ok=True)
 
 # Serialize to JSON
-json_str = AllBasicTypes_JsonCodec.instance().encode(sample_data)
+json_str = AllBasicTypes_JsonCodec.instance().encode(BaboonCodecContext.default(), sample_data)
 json_file_path = json_dir / "all-basic-types.json"
 with open(json_file_path, "w", encoding="utf-8") as f:
     f.write(json_str)
