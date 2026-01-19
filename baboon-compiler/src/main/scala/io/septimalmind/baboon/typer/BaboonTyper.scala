@@ -30,6 +30,7 @@ object BaboonTyper {
     scopeSupport: ScopeSupport[F],
     componentParsers: ComponentParsers[F],
     types: TypeInfo,
+    rootExtractor: RootExtractor,
   ) extends BaboonTyper[F] {
 
     private case class TyperOutput(defs: List[DomainMember], renames: Map[TypeId.User, TypeId.User])
@@ -47,10 +48,7 @@ object BaboonTyper {
             .map(d => (d.id, d))
             .toUniqueMap(e => BaboonIssue.of(TyperIssue.DuplicatedTypedefs(model, e)))
         }
-        roots = indexedDefs.collect {
-          case (k, v: DomainMember.User) if v.root =>
-            (k, v)
-        }
+        roots = rootExtractor.roots(indexedDefs)
         predecessors <- buildDependencies(
           indexedDefs,
           roots,
