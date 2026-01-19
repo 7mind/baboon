@@ -442,7 +442,7 @@ object BaboonJS {
     runner.runFuture(
       Injector
         .NoCycles[F[Throwable, _]]()
-        .produceRun(m) {
+        .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
           (loader: BaboonLoaderJS[F]) =>
             (for {
               family <- loader.load(inputs.toList)
@@ -466,7 +466,7 @@ object BaboonJS {
     runner.runFuture(
       Injector
         .NoCycles[F[Throwable, _]]()
-        .produceRun(m) {
+        .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
           (loader: BaboonLoaderJS[F], logger: BLogger, loc: Locator) =>
             (for {
               loadedModels <- loader.load(inputs.toList)
@@ -745,7 +745,7 @@ object BaboonJS {
         runner.runFuture(
           Injector
             .NoCycles[F[Throwable, _]]()
-            .produceRun(m) {
+            .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
               (loader: BaboonLoaderJS[F], codec: BaboonRuntimeCodec[F]) =>
                 (for {
                   family <- loader.load(inputs.toList)
@@ -759,7 +759,7 @@ object BaboonJS {
         runner.runFuture(
           Injector
             .NoCycles[F[Throwable, _]]()
-            .produceRun(m) {
+            .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
               (codec: BaboonRuntimeCodec[F]) =>
                 (for {
                   json   <- Error2[F].fromEither(parseJson(jsonString).left.map(e => new RuntimeException(s"Invalid JSON: ${e.getMessage}")))
@@ -791,7 +791,7 @@ object BaboonJS {
         runner.runFuture(
           Injector
             .NoCycles[F[Throwable, _]]()
-            .produceRun(m) {
+            .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
               (loader: BaboonLoaderJS[F], codec: BaboonRuntimeCodec[F]) =>
                 (for {
                   family <- loader.load(inputs.toList)
@@ -804,7 +804,7 @@ object BaboonJS {
         runner.runFuture(
           Injector
             .NoCycles[F[Throwable, _]]()
-            .produceRun(m) {
+            .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
               (codec: BaboonRuntimeCodec[F]) =>
                 (for {
                   result <- codec.decode(family, pkg, version, idString, data)
