@@ -140,14 +140,17 @@ class BaboonCodecsFacade:
 
     def encode_to_json(self,
                        value: BaboonGenerated,
-                       type_meta_override: Optional[BaboonTypeMeta] = None) -> dict[str, Any]:
+                       type_meta_override: Optional[BaboonTypeMeta] = None) -> str:
         type_meta = BaboonTypeMeta.from_instance(value)
         try:
             codec = self._get_json_codec(type_meta, exact=True)
-            model_dict = codec.encode(BaboonCodecContext.Compact, value)
-            meta_json = BaboonTypeMetaCodec.write_json(type_meta_override or type_meta)
-            meta_json[self.CONTENT_JSON_KEY] = model_dict
-            return model_dict
+            model_json = codec.encode(BaboonCodecContext.default(), value)
+            meta_json_dict = BaboonTypeMetaCodec.write_json(type_meta_override or type_meta)
+            result = {
+                **meta_json_dict,
+                self.CONTENT_JSON_KEY: model_json,
+            }
+            return json.dumps(result)
         except Exception as e:
             raise BaboonCodecException.EncoderFailure(
                 f"Can not encode to json form type [{value.baboon_type_identifier}] "
@@ -155,18 +158,13 @@ class BaboonCodecsFacade:
                 e
             )
 
-    def encode_to_json_string(self,
-                              value: BaboonGenerated,
-                              type_meta_override: Optional[BaboonTypeMeta] = None) -> str:
-        model_dict = self.encode_to_json(value, type_meta_override)
-        return json.dumps(model_dict)
-
-    def decode_from_json(self, value: dict[str, Any]) -> BaboonGenerated:
+    def decode_from_json(self, value: str) -> BaboonGenerated:
         try:
-            type_meta = BaboonTypeMetaCodec.read_meta_json(value)
+            json_dict = json.loads(value)
+            type_meta = BaboonTypeMetaCodec.read_meta_json(json_dict)
             codec = self._get_json_codec(type_meta, exact=False)
-            content = dict[self.CONTENT_JSON_KEY]
-            return codec.decode(content)
+            content = json_dict[self.CONTENT_JSON_KEY]
+            return codec.decode(BaboonCodecContext.default(), content)
         except Exception as e:
             raise BaboonCodecException.DecoderFailure(
                 f"Can not decode JSON form type "
@@ -174,10 +172,6 @@ class BaboonCodecsFacade:
                 f"of version '{type_meta.domain_version}'. JSON: {value}",
                 e
             )
-
-    def decode_from_json_string(self, value: str) -> BaboonGenerated:
-        json_obj = json.loads(value)
-        return self.decode_from_json(json_obj)
 
     def decode_from_json_latest(self, value: str, target_type: Type[TO]) -> TO:
         baboon = self.decode_from_json_string(value)
@@ -266,26 +260,22 @@ class BaboonCodecsFacade:
                 f"Unknown domain {type_meta.domain_identifier}."
             )
 
+        # extract domain model version and latest version
+        model_version = type_meta.version
         min_version = versions[0]
         max_version = versions[-1]
 
-        # Determine model version
-        if type_meta.version_min_compat and type_meta.version.version > max_version.version:
-            model_version = BaboonDomainVersion(
-                type_meta.domain_identifier,
-                type_meta.version_min_compat.version
-            )
-        else:
-            model_version = BaboonDomainVersion(
-                type_meta.domain_identifier,
-                type_meta.version.version
-            )
+        # it's a model of newer version than we have, we should find min compat version
+        if type_meta.version_min_compat and model_version.version > max_version.version:
+            model_version = type_meta.version_min_compat
 
-        # Get appropriate codec
+        # it's a model of latest version, get last version codec
         if exact and model_version.version == max_version.version:
             return self._get_codec_exact(versions_codecs, model_version, type_meta.type_identifier)
+        # it's a model of outdated version, we should read it with max compat codec
         elif min_version.version <= model_version.version < max_version.version:
             return self._get_codec_max_compat(versions_codecs, model_version, max_version, type_meta.type_identifier)
+        # it's a model of deprecated version, we should try to decode with minimal version
         elif model_version.version < min_version.version:
             return self._get_codec_max_compat(versions_codecs, min_version, max_version, type_meta.type_identifier)
         else:
@@ -297,7 +287,6 @@ class BaboonCodecsFacade:
                          versions_codecs: Dict[BaboonDomainVersion, Lazy],
                          domain_version: BaboonDomainVersion,
                          type_identifier: str) -> Tuple[Optional[Exception], Optional[BaboonCodecData]]:
-        """Get exact codec for version."""
         lazy_codecs = versions_codecs.get(domain_version)
         if not lazy_codecs:
             raise BaboonCodecException.CodecNotFound(
@@ -318,7 +307,6 @@ class BaboonCodecsFacade:
                               model_version: BaboonDomainVersion,
                               max_version: BaboonDomainVersion,
                               type_identifier: str) -> BaboonCodecData:
-        """Get maximum compatible codec."""
         lazy_meta = self.versions_meta.get(model_version)
         if not lazy_meta:
             raise BaboonCodecException.CodecNotFound(
