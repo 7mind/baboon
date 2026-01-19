@@ -8,6 +8,7 @@ object PyTypes {
   // baboon modules
   val pyBaboonSharedRuntimeModule: PyModuleId = PyModuleId(s"baboon_runtime_shared")
   val pyBaboonCodecsModule: PyModuleId        = PyModuleId(s"baboon_codecs")
+  val pyBaboonConversionsModule: PyModuleId   = PyModuleId(s"baboon_conversions")
 
   // python modules
   val pyBuiltins: PyModuleId       = PyModuleId("builtins")
@@ -27,10 +28,10 @@ object PyTypes {
   val pydantic: PyModuleId = PyModuleId("pydantic")
 
   // baboon meta
-  val baboonMeta: PyType             = PyType(pyBaboonSharedRuntimeModule, "BaboonMeta")
-  val iBaboonGenerated: PyType       = PyType(pyBaboonSharedRuntimeModule, "BaboonGenerated")
-  val iBaboonGeneratedLatest: PyType = PyType(pyBaboonSharedRuntimeModule, "BaboonGeneratedLatest")
-  val iBaboonAdtMemberMeta: PyType   = PyType(pyBaboonSharedRuntimeModule, "BaboonAdtMemberMeta")
+  val baboonMeta: PyType            = PyType(pyBaboonSharedRuntimeModule, "BaboonMeta")
+  val baboonGenerated: PyType       = PyType(pyBaboonSharedRuntimeModule, "BaboonGenerated")
+  val baboonGeneratedLatest: PyType = PyType(pyBaboonSharedRuntimeModule, "BaboonGeneratedLatest")
+  val baboonAdtMemberMeta: PyType   = PyType(pyBaboonSharedRuntimeModule, "BaboonAdtMemberMeta")
 
   // baboon codecs
   def abstractBaboonCodecs(id: String): PyType = PyType(pyBaboonCodecsModule, s"AbstractBaboon${id.capitalize}Codecs")
@@ -54,8 +55,9 @@ object PyTypes {
   val baboonBinCodecNoEncoderGeneratedAdt: PyType = PyType(pyBaboonCodecsModule, "NoBinEncoderGeneratedAdt")
 
   // baboon conversions
-  val baboonAbstractConversion: PyType  = PyType(pyBaboonSharedRuntimeModule, "BaboonAbstractConversion")
-  val baboonAbstractConversions: PyType = PyType(pyBaboonSharedRuntimeModule, "BaboonAbstractConversions")
+  val abstractConversion: PyType        = PyType(pyBaboonConversionsModule, "AbstractConversion")
+  val baboonAbstractConversion: PyType  = PyType(pyBaboonConversionsModule, "AbstractConversion")
+  val baboonAbstractConversions: PyType = PyType(pyBaboonConversionsModule, "AbstractBaboonConversions")
 
   // baboon types
   val deprecated: PyType               = PyType(pyBaboonSharedRuntimeModule, "deprecated")

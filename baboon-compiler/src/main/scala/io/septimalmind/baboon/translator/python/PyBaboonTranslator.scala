@@ -174,7 +174,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
 
     val usualImportsByModule = usual.groupBy(_.moduleId).toList.sortBy { case (moduleId, types) => moduleId.path.size + types.size }.reverse.map {
       case (module, types) =>
-        if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule) {
+        if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule || module == pyBaboonConversionsModule) {
           val baseString  = pyFileTools.definitionsBasePkg.mkString(".")
           val typesString = types.map(_.name).mkString(", ")
           q"from $baseString.${module.module} import $typesString"

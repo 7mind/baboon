@@ -121,8 +121,8 @@ class AbstractBaboonConversions:
     def convert(self, from_obj: BaboonGenerated, conversion: Conversion) -> BaboonGenerated:
         return self.convert_with_context(None, from_obj, conversion)
 
-    def convert_by_type(self, context, from_obj: From, to_type: Type[To]) -> To:
-        key = ConversionKey(type(from_obj), to_type)
+    def convert_by_type(self, context, from_obj: From, from_type: Type[From], to_type: Type[To]) -> To:
+        key = ConversionKey(from_type , to_type)
         conv = self._conversions[key]
         return conv.convert(context, self, from_obj)
 
