@@ -1,9 +1,9 @@
 package io.septimalmind.baboon.lsp.features
 
-import io.septimalmind.baboon.lsp.protocol.{Diagnostic, DiagnosticSeverity}
+import io.septimalmind.baboon.lsp.protocol.{Diagnostic, DiagnosticSeverity, Position, Range}
 import io.septimalmind.baboon.lsp.state.CompilationResult
 import io.septimalmind.baboon.lsp.util.PositionConverter
-import io.septimalmind.baboon.parser.model.RawNodeMeta
+import io.septimalmind.baboon.parser.model.{InputOffset, RawNodeMeta}
 import io.septimalmind.baboon.parser.model.issues._
 
 class DiagnosticsProvider(positionConverter: PositionConverter) {
@@ -19,7 +19,7 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
       case BaboonIssue.Parser(pi) =>
         pi match {
           case ParserIssue.ParserFailed(error, _) =>
-            (positionConverter.defaultRange, s"Parse error: ${error.msg}", DiagnosticSeverity.Error)
+            (parseErrorRange(error), s"Parse error: ${error.msg}", DiagnosticSeverity.Error)
           case ParserIssue.IncludeNotFound(path) =>
             (positionConverter.defaultRange, s"Include not found: $path", DiagnosticSeverity.Error)
         }
@@ -48,6 +48,18 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
     }
 
     Some(Diagnostic(range, message, Some(severity), Some("baboon")))
+  }
+
+  private def parseErrorRange(error: fastparse.Parsed.Failure): Range = {
+    val pretty = error.extra.input.prettyIndex(error.index)
+    val parts  = pretty.split(":")
+    require(parts.length >= 2, s"Unexpected parser error position format: $pretty")
+
+    val line   = parts(0).toInt
+    val column = parts(1).toInt
+    val offset = InputOffset(error.index, line, column)
+    val start  = positionConverter.fromInputOffset(offset)
+    Range(start, Position(start.line, start.character + 1))
   }
 
   private def extractTyperIssueInfo(issue: TyperIssue): (Option[RawNodeMeta], String) = {
