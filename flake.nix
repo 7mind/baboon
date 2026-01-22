@@ -53,7 +53,14 @@
 
             buildPhase = ''
               ${sbtSetup.setupScript}
-              sbt baboonJVM/GraalVMNativeImage/packageBin
+              ${pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
+                HOME="$TMPDIR" \
+                SBT_OPTS="-Duser.home=$TMPDIR -Dsbt.global.base=$TMPDIR/.sbt -Dsbt.ivy.home=$TMPDIR/.ivy2 -Divy.home=$TMPDIR/.ivy2 -Dsbt.boot.directory=$TMPDIR/.sbt/boot" \
+                sbt baboonJVM/GraalVMNativeImage/packageBin
+              ''}
+              ${pkgs.lib.optionalString (!pkgs.stdenv.isDarwin) ''
+                sbt baboonJVM/GraalVMNativeImage/packageBin
+              ''}
             '';
 
             installPhase = ''
