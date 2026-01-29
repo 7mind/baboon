@@ -177,13 +177,46 @@ namespace Baboon.Time
         public int DiffInFullHours(RpDateTime other) => (int) (this - other).TotalHours;
         public int DiffInFullDays(RpDateTime other) => (int) (this - other).TotalDays;
         public int DiffInFullWeeks(RpDateTime other) => DiffInFullDays(other) / 7;
-        public int DiffInFullMonths(RpDateTime other)
+        public int DiffInFullYears(RpDateTime other) => DiffInFullCalendarMonths(other) / 12;
+
+        /**
+         * This method returns the number of calendar months that have fully completed within the period, taking the time of day into account.
+         */
+        public int DiffInFullCalendarMonths(RpDateTime other)
         {
-            var thisDt = ToUniversalTime();
-            var otherDt = other.ToUniversalTime();
-            return thisDt.Date == otherDt.Date ? 0 : (thisDt.Year - otherDt.Year) * 12 + thisDt.Month - otherDt.Month + thisDt.GetMonthsDiffByDays(otherDt);
+            var end = ToUniversalTime();
+            var start = other.ToUniversalTime();
+
+            if (start > end)
+            {
+                (end, start) = (start, end);
+            }
+
+            var endDaysInMonth = DateTime.DaysInMonth(end.Year, end.Month);
+            var endIsEndOfMonth = endDaysInMonth == end.Day;
+            var months = (end.Year - start.Year) * 12 + end.Month - start.Month;
+
+            if (start.Day < end.Day)
+            {
+                return months;
+            }
+
+            if (start.Day > end.Day)
+            {
+                // if start is 30/01/26 and end is 28/02/26 we should count that this is full month
+                if (!endIsEndOfMonth)
+                {
+                    return months - 1;
+                }
+            }
+
+            if (end.TimeOfDay < start.TimeOfDay)
+            {
+                return months - 1;
+            }
+
+            return months;
         }
-        public int DiffInFullYears(RpDateTime other) => DiffInFullMonths(other) / 12;
 
         public static RpDateTime Now => new(DateTimeOffset.Now, DateTimeKind.Local);
         public static RpDateTime UtcNow => new(DateTimeOffset.UtcNow, DateTimeKind.Utc);
@@ -265,31 +298,6 @@ namespace Baboon.Time
 
         public static RpDateTime Parse(string dt) => BaboonDateTimeFormats.FromString(dt);
         public static bool TryParse(string dt, out RpDateTime value) => BaboonDateTimeFormats.TryFromString(dt, out value);
-
-        private int GetMonthsDiffByDays(RpDateTime other)
-        {
-            var thisDt = ToUniversalTime();
-            var otherDt = other.ToUniversalTime();
-
-            var thisDaysInMonth = DateTime.DaysInMonth(thisDt.Year, thisDt.Month);
-            var otherDaysInMonth = DateTime.DaysInMonth(otherDt.Year, otherDt.Month);
-
-            var thisDay = thisDaysInMonth < otherDaysInMonth ? thisDt.Day : thisDaysInMonth == thisDt.Day ? otherDaysInMonth : thisDt.Day;
-            var otherDay = otherDaysInMonth < thisDaysInMonth ? otherDt.Day : otherDaysInMonth == otherDt.Day ? thisDaysInMonth : otherDt.Day;
-
-            if (thisDt < other)
-            {
-                if (thisDay > otherDay) return 1;
-                if (thisDay == otherDay && thisDt.TimeOfDay > otherDt.TimeOfDay) return 1;
-            }
-            else
-            {
-                if (thisDay < otherDay) return -1;
-                if (thisDay == otherDay && thisDt.TimeOfDay < otherDt.TimeOfDay) return -1;
-            }
-
-            return 0;
-        }
 
         private static long AdjustTicksOverflow(long ticks)
         {
