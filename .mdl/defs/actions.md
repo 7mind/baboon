@@ -14,6 +14,7 @@ This file defines the build orchestration for the Baboon project using mudyla.
 # environment
 
 - `LANG=C.UTF-8`
+- `JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8`
 
 ## passthrough
 
