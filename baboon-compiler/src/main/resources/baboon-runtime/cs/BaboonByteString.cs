@@ -71,7 +71,7 @@ namespace Baboon.Runtime.Shared
         // Concatenation
         public ByteString Concat(ByteString other)
         {
-            if (other == null!)
+            if (other is null)
             {
                 throw new ArgumentNullException(nameof(other));
             }
@@ -115,9 +115,9 @@ namespace Baboon.Runtime.Shared
         }
 
         // Comparison
-        public int CompareTo(ByteString other)
+        public int CompareTo(ByteString? other)
         {
-            if (other == null!) return 1;
+            if (other is null) return 1;
 
             var minLength = Math.Min(_bytes.Length, other._bytes.Length);
             for (var i = 0; i < minLength; i++)
@@ -130,9 +130,9 @@ namespace Baboon.Runtime.Shared
         }
 
         // Equality
-        public bool Equals(ByteString other)
+        public bool Equals(ByteString? other)
         {
-            if (other == null!) return false;
+            if (other is null) return false;
             if (_bytes.Length != other._bytes.Length) return false;
 
             for (var i = 0; i < _bytes.Length; i++)
@@ -159,10 +159,10 @@ namespace Baboon.Runtime.Shared
         }
 
         // Comparison operators
-        public static bool operator ==(ByteString left, ByteString right)
+        public static bool operator ==(ByteString? left, ByteString? right)
         {
             if (ReferenceEquals(left, right)) return true;
-            if (left == null! || right == null!) return false;
+            if (left is null || right is null) return false;
             return left.Equals(right);
         }
 
@@ -171,27 +171,27 @@ namespace Baboon.Runtime.Shared
             return !(left == right);
         }
 
-        public static bool operator <(ByteString left, ByteString right)
+        public static bool operator <(ByteString? left, ByteString? right)
         {
-            if (left == null!) return right != null!;
+            if (left is null) return right is not null;
             return left.CompareTo(right) < 0;
         }
 
-        public static bool operator >(ByteString left, ByteString right)
+        public static bool operator >(ByteString? left, ByteString? right)
         {
-            if (left == null!) return false;
+            if (left is null) return right is not null;
             return left.CompareTo(right) > 0;
         }
 
-        public static bool operator <=(ByteString left, ByteString right)
+        public static bool operator <=(ByteString? left, ByteString? right)
         {
-            if (left == null!) return true;
+            if (left is null) return true;
             return left.CompareTo(right) <= 0;
         }
 
-        public static bool operator >=(ByteString left, ByteString right)
+        public static bool operator >=(ByteString? left, ByteString? right)
         {
-            if (left == null!) return right == null!;
+            if (left is null) return right is null;
             return left.CompareTo(right) >= 0;
         }
 
@@ -301,9 +301,9 @@ namespace Baboon.Runtime.Shared
             return new ByteString(result);
         }
 
-        public bool StartsWith(ByteString other)
+        public bool StartsWith(ByteString? other)
         {
-            if (other == null! || other.Length > Length) return false;
+            if (other is null || other.Length > Length) return false;
             for (var i = 0; i < other.Length; i++)
             {
                 if (_bytes[i] != other._bytes[i]) return false;
@@ -312,9 +312,9 @@ namespace Baboon.Runtime.Shared
             return true;
         }
 
-        public bool EndsWith(ByteString other)
+        public bool EndsWith(ByteString? other)
         {
-            if (other == null! || other.Length > Length) return false;
+            if (other is null || other.Length > Length) return false;
 
             int offset = Length - other.Length;
             for (int i = 0; i < other.Length; i++)
