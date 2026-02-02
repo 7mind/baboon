@@ -1,13 +1,10 @@
 #nullable enable
 
-using System.Collections.Generic;
+using System;
+using System.Globalization;
 using System.IO;
 using System.Linq;
-using System;
-using System.Collections.Immutable;
-using System.Diagnostics;
 using System.Text;
-using Newtonsoft.Json.Linq;
 
 // ReSharper disable UnusedTypeParameter
 // ReSharper disable CheckNamespace
@@ -26,7 +23,7 @@ using Newtonsoft.Json.Linq;
 
 namespace Baboon.Runtime.Shared
 {
-    public class ByteString : IComparable<ByteString>, IEquatable<ByteString>
+    public sealed class ByteString : IComparable<ByteString>, IEquatable<ByteString>
     {
         private readonly byte[] _bytes;
 
@@ -40,9 +37,9 @@ namespace Baboon.Runtime.Shared
             _bytes = bytes ?? throw new ArgumentNullException(nameof(bytes));
         }
 
-        public ByteString(string text, Encoding encoding = null)
+        public ByteString(string text, Encoding? encoding = null)
         {
-            encoding = encoding ?? Encoding.UTF8;
+            encoding ??= Encoding.UTF8;
             _bytes = encoding.GetBytes(text);
         }
 
@@ -58,10 +55,12 @@ namespace Baboon.Runtime.Shared
         {
             hex = hex.Replace(" ", "").Replace("-", "");
             if (hex.Length % 2 != 0)
+            {
                 throw new ArgumentException("Hex string must have even length");
+            }
 
-            byte[] bytes = new byte[hex.Length / 2];
-            for (int i = 0; i < bytes.Length; i++)
+            var bytes = new byte[hex.Length / 2];
+            for (var i = 0; i < bytes.Length; i++)
             {
                 bytes[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
             }
@@ -72,9 +71,12 @@ namespace Baboon.Runtime.Shared
         // Concatenation
         public ByteString Concat(ByteString other)
         {
-            if (other == null) throw new ArgumentNullException(nameof(other));
+            if (other == null!)
+            {
+                throw new ArgumentNullException(nameof(other));
+            }
 
-            byte[] result = new byte[_bytes.Length + other._bytes.Length];
+            var result = new byte[_bytes.Length + other._bytes.Length];
             Array.Copy(_bytes, 0, result, 0, _bytes.Length);
             Array.Copy(other._bytes, 0, result, _bytes.Length, other._bytes.Length);
             return new ByteString(result);
@@ -82,22 +84,23 @@ namespace Baboon.Runtime.Shared
 
         public ByteString Concat(params ByteString[] others)
         {
-            if (others == null) throw new ArgumentNullException(nameof(others));
+            if (others == null)
+            {
+                throw new ArgumentNullException(nameof(others));
+            }
 
-            int totalLength = _bytes.Length + others.Sum(bs => bs?.Length ?? 0);
-            byte[] result = new byte[totalLength];
+            var totalLength = _bytes.Length + others.Sum(bs => bs?.Length ?? 0);
+            var result = new byte[totalLength];
 
-            int offset = 0;
+            var offset = 0;
             Array.Copy(_bytes, 0, result, offset, _bytes.Length);
             offset += _bytes.Length;
 
             foreach (var other in others)
             {
-                if (other != null)
-                {
-                    Array.Copy(other._bytes, 0, result, offset, other._bytes.Length);
-                    offset += other._bytes.Length;
-                }
+                if (other == null!) continue;
+                Array.Copy(other._bytes, 0, result, offset, other._bytes.Length);
+                offset += other._bytes.Length;
             }
 
             return new ByteString(result);
@@ -106,20 +109,20 @@ namespace Baboon.Runtime.Shared
         // Operator overloads for concatenation
         public static ByteString operator +(ByteString left, ByteString right)
         {
-            if (left == null) return right;
-            if (right == null) return left;
+            if (left == null!) return right;
+            if (right == null!) return left;
             return left.Concat(right);
         }
 
         // Comparison
         public int CompareTo(ByteString other)
         {
-            if (other == null) return 1;
+            if (other == null!) return 1;
 
-            int minLength = Math.Min(_bytes.Length, other._bytes.Length);
-            for (int i = 0; i < minLength; i++)
+            var minLength = Math.Min(_bytes.Length, other._bytes.Length);
+            for (var i = 0; i < minLength; i++)
             {
-                int comparison = _bytes[i].CompareTo(other._bytes[i]);
+                var comparison = _bytes[i].CompareTo(other._bytes[i]);
                 if (comparison != 0) return comparison;
             }
 
@@ -129,10 +132,10 @@ namespace Baboon.Runtime.Shared
         // Equality
         public bool Equals(ByteString other)
         {
-            if (other == null) return false;
+            if (other == null!) return false;
             if (_bytes.Length != other._bytes.Length) return false;
 
-            for (int i = 0; i < _bytes.Length; i++)
+            for (var i = 0; i < _bytes.Length; i++)
             {
                 if (_bytes[i] != other._bytes[i]) return false;
             }
@@ -140,21 +143,17 @@ namespace Baboon.Runtime.Shared
             return true;
         }
 
-        public override bool Equals(object obj)
+        public override bool Equals(object? obj)
         {
-            return Equals(obj as ByteString);
+            return obj is ByteString bs && Equals(bs);
         }
 
         public override int GetHashCode()
         {
             unchecked
             {
-                int hash = 17;
-                foreach (byte b in _bytes)
-                {
-                    hash = hash * 31 + b;
-                }
-
+                var hash = 17;
+                foreach (var b in _bytes) hash = hash * 31 + b;
                 return hash;
             }
         }
@@ -163,7 +162,7 @@ namespace Baboon.Runtime.Shared
         public static bool operator ==(ByteString left, ByteString right)
         {
             if (ReferenceEquals(left, right)) return true;
-            if (left is null || right is null) return false;
+            if (left == null! || right == null!) return false;
             return left.Equals(right);
         }
 
@@ -174,32 +173,32 @@ namespace Baboon.Runtime.Shared
 
         public static bool operator <(ByteString left, ByteString right)
         {
-            if (left is null) return right is not null;
+            if (left == null!) return right != null!;
             return left.CompareTo(right) < 0;
         }
 
         public static bool operator >(ByteString left, ByteString right)
         {
-            if (left is null) return false;
+            if (left == null!) return false;
             return left.CompareTo(right) > 0;
         }
 
         public static bool operator <=(ByteString left, ByteString right)
         {
-            if (left is null) return true;
+            if (left == null!) return true;
             return left.CompareTo(right) <= 0;
         }
 
         public static bool operator >=(ByteString left, ByteString right)
         {
-            if (left is null) return right is null;
+            if (left == null!) return right == null!;
             return left.CompareTo(right) >= 0;
         }
 
         // Utility methods
         public byte[] ToArray()
         {
-            byte[] copy = new byte[_bytes.Length];
+            var copy = new byte[_bytes.Length];
             Array.Copy(_bytes, copy, _bytes.Length);
             return copy;
         }
@@ -230,13 +229,8 @@ namespace Baboon.Runtime.Shared
         public string Encode()
         {
             if (_bytes.Length == 0) return string.Empty;
-
-            StringBuilder sb = new StringBuilder(_bytes.Length * 2);
-            foreach (byte b in _bytes)
-            {
-                sb.Append(b.ToString("X2"));
-            }
-
+            var sb = new StringBuilder(_bytes.Length * 2);
+            foreach (var b in _bytes) sb.Append(b.ToString("X2"));
             return sb.ToString();
         }
 
@@ -244,7 +238,9 @@ namespace Baboon.Runtime.Shared
         public static ByteString Parse(string hexString)
         {
             if (hexString == null)
+            {
                 throw new ArgumentNullException(nameof(hexString));
+            }
 
             // Remove common separators and whitespace
             hexString = hexString.Replace(" ", "")
@@ -253,17 +249,20 @@ namespace Baboon.Runtime.Shared
                 .Trim();
 
             if (hexString.Length == 0)
-                return ByteString.Empty;
+            {
+                return Empty;
+            }
 
             if (hexString.Length % 2 != 0)
-                throw new FormatException(
-                    $"Invalid hex string length: {hexString.Length}. Hex string must have even length.");
-
-            byte[] bytes = new byte[hexString.Length / 2];
-            for (int i = 0; i < bytes.Length; i++)
             {
-                string byteString = hexString.Substring(i * 2, 2);
-                if (!byte.TryParse(byteString, System.Globalization.NumberStyles.HexNumber, null, out bytes[i]))
+                throw new FormatException($"Invalid hex string length: {hexString.Length}. Hex string must have even length.");
+            }
+
+            var bytes = new byte[hexString.Length / 2];
+            for (var i = 0; i < bytes.Length; i++)
+            {
+                var byteString = hexString.Substring(i * 2, 2);
+                if (!byte.TryParse(byteString, NumberStyles.HexNumber, null, out bytes[i]))
                 {
                     throw new FormatException($"Invalid hex characters at position {i * 2}: '{byteString}'");
                 }
@@ -274,34 +273,38 @@ namespace Baboon.Runtime.Shared
 
         public static void WriteBytes(ByteString dt, BinaryWriter writer)
         {
-            writer.Write((uint)dt._bytes.Length);
+            writer.Write((uint) dt._bytes.Length);
             writer.Write(dt._bytes);
         }
 
         public static ByteString ReadBytes(BinaryReader reader)
         {
-            uint length = reader.ReadUInt32();
-            byte[] bytes = reader.ReadBytes((int)length);
+            var length = reader.ReadUInt32();
+            var bytes = reader.ReadBytes((int) length);
             return new ByteString(bytes);
         }
 
         public ByteString Substring(int startIndex, int length)
         {
             if (startIndex < 0 || startIndex >= _bytes.Length)
+            {
                 throw new ArgumentOutOfRangeException(nameof(startIndex));
-            if (length < 0 || startIndex + length > _bytes.Length)
-                throw new ArgumentOutOfRangeException(nameof(length));
+            }
 
-            byte[] result = new byte[length];
+            if (length < 0 || startIndex + length > _bytes.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(length));
+            }
+
+            var result = new byte[length];
             Array.Copy(_bytes, startIndex, result, 0, length);
             return new ByteString(result);
         }
 
         public bool StartsWith(ByteString other)
         {
-            if (other == null || other.Length > Length) return false;
-
-            for (int i = 0; i < other.Length; i++)
+            if (other == null! || other.Length > Length) return false;
+            for (var i = 0; i < other.Length; i++)
             {
                 if (_bytes[i] != other._bytes[i]) return false;
             }
@@ -311,7 +314,7 @@ namespace Baboon.Runtime.Shared
 
         public bool EndsWith(ByteString other)
         {
-            if (other == null || other.Length > Length) return false;
+            if (other == null! || other.Length > Length) return false;
 
             int offset = Length - other.Length;
             for (int i = 0; i < other.Length; i++)
