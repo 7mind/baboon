@@ -208,7 +208,7 @@ package baboon.runtime.shared {
         jsonCodec  <- getJsonCodec(typeMeta, exact = true).toTry
         jsonContent = jsonCodec.encode(BaboonCodecContext.Compact, value)
         metaJson    = typeMetaOverride.getOrElse(typeMeta).writeJson
-        result      = jsonContent.mapObject(_.add(CONTENT_JSON_KEY, metaJson))
+        result      = metaJson.mapObject(_.add(CONTENT_JSON_KEY, jsonContent))
       } yield result).toEither.left.map(
         e =>
           BaboonCodecException.EncoderFailure(
