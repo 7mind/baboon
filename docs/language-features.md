@@ -12,6 +12,29 @@ version "1.0.0"
 - `model` defines the namespace root for every referenced type.
 - `version` tags the schema snapshot used by the evolution engine.
 
+## Pragmas
+
+Pragmas are key-value directives placed between the `version` line and `include`/content. They configure per-domain, per-backend behavior without changing the CLI invocation.
+
+```baboon
+model acme.billing
+version "2.0.0"
+
+pragma scala.service.result.type = "scala.util.Either"
+pragma scala.service.result.pattern = "[$error, $success]"
+pragma rust.service.result.no-errors = "true"
+
+include "./shared.baboon"
+
+root data Invoice { ... }
+```
+
+- Keys are dotted identifiers; values are quoted strings.
+- Multiple pragmas can appear in any order before `include` and definitions.
+- Pragmas are scoped to the domain (model + version) they appear in.
+
+Currently supported pragmas control service method return type rendering. See the [Services](#services) section for details.
+
 ## Root reachability, includes, and namespaces
 
 Baboon only emits types that are transitively reachable from `root` declarations. Use `include` to pull in other files and `ns` to group related pieces without repeating the model header.
@@ -219,6 +242,112 @@ Service definitions are scoped like other members and can live inside namespaces
 
 Currently, service support is limited: Baboon does not provide transport runtime and does not generate all the necessary metadata.
 
+### Configurable service return types
+
+By default each backend wraps service method return types in a language-idiomatic result type:
+
+| Backend | Default return type | Default for `err` absent |
+|---------|-------------------|--------------------------|
+| Scala | `scala.util.Either[Err, Out]` | `Out` directly |
+| Rust | `Result<Out, Err>` | `Out` directly |
+| C# | `Out` (no error wrapping) | `Out` directly |
+| Python | `Out` (no error wrapping) | `Out` directly |
+
+You can override these defaults using pragmas in `.baboon` files or CLI flags.
+
+#### Pragma keys
+
+All pragma keys follow the pattern `{lang}.service.result.*` where `{lang}` is `scala`, `rust`, `cs`, or `python`.
+
+| Pragma key | Value | Description |
+|-----------|-------|-------------|
+| `{lang}.service.result.no-errors` | `"true"` / `"false"` | When true, methods return just the output type |
+| `{lang}.service.result.type` | e.g. `"Result"` | Wrapper type name (fully qualified if needed) |
+| `{lang}.service.result.pattern` | e.g. `"<$success, $error>"` | Type parameter pattern; `$success` and `$error` are expanded |
+| `{lang}.service.result.hkt` | `"true"` / `"false"` | Enable higher-kinded type parameter (Scala only) |
+| `{lang}.service.result.hkt.name` | e.g. `"F"` | HKT type parameter name (default `F`) |
+| `{lang}.service.result.hkt.signature` | e.g. `"[+_, +_]"` | HKT type parameter bounds (default `[+_, +_]`) |
+
+#### Example: ZIO-style Scala services
+
+```baboon
+model acme.billing
+version "1.0.0"
+
+pragma scala.service.result.hkt = "true"
+pragma scala.service.result.hkt.name = "F"
+pragma scala.service.result.hkt.signature = "[+_, +_]"
+pragma scala.service.result.pattern = "[$error, $success]"
+
+root service BillingApi {
+  def CreateInvoice (
+    in = CreateInvoiceRequest
+    out = InvoiceId
+    err = InvoiceError
+  )
+}
+```
+
+Generated Scala:
+
+```scala
+trait BillingApi[F[+_, +_]] {
+  def CreateInvoice(arg: CreateInvoiceRequest): F[InvoiceError, InvoiceId]
+}
+```
+
+#### Example: error-free Python services
+
+```baboon
+model acme.billing
+version "1.0.0"
+
+pragma python.service.result.no-errors = "true"
+
+root service BillingApi {
+  def CreateInvoice (
+    in = CreateInvoiceRequest
+    out = InvoiceId
+    err = InvoiceError
+  )
+}
+```
+
+Generated Python (the `err` type is ignored):
+
+```python
+class BillingApi(ABC):
+    @abstractmethod
+    def CreateInvoice(self, arg: CreateInvoiceRequest) -> InvoiceId:
+        raise NotImplementedError
+```
+
+#### CLI flags
+
+The same settings are available as CLI flags per backend. CLI flags override `.baboon` pragmas.
+
+```bash
+baboon \
+  --model-dir ./models \
+  :scala \
+    --service-result-hkt true \
+    --service-result-hkt-name F \
+    --service-result-hkt-signature "[+_, +_]" \
+    --service-result-pattern "[\$error, \$success]" \
+    --output ./output/scala \
+  :rust \
+    --service-result-type "anyhow::Result" \
+    --service-result-pattern "<\$success>" \
+    --service-result-no-errors true \
+    --output ./output/rust
+```
+
+Arbitrary pragma key-value pairs can also be passed via `--pragma`:
+
+```bash
+baboon :scala --pragma "scala.service.result.hkt=true" --pragma "scala.service.result.hkt.name=F"
+```
+
 ## Imports
 
 Imports inline definitions from another *version of the same model*. The imported version is used only as a source of declarations—once merged, the current file’s `model`/`version` stay in effect.
@@ -253,8 +382,9 @@ Versioned files can be diffed by Baboon to emit migration code. When a change is
 
 ## Code generation targets
 
-- Scala classes, codecs, and helpers.
-- C# classes with deduplication to minimize emitted artifacts.
-- Generated UEBA codecs for compact binary payloads.
+- **Scala** — classes, Circe JSON codecs, UEBA binary codecs, and evolution converters.
+- **C#** — classes with aggressive deduplication, Newtonsoft.Json codecs, UEBA binary codecs, and evolution converters.
+- **Rust** — native structs/enums with serde derive, custom UEBA binary codecs, and evolution converters.
+- **Python** — dataclasses with custom JSON codecs.
 
 Invoke `mdl :build :mkdist` to generate and package all targets through the existing mudyla pipelines.
