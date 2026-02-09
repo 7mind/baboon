@@ -15,6 +15,54 @@ impl Default for BaboonCodecContext {
     }
 }
 
+impl BaboonCodecContext {
+    pub fn use_indices(&self) -> bool {
+        matches!(self, BaboonCodecContext::Indexed)
+    }
+}
+
+// --- Index support ---
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BaboonIndexEntry {
+    pub offset: u32,
+    pub length: u32,
+}
+
+pub trait BaboonBinCodecIndexed {
+    fn index_elements_count(ctx: &BaboonCodecContext) -> u16;
+
+    fn read_index(
+        ctx: &BaboonCodecContext,
+        reader: &mut dyn Read,
+    ) -> Result<(u8, Vec<BaboonIndexEntry>), Box<dyn std::error::Error>> {
+        let header = bin_tools::read_byte(reader)?;
+        let is_indexed = (header & 0x01) != 0;
+        let mut result = Vec::new();
+        let mut prev_offset: u32 = 0;
+        let mut prev_len: u32 = 0;
+        if is_indexed {
+            let mut left = Self::index_elements_count(ctx) as usize;
+            while left > 0 {
+                let offset = bin_tools::read_i32(reader)? as u32;
+                let len = bin_tools::read_i32(reader)? as u32;
+                assert!(len > 0, "Length must be positive");
+                assert!(
+                    offset >= prev_offset + prev_len,
+                    "Offset violation: {} not >= {}",
+                    offset,
+                    prev_offset + prev_len
+                );
+                result.push(BaboonIndexEntry { offset, length: len });
+                left -= 1;
+                prev_offset = offset;
+                prev_len = len;
+            }
+        }
+        Ok((header, result))
+    }
+}
+
 // --- Binary codec traits ---
 
 pub trait BaboonBinEncode {

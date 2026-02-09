@@ -19,9 +19,9 @@ class RsUEBACodecGenerator(
   override def translate(defn: DomainMember.User, rsRef: RsValue.RsType, srcRef: RsValue.RsType): Option[TextTree[RsValue]] = {
     if (isActive(defn.id)) {
       defn.defn match {
-        case d: Typedef.Dto     => Some(genDtoCodec(rsRef, d))
-        case e: Typedef.Enum    => Some(genEnumCodec(rsRef, e))
-        case a: Typedef.Adt     => Some(genAdtCodec(rsRef, a))
+        case d: Typedef.Dto     => Some(genDtoCodec(defn, rsRef, d))
+        case e: Typedef.Enum    => Some(genEnumCodec(defn, rsRef, e))
+        case a: Typedef.Adt     => Some(genAdtCodec(defn, rsRef, a))
         case _: Typedef.Foreign => None
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
@@ -41,13 +41,53 @@ class RsUEBACodecGenerator(
     }
   }
 
-  private def genDtoCodec(name: RsValue.RsType, dto: Typedef.Dto): TextTree[RsValue] = {
+  private def genIndexedImpl(defn: DomainMember.User, name: RsValue.RsType): TextTree[RsValue] = {
+    val indexCount = defn.defn match {
+      case d: Typedef.Dto =>
+        d.fields.count(f => domain.refMeta(f.tpe).len.isVariable)
+      case _: Typedef.Enum => 0
+      case _: Typedef.Adt  => 0
+      case _               => 0
+    }
+
+    q"""impl crate::baboon_runtime::BaboonBinCodecIndexed for ${name.asName} {
+       |    fn index_elements_count(_ctx: &crate::baboon_runtime::BaboonCodecContext) -> u16 {
+       |        ${indexCount.toString}
+       |    }
+       |}""".stripMargin
+  }
+
+  private def genDtoCodec(defn: DomainMember.User, name: RsValue.RsType, dto: Typedef.Dto): TextTree[RsValue] = {
+    // Compact mode encoder: fields written directly to writer
     val encFields = dto.fields.map { f =>
       val fieldRef = q"value.${toSnakeCase(f.name.name)}"
       if (needsBox(f.tpe)) {
-        mkEncoder(f.tpe, q"(*$fieldRef)")
+        mkEncoder(f.tpe, q"(*$fieldRef)", q"writer")
       } else {
-        mkEncoder(f.tpe, fieldRef)
+        mkEncoder(f.tpe, fieldRef, q"writer")
+      }
+    }
+
+    // Indexed mode encoder: fields written to buffer, index entries to main writer
+    // Uses &mut buffer directly (not a long-lived binding) so borrow is dropped between calls,
+    // allowing buffer.len() reads for variable-length field index entries.
+    val indexedEncFields = dto.fields.map { f =>
+      val fieldRef = q"value.${toSnakeCase(f.name.name)}"
+      val actualRef = if (needsBox(f.tpe)) q"(*$fieldRef)" else fieldRef
+      val fakeEnc = mkEncoder(f.tpe, actualRef, q"&mut buffer")
+      val isVariable = domain.refMeta(f.tpe).len.isVariable
+
+      if (isVariable) {
+        q"""{
+           |    let before = buffer.len();
+           |    crate::baboon_runtime::bin_tools::write_i32(writer, before as i32)?;
+           |    $fakeEnc
+           |    let after = buffer.len();
+           |    let length = after - before;
+           |    crate::baboon_runtime::bin_tools::write_i32(writer, length as i32)?;
+           |}""".stripMargin
+      } else {
+        fakeEnc
       }
     }
 
@@ -64,18 +104,32 @@ class RsUEBACodecGenerator(
       q"${toSnakeCase(f.name.name)},"
     }
 
-    q"""impl crate::baboon_runtime::BaboonBinEncode for ${name.asName} {
+    val indexedImpl = genIndexedImpl(defn, name)
+
+    q"""$indexedImpl
+       |
+       |impl crate::baboon_runtime::BaboonBinEncode for ${name.asName} {
        |    fn encode_ueba(&self, ctx: &crate::baboon_runtime::BaboonCodecContext, writer: &mut dyn std::io::Write) -> std::io::Result<()> {
        |        let value = self;
-       |        crate::baboon_runtime::bin_tools::write_byte(writer, 0)?;
-       |        ${encFields.joinN().shift(8).trim}
+       |        if ctx.use_indices() {
+       |            crate::baboon_runtime::bin_tools::write_byte(writer, 0x01)?;
+       |            let mut buffer: Vec<u8> = Vec::new();
+       |            ${indexedEncFields.joinN().shift(12).trim}
+       |            writer.write_all(&buffer)?;
+       |        } else {
+       |            crate::baboon_runtime::bin_tools::write_byte(writer, 0x00)?;
+       |            ${encFields.joinN().shift(12).trim}
+       |        }
        |        Ok(())
        |    }
        |}
        |
        |impl crate::baboon_runtime::BaboonBinDecode for ${name.asName} {
        |    fn decode_ueba(ctx: &crate::baboon_runtime::BaboonCodecContext, reader: &mut dyn std::io::Read) -> Result<Self, Box<dyn std::error::Error>> {
-       |        let _header = crate::baboon_runtime::bin_tools::read_byte(reader)?;
+       |        let (_header, index) = <Self as crate::baboon_runtime::BaboonBinCodecIndexed>::read_index(ctx, reader)?;
+       |        if ctx.use_indices() {
+       |            assert_eq!(index.len(), <Self as crate::baboon_runtime::BaboonBinCodecIndexed>::index_elements_count(ctx) as usize);
+       |        }
        |        ${decFields.joinN().shift(8).trim}
        |        Ok(${name.asName} {
        |            ${ctorFields.joinN().shift(12).trim}
@@ -84,7 +138,7 @@ class RsUEBACodecGenerator(
        |}""".stripMargin
   }
 
-  private def genEnumCodec(name: RsValue.RsType, e: Typedef.Enum): TextTree[RsValue] = {
+  private def genEnumCodec(defn: DomainMember.User, name: RsValue.RsType, e: Typedef.Enum): TextTree[RsValue] = {
     val encBranches = e.members.zipWithIndex.toList.map { case (m, idx) =>
       q"""${name.asName}::${m.name.capitalize} => crate::baboon_runtime::bin_tools::write_byte(writer, ${idx.toString})?,"""
     }
@@ -93,7 +147,11 @@ class RsUEBACodecGenerator(
       q"""${idx.toString} => Ok(${name.asName}::${m.name.capitalize}),"""
     }
 
-    q"""impl crate::baboon_runtime::BaboonBinEncode for ${name.asName} {
+    val indexedImpl = genIndexedImpl(defn, name)
+
+    q"""$indexedImpl
+       |
+       |impl crate::baboon_runtime::BaboonBinEncode for ${name.asName} {
        |    fn encode_ueba(&self, ctx: &crate::baboon_runtime::BaboonCodecContext, writer: &mut dyn std::io::Write) -> std::io::Result<()> {
        |        match self {
        |            ${encBranches.joinN().shift(12).trim}
@@ -113,7 +171,7 @@ class RsUEBACodecGenerator(
        |}""".stripMargin
   }
 
-  private def genAdtCodec(name: RsValue.RsType, adt: Typedef.Adt): TextTree[RsValue] = {
+  private def genAdtCodec(defn: DomainMember.User, name: RsValue.RsType, adt: Typedef.Adt): TextTree[RsValue] = {
     val branches = adt.dataMembers(domain).zipWithIndex.toList
 
     val encBranches = branches.map { case (mid, idx) =>
@@ -133,7 +191,11 @@ class RsUEBACodecGenerator(
          |}""".stripMargin
     }
 
-    q"""impl crate::baboon_runtime::BaboonBinEncode for ${name.asName} {
+    val indexedImpl = genIndexedImpl(defn, name)
+
+    q"""$indexedImpl
+       |
+       |impl crate::baboon_runtime::BaboonBinEncode for ${name.asName} {
        |    fn encode_ueba(&self, ctx: &crate::baboon_runtime::BaboonCodecContext, writer: &mut dyn std::io::Write) -> std::io::Result<()> {
        |        match self {
        |            ${encBranches.joinN().shift(12).trim}
@@ -157,35 +219,35 @@ class RsUEBACodecGenerator(
   // - .encode_ueba() works via auto-ref/auto-deref for any ref level
   // - .len() and .iter() work via auto-deref for any ref level
   // - match needs &$ref to avoid moving out of borrow; match ergonomics handles &&T
-  private def mkEncoder(tpe: TypeRef, ref: TextTree[RsValue]): TextTree[RsValue] = {
+  private def mkEncoder(tpe: TypeRef, ref: TextTree[RsValue], writer: TextTree[RsValue] = q"writer"): TextTree[RsValue] = {
     tpe match {
       case TypeRef.Scalar(_) =>
-        q"$ref.encode_ueba(ctx, writer)?;"
+        q"$ref.encode_ueba(ctx, $writer)?;"
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
             q"""match &$ref {
-               |    None => crate::baboon_runtime::bin_tools::write_byte(writer, 0)?,
+               |    None => crate::baboon_runtime::bin_tools::write_byte($writer, 0)?,
                |    Some(v) => {
-               |        crate::baboon_runtime::bin_tools::write_byte(writer, 1)?;
-               |        ${mkEncoder(c.args.head, q"v").shift(8).trim}
+               |        crate::baboon_runtime::bin_tools::write_byte($writer, 1)?;
+               |        ${mkEncoder(c.args.head, q"v", writer).shift(8).trim}
                |    }
                |}""".stripMargin
           case TypeId.Builtins.lst =>
-            q"""crate::baboon_runtime::bin_tools::write_i32(writer, $ref.len() as i32)?;
+            q"""crate::baboon_runtime::bin_tools::write_i32($writer, $ref.len() as i32)?;
                |for item in ($ref).iter() {
-               |    ${mkEncoder(c.args.head, q"item").shift(4).trim}
+               |    ${mkEncoder(c.args.head, q"item", writer).shift(4).trim}
                |}""".stripMargin
           case TypeId.Builtins.set =>
-            q"""crate::baboon_runtime::bin_tools::write_i32(writer, $ref.len() as i32)?;
+            q"""crate::baboon_runtime::bin_tools::write_i32($writer, $ref.len() as i32)?;
                |for item in ($ref).iter() {
-               |    ${mkEncoder(c.args.head, q"item").shift(4).trim}
+               |    ${mkEncoder(c.args.head, q"item", writer).shift(4).trim}
                |}""".stripMargin
           case TypeId.Builtins.map =>
-            q"""crate::baboon_runtime::bin_tools::write_i32(writer, $ref.len() as i32)?;
+            q"""crate::baboon_runtime::bin_tools::write_i32($writer, $ref.len() as i32)?;
                |for (k, v) in ($ref).iter() {
-               |    ${mkEncoder(c.args.head, q"k").shift(4).trim}
-               |    ${mkEncoder(c.args.last, q"v").shift(4).trim}
+               |    ${mkEncoder(c.args.head, q"k", writer).shift(4).trim}
+               |    ${mkEncoder(c.args.last, q"v", writer).shift(4).trim}
                |}""".stripMargin
           case o => throw new RuntimeException(s"BUG: Unexpected collection type: $o")
         }
