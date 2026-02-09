@@ -67,6 +67,7 @@ class RsUEBACodecGenerator(
     q"""impl crate::baboon_runtime::BaboonBinEncode for ${name.asName} {
        |    fn encode_ueba(&self, ctx: &crate::baboon_runtime::BaboonCodecContext, writer: &mut dyn std::io::Write) -> std::io::Result<()> {
        |        let value = self;
+       |        crate::baboon_runtime::bin_tools::write_byte(writer, 0)?;
        |        ${encFields.joinN().shift(8).trim}
        |        Ok(())
        |    }
@@ -74,6 +75,7 @@ class RsUEBACodecGenerator(
        |
        |impl crate::baboon_runtime::BaboonBinDecode for ${name.asName} {
        |    fn decode_ueba(ctx: &crate::baboon_runtime::BaboonCodecContext, reader: &mut dyn std::io::Read) -> Result<Self, Box<dyn std::error::Error>> {
+       |        let _header = crate::baboon_runtime::bin_tools::read_byte(reader)?;
        |        ${decFields.joinN().shift(8).trim}
        |        Ok(${name.asName} {
        |            ${ctorFields.joinN().shift(12).trim}

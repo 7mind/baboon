@@ -283,7 +283,7 @@ $BABOON_BIN \
   :python  \
   --output ./test/conv-test-py/Generated \
   :rust \
-  --output ./test/conv-test-rs/src
+  --output ./test/conv-test-rs/src/generated
 
 ret success:bool=true
 ```

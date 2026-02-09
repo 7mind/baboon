@@ -64,6 +64,10 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
     assertBasicFields(readJsonFile("cs", "C# JSON"), "C# JSON")
   }
 
+  it should "read Rust-generated JSON" in {
+    assertBasicFields(readJsonFile("rust", "Rust JSON"), "Rust JSON")
+  }
+
   // UEBA Tests
   "Scala UEBA deserialization" should "read Scala-generated UEBA" in {
     assertBasicFields(readUebaFile("scala", "Scala UEBA"), "Scala UEBA")
@@ -71,6 +75,10 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
 
   it should "read C#-generated UEBA" in {
     assertBasicFields(readUebaFile("cs", "C# UEBA"), "C# UEBA")
+  }
+
+  it should "read Rust-generated UEBA" in {
+    assertBasicFields(readUebaFile("rust", "Rust UEBA"), "Rust UEBA")
   }
 
   // Cross-language comparison
@@ -86,5 +94,17 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
     val csData    = readUebaFile("cs", "C# UEBA")
     printComparison("UEBA", scalaData, csData)
     assert(scalaData == csData, "Scala and C# UEBA data should be equal")
+  }
+
+  it should "verify Scala and Rust JSON produce equivalent data" in {
+    val scalaData = readJsonFile("scala", "Scala JSON")
+    val rustData  = readJsonFile("rust", "Rust JSON")
+    assert(scalaData == rustData, "Scala and Rust JSON data should be equal")
+  }
+
+  it should "verify Scala and Rust UEBA produce equivalent data" in {
+    val scalaData = readUebaFile("scala", "Scala UEBA")
+    val rustData  = readUebaFile("rust", "Rust UEBA")
+    assert(scalaData == rustData, "Scala and Rust UEBA data should be equal")
   }
 }

@@ -159,7 +159,7 @@ pub mod hex_bytes {
     use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S: Serializer>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
-        let hex_string: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+        let hex_string: String = bytes.iter().map(|b| format!("{:02X}", b)).collect();
         serializer.serialize_str(&hex_string)
     }
 
@@ -370,7 +370,7 @@ pub mod time_formats {
 // --- Binary encoding/decoding tools ---
 
 pub mod bin_tools {
-    use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
+    use chrono::{DateTime, FixedOffset, NaiveDateTime, Offset, TimeZone, Utc};
     use rust_decimal::Decimal;
     use std::io::{Read, Write};
     use uuid::Uuid;
@@ -426,13 +426,41 @@ pub mod bin_tools {
     }
 
     pub fn write_decimal(writer: &mut dyn Write, value: &Decimal) -> std::io::Result<()> {
-        let bytes = value.serialize();
-        writer.write_all(&bytes)
+        // .NET decimal format: lo (i32), mid (i32), hi (i32), flags (i32)
+        // flags: sign in bit 31, scale in bits 16-23
+        let normalized = value.normalize();
+        let scale = normalized.scale();
+        let is_negative = normalized.is_sign_negative();
+        let mantissa = normalized.mantissa().unsigned_abs();
+
+        let lo = (mantissa & 0xFFFFFFFF) as i32;
+        let mid = ((mantissa >> 32) & 0xFFFFFFFF) as i32;
+        let hi = ((mantissa >> 64) & 0xFFFFFFFF) as i32;
+
+        let sign: u32 = if is_negative { 0x80000000 } else { 0 };
+        let flags = (sign | ((scale as u32) << 16)) as i32;
+
+        write_i32(writer, lo)?;
+        write_i32(writer, mid)?;
+        write_i32(writer, hi)?;
+        write_i32(writer, flags)
     }
 
     pub fn write_string(writer: &mut dyn Write, value: &str) -> std::io::Result<()> {
         let bytes = value.as_bytes();
-        write_i32(writer, bytes.len() as i32)?;
+        // VLQ (7-bit variable-length) encoding for length, matching C#/Scala format
+        let mut len = bytes.len() as u32;
+        loop {
+            let mut current_byte = (len & 0x7F) as u8;
+            len >>= 7;
+            if len != 0 {
+                current_byte |= 0x80;
+            }
+            writer.write_all(&[current_byte])?;
+            if len == 0 {
+                break;
+            }
+        }
         writer.write_all(bytes)
     }
 
@@ -442,21 +470,33 @@ pub mod bin_tools {
     }
 
     pub fn write_uuid(writer: &mut dyn Write, value: &Uuid) -> std::io::Result<()> {
-        writer.write_all(value.as_bytes())
+        // .NET GUID mixed-endian format: reverse bytes 0-3, 4-5, 6-7
+        let bytes = value.as_bytes();
+        let mut guid_bytes = *bytes;
+        guid_bytes.swap(0, 3);
+        guid_bytes.swap(1, 2);
+        guid_bytes.swap(4, 5);
+        guid_bytes.swap(6, 7);
+        writer.write_all(&guid_bytes)
     }
+
+    const DOTNET_EPOCH_OFFSET_MS: i64 = 62135596800000;
 
     pub fn write_timestamp<Tz: chrono::TimeZone>(
         writer: &mut dyn Write,
         value: &DateTime<Tz>,
     ) -> std::io::Result<()> {
-        let fixed = value
-            .with_timezone(&Utc)
-            .with_timezone(&FixedOffset::east_opt(0).unwrap());
-        write_i64(writer, fixed.timestamp())?;
-        write_i32(writer, fixed.timestamp_subsec_nanos() as i32)?;
-        let offset_seconds = fixed.offset().local_minus_utc();
-        write_i32(writer, offset_seconds)?;
-        write_bool(writer, true) // is_defined flag
+        // .NET DateTimeOffset format: localTicksMs (i64) + offsetMs (i64) + kind (u8)
+        let epoch_ms = value.timestamp_millis();
+        let dotnet_utc_ticks_ms = epoch_ms + DOTNET_EPOCH_OFFSET_MS;
+        let offset_seconds = value.offset().fix().local_minus_utc();
+        let offset_ms = offset_seconds as i64 * 1000;
+        let dotnet_local_ticks_ms = dotnet_utc_ticks_ms + offset_ms;
+        let kind: u8 = if offset_seconds == 0 { 1 } else { 0 };
+
+        write_i64(writer, dotnet_local_ticks_ms)?;
+        write_i64(writer, offset_ms)?;
+        write_byte(writer, kind)
     }
 
     // --- Readers ---
@@ -534,14 +574,40 @@ pub mod bin_tools {
     }
 
     pub fn read_decimal(reader: &mut dyn Read) -> Result<Decimal, Box<dyn std::error::Error>> {
-        let mut buf = [0u8; 16];
-        reader.read_exact(&mut buf)?;
-        Ok(Decimal::deserialize(buf))
+        // .NET decimal format: lo (i32), mid (i32), hi (i32), flags (i32)
+        let lo = read_i32(reader)? as u32;
+        let mid = read_i32(reader)? as u32;
+        let hi = read_i32(reader)? as u32;
+        let flags = read_i32(reader)? as u32;
+
+        let scale = ((flags >> 16) & 0xFF) as u32;
+        let is_negative = (flags & 0x80000000) != 0;
+
+        let mantissa = (lo as u128) | ((mid as u128) << 32) | ((hi as u128) << 64);
+        let mantissa_i128 = if is_negative {
+            -(mantissa as i128)
+        } else {
+            mantissa as i128
+        };
+
+        Ok(Decimal::from_i128_with_scale(mantissa_i128, scale))
     }
 
     pub fn read_string(reader: &mut dyn Read) -> Result<String, Box<dyn std::error::Error>> {
-        let len = read_i32(reader)? as usize;
-        let mut buf = vec![0u8; len];
+        // VLQ (7-bit variable-length) decoding for length, matching C#/Scala format
+        let mut length: u32 = 0;
+        let mut shift: u32 = 0;
+        loop {
+            let mut buf = [0u8; 1];
+            reader.read_exact(&mut buf)?;
+            let byte_read = buf[0];
+            length |= ((byte_read & 0x7F) as u32) << shift;
+            shift += 7;
+            if (byte_read & 0x80) == 0 {
+                break;
+            }
+        }
+        let mut buf = vec![0u8; length as usize];
         reader.read_exact(&mut buf)?;
         Ok(String::from_utf8(buf)?)
     }
@@ -554,19 +620,30 @@ pub mod bin_tools {
     }
 
     pub fn read_uuid(reader: &mut dyn Read) -> Result<Uuid, Box<dyn std::error::Error>> {
+        // .NET GUID mixed-endian format: reverse bytes 0-3, 4-5, 6-7
         let mut buf = [0u8; 16];
         reader.read_exact(&mut buf)?;
+        buf.swap(0, 3);
+        buf.swap(1, 2);
+        buf.swap(4, 5);
+        buf.swap(6, 7);
         Ok(Uuid::from_bytes(buf))
     }
 
     pub fn read_timestamp_utc(
         reader: &mut dyn Read,
     ) -> Result<DateTime<Utc>, Box<dyn std::error::Error>> {
-        let seconds = read_i64(reader)?;
-        let nanos = read_i32(reader)? as u32;
-        let _offset_seconds = read_i32(reader)?;
-        let _is_defined = read_bool(reader)?;
-        let dt = NaiveDateTime::from_timestamp_opt(seconds, nanos)
+        // .NET DateTimeOffset format: localTicksMs (i64) + offsetMs (i64) + kind (u8)
+        let dotnet_local_ticks_ms = read_i64(reader)?;
+        let offset_ms = read_i64(reader)?;
+        let _kind = read_byte(reader)?;
+
+        let dotnet_utc_ticks_ms = dotnet_local_ticks_ms - offset_ms;
+        let epoch_ms = dotnet_utc_ticks_ms - DOTNET_EPOCH_OFFSET_MS;
+
+        let secs = epoch_ms / 1000;
+        let nanos = ((epoch_ms % 1000) * 1_000_000) as u32;
+        let dt = NaiveDateTime::from_timestamp_opt(secs, nanos)
             .ok_or("Invalid timestamp")?;
         Ok(Utc.from_utc_datetime(&dt))
     }
@@ -574,13 +651,20 @@ pub mod bin_tools {
     pub fn read_timestamp_offset(
         reader: &mut dyn Read,
     ) -> Result<DateTime<FixedOffset>, Box<dyn std::error::Error>> {
-        let seconds = read_i64(reader)?;
-        let nanos = read_i32(reader)? as u32;
-        let offset_seconds = read_i32(reader)?;
-        let _is_defined = read_bool(reader)?;
+        // .NET DateTimeOffset format: localTicksMs (i64) + offsetMs (i64) + kind (u8)
+        let dotnet_local_ticks_ms = read_i64(reader)?;
+        let offset_ms = read_i64(reader)?;
+        let _kind = read_byte(reader)?;
+
+        let dotnet_utc_ticks_ms = dotnet_local_ticks_ms - offset_ms;
+        let epoch_ms = dotnet_utc_ticks_ms - DOTNET_EPOCH_OFFSET_MS;
+        let offset_seconds = (offset_ms / 1000) as i32;
+
         let offset = FixedOffset::east_opt(offset_seconds)
             .ok_or("Invalid offset")?;
-        let dt = NaiveDateTime::from_timestamp_opt(seconds, nanos)
+        let secs = epoch_ms / 1000;
+        let nanos = ((epoch_ms % 1000) * 1_000_000) as u32;
+        let dt = NaiveDateTime::from_timestamp_opt(secs, nanos)
             .ok_or("Invalid timestamp")?;
         Ok(offset.from_utc_datetime(&dt))
     }
