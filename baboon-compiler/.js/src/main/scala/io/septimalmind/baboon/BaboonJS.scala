@@ -249,6 +249,8 @@ object BaboonJS {
                 generateJsonCodecsByDefault               = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault               = opts.generateUebaCodecsByDefault.getOrElse(false),
                 deduplicate                               = opts.deduplicate.getOrElse(true),
+                serviceResult                             = ServiceResultConfig.csDefault,
+                pragmas                                   = Map.empty,
               ),
             )
           case "scala" =>
@@ -265,6 +267,8 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                serviceResult               = ServiceResultConfig.scalaDefault,
+                pragmas                     = Map.empty,
               ),
             )
           case other => throw new IllegalArgumentException(s"Unknown target language: $other")

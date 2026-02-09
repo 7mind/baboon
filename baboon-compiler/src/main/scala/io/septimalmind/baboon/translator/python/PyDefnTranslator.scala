@@ -1,7 +1,9 @@
 package io.septimalmind.baboon.translator.python
 
 import io.septimalmind.baboon.CompilerProduct
+import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.ServiceResultResolver
 import io.septimalmind.baboon.translator.python.PyTypes.*
 import io.septimalmind.baboon.translator.python.PyValue.PyType
 import io.septimalmind.baboon.typer.BaboonEnquiries
@@ -40,6 +42,7 @@ object PyDefnTranslator {
   )
 
   final class PyDefnTranslatorImpl[F[+_, +_]: Applicative2](
+    target: PyTarget,
     codecsFixture: PyCodecFixtureTranslator,
     codecsTests: PyCodecTestTranslator,
     typeTranslator: PyTypeTranslator,
@@ -309,7 +312,28 @@ object PyDefnTranslator {
                 |""".stripMargin,
             List.empty,
           )
-        case _: Typedef.Service => PyDefnRepr(q"", List.empty)
+        case service: Typedef.Service =>
+          val resolved = ServiceResultResolver.resolve(domain, "python", target.language.serviceResult, target.language.pragmas)
+          val methods = service.methods.map { m =>
+            val inType  = typeTranslator.asPyRef(m.sig, domain, evolution)
+            val outType = m.out.map(typeTranslator.asPyRef(_, domain, evolution))
+            val errType = m.err.map(typeTranslator.asPyRef(_, domain, evolution))
+            val pyName: PyValue => String = { case t: PyValue.PyType => t.name }
+            val outStr  = outType.map(_.mapRender(pyName)).getOrElse("")
+            val errStr  = errType.map(_.mapRender(pyName))
+            val retStr  = resolved.renderReturnType(outStr, errStr, "None")
+            q"""|@$pyAbstractMethod
+                |def ${m.name.name}(self, arg: $inType) -> $retStr:
+                |    raise NotImplementedError
+                |""".stripMargin
+          }
+          val allMethods = if (methods.isEmpty) q"pass" else methods.joinN()
+          PyDefnRepr(
+            q"""|class ${service.id.name.name}($pyABC):
+                |    ${allMethods.shift(4).trim}
+                |""".stripMargin,
+            List.empty,
+          )
         case _: Typedef.Foreign => PyDefnRepr(q"", List.empty)
       }
 

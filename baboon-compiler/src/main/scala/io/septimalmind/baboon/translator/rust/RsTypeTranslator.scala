@@ -8,7 +8,16 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
+object RsTypeTranslator {
+  sealed trait HexSerdeKind
+  object HexSerdeKind {
+    case object Direct extends HexSerdeKind
+    case object Optional extends HexSerdeKind
+  }
+}
+
 class RsTypeTranslator {
+  import RsTypeTranslator.HexSerdeKind
 
   def asRsRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[RsValue] = {
     tpe match {
@@ -135,10 +144,15 @@ class RsTypeTranslator {
   }
 
   /** Check if a TypeRef contains bytes (Vec<u8>) that needs hex serde */
-  def needsHexSerde(tpe: TypeRef): Boolean = {
+  def needsHexSerde(tpe: TypeRef): Option[HexSerdeKind] = {
     tpe match {
-      case TypeRef.Scalar(TypeId.Builtins.bytes) => true
-      case _                                     => false
+      case TypeRef.Scalar(TypeId.Builtins.bytes) => Some(HexSerdeKind.Direct)
+      case TypeRef.Constructor(TypeId.Builtins.opt, args) if args.exists {
+            case TypeRef.Scalar(TypeId.Builtins.bytes) => true
+            case _                                     => false
+          } =>
+        Some(HexSerdeKind.Optional)
+      case _ => None
     }
   }
 

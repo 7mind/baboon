@@ -40,6 +40,45 @@ object CompilerTarget {
   ) extends CompilerTarget
 }
 
+final case class HktConfig(
+  name: String,
+  signature: String,
+)
+
+final case class ServiceResultConfig(
+  noErrors: Boolean,
+  resultType: Option[String],
+  pattern: Option[String],
+  hkt: Option[HktConfig],
+)
+
+object ServiceResultConfig {
+  val scalaDefault: ServiceResultConfig = ServiceResultConfig(
+    noErrors   = false,
+    resultType = Some("scala.util.Either"),
+    pattern    = Some("[$error, $success]"),
+    hkt        = None,
+  )
+  val rustDefault: ServiceResultConfig = ServiceResultConfig(
+    noErrors   = false,
+    resultType = Some("Result"),
+    pattern    = Some("<$success, $error>"),
+    hkt        = None,
+  )
+  val csDefault: ServiceResultConfig = ServiceResultConfig(
+    noErrors   = true,
+    resultType = None,
+    pattern    = None,
+    hkt        = None,
+  )
+  val pythonDefault: ServiceResultConfig = ServiceResultConfig(
+    noErrors   = true,
+    resultType = None,
+    pattern    = None,
+    hkt        = None,
+  )
+}
+
 final case class PyOptions(
   writeEvolutionDict: Boolean,
   wrappedAdtBranchCodecs: Boolean,
@@ -48,6 +87,8 @@ final case class PyOptions(
   generateUebaCodecsByDefault: Boolean,
   generateJsonCodecsByDefault: Boolean,
   enableDeprecatedEncoders: Boolean,
+  serviceResult: ServiceResultConfig,
+  pragmas: Map[String, String],
 )
 
 final case class ScOptions(
@@ -58,6 +99,8 @@ final case class ScOptions(
   generateUebaCodecs: Boolean,
   generateUebaCodecsByDefault: Boolean,
   generateJsonCodecsByDefault: Boolean,
+  serviceResult: ServiceResultConfig,
+  pragmas: Map[String, String],
 )
 
 final case class CSOptions(
@@ -74,6 +117,8 @@ final case class CSOptions(
   generateUebaCodecsByDefault: Boolean,
   generateJsonCodecsByDefault: Boolean,
   deduplicate: Boolean,
+  serviceResult: ServiceResultConfig,
+  pragmas: Map[String, String],
 )
 
 final case class RsOptions(
@@ -82,6 +127,8 @@ final case class RsOptions(
   generateUebaCodecs: Boolean,
   generateUebaCodecsByDefault: Boolean,
   generateJsonCodecsByDefault: Boolean,
+  serviceResult: ServiceResultConfig,
+  pragmas: Map[String, String],
 )
 
 final case class GenericOptions(

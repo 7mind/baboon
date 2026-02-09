@@ -96,6 +96,7 @@ class JvmBaboonCompilerTest extends AnyWordSpec with Matchers {
       Map.empty,
       Set.empty,
       Map.empty,
+      Map.empty,
     )
     val evolution = BaboonEvolution(pkg, version, Map.empty, Map.empty, Map.empty)
     val lineage = BaboonLineage(pkg, NEMap.from(Map(version -> domain)).getOrElse(throw new IllegalStateException("Empty lineage")), evolution)

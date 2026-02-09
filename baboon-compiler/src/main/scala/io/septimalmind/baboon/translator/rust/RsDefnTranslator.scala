@@ -1,7 +1,9 @@
 package io.septimalmind.baboon.translator.rust
 
 import io.septimalmind.baboon.CompilerProduct
+import io.septimalmind.baboon.CompilerTarget.RsTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.ServiceResultResolver
 import io.septimalmind.baboon.translator.rust.RsValue.RsType
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
@@ -27,6 +29,7 @@ object RsDefnTranslator {
   )
 
   class RsDefnTranslatorImpl[F[+_, +_]: Applicative2](
+    target: RsTarget,
     domain: Domain,
     evo: BaboonEvolution,
     rsFiles: RsFileTools,
@@ -237,8 +240,12 @@ object RsDefnTranslator {
       }
 
       // Special serde for bytes (hex encoding)
-      if (trans.needsHexSerde(f.tpe)) {
-        attrs += q"""#[serde(with = "crate::baboon_runtime::hex_bytes")]"""
+      trans.needsHexSerde(f.tpe) match {
+        case Some(RsTypeTranslator.HexSerdeKind.Direct) =>
+          attrs += q"""#[serde(with = "crate::baboon_runtime::hex_bytes")]"""
+        case Some(RsTypeTranslator.HexSerdeKind.Optional) =>
+          attrs += q"""#[serde(with = "crate::baboon_runtime::opt_hex_bytes")]"""
+        case None =>
       }
       // Special serde for Decimal (as number)
       if (trans.needsDecimalSerde(f.tpe)) {
@@ -405,18 +412,20 @@ object RsDefnTranslator {
     }
 
     private def makeServiceRepr(defn: DomainMember.User, name: RsType): TextTree[RsValue] = {
-      val service = defn.defn.asInstanceOf[Typedef.Service]
+      val resolved = ServiceResultResolver.resolve(domain, "rust", target.language.serviceResult, target.language.pragmas)
+      val service  = defn.defn.asInstanceOf[Typedef.Service]
       val methods = service.methods.map { m =>
         val inType  = trans.asRsRef(m.sig, domain, evo)
         val outType = m.out.map(trans.asRsRef(_, domain, evo))
         val errType = m.err.map(trans.asRsRef(_, domain, evo))
-        val ret = (outType, errType) match {
-          case (Some(o), Some(e)) => q"Result<$o, $e>"
-          case (None, Some(e))    => q"Result<(), $e>"
-          case (Some(o), None)    => o
-          case _                  => q"()"
+        val rsFqName: RsValue => String = {
+          case t: RsValue.RsType     => if (t.predef) t.name else (t.crate.parts :+ t.name).mkString("::")
+          case t: RsValue.RsTypeName => t.name
         }
-        q"fn ${toSnakeCase(m.name.name)}(&self, arg: $inType) -> $ret;"
+        val outStr  = outType.map(_.mapRender(rsFqName)).getOrElse("")
+        val errStr  = errType.map(_.mapRender(rsFqName))
+        val retStr  = resolved.renderReturnType(outStr, errStr, "()")
+        q"fn ${toSnakeCase(m.name.name)}(&self, arg: $inType) -> $retStr;"
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
       q"""pub trait ${name.asName} {

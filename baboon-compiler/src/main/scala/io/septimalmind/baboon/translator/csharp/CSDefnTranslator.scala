@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.ServiceResultResolver
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType, CSTypeOrigin}
 import io.septimalmind.baboon.typer.model.*
@@ -383,22 +384,19 @@ object CSDefnTranslator {
         case _: Typedef.Foreign => DefnRepr(q"", List.empty)
 
         case service: Typedef.Service =>
+          val resolved = ServiceResultResolver.resolve(domain, "cs", target.language.serviceResult, target.language.pragmas)
           val methods = service.methods.map {
             m =>
-              val out = m.out.map(r => trans.asCsRef(r, domain, evo))
-              val err = m.err.map(r => trans.asCsRef(r, domain, evo))
-
-              val ret = (out, err) match {
-                case (Some(o), Some(e)) =>
-                  q"${CSTypes.either}<$e, $o>"
-                case (None, Some(e)) =>
-                  q"${CSTypes.either}<$e, ${CSTypes.unit}>"
-                case (Some(o), None) =>
-                  o
-                case (None, None) =>
-                  q"void"
+              val out    = m.out.map(r => trans.asCsRef(r, domain, evo))
+              val err    = m.err.map(r => trans.asCsRef(r, domain, evo))
+              val csFqName: CSValue => String = {
+                case t: CSValue.CSType     => (t.pkg.parts :+ t.name).mkString(".")
+                case t: CSValue.CSTypeName => t.name
               }
-              q"""public $ret ${m.name.name}(${trans.asCsRef(m.sig, domain, evo)} arg);"""
+              val outStr = out.map(_.mapRender(csFqName)).getOrElse("")
+              val errStr = err.map(_.mapRender(csFqName))
+              val retStr = resolved.renderReturnType(outStr, errStr, "void")
+              q"""public $retStr ${m.name.name}(${trans.asCsRef(m.sig, domain, evo)} arg);"""
           }.join("\n")
 
           DefnRepr(

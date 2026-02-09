@@ -174,6 +174,8 @@ object Baboon {
                             generateJsonCodecsByDefault               = opts.generateJsonCodecsByDefault.getOrElse(false),
                             generateUebaCodecsByDefault               = opts.generateUebaCodecsByDefault.getOrElse(false),
                             deduplicate                               = opts.deduplicate.getOrElse(true),
+                            serviceResult                             = mkServiceResult(opts, ServiceResultConfig.csDefault),
+                            pragmas                                   = parsePragmas(opts.pragma),
                           ),
                         )
                     }
@@ -194,6 +196,8 @@ object Baboon {
                             generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                             generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                             generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                            serviceResult               = mkServiceResult(opts, ServiceResultConfig.scalaDefault),
+                            pragmas                     = parsePragmas(opts.pragma),
                           ),
                         )
                     }
@@ -214,6 +218,8 @@ object Baboon {
                             generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                             generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
                             enableDeprecatedEncoders    = opts.enableDeprecatedEncoders.getOrElse(false),
+                            serviceResult               = mkServiceResult(opts, ServiceResultConfig.pythonDefault),
+                            pragmas                     = parsePragmas(opts.pragma),
                           ),
                         )
                     }
@@ -232,6 +238,8 @@ object Baboon {
                             generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                             generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                             generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                            serviceResult               = mkServiceResult(opts, ServiceResultConfig.rustDefault),
+                            pragmas                     = parsePragmas(opts.pragma),
                           ),
                         )
                     }
@@ -300,6 +308,31 @@ object Baboon {
       codecTestIterations = opts.generic.codecTestIterations.getOrElse(500)
     )
     SharedOpts(outOpts, genericOpts)
+  }
+
+  private def parsePragmas(raw: List[String]): Map[String, String] = {
+    raw.flatMap { s =>
+      val idx = s.indexOf('=')
+      if (idx > 0) Some(s.substring(0, idx).trim -> s.substring(idx + 1).trim)
+      else None
+    }.toMap
+  }
+
+  private def mkServiceResult(opts: SharedCLIOptions, default: ServiceResultConfig): ServiceResultConfig = {
+    val hkt = opts match {
+      case sc: ScalaHktCLIOptions if sc.serviceResultHkt.getOrElse(false) =>
+        Some(HktConfig(
+          name      = sc.serviceResultHktName.getOrElse("F"),
+          signature = sc.serviceResultHktSignature.getOrElse("[+_, +_]"),
+        ))
+      case _ => default.hkt
+    }
+    ServiceResultConfig(
+      noErrors   = opts.serviceResultNoErrors.getOrElse(default.noErrors),
+      resultType = opts.serviceResultType.orElse(default.resultType),
+      pattern    = opts.serviceResultPattern.orElse(default.pattern),
+      hkt        = hkt,
+    )
   }
 
   private def processTarget[F[+_, +_]: Error2: MaybeSuspend2: TagKK](

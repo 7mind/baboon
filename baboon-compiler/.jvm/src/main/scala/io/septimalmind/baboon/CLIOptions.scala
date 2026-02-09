@@ -28,6 +28,16 @@ case class GenericTranspilerCLIOptions(
 trait SharedCLIOptions {
   def generic: GenericTranspilerCLIOptions
   def extAllowCleanup: List[String]
+  def serviceResultNoErrors: Option[Boolean]
+  def serviceResultType: Option[String]
+  def serviceResultPattern: Option[String]
+  def pragma: List[String]
+}
+
+trait ScalaHktCLIOptions {
+  def serviceResultHkt: Option[Boolean]
+  def serviceResultHktName: Option[String]
+  def serviceResultHktSignature: Option[String]
 }
 
 case class CsCLIOptions(
@@ -57,6 +67,14 @@ case class CsCLIOptions(
   deduplicate: Option[Boolean],
   @HelpMessage("Allow to erase target directory even if files with these extensions exist there. Default: cs,json,meta")
   extAllowCleanup: List[String],
+  @HelpMessage("Service methods return only success type, no error wrapping (default: true for C#)")
+  serviceResultNoErrors: Option[Boolean],
+  @HelpMessage("Wrapper type for service results (e.g. 'Either')")
+  serviceResultType: Option[String],
+  @HelpMessage("Pattern for service result type (e.g. '<$error, $success>')")
+  serviceResultPattern: Option[String],
+  @HelpMessage("Set a pragma value (key=value, repeatable)")
+  pragma: List[String],
 ) extends SharedCLIOptions
 
 case class ScCLIOptions(
@@ -78,7 +96,21 @@ case class ScCLIOptions(
   generateJsonCodecsByDefault: Option[Boolean],
   @HelpMessage("Generate UEBA codecs even for types without derived[ueba]")
   generateUebaCodecsByDefault: Option[Boolean],
-) extends SharedCLIOptions
+  @HelpMessage("Service methods return only success type, no error wrapping (default: false for Scala)")
+  serviceResultNoErrors: Option[Boolean],
+  @HelpMessage("Wrapper type for service results (e.g. 'scala.util.Either')")
+  serviceResultType: Option[String],
+  @HelpMessage("Pattern for service result type (e.g. '[$error, $success]')")
+  serviceResultPattern: Option[String],
+  @HelpMessage("Use HKT type parameter for service result")
+  serviceResultHkt: Option[Boolean],
+  @HelpMessage("HKT type parameter name (e.g. 'F')")
+  serviceResultHktName: Option[String],
+  @HelpMessage("HKT type parameter signature (e.g. '[+_, +_]')")
+  serviceResultHktSignature: Option[String],
+  @HelpMessage("Set a pragma value (key=value, repeatable)")
+  pragma: List[String],
+) extends SharedCLIOptions with ScalaHktCLIOptions
 
 case class PyCLIOptions(
   @Recurse
@@ -99,6 +131,14 @@ case class PyCLIOptions(
   generateUebaCodecsByDefault: Option[Boolean],
   @HelpMessage("Do not generate encoders for deprecated versions")
   enableDeprecatedEncoders: Option[Boolean],
+  @HelpMessage("Service methods return only success type, no error wrapping (default: true for Python)")
+  serviceResultNoErrors: Option[Boolean],
+  @HelpMessage("Wrapper type for service results")
+  serviceResultType: Option[String],
+  @HelpMessage("Pattern for service result type")
+  serviceResultPattern: Option[String],
+  @HelpMessage("Set a pragma value (key=value, repeatable)")
+  pragma: List[String],
 ) extends SharedCLIOptions
 
 case class RsCLIOptions(
@@ -116,6 +156,14 @@ case class RsCLIOptions(
   generateJsonCodecsByDefault: Option[Boolean],
   @HelpMessage("Generate UEBA codecs even for types without derived[ueba]")
   generateUebaCodecsByDefault: Option[Boolean],
+  @HelpMessage("Service methods return only success type, no error wrapping (default: false for Rust)")
+  serviceResultNoErrors: Option[Boolean],
+  @HelpMessage("Wrapper type for service results (e.g. 'Result')")
+  serviceResultType: Option[String],
+  @HelpMessage("Pattern for service result type (e.g. '<$success, $error>')")
+  serviceResultPattern: Option[String],
+  @HelpMessage("Set a pragma value (key=value, repeatable)")
+  pragma: List[String],
 ) extends SharedCLIOptions
 
 case class CLIOptions(
