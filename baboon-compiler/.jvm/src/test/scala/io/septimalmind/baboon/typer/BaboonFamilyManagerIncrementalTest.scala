@@ -121,7 +121,7 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
       val meta = RawNodeMeta(InputPointer.JustFile(input.path))
       val header = RawHeader(meta, pkg.split("\\.").toSeq)
       val rawVersion = RawVersion(meta, version)
-      val domain = RawDomain(header, rawVersion, None, RawContent(Seq.empty, Seq.empty))
+      val domain = RawDomain(header, rawVersion, Seq.empty, None, RawContent(Seq.empty, Seq.empty))
       F.pure(domain)
     }
   }
@@ -155,6 +155,7 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
         Map.empty,
         Map.empty,
         Set.empty,
+        Map.empty,
         Map.empty,
       )
     }

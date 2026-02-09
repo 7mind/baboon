@@ -18,11 +18,23 @@ class DefModel(
 ) {
   context.discard()
 
+  def pragma[$: P]: P[RawPragma] = {
+    import fastparse.ScalaWhitespace.whitespace
+    P(kw(kw.pragma, pragmaKey ~ "=" ~ Literals.Literals.SimpleStr)).map {
+      case (key, value) => RawPragma(key, value)
+    }
+  }
+
+  def pragmaKey[$: P]: P[String] = {
+    import fastparse.NoWhitespace.noWhitespaceImplicit
+    P(idt.symbol.rep(sep = fastparse.LiteralStr("."), min = 1).!).map(_.trim)
+  }
+
   def model[$: P]: P[RawDomain] = {
     import fastparse.ScalaWhitespace.whitespace
-    P(Start ~ header ~ version ~ `import`.? ~ content ~ End).map {
-      case (decl, version, imp, members) =>
-        RawDomain(decl, version, imp, members)
+    P(Start ~ header ~ version ~ pragma.rep() ~ `import`.? ~ content ~ End).map {
+      case (decl, version, pragmas, imp, members) =>
+        RawDomain(decl, version, pragmas, imp, members)
     }
   }
 

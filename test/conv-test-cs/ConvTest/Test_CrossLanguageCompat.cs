@@ -72,7 +72,13 @@ namespace ConvTest
         [Test]
         public void CSharp_JSON_Deserialization_Should_Read_Python_Generated_JSON()
         {
-            AssertBasicFields(ReadJsonFile("cs", "C# JSON"), "C# JSON");
+            AssertBasicFields(ReadJsonFile("python", "Python JSON"), "Python JSON");
+        }
+
+        [Test]
+        public void CSharp_JSON_Deserialization_Should_Read_Rust_Generated_JSON()
+        {
+            AssertBasicFields(ReadJsonFile("rust", "Rust JSON"), "Rust JSON");
         }
 
         // UEBA Tests
@@ -91,9 +97,14 @@ namespace ConvTest
         [Test]
         public void CSharp_UEBA_Deserialization_Should_Read_Python_Generated_UEBA()
         {
-            AssertBasicFields(ReadUebaFile("python", "C# UEBA"), "C# UEBA");
+            AssertBasicFields(ReadUebaFile("python", "Python UEBA"), "Python UEBA");
         }
 
+        [Test]
+        public void CSharp_UEBA_Deserialization_Should_Read_Rust_Generated_UEBA()
+        {
+            AssertBasicFields(ReadUebaFile("rust", "Rust UEBA"), "Rust UEBA");
+        }
 
         // Cross-language comparison
         [Test]
@@ -118,7 +129,7 @@ namespace ConvTest
         public void CrossLanguage_Comparison_Should_Verify_Python_And_CSharp_JSON_Produce_Equivalent_Data()
         {
             var csData = ReadJsonFile("cs", "C# JSON");
-            var pythonData = ReadJsonFile("python", "python JSON");
+            var pythonData = ReadJsonFile("python", "Python JSON");
             PrintComparison("JSON", "Python", pythonData, csData);
             Assert.That(csData, Is.EqualTo(pythonData), "Python and C# JSON data should be equal");
         }
@@ -126,10 +137,28 @@ namespace ConvTest
         [Test]
         public void CrossLanguage_Comparison_Should_Verify_Python_And_CSharp_UEBA_Produce_Equivalent_Data()
         {
-            var pythonData = ReadUebaFile("python", "python UEBA");
+            var pythonData = ReadUebaFile("python", "Python UEBA");
             var csData = ReadUebaFile("cs", "C# UEBA");
-            PrintComparison("UEBA", "python", pythonData, csData);
-            Assert.That(csData, Is.EqualTo(pythonData), "python and C# UEBA data should be equal");
+            PrintComparison("UEBA", "Python", pythonData, csData);
+            Assert.That(csData, Is.EqualTo(pythonData), "Python and C# UEBA data should be equal");
+        }
+
+        [Test]
+        public void CrossLanguage_Comparison_Should_Verify_Rust_And_CSharp_JSON_Produce_Equivalent_Data()
+        {
+            var csData = ReadJsonFile("cs", "C# JSON");
+            var rustData = ReadJsonFile("rust", "Rust JSON");
+            PrintComparison("JSON", "Rust", rustData, csData);
+            Assert.That(csData, Is.EqualTo(rustData), "Rust and C# JSON data should be equal");
+        }
+
+        [Test]
+        public void CrossLanguage_Comparison_Should_Verify_Rust_And_CSharp_UEBA_Produce_Equivalent_Data()
+        {
+            var rustData = ReadUebaFile("rust", "Rust UEBA");
+            var csData = ReadUebaFile("cs", "C# UEBA");
+            PrintComparison("UEBA", "Rust", rustData, csData);
+            Assert.That(csData, Is.EqualTo(rustData), "Rust and C# UEBA data should be equal");
         }
     }
 }

@@ -1,6 +1,7 @@
 __pycache__
 .venv
 .direnv
+Cargo.lock
 baboon.json
 .idea
 *.DotSettings.user

@@ -1,0 +1,13 @@
+[package]
+name = "baboon-conv-test-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+rust_decimal = { version = "1", features = ["serde-with-str"] }
+hex = "0.4"
+rand = "0.8"
