@@ -31,6 +31,13 @@ object CompilerTarget {
     generic: GenericOptions,
     language: PyOptions,
   ) extends CompilerTarget
+
+  case class RsTarget(
+    id: String,
+    output: OutputOptions,
+    generic: GenericOptions,
+    language: RsOptions,
+  ) extends CompilerTarget
 }
 
 final case class PyOptions(
@@ -67,6 +74,14 @@ final case class CSOptions(
   generateUebaCodecsByDefault: Boolean,
   generateJsonCodecsByDefault: Boolean,
   deduplicate: Boolean,
+)
+
+final case class RsOptions(
+  writeEvolutionDict: Boolean,
+  generateJsonCodecs: Boolean,
+  generateUebaCodecs: Boolean,
+  generateUebaCodecsByDefault: Boolean,
+  generateJsonCodecsByDefault: Boolean,
 )
 
 final case class GenericOptions(

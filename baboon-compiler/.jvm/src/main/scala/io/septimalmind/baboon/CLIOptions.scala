@@ -101,6 +101,23 @@ case class PyCLIOptions(
   enableDeprecatedEncoders: Option[Boolean],
 ) extends SharedCLIOptions
 
+case class RsCLIOptions(
+  @Recurse
+  generic: GenericTranspilerCLIOptions,
+  @HelpMessage("Allow to erase target directory even if files with these extensions exist there. Default: rs,json,meta")
+  extAllowCleanup: List[String],
+  @HelpMessage("Adds evolution metadata as a Rust dictionary")
+  rsWriteEvolutionDict: Option[Boolean],
+  @HelpMessage("Generate JSON codecs")
+  generateJsonCodecs: Option[Boolean],
+  @HelpMessage("Generate UEBA codecs")
+  generateUebaCodecs: Option[Boolean],
+  @HelpMessage("Generate JSON codecs even for types without derived[json]")
+  generateJsonCodecsByDefault: Option[Boolean],
+  @HelpMessage("Generate UEBA codecs even for types without derived[ueba]")
+  generateUebaCodecsByDefault: Option[Boolean],
+) extends SharedCLIOptions
+
 case class CLIOptions(
   @HelpMessage("A list of *.baboon files to process (can be combined with --model-dir)")
   model: List[String],

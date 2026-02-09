@@ -40,6 +40,7 @@ object Baboon {
       |Modalities:
       |  :cs                      Generate C# code
       |  :scala                   Generate Scala code
+      |  :rust                    Generate Rust code
       |  :lsp                     Start LSP server
       |  :explore                 Start interactive explorer
       |
@@ -57,6 +58,12 @@ object Baboon {
       |  --runtime <only|with|without>  Runtime generation mode
       |  --sc-write-evolution-dict  Add evolution metadata as Scala dictionary
       |  --sc-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
+      |
+      |Rust options (:rust):
+      |  --output <dir>           Output directory for generated code
+      |  --fixture-output <dir>   Output directory for generated fixtures
+      |  --runtime <only|with|without>  Runtime generation mode
+      |  --rs-write-evolution-dict  Add evolution metadata as Rust dictionary
       |
       |LSP options (:lsp):
       |  --port <port>            TCP port to listen on (default: stdio)
@@ -191,7 +198,7 @@ object Baboon {
                         )
                     }
                   case "python" =>
-                    CaseApp.parse[PyCLIOptions](roleArgs).leftMap(e => s"Can't parse cs CLI: $e").map {
+                    CaseApp.parse[PyCLIOptions](roleArgs).leftMap(e => s"Can't parse python CLI: $e").map {
                       case (opts, _) =>
                         val shopts = mkGenericOpts(opts)
 
@@ -207,6 +214,24 @@ object Baboon {
                             generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                             generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
                             enableDeprecatedEncoders    = opts.enableDeprecatedEncoders.getOrElse(false),
+                          ),
+                        )
+                    }
+                  case "rust" =>
+                    CaseApp.parse[RsCLIOptions](roleArgs).leftMap(e => s"Can't parse rust CLI: $e").map {
+                      case (opts, _) =>
+                        val shopts = mkGenericOpts(opts)
+
+                        CompilerTarget.RsTarget(
+                          id      = "Rust",
+                          output  = shopts.outOpts,
+                          generic = shopts.genericOpts,
+                          language = RsOptions(
+                            writeEvolutionDict          = opts.rsWriteEvolutionDict.getOrElse(false),
+                            generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
+                            generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
+                            generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
+                            generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
                           ),
                         )
                     }
@@ -260,7 +285,7 @@ object Baboon {
 
     val safeToRemove = NEList.from(opts.extAllowCleanup) match {
       case Some(value) => value.toSet
-      case None        => Set("meta", "cs", "json", "scala", "py", "pyc")
+      case None        => Set("meta", "cs", "json", "scala", "py", "pyc", "rs")
     }
 
     val outOpts = OutputOptions(
@@ -293,6 +318,8 @@ object Baboon {
         new BaboonJvmScModule[F](t)
       case t: CompilerTarget.PyTarget =>
         new BaboonJvmPyModule[F](t)
+      case t: CompilerTarget.RsTarget =>
+        new BaboonJvmRsModule[F](t)
     }
 
     Injector

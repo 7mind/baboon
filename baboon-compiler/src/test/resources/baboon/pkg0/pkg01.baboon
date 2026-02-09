@@ -6,12 +6,14 @@ foreign ObscureInt {
   cs = "System.Int32"
   scala = "java.lang.Integer"
   py = "builtins.int"
+  rust = "std::primitive::i32"
 }
 
 foreign ForeignStruct {
   cs = "BaboonDefinitions.Foreign.TestForeignStruct" with { "value-type" = "yes" }
   scala = "java.lang.Integer"
   py = "typing.NamedTuple"
+  rust = "std::primitive::i32"
 }
 
 
