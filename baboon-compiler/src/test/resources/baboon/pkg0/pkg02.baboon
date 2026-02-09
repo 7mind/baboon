@@ -15,6 +15,7 @@ foreign ObscureInt {
   cs = "System.Int32"
   scala = "java.lang.Integer"
   py = "builtins.int"
+  rust = "std::primitive::i32"
 }
 
 root data T1_E1_RET {

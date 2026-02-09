@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Baboon is a Domain Modeling Language (DML) compiler with schema evolution support. It compiles `.baboon` domain model files to multiple target languages (Scala, C#) with automatic JSON and UEBA codec generation.
+Baboon is a Domain Modeling Language (DML) compiler with schema evolution support. It compiles `.baboon` domain model files to multiple target languages (Scala, C#, Python, Rust) with automatic JSON and UEBA codec generation.
 
 ## Essential Commands
 
@@ -23,11 +23,11 @@ mdl :build :test
 
 # Run specific test suites independently:
 # - Regular ADT tests
-mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular
+mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular :test-rust-regular
 # - Wrapped ADT tests
-mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped
+mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped :test-rust-wrapped
 # - Manual/compatibility tests
-mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-manual-cs :test-manual-scala
+mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-gen-compat-rust :test-manual-cs :test-manual-scala :test-manual-rust
 
 # Run complete build pipeline (format, build, test)
 mdl :full-build
@@ -64,7 +64,9 @@ baboon \
   :cs \
   --output ./output/cs \
   :scala \
-  --output ./output/scala
+  --output ./output/scala \
+  :rust \
+  --output ./output/rust
 ```
 
 ## High-Level Architecture
@@ -89,6 +91,8 @@ baboon \
 4. **Code Generators (`translator/` package)**
    - `csharp/` - C# code generation with advanced deduplication
    - `scala/` - Scala code generation
+   - `python/` - Python code generation
+   - `rust/` - Rust code generation with native types, serde derive, and custom UEBA binary codecs
    - Each generator produces source files, codec implementations and conversions from lower versions to higher ones
 
 5. **Runtime Support (`src/main/resources/baboon-runtime/`)**
@@ -115,7 +119,8 @@ Baboon files support:
    - Allows easy testing and modularity
 
 3. **Codec Generation**:
-   - Generates both JSON (via Circe) and custom binary (UEBA) codecs
+   - Generates both JSON and custom binary (UEBA) codecs
+   - JSON: Circe (Scala), Newtonsoft.Json (C#), serde (Rust), custom (Python)
    - Supports automatic evolution between versions
 
 4. **CLI Design**:
@@ -126,7 +131,8 @@ Baboon files support:
 
 - Unit tests for individual components
 - Integration tests with full compilation cycles
-- Generated code tests in `test/cs-stub/` and `test/sc-stub/`
+- Generated code tests in `test/cs-stub/`, `test/sc-stub/`, `test/py-stub/`, and `test/rs-stub/`
+- Cross-platform compatibility tests in `test/conv-test-{cs,sc,py,rs}/` (verifies JSON/UEBA interop across all languages)
 - Evolution tests validating schema migration
 
 **Parallel Test Execution**: Test actions `test-gen-regular-adt` and `test-gen-wrapped-adt` can run in parallel. Each action:

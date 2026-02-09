@@ -31,7 +31,7 @@ TEST_DIR="./target/test-regular"
 
 # Create temporary test directories
 mkdir -p "$TEST_DIR"
-rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub"  "$TEST_DIR/py-stub"
+rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub"
 
 # Copy stub projects, excluding generated and build artifacts
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
@@ -39,7 +39,9 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclud
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
   ./test/sc-stub/ "$TEST_DIR/sc-stub/"
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
-  ./test/py-stub/ "$TEST_DIR/py-stub/"  
+  ./test/py-stub/ "$TEST_DIR/py-stub/"
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
+  ./test/rs-stub/ "$TEST_DIR/rs-stub/"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
@@ -68,7 +70,14 @@ $BABOON_BIN \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   --py-write-evolution-dict true \
-  --py-wrapped-adt-branch-codecs false
+  --py-wrapped-adt-branch-codecs false \
+  :rust \
+  --output "$TEST_DIR/rs-stub/src" \
+  --test-output "$TEST_DIR/rs-stub/src" \
+  --fixture-output "$TEST_DIR/rs-stub/src" \
+  --rs-write-evolution-dict true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true
 
 ret success:bool=true
 ret test_dir:string="$TEST_DIR"
@@ -119,6 +128,19 @@ popd
 ret success:bool=true
 ```
 
+# action: test-rust-regular
+
+Run Rust tests with regular ADT codecs.
+
+```bash
+TEST_DIR="${action.test-gen-regular-adt.test_dir}"
+pushd "$TEST_DIR/rs-stub"
+cargo test
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-wrapped-adt
 
 Generate code with wrapped ADT branch codecs.
@@ -131,7 +153,7 @@ TEST_DIR="./target/test-wrapped"
 
 # Create temporary test directories
 mkdir -p "$TEST_DIR"
-rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub"
+rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub"
 
 # Copy stub projects, excluding generated and build artifacts
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
@@ -139,7 +161,9 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclud
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
   ./test/sc-stub/ "$TEST_DIR/sc-stub/"
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
-  ./test/py-stub/ "$TEST_DIR/py-stub/"  
+  ./test/py-stub/ "$TEST_DIR/py-stub/"
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
+  ./test/rs-stub/ "$TEST_DIR/rs-stub/"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
@@ -168,7 +192,14 @@ $BABOON_BIN \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   --py-write-evolution-dict true \
-  --py-wrapped-adt-branch-codecs true
+  --py-wrapped-adt-branch-codecs true \
+  :rust \
+  --output "$TEST_DIR/rs-stub/src" \
+  --test-output "$TEST_DIR/rs-stub/src" \
+  --fixture-output "$TEST_DIR/rs-stub/src" \
+  --rs-write-evolution-dict true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true
 
 ret success:bool=true
 ret test_dir:string="$TEST_DIR"
@@ -219,6 +250,19 @@ popd
 ret success:bool=true
 ```
 
+# action: test-rust-wrapped
+
+Run Rust tests with wrapped ADT codecs.
+
+```bash
+TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
+pushd "$TEST_DIR/rs-stub"
+cargo test
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-manual
 
 Generate code for manual test projects.
@@ -237,7 +281,9 @@ $BABOON_BIN \
   :scala \
   --output ./test/conv-test-sc/src/main/scala/generated-main \
   :python  \
-  --output ./test/conv-test-py/Generated
+  --output ./test/conv-test-py/Generated \
+  :rust \
+  --output ./test/conv-test-rs/src/generated
 
 ret success:bool=true
 ```
@@ -287,6 +333,20 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-compat-rust
+
+Generate compatibility test files using Rust.
+
+```bash
+dep action.test-gen-manual
+
+pushd ./test/conv-test-rs
+cargo run
+popd
+
+ret success:bool=true
+```
+
 # action: test-manual-cs
 
 Run manual C# compatibility tests.
@@ -295,6 +355,7 @@ Run manual C# compatibility tests.
 dep action.test-gen-compat-scala
 dep action.test-gen-compat-cs
 dep action.test-gen-compat-python
+dep action.test-gen-compat-rust
 
 pushd ./test/conv-test-cs
 dotnet build
@@ -311,6 +372,7 @@ Run manual Scala compatibility tests.
 ```bash
 dep action.test-gen-compat-scala
 dep action.test-gen-compat-cs
+dep action.test-gen-compat-rust
 
 pushd ./test/conv-test-sc
 sbt +clean +test
@@ -344,6 +406,23 @@ popd
 ret success:bool=true
 ```
 
+# action: test-manual-rust
+
+Run Rust cross-language compatibility tests.
+
+```bash
+dep action.test-gen-compat-scala
+dep action.test-gen-compat-cs
+dep action.test-gen-compat-python
+dep action.test-gen-compat-rust
+
+pushd ./test/conv-test-rs
+cargo test
+popd
+
+ret success:bool=true
+```
+
 # action: test
 
 Run complete test suite (orchestrator action).
@@ -353,11 +432,14 @@ dep action.test-sbt-basic
 dep action.test-cs-regular
 dep action.test-scala-regular
 dep action.test-python-regular
+dep action.test-rust-regular
 dep action.test-cs-wrapped
 dep action.test-scala-wrapped
 dep action.test-python-wrapped
+dep action.test-rust-wrapped
 dep action.test-manual-cs
 dep action.test-manual-scala
+dep action.test-manual-rust
 
 ret success:bool=true
 ```

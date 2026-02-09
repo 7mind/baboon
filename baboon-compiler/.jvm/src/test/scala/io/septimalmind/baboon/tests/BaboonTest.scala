@@ -57,6 +57,8 @@ abstract class BaboonTest[F[+_, +_]: TagKK: BaboonTestModule] extends Spec2[F]()
                 generateJsonCodecsByDefault               = true,
                 generateUebaCodecsByDefault               = true,
                 deduplicate                               = true,
+                serviceResult                             = ServiceResultConfig.csDefault,
+                pragmas                                   = Map.empty,
               ),
             )
           ),

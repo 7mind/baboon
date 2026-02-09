@@ -75,7 +75,7 @@ object BaboonTyper {
         derivations <- computeDerivations(graph.meta.nodes)
         renames      = typed.renames
       } yield {
-        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations, roots.keySet, renames)
+        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations, roots.keySet, renames, model.pragmas.map(p => (p.key, p.value)).toMap)
       }
     }
 

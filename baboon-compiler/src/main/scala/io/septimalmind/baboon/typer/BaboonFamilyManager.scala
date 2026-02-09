@@ -312,7 +312,7 @@ object BaboonFamilyManager {
 
       val fullMembers = (importedMembers ++ currentMembers).unwrap.map(_._2)
 
-      RawDomain(current.header, current.version, None, RawContent(Seq.empty, fullMembers))
+      RawDomain(current.header, current.version, current.pragmas, None, RawContent(Seq.empty, fullMembers))
     }
 
     private def resolveImports(parsed: List[RawDomain]): F[NEList[BaboonIssue], List[RawDomain]] = {

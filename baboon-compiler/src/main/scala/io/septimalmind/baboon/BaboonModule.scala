@@ -8,6 +8,7 @@ import io.septimalmind.baboon.translator.csharp.*
 import io.septimalmind.baboon.translator.csharp.CSCodecFixtureTranslator.CSRandomMethodTranslatorImpl
 import io.septimalmind.baboon.translator.python.*
 import io.septimalmind.baboon.translator.python.PyDefnTranslator.PyDefnTranslatorImpl
+import io.septimalmind.baboon.translator.rust.*
 import io.septimalmind.baboon.translator.scl.*
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.model.*
@@ -142,4 +143,29 @@ class BaboonCommonPyModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[PyBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[PyBaboonTranslator[F]]
+}
+
+class BaboonCommonRsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
+  include(new SharedTranspilerModule[F])
+
+  makeSubcontext[RsDefnTranslator[F]]
+    .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
+    .withSubmodule(new ModuleDef {
+      make[RsDefnTranslator[F]].from[RsDefnTranslator.RsDefnTranslatorImpl[F]]
+      make[RsCodecFixtureTranslator].from[RsCodecFixtureTranslator.RsCodecFixtureTranslatorImpl]
+      make[RsCodecTestsTranslator].from[RsCodecTestsTranslator.Impl]
+      many[RsCodecTranslator]
+        .add[RsJsonCodecGenerator]
+        .add[RsUEBACodecGenerator]
+    })
+
+  make[RsFileTools].from[RsFileTools.RsFileToolsImpl]
+  make[RsTreeTools].from[RsTreeTools.RsTreeToolsImpl]
+
+  make[RsTypeTranslator]
+  makeFactory[RsConversionTranslator.Factory[F]]
+
+  make[RsBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
+  many[BaboonAbstractTranslator[F]]
+    .ref[RsBaboonTranslator[F]]
 }

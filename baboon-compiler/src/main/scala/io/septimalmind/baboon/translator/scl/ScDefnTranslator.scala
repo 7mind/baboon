@@ -1,7 +1,9 @@
 package io.septimalmind.baboon.translator.scl
 
 import io.septimalmind.baboon.CompilerProduct
+import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
+import io.septimalmind.baboon.translator.ServiceResultResolver
 import io.septimalmind.baboon.translator.scl.ScValue.ScType
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Applicative2, F}
@@ -39,6 +41,7 @@ object ScDefnTranslator {
   )
 
   class ScDefnTranslatorImpl[F[+_, +_]: Applicative2](
+    target: ScTarget,
     domain: Domain,
     evo: BaboonEvolution,
     scFiles: ScFileTools,
@@ -312,22 +315,25 @@ object ScDefnTranslator {
           )
 
         case service: Typedef.Service =>
+          val resolved = ServiceResultResolver.resolve(domain, "scala", target.language.serviceResult, target.language.pragmas)
           val methods = service.methods.map {
             m =>
-              val in  = trans.asScRef(m.sig, domain, evo)
-              val out = m.out.map(trans.asScRef(_, domain, evo))
-              val err = m.err.map(trans.asScRef(_, domain, evo))
-              val ret = (out, err) match {
-                case (Some(o), Some(e)) => q"$scEither[$e, $o]"
-                case (None, Some(e))    => q"$scEither[$e, $scUnit]"
-                case (Some(o), None)    => o
-                case _                  => q"$scUnit"
+              val in     = trans.asScRef(m.sig, domain, evo)
+              val out    = m.out.map(trans.asScRef(_, domain, evo))
+              val err    = m.err.map(trans.asScRef(_, domain, evo))
+              val scFqName: ScValue => String = {
+                case t: ScValue.ScType     => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
+                case t: ScValue.ScTypeName => t.name
               }
-              q"def ${m.name.name}(arg: $in): $ret"
+              val outStr = out.map(_.mapRender(scFqName)).getOrElse("")
+              val errStr = err.map(_.mapRender(scFqName))
+              val retStr = resolved.renderReturnType(outStr, errStr, "Unit")
+              q"def ${m.name.name}(arg: $in): $retStr"
           }
+          val traitTypeParam = resolved.traitTypeParam.map(tp => s"[$tp]").getOrElse("")
           val body = if (methods.nonEmpty) methods.joinN() else q""
           DefnRepr(
-            q"""trait ${name.asName} {
+            q"""trait ${name.asName}$traitTypeParam {
                |    ${body.shift(4).trim}
                |}""".stripMargin,
             Nil,
