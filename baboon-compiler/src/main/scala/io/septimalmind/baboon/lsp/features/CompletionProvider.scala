@@ -3,7 +3,7 @@ package io.septimalmind.baboon.lsp.features
 import io.septimalmind.baboon.lsp.LspLogging
 import io.septimalmind.baboon.lsp.protocol.{CompletionItem, CompletionItemKind, Position}
 import io.septimalmind.baboon.lsp.state.{DocumentState, WorkspaceState}
-import io.septimalmind.baboon.translator.ServiceResultResolver
+import io.septimalmind.baboon.translator.{ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.typer.model._
 import io.septimalmind.baboon.util.BLogger
 
@@ -137,7 +137,7 @@ class CompletionProvider(
   }
 
   private def getPragmaKeyCompletions: Seq[CompletionItem] = {
-    ServiceResultResolver.knownPragmaKeys.map { case (key, description) =>
+    (ServiceResultResolver.knownPragmaKeys ++ ServiceContextResolver.knownPragmaKeys).map { case (key, description) =>
       CompletionItem(
         label = key,
         kind = Some(CompletionItemKind.Property),
@@ -152,12 +152,21 @@ class CompletionProvider(
   private def getPragmaValueCompletions(key: String): Seq[CompletionItem] = {
     val booleanSuffixes = Set("no-errors", "hkt")
     val isBoolean = booleanSuffixes.exists(s => key.endsWith(s".$s"))
+    val isContextMode = key.endsWith(".service.context")
     if (isBoolean) {
       Seq("true", "false").map { v =>
         CompletionItem(
           label = v,
           kind = Some(CompletionItemKind.Value),
           detail = Some("boolean value"),
+        )
+      }
+    } else if (isContextMode) {
+      Seq("none", "abstract", "type").map { v =>
+        CompletionItem(
+          label = v,
+          kind = Some(CompletionItemKind.Value),
+          detail = Some("context mode"),
         )
       }
     } else {

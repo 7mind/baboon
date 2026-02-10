@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.typescript
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.ServiceResultResolver
+import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.typescript.TsValue.TsType
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
@@ -239,7 +239,13 @@ object TsDefnTranslator {
     }
 
     private def makeServiceRepr(defn: DomainMember.User, name: TsType): TextTree[TsValue] = {
-      val resolved = ServiceResultResolver.resolve(domain, "typescript", target.language.serviceResult, target.language.pragmas)
+      val resolved    = ServiceResultResolver.resolve(domain, "typescript", target.language.serviceResult, target.language.pragmas)
+      val resolvedCtx = ServiceContextResolver.resolve(domain, "typescript", target.language.serviceContext, target.language.pragmas)
+      val ctxParam = resolvedCtx match {
+        case ResolvedServiceContext.NoContext                => ""
+        case ResolvedServiceContext.AbstractContext(tn, pn)  => s"$pn: $tn, "
+        case ResolvedServiceContext.ConcreteContext(tn, pn)  => s"$pn: $tn, "
+      }
       val service  = defn.defn.asInstanceOf[Typedef.Service]
       val methods = service.methods.map { m =>
         val inType  = trans.asTsRef(m.sig, domain, evo)
@@ -258,10 +264,14 @@ object TsDefnTranslator {
           val retStr  = resolved.renderReturnType(outStr, errStr, "void")
           q"$retStr"
         }
-        q"${m.name.name}(arg: $inType): $retTree;"
+        q"${m.name.name}(${ctxParam}arg: $inType): $retTree;"
+      }
+      val genericParam = resolvedCtx match {
+        case ResolvedServiceContext.AbstractContext(tn, _) => s"<$tn>"
+        case _                                            => ""
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
-      q"""export interface ${name.asName} {
+      q"""export interface ${name.asName}$genericParam {
          |    ${body.shift(4).trim}
          |}""".stripMargin
     }

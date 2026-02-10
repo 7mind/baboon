@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.scl
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.ServiceResultResolver
+import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.scl.ScValue.ScType
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Applicative2, F}
@@ -315,7 +315,13 @@ object ScDefnTranslator {
           )
 
         case service: Typedef.Service =>
-          val resolved = ServiceResultResolver.resolve(domain, "scala", target.language.serviceResult, target.language.pragmas)
+          val resolved    = ServiceResultResolver.resolve(domain, "scala", target.language.serviceResult, target.language.pragmas)
+          val resolvedCtx = ServiceContextResolver.resolve(domain, "scala", target.language.serviceContext, target.language.pragmas)
+          val ctxParam = resolvedCtx match {
+            case ResolvedServiceContext.NoContext                       => ""
+            case ResolvedServiceContext.AbstractContext(tn, pn)        => s"$pn: $tn, "
+            case ResolvedServiceContext.ConcreteContext(tn, pn)        => s"$pn: $tn, "
+          }
           val methods = service.methods.map {
             m =>
               val in     = trans.asScRef(m.sig, domain, evo)
@@ -328,9 +334,16 @@ object ScDefnTranslator {
               val outStr = out.map(_.mapRender(scFqName)).getOrElse("")
               val errStr = err.map(_.mapRender(scFqName))
               val retStr = resolved.renderReturnType(outStr, errStr, "Unit")
-              q"def ${m.name.name}(arg: $in): $retStr"
+              q"def ${m.name.name}(${ctxParam}arg: $in): $retStr"
           }
-          val traitTypeParam = resolved.traitTypeParam.map(tp => s"[$tp]").getOrElse("")
+          val typeParams = Seq(
+            resolved.traitTypeParam,
+            resolvedCtx match {
+              case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+              case _                                            => None
+            },
+          ).flatten
+          val traitTypeParam = if (typeParams.nonEmpty) typeParams.mkString("[", ", ", "]") else ""
           val body = if (methods.nonEmpty) methods.joinN() else q""
           DefnRepr(
             q"""trait ${name.asName}$traitTypeParam {

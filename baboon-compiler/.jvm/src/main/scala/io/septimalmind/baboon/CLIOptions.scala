@@ -31,6 +31,9 @@ trait SharedCLIOptions {
   def serviceResultNoErrors: Option[Boolean]
   def serviceResultType: Option[String]
   def serviceResultPattern: Option[String]
+  def serviceContextMode: Option[String]
+  def serviceContextType: Option[String]
+  def serviceContextParameterName: Option[String]
   def pragma: List[String]
 }
 
@@ -73,6 +76,12 @@ case class CsCLIOptions(
   serviceResultType: Option[String],
   @HelpMessage("Pattern for service result type (e.g. '<$error, $success>')")
   serviceResultPattern: Option[String],
+  @HelpMessage("Service method context parameter mode: none, abstract, type (default: none)")
+  serviceContextMode: Option[String],
+  @HelpMessage("Context type name (default: Ctx)")
+  serviceContextType: Option[String],
+  @HelpMessage("Context parameter name (default: ctx)")
+  serviceContextParameterName: Option[String],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
 ) extends SharedCLIOptions
@@ -108,6 +117,12 @@ case class ScCLIOptions(
   serviceResultHktName: Option[String],
   @HelpMessage("HKT type parameter signature (e.g. '[+_, +_]')")
   serviceResultHktSignature: Option[String],
+  @HelpMessage("Service method context parameter mode: none, abstract, type (default: none)")
+  serviceContextMode: Option[String],
+  @HelpMessage("Context type name (default: Ctx)")
+  serviceContextType: Option[String],
+  @HelpMessage("Context parameter name (default: ctx)")
+  serviceContextParameterName: Option[String],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
 ) extends SharedCLIOptions with ScalaHktCLIOptions
@@ -137,6 +152,12 @@ case class PyCLIOptions(
   serviceResultType: Option[String],
   @HelpMessage("Pattern for service result type")
   serviceResultPattern: Option[String],
+  @HelpMessage("Service method context parameter mode: none, abstract, type (default: none)")
+  serviceContextMode: Option[String],
+  @HelpMessage("Context type name (default: Ctx)")
+  serviceContextType: Option[String],
+  @HelpMessage("Context parameter name (default: ctx)")
+  serviceContextParameterName: Option[String],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
 ) extends SharedCLIOptions
@@ -164,6 +185,12 @@ case class RsCLIOptions(
   serviceResultType: Option[String],
   @HelpMessage("Pattern for service result type (e.g. '<$success, $error>')")
   serviceResultPattern: Option[String],
+  @HelpMessage("Service method context parameter mode: none, abstract, type (default: none)")
+  serviceContextMode: Option[String],
+  @HelpMessage("Context type name (default: Ctx)")
+  serviceContextType: Option[String],
+  @HelpMessage("Context parameter name (default: ctx)")
+  serviceContextParameterName: Option[String],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
 ) extends SharedCLIOptions
@@ -191,6 +218,12 @@ case class TsCLIOptions(
   serviceResultType: Option[String],
   @HelpMessage("Pattern for service result type")
   serviceResultPattern: Option[String],
+  @HelpMessage("Service method context parameter mode: none, abstract, type (default: none)")
+  serviceContextMode: Option[String],
+  @HelpMessage("Context type name (default: Ctx)")
+  serviceContextType: Option[String],
+  @HelpMessage("Context parameter name (default: ctx)")
+  serviceContextParameterName: Option[String],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
 ) extends SharedCLIOptions

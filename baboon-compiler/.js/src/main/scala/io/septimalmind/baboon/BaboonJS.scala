@@ -250,6 +250,7 @@ object BaboonJS {
                 generateUebaCodecsByDefault               = opts.generateUebaCodecsByDefault.getOrElse(false),
                 deduplicate                               = opts.deduplicate.getOrElse(true),
                 serviceResult                             = ServiceResultConfig.csDefault,
+                serviceContext                            = ServiceContextConfig.default,
                 pragmas                                   = Map.empty,
               ),
             )
@@ -268,6 +269,7 @@ object BaboonJS {
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
                 serviceResult               = ServiceResultConfig.scalaDefault,
+                serviceContext              = ServiceContextConfig.default,
                 pragmas                     = Map.empty,
               ),
             )

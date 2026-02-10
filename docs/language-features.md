@@ -348,6 +348,120 @@ Arbitrary pragma key-value pairs can also be passed via `--pragma`:
 baboon :scala --pragma "scala.service.result.hkt=true" --pragma "scala.service.result.hkt.name=F"
 ```
 
+### Service context parameters
+
+By default, generated service methods only accept the input argument. You can inject an additional context parameter into every service method using the `{lang}.service.context` pragma family. This is useful for passing request context, authentication tokens, or other cross-cutting concerns.
+
+Three modes are supported:
+
+| Mode | Description |
+|------|-------------|
+| `none` | No context parameter (default) |
+| `abstract` | Context type becomes a generic type parameter on the service trait/interface |
+| `type` | Context type is a concrete, fully qualified type name |
+
+#### Pragma keys
+
+All pragma keys follow the pattern `{lang}.service.context*` where `{lang}` is `scala`, `rust`, `cs`, `python`, or `typescript`.
+
+| Pragma key | Value | Description |
+|-----------|-------|-------------|
+| `{lang}.service.context` | `"none"` / `"abstract"` / `"type"` | Context parameter mode |
+| `{lang}.service.context.type` | e.g. `"Ctx"` | Context type name (default `Ctx`); must be a valid identifier (simple name for `abstract` mode) |
+| `{lang}.service.context.parameter.name` | e.g. `"ctx"` | Context parameter name (default `ctx`) |
+
+#### Example: abstract context in Scala
+
+```baboon
+model acme.billing
+version "1.0.0"
+
+pragma scala.service.context = "abstract"
+pragma scala.service.context.type = "Ctx"
+pragma scala.service.context.parameter.name = "context"
+
+root service BillingApi {
+  def CreateInvoice (
+    in = CreateInvoiceRequest
+    out = InvoiceId
+  )
+}
+```
+
+Generated Scala:
+
+```scala
+trait BillingApi[Ctx] {
+  def CreateInvoice(context: Ctx, arg: CreateInvoiceRequest): InvoiceId
+}
+```
+
+#### Example: concrete context in TypeScript
+
+```baboon
+model acme.billing
+version "1.0.0"
+
+pragma typescript.service.context = "type"
+pragma typescript.service.context.type = "RequestContext"
+
+root service BillingApi {
+  def CreateInvoice (
+    in = CreateInvoiceRequest
+    out = InvoiceId
+  )
+}
+```
+
+Generated TypeScript:
+
+```typescript
+export interface BillingApi {
+    CreateInvoice(ctx: RequestContext, arg: CreateInvoiceRequest): InvoiceId;
+}
+```
+
+#### Combining with HKT and result pragmas
+
+Context pragmas compose with result pragmas. For example, combining HKT results with abstract context in Scala:
+
+```baboon
+pragma scala.service.result.hkt = "true"
+pragma scala.service.context = "abstract"
+```
+
+Generated Scala:
+
+```scala
+trait BillingApi[F[+_, +_], Ctx] {
+  def CreateInvoice(ctx: Ctx, arg: CreateInvoiceRequest): F[InvoiceError, InvoiceId]
+}
+```
+
+#### CLI flags
+
+The same settings are available as CLI flags per backend. CLI flags override `.baboon` pragmas.
+
+```bash
+baboon \
+  --model-dir ./models \
+  :scala \
+    --service-context-mode abstract \
+    --service-context-type Ctx \
+    --service-context-parameter-name context \
+    --output ./output/scala \
+  :typescript \
+    --service-context-mode type \
+    --service-context-type RequestContext \
+    --output ./output/typescript
+```
+
+Or via `--pragma`:
+
+```bash
+baboon :scala --pragma "scala.service.context=abstract" --pragma "scala.service.context.type=Ctx"
+```
+
 ## Imports
 
 Imports inline definitions from another *version of the same model*. The imported version is used only as a source of declarations—once merged, the current file’s `model`/`version` stay in effect.

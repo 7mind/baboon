@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.rust
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.RsTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.ServiceResultResolver
+import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.rust.RsValue.RsType
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
@@ -483,7 +483,13 @@ object RsDefnTranslator {
     }
 
     private def makeServiceRepr(defn: DomainMember.User, name: RsType): TextTree[RsValue] = {
-      val resolved = ServiceResultResolver.resolve(domain, "rust", target.language.serviceResult, target.language.pragmas)
+      val resolved    = ServiceResultResolver.resolve(domain, "rust", target.language.serviceResult, target.language.pragmas)
+      val resolvedCtx = ServiceContextResolver.resolve(domain, "rust", target.language.serviceContext, target.language.pragmas)
+      val ctxParam = resolvedCtx match {
+        case ResolvedServiceContext.NoContext                => ""
+        case ResolvedServiceContext.AbstractContext(tn, pn)  => s"$pn: $tn, "
+        case ResolvedServiceContext.ConcreteContext(tn, pn)  => s"$pn: $tn, "
+      }
       val service  = defn.defn.asInstanceOf[Typedef.Service]
       val methods = service.methods.map { m =>
         val inType  = trans.asRsRef(m.sig, domain, evo)
@@ -496,10 +502,14 @@ object RsDefnTranslator {
         val outStr  = outType.map(_.mapRender(rsFqName)).getOrElse("")
         val errStr  = errType.map(_.mapRender(rsFqName))
         val retStr  = resolved.renderReturnType(outStr, errStr, "()")
-        q"fn ${toSnakeCase(m.name.name)}(&self, arg: $inType) -> $retStr;"
+        q"fn ${toSnakeCase(m.name.name)}(&self, ${ctxParam}arg: $inType) -> $retStr;"
+      }
+      val genericParam = resolvedCtx match {
+        case ResolvedServiceContext.AbstractContext(tn, _) => s"<$tn>"
+        case _                                            => ""
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
-      q"""pub trait ${name.asName} {
+      q"""pub trait ${name.asName}$genericParam {
          |    ${body.shift(4).trim}
          |}""".stripMargin
     }

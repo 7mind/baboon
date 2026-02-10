@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.csharp
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.CSTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.ServiceResultResolver
+import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType, CSTypeOrigin}
 import io.septimalmind.baboon.typer.model.*
@@ -384,7 +384,13 @@ object CSDefnTranslator {
         case _: Typedef.Foreign => DefnRepr(q"", List.empty)
 
         case service: Typedef.Service =>
-          val resolved = ServiceResultResolver.resolve(domain, "cs", target.language.serviceResult, target.language.pragmas)
+          val resolved    = ServiceResultResolver.resolve(domain, "cs", target.language.serviceResult, target.language.pragmas)
+          val resolvedCtx = ServiceContextResolver.resolve(domain, "cs", target.language.serviceContext, target.language.pragmas)
+          val ctxParam = resolvedCtx match {
+            case ResolvedServiceContext.NoContext                => ""
+            case ResolvedServiceContext.AbstractContext(tn, pn)  => s"$tn $pn, "
+            case ResolvedServiceContext.ConcreteContext(tn, pn)  => s"$tn $pn, "
+          }
           val methods = service.methods.map {
             m =>
               val out    = m.out.map(r => trans.asCsRef(r, domain, evo))
@@ -396,12 +402,16 @@ object CSDefnTranslator {
               val outStr = out.map(_.mapRender(csFqName)).getOrElse("")
               val errStr = err.map(_.mapRender(csFqName))
               val retStr = resolved.renderReturnType(outStr, errStr, "void")
-              q"""public $retStr ${m.name.name}(${trans.asCsRef(m.sig, domain, evo)} arg);"""
+              q"""public $retStr ${m.name.name}($ctxParam${trans.asCsRef(m.sig, domain, evo)} arg);"""
           }.join("\n")
 
+          val genericParam = resolvedCtx match {
+            case ResolvedServiceContext.AbstractContext(tn, _) => s"<$tn>"
+            case _                                            => ""
+          }
           DefnRepr(
             q"""namespace ${name.asName} {
-               |    public interface ${name.asName}  {
+               |    public interface ${name.asName}$genericParam  {
                |        ${methods.shift(8).trim}
                |    }
                |}""".stripMargin,

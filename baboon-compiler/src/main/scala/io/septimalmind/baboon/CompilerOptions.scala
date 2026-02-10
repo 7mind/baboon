@@ -92,6 +92,20 @@ object ServiceResultConfig {
   )
 }
 
+final case class ServiceContextConfig(
+  mode: String,
+  typeName: String,
+  parameterName: String,
+)
+
+object ServiceContextConfig {
+  val default: ServiceContextConfig = ServiceContextConfig(
+    mode          = "none",
+    typeName      = "Ctx",
+    parameterName = "ctx",
+  )
+}
+
 final case class PyOptions(
   writeEvolutionDict: Boolean,
   wrappedAdtBranchCodecs: Boolean,
@@ -101,6 +115,7 @@ final case class PyOptions(
   generateJsonCodecsByDefault: Boolean,
   enableDeprecatedEncoders: Boolean,
   serviceResult: ServiceResultConfig,
+  serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
 )
 
@@ -113,6 +128,7 @@ final case class ScOptions(
   generateUebaCodecsByDefault: Boolean,
   generateJsonCodecsByDefault: Boolean,
   serviceResult: ServiceResultConfig,
+  serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
 )
 
@@ -131,6 +147,7 @@ final case class CSOptions(
   generateJsonCodecsByDefault: Boolean,
   deduplicate: Boolean,
   serviceResult: ServiceResultConfig,
+  serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
 )
 
@@ -142,6 +159,7 @@ final case class RsOptions(
   generateUebaCodecsByDefault: Boolean,
   generateJsonCodecsByDefault: Boolean,
   serviceResult: ServiceResultConfig,
+  serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
 )
 
@@ -153,6 +171,7 @@ final case class TsOptions(
   generateUebaCodecsByDefault: Boolean,
   generateJsonCodecsByDefault: Boolean,
   serviceResult: ServiceResultConfig,
+  serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
 )
 

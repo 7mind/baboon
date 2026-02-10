@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.python
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.ServiceResultResolver
+import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.python.PyTypes.*
 import io.septimalmind.baboon.translator.python.PyValue.PyType
 import io.septimalmind.baboon.typer.BaboonEnquiries
@@ -313,7 +313,13 @@ object PyDefnTranslator {
             List.empty,
           )
         case service: Typedef.Service =>
-          val resolved = ServiceResultResolver.resolve(domain, "python", target.language.serviceResult, target.language.pragmas)
+          val resolved    = ServiceResultResolver.resolve(domain, "python", target.language.serviceResult, target.language.pragmas)
+          val resolvedCtx = ServiceContextResolver.resolve(domain, "python", target.language.serviceContext, target.language.pragmas)
+          val ctxParam = resolvedCtx match {
+            case ResolvedServiceContext.NoContext                => ""
+            case ResolvedServiceContext.AbstractContext(tn, pn)  => s"$pn: $tn, "
+            case ResolvedServiceContext.ConcreteContext(tn, pn)  => s"$pn: $tn, "
+          }
           val methods = service.methods.map { m =>
             val inType  = typeTranslator.asPyRef(m.sig, domain, evolution)
             val outType = m.out.map(typeTranslator.asPyRef(_, domain, evolution))
@@ -323,13 +329,19 @@ object PyDefnTranslator {
             val errStr  = errType.map(_.mapRender(pyName))
             val retStr  = resolved.renderReturnType(outStr, errStr, "None")
             q"""|@$pyAbstractMethod
-                |def ${m.name.name}(self, arg: $inType) -> $retStr:
+                |def ${m.name.name}(self, ${ctxParam}arg: $inType) -> $retStr:
                 |    raise NotImplementedError
                 |""".stripMargin
           }
           val allMethods = if (methods.isEmpty) q"pass" else methods.joinN()
+          val classBases = resolvedCtx match {
+            case ResolvedServiceContext.AbstractContext(tn, _) =>
+              q"$pyABC, Generic[$tn]"
+            case _ =>
+              q"$pyABC"
+          }
           PyDefnRepr(
-            q"""|class ${service.id.name.name}($pyABC):
+            q"""|class ${service.id.name.name}($classBases):
                 |    ${allMethods.shift(4).trim}
                 |""".stripMargin,
             List.empty,
