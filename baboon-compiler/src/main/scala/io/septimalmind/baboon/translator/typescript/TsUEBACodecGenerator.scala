@@ -34,6 +34,19 @@ class TsUEBACodecGenerator(
     } else None
   }
 
+  private def adtBranchIndex(adtId: TypeId.User, dtoId: TypeId): Int = {
+    domain.defs.meta
+      .nodes(adtId)
+      .asInstanceOf[DomainMember.User]
+      .defn
+      .asInstanceOf[Typedef.Adt]
+      .dataMembers(domain)
+      .zipWithIndex
+      .find(_._1 == dtoId)
+      .get
+      ._2
+  }
+
   private def genDtoCodec(name: TsValue.TsType, dto: Typedef.Dto): TextTree[TsValue] = {
     val indexCount = dto.fields.count(f => domain.refMeta(f.tpe).len.isVariable)
 
@@ -68,8 +81,60 @@ class TsUEBACodecGenerator(
       q"${f.name.name},"
     }
 
-    q"""export function encode_${name.asName}_ueba(value: ${name.asName}, ctx: ${baboonCodecContext}, writer: ${baboonBinWriter}): void {
-       |    if (ctx === ${baboonCodecContext}.Indexed) {
+    val encPrefix = dto.id.owner match {
+      case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
+        val idx = adtBranchIndex(id, dto.id)
+        Some(q"${binTools}.writeByte(writer, ${idx.toString});")
+      case _ => None
+    }
+
+    val encPrefixTree = encPrefix.map(p => q"""$p
+       |""".stripMargin).getOrElse(q"")
+
+    val branchDecodeFn = dto.id.owner match {
+      case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs =>
+        Some(
+          q"""export function decode_${name.asName}_ueba_branch(ctx: ${baboonCodecContext}, reader: ${baboonBinReader}): ${name.asName} {
+             |    const header = ${binTools}.readByte(reader);
+             |    const useIndices = header === 0x01;
+             |    if (useIndices) {
+             |        for (let i = 0; i < ${indexCount.toString}; i++) {
+             |            ${binTools}.readI32(reader);
+             |            ${binTools}.readI32(reader);
+             |        }
+             |    }
+             |    ${decFields.joinN().shift(4).trim}
+             |    return {
+             |        ${ctorFields.joinN().shift(8).trim}
+             |    };
+             |}""".stripMargin
+        )
+      case _ => None
+    }
+
+    val decBody = dto.id.owner match {
+      case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
+        val idx = adtBranchIndex(id, dto.id)
+        q"""const marker = ${binTools}.readByte(reader);
+           |if (marker !== ${idx.toString}) { throw new Error("Expected ADT branch marker ${idx.toString}, got " + marker); }
+           |return decode_${name.asName}_ueba_branch(ctx, reader);""".stripMargin
+      case _ =>
+        q"""const header = ${binTools}.readByte(reader);
+           |const useIndices = header === 0x01;
+           |if (useIndices) {
+           |    for (let i = 0; i < ${indexCount.toString}; i++) {
+           |        ${binTools}.readI32(reader);
+           |        ${binTools}.readI32(reader);
+           |    }
+           |}
+           |${decFields.joinN().shift(0).trim}
+           |return {
+           |    ${ctorFields.joinN().shift(4).trim}
+           |};""".stripMargin
+    }
+
+    val mainCodec = q"""export function encode_${name.asName}_ueba(value: ${name.asName}, ctx: ${baboonCodecContext}, writer: ${baboonBinWriter}): void {
+       |    ${encPrefixTree}if (ctx === ${baboonCodecContext}.Indexed) {
        |        ${binTools}.writeByte(writer, 0x01);
        |        const buffer = new ${baboonBinWriter}();
        |        ${indexedEncFields.joinN().shift(8).trim}
@@ -81,19 +146,16 @@ class TsUEBACodecGenerator(
        |}
        |
        |export function decode_${name.asName}_ueba(ctx: ${baboonCodecContext}, reader: ${baboonBinReader}): ${name.asName} {
-       |    const header = ${binTools}.readByte(reader);
-       |    const useIndices = header === 0x01;
-       |    if (useIndices) {
-       |        for (let i = 0; i < ${indexCount.toString}; i++) {
-       |            ${binTools}.readI32(reader);
-       |            ${binTools}.readI32(reader);
-       |        }
-       |    }
-       |    ${decFields.joinN().shift(4).trim}
-       |    return {
-       |        ${ctorFields.joinN().shift(8).trim}
-       |    };
+       |    ${decBody.shift(4).trim}
        |}""".stripMargin
+
+    branchDecodeFn match {
+      case Some(branchFn) =>
+        q"""$branchFn
+           |
+           |$mainCodec""".stripMargin
+      case None => mainCodec
+    }
   }
 
   private def genEnumCodec(name: TsValue.TsType, e: Typedef.Enum): TextTree[TsValue] = {
@@ -127,13 +189,21 @@ class TsUEBACodecGenerator(
     val encBranches = branches.map { case (mid, idx) =>
       val branchName = mid.name.name
       val branchType = trans.asTsType(mid, domain, evo)
-      q"""case "$branchName": ${binTools}.writeByte(writer, ${idx.toString}); encode_${branchType.asName}_ueba(value.value, ctx, writer); break;"""
+      if (target.language.wrappedAdtBranchCodecs) {
+        q"""case "$branchName": encode_${branchType.asName}_ueba(value.value, ctx, writer); break;"""
+      } else {
+        q"""case "$branchName": ${binTools}.writeByte(writer, ${idx.toString}); encode_${branchType.asName}_ueba(value.value, ctx, writer); break;"""
+      }
     }
 
     val decBranches = branches.map { case (mid, idx) =>
       val branchName = mid.name.name
       val branchType = trans.asTsType(mid, domain, evo)
-      q"""case ${idx.toString}: return ${name.asName}_$branchName(decode_${branchType.asName}_ueba(ctx, reader));"""
+      if (target.language.wrappedAdtBranchCodecs) {
+        q"""case ${idx.toString}: return ${name.asName}_$branchName(decode_${branchType.asName}_ueba_branch(ctx, reader));"""
+      } else {
+        q"""case ${idx.toString}: return ${name.asName}_$branchName(decode_${branchType.asName}_ueba(ctx, reader));"""
+      }
     }
 
     q"""export function encode_${name.asName}_ueba(value: ${name.asName}, ctx: ${baboonCodecContext}, writer: ${baboonBinWriter}): void {

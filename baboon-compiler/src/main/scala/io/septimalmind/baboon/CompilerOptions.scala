@@ -136,6 +136,7 @@ final case class CSOptions(
 
 final case class RsOptions(
   writeEvolutionDict: Boolean,
+  wrappedAdtBranchCodecs: Boolean,
   generateJsonCodecs: Boolean,
   generateUebaCodecs: Boolean,
   generateUebaCodecsByDefault: Boolean,
@@ -146,6 +147,7 @@ final case class RsOptions(
 
 final case class TsOptions(
   writeEvolutionDict: Boolean,
+  wrappedAdtBranchCodecs: Boolean,
   generateJsonCodecs: Boolean,
   generateUebaCodecs: Boolean,
   generateUebaCodecsByDefault: Boolean,

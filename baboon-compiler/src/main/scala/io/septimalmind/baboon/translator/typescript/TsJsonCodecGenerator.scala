@@ -50,10 +50,18 @@ class TsJsonCodecGenerator(
       }
     }
 
+    val mainEnc = q"""{
+       |    ${encodeFields.joinN().shift(4).trim}
+       |}""".stripMargin
+
+    val fullEnc = dto.id.owner match {
+      case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs =>
+        q"""{ "${dto.id.name.name}": $mainEnc }"""
+      case _ => mainEnc
+    }
+
     q"""export function encode_${name.asName}_json(value: ${name.asName}): unknown {
-       |    return {
-       |        ${encodeFields.joinN().shift(8).trim}
-       |    };
+       |    return $fullEnc;
        |}
        |
        |export function decode_${name.asName}_json(json: unknown): ${name.asName} {
@@ -80,7 +88,11 @@ class TsJsonCodecGenerator(
     val encCases = dataMembers.map { mid =>
       val branchName = mid.name.name
       val branchType = trans.toTsTypeRefKeepForeigns(mid, domain, evo)
-      q"""case "$branchName": return { "$branchName": encode_${branchType.asName}_json(value.value) };"""
+      if (target.language.wrappedAdtBranchCodecs) {
+        q"""case "$branchName": return encode_${branchType.asName}_json(value.value);"""
+      } else {
+        q"""case "$branchName": return { "$branchName": encode_${branchType.asName}_json(value.value) };"""
+      }
     }
 
     val decCases = dataMembers.map { mid =>

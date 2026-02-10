@@ -144,20 +144,76 @@ object RsDefnTranslator {
       val derives = dtoDerives(dto)
       val ordImpls = dtoOrdImpls(dto, name)
 
+      val customSerialize = if (isWrappedAdtBranch(dto)) {
+        val branchName = dto.id.name.name
+        val hasFields = dto.fields.nonEmpty
+
+        val innerFields = dto.fields.map { f =>
+          val rawT       = trans.asRsRef(f.tpe, domain, evo)
+          val t          = if (needsBox(f.tpe)) q"Box<$rawT>" else rawT
+          val serdeAttrs = fieldSerdeAttributes(f)
+          val attrLine   = if (serdeAttrs.nonEmpty) serdeAttrs.joinN() else q""
+          q"""$attrLine
+             |${toSnakeCase(f.name.name)}: &'a $t,""".stripMargin.trim
+        }
+        val innerFieldsList = if (innerFields.nonEmpty) innerFields.joinN() else q""
+
+        val fieldAssignments = dto.fields.map { f =>
+          val fld = toSnakeCase(f.name.name)
+          q"$fld: &self.$fld,"
+        }
+        val fieldAssignmentsList = if (fieldAssignments.nonEmpty) fieldAssignments.joinN() else q""
+
+        val fieldsStructDecl = if (hasFields) q"struct Fields<'a>" else q"struct Fields"
+
+        q"""
+           |
+           |impl serde::Serialize for ${name.asName} {
+           |    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+           |        use serde::ser::SerializeMap;
+           |        #[derive(serde::Serialize)]
+           |        $fieldsStructDecl {
+           |            ${innerFieldsList.shift(12).trim}
+           |        }
+           |        let fields = Fields {
+           |            ${fieldAssignmentsList.shift(12).trim}
+           |        };
+           |        let mut map = serializer.serialize_map(Some(1))?;
+           |        map.serialize_entry("$branchName", &fields)?;
+           |        map.end()
+           |    }
+           |}""".stripMargin
+      } else {
+        q""
+      }
+
       q"""$derives
          |pub struct ${name.asName} {
          |    ${fieldsList.shift(4).trim}
          |}
          |
-         |$ordImpls""".stripMargin
+         |$ordImpls$customSerialize""".stripMargin
+    }
+
+    private def isWrappedAdtBranch(dto: Typedef.Dto): Boolean = {
+      target.language.wrappedAdtBranchCodecs && (dto.id.owner match {
+        case Owner.Adt(_) => true
+        case _            => false
+      })
     }
 
     private def dtoDerives(dto: Typedef.Dto): TextTree[RsValue] = {
       val hasNonOrd = dto.fields.exists(f => hasDirectFloat(f.tpe))
-      if (hasNonOrd) {
-        q"#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]"
-      } else {
-        q"#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]"
+      val wrappedBranch = isWrappedAdtBranch(dto)
+      (hasNonOrd, wrappedBranch) match {
+        case (_, true) if hasNonOrd =>
+          q"#[derive(Clone, Debug, serde::Deserialize)]"
+        case (_, true) =>
+          q"#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]"
+        case (true, false) =>
+          q"#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]"
+        case (false, false) =>
+          q"#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]"
       }
     }
 
@@ -350,10 +406,34 @@ object RsDefnTranslator {
       }
 
       // Custom serde for ADT: serialize as {"BranchName": { ... }}
-      val serBranches = dataMembers.map { mid =>
-        val branchName = mid.name.name.capitalize
-        q"""${name.asName}::$branchName(v) => {
-           |    map.serialize_entry("$branchName", v)?;
+      val serImpl = if (target.language.wrappedAdtBranchCodecs) {
+        val serBranches = dataMembers.map { mid =>
+          val branchName = mid.name.name.capitalize
+          q"""${name.asName}::$branchName(v) => v.serialize(serializer),"""
+        }
+        q"""impl serde::Serialize for ${name.asName} {
+           |    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+           |        match self {
+           |            ${serBranches.toList.joinN().shift(12).trim}
+           |        }
+           |    }
+           |}""".stripMargin
+      } else {
+        val serBranches = dataMembers.map { mid =>
+          val branchName = mid.name.name.capitalize
+          q"""${name.asName}::$branchName(v) => {
+             |    map.serialize_entry("$branchName", v)?;
+             |}""".stripMargin
+        }
+        q"""impl serde::Serialize for ${name.asName} {
+           |    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+           |        use serde::ser::SerializeMap;
+           |        let mut map = serializer.serialize_map(Some(1))?;
+           |        match self {
+           |            ${serBranches.toList.joinN().shift(12).trim}
+           |        }
+           |        map.end()
+           |    }
            |}""".stripMargin
       }
 
@@ -375,16 +455,7 @@ object RsDefnTranslator {
          |    ${variants.toList.joinN().shift(4).trim}
          |}
          |
-         |impl serde::Serialize for ${name.asName} {
-         |    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-         |        use serde::ser::SerializeMap;
-         |        let mut map = serializer.serialize_map(Some(1))?;
-         |        match self {
-         |            ${serBranches.toList.joinN().shift(12).trim}
-         |        }
-         |        map.end()
-         |    }
-         |}
+         |$serImpl
          |
          |impl<'de> serde::Deserialize<'de> for ${name.asName} {
          |    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {

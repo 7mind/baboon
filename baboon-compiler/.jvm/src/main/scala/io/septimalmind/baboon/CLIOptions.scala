@@ -148,6 +148,8 @@ case class RsCLIOptions(
   extAllowCleanup: List[String],
   @HelpMessage("Adds evolution metadata as a Rust dictionary")
   rsWriteEvolutionDict: Option[Boolean],
+  @HelpMessage("Every ADT branch will encode ADT metadata and expect it in the decoder")
+  rsWrappedAdtBranchCodecs: Option[Boolean],
   @HelpMessage("Generate JSON codecs")
   generateJsonCodecs: Option[Boolean],
   @HelpMessage("Generate UEBA codecs")
@@ -173,6 +175,8 @@ case class TsCLIOptions(
   extAllowCleanup: List[String],
   @HelpMessage("Adds evolution metadata as a TypeScript dictionary")
   tsWriteEvolutionDict: Option[Boolean],
+  @HelpMessage("Every ADT branch will encode ADT metadata and expect it in the decoder")
+  tsWrappedAdtBranchCodecs: Option[Boolean],
   @HelpMessage("Generate JSON codecs")
   generateJsonCodecs: Option[Boolean],
   @HelpMessage("Generate UEBA codecs")

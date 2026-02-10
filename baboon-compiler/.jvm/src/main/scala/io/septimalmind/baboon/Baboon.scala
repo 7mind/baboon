@@ -65,6 +65,7 @@ object Baboon {
       |  --fixture-output <dir>   Output directory for generated fixtures
       |  --runtime <only|with|without>  Runtime generation mode
       |  --rs-write-evolution-dict  Add evolution metadata as Rust dictionary
+      |  --rs-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
       |
       |LSP options (:lsp):
       |  --port <port>            TCP port to listen on (default: stdio)
@@ -235,6 +236,7 @@ object Baboon {
                           generic = shopts.genericOpts,
                           language = RsOptions(
                             writeEvolutionDict          = opts.rsWriteEvolutionDict.getOrElse(false),
+                            wrappedAdtBranchCodecs      = opts.rsWrappedAdtBranchCodecs.getOrElse(false),
                             generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
                             generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                             generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
@@ -255,6 +257,7 @@ object Baboon {
                           generic = shopts.genericOpts,
                           language = TsOptions(
                             writeEvolutionDict          = opts.tsWriteEvolutionDict.getOrElse(false),
+                            wrappedAdtBranchCodecs      = opts.tsWrappedAdtBranchCodecs.getOrElse(false),
                             generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
                             generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                             generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),

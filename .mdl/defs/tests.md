@@ -53,16 +53,16 @@ $BABOON_BIN \
   --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedTests" \
   --fixture-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedFixtures" \
-  --cs-wrapped-adt-branch-codecs false \
-  --cs-write-evolution-dict true \
+  --cs-wrapped-adt-branch-codecs=false \
+  --cs-write-evolution-dict=true \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :scala \
   --output "$TEST_DIR/sc-stub/src/main/scala/generated-main" \
   --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
   --fixture-output "$TEST_DIR/sc-stub/src/main/scala/generated-fixtures" \
-  --sc-write-evolution-dict true \
-  --sc-wrapped-adt-branch-codecs false \
+  --sc-write-evolution-dict=true \
+  --sc-wrapped-adt-branch-codecs=false \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :python \
@@ -71,20 +71,22 @@ $BABOON_BIN \
   --fixture-output "$TEST_DIR/py-stub/BaboonTests/GeneratedFixtures" \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
-  --py-write-evolution-dict true \
-  --py-wrapped-adt-branch-codecs false \
+  --py-write-evolution-dict=true \
+  --py-wrapped-adt-branch-codecs=false \
   :rust \
   --output "$TEST_DIR/rs-stub/src" \
   --test-output "$TEST_DIR/rs-stub/src" \
   --fixture-output "$TEST_DIR/rs-stub/src" \
-  --rs-write-evolution-dict true \
+  --rs-write-evolution-dict=true \
+  --rs-wrapped-adt-branch-codecs=false \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :typescript \
   --output "$TEST_DIR/ts-stub/src" \
   --test-output "$TEST_DIR/ts-stub/src" \
   --fixture-output "$TEST_DIR/ts-stub/src" \
-  --ts-write-evolution-dict true \
+  --ts-write-evolution-dict=true \
+  --ts-wrapped-adt-branch-codecs=false \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true
 
@@ -198,16 +200,16 @@ $BABOON_BIN \
   --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedTests" \
   --fixture-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedFixtures" \
-  --cs-wrapped-adt-branch-codecs true \
-  --cs-write-evolution-dict true \
+  --cs-wrapped-adt-branch-codecs=true \
+  --cs-write-evolution-dict=true \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :scala \
   --output "$TEST_DIR/sc-stub/src/main/scala/generated-main" \
   --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
   --fixture-output "$TEST_DIR/sc-stub/src/main/scala/generated-fixtures" \
-  --sc-write-evolution-dict true \
-  --sc-wrapped-adt-branch-codecs true \
+  --sc-write-evolution-dict=true \
+  --sc-wrapped-adt-branch-codecs=true \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :python \
@@ -216,20 +218,22 @@ $BABOON_BIN \
   --fixture-output "$TEST_DIR/py-stub/BaboonTests/GeneratedFixtures" \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
-  --py-write-evolution-dict true \
-  --py-wrapped-adt-branch-codecs true \
+  --py-write-evolution-dict=true \
+  --py-wrapped-adt-branch-codecs=true \
   :rust \
   --output "$TEST_DIR/rs-stub/src" \
   --test-output "$TEST_DIR/rs-stub/src" \
   --fixture-output "$TEST_DIR/rs-stub/src" \
-  --rs-write-evolution-dict true \
+  --rs-write-evolution-dict=true \
+  --rs-wrapped-adt-branch-codecs=true \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :typescript \
   --output "$TEST_DIR/ts-stub/src" \
   --test-output "$TEST_DIR/ts-stub/src" \
   --fixture-output "$TEST_DIR/ts-stub/src" \
-  --ts-write-evolution-dict true \
+  --ts-write-evolution-dict=true \
+  --ts-wrapped-adt-branch-codecs=true \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true
 
