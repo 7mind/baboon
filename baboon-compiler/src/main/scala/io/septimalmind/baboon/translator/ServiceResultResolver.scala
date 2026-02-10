@@ -45,6 +45,20 @@ object ServiceResultResolver {
     "typescript" -> "typescript.service.result.",
   )
 
+  private val pragmaSuffixes: Seq[(String, String)] = Seq(
+    "no-errors"     -> "\"true\" or \"false\"",
+    "type"          -> "result type name",
+    "pattern"       -> "e.g. [$error, $success]",
+    "hkt"           -> "\"true\" or \"false\"",
+    "hkt.name"      -> "e.g. F",
+    "hkt.signature" -> "e.g. [+_, +_]",
+  )
+
+  val knownPragmaKeys: Seq[(String, String)] = for {
+    (_, prefix) <- pragmaPrefix.toSeq.sortBy(_._1)
+    (suffix, description) <- pragmaSuffixes
+  } yield (s"$prefix$suffix", description)
+
   def resolve(domain: Domain, languageKey: String, cliConfig: ServiceResultConfig, cliPragmas: Map[String, String]): ResolvedServiceResult = {
     val prefix        = pragmaPrefix.getOrElse(languageKey, s"$languageKey.service.result.")
     val domainPragmas = domain.pragmas.filter { case (k, _) => k.startsWith(prefix) }.map { case (k, v) => (k.stripPrefix(prefix), v) }

@@ -3,6 +3,7 @@ package io.septimalmind.baboon.lsp.features
 import io.septimalmind.baboon.lsp.LspLogging
 import io.septimalmind.baboon.lsp.protocol.{CompletionItem, CompletionItemKind, Position}
 import io.septimalmind.baboon.lsp.state.{DocumentState, WorkspaceState}
+import io.septimalmind.baboon.translator.ServiceResultResolver
 import io.septimalmind.baboon.typer.model._
 import io.septimalmind.baboon.util.BLogger
 
@@ -14,7 +15,7 @@ class CompletionProvider(
 
   private val keywords = Seq(
     "model", "version", "import", "root", "data", "adt",
-    "enum", "foreign", "mixin", "service", "derived", "was"
+    "enum", "foreign", "mixin", "contract", "service", "pragma", "derived", "was"
   )
 
   private val builtinTypes = Seq(
@@ -36,8 +37,14 @@ class CompletionProvider(
       case CompletionContext.FieldName =>
         Seq.empty
 
+      case CompletionContext.PragmaKeyPosition =>
+        getPragmaKeyCompletions
+
+      case CompletionContext.PragmaValuePosition(key) =>
+        getPragmaValueCompletions(key)
+
       case CompletionContext.Unknown =>
-        getKeywordCompletions ++ getTypeCompletions ++ getBuiltinCompletions
+        getKeywordCompletions ++ getTypeCompletions ++ getBuiltinCompletions ++ getPragmaKeyCompletions
     }
 
     // Filter by prefix - match against both filterText (simple name) and label (full path)
@@ -58,10 +65,12 @@ class CompletionProvider(
 
   private sealed trait CompletionContext
   private object CompletionContext {
-    case object TypePosition    extends CompletionContext
-    case object KeywordPosition extends CompletionContext
-    case object FieldName       extends CompletionContext
-    case object Unknown         extends CompletionContext
+    case object TypePosition       extends CompletionContext
+    case object KeywordPosition    extends CompletionContext
+    case object FieldName          extends CompletionContext
+    case object PragmaKeyPosition  extends CompletionContext
+    case class PragmaValuePosition(key: String) extends CompletionContext
+    case object Unknown            extends CompletionContext
   }
 
   private def getCompletionContext(uri: String, position: Position): (CompletionContext, Option[String]) = {
@@ -77,8 +86,16 @@ class CompletionProvider(
           val typeWithPrefixPattern = """^(.*:\s*)(\w*)$""".r
           // Pattern for generic args: "opt[TypePre" or "map[K, ValuePre"
           val genericArgPattern = """^(.*[\[,]\s*)(\w*)$""".r
+          // Pragma key: "pragma scala.service.result." or "pragma sc"
+          val pragmaKeyPattern = """^\s*pragma\s+([\w.]*)$""".r
+          // Pragma value: 'pragma scala.service.result.no-errors = "tru'
+          val pragmaValuePattern = """^\s*pragma\s+([\w.]+)\s*=\s*"?(\w*)$""".r
 
           beforeCursor match {
+            case pragmaValuePattern(key, prefix) =>
+              (CompletionContext.PragmaValuePosition(key), Some(prefix))
+            case pragmaKeyPattern(prefix) =>
+              (CompletionContext.PragmaKeyPosition, Some(prefix))
             case typeWithPrefixPattern(_, prefix) =>
               (CompletionContext.TypePosition, Some(prefix))
             case genericArgPattern(_, prefix) =>
@@ -116,6 +133,35 @@ class CompletionProvider(
         detail = Some("builtin type"),
         sortText = Some(s"1_$bt")
       )
+    }
+  }
+
+  private def getPragmaKeyCompletions: Seq[CompletionItem] = {
+    ServiceResultResolver.knownPragmaKeys.map { case (key, description) =>
+      CompletionItem(
+        label = key,
+        kind = Some(CompletionItemKind.Property),
+        detail = Some(description),
+        insertText = Some(key),
+        sortText = Some(s"0_$key"),
+        filterText = Some(key)
+      )
+    }
+  }
+
+  private def getPragmaValueCompletions(key: String): Seq[CompletionItem] = {
+    val booleanSuffixes = Set("no-errors", "hkt")
+    val isBoolean = booleanSuffixes.exists(s => key.endsWith(s".$s"))
+    if (isBoolean) {
+      Seq("true", "false").map { v =>
+        CompletionItem(
+          label = v,
+          kind = Some(CompletionItemKind.Value),
+          detail = Some("boolean value"),
+        )
+      }
+    } else {
+      Seq.empty
     }
   }
 
