@@ -3,8 +3,7 @@
 #![allow(unused_variables)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
-
-pub mod baboon_runtime;
 pub mod baboon_fixture;
+pub mod baboon_runtime;
 pub mod rename;
 pub mod testpkg;
