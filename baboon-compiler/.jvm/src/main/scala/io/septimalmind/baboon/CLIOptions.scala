@@ -148,6 +148,8 @@ case class RsCLIOptions(
   extAllowCleanup: List[String],
   @HelpMessage("Adds evolution metadata as a Rust dictionary")
   rsWriteEvolutionDict: Option[Boolean],
+  @HelpMessage("Every ADT branch will encode ADT metadata and expect it in the decoder")
+  rsWrappedAdtBranchCodecs: Option[Boolean],
   @HelpMessage("Generate JSON codecs")
   generateJsonCodecs: Option[Boolean],
   @HelpMessage("Generate UEBA codecs")
@@ -161,6 +163,33 @@ case class RsCLIOptions(
   @HelpMessage("Wrapper type for service results (e.g. 'Result')")
   serviceResultType: Option[String],
   @HelpMessage("Pattern for service result type (e.g. '<$success, $error>')")
+  serviceResultPattern: Option[String],
+  @HelpMessage("Set a pragma value (key=value, repeatable)")
+  pragma: List[String],
+) extends SharedCLIOptions
+
+case class TsCLIOptions(
+  @Recurse
+  generic: GenericTranspilerCLIOptions,
+  @HelpMessage("Allow to erase target directory even if files with these extensions exist there. Default: ts,json,meta")
+  extAllowCleanup: List[String],
+  @HelpMessage("Adds evolution metadata as a TypeScript dictionary")
+  tsWriteEvolutionDict: Option[Boolean],
+  @HelpMessage("Every ADT branch will encode ADT metadata and expect it in the decoder")
+  tsWrappedAdtBranchCodecs: Option[Boolean],
+  @HelpMessage("Generate JSON codecs")
+  generateJsonCodecs: Option[Boolean],
+  @HelpMessage("Generate UEBA codecs")
+  generateUebaCodecs: Option[Boolean],
+  @HelpMessage("Generate JSON codecs even for types without derived[json]")
+  generateJsonCodecsByDefault: Option[Boolean],
+  @HelpMessage("Generate UEBA codecs even for types without derived[ueba]")
+  generateUebaCodecsByDefault: Option[Boolean],
+  @HelpMessage("Service methods return only success type, no error wrapping (default: true for TypeScript)")
+  serviceResultNoErrors: Option[Boolean],
+  @HelpMessage("Wrapper type for service results")
+  serviceResultType: Option[String],
+  @HelpMessage("Pattern for service result type")
   serviceResultPattern: Option[String],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],

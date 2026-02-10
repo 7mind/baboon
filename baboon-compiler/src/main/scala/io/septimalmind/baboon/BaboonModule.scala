@@ -10,6 +10,7 @@ import io.septimalmind.baboon.translator.python.*
 import io.septimalmind.baboon.translator.python.PyDefnTranslator.PyDefnTranslatorImpl
 import io.septimalmind.baboon.translator.rust.*
 import io.septimalmind.baboon.translator.scl.*
+import io.septimalmind.baboon.translator.typescript.*
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.util.BaboonMetagen
@@ -168,4 +169,29 @@ class BaboonCommonRsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[RsBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[RsBaboonTranslator[F]]
+}
+
+class BaboonCommonTsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
+  include(new SharedTranspilerModule[F])
+
+  makeSubcontext[TsDefnTranslator[F]]
+    .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
+    .withSubmodule(new ModuleDef {
+      make[TsDefnTranslator[F]].from[TsDefnTranslator.TsDefnTranslatorImpl[F]]
+      make[TsCodecFixtureTranslator].from[TsCodecFixtureTranslator.TsCodecFixtureTranslatorImpl]
+      make[TsCodecTestsTranslator].from[TsCodecTestsTranslator.Impl]
+      many[TsCodecTranslator]
+        .add[TsJsonCodecGenerator]
+        .add[TsUEBACodecGenerator]
+    })
+
+  make[TsFileTools].from[TsFileTools.TsFileToolsImpl]
+  make[TsTreeTools].from[TsTreeTools.TsTreeToolsImpl]
+
+  make[TsTypeTranslator]
+  makeFactory[TsConversionTranslator.Factory[F]]
+
+  make[TsBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
+  many[BaboonAbstractTranslator[F]]
+    .ref[TsBaboonTranslator[F]]
 }

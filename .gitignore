@@ -190,3 +190,6 @@ project/plugins/project/
 
 # End of https://www.toptal.com/developers/gitignore/api/java,scala,jetbrains+all,sbt,maven,bloop
 .aider*
+
+# Node.js / TypeScript
+node_modules/

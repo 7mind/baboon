@@ -1,0 +1,16 @@
+{
+  "name": "baboon-conv-test-ts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run",
+    "compat": "tsx src/compat_main.ts"
+  },
+  "devDependencies": {
+    "typescript": "~5.7.0",
+    "vitest": "~3.0.0",
+    "tsx": "~4.19.0"
+  }
+}

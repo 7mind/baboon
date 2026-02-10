@@ -57,6 +57,19 @@ class RsUEBACodecGenerator(
        |}""".stripMargin
   }
 
+  private def adtBranchIndex(adtId: TypeId.User, dtoId: TypeId): Int = {
+    domain.defs.meta
+      .nodes(adtId)
+      .asInstanceOf[DomainMember.User]
+      .defn
+      .asInstanceOf[Typedef.Adt]
+      .dataMembers(domain)
+      .zipWithIndex
+      .find(_._1 == dtoId)
+      .get
+      ._2
+  }
+
   private def genDtoCodec(defn: DomainMember.User, name: RsValue.RsType, dto: Typedef.Dto): TextTree[RsValue] = {
     // Compact mode encoder: fields written directly to writer
     val encFields = dto.fields.map { f =>
@@ -106,12 +119,62 @@ class RsUEBACodecGenerator(
 
     val indexedImpl = genIndexedImpl(defn, name)
 
+    val encPrefix = dto.id.owner match {
+      case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
+        val idx = adtBranchIndex(id, dto.id)
+        Some(q"crate::baboon_runtime::bin_tools::write_byte(writer, ${idx.toString})?;")
+      case _ => None
+    }
+
+    val encPrefixTree = encPrefix.map(p => q"""$p
+       |        """.stripMargin).getOrElse(q"")
+
+    val branchDecodeFn = dto.id.owner match {
+      case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
+        Some(
+          q"""impl ${name.asName} {
+             |    pub fn decode_ueba_branch(ctx: &crate::baboon_runtime::BaboonCodecContext, reader: &mut dyn std::io::Read) -> Result<Self, Box<dyn std::error::Error>> {
+             |        use crate::baboon_runtime::BaboonBinDecode;
+             |        let (_header, index) = <Self as crate::baboon_runtime::BaboonBinCodecIndexed>::read_index(ctx, reader)?;
+             |        if ctx.use_indices() {
+             |            assert_eq!(index.len(), <Self as crate::baboon_runtime::BaboonBinCodecIndexed>::index_elements_count(ctx) as usize);
+             |        }
+             |        ${decFields.joinN().shift(8).trim}
+             |        Ok(${name.asName} {
+             |            ${ctorFields.joinN().shift(12).trim}
+             |        })
+             |    }
+             |}""".stripMargin
+        )
+      case _ => None
+    }
+
+    val decBody = dto.id.owner match {
+      case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
+        val idx = adtBranchIndex(id, dto.id)
+        q"""let marker = crate::baboon_runtime::bin_tools::read_byte(reader)?;
+           |assert_eq!(marker, ${idx.toString}, "Expected ADT branch marker ${idx.toString}, got {}", marker);
+           |Self::decode_ueba_branch(ctx, reader)""".stripMargin
+      case _ =>
+        q"""let (_header, index) = <Self as crate::baboon_runtime::BaboonBinCodecIndexed>::read_index(ctx, reader)?;
+           |if ctx.use_indices() {
+           |    assert_eq!(index.len(), <Self as crate::baboon_runtime::BaboonBinCodecIndexed>::index_elements_count(ctx) as usize);
+           |}
+           |${decFields.joinN().shift(0).trim}
+           |Ok(${name.asName} {
+           |    ${ctorFields.joinN().shift(4).trim}
+           |})""".stripMargin
+    }
+
+    val branchDecodeFnTree = branchDecodeFn.map(fn => q"""$fn
+       |""".stripMargin).getOrElse(q"")
+
     q"""$indexedImpl
        |
-       |impl crate::baboon_runtime::BaboonBinEncode for ${name.asName} {
+       |${branchDecodeFnTree}impl crate::baboon_runtime::BaboonBinEncode for ${name.asName} {
        |    fn encode_ueba(&self, ctx: &crate::baboon_runtime::BaboonCodecContext, writer: &mut dyn std::io::Write) -> std::io::Result<()> {
        |        let value = self;
-       |        if ctx.use_indices() {
+       |        ${encPrefixTree}if ctx.use_indices() {
        |            crate::baboon_runtime::bin_tools::write_byte(writer, 0x01)?;
        |            let mut buffer: Vec<u8> = Vec::new();
        |            ${indexedEncFields.joinN().shift(12).trim}
@@ -126,14 +189,7 @@ class RsUEBACodecGenerator(
        |
        |impl crate::baboon_runtime::BaboonBinDecode for ${name.asName} {
        |    fn decode_ueba(ctx: &crate::baboon_runtime::BaboonCodecContext, reader: &mut dyn std::io::Read) -> Result<Self, Box<dyn std::error::Error>> {
-       |        let (_header, index) = <Self as crate::baboon_runtime::BaboonBinCodecIndexed>::read_index(ctx, reader)?;
-       |        if ctx.use_indices() {
-       |            assert_eq!(index.len(), <Self as crate::baboon_runtime::BaboonBinCodecIndexed>::index_elements_count(ctx) as usize);
-       |        }
-       |        ${decFields.joinN().shift(8).trim}
-       |        Ok(${name.asName} {
-       |            ${ctorFields.joinN().shift(12).trim}
-       |        })
+       |        ${decBody.shift(8).trim}
        |    }
        |}""".stripMargin
   }
@@ -176,19 +232,32 @@ class RsUEBACodecGenerator(
 
     val encBranches = branches.map { case (mid, idx) =>
       val branchName = mid.name.name.capitalize
-      q"""${name.asName}::$branchName(v) => {
-         |    crate::baboon_runtime::bin_tools::write_byte(writer, ${idx.toString})?;
-         |    v.encode_ueba(ctx, writer)?;
-         |}""".stripMargin
+      if (target.language.wrappedAdtBranchCodecs) {
+        q"""${name.asName}::$branchName(v) => {
+           |    v.encode_ueba(ctx, writer)?;
+           |}""".stripMargin
+      } else {
+        q"""${name.asName}::$branchName(v) => {
+           |    crate::baboon_runtime::bin_tools::write_byte(writer, ${idx.toString})?;
+           |    v.encode_ueba(ctx, writer)?;
+           |}""".stripMargin
+      }
     }
 
     val decBranches = branches.map { case (mid, idx) =>
       val branchName = mid.name.name.capitalize
       val branchType = trans.asRsType(mid, domain, evo)
-      q"""${idx.toString} => {
-         |    let v = ${branchType.asName}::decode_ueba(ctx, reader)?;
-         |    Ok(${name.asName}::$branchName(v))
-         |}""".stripMargin
+      if (target.language.wrappedAdtBranchCodecs) {
+        q"""${idx.toString} => {
+           |    let v = ${branchType.asName}::decode_ueba_branch(ctx, reader)?;
+           |    Ok(${name.asName}::$branchName(v))
+           |}""".stripMargin
+      } else {
+        q"""${idx.toString} => {
+           |    let v = ${branchType.asName}::decode_ueba(ctx, reader)?;
+           |    Ok(${name.asName}::$branchName(v))
+           |}""".stripMargin
+      }
     }
 
     val indexedImpl = genIndexedImpl(defn, name)

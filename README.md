@@ -25,7 +25,8 @@ Generates:
   - **C#**
   - **Scala**
   - **Python**
-  - Typescript and more backends are on the way.
+  - **Rust**
+  - **TypeScript**
 
 ## Highlights
 
@@ -126,7 +127,7 @@ Points marked with (*) will/may be improved in the future.
 
 The `baboon` CLI supports multiple commands for compilation, exploration, and IDE integration:
 
-- `:cs`, `:scala` - Code generation for target languages
+- `:cs`, `:scala`, `:python`, `:rust`, `:typescript` - Code generation for target languages
 - `:explore` - Launch [Interactive Explorer](docs/explorer-mode.md)
 - `:lsp` - Start [LSP Server](docs/lsp-integration.md)
 
@@ -174,9 +175,9 @@ direnv exec . mdl :build :test
 direnv exec . mdl :full-build
 
 # Run specific test suites
-direnv exec . mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular
-direnv exec . mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped
-direnv exec . mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-manual-cs :test-manual-scala
+direnv exec . mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular :test-rust-regular :test-typescript-regular
+direnv exec . mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped :test-rust-wrapped :test-typescript-wrapped
+direnv exec . mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-gen-compat-rust :test-gen-compat-typescript :test-manual-cs :test-manual-scala :test-manual-rust :test-manual-typescript
 
 # Create distribution packages
 direnv exec . mdl :build :mkdist

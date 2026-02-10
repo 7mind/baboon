@@ -31,7 +31,7 @@ TEST_DIR="./target/test-regular"
 
 # Create temporary test directories
 mkdir -p "$TEST_DIR"
-rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub"
+rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub"
 
 # Copy stub projects, excluding generated and build artifacts
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
@@ -42,6 +42,8 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclud
   ./test/py-stub/ "$TEST_DIR/py-stub/"
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
   ./test/rs-stub/ "$TEST_DIR/rs-stub/"
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules' --exclude='dist' \
+  ./test/ts-stub/ "$TEST_DIR/ts-stub/"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
@@ -51,16 +53,16 @@ $BABOON_BIN \
   --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedTests" \
   --fixture-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedFixtures" \
-  --cs-wrapped-adt-branch-codecs false \
-  --cs-write-evolution-dict true \
+  --cs-wrapped-adt-branch-codecs=false \
+  --cs-write-evolution-dict=true \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :scala \
   --output "$TEST_DIR/sc-stub/src/main/scala/generated-main" \
   --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
   --fixture-output "$TEST_DIR/sc-stub/src/main/scala/generated-fixtures" \
-  --sc-write-evolution-dict true \
-  --sc-wrapped-adt-branch-codecs false \
+  --sc-write-evolution-dict=true \
+  --sc-wrapped-adt-branch-codecs=false \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :python \
@@ -69,13 +71,22 @@ $BABOON_BIN \
   --fixture-output "$TEST_DIR/py-stub/BaboonTests/GeneratedFixtures" \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
-  --py-write-evolution-dict true \
-  --py-wrapped-adt-branch-codecs false \
+  --py-write-evolution-dict=true \
+  --py-wrapped-adt-branch-codecs=false \
   :rust \
   --output "$TEST_DIR/rs-stub/src" \
   --test-output "$TEST_DIR/rs-stub/src" \
   --fixture-output "$TEST_DIR/rs-stub/src" \
-  --rs-write-evolution-dict true \
+  --rs-write-evolution-dict=true \
+  --rs-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  :typescript \
+  --output "$TEST_DIR/ts-stub/src" \
+  --test-output "$TEST_DIR/ts-stub/src" \
+  --fixture-output "$TEST_DIR/ts-stub/src" \
+  --ts-write-evolution-dict=true \
+  --ts-wrapped-adt-branch-codecs=false \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true
 
@@ -141,6 +152,20 @@ popd
 ret success:bool=true
 ```
 
+# action: test-typescript-regular
+
+Run TypeScript tests with regular ADT codecs.
+
+```bash
+TEST_DIR="${action.test-gen-regular-adt.test_dir}"
+pushd "$TEST_DIR/ts-stub"
+npm install
+npm test
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-wrapped-adt
 
 Generate code with wrapped ADT branch codecs.
@@ -153,7 +178,7 @@ TEST_DIR="./target/test-wrapped"
 
 # Create temporary test directories
 mkdir -p "$TEST_DIR"
-rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub"
+rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub"
 
 # Copy stub projects, excluding generated and build artifacts
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
@@ -164,6 +189,8 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclud
   ./test/py-stub/ "$TEST_DIR/py-stub/"
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
   ./test/rs-stub/ "$TEST_DIR/rs-stub/"
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules' --exclude='dist' \
+  ./test/ts-stub/ "$TEST_DIR/ts-stub/"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
@@ -173,16 +200,16 @@ $BABOON_BIN \
   --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
   --test-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedTests" \
   --fixture-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedFixtures" \
-  --cs-wrapped-adt-branch-codecs true \
-  --cs-write-evolution-dict true \
+  --cs-wrapped-adt-branch-codecs=true \
+  --cs-write-evolution-dict=true \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :scala \
   --output "$TEST_DIR/sc-stub/src/main/scala/generated-main" \
   --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
   --fixture-output "$TEST_DIR/sc-stub/src/main/scala/generated-fixtures" \
-  --sc-write-evolution-dict true \
-  --sc-wrapped-adt-branch-codecs true \
+  --sc-write-evolution-dict=true \
+  --sc-wrapped-adt-branch-codecs=true \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :python \
@@ -191,13 +218,22 @@ $BABOON_BIN \
   --fixture-output "$TEST_DIR/py-stub/BaboonTests/GeneratedFixtures" \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
-  --py-write-evolution-dict true \
-  --py-wrapped-adt-branch-codecs true \
+  --py-write-evolution-dict=true \
+  --py-wrapped-adt-branch-codecs=true \
   :rust \
   --output "$TEST_DIR/rs-stub/src" \
   --test-output "$TEST_DIR/rs-stub/src" \
   --fixture-output "$TEST_DIR/rs-stub/src" \
-  --rs-write-evolution-dict true \
+  --rs-write-evolution-dict=true \
+  --rs-wrapped-adt-branch-codecs=true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  :typescript \
+  --output "$TEST_DIR/ts-stub/src" \
+  --test-output "$TEST_DIR/ts-stub/src" \
+  --fixture-output "$TEST_DIR/ts-stub/src" \
+  --ts-write-evolution-dict=true \
+  --ts-wrapped-adt-branch-codecs=true \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true
 
@@ -263,6 +299,20 @@ popd
 ret success:bool=true
 ```
 
+# action: test-typescript-wrapped
+
+Run TypeScript tests with wrapped ADT codecs.
+
+```bash
+TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
+pushd "$TEST_DIR/ts-stub"
+npm install
+npm test
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-manual
 
 Generate code for manual test projects.
@@ -283,7 +333,9 @@ $BABOON_BIN \
   :python  \
   --output ./test/conv-test-py/Generated \
   :rust \
-  --output ./test/conv-test-rs/src/generated
+  --output ./test/conv-test-rs/src/generated \
+  :typescript \
+  --output ./test/conv-test-ts/src/generated
 
 ret success:bool=true
 ```
@@ -347,6 +399,21 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-compat-typescript
+
+Generate compatibility test files using TypeScript.
+
+```bash
+dep action.test-gen-manual
+
+pushd ./test/conv-test-ts
+npm install
+npm run compat
+popd
+
+ret success:bool=true
+```
+
 # action: test-manual-cs
 
 Run manual C# compatibility tests.
@@ -356,6 +423,7 @@ dep action.test-gen-compat-scala
 dep action.test-gen-compat-cs
 dep action.test-gen-compat-python
 dep action.test-gen-compat-rust
+dep action.test-gen-compat-typescript
 
 pushd ./test/conv-test-cs
 dotnet build
@@ -373,6 +441,7 @@ Run manual Scala compatibility tests.
 dep action.test-gen-compat-scala
 dep action.test-gen-compat-cs
 dep action.test-gen-compat-rust
+dep action.test-gen-compat-typescript
 
 pushd ./test/conv-test-sc
 sbt +clean +test
@@ -415,9 +484,29 @@ dep action.test-gen-compat-scala
 dep action.test-gen-compat-cs
 dep action.test-gen-compat-python
 dep action.test-gen-compat-rust
+dep action.test-gen-compat-typescript
 
 pushd ./test/conv-test-rs
 cargo test
+popd
+
+ret success:bool=true
+```
+
+# action: test-manual-typescript
+
+Run TypeScript cross-language compatibility tests.
+
+```bash
+dep action.test-gen-compat-scala
+dep action.test-gen-compat-cs
+dep action.test-gen-compat-python
+dep action.test-gen-compat-rust
+dep action.test-gen-compat-typescript
+
+pushd ./test/conv-test-ts
+npm install
+npm test
 popd
 
 ret success:bool=true
@@ -433,13 +522,16 @@ dep action.test-cs-regular
 dep action.test-scala-regular
 dep action.test-python-regular
 dep action.test-rust-regular
+dep action.test-typescript-regular
 dep action.test-cs-wrapped
 dep action.test-scala-wrapped
 dep action.test-python-wrapped
 dep action.test-rust-wrapped
+dep action.test-typescript-wrapped
 dep action.test-manual-cs
 dep action.test-manual-scala
 dep action.test-manual-rust
+dep action.test-manual-typescript
 
 ret success:bool=true
 ```

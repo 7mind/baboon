@@ -7,6 +7,7 @@ foreign ObscureInt {
   scala = "java.lang.Integer"
   py = "builtins.int"
   rust = "std::primitive::i32"
+  typescript = "number"
 }
 
 foreign ForeignStruct {
@@ -14,6 +15,7 @@ foreign ForeignStruct {
   scala = "java.lang.Integer"
   py = "typing.NamedTuple"
   rust = "std::primitive::i32"
+  typescript = "Record<string, never>"
 }
 
 
