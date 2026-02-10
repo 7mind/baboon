@@ -16,6 +16,7 @@ foreign ObscureInt {
   scala = "java.lang.Integer"
   py = "builtins.int"
   rust = "std::primitive::i32"
+  typescript = "number"
 }
 
 root data T1_E1_RET {

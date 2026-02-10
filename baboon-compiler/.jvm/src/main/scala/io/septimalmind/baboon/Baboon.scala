@@ -41,6 +41,7 @@ object Baboon {
       |  :cs                      Generate C# code
       |  :scala                   Generate Scala code
       |  :rust                    Generate Rust code
+      |  :typescript              Generate TypeScript code
       |  :lsp                     Start LSP server
       |  :explore                 Start interactive explorer
       |
@@ -243,6 +244,26 @@ object Baboon {
                           ),
                         )
                     }
+                  case "typescript" =>
+                    CaseApp.parse[TsCLIOptions](roleArgs).leftMap(e => s"Can't parse typescript CLI: $e").map {
+                      case (opts, _) =>
+                        val shopts = mkGenericOpts(opts)
+
+                        CompilerTarget.TsTarget(
+                          id      = "TypeScript",
+                          output  = shopts.outOpts,
+                          generic = shopts.genericOpts,
+                          language = TsOptions(
+                            writeEvolutionDict          = opts.tsWriteEvolutionDict.getOrElse(false),
+                            generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
+                            generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
+                            generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
+                            generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                            serviceResult               = mkServiceResult(opts, ServiceResultConfig.typescriptDefault),
+                            pragmas                     = parsePragmas(opts.pragma),
+                          ),
+                        )
+                    }
                   case r => Left(s"Unknown role id: $r")
                 }
             }
@@ -293,7 +314,7 @@ object Baboon {
 
     val safeToRemove = NEList.from(opts.extAllowCleanup) match {
       case Some(value) => value.toSet
-      case None        => Set("meta", "cs", "json", "scala", "py", "pyc", "rs")
+      case None        => Set("meta", "cs", "json", "scala", "py", "pyc", "rs", "ts")
     }
 
     val outOpts = OutputOptions(
@@ -353,6 +374,8 @@ object Baboon {
         new BaboonJvmPyModule[F](t)
       case t: CompilerTarget.RsTarget =>
         new BaboonJvmRsModule[F](t)
+      case t: CompilerTarget.TsTarget =>
+        new BaboonJvmTsModule[F](t)
     }
 
     Injector

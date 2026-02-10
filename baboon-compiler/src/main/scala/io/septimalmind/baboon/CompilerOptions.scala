@@ -38,6 +38,13 @@ object CompilerTarget {
     generic: GenericOptions,
     language: RsOptions,
   ) extends CompilerTarget
+
+  case class TsTarget(
+    id: String,
+    output: OutputOptions,
+    generic: GenericOptions,
+    language: TsOptions,
+  ) extends CompilerTarget
 }
 
 final case class HktConfig(
@@ -72,6 +79,12 @@ object ServiceResultConfig {
     hkt        = None,
   )
   val pythonDefault: ServiceResultConfig = ServiceResultConfig(
+    noErrors   = true,
+    resultType = None,
+    pattern    = None,
+    hkt        = None,
+  )
+  val typescriptDefault: ServiceResultConfig = ServiceResultConfig(
     noErrors   = true,
     resultType = None,
     pattern    = None,
@@ -122,6 +135,16 @@ final case class CSOptions(
 )
 
 final case class RsOptions(
+  writeEvolutionDict: Boolean,
+  generateJsonCodecs: Boolean,
+  generateUebaCodecs: Boolean,
+  generateUebaCodecsByDefault: Boolean,
+  generateJsonCodecsByDefault: Boolean,
+  serviceResult: ServiceResultConfig,
+  pragmas: Map[String, String],
+)
+
+final case class TsOptions(
   writeEvolutionDict: Boolean,
   generateJsonCodecs: Boolean,
   generateUebaCodecs: Boolean,
