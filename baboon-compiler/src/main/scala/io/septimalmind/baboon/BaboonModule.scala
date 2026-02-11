@@ -74,6 +74,7 @@ class BaboonCommonCSModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
       make[CSDefnTranslator[F]].from[CSDefnTranslator.CSDefnTranslatorImpl[F]]
       make[CSCodecTestsTranslator].from[CSCodecTestsTranslator.Impl]
       make[CSCodecFixtureTranslator].from[CSRandomMethodTranslatorImpl]
+      make[CSServiceWiringTranslator].from[CSServiceWiringTranslator.Impl]
       make[CSDomainTreeTools].from[CSDomainTreeTools.CSDomainTreeToolsImpl]
 
       many[CSCodecTranslator]

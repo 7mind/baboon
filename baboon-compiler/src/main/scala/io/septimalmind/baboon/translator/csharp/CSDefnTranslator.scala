@@ -18,6 +18,7 @@ trait CSDefnTranslator[F[+_, +_]] {
   def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[CSDefnTranslator.Output]]
   def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[CSDefnTranslator.Output]]
   def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue], List[CSDefnTranslator.Output]]
+  def translateServiceRt(): F[NEList[BaboonIssue], List[CSDefnTranslator.Output]]
 }
 
 object CSDefnTranslator {
@@ -63,6 +64,7 @@ object CSDefnTranslator {
     codecs: Set[CSCodecTranslator],
     codecsTests: CSCodecTestsTranslator,
     codecsFixture: CSCodecFixtureTranslator,
+    wiringTranslator: CSServiceWiringTranslator,
     domain: Domain,
     evo: BaboonEvolution,
     lineage: BaboonLineage,
@@ -97,18 +99,28 @@ object CSDefnTranslator {
         Some(repr.defn)
       }
 
-      F.pure(
-        List(
-          Output(
-            getOutputPath(defn),
-            reprOut,
-            trans.toCsPkg(domain.id, domain.version, evo),
-            CompilerProduct.Definition,
-            codecReg = regsPerCodec,
-            origin   = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
-          )
-        )
+      val mainOutput = Output(
+        getOutputPath(defn),
+        reprOut,
+        trans.toCsPkg(domain.id, domain.version, evo),
+        CompilerProduct.Definition,
+        codecReg = regsPerCodec,
+        origin   = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
       )
+
+      val wiringOutput = wiringTranslator.translate(defn).map { wiringTree =>
+        val srcRef = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
+        val ns     = srcRef.pkg.parts
+        Output(
+          getOutputPath(defn, suffix = Some(".Wiring")),
+          Some(csTrees.inNs(ns.toSeq, wiringTree)),
+          trans.toCsPkg(domain.id, domain.version, evo),
+          CompilerProduct.Definition,
+          origin = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
+        )
+      }.toList
+
+      F.pure(mainOutput :: wiringOutput)
     }
 
     override def translateFixtures(defn: DomainMember.User): Out[List[Output]] = {
@@ -153,6 +165,23 @@ object CSDefnTranslator {
       }
 
       F.pure(codecTestOut.toList)
+    }
+
+    override def translateServiceRt(): Out[List[Output]] = {
+      val rtTree = wiringTranslator.translateServiceRt(domain)
+      val result = rtTree.map { tree =>
+        val pkg = trans.toCsPkg(domain.id, domain.version, evo)
+        val wrapped = csTrees.inNs(pkg.parts.toSeq, tree)
+        val fbase = csFiles.basename(domain, evo)
+        Output(
+          s"$fbase/BaboonServiceRt.cs",
+          Some(wrapped),
+          pkg,
+          CompilerProduct.Definition,
+          origin = OutputOrigin.Runtime,
+        )
+      }.toList
+      F.pure(result)
     }
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {

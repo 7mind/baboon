@@ -295,6 +295,18 @@ root service I1 {
     )
 }
 
+root service I2 {
+    def noErrCall (
+        data in {
+            value: i32
+        }
+
+        data out {
+            result: str
+        }
+    )
+}
+
 root data T14_FieldRename {
   newName: str was oldName
   unchanged: i32
