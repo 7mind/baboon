@@ -512,6 +512,159 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-cs-wiring-either
+
+Generate code for C# wiring tests with built-in Either container.
+
+```bash
+dep action.restore-dotnet
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-cs-wiring-either"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/cs-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' \
+  ./test/cs-stub/ "$TEST_DIR/cs-stub/"
+rsync -a ./test/cs-stub-either-overlay/ "$TEST_DIR/cs-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-either.lock \
+  :cs \
+  --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
+  --test-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedTests" \
+  --fixture-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedFixtures" \
+  --cs-wrapped-adt-branch-codecs=false \
+  --cs-write-evolution-dict=true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Baboon.Runtime.Shared.Either" \
+  --service-result-pattern="<\$error, \$success>"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-cs-wiring-either
+
+Run C# Either wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-cs-wiring-either.test_dir}"
+pushd "$TEST_DIR/cs-stub"
+dotnet build -c Release
+dotnet test -c Release BaboonTests/BaboonTests.csproj
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-cs-wiring-result
+
+Generate code for C# wiring tests with custom Result container (reversed param order).
+
+```bash
+dep action.restore-dotnet
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-cs-wiring-result"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/cs-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' \
+  ./test/cs-stub/ "$TEST_DIR/cs-stub/"
+rsync -a ./test/cs-stub-result-overlay/ "$TEST_DIR/cs-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-result.lock \
+  :cs \
+  --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
+  --test-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedTests" \
+  --fixture-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedFixtures" \
+  --cs-wrapped-adt-branch-codecs=false \
+  --cs-write-evolution-dict=true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="CustomContainers.Result" \
+  --service-result-pattern="<\$success, \$error>"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-cs-wiring-result
+
+Run C# Result wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-cs-wiring-result.test_dir}"
+pushd "$TEST_DIR/cs-stub"
+dotnet build -c Release
+dotnet test -c Release BaboonTests/BaboonTests.csproj
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-cs-wiring-outcome
+
+Generate code for C# wiring tests with single-param Outcome container.
+
+```bash
+dep action.restore-dotnet
+
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-cs-wiring-outcome"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/cs-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' \
+  ./test/cs-stub/ "$TEST_DIR/cs-stub/"
+rsync -a ./test/cs-stub-outcome-overlay/ "$TEST_DIR/cs-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-outcome.lock \
+  :cs \
+  --output "$TEST_DIR/cs-stub/BaboonDefinitions/Generated" \
+  --test-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedTests" \
+  --fixture-output "$TEST_DIR/cs-stub/BaboonTests/GeneratedFixtures" \
+  --cs-wrapped-adt-branch-codecs=false \
+  --cs-write-evolution-dict=true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="CustomContainers.Outcome" \
+  --service-result-pattern="<\$success>"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-cs-wiring-outcome
+
+Run C# Outcome wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-cs-wiring-outcome.test_dir}"
+pushd "$TEST_DIR/cs-stub"
+dotnet build -c Release
+dotnet test -c Release BaboonTests/BaboonTests.csproj
+popd
+
+ret success:bool=true
+```
+
 # action: test
 
 Run complete test suite (orchestrator action).
@@ -532,6 +685,9 @@ dep action.test-manual-cs
 dep action.test-manual-scala
 dep action.test-manual-rust
 dep action.test-manual-typescript
+dep action.test-cs-wiring-either
+dep action.test-cs-wiring-result
+dep action.test-cs-wiring-outcome
 
 ret success:bool=true
 ```

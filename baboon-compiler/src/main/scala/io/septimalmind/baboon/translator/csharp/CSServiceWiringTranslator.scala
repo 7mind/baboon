@@ -280,6 +280,11 @@ object CSServiceWiringTranslator {
 
     private def ct(error: String, success: String): String = renderContainer(error, success)
 
+    private def renderFq(tree: TextTree[CSValue]): String = tree.mapRender {
+      case t: CSValue.CSType     => (t.pkg.parts :+ t.name).mkString(".")
+      case t: CSValue.CSTypeName => t.name
+    }
+
     private def generateErrorsJsonMethod(service: Typedef.Service): TextTree[CSValue] = {
       val svcName = service.id.name.name
       val wiringRetType = ct("BaboonWiringError", "string")
@@ -289,7 +294,7 @@ object CSServiceWiringTranslator {
         val inRef   = trans.asCsRef(m.sig, domain, evo)
 
         val decodeStep =
-          q"""${ct("BaboonWiringError", inRef.toString)} input;
+          q"""${ct("BaboonWiringError", renderFq(inRef))} input;
              |try
              |{
              |    var wire = $nsJToken.Parse(data);
@@ -411,7 +416,7 @@ object CSServiceWiringTranslator {
         val inRef   = trans.asCsRef(m.sig, domain, evo)
 
         val decodeStep =
-          q"""${ct("BaboonWiringError", inRef.toString)} input;
+          q"""${ct("BaboonWiringError", renderFq(inRef))} input;
              |try
              |{
              |    var ms = new $memoryStream(data);
