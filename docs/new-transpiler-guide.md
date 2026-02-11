@@ -25,7 +25,8 @@ This guide walks you through implementing a full-featured code generation backen
 19. [UEBA Binary Protocol Reference](#ueba-binary-protocol-reference)
 20. [TextTree Usage Guide](#texttree-usage-guide)
 21. [Service and Pragma Support](#service-and-pragma-support)
-22. [Common Pitfalls](#common-pitfalls)
+22. [Transport Plumbing (separate doc)](transport-plumbing.md)
+23. [Common Pitfalls](#common-pitfalls)
 
 ---
 
@@ -430,7 +431,9 @@ Service rendering depends on pragmas:
 - **Service result configuration**: Controls whether methods return bare types or wrapped results (e.g., `Either[Error, Success]`, `Result<Success, Error>`)
 - **Service context configuration**: Controls whether methods take a context parameter
 
-See [Service and Pragma Support](#service-and-pragma-support) for details.
+In addition to the service interface, the compiler generates **transport wiring** — a static dispatcher class that marshals between wire formats (JSON, UEBA) and domain types, and optionally a **runtime typeclass interface** (`IBaboonServiceRt`) that abstracts over the error container shape.
+
+See [Service and Pragma Support](#service-and-pragma-support) for pragma configuration and [Transport Plumbing](transport-plumbing.md) for the full wiring architecture, container shape abstraction, and implementation guide.
 
 ### Foreign Type Handling
 
@@ -1356,6 +1359,8 @@ val code = q"val $name = 42"  // No import generated
 ---
 
 ## Service and Pragma Support
+
+For the full wiring architecture — including the container shape abstraction, `IBaboonServiceRt` typeclass generation, the three-step wiring pipeline, error types, and testing strategy with overlay stubs — see [Transport Plumbing](transport-plumbing.md).
 
 ### Service Result Configuration
 
