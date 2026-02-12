@@ -41,9 +41,9 @@ object DtCodecTestsTranslator {
 
       definition match {
         case d if enquiries.hasForeignType(d, domain, BaboonLang.Dart) => None
-        case d if enquiries.isRecursiveTypedef(d, domain)     => None
-        case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
-        case _ if !isLatestVersion                            => None
+        case d if enquiries.isRecursiveTypedef(d, domain)              => None
+        case d if d.defn.isInstanceOf[Typedef.NonDataTypedef]          => None
+        case _ if !isLatestVersion                                     => None
         case _ =>
           val testBody           = makeTest(definition, srcRef)
           val typeImport         = makeTestToLibImport(testPath, typePath)

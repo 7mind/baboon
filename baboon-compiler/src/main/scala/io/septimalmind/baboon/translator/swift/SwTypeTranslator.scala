@@ -84,24 +84,24 @@ class SwTypeTranslator {
     tpe match {
       case b: TypeId.BuiltinScalar =>
         b match {
-          case TypeId.Builtins.bit  => swBool
-          case TypeId.Builtins.i08  => swInt8
-          case TypeId.Builtins.i16  => swInt16
-          case TypeId.Builtins.i32  => swInt32
-          case TypeId.Builtins.i64  => swInt64
-          case TypeId.Builtins.u08  => swUInt8
-          case TypeId.Builtins.u16  => swUInt16
-          case TypeId.Builtins.u32  => swUInt32
-          case TypeId.Builtins.u64  => swUInt64
-          case TypeId.Builtins.f32  => swFloat
-          case TypeId.Builtins.f64  => swDouble
-          case TypeId.Builtins.f128 => baboonDecimal
-          case TypeId.Builtins.str  => swString
+          case TypeId.Builtins.bit   => swBool
+          case TypeId.Builtins.i08   => swInt8
+          case TypeId.Builtins.i16   => swInt16
+          case TypeId.Builtins.i32   => swInt32
+          case TypeId.Builtins.i64   => swInt64
+          case TypeId.Builtins.u08   => swUInt8
+          case TypeId.Builtins.u16   => swUInt16
+          case TypeId.Builtins.u32   => swUInt32
+          case TypeId.Builtins.u64   => swUInt64
+          case TypeId.Builtins.f32   => swFloat
+          case TypeId.Builtins.f64   => swDouble
+          case TypeId.Builtins.f128  => baboonDecimal
+          case TypeId.Builtins.str   => swString
           case TypeId.Builtins.bytes => swData
-          case TypeId.Builtins.uid  => swUUID
-          case TypeId.Builtins.tsu  => swDate
-          case TypeId.Builtins.tso  => baboonDateTimeOffset
-          case other => throw new IllegalArgumentException(s"Unexpected: $other")
+          case TypeId.Builtins.uid   => swUUID
+          case TypeId.Builtins.tsu   => swDate
+          case TypeId.Builtins.tso   => baboonDateTimeOffset
+          case other                 => throw new IllegalArgumentException(s"Unexpected: $other")
         }
       case TypeId.Builtins.map => swDictionary
       case TypeId.Builtins.lst => swArray
@@ -238,8 +238,9 @@ class SwTypeTranslator {
   private def renderScopedTypeName(tid: TypeId.User): (String, String) = {
     val baseName  = tid.name.name
     val ownerPath = renderOwnerQualifiedPath(tid.owner)
-    val qualified = if (ownerPath.isEmpty) baseName
-    else s"${ownerPath.mkString(".")}.$baseName"
+    val qualified =
+      if (ownerPath.isEmpty) baseName
+      else s"${ownerPath.mkString(".")}.$baseName"
     (qualified, baseName)
   }
 
@@ -262,27 +263,77 @@ class SwTypeTranslator {
   def effectiveSwPkg(owner: Owner, domain: Domain, evo: BaboonEvolution): SwPackageId = {
     val basePkg = toSwPkg(domain.id, domain.version, evo)
     owner match {
-      case Owner.Toplevel  => basePkg
-      case Owner.Ns(path)  => SwPackageId(NEList.unsafeFrom(basePkg.parts.toList ++ path.map(_.name.toLowerCase)))
-      case Owner.Adt(id)   => effectiveSwPkg(id.owner, domain, evo)
+      case Owner.Toplevel => basePkg
+      case Owner.Ns(path) => SwPackageId(NEList.unsafeFrom(basePkg.parts.toList ++ path.map(_.name.toLowerCase)))
+      case Owner.Adt(id)  => effectiveSwPkg(id.owner, domain, evo)
     }
   }
 
   def toSnakeCase(name: String): String = {
-    name.replaceAll("([A-Z]+)([A-Z][a-z])", "$1_$2")
+    name
+      .replaceAll("([A-Z]+)([A-Z][a-z])", "$1_$2")
       .replaceAll("([a-z\\d])([A-Z])", "$1_$2")
       .toLowerCase
   }
 
   private val swiftKeywords: Set[String] = Set(
-    "associatedtype", "class", "deinit", "enum", "extension", "fileprivate",
-    "func", "import", "init", "inout", "internal", "let", "open", "operator",
-    "private", "protocol", "public", "rethrows", "static", "struct",
-    "subscript", "typealias", "var", "break", "case", "continue", "default",
-    "defer", "do", "else", "fallthrough", "for", "guard", "if", "in",
-    "repeat", "return", "switch", "where", "while", "as", "catch", "false",
-    "is", "nil", "self", "Self", "super", "throw", "throws", "true", "try",
-    "async", "await", "Any", "Protocol", "Type",
+    "associatedtype",
+    "class",
+    "deinit",
+    "enum",
+    "extension",
+    "fileprivate",
+    "func",
+    "import",
+    "init",
+    "inout",
+    "internal",
+    "let",
+    "open",
+    "operator",
+    "private",
+    "protocol",
+    "public",
+    "rethrows",
+    "static",
+    "struct",
+    "subscript",
+    "typealias",
+    "var",
+    "break",
+    "case",
+    "continue",
+    "default",
+    "defer",
+    "do",
+    "else",
+    "fallthrough",
+    "for",
+    "guard",
+    "if",
+    "in",
+    "repeat",
+    "return",
+    "switch",
+    "where",
+    "while",
+    "as",
+    "catch",
+    "false",
+    "is",
+    "nil",
+    "self",
+    "Self",
+    "super",
+    "throw",
+    "throws",
+    "true",
+    "try",
+    "async",
+    "await",
+    "Any",
+    "Protocol",
+    "Type",
   )
 
   def escapeSwiftKeyword(name: String): String = {

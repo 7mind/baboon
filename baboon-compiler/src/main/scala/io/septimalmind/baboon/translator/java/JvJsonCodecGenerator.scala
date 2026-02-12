@@ -21,13 +21,13 @@ class JvJsonCodecGenerator(
   override def translate(defn: DomainMember.User, jvRef: JvValue.JvType, srcRef: JvValue.JvType): Option[TextTree[JvValue]] = {
     if (isActive(defn.id)) {
       (defn.defn match {
-        case d: Typedef.Dto      => Some(genDtoBodies(jvRef, d))
-        case _: Typedef.Enum     => Some(genEnumBodies(jvRef))
-        case a: Typedef.Adt      => Some(genAdtBodies(jvRef, a))
+        case d: Typedef.Dto  => Some(genDtoBodies(jvRef, d))
+        case _: Typedef.Enum => Some(genEnumBodies(jvRef))
+        case a: Typedef.Adt  => Some(genAdtBodies(jvRef, a))
         case f: Typedef.Foreign =>
           f.bindings.get(BaboonLang.Java) match {
             case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
-            case _ => Some(genForeignBodies(jvRef))
+            case _                                                                  => Some(genForeignBodies(jvRef))
           }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None

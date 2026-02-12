@@ -35,9 +35,9 @@ object ScCodecTestsTranslator {
 
       definition match {
         case d if enquiries.hasForeignType(d, domain, BaboonLang.Scala) => None
-        case d if enquiries.isRecursiveTypedef(d, domain)     => None
-        case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
-        case _ if !isLatestVersion                            => None
+        case d if enquiries.isRecursiveTypedef(d, domain)               => None
+        case d if d.defn.isInstanceOf[Typedef.NonDataTypedef]           => None
+        case _ if !isLatestVersion                                      => None
         case _ =>
           val testClass =
             q"""class ${srcRef.name}_tests extends $anyFlatSpec {

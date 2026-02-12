@@ -75,37 +75,38 @@ object CompatMain {
   private def readAndVerify(filePath: String): Unit = {
     val ctx  = BaboonCodecContext.Default
     val path = Paths.get(filePath)
-    val data: AllBasicTypes = try {
-      if (filePath.endsWith(".json")) {
-        val jsonStr = new String(Files.readAllBytes(path), "UTF-8")
-        val json    = parse(jsonStr).getOrElse(throw new RuntimeException(s"Failed to parse JSON from $filePath"))
-        AllBasicTypes_JsonCodec.instance.decode(ctx, json) match {
-          case Right(d)  => d
-          case Left(err) => throw new RuntimeException(s"JSON decode failed: $err")
-        }
-      } else if (filePath.endsWith(".ueba")) {
-        val bytes      = Files.readAllBytes(path)
-        val bais       = new ByteArrayInputStream(bytes)
-        val uebaReader = new LEDataInputStream(bais)
-        try {
-          AllBasicTypes_UEBACodec.instance.decode(ctx, uebaReader) match {
+    val data: AllBasicTypes =
+      try {
+        if (filePath.endsWith(".json")) {
+          val jsonStr = new String(Files.readAllBytes(path), "UTF-8")
+          val json    = parse(jsonStr).getOrElse(throw new RuntimeException(s"Failed to parse JSON from $filePath"))
+          AllBasicTypes_JsonCodec.instance.decode(ctx, json) match {
             case Right(d)  => d
-            case Left(err) => throw new RuntimeException(s"UEBA decode failed: $err")
+            case Left(err) => throw new RuntimeException(s"JSON decode failed: $err")
           }
-        } finally {
-          uebaReader.close()
+        } else if (filePath.endsWith(".ueba")) {
+          val bytes      = Files.readAllBytes(path)
+          val bais       = new ByteArrayInputStream(bytes)
+          val uebaReader = new LEDataInputStream(bais)
+          try {
+            AllBasicTypes_UEBACodec.instance.decode(ctx, uebaReader) match {
+              case Right(d)  => d
+              case Left(err) => throw new RuntimeException(s"UEBA decode failed: $err")
+            }
+          } finally {
+            uebaReader.close()
+          }
+        } else {
+          System.err.println(s"Unknown file extension: $filePath")
+          sys.exit(1)
+          throw new RuntimeException("unreachable")
         }
-      } else {
-        System.err.println(s"Unknown file extension: $filePath")
-        sys.exit(1)
-        throw new RuntimeException("unreachable")
+      } catch {
+        case e: Exception =>
+          System.err.println(s"Deserialization failed: ${e.getMessage}")
+          sys.exit(1)
+          throw new RuntimeException("unreachable")
       }
-    } catch {
-      case e: Exception =>
-        System.err.println(s"Deserialization failed: ${e.getMessage}")
-        sys.exit(1)
-        throw new RuntimeException("unreachable")
-    }
 
     if (data.vstr != "Hello, Baboon!") {
       System.err.println(s"vstr mismatch: expected 'Hello, Baboon!', got '${data.vstr}'")

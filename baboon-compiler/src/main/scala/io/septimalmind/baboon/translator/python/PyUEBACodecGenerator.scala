@@ -23,13 +23,13 @@ class PyUEBACodecGenerator(
     srcRef: PyValue.PyType,
   ): Option[TextTree[PyValue]] = {
     (defn.defn match {
-      case d: Typedef.Dto      => Some(genDtoBodies(pyRef, d))
-      case e: Typedef.Enum     => Some(genEnumBodies(e))
-      case a: Typedef.Adt      => Some(genAdtBodies(pyRef, a))
+      case d: Typedef.Dto  => Some(genDtoBodies(pyRef, d))
+      case e: Typedef.Enum => Some(genEnumBodies(e))
+      case a: Typedef.Adt  => Some(genAdtBodies(pyRef, a))
       case f: Typedef.Foreign =>
         f.bindings.get(BaboonLang.Py) match {
           case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
-          case _ => Some(genForeignTypesBodies(pyRef))
+          case _                                                                  => Some(genForeignTypesBodies(pyRef))
         }
       case _: Typedef.Service  => None
       case _: Typedef.Contract => None
@@ -102,14 +102,14 @@ class PyUEBACodecGenerator(
       defn match {
         case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonBinCodecBase[$name, $cType]"
         case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonBinCodecBase[$name, $cType]"
-        case _ if defn.isAdt                                => q"$baboonBinCodecGeneratedAdt[$name, $cType]"
+        case _ if defn.ownedByAdt                           => q"$baboonBinCodecGeneratedAdt[$name, $cType]"
         case _                                              => q"$baboonBinCodecGenerated[$name, $cType]"
       }
     } else {
       defn match {
         case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonBinCodecNoEncoder[$name, $cType]"
         case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonBinCodecNoEncoder[$name, $cType]"
-        case _ if defn.isAdt                                => q"$baboonBinCodecNoEncoderGeneratedAdt[$name, $cType]"
+        case _ if defn.ownedByAdt                           => q"$baboonBinCodecNoEncoderGeneratedAdt[$name, $cType]"
         case _                                              => q"$baboonBinCodecNoEncoderGenerated[$name, $cType]"
       }
     }

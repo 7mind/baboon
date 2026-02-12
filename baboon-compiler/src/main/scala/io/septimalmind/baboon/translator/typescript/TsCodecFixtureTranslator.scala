@@ -3,7 +3,6 @@ package io.septimalmind.baboon.translator.typescript
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
-import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -17,6 +16,7 @@ object TsCodecFixtureTranslator {
     enquiries: BaboonEnquiries,
     domain: Domain,
     evo: BaboonEvolution,
+    tsFileTools: TsFileTools,
   ) extends TsCodecFixtureTranslator {
 
     import TsTypes.baboonRandom
@@ -24,32 +24,32 @@ object TsCodecFixtureTranslator {
     override def translate(definition: DomainMember.User): Option[TextTree[TsValue]] = {
       definition.defn match {
         case _ if enquiries.hasForeignType(definition, domain, BaboonLang.Typescript) => None
-        case _ if enquiries.isRecursiveTypedef(definition, domain) => None
-        case dto: Typedef.Dto                                      => Some(doTranslateDto(dto))
-        case adt: Typedef.Adt                                      => Some(doTranslateAdt(adt))
-        case _: Typedef.Contract                                   => None
-        case _: Typedef.Enum                                       => None
-        case _: Typedef.Foreign                                    => None
-        case _: Typedef.Service                                    => None
+        case _ if enquiries.isRecursiveTypedef(definition, domain)                    => None
+        case dto: Typedef.Dto                                                         => Some(doTranslateDto(dto))
+        case adt: Typedef.Adt                                                         => Some(doTranslateAdt(adt))
+        case _: Typedef.Contract                                                      => None
+        case _: Typedef.Enum                                                          => None
+        case _: Typedef.Foreign                                                       => None
+        case _: Typedef.Service                                                       => None
       }
     }
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[TsValue] = {
       val generatedFields = dto.fields.map {
         f =>
-          q"${f.name.name}: ${genType(f.tpe)},"
+          q"${genType(f.tpe)},"
       }
-      val fullType = translator.toTsTypeRefKeepForeigns(dto.id, domain, evo)
+      val fullType = translator.asTsTypeKeepForeigns(dto.id, domain, evo, tsFileTools.definitionsBasePkg)
 
       q"""export function ${fixtureFnName(dto.id)}(rnd: $baboonRandom): $fullType {
-         |    return {
+         |    return new $fullType (
          |        ${generatedFields.joinN().shift(8).trim}
-         |    };
+         |    )
          |}""".stripMargin
     }
 
     private def doTranslateAdt(adt: Typedef.Adt): TextTree[TsValue] = {
-      val adtName = translator.asTsType(adt.id, domain, evo)
+      val adtName = translator.asTsType(adt.id, domain, evo, tsFileTools.definitionsBasePkg)
       val members = adt.members.toList
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
@@ -57,9 +57,7 @@ object TsCodecFixtureTranslator {
       val membersFixtures = members.sortBy(_.id.toString).map(doTranslateDtoPrivate)
       val membersGenerators = members.sortBy(_.id.toString).map {
         dto =>
-          val branchName = dto.id.name.name
-          val factoryFn  = TsValue.TsType(adtName.module, s"${adtName.name}_$branchName")
-          q"$factoryFn(${fixtureFnName(dto.id)}(rnd))"
+          q"${fixtureFnName(dto.id)}(rnd)"
       }
 
       val randomAllEntries = membersGenerators.map(g => q"$g,")
@@ -82,14 +80,14 @@ object TsCodecFixtureTranslator {
     private def doTranslateDtoPrivate(dto: Typedef.Dto): TextTree[TsValue] = {
       val generatedFields = dto.fields.map {
         f =>
-          q"${f.name.name}: ${genType(f.tpe)},"
+          q"${genType(f.tpe)},"
       }
-      val fullType = translator.toTsTypeRefKeepForeigns(dto.id, domain, evo)
+      val fullType = translator.asTsTypeKeepForeigns(dto.id, domain, evo, tsFileTools.definitionsBasePkg)
 
       q"""function ${fixtureFnName(dto.id)}(rnd: $baboonRandom): $fullType {
-         |    return {
+         |    return new $fullType (
          |        ${generatedFields.joinN().shift(8).trim}
-         |    };
+         |    )
          |}""".stripMargin
     }
 
@@ -98,9 +96,9 @@ object TsCodecFixtureTranslator {
     }
 
     private def fixtureFnRef(id: TypeId.User): TsValue.TsType = {
-      val userType      = translator.toTsTypeRefKeepForeigns(id, domain, evo)
-      val partsList     = userType.module.parts.toList
-      val fixtureModule = TsValue.TsModuleId(NEList.unsafeFrom(partsList.init :+ (partsList.last + ".fixture")))
+      val userType      = translator.asTsTypeKeepForeigns(id, domain, evo, tsFileTools.fixturesBasePkg)
+      val partsList     = userType.moduleId.path
+      val fixtureModule = TsValue.TsModuleId(partsList.init :+ (partsList.last + ".fixture"))
       TsValue.TsType(fixtureModule, fixtureFnName(id))
     }
 
@@ -143,8 +141,8 @@ object TsCodecFixtureTranslator {
         case TypeId.Builtins.bit   => q"rnd.nextBit()"
 
         case u: TypeId.User if enquiries.isEnum(tpe, domain) =>
-          val enumType   = translator.asTsType(u, domain, evo)
-          val enumValues = TsValue.TsType(enumType.module, s"${enumType.name}_values")
+          val enumType   = translator.asTsType(u, domain, evo, tsFileTools.definitionsBasePkg)
+          val enumValues = TsValue.TsType(enumType.moduleId, s"${enumType.name}_values")
           q"rnd.mkEnum($enumValues)"
         case u: TypeId.User =>
           val fnRef = fixtureFnRef(u)

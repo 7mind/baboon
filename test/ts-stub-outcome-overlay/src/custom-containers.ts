@@ -1,4 +1,4 @@
-import { IBaboonServiceRt } from "./testpkg/pkg0/baboon-service-rt";
+import {IBaboonServiceRt} from "./baboondefinitions/generated/testpkg/pkg0/baboon-service-rt";
 
 export type Outcome<S> =
     | { readonly tag: "Success"; readonly value: S }

@@ -35,7 +35,7 @@ object CSCodecTestsTranslator {
       val isLatestVersion = domain.version == evo.latest
 
       definition match {
-        case d if enquiries.hasForeignType(d, domain, BaboonLang.Cs)              => None
+        case d if enquiries.hasForeignType(d, domain, BaboonLang.Cs)            => None
         case d if enquiries.isRecursiveTypedef(d, domain)                       => None
         case d if d.defn.isInstanceOf[Typedef.NonDataTypedef]                   => None
         case _ if !target.language.enableDeprecatedEncoders && !isLatestVersion => None

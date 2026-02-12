@@ -46,9 +46,9 @@ object SwCodecTestsTranslator {
         case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
         case _ if !isLatestVersion                            => None
         case _ =>
-          val testBody = makeTest(definition, srcRef)
+          val testBody      = makeTest(definition, srcRef)
           val testClassName = srcRef.name.replace(".", "_")
-          val moduleName = typeTranslator.domainModuleName(domain.id, domain.version, evo)
+          val moduleName    = typeTranslator.domainModuleName(domain.id, domain.version, evo)
           val testFile =
             q"""import XCTest
                |import Foundation
@@ -65,14 +65,16 @@ object SwCodecTestsTranslator {
 
     private def makeTest(definition: DomainMember.User, srcRef: SwType): TextTree[SwValue] = {
       val fixture = makeFixture(definition, domain, evo)
-      codecs.filter(_.isActive(definition.id)).map { codec =>
-        val body = codec.id match {
-          case "Json" =>
-            val assertions = jsonCodecAssertions(definition, srcRef)
-            val crossRead  = crossLanguageJsonRead(definition, srcRef)
-            val crossWrite = crossLanguageJsonWrite(definition, srcRef)
+      codecs
+        .filter(_.isActive(definition.id)).map {
+          codec =>
+            val body = codec.id match {
+              case "Json" =>
+                val assertions = jsonCodecAssertions(definition, srcRef)
+                val crossRead  = crossLanguageJsonRead(definition, srcRef)
+                val crossWrite = crossLanguageJsonWrite(definition, srcRef)
 
-            q"""
+                q"""
                |func testJsonRoundTrip() throws {
                |    for _ in 0..<${target.generic.codecTestIterations.toString} {
                |        let rnd = $baboonRandomFactory.create()
@@ -86,13 +88,13 @@ object SwCodecTestsTranslator {
                |${crossWrite.shift(0).trim}
                |"""
 
-          case "Ueba" =>
-            val compactAssertions = uebaCodecAssertions(definition, srcRef, q"$baboonCodecContext.compact")
-            val indexedAssertions = uebaCodecAssertions(definition, srcRef, q"$baboonCodecContext.indexed")
-            val crossRead        = crossLanguageUebaRead(definition, srcRef)
-            val crossWrite       = crossLanguageUebaWrite(definition, srcRef)
+              case "Ueba" =>
+                val compactAssertions = uebaCodecAssertions(definition, srcRef, q"$baboonCodecContext.compact")
+                val indexedAssertions = uebaCodecAssertions(definition, srcRef, q"$baboonCodecContext.indexed")
+                val crossRead         = crossLanguageUebaRead(definition, srcRef)
+                val crossWrite        = crossLanguageUebaWrite(definition, srcRef)
 
-            q"""
+                q"""
                |func testUebaCompactRoundTrip() throws {
                |    for _ in 0..<${target.generic.codecTestIterations.toString} {
                |        let rnd = $baboonRandomFactory.create()
@@ -114,12 +116,12 @@ object SwCodecTestsTranslator {
                |${crossWrite.shift(0).trim}
                |"""
 
-          case unknown =>
-            logger.message(s"Cannot create codec tests ($unknown) for unsupported type $srcRef")
-            q""
-        }
-        body.stripMargin.trim
-      }.toList.joinNN().shift(4).trim
+              case unknown =>
+                logger.message(s"Cannot create codec tests ($unknown) for unsupported type $srcRef")
+                q""
+            }
+            body.stripMargin.trim
+        }.toList.joinNN().shift(4).trim
     }
 
     private def makeFixture(
@@ -127,7 +129,7 @@ object SwCodecTestsTranslator {
       domain: Domain,
       evolution: BaboonEvolution,
     ): TextTree[SwValue] = {
-      val swType = typeTranslator.asSwType(definition.id, domain, evolution)
+      val swType      = typeTranslator.asSwType(definition.id, domain, evolution)
       val fixtureName = typeTranslator.fixtureClassName(definition.id, domain, evolution)
       definition.defn match {
         case _: Typedef.Enum =>
@@ -185,16 +187,17 @@ object SwCodecTestsTranslator {
       val codecName = SwType(srcRef.pkg, s"${srcRef.name}_JsonCodec")
       val typeId    = definition.id.render
       val languages = List("cs", "scala", "rust", "typescript", "kotlin", "java", "dart")
-      val readTests = languages.map { lang =>
-        q"""func testCrossLanguageJsonReadFrom_$lang() throws {
-           |    let url = URL(fileURLWithPath: "../../../../../target/$lang/json-default/$typeId.json")
-           |    guard FileManager.default.fileExists(atPath: url.path) else { return }
-           |    let data = try Data(contentsOf: url)
-           |    let json = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
-           |    let decoded = try $codecName.instance.decode($baboonCodecContext.defaultCtx, json)
-           |    XCTAssertNotNil(decoded)
-           |}
-           |""".stripMargin
+      val readTests = languages.map {
+        lang =>
+          q"""func testCrossLanguageJsonReadFrom_$lang() throws {
+             |    let url = URL(fileURLWithPath: "../../../../../target/$lang/json-default/$typeId.json")
+             |    guard FileManager.default.fileExists(atPath: url.path) else { return }
+             |    let data = try Data(contentsOf: url)
+             |    let json = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+             |    let decoded = try $codecName.instance.decode($baboonCodecContext.defaultCtx, json)
+             |    XCTAssertNotNil(decoded)
+             |}
+             |""".stripMargin
       }
       readTests.joinNN()
     }
@@ -229,16 +232,17 @@ object SwCodecTestsTranslator {
       val codecName = SwType(srcRef.pkg, s"${srcRef.name}_UebaCodec")
       val typeId    = definition.id.render
       val languages = List("cs", "scala", "rust", "typescript", "kotlin", "java", "dart")
-      val readTests = languages.map { lang =>
-        q"""func testCrossLanguageUebaReadFrom_$lang() throws {
-           |    let url = URL(fileURLWithPath: "../../../../../target/$lang/ueba-default/$typeId.ueba")
-           |    guard FileManager.default.fileExists(atPath: url.path) else { return }
-           |    let bytes = try Data(contentsOf: url)
-           |    let reader = $baboonBinTools.createReader(bytes)
-           |    let decoded = try $codecName.instance.decode($baboonCodecContext.compact, reader)
-           |    XCTAssertNotNil(decoded)
-           |}
-           |""".stripMargin
+      val readTests = languages.map {
+        lang =>
+          q"""func testCrossLanguageUebaReadFrom_$lang() throws {
+             |    let url = URL(fileURLWithPath: "../../../../../target/$lang/ueba-default/$typeId.ueba")
+             |    guard FileManager.default.fileExists(atPath: url.path) else { return }
+             |    let bytes = try Data(contentsOf: url)
+             |    let reader = $baboonBinTools.createReader(bytes)
+             |    let decoded = try $codecName.instance.decode($baboonCodecContext.compact, reader)
+             |    XCTAssertNotNil(decoded)
+             |}
+             |""".stripMargin
       }
       readTests.joinNN()
     }

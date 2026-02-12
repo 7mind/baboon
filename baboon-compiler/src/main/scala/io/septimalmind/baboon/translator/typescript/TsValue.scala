@@ -1,36 +1,28 @@
 package io.septimalmind.baboon.translator.typescript
 
-import io.septimalmind.baboon.translator.FQNSymbol
-import izumi.fundamentals.collections.nonempty.NEList
+import io.septimalmind.baboon.typer.model.Version
 
-sealed trait TsValue
-
+trait TsValue
 object TsValue {
-  case class TsModuleId(parts: NEList[String])
-
+  final case class TsModuleId(path: List[String], version: Option[Version] = None)
   object TsModuleId {
-    def apply(pkg: String): TsModuleId =
-      TsModuleId(NEList.unsafeFrom(pkg.split("/").toList))
+    def apply(module: String): TsModuleId = {
+      new TsModuleId(List(module))
+    }
   }
-
-  case class TsType(
-    module: TsModuleId,
+  final case class TsType(
+    moduleId: TsModuleId,
     name: String,
-    fq: Boolean     = false,
-    predef: Boolean = false,
+    alias: Option[String] = None,
+    predef: Boolean       = false,
   ) extends TsValue {
-    def fullyQualified: TsType = this.copy(fq = true)
-    def asName: TsTypeName     = TsTypeName(name)
-
-    override def toString: String = s"${module.parts.mkString("/")}/$name"
+    def withAlias(alias: String): TsType = {
+      this.copy(alias = Some(alias))
+    }
   }
-
-  case class TsTypeName(name: String) extends TsValue
-
-  implicit object FQNTsValue extends FQNSymbol[TsValue] {
-    override def fullyQualified(value: TsValue): TsValue = value match {
-      case t: TsType     => t.fullyQualified
-      case n: TsTypeName => n
+  object TsType {
+    def predef(typeName: String): TsType = {
+      new TsType(TsModuleId(""), typeName, predef = true)
     }
   }
 }

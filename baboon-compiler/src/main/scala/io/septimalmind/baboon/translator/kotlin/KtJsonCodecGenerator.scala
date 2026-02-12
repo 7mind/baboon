@@ -21,13 +21,13 @@ class KtJsonCodecGenerator(
   override def translate(defn: DomainMember.User, ktRef: KtValue.KtType, srcRef: KtValue.KtType): Option[TextTree[KtValue]] = {
     if (isActive(defn.id)) {
       (defn.defn match {
-        case d: Typedef.Dto      => Some(genDtoBodies(ktRef, d))
-        case _: Typedef.Enum     => Some(genEnumBodies(ktRef))
-        case a: Typedef.Adt      => Some(genAdtBodies(ktRef, a))
+        case d: Typedef.Dto  => Some(genDtoBodies(ktRef, d))
+        case _: Typedef.Enum => Some(genEnumBodies(ktRef))
+        case a: Typedef.Adt  => Some(genAdtBodies(ktRef, a))
         case f: Typedef.Foreign =>
           f.bindings.get(BaboonLang.Kotlin) match {
             case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
-            case _ => Some(genForeignBodies(ktRef))
+            case _                                                                  => Some(genForeignBodies(ktRef))
           }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None

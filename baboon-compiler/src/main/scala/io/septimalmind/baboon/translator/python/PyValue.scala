@@ -12,7 +12,6 @@ object PyValue {
     def withModuleName(name: String): PyModuleId = {
       this.copy(path = NEList.unsafeFrom(path.toList.init :+ name))
     }
-    val isBaboonModule: Boolean = path.head.startsWith("baboon")
   }
   object PyModuleId {
     def apply(module: String): PyModuleId = {

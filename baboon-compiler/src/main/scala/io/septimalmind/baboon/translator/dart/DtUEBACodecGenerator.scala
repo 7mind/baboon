@@ -26,13 +26,13 @@ class DtUEBACodecGenerator(
   ): Option[TextTree[DtValue]] = {
     if (isActive(defn.id)) {
       (defn.defn match {
-        case d: Typedef.Dto      => Some(genDtoBodies(dtRef, d))
-        case e: Typedef.Enum     => Some(genEnumBodies(dtRef, e))
-        case a: Typedef.Adt      => Some(genAdtBodies(dtRef, a))
+        case d: Typedef.Dto  => Some(genDtoBodies(dtRef, d))
+        case e: Typedef.Enum => Some(genEnumBodies(dtRef, e))
+        case a: Typedef.Adt  => Some(genAdtBodies(dtRef, a))
         case f: Typedef.Foreign =>
           f.bindings.get(BaboonLang.Dart) match {
             case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
-            case _ => Some(genForeignBodies(dtRef))
+            case _                                                                  => Some(genForeignBodies(dtRef))
           }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None

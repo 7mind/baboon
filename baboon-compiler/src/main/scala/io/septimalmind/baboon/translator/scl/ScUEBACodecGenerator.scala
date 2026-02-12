@@ -25,13 +25,13 @@ class ScUEBACodecGenerator(
   ): Option[TextTree[ScValue]] = {
     if (isActive(defn.id)) {
       (defn.defn match {
-        case d: Typedef.Dto      => Some(genDtoBodies(csRef, d))
-        case e: Typedef.Enum     => Some(genEnumBodies(csRef, e))
-        case a: Typedef.Adt      => Some(genAdtBodies(csRef, a))
+        case d: Typedef.Dto  => Some(genDtoBodies(csRef, d))
+        case e: Typedef.Enum => Some(genEnumBodies(csRef, e))
+        case a: Typedef.Adt  => Some(genAdtBodies(csRef, a))
         case f: Typedef.Foreign =>
           f.bindings.get(BaboonLang.Scala) match {
             case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
-            case _ => Some(genForeignBodies(csRef))
+            case _                                                                  => Some(genForeignBodies(csRef))
           }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
@@ -133,14 +133,14 @@ class ScUEBACodecGenerator(
       defn match {
         case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonBinCodecBase[$name, $codecIface]"
         case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonBinCodecBase[$name, $codecIface]"
-        case _ if defn.isAdt                                => q"$baboonBinCodecBaseGeneratedAdt[$name, $codecIface]"
+        case _ if defn.ownedByAdt                           => q"$baboonBinCodecBaseGeneratedAdt[$name, $codecIface]"
         case _                                              => q"$baboonBinCodecBaseGenerated[$name, $codecIface]"
       }
     } else {
       defn match {
         case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonBinCodecNoEncoder[$name, $codecIface]"
         case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonBinCodecNoEncoder[$name, $codecIface]"
-        case _ if defn.isAdt                                => q"$baboonBinCodecNoEncoderGeneratedAdt[$name, $codecIface]"
+        case _ if defn.ownedByAdt                           => q"$baboonBinCodecNoEncoderGeneratedAdt[$name, $codecIface]"
         case _                                              => q"$baboonBinCodecNoEncoderGenerated[$name, $codecIface]"
       }
     }
@@ -532,7 +532,7 @@ class ScUEBACodecGenerator(
       case f: Typedef.Foreign =>
         f.bindings.get(BaboonLang.Scala) match {
           case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => Nil
-          case _ => meta.map(_.valueField)
+          case _                                                                  => meta.map(_.valueField)
         }
       case _ => meta.map(_.refValueField)
     }

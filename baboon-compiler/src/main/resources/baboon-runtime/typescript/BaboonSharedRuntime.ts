@@ -75,7 +75,7 @@ export class BaboonBinReader {
     readBytes(length: number): Uint8Array {
         const slice = this.buf.slice(this.pos, this.pos + length);
         this.pos += length;
-        return slice;
+        return new Uint8Array(slice);
     }
 
     readI8(): number {
@@ -597,15 +597,17 @@ export class BinTools {
 // --- Metadata interfaces ---
 
 export interface BaboonGenerated {
-    readonly baboon_domain_version: string;
-    readonly baboon_domain_identifier: string;
-    readonly baboon_type_identifier: string;
+    baboonDomainVersion(): string
+    baboonDomainIdentifier(): string
+    baboonSameInVersions(): string[]
+    baboonTypeIdentifier(): string
 }
 
-export interface BaboonGeneratedLatest extends BaboonGenerated {}
+export interface BaboonGeneratedLatest extends BaboonGenerated {
+}
 
 export interface BaboonAdtMemberMeta extends BaboonGenerated {
-    readonly baboon_adt_type_identifier: string;
+    readonly baboonAdtTypeIdentifier: string;
 }
 
 // --- Service wiring types ---
@@ -642,4 +644,24 @@ export interface AbstractConversion<From, To> {
 export interface AbstractBaboonConversions {
     versionsFrom(): string[];
     versionTo(): string;
+}
+
+export class Lazy<T> {
+    private valueRef: T | undefined;
+    private initialized = false;
+
+    constructor(private readonly initializer: () => T) {
+    }
+
+    get value(): T {
+        if (!this.initialized) {
+            this.valueRef = this.initializer();
+            this.initialized = true;
+        }
+        return this.valueRef!;
+    }
+
+    get isValueCreated(): boolean {
+        return this.initialized;
+    }
 }

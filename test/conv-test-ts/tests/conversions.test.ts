@@ -1,9 +1,10 @@
-import { describe, test, expect } from "vitest";
+import {describe, test, expect} from "vitest";
 import * as fs from "fs";
 import * as path from "path";
-import { fileURLToPath } from "url";
+import {fileURLToPath} from "url";
+import {AllBasicTypes} from "../src/generated/convtest/testpkg/AllBasicTypes";
+import {BaboonCodecContext} from "../src/generated/BaboonSharedRuntime";
 
-import { decode_AllBasicTypes_json, encode_AllBasicTypes_json } from "../src/generated/convtest/testpkg/all-basic-types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const compatDir = path.resolve(__dirname, "../../../target/compat-test");
@@ -22,9 +23,9 @@ describe("Cross-language JSON compatibility", () => {
 
             const data = fs.readFileSync(jsonPath, "utf-8");
             const json = JSON.parse(data);
-            const decoded = decode_AllBasicTypes_json(json);
-            const reEncoded = encode_AllBasicTypes_json(decoded);
-            const reDecoded = decode_AllBasicTypes_json(reEncoded);
+            const decoded = AllBasicTypes.jsonCodec().decode(BaboonCodecContext.Default, json);
+            const reEncoded = AllBasicTypes.jsonCodec().encode(BaboonCodecContext.Default, decoded);
+            const reDecoded = AllBasicTypes.jsonCodec().decode(BaboonCodecContext.Default, reEncoded);
             expect(reDecoded).toStrictEqual(decoded);
         });
     }

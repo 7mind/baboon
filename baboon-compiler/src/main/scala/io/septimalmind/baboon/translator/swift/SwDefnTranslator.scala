@@ -72,7 +72,7 @@ object SwDefnTranslator {
         getOutputModule(defn),
         CompilerProduct.Definition,
         codecReg = registrations,
-        imports = Set("BaboonRuntime"),
+        imports  = Set("BaboonRuntime"),
       )
 
       F.pure(List(mainOutput))
@@ -87,14 +87,15 @@ object SwDefnTranslator {
 
     private def doTranslateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       val fixtureTree = codecsFixture.translate(defn)
-      val result = fixtureTree.map { tree =>
-        Output(
-          getOutputPath(defn, suffix = Some("_fixture")),
-          tree,
-          getOutputModule(defn),
-          CompilerProduct.Fixture,
-          imports = Set("BaboonRuntime"),
-        )
+      val result = fixtureTree.map {
+        tree =>
+          Output(
+            getOutputPath(defn, suffix = Some("_fixture")),
+            tree,
+            getOutputModule(defn),
+            CompilerProduct.Fixture,
+            imports = Set("BaboonRuntime"),
+          )
       }.toList
       F.pure(result)
     }
@@ -113,30 +114,32 @@ object SwDefnTranslator {
       val typePath    = getOutputPath(defn)
       val fixturePath = getOutputPath(defn, suffix = Some("_fixture"))
       val testTree    = codecTests.translate(defn, swTypeRef, srcRef, testPath, typePath, fixturePath)
-      val result = testTree.map { tree =>
-        Output(
-          testPath,
-          tree,
-          getOutputModule(defn),
-          CompilerProduct.Test,
-          doNotModify = true,
-        )
+      val result = testTree.map {
+        tree =>
+          Output(
+            testPath,
+            tree,
+            getOutputModule(defn),
+            CompilerProduct.Test,
+            doNotModify = true,
+          )
       }.toList
       F.pure(result)
     }
 
     override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
       val rtTree = wiringTranslator.translateServiceRt(domain)
-      val result = rtTree.map { tree =>
-        val pkg   = trans.toSwPkg(domain.id, domain.version, evo)
-        val fbase = swFiles.basename(domain, evo)
-        Output(
-          s"$fbase/baboon_service_rt.swift",
-          tree,
-          pkg,
-          CompilerProduct.Definition,
-          imports = Set("BaboonRuntime"),
-        )
+      val result = rtTree.map {
+        tree =>
+          val pkg   = trans.toSwPkg(domain.id, domain.version, evo)
+          val fbase = swFiles.basename(domain, evo)
+          Output(
+            s"$fbase/baboon_service_rt.swift",
+            tree,
+            pkg,
+            CompilerProduct.Definition,
+            imports = Set("BaboonRuntime"),
+          )
       }.toList
       F.pure(result)
     }
@@ -246,10 +249,11 @@ object SwDefnTranslator {
     ): DefnRepr = {
       val hasFields = dto.fields.nonEmpty
 
-      val fieldDeclarations = dto.fields.map { f =>
-        val t       = trans.asSwRef(f.tpe, domain, evo)
-        val escaped = trans.escapeSwiftKeyword(f.name.name)
-        q"public let $escaped: $t"
+      val fieldDeclarations = dto.fields.map {
+        f =>
+          val t       = trans.asSwRef(f.tpe, domain, evo)
+          val escaped = trans.escapeSwiftKeyword(f.name.name)
+          q"public let $escaped: $t"
       }
 
       val contractParents = dto.contracts.map(c => trans.toSwTypeRefKeepForeigns(c, domain, evo))
@@ -259,7 +263,7 @@ object SwDefnTranslator {
         case _ => Seq.empty
       }
 
-      val allParents = (adtMemberProto ++ contractParents :+ genMarker).distinct
+      val allParents        = (adtMemberProto ++ contractParents :+ genMarker).distinct
       val conformanceClause = allParents.map(t => q"$t").join(", ")
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
@@ -269,14 +273,16 @@ object SwDefnTranslator {
       } else q""
 
       val initDecl = if (hasFields) {
-        val initParams = dto.fields.map { f =>
-          val t       = trans.asSwRef(f.tpe, domain, evo)
-          val escaped = trans.escapeSwiftKeyword(f.name.name)
-          q"$escaped: $t"
+        val initParams = dto.fields.map {
+          f =>
+            val t       = trans.asSwRef(f.tpe, domain, evo)
+            val escaped = trans.escapeSwiftKeyword(f.name.name)
+            q"$escaped: $t"
         }
-        val initBody = dto.fields.map { f =>
-          val escaped = trans.escapeSwiftKeyword(f.name.name)
-          q"self.$escaped = $escaped"
+        val initBody = dto.fields.map {
+          f =>
+            val escaped = trans.escapeSwiftKeyword(f.name.name)
+            q"self.$escaped = $escaped"
         }
         q"""public init(
            |    ${initParams.join(",\n").shift(4).trim}
@@ -305,8 +311,9 @@ object SwDefnTranslator {
       mainMeta: List[SwDomainTreeTools.MetaField],
       codecMeta: Iterable[TextTree[SwValue]],
     ): DefnRepr = {
-      val cases = e.members.map { m =>
-        q"""case ${m.name} = "${m.name}""""
+      val cases = e.members.map {
+        m =>
+          q"""case ${m.name} = "${m.name}""""
       }.toList
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
@@ -335,31 +342,33 @@ object SwDefnTranslator {
       mainMeta: List[SwDomainTreeTools.MetaField],
       codecMeta: Iterable[TextTree[SwValue]],
     ): DefnRepr = {
-      val parents = Seq(genMarker)
+      val parents           = Seq(genMarker)
       val conformanceClause = parents.map(t => q"$t").join(", ")
 
       val dataMembers = adt.members.toList.filter {
         mid =>
           domain.defs.meta.nodes(mid) match {
             case DomainMember.User(_, _: Typedef.NonDataTypedef, _, _) => false
-            case _                                                      => true
+            case _                                                     => true
           }
       }
 
-      val memberTrees = adt.members.map { mid =>
-        domain.defs.meta.nodes(mid) match {
-          case mdefn: DomainMember.User => makeFullRepr(mdefn, inLib = false)
-          case other                    => throw new RuntimeException(s"BUG: missing/wrong adt member: $mid => $other")
-        }
+      val memberTrees = adt.members.map {
+        mid =>
+          domain.defs.meta.nodes(mid) match {
+            case mdefn: DomainMember.User => makeFullRepr(mdefn, inLib = false)
+            case other                    => throw new RuntimeException(s"BUG: missing/wrong adt member: $mid => $other")
+          }
       }
 
       val memberDtos = memberTrees.map(_.defn).toList.joinNN()
 
-      val enumCases = dataMembers.map { mid =>
-        val memberName = mid.name.name
-        val caseName   = memberName.head.toLower.toString + memberName.tail
-        val memberRef  = trans.toSwTypeRefKeepForeigns(mid, domain, evo)
-        q"case $caseName(${memberRef.asDeclName})"
+      val enumCases = dataMembers.map {
+        mid =>
+          val memberName = mid.name.name
+          val caseName   = memberName.head.toLower.toString + memberName.tail
+          val memberRef  = trans.toSwTypeRefKeepForeigns(mid, domain, evo)
+          q"case $caseName(${memberRef.asDeclName})"
       }.toList
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
@@ -381,15 +390,16 @@ object SwDefnTranslator {
       name: SwType,
       genMarker: SwType,
     ): DefnRepr = {
-      val methods = contract.fields.map { f =>
-        val t       = trans.asSwRef(f.tpe, domain, evo)
-        val escaped = trans.escapeSwiftKeyword(f.name.name)
-        q"var $escaped: $t { get }"
+      val methods = contract.fields.map {
+        f =>
+          val t       = trans.asSwRef(f.tpe, domain, evo)
+          val escaped = trans.escapeSwiftKeyword(f.name.name)
+          q"var $escaped: $t { get }"
       }
-      val contractParents = contract.contracts.map(c => trans.toSwTypeRefKeepForeigns(c, domain, evo))
-      val parents         = (contractParents :+ genMarker).distinct
+      val contractParents   = contract.contracts.map(c => trans.toSwTypeRefKeepForeigns(c, domain, evo))
+      val parents           = (contractParents :+ genMarker).distinct
       val conformanceClause = parents.map(t => q"$t").join(", ")
-      val body = if (methods.nonEmpty) methods.joinN() else q""
+      val body              = if (methods.nonEmpty) methods.joinN() else q""
 
       DefnRepr(
         q"""public protocol ${name.asDeclName}: $conformanceClause {
@@ -404,11 +414,12 @@ object SwDefnTranslator {
       name: SwType,
     ): DefnRepr = {
       val service = defn.defn.asInstanceOf[Typedef.Service]
-      val methods = service.methods.map { m =>
-        val in  = trans.asSwRef(m.sig, domain, evo)
-        val out = m.out.map(trans.asSwRef(_, domain, evo))
-        val retStr = out.map(o => q" -> $o").getOrElse(q"")
-        q"func ${m.name.name}(arg: $in)$retStr"
+      val methods = service.methods.map {
+        m =>
+          val in     = trans.asSwRef(m.sig, domain, evo)
+          val out    = m.out.map(trans.asSwRef(_, domain, evo))
+          val retStr = out.map(o => q" -> $o").getOrElse(q"")
+          q"func ${m.name.name}(arg: $in)$retStr"
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
 
@@ -421,10 +432,10 @@ object SwDefnTranslator {
     }
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
-      val fbase   = swFiles.basename(domain, evo)
-      val typeRef = trans.toSwTypeRefKeepForeigns(defn.id, domain, evo)
+      val fbase    = swFiles.basename(domain, evo)
+      val typeRef  = trans.toSwTypeRefKeepForeigns(defn.id, domain, evo)
       val flatName = typeRef.name.replace('.', '_')
-      val fname   = s"${trans.toSnakeCase(flatName)}${suffix.getOrElse("")}.swift"
+      val fname    = s"${trans.toSnakeCase(flatName)}${suffix.getOrElse("")}.swift"
       s"$fbase/$fname"
     }
 

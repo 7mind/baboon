@@ -78,7 +78,7 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
       case CircularInheritance(error, meta)             => (Some(meta), s"Circular inheritance: $error")
       case NonUniqueEnumBranches(dupes, id, meta)       => (Some(meta), s"Duplicate enum branches in ${id.name.name}: ${dupes.keys.mkString(", ")}")
       case NonUniqueForeignEntries(dupes, id, meta)     => (Some(meta), s"Duplicate foreign entries in ${id.name.name}: ${dupes.keys.map(_.asString).mkString(", ")}")
-      case UnknownForeignLang(lang, id, meta)            => (Some(meta), s"Unknown foreign language '$lang' in ${id.name.name}")
+      case UnknownForeignLang(lang, id, meta)           => (Some(meta), s"Unknown foreign language '$lang' in ${id.name.name}")
       case EmptyGenericArgs(id, meta)                   => (Some(meta), s"Empty generic args for ${id.name.name}")
       case NonUniqueTypedefs(dupes, meta)               => (Some(meta), s"Duplicate typedefs: ${dupes.keys.map(_.name.name).mkString(", ")}")
       case NonUniqueScope(dupes, meta)                  => (Some(meta), s"Duplicate scopes: ${dupes.keys.mkString(", ")}")
@@ -109,7 +109,7 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
       case EmptyFamily(_)                               => (None, "Empty family")
       case EmptyFamilyReload(_)                         => (None, "Empty family")
       case TodoTyperIssue(descr)                        => (None, s"TODO: $descr")
-      case InvalidRtMapping(id, reason, meta)            => (Some(meta), s"Invalid rt mapping in ${id.name.name}: $reason")
+      case InvalidRtMapping(id, reason, meta)           => (Some(meta), s"Invalid rt mapping in ${id.name.name}: $reason")
     }
   }
 

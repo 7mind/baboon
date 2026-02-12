@@ -71,8 +71,9 @@ class TypeRenderer(domain: Domain) {
 
       case foreign: Typedef.Foreign =>
         sb.append(s"${BLUE}foreign$RESET $GREEN${foreign.id.name.name}$RESET {\n")
-        foreign.runtimeMapping.foreach { rtRef =>
-          sb.append(s"    ${CYAN}rt$RESET = ${renderTypeRef(rtRef)}\n")
+        foreign.runtimeMapping.foreach {
+          rtRef =>
+            sb.append(s"    ${CYAN}rt$RESET = ${renderTypeRef(rtRef)}\n")
         }
         foreign.bindings.toSeq.sortBy(_._1.asString).foreach {
           case (lang, entry) =>

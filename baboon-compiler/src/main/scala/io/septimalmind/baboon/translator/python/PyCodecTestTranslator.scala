@@ -34,9 +34,9 @@ object PyCodecTestTranslator {
 
       defn match {
         case d if enquiries.hasForeignType(d, domain, BaboonLang.Py) => None
-        case d if enquiries.isRecursiveTypedef(d, domain)     => None
-        case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
-        case _ if !isLatestVersion                            => None
+        case d if enquiries.isRecursiveTypedef(d, domain)            => None
+        case d if d.defn.isInstanceOf[Typedef.NonDataTypedef]        => None
+        case _ if !isLatestVersion                                   => None
         case _ =>
           val testClass =
             q"""class Test_${srcRef.name}_Tests($pyTestCase):

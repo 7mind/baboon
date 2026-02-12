@@ -27,13 +27,13 @@ object KtCodecFixtureTranslator {
     ): Option[TextTree[KtValue]] = {
       definition.defn match {
         case _ if enquiries.hasForeignType(definition, domain, BaboonLang.Kotlin) => None
-        case _ if enquiries.isRecursiveTypedef(definition, domain) => None
-        case dto: Typedef.Dto                                      => Some(doTranslateDto(dto))
-        case adt: Typedef.Adt                                      => Some(doTranslateAdt(adt))
-        case _: Typedef.Contract                                   => None
-        case _: Typedef.Enum                                       => None
-        case _: Typedef.Foreign                                    => None
-        case _: Typedef.Service                                    => None
+        case _ if enquiries.isRecursiveTypedef(definition, domain)                => None
+        case dto: Typedef.Dto                                                     => Some(doTranslateDto(dto))
+        case adt: Typedef.Adt                                                     => Some(doTranslateAdt(adt))
+        case _: Typedef.Contract                                                  => None
+        case _: Typedef.Enum                                                      => None
+        case _: Typedef.Foreign                                                   => None
+        case _: Typedef.Service                                                   => None
       }
     }
 
@@ -59,13 +59,13 @@ object KtCodecFixtureTranslator {
         case u: DomainMember.User =>
           u.defn match {
             case _ if enquiries.hasForeignType(u, domain, BaboonLang.Kotlin) => None
-            case _ if enquiries.isRecursiveTypedef(u, domain) => None
-            case _: Typedef.Contract                          => None
-            case _: Typedef.Enum                              => None
-            case _: Typedef.Foreign                           => None
-            case _: Typedef.Service                           => None
-            case dto: Typedef.Dto                             => Some(fixtureTpe(dto.id))
-            case adt: Typedef.Adt                             => Some(fixtureTpe(adt.id))
+            case _ if enquiries.isRecursiveTypedef(u, domain)                => None
+            case _: Typedef.Contract                                         => None
+            case _: Typedef.Enum                                             => None
+            case _: Typedef.Foreign                                          => None
+            case _: Typedef.Service                                          => None
+            case dto: Typedef.Dto                                            => Some(fixtureTpe(dto.id))
+            case adt: Typedef.Adt                                            => Some(fixtureTpe(adt.id))
           }
       }
     }
