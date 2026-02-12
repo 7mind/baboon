@@ -42,6 +42,12 @@ object ScServiceWiringTranslator {
     }
 
     private def renderContainer(error: String, success: String): String = {
+      val p        = resolved.pattern.get.replace("$error", error).replace("$success", success)
+      val typeName = resolved.hkt.map(_.name).getOrElse(resolved.resultType.get)
+      s"$typeName$p"
+    }
+
+    private def renderConcreteContainer(error: String, success: String): String = {
       val p = resolved.pattern.get.replace("$error", error).replace("$success", success)
       s"${resolved.resultType.get}$p"
     }
@@ -73,15 +79,20 @@ object ScServiceWiringTranslator {
       val isBuiltinEither = resolved.resultType.exists(t => t == "Either" || t == "scala.util.Either")
 
       val defaultImpl: Option[TextTree[ScValue]] = if (isBuiltinEither) {
+        val cct = renderConcreteContainer _
+        val defaultRtTypeArg = resolved.hkt match {
+          case Some(_) => "[Either]"
+          case None    => ""
+        }
         Some(
-          q"""object BaboonServiceRtDefault extends IBaboonServiceRt {
-             |  def pure[L, R](value: R): ${ct("L", "R")} = Right(value)
-             |  def fail[L, R](error: L): ${ct("L", "R")} = Left(error)
-             |  def leftMap[A, B, C](value: ${ct("A", "B")}, f: A => C): ${ct("C", "B")} = value match {
+          q"""object BaboonServiceRtDefault extends IBaboonServiceRt$defaultRtTypeArg {
+             |  def pure[L, R](value: R): ${cct("L", "R")} = Right(value)
+             |  def fail[L, R](error: L): ${cct("L", "R")} = Left(error)
+             |  def leftMap[A, B, C](value: ${cct("A", "B")}, f: A => C): ${cct("C", "B")} = value match {
              |    case Left(a) => Left(f(a))
              |    case Right(b) => Right(b)
              |  }
-             |  def flatMap[A, B, C](value: ${ct("A", "B")}, f: B => ${ct("A", "C")}): ${ct("A", "C")} = value match {
+             |  def flatMap[A, B, C](value: ${cct("A", "B")}, f: B => ${cct("A", "C")}): ${cct("A", "C")} = value match {
              |    case Left(a) => Left(a)
              |    case Right(b) => f(b)
              |  }
@@ -115,9 +126,31 @@ object ScServiceWiringTranslator {
       case ResolvedServiceContext.ConcreteContext(_, pn) => s"$pn, "
     }
 
-    private def genericParam: String = resolvedCtx match {
-      case ResolvedServiceContext.AbstractContext(tn, _) => s"[$tn]"
-      case _                                            => ""
+    private def genericParam: String = {
+      val params = Seq(
+        resolved.hkt.map(h => s"${h.name}${h.signature}"),
+        resolvedCtx match {
+          case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+          case _                                            => None
+        },
+      ).flatten
+      if (params.nonEmpty) params.mkString("[", ", ", "]") else ""
+    }
+
+    private def svcTypeArg: String = {
+      val params = Seq(
+        resolved.hkt.map(_.name),
+        resolvedCtx match {
+          case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+          case _                                            => None
+        },
+      ).flatten
+      if (params.nonEmpty) params.mkString("[", ", ", "]") else ""
+    }
+
+    private def rtTypeArg: String = resolved.hkt match {
+      case Some(h) => s"[${h.name}]"
+      case None    => ""
     }
 
     private def renderFq(tree: TextTree[ScValue]): String = tree.mapRender {
@@ -175,7 +208,7 @@ object ScServiceWiringTranslator {
       q"""def invokeJson$genericParam(
          |  method: $baboonMethodId,
          |  data: String,
-         |  impl: ${svcName}$genericParam,
+         |  impl: ${svcName}$svcTypeArg,
          |  ${ctxParamDecl}ctx: $baboonCodecContext): String = {
          |  method.methodName match {
          |    ${cases.shift(4).trim}
@@ -218,7 +251,7 @@ object ScServiceWiringTranslator {
       q"""def invokeUeba$genericParam(
          |  method: $baboonMethodId,
          |  data: Array[Byte],
-         |  impl: ${svcName}$genericParam,
+         |  impl: ${svcName}$svcTypeArg,
          |  ${ctxParamDecl}ctx: $baboonCodecContext): Array[Byte] = {
          |  method.methodName match {
          |    ${cases.shift(4).trim}
@@ -343,8 +376,8 @@ object ScServiceWiringTranslator {
       q"""def invokeJson$genericParam(
          |  method: $baboonMethodId,
          |  data: String,
-         |  impl: ${svcName}$genericParam,
-         |  rt: IBaboonServiceRt,
+         |  impl: ${svcName}$svcTypeArg,
+         |  rt: IBaboonServiceRt$rtTypeArg,
          |  ${ctxParamDecl}ctx: $baboonCodecContext): $wiringRetType = {
          |  method.methodName match {
          |    ${cases.shift(4).trim}
@@ -449,8 +482,8 @@ object ScServiceWiringTranslator {
       q"""def invokeUeba$genericParam(
          |  method: $baboonMethodId,
          |  data: Array[Byte],
-         |  impl: ${svcName}$genericParam,
-         |  rt: IBaboonServiceRt,
+         |  impl: ${svcName}$svcTypeArg,
+         |  rt: IBaboonServiceRt$rtTypeArg,
          |  ${ctxParamDecl}ctx: $baboonCodecContext): $wiringRetType = {
          |  method.methodName match {
          |    ${cases.shift(4).trim}

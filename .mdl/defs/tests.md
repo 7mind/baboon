@@ -809,6 +809,57 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-sc-wiring-hkt
+
+Generate code for Scala wiring tests with HKT (higher-kinded type parameter F[+_, +_]).
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-sc-wiring-hkt"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/sc-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
+  ./test/sc-stub/ "$TEST_DIR/sc-stub/"
+rsync -a ./test/sc-stub-hkt-overlay/ "$TEST_DIR/sc-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-sc-hkt.lock \
+  :scala \
+  --output "$TEST_DIR/sc-stub/src/main/scala/generated-main" \
+  --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
+  --fixture-output "$TEST_DIR/sc-stub/src/main/scala/generated-fixtures" \
+  --sc-write-evolution-dict=true \
+  --sc-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="custom.MyBi" \
+  --service-result-pattern="[\$error, \$success]" \
+  --service-result-hkt=true \
+  --service-result-hkt-name="F" \
+  --service-result-hkt-signature="[+_, +_]"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-sc-wiring-hkt
+
+Run Scala HKT wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-sc-wiring-hkt.test_dir}"
+pushd "$TEST_DIR/sc-stub"
+sbt +clean +test
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-ts-wiring-either
 
 Generate code for TypeScript wiring tests with built-in BaboonEither container.
@@ -1287,6 +1338,7 @@ dep action.test-cs-wiring-outcome
 dep action.test-sc-wiring-either
 dep action.test-sc-wiring-result
 dep action.test-sc-wiring-outcome
+dep action.test-sc-wiring-hkt
 dep action.test-ts-wiring-either
 dep action.test-ts-wiring-result
 dep action.test-ts-wiring-outcome
