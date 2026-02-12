@@ -16,6 +16,7 @@ trait TsDefnTranslator[F[+_, +_]] {
   def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[TsDefnTranslator.Output]]
   def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[TsDefnTranslator.Output]]
   def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue], List[TsDefnTranslator.Output]]
+  def translateServiceRt(): F[NEList[BaboonIssue], List[TsDefnTranslator.Output]]
 }
 
 object TsDefnTranslator {
@@ -38,6 +39,7 @@ object TsDefnTranslator {
     codecTests: TsCodecTestsTranslator,
     codecsFixture: TsCodecFixtureTranslator,
     enquiries: BaboonEnquiries,
+    wiringTranslator: TsServiceWiringTranslator,
   ) extends TsDefnTranslator[F] {
 
     override def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
@@ -55,16 +57,16 @@ object TsDefnTranslator {
           val codecTrees = codecs.toList.flatMap(t => t.translate(defn, trans.asTsType(defn.id, domain, evo), trans.toTsTypeRefKeepForeigns(defn.id, domain, evo)).toList)
           val allDefs = (repr +: codecTrees).joinNN()
 
-          F.pure(
-            List(
-              Output(
-                getOutputPath(defn),
-                allDefs,
-                trans.toTsModule(domain.id, domain.version, evo),
-                CompilerProduct.Definition,
-              )
-            )
+          val mainOutput = Output(
+            getOutputPath(defn),
+            allDefs,
+            trans.toTsModule(domain.id, domain.version, evo),
+            CompilerProduct.Definition,
           )
+
+          val wiringOutput = wiringTranslator.translate(defn).toList
+
+          F.pure(mainOutput :: wiringOutput)
       }
     }
 
@@ -111,6 +113,10 @@ object TsDefnTranslator {
             CompilerProduct.Test,
           )
       }.toList)
+    }
+
+    override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
+      F.pure(wiringTranslator.translateServiceRt().toList)
     }
 
     private def makeRepr(defn: DomainMember.User): TextTree[TsValue] = {
@@ -255,14 +261,18 @@ object TsDefnTranslator {
         val retTree: TextTree[TsValue] = if (resolved.noErrors || errType.isEmpty) {
           outType.getOrElse(q"void")
         } else {
-          val tsRender: TsValue => String = {
-            case t: TsValue.TsType     => t.name
-            case t: TsValue.TsTypeName => t.name
+          val isBuiltinEither = resolved.resultType.exists(_ == "BaboonEither")
+          if (isBuiltinEither) {
+            val outTree = outType.getOrElse(q"void")
+            val errTree = errType.getOrElse(q"void")
+            val resultTypeName = resolved.resultType.getOrElse("")
+            val resultTypeRef = TsValue.TsType(TsTypes.runtimeModule, resultTypeName)
+            val pat = resolved.pattern.getOrElse("")
+            val expanded = expandPattern(pat, errTree, outTree)
+            q"$resultTypeRef$expanded"
+          } else {
+            q"any"
           }
-          val outStr  = outType.map(_.mapRender(tsRender)).getOrElse("")
-          val errStr  = errType.map(_.mapRender(tsRender))
-          val retStr  = resolved.renderReturnType(outStr, errStr, "void")
-          q"$retStr"
         }
         q"${m.name.name}(${ctxParam}arg: $inType): $retTree;"
       }
@@ -274,6 +284,26 @@ object TsDefnTranslator {
       q"""export interface ${name.asName}$genericParam {
          |    ${body.shift(4).trim}
          |}""".stripMargin
+    }
+
+    private def expandPattern(pat: String, errTree: TextTree[TsValue], outTree: TextTree[TsValue]): TextTree[TsValue] = {
+      val placeholderRegex = "\\$(error|success)".r
+      val segments = scala.collection.mutable.ListBuffer.empty[TextTree[TsValue]]
+      var lastEnd = 0
+      for (m <- placeholderRegex.findAllMatchIn(pat)) {
+        if (m.start > lastEnd) {
+          segments += q"${pat.substring(lastEnd, m.start)}"
+        }
+        m.group(1) match {
+          case "error"   => segments += errTree
+          case "success" => segments += outTree
+        }
+        lastEnd = m.end
+      }
+      if (lastEnd < pat.length) {
+        segments += q"${pat.substring(lastEnd)}"
+      }
+      segments.reduce((a, b) => q"$a$b")
     }
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {

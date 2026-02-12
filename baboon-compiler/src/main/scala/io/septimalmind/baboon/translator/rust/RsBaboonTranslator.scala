@@ -92,6 +92,7 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
           defnSources     <- translateProduct(domain, CompilerProduct.Definition, defnTranslator.translate)
           fixturesSources <- translateProduct(domain, CompilerProduct.Fixture, defnTranslator.translateFixtures)
           testsSources    <- translateProduct(domain, CompilerProduct.Test, defnTranslator.translateTests)
+          serviceRt       <- defnTranslator.translateServiceRt()
 
           conversionSources <- {
             if (target.output.products.contains(CompilerProduct.Conversion)) {
@@ -102,7 +103,7 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
             }
           }
         } yield {
-          defnSources ++ conversionSources ++ fixturesSources ++ testsSources
+          defnSources ++ serviceRt ++ conversionSources ++ fixturesSources ++ testsSources
         }
     }
   }
@@ -195,7 +196,14 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
             RsValue.RsCrateId(NEList("crate")),
             CompilerProduct.Runtime,
             doNotModify = true,
-          )
+          ),
+          RsDefnTranslator.Output(
+            "baboon_service_wiring.rs",
+            TextTree.text(IzResources.readAsString("baboon-runtime/rust/baboon_service_wiring.rs").get),
+            RsValue.RsCrateId(NEList("crate")),
+            CompilerProduct.Runtime,
+            doNotModify = true,
+          ),
         )
       )
     } else {

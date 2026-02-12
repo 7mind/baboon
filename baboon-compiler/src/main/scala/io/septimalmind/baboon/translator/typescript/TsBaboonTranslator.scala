@@ -77,6 +77,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
           defnSources     <- translateProduct(domain, CompilerProduct.Definition, defnTranslator.translate)
           fixturesSources <- translateProduct(domain, CompilerProduct.Fixture, defnTranslator.translateFixtures)
           testsSources    <- translateProduct(domain, CompilerProduct.Test, defnTranslator.translateTests)
+          serviceRt       <- defnTranslator.translateServiceRt()
 
           conversionSources <- {
             if (target.output.products.contains(CompilerProduct.Conversion)) {
@@ -87,7 +88,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
             }
           }
         } yield {
-          defnSources ++ conversionSources ++ fixturesSources ++ testsSources
+          defnSources ++ serviceRt ++ conversionSources ++ fixturesSources ++ testsSources
         }
     }
   }

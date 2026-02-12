@@ -21,6 +21,11 @@ object RsTypes {
   val baboonBinTools: RsType     = RsType(baboonRuntimeCrate, "bin_tools")
   val baboonTimeFormats: RsType  = RsType(baboonRuntimeCrate, "time_formats")
 
+  // baboon service wiring types
+  val baboonServiceWiringCrate: RsCrateId = parseCrate("crate::baboon_service_wiring")
+  val baboonMethodId: RsType              = RsType(baboonServiceWiringCrate, "BaboonMethodId")
+  val baboonWiringError: RsType           = RsType(baboonServiceWiringCrate, "BaboonWiringError")
+
   // baboon conversions
   val baboonAbstractConversion: RsType  = RsType(baboonRuntimeCrate, "AbstractConversion")
   val baboonAbstractConversions: RsType = RsType(baboonRuntimeCrate, "AbstractBaboonConversions")

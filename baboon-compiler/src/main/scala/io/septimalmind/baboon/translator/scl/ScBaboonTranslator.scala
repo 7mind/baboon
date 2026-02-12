@@ -80,6 +80,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
           defnSources     <- translateProduct(domain, CompilerProduct.Definition, defnTranslator.translate)
           fixturesSources <- translateProduct(domain, CompilerProduct.Fixture, defnTranslator.translateFixtures)
           testsSources    <- translateProduct(domain, CompilerProduct.Test, defnTranslator.translateTests)
+          serviceRt       <- defnTranslator.translateServiceRt()
 
           conversionSources <- {
             if (target.output.products.contains(CompilerProduct.Conversion)) {
@@ -101,6 +102,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
           conversionSources ++
           fixturesSources ++
           testsSources ++
+          serviceRt ++
           meta
         }
     }
@@ -204,6 +206,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
           rt("BaboonConversions.scala", "baboon-runtime/scala/BaboonConversions.scala"),
           rt("BaboonExceptions.scala", "baboon-runtime/scala/BaboonExceptions.scala"),
           rt("BaboonRuntimeShared.scala", "baboon-runtime/scala/BaboonRuntimeShared.scala", _.replace("""\\.""", """\\\\.""")),
+          rt("BaboonServiceWiring.scala", "baboon-runtime/scala/BaboonServiceWiring.scala"),
           rt("BaboonTools.scala", "baboon-runtime/scala/BaboonTools.scala"),
         )
       )

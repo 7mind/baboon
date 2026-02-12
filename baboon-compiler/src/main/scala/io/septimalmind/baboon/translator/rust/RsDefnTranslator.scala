@@ -16,6 +16,7 @@ trait RsDefnTranslator[F[+_, +_]] {
   def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[RsDefnTranslator.Output]]
   def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[RsDefnTranslator.Output]]
   def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue], List[RsDefnTranslator.Output]]
+  def translateServiceRt(): F[NEList[BaboonIssue], List[RsDefnTranslator.Output]]
 }
 
 object RsDefnTranslator {
@@ -38,6 +39,7 @@ object RsDefnTranslator {
     codecTests: RsCodecTestsTranslator,
     codecsFixture: RsCodecFixtureTranslator,
     enquiries: BaboonEnquiries,
+    wiringTranslator: RsServiceWiringTranslator,
   ) extends RsDefnTranslator[F] {
 
     override def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
@@ -52,16 +54,23 @@ object RsDefnTranslator {
       val codecTrees = codecs.toList.flatMap(t => t.translate(defn, trans.asRsType(defn.id, domain, evo), trans.toRsTypeRefKeepForeigns(defn.id, domain, evo)).toList)
       val allDefs = (repr +: codecTrees).joinNN()
 
-      F.pure(
-        List(
-          Output(
-            getOutputPath(defn),
-            allDefs,
-            trans.toRsCrate(domain.id, domain.version, evo),
-            CompilerProduct.Definition,
-          )
-        )
+      val mainOutput = Output(
+        getOutputPath(defn),
+        allDefs,
+        trans.toRsCrate(domain.id, domain.version, evo),
+        CompilerProduct.Definition,
       )
+
+      val wiringOutput = wiringTranslator.translate(defn).map { wiringTree =>
+        Output(
+          getOutputPath(defn, suffix = Some("_wiring")),
+          wiringTree,
+          trans.toRsCrate(domain.id, domain.version, evo),
+          CompilerProduct.Definition,
+        )
+      }.toList
+
+      F.pure(mainOutput :: wiringOutput)
     }
 
     override def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
@@ -104,6 +113,20 @@ object RsDefnTranslator {
             CompilerProduct.Test,
           )
       }.toList)
+    }
+
+    override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
+      val rtTree = wiringTranslator.translateServiceRt(domain)
+      val result = rtTree.map { tree =>
+        val fbase = rsFiles.basename(domain, evo)
+        Output(
+          s"$fbase/baboon_service_rt.rs",
+          tree,
+          trans.toRsCrate(domain.id, domain.version, evo),
+          CompilerProduct.Definition,
+        )
+      }.toList
+      F.pure(result)
     }
 
     private def makeRepr(defn: DomainMember.User): TextTree[RsValue] = {

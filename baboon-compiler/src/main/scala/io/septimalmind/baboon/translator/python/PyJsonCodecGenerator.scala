@@ -106,7 +106,7 @@ final class PyJsonCodecGenerator(
   }
 
   override def codecType(tid: TypeId.User): PyType = {
-    val typeName = s"${tid.name.name}_JsonCodec"
+    val typeName = s"${tid.name.name.capitalize}_JsonCodec"
     val moduleId = typeTranslator.toPyModule(tid, domain.version, evolution, pyFileTools.definitionsBasePkg)
     PyType(moduleId, typeName)
   }

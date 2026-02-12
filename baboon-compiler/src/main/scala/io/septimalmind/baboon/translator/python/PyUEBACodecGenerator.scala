@@ -144,7 +144,7 @@ class PyUEBACodecGenerator(
              |    return
              |""".stripMargin,
           q"""if as_byte == ${i.toString}:
-             |    return ${enum.id.name.name}.${m.name}
+             |    return ${enum.id.name.name.capitalize}.${m.name}
              |""".stripMargin,
         )
     }
@@ -152,12 +152,12 @@ class PyUEBACodecGenerator(
     (
       q"""${branches.map(_._1).joinN()}
          |
-         |raise ValueError(f"Cannot encode {value} to ${enum.id.name.name}: no matching value")""".stripMargin,
+         |raise ValueError(f"Cannot encode {value} to ${enum.id.name.name.capitalize}: no matching value")""".stripMargin,
       q"""as_byte = wire.read_byte()
          |
          |${branches.map(_._2).joinN()}
          |
-         |raise ValueError(f"Cannot decode {wire} to ${enum.id.name.name}: no matching value")""".stripMargin,
+         |raise ValueError(f"Cannot decode {wire} to ${enum.id.name.name.capitalize}: no matching value")""".stripMargin,
     )
   }
 
@@ -167,12 +167,12 @@ class PyUEBACodecGenerator(
         val cName = codecType(member)
         val encoder = {
           if (pyTarget.language.wrappedAdtBranchCodecs) {
-            q"""if isinstance(value, ${member.name.name}):
+            q"""if isinstance(value, ${member.name.name.capitalize}):
                |    $cName.instance().encode(ctx, wire, value)
                |    return
                |""".stripMargin
           } else {
-            q"""if isinstance(value, ${member.name.name}):
+            q"""if isinstance(value, ${member.name.name.capitalize}):
                |    wire.write_byte(${i.toString})
                |    $cName.instance().encode(ctx, wire, value)
                |    return
@@ -428,7 +428,7 @@ class PyUEBACodecGenerator(
   }
 
   override def codecType(tid: TypeId.User): PyType = {
-    val typeName = s"${tid.name.name}_UEBACodec"
+    val typeName = s"${tid.name.name.capitalize}_UEBACodec"
     val moduleId = typeTranslator
       .toPyModule(tid, domain.version, evolution, pyFileTools.definitionsBasePkg)
     PyType(moduleId, typeName)

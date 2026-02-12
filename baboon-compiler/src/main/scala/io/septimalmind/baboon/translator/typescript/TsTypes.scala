@@ -29,6 +29,12 @@ object TsTypes {
   val abstractConversion: TsType     = TsType(runtimeModule, "AbstractConversion")
   val abstractBaboonConversions: TsType = TsType(runtimeModule, "AbstractBaboonConversions")
 
+  // Service wiring types
+  val baboonMethodId: TsType        = TsType(runtimeModule, "BaboonMethodId")
+  val baboonWiringError: TsType     = TsType(runtimeModule, "BaboonWiringError")
+  val baboonWiringException: TsType = TsType(runtimeModule, "BaboonWiringException")
+  val baboonEither: TsType          = TsType(runtimeModule, "BaboonEither")
+
   // Fixture types
   val baboonRandom: TsType = TsType(fixtureModule, "BaboonRandom")
 }

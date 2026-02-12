@@ -123,4 +123,17 @@ object PyTypes {
 
   // collections
   val pyDefaultDict: PyType = PyType(pyCollections, "defaultdict")
+
+  // baboon service wiring
+  val pyBaboonServiceWiringModule: PyModuleId = PyModuleId("baboon_service_wiring")
+  val baboonMethodId: PyType                  = PyType(pyBaboonServiceWiringModule, "BaboonMethodId")
+  val baboonWiringError: PyType               = PyType(pyBaboonServiceWiringModule, "BaboonWiringError")
+  val baboonNoMatchingMethod: PyType          = PyType(pyBaboonServiceWiringModule, "NoMatchingMethod")
+  val baboonDecoderFailed: PyType             = PyType(pyBaboonServiceWiringModule, "DecoderFailed")
+  val baboonEncoderFailed: PyType             = PyType(pyBaboonServiceWiringModule, "EncoderFailed")
+  val baboonCallFailed: PyType                = PyType(pyBaboonServiceWiringModule, "CallFailed")
+  val baboonWiringException: PyType           = PyType(pyBaboonServiceWiringModule, "BaboonWiringException")
+  val baboonEitherType: PyType                = PyType(pyBaboonServiceWiringModule, "BaboonEither")
+  val baboonLeftType: PyType                  = PyType(pyBaboonServiceWiringModule, "BaboonLeft")
+  val baboonRightType: PyType                 = PyType(pyBaboonServiceWiringModule, "BaboonRight")
 }

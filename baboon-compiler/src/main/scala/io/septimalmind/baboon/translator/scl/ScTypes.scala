@@ -57,6 +57,11 @@ object ScTypes {
   val scByteString: ScType                    = ScType(baboonRuntimePkg, "ByteString")
   val baboonRandom: ScType                    = ScType(baboonFixturePkg, "BaboonRandom")
 
+  // baboon service wiring types
+  val baboonMethodId: ScType        = ScType(baboonRuntimePkg, "BaboonMethodId")
+  val baboonWiringError: ScType     = ScType(baboonRuntimePkg, "BaboonWiringError")
+  val baboonWiringException: ScType = ScType(baboonRuntimePkg, "BaboonWiringException")
+
   // baboon conversions
   val baboonAbstractConversion  = ScType(baboonRuntimePkg, "AbstractConversion")
   val baboonAbstractConversions = ScType(baboonRuntimePkg, "AbstractBaboonConversions")

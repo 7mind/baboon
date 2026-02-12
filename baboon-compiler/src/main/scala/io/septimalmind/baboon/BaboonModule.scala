@@ -105,6 +105,7 @@ class BaboonCommonScModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
       make[ScDefnTranslator[F]].from[ScDefnTranslator.ScDefnTranslatorImpl[F]]
       make[ScCodecFixtureTranslator].from[ScCodecFixtureTranslator.ScRandomMethodTranslatorImpl]
       make[ScCodecTestsTranslator].from[ScCodecTestsTranslator.Impl]
+      make[ScServiceWiringTranslator].from[ScServiceWiringTranslator.Impl]
       many[ScCodecTranslator]
         .add[ScJsonCodecGenerator]
         .add[ScUEBACodecGenerator]
@@ -132,6 +133,7 @@ class BaboonCommonPyModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
       make[PyCodecFixtureTranslator].from[PyCodecFixtureTranslator.PyCodecFixtureTranslatorImpl]
       make[PyCodecTestTranslator].from[PyCodecTestTranslator.PyCodecTestTranslatorImpl]
       make[PyJsonCodecGenerator]
+      make[PyServiceWiringTranslator].from[PyServiceWiringTranslator.Impl]
       many[PyCodecTranslator]
         .add[PyJsonCodecGenerator]
         .add[PyUEBACodecGenerator]
@@ -156,6 +158,7 @@ class BaboonCommonRsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
       make[RsDefnTranslator[F]].from[RsDefnTranslator.RsDefnTranslatorImpl[F]]
       make[RsCodecFixtureTranslator].from[RsCodecFixtureTranslator.RsCodecFixtureTranslatorImpl]
       make[RsCodecTestsTranslator].from[RsCodecTestsTranslator.Impl]
+      make[RsServiceWiringTranslator].from[RsServiceWiringTranslator.Impl]
       many[RsCodecTranslator]
         .add[RsJsonCodecGenerator]
         .add[RsUEBACodecGenerator]
@@ -179,6 +182,7 @@ class BaboonCommonTsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
       make[TsDefnTranslator[F]].from[TsDefnTranslator.TsDefnTranslatorImpl[F]]
+      make[TsServiceWiringTranslator].from[TsServiceWiringTranslator.Impl]
       make[TsCodecFixtureTranslator].from[TsCodecFixtureTranslator.TsCodecFixtureTranslatorImpl]
       make[TsCodecTestsTranslator].from[TsCodecTestsTranslator.Impl]
       many[TsCodecTranslator]

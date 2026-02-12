@@ -15,6 +15,7 @@ trait ScDefnTranslator[F[+_, +_]] {
   def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[ScDefnTranslator.Output]]
   def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[ScDefnTranslator.Output]]
   def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue], List[ScDefnTranslator.Output]]
+  def translateServiceRt(): F[NEList[BaboonIssue], List[ScDefnTranslator.Output]]
 }
 
 object ScDefnTranslator {
@@ -50,6 +51,7 @@ object ScDefnTranslator {
     codecs: Set[ScCodecTranslator],
     codecTests: ScCodecTestsTranslator,
     codecsFixture: ScCodecFixtureTranslator,
+    wiringTranslator: ScServiceWiringTranslator,
     scDomainTreeTools: ScDomainTreeTools,
   ) extends ScDefnTranslator[F] {
     import ScTypes.*
@@ -66,17 +68,26 @@ object ScDefnTranslator {
 
       val registrations = codecs.toList.map(codec => codec.id -> repr.codecs.flatMap(reg => reg.trees.get(codec.id).map(expr => q"${reg.tpeId}, $expr")))
 
-      F.pure(
-        List(
-          Output(
-            getOutputPath(defn),
-            repr.defn,
-            trans.toScPkg(domain.id, domain.version, evo),
-            CompilerProduct.Definition,
-            codecReg = registrations,
-          )
-        )
+      val mainOutput = Output(
+        getOutputPath(defn),
+        repr.defn,
+        trans.toScPkg(domain.id, domain.version, evo),
+        CompilerProduct.Definition,
+        codecReg = registrations,
       )
+
+      val wiringOutput = wiringTranslator.translate(defn).map { wiringTree =>
+        val pkg = trans.toScPkg(domain.id, domain.version, evo)
+        val wrapped = scTrees.inNs(pkg.parts.toSeq, wiringTree)
+        Output(
+          getOutputPath(defn, suffix = Some("_Wiring")),
+          wrapped,
+          pkg,
+          CompilerProduct.Definition,
+        )
+      }.toList
+
+      F.pure(mainOutput :: wiringOutput)
     }
 
     override def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
@@ -127,6 +138,22 @@ object ScDefnTranslator {
       }
 
       F.pure(codecTestOut.toList)
+    }
+
+    override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
+      val rtTree = wiringTranslator.translateServiceRt(domain)
+      val result = rtTree.map { tree =>
+        val pkg = trans.toScPkg(domain.id, domain.version, evo)
+        val wrapped = scTrees.inNs(pkg.parts.toSeq, tree)
+        val fbase = scFiles.basename(domain, evo)
+        Output(
+          s"$fbase/BaboonServiceRt.scala",
+          wrapped,
+          pkg,
+          CompilerProduct.Definition,
+        )
+      }.toList
+      F.pure(result)
     }
 
     private def makeTestRepr(defn: DomainMember.User): Option[TextTree[ScValue]] = {

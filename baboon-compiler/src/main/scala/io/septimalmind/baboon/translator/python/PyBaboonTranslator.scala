@@ -62,6 +62,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           defnSources     <- translateProduct(domain, CompilerProduct.Definition, defnTranslator.translate)
           fixturesSources <- translateProduct(domain, CompilerProduct.Fixture, defnTranslator.translateFixtures)
           testsSources    <- translateProduct(domain, CompilerProduct.Test, defnTranslator.translateTests)
+          serviceRt       <- defnTranslator.translateServiceRt()
           initPyFile       = if (domain.version == lineage.evolution.latest) Nil else List(genInitPy(defnSources, domain))
 
           conversionSources <- {
@@ -84,6 +85,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           conversionSources ++
           fixturesSources ++
           testsSources ++
+          serviceRt ++
           meta ++
           initPyFile
         }
@@ -136,6 +138,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           rt("baboon_conversions.py", "baboon-runtime/python/baboon_conversions.py"),
           rt("baboon_exceptions.py", "baboon-runtime/python/baboon_exceptions.py"),
           rt("baboon_codecs.py", "baboon-runtime/python/baboon_codecs.py"),
+          rt("baboon_service_wiring.py", "baboon-runtime/python/baboon_service_wiring.py"),
           PyDefnTranslator.Output("__init__.py", TextTree.text(""), pyBaboonSharedRuntimeModule, CompilerProduct.Runtime)
         )
       )
@@ -175,7 +178,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
 
     val usualImportsByModule = usual.groupBy(_.moduleId).toList.sortBy { case (moduleId, types) => moduleId.path.size + types.size }.reverse.map {
       case (module, types) =>
-        if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule || module == pyBaboonConversionsModule) {
+        if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule || module == pyBaboonConversionsModule || module == pyBaboonServiceWiringModule) {
           val baseString  = pyFileTools.definitionsBasePkg.mkString(".")
           val typesString = types.map(_.name).mkString(", ")
           q"from $baseString.${module.module} import $typesString"

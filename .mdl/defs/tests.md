@@ -665,6 +665,602 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-sc-wiring-either
+
+Generate code for Scala wiring tests with built-in Either container.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-sc-wiring-either"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/sc-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
+  ./test/sc-stub/ "$TEST_DIR/sc-stub/"
+rsync -a ./test/sc-stub-either-overlay/ "$TEST_DIR/sc-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-sc-either.lock \
+  :scala \
+  --output "$TEST_DIR/sc-stub/src/main/scala/generated-main" \
+  --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
+  --fixture-output "$TEST_DIR/sc-stub/src/main/scala/generated-fixtures" \
+  --sc-write-evolution-dict=true \
+  --sc-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Either" \
+  --service-result-pattern="[\$error, \$success]"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-sc-wiring-either
+
+Run Scala Either wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-sc-wiring-either.test_dir}"
+pushd "$TEST_DIR/sc-stub"
+sbt +clean +test
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-sc-wiring-result
+
+Generate code for Scala wiring tests with custom Result container (reversed param order).
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-sc-wiring-result"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/sc-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
+  ./test/sc-stub/ "$TEST_DIR/sc-stub/"
+rsync -a ./test/sc-stub-result-overlay/ "$TEST_DIR/sc-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-sc-result.lock \
+  :scala \
+  --output "$TEST_DIR/sc-stub/src/main/scala/generated-main" \
+  --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
+  --fixture-output "$TEST_DIR/sc-stub/src/main/scala/generated-fixtures" \
+  --sc-write-evolution-dict=true \
+  --sc-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="containers.Result" \
+  --service-result-pattern="[\$success, \$error]"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-sc-wiring-result
+
+Run Scala Result wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-sc-wiring-result.test_dir}"
+pushd "$TEST_DIR/sc-stub"
+sbt +clean +test
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-sc-wiring-outcome
+
+Generate code for Scala wiring tests with single-param Outcome container.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-sc-wiring-outcome"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/sc-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
+  ./test/sc-stub/ "$TEST_DIR/sc-stub/"
+rsync -a ./test/sc-stub-outcome-overlay/ "$TEST_DIR/sc-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-sc-outcome.lock \
+  :scala \
+  --output "$TEST_DIR/sc-stub/src/main/scala/generated-main" \
+  --test-output "$TEST_DIR/sc-stub/src/test/scala/generated-tests" \
+  --fixture-output "$TEST_DIR/sc-stub/src/main/scala/generated-fixtures" \
+  --sc-write-evolution-dict=true \
+  --sc-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="containers.Outcome" \
+  --service-result-pattern="[\$success]"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-sc-wiring-outcome
+
+Run Scala Outcome wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-sc-wiring-outcome.test_dir}"
+pushd "$TEST_DIR/sc-stub"
+sbt +clean +test
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-ts-wiring-either
+
+Generate code for TypeScript wiring tests with built-in BaboonEither container.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-ts-wiring-either"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/ts-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules' --exclude='dist' \
+  ./test/ts-stub/ "$TEST_DIR/ts-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-ts-either.lock \
+  :typescript \
+  --output "$TEST_DIR/ts-stub/src" \
+  --test-output "$TEST_DIR/ts-stub/src" \
+  --fixture-output "$TEST_DIR/ts-stub/src" \
+  --ts-write-evolution-dict=true \
+  --ts-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="BaboonEither" \
+  '--service-result-pattern=<$error, $success>'
+
+rsync -a ./test/ts-stub-either-overlay/ "$TEST_DIR/ts-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-ts-wiring-either
+
+Run TypeScript BaboonEither wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-ts-wiring-either.test_dir}"
+pushd "$TEST_DIR/ts-stub"
+npm install
+npm test
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-ts-wiring-result
+
+Generate code for TypeScript wiring tests with custom Result container (reversed param order).
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-ts-wiring-result"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/ts-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules' --exclude='dist' \
+  ./test/ts-stub/ "$TEST_DIR/ts-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-ts-result.lock \
+  :typescript \
+  --output "$TEST_DIR/ts-stub/src" \
+  --test-output "$TEST_DIR/ts-stub/src" \
+  --fixture-output "$TEST_DIR/ts-stub/src" \
+  --ts-write-evolution-dict=true \
+  --ts-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Result" \
+  '--service-result-pattern=<$success, $error>'
+
+rsync -a ./test/ts-stub-result-overlay/ "$TEST_DIR/ts-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-ts-wiring-result
+
+Run TypeScript Result wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-ts-wiring-result.test_dir}"
+pushd "$TEST_DIR/ts-stub"
+npm install
+npm test
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-ts-wiring-outcome
+
+Generate code for TypeScript wiring tests with single-param Outcome container.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-ts-wiring-outcome"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/ts-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules' --exclude='dist' \
+  ./test/ts-stub/ "$TEST_DIR/ts-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-ts-outcome.lock \
+  :typescript \
+  --output "$TEST_DIR/ts-stub/src" \
+  --test-output "$TEST_DIR/ts-stub/src" \
+  --fixture-output "$TEST_DIR/ts-stub/src" \
+  --ts-write-evolution-dict=true \
+  --ts-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Outcome" \
+  '--service-result-pattern=<$success>'
+
+rsync -a ./test/ts-stub-outcome-overlay/ "$TEST_DIR/ts-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-ts-wiring-outcome
+
+Run TypeScript Outcome wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-ts-wiring-outcome.test_dir}"
+pushd "$TEST_DIR/ts-stub"
+npm install
+npm test
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-rs-wiring-either
+
+Generate code for Rust wiring tests with built-in Result container.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-rs-wiring-either"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/rs-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
+  ./test/rs-stub/ "$TEST_DIR/rs-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-rs-either.lock \
+  :rust \
+  --output "$TEST_DIR/rs-stub/src" \
+  --test-output "$TEST_DIR/rs-stub/src" \
+  --fixture-output "$TEST_DIR/rs-stub/src" \
+  --rs-write-evolution-dict=true \
+  --rs-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="Result" \
+  --service-result-pattern="<\$success, \$error>"
+
+rsync -a ./test/rs-stub-either-overlay/ "$TEST_DIR/rs-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-rs-wiring-either
+
+Run Rust Either wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-rs-wiring-either.test_dir}"
+pushd "$TEST_DIR/rs-stub"
+cargo test
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-rs-wiring-result
+
+Generate code for Rust wiring tests with custom MyResult container (reversed param order).
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-rs-wiring-result"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/rs-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
+  ./test/rs-stub/ "$TEST_DIR/rs-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-rs-result.lock \
+  :rust \
+  --output "$TEST_DIR/rs-stub/src" \
+  --test-output "$TEST_DIR/rs-stub/src" \
+  --fixture-output "$TEST_DIR/rs-stub/src" \
+  --rs-write-evolution-dict=true \
+  --rs-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="crate::custom_containers::MyResult" \
+  --service-result-pattern="<\$success, \$error>"
+
+rsync -a ./test/rs-stub-result-overlay/ "$TEST_DIR/rs-stub/"
+echo 'pub mod custom_containers;' >> "$TEST_DIR/rs-stub/src/lib.rs"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-rs-wiring-result
+
+Run Rust MyResult wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-rs-wiring-result.test_dir}"
+pushd "$TEST_DIR/rs-stub"
+cargo test
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-rs-wiring-outcome
+
+Generate code for Rust wiring tests with single-param Outcome container.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-rs-wiring-outcome"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/rs-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
+  ./test/rs-stub/ "$TEST_DIR/rs-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-rs-outcome.lock \
+  :rust \
+  --output "$TEST_DIR/rs-stub/src" \
+  --test-output "$TEST_DIR/rs-stub/src" \
+  --fixture-output "$TEST_DIR/rs-stub/src" \
+  --rs-write-evolution-dict=true \
+  --rs-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=false \
+  --service-result-type="crate::custom_containers::Outcome" \
+  --service-result-pattern="<\$success>"
+
+rsync -a ./test/rs-stub-outcome-overlay/ "$TEST_DIR/rs-stub/"
+echo 'pub mod custom_containers;' >> "$TEST_DIR/rs-stub/src/lib.rs"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-rs-wiring-outcome
+
+Run Rust Outcome wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-rs-wiring-outcome.test_dir}"
+pushd "$TEST_DIR/rs-stub"
+cargo test
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-py-wiring-either
+
+Generate code for Python wiring tests with built-in BaboonEither container.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-py-wiring-either"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/py-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' --exclude='.venv' \
+  ./test/py-stub/ "$TEST_DIR/py-stub/"
+rsync -a ./test/py-stub-either-overlay/ "$TEST_DIR/py-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-py-either.lock \
+  :python \
+  --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
+  --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
+  --fixture-output "$TEST_DIR/py-stub/BaboonTests/GeneratedFixtures" \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --py-write-evolution-dict=true \
+  --py-wrapped-adt-branch-codecs=false \
+  --service-result-no-errors=false \
+  --service-result-type="BaboonEither" \
+  '--service-result-pattern=[$error, $success]'
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-py-wiring-either
+
+Run Python BaboonEither wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-py-wiring-either.test_dir}"
+pushd "$TEST_DIR/py-stub"
+python3 -m venv .venv
+if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
+python3 -m pip install -r requirements.txt
+python3 -m unittest discover -s BaboonTests -p "WiringTests.py"
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-py-wiring-result
+
+Generate code for Python wiring tests with custom Result container (reversed param order).
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-py-wiring-result"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/py-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' --exclude='.venv' \
+  ./test/py-stub/ "$TEST_DIR/py-stub/"
+rsync -a ./test/py-stub-result-overlay/ "$TEST_DIR/py-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-py-result.lock \
+  :python \
+  --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
+  --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
+  --fixture-output "$TEST_DIR/py-stub/BaboonTests/GeneratedFixtures" \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --py-write-evolution-dict=true \
+  --py-wrapped-adt-branch-codecs=false \
+  --service-result-no-errors=false \
+  --service-result-type="Result" \
+  '--service-result-pattern=[$success, $error]'
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-py-wiring-result
+
+Run Python Result wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-py-wiring-result.test_dir}"
+pushd "$TEST_DIR/py-stub"
+python3 -m venv .venv
+if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
+python3 -m pip install -r requirements.txt
+python3 -m unittest discover -s BaboonTests -p "WiringTests.py"
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-py-wiring-outcome
+
+Generate code for Python wiring tests with single-param Outcome container.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-py-wiring-outcome"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/py-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' --exclude='.venv' \
+  ./test/py-stub/ "$TEST_DIR/py-stub/"
+rsync -a ./test/py-stub-outcome-overlay/ "$TEST_DIR/py-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-py-outcome.lock \
+  :python \
+  --output "$TEST_DIR/py-stub/BaboonDefinitions/Generated" \
+  --test-output "$TEST_DIR/py-stub/BaboonTests/GeneratedTests" \
+  --fixture-output "$TEST_DIR/py-stub/BaboonTests/GeneratedFixtures" \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --py-write-evolution-dict=true \
+  --py-wrapped-adt-branch-codecs=false \
+  --service-result-no-errors=false \
+  --service-result-type="Outcome" \
+  '--service-result-pattern=[$success]'
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-py-wiring-outcome
+
+Run Python Outcome wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-py-wiring-outcome.test_dir}"
+pushd "$TEST_DIR/py-stub"
+python3 -m venv .venv
+if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
+python3 -m pip install -r requirements.txt
+python3 -m unittest discover -s BaboonTests -p "WiringTests.py"
+popd
+
+ret success:bool=true
+```
+
 # action: test
 
 Run complete test suite (orchestrator action).
@@ -688,6 +1284,18 @@ dep action.test-manual-typescript
 dep action.test-cs-wiring-either
 dep action.test-cs-wiring-result
 dep action.test-cs-wiring-outcome
+dep action.test-sc-wiring-either
+dep action.test-sc-wiring-result
+dep action.test-sc-wiring-outcome
+dep action.test-ts-wiring-either
+dep action.test-ts-wiring-result
+dep action.test-ts-wiring-outcome
+dep action.test-rs-wiring-either
+dep action.test-rs-wiring-result
+dep action.test-rs-wiring-outcome
+dep action.test-py-wiring-either
+dep action.test-py-wiring-result
+dep action.test-py-wiring-outcome
 
 ret success:bool=true
 ```

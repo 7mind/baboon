@@ -607,6 +607,31 @@ export interface BaboonAdtMemberMeta extends BaboonGenerated {
     readonly baboon_adt_type_identifier: string;
 }
 
+// --- Service wiring types ---
+
+export interface BaboonMethodId {
+    readonly serviceName: string;
+    readonly methodName: string;
+}
+
+export type BaboonWiringError =
+    | { readonly tag: 'NoMatchingMethod'; readonly method: BaboonMethodId }
+    | { readonly tag: 'DecoderFailed'; readonly method: BaboonMethodId; readonly error: unknown }
+    | { readonly tag: 'EncoderFailed'; readonly method: BaboonMethodId; readonly error: unknown }
+    | { readonly tag: 'CallFailed'; readonly method: BaboonMethodId; readonly domainError: unknown };
+
+export class BaboonWiringException extends Error {
+    readonly error: BaboonWiringError;
+    constructor(error: BaboonWiringError) {
+        super(JSON.stringify(error));
+        this.error = error;
+    }
+}
+
+export type BaboonEither<L, R> =
+    | { readonly tag: 'Left'; readonly value: L }
+    | { readonly tag: 'Right'; readonly value: R };
+
 // --- Conversion interfaces ---
 
 export interface AbstractConversion<From, To> {

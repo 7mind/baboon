@@ -368,7 +368,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
     val nameParts =
       Seq("Convert") ++
       conversion.sourceTpe.owner.asPseudoPkg ++
-      Seq(conversion.sourceTpe.name.name, "From", sourceVersionString)
+      Seq(conversion.sourceTpe.name.name.capitalize, "From", sourceVersionString)
 
     nameParts.mkString("__")
   }
@@ -380,7 +380,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
       "from",
       sourceVersionString,
       conversion.sourceTpe.owner.asPseudoPkg.mkString("_"),
-      s"${conversion.sourceTpe.name.name}",
+      s"${conversion.sourceTpe.name.name.capitalize}",
     ).mkString("_")
 
     val versionPathPart = if (domain.version == evolution.latest) Nil else List(currentVersionString)

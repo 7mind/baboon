@@ -54,15 +54,15 @@ object PyCodecFixtureTranslator {
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
       val membersFixtures   = members.sortBy(_.id.toString).map(dto => doTranslateDto(dto))
-      val membersGenerators = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name}_Fixture.random()")
+      val membersGenerators = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name.capitalize}_Fixture.random()")
 
       val adtType = typeTranslator
         .asPyType(adt.id, domain, evolution, pkgBase = pyFileTools.definitionsBasePkg)
 
-      q"""class ${adt.id.name.name}_Fixture:
+      q"""class ${adt.id.name.name.capitalize}_Fixture:
          |    @$pyStaticMethod
          |    def random() -> $adtType:
-         |        return $baboonFixture.oneof(${adt.id.name.name}_Fixture.random_all())
+         |        return $baboonFixture.oneof(${adt.id.name.name.capitalize}_Fixture.random_all())
          |
          |    @$pyStaticMethod
          |    def random_all() -> $pyList[$adtType]:
@@ -119,7 +119,7 @@ object PyCodecFixtureTranslator {
     }
 
     override def fixtureType(tid: TypeId.User): PyType = {
-      val typeName = s"${tid.name.name}_Fixture"
+      val typeName = s"${tid.name.name.capitalize}_Fixture"
       val pyModuleId = typeTranslator
         .toPyModule(tid, domain.version, evolution, pyFileTools.fixturesBasePkg)
         .withModuleName(typeName)

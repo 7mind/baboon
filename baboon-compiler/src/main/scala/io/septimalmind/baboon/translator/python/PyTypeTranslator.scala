@@ -90,7 +90,7 @@ final class PyTypeTranslator {
         case Some(name) => ownerPath :+ name
         case None       => ownerPath
       }
-      val typeName     = List(tid.name.name)
+      val typeName     = List(tid.name.name.capitalize)
       val fullTypeName = (List(versionString) ++ moduleName ++ typeName).mkString(".")
       PyType(moduleId, fullTypeName, versioned = true)
     }
@@ -133,7 +133,7 @@ final class PyTypeTranslator {
   private def typeModuleName(tid: TypeId.User): Option[String] = {
     tid.owner match {
       case _: Owner.Adt => None
-      case _            => Some(tid.name.name)
+      case _            => Some(tid.name.name.capitalize)
     }
   }
 

@@ -5,7 +5,7 @@ import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.python.PyTypes.*
-import io.septimalmind.baboon.translator.python.PyValue.PyType
+import io.septimalmind.baboon.translator.python.PyValue.{PyModuleId, PyType}
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Applicative2, F}
@@ -17,6 +17,7 @@ trait PyDefnTranslator[F[+_, +_]] {
   def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[PyDefnTranslator.Output]]
   def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[PyDefnTranslator.Output]]
   def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue], List[PyDefnTranslator.Output]]
+  def translateServiceRt(): F[NEList[BaboonIssue], List[PyDefnTranslator.Output]]
 }
 
 object PyDefnTranslator {
@@ -52,6 +53,7 @@ object PyDefnTranslator {
     evolution: BaboonEvolution,
     fileTools: PyFileTools,
     domain: Domain,
+    wiringTranslator: PyServiceWiringTranslator,
   ) extends PyDefnTranslator[F] {
     override def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       defn.id.owner match {
@@ -93,6 +95,25 @@ object PyDefnTranslator {
       F.pure(codecsTestsOut.toList)
     }
 
+    override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
+      val rtTree = wiringTranslator.translateServiceRt(domain)
+      val result = rtTree.map { tree =>
+        val fbase = fileTools.basename(domain, evolution)
+        val serviceRtModule = {
+          val pathToModule = domain.id.path.toList
+          val fullPath     = fileTools.definitionsBasePkg ++ pathToModule ++ List("BaboonServiceRt")
+          PyModuleId(NEList.unsafeFrom(fullPath))
+        }
+        Output(
+          s"$fbase/BaboonServiceRt.py",
+          tree,
+          serviceRtModule,
+          CompilerProduct.Definition,
+        )
+      }.toList
+      F.pure(result)
+    }
+
     private def doTranslateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       val fixtureTree = codecsFixture
         .translate(defn).map(
@@ -114,17 +135,27 @@ object PyDefnTranslator {
         (codecTranslator.id, repr.codecs.flatMap(reg => reg.trees.get(codecTranslator.id).map(expr => q"${reg.tpeId}, $expr")))
       )
 
-      F.pure(
-        List(
-          Output(
-            getOutputPath(defn),
-            repr.defn,
-            typeTranslator.toPyModule(defn.id, domain.version, evolution, fileTools.definitionsBasePkg),
-            CompilerProduct.Definition,
-            codecReg = regsPerCodec,
-          )
-        )
+      val mainOutput = Output(
+        getOutputPath(defn),
+        repr.defn,
+        typeTranslator.toPyModule(defn.id, domain.version, evolution, fileTools.definitionsBasePkg),
+        CompilerProduct.Definition,
+        codecReg = regsPerCodec,
       )
+
+      val wiringOutput = wiringTranslator.translate(defn).map { wiringTree =>
+        val wiringModule = typeTranslator
+          .toPyModule(defn.id, domain.version, evolution, fileTools.definitionsBasePkg)
+          .withModuleName(s"${defn.id.name.name}_Wiring")
+        Output(
+          getOutputPath(defn, suffix = Some("_Wiring")),
+          wiringTree,
+          wiringModule,
+          CompilerProduct.Definition,
+        )
+      }.toList
+
+      F.pure(mainOutput :: wiringOutput)
     }
 
     private def makeFullRepr(defn: DomainMember.User): PyDefnRepr = {
@@ -211,7 +242,7 @@ object PyDefnTranslator {
             ).flatten
 
           PyDefnRepr(
-            q"""class ${dto.id.name.name}($parents):
+            q"""class ${dto.id.name.name.capitalize}($parents):
                |    ${members.joinNN().shift(4).trim}
                |""".stripMargin,
             List.empty,
@@ -220,7 +251,7 @@ object PyDefnTranslator {
         case enum: Typedef.Enum =>
           val branches = enum.members.map(m => q"${m.name.capitalize} = \"${m.name.capitalize}\"").toSeq
           PyDefnRepr(
-            q"""|class ${enum.id.name.name}($pyEnum):
+            q"""|class ${enum.id.name.name.capitalize}($pyEnum):
                 |    ${branches.joinN().shift(4).trim}
                 |""".stripMargin,
             List.empty,
@@ -250,7 +281,7 @@ object PyDefnTranslator {
                     |
                     |def __init_subclass__(cls, **kwargs):
                     |   super().__init_subclass__(**kwargs)
-                    |   ${adt.id.name.name}.__registry__[cls.__name__] = cls
+                    |   ${adt.id.name.name.capitalize}.__registry__[cls.__name__] = cls
                     |
                     |@$pydanticModelSerializer(mode='wrap')
                     |def serialize(self, serializer):
@@ -261,7 +292,7 @@ object PyDefnTranslator {
                     |def polymorphic(cls, values, handler):
                     |    if isinstance(values, dict) and len(values) == 1:
                     |        class_name = next(iter(values))
-                    |        registry = ${adt.id.name.name}.__registry__
+                    |        registry = ${adt.id.name.name.capitalize}.__registry__
                     |
                     |        if class_name in registry:
                     |            candidate = registry[class_name]
@@ -282,7 +313,7 @@ object PyDefnTranslator {
           val regs = memberTrees.map(_.codecs)
 
           PyDefnRepr(
-            q"""|class ${adt.id.name.name}($parents):
+            q"""|class ${adt.id.name.name.capitalize}($parents):
                 |    pass
                 |
                 |    ${members.joinNN().shift(4).trim}
@@ -307,7 +338,7 @@ object PyDefnTranslator {
           }
           val allMethods = if (methods.isEmpty) q"pass" else methods.joinN()
           PyDefnRepr(
-            q"""|class ${contract.id.name.name}($parents):
+            q"""|class ${contract.id.name.name.capitalize}($parents):
                 |    ${allMethods.shift(4).trim}
                 |""".stripMargin,
             List.empty,
@@ -321,15 +352,20 @@ object PyDefnTranslator {
             case ResolvedServiceContext.ConcreteContext(tn, pn)  => s"$pn: $tn, "
           }
           val methods = service.methods.map { m =>
-            val inType  = typeTranslator.asPyRef(m.sig, domain, evolution)
-            val outType = m.out.map(typeTranslator.asPyRef(_, domain, evolution))
-            val errType = m.err.map(typeTranslator.asPyRef(_, domain, evolution))
-            val pyName: PyValue => String = { case t: PyValue.PyType => t.name }
-            val outStr  = outType.map(_.mapRender(pyName)).getOrElse("")
-            val errStr  = errType.map(_.mapRender(pyName))
-            val retStr  = resolved.renderReturnType(outStr, errStr, "None")
+            val inType  = typeTranslator.asPyRef(m.sig, domain, evolution, fileTools.definitionsBasePkg)
+            val outType = m.out.map(typeTranslator.asPyRef(_, domain, evolution, fileTools.definitionsBasePkg))
+            val errType = m.err.map(typeTranslator.asPyRef(_, domain, evolution, fileTools.definitionsBasePkg))
+            val retAnnotation: TextTree[PyValue] = if (resolved.noErrors || errType.isEmpty) {
+              outType.getOrElse(q"None")
+            } else {
+              val pyName: PyValue => String = { case t: PyValue.PyType => t.name }
+              val outStr  = outType.map(_.mapRender(pyName)).getOrElse("")
+              val errStr  = errType.map(_.mapRender(pyName))
+              val retStr  = resolved.renderReturnType(outStr, errStr, "None")
+              q"${"\""  + retStr + "\""}"
+            }
             q"""|@$pyAbstractMethod
-                |def ${m.name.name}(self, ${ctxParam}arg: $inType) -> $retStr:
+                |def ${m.name.name}(self, ${ctxParam}arg: $inType) -> $retAnnotation:
                 |    raise NotImplementedError
                 |""".stripMargin
           }
@@ -341,7 +377,7 @@ object PyDefnTranslator {
               q"$pyABC"
           }
           PyDefnRepr(
-            q"""|class ${service.id.name.name}($classBases):
+            q"""|class ${service.id.name.name.capitalize}($classBases):
                 |    ${allMethods.shift(4).trim}
                 |""".stripMargin,
             List.empty,
@@ -404,7 +440,7 @@ object PyDefnTranslator {
 
     private def getOutputPath(defn: DomainMember.User, prefix: Option[String] = None, suffix: Option[String] = None): String = {
       val fbase = fileTools.basename(domain, evolution)
-      val fname = s"${prefix.getOrElse("")}${defn.id.name.name}${suffix.getOrElse("")}.py"
+      val fname = s"${prefix.getOrElse("")}${defn.id.name.name.capitalize}${suffix.getOrElse("")}.py"
       defn.defn.id.owner match {
         case Owner.Toplevel => s"$fbase/$fname"
         case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString("/")}/$fname"
