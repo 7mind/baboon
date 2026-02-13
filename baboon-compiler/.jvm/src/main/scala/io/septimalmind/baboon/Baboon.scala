@@ -43,6 +43,7 @@ object Baboon {
       |  :rust                    Generate Rust code
       |  :typescript              Generate TypeScript code
       |  :kotlin                  Generate Kotlin code
+      |  :java                    Generate Java 21 code
       |  :lsp                     Start LSP server
       |  :explore                 Start interactive explorer
       |
@@ -296,6 +297,29 @@ object Baboon {
                           ),
                         )
                     }
+                  case "java" =>
+                    CaseApp.parse[JvCLIOptions](roleArgs).leftMap(e => s"Can't parse java CLI: $e").map {
+                      case (opts, _) =>
+                        val shopts = mkGenericOpts(opts)
+
+                        CompilerTarget.JvTarget(
+                          id      = "Java",
+                          output  = shopts.outOpts,
+                          generic = shopts.genericOpts,
+                          language = JvOptions(
+                            writeEvolutionDict          = opts.jvWriteEvolutionDict.getOrElse(false),
+                            wrappedAdtBranchCodecs      = opts.jvWrappedAdtBranchCodecs.getOrElse(false),
+                            enableDeprecatedEncoders    = opts.enableDeprecatedEncoders.getOrElse(false),
+                            generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
+                            generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
+                            generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
+                            generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                            serviceResult               = mkServiceResult(opts, ServiceResultConfig.javaDefault),
+                            serviceContext              = mkServiceContext(opts),
+                            pragmas                     = parsePragmas(opts.pragma),
+                          ),
+                        )
+                    }
                   case r => Left(s"Unknown role id: $r")
                 }
             }
@@ -346,7 +370,7 @@ object Baboon {
 
     val safeToRemove = NEList.from(opts.extAllowCleanup) match {
       case Some(value) => value.toSet
-      case None        => Set("meta", "cs", "json", "scala", "py", "pyc", "rs", "ts", "kt")
+      case None        => Set("meta", "cs", "json", "scala", "py", "pyc", "rs", "ts", "kt", "java")
     }
 
     val outOpts = OutputOptions(
@@ -418,6 +442,8 @@ object Baboon {
         new BaboonJvmTsModule[F](t)
       case t: CompilerTarget.KtTarget =>
         new BaboonJvmKtModule[F](t)
+      case t: CompilerTarget.JvTarget =>
+        new BaboonJvmJvModule[F](t)
     }
 
     Injector

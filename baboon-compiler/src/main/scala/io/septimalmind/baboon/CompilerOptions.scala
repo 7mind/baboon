@@ -52,6 +52,13 @@ object CompilerTarget {
     generic: GenericOptions,
     language: KtOptions,
   ) extends CompilerTarget
+
+  case class JvTarget(
+    id: String,
+    output: OutputOptions,
+    generic: GenericOptions,
+    language: JvOptions,
+  ) extends CompilerTarget
 }
 
 final case class HktConfig(
@@ -101,6 +108,12 @@ object ServiceResultConfig {
     noErrors   = false,
     resultType = Some("Either"),
     pattern    = Some("<$error, $success>"),
+    hkt        = None,
+  )
+  val javaDefault: ServiceResultConfig = ServiceResultConfig(
+    noErrors   = true,
+    resultType = None,
+    pattern    = None,
     hkt        = None,
   )
 }
@@ -189,6 +202,19 @@ final case class TsOptions(
 )
 
 final case class KtOptions(
+  writeEvolutionDict: Boolean,
+  wrappedAdtBranchCodecs: Boolean,
+  enableDeprecatedEncoders: Boolean,
+  generateJsonCodecs: Boolean,
+  generateUebaCodecs: Boolean,
+  generateUebaCodecsByDefault: Boolean,
+  generateJsonCodecsByDefault: Boolean,
+  serviceResult: ServiceResultConfig,
+  serviceContext: ServiceContextConfig,
+  pragmas: Map[String, String],
+)
+
+final case class JvOptions(
   writeEvolutionDict: Boolean,
   wrappedAdtBranchCodecs: Boolean,
   enableDeprecatedEncoders: Boolean,

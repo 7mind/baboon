@@ -10,6 +10,7 @@ import io.septimalmind.baboon.translator.python.*
 import io.septimalmind.baboon.translator.python.PyDefnTranslator.PyDefnTranslatorImpl
 import io.septimalmind.baboon.translator.rust.*
 import io.septimalmind.baboon.translator.scl.*
+import io.septimalmind.baboon.translator.java.*
 import io.septimalmind.baboon.translator.kotlin.*
 import io.septimalmind.baboon.translator.typescript.*
 import io.septimalmind.baboon.typer.*
@@ -227,4 +228,31 @@ class BaboonCommonKtModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[KtBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[KtBaboonTranslator[F]]
+}
+
+class BaboonCommonJvModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
+  include(new SharedTranspilerModule[F])
+
+  makeSubcontext[JvDefnTranslator[F]]
+    .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
+    .withSubmodule(new ModuleDef {
+      make[JvDomainTreeTools].from[JvDomainTreeTools.JvDomainTreeToolsImpl]
+      make[JvDefnTranslator[F]].from[JvDefnTranslator.JvDefnTranslatorImpl[F]]
+      make[JvCodecFixtureTranslator].from[JvCodecFixtureTranslator.Impl]
+      make[JvCodecTestsTranslator].from[JvCodecTestsTranslator.Impl]
+      make[JvServiceWiringTranslator].from[JvServiceWiringTranslator.Impl]
+      many[JvCodecTranslator]
+        .add[JvJsonCodecGenerator]
+        .add[JvUEBACodecGenerator]
+    })
+
+  make[JvFileTools].from[JvFileTools.JvFileToolsImpl]
+  make[JvTreeTools].from[JvTreeTools.JvTreeToolsImpl]
+
+  make[JvTypeTranslator]
+  makeFactory[JvConversionTranslator.Factory[F]]
+
+  make[JvBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
+  many[BaboonAbstractTranslator[F]]
+    .ref[JvBaboonTranslator[F]]
 }
