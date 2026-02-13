@@ -228,6 +228,47 @@ case class TsCLIOptions(
   pragma: List[String],
 ) extends SharedCLIOptions
 
+case class KtCLIOptions(
+  @Recurse
+  generic: GenericTranspilerCLIOptions,
+  @HelpMessage("Allow to erase target directory even if files with these extensions exist there. Default: kt,json,meta")
+  extAllowCleanup: List[String],
+  @HelpMessage("Adds evolution metadata as a Kotlin dictionary")
+  ktWriteEvolutionDict: Option[Boolean],
+  @HelpMessage("Every ADT branch will encode ADT metadata and expect it in the decoder")
+  ktWrappedAdtBranchCodecs: Option[Boolean],
+  @HelpMessage("Do not generate encoders for deprecated versions")
+  enableDeprecatedEncoders: Option[Boolean],
+  @HelpMessage("Generate JSON codecs")
+  generateJsonCodecs: Option[Boolean],
+  @HelpMessage("Generate UEBA codecs")
+  generateUebaCodecs: Option[Boolean],
+  @HelpMessage("Generate JSON codecs even for types without derived[json]")
+  generateJsonCodecsByDefault: Option[Boolean],
+  @HelpMessage("Generate UEBA codecs even for types without derived[ueba]")
+  generateUebaCodecsByDefault: Option[Boolean],
+  @HelpMessage("Service methods return only success type, no error wrapping (default: false for Kotlin)")
+  serviceResultNoErrors: Option[Boolean],
+  @HelpMessage("Wrapper type for service results (e.g. 'Result')")
+  serviceResultType: Option[String],
+  @HelpMessage("Pattern for service result type (e.g. '<$success, $error>')")
+  serviceResultPattern: Option[String],
+  @HelpMessage("Use HKT type parameter for service result")
+  serviceResultHkt: Option[Boolean],
+  @HelpMessage("HKT type parameter name (e.g. 'F')")
+  serviceResultHktName: Option[String],
+  @HelpMessage("HKT type parameter signature (e.g. '<*, *>')")
+  serviceResultHktSignature: Option[String],
+  @HelpMessage("Service method context parameter mode: none, abstract, type (default: none)")
+  serviceContextMode: Option[String],
+  @HelpMessage("Context type name (default: Ctx)")
+  serviceContextType: Option[String],
+  @HelpMessage("Context parameter name (default: ctx)")
+  serviceContextParameterName: Option[String],
+  @HelpMessage("Set a pragma value (key=value, repeatable)")
+  pragma: List[String],
+) extends SharedCLIOptions with ScalaHktCLIOptions
+
 case class CLIOptions(
   @HelpMessage("A list of *.baboon files to process (can be combined with --model-dir)")
   model: List[String],

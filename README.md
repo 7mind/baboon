@@ -27,6 +27,7 @@ Generates:
   - **Python**
   - **Rust**
   - **TypeScript**
+  - **Kotlin**
 
 ## Highlights
 

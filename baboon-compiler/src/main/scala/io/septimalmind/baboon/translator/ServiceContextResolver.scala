@@ -11,7 +11,7 @@ object ResolvedServiceContext {
 }
 
 object ServiceContextResolver {
-  private val languages = Seq("cs", "python", "rust", "scala", "typescript")
+  private val languages = Seq("cs", "kotlin", "python", "rust", "scala", "typescript")
 
   private val pragmaSuffixes: Seq[(String, String)] = Seq(
     ""                -> "\"none\", \"abstract\", or \"type\"",

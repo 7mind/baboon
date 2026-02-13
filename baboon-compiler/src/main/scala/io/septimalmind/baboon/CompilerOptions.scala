@@ -45,6 +45,13 @@ object CompilerTarget {
     generic: GenericOptions,
     language: TsOptions,
   ) extends CompilerTarget
+
+  case class KtTarget(
+    id: String,
+    output: OutputOptions,
+    generic: GenericOptions,
+    language: KtOptions,
+  ) extends CompilerTarget
 }
 
 final case class HktConfig(
@@ -88,6 +95,12 @@ object ServiceResultConfig {
     noErrors   = true,
     resultType = None,
     pattern    = None,
+    hkt        = None,
+  )
+  val kotlinDefault: ServiceResultConfig = ServiceResultConfig(
+    noErrors   = false,
+    resultType = Some("Either"),
+    pattern    = Some("<$error, $success>"),
     hkt        = None,
   )
 }
@@ -166,6 +179,19 @@ final case class RsOptions(
 final case class TsOptions(
   writeEvolutionDict: Boolean,
   wrappedAdtBranchCodecs: Boolean,
+  generateJsonCodecs: Boolean,
+  generateUebaCodecs: Boolean,
+  generateUebaCodecsByDefault: Boolean,
+  generateJsonCodecsByDefault: Boolean,
+  serviceResult: ServiceResultConfig,
+  serviceContext: ServiceContextConfig,
+  pragmas: Map[String, String],
+)
+
+final case class KtOptions(
+  writeEvolutionDict: Boolean,
+  wrappedAdtBranchCodecs: Boolean,
+  enableDeprecatedEncoders: Boolean,
   generateJsonCodecs: Boolean,
   generateUebaCodecs: Boolean,
   generateUebaCodecsByDefault: Boolean,
