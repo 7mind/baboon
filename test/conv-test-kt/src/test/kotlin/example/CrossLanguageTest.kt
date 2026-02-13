@@ -63,6 +63,16 @@ class CrossLanguageTest {
     }
 
     @Test
+    fun `Kotlin JSON should read Python-generated JSON`() {
+        assertBasicFields(readJsonFile("python"), "Python JSON")
+    }
+
+    @Test
+    fun `Kotlin JSON should read TypeScript-generated JSON`() {
+        assertBasicFields(readJsonFile("typescript"), "TypeScript JSON")
+    }
+
+    @Test
     fun `Kotlin UEBA should read Kotlin-generated UEBA`() {
         assertBasicFields(readUebaFile("kotlin"), "Kotlin UEBA")
     }
@@ -83,15 +93,27 @@ class CrossLanguageTest {
     }
 
     @Test
+    fun `Kotlin UEBA should read Python-generated UEBA`() {
+        assertBasicFields(readUebaFile("python"), "Python UEBA")
+    }
+
+    @Test
+    fun `Kotlin UEBA should read TypeScript-generated UEBA`() {
+        assertBasicFields(readUebaFile("typescript"), "TypeScript UEBA")
+    }
+
+    @Test
     fun `Cross-language JSON should produce equivalent data`() {
         val kotlinData = readJsonFile("kotlin")
         val scalaData = readJsonFile("scala")
         val csData = readJsonFile("cs")
         val rustData = readJsonFile("rust")
+        val tsData = readJsonFile("typescript")
 
         assertEquals(kotlinData, scalaData, "Kotlin and Scala JSON data should be equal")
         assertEquals(kotlinData, csData, "Kotlin and C# JSON data should be equal")
         assertEquals(kotlinData, rustData, "Kotlin and Rust JSON data should be equal")
+        assertEquals(kotlinData, tsData, "Kotlin and TypeScript JSON data should be equal")
     }
 
     @Test
@@ -100,9 +122,13 @@ class CrossLanguageTest {
         val scalaData = readUebaFile("scala")
         val csData = readUebaFile("cs")
         val rustData = readUebaFile("rust")
+        val pythonData = readUebaFile("python")
+        val tsData = readUebaFile("typescript")
 
         assertEquals(kotlinData, scalaData, "Kotlin and Scala UEBA data should be equal")
         assertEquals(kotlinData, csData, "Kotlin and C# UEBA data should be equal")
         assertEquals(kotlinData, rustData, "Kotlin and Rust UEBA data should be equal")
+        assertEquals(kotlinData, pythonData, "Kotlin and Python UEBA data should be equal")
+        assertEquals(kotlinData, tsData, "Kotlin and TypeScript UEBA data should be equal")
     }
 }

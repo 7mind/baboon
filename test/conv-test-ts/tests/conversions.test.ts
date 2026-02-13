@@ -6,9 +6,9 @@ import { fileURLToPath } from "url";
 import { decode_AllBasicTypes_json, encode_AllBasicTypes_json } from "../src/generated/convtest/testpkg/all-basic-types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const compatDir = path.resolve(__dirname, "../../target/compat-test");
+const compatDir = path.resolve(__dirname, "../../../target/compat-test");
 
-const languages = ["scala", "cs", "rust", "python", "typescript"];
+const languages = ["scala", "cs", "rust", "python", "typescript", "kotlin"];
 
 describe("Cross-language JSON compatibility", () => {
     for (const lang of languages) {

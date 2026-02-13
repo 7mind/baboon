@@ -4,13 +4,23 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeFormatterBuilder
+import java.time.temporal.ChronoField
 
 object BaboonTimeFormats {
     val tsuFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
     val tsoFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
 
-    fun parseTso(s: String): OffsetDateTime = OffsetDateTime.parse(s, tsoFormat)
-    fun parseTsu(s: String): OffsetDateTime = OffsetDateTime.parse(s, tsuFormat)
+    private val flexibleParseFormat: DateTimeFormatter = DateTimeFormatterBuilder()
+        .appendPattern("yyyy-MM-dd'T'HH:mm:ss")
+        .optionalStart()
+        .appendFraction(ChronoField.NANO_OF_SECOND, 0, 9, true)
+        .optionalEnd()
+        .appendPattern("XXX")
+        .toFormatter()
+
+    fun parseTso(s: String): OffsetDateTime = OffsetDateTime.parse(s, flexibleParseFormat)
+    fun parseTsu(s: String): OffsetDateTime = OffsetDateTime.parse(s, flexibleParseFormat)
 
     fun formatTsu(s: OffsetDateTime): String = s.format(tsuFormat)
     fun formatTso(s: OffsetDateTime): String = s.format(tsoFormat)
