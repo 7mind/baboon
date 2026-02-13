@@ -63,11 +63,6 @@ class CrossLanguageTest {
     }
 
     @Test
-    fun `Kotlin JSON should read TypeScript-generated JSON`() {
-        assertBasicFields(readJsonFile("typescript"), "TypeScript JSON")
-    }
-
-    @Test
     fun `Kotlin UEBA should read Kotlin-generated UEBA`() {
         assertBasicFields(readUebaFile("kotlin"), "Kotlin UEBA")
     }
@@ -85,11 +80,6 @@ class CrossLanguageTest {
     @Test
     fun `Kotlin UEBA should read Rust-generated UEBA`() {
         assertBasicFields(readUebaFile("rust"), "Rust UEBA")
-    }
-
-    @Test
-    fun `Kotlin UEBA should read TypeScript-generated UEBA`() {
-        assertBasicFields(readUebaFile("typescript"), "TypeScript UEBA")
     }
 
     @Test

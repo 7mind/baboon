@@ -4,7 +4,7 @@ import convtest.testpkg.AllBasicTypes
 import convtest.testpkg.AllBasicTypes_JsonCodec
 import convtest.testpkg.AllBasicTypes_UEBACodec
 import baboon.runtime.shared.BaboonCodecContext
-import baboon.runtime.shared.BaboonByteString
+import baboon.runtime.shared.ByteString
 import baboon.runtime.shared.LEDataOutputStream
 import baboon.runtime.shared.BaboonTimeFormats
 import kotlinx.serialization.json.JsonElement
@@ -63,7 +63,7 @@ private fun createSampleData(): AllBasicTypes {
         vf64 = 2.718281828,
         vf128 = BigDecimal("123456789.987654321"),
         vstr = "Hello, Baboon!",
-        vbstr = BaboonByteString(byteArrayOf(0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x42, 0x79, 0x74, 0x65, 0x73)),
+        vbstr = ByteString.of(byteArrayOf(0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x42, 0x79, 0x74, 0x65, 0x73)),
         vuid = UUID.fromString("12345678-1234-5678-1234-567812345678"),
         vbit = true,
         vtsu = OffsetDateTime.of(2024, 6, 15, 12, 30, 45, 123456789, ZoneOffset.UTC),
