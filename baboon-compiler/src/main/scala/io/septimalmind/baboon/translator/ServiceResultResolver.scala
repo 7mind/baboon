@@ -40,6 +40,8 @@ object ServiceResultResolver {
   private val pragmaPrefix = Map(
     "scala"      -> "scala.service.result.",
     "cs"         -> "cs.service.result.",
+    "java"       -> "java.service.result.",
+    "kotlin"     -> "kotlin.service.result.",
     "rust"       -> "rust.service.result.",
     "python"     -> "python.service.result.",
     "typescript" -> "typescript.service.result.",

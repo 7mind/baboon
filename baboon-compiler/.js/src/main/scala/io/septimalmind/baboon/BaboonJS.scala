@@ -208,7 +208,7 @@ object BaboonJS {
   private def createOutputOptions(generic: js.UndefOr[JSGenericOptions]): OutputOptionsJS = {
     val g = generic.getOrElse(js.Dynamic.literal().asInstanceOf[JSGenericOptions])
     OutputOptionsJS(
-      safeToRemoveExtensions = Set("meta", "cs", "json", "scala"),
+      safeToRemoveExtensions = Set("meta", "cs", "json", "scala", "kt"),
       runtime                = parseRuntimeOpt(g.runtime),
       generateConversions    = !g.disableConversions.getOrElse(false),
       generateTests          = g.generateTests.getOrElse(false),

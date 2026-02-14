@@ -14,6 +14,8 @@ enum T1_E1 {
 foreign ObscureInt {
   cs = "System.Int32"
   scala = "java.lang.Integer"
+  kotlin = "java.lang.Integer"
+  java = "java.lang.Integer"
   py = "builtins.int"
   rust = "std::primitive::i32"
   typescript = "number"

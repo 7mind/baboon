@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Baboon is a Domain Modeling Language (DML) compiler with schema evolution support. It compiles `.baboon` domain model files to multiple target languages (Scala, C#, Python, Rust, TypeScript) with automatic JSON and UEBA codec generation.
+Baboon is a Domain Modeling Language (DML) compiler with schema evolution support. It compiles `.baboon` domain model files to multiple target languages (Scala, C#, Python, Rust, TypeScript, Kotlin, Java) with automatic JSON and UEBA codec generation.
 
 ## Essential Commands
 
@@ -23,11 +23,11 @@ mdl :build :test
 
 # Run specific test suites independently:
 # - Regular ADT tests
-mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular :test-rust-regular :test-typescript-regular
+mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular :test-rust-regular :test-typescript-regular :test-kotlin-regular :test-java-regular
 # - Wrapped ADT tests
-mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped :test-rust-wrapped :test-typescript-wrapped
+mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped :test-rust-wrapped :test-typescript-wrapped :test-kotlin-wrapped :test-java-wrapped
 # - Manual/compatibility tests
-mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-gen-compat-rust :test-gen-compat-typescript :test-manual-cs :test-manual-scala :test-manual-rust :test-manual-typescript
+mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-gen-compat-rust :test-gen-compat-typescript :test-gen-compat-kotlin :test-gen-compat-java :test-manual-cs :test-manual-scala :test-manual-rust :test-manual-typescript :test-manual-kotlin :test-manual-java
 
 # Run complete build pipeline (format, build, test)
 mdl :full-build
@@ -68,7 +68,11 @@ baboon \
   :rust \
   --output ./output/rust \
   :typescript \
-  --output ./output/ts
+  --output ./output/ts \
+  :kotlin \
+  --output ./output/kotlin \
+  :java \
+  --output ./output/java
 ```
 
 ## High-Level Architecture
@@ -96,6 +100,8 @@ baboon \
    - `python/` - Python code generation
    - `rust/` - Rust code generation with native types, serde derive, and custom UEBA binary codecs
    - `typescript/` - TypeScript code generation with function-based JSON/UEBA codecs
+   - `kotlin/` - Kotlin code generation with Jackson JSON codecs and UEBA binary codecs
+   - `java/` - Java code generation with Jackson JSON codecs and UEBA binary codecs
    - Each generator produces source files, codec implementations and conversions from lower versions to higher ones
 
 5. **Runtime Support (`src/main/resources/baboon-runtime/`)**
@@ -123,7 +129,7 @@ Baboon files support:
 
 3. **Codec Generation**:
    - Generates both JSON and custom binary (UEBA) codecs
-   - JSON: Circe (Scala), Newtonsoft.Json (C#), serde (Rust), custom (Python, TypeScript)
+   - JSON: Circe (Scala), Newtonsoft.Json (C#), serde (Rust), Jackson (Kotlin, Java), custom (Python, TypeScript)
    - Supports automatic evolution between versions
 
 4. **CLI Design**:
@@ -134,8 +140,8 @@ Baboon files support:
 
 - Unit tests for individual components
 - Integration tests with full compilation cycles
-- Generated code tests in `test/cs-stub/`, `test/sc-stub/`, `test/py-stub/`, `test/rs-stub/`, and `test/ts-stub/`
-- Cross-platform compatibility tests in `test/conv-test-{cs,sc,py,rs,ts}/` (verifies JSON/UEBA interop across all languages)
+- Generated code tests in `test/cs-stub/`, `test/sc-stub/`, `test/py-stub/`, `test/rs-stub/`, `test/ts-stub/`, `test/kt-stub/`, and `test/jv-stub/`
+- Cross-platform compatibility tests in `test/conv-test-{cs,sc,py,rs,ts,kt,jv}/` (verifies JSON/UEBA interop across all languages)
 - Evolution tests validating schema migration
 
 **Parallel Test Execution**: Test actions `test-gen-regular-adt` and `test-gen-wrapped-adt` can run in parallel. Each action:
