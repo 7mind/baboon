@@ -193,7 +193,7 @@ Run Kotlin tests with regular ADT codecs.
 ```bash
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/kt-stub"
-gradle clean test
+gradle --no-daemon clean test
 popd
 
 ret success:bool=true
@@ -386,7 +386,7 @@ Run Kotlin tests with wrapped ADT codecs.
 ```bash
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
 pushd "$TEST_DIR/kt-stub"
-gradle clean test
+gradle --no-daemon clean test
 popd
 
 ret success:bool=true
@@ -458,7 +458,7 @@ Generate compatibility test files using Kotlin.
 dep action.test-gen-manual
 
 pushd ./test/conv-test-kt
-gradle run
+gradle --no-daemon run
 popd
 
 ret success:bool=true
@@ -658,7 +658,7 @@ dep action.test-gen-compat-kotlin
 dep action.test-gen-compat-java
 
 pushd ./test/conv-test-kt
-gradle test
+gradle --no-daemon test
 popd
 
 ret success:bool=true
