@@ -3,8 +3,8 @@
 pubspec.lock
 build/
 generated*/
-lib/
-test/
+/lib/
+/test/
 packages/baboon_runtime/lib/baboon_runtime.dart
 packages/baboon_runtime/lib/baboon_fixture.dart
 packages/baboon_runtime/.dart_tool/
