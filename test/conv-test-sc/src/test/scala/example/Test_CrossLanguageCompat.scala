@@ -107,4 +107,45 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
     val rustData  = readUebaFile("rust", "Rust UEBA")
     assert(scalaData == rustData, "Scala and Rust UEBA data should be equal")
   }
+
+  // Python, TypeScript, Kotlin, Java, Dart
+  it should "read Python-generated JSON" in {
+    assertBasicFields(readJsonFile("python", "Python JSON"), "Python JSON")
+  }
+
+  it should "read TypeScript-generated JSON" in {
+    assertBasicFields(readJsonFile("typescript", "TypeScript JSON"), "TypeScript JSON")
+  }
+
+  it should "read Kotlin-generated JSON" in {
+    assertBasicFields(readJsonFile("kotlin", "Kotlin JSON"), "Kotlin JSON")
+  }
+
+  it should "read Java-generated JSON" in {
+    assertBasicFields(readJsonFile("java", "Java JSON"), "Java JSON")
+  }
+
+  it should "read Dart-generated JSON" in {
+    assertBasicFields(readJsonFile("dart", "Dart JSON"), "Dart JSON")
+  }
+
+  "Scala UEBA deserialization" should "read Python-generated UEBA" in {
+    assertBasicFields(readUebaFile("python", "Python UEBA"), "Python UEBA")
+  }
+
+  it should "read TypeScript-generated UEBA" in {
+    assertBasicFields(readUebaFile("typescript", "TypeScript UEBA"), "TypeScript UEBA")
+  }
+
+  it should "read Kotlin-generated UEBA" in {
+    assertBasicFields(readUebaFile("kotlin", "Kotlin UEBA"), "Kotlin UEBA")
+  }
+
+  it should "read Java-generated UEBA" in {
+    assertBasicFields(readUebaFile("java", "Java UEBA"), "Java UEBA")
+  }
+
+  it should "read Dart-generated UEBA" in {
+    assertBasicFields(readUebaFile("dart", "Dart UEBA"), "Dart UEBA")
+  }
 }

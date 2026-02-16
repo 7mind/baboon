@@ -60,6 +60,12 @@ package baboon.runtime.shared {
     val decodeShort: Decoder[Short]           = Decoder.instance(cursor => Decoder.decodeLong(cursor).map(_.toShort))
     val decodeInt: Decoder[Int]               = Decoder.instance(cursor => Decoder.decodeLong(cursor).map(_.toInt))
     val decodeLong: Decoder[Long]             = Decoder.instance(cursor => Decoder.decodeBigInt(cursor).map(_.longValue))
+    val decodeBigDecimalLenient: Decoder[BigDecimal] = Decoder.instance { cursor =>
+      cursor.as[BigDecimal](Decoder.decodeBigDecimal) match {
+        case Right(v) => Right(v)
+        case Left(_)  => cursor.as[String].map(s => BigDecimal(s))
+      }
+    }
 
     val decodeKeyBoolean: KeyDecoder[Boolean]        = _.toBooleanOption
     val decodeKeyFloat: KeyDecoder[Float]            = _.toFloatOption

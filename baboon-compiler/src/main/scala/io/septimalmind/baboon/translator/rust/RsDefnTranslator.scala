@@ -338,6 +338,10 @@ object RsDefnTranslator {
           attrs += q"""#[serde(with = "crate::baboon_runtime::tso_serde")]"""
         case _ =>
       }
+      // Lenient deserialization for fields containing i64/u64 (accepts both numbers and strings)
+      if (trans.needsLenientSerde(f.tpe)) {
+        attrs += q"""#[serde(deserialize_with = "crate::baboon_runtime::lenient_numeric::deserialize")]"""
+      }
 
       attrs.toList
     }

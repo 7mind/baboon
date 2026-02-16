@@ -23,7 +23,7 @@ namespace ConvTest
             var file = Path.Combine(baseDir, $"{source}-json", "all-basic-types.json");
             var jsonStr = File.ReadAllText(file, Encoding.UTF8);
             using var reader = new JsonTextReader(new StringReader(jsonStr))
-                { DateParseHandling = DateParseHandling.None };
+                { DateParseHandling = DateParseHandling.None, FloatParseHandling = FloatParseHandling.Decimal };
             var jsonToken = JToken.Load(reader);
             return AllBasicTypes_JsonCodec.Instance.Decode(ctx, jsonToken);
         }
@@ -159,6 +159,54 @@ namespace ConvTest
             var csData = ReadUebaFile("cs", "C# UEBA");
             PrintComparison("UEBA", "Rust", rustData, csData);
             Assert.That(csData, Is.EqualTo(rustData), "Rust and C# UEBA data should be equal");
+        }
+
+        [Test]
+        public void CSharp_JSON_Deserialization_Should_Read_TypeScript_Generated_JSON()
+        {
+            AssertBasicFields(ReadJsonFile("typescript", "TypeScript JSON"), "TypeScript JSON");
+        }
+
+        [Test]
+        public void CSharp_UEBA_Deserialization_Should_Read_TypeScript_Generated_UEBA()
+        {
+            AssertBasicFields(ReadUebaFile("typescript", "TypeScript UEBA"), "TypeScript UEBA");
+        }
+
+        [Test]
+        public void CSharp_JSON_Deserialization_Should_Read_Kotlin_Generated_JSON()
+        {
+            AssertBasicFields(ReadJsonFile("kotlin", "Kotlin JSON"), "Kotlin JSON");
+        }
+
+        [Test]
+        public void CSharp_UEBA_Deserialization_Should_Read_Kotlin_Generated_UEBA()
+        {
+            AssertBasicFields(ReadUebaFile("kotlin", "Kotlin UEBA"), "Kotlin UEBA");
+        }
+
+        [Test]
+        public void CSharp_JSON_Deserialization_Should_Read_Java_Generated_JSON()
+        {
+            AssertBasicFields(ReadJsonFile("java", "Java JSON"), "Java JSON");
+        }
+
+        [Test]
+        public void CSharp_UEBA_Deserialization_Should_Read_Java_Generated_UEBA()
+        {
+            AssertBasicFields(ReadUebaFile("java", "Java UEBA"), "Java UEBA");
+        }
+
+        [Test]
+        public void CSharp_JSON_Deserialization_Should_Read_Dart_Generated_JSON()
+        {
+            AssertBasicFields(ReadJsonFile("dart", "Dart JSON"), "Dart JSON");
+        }
+
+        [Test]
+        public void CSharp_UEBA_Deserialization_Should_Read_Dart_Generated_UEBA()
+        {
+            AssertBasicFields(ReadUebaFile("dart", "Dart UEBA"), "Dart UEBA");
         }
     }
 }

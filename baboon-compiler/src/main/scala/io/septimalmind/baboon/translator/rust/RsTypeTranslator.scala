@@ -164,6 +164,16 @@ class RsTypeTranslator {
     }
   }
 
+  /** Check if a TypeRef contains i64/u64 that needs lenient deserialization (accepts both numbers and strings) */
+  def needsLenientSerde(tpe: TypeRef): Boolean = {
+    tpe match {
+      case TypeRef.Scalar(TypeId.Builtins.i64) => true
+      case TypeRef.Scalar(TypeId.Builtins.u64) => true
+      case TypeRef.Constructor(_, args)        => args.exists(needsLenientSerde)
+      case _                                   => false
+    }
+  }
+
   /** Check if a TypeRef is a timestamp type */
   def isTimestamp(tpe: TypeRef): Boolean = {
     tpe match {

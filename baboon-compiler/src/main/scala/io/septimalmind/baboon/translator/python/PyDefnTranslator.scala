@@ -424,7 +424,7 @@ object PyDefnTranslator {
 
       val serializeDecimalAsJsonNumber =
         if (dtoFields.map(_.tpe.id).contains(TypeId.Builtins.f128)) {
-          List(q"json_encoders={Decimal: float}")
+          List(q"json_encoders={Decimal: str}")
         } else Nil
 
       val configs = List(frozen, serializeByAlias, serializeJsonBytesAsHex, serializeDecimalAsJsonNumber).flatten

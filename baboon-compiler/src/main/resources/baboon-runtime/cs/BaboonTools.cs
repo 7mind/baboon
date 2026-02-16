@@ -29,6 +29,15 @@ namespace Baboon.Runtime.Shared
 
     public static class BaboonTools
     {
+        public static decimal ReadDecimalLenient(JToken token)
+        {
+            if (token.Type == JTokenType.String)
+            {
+                return decimal.Parse(token.Value<string>()!, System.Globalization.CultureInfo.InvariantCulture);
+            }
+            return token.Value<decimal>();
+        }
+
         public static T? ReadNullableValueType<T>(bool ifNot, Func<T> thenReturn) where T : struct
         {
             if (ifNot) return null;

@@ -8,7 +8,7 @@ import { decode_AllBasicTypes_json, encode_AllBasicTypes_json } from "../src/gen
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const compatDir = path.resolve(__dirname, "../../../target/compat-test");
 
-const languages = ["scala", "cs", "rust", "python", "typescript", "kotlin"];
+const languages = ["scala", "cs", "rust", "python", "typescript", "kotlin", "java", "dart"];
 
 describe("Cross-language JSON compatibility", () => {
     for (const lang of languages) {

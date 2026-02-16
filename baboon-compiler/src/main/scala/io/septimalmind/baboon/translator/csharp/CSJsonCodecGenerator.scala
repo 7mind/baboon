@@ -343,7 +343,7 @@ class CSJsonCodecGenerator(
         case TypeId.Builtins.u64                       => q"$fref.Value<$csUInt64>()!"
         case TypeId.Builtins.f32                       => q"$fref.Value<$csSingle>()!"
         case TypeId.Builtins.f64                       => q"$fref.Value<$csDouble>()!"
-        case TypeId.Builtins.f128                      => q"$fref.Value<$csDecimal>()!"
+        case TypeId.Builtins.f128                      => q"$BaboonTools.ReadDecimalLenient($fref)"
         case TypeId.Builtins.str                       => q"$fref.Value<$csString>()!"
         case TypeId.Builtins.bytes                     => q"$csByteString.Parse($fref.Value<$csString>()!)"
         case TypeId.Builtins.uid                       => q"$csGuid.Parse($fref.Value<$csString>()!)"

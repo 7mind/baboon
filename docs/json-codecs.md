@@ -1,6 +1,6 @@
 # JSON codec conventions
 
-Baboon's generated JSON codecs aim for predictable, deterministic shapes that round‑trip across all supported backends: Scala (Circe), C# (System.Text.Json), Rust (serde), TypeScript, Python, Kotlin (Jackson), and Java (Jackson). This document explains the layout and corner cases so you can interoperate or write custom codecs.
+Baboon's generated JSON codecs aim for predictable, deterministic shapes that round‑trip across all supported backends: Scala (Circe), C# (System.Text.Json), Rust (serde), TypeScript, Python, Kotlin (Jackson), Java (Jackson), and Dart (dart:convert). This document explains the layout and corner cases so you can interoperate or write custom codecs.
 
 ## General rules
 

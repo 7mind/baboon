@@ -117,6 +117,26 @@ class CrossLanguageTest {
     }
 
     @Test
+    fun `Kotlin JSON should read Java-generated JSON`() {
+        assertBasicFields(readJsonFile("java"), "Java JSON")
+    }
+
+    @Test
+    fun `Kotlin JSON should read Dart-generated JSON`() {
+        assertBasicFields(readJsonFile("dart"), "Dart JSON")
+    }
+
+    @Test
+    fun `Kotlin UEBA should read Java-generated UEBA`() {
+        assertBasicFields(readUebaFile("java"), "Java UEBA")
+    }
+
+    @Test
+    fun `Kotlin UEBA should read Dart-generated UEBA`() {
+        assertBasicFields(readUebaFile("dart"), "Dart UEBA")
+    }
+
+    @Test
     fun `Cross-language UEBA should produce equivalent data`() {
         val kotlinData = readUebaFile("kotlin")
         val scalaData = readUebaFile("scala")

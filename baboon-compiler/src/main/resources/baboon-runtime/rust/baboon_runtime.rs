@@ -333,6 +333,47 @@ pub mod opt_decimal_as_number {
     }
 }
 
+// --- Serde helper for lenient numeric deserialization (accepts both JSON numbers and strings) ---
+
+pub mod lenient_numeric {
+    use serde::{Deserialize, Deserializer, de::DeserializeOwned};
+
+    fn transform_strings_to_numbers(value: serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::String(s) => {
+                if let Ok(n) = s.parse::<i64>() {
+                    serde_json::Value::Number(n.into())
+                } else if let Ok(n) = s.parse::<u64>() {
+                    serde_json::Value::Number(n.into())
+                } else {
+                    serde_json::Value::String(s)
+                }
+            }
+            serde_json::Value::Array(arr) => {
+                serde_json::Value::Array(arr.into_iter().map(transform_strings_to_numbers).collect())
+            }
+            serde_json::Value::Object(map) => {
+                serde_json::Value::Object(
+                    map.into_iter()
+                        .map(|(k, v)| (k, transform_strings_to_numbers(v)))
+                        .collect(),
+                )
+            }
+            other => other,
+        }
+    }
+
+    pub fn deserialize<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+    where
+        T: DeserializeOwned,
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let transformed = transform_strings_to_numbers(value);
+        T::deserialize(transformed).map_err(serde::de::Error::custom)
+    }
+}
+
 // --- Serde helpers for timestamps ---
 
 pub mod tsu_serde {

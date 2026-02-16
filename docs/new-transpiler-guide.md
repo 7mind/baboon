@@ -1,6 +1,6 @@
 # Implementing a New Baboon Backend: Step-by-Step Guide
 
-This guide walks you through implementing a full-featured code generation backend for the Baboon compiler. It assumes you want to add support for a new target language (referred to as `$LANG` throughout). Use the existing C#, Scala, Rust, TypeScript, Python, Kotlin, and Java translators as reference implementations.
+This guide walks you through implementing a full-featured code generation backend for the Baboon compiler. It assumes you want to add support for a new target language (referred to as `$LANG` throughout). Use the existing C#, Scala, Rust, TypeScript, Python, Kotlin, Java, and Dart translators as reference implementations.
 
 ## Table of Contents
 
@@ -928,7 +928,7 @@ class BaboonJvm$LANGModule[F[+_, +_]: Error2: TagKK](target: CompilerTarget.$LAN
 Add your language key to the `languages` list:
 
 ```scala
-private val languages = Seq("cs", "python", "rust", "scala", "typescript", "kotlin", "java", "$lang")
+private val languages = Seq("cs", "python", "rust", "scala", "typescript", "kotlin", "java", "dart", "$lang")
 ```
 
 ---
@@ -1209,29 +1209,29 @@ dep action.test-gen-compat-$lang
 
 Complete type mapping table across all existing backends:
 
-| Baboon | C# | Scala | Rust | TypeScript | Python | Kotlin | Java |
-|--------|-----|-------|------|------------|--------|--------|------|
-| `bit` | `Boolean` | `Boolean` | `bool` | `boolean` | `bool` | `Boolean` | `boolean` |
-| `i08` | `SByte` | `Byte` | `i8` | `number` | `int` | `Byte` | `byte` |
-| `i16` | `Int16` | `Short` | `i16` | `number` | `int` | `Short` | `short` |
-| `i32` | `Int32` | `Int` | `i32` | `number` | `int` | `Int` | `int` |
-| `i64` | `Int64` | `Long` | `i64` | `bigint` | `int` | `Long` | `long` |
-| `u08` | `Byte` | `Byte` | `u8` | `number` | `int` | `UByte` | `short` |
-| `u16` | `UInt16` | `Short` | `u16` | `number` | `int` | `UShort` | `int` |
-| `u32` | `UInt32` | `Int` | `u32` | `number` | `int` | `UInt` | `long` |
-| `u64` | `UInt64` | `Long` | `u64` | `bigint` | `int` | `ULong` | `long` |
-| `f32` | `Single` | `Float` | `f32` | `number` | `float` | `Float` | `float` |
-| `f64` | `Double` | `Double` | `f64` | `number` | `float` | `Double` | `double` |
-| `f128` | `Decimal` | `BigDecimal` | `Decimal` | `string` | `Decimal` | `BigDecimal` | `BigDecimal` |
-| `str` | `String` | `String` | `String` | `string` | `str` | `String` | `String` |
-| `bytes` | `ByteString` | `ByteString` | `Vec<u8>` | `Uint8Array` | `bytes` | `ByteString` | `ByteString` |
-| `uid` | `Guid` | `UUID` | `Uuid` | `string` | `UUID` | `UUID` | `UUID` |
-| `tsu` | `RpDateTime` | `OffsetDateTime` | `DateTime<Utc>` | `BaboonDateTime` | `datetime` | `OffsetDateTime` | `OffsetDateTime` |
-| `tso` | `RpDateTime` | `OffsetDateTime` | `DateTime<FixedOffset>` | `BaboonDateTime` | `datetime` | `OffsetDateTime` | `OffsetDateTime` |
-| `opt[T]` | `T?` / `Nullable<T>` | `Option[T]` | `Option<T>` | `T \| null` | `Optional[T]` | `T?` | `Optional<T>` |
-| `lst[T]` | `IReadOnlyList<T>` | `List[T]` | `Vec<T>` | `T[]` | `list[T]` | `List<T>` | `List<T>` |
-| `set[T]` | `ImmutableHashSet<T>` | `Set[T]` | `BTreeSet<T>` | `Set<T>` | `set[T]` | `Set<T>` | `Set<T>` |
-| `map[K,V]` | `IReadOnlyDictionary<K,V>` | `Map[K,V]` | `BTreeMap<K,V>` | `Map<K,V>` | `dict[K,V]` | `Map<K,V>` | `Map<K,V>` |
+| Baboon | C# | Scala | Rust | TypeScript | Python | Kotlin | Java | Dart |
+|--------|-----|-------|------|------------|--------|--------|------|------|
+| `bit` | `Boolean` | `Boolean` | `bool` | `boolean` | `bool` | `Boolean` | `boolean` | `bool` |
+| `i08` | `SByte` | `Byte` | `i8` | `number` | `int` | `Byte` | `byte` | `int` |
+| `i16` | `Int16` | `Short` | `i16` | `number` | `int` | `Short` | `short` | `int` |
+| `i32` | `Int32` | `Int` | `i32` | `number` | `int` | `Int` | `int` | `int` |
+| `i64` | `Int64` | `Long` | `i64` | `bigint` | `int` | `Long` | `long` | `int` |
+| `u08` | `Byte` | `Byte` | `u8` | `number` | `int` | `UByte` | `short` | `int` |
+| `u16` | `UInt16` | `Short` | `u16` | `number` | `int` | `UShort` | `int` | `int` |
+| `u32` | `UInt32` | `Int` | `u32` | `number` | `int` | `UInt` | `long` | `int` |
+| `u64` | `UInt64` | `Long` | `u64` | `bigint` | `int` | `ULong` | `long` | `int` |
+| `f32` | `Single` | `Float` | `f32` | `number` | `float` | `Float` | `float` | `double` |
+| `f64` | `Double` | `Double` | `f64` | `number` | `float` | `Double` | `double` | `double` |
+| `f128` | `Decimal` | `BigDecimal` | `Decimal` | `string` | `Decimal` | `BigDecimal` | `BigDecimal` | `BaboonDecimal` |
+| `str` | `String` | `String` | `String` | `string` | `str` | `String` | `String` | `String` |
+| `bytes` | `ByteString` | `ByteString` | `Vec<u8>` | `Uint8Array` | `bytes` | `ByteString` | `ByteString` | `Uint8List` |
+| `uid` | `Guid` | `UUID` | `Uuid` | `string` | `UUID` | `UUID` | `UUID` | `String` |
+| `tsu` | `RpDateTime` | `OffsetDateTime` | `DateTime<Utc>` | `BaboonDateTime` | `datetime` | `OffsetDateTime` | `OffsetDateTime` | `DateTime` |
+| `tso` | `RpDateTime` | `OffsetDateTime` | `DateTime<FixedOffset>` | `BaboonDateTime` | `datetime` | `OffsetDateTime` | `OffsetDateTime` | `BaboonDateTimeOffset` |
+| `opt[T]` | `T?` / `Nullable<T>` | `Option[T]` | `Option<T>` | `T \| null` | `Optional[T]` | `T?` | `Optional<T>` | `T?` |
+| `lst[T]` | `IReadOnlyList<T>` | `List[T]` | `Vec<T>` | `T[]` | `list[T]` | `List<T>` | `List<T>` | `List<T>` |
+| `set[T]` | `ImmutableHashSet<T>` | `Set[T]` | `BTreeSet<T>` | `Set<T>` | `set[T]` | `Set<T>` | `Set<T>` | `Set<T>` |
+| `map[K,V]` | `IReadOnlyDictionary<K,V>` | `Map[K,V]` | `BTreeMap<K,V>` | `Map<K,V>` | `dict[K,V]` | `Map<K,V>` | `Map<K,V>` | `Map<K,V>` |
 
 ---
 
@@ -1421,7 +1421,7 @@ pragma $lang.service.context.parameter.name = "context"
 Add your language key to `ServiceContextResolver.languages` and `ServiceResultResolver.languages`:
 
 ```scala
-private val languages = Seq("cs", "python", "rust", "scala", "typescript", "kotlin", "java", "$lang")
+private val languages = Seq("cs", "python", "rust", "scala", "typescript", "kotlin", "java", "dart", "$lang")
 ```
 
 This registers all `$lang.service.context.*` and `$lang.service.result.*` pragma keys as known.

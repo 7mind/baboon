@@ -98,7 +98,6 @@ fn test_rust_cs_json_equal() {
 }
 
 #[test]
-#[ignore = "Python has known precision issues: microsecond timestamps, f64 decimal, lowercase hex"]
 fn test_rust_python_json_equal() {
     let rust_data = read_json_file("rust");
     let python_data = read_json_file("python");
@@ -125,4 +124,53 @@ fn test_rust_python_ueba_equal() {
     let rust_data = read_ueba_file("rust");
     let python_data = read_ueba_file("python");
     assert_eq!(rust_data, python_data, "Rust and Python UEBA data should be equal");
+}
+
+// TypeScript, Kotlin, Java, Dart
+#[test]
+fn test_read_typescript_json() {
+    let data = read_json_file("typescript");
+    assert_basic_fields(&data, "TypeScript JSON");
+}
+
+#[test]
+fn test_read_kotlin_json() {
+    let data = read_json_file("kotlin");
+    assert_basic_fields(&data, "Kotlin JSON");
+}
+
+#[test]
+fn test_read_java_json() {
+    let data = read_json_file("java");
+    assert_basic_fields(&data, "Java JSON");
+}
+
+#[test]
+fn test_read_dart_json() {
+    let data = read_json_file("dart");
+    assert_basic_fields(&data, "Dart JSON");
+}
+
+#[test]
+fn test_read_typescript_ueba() {
+    let data = read_ueba_file("typescript");
+    assert_basic_fields(&data, "TypeScript UEBA");
+}
+
+#[test]
+fn test_read_kotlin_ueba() {
+    let data = read_ueba_file("kotlin");
+    assert_basic_fields(&data, "Kotlin UEBA");
+}
+
+#[test]
+fn test_read_java_ueba() {
+    let data = read_ueba_file("java");
+    assert_basic_fields(&data, "Java UEBA");
+}
+
+#[test]
+fn test_read_dart_ueba() {
+    let data = read_ueba_file("dart");
+    assert_basic_fields(&data, "Dart UEBA");
 }

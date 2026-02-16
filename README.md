@@ -29,6 +29,7 @@ Generates:
   - **TypeScript**
   - **Kotlin**
   - **Java**
+  - **Dart**
 
 ## Highlights
 
@@ -129,7 +130,7 @@ Points marked with (*) will/may be improved in the future.
 
 The `baboon` CLI supports multiple commands for compilation, exploration, and IDE integration:
 
-- `:cs`, `:scala`, `:python`, `:rust`, `:typescript`, `:kotlin`, `:java` - Code generation for target languages
+- `:cs`, `:scala`, `:python`, `:rust`, `:typescript`, `:kotlin`, `:java`, `:dart` - Code generation for target languages
 - `:explore` - Launch [Interactive Explorer](docs/explorer-mode.md)
 - `:lsp` - Start [LSP Server](docs/lsp-integration.md)
 
@@ -177,9 +178,9 @@ direnv exec . mdl :build :test
 direnv exec . mdl :full-build
 
 # Run specific test suites
-direnv exec . mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular :test-rust-regular :test-typescript-regular :test-kotlin-regular :test-java-regular
-direnv exec . mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped :test-rust-wrapped :test-typescript-wrapped :test-kotlin-wrapped :test-java-wrapped
-direnv exec . mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-gen-compat-rust :test-gen-compat-typescript :test-gen-compat-kotlin :test-gen-compat-java :test-manual-cs :test-manual-scala :test-manual-rust :test-manual-typescript :test-manual-kotlin :test-manual-java
+direnv exec . mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular :test-rust-regular :test-typescript-regular :test-kotlin-regular :test-java-regular :test-dart-regular
+direnv exec . mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped :test-rust-wrapped :test-typescript-wrapped :test-kotlin-wrapped :test-java-wrapped :test-dart-wrapped
+direnv exec . mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-gen-compat-rust :test-gen-compat-typescript :test-gen-compat-kotlin :test-gen-compat-java :test-gen-compat-dart :test-manual-cs :test-manual-scala :test-manual-rust :test-manual-typescript :test-manual-kotlin :test-manual-java :test-manual-dart
 
 # Create distribution packages
 direnv exec . mdl :build :mkdist

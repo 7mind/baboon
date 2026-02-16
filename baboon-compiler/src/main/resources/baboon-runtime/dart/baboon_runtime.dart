@@ -123,6 +123,7 @@ class BaboonIndexEntry {
 // --- Binary Writer ---
 
 class BaboonBinWriter {
+  static const int _dotnetEpochOffsetMs = 62135596800000;
   Uint8List _buf;
   int _pos;
 
@@ -301,13 +302,17 @@ class BaboonBinWriter {
   }
 
   void writeTsu(DateTime value) {
-    writeI64(value.toUtc().millisecondsSinceEpoch);
-    writeI64(0); // UTC offset = 0
-    writeU8(1);  // kind = 1 (UTC)
+    final epochMs = value.toUtc().millisecondsSinceEpoch;
+    final dotnetUtcMs = epochMs + _dotnetEpochOffsetMs;
+    writeI64(dotnetUtcMs);
+    writeI64(0);
+    writeU8(1); // kind = 1 (UTC)
   }
 
   void writeTso(BaboonDateTimeOffset value) {
-    writeI64(value.epochMillis);
+    final dotnetUtcMs = value.epochMillis + _dotnetEpochOffsetMs;
+    final dotnetLocalMs = dotnetUtcMs + value.offsetMillis;
+    writeI64(dotnetLocalMs);
     writeI64(value.offsetMillis);
     writeU8(0); // kind = 0 (offset)
   }
@@ -484,21 +489,25 @@ class BaboonBinReader {
   }
 
   DateTime readTsu() {
-    final millis = readI64();
-    final offsetMillis = readI64();
+    final dotnetLocalMs = readI64();
+    final offsetMs = readI64();
     final kind = readU8();
     assert(kind >= 0 && kind <= 2);
-    return DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true);
+    final dotnetUtcMs = dotnetLocalMs - offsetMs;
+    final epochMs = dotnetUtcMs - BaboonBinWriter._dotnetEpochOffsetMs;
+    return DateTime.fromMillisecondsSinceEpoch(epochMs, isUtc: true);
   }
 
   BaboonDateTimeOffset readTso() {
-    final millis = readI64();
-    final offsetMillis = readI64();
+    final dotnetLocalMs = readI64();
+    final offsetMs = readI64();
     final kind = readU8();
     assert(kind >= 0 && kind <= 2);
+    final dotnetUtcMs = dotnetLocalMs - offsetMs;
+    final epochMs = dotnetUtcMs - BaboonBinWriter._dotnetEpochOffsetMs;
     return BaboonDateTimeOffset(
-      epochMillis: millis,
-      offsetMillis: offsetMillis,
+      epochMillis: epochMs,
+      offsetMillis: offsetMs,
       kind: kind == 1 ? 'Utc' : 'Local',
     );
   }

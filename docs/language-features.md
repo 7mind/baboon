@@ -222,7 +222,7 @@ Attach derivations on any type to request generated typeclass instances:
 root data AllBasicTypes: derived[json], derived[ueba] { ... }
 ```
 
-The compiler currently ships JSON and UEBA codec derivation. Additional derivations can be added with the same `derived[...]` syntax. Baboon will produce C#, Scala, Rust, TypeScript, Python, Kotlin, and Java code from the same model and aggressively deduplicates shared shapes in generated C#.
+The compiler currently ships JSON and UEBA codec derivation. Additional derivations can be added with the same `derived[...]` syntax. Baboon will produce C#, Scala, Rust, TypeScript, Python, Kotlin, Java, and Dart code from the same model and aggressively deduplicates shared shapes in generated C#.
 
 ## Services
 
@@ -255,12 +255,13 @@ By default each backend wraps service method return types in a language-idiomati
 | TypeScript | `Out` (no error wrapping) | `Out` directly |
 | Kotlin | `Out` (no error wrapping) | `Out` directly |
 | Java | `Out` (no error wrapping) | `Out` directly |
+| Dart | `Out` (no error wrapping) | `Out` directly |
 
 You can override these defaults using pragmas in `.baboon` files or CLI flags.
 
 #### Pragma keys
 
-All pragma keys follow the pattern `{lang}.service.result.*` where `{lang}` is `scala`, `rust`, `cs`, `python`, `typescript`, `kotlin`, or `java`.
+All pragma keys follow the pattern `{lang}.service.result.*` where `{lang}` is `scala`, `rust`, `cs`, `python`, `typescript`, `kotlin`, `java`, or `dart`.
 
 | Pragma key | Value | Description |
 |-----------|-------|-------------|
@@ -365,7 +366,7 @@ Three modes are supported:
 
 #### Pragma keys
 
-All pragma keys follow the pattern `{lang}.service.context*` where `{lang}` is `scala`, `rust`, `cs`, `python`, `typescript`, `kotlin`, or `java`.
+All pragma keys follow the pattern `{lang}.service.context*` where `{lang}` is `scala`, `rust`, `cs`, `python`, `typescript`, `kotlin`, `java`, or `dart`.
 
 | Pragma key | Value | Description |
 |-----------|-------|-------------|
@@ -506,5 +507,6 @@ Versioned files can be diffed by Baboon to emit migration code. When a change is
 - **TypeScript** — classes with function-based JSON and UEBA codecs, and evolution converters.
 - **Kotlin** — data classes with Jackson JSON codecs, UEBA binary codecs, and evolution converters.
 - **Java** — records/classes with Jackson JSON codecs, UEBA binary codecs, and evolution converters.
+- **Dart** — classes with dart:convert JSON codecs, UEBA binary codecs, and evolution converters.
 
 Invoke `mdl :build :mkdist` to generate and package all targets through the existing mudyla pipelines.

@@ -358,7 +358,7 @@ class ScJsonCodecGenerator(
 
                 case TypeId.Builtins.f32   => q"$circeDecodeFloat"
                 case TypeId.Builtins.f64   => q"$circeDecodeDouble"
-                case TypeId.Builtins.f128  => q"$circeDecodeBigDecimal"
+                case TypeId.Builtins.f128  => q"$baboonDecodeBigDecimalLenient"
                 case TypeId.Builtins.str   => q"$circeDecodeString"
                 case TypeId.Builtins.bytes => q"$baboonDecodeByteString"
                 case TypeId.Builtins.uid   => q"$circeDecodeUuid"

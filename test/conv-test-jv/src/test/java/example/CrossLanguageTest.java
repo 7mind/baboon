@@ -133,6 +133,16 @@ public class CrossLanguageTest {
     }
 
     @Test
+    public void javaJsonShouldReadDartGeneratedJson() throws Exception {
+        assertBasicFields(readJsonFile("dart"), "Dart JSON");
+    }
+
+    @Test
+    public void javaUebaShouldReadDartGeneratedUeba() throws Exception {
+        assertBasicFields(readUebaFile("dart"), "Dart UEBA");
+    }
+
+    @Test
     public void crossLanguageUebaShouldProduceEquivalentData() throws Exception {
         var javaData = readUebaFile("java");
         var scalaData = readUebaFile("scala");
