@@ -107,6 +107,8 @@ jobs:
       - name: Install rsync
         shell: pwsh
         run: choco install rsync -y
+      - name: Set up Dart SDK
+        uses: dart-lang/setup-dart@v1
       - name: Install mudyla
         shell: bash
         run: pip install git+https://github.com/7mind/mudyla.git
