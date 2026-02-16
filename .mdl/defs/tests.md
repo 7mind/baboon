@@ -31,7 +31,7 @@ TEST_DIR="./target/test-regular"
 
 # Create temporary test directories
 mkdir -p "$TEST_DIR"
-rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub"
+rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/jv-stub"
 
 # Copy stub projects, excluding generated and build artifacts
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
@@ -44,6 +44,10 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclud
   ./test/rs-stub/ "$TEST_DIR/rs-stub/"
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules' --exclude='dist' \
   ./test/ts-stub/ "$TEST_DIR/ts-stub/"
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --exclude='.gradle' \
+  ./test/kt-stub/ "$TEST_DIR/kt-stub/"
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
+  ./test/jv-stub/ "$TEST_DIR/jv-stub/"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
@@ -87,6 +91,22 @@ $BABOON_BIN \
   --fixture-output "$TEST_DIR/ts-stub/src" \
   --ts-write-evolution-dict=true \
   --ts-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  :kotlin \
+  --output "$TEST_DIR/kt-stub/src/main/kotlin/generated-main" \
+  --test-output "$TEST_DIR/kt-stub/src/test/kotlin/generated-tests" \
+  --fixture-output "$TEST_DIR/kt-stub/src/main/kotlin/generated-fixtures" \
+  --kt-write-evolution-dict=true \
+  --kt-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  :java \
+  --output "$TEST_DIR/jv-stub/src/main/java/generated-main" \
+  --test-output "$TEST_DIR/jv-stub/src/test/java/generated-tests" \
+  --fixture-output "$TEST_DIR/jv-stub/src/main/java/generated-fixtures" \
+  --jv-write-evolution-dict=true \
+  --jv-wrapped-adt-branch-codecs=false \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true
 
@@ -166,6 +186,32 @@ popd
 ret success:bool=true
 ```
 
+# action: test-kotlin-regular
+
+Run Kotlin tests with regular ADT codecs.
+
+```bash
+TEST_DIR="${action.test-gen-regular-adt.test_dir}"
+pushd "$TEST_DIR/kt-stub"
+gradle --no-daemon clean test
+popd
+
+ret success:bool=true
+```
+
+# action: test-java-regular
+
+Run Java tests with regular ADT codecs.
+
+```bash
+TEST_DIR="${action.test-gen-regular-adt.test_dir}"
+pushd "$TEST_DIR/jv-stub"
+mvn clean test
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-wrapped-adt
 
 Generate code with wrapped ADT branch codecs.
@@ -178,7 +224,7 @@ TEST_DIR="./target/test-wrapped"
 
 # Create temporary test directories
 mkdir -p "$TEST_DIR"
-rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub"
+rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/jv-stub"
 
 # Copy stub projects, excluding generated and build artifacts
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
@@ -191,6 +237,10 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclud
   ./test/rs-stub/ "$TEST_DIR/rs-stub/"
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules' --exclude='dist' \
   ./test/ts-stub/ "$TEST_DIR/ts-stub/"
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --exclude='.gradle' \
+  ./test/kt-stub/ "$TEST_DIR/kt-stub/"
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
+  ./test/jv-stub/ "$TEST_DIR/jv-stub/"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
@@ -234,6 +284,22 @@ $BABOON_BIN \
   --fixture-output "$TEST_DIR/ts-stub/src" \
   --ts-write-evolution-dict=true \
   --ts-wrapped-adt-branch-codecs=true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  :kotlin \
+  --output "$TEST_DIR/kt-stub/src/main/kotlin/generated-main" \
+  --test-output "$TEST_DIR/kt-stub/src/test/kotlin/generated-tests" \
+  --fixture-output "$TEST_DIR/kt-stub/src/main/kotlin/generated-fixtures" \
+  --kt-write-evolution-dict=true \
+  --kt-wrapped-adt-branch-codecs=true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  :java \
+  --output "$TEST_DIR/jv-stub/src/main/java/generated-main" \
+  --test-output "$TEST_DIR/jv-stub/src/test/java/generated-tests" \
+  --fixture-output "$TEST_DIR/jv-stub/src/main/java/generated-fixtures" \
+  --jv-write-evolution-dict=true \
+  --jv-wrapped-adt-branch-codecs=true \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true
 
@@ -313,6 +379,32 @@ popd
 ret success:bool=true
 ```
 
+# action: test-kotlin-wrapped
+
+Run Kotlin tests with wrapped ADT codecs.
+
+```bash
+TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
+pushd "$TEST_DIR/kt-stub"
+gradle --no-daemon clean test
+popd
+
+ret success:bool=true
+```
+
+# action: test-java-wrapped
+
+Run Java tests with wrapped ADT codecs.
+
+```bash
+TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
+pushd "$TEST_DIR/jv-stub"
+mvn clean test
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-manual
 
 Generate code for manual test projects.
@@ -335,7 +427,39 @@ $BABOON_BIN \
   :rust \
   --output ./test/conv-test-rs/src/generated \
   :typescript \
-  --output ./test/conv-test-ts/src/generated
+  --output ./test/conv-test-ts/src/generated \
+  :kotlin \
+  --output ./test/conv-test-kt/src/main/kotlin/generated-main \
+  :java \
+  --output ./test/conv-test-jv/src/main/java/generated-main
+
+ret success:bool=true
+```
+
+# action: test-gen-compat-java
+
+Generate compatibility test files using Java.
+
+```bash
+dep action.test-gen-manual
+
+pushd ./test/conv-test-jv
+mvn compile exec:java
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-compat-kotlin
+
+Generate compatibility test files using Kotlin.
+
+```bash
+dep action.test-gen-manual
+
+pushd ./test/conv-test-kt
+gradle --no-daemon run
+popd
 
 ret success:bool=true
 ```
@@ -424,6 +548,8 @@ dep action.test-gen-compat-cs
 dep action.test-gen-compat-python
 dep action.test-gen-compat-rust
 dep action.test-gen-compat-typescript
+dep action.test-gen-compat-kotlin
+dep action.test-gen-compat-java
 
 pushd ./test/conv-test-cs
 dotnet build
@@ -442,6 +568,8 @@ dep action.test-gen-compat-scala
 dep action.test-gen-compat-cs
 dep action.test-gen-compat-rust
 dep action.test-gen-compat-typescript
+dep action.test-gen-compat-kotlin
+dep action.test-gen-compat-java
 
 pushd ./test/conv-test-sc
 sbt +clean +test
@@ -485,6 +613,8 @@ dep action.test-gen-compat-cs
 dep action.test-gen-compat-python
 dep action.test-gen-compat-rust
 dep action.test-gen-compat-typescript
+dep action.test-gen-compat-kotlin
+dep action.test-gen-compat-java
 
 pushd ./test/conv-test-rs
 cargo test
@@ -503,10 +633,52 @@ dep action.test-gen-compat-cs
 dep action.test-gen-compat-python
 dep action.test-gen-compat-rust
 dep action.test-gen-compat-typescript
+dep action.test-gen-compat-kotlin
+dep action.test-gen-compat-java
 
 pushd ./test/conv-test-ts
 npm install
 npm test
+popd
+
+ret success:bool=true
+```
+
+# action: test-manual-kotlin
+
+Run Kotlin cross-language compatibility tests.
+
+```bash
+dep action.test-gen-compat-scala
+dep action.test-gen-compat-cs
+dep action.test-gen-compat-python
+dep action.test-gen-compat-rust
+dep action.test-gen-compat-typescript
+dep action.test-gen-compat-kotlin
+dep action.test-gen-compat-java
+
+pushd ./test/conv-test-kt
+gradle --no-daemon test
+popd
+
+ret success:bool=true
+```
+
+# action: test-manual-java
+
+Run Java cross-language compatibility tests.
+
+```bash
+dep action.test-gen-compat-scala
+dep action.test-gen-compat-cs
+dep action.test-gen-compat-python
+dep action.test-gen-compat-rust
+dep action.test-gen-compat-typescript
+dep action.test-gen-compat-kotlin
+dep action.test-gen-compat-java
+
+pushd ./test/conv-test-jv
+mvn clean test
 popd
 
 ret success:bool=true
@@ -1323,15 +1495,21 @@ dep action.test-scala-regular
 dep action.test-python-regular
 dep action.test-rust-regular
 dep action.test-typescript-regular
+dep action.test-kotlin-regular
+dep action.test-java-regular
 dep action.test-cs-wrapped
 dep action.test-scala-wrapped
 dep action.test-python-wrapped
 dep action.test-rust-wrapped
 dep action.test-typescript-wrapped
+dep action.test-kotlin-wrapped
+dep action.test-java-wrapped
 dep action.test-manual-cs
 dep action.test-manual-scala
 dep action.test-manual-rust
 dep action.test-manual-typescript
+dep action.test-manual-kotlin
+dep action.test-manual-java
 dep action.test-cs-wiring-either
 dep action.test-cs-wiring-result
 dep action.test-cs-wiring-outcome

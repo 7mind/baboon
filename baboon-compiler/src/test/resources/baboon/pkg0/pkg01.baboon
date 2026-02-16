@@ -5,6 +5,8 @@ version "1.0.0"
 foreign ObscureInt {
   cs = "System.Int32"
   scala = "java.lang.Integer"
+  kotlin = "java.lang.Integer"
+  java = "java.lang.Integer"
   py = "builtins.int"
   rust = "std::primitive::i32"
   typescript = "number"
@@ -13,6 +15,8 @@ foreign ObscureInt {
 foreign ForeignStruct {
   cs = "BaboonDefinitions.Foreign.TestForeignStruct" with { "value-type" = "yes" }
   scala = "java.lang.Integer"
+  kotlin = "java.lang.Integer"
+  java = "java.lang.Integer"
   py = "typing.NamedTuple"
   rust = "std::primitive::i32"
   typescript = "Record<string, never>"

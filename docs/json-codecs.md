@@ -1,6 +1,6 @@
 # JSON codec conventions
 
-Baboon’s generated JSON codecs aim for predictable, deterministic shapes that round‑trip between Scala (circe) and C# (System.Text.Json). This document explains the layout and corner cases so you can interoperate or write custom codecs.
+Baboon's generated JSON codecs aim for predictable, deterministic shapes that round‑trip across all supported backends: Scala (Circe), C# (System.Text.Json), Rust (serde), TypeScript, Python, Kotlin (Jackson), and Java (Jackson). This document explains the layout and corner cases so you can interoperate or write custom codecs.
 
 ## General rules
 
@@ -49,7 +49,7 @@ Map keys are always strings in JSON. The string form depends on the key type:
 
 ## Foreign types
 
-Generated codecs contain placeholder instances for foreign types; you must override them (`BaboonCodecs#Register` in C#, `BaboonCodecs.register` in Scala) with real implementations that follow these conventions.
+Generated codecs contain placeholder instances for foreign types; you must override them (e.g. `BaboonCodecs#Register` in C#, `BaboonCodecs.register` in Scala) with real implementations that follow these conventions. Refer to the foreign type registration mechanism for your target language.
 
 ## Examples
 

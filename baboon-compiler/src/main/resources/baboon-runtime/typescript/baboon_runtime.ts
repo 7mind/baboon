@@ -358,10 +358,11 @@ export class BinTools {
 
     static writeDecimal(writer: BaboonBinWriter, value: BaboonDecimal): void {
         // .NET decimal format: lo (i32), mid (i32), hi (i32), flags (i32)
-        const num = value.toNumber();
-        const isNeg = num < 0;
-        const abs = Math.abs(num);
-        const str = abs.toString();
+        let str = value.toString();
+        const isNeg = str.startsWith("-");
+        if (isNeg) {
+            str = str.substring(1);
+        }
 
         let scale = 0;
         const dotIdx = str.indexOf(".");

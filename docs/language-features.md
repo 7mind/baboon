@@ -196,7 +196,7 @@ foreign Money: derived[json], derived[ueba] {
 }
 ```
 
-- Each entry maps a language tag (`cs`, `sc`, `ts`, etc.) to a fully qualified type name.
+- Each entry maps a language tag (`cs`, `sc`, `ts`, `kt`, `jv`, etc.) to a fully qualified type name.
 - Optional `with { key = "value" }` attributes are implementation hints for the backend.
 
 ## Built-in types and collections
@@ -222,7 +222,7 @@ Attach derivations on any type to request generated typeclass instances:
 root data AllBasicTypes: derived[json], derived[ueba] { ... }
 ```
 
-The compiler currently ships JSON and UEBA codec derivation. Additional derivations can be added with the same `derived[...]` syntax. Baboon will produce C# and Scala classes from the same model and aggressively deduplicates shared shapes in generated C#.
+The compiler currently ships JSON and UEBA codec derivation. Additional derivations can be added with the same `derived[...]` syntax. Baboon will produce C#, Scala, Rust, TypeScript, Python, Kotlin, and Java code from the same model and aggressively deduplicates shared shapes in generated C#.
 
 ## Services
 
@@ -252,12 +252,15 @@ By default each backend wraps service method return types in a language-idiomati
 | Rust | `Result<Out, Err>` | `Out` directly |
 | C# | `Out` (no error wrapping) | `Out` directly |
 | Python | `Out` (no error wrapping) | `Out` directly |
+| TypeScript | `Out` (no error wrapping) | `Out` directly |
+| Kotlin | `Out` (no error wrapping) | `Out` directly |
+| Java | `Out` (no error wrapping) | `Out` directly |
 
 You can override these defaults using pragmas in `.baboon` files or CLI flags.
 
 #### Pragma keys
 
-All pragma keys follow the pattern `{lang}.service.result.*` where `{lang}` is `scala`, `rust`, `cs`, or `python`.
+All pragma keys follow the pattern `{lang}.service.result.*` where `{lang}` is `scala`, `rust`, `cs`, `python`, `typescript`, `kotlin`, or `java`.
 
 | Pragma key | Value | Description |
 |-----------|-------|-------------|
@@ -362,7 +365,7 @@ Three modes are supported:
 
 #### Pragma keys
 
-All pragma keys follow the pattern `{lang}.service.context*` where `{lang}` is `scala`, `rust`, `cs`, `python`, or `typescript`.
+All pragma keys follow the pattern `{lang}.service.context*` where `{lang}` is `scala`, `rust`, `cs`, `python`, `typescript`, `kotlin`, or `java`.
 
 | Pragma key | Value | Description |
 |-----------|-------|-------------|
@@ -500,5 +503,8 @@ Versioned files can be diffed by Baboon to emit migration code. When a change is
 - **C#** — classes with aggressive deduplication, Newtonsoft.Json codecs, UEBA binary codecs, and evolution converters.
 - **Rust** — native structs/enums with serde derive, custom UEBA binary codecs, and evolution converters.
 - **Python** — dataclasses with custom JSON codecs.
+- **TypeScript** — classes with function-based JSON and UEBA codecs, and evolution converters.
+- **Kotlin** — data classes with Jackson JSON codecs, UEBA binary codecs, and evolution converters.
+- **Java** — records/classes with Jackson JSON codecs, UEBA binary codecs, and evolution converters.
 
 Invoke `mdl :build :mkdist` to generate and package all targets through the existing mudyla pipelines.

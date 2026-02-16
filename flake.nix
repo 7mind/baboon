@@ -94,6 +94,11 @@
             squish-find-the-brains.packages.${system}.generate-lockfile
             mudyla.packages.${system}.default
             nodejs_24
+
+            kotlin
+            gradle
+
+            maven
           ];
         };
       }

@@ -45,7 +45,7 @@ function main(): void {
     const sampleData = createSampleData();
     const ctx = BaboonCodecContext.Default;
 
-    const baseDir = path.resolve(__dirname, "../../target/compat-test");
+    const baseDir = path.resolve(__dirname, "../../../target/compat-test");
     const jsonDir = path.join(baseDir, "typescript-json");
     const uebaDir = path.join(baseDir, "typescript-ueba");
 
