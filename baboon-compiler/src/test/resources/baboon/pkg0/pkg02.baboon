@@ -19,6 +19,7 @@ foreign ObscureInt {
   py = "builtins.int"
   rust = "std::primitive::i32"
   typescript = "number"
+  dart = "dart.core.int"
 }
 
 root data T1_E1_RET {

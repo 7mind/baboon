@@ -6,6 +6,7 @@
     {"pattern": "baboon-runtime/rust/.*\\.rs"},
     {"pattern": "baboon-runtime/typescript/.*\\.ts"},
     {"pattern": "baboon-runtime/kotlin/.*\\.kt"},
-    {"pattern": "baboon-runtime/java/.*\\.java"}
+    {"pattern": "baboon-runtime/java/.*\\.java"},
+    {"pattern": "baboon-runtime/dart/.*\\.dart"}
   ]
 }

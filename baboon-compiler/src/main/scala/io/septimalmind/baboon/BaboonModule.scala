@@ -10,6 +10,7 @@ import io.septimalmind.baboon.translator.python.*
 import io.septimalmind.baboon.translator.python.PyDefnTranslator.PyDefnTranslatorImpl
 import io.septimalmind.baboon.translator.rust.*
 import io.septimalmind.baboon.translator.scl.*
+import io.septimalmind.baboon.translator.dart.*
 import io.septimalmind.baboon.translator.java.*
 import io.septimalmind.baboon.translator.kotlin.*
 import io.septimalmind.baboon.translator.typescript.*
@@ -255,4 +256,31 @@ class BaboonCommonJvModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[JvBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[JvBaboonTranslator[F]]
+}
+
+class BaboonCommonDtModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
+  include(new SharedTranspilerModule[F])
+
+  makeSubcontext[DtDefnTranslator[F]]
+    .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
+    .withSubmodule(new ModuleDef {
+      make[DtDomainTreeTools].from[DtDomainTreeTools.DtDomainTreeToolsImpl]
+      make[DtDefnTranslator[F]].from[DtDefnTranslator.DtDefnTranslatorImpl[F]]
+      make[DtCodecFixtureTranslator].from[DtCodecFixtureTranslator.Impl]
+      make[DtCodecTestsTranslator].from[DtCodecTestsTranslator.Impl]
+      make[DtServiceWiringTranslator].from[DtServiceWiringTranslator.Impl]
+      many[DtCodecTranslator]
+        .add[DtJsonCodecGenerator]
+        .add[DtUEBACodecGenerator]
+    })
+
+  make[DtFileTools].from[DtFileTools.DtFileToolsImpl]
+  make[DtTreeTools].from[DtTreeTools.DtTreeToolsImpl]
+
+  make[DtTypeTranslator]
+  makeFactory[DtConversionTranslator.Factory[F]]
+
+  make[DtBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
+  many[BaboonAbstractTranslator[F]]
+    .ref[DtBaboonTranslator[F]]
 }
