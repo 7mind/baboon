@@ -201,7 +201,7 @@ object DtCodecTestsTranslator {
 
     private def crossLanguageJsonRead(definition: DomainMember.User, srcRef: DtValue.DtType): TextTree[DtValue] = {
       val codecName = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_JsonCodec")
-      val typeId    = definition.id.toString
+      val typeId    = definition.id.render
       val languages = List("cs", "scala", "rust", "typescript", "kotlin", "java")
       val readTests = languages.map { lang =>
         q"""test('Cross-language JSON reading from $lang', () {
@@ -220,7 +220,7 @@ object DtCodecTestsTranslator {
 
     private def crossLanguageJsonWrite(definition: DomainMember.User, srcRef: DtValue.DtType): TextTree[DtValue] = {
       val codecName = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_JsonCodec")
-      val typeId    = definition.id.toString
+      val typeId    = definition.id.render
       q"""test('Cross-language JSON writing', () {
          |  final rnd = $baboonRandomFactory.create();
          |  ${makeFixture(definition, domain, evo).shift(2).trim}
@@ -231,7 +231,7 @@ object DtCodecTestsTranslator {
 
     private def makeJsonWriteBody(definition: DomainMember.User, srcRef: DtValue.DtType): TextTree[DtValue] = {
       val codecName = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_JsonCodec")
-      val typeId    = definition.id.toString
+      val typeId    = definition.id.render
       val fixtureVar = definition.defn match {
         case _: Typedef.Adt => "fixtures.first"
         case _              => "fixture"
@@ -244,7 +244,7 @@ object DtCodecTestsTranslator {
 
     private def crossLanguageUebaRead(definition: DomainMember.User, srcRef: DtValue.DtType): TextTree[DtValue] = {
       val codecName = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_UebaCodec")
-      val typeId    = definition.id.toString
+      val typeId    = definition.id.render
       val languages = List("cs", "scala", "rust", "typescript", "kotlin", "java")
       val readTests = languages.map { lang =>
         q"""test('Cross-language UEBA reading from $lang', () {
@@ -263,7 +263,7 @@ object DtCodecTestsTranslator {
 
     private def crossLanguageUebaWrite(definition: DomainMember.User, srcRef: DtValue.DtType): TextTree[DtValue] = {
       val codecName = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_UebaCodec")
-      val typeId    = definition.id.toString
+      val typeId    = definition.id.render
       q"""test('Cross-language UEBA writing', () {
          |  final rnd = $baboonRandomFactory.create();
          |  ${makeFixture(definition, domain, evo).shift(2).trim}
@@ -274,7 +274,7 @@ object DtCodecTestsTranslator {
 
     private def makeUebaWriteBody(definition: DomainMember.User, srcRef: DtValue.DtType): TextTree[DtValue] = {
       val codecName = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_UebaCodec")
-      val typeId    = definition.id.toString
+      val typeId    = definition.id.render
       val fixtureVar = definition.defn match {
         case _: Typedef.Adt => "fixtures.first"
         case _              => "fixture"
