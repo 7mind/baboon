@@ -59,6 +59,13 @@ object CompilerTarget {
     generic: GenericOptions,
     language: JvOptions,
   ) extends CompilerTarget
+
+  case class DtTarget(
+    id: String,
+    output: OutputOptions,
+    generic: GenericOptions,
+    language: DtOptions,
+  ) extends CompilerTarget
 }
 
 final case class HktConfig(
@@ -111,6 +118,12 @@ object ServiceResultConfig {
     hkt        = None,
   )
   val javaDefault: ServiceResultConfig = ServiceResultConfig(
+    noErrors   = true,
+    resultType = None,
+    pattern    = None,
+    hkt        = None,
+  )
+  val dartDefault: ServiceResultConfig = ServiceResultConfig(
     noErrors   = true,
     resultType = None,
     pattern    = None,
@@ -218,6 +231,18 @@ final case class JvOptions(
   writeEvolutionDict: Boolean,
   wrappedAdtBranchCodecs: Boolean,
   enableDeprecatedEncoders: Boolean,
+  generateJsonCodecs: Boolean,
+  generateUebaCodecs: Boolean,
+  generateUebaCodecsByDefault: Boolean,
+  generateJsonCodecsByDefault: Boolean,
+  serviceResult: ServiceResultConfig,
+  serviceContext: ServiceContextConfig,
+  pragmas: Map[String, String],
+)
+
+final case class DtOptions(
+  writeEvolutionDict: Boolean,
+  wrappedAdtBranchCodecs: Boolean,
   generateJsonCodecs: Boolean,
   generateUebaCodecs: Boolean,
   generateUebaCodecsByDefault: Boolean,

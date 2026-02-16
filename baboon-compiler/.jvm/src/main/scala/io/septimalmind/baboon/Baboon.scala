@@ -44,6 +44,7 @@ object Baboon {
       |  :typescript              Generate TypeScript code
       |  :kotlin                  Generate Kotlin code
       |  :java                    Generate Java 21 code
+      |  :dart                    Generate Dart 3+ code
       |  :lsp                     Start LSP server
       |  :explore                 Start interactive explorer
       |
@@ -320,6 +321,28 @@ object Baboon {
                           ),
                         )
                     }
+                  case "dart" =>
+                    CaseApp.parse[DtCLIOptions](roleArgs).leftMap(e => s"Can't parse dart CLI: $e").map {
+                      case (opts, _) =>
+                        val shopts = mkGenericOpts(opts)
+
+                        CompilerTarget.DtTarget(
+                          id      = "Dart",
+                          output  = shopts.outOpts,
+                          generic = shopts.genericOpts,
+                          language = DtOptions(
+                            writeEvolutionDict          = opts.dtWriteEvolutionDict.getOrElse(false),
+                            wrappedAdtBranchCodecs      = opts.dtWrappedAdtBranchCodecs.getOrElse(false),
+                            generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
+                            generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
+                            generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
+                            generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                            serviceResult               = mkServiceResult(opts, ServiceResultConfig.dartDefault),
+                            serviceContext              = mkServiceContext(opts),
+                            pragmas                     = parsePragmas(opts.pragma),
+                          ),
+                        )
+                    }
                   case r => Left(s"Unknown role id: $r")
                 }
             }
@@ -370,7 +393,7 @@ object Baboon {
 
     val safeToRemove = NEList.from(opts.extAllowCleanup) match {
       case Some(value) => value.toSet
-      case None        => Set("meta", "cs", "json", "scala", "py", "pyc", "rs", "ts", "kt", "java")
+      case None        => Set("meta", "cs", "json", "scala", "py", "pyc", "rs", "ts", "kt", "java", "dart")
     }
 
     val outOpts = OutputOptions(
@@ -444,6 +467,8 @@ object Baboon {
         new BaboonJvmKtModule[F](t)
       case t: CompilerTarget.JvTarget =>
         new BaboonJvmJvModule[F](t)
+      case t: CompilerTarget.DtTarget =>
+        new BaboonJvmDtModule[F](t)
     }
 
     Injector

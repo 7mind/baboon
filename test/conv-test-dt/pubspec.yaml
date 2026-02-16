@@ -1,0 +1,13 @@
+name: conv_test_dt
+description: Baboon Dart cross-language compatibility tests
+version: 0.0.1
+
+environment:
+  sdk: ^3.0.0
+
+dependencies:
+  baboon_runtime:
+    path: packages/baboon_runtime
+
+dev_dependencies:
+  test: ^1.24.0

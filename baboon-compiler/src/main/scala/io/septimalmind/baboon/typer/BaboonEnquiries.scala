@@ -315,7 +315,8 @@ object BaboonEnquiries {
                       case a: BinReprLen.Alternatives =>
                         a.prefixed(1)
                       case r: BinReprLen.Range =>
-                        r.prefixed(1)
+                        // null case: 1 byte (bool marker); non-null: 1 + inner bytes
+                        BinReprLen.Range(1, r.max.map(_ + 1))
                     }
                 }
               // BinReprLen.Alternatives(Set(1, )) // N or 1...

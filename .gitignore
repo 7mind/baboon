@@ -196,3 +196,8 @@ project/plugins/project/
 
 # Node.js / TypeScript
 node_modules/
+
+# Dart
+.dart_tool/
+.packages
+pubspec.lock

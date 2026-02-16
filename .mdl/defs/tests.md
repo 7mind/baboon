@@ -31,7 +31,7 @@ TEST_DIR="./target/test-regular"
 
 # Create temporary test directories
 mkdir -p "$TEST_DIR"
-rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/jv-stub"
+rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/jv-stub" "$TEST_DIR/dt-stub"
 
 # Copy stub projects, excluding generated and build artifacts
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
@@ -48,6 +48,8 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --excl
   ./test/kt-stub/ "$TEST_DIR/kt-stub/"
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
   ./test/jv-stub/ "$TEST_DIR/jv-stub/"
+rsync -a --exclude='generated-*' --exclude='.dart_tool' --exclude='pubspec.lock' \
+  ./test/dt-stub/ "$TEST_DIR/dt-stub/"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
@@ -108,7 +110,19 @@ $BABOON_BIN \
   --jv-write-evolution-dict=true \
   --jv-wrapped-adt-branch-codecs=false \
   --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  :dart \
+  --output "$TEST_DIR/dt-stub/lib" \
+  --test-output "$TEST_DIR/dt-stub/test" \
+  --fixture-output "$TEST_DIR/dt-stub/lib" \
+  --dt-write-evolution-dict=true \
+  --dt-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true
+
+# Move Dart runtime files into the baboon_runtime package
+mv "$TEST_DIR/dt-stub/lib/baboon_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_fixture.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 
 ret success:bool=true
 ret test_dir:string="$TEST_DIR"
@@ -212,6 +226,20 @@ popd
 ret success:bool=true
 ```
 
+# action: test-dart-regular
+
+Run Dart tests with regular ADT codecs.
+
+```bash
+TEST_DIR="${action.test-gen-regular-adt.test_dir}"
+pushd "$TEST_DIR/dt-stub"
+dart pub get
+dart test
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-wrapped-adt
 
 Generate code with wrapped ADT branch codecs.
@@ -224,7 +252,7 @@ TEST_DIR="./target/test-wrapped"
 
 # Create temporary test directories
 mkdir -p "$TEST_DIR"
-rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/jv-stub"
+rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/jv-stub" "$TEST_DIR/dt-stub"
 
 # Copy stub projects, excluding generated and build artifacts
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
@@ -241,6 +269,8 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --excl
   ./test/kt-stub/ "$TEST_DIR/kt-stub/"
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
   ./test/jv-stub/ "$TEST_DIR/jv-stub/"
+rsync -a --exclude='generated-*' --exclude='.dart_tool' --exclude='pubspec.lock' \
+  ./test/dt-stub/ "$TEST_DIR/dt-stub/"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
@@ -301,7 +331,19 @@ $BABOON_BIN \
   --jv-write-evolution-dict=true \
   --jv-wrapped-adt-branch-codecs=true \
   --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  :dart \
+  --output "$TEST_DIR/dt-stub/lib" \
+  --test-output "$TEST_DIR/dt-stub/test" \
+  --fixture-output "$TEST_DIR/dt-stub/lib" \
+  --dt-write-evolution-dict=true \
+  --dt-wrapped-adt-branch-codecs=true \
+  --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true
+
+# Move Dart runtime files into the baboon_runtime package
+mv "$TEST_DIR/dt-stub/lib/baboon_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_fixture.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 
 ret success:bool=true
 ret test_dir:string="$TEST_DIR"
@@ -405,6 +447,20 @@ popd
 ret success:bool=true
 ```
 
+# action: test-dart-wrapped
+
+Run Dart tests with wrapped ADT codecs.
+
+```bash
+TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
+pushd "$TEST_DIR/dt-stub"
+dart pub get
+dart test
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-manual
 
 Generate code for manual test projects.
@@ -431,7 +487,12 @@ $BABOON_BIN \
   :kotlin \
   --output ./test/conv-test-kt/src/main/kotlin/generated-main \
   :java \
-  --output ./test/conv-test-jv/src/main/java/generated-main
+  --output ./test/conv-test-jv/src/main/java/generated-main \
+  :dart \
+  --output ./test/conv-test-dt/lib/generated
+
+# Move Dart runtime files into the baboon_runtime package
+mv ./test/conv-test-dt/lib/generated/baboon_runtime.dart ./test/conv-test-dt/packages/baboon_runtime/lib/
 
 ret success:bool=true
 ```
@@ -538,6 +599,21 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-compat-dart
+
+Generate compatibility test files using Dart.
+
+```bash
+dep action.test-gen-manual
+
+pushd ./test/conv-test-dt
+dart pub get
+dart run bin/compat_main.dart
+popd
+
+ret success:bool=true
+```
+
 # action: test-manual-cs
 
 Run manual C# compatibility tests.
@@ -550,6 +626,7 @@ dep action.test-gen-compat-rust
 dep action.test-gen-compat-typescript
 dep action.test-gen-compat-kotlin
 dep action.test-gen-compat-java
+dep action.test-gen-compat-dart
 
 pushd ./test/conv-test-cs
 dotnet build
@@ -570,6 +647,7 @@ dep action.test-gen-compat-rust
 dep action.test-gen-compat-typescript
 dep action.test-gen-compat-kotlin
 dep action.test-gen-compat-java
+dep action.test-gen-compat-dart
 
 pushd ./test/conv-test-sc
 sbt +clean +test
@@ -615,6 +693,7 @@ dep action.test-gen-compat-rust
 dep action.test-gen-compat-typescript
 dep action.test-gen-compat-kotlin
 dep action.test-gen-compat-java
+dep action.test-gen-compat-dart
 
 pushd ./test/conv-test-rs
 cargo test
@@ -635,6 +714,7 @@ dep action.test-gen-compat-rust
 dep action.test-gen-compat-typescript
 dep action.test-gen-compat-kotlin
 dep action.test-gen-compat-java
+dep action.test-gen-compat-dart
 
 pushd ./test/conv-test-ts
 npm install
@@ -656,6 +736,7 @@ dep action.test-gen-compat-rust
 dep action.test-gen-compat-typescript
 dep action.test-gen-compat-kotlin
 dep action.test-gen-compat-java
+dep action.test-gen-compat-dart
 
 pushd ./test/conv-test-kt
 gradle --no-daemon test
@@ -676,9 +757,32 @@ dep action.test-gen-compat-rust
 dep action.test-gen-compat-typescript
 dep action.test-gen-compat-kotlin
 dep action.test-gen-compat-java
+dep action.test-gen-compat-dart
 
 pushd ./test/conv-test-jv
 mvn clean test
+popd
+
+ret success:bool=true
+```
+
+# action: test-manual-dart
+
+Run Dart cross-language compatibility tests.
+
+```bash
+dep action.test-gen-compat-scala
+dep action.test-gen-compat-cs
+dep action.test-gen-compat-python
+dep action.test-gen-compat-rust
+dep action.test-gen-compat-typescript
+dep action.test-gen-compat-kotlin
+dep action.test-gen-compat-java
+dep action.test-gen-compat-dart
+
+pushd ./test/conv-test-dt
+dart pub get
+dart test
 popd
 
 ret success:bool=true
@@ -1497,6 +1601,7 @@ dep action.test-rust-regular
 dep action.test-typescript-regular
 dep action.test-kotlin-regular
 dep action.test-java-regular
+dep action.test-dart-regular
 dep action.test-cs-wrapped
 dep action.test-scala-wrapped
 dep action.test-python-wrapped
@@ -1504,12 +1609,14 @@ dep action.test-rust-wrapped
 dep action.test-typescript-wrapped
 dep action.test-kotlin-wrapped
 dep action.test-java-wrapped
+dep action.test-dart-wrapped
 dep action.test-manual-cs
 dep action.test-manual-scala
 dep action.test-manual-rust
 dep action.test-manual-typescript
 dep action.test-manual-kotlin
 dep action.test-manual-java
+dep action.test-manual-dart
 dep action.test-cs-wiring-either
 dep action.test-cs-wiring-result
 dep action.test-cs-wiring-outcome
