@@ -262,8 +262,9 @@ if ! command -v swift &> /dev/null; then
 fi
 
 # On macOS, Nix pollutes the environment with an incompatible SDK (VFS overlays, SDKROOT, compiler flags).
-# Explicitly reset to Xcode's SDK and strip Nix compiler/linker flags.
-if [[ "$(uname)" == "Darwin" ]] && [[ "${SDKROOT:-}" == /nix/* ]]; then
+# Explicitly reset to Xcode's SDK and strip ALL Nix compiler/linker flags.
+# Check SDKROOT and NIX_CFLAGS_COMPILE since nixpkgs 25.11 may not set SDKROOT but still injects SDK via CC wrapper.
+if [[ "$(uname)" == "Darwin" ]] && { [[ "${SDKROOT:-}" == /nix/* ]] || [[ -n "${NIX_CFLAGS_COMPILE:-}" ]] || [[ -n "${NIX_LDFLAGS:-}" ]]; }; then
   export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
   unset NIX_CFLAGS_COMPILE NIX_LDFLAGS NIX_CFLAGS_COMPILE_FOR_BUILD NIX_LDFLAGS_FOR_BUILD
 fi
@@ -519,8 +520,9 @@ if ! command -v swift &> /dev/null; then
 fi
 
 # On macOS, Nix pollutes the environment with an incompatible SDK (VFS overlays, SDKROOT, compiler flags).
-# Explicitly reset to Xcode's SDK and strip Nix compiler/linker flags.
-if [[ "$(uname)" == "Darwin" ]] && [[ "${SDKROOT:-}" == /nix/* ]]; then
+# Explicitly reset to Xcode's SDK and strip ALL Nix compiler/linker flags.
+# Check SDKROOT and NIX_CFLAGS_COMPILE since nixpkgs 25.11 may not set SDKROOT but still injects SDK via CC wrapper.
+if [[ "$(uname)" == "Darwin" ]] && { [[ "${SDKROOT:-}" == /nix/* ]] || [[ -n "${NIX_CFLAGS_COMPILE:-}" ]] || [[ -n "${NIX_LDFLAGS:-}" ]]; }; then
   export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
   unset NIX_CFLAGS_COMPILE NIX_LDFLAGS NIX_CFLAGS_COMPILE_FOR_BUILD NIX_LDFLAGS_FOR_BUILD
 fi
@@ -702,8 +704,9 @@ if ! command -v swift &> /dev/null; then
 fi
 
 # On macOS, Nix pollutes the environment with an incompatible SDK (VFS overlays, SDKROOT, compiler flags).
-# Explicitly reset to Xcode's SDK and strip Nix compiler/linker flags.
-if [[ "$(uname)" == "Darwin" ]] && [[ "${SDKROOT:-}" == /nix/* ]]; then
+# Explicitly reset to Xcode's SDK and strip ALL Nix compiler/linker flags.
+# Check SDKROOT and NIX_CFLAGS_COMPILE since nixpkgs 25.11 may not set SDKROOT but still injects SDK via CC wrapper.
+if [[ "$(uname)" == "Darwin" ]] && { [[ "${SDKROOT:-}" == /nix/* ]] || [[ -n "${NIX_CFLAGS_COMPILE:-}" ]] || [[ -n "${NIX_LDFLAGS:-}" ]]; }; then
   export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
   unset NIX_CFLAGS_COMPILE NIX_LDFLAGS NIX_CFLAGS_COMPILE_FOR_BUILD NIX_LDFLAGS_FOR_BUILD
 fi
@@ -918,8 +921,9 @@ if ! command -v swift &> /dev/null; then
 fi
 
 # On macOS, Nix pollutes the environment with an incompatible SDK (VFS overlays, SDKROOT, compiler flags).
-# Explicitly reset to Xcode's SDK and strip Nix compiler/linker flags.
-if [[ "$(uname)" == "Darwin" ]] && [[ "${SDKROOT:-}" == /nix/* ]]; then
+# Explicitly reset to Xcode's SDK and strip ALL Nix compiler/linker flags.
+# Check SDKROOT and NIX_CFLAGS_COMPILE since nixpkgs 25.11 may not set SDKROOT but still injects SDK via CC wrapper.
+if [[ "$(uname)" == "Darwin" ]] && { [[ "${SDKROOT:-}" == /nix/* ]] || [[ -n "${NIX_CFLAGS_COMPILE:-}" ]] || [[ -n "${NIX_LDFLAGS:-}" ]]; }; then
   export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
   unset NIX_CFLAGS_COMPILE NIX_LDFLAGS NIX_CFLAGS_COMPILE_FOR_BUILD NIX_LDFLAGS_FOR_BUILD
 fi
