@@ -263,15 +263,17 @@ fi
 
 # On macOS inside nix develop, the Nix apple-sdk pollutes the environment (SDKROOT, VFS overlays,
 # NIX_CFLAGS_COMPILE, CC wrapper flags) causing SDK version mismatch with Xcode's Swift compiler.
-# Run Swift in a clean environment via env -i to bypass ALL Nix pollution.
+# Strip ALL Nix-related variables and reset toolchain paths to Xcode defaults.
+if [[ "$(uname)" == "Darwin" ]]; then
+  while IFS='=' read -r var _; do [[ "$var" == NIX_* ]] && unset "$var"; done < <(env)
+  unset SDKROOT CC CXX AR LD RANLIB STRIP NM OBJCOPY configureFlags
+  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
+  export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$(/usr/bin/xcode-select -p)/usr/bin"
+fi
+
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/sw-stub"
-if [[ "$(uname)" == "Darwin" ]]; then
-  XCODE_DEVELOPER_DIR=$(/usr/bin/xcode-select -p)
-  env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin:${XCODE_DEVELOPER_DIR}/usr/bin" TMPDIR="${TMPDIR:-/tmp}" LANG="${LANG:-en_US.UTF-8}" swift test
-else
-  swift test
-fi
+swift test
 popd
 
 ret success:bool=true
@@ -521,15 +523,17 @@ fi
 
 # On macOS inside nix develop, the Nix apple-sdk pollutes the environment (SDKROOT, VFS overlays,
 # NIX_CFLAGS_COMPILE, CC wrapper flags) causing SDK version mismatch with Xcode's Swift compiler.
-# Run Swift in a clean environment via env -i to bypass ALL Nix pollution.
+# Strip ALL Nix-related variables and reset toolchain paths to Xcode defaults.
+if [[ "$(uname)" == "Darwin" ]]; then
+  while IFS='=' read -r var _; do [[ "$var" == NIX_* ]] && unset "$var"; done < <(env)
+  unset SDKROOT CC CXX AR LD RANLIB STRIP NM OBJCOPY configureFlags
+  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
+  export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$(/usr/bin/xcode-select -p)/usr/bin"
+fi
+
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
 pushd "$TEST_DIR/sw-stub"
-if [[ "$(uname)" == "Darwin" ]]; then
-  XCODE_DEVELOPER_DIR=$(/usr/bin/xcode-select -p)
-  env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin:${XCODE_DEVELOPER_DIR}/usr/bin" TMPDIR="${TMPDIR:-/tmp}" LANG="${LANG:-en_US.UTF-8}" swift test
-else
-  swift test
-fi
+swift test
 popd
 
 ret success:bool=true
@@ -705,14 +709,16 @@ fi
 
 # On macOS inside nix develop, the Nix apple-sdk pollutes the environment (SDKROOT, VFS overlays,
 # NIX_CFLAGS_COMPILE, CC wrapper flags) causing SDK version mismatch with Xcode's Swift compiler.
-# Run Swift in a clean environment via env -i to bypass ALL Nix pollution.
-pushd ./test/conv-test-sw
+# Strip ALL Nix-related variables and reset toolchain paths to Xcode defaults.
 if [[ "$(uname)" == "Darwin" ]]; then
-  XCODE_DEVELOPER_DIR=$(/usr/bin/xcode-select -p)
-  env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin:${XCODE_DEVELOPER_DIR}/usr/bin" TMPDIR="${TMPDIR:-/tmp}" LANG="${LANG:-en_US.UTF-8}" swift run CompatMain
-else
-  swift run CompatMain
+  while IFS='=' read -r var _; do [[ "$var" == NIX_* ]] && unset "$var"; done < <(env)
+  unset SDKROOT CC CXX AR LD RANLIB STRIP NM OBJCOPY configureFlags
+  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
+  export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$(/usr/bin/xcode-select -p)/usr/bin"
 fi
+
+pushd ./test/conv-test-sw
+swift run CompatMain
 popd
 
 ret success:bool=true
@@ -922,14 +928,16 @@ fi
 
 # On macOS inside nix develop, the Nix apple-sdk pollutes the environment (SDKROOT, VFS overlays,
 # NIX_CFLAGS_COMPILE, CC wrapper flags) causing SDK version mismatch with Xcode's Swift compiler.
-# Run Swift in a clean environment via env -i to bypass ALL Nix pollution.
-pushd ./test/conv-test-sw
+# Strip ALL Nix-related variables and reset toolchain paths to Xcode defaults.
 if [[ "$(uname)" == "Darwin" ]]; then
-  XCODE_DEVELOPER_DIR=$(/usr/bin/xcode-select -p)
-  env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin:${XCODE_DEVELOPER_DIR}/usr/bin" TMPDIR="${TMPDIR:-/tmp}" LANG="${LANG:-en_US.UTF-8}" swift test
-else
-  swift test
+  while IFS='=' read -r var _; do [[ "$var" == NIX_* ]] && unset "$var"; done < <(env)
+  unset SDKROOT CC CXX AR LD RANLIB STRIP NM OBJCOPY configureFlags
+  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
+  export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$(/usr/bin/xcode-select -p)/usr/bin"
 fi
+
+pushd ./test/conv-test-sw
+swift test
 popd
 
 ret success:bool=true
