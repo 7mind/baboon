@@ -261,17 +261,17 @@ if ! command -v swift &> /dev/null; then
   exit 0
 fi
 
-# On macOS, Nix pollutes the environment with an incompatible SDK (VFS overlays, SDKROOT, compiler flags).
-# Explicitly reset to Xcode's SDK and strip ALL Nix compiler/linker flags.
-# Check SDKROOT and NIX_CFLAGS_COMPILE since nixpkgs 25.11 may not set SDKROOT but still injects SDK via CC wrapper.
-if [[ "$(uname)" == "Darwin" ]] && { [[ "${SDKROOT:-}" == /nix/* ]] || [[ -n "${NIX_CFLAGS_COMPILE:-}" ]] || [[ -n "${NIX_LDFLAGS:-}" ]]; }; then
-  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
-  unset NIX_CFLAGS_COMPILE NIX_LDFLAGS NIX_CFLAGS_COMPILE_FOR_BUILD NIX_LDFLAGS_FOR_BUILD
-fi
-
+# On macOS inside nix develop, the Nix apple-sdk pollutes the environment (SDKROOT, VFS overlays,
+# NIX_CFLAGS_COMPILE, CC wrapper flags) causing SDK version mismatch with Xcode's Swift compiler.
+# Run Swift in a clean environment via env -i to bypass ALL Nix pollution.
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/sw-stub"
-swift test
+if [[ "$(uname)" == "Darwin" ]]; then
+  XCODE_DEVELOPER_DIR=$(/usr/bin/xcode-select -p)
+  env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin:${XCODE_DEVELOPER_DIR}/usr/bin" TMPDIR="${TMPDIR:-/tmp}" LANG="${LANG:-en_US.UTF-8}" swift test
+else
+  swift test
+fi
 popd
 
 ret success:bool=true
@@ -519,17 +519,17 @@ if ! command -v swift &> /dev/null; then
   exit 0
 fi
 
-# On macOS, Nix pollutes the environment with an incompatible SDK (VFS overlays, SDKROOT, compiler flags).
-# Explicitly reset to Xcode's SDK and strip ALL Nix compiler/linker flags.
-# Check SDKROOT and NIX_CFLAGS_COMPILE since nixpkgs 25.11 may not set SDKROOT but still injects SDK via CC wrapper.
-if [[ "$(uname)" == "Darwin" ]] && { [[ "${SDKROOT:-}" == /nix/* ]] || [[ -n "${NIX_CFLAGS_COMPILE:-}" ]] || [[ -n "${NIX_LDFLAGS:-}" ]]; }; then
-  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
-  unset NIX_CFLAGS_COMPILE NIX_LDFLAGS NIX_CFLAGS_COMPILE_FOR_BUILD NIX_LDFLAGS_FOR_BUILD
-fi
-
+# On macOS inside nix develop, the Nix apple-sdk pollutes the environment (SDKROOT, VFS overlays,
+# NIX_CFLAGS_COMPILE, CC wrapper flags) causing SDK version mismatch with Xcode's Swift compiler.
+# Run Swift in a clean environment via env -i to bypass ALL Nix pollution.
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
 pushd "$TEST_DIR/sw-stub"
-swift test
+if [[ "$(uname)" == "Darwin" ]]; then
+  XCODE_DEVELOPER_DIR=$(/usr/bin/xcode-select -p)
+  env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin:${XCODE_DEVELOPER_DIR}/usr/bin" TMPDIR="${TMPDIR:-/tmp}" LANG="${LANG:-en_US.UTF-8}" swift test
+else
+  swift test
+fi
 popd
 
 ret success:bool=true
@@ -703,16 +703,16 @@ if ! command -v swift &> /dev/null; then
   exit 0
 fi
 
-# On macOS, Nix pollutes the environment with an incompatible SDK (VFS overlays, SDKROOT, compiler flags).
-# Explicitly reset to Xcode's SDK and strip ALL Nix compiler/linker flags.
-# Check SDKROOT and NIX_CFLAGS_COMPILE since nixpkgs 25.11 may not set SDKROOT but still injects SDK via CC wrapper.
-if [[ "$(uname)" == "Darwin" ]] && { [[ "${SDKROOT:-}" == /nix/* ]] || [[ -n "${NIX_CFLAGS_COMPILE:-}" ]] || [[ -n "${NIX_LDFLAGS:-}" ]]; }; then
-  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
-  unset NIX_CFLAGS_COMPILE NIX_LDFLAGS NIX_CFLAGS_COMPILE_FOR_BUILD NIX_LDFLAGS_FOR_BUILD
-fi
-
+# On macOS inside nix develop, the Nix apple-sdk pollutes the environment (SDKROOT, VFS overlays,
+# NIX_CFLAGS_COMPILE, CC wrapper flags) causing SDK version mismatch with Xcode's Swift compiler.
+# Run Swift in a clean environment via env -i to bypass ALL Nix pollution.
 pushd ./test/conv-test-sw
-swift run CompatMain
+if [[ "$(uname)" == "Darwin" ]]; then
+  XCODE_DEVELOPER_DIR=$(/usr/bin/xcode-select -p)
+  env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin:${XCODE_DEVELOPER_DIR}/usr/bin" TMPDIR="${TMPDIR:-/tmp}" LANG="${LANG:-en_US.UTF-8}" swift run CompatMain
+else
+  swift run CompatMain
+fi
 popd
 
 ret success:bool=true
@@ -920,16 +920,16 @@ if ! command -v swift &> /dev/null; then
   exit 0
 fi
 
-# On macOS, Nix pollutes the environment with an incompatible SDK (VFS overlays, SDKROOT, compiler flags).
-# Explicitly reset to Xcode's SDK and strip ALL Nix compiler/linker flags.
-# Check SDKROOT and NIX_CFLAGS_COMPILE since nixpkgs 25.11 may not set SDKROOT but still injects SDK via CC wrapper.
-if [[ "$(uname)" == "Darwin" ]] && { [[ "${SDKROOT:-}" == /nix/* ]] || [[ -n "${NIX_CFLAGS_COMPILE:-}" ]] || [[ -n "${NIX_LDFLAGS:-}" ]]; }; then
-  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
-  unset NIX_CFLAGS_COMPILE NIX_LDFLAGS NIX_CFLAGS_COMPILE_FOR_BUILD NIX_LDFLAGS_FOR_BUILD
-fi
-
+# On macOS inside nix develop, the Nix apple-sdk pollutes the environment (SDKROOT, VFS overlays,
+# NIX_CFLAGS_COMPILE, CC wrapper flags) causing SDK version mismatch with Xcode's Swift compiler.
+# Run Swift in a clean environment via env -i to bypass ALL Nix pollution.
 pushd ./test/conv-test-sw
-swift test
+if [[ "$(uname)" == "Darwin" ]]; then
+  XCODE_DEVELOPER_DIR=$(/usr/bin/xcode-select -p)
+  env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin:${XCODE_DEVELOPER_DIR}/usr/bin" TMPDIR="${TMPDIR:-/tmp}" LANG="${LANG:-en_US.UTF-8}" swift test
+else
+  swift test
+fi
 popd
 
 ret success:bool=true
