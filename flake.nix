@@ -101,6 +101,7 @@
             maven
 
             dart
+            # Swift: not available in nixpkgs (GCC 14 build failure), install via swiftly or swift.org
           ];
         };
       }

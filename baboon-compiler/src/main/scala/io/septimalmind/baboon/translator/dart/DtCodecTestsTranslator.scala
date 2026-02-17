@@ -204,7 +204,7 @@ object DtCodecTestsTranslator {
     private def crossLanguageJsonRead(definition: DomainMember.User, srcRef: DtValue.DtType): TextTree[DtValue] = {
       val codecName = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_JsonCodec")
       val typeId    = definition.id.render
-      val languages = List("cs", "scala", "rust", "typescript", "kotlin", "java")
+      val languages = List("cs", "scala", "rust", "typescript", "kotlin", "java", "swift")
       val readTests = languages.map {
         lang =>
           q"""test('Cross-language JSON reading from $lang', () {
@@ -248,7 +248,7 @@ object DtCodecTestsTranslator {
     private def crossLanguageUebaRead(definition: DomainMember.User, srcRef: DtValue.DtType): TextTree[DtValue] = {
       val codecName = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_UebaCodec")
       val typeId    = definition.id.render
-      val languages = List("cs", "scala", "rust", "typescript", "kotlin", "java")
+      val languages = List("cs", "scala", "rust", "typescript", "kotlin", "java", "swift")
       val readTests = languages.map {
         lang =>
           q"""test('Cross-language UEBA reading from $lang', () {

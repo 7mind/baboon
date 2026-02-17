@@ -31,7 +31,7 @@ TEST_DIR="./target/test-regular"
 
 # Create temporary test directories
 mkdir -p "$TEST_DIR"
-rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/jv-stub" "$TEST_DIR/dt-stub"
+rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/jv-stub" "$TEST_DIR/dt-stub" "$TEST_DIR/sw-stub"
 
 # Copy stub projects, excluding generated and build artifacts
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
@@ -50,6 +50,8 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
   ./test/jv-stub/ "$TEST_DIR/jv-stub/"
 rsync -a --exclude='generated-*' --exclude='.dart_tool' --exclude='pubspec.lock' \
   ./test/dt-stub/ "$TEST_DIR/dt-stub/"
+rsync -a --exclude='.build' --exclude='.swiftpm' \
+  ./test/sw-stub/ "$TEST_DIR/sw-stub/"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
@@ -117,6 +119,14 @@ $BABOON_BIN \
   --fixture-output "$TEST_DIR/dt-stub/lib" \
   --dt-write-evolution-dict=true \
   --dt-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  :swift \
+  --output "$TEST_DIR/sw-stub/Sources/BaboonGenerated" \
+  --test-output "$TEST_DIR/sw-stub/Tests/BaboonTests" \
+  --fixture-output "$TEST_DIR/sw-stub/Sources/BaboonGenerated" \
+  --sw-write-evolution-dict=true \
+  --sw-wrapped-adt-branch-codecs=false \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true
 
@@ -240,6 +250,25 @@ popd
 ret success:bool=true
 ```
 
+# action: test-swift-regular
+
+Run Swift tests with regular ADT codecs.
+
+```bash
+if ! command -v swift &> /dev/null; then
+  echo "Swift not found, skipping test"
+  ret success:bool=true
+  exit 0
+fi
+
+TEST_DIR="${action.test-gen-regular-adt.test_dir}"
+pushd "$TEST_DIR/sw-stub"
+swift test
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-wrapped-adt
 
 Generate code with wrapped ADT branch codecs.
@@ -252,7 +281,7 @@ TEST_DIR="./target/test-wrapped"
 
 # Create temporary test directories
 mkdir -p "$TEST_DIR"
-rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/jv-stub" "$TEST_DIR/dt-stub"
+rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/jv-stub" "$TEST_DIR/dt-stub" "$TEST_DIR/sw-stub"
 
 # Copy stub projects, excluding generated and build artifacts
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
@@ -271,6 +300,8 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
   ./test/jv-stub/ "$TEST_DIR/jv-stub/"
 rsync -a --exclude='generated-*' --exclude='.dart_tool' --exclude='pubspec.lock' \
   ./test/dt-stub/ "$TEST_DIR/dt-stub/"
+rsync -a --exclude='.build' --exclude='.swiftpm' \
+  ./test/sw-stub/ "$TEST_DIR/sw-stub/"
 
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
@@ -338,6 +369,14 @@ $BABOON_BIN \
   --fixture-output "$TEST_DIR/dt-stub/lib" \
   --dt-write-evolution-dict=true \
   --dt-wrapped-adt-branch-codecs=true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  :swift \
+  --output "$TEST_DIR/sw-stub/Sources/BaboonGenerated" \
+  --test-output "$TEST_DIR/sw-stub/Tests/BaboonTests" \
+  --fixture-output "$TEST_DIR/sw-stub/Sources/BaboonGenerated" \
+  --sw-write-evolution-dict=true \
+  --sw-wrapped-adt-branch-codecs=true \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true
 
@@ -461,6 +500,25 @@ popd
 ret success:bool=true
 ```
 
+# action: test-swift-wrapped
+
+Run Swift tests with wrapped ADT codecs.
+
+```bash
+if ! command -v swift &> /dev/null; then
+  echo "Swift not found, skipping test"
+  ret success:bool=true
+  exit 0
+fi
+
+TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
+pushd "$TEST_DIR/sw-stub"
+swift test
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-manual
 
 Generate code for manual test projects.
@@ -489,7 +547,9 @@ $BABOON_BIN \
   :java \
   --output ./test/conv-test-jv/src/main/java/generated-main \
   :dart \
-  --output ./test/conv-test-dt/lib/generated
+  --output ./test/conv-test-dt/lib/generated \
+  :swift \
+  --output ./test/conv-test-sw/Sources/BaboonGenerated
 
 # Move Dart runtime files into the baboon_runtime package
 mv ./test/conv-test-dt/lib/generated/baboon_runtime.dart ./test/conv-test-dt/packages/baboon_runtime/lib/
@@ -614,6 +674,26 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-compat-swift
+
+Generate compatibility test files using Swift.
+
+```bash
+dep action.test-gen-manual
+
+if ! command -v swift &> /dev/null; then
+  echo "Swift not found, skipping compat gen"
+  ret success:bool=true
+  exit 0
+fi
+
+pushd ./test/conv-test-sw
+swift run CompatMain
+popd
+
+ret success:bool=true
+```
+
 # action: test-manual-cs
 
 Run manual C# compatibility tests.
@@ -627,6 +707,7 @@ dep action.test-gen-compat-typescript
 dep action.test-gen-compat-kotlin
 dep action.test-gen-compat-java
 dep action.test-gen-compat-dart
+dep action.test-gen-compat-swift
 
 pushd ./test/conv-test-cs
 dotnet build
@@ -648,6 +729,7 @@ dep action.test-gen-compat-typescript
 dep action.test-gen-compat-kotlin
 dep action.test-gen-compat-java
 dep action.test-gen-compat-dart
+dep action.test-gen-compat-swift
 
 pushd ./test/conv-test-sc
 sbt +clean +test
@@ -694,6 +776,7 @@ dep action.test-gen-compat-typescript
 dep action.test-gen-compat-kotlin
 dep action.test-gen-compat-java
 dep action.test-gen-compat-dart
+dep action.test-gen-compat-swift
 
 pushd ./test/conv-test-rs
 cargo test
@@ -715,6 +798,7 @@ dep action.test-gen-compat-typescript
 dep action.test-gen-compat-kotlin
 dep action.test-gen-compat-java
 dep action.test-gen-compat-dart
+dep action.test-gen-compat-swift
 
 pushd ./test/conv-test-ts
 npm install
@@ -737,6 +821,7 @@ dep action.test-gen-compat-typescript
 dep action.test-gen-compat-kotlin
 dep action.test-gen-compat-java
 dep action.test-gen-compat-dart
+dep action.test-gen-compat-swift
 
 pushd ./test/conv-test-kt
 gradle --no-daemon test
@@ -758,6 +843,7 @@ dep action.test-gen-compat-typescript
 dep action.test-gen-compat-kotlin
 dep action.test-gen-compat-java
 dep action.test-gen-compat-dart
+dep action.test-gen-compat-swift
 
 pushd ./test/conv-test-jv
 mvn clean test
@@ -779,10 +865,39 @@ dep action.test-gen-compat-typescript
 dep action.test-gen-compat-kotlin
 dep action.test-gen-compat-java
 dep action.test-gen-compat-dart
+dep action.test-gen-compat-swift
 
 pushd ./test/conv-test-dt
 dart pub get
 dart test
+popd
+
+ret success:bool=true
+```
+
+# action: test-manual-swift
+
+Run Swift cross-language compatibility tests.
+
+```bash
+dep action.test-gen-compat-scala
+dep action.test-gen-compat-cs
+dep action.test-gen-compat-python
+dep action.test-gen-compat-rust
+dep action.test-gen-compat-typescript
+dep action.test-gen-compat-kotlin
+dep action.test-gen-compat-java
+dep action.test-gen-compat-dart
+dep action.test-gen-compat-swift
+
+if ! command -v swift &> /dev/null; then
+  echo "Swift not found, skipping test"
+  ret success:bool=true
+  exit 0
+fi
+
+pushd ./test/conv-test-sw
+swift test
 popd
 
 ret success:bool=true
@@ -1602,6 +1717,7 @@ dep action.test-typescript-regular
 dep action.test-kotlin-regular
 dep action.test-java-regular
 dep action.test-dart-regular
+dep action.test-swift-regular
 dep action.test-cs-wrapped
 dep action.test-scala-wrapped
 dep action.test-python-wrapped
@@ -1610,6 +1726,7 @@ dep action.test-typescript-wrapped
 dep action.test-kotlin-wrapped
 dep action.test-java-wrapped
 dep action.test-dart-wrapped
+dep action.test-swift-wrapped
 dep action.test-manual-cs
 dep action.test-manual-scala
 dep action.test-manual-rust
@@ -1617,6 +1734,7 @@ dep action.test-manual-typescript
 dep action.test-manual-kotlin
 dep action.test-manual-java
 dep action.test-manual-dart
+dep action.test-manual-swift
 dep action.test-cs-wiring-either
 dep action.test-cs-wiring-result
 dep action.test-cs-wiring-outcome

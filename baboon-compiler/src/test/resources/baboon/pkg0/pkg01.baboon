@@ -11,6 +11,7 @@ foreign ObscureInt {
   rust = "std::primitive::i32"
   typescript = "number"
   dart = "dart.core.int"
+  swift = "Swift.Int32"
 }
 
 foreign ForeignStruct {
@@ -22,6 +23,7 @@ foreign ForeignStruct {
   rust = "std::primitive::i32"
   typescript = "Record<string, never>"
   dart = "dart.core.int"
+  swift = "Swift.Int32"
 }
 
 foreign AliasedScalar {

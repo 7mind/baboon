@@ -14,6 +14,7 @@ import io.septimalmind.baboon.translator.scl.*
 import io.septimalmind.baboon.translator.dart.*
 import io.septimalmind.baboon.translator.java.*
 import io.septimalmind.baboon.translator.kotlin.*
+import io.septimalmind.baboon.translator.swift.*
 import io.septimalmind.baboon.translator.typescript.*
 import io.septimalmind.baboon.typer.*
 import io.septimalmind.baboon.typer.model.*
@@ -285,4 +286,31 @@ class BaboonCommonDtModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[DtBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[DtBaboonTranslator[F]]
+}
+
+class BaboonCommonSwModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
+  include(new SharedTranspilerModule[F])
+
+  makeSubcontext[SwDefnTranslator[F]]
+    .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
+    .withSubmodule(new ModuleDef {
+      make[SwDomainTreeTools].from[SwDomainTreeTools.SwDomainTreeToolsImpl]
+      make[SwDefnTranslator[F]].from[SwDefnTranslator.SwDefnTranslatorImpl[F]]
+      make[SwCodecFixtureTranslator].from[SwCodecFixtureTranslator.Impl]
+      make[SwCodecTestsTranslator].from[SwCodecTestsTranslator.Impl]
+      make[SwServiceWiringTranslator].from[SwServiceWiringTranslator.Impl]
+      many[SwCodecTranslator]
+        .add[SwJsonCodecGenerator]
+        .add[SwUEBACodecGenerator]
+    })
+
+  make[SwFileTools].from[SwFileTools.SwFileToolsImpl]
+  make[SwTreeTools].from[SwTreeTools.SwTreeToolsImpl]
+
+  make[SwTypeTranslator]
+  makeFactory[SwConversionTranslator.Factory[F]]
+
+  make[SwBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
+  many[BaboonAbstractTranslator[F]]
+    .ref[SwBaboonTranslator[F]]
 }

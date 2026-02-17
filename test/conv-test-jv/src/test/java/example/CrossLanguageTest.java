@@ -159,4 +159,18 @@ public class CrossLanguageTest {
         assertEquals(javaData, tsData, "Java and TypeScript UEBA data should be equal");
         assertEquals(javaData, kotlinData, "Java and Kotlin UEBA data should be equal");
     }
+
+    @Test
+    public void javaJsonShouldReadSwiftGeneratedJson() throws Exception {
+        var file = baseDir.resolve("swift-json/all-basic-types.json");
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.exists(file), "Swift JSON file not found, skipping");
+        assertBasicFields(readJsonFile("swift"), "Swift JSON");
+    }
+
+    @Test
+    public void javaUebaShouldReadSwiftGeneratedUeba() throws Exception {
+        var file = baseDir.resolve("swift-ueba/all-basic-types.ueba");
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.exists(file), "Swift UEBA file not found, skipping");
+        assertBasicFields(readUebaFile("swift"), "Swift UEBA");
+    }
 }

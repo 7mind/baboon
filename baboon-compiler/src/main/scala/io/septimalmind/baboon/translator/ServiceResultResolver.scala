@@ -45,6 +45,7 @@ object ServiceResultResolver {
     "kotlin"     -> "kotlin.service.result.",
     "rust"       -> "rust.service.result.",
     "python"     -> "python.service.result.",
+    "swift"      -> "swift.service.result.",
     "typescript" -> "typescript.service.result.",
   )
 

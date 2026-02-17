@@ -20,6 +20,7 @@ foreign ObscureInt {
   rust = "std::primitive::i32"
   typescript = "number"
   dart = "dart.core.int"
+  swift = "Swift.Int32"
 }
 
 root data T1_E1_RET {

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Baboon is a Domain Modeling Language (DML) compiler with schema evolution support. It compiles `.baboon` domain model files to multiple target languages (Scala, C#, Python, Rust, TypeScript, Kotlin, Java, Dart) with automatic JSON and UEBA codec generation.
+Baboon is a Domain Modeling Language (DML) compiler with schema evolution support. It compiles `.baboon` domain model files to multiple target languages (Scala, C#, Python, Rust, TypeScript, Kotlin, Java, Dart, Swift) with automatic JSON and UEBA codec generation.
 
 ## Essential Commands
 
@@ -23,11 +23,11 @@ mdl :build :test
 
 # Run specific test suites independently:
 # - Regular ADT tests
-mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular :test-rust-regular :test-typescript-regular :test-kotlin-regular :test-java-regular :test-dart-regular
+mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular :test-rust-regular :test-typescript-regular :test-kotlin-regular :test-java-regular :test-dart-regular :test-swift-regular
 # - Wrapped ADT tests
-mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped :test-rust-wrapped :test-typescript-wrapped :test-kotlin-wrapped :test-java-wrapped :test-dart-wrapped
+mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped :test-rust-wrapped :test-typescript-wrapped :test-kotlin-wrapped :test-java-wrapped :test-dart-wrapped :test-swift-wrapped
 # - Manual/compatibility tests
-mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-gen-compat-rust :test-gen-compat-typescript :test-gen-compat-kotlin :test-gen-compat-java :test-gen-compat-dart :test-manual-cs :test-manual-scala :test-manual-rust :test-manual-typescript :test-manual-kotlin :test-manual-java :test-manual-dart
+mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-gen-compat-rust :test-gen-compat-typescript :test-gen-compat-kotlin :test-gen-compat-java :test-gen-compat-dart :test-gen-compat-swift :test-manual-cs :test-manual-scala :test-manual-rust :test-manual-typescript :test-manual-kotlin :test-manual-java :test-manual-dart :test-manual-swift
 
 # Run complete build pipeline (format, build, test)
 mdl :full-build
@@ -74,7 +74,9 @@ baboon \
   :java \
   --output ./output/java \
   :dart \
-  --output ./output/dart
+  --output ./output/dart \
+  :swift \
+  --output ./output/swift
 ```
 
 ## High-Level Architecture
@@ -105,6 +107,7 @@ baboon \
    - `kotlin/` - Kotlin code generation with Jackson JSON codecs and UEBA binary codecs
    - `java/` - Java code generation with Jackson JSON codecs and UEBA binary codecs
    - `dart/` - Dart code generation with dart:convert JSON codecs and UEBA binary codecs
+   - `swift/` - Swift code generation with JSONSerialization JSON codecs and UEBA binary codecs
    - Each generator produces source files, codec implementations and conversions from lower versions to higher ones
 
 5. **Runtime Support (`src/main/resources/baboon-runtime/`)**
@@ -132,7 +135,7 @@ Baboon files support:
 
 3. **Codec Generation**:
    - Generates both JSON and custom binary (UEBA) codecs
-   - JSON: Circe (Scala), Newtonsoft.Json (C#), serde (Rust), Jackson (Kotlin, Java), dart:convert (Dart), custom (Python, TypeScript)
+   - JSON: Circe (Scala), Newtonsoft.Json (C#), serde (Rust), Jackson (Kotlin, Java), dart:convert (Dart), JSONSerialization (Swift), custom (Python, TypeScript)
    - Supports automatic evolution between versions
 
 4. **CLI Design**:
@@ -143,8 +146,8 @@ Baboon files support:
 
 - Unit tests for individual components
 - Integration tests with full compilation cycles
-- Generated code tests in `test/cs-stub/`, `test/sc-stub/`, `test/py-stub/`, `test/rs-stub/`, `test/ts-stub/`, `test/kt-stub/`, `test/jv-stub/`, and `test/dt-stub/`
-- Cross-platform compatibility tests in `test/conv-test-{cs,sc,py,rs,ts,kt,jv,dt}/` (verifies JSON/UEBA interop across all languages)
+- Generated code tests in `test/cs-stub/`, `test/sc-stub/`, `test/py-stub/`, `test/rs-stub/`, `test/ts-stub/`, `test/kt-stub/`, `test/jv-stub/`, `test/dt-stub/`, and `test/sw-stub/`
+- Cross-platform compatibility tests in `test/conv-test-{cs,sc,py,rs,ts,kt,jv,dt,sw}/` (verifies JSON/UEBA interop across all languages)
 - Evolution tests validating schema migration
 
 **Parallel Test Execution**: Test actions `test-gen-regular-adt` and `test-gen-wrapped-adt` can run in parallel. Each action:
