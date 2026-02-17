@@ -261,20 +261,8 @@ if ! command -v swift &> /dev/null; then
   exit 0
 fi
 
-# On macOS inside nix develop, the Nix apple-sdk pollutes the environment (SDKROOT, VFS overlays,
-# NIX_CFLAGS_COMPILE, CC wrapper flags) causing SDK version mismatch with Xcode's Swift compiler.
-# Strip ALL Nix-related variables and reset toolchain paths to Xcode defaults.
-if [[ "$(uname)" == "Darwin" ]]; then
-  while IFS='=' read -r var _; do [[ "$var" == NIX_* ]] && unset "$var"; done < <(env)
-  unset SDKROOT CC CXX AR LD RANLIB STRIP NM OBJCOPY configureFlags
-  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
-  export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$(/usr/bin/xcode-select -p)/usr/bin"
-fi
-
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
-pushd "$TEST_DIR/sw-stub"
-swift test
-popd
+./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
 
 ret success:bool=true
 ```
@@ -521,20 +509,8 @@ if ! command -v swift &> /dev/null; then
   exit 0
 fi
 
-# On macOS inside nix develop, the Nix apple-sdk pollutes the environment (SDKROOT, VFS overlays,
-# NIX_CFLAGS_COMPILE, CC wrapper flags) causing SDK version mismatch with Xcode's Swift compiler.
-# Strip ALL Nix-related variables and reset toolchain paths to Xcode defaults.
-if [[ "$(uname)" == "Darwin" ]]; then
-  while IFS='=' read -r var _; do [[ "$var" == NIX_* ]] && unset "$var"; done < <(env)
-  unset SDKROOT CC CXX AR LD RANLIB STRIP NM OBJCOPY configureFlags
-  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
-  export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$(/usr/bin/xcode-select -p)/usr/bin"
-fi
-
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
-pushd "$TEST_DIR/sw-stub"
-swift test
-popd
+./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
 
 ret success:bool=true
 ```
@@ -707,19 +683,7 @@ if ! command -v swift &> /dev/null; then
   exit 0
 fi
 
-# On macOS inside nix develop, the Nix apple-sdk pollutes the environment (SDKROOT, VFS overlays,
-# NIX_CFLAGS_COMPILE, CC wrapper flags) causing SDK version mismatch with Xcode's Swift compiler.
-# Strip ALL Nix-related variables and reset toolchain paths to Xcode defaults.
-if [[ "$(uname)" == "Darwin" ]]; then
-  while IFS='=' read -r var _; do [[ "$var" == NIX_* ]] && unset "$var"; done < <(env)
-  unset SDKROOT CC CXX AR LD RANLIB STRIP NM OBJCOPY configureFlags
-  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
-  export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$(/usr/bin/xcode-select -p)/usr/bin"
-fi
-
-pushd ./test/conv-test-sw
-swift run CompatMain
-popd
+./scripts/swift-xcode.sh ./test/conv-test-sw run CompatMain
 
 ret success:bool=true
 ```
@@ -926,19 +890,7 @@ if ! command -v swift &> /dev/null; then
   exit 0
 fi
 
-# On macOS inside nix develop, the Nix apple-sdk pollutes the environment (SDKROOT, VFS overlays,
-# NIX_CFLAGS_COMPILE, CC wrapper flags) causing SDK version mismatch with Xcode's Swift compiler.
-# Strip ALL Nix-related variables and reset toolchain paths to Xcode defaults.
-if [[ "$(uname)" == "Darwin" ]]; then
-  while IFS='=' read -r var _; do [[ "$var" == NIX_* ]] && unset "$var"; done < <(env)
-  unset SDKROOT CC CXX AR LD RANLIB STRIP NM OBJCOPY configureFlags
-  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
-  export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$(/usr/bin/xcode-select -p)/usr/bin"
-fi
-
-pushd ./test/conv-test-sw
-swift test
-popd
+./scripts/swift-xcode.sh ./test/conv-test-sw test
 
 ret success:bool=true
 ```
