@@ -261,6 +261,11 @@ if ! command -v swift &> /dev/null; then
   exit 0
 fi
 
+# On macOS, Nix may set SDKROOT to an incompatible SDK. Unset it so Swift uses Xcode's SDK.
+if [[ "$(uname)" == "Darwin" ]] && [[ "$SDKROOT" == /nix/* ]]; then
+  unset SDKROOT
+fi
+
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/sw-stub"
 swift test
@@ -511,6 +516,11 @@ if ! command -v swift &> /dev/null; then
   exit 0
 fi
 
+# On macOS, Nix may set SDKROOT to an incompatible SDK. Unset it so Swift uses Xcode's SDK.
+if [[ "$(uname)" == "Darwin" ]] && [[ "$SDKROOT" == /nix/* ]]; then
+  unset SDKROOT
+fi
+
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
 pushd "$TEST_DIR/sw-stub"
 swift test
@@ -685,6 +695,11 @@ if ! command -v swift &> /dev/null; then
   echo "Swift not found, skipping compat gen"
   ret success:bool=true
   exit 0
+fi
+
+# On macOS, Nix may set SDKROOT to an incompatible SDK. Unset it so Swift uses Xcode's SDK.
+if [[ "$(uname)" == "Darwin" ]] && [[ "$SDKROOT" == /nix/* ]]; then
+  unset SDKROOT
 fi
 
 pushd ./test/conv-test-sw
@@ -894,6 +909,11 @@ if ! command -v swift &> /dev/null; then
   echo "Swift not found, skipping test"
   ret success:bool=true
   exit 0
+fi
+
+# On macOS, Nix may set SDKROOT to an incompatible SDK. Unset it so Swift uses Xcode's SDK.
+if [[ "$(uname)" == "Darwin" ]] && [[ "$SDKROOT" == /nix/* ]]; then
+  unset SDKROOT
 fi
 
 pushd ./test/conv-test-sw
