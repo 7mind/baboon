@@ -261,9 +261,11 @@ if ! command -v swift &> /dev/null; then
   exit 0
 fi
 
-# On macOS, Nix may set SDKROOT to an incompatible SDK. Unset it so Swift uses Xcode's SDK.
-if [[ "$(uname)" == "Darwin" ]] && [[ "$SDKROOT" == /nix/* ]]; then
-  unset SDKROOT
+# On macOS, Nix pollutes the environment with an incompatible SDK (VFS overlays, SDKROOT, compiler flags).
+# Explicitly reset to Xcode's SDK and strip Nix compiler/linker flags.
+if [[ "$(uname)" == "Darwin" ]] && [[ "${SDKROOT:-}" == /nix/* ]]; then
+  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
+  unset NIX_CFLAGS_COMPILE NIX_LDFLAGS NIX_CFLAGS_COMPILE_FOR_BUILD NIX_LDFLAGS_FOR_BUILD
 fi
 
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
@@ -516,9 +518,11 @@ if ! command -v swift &> /dev/null; then
   exit 0
 fi
 
-# On macOS, Nix may set SDKROOT to an incompatible SDK. Unset it so Swift uses Xcode's SDK.
-if [[ "$(uname)" == "Darwin" ]] && [[ "$SDKROOT" == /nix/* ]]; then
-  unset SDKROOT
+# On macOS, Nix pollutes the environment with an incompatible SDK (VFS overlays, SDKROOT, compiler flags).
+# Explicitly reset to Xcode's SDK and strip Nix compiler/linker flags.
+if [[ "$(uname)" == "Darwin" ]] && [[ "${SDKROOT:-}" == /nix/* ]]; then
+  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
+  unset NIX_CFLAGS_COMPILE NIX_LDFLAGS NIX_CFLAGS_COMPILE_FOR_BUILD NIX_LDFLAGS_FOR_BUILD
 fi
 
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
@@ -697,9 +701,11 @@ if ! command -v swift &> /dev/null; then
   exit 0
 fi
 
-# On macOS, Nix may set SDKROOT to an incompatible SDK. Unset it so Swift uses Xcode's SDK.
-if [[ "$(uname)" == "Darwin" ]] && [[ "$SDKROOT" == /nix/* ]]; then
-  unset SDKROOT
+# On macOS, Nix pollutes the environment with an incompatible SDK (VFS overlays, SDKROOT, compiler flags).
+# Explicitly reset to Xcode's SDK and strip Nix compiler/linker flags.
+if [[ "$(uname)" == "Darwin" ]] && [[ "${SDKROOT:-}" == /nix/* ]]; then
+  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
+  unset NIX_CFLAGS_COMPILE NIX_LDFLAGS NIX_CFLAGS_COMPILE_FOR_BUILD NIX_LDFLAGS_FOR_BUILD
 fi
 
 pushd ./test/conv-test-sw
@@ -911,9 +917,11 @@ if ! command -v swift &> /dev/null; then
   exit 0
 fi
 
-# On macOS, Nix may set SDKROOT to an incompatible SDK. Unset it so Swift uses Xcode's SDK.
-if [[ "$(uname)" == "Darwin" ]] && [[ "$SDKROOT" == /nix/* ]]; then
-  unset SDKROOT
+# On macOS, Nix pollutes the environment with an incompatible SDK (VFS overlays, SDKROOT, compiler flags).
+# Explicitly reset to Xcode's SDK and strip Nix compiler/linker flags.
+if [[ "$(uname)" == "Darwin" ]] && [[ "${SDKROOT:-}" == /nix/* ]]; then
+  export SDKROOT=$(/usr/bin/xcrun --sdk macosx --show-sdk-path)
+  unset NIX_CFLAGS_COMPILE NIX_LDFLAGS NIX_CFLAGS_COMPILE_FOR_BUILD NIX_LDFLAGS_FOR_BUILD
 fi
 
 pushd ./test/conv-test-sw
