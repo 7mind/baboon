@@ -9,9 +9,56 @@ import izumi.fundamentals.platform.strings.TextTree.Quote
 
 class SwTypeTranslator {
   def asSwRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[SwValue] = {
+    def fieldsOf(p: Product): Map[String, Any] = {
+      p.productElementNames.zip(p.productIterator).toMap
+    }
+
+    def extractBaboonRefFromForeignEntry(fe: Typedef.ForeignEntry): Option[TypeRef] = {
+      fe.mapping match {
+        case Typedef.ForeignMapping.BaboonRef(typeRef) =>
+          Some(typeRef)
+        case _ =>
+          val f = fieldsOf(fe)
+          f.get("mapping") match {
+            case Some(mapping: Product) =>
+              fieldsOf(mapping).get("typeRef") match {
+                case Some(typeRef: TypeRef) =>
+                  Some(typeRef)
+                case _ =>
+                  None
+              }
+            case _ =>
+              None
+          }
+      }
+    }
+
+    def resolveForeignAlias(id: TypeId.User): Option[TypeRef] = {
+      domain.defs.meta.nodes(id) match {
+        case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
+          val swiftBindingAlias = defn.bindings.iterator.collectFirst {
+            case (k, v) if k.toString.equalsIgnoreCase("swift") && extractBaboonRefFromForeignEntry(v).nonEmpty =>
+              extractBaboonRefFromForeignEntry(v).get
+          }
+          swiftBindingAlias.orElse {
+            defn.bindings.valuesIterator.collectFirst {
+              case entry if extractBaboonRefFromForeignEntry(entry).nonEmpty =>
+                extractBaboonRefFromForeignEntry(entry).get
+            }
+          }
+        case _ =>
+          None
+      }
+    }
+
     tpe match {
       case TypeRef.Scalar(id) =>
-        q"${asSwType(id, domain, evo)}"
+        id match {
+          case uid: TypeId.User if resolveForeignAlias(uid).nonEmpty =>
+            asSwRef(resolveForeignAlias(uid).get, domain, evo)
+          case _ =>
+            q"${asSwType(id, domain, evo)}"
+        }
 
       case TypeRef.Constructor(id, args) if id == TypeId.Builtins.opt =>
         val inner = asSwRef(args.head, domain, evo)
@@ -99,6 +146,11 @@ class SwTypeTranslator {
     }
 
     def extractDeclFromForeignEntry(fe: Typedef.ForeignEntry): String = {
+      fe.mapping match {
+        case Typedef.ForeignMapping.Custom(decl, _) =>
+          return decl
+        case Typedef.ForeignMapping.BaboonRef(_) =>
+      }
       val f = fieldsOf(fe)
       f.get("decl") match {
         case Some(d: String) =>
@@ -118,16 +170,57 @@ class SwTypeTranslator {
       }
     }
 
+    def extractBaboonRefFromForeignEntry(fe: Typedef.ForeignEntry): Option[TypeRef] = {
+      fe.mapping match {
+        case Typedef.ForeignMapping.BaboonRef(typeRef) =>
+          Some(typeRef)
+        case _ =>
+          val f = fieldsOf(fe)
+          f.get("mapping") match {
+            case Some(mapping: Product) =>
+              fieldsOf(mapping).get("typeRef") match {
+                case Some(typeRef: TypeRef) =>
+                  Some(typeRef)
+                case _ =>
+                  None
+              }
+            case _ =>
+              None
+          }
+      }
+    }
+
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
-        val fe    = defn.bindings.iterator.collectFirst {
+        val swiftBinding = defn.bindings.iterator.collectFirst {
           case (k, v) if isSwiftBindingKey(k) => v
-        }.getOrElse(throw new IllegalStateException(s"Missing swift binding for foreign type: ${defn.id}"))
-        val parts = extractDeclFromForeignEntry(fe).split('.').toList
-        assert(parts.length > 1)
-        val pkg = parts.init
-        val id  = parts.last
-        SwType(SwPackageId(NEList.unsafeFrom(pkg)), id)
+        }
+
+        val aliasFromAnyBinding = defn.bindings.valuesIterator.collectFirst {
+          case entry if extractBaboonRefFromForeignEntry(entry).nonEmpty => extractBaboonRefFromForeignEntry(entry).get
+        }
+
+        (swiftBinding, aliasFromAnyBinding) match {
+          case (Some(fe), _) if extractBaboonRefFromForeignEntry(fe).nonEmpty =>
+            extractBaboonRefFromForeignEntry(fe).get match {
+              case TypeRef.Scalar(refId) =>
+                asSwType(refId, domain, evolution)
+              case other =>
+                toSwTypeRefKeepForeigns(tid, domain, evolution)
+            }
+          case (Some(fe), _) =>
+            val parts = extractDeclFromForeignEntry(fe).split('.').toList
+            assert(parts.length > 1)
+            val pkg = parts.init
+            val id  = parts.last
+            SwType(SwPackageId(NEList.unsafeFrom(pkg)), id)
+          case (None, Some(TypeRef.Scalar(refId))) =>
+            asSwType(refId, domain, evolution)
+          case (None, Some(other)) =>
+            toSwTypeRefKeepForeigns(tid, domain, evolution)
+          case (None, None) =>
+            throw new IllegalStateException(s"Missing swift binding for foreign type: ${defn.id}")
+        }
       case _ =>
         toSwTypeRefKeepForeigns(tid, domain, evolution)
     }

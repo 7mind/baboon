@@ -154,8 +154,12 @@ object SwDefnTranslator {
 
       val swTypeRef = trans.asSwType(defn.id, domain, evo)
       val srcRef    = trans.toSwTypeRefKeepForeigns(defn.id, domain, evo)
+      val reprName = defn.defn match {
+        case _: Typedef.Foreign => srcRef
+        case _                  => swTypeRef
+      }
 
-      val repr = makeRepr(defn, swTypeRef, isLatestVersion)
+      val repr = makeRepr(defn, reprName, isLatestVersion)
 
       val codecTrees =
         codecs.toList
@@ -213,8 +217,20 @@ object SwDefnTranslator {
         case _: Typedef.Service =>
           renderService(defn, name)
 
-        case _: Typedef.Foreign => DefnRepr(q"", Nil)
+        case _: Typedef.Foreign =>
+          renderForeign(defn, name)
       }
+    }
+
+    private def renderForeign(
+      defn: DomainMember.User,
+      name: SwType,
+    ): DefnRepr = {
+      val target = trans.asSwRef(TypeRef.Scalar(defn.id), domain, evo)
+      DefnRepr(
+        q"typealias ${name.asName} = $target",
+        Nil,
+      )
     }
 
     private def renderDto(
