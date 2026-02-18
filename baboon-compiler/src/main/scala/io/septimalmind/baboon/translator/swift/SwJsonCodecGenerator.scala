@@ -41,10 +41,7 @@ class SwJsonCodecGenerator(
     dec: TextTree[SwValue],
   ): TextTree[SwValue] = {
     val isEncoderEnabled = domain.version == evo.latest
-    val encReturnType = defn.defn match {
-      case _: Typedef.Enum | _: Typedef.Foreign => "Any"
-      case _                                    => "[String: Any]"
-    }
+    val encReturnType = "Any"
     val encodeMethod =
       if (isEncoderEnabled) {
         List(
@@ -169,7 +166,7 @@ class SwJsonCodecGenerator(
 
     val decFields = d.fields.map { f =>
       val escaped = trans.escapeSwiftKeyword(f.name.name)
-      q"$escaped: ${mkDecoder(f.name.name, f.tpe, q"jsonObj")}"
+      q"$escaped: try ${mkDecoder(f.name.name, f.tpe, q"jsonObj")}"
     }
 
     val mainEnc = q"""return [

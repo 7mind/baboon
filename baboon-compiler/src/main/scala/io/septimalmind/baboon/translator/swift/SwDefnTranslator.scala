@@ -176,7 +176,8 @@ object SwDefnTranslator {
             .sortBy(_.getClass.getName)
             .flatMap(
               codec =>
-                if (codec.isActive(d.id)) List(codec.id -> q"{ () -> Any in ${codec.codecName(srcRef).copy(fq = true)} }")
+                if (codec.isActive(d.id))
+                  List(codec.id -> q"{ () -> Any in ${codec.codecName(srcRef).copy(fq = true)}.instance }")
                 else Nil
             )
           List(CodecReg(defn.id, swTypeRef, srcRef, q""""${defn.id.toString}"""", codecsReg.toMap))

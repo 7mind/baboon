@@ -55,6 +55,24 @@ if ! command -v swift >/dev/null 2>&1; then
   exit 1
 fi
 
+if [[ "$(uname)" == "Linux" ]]; then
+  SWIFT_BIN="$(command -v swift)"
+  if [[ "$SWIFT_BIN" == /nix/store/* ]]; then
+    shopt -s nullglob
+    swift_lib_paths=(
+      /nix/store/*swift-*-lib*/lib/swift/linux
+      /nix/store/*swift-corelibs-foundation-*/lib/swift/linux
+      /nix/store/*swift-corelibs-libdispatch-*/lib
+    )
+    shopt -u nullglob
+
+    if [[ ${#swift_lib_paths[@]} -gt 0 ]]; then
+      SWIFT_LD_PATH="$(IFS=:; echo "${swift_lib_paths[*]}")"
+      export LD_LIBRARY_PATH="${SWIFT_LD_PATH}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    fi
+  fi
+fi
+
 pushd "$SWIFT_PROJECT_DIR" >/dev/null
 swift "$@"
 popd >/dev/null

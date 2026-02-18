@@ -342,7 +342,7 @@ class BaboonBinWriter {
 
     func writeAll(_ data: Data) {
         ensureCapacity(data.count)
-        data.copyBytes(to: &buf[position...], count: data.count)
+        data.copyBytes(to: &buf[position], count: data.count)
         position += data.count
     }
 
@@ -607,7 +607,7 @@ class BaboonTimeFormats {
         let localDate = utcDate.addingTimeInterval(Double(offsetSeconds))
 
         let calendar = Calendar(identifier: .gregorian)
-        var comps = calendar.dateComponents(in: TimeZone(identifier: "UTC")!, from: localDate)
+        var comps = calendar.dateComponents(in: TimeZone(secondsFromGMT: 0)!, from: localDate)
         let y = String(format: "%04d", comps.year!)
         let m = String(format: "%02d", comps.month!)
         let d = String(format: "%02d", comps.day!)

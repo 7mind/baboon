@@ -111,7 +111,10 @@ class SwConversionTranslator[F[+_, +_]: Error2](
       }
 
     val conv =
-      q"""conversions.convertWithContext(context, $oldRef, "${os.id.toString}", "${s.id.toString}") as! $newTypeRefTree"""
+      q"""({ () -> $newTypeRefTree in
+         |    let converted: $newTypeRefTree = conversions.convertWithContext(context, $oldRef, "${os.id.toString}", "${s.id.toString}")
+         |    return converted
+         |}())""".stripMargin
 
     s.id match {
       case _: TypeId.Builtin => direct
@@ -166,7 +169,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
         val rendered = conv match {
           case _: Conversion.CustomConversionRequired =>
             val classDef = q"""class $className: $baboonAbstractConversion<$tin, $tout> {
-                              |    func doConvert(
+                              |    override func doConvert(
                               |        _ context: Any?,
                               |        _ conversions: $baboonAbstractConversions,
                               |        _ from: $tin
@@ -183,7 +186,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
               RenderedConversion(
                 fname,
                 tools.inLib(classDef),
-                Some(q"""register(required.$convMethodName())"""),
+                Some(q"""register("${conv.targetTpe.toString}", { required.$convMethodName() })"""),
                 Some(q"func $convMethodName() -> $baboonAbstractConversion<$tin, $tout>"),
               )
             )
@@ -203,7 +206,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
               }
             val classDef = q"""class $className: $baboonAbstractConversion<$tin, $tout> {
                               |    static let instance = $className()
-                              |    private init() {}
+                              |    private override init() { super.init() }
                               |    override func doConvert(
                               |        _ context: Any?,
                               |        _ conversions: $baboonAbstractConversions,
@@ -218,7 +221,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
                               |    ${meta.shift(4).trim}
                               |}
                   """.stripMargin.trim
-            val regtree = q"register($className.instance)"
+            val regtree = q"""register("${conv.targetTpe.toString}", { $className.instance })"""
             List(RenderedConversion(fname, tools.inLib(classDef), Some(regtree), None))
 
           case c: Conversion.CopyAdtBranchByName =>
@@ -233,7 +236,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
 
             val classDef = q"""class $className: $baboonAbstractConversion<$tin, $tout> {
                               |    static let instance = $className()
-                              |    private init() {}
+                              |    private override init() { super.init() }
                               |    override func doConvert(
                               |        _ context: Any?,
                               |        _ conversions: $baboonAbstractConversions,
@@ -245,7 +248,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
                               |    ${meta.shift(4).trim}
                               |}
                   """.stripMargin.trim
-            val regtree = q"register($className.instance)"
+            val regtree = q"""register("${conv.targetTpe.toString}", { $className.instance })"""
             List(RenderedConversion(fname, tools.inLib(classDef), Some(regtree), None))
 
           case c: Conversion.DtoConversion =>
@@ -259,6 +262,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
               f =>
                 val op  = ops(f)
                 val fld = trans.escapeSwiftKeyword(f.name.name)
+                val ftype = trans.asSwRef(f.tpe, domain, evo)
                 val expr = op match {
                   case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"from.$fld", 1)
                   case o: FieldOp.InitializeWithDefault =>
@@ -308,12 +312,12 @@ class SwConversionTranslator[F[+_, +_]: Error2](
                         swapCollType(srcFieldRef, m, 0)
                     }
                 }
-                q"let ${f.name.name.toLowerCase} = $expr"
+                q"let ${f.name.name.toLowerCase}: $ftype = $expr"
             }
             val ctorArgs = dto.fields.map(f => q"${trans.escapeSwiftKeyword(f.name.name)}: ${f.name.name.toLowerCase}")
             val classDef = q"""class $className: $baboonAbstractConversion<$tin, $tout> {
                               |    static let instance = $className()
-                              |    private init() {}
+                              |    private override init() { super.init() }
                               |    override func doConvert(
                               |        _ context: Any?,
                               |        _ conversions: $baboonAbstractConversions,
@@ -327,7 +331,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
                               |    ${meta.shift(4).trim}
                               |}
                   """.stripMargin.trim
-            val regtree = q"register($className.instance)"
+            val regtree = q"""register("${conv.targetTpe.toString}", { $className.instance })"""
             List(RenderedConversion(fname, tools.inLib(classDef), Some(regtree), None))
         }
 

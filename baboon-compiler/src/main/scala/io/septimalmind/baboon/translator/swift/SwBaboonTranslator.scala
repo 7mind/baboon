@@ -262,14 +262,14 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
            |
            |    ${missingIface.shift(4).trim}
            |
-           |    init($ctorParamDecl) {
+           |    override init($ctorParamDecl) {
            |        ${if (missing.nonEmpty) q"self.required = required" else q""}
            |        super.init()
            |        ${conversionRegs.joinN().shift(8).trim}
            |    }
            |
-           |    var versionsFrom: [String] { [${toCurrent.map(_.from.v.toString).map(v => s""""$v"""").mkString(", ")}] }
-           |    var versionTo: String { "${domain.version.v.toString}" }
+           |    override var versionsFrom: [String] { [${toCurrent.map(_.from.v.toString).map(v => s""""$v"""").mkString(", ")}] }
+           |    override var versionTo: String { "${domain.version.v.toString}" }
            |}""".stripMargin
 
       import izumi.fundamentals.collections.IzCollections.*

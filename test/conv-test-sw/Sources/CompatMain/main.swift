@@ -3,7 +3,7 @@ import Foundation
 
 func createSampleData() -> AllBasicTypes {
     var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = TimeZone(identifier: "UTC")!
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
 
     var tsuComps = DateComponents()
     tsuComps.year = 2024
@@ -75,7 +75,7 @@ print("Written JSON to \(jsonPath)")
 
 let writer = BaboonBinWriter()
 AllBasicTypes_UebaCodec.instance.encode(ctx, writer, sampleData)
-let uebaBytes = writer.toBytes()
+let uebaBytes = writer.toData()
 let uebaPath = "\(swiftUebaDir)/all-basic-types.ueba"
 try uebaBytes.write(to: URL(fileURLWithPath: uebaPath))
 print("Written UEBA to \(uebaPath)")

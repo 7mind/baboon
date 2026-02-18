@@ -77,7 +77,7 @@ class SwUEBACodecGenerator(
     }
 
     val indexGetter =
-      q"""override var indexElementsCount: Int {
+      q"""var indexElementsCount: Int {
          |    ${indexBody.shift(4).trim}
          |}""".stripMargin
 
@@ -306,7 +306,7 @@ class SwUEBACodecGenerator(
 
         val w = domain.refMeta(field.tpe).len match {
           case BinReprLen.Fixed(bytes) =>
-            q"""{
+            q"""do {
                |    // ${field.toString}
                |    let before = buffer.position
                |    ${bufferEnc.shift(4).trim}
@@ -330,7 +330,7 @@ class SwUEBACodecGenerator(
                 ).joinN()
             }
 
-            q"""{
+            q"""do {
                |    // ${field.toString}
                |    let before = buffer.position
                |    writer.writeI32(Int32(before))

@@ -46,7 +46,7 @@ final class CrossLanguageTests: XCTestCase {
             let decoded = try readUebaFile(source)
             let writer = BaboonBinWriter()
             AllBasicTypes_UebaCodec.instance.encode(ctx, writer, decoded)
-            let reReader = BaboonBinReader(writer.toBytes())
+            let reReader = BaboonBinReader(writer.toData())
             let reDecoded = AllBasicTypes_UebaCodec.instance.decode(ctx, reReader)
             XCTAssertEqual(reDecoded, decoded, "UEBA round-trip failed for \(source)")
         }
