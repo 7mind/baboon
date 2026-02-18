@@ -906,6 +906,12 @@ if ! command -v swift &> /dev/null; then
   exit 0
 fi
 
+if [[ "$(uname)" == "Linux" ]]; then
+  echo "Skipping Swift tests on Linux: XCTest module is unavailable in this Swift toolchain"
+  ret success:bool=true
+  exit 0
+fi
+
 ./scripts/swift-xcode.sh ./test/conv-test-sw test
 
 ret success:bool=true
