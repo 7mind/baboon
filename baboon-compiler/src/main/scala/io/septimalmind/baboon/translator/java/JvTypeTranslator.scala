@@ -2,6 +2,7 @@ package io.septimalmind.baboon.translator.java
 
 import io.septimalmind.baboon.translator.java.JvTypes.*
 import io.septimalmind.baboon.translator.java.JvValue.{JvPackageId, JvType}
+import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
@@ -38,7 +39,7 @@ class JvTypeTranslator {
 
   /** Like asJvRef but always uses boxed types for primitives (needed inside generics). */
   def asJvBoxedRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[JvValue] = {
-    tpe match {
+    BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Java) match {
       case TypeRef.Scalar(id) =>
         q"${asJvBoxedType(id, domain, evo)}"
       case other =>

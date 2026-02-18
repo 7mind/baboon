@@ -141,13 +141,14 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
   private def foreignTypeIsValueType(id: TypeId, domain: Domain): Boolean = {
     domain.defs.meta.nodes(id) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
-        val attrs = defn.bindings(BaboonLang.Cs).mapping match {
-          case Typedef.ForeignMapping.Custom(_, entryAttrs) => entryAttrs.attrs
-          case _: Typedef.ForeignMapping.BaboonRef          => List.empty
+        defn.bindings(BaboonLang.Cs).mapping match {
+          case Typedef.ForeignMapping.Custom(_, entryAttrs) =>
+            entryAttrs.attrs
+              .find(_.name == "value-type")
+              .exists(a => a.value.toLowerCase == "yes" || a.value.toLowerCase == "true")
+          case Typedef.ForeignMapping.BaboonRef(typeRef) =>
+            isCSValueType(typeRef, domain)
         }
-        attrs
-          .find(_.name == "value-type")
-          .exists(a => a.value.toLowerCase == "yes" || a.value.toLowerCase == "true")
       case _ =>
         false
     }

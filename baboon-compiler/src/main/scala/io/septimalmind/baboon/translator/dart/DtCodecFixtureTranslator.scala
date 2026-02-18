@@ -101,7 +101,7 @@ object DtCodecFixtureTranslator {
 
     private def genType(tpe: TypeRef): TextTree[DtValue] = {
       def gen(tpe: TypeRef): TextTree[DtValue] = {
-        tpe match {
+        BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Dart) match {
           case tpe: TypeRef.Scalar => genScalar(tpe)
           case TypeRef.Constructor(id, args) =>
             id match {

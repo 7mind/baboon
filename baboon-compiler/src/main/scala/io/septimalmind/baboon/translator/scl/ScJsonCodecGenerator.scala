@@ -5,6 +5,7 @@ import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.scl.ScCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.scl.ScDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.scl.ScTypes.*
+import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -454,6 +455,7 @@ class ScJsonCodecGenerator(
   }
 
   override def isActive(id: TypeId): Boolean = {
+    !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Scala) &&
     target.language.generateJsonCodecs && (target.language.generateJsonCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("json"), Set.empty[TypeId]).contains(id))
   }

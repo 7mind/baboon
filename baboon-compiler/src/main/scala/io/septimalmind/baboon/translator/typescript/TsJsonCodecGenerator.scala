@@ -236,6 +236,7 @@ class TsJsonCodecGenerator(
   }
 
   override def isActive(id: TypeId): Boolean = {
+    !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Typescript) &&
     target.language.generateJsonCodecs && (target.language.generateJsonCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("json"), Set.empty[TypeId]).contains(id))
   }

@@ -360,6 +360,7 @@ class TsUEBACodecGenerator(
   }
 
   override def isActive(id: TypeId): Boolean = {
+    !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Typescript) &&
     target.language.generateUebaCodecs && (target.language.generateUebaCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId]).contains(id))
   }

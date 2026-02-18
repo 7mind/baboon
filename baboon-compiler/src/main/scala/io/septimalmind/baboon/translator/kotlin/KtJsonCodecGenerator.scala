@@ -5,6 +5,7 @@ import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.kotlin.KtCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.kotlin.KtDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.kotlin.KtTypes.*
+import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -398,6 +399,7 @@ class KtJsonCodecGenerator(
   }
 
   override def isActive(id: TypeId): Boolean = {
+    !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Kotlin) &&
     target.language.generateJsonCodecs && (target.language.generateJsonCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("json"), Set.empty[TypeId]).contains(id))
   }

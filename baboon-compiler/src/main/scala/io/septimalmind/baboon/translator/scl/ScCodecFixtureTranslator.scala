@@ -118,7 +118,7 @@ object ScCodecFixtureTranslator {
 
     private def genType(tpe: TypeRef): TextTree[ScValue] = {
       def gen(tpe: TypeRef): TextTree[ScValue] = {
-        tpe match {
+        BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Scala) match {
           case tpe: TypeRef.Scalar => genScalar(tpe)
           case TypeRef.Constructor(id, args) =>
             id match {

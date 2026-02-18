@@ -97,7 +97,7 @@ object RsCodecFixtureTranslator {
     }
 
     private def genType(tpe: TypeRef): TextTree[RsValue] = {
-      tpe match {
+      BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Rust) match {
         case tpe: TypeRef.Scalar => genScalar(tpe)
         case TypeRef.Constructor(id, args) =>
           id match {

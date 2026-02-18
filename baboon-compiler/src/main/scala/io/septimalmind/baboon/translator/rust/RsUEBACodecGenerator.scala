@@ -299,7 +299,7 @@ class RsUEBACodecGenerator(
   // - .len() and .iter() work via auto-deref for any ref level
   // - match needs &$ref to avoid moving out of borrow; match ergonomics handles &&T
   private def mkEncoder(tpe: TypeRef, ref: TextTree[RsValue], writer: TextTree[RsValue] = q"writer"): TextTree[RsValue] = {
-    tpe match {
+    BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Rust) match {
       case TypeRef.Scalar(_) =>
         q"$ref.encode_ueba(ctx, $writer)?;"
       case c: TypeRef.Constructor =>
@@ -406,6 +406,7 @@ class RsUEBACodecGenerator(
   }
 
   override def isActive(id: TypeId): Boolean = {
+    !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Rust) &&
     target.language.generateUebaCodecs && (target.language.generateUebaCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId]).contains(id))
   }

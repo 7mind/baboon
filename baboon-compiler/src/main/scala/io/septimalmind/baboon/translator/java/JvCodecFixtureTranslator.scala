@@ -118,7 +118,7 @@ object JvCodecFixtureTranslator {
 
     private def genType(tpe: TypeRef): TextTree[JvValue] = {
       def gen(tpe: TypeRef): TextTree[JvValue] = {
-        tpe match {
+        BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Java) match {
           case tpe: TypeRef.Scalar => genScalar(tpe)
           case TypeRef.Constructor(id, args) =>
             id match {

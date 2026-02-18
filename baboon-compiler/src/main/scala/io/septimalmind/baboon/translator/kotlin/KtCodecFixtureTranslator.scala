@@ -117,7 +117,7 @@ object KtCodecFixtureTranslator {
 
     private def genType(tpe: TypeRef): TextTree[KtValue] = {
       def gen(tpe: TypeRef): TextTree[KtValue] = {
-        tpe match {
+        BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Kotlin) match {
           case tpe: TypeRef.Scalar => genScalar(tpe)
           case TypeRef.Constructor(id, args) =>
             id match {

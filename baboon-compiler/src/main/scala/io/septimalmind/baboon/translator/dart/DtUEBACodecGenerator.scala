@@ -6,6 +6,7 @@ import io.septimalmind.baboon.translator.dart.DtCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.dart.DtDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.dart.DtTypes.*
 import io.septimalmind.baboon.translator.dart.DtValue.DtType
+import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -538,6 +539,7 @@ class DtUEBACodecGenerator(
   }
 
   override def isActive(id: TypeId): Boolean = {
+    !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Dart) &&
     target.language.generateUebaCodecs && (target.language.generateUebaCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId]).contains(id))
   }

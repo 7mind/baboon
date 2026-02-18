@@ -43,6 +43,32 @@ trait BaboonEnquiries {
 
 object BaboonEnquiries {
 
+  def isBaboonRefForeign(id: TypeId, domain: Domain, lang: BaboonLang): Boolean = {
+    domain.defs.meta.nodes.get(id).exists {
+      case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+        f.bindings.get(lang).exists(_.mapping.isInstanceOf[Typedef.ForeignMapping.BaboonRef])
+      case _ => false
+    }
+  }
+
+  def resolveBaboonRef(tpe: TypeRef, domain: Domain, lang: BaboonLang): TypeRef = {
+    tpe match {
+      case TypeRef.Scalar(id: TypeId.User) =>
+        domain.defs.meta.nodes.get(id) match {
+          case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
+            f.bindings.get(lang) match {
+              case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                resolveBaboonRef(aliasedRef, domain, lang)
+              case _ => tpe
+            }
+          case _ => tpe
+        }
+      case TypeRef.Constructor(id, args) =>
+        TypeRef.Constructor(id, args.map(a => resolveBaboonRef(a, domain, lang)))
+      case _ => tpe
+    }
+  }
+
   class BaboonEnquiriesImpl extends BaboonEnquiries {
     def unfold(dom: Domain, contracts: List[TypeId.User]): List[Field] = {
       val direct = contracts

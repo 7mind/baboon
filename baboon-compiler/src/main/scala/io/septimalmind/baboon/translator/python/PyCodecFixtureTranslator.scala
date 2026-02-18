@@ -75,7 +75,7 @@ object PyCodecFixtureTranslator {
     }
 
     private def genType(tpe: TypeRef): TextTree[PyValue] = {
-      tpe match {
+      BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Py) match {
         case s: TypeRef.Scalar =>
           s.id match {
             case TypeId.Builtins.i08 => q"$baboonFixture.next_byte()"
