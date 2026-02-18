@@ -115,6 +115,7 @@ class WorkspaceState(
       case CircularInheritance(_, meta)          => Some(meta.pos)
       case NonUniqueEnumBranches(_, _, meta)     => Some(meta.pos)
       case NonUniqueForeignEntries(_, _, meta)   => Some(meta.pos)
+      case UnknownForeignLang(_, _, meta)        => Some(meta.pos)
       case EmptyGenericArgs(_, meta)             => Some(meta.pos)
       case NonUniqueTypedefs(_, meta)            => Some(meta.pos)
       case NonUniqueScope(_, meta)               => Some(meta.pos)

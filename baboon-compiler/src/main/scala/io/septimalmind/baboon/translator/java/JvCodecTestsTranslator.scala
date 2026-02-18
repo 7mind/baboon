@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.java
 import io.septimalmind.baboon.CompilerTarget.JvTarget
 import io.septimalmind.baboon.translator.java.JvTypes.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
-import io.septimalmind.baboon.typer.model.{BaboonEvolution, Domain, DomainMember, Typedef}
+import io.septimalmind.baboon.typer.model.{BaboonEvolution, BaboonLang, Domain, DomainMember, Typedef}
 import io.septimalmind.baboon.util.BLogger
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -34,7 +34,7 @@ object JvCodecTestsTranslator {
       val isLatestVersion = domain.version == evo.latest
 
       definition match {
-        case d if enquiries.hasForeignType(d, domain)         => None
+        case d if enquiries.hasForeignType(d, domain, BaboonLang.Java) => None
         case d if enquiries.isRecursiveTypedef(d, domain)     => None
         case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
         case _ if !isLatestVersion                            => None

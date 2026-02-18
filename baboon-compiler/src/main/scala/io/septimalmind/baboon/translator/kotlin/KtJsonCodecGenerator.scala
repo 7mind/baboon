@@ -5,6 +5,7 @@ import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.kotlin.KtCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.kotlin.KtDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.kotlin.KtTypes.*
+import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -23,7 +24,11 @@ class KtJsonCodecGenerator(
         case d: Typedef.Dto      => Some(genDtoBodies(ktRef, d))
         case _: Typedef.Enum     => Some(genEnumBodies(ktRef))
         case a: Typedef.Adt      => Some(genAdtBodies(ktRef, a))
-        case _: Typedef.Foreign  => Some(genForeignBodies(ktRef))
+        case f: Typedef.Foreign =>
+          f.bindings.get(BaboonLang.Kotlin) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
+            case _ => Some(genForeignBodies(ktRef))
+          }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
       }).map {
@@ -189,8 +194,13 @@ class KtJsonCodecGenerator(
               u.defn match {
                 case _: Typedef.Enum =>
                   q"$ref.name"
-                case _: Typedef.Foreign =>
-                  q"$ref.toString()"
+                case f: Typedef.Foreign =>
+                  f.bindings.get(BaboonLang.Kotlin) match {
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                      encodeKey(aliasedRef, ref)
+                    case _ =>
+                      q"$ref.toString()"
+                  }
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -223,8 +233,19 @@ class KtJsonCodecGenerator(
           case TypeId.Builtins.str   => q"$jsonPrimitive($ref)"
           case TypeId.Builtins.bytes => q"$jsonPrimitive($ref.toHexString())"
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
-            q"$targetTpe.encode(ctx, $ref)"
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Kotlin) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkEncoder(aliasedRef, ref)
+                  case _ =>
+                    val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                    q"$targetTpe.encode(ctx, $ref)"
+                }
+              case _ =>
+                val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                q"$targetTpe.encode(ctx, $ref)"
+            }
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
@@ -268,8 +289,19 @@ class KtJsonCodecGenerator(
             case TypeId.Builtins.tsu   => q"$baboonTimeFormats.parseTsu($ref.jsonPrimitive.content)"
             case TypeId.Builtins.tso   => q"$baboonTimeFormats.parseTso($ref.jsonPrimitive.content)"
             case u: TypeId.User =>
-              val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
-              q"$targetTpe.decode(ctx, $ref)"
+              domain.defs.meta.nodes(u) match {
+                case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                  f.bindings.get(BaboonLang.Kotlin) match {
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                      decodeElement(aliasedRef, ref)
+                    case _ =>
+                      val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                      q"$targetTpe.decode(ctx, $ref)"
+                  }
+                case _ =>
+                  val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                  q"$targetTpe.decode(ctx, $ref)"
+              }
             case o =>
               throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
@@ -318,9 +350,14 @@ class KtJsonCodecGenerator(
                     case _: Typedef.Enum =>
                       val targetTpe = trans.toKtTypeRefKeepForeigns(u, domain, evo)
                       q"$targetTpe.parse($ref) ?: throw IllegalArgumentException(\"Cannot parse enum key: \" + $ref)"
-                    case _: Typedef.Foreign =>
-                      val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
-                      q"$targetTpe.decode(ctx, $jsonPrimitive($ref))"
+                    case f: Typedef.Foreign =>
+                      f.bindings.get(BaboonLang.Kotlin) match {
+                        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                          decodeKey(aliasedRef, ref)
+                        case _ =>
+                          val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                          q"$targetTpe.decode(ctx, $jsonPrimitive($ref))"
+                      }
                     case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
                   }
                 case o => throw new RuntimeException(s"BUG: Type/usertype mismatch: $o")
@@ -341,8 +378,13 @@ class KtJsonCodecGenerator(
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[KtValue]] = {
     defn.defn match {
-      case _: Typedef.Enum | _: Typedef.Foreign => meta.map(_.valueField)
-      case _                                    => meta.map(_.refValueField)
+      case _: Typedef.Enum => meta.map(_.valueField)
+      case f: Typedef.Foreign =>
+        f.bindings.get(BaboonLang.Kotlin) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => meta.map(_.refValueField)
+          case _                                                                  => meta.map(_.valueField)
+        }
+      case _ => meta.map(_.refValueField)
     }
   }
 
@@ -357,6 +399,7 @@ class KtJsonCodecGenerator(
   }
 
   override def isActive(id: TypeId): Boolean = {
+    !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Kotlin) &&
     target.language.generateJsonCodecs && (target.language.generateJsonCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("json"), Set.empty[TypeId]).contains(id))
   }

@@ -4,6 +4,7 @@ import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.python.PyTypes.*
 import io.septimalmind.baboon.translator.python.PyValue.PyType
+import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
@@ -25,7 +26,11 @@ class PyUEBACodecGenerator(
       case d: Typedef.Dto      => Some(genDtoBodies(pyRef, d))
       case e: Typedef.Enum     => Some(genEnumBodies(e))
       case a: Typedef.Adt      => Some(genAdtBodies(pyRef, a))
-      case _: Typedef.Foreign  => Some(genForeignTypesBodies(pyRef))
+      case f: Typedef.Foreign =>
+        f.bindings.get(BaboonLang.Py) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
+          case _ => Some(genForeignTypesBodies(pyRef))
+        }
       case _: Typedef.Service  => None
       case _: Typedef.Contract => None
     }).map {
@@ -350,8 +355,19 @@ class PyUEBACodecGenerator(
               case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val target = codecType(u)
-            q"$target.instance().encode(ctx, $writerRef, $ref)"
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Py) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkEncoder(aliasedRef, ref, writerRef)
+                  case _ =>
+                    val target = codecType(u)
+                    q"$target.instance().encode(ctx, $writerRef, $ref)"
+                }
+              case _ =>
+                val target = codecType(u)
+                q"$target.instance().encode(ctx, $writerRef, $ref)"
+            }
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -400,7 +416,16 @@ class PyUEBACodecGenerator(
 
               case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
-          case u: TypeId.User => q"${codecType(u)}.instance().decode(ctx, wire)"
+          case u: TypeId.User =>
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Py) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkDecoder(aliasedRef)
+                  case _ => q"${codecType(u)}.instance().decode(ctx, wire)"
+                }
+              case _ => q"${codecType(u)}.instance().decode(ctx, wire)"
+            }
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -442,6 +467,7 @@ class PyUEBACodecGenerator(
   }
 
   override def isActive(id: TypeId): Boolean = {
+    !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Py) &&
     pyTarget.language.generateUebaCodecs && (pyTarget.language.generateUebaCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId]).contains(id))
   }

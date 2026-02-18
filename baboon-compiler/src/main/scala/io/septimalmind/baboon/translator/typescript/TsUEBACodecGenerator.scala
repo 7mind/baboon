@@ -22,7 +22,7 @@ class TsUEBACodecGenerator(
   }
 
   override def translate(defn: DomainMember.User, tsRef: TsValue.TsType, srcRef: TsValue.TsType): Option[TextTree[TsValue]] = {
-    if (isActive(defn.id) && !enquiries.hasForeignType(defn, domain)) {
+    if (isActive(defn.id) && !enquiries.hasForeignType(defn, domain, BaboonLang.Typescript)) {
       defn.defn match {
         case d: Typedef.Dto      => Some(genDtoCodec(srcRef, d))
         case e: Typedef.Enum     => Some(genEnumCodec(srcRef, e))
@@ -254,9 +254,21 @@ class TsUEBACodecGenerator(
           case TypeId.Builtins.tsu   => q"$binTools.writeTimestampUtc($w, $ref);"
           case TypeId.Builtins.tso   => q"$binTools.writeTimestampOffset($w, $ref);"
           case u: TypeId.User =>
-            val tsType = trans.toTsTypeRefKeepForeigns(u, domain, evo)
-            val fn     = codecFnRef(tsType, "encode_", "_ueba")
-            q"$fn($ref, ctx, $w);"
+            domain.defs.meta.nodes.get(u) match {
+              case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
+                f.bindings.get(BaboonLang.Typescript) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkEncoder(aliasedRef, ref, writer)
+                  case _ =>
+                    val tsType = trans.toTsTypeRefKeepForeigns(u, domain, evo)
+                    val fn     = codecFnRef(tsType, "encode_", "_ueba")
+                    q"$fn($ref, ctx, $w);"
+                }
+              case _ =>
+                val tsType = trans.toTsTypeRefKeepForeigns(u, domain, evo)
+                val fn     = codecFnRef(tsType, "encode_", "_ueba")
+                q"$fn($ref, ctx, $w);"
+            }
           case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
       case TypeRef.Constructor(cid, args) =>
@@ -311,9 +323,21 @@ class TsUEBACodecGenerator(
           case TypeId.Builtins.tsu   => q"$binTools.readTimestampUtc(reader)"
           case TypeId.Builtins.tso   => q"$binTools.readTimestampOffset(reader)"
           case u: TypeId.User =>
-            val tsType = trans.toTsTypeRefKeepForeigns(u, domain, evo)
-            val fn     = codecFnRef(tsType, "decode_", "_ueba")
-            q"$fn(ctx, reader)"
+            domain.defs.meta.nodes.get(u) match {
+              case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
+                f.bindings.get(BaboonLang.Typescript) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkDecoder(aliasedRef)
+                  case _ =>
+                    val tsType = trans.toTsTypeRefKeepForeigns(u, domain, evo)
+                    val fn     = codecFnRef(tsType, "decode_", "_ueba")
+                    q"$fn(ctx, reader)"
+                }
+              case _ =>
+                val tsType = trans.toTsTypeRefKeepForeigns(u, domain, evo)
+                val fn     = codecFnRef(tsType, "decode_", "_ueba")
+                q"$fn(ctx, reader)"
+            }
           case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
       case TypeRef.Constructor(cid, args) =>
@@ -336,6 +360,7 @@ class TsUEBACodecGenerator(
   }
 
   override def isActive(id: TypeId): Boolean = {
+    !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Typescript) &&
     target.language.generateUebaCodecs && (target.language.generateUebaCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId]).contains(id))
   }

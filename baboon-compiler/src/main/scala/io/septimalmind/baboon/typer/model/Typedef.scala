@@ -11,6 +11,25 @@ case class UnmodifiedSince(typeId: TypeId, in: Version, sameIn: NEList[Version])
 case class TypeMeta(shallowId: ShallowSchemaId, deepId: DeepSchemaId)
 case class RefMeta(len: BinReprLen)
 
+sealed trait BaboonLang {
+  def asString: String
+}
+
+object BaboonLang {
+  case object Scala extends BaboonLang      { val asString = "scala" }
+  case object Cs extends BaboonLang         { val asString = "cs" }
+  case object Py extends BaboonLang         { val asString = "py" }
+  case object Rust extends BaboonLang       { val asString = "rust" }
+  case object Typescript extends BaboonLang { val asString = "typescript" }
+  case object Kotlin extends BaboonLang     { val asString = "kotlin" }
+  case object Java extends BaboonLang       { val asString = "java" }
+  case object Dart extends BaboonLang       { val asString = "dart" }
+
+  val all: List[BaboonLang] = List(Scala, Cs, Py, Rust, Typescript, Kotlin, Java, Dart)
+
+  def fromString(s: String): Option[BaboonLang] = all.find(_.asString == s)
+}
+
 sealed trait Typedef {
   def id: TypeId
 }
@@ -28,9 +47,16 @@ object Typedef {
 
   case class ForeignEntryAttr(name: String, value: String)
   case class ForeignEntryAttrs(attrs: List[ForeignEntryAttr])
-  case class ForeignEntry(lang: String, decl: String, attrs: ForeignEntryAttrs)
 
-  case class Foreign(id: TypeId.User, bindings: Map[String, ForeignEntry]) extends User
+  sealed trait ForeignMapping
+  object ForeignMapping {
+    case class Custom(decl: String, attrs: ForeignEntryAttrs) extends ForeignMapping
+    case class BaboonRef(typeRef: TypeRef) extends ForeignMapping
+  }
+
+  case class ForeignEntry(lang: BaboonLang, mapping: ForeignMapping)
+
+  case class Foreign(id: TypeId.User, bindings: Map[BaboonLang, ForeignEntry]) extends User
 
   sealed trait NonDataTypedef {
     this: Typedef =>

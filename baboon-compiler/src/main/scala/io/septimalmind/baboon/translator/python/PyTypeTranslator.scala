@@ -15,6 +15,19 @@ final class PyTypeTranslator {
     pkgBase: List[String] = Nil,
   ): TextTree[PyValue] = {
     tpe match {
+      case TypeRef.Scalar(uid: TypeId.User) =>
+        domain.defs.meta.nodes(uid) match {
+          case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+            f.bindings.get(BaboonLang.Py) match {
+              case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                asPyRef(aliasedRef, domain, evolution, pkgBase)
+              case _ =>
+                q"${asPyType(uid, domain, evolution, pkgBase)}"
+            }
+          case _ =>
+            q"${asPyType(uid, domain, evolution, pkgBase)}"
+        }
+
       case TypeRef.Scalar(id) =>
         q"${asPyType(id, domain, evolution, pkgBase)}"
       case TypeRef.Constructor(id, args) =>
@@ -120,12 +133,15 @@ final class PyTypeTranslator {
   ): Option[PyType] = {
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
-        val foreign = defn.bindings("py")
-        val parts   = foreign.decl.split('.').toList
-        assert(parts.length > 1)
-        val module = parts.init
-        val id     = parts.last
-        Some(PyType(PyModuleId(NEList.unsafeFrom(module)), id))
+        defn.bindings.get(BaboonLang.Py) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+            val parts = decl.split('.').toList
+            assert(parts.length > 1)
+            val module = parts.init
+            val id     = parts.last
+            Some(PyType(PyModuleId(NEList.unsafeFrom(module)), id))
+          case _ => None
+        }
       case _ => None
     }
   }

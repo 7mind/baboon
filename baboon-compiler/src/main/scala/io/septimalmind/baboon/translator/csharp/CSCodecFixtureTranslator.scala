@@ -28,7 +28,7 @@ object CSCodecFixtureTranslator {
         None
       } else {
         definition.defn match {
-          case _ if enquiries.hasForeignType(definition, domain)     => None
+          case _ if enquiries.hasForeignType(definition, domain, BaboonLang.Cs) => None
           case _ if enquiries.isRecursiveTypedef(definition, domain) => None
           case _: Typedef.Contract                                   => None
           case _: Typedef.Enum                                       => None
@@ -104,7 +104,7 @@ object CSCodecFixtureTranslator {
 
     private def genType(tpe: TypeRef): TextTree[CSValue] = {
       def gen(tpe: TypeRef): TextTree[CSValue] = {
-        tpe match {
+        BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Cs) match {
           case tpe: TypeRef.Scalar => genScalar(tpe)
           case TypeRef.Constructor(id, args) =>
             id match {
@@ -138,7 +138,7 @@ object CSCodecFixtureTranslator {
       tpe: TypeRef
     ): TextTree[CSValue] = {
       def render(tpe: TypeRef): TextTree[CSValue] = {
-        tpe match {
+        BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Cs) match {
           case TypeRef.Constructor(Builtins.opt, args) => q"${render(args.head)}?"
           case TypeRef.Constructor(Builtins.map, args) => q"${translator.asCsType(Builtins.map, domain, evo)}<${render(args.head)}, ${render(args.last)}>"
           case TypeRef.Constructor(id, args)           => q"${translator.asCsType(id, domain, evo)}<${render(args.head)}>"

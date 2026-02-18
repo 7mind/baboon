@@ -5,6 +5,7 @@ import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.typer.model.DomainKey
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Typedef.ForeignEntry
+import io.septimalmind.baboon.typer.model.BaboonLang
 import izumi.fundamentals.graphs.{DAGError, ToposortError}
 import izumi.fundamentals.platform.strings.IzString.toRichIterable
 
@@ -45,10 +46,12 @@ object TyperIssue {
   ) extends TyperIssue
 
   case class NonUniqueForeignEntries(
-    duplicateForeignEntries: Map[String, List[ForeignEntry]],
+    duplicateForeignEntries: Map[BaboonLang, List[ForeignEntry]],
     id: TypeId.User,
     meta: RawNodeMeta,
   ) extends TyperIssue
+
+  case class UnknownForeignLang(lang: String, id: TypeId.User, meta: RawNodeMeta) extends TyperIssue
 
   case class EmptyEnum(id: TypeId.User, meta: RawNodeMeta) extends TyperIssue
 
@@ -230,10 +233,18 @@ object TyperIssue {
   implicit val nonUniqueForeignEntriesPrinter: IssuePrinter[NonUniqueForeignEntries] =
     (issue: NonUniqueForeignEntries) => {
       val stringProblems = issue.duplicateForeignEntries.values
-        .map(_.map(_.lang).niceList())
+        .map(_.map(_.lang.asString).niceList())
         .mkString("\n")
       s"""${extractLocation(issue.meta)}
          |Foreign type ${issue.id.toString} has members with identical names:$stringProblems
+         |""".stripMargin
+    }
+
+  implicit val unknownForeignLangPrinter: IssuePrinter[UnknownForeignLang] =
+    (issue: UnknownForeignLang) => {
+      s"""${extractLocation(issue.meta)}
+         |Unknown foreign language identifier '${issue.lang}' in foreign type ${issue.id.toString}
+         |Valid identifiers: ${BaboonLang.all.map(_.asString).mkString(", ")}
          |""".stripMargin
     }
 

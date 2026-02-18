@@ -5,6 +5,7 @@ import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.{CodecArguments, CodecMeta}
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
+import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -26,8 +27,11 @@ class CSJsonCodecGenerator(
           Some(genEnumBodies(csRef))
         case a: Typedef.Adt =>
           Some(genAdtBodies(csRef, a))
-        case _: Typedef.Foreign =>
-          Some(genForeignBodies(csRef))
+        case f: Typedef.Foreign =>
+          f.bindings.get(BaboonLang.Cs) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
+            case _ => Some(genForeignBodies(csRef))
+          }
         case _: Typedef.Contract =>
           None
         case _: Typedef.Service =>
@@ -274,8 +278,15 @@ class CSJsonCodecGenerator(
           domain.defs.meta.nodes(uid) match {
             case u: DomainMember.User =>
               u.defn match {
-                case _: Typedef.Enum | _: Typedef.Foreign =>
+                case _: Typedef.Enum =>
                   q"""${codecName(uid)}.Instance.Encode(ctx, $ref).ToString($nsFormatting.None)"""
+                case f: Typedef.Foreign =>
+                  f.bindings.get(BaboonLang.Cs) match {
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                      encodeKey(aliasedRef, ref)
+                    case _ =>
+                      q"""${codecName(uid)}.Instance.Encode(ctx, $ref).ToString($nsFormatting.None)"""
+                  }
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -299,8 +310,19 @@ class CSJsonCodecGenerator(
           case _: TypeId.BuiltinScalar =>
             q"new $nsJValue($ref)"
           case u: TypeId.User =>
-            val targetTpe = codecName(u)
-            q"""$targetTpe.Instance.Encode(ctx, $ref)"""
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Cs) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkEncoder(aliasedRef, ref, codecArgs)
+                  case _ =>
+                    val targetTpe = codecName(u)
+                    q"""$targetTpe.Instance.Encode(ctx, $ref)"""
+                }
+              case _ =>
+                val targetTpe = codecName(u)
+                q"""$targetTpe.Instance.Encode(ctx, $ref)"""
+            }
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -374,8 +396,15 @@ class CSJsonCodecGenerator(
           domain.defs.meta.nodes(uid) match {
             case u: DomainMember.User =>
               u.defn match {
-                case _: Typedef.Enum | _: Typedef.Foreign =>
+                case _: Typedef.Enum =>
                   q"""${codecName(uid)}.Instance.Decode(ctx, new $nsJValue($ref!))"""
+                case f: Typedef.Foreign =>
+                  f.bindings.get(BaboonLang.Cs) match {
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                      decodeKey(aliasedRef, ref)
+                    case _ =>
+                      q"""${codecName(uid)}.Instance.Decode(ctx, new $nsJValue($ref!))"""
+                  }
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -392,7 +421,17 @@ class CSJsonCodecGenerator(
         mkReader(bs)
 
       case TypeRef.Scalar(u: TypeId.User) =>
-        q"""${codecName(u)}.Instance.Decode(ctx, $ref!)"""
+        domain.defs.meta.nodes(u) match {
+          case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+            f.bindings.get(BaboonLang.Cs) match {
+              case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                mkDecoder(aliasedRef, ref, codecArgs)
+              case _ =>
+                q"""${codecName(u)}.Instance.Decode(ctx, $ref!)"""
+            }
+          case _ =>
+            q"""${codecName(u)}.Instance.Decode(ctx, $ref!)"""
+        }
 
       case TypeRef.Constructor(id, args) =>
         id match {
@@ -450,6 +489,7 @@ class CSJsonCodecGenerator(
   }
 
   def isActive(id: TypeId): Boolean = {
+    !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Cs) &&
     target.language.generateJsonCodecs && (target.language.generateJsonCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("json"), Set.empty[TypeId]).contains(id))
   }

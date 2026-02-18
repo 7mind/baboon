@@ -5,6 +5,7 @@ import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.scl.ScCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.scl.ScDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.scl.ScTypes.*
+import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -23,7 +24,11 @@ class ScJsonCodecGenerator(
         case d: Typedef.Dto      => Some(genDtoBodies(csRef, d))
         case _: Typedef.Enum     => Some(genEnumBodies(csRef))
         case a: Typedef.Adt      => Some(genAdtBodies(csRef, a))
-        case _: Typedef.Foreign  => Some(genForeignBodies(csRef))
+        case f: Typedef.Foreign =>
+          f.bindings.get(BaboonLang.Scala) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
+            case _ => Some(genForeignBodies(csRef))
+          }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
       }).map {
@@ -235,9 +240,17 @@ class ScJsonCodecGenerator(
           domain.defs.meta.nodes(uid) match {
             case u: DomainMember.User =>
               u.defn match {
-                case _: Typedef.Enum | _: Typedef.Foreign =>
+                case _: Typedef.Enum =>
                   val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
                   q"""${targetTpe}_JsonCodec.instance.encode(ctx, $ref)"""
+                case f: Typedef.Foreign =>
+                  f.bindings.get(BaboonLang.Scala) match {
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                      encodeKey(aliasedRef, ref)
+                    case _ =>
+                      val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
+                      q"""${targetTpe}_JsonCodec.instance.encode(ctx, $ref)"""
+                  }
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -273,8 +286,19 @@ class ScJsonCodecGenerator(
           case TypeId.Builtins.str   => q"$circeJson.fromString($ref)"
           case TypeId.Builtins.bytes => q"$circeJson.fromString($ref.toHexString)"
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
-            q"$targetTpe.instance.encode(ctx, $ref)"
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Scala) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkEncoder(aliasedRef, ref)
+                  case _ =>
+                    val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                    q"$targetTpe.instance.encode(ctx, $ref)"
+                }
+              case _ =>
+                val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                q"$targetTpe.instance.encode(ctx, $ref)"
+            }
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
@@ -327,9 +351,17 @@ class ScJsonCodecGenerator(
               domain.defs.meta.nodes(uid) match {
                 case u: DomainMember.User =>
                   u.defn match {
-                    case _: Typedef.Enum | _: Typedef.Foreign =>
+                    case _: Typedef.Enum =>
                       val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
                       q"$circeKeyDecoder.instance(s => ${targetTpe}_JsonCodec.instance.decode(ctx, $circeJson.fromString(s)).toOption)"
+                    case f: Typedef.Foreign =>
+                      f.bindings.get(BaboonLang.Scala) match {
+                        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                          getKeyDecoder(aliasedRef)
+                        case _ =>
+                          val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
+                          q"$circeKeyDecoder.instance(s => ${targetTpe}_JsonCodec.instance.decode(ctx, $circeJson.fromString(s)).toOption)"
+                      }
                     case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
                   }
                 case o =>
@@ -367,8 +399,19 @@ class ScJsonCodecGenerator(
                 case other                 => throw new RuntimeException(s"BUG: Unexpected type: $other")
               }
             case u: TypeId.User =>
-              val targetTpe = trans.toScTypeRefKeepForeigns(u, domain, evo)
-              q"${targetTpe}_JsonCodec.circeDecoder"
+              domain.defs.meta.nodes(u) match {
+                case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                  f.bindings.get(BaboonLang.Scala) match {
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                      getDecoder(aliasedRef)
+                    case _ =>
+                      val targetTpe = trans.toScTypeRefKeepForeigns(u, domain, evo)
+                      q"${targetTpe}_JsonCodec.circeDecoder"
+                  }
+                case _ =>
+                  val targetTpe = trans.toScTypeRefKeepForeigns(u, domain, evo)
+                  q"${targetTpe}_JsonCodec.circeDecoder"
+              }
           }
         case TypeRef.Constructor(id, args) =>
           id match {
@@ -391,8 +434,13 @@ class ScJsonCodecGenerator(
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[ScValue]] = {
     defn.defn match {
-      case _: Typedef.Enum | _: Typedef.Foreign => meta.map(_.valueField)
-      case _                                    => meta.map(_.refValueField)
+      case _: Typedef.Enum => meta.map(_.valueField)
+      case f: Typedef.Foreign =>
+        f.bindings.get(BaboonLang.Scala) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => Nil
+          case _ => meta.map(_.valueField)
+        }
+      case _ => meta.map(_.refValueField)
     }
   }
 
@@ -407,6 +455,7 @@ class ScJsonCodecGenerator(
   }
 
   override def isActive(id: TypeId): Boolean = {
+    !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Scala) &&
     target.language.generateJsonCodecs && (target.language.generateJsonCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("json"), Set.empty[TypeId]).contains(id))
   }

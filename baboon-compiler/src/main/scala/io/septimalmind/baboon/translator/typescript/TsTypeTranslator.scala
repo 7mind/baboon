@@ -11,6 +11,19 @@ class TsTypeTranslator {
 
   def asTsRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[TsValue] = {
     tpe match {
+      case TypeRef.Scalar(uid: TypeId.User) =>
+        domain.defs.meta.nodes(uid) match {
+          case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+            f.bindings.get(BaboonLang.Typescript) match {
+              case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                asTsRef(aliasedRef, domain, evo)
+              case _ =>
+                q"${asTsType(uid, domain, evo)}"
+            }
+          case _ =>
+            q"${asTsType(uid, domain, evo)}"
+        }
+
       case TypeRef.Scalar(id) =>
         q"${asTsType(id, domain, evo)}"
 
@@ -80,8 +93,12 @@ class TsTypeTranslator {
   private def asTsTypeDerefForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): TsType = {
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
-        val fe = defn.bindings("typescript")
-        TsType(TsModuleId(NEList("foreign")), fe.decl, predef = true)
+        defn.bindings.get(BaboonLang.Typescript) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+            TsType(TsModuleId(NEList("foreign")), decl, predef = true)
+          case _ =>
+            toTsTypeRefKeepForeigns(tid, domain, evolution)
+        }
       case _ =>
         toTsTypeRefKeepForeigns(tid, domain, evolution)
     }

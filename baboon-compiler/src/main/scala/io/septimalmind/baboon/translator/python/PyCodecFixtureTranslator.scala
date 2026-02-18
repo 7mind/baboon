@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.python
 import io.septimalmind.baboon.translator.python.PyTypes.{baboonFixture, pyList, pyStaticMethod}
 import io.septimalmind.baboon.translator.python.PyValue.PyType
 import io.septimalmind.baboon.typer.BaboonEnquiries
-import io.septimalmind.baboon.typer.model.{BaboonEvolution, Domain, DomainMember, TypeId, TypeRef, Typedef}
+import io.septimalmind.baboon.typer.model.{BaboonEvolution, BaboonLang, Domain, DomainMember, TypeId, TypeRef, Typedef}
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
@@ -23,7 +23,7 @@ object PyCodecFixtureTranslator {
   ) extends PyCodecFixtureTranslator {
     override def translate(defn: DomainMember.User): Option[TextTree[PyValue]] = {
       defn.defn match {
-        case _ if enquiries.hasForeignType(defn, domain)     => None
+        case _ if enquiries.hasForeignType(defn, domain, BaboonLang.Py) => None
         case _ if enquiries.isRecursiveTypedef(defn, domain) => None
         case _: Typedef.Contract                             => None
         case _: Typedef.Enum                                 => None
@@ -75,7 +75,7 @@ object PyCodecFixtureTranslator {
     }
 
     private def genType(tpe: TypeRef): TextTree[PyValue] = {
-      tpe match {
+      BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Py) match {
         case s: TypeRef.Scalar =>
           s.id match {
             case TypeId.Builtins.i08 => q"$baboonFixture.next_byte()"

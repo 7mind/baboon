@@ -2,6 +2,7 @@ package io.septimalmind.baboon.translator.java
 
 import io.septimalmind.baboon.translator.java.JvTypes.*
 import io.septimalmind.baboon.translator.java.JvValue.{JvPackageId, JvType}
+import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
@@ -10,6 +11,19 @@ import izumi.fundamentals.platform.strings.TextTree.Quote
 class JvTypeTranslator {
   def asJvRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[JvValue] = {
     tpe match {
+      case TypeRef.Scalar(uid: TypeId.User) =>
+        domain.defs.meta.nodes(uid) match {
+          case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+            f.bindings.get(BaboonLang.Java) match {
+              case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                asJvRef(aliasedRef, domain, evo)
+              case _ =>
+                q"${asJvType(uid, domain, evo)}"
+            }
+          case _ =>
+            q"${asJvType(uid, domain, evo)}"
+        }
+
       case TypeRef.Scalar(id) =>
         q"${asJvType(id, domain, evo)}"
 
@@ -25,7 +39,7 @@ class JvTypeTranslator {
 
   /** Like asJvRef but always uses boxed types for primitives (needed inside generics). */
   def asJvBoxedRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[JvValue] = {
-    tpe match {
+    BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Java) match {
       case TypeRef.Scalar(id) =>
         q"${asJvBoxedType(id, domain, evo)}"
       case other =>
@@ -113,12 +127,16 @@ class JvTypeTranslator {
   private def asJvTypeDerefForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): JvType = {
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
-        val fe    = defn.bindings("java")
-        val parts = fe.decl.split('.').toList
-        assert(parts.length > 1)
-        val pkg = parts.init
-        val id  = parts.last
-        JvType(JvPackageId(NEList.unsafeFrom(pkg)), id)
+        defn.bindings.get(BaboonLang.Java) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+            val parts = decl.split('.').toList
+            assert(parts.length > 1)
+            val pkg = parts.init
+            val id  = parts.last
+            JvType(JvPackageId(NEList.unsafeFrom(pkg)), id)
+          case _ =>
+            toJvTypeRefKeepForeigns(tid, domain, evolution)
+        }
       case _ =>
         toJvTypeRefKeepForeigns(tid, domain, evolution)
     }

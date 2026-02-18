@@ -23,7 +23,7 @@ object TsCodecFixtureTranslator {
 
     override def translate(definition: DomainMember.User): Option[TextTree[TsValue]] = {
       definition.defn match {
-        case _ if enquiries.hasForeignType(definition, domain)     => None
+        case _ if enquiries.hasForeignType(definition, domain, BaboonLang.Typescript) => None
         case _ if enquiries.isRecursiveTypedef(definition, domain) => None
         case dto: Typedef.Dto                                      => Some(doTranslateDto(dto))
         case adt: Typedef.Adt                                      => Some(doTranslateAdt(adt))
@@ -105,7 +105,7 @@ object TsCodecFixtureTranslator {
     }
 
     private def genType(tpe: TypeRef): TextTree[TsValue] = {
-      tpe match {
+      BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Typescript) match {
         case tpe: TypeRef.Scalar => genScalar(tpe)
         case TypeRef.Constructor(id, args) =>
           id match {

@@ -3,8 +3,8 @@ package io.septimalmind.baboon.typer
 import io.septimalmind.baboon.parser.model.{RawAdt, RawDefn, RawDtoMember, RawDtoid, ScopedRef}
 import io.septimalmind.baboon.typer.model.BinReprLen.Variable
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
-import io.septimalmind.baboon.typer.model.Typedef.Contract
-import io.septimalmind.baboon.typer.model.{BinReprLen, Domain, DomainMember, Field, Owner, ShallowSchemaId, TypeId, TypeRef, Typedef}
+import io.septimalmind.baboon.typer.model.Typedef.{Contract, ForeignMapping}
+import io.septimalmind.baboon.typer.model.{BaboonLang, BinReprLen, Domain, DomainMember, Field, Owner, ShallowSchemaId, TypeId, TypeRef, Typedef}
 import izumi.fundamentals.collections.nonempty.NESet
 import izumi.fundamentals.graphs.struct.AdjacencyList
 import izumi.fundamentals.graphs.tools.cycles.LoopDetector
@@ -12,6 +12,12 @@ import izumi.fundamentals.platform.crypto.IzSha256HashFunction
 
 import scala.annotation.tailrec
 import scala.collection.mutable
+
+sealed trait ForeignResolution
+object ForeignResolution {
+  case class CustomType(entry: Typedef.ForeignEntry) extends ForeignResolution
+  case class BaboonAlias(typeRef: TypeRef) extends ForeignResolution
+}
 
 trait BaboonEnquiries {
   def fullDepsOfDefn(defn: DomainMember): Set[TypeId]
@@ -21,6 +27,8 @@ trait BaboonEnquiries {
   def shallowId(defn: DomainMember): ShallowSchemaId
   def hardDepsOfRawDefn(dd: RawDefn): Set[ScopedRef]
   def hasForeignType(definition: DomainMember.User, domain: Domain): Boolean
+  def hasForeignType(definition: DomainMember.User, domain: Domain, lang: BaboonLang): Boolean
+  def resolveForeignBinding(defn: Typedef.Foreign, lang: BaboonLang): Option[ForeignResolution]
   def isRecursiveTypedef(definition: DomainMember.User, domain: Domain): Boolean
   def loopsOf(
     domain: Map[TypeId, DomainMember]
@@ -34,6 +42,32 @@ trait BaboonEnquiries {
 }
 
 object BaboonEnquiries {
+
+  def isBaboonRefForeign(id: TypeId, domain: Domain, lang: BaboonLang): Boolean = {
+    domain.defs.meta.nodes.get(id).exists {
+      case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+        f.bindings.get(lang).exists(_.mapping.isInstanceOf[Typedef.ForeignMapping.BaboonRef])
+      case _ => false
+    }
+  }
+
+  def resolveBaboonRef(tpe: TypeRef, domain: Domain, lang: BaboonLang): TypeRef = {
+    tpe match {
+      case TypeRef.Scalar(id: TypeId.User) =>
+        domain.defs.meta.nodes.get(id) match {
+          case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
+            f.bindings.get(lang) match {
+              case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                resolveBaboonRef(aliasedRef, domain, lang)
+              case _ => tpe
+            }
+          case _ => tpe
+        }
+      case TypeRef.Constructor(id, args) =>
+        TypeRef.Constructor(id, args.map(a => resolveBaboonRef(a, domain, lang)))
+      case _ => tpe
+    }
+  }
 
   class BaboonEnquiriesImpl extends BaboonEnquiries {
     def unfold(dom: Domain, contracts: List[TypeId.User]): List[Field] = {
@@ -59,7 +93,24 @@ object BaboonEnquiries {
       loops
     }
 
+    def resolveForeignBinding(defn: Typedef.Foreign, lang: BaboonLang): Option[ForeignResolution] = {
+      defn.bindings.get(lang).map { entry =>
+        entry.mapping match {
+          case ForeignMapping.BaboonRef(typeRef) => ForeignResolution.BaboonAlias(typeRef)
+          case ForeignMapping.Custom(_, _)       => ForeignResolution.CustomType(entry)
+        }
+      }
+    }
+
+    def hasForeignType(definition: DomainMember.User, domain: Domain, lang: BaboonLang): Boolean = {
+      hasForeignTypeImpl(definition, domain, Some(lang))
+    }
+
     def hasForeignType(definition: DomainMember.User, domain: Domain): Boolean = {
+      hasForeignTypeImpl(definition, domain, None)
+    }
+
+    private def hasForeignTypeImpl(definition: DomainMember.User, domain: Domain, lang: Option[BaboonLang]): Boolean = {
       def processRefs(foreignType: Option[TypeId], tail: List[Typedef], refs: List[TypeRef], seen: mutable.HashSet[TypeId]): Option[TypeId] = {
         val moreToCheck = refs.flatMap {
           case TypeRef.Scalar(id) =>
@@ -106,7 +157,12 @@ object BaboonEnquiries {
                   }
                 collectForeignType(tail ++ dtos, foreignType, seen)
               case f: Typedef.Foreign =>
-                collectForeignType(tail, Some(f.id), seen)
+                lang.flatMap(l => f.bindings.get(l)) match {
+                  case Some(Typedef.ForeignEntry(_, ForeignMapping.BaboonRef(typeRef))) =>
+                    processRefs(foreignType, tail, List(typeRef), seen)
+                  case _ =>
+                    collectForeignType(tail, Some(f.id), seen)
+                }
               case _: Typedef.Enum =>
                 collectForeignType(tail, foreignType, seen)
               case s: Typedef.Service =>
@@ -172,7 +228,13 @@ object BaboonEnquiries {
               explodeFields(t.fields) ++ t.contracts
             case _: Typedef.Enum    => Set.empty
             case t: Typedef.Adt     => t.members.toSet ++ t.contracts
-            case _: Typedef.Foreign => Set.empty
+            case f: Typedef.Foreign =>
+              f.bindings.values.flatMap { entry =>
+                entry.mapping match {
+                  case ForeignMapping.BaboonRef(typeRef) => explodeRef(typeRef)
+                  case ForeignMapping.Custom(_, _)       => Set.empty
+                }
+              }.toSet
             case s: Typedef.Service =>
               s.methods.flatMap(m => Set(m.sig) ++ m.out.toSet ++ m.err.toSet).flatMap(explodeRef).toSet
           }
@@ -225,8 +287,15 @@ object BaboonEnquiries {
               s"[adt;${wrap(a.id)};$members]"
             case f: Typedef.Foreign =>
               val members = f.bindings.values.toList
-                .sortBy(_.lang)
-                .map(e => s"[${e.lang};${e.decl};${e.attrs.attrs.map(a => s"${a.name};${a.value}").sorted.mkString(":")}]")
+                .sortBy(_.lang.asString)
+                .map { e =>
+                  e.mapping match {
+                    case ForeignMapping.Custom(decl, attrs) =>
+                      s"[${e.lang.asString};$decl;${attrs.attrs.map(a => s"${a.name};${a.value}").sorted.mkString(":")}]"
+                    case ForeignMapping.BaboonRef(typeRef) =>
+                      s"[${e.lang.asString};baboon:${typeRef.toString}]"
+                  }
+                }
                 .mkString(":")
               s"[foreign;${wrap(f.id)};$members]"
           }
@@ -278,8 +347,13 @@ object BaboonEnquiries {
               Set.empty
             case _: Typedef.Adt =>
               Set.empty
-            case _: Typedef.Foreign =>
-              Set.empty
+            case f: Typedef.Foreign =>
+              f.bindings.values.flatMap { entry =>
+                entry.mapping match {
+                  case ForeignMapping.BaboonRef(typeRef) => Set(typeRef)
+                  case ForeignMapping.Custom(_, _)       => Set.empty[TypeRef]
+                }
+              }.toSet
             case s: Typedef.Service =>
               s.methods.flatMap(m => Set(m.sig) ++ m.out.toSet ++ m.err.toSet)
           }

@@ -24,7 +24,7 @@ object DtCodecFixtureTranslator {
       definition: DomainMember.User
     ): Option[TextTree[DtValue]] = {
       definition.defn match {
-        case _ if enquiries.hasForeignType(definition, domain)     => None
+        case _ if enquiries.hasForeignType(definition, domain, BaboonLang.Dart) => None
         case _ if enquiries.isRecursiveTypedef(definition, domain) => None
         case dto: Typedef.Dto                                      => Some(doTranslateDto(dto))
         case adt: Typedef.Adt                                      => Some(doTranslateAdt(adt))
@@ -44,7 +44,7 @@ object DtCodecFixtureTranslator {
         case _: DomainMember.Builtin => None
         case u: DomainMember.User =>
           u.defn match {
-            case _ if enquiries.hasForeignType(u, domain)     => None
+            case _ if enquiries.hasForeignType(u, domain, BaboonLang.Dart) => None
             case _ if enquiries.isRecursiveTypedef(u, domain) => None
             case _: Typedef.Contract                          => None
             case _: Typedef.Enum                              => None
@@ -101,7 +101,7 @@ object DtCodecFixtureTranslator {
 
     private def genType(tpe: TypeRef): TextTree[DtValue] = {
       def gen(tpe: TypeRef): TextTree[DtValue] = {
-        tpe match {
+        BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Dart) match {
           case tpe: TypeRef.Scalar => genScalar(tpe)
           case TypeRef.Constructor(id, args) =>
             id match {

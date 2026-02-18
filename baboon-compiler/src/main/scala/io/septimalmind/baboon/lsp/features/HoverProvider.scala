@@ -123,7 +123,12 @@ class HoverProvider(
         sb.append("\n**Bindings:**\n")
         foreign.bindings.foreach {
           case (lang, entry) =>
-            sb.append(s"- $lang: `${entry.decl}`\n")
+            entry.mapping match {
+              case Typedef.ForeignMapping.Custom(decl, _) =>
+                sb.append(s"- ${lang.asString}: `$decl`\n")
+              case Typedef.ForeignMapping.BaboonRef(typeRef) =>
+                sb.append(s"- ${lang.asString}: $typeRef (baboon alias)\n")
+            }
         }
 
       case contract: Typedef.Contract =>

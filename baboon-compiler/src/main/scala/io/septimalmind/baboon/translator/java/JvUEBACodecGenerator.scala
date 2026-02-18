@@ -5,6 +5,7 @@ import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.java.JvCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.java.JvDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.java.JvTypes.*
+import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
@@ -27,7 +28,11 @@ class JvUEBACodecGenerator(
         case d: Typedef.Dto      => Some(genDtoBodies(jvRef, d))
         case e: Typedef.Enum     => Some(genEnumBodies(jvRef, e))
         case a: Typedef.Adt      => Some(genAdtBodies(jvRef, a))
-        case _: Typedef.Foreign  => Some(genForeignBodies(jvRef))
+        case f: Typedef.Foreign =>
+          f.bindings.get(BaboonLang.Java) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
+            case _ => Some(genForeignBodies(jvRef))
+          }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
       }).map {
@@ -420,8 +425,19 @@ class JvUEBACodecGenerator(
               case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
-            q"""$targetTpe.INSTANCE.decode(ctx, input)"""
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Java) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkDecoder(aliasedRef)
+                  case _ =>
+                    val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
+                    q"""$targetTpe.INSTANCE.decode(ctx, input)"""
+                }
+              case _ =>
+                val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
+                q"""$targetTpe.INSTANCE.decode(ctx, input)"""
+            }
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -469,8 +485,19 @@ class JvUEBACodecGenerator(
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
-            q"""$targetTpe.INSTANCE.encode(ctx, $wref, $ref);"""
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Java) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkEncoder(aliasedRef, ref, wref)
+                  case _ =>
+                    val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
+                    q"""$targetTpe.INSTANCE.encode(ctx, $wref, $ref);"""
+                }
+              case _ =>
+                val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
+                q"""$targetTpe.INSTANCE.encode(ctx, $wref, $ref);"""
+            }
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -509,8 +536,13 @@ class JvUEBACodecGenerator(
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[JvValue]] = {
     defn.defn match {
-      case _: Typedef.Enum | _: Typedef.Foreign => meta.map(_.valueField)
-      case _                                    => meta.map(_.refValueField)
+      case _: Typedef.Enum => meta.map(_.valueField)
+      case f: Typedef.Foreign =>
+        f.bindings.get(BaboonLang.Java) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => meta.map(_.refValueField)
+          case _                                                                  => meta.map(_.valueField)
+        }
+      case _ => meta.map(_.refValueField)
     }
   }
 
@@ -529,6 +561,7 @@ class JvUEBACodecGenerator(
   }
 
   override def isActive(id: TypeId): Boolean = {
+    !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Java) &&
     target.language.generateUebaCodecs && (target.language.generateUebaCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId]).contains(id))
   }

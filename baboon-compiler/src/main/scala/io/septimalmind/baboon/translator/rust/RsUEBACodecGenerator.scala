@@ -299,7 +299,7 @@ class RsUEBACodecGenerator(
   // - .len() and .iter() work via auto-deref for any ref level
   // - match needs &$ref to avoid moving out of borrow; match ergonomics handles &&T
   private def mkEncoder(tpe: TypeRef, ref: TextTree[RsValue], writer: TextTree[RsValue] = q"writer"): TextTree[RsValue] = {
-    tpe match {
+    BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Rust) match {
       case TypeRef.Scalar(_) =>
         q"$ref.encode_ueba(ctx, $writer)?;"
       case c: TypeRef.Constructor =>
@@ -355,8 +355,19 @@ class RsUEBACodecGenerator(
           case TypeId.Builtins.tsu   => q"crate::baboon_runtime::bin_tools::read_timestamp_utc(reader)?"
           case TypeId.Builtins.tso   => q"crate::baboon_runtime::bin_tools::read_timestamp_offset(reader)?"
           case u: TypeId.User =>
-            val tpe = trans.asRsType(u, domain, evo)
-            q"${tpe.asName}::decode_ueba(ctx, reader)?"
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Rust) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkDecoder(aliasedRef)
+                  case _ =>
+                    val tpe = trans.asRsType(u, domain, evo)
+                    q"${tpe.asName}::decode_ueba(ctx, reader)?"
+                }
+              case _ =>
+                val tpe = trans.asRsType(u, domain, evo)
+                q"${tpe.asName}::decode_ueba(ctx, reader)?"
+            }
           case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
       case c: TypeRef.Constructor =>
@@ -395,6 +406,7 @@ class RsUEBACodecGenerator(
   }
 
   override def isActive(id: TypeId): Boolean = {
+    !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Rust) &&
     target.language.generateUebaCodecs && (target.language.generateUebaCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId]).contains(id))
   }
