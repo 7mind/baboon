@@ -12,14 +12,14 @@ final class CrossLanguageTests: XCTestCase {
         let filePath = "\(baseDir)/\(source)-json/all-basic-types.json"
         let data = try Data(contentsOf: URL(fileURLWithPath: filePath))
         let json = try JSONSerialization.jsonObject(with: data)
-        return AllBasicTypes_JsonCodec.instance.decode(ctx, json)
+        return try AllBasicTypes_JsonCodec.instance.decode(ctx, json)
     }
 
     func readUebaFile(_ source: String) throws -> AllBasicTypes {
         let filePath = "\(baseDir)/\(source)-ueba/all-basic-types.ueba"
         let data = try Data(contentsOf: URL(fileURLWithPath: filePath))
         let reader = BaboonBinReader(data)
-        return AllBasicTypes_UebaCodec.instance.decode(ctx, reader)
+        return try AllBasicTypes_UebaCodec.instance.decode(ctx, reader)
     }
 
     func testJsonCrossLanguageCompatibility() throws {
@@ -31,7 +31,7 @@ final class CrossLanguageTests: XCTestCase {
             }
             let decoded = try readJsonFile(source)
             let reEncoded = AllBasicTypes_JsonCodec.instance.encode(ctx, decoded)
-            let reDecoded = AllBasicTypes_JsonCodec.instance.decode(ctx, reEncoded)
+            let reDecoded = try AllBasicTypes_JsonCodec.instance.decode(ctx, reEncoded)
             XCTAssertEqual(reDecoded, decoded, "JSON round-trip failed for \(source)")
         }
     }
@@ -47,7 +47,7 @@ final class CrossLanguageTests: XCTestCase {
             let writer = BaboonBinWriter()
             AllBasicTypes_UebaCodec.instance.encode(ctx, writer, decoded)
             let reReader = BaboonBinReader(writer.toData())
-            let reDecoded = AllBasicTypes_UebaCodec.instance.decode(ctx, reReader)
+            let reDecoded = try AllBasicTypes_UebaCodec.instance.decode(ctx, reReader)
             XCTAssertEqual(reDecoded, decoded, "UEBA round-trip failed for \(source)")
         }
     }
