@@ -67,7 +67,9 @@ class BaboonRandom {
         comps.minute = minute
         comps.second = second
         comps.nanosecond = millis * 1_000_000
-        return calendar.date(from: comps)!
+        let date = calendar.date(from: comps)!
+        let epochMillis = Int64(date.timeIntervalSince1970 * 1000)
+        return Date(timeIntervalSince1970: Double(epochMillis) / 1000.0)
     }
 
     func nextTso() -> BaboonDateTimeOffset {
