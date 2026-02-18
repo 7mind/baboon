@@ -92,7 +92,9 @@ class SwTypeTranslator {
   private def asSwTypeDerefForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): SwType = {
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
-        val fe    = defn.bindings("swift")
+        val fe    = defn.bindings.iterator.collectFirst {
+          case (k, v) if k.toString.equalsIgnoreCase("swift") => v
+        }.getOrElse(throw new IllegalStateException(s"Missing swift binding for foreign type: ${defn.id}"))
         val parts = fe.decl.split('.').toList
         assert(parts.length > 1)
         val pkg = parts.init
