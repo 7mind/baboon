@@ -24,6 +24,34 @@ foreign ForeignStruct {
   dart = "dart.core.int"
 }
 
+foreign AliasedScalar {
+  scala = i64
+  cs = i64
+  kotlin = i64
+  java = i64
+  py = i64
+  rust = i64
+  typescript = i64
+  dart = i64
+}
+
+foreign AliasedCollection {
+  scala = lst[str]
+  cs = lst[str]
+  kotlin = lst[str]
+  java = lst[str]
+  py = lst[str]
+  rust = lst[str]
+  typescript = lst[str]
+  dart = lst[str]
+}
+
+root data T16_AliasedForeign : derived[json], derived[ueba] {
+  scalar: AliasedScalar
+  collection: AliasedCollection
+  optScalar: opt[AliasedScalar]
+  mapScalar: map[str, AliasedScalar]
+}
 
 root data F1 {
    fld0: ForeignStruct
