@@ -106,15 +106,29 @@ class SwTypeTranslator {
   def toSwTypeRefKeepForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): SwType = {
     val version = domain.version
     val pkg     = toSwPkg(tid.pkg, version, evolution)
+    val typeName = renderTypeName(tid.name.name, version, evolution)
 
     tid.owner match {
       case Owner.Adt(id) =>
         val parentOwnerParts = renderOwner(id.owner)
         val parentPkg        = SwPackageId(pkg.parts ++ parentOwnerParts)
-        SwType(parentPkg, tid.name.name, importAs = Some(toSnakeCase(id.name.name)))
+        val ownerName        = renderTypeName(id.name.name, version, evolution)
+        SwType(parentPkg, typeName, importAs = Some(toSnakeCase(ownerName)))
       case other =>
         val ownerAsPrefix = renderOwner(other)
-        SwType(SwPackageId(pkg.parts ++ ownerAsPrefix), tid.name.name)
+        SwType(SwPackageId(pkg.parts ++ ownerAsPrefix), typeName)
+    }
+  }
+
+  private def renderTypeName(baseName: String, version: Version, evolution: BaboonEvolution): String = {
+    if (version == evolution.latest) {
+      baseName
+    } else {
+      val normalizedVersion = version.v.toString.map {
+        case c if c.isLetterOrDigit => c
+        case _                      => '_'
+      }
+      s"${baseName}_v_$normalizedVersion"
     }
   }
 
