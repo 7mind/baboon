@@ -568,10 +568,19 @@ class BaboonBinReader {
         assert(kind >= 0 && kind <= 2)
         let dotnetUtcMs = dotnetLocalMs - offsetMs
         let epochMs = dotnetUtcMs - BaboonBinWriter.dotnetEpochOffsetMs
+        let normalizedKind: String
+        switch kind {
+        case 0:
+            normalizedKind = "offset"
+        case 1:
+            normalizedKind = "utc"
+        default:
+            normalizedKind = "local"
+        }
         return BaboonDateTimeOffset(
             epochMillis: epochMs,
             offsetMillis: offsetMs,
-            kind: kind == 1 ? "Utc" : "Local"
+            kind: normalizedKind
         )
     }
 }
