@@ -110,6 +110,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
 
   private def generateMeta(domain: Domain, lineage: BaboonLineage): Out[List[SwDefnTranslator.Output]] = {
     val basename = swFiles.basename(domain, lineage.evolution)
+    val versionSuffix = outputVersionSuffix(domain, lineage.evolution)
     val pkg      = trans.toSwPkg(domain.id, domain.version, lineage.evolution)
 
     val entries = lineage.evolution
@@ -132,7 +133,12 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
          |    }
          |}""".stripMargin
 
-    val metaOutput = SwDefnTranslator.Output(s"$basename/baboon_metadata.swift", metaTree, pkg, CompilerProduct.Definition)
+    val metaOutput = SwDefnTranslator.Output(
+      s"$basename/baboon_metadata$versionSuffix.swift",
+      metaTree,
+      pkg,
+      CompilerProduct.Definition,
+    )
 
     F.pure(List(metaOutput))
   }
@@ -246,8 +252,12 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
 
       val ctorParamDecl = if (missing.nonEmpty) "_ required: RequiredConversions" else ""
 
+      val basename = swFiles.basename(domain, lineage.evolution)
+      val versionSuffix = outputVersionSuffix(domain, lineage.evolution)
+      val conversionsClassName = s"BaboonConversions$versionSuffix"
+
       val converter =
-        q"""class BaboonConversions: $baboonAbstractConversions {
+        q"""class $conversionsClassName: $baboonAbstractConversions {
            |    $ctorParam
            |
            |    ${missingIface.shift(4).trim}
@@ -265,10 +275,8 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
       import izumi.fundamentals.collections.IzCollections.*
       val regsMap = defnOut.flatMap(_.codecReg).toMultimap.view.mapValues(_.flatten).toMap
 
-      val basename = swFiles.basename(domain, lineage.evolution)
-
       val converterOutput = SwDefnTranslator.Output(
-        s"$basename/baboon_conversions.swift",
+        s"$basename/baboon_conversions$versionSuffix.swift",
         converter,
         pkg,
         CompilerProduct.Conversion,
@@ -276,7 +284,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
 
       val codecOutputs = regsMap.map {
         case (codecId, regs) =>
-          val className = s"BaboonCodecs${codecId.capitalize}"
+          val className = s"BaboonCodecs${codecId.capitalize}$versionSuffix"
           val codecTree =
             q"""class $className: ${SwValue.SwType(baboonRuntimePkg, s"AbstractBaboon${codecId}Codecs")} {
                |    override init() {
@@ -303,6 +311,18 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
       }
 
       List(converterOutput) ++ codecOutputs ++ convertersOutput
+    }
+  }
+
+  private def outputVersionSuffix(domain: Domain, evolution: BaboonEvolution): String = {
+    if (evolution.latest == domain.version) {
+      ""
+    } else {
+      val normalizedVersion = domain.version.v.toString.map {
+        case c if c.isLetterOrDigit => c
+        case _                      => '_'
+      }
+      s"_v_$normalizedVersion"
     }
   }
 }
