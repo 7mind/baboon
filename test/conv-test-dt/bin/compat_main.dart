@@ -43,29 +43,118 @@ AllBasicTypes createSampleData() {
   );
 }
 
-void main() {
-  final sampleData = createSampleData();
+void writeJson(AllBasicTypes data, String outputDir) {
+  Directory(outputDir).createSync(recursive: true);
   final ctx = BaboonCodecContext.defaultCtx;
-
-  final baseDir = Directory('../../target/compat-test').absolute.path;
-  final dartJsonDir = '$baseDir/dart-json';
-  final dartUebaDir = '$baseDir/dart-ueba';
-
-  Directory(dartJsonDir).createSync(recursive: true);
-  Directory(dartUebaDir).createSync(recursive: true);
-
-  final jsonData = AllBasicTypes_JsonCodec.instance.encode(ctx, sampleData);
+  final jsonData = AllBasicTypes_JsonCodec.instance.encode(ctx, data);
   final jsonStr = jsonEncode(jsonData);
-  final jsonFile = File('$dartJsonDir/all-basic-types.json');
+  final jsonFile = File('$outputDir/all-basic-types.json');
   jsonFile.writeAsStringSync(jsonStr);
   print('Written JSON to ${jsonFile.absolute.path}');
+}
 
+void writeUeba(AllBasicTypes data, String outputDir) {
+  Directory(outputDir).createSync(recursive: true);
+  final ctx = BaboonCodecContext.defaultCtx;
   final writer = BaboonBinWriter();
-  AllBasicTypes_UebaCodec.instance.encode(ctx, writer, sampleData);
+  AllBasicTypes_UebaCodec.instance.encode(ctx, writer, data);
   final uebaBytes = writer.toBytes();
-  final uebaFile = File('$dartUebaDir/all-basic-types.ueba');
+  final uebaFile = File('$outputDir/all-basic-types.ueba');
   uebaFile.writeAsBytesSync(uebaBytes);
   print('Written UEBA to ${uebaFile.absolute.path}');
+}
+
+void readAndVerify(String filePath) {
+  final ctx = BaboonCodecContext.defaultCtx;
+  AllBasicTypes data;
+
+  try {
+    if (filePath.endsWith('.json')) {
+      final jsonStr = File(filePath).readAsStringSync();
+      final json = jsonDecode(jsonStr);
+      data = AllBasicTypes_JsonCodec.instance.decode(ctx, json);
+    } else if (filePath.endsWith('.ueba')) {
+      final bytes = File(filePath).readAsBytesSync();
+      final reader = BaboonBinReader(Uint8List.fromList(bytes));
+      data = AllBasicTypes_UebaCodec.instance.decode(ctx, reader);
+    } else {
+      stderr.writeln('Unknown file extension: $filePath');
+      exit(1);
+    }
+  } catch (e) {
+    stderr.writeln('Deserialization failed: $e');
+    exit(1);
+  }
+
+  if (data.vstr != 'Hello, Baboon!') {
+    stderr.writeln("vstr mismatch: expected 'Hello, Baboon!', got '${data.vstr}'");
+    exit(1);
+  }
+  if (data.vi32 != 123456) {
+    stderr.writeln('vi32 mismatch: expected 123456, got ${data.vi32}');
+    exit(1);
+  }
+  if (!data.vbit) {
+    stderr.writeln('vbit mismatch: expected true, got ${data.vbit}');
+    exit(1);
+  }
+
+  // Roundtrip
+  try {
+    if (filePath.endsWith('.json')) {
+      final reEncoded = AllBasicTypes_JsonCodec.instance.encode(ctx, data);
+      final reDecoded = AllBasicTypes_JsonCodec.instance.decode(ctx, reEncoded);
+      if (data != reDecoded) {
+        stderr.writeln('JSON roundtrip mismatch');
+        exit(1);
+      }
+    } else {
+      final writer = BaboonBinWriter();
+      AllBasicTypes_UebaCodec.instance.encode(ctx, writer, data);
+      final reReader = BaboonBinReader(writer.toBytes());
+      final reDecoded = AllBasicTypes_UebaCodec.instance.decode(ctx, reReader);
+      if (data != reDecoded) {
+        stderr.writeln('UEBA roundtrip mismatch');
+        exit(1);
+      }
+    }
+  } catch (e) {
+    stderr.writeln('Roundtrip failed: $e');
+    exit(1);
+  }
+
+  print('OK');
+}
+
+void runLegacy() {
+  final sampleData = createSampleData();
+  final baseDir = Directory('../../target/compat-test').absolute.path;
+
+  writeJson(sampleData, '$baseDir/dart-json');
+  writeUeba(sampleData, '$baseDir/dart-ueba');
 
   print('Dart serialization complete!');
+}
+
+void main(List<String> args) {
+  if (args.length >= 3 && args[0] == 'write') {
+    final outputDir = args[1];
+    final format = args[2];
+    final sampleData = createSampleData();
+    switch (format) {
+      case 'json':
+        writeJson(sampleData, outputDir);
+        break;
+      case 'ueba':
+        writeUeba(sampleData, outputDir);
+        break;
+      default:
+        stderr.writeln('Unknown format: $format');
+        exit(1);
+    }
+  } else if (args.length >= 2 && args[0] == 'read') {
+    readAndVerify(args[1]);
+  } else {
+    runLegacy();
+  }
 }
