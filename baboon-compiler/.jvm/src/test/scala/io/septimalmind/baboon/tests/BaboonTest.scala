@@ -67,7 +67,7 @@ abstract class BaboonTest[F[+_, +_]: TagKK: BaboonTestModule] extends Spec2[F]()
         UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither,
       ).morph[PluginBase]
     ),
-    activation = super.config.activation + BaboonModeAxis.Compiler
+    activation = super.config.activation + BaboonModeAxis.Compiler,
   )
 
   def loadPkg(loader: BaboonLoader[F]): F[NEList[BaboonIssue], BaboonFamily] = {

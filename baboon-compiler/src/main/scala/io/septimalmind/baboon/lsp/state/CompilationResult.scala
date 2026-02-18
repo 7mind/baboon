@@ -6,7 +6,7 @@ import io.septimalmind.baboon.typer.model.BaboonFamily
 case class CompilationResult(
   family: Option[BaboonFamily],
   issues: Seq[BaboonIssue],
-  fileIssues: Map[String, Seq[BaboonIssue]]
+  fileIssues: Map[String, Seq[BaboonIssue]],
 )
 
 object CompilationResult {

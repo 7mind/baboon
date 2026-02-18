@@ -20,7 +20,7 @@ object ServiceContextResolver {
   )
 
   val knownPragmaKeys: Seq[(String, String)] = for {
-    lang <- languages
+    lang                  <- languages
     (suffix, description) <- pragmaSuffixes
   } yield (s"$lang.service.context$suffix", description)
 
@@ -29,8 +29,9 @@ object ServiceContextResolver {
   private def validateTypeName(typeName: String, mode: String): String = {
     val parts = typeName.split('.')
     assert(parts.nonEmpty, s"service.context.type must not be empty")
-    parts.foreach { part =>
-      assert(validIdentifier.matches(part), s"service.context.type component '$part' is not a valid identifier in '$typeName'")
+    parts.foreach {
+      part =>
+        assert(validIdentifier.matches(part), s"service.context.type component '$part' is not a valid identifier in '$typeName'")
     }
     if (mode == "abstract") {
       assert(parts.length == 1, s"service.context.type must be a simple name for abstract mode, got '$typeName'")
@@ -48,7 +49,8 @@ object ServiceContextResolver {
     val typeKey  = s"$languageKey.service.context.type"
     val paramKey = s"$languageKey.service.context.parameter.name"
 
-    val mode = cliPragmas.get(modeKey)
+    val mode = cliPragmas
+      .get(modeKey)
       .orElse(domain.pragmas.get(modeKey))
       .getOrElse(cliConfig.mode)
 
@@ -56,10 +58,12 @@ object ServiceContextResolver {
       case "none" =>
         ResolvedServiceContext.NoContext
       case "abstract" | "type" =>
-        val typeName = cliPragmas.get(typeKey)
+        val typeName = cliPragmas
+          .get(typeKey)
           .orElse(domain.pragmas.get(typeKey))
           .getOrElse(cliConfig.typeName)
-        val paramName = cliPragmas.get(paramKey)
+        val paramName = cliPragmas
+          .get(paramKey)
           .orElse(domain.pragmas.get(paramKey))
           .getOrElse(cliConfig.parameterName)
 

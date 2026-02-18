@@ -191,9 +191,10 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
         )
       } else Nil
 
-      val importLines = usedTypes.map { p =>
-        val importName = if (p.name.contains('.')) p.name.split('.').head else p.name
-        s"import ${p.pkg.parts.mkString(".")}.$importName"
+      val importLines = usedTypes.map {
+        p =>
+          val importName = if (p.name.contains('.')) p.name.split('.').head else p.name
+          s"import ${p.pkg.parts.mkString(".")}.$importName"
       }.distinct ++ kotlinxJsonExtImports
 
       if (importLines.isEmpty) {

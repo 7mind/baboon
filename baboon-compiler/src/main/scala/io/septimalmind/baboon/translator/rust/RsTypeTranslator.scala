@@ -48,18 +48,18 @@ class RsTypeTranslator {
     tpe match {
       case b: TypeId.BuiltinScalar =>
         b match {
-          case TypeId.Builtins.i08  => rsI8
-          case TypeId.Builtins.i16  => rsI16
-          case TypeId.Builtins.i32  => rsI32
-          case TypeId.Builtins.i64  => rsI64
-          case TypeId.Builtins.u08  => rsU8
-          case TypeId.Builtins.u16  => rsU16
-          case TypeId.Builtins.u32  => rsU32
-          case TypeId.Builtins.u64  => rsU64
-          case TypeId.Builtins.f32  => rsF32
-          case TypeId.Builtins.f64  => rsF64
-          case TypeId.Builtins.f128 => rsDecimal
-          case TypeId.Builtins.str  => rsString
+          case TypeId.Builtins.i08   => rsI8
+          case TypeId.Builtins.i16   => rsI16
+          case TypeId.Builtins.i32   => rsI32
+          case TypeId.Builtins.i64   => rsI64
+          case TypeId.Builtins.u08   => rsU8
+          case TypeId.Builtins.u16   => rsU16
+          case TypeId.Builtins.u32   => rsU32
+          case TypeId.Builtins.u64   => rsU64
+          case TypeId.Builtins.f32   => rsF32
+          case TypeId.Builtins.f64   => rsF64
+          case TypeId.Builtins.f128  => rsDecimal
+          case TypeId.Builtins.str   => rsString
           case TypeId.Builtins.bytes =>
             // Vec<u8> - but we handle serde annotation at field level
             RsType(stdCrate, "Vec<u8>", predef = true)
@@ -69,14 +69,14 @@ class RsTypeTranslator {
           case TypeId.Builtins.tso =>
             RsType(chronoCrate, "DateTime<chrono::FixedOffset>", fq = true)
           case TypeId.Builtins.bit => rsBool
-          case other => throw new IllegalArgumentException(s"Unexpected builtin scalar: $other")
+          case other               => throw new IllegalArgumentException(s"Unexpected builtin scalar: $other")
         }
       case TypeId.Builtins.map => rsBTreeMap
       case TypeId.Builtins.lst => RsType(stdCrate, "Vec", predef = true)
       case TypeId.Builtins.set => rsBTreeSet
       case TypeId.Builtins.opt => rsOption
       case uid: TypeId.User    => asRsTypeDerefForeigns(uid, domain, evo)
-      case other => throw new IllegalArgumentException(s"Unexpected type: $other")
+      case other               => throw new IllegalArgumentException(s"Unexpected type: $other")
     }
   }
 
@@ -178,7 +178,7 @@ class RsTypeTranslator {
   def isTimestamp(tpe: TypeRef): Boolean = {
     tpe match {
       case TypeRef.Scalar(TypeId.Builtins.tsu) | TypeRef.Scalar(TypeId.Builtins.tso) => true
-      case _ => false
+      case _                                                                         => false
     }
   }
 

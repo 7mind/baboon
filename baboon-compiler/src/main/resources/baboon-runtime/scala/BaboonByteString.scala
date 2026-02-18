@@ -5,8 +5,8 @@ package baboon.runtime.shared {
   import scala.util.Try
 
   /**
-   * Minimal immutable ByteString implementation with comparison and concatenation
-   */
+    * Minimal immutable ByteString implementation with comparison and concatenation
+    */
   class ByteString private (private val bytes: Array[Byte]) extends Ordered[ByteString] {
 
     // Properties
@@ -161,8 +161,8 @@ package baboon.runtime.shared {
   }
 
   /**
-   * ByteString companion object with factory methods
-   */
+    * ByteString companion object with factory methods
+    */
   object ByteString {
 
     // Factory methods

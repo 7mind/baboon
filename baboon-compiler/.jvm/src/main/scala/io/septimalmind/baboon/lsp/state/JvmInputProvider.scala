@@ -11,27 +11,30 @@ import java.nio.file.{Files, Path}
 /** JVM implementation of InputProvider that scans the filesystem for .baboon files */
 class JvmInputProvider(
   modelDirs: Set[Path],
-  pathOps: PathOps
+  pathOps: PathOps,
 ) extends InputProvider {
 
   override def getWorkspaceInputs: Seq[BaboonParser.Input] = {
-    modelDirs.toSeq.flatMap { folder =>
-      if (Files.exists(folder)) {
-        IzFiles.walk(folder.toFile)
-          .filter(_.toFile.getName.endsWith(".baboon"))
-          .flatMap { file =>
-            val path = file.toAbsolutePath
-            scala.util.Try {
-              val content = IzFiles.readString(file.toFile)
-              BaboonParser.Input(
-                FSPath.parse(NEString.unsafeFrom(path.toString)),
-                content
-              )
-            }.toOption
-          }
-      } else {
-        Seq.empty
-      }
+    modelDirs.toSeq.flatMap {
+      folder =>
+        if (Files.exists(folder)) {
+          IzFiles
+            .walk(folder.toFile)
+            .filter(_.toFile.getName.endsWith(".baboon"))
+            .flatMap {
+              file =>
+                val path = file.toAbsolutePath
+                scala.util.Try {
+                  val content = IzFiles.readString(file.toFile)
+                  BaboonParser.Input(
+                    FSPath.parse(NEString.unsafeFrom(path.toString)),
+                    content,
+                  )
+                }.toOption
+            }
+        } else {
+          Seq.empty
+        }
     }
   }
 

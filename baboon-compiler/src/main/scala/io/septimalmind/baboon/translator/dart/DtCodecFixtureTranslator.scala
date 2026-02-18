@@ -63,8 +63,9 @@ object DtCodecFixtureTranslator {
     private def doTranslateDto(dto: Typedef.Dto): TextTree[DtValue] = {
       val fullType = translator.toDtTypeRefKeepForeigns(dto.id, domain, evo)
 
-      val generatedFields = dto.fields.map { f =>
-        q"${f.name.name}: ${genType(f.tpe)}"
+      val generatedFields = dto.fields.map {
+        f =>
+          q"${f.name.name}: ${genType(f.tpe)}"
       }
 
       q"""class ${fixtureTpeName(dto.id)} {

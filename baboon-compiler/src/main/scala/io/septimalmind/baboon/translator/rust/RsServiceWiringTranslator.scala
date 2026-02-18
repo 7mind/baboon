@@ -48,7 +48,7 @@ object RsServiceWiringTranslator {
 
       val hasServices = domain.defs.meta.nodes.values.exists {
         case DomainMember.User(_, _: Typedef.Service, _, _) => true
-        case _                                               => false
+        case _                                              => false
       }
       if (!hasServices) return None
 
@@ -115,7 +115,7 @@ object RsServiceWiringTranslator {
 
     private def genericParam: String = resolvedCtx match {
       case ResolvedServiceContext.AbstractContext(tn, _) => s"<$tn>"
-      case _                                            => ""
+      case _                                             => ""
     }
 
     private def renderFq(tree: TextTree[RsValue]): String = tree.mapRender {
@@ -134,34 +134,37 @@ object RsServiceWiringTranslator {
       val svcName = service.id.name.name
       val svcType = trans.asRsType(service.id, domain, evo)
 
-      val jsonFn = if (hasJsonCodecs)
-        Some(generateNoErrorsJsonFn(service, svcName, svcType))
-      else None
+      val jsonFn =
+        if (hasJsonCodecs)
+          Some(generateNoErrorsJsonFn(service, svcName, svcType))
+        else None
 
-      val uebaFn = if (hasUebaCodecs)
-        Some(generateNoErrorsUebaFn(service, svcName, svcType))
-      else None
+      val uebaFn =
+        if (hasUebaCodecs)
+          Some(generateNoErrorsUebaFn(service, svcName, svcType))
+        else None
 
       Seq(jsonFn, uebaFn).flatten.joinNN()
     }
 
     private def generateNoErrorsJsonFn(service: Typedef.Service, svcName: String, svcType: RsValue.RsType): TextTree[RsValue] = {
-      val cases = service.methods.map { m =>
-        val inFq = inTypeFq(m)
+      val cases = service.methods.map {
+        m =>
+          val inFq = inTypeFq(m)
 
-        val encodeAndReturn = m.out match {
-          case Some(_) =>
-            q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded);
-               |serde_json::to_string(&result).map_err(|e| $baboonWiringError::EncoderFailed(method.clone(), Box::new(e)))""".stripMargin
-          case None =>
-            q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded);
-               |Ok("null".to_string())""".stripMargin
-        }
+          val encodeAndReturn = m.out match {
+            case Some(_) =>
+              q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded);
+                 |serde_json::to_string(&result).map_err(|e| $baboonWiringError::EncoderFailed(method.clone(), Box::new(e)))""".stripMargin
+            case None =>
+              q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded);
+                 |Ok("null".to_string())""".stripMargin
+          }
 
-        q""""${m.name.name}" => {
-           |    let decoded: $inFq = serde_json::from_str(data).map_err(|e| $baboonWiringError::DecoderFailed(method.clone(), Box::new(e)))?;
-           |    ${encodeAndReturn.shift(4).trim}
-           |}""".stripMargin
+          q""""${m.name.name}" => {
+             |    let decoded: $inFq = serde_json::from_str(data).map_err(|e| $baboonWiringError::DecoderFailed(method.clone(), Box::new(e)))?;
+             |    ${encodeAndReturn.shift(4).trim}
+             |}""".stripMargin
       }.join("\n")
 
       q"""pub fn invoke_json_$svcName$genericParam(
@@ -178,25 +181,26 @@ object RsServiceWiringTranslator {
     }
 
     private def generateNoErrorsUebaFn(service: Typedef.Service, svcName: String, svcType: RsValue.RsType): TextTree[RsValue] = {
-      val cases = service.methods.map { m =>
-        val inFq = inTypeFq(m)
+      val cases = service.methods.map {
+        m =>
+          val inFq = inTypeFq(m)
 
-        val encodeAndReturn = m.out match {
-          case Some(_) =>
-            q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded);
-               |let mut out_buf = Vec::new();
-               |$baboonBinEncode::encode_ueba(&result, ctx, &mut out_buf).map_err(|e| $baboonWiringError::EncoderFailed(method.clone(), Box::new(e)))?;
-               |Ok(out_buf)""".stripMargin
-          case None =>
-            q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded);
-               |Ok(Vec::new())""".stripMargin
-        }
+          val encodeAndReturn = m.out match {
+            case Some(_) =>
+              q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded);
+                 |let mut out_buf = Vec::new();
+                 |$baboonBinEncode::encode_ueba(&result, ctx, &mut out_buf).map_err(|e| $baboonWiringError::EncoderFailed(method.clone(), Box::new(e)))?;
+                 |Ok(out_buf)""".stripMargin
+            case None =>
+              q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded);
+                 |Ok(Vec::new())""".stripMargin
+          }
 
-        q""""${m.name.name}" => {
-           |    let mut cursor = std::io::Cursor::new(data);
-           |    let decoded: $inFq = $baboonBinDecode::decode_ueba(ctx, &mut cursor).map_err(|e| $baboonWiringError::DecoderFailed(method.clone(), e))?;
-           |    ${encodeAndReturn.shift(4).trim}
-           |}""".stripMargin
+          q""""${m.name.name}" => {
+             |    let mut cursor = std::io::Cursor::new(data);
+             |    let decoded: $inFq = $baboonBinDecode::decode_ueba(ctx, &mut cursor).map_err(|e| $baboonWiringError::DecoderFailed(method.clone(), e))?;
+             |    ${encodeAndReturn.shift(4).trim}
+             |}""".stripMargin
       }.join("\n")
 
       q"""pub fn invoke_ueba_$svcName$genericParam(
@@ -233,13 +237,15 @@ object RsServiceWiringTranslator {
       val svcName = service.id.name.name
       val svcType = trans.asRsType(service.id, domain, evo)
 
-      val jsonFn = if (hasJsonCodecs)
-        Some(generateErrorsJsonFn(service, svcName, svcType))
-      else None
+      val jsonFn =
+        if (hasJsonCodecs)
+          Some(generateErrorsJsonFn(service, svcName, svcType))
+        else None
 
-      val uebaFn = if (hasUebaCodecs)
-        Some(generateErrorsUebaFn(service, svcName, svcType))
-      else None
+      val uebaFn =
+        if (hasUebaCodecs)
+          Some(generateErrorsUebaFn(service, svcName, svcType))
+        else None
 
       Seq(jsonFn, uebaFn).flatten.joinNN()
     }
@@ -247,67 +253,68 @@ object RsServiceWiringTranslator {
     private def generateErrorsJsonFn(service: Typedef.Service, svcName: String, svcType: RsValue.RsType): TextTree[RsValue] = {
       val wiringRetType = ct(bweFq, "String")
 
-      val cases = service.methods.map { m =>
-        val inFq = inTypeFq(m)
-        val lmHint = leftMapHint(m)
+      val cases = service.methods.map {
+        m =>
+          val inFq   = inTypeFq(m)
+          val lmHint = leftMapHint(m)
 
-        val decodeStep =
-          q"""let input: ${ct(bweFq, inFq)} = match serde_json::from_str::<$inFq>(data) {
-             |    Ok(v) => rt.pure$pureHint(v),
-             |    Err(e) => rt.fail($bweFq::DecoderFailed(method.clone(), Box::new(e))),
-             |};""".stripMargin
+          val decodeStep =
+            q"""let input: ${ct(bweFq, inFq)} = match serde_json::from_str::<$inFq>(data) {
+               |    Ok(v) => rt.pure$pureHint(v),
+               |    Err(e) => rt.fail($bweFq::DecoderFailed(method.clone(), Box::new(e))),
+               |};""".stripMargin
 
-        val hasErrType = m.err.isDefined && !resolved.noErrors
+          val hasErrType = m.err.isDefined && !resolved.noErrors
 
-        val callAndEncodeStep = m.out match {
-          case Some(_) =>
-            val callBody = if (hasErrType) {
-              q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                 |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
-                 |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                 |}""".stripMargin
-            } else {
-              q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                 |    Ok(result) => rt.pure$pureHint(result),
-                 |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                 |}""".stripMargin
-            }
+          val callAndEncodeStep = m.out match {
+            case Some(_) =>
+              val callBody = if (hasErrType) {
+                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                   |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
+                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                   |}""".stripMargin
+              } else {
+                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                   |    Ok(result) => rt.pure$pureHint(result),
+                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                   |}""".stripMargin
+              }
 
-            q"""let output = rt.flat_map$flatMapHint(input, |v| {
-               |    ${callBody.shift(4).trim}
-               |});
-               |rt.flat_map$flatMapHint(output, |v| {
-               |    match serde_json::to_string(&v) {
-               |        Ok(s) => rt.pure$pureHint(s),
-               |        Err(e) => rt.fail($bweFq::EncoderFailed(method.clone(), Box::new(e))),
-               |    }
-               |})""".stripMargin
+              q"""let output = rt.flat_map$flatMapHint(input, |v| {
+                 |    ${callBody.shift(4).trim}
+                 |});
+                 |rt.flat_map$flatMapHint(output, |v| {
+                 |    match serde_json::to_string(&v) {
+                 |        Ok(s) => rt.pure$pureHint(s),
+                 |        Err(e) => rt.fail($bweFq::EncoderFailed(method.clone(), Box::new(e))),
+                 |    }
+                 |})""".stripMargin
 
-          case None =>
-            val callBody = if (hasErrType) {
-              q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                 |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
-                 |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                 |}""".stripMargin
-            } else {
-              q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                 |    Ok(_) => rt.pure$pureHint("null".to_string()),
-                 |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                 |}""".stripMargin
-            }
+            case None =>
+              val callBody = if (hasErrType) {
+                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                   |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
+                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                   |}""".stripMargin
+              } else {
+                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                   |    Ok(_) => rt.pure$pureHint("null".to_string()),
+                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                   |}""".stripMargin
+              }
 
-            q"""rt.flat_map$flatMapHint(input, |v| {
-               |    ${callBody.shift(4).trim}
-               |})""".stripMargin
-        }
+              q"""rt.flat_map$flatMapHint(input, |v| {
+                 |    ${callBody.shift(4).trim}
+                 |})""".stripMargin
+          }
 
-        q""""${m.name.name}" => {
-           |    ${decodeStep.shift(4).trim}
-           |    ${callAndEncodeStep.shift(4).trim}
-           |}""".stripMargin
+          q""""${m.name.name}" => {
+             |    ${decodeStep.shift(4).trim}
+             |    ${callAndEncodeStep.shift(4).trim}
+             |}""".stripMargin
       }.join("\n")
 
-      q"""pub fn invoke_json_${svcName}<Rt: $ibaboonServiceRt>$genericParam(
+      q"""pub fn invoke_json_$svcName<Rt: $ibaboonServiceRt>$genericParam(
          |    method: &$baboonMethodId,
          |    data: &str,
          |    impl_: &dyn $svcType$genericParam,
@@ -324,71 +331,72 @@ object RsServiceWiringTranslator {
     private def generateErrorsUebaFn(service: Typedef.Service, svcName: String, svcType: RsValue.RsType): TextTree[RsValue] = {
       val wiringRetType = ct(bweFq, "Vec<u8>")
 
-      val cases = service.methods.map { m =>
-        val inFq = inTypeFq(m)
-        val lmHint = leftMapHint(m)
+      val cases = service.methods.map {
+        m =>
+          val inFq   = inTypeFq(m)
+          val lmHint = leftMapHint(m)
 
-        val decodeStep =
-          q"""let input: ${ct(bweFq, inFq)} = {
-             |    let mut cursor = std::io::Cursor::new(data);
-             |    match $baboonBinDecode::decode_ueba(ctx, &mut cursor) {
-             |        Ok(v) => rt.pure$pureHint(v),
-             |        Err(e) => rt.fail($bweFq::DecoderFailed(method.clone(), e)),
-             |    }
-             |};""".stripMargin
-
-        val hasErrType = m.err.isDefined && !resolved.noErrors
-
-        val callAndEncodeStep = m.out match {
-          case Some(_) =>
-            val callBody = if (hasErrType) {
-              q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                 |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
-                 |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                 |}""".stripMargin
-            } else {
-              q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                 |    Ok(result) => rt.pure$pureHint(result),
-                 |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                 |}""".stripMargin
-            }
-
-            q"""let output = rt.flat_map$flatMapHint(input, |v| {
-               |    ${callBody.shift(4).trim}
-               |});
-               |rt.flat_map$flatMapHint(output, |v| {
-               |    let mut out_buf = Vec::new();
-               |    match $baboonBinEncode::encode_ueba(&v, ctx, &mut out_buf) {
-               |        Ok(()) => rt.pure$pureHint(out_buf),
-               |        Err(e) => rt.fail($bweFq::EncoderFailed(method.clone(), Box::new(e))),
+          val decodeStep =
+            q"""let input: ${ct(bweFq, inFq)} = {
+               |    let mut cursor = std::io::Cursor::new(data);
+               |    match $baboonBinDecode::decode_ueba(ctx, &mut cursor) {
+               |        Ok(v) => rt.pure$pureHint(v),
+               |        Err(e) => rt.fail($bweFq::DecoderFailed(method.clone(), e)),
                |    }
-               |})""".stripMargin
+               |};""".stripMargin
 
-          case None =>
-            val callBody = if (hasErrType) {
-              q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                 |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
-                 |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                 |}""".stripMargin
-            } else {
-              q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                 |    Ok(_) => rt.pure$pureHint(Vec::new()),
-                 |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                 |}""".stripMargin
-            }
+          val hasErrType = m.err.isDefined && !resolved.noErrors
 
-            q"""rt.flat_map$flatMapHint(input, |v| {
-               |    ${callBody.shift(4).trim}
-               |})""".stripMargin
-        }
+          val callAndEncodeStep = m.out match {
+            case Some(_) =>
+              val callBody = if (hasErrType) {
+                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                   |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
+                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                   |}""".stripMargin
+              } else {
+                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                   |    Ok(result) => rt.pure$pureHint(result),
+                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                   |}""".stripMargin
+              }
 
-        q""""${m.name.name}" => {
-           |    ${decodeStep.shift(4).trim}
-           |    ${callAndEncodeStep.shift(4).trim}
-           |}""".stripMargin
+              q"""let output = rt.flat_map$flatMapHint(input, |v| {
+                 |    ${callBody.shift(4).trim}
+                 |});
+                 |rt.flat_map$flatMapHint(output, |v| {
+                 |    let mut out_buf = Vec::new();
+                 |    match $baboonBinEncode::encode_ueba(&v, ctx, &mut out_buf) {
+                 |        Ok(()) => rt.pure$pureHint(out_buf),
+                 |        Err(e) => rt.fail($bweFq::EncoderFailed(method.clone(), Box::new(e))),
+                 |    }
+                 |})""".stripMargin
+
+            case None =>
+              val callBody = if (hasErrType) {
+                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                   |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
+                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                   |}""".stripMargin
+              } else {
+                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                   |    Ok(_) => rt.pure$pureHint(Vec::new()),
+                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                   |}""".stripMargin
+              }
+
+              q"""rt.flat_map$flatMapHint(input, |v| {
+                 |    ${callBody.shift(4).trim}
+                 |})""".stripMargin
+          }
+
+          q""""${m.name.name}" => {
+             |    ${decodeStep.shift(4).trim}
+             |    ${callAndEncodeStep.shift(4).trim}
+             |}""".stripMargin
       }.join("\n")
 
-      q"""pub fn invoke_ueba_${svcName}<Rt: $ibaboonServiceRt>$genericParam(
+      q"""pub fn invoke_ueba_$svcName<Rt: $ibaboonServiceRt>$genericParam(
          |    method: &$baboonMethodId,
          |    data: &[u8],
          |    impl_: &dyn $svcType$genericParam,

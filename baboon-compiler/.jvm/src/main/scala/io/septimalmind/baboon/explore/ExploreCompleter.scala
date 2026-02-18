@@ -12,8 +12,9 @@ class ExploreCompleter(registry: CommandRegistry) extends Completer {
 
     val completions = registry.completeCommand(buffer, cursor)
 
-    completions.foreach { completion =>
-      candidates.add(new Candidate(completion))
+    completions.foreach {
+      completion =>
+        candidates.add(new Candidate(completion))
     }
   }
 }

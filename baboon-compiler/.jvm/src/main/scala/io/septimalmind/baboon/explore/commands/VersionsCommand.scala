@@ -11,15 +11,16 @@ object VersionsCommand extends Command {
       case None =>
         Left("No domain selected. Use 'switch <domain>' first.")
       case Some(lineage) =>
-        val sb = new StringBuilder
-        val latest = lineage.evolution.latest
+        val sb       = new StringBuilder
+        val latest   = lineage.evolution.latest
         val versions = lineage.versions.toMap.keys.toSeq.sorted
 
         sb.append(s"${Colors.CYAN}Versions in ${lineage.pkg.path.mkString(".")}:${Colors.RESET}\n")
-        versions.foreach { v =>
-          val marker = if (ctx.currentVersion.contains(v)) s"${Colors.GREEN}*${Colors.RESET} " else "  "
-          val latestMarker = if (v == latest) s" ${Colors.YELLOW}(latest)${Colors.RESET}" else ""
-          sb.append(s"$marker$v$latestMarker\n")
+        versions.foreach {
+          v =>
+            val marker       = if (ctx.currentVersion.contains(v)) s"${Colors.GREEN}*${Colors.RESET} " else "  "
+            val latestMarker = if (v == latest) s" ${Colors.YELLOW}(latest)${Colors.RESET}" else ""
+            sb.append(s"$marker$v$latestMarker\n")
         }
 
         Right(sb.toString().stripSuffix("\n"))

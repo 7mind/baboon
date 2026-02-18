@@ -33,19 +33,21 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       // Detect type/namespace conflicts: `foo.rs` conflicts with directory `foo/`
       // In Rust you can't have both — merge the type content into `foo/mod.rs`
       allPaths = translated.filterNot(_.doNotModify).map(_.path).toSet
-      dirPaths = allPaths.flatMap { p =>
-        val parts = p.split('/').toList
-        (1 until parts.size).map(i => parts.take(i).mkString("/"))
+      dirPaths = allPaths.flatMap {
+        p =>
+          val parts = p.split('/').toList
+          (1 until parts.size).map(i => parts.take(i).mkString("/"))
       }
-      conflicting = translated.filter { o =>
-        !o.doNotModify && dirPaths.contains(o.path.stripSuffix(".rs"))
+      conflicting = translated.filter {
+        o =>
+          !o.doNotModify && dirPaths.contains(o.path.stripSuffix(".rs"))
       }
       conflictPaths = conflicting.map(_.path).toSet
-      normal = translated.filterNot(o => conflictPaths.contains(o.path))
+      normal        = translated.filterNot(o => conflictPaths.contains(o.path))
 
       allModFiles <- generateModFiles(translated, conflicting)
-      modFiles = allModFiles.filterNot(_.path == "mod.rs")
-      libFile = generateLibRs(normal ++ runtime ++ fixture ++ modFiles)
+      modFiles     = allModFiles.filterNot(_.path == "mod.rs")
+      libFile      = generateLibRs(normal ++ runtime ++ fixture ++ modFiles)
       rendered = (normal ++ runtime ++ fixture ++ modFiles ++ libFile).map {
         o =>
           val content = renderTree(o)
@@ -127,62 +129,69 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
 
     val allDirs = scala.collection.mutable.Set.empty[String]
 
-    val filesByDir = paths.groupBy { path =>
-      val parts = path.split('/').toList
-      if (parts.size > 1) parts.init.mkString("/") else ""
+    val filesByDir = paths.groupBy {
+      path =>
+        val parts = path.split('/').toList
+        if (parts.size > 1) parts.init.mkString("/") else ""
     }
 
-    paths.foreach { path =>
-      val parts = path.split('/').toList
-      for (i <- 1 until parts.size) {
-        allDirs += parts.take(i).mkString("/")
-      }
-      if (parts.size == 1) allDirs += ""
-    }
-
-    allDirs.toList.sorted.map { dir =>
-      val prefix = if (dir.isEmpty) "" else dir + "/"
-
-      // Direct child directories of this directory
-      val childDirs = allDirs.filter { d =>
-        d.startsWith(prefix) && d != dir && !d.drop(prefix.length).contains('/')
-      }.map(_.drop(prefix.length)).toSet
-
-      // File modules in this directory, EXCLUDING those that clash with child directories
-      val fileModNames = filesByDir.getOrElse(dir, Nil).map { file =>
-        file.split('/').last.stripSuffix(".rs")
-      }.sorted.distinct.filterNot(childDirs.contains)
-
-      val allModNames = (fileModNames ++ childDirs.toList).sorted.distinct
-      val modDecls = allModNames.flatMap { name =>
-        val escaped = escapeRustKeyword(name)
-        if (childDirs.contains(name)) {
-          // Directory module: declare but don't re-export (avoids name clashes with versioned modules)
-          List(q"pub mod $escaped;")
-        } else {
-          // File module: declare and re-export so types/functions are accessible from parent
-          List(q"pub mod $escaped;", q"pub use $escaped::*;")
+    paths.foreach {
+      path =>
+        val parts = path.split('/').toList
+        for (i <- 1 until parts.size) {
+          allDirs += parts.take(i).mkString("/")
         }
-      }
+        if (parts.size == 1) allDirs += ""
+    }
 
-      // Merge content from conflicting types that were absorbed into this directory
-      val mergedContent = conflictContent.getOrElse(dir, Nil).map(_.tree)
+    allDirs.toList.sorted.map {
+      dir =>
+        val prefix = if (dir.isEmpty) "" else dir + "/"
 
-      val modTree = if (mergedContent.nonEmpty) {
-        (modDecls ++ mergedContent).joinNN()
-      } else {
-        modDecls.joinN()
-      }
+        // Direct child directories of this directory
+        val childDirs = allDirs.filter {
+          d =>
+            d.startsWith(prefix) && d != dir && !d.drop(prefix.length).contains('/')
+        }.map(_.drop(prefix.length)).toSet
 
-      val modPath = if (dir.isEmpty) "mod.rs" else s"$dir/mod.rs"
+        // File modules in this directory, EXCLUDING those that clash with child directories
+        val fileModNames = filesByDir
+          .getOrElse(dir, Nil).map {
+            file =>
+              file.split('/').last.stripSuffix(".rs")
+          }.sorted.distinct.filterNot(childDirs.contains)
 
-      RsDefnTranslator.Output(
-        modPath,
-        modTree,
-        RsValue.RsCrateId(NEList("crate")),
-        product,
-        isModFile = true,
-      )
+        val allModNames = (fileModNames ++ childDirs.toList).sorted.distinct
+        val modDecls = allModNames.flatMap {
+          name =>
+            val escaped = escapeRustKeyword(name)
+            if (childDirs.contains(name)) {
+              // Directory module: declare but don't re-export (avoids name clashes with versioned modules)
+              List(q"pub mod $escaped;")
+            } else {
+              // File module: declare and re-export so types/functions are accessible from parent
+              List(q"pub mod $escaped;", q"pub use $escaped::*;")
+            }
+        }
+
+        // Merge content from conflicting types that were absorbed into this directory
+        val mergedContent = conflictContent.getOrElse(dir, Nil).map(_.tree)
+
+        val modTree = if (mergedContent.nonEmpty) {
+          (modDecls ++ mergedContent).joinNN()
+        } else {
+          modDecls.joinN()
+        }
+
+        val modPath = if (dir.isEmpty) "mod.rs" else s"$dir/mod.rs"
+
+        RsDefnTranslator.Output(
+          modPath,
+          modTree,
+          RsValue.RsCrateId(NEList("crate")),
+          product,
+          isModFile = true,
+        )
     }
   }
 
@@ -252,8 +261,9 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
         .filterNot(t => t.crate.parts == selfModulePath)
         .sortBy(_.toString)
 
-      val imports = usedTypes.map { t =>
-        q"use ${t.crate.parts.mkString("::")}::${t.name};"
+      val imports = usedTypes.map {
+        t =>
+          q"use ${t.crate.parts.mkString("::")}::${t.name};"
       }.joinN()
 
       val full = Seq(imports, o.tree).joinNN()
@@ -271,9 +281,10 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
     val topLevelModules = allOutputs
       .filterNot(_.isModFile)
       .filterNot(_.path == "lib.rs")
-      .map { o =>
-        val first = o.path.split('/').head
-        first.stripSuffix(".rs")
+      .map {
+        o =>
+          val first = o.path.split('/').head
+          first.stripSuffix(".rs")
       }
       .distinct
       .sorted
@@ -286,9 +297,10 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       q"#![allow(non_snake_case)]",
     )
 
-    val modDecls = topLevelModules.map { name =>
-      val escaped = escapeRustKeyword(name)
-      q"pub mod $escaped;"
+    val modDecls = topLevelModules.map {
+      name =>
+        val escaped = escapeRustKeyword(name)
+        q"pub mod $escaped;"
     }
 
     val tree = (allows ++ modDecls).joinN()

@@ -17,7 +17,7 @@ object SwitchCommand extends Command {
           case Some(pkg) =>
             ctx.switchTo(pkg, None) match {
               case Right(_) =>
-                Right(s"${Colors.GREEN}Switched to ${pkgStr} v:${ctx.currentVersion.get}${Colors.RESET}")
+                Right(s"${Colors.GREEN}Switched to $pkgStr v:${ctx.currentVersion.get}${Colors.RESET}")
               case Left(err) => Left(err)
             }
         }

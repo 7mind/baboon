@@ -14,7 +14,7 @@ class DocumentSymbolProvider(
   workspaceState: WorkspaceState,
   positionConverter: PositionConverter,
   pathOps: PathOps,
-  logger: BLogger
+  logger: BLogger,
 ) {
 
   def getSymbols(uri: String): Seq[DocumentSymbol] = {
@@ -26,10 +26,12 @@ class DocumentSymbolProvider(
         logger.message(LspLogging.Context, "getSymbols: NO FAMILY - compilation failed or not run")
         Seq.empty
       case Some(family) =>
-        val allTypes = family.domains.toMap.values.flatMap { lineage =>
-          lineage.versions.toMap.values.flatMap { domain =>
-            domain.defs.meta.nodes.values.collect { case u: DomainMember.User => u }
-          }
+        val allTypes = family.domains.toMap.values.flatMap {
+          lineage =>
+            lineage.versions.toMap.values.flatMap {
+              domain =>
+                domain.defs.meta.nodes.values.collect { case u: DomainMember.User => u }
+            }
         }.toSeq
         logger.message(LspLogging.Context, s"getSymbols: found ${allTypes.size} total types in family")
 
@@ -38,12 +40,13 @@ class DocumentSymbolProvider(
 
         if (inFile.isEmpty && allTypes.nonEmpty) {
           // Debug: show first few type paths
-          allTypes.take(3).foreach { u =>
-            u.meta.pos match {
-              case fk: InputPointer.FileKnown =>
-                logger.message(LspLogging.Context, s"getSymbols: type ${u.id.name.name} is in ${fk.file.asString}")
-              case _ =>
-            }
+          allTypes.take(3).foreach {
+            u =>
+              u.meta.pos match {
+                case fk: InputPointer.FileKnown =>
+                  logger.message(LspLogging.Context, s"getSymbols: type ${u.id.name.name} is in ${fk.file.asString}")
+                case _ =>
+              }
           }
         }
 
@@ -80,25 +83,29 @@ class DocumentSymbolProvider(
 
     val children: Seq[DocumentSymbol] = member.defn match {
       case adt: Typedef.Adt =>
-        adt.members.toList.flatMap { branchId =>
-          domain.defs.meta.nodes.get(branchId).collect { case u: DomainMember.User =>
-            val childRange = u.meta.pos match {
-              case full: InputPointer.Full     => positionConverter.fromInputPointer(full)
-              case offset: InputPointer.Offset => positionConverter.fromStartOffset(offset)
-              case _                           => Range.zero
+        adt.members.toList.flatMap {
+          branchId =>
+            domain.defs.meta.nodes.get(branchId).collect {
+              case u: DomainMember.User =>
+                val childRange = u.meta.pos match {
+                  case full: InputPointer.Full     => positionConverter.fromInputPointer(full)
+                  case offset: InputPointer.Offset => positionConverter.fromStartOffset(offset)
+                  case _                           => Range.zero
+                }
+                DocumentSymbol(branchId.name.name, SymbolKind.Class, childRange, childRange)
             }
-            DocumentSymbol(branchId.name.name, SymbolKind.Class, childRange, childRange)
-          }
         }
 
       case enum: Typedef.Enum =>
-        enum.members.toList.map { m =>
-          DocumentSymbol(m.name, SymbolKind.EnumMember, range, range)
+        enum.members.toList.map {
+          m =>
+            DocumentSymbol(m.name, SymbolKind.EnumMember, range, range)
         }
 
       case dto: Typedef.Dto =>
-        dto.fields.map { f =>
-          DocumentSymbol(f.name.name, SymbolKind.Field, range, range)
+        dto.fields.map {
+          f =>
+            DocumentSymbol(f.name.name, SymbolKind.Field, range, range)
         }
 
       case _ => Seq.empty

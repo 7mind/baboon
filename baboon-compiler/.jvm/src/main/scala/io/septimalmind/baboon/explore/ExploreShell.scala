@@ -6,14 +6,16 @@ import org.jline.reader.LineReader
 import org.jline.terminal.TerminalBuilder
 
 class ExploreShell(ctx: ExploreContext[EitherF]) {
-  private val terminal = TerminalBuilder.builder()
+  private val terminal = TerminalBuilder
+    .builder()
     .system(true)
     .build()
 
-  private val registry = new CommandRegistry(ctx)
+  private val registry  = new CommandRegistry(ctx)
   private val completer = new ExploreCompleter(registry)
 
-  private val reader = LineReaderBuilder.builder()
+  private val reader = LineReaderBuilder
+    .builder()
     .terminal(terminal)
     .completer(completer)
     .option(LineReader.Option.CASE_INSENSITIVE, true)
@@ -79,10 +81,11 @@ class ExploreShell(ctx: ExploreContext[EitherF]) {
 
       case multiple if multiple.nonEmpty =>
         terminal.writer().println(s"${Colors.CYAN}Available domains:${Colors.RESET}")
-        multiple.foreach { pkg =>
-          val lineage = ctx.family.domains.toMap(pkg)
-          val versionCount = lineage.versions.toMap.size
-          terminal.writer().println(s"  ${pkg.path.mkString(".")} ${Colors.DIM}($versionCount version(s))${Colors.RESET}")
+        multiple.foreach {
+          pkg =>
+            val lineage      = ctx.family.domains.toMap(pkg)
+            val versionCount = lineage.versions.toMap.size
+            terminal.writer().println(s"  ${pkg.path.mkString(".")} ${Colors.DIM}($versionCount version(s))${Colors.RESET}")
         }
         terminal.writer().println()
         terminal.writer().println(s"Use ${Colors.GREEN}switch <domain>${Colors.RESET} to select a domain")
@@ -104,14 +107,14 @@ class ExploreShell(ctx: ExploreContext[EitherF]) {
 }
 
 object Colors {
-  val RESET = "\u001b[0m"
-  val RED = "\u001b[31m"
-  val GREEN = "\u001b[32m"
-  val YELLOW = "\u001b[33m"
-  val BLUE = "\u001b[34m"
+  val RESET   = "\u001b[0m"
+  val RED     = "\u001b[31m"
+  val GREEN   = "\u001b[32m"
+  val YELLOW  = "\u001b[33m"
+  val BLUE    = "\u001b[34m"
   val MAGENTA = "\u001b[35m"
-  val CYAN = "\u001b[36m"
-  val WHITE = "\u001b[37m"
-  val BOLD = "\u001b[1m"
-  val DIM = "\u001b[2m"
+  val CYAN    = "\u001b[36m"
+  val WHITE   = "\u001b[37m"
+  val BOLD    = "\u001b[1m"
+  val DIM     = "\u001b[2m"
 }

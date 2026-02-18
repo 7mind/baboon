@@ -29,6 +29,12 @@ export interface BaboonDecodeResult {
   error?: string;
 }
 
+export interface BaboonSchemeResult {
+  success: boolean;
+  content?: string;
+  error?: string;
+}
+
 export interface BaboonGenericOptions {
   codecTestIterations?: number;
   omitMostRecentVersionSuffixFromPaths?: boolean;
@@ -115,6 +121,18 @@ export interface BaboonCompilerAPI {
     idString: string,
     data: Uint8Array
   ): Promise<BaboonDecodeResult>;
+
+  cleanupScheme(
+    files: Record<string, string>,
+    domain: string,
+    version: string
+  ): Promise<BaboonSchemeResult>;
+
+  cleanupSchemeLoaded(
+    model: BaboonLoadedModel,
+    domain: string,
+    version: string
+  ): Promise<BaboonSchemeResult>;
 }
 
 export const BaboonCompiler: BaboonCompilerAPI;

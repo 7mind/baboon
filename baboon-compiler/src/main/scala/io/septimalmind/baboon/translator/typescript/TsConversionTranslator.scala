@@ -112,11 +112,12 @@ class TsConversionTranslator[F[+_, +_]: Error2](
 
           case c: Conversion.CopyAdtBranchByName =>
             val adtType = trans.toTsTypeRefKeepForeigns(conv.targetTpe, domain, evo)
-            val cases = c.oldDefn.dataMembers(srcDom).map { oldId =>
-              val newId = c.branchMapping.getOrElse(oldId.name.name, oldId)
-              val newBranchType = trans.toTsTypeRefKeepForeigns(newId, domain, evo)
-              val factoryFn = TsValue.TsType(adtType.module, s"${adtType.name}_${newId.name.name}")
-              q"""case "${oldId.name.name}": return ${factoryFn}(JSON.parse(JSON.stringify(from.value)) as ${newBranchType});"""
+            val cases = c.oldDefn.dataMembers(srcDom).map {
+              oldId =>
+                val newId         = c.branchMapping.getOrElse(oldId.name.name, oldId)
+                val newBranchType = trans.toTsTypeRefKeepForeigns(newId, domain, evo)
+                val factoryFn     = TsValue.TsType(adtType.module, s"${adtType.name}_${newId.name.name}")
+                q"""case "${oldId.name.name}": return $factoryFn(JSON.parse(JSON.stringify(from.value)) as $newBranchType);"""
             }
             List(
               TsRenderedConversion(
@@ -136,55 +137,56 @@ class TsConversionTranslator[F[+_, +_]: Error2](
             val defnTypeId = c.targetTpe
             val dto = domain.defs.meta.nodes(defnTypeId) match {
               case DomainMember.User(_, d: Typedef.Dto, _, _) => d
-              case _ => throw new IllegalStateException("DTO expected")
+              case _                                          => throw new IllegalStateException("DTO expected")
             }
             val ops = c.ops.map(o => o.targetField -> o).toMap
-            val assigns = dto.fields.map { f =>
-              val op  = ops(f)
-              val fld = f.name.name
-              val expr = op match {
-                case _: FieldOp.Transfer =>
-                  if (hasUserType(f.tpe)) {
+            val assigns = dto.fields.map {
+              f =>
+                val op  = ops(f)
+                val fld = f.name.name
+                val expr = op match {
+                  case _: FieldOp.Transfer =>
+                    if (hasUserType(f.tpe)) {
+                      jsonConvert(q"from.$fld")
+                    } else {
+                      q"from.$fld"
+                    }
+                  case o: FieldOp.InitializeWithDefault =>
+                    o.targetField.tpe match {
+                      case TypeRef.Constructor(id, _) =>
+                        id match {
+                          case TypeId.Builtins.lst => q"[]"
+                          case TypeId.Builtins.set => q"new Set()"
+                          case TypeId.Builtins.map => q"new Map()"
+                          case TypeId.Builtins.opt => q"undefined"
+                          case _                   => throw new IllegalStateException(s"Unsupported constructor type: $id")
+                        }
+                      case _ => throw new IllegalStateException("Unsupported target field type")
+                    }
+                  case _: FieldOp.WrapIntoCollection =>
+                    val innerExpr = if (hasUserType(f.tpe)) jsonConvert(q"from.$fld") else q"from.$fld"
+                    f.tpe match {
+                      case TypeRef.Constructor(TypeId.Builtins.opt, _) => q"$innerExpr"
+                      case TypeRef.Constructor(TypeId.Builtins.set, _) => q"new Set([$innerExpr])"
+                      case TypeRef.Constructor(TypeId.Builtins.lst, _) => q"[$innerExpr]"
+                      case _                                           => q"[$innerExpr]"
+                    }
+                  case _: FieldOp.ExpandPrecision =>
                     jsonConvert(q"from.$fld")
-                  } else {
-                    q"from.$fld"
-                  }
-                case o: FieldOp.InitializeWithDefault =>
-                  o.targetField.tpe match {
-                    case TypeRef.Constructor(id, _) =>
-                      id match {
-                        case TypeId.Builtins.lst => q"[]"
-                        case TypeId.Builtins.set => q"new Set()"
-                        case TypeId.Builtins.map => q"new Map()"
-                        case TypeId.Builtins.opt => q"undefined"
-                        case _ => throw new IllegalStateException(s"Unsupported constructor type: $id")
-                      }
-                    case _ => throw new IllegalStateException("Unsupported target field type")
-                  }
-                case _: FieldOp.WrapIntoCollection =>
-                  val innerExpr = if (hasUserType(f.tpe)) jsonConvert(q"from.$fld") else q"from.$fld"
-                  f.tpe match {
-                    case TypeRef.Constructor(TypeId.Builtins.opt, _) => q"$innerExpr"
-                    case TypeRef.Constructor(TypeId.Builtins.set, _) => q"new Set([$innerExpr])"
-                    case TypeRef.Constructor(TypeId.Builtins.lst, _) => q"[$innerExpr]"
-                    case _ => q"[$innerExpr]"
-                  }
-                case _: FieldOp.ExpandPrecision =>
-                  jsonConvert(q"from.$fld")
-                case _: FieldOp.SwapCollectionType =>
-                  jsonConvert(q"from.$fld")
-                case o: FieldOp.Rename =>
-                  val srcFld = o.sourceFieldName.name
-                  if (hasUserType(f.tpe)) {
+                  case _: FieldOp.SwapCollectionType =>
+                    jsonConvert(q"from.$fld")
+                  case o: FieldOp.Rename =>
+                    val srcFld = o.sourceFieldName.name
+                    if (hasUserType(f.tpe)) {
+                      jsonConvert(q"from.$srcFld")
+                    } else {
+                      q"from.$srcFld"
+                    }
+                  case o: FieldOp.Redef =>
+                    val srcFld = o.sourceFieldName.name
                     jsonConvert(q"from.$srcFld")
-                  } else {
-                    q"from.$srcFld"
-                  }
-                case o: FieldOp.Redef =>
-                  val srcFld = o.sourceFieldName.name
-                  jsonConvert(q"from.$srcFld")
-              }
-              q"$fld: $expr,"
+                }
+                q"$fld: $expr,"
             }
 
             List(

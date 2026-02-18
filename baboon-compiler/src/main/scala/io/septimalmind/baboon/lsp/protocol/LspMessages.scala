@@ -9,7 +9,7 @@ final case class InitializeParams(
   processId: Option[Int],
   rootUri: Option[String],
   workspaceFolders: Option[Seq[WorkspaceFolder]],
-  capabilities: Json
+  capabilities: Json,
 )
 
 object InitializeParams {
@@ -19,7 +19,7 @@ object InitializeParams {
 final case class TextDocumentSyncOptions(
   openClose: Boolean,
   change: Int,
-  save: Option[SaveOptions]
+  save: Option[SaveOptions],
 )
 
 object TextDocumentSyncOptions {
@@ -34,7 +34,7 @@ object SaveOptions {
 
 final case class CompletionOptions(
   triggerCharacters: Option[Seq[String]],
-  resolveProvider: Option[Boolean]
+  resolveProvider: Option[Boolean],
 )
 
 object CompletionOptions {
@@ -43,10 +43,10 @@ object CompletionOptions {
 
 final case class ServerCapabilities(
   textDocumentSync: Option[TextDocumentSyncOptions] = None,
-  definitionProvider: Option[Boolean] = None,
-  hoverProvider: Option[Boolean] = None,
-  completionProvider: Option[CompletionOptions] = None,
-  documentSymbolProvider: Option[Boolean] = None
+  definitionProvider: Option[Boolean]               = None,
+  hoverProvider: Option[Boolean]                    = None,
+  completionProvider: Option[CompletionOptions]     = None,
+  documentSymbolProvider: Option[Boolean]           = None,
 )
 
 object ServerCapabilities {
@@ -69,7 +69,7 @@ object DidOpenTextDocumentParams {
 
 final case class DidChangeTextDocumentParams(
   textDocument: VersionedTextDocumentIdentifier,
-  contentChanges: Seq[TextDocumentContentChangeEvent]
+  contentChanges: Seq[TextDocumentContentChangeEvent],
 )
 
 object DidChangeTextDocumentParams {
@@ -78,7 +78,7 @@ object DidChangeTextDocumentParams {
 
 final case class DidSaveTextDocumentParams(
   textDocument: TextDocumentIdentifier,
-  text: Option[String]
+  text: Option[String],
 )
 
 object DidSaveTextDocumentParams {
@@ -95,7 +95,7 @@ object DidCloseTextDocumentParams {
 
 final case class DefinitionParams(
   textDocument: TextDocumentIdentifier,
-  position: Position
+  position: Position,
 )
 
 object DefinitionParams {
@@ -104,7 +104,7 @@ object DefinitionParams {
 
 final case class HoverParams(
   textDocument: TextDocumentIdentifier,
-  position: Position
+  position: Position,
 )
 
 object HoverParams {
@@ -113,7 +113,7 @@ object HoverParams {
 
 final case class CompletionParams(
   textDocument: TextDocumentIdentifier,
-  position: Position
+  position: Position,
 )
 
 object CompletionParams {
@@ -130,7 +130,7 @@ object DocumentSymbolParams {
 
 final case class PublishDiagnosticsParams(
   uri: String,
-  diagnostics: Seq[Diagnostic]
+  diagnostics: Seq[Diagnostic],
 )
 
 object PublishDiagnosticsParams {
@@ -140,7 +140,7 @@ object PublishDiagnosticsParams {
 // ============ TextDocumentSyncKind ============
 
 object TextDocumentSyncKind {
-  val None: Int = 0
-  val Full: Int = 1
+  val None: Int        = 0
+  val Full: Int        = 1
   val Incremental: Int = 2
 }

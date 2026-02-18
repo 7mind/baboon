@@ -15,18 +15,18 @@ class TsJsonCodecGenerator(
   enquiries: BaboonEnquiries,
 ) extends TsCodecTranslator {
 
-  import TsTypes.{binTools, baboonDecimal, baboonDateTimeUtc, baboonDateTimeOffset}
+  import TsTypes.{baboonDateTimeOffset, baboonDateTimeUtc, baboonDecimal, binTools}
 
   private def codecFnRef(tsType: TsValue.TsType, prefix: String, suffix: String): TsValue.TsType = {
-    TsValue.TsType(tsType.module, s"${prefix}${tsType.name}${suffix}")
+    TsValue.TsType(tsType.module, s"$prefix${tsType.name}$suffix")
   }
 
   override def translate(defn: DomainMember.User, tsRef: TsValue.TsType, srcRef: TsValue.TsType): Option[TextTree[TsValue]] = {
     if (isActive(defn.id) && !enquiries.hasForeignType(defn, domain)) {
       defn.defn match {
-        case d: Typedef.Dto     => Some(genDtoCodec(d, srcRef))
-        case e: Typedef.Enum    => Some(genEnumCodec(e, srcRef))
-        case a: Typedef.Adt     => Some(genAdtCodec(a, srcRef))
+        case d: Typedef.Dto      => Some(genDtoCodec(d, srcRef))
+        case e: Typedef.Enum     => Some(genEnumCodec(e, srcRef))
+        case a: Typedef.Adt      => Some(genAdtCodec(a, srcRef))
         case _: Typedef.Foreign  => None
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
@@ -35,24 +35,26 @@ class TsJsonCodecGenerator(
   }
 
   private def genDtoCodec(dto: Typedef.Dto, name: TsValue.TsType): TextTree[TsValue] = {
-    val encodeFields = dto.fields.map { f =>
-      val fld = f.name.name
-      q""""$fld": ${mkJsonEncoder(f.tpe, q"value.$fld")},"""
+    val encodeFields = dto.fields.map {
+      f =>
+        val fld = f.name.name
+        q""""$fld": ${mkJsonEncoder(f.tpe, q"value.$fld")},"""
     }
 
-    val decodeFields = dto.fields.map { f =>
-      val fld = f.name.name
-      f.tpe match {
-        case TypeRef.Constructor(TypeId.Builtins.opt, _) =>
-          q"""$fld: obj["$fld"] === undefined || obj["$fld"] === null ? undefined : ${mkJsonDecoder(f.tpe, q"""obj["$fld"]""")},"""
-        case _ =>
-          q"""$fld: ${mkJsonDecoder(f.tpe, q"""obj["$fld"]""")},"""
-      }
+    val decodeFields = dto.fields.map {
+      f =>
+        val fld = f.name.name
+        f.tpe match {
+          case TypeRef.Constructor(TypeId.Builtins.opt, _) =>
+            q"""$fld: obj["$fld"] === undefined || obj["$fld"] === null ? undefined : ${mkJsonDecoder(f.tpe, q"""obj["$fld"]""")},"""
+          case _ =>
+            q"""$fld: ${mkJsonDecoder(f.tpe, q"""obj["$fld"]""")},"""
+        }
     }
 
     val mainEnc = q"""{
-       |    ${encodeFields.joinN().shift(4).trim}
-       |}""".stripMargin
+                     |    ${encodeFields.joinN().shift(4).trim}
+                     |}""".stripMargin
 
     val fullEnc = dto.id.owner match {
       case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs =>
@@ -85,20 +87,22 @@ class TsJsonCodecGenerator(
   private def genAdtCodec(adt: Typedef.Adt, name: TsValue.TsType): TextTree[TsValue] = {
     val dataMembers = adt.dataMembers(domain)
 
-    val encCases = dataMembers.map { mid =>
-      val branchName = mid.name.name
-      val branchType = trans.toTsTypeRefKeepForeigns(mid, domain, evo)
-      if (target.language.wrappedAdtBranchCodecs) {
-        q"""case "$branchName": return encode_${branchType.asName}_json(value.value);"""
-      } else {
-        q"""case "$branchName": return { "$branchName": encode_${branchType.asName}_json(value.value) };"""
-      }
+    val encCases = dataMembers.map {
+      mid =>
+        val branchName = mid.name.name
+        val branchType = trans.toTsTypeRefKeepForeigns(mid, domain, evo)
+        if (target.language.wrappedAdtBranchCodecs) {
+          q"""case "$branchName": return encode_${branchType.asName}_json(value.value);"""
+        } else {
+          q"""case "$branchName": return { "$branchName": encode_${branchType.asName}_json(value.value) };"""
+        }
     }
 
-    val decCases = dataMembers.map { mid =>
-      val branchName = mid.name.name
-      val branchType = trans.toTsTypeRefKeepForeigns(mid, domain, evo)
-      q"""case "$branchName": return ${name.asName}_$branchName(decode_${branchType.asName}_json(obj[key]));"""
+    val decCases = dataMembers.map {
+      mid =>
+        val branchName = mid.name.name
+        val branchType = trans.toTsTypeRefKeepForeigns(mid, domain, evo)
+        q"""case "$branchName": return ${name.asName}_$branchName(decode_${branchType.asName}_json(obj[key]));"""
     }
 
     q"""export function encode_${name.asName}_json(value: ${name.asName}): unknown {
@@ -126,7 +130,7 @@ class TsJsonCodecGenerator(
           case TypeId.Builtins.f128 =>
             q"$ref.toString()"
           case TypeId.Builtins.bytes =>
-            q"${binTools}.hexEncode($ref)"
+            q"$binTools.hexEncode($ref)"
           case TypeId.Builtins.tsu =>
             q"$ref.toISOString()"
           case TypeId.Builtins.tso =>
@@ -136,7 +140,7 @@ class TsJsonCodecGenerator(
             domain.defs.meta.nodes.get(u) match {
               case Some(DomainMember.User(_, _: Typedef.Enum | _: Typedef.Dto | _: Typedef.Adt, _, _)) =>
                 val fn = codecFnRef(tsType, "encode_", "_json")
-                q"${fn}($ref)"
+                q"$fn($ref)"
               case _ => ref
             }
           case _ => ref
@@ -166,32 +170,31 @@ class TsJsonCodecGenerator(
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
-          case TypeId.Builtins.bit   => q"$ref as boolean"
-          case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 |
-               TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 |
-               TypeId.Builtins.f32 | TypeId.Builtins.f64 =>
+          case TypeId.Builtins.bit => q"$ref as boolean"
+          case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 | TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 | TypeId.Builtins.f32 |
+              TypeId.Builtins.f64 =>
             q"$ref as number"
           case TypeId.Builtins.i64 | TypeId.Builtins.u64 =>
             q"BigInt($ref as string)"
           case TypeId.Builtins.f128 =>
-            q"${baboonDecimal}.fromString($ref as string)"
+            q"$baboonDecimal.fromString($ref as string)"
           case TypeId.Builtins.str | TypeId.Builtins.uid =>
             q"$ref as string"
           case TypeId.Builtins.bytes =>
-            q"${binTools}.hexDecode($ref as string)"
+            q"$binTools.hexDecode($ref as string)"
           case TypeId.Builtins.tsu =>
-            q"${baboonDateTimeUtc}.fromISO($ref as string)"
+            q"$baboonDateTimeUtc.fromISO($ref as string)"
           case TypeId.Builtins.tso =>
-            q"${baboonDateTimeOffset}.fromISO($ref as string)"
+            q"$baboonDateTimeOffset.fromISO($ref as string)"
           case u: TypeId.User =>
             val tsType = trans.toTsTypeRefKeepForeigns(u, domain, evo)
             domain.defs.meta.nodes.get(u) match {
               case Some(DomainMember.User(_, _: Typedef.Enum | _: Typedef.Dto | _: Typedef.Adt, _, _)) =>
                 val fn = codecFnRef(tsType, "decode_", "_json")
-                q"${fn}($ref)"
+                q"$fn($ref)"
               case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) =>
                 val mappedType = trans.asTsType(u, domain, evo)
-                q"$ref as ${mappedType}"
+                q"$ref as $mappedType"
               case _ => ref
             }
           case o => throw new RuntimeException(s"BUG: Unexpected scalar type: $o")

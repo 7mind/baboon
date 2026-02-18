@@ -16,13 +16,13 @@ object TsValue {
   case class TsType(
     module: TsModuleId,
     name: String,
-    fq: Boolean = false,
+    fq: Boolean     = false,
     predef: Boolean = false,
   ) extends TsValue {
     def fullyQualified: TsType = this.copy(fq = true)
     def asName: TsTypeName     = TsTypeName(name)
 
-    override def toString: String = s"${module.parts.mkString("/")}/${name}"
+    override def toString: String = s"${module.parts.mkString("/")}/$name"
   }
 
   case class TsTypeName(name: String) extends TsValue

@@ -35,8 +35,9 @@ object RsCodecFixtureTranslator {
     }
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[RsValue] = {
-      val generatedFields = dto.fields.map { f =>
-        q"${toSnakeCase(f.name.name)}: ${genType(f.tpe)},"
+      val generatedFields = dto.fields.map {
+        f =>
+          q"${toSnakeCase(f.name.name)}: ${genType(f.tpe)},"
       }
       val fullType = translator.toRsTypeRefKeepForeigns(dto.id, domain, evo)
 
@@ -53,10 +54,11 @@ object RsCodecFixtureTranslator {
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
-      val membersFixtures   = members.sortBy(_.id.toString).map(doTranslateDtoPrivate)
-      val membersGenerators = members.sortBy(_.id.toString).map { dto =>
-        val branchName = dto.id.name.name.capitalize
-        q"$adtName::$branchName(${fixtureFnName(dto.id)}(rnd))"
+      val membersFixtures = members.sortBy(_.id.toString).map(doTranslateDtoPrivate)
+      val membersGenerators = members.sortBy(_.id.toString).map {
+        dto =>
+          val branchName = dto.id.name.name.capitalize
+          q"$adtName::$branchName(${fixtureFnName(dto.id)}(rnd))"
       }
 
       val randomAllEntries = membersGenerators.map(g => q"$g,")
@@ -77,8 +79,9 @@ object RsCodecFixtureTranslator {
     }
 
     private def doTranslateDtoPrivate(dto: Typedef.Dto): TextTree[RsValue] = {
-      val generatedFields = dto.fields.map { f =>
-        q"${toSnakeCase(f.name.name)}: ${genType(f.tpe)},"
+      val generatedFields = dto.fields.map {
+        f =>
+          q"${toSnakeCase(f.name.name)}: ${genType(f.tpe)},"
       }
       val fullType = translator.toRsTypeRefKeepForeigns(dto.id, domain, evo)
 
@@ -113,23 +116,23 @@ object RsCodecFixtureTranslator {
 
     private def genScalar(tpe: TypeRef.Scalar): TextTree[RsValue] = {
       tpe.id match {
-        case TypeId.Builtins.i08  => q"rnd.next_i08()"
-        case TypeId.Builtins.i16  => q"rnd.next_i16()"
-        case TypeId.Builtins.i32  => q"rnd.next_i32()"
-        case TypeId.Builtins.i64  => q"rnd.next_i64()"
-        case TypeId.Builtins.u08  => q"rnd.next_u08()"
-        case TypeId.Builtins.u16  => q"rnd.next_u16()"
-        case TypeId.Builtins.u32  => q"rnd.next_u32()"
-        case TypeId.Builtins.u64  => q"rnd.next_u64()"
-        case TypeId.Builtins.f32  => q"rnd.next_f32()"
-        case TypeId.Builtins.f64  => q"rnd.next_f64()"
-        case TypeId.Builtins.f128 => q"rnd.next_f128()"
-        case TypeId.Builtins.str  => q"rnd.next_string()"
+        case TypeId.Builtins.i08   => q"rnd.next_i08()"
+        case TypeId.Builtins.i16   => q"rnd.next_i16()"
+        case TypeId.Builtins.i32   => q"rnd.next_i32()"
+        case TypeId.Builtins.i64   => q"rnd.next_i64()"
+        case TypeId.Builtins.u08   => q"rnd.next_u08()"
+        case TypeId.Builtins.u16   => q"rnd.next_u16()"
+        case TypeId.Builtins.u32   => q"rnd.next_u32()"
+        case TypeId.Builtins.u64   => q"rnd.next_u64()"
+        case TypeId.Builtins.f32   => q"rnd.next_f32()"
+        case TypeId.Builtins.f64   => q"rnd.next_f64()"
+        case TypeId.Builtins.f128  => q"rnd.next_f128()"
+        case TypeId.Builtins.str   => q"rnd.next_string()"
         case TypeId.Builtins.bytes => q"rnd.next_bytes()"
-        case TypeId.Builtins.uid  => q"rnd.next_uid()"
-        case TypeId.Builtins.tsu  => q"rnd.next_tsu()"
-        case TypeId.Builtins.tso  => q"rnd.next_tso()"
-        case TypeId.Builtins.bit  => q"rnd.next_bit()"
+        case TypeId.Builtins.uid   => q"rnd.next_uid()"
+        case TypeId.Builtins.tsu   => q"rnd.next_tsu()"
+        case TypeId.Builtins.tso   => q"rnd.next_tso()"
+        case TypeId.Builtins.bit   => q"rnd.next_bit()"
 
         case u: TypeId.User if enquiries.isEnum(tpe, domain) =>
           val enumType = translator.asRsType(u, domain, evo)

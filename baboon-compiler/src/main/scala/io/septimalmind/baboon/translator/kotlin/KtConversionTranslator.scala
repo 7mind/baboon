@@ -125,7 +125,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
 
   private def builtinConversion(to: TypeId, from: TypeId): Option[String] = {
     (from, to) match {
-      case _ if from == to => None
+      case _ if from == to           => None
       case (_, TypeId.Builtins.i16)  => Some("toShort()")
       case (_, TypeId.Builtins.i32)  => Some("toInt()")
       case (_, TypeId.Builtins.i64)  => Some("toLong()")
@@ -257,14 +257,14 @@ class KtConversionTranslator[F[+_, +_]: Error2](
                           case TypeId.Builtins.set => q"emptySet()"
                           case TypeId.Builtins.map => q"emptyMap()"
                           case TypeId.Builtins.opt => q"null"
-                          case _ => throw new IllegalStateException(s"Unsupported constructor type: $id")
+                          case _                   => throw new IllegalStateException(s"Unsupported constructor type: $id")
                         }
                       case _ => throw new IllegalStateException("Unsupported target field type")
                     }
 
                   case _: FieldOp.WrapIntoCollection => q"listOf(_from.$fld) as ${trans.asKtRef(f.tpe, domain, evo)}"
                   case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"_from.$fld", 1, Some(o.oldTpe))
-                  case o: FieldOp.SwapCollectionType  => swapCollType(q"_from.$fld", o, 0)
+                  case o: FieldOp.SwapCollectionType => swapCollType(q"_from.$fld", o, 0)
                   case o: FieldOp.Rename             => transfer(o.targetField.tpe, q"_from.${o.sourceFieldName.name}", 1)
                   case o: FieldOp.Redef =>
                     val srcFieldRef = q"_from.${o.sourceFieldName.name}"

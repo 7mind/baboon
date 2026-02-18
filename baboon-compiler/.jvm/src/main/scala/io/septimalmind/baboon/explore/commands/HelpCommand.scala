@@ -27,9 +27,10 @@ object HelpCommand extends Command {
       ("exit / quit", "Exit the explorer"),
     )
 
-    commands.foreach { case (cmd, desc) =>
-      sb.append(s"  ${Colors.GREEN}$cmd${Colors.RESET}\n")
-      sb.append(s"      $desc\n")
+    commands.foreach {
+      case (cmd, desc) =>
+        sb.append(s"  ${Colors.GREEN}$cmd${Colors.RESET}\n")
+        sb.append(s"      $desc\n")
     }
 
     sb.append(s"\n${Colors.DIM}Tab completion is available for commands and type names.${Colors.RESET}")

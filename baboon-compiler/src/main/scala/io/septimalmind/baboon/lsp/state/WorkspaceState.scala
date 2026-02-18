@@ -12,9 +12,9 @@ class WorkspaceState(
   compiler: LspCompiler,
   inputProvider: InputProvider,
   pathOps: PathOps,
-  logger: BLogger
+  logger: BLogger,
 ) {
-  @volatile private var lastCompilationResult: CompilationResult = CompilationResult.empty
+  @volatile private var lastCompilationResult: CompilationResult   = CompilationResult.empty
   @volatile private var lastSuccessfulFamily: Option[BaboonFamily] = None
 
   /** VSCode workspace folders are ignored - model dirs must be specified via CLI */
@@ -40,9 +40,10 @@ class WorkspaceState(
           CompilationResult(Some(family), Seq.empty, Map.empty)
         case Left(issues) =>
           logger.message(LspLogging.Context, s"recompile: FAILED - ${issues.size} issues (using cached family for completions)")
-          issues.toList.take(5).foreach { issue =>
-            val formatted = formatIssue(issue)
-            logger.message(LspLogging.Context, s"recompile: $formatted")
+          issues.toList.take(5).foreach {
+            issue =>
+              val formatted = formatIssue(issue)
+              logger.message(LspLogging.Context, s"recompile: $formatted")
           }
           val fileIssues = groupIssuesByFile(issues.toList)
           CompilationResult(None, issues.toList, fileIssues)
@@ -102,75 +103,75 @@ class WorkspaceState(
   private def extractTyperIssuePointer(issue: io.septimalmind.baboon.parser.model.issues.TyperIssue): Option[InputPointer] = {
     import io.septimalmind.baboon.parser.model.issues.TyperIssue._
     issue match {
-      case GenericTyperIssue(_, meta)                   => Some(meta.pos)
-      case NameNotFound(_, _, meta)                     => Some(meta.pos)
-      case MissingTypeId(_, _, meta)                    => Some(meta.pos)
-      case NonUniqueFields(_, _, meta)                  => Some(meta.pos)
-      case EmptyEnum(_, meta)                           => Some(meta.pos)
-      case EmptyAdt(_, meta)                            => Some(meta.pos)
-      case BadTypeName(_, meta)                         => Some(meta.pos)
-      case BadFieldName(_, meta)                        => Some(meta.pos)
-      case BadEnumName(_, meta)                         => Some(meta.pos)
-      case CircularInheritance(_, meta)                 => Some(meta.pos)
-      case NonUniqueEnumBranches(_, _, meta)            => Some(meta.pos)
-      case NonUniqueForeignEntries(_, _, meta)          => Some(meta.pos)
-      case EmptyGenericArgs(_, meta)                    => Some(meta.pos)
-      case NonUniqueTypedefs(_, meta)                   => Some(meta.pos)
-      case NonUniqueScope(_, meta)                      => Some(meta.pos)
-      case UnexpectedScoping(_, meta)                   => Some(meta.pos)
-      case UnexpectedBuiltin(_, _, meta)                => Some(meta.pos)
-      case UnexpectedNonBuiltin(_, _, _, meta)          => Some(meta.pos)
-      case ScopedRefToNamespacedGeneric(_, meta)        => Some(meta.pos)
-      case UnexpectedScopeLookup(_, meta)               => Some(meta.pos)
-      case NamSeqeNotFound(_, _, meta)                  => Some(meta.pos)
-      case DuplicatedTypes(_, meta)                     => Some(meta.pos)
-      case WrongParent(_, _, meta)                      => Some(meta.pos)
-      case MissingContractFields(_, _, meta)            => Some(meta.pos)
-      case BadInheritance(_, meta)                      => Some(meta.pos)
-      case NonUniqueMethodNames(_, _, meta)             => Some(meta.pos)
-      case ServiceMissingOutput(_, _, meta)             => Some(meta.pos)
-      case ServiceMultipleOutputs(_, _, _, meta)        => Some(meta.pos)
-      case ServiceMultipleErrors(_, _, _, meta)         => Some(meta.pos)
-      case DagError(_, meta)                            => Some(meta.pos)
-      case ScalarExpected(_, meta)                      => Some(meta.pos)
-      case CollectionExpected(_, meta)                  => Some(meta.pos)
-      case ScopeCannotBeEmpty(member)                   => Some(member.meta.pos)
-      case EmptyPackageId(header)                       => Some(header.meta.pos)
-      case DuplicatedTypedefs(model, _)                 => Some(model.header.meta.pos)
-      case _: NonUniqueDomainVersions                   => None
-      case _: EmptyDomainFamily                         => None
-      case _: NonUniqueLineages                         => None
-      case _: NonUniqueRawDomainVersion                 => None
-      case _: EmptyFamily                               => None
-      case _: EmptyFamilyReload                         => None
-      case _: TodoTyperIssue                            => None
+      case GenericTyperIssue(_, meta)            => Some(meta.pos)
+      case NameNotFound(_, _, meta)              => Some(meta.pos)
+      case MissingTypeId(_, _, meta)             => Some(meta.pos)
+      case NonUniqueFields(_, _, meta)           => Some(meta.pos)
+      case EmptyEnum(_, meta)                    => Some(meta.pos)
+      case EmptyAdt(_, meta)                     => Some(meta.pos)
+      case BadTypeName(_, meta)                  => Some(meta.pos)
+      case BadFieldName(_, meta)                 => Some(meta.pos)
+      case BadEnumName(_, meta)                  => Some(meta.pos)
+      case CircularInheritance(_, meta)          => Some(meta.pos)
+      case NonUniqueEnumBranches(_, _, meta)     => Some(meta.pos)
+      case NonUniqueForeignEntries(_, _, meta)   => Some(meta.pos)
+      case EmptyGenericArgs(_, meta)             => Some(meta.pos)
+      case NonUniqueTypedefs(_, meta)            => Some(meta.pos)
+      case NonUniqueScope(_, meta)               => Some(meta.pos)
+      case UnexpectedScoping(_, meta)            => Some(meta.pos)
+      case UnexpectedBuiltin(_, _, meta)         => Some(meta.pos)
+      case UnexpectedNonBuiltin(_, _, _, meta)   => Some(meta.pos)
+      case ScopedRefToNamespacedGeneric(_, meta) => Some(meta.pos)
+      case UnexpectedScopeLookup(_, meta)        => Some(meta.pos)
+      case NamSeqeNotFound(_, _, meta)           => Some(meta.pos)
+      case DuplicatedTypes(_, meta)              => Some(meta.pos)
+      case WrongParent(_, _, meta)               => Some(meta.pos)
+      case MissingContractFields(_, _, meta)     => Some(meta.pos)
+      case BadInheritance(_, meta)               => Some(meta.pos)
+      case NonUniqueMethodNames(_, _, meta)      => Some(meta.pos)
+      case ServiceMissingOutput(_, _, meta)      => Some(meta.pos)
+      case ServiceMultipleOutputs(_, _, _, meta) => Some(meta.pos)
+      case ServiceMultipleErrors(_, _, _, meta)  => Some(meta.pos)
+      case DagError(_, meta)                     => Some(meta.pos)
+      case ScalarExpected(_, meta)               => Some(meta.pos)
+      case CollectionExpected(_, meta)           => Some(meta.pos)
+      case ScopeCannotBeEmpty(member)            => Some(member.meta.pos)
+      case EmptyPackageId(header)                => Some(header.meta.pos)
+      case DuplicatedTypedefs(model, _)          => Some(model.header.meta.pos)
+      case _: NonUniqueDomainVersions            => None
+      case _: EmptyDomainFamily                  => None
+      case _: NonUniqueLineages                  => None
+      case _: NonUniqueRawDomainVersion          => None
+      case _: EmptyFamily                        => None
+      case _: EmptyFamilyReload                  => None
+      case _: TodoTyperIssue                     => None
     }
   }
 
   private def extractVerificationIssuePointer(issue: io.septimalmind.baboon.parser.model.issues.VerificationIssue): Option[InputPointer] = {
     import io.septimalmind.baboon.parser.model.issues.VerificationIssue._
     issue match {
-      case ConflictingDtoFields(_, _, meta)                   => Some(meta.pos)
-      case ConflictingEnumBranches(_, _, meta)                => Some(meta.pos)
-      case ConflictingAdtBranches(_, _, meta)                 => Some(meta.pos)
-      case BadFieldNames(_, _, meta)                          => Some(meta.pos)
-      case EmptyEnumDef(_, meta)                              => Some(meta.pos)
+      case ConflictingDtoFields(_, _, meta)                     => Some(meta.pos)
+      case ConflictingEnumBranches(_, _, meta)                  => Some(meta.pos)
+      case ConflictingAdtBranches(_, _, meta)                   => Some(meta.pos)
+      case BadFieldNames(_, _, meta)                            => Some(meta.pos)
+      case EmptyEnumDef(_, meta)                                => Some(meta.pos)
       case EitherAllOrNoneEnumMembersMustHaveConstants(_, meta) => Some(meta.pos)
-      case WrongEnumConstant(_, meta)                         => Some(meta.pos)
-      case EmptyAdtDef(_, meta)                               => Some(meta.pos)
-      case UnderscoredDefinitionRetained(_, meta)             => Some(meta.pos)
-      case PathologicGenerics(_, _, meta)                     => Some(meta.pos)
-      case SetsCantContainGenerics(_, _, meta)                => Some(meta.pos)
-      case MapKeysShouldNotBeGeneric(_, _, meta)              => Some(meta.pos)
-      case _: LockedVersionModified                           => None
-      case _: MissingTypeDef                                  => None
-      case _: ReferentialCyclesFound                          => None
-      case _: IncorrectRootFound                              => None
-      case _: ConflictingTypeIds                              => None
-      case _: MissingEvoDiff                                  => None
-      case _: MissingEvoConversion                            => None
-      case _: BrokenConversion                                => None
-      case _: IncorrectConversionApplication                  => None
+      case WrongEnumConstant(_, meta)                           => Some(meta.pos)
+      case EmptyAdtDef(_, meta)                                 => Some(meta.pos)
+      case UnderscoredDefinitionRetained(_, meta)               => Some(meta.pos)
+      case PathologicGenerics(_, _, meta)                       => Some(meta.pos)
+      case SetsCantContainGenerics(_, _, meta)                  => Some(meta.pos)
+      case MapKeysShouldNotBeGeneric(_, _, meta)                => Some(meta.pos)
+      case _: LockedVersionModified                             => None
+      case _: MissingTypeDef                                    => None
+      case _: ReferentialCyclesFound                            => None
+      case _: IncorrectRootFound                                => None
+      case _: ConflictingTypeIds                                => None
+      case _: MissingEvoDiff                                    => None
+      case _: MissingEvoConversion                              => None
+      case _: BrokenConversion                                  => None
+      case _: IncorrectConversionApplication                    => None
     }
   }
 
@@ -185,35 +186,37 @@ class WorkspaceState(
       case BaboonIssue.Parser(IncludeNotFound(path)) =>
         (None, s"Include not found: $path")
 
-      case BaboonIssue.Typer(ti) => ti match {
-        case GenericTyperIssue(msg, meta)               => (extractLocation(meta.pos), msg)
-        case NameNotFound(_, name, meta)                => (extractLocation(meta.pos), s"Type not found: ${name.path.head.name}")
-        case MissingTypeId(_, missing, meta)            => (extractLocation(meta.pos), s"Missing types: ${missing.map(_.name.name).mkString(", ")}")
-        case NonUniqueFields(id, dupes, meta)           => (extractLocation(meta.pos), s"Duplicate fields in ${id.name.name}: ${dupes.keys.mkString(", ")}")
-        case EmptyEnum(id, meta)                        => (extractLocation(meta.pos), s"Empty enum: ${id.name.name}")
-        case EmptyAdt(id, meta)                         => (extractLocation(meta.pos), s"Empty ADT: ${id.name.name}")
-        case BadTypeName(name, meta)                    => (extractLocation(meta.pos), s"Invalid type name: $name")
-        case BadFieldName(name, meta)                   => (extractLocation(meta.pos), s"Invalid field name: $name")
-        case BadEnumName(name, meta)                    => (extractLocation(meta.pos), s"Invalid enum member name: $name")
-        case CircularInheritance(error, meta)           => (extractLocation(meta.pos), s"Circular inheritance: $error")
-        case UnexpectedBuiltin(id, _, meta)             => (extractLocation(meta.pos), s"Unexpected builtin: ${id.name.name}")
-        case UnexpectedNonBuiltin(name, _, _, meta)     => (extractLocation(meta.pos), s"Type not found: ${name.name}")
-        case NonUniqueDomainVersions(dupes)             => (None, s"Duplicate domain versions: ${dupes.keys.mkString(", ")}")
-        case NonUniqueRawDomainVersion(conflicts)       => (None, s"Duplicate domain versions: ${conflicts.keys.map(k => s"${k.id}@${k.version}").mkString(", ")}")
-        case _                                          => (None, ti.toString.take(100))
-      }
+      case BaboonIssue.Typer(ti) =>
+        ti match {
+          case GenericTyperIssue(msg, meta)           => (extractLocation(meta.pos), msg)
+          case NameNotFound(_, name, meta)            => (extractLocation(meta.pos), s"Type not found: ${name.path.head.name}")
+          case MissingTypeId(_, missing, meta)        => (extractLocation(meta.pos), s"Missing types: ${missing.map(_.name.name).mkString(", ")}")
+          case NonUniqueFields(id, dupes, meta)       => (extractLocation(meta.pos), s"Duplicate fields in ${id.name.name}: ${dupes.keys.mkString(", ")}")
+          case EmptyEnum(id, meta)                    => (extractLocation(meta.pos), s"Empty enum: ${id.name.name}")
+          case EmptyAdt(id, meta)                     => (extractLocation(meta.pos), s"Empty ADT: ${id.name.name}")
+          case BadTypeName(name, meta)                => (extractLocation(meta.pos), s"Invalid type name: $name")
+          case BadFieldName(name, meta)               => (extractLocation(meta.pos), s"Invalid field name: $name")
+          case BadEnumName(name, meta)                => (extractLocation(meta.pos), s"Invalid enum member name: $name")
+          case CircularInheritance(error, meta)       => (extractLocation(meta.pos), s"Circular inheritance: $error")
+          case UnexpectedBuiltin(id, _, meta)         => (extractLocation(meta.pos), s"Unexpected builtin: ${id.name.name}")
+          case UnexpectedNonBuiltin(name, _, _, meta) => (extractLocation(meta.pos), s"Type not found: ${name.name}")
+          case NonUniqueDomainVersions(dupes)         => (None, s"Duplicate domain versions: ${dupes.keys.mkString(", ")}")
+          case NonUniqueRawDomainVersion(conflicts)   => (None, s"Duplicate domain versions: ${conflicts.keys.map(k => s"${k.id}@${k.version}").mkString(", ")}")
+          case _                                      => (None, ti.toString.take(100))
+        }
 
-      case BaboonIssue.Verification(vi) => vi match {
-        case ConflictingDtoFields(dto, _, meta)         => (extractLocation(meta.pos), s"Conflicting fields in ${dto.name.name}")
-        case EmptyEnumDef(e, meta)                      => (extractLocation(meta.pos), s"Empty enum: ${e.id.name.name}")
-        case EmptyAdtDef(a, meta)                       => (extractLocation(meta.pos), s"Empty ADT: ${a.id.name.name}")
-        case _                                          => (None, vi.toString.take(100))
-      }
+      case BaboonIssue.Verification(vi) =>
+        vi match {
+          case ConflictingDtoFields(dto, _, meta) => (extractLocation(meta.pos), s"Conflicting fields in ${dto.name.name}")
+          case EmptyEnumDef(e, meta)              => (extractLocation(meta.pos), s"Empty enum: ${e.id.name.name}")
+          case EmptyAdtDef(a, meta)               => (extractLocation(meta.pos), s"Empty ADT: ${a.id.name.name}")
+          case _                                  => (None, vi.toString.take(100))
+        }
 
-      case BaboonIssue.Evolution(ei)     => (None, s"Evolution: ${ei.toString.take(80)}")
-      case BaboonIssue.IO(ioi)           => (None, s"IO: ${ioi.toString.take(80)}")
-      case BaboonIssue.Translation(ti)   => (None, s"Translation: ${ti.toString.take(80)}")
-      case BaboonIssue.RuntimeCodec(ri)  => (None, s"Runtime codec: ${ri.toString.take(80)}")
+      case BaboonIssue.Evolution(ei)    => (None, s"Evolution: ${ei.toString.take(80)}")
+      case BaboonIssue.IO(ioi)          => (None, s"IO: ${ioi.toString.take(80)}")
+      case BaboonIssue.Translation(ti)  => (None, s"Translation: ${ti.toString.take(80)}")
+      case BaboonIssue.RuntimeCodec(ri) => (None, s"Runtime codec: ${ri.toString.take(80)}")
     }
 
     location match {

@@ -168,8 +168,7 @@ object BaboonTyper {
                   .map(adtId => Owner.Adt(adtId))
               case _ =>
                 val ns = asPath(found).collect {
-                  case s: SubScope[ExtendedRawDefn]
-                      if s.defn.defn.isInstanceOf[RawNamespace] || s.defn.defn.isInstanceOf[RawService] =>
+                  case s: SubScope[ExtendedRawDefn] if s.defn.defn.isInstanceOf[RawNamespace] || s.defn.defn.isInstanceOf[RawService] =>
                     TypeName(s.name.name)
                 }
                 F.pure {
@@ -201,11 +200,12 @@ object BaboonTyper {
         case (scope, rawDefn, ref) =>
           for {
             newId <- scopeSupport.resolveUserTypeId(rawDefn.name, scope, pkg, rawDefn.meta)
-            oldOwner <- if (ref.prefix.isEmpty) {
-              F.pure(newId.owner)
-            } else {
-              ownerForPrefix(ref.prefix, scope)
-            }
+            oldOwner <-
+              if (ref.prefix.isEmpty) {
+                F.pure(newId.owner)
+              } else {
+                ownerForPrefix(ref.prefix, scope)
+              }
             oldId = TypeId.User(pkg, oldOwner, TypeName(ref.name.name))
           } yield {
             (newId, oldId)

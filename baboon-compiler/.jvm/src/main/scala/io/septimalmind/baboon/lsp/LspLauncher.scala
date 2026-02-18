@@ -9,7 +9,7 @@ import scala.annotation.tailrec
 class LspLauncher(
   server: BaboonLanguageServer,
   port: Option[Int],
-  logger: BLogger
+  logger: BLogger,
 ) {
 
   def launch(): Unit = {

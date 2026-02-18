@@ -97,19 +97,20 @@ object PyDefnTranslator {
 
     override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
       val rtTree = wiringTranslator.translateServiceRt(domain)
-      val result = rtTree.map { tree =>
-        val fbase = fileTools.basename(domain, evolution)
-        val serviceRtModule = {
-          val pathToModule = domain.id.path.toList
-          val fullPath     = fileTools.definitionsBasePkg ++ pathToModule ++ List("BaboonServiceRt")
-          PyModuleId(NEList.unsafeFrom(fullPath))
-        }
-        Output(
-          s"$fbase/BaboonServiceRt.py",
-          tree,
-          serviceRtModule,
-          CompilerProduct.Definition,
-        )
+      val result = rtTree.map {
+        tree =>
+          val fbase = fileTools.basename(domain, evolution)
+          val serviceRtModule = {
+            val pathToModule = domain.id.path.toList
+            val fullPath     = fileTools.definitionsBasePkg ++ pathToModule ++ List("BaboonServiceRt")
+            PyModuleId(NEList.unsafeFrom(fullPath))
+          }
+          Output(
+            s"$fbase/BaboonServiceRt.py",
+            tree,
+            serviceRtModule,
+            CompilerProduct.Definition,
+          )
       }.toList
       F.pure(result)
     }
@@ -131,9 +132,8 @@ object PyDefnTranslator {
     private def doTranslate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       val repr = makeFullRepr(defn)
 
-      val regsPerCodec = codecs.toList.map(codecTranslator =>
-        (codecTranslator.id, repr.codecs.flatMap(reg => reg.trees.get(codecTranslator.id).map(expr => q"${reg.tpeId}, $expr")))
-      )
+      val regsPerCodec =
+        codecs.toList.map(codecTranslator => (codecTranslator.id, repr.codecs.flatMap(reg => reg.trees.get(codecTranslator.id).map(expr => q"${reg.tpeId}, $expr"))))
 
       val mainOutput = Output(
         getOutputPath(defn),
@@ -143,17 +143,19 @@ object PyDefnTranslator {
         codecReg = regsPerCodec,
       )
 
-      val wiringOutput = wiringTranslator.translate(defn).map { wiringTree =>
-        val wiringModule = typeTranslator
-          .toPyModule(defn.id, domain.version, evolution, fileTools.definitionsBasePkg)
-          .withModuleName(s"${defn.id.name.name}_Wiring")
-        Output(
-          getOutputPath(defn, suffix = Some("_Wiring")),
-          wiringTree,
-          wiringModule,
-          CompilerProduct.Definition,
-        )
-      }.toList
+      val wiringOutput = wiringTranslator
+        .translate(defn).map {
+          wiringTree =>
+            val wiringModule = typeTranslator
+              .toPyModule(defn.id, domain.version, evolution, fileTools.definitionsBasePkg)
+              .withModuleName(s"${defn.id.name.name}_Wiring")
+            Output(
+              getOutputPath(defn, suffix = Some("_Wiring")),
+              wiringTree,
+              wiringModule,
+              CompilerProduct.Definition,
+            )
+        }.toList
 
       F.pure(mainOutput :: wiringOutput)
     }
@@ -347,27 +349,28 @@ object PyDefnTranslator {
           val resolved    = ServiceResultResolver.resolve(domain, "python", target.language.serviceResult, target.language.pragmas)
           val resolvedCtx = ServiceContextResolver.resolve(domain, "python", target.language.serviceContext, target.language.pragmas)
           val ctxParam = resolvedCtx match {
-            case ResolvedServiceContext.NoContext                => ""
-            case ResolvedServiceContext.AbstractContext(tn, pn)  => s"$pn: $tn, "
-            case ResolvedServiceContext.ConcreteContext(tn, pn)  => s"$pn: $tn, "
+            case ResolvedServiceContext.NoContext               => ""
+            case ResolvedServiceContext.AbstractContext(tn, pn) => s"$pn: $tn, "
+            case ResolvedServiceContext.ConcreteContext(tn, pn) => s"$pn: $tn, "
           }
-          val methods = service.methods.map { m =>
-            val inType  = typeTranslator.asPyRef(m.sig, domain, evolution, fileTools.definitionsBasePkg)
-            val outType = m.out.map(typeTranslator.asPyRef(_, domain, evolution, fileTools.definitionsBasePkg))
-            val errType = m.err.map(typeTranslator.asPyRef(_, domain, evolution, fileTools.definitionsBasePkg))
-            val retAnnotation: TextTree[PyValue] = if (resolved.noErrors || errType.isEmpty) {
-              outType.getOrElse(q"None")
-            } else {
-              val pyName: PyValue => String = { case t: PyValue.PyType => t.name }
-              val outStr  = outType.map(_.mapRender(pyName)).getOrElse("")
-              val errStr  = errType.map(_.mapRender(pyName))
-              val retStr  = resolved.renderReturnType(outStr, errStr, "None")
-              q"${"\""  + retStr + "\""}"
-            }
-            q"""|@$pyAbstractMethod
-                |def ${m.name.name}(self, ${ctxParam}arg: $inType) -> $retAnnotation:
-                |    raise NotImplementedError
-                |""".stripMargin
+          val methods = service.methods.map {
+            m =>
+              val inType  = typeTranslator.asPyRef(m.sig, domain, evolution, fileTools.definitionsBasePkg)
+              val outType = m.out.map(typeTranslator.asPyRef(_, domain, evolution, fileTools.definitionsBasePkg))
+              val errType = m.err.map(typeTranslator.asPyRef(_, domain, evolution, fileTools.definitionsBasePkg))
+              val retAnnotation: TextTree[PyValue] = if (resolved.noErrors || errType.isEmpty) {
+                outType.getOrElse(q"None")
+              } else {
+                val pyName: PyValue => String = { case t: PyValue.PyType => t.name }
+                val outStr                    = outType.map(_.mapRender(pyName)).getOrElse("")
+                val errStr                    = errType.map(_.mapRender(pyName))
+                val retStr                    = resolved.renderReturnType(outStr, errStr, "None")
+                q"${"\"" + retStr + "\""}"
+              }
+              q"""|@$pyAbstractMethod
+                  |def ${m.name.name}(self, ${ctxParam}arg: $inType) -> $retAnnotation:
+                  |    raise NotImplementedError
+                  |""".stripMargin
           }
           val allMethods = if (methods.isEmpty) q"pass" else methods.joinN()
           val classBases = resolvedCtx match {

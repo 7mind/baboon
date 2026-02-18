@@ -176,7 +176,7 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
           field =>
             val op        = ops(field)
             val fieldName = field.name.name
-            val fieldRef = q"_from.$fieldName"
+            val fieldRef  = q"_from.$fieldName"
             val expr = op match {
               case o: FieldOp.Transfer => transfer(o.targetField.tpe, fieldRef)
 

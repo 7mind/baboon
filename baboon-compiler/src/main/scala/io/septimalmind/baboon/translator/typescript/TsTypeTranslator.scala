@@ -55,14 +55,14 @@ class TsTypeTranslator {
           case TypeId.Builtins.uid   => tsString
           case TypeId.Builtins.tsu   => baboonDateTimeUtc
           case TypeId.Builtins.tso   => baboonDateTimeOffset
-          case other => throw new IllegalArgumentException(s"Unexpected builtin scalar: $other")
+          case other                 => throw new IllegalArgumentException(s"Unexpected builtin scalar: $other")
         }
       case TypeId.Builtins.map => TsType(predefModule, "ReadonlyMap", predef = true)
       case TypeId.Builtins.lst => TsType(predefModule, "ReadonlyArray", predef = true)
       case TypeId.Builtins.set => TsType(predefModule, "ReadonlySet", predef = true)
       case TypeId.Builtins.opt => TsType(predefModule, "undefined", predef = true)
       case uid: TypeId.User    => asTsTypeDerefForeigns(uid, domain, evo)
-      case other => throw new IllegalArgumentException(s"Unexpected type: $other")
+      case other               => throw new IllegalArgumentException(s"Unexpected type: $other")
     }
   }
 
@@ -72,8 +72,8 @@ class TsTypeTranslator {
 
   def toTsModule(p: Pkg, version: Version, omitVersion: Boolean): TsModuleId = {
     val verString = "v" + version.v.toString.split('.').mkString("_")
-    val base = p.path.map(_.toLowerCase)
-    val segments = if (omitVersion) base else base :+ verString
+    val base      = p.path.map(_.toLowerCase)
+    val segments  = if (omitVersion) base else base :+ verString
     TsModuleId(NEList.unsafeFrom(segments.toList))
   }
 
@@ -92,7 +92,7 @@ class TsTypeTranslator {
     val module  = toTsModule(tid.pkg, version, evolution)
 
     val ownerAsPrefix = renderOwner(tid.owner)
-    val escapedName = escapeTsKeyword(tid.name.name)
+    val escapedName   = escapeTsKeyword(tid.name.name)
 
     val fullModule = tid.owner match {
       case Owner.Adt(_) =>
@@ -114,12 +114,11 @@ class TsTypeTranslator {
 
   def escapeTsKeyword(s: String): String = {
     s match {
-      case "break" | "case" | "catch" | "continue" | "debugger" | "default" | "delete" | "do" |
-           "else" | "finally" | "for" | "function" | "if" | "in" | "instanceof" | "new" |
-           "return" | "switch" | "this" | "throw" | "try" | "typeof" | "var" | "void" | "while" |
-           "with" | "class" | "const" | "enum" | "export" | "extends" | "import" | "super" |
-           "implements" | "interface" | "let" | "package" | "private" | "protected" | "public" |
-           "static" | "yield" | "await" | "async" | "of" | "type" | "from" | "as" | "is" => s"${s}_"
+      case "break" | "case" | "catch" | "continue" | "debugger" | "default" | "delete" | "do" | "else" | "finally" | "for" | "function" | "if" | "in" | "instanceof" |
+          "new" | "return" | "switch" | "this" | "throw" | "try" | "typeof" | "var" | "void" | "while" | "with" | "class" | "const" | "enum" | "export" | "extends" |
+          "import" | "super" | "implements" | "interface" | "let" | "package" | "private" | "protected" | "public" | "static" | "yield" | "await" | "async" | "of" |
+          "type" | "from" | "as" | "is" =>
+        s"${s}_"
       case _ => s
     }
   }
@@ -130,7 +129,7 @@ class TsTypeTranslator {
 
   def camelToKebab(s: String): String = {
     val result = new StringBuilder
-    var i = 0
+    var i      = 0
     while (i < s.length) {
       val c = s.charAt(i)
       if (c.isUpper) {

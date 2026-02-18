@@ -30,7 +30,7 @@ object ExampleCommand extends Command {
                     sb.append(json.spaces2)
                     sb.append("\n")
 
-                    val pkg = ctx.currentPkg.get
+                    val pkg     = ctx.currentPkg.get
                     val version = ctx.currentVersion.get
 
                     val renderer = new UebaDecodeRenderer(dom, ctx.enquiries)
@@ -40,7 +40,7 @@ object ExampleCommand extends Command {
                         sb.append(s"\n${Colors.CYAN}UEBA (compact, ${bytes.length} bytes):${Colors.RESET}\n")
                         sb.append(renderer.renderOffsets(bytes, json, member))
                       case Left(err) =>
-                        sb.append(s"\n${Colors.YELLOW}UEBA encoding failed: ${err}${Colors.RESET}")
+                        sb.append(s"\n${Colors.YELLOW}UEBA encoding failed: $err${Colors.RESET}")
                     }
 
                     ctx.encode(pkg, version, member.id.toString, json, indexed = true) match {

@@ -29,17 +29,17 @@ class ExploreContext[F[+_, +_]: Error2: MaybeSuspend2](
   def decode(pkg: Pkg, version: Version, idString: String, data: Vector[Byte]): F[BaboonIssue, Json] =
     codec.decode(family, pkg, version, idString, data)
 
-  private var _currentPkg: Option[Pkg] = None
+  private var _currentPkg: Option[Pkg]         = None
   private var _currentVersion: Option[Version] = None
 
-  def currentPkg: Option[Pkg] = _currentPkg
+  def currentPkg: Option[Pkg]         = _currentPkg
   def currentVersion: Option[Version] = _currentVersion
 
   def currentDomain: Option[Domain] = for {
-    pkg <- _currentPkg
-    ver <- _currentVersion
+    pkg     <- _currentPkg
+    ver     <- _currentVersion
     lineage <- family.domains.toMap.get(pkg)
-    dom <- lineage.versions.toMap.get(ver)
+    dom     <- lineage.versions.toMap.get(ver)
   } yield dom
 
   def currentLineage: Option[BaboonLineage] =
@@ -70,16 +70,18 @@ class ExploreContext[F[+_, +_]: Error2: MaybeSuspend2](
     currentLineage.toSeq.flatMap(_.versions.toMap.keys).sorted
 
   def allTypeIds: Seq[TypeId.User] =
-    currentDomain.toSeq.flatMap { dom =>
-      dom.defs.meta.nodes.values.collect { case u: DomainMember.User => u.id }
+    currentDomain.toSeq.flatMap {
+      dom =>
+        dom.defs.meta.nodes.values.collect { case u: DomainMember.User => u.id }
     }.sortBy(_.name.name)
 
   def findType(name: String): Option[DomainMember.User] = {
-    currentDomain.flatMap { dom =>
-      dom.defs.meta.nodes.values.collectFirst {
-        case u: DomainMember.User if u.id.name.name == name => u
-        case u: DomainMember.User if u.id.toString == name => u
-      }
+    currentDomain.flatMap {
+      dom =>
+        dom.defs.meta.nodes.values.collectFirst {
+          case u: DomainMember.User if u.id.name.name == name => u
+          case u: DomainMember.User if u.id.toString == name  => u
+        }
     }
   }
 
@@ -98,16 +100,20 @@ class ExploreContext[F[+_, +_]: Error2: MaybeSuspend2](
   def reload(): F[NEList[BaboonIssue], BaboonFamily] = {
     F.flatMap(F.maybeSuspend {
       val fromFiles = inputs.individualInputs.map(_.toPath)
-      val fromDirs = inputs.directoryInputs.flatMap { dir =>
-        IzFiles.walk(dir.toFile)
-          .filter(_.toFile.getName.endsWith(".baboon"))
+      val fromDirs = inputs.directoryInputs.flatMap {
+        dir =>
+          IzFiles
+            .walk(dir.toFile)
+            .filter(_.toFile.getName.endsWith(".baboon"))
       }
       (fromFiles ++ fromDirs).toList
-    }) { inputModels =>
-      F.map(loader.load(inputModels)) { newFamily =>
-        updateFamily(newFamily)
-        newFamily
-      }
+    }) {
+      inputModels =>
+        F.map(loader.load(inputModels)) {
+          newFamily =>
+            updateFamily(newFamily)
+            newFamily
+        }
     }
   }
 
@@ -123,7 +129,7 @@ class ExploreContext[F[+_, +_]: Error2: MaybeSuspend2](
             _currentVersion = Some(lineage.evolution.latest)
         }
       case _ =>
-        _currentPkg = None
+        _currentPkg     = None
         _currentVersion = None
     }
   }

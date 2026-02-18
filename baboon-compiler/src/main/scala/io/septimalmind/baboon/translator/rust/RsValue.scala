@@ -16,7 +16,7 @@ object RsValue {
   case class RsType(
     crate: RsCrateId,
     name: String,
-    fq: Boolean = false,
+    fq: Boolean     = false,
     predef: Boolean = false,
   ) extends RsValue {
     def fullyQualified: RsType = this.copy(fq = true)

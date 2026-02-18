@@ -38,19 +38,19 @@ object DeptreeCommand extends Command {
     typeId: TypeId,
     sb: StringBuilder,
     indent: Int,
-    visited: mutable.Set[TypeId]
+    visited: mutable.Set[TypeId],
   ): Unit = {
-    val prefix = "  " * indent
+    val prefix    = "  " * indent
     val connector = if (indent > 0) "├─ " else ""
 
     typeId match {
       case u: TypeId.User =>
         val kind = dom.defs.meta.nodes.get(u) match {
           case Some(m: DomainMember.User) => kindOf(m)
-          case _ => ""
+          case _                          => ""
         }
 
-        val isRecursive = visited.contains(typeId)
+        val isRecursive     = visited.contains(typeId)
         val recursiveMarker = if (isRecursive) s" ${Colors.YELLOW}(recursive)${Colors.RESET}" else ""
 
         sb.append(s"$prefix$connector${Colors.BLUE}$kind${Colors.RESET} ${Colors.GREEN}${u.name.name}${Colors.RESET}$recursiveMarker\n")
@@ -64,8 +64,9 @@ object DeptreeCommand extends Command {
                 case uid: TypeId.User => uid
               }.toSeq.sortBy(_.name.name)
 
-              userDeps.foreach { depId =>
-                printTree(dom, ctx, depId, sb, indent + 1, visited)
+              userDeps.foreach {
+                depId =>
+                  printTree(dom, ctx, depId, sb, indent + 1, visited)
               }
             case _ =>
           }
@@ -79,12 +80,12 @@ object DeptreeCommand extends Command {
   private def kindOf(member: DomainMember.User): String = {
     import io.septimalmind.baboon.typer.model.Typedef.*
     member.defn match {
-      case _: Dto => "data"
-      case _: Adt => "adt"
-      case _: Enum => "enum"
-      case _: Foreign => "foreign"
+      case _: Dto      => "data"
+      case _: Adt      => "adt"
+      case _: Enum     => "enum"
+      case _: Foreign  => "foreign"
       case _: Contract => "mixin"
-      case _: Service => "service"
+      case _: Service  => "service"
     }
   }
 

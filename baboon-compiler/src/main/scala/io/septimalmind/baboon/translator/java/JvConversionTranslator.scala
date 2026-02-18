@@ -124,7 +124,7 @@ class JvConversionTranslator[F[+_, +_]: Error2](
 
   private def builtinConversion(to: TypeId, from: TypeId): Option[String] = {
     (from, to) match {
-      case _ if from == to       => None
+      case _ if from == to           => None
       case (_, TypeId.Builtins.i16)  => Some("(short)")
       case (_, TypeId.Builtins.i32)  => Some("(int)")
       case (_, TypeId.Builtins.i64)  => Some("(long)")
@@ -150,7 +150,7 @@ class JvConversionTranslator[F[+_, +_]: Error2](
     F.flatTraverseAccumErrors(targetedConversions) {
       conv =>
         val className = makeName("Convert", conv)
-        val fname = s"$className.java"
+        val fname     = s"$className.java"
 
         val tin  = trans.asJvType(conv.sourceTpe, srcDom, evo).fullyQualified
         def tout = trans.asJvType(conv.targetTpe, domain, evo)
@@ -264,7 +264,7 @@ class JvConversionTranslator[F[+_, +_]: Error2](
                           case TypeId.Builtins.set => q"$jvSet.<${trans.asJvBoxedRef(args.head, domain, evo)}>of()"
                           case TypeId.Builtins.map => q"$jvMap.<${trans.asJvBoxedRef(args.head, domain, evo)}, ${trans.asJvBoxedRef(args.last, domain, evo)}>of()"
                           case TypeId.Builtins.opt => q"$jvOptional.<${trans.asJvBoxedRef(args.head, domain, evo)}>empty()"
-                          case _ => throw new IllegalStateException(s"Unsupported constructor type: $id")
+                          case _                   => throw new IllegalStateException(s"Unsupported constructor type: $id")
                         }
                       case _ => throw new IllegalStateException("Unsupported target field type")
                     }
@@ -276,12 +276,12 @@ class JvConversionTranslator[F[+_, +_]: Error2](
                           case TypeId.Builtins.opt => q"$jvOptional.of(from.$fld())"
                           case TypeId.Builtins.lst => q"$jvList.of(from.$fld())"
                           case TypeId.Builtins.set => q"$jvSet.of(from.$fld())"
-                          case _ => throw new IllegalStateException(s"Unsupported collection wrap type: $id")
+                          case _                   => throw new IllegalStateException(s"Unsupported collection wrap type: $id")
                         }
                       case _ => throw new IllegalStateException("WrapIntoCollection target must be a constructor type")
                     }
                   case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"from.$fld()", 1, Some(o.oldTpe))
-                  case o: FieldOp.SwapCollectionType  => swapCollType(q"from.$fld()", o, 0)
+                  case o: FieldOp.SwapCollectionType => swapCollType(q"from.$fld()", o, 0)
                   case o: FieldOp.Rename             => transfer(o.targetField.tpe, q"from.${o.sourceFieldName.name}()", 1)
                   case o: FieldOp.Redef =>
                     val srcFieldRef = q"from.${o.sourceFieldName.name}()"
@@ -293,7 +293,7 @@ class JvConversionTranslator[F[+_, +_]: Error2](
                               case TypeId.Builtins.opt => q"$jvOptional.of($srcFieldRef)"
                               case TypeId.Builtins.lst => q"$jvList.of($srcFieldRef)"
                               case TypeId.Builtins.set => q"$jvSet.of($srcFieldRef)"
-                              case _ => throw new IllegalStateException(s"Unsupported collection wrap type: $id")
+                              case _                   => throw new IllegalStateException(s"Unsupported collection wrap type: $id")
                             }
                           case _ => throw new IllegalStateException("WrapIntoCollection target must be a constructor type")
                         }

@@ -14,15 +14,15 @@ class BaboonInclusionResolverImpl[F[+_, +_]](
   import io.septimalmind.baboon.PathTools.*
 
   def resolveInclude(inc: RawInclude): Option[(FSPath, String)] = {
-    options.directoryInputs
-      .iterator
+    options.directoryInputs.iterator
       .map(_.resolve(inc.value))
       .map(_.toAbsolutePath.normalize())
       .map(p => p.toFile)
       .find(f => f.exists() && f.isFile)
-      .map { file =>
-        val path = FSPath.parse(NEString.unsafeFrom(file.getAbsolutePath))
-        path -> IzFiles.readString(file)
+      .map {
+        file =>
+          val path = FSPath.parse(NEString.unsafeFrom(file.getAbsolutePath))
+          path -> IzFiles.readString(file)
       }
   }
 }

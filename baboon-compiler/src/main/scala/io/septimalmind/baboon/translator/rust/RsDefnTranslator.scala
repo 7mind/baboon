@@ -26,7 +26,7 @@ object RsDefnTranslator {
     crate: RsValue.RsCrateId,
     product: CompilerProduct,
     doNotModify: Boolean = false,
-    isModFile: Boolean = false,
+    isModFile: Boolean   = false,
   )
 
   class RsDefnTranslatorImpl[F[+_, +_]: Applicative2](
@@ -50,9 +50,9 @@ object RsDefnTranslator {
     }
 
     private def doTranslate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val repr = makeRepr(defn)
+      val repr       = makeRepr(defn)
       val codecTrees = codecs.toList.flatMap(t => t.translate(defn, trans.asRsType(defn.id, domain, evo), trans.toRsTypeRefKeepForeigns(defn.id, domain, evo)).toList)
-      val allDefs = (repr +: codecTrees).joinNN()
+      val allDefs    = (repr +: codecTrees).joinNN()
 
       val mainOutput = Output(
         getOutputPath(defn),
@@ -61,14 +61,16 @@ object RsDefnTranslator {
         CompilerProduct.Definition,
       )
 
-      val wiringOutput = wiringTranslator.translate(defn).map { wiringTree =>
-        Output(
-          getOutputPath(defn, suffix = Some("_wiring")),
-          wiringTree,
-          trans.toRsCrate(domain.id, domain.version, evo),
-          CompilerProduct.Definition,
-        )
-      }.toList
+      val wiringOutput = wiringTranslator
+        .translate(defn).map {
+          wiringTree =>
+            Output(
+              getOutputPath(defn, suffix = Some("_wiring")),
+              wiringTree,
+              trans.toRsCrate(domain.id, domain.version, evo),
+              CompilerProduct.Definition,
+            )
+        }.toList
 
       F.pure(mainOutput :: wiringOutput)
     }
@@ -101,8 +103,8 @@ object RsDefnTranslator {
     }
 
     private def doTranslateTest(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val csTypeRef = trans.asRsType(defn.id, domain, evo)
-      val srcRef    = trans.toRsTypeRefKeepForeigns(defn.id, domain, evo)
+      val csTypeRef   = trans.asRsType(defn.id, domain, evo)
+      val srcRef      = trans.toRsTypeRefKeepForeigns(defn.id, domain, evo)
       val testTreeOpt = codecTests.translate(defn, csTypeRef, srcRef)
       F.pure(testTreeOpt.map {
         testTree =>
@@ -117,14 +119,15 @@ object RsDefnTranslator {
 
     override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
       val rtTree = wiringTranslator.translateServiceRt(domain)
-      val result = rtTree.map { tree =>
-        val fbase = rsFiles.basename(domain, evo)
-        Output(
-          s"$fbase/baboon_service_rt.rs",
-          tree,
-          trans.toRsCrate(domain.id, domain.version, evo),
-          CompilerProduct.Definition,
-        )
+      val result = rtTree.map {
+        tree =>
+          val fbase = rsFiles.basename(domain, evo)
+          Output(
+            s"$fbase/baboon_service_rt.rs",
+            tree,
+            trans.toRsCrate(domain.id, domain.version, evo),
+            CompilerProduct.Definition,
+          )
       }.toList
       F.pure(result)
     }
@@ -154,36 +157,39 @@ object RsDefnTranslator {
     }
 
     private def makeDtoRepr(dto: Typedef.Dto, name: RsType): TextTree[RsValue] = {
-      val fields = dto.fields.map { f =>
-        val rawT        = trans.asRsRef(f.tpe, domain, evo)
-        val t           = if (needsBox(f.tpe)) q"Box<$rawT>" else rawT
-        val serdeAttrs  = fieldSerdeAttributes(f)
-        val attrLine    = if (serdeAttrs.nonEmpty) serdeAttrs.joinN() else q""
-        q"""$attrLine
-           |pub ${toSnakeCase(f.name.name)}: $t,""".stripMargin.trim
-      }
-      val fieldsList = if (fields.nonEmpty) fields.joinN() else q""
-
-      val derives = dtoDerives(dto)
-      val ordImpls = dtoOrdImpls(dto, name)
-
-      val customSerialize = if (isWrappedAdtBranch(dto)) {
-        val branchName = dto.id.name.name
-        val hasFields = dto.fields.nonEmpty
-
-        val innerFields = dto.fields.map { f =>
+      val fields = dto.fields.map {
+        f =>
           val rawT       = trans.asRsRef(f.tpe, domain, evo)
           val t          = if (needsBox(f.tpe)) q"Box<$rawT>" else rawT
           val serdeAttrs = fieldSerdeAttributes(f)
           val attrLine   = if (serdeAttrs.nonEmpty) serdeAttrs.joinN() else q""
           q"""$attrLine
-             |${toSnakeCase(f.name.name)}: &'a $t,""".stripMargin.trim
+             |pub ${toSnakeCase(f.name.name)}: $t,""".stripMargin.trim
+      }
+      val fieldsList = if (fields.nonEmpty) fields.joinN() else q""
+
+      val derives  = dtoDerives(dto)
+      val ordImpls = dtoOrdImpls(dto, name)
+
+      val customSerialize = if (isWrappedAdtBranch(dto)) {
+        val branchName = dto.id.name.name
+        val hasFields  = dto.fields.nonEmpty
+
+        val innerFields = dto.fields.map {
+          f =>
+            val rawT       = trans.asRsRef(f.tpe, domain, evo)
+            val t          = if (needsBox(f.tpe)) q"Box<$rawT>" else rawT
+            val serdeAttrs = fieldSerdeAttributes(f)
+            val attrLine   = if (serdeAttrs.nonEmpty) serdeAttrs.joinN() else q""
+            q"""$attrLine
+               |${toSnakeCase(f.name.name)}: &'a $t,""".stripMargin.trim
         }
         val innerFieldsList = if (innerFields.nonEmpty) innerFields.joinN() else q""
 
-        val fieldAssignments = dto.fields.map { f =>
-          val fld = toSnakeCase(f.name.name)
-          q"$fld: &self.$fld,"
+        val fieldAssignments = dto.fields.map {
+          f =>
+            val fld = toSnakeCase(f.name.name)
+            q"$fld: &self.$fld,"
         }
         val fieldAssignmentsList = if (fieldAssignments.nonEmpty) fieldAssignments.joinN() else q""
 
@@ -226,7 +232,7 @@ object RsDefnTranslator {
     }
 
     private def dtoDerives(dto: Typedef.Dto): TextTree[RsValue] = {
-      val hasNonOrd = dto.fields.exists(f => hasDirectFloat(f.tpe))
+      val hasNonOrd     = dto.fields.exists(f => hasDirectFloat(f.tpe))
       val wrappedBranch = isWrappedAdtBranch(dto)
       (hasNonOrd, wrappedBranch) match {
         case (_, true) if hasNonOrd =>
@@ -245,19 +251,20 @@ object RsDefnTranslator {
       if (!hasNonOrd) {
         q""
       } else {
-        val fieldComparisons = dto.fields.map { f =>
-          val fld = toSnakeCase(f.name.name)
-          if (hasDirectFloat(f.tpe)) {
-            q"""match baboon_total_cmp_ser(&self.$fld, &other.$fld) {
-               |    std::cmp::Ordering::Equal => {},
-               |    ord => return ord,
-               |}""".stripMargin
-          } else {
-            q"""match self.$fld.cmp(&other.$fld) {
-               |    std::cmp::Ordering::Equal => {},
-               |    ord => return ord,
-               |}""".stripMargin
-          }
+        val fieldComparisons = dto.fields.map {
+          f =>
+            val fld = toSnakeCase(f.name.name)
+            if (hasDirectFloat(f.tpe)) {
+              q"""match baboon_total_cmp_ser(&self.$fld, &other.$fld) {
+                 |    std::cmp::Ordering::Equal => {},
+                 |    ord => return ord,
+                 |}""".stripMargin
+            } else {
+              q"""match self.$fld.cmp(&other.$fld) {
+                 |    std::cmp::Ordering::Equal => {},
+                 |    ord => return ord,
+                 |}""".stripMargin
+            }
         }
         q"""impl PartialEq for ${name.asName} {
            |    fn eq(&self, other: &Self) -> bool {
@@ -292,8 +299,8 @@ object RsDefnTranslator {
         case TypeRef.Scalar(TypeId.Builtins.f32)  => true
         case TypeRef.Scalar(TypeId.Builtins.f64)  => true
         case TypeRef.Scalar(TypeId.Builtins.f128) => true
-        case TypeRef.Constructor(_, args)          => args.exists(hasDirectFloat)
-        case _                                     => false
+        case TypeRef.Constructor(_, args)         => args.exists(hasDirectFloat)
+        case _                                    => false
       }
     }
 
@@ -347,20 +354,24 @@ object RsDefnTranslator {
     }
 
     private def makeEnumRepr(e: Typedef.Enum, name: RsType): TextTree[RsValue] = {
-      val variants = e.members.map { m =>
-        q"${m.name.capitalize},"
+      val variants = e.members.map {
+        m =>
+          q"${m.name.capitalize},"
       }.toList
 
-      val parseCases = e.members.map { m =>
-        q""""${m.name.capitalize}" => Ok(${name.asName}::${m.name.capitalize}),"""
+      val parseCases = e.members.map {
+        m =>
+          q""""${m.name.capitalize}" => Ok(${name.asName}::${m.name.capitalize}),"""
       }.toList
 
-      val displayCases = e.members.map { m =>
-        q"""${name.asName}::${m.name.capitalize} => write!(f, "${m.name.capitalize}"),"""
+      val displayCases = e.members.map {
+        m =>
+          q"""${name.asName}::${m.name.capitalize} => write!(f, "${m.name.capitalize}"),"""
       }.toList
 
-      val allVariants = e.members.map { m =>
-        q"${name.asName}::${m.name.capitalize},"
+      val allVariants = e.members.map {
+        m =>
+          q"${name.asName}::${m.name.capitalize},"
       }.toList
 
       q"""#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
@@ -402,41 +413,45 @@ object RsDefnTranslator {
     private def makeAdtRepr(adt: Typedef.Adt, name: RsType): TextTree[RsValue] = {
       val dataMembers = adt.dataMembers(domain)
       // First, generate structs for each branch
-      val branchStructs = dataMembers.map { mid =>
-        domain.defs.meta.nodes(mid) match {
-          case mdefn: DomainMember.User =>
-            mdefn.defn match {
-              case dto: Typedef.Dto =>
-                val branchName = trans.asRsType(dto.id, domain, evo)
-                makeDtoRepr(dto, branchName)
-              case other =>
-                throw new RuntimeException(s"BUG: ADT member should be Dto, got: $other")
-            }
-          case other =>
-            throw new RuntimeException(s"BUG: missing/wrong adt member: $mid => $other")
-        }
+      val branchStructs = dataMembers.map {
+        mid =>
+          domain.defs.meta.nodes(mid) match {
+            case mdefn: DomainMember.User =>
+              mdefn.defn match {
+                case dto: Typedef.Dto =>
+                  val branchName = trans.asRsType(dto.id, domain, evo)
+                  makeDtoRepr(dto, branchName)
+                case other =>
+                  throw new RuntimeException(s"BUG: ADT member should be Dto, got: $other")
+              }
+            case other =>
+              throw new RuntimeException(s"BUG: missing/wrong adt member: $mid => $other")
+          }
       }
 
-      val branchCodecs = dataMembers.flatMap { mid =>
-        domain.defs.meta.nodes(mid) match {
-          case mdefn: DomainMember.User =>
-            codecs.toList.flatMap(_.translate(mdefn, trans.asRsType(mdefn.id, domain, evo), trans.toRsTypeRefKeepForeigns(mdefn.id, domain, evo)).toList)
-          case _ => Nil
-        }
+      val branchCodecs = dataMembers.flatMap {
+        mid =>
+          domain.defs.meta.nodes(mid) match {
+            case mdefn: DomainMember.User =>
+              codecs.toList.flatMap(_.translate(mdefn, trans.asRsType(mdefn.id, domain, evo), trans.toRsTypeRefKeepForeigns(mdefn.id, domain, evo)).toList)
+            case _ => Nil
+          }
       }
 
       // Generate the ADT enum
-      val variants = dataMembers.map { mid =>
-        val branchName = mid.name.name.capitalize
-        val branchType = trans.asRsType(mid, domain, evo)
-        q"$branchName(${branchType.asName}),"
+      val variants = dataMembers.map {
+        mid =>
+          val branchName = mid.name.name.capitalize
+          val branchType = trans.asRsType(mid, domain, evo)
+          q"$branchName(${branchType.asName}),"
       }
 
       // Custom serde for ADT: serialize as {"BranchName": { ... }}
       val serImpl = if (target.language.wrappedAdtBranchCodecs) {
-        val serBranches = dataMembers.map { mid =>
-          val branchName = mid.name.name.capitalize
-          q"""${name.asName}::$branchName(v) => v.serialize(serializer),"""
+        val serBranches = dataMembers.map {
+          mid =>
+            val branchName = mid.name.name.capitalize
+            q"""${name.asName}::$branchName(v) => v.serialize(serializer),"""
         }
         q"""impl serde::Serialize for ${name.asName} {
            |    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -446,11 +461,12 @@ object RsDefnTranslator {
            |    }
            |}""".stripMargin
       } else {
-        val serBranches = dataMembers.map { mid =>
-          val branchName = mid.name.name.capitalize
-          q"""${name.asName}::$branchName(v) => {
-             |    map.serialize_entry("$branchName", v)?;
-             |}""".stripMargin
+        val serBranches = dataMembers.map {
+          mid =>
+            val branchName = mid.name.name.capitalize
+            q"""${name.asName}::$branchName(v) => {
+               |    map.serialize_entry("$branchName", v)?;
+               |}""".stripMargin
         }
         q"""impl serde::Serialize for ${name.asName} {
            |    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -464,13 +480,14 @@ object RsDefnTranslator {
            |}""".stripMargin
       }
 
-      val deBranches = dataMembers.map { mid =>
-        val branchName  = mid.name.name.capitalize
-        val branchType  = trans.asRsType(mid, domain, evo)
-        q""""$branchName" => {
-           |    let v: ${branchType.asName} = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
-           |    Ok(${name.asName}::$branchName(v))
-           |}""".stripMargin
+      val deBranches = dataMembers.map {
+        mid =>
+          val branchName = mid.name.name.capitalize
+          val branchType = trans.asRsType(mid, domain, evo)
+          q""""$branchName" => {
+             |    let v: ${branchType.asName} = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+             |    Ok(${name.asName}::$branchName(v))
+             |}""".stripMargin
       }
 
       q"""${branchStructs.toList.joinNN()}
@@ -499,9 +516,10 @@ object RsDefnTranslator {
 
     private def makeContractRepr(defn: DomainMember.User, name: RsType): TextTree[RsValue] = {
       val contract = defn.defn.asInstanceOf[Typedef.Contract]
-      val methods = contract.fields.map { f =>
-        val t = trans.asRsRef(f.tpe, domain, evo)
-        q"fn ${toSnakeCase(f.name.name)}(&self) -> &$t;"
+      val methods = contract.fields.map {
+        f =>
+          val t = trans.asRsRef(f.tpe, domain, evo)
+          q"fn ${toSnakeCase(f.name.name)}(&self) -> &$t;"
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
       q"""pub trait ${name.asName} {
@@ -513,27 +531,28 @@ object RsDefnTranslator {
       val resolved    = ServiceResultResolver.resolve(domain, "rust", target.language.serviceResult, target.language.pragmas)
       val resolvedCtx = ServiceContextResolver.resolve(domain, "rust", target.language.serviceContext, target.language.pragmas)
       val ctxParam = resolvedCtx match {
-        case ResolvedServiceContext.NoContext                => ""
-        case ResolvedServiceContext.AbstractContext(tn, pn)  => s"$pn: $tn, "
-        case ResolvedServiceContext.ConcreteContext(tn, pn)  => s"$pn: $tn, "
+        case ResolvedServiceContext.NoContext               => ""
+        case ResolvedServiceContext.AbstractContext(tn, pn) => s"$pn: $tn, "
+        case ResolvedServiceContext.ConcreteContext(tn, pn) => s"$pn: $tn, "
       }
-      val service  = defn.defn.asInstanceOf[Typedef.Service]
-      val methods = service.methods.map { m =>
-        val inType  = trans.asRsRef(m.sig, domain, evo)
-        val outType = m.out.map(trans.asRsRef(_, domain, evo))
-        val errType = m.err.map(trans.asRsRef(_, domain, evo))
-        val rsFqName: RsValue => String = {
-          case t: RsValue.RsType     => if (t.predef) t.name else (t.crate.parts :+ t.name).mkString("::")
-          case t: RsValue.RsTypeName => t.name
-        }
-        val outStr  = outType.map(_.mapRender(rsFqName)).getOrElse("")
-        val errStr  = errType.map(_.mapRender(rsFqName))
-        val retStr  = resolved.renderReturnType(outStr, errStr, "()")
-        q"fn ${toSnakeCase(m.name.name)}(&self, ${ctxParam}arg: $inType) -> $retStr;"
+      val service = defn.defn.asInstanceOf[Typedef.Service]
+      val methods = service.methods.map {
+        m =>
+          val inType  = trans.asRsRef(m.sig, domain, evo)
+          val outType = m.out.map(trans.asRsRef(_, domain, evo))
+          val errType = m.err.map(trans.asRsRef(_, domain, evo))
+          val rsFqName: RsValue => String = {
+            case t: RsValue.RsType     => if (t.predef) t.name else (t.crate.parts :+ t.name).mkString("::")
+            case t: RsValue.RsTypeName => t.name
+          }
+          val outStr = outType.map(_.mapRender(rsFqName)).getOrElse("")
+          val errStr = errType.map(_.mapRender(rsFqName))
+          val retStr = resolved.renderReturnType(outStr, errStr, "()")
+          q"fn ${toSnakeCase(m.name.name)}(&self, ${ctxParam}arg: $inType) -> $retStr;"
       }
       val genericParam = resolvedCtx match {
         case ResolvedServiceContext.AbstractContext(tn, _) => s"<$tn>"
-        case _                                            => ""
+        case _                                             => ""
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
       q"""pub trait ${name.asName}$genericParam {
@@ -559,11 +578,10 @@ object RsDefnTranslator {
 
   def escapeRustKeyword(s: String): String = {
     s match {
-      case "type" | "self" | "super" | "crate" | "mod" | "fn" | "let" | "mut" | "ref" |
-           "match" | "if" | "else" | "while" | "for" | "loop" | "break" | "continue" |
-           "return" | "struct" | "enum" | "trait" | "impl" | "use" | "pub" | "as" | "in" |
-           "where" | "async" | "await" | "dyn" | "move" | "static" | "const" | "unsafe" |
-           "extern" | "true" | "false" => s"r#$s"
+      case "type" | "self" | "super" | "crate" | "mod" | "fn" | "let" | "mut" | "ref" | "match" | "if" | "else" | "while" | "for" | "loop" | "break" | "continue" |
+          "return" | "struct" | "enum" | "trait" | "impl" | "use" | "pub" | "as" | "in" | "where" | "async" | "await" | "dyn" | "move" | "static" | "const" | "unsafe" |
+          "extern" | "true" | "false" =>
+        s"r#$s"
       case _ => s
     }
   }
@@ -574,7 +592,7 @@ object RsDefnTranslator {
 
   def toSnakeCaseRaw(s: String): String = {
     val result = new StringBuilder
-    var i = 0
+    var i      = 0
     while (i < s.length) {
       val c = s.charAt(i)
       if (c.isUpper) {

@@ -31,8 +31,9 @@ object KtServiceWiringTranslator {
     private val hasJsonCodecs: Boolean = codecs.exists(_.isInstanceOf[KtJsonCodecGenerator])
     private val hasUebaCodecs: Boolean = codecs.exists(_.isInstanceOf[KtUEBACodecGenerator])
 
-    private val resultKtType: Option[KtValue.KtType] = resolved.resultType.map { rt =>
-      KtValue.KtType(baboonRuntimePkg, rt)
+    private val resultKtType: Option[KtValue.KtType] = resolved.resultType.map {
+      rt =>
+        KtValue.KtType(baboonRuntimePkg, rt)
     }
 
     private def jsonCodecName(typeId: TypeId.User): KtValue.KtType = {
@@ -61,7 +62,7 @@ object KtServiceWiringTranslator {
 
       val hasServices = domain.defs.meta.nodes.values.exists {
         case DomainMember.User(_, _: Typedef.Service, _, _) => true
-        case _                                               => false
+        case _                                              => false
       }
       if (!hasServices) return None
 
@@ -104,8 +105,9 @@ object KtServiceWiringTranslator {
         )
       } else None
 
-      val importHint = resultKtType.map { kt =>
-        q"private typealias _BaboonServiceResultType<L, R> = $kt<L, R>"
+      val importHint = resultKtType.map {
+        kt =>
+          q"private typealias _BaboonServiceResultType<L, R> = $kt<L, R>"
       }
 
       Some(Seq[Option[TextTree[KtValue]]](importHint, Some(rtTrait), defaultImpl).flatten.join("\n\n"))
@@ -117,8 +119,9 @@ object KtServiceWiringTranslator {
           val methods =
             if (resolved.noErrors) generateNoErrorsWiring(service)
             else generateErrorsWiring(service)
-          val importHint = resultKtType.map { kt =>
-            q"private typealias _${service.id.name.name}WiringResult<L, R> = $kt<L, R>\n\n"
+          val importHint = resultKtType.map {
+            kt =>
+              q"private typealias _${service.id.name.name}WiringResult<L, R> = $kt<L, R>\n\n"
           }.getOrElse(q"")
           Some(q"$importHint$methods")
         case _ => None
@@ -142,7 +145,7 @@ object KtServiceWiringTranslator {
         resolved.hkt.map(h => s"${h.name}${h.signature}"),
         resolvedCtx match {
           case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
-          case _                                            => None
+          case _                                             => None
         },
       ).flatten
       if (params.nonEmpty) params.mkString("<", ", ", ">") else ""
@@ -153,7 +156,7 @@ object KtServiceWiringTranslator {
         resolved.hkt.map(_.name),
         resolvedCtx match {
           case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
-          case _                                            => None
+          case _                                             => None
         },
       ).flatten
       if (params.nonEmpty) params.mkString("<", ", ", ">") else ""
@@ -174,13 +177,15 @@ object KtServiceWiringTranslator {
     private def generateNoErrorsWiring(service: Typedef.Service): TextTree[KtValue] = {
       val svcName = service.id.name.name
 
-      val jsonMethod = if (hasJsonCodecs)
-        Some(generateNoErrorsJsonMethod(service))
-      else None
+      val jsonMethod =
+        if (hasJsonCodecs)
+          Some(generateNoErrorsJsonMethod(service))
+        else None
 
-      val uebaMethod = if (hasUebaCodecs)
-        Some(generateNoErrorsUebaMethod(service))
-      else None
+      val uebaMethod =
+        if (hasUebaCodecs)
+          Some(generateNoErrorsUebaMethod(service))
+        else None
 
       val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
 
@@ -191,35 +196,36 @@ object KtServiceWiringTranslator {
 
     private def generateNoErrorsJsonMethod(service: Typedef.Service): TextTree[KtValue] = {
       val svcName = service.id.name.name
-      val cases = service.methods.map { m =>
-        val inCodec = jsonCodecName(m.sig.id.asInstanceOf[TypeId.User])
+      val cases = service.methods.map {
+        m =>
+          val inCodec = jsonCodecName(m.sig.id.asInstanceOf[TypeId.User])
 
-        val encodeOutput = m.out match {
-          case Some(outRef) =>
-            val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
-            q"""val encoded = $outCodec.encode(ctx, result)
-               |encoded.toString()""".stripMargin
-          case None =>
-            q""""null""""
-        }
+          val encodeOutput = m.out match {
+            case Some(outRef) =>
+              val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
+              q"""val encoded = $outCodec.encode(ctx, result)
+                 |encoded.toString()""".stripMargin
+            case None =>
+              q""""null""""
+          }
 
-        val callExpr = m.out match {
-          case Some(_) => q"val result = impl.${m.name.name}(${ctxArgPass}decoded)"
-          case None    => q"impl.${m.name.name}(${ctxArgPass}decoded)"
-        }
+          val callExpr = m.out match {
+            case Some(_) => q"val result = impl.${m.name.name}(${ctxArgPass}decoded)"
+            case None    => q"impl.${m.name.name}(${ctxArgPass}decoded)"
+          }
 
-        q""""${m.name.name}" -> {
-           |  val wire = $kotlinxJson.parseToJsonElement(data)
-           |  val decoded = $inCodec.decode(ctx, wire)
-           |  $callExpr
-           |  ${encodeOutput.shift(2).trim}
-           |}""".stripMargin
+          q""""${m.name.name}" -> {
+             |  val wire = $kotlinxJson.parseToJsonElement(data)
+             |  val decoded = $inCodec.decode(ctx, wire)
+             |  $callExpr
+             |  ${encodeOutput.shift(2).trim}
+             |}""".stripMargin
       }.join("\n")
 
       q"""fun invokeJson$genericParam(
          |  method: $baboonMethodId,
          |  data: String,
-         |  impl: ${svcName}$svcTypeArg,
+         |  impl: $svcName$svcTypeArg,
          |  ${ctxParamDecl}ctx: $baboonCodecContext): String {
          |  return when (method.methodName) {
          |    ${cases.shift(4).trim}
@@ -231,39 +237,40 @@ object KtServiceWiringTranslator {
 
     private def generateNoErrorsUebaMethod(service: Typedef.Service): TextTree[KtValue] = {
       val svcName = service.id.name.name
-      val cases = service.methods.map { m =>
-        val inCodec = uebaCodecName(m.sig.id.asInstanceOf[TypeId.User])
+      val cases = service.methods.map {
+        m =>
+          val inCodec = uebaCodecName(m.sig.id.asInstanceOf[TypeId.User])
 
-        val encodeOutput = m.out match {
-          case Some(outRef) =>
-            val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
-            q"""val oms = $byteArrayOutputStream()
-               |val bw = $binaryOutput(oms)
-               |$outCodec.instance.encode(ctx, bw, result)
-               |bw.flush()
-               |oms.toByteArray()""".stripMargin
-          case None =>
-            q"ByteArray(0)"
-        }
+          val encodeOutput = m.out match {
+            case Some(outRef) =>
+              val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
+              q"""val oms = $byteArrayOutputStream()
+                 |val bw = $binaryOutput(oms)
+                 |$outCodec.instance.encode(ctx, bw, result)
+                 |bw.flush()
+                 |oms.toByteArray()""".stripMargin
+            case None =>
+              q"ByteArray(0)"
+          }
 
-        val callExpr = m.out match {
-          case Some(_) => q"val result = impl.${m.name.name}(${ctxArgPass}decoded)"
-          case None    => q"impl.${m.name.name}(${ctxArgPass}decoded)"
-        }
+          val callExpr = m.out match {
+            case Some(_) => q"val result = impl.${m.name.name}(${ctxArgPass}decoded)"
+            case None    => q"impl.${m.name.name}(${ctxArgPass}decoded)"
+          }
 
-        q""""${m.name.name}" -> {
-           |  val ims = $byteArrayInputStream(data)
-           |  val br = $binaryInput(ims)
-           |  val decoded = $inCodec.instance.decode(ctx, br)
-           |  $callExpr
-           |  ${encodeOutput.shift(2).trim}
-           |}""".stripMargin
+          q""""${m.name.name}" -> {
+             |  val ims = $byteArrayInputStream(data)
+             |  val br = $binaryInput(ims)
+             |  val decoded = $inCodec.instance.decode(ctx, br)
+             |  $callExpr
+             |  ${encodeOutput.shift(2).trim}
+             |}""".stripMargin
       }.join("\n")
 
       q"""fun invokeUeba$genericParam(
          |  method: $baboonMethodId,
          |  data: ByteArray,
-         |  impl: ${svcName}$svcTypeArg,
+         |  impl: $svcName$svcTypeArg,
          |  ${ctxParamDecl}ctx: $baboonCodecContext): ByteArray {
          |  return when (method.methodName) {
          |    ${cases.shift(4).trim}
@@ -278,13 +285,15 @@ object KtServiceWiringTranslator {
     private def generateErrorsWiring(service: Typedef.Service): TextTree[KtValue] = {
       val svcName = service.id.name.name
 
-      val jsonMethod = if (hasJsonCodecs)
-        Some(generateErrorsJsonMethod(service))
-      else None
+      val jsonMethod =
+        if (hasJsonCodecs)
+          Some(generateErrorsJsonMethod(service))
+        else None
 
-      val uebaMethod = if (hasUebaCodecs)
-        Some(generateErrorsUebaMethod(service))
-      else None
+      val uebaMethod =
+        if (hasUebaCodecs)
+          Some(generateErrorsUebaMethod(service))
+        else None
 
       val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
 
@@ -298,92 +307,93 @@ object KtServiceWiringTranslator {
     private def ct(error: String, success: String): String = renderContainer(error, success)
 
     private def generateErrorsJsonMethod(service: Typedef.Service): TextTree[KtValue] = {
-      val svcName = service.id.name.name
+      val svcName       = service.id.name.name
       val wiringRetType = ct(bweFq, "String")
 
-      val cases = service.methods.map { m =>
-        val inCodec = jsonCodecName(m.sig.id.asInstanceOf[TypeId.User])
-        val inRef = trans.asKtRef(m.sig, domain, evo)
+      val cases = service.methods.map {
+        m =>
+          val inCodec = jsonCodecName(m.sig.id.asInstanceOf[TypeId.User])
+          val inRef   = trans.asKtRef(m.sig, domain, evo)
 
-        val decodeStep =
-          q"""val input: ${ct(bweFq, renderFq(inRef))} = try {
-             |  val wire = $kotlinxJson.parseToJsonElement(data)
-             |  rt.pure<$bweFq, $inRef>($inCodec.decode(ctx, wire))
-             |} catch (ex: Throwable) {
-             |  rt.fail<$bweFq, $inRef>($bweFq.DecoderFailed(method, ex))
+          val decodeStep =
+            q"""val input: ${ct(bweFq, renderFq(inRef))} = try {
+               |  val wire = $kotlinxJson.parseToJsonElement(data)
+               |  rt.pure<$bweFq, $inRef>($inCodec.decode(ctx, wire))
+               |} catch (ex: Throwable) {
+               |  rt.fail<$bweFq, $inRef>($bweFq.DecoderFailed(method, ex))
+               |}""".stripMargin
+
+          val hasErrType = m.err.isDefined && !resolved.noErrors
+
+          val callAndEncodeStep = m.out match {
+            case Some(outRef) =>
+              val outType  = trans.asKtRef(outRef, domain, evo)
+              val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
+
+              val callBody = if (hasErrType) {
+                val errType = trans.asKtRef(m.err.get, domain, evo)
+                q"""try {
+                   |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
+                   |  rt.leftMap<$errType, $outType, $bweFq>(
+                   |    callResult) { err -> $bweFq.CallFailed(method, err) }
+                   |} catch (ex: Throwable) {
+                   |  rt.fail<$bweFq, $outType>($bweFq.CallFailed(method, ex))
+                   |}""".stripMargin
+              } else {
+                q"""try {
+                   |  rt.pure<$bweFq, $outType>(impl.${m.name.name}(${ctxArgPass}v))
+                   |} catch (ex: Throwable) {
+                   |  rt.fail<$bweFq, $outType>($bweFq.CallFailed(method, ex))
+                   |}""".stripMargin
+              }
+
+              q"""val output = rt.flatMap<$bweFq, $inRef, $outType>(input) { v ->
+                 |  ${callBody.shift(2).trim}
+                 |}
+                 |rt.flatMap<$bweFq, $outType, String>(output) { v ->
+                 |  try {
+                 |    val encoded = $outCodec.encode(ctx, v)
+                 |    rt.pure<$bweFq, String>(encoded.toString())
+                 |  } catch (ex: Throwable) {
+                 |    rt.fail<$bweFq, String>($bweFq.EncoderFailed(method, ex))
+                 |  }
+                 |}""".stripMargin
+
+            case None =>
+              val callBody = if (hasErrType) {
+                val errType = trans.asKtRef(m.err.get, domain, evo)
+                q"""try {
+                   |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
+                   |  rt.leftMap<$errType, Unit, $bweFq>(
+                   |    callResult) { err -> $bweFq.CallFailed(method, err) }
+                   |} catch (ex: Throwable) {
+                   |  rt.fail<$bweFq, Unit>($bweFq.CallFailed(method, ex))
+                   |}""".stripMargin
+              } else {
+                q"""try {
+                   |  impl.${m.name.name}(${ctxArgPass}v)
+                   |  rt.pure<$bweFq, Unit>(Unit)
+                   |} catch (ex: Throwable) {
+                   |  rt.fail<$bweFq, Unit>($bweFq.CallFailed(method, ex))
+                   |}""".stripMargin
+              }
+
+              q"""rt.flatMap<$bweFq, $inRef, String>(input) { v ->
+                 |  ${callBody.shift(2).trim}
+                 |  rt.pure<$bweFq, String>("null")
+                 |}""".stripMargin
+          }
+
+          q""""${m.name.name}" -> {
+             |  ${decodeStep.shift(2).trim}
+             |  ${callAndEncodeStep.shift(2).trim}
              |}""".stripMargin
-
-        val hasErrType = m.err.isDefined && !resolved.noErrors
-
-        val callAndEncodeStep = m.out match {
-          case Some(outRef) =>
-            val outType = trans.asKtRef(outRef, domain, evo)
-            val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
-
-            val callBody = if (hasErrType) {
-              val errType = trans.asKtRef(m.err.get, domain, evo)
-              q"""try {
-                 |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
-                 |  rt.leftMap<$errType, $outType, $bweFq>(
-                 |    callResult) { err -> $bweFq.CallFailed(method, err) }
-                 |} catch (ex: Throwable) {
-                 |  rt.fail<$bweFq, $outType>($bweFq.CallFailed(method, ex))
-                 |}""".stripMargin
-            } else {
-              q"""try {
-                 |  rt.pure<$bweFq, $outType>(impl.${m.name.name}(${ctxArgPass}v))
-                 |} catch (ex: Throwable) {
-                 |  rt.fail<$bweFq, $outType>($bweFq.CallFailed(method, ex))
-                 |}""".stripMargin
-            }
-
-            q"""val output = rt.flatMap<$bweFq, $inRef, $outType>(input) { v ->
-               |  ${callBody.shift(2).trim}
-               |}
-               |rt.flatMap<$bweFq, $outType, String>(output) { v ->
-               |  try {
-               |    val encoded = $outCodec.encode(ctx, v)
-               |    rt.pure<$bweFq, String>(encoded.toString())
-               |  } catch (ex: Throwable) {
-               |    rt.fail<$bweFq, String>($bweFq.EncoderFailed(method, ex))
-               |  }
-               |}""".stripMargin
-
-          case None =>
-            val callBody = if (hasErrType) {
-              val errType = trans.asKtRef(m.err.get, domain, evo)
-              q"""try {
-                 |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
-                 |  rt.leftMap<$errType, Unit, $bweFq>(
-                 |    callResult) { err -> $bweFq.CallFailed(method, err) }
-                 |} catch (ex: Throwable) {
-                 |  rt.fail<$bweFq, Unit>($bweFq.CallFailed(method, ex))
-                 |}""".stripMargin
-            } else {
-              q"""try {
-                 |  impl.${m.name.name}(${ctxArgPass}v)
-                 |  rt.pure<$bweFq, Unit>(Unit)
-                 |} catch (ex: Throwable) {
-                 |  rt.fail<$bweFq, Unit>($bweFq.CallFailed(method, ex))
-                 |}""".stripMargin
-            }
-
-            q"""rt.flatMap<$bweFq, $inRef, String>(input) { v ->
-               |  ${callBody.shift(2).trim}
-               |  rt.pure<$bweFq, String>("null")
-               |}""".stripMargin
-        }
-
-        q""""${m.name.name}" -> {
-           |  ${decodeStep.shift(2).trim}
-           |  ${callAndEncodeStep.shift(2).trim}
-           |}""".stripMargin
       }.join("\n")
 
       q"""fun invokeJson$genericParam(
          |  method: $baboonMethodId,
          |  data: String,
-         |  impl: ${svcName}$svcTypeArg,
+         |  impl: $svcName$svcTypeArg,
          |  rt: IBaboonServiceRt$rtTypeArg,
          |  ${ctxParamDecl}ctx: $baboonCodecContext): $wiringRetType {
          |  return when (method.methodName) {
@@ -395,96 +405,97 @@ object KtServiceWiringTranslator {
     }
 
     private def generateErrorsUebaMethod(service: Typedef.Service): TextTree[KtValue] = {
-      val svcName = service.id.name.name
+      val svcName       = service.id.name.name
       val wiringRetType = ct(bweFq, "ByteArray")
 
-      val cases = service.methods.map { m =>
-        val inCodec = uebaCodecName(m.sig.id.asInstanceOf[TypeId.User])
-        val inRef = trans.asKtRef(m.sig, domain, evo)
+      val cases = service.methods.map {
+        m =>
+          val inCodec = uebaCodecName(m.sig.id.asInstanceOf[TypeId.User])
+          val inRef   = trans.asKtRef(m.sig, domain, evo)
 
-        val decodeStep =
-          q"""val input: ${ct(bweFq, renderFq(inRef))} = try {
-             |  val ims = $byteArrayInputStream(data)
-             |  val br = $binaryInput(ims)
-             |  rt.pure<$bweFq, $inRef>($inCodec.instance.decode(ctx, br))
-             |} catch (ex: Throwable) {
-             |  rt.fail<$bweFq, $inRef>($bweFq.DecoderFailed(method, ex))
+          val decodeStep =
+            q"""val input: ${ct(bweFq, renderFq(inRef))} = try {
+               |  val ims = $byteArrayInputStream(data)
+               |  val br = $binaryInput(ims)
+               |  rt.pure<$bweFq, $inRef>($inCodec.instance.decode(ctx, br))
+               |} catch (ex: Throwable) {
+               |  rt.fail<$bweFq, $inRef>($bweFq.DecoderFailed(method, ex))
+               |}""".stripMargin
+
+          val hasErrType = m.err.isDefined && !resolved.noErrors
+
+          val callAndEncodeStep = m.out match {
+            case Some(outRef) =>
+              val outType  = trans.asKtRef(outRef, domain, evo)
+              val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
+
+              val callBody = if (hasErrType) {
+                val errType = trans.asKtRef(m.err.get, domain, evo)
+                q"""try {
+                   |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
+                   |  rt.leftMap<$errType, $outType, $bweFq>(
+                   |    callResult) { err -> $bweFq.CallFailed(method, err) }
+                   |} catch (ex: Throwable) {
+                   |  rt.fail<$bweFq, $outType>($bweFq.CallFailed(method, ex))
+                   |}""".stripMargin
+              } else {
+                q"""try {
+                   |  rt.pure<$bweFq, $outType>(impl.${m.name.name}(${ctxArgPass}v))
+                   |} catch (ex: Throwable) {
+                   |  rt.fail<$bweFq, $outType>($bweFq.CallFailed(method, ex))
+                   |}""".stripMargin
+              }
+
+              q"""val output = rt.flatMap<$bweFq, $inRef, $outType>(input) { v ->
+                 |  ${callBody.shift(2).trim}
+                 |}
+                 |rt.flatMap<$bweFq, $outType, ByteArray>(output) { v ->
+                 |  try {
+                 |    val oms = $byteArrayOutputStream()
+                 |    val bw = $binaryOutput(oms)
+                 |    $outCodec.instance.encode(ctx, bw, v)
+                 |    bw.flush()
+                 |    rt.pure<$bweFq, ByteArray>(oms.toByteArray())
+                 |  } catch (ex: Throwable) {
+                 |    rt.fail<$bweFq, ByteArray>($bweFq.EncoderFailed(method, ex))
+                 |  }
+                 |}""".stripMargin
+
+            case None =>
+              val callBody = if (hasErrType) {
+                val errType = trans.asKtRef(m.err.get, domain, evo)
+                q"""try {
+                   |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
+                   |  rt.leftMap<$errType, Unit, $bweFq>(
+                   |    callResult) { err -> $bweFq.CallFailed(method, err) }
+                   |} catch (ex: Throwable) {
+                   |  rt.fail<$bweFq, Unit>($bweFq.CallFailed(method, ex))
+                   |}""".stripMargin
+              } else {
+                q"""try {
+                   |  impl.${m.name.name}(${ctxArgPass}v)
+                   |  rt.pure<$bweFq, Unit>(Unit)
+                   |} catch (ex: Throwable) {
+                   |  rt.fail<$bweFq, Unit>($bweFq.CallFailed(method, ex))
+                   |}""".stripMargin
+              }
+
+              q"""rt.flatMap<$bweFq, $inRef, ByteArray>(input) { v ->
+                 |  ${callBody.shift(2).trim}
+                 |  rt.pure<$bweFq, ByteArray>(ByteArray(0))
+                 |}""".stripMargin
+          }
+
+          q""""${m.name.name}" -> {
+             |  ${decodeStep.shift(2).trim}
+             |  ${callAndEncodeStep.shift(2).trim}
              |}""".stripMargin
-
-        val hasErrType = m.err.isDefined && !resolved.noErrors
-
-        val callAndEncodeStep = m.out match {
-          case Some(outRef) =>
-            val outType = trans.asKtRef(outRef, domain, evo)
-            val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
-
-            val callBody = if (hasErrType) {
-              val errType = trans.asKtRef(m.err.get, domain, evo)
-              q"""try {
-                 |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
-                 |  rt.leftMap<$errType, $outType, $bweFq>(
-                 |    callResult) { err -> $bweFq.CallFailed(method, err) }
-                 |} catch (ex: Throwable) {
-                 |  rt.fail<$bweFq, $outType>($bweFq.CallFailed(method, ex))
-                 |}""".stripMargin
-            } else {
-              q"""try {
-                 |  rt.pure<$bweFq, $outType>(impl.${m.name.name}(${ctxArgPass}v))
-                 |} catch (ex: Throwable) {
-                 |  rt.fail<$bweFq, $outType>($bweFq.CallFailed(method, ex))
-                 |}""".stripMargin
-            }
-
-            q"""val output = rt.flatMap<$bweFq, $inRef, $outType>(input) { v ->
-               |  ${callBody.shift(2).trim}
-               |}
-               |rt.flatMap<$bweFq, $outType, ByteArray>(output) { v ->
-               |  try {
-               |    val oms = $byteArrayOutputStream()
-               |    val bw = $binaryOutput(oms)
-               |    $outCodec.instance.encode(ctx, bw, v)
-               |    bw.flush()
-               |    rt.pure<$bweFq, ByteArray>(oms.toByteArray())
-               |  } catch (ex: Throwable) {
-               |    rt.fail<$bweFq, ByteArray>($bweFq.EncoderFailed(method, ex))
-               |  }
-               |}""".stripMargin
-
-          case None =>
-            val callBody = if (hasErrType) {
-              val errType = trans.asKtRef(m.err.get, domain, evo)
-              q"""try {
-                 |  val callResult = impl.${m.name.name}(${ctxArgPass}v)
-                 |  rt.leftMap<$errType, Unit, $bweFq>(
-                 |    callResult) { err -> $bweFq.CallFailed(method, err) }
-                 |} catch (ex: Throwable) {
-                 |  rt.fail<$bweFq, Unit>($bweFq.CallFailed(method, ex))
-                 |}""".stripMargin
-            } else {
-              q"""try {
-                 |  impl.${m.name.name}(${ctxArgPass}v)
-                 |  rt.pure<$bweFq, Unit>(Unit)
-                 |} catch (ex: Throwable) {
-                 |  rt.fail<$bweFq, Unit>($bweFq.CallFailed(method, ex))
-                 |}""".stripMargin
-            }
-
-            q"""rt.flatMap<$bweFq, $inRef, ByteArray>(input) { v ->
-               |  ${callBody.shift(2).trim}
-               |  rt.pure<$bweFq, ByteArray>(ByteArray(0))
-               |}""".stripMargin
-        }
-
-        q""""${m.name.name}" -> {
-           |  ${decodeStep.shift(2).trim}
-           |  ${callAndEncodeStep.shift(2).trim}
-           |}""".stripMargin
       }.join("\n")
 
       q"""fun invokeUeba$genericParam(
          |  method: $baboonMethodId,
          |  data: ByteArray,
-         |  impl: ${svcName}$svcTypeArg,
+         |  impl: $svcName$svcTypeArg,
          |  rt: IBaboonServiceRt$rtTypeArg,
          |  ${ctxParamDecl}ctx: $baboonCodecContext): $wiringRetType {
          |  return when (method.methodName) {

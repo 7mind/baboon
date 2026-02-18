@@ -26,7 +26,7 @@ object TsDefnTranslator {
     module: TsValue.TsModuleId,
     product: CompilerProduct,
     doNotModify: Boolean = false,
-    isBarrel: Boolean = false,
+    isBarrel: Boolean    = false,
   )
 
   class TsDefnTranslatorImpl[F[+_, +_]: Applicative2](
@@ -53,9 +53,9 @@ object TsDefnTranslator {
       defn.defn match {
         case _: Typedef.Foreign => F.pure(List.empty)
         case _ =>
-          val repr = makeRepr(defn)
+          val repr       = makeRepr(defn)
           val codecTrees = codecs.toList.flatMap(t => t.translate(defn, trans.asTsType(defn.id, domain, evo), trans.toTsTypeRefKeepForeigns(defn.id, domain, evo)).toList)
-          val allDefs = (repr +: codecTrees).joinNN()
+          val allDefs    = (repr +: codecTrees).joinNN()
 
           val mainOutput = Output(
             getOutputPath(defn),
@@ -99,10 +99,10 @@ object TsDefnTranslator {
     }
 
     private def doTranslateTest(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val tsTypeRef = trans.asTsType(defn.id, domain, evo)
-      val srcRef    = trans.toTsTypeRefKeepForeigns(defn.id, domain, evo)
+      val tsTypeRef     = trans.asTsType(defn.id, domain, evo)
+      val srcRef        = trans.toTsTypeRefKeepForeigns(defn.id, domain, evo)
       val fixtureModule = getOutputModule(defn, suffix = Some(".fixture"))
-      val testTreeOpt = codecTests.translate(defn, tsTypeRef, srcRef, fixtureModule)
+      val testTreeOpt   = codecTests.translate(defn, tsTypeRef, srcRef, fixtureModule)
       F.pure(testTreeOpt.map {
         testTree =>
           val testModule = getOutputModule(defn, suffix = Some(".test"))
@@ -139,14 +139,15 @@ object TsDefnTranslator {
     }
 
     private def makeDtoRepr(dto: Typedef.Dto, name: TsType): TextTree[TsValue] = {
-      val fields = dto.fields.map { f =>
-        val t = trans.asTsRef(f.tpe, domain, evo)
-        f.tpe match {
-          case TypeRef.Constructor(TypeId.Builtins.opt, _) =>
-            q"readonly ${f.name.name}?: $t;"
-          case _ =>
-            q"readonly ${f.name.name}: $t;"
-        }
+      val fields = dto.fields.map {
+        f =>
+          val t = trans.asTsRef(f.tpe, domain, evo)
+          f.tpe match {
+            case TypeRef.Constructor(TypeId.Builtins.opt, _) =>
+              q"readonly ${f.name.name}?: $t;"
+            case _ =>
+              q"readonly ${f.name.name}: $t;"
+          }
       }
       val fieldsList = if (fields.nonEmpty) fields.joinN() else q""
 
@@ -156,14 +157,16 @@ object TsDefnTranslator {
     }
 
     private def makeEnumRepr(e: Typedef.Enum, name: TsType): TextTree[TsValue] = {
-      val variants = e.members.map { m =>
-        q""""${m.name.capitalize}""""
+      val variants = e.members.map {
+        m =>
+          q""""${m.name.capitalize}""""
       }.toList
 
       val unionType = variants.map(v => v).reduce((a, b) => q"$a | $b")
 
-      val allValues = e.members.map { m =>
-        q""""${m.name.capitalize}","""
+      val allValues = e.members.map {
+        m =>
+          q""""${m.name.capitalize}","""
       }.toList
 
       q"""export type ${name.asName} = $unionType;
@@ -184,43 +187,47 @@ object TsDefnTranslator {
     private def makeAdtRepr(adt: Typedef.Adt, name: TsType): TextTree[TsValue] = {
       val dataMembers = adt.dataMembers(domain)
 
-      val branchInterfaces = dataMembers.map { mid =>
-        domain.defs.meta.nodes(mid) match {
-          case mdefn: DomainMember.User =>
-            mdefn.defn match {
-              case dto: Typedef.Dto =>
-                val branchName = trans.asTsType(dto.id, domain, evo)
-                makeDtoRepr(dto, branchName)
-              case other =>
-                throw new RuntimeException(s"BUG: ADT member should be Dto, got: $other")
-            }
-          case other =>
-            throw new RuntimeException(s"BUG: missing/wrong adt member: $mid => $other")
-        }
+      val branchInterfaces = dataMembers.map {
+        mid =>
+          domain.defs.meta.nodes(mid) match {
+            case mdefn: DomainMember.User =>
+              mdefn.defn match {
+                case dto: Typedef.Dto =>
+                  val branchName = trans.asTsType(dto.id, domain, evo)
+                  makeDtoRepr(dto, branchName)
+                case other =>
+                  throw new RuntimeException(s"BUG: ADT member should be Dto, got: $other")
+              }
+            case other =>
+              throw new RuntimeException(s"BUG: missing/wrong adt member: $mid => $other")
+          }
       }
 
-      val branchCodecs = dataMembers.flatMap { mid =>
-        domain.defs.meta.nodes(mid) match {
-          case mdefn: DomainMember.User =>
-            codecs.toList.flatMap(_.translate(mdefn, trans.asTsType(mdefn.id, domain, evo), trans.toTsTypeRefKeepForeigns(mdefn.id, domain, evo)).toList)
-          case _ => Nil
-        }
+      val branchCodecs = dataMembers.flatMap {
+        mid =>
+          domain.defs.meta.nodes(mid) match {
+            case mdefn: DomainMember.User =>
+              codecs.toList.flatMap(_.translate(mdefn, trans.asTsType(mdefn.id, domain, evo), trans.toTsTypeRefKeepForeigns(mdefn.id, domain, evo)).toList)
+            case _ => Nil
+          }
       }
 
-      val wrappedTypes = dataMembers.map { mid =>
-        val branchName = mid.name.name
-        val branchType = trans.asTsType(mid, domain, evo)
-        q"""{ readonly _tag: "$branchName"; readonly value: ${branchType.asName} }"""
+      val wrappedTypes = dataMembers.map {
+        mid =>
+          val branchName = mid.name.name
+          val branchType = trans.asTsType(mid, domain, evo)
+          q"""{ readonly _tag: "$branchName"; readonly value: ${branchType.asName} }"""
       }
 
       val unionType = wrappedTypes.toList.reduce((a, b) => q"$a | $b")
 
-      val factoryFns = dataMembers.map { mid =>
-        val branchName = mid.name.name
-        val branchType = trans.asTsType(mid, domain, evo)
-        q"""export function ${name.asName}_$branchName(value: ${branchType.asName}): ${name.asName} {
-           |    return { _tag: "$branchName", value };
-           |}""".stripMargin
+      val factoryFns = dataMembers.map {
+        mid =>
+          val branchName = mid.name.name
+          val branchType = trans.asTsType(mid, domain, evo)
+          q"""export function ${name.asName}_$branchName(value: ${branchType.asName}): ${name.asName} {
+             |    return { _tag: "$branchName", value };
+             |}""".stripMargin
       }
 
       q"""${branchInterfaces.toList.joinNN()}
@@ -234,9 +241,10 @@ object TsDefnTranslator {
 
     private def makeContractRepr(defn: DomainMember.User, name: TsType): TextTree[TsValue] = {
       val contract = defn.defn.asInstanceOf[Typedef.Contract]
-      val methods = contract.fields.map { f =>
-        val t = trans.asTsRef(f.tpe, domain, evo)
-        q"readonly ${f.name.name}: $t;"
+      val methods = contract.fields.map {
+        f =>
+          val t = trans.asTsRef(f.tpe, domain, evo)
+          q"readonly ${f.name.name}: $t;"
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
       q"""export interface ${name.asName} {
@@ -248,37 +256,38 @@ object TsDefnTranslator {
       val resolved    = ServiceResultResolver.resolve(domain, "typescript", target.language.serviceResult, target.language.pragmas)
       val resolvedCtx = ServiceContextResolver.resolve(domain, "typescript", target.language.serviceContext, target.language.pragmas)
       val ctxParam = resolvedCtx match {
-        case ResolvedServiceContext.NoContext                => ""
-        case ResolvedServiceContext.AbstractContext(tn, pn)  => s"$pn: $tn, "
-        case ResolvedServiceContext.ConcreteContext(tn, pn)  => s"$pn: $tn, "
+        case ResolvedServiceContext.NoContext               => ""
+        case ResolvedServiceContext.AbstractContext(tn, pn) => s"$pn: $tn, "
+        case ResolvedServiceContext.ConcreteContext(tn, pn) => s"$pn: $tn, "
       }
-      val service  = defn.defn.asInstanceOf[Typedef.Service]
-      val methods = service.methods.map { m =>
-        val inType  = trans.asTsRef(m.sig, domain, evo)
-        val outType = m.out.map(trans.asTsRef(_, domain, evo))
-        val errType = m.err.map(trans.asTsRef(_, domain, evo))
+      val service = defn.defn.asInstanceOf[Typedef.Service]
+      val methods = service.methods.map {
+        m =>
+          val inType  = trans.asTsRef(m.sig, domain, evo)
+          val outType = m.out.map(trans.asTsRef(_, domain, evo))
+          val errType = m.err.map(trans.asTsRef(_, domain, evo))
 
-        val retTree: TextTree[TsValue] = if (resolved.noErrors || errType.isEmpty) {
-          outType.getOrElse(q"void")
-        } else {
-          val isBuiltinEither = resolved.resultType.exists(_ == "BaboonEither")
-          if (isBuiltinEither) {
-            val outTree = outType.getOrElse(q"void")
-            val errTree = errType.getOrElse(q"void")
-            val resultTypeName = resolved.resultType.getOrElse("")
-            val resultTypeRef = TsValue.TsType(TsTypes.runtimeModule, resultTypeName)
-            val pat = resolved.pattern.getOrElse("")
-            val expanded = expandPattern(pat, errTree, outTree)
-            q"$resultTypeRef$expanded"
+          val retTree: TextTree[TsValue] = if (resolved.noErrors || errType.isEmpty) {
+            outType.getOrElse(q"void")
           } else {
-            q"any"
+            val isBuiltinEither = resolved.resultType.exists(_ == "BaboonEither")
+            if (isBuiltinEither) {
+              val outTree        = outType.getOrElse(q"void")
+              val errTree        = errType.getOrElse(q"void")
+              val resultTypeName = resolved.resultType.getOrElse("")
+              val resultTypeRef  = TsValue.TsType(TsTypes.runtimeModule, resultTypeName)
+              val pat            = resolved.pattern.getOrElse("")
+              val expanded       = expandPattern(pat, errTree, outTree)
+              q"$resultTypeRef$expanded"
+            } else {
+              q"any"
+            }
           }
-        }
-        q"${m.name.name}(${ctxParam}arg: $inType): $retTree;"
+          q"${m.name.name}(${ctxParam}arg: $inType): $retTree;"
       }
       val genericParam = resolvedCtx match {
         case ResolvedServiceContext.AbstractContext(tn, _) => s"<$tn>"
-        case _                                            => ""
+        case _                                             => ""
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
       q"""export interface ${name.asName}$genericParam {
@@ -288,8 +297,8 @@ object TsDefnTranslator {
 
     private def expandPattern(pat: String, errTree: TextTree[TsValue], outTree: TextTree[TsValue]): TextTree[TsValue] = {
       val placeholderRegex = "\\$(error|success)".r
-      val segments = scala.collection.mutable.ListBuffer.empty[TextTree[TsValue]]
-      var lastEnd = 0
+      val segments         = scala.collection.mutable.ListBuffer.empty[TextTree[TsValue]]
+      var lastEnd          = 0
       for (m <- placeholderRegex.findAllMatchIn(pat)) {
         if (m.start > lastEnd) {
           segments += q"${pat.substring(lastEnd, m.start)}"

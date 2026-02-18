@@ -454,8 +454,8 @@ object BaboonValidator {
                     DomainMember.User(_, oe: Typedef.Enum, _, _),
                     DomainMember.User(_, ne: Typedef.Enum, _, _),
                   ) =>
-                val oldNames = oe.members.map(_.name).toSet
-                val newNames = ne.members.map(_.name).toSet
+                val oldNames       = oe.members.map(_.name).toSet
+                val newNames       = ne.members.map(_.name).toSet
                 val mappedOldNames = oldNames.map(name => c.memberMapping.getOrElse(name, name))
                 F.when(
                   mappedOldNames.diff(newNames).nonEmpty
@@ -591,8 +591,9 @@ object BaboonValidator {
                   ) =>
                 val oldNames = oa.members.map(_.name.name).toSet
                 val newNames = na.members.map(_.name.name).toSet
-                val mappedOldNames = oldNames.map { name =>
-                  c.branchMapping.get(name).map(_.name.name).getOrElse(name)
+                val mappedOldNames = oldNames.map {
+                  name =>
+                    c.branchMapping.get(name).map(_.name.name).getOrElse(name)
                 }
                 F.when(
                   mappedOldNames.diff(newNames).nonEmpty

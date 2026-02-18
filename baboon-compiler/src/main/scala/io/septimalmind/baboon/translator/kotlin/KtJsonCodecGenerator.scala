@@ -102,9 +102,9 @@ class KtJsonCodecGenerator(
   private def genAdtBodies(name: KtValue.KtType, adt: Typedef.Adt): (TextTree[KtValue], TextTree[KtValue]) = {
     val branches = adt.dataMembers(domain).map {
       m =>
-        val branchName  = m.name.name
-        val fqBranch    = q"${adt.id.name.name}.${branchName}"
-        val branchRef   = q"branchVal"
+        val branchName = m.name.name
+        val fqBranch   = q"${adt.id.name.name}.$branchName"
+        val branchRef  = q"branchVal"
 
         val routedBranchEncoder = q"${fqBranch}_JsonCodec.encode(ctx, $branchRef)"
         val branchEncoder = if (target.language.wrappedAdtBranchCodecs) {

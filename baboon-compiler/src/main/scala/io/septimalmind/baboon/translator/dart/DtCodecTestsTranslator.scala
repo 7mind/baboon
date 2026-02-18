@@ -45,8 +45,8 @@ object DtCodecTestsTranslator {
         case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
         case _ if !isLatestVersion                            => None
         case _ =>
-          val testBody = makeTest(definition, srcRef)
-          val typeImport    = makeTestToLibImport(testPath, typePath)
+          val testBody           = makeTest(definition, srcRef)
+          val typeImport         = makeTestToLibImport(testPath, typePath)
           val needsFixtureImport = !definition.defn.isInstanceOf[Typedef.Enum]
           val fixtureImportLine = if (needsFixtureImport) {
             val fixtureImport = makeTestToLibImport(testPath, fixturePath)
@@ -81,14 +81,16 @@ object DtCodecTestsTranslator {
 
     private def makeTest(definition: DomainMember.User, srcRef: DtValue.DtType): TextTree[DtValue] = {
       val fixture = makeFixture(definition, domain, evo)
-      codecs.filter(_.isActive(definition.id)).map { codec =>
-        val body = codec.id match {
-          case "Json" =>
-            val assertions = jsonCodecAssertions(definition, srcRef)
-            val crossRead  = crossLanguageJsonRead(definition, srcRef)
-            val crossWrite = crossLanguageJsonWrite(definition, srcRef)
+      codecs
+        .filter(_.isActive(definition.id)).map {
+          codec =>
+            val body = codec.id match {
+              case "Json" =>
+                val assertions = jsonCodecAssertions(definition, srcRef)
+                val crossRead  = crossLanguageJsonRead(definition, srcRef)
+                val crossWrite = crossLanguageJsonWrite(definition, srcRef)
 
-            q"""
+                q"""
                |test('JSON codec round-trip', () {
                |  for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++) {
                |    final rnd = $baboonRandomFactory.create();
@@ -102,13 +104,13 @@ object DtCodecTestsTranslator {
                |${crossWrite.shift(0).trim}
                |"""
 
-          case "Ueba" =>
-            val compactAssertions = uebaCodecAssertions(definition, srcRef, q"$baboonCodecContext.compact")
-            val indexedAssertions = uebaCodecAssertions(definition, srcRef, q"$baboonCodecContext.indexed")
-            val crossRead        = crossLanguageUebaRead(definition, srcRef)
-            val crossWrite       = crossLanguageUebaWrite(definition, srcRef)
+              case "Ueba" =>
+                val compactAssertions = uebaCodecAssertions(definition, srcRef, q"$baboonCodecContext.compact")
+                val indexedAssertions = uebaCodecAssertions(definition, srcRef, q"$baboonCodecContext.indexed")
+                val crossRead         = crossLanguageUebaRead(definition, srcRef)
+                val crossWrite        = crossLanguageUebaWrite(definition, srcRef)
 
-            q"""
+                q"""
                |test('UEBA compact codec round-trip', () {
                |  for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++) {
                |    final rnd = $baboonRandomFactory.create();
@@ -130,12 +132,12 @@ object DtCodecTestsTranslator {
                |${crossWrite.shift(0).trim}
                |"""
 
-          case unknown =>
-            logger.message(s"Cannot create codec tests ($unknown) for unsupported type $srcRef")
-            q""
-        }
-        body.stripMargin.trim
-      }.toList.joinNN().shift(2).trim
+              case unknown =>
+                logger.message(s"Cannot create codec tests ($unknown) for unsupported type $srcRef")
+                q""
+            }
+            body.stripMargin.trim
+        }.toList.joinNN().shift(2).trim
     }
 
     private def makeFixture(
@@ -143,7 +145,7 @@ object DtCodecTestsTranslator {
       domain: Domain,
       evolution: BaboonEvolution,
     ): TextTree[DtValue] = {
-      val dtType = typeTranslator.asDtType(definition.id, domain, evolution)
+      val dtType      = typeTranslator.asDtType(definition.id, domain, evolution)
       val fixtureName = s"${definition.id.name.name.capitalize}_Fixture"
       definition.defn match {
         case e: Typedef.Enum =>
@@ -203,17 +205,18 @@ object DtCodecTestsTranslator {
       val codecName = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_JsonCodec")
       val typeId    = definition.id.render
       val languages = List("cs", "scala", "rust", "typescript", "kotlin", "java")
-      val readTests = languages.map { lang =>
-        q"""test('Cross-language JSON reading from $lang', () {
-           |  final file = File('../../../../../target/$lang/json-default/$typeId.json');
-           |  if (file.existsSync()) {
-           |    final content = file.readAsStringSync();
-           |    final json = jsonDecode(content);
-           |    final decoded = $codecName.instance.decode($baboonCodecContext.defaultCtx, json);
-           |    expect(decoded, isNotNull);
-           |  }
-           |}, skip: !File('../../../../../target/$lang/json-default/$typeId.json').existsSync());
-           |""".stripMargin
+      val readTests = languages.map {
+        lang =>
+          q"""test('Cross-language JSON reading from $lang', () {
+             |  final file = File('../../../../../target/$lang/json-default/$typeId.json');
+             |  if (file.existsSync()) {
+             |    final content = file.readAsStringSync();
+             |    final json = jsonDecode(content);
+             |    final decoded = $codecName.instance.decode($baboonCodecContext.defaultCtx, json);
+             |    expect(decoded, isNotNull);
+             |  }
+             |}, skip: !File('../../../../../target/$lang/json-default/$typeId.json').existsSync());
+             |""".stripMargin
       }
       readTests.joinNN()
     }
@@ -246,17 +249,18 @@ object DtCodecTestsTranslator {
       val codecName = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_UebaCodec")
       val typeId    = definition.id.render
       val languages = List("cs", "scala", "rust", "typescript", "kotlin", "java")
-      val readTests = languages.map { lang =>
-        q"""test('Cross-language UEBA reading from $lang', () {
-           |  final file = File('../../../../../target/$lang/ueba-default/$typeId.ueba');
-           |  if (file.existsSync()) {
-           |    final bytes = file.readAsBytesSync();
-           |    final reader = $baboonBinTools.createReader(bytes);
-           |    final decoded = $codecName.instance.decode($baboonCodecContext.compact, reader);
-           |    expect(decoded, isNotNull);
-           |  }
-           |}, skip: !File('../../../../../target/$lang/ueba-default/$typeId.ueba').existsSync());
-           |""".stripMargin
+      val readTests = languages.map {
+        lang =>
+          q"""test('Cross-language UEBA reading from $lang', () {
+             |  final file = File('../../../../../target/$lang/ueba-default/$typeId.ueba');
+             |  if (file.existsSync()) {
+             |    final bytes = file.readAsBytesSync();
+             |    final reader = $baboonBinTools.createReader(bytes);
+             |    final decoded = $codecName.instance.decode($baboonCodecContext.compact, reader);
+             |    expect(decoded, isNotNull);
+             |  }
+             |}, skip: !File('../../../../../target/$lang/ueba-default/$typeId.ueba').existsSync());
+             |""".stripMargin
       }
       readTests.joinNN()
     }

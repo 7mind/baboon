@@ -9,7 +9,7 @@ object EvoCommand extends Command {
   def help: String = "evo [-v] <type> - Show evolution history. -v=verbose"
 
   def execute(args: Seq[String], ctx: ExploreContext[EitherF]): Either[String, String] = {
-    val verbose = args.contains("-v")
+    val verbose  = args.contains("-v")
     val typeArgs = args.filterNot(_.startsWith("-"))
 
     typeArgs.headOption match {
@@ -33,53 +33,59 @@ object EvoCommand extends Command {
                 if (sortedSteps.isEmpty) {
                   sb.append(s"${Colors.DIM}No evolution steps recorded${Colors.RESET}")
                 } else {
-                  sortedSteps.foreach { step =>
-                    val diff = lineage.evolution.diffs(step)
-                    val changes = diff.changes
+                  sortedSteps.foreach {
+                    step =>
+                      val diff    = lineage.evolution.diffs(step)
+                      val changes = diff.changes
 
-                    val status = if (changes.added.contains(typeId)) {
-                      s"${Colors.GREEN}+ Added${Colors.RESET}"
-                    } else if (changes.removed.contains(typeId)) {
-                      s"${Colors.RED}- Removed${Colors.RESET}"
-                    } else if (changes.fullyModified.contains(typeId)) {
-                      s"${Colors.YELLOW}~ Modified (full)${Colors.RESET}"
-                    } else if (changes.shallowModified.contains(typeId)) {
-                      s"${Colors.YELLOW}~ Modified (shallow)${Colors.RESET}"
-                    } else if (changes.deepModified.contains(typeId)) {
-                      s"${Colors.CYAN}~ Modified (deep deps)${Colors.RESET}"
-                    } else if (changes.renamed.values.toSet.contains(typeId.asInstanceOf[TypeId.User])) {
-                      val oldName = changes.renamed.find(_._2 == typeId).map(_._1.name.name).getOrElse("?")
-                      s"${Colors.MAGENTA}> Renamed from $oldName${Colors.RESET}"
-                    } else if (changes.renamed.contains(typeId.asInstanceOf[TypeId.User])) {
-                      val newName = changes.renamed(typeId.asInstanceOf[TypeId.User]).name.name
-                      s"${Colors.MAGENTA}> Renamed to $newName${Colors.RESET}"
-                    } else if (changes.unmodified.contains(typeId)) {
-                      s"${Colors.DIM}= Unchanged${Colors.RESET}"
-                    } else {
-                      s"${Colors.DIM}? Unknown${Colors.RESET}"
-                    }
+                      val status = if (changes.added.contains(typeId)) {
+                        s"${Colors.GREEN}+ Added${Colors.RESET}"
+                      } else if (changes.removed.contains(typeId)) {
+                        s"${Colors.RED}- Removed${Colors.RESET}"
+                      } else if (changes.fullyModified.contains(typeId)) {
+                        s"${Colors.YELLOW}~ Modified (full)${Colors.RESET}"
+                      } else if (changes.shallowModified.contains(typeId)) {
+                        s"${Colors.YELLOW}~ Modified (shallow)${Colors.RESET}"
+                      } else if (changes.deepModified.contains(typeId)) {
+                        s"${Colors.CYAN}~ Modified (deep deps)${Colors.RESET}"
+                      } else if (changes.renamed.values.toSet.contains(typeId.asInstanceOf[TypeId.User])) {
+                        val oldName = changes.renamed.find(_._2 == typeId).map(_._1.name.name).getOrElse("?")
+                        s"${Colors.MAGENTA}> Renamed from $oldName${Colors.RESET}"
+                      } else if (changes.renamed.contains(typeId.asInstanceOf[TypeId.User])) {
+                        val newName = changes.renamed(typeId.asInstanceOf[TypeId.User]).name.name
+                        s"${Colors.MAGENTA}> Renamed to $newName${Colors.RESET}"
+                      } else if (changes.unmodified.contains(typeId)) {
+                        s"${Colors.DIM}= Unchanged${Colors.RESET}"
+                      } else {
+                        s"${Colors.DIM}? Unknown${Colors.RESET}"
+                      }
 
-                    sb.append(s"  ${Colors.BLUE}${step.from}${Colors.RESET} -> ${Colors.BLUE}${step.to}${Colors.RESET}: $status\n")
+                      sb.append(s"  ${Colors.BLUE}${step.from}${Colors.RESET} -> ${Colors.BLUE}${step.to}${Colors.RESET}: $status\n")
 
-                    if (verbose) {
-                      diff.diffs.get(typeId).foreach { typeDiff =>
-                        typeDiff.ops.foreach { op =>
-                          sb.append(s"      ${formatOp(op)}\n")
+                      if (verbose) {
+                        diff.diffs.get(typeId).foreach {
+                          typeDiff =>
+                            typeDiff.ops.foreach {
+                              op =>
+                                sb.append(s"      ${formatOp(op)}\n")
+                            }
                         }
                       }
-                    }
 
-                    // Show conversion info for this step
-                    lineage.evolution.rules.get(step).foreach { ruleset =>
-                      ruleset.conversions.find(_.sourceTpe == typeId).foreach { conv =>
-                        sb.append(s"      ${formatConversionShort(conv)}\n")
+                      // Show conversion info for this step
+                      lineage.evolution.rules.get(step).foreach {
+                        ruleset =>
+                          ruleset.conversions.find(_.sourceTpe == typeId).foreach {
+                            conv =>
+                              sb.append(s"      ${formatConversionShort(conv)}\n")
+                          }
                       }
-                    }
                   }
                 }
 
-                lineage.evolution.typesUnchangedSince.get(ctx.currentVersion.get).flatMap(_.get(typeId)).foreach { unmodified =>
-                  sb.append(s"\n${Colors.GREEN}Unchanged since: ${unmodified.in}${Colors.RESET}")
+                lineage.evolution.typesUnchangedSince.get(ctx.currentVersion.get).flatMap(_.get(typeId)).foreach {
+                  unmodified =>
+                    sb.append(s"\n${Colors.GREEN}Unchanged since: ${unmodified.in}${Colors.RESET}")
                 }
 
                 Right(sb.toString().stripSuffix("\n"))
@@ -98,9 +104,9 @@ object EvoCommand extends Command {
     case DtoOp.KeepField(f, modification) =>
       val modStr = modification match {
         case RefModification.Unchanged => s"${Colors.DIM}unchanged${Colors.RESET}"
-        case RefModification.Shallow => s"${Colors.CYAN}shallow change${Colors.RESET}"
-        case RefModification.Deep => s"${Colors.CYAN}deep change${Colors.RESET}"
-        case RefModification.Full => s"${Colors.YELLOW}full change${Colors.RESET}"
+        case RefModification.Shallow   => s"${Colors.CYAN}shallow change${Colors.RESET}"
+        case RefModification.Deep      => s"${Colors.CYAN}deep change${Colors.RESET}"
+        case RefModification.Full      => s"${Colors.YELLOW}full change${Colors.RESET}"
       }
       s"${Colors.DIM}= ${f.name.name}${Colors.RESET}: ${formatTypeRef(f.tpe)} ($modStr)"
     case DtoOp.RenameField(oldField, newField, modification) =>
@@ -129,9 +135,9 @@ object EvoCommand extends Command {
     case AdtOp.KeepBranch(id, modification) =>
       val modStr = modification match {
         case RefModification.Unchanged => s"${Colors.DIM}unchanged${Colors.RESET}"
-        case RefModification.Shallow => s"${Colors.CYAN}shallow change${Colors.RESET}"
-        case RefModification.Deep => s"${Colors.CYAN}deep change${Colors.RESET}"
-        case RefModification.Full => s"${Colors.YELLOW}full change${Colors.RESET}"
+        case RefModification.Shallow   => s"${Colors.CYAN}shallow change${Colors.RESET}"
+        case RefModification.Deep      => s"${Colors.CYAN}deep change${Colors.RESET}"
+        case RefModification.Full      => s"${Colors.YELLOW}full change${Colors.RESET}"
       }
       s"${Colors.DIM}= branch ${id.name.name}${Colors.RESET} ($modStr)"
     case other =>
@@ -144,7 +150,7 @@ object EvoCommand extends Command {
         case DerivationFailure.IncompatibleFields(changes, additions) =>
           val parts = Seq(
             if (changes.nonEmpty) Some(s"incompatible: ${changes.map(c => c.f.name.name).mkString(", ")}") else None,
-            if (additions.nonEmpty) Some(s"new required: ${additions.map(a => a.f.name.name).mkString(", ")}") else None
+            if (additions.nonEmpty) Some(s"new required: ${additions.map(a => a.f.name.name).mkString(", ")}") else None,
           ).flatten
           parts.mkString("; ")
         case DerivationFailure.AdtBranchRemoved(ops) =>
@@ -175,12 +181,12 @@ object EvoCommand extends Command {
 
   private def formatTypeId(id: TypeId): String = id match {
     case b: TypeId.Builtin => s"${Colors.CYAN}${b.name.name}${Colors.RESET}"
-    case u: TypeId.User => s"${Colors.GREEN}${u.name.name}${Colors.RESET}"
+    case u: TypeId.User    => s"${Colors.GREEN}${u.name.name}${Colors.RESET}"
   }
 
   def complete(args: Seq[String], ctx: ExploreContext[EitherF]): Seq[String] = {
     val nonFlags = args.filterNot(_.startsWith("-"))
-    val lastArg = args.lastOption.getOrElse("")
+    val lastArg  = args.lastOption.getOrElse("")
 
     if (lastArg.startsWith("-")) {
       Seq("-v").filter(_.startsWith(lastArg))

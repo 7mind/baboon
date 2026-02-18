@@ -27,19 +27,18 @@ class DtTypeTranslator {
     tpe match {
       case b: TypeId.BuiltinScalar =>
         b match {
-          case TypeId.Builtins.bit                         => dtBool
-          case TypeId.Builtins.i08 | TypeId.Builtins.i16 |
-               TypeId.Builtins.i32 | TypeId.Builtins.i64 |
-               TypeId.Builtins.u08 | TypeId.Builtins.u16 |
-               TypeId.Builtins.u32 | TypeId.Builtins.u64  => dtInt
-          case TypeId.Builtins.f32 | TypeId.Builtins.f64   => dtDouble
-          case TypeId.Builtins.f128                         => baboonDecimal
-          case TypeId.Builtins.str                          => dtString
-          case TypeId.Builtins.bytes                        => dtUint8List
-          case TypeId.Builtins.uid                          => dtString
-          case TypeId.Builtins.tsu                          => dtDateTime
-          case TypeId.Builtins.tso                          => baboonDateTimeOffset
-          case other => throw new IllegalArgumentException(s"Unexpected: $other")
+          case TypeId.Builtins.bit => dtBool
+          case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 | TypeId.Builtins.i64 | TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 |
+              TypeId.Builtins.u64 =>
+            dtInt
+          case TypeId.Builtins.f32 | TypeId.Builtins.f64 => dtDouble
+          case TypeId.Builtins.f128                      => baboonDecimal
+          case TypeId.Builtins.str                       => dtString
+          case TypeId.Builtins.bytes                     => dtUint8List
+          case TypeId.Builtins.uid                       => dtString
+          case TypeId.Builtins.tsu                       => dtDateTime
+          case TypeId.Builtins.tso                       => baboonDateTimeOffset
+          case other                                     => throw new IllegalArgumentException(s"Unexpected: $other")
         }
       case TypeId.Builtins.map => dtMap
       case TypeId.Builtins.lst => dtList
@@ -114,29 +113,86 @@ class DtTypeTranslator {
   def effectiveDtPkg(owner: Owner, domain: Domain, evo: BaboonEvolution): DtPackageId = {
     val basePkg = toDtPkg(domain.id, domain.version, evo)
     owner match {
-      case Owner.Toplevel  => basePkg
-      case Owner.Ns(path)  => DtPackageId(NEList.unsafeFrom(basePkg.parts.toList ++ path.map(_.name.toLowerCase)))
-      case Owner.Adt(id)   => effectiveDtPkg(id.owner, domain, evo)
+      case Owner.Toplevel => basePkg
+      case Owner.Ns(path) => DtPackageId(NEList.unsafeFrom(basePkg.parts.toList ++ path.map(_.name.toLowerCase)))
+      case Owner.Adt(id)  => effectiveDtPkg(id.owner, domain, evo)
     }
   }
 
   /** Convert a CamelCase or PascalCase name to snake_case for Dart file names */
   def toSnakeCase(name: String): String = {
-    name.replaceAll("([A-Z]+)([A-Z][a-z])", "$1_$2")
+    name
+      .replaceAll("([A-Z]+)([A-Z][a-z])", "$1_$2")
       .replaceAll("([a-z\\d])([A-Z])", "$1_$2")
       .toLowerCase
   }
 
   private val dartKeywords: Set[String] = Set(
-    "abstract", "as", "assert", "async", "await", "break", "case", "catch",
-    "class", "const", "continue", "covariant", "default", "deferred", "do",
-    "dynamic", "else", "enum", "export", "extends", "extension", "external",
-    "factory", "false", "final", "finally", "for", "get", "hide", "if",
-    "implements", "import", "in", "interface", "is", "late", "library",
-    "mixin", "new", "null", "on", "operator", "part", "required", "rethrow",
-    "return", "sealed", "set", "show", "static", "super", "switch", "sync",
-    "this", "throw", "true", "try", "type", "typedef", "var", "void",
-    "when", "while", "with", "yield",
+    "abstract",
+    "as",
+    "assert",
+    "async",
+    "await",
+    "break",
+    "case",
+    "catch",
+    "class",
+    "const",
+    "continue",
+    "covariant",
+    "default",
+    "deferred",
+    "do",
+    "dynamic",
+    "else",
+    "enum",
+    "export",
+    "extends",
+    "extension",
+    "external",
+    "factory",
+    "false",
+    "final",
+    "finally",
+    "for",
+    "get",
+    "hide",
+    "if",
+    "implements",
+    "import",
+    "in",
+    "interface",
+    "is",
+    "late",
+    "library",
+    "mixin",
+    "new",
+    "null",
+    "on",
+    "operator",
+    "part",
+    "required",
+    "rethrow",
+    "return",
+    "sealed",
+    "set",
+    "show",
+    "static",
+    "super",
+    "switch",
+    "sync",
+    "this",
+    "throw",
+    "true",
+    "try",
+    "type",
+    "typedef",
+    "var",
+    "void",
+    "when",
+    "while",
+    "with",
+    "yield",
   )
 
   def escapeDartKeyword(name: String): String = {

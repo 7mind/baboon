@@ -81,9 +81,9 @@ object FSPath {
   }
 
   def parse(path: NEString): FSPath = {
-    val pathStr = path.theString
+    val pathStr    = path.theString
     val isAbsolute = pathStr.startsWith("/")
-    val parts = pathStr.split("/").toIndexedSeq.filter(_.nonEmpty).map(NEString.unsafeFrom)
+    val parts      = pathStr.split("/").toIndexedSeq.filter(_.nonEmpty).map(NEString.unsafeFrom)
 
     if (parts.isEmpty) {
       Name(path)
@@ -96,4 +96,3 @@ object FSPath {
     }
   }
 }
-

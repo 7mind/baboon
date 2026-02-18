@@ -3,6 +3,7 @@ package io.septimalmind.baboon
 import distage.DIKey
 import distage.ModuleDef
 import io.septimalmind.baboon.parser.BaboonParser
+import io.septimalmind.baboon.scheme.BaboonSchemeRenderer
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.translator.csharp.*
 import io.septimalmind.baboon.translator.csharp.CSCodecFixtureTranslator.CSRandomMethodTranslatorImpl
@@ -55,6 +56,7 @@ class BaboonModuleLogicModule[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
   make[BaboonComparator[F]].from[BaboonComparator.BaboonComparatorImpl[F]]
 
   make[BaboonEnquiries].from[BaboonEnquiries.BaboonEnquiriesImpl]
+  make[BaboonSchemeRenderer].from[BaboonSchemeRenderer.BaboonSchemeRendererImpl]
   make[TypeInfo].from[TypeInfo.TypeInfoImpl]
 
   make[ScopeSupport[F]].from[ScopeSupport.ScopeSupportImpl[F]]

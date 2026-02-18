@@ -56,8 +56,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
          |}""".stripMargin
 
 //    import izumi.fundamentals.collections.IzCollections.*
-    val (_, convsToTranslate) = rules.conversions
-      .collect { case tc: TargetedConversion => tc }
+    val (_, convsToTranslate) = rules.conversions.collect { case tc: TargetedConversion => tc }
       .partition(c => csTypeInfo.canBeUpgradedTo(c.sourceTpe, srcDom.version, lineage).nonEmpty)
 
 //    import izumi.fundamentals.platform.strings.IzString.*

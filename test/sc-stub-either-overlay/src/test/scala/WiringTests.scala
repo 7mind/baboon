@@ -33,13 +33,13 @@ class MockI2Either extends testpkg.pkg0.I2 {
 
 class EitherWiringTests extends AnyFlatSpec with Matchers {
 
-  val ctx: BaboonCodecContext = BaboonCodecContext.Default
+  val ctx: BaboonCodecContext           = BaboonCodecContext.Default
   val rt: testpkg.pkg0.IBaboonServiceRt = testpkg.pkg0.BaboonServiceRtDefault
 
   // ==================== I1 JSON Tests ====================
 
   "I1Wiring.invokeJson testCall" should "return Right for success" in {
-    val impl = new MockI1Either()
+    val impl   = new MockI1Either()
     val method = BaboonMethodId("I1", "testCall")
     val inputJson = testpkg.pkg0.i1.testcall.In_JsonCodec.instance
       .encode(ctx, testpkg.pkg0.i1.testcall.In()).noSpaces
@@ -49,7 +49,8 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
     result match {
       case Right(jsonStr) =>
         val wire = io.circe.parser.parse(jsonStr).fold(throw _, identity)
-        val decoded = testpkg.pkg0.i1.testcall.Out_JsonCodec.instance.decode(ctx, wire)
+        val decoded = testpkg.pkg0.i1.testcall.Out_JsonCodec.instance
+          .decode(ctx, wire)
           .fold(ex => fail(ex.toString), identity)
         decoded.i00 shouldBe 42
       case Left(err) => fail(s"Expected Right, got Left($err)")
@@ -57,18 +58,18 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
   }
 
   "I1Wiring.invokeJson testCall2" should "return Right for success" in {
-    val impl = new MockI1Either()
+    val impl   = new MockI1Either()
     val method = BaboonMethodId("I1", "testCall2")
     val inputJson = testpkg.pkg0.T7_Empty_JsonCodec.instance
       .encode(ctx, testpkg.pkg0.T7_Empty()).noSpaces
 
     val result = testpkg.pkg0.I1Wiring.invokeJson(method, inputJson, impl, rt, ctx)
 
-    result shouldBe a [Right[_, _]]
+    result shouldBe a[Right[_, _]]
   }
 
   "I1Wiring.invokeJson" should "return Left(CallFailed) for domain error" in {
-    val impl = new FailingI1Either()
+    val impl   = new FailingI1Either()
     val method = BaboonMethodId("I1", "testCall")
     val inputJson = testpkg.pkg0.i1.testcall.In_JsonCodec.instance
       .encode(ctx, testpkg.pkg0.i1.testcall.In()).noSpaces
@@ -76,37 +77,37 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
     val result = testpkg.pkg0.I1Wiring.invokeJson(method, inputJson, impl, rt, ctx)
 
     result match {
-      case Left(err) => err shouldBe a [BaboonWiringError.CallFailed]
-      case Right(_) => fail("Expected Left(CallFailed)")
+      case Left(err) => err shouldBe a[BaboonWiringError.CallFailed]
+      case Right(_)  => fail("Expected Left(CallFailed)")
     }
   }
 
   "I1Wiring.invokeJson" should "return Left(NoMatchingMethod) for unknown method" in {
-    val impl = new MockI1Either()
+    val impl   = new MockI1Either()
     val method = BaboonMethodId("I1", "nonexistent")
 
     val result = testpkg.pkg0.I1Wiring.invokeJson(method, "{}", impl, rt, ctx)
 
     result match {
-      case Left(err) => err shouldBe a [BaboonWiringError.NoMatchingMethod]
-      case Right(_) => fail("Expected Left(NoMatchingMethod)")
+      case Left(err) => err shouldBe a[BaboonWiringError.NoMatchingMethod]
+      case Right(_)  => fail("Expected Left(NoMatchingMethod)")
     }
   }
 
   "I1Wiring.invokeJson" should "return Left(DecoderFailed) for bad input" in {
-    val impl = new MockI1Either()
+    val impl   = new MockI1Either()
     val method = BaboonMethodId("I1", "testCall")
 
     val result = testpkg.pkg0.I1Wiring.invokeJson(method, "not valid json!!", impl, rt, ctx)
 
     result match {
-      case Left(err) => err shouldBe a [BaboonWiringError.DecoderFailed]
-      case Right(_) => fail("Expected Left(DecoderFailed)")
+      case Left(err) => err shouldBe a[BaboonWiringError.DecoderFailed]
+      case Right(_)  => fail("Expected Left(DecoderFailed)")
     }
   }
 
   "I1Wiring.invokeJson" should "return Left(CallFailed) when service throws" in {
-    val impl = new ThrowingI1Either()
+    val impl   = new ThrowingI1Either()
     val method = BaboonMethodId("I1", "testCall")
     val inputJson = testpkg.pkg0.i1.testcall.In_JsonCodec.instance
       .encode(ctx, testpkg.pkg0.i1.testcall.In()).noSpaces
@@ -114,19 +115,19 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
     val result = testpkg.pkg0.I1Wiring.invokeJson(method, inputJson, impl, rt, ctx)
 
     result match {
-      case Left(err) => err shouldBe a [BaboonWiringError.CallFailed]
-      case Right(_) => fail("Expected Left(CallFailed)")
+      case Left(err) => err shouldBe a[BaboonWiringError.CallFailed]
+      case Right(_)  => fail("Expected Left(CallFailed)")
     }
   }
 
   // ==================== I1 UEBA Tests ====================
 
   "I1Wiring.invokeUeba testCall" should "return Right for success" in {
-    val impl = new MockI1Either()
+    val impl   = new MockI1Either()
     val method = BaboonMethodId("I1", "testCall")
 
     val oms = new java.io.ByteArrayOutputStream()
-    val bw = new baboon.runtime.shared.LEDataOutputStream(oms)
+    val bw  = new baboon.runtime.shared.LEDataOutputStream(oms)
     testpkg.pkg0.i1.testcall.In_UEBACodec.instance.encode(ctx, bw, testpkg.pkg0.i1.testcall.In())
     bw.flush()
     val inputBytes = oms.toByteArray
@@ -136,8 +137,9 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
     result match {
       case Right(outputBytes) =>
         val ims = new java.io.ByteArrayInputStream(outputBytes)
-        val br = new baboon.runtime.shared.LEDataInputStream(ims)
-        val decoded = testpkg.pkg0.i1.testcall.Out_UEBACodec.instance.decode(ctx, br)
+        val br  = new baboon.runtime.shared.LEDataInputStream(ims)
+        val decoded = testpkg.pkg0.i1.testcall.Out_UEBACodec.instance
+          .decode(ctx, br)
           .fold(ex => fail(ex.toString), identity)
         decoded.i00 shouldBe 42
       case Left(err) => fail(s"Expected Right, got Left($err)")
@@ -145,23 +147,23 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
   }
 
   "I1Wiring.invokeUeba" should "return Left(NoMatchingMethod) for unknown method" in {
-    val impl = new MockI1Either()
+    val impl   = new MockI1Either()
     val method = BaboonMethodId("I1", "nonexistent")
 
     val result = testpkg.pkg0.I1Wiring.invokeUeba(method, Array.emptyByteArray, impl, rt, ctx)
 
     result match {
-      case Left(err) => err shouldBe a [BaboonWiringError.NoMatchingMethod]
-      case Right(_) => fail("Expected Left(NoMatchingMethod)")
+      case Left(err) => err shouldBe a[BaboonWiringError.NoMatchingMethod]
+      case Right(_)  => fail("Expected Left(NoMatchingMethod)")
     }
   }
 
   "I1Wiring.invokeUeba" should "return Left(CallFailed) when service throws" in {
-    val impl = new ThrowingI1Either()
+    val impl   = new ThrowingI1Either()
     val method = BaboonMethodId("I1", "testCall")
 
     val oms = new java.io.ByteArrayOutputStream()
-    val bw = new baboon.runtime.shared.LEDataOutputStream(oms)
+    val bw  = new baboon.runtime.shared.LEDataOutputStream(oms)
     testpkg.pkg0.i1.testcall.In_UEBACodec.instance.encode(ctx, bw, testpkg.pkg0.i1.testcall.In())
     bw.flush()
     val inputBytes = oms.toByteArray
@@ -169,15 +171,15 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
     val result = testpkg.pkg0.I1Wiring.invokeUeba(method, inputBytes, impl, rt, ctx)
 
     result match {
-      case Left(err) => err shouldBe a [BaboonWiringError.CallFailed]
-      case Right(_) => fail("Expected Left(CallFailed)")
+      case Left(err) => err shouldBe a[BaboonWiringError.CallFailed]
+      case Right(_)  => fail("Expected Left(CallFailed)")
     }
   }
 
   // ==================== I2 Tests (no err type) ====================
 
   "I2Wiring.invokeJson noErrCall" should "return Right for success" in {
-    val impl = new MockI2Either()
+    val impl   = new MockI2Either()
     val method = BaboonMethodId("I2", "noErrCall")
     val inputJson = testpkg.pkg0.i2.noerrcall.In_JsonCodec.instance
       .encode(ctx, testpkg.pkg0.i2.noerrcall.In(value = 123)).noSpaces
@@ -187,7 +189,8 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
     result match {
       case Right(jsonStr) =>
         val wire = io.circe.parser.parse(jsonStr).fold(throw _, identity)
-        val decoded = testpkg.pkg0.i2.noerrcall.Out_JsonCodec.instance.decode(ctx, wire)
+        val decoded = testpkg.pkg0.i2.noerrcall.Out_JsonCodec.instance
+          .decode(ctx, wire)
           .fold(ex => fail(ex.toString), identity)
         decoded.result shouldBe "result_123"
       case Left(err) => fail(s"Expected Right, got Left($err)")
@@ -195,11 +198,11 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
   }
 
   "I2Wiring.invokeUeba noErrCall" should "return Right for success" in {
-    val impl = new MockI2Either()
+    val impl   = new MockI2Either()
     val method = BaboonMethodId("I2", "noErrCall")
 
     val oms = new java.io.ByteArrayOutputStream()
-    val bw = new baboon.runtime.shared.LEDataOutputStream(oms)
+    val bw  = new baboon.runtime.shared.LEDataOutputStream(oms)
     testpkg.pkg0.i2.noerrcall.In_UEBACodec.instance.encode(ctx, bw, testpkg.pkg0.i2.noerrcall.In(value = 456))
     bw.flush()
     val inputBytes = oms.toByteArray
@@ -209,8 +212,9 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
     result match {
       case Right(outputBytes) =>
         val ims = new java.io.ByteArrayInputStream(outputBytes)
-        val br = new baboon.runtime.shared.LEDataInputStream(ims)
-        val decoded = testpkg.pkg0.i2.noerrcall.Out_UEBACodec.instance.decode(ctx, br)
+        val br  = new baboon.runtime.shared.LEDataInputStream(ims)
+        val decoded = testpkg.pkg0.i2.noerrcall.Out_UEBACodec.instance
+          .decode(ctx, br)
           .fold(ex => fail(ex.toString), identity)
         decoded.result shouldBe "result_456"
       case Left(err) => fail(s"Expected Right, got Left($err)")

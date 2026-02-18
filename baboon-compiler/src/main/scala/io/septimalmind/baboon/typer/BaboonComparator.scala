@@ -257,7 +257,7 @@ object BaboonComparator {
                 F.fail(BaboonIssue.of(EvolutionIssue.IncomparableTypedefs(o, n)))
             }
         }
-        allDiffs     = keptDiffs ++ renamedDiffs
+        allDiffs      = keptDiffs ++ renamedDiffs
         indexedDiffs <- F.fromEither(allDiffs.toUniqueMap(e => BaboonIssue.of(EvolutionIssue.NonUniqueDiffs(e))))
       } yield {
         BaboonDiff(
@@ -292,25 +292,29 @@ object BaboonComparator {
       val members1 = e1.members.map(m => (m.name, m)).toMap
       val members2 = e2.members.map(m => (m.name, m)).toMap
 
-      val names1         = members1.keySet
-      val names2         = members2.keySet
-      val invalidRenames = e2.members.toList.flatMap { newMember =>
-        newMember.prevName.flatMap { prevName =>
-          if (!members1.contains(prevName)) {
-            Some(EvolutionIssue.InvalidEnumMemberRename(e2.id, newMember.name, prevName))
-          } else {
-            None
-          }
-        }.toList
+      val names1 = members1.keySet
+      val names2 = members2.keySet
+      val invalidRenames = e2.members.toList.flatMap {
+        newMember =>
+          newMember.prevName.flatMap {
+            prevName =>
+              if (!members1.contains(prevName)) {
+                Some(EvolutionIssue.InvalidEnumMemberRename(e2.id, newMember.name, prevName))
+              } else {
+                None
+              }
+          }.toList
       }
 
       for {
         _ <- F.traverseAccumErrors(invalidRenames)(issue => F.fail(BaboonIssue.of(issue)))
       } yield {
-        val renamedMembers = e2.members.toList.flatMap { newMember =>
-          newMember.prevName.flatMap { prevName =>
-            members1.get(prevName).map(oldMember => (newMember.name, (oldMember, newMember)))
-          }.toList
+        val renamedMembers = e2.members.toList.flatMap {
+          newMember =>
+            newMember.prevName.flatMap {
+              prevName =>
+                members1.get(prevName).map(oldMember => (newMember.name, (oldMember, newMember)))
+            }.toList
         }.toMap
 
         val renamedNewNames = renamedMembers.keySet
@@ -347,24 +351,25 @@ object BaboonComparator {
         // For renamed ADTs, compare branches by name since TypeIds will differ
         val members1ByName = a1.members.map(m => (m.name.name, m)).toMap
         val members2ByName = a2.members.map(m => (m.name.name, m)).toMap
-        val renamedByName = branchRenames.map { case (newId, oldId) => (oldId.name.name, newId.name.name) }
+        val renamedByName  = branchRenames.map { case (newId, oldId) => (oldId.name.name, newId.name.name) }
 
-        val names1         = members1ByName.keySet
-        val names2         = members2ByName.keySet
-        val removedNames   = names1.diff(names2).diff(renamedByName.keySet)
-        val addedNames     = names2.diff(names1).diff(renamedByName.values.toSet)
-        val keptNames      = names1.intersect(names2)
+        val names1       = members1ByName.keySet
+        val names2       = members2ByName.keySet
+        val removedNames = names1.diff(names2).diff(renamedByName.keySet)
+        val addedNames   = names2.diff(names1).diff(renamedByName.values.toSet)
+        val keptNames    = names1.intersect(names2)
 
-        val keptMembers = keptNames.map { name =>
-          val oldRef = members1ByName(name)
-          val newRef = members2ByName(name)
-          // Check modification status based on the new branch ref
-          val modification = figureOutModification(changes, Set(newRef))
-          AdtOp.KeepBranch(newRef, modification)
+        val keptMembers = keptNames.map {
+          name =>
+            val oldRef = members1ByName(name)
+            val newRef = members2ByName(name)
+            // Check modification status based on the new branch ref
+            val modification = figureOutModification(changes, Set(newRef))
+            AdtOp.KeepBranch(newRef, modification)
         }
         val renamedMembers = renamedByName.map {
           case (_, newName) =>
-            val newRef = members2ByName(newName)
+            val newRef       = members2ByName(newName)
             val modification = figureOutModification(changes, Set(newRef))
             AdtOp.KeepBranch(newRef, modification)
         }
@@ -382,8 +387,8 @@ object BaboonComparator {
         val members1 = a1.members.toSet
         val members2 = a2.members.toSet
 
-        val renamedOld = branchRenames.values.toSet
-        val renamedNew = branchRenames.keySet
+        val renamedOld     = branchRenames.values.toSet
+        val renamedNew     = branchRenames.keySet
         val removedMembers = members1.diff(members2).diff(renamedOld)
         val addedMembers   = members2.diff(members1).diff(renamedNew)
         val keptMembers = members1.intersect(members2).map {
@@ -421,23 +426,27 @@ object BaboonComparator {
       val names1 = members1.keySet
       val names2 = members2.keySet
 
-      val invalidRenames = d2.fields.flatMap { newField =>
-        newField.prevName.flatMap { prevName =>
-          if (!members1.contains(prevName)) {
-            Some(EvolutionIssue.InvalidFieldRename(d2.id, newField.name, prevName))
-          } else {
-            None
+      val invalidRenames = d2.fields.flatMap {
+        newField =>
+          newField.prevName.flatMap {
+            prevName =>
+              if (!members1.contains(prevName)) {
+                Some(EvolutionIssue.InvalidFieldRename(d2.id, newField.name, prevName))
+              } else {
+                None
+              }
           }
-        }
       }
 
       for {
         _ <- F.traverseAccumErrors(invalidRenames)(issue => F.fail(BaboonIssue.of(issue)))
       } yield {
-        val renamedFields: Map[FieldName, (Field, Field)] = d2.fields.flatMap { newField =>
-          newField.prevName.flatMap { prevName =>
-            members1.get(prevName).map(oldField => (newField.name, (oldField, newField)))
-          }
+        val renamedFields: Map[FieldName, (Field, Field)] = d2.fields.flatMap {
+          newField =>
+            newField.prevName.flatMap {
+              prevName =>
+                members1.get(prevName).map(oldField => (newField.name, (oldField, newField)))
+            }
         }.toMap
 
         val renamedNewNames = renamedFields.keySet

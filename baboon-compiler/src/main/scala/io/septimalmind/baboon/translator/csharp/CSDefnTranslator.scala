@@ -108,17 +108,19 @@ object CSDefnTranslator {
         origin   = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
       )
 
-      val wiringOutput = wiringTranslator.translate(defn).map { wiringTree =>
-        val srcRef = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
-        val ns     = srcRef.pkg.parts
-        Output(
-          getOutputPath(defn, suffix = Some(".Wiring")),
-          Some(csTrees.inNs(ns.toSeq, wiringTree)),
-          trans.toCsPkg(domain.id, domain.version, evo),
-          CompilerProduct.Definition,
-          origin = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
-        )
-      }.toList
+      val wiringOutput = wiringTranslator
+        .translate(defn).map {
+          wiringTree =>
+            val srcRef = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
+            val ns     = srcRef.pkg.parts
+            Output(
+              getOutputPath(defn, suffix = Some(".Wiring")),
+              Some(csTrees.inNs(ns.toSeq, wiringTree)),
+              trans.toCsPkg(domain.id, domain.version, evo),
+              CompilerProduct.Definition,
+              origin = OutputOrigin.TypeInDomain(defn.id, domain.id, domain.version),
+            )
+        }.toList
 
       F.pure(mainOutput :: wiringOutput)
     }
@@ -169,17 +171,18 @@ object CSDefnTranslator {
 
     override def translateServiceRt(): Out[List[Output]] = {
       val rtTree = wiringTranslator.translateServiceRt(domain)
-      val result = rtTree.map { tree =>
-        val pkg = trans.toCsPkg(domain.id, domain.version, evo)
-        val wrapped = csTrees.inNs(pkg.parts.toSeq, tree)
-        val fbase = csFiles.basename(domain, evo)
-        Output(
-          s"$fbase/BaboonServiceRt.cs",
-          Some(wrapped),
-          pkg,
-          CompilerProduct.Definition,
-          origin = OutputOrigin.Runtime,
-        )
+      val result = rtTree.map {
+        tree =>
+          val pkg     = trans.toCsPkg(domain.id, domain.version, evo)
+          val wrapped = csTrees.inNs(pkg.parts.toSeq, tree)
+          val fbase   = csFiles.basename(domain, evo)
+          Output(
+            s"$fbase/BaboonServiceRt.cs",
+            Some(wrapped),
+            pkg,
+            CompilerProduct.Definition,
+            origin = OutputOrigin.Runtime,
+          )
       }.toList
       F.pure(result)
     }
@@ -416,14 +419,14 @@ object CSDefnTranslator {
           val resolved    = ServiceResultResolver.resolve(domain, "cs", target.language.serviceResult, target.language.pragmas)
           val resolvedCtx = ServiceContextResolver.resolve(domain, "cs", target.language.serviceContext, target.language.pragmas)
           val ctxParam = resolvedCtx match {
-            case ResolvedServiceContext.NoContext                => ""
-            case ResolvedServiceContext.AbstractContext(tn, pn)  => s"$tn $pn, "
-            case ResolvedServiceContext.ConcreteContext(tn, pn)  => s"$tn $pn, "
+            case ResolvedServiceContext.NoContext               => ""
+            case ResolvedServiceContext.AbstractContext(tn, pn) => s"$tn $pn, "
+            case ResolvedServiceContext.ConcreteContext(tn, pn) => s"$tn $pn, "
           }
           val methods = service.methods.map {
             m =>
-              val out    = m.out.map(r => trans.asCsRef(r, domain, evo))
-              val err    = m.err.map(r => trans.asCsRef(r, domain, evo))
+              val out = m.out.map(r => trans.asCsRef(r, domain, evo))
+              val err = m.err.map(r => trans.asCsRef(r, domain, evo))
               val csFqName: CSValue => String = {
                 case t: CSValue.CSType     => (t.pkg.parts :+ t.name).mkString(".")
                 case t: CSValue.CSTypeName => t.name
@@ -436,7 +439,7 @@ object CSDefnTranslator {
 
           val genericParam = resolvedCtx match {
             case ResolvedServiceContext.AbstractContext(tn, _) => s"<$tn>"
-            case _                                            => ""
+            case _                                             => ""
           }
           DefnRepr(
             q"""namespace ${name.asName} {

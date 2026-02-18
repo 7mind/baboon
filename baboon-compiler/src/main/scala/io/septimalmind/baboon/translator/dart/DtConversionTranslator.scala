@@ -125,13 +125,12 @@ class DtConversionTranslator[F[+_, +_]: Error2](
 
   private def builtinConversion(to: TypeId, from: TypeId): Option[String] = {
     (from, to) match {
-      case _ if from == to                                                 => None
-      case (_, TypeId.Builtins.i16 | TypeId.Builtins.i32 |
-              TypeId.Builtins.i64 | TypeId.Builtins.u16 |
-              TypeId.Builtins.u32 | TypeId.Builtins.u64)                   => None // int -> int in Dart, identity
-      case (_, TypeId.Builtins.f64)                                        => Some("(x) => x.toDouble()")
-      case (_, TypeId.Builtins.f128)                                       => Some("BaboonDecimal.fromString")
-      case _                                                               => None
+      case _ if from == to => None
+      case (_, TypeId.Builtins.i16 | TypeId.Builtins.i32 | TypeId.Builtins.i64 | TypeId.Builtins.u16 | TypeId.Builtins.u32 | TypeId.Builtins.u64) =>
+        None // int -> int in Dart, identity
+      case (_, TypeId.Builtins.f64)  => Some("(x) => x.toDouble()")
+      case (_, TypeId.Builtins.f128) => Some("BaboonDecimal.fromString")
+      case _                         => None
     }
   }
 
@@ -200,7 +199,7 @@ class DtConversionTranslator[F[+_, +_]: Error2](
             val classDef = q"""class $className
                               |  extends $baboonAbstractConversion<$tin, $tout> {
                               |    static final $className instance = $className._();
-                              |    ${className}._();
+                              |    $className._();
                               |    @override $tout doConvert(
                               |      dynamic context,
                               |      $baboonAbstractConversions conversions,
@@ -228,7 +227,7 @@ class DtConversionTranslator[F[+_, +_]: Error2](
             val classDef = q"""class $className
                               |  extends $baboonAbstractConversion<$tin, $tout> {
                               |    static final $className instance = $className._();
-                              |    ${className}._();
+                              |    $className._();
                               |    @override $tout doConvert(
                               |      dynamic context,
                               |      $baboonAbstractConversions conversions,
@@ -264,7 +263,7 @@ class DtConversionTranslator[F[+_, +_]: Error2](
                           case TypeId.Builtins.set => q"{}"
                           case TypeId.Builtins.map => q"{}"
                           case TypeId.Builtins.opt => q"null"
-                          case _ => throw new IllegalStateException(s"Unsupported constructor type: $id")
+                          case _                   => throw new IllegalStateException(s"Unsupported constructor type: $id")
                         }
                       case _ => throw new IllegalStateException("Unsupported target field type")
                     }
@@ -276,12 +275,12 @@ class DtConversionTranslator[F[+_, +_]: Error2](
                           case TypeId.Builtins.opt => q"from.$fld"
                           case TypeId.Builtins.lst => q"[from.$fld]"
                           case TypeId.Builtins.set => q"{from.$fld}"
-                          case _ => throw new IllegalStateException(s"Unsupported collection wrap type: $id")
+                          case _                   => throw new IllegalStateException(s"Unsupported collection wrap type: $id")
                         }
                       case _ => throw new IllegalStateException("WrapIntoCollection target must be a constructor type")
                     }
                   case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"from.$fld", 1, Some(o.oldTpe))
-                  case o: FieldOp.SwapCollectionType  => swapCollType(q"from.$fld", o, 0)
+                  case o: FieldOp.SwapCollectionType => swapCollType(q"from.$fld", o, 0)
                   case o: FieldOp.Rename             => transfer(o.targetField.tpe, q"from.${o.sourceFieldName.name}", 1)
                   case o: FieldOp.Redef =>
                     val srcFieldRef = q"from.${o.sourceFieldName.name}"
@@ -293,7 +292,7 @@ class DtConversionTranslator[F[+_, +_]: Error2](
                               case TypeId.Builtins.opt => q"$srcFieldRef"
                               case TypeId.Builtins.lst => q"[$srcFieldRef]"
                               case TypeId.Builtins.set => q"{$srcFieldRef}"
-                              case _ => throw new IllegalStateException(s"Unsupported collection wrap type: $id")
+                              case _                   => throw new IllegalStateException(s"Unsupported collection wrap type: $id")
                             }
                           case _ => throw new IllegalStateException("WrapIntoCollection target must be a constructor type")
                         }
@@ -309,7 +308,7 @@ class DtConversionTranslator[F[+_, +_]: Error2](
             val classDef = q"""class $className
                               |  extends $baboonAbstractConversion<$tin, $tout> {
                               |    static final $className instance = $className._();
-                              |    ${className}._();
+                              |    $className._();
                               |    @override $tout doConvert(
                               |      dynamic context,
                               |      $baboonAbstractConversions conversions,
@@ -342,9 +341,17 @@ class DtConversionTranslator[F[+_, +_]: Error2](
 
     (oldId, newId) match {
       case (TypeId.Builtins.opt, TypeId.Builtins.lst) =>
-        q"""($fieldRef != null) ? [(() { final e = $fieldRef!; return ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}; })()] : <${trans.asDtRef(newArgs.head, domain, evo)}>[]"""
+        q"""($fieldRef != null) ? [(() { final e = $fieldRef!; return ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}; })()] : <${trans.asDtRef(
+            newArgs.head,
+            domain,
+            evo,
+          )}>[]"""
       case (TypeId.Builtins.opt, TypeId.Builtins.set) =>
-        q"""($fieldRef != null) ? {(() { final e = $fieldRef!; return ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}; })()} : <${trans.asDtRef(newArgs.head, domain, evo)}>{}"""
+        q"""($fieldRef != null) ? {(() { final e = $fieldRef!; return ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}; })()} : <${trans.asDtRef(
+            newArgs.head,
+            domain,
+            evo,
+          )}>{}"""
       case (TypeId.Builtins.opt, TypeId.Builtins.opt) =>
         q"""($fieldRef != null) ? (() { final e = $fieldRef!; return ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}; })() : null"""
 

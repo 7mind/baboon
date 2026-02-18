@@ -203,8 +203,9 @@ class JvUEBACodecGenerator(
     val encChain = encBranches match {
       case Nil => encElse
       case _ =>
-        val elseIfBranches = encBranches.tail.map { b =>
-          q" else $b"
+        val elseIfBranches = encBranches.tail.map {
+          b =>
+            q" else $b"
         }
         val chain = (Seq(encBranches.head) ++ elseIfBranches).join("")
         q"""$chain else {
@@ -514,11 +515,11 @@ class JvUEBACodecGenerator(
   }
 
   def codecName(name: JvValue.JvType, owner: Owner): JvValue.JvType = {
-    val domainPkg = trans.toJvPkg(domain.id, domain.version, evo)
+    val domainPkg   = trans.toJvPkg(domain.id, domain.version, evo)
     val ownerPrefix = name.pkg.parts.toSeq.drop(domainPkg.parts.toSeq.length)
-    val prefixStr = if (ownerPrefix.nonEmpty) ownerPrefix.mkString("_") + "_" else ""
-    val realPkg = trans.effectiveJvPkg(owner, domain, evo)
-    JvValue.JvType(realPkg, s"${prefixStr}${name.name}_UEBACodec", name.fq)
+    val prefixStr   = if (ownerPrefix.nonEmpty) ownerPrefix.mkString("_") + "_" else ""
+    val realPkg     = trans.effectiveJvPkg(owner, domain, evo)
+    JvValue.JvType(realPkg, s"$prefixStr${name.name}_UEBACodec", name.fq)
   }
 
   override def codecMeta(defn: DomainMember.User, name: JvValue.JvType): Option[CodecMeta] = {

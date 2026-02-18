@@ -43,9 +43,9 @@ class RsConversionTranslator[F[+_, +_]: Error2](
 
   private def hasUserType(tpe: TypeRef): Boolean = {
     tpe match {
-      case TypeRef.Scalar(_: TypeId.User)  => true
-      case TypeRef.Constructor(_, args)     => args.exists(hasUserType)
-      case _                               => false
+      case TypeRef.Scalar(_: TypeId.User) => true
+      case TypeRef.Constructor(_, args)   => args.exists(hasUserType)
+      case _                              => false
     }
   }
 
@@ -112,9 +112,10 @@ class RsConversionTranslator[F[+_, +_]: Error2](
             )
 
           case c: Conversion.CopyAdtBranchByName =>
-            val cases = c.oldDefn.dataMembers(srcDom).map { oldId =>
-              val newId = c.branchMapping.getOrElse(oldId.name.name, oldId)
-              q"""$tin::${oldId.name.name.capitalize}(x) => $tout::${newId.name.name.capitalize}(serde_json::from_value(serde_json::to_value(x).unwrap()).unwrap()),"""
+            val cases = c.oldDefn.dataMembers(srcDom).map {
+              oldId =>
+                val newId = c.branchMapping.getOrElse(oldId.name.name, oldId)
+                q"""$tin::${oldId.name.name.capitalize}(x) => $tout::${newId.name.name.capitalize}(serde_json::from_value(serde_json::to_value(x).unwrap()).unwrap()),"""
             }
             List(
               RsRenderedConversion(
@@ -133,55 +134,56 @@ class RsConversionTranslator[F[+_, +_]: Error2](
             val defnTypeId = c.targetTpe
             val dto = domain.defs.meta.nodes(defnTypeId) match {
               case DomainMember.User(_, d: Typedef.Dto, _, _) => d
-              case _ => throw new IllegalStateException("DTO expected")
+              case _                                          => throw new IllegalStateException("DTO expected")
             }
             val ops = c.ops.map(o => o.targetField -> o).toMap
-            val assigns = dto.fields.map { f =>
-              val op  = ops(f)
-              val fld = toSnakeCase(f.name.name)
-              val expr = op match {
-                case _: FieldOp.Transfer =>
-                  if (hasUserType(f.tpe)) {
+            val assigns = dto.fields.map {
+              f =>
+                val op  = ops(f)
+                val fld = toSnakeCase(f.name.name)
+                val expr = op match {
+                  case _: FieldOp.Transfer =>
+                    if (hasUserType(f.tpe)) {
+                      serdeConvert(q"from.$fld")
+                    } else {
+                      q"from.$fld.clone()"
+                    }
+                  case o: FieldOp.InitializeWithDefault =>
+                    o.targetField.tpe match {
+                      case TypeRef.Constructor(id, _) =>
+                        id match {
+                          case TypeId.Builtins.lst => q"Vec::new()"
+                          case TypeId.Builtins.set => q"std::collections::BTreeSet::new()"
+                          case TypeId.Builtins.map => q"std::collections::BTreeMap::new()"
+                          case TypeId.Builtins.opt => q"None"
+                          case _                   => throw new IllegalStateException(s"Unsupported constructor type: $id")
+                        }
+                      case _ => throw new IllegalStateException("Unsupported target field type")
+                    }
+                  case _: FieldOp.WrapIntoCollection =>
+                    val innerExpr = if (hasUserType(f.tpe)) serdeConvert(q"from.$fld") else q"from.$fld.clone()"
+                    f.tpe match {
+                      case TypeRef.Constructor(TypeId.Builtins.opt, _) => q"Some($innerExpr)"
+                      case TypeRef.Constructor(TypeId.Builtins.set, _) => q"std::collections::BTreeSet::from([$innerExpr])"
+                      case TypeRef.Constructor(TypeId.Builtins.lst, _) => q"vec![$innerExpr]"
+                      case _                                           => q"vec![$innerExpr]"
+                    }
+                  case _: FieldOp.ExpandPrecision =>
                     serdeConvert(q"from.$fld")
-                  } else {
-                    q"from.$fld.clone()"
-                  }
-                case o: FieldOp.InitializeWithDefault =>
-                  o.targetField.tpe match {
-                    case TypeRef.Constructor(id, _) =>
-                      id match {
-                        case TypeId.Builtins.lst => q"Vec::new()"
-                        case TypeId.Builtins.set => q"std::collections::BTreeSet::new()"
-                        case TypeId.Builtins.map => q"std::collections::BTreeMap::new()"
-                        case TypeId.Builtins.opt => q"None"
-                        case _ => throw new IllegalStateException(s"Unsupported constructor type: $id")
-                      }
-                    case _ => throw new IllegalStateException("Unsupported target field type")
-                  }
-                case _: FieldOp.WrapIntoCollection =>
-                  val innerExpr = if (hasUserType(f.tpe)) serdeConvert(q"from.$fld") else q"from.$fld.clone()"
-                  f.tpe match {
-                    case TypeRef.Constructor(TypeId.Builtins.opt, _) => q"Some($innerExpr)"
-                    case TypeRef.Constructor(TypeId.Builtins.set, _) => q"std::collections::BTreeSet::from([$innerExpr])"
-                    case TypeRef.Constructor(TypeId.Builtins.lst, _) => q"vec![$innerExpr]"
-                    case _ => q"vec![$innerExpr]"
-                  }
-                case _: FieldOp.ExpandPrecision =>
-                  serdeConvert(q"from.$fld")
-                case _: FieldOp.SwapCollectionType =>
-                  serdeConvert(q"from.$fld")
-                case o: FieldOp.Rename =>
-                  val srcFld = toSnakeCase(o.sourceFieldName.name)
-                  if (hasUserType(f.tpe)) {
+                  case _: FieldOp.SwapCollectionType =>
+                    serdeConvert(q"from.$fld")
+                  case o: FieldOp.Rename =>
+                    val srcFld = toSnakeCase(o.sourceFieldName.name)
+                    if (hasUserType(f.tpe)) {
+                      serdeConvert(q"from.$srcFld")
+                    } else {
+                      q"from.$srcFld.clone()"
+                    }
+                  case o: FieldOp.Redef =>
+                    val srcFld = toSnakeCase(o.sourceFieldName.name)
                     serdeConvert(q"from.$srcFld")
-                  } else {
-                    q"from.$srcFld.clone()"
-                  }
-                case o: FieldOp.Redef =>
-                  val srcFld = toSnakeCase(o.sourceFieldName.name)
-                  serdeConvert(q"from.$srcFld")
-              }
-              q"$fld: $expr,"
+                }
+                q"$fld: $expr,"
             }
 
             List(
