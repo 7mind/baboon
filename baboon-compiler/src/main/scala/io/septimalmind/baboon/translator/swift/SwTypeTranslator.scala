@@ -90,12 +90,40 @@ class SwTypeTranslator {
   }
 
   private def asSwTypeDerefForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): SwType = {
+    def isSwiftBindingKey(k: Any): Boolean = {
+      k.toString.equalsIgnoreCase("swift")
+    }
+
+    def fieldsOf(p: Product): Map[String, Any] = {
+      p.productElementNames.zip(p.productIterator).toMap
+    }
+
+    def extractDeclFromForeignEntry(fe: Typedef.ForeignEntry): String = {
+      val f = fieldsOf(fe)
+      f.get("decl") match {
+        case Some(d: String) =>
+          d
+        case _ =>
+          f.get("mapping") match {
+            case Some(mapping: Product) =>
+              fieldsOf(mapping).get("decl") match {
+                case Some(d: String) =>
+                  d
+                case _ =>
+                  throw new IllegalStateException(s"Unsupported swift foreign mapping shape: $mapping")
+              }
+            case _ =>
+              throw new IllegalStateException(s"Unsupported swift foreign entry shape: $fe")
+          }
+      }
+    }
+
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
         val fe    = defn.bindings.iterator.collectFirst {
-          case (k, v) if k.toString.equalsIgnoreCase("swift") => v
+          case (k, v) if isSwiftBindingKey(k) => v
         }.getOrElse(throw new IllegalStateException(s"Missing swift binding for foreign type: ${defn.id}"))
-        val parts = fe.decl.split('.').toList
+        val parts = extractDeclFromForeignEntry(fe).split('.').toList
         assert(parts.length > 1)
         val pkg = parts.init
         val id  = parts.last
