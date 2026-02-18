@@ -61,21 +61,21 @@ class BaboonTranslator[F[+_, +_]: Error2](
 
   private def convertForeign(id: TypeId.User, isRoot: Boolean, f: RawForeign): F[NEList[BaboonIssue], NEList[DomainMember.User]] = {
     for {
+      mappedEntries <- F.traverse(f.defns) { e =>
+        for {
+          lang <- F.fromEither {
+            BaboonLang.fromString(e.lang).toRight(BaboonIssue.of(TyperIssue.UnknownForeignLang(e.lang, id, f.meta)))
+          }
+          mapping <- e.decl match {
+            case RawForeignDecl.Custom(decl, attrs) =>
+              F.pure(ForeignMapping.Custom(decl, ForeignEntryAttrs(attrs.attrs.map(a => ForeignEntryAttr(a.name, a.value)))))
+            case RawForeignDecl.BaboonRef(rawTypeRef) =>
+              convertTpe(rawTypeRef, f.meta).map(ForeignMapping.BaboonRef(_))
+          }
+        } yield (lang, ForeignEntry(lang, mapping))
+      }
       entries <- F.fromEither {
-        f.defns
-          .map(
-            e =>
-              (
-                e.lang,
-                ForeignEntry(
-                  e.lang,
-                  e.decl,
-                  ForeignEntryAttrs(
-                    e.attrs.attrs.map(a => ForeignEntryAttr(a.name, a.value))
-                  ),
-                ),
-              )
-          )
+        mappedEntries
           .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueForeignEntries(e, id, f.meta)))
       }
     } yield {

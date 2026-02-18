@@ -28,7 +28,11 @@ class DtUEBACodecGenerator(
         case d: Typedef.Dto      => Some(genDtoBodies(dtRef, d))
         case e: Typedef.Enum     => Some(genEnumBodies(dtRef, e))
         case a: Typedef.Adt      => Some(genAdtBodies(dtRef, a))
-        case _: Typedef.Foreign  => Some(genForeignBodies(dtRef))
+        case f: Typedef.Foreign =>
+          f.bindings.get(BaboonLang.Dart) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
+            case _ => Some(genForeignBodies(dtRef))
+          }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
       }).map {
@@ -401,8 +405,19 @@ class DtUEBACodecGenerator(
               case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
-            q"""$targetTpe.instance.decode(ctx, reader)"""
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Dart) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkDecoder(aliasedRef)
+                  case _ =>
+                    val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
+                    q"""$targetTpe.instance.decode(ctx, reader)"""
+                }
+              case _ =>
+                val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
+                q"""$targetTpe.instance.decode(ctx, reader)"""
+            }
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -450,8 +465,19 @@ class DtUEBACodecGenerator(
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
-            q"""$targetTpe.instance.encode(ctx, $wref, $ref);"""
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Dart) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkEncoder(aliasedRef, ref, wref)
+                  case _ =>
+                    val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
+                    q"""$targetTpe.instance.encode(ctx, $wref, $ref);"""
+                }
+              case _ =>
+                val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
+                q"""$targetTpe.instance.encode(ctx, $wref, $ref);"""
+            }
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -490,8 +516,13 @@ class DtUEBACodecGenerator(
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[DtValue]] = {
     defn.defn match {
-      case _: Typedef.Enum | _: Typedef.Foreign => meta.map(_.valueField)
-      case _                                    => meta.map(_.refValueField)
+      case _: Typedef.Enum => meta.map(_.valueField)
+      case f: Typedef.Foreign =>
+        f.bindings.get(BaboonLang.Dart) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => meta.map(_.refValueField)
+          case _                                                                  => meta.map(_.valueField)
+        }
+      case _ => meta.map(_.refValueField)
     }
   }
 

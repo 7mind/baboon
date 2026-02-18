@@ -23,7 +23,11 @@ class DtJsonCodecGenerator(
         case d: Typedef.Dto      => Some(genDtoBodies(dtRef, d))
         case _: Typedef.Enum     => Some(genEnumBodies(dtRef))
         case a: Typedef.Adt      => Some(genAdtBodies(dtRef, a))
-        case _: Typedef.Foreign  => Some(genForeignBodies(dtRef))
+        case f: Typedef.Foreign =>
+          f.bindings.get(BaboonLang.Dart) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
+            case _ => Some(genForeignBodies(dtRef))
+          }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
       }).map {
@@ -211,8 +215,13 @@ class DtJsonCodecGenerator(
               u.defn match {
                 case _: Typedef.Enum =>
                   q"$ref.name"
-                case _: Typedef.Foreign =>
-                  q"$ref.toString()"
+                case f: Typedef.Foreign =>
+                  f.bindings.get(BaboonLang.Dart) match {
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                      encodeKey(aliasedRef, ref)
+                    case _ =>
+                      q"$ref.toString()"
+                  }
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -238,8 +247,19 @@ class DtJsonCodecGenerator(
           case TypeId.Builtins.tsu                                                                   => q"$baboonTimeFormats.formatUtc($ref)"
           case TypeId.Builtins.tso                                                                   => q"$baboonTimeFormats.formatOffset($ref)"
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
-            q"$targetTpe.instance.encode(ctx, $ref)"
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Dart) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkEncoder(aliasedRef, ref, depth)
+                  case _ =>
+                    val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
+                    q"$targetTpe.instance.encode(ctx, $ref)"
+                }
+              case _ =>
+                val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
+                q"$targetTpe.instance.encode(ctx, $ref)"
+            }
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
@@ -282,8 +302,19 @@ class DtJsonCodecGenerator(
             case TypeId.Builtins.tsu                                             => q"$baboonTimeFormats.parseUtc($ref as String)"
             case TypeId.Builtins.tso                                             => q"$baboonTimeFormats.parseOffset($ref as String)"
             case u: TypeId.User =>
-              val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
-              q"$targetTpe.instance.decode(ctx, $ref)"
+              domain.defs.meta.nodes(u) match {
+                case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                  f.bindings.get(BaboonLang.Dart) match {
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                      decodeElement(aliasedRef, ref, depth)
+                    case _ =>
+                      val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
+                      q"$targetTpe.instance.decode(ctx, $ref)"
+                  }
+                case _ =>
+                  val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
+                  q"$targetTpe.instance.decode(ctx, $ref)"
+              }
             case o =>
               throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
@@ -328,9 +359,14 @@ class DtJsonCodecGenerator(
                     case _: Typedef.Enum =>
                       val targetTpe = trans.toDtTypeRefKeepForeigns(u, domain, evo)
                       q"$targetTpe.parse($ref)!"
-                    case _: Typedef.Foreign =>
-                      val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
-                      q"$targetTpe.instance.decode(ctx, $ref)"
+                    case f: Typedef.Foreign =>
+                      f.bindings.get(BaboonLang.Dart) match {
+                        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                          decodeKey(aliasedRef, ref)
+                        case _ =>
+                          val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
+                          q"$targetTpe.instance.decode(ctx, $ref)"
+                      }
                     case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
                   }
                 case o => throw new RuntimeException(s"BUG: Type/usertype mismatch: $o")
@@ -351,8 +387,13 @@ class DtJsonCodecGenerator(
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[DtValue]] = {
     defn.defn match {
-      case _: Typedef.Enum | _: Typedef.Foreign => meta.map(_.valueField)
-      case _                                    => meta.map(_.refValueField)
+      case _: Typedef.Enum => meta.map(_.valueField)
+      case f: Typedef.Foreign =>
+        f.bindings.get(BaboonLang.Dart) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => meta.map(_.refValueField)
+          case _                                                                  => meta.map(_.valueField)
+        }
+      case _ => meta.map(_.refValueField)
     }
   }
 

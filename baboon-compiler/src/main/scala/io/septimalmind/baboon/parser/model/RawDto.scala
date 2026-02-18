@@ -37,7 +37,13 @@ object RawForeignEntryAttrs {
 
 }
 
-case class RawForeignEntry(lang: String, decl: String, attrs: RawForeignEntryAttrs)
+sealed trait RawForeignDecl
+object RawForeignDecl {
+  case class Custom(decl: String, attrs: RawForeignEntryAttrs) extends RawForeignDecl
+  case class BaboonRef(typeRef: RawTypeRef) extends RawForeignDecl
+}
+
+case class RawForeignEntry(lang: String, decl: RawForeignDecl)
 
 case class RawFunc(
   name: String,

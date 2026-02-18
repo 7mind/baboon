@@ -332,13 +332,18 @@ object BaboonSchemeRenderer {
       indent: String,
     ): Unit = {
       sb.append(s"$indent${rootPrefix}foreign ${foreign.id.name.name} {\n")
-      foreign.bindings.toList.sortBy(_._1).foreach {
+      foreign.bindings.toList.sortBy(_._1.asString).foreach {
         case (lang, entry) =>
-          val attrs = if (entry.attrs.attrs.nonEmpty) {
-            val attrStr = entry.attrs.attrs.map(a => s""""${a.name}" = "${a.value}"""").mkString(", ")
-            s""" with { $attrStr }"""
-          } else ""
-          sb.append(s"""$indent  $lang = "${entry.decl}"$attrs\n""")
+          entry.mapping match {
+            case Typedef.ForeignMapping.Custom(decl, entryAttrs) =>
+              val attrs = if (entryAttrs.attrs.nonEmpty) {
+                val attrStr = entryAttrs.attrs.map(a => s""""${a.name}" = "${a.value}"""").mkString(", ")
+                s""" with { $attrStr }"""
+              } else ""
+              sb.append(s"""$indent  ${lang.asString} = "$decl"$attrs\n""")
+            case Typedef.ForeignMapping.BaboonRef(typeRef) =>
+              sb.append(s"$indent  ${lang.asString} = ${renderTypeRef(typeRef)}\n")
+          }
       }
       sb.append(s"$indent}\n")
     }

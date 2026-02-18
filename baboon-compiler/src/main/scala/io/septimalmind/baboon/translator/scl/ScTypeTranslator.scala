@@ -10,6 +10,19 @@ import izumi.fundamentals.platform.strings.TextTree.Quote
 class ScTypeTranslator {
   def asScRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[ScValue] = {
     tpe match {
+      case TypeRef.Scalar(uid: TypeId.User) =>
+        domain.defs.meta.nodes(uid) match {
+          case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+            f.bindings.get(BaboonLang.Scala) match {
+              case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                asScRef(aliasedRef, domain, evo)
+              case _ =>
+                q"${asScType(uid, domain, evo)}"
+            }
+          case _ =>
+            q"${asScType(uid, domain, evo)}"
+        }
+
       case TypeRef.Scalar(id) =>
         q"${asScType(id, domain, evo)}"
 
@@ -74,12 +87,16 @@ class ScTypeTranslator {
   private def asScTypeDerefForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): ScType = {
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
-        val fe    = defn.bindings("scala")
-        val parts = fe.decl.split('.').toList
-        assert(parts.length > 1)
-        val pkg = parts.init
-        val id  = parts.last
-        ScType(ScPackageId(NEList.unsafeFrom(pkg)), id)
+        defn.bindings.get(BaboonLang.Scala) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+            val parts = decl.split('.').toList
+            assert(parts.length > 1)
+            val pkg = parts.init
+            val id  = parts.last
+            ScType(ScPackageId(NEList.unsafeFrom(pkg)), id)
+          case _ =>
+            toScTypeRefKeepForeigns(tid, domain, evolution)
+        }
       case _ =>
         toScTypeRefKeepForeigns(tid, domain, evolution)
     }

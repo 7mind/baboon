@@ -26,7 +26,7 @@ object JvCodecFixtureTranslator {
       definition: DomainMember.User
     ): Option[TextTree[JvValue]] = {
       definition.defn match {
-        case _ if enquiries.hasForeignType(definition, domain)     => None
+        case _ if enquiries.hasForeignType(definition, domain, BaboonLang.Java) => None
         case _ if enquiries.isRecursiveTypedef(definition, domain) => None
         case dto: Typedef.Dto                                      => Some(doTranslateDto(dto))
         case adt: Typedef.Adt                                      => Some(doTranslateAdt(adt))
@@ -58,7 +58,7 @@ object JvCodecFixtureTranslator {
         case _: DomainMember.Builtin => None
         case u: DomainMember.User =>
           u.defn match {
-            case _ if enquiries.hasForeignType(u, domain)     => None
+            case _ if enquiries.hasForeignType(u, domain, BaboonLang.Java) => None
             case _ if enquiries.isRecursiveTypedef(u, domain) => None
             case _: Typedef.Contract                          => None
             case _: Typedef.Enum                              => None

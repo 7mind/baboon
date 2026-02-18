@@ -71,14 +71,19 @@ class TypeRenderer(domain: Domain) {
 
       case foreign: Typedef.Foreign =>
         sb.append(s"${BLUE}foreign$RESET $GREEN${foreign.id.name.name}$RESET {\n")
-        foreign.bindings.toSeq.sortBy(_._1).foreach {
+        foreign.bindings.toSeq.sortBy(_._1.asString).foreach {
           case (lang, entry) =>
-            sb.append(s"    $CYAN$lang$RESET = $WHITE\"${entry.decl}\"$RESET")
-            if (entry.attrs.attrs.nonEmpty) {
-              val attrs = entry.attrs.attrs.map(a => s"\"${a.name}\" = \"${a.value}\"").mkString(", ")
-              sb.append(s" with { $attrs }")
+            entry.mapping match {
+              case Typedef.ForeignMapping.Custom(decl, entryAttrs) =>
+                sb.append(s"    $CYAN${lang.asString}$RESET = $WHITE\"$decl\"$RESET")
+                if (entryAttrs.attrs.nonEmpty) {
+                  val attrs = entryAttrs.attrs.map(a => s"\"${a.name}\" = \"${a.value}\"").mkString(", ")
+                  sb.append(s" with { $attrs }")
+                }
+                sb.append("\n")
+              case Typedef.ForeignMapping.BaboonRef(typeRef) =>
+                sb.append(s"    $CYAN${lang.asString}$RESET = ${renderTypeRef(typeRef)}\n")
             }
-            sb.append("\n")
         }
         sb.append("}")
 

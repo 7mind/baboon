@@ -27,7 +27,11 @@ class ScUEBACodecGenerator(
         case d: Typedef.Dto      => Some(genDtoBodies(csRef, d))
         case e: Typedef.Enum     => Some(genEnumBodies(csRef, e))
         case a: Typedef.Adt      => Some(genAdtBodies(csRef, a))
-        case _: Typedef.Foreign  => Some(genForeignBodies(csRef))
+        case f: Typedef.Foreign =>
+          f.bindings.get(BaboonLang.Scala) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
+            case _ => Some(genForeignBodies(csRef))
+          }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
       }).map {
@@ -408,8 +412,19 @@ class ScUEBACodecGenerator(
               case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
-            q"""$targetTpe.instance.decode(ctx, wire).toTry.get"""
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Scala) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkDecoder(aliasedRef)
+                  case _ =>
+                    val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                    q"""$targetTpe.instance.decode(ctx, wire).toTry.get"""
+                }
+              case _ =>
+                val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                q"""$targetTpe.instance.decode(ctx, wire).toTry.get"""
+            }
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -457,8 +472,19 @@ class ScUEBACodecGenerator(
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
-            q"""$targetTpe.instance.encode(ctx, $wref, $ref)"""
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Scala) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkEncoder(aliasedRef, ref, wref)
+                  case _ =>
+                    val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                    q"""$targetTpe.instance.encode(ctx, $wref, $ref)"""
+                }
+              case _ =>
+                val targetTpe = codecName(trans.toScTypeRefKeepForeigns(u, domain, evo))
+                q"""$targetTpe.instance.encode(ctx, $wref, $ref)"""
+            }
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -501,8 +527,13 @@ class ScUEBACodecGenerator(
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[ScValue]] = {
     defn.defn match {
-      case _: Typedef.Enum | _: Typedef.Foreign => meta.map(_.valueField)
-      case _                                    => meta.map(_.refValueField)
+      case _: Typedef.Enum => meta.map(_.valueField)
+      case f: Typedef.Foreign =>
+        f.bindings.get(BaboonLang.Scala) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => Nil
+          case _ => meta.map(_.valueField)
+        }
+      case _ => meta.map(_.refValueField)
     }
   }
 

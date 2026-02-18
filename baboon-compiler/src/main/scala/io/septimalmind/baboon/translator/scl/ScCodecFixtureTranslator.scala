@@ -26,7 +26,7 @@ object ScCodecFixtureTranslator {
       definition: DomainMember.User
     ): Option[TextTree[ScValue]] = {
       definition.defn match {
-        case _ if enquiries.hasForeignType(definition, domain)     => None
+        case _ if enquiries.hasForeignType(definition, domain, BaboonLang.Scala) => None
         case _ if enquiries.isRecursiveTypedef(definition, domain) => None
         case dto: Typedef.Dto                                      => Some(doTranslateDto(dto))
         case adt: Typedef.Adt                                      => Some(doTranslateAdt(adt))
@@ -59,7 +59,7 @@ object ScCodecFixtureTranslator {
         case _: DomainMember.Builtin => None
         case u: DomainMember.User =>
           u.defn match {
-            case _ if enquiries.hasForeignType(u, domain)     => None
+            case _ if enquiries.hasForeignType(u, domain, BaboonLang.Scala) => None
             case _ if enquiries.isRecursiveTypedef(u, domain) => None
             case _: Typedef.Contract                          => None
             case _: Typedef.Enum                              => None

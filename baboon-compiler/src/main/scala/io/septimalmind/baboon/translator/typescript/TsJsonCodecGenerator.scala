@@ -22,7 +22,7 @@ class TsJsonCodecGenerator(
   }
 
   override def translate(defn: DomainMember.User, tsRef: TsValue.TsType, srcRef: TsValue.TsType): Option[TextTree[TsValue]] = {
-    if (isActive(defn.id) && !enquiries.hasForeignType(defn, domain)) {
+    if (isActive(defn.id) && !enquiries.hasForeignType(defn, domain, BaboonLang.Typescript)) {
       defn.defn match {
         case d: Typedef.Dto      => Some(genDtoCodec(d, srcRef))
         case e: Typedef.Enum     => Some(genEnumCodec(e, srcRef))
@@ -136,9 +136,15 @@ class TsJsonCodecGenerator(
           case TypeId.Builtins.tso =>
             q"$ref.toISOString()"
           case u: TypeId.User =>
-            val tsType = trans.toTsTypeRefKeepForeigns(u, domain, evo)
             domain.defs.meta.nodes.get(u) match {
+              case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
+                f.bindings.get(BaboonLang.Typescript) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkJsonEncoder(aliasedRef, ref)
+                  case _ => ref
+                }
               case Some(DomainMember.User(_, _: Typedef.Enum | _: Typedef.Dto | _: Typedef.Adt, _, _)) =>
+                val tsType = trans.toTsTypeRefKeepForeigns(u, domain, evo)
                 val fn = codecFnRef(tsType, "encode_", "_json")
                 q"$fn($ref)"
               case _ => ref
@@ -187,14 +193,19 @@ class TsJsonCodecGenerator(
           case TypeId.Builtins.tso =>
             q"$baboonDateTimeOffset.fromISO($ref as string)"
           case u: TypeId.User =>
-            val tsType = trans.toTsTypeRefKeepForeigns(u, domain, evo)
             domain.defs.meta.nodes.get(u) match {
+              case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
+                f.bindings.get(BaboonLang.Typescript) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkJsonDecoder(aliasedRef, ref)
+                  case _ =>
+                    val mappedType = trans.asTsType(u, domain, evo)
+                    q"$ref as $mappedType"
+                }
               case Some(DomainMember.User(_, _: Typedef.Enum | _: Typedef.Dto | _: Typedef.Adt, _, _)) =>
+                val tsType = trans.toTsTypeRefKeepForeigns(u, domain, evo)
                 val fn = codecFnRef(tsType, "decode_", "_json")
                 q"$fn($ref)"
-              case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) =>
-                val mappedType = trans.asTsType(u, domain, evo)
-                q"$ref as $mappedType"
               case _ => ref
             }
           case o => throw new RuntimeException(s"BUG: Unexpected scalar type: $o")

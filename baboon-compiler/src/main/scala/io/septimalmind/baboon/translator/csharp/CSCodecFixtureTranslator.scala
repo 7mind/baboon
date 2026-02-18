@@ -28,7 +28,7 @@ object CSCodecFixtureTranslator {
         None
       } else {
         definition.defn match {
-          case _ if enquiries.hasForeignType(definition, domain)     => None
+          case _ if enquiries.hasForeignType(definition, domain, BaboonLang.Cs) => None
           case _ if enquiries.isRecursiveTypedef(definition, domain) => None
           case _: Typedef.Contract                                   => None
           case _: Typedef.Enum                                       => None

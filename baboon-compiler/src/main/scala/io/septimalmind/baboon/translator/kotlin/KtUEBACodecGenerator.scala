@@ -27,7 +27,11 @@ class KtUEBACodecGenerator(
         case d: Typedef.Dto      => Some(genDtoBodies(ktRef, d))
         case e: Typedef.Enum     => Some(genEnumBodies(ktRef, e))
         case a: Typedef.Adt      => Some(genAdtBodies(ktRef, a))
-        case _: Typedef.Foreign  => Some(genForeignBodies(ktRef))
+        case f: Typedef.Foreign =>
+          f.bindings.get(BaboonLang.Kotlin) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
+            case _ => Some(genForeignBodies(ktRef))
+          }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
       }).map {
@@ -404,8 +408,19 @@ class KtUEBACodecGenerator(
               case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
-            q"""$targetTpe.instance.decode(ctx, wire)"""
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Kotlin) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkDecoder(aliasedRef)
+                  case _ =>
+                    val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                    q"""$targetTpe.instance.decode(ctx, wire)"""
+                }
+              case _ =>
+                val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                q"""$targetTpe.instance.decode(ctx, wire)"""
+            }
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -452,8 +467,19 @@ class KtUEBACodecGenerator(
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
-            q"""$targetTpe.instance.encode(ctx, $wref, $ref)"""
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Kotlin) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkEncoder(aliasedRef, ref, wref)
+                  case _ =>
+                    val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                    q"""$targetTpe.instance.encode(ctx, $wref, $ref)"""
+                }
+              case _ =>
+                val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
+                q"""$targetTpe.instance.encode(ctx, $wref, $ref)"""
+            }
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -492,8 +518,13 @@ class KtUEBACodecGenerator(
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[KtValue]] = {
     defn.defn match {
-      case _: Typedef.Enum | _: Typedef.Foreign => meta.map(_.valueField)
-      case _                                    => meta.map(_.refValueField)
+      case _: Typedef.Enum => meta.map(_.valueField)
+      case f: Typedef.Foreign =>
+        f.bindings.get(BaboonLang.Kotlin) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => meta.map(_.refValueField)
+          case _                                                                  => meta.map(_.valueField)
+        }
+      case _ => meta.map(_.refValueField)
     }
   }
 

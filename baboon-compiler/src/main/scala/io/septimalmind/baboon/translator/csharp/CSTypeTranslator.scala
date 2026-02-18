@@ -37,6 +37,19 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
 
   def asCsRef(tpe: TypeRef, domain: Domain, evolution: BaboonEvolution, mutableCollections: Boolean = false): TextTree[CSValue] = {
     tpe match {
+      case TypeRef.Scalar(uid: TypeId.User) =>
+        domain.defs.meta.nodes(uid) match {
+          case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+            f.bindings.get(BaboonLang.Cs) match {
+              case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                asCsRef(aliasedRef, domain, evolution, mutableCollections)
+              case _ =>
+                q"${asCsType(uid, domain, evolution, mutableCollections)}"
+            }
+          case _ =>
+            q"${asCsType(uid, domain, evolution, mutableCollections)}"
+        }
+
       case TypeRef.Scalar(id) =>
         q"${asCsType(id, domain, evolution, mutableCollections)}"
 
@@ -94,12 +107,16 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
   private def asCsTypeDerefForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): CSType = {
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
-        val fe    = defn.bindings("cs")
-        val parts = fe.decl.split('.').toList
-        assert(parts.length > 1)
-        val pkg = parts.init
-        val id  = parts.last
-        CSType(CSPackageId(NEList.unsafeFrom(pkg)), id, fq = false, CSTypeOrigin(tid, domain))
+        defn.bindings.get(BaboonLang.Cs) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+            val parts = decl.split('.').toList
+            assert(parts.length > 1)
+            val pkg = parts.init
+            val id  = parts.last
+            CSType(CSPackageId(NEList.unsafeFrom(pkg)), id, fq = false, CSTypeOrigin(tid, domain))
+          case _ =>
+            asCsTypeKeepForeigns(tid, domain, evolution)
+        }
       case _ =>
         asCsTypeKeepForeigns(tid, domain, evolution)
     }

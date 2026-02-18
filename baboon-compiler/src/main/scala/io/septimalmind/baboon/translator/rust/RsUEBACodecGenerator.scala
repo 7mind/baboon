@@ -355,8 +355,19 @@ class RsUEBACodecGenerator(
           case TypeId.Builtins.tsu   => q"crate::baboon_runtime::bin_tools::read_timestamp_utc(reader)?"
           case TypeId.Builtins.tso   => q"crate::baboon_runtime::bin_tools::read_timestamp_offset(reader)?"
           case u: TypeId.User =>
-            val tpe = trans.asRsType(u, domain, evo)
-            q"${tpe.asName}::decode_ueba(ctx, reader)?"
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Rust) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkDecoder(aliasedRef)
+                  case _ =>
+                    val tpe = trans.asRsType(u, domain, evo)
+                    q"${tpe.asName}::decode_ueba(ctx, reader)?"
+                }
+              case _ =>
+                val tpe = trans.asRsType(u, domain, evo)
+                q"${tpe.asName}::decode_ueba(ctx, reader)?"
+            }
           case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
       case c: TypeRef.Constructor =>

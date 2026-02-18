@@ -4,7 +4,7 @@ import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.python.PyTypes.*
 import io.septimalmind.baboon.translator.python.PyValue.PyType
-import io.septimalmind.baboon.typer.model.{BaboonEvolution, Domain, DomainMember, TypeId, Typedef}
+import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
@@ -21,7 +21,11 @@ final class PyJsonCodecGenerator(
       case _: Typedef.Dto      => Some(genDtoBodies(pyRef))
       case _: Typedef.Adt      => Some(genAdtBodies(pyRef))
       case _: Typedef.Enum     => Some(genEnumBodies(pyRef))
-      case _: Typedef.Foreign  => Some(genForeignTypesBodies(pyRef))
+      case f: Typedef.Foreign =>
+        f.bindings.get(BaboonLang.Py) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
+          case _ => Some(genForeignTypesBodies(pyRef))
+        }
       case _: Typedef.Service  => None
       case _: Typedef.Contract => None
     }).map {

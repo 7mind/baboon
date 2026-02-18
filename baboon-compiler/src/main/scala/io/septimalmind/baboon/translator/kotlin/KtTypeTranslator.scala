@@ -10,6 +10,19 @@ import izumi.fundamentals.platform.strings.TextTree.Quote
 class KtTypeTranslator {
   def asKtRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[KtValue] = {
     tpe match {
+      case TypeRef.Scalar(uid: TypeId.User) =>
+        domain.defs.meta.nodes(uid) match {
+          case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+            f.bindings.get(BaboonLang.Kotlin) match {
+              case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                asKtRef(aliasedRef, domain, evo)
+              case _ =>
+                q"${asKtType(uid, domain, evo)}"
+            }
+          case _ =>
+            q"${asKtType(uid, domain, evo)}"
+        }
+
       case TypeRef.Scalar(id) =>
         q"${asKtType(id, domain, evo)}"
 
@@ -92,12 +105,16 @@ class KtTypeTranslator {
   private def asKtTypeDerefForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): KtType = {
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
-        val fe    = defn.bindings("kotlin")
-        val parts = fe.decl.split('.').toList
-        assert(parts.length > 1)
-        val pkg = parts.init
-        val id  = parts.last
-        KtType(KtPackageId(NEList.unsafeFrom(pkg)), id)
+        defn.bindings.get(BaboonLang.Kotlin) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+            val parts = decl.split('.').toList
+            assert(parts.length > 1)
+            val pkg = parts.init
+            val id  = parts.last
+            KtType(KtPackageId(NEList.unsafeFrom(pkg)), id)
+          case _ =>
+            toKtTypeRefKeepForeigns(tid, domain, evolution)
+        }
       case _ =>
         toKtTypeRefKeepForeigns(tid, domain, evolution)
     }

@@ -10,6 +10,19 @@ import izumi.fundamentals.platform.strings.TextTree.Quote
 class DtTypeTranslator {
   def asDtRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[DtValue] = {
     tpe match {
+      case TypeRef.Scalar(uid: TypeId.User) =>
+        domain.defs.meta.nodes(uid) match {
+          case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+            f.bindings.get(BaboonLang.Dart) match {
+              case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                asDtRef(aliasedRef, domain, evo)
+              case _ =>
+                q"${asDtType(uid, domain, evo)}"
+            }
+          case _ =>
+            q"${asDtType(uid, domain, evo)}"
+        }
+
       case TypeRef.Scalar(id) =>
         q"${asDtType(id, domain, evo)}"
 
@@ -76,12 +89,16 @@ class DtTypeTranslator {
   private def asDtTypeDerefForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): DtType = {
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
-        val fe    = defn.bindings("dart")
-        val parts = fe.decl.split('.').toList
-        assert(parts.length > 1)
-        val pkg = parts.init
-        val id  = parts.last
-        DtType(DtPackageId(NEList.unsafeFrom(pkg)), id)
+        defn.bindings.get(BaboonLang.Dart) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+            val parts = decl.split('.').toList
+            assert(parts.length > 1)
+            val pkg = parts.init
+            val id  = parts.last
+            DtType(DtPackageId(NEList.unsafeFrom(pkg)), id)
+          case _ =>
+            toDtTypeRefKeepForeigns(tid, domain, evolution)
+        }
       case _ =>
         toDtTypeRefKeepForeigns(tid, domain, evolution)
     }

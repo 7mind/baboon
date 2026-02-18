@@ -21,6 +21,19 @@ class RsTypeTranslator {
 
   def asRsRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[RsValue] = {
     tpe match {
+      case TypeRef.Scalar(uid: TypeId.User) =>
+        domain.defs.meta.nodes(uid) match {
+          case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+            f.bindings.get(BaboonLang.Rust) match {
+              case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                asRsRef(aliasedRef, domain, evo)
+              case _ =>
+                q"${asRsType(uid, domain, evo)}"
+            }
+          case _ =>
+            q"${asRsType(uid, domain, evo)}"
+        }
+
       case TypeRef.Scalar(id) =>
         q"${asRsType(id, domain, evo)}"
 
@@ -106,12 +119,16 @@ class RsTypeTranslator {
   private def asRsTypeDerefForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): RsType = {
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
-        val fe    = defn.bindings("rust")
-        val parts = fe.decl.split("::").toList
-        assert(parts.length > 1)
-        val pkg = parts.init
-        val id  = parts.last
-        RsType(RsCrateId(NEList.unsafeFrom(pkg)), id)
+        defn.bindings.get(BaboonLang.Rust) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+            val parts = decl.split("::").toList
+            assert(parts.length > 1)
+            val pkg = parts.init
+            val id  = parts.last
+            RsType(RsCrateId(NEList.unsafeFrom(pkg)), id)
+          case _ =>
+            toRsTypeRefKeepForeigns(tid, domain, evolution)
+        }
       case _ =>
         toRsTypeRefKeepForeigns(tid, domain, evolution)
     }

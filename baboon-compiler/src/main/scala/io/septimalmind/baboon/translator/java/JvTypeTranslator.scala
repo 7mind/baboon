@@ -10,6 +10,19 @@ import izumi.fundamentals.platform.strings.TextTree.Quote
 class JvTypeTranslator {
   def asJvRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[JvValue] = {
     tpe match {
+      case TypeRef.Scalar(uid: TypeId.User) =>
+        domain.defs.meta.nodes(uid) match {
+          case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+            f.bindings.get(BaboonLang.Java) match {
+              case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                asJvRef(aliasedRef, domain, evo)
+              case _ =>
+                q"${asJvType(uid, domain, evo)}"
+            }
+          case _ =>
+            q"${asJvType(uid, domain, evo)}"
+        }
+
       case TypeRef.Scalar(id) =>
         q"${asJvType(id, domain, evo)}"
 
@@ -113,12 +126,16 @@ class JvTypeTranslator {
   private def asJvTypeDerefForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): JvType = {
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
-        val fe    = defn.bindings("java")
-        val parts = fe.decl.split('.').toList
-        assert(parts.length > 1)
-        val pkg = parts.init
-        val id  = parts.last
-        JvType(JvPackageId(NEList.unsafeFrom(pkg)), id)
+        defn.bindings.get(BaboonLang.Java) match {
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+            val parts = decl.split('.').toList
+            assert(parts.length > 1)
+            val pkg = parts.init
+            val id  = parts.last
+            JvType(JvPackageId(NEList.unsafeFrom(pkg)), id)
+          case _ =>
+            toJvTypeRefKeepForeigns(tid, domain, evolution)
+        }
       case _ =>
         toJvTypeRefKeepForeigns(tid, domain, evolution)
     }

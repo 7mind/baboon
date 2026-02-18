@@ -31,7 +31,11 @@ class CSUEBACodecGenerator(
         case d: Typedef.Dto      => Some(genDtoBodies(csRef, d))
         case e: Typedef.Enum     => Some(genEnumBodies(csRef, e))
         case a: Typedef.Adt      => Some(genAdtBodies(csRef, a))
-        case _: Typedef.Foreign  => Some(genForeignBodies(csRef))
+        case f: Typedef.Foreign =>
+          f.bindings.get(BaboonLang.Cs) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
+            case _ => Some(genForeignBodies(csRef))
+          }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
       }).map {
@@ -430,7 +434,17 @@ class CSUEBACodecGenerator(
               case o                                         => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            q"""${codecName(u)}.Instance.Decode(ctx, $wref)"""
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Cs) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkDecoder(aliasedRef, wref, codecArgs)
+                  case _ =>
+                    q"""${codecName(u)}.Instance.Decode(ctx, $wref)"""
+                }
+              case _ =>
+                q"""${codecName(u)}.Instance.Decode(ctx, $wref)"""
+            }
         }
       case c: TypeRef.Constructor =>
         c.id match {
@@ -487,7 +501,17 @@ class CSUEBACodecGenerator(
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
-            q"""${codecName(u)}.Instance.Encode(ctx, $wref, $ref)"""
+            domain.defs.meta.nodes(u) match {
+              case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
+                f.bindings.get(BaboonLang.Cs) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                    mkEncoder(aliasedRef, ref, wref, codecArgs)
+                  case _ =>
+                    q"""${codecName(u)}.Instance.Encode(ctx, $wref, $ref)"""
+                }
+              case _ =>
+                q"""${codecName(u)}.Instance.Encode(ctx, $wref, $ref)"""
+            }
         }
       case c: TypeRef.Constructor =>
         c.id match {
