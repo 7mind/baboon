@@ -373,7 +373,18 @@ object SwDefnTranslator {
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
       val fbase = swFiles.basename(domain, evo)
-      val fname = s"${trans.toSnakeCase(defn.id.name.name)}${suffix.getOrElse("")}.swift"
+      val versionSuffix = {
+        if (evo.latest == domain.version) {
+          ""
+        } else {
+          val normalizedVersion = domain.version.v.toString.map {
+            case c if c.isLetterOrDigit => c
+            case _                      => '_'
+          }
+          s"_v_$normalizedVersion"
+        }
+      }
+      val fname = s"${trans.toSnakeCase(defn.id.name.name)}$versionSuffix${suffix.getOrElse("")}.swift"
 
       defn.defn.id.owner match {
         case Owner.Toplevel => s"$fbase/$fname"
