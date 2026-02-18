@@ -56,8 +56,8 @@ object SwCodecFixtureTranslator {
       }
     }
 
-    private def fixtureTpeName(id: TypeId): TextTree[SwValue] = {
-      q"${id.name.name.capitalize}_Fixture"
+    private def fixtureTpeName(id: TypeId.User): TextTree[SwValue] = {
+      q"${translator.fixtureClassName(id, domain, evo)}"
     }
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[SwValue] = {
@@ -86,7 +86,7 @@ object SwCodecFixtureTranslator {
       val membersFixtures    = members.sortBy(_.id.toString).map(doTranslateDto)
       val membersDirectCalls = members.sortBy(_.id.toString).map { dto =>
         val caseName = dto.id.name.name.head.toLower.toString + dto.id.name.name.tail
-        q".$caseName(${dto.id.name.name.capitalize}_Fixture.random(rnd))"
+        q".$caseName(${fixtureTpeName(dto.id)}.random(rnd))"
       }
 
       q"""${membersFixtures.joinN()}
@@ -153,11 +153,9 @@ object SwCodecFixtureTranslator {
           q"rnd.mkEnum($enumType.all)"
         case u: TypeId.User =>
           val fixturePkg = translator.effectiveSwPkg(u.owner, domain, evo)
-          val importAsFileName = u.owner match {
-            case Owner.Adt(adtId) => translator.toSnakeCase(adtId.name.name)
-            case _                => translator.toSnakeCase(u.name.name)
-          }
-          val fixtureType = SwValue.SwType(fixturePkg, s"${u.name.name.capitalize}_Fixture", importAs = Some(s"${importAsFileName}_fixture"))
+          val fixtureClassName = translator.fixtureClassName(u, domain, evo)
+          val fixtureFileName = s"${translator.toSnakeCase(translator.toSwTypeRefKeepForeigns(u, domain, evo).name)}_fixture"
+          val fixtureType      = SwValue.SwType(fixturePkg, fixtureClassName, importAs = Some(fixtureFileName))
           q"$fixtureType.random(rnd)"
 
         case t => throw new IllegalArgumentException(s"Unexpected scalar type: $t")

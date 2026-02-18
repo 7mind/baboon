@@ -112,6 +112,9 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
     val basename = swFiles.basename(domain, lineage.evolution)
     val versionSuffix = outputVersionSuffix(domain, lineage.evolution)
     val pkg      = trans.toSwPkg(domain.id, domain.version, lineage.evolution)
+    val domainSuffix      = domainClassSuffix(domain)
+    val domainFileSuffix  = trans.toSnakeCase(domainSuffix)
+    val metadataClassName = s"BaboonMetadata_${domainSuffix}$versionSuffix"
 
     val entries = lineage.evolution
       .typesUnchangedSince(domain.version)
@@ -123,18 +126,18 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
       }
 
     val metaTree =
-      q"""class BaboonMetadata {
+      q"""class $metadataClassName {
          |    static let unmodified: [String: [String]] = [
          |        ${entries.joinN().shift(8).trim}
          |    ]
          |
          |    func sameInVersions(_ typeId: String) -> [String] {
-         |        return BaboonMetadata.unmodified[typeId] ?? []
+         |        return $metadataClassName.unmodified[typeId] ?? []
          |    }
          |}""".stripMargin
 
     val metaOutput = SwDefnTranslator.Output(
-      s"$basename/baboon_metadata$versionSuffix.swift",
+      s"$basename/baboon_metadata_${domainFileSuffix}$versionSuffix.swift",
       metaTree,
       pkg,
       CompilerProduct.Definition,
@@ -251,10 +254,13 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
       } else q""
 
       val ctorParamDecl = if (missing.nonEmpty) "_ required: RequiredConversions" else ""
+      val ctorPrefix = if (missing.nonEmpty) "" else "override "
 
       val basename = swFiles.basename(domain, lineage.evolution)
       val versionSuffix = outputVersionSuffix(domain, lineage.evolution)
-      val conversionsClassName = s"BaboonConversions$versionSuffix"
+      val domainSuffix = domainClassSuffix(domain)
+      val domainFileSuffix = trans.toSnakeCase(domainSuffix)
+      val conversionsClassName = s"BaboonConversions_${domainSuffix}$versionSuffix"
 
       val converter =
         q"""class $conversionsClassName: $baboonAbstractConversions {
@@ -262,7 +268,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
            |
            |    ${missingIface.shift(4).trim}
            |
-           |    override init($ctorParamDecl) {
+           |    ${ctorPrefix}init($ctorParamDecl) {
            |        ${if (missing.nonEmpty) q"self.required = required" else q""}
            |        super.init()
            |        ${conversionRegs.joinN().shift(8).trim}
@@ -276,7 +282,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
       val regsMap = defnOut.flatMap(_.codecReg).toMultimap.view.mapValues(_.flatten).toMap
 
       val converterOutput = SwDefnTranslator.Output(
-        s"$basename/baboon_conversions$versionSuffix.swift",
+        s"$basename/baboon_conversions_${domainFileSuffix}$versionSuffix.swift",
         converter,
         pkg,
         CompilerProduct.Conversion,
@@ -284,7 +290,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
 
       val codecOutputs = regsMap.map {
         case (codecId, regs) =>
-          val className = s"BaboonCodecs${codecId.capitalize}$versionSuffix"
+          val className = s"BaboonCodecs${codecId.capitalize}_${domainSuffix}$versionSuffix"
           val codecTree =
             q"""class $className: ${SwValue.SwType(baboonRuntimePkg, s"AbstractBaboon${codecId}Codecs")} {
                |    override init() {
@@ -323,6 +329,28 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
         case _                      => '_'
       }
       s"_v_$normalizedVersion"
+    }
+  }
+
+  private def domainClassSuffix(domain: Domain): String = {
+    domain.id.path.toList.map(toTypeSegment).mkString("_")
+  }
+
+  private def toTypeSegment(raw: String): String = {
+    val normalized = raw.map {
+      case c if c.isLetterOrDigit => c
+      case _                      => '_'
+    }
+    val prefixed = if (normalized.nonEmpty && normalized.head.isDigit) {
+      s"T_$normalized"
+    } else {
+      normalized
+    }
+    val parts = prefixed.split('_').toList.filter(_.nonEmpty)
+    if (parts.isEmpty) {
+      "T"
+    } else {
+      parts.map(p => p.head.toUpper + p.tail).mkString("_")
     }
   }
 }

@@ -106,7 +106,7 @@ class SwTypeTranslator {
   def toSwTypeRefKeepForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): SwType = {
     val version = domain.version
     val pkg     = toSwPkg(tid.pkg, version, evolution)
-    val typeName = renderTypeName(tid.name.name, version, evolution)
+    val typeName = renderScopedTypeName(tid, version, evolution)
 
     tid.owner match {
       case Owner.Adt(id) =>
@@ -117,6 +117,21 @@ class SwTypeTranslator {
       case other =>
         val ownerAsPrefix = renderOwner(other)
         SwType(SwPackageId(pkg.parts ++ ownerAsPrefix), typeName)
+    }
+  }
+
+  def fixtureClassName(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): String = {
+    val swType = toSwTypeRefKeepForeigns(tid, domain, evolution)
+    s"${swType.name}_Fixture"
+  }
+
+  private def renderScopedTypeName(tid: TypeId.User, version: Version, evolution: BaboonEvolution): String = {
+    val baseName    = renderTypeName(tid.name.name, version, evolution)
+    val ownerPrefix = renderOwnerTypePrefix(tid.owner, version, evolution)
+    if (ownerPrefix.isEmpty) {
+      baseName
+    } else {
+      s"${ownerPrefix.mkString("_")}_$baseName"
     }
   }
 
@@ -137,6 +152,33 @@ class SwTypeTranslator {
       case Owner.Toplevel => Seq.empty
       case Owner.Ns(path) => path.map(_.name.toLowerCase)
       case Owner.Adt(id)  => renderOwner(id.owner) :+ id.name.name.toLowerCase
+    }
+  }
+
+  private def renderOwnerTypePrefix(owner: Owner, version: Version, evolution: BaboonEvolution): Seq[String] = {
+    owner match {
+      case Owner.Toplevel => Seq.empty
+      case Owner.Ns(path) => path.map(p => toTypeNameSegment(p.name))
+      case Owner.Adt(id) =>
+        renderOwnerTypePrefix(id.owner, version, evolution) :+ toTypeNameSegment(renderTypeName(id.name.name, version, evolution))
+    }
+  }
+
+  private def toTypeNameSegment(raw: String): String = {
+    val normalized = raw.map {
+      case c if c.isLetterOrDigit => c
+      case _                      => '_'
+    }
+    val prefixed = if (normalized.nonEmpty && normalized.head.isDigit) {
+      s"T_$normalized"
+    } else {
+      normalized
+    }
+    val parts = prefixed.split('_').toList.filter(_.nonEmpty)
+    if (parts.isEmpty) {
+      "T"
+    } else {
+      parts.map(part => part.head.toUpper + part.tail).mkString("_")
     }
   }
 

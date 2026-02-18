@@ -294,9 +294,16 @@ object SwDefnTranslator {
       mainMeta: List[SwDomainTreeTools.MetaField],
       codecMeta: Iterable[TextTree[SwValue]],
     ): DefnRepr = {
-      val contractParents = adt.contracts.map(c => trans.toSwTypeRefKeepForeigns(c, domain, evo))
-      val parents         = (contractParents :+ genMarker).distinct
+      val parents = Seq(genMarker)
       val conformanceClause = parents.map(t => q"$t").join(", ")
+
+      val dataMembers = adt.members.toList.filter {
+        mid =>
+          domain.defs.meta.nodes(mid) match {
+            case DomainMember.User(_, _: Typedef.NonDataTypedef, _, _) => false
+            case _                                                      => true
+          }
+      }
 
       val memberTrees = adt.members.map { mid =>
         domain.defs.meta.nodes(mid) match {
@@ -307,7 +314,7 @@ object SwDefnTranslator {
 
       val memberDtos = memberTrees.map(_.defn).toList.joinNN()
 
-      val enumCases = adt.members.map { mid =>
+      val enumCases = dataMembers.map { mid =>
         val memberName = mid.name.name
         val caseName   = memberName.head.toLower.toString + memberName.tail
         val memberRef  = trans.toSwTypeRefKeepForeigns(mid, domain, evo)
@@ -319,7 +326,7 @@ object SwDefnTranslator {
       DefnRepr(
         q"""$memberDtos
            |
-           |enum ${name.asName}: Equatable, Hashable, $conformanceClause {
+           |indirect enum ${name.asName}: Equatable, Hashable, $conformanceClause {
            |  ${enumCases.joinN().shift(4).trim}
            |
            |  ${staticMetaFields.joinN().shift(4).trim}
@@ -374,18 +381,8 @@ object SwDefnTranslator {
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
       val fbase = swFiles.basename(domain, evo)
-      val versionSuffix = {
-        if (evo.latest == domain.version) {
-          ""
-        } else {
-          val normalizedVersion = domain.version.v.toString.map {
-            case c if c.isLetterOrDigit => c
-            case _                      => '_'
-          }
-          s"_v_$normalizedVersion"
-        }
-      }
-      val fname = s"${trans.toSnakeCase(defn.id.name.name)}$versionSuffix${suffix.getOrElse("")}.swift"
+      val scopedTypeName = trans.toSwTypeRefKeepForeigns(defn.id, domain, evo).name
+      val fname          = s"${trans.toSnakeCase(scopedTypeName)}${suffix.getOrElse("")}.swift"
 
       defn.defn.id.owner match {
         case Owner.Toplevel => s"$fbase/$fname"

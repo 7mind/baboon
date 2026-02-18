@@ -125,7 +125,7 @@ object SwCodecTestsTranslator {
       evolution: BaboonEvolution,
     ): TextTree[SwValue] = {
       val swType = typeTranslator.asSwType(definition.id, domain, evolution)
-      val fixtureName = s"${definition.id.name.name.capitalize}_Fixture"
+      val fixtureName = typeTranslator.fixtureClassName(definition.id, domain, evolution)
       definition.defn match {
         case _: Typedef.Enum =>
           q"let fixture = $swType.all[rnd.nextIntRange($swType.all.count)]"
