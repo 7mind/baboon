@@ -591,14 +591,28 @@ class BaboonBinTools {
 // --- Time Formats ---
 
 class BaboonTimeFormats {
-    private static let isoFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
+    private static let utcTimeZone = TimeZone(secondsFromGMT: 0)!
+    private static let utcCalendar: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = utcTimeZone
+        return c
     }()
 
     static func formatUtc(_ dt: Date) -> String {
-        return isoFormatter.string(from: dt)
+        let epochMillis = Int64(dt.timeIntervalSince1970 * 1000.0)
+        let normalizedDate = Date(timeIntervalSince1970: Double(epochMillis) / 1000.0)
+        let comps = utcCalendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: normalizedDate)
+        let ms = Int((epochMillis % 1000 + 1000) % 1000)
+        return String(
+            format: "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+            comps.year!,
+            comps.month!,
+            comps.day!,
+            comps.hour!,
+            comps.minute!,
+            comps.second!,
+            ms
+        )
     }
 
     static func formatOffset(_ dto: BaboonDateTimeOffset) -> String {
@@ -625,57 +639,133 @@ class BaboonTimeFormats {
     }
 
     static func parseUtc(_ s: String) -> Date {
-        if let d = isoFormatter.date(from: s) { return d }
-        // Fallback: try without fractional seconds
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f.date(from: s)!
+        let parsed = parseIso8601(s)
+        return Date(timeIntervalSince1970: Double(parsed.epochMillis) / 1000.0)
     }
 
     static func parseOffset(_ s: String) -> BaboonDateTimeOffset {
-        // Parse timezone offset from the end of the string
-        // Format: ...+HH:MM or ...-HH:MM
-        let chars = Array(s)
-        let len = chars.count
-
-        // Look for +/-HH:MM at end (6 chars)
-        if len >= 6 && chars[len - 3] == Character(":") {
-            let signChar = chars[len - 6]
-            if signChar == Character("+") || signChar == Character("-") {
-                let sign: Int64 = signChar == Character("+") ? 1 : -1
-                let hoursStr = String(chars[(len - 5)..<(len - 3)])
-                let minutesStr = String(chars[(len - 2)..<len])
-                if let hours = Int64(hoursStr), let minutes = Int64(minutesStr) {
-                    let offsetMillis = sign * (hours * 3600000 + minutes * 60000)
-                    let basePart = String(chars[0..<(len - 6)])
-                    // Force UTC interpretation
-                    let utcString = basePart + "Z"
-                    let localDt = BaboonTimeFormats.parseUtc(utcString)
-                    let epochMillis = Int64(localDt.timeIntervalSince1970 * 1000) - offsetMillis
-                    return BaboonDateTimeOffset(
-                        epochMillis: epochMillis,
-                        offsetMillis: offsetMillis,
-                        kind: "offset"
-                    )
-                }
-            }
-        }
-
-        if s.hasSuffix("Z") || s.hasSuffix("z") {
-            let dt = BaboonTimeFormats.parseUtc(s)
+        let parsed = parseIso8601(s)
+        if parsed.hasOffset {
             return BaboonDateTimeOffset(
-                epochMillis: Int64(dt.timeIntervalSince1970 * 1000),
+                epochMillis: parsed.epochMillis,
+                offsetMillis: parsed.offsetMillis,
+                kind: "offset"
+            )
+        }
+        if parsed.hasZulu {
+            return BaboonDateTimeOffset(
+                epochMillis: parsed.epochMillis,
                 offsetMillis: 0,
                 kind: "utc"
             )
         }
-
-        let dt = BaboonTimeFormats.parseUtc(s + "Z")
         return BaboonDateTimeOffset(
-            epochMillis: Int64(dt.timeIntervalSince1970 * 1000),
+            epochMillis: parsed.epochMillis,
             offsetMillis: 0,
             kind: "local"
         )
+    }
+
+    private struct ParsedIso8601 {
+        let epochMillis: Int64
+        let offsetMillis: Int64
+        let hasOffset: Bool
+        let hasZulu: Bool
+    }
+
+    private static func parseIso8601(_ s: String) -> ParsedIso8601 {
+        let bytes = Array(s.utf8)
+        assert(bytes.count >= 19)
+        assert(bytes[4] == 45)  // -
+        assert(bytes[7] == 45)  // -
+        assert(bytes[10] == 84 || bytes[10] == 116) // T/t
+        assert(bytes[13] == 58) // :
+        assert(bytes[16] == 58) // :
+
+        let year = parseDecimal(bytes, 0, 4)
+        let month = parseDecimal(bytes, 5, 2)
+        let day = parseDecimal(bytes, 8, 2)
+        let hour = parseDecimal(bytes, 11, 2)
+        let minute = parseDecimal(bytes, 14, 2)
+        let second = parseDecimal(bytes, 17, 2)
+
+        var idx = 19
+        var millis = 0
+        if idx < bytes.count && bytes[idx] == 46 { // .
+            idx += 1
+            let fracStart = idx
+            while idx < bytes.count && isDigit(bytes[idx]) {
+                idx += 1
+            }
+            let fracLen = idx - fracStart
+            assert(fracLen > 0)
+            let used = min(fracLen, 3)
+            var i = 0
+            while i < used {
+                millis = millis * 10 + Int(bytes[fracStart + i] - 48)
+                i += 1
+            }
+            if used == 1 { millis *= 100 }
+            if used == 2 { millis *= 10 }
+        }
+
+        var offsetMillis: Int64 = 0
+        var hasOffset = false
+        var hasZulu = false
+
+        if idx < bytes.count {
+            let tz = bytes[idx]
+            if tz == 90 || tz == 122 { // Z/z
+                assert(idx + 1 == bytes.count)
+                hasZulu = true
+            } else {
+                assert(tz == 43 || tz == 45) // +/-
+                assert(idx + 6 == bytes.count)
+                assert(bytes[idx + 3] == 58) // :
+                let sign: Int64 = tz == 43 ? 1 : -1
+                let tzHours = Int64(parseDecimal(bytes, idx + 1, 2))
+                let tzMinutes = Int64(parseDecimal(bytes, idx + 4, 2))
+                offsetMillis = sign * (tzHours * 3600000 + tzMinutes * 60000)
+                hasOffset = true
+            }
+        }
+
+        var comps = DateComponents()
+        comps.year = year
+        comps.month = month
+        comps.day = day
+        comps.hour = hour
+        comps.minute = minute
+        comps.second = second
+        comps.nanosecond = millis * 1_000_000
+
+        let localDate = utcCalendar.date(from: comps)!
+        let localEpochMillis = Int64(localDate.timeIntervalSince1970 * 1000.0)
+        let epochMillis = localEpochMillis - offsetMillis
+
+        return ParsedIso8601(
+            epochMillis: epochMillis,
+            offsetMillis: offsetMillis,
+            hasOffset: hasOffset,
+            hasZulu: hasZulu
+        )
+    }
+
+    private static func parseDecimal(_ bytes: [UInt8], _ start: Int, _ count: Int) -> Int {
+        assert(start + count <= bytes.count)
+        var value = 0
+        var i = 0
+        while i < count {
+            let b = bytes[start + i]
+            assert(isDigit(b))
+            value = value * 10 + Int(b - 48)
+            i += 1
+        }
+        return value
+    }
+
+    private static func isDigit(_ b: UInt8) -> Bool {
+        return b >= 48 && b <= 57
     }
 }
 

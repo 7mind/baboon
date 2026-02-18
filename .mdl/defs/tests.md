@@ -684,7 +684,6 @@ Generate compatibility test files using Swift.
 
 ```bash
 dep action.test-gen-manual
-dep action.test-gen-compat-scala
 
 if ! command -v swift &> /dev/null; then
   if [[ "$(uname)" == "Linux" ]]; then
@@ -692,20 +691,6 @@ if ! command -v swift &> /dev/null; then
     exit 1
   fi
   echo "Swift not found, skipping compat gen"
-  ret success:bool=true
-  exit 0
-fi
-
-if [[ "$(uname)" == "Linux" ]]; then
-  if ./scripts/swift-xcode.sh ./test/conv-test-sw run CompatMain; then
-    ret success:bool=true
-    exit 0
-  fi
-
-  echo "Swift CompatMain failed on Linux, falling back to Scala-generated compatibility fixtures" >&2
-  mkdir -p ./target/compat-test/swift-json ./target/compat-test/swift-ueba
-  cp ./target/compat-test/scala-json/all-basic-types.json ./target/compat-test/swift-json/all-basic-types.json
-  cp ./target/compat-test/scala-ueba/all-basic-types.ueba ./target/compat-test/swift-ueba/all-basic-types.ueba
   ret success:bool=true
   exit 0
 fi
