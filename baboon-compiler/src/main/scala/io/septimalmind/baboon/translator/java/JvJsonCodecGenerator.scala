@@ -201,12 +201,12 @@ class JvJsonCodecGenerator(
 
     def encodeKey(tpe: TypeRef, ref: TextTree[JvValue]): TextTree[JvValue] = {
       tpe.id match {
-        case TypeId.Builtins.tsu => q"$baboonTimeFormats.formatTsu($ref)"
-        case TypeId.Builtins.tso => q"$baboonTimeFormats.formatTso($ref)"
-        case TypeId.Builtins.uid => q"$ref.toString()"
-        case TypeId.Builtins.f128 => q"$ref.toPlainString()"
+        case TypeId.Builtins.tsu   => q"$baboonTimeFormats.formatTsu($ref)"
+        case TypeId.Builtins.tso   => q"$baboonTimeFormats.formatTso($ref)"
+        case TypeId.Builtins.uid   => q"$ref.toString()"
+        case TypeId.Builtins.f128  => q"$ref.toPlainString()"
         case TypeId.Builtins.bytes => q"$ref.toHex()"
-        case _: TypeId.Builtin => q"String.valueOf($ref)"
+        case _: TypeId.Builtin     => q"String.valueOf($ref)"
         case uid: TypeId.User =>
           domain.defs.meta.nodes(uid) match {
             case u: DomainMember.User =>
@@ -261,9 +261,17 @@ class JvJsonCodecGenerator(
             val valueEnc = mkEncoder(c.args.last, q"$varName.getValue()", depth + 1)
             q"""((java.util.function.Supplier<$jsonNode>) () -> { var $objName = $jsonNodeFactory.instance.objectNode(); for (var $varName : $ref.entrySet()) { $objName.set($keyEnc, $valueEnc); } return $objName; }).get()"""
           case TypeId.Builtins.lst =>
-            q"""((java.util.function.Supplier<$jsonNode>) () -> { var $arrName = $jsonNodeFactory.instance.arrayNode(); for (var $varName : $ref) { $arrName.add(${mkEncoder(c.args.head, q"$varName", depth + 1)}); } return $arrName; }).get()"""
+            q"""((java.util.function.Supplier<$jsonNode>) () -> { var $arrName = $jsonNodeFactory.instance.arrayNode(); for (var $varName : $ref) { $arrName.add(${mkEncoder(
+                c.args.head,
+                q"$varName",
+                depth + 1,
+              )}); } return $arrName; }).get()"""
           case TypeId.Builtins.set =>
-            q"""((java.util.function.Supplier<$jsonNode>) () -> { var $arrName = $jsonNodeFactory.instance.arrayNode(); for (var $varName : $ref) { $arrName.add(${mkEncoder(c.args.head, q"$varName", depth + 1)}); } return $arrName; }).get()"""
+            q"""((java.util.function.Supplier<$jsonNode>) () -> { var $arrName = $jsonNodeFactory.instance.arrayNode(); for (var $varName : $ref) { $arrName.add(${mkEncoder(
+                c.args.head,
+                q"$varName",
+                depth + 1,
+              )}); } return $arrName; }).get()"""
           case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
     }
@@ -304,14 +312,30 @@ class JvJsonCodecGenerator(
               q"""$ref == null || $ref.isNull() ? java.util.Optional.empty() : java.util.Optional.of(${decodeElement(c.args.head, ref, depth + 1)})"""
             case TypeId.Builtins.lst =>
               val elemDec = decodeElement(c.args.head, q"$varName", depth + 1)
-              q"""((java.util.function.Supplier<$jvList<${trans.asJvBoxedRef(c.args.head, domain, evo)}>>) () -> { var lst = new $jvArrayList<${trans.asJvBoxedRef(c.args.head, domain, evo)}>(); for (var $varName : (Iterable<$jsonNode>) () -> $ref.elements()) { lst.add($elemDec); } return lst; }).get()"""
+              q"""((java.util.function.Supplier<$jvList<${trans.asJvBoxedRef(c.args.head, domain, evo)}>>) () -> { var lst = new $jvArrayList<${trans.asJvBoxedRef(
+                  c.args.head,
+                  domain,
+                  evo,
+                )}>(); for (var $varName : (Iterable<$jsonNode>) () -> $ref.elements()) { lst.add($elemDec); } return lst; }).get()"""
             case TypeId.Builtins.set =>
               val elemDec = decodeElement(c.args.head, q"$varName", depth + 1)
-              q"""((java.util.function.Supplier<$jvSet<${trans.asJvBoxedRef(c.args.head, domain, evo)}>>) () -> { var set = new $jvLinkedHashSet<${trans.asJvBoxedRef(c.args.head, domain, evo)}>(); for (var $varName : (Iterable<$jsonNode>) () -> $ref.elements()) { set.add($elemDec); } return set; }).get()"""
+              q"""((java.util.function.Supplier<$jvSet<${trans.asJvBoxedRef(c.args.head, domain, evo)}>>) () -> { var set = new $jvLinkedHashSet<${trans.asJvBoxedRef(
+                  c.args.head,
+                  domain,
+                  evo,
+                )}>(); for (var $varName : (Iterable<$jsonNode>) () -> $ref.elements()) { set.add($elemDec); } return set; }).get()"""
             case TypeId.Builtins.map =>
               val keyDec   = decodeKey(c.args.head, q"$varName.getKey()")
               val valueDec = decodeElement(c.args.last, q"$varName.getValue()", depth + 1)
-              q"""((java.util.function.Supplier<$jvMap<${trans.asJvBoxedRef(c.args.head, domain, evo)}, ${trans.asJvBoxedRef(c.args.last, domain, evo)}>>) () -> { var map = new $jvLinkedHashMap<${trans.asJvBoxedRef(c.args.head, domain, evo)}, ${trans.asJvBoxedRef(c.args.last, domain, evo)}>(); for (var $varName : (Iterable<java.util.Map.Entry<String, $jsonNode>>) () -> $ref.fields()) { map.put($keyDec, $valueDec); } return map; }).get()"""
+              q"""((java.util.function.Supplier<$jvMap<${trans.asJvBoxedRef(c.args.head, domain, evo)}, ${trans.asJvBoxedRef(
+                  c.args.last,
+                  domain,
+                  evo,
+                )}>>) () -> { var map = new $jvLinkedHashMap<${trans.asJvBoxedRef(c.args.head, domain, evo)}, ${trans.asJvBoxedRef(
+                  c.args.last,
+                  domain,
+                  evo,
+                )}>(); for (var $varName : (Iterable<java.util.Map.Entry<String, $jsonNode>>) () -> $ref.fields()) { map.put($keyDec, $valueDec); } return map; }).get()"""
             case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
       }
@@ -361,7 +385,15 @@ class JvJsonCodecGenerator(
     tpe match {
       case TypeRef.Constructor(id, args) if id.name.name == "opt" =>
         val fieldNode = q"""$jsonObjRef.get("$fieldName")"""
-        q"""((java.util.function.Supplier<java.util.Optional<${trans.asJvBoxedRef(args.head, domain, evo)}>>) () -> { var v = $fieldNode; return v == null || v.isNull() ? java.util.Optional.empty() : java.util.Optional.of(${decodeElement(args.head, q"v", 0)}); }).get()"""
+        q"""((java.util.function.Supplier<java.util.Optional<${trans.asJvBoxedRef(
+            args.head,
+            domain,
+            evo,
+          )}>>) () -> { var v = $fieldNode; return v == null || v.isNull() ? java.util.Optional.empty() : java.util.Optional.of(${decodeElement(
+            args.head,
+            q"v",
+            0,
+          )}); }).get()"""
       case _ =>
         q"""${decodeElement(tpe, q"""$jsonObjRef.get("$fieldName")""", 0)}"""
     }
@@ -375,11 +407,11 @@ class JvJsonCodecGenerator(
   }
 
   def codecName(name: JvValue.JvType, owner: Owner): JvValue.JvType = {
-    val domainPkg = trans.toJvPkg(domain.id, domain.version, evo)
+    val domainPkg   = trans.toJvPkg(domain.id, domain.version, evo)
     val ownerPrefix = name.pkg.parts.toSeq.drop(domainPkg.parts.toSeq.length)
-    val prefixStr = if (ownerPrefix.nonEmpty) ownerPrefix.mkString("_") + "_" else ""
-    val realPkg = trans.effectiveJvPkg(owner, domain, evo)
-    JvValue.JvType(realPkg, s"${prefixStr}${name.name}_JsonCodec", name.fq)
+    val prefixStr   = if (ownerPrefix.nonEmpty) ownerPrefix.mkString("_") + "_" else ""
+    val realPkg     = trans.effectiveJvPkg(owner, domain, evo)
+    JvValue.JvType(realPkg, s"$prefixStr${name.name}_JsonCodec", name.fq)
   }
 
   override def codecMeta(defn: DomainMember.User, name: JvValue.JvType): Option[CodecMeta] = {

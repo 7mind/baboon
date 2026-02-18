@@ -227,18 +227,16 @@ class DtJsonCodecGenerator(
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
-          case TypeId.Builtins.bit   => q"$ref"
-          case TypeId.Builtins.i08 | TypeId.Builtins.i16 |
-               TypeId.Builtins.i32 | TypeId.Builtins.i64 => q"$ref"
-          case TypeId.Builtins.u08 | TypeId.Builtins.u16 |
-               TypeId.Builtins.u32 | TypeId.Builtins.u64 => q"$ref"
-          case TypeId.Builtins.f32 | TypeId.Builtins.f64  => q"$ref"
-          case TypeId.Builtins.f128  => q"$ref.value"
-          case TypeId.Builtins.str   => q"$ref"
-          case TypeId.Builtins.uid   => q"$ref"
-          case TypeId.Builtins.bytes => q"$ref.toHexString()"
-          case TypeId.Builtins.tsu   => q"$baboonTimeFormats.formatUtc($ref)"
-          case TypeId.Builtins.tso   => q"$baboonTimeFormats.formatOffset($ref)"
+          case TypeId.Builtins.bit                                                                   => q"$ref"
+          case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 | TypeId.Builtins.i64 => q"$ref"
+          case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 | TypeId.Builtins.u64 => q"$ref"
+          case TypeId.Builtins.f32 | TypeId.Builtins.f64                                             => q"$ref"
+          case TypeId.Builtins.f128                                                                  => q"$ref.value"
+          case TypeId.Builtins.str                                                                   => q"$ref"
+          case TypeId.Builtins.uid                                                                   => q"$ref"
+          case TypeId.Builtins.bytes                                                                 => q"$ref.toHexString()"
+          case TypeId.Builtins.tsu                                                                   => q"$baboonTimeFormats.formatUtc($ref)"
+          case TypeId.Builtins.tso                                                                   => q"$baboonTimeFormats.formatOffset($ref)"
           case u: TypeId.User =>
             val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
             q"$targetTpe.instance.encode(ctx, $ref)"
@@ -271,20 +269,18 @@ class DtJsonCodecGenerator(
       tpe match {
         case TypeRef.Scalar(id) =>
           id match {
-            case TypeId.Builtins.bit   => q"$ref as bool"
-            case TypeId.Builtins.i08 | TypeId.Builtins.i16 |
-                 TypeId.Builtins.i32   => q"($ref as num).toInt()"
-            case TypeId.Builtins.i64   => q"($ref is String ? int.parse($ref as String) : ($ref as num).toInt())"
-            case TypeId.Builtins.u08 | TypeId.Builtins.u16 |
-                 TypeId.Builtins.u32   => q"($ref as num).toInt()"
-            case TypeId.Builtins.u64   => q"($ref is String ? int.parse($ref as String) : ($ref as num).toInt())"
-            case TypeId.Builtins.f32 | TypeId.Builtins.f64 => q"($ref as num).toDouble()"
-            case TypeId.Builtins.f128  => q"$baboonDecimal($ref is String ? $ref as String : $ref.toString())"
-            case TypeId.Builtins.str   => q"$ref as String"
-            case TypeId.Builtins.uid   => q"$ref as String"
-            case TypeId.Builtins.bytes => q"$baboonByteStringTools.fromHexString($ref as String)"
-            case TypeId.Builtins.tsu   => q"$baboonTimeFormats.parseUtc($ref as String)"
-            case TypeId.Builtins.tso   => q"$baboonTimeFormats.parseOffset($ref as String)"
+            case TypeId.Builtins.bit                                             => q"$ref as bool"
+            case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 => q"($ref as num).toInt()"
+            case TypeId.Builtins.i64                                             => q"($ref is String ? int.parse($ref as String) : ($ref as num).toInt())"
+            case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 => q"($ref as num).toInt()"
+            case TypeId.Builtins.u64                                             => q"($ref is String ? int.parse($ref as String) : ($ref as num).toInt())"
+            case TypeId.Builtins.f32 | TypeId.Builtins.f64                       => q"($ref as num).toDouble()"
+            case TypeId.Builtins.f128                                            => q"$baboonDecimal($ref is String ? $ref as String : $ref.toString())"
+            case TypeId.Builtins.str                                             => q"$ref as String"
+            case TypeId.Builtins.uid                                             => q"$ref as String"
+            case TypeId.Builtins.bytes                                           => q"$baboonByteStringTools.fromHexString($ref as String)"
+            case TypeId.Builtins.tsu                                             => q"$baboonTimeFormats.parseUtc($ref as String)"
+            case TypeId.Builtins.tso                                             => q"$baboonTimeFormats.parseOffset($ref as String)"
             case u: TypeId.User =>
               val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
               q"$targetTpe.instance.decode(ctx, $ref)"
@@ -314,19 +310,17 @@ class DtJsonCodecGenerator(
       tpe match {
         case TypeRef.Scalar(id) =>
           id match {
-            case TypeId.Builtins.bit   => q"$ref == 'true'"
-            case TypeId.Builtins.i08 | TypeId.Builtins.i16 |
-                 TypeId.Builtins.i32 | TypeId.Builtins.i64 => q"int.parse($ref)"
-            case TypeId.Builtins.u08 | TypeId.Builtins.u16 |
-                 TypeId.Builtins.u32 | TypeId.Builtins.u64 => q"int.parse($ref)"
-            case TypeId.Builtins.f32   => q"double.parse($ref)"
-            case TypeId.Builtins.f64   => q"double.parse($ref)"
-            case TypeId.Builtins.f128  => q"$baboonDecimal($ref)"
-            case TypeId.Builtins.str   => q"$ref"
-            case TypeId.Builtins.uid   => q"$ref"
-            case TypeId.Builtins.bytes => q"$baboonByteStringTools.fromHexString($ref)"
-            case TypeId.Builtins.tsu   => q"$baboonTimeFormats.parseUtc($ref)"
-            case TypeId.Builtins.tso   => q"$baboonTimeFormats.parseOffset($ref)"
+            case TypeId.Builtins.bit                                                                   => q"$ref == 'true'"
+            case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 | TypeId.Builtins.i64 => q"int.parse($ref)"
+            case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 | TypeId.Builtins.u64 => q"int.parse($ref)"
+            case TypeId.Builtins.f32                                                                   => q"double.parse($ref)"
+            case TypeId.Builtins.f64                                                                   => q"double.parse($ref)"
+            case TypeId.Builtins.f128                                                                  => q"$baboonDecimal($ref)"
+            case TypeId.Builtins.str                                                                   => q"$ref"
+            case TypeId.Builtins.uid                                                                   => q"$ref"
+            case TypeId.Builtins.bytes                                                                 => q"$baboonByteStringTools.fromHexString($ref)"
+            case TypeId.Builtins.tsu                                                                   => q"$baboonTimeFormats.parseUtc($ref)"
+            case TypeId.Builtins.tso                                                                   => q"$baboonTimeFormats.parseOffset($ref)"
             case u: TypeId.User =>
               domain.defs.meta.nodes(u) match {
                 case ud: DomainMember.User =>

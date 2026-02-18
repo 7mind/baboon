@@ -49,8 +49,8 @@ final class PyJsonCodecGenerator(
               |    ${dec.shift(4).trim}
               |""".stripMargin)
     val baseMethods = encodeMethod ++ decodeMethod
-    val cName   = q"${srcRef.name}_JsonCodec"
-    val cType = q"'${codecType(defn.id)}'"
+    val cName       = q"${srcRef.name}_JsonCodec"
+    val cType       = q"'${codecType(defn.id)}'"
 
     val cParent = if (isEncoderEnabled) {
       defn match {

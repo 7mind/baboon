@@ -11,7 +11,7 @@ import izumi.fundamentals.collections.nonempty.NEList
 /** JVM implementation of LspCompiler that wraps BaboonFamilyManager */
 class JvmBaboonCompiler[F[+_, +_]: Error2](
   manager: BaboonFamilyManager[F],
-  runner: QuasiIORunner[F[Throwable, _]]
+  runner: QuasiIORunner[F[Throwable, _]],
 ) extends LspCompiler {
 
   override def reload(
@@ -21,8 +21,9 @@ class JvmBaboonCompiler[F[+_, +_]: Error2](
     val F = implicitly[Error2[F]]
     runner.run(
       F.catchAll(
-        F.flatMap(buildReloadInputs(inputs.toList)) { reloadInputs =>
-          F.map(manager.reload(previous, reloadInputs))(family => Right(family): Either[NEList[BaboonIssue], BaboonFamily])
+        F.flatMap(buildReloadInputs(inputs.toList)) {
+          reloadInputs =>
+            F.map(manager.reload(previous, reloadInputs))(family => Right(family): Either[NEList[BaboonIssue], BaboonFamily])
         }
       )(issues => F.pure(Left(issues): Either[NEList[BaboonIssue], BaboonFamily]))
     )
@@ -31,11 +32,12 @@ class JvmBaboonCompiler[F[+_, +_]: Error2](
   private def buildReloadInputs(
     inputs: List[BaboonParser.Input]
   ): F[NEList[BaboonIssue], List[BaboonParser.ReloadInput]] = {
-    val F = implicitly[Error2[F]]
+    val F     = implicitly[Error2[F]]
     val paths = inputs.map(_.path)
     assert(paths.distinct.size == paths.size, "Duplicate file paths provided to LSP compiler")
-    val reloadInputs = inputs.map { input =>
-      BaboonParser.ReloadInput.Unparsed(input.path, input.content)
+    val reloadInputs = inputs.map {
+      input =>
+        BaboonParser.ReloadInput.Unparsed(input.path, input.content)
     }
     F.pure(reloadInputs)
   }

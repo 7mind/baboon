@@ -19,9 +19,9 @@ abstract class RenameResolutionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModu
         for {
           fam <- loadRenamePkg(loader)
         } yield {
-          val pkg = Pkg(NEList("rename", "ns"))
+          val pkg     = Pkg(NEList("rename", "ns"))
           val lineage = fam.domains.toMap(pkg)
-          val domain = lineage.versions.toMap(Version.parse("2.0.0"))
+          val domain  = lineage.versions.toMap(Version.parse("2.0.0"))
 
           val newAbsId = TypeId.User(
             pkg,

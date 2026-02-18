@@ -133,53 +133,61 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
 
     val allDirs = scala.collection.mutable.Set.empty[String]
 
-    val filesByDir = allPaths.groupBy { path =>
-      val parts = path.split('/').toList
-      if (parts.size > 1) parts.init.mkString("/") else ""
+    val filesByDir = allPaths.groupBy {
+      path =>
+        val parts = path.split('/').toList
+        if (parts.size > 1) parts.init.mkString("/") else ""
     }
 
-    allPaths.foreach { path =>
-      val parts = path.split('/').toList
-      for (i <- 1 until parts.size) {
-        allDirs += parts.take(i).mkString("/")
-      }
-      if (parts.size == 1) allDirs += ""
+    allPaths.foreach {
+      path =>
+        val parts = path.split('/').toList
+        for (i <- 1 until parts.size) {
+          allDirs += parts.take(i).mkString("/")
+        }
+        if (parts.size == 1) allDirs += ""
     }
 
-    allDirs.toList.sorted.map { dir =>
-      val prefix = if (dir.isEmpty) "" else dir + "/"
+    allDirs.toList.sorted.map {
+      dir =>
+        val prefix = if (dir.isEmpty) "" else dir + "/"
 
-      val childDirs = allDirs.filter { d =>
-        d.startsWith(prefix) && d != dir && !d.drop(prefix.length).contains('/')
-      }.map(_.drop(prefix.length)).toSet
+        val childDirs = allDirs.filter {
+          d =>
+            d.startsWith(prefix) && d != dir && !d.drop(prefix.length).contains('/')
+        }.map(_.drop(prefix.length)).toSet
 
-      val fileModNames = filesByDir.getOrElse(dir, Nil).map { file =>
-        file.split('/').last.stripSuffix(".ts")
-      }.sorted.distinct
+        val fileModNames = filesByDir
+          .getOrElse(dir, Nil).map {
+            file =>
+              file.split('/').last.stripSuffix(".ts")
+          }.sorted.distinct
 
-      val fileExports = fileModNames.map { name =>
-        q"""export * from "./$name";"""
-      }
-
-      val versionedDirPattern = "v\\d+_\\d+(_\\d+)?".r
-      val fileModNameSet = fileModNames.toSet
-      val dirExports = childDirs.toList.sorted
-        .filterNot(fileModNameSet.contains)
-        .filterNot(name => versionedDirPattern.matches(name))
-        .map { name =>
-          q"""export * from "./$name/index";"""
+        val fileExports = fileModNames.map {
+          name =>
+            q"""export * from "./$name";"""
         }
 
-      val barrelTree = (fileExports ++ dirExports).joinN()
-      val barrelPath = if (dir.isEmpty) "index.ts" else s"$dir/index.ts"
+        val versionedDirPattern = "v\\d+_\\d+(_\\d+)?".r
+        val fileModNameSet      = fileModNames.toSet
+        val dirExports = childDirs.toList.sorted
+          .filterNot(fileModNameSet.contains)
+          .filterNot(name => versionedDirPattern.matches(name))
+          .map {
+            name =>
+              q"""export * from "./$name/index";"""
+          }
 
-      TsDefnTranslator.Output(
-        barrelPath,
-        barrelTree,
-        TsValue.TsModuleId(NEList("index")),
-        CompilerProduct.Definition,
-        isBarrel = true,
-      )
+        val barrelTree = (fileExports ++ dirExports).joinN()
+        val barrelPath = if (dir.isEmpty) "index.ts" else s"$dir/index.ts"
+
+        TsDefnTranslator.Output(
+          barrelPath,
+          barrelTree,
+          TsValue.TsModuleId(NEList("index")),
+          CompilerProduct.Definition,
+          isBarrel = true,
+        )
     }
   }
 
@@ -202,25 +210,28 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       val runtimeImports = usedTypes.filter(t => t.module == TsTypes.runtimeModule).map(_.name).sorted.distinct
       val fixtureImports = usedTypes.filter(t => t.module == TsTypes.fixtureModule).map(_.name).sorted.distinct
 
-      val userTypes = usedTypes.filterNot(t =>
-        t.module == TsTypes.runtimeModule ||
-        t.module == TsTypes.fixtureModule ||
-        t.module == TsTypes.predefModule
+      val userTypes = usedTypes.filterNot(
+        t =>
+          t.module == TsTypes.runtimeModule ||
+          t.module == TsTypes.fixtureModule ||
+          t.module == TsTypes.predefModule
       )
 
       val userImportsByModule = userTypes.groupBy(_.module).toList.sortBy(_._1.parts.mkString("/"))
 
       // Build alias map: when the same name appears from multiple modules, alias the non-primary ones
       val nameToModules = userTypes.groupBy(_.name).filter(_._2.map(_.module).distinct.size > 1)
-      val aliasMap = scala.collection.mutable.Map.empty[(TsValue.TsModuleId, String), String]
+      val aliasMap      = scala.collection.mutable.Map.empty[(TsValue.TsModuleId, String), String]
 
-      nameToModules.foreach { case (name, types) =>
-        val modules = types.map(_.module).distinct.sortBy(_.parts.mkString("/"))
-        // The last module (typically the latest/current version) keeps the original name
-        modules.init.foreach { mod =>
-          val suffix = mod.parts.last.replace('-', '_')
-          aliasMap((mod, name)) = s"${name}__${suffix}"
-        }
+      nameToModules.foreach {
+        case (name, types) =>
+          val modules = types.map(_.module).distinct.sortBy(_.parts.mkString("/"))
+          // The last module (typically the latest/current version) keeps the original name
+          modules.init.foreach {
+            mod =>
+              val suffix = mod.parts.last.replace('-', '_')
+              aliasMap((mod, name)) = s"${name}__$suffix"
+          }
       }
 
       val runtimeImportLine = if (runtimeImports.nonEmpty) {
@@ -233,26 +244,29 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         List(q"""import { ${fixtureImports.mkString(", ")} } from "$relPath";""")
       } else Nil
 
-      val userImportLines = userImportsByModule.flatMap { case (mod, types) =>
-        val targetFile = findModuleFile(mod, allOutputs)
-        targetFile.flatMap { tf =>
-          val targetBase = tf.stripSuffix(".ts")
-          if (targetBase == selfBase) None
-          else {
-            val relPath = computeRelativePath(selfDir, targetBase)
-            val importParts = types.map(_.name).sorted.distinct.map { name =>
-              aliasMap.get((mod, name)) match {
-                case Some(alias) => s"$name as $alias"
-                case None        => name
+      val userImportLines = userImportsByModule.flatMap {
+        case (mod, types) =>
+          val targetFile = findModuleFile(mod, allOutputs)
+          targetFile.flatMap {
+            tf =>
+              val targetBase = tf.stripSuffix(".ts")
+              if (targetBase == selfBase) None
+              else {
+                val relPath = computeRelativePath(selfDir, targetBase)
+                val importParts = types.map(_.name).sorted.distinct.map {
+                  name =>
+                    aliasMap.get((mod, name)) match {
+                      case Some(alias) => s"$name as $alias"
+                      case None        => name
+                    }
+                }
+                Some(q"""import { ${importParts.mkString(", ")} } from "$relPath";""")
               }
-            }
-            Some(q"""import { ${importParts.mkString(", ")} } from "$relPath";""")
           }
-        }
       }
 
       val allImports = (runtimeImportLine ++ fixtureImportLine ++ userImportLines).joinN()
-      val full = Seq(allImports, o.tree).joinNN()
+      val full       = Seq(allImports, o.tree).joinNN()
 
       full.mapRender {
         case t: TsValue.TsType =>
@@ -279,7 +293,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       common += 1
     }
 
-    val ups = fromParts.length - common
+    val ups   = fromParts.length - common
     val downs = toParts.drop(common)
 
     val prefix = if (ups == 0) "./" else "../" * ups

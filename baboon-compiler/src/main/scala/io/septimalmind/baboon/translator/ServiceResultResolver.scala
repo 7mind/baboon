@@ -58,7 +58,7 @@ object ServiceResultResolver {
   )
 
   val knownPragmaKeys: Seq[(String, String)] = for {
-    (_, prefix) <- pragmaPrefix.toSeq.sortBy(_._1)
+    (_, prefix)           <- pragmaPrefix.toSeq.sortBy(_._1)
     (suffix, description) <- pragmaSuffixes
   } yield (s"$prefix$suffix", description)
 
@@ -74,10 +74,12 @@ object ServiceResultResolver {
     val pattern    = merged.get("pattern").orElse(cliConfig.pattern)
 
     val hkt = if (merged.get("hkt").exists(_.toBoolean)) {
-      Some(HktConfig(
-        name      = merged.getOrElse("hkt.name", "F"),
-        signature = merged.getOrElse("hkt.signature", "[+_, +_]"),
-      ))
+      Some(
+        HktConfig(
+          name      = merged.getOrElse("hkt.name", "F"),
+          signature = merged.getOrElse("hkt.signature", "[+_, +_]"),
+        )
+      )
     } else {
       cliConfig.hkt
     }

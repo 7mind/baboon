@@ -7,7 +7,8 @@ import io.septimalmind.baboon.lsp._
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.parser.model.issues.IssuePrinter.IssuePrinterListOps
 import io.septimalmind.baboon.BaboonModeAxis
-import io.septimalmind.baboon.typer.model.BaboonFamily
+import io.septimalmind.baboon.scheme.BaboonSchemeRenderer
+import io.septimalmind.baboon.typer.model.{BaboonFamily, Pkg, Version}
 import io.septimalmind.baboon.util.BLogger
 import izumi.functional.bio.impl.BioEither
 import izumi.functional.bio.unsafe.MaybeSuspend2
@@ -47,6 +48,12 @@ object Baboon {
       |  :dart                    Generate Dart 3+ code
       |  :lsp                     Start LSP server
       |  :explore                 Start interactive explorer
+      |  :scheme                  Emit a cleaned-up single .baboon file for a domain version
+      |
+      |Scheme options (:scheme):
+      |  --domain <name>          Domain name (e.g., 'my.domain.name')
+      |  --version <version>      Version string (e.g., '1.0.0')
+      |  --target <file>          Target output file path
       |
       |C# options (:cs):
       |  --output <dir>           Output directory for generated code
@@ -78,6 +85,7 @@ object Baboon {
       |  baboon --model-dir ./models :lsp
       |  baboon --model-dir ./models :lsp --port 5007
       |  baboon --model-dir ./models :explore
+      |  baboon --model-dir ./models :scheme --domain=my.pkg --version=1.0.0 --target=./cleaned.baboon
       |""".stripMargin
 
   def main(args: Array[String]): Unit = {
@@ -96,6 +104,7 @@ object Baboon {
     new MultiModalArgsParserImpl().parse(args).merge match {
       case MultiModalArgs(generalArgs, modalities) =>
         val isExploreMode = modalities.exists { case ModalityArgs(id, _) => id == "explore" }
+        val isSchemeMode  = modalities.exists { case ModalityArgs(id, _) => id == "scheme" }
         val _             = isLspMode || modalities.exists { case ModalityArgs(id, _) => id == "lsp" }
 
         if (isLspMode) {
@@ -140,6 +149,29 @@ object Baboon {
             import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
 
             exploreEntrypoint(directoryInputs, individualInputs)
+          }
+          out match {
+            case Left(value) =>
+              System.err.println(value.toList.niceList())
+              System.exit(1)
+              ()
+            case Right(_) =>
+              System.exit(0)
+              ()
+          }
+        } else if (isSchemeMode) {
+          val schemeModality = modalities.find(_.id == "scheme").get
+          val out = for {
+            generalOptions <- CaseApp.parse[CLIOptions](generalArgs).leftMap(e => NEList(s"Can't parse generic CLI: $e"))
+            schemeOptions  <- CaseApp.parse[SchemeCLIOptions](schemeModality.args).leftMap(e => NEList(s"Can't parse scheme CLI: $e"))
+          } yield {
+            val directoryInputs  = generalOptions._1.modelDir.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+            val individualInputs = generalOptions._1.model.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
+
+            import izumi.distage.modules.support.unsafe.EitherSupport.{defaultModuleEither, quasiIOEither, quasiIORunnerEither}
+            import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+            schemeEntrypoint(directoryInputs, individualInputs, schemeOptions._1)
           }
           out match {
             case Left(value) =>
@@ -411,10 +443,11 @@ object Baboon {
   }
 
   private def parsePragmas(raw: List[String]): Map[String, String] = {
-    raw.flatMap { s =>
-      val idx = s.indexOf('=')
-      if (idx > 0) Some(s.substring(0, idx).trim -> s.substring(idx + 1).trim)
-      else None
+    raw.flatMap {
+      s =>
+        val idx = s.indexOf('=')
+        if (idx > 0) Some(s.substring(0, idx).trim -> s.substring(idx + 1).trim)
+        else None
     }.toMap
   }
 
@@ -429,10 +462,12 @@ object Baboon {
   private def mkServiceResult(opts: SharedCLIOptions, default: ServiceResultConfig): ServiceResultConfig = {
     val hkt = opts match {
       case sc: ScalaHktCLIOptions if sc.serviceResultHkt.getOrElse(false) =>
-        Some(HktConfig(
-          name      = sc.serviceResultHktName.getOrElse("F"),
-          signature = sc.serviceResultHktSignature.getOrElse("[+_, +_]"),
-        ))
+        Some(
+          HktConfig(
+            name      = sc.serviceResultHktName.getOrElse("F"),
+            signature = sc.serviceResultHktSignature.getOrElse("[+_, +_]"),
+          )
+        )
       case _ => default.hkt
     }
     ServiceResultConfig(
@@ -590,6 +625,72 @@ object Baboon {
     }
   }
 
+  private def schemeEntrypoint(
+    directoryInputs: Set[FSPath],
+    individualInputs: Set[FSPath],
+    schemeOptions: SchemeCLIOptions,
+  )(implicit
+    quasiIO: QuasiIO[Either[Throwable, _]],
+    runner: QuasiIORunner[Either[Throwable, _]],
+    error2: Error2[EitherF],
+    maybeSuspend2: MaybeSuspend2[EitherF],
+    parallelAccumulatingOps2: ParallelErrorAccumulatingOps2[EitherF],
+    tag: TagKK[EitherF],
+    defaultModule2: DefaultModule2[EitherF],
+  ): Unit = {
+    val options = CompilerOptions(
+      debug                    = false,
+      individualInputs         = individualInputs,
+      directoryInputs          = directoryInputs,
+      targets                  = Seq.empty,
+      metaWriteEvolutionJsonTo = None,
+      lockFile                 = None,
+    )
+    val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
+    import PathTools.*
+
+    runner.run {
+      Injector
+        .NoCycles[EitherF[Throwable, _]]()
+        .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
+          (loader: BaboonLoader[EitherF], logger: BLogger, renderer: BaboonSchemeRenderer) =>
+            for {
+              inputModels <- F.maybeSuspend(individualInputs.map(_.toPath) ++ directoryInputs.flatMap {
+                dir =>
+                  IzFiles
+                    .walk(dir.toFile)
+                    .filter(_.toFile.getName.endsWith(".baboon"))
+              })
+              _ <- F.maybeSuspend {
+                logger.message(s"Inputs: ${inputModels.map(_.toFile.getCanonicalPath).toList.sorted.niceList()}")
+              }
+
+              loadedModels <- loader.load(inputModels.toList).catchAll {
+                value =>
+                  System.err.println("Loader failed")
+                  System.err.println(value.toList.stringifyIssues)
+                  sys.exit(4)
+              }
+
+              pkg     = Pkg(NEList.unsafeFrom(schemeOptions.domain.split("\\.").toList))
+              version = Version.parse(schemeOptions.version)
+
+              result <- F.fromEither(renderer.render(loadedModels, pkg, version).left.map(e => new RuntimeException(e)))
+
+              _ <- F.maybeSuspend {
+                val targetPath = Paths.get(schemeOptions.target)
+                val parent     = targetPath.getParent
+                if (parent != null) {
+                  java.nio.file.Files.createDirectories(parent)
+                }
+                java.nio.file.Files.writeString(targetPath, result)
+                logger.message(s"Scheme written to: ${targetPath.toAbsolutePath}")
+              }
+            } yield {}
+        }
+    }
+  }
+
   private def lspEntrypoint[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2: TagKK: DefaultModule2](
     directoryInputs: Set[FSPath],
     individualInputs: Set[FSPath],
@@ -619,10 +720,13 @@ object Baboon {
 
       Injector
         .NoCycles[F[Throwable, _]]()
-        .produceRun(new ModuleDef {
-          include(m)
-          include(lspModule)
-        }, Activation(BaboonModeAxis.Lsp)) {
+        .produceRun(
+          new ModuleDef {
+            include(m)
+            include(lspModule)
+          },
+          Activation(BaboonModeAxis.Lsp),
+        ) {
           (launcher: LspLauncher, logger: BLogger) =>
             F.maybeSuspend {
               logger.message(LspLogging.Context, "Starting Baboon LSP server...")

@@ -31,12 +31,13 @@ object DepsOfCommand extends Command {
                 } else {
                   val sb = new StringBuilder
                   sb.append(s"${Colors.CYAN}${Colors.GREEN}$typeName${Colors.CYAN} depends on:${Colors.RESET}\n")
-                  userDeps.foreach { id =>
-                    val kind = dom.defs.meta.nodes.get(id) match {
-                      case Some(u: DomainMember.User) => kindOf(u)
-                      case _ => ""
-                    }
-                    sb.append(s"  ${Colors.BLUE}$kind${Colors.RESET} ${Colors.GREEN}${id.name.name}${Colors.RESET}\n")
+                  userDeps.foreach {
+                    id =>
+                      val kind = dom.defs.meta.nodes.get(id) match {
+                        case Some(u: DomainMember.User) => kindOf(u)
+                        case _                          => ""
+                      }
+                      sb.append(s"  ${Colors.BLUE}$kind${Colors.RESET} ${Colors.GREEN}${id.name.name}${Colors.RESET}\n")
                   }
                   Right(sb.toString().stripSuffix("\n"))
                 }
@@ -48,12 +49,12 @@ object DepsOfCommand extends Command {
   private def kindOf(member: DomainMember.User): String = {
     import io.septimalmind.baboon.typer.model.Typedef.*
     member.defn match {
-      case _: Dto => "data"
-      case _: Adt => "adt"
-      case _: Enum => "enum"
-      case _: Foreign => "foreign"
+      case _: Dto      => "data"
+      case _: Adt      => "adt"
+      case _: Enum     => "enum"
+      case _: Foreign  => "foreign"
       case _: Contract => "mixin"
-      case _: Service => "service"
+      case _: Service  => "service"
     }
   }
 

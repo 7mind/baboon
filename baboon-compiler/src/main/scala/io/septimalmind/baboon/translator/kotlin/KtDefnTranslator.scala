@@ -76,16 +76,18 @@ object KtDefnTranslator {
         codecReg = registrations,
       )
 
-      val wiringOutput = wiringTranslator.translate(defn).map { wiringTree =>
-        val pkg = trans.toKtPkg(domain.id, domain.version, evo)
-        val wrapped = ktTrees.inPkg(pkg.parts.toSeq, wiringTree)
-        Output(
-          getOutputPath(defn, suffix = Some("Wiring")),
-          wrapped,
-          pkg,
-          CompilerProduct.Definition,
-        )
-      }.toList
+      val wiringOutput = wiringTranslator
+        .translate(defn).map {
+          wiringTree =>
+            val pkg     = trans.toKtPkg(domain.id, domain.version, evo)
+            val wrapped = ktTrees.inPkg(pkg.parts.toSeq, wiringTree)
+            Output(
+              getOutputPath(defn, suffix = Some("Wiring")),
+              wrapped,
+              pkg,
+              CompilerProduct.Definition,
+            )
+        }.toList
 
       F.pure(mainOutput :: wiringOutput)
     }
@@ -115,7 +117,7 @@ object KtDefnTranslator {
       val srcRef = trans.toKtTypeRefKeepForeigns(defn.id, domain, evo)
       val ns     = srcRef.pkg.parts
 
-      val fixtureTree       = codecsFixture.translate(defn)
+      val fixtureTree        = codecsFixture.translate(defn)
       val fixtureTreeWithPkg = fixtureTree.map(t => ktTrees.inPkg(ns.toSeq, t))
 
       fixtureTreeWithPkg
@@ -144,16 +146,17 @@ object KtDefnTranslator {
 
     override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
       val rtTree = wiringTranslator.translateServiceRt(domain)
-      val result = rtTree.map { tree =>
-        val pkg = trans.toKtPkg(domain.id, domain.version, evo)
-        val wrapped = ktTrees.inPkg(pkg.parts.toSeq, tree)
-        val fbase = ktFiles.basename(domain, evo)
-        Output(
-          s"$fbase/BaboonServiceRt.kt",
-          wrapped,
-          pkg,
-          CompilerProduct.Definition,
-        )
+      val result = rtTree.map {
+        tree =>
+          val pkg     = trans.toKtPkg(domain.id, domain.version, evo)
+          val wrapped = ktTrees.inPkg(pkg.parts.toSeq, tree)
+          val fbase   = ktFiles.basename(domain, evo)
+          Output(
+            s"$fbase/BaboonServiceRt.kt",
+            wrapped,
+            pkg,
+            CompilerProduct.Definition,
+          )
       }.toList
       F.pure(result)
     }
@@ -163,7 +166,7 @@ object KtDefnTranslator {
       val srcRef    = trans.toKtTypeRefKeepForeigns(defn.id, domain, evo)
       val ns        = srcRef.pkg.parts
 
-      val testTree       = codecTests.translate(defn, ktTypeRef, srcRef)
+      val testTree        = codecTests.translate(defn, ktTypeRef, srcRef)
       val testTreeWithPkg = testTree.map(t => ktTrees.inPkg(ns.toSeq, t))
 
       testTreeWithPkg
@@ -235,7 +238,7 @@ object KtDefnTranslator {
           val contractFieldNames = collectContractFieldNames(dto.contracts)
           val params = dto.fields.map {
             f =>
-              val t = trans.asKtNullableRef(f.tpe, domain, evo)
+              val t      = trans.asKtNullableRef(f.tpe, domain, evo)
               val prefix = if (contractFieldNames.contains(f.name.name)) "override val" else "val"
               q"$prefix ${f.name.name}: $t"
           }
@@ -249,8 +252,8 @@ object KtDefnTranslator {
 
           val parentsList = adtParent match {
             case Some(adtType) =>
-              if (interfaceParents.nonEmpty) q" : ${adtType}(), ${interfaceParents.map(t => q"$t").join(", ")}"
-              else q" : ${adtType}()"
+              if (interfaceParents.nonEmpty) q" : $adtType(), ${interfaceParents.map(t => q"$t").join(", ")}"
+              else q" : $adtType()"
             case None =>
               if (interfaceParents.nonEmpty) q" : ${interfaceParents.map(t => q"$t").join(", ")}"
               else q""
@@ -259,7 +262,7 @@ object KtDefnTranslator {
           val objectMetaFields = mainMeta.map(_.valueField) ++ codecMeta
           val classMetaFields  = mainMeta.map(mt => q"override ${mt.refValueField}")
 
-          val hasFields = params.nonEmpty
+          val hasFields    = params.nonEmpty
           val classKeyword = if (hasFields) "data class" else "class"
 
           val paramsBlock = if (hasFields) {
@@ -277,7 +280,7 @@ object KtDefnTranslator {
           } else q""
 
           DefnRepr(
-            q"""$classKeyword ${name.asName}${paramsBlock}${parentsList} {
+            q"""$classKeyword ${name.asName}$paramsBlock$parentsList {
                |  ${classMetaFields.joinN().shift(2).trim}
                |  ${emptyClassMethods.shift(2).trim}
                |
@@ -318,8 +321,8 @@ object KtDefnTranslator {
 
         case adt: Typedef.Adt =>
           val contractParents = adt.contracts.map(c => trans.toKtTypeRefKeepForeigns(c, domain, evo))
-          val parents = (contractParents :+ genMarker).distinct
-          val parentsList = if (parents.nonEmpty) q" : ${parents.map(t => q"$t").join(", ")}" else q""
+          val parents         = (contractParents :+ genMarker).distinct
+          val parentsList     = if (parents.nonEmpty) q" : ${parents.map(t => q"$t").join(", ")}" else q""
 
           val memberTrees = adt.members.map {
             mid =>
@@ -333,7 +336,7 @@ object KtDefnTranslator {
           val classMetaFields  = mainMeta.map(mt => q"override ${mt.refValueField}")
 
           DefnRepr(
-            q"""sealed class ${name.asName}${parentsList} {
+            q"""sealed class ${name.asName}$parentsList {
                |  ${classMetaFields.joinN().shift(2).trim}
                |
                |  ${memberTrees.map(_.defn).toList.joinNN().shift(2).trim}
@@ -352,11 +355,11 @@ object KtDefnTranslator {
               q"val ${f.name.name}: $t"
           }
           val contractParents = contract.contracts.map(c => trans.toKtTypeRefKeepForeigns(c, domain, evo))
-          val parents = (contractParents :+ genMarker).distinct
-          val parentsList = if (parents.nonEmpty) q" : ${parents.map(t => q"$t").join(", ")}" else q""
-          val body = if (methods.nonEmpty) methods.joinN() else q""
+          val parents         = (contractParents :+ genMarker).distinct
+          val parentsList     = if (parents.nonEmpty) q" : ${parents.map(t => q"$t").join(", ")}" else q""
+          val body            = if (methods.nonEmpty) methods.joinN() else q""
           DefnRepr(
-            q"""interface ${name.asName}${parentsList} {
+            q"""interface ${name.asName}$parentsList {
                |  ${body.shift(2).trim}
                |}""".stripMargin,
             Nil,
@@ -366,15 +369,15 @@ object KtDefnTranslator {
           val resolved    = ServiceResultResolver.resolve(domain, "kotlin", target.language.serviceResult, target.language.pragmas)
           val resolvedCtx = ServiceContextResolver.resolve(domain, "kotlin", target.language.serviceContext, target.language.pragmas)
           val ctxParam = resolvedCtx match {
-            case ResolvedServiceContext.NoContext                => ""
-            case ResolvedServiceContext.AbstractContext(tn, pn)  => s"$pn: $tn, "
-            case ResolvedServiceContext.ConcreteContext(tn, pn)  => s"$pn: $tn, "
+            case ResolvedServiceContext.NoContext               => ""
+            case ResolvedServiceContext.AbstractContext(tn, pn) => s"$pn: $tn, "
+            case ResolvedServiceContext.ConcreteContext(tn, pn) => s"$pn: $tn, "
           }
           val methods = service.methods.map {
             m =>
-              val in     = trans.asKtRef(m.sig, domain, evo)
-              val out    = m.out.map(trans.asKtRef(_, domain, evo))
-              val err    = m.err.map(trans.asKtRef(_, domain, evo))
+              val in  = trans.asKtRef(m.sig, domain, evo)
+              val out = m.out.map(trans.asKtRef(_, domain, evo))
+              val err = m.err.map(trans.asKtRef(_, domain, evo))
               val ktFqName: KtValue => String = {
                 case t: KtValue.KtType     => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
                 case t: KtValue.KtTypeName => t.name
@@ -388,15 +391,17 @@ object KtDefnTranslator {
             resolved.traitTypeParam,
             resolvedCtx match {
               case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
-              case _                                            => None
+              case _                                             => None
             },
           ).flatten
           val traitTypeParam = if (typeParams.nonEmpty) typeParams.mkString("<", ", ", ">") else ""
-          val body = if (methods.nonEmpty) methods.joinN() else q""
-          val resultImportHint = resolved.resultType.filter(_ != "Unit").map { rt =>
-            val ktType = KtValue.KtType(baboonRuntimePkg, rt)
-            q"private typealias _${service.id.name.name}SvcResult<L, R> = $ktType<L, R>\n\n"
-          }.getOrElse(q"")
+          val body           = if (methods.nonEmpty) methods.joinN() else q""
+          val resultImportHint = resolved.resultType
+            .filter(_ != "Unit").map {
+              rt =>
+                val ktType = KtValue.KtType(baboonRuntimePkg, rt)
+                q"private typealias _${service.id.name.name}SvcResult<L, R> = $ktType<L, R>\n\n"
+            }.getOrElse(q"")
           DefnRepr(
             q"""${resultImportHint}interface ${name.asName}$traitTypeParam {
                |  ${body.shift(2).trim}
@@ -409,12 +414,13 @@ object KtDefnTranslator {
     }
 
     private def collectContractFieldNames(contracts: List[TypeId.User]): Set[String] = {
-      contracts.flatMap { contractId =>
-        domain.defs.meta.nodes.get(contractId) match {
-          case Some(DomainMember.User(_, ct: Typedef.Contract, _, _)) =>
-            ct.fields.map(_.name.name) ++ collectContractFieldNames(ct.contracts)
-          case _ => Seq.empty
-        }
+      contracts.flatMap {
+        contractId =>
+          domain.defs.meta.nodes.get(contractId) match {
+            case Some(DomainMember.User(_, ct: Typedef.Contract, _, _)) =>
+              ct.fields.map(_.name.name) ++ collectContractFieldNames(ct.contracts)
+            case _ => Seq.empty
+          }
       }.toSet
     }
 

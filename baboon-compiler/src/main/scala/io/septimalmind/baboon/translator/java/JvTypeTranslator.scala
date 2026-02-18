@@ -37,23 +37,23 @@ class JvTypeTranslator {
     tpe match {
       case b: TypeId.BuiltinScalar =>
         b match {
-          case TypeId.Builtins.bit  => jvBoolean
-          case TypeId.Builtins.i08  => jvByte
-          case TypeId.Builtins.i16  => jvShort
-          case TypeId.Builtins.i32  => jvInt
-          case TypeId.Builtins.i64  => jvLong
-          case TypeId.Builtins.u08  => jvShort   // next-wider signed
-          case TypeId.Builtins.u16  => jvInt     // next-wider signed
-          case TypeId.Builtins.u32  => jvLong    // next-wider signed
-          case TypeId.Builtins.u64  => jvLong    // same width, use unsigned utility methods
-          case TypeId.Builtins.f32  => jvFloat
-          case TypeId.Builtins.f64  => jvDouble
-          case TypeId.Builtins.f128 => jvBigDecimal
-          case TypeId.Builtins.str  => jvString
-          case TypeId.Builtins.bytes => jvByteString
-          case TypeId.Builtins.uid   => jvUid
+          case TypeId.Builtins.bit                       => jvBoolean
+          case TypeId.Builtins.i08                       => jvByte
+          case TypeId.Builtins.i16                       => jvShort
+          case TypeId.Builtins.i32                       => jvInt
+          case TypeId.Builtins.i64                       => jvLong
+          case TypeId.Builtins.u08                       => jvShort // next-wider signed
+          case TypeId.Builtins.u16                       => jvInt // next-wider signed
+          case TypeId.Builtins.u32                       => jvLong // next-wider signed
+          case TypeId.Builtins.u64                       => jvLong // same width, use unsigned utility methods
+          case TypeId.Builtins.f32                       => jvFloat
+          case TypeId.Builtins.f64                       => jvDouble
+          case TypeId.Builtins.f128                      => jvBigDecimal
+          case TypeId.Builtins.str                       => jvString
+          case TypeId.Builtins.bytes                     => jvByteString
+          case TypeId.Builtins.uid                       => jvUid
           case TypeId.Builtins.tso | TypeId.Builtins.tsu => jvOffsetDateTime
-          case other => throw new IllegalArgumentException(s"Unexpected: $other")
+          case other                                     => throw new IllegalArgumentException(s"Unexpected: $other")
         }
       case TypeId.Builtins.map => jvMap
       case TypeId.Builtins.lst => jvList
@@ -70,18 +70,18 @@ class JvTypeTranslator {
     tpe match {
       case b: TypeId.BuiltinScalar =>
         b match {
-          case TypeId.Builtins.bit  => jvBoxedBoolean
-          case TypeId.Builtins.i08  => jvBoxedByte
-          case TypeId.Builtins.i16  => jvBoxedShort
-          case TypeId.Builtins.i32  => jvBoxedInteger
-          case TypeId.Builtins.i64  => jvBoxedLong
-          case TypeId.Builtins.u08  => jvBoxedShort
-          case TypeId.Builtins.u16  => jvBoxedInteger
-          case TypeId.Builtins.u32  => jvBoxedLong
-          case TypeId.Builtins.u64  => jvBoxedLong
-          case TypeId.Builtins.f32  => jvBoxedFloat
-          case TypeId.Builtins.f64  => jvBoxedDouble
-          case other                => asJvType(tpe, domain, evo) // non-primitive builtins are already boxed
+          case TypeId.Builtins.bit => jvBoxedBoolean
+          case TypeId.Builtins.i08 => jvBoxedByte
+          case TypeId.Builtins.i16 => jvBoxedShort
+          case TypeId.Builtins.i32 => jvBoxedInteger
+          case TypeId.Builtins.i64 => jvBoxedLong
+          case TypeId.Builtins.u08 => jvBoxedShort
+          case TypeId.Builtins.u16 => jvBoxedInteger
+          case TypeId.Builtins.u32 => jvBoxedLong
+          case TypeId.Builtins.u64 => jvBoxedLong
+          case TypeId.Builtins.f32 => jvBoxedFloat
+          case TypeId.Builtins.f64 => jvBoxedDouble
+          case other               => asJvType(tpe, domain, evo) // non-primitive builtins are already boxed
         }
       case _ => asJvType(tpe, domain, evo)
     }
@@ -151,9 +151,9 @@ class JvTypeTranslator {
   def effectiveJvPkg(owner: Owner, domain: Domain, evo: BaboonEvolution): JvPackageId = {
     val basePkg = toJvPkg(domain.id, domain.version, evo)
     owner match {
-      case Owner.Toplevel  => basePkg
-      case Owner.Ns(path)  => JvPackageId(NEList.unsafeFrom(basePkg.parts.toList ++ path.map(_.name.toLowerCase)))
-      case Owner.Adt(id)   => effectiveJvPkg(id.owner, domain, evo)
+      case Owner.Toplevel => basePkg
+      case Owner.Ns(path) => JvPackageId(NEList.unsafeFrom(basePkg.parts.toList ++ path.map(_.name.toLowerCase)))
+      case Owner.Adt(id)  => effectiveJvPkg(id.owner, domain, evo)
     }
   }
 }

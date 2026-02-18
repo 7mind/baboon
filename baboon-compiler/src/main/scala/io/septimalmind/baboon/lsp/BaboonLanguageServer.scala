@@ -14,7 +14,7 @@ class BaboonLanguageServer(
   hoverProvider: HoverProvider,
   completionProvider: CompletionProvider,
   documentSymbolProvider: DocumentSymbolProvider,
-  exitCallback: () => Unit
+  exitCallback: () => Unit,
 ) {
 
   private var transport: LspTransport = _
@@ -103,28 +103,33 @@ class BaboonLanguageServer(
         exitCallback()
 
       case "textDocument/didOpen" =>
-        params.flatMap(_.as[DidOpenTextDocumentParams].toOption).foreach { p =>
-          documentState.open(p.textDocument.uri, p.textDocument.text)
-          recompileAndPublishDiagnostics()
+        params.flatMap(_.as[DidOpenTextDocumentParams].toOption).foreach {
+          p =>
+            documentState.open(p.textDocument.uri, p.textDocument.text)
+            recompileAndPublishDiagnostics()
         }
 
       case "textDocument/didChange" =>
-        params.flatMap(_.as[DidChangeTextDocumentParams].toOption).foreach { p =>
-          p.contentChanges.lastOption.foreach { change =>
-            documentState.update(p.textDocument.uri, change.text)
-          }
+        params.flatMap(_.as[DidChangeTextDocumentParams].toOption).foreach {
+          p =>
+            p.contentChanges.lastOption.foreach {
+              change =>
+                documentState.update(p.textDocument.uri, change.text)
+            }
         }
 
       case "textDocument/didSave" =>
-        params.flatMap(_.as[DidSaveTextDocumentParams].toOption).foreach { p =>
-          p.text.foreach(text => documentState.update(p.textDocument.uri, text))
-          recompileAndPublishDiagnostics()
+        params.flatMap(_.as[DidSaveTextDocumentParams].toOption).foreach {
+          p =>
+            p.text.foreach(text => documentState.update(p.textDocument.uri, text))
+            recompileAndPublishDiagnostics()
         }
 
       case "textDocument/didClose" =>
-        params.flatMap(_.as[DidCloseTextDocumentParams].toOption).foreach { p =>
-          documentState.close(p.textDocument.uri)
-          publishDiagnostics(p.textDocument.uri, Seq.empty)
+        params.flatMap(_.as[DidCloseTextDocumentParams].toOption).foreach {
+          p =>
+            documentState.close(p.textDocument.uri)
+            publishDiagnostics(p.textDocument.uri, Seq.empty)
         }
 
       case _ =>
@@ -134,26 +139,32 @@ class BaboonLanguageServer(
   }
 
   private def initialize(params: InitializeParams): InitializeResult = {
-    params.workspaceFolders.foreach { folders =>
-      folders.foreach { folder =>
-        workspaceState.addWorkspaceFolder(folder.uri)
-      }
+    params.workspaceFolders.foreach {
+      folders =>
+        folders.foreach {
+          folder =>
+            workspaceState.addWorkspaceFolder(folder.uri)
+        }
     }
     params.rootUri.foreach(workspaceState.addWorkspaceFolder)
 
     val capabilities = ServerCapabilities(
-      textDocumentSync = Some(TextDocumentSyncOptions(
-        openClose = true,
-        change = TextDocumentSyncKind.Full,
-        save = Some(SaveOptions(includeText = true))
-      )),
+      textDocumentSync = Some(
+        TextDocumentSyncOptions(
+          openClose = true,
+          change    = TextDocumentSyncKind.Full,
+          save      = Some(SaveOptions(includeText = true)),
+        )
+      ),
       definitionProvider = Some(true),
-      hoverProvider = Some(true),
-      completionProvider = Some(CompletionOptions(
-        triggerCharacters = Some(Seq(".", ":", "[")),
-        resolveProvider = Some(false)
-      )),
-      documentSymbolProvider = Some(true)
+      hoverProvider      = Some(true),
+      completionProvider = Some(
+        CompletionOptions(
+          triggerCharacters = Some(Seq(".", ":", "[")),
+          resolveProvider   = Some(false),
+        )
+      ),
+      documentSymbolProvider = Some(true),
     )
 
     InitializeResult(capabilities)
@@ -171,22 +182,24 @@ class BaboonLanguageServer(
 
   private def publishDiagnosticsForResult(compilationResult: CompilationResult): Unit = {
     // Publish diagnostics for all files that have issues
-    compilationResult.fileIssues.keys.foreach { uri =>
-      val diagnostics = diagnosticsProvider.getDiagnostics(uri, compilationResult)
-      publishDiagnostics(uri, diagnostics)
+    compilationResult.fileIssues.keys.foreach {
+      uri =>
+        val diagnostics = diagnosticsProvider.getDiagnostics(uri, compilationResult)
+        publishDiagnostics(uri, diagnostics)
     }
 
     // Clear diagnostics for open documents that no longer have issues
-    documentState.getOpenDocuments.foreach { uri =>
-      if (!compilationResult.fileIssues.contains(uri)) {
-        publishDiagnostics(uri, Seq.empty)
-      }
+    documentState.getOpenDocuments.foreach {
+      uri =>
+        if (!compilationResult.fileIssues.contains(uri)) {
+          publishDiagnostics(uri, Seq.empty)
+        }
     }
   }
 
   private def publishDiagnostics(uri: String, diagnostics: Seq[Diagnostic]): Unit = {
     if (transport != null) {
-      val params = PublishDiagnosticsParams(uri, diagnostics)
+      val params       = PublishDiagnosticsParams(uri, diagnostics)
       val notification = JsonRpcMessage.encodeNotification("textDocument/publishDiagnostics", params.asJson)
       transport.writeMessage(notification)
     }

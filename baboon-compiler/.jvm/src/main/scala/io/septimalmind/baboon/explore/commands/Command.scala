@@ -43,13 +43,13 @@ class CommandRegistry(ctx: ExploreContext[EitherF]) {
       case Some(cmdName) =>
         commands.get(cmdName.toLowerCase) match {
           case Some(cmd) => cmd.execute(parts.tail, ctx)
-          case None => Left(s"Unknown command: $cmdName. Type 'help' for available commands.")
+          case None      => Left(s"Unknown command: $cmdName. Type 'help' for available commands.")
         }
     }
   }
 
   def completeCommand(buffer: String, cursor: Int): Seq[String] = {
-    val parts = parseLine(buffer.take(cursor))
+    val parts       = parseLine(buffer.take(cursor))
     val currentWord = if (buffer.endsWith(" ")) "" else parts.lastOption.getOrElse("")
 
     if (parts.length <= 1 && !buffer.endsWith(" ")) {

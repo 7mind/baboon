@@ -46,92 +46,94 @@ object RsCodecTestsTranslator {
       val testFnName    = toSnakeCaseRaw(srcRef.name)
       val fixtureMethod = fixtureMethodName(definition)
 
-      val jsonTests = codecs.filter(_.isActive(definition.id)).collect {
-        case _: RsJsonCodecGenerator =>
-          val jsonRoundTrip = definition.defn match {
-            case _: Typedef.Adt =>
-              q"""let fixtures = super::${fixtureMethod}_all(&mut rnd);
-                 |for fixture in fixtures {
-                 |    let json = serde_json::to_value(&fixture).expect("JSON encode failed");
-                 |    let decoded: $srcRef = serde_json::from_value(json.clone()).expect("JSON decode failed");
-                 |    assert_eq!(fixture, decoded);
-                 |}""".stripMargin
-            case _: Typedef.Enum =>
-              q"""for fixture in $srcRef::all() {
-                 |    let json = serde_json::to_value(&fixture).expect("JSON encode failed");
-                 |    let decoded: $srcRef = serde_json::from_value(json.clone()).expect("JSON decode failed");
-                 |    assert_eq!(fixture, decoded);
-                 |}""".stripMargin
-            case _ =>
-              q"""let fixture = super::$fixtureMethod(&mut rnd);
-                 |let json = serde_json::to_value(&fixture).expect("JSON encode failed");
-                 |let decoded: $srcRef = serde_json::from_value(json.clone()).expect("JSON decode failed");
-                 |assert_eq!(fixture, decoded);""".stripMargin
-          }
+      val jsonTests = codecs
+        .filter(_.isActive(definition.id)).collect {
+          case _: RsJsonCodecGenerator =>
+            val jsonRoundTrip = definition.defn match {
+              case _: Typedef.Adt =>
+                q"""let fixtures = super::${fixtureMethod}_all(&mut rnd);
+                   |for fixture in fixtures {
+                   |    let json = serde_json::to_value(&fixture).expect("JSON encode failed");
+                   |    let decoded: $srcRef = serde_json::from_value(json.clone()).expect("JSON decode failed");
+                   |    assert_eq!(fixture, decoded);
+                   |}""".stripMargin
+              case _: Typedef.Enum =>
+                q"""for fixture in $srcRef::all() {
+                   |    let json = serde_json::to_value(&fixture).expect("JSON encode failed");
+                   |    let decoded: $srcRef = serde_json::from_value(json.clone()).expect("JSON decode failed");
+                   |    assert_eq!(fixture, decoded);
+                   |}""".stripMargin
+              case _ =>
+                q"""let fixture = super::$fixtureMethod(&mut rnd);
+                   |let json = serde_json::to_value(&fixture).expect("JSON encode failed");
+                   |let decoded: $srcRef = serde_json::from_value(json.clone()).expect("JSON decode failed");
+                   |assert_eq!(fixture, decoded);""".stripMargin
+            }
 
-          q"""#[test]
-             |fn test_${testFnName}_json_codec() {
-             |    for _ in 0..${target.generic.codecTestIterations.toString} {
-             |        let mut rnd = crate::baboon_fixture::BaboonRandom::new();
-             |        ${jsonRoundTrip.shift(8).trim}
-             |    }
-             |}
-             |
-             |#[test]
-             |fn test_${testFnName}_json_cross_language() {
-             |    let tpeid = "${definition.id.render}";
-             |    let path = format!("./../target/cs/json-default/{}.json", tpeid);
-             |    let path = std::path::Path::new(&path);
-             |    if !path.exists() {
-             |        eprintln!("Skipping cross-language test: {:?} not found", path);
-             |        return;
-             |    }
-             |    let data = std::fs::read_to_string(path).expect("Failed to read JSON file");
-             |    let decoded: $srcRef = serde_json::from_str(&data).expect("Failed to decode cross-language JSON");
-             |    let re_encoded = serde_json::to_value(&decoded).expect("Failed to re-encode");
-             |    let re_decoded: $srcRef = serde_json::from_value(re_encoded).expect("Failed to decode re-encoded");
-             |    assert_eq!(decoded, re_decoded);
-             |}""".stripMargin
-      }.toList
+            q"""#[test]
+               |fn test_${testFnName}_json_codec() {
+               |    for _ in 0..${target.generic.codecTestIterations.toString} {
+               |        let mut rnd = crate::baboon_fixture::BaboonRandom::new();
+               |        ${jsonRoundTrip.shift(8).trim}
+               |    }
+               |}
+               |
+               |#[test]
+               |fn test_${testFnName}_json_cross_language() {
+               |    let tpeid = "${definition.id.render}";
+               |    let path = format!("./../target/cs/json-default/{}.json", tpeid);
+               |    let path = std::path::Path::new(&path);
+               |    if !path.exists() {
+               |        eprintln!("Skipping cross-language test: {:?} not found", path);
+               |        return;
+               |    }
+               |    let data = std::fs::read_to_string(path).expect("Failed to read JSON file");
+               |    let decoded: $srcRef = serde_json::from_str(&data).expect("Failed to decode cross-language JSON");
+               |    let re_encoded = serde_json::to_value(&decoded).expect("Failed to re-encode");
+               |    let re_decoded: $srcRef = serde_json::from_value(re_encoded).expect("Failed to decode re-encoded");
+               |    assert_eq!(decoded, re_decoded);
+               |}""".stripMargin
+        }.toList
 
-      val uebaTests = codecs.filter(_.isActive(definition.id)).collect {
-        case _: RsUEBACodecGenerator =>
-          val uebaRoundTrip = definition.defn match {
-            case _: Typedef.Adt =>
-              q"""let fixtures = super::${fixtureMethod}_all(&mut rnd);
-                 |for fixture in fixtures {
-                 |    let mut buf = Vec::new();
-                 |    crate::baboon_runtime::BaboonBinEncode::encode_ueba(&fixture, &ctx, &mut buf).expect("UEBA encode failed");
-                 |    let mut cursor = std::io::Cursor::new(&buf);
-                 |    let decoded = <$srcRef as crate::baboon_runtime::BaboonBinDecode>::decode_ueba(&ctx, &mut cursor).expect("UEBA decode failed");
-                 |    assert_eq!(fixture, decoded);
-                 |}""".stripMargin
-            case _: Typedef.Enum =>
-              q"""for fixture in $srcRef::all() {
-                 |    let mut buf = Vec::new();
-                 |    crate::baboon_runtime::BaboonBinEncode::encode_ueba(&fixture, &ctx, &mut buf).expect("UEBA encode failed");
-                 |    let mut cursor = std::io::Cursor::new(&buf);
-                 |    let decoded = <$srcRef as crate::baboon_runtime::BaboonBinDecode>::decode_ueba(&ctx, &mut cursor).expect("UEBA decode failed");
-                 |    assert_eq!(fixture, decoded);
-                 |}""".stripMargin
-            case _ =>
-              q"""let fixture = super::$fixtureMethod(&mut rnd);
-                 |let mut buf = Vec::new();
-                 |crate::baboon_runtime::BaboonBinEncode::encode_ueba(&fixture, &ctx, &mut buf).expect("UEBA encode failed");
-                 |let mut cursor = std::io::Cursor::new(&buf);
-                 |let decoded = <$srcRef as crate::baboon_runtime::BaboonBinDecode>::decode_ueba(&ctx, &mut cursor).expect("UEBA decode failed");
-                 |assert_eq!(fixture, decoded);""".stripMargin
-          }
+      val uebaTests = codecs
+        .filter(_.isActive(definition.id)).collect {
+          case _: RsUEBACodecGenerator =>
+            val uebaRoundTrip = definition.defn match {
+              case _: Typedef.Adt =>
+                q"""let fixtures = super::${fixtureMethod}_all(&mut rnd);
+                   |for fixture in fixtures {
+                   |    let mut buf = Vec::new();
+                   |    crate::baboon_runtime::BaboonBinEncode::encode_ueba(&fixture, &ctx, &mut buf).expect("UEBA encode failed");
+                   |    let mut cursor = std::io::Cursor::new(&buf);
+                   |    let decoded = <$srcRef as crate::baboon_runtime::BaboonBinDecode>::decode_ueba(&ctx, &mut cursor).expect("UEBA decode failed");
+                   |    assert_eq!(fixture, decoded);
+                   |}""".stripMargin
+              case _: Typedef.Enum =>
+                q"""for fixture in $srcRef::all() {
+                   |    let mut buf = Vec::new();
+                   |    crate::baboon_runtime::BaboonBinEncode::encode_ueba(&fixture, &ctx, &mut buf).expect("UEBA encode failed");
+                   |    let mut cursor = std::io::Cursor::new(&buf);
+                   |    let decoded = <$srcRef as crate::baboon_runtime::BaboonBinDecode>::decode_ueba(&ctx, &mut cursor).expect("UEBA decode failed");
+                   |    assert_eq!(fixture, decoded);
+                   |}""".stripMargin
+              case _ =>
+                q"""let fixture = super::$fixtureMethod(&mut rnd);
+                   |let mut buf = Vec::new();
+                   |crate::baboon_runtime::BaboonBinEncode::encode_ueba(&fixture, &ctx, &mut buf).expect("UEBA encode failed");
+                   |let mut cursor = std::io::Cursor::new(&buf);
+                   |let decoded = <$srcRef as crate::baboon_runtime::BaboonBinDecode>::decode_ueba(&ctx, &mut cursor).expect("UEBA decode failed");
+                   |assert_eq!(fixture, decoded);""".stripMargin
+            }
 
-          q"""#[test]
-             |fn test_${testFnName}_ueba_codec() {
-             |    let ctx = crate::baboon_runtime::BaboonCodecContext::Default;
-             |    for _ in 0..${target.generic.codecTestIterations.toString} {
-             |        let mut rnd = crate::baboon_fixture::BaboonRandom::new();
-             |        ${uebaRoundTrip.shift(8).trim}
-             |    }
-             |}""".stripMargin
-      }.toList
+            q"""#[test]
+               |fn test_${testFnName}_ueba_codec() {
+               |    let ctx = crate::baboon_runtime::BaboonCodecContext::Default;
+               |    for _ in 0..${target.generic.codecTestIterations.toString} {
+               |        let mut rnd = crate::baboon_fixture::BaboonRandom::new();
+               |        ${uebaRoundTrip.shift(8).trim}
+               |    }
+               |}""".stripMargin
+        }.toList
 
       (jsonTests ++ uebaTests).joinNN()
     }

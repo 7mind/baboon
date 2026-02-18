@@ -85,29 +85,32 @@ object JvDefnTranslator {
         codecReg = registrations,
       )
 
-      val codecOutputs = repr.codecDefs.map { codecDef =>
-        val fbase = jvFiles.basename(domain, evo)
-        val codecPkg = effectivePkg(codecDef.owner)
-        val subdir = ownerSubdir(codecDef.owner)
-        val fname = s"${codecDef.className}.java"
-        val wrapped = jvTrees.inPkg(codecPkg.parts.toSeq, codecDef.tree)
-        Output(
-          s"$fbase$subdir/$fname",
-          wrapped,
-          codecPkg,
-          CompilerProduct.Definition,
-        )
+      val codecOutputs = repr.codecDefs.map {
+        codecDef =>
+          val fbase    = jvFiles.basename(domain, evo)
+          val codecPkg = effectivePkg(codecDef.owner)
+          val subdir   = ownerSubdir(codecDef.owner)
+          val fname    = s"${codecDef.className}.java"
+          val wrapped  = jvTrees.inPkg(codecPkg.parts.toSeq, codecDef.tree)
+          Output(
+            s"$fbase$subdir/$fname",
+            wrapped,
+            codecPkg,
+            CompilerProduct.Definition,
+          )
       }
 
-      val wiringOutput = wiringTranslator.translate(defn).map { wiringTree =>
-        val wrapped = jvTrees.inPkg(pkg.parts.toSeq, wiringTree)
-        Output(
-          getOutputPath(defn, suffix = Some("Wiring")),
-          wrapped,
-          pkg,
-          CompilerProduct.Definition,
-        )
-      }.toList
+      val wiringOutput = wiringTranslator
+        .translate(defn).map {
+          wiringTree =>
+            val wrapped = jvTrees.inPkg(pkg.parts.toSeq, wiringTree)
+            Output(
+              getOutputPath(defn, suffix = Some("Wiring")),
+              wrapped,
+              pkg,
+              CompilerProduct.Definition,
+            )
+        }.toList
 
       F.pure(mainOutput :: (codecOutputs ++ wiringOutput))
     }
@@ -166,16 +169,17 @@ object JvDefnTranslator {
 
     override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
       val rtTree = wiringTranslator.translateServiceRt(domain)
-      val result = rtTree.map { tree =>
-        val pkg = trans.toJvPkg(domain.id, domain.version, evo)
-        val wrapped = jvTrees.inPkg(pkg.parts.toSeq, tree)
-        val fbase = jvFiles.basename(domain, evo)
-        Output(
-          s"$fbase/BaboonServiceRt.java",
-          wrapped,
-          pkg,
-          CompilerProduct.Definition,
-        )
+      val result = rtTree.map {
+        tree =>
+          val pkg     = trans.toJvPkg(domain.id, domain.version, evo)
+          val wrapped = jvTrees.inPkg(pkg.parts.toSeq, tree)
+          val fbase   = jvFiles.basename(domain, evo)
+          Output(
+            s"$fbase/BaboonServiceRt.java",
+            wrapped,
+            pkg,
+            CompilerProduct.Definition,
+          )
       }.toList
       F.pure(result)
     }
@@ -211,10 +215,12 @@ object JvDefnTranslator {
 
       val repr = makeRepr(defn, jvTypeRef, isLatestVersion)
 
-      val ownCodecDefs = codecs.toList.flatMap { c =>
-        c.translate(defn, jvTypeRef, srcRef).map { tree =>
-          CodecDef(c.codecName(srcRef, defn.defn.id.owner).name, defn.defn.id.owner, deprecatePrevious(tree))
-        }
+      val ownCodecDefs = codecs.toList.flatMap {
+        c =>
+          c.translate(defn, jvTypeRef, srcRef).map {
+            tree =>
+              CodecDef(c.codecName(srcRef, defn.defn.id.owner).name, defn.defn.id.owner, deprecatePrevious(tree))
+          }
       }
 
       val defnRepr = deprecatePrevious(repr.defn)
@@ -238,7 +244,7 @@ object JvDefnTranslator {
           List(CodecReg(defn.id, jvTypeRef, srcRef, q"\"${defn.id.toString}\"", codecsReg.toMap))
       }
 
-      val allRegs = reg ++ repr.codecs
+      val allRegs      = reg ++ repr.codecs
       val allCodecDefs = ownCodecDefs ++ repr.codecDefs
 
       DefnRepr(content, allCodecDefs, allRegs)
@@ -296,10 +302,10 @@ object JvDefnTranslator {
       }
 
       val interfaceParents = (adtParent ++ adtMarker ++ contractParents :+ genMarker).distinct
-      val implementsList = interfaceParents.map(t => q"$t").join(", ")
+      val implementsList   = interfaceParents.map(t => q"$t").join(", ")
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
-      val hasFields = params.nonEmpty
+      val hasFields        = params.nonEmpty
 
       val paramsBlock = if (hasFields) {
         q"""(
@@ -327,7 +333,7 @@ object JvDefnTranslator {
       } else q""
 
       DefnRepr(
-        q"""public record ${name.asName}${paramsBlock} implements ${implementsList} {
+        q"""public record ${name.asName}$paramsBlock implements $implementsList {
            |  ${staticMetaFields.joinN().shift(2).trim}
            |  ${emptyRecordMethods.shift(2).trim}
            |}""".stripMargin,
@@ -387,8 +393,8 @@ object JvDefnTranslator {
       codecMeta: Iterable[TextTree[JvValue]],
     ): DefnRepr = {
       val contractParents = adt.contracts.map(c => trans.toJvTypeRefKeepForeigns(c, domain, evo))
-      val parents = (contractParents :+ genMarker).distinct
-      val parentsList = parents.map(t => q"$t").join(", ")
+      val parents         = (contractParents :+ genMarker).distinct
+      val parentsList     = parents.map(t => q"$t").join(", ")
 
       val memberTrees = adt.members.map {
         mid =>
@@ -398,9 +404,10 @@ object JvDefnTranslator {
           }
       }
 
-      val memberNames = adt.members.map { mid =>
-        val memberName = mid.name.name.capitalize
-        q"${name.asName}.$memberName"
+      val memberNames = adt.members.map {
+        mid =>
+          val memberName = mid.name.name.capitalize
+          q"${name.asName}.$memberName"
       }.toList
 
       val permitsClause = q" permits ${memberNames.join(", ")}"
@@ -408,7 +415,7 @@ object JvDefnTranslator {
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
 
       DefnRepr(
-        q"""public sealed interface ${name.asName} extends ${parentsList}${permitsClause} {
+        q"""public sealed interface ${name.asName} extends $parentsList$permitsClause {
            |  ${staticMetaFields.joinN().shift(2).trim}
            |
            |  ${memberTrees.map(_.defn).toList.joinNN().shift(2).trim}
@@ -433,15 +440,15 @@ object JvDefnTranslator {
         case Owner.Adt(adtId) => Seq(trans.toJvTypeRefKeepForeigns(adtId, domain, evo))
         case _                => Seq.empty
       }
-      val parents = (adtParent ++ contractParents :+ genMarker).distinct
+      val parents     = (adtParent ++ contractParents :+ genMarker).distinct
       val parentsList = parents.map(t => q"$t").join(", ")
-      val body = if (methods.nonEmpty) methods.joinN() else q""
+      val body        = if (methods.nonEmpty) methods.joinN() else q""
       val sealedModifier = contract.id.owner match {
         case Owner.Adt(_) => "non-sealed"
         case _            => ""
       }
       DefnRepr(
-        q"""public $sealedModifier interface ${name.asName} extends ${parentsList} {
+        q"""public $sealedModifier interface ${name.asName} extends $parentsList {
            |  ${body.shift(2).trim}
            |}""".stripMargin,
         Nil,
@@ -462,9 +469,9 @@ object JvDefnTranslator {
       }
       val methods = service.methods.map {
         m =>
-          val in     = trans.asJvRef(m.sig, domain, evo)
-          val out    = m.out.map(trans.asJvRef(_, domain, evo))
-          val err    = m.err.map(trans.asJvRef(_, domain, evo))
+          val in  = trans.asJvRef(m.sig, domain, evo)
+          val out = m.out.map(trans.asJvRef(_, domain, evo))
+          val err = m.err.map(trans.asJvRef(_, domain, evo))
           val jvFqName: JvValue => String = {
             case t: JvValue.JvType     => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
             case t: JvValue.JvTypeName => t.name
@@ -472,17 +479,17 @@ object JvDefnTranslator {
           val outStr = out.map(_.mapRender(jvFqName)).getOrElse("void")
           val errStr = err.map(_.mapRender(jvFqName))
           val retStr = resolved.renderReturnType(outStr, errStr, "void")
-          q"$retStr ${m.name.name}(${ctxParam}$in arg);"
+          q"$retStr ${m.name.name}($ctxParam$in arg);"
       }
       val typeParams = Seq(
         resolved.traitTypeParam,
         resolvedCtx match {
           case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
-          case _                                            => None
+          case _                                             => None
         },
       ).flatten
       val traitTypeParam = if (typeParams.nonEmpty) typeParams.mkString("<", ", ", ">") else ""
-      val body = if (methods.nonEmpty) methods.joinN() else q""
+      val body           = if (methods.nonEmpty) methods.joinN() else q""
       DefnRepr(
         q"""public interface ${name.asName}$traitTypeParam {
            |  ${body.shift(2).trim}
@@ -493,12 +500,13 @@ object JvDefnTranslator {
     }
 
     private def collectContractFieldNames(contracts: List[TypeId.User]): Set[String] = {
-      contracts.flatMap { contractId =>
-        domain.defs.meta.nodes.get(contractId) match {
-          case Some(DomainMember.User(_, ct: Typedef.Contract, _, _)) =>
-            ct.fields.map(_.name.name) ++ collectContractFieldNames(ct.contracts)
-          case _ => Seq.empty
-        }
+      contracts.flatMap {
+        contractId =>
+          domain.defs.meta.nodes.get(contractId) match {
+            case Some(DomainMember.User(_, ct: Typedef.Contract, _, _)) =>
+              ct.fields.map(_.name.name) ++ collectContractFieldNames(ct.contracts)
+            case _ => Seq.empty
+          }
       }.toSet
     }
 
@@ -513,10 +521,10 @@ object JvDefnTranslator {
     }
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
-      val fbase = jvFiles.basename(domain, evo)
-      val subdir = ownerSubdir(defn.defn.id.owner)
+      val fbase    = jvFiles.basename(domain, evo)
+      val subdir   = ownerSubdir(defn.defn.id.owner)
       val javaName = defn.id.name.name.capitalize
-      val fname = s"$javaName${suffix.getOrElse("")}.java"
+      val fname    = s"$javaName${suffix.getOrElse("")}.java"
       s"$fbase$subdir/$fname"
     }
   }

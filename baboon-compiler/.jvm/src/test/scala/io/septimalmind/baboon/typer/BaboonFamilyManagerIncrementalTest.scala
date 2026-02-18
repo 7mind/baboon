@@ -20,7 +20,7 @@ import org.scalatest.wordspec.AnyWordSpec
 
 class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
   private type EitherF[+E, +A] = Either[E, A]
-  private implicit val error2: Error2[EitherF] = BioEither
+  private implicit val error2: Error2[EitherF]               = BioEither
   private implicit val maybeSuspend2: MaybeSuspend2[EitherF] = new MaybeSuspend2[EitherF]
   private implicit val parallel2: ParallelErrorAccumulatingOps2[EitherF] = new ParallelErrorAccumulatingOps2[EitherF] {
     override def InnerF: Error2[EitherF] = BioEither
@@ -40,10 +40,10 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
 
   "BaboonFamilyManager.reload" should {
     "retype only affected versions and later versions of the same domain" in {
-      val parser = new TestParser[EitherF]
-      val typer = new CountingTyper[EitherF]
+      val parser     = new TestParser[EitherF]
+      val typer      = new CountingTyper[EitherF]
       val comparator = new TestComparator[EitherF]
-      val validator = new NoopValidator[EitherF]
+      val validator  = new NoopValidator[EitherF]
       val manager = new BaboonFamilyManager.BaboonFamilyManagerImpl[EitherF](
         parser,
         typer,
@@ -53,8 +53,8 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
         FileContentProviderNoop,
       )
 
-      val inputV1 = input("/test/foo-1.baboon", "foo|1.0.0")
-      val inputV2 = input("/test/foo-2.baboon", "foo|2.0.0")
+      val inputV1    = input("/test/foo-1.baboon", "foo|1.0.0")
+      val inputV2    = input("/test/foo-2.baboon", "foo|2.0.0")
       val inputOther = input("/test/bar-1.baboon", "bar|1.0.0")
 
       val initial = manager.load(List(inputV1, inputV2, inputOther)).toOption.get
@@ -74,10 +74,10 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
     }
 
     "retype only the changed version when no later versions exist" in {
-      val parser = new TestParser[EitherF]
-      val typer = new CountingTyper[EitherF]
+      val parser     = new TestParser[EitherF]
+      val typer      = new CountingTyper[EitherF]
       val comparator = new TestComparator[EitherF]
-      val validator = new NoopValidator[EitherF]
+      val validator  = new NoopValidator[EitherF]
       val manager = new BaboonFamilyManager.BaboonFamilyManagerImpl[EitherF](
         parser,
         typer,
@@ -99,7 +99,7 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
       manager.reload(Some(initial), reloadInputs).toOption.get
 
       typer.processedKeys shouldBe Set(
-        DomainKey("foo", "1.0.0"),
+        DomainKey("foo", "1.0.0")
       )
     }
   }
@@ -114,14 +114,14 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
 
   private final class TestParser[F[+_, +_]: Error2] extends BaboonParser[F] {
     override def parse(input: BaboonParser.Input): F[NEList[BaboonIssue], RawDomain] = {
-      val F = implicitly[Error2[F]]
-      val parts = input.content.split("\\|").toList
-      val pkg = parts.headOption.getOrElse("default")
-      val version = parts.drop(1).headOption.getOrElse("1.0.0")
-      val meta = RawNodeMeta(InputPointer.JustFile(input.path))
-      val header = RawHeader(meta, pkg.split("\\.").toSeq)
+      val F          = implicitly[Error2[F]]
+      val parts      = input.content.split("\\|").toList
+      val pkg        = parts.headOption.getOrElse("default")
+      val version    = parts.drop(1).headOption.getOrElse("1.0.0")
+      val meta       = RawNodeMeta(InputPointer.JustFile(input.path))
+      val header     = RawHeader(meta, pkg.split("\\.").toSeq)
       val rawVersion = RawVersion(meta, version)
-      val domain = RawDomain(header, rawVersion, Seq.empty, None, RawContent(Seq.empty, Seq.empty))
+      val domain     = RawDomain(header, rawVersion, Seq.empty, None, RawContent(Seq.empty, Seq.empty))
       F.pure(domain)
     }
   }
@@ -136,14 +136,14 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
     }
 
     override def process(rawDomain: RawDomain): F[NEList[BaboonIssue], Domain] = {
-      val F = implicitly[Error2[F]]
+      val F   = implicitly[Error2[F]]
       val key = DomainKey(rawDomain.header.name.mkString("."), rawDomain.version.value)
       seen = seen + key
       F.pure(toDomain(rawDomain))
     }
 
     private def toDomain(rawDomain: RawDomain): Domain = {
-      val pkg = Pkg(NEList.unsafeFrom(rawDomain.header.name.toList))
+      val pkg     = Pkg(NEList.unsafeFrom(rawDomain.header.name.toList))
       val version = Version.parse(rawDomain.version.value)
       Domain(
         pkg,
@@ -166,7 +166,7 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
       pkg: Pkg,
       versions: NEMap[Version, Domain],
     ): F[NEList[BaboonIssue], BaboonEvolution] = {
-      val F = implicitly[Error2[F]]
+      val F      = implicitly[Error2[F]]
       val latest = versions.keySet.toList.sorted(Version.ordering).last
       F.pure(BaboonEvolution(pkg, latest, Map.empty, Map.empty, Map.empty))
     }

@@ -23,8 +23,8 @@ class JvmBaboonCompilerTest extends AnyWordSpec with Matchers {
 
   "JvmBaboonCompiler.reload" should {
     "forward previous family and mark all inputs as unparsed" in {
-      val manager = new RecordingManager[EitherF]
-      val runner = new EitherRunner
+      val manager  = new RecordingManager[EitherF]
+      val runner   = new EitherRunner
       val compiler = new JvmBaboonCompiler[EitherF](manager, runner)
 
       val inputA = BaboonParser.Input(path("a.baboon"), "content-a")
@@ -59,10 +59,10 @@ class JvmBaboonCompilerTest extends AnyWordSpec with Matchers {
 
   private final class RecordingManager[F[+_, +_]: Error2] extends BaboonFamilyManager[F] {
     @volatile private var last: List[BaboonParser.ReloadInput] = List.empty
-    @volatile private var prev: Option[BaboonFamily] = None
+    @volatile private var prev: Option[BaboonFamily]           = None
 
     def lastReloadInputs: List[BaboonParser.ReloadInput] = last
-    def lastPrevious: Option[BaboonFamily] = prev
+    def lastPrevious: Option[BaboonFamily]               = prev
 
     override def load(
       definitions: List[BaboonParser.Input]
@@ -73,7 +73,7 @@ class JvmBaboonCompilerTest extends AnyWordSpec with Matchers {
 
     override def reload(
       previous: Option[BaboonFamily],
-      definitions: List[BaboonParser.ReloadInput]
+      definitions: List[BaboonParser.ReloadInput],
     ): F[NEList[BaboonIssue], BaboonFamily] = {
       last = definitions
       prev = previous
@@ -83,7 +83,7 @@ class JvmBaboonCompilerTest extends AnyWordSpec with Matchers {
   }
 
   private def makeFamily(): BaboonFamily = {
-    val pkg = Pkg(NEList("x"))
+    val pkg     = Pkg(NEList("x"))
     val version = Version.parse("1.0.0")
     val domain = Domain(
       pkg,
@@ -99,7 +99,7 @@ class JvmBaboonCompilerTest extends AnyWordSpec with Matchers {
       Map.empty,
     )
     val evolution = BaboonEvolution(pkg, version, Map.empty, Map.empty, Map.empty)
-    val lineage = BaboonLineage(pkg, NEMap.from(Map(version -> domain)).getOrElse(throw new IllegalStateException("Empty lineage")), evolution)
+    val lineage   = BaboonLineage(pkg, NEMap.from(Map(version -> domain)).getOrElse(throw new IllegalStateException("Empty lineage")), evolution)
     BaboonFamily(NEMap.from(Map(pkg -> lineage)).getOrElse(throw new IllegalStateException("Empty family")), BaboonFamilyCache.empty)
   }
 

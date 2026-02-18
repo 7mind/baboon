@@ -76,16 +76,18 @@ object ScDefnTranslator {
         codecReg = registrations,
       )
 
-      val wiringOutput = wiringTranslator.translate(defn).map { wiringTree =>
-        val pkg = trans.toScPkg(domain.id, domain.version, evo)
-        val wrapped = scTrees.inNs(pkg.parts.toSeq, wiringTree)
-        Output(
-          getOutputPath(defn, suffix = Some("_Wiring")),
-          wrapped,
-          pkg,
-          CompilerProduct.Definition,
-        )
-      }.toList
+      val wiringOutput = wiringTranslator
+        .translate(defn).map {
+          wiringTree =>
+            val pkg     = trans.toScPkg(domain.id, domain.version, evo)
+            val wrapped = scTrees.inNs(pkg.parts.toSeq, wiringTree)
+            Output(
+              getOutputPath(defn, suffix = Some("_Wiring")),
+              wrapped,
+              pkg,
+              CompilerProduct.Definition,
+            )
+        }.toList
 
       F.pure(mainOutput :: wiringOutput)
     }
@@ -142,16 +144,17 @@ object ScDefnTranslator {
 
     override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
       val rtTree = wiringTranslator.translateServiceRt(domain)
-      val result = rtTree.map { tree =>
-        val pkg = trans.toScPkg(domain.id, domain.version, evo)
-        val wrapped = scTrees.inNs(pkg.parts.toSeq, tree)
-        val fbase = scFiles.basename(domain, evo)
-        Output(
-          s"$fbase/BaboonServiceRt.scala",
-          wrapped,
-          pkg,
-          CompilerProduct.Definition,
-        )
+      val result = rtTree.map {
+        tree =>
+          val pkg     = trans.toScPkg(domain.id, domain.version, evo)
+          val wrapped = scTrees.inNs(pkg.parts.toSeq, tree)
+          val fbase   = scFiles.basename(domain, evo)
+          Output(
+            s"$fbase/BaboonServiceRt.scala",
+            wrapped,
+            pkg,
+            CompilerProduct.Definition,
+          )
       }.toList
       F.pure(result)
     }
@@ -345,15 +348,15 @@ object ScDefnTranslator {
           val resolved    = ServiceResultResolver.resolve(domain, "scala", target.language.serviceResult, target.language.pragmas)
           val resolvedCtx = ServiceContextResolver.resolve(domain, "scala", target.language.serviceContext, target.language.pragmas)
           val ctxParam = resolvedCtx match {
-            case ResolvedServiceContext.NoContext                       => ""
-            case ResolvedServiceContext.AbstractContext(tn, pn)        => s"$pn: $tn, "
-            case ResolvedServiceContext.ConcreteContext(tn, pn)        => s"$pn: $tn, "
+            case ResolvedServiceContext.NoContext               => ""
+            case ResolvedServiceContext.AbstractContext(tn, pn) => s"$pn: $tn, "
+            case ResolvedServiceContext.ConcreteContext(tn, pn) => s"$pn: $tn, "
           }
           val methods = service.methods.map {
             m =>
-              val in     = trans.asScRef(m.sig, domain, evo)
-              val out    = m.out.map(trans.asScRef(_, domain, evo))
-              val err    = m.err.map(trans.asScRef(_, domain, evo))
+              val in  = trans.asScRef(m.sig, domain, evo)
+              val out = m.out.map(trans.asScRef(_, domain, evo))
+              val err = m.err.map(trans.asScRef(_, domain, evo))
               val scFqName: ScValue => String = {
                 case t: ScValue.ScType     => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
                 case t: ScValue.ScTypeName => t.name
@@ -367,11 +370,11 @@ object ScDefnTranslator {
             resolved.traitTypeParam,
             resolvedCtx match {
               case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
-              case _                                            => None
+              case _                                             => None
             },
           ).flatten
           val traitTypeParam = if (typeParams.nonEmpty) typeParams.mkString("[", ", ", "]") else ""
-          val body = if (methods.nonEmpty) methods.joinN() else q""
+          val body           = if (methods.nonEmpty) methods.joinN() else q""
           DefnRepr(
             q"""trait ${name.asName}$traitTypeParam {
                |    ${body.shift(4).trim}

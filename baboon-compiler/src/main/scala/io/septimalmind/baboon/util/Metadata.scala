@@ -45,11 +45,12 @@ object BaboonDomainCodecs {
     override def apply(a: DerivationFailure.IncompatibleRenames): Json =
       Json.obj(
         "renames" -> a.incompatibleRenames
-          .map(r =>
-            Json.obj(
-              "oldField" -> r.oldField.asJson,
-              "newField" -> r.newField.asJson,
-            )
+          .map(
+            r =>
+              Json.obj(
+                "oldField" -> r.oldField.asJson,
+                "newField" -> r.newField.asJson,
+              )
           ).asJson
       )
   }

@@ -10,7 +10,7 @@ class DocumentState(pathOps: PathOps) {
   case class DocumentInfo(
     uri: String,
     content: String,
-    version: Int
+    version: Int,
   )
 
   def open(uri: String, content: String): Unit = {

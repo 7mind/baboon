@@ -34,7 +34,7 @@ object BaboonRules {
             val renamed = diff.changes.renamed.collect {
               case (newId, oldId)
                   if newId.owner == Owner.Adt(targetAdtId) &&
-                    oldId.owner == Owner.Adt(oldAdtId) =>
+                  oldId.owner == Owner.Adt(oldAdtId) =>
                 (oldId.name.name, newId)
             }
             adt.members.map(m => (m.name.name, m)).toMap ++ renamed
@@ -69,8 +69,8 @@ object BaboonRules {
             val deepChanged = diff.changes.deepModified.contains(id)
 
             // For renamed types, check if there's a diff entry (structure may have changed along with rename)
-            val hasDiff          = diff.diffs.contains(id)
-            val sameLocalStruct  = (unmodified || deepChanged) && !isRenamed || (isRenamed && !hasDiff)
+            val hasDiff         = diff.diffs.contains(id)
+            val sameLocalStruct = (unmodified || deepChanged) && !isRenamed || (isRenamed && !hasDiff)
 
             val shallowChanged = diff.changes.shallowModified.contains(id) || diff.changes.fullyModified
               .contains(id) || (isRenamed && hasDiff)
@@ -185,22 +185,23 @@ object BaboonRules {
 
                   renames = ops.collect { case op: DtoOp.RenameField => op }.toSet
 
-                  pureRenames = renames.filter(op => op.oldField.tpe == op.newField.tpe)
+                  pureRenames           = renames.filter(op => op.oldField.tpe == op.newField.tpe)
                   renamesWithTypeChange = renames.diff(pureRenames)
 
-                  incompatibleRenames = renamesWithTypeChange.filter { op =>
-                    !types.isCompatibleChange(op.oldField.tpe, op.newField.tpe)
+                  incompatibleRenames = renamesWithTypeChange.filter {
+                    op =>
+                      !types.isCompatibleChange(op.oldField.tpe, op.newField.tpe)
                   }
 
-                  pureRenameOps = pureRenames.map { op =>
-                    FieldOp.Rename(op.oldField.name, op.newField)
+                  pureRenameOps = pureRenames.map {
+                    op =>
+                      FieldOp.Rename(op.oldField.name, op.newField)
                   }
 
                   redefWrap = renamesWithTypeChange
                     .map(op => (op.oldField.tpe, op.newField.tpe, op))
                     .collect {
-                      case (o: TypeRef.Scalar, n: TypeRef.Constructor, op)
-                          if types.canBeWrappedIntoCollection(o, n) =>
+                      case (o: TypeRef.Scalar, n: TypeRef.Constructor, op) if types.canBeWrappedIntoCollection(o, n) =>
                         FieldOp.Redef(
                           op.oldField.name,
                           op.newField,
@@ -211,8 +212,7 @@ object BaboonRules {
                   redefPrecex = renamesWithTypeChange
                     .map(op => (op.oldField.tpe, op.newField.tpe, op))
                     .collect {
-                      case (o: TypeRef.Scalar, n: TypeRef.Scalar, op)
-                          if types.isPrecisionExpansion(o.id, n.id) =>
+                      case (o: TypeRef.Scalar, n: TypeRef.Scalar, op) if types.isPrecisionExpansion(o.id, n.id) =>
                         FieldOp.Redef(
                           op.oldField.name,
                           op.newField,
@@ -223,8 +223,7 @@ object BaboonRules {
                   redefSwap = renamesWithTypeChange
                     .map(op => (op.oldField.tpe, op.newField.tpe, op))
                     .collect {
-                      case (o: TypeRef.Constructor, n: TypeRef.Constructor, op)
-                          if types.canChangeCollectionType(o, n) =>
+                      case (o: TypeRef.Constructor, n: TypeRef.Constructor, op) if types.canChangeCollectionType(o, n) =>
                         FieldOp.Redef(
                           op.oldField.name,
                           op.newField,

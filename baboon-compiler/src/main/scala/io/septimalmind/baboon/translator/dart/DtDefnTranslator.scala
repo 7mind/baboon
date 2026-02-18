@@ -85,13 +85,14 @@ object DtDefnTranslator {
 
     private def doTranslateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       val fixtureTree = codecsFixture.translate(defn)
-      val result = fixtureTree.map { tree =>
-        Output(
-          getOutputPath(defn, suffix = Some("_fixture")),
-          tree,
-          getOutputModule(defn),
-          CompilerProduct.Fixture,
-        )
+      val result = fixtureTree.map {
+        tree =>
+          Output(
+            getOutputPath(defn, suffix = Some("_fixture")),
+            tree,
+            getOutputModule(defn),
+            CompilerProduct.Fixture,
+          )
       }.toList
       F.pure(result)
     }
@@ -104,35 +105,37 @@ object DtDefnTranslator {
     }
 
     private def doTranslateTest(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val dtTypeRef = trans.asDtType(defn.id, domain, evo)
-      val srcRef    = trans.toDtTypeRefKeepForeigns(defn.id, domain, evo)
-      val testPath  = getOutputPath(defn, suffix = Some("_test"))
-      val typePath  = getOutputPath(defn)
+      val dtTypeRef   = trans.asDtType(defn.id, domain, evo)
+      val srcRef      = trans.toDtTypeRefKeepForeigns(defn.id, domain, evo)
+      val testPath    = getOutputPath(defn, suffix = Some("_test"))
+      val typePath    = getOutputPath(defn)
       val fixturePath = getOutputPath(defn, suffix = Some("_fixture"))
-      val testTree  = codecTests.translate(defn, dtTypeRef, srcRef, testPath, typePath, fixturePath)
-      val result = testTree.map { tree =>
-        Output(
-          testPath,
-          tree,
-          getOutputModule(defn),
-          CompilerProduct.Test,
-          doNotModify = true,
-        )
+      val testTree    = codecTests.translate(defn, dtTypeRef, srcRef, testPath, typePath, fixturePath)
+      val result = testTree.map {
+        tree =>
+          Output(
+            testPath,
+            tree,
+            getOutputModule(defn),
+            CompilerProduct.Test,
+            doNotModify = true,
+          )
       }.toList
       F.pure(result)
     }
 
     override def translateServiceRt(): F[NEList[BaboonIssue], List[Output]] = {
       val rtTree = wiringTranslator.translateServiceRt(domain)
-      val result = rtTree.map { tree =>
-        val pkg   = trans.toDtPkg(domain.id, domain.version, evo)
-        val fbase = dtFiles.basename(domain, evo)
-        Output(
-          s"$fbase/baboon_service_rt.dart",
-          tree,
-          pkg,
-          CompilerProduct.Definition,
-        )
+      val result = rtTree.map {
+        tree =>
+          val pkg   = trans.toDtPkg(domain.id, domain.version, evo)
+          val fbase = dtFiles.basename(domain, evo)
+          Output(
+            s"$fbase/baboon_service_rt.dart",
+            tree,
+            pkg,
+            CompilerProduct.Definition,
+          )
       }.toList
       F.pure(result)
     }
@@ -224,26 +227,28 @@ object DtDefnTranslator {
       codecMeta: Iterable[TextTree[DtValue]],
     ): DefnRepr = {
       val contractFieldNames = collectContractFieldNames(dto.contracts)
-      val hasFields = dto.fields.nonEmpty
+      val hasFields          = dto.fields.nonEmpty
 
-      val fieldDeclarations = dto.fields.map { f =>
-        val t = trans.asDtRef(f.tpe, domain, evo)
-        val overridePrefix = if (contractFieldNames.contains(f.name.name)) "@override " else ""
-        f.tpe match {
-          case TypeRef.Constructor(TypeId.Builtins.opt, _) =>
-            q"${overridePrefix}final $t ${f.name.name};"
-          case _ =>
-            q"${overridePrefix}final $t ${f.name.name};"
-        }
+      val fieldDeclarations = dto.fields.map {
+        f =>
+          val t              = trans.asDtRef(f.tpe, domain, evo)
+          val overridePrefix = if (contractFieldNames.contains(f.name.name)) "@override " else ""
+          f.tpe match {
+            case TypeRef.Constructor(TypeId.Builtins.opt, _) =>
+              q"${overridePrefix}final $t ${f.name.name};"
+            case _ =>
+              q"${overridePrefix}final $t ${f.name.name};"
+          }
       }
 
-      val constructorParams = dto.fields.map { f =>
-        f.tpe match {
-          case TypeRef.Constructor(TypeId.Builtins.opt, _) =>
-            q"this.${f.name.name}"
-          case _ =>
-            q"required this.${f.name.name}"
-        }
+      val constructorParams = dto.fields.map {
+        f =>
+          f.tpe match {
+            case TypeRef.Constructor(TypeId.Builtins.opt, _) =>
+              q"this.${f.name.name}"
+            case _ =>
+              q"required this.${f.name.name}"
+          }
       }
 
       val contractParents = dto.contracts.map(c => trans.toDtTypeRefKeepForeigns(c, domain, evo))
@@ -255,12 +260,12 @@ object DtDefnTranslator {
       }
 
       val interfaceParents = (adtParent ++ adtMarker ++ contractParents :+ genMarker).distinct
-      val implementsList = interfaceParents.map(t => q"$t").join(", ")
+      val implementsList   = interfaceParents.map(t => q"$t").join(", ")
 
       val extendsClause = dto.id.owner match {
         case Owner.Adt(_) =>
           val adtType = adtParent.head
-          val ifaces = (adtMarker ++ contractParents :+ genMarker).distinct
+          val ifaces  = (adtMarker ++ contractParents :+ genMarker).distinct
           if (ifaces.nonEmpty) q" extends $adtType implements ${ifaces.map(t => q"$t").join(", ")}"
           else q" extends $adtType"
         case _ =>
@@ -335,13 +340,15 @@ object DtDefnTranslator {
       mainMeta: List[DtDomainTreeTools.MetaField],
       codecMeta: Iterable[TextTree[DtValue]],
     ): DefnRepr = {
-      val cases = e.members.map { m =>
-        q"${m.name}"
+      val cases = e.members.map {
+        m =>
+          q"${m.name}"
       }.toList
 
-      val parseCases = e.members.map { m =>
-        val obj = m.name.capitalize
-        q"'$obj' => $obj,"
+      val parseCases = e.members.map {
+        m =>
+          val obj = m.name.capitalize
+          q"'$obj' => $obj,"
       }.toList
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
@@ -373,15 +380,16 @@ object DtDefnTranslator {
       mainMeta: List[DtDomainTreeTools.MetaField],
       codecMeta: Iterable[TextTree[DtValue]],
     ): DefnRepr = {
-      val contractParents = adt.contracts.map(c => trans.toDtTypeRefKeepForeigns(c, domain, evo))
-      val parents = (contractParents :+ genMarker).distinct
+      val contractParents  = adt.contracts.map(c => trans.toDtTypeRefKeepForeigns(c, domain, evo))
+      val parents          = (contractParents :+ genMarker).distinct
       val implementsClause = if (parents.nonEmpty) q" implements ${parents.map(t => q"$t").join(", ")}" else q""
 
-      val memberTrees = adt.members.map { mid =>
-        domain.defs.meta.nodes(mid) match {
-          case mdefn: DomainMember.User => makeFullRepr(mdefn, inLib = false)
-          case other                    => throw new RuntimeException(s"BUG: missing/wrong adt member: $mid => $other")
-        }
+      val memberTrees = adt.members.map {
+        mid =>
+          domain.defs.meta.nodes(mid) match {
+            case mdefn: DomainMember.User => makeFullRepr(mdefn, inLib = false)
+            case other                    => throw new RuntimeException(s"BUG: missing/wrong adt member: $mid => $other")
+          }
       }
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
@@ -403,14 +411,15 @@ object DtDefnTranslator {
       name: DtType,
       genMarker: DtType,
     ): DefnRepr = {
-      val methods = contract.fields.map { f =>
-        val t = trans.asDtRef(f.tpe, domain, evo)
-        q"$t get ${f.name.name};"
+      val methods = contract.fields.map {
+        f =>
+          val t = trans.asDtRef(f.tpe, domain, evo)
+          q"$t get ${f.name.name};"
       }
-      val contractParents = contract.contracts.map(c => trans.toDtTypeRefKeepForeigns(c, domain, evo))
-      val parents = (contractParents :+ genMarker).distinct
+      val contractParents  = contract.contracts.map(c => trans.toDtTypeRefKeepForeigns(c, domain, evo))
+      val parents          = (contractParents :+ genMarker).distinct
       val implementsClause = if (parents.nonEmpty) q" implements ${parents.map(t => q"$t").join(", ")}" else q""
-      val body = if (methods.nonEmpty) methods.joinN() else q""
+      val body             = if (methods.nonEmpty) methods.joinN() else q""
 
       DefnRepr(
         q"""abstract interface class ${name.asName}$implementsClause {
@@ -425,11 +434,12 @@ object DtDefnTranslator {
       name: DtType,
     ): DefnRepr = {
       val service = defn.defn.asInstanceOf[Typedef.Service]
-      val methods = service.methods.map { m =>
-        val in  = trans.asDtRef(m.sig, domain, evo)
-        val out = m.out.map(trans.asDtRef(_, domain, evo))
-        val retStr = out.map(o => q"$o").getOrElse(q"void")
-        q"$retStr ${m.name.name}($in arg);"
+      val methods = service.methods.map {
+        m =>
+          val in     = trans.asDtRef(m.sig, domain, evo)
+          val out    = m.out.map(trans.asDtRef(_, domain, evo))
+          val retStr = out.map(o => q"$o").getOrElse(q"void")
+          q"$retStr ${m.name.name}($in arg);"
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
 
@@ -442,12 +452,13 @@ object DtDefnTranslator {
     }
 
     private def collectContractFieldNames(contracts: List[TypeId.User]): Set[String] = {
-      contracts.flatMap { contractId =>
-        domain.defs.meta.nodes.get(contractId) match {
-          case Some(DomainMember.User(_, ct: Typedef.Contract, _, _)) =>
-            ct.fields.map(_.name.name) ++ collectContractFieldNames(ct.contracts)
-          case _ => Seq.empty
-        }
+      contracts.flatMap {
+        contractId =>
+          domain.defs.meta.nodes.get(contractId) match {
+            case Some(DomainMember.User(_, ct: Typedef.Contract, _, _)) =>
+              ct.fields.map(_.name.name) ++ collectContractFieldNames(ct.contracts)
+            case _ => Seq.empty
+          }
       }.toSet
     }
 

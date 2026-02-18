@@ -50,12 +50,13 @@ object KtCodecTestsTranslator {
 
     private def makeTest(definition: DomainMember.User, srcRef: KtValue.KtType): TextTree[KtValue] = {
       val fixture = makeFixture(definition, domain, evo)
-      codecs.filter(_.isActive(definition.id)).map {
-        case jsonCodec: KtJsonCodecGenerator =>
-          val body      = jsonCodecAssertions(definition)
-          val codecName = jsonCodec.codecName(srcRef)
+      codecs
+        .filter(_.isActive(definition.id)).map {
+          case jsonCodec: KtJsonCodecGenerator =>
+            val body      = jsonCodecAssertions(definition)
+            val codecName = jsonCodec.codecName(srcRef)
 
-          q"""
+            q"""
              |@$ktTestAnnotation
              |fun `${srcRef.name} should support JSON codec`() {
              |  repeat(${target.generic.codecTestIterations.toString}) {
@@ -76,10 +77,10 @@ object KtCodecTestsTranslator {
              |}
              |"""
 
-        case uebaCodec: KtUEBACodecGenerator =>
-          val body      = uebaCodecAssertions(definition)
-          val codecName = uebaCodec.codecName(srcRef)
-          q"""
+          case uebaCodec: KtUEBACodecGenerator =>
+            val body      = uebaCodecAssertions(definition)
+            val codecName = uebaCodec.codecName(srcRef)
+            q"""
              |@$ktTestAnnotation
              |fun `${srcRef.name} should support UEBA codec`() {
              |  repeat(${target.generic.codecTestIterations.toString}) {
@@ -108,10 +109,10 @@ object KtCodecTestsTranslator {
              |}
              |"""
 
-        case unknown =>
-          logger.message(s"Cannot create codec tests (${unknown.codecName(srcRef)}) for unsupported type $srcRef")
-          q""
-      }.toList.map(_.stripMargin.trim).joinNN().shift(2).trim
+          case unknown =>
+            logger.message(s"Cannot create codec tests (${unknown.codecName(srcRef)}) for unsupported type $srcRef")
+            q""
+        }.toList.map(_.stripMargin.trim).joinNN().shift(2).trim
     }
 
     private def makeFixture(

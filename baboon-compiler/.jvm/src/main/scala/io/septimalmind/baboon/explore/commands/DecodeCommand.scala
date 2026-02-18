@@ -17,14 +17,14 @@ object DecodeCommand extends Command {
               case None =>
                 Left(s"Type not found: $typeName")
               case Some(member) =>
-                val hexStr = hexParts.mkString("")
+                val hexStr   = hexParts.mkString("")
                 val cleanHex = hexStr.replaceAll("[^0-9A-Fa-f]", "")
                 if (cleanHex.length % 2 != 0) {
                   Left("Invalid hex string: odd number of characters")
                 } else {
                   val bytes = cleanHex.grouped(2).map(s => Integer.parseInt(s, 16).toByte).toVector
 
-                  val pkg = ctx.currentPkg.get
+                  val pkg     = ctx.currentPkg.get
                   val version = ctx.currentVersion.get
 
                   ctx.decode(pkg, version, member.id.toString, bytes) match {

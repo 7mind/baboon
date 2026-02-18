@@ -18,7 +18,7 @@ class JsonRpcTransport(in: InputStream, out: OutputStream) extends LspTransport 
     Try {
       // Read headers
       var contentLength = -1
-      var line = reader.readLine()
+      var line          = reader.readLine()
 
       while (line != null && line.isEmpty) {
         line = reader.readLine()
@@ -37,7 +37,7 @@ class JsonRpcTransport(in: InputStream, out: OutputStream) extends LspTransport 
 
       if (contentLength > 0) {
         val buffer = new Array[Char](contentLength)
-        var read = 0
+        var read   = 0
         while (read < contentLength) {
           val n = reader.read(buffer, read, contentLength - read)
           if (n == -1) throw new EOFException("Unexpected end of stream")
@@ -53,8 +53,8 @@ class JsonRpcTransport(in: InputStream, out: OutputStream) extends LspTransport 
 
   override def writeMessage(json: Json): Unit = {
     val content = json.noSpaces
-    val bytes = content.getBytes(StandardCharsets.UTF_8)
-    val header = s"Content-Length: ${bytes.length}\r\n\r\n"
+    val bytes   = content.getBytes(StandardCharsets.UTF_8)
+    val header  = s"Content-Length: ${bytes.length}\r\n\r\n"
 
     synchronized {
       writer.write(header.getBytes(StandardCharsets.UTF_8))

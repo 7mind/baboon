@@ -184,9 +184,10 @@ class JvBaboonTranslator[F[+_, +_]: Error2](
         .filterNot(t => t.pkg.parts.startsWith(o.pkg.parts))
         .sortBy(_.toString)
 
-      val importLines = usedTypes.map { p =>
-        val importName = if (p.name.contains('.')) p.name.split('.').head else p.name
-        s"import ${p.pkg.parts.mkString(".")}.$importName;"
+      val importLines = usedTypes.map {
+        p =>
+          val importName = if (p.name.contains('.')) p.name.split('.').head else p.name
+          s"import ${p.pkg.parts.mkString(".")}.$importName;"
       }.distinct
 
       if (importLines.isEmpty) {

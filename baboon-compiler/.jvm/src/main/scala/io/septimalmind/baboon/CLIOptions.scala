@@ -125,7 +125,8 @@ case class ScCLIOptions(
   serviceContextParameterName: Option[String],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
-) extends SharedCLIOptions with ScalaHktCLIOptions
+) extends SharedCLIOptions
+  with ScalaHktCLIOptions
 
 case class PyCLIOptions(
   @Recurse
@@ -267,7 +268,8 @@ case class KtCLIOptions(
   serviceContextParameterName: Option[String],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
-) extends SharedCLIOptions with ScalaHktCLIOptions
+) extends SharedCLIOptions
+  with ScalaHktCLIOptions
 
 case class JvCLIOptions(
   @Recurse
@@ -336,6 +338,15 @@ case class DtCLIOptions(
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
 ) extends SharedCLIOptions
+
+case class SchemeCLIOptions(
+  @HelpMessage("Domain name (e.g., 'my.domain.name')")
+  domain: String,
+  @HelpMessage("Version (e.g., '1.0.0')")
+  version: String,
+  @HelpMessage("Target output file path")
+  target: String,
+)
 
 case class CLIOptions(
   @HelpMessage("A list of *.baboon files to process (can be combined with --model-dir)")

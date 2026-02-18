@@ -31,18 +31,18 @@ object Location {
 
 /** LSP Diagnostic Severity */
 object DiagnosticSeverity {
-  val Error: Int = 1
-  val Warning: Int = 2
+  val Error: Int       = 1
+  val Warning: Int     = 2
   val Information: Int = 3
-  val Hint: Int = 4
+  val Hint: Int        = 4
 }
 
 /** LSP Diagnostic */
 final case class Diagnostic(
   range: Range,
   message: String,
-  severity: Option[Int] = None,
-  source: Option[String] = None
+  severity: Option[Int]  = None,
+  source: Option[String] = None,
 )
 
 object Diagnostic {
@@ -53,7 +53,7 @@ object Diagnostic {
 /** LSP MarkupKind */
 object MarkupKind {
   val PlainText: String = "plaintext"
-  val Markdown: String = "markdown"
+  val Markdown: String  = "markdown"
 }
 
 /** LSP MarkupContent */
@@ -74,42 +74,42 @@ object Hover {
 
 /** LSP CompletionItemKind */
 object CompletionItemKind {
-  val Text: Int = 1
-  val Method: Int = 2
-  val Function: Int = 3
-  val Constructor: Int = 4
-  val Field: Int = 5
-  val Variable: Int = 6
-  val Class: Int = 7
-  val Interface: Int = 8
-  val Module: Int = 9
-  val Property: Int = 10
-  val Unit: Int = 11
-  val Value: Int = 12
-  val Enum: Int = 13
-  val Keyword: Int = 14
-  val Snippet: Int = 15
-  val Color: Int = 16
-  val File: Int = 17
-  val Reference: Int = 18
-  val Folder: Int = 19
-  val EnumMember: Int = 20
-  val Constant: Int = 21
-  val Struct: Int = 22
-  val Event: Int = 23
-  val Operator: Int = 24
+  val Text: Int          = 1
+  val Method: Int        = 2
+  val Function: Int      = 3
+  val Constructor: Int   = 4
+  val Field: Int         = 5
+  val Variable: Int      = 6
+  val Class: Int         = 7
+  val Interface: Int     = 8
+  val Module: Int        = 9
+  val Property: Int      = 10
+  val Unit: Int          = 11
+  val Value: Int         = 12
+  val Enum: Int          = 13
+  val Keyword: Int       = 14
+  val Snippet: Int       = 15
+  val Color: Int         = 16
+  val File: Int          = 17
+  val Reference: Int     = 18
+  val Folder: Int        = 19
+  val EnumMember: Int    = 20
+  val Constant: Int      = 21
+  val Struct: Int        = 22
+  val Event: Int         = 23
+  val Operator: Int      = 24
   val TypeParameter: Int = 25
 }
 
 /** LSP CompletionItem */
 final case class CompletionItem(
   label: String,
-  kind: Option[Int] = None,
-  detail: Option[String] = None,
+  kind: Option[Int]                    = None,
+  detail: Option[String]               = None,
   documentation: Option[MarkupContent] = None,
-  insertText: Option[String] = None,
-  sortText: Option[String] = None,
-  filterText: Option[String] = None
+  insertText: Option[String]           = None,
+  sortText: Option[String]             = None,
+  filterText: Option[String]           = None,
 )
 
 object CompletionItem {
@@ -119,31 +119,31 @@ object CompletionItem {
 
 /** LSP SymbolKind */
 object SymbolKind {
-  val File: Int = 1
-  val Module: Int = 2
-  val Namespace: Int = 3
-  val Package: Int = 4
-  val Class: Int = 5
-  val Method: Int = 6
-  val Property: Int = 7
-  val Field: Int = 8
-  val Constructor: Int = 9
-  val Enum: Int = 10
-  val Interface: Int = 11
-  val Function: Int = 12
-  val Variable: Int = 13
-  val Constant: Int = 14
-  val String: Int = 15
-  val Number: Int = 16
-  val Boolean: Int = 17
-  val Array: Int = 18
-  val Object: Int = 19
-  val Key: Int = 20
-  val Null: Int = 21
-  val EnumMember: Int = 22
-  val Struct: Int = 23
-  val Event: Int = 24
-  val Operator: Int = 25
+  val File: Int          = 1
+  val Module: Int        = 2
+  val Namespace: Int     = 3
+  val Package: Int       = 4
+  val Class: Int         = 5
+  val Method: Int        = 6
+  val Property: Int      = 7
+  val Field: Int         = 8
+  val Constructor: Int   = 9
+  val Enum: Int          = 10
+  val Interface: Int     = 11
+  val Function: Int      = 12
+  val Variable: Int      = 13
+  val Constant: Int      = 14
+  val String: Int        = 15
+  val Number: Int        = 16
+  val Boolean: Int       = 17
+  val Array: Int         = 18
+  val Object: Int        = 19
+  val Key: Int           = 20
+  val Null: Int          = 21
+  val EnumMember: Int    = 22
+  val Struct: Int        = 23
+  val Event: Int         = 24
+  val Operator: Int      = 25
   val TypeParameter: Int = 26
 }
 
@@ -153,22 +153,23 @@ final case class DocumentSymbol(
   kind: Int,
   range: Range,
   selectionRange: Range,
-  children: Option[Seq[DocumentSymbol]] = None
+  children: Option[Seq[DocumentSymbol]] = None,
 )
 
 object DocumentSymbol {
   // Custom encoder that omits null children instead of serializing as null
-  implicit val encoder: Encoder[DocumentSymbol] = Encoder.instance { ds =>
-    val base = Json.obj(
-      "name" -> Json.fromString(ds.name),
-      "kind" -> Json.fromInt(ds.kind),
-      "range" -> Encoder[Range].apply(ds.range),
-      "selectionRange" -> Encoder[Range].apply(ds.selectionRange)
-    )
-    ds.children match {
-      case Some(children) => base.deepMerge(Json.obj("children" -> Encoder[Seq[DocumentSymbol]].apply(children)))
-      case None => base
-    }
+  implicit val encoder: Encoder[DocumentSymbol] = Encoder.instance {
+    ds =>
+      val base = Json.obj(
+        "name"           -> Json.fromString(ds.name),
+        "kind"           -> Json.fromInt(ds.kind),
+        "range"          -> Encoder[Range].apply(ds.range),
+        "selectionRange" -> Encoder[Range].apply(ds.selectionRange),
+      )
+      ds.children match {
+        case Some(children) => base.deepMerge(Json.obj("children" -> Encoder[Seq[DocumentSymbol]].apply(children)))
+        case None           => base
+      }
   }
   implicit val decoder: Decoder[DocumentSymbol] = deriveDecoder
 }
@@ -186,7 +187,7 @@ final case class TextDocumentItem(
   uri: String,
   languageId: String,
   version: Int,
-  text: String
+  text: String,
 )
 
 object TextDocumentItem {
@@ -213,7 +214,7 @@ object TextDocumentContentChangeEvent {
 /** LSP TextDocumentPositionParams */
 final case class TextDocumentPositionParams(
   textDocument: TextDocumentIdentifier,
-  position: Position
+  position: Position,
 )
 
 object TextDocumentPositionParams {

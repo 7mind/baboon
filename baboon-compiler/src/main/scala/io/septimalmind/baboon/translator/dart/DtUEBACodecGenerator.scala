@@ -185,8 +185,9 @@ class DtUEBACodecGenerator(
     val encChain = encBranches match {
       case Nil => encElse
       case _ =>
-        val elseIfBranches = encBranches.tail.map { b =>
-          q" else $b"
+        val elseIfBranches = encBranches.tail.map {
+          b =>
+            q" else $b"
         }
         val chain = (Seq(encBranches.head) ++ elseIfBranches).join("")
         q"""$chain else {

@@ -50,12 +50,13 @@ object JvCodecTestsTranslator {
 
     private def makeTest(definition: DomainMember.User, srcRef: JvValue.JvType): TextTree[JvValue] = {
       val fixture = makeFixture(definition, domain, evo)
-      codecs.filter(_.isActive(definition.id)).map {
-        case jsonCodec: JvJsonCodecGenerator =>
-          val body      = jsonCodecAssertions(definition)
-          val codecName = jsonCodec.codecName(srcRef, definition.defn.id.owner)
+      codecs
+        .filter(_.isActive(definition.id)).map {
+          case jsonCodec: JvJsonCodecGenerator =>
+            val body      = jsonCodecAssertions(definition)
+            val codecName = jsonCodec.codecName(srcRef, definition.defn.id.owner)
 
-          q"""
+            q"""
              |@$jvTestAnnotation
              |public void ${srcRef.name}_should_support_JSON_codec() throws Exception {
              |  for (int i = 0; i < ${target.generic.codecTestIterations.toString}; i++) {
@@ -77,10 +78,10 @@ object JvCodecTestsTranslator {
              |}
              |"""
 
-        case uebaCodec: JvUEBACodecGenerator =>
-          val body      = uebaCodecAssertions(definition)
-          val codecName = uebaCodec.codecName(srcRef, definition.defn.id.owner)
-          q"""
+          case uebaCodec: JvUEBACodecGenerator =>
+            val body      = uebaCodecAssertions(definition)
+            val codecName = uebaCodec.codecName(srcRef, definition.defn.id.owner)
+            q"""
              |@$jvTestAnnotation
              |public void ${srcRef.name}_should_support_UEBA_codec() throws Exception {
              |  for (int i = 0; i < ${target.generic.codecTestIterations.toString}; i++) {
@@ -110,10 +111,10 @@ object JvCodecTestsTranslator {
              |}
              |"""
 
-        case unknown =>
-          logger.message(s"Cannot create codec tests (${unknown.codecName(srcRef, definition.defn.id.owner)}) for unsupported type $srcRef")
-          q""
-      }.toList.map(_.stripMargin.trim).joinNN().shift(2).trim
+          case unknown =>
+            logger.message(s"Cannot create codec tests (${unknown.codecName(srcRef, definition.defn.id.owner)}) for unsupported type $srcRef")
+            q""
+        }.toList.map(_.stripMargin.trim).joinNN().shift(2).trim
     }
 
     private def makeFixture(

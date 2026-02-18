@@ -62,7 +62,7 @@ object TsServiceWiringTranslator {
 
       val hasServices = domain.defs.meta.nodes.values.exists {
         case DomainMember.User(_, _: Typedef.Service, _, _) => true
-        case _                                               => false
+        case _                                              => false
       }
       if (!hasServices) return None
 
@@ -102,12 +102,14 @@ object TsServiceWiringTranslator {
 
       val tree = Seq[Option[TextTree[TsValue]]](importTrigger, Some(rtTrait), defaultImpl).flatten.joinNN()
 
-      Some(TsDefnTranslator.Output(
-        s"$fbase/baboon-service-rt.ts",
-        tree,
-        rtModule,
-        CompilerProduct.Definition,
-      ))
+      Some(
+        TsDefnTranslator.Output(
+          s"$fbase/baboon-service-rt.ts",
+          tree,
+          rtModule,
+          CompilerProduct.Definition,
+        )
+      )
     }
 
     override def translate(defn: DomainMember.User): Option[TsDefnTranslator.Output] = {
@@ -117,15 +119,17 @@ object TsServiceWiringTranslator {
             if (resolved.noErrors) generateNoErrorsWiring(service)
             else generateErrorsWiring(service)
 
-          val wiringPath = getWiringPath(defn)
+          val wiringPath   = getWiringPath(defn)
           val wiringModule = TsValue.TsModuleId(NEList.unsafeFrom(wiringPath.stripSuffix(".ts").split('/').toList))
 
-          Some(TsDefnTranslator.Output(
-            wiringPath,
-            methods,
-            wiringModule,
-            CompilerProduct.Definition,
-          ))
+          Some(
+            TsDefnTranslator.Output(
+              wiringPath,
+              methods,
+              wiringModule,
+              CompilerProduct.Definition,
+            )
+          )
         case _ => None
       }
     }
@@ -133,9 +137,9 @@ object TsServiceWiringTranslator {
     private def getWiringPath(defn: DomainMember.User): String = {
       val fname = s"${trans.camelToKebab(defn.defn.id.name.name)}-wiring.ts"
       defn.defn.id.owner match {
-        case Owner.Toplevel  => s"$fbase/$fname"
-        case Owner.Ns(path)  => s"$fbase/${path.map(_.name.toLowerCase).mkString("/")}/$fname"
-        case Owner.Adt(id)   => s"$fbase/${trans.camelToKebab(id.name.name)}/$fname"
+        case Owner.Toplevel => s"$fbase/$fname"
+        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString("/")}/$fname"
+        case Owner.Adt(id)  => s"$fbase/${trans.camelToKebab(id.name.name)}/$fname"
       }
     }
 
@@ -156,35 +160,38 @@ object TsServiceWiringTranslator {
     private def generateNoErrorsWiring(service: Typedef.Service): TextTree[TsValue] = {
       val svcType = trans.asTsType(service.id, domain, evo)
 
-      val jsonFn = if (hasJsonCodecs)
-        Some(generateNoErrorsJsonFn(service, svcType))
-      else None
+      val jsonFn =
+        if (hasJsonCodecs)
+          Some(generateNoErrorsJsonFn(service, svcType))
+        else None
 
-      val uebaFn = if (hasUebaCodecs)
-        Some(generateNoErrorsUebaFn(service, svcType))
-      else None
+      val uebaFn =
+        if (hasUebaCodecs)
+          Some(generateNoErrorsUebaFn(service, svcType))
+        else None
 
       Seq(jsonFn, uebaFn).flatten.joinNN()
     }
 
     private def generateNoErrorsJsonFn(service: Typedef.Service, svcType: TsValue.TsType): TextTree[TsValue] = {
-      val cases = service.methods.map { m =>
-        val inCodecDecode = codecFnRef(m.sig.id.asInstanceOf[TypeId.User], "decode_", "_json")
+      val cases = service.methods.map {
+        m =>
+          val inCodecDecode = codecFnRef(m.sig.id.asInstanceOf[TypeId.User], "decode_", "_json")
 
-        val encodeAndReturn = m.out match {
-          case Some(outRef) =>
-            val outCodecEncode = codecFnRef(outRef.id.asInstanceOf[TypeId.User], "encode_", "_json")
-            q"""const result = impl.${m.name.name}(${ctxArgPass}decoded);
-               |return JSON.stringify($outCodecEncode(result));""".stripMargin
-          case None =>
-            q"""impl.${m.name.name}(${ctxArgPass}decoded);
-               |return "null";""".stripMargin
-        }
+          val encodeAndReturn = m.out match {
+            case Some(outRef) =>
+              val outCodecEncode = codecFnRef(outRef.id.asInstanceOf[TypeId.User], "encode_", "_json")
+              q"""const result = impl.${m.name.name}(${ctxArgPass}decoded);
+                 |return JSON.stringify($outCodecEncode(result));""".stripMargin
+            case None =>
+              q"""impl.${m.name.name}(${ctxArgPass}decoded);
+                 |return "null";""".stripMargin
+          }
 
-        q"""case "${m.name.name}": {
-           |    const decoded = $inCodecDecode(JSON.parse(data));
-           |    ${encodeAndReturn.shift(4).trim}
-           |}""".stripMargin
+          q"""case "${m.name.name}": {
+             |    const decoded = $inCodecDecode(JSON.parse(data));
+             |    ${encodeAndReturn.shift(4).trim}
+             |}""".stripMargin
       }.join("\n")
 
       q"""export function invokeJson_${svcType.asName}(
@@ -202,26 +209,27 @@ object TsServiceWiringTranslator {
     }
 
     private def generateNoErrorsUebaFn(service: Typedef.Service, svcType: TsValue.TsType): TextTree[TsValue] = {
-      val cases = service.methods.map { m =>
-        val inCodecDecode = codecFnRef(m.sig.id.asInstanceOf[TypeId.User], "decode_", "_ueba")
+      val cases = service.methods.map {
+        m =>
+          val inCodecDecode = codecFnRef(m.sig.id.asInstanceOf[TypeId.User], "decode_", "_ueba")
 
-        val encodeAndReturn = m.out match {
-          case Some(outRef) =>
-            val outCodecEncode = codecFnRef(outRef.id.asInstanceOf[TypeId.User], "encode_", "_ueba")
-            q"""const result = impl.${m.name.name}(${ctxArgPass}decoded);
-               |const writer = new $baboonBinWriter();
-               |$outCodecEncode(result, ctx, writer);
-               |return writer.toBytes();""".stripMargin
-          case None =>
-            q"""impl.${m.name.name}(${ctxArgPass}decoded);
-               |return new Uint8Array(0);""".stripMargin
-        }
+          val encodeAndReturn = m.out match {
+            case Some(outRef) =>
+              val outCodecEncode = codecFnRef(outRef.id.asInstanceOf[TypeId.User], "encode_", "_ueba")
+              q"""const result = impl.${m.name.name}(${ctxArgPass}decoded);
+                 |const writer = new $baboonBinWriter();
+                 |$outCodecEncode(result, ctx, writer);
+                 |return writer.toBytes();""".stripMargin
+            case None =>
+              q"""impl.${m.name.name}(${ctxArgPass}decoded);
+                 |return new Uint8Array(0);""".stripMargin
+          }
 
-        q"""case "${m.name.name}": {
-           |    const reader = new $baboonBinReader(data);
-           |    const decoded = $inCodecDecode(ctx, reader);
-           |    ${encodeAndReturn.shift(4).trim}
-           |}""".stripMargin
+          q"""case "${m.name.name}": {
+             |    const reader = new $baboonBinReader(data);
+             |    const decoded = $inCodecDecode(ctx, reader);
+             |    ${encodeAndReturn.shift(4).trim}
+             |}""".stripMargin
       }.join("\n")
 
       q"""export function invokeUeba_${svcType.asName}(
@@ -248,16 +256,19 @@ object TsServiceWiringTranslator {
     private def generateErrorsWiring(service: Typedef.Service): TextTree[TsValue] = {
       val svcType = trans.asTsType(service.id, domain, evo)
 
-      val jsonFn = if (hasJsonCodecs)
-        Some(generateErrorsJsonFn(service, svcType))
-      else None
+      val jsonFn =
+        if (hasJsonCodecs)
+          Some(generateErrorsJsonFn(service, svcType))
+        else None
 
-      val uebaFn = if (hasUebaCodecs)
-        Some(generateErrorsUebaFn(service, svcType))
-      else None
+      val uebaFn =
+        if (hasUebaCodecs)
+          Some(generateErrorsUebaFn(service, svcType))
+        else None
 
-      val importTrigger: Option[TextTree[TsValue]] = containerTypeRef.map { ref =>
-        q"type _ContainerImport<L, R> = $ref<L, R>;"
+      val importTrigger: Option[TextTree[TsValue]] = containerTypeRef.map {
+        ref =>
+          q"type _ContainerImport<L, R> = $ref<L, R>;"
       }
 
       (importTrigger.toSeq ++ jsonFn.toSeq ++ uebaFn.toSeq).joinNN()
@@ -266,77 +277,78 @@ object TsServiceWiringTranslator {
     private def generateErrorsJsonFn(service: Typedef.Service, svcType: TsValue.TsType): TextTree[TsValue] = {
       val wiringRetType = renderContainer("BaboonWiringError", "string")
 
-      val cases = service.methods.map { m =>
-        val inTypeRef = trans.asTsType(m.sig.id.asInstanceOf[TypeId.User], domain, evo)
-        val inCodecDecode = codecFnRef(m.sig.id.asInstanceOf[TypeId.User], "decode_", "_json")
+      val cases = service.methods.map {
+        m =>
+          val inTypeRef     = trans.asTsType(m.sig.id.asInstanceOf[TypeId.User], domain, evo)
+          val inCodecDecode = codecFnRef(m.sig.id.asInstanceOf[TypeId.User], "decode_", "_json")
 
-        val decodeStep =
-          q"""let input: ${renderContainer("BaboonWiringError", inTypeRef.name)};
-             |try {
-             |    input = rt.pure<$baboonWiringError, $inTypeRef>($inCodecDecode(JSON.parse(data)));
-             |} catch (ex: unknown) {
-             |    input = rt.fail<$baboonWiringError, $inTypeRef>({ tag: 'DecoderFailed', method, error: ex });
+          val decodeStep =
+            q"""let input: ${renderContainer("BaboonWiringError", inTypeRef.name)};
+               |try {
+               |    input = rt.pure<$baboonWiringError, $inTypeRef>($inCodecDecode(JSON.parse(data)));
+               |} catch (ex: unknown) {
+               |    input = rt.fail<$baboonWiringError, $inTypeRef>({ tag: 'DecoderFailed', method, error: ex });
+               |}""".stripMargin
+
+          val hasErrType = m.err.isDefined && !resolved.noErrors
+
+          val callAndEncodeStep = m.out match {
+            case Some(outRef) =>
+              val outTypeRef     = trans.asTsType(outRef.id.asInstanceOf[TypeId.User], domain, evo)
+              val outCodecEncode = codecFnRef(outRef.id.asInstanceOf[TypeId.User], "encode_", "_json")
+
+              val callBody = if (hasErrType) {
+                q"""try {
+                   |    const callResult = impl.${m.name.name}(${ctxArgPass}v);
+                   |    return rt.leftMap(callResult, (err) => ({ tag: 'CallFailed' as const, method, domainError: err }));
+                   |} catch (ex: unknown) {
+                   |    return rt.fail<$baboonWiringError, $outTypeRef>({ tag: 'CallFailed', method, domainError: ex });
+                   |}""".stripMargin
+              } else {
+                q"""try {
+                   |    return rt.pure<$baboonWiringError, $outTypeRef>(impl.${m.name.name}(${ctxArgPass}v));
+                   |} catch (ex: unknown) {
+                   |    return rt.fail<$baboonWiringError, $outTypeRef>({ tag: 'CallFailed', method, domainError: ex });
+                   |}""".stripMargin
+              }
+
+              q"""const output = rt.flatMap(input, (v: $inTypeRef) => {
+                 |    ${callBody.shift(4).trim}
+                 |});
+                 |return rt.flatMap(output, (v: $outTypeRef) => {
+                 |    try {
+                 |        return rt.pure<$baboonWiringError, string>(JSON.stringify($outCodecEncode(v)));
+                 |    } catch (ex: unknown) {
+                 |        return rt.fail<$baboonWiringError, string>({ tag: 'EncoderFailed', method, error: ex });
+                 |    }
+                 |});""".stripMargin
+
+            case None =>
+              val callBody = if (hasErrType) {
+                q"""try {
+                   |    const callResult = impl.${m.name.name}(${ctxArgPass}v);
+                   |    return rt.leftMap(callResult, (err) => ({ tag: 'CallFailed' as const, method, domainError: err }));
+                   |} catch (ex: unknown) {
+                   |    return rt.fail<$baboonWiringError, void>({ tag: 'CallFailed', method, domainError: ex });
+                   |}""".stripMargin
+              } else {
+                q"""try {
+                   |    impl.${m.name.name}(${ctxArgPass}v);
+                   |    return rt.pure<$baboonWiringError, string>("null");
+                   |} catch (ex: unknown) {
+                   |    return rt.fail<$baboonWiringError, string>({ tag: 'CallFailed', method, domainError: ex });
+                   |}""".stripMargin
+              }
+
+              q"""return rt.flatMap(input, (v: $inTypeRef) => {
+                 |    ${callBody.shift(4).trim}
+                 |});""".stripMargin
+          }
+
+          q"""case "${m.name.name}": {
+             |    ${decodeStep.shift(4).trim}
+             |    ${callAndEncodeStep.shift(4).trim}
              |}""".stripMargin
-
-        val hasErrType = m.err.isDefined && !resolved.noErrors
-
-        val callAndEncodeStep = m.out match {
-          case Some(outRef) =>
-            val outTypeRef = trans.asTsType(outRef.id.asInstanceOf[TypeId.User], domain, evo)
-            val outCodecEncode = codecFnRef(outRef.id.asInstanceOf[TypeId.User], "encode_", "_json")
-
-            val callBody = if (hasErrType) {
-              q"""try {
-                 |    const callResult = impl.${m.name.name}(${ctxArgPass}v);
-                 |    return rt.leftMap(callResult, (err) => ({ tag: 'CallFailed' as const, method, domainError: err }));
-                 |} catch (ex: unknown) {
-                 |    return rt.fail<$baboonWiringError, $outTypeRef>({ tag: 'CallFailed', method, domainError: ex });
-                 |}""".stripMargin
-            } else {
-              q"""try {
-                 |    return rt.pure<$baboonWiringError, $outTypeRef>(impl.${m.name.name}(${ctxArgPass}v));
-                 |} catch (ex: unknown) {
-                 |    return rt.fail<$baboonWiringError, $outTypeRef>({ tag: 'CallFailed', method, domainError: ex });
-                 |}""".stripMargin
-            }
-
-            q"""const output = rt.flatMap(input, (v: $inTypeRef) => {
-               |    ${callBody.shift(4).trim}
-               |});
-               |return rt.flatMap(output, (v: $outTypeRef) => {
-               |    try {
-               |        return rt.pure<$baboonWiringError, string>(JSON.stringify($outCodecEncode(v)));
-               |    } catch (ex: unknown) {
-               |        return rt.fail<$baboonWiringError, string>({ tag: 'EncoderFailed', method, error: ex });
-               |    }
-               |});""".stripMargin
-
-          case None =>
-            val callBody = if (hasErrType) {
-              q"""try {
-                 |    const callResult = impl.${m.name.name}(${ctxArgPass}v);
-                 |    return rt.leftMap(callResult, (err) => ({ tag: 'CallFailed' as const, method, domainError: err }));
-                 |} catch (ex: unknown) {
-                 |    return rt.fail<$baboonWiringError, void>({ tag: 'CallFailed', method, domainError: ex });
-                 |}""".stripMargin
-            } else {
-              q"""try {
-                 |    impl.${m.name.name}(${ctxArgPass}v);
-                 |    return rt.pure<$baboonWiringError, string>("null");
-                 |} catch (ex: unknown) {
-                 |    return rt.fail<$baboonWiringError, string>({ tag: 'CallFailed', method, domainError: ex });
-                 |}""".stripMargin
-            }
-
-            q"""return rt.flatMap(input, (v: $inTypeRef) => {
-               |    ${callBody.shift(4).trim}
-               |});""".stripMargin
-        }
-
-        q"""case "${m.name.name}": {
-           |    ${decodeStep.shift(4).trim}
-           |    ${callAndEncodeStep.shift(4).trim}
-           |}""".stripMargin
       }.join("\n")
 
       q"""export function invokeJson_${svcType.asName}(
@@ -357,80 +369,81 @@ object TsServiceWiringTranslator {
     private def generateErrorsUebaFn(service: Typedef.Service, svcType: TsValue.TsType): TextTree[TsValue] = {
       val wiringRetType = renderContainer("BaboonWiringError", "Uint8Array")
 
-      val cases = service.methods.map { m =>
-        val inTypeRef = trans.asTsType(m.sig.id.asInstanceOf[TypeId.User], domain, evo)
-        val inCodecDecode = codecFnRef(m.sig.id.asInstanceOf[TypeId.User], "decode_", "_ueba")
+      val cases = service.methods.map {
+        m =>
+          val inTypeRef     = trans.asTsType(m.sig.id.asInstanceOf[TypeId.User], domain, evo)
+          val inCodecDecode = codecFnRef(m.sig.id.asInstanceOf[TypeId.User], "decode_", "_ueba")
 
-        val decodeStep =
-          q"""let input: ${renderContainer("BaboonWiringError", inTypeRef.name)};
-             |try {
-             |    const reader = new $baboonBinReader(data);
-             |    input = rt.pure<$baboonWiringError, $inTypeRef>($inCodecDecode(ctx, reader));
-             |} catch (ex: unknown) {
-             |    input = rt.fail<$baboonWiringError, $inTypeRef>({ tag: 'DecoderFailed', method, error: ex });
+          val decodeStep =
+            q"""let input: ${renderContainer("BaboonWiringError", inTypeRef.name)};
+               |try {
+               |    const reader = new $baboonBinReader(data);
+               |    input = rt.pure<$baboonWiringError, $inTypeRef>($inCodecDecode(ctx, reader));
+               |} catch (ex: unknown) {
+               |    input = rt.fail<$baboonWiringError, $inTypeRef>({ tag: 'DecoderFailed', method, error: ex });
+               |}""".stripMargin
+
+          val hasErrType = m.err.isDefined && !resolved.noErrors
+
+          val callAndEncodeStep = m.out match {
+            case Some(outRef) =>
+              val outTypeRef     = trans.asTsType(outRef.id.asInstanceOf[TypeId.User], domain, evo)
+              val outCodecEncode = codecFnRef(outRef.id.asInstanceOf[TypeId.User], "encode_", "_ueba")
+
+              val callBody = if (hasErrType) {
+                q"""try {
+                   |    const callResult = impl.${m.name.name}(${ctxArgPass}v);
+                   |    return rt.leftMap(callResult, (err) => ({ tag: 'CallFailed' as const, method, domainError: err }));
+                   |} catch (ex: unknown) {
+                   |    return rt.fail<$baboonWiringError, $outTypeRef>({ tag: 'CallFailed', method, domainError: ex });
+                   |}""".stripMargin
+              } else {
+                q"""try {
+                   |    return rt.pure<$baboonWiringError, $outTypeRef>(impl.${m.name.name}(${ctxArgPass}v));
+                   |} catch (ex: unknown) {
+                   |    return rt.fail<$baboonWiringError, $outTypeRef>({ tag: 'CallFailed', method, domainError: ex });
+                   |}""".stripMargin
+              }
+
+              q"""const output = rt.flatMap(input, (v: $inTypeRef) => {
+                 |    ${callBody.shift(4).trim}
+                 |});
+                 |return rt.flatMap(output, (v: $outTypeRef) => {
+                 |    try {
+                 |        const writer = new $baboonBinWriter();
+                 |        $outCodecEncode(v, ctx, writer);
+                 |        return rt.pure<$baboonWiringError, Uint8Array>(writer.toBytes());
+                 |    } catch (ex: unknown) {
+                 |        return rt.fail<$baboonWiringError, Uint8Array>({ tag: 'EncoderFailed', method, error: ex });
+                 |    }
+                 |});""".stripMargin
+
+            case None =>
+              val callBody = if (hasErrType) {
+                q"""try {
+                   |    const callResult = impl.${m.name.name}(${ctxArgPass}v);
+                   |    return rt.leftMap(callResult, (err) => ({ tag: 'CallFailed' as const, method, domainError: err }));
+                   |} catch (ex: unknown) {
+                   |    return rt.fail<$baboonWiringError, Uint8Array>({ tag: 'CallFailed', method, domainError: ex });
+                   |}""".stripMargin
+              } else {
+                q"""try {
+                   |    impl.${m.name.name}(${ctxArgPass}v);
+                   |    return rt.pure<$baboonWiringError, Uint8Array>(new Uint8Array(0));
+                   |} catch (ex: unknown) {
+                   |    return rt.fail<$baboonWiringError, Uint8Array>({ tag: 'CallFailed', method, domainError: ex });
+                   |}""".stripMargin
+              }
+
+              q"""return rt.flatMap(input, (v: $inTypeRef) => {
+                 |    ${callBody.shift(4).trim}
+                 |});""".stripMargin
+          }
+
+          q"""case "${m.name.name}": {
+             |    ${decodeStep.shift(4).trim}
+             |    ${callAndEncodeStep.shift(4).trim}
              |}""".stripMargin
-
-        val hasErrType = m.err.isDefined && !resolved.noErrors
-
-        val callAndEncodeStep = m.out match {
-          case Some(outRef) =>
-            val outTypeRef = trans.asTsType(outRef.id.asInstanceOf[TypeId.User], domain, evo)
-            val outCodecEncode = codecFnRef(outRef.id.asInstanceOf[TypeId.User], "encode_", "_ueba")
-
-            val callBody = if (hasErrType) {
-              q"""try {
-                 |    const callResult = impl.${m.name.name}(${ctxArgPass}v);
-                 |    return rt.leftMap(callResult, (err) => ({ tag: 'CallFailed' as const, method, domainError: err }));
-                 |} catch (ex: unknown) {
-                 |    return rt.fail<$baboonWiringError, $outTypeRef>({ tag: 'CallFailed', method, domainError: ex });
-                 |}""".stripMargin
-            } else {
-              q"""try {
-                 |    return rt.pure<$baboonWiringError, $outTypeRef>(impl.${m.name.name}(${ctxArgPass}v));
-                 |} catch (ex: unknown) {
-                 |    return rt.fail<$baboonWiringError, $outTypeRef>({ tag: 'CallFailed', method, domainError: ex });
-                 |}""".stripMargin
-            }
-
-            q"""const output = rt.flatMap(input, (v: $inTypeRef) => {
-               |    ${callBody.shift(4).trim}
-               |});
-               |return rt.flatMap(output, (v: $outTypeRef) => {
-               |    try {
-               |        const writer = new $baboonBinWriter();
-               |        $outCodecEncode(v, ctx, writer);
-               |        return rt.pure<$baboonWiringError, Uint8Array>(writer.toBytes());
-               |    } catch (ex: unknown) {
-               |        return rt.fail<$baboonWiringError, Uint8Array>({ tag: 'EncoderFailed', method, error: ex });
-               |    }
-               |});""".stripMargin
-
-          case None =>
-            val callBody = if (hasErrType) {
-              q"""try {
-                 |    const callResult = impl.${m.name.name}(${ctxArgPass}v);
-                 |    return rt.leftMap(callResult, (err) => ({ tag: 'CallFailed' as const, method, domainError: err }));
-                 |} catch (ex: unknown) {
-                 |    return rt.fail<$baboonWiringError, Uint8Array>({ tag: 'CallFailed', method, domainError: ex });
-                 |}""".stripMargin
-            } else {
-              q"""try {
-                 |    impl.${m.name.name}(${ctxArgPass}v);
-                 |    return rt.pure<$baboonWiringError, Uint8Array>(new Uint8Array(0));
-                 |} catch (ex: unknown) {
-                 |    return rt.fail<$baboonWiringError, Uint8Array>({ tag: 'CallFailed', method, domainError: ex });
-                 |}""".stripMargin
-            }
-
-            q"""return rt.flatMap(input, (v: $inTypeRef) => {
-               |    ${callBody.shift(4).trim}
-               |});""".stripMargin
-        }
-
-        q"""case "${m.name.name}": {
-           |    ${decodeStep.shift(4).trim}
-           |    ${callAndEncodeStep.shift(4).trim}
-           |}""".stripMargin
       }.join("\n")
 
       q"""export function invokeUeba_${svcType.asName}(

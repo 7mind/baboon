@@ -150,7 +150,7 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
     if (target.output.products.contains(CompilerProduct.FixtureRuntime)) {
       F.pure(
         List(
-          fix("baboon_fixture.dart", "baboon-runtime/dart/baboon_fixture.dart"),
+          fix("baboon_fixture.dart", "baboon-runtime/dart/baboon_fixture.dart")
         )
       )
     } else F.pure(Nil)
@@ -174,8 +174,9 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
         .filterNot(_.fq)
         .sortBy(_.toString)
 
-      val importLines = usedTypes.flatMap { p =>
-        resolveImport(p, o.module, currentFileName)
+      val importLines = usedTypes.flatMap {
+        p =>
+          resolveImport(p, o.module, currentFileName)
       }.distinct.sorted
 
       if (importLines.isEmpty) {
@@ -240,7 +241,7 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
     if (target.output.products.contains(CompilerProduct.Runtime)) {
       F.pure(
         List(
-          rt("baboon_runtime.dart", "baboon-runtime/dart/baboon_runtime.dart"),
+          rt("baboon_runtime.dart", "baboon-runtime/dart/baboon_runtime.dart")
         )
       )
     } else {

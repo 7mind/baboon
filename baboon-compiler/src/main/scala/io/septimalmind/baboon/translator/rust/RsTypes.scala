@@ -34,10 +34,10 @@ object RsTypes {
   val baboonRandom: RsType = RsType(baboonFixtureCrate, "BaboonRandom")
 
   // serde helpers in runtime
-  val hexBytesSerde: RsType         = RsType(baboonRuntimeCrate, "hex_bytes")
-  val decimalSerde: RsType          = RsType(baboonRuntimeCrate, "decimal_as_number")
-  val optHexBytesSerde: RsType      = RsType(baboonRuntimeCrate, "opt_hex_bytes")
-  val optDecimalSerde: RsType       = RsType(baboonRuntimeCrate, "opt_decimal_as_number")
+  val hexBytesSerde: RsType    = RsType(baboonRuntimeCrate, "hex_bytes")
+  val decimalSerde: RsType     = RsType(baboonRuntimeCrate, "decimal_as_number")
+  val optHexBytesSerde: RsType = RsType(baboonRuntimeCrate, "opt_hex_bytes")
+  val optDecimalSerde: RsType  = RsType(baboonRuntimeCrate, "opt_decimal_as_number")
 
   // Rust std
   val stdCrate: RsCrateId = parseCrate("std")
@@ -68,8 +68,8 @@ object RsTypes {
   val rsBox: RsType    = RsType(stdCrate, "Box", predef = true)
 
   // External crates
-  val uuidCrate: RsCrateId    = parseCrate("uuid")
-  val rsUuid: RsType          = RsType(uuidCrate, "Uuid")
+  val uuidCrate: RsCrateId = parseCrate("uuid")
+  val rsUuid: RsType       = RsType(uuidCrate, "Uuid")
 
   val chronoCrate: RsCrateId  = parseCrate("chrono")
   val rsDateTimeUtc: RsType   = RsType(chronoCrate, "DateTime<chrono::Utc>")
@@ -83,11 +83,11 @@ object RsTypes {
   val rsDecimal: RsType       = RsType(decimalCrate, "Decimal")
 
   // serde
-  val serdeCrate: RsCrateId       = parseCrate("serde")
-  val rsSerialize: RsType         = RsType(serdeCrate, "Serialize")
-  val rsDeserialize: RsType       = RsType(serdeCrate, "Deserialize")
-  val serdeJsonCrate: RsCrateId   = parseCrate("serde_json")
-  val rsSerdeJsonValue: RsType    = RsType(serdeJsonCrate, "Value")
+  val serdeCrate: RsCrateId     = parseCrate("serde")
+  val rsSerialize: RsType       = RsType(serdeCrate, "Serialize")
+  val rsDeserialize: RsType     = RsType(serdeCrate, "Deserialize")
+  val serdeJsonCrate: RsCrateId = parseCrate("serde_json")
+  val rsSerdeJsonValue: RsType  = RsType(serdeJsonCrate, "Value")
 
   def parseCrate(path: String): RsCrateId = RsCrateId(NEList.unsafeFrom(path.split("::").toList))
 }

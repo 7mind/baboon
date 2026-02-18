@@ -18,9 +18,9 @@ trait BLogger {
 
 object BLogger {
   object Noop extends BLogger {
-    override def message(msg: String): Unit = ()
-    override def message(context: String, msg: String): Unit = ()
-    override def message(msg: TextTree[Any]): Unit = ()
+    override def message(msg: String): Unit                         = ()
+    override def message(context: String, msg: String): Unit        = ()
+    override def message(msg: TextTree[Any]): Unit                  = ()
     override def message(context: String, msg: TextTree[Any]): Unit = ()
   }
 

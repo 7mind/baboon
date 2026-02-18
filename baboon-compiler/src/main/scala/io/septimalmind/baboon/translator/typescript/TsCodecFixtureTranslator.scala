@@ -35,12 +35,13 @@ object TsCodecFixtureTranslator {
     }
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[TsValue] = {
-      val generatedFields = dto.fields.map { f =>
-        q"${f.name.name}: ${genType(f.tpe)},"
+      val generatedFields = dto.fields.map {
+        f =>
+          q"${f.name.name}: ${genType(f.tpe)},"
       }
       val fullType = translator.toTsTypeRefKeepForeigns(dto.id, domain, evo)
 
-      q"""export function ${fixtureFnName(dto.id)}(rnd: ${baboonRandom}): ${fullType} {
+      q"""export function ${fixtureFnName(dto.id)}(rnd: $baboonRandom): $fullType {
          |    return {
          |        ${generatedFields.joinN().shift(8).trim}
          |    };
@@ -54,21 +55,22 @@ object TsCodecFixtureTranslator {
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
       val membersFixtures = members.sortBy(_.id.toString).map(doTranslateDtoPrivate)
-      val membersGenerators = members.sortBy(_.id.toString).map { dto =>
-        val branchName = dto.id.name.name
-        val factoryFn = TsValue.TsType(adtName.module, s"${adtName.name}_$branchName")
-        q"${factoryFn}(${fixtureFnName(dto.id)}(rnd))"
+      val membersGenerators = members.sortBy(_.id.toString).map {
+        dto =>
+          val branchName = dto.id.name.name
+          val factoryFn  = TsValue.TsType(adtName.module, s"${adtName.name}_$branchName")
+          q"$factoryFn(${fixtureFnName(dto.id)}(rnd))"
       }
 
       val randomAllEntries = membersGenerators.map(g => q"$g,")
 
-      q"""export function ${fixtureFnName(adt.id)}(rnd: ${baboonRandom}): ${adtName} {
+      q"""export function ${fixtureFnName(adt.id)}(rnd: $baboonRandom): $adtName {
          |    const all = ${fixtureFnName(adt.id)}_all(rnd);
          |    const idx = rnd.nextUSize(all.length);
          |    return all[idx];
          |}
          |
-         |export function ${fixtureFnName(adt.id)}_all(rnd: ${baboonRandom}): ${adtName}[] {
+         |export function ${fixtureFnName(adt.id)}_all(rnd: $baboonRandom): $adtName[] {
          |    return [
          |        ${randomAllEntries.joinN().shift(8).trim}
          |    ];
@@ -78,12 +80,13 @@ object TsCodecFixtureTranslator {
     }
 
     private def doTranslateDtoPrivate(dto: Typedef.Dto): TextTree[TsValue] = {
-      val generatedFields = dto.fields.map { f =>
-        q"${f.name.name}: ${genType(f.tpe)},"
+      val generatedFields = dto.fields.map {
+        f =>
+          q"${f.name.name}: ${genType(f.tpe)},"
       }
       val fullType = translator.toTsTypeRefKeepForeigns(dto.id, domain, evo)
 
-      q"""function ${fixtureFnName(dto.id)}(rnd: ${baboonRandom}): ${fullType} {
+      q"""function ${fixtureFnName(dto.id)}(rnd: $baboonRandom): $fullType {
          |    return {
          |        ${generatedFields.joinN().shift(8).trim}
          |    };
@@ -95,8 +98,8 @@ object TsCodecFixtureTranslator {
     }
 
     private def fixtureFnRef(id: TypeId.User): TsValue.TsType = {
-      val userType = translator.toTsTypeRefKeepForeigns(id, domain, evo)
-      val partsList = userType.module.parts.toList
+      val userType      = translator.toTsTypeRefKeepForeigns(id, domain, evo)
+      val partsList     = userType.module.parts.toList
       val fixtureModule = TsValue.TsModuleId(NEList.unsafeFrom(partsList.init :+ (partsList.last + ".fixture")))
       TsValue.TsType(fixtureModule, fixtureFnName(id))
     }
@@ -140,12 +143,12 @@ object TsCodecFixtureTranslator {
         case TypeId.Builtins.bit   => q"rnd.nextBit()"
 
         case u: TypeId.User if enquiries.isEnum(tpe, domain) =>
-          val enumType = translator.asTsType(u, domain, evo)
+          val enumType   = translator.asTsType(u, domain, evo)
           val enumValues = TsValue.TsType(enumType.module, s"${enumType.name}_values")
-          q"rnd.mkEnum(${enumValues})"
+          q"rnd.mkEnum($enumValues)"
         case u: TypeId.User =>
           val fnRef = fixtureFnRef(u)
-          q"${fnRef}(rnd)"
+          q"$fnRef(rnd)"
         case t => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
       }
     }

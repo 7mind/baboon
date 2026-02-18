@@ -41,11 +41,12 @@ class DefMeta(context: ParserContext) {
   }
 
   private def simpleTypeRef[$: P]: P[RawTypeRef.Simple] = {
-    idt.symbolSeq.map { seq =>
-      val parts  = seq.map(RawTypeName.apply).toList
-      val name   = parts.last
-      val prefix = parts.init
-      RawTypeRef.Simple(name, prefix)
+    idt.symbolSeq.map {
+      seq =>
+        val parts  = seq.map(RawTypeName.apply).toList
+        val name   = parts.last
+        val prefix = parts.init
+        RawTypeRef.Simple(name, prefix)
     }
   }
 

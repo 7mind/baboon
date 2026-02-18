@@ -19,10 +19,10 @@ class RsUEBACodecGenerator(
   override def translate(defn: DomainMember.User, rsRef: RsValue.RsType, srcRef: RsValue.RsType): Option[TextTree[RsValue]] = {
     if (isActive(defn.id)) {
       defn.defn match {
-        case d: Typedef.Dto     => Some(genDtoCodec(defn, rsRef, d))
-        case e: Typedef.Enum    => Some(genEnumCodec(defn, rsRef, e))
-        case a: Typedef.Adt     => Some(genAdtCodec(defn, rsRef, a))
-        case _: Typedef.Foreign => None
+        case d: Typedef.Dto      => Some(genDtoCodec(defn, rsRef, d))
+        case e: Typedef.Enum     => Some(genEnumCodec(defn, rsRef, e))
+        case a: Typedef.Adt      => Some(genAdtCodec(defn, rsRef, a))
+        case _: Typedef.Foreign  => None
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
       }
@@ -72,49 +72,53 @@ class RsUEBACodecGenerator(
 
   private def genDtoCodec(defn: DomainMember.User, name: RsValue.RsType, dto: Typedef.Dto): TextTree[RsValue] = {
     // Compact mode encoder: fields written directly to writer
-    val encFields = dto.fields.map { f =>
-      val fieldRef = q"value.${toSnakeCase(f.name.name)}"
-      if (needsBox(f.tpe)) {
-        mkEncoder(f.tpe, q"(*$fieldRef)", q"writer")
-      } else {
-        mkEncoder(f.tpe, fieldRef, q"writer")
-      }
+    val encFields = dto.fields.map {
+      f =>
+        val fieldRef = q"value.${toSnakeCase(f.name.name)}"
+        if (needsBox(f.tpe)) {
+          mkEncoder(f.tpe, q"(*$fieldRef)", q"writer")
+        } else {
+          mkEncoder(f.tpe, fieldRef, q"writer")
+        }
     }
 
     // Indexed mode encoder: fields written to buffer, index entries to main writer
     // Uses &mut buffer directly (not a long-lived binding) so borrow is dropped between calls,
     // allowing buffer.len() reads for variable-length field index entries.
-    val indexedEncFields = dto.fields.map { f =>
-      val fieldRef = q"value.${toSnakeCase(f.name.name)}"
-      val actualRef = if (needsBox(f.tpe)) q"(*$fieldRef)" else fieldRef
-      val fakeEnc = mkEncoder(f.tpe, actualRef, q"&mut buffer")
-      val isVariable = domain.refMeta(f.tpe).len.isVariable
+    val indexedEncFields = dto.fields.map {
+      f =>
+        val fieldRef   = q"value.${toSnakeCase(f.name.name)}"
+        val actualRef  = if (needsBox(f.tpe)) q"(*$fieldRef)" else fieldRef
+        val fakeEnc    = mkEncoder(f.tpe, actualRef, q"&mut buffer")
+        val isVariable = domain.refMeta(f.tpe).len.isVariable
 
-      if (isVariable) {
-        q"""{
-           |    let before = buffer.len();
-           |    crate::baboon_runtime::bin_tools::write_i32(writer, before as i32)?;
-           |    $fakeEnc
-           |    let after = buffer.len();
-           |    let length = after - before;
-           |    crate::baboon_runtime::bin_tools::write_i32(writer, length as i32)?;
-           |}""".stripMargin
-      } else {
-        fakeEnc
-      }
+        if (isVariable) {
+          q"""{
+             |    let before = buffer.len();
+             |    crate::baboon_runtime::bin_tools::write_i32(writer, before as i32)?;
+             |    $fakeEnc
+             |    let after = buffer.len();
+             |    let length = after - before;
+             |    crate::baboon_runtime::bin_tools::write_i32(writer, length as i32)?;
+             |}""".stripMargin
+        } else {
+          fakeEnc
+        }
     }
 
-    val decFields = dto.fields.map { f =>
-      val decoder = mkDecoder(f.tpe)
-      if (needsBox(f.tpe)) {
-        q"let ${toSnakeCase(f.name.name)} = Box::new($decoder);"
-      } else {
-        q"let ${toSnakeCase(f.name.name)} = $decoder;"
-      }
+    val decFields = dto.fields.map {
+      f =>
+        val decoder = mkDecoder(f.tpe)
+        if (needsBox(f.tpe)) {
+          q"let ${toSnakeCase(f.name.name)} = Box::new($decoder);"
+        } else {
+          q"let ${toSnakeCase(f.name.name)} = $decoder;"
+        }
     }
 
-    val ctorFields = dto.fields.map { f =>
-      q"${toSnakeCase(f.name.name)},"
+    val ctorFields = dto.fields.map {
+      f =>
+        q"${toSnakeCase(f.name.name)},"
     }
 
     val indexedImpl = genIndexedImpl(defn, name)
@@ -126,8 +130,9 @@ class RsUEBACodecGenerator(
       case _ => None
     }
 
-    val encPrefixTree = encPrefix.map(p => q"""$p
-       |        """.stripMargin).getOrElse(q"")
+    val encPrefixTree = encPrefix
+      .map(p => q"""$p
+                   |        """.stripMargin).getOrElse(q"")
 
     val branchDecodeFn = dto.id.owner match {
       case Owner.Adt(id) if target.language.wrappedAdtBranchCodecs =>
@@ -166,8 +171,9 @@ class RsUEBACodecGenerator(
            |})""".stripMargin
     }
 
-    val branchDecodeFnTree = branchDecodeFn.map(fn => q"""$fn
-       |""".stripMargin).getOrElse(q"")
+    val branchDecodeFnTree = branchDecodeFn
+      .map(fn => q"""$fn
+                    |""".stripMargin).getOrElse(q"")
 
     q"""$indexedImpl
        |
@@ -195,12 +201,14 @@ class RsUEBACodecGenerator(
   }
 
   private def genEnumCodec(defn: DomainMember.User, name: RsValue.RsType, e: Typedef.Enum): TextTree[RsValue] = {
-    val encBranches = e.members.zipWithIndex.toList.map { case (m, idx) =>
-      q"""${name.asName}::${m.name.capitalize} => crate::baboon_runtime::bin_tools::write_byte(writer, ${idx.toString})?,"""
+    val encBranches = e.members.zipWithIndex.toList.map {
+      case (m, idx) =>
+        q"""${name.asName}::${m.name.capitalize} => crate::baboon_runtime::bin_tools::write_byte(writer, ${idx.toString})?,"""
     }
 
-    val decBranches = e.members.zipWithIndex.toList.map { case (m, idx) =>
-      q"""${idx.toString} => Ok(${name.asName}::${m.name.capitalize}),"""
+    val decBranches = e.members.zipWithIndex.toList.map {
+      case (m, idx) =>
+        q"""${idx.toString} => Ok(${name.asName}::${m.name.capitalize}),"""
     }
 
     val indexedImpl = genIndexedImpl(defn, name)
@@ -230,34 +238,36 @@ class RsUEBACodecGenerator(
   private def genAdtCodec(defn: DomainMember.User, name: RsValue.RsType, adt: Typedef.Adt): TextTree[RsValue] = {
     val branches = adt.dataMembers(domain).zipWithIndex.toList
 
-    val encBranches = branches.map { case (mid, idx) =>
-      val branchName = mid.name.name.capitalize
-      if (target.language.wrappedAdtBranchCodecs) {
-        q"""${name.asName}::$branchName(v) => {
-           |    v.encode_ueba(ctx, writer)?;
-           |}""".stripMargin
-      } else {
-        q"""${name.asName}::$branchName(v) => {
-           |    crate::baboon_runtime::bin_tools::write_byte(writer, ${idx.toString})?;
-           |    v.encode_ueba(ctx, writer)?;
-           |}""".stripMargin
-      }
+    val encBranches = branches.map {
+      case (mid, idx) =>
+        val branchName = mid.name.name.capitalize
+        if (target.language.wrappedAdtBranchCodecs) {
+          q"""${name.asName}::$branchName(v) => {
+             |    v.encode_ueba(ctx, writer)?;
+             |}""".stripMargin
+        } else {
+          q"""${name.asName}::$branchName(v) => {
+             |    crate::baboon_runtime::bin_tools::write_byte(writer, ${idx.toString})?;
+             |    v.encode_ueba(ctx, writer)?;
+             |}""".stripMargin
+        }
     }
 
-    val decBranches = branches.map { case (mid, idx) =>
-      val branchName = mid.name.name.capitalize
-      val branchType = trans.asRsType(mid, domain, evo)
-      if (target.language.wrappedAdtBranchCodecs) {
-        q"""${idx.toString} => {
-           |    let v = ${branchType.asName}::decode_ueba_branch(ctx, reader)?;
-           |    Ok(${name.asName}::$branchName(v))
-           |}""".stripMargin
-      } else {
-        q"""${idx.toString} => {
-           |    let v = ${branchType.asName}::decode_ueba(ctx, reader)?;
-           |    Ok(${name.asName}::$branchName(v))
-           |}""".stripMargin
-      }
+    val decBranches = branches.map {
+      case (mid, idx) =>
+        val branchName = mid.name.name.capitalize
+        val branchType = trans.asRsType(mid, domain, evo)
+        if (target.language.wrappedAdtBranchCodecs) {
+          q"""${idx.toString} => {
+             |    let v = ${branchType.asName}::decode_ueba_branch(ctx, reader)?;
+             |    Ok(${name.asName}::$branchName(v))
+             |}""".stripMargin
+        } else {
+          q"""${idx.toString} => {
+             |    let v = ${branchType.asName}::decode_ueba(ctx, reader)?;
+             |    Ok(${name.asName}::$branchName(v))
+             |}""".stripMargin
+        }
     }
 
     val indexedImpl = genIndexedImpl(defn, name)

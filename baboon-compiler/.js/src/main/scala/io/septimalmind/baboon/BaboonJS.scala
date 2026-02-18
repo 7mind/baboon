@@ -5,6 +5,7 @@ import io.circe.Json
 import io.circe.parser.parse as parseJson
 import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.FSPath
+import io.septimalmind.baboon.scheme.BaboonSchemeRenderer
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.typer.BaboonRuntimeCodec
 import io.septimalmind.baboon.typer.model.{BaboonFamily, Pkg, Version}
@@ -137,6 +138,33 @@ object BaboonJS {
           success = false,
           error   = error,
         ).asInstanceOf[JSDecodeResult]
+    }
+  }
+
+  /**
+    * Scheme cleanup result
+    */
+  trait JSSchemeResult extends js.Object {
+    val success: Boolean
+    val content: js.UndefOr[String]
+    val error: js.UndefOr[String]
+  }
+
+  object JSSchemeResult {
+    def success(content: String): JSSchemeResult = {
+      js.Dynamic
+        .literal(
+          success = true,
+          content = content,
+        ).asInstanceOf[JSSchemeResult]
+    }
+
+    def failure(error: String): JSSchemeResult = {
+      js.Dynamic
+        .literal(
+          success = false,
+          error   = error,
+        ).asInstanceOf[JSSchemeResult]
     }
   }
 
@@ -301,28 +329,28 @@ object BaboonJS {
     val (mainOut, fixturesOut, testsOut) = buildOutputPaths(output)
     OutputOptions(
       safeToRemoveExtensions = output.safeToRemoveExtensions,
-      runtime = output.runtime,
-      generateConversions = output.generateConversions,
-      output = mainOut,
-      fixturesOutput = fixturesOut,
-      testsOutput = testsOut,
+      runtime                = output.runtime,
+      generateConversions    = output.generateConversions,
+      output                 = mainOut,
+      fixturesOutput         = fixturesOut,
+      testsOutput            = testsOut,
     )
   }
 
   private def toCSTarget(target: CompilerTargetJS.CSTarget): CompilerTarget.CSTarget = {
     CompilerTarget.CSTarget(
-      id      = target.id,
-      output  = toOutputOptions(target.output),
-      generic = target.generic,
+      id       = target.id,
+      output   = toOutputOptions(target.output),
+      generic  = target.generic,
       language = target.language,
     )
   }
 
   private def toScTarget(target: CompilerTargetJS.ScTarget): CompilerTarget.ScTarget = {
     CompilerTarget.ScTarget(
-      id      = target.id,
-      output  = toOutputOptions(target.output),
-      generic = target.generic,
+      id       = target.id,
+      output   = toOutputOptions(target.output),
+      generic  = target.generic,
       language = target.language,
     )
   }
@@ -340,11 +368,11 @@ object BaboonJS {
     debug: Boolean,
   ): CompilerOptions = {
     CompilerOptions(
-      individualInputs = inputs.map(_.path).toSet,
-      directoryInputs = collectInputDirectories(inputs),
-      lockFile = None,
-      debug = debug,
-      targets = toCompilerTargets(targets),
+      individualInputs         = inputs.map(_.path).toSet,
+      directoryInputs          = collectInputDirectories(inputs),
+      lockFile                 = None,
+      debug                    = debug,
+      targets                  = toCompilerTargets(targets),
       metaWriteEvolutionJsonTo = None,
     )
   }
@@ -441,9 +469,9 @@ object BaboonJS {
     quasiIO: QuasiIO[F[Throwable, _]],
     runner: QuasiIORunner[F[Throwable, _]],
   ): Future[BaboonFamily] = {
-    val logger = new BLoggerJS(false)
+    val logger          = new BLoggerJS(false)
     val compilerOptions = createCompilerOptions(inputs, Seq.empty, debug = false)
-    val m = new BaboonModuleJS[F](inputs.toList, logger, ParallelErrorAccumulatingOps2[F], compilerOptions)
+    val m               = new BaboonModuleJS[F](inputs.toList, logger, ParallelErrorAccumulatingOps2[F], compilerOptions)
 
     runner.runFuture(
       Injector
@@ -465,9 +493,9 @@ object BaboonJS {
     quasiIO: QuasiIO[F[Throwable, _]],
     runner: QuasiIORunner[F[Throwable, _]],
   ): Future[Seq[OutputFileWithPath]] = {
-    val logger = new BLoggerJS(debug)
+    val logger          = new BLoggerJS(debug)
     val compilerOptions = createCompilerOptions(inputs, targets, debug)
-    val m = new BaboonModuleJS[F](inputs, logger, ParallelErrorAccumulatingOps2[F], compilerOptions)
+    val m               = new BaboonModuleJS[F](inputs, logger, ParallelErrorAccumulatingOps2[F], compilerOptions)
 
     runner.runFuture(
       Injector
@@ -726,6 +754,134 @@ object BaboonJS {
           .successful(
             JSDecodeResult.failure(s"Decoding failed: ${e.getMessage}")
           ).toJSPromise
+    }
+  }
+
+  /**
+    * Render a cleaned-up single .baboon file for a specific domain and version
+    *
+    * @param files Map of baboon files (path -> content)
+    * @param domain Domain name (e.g., "io.example.models")
+    * @param version Version string (e.g., "1.0.0")
+    * @return JS Promise that resolves to scheme result with rendered content or error
+    */
+  @JSExport
+  def cleanupScheme(
+    files: js.Dictionary[String],
+    domain: String,
+    version: String,
+  ): js.Promise[JSSchemeResult] = {
+    implicit val ec: ExecutionContext = scala.scalajs.concurrent.JSExecutionContext.queue
+
+    try {
+      val inputs = files.toSeq.map {
+        case (path, content) =>
+          BaboonParser.Input(
+            FSPath.parse(NEString.unsafeFrom(path)),
+            content,
+          )
+      }
+
+      import izumi.distage.modules.support.unsafe.EitherSupport.*
+      import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+      type F[+E, +A] = Either[E, A]
+
+      val resultFuture = cleanupSchemeInternal[F](Left(inputs), domain, version)
+
+      resultFuture.map {
+        content => JSSchemeResult.success(content)
+      }.recover {
+        case e: Throwable =>
+          JSSchemeResult.failure(s"Scheme cleanup failed: ${e.getMessage}")
+      }.toJSPromise
+    } catch {
+      case e: Throwable =>
+        Future
+          .successful(
+            JSSchemeResult.failure(s"Scheme cleanup failed: ${e.getMessage}")
+          ).toJSPromise
+    }
+  }
+
+  /**
+    * Render a cleaned-up single .baboon file for a specific domain and version using a loaded model
+    *
+    * @param model Loaded Baboon model
+    * @param domain Domain name (e.g., "io.example.models")
+    * @param version Version string (e.g., "1.0.0")
+    * @return JS Promise that resolves to scheme result with rendered content or error
+    */
+  @JSExport
+  def cleanupSchemeLoaded(
+    model: BaboonLoadedModel,
+    domain: String,
+    version: String,
+  ): js.Promise[JSSchemeResult] = {
+    implicit val ec: ExecutionContext = scala.scalajs.concurrent.JSExecutionContext.queue
+
+    try {
+      val family = model.asInstanceOf[BaboonLoadedModelImpl].family
+
+      import izumi.distage.modules.support.unsafe.EitherSupport.*
+      import izumi.functional.bio.unsafe.UnsafeInstances.Lawless_ParallelErrorAccumulatingOpsEither
+
+      type F[+E, +A] = Either[E, A]
+
+      val resultFuture = cleanupSchemeInternal[F](Right(family), domain, version)
+
+      resultFuture.map {
+        content => JSSchemeResult.success(content)
+      }.recover {
+        case e: Throwable =>
+          JSSchemeResult.failure(s"Scheme cleanup failed: ${e.getMessage}")
+      }.toJSPromise
+    } catch {
+      case e: Throwable =>
+        Future
+          .successful(
+            JSSchemeResult.failure(s"Scheme cleanup failed: ${e.getMessage}")
+          ).toJSPromise
+    }
+  }
+
+  private def cleanupSchemeInternal[F[+_, +_]: Error2: MaybeSuspend2: ParallelErrorAccumulatingOps2: TagKK: DefaultModule2](
+    input: Either[Seq[BaboonParser.Input], BaboonFamily],
+    domainString: String,
+    versionString: String,
+  )(implicit
+    quasiIO: QuasiIO[F[Throwable, _]],
+    runner: QuasiIORunner[F[Throwable, _]],
+  ): Future[String] = {
+    val pkg     = parsePkg(domainString)
+    val version = Version.parse(versionString)
+
+    input match {
+      case Left(inputs) =>
+        val logger          = new BLoggerJS(false)
+        val compilerOptions = createCompilerOptions(inputs, Seq.empty, debug = false)
+        val m               = new BaboonModuleJS[F](inputs.toList, logger, ParallelErrorAccumulatingOps2[F], compilerOptions)
+        runner.runFuture(
+          Injector
+            .NoCycles[F[Throwable, _]]()
+            .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
+              (loader: BaboonLoaderJS[F], renderer: BaboonSchemeRenderer) =>
+                (for {
+                  family <- loader.load(inputs.toList)
+                  result <- Error2[F].fromEither(renderer.render(family, pkg, version).left.map(e => new RuntimeException(e)))
+                } yield result).leftMap(issues => new RuntimeException(s"Scheme cleanup failure: $issues"))
+            }
+        )
+      case Right(family) =>
+        val m = new BaboonCodecModuleJS[F](ParallelErrorAccumulatingOps2[F])
+        runner.runFuture(
+          Injector
+            .NoCycles[F[Throwable, _]]()
+            .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
+              (renderer: BaboonSchemeRenderer) =>
+                Error2[F].fromEither(renderer.render(family, pkg, version).left.map(e => new RuntimeException(e)))
+            }
+        )
     }
   }
 
