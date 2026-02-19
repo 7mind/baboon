@@ -13,7 +13,6 @@ import argparse
 import asyncio
 import json
 import os
-import shlex
 import shutil
 import signal
 import subprocess
@@ -103,33 +102,13 @@ class LangConfig:
 def _shell_cmd(shell_str: str):
     return (["bash", "-c", shell_str], False)
 
-def _swift_shell_cmd(swift_cmd: str):
-    return _shell_cmd(
-        f"""
-set -euo pipefail
-if [ "$(uname -s)" = "Linux" ]; then
-  SWIFT_BIN="$(command -v swift)"
-  if [ -z "$SWIFT_BIN" ]; then
-    echo "swift executable is not available in PATH" >&2
-    exit 1
-  fi
-  SWIFT_TARGET_INFO="$(swiftc -print-target-info)"
-  SWIFT_STDLIB="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["paths"]["runtimeLibraryPaths"][0])' <<< "$SWIFT_TARGET_INFO")"
-  SWIFT_LIBDISPATCH_BASE="$(nix-store -q --requisites "$SWIFT_BIN" | awk '/swift-corelibs-libdispatch-/{{ print; exit }}')"
-  if [ -z "$SWIFT_LIBDISPATCH_BASE" ]; then
-    echo "swift-corelibs-libdispatch is not found in swift closure" >&2
-    exit 1
-  fi
-  SWIFT_LIBDISPATCH="$SWIFT_LIBDISPATCH_BASE/lib"
-  if [ ! -d "$SWIFT_STDLIB" ] || [ ! -d "$SWIFT_LIBDISPATCH" ]; then
-    echo "Swift runtime libraries are not available: SWIFT_LIBDISPATCH=$SWIFT_LIBDISPATCH SWIFT_STDLIB=$SWIFT_STDLIB" >&2
-    exit 1
-  fi
-  export LD_LIBRARY_PATH="$SWIFT_LIBDISPATCH:$SWIFT_STDLIB:${{LD_LIBRARY_PATH:-}}"
-fi
-{swift_cmd}
-""".strip()
-    )
+SWIFT_WRAPPER = str(
+    (Path(__file__).resolve().parent.parent.parent / "scripts" / "swift-xcode.sh")
+)
+
+
+def _swift_cmd(*args: str):
+    return ([SWIFT_WRAPPER, ".", *args], False)
 
 
 LANG_CONFIGS: dict[Lang, LangConfig] = {
@@ -275,13 +254,13 @@ LANG_CONFIGS: dict[Lang, LangConfig] = {
         baboon_target=":swift",
         baboon_output="Sources/BaboonGenerated",
         build_cmds=[
-            _swift_shell_cmd("swift build -c release"),
+            _swift_cmd("build", "-c", "release"),
         ],
-        write_cmd=lambda d, f: _swift_shell_cmd(
-            f"swift run -c release CompatMain write {shlex.quote(d)} {shlex.quote(f)}"
+        write_cmd=lambda d, f: _swift_cmd(
+            "run", "-c", "release", "CompatMain", "write", d, f
         ),
-        read_cmd=lambda p: _swift_shell_cmd(
-            f"swift run -c release CompatMain read {shlex.quote(p)}"
+        read_cmd=lambda p: _swift_cmd(
+            "run", "-c", "release", "CompatMain", "read", p
         ),
         rsync_excludes=[".build", "Sources/BaboonGenerated"],
     ),
