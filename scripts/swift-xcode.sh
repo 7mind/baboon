@@ -58,18 +58,22 @@ fi
 if [[ "$(uname)" == "Linux" ]]; then
   SWIFT_BIN="$(command -v swift)"
   if [[ "$SWIFT_BIN" == /nix/store/* ]]; then
-    shopt -s nullglob
-    swift_lib_paths=(
-      /nix/store/*swift-*-lib*/lib/swift/linux
-      /nix/store/*swift-corelibs-foundation-*/lib/swift/linux
-      /nix/store/*swift-corelibs-libdispatch-*/lib
-    )
-    shopt -u nullglob
+    SWIFT_TARGET_INFO="$(swiftc -print-target-info)"
+    SWIFT_STDLIB="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["paths"]["runtimeLibraryPaths"][0])' <<< "$SWIFT_TARGET_INFO")"
+    SWIFT_LIBDISPATCH_BASE="$(nix-store -q --requisites "$SWIFT_BIN" | awk '/swift-corelibs-libdispatch-/{ print; exit }')"
 
-    if [[ ${#swift_lib_paths[@]} -gt 0 ]]; then
-      SWIFT_LD_PATH="$(IFS=:; echo "${swift_lib_paths[*]}")"
-      export LD_LIBRARY_PATH="${SWIFT_LD_PATH}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    if [[ -z "$SWIFT_LIBDISPATCH_BASE" ]]; then
+      echo "swift-corelibs-libdispatch is not found in swift closure" >&2
+      exit 1
     fi
+
+    SWIFT_LIBDISPATCH="$SWIFT_LIBDISPATCH_BASE/lib"
+    if [[ ! -d "$SWIFT_STDLIB" || ! -d "$SWIFT_LIBDISPATCH" ]]; then
+      echo "Swift runtime libraries are not available: SWIFT_STDLIB=$SWIFT_STDLIB SWIFT_LIBDISPATCH=$SWIFT_LIBDISPATCH" >&2
+      exit 1
+    fi
+
+    export LD_LIBRARY_PATH="$SWIFT_LIBDISPATCH:$SWIFT_STDLIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
   fi
 fi
 
