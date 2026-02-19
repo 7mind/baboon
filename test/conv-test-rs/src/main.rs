@@ -2,10 +2,11 @@ use chrono::{FixedOffset, NaiveDate, NaiveTime, NaiveDateTime, TimeZone, Utc};
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Cursor;
 use std::path::PathBuf;
 
 use baboon_conv_test_rs::convtest::testpkg::AllBasicTypes;
-use baboon_conv_test_rs::baboon_runtime::{BaboonBinEncode, BaboonCodecContext};
+use baboon_conv_test_rs::baboon_runtime::{BaboonBinEncode, BaboonBinDecode, BaboonCodecContext};
 use uuid::Uuid;
 
 fn create_sample_data() -> AllBasicTypes {
@@ -63,29 +64,115 @@ fn create_sample_data() -> AllBasicTypes {
     }
 }
 
-fn main() {
-    let sample_data = create_sample_data();
-    let ctx = BaboonCodecContext::Default;
-
-    let base_dir = PathBuf::from("../../target/compat-test");
-    let json_dir = base_dir.join("rust-json");
-    let ueba_dir = base_dir.join("rust-ueba");
-
-    fs::create_dir_all(&json_dir).expect("Failed to create JSON output directory");
-    fs::create_dir_all(&ueba_dir).expect("Failed to create UEBA output directory");
-
-    // Serialize to JSON
-    let json_str = serde_json::to_string_pretty(&sample_data).expect("Failed to serialize to JSON");
-    let json_path = json_dir.join("all-basic-types.json");
+fn write_json(data: &AllBasicTypes, output_dir: &str) {
+    fs::create_dir_all(output_dir).expect("Failed to create output directory");
+    let json_str = serde_json::to_string_pretty(data).expect("Failed to serialize to JSON");
+    let json_path = PathBuf::from(output_dir).join("all-basic-types.json");
     fs::write(&json_path, &json_str).expect("Failed to write JSON file");
     println!("Written JSON to {:?}", json_path);
+}
 
-    // Serialize to UEBA
+fn write_ueba(data: &AllBasicTypes, output_dir: &str) {
+    let ctx = BaboonCodecContext::Default;
+    fs::create_dir_all(output_dir).expect("Failed to create output directory");
     let mut ueba_bytes = Vec::new();
-    sample_data.encode_ueba(&ctx, &mut ueba_bytes).expect("Failed to encode UEBA");
-    let ueba_path = ueba_dir.join("all-basic-types.ueba");
+    data.encode_ueba(&ctx, &mut ueba_bytes).expect("Failed to encode UEBA");
+    let ueba_path = PathBuf::from(output_dir).join("all-basic-types.ueba");
     fs::write(&ueba_path, &ueba_bytes).expect("Failed to write UEBA file");
     println!("Written UEBA to {:?}", ueba_path);
+}
+
+fn read_and_verify(file_path: &str) {
+    let ctx = BaboonCodecContext::Default;
+    let path = PathBuf::from(file_path);
+
+    let data: AllBasicTypes = if file_path.ends_with(".json") {
+        let json_str = fs::read_to_string(&path)
+            .unwrap_or_else(|e| { eprintln!("Failed to read {:?}: {}", path, e); std::process::exit(1); });
+        serde_json::from_str(&json_str)
+            .unwrap_or_else(|e| { eprintln!("Failed to parse JSON from {:?}: {}", path, e); std::process::exit(1); })
+    } else if file_path.ends_with(".ueba") {
+        let bytes = fs::read(&path)
+            .unwrap_or_else(|e| { eprintln!("Failed to read {:?}: {}", path, e); std::process::exit(1); });
+        let mut cursor = Cursor::new(&bytes);
+        AllBasicTypes::decode_ueba(&ctx, &mut cursor)
+            .unwrap_or_else(|e| { eprintln!("Failed to decode UEBA from {:?}: {}", path, e); std::process::exit(1); })
+    } else {
+        eprintln!("Unknown file extension: {}", file_path);
+        std::process::exit(1);
+    };
+
+    if data.vstr != "Hello, Baboon!" {
+        eprintln!("vstr mismatch: expected 'Hello, Baboon!', got '{}'", data.vstr);
+        std::process::exit(1);
+    }
+    if data.vi32 != 123456 {
+        eprintln!("vi32 mismatch: expected 123456, got {}", data.vi32);
+        std::process::exit(1);
+    }
+    if !data.vbit {
+        eprintln!("vbit mismatch: expected true, got {}", data.vbit);
+        std::process::exit(1);
+    }
+
+    // Roundtrip
+    if file_path.ends_with(".json") {
+        let re_encoded = serde_json::to_string(&data)
+            .unwrap_or_else(|e| { eprintln!("JSON re-encode failed: {}", e); std::process::exit(1); });
+        let re_decoded: AllBasicTypes = serde_json::from_str(&re_encoded)
+            .unwrap_or_else(|e| { eprintln!("JSON roundtrip decode failed: {}", e); std::process::exit(1); });
+        if data != re_decoded {
+            eprintln!("JSON roundtrip mismatch");
+            std::process::exit(1);
+        }
+    } else {
+        let mut re_bytes = Vec::new();
+        data.encode_ueba(&ctx, &mut re_bytes)
+            .unwrap_or_else(|e| { eprintln!("UEBA re-encode failed: {}", e); std::process::exit(1); });
+        let mut cursor = Cursor::new(&re_bytes);
+        let re_decoded = AllBasicTypes::decode_ueba(&ctx, &mut cursor)
+            .unwrap_or_else(|e| { eprintln!("UEBA roundtrip decode failed: {}", e); std::process::exit(1); });
+        if data != re_decoded {
+            eprintln!("UEBA roundtrip mismatch");
+            std::process::exit(1);
+        }
+    }
+
+    println!("OK");
+}
+
+fn run_legacy() {
+    let sample_data = create_sample_data();
+
+    let base_dir = PathBuf::from("../../target/compat-test");
+    write_json(&sample_data, base_dir.join("rust-json").to_str().unwrap());
+    write_ueba(&sample_data, base_dir.join("rust-ueba").to_str().unwrap());
 
     println!("Rust serialization complete!");
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+
+    match args.first().map(|s| s.as_str()) {
+        Some("write") => {
+            let output_dir = &args[1];
+            let format = &args[2];
+            let sample_data = create_sample_data();
+            match format.as_str() {
+                "json" => write_json(&sample_data, output_dir),
+                "ueba" => write_ueba(&sample_data, output_dir),
+                _ => {
+                    eprintln!("Unknown format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+        Some("read") => {
+            read_and_verify(&args[1]);
+        }
+        _ => {
+            run_legacy();
+        }
+    }
 }

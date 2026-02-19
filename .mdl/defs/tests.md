@@ -1636,3 +1636,21 @@ dep action.test-py-wiring-outcome
 
 ret success:bool=true
 ```
+
+# action: test-acceptance
+
+Run cross-language serialization acceptance tests (full cartesian product).
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TARGET_DIR="./target/acceptance"
+
+python3 test/acceptance/run_acceptance.py \
+  --baboon "$BABOON_BIN" \
+  --target "$TARGET_DIR" \
+  --parallelism "$(nproc)"
+
+ret success:bool=true
+```
