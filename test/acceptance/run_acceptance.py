@@ -254,13 +254,13 @@ LANG_CONFIGS: dict[Lang, LangConfig] = {
         baboon_target=":swift",
         baboon_output="Sources/BaboonGenerated",
         build_cmds=[
-            _swift_cmd("build", "-c", "release"),
+            _swift_cmd("build"),
         ],
         write_cmd=lambda d, f: _swift_cmd(
-            "run", "-c", "release", "CompatMain", "write", d, f
+            "run", "CompatMain", "write", d, f
         ),
         read_cmd=lambda p: _swift_cmd(
-            "run", "-c", "release", "CompatMain", "read", p
+            "run", "CompatMain", "read", p
         ),
         rsync_excludes=[".build", "Sources/BaboonGenerated"],
     ),
