@@ -1,5 +1,9 @@
 import Foundation
 
+private func baboonEpochMillis(_ date: Date) -> Int64 {
+    return Int64((date.timeIntervalSince1970 * 1000.0).rounded())
+}
+
 // --- Codec Errors ---
 
 enum BaboonCodecError: Error {
@@ -325,7 +329,7 @@ class BaboonBinWriter {
     }
 
     func writeTsu(_ value: Date) {
-        let epochMs = Int64(value.timeIntervalSince1970 * 1000)
+        let epochMs = baboonEpochMillis(value)
         let dotnetUtcMs = epochMs + BaboonBinWriter.dotnetEpochOffsetMs
         writeI64(dotnetUtcMs)
         writeI64(0)
@@ -608,7 +612,7 @@ class BaboonTimeFormats {
     }()
 
     static func formatUtc(_ dt: Date) -> String {
-        let epochMillis = Int64(dt.timeIntervalSince1970 * 1000.0)
+        let epochMillis = baboonEpochMillis(dt)
         let normalizedDate = Date(timeIntervalSince1970: Double(epochMillis) / 1000.0)
         let comps = utcCalendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: normalizedDate)
         let ms = Int((epochMillis % 1000 + 1000) % 1000)
@@ -637,7 +641,8 @@ class BaboonTimeFormats {
         let h = String(format: "%02d", comps.hour!)
         let min = String(format: "%02d", comps.minute!)
         let sec = String(format: "%02d", comps.second!)
-        let ms = String(format: "%03d", Int(localDate.timeIntervalSince1970 * 1000) % 1000)
+        let localEpochMillis = baboonEpochMillis(localDate)
+        let ms = String(format: "%03d", Int((localEpochMillis % 1000 + 1000) % 1000))
         let base = "\\(y)-\\(m)-\\(d)T\\(h):\\(min):\\(sec).\\(ms)"
 
         let sign = dto.offsetMillis >= 0 ? "+" : "-"
@@ -749,7 +754,7 @@ class BaboonTimeFormats {
         comps.nanosecond = millis * 1_000_000
 
         let localDate = utcCalendar.date(from: comps)!
-        let localEpochMillis = Int64(localDate.timeIntervalSince1970 * 1000.0)
+        let localEpochMillis = baboonEpochMillis(localDate)
         let epochMillis = localEpochMillis - offsetMillis
 
         return ParsedIso8601(

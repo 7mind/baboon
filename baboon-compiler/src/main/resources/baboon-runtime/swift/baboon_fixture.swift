@@ -1,5 +1,9 @@
 import Foundation
 
+private func baboonEpochMillis(_ date: Date) -> Int64 {
+    return Int64((date.timeIntervalSince1970 * 1000.0).rounded())
+}
+
 class BaboonRandom {
     private var rng = SystemRandomNumberGenerator()
 
@@ -68,7 +72,7 @@ class BaboonRandom {
         comps.second = second
         comps.nanosecond = millis * 1_000_000
         let date = calendar.date(from: comps)!
-        let epochMillis = Int64(date.timeIntervalSince1970 * 1000)
+        let epochMillis = baboonEpochMillis(date)
         return Date(timeIntervalSince1970: Double(epochMillis) / 1000.0)
     }
 
@@ -77,7 +81,7 @@ class BaboonRandom {
         let offsetHours = Int64(Int.random(in: -12...12, using: &rng))
         let offsetMillis = offsetHours * 3600000
         return BaboonDateTimeOffset(
-            epochMillis: Int64(dt.timeIntervalSince1970 * 1000),
+            epochMillis: baboonEpochMillis(dt),
             offsetMillis: offsetMillis,
             kind: "offset"
         )

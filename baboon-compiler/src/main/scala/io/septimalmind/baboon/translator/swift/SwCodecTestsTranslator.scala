@@ -218,7 +218,7 @@ object SwCodecTestsTranslator {
          |try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
          |let outFile = outDir.appendingPathComponent("$typeId.json")
          |let encoded = $codecName.instance.encode($baboonCodecContext.defaultCtx, $fixtureVar)
-         |let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys])
+         |let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
          |try jsonData.write(to: outFile)""".stripMargin
     }
 

@@ -136,7 +136,7 @@ object SwServiceWiringTranslator {
           case Some(outRef) =>
             val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
             q"""let encoded = $outCodec.instance.encode(ctx, result)
-               |let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys])
+               |let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
                |return String(data: jsonData, encoding: .utf8)!""".stripMargin
           case None =>
             q"""return "null" """
@@ -282,7 +282,7 @@ object SwServiceWiringTranslator {
                |return rt.flatMap(output) { v in
                |    do {
                |        let encoded = $outCodec.instance.encode(ctx, v)
-               |        let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys])
+               |        let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
                |        return rt.pure(String(data: jsonData, encoding: .utf8)!)
                |    } catch {
                |        return rt.fail($baboonWiringError.encoderFailed(method, error))
