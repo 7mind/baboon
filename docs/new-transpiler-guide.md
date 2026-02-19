@@ -21,12 +21,13 @@ This guide walks you through implementing a full-featured code generation backen
 15. [Step 13: Create Stub Test Project](#step-13-create-stub-test-project)
 16. [Step 14: Create Cross-Language Compatibility Tests](#step-14-create-cross-language-compatibility-tests)
 17. [Step 15: Update Build Infrastructure](#step-15-update-build-infrastructure)
-18. [Type Mapping Reference](#type-mapping-reference)
-19. [UEBA Binary Protocol Reference](#ueba-binary-protocol-reference)
-20. [TextTree Usage Guide](#texttree-usage-guide)
-21. [Service and Pragma Support](#service-and-pragma-support)
-22. [Transport Plumbing (separate doc)](transport-plumbing.md)
-23. [Common Pitfalls](#common-pitfalls)
+18. [Step 16: Integrate Backend into Acceptance Suite](#step-16-integrate-backend-into-acceptance-suite)
+19. [Type Mapping Reference](#type-mapping-reference)
+20. [UEBA Binary Protocol Reference](#ueba-binary-protocol-reference)
+21. [TextTree Usage Guide](#texttree-usage-guide)
+22. [Service and Pragma Support](#service-and-pragma-support)
+23. [Transport Plumbing (separate doc)](transport-plumbing.md)
+24. [Common Pitfalls](#common-pitfalls)
 
 ---
 
@@ -1202,6 +1203,78 @@ Each existing `test-manual-*` action must add a dependency on `test-gen-compat-$
 ```bash
 dep action.test-gen-compat-$lang
 ```
+
+---
+
+## Step 16: Integrate Backend into Acceptance Suite
+
+The acceptance suite (`test/acceptance/run_acceptance.py`) is the cross-language compatibility matrix used in CI.  
+Your backend is not fully integrated until it is included here.
+
+### 1. Add language enum and display name
+
+In `test/acceptance/run_acceptance.py`:
+- Add a new enum value in `Lang` (e.g. `MYLANG = "mylang"`).
+- Add a human-readable label in `LANG_DISPLAY`.
+
+### 2. Add `LangConfig` entry
+
+Add a `LANG_CONFIGS[Lang.MYLANG]` entry with:
+- `dir_name`: test project directory under `test/` (e.g. `conv-test-mylang`)
+- `baboon_target`: compiler CLI target (e.g. `:mylang`)
+- `baboon_output`: generated sources destination inside that project
+- `build_cmds`: commands that compile the project
+- `write_cmd`: command that writes compatibility artifacts
+- `read_cmd`: command that reads one artifact and validates it
+- `rsync_excludes`: build/generated directories that must not be copied
+
+### 3. Respect acceptance runner command contract
+
+Your compat entrypoint must support:
+- `write <outputDir> <json|ueba>`
+- `read <filePath>`
+
+`write` must create exactly:
+- `<outputDir>/all-basic-types.json` for JSON
+- `<outputDir>/all-basic-types.ueba` for UEBA
+
+`read` must:
+- decode the provided file
+- validate a few sentinel fields (`vstr`, `vi32`, `vbit`)
+- exit non-zero on mismatch/error
+
+### 4. Keep runner environment explicit
+
+If your toolchain needs runtime env vars (dynamic libraries, JVM flags, etc.), wrap commands in shell in `run_acceptance.py` and export the required env explicitly there. Do not rely on interactive shell state.
+
+### 5. Validate locally
+
+Build compiler binary:
+```bash
+nix develop --command mdl :build
+```
+
+Validate your backend only:
+```bash
+nix develop --command python3 test/acceptance/run_acceptance.py \
+  --baboon baboon-compiler/.jvm/target/graalvm-native-image/baboon \
+  --target ./target/acceptance-$lang-only \
+  --parallelism "$(nproc)" \
+  --langs $lang
+```
+
+Validate full matrix:
+```bash
+nix develop --command python3 test/acceptance/run_acceptance.py \
+  --baboon baboon-compiler/.jvm/target/graalvm-native-image/baboon \
+  --target ./target/acceptance \
+  --parallelism "$(nproc)"
+```
+
+Expected final summary:
+- `Passed: N/N`
+- `Build failed: 0/N`
+- `Serde failed: 0/N`
 
 ---
 

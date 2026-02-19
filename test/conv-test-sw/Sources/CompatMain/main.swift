@@ -1,6 +1,11 @@
 import Foundation
 @testable import BaboonGenerated
 
+func fail(_ message: String) -> Never {
+    fputs(message + "\n", stderr)
+    exit(1)
+}
+
 func createSampleData() -> AllBasicTypes {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -57,27 +62,100 @@ func createSampleData() -> AllBasicTypes {
     )
 }
 
-let sampleData = createSampleData()
-let ctx = BaboonCodecContext.defaultCtx
+func writeJson(_ data: AllBasicTypes, _ outputDir: String) throws {
+    try FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+    let jsonObj = AllBasicTypes_JsonCodec.instance.encode(.defaultCtx, data)
+    let jsonData = try JSONSerialization.data(withJSONObject: jsonObj, options: [.prettyPrinted, .sortedKeys])
+    let jsonPath = "\(outputDir)/all-basic-types.json"
+    try jsonData.write(to: URL(fileURLWithPath: jsonPath))
+    print("Written JSON to \(jsonPath)")
+}
 
-let baseDir = URL(fileURLWithPath: "../../target/compat-test").standardizedFileURL.path
-let swiftJsonDir = "\(baseDir)/swift-json"
-let swiftUebaDir = "\(baseDir)/swift-ueba"
+func writeUeba(_ data: AllBasicTypes, _ outputDir: String) throws {
+    try FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+    let writer = BaboonBinWriter()
+    AllBasicTypes_UebaCodec.instance.encode(.defaultCtx, writer, data)
+    let uebaPath = "\(outputDir)/all-basic-types.ueba"
+    try writer.toData().write(to: URL(fileURLWithPath: uebaPath))
+    print("Written UEBA to \(uebaPath)")
+}
 
-try FileManager.default.createDirectory(atPath: swiftJsonDir, withIntermediateDirectories: true)
-try FileManager.default.createDirectory(atPath: swiftUebaDir, withIntermediateDirectories: true)
+func readAndVerify(_ filePath: String) throws {
+    let data: AllBasicTypes
+    if filePath.hasSuffix(".json") {
+        let raw = try Data(contentsOf: URL(fileURLWithPath: filePath))
+        let json = try JSONSerialization.jsonObject(with: raw, options: [.fragmentsAllowed])
+        data = try AllBasicTypes_JsonCodec.instance.decode(.defaultCtx, json)
+    } else if filePath.hasSuffix(".ueba") {
+        let raw = try Data(contentsOf: URL(fileURLWithPath: filePath))
+        let reader = BaboonBinReader(raw)
+        data = try AllBasicTypes_UebaCodec.instance.decode(.defaultCtx, reader)
+    } else {
+        fail("Unknown file extension: \(filePath)")
+    }
 
-let jsonObj = AllBasicTypes_JsonCodec.instance.encode(ctx, sampleData)
-let jsonData = try JSONSerialization.data(withJSONObject: jsonObj, options: [.prettyPrinted, .sortedKeys])
-let jsonPath = "\(swiftJsonDir)/all-basic-types.json"
-try jsonData.write(to: URL(fileURLWithPath: jsonPath))
-print("Written JSON to \(jsonPath)")
+    guard data.vstr == "Hello, Baboon!" else {
+        fail("vstr mismatch: expected 'Hello, Baboon!', got '\(data.vstr)'")
+    }
+    guard data.vi32 == 123456 else {
+        fail("vi32 mismatch: expected 123456, got \(data.vi32)")
+    }
+    guard data.vbit else {
+        fail("vbit mismatch: expected true, got false")
+    }
 
-let writer = BaboonBinWriter()
-AllBasicTypes_UebaCodec.instance.encode(ctx, writer, sampleData)
-let uebaBytes = writer.toData()
-let uebaPath = "\(swiftUebaDir)/all-basic-types.ueba"
-try uebaBytes.write(to: URL(fileURLWithPath: uebaPath))
-print("Written UEBA to \(uebaPath)")
+    if filePath.hasSuffix(".json") {
+        let reEncoded = AllBasicTypes_JsonCodec.instance.encode(.defaultCtx, data)
+        let reDecoded = try AllBasicTypes_JsonCodec.instance.decode(.defaultCtx, reEncoded)
+        guard reDecoded.vstr == data.vstr && reDecoded.vi32 == data.vi32 && reDecoded.vbit == data.vbit else {
+            fail("JSON roundtrip mismatch")
+        }
+    } else {
+        let writer = BaboonBinWriter()
+        AllBasicTypes_UebaCodec.instance.encode(.defaultCtx, writer, data)
+        let reReader = BaboonBinReader(writer.toData())
+        let reDecoded = try AllBasicTypes_UebaCodec.instance.decode(.defaultCtx, reReader)
+        guard reDecoded.vstr == data.vstr && reDecoded.vi32 == data.vi32 && reDecoded.vbit == data.vbit else {
+            fail("UEBA roundtrip mismatch")
+        }
+    }
+}
 
-print("Swift serialization complete!")
+func runLegacy() throws {
+    let sampleData = createSampleData()
+    let baseDir = URL(fileURLWithPath: "../../target/compat-test").standardizedFileURL.path
+    try writeJson(sampleData, "\(baseDir)/swift-json")
+    try writeUeba(sampleData, "\(baseDir)/swift-ueba")
+    print("Swift serialization complete!")
+}
+
+let args = Array(CommandLine.arguments.dropFirst())
+
+do {
+    if args.first == "write" {
+        guard args.count == 3 else {
+            fail("Usage: CompatMain write <outputDir> <json|ueba>")
+        }
+        let sampleData = createSampleData()
+        let outputDir = args[1]
+        let format = args[2]
+        switch format {
+        case "json":
+            try writeJson(sampleData, outputDir)
+        case "ueba":
+            try writeUeba(sampleData, outputDir)
+        default:
+            fail("Unknown format: \(format)")
+        }
+    } else if args.first == "read" {
+        guard args.count == 2 else {
+            fail("Usage: CompatMain read <filePath>")
+        }
+        try readAndVerify(args[1])
+        print("OK")
+    } else {
+        try runLegacy()
+    }
+} catch {
+    fail("Swift compat command failed: \(error)")
+}

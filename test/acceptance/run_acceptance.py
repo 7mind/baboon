@@ -2,7 +2,7 @@
 """
 Baboon cross-language serialization acceptance test runner.
 
-Tests all (format, from_lang, to_lang) triplets across 8 languages and 2 formats,
+Tests all (format, from_lang, to_lang) triplets across 9 languages and 2 formats,
 producing an HTML report with color-coded compatibility matrices.
 
 Usage:
@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import json
 import os
+import shlex
 import shutil
 import signal
 import subprocess
@@ -38,6 +39,7 @@ class Lang(Enum):
     KOTLIN = "kotlin"
     JAVA = "java"
     DART = "dart"
+    SWIFT = "swift"
 
 
 class Format(Enum):
@@ -61,6 +63,7 @@ LANG_DISPLAY = {
     Lang.KOTLIN: "Kotlin",
     Lang.JAVA: "Java",
     Lang.DART: "Dart",
+    Lang.SWIFT: "Swift",
 }
 
 
@@ -99,6 +102,23 @@ class LangConfig:
 
 def _shell_cmd(shell_str: str):
     return (["bash", "-c", shell_str], False)
+
+def _swift_shell_cmd(swift_cmd: str):
+    return _shell_cmd(
+        f"""
+set -euo pipefail
+SWIFT_BIN="$(readlink -f "$(command -v swift)")"
+SWIFT_DEPS="$(nix-store -q --requisites "$SWIFT_BIN")"
+SWIFT_LIBDISPATCH="$(echo "$SWIFT_DEPS" | grep 'swift-corelibs-libdispatch' | head -n1)/lib"
+SWIFT_STDLIB="$(echo "$SWIFT_DEPS" | grep -E 'swift-.*-lib$' | head -n1)/lib/swift/linux"
+if [ ! -d "$SWIFT_LIBDISPATCH" ] || [ ! -d "$SWIFT_STDLIB" ]; then
+  echo "Swift runtime libraries are not available: SWIFT_LIBDISPATCH=$SWIFT_LIBDISPATCH SWIFT_STDLIB=$SWIFT_STDLIB" >&2
+  exit 1
+fi
+export LD_LIBRARY_PATH="$SWIFT_LIBDISPATCH:$SWIFT_STDLIB:${{LD_LIBRARY_PATH:-}}"
+{swift_cmd}
+""".strip()
+    )
 
 
 LANG_CONFIGS: dict[Lang, LangConfig] = {
@@ -238,6 +258,21 @@ LANG_CONFIGS: dict[Lang, LangConfig] = {
             False,
         ),
         rsync_excludes=[".dart_tool", "pubspec.lock", "generated"],
+    ),
+    Lang.SWIFT: LangConfig(
+        dir_name="conv-test-sw",
+        baboon_target=":swift",
+        baboon_output="Sources/BaboonGenerated",
+        build_cmds=[
+            _swift_shell_cmd("swift build -c release -Xswiftc -enable-testing"),
+        ],
+        write_cmd=lambda d, f: _swift_shell_cmd(
+            f"swift run -c release -Xswiftc -enable-testing CompatMain write {shlex.quote(d)} {shlex.quote(f)}"
+        ),
+        read_cmd=lambda p: _swift_shell_cmd(
+            f"swift run -c release -Xswiftc -enable-testing CompatMain read {shlex.quote(p)}"
+        ),
+        rsync_excludes=[".build", "Sources/BaboonGenerated"],
     ),
 }
 
