@@ -56,6 +56,44 @@ jobs:
           path: |
             baboon-compiler/.jvm/target/graalvm-native-image/**
 
+  acceptance-tests:
+    name: acceptance-tests
+    runs-on:
+      - ubuntu-latest
+    needs:
+      - build-unix
+    steps:
+      - uses: 7mind/github-env@minimal
+        with:
+          setup-nix: true
+      - name: Download baboon binary
+        uses: actions/download-artifact@v4
+        with:
+          name: baboon-linux-amd64
+          path: baboon-compiler/.jvm/target/graalvm-native-image/
+      - name: Run acceptance tests
+        run: |
+          chmod +x baboon-compiler/.jvm/target/graalvm-native-image/baboon
+          nix develop --command python3 test/acceptance/run_acceptance.py \
+            --baboon baboon-compiler/.jvm/target/graalvm-native-image/baboon \
+            --target ./target/acceptance \
+            --parallelism "$(nproc)"
+      - name: Write step summary
+        if: always()
+        run: |
+          if [ -f ./target/acceptance/acceptance-summary.md ]; then
+            cat ./target/acceptance/acceptance-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload acceptance report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: acceptance-report
+          path: |
+            target/acceptance/acceptance-report.html
+            target/acceptance/acceptance-results.json
+            target/acceptance/acceptance-summary.md
+
   validate-flake:
     strategy:
       fail-fast: false

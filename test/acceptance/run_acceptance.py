@@ -737,6 +737,111 @@ def generate_html_report(report: AcceptanceReport, langs: list[Lang], target_dir
     print(f"HTML report: {report_path}")
 
 
+def _resolve_cell_status(
+    report: AcceptanceReport, fmt: Format, from_lang: Lang, to_lang: Lang,
+) -> str:
+    key = (fmt, from_lang, to_lang)
+    r = report.read_results.get(key)
+    if r:
+        return r.status.value
+    br_from = report.build_results.get(from_lang)
+    br_to = report.build_results.get(to_lang)
+    if (br_from and br_from.status != Status.PASSED) or (
+        br_to and br_to.status != Status.PASSED
+    ):
+        return "B"
+    wr = report.write_results.get((from_lang, fmt))
+    if wr and wr.status != Status.PASSED:
+        return "S"
+    return "U"
+
+
+def generate_markdown_summary(
+    report: AcceptanceReport, langs: list[Lang], target_dir: Path,
+):
+    status_emoji = {"P": ":white_check_mark:", "B": ":warning:", "S": ":x:", "U": ":grey_question:"}
+    lines: list[str] = []
+
+    expected_total = len(langs) * len(langs) * len(Format)
+    counts: dict[str, int] = {"P": 0, "B": 0, "S": 0, "U": 0}
+    for fmt in Format:
+        for from_lang in langs:
+            for to_lang in langs:
+                counts[_resolve_cell_status(report, fmt, from_lang, to_lang)] += 1
+
+    all_passed = counts["P"] == expected_total
+
+    if all_passed:
+        lines.append(f"## :white_check_mark: Acceptance Tests Passed ({expected_total}/{expected_total})")
+    else:
+        lines.append(f"## :x: Acceptance Tests: {counts['P']}/{expected_total} passed")
+
+    lines.append("")
+    lines.append(f"Duration: {report.total_duration_sec:.1f}s")
+    lines.append("")
+    lines.append(
+        f"| | Passed | Build Failed | Serde Failed | Unexpected |"
+    )
+    lines.append(f"|---|---|---|---|---|")
+    lines.append(
+        f"| Count | {counts['P']} | {counts['B']} | {counts['S']} | {counts['U']} |"
+    )
+    lines.append("")
+
+    for fmt in Format:
+        lines.append(f"### {fmt.value.upper()} Compatibility Matrix")
+        lines.append("")
+        lines.append("*Rows = serializer (FROM), Columns = deserializer (TO)*")
+        lines.append("")
+
+        header = "| FROM \\ TO | " + " | ".join(LANG_DISPLAY[l] for l in langs) + " |"
+        sep = "|---|" + "|".join("---" for _ in langs) + "|"
+        lines.append(header)
+        lines.append(sep)
+
+        for from_lang in langs:
+            cells = []
+            for to_lang in langs:
+                s = _resolve_cell_status(report, fmt, from_lang, to_lang)
+                cells.append(status_emoji.get(s, s))
+            lines.append(
+                f"| **{LANG_DISPLAY[from_lang]}** | " + " | ".join(cells) + " |"
+            )
+        lines.append("")
+
+    # Failure details
+    failures = []
+    for fmt in Format:
+        for from_lang in langs:
+            for to_lang in langs:
+                s = _resolve_cell_status(report, fmt, from_lang, to_lang)
+                if s != "P":
+                    key = (fmt, from_lang, to_lang)
+                    r = report.read_results.get(key)
+                    detail = ""
+                    if r and r.stderr:
+                        detail = r.stderr.strip().split("\n")[-1][:120]
+                    failures.append(
+                        f"- **{LANG_DISPLAY[from_lang]} -> {LANG_DISPLAY[to_lang]}** "
+                        f"({fmt.value.upper()}): {s}"
+                        + (f" — `{detail}`" if detail else "")
+                    )
+
+    if failures:
+        lines.append("<details>")
+        lines.append(f"<summary>{len(failures)} failures (click to expand)</summary>")
+        lines.append("")
+        for f in failures:
+            lines.append(f)
+        lines.append("")
+        lines.append("</details>")
+        lines.append("")
+
+    summary_path = target_dir / "acceptance-summary.md"
+    summary_path.write_text("\n".join(lines), encoding="utf-8")
+    print(f"Markdown summary: {summary_path}")
+
+
 def write_json_results(report: AcceptanceReport, langs: list[Lang], target_dir: Path):
     results = {
         "total_duration_sec": report.total_duration_sec,
@@ -783,6 +888,16 @@ def write_json_results(report: AcceptanceReport, langs: list[Lang], target_dir: 
     results_path = target_dir / "acceptance-results.json"
     results_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
     print(f"JSON results: {results_path}")
+
+
+# ---------------------------------------------------------------------------
+# Report output
+# ---------------------------------------------------------------------------
+
+def write_all_reports(report: AcceptanceReport, langs: list[Lang], target_dir: Path):
+    generate_html_report(report, langs, target_dir)
+    generate_markdown_summary(report, langs, target_dir)
+    write_json_results(report, langs, target_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -928,8 +1043,7 @@ async def async_main():
             for line in report.codegen_result.stderr.strip().split("\n")[-10:]:
                 print(f"    {line}")
         report.total_duration_sec = time.monotonic() - start_time
-        generate_html_report(report, langs, target_dir)
-        write_json_results(report, langs, target_dir)
+        write_all_reports(report, langs, target_dir)
         return 1
     print(f"  OK ({report.codegen_result.duration_sec:.1f}s)")
 
@@ -950,8 +1064,7 @@ async def async_main():
 
     if _shutting_down:
         report.total_duration_sec = time.monotonic() - start_time
-        generate_html_report(report, langs, target_dir)
-        write_json_results(report, langs, target_dir)
+        write_all_reports(report, langs, target_dir)
         return 130
 
     # Phase 4: Serialize
@@ -972,8 +1085,7 @@ async def async_main():
 
     if _shutting_down:
         report.total_duration_sec = time.monotonic() - start_time
-        generate_html_report(report, langs, target_dir)
-        write_json_results(report, langs, target_dir)
+        write_all_reports(report, langs, target_dir)
         return 130
 
     # Phase 5: Deserialize and verify
@@ -1023,8 +1135,7 @@ async def async_main():
     report.total_duration_sec = time.monotonic() - start_time
 
     print_phase("Phase 6: Generate report")
-    generate_html_report(report, langs, target_dir)
-    write_json_results(report, langs, target_dir)
+    write_all_reports(report, langs, target_dir)
 
     all_passed = print_summary(report, langs)
     return 0 if all_passed else 1
