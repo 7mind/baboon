@@ -60,14 +60,33 @@ if [[ "$(uname)" == "Linux" ]]; then
   if [[ "$SWIFT_BIN" == /nix/store/* ]]; then
     SWIFT_TARGET_INFO="$(swiftc -print-target-info)"
     SWIFT_STDLIB="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["paths"]["runtimeLibraryPaths"][0])' <<< "$SWIFT_TARGET_INFO")"
-    SWIFT_LIBDISPATCH_BASE="$(nix-store -q --requisites "$SWIFT_BIN" | awk '/swift-corelibs-libdispatch-/{ print; exit }')"
-
-    if [[ -z "$SWIFT_LIBDISPATCH_BASE" ]]; then
-      echo "swift-corelibs-libdispatch is not found in swift closure" >&2
+    SWIFT_VERSION="$(swift --version | sed -n 's/^Swift version \([0-9][0-9.]*\).*/\1/p' | head -n1)"
+    if [[ -z "$SWIFT_VERSION" ]]; then
+      echo "Unable to detect Swift version from 'swift --version'" >&2
       exit 1
     fi
 
-    SWIFT_LIBDISPATCH="$SWIFT_LIBDISPATCH_BASE/lib"
+    shopt -s nullglob
+    swift_libdispatch_candidates=(/nix/store/*swift-corelibs-libdispatch-"$SWIFT_VERSION"*/lib)
+    shopt -u nullglob
+
+    swift_libdispatch_matches=()
+    for candidate in "${swift_libdispatch_candidates[@]}"; do
+      if [[ "$candidate" == *-dev/lib ]]; then
+        continue
+      fi
+      if [[ -f "$candidate/libdispatch.so" || -f "$candidate/libdispatch.so.5" ]]; then
+        swift_libdispatch_matches+=("$candidate")
+      fi
+    done
+
+    if [[ ${#swift_libdispatch_matches[@]} -ne 1 ]]; then
+      echo "Expected exactly one runtime swift-corelibs-libdispatch path for Swift $SWIFT_VERSION, found ${#swift_libdispatch_matches[@]}" >&2
+      printf 'Candidates:\n%s\n' "${swift_libdispatch_candidates[@]}" >&2 || true
+      exit 1
+    fi
+
+    SWIFT_LIBDISPATCH="${swift_libdispatch_matches[0]}"
     if [[ ! -d "$SWIFT_STDLIB" || ! -d "$SWIFT_LIBDISPATCH" ]]; then
       echo "Swift runtime libraries are not available: SWIFT_STDLIB=$SWIFT_STDLIB SWIFT_LIBDISPATCH=$SWIFT_LIBDISPATCH" >&2
       exit 1
