@@ -7,7 +7,10 @@ let package = Package(
     targets: [
         .target(
             name: "BaboonGenerated",
-            path: "Sources/BaboonGenerated"
+            path: "Sources/BaboonGenerated",
+            swiftSettings: [
+                .unsafeFlags(["-enable-testing"])
+            ]
         ),
         .executableTarget(
             name: "CompatMain",

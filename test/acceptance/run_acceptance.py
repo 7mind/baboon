@@ -264,13 +264,13 @@ LANG_CONFIGS: dict[Lang, LangConfig] = {
         baboon_target=":swift",
         baboon_output="Sources/BaboonGenerated",
         build_cmds=[
-            _swift_shell_cmd("swift build -c release -Xswiftc -enable-testing"),
+            _swift_shell_cmd("swift build -c release"),
         ],
         write_cmd=lambda d, f: _swift_shell_cmd(
-            f"swift run -c release -Xswiftc -enable-testing CompatMain write {shlex.quote(d)} {shlex.quote(f)}"
+            f"swift run -c release CompatMain write {shlex.quote(d)} {shlex.quote(f)}"
         ),
         read_cmd=lambda p: _swift_shell_cmd(
-            f"swift run -c release -Xswiftc -enable-testing CompatMain read {shlex.quote(p)}"
+            f"swift run -c release CompatMain read {shlex.quote(p)}"
         ),
         rsync_excludes=[".build", "Sources/BaboonGenerated"],
     ),
