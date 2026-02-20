@@ -4,55 +4,57 @@ private func baboonEpochMillis(_ date: Date) -> Int64 {
     return Int64((date.timeIntervalSince1970 * 1000.0).rounded())
 }
 
-class BaboonRandom {
+public class BaboonRandom {
     private var rng = SystemRandomNumberGenerator()
 
-    func nextBool() -> Bool { return Bool.random(using: &rng) }
+    public init() {}
 
-    func nextI08() -> Int8 { return Int8.random(in: Int8.min...Int8.max, using: &rng) }
-    func nextI16() -> Int16 { return Int16.random(in: Int16.min...Int16.max, using: &rng) }
-    func nextI32() -> Int32 { return Int32.random(in: Int32.min...Int32.max, using: &rng) }
-    func nextI64() -> Int64 { return Int64.random(in: Int64.min...Int64.max, using: &rng) }
+    public func nextBool() -> Bool { return Bool.random(using: &rng) }
 
-    func nextU08() -> UInt8 { return UInt8.random(in: UInt8.min...UInt8.max, using: &rng) }
-    func nextU16() -> UInt16 { return UInt16.random(in: UInt16.min...UInt16.max, using: &rng) }
-    func nextU32() -> UInt32 { return UInt32.random(in: UInt32.min...UInt32.max, using: &rng) }
-    func nextU64() -> UInt64 { return UInt64.random(in: UInt64.min...UInt64.max, using: &rng) }
+    public func nextI08() -> Int8 { return Int8.random(in: Int8.min...Int8.max, using: &rng) }
+    public func nextI16() -> Int16 { return Int16.random(in: Int16.min...Int16.max, using: &rng) }
+    public func nextI32() -> Int32 { return Int32.random(in: Int32.min...Int32.max, using: &rng) }
+    public func nextI64() -> Int64 { return Int64.random(in: Int64.min...Int64.max, using: &rng) }
 
-    func nextF32() -> Float {
+    public func nextU08() -> UInt8 { return UInt8.random(in: UInt8.min...UInt8.max, using: &rng) }
+    public func nextU16() -> UInt16 { return UInt16.random(in: UInt16.min...UInt16.max, using: &rng) }
+    public func nextU32() -> UInt32 { return UInt32.random(in: UInt32.min...UInt32.max, using: &rng) }
+    public func nextU64() -> UInt64 { return UInt64.random(in: UInt64.min...UInt64.max, using: &rng) }
+
+    public func nextF32() -> Float {
         let raw = Float.random(in: -500.0...500.0, using: &rng)
         // Round-trip through bitPattern to ensure UEBA binary precision
         return Float(bitPattern: raw.bitPattern)
     }
 
-    func nextF64() -> Double {
+    public func nextF64() -> Double {
         return Double.random(in: -5e14...5e14, using: &rng)
     }
 
-    func nextDecimal() -> BaboonDecimal {
+    public func nextDecimal() -> BaboonDecimal {
         let intPart = Int.random(in: -499999...499999, using: &rng)
         let fracPart = Int.random(in: 0...999999, using: &rng)
         let fracStr = String(format: "%06d", fracPart)
         return BaboonDecimal("\\(intPart).\\(fracStr)")
     }
 
-    func nextString() -> String {
+    public func nextString() -> String {
         let length = Int.random(in: 1...20, using: &rng)
         let chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         let charsArray = Array(chars)
         return String((0..<length).map { _ in charsArray[Int.random(in: 0..<charsArray.count, using: &rng)] })
     }
 
-    func nextBytes() -> Data {
+    public func nextBytes() -> Data {
         let length = Int.random(in: 1...32, using: &rng)
         return Data((0..<length).map { _ in UInt8.random(in: 0...255, using: &rng) })
     }
 
-    func nextUuid() -> UUID {
+    public func nextUuid() -> UUID {
         return UUID()
     }
 
-    func nextTsu() -> Date {
+    public func nextTsu() -> Date {
         let year = 2000 + Int.random(in: 0..<30, using: &rng)
         let month = 1 + Int.random(in: 0..<12, using: &rng)
         let day = 1 + Int.random(in: 0..<28, using: &rng)
@@ -76,7 +78,7 @@ class BaboonRandom {
         return Date(timeIntervalSince1970: Double(epochMillis) / 1000.0)
     }
 
-    func nextTso() -> BaboonDateTimeOffset {
+    public func nextTso() -> BaboonDateTimeOffset {
         let dt = nextTsu()
         let offsetHours = Int64(Int.random(in: -12...12, using: &rng))
         let offsetMillis = offsetHours * 3600000
@@ -87,20 +89,20 @@ class BaboonRandom {
         )
     }
 
-    func nextIntRange(_ max: Int) -> Int {
+    public func nextIntRange(_ max: Int) -> Int {
         return Int.random(in: 0..<max, using: &rng)
     }
 
-    func oneOf<T>(_ items: [T]) -> T {
+    public func oneOf<T>(_ items: [T]) -> T {
         return items[Int.random(in: 0..<items.count, using: &rng)]
     }
 
-    func mkList<T>(_ gen: () -> T) -> [T] {
+    public func mkList<T>(_ gen: () -> T) -> [T] {
         let length = Int.random(in: 1...5, using: &rng)
         return (0..<length).map { _ in gen() }
     }
 
-    func mkSet<T: Hashable>(_ gen: () -> T) -> Set<T> {
+    public func mkSet<T: Hashable>(_ gen: () -> T) -> Set<T> {
         let length = Int.random(in: 1...5, using: &rng)
         var result = Set<T>()
         var attempts = 0
@@ -111,7 +113,7 @@ class BaboonRandom {
         return result
     }
 
-    func mkMap<K: Hashable, V>(_ genKey: () -> K, _ genValue: () -> V) -> [K: V] {
+    public func mkMap<K: Hashable, V>(_ genKey: () -> K, _ genValue: () -> V) -> [K: V] {
         let length = Int.random(in: 1...5, using: &rng)
         var result = [K: V]()
         var attempts = 0
@@ -122,17 +124,17 @@ class BaboonRandom {
         return result
     }
 
-    func mkOptional<T>(_ gen: () -> T) -> T? {
+    public func mkOptional<T>(_ gen: () -> T) -> T? {
         return Bool.random(using: &rng) ? gen() : nil
     }
 
-    func mkEnum<T>(_ values: [T]) -> T {
+    public func mkEnum<T>(_ values: [T]) -> T {
         return values[Int.random(in: 0..<values.count, using: &rng)]
     }
 }
 
-class BaboonRandomFactory {
-    static func create() -> BaboonRandom {
+public class BaboonRandomFactory {
+    public static func create() -> BaboonRandom {
         return BaboonRandom()
     }
 }

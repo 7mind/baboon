@@ -122,9 +122,9 @@ $BABOON_BIN \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :swift \
-  --output "$TEST_DIR/sw-stub/Sources/BaboonGenerated" \
+  --output "$TEST_DIR/sw-stub/Sources" \
   --test-output "$TEST_DIR/sw-stub/Tests/BaboonTests" \
-  --fixture-output "$TEST_DIR/sw-stub/Sources/BaboonGenerated" \
+  --fixture-output "$TEST_DIR/sw-stub/Sources" \
   --sw-write-evolution-dict=true \
   --sw-wrapped-adt-branch-codecs=false \
   --generate-ueba-codecs-by-default=true \
@@ -378,9 +378,9 @@ $BABOON_BIN \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :swift \
-  --output "$TEST_DIR/sw-stub/Sources/BaboonGenerated" \
+  --output "$TEST_DIR/sw-stub/Sources" \
   --test-output "$TEST_DIR/sw-stub/Tests/BaboonTests" \
-  --fixture-output "$TEST_DIR/sw-stub/Sources/BaboonGenerated" \
+  --fixture-output "$TEST_DIR/sw-stub/Sources" \
   --sw-write-evolution-dict=true \
   --sw-wrapped-adt-branch-codecs=true \
   --generate-ueba-codecs-by-default=true \
@@ -561,7 +561,7 @@ $BABOON_BIN \
   :dart \
   --output ./test/conv-test-dt/lib/generated \
   :swift \
-  --output ./test/conv-test-sw/Sources/BaboonGenerated
+  --output ./test/conv-test-sw/Generated
 
 # Move Dart runtime files into the baboon_runtime package
 mv ./test/conv-test-dt/lib/generated/baboon_runtime.dart ./test/conv-test-dt/packages/baboon_runtime/lib/

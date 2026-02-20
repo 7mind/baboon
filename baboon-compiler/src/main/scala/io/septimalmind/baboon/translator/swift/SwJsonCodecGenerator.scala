@@ -42,10 +42,11 @@ class SwJsonCodecGenerator(
   ): TextTree[SwValue] = {
     val isEncoderEnabled = domain.version == evo.latest
     val encReturnType = "Any"
+    val localName = name.asDeclName
     val encodeMethod =
       if (isEncoderEnabled) {
         List(
-          q"""override func encode(_ ctx: $baboonCodecContext, _ value: $name) -> $encReturnType {
+          q"""public override func encode(_ ctx: $baboonCodecContext, _ value: $localName) -> $encReturnType {
              |    ${enc.shift(4).trim}
              |}
              |""".stripMargin.trim
@@ -53,7 +54,7 @@ class SwJsonCodecGenerator(
       } else Nil
     val decodeMethod =
       List(
-        q"""override func decode(_ ctx: $baboonCodecContext, _ wire: Any) throws -> $name {
+        q"""public override func decode(_ ctx: $baboonCodecContext, _ wire: Any) throws -> $localName {
            |    ${dec.shift(4).trim}
            |}""".stripMargin.trim
       )
@@ -64,22 +65,22 @@ class SwJsonCodecGenerator(
 
     val cParent = if (isEncoderEnabled) {
       defn match {
-        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecBase<$name>"
-        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecBase<$name>"
-        case _ if defn.isAdt                                => q"$baboonJsonCodecBaseGeneratedAdt<$name>"
-        case _                                              => q"$baboonJsonCodecBaseGenerated<$name>"
+        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecBase<$localName>"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecBase<$localName>"
+        case _ if defn.isAdt                                => q"$baboonJsonCodecBaseGeneratedAdt<$localName>"
+        case _                                              => q"$baboonJsonCodecBaseGenerated<$localName>"
       }
     } else {
       defn match {
-        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecNoEncoder<$name>"
-        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecNoEncoder<$name>"
-        case _ if defn.isAdt                                => q"$baboonJsonCodecNoEncoderGeneratedAdt<$name>"
-        case _                                              => q"$baboonJsonCodecNoEncoderGenerated<$name>"
+        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecNoEncoder<$localName>"
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecNoEncoder<$localName>"
+        case _ if defn.isAdt                                => q"$baboonJsonCodecNoEncoderGeneratedAdt<$localName>"
+        case _                                              => q"$baboonJsonCodecNoEncoderGenerated<$localName>"
       }
     }
 
-    q"""class ${cName.asName}: $cParent {
-       |    static let instance = ${cName.asName}()
+    q"""public class ${cName.asDeclName}: $cParent {
+       |    public static let instance = ${cName.asDeclName}()
        |    private override init() { super.init() }
        |
        |    ${baseMethods.joinNN().shift(4).trim}
@@ -149,7 +150,7 @@ class SwJsonCodecGenerator(
       q"""guard let str = wire as? String else {
          |    throw BaboonCodecError.invalidInput("Expected string for ${name.name}")
          |}
-         |guard let parsed = $name.parse(str.trimmingCharacters(in: .whitespaces)) else {
+         |guard let parsed = ${name.asDeclName}.parse(str.trimmingCharacters(in: .whitespaces)) else {
          |    throw BaboonCodecError.invalidInput("Cannot decode to ${name.name}: no matching value for \\(str)")
          |}
          |return parsed""".stripMargin,
@@ -186,11 +187,11 @@ class SwJsonCodecGenerator(
       q"""guard let jsonObj = wire as? [String: Any] else {
          |    throw BaboonCodecError.invalidInput("Expected dictionary for ${name.name}")
          |}
-         |return $name(
+         |return ${name.asDeclName}(
          |    ${decFields.join(",\n").shift(4).trim}
          |)""".stripMargin
     } else {
-      q"""return $name()"""
+      q"""return ${name.asDeclName}()"""
     }
 
     (encBody, decBody)
@@ -369,12 +370,13 @@ class SwJsonCodecGenerator(
 
   def codecName(name: SwValue.SwType): SwValue.SwType = {
     val baseFileName = name.importAs.getOrElse(trans.toSnakeCase(name.name))
-    SwValue.SwType(name.pkg, s"${name.name}_JsonCodec", name.fq, importAs = Some(baseFileName))
+    val localName = name.localName.getOrElse(name.name)
+    SwValue.SwType(name.pkg, s"${name.name}_JsonCodec", name.fq, importAs = Some(baseFileName), localName = Some(s"${localName}_JsonCodec"))
   }
 
   override def codecMeta(defn: DomainMember.User, name: SwValue.SwType): Option[CodecMeta] = {
     if (isActive(defn.id)) {
-      Some(CodecMeta(q"static let codecJson: $baboonJsonCodec<$name> = ${codecName(name).asName}.instance"))
+      Some(CodecMeta(q"public static let codecJson: $baboonJsonCodec<${name.asDeclName}> = ${codecName(name).asDeclName}.instance"))
     } else None
   }
 

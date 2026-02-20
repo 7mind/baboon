@@ -67,8 +67,8 @@ object SwCodecFixtureTranslator {
         q"${translator.escapeSwiftKeyword(f.name.name)}: ${genType(f.tpe)}"
       }
 
-      q"""class ${fixtureTpeName(dto.id)} {
-         |    static func random(_ rnd: $baboonRandom) -> $fullType {
+      q"""public class ${fixtureTpeName(dto.id)} {
+         |    public static func random(_ rnd: $baboonRandom) -> $fullType {
          |        return $fullType(
          |            ${generatedFields.join(",\n").shift(12).trim}
          |        )
@@ -91,12 +91,12 @@ object SwCodecFixtureTranslator {
 
       q"""${membersFixtures.joinN()}
          |
-         |class ${fixtureTpeName(adt.id)} {
-         |    static func random(_ rnd: $baboonRandom) -> $fullType {
+         |public class ${fixtureTpeName(adt.id)} {
+         |    public static func random(_ rnd: $baboonRandom) -> $fullType {
          |        return rnd.oneOf(randomAll(rnd))
          |    }
          |
-         |    static func randomAll(_ rnd: $baboonRandom) -> [$fullType] {
+         |    public static func randomAll(_ rnd: $baboonRandom) -> [$fullType] {
          |        return [
          |            ${membersDirectCalls.join(",\n").shift(12).trim}
          |        ]

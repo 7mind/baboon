@@ -7,20 +7,9 @@ trait SwFileTools {
 }
 
 object SwFileTools {
-  class SwFileToolsImpl extends SwFileTools {
+  class SwFileToolsImpl(trans: SwTypeTranslator) extends SwFileTools {
     def basename(dom: Domain, evolution: BaboonEvolution): String = {
-      basename(
-        dom,
-        evolution.latest == dom.version,
-      )
-    }
-
-    private def basename(dom: Domain, omitVersion: Boolean): String = {
-      val base = dom.id.path.map(_.toLowerCase)
-      val segments =
-        if (omitVersion) base
-        else base ++ Seq(dom.version.v.toString)
-      segments.mkString("/")
+      trans.domainModuleName(dom.id, dom.version, evolution)
     }
   }
 }

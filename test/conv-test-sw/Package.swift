@@ -6,20 +6,30 @@ let package = Package(
     platforms: [.macOS(.v13)],
     targets: [
         .target(
-            name: "BaboonGenerated",
-            path: "Sources/BaboonGenerated",
+            name: "BaboonRuntime",
+            path: "Generated/BaboonRuntime"
+        ),
+        .target(
+            name: "ConvtestTestpkg_v1_0_0",
+            dependencies: ["BaboonRuntime"],
+            path: "Generated/ConvtestTestpkg_v1_0_0"
+        ),
+        .target(
+            name: "ConvtestTestpkg",
+            dependencies: ["BaboonRuntime", "ConvtestTestpkg_v1_0_0"],
+            path: "Generated/ConvtestTestpkg",
             swiftSettings: [
                 .unsafeFlags(["-enable-testing"])
             ]
         ),
         .executableTarget(
             name: "CompatMain",
-            dependencies: ["BaboonGenerated"],
+            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0"],
             path: "Sources/CompatMain"
         ),
         .testTarget(
             name: "CrossLanguageTests",
-            dependencies: ["BaboonGenerated"],
+            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0"],
             path: "Tests/CrossLanguageTests"
         ),
     ]

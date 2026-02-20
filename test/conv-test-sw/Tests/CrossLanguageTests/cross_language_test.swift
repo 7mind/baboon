@@ -1,6 +1,7 @@
 import XCTest
 import Foundation
-@testable import BaboonGenerated
+import BaboonRuntime
+@testable import ConvtestTestpkg
 
 final class CrossLanguageTests: XCTestCase {
     let baseDir = URL(fileURLWithPath: "../../target/compat-test").standardizedFileURL.path

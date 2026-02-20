@@ -161,15 +161,15 @@ class SwConversionTranslator[F[+_, +_]: Error2](
         val tin  = trans.asSwType(conv.sourceTpe, srcDom, evo).fullyQualified
         def tout = trans.asSwType(conv.targetTpe, domain, evo)
 
-        val meta = q"""override var versionFrom: String { "${srcVer.v.toString}" }
-                      |override var versionTo: String { "${domain.version.v.toString}" }
-                      |override var typeId: String { "${conv.sourceTpe.toString}" }
+        val meta = q"""public override var versionFrom: String { "${srcVer.v.toString}" }
+                      |public override var versionTo: String { "${domain.version.v.toString}" }
+                      |public override var typeId: String { "${conv.sourceTpe.toString}" }
                       """.stripMargin.trim
 
         val rendered = conv match {
           case _: Conversion.CustomConversionRequired =>
-            val classDef = q"""class $className: $baboonAbstractConversion<$tin, $tout> {
-                              |    override func doConvert(
+            val classDef = q"""public class $className: $baboonAbstractConversion<$tin, $tout> {
+                              |    public override func doConvert(
                               |        _ context: Any?,
                               |        _ conversions: $baboonAbstractConversions,
                               |        _ from: $tin
@@ -185,7 +185,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
             List(
               RenderedConversion(
                 fname,
-                tools.inLib(classDef),
+                tools.inLib(classDef, Owner.Toplevel),
                 Some(q"""register("${conv.targetTpe.toString}", { required.$convMethodName() })"""),
                 Some(q"func $convMethodName() -> $baboonAbstractConversion<$tin, $tout>"),
               )
@@ -204,10 +204,10 @@ class SwConversionTranslator[F[+_, +_]: Error2](
                    |    ${mappingEntries.joinN().shift(4).trim}
                    |][from.rawValue] ?? from.rawValue""".stripMargin
               }
-            val classDef = q"""class $className: $baboonAbstractConversion<$tin, $tout> {
+            val classDef = q"""public class $className: $baboonAbstractConversion<$tin, $tout> {
                               |    static let instance = $className()
                               |    private override init() { super.init() }
-                              |    override func doConvert(
+                              |    public override func doConvert(
                               |        _ context: Any?,
                               |        _ conversions: $baboonAbstractConversions,
                               |        _ from: $tin
@@ -222,7 +222,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
                               |}
                   """.stripMargin.trim
             val regtree = q"""register("${conv.targetTpe.toString}", { $className.instance })"""
-            List(RenderedConversion(fname, tools.inLib(classDef), Some(regtree), None))
+            List(RenderedConversion(fname, tools.inLib(classDef, Owner.Toplevel), Some(regtree), None))
 
           case c: Conversion.CopyAdtBranchByName =>
             val cases = c.oldDefn.dataMembers(srcDom).map {
@@ -234,10 +234,10 @@ class SwConversionTranslator[F[+_, +_]: Error2](
                 q"if case .$oldCaseName(let x) = from { return .$newCaseName($converted) }"
             }
 
-            val classDef = q"""class $className: $baboonAbstractConversion<$tin, $tout> {
+            val classDef = q"""public class $className: $baboonAbstractConversion<$tin, $tout> {
                               |    static let instance = $className()
                               |    private override init() { super.init() }
-                              |    override func doConvert(
+                              |    public override func doConvert(
                               |        _ context: Any?,
                               |        _ conversions: $baboonAbstractConversions,
                               |        _ from: $tin
@@ -249,7 +249,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
                               |}
                   """.stripMargin.trim
             val regtree = q"""register("${conv.targetTpe.toString}", { $className.instance })"""
-            List(RenderedConversion(fname, tools.inLib(classDef), Some(regtree), None))
+            List(RenderedConversion(fname, tools.inLib(classDef, Owner.Toplevel), Some(regtree), None))
 
           case c: Conversion.DtoConversion =>
             val defnTypeId = c.targetTpe
@@ -315,10 +315,10 @@ class SwConversionTranslator[F[+_, +_]: Error2](
                 q"let ${f.name.name.toLowerCase}: $ftype = $expr"
             }
             val ctorArgs = dto.fields.map(f => q"${trans.escapeSwiftKeyword(f.name.name)}: ${f.name.name.toLowerCase}")
-            val classDef = q"""class $className: $baboonAbstractConversion<$tin, $tout> {
+            val classDef = q"""public class $className: $baboonAbstractConversion<$tin, $tout> {
                               |    static let instance = $className()
                               |    private override init() { super.init() }
-                              |    override func doConvert(
+                              |    public override func doConvert(
                               |        _ context: Any?,
                               |        _ conversions: $baboonAbstractConversions,
                               |        _ from: $tin
@@ -332,7 +332,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
                               |}
                   """.stripMargin.trim
             val regtree = q"""register("${conv.targetTpe.toString}", { $className.instance })"""
-            List(RenderedConversion(fname, tools.inLib(classDef), Some(regtree), None))
+            List(RenderedConversion(fname, tools.inLib(classDef, Owner.Toplevel), Some(regtree), None))
         }
 
         if (false) {

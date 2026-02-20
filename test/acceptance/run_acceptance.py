@@ -252,7 +252,7 @@ LANG_CONFIGS: dict[Lang, LangConfig] = {
     Lang.SWIFT: LangConfig(
         dir_name="conv-test-sw",
         baboon_target=":swift",
-        baboon_output="Sources/BaboonGenerated",
+        baboon_output="Generated",
         build_cmds=[],
         write_cmd=lambda d, f: _swift_cmd(
             "run", "CompatMain", "write", d, f
@@ -260,7 +260,7 @@ LANG_CONFIGS: dict[Lang, LangConfig] = {
         read_cmd=lambda p: _swift_cmd(
             "run", "CompatMain", "read", p
         ),
-        rsync_excludes=[".build", "Sources/BaboonGenerated"],
+        rsync_excludes=[".build", "Generated"],
     ),
 }
 

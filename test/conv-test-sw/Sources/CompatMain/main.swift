@@ -1,5 +1,6 @@
 import Foundation
-@testable import BaboonGenerated
+import BaboonRuntime
+@testable import ConvtestTestpkg
 
 func fail(_ message: String) -> Never {
     fputs(message + "\n", stderr)

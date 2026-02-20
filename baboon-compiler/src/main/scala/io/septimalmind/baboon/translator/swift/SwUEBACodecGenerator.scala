@@ -77,13 +77,14 @@ class SwUEBACodecGenerator(
     }
 
     val indexGetter =
-      q"""var indexElementsCount: Int {
+      q"""public var indexElementsCount: Int {
          |    ${indexBody.shift(4).trim}
          |}""".stripMargin
 
+    val localName = name.asDeclName
     val encoderMethods = if (isEncoderEnabled) {
       List(
-        q"""override func encode(_ ctx: $baboonCodecContext, _ writer: $baboonBinWriter, _ value: $name) {
+        q"""public override func encode(_ ctx: $baboonCodecContext, _ writer: $baboonBinWriter, _ value: $localName) {
            |    ${enc.shift(4).trim}
            |}
            |""".stripMargin
@@ -91,7 +92,7 @@ class SwUEBACodecGenerator(
     } else Nil
 
     val decoderMethods = List(
-      q"""override func decode(_ ctx: $baboonCodecContext, _ reader: $baboonBinReader) throws -> $name {
+      q"""public override func decode(_ ctx: $baboonCodecContext, _ reader: $baboonBinReader) throws -> $localName {
          |    ${dec.shift(4).trim}
          |}""".stripMargin
     )
@@ -99,7 +100,7 @@ class SwUEBACodecGenerator(
     val baseMethods = encoderMethods ++ decoderMethods
       ++ branchDecoder.map {
         body =>
-          q"""func decodeBranch(_ ctx: $baboonCodecContext, _ reader: $baboonBinReader) throws -> $name {
+          q"""func decodeBranch(_ ctx: $baboonCodecContext, _ reader: $baboonBinReader) throws -> $localName {
              |    ${body.shift(4).trim}
              |}""".stripMargin
       }.toList ++ List(indexGetter)
@@ -124,8 +125,8 @@ class SwUEBACodecGenerator(
 
     val meta = renderMeta(defn, swDomainTreeTools.makeCodecMeta(defn))
 
-    q"""class ${cName.asName}: $cParent<$name>, $baboonBinCodecIndexed {
-       |    static let instance = ${cName.asName}()
+    q"""public class ${cName.asDeclName}: $cParent<$localName>, $baboonBinCodecIndexed {
+       |    public static let instance = ${cName.asDeclName}()
        |    private override init() { super.init() }
        |
        |    ${baseMethods.joinNN().shift(4).trim}
@@ -194,7 +195,7 @@ class SwUEBACodecGenerator(
 
     val decBranches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        q"case ${idx.toString}: return $name.${m.name}"
+        q"case ${idx.toString}: return ${name.asDeclName}.${m.name}"
     }
 
     (
@@ -289,7 +290,7 @@ class SwUEBACodecGenerator(
 
     q"""let index = try readIndex(ctx, reader)
        |if ctx.useIndices { assert(index.count == indexElementsCount) }
-       |return $name(
+       |return ${name.asDeclName}(
        |    $fieldAssignments
        |)""".stripMargin
   }
@@ -471,12 +472,13 @@ class SwUEBACodecGenerator(
 
   def codecName(name: SwType): SwType = {
     val baseFileName = name.importAs.getOrElse(trans.toSnakeCase(name.name))
-    SwType(name.pkg, s"${name.name}_UebaCodec", name.fq, importAs = Some(baseFileName))
+    val localName = name.localName.getOrElse(name.name)
+    SwType(name.pkg, s"${name.name}_UebaCodec", name.fq, importAs = Some(baseFileName), localName = Some(s"${localName}_UebaCodec"))
   }
 
   override def codecMeta(defn: DomainMember.User, name: SwType): Option[CodecMeta] = {
     if (isActive(defn.id)) {
-      Some(CodecMeta(q"static let codecUeba: $baboonBinCodec<$name> = ${codecName(name).asName}.instance"))
+      Some(CodecMeta(q"public static let codecUeba: $baboonBinCodec<${name.asDeclName}> = ${codecName(name).asDeclName}.instance"))
     } else None
   }
 
