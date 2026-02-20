@@ -60,8 +60,22 @@ class BaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def convertForeign(id: TypeId.User, isRoot: Boolean, f: RawForeign): F[NEList[BaboonIssue], NEList[DomainMember.User]] = {
+    val (rtEntries, langEntries) = f.defns.partition(_.lang == "rt")
+
     for {
-      mappedEntries <- F.traverse(f.defns) { e =>
+      rtMapping <- rtEntries match {
+        case Nil => F.pure(None: Option[TypeRef])
+        case single :: Nil =>
+          single.decl match {
+            case RawForeignDecl.BaboonRef(rawTypeRef) =>
+              convertTpe(rawTypeRef, f.meta).map(Some(_))
+            case RawForeignDecl.Custom(_, _) =>
+              F.fail(BaboonIssue.of(TyperIssue.InvalidRtMapping(id, "rt binding must be a baboon type reference, not a string", f.meta)))
+          }
+        case _ =>
+          F.fail(BaboonIssue.of(TyperIssue.InvalidRtMapping(id, "multiple rt bindings are not allowed", f.meta)))
+      }
+      mappedEntries <- F.traverse(langEntries) { e =>
         for {
           lang <- F.fromEither {
             BaboonLang.fromString(e.lang).toRight(BaboonIssue.of(TyperIssue.UnknownForeignLang(e.lang, id, f.meta)))
@@ -79,7 +93,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
           .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueForeignEntries(e, id, f.meta)))
       }
     } yield {
-      NEList(DomainMember.User(isRoot, Typedef.Foreign(id, entries), f.derived, f.meta))
+      NEList(DomainMember.User(isRoot, Typedef.Foreign(id, entries, rtMapping), f.derived, f.meta))
     }
   }
 

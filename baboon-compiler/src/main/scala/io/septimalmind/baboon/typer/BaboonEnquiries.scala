@@ -229,12 +229,14 @@ object BaboonEnquiries {
             case _: Typedef.Enum    => Set.empty
             case t: Typedef.Adt     => t.members.toSet ++ t.contracts
             case f: Typedef.Foreign =>
-              f.bindings.values.flatMap { entry =>
+              val bindingDeps = f.bindings.values.flatMap { entry =>
                 entry.mapping match {
                   case ForeignMapping.BaboonRef(typeRef) => explodeRef(typeRef)
                   case ForeignMapping.Custom(_, _)       => Set.empty
                 }
               }.toSet
+              val rtDeps = f.runtimeMapping.map(explodeRef).getOrElse(Set.empty)
+              bindingDeps ++ rtDeps
             case s: Typedef.Service =>
               s.methods.flatMap(m => Set(m.sig) ++ m.out.toSet ++ m.err.toSet).flatMap(explodeRef).toSet
           }
@@ -286,6 +288,7 @@ object BaboonEnquiries {
                 a.members.toList.map(id => wrap(id)).sorted.mkString(",")
               s"[adt;${wrap(a.id)};$members]"
             case f: Typedef.Foreign =>
+              val rtPart = f.runtimeMapping.map(ref => s"rt:${ref.toString}").getOrElse("")
               val members = f.bindings.values.toList
                 .sortBy(_.lang.asString)
                 .map { e =>
@@ -297,7 +300,7 @@ object BaboonEnquiries {
                   }
                 }
                 .mkString(":")
-              s"[foreign;${wrap(f.id)};$members]"
+              s"[foreign;${wrap(f.id)};$rtPart;$members]"
           }
       }
 
@@ -348,12 +351,14 @@ object BaboonEnquiries {
             case _: Typedef.Adt =>
               Set.empty
             case f: Typedef.Foreign =>
-              f.bindings.values.flatMap { entry =>
+              val bindingRefs = f.bindings.values.flatMap { entry =>
                 entry.mapping match {
                   case ForeignMapping.BaboonRef(typeRef) => Set(typeRef)
                   case ForeignMapping.Custom(_, _)       => Set.empty[TypeRef]
                 }
               }.toSet
+              val rtRefs = f.runtimeMapping.toSet
+              bindingRefs ++ rtRefs
             case s: Typedef.Service =>
               s.methods.flatMap(m => Set(m.sig) ++ m.out.toSet ++ m.err.toSet)
           }
@@ -458,10 +463,12 @@ object BaboonEnquiries {
                     BinReprLen.Range(1, None)
                   }
                 case _: Typedef.Service =>
-                  // services cannot be serialized at all
                   BinReprLen.Unknown()
-                case _: Typedef.Foreign =>
-                  BinReprLen.Unknown()
+                case f: Typedef.Foreign =>
+                  f.runtimeMapping match {
+                    case Some(typeRef) => binReprLenImpl(dom, typeRef, visited)
+                    case None          => BinReprLen.Unknown()
+                  }
               }
           }
 

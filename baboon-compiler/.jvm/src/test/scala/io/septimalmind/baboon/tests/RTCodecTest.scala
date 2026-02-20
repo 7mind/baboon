@@ -31,6 +31,32 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
         }
     }
 
+    "roundtrip foreign types with rt binding through UEBA" in {
+      (loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F]) =>
+        for {
+          fam <- loadPkg(loader)
+          // T1_Foreign_DTO has ft: ObscureInt and fm: map[ObscureInt, ObscureInt]
+          // ObscureInt has rt = i32, so it should encode/decode as i32
+          data: Json = io.circe.parser.parse("""{"ft":42,"fm":{"123":456,"789":0}}""").toOption.get
+          encoded <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("1.0.0"), "testpkg.pkg0/:#T1_Foreign_DTO", data, indexed = false)
+          decoded <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("1.0.0"), "testpkg.pkg0/:#T1_Foreign_DTO", encoded)
+        } yield {
+          assert(data == decoded)
+        }
+    }
+
+    "roundtrip foreign types with rt binding through indexed UEBA" in {
+      (loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F]) =>
+        for {
+          fam <- loadPkg(loader)
+          data: Json = io.circe.parser.parse("""{"ft":42,"fm":{"123":456,"789":0}}""").toOption.get
+          encoded <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("1.0.0"), "testpkg.pkg0/:#T1_Foreign_DTO", data, indexed = true)
+          decoded <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("1.0.0"), "testpkg.pkg0/:#T1_Foreign_DTO", encoded)
+        } yield {
+          assert(data == decoded)
+        }
+    }
+
     "roundtrip JSON files through UEBA" in {
       (loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F]) =>
         val metaPath = Paths.get("target/test-regular/cs-stub/BaboonDefinitions/Generated/baboon-meta.json")

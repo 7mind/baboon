@@ -924,6 +924,38 @@ class BaboonJvm$LANGModule[F[+_, +_]: Error2: TagKK](target: CompilerTarget.$LAN
 }
 ```
 
+### BaboonJS (ScalaJS JavaScript API)
+
+The BaboonJS module provides a JavaScript API for the compiler via ScalaJS. When adding a new target, update these files:
+
+**`CompilerOptionsJS.scala`**: Add a new `CompilerTargetJS.$LANGTarget` case class mirroring `CompilerTarget.$LANGTarget`:
+
+```scala
+case class $LANGTarget(
+  id: String,
+  output: OutputOptionsJS,
+  generic: GenericOptions,
+  language: $LANGOptions,
+) extends CompilerTargetJS
+```
+
+**`BaboonModuleJS.scala`**: Add a new DI module class:
+
+```scala
+class BaboonJs$LANGModule[F[+_, +_]: Error2: TagKK](compilerTarget: CompilerTarget.$LANGTarget) extends ModuleDef {
+  include(new BaboonCommon$LANGModule[F]())
+  make[CompilerTarget.$LANGTarget].fromValue(compilerTarget)
+}
+```
+
+**`BaboonJS.scala`**: Add language support in several places:
+1. Add a language options field to `JSCompilerTarget` (either reuse `JSCommonLangOptions` or create a language-specific trait)
+2. Add a case in `createTargets` to construct `CompilerTargetJS.$LANGTarget` with default options
+3. Add a `to$LANGTarget` conversion method from `CompilerTargetJS.$LANGTarget` to `CompilerTarget.$LANGTarget`
+4. Add a case in `toCompilerTargets` to call `to$LANGTarget`
+5. Add a case in `processTarget` to create `BaboonJs$LANGModule`
+6. Add the file extension to `safeToRemoveExtensions` in `createOutputOptions`
+
 ### ServiceContextResolver.scala and ServiceResultResolver.scala
 
 Add your language key to the `languages` list:
@@ -1575,6 +1607,7 @@ Before considering your backend complete, verify:
 - [ ] Runtime libraries are embedded as JVM resources
 - [ ] CLI options are registered and parsed correctly
 - [ ] DI module is wired correctly
+- [ ] BaboonJS bridge updated (`CompilerOptionsJS`, `BaboonModuleJS`, `BaboonJS`)
 - [ ] Stub test project compiles and tests pass
 - [ ] Cross-language compat tests pass (read/write JSON and UEBA from/to all other backends)
 - [ ] Build actions added to `.mdl/defs/tests.md`
