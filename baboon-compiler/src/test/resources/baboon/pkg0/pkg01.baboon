@@ -3,6 +3,7 @@ model testpkg.pkg0
 version "1.0.0"
 
 foreign ObscureInt {
+  rt = i32
   cs = "System.Int32"
   scala = "java.lang.Integer"
   kotlin = "java.lang.Integer"

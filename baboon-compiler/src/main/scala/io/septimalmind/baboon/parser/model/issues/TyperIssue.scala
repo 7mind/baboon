@@ -53,6 +53,8 @@ object TyperIssue {
 
   case class UnknownForeignLang(lang: String, id: TypeId.User, meta: RawNodeMeta) extends TyperIssue
 
+  case class InvalidRtMapping(id: TypeId.User, reason: String, meta: RawNodeMeta) extends TyperIssue
+
   case class EmptyEnum(id: TypeId.User, meta: RawNodeMeta) extends TyperIssue
 
   case class NonUniqueFields(id: TypeId.User, duplicateFields: Map[String, List[Field]], meta: RawNodeMeta) extends TyperIssue
@@ -244,7 +246,14 @@ object TyperIssue {
     (issue: UnknownForeignLang) => {
       s"""${extractLocation(issue.meta)}
          |Unknown foreign language identifier '${issue.lang}' in foreign type ${issue.id.toString}
-         |Valid identifiers: ${BaboonLang.all.map(_.asString).mkString(", ")}
+         |Valid identifiers: ${BaboonLang.all.map(_.asString).mkString(", ")}, rt
+         |""".stripMargin
+    }
+
+  implicit val invalidRtMappingPrinter: IssuePrinter[InvalidRtMapping] =
+    (issue: InvalidRtMapping) => {
+      s"""${extractLocation(issue.meta)}
+         |Invalid rt mapping in foreign type ${issue.id.toString}: ${issue.reason}
          |""".stripMargin
     }
 

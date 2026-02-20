@@ -332,6 +332,9 @@ object BaboonSchemeRenderer {
       indent: String,
     ): Unit = {
       sb.append(s"$indent${rootPrefix}foreign ${foreign.id.name.name} {\n")
+      foreign.runtimeMapping.foreach { rtRef =>
+        sb.append(s"$indent  rt = ${renderTypeRef(rtRef)}\n")
+      }
       foreign.bindings.toList.sortBy(_._1.asString).foreach {
         case (lang, entry) =>
           entry.mapping match {

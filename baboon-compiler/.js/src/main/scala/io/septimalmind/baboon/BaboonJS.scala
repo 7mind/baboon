@@ -200,6 +200,17 @@ object BaboonJS {
   }
 
   @js.native
+  trait JSCommonLangOptions extends js.Object {
+    val writeEvolutionDict: js.UndefOr[Boolean]
+    val wrappedAdtBranchCodecs: js.UndefOr[Boolean]
+    val enableDeprecatedEncoders: js.UndefOr[Boolean]
+    val generateJsonCodecs: js.UndefOr[Boolean]
+    val generateUebaCodecs: js.UndefOr[Boolean]
+    val generateUebaCodecsByDefault: js.UndefOr[Boolean]
+    val generateJsonCodecsByDefault: js.UndefOr[Boolean]
+  }
+
+  @js.native
   trait JSGenericOptions extends js.Object {
     val codecTestIterations: js.UndefOr[Int]
     val omitMostRecentVersionSuffixFromPaths: js.UndefOr[Boolean]
@@ -212,10 +223,17 @@ object BaboonJS {
 
   @js.native
   trait JSCompilerTarget extends js.Object {
-    val language: String // "cs" or "scala"
+    val language: String
     val generic: js.UndefOr[JSGenericOptions]
     val cs: js.UndefOr[JSCSOptions]
     val scala: js.UndefOr[JSScOptions]
+    val python: js.UndefOr[JSCommonLangOptions]
+    val rust: js.UndefOr[JSCommonLangOptions]
+    val typescript: js.UndefOr[JSCommonLangOptions]
+    val kotlin: js.UndefOr[JSCommonLangOptions]
+    val java: js.UndefOr[JSCommonLangOptions]
+    val dart: js.UndefOr[JSCommonLangOptions]
+    val swift: js.UndefOr[JSCommonLangOptions]
   }
 
   @js.native
@@ -236,7 +254,7 @@ object BaboonJS {
   private def createOutputOptions(generic: js.UndefOr[JSGenericOptions]): OutputOptionsJS = {
     val g = generic.getOrElse(js.Dynamic.literal().asInstanceOf[JSGenericOptions])
     OutputOptionsJS(
-      safeToRemoveExtensions = Set("meta", "cs", "json", "scala", "kt"),
+      safeToRemoveExtensions = Set("meta", "cs", "json", "scala", "kt", "py", "rs", "ts", "java", "dart", "swift"),
       runtime                = parseRuntimeOpt(g.runtime),
       generateConversions    = !g.disableConversions.getOrElse(false),
       generateTests          = g.generateTests.getOrElse(false),
@@ -301,6 +319,135 @@ object BaboonJS {
                 pragmas                     = Map.empty,
               ),
             )
+          case "python" =>
+            val opts = target.python.getOrElse(js.Dynamic.literal().asInstanceOf[JSCommonLangOptions])
+            CompilerTargetJS.PyTarget(
+              id      = "Python",
+              output  = createOutputOptions(target.generic),
+              generic = createGenericOptions(target.generic),
+              language = PyOptions(
+                writeEvolutionDict          = opts.writeEvolutionDict.getOrElse(false),
+                wrappedAdtBranchCodecs      = opts.wrappedAdtBranchCodecs.getOrElse(false),
+                enableDeprecatedEncoders    = opts.enableDeprecatedEncoders.getOrElse(false),
+                generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
+                generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
+                generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
+                generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                serviceResult               = ServiceResultConfig.pythonDefault,
+                serviceContext              = ServiceContextConfig.default,
+                pragmas                     = Map.empty,
+              ),
+            )
+          case "rust" =>
+            val opts = target.rust.getOrElse(js.Dynamic.literal().asInstanceOf[JSCommonLangOptions])
+            CompilerTargetJS.RsTarget(
+              id      = "Rust",
+              output  = createOutputOptions(target.generic),
+              generic = createGenericOptions(target.generic),
+              language = RsOptions(
+                writeEvolutionDict          = opts.writeEvolutionDict.getOrElse(false),
+                wrappedAdtBranchCodecs      = opts.wrappedAdtBranchCodecs.getOrElse(false),
+                generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
+                generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
+                generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
+                generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                serviceResult               = ServiceResultConfig.rustDefault,
+                serviceContext              = ServiceContextConfig.default,
+                pragmas                     = Map.empty,
+              ),
+            )
+          case "typescript" =>
+            val opts = target.typescript.getOrElse(js.Dynamic.literal().asInstanceOf[JSCommonLangOptions])
+            CompilerTargetJS.TsTarget(
+              id      = "TypeScript",
+              output  = createOutputOptions(target.generic),
+              generic = createGenericOptions(target.generic),
+              language = TsOptions(
+                writeEvolutionDict          = opts.writeEvolutionDict.getOrElse(false),
+                wrappedAdtBranchCodecs      = opts.wrappedAdtBranchCodecs.getOrElse(false),
+                generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
+                generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
+                generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
+                generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                serviceResult               = ServiceResultConfig.typescriptDefault,
+                serviceContext              = ServiceContextConfig.default,
+                pragmas                     = Map.empty,
+              ),
+            )
+          case "kotlin" =>
+            val opts = target.kotlin.getOrElse(js.Dynamic.literal().asInstanceOf[JSCommonLangOptions])
+            CompilerTargetJS.KtTarget(
+              id      = "Kotlin",
+              output  = createOutputOptions(target.generic),
+              generic = createGenericOptions(target.generic),
+              language = KtOptions(
+                writeEvolutionDict          = opts.writeEvolutionDict.getOrElse(false),
+                wrappedAdtBranchCodecs      = opts.wrappedAdtBranchCodecs.getOrElse(false),
+                enableDeprecatedEncoders    = opts.enableDeprecatedEncoders.getOrElse(false),
+                generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
+                generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
+                generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
+                generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                serviceResult               = ServiceResultConfig.kotlinDefault,
+                serviceContext              = ServiceContextConfig.default,
+                pragmas                     = Map.empty,
+              ),
+            )
+          case "java" =>
+            val opts = target.java.getOrElse(js.Dynamic.literal().asInstanceOf[JSCommonLangOptions])
+            CompilerTargetJS.JvTarget(
+              id      = "Java",
+              output  = createOutputOptions(target.generic),
+              generic = createGenericOptions(target.generic),
+              language = JvOptions(
+                writeEvolutionDict          = opts.writeEvolutionDict.getOrElse(false),
+                wrappedAdtBranchCodecs      = opts.wrappedAdtBranchCodecs.getOrElse(false),
+                enableDeprecatedEncoders    = opts.enableDeprecatedEncoders.getOrElse(false),
+                generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
+                generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
+                generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
+                generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                serviceResult               = ServiceResultConfig.javaDefault,
+                serviceContext              = ServiceContextConfig.default,
+                pragmas                     = Map.empty,
+              ),
+            )
+          case "dart" =>
+            val opts = target.dart.getOrElse(js.Dynamic.literal().asInstanceOf[JSCommonLangOptions])
+            CompilerTargetJS.DtTarget(
+              id      = "Dart",
+              output  = createOutputOptions(target.generic),
+              generic = createGenericOptions(target.generic),
+              language = DtOptions(
+                writeEvolutionDict          = opts.writeEvolutionDict.getOrElse(false),
+                wrappedAdtBranchCodecs      = opts.wrappedAdtBranchCodecs.getOrElse(false),
+                generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
+                generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
+                generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
+                generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                serviceResult               = ServiceResultConfig.dartDefault,
+                serviceContext              = ServiceContextConfig.default,
+                pragmas                     = Map.empty,
+              ),
+            )
+          case "swift" =>
+            val opts = target.swift.getOrElse(js.Dynamic.literal().asInstanceOf[JSCommonLangOptions])
+            CompilerTargetJS.SwTarget(
+              id      = "Swift",
+              output  = createOutputOptions(target.generic),
+              generic = createGenericOptions(target.generic),
+              language = SwOptions(
+                writeEvolutionDict          = opts.writeEvolutionDict.getOrElse(false),
+                wrappedAdtBranchCodecs      = opts.wrappedAdtBranchCodecs.getOrElse(false),
+                generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
+                generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
+                generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
+                generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
+                serviceResult               = ServiceResultConfig.swiftDefault,
+                serviceContext              = ServiceContextConfig.default,
+                pragmas                     = Map.empty,
+              ),
+            )
           case other => throw new IllegalArgumentException(s"Unknown target language: $other")
         }
     }
@@ -355,10 +502,80 @@ object BaboonJS {
     )
   }
 
+  private def toPyTarget(target: CompilerTargetJS.PyTarget): CompilerTarget.PyTarget = {
+    CompilerTarget.PyTarget(
+      id       = target.id,
+      output   = toOutputOptions(target.output),
+      generic  = target.generic,
+      language = target.language,
+    )
+  }
+
+  private def toRsTarget(target: CompilerTargetJS.RsTarget): CompilerTarget.RsTarget = {
+    CompilerTarget.RsTarget(
+      id       = target.id,
+      output   = toOutputOptions(target.output),
+      generic  = target.generic,
+      language = target.language,
+    )
+  }
+
+  private def toTsTarget(target: CompilerTargetJS.TsTarget): CompilerTarget.TsTarget = {
+    CompilerTarget.TsTarget(
+      id       = target.id,
+      output   = toOutputOptions(target.output),
+      generic  = target.generic,
+      language = target.language,
+    )
+  }
+
+  private def toKtTarget(target: CompilerTargetJS.KtTarget): CompilerTarget.KtTarget = {
+    CompilerTarget.KtTarget(
+      id       = target.id,
+      output   = toOutputOptions(target.output),
+      generic  = target.generic,
+      language = target.language,
+    )
+  }
+
+  private def toJvTarget(target: CompilerTargetJS.JvTarget): CompilerTarget.JvTarget = {
+    CompilerTarget.JvTarget(
+      id       = target.id,
+      output   = toOutputOptions(target.output),
+      generic  = target.generic,
+      language = target.language,
+    )
+  }
+
+  private def toDtTarget(target: CompilerTargetJS.DtTarget): CompilerTarget.DtTarget = {
+    CompilerTarget.DtTarget(
+      id       = target.id,
+      output   = toOutputOptions(target.output),
+      generic  = target.generic,
+      language = target.language,
+    )
+  }
+
+  private def toSwTarget(target: CompilerTargetJS.SwTarget): CompilerTarget.SwTarget = {
+    CompilerTarget.SwTarget(
+      id       = target.id,
+      output   = toOutputOptions(target.output),
+      generic  = target.generic,
+      language = target.language,
+    )
+  }
+
   private def toCompilerTargets(targets: Seq[CompilerTargetJS]): Seq[CompilerTarget] = {
     targets.map {
       case t: CompilerTargetJS.CSTarget => toCSTarget(t)
       case t: CompilerTargetJS.ScTarget => toScTarget(t)
+      case t: CompilerTargetJS.PyTarget => toPyTarget(t)
+      case t: CompilerTargetJS.RsTarget => toRsTarget(t)
+      case t: CompilerTargetJS.TsTarget => toTsTarget(t)
+      case t: CompilerTargetJS.KtTarget => toKtTarget(t)
+      case t: CompilerTargetJS.JvTarget => toJvTarget(t)
+      case t: CompilerTargetJS.DtTarget => toDtTarget(t)
+      case t: CompilerTargetJS.SwTarget => toSwTarget(t)
     }
   }
 
@@ -523,10 +740,15 @@ object BaboonJS {
     m: DefaultModule[F[Throwable, _]],
   ): F[Throwable, Seq[OutputFileWithPath]] = {
     val module = target match {
-      case t: CompilerTargetJS.CSTarget =>
-        new BaboonJsCSModule[F](toCSTarget(t))
-      case t: CompilerTargetJS.ScTarget =>
-        new BaboonJsScModule[F](toScTarget(t))
+      case t: CompilerTargetJS.CSTarget => new BaboonJsCSModule[F](toCSTarget(t))
+      case t: CompilerTargetJS.ScTarget => new BaboonJsScModule[F](toScTarget(t))
+      case t: CompilerTargetJS.PyTarget => new BaboonJsPyModule[F](toPyTarget(t))
+      case t: CompilerTargetJS.RsTarget => new BaboonJsRsModule[F](toRsTarget(t))
+      case t: CompilerTargetJS.TsTarget => new BaboonJsTsModule[F](toTsTarget(t))
+      case t: CompilerTargetJS.KtTarget => new BaboonJsKtModule[F](toKtTarget(t))
+      case t: CompilerTargetJS.JvTarget => new BaboonJsJvModule[F](toJvTarget(t))
+      case t: CompilerTargetJS.DtTarget => new BaboonJsDtModule[F](toDtTarget(t))
+      case t: CompilerTargetJS.SwTarget => new BaboonJsSwModule[F](toSwTarget(t))
     }
 
     Injector

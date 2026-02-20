@@ -57,7 +57,7 @@ object Typedef {
 
   case class ForeignEntry(lang: BaboonLang, mapping: ForeignMapping)
 
-  case class Foreign(id: TypeId.User, bindings: Map[BaboonLang, ForeignEntry]) extends User
+  case class Foreign(id: TypeId.User, bindings: Map[BaboonLang, ForeignEntry], runtimeMapping: Option[TypeRef]) extends User
 
   sealed trait NonDataTypedef {
     this: Typedef =>

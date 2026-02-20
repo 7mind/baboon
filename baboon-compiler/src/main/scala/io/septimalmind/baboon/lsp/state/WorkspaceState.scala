@@ -146,6 +146,7 @@ class WorkspaceState(
       case _: EmptyFamily                        => None
       case _: EmptyFamilyReload                  => None
       case _: TodoTyperIssue                     => None
+      case InvalidRtMapping(_, _, meta)          => Some(meta.pos)
     }
   }
 

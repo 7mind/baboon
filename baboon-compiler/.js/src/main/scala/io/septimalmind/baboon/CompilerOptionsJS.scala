@@ -20,6 +20,55 @@ object CompilerTargetJS {
     generic: GenericOptions,
     language: ScOptions,
   ) extends CompilerTargetJS
+
+  case class PyTarget(
+    id: String,
+    output: OutputOptionsJS,
+    generic: GenericOptions,
+    language: PyOptions,
+  ) extends CompilerTargetJS
+
+  case class RsTarget(
+    id: String,
+    output: OutputOptionsJS,
+    generic: GenericOptions,
+    language: RsOptions,
+  ) extends CompilerTargetJS
+
+  case class TsTarget(
+    id: String,
+    output: OutputOptionsJS,
+    generic: GenericOptions,
+    language: TsOptions,
+  ) extends CompilerTargetJS
+
+  case class KtTarget(
+    id: String,
+    output: OutputOptionsJS,
+    generic: GenericOptions,
+    language: KtOptions,
+  ) extends CompilerTargetJS
+
+  case class JvTarget(
+    id: String,
+    output: OutputOptionsJS,
+    generic: GenericOptions,
+    language: JvOptions,
+  ) extends CompilerTargetJS
+
+  case class DtTarget(
+    id: String,
+    output: OutputOptionsJS,
+    generic: GenericOptions,
+    language: DtOptions,
+  ) extends CompilerTargetJS
+
+  case class SwTarget(
+    id: String,
+    output: OutputOptionsJS,
+    generic: GenericOptions,
+    language: SwOptions,
+  ) extends CompilerTargetJS
 }
 
 final case class OutputOptionsJS(

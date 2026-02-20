@@ -109,6 +109,7 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
       case EmptyFamily(_)                               => (None, "Empty family")
       case EmptyFamilyReload(_)                         => (None, "Empty family")
       case TodoTyperIssue(descr)                        => (None, s"TODO: $descr")
+      case InvalidRtMapping(id, reason, meta)            => (Some(meta), s"Invalid rt mapping in ${id.name.name}: $reason")
     }
   }
 

@@ -71,7 +71,11 @@ object BaboonRuntimeCodec {
         case dto: Typedef.Dto    => encodeDto(dom, dto, json, writer, indexed)
         case enum: Typedef.Enum  => encodeEnum(dom, enum, json, writer)
         case adt: Typedef.Adt    => encodeAdt(dom, adt, json, writer, indexed)
-        case _: Typedef.Foreign  => F.fail(RuntimeCodecIssue.CannotEncodeType(typedef.id, "Foreign types cannot be encoded"))
+        case f: Typedef.Foreign =>
+          f.runtimeMapping match {
+            case Some(typeRef) => encodeTypeRef(dom, typeRef, json, writer, indexed)
+            case None          => F.fail(RuntimeCodecIssue.CannotEncodeType(typedef.id, "Foreign types without rt binding cannot be encoded"))
+          }
         case _: Typedef.Service  => F.fail(RuntimeCodecIssue.CannotEncodeType(typedef.id, "Service types cannot be encoded"))
         case _: Typedef.Contract => F.fail(RuntimeCodecIssue.CannotEncodeType(typedef.id, "Contract types cannot be encoded"))
       }
@@ -83,7 +87,11 @@ object BaboonRuntimeCodec {
         case dto: Typedef.Dto    => decodeDto(dom, dto, reader)
         case enum: Typedef.Enum  => decodeEnum(dom, enum, reader)
         case adt: Typedef.Adt    => decodeAdt(dom, adt, reader)
-        case _: Typedef.Foreign  => F.fail(RuntimeCodecIssue.CannotDecodeType(typedef.id, "Foreign types cannot be decoded"))
+        case f: Typedef.Foreign =>
+          f.runtimeMapping match {
+            case Some(typeRef) => decodeTypeRef(dom, typeRef, reader)
+            case None          => F.fail(RuntimeCodecIssue.CannotDecodeType(typedef.id, "Foreign types without rt binding cannot be decoded"))
+          }
         case _: Typedef.Service  => F.fail(RuntimeCodecIssue.CannotDecodeType(typedef.id, "Service types cannot be decoded"))
         case _: Typedef.Contract => F.fail(RuntimeCodecIssue.CannotDecodeType(typedef.id, "Contract types cannot be decoded"))
       }
@@ -595,11 +603,15 @@ object BaboonRuntimeCodec {
               F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(TypeRef.Scalar(other)))
           }
         case TypeRef.Scalar(u: TypeId.User) =>
-          // Assume enum or foreign type that can be represented as string
           val typedef = dom.defs.meta.nodes(u).asInstanceOf[DomainMember.User].defn
           typedef match {
             case enum: Typedef.Enum =>
               encodeEnum(dom, enum, Json.fromString(key), writer)
+            case f: Typedef.Foreign =>
+              f.runtimeMapping match {
+                case Some(typeRef) => encodeMapKey(dom, typeRef, key, writer)
+                case None          => F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(TypeRef.Scalar(u)))
+              }
             case _ =>
               F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(TypeRef.Scalar(u)))
           }
@@ -668,6 +680,11 @@ object BaboonRuntimeCodec {
                     case Some(s) => F.pure(s)
                     case None    => F.fail(RuntimeCodecIssue.CannotDecodeType(u, "Failed to decode enum key as string"))
                   }
+              }
+            case f: Typedef.Foreign =>
+              f.runtimeMapping match {
+                case Some(typeRef) => decodeMapKey(dom, typeRef, reader)
+                case None          => F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(TypeRef.Scalar(u)))
               }
             case _ =>
               F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(TypeRef.Scalar(u)))
