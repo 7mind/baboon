@@ -1,7 +1,7 @@
 package io.septimalmind.baboon
 
 import distage.{DIKey, ModuleDef}
-import io.septimalmind.baboon.CompilerTarget.{CSTarget, DtTarget, JvTarget, KtTarget, PyTarget, RsTarget, ScTarget, TsTarget}
+import io.septimalmind.baboon.CompilerTarget.{CSTarget, DtTarget, JvTarget, KtTarget, PyTarget, RsTarget, ScTarget, SwTarget, TsTarget}
 import io.septimalmind.baboon.explore.{ExploreContext, ExploreInputs}
 import io.septimalmind.baboon.parser.{BaboonInclusionResolver, BaboonInclusionResolverImpl}
 import io.septimalmind.baboon.typer.model.BaboonFamily
@@ -62,6 +62,12 @@ class BaboonJvmDtModule[F[+_, +_]: Error2: TagKK](target: DtTarget) extends Modu
   include(new SharedTranspilerJvmModule[F]())
   include(new BaboonCommonDtModule[F]())
   make[DtTarget].fromValue(target)
+}
+
+class BaboonJvmSwModule[F[+_, +_]: Error2: TagKK](target: SwTarget) extends ModuleDef {
+  include(new SharedTranspilerJvmModule[F]())
+  include(new BaboonCommonSwModule[F]())
+  make[SwTarget].fromValue(target)
 }
 
 class BaboonModuleJvm[F[+_, +_]: Error2: MaybeSuspend2: TagKK](

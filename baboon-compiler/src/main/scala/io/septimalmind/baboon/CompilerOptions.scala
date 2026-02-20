@@ -66,6 +66,13 @@ object CompilerTarget {
     generic: GenericOptions,
     language: DtOptions,
   ) extends CompilerTarget
+
+  case class SwTarget(
+    id: String,
+    output: OutputOptions,
+    generic: GenericOptions,
+    language: SwOptions,
+  ) extends CompilerTarget
 }
 
 final case class HktConfig(
@@ -124,6 +131,12 @@ object ServiceResultConfig {
     hkt        = None,
   )
   val dartDefault: ServiceResultConfig = ServiceResultConfig(
+    noErrors   = true,
+    resultType = None,
+    pattern    = None,
+    hkt        = None,
+  )
+  val swiftDefault: ServiceResultConfig = ServiceResultConfig(
     noErrors   = true,
     resultType = None,
     pattern    = None,
@@ -241,6 +254,18 @@ final case class JvOptions(
 )
 
 final case class DtOptions(
+  writeEvolutionDict: Boolean,
+  wrappedAdtBranchCodecs: Boolean,
+  generateJsonCodecs: Boolean,
+  generateUebaCodecs: Boolean,
+  generateUebaCodecsByDefault: Boolean,
+  generateJsonCodecsByDefault: Boolean,
+  serviceResult: ServiceResultConfig,
+  serviceContext: ServiceContextConfig,
+  pragmas: Map[String, String],
+)
+
+final case class SwOptions(
   writeEvolutionDict: Boolean,
   wrappedAdtBranchCodecs: Boolean,
   generateJsonCodecs: Boolean,

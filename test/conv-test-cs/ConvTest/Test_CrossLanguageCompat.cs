@@ -208,5 +208,21 @@ namespace ConvTest
         {
             AssertBasicFields(ReadUebaFile("dart", "Dart UEBA"), "Dart UEBA");
         }
+
+        [Test]
+        public void CSharp_JSON_Deserialization_Should_Read_Swift_Generated_JSON()
+        {
+            var file = Path.Combine(baseDir, "swift-json", "all-basic-types.json");
+            if (!File.Exists(file)) { Assert.Ignore("Swift JSON file not found, skipping"); return; }
+            AssertBasicFields(ReadJsonFile("swift", "Swift JSON"), "Swift JSON");
+        }
+
+        [Test]
+        public void CSharp_UEBA_Deserialization_Should_Read_Swift_Generated_UEBA()
+        {
+            var file = Path.Combine(baseDir, "swift-ueba", "all-basic-types.ueba");
+            if (!File.Exists(file)) { Assert.Ignore("Swift UEBA file not found, skipping"); return; }
+            AssertBasicFields(ReadUebaFile("swift", "Swift UEBA"), "Swift UEBA");
+        }
     }
 }

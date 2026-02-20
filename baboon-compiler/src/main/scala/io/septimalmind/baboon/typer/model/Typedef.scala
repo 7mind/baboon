@@ -24,8 +24,9 @@ object BaboonLang {
   case object Kotlin extends BaboonLang     { val asString = "kotlin" }
   case object Java extends BaboonLang       { val asString = "java" }
   case object Dart extends BaboonLang       { val asString = "dart" }
+  case object Swift extends BaboonLang      { val asString = "swift" }
 
-  val all: List[BaboonLang] = List(Scala, Cs, Py, Rust, Typescript, Kotlin, Java, Dart)
+  val all: List[BaboonLang] = List(Scala, Cs, Py, Rust, Typescript, Kotlin, Java, Dart, Swift)
 
   def fromString(s: String): Option[BaboonLang] = all.find(_.asString == s)
 }

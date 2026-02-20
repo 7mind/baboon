@@ -151,4 +151,18 @@ class CrossLanguageTest {
         assertEquals(kotlinData, pythonData, "Kotlin and Python UEBA data should be equal")
         assertEquals(kotlinData, tsData, "Kotlin and TypeScript UEBA data should be equal")
     }
+
+    @Test
+    fun `Kotlin JSON should read Swift-generated JSON`() {
+        val file = File(baseDir, "swift-json/all-basic-types.json")
+        if (!file.exists()) { println("Swift JSON file not found, skipping"); return }
+        assertBasicFields(readJsonFile("swift"), "Swift JSON")
+    }
+
+    @Test
+    fun `Kotlin UEBA should read Swift-generated UEBA`() {
+        val file = File(baseDir, "swift-ueba/all-basic-types.ueba")
+        if (!file.exists()) { println("Swift UEBA file not found, skipping"); return }
+        assertBasicFields(readUebaFile("swift"), "Swift UEBA")
+    }
 }

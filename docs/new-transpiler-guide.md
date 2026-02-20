@@ -1,6 +1,6 @@
 # Implementing a New Baboon Backend: Step-by-Step Guide
 
-This guide walks you through implementing a full-featured code generation backend for the Baboon compiler. It assumes you want to add support for a new target language (referred to as `$LANG` throughout). Use the existing C#, Scala, Rust, TypeScript, Python, Kotlin, Java, and Dart translators as reference implementations.
+This guide walks you through implementing a full-featured code generation backend for the Baboon compiler. It assumes you want to add support for a new target language (referred to as `$LANG` throughout). Use the existing C#, Scala, Rust, TypeScript, Python, Kotlin, Java, Dart, and Swift translators as reference implementations.
 
 ## Table of Contents
 
@@ -21,12 +21,13 @@ This guide walks you through implementing a full-featured code generation backen
 15. [Step 13: Create Stub Test Project](#step-13-create-stub-test-project)
 16. [Step 14: Create Cross-Language Compatibility Tests](#step-14-create-cross-language-compatibility-tests)
 17. [Step 15: Update Build Infrastructure](#step-15-update-build-infrastructure)
-18. [Type Mapping Reference](#type-mapping-reference)
-19. [UEBA Binary Protocol Reference](#ueba-binary-protocol-reference)
-20. [TextTree Usage Guide](#texttree-usage-guide)
-21. [Service and Pragma Support](#service-and-pragma-support)
-22. [Transport Plumbing (separate doc)](transport-plumbing.md)
-23. [Common Pitfalls](#common-pitfalls)
+18. [Step 16: Integrate Backend into Acceptance Suite](#step-16-integrate-backend-into-acceptance-suite)
+19. [Type Mapping Reference](#type-mapping-reference)
+20. [UEBA Binary Protocol Reference](#ueba-binary-protocol-reference)
+21. [TextTree Usage Guide](#texttree-usage-guide)
+22. [Service and Pragma Support](#service-and-pragma-support)
+23. [Transport Plumbing (separate doc)](transport-plumbing.md)
+24. [Common Pitfalls](#common-pitfalls)
 
 ---
 
@@ -1205,33 +1206,105 @@ dep action.test-gen-compat-$lang
 
 ---
 
+## Step 16: Integrate Backend into Acceptance Suite
+
+The acceptance suite (`test/acceptance/run_acceptance.py`) is the cross-language compatibility matrix used in CI.  
+Your backend is not fully integrated until it is included here.
+
+### 1. Add language enum and display name
+
+In `test/acceptance/run_acceptance.py`:
+- Add a new enum value in `Lang` (e.g. `MYLANG = "mylang"`).
+- Add a human-readable label in `LANG_DISPLAY`.
+
+### 2. Add `LangConfig` entry
+
+Add a `LANG_CONFIGS[Lang.MYLANG]` entry with:
+- `dir_name`: test project directory under `test/` (e.g. `conv-test-mylang`)
+- `baboon_target`: compiler CLI target (e.g. `:mylang`)
+- `baboon_output`: generated sources destination inside that project
+- `build_cmds`: commands that compile the project
+- `write_cmd`: command that writes compatibility artifacts
+- `read_cmd`: command that reads one artifact and validates it
+- `rsync_excludes`: build/generated directories that must not be copied
+
+### 3. Respect acceptance runner command contract
+
+Your compat entrypoint must support:
+- `write <outputDir> <json|ueba>`
+- `read <filePath>`
+
+`write` must create exactly:
+- `<outputDir>/all-basic-types.json` for JSON
+- `<outputDir>/all-basic-types.ueba` for UEBA
+
+`read` must:
+- decode the provided file
+- validate a few sentinel fields (`vstr`, `vi32`, `vbit`)
+- exit non-zero on mismatch/error
+
+### 4. Keep runner environment explicit
+
+If your toolchain needs runtime env vars (dynamic libraries, JVM flags, etc.), wrap commands in shell in `run_acceptance.py` and export the required env explicitly there. Do not rely on interactive shell state.
+
+### 5. Validate locally
+
+Build compiler binary:
+```bash
+nix develop --command mdl :build
+```
+
+Validate your backend only:
+```bash
+nix develop --command python3 test/acceptance/run_acceptance.py \
+  --baboon baboon-compiler/.jvm/target/graalvm-native-image/baboon \
+  --target ./target/acceptance-$lang-only \
+  --parallelism "$(nproc)" \
+  --langs $lang
+```
+
+Validate full matrix:
+```bash
+nix develop --command python3 test/acceptance/run_acceptance.py \
+  --baboon baboon-compiler/.jvm/target/graalvm-native-image/baboon \
+  --target ./target/acceptance \
+  --parallelism "$(nproc)"
+```
+
+Expected final summary:
+- `Passed: N/N`
+- `Build failed: 0/N`
+- `Serde failed: 0/N`
+
+---
+
 ## Type Mapping Reference
 
 Complete type mapping table across all existing backends:
 
-| Baboon | C# | Scala | Rust | TypeScript | Python | Kotlin | Java | Dart |
-|--------|-----|-------|------|------------|--------|--------|------|------|
-| `bit` | `Boolean` | `Boolean` | `bool` | `boolean` | `bool` | `Boolean` | `boolean` | `bool` |
-| `i08` | `SByte` | `Byte` | `i8` | `number` | `int` | `Byte` | `byte` | `int` |
-| `i16` | `Int16` | `Short` | `i16` | `number` | `int` | `Short` | `short` | `int` |
-| `i32` | `Int32` | `Int` | `i32` | `number` | `int` | `Int` | `int` | `int` |
-| `i64` | `Int64` | `Long` | `i64` | `bigint` | `int` | `Long` | `long` | `int` |
-| `u08` | `Byte` | `Byte` | `u8` | `number` | `int` | `UByte` | `short` | `int` |
-| `u16` | `UInt16` | `Short` | `u16` | `number` | `int` | `UShort` | `int` | `int` |
-| `u32` | `UInt32` | `Int` | `u32` | `number` | `int` | `UInt` | `long` | `int` |
-| `u64` | `UInt64` | `Long` | `u64` | `bigint` | `int` | `ULong` | `long` | `int` |
-| `f32` | `Single` | `Float` | `f32` | `number` | `float` | `Float` | `float` | `double` |
-| `f64` | `Double` | `Double` | `f64` | `number` | `float` | `Double` | `double` | `double` |
-| `f128` | `Decimal` | `BigDecimal` | `Decimal` | `string` | `Decimal` | `BigDecimal` | `BigDecimal` | `BaboonDecimal` |
-| `str` | `String` | `String` | `String` | `string` | `str` | `String` | `String` | `String` |
-| `bytes` | `ByteString` | `ByteString` | `Vec<u8>` | `Uint8Array` | `bytes` | `ByteString` | `ByteString` | `Uint8List` |
-| `uid` | `Guid` | `UUID` | `Uuid` | `string` | `UUID` | `UUID` | `UUID` | `String` |
-| `tsu` | `RpDateTime` | `OffsetDateTime` | `DateTime<Utc>` | `BaboonDateTime` | `datetime` | `OffsetDateTime` | `OffsetDateTime` | `DateTime` |
-| `tso` | `RpDateTime` | `OffsetDateTime` | `DateTime<FixedOffset>` | `BaboonDateTime` | `datetime` | `OffsetDateTime` | `OffsetDateTime` | `BaboonDateTimeOffset` |
-| `opt[T]` | `T?` / `Nullable<T>` | `Option[T]` | `Option<T>` | `T \| null` | `Optional[T]` | `T?` | `Optional<T>` | `T?` |
-| `lst[T]` | `IReadOnlyList<T>` | `List[T]` | `Vec<T>` | `T[]` | `list[T]` | `List<T>` | `List<T>` | `List<T>` |
-| `set[T]` | `ImmutableHashSet<T>` | `Set[T]` | `BTreeSet<T>` | `Set<T>` | `set[T]` | `Set<T>` | `Set<T>` | `Set<T>` |
-| `map[K,V]` | `IReadOnlyDictionary<K,V>` | `Map[K,V]` | `BTreeMap<K,V>` | `Map<K,V>` | `dict[K,V]` | `Map<K,V>` | `Map<K,V>` | `Map<K,V>` |
+| Baboon | C# | Scala | Rust | TypeScript | Python | Kotlin | Java | Dart | Swift |
+|--------|-----|-------|------|------------|--------|--------|------|------|-------|
+| `bit` | `Boolean` | `Boolean` | `bool` | `boolean` | `bool` | `Boolean` | `boolean` | `bool` | `Bool` |
+| `i08` | `SByte` | `Byte` | `i8` | `number` | `int` | `Byte` | `byte` | `int` | `Int8` |
+| `i16` | `Int16` | `Short` | `i16` | `number` | `int` | `Short` | `short` | `int` | `Int16` |
+| `i32` | `Int32` | `Int` | `i32` | `number` | `int` | `Int` | `int` | `int` | `Int32` |
+| `i64` | `Int64` | `Long` | `i64` | `bigint` | `int` | `Long` | `long` | `int` | `Int64` |
+| `u08` | `Byte` | `Byte` | `u8` | `number` | `int` | `UByte` | `short` | `int` | `UInt8` |
+| `u16` | `UInt16` | `Short` | `u16` | `number` | `int` | `UShort` | `int` | `int` | `UInt16` |
+| `u32` | `UInt32` | `Int` | `u32` | `number` | `int` | `UInt` | `long` | `int` | `UInt32` |
+| `u64` | `UInt64` | `Long` | `u64` | `bigint` | `int` | `ULong` | `long` | `int` | `UInt64` |
+| `f32` | `Single` | `Float` | `f32` | `number` | `float` | `Float` | `float` | `double` | `Float` |
+| `f64` | `Double` | `Double` | `f64` | `number` | `float` | `Double` | `double` | `double` | `Double` |
+| `f128` | `Decimal` | `BigDecimal` | `Decimal` | `string` | `Decimal` | `BigDecimal` | `BigDecimal` | `BaboonDecimal` | `BaboonDecimal` |
+| `str` | `String` | `String` | `String` | `string` | `str` | `String` | `String` | `String` | `String` |
+| `bytes` | `ByteString` | `ByteString` | `Vec<u8>` | `Uint8Array` | `bytes` | `ByteString` | `ByteString` | `Uint8List` | `Data` |
+| `uid` | `Guid` | `UUID` | `Uuid` | `string` | `UUID` | `UUID` | `UUID` | `String` | `UUID` |
+| `tsu` | `RpDateTime` | `OffsetDateTime` | `DateTime<Utc>` | `BaboonDateTime` | `datetime` | `OffsetDateTime` | `OffsetDateTime` | `DateTime` | `Date` |
+| `tso` | `RpDateTime` | `OffsetDateTime` | `DateTime<FixedOffset>` | `BaboonDateTime` | `datetime` | `OffsetDateTime` | `OffsetDateTime` | `BaboonDateTimeOffset` | `BaboonDateTimeOffset` |
+| `opt[T]` | `T?` / `Nullable<T>` | `Option[T]` | `Option<T>` | `T \| null` | `Optional[T]` | `T?` | `Optional<T>` | `T?` | `T?` |
+| `lst[T]` | `IReadOnlyList<T>` | `List[T]` | `Vec<T>` | `T[]` | `list[T]` | `List<T>` | `List<T>` | `List<T>` | `[T]` |
+| `set[T]` | `ImmutableHashSet<T>` | `Set[T]` | `BTreeSet<T>` | `Set<T>` | `set[T]` | `Set<T>` | `Set<T>` | `Set<T>` | `Set<T>` |
+| `map[K,V]` | `IReadOnlyDictionary<K,V>` | `Map[K,V]` | `BTreeMap<K,V>` | `Map<K,V>` | `dict[K,V]` | `Map<K,V>` | `Map<K,V>` | `Map<K,V>` | `[K: V]` |
 
 ---
 

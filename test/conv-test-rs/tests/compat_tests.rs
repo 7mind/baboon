@@ -174,3 +174,25 @@ fn test_read_dart_ueba() {
     let data = read_ueba_file("dart");
     assert_basic_fields(&data, "Dart UEBA");
 }
+
+#[test]
+fn test_read_swift_json() {
+    let path = base_dir().join("swift-json/all-basic-types.json");
+    if !path.exists() {
+        println!("Skipping Swift JSON - file not found");
+        return;
+    }
+    let data = read_json_file("swift");
+    assert_basic_fields(&data, "Swift JSON");
+}
+
+#[test]
+fn test_read_swift_ueba() {
+    let path = base_dir().join("swift-ueba/all-basic-types.ueba");
+    if !path.exists() {
+        println!("Skipping Swift UEBA - file not found");
+        return;
+    }
+    let data = read_ueba_file("swift");
+    assert_basic_fields(&data, "Swift UEBA");
+}

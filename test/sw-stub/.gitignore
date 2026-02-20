@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+Sources/BaboonGenerated/*.swift
+Tests/BaboonTests/*.swift
+!Sources/BaboonGenerated/.gitkeep
+!Tests/BaboonTests/.gitkeep

@@ -32,7 +32,8 @@ void main() {
     'python',
     'typescript',
     'kotlin',
-    'java'
+    'java',
+    'swift'
   ];
 
   group('JSON cross-language compatibility', () {

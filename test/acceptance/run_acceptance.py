@@ -2,7 +2,7 @@
 """
 Baboon cross-language serialization acceptance test runner.
 
-Tests all (format, from_lang, to_lang) triplets across 8 languages and 2 formats,
+Tests all (format, from_lang, to_lang) triplets across 9 languages and 2 formats,
 producing an HTML report with color-coded compatibility matrices.
 
 Usage:
@@ -38,6 +38,7 @@ class Lang(Enum):
     KOTLIN = "kotlin"
     JAVA = "java"
     DART = "dart"
+    SWIFT = "swift"
 
 
 class Format(Enum):
@@ -61,6 +62,7 @@ LANG_DISPLAY = {
     Lang.KOTLIN: "Kotlin",
     Lang.JAVA: "Java",
     Lang.DART: "Dart",
+    Lang.SWIFT: "Swift",
 }
 
 
@@ -99,6 +101,14 @@ class LangConfig:
 
 def _shell_cmd(shell_str: str):
     return (["bash", "-c", shell_str], False)
+
+SWIFT_WRAPPER = str(
+    (Path(__file__).resolve().parent.parent.parent / "scripts" / "swift-xcode.sh")
+)
+
+
+def _swift_cmd(*args: str):
+    return ([SWIFT_WRAPPER, ".", *args], False)
 
 
 LANG_CONFIGS: dict[Lang, LangConfig] = {
@@ -238,6 +248,19 @@ LANG_CONFIGS: dict[Lang, LangConfig] = {
             False,
         ),
         rsync_excludes=[".dart_tool", "pubspec.lock", "generated"],
+    ),
+    Lang.SWIFT: LangConfig(
+        dir_name="conv-test-sw",
+        baboon_target=":swift",
+        baboon_output="Sources/BaboonGenerated",
+        build_cmds=[],
+        write_cmd=lambda d, f: _swift_cmd(
+            "run", "CompatMain", "write", d, f
+        ),
+        read_cmd=lambda p: _swift_cmd(
+            "run", "CompatMain", "read", p
+        ),
+        rsync_excludes=[".build", "Sources/BaboonGenerated"],
     ),
 }
 

@@ -60,21 +60,27 @@ jobs:
     name: acceptance-tests
     runs-on:
       - ubuntu-latest
-    needs:
-      - build-unix
     steps:
       - uses: 7mind/github-env@minimal
         with:
           setup-nix: true
-      - name: Download baboon binary
-        uses: actions/download-artifact@v4
-        with:
-          name: baboon-linux-amd64
-          path: baboon-compiler/.jvm/target/graalvm-native-image/
+      - name: Build baboon binary
+        run: |
+          nix develop --ignore-environment \
+            --keep HOME \
+            --keep USER \
+            --keep CI \
+            --keep GITHUB_ACTIONS \
+            --command mdl --github-actions :build
       - name: Run acceptance tests
         run: |
           chmod +x baboon-compiler/.jvm/target/graalvm-native-image/baboon
-          nix develop --command python3 test/acceptance/run_acceptance.py \
+          nix develop --ignore-environment \
+            --keep HOME \
+            --keep USER \
+            --keep CI \
+            --keep GITHUB_ACTIONS \
+            --command python3 test/acceptance/run_acceptance.py \
             --baboon baboon-compiler/.jvm/target/graalvm-native-image/baboon \
             --target ./target/acceptance \
             --parallelism "$(nproc)"

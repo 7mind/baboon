@@ -148,4 +148,16 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
   it should "read Dart-generated UEBA" in {
     assertBasicFields(readUebaFile("dart", "Dart UEBA"), "Dart UEBA")
   }
+
+  it should "read Swift-generated JSON" in {
+    val file = baseDir.resolve("swift-json/all-basic-types.json")
+    assume(Files.exists(file), "Swift JSON file not found, skipping")
+    assertBasicFields(readJsonFile("swift", "Swift JSON"), "Swift JSON")
+  }
+
+  it should "read Swift-generated UEBA" in {
+    val file = baseDir.resolve("swift-ueba/all-basic-types.ueba")
+    assume(Files.exists(file), "Swift UEBA file not found, skipping")
+    assertBasicFields(readUebaFile("swift", "Swift UEBA"), "Swift UEBA")
+  }
 }

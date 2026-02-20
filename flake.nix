@@ -1,8 +1,7 @@
 {
   description = "baboon build environment";
 
-  # this version contains essential graalvm fixes, but we will have to pin to a better tag once available
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/25.11";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
   inputs.flake-utils.url = "github:numtide/flake-utils";
 
   inputs.squish-find-the-brains.url = "github:7mind/squish-find-the-brains";
@@ -101,6 +100,9 @@
             maven
 
             dart
+          ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+            swift
+            swiftpm
           ];
         };
       }
