@@ -253,9 +253,7 @@ LANG_CONFIGS: dict[Lang, LangConfig] = {
         dir_name="conv-test-sw",
         baboon_target=":swift",
         baboon_output="Sources/BaboonGenerated",
-        build_cmds=[
-            _swift_cmd("build"),
-        ],
+        build_cmds=[],
         write_cmd=lambda d, f: _swift_cmd(
             "run", "CompatMain", "write", d, f
         ),
