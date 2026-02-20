@@ -6,21 +6,21 @@ private func baboonEpochMillis(_ date: Date) -> Int64 {
 
 // --- Codec Errors ---
 
-enum BaboonCodecError: Error {
+public enum BaboonCodecError: Error {
     case invalidInput(String)
 }
 
 // --- Metadata Interfaces ---
 
-protocol BaboonGenerated {}
+public protocol BaboonGenerated {}
 
-protocol BaboonGeneratedLatest: BaboonGenerated {}
+public protocol BaboonGeneratedLatest: BaboonGenerated {}
 
-protocol BaboonAdtMemberMeta {
+public protocol BaboonAdtMemberMeta {
     static var baboonAdtTypeIdentifier: String { get }
 }
 
-protocol BaboonMeta {
+public protocol BaboonMeta {
     static var baboonDomainVersion: String { get }
     static var baboonDomainIdentifier: String { get }
     static var baboonTypeIdentifier: String { get }
@@ -28,77 +28,84 @@ protocol BaboonMeta {
 
 // --- Codec Context ---
 
-enum BaboonCodecContext {
+public enum BaboonCodecContext {
     case defaultCtx
     case indexed
     case compact
 
-    static let `default` = BaboonCodecContext.defaultCtx
+    public static let `default` = BaboonCodecContext.defaultCtx
 
-    var useIndices: Bool {
+    public var useIndices: Bool {
         return self == .indexed
     }
 }
 
 // --- JSON Codecs ---
 
-class BaboonJsonCodec<T> {
-    func decode(_ ctx: BaboonCodecContext, _ wire: Any) throws -> T {
+open class BaboonJsonCodec<T> {
+    public init() {}
+    open func decode(_ ctx: BaboonCodecContext, _ wire: Any) throws -> T {
         fatalError("Must override")
     }
 }
 
-class BaboonJsonCodecBase<T>: BaboonJsonCodec<T> {
-    func encode(_ ctx: BaboonCodecContext, _ value: T) -> Any {
+open class BaboonJsonCodecBase<T>: BaboonJsonCodec<T> {
+    open func encode(_ ctx: BaboonCodecContext, _ value: T) -> Any {
         fatalError("Must override")
     }
 }
 
-class BaboonJsonCodecBaseGenerated<T>: BaboonJsonCodecBase<T> {}
+open class BaboonJsonCodecBaseGenerated<T>: BaboonJsonCodecBase<T> {}
 
-class BaboonJsonCodecBaseGeneratedAdt<T>: BaboonJsonCodecBase<T> {}
+open class BaboonJsonCodecBaseGeneratedAdt<T>: BaboonJsonCodecBase<T> {}
 
-class BaboonJsonCodecNoEncoder<T>: BaboonJsonCodec<T> {}
+open class BaboonJsonCodecNoEncoder<T>: BaboonJsonCodec<T> {}
 
-class BaboonJsonCodecNoEncoderGenerated<T>: BaboonJsonCodecNoEncoder<T> {}
+open class BaboonJsonCodecNoEncoderGenerated<T>: BaboonJsonCodecNoEncoder<T> {}
 
-class BaboonJsonCodecNoEncoderGeneratedAdt<T>: BaboonJsonCodecNoEncoder<T> {}
+open class BaboonJsonCodecNoEncoderGeneratedAdt<T>: BaboonJsonCodecNoEncoder<T> {}
 
 // --- Binary Codecs ---
 
-class BaboonBinCodec<T> {
-    func decode(_ ctx: BaboonCodecContext, _ reader: BaboonBinReader) throws -> T {
+open class BaboonBinCodec<T> {
+    public init() {}
+    open func decode(_ ctx: BaboonCodecContext, _ reader: BaboonBinReader) throws -> T {
         fatalError("Must override")
     }
 }
 
-class BaboonBinCodecBase<T>: BaboonBinCodec<T> {
-    func encode(_ ctx: BaboonCodecContext, _ writer: BaboonBinWriter, _ value: T) {
+open class BaboonBinCodecBase<T>: BaboonBinCodec<T> {
+    open func encode(_ ctx: BaboonCodecContext, _ writer: BaboonBinWriter, _ value: T) {
         fatalError("Must override")
     }
 }
 
-class BaboonBinCodecBaseGenerated<T>: BaboonBinCodecBase<T> {}
+open class BaboonBinCodecBaseGenerated<T>: BaboonBinCodecBase<T> {}
 
-class BaboonBinCodecBaseGeneratedAdt<T>: BaboonBinCodecBase<T> {}
+open class BaboonBinCodecBaseGeneratedAdt<T>: BaboonBinCodecBase<T> {}
 
-class BaboonBinCodecNoEncoder<T>: BaboonBinCodec<T> {}
+open class BaboonBinCodecNoEncoder<T>: BaboonBinCodec<T> {}
 
-class BaboonBinCodecNoEncoderGenerated<T>: BaboonBinCodecNoEncoder<T> {}
+open class BaboonBinCodecNoEncoderGenerated<T>: BaboonBinCodecNoEncoder<T> {}
 
-class BaboonBinCodecNoEncoderGeneratedAdt<T>: BaboonBinCodecNoEncoder<T> {}
+open class BaboonBinCodecNoEncoderGeneratedAdt<T>: BaboonBinCodecNoEncoder<T> {}
 
-protocol BaboonBinCodecIndexed {
+public protocol BaboonBinCodecIndexed {
     var indexElementsCount: Int { get }
 }
 
-struct BaboonIndexEntry {
-    let offset: Int32
-    let length: Int32
+public struct BaboonIndexEntry {
+    public let offset: Int32
+    public let length: Int32
+
+    public init(offset: Int32, length: Int32) {
+        self.offset = offset
+        self.length = length
+    }
 }
 
 extension BaboonBinCodecIndexed {
-    func readIndex(_ ctx: BaboonCodecContext, _ reader: BaboonBinReader) throws -> [BaboonIndexEntry] {
+    public func readIndex(_ ctx: BaboonCodecContext, _ reader: BaboonBinReader) throws -> [BaboonIndexEntry] {
         let header = reader.readU8()
         let hasIndex = (header & 1) != 0
         if !hasIndex { return [] }
@@ -115,13 +122,13 @@ extension BaboonBinCodecIndexed {
 
 // --- Binary Writer ---
 
-class BaboonBinWriter {
-    static let dotnetEpochOffsetMs: Int64 = 62135596800000
+public class BaboonBinWriter {
+    public static let dotnetEpochOffsetMs: Int64 = 62135596800000
 
     private var buf: [UInt8]
-    private(set) var position: Int = 0
+    public private(set) var position: Int = 0
 
-    init(initialCapacity: Int = 256) {
+    public init(initialCapacity: Int = 256) {
         buf = [UInt8](repeating: 0, count: initialCapacity)
     }
 
@@ -137,19 +144,19 @@ class BaboonBinWriter {
         }
     }
 
-    func writeU8(_ value: UInt8) {
+    public func writeU8(_ value: UInt8) {
         ensureCapacity(1)
         buf[position] = value
         position += 1
     }
 
-    func writeI8(_ value: Int8) {
+    public func writeI8(_ value: Int8) {
         ensureCapacity(1)
         buf[position] = UInt8(bitPattern: value)
         position += 1
     }
 
-    func writeU16(_ value: UInt16) {
+    public func writeU16(_ value: UInt16) {
         ensureCapacity(2)
         var v = value.littleEndian
         withUnsafeBytes(of: &v) { ptr in
@@ -159,7 +166,7 @@ class BaboonBinWriter {
         position += 2
     }
 
-    func writeI16(_ value: Int16) {
+    public func writeI16(_ value: Int16) {
         ensureCapacity(2)
         var v = value.littleEndian
         withUnsafeBytes(of: &v) { ptr in
@@ -169,7 +176,7 @@ class BaboonBinWriter {
         position += 2
     }
 
-    func writeU32(_ value: UInt32) {
+    public func writeU32(_ value: UInt32) {
         ensureCapacity(4)
         var v = value.littleEndian
         withUnsafeBytes(of: &v) { ptr in
@@ -178,7 +185,7 @@ class BaboonBinWriter {
         position += 4
     }
 
-    func writeI32(_ value: Int32) {
+    public func writeI32(_ value: Int32) {
         ensureCapacity(4)
         var v = value.littleEndian
         withUnsafeBytes(of: &v) { ptr in
@@ -187,7 +194,7 @@ class BaboonBinWriter {
         position += 4
     }
 
-    func writeU64(_ value: UInt64) {
+    public func writeU64(_ value: UInt64) {
         ensureCapacity(8)
         var v = value.littleEndian
         withUnsafeBytes(of: &v) { ptr in
@@ -196,7 +203,7 @@ class BaboonBinWriter {
         position += 8
     }
 
-    func writeI64(_ value: Int64) {
+    public func writeI64(_ value: Int64) {
         ensureCapacity(8)
         var v = value.littleEndian
         withUnsafeBytes(of: &v) { ptr in
@@ -205,7 +212,7 @@ class BaboonBinWriter {
         position += 8
     }
 
-    func writeF32(_ value: Float) {
+    public func writeF32(_ value: Float) {
         ensureCapacity(4)
         var v = value.bitPattern.littleEndian
         withUnsafeBytes(of: &v) { ptr in
@@ -214,7 +221,7 @@ class BaboonBinWriter {
         position += 4
     }
 
-    func writeF64(_ value: Double) {
+    public func writeF64(_ value: Double) {
         ensureCapacity(8)
         var v = value.bitPattern.littleEndian
         withUnsafeBytes(of: &v) { ptr in
@@ -223,11 +230,11 @@ class BaboonBinWriter {
         position += 8
     }
 
-    func writeBool(_ value: Bool) {
+    public func writeBool(_ value: Bool) {
         writeU8(value ? 1 : 0)
     }
 
-    func writeString(_ value: String) {
+    public func writeString(_ value: String) {
         let bytes = Array(value.utf8)
         // 7-bit VLQ encoding for string length (compatible with .NET BinaryWriter)
         var len = bytes.count
@@ -240,12 +247,12 @@ class BaboonBinWriter {
         writeAll(Data(bytes))
     }
 
-    func writeBytes(_ data: Data) {
+    public func writeBytes(_ data: Data) {
         writeI32(Int32(data.count))
         writeAll(data)
     }
 
-    func writeDecimal(_ value: BaboonDecimal) {
+    public func writeDecimal(_ value: BaboonDecimal) {
         // .NET decimal format: lo (i32), mid (i32), hi (i32), flags (i32) = 16 bytes
         var str = value.stringValue
         let isNeg = str.hasPrefix("-")
@@ -293,7 +300,7 @@ class BaboonBinWriter {
         position += 4
     }
 
-    func writeUuid(_ uuid: UUID) {
+    public func writeUuid(_ uuid: UUID) {
         let hex = uuid.uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         assert(hex.count == 32)
 
@@ -328,7 +335,7 @@ class BaboonBinWriter {
         writeAll(Data(bytes))
     }
 
-    func writeTsu(_ value: Date) {
+    public func writeTsu(_ value: Date) {
         let epochMs = baboonEpochMillis(value)
         let dotnetUtcMs = epochMs + BaboonBinWriter.dotnetEpochOffsetMs
         writeI64(dotnetUtcMs)
@@ -336,7 +343,7 @@ class BaboonBinWriter {
         writeU8(1) // kind = 1 (UTC)
     }
 
-    func writeTso(_ value: BaboonDateTimeOffset) {
+    public func writeTso(_ value: BaboonDateTimeOffset) {
         let dotnetUtcMs = value.epochMillis + BaboonBinWriter.dotnetEpochOffsetMs
         let dotnetLocalMs = dotnetUtcMs + value.offsetMillis
         writeI64(dotnetLocalMs)
@@ -344,40 +351,40 @@ class BaboonBinWriter {
         writeU8(0) // kind = 0 (offset)
     }
 
-    func writeAll(_ data: Data) {
+    public func writeAll(_ data: Data) {
         ensureCapacity(data.count)
         data.copyBytes(to: &buf[position], count: data.count)
         position += data.count
     }
 
-    func toData() -> Data {
+    public func toData() -> Data {
         return Data(buf[0..<position])
     }
 }
 
 // --- Binary Reader ---
 
-class BaboonBinReader {
+public class BaboonBinReader {
     private let data: Data
     private var pos: Int = 0
 
-    init(_ data: Data) {
+    public init(_ data: Data) {
         self.data = data
     }
 
-    func readU8() -> UInt8 {
+    public func readU8() -> UInt8 {
         let v = data[data.startIndex + pos]
         pos += 1
         return v
     }
 
-    func readI8() -> Int8 {
+    public func readI8() -> Int8 {
         let v = Int8(bitPattern: data[data.startIndex + pos])
         pos += 1
         return v
     }
 
-    func readU16() -> UInt16 {
+    public func readU16() -> UInt16 {
         var v: UInt16 = 0
         _ = withUnsafeMutableBytes(of: &v) { ptr in
             data.copyBytes(to: ptr, from: (data.startIndex + pos)..<(data.startIndex + pos + 2))
@@ -386,7 +393,7 @@ class BaboonBinReader {
         return UInt16(littleEndian: v)
     }
 
-    func readI16() -> Int16 {
+    public func readI16() -> Int16 {
         var v: Int16 = 0
         _ = withUnsafeMutableBytes(of: &v) { ptr in
             data.copyBytes(to: ptr, from: (data.startIndex + pos)..<(data.startIndex + pos + 2))
@@ -395,7 +402,7 @@ class BaboonBinReader {
         return Int16(littleEndian: v)
     }
 
-    func readU32() -> UInt32 {
+    public func readU32() -> UInt32 {
         var v: UInt32 = 0
         _ = withUnsafeMutableBytes(of: &v) { ptr in
             data.copyBytes(to: ptr, from: (data.startIndex + pos)..<(data.startIndex + pos + 4))
@@ -404,7 +411,7 @@ class BaboonBinReader {
         return UInt32(littleEndian: v)
     }
 
-    func readI32() -> Int32 {
+    public func readI32() -> Int32 {
         var v: Int32 = 0
         _ = withUnsafeMutableBytes(of: &v) { ptr in
             data.copyBytes(to: ptr, from: (data.startIndex + pos)..<(data.startIndex + pos + 4))
@@ -413,7 +420,7 @@ class BaboonBinReader {
         return Int32(littleEndian: v)
     }
 
-    func readU64() -> UInt64 {
+    public func readU64() -> UInt64 {
         var v: UInt64 = 0
         _ = withUnsafeMutableBytes(of: &v) { ptr in
             data.copyBytes(to: ptr, from: (data.startIndex + pos)..<(data.startIndex + pos + 8))
@@ -422,7 +429,7 @@ class BaboonBinReader {
         return UInt64(littleEndian: v)
     }
 
-    func readI64() -> Int64 {
+    public func readI64() -> Int64 {
         var v: Int64 = 0
         _ = withUnsafeMutableBytes(of: &v) { ptr in
             data.copyBytes(to: ptr, from: (data.startIndex + pos)..<(data.startIndex + pos + 8))
@@ -431,21 +438,21 @@ class BaboonBinReader {
         return Int64(littleEndian: v)
     }
 
-    func readF32() -> Float {
+    public func readF32() -> Float {
         let bits = readU32()
         return Float(bitPattern: bits)
     }
 
-    func readF64() -> Double {
+    public func readF64() -> Double {
         let bits = readU64()
         return Double(bitPattern: bits)
     }
 
-    func readBool() -> Bool {
+    public func readBool() -> Bool {
         return readU8() != 0
     }
 
-    func readString() -> String {
+    public func readString() -> String {
         // 7-bit VLQ decoding for string length (compatible with .NET BinaryReader)
         var length = 0
         var shift = 0
@@ -460,14 +467,14 @@ class BaboonBinReader {
         return String(data: bytes, encoding: .utf8)!
     }
 
-    func readBytes() -> Data {
+    public func readBytes() -> Data {
         let length = Int(readI32())
         let bytes = data.subdata(in: (data.startIndex + pos)..<(data.startIndex + pos + length))
         pos += length
         return bytes
     }
 
-    func readDecimal() -> BaboonDecimal {
+    public func readDecimal() -> BaboonDecimal {
         // .NET decimal format: lo (i32), mid (i32), hi (i32), flags (i32) = 16 bytes
         let lo = UInt64(readRawU32())
         let mid = UInt64(readRawU32())
@@ -528,7 +535,7 @@ class BaboonBinReader {
         return UInt32(littleEndian: v)
     }
 
-    func readUuid() -> UUID {
+    public func readUuid() -> UUID {
         var bytes = [UInt8](repeating: 0, count: 16)
         for i in 0..<16 {
             bytes[i] = data[data.startIndex + pos + i]
@@ -555,7 +562,7 @@ class BaboonBinReader {
         return UUID(uuidString: hex)!
     }
 
-    func readTsu() -> Date {
+    public func readTsu() -> Date {
         let dotnetLocalMs = readI64()
         let offsetMs = readI64()
         let kind = readU8()
@@ -565,7 +572,7 @@ class BaboonBinReader {
         return Date(timeIntervalSince1970: Double(epochMs) / 1000.0)
     }
 
-    func readTso() -> BaboonDateTimeOffset {
+    public func readTso() -> BaboonDateTimeOffset {
         let dotnetLocalMs = readI64()
         let offsetMs = readI64()
         let kind = readU8()
@@ -591,19 +598,19 @@ class BaboonBinReader {
 
 // --- Binary Tools ---
 
-class BaboonBinTools {
-    static func createWriter(_ initialCapacity: Int = 256) -> BaboonBinWriter {
+public class BaboonBinTools {
+    public static func createWriter(_ initialCapacity: Int = 256) -> BaboonBinWriter {
         return BaboonBinWriter(initialCapacity: initialCapacity)
     }
 
-    static func createReader(_ data: Data) -> BaboonBinReader {
+    public static func createReader(_ data: Data) -> BaboonBinReader {
         return BaboonBinReader(data)
     }
 }
 
 // --- Time Formats ---
 
-class BaboonTimeFormats {
+public class BaboonTimeFormats {
     private static let utcTimeZone = TimeZone(secondsFromGMT: 0)!
     private static let utcCalendar: Calendar = {
         var c = Calendar(identifier: .gregorian)
@@ -611,7 +618,7 @@ class BaboonTimeFormats {
         return c
     }()
 
-    static func formatUtc(_ dt: Date) -> String {
+    public static func formatUtc(_ dt: Date) -> String {
         let epochMillis = baboonEpochMillis(dt)
         let normalizedDate = Date(timeIntervalSince1970: Double(epochMillis) / 1000.0)
         let comps = utcCalendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: normalizedDate)
@@ -628,7 +635,7 @@ class BaboonTimeFormats {
         )
     }
 
-    static func formatOffset(_ dto: BaboonDateTimeOffset) -> String {
+    public static func formatOffset(_ dto: BaboonDateTimeOffset) -> String {
         let utcDate = Date(timeIntervalSince1970: Double(dto.epochMillis) / 1000.0)
         let offsetSeconds = Int(dto.offsetMillis / 1000)
         let localDate = utcDate.addingTimeInterval(Double(offsetSeconds))
@@ -652,12 +659,12 @@ class BaboonTimeFormats {
         return "\\(base)\\(sign)\\(hours):\\(minutes)"
     }
 
-    static func parseUtc(_ s: String) -> Date {
+    public static func parseUtc(_ s: String) -> Date {
         let parsed = parseIso8601(s)
         return Date(timeIntervalSince1970: Double(parsed.epochMillis) / 1000.0)
     }
 
-    static func parseOffset(_ s: String) -> BaboonDateTimeOffset {
+    public static func parseOffset(_ s: String) -> BaboonDateTimeOffset {
         let parsed = parseIso8601(s)
         if parsed.hasOffset {
             return BaboonDateTimeOffset(
@@ -785,8 +792,8 @@ class BaboonTimeFormats {
 
 // --- Byte String Tools ---
 
-class BaboonByteStringTools {
-    static func fromHexString(_ hex: String) -> Data {
+public class BaboonByteStringTools {
+    public static func fromHexString(_ hex: String) -> Data {
         let chars = Array(hex.utf8)
         let length = chars.count / 2
         var result = [UInt8](repeating: 0, count: length)
@@ -798,7 +805,7 @@ class BaboonByteStringTools {
         return Data(result)
     }
 
-    static func toHexString(_ data: Data) -> String {
+    public static func toHexString(_ data: Data) -> String {
         return data.map { String(format: "%02x", $0) }.joined()
     }
 
@@ -812,10 +819,10 @@ class BaboonByteStringTools {
 
 // --- Custom Types ---
 
-struct BaboonDecimal: Equatable, Hashable {
-    let stringValue: String
+public struct BaboonDecimal: Equatable, Hashable {
+    public let stringValue: String
 
-    init(_ value: String) {
+    public init(_ value: String) {
         self.stringValue = value
     }
 
@@ -829,62 +836,72 @@ struct BaboonDecimal: Equatable, Hashable {
         return result
     }
 
-    static func == (lhs: BaboonDecimal, rhs: BaboonDecimal) -> Bool {
+    public static func == (lhs: BaboonDecimal, rhs: BaboonDecimal) -> Bool {
         return normalize(lhs.stringValue) == normalize(rhs.stringValue)
     }
 
-    func hash(into hasher: inout Hasher) {
+    public func hash(into hasher: inout Hasher) {
         hasher.combine(BaboonDecimal.normalize(stringValue))
     }
 }
 
-struct BaboonDateTimeOffset: Equatable, Hashable {
-    let epochMillis: Int64
-    let offsetMillis: Int64
-    let kind: String
+public struct BaboonDateTimeOffset: Equatable, Hashable {
+    public let epochMillis: Int64
+    public let offsetMillis: Int64
+    public let kind: String
 
-    static func == (lhs: BaboonDateTimeOffset, rhs: BaboonDateTimeOffset) -> Bool {
+    public init(epochMillis: Int64, offsetMillis: Int64, kind: String) {
+        self.epochMillis = epochMillis
+        self.offsetMillis = offsetMillis
+        self.kind = kind
+    }
+
+    public static func == (lhs: BaboonDateTimeOffset, rhs: BaboonDateTimeOffset) -> Bool {
         return lhs.epochMillis == rhs.epochMillis && lhs.offsetMillis == rhs.offsetMillis
     }
 
-    func hash(into hasher: inout Hasher) {
+    public func hash(into hasher: inout Hasher) {
         hasher.combine(epochMillis)
         hasher.combine(offsetMillis)
     }
 
-    func toUtc() -> Date {
+    public func toUtc() -> Date {
         return Date(timeIntervalSince1970: Double(epochMillis) / 1000.0)
     }
 
-    func toLocal() -> Date {
+    public func toLocal() -> Date {
         return Date(timeIntervalSince1970: Double(epochMillis + offsetMillis) / 1000.0)
     }
 }
 
 // --- Conversions ---
 
-class AbstractConversion<F, T> {
-    var versionFrom: String { fatalError("Must override") }
-    var versionTo: String { fatalError("Must override") }
-    var typeId: String { fatalError("Must override") }
+open class AbstractConversion<F, T> {
+    public init() {}
 
-    func doConvert(_ context: Any?, _ conversions: AbstractBaboonConversions, _ from: F) -> T {
+    open var versionFrom: String { fatalError("Must override") }
+    open var versionTo: String { fatalError("Must override") }
+    open var typeId: String { fatalError("Must override") }
+
+    open func doConvert(_ context: Any?, _ conversions: AbstractBaboonConversions, _ from: F) -> T {
         fatalError("Must override")
     }
 
-    func convert(_ from: F) -> T {
+    public func convert(_ from: F) -> T {
         return doConvert(nil, AbstractBaboonConversions(), from)
     }
 }
 
-class AbstractBaboonConversions {
+open class AbstractBaboonConversions {
     private var registry: [String: () -> Any] = [:]
 
-    func register<F, T>(_ typeId: String, _ factory: @escaping () -> AbstractConversion<F, T>) {
+    public init() {}
+
+    public func register<F, T>(_ typeId: String, _ factory: @escaping () -> AbstractConversion<F, T>) {
         registry[typeId] = factory
     }
 
-    func convertWithContext<F, T>(_ context: Any?, _ from: F, _ sourceTypeId: String, _ targetTypeId: String) -> T {
+    public func convertWithContext<F, T>(_ context: Any?, _ from: F, _ sourceTypeId: String, _ targetTypeId: String) -> T {
         guard let factory = registry[targetTypeId] else {
             fatalError("No conversion registered for type: \\(targetTypeId)")
         }
@@ -892,56 +909,65 @@ class AbstractBaboonConversions {
         return conversion.doConvert(context, self, from)
     }
 
-    var versionsFrom: [String] { [] }
-    var versionTo: String { "" }
+    open var versionsFrom: [String] { [] }
+    open var versionTo: String { "" }
 }
 
-class AbstractBaboonJsonCodecs {
+open class AbstractBaboonJsonCodecs {
     private var codecs: [String: BaboonJsonCodec<Any>] = [:]
 
-    func register(_ typeId: String, _ factory: () -> Any) {
+    public init() {}
+
+    public func register(_ typeId: String, _ factory: () -> Any) {
         codecs[typeId] = factory() as? BaboonJsonCodec<Any>
     }
 
-    func codecFor(_ typeId: String) -> BaboonJsonCodec<Any>? {
+    public func codecFor(_ typeId: String) -> BaboonJsonCodec<Any>? {
         return codecs[typeId]
     }
 }
 
-class AbstractBaboonUebaCodecs {
+open class AbstractBaboonUebaCodecs {
     private var codecs: [String: BaboonBinCodec<Any>] = [:]
 
-    func register(_ typeId: String, _ factory: () -> Any) {
+    public init() {}
+
+    public func register(_ typeId: String, _ factory: () -> Any) {
         codecs[typeId] = factory() as? BaboonBinCodec<Any>
     }
 
-    func codecFor(_ typeId: String) -> BaboonBinCodec<Any>? {
+    public func codecFor(_ typeId: String) -> BaboonBinCodec<Any>? {
         return codecs[typeId]
     }
 }
 
 // --- Service Wiring ---
 
-struct BaboonMethodId: Equatable, Hashable {
-    let serviceId: String
-    let methodName: String
+public struct BaboonMethodId: Equatable, Hashable {
+    public let serviceId: String
+    public let methodName: String
+
+    public init(serviceId: String, methodName: String) {
+        self.serviceId = serviceId
+        self.methodName = methodName
+    }
 }
 
-enum BaboonWiringError: Error {
+public enum BaboonWiringError: Error {
     case noMatchingMethod(BaboonMethodId)
     case decoderFailed(BaboonMethodId, Error)
     case encoderFailed(BaboonMethodId, Error)
     case callFailed(BaboonMethodId, Any)
 }
 
-struct BaboonWiringException: Error {
-    let error: BaboonWiringError
-    init(_ error: BaboonWiringError) { self.error = error }
+public struct BaboonWiringException: Error {
+    public let error: BaboonWiringError
+    public init(_ error: BaboonWiringError) { self.error = error }
 }
 
 // --- Either for Service Results ---
 
-enum BaboonEither<L, R> {
+public enum BaboonEither<L, R> {
     case left(L)
     case right(R)
 }

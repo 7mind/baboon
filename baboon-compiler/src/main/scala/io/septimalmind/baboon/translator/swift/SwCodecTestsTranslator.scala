@@ -47,12 +47,15 @@ object SwCodecTestsTranslator {
         case _ if !isLatestVersion                            => None
         case _ =>
           val testBody = makeTest(definition, srcRef)
+          val testClassName = srcRef.name.replace(".", "_")
+          val moduleName = typeTranslator.domainModuleName(domain.id, domain.version, evo)
           val testFile =
             q"""import XCTest
                |import Foundation
-               |@testable import BaboonGenerated
+               |import BaboonRuntime
+               |@testable import $moduleName
                |
-               |final class ${srcRef.name}_Tests: XCTestCase {
+               |final class ${testClassName}_Tests: XCTestCase {
                |    ${testBody.shift(4).trim}
                |}
                |""".stripMargin

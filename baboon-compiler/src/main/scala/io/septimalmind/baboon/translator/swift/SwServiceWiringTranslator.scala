@@ -71,7 +71,7 @@ object SwServiceWiringTranslator {
       }
 
       val rtTrait: TextTree[SwValue] =
-        q"""protocol IBaboonServiceRt$traitTypeParams {
+        q"""public protocol IBaboonServiceRt$traitTypeParams {
            |    func pure<L, R>(_ value: R) -> ${ct("L", "R")}
            |    func fail<L, R>(_ error: L) -> ${ct("L", "R")}
            |    func leftMap<A, B, C>(_ value: ${ct("A", "B")}, _ f: (A) -> C) -> ${ct("C", "B")}
@@ -122,7 +122,7 @@ object SwServiceWiringTranslator {
 
       val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
 
-      q"""class ${svcName}Wiring {
+      q"""public class ${svcName}Wiring {
          |    ${methods.shift(4).trim}
          |}""".stripMargin
     }
@@ -155,7 +155,7 @@ object SwServiceWiringTranslator {
            |},""".stripMargin
       }.join("\n")
 
-      q"""static func invokeJson(
+      q"""public static func invokeJson(
          |    _ method: $baboonMethodId,
          |    _ data: String,
          |    _ impl: $svcName,
@@ -199,7 +199,7 @@ object SwServiceWiringTranslator {
            |},""".stripMargin
       }.join("\n")
 
-      q"""static func invokeUeba(
+      q"""public static func invokeUeba(
          |    _ method: $baboonMethodId,
          |    _ data: Data,
          |    _ impl: $svcName,
@@ -228,7 +228,7 @@ object SwServiceWiringTranslator {
 
       val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
 
-      q"""class ${svcName}Wiring {
+      q"""public class ${svcName}Wiring {
          |    ${methods.shift(4).trim}
          |}""".stripMargin
     }
@@ -318,7 +318,7 @@ object SwServiceWiringTranslator {
            |},""".stripMargin
       }.join("\n")
 
-      q"""static func invokeJson(
+      q"""public static func invokeJson(
          |    _ method: $baboonMethodId,
          |    _ data: String,
          |    _ impl: $svcName,
@@ -416,7 +416,7 @@ object SwServiceWiringTranslator {
            |},""".stripMargin
       }.join("\n")
 
-      q"""static func invokeUeba(
+      q"""public static func invokeUeba(
          |    _ method: $baboonMethodId,
          |    _ data: Data,
          |    _ impl: $svcName,

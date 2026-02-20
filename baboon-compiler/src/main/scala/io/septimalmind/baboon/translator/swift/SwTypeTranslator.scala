@@ -114,26 +114,7 @@ class SwTypeTranslator {
   }
 
   def toSwPkg(p: Pkg, version: Version, evolution: BaboonEvolution): SwPackageId = {
-    toSwPkg(
-      p,
-      version,
-      omitVersion = version == evolution.latest,
-    )
-  }
-
-  def toSwPkg(p: Pkg, version: Version, omitVersion: Boolean): SwPackageId = {
-    val verString = "v" + version.v.toString
-      .split('.')
-      .mkString("_")
-
-    val base = p.path.map(_.toLowerCase)
-    val segments = if (omitVersion) {
-      base
-    } else {
-      base :+ verString
-    }
-
-    SwPackageId(segments)
+    SwPackageId(domainModuleName(p, version, evolution))
   }
 
   private def asSwTypeDerefForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): SwType = {
@@ -227,46 +208,46 @@ class SwTypeTranslator {
   }
 
   def toSwTypeRefKeepForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): SwType = {
-    val version = domain.version
-    val pkg     = toSwPkg(tid.pkg, version, evolution)
-    val typeName = renderScopedTypeName(tid, version, evolution)
+    val version                    = domain.version
+    val pkg                        = toSwPkg(tid.pkg, version, evolution)
+    val (qualifiedName, localName) = renderScopedTypeName(tid)
 
     tid.owner match {
       case Owner.Adt(id) =>
         val parentOwnerParts = renderOwner(id.owner)
         val parentPkg        = SwPackageId(pkg.parts ++ parentOwnerParts)
-        val ownerName        = renderTypeName(id.name.name, version, evolution)
-        SwType(parentPkg, typeName, importAs = Some(toSnakeCase(ownerName)))
+        val ownerName        = id.name.name
+        SwType(parentPkg, qualifiedName, importAs = Some(toSnakeCase(ownerName)), localName = Some(localName))
       case other =>
         val ownerAsPrefix = renderOwner(other)
-        SwType(SwPackageId(pkg.parts ++ ownerAsPrefix), typeName)
+        SwType(SwPackageId(pkg.parts ++ ownerAsPrefix), qualifiedName, localName = Some(localName))
     }
   }
 
   def fixtureClassName(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): String = {
     val swType = toSwTypeRefKeepForeigns(tid, domain, evolution)
-    s"${swType.name}_Fixture"
+    s"${swType.name.replace('.', '_')}_Fixture"
   }
 
-  private def renderScopedTypeName(tid: TypeId.User, version: Version, evolution: BaboonEvolution): String = {
-    val baseName    = renderTypeName(tid.name.name, version, evolution)
-    val ownerPrefix = renderOwnerTypePrefix(tid.owner, version, evolution)
-    if (ownerPrefix.isEmpty) {
-      baseName
-    } else {
-      s"${ownerPrefix.mkString("_")}_$baseName"
-    }
+  def domainModuleName(pkg: Pkg, version: Version, evo: BaboonEvolution): String = {
+    val base = pkg.path.map(s => s.head.toUpper + s.tail).mkString("")
+    if (version == evo.latest) base
+    else base + "_v" + version.v.toString.replace('.', '_')
   }
 
-  private def renderTypeName(baseName: String, version: Version, evolution: BaboonEvolution): String = {
-    if (version == evolution.latest) {
-      baseName
-    } else {
-      val normalizedVersion = version.v.toString.map {
-        case c if c.isLetterOrDigit => c
-        case _                      => '_'
-      }
-      s"${baseName}_v_$normalizedVersion"
+  private def renderScopedTypeName(tid: TypeId.User): (String, String) = {
+    val baseName  = tid.name.name
+    val ownerPath = renderOwnerQualifiedPath(tid.owner)
+    val qualified = if (ownerPath.isEmpty) baseName
+    else s"${ownerPath.mkString(".")}.$baseName"
+    (qualified, baseName)
+  }
+
+  private def renderOwnerQualifiedPath(owner: Owner): Seq[String] = {
+    owner match {
+      case Owner.Toplevel => Seq.empty
+      case Owner.Ns(path) => path.map(_.name.toLowerCase)
+      case Owner.Adt(id)  => renderOwnerQualifiedPath(id.owner) :+ id.name.name
     }
   }
 
@@ -275,33 +256,6 @@ class SwTypeTranslator {
       case Owner.Toplevel => Seq.empty
       case Owner.Ns(path) => path.map(_.name.toLowerCase)
       case Owner.Adt(id)  => renderOwner(id.owner) :+ id.name.name.toLowerCase
-    }
-  }
-
-  private def renderOwnerTypePrefix(owner: Owner, version: Version, evolution: BaboonEvolution): Seq[String] = {
-    owner match {
-      case Owner.Toplevel => Seq.empty
-      case Owner.Ns(path) => path.map(p => toTypeNameSegment(p.name))
-      case Owner.Adt(id) =>
-        renderOwnerTypePrefix(id.owner, version, evolution) :+ toTypeNameSegment(renderTypeName(id.name.name, version, evolution))
-    }
-  }
-
-  private def toTypeNameSegment(raw: String): String = {
-    val normalized = raw.map {
-      case c if c.isLetterOrDigit => c
-      case _                      => '_'
-    }
-    val prefixed = if (normalized.nonEmpty && normalized.head.isDigit) {
-      s"T_$normalized"
-    } else {
-      normalized
-    }
-    val parts = prefixed.split('_').toList.filter(_.nonEmpty)
-    if (parts.isEmpty) {
-      "T"
-    } else {
-      parts.map(part => part.head.toUpper + part.tail).mkString("_")
     }
   }
 

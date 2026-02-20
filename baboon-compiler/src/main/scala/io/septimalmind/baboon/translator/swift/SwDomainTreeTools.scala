@@ -34,19 +34,19 @@ object SwDomainTreeTools {
     }
 
     private def mainMeta(defn: DomainMember.User): List[MetaField] = {
-      val ref = typeTranslator.asSwType(defn.id, domain, evolution).asName
+      val ref = typeTranslator.asSwType(defn.id, domain, evolution).asDeclName
       val baboonDomainVersion = MetaField(
-        q"""static let baboonDomainVersion: String""",
+        q"""public static let baboonDomainVersion: String""",
         q""""${domain.version.v.toString}"""",
         q"$ref.baboonDomainVersion",
       )
       val baboonDomainIdentifier = MetaField(
-        q"""static let baboonDomainIdentifier: String""",
+        q"""public static let baboonDomainIdentifier: String""",
         q""""${defn.id.pkg.toString}"""",
         q"$ref.baboonDomainIdentifier",
       )
       val baboonTypeIdentifier = MetaField(
-        q"""static let baboonTypeIdentifier: String""",
+        q"""public static let baboonTypeIdentifier: String""",
         q""""${defn.id.toString}"""",
         q"$ref.baboonTypeIdentifier",
       )
@@ -56,9 +56,9 @@ object SwDomainTreeTools {
     private def adtMeta(defn: DomainMember.User): List[MetaField] = {
       defn.id.owner match {
         case Owner.Adt(id) =>
-          val adtRef = typeTranslator.asSwType(defn.id, domain, evolution).asName
+          val adtRef = typeTranslator.asSwType(defn.id, domain, evolution).asDeclName
           val adtTypeIdentifier = MetaField(
-            q"""static let baboonAdtTypeIdentifier: String""",
+            q"""public static let baboonAdtTypeIdentifier: String""",
             q""""${id.toString}"""",
             q"$adtRef.baboonAdtTypeIdentifier",
           )
@@ -68,10 +68,10 @@ object SwDomainTreeTools {
     }
 
     private def sameInVersion(defn: DomainMember.User): List[MetaField] = {
-      val ref             = typeTranslator.asSwType(defn.id, domain, evolution).asName
+      val ref             = typeTranslator.asSwType(defn.id, domain, evolution).asDeclName
       val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id).sameIn.map(v => s""""${v.v.toString}"""")
       val sameInVersion = MetaField(
-        q"static let baboonSameInVersions: [String]",
+        q"public static let baboonSameInVersions: [String]",
         q"[${unmodifiedSince.mkString(", ")}]",
         q"$ref.baboonSameInVersions",
       )

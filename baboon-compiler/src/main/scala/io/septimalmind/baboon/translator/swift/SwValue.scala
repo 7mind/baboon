@@ -13,9 +13,17 @@ object SwValue {
       SwPackageId(NEList.unsafeFrom(pkg.split('.').toList))
   }
 
-  case class SwType(pkg: SwPackageId, name: String, fq: Boolean = false, predef: Boolean = false, importAs: Option[String] = None) extends SwValue {
+  case class SwType(
+    pkg: SwPackageId,
+    name: String,
+    fq: Boolean = false,
+    predef: Boolean = false,
+    importAs: Option[String] = None,
+    localName: Option[String] = None,
+  ) extends SwValue {
     def fullyQualified: SwType = this.copy(fq = true)
     def asName: SwTypeName     = SwTypeName(name)
+    def asDeclName: SwTypeName = SwTypeName(localName.getOrElse(name))
 
     override def toString: String = s"${pkg.parts.mkString(".")}#$name"
   }

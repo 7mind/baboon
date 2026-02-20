@@ -37,6 +37,7 @@ object SwDefnTranslator {
     product: CompilerProduct,
     doNotModify: Boolean                              = false,
     codecReg: List[(String, List[TextTree[SwValue]])] = Nil,
+    imports: Set[String]                              = Set.empty,
   )
 
   class SwDefnTranslatorImpl[F[+_, +_]: Applicative2](
@@ -71,6 +72,7 @@ object SwDefnTranslator {
         getOutputModule(defn),
         CompilerProduct.Definition,
         codecReg = registrations,
+        imports = Set("BaboonRuntime"),
       )
 
       F.pure(List(mainOutput))
@@ -91,6 +93,7 @@ object SwDefnTranslator {
           tree,
           getOutputModule(defn),
           CompilerProduct.Fixture,
+          imports = Set("BaboonRuntime"),
         )
       }.toList
       F.pure(result)
@@ -132,6 +135,7 @@ object SwDefnTranslator {
           tree,
           pkg,
           CompilerProduct.Definition,
+          imports = Set("BaboonRuntime"),
         )
       }.toList
       F.pure(result)
@@ -171,7 +175,7 @@ object SwDefnTranslator {
       assert(defn.id.pkg == domain.id)
 
       val allDefs = (defnRepr +: codecTrees).joinNN()
-      val content = if (inLib) swTrees.inLib(allDefs) else allDefs
+      val content = if (inLib) swTrees.inLib(allDefs, defn.defn.id.owner) else allDefs
 
       val reg = defn.defn match {
         case _: Typedef.NonDataTypedef => Nil
@@ -181,7 +185,7 @@ object SwDefnTranslator {
             .flatMap(
               codec =>
                 if (codec.isActive(d.id))
-                  List(codec.id -> q"{ () -> Any in ${codec.codecName(srcRef).copy(fq = true)}.instance }")
+                  List(codec.id -> q"{ () -> Any in ${codec.codecName(srcRef)}.instance }")
                 else Nil
             )
           List(CodecReg(defn.id, swTypeRef, srcRef, q""""${defn.id.toString}"""", codecsReg.toMap))
@@ -228,7 +232,7 @@ object SwDefnTranslator {
     ): DefnRepr = {
       val target = trans.asSwRef(TypeRef.Scalar(defn.id), domain, evo)
       DefnRepr(
-        q"typealias ${name.asName} = $target",
+        q"public typealias ${name.asDeclName} = $target",
         Nil,
       )
     }
@@ -245,7 +249,7 @@ object SwDefnTranslator {
       val fieldDeclarations = dto.fields.map { f =>
         val t       = trans.asSwRef(f.tpe, domain, evo)
         val escaped = trans.escapeSwiftKeyword(f.name.name)
-        q"let $escaped: $t"
+        q"public let $escaped: $t"
       }
 
       val contractParents = dto.contracts.map(c => trans.toSwTypeRefKeepForeigns(c, domain, evo))
@@ -264,9 +268,30 @@ object SwDefnTranslator {
         fieldDeclarations.joinN()
       } else q""
 
+      val initDecl = if (hasFields) {
+        val initParams = dto.fields.map { f =>
+          val t       = trans.asSwRef(f.tpe, domain, evo)
+          val escaped = trans.escapeSwiftKeyword(f.name.name)
+          q"$escaped: $t"
+        }
+        val initBody = dto.fields.map { f =>
+          val escaped = trans.escapeSwiftKeyword(f.name.name)
+          q"self.$escaped = $escaped"
+        }
+        q"""public init(
+           |    ${initParams.join(",\n").shift(4).trim}
+           |) {
+           |    ${initBody.joinN().shift(4).trim}
+           |}""".stripMargin
+      } else {
+        q"public init() {}"
+      }
+
       DefnRepr(
-        q"""struct ${name.asName}: Equatable, Hashable, $conformanceClause {
+        q"""public struct ${name.asDeclName}: Equatable, Hashable, $conformanceClause {
            |  ${fieldsBlock.shift(4).trim}
+           |
+           |  ${initDecl.shift(4).trim}
            |
            |  ${staticMetaFields.joinN().shift(4).trim}
            |}""".stripMargin,
@@ -287,16 +312,16 @@ object SwDefnTranslator {
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
 
       DefnRepr(
-        q"""enum ${name.asName}: String, CaseIterable, $iBaboonGenerated {
+        q"""public enum ${name.asDeclName}: String, CaseIterable, $iBaboonGenerated {
            |  ${cases.joinN().shift(4).trim}
            |
            |  ${staticMetaFields.joinN().shift(4).trim}
            |
-           |  static func parse(_ s: String) -> ${name.asName}? {
-           |    return ${name.asName}(rawValue: s)
+           |  public static func parse(_ s: String) -> ${name.asDeclName}? {
+           |    return ${name.asDeclName}(rawValue: s)
            |  }
            |
-           |  static var all: [${name.asName}] { return Array(Self.allCases) }
+           |  public static var all: [${name.asDeclName}] { return Array(Self.allCases) }
            |}""".stripMargin,
         Nil,
       )
@@ -334,15 +359,15 @@ object SwDefnTranslator {
         val memberName = mid.name.name
         val caseName   = memberName.head.toLower.toString + memberName.tail
         val memberRef  = trans.toSwTypeRefKeepForeigns(mid, domain, evo)
-        q"case $caseName($memberRef)"
+        q"case $caseName(${memberRef.asDeclName})"
       }.toList
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
 
       DefnRepr(
-        q"""$memberDtos
+        q"""public indirect enum ${name.asDeclName}: Equatable, Hashable, $conformanceClause {
+           |  ${memberDtos.shift(4).trim}
            |
-           |indirect enum ${name.asName}: Equatable, Hashable, $conformanceClause {
            |  ${enumCases.joinN().shift(4).trim}
            |
            |  ${staticMetaFields.joinN().shift(4).trim}
@@ -367,7 +392,7 @@ object SwDefnTranslator {
       val body = if (methods.nonEmpty) methods.joinN() else q""
 
       DefnRepr(
-        q"""protocol ${name.asName}: $conformanceClause {
+        q"""public protocol ${name.asDeclName}: $conformanceClause {
            |  ${body.shift(4).trim}
            |}""".stripMargin,
         Nil,
@@ -388,7 +413,7 @@ object SwDefnTranslator {
       val body = if (methods.nonEmpty) methods.joinN() else q""
 
       DefnRepr(
-        q"""protocol ${name.asName} {
+        q"""public protocol ${name.asDeclName} {
            |  ${body.shift(4).trim}
            |}""".stripMargin,
         Nil,
@@ -396,24 +421,15 @@ object SwDefnTranslator {
     }
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
-      val fbase = swFiles.basename(domain, evo)
-      val scopedTypeName = trans.toSwTypeRefKeepForeigns(defn.id, domain, evo).name
-      val fname          = s"${trans.toSnakeCase(scopedTypeName)}${suffix.getOrElse("")}.swift"
-
-      defn.defn.id.owner match {
-        case Owner.Toplevel => s"$fbase/$fname"
-        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString("/")}/$fname"
-        case Owner.Adt(id)  => s"$fbase/${trans.toSnakeCase(id.name.name)}/$fname"
-      }
+      val fbase   = swFiles.basename(domain, evo)
+      val typeRef = trans.toSwTypeRefKeepForeigns(defn.id, domain, evo)
+      val flatName = typeRef.name.replace('.', '_')
+      val fname   = s"${trans.toSnakeCase(flatName)}${suffix.getOrElse("")}.swift"
+      s"$fbase/$fname"
     }
 
     private def getOutputModule(defn: DomainMember.User): SwValue.SwPackageId = {
-      val basePkg = trans.toSwPkg(domain.id, domain.version, evo)
-      defn.defn.id.owner match {
-        case Owner.Toplevel => basePkg
-        case Owner.Ns(path) => SwValue.SwPackageId(basePkg.parts ++ path.map(_.name.toLowerCase))
-        case Owner.Adt(id)  => SwValue.SwPackageId(basePkg.parts :+ trans.toSnakeCase(id.name.name))
-      }
+      trans.effectiveSwPkg(defn.defn.id.owner, domain, evo)
     }
   }
 }

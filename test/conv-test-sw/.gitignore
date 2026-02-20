@@ -1,4 +1,3 @@
 .build/
 .swiftpm/
-Sources/BaboonGenerated/
-!Sources/BaboonGenerated/.gitkeep
+Generated/
