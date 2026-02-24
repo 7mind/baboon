@@ -1,4 +1,4 @@
-import {BaboonBinReader, BaboonBinWriter, BaboonMethodId} from "./baboon_runtime";
+import {BaboonBinReader, BaboonBinWriter, BaboonMethodId} from "./baboondefinitions/generated/BaboonSharedRuntime";
 import {Outcome, OutcomeServiceRt} from "./custom-containers";
 import {IBaboonServiceRt} from "./baboondefinitions/generated/testpkg/pkg0/baboon-service-rt";
 import {I1} from "./baboondefinitions/generated/testpkg/pkg0/I1";

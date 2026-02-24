@@ -1,17 +1,21 @@
-import {BaboonBinWriter, BaboonMethodId} from "./baboon_runtime";
-import {IBaboonServiceRt} from "./generated/testpkg/pkg0/baboon-service-rt";
+import {
+    BaboonBinReader,
+    BaboonBinWriter,
+    BaboonCodecContext,
+    BaboonMethodId
+} from "./baboondefinitions/generated/BaboonSharedRuntime";
+import { IBaboonServiceRt } from "./baboondefinitions/generated/testpkg/pkg0/baboon-service-rt";
 import {Result, ResultServiceRt} from "./custom-containers";
-import {In} from "./generated/testpkg/pkg0/i1/testcall/in";
-import {In as In_No_Err} from "./generated/testpkg/pkg0/i2/noerrcall/in";
-import {Out} from "./generated/testpkg/pkg0/i1/testcall/out";
-import {Out as Out_No_Err} from "./generated/testpkg/pkg0/i2/noerrcall/out";
-import {Err} from "./generated/testpkg/pkg0/i1/testcall/err";
-import {I2} from "./generated/testpkg/pkg0/I2";
-import {I1} from "./generated/testpkg/pkg0/I1";
-import {BaboonBinReader, BaboonCodecContext} from "./generated/BaboonSharedRuntime";
-import {invokeJson_I1, invokeUeba_I1} from "./generated/testpkg/pkg0/i1-wiring";
-import {T7_Empty} from "./generated/testpkg/pkg0/T7_Empty";
-import {invokeJson_I2, invokeUeba_I2} from "./generated/testpkg/pkg0/i2-wiring";
+import {I1} from "./baboondefinitions/generated/testpkg/pkg0/I1";
+import {In} from "./baboondefinitions/generated/testpkg/pkg0/i1/testcall/in";
+import {Out} from "./baboondefinitions/generated/testpkg/pkg0/i1/testcall/out";
+import {Err} from "./baboondefinitions/generated/testpkg/pkg0/i1/testcall/err";
+import {T7_Empty} from "./baboondefinitions/generated/testpkg/pkg0/T7_Empty";
+import {I2} from "./baboondefinitions/generated/testpkg/pkg0/I2";
+import {In as In_No_Err} from "./baboondefinitions/generated/testpkg/pkg0/i2/noerrcall/in";
+import {Out as Out_No_Err} from "./baboondefinitions/generated/testpkg/pkg0/i2/noerrcall/out";
+import {invokeJson_I1, invokeUeba_I1} from "./baboondefinitions/generated/testpkg/pkg0/i1-wiring";
+import {invokeJson_I2, invokeUeba_I2} from "./baboondefinitions/generated/testpkg/pkg0/i2-wiring";
 
 const ctx = BaboonCodecContext.Default;
 const rt: IBaboonServiceRt = ResultServiceRt;

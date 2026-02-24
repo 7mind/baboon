@@ -1296,7 +1296,7 @@ $BABOON_BIN \
   --meta-write-evolution-json baboon-meta.json \
   --lock-file=./target/baboon-ts-either.lock \
   :typescript \
-  --output "$TEST_DIR/ts-stub/src/generated" \
+  --output "$TEST_DIR/ts-stub/src/baboondefinitions/generated" \
   --test-output "$TEST_DIR/ts-stub/src/baboontests/generatedtests" \
   --fixture-output "$TEST_DIR/ts-stub/src/baboontests/generatedfixtures" \
   --ts-write-evolution-dict=true \
@@ -1346,7 +1346,7 @@ $BABOON_BIN \
   --meta-write-evolution-json baboon-meta.json \
   --lock-file=./target/baboon-ts-result.lock \
   :typescript \
-  --output "$TEST_DIR/ts-stub/src/generated" \
+  --output "$TEST_DIR/ts-stub/src/baboondefinitions/generated" \
   --test-output "$TEST_DIR/ts-stub/src/baboontests/generatedtests" \
   --fixture-output "$TEST_DIR/ts-stub/src/baboontests/generatedfixtures" \
   --ts-write-evolution-dict=true \
@@ -1734,7 +1734,7 @@ ret success:bool=true
 Run complete test suite (orchestrator action).
 
 ```bash
-
+dep action.test-sbt-basic
 dep action.test-cs-regular
 dep action.test-scala-regular
 dep action.test-python-regular
