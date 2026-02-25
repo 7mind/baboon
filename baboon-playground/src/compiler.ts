@@ -43,8 +43,56 @@ interface JSCompilerAPIOptions {
   debug?: boolean;
 }
 
+interface JSTypeInfo {
+  pkg: string;
+  version: string;
+  id: string;
+  name: string;
+  kind: string;
+}
+
+interface JSGenerateResult {
+  success: boolean;
+  json?: string;
+  error?: string;
+}
+
+interface JSEncodeResult {
+  success: boolean;
+  data?: Uint8Array;
+  error?: string;
+}
+
+interface JSDecodeResult {
+  success: boolean;
+  json?: string;
+  error?: string;
+}
+
+interface BaboonLoadedModel {
+  __brand: "BaboonLoadedModel";
+}
+
 interface BaboonCompilerAPI {
   compile(options: JSCompilerAPIOptions): Promise<JSCompilationResult>;
+  load(files: Record<string, string>): Promise<BaboonLoadedModel>;
+  listTypes(model: BaboonLoadedModel): JSTypeInfo[];
+  generateRandom(model: BaboonLoadedModel, pkg: string, version: string, typeId: string): JSGenerateResult;
+  encodeLoaded(
+    model: BaboonLoadedModel,
+    pkg: string,
+    version: string,
+    typeId: string,
+    json: string,
+    indexed: boolean,
+  ): Promise<JSEncodeResult>;
+  decodeLoaded(
+    model: BaboonLoadedModel,
+    pkg: string,
+    version: string,
+    typeId: string,
+    data: Uint8Array,
+  ): Promise<JSDecodeResult>;
 }
 
 export interface OutputFile {
@@ -287,4 +335,68 @@ export async function compile(
     filesByLanguage,
     errors: [],
   };
+}
+
+export { type BaboonLoadedModel };
+
+export interface TypeInfo {
+  pkg: string;
+  version: string;
+  id: string;
+  name: string;
+  kind: string;
+}
+
+export async function loadModel(files: Map<string, string>): Promise<BaboonLoadedModel> {
+  const compiler = await getCompiler();
+  const dict: Record<string, string> = {};
+  const directoryInputs = collectDirectoryInputs(files.keys());
+  for (const [path, content] of files) {
+    if (path.endsWith(".baboon")) {
+      dict[path] = resolveIncludes(content, files, directoryInputs, new Set([path]));
+    }
+  }
+  return compiler.load(dict);
+}
+
+export function listTypes(model: BaboonLoadedModel): TypeInfo[] {
+  if (!compilerInstance) {
+    throw new Error("Compiler not loaded");
+  }
+  return compilerInstance.listTypes(model);
+}
+
+export function generateRandom(
+  model: BaboonLoadedModel,
+  pkg: string,
+  version: string,
+  typeId: string,
+): { success: boolean; json?: string; error?: string } {
+  if (!compilerInstance) {
+    throw new Error("Compiler not loaded");
+  }
+  return compilerInstance.generateRandom(model, pkg, version, typeId);
+}
+
+export async function encodeToUeba(
+  model: BaboonLoadedModel,
+  pkg: string,
+  version: string,
+  typeId: string,
+  json: string,
+  indexed: boolean,
+): Promise<{ success: boolean; data?: Uint8Array; error?: string }> {
+  const compiler = await getCompiler();
+  return compiler.encodeLoaded(model, pkg, version, typeId, json, indexed);
+}
+
+export async function decodeFromUeba(
+  model: BaboonLoadedModel,
+  pkg: string,
+  version: string,
+  typeId: string,
+  data: Uint8Array,
+): Promise<{ success: boolean; json?: string; error?: string }> {
+  const compiler = await getCompiler();
+  return compiler.decodeLoaded(model, pkg, version, typeId, data);
 }

@@ -5,6 +5,7 @@ import { Preview } from "./preview.ts";
 import { compile } from "./compiler.ts";
 import { OptionsPanel, DEFAULT_OPTIONS } from "./options.ts";
 import type { CompilerOptions } from "./options.ts";
+import { CodecToolsPanel } from "./codec-tools.ts";
 import { zipSync, unzipSync, strToU8, strFromU8 } from "fflate";
 
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
@@ -57,6 +58,12 @@ optionsBtn.className = "header-btn";
 optionsBtn.textContent = "Options";
 headerActions.appendChild(optionsBtn);
 
+const codecsBtn = document.createElement("button");
+codecsBtn.className = "header-btn";
+codecsBtn.textContent = "Codecs";
+codecsBtn.title = "JSON/UEBA codec tools";
+headerActions.appendChild(codecsBtn);
+
 const compileBtn = document.createElement("button");
 compileBtn.className = "compile-btn";
 compileBtn.textContent = "Compile";
@@ -77,6 +84,13 @@ const optionsPanel = new OptionsPanel((options) => {
 
 optionsBtn.addEventListener("click", () => {
   optionsPanel.open();
+});
+
+const codecToolsPanel = new CodecToolsPanel();
+
+codecsBtn.addEventListener("click", () => {
+  const files = baboonEditor.getFiles();
+  codecToolsPanel.open(files);
 });
 
 exportBtn.addEventListener("click", () => {

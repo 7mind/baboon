@@ -7,8 +7,9 @@ import io.septimalmind.baboon.parser.BaboonParser
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.scheme.BaboonSchemeRenderer
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
-import io.septimalmind.baboon.typer.BaboonRuntimeCodec
-import io.septimalmind.baboon.typer.model.{BaboonFamily, Pkg, Version}
+import io.septimalmind.baboon.explore.RandomJsonGenerator
+import io.septimalmind.baboon.typer.{BaboonEnquiries, BaboonRuntimeCodec}
+import io.septimalmind.baboon.typer.model.{BaboonFamily, DomainMember, Pkg, Typedef, Version}
 import io.septimalmind.baboon.util.{BLogger, BLoggerJS}
 import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Error2, F, ParallelErrorAccumulatingOps2}
@@ -165,6 +166,57 @@ object BaboonJS {
           success = false,
           error   = error,
         ).asInstanceOf[JSSchemeResult]
+    }
+  }
+
+  /**
+    * Type info for listTypes
+    */
+  trait JSTypeInfo extends js.Object {
+    val pkg: String
+    val version: String
+    val id: String
+    val name: String
+    val kind: String
+  }
+
+  object JSTypeInfo {
+    def apply(pkg: String, version: String, id: String, name: String, kind: String): JSTypeInfo = {
+      js.Dynamic
+        .literal(
+          pkg     = pkg,
+          version = version,
+          id      = id,
+          name    = name,
+          kind    = kind,
+        ).asInstanceOf[JSTypeInfo]
+    }
+  }
+
+  /**
+    * Random generation result
+    */
+  trait JSGenerateResult extends js.Object {
+    val success: Boolean
+    val json: js.UndefOr[String]
+    val error: js.UndefOr[String]
+  }
+
+  object JSGenerateResult {
+    def success(json: String): JSGenerateResult = {
+      js.Dynamic
+        .literal(
+          success = true,
+          json    = json,
+        ).asInstanceOf[JSGenerateResult]
+    }
+
+    def failure(error: String): JSGenerateResult = {
+      js.Dynamic
+        .literal(
+          success = false,
+          error   = error,
+        ).asInstanceOf[JSGenerateResult]
     }
   }
 
@@ -626,6 +678,82 @@ object BaboonJS {
     } catch {
       case e: Throwable =>
         Future.failed(new RuntimeException(s"Loading failed: ${e.getMessage}")).toJSPromise
+    }
+  }
+
+  /**
+    * List all user-defined types from a loaded model
+    */
+  @JSExport
+  def listTypes(model: BaboonLoadedModel): js.Array[JSTypeInfo] = {
+    val family = model.asInstanceOf[BaboonLoadedModelImpl].family
+    val result = js.Array[JSTypeInfo]()
+
+    for ((pkg, lineage) <- family.domains.toMap) {
+      for ((version, domain) <- lineage.versions.toMap) {
+        for ((typeId, member) <- domain.defs.meta.nodes) {
+          member match {
+            case user: DomainMember.User =>
+              val kind = user.defn match {
+                case _: Typedef.Dto      => "dto"
+                case _: Typedef.Adt      => "adt"
+                case _: Typedef.Enum     => "enum"
+                case _: Typedef.Foreign  => "foreign"
+                case _: Typedef.Contract => "contract"
+                case _: Typedef.Service  => "service"
+              }
+              // skip ADT branch members (they're owned by their parent ADT)
+              if (!user.ownedByAdt) {
+                result.push(JSTypeInfo(
+                  pkg     = pkg.toString,
+                  version = version.toString,
+                  id      = typeId.toString,
+                  name    = user.defn.id.name.name,
+                  kind    = kind,
+                ))
+              }
+            case _ => // skip builtins
+          }
+        }
+      }
+    }
+
+    result
+  }
+
+  /**
+    * Generate a random JSON instance for a given type
+    */
+  @JSExport
+  def generateRandom(
+    model: BaboonLoadedModel,
+    pkg: String,
+    version: String,
+    typeId: String,
+  ): JSGenerateResult = {
+    try {
+      val family      = model.asInstanceOf[BaboonLoadedModelImpl].family
+      val parsedPkg   = parsePkg(pkg)
+      val parsedVer   = Version.parse(version)
+      val enquiries   = new BaboonEnquiries.BaboonEnquiriesImpl
+
+      val lineage = family.domains.toMap.getOrElse(parsedPkg,
+        throw new RuntimeException(s"Package not found: $pkg"))
+      val domain = lineage.versions.toMap.getOrElse(parsedVer,
+        throw new RuntimeException(s"Version not found: $version"))
+
+      val member = domain.defs.meta.nodes.collectFirst {
+        case (tid, m: DomainMember.User) if tid.toString == typeId => m
+      }.getOrElse(throw new RuntimeException(s"Type not found: $typeId"))
+
+      val generator = new RandomJsonGenerator(domain, enquiries)
+      generator.generate(member) match {
+        case Right(json) => JSGenerateResult.success(json.spaces2)
+        case Left(error) => JSGenerateResult.failure(error)
+      }
+    } catch {
+      case e: Throwable =>
+        JSGenerateResult.failure(s"Generation failed: ${e.getMessage}")
     }
   }
 

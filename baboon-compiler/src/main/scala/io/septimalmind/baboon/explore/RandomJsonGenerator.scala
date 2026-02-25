@@ -6,7 +6,6 @@ import io.septimalmind.baboon.typer.model.*
 
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatterBuilder
-import java.util.UUID
 import scala.util.Random
 
 class RandomJsonGenerator(domain: Domain, enquiries: BaboonEnquiries) {
@@ -98,7 +97,7 @@ class RandomJsonGenerator(domain: Domain, enquiries: BaboonEnquiries) {
       case `f128`  => Json.fromBigDecimal(BigDecimal(random.nextDouble() * 1000))
       case `str`   => Json.fromString(randomString(10))
       case `bytes` => Json.fromString(randomHexString(16))
-      case `uid`   => Json.fromString(UUID.randomUUID().toString)
+      case `uid`   => Json.fromString(randomUUID())
       case `tsu` | `tso` =>
         val year   = 2020 + random.nextInt(10)
         val month  = 1 + random.nextInt(12)
@@ -158,7 +157,7 @@ class RandomJsonGenerator(domain: Domain, enquiries: BaboonEnquiries) {
           case `str`                                         => randomString(8)
           case `i08` | `i16` | `i32` | `u08` | `u16` | `u32` => random.nextInt(1000).toString
           case `i64` | `u64`                                 => random.nextLong().toString
-          case `uid`                                         => UUID.randomUUID().toString
+          case `uid`                                         => randomUUID()
           case _                                             => randomString(8)
         }
       case TypeRef.Scalar(u: TypeId.User) =>
@@ -174,6 +173,11 @@ class RandomJsonGenerator(domain: Domain, enquiries: BaboonEnquiries) {
         }
       case _ => randomString(8)
     }
+  }
+
+  private def randomUUID(): String = {
+    def hex(n: Int): String = (0 until n).map(_ => f"${random.nextInt(16)}%x").mkString
+    s"${hex(8)}-${hex(4)}-4${hex(3)}-${hex(1)}${hex(3)}-${hex(12)}"
   }
 
   private def randomString(length: Int): String = {
