@@ -1,0 +1,272 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+    Ubuntu, Cantarell, sans-serif;
+  background: #1e1e1e;
+  color: #cccccc;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Header */
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: #252526;
+  border-bottom: 1px solid #3c3c3c;
+  flex-shrink: 0;
+}
+
+.app-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.compile-btn {
+  padding: 6px 20px;
+  background: #0e639c;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.compile-btn:hover {
+  background: #1177bb;
+}
+
+.compile-btn:disabled {
+  background: #3c3c3c;
+  color: #888888;
+  cursor: not-allowed;
+}
+
+/* Main content */
+.main-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Editor panel (top) */
+.editor-panel {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 200px;
+  border-bottom: 2px solid #3c3c3c;
+}
+
+.source-sidebar {
+  width: 250px;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  background: #252526;
+  border-right: 1px solid #3c3c3c;
+  flex-shrink: 0;
+}
+
+.source-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid #3c3c3c;
+  flex-shrink: 0;
+}
+
+.source-toolbar-btn {
+  background: #3c3c3c;
+  color: #cccccc;
+  border: none;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.source-toolbar-btn:hover {
+  background: #505050;
+}
+
+.source-tree {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+.source-tree-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-tree-actions {
+  display: none;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.file-tree-item:hover .source-tree-actions {
+  display: flex;
+}
+
+.source-tree-action {
+  opacity: 0.5;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+}
+
+.source-tree-action:hover {
+  opacity: 1;
+}
+
+.editor-container {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Preview panel (bottom) */
+.preview-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 200px;
+}
+
+.preview-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 6px 16px;
+  background: #252526;
+  border-bottom: 1px solid #3c3c3c;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.preview-label {
+  font-size: 13px;
+  color: #cccccc;
+}
+
+.language-select {
+  background: #3c3c3c;
+  color: #cccccc;
+  border: 1px solid #555555;
+  padding: 4px 8px;
+  font-size: 13px;
+  border-radius: 3px;
+  outline: none;
+}
+
+.language-select:focus {
+  border-color: #0e639c;
+}
+
+.preview-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.preview-tree-container {
+  width: 250px;
+  min-width: 150px;
+  border-right: 1px solid #3c3c3c;
+  overflow-y: auto;
+  background: #252526;
+  flex-shrink: 0;
+}
+
+.preview-editor-container {
+  flex: 1;
+  min-width: 0;
+}
+
+/* File tree */
+.file-tree {
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+.file-tree-item {
+  display: flex;
+  align-items: center;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  gap: 4px;
+}
+
+.file-tree-item:hover {
+  background: #2a2d2e;
+}
+
+.file-tree-item.selected {
+  background: #094771;
+  color: #ffffff;
+}
+
+.file-tree-icon {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.dir-icon {
+  color: #cccccc;
+}
+
+.file-icon {
+  font-size: 11px;
+}
+
+/* Error panel */
+.error-panel {
+  padding: 16px;
+  background: #1e1e1e;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.error-heading {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f48771;
+  margin-bottom: 12px;
+}
+
+.error-message {
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-size: 13px;
+  color: #f48771;
+  background: #2d2020;
+  padding: 12px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

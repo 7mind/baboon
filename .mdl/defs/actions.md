@@ -10,6 +10,9 @@ This file defines the build orchestration for the Baboon project using mudyla.
 - `args.mkdist-target`:  Target directory for distribution
    - type: `directory`
    - default: `"./target/dist"`
+- `args.js-link-mode`:  Scala.js link mode (fast or full)
+   - type: `string`
+   - default: `"fast"`
 
 # environment
 
@@ -247,6 +250,78 @@ npm publish --provenance --access public
 
 ret success:bool=true
 ret publish_dir:directory="$(realpath "$PUBLISH_DIR")"
+```
+
+# action: gen-js-dev
+
+Generate JavaScript bundle for BaboonJS (local development, no CI checks).
+Link mode is controlled by `--js-link-mode` argument (default: fast).
+
+```bash
+set -euo pipefail
+
+LINK_MODE="${args.js-link-mode}"
+
+if [[ "$LINK_MODE" == "fast" ]]; then
+  SBT_TASK="baboonJS/fastLinkJS"
+  JS_DIST_DIR="./baboon-compiler/.js/target/scala-2.13/baboon-fastopt"
+elif [[ "$LINK_MODE" == "full" ]]; then
+  SBT_TASK="baboonJS/fullLinkJS"
+  JS_DIST_DIR="./baboon-compiler/.js/target/scala-2.13/baboon-opt"
+else
+  echo "Unknown js-link-mode: '$LINK_MODE'. Must be 'fast' or 'full'." >&2
+  exit 1
+fi
+
+echo "Building Scala.js with ${LINK_MODE} linking (sbt '++2.13 ${SBT_TASK}')..."
+sbt "++2.13 ${SBT_TASK}"
+
+if [[ ! -f "${JS_DIST_DIR}/main.js" ]]; then
+  echo "Scala.js output is missing at ${JS_DIST_DIR}/main.js" >&2
+  exit 1
+fi
+
+ret success:bool=true
+ret dist_dir:directory="$(realpath "$JS_DIST_DIR")"
+```
+
+# action: playground
+
+Build the Baboon Playground web application.
+
+```bash
+dep action.gen-js-dev
+
+set -euo pipefail
+
+PROJECT_ROOT="${sys.project-root}"
+PLAYGROUND_DIR="${PROJECT_ROOT}/baboon-playground"
+COMPILER_DIR="${PLAYGROUND_DIR}/public/compiler"
+JS_DIST_DIR="${action.gen-js-dev.dist_dir}"
+
+echo "Using Scala.js output from: ${JS_DIST_DIR}"
+
+rm -rf "$COMPILER_DIR"
+mkdir -p "$COMPILER_DIR"
+cp "${JS_DIST_DIR}/"*.js "$COMPILER_DIR"/
+cp "${JS_DIST_DIR}/"*.js.map "$COMPILER_DIR"/ 2>/dev/null || true
+
+cd "$PLAYGROUND_DIR"
+npm install
+npm run build
+
+cat > "${PLAYGROUND_DIR}/dist/serve.sh" << 'SERVE_EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")"
+PORT="${1:-8080}"
+echo "Serving playground at http://localhost:${PORT}"
+python3 -m http.server "$PORT"
+SERVE_EOF
+chmod +x "${PLAYGROUND_DIR}/dist/serve.sh"
+
+ret success:bool=true
+ret dist_dir:directory="$(realpath "${PLAYGROUND_DIR}/dist")"
 ```
 
 # action: full-build

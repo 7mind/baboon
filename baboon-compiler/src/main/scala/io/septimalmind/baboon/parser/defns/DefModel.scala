@@ -32,8 +32,8 @@ class DefModel(
 
   def model[$: P]: P[RawDomain] = {
     import fastparse.ScalaWhitespace.whitespace
-    P(Start ~ header ~ version ~ pragma.rep() ~ `import`.? ~ content ~ End).map {
-      case (decl, version, pragmas, imp, members) =>
+    P(Start ~ header ~ version ~ pragma.rep() ~ modelContent ~ End).map {
+      case (decl, version, pragmas, (imp, members)) =>
         RawDomain(decl, version, pragmas, imp, members)
     }
   }
@@ -71,6 +71,16 @@ class DefModel(
     }
 
     P(main | namespace)
+  }
+
+  def modelContent[$: P]: P[(Option[RawImport], RawContent)] = {
+    import fastparse.ScalaWhitespace.whitespace
+    (include.rep() ~ member.rep() ~ (`import` ~ include.rep() ~ member.rep()).?).map {
+      case (inc1, defs1, Some((imp, inc2, defs2))) =>
+        (Some(imp), RawContent(inc1 ++ inc2, defs1 ++ defs2))
+      case (inc1, defs1, None) =>
+        (None, RawContent(inc1, defs1))
+    }
   }
 
   def content[$: P]: P[RawContent] = {
