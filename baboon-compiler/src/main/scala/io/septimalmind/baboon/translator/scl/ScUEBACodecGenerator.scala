@@ -147,7 +147,7 @@ class ScUEBACodecGenerator(
     val parents = List(cParent, q"$baboonBinCodecIndexed")
     val meta    = renderMeta(defn, scDomainTreeTools.makeCodecMeta(defn))
 
-    q"""object ${cName.asName} extends ${parents.join(" with ")} {
+    q"""object ${cName.name} extends ${parents.join(" with ")} {
        |  ${baseMethods.joinNN().shift(2).trim}
        |
        |  ${meta.joinN().shift(2).trim}
@@ -171,9 +171,7 @@ class ScUEBACodecGenerator(
         val branchNs   = q"${adt.id.name.name}"
         val branchName = m.name.name
         val fqBranch   = q"$branchNs.$branchName"
-
-        val adtRef = trans.toScTypeRefKeepForeigns(m, domain, evo)
-        val cName  = codecName(adtRef)
+        val cName      = q"${fqBranch}_BinCodec"
 
         val castedName = branchName.toLowerCase
 
@@ -192,11 +190,8 @@ class ScUEBACodecGenerator(
         }
 
         (
-          q"""case $castedName: $fqBranch => 
-             |  ${encBody.shift(2).trim}
-             |""".stripMargin,
-          q"""case ${idx.toString} => $decBody
-             |""".stripMargin,
+          q"case $castedName: $fqBranch => ${encBody.shift(2).trim}",
+          q"case ${idx.toString} => $decBody",
         )
     }
 
@@ -227,13 +222,13 @@ class ScUEBACodecGenerator(
 
     (
       q"""value match {
-         |  ${branches.map(_._1).joinN().shift(2)}
+         |${branches.map(_._1).joinN().shift(2)}
          |}
          """.stripMargin,
       q"""val asByte = wire.readByte()
          |
          |asByte match {
-         |  ${branches.map(_._2).joinN().shift(2)}
+         |${branches.map(_._2).joinN().shift(2)}
          |  case _ => Left(new $genericException(s"Cannot decode {wire} to ${name.name}: no matching value"))
          |}
          |""".stripMargin,
@@ -539,7 +534,7 @@ class ScUEBACodecGenerator(
   }
 
   def codecName(name: ScValue.ScType): ScValue.ScType = {
-    ScValue.ScType(name.pkg, s"${name.name}_UEBACodec", name.fq)
+    ScValue.ScType(name.pkg, s"${name.name}_BinCodec", name.inObject)
   }
 
   override def codecMeta(defn: DomainMember.User, name: ScValue.ScType): Option[CodecMeta] = {
