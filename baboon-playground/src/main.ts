@@ -5,6 +5,7 @@ import { Preview } from "./preview.ts";
 import { compile } from "./compiler.ts";
 import { OptionsPanel, DEFAULT_OPTIONS } from "./options.ts";
 import type { CompilerOptions } from "./options.ts";
+import { zipSync, unzipSync, strToU8, strFromU8 } from "fflate";
 
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
@@ -39,8 +40,20 @@ const headerActions = document.createElement("div");
 headerActions.className = "header-actions";
 header.appendChild(headerActions);
 
+const importBtn = document.createElement("button");
+importBtn.className = "header-btn";
+importBtn.textContent = "Import";
+importBtn.title = "Import .baboon files from a ZIP archive";
+headerActions.appendChild(importBtn);
+
+const exportBtn = document.createElement("button");
+exportBtn.className = "header-btn";
+exportBtn.textContent = "Export";
+exportBtn.title = "Export editor files as a ZIP archive";
+headerActions.appendChild(exportBtn);
+
 const optionsBtn = document.createElement("button");
-optionsBtn.className = "options-btn";
+optionsBtn.className = "header-btn";
 optionsBtn.textContent = "Options";
 headerActions.appendChild(optionsBtn);
 
@@ -64,6 +77,56 @@ const optionsPanel = new OptionsPanel((options) => {
 
 optionsBtn.addEventListener("click", () => {
   optionsPanel.open();
+});
+
+exportBtn.addEventListener("click", () => {
+  const files = baboonEditor.getFiles();
+  const zipData: Record<string, Uint8Array> = {};
+  for (const [path, content] of files) {
+    zipData[path] = strToU8(content);
+  }
+  const zipped = zipSync(zipData);
+  const blob = new Blob([zipped.buffer as ArrayBuffer], { type: "application/zip" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "baboon-playground.zip";
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+const fileInput = document.createElement("input");
+fileInput.type = "file";
+fileInput.accept = ".zip";
+fileInput.style.display = "none";
+document.body.appendChild(fileInput);
+
+importBtn.addEventListener("click", () => {
+  fileInput.click();
+});
+
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files?.[0];
+  if (!file) return;
+  fileInput.value = "";
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const buffer = reader.result as ArrayBuffer;
+    const unzipped = unzipSync(new Uint8Array(buffer));
+    const files = new Map<string, string>();
+    for (const [path, data] of Object.entries(unzipped)) {
+      if (path.startsWith("__MACOSX/")) continue;
+      if (path.endsWith("/")) continue;
+      const basename = path.split("/").pop()!;
+      if (basename.startsWith(".")) continue;
+      if (!path.endsWith(".baboon") && !path.endsWith(".bmo")) continue;
+      files.set(path, strFromU8(data));
+    }
+    if (files.size === 0) return;
+    baboonEditor.setFiles(files);
+  };
+  reader.readAsArrayBuffer(file);
 });
 
 let compiling = false;

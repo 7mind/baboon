@@ -1,4 +1,5 @@
 import * as monaco from "monaco-editor";
+import { zipSync, strToU8 } from "fflate";
 import { FileTree } from "./file-tree.ts";
 import {
   type BaboonTargetLanguage,
@@ -53,6 +54,13 @@ export class Preview {
       this.renderCurrentLanguage();
     });
     this.toolbar.appendChild(this.languageSelect);
+
+    const downloadBtn = document.createElement("button");
+    downloadBtn.className = "preview-download-btn";
+    downloadBtn.textContent = "Download";
+    downloadBtn.title = "Download generated files as ZIP";
+    downloadBtn.addEventListener("click", () => this.downloadCurrentLanguage());
+    this.toolbar.appendChild(downloadBtn);
 
     this.errorPanel = document.createElement("div");
     this.errorPanel.className = "error-panel";
@@ -117,6 +125,24 @@ export class Preview {
     if (paths.length === 0) {
       this.showPlaceholder();
     }
+  }
+
+  private downloadCurrentLanguage(): void {
+    if (!this.result || this.filesByPath.size === 0) return;
+
+    const zipData: Record<string, Uint8Array> = {};
+    for (const [path, file] of this.filesByPath) {
+      zipData[path] = strToU8(file.content);
+    }
+    const zipped = zipSync(zipData);
+    const lang = LANGUAGE_DISPLAY_NAMES[this.selectedLanguage].toLowerCase();
+    const blob = new Blob([zipped.buffer as ArrayBuffer], { type: "application/zip" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `baboon-${lang}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   private showFile(path: string): void {

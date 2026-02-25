@@ -424,6 +424,25 @@ export class BaboonEditor {
     }
   }
 
+  setFiles(files: Map<string, string>): void {
+    for (const file of this.files.values()) {
+      file.model.dispose();
+    }
+    this.files.clear();
+    this.expandedPaths.clear();
+    this.selectedPath = null;
+    this.editor.setModel(null);
+
+    for (const [path, content] of files) {
+      this.addFile(path, content);
+    }
+
+    const firstPath = [...files.keys()][0];
+    if (firstPath) {
+      this.selectFile(firstPath);
+    }
+  }
+
   getFiles(): Map<string, string> {
     const result = new Map<string, string>();
     for (const [path, file] of this.files) {

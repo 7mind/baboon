@@ -43,7 +43,7 @@ body {
   align-items: center;
 }
 
-.options-btn {
+.header-btn {
   padding: 6px 16px;
   background: #3c3c3c;
   color: #cccccc;
@@ -54,7 +54,7 @@ body {
   font-weight: 500;
 }
 
-.options-btn:hover {
+.header-btn:hover {
   background: #505050;
 }
 
@@ -338,6 +338,21 @@ body {
 
 .language-select:focus {
   border-color: #0e639c;
+}
+
+.preview-download-btn {
+  margin-left: auto;
+  padding: 4px 12px;
+  background: #3c3c3c;
+  color: #cccccc;
+  border: 1px solid #555555;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.preview-download-btn:hover {
+  background: #505050;
 }
 
 .preview-content {
