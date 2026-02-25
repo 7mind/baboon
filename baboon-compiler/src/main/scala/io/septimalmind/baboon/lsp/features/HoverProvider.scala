@@ -120,8 +120,9 @@ class HoverProvider(
         }
 
       case foreign: Typedef.Foreign =>
-        foreign.runtimeMapping.foreach { rtRef =>
-          sb.append(s"\n**Runtime mapping:** $rtRef\n")
+        foreign.runtimeMapping.foreach {
+          rtRef =>
+            sb.append(s"\n**Runtime mapping:** $rtRef\n")
         }
         sb.append("\n**Bindings:**\n")
         foreign.bindings.foreach {

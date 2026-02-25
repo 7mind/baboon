@@ -5,5 +5,6 @@
 #![allow(non_snake_case)]
 pub mod baboon_fixture;
 pub mod baboon_runtime;
+pub mod baboon_service_wiring;
 pub mod rename;
 pub mod testpkg;

@@ -29,13 +29,13 @@ class CSUEBACodecGenerator(
 
     if (isActive(defn.id)) {
       (defn.defn match {
-        case d: Typedef.Dto      => Some(genDtoBodies(csRef, d))
-        case e: Typedef.Enum     => Some(genEnumBodies(csRef, e))
-        case a: Typedef.Adt      => Some(genAdtBodies(csRef, a))
+        case d: Typedef.Dto  => Some(genDtoBodies(csRef, d))
+        case e: Typedef.Enum => Some(genEnumBodies(csRef, e))
+        case a: Typedef.Adt  => Some(genAdtBodies(csRef, a))
         case f: Typedef.Foreign =>
           f.bindings.get(BaboonLang.Cs) match {
             case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
-            case _ => Some(genForeignBodies(csRef))
+            case _                                                                  => Some(genForeignBodies(csRef))
           }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None

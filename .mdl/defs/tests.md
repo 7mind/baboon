@@ -90,9 +90,9 @@ $BABOON_BIN \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :typescript \
-  --output "$TEST_DIR/ts-stub/src" \
-  --test-output "$TEST_DIR/ts-stub/src" \
-  --fixture-output "$TEST_DIR/ts-stub/src" \
+  --output "$TEST_DIR/ts-stub/src/generated" \
+  --test-output "$TEST_DIR/ts-stub/src/baboontests/generatedtests" \
+  --fixture-output "$TEST_DIR/ts-stub/src/baboontests/generatedfixtures" \
   --ts-write-evolution-dict=true \
   --ts-wrapped-adt-branch-codecs=false \
   --generate-ueba-codecs-by-default=true \
@@ -201,6 +201,8 @@ ret success:bool=true
 Run TypeScript tests with regular ADT codecs.
 
 ```bash
+dep action.test-cs-regular
+
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/ts-stub"
 npm install
@@ -346,9 +348,9 @@ $BABOON_BIN \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true \
   :typescript \
-  --output "$TEST_DIR/ts-stub/src" \
-  --test-output "$TEST_DIR/ts-stub/src" \
-  --fixture-output "$TEST_DIR/ts-stub/src" \
+  --output "$TEST_DIR/ts-stub/src/generated" \
+  --test-output "$TEST_DIR/ts-stub/src/baboontests/generatedtests" \
+  --fixture-output "$TEST_DIR/ts-stub/src/baboontests/generatedfixtures" \
   --ts-write-evolution-dict=true \
   --ts-wrapped-adt-branch-codecs=true \
   --generate-ueba-codecs-by-default=true \
@@ -457,6 +459,8 @@ ret success:bool=true
 Run TypeScript tests with wrapped ADT codecs.
 
 ```bash
+dep action.test-cs-wrapped
+
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
 pushd "$TEST_DIR/ts-stub"
 npm install
@@ -1292,9 +1296,9 @@ $BABOON_BIN \
   --meta-write-evolution-json baboon-meta.json \
   --lock-file=./target/baboon-ts-either.lock \
   :typescript \
-  --output "$TEST_DIR/ts-stub/src" \
-  --test-output "$TEST_DIR/ts-stub/src" \
-  --fixture-output "$TEST_DIR/ts-stub/src" \
+  --output "$TEST_DIR/ts-stub/src/baboondefinitions/generated" \
+  --test-output "$TEST_DIR/ts-stub/src/baboontests/generatedtests" \
+  --fixture-output "$TEST_DIR/ts-stub/src/baboontests/generatedfixtures" \
   --ts-write-evolution-dict=true \
   --ts-wrapped-adt-branch-codecs=false \
   --generate-ueba-codecs-by-default=true \
@@ -1317,7 +1321,7 @@ Run TypeScript BaboonEither wiring tests.
 TEST_DIR="${action.test-gen-ts-wiring-either.test_dir}"
 pushd "$TEST_DIR/ts-stub"
 npm install
-npm test
+npx vitest run src/wiring.test.ts
 popd
 
 ret success:bool=true
@@ -1342,9 +1346,9 @@ $BABOON_BIN \
   --meta-write-evolution-json baboon-meta.json \
   --lock-file=./target/baboon-ts-result.lock \
   :typescript \
-  --output "$TEST_DIR/ts-stub/src" \
-  --test-output "$TEST_DIR/ts-stub/src" \
-  --fixture-output "$TEST_DIR/ts-stub/src" \
+  --output "$TEST_DIR/ts-stub/src/baboondefinitions/generated" \
+  --test-output "$TEST_DIR/ts-stub/src/baboontests/generatedtests" \
+  --fixture-output "$TEST_DIR/ts-stub/src/baboontests/generatedfixtures" \
   --ts-write-evolution-dict=true \
   --ts-wrapped-adt-branch-codecs=false \
   --generate-ueba-codecs-by-default=true \
@@ -1367,7 +1371,7 @@ Run TypeScript Result wiring tests.
 TEST_DIR="${action.test-gen-ts-wiring-result.test_dir}"
 pushd "$TEST_DIR/ts-stub"
 npm install
-npm test
+npx vitest run src/wiring.test.ts
 popd
 
 ret success:bool=true
@@ -1392,9 +1396,9 @@ $BABOON_BIN \
   --meta-write-evolution-json baboon-meta.json \
   --lock-file=./target/baboon-ts-outcome.lock \
   :typescript \
-  --output "$TEST_DIR/ts-stub/src" \
-  --test-output "$TEST_DIR/ts-stub/src" \
-  --fixture-output "$TEST_DIR/ts-stub/src" \
+  --output "$TEST_DIR/ts-stub/src/baboondefinitions/generated" \
+  --test-output "$TEST_DIR/ts-stub/src/baboontests/generatedtests" \
+  --fixture-output "$TEST_DIR/ts-stub/src/baboontests/generatedfixtures" \
   --ts-write-evolution-dict=true \
   --ts-wrapped-adt-branch-codecs=false \
   --generate-ueba-codecs-by-default=true \
@@ -1417,7 +1421,7 @@ Run TypeScript Outcome wiring tests.
 TEST_DIR="${action.test-gen-ts-wiring-outcome.test_dir}"
 pushd "$TEST_DIR/ts-stub"
 npm install
-npm test
+npx vitest run src/wiring.test.ts
 popd
 
 ret success:bool=true

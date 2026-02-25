@@ -1,4 +1,4 @@
-import { BaboonDecimal, BaboonDateTimeUtc, BaboonDateTimeOffset } from "./baboon_runtime";
+import { BaboonDecimal, BaboonDateTimeUtc, BaboonDateTimeOffset } from "./BaboonSharedRuntime";
 
 export class BaboonRandom {
     nextI08(): number {

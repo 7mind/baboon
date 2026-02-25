@@ -94,11 +94,12 @@ object BaboonEnquiries {
     }
 
     def resolveForeignBinding(defn: Typedef.Foreign, lang: BaboonLang): Option[ForeignResolution] = {
-      defn.bindings.get(lang).map { entry =>
-        entry.mapping match {
-          case ForeignMapping.BaboonRef(typeRef) => ForeignResolution.BaboonAlias(typeRef)
-          case ForeignMapping.Custom(_, _)       => ForeignResolution.CustomType(entry)
-        }
+      defn.bindings.get(lang).map {
+        entry =>
+          entry.mapping match {
+            case ForeignMapping.BaboonRef(typeRef) => ForeignResolution.BaboonAlias(typeRef)
+            case ForeignMapping.Custom(_, _)       => ForeignResolution.CustomType(entry)
+          }
       }
     }
 
@@ -226,14 +227,15 @@ object BaboonEnquiries {
               explodeFields(t.fields) ++ t.contracts
             case t: Typedef.Contract =>
               explodeFields(t.fields) ++ t.contracts
-            case _: Typedef.Enum    => Set.empty
-            case t: Typedef.Adt     => t.members.toSet ++ t.contracts
+            case _: Typedef.Enum => Set.empty
+            case t: Typedef.Adt  => t.members.toSet ++ t.contracts
             case f: Typedef.Foreign =>
-              val bindingDeps = f.bindings.values.flatMap { entry =>
-                entry.mapping match {
-                  case ForeignMapping.BaboonRef(typeRef) => explodeRef(typeRef)
-                  case ForeignMapping.Custom(_, _)       => Set.empty
-                }
+              val bindingDeps = f.bindings.values.flatMap {
+                entry =>
+                  entry.mapping match {
+                    case ForeignMapping.BaboonRef(typeRef) => explodeRef(typeRef)
+                    case ForeignMapping.Custom(_, _)       => Set.empty
+                  }
               }.toSet
               val rtDeps = f.runtimeMapping.map(explodeRef).getOrElse(Set.empty)
               bindingDeps ++ rtDeps
@@ -291,13 +293,14 @@ object BaboonEnquiries {
               val rtPart = f.runtimeMapping.map(ref => s"rt:${ref.toString}").getOrElse("")
               val members = f.bindings.values.toList
                 .sortBy(_.lang.asString)
-                .map { e =>
-                  e.mapping match {
-                    case ForeignMapping.Custom(decl, attrs) =>
-                      s"[${e.lang.asString};$decl;${attrs.attrs.map(a => s"${a.name};${a.value}").sorted.mkString(":")}]"
-                    case ForeignMapping.BaboonRef(typeRef) =>
-                      s"[${e.lang.asString};baboon:${typeRef.toString}]"
-                  }
+                .map {
+                  e =>
+                    e.mapping match {
+                      case ForeignMapping.Custom(decl, attrs) =>
+                        s"[${e.lang.asString};$decl;${attrs.attrs.map(a => s"${a.name};${a.value}").sorted.mkString(":")}]"
+                      case ForeignMapping.BaboonRef(typeRef) =>
+                        s"[${e.lang.asString};baboon:${typeRef.toString}]"
+                    }
                 }
                 .mkString(":")
               s"[foreign;${wrap(f.id)};$rtPart;$members]"
@@ -351,11 +354,12 @@ object BaboonEnquiries {
             case _: Typedef.Adt =>
               Set.empty
             case f: Typedef.Foreign =>
-              val bindingRefs = f.bindings.values.flatMap { entry =>
-                entry.mapping match {
-                  case ForeignMapping.BaboonRef(typeRef) => Set(typeRef)
-                  case ForeignMapping.Custom(_, _)       => Set.empty[TypeRef]
-                }
+              val bindingRefs = f.bindings.values.flatMap {
+                entry =>
+                  entry.mapping match {
+                    case ForeignMapping.BaboonRef(typeRef) => Set(typeRef)
+                    case ForeignMapping.Custom(_, _)       => Set.empty[TypeRef]
+                  }
               }.toSet
               val rtRefs = f.runtimeMapping.toSet
               bindingRefs ++ rtRefs

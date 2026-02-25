@@ -16,9 +16,9 @@ object SwValue {
   case class SwType(
     pkg: SwPackageId,
     name: String,
-    fq: Boolean = false,
-    predef: Boolean = false,
-    importAs: Option[String] = None,
+    fq: Boolean               = false,
+    predef: Boolean           = false,
+    importAs: Option[String]  = None,
     localName: Option[String] = None,
   ) extends SwValue {
     def fullyQualified: SwType = this.copy(fq = true)

@@ -2,7 +2,6 @@ package io.septimalmind.baboon.translator.typescript
 
 import distage.Id
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
-import io.septimalmind.baboon.translator.typescript.TsValue.TsModuleId
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.FieldOp
 import izumi.functional.bio.{Error2, F}
@@ -13,7 +12,6 @@ import izumi.fundamentals.platform.strings.TextTree.*
 object TsConversionTranslator {
   trait Factory[F[+_, +_]] {
     def apply(
-      module: TsModuleId,
       srcDom: Domain @Id("source"),
       domain: Domain @Id("current"),
       rules: BaboonRuleset,
@@ -31,11 +29,11 @@ case class TsRenderedConversion(
 
 class TsConversionTranslator[F[+_, +_]: Error2](
   trans: TsTypeTranslator,
-  module: TsModuleId,
   srcDom: Domain @Id("source"),
   domain: Domain @Id("current"),
   rules: BaboonRuleset,
   evo: BaboonEvolution,
+  tsFileTools: TsFileTools,
 ) {
   private val srcVer = srcDom.version
   type Out[T] = F[NEList[BaboonIssue], T]
@@ -69,8 +67,10 @@ class TsConversionTranslator[F[+_, +_]: Error2](
           s"${trans.camelToKebab(conv.sourceTpe.name.name)}.ts"
         )).mkString("_")
 
-        val tout = trans.toTsTypeRefKeepForeigns(conv.targetTpe, domain, evo)
-        val tin  = trans.toTsTypeRefKeepForeigns(conv.sourceTpe, srcDom, evo)
+        val tout = trans.asTsTypeKeepForeigns(conv.targetTpe, domain, evo, tsFileTools.definitionsBasePkg)
+        val tin = trans
+          .asTsTypeKeepForeigns(conv.sourceTpe, srcDom, evo, tsFileTools.definitionsBasePkg)
+          .withAlias(s"${conv.sourceTpe.name.name}_${srcDom.version.format(prefix = "_", delimiter = "_")}")
 
         val rendered = conv match {
           case _: Conversion.CustomConversionRequired =>
@@ -111,22 +111,26 @@ class TsConversionTranslator[F[+_, +_]: Error2](
             )
 
           case c: Conversion.CopyAdtBranchByName =>
-            val adtType = trans.toTsTypeRefKeepForeigns(conv.targetTpe, domain, evo)
+            val adtType = trans.asTsTypeKeepForeigns(conv.targetTpe, domain, evo, tsFileTools.definitionsBasePkg)
             val cases = c.oldDefn.dataMembers(srcDom).map {
               oldId =>
+                val oldTpe = trans
+                  .asTsTypeKeepForeigns(oldId, srcDom, evo, tsFileTools.definitionsBasePkg)
+                  .withAlias(s"${oldId.name.name}_${srcDom.version.format(prefix = "_", delimiter = "_")}")
                 val newId         = c.branchMapping.getOrElse(oldId.name.name, oldId)
-                val newBranchType = trans.toTsTypeRefKeepForeigns(newId, domain, evo)
-                val factoryFn     = TsValue.TsType(adtType.module, s"${adtType.name}_${newId.name.name}")
-                q"""case "${oldId.name.name}": return $factoryFn(JSON.parse(JSON.stringify(from.value)) as $newBranchType);"""
+                val newBranchType = trans.asTsTypeKeepForeigns(newId, domain, evo, tsFileTools.definitionsBasePkg)
+                val factoryFn     = TsValue.TsType(adtType.moduleId, s"${adtType.name}_${newId.name.name}")
+                q"""if (from instanceof $oldTpe) {
+                   |    return JSON.parse(JSON.stringify(from)) as $newBranchType
+                   |}""".stripMargin
             }
             List(
               TsRenderedConversion(
                 fname,
                 q"""export function $fnName(from: $tin): $tout {
-                   |    switch (from._tag) {
-                   |        ${cases.toList.joinN().shift(8).trim}
-                   |        default: throw new Error("Unknown ADT branch: " + (from as { _tag: string })._tag);
-                   |    }
+                   |    ${cases.toList.joinN().shift(4).trim}
+                   |
+                   |    throw new Error("Unknown ADT branch: " + from);
                    |}""".stripMargin,
                 Some(q"$fnName"),
                 None,
@@ -144,7 +148,7 @@ class TsConversionTranslator[F[+_, +_]: Error2](
               f =>
                 val op  = ops(f)
                 val fld = f.name.name
-                val expr = op match {
+                op match {
                   case _: FieldOp.Transfer =>
                     if (hasUserType(f.tpe)) {
                       jsonConvert(q"from.$fld")
@@ -186,16 +190,15 @@ class TsConversionTranslator[F[+_, +_]: Error2](
                     val srcFld = o.sourceFieldName.name
                     jsonConvert(q"from.$srcFld")
                 }
-                q"$fld: $expr,"
             }
 
             List(
               TsRenderedConversion(
                 fname,
                 q"""export function $fnName(from: $tin): $tout {
-                   |    return {
+                   |    return new $tout (
                    |        ${assigns.joinN().shift(8).trim}
-                   |    };
+                   |    )
                    |}""".stripMargin,
                 Some(q"$fnName"),
                 None,

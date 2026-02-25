@@ -32,13 +32,13 @@ object SwServiceWiringTranslator {
     private val hasUebaCodecs: Boolean = codecs.exists(_.id == "Ueba")
 
     private def jsonCodecName(typeId: TypeId.User): SwType = {
-      val srcRef = trans.toSwTypeRefKeepForeigns(typeId, domain, evo)
+      val srcRef       = trans.toSwTypeRefKeepForeigns(typeId, domain, evo)
       val baseFileName = srcRef.importAs.getOrElse(trans.toSnakeCase(srcRef.name))
       SwType(srcRef.pkg, s"${srcRef.name}_JsonCodec", srcRef.fq, importAs = Some(baseFileName))
     }
 
     private def uebaCodecName(typeId: TypeId.User): SwType = {
-      val srcRef = trans.toSwTypeRefKeepForeigns(typeId, domain, evo)
+      val srcRef       = trans.toSwTypeRefKeepForeigns(typeId, domain, evo)
       val baseFileName = srcRef.importAs.getOrElse(trans.toSnakeCase(srcRef.name))
       SwType(srcRef.pkg, s"${srcRef.name}_UebaCodec", srcRef.fq, importAs = Some(baseFileName))
     }
@@ -59,7 +59,7 @@ object SwServiceWiringTranslator {
 
       val hasServices = domain.defs.meta.nodes.values.exists {
         case DomainMember.User(_, _: Typedef.Service, _, _) => true
-        case _                                               => false
+        case _                                              => false
       }
       if (!hasServices) return None
 
@@ -105,20 +105,22 @@ object SwServiceWiringTranslator {
     }
 
     private def renderFq(tree: TextTree[SwValue]): String = tree.mapRender {
-      case t: SwType          => if (t.predef) trans.escapeSwiftKeyword(t.name) else t.name
+      case t: SwType             => if (t.predef) trans.escapeSwiftKeyword(t.name) else t.name
       case t: SwValue.SwTypeName => trans.escapeSwiftKeyword(t.name)
     }
 
     private def generateNoErrorsWiring(service: Typedef.Service): TextTree[SwValue] = {
       val svcName = service.id.name.name
 
-      val jsonMethod = if (hasJsonCodecs)
-        Some(generateNoErrorsJsonMethod(service))
-      else None
+      val jsonMethod =
+        if (hasJsonCodecs)
+          Some(generateNoErrorsJsonMethod(service))
+        else None
 
-      val uebaMethod = if (hasUebaCodecs)
-        Some(generateNoErrorsUebaMethod(service))
-      else None
+      val uebaMethod =
+        if (hasUebaCodecs)
+          Some(generateNoErrorsUebaMethod(service))
+        else None
 
       val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
 
@@ -129,30 +131,31 @@ object SwServiceWiringTranslator {
 
     private def generateNoErrorsJsonMethod(service: Typedef.Service): TextTree[SwValue] = {
       val svcName = service.id.name.name
-      val cases = service.methods.map { m =>
-        val inCodec = jsonCodecName(m.sig.id.asInstanceOf[TypeId.User])
+      val cases = service.methods.map {
+        m =>
+          val inCodec = jsonCodecName(m.sig.id.asInstanceOf[TypeId.User])
 
-        val encodeOutput = m.out match {
-          case Some(outRef) =>
-            val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
-            q"""let encoded = $outCodec.instance.encode(ctx, result)
-               |let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
-               |return String(data: jsonData, encoding: .utf8)!""".stripMargin
-          case None =>
-            q"""return "null" """
-        }
+          val encodeOutput = m.out match {
+            case Some(outRef) =>
+              val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
+              q"""let encoded = $outCodec.instance.encode(ctx, result)
+                 |let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
+                 |return String(data: jsonData, encoding: .utf8)!""".stripMargin
+            case None =>
+              q"""return "null" """
+          }
 
-        val callExpr = m.out match {
-          case Some(_) => q"let result = impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
-          case None    => q"impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
-        }
+          val callExpr = m.out match {
+            case Some(_) => q"let result = impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
+            case None    => q"impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
+          }
 
-        q""""${m.name.name}": {
-           |    let wire = try JSONSerialization.jsonObject(with: data.data(using: .utf8)!, options: [.fragmentsAllowed])
-           |    let decoded = try $inCodec.instance.decode(ctx, wire)
-           |    $callExpr
-           |    ${encodeOutput.shift(4).trim}
-           |},""".stripMargin
+          q""""${m.name.name}": {
+             |    let wire = try JSONSerialization.jsonObject(with: data.data(using: .utf8)!, options: [.fragmentsAllowed])
+             |    let decoded = try $inCodec.instance.decode(ctx, wire)
+             |    $callExpr
+             |    ${encodeOutput.shift(4).trim}
+             |},""".stripMargin
       }.join("\n")
 
       q"""public static func invokeJson(
@@ -173,30 +176,31 @@ object SwServiceWiringTranslator {
 
     private def generateNoErrorsUebaMethod(service: Typedef.Service): TextTree[SwValue] = {
       val svcName = service.id.name.name
-      val cases = service.methods.map { m =>
-        val inCodec = uebaCodecName(m.sig.id.asInstanceOf[TypeId.User])
+      val cases = service.methods.map {
+        m =>
+          val inCodec = uebaCodecName(m.sig.id.asInstanceOf[TypeId.User])
 
-        val encodeOutput = m.out match {
-          case Some(outRef) =>
-            val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
-            q"""let writer = $baboonBinTools.createWriter()
-               |$outCodec.instance.encode(ctx, writer, result)
-               |return writer.toData()""".stripMargin
-          case None =>
-            q"return Data()"
-        }
+          val encodeOutput = m.out match {
+            case Some(outRef) =>
+              val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
+              q"""let writer = $baboonBinTools.createWriter()
+                 |$outCodec.instance.encode(ctx, writer, result)
+                 |return writer.toData()""".stripMargin
+            case None =>
+              q"return Data()"
+          }
 
-        val callExpr = m.out match {
-          case Some(_) => q"let result = impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
-          case None    => q"impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
-        }
+          val callExpr = m.out match {
+            case Some(_) => q"let result = impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
+            case None    => q"impl.${m.name.name}(arg: ${ctxArgPass}decoded)"
+          }
 
-        q""""${m.name.name}": {
-           |    let reader = $baboonBinTools.createReader(data)
-           |    let decoded = try $inCodec.instance.decode(ctx, reader)
-           |    $callExpr
-           |    ${encodeOutput.shift(4).trim}
-           |},""".stripMargin
+          q""""${m.name.name}": {
+             |    let reader = $baboonBinTools.createReader(data)
+             |    let decoded = try $inCodec.instance.decode(ctx, reader)
+             |    $callExpr
+             |    ${encodeOutput.shift(4).trim}
+             |},""".stripMargin
       }.join("\n")
 
       q"""public static func invokeUeba(
@@ -218,13 +222,15 @@ object SwServiceWiringTranslator {
     private def generateErrorsWiring(service: Typedef.Service): TextTree[SwValue] = {
       val svcName = service.id.name.name
 
-      val jsonMethod = if (hasJsonCodecs)
-        Some(generateErrorsJsonMethod(service))
-      else None
+      val jsonMethod =
+        if (hasJsonCodecs)
+          Some(generateErrorsJsonMethod(service))
+        else None
 
-      val uebaMethod = if (hasUebaCodecs)
-        Some(generateErrorsUebaMethod(service))
-      else None
+      val uebaMethod =
+        if (hasUebaCodecs)
+          Some(generateErrorsUebaMethod(service))
+        else None
 
       val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
 
@@ -241,81 +247,82 @@ object SwServiceWiringTranslator {
       val svcName       = service.id.name.name
       val wiringRetType = ct(bweFq, "String")
 
-      val cases = service.methods.map { m =>
-        val inCodec = jsonCodecName(m.sig.id.asInstanceOf[TypeId.User])
-        val inRef   = trans.asSwRef(m.sig, domain, evo)
+      val cases = service.methods.map {
+        m =>
+          val inCodec = jsonCodecName(m.sig.id.asInstanceOf[TypeId.User])
+          val inRef   = trans.asSwRef(m.sig, domain, evo)
 
-        val decodeStep =
-          q"""var input: ${ct(bweFq, renderFq(inRef))}
-             |do {
-             |    let wire = try JSONSerialization.jsonObject(with: data.data(using: .utf8)!, options: [.fragmentsAllowed])
-             |    input = rt.pure(try $inCodec.instance.decode(ctx, wire))
-             |} catch {
-             |    input = rt.fail($baboonWiringError.decoderFailed(method, error))
-             |}""".stripMargin
-
-        val hasErrType = m.err.isDefined && !resolved.noErrors
-
-        val callAndEncodeStep = m.out match {
-          case Some(outRef) =>
-            val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
-
-            val callBody = if (hasErrType) {
-              q"""do {
-                 |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
-                 |    return rt.leftMap(
-                 |        callResult, { err in $baboonWiringError.callFailed(method, err) })
-                 |} catch {
-                 |    return rt.fail($baboonWiringError.callFailed(method, error))
-                 |}""".stripMargin
-            } else {
-              q"""do {
-                 |    return rt.pure(impl.${m.name.name}(arg: ${ctxArgPass}v))
-                 |} catch {
-                 |    return rt.fail($baboonWiringError.callFailed(method, error))
-                 |}""".stripMargin
-            }
-
-            q"""let output = rt.flatMap(input) { v in
-               |    ${callBody.shift(4).trim}
-               |}
-               |return rt.flatMap(output) { v in
-               |    do {
-               |        let encoded = $outCodec.instance.encode(ctx, v)
-               |        let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
-               |        return rt.pure(String(data: jsonData, encoding: .utf8)!)
-               |    } catch {
-               |        return rt.fail($baboonWiringError.encoderFailed(method, error))
-               |    }
+          val decodeStep =
+            q"""var input: ${ct(bweFq, renderFq(inRef))}
+               |do {
+               |    let wire = try JSONSerialization.jsonObject(with: data.data(using: .utf8)!, options: [.fragmentsAllowed])
+               |    input = rt.pure(try $inCodec.instance.decode(ctx, wire))
+               |} catch {
+               |    input = rt.fail($baboonWiringError.decoderFailed(method, error))
                |}""".stripMargin
 
-          case None =>
-            val callBody = if (hasErrType) {
-              q"""do {
-                 |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
-                 |    return rt.leftMap(
-                 |        callResult, { err in $baboonWiringError.callFailed(method, err) })
-                 |} catch {
-                 |    return rt.fail($baboonWiringError.callFailed(method, error))
-                 |}""".stripMargin
-            } else {
-              q"""do {
-                 |    impl.${m.name.name}(arg: ${ctxArgPass}v)
-                 |    return rt.pure("null")
-                 |} catch {
-                 |    return rt.fail($baboonWiringError.callFailed(method, error))
-                 |}""".stripMargin
-            }
+          val hasErrType = m.err.isDefined && !resolved.noErrors
 
-            q"""return rt.flatMap(input) { v in
-               |    ${callBody.shift(4).trim}
-               |}""".stripMargin
-        }
+          val callAndEncodeStep = m.out match {
+            case Some(outRef) =>
+              val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
 
-        q""""${m.name.name}": {
-           |    ${decodeStep.shift(4).trim}
-           |    ${callAndEncodeStep.shift(4).trim}
-           |},""".stripMargin
+              val callBody = if (hasErrType) {
+                q"""do {
+                   |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
+                   |    return rt.leftMap(
+                   |        callResult, { err in $baboonWiringError.callFailed(method, err) })
+                   |} catch {
+                   |    return rt.fail($baboonWiringError.callFailed(method, error))
+                   |}""".stripMargin
+              } else {
+                q"""do {
+                   |    return rt.pure(impl.${m.name.name}(arg: ${ctxArgPass}v))
+                   |} catch {
+                   |    return rt.fail($baboonWiringError.callFailed(method, error))
+                   |}""".stripMargin
+              }
+
+              q"""let output = rt.flatMap(input) { v in
+                 |    ${callBody.shift(4).trim}
+                 |}
+                 |return rt.flatMap(output) { v in
+                 |    do {
+                 |        let encoded = $outCodec.instance.encode(ctx, v)
+                 |        let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
+                 |        return rt.pure(String(data: jsonData, encoding: .utf8)!)
+                 |    } catch {
+                 |        return rt.fail($baboonWiringError.encoderFailed(method, error))
+                 |    }
+                 |}""".stripMargin
+
+            case None =>
+              val callBody = if (hasErrType) {
+                q"""do {
+                   |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
+                   |    return rt.leftMap(
+                   |        callResult, { err in $baboonWiringError.callFailed(method, err) })
+                   |} catch {
+                   |    return rt.fail($baboonWiringError.callFailed(method, error))
+                   |}""".stripMargin
+              } else {
+                q"""do {
+                   |    impl.${m.name.name}(arg: ${ctxArgPass}v)
+                   |    return rt.pure("null")
+                   |} catch {
+                   |    return rt.fail($baboonWiringError.callFailed(method, error))
+                   |}""".stripMargin
+              }
+
+              q"""return rt.flatMap(input) { v in
+                 |    ${callBody.shift(4).trim}
+                 |}""".stripMargin
+          }
+
+          q""""${m.name.name}": {
+             |    ${decodeStep.shift(4).trim}
+             |    ${callAndEncodeStep.shift(4).trim}
+             |},""".stripMargin
       }.join("\n")
 
       q"""public static func invokeJson(
@@ -339,81 +346,82 @@ object SwServiceWiringTranslator {
       val svcName       = service.id.name.name
       val wiringRetType = ct(bweFq, "Data")
 
-      val cases = service.methods.map { m =>
-        val inCodec = uebaCodecName(m.sig.id.asInstanceOf[TypeId.User])
-        val inRef   = trans.asSwRef(m.sig, domain, evo)
+      val cases = service.methods.map {
+        m =>
+          val inCodec = uebaCodecName(m.sig.id.asInstanceOf[TypeId.User])
+          val inRef   = trans.asSwRef(m.sig, domain, evo)
 
-        val decodeStep =
-          q"""var input: ${ct(bweFq, renderFq(inRef))}
-             |do {
-             |    let reader = $baboonBinTools.createReader(data)
-             |    input = rt.pure(try $inCodec.instance.decode(ctx, reader))
-             |} catch {
-             |    input = rt.fail($baboonWiringError.decoderFailed(method, error))
-             |}""".stripMargin
-
-        val hasErrType = m.err.isDefined && !resolved.noErrors
-
-        val callAndEncodeStep = m.out match {
-          case Some(outRef) =>
-            val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
-
-            val callBody = if (hasErrType) {
-              q"""do {
-                 |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
-                 |    return rt.leftMap(
-                 |        callResult, { err in $baboonWiringError.callFailed(method, err) })
-                 |} catch {
-                 |    return rt.fail($baboonWiringError.callFailed(method, error))
-                 |}""".stripMargin
-            } else {
-              q"""do {
-                 |    return rt.pure(impl.${m.name.name}(arg: ${ctxArgPass}v))
-                 |} catch {
-                 |    return rt.fail($baboonWiringError.callFailed(method, error))
-                 |}""".stripMargin
-            }
-
-            q"""let output = rt.flatMap(input) { v in
-               |    ${callBody.shift(4).trim}
-               |}
-               |return rt.flatMap(output) { v in
-               |    do {
-               |        let writer = $baboonBinTools.createWriter()
-               |        $outCodec.instance.encode(ctx, writer, v)
-               |        return rt.pure(writer.toData())
-               |    } catch {
-               |        return rt.fail($baboonWiringError.encoderFailed(method, error))
-               |    }
+          val decodeStep =
+            q"""var input: ${ct(bweFq, renderFq(inRef))}
+               |do {
+               |    let reader = $baboonBinTools.createReader(data)
+               |    input = rt.pure(try $inCodec.instance.decode(ctx, reader))
+               |} catch {
+               |    input = rt.fail($baboonWiringError.decoderFailed(method, error))
                |}""".stripMargin
 
-          case None =>
-            val callBody = if (hasErrType) {
-              q"""do {
-                 |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
-                 |    return rt.leftMap(
-                 |        callResult, { err in $baboonWiringError.callFailed(method, err) })
-                 |} catch {
-                 |    return rt.fail($baboonWiringError.callFailed(method, error))
-                 |}""".stripMargin
-            } else {
-              q"""do {
-                 |    impl.${m.name.name}(arg: ${ctxArgPass}v)
-                 |    return rt.pure(Data())
-                 |} catch {
-                 |    return rt.fail($baboonWiringError.callFailed(method, error))
-                 |}""".stripMargin
-            }
+          val hasErrType = m.err.isDefined && !resolved.noErrors
 
-            q"""return rt.flatMap(input) { v in
-               |    ${callBody.shift(4).trim}
-               |}""".stripMargin
-        }
+          val callAndEncodeStep = m.out match {
+            case Some(outRef) =>
+              val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
 
-        q""""${m.name.name}": {
-           |    ${decodeStep.shift(4).trim}
-           |    ${callAndEncodeStep.shift(4).trim}
-           |},""".stripMargin
+              val callBody = if (hasErrType) {
+                q"""do {
+                   |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
+                   |    return rt.leftMap(
+                   |        callResult, { err in $baboonWiringError.callFailed(method, err) })
+                   |} catch {
+                   |    return rt.fail($baboonWiringError.callFailed(method, error))
+                   |}""".stripMargin
+              } else {
+                q"""do {
+                   |    return rt.pure(impl.${m.name.name}(arg: ${ctxArgPass}v))
+                   |} catch {
+                   |    return rt.fail($baboonWiringError.callFailed(method, error))
+                   |}""".stripMargin
+              }
+
+              q"""let output = rt.flatMap(input) { v in
+                 |    ${callBody.shift(4).trim}
+                 |}
+                 |return rt.flatMap(output) { v in
+                 |    do {
+                 |        let writer = $baboonBinTools.createWriter()
+                 |        $outCodec.instance.encode(ctx, writer, v)
+                 |        return rt.pure(writer.toData())
+                 |    } catch {
+                 |        return rt.fail($baboonWiringError.encoderFailed(method, error))
+                 |    }
+                 |}""".stripMargin
+
+            case None =>
+              val callBody = if (hasErrType) {
+                q"""do {
+                   |    let callResult = impl.${m.name.name}(arg: ${ctxArgPass}v)
+                   |    return rt.leftMap(
+                   |        callResult, { err in $baboonWiringError.callFailed(method, err) })
+                   |} catch {
+                   |    return rt.fail($baboonWiringError.callFailed(method, error))
+                   |}""".stripMargin
+              } else {
+                q"""do {
+                   |    impl.${m.name.name}(arg: ${ctxArgPass}v)
+                   |    return rt.pure(Data())
+                   |} catch {
+                   |    return rt.fail($baboonWiringError.callFailed(method, error))
+                   |}""".stripMargin
+              }
+
+              q"""return rt.flatMap(input) { v in
+                 |    ${callBody.shift(4).trim}
+                 |}""".stripMargin
+          }
+
+          q""""${m.name.name}": {
+             |    ${decodeStep.shift(4).trim}
+             |    ${callAndEncodeStep.shift(4).trim}
+             |},""".stripMargin
       }.join("\n")
 
       q"""public static func invokeUeba(

@@ -41,8 +41,8 @@ class SwJsonCodecGenerator(
     dec: TextTree[SwValue],
   ): TextTree[SwValue] = {
     val isEncoderEnabled = domain.version == evo.latest
-    val encReturnType = "Any"
-    val localName = name.asDeclName
+    val encReturnType    = "Any"
+    val localName        = name.asDeclName
     val encodeMethod =
       if (isEncoderEnabled) {
         List(
@@ -105,24 +105,25 @@ class SwJsonCodecGenerator(
   }
 
   private def genAdtBodies(name: SwValue.SwType, adt: Typedef.Adt): (TextTree[SwValue], TextTree[SwValue]) = {
-    val branches = adt.dataMembers(domain).map { m =>
-      val branchName    = m.name.name
-      val caseName      = branchName.head.toLower.toString + branchName.tail
-      val fqBranch      = trans.toSwTypeRefKeepForeigns(m, domain, evo)
+    val branches = adt.dataMembers(domain).map {
+      m =>
+        val branchName = m.name.name
+        val caseName   = branchName.head.toLower.toString + branchName.tail
+        val fqBranch   = trans.toSwTypeRefKeepForeigns(m, domain, evo)
 
-      val routedBranchEncoder = q"${codecName(fqBranch)}.instance.encode(ctx, branchVal)"
-      val branchEncoder = if (target.language.wrappedAdtBranchCodecs) {
-        routedBranchEncoder
-      } else {
-        wrapAdtBranchEncoder(branchName, routedBranchEncoder)
-      }
+        val routedBranchEncoder = q"${codecName(fqBranch)}.instance.encode(ctx, branchVal)"
+        val branchEncoder = if (target.language.wrappedAdtBranchCodecs) {
+          routedBranchEncoder
+        } else {
+          wrapAdtBranchEncoder(branchName, routedBranchEncoder)
+        }
 
-      (
-        q"""case .$caseName(let branchVal):
-           |    return $branchEncoder""".stripMargin,
-        q"""case "$branchName":
-           |    return .$caseName(try ${codecName(fqBranch)}.instance.decode(ctx, entryValue))""".stripMargin,
-      )
+        (
+          q"""case .$caseName(let branchVal):
+             |    return $branchEncoder""".stripMargin,
+          q"""case "$branchName":
+             |    return .$caseName(try ${codecName(fqBranch)}.instance.decode(ctx, entryValue))""".stripMargin,
+        )
     }
 
     (
@@ -158,16 +159,18 @@ class SwJsonCodecGenerator(
   }
 
   private def genDtoBodies(name: SwValue.SwType, d: Typedef.Dto): (TextTree[SwValue], TextTree[SwValue]) = {
-    val encFields = d.fields.map { f =>
-      val escaped  = trans.escapeSwiftKeyword(f.name.name)
-      val fieldRef = q"value.$escaped"
-      val enc      = mkEncoder(f.tpe, fieldRef)
-      q""""${f.name.name}": $enc as Any,"""
+    val encFields = d.fields.map {
+      f =>
+        val escaped  = trans.escapeSwiftKeyword(f.name.name)
+        val fieldRef = q"value.$escaped"
+        val enc      = mkEncoder(f.tpe, fieldRef)
+        q""""${f.name.name}": $enc as Any,"""
     }
 
-    val decFields = d.fields.map { f =>
-      val escaped = trans.escapeSwiftKeyword(f.name.name)
-      q"$escaped: try ${mkDecoder(f.name.name, f.tpe, q"jsonObj")}"
+    val decFields = d.fields.map {
+      f =>
+        val escaped = trans.escapeSwiftKeyword(f.name.name)
+        q"$escaped: try ${mkDecoder(f.name.name, f.tpe, q"jsonObj")}"
     }
 
     val mainEnc = q"""return [
@@ -212,7 +215,7 @@ class SwJsonCodecGenerator(
               u.defn match {
                 case _: Typedef.Enum    => q"$ref.rawValue"
                 case _: Typedef.Foreign => q"String(describing: $ref)"
-                case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
+                case o                  => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
             case o => throw new RuntimeException(s"BUG: Type/usertype mismatch: $o")
           }
@@ -223,21 +226,19 @@ class SwJsonCodecGenerator(
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
-          case TypeId.Builtins.bit   => q"$ref"
-          case TypeId.Builtins.i08 | TypeId.Builtins.i16 |
-               TypeId.Builtins.i32  => q"Int($ref)"
-          case TypeId.Builtins.i64   => q"String($ref)"
-          case TypeId.Builtins.u08 | TypeId.Builtins.u16 |
-               TypeId.Builtins.u32  => q"Int($ref)"
-          case TypeId.Builtins.u64   => q"String($ref)"
-          case TypeId.Builtins.f32   => q"Double($ref)"
-          case TypeId.Builtins.f64   => q"$ref"
-          case TypeId.Builtins.f128  => q"$ref.stringValue"
-          case TypeId.Builtins.str   => q"$ref"
-          case TypeId.Builtins.uid   => q"$ref.uuidString"
-          case TypeId.Builtins.bytes => q"$baboonByteStringTools.toHexString($ref)"
-          case TypeId.Builtins.tsu   => q"$baboonTimeFormats.formatUtc($ref)"
-          case TypeId.Builtins.tso   => q"$baboonTimeFormats.formatOffset($ref)"
+          case TypeId.Builtins.bit                                             => q"$ref"
+          case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 => q"Int($ref)"
+          case TypeId.Builtins.i64                                             => q"String($ref)"
+          case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 => q"Int($ref)"
+          case TypeId.Builtins.u64                                             => q"String($ref)"
+          case TypeId.Builtins.f32                                             => q"Double($ref)"
+          case TypeId.Builtins.f64                                             => q"$ref"
+          case TypeId.Builtins.f128                                            => q"$ref.stringValue"
+          case TypeId.Builtins.str                                             => q"$ref"
+          case TypeId.Builtins.uid                                             => q"$ref.uuidString"
+          case TypeId.Builtins.bytes                                           => q"$baboonByteStringTools.toHexString($ref)"
+          case TypeId.Builtins.tsu                                             => q"$baboonTimeFormats.formatUtc($ref)"
+          case TypeId.Builtins.tso                                             => q"$baboonTimeFormats.formatOffset($ref)"
           case u: TypeId.User =>
             val targetTpe = codecName(trans.toSwTypeRefKeepForeigns(u, domain, evo))
             q"$targetTpe.instance.encode(ctx, $ref)"
@@ -370,7 +371,7 @@ class SwJsonCodecGenerator(
 
   def codecName(name: SwValue.SwType): SwValue.SwType = {
     val baseFileName = name.importAs.getOrElse(trans.toSnakeCase(name.name))
-    val localName = name.localName.getOrElse(name.name)
+    val localName    = name.localName.getOrElse(name.name)
     SwValue.SwType(name.pkg, s"${name.name}_JsonCodec", name.fq, importAs = Some(baseFileName), localName = Some(s"${localName}_JsonCodec"))
   }
 

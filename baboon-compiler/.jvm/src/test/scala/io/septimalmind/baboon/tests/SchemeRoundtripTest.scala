@@ -46,21 +46,23 @@ abstract class SchemeRoundtripTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
     pkg: Pkg,
     version: Version,
   ): F[NEList[BaboonIssue], Unit] = {
-    val rendered1 = renderer.render(family, pkg, version).fold(
-      e => throw new AssertionError(s"First render failed for $pkg@$version: $e"),
-      identity,
-    )
+    val rendered1 = renderer
+      .render(family, pkg, version).fold(
+        e => throw new AssertionError(s"First render failed for $pkg@$version: $e"),
+        identity,
+      )
     val input = BaboonParser.Input(
-      FSPath.parse(NEString.unsafeFrom(s"roundtrip-${version}.baboon")),
+      FSPath.parse(NEString.unsafeFrom(s"roundtrip-$version.baboon")),
       rendered1,
     )
     for {
       family2 <- manager.load(List(input))
     } yield {
-      val rendered2 = renderer.render(family2, pkg, version).fold(
-        e => throw new AssertionError(s"Second render failed for $pkg@$version: $e"),
-        identity,
-      )
+      val rendered2 = renderer
+        .render(family2, pkg, version).fold(
+          e => throw new AssertionError(s"Second render failed for $pkg@$version: $e"),
+          identity,
+        )
       assert(rendered1 == rendered2, s"Roundtrip mismatch for $pkg@$version:\n---FIRST---\n$rendered1\n---SECOND---\n$rendered2")
     }
   }

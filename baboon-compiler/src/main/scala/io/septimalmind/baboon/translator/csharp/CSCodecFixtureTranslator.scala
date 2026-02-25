@@ -29,11 +29,11 @@ object CSCodecFixtureTranslator {
       } else {
         definition.defn match {
           case _ if enquiries.hasForeignType(definition, domain, BaboonLang.Cs) => None
-          case _ if enquiries.isRecursiveTypedef(definition, domain) => None
-          case _: Typedef.Contract                                   => None
-          case _: Typedef.Enum                                       => None
-          case _: Typedef.Foreign                                    => None
-          case _: Typedef.Service                                    => None
+          case _ if enquiries.isRecursiveTypedef(definition, domain)            => None
+          case _: Typedef.Contract                                              => None
+          case _: Typedef.Enum                                                  => None
+          case _: Typedef.Foreign                                               => None
+          case _: Typedef.Service                                               => None
 
           case dto: Typedef.Dto =>
             Some(doTranslateDto(dto))

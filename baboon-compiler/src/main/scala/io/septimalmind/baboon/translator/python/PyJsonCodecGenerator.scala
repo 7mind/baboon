@@ -19,13 +19,13 @@ final class PyJsonCodecGenerator(
 ) extends PyCodecTranslator {
   override def translate(defn: DomainMember.User, pyRef: PyType, srcRef: PyType): Option[TextTree[PyValue]] = {
     (defn.defn match {
-      case _: Typedef.Dto      => Some(genDtoBodies(pyRef))
-      case _: Typedef.Adt      => Some(genAdtBodies(pyRef))
-      case _: Typedef.Enum     => Some(genEnumBodies(pyRef))
+      case _: Typedef.Dto  => Some(genDtoBodies(pyRef))
+      case _: Typedef.Adt  => Some(genAdtBodies(pyRef))
+      case _: Typedef.Enum => Some(genEnumBodies(pyRef))
       case f: Typedef.Foreign =>
         f.bindings.get(BaboonLang.Py) match {
           case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
-          case _ => Some(genForeignTypesBodies(pyRef))
+          case _                                                                  => Some(genForeignTypesBodies(pyRef))
         }
       case _: Typedef.Service  => None
       case _: Typedef.Contract => None
@@ -61,14 +61,14 @@ final class PyJsonCodecGenerator(
       defn match {
         case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecBase[$name, $cType]"
         case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecBase[$name, $cType]"
-        case _ if defn.isAdt                                => q"$baboonJsonCodecBaseGeneratedAdt[$name, $cType]"
+        case _ if defn.ownedByAdt                           => q"$baboonJsonCodecBaseGeneratedAdt[$name, $cType]"
         case _                                              => q"$baboonJsonCodecBaseGenerated[$name, $cType]"
       }
     } else {
       defn match {
         case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecNoEncoder[$name, $cType]"
         case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecNoEncoder[$name, $cType]"
-        case _ if defn.isAdt                                => q"$baboonJsonCodecNoEncoderGeneratedAdt[$name, $cType]"
+        case _ if defn.ownedByAdt                           => q"$baboonJsonCodecNoEncoderGeneratedAdt[$name, $cType]"
         case _                                              => q"$baboonJsonCodecNoEncoderGenerated[$name, $cType]"
       }
     }

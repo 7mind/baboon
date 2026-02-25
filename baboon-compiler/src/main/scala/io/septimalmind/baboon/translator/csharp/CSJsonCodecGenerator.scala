@@ -30,7 +30,7 @@ class CSJsonCodecGenerator(
         case f: Typedef.Foreign =>
           f.bindings.get(BaboonLang.Cs) match {
             case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
-            case _ => Some(genForeignBodies(csRef))
+            case _                                                                  => Some(genForeignBodies(csRef))
           }
         case _: Typedef.Contract =>
           None

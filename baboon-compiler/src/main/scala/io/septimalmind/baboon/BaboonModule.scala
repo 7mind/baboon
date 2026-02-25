@@ -191,13 +191,13 @@ class BaboonCommonTsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
       make[TsServiceWiringTranslator].from[TsServiceWiringTranslator.Impl]
       make[TsCodecFixtureTranslator].from[TsCodecFixtureTranslator.TsCodecFixtureTranslatorImpl]
       make[TsCodecTestsTranslator].from[TsCodecTestsTranslator.Impl]
+      make[TsDomainTreeTools].from[TsDomainTreeTools.TsDomainTreeToolsImpl]
       many[TsCodecTranslator]
         .add[TsJsonCodecGenerator]
         .add[TsUEBACodecGenerator]
     })
 
   make[TsFileTools].from[TsFileTools.TsFileToolsImpl]
-  make[TsTreeTools].from[TsTreeTools.TsTreeToolsImpl]
 
   make[TsTypeTranslator]
   makeFactory[TsConversionTranslator.Factory[F]]

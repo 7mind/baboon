@@ -128,16 +128,16 @@ class SwConversionTranslator[F[+_, +_]: Error2](
 
   private def builtinConversion(to: TypeId, from: TypeId): Option[String] = {
     (from, to) match {
-      case _ if from == to => None
-      case (_, TypeId.Builtins.i16) => Some("Int16")
-      case (_, TypeId.Builtins.i32) => Some("Int32")
-      case (_, TypeId.Builtins.i64) => Some("Int64")
-      case (_, TypeId.Builtins.u16) => Some("UInt16")
-      case (_, TypeId.Builtins.u32) => Some("UInt32")
-      case (_, TypeId.Builtins.u64) => Some("UInt64")
-      case (_, TypeId.Builtins.f64) => Some("Double")
+      case _ if from == to           => None
+      case (_, TypeId.Builtins.i16)  => Some("Int16")
+      case (_, TypeId.Builtins.i32)  => Some("Int32")
+      case (_, TypeId.Builtins.i64)  => Some("Int64")
+      case (_, TypeId.Builtins.u16)  => Some("UInt16")
+      case (_, TypeId.Builtins.u32)  => Some("UInt32")
+      case (_, TypeId.Builtins.u64)  => Some("UInt64")
+      case (_, TypeId.Builtins.f64)  => Some("Double")
       case (_, TypeId.Builtins.f128) => Some("BaboonDecimal")
-      case _ => None
+      case _                         => None
     }
   }
 
@@ -228,9 +228,9 @@ class SwConversionTranslator[F[+_, +_]: Error2](
             val cases = c.oldDefn.dataMembers(srcDom).map {
               oldId =>
                 val oldCaseName = oldId.name.name.head.toLower.toString + oldId.name.name.tail
-                val newId = c.branchMapping.getOrElse(oldId.name.name, oldId)
+                val newId       = c.branchMapping.getOrElse(oldId.name.name, oldId)
                 val newCaseName = newId.name.name.head.toLower.toString + newId.name.name.tail
-                val converted = transfer(TypeRef.Scalar(newId), q"x", 1, Some(TypeRef.Scalar(oldId)))
+                val converted   = transfer(TypeRef.Scalar(newId), q"x", 1, Some(TypeRef.Scalar(oldId)))
                 q"if case .$oldCaseName(let x) = from { return .$newCaseName($converted) }"
             }
 
@@ -260,8 +260,8 @@ class SwConversionTranslator[F[+_, +_]: Error2](
             val ops = c.ops.map(o => o.targetField -> o).toMap
             val assigns = dto.fields.map {
               f =>
-                val op  = ops(f)
-                val fld = trans.escapeSwiftKeyword(f.name.name)
+                val op    = ops(f)
+                val fld   = trans.escapeSwiftKeyword(f.name.name)
                 val ftype = trans.asSwRef(f.tpe, domain, evo)
                 val expr = op match {
                   case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"from.$fld", 1)
@@ -273,7 +273,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
                           case TypeId.Builtins.set => q"Set()"
                           case TypeId.Builtins.map => q"[:]"
                           case TypeId.Builtins.opt => q"nil"
-                          case _ => throw new IllegalStateException(s"Unsupported constructor type: $id")
+                          case _                   => throw new IllegalStateException(s"Unsupported constructor type: $id")
                         }
                       case _ => throw new IllegalStateException("Unsupported target field type")
                     }
@@ -285,12 +285,12 @@ class SwConversionTranslator[F[+_, +_]: Error2](
                           case TypeId.Builtins.opt => q"from.$fld"
                           case TypeId.Builtins.lst => q"[from.$fld]"
                           case TypeId.Builtins.set => q"Set([from.$fld])"
-                          case _ => throw new IllegalStateException(s"Unsupported collection wrap type: $id")
+                          case _                   => throw new IllegalStateException(s"Unsupported collection wrap type: $id")
                         }
                       case _ => throw new IllegalStateException("WrapIntoCollection target must be a constructor type")
                     }
                   case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"from.$fld", 1, Some(o.oldTpe))
-                  case o: FieldOp.SwapCollectionType  => swapCollType(q"from.$fld", o, 0)
+                  case o: FieldOp.SwapCollectionType => swapCollType(q"from.$fld", o, 0)
                   case o: FieldOp.Rename             => transfer(o.targetField.tpe, q"from.${trans.escapeSwiftKeyword(o.sourceFieldName.name)}", 1)
                   case o: FieldOp.Redef =>
                     val srcFieldRef = q"from.${trans.escapeSwiftKeyword(o.sourceFieldName.name)}"
@@ -302,7 +302,7 @@ class SwConversionTranslator[F[+_, +_]: Error2](
                               case TypeId.Builtins.opt => q"$srcFieldRef"
                               case TypeId.Builtins.lst => q"[$srcFieldRef]"
                               case TypeId.Builtins.set => q"Set([$srcFieldRef])"
-                              case _ => throw new IllegalStateException(s"Unsupported collection wrap type: $id")
+                              case _                   => throw new IllegalStateException(s"Unsupported collection wrap type: $id")
                             }
                           case _ => throw new IllegalStateException("WrapIntoCollection target must be a constructor type")
                         }

@@ -5,6 +5,8 @@ import izumi.fundamentals.platform.exceptions.Issue
 import izumi.fundamentals.platform.exceptions.Issue.IssueContext
 import izumi.fundamentals.platform.strings.IzString.toRichIterable
 
+import scala.language.implicitConversions
+
 sealed trait TranslationIssue extends IssueGroup
 
 object TranslationIssue {

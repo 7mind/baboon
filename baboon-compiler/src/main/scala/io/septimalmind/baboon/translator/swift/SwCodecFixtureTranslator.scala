@@ -63,8 +63,9 @@ object SwCodecFixtureTranslator {
     private def doTranslateDto(dto: Typedef.Dto): TextTree[SwValue] = {
       val fullType = translator.toSwTypeRefKeepForeigns(dto.id, domain, evo)
 
-      val generatedFields = dto.fields.map { f =>
-        q"${translator.escapeSwiftKeyword(f.name.name)}: ${genType(f.tpe)}"
+      val generatedFields = dto.fields.map {
+        f =>
+          q"${translator.escapeSwiftKeyword(f.name.name)}: ${genType(f.tpe)}"
       }
 
       q"""public class ${fixtureTpeName(dto.id)} {
@@ -83,10 +84,11 @@ object SwCodecFixtureTranslator {
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
-      val membersFixtures    = members.sortBy(_.id.toString).map(doTranslateDto)
-      val membersDirectCalls = members.sortBy(_.id.toString).map { dto =>
-        val caseName = dto.id.name.name.head.toLower.toString + dto.id.name.name.tail
-        q".$caseName(${fixtureTpeName(dto.id)}.random(rnd))"
+      val membersFixtures = members.sortBy(_.id.toString).map(doTranslateDto)
+      val membersDirectCalls = members.sortBy(_.id.toString).map {
+        dto =>
+          val caseName = dto.id.name.name.head.toLower.toString + dto.id.name.name.tail
+          q".$caseName(${fixtureTpeName(dto.id)}.random(rnd))"
       }
 
       q"""${membersFixtures.joinN()}
@@ -152,9 +154,9 @@ object SwCodecFixtureTranslator {
           val enumType = translator.toSwTypeRefKeepForeigns(u, domain, evo)
           q"rnd.mkEnum($enumType.all)"
         case u: TypeId.User =>
-          val fixturePkg = translator.effectiveSwPkg(u.owner, domain, evo)
+          val fixturePkg       = translator.effectiveSwPkg(u.owner, domain, evo)
           val fixtureClassName = translator.fixtureClassName(u, domain, evo)
-          val fixtureFileName = s"${translator.toSnakeCase(translator.toSwTypeRefKeepForeigns(u, domain, evo).name)}_fixture"
+          val fixtureFileName  = s"${translator.toSnakeCase(translator.toSwTypeRefKeepForeigns(u, domain, evo).name)}_fixture"
           val fixtureType      = SwValue.SwType(fixturePkg, fixtureClassName, importAs = Some(fixtureFileName))
           q"$fixtureType.random(rnd)"
 

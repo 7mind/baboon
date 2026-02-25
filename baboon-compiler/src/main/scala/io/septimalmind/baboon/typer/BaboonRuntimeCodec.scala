@@ -68,9 +68,9 @@ object BaboonRuntimeCodec {
     // Encode user-defined types
     private def encodeUserType(dom: Domain, typedef: Typedef.User, json: Json, writer: LEDataOutputStream, indexed: Boolean): F[BaboonIssue, Unit] = {
       typedef match {
-        case dto: Typedef.Dto    => encodeDto(dom, dto, json, writer, indexed)
-        case enum: Typedef.Enum  => encodeEnum(dom, enum, json, writer)
-        case adt: Typedef.Adt    => encodeAdt(dom, adt, json, writer, indexed)
+        case dto: Typedef.Dto   => encodeDto(dom, dto, json, writer, indexed)
+        case enum: Typedef.Enum => encodeEnum(dom, enum, json, writer)
+        case adt: Typedef.Adt   => encodeAdt(dom, adt, json, writer, indexed)
         case f: Typedef.Foreign =>
           f.runtimeMapping match {
             case Some(typeRef) => encodeTypeRef(dom, typeRef, json, writer, indexed)
@@ -84,9 +84,9 @@ object BaboonRuntimeCodec {
     // Decode user-defined types
     private def decodeUserType(dom: Domain, typedef: Typedef.User, reader: LEDataInputStream): F[BaboonIssue, Json] = {
       typedef match {
-        case dto: Typedef.Dto    => decodeDto(dom, dto, reader)
-        case enum: Typedef.Enum  => decodeEnum(dom, enum, reader)
-        case adt: Typedef.Adt    => decodeAdt(dom, adt, reader)
+        case dto: Typedef.Dto   => decodeDto(dom, dto, reader)
+        case enum: Typedef.Enum => decodeEnum(dom, enum, reader)
+        case adt: Typedef.Adt   => decodeAdt(dom, adt, reader)
         case f: Typedef.Foreign =>
           f.runtimeMapping match {
             case Some(typeRef) => decodeTypeRef(dom, typeRef, reader)

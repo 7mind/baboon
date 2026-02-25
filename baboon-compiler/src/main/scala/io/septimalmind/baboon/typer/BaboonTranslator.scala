@@ -75,18 +75,19 @@ class BaboonTranslator[F[+_, +_]: Error2](
         case _ =>
           F.fail(BaboonIssue.of(TyperIssue.InvalidRtMapping(id, "multiple rt bindings are not allowed", f.meta)))
       }
-      mappedEntries <- F.traverse(langEntries) { e =>
-        for {
-          lang <- F.fromEither {
-            BaboonLang.fromString(e.lang).toRight(BaboonIssue.of(TyperIssue.UnknownForeignLang(e.lang, id, f.meta)))
-          }
-          mapping <- e.decl match {
-            case RawForeignDecl.Custom(decl, attrs) =>
-              F.pure(ForeignMapping.Custom(decl, ForeignEntryAttrs(attrs.attrs.map(a => ForeignEntryAttr(a.name, a.value)))))
-            case RawForeignDecl.BaboonRef(rawTypeRef) =>
-              convertTpe(rawTypeRef, f.meta).map(ForeignMapping.BaboonRef(_))
-          }
-        } yield (lang, ForeignEntry(lang, mapping))
+      mappedEntries <- F.traverse(langEntries) {
+        e =>
+          for {
+            lang <- F.fromEither {
+              BaboonLang.fromString(e.lang).toRight(BaboonIssue.of(TyperIssue.UnknownForeignLang(e.lang, id, f.meta)))
+            }
+            mapping <- e.decl match {
+              case RawForeignDecl.Custom(decl, attrs) =>
+                F.pure(ForeignMapping.Custom(decl, ForeignEntryAttrs(attrs.attrs.map(a => ForeignEntryAttr(a.name, a.value)))))
+              case RawForeignDecl.BaboonRef(rawTypeRef) =>
+                convertTpe(rawTypeRef, f.meta).map(ForeignMapping.BaboonRef(_))
+            }
+          } yield (lang, ForeignEntry(lang, mapping))
       }
       entries <- F.fromEither {
         mappedEntries

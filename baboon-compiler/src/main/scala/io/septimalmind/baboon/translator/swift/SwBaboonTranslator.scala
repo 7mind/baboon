@@ -30,7 +30,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
       translated <- translateFamily(family)
       runtime    <- sharedRuntime()
       fixture    <- sharedFixture()
-      allOutputs = translated ++ runtime ++ fixture
+      allOutputs  = translated ++ runtime ++ fixture
       rendered = allOutputs.map {
         o =>
           val content = renderTree(o)
@@ -123,19 +123,21 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
 
     if (nsPaths.isEmpty) return Nil
 
-    val allPrefixes = nsPaths.flatMap { path =>
-      (1 to path.length).map(path.take)
+    val allPrefixes = nsPaths.flatMap {
+      path =>
+        (1 to path.length).map(path.take)
     }.toList.sortBy(_.length)
 
-    val declarations = allPrefixes.distinct.sortBy(_.length).map { prefix =>
-      if (prefix.length == 1) {
-        val name = trans.escapeSwiftKeyword(prefix.head.name.toLowerCase)
-        q"public enum $name {}"
-      } else {
-        val parentPath = prefix.init.map(s => trans.escapeSwiftKeyword(s.name.toLowerCase)).mkString(".")
-        val name       = trans.escapeSwiftKeyword(prefix.last.name.toLowerCase)
-        q"extension $parentPath { public enum $name {} }"
-      }
+    val declarations = allPrefixes.distinct.sortBy(_.length).map {
+      prefix =>
+        if (prefix.length == 1) {
+          val name = trans.escapeSwiftKeyword(prefix.head.name.toLowerCase)
+          q"public enum $name {}"
+        } else {
+          val parentPath = prefix.init.map(s => trans.escapeSwiftKeyword(s.name.toLowerCase)).mkString(".")
+          val name       = trans.escapeSwiftKeyword(prefix.last.name.toLowerCase)
+          q"extension $parentPath { public enum $name {} }"
+        }
     }
 
     if (declarations.isEmpty) return Nil
@@ -143,21 +145,23 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
     val basename = swFiles.basename(domain, evo)
     val pkg      = trans.toSwPkg(domain.id, domain.version, evo)
 
-    List(SwDefnTranslator.Output(
-      s"$basename/baboon_namespaces.swift",
-      declarations.joinN(),
-      pkg,
-      CompilerProduct.Definition,
-    ))
+    List(
+      SwDefnTranslator.Output(
+        s"$basename/baboon_namespaces.swift",
+        declarations.joinN(),
+        pkg,
+        CompilerProduct.Definition,
+      )
+    )
   }
 
   private def generateMeta(domain: Domain, lineage: BaboonLineage): Out[List[SwDefnTranslator.Output]] = {
-    val basename = swFiles.basename(domain, lineage.evolution)
-    val versionSuffix = outputVersionSuffix(domain, lineage.evolution)
-    val pkg      = trans.toSwPkg(domain.id, domain.version, lineage.evolution)
+    val basename          = swFiles.basename(domain, lineage.evolution)
+    val versionSuffix     = outputVersionSuffix(domain, lineage.evolution)
+    val pkg               = trans.toSwPkg(domain.id, domain.version, lineage.evolution)
     val domainSuffix      = domainClassSuffix(domain)
     val domainFileSuffix  = trans.toSnakeCase(domainSuffix)
-    val metadataClassName = s"BaboonMetadata_${domainSuffix}$versionSuffix"
+    val metadataClassName = s"BaboonMetadata_$domainSuffix$versionSuffix"
 
     val entries = lineage.evolution
       .typesUnchangedSince(domain.version)
@@ -180,7 +184,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
          |}""".stripMargin
 
     val metaOutput = SwDefnTranslator.Output(
-      s"$basename/baboon_metadata_${domainFileSuffix}$versionSuffix.swift",
+      s"$basename/baboon_metadata_$domainFileSuffix$versionSuffix.swift",
       metaTree,
       pkg,
       CompilerProduct.Definition,
@@ -203,7 +207,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
     if (target.output.products.contains(CompilerProduct.FixtureRuntime)) {
       F.pure(
         List(
-          fix("BaboonRuntime/baboon_fixture.swift", "baboon-runtime/swift/baboon_fixture.swift"),
+          fix("BaboonRuntime/baboon_fixture.swift", "baboon-runtime/swift/baboon_fixture.swift")
         )
       )
     } else F.pure(Nil)
@@ -213,7 +217,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
     val rendered = o.tree.mapRender {
       case t: SwValue.SwTypeName => trans.escapeSwiftKeyword(t.name)
       case t: SwValue.SwType if t.fq =>
-        val moduleName = t.pkg.parts.head
+        val moduleName  = t.pkg.parts.head
         val escapedName = t.name.split('.').map(trans.escapeSwiftKeyword).mkString(".")
         s"$moduleName.$escapedName"
       case t: SwValue.SwType =>
@@ -256,7 +260,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
     if (target.output.products.contains(CompilerProduct.Runtime)) {
       F.pure(
         List(
-          rt("BaboonRuntime/baboon_runtime.swift", "baboon-runtime/swift/baboon_runtime.swift"),
+          rt("BaboonRuntime/baboon_runtime.swift", "baboon-runtime/swift/baboon_runtime.swift")
         )
       )
     } else {
@@ -304,13 +308,13 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
       } else q""
 
       val ctorParamDecl = if (missing.nonEmpty) "_ required: RequiredConversions" else ""
-      val ctorPrefix = if (missing.nonEmpty) "" else "override "
+      val ctorPrefix    = if (missing.nonEmpty) "" else "override "
 
-      val basename = swFiles.basename(domain, lineage.evolution)
-      val versionSuffix = outputVersionSuffix(domain, lineage.evolution)
-      val domainSuffix = domainClassSuffix(domain)
-      val domainFileSuffix = trans.toSnakeCase(domainSuffix)
-      val conversionsClassName = s"BaboonConversions_${domainSuffix}$versionSuffix"
+      val basename             = swFiles.basename(domain, lineage.evolution)
+      val versionSuffix        = outputVersionSuffix(domain, lineage.evolution)
+      val domainSuffix         = domainClassSuffix(domain)
+      val domainFileSuffix     = trans.toSnakeCase(domainSuffix)
+      val conversionsClassName = s"BaboonConversions_$domainSuffix$versionSuffix"
 
       val oldVersionModules = toCurrent.map(step => trans.domainModuleName(domain.id, step.from, lineage.evolution)).toSet
       val conversionImports = Set("BaboonRuntime") ++ oldVersionModules
@@ -335,7 +339,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
       val regsMap = defnOut.flatMap(_.codecReg).toMultimap.view.mapValues(_.flatten).toMap
 
       val converterOutput = SwDefnTranslator.Output(
-        s"$basename/baboon_conversions_${domainFileSuffix}$versionSuffix.swift",
+        s"$basename/baboon_conversions_$domainFileSuffix$versionSuffix.swift",
         converter,
         pkg,
         CompilerProduct.Conversion,
@@ -344,7 +348,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
 
       val codecOutputs = regsMap.map {
         case (codecId, regs) =>
-          val className = s"BaboonCodecs${codecId.capitalize}_${domainSuffix}$versionSuffix"
+          val className = s"BaboonCodecs${codecId.capitalize}_$domainSuffix$versionSuffix"
           val codecTree =
             q"""public class $className: ${SwValue.SwType(baboonRuntimePkg, s"AbstractBaboon${codecId}Codecs")} {
                |    override public init() {

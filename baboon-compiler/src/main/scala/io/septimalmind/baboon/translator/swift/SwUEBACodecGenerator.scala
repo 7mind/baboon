@@ -472,7 +472,7 @@ class SwUEBACodecGenerator(
 
   def codecName(name: SwType): SwType = {
     val baseFileName = name.importAs.getOrElse(trans.toSnakeCase(name.name))
-    val localName = name.localName.getOrElse(name.name)
+    val localName    = name.localName.getOrElse(name.name)
     SwType(name.pkg, s"${name.name}_UebaCodec", name.fq, importAs = Some(baseFileName), localName = Some(s"${localName}_UebaCodec"))
   }
 

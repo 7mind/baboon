@@ -4,6 +4,8 @@ import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
+import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonRuntimeShared, tsFixtureShared}
+import io.septimalmind.baboon.translator.typescript.TsValue.{TsModuleId, TsType}
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
@@ -18,7 +20,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
   convTransFac: TsConversionTranslator.Factory[F],
   defnTranslator: Subcontext[TsDefnTranslator[F]],
   target: TsTarget,
-  tsFiles: TsFileTools,
+  tsFileTools: TsFileTools,
 ) extends BaboonAbstractTranslator[F] {
 
   type Out[T] = F[NEList[BaboonIssue], T]
@@ -26,14 +28,15 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
   override def translate(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
     for {
       translated <- translateFamily(family)
-      runtime    <- sharedRuntime()
-      fixture    <- sharedFixture()
-
-      allOutputs = translated ++ runtime ++ fixture
-
-      rendered = allOutputs.map {
+      runtime    <- sharedRuntime
+      fixture    <- sharedFixture
+      rendered = (
+        translated ++
+          runtime ++
+          fixture
+      ).map {
         o =>
-          val content = renderTree(o, allOutputs)
+          val content = renderTree(o)
           (o.path, OutputFile(content, o.product))
       }
       unique <- F.fromEither(rendered.toUniqueMap(c => BaboonIssue.of(TranslationIssue.NonUniqueOutputFiles(c))))
@@ -93,14 +96,14 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     }
   }
 
-  private def sharedRuntime(): Out[List[TsDefnTranslator.Output]] = {
+  private def sharedRuntime: Out[List[TsDefnTranslator.Output]] = {
     if (target.output.products.contains(CompilerProduct.Runtime)) {
       F.pure(
         List(
           TsDefnTranslator.Output(
-            "baboon_runtime.ts",
-            TextTree.text(IzResources.readAsString("baboon-runtime/typescript/baboon_runtime.ts").get),
-            TsValue.TsModuleId(NEList("baboon_runtime")),
+            "BaboonSharedRuntime.ts",
+            TextTree.text(IzResources.readAsString("baboon-runtime/typescript/BaboonSharedRuntime.ts").get),
+            tsBaboonRuntimeShared,
             CompilerProduct.Runtime,
             doNotModify = true,
           )
@@ -111,15 +114,15 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     }
   }
 
-  private def sharedFixture(): Out[List[TsDefnTranslator.Output]] = {
+  private def sharedFixture: Out[List[TsDefnTranslator.Output]] = {
     if (target.output.products.contains(CompilerProduct.FixtureRuntime)) {
       F.pure(
         List(
           TsDefnTranslator.Output(
-            "baboon_fixture.ts",
-            TextTree.text(IzResources.readAsString("baboon-runtime/typescript/baboon_fixture.ts").get),
-            TsValue.TsModuleId(NEList("baboon_fixture")),
-            CompilerProduct.FixtureRuntime,
+            "BaboonSharedFixture.ts",
+            TextTree.text(IzResources.readAsString("baboon-runtime/typescript/BaboonSharedFixture.ts").get),
+            tsBaboonRuntimeShared,
+            CompilerProduct.Runtime,
             doNotModify = true,
           )
         )
@@ -127,177 +130,74 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     } else F.pure(Nil)
   }
 
-  private def generateBarrelFiles(outputs: List[TsDefnTranslator.Output]): List[TsDefnTranslator.Output] = {
-    val allPaths = outputs.filter(o => !o.doNotModify && o.product == CompilerProduct.Definition).map(_.path)
-    if (allPaths.isEmpty) return Nil
-
-    val allDirs = scala.collection.mutable.Set.empty[String]
-
-    val filesByDir = allPaths.groupBy {
-      path =>
-        val parts = path.split('/').toList
-        if (parts.size > 1) parts.init.mkString("/") else ""
-    }
-
-    allPaths.foreach {
-      path =>
-        val parts = path.split('/').toList
-        for (i <- 1 until parts.size) {
-          allDirs += parts.take(i).mkString("/")
-        }
-        if (parts.size == 1) allDirs += ""
-    }
-
-    allDirs.toList.sorted.map {
-      dir =>
-        val prefix = if (dir.isEmpty) "" else dir + "/"
-
-        val childDirs = allDirs.filter {
-          d =>
-            d.startsWith(prefix) && d != dir && !d.drop(prefix.length).contains('/')
-        }.map(_.drop(prefix.length)).toSet
-
-        val fileModNames = filesByDir
-          .getOrElse(dir, Nil).map {
-            file =>
-              file.split('/').last.stripSuffix(".ts")
-          }.sorted.distinct
-
-        val fileExports = fileModNames.map {
-          name =>
-            q"""export * from "./$name";"""
-        }
-
-        val versionedDirPattern = "v\\d+_\\d+(_\\d+)?".r
-        val fileModNameSet      = fileModNames.toSet
-        val dirExports = childDirs.toList.sorted
-          .filterNot(fileModNameSet.contains)
-          .filterNot(name => versionedDirPattern.matches(name))
-          .map {
-            name =>
-              q"""export * from "./$name/index";"""
-          }
-
-        val barrelTree = (fileExports ++ dirExports).joinN()
-        val barrelPath = if (dir.isEmpty) "index.ts" else s"$dir/index.ts"
-
-        TsDefnTranslator.Output(
-          barrelPath,
-          barrelTree,
-          TsValue.TsModuleId(NEList("index")),
-          CompilerProduct.Definition,
-          isBarrel = true,
-        )
-    }
-  }
-
-  private def renderTree(o: TsDefnTranslator.Output, allOutputs: List[TsDefnTranslator.Output]): String = {
-    if (o.doNotModify || o.isBarrel) {
-      o.tree.mapRender {
-        case t: TsValue.TsType     => t.name
-        case t: TsValue.TsTypeName => t.name
+  private def renderTree(o: TsDefnTranslator.Output): String = {
+    def baboonTypeImport(moduleId: TsModuleId, types: String): TextTree[TsValue] = {
+      if (o.module.path.startsWith(tsFileTools.definitionsBasePkg)) {
+        val baboonPkg    = o.module.path.dropWhile(part => tsFileTools.definitionsBasePkg.contains(part))
+        val pathToModule = (0 until baboonPkg.size - 1).map(_ => "../").mkString("")
+        q"import {$types} from '$pathToModule${moduleId.path.mkString("")}'"
+      } else {
+        val pathToCommonParent = (0 until o.module.path.size - 1).map(_ => "../").mkString("")
+        q"import {$types} from '$pathToCommonParent${tsFileTools.definitionsBasePkg.mkString("/")}/${moduleId.path.mkString("")}'"
       }
-    } else {
-      val selfDir = {
-        val parts = o.path.split('/').toList
-        if (parts.size > 1) parts.init.mkString("/") else ""
+    }
+
+    def definitionImport(moduleId: TsModuleId, types: String): TextTree[TsValue] = {
+      if (o.module.path.startsWith(tsFileTools.definitionsBasePkg)) {
+        val baboonPkg = moduleId.path.dropWhile(part => o.module.path.contains(part))
+        q"import {$types} from './${baboonPkg.mkString("/")}'"
+      } else {
+        val pathToCommonParent = (0 until o.module.path.size - 1).map(_ => "../").mkString("")
+        q"import {$types} from '$pathToCommonParent${moduleId.path.mkString("/")}'"
       }
-      val selfBase = o.path.stripSuffix(".ts")
+    }
 
-      val usedTypes = o.tree.values.collect { case t: TsValue.TsType => t }.distinct
-        .filterNot(_.predef)
+    def fixtureImport(moduleId: TsModuleId, types: String): TextTree[TsValue] = {
+      if (o.module.path.startsWith(tsFileTools.fixturesBasePkg)) {
+        val baboonPkg = moduleId.path.dropWhile(part => o.module.path.contains(part))
+        q"import {$types} from './${baboonPkg.mkString("/")}'"
+      } else {
+        val baboonPkg    = moduleId.path.dropWhile(part => o.module.path.contains(part))
+        val diff         = baboonPkg.size - 1
+        val parentImport = (0 until diff).map(_ => "../").mkString("")
+        q"import {$types} from '$parentImport${baboonPkg.mkString("/")}'"
+      }
+    }
 
-      val runtimeImports = usedTypes.filter(t => t.module == TsTypes.runtimeModule).map(_.name).sorted.distinct
-      val fixtureImports = usedTypes.filter(t => t.module == TsTypes.fixtureModule).map(_.name).sorted.distinct
+    val usedTypes = o.tree.values.collect { case t: TsValue.TsType => t }
+      .filterNot(_.moduleId.path.isEmpty)
+      .filterNot(_.moduleId == o.module)
+      .filterNot(_.predef)
+      .distinct
 
-      val userTypes = usedTypes.filterNot(
-        t =>
-          t.module == TsTypes.runtimeModule ||
-          t.module == TsTypes.fixtureModule ||
-          t.module == TsTypes.predefModule
-      )
+    val typesByModule = usedTypes.groupBy(_.moduleId).toList.sortBy { case (moduleId, types) => moduleId.path.size + types.size }.reverse
 
-      val userImportsByModule = userTypes.groupBy(_.module).toList.sortBy(_._1.parts.mkString("/"))
-
-      // Build alias map: when the same name appears from multiple modules, alias the non-primary ones
-      val nameToModules = userTypes.groupBy(_.name).filter(_._2.map(_.module).distinct.size > 1)
-      val aliasMap      = scala.collection.mutable.Map.empty[(TsValue.TsModuleId, String), String]
-
-      nameToModules.foreach {
-        case (name, types) =>
-          val modules = types.map(_.module).distinct.sortBy(_.parts.mkString("/"))
-          // The last module (typically the latest/current version) keeps the original name
-          modules.init.foreach {
-            mod =>
-              val suffix = mod.parts.last.replace('-', '_')
-              aliasMap((mod, name)) = s"${name}__$suffix"
+    val importsByModule =
+      typesByModule.map {
+        case (moduleId, types) =>
+          val typesString = types.map {
+            case TsType(_, name, Some(alias), _) => s"$name as $alias"
+            case t: TsValue.TsType               => t.name
+          }.mkString(", ")
+          if (moduleId.path.startsWith(tsFileTools.definitionsBasePkg)) {
+            definitionImport(moduleId, typesString)
+          } else if (moduleId.path.startsWith(tsFileTools.fixturesBasePkg) && tsFileTools.fixturesBasePkg.nonEmpty) {
+            fixtureImport(moduleId, typesString)
+          } else if (moduleId == tsBaboonRuntimeShared || moduleId == tsFixtureShared) {
+            baboonTypeImport(moduleId, typesString)
+          } else {
+            q"import {$typesString} from '${moduleId.path.mkString("/")}'"
           }
       }
 
-      val runtimeImportLine = if (runtimeImports.nonEmpty) {
-        val relPath = computeRelativePath(selfDir, "baboon_runtime")
-        List(q"""import { ${runtimeImports.mkString(", ")} } from "$relPath";""")
-      } else Nil
+    val allImports = importsByModule.joinN()
 
-      val fixtureImportLine = if (fixtureImports.nonEmpty) {
-        val relPath = computeRelativePath(selfDir, "baboon_fixture")
-        List(q"""import { ${fixtureImports.mkString(", ")} } from "$relPath";""")
-      } else Nil
+    val full = Seq(allImports, o.tree).joinNN()
 
-      val userImportLines = userImportsByModule.flatMap {
-        case (mod, types) =>
-          val targetFile = findModuleFile(mod, allOutputs)
-          targetFile.flatMap {
-            tf =>
-              val targetBase = tf.stripSuffix(".ts")
-              if (targetBase == selfBase) None
-              else {
-                val relPath = computeRelativePath(selfDir, targetBase)
-                val importParts = types.map(_.name).sorted.distinct.map {
-                  name =>
-                    aliasMap.get((mod, name)) match {
-                      case Some(alias) => s"$name as $alias"
-                      case None        => name
-                    }
-                }
-                Some(q"""import { ${importParts.mkString(", ")} } from "$relPath";""")
-              }
-          }
-      }
-
-      val allImports = (runtimeImportLine ++ fixtureImportLine ++ userImportLines).joinN()
-      val full       = Seq(allImports, o.tree).joinNN()
-
-      full.mapRender {
-        case t: TsValue.TsType =>
-          aliasMap.getOrElse((t.module, t.name), t.name)
-        case t: TsValue.TsTypeName => t.name
-      }
+    full.mapRender {
+      case TsValue.TsType(_, _, Some(alias), _) => alias
+      case t: TsValue.TsType                    => t.name
     }
-  }
-
-  private def findModuleFile(mod: TsValue.TsModuleId, allOutputs: List[TsDefnTranslator.Output]): Option[String] = {
-    val modPath = mod.parts.mkString("/") + ".ts"
-    allOutputs.find(_.path == modPath).map(_.path).orElse {
-      val barrelPath = mod.parts.mkString("/") + "/index.ts"
-      allOutputs.find(_.path == barrelPath).map(_ => mod.parts.mkString("/") + "/index")
-    }
-  }
-
-  private def computeRelativePath(fromDir: String, toPath: String): String = {
-    val fromParts = if (fromDir.isEmpty) Array.empty[String] else fromDir.split('/')
-    val toParts   = toPath.split('/')
-
-    var common = 0
-    while (common < fromParts.length && common < toParts.length && fromParts(common) == toParts(common)) {
-      common += 1
-    }
-
-    val ups   = fromParts.length - common
-    val downs = toParts.drop(common)
-
-    val prefix = if (ups == 0) "./" else "../" * ups
-    prefix + downs.mkString("/")
   }
 
   private def generateConversions(
@@ -305,7 +205,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     lineage: BaboonLineage,
     toCurrent: Set[EvolutionStep],
   ): Out[List[TsDefnTranslator.Output]] = {
-    val module = trans.toTsModule(domain.id, domain.version, lineage.evolution)
+    val module = trans.toTsModule(domain.id, domain.version, lineage.evolution, tsFileTools.definitionsBasePkg)
 
     for {
       convs <-
@@ -315,7 +215,6 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
             .map {
               case (srcVer, rules) =>
                 convTransFac(
-                  module = module,
                   srcDom = lineage.versions(srcVer.from),
                   domain = domain,
                   rules  = rules,
@@ -324,7 +223,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
             }
         }
     } yield {
-      val basename = tsFiles.basename(domain, lineage.evolution)
+      val basename = tsFileTools.basename(domain, lineage.evolution)
       convs.toList.map {
         conv =>
           TsDefnTranslator.Output(

@@ -16,15 +16,15 @@ sealed trait BaboonLang {
 }
 
 object BaboonLang {
-  case object Scala extends BaboonLang      { val asString = "scala" }
-  case object Cs extends BaboonLang         { val asString = "cs" }
-  case object Py extends BaboonLang         { val asString = "py" }
-  case object Rust extends BaboonLang       { val asString = "rust" }
+  case object Scala extends BaboonLang { val asString = "scala" }
+  case object Cs extends BaboonLang { val asString = "cs" }
+  case object Py extends BaboonLang { val asString = "py" }
+  case object Rust extends BaboonLang { val asString = "rust" }
   case object Typescript extends BaboonLang { val asString = "typescript" }
-  case object Kotlin extends BaboonLang     { val asString = "kotlin" }
-  case object Java extends BaboonLang       { val asString = "java" }
-  case object Dart extends BaboonLang       { val asString = "dart" }
-  case object Swift extends BaboonLang      { val asString = "swift" }
+  case object Kotlin extends BaboonLang { val asString = "kotlin" }
+  case object Java extends BaboonLang { val asString = "java" }
+  case object Dart extends BaboonLang { val asString = "dart" }
+  case object Swift extends BaboonLang { val asString = "swift" }
 
   val all: List[BaboonLang] = List(Scala, Cs, Py, Rust, Typescript, Kotlin, Java, Dart, Swift)
 

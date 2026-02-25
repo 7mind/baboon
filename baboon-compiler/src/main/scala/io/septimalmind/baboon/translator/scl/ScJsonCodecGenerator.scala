@@ -21,13 +21,13 @@ class ScJsonCodecGenerator(
   override def translate(defn: DomainMember.User, csRef: ScValue.ScType, srcRef: ScValue.ScType): Option[TextTree[ScValue]] = {
     if (isActive(defn.id)) {
       (defn.defn match {
-        case d: Typedef.Dto      => Some(genDtoBodies(csRef, d))
-        case _: Typedef.Enum     => Some(genEnumBodies(csRef))
-        case a: Typedef.Adt      => Some(genAdtBodies(csRef, a))
+        case d: Typedef.Dto  => Some(genDtoBodies(csRef, d))
+        case _: Typedef.Enum => Some(genEnumBodies(csRef))
+        case a: Typedef.Adt  => Some(genAdtBodies(csRef, a))
         case f: Typedef.Foreign =>
           f.bindings.get(BaboonLang.Scala) match {
             case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
-            case _ => Some(genForeignBodies(csRef))
+            case _                                                                  => Some(genForeignBodies(csRef))
           }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
@@ -90,14 +90,14 @@ class ScJsonCodecGenerator(
       defn match {
         case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecBase[$name, $iName]"
         case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecBase[$name, $iName]"
-        case _ if defn.isAdt                                => q"$baboonJsonCodecBaseGeneratedAdt[$name, $iName]"
+        case _ if defn.ownedByAdt                           => q"$baboonJsonCodecBaseGeneratedAdt[$name, $iName]"
         case _                                              => q"$baboonJsonCodecBaseGenerated[$name, $iName]"
       }
     } else {
       defn match {
         case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecNoEncoder[$name, $iName]"
         case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecNoEncoder[$name, $iName]"
-        case _ if defn.isAdt                                => q"$baboonJsonCodecNoEncoderGeneratedAdt[$name, $iName]"
+        case _ if defn.ownedByAdt                           => q"$baboonJsonCodecNoEncoderGeneratedAdt[$name, $iName]"
         case _                                              => q"$baboonJsonCodecNoEncoderGenerated[$name, $iName]"
       }
     }
@@ -438,7 +438,7 @@ class ScJsonCodecGenerator(
       case f: Typedef.Foreign =>
         f.bindings.get(BaboonLang.Scala) match {
           case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => Nil
-          case _ => meta.map(_.valueField)
+          case _                                                                  => meta.map(_.valueField)
         }
       case _ => meta.map(_.refValueField)
     }

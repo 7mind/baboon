@@ -24,13 +24,13 @@ object PyCodecFixtureTranslator {
     override def translate(defn: DomainMember.User): Option[TextTree[PyValue]] = {
       defn.defn match {
         case _ if enquiries.hasForeignType(defn, domain, BaboonLang.Py) => None
-        case _ if enquiries.isRecursiveTypedef(defn, domain) => None
-        case _: Typedef.Contract                             => None
-        case _: Typedef.Enum                                 => None
-        case _: Typedef.Foreign                              => None
-        case _: Typedef.Service                              => None
-        case dto: Typedef.Dto                                => Some(doTranslateDto(dto))
-        case adt: Typedef.Adt                                => Some(doTranslateAdt(adt))
+        case _ if enquiries.isRecursiveTypedef(defn, domain)            => None
+        case _: Typedef.Contract                                        => None
+        case _: Typedef.Enum                                            => None
+        case _: Typedef.Foreign                                         => None
+        case _: Typedef.Service                                         => None
+        case dto: Typedef.Dto                                           => Some(doTranslateDto(dto))
+        case adt: Typedef.Adt                                           => Some(doTranslateAdt(adt))
       }
     }
 
