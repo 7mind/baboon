@@ -1,4 +1,5 @@
 import { sha256 as jsSha256 } from "js-sha256";
+import type { CompilerOptions } from "./options.ts";
 
 interface JSInputFile {
   path: string;
@@ -17,18 +18,33 @@ interface JSCompilationResult {
   errors?: string[];
 }
 
-interface JSCompilerTarget {
-  language: string;
+interface JSLangOptions {
+  wrappedAdtBranchCodecs?: boolean;
+  generateJsonCodecs?: boolean;
+  generateUebaCodecs?: boolean;
+  generateJsonCodecsByDefault?: boolean;
+  generateUebaCodecsByDefault?: boolean;
+  writeEvolutionDict?: boolean;
 }
 
-interface JSCompilerOptions {
+interface JSGenericOptions {
+  disableConversions?: boolean;
+}
+
+interface JSCompilerTarget {
+  language: string;
+  generic?: JSGenericOptions;
+  [langKey: string]: unknown;
+}
+
+interface JSCompilerAPIOptions {
   inputs: JSInputFile[];
   targets: JSCompilerTarget[];
   debug?: boolean;
 }
 
 interface BaboonCompilerAPI {
-  compile(options: JSCompilerOptions): Promise<JSCompilationResult>;
+  compile(options: JSCompilerAPIOptions): Promise<JSCompilationResult>;
 }
 
 export interface OutputFile {
@@ -216,16 +232,26 @@ function prepareInputs(files: Map<string, string>): JSInputFile[] {
   return inputs;
 }
 
+function buildTargets(options: CompilerOptions): JSCompilerTarget[] {
+  const generic: JSGenericOptions = {
+    disableConversions: options.generic.disableConversions,
+  };
+  return ALL_LANGUAGES.map((language) => {
+    const langOpts: JSLangOptions = options.languages[language];
+    const target: JSCompilerTarget = { language, generic };
+    target[language] = langOpts;
+    return target;
+  });
+}
+
 export async function compile(
-  files: Map<string, string>
+  files: Map<string, string>,
+  options: CompilerOptions,
 ): Promise<CompilationResult> {
   const compiler = await getCompiler();
 
   const inputs = prepareInputs(files);
-
-  const targets: JSCompilerTarget[] = ALL_LANGUAGES.map((language) => ({
-    language,
-  }));
+  const targets = buildTargets(options);
 
   const result = await compiler.compile({
     inputs,

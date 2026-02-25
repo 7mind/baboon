@@ -3,6 +3,8 @@ import { registerBaboonLanguage } from "./baboon-language.ts";
 import { BaboonEditor } from "./editor.ts";
 import { Preview } from "./preview.ts";
 import { compile } from "./compiler.ts";
+import { OptionsPanel, DEFAULT_OPTIONS } from "./options.ts";
+import type { CompilerOptions } from "./options.ts";
 
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
@@ -33,10 +35,19 @@ title.className = "app-title";
 title.textContent = "Baboon Playground";
 header.appendChild(title);
 
+const headerActions = document.createElement("div");
+headerActions.className = "header-actions";
+header.appendChild(headerActions);
+
+const optionsBtn = document.createElement("button");
+optionsBtn.className = "options-btn";
+optionsBtn.textContent = "Options";
+headerActions.appendChild(optionsBtn);
+
 const compileBtn = document.createElement("button");
 compileBtn.className = "compile-btn";
 compileBtn.textContent = "Compile";
-header.appendChild(compileBtn);
+headerActions.appendChild(compileBtn);
 
 const mainContent = document.createElement("div");
 mainContent.className = "main-content";
@@ -44,6 +55,16 @@ app.appendChild(mainContent);
 
 const baboonEditor = new BaboonEditor(mainContent);
 const preview = new Preview(mainContent);
+
+let currentOptions: CompilerOptions = structuredClone(DEFAULT_OPTIONS);
+
+const optionsPanel = new OptionsPanel((options) => {
+  currentOptions = options;
+});
+
+optionsBtn.addEventListener("click", () => {
+  optionsPanel.open();
+});
 
 let compiling = false;
 
@@ -55,7 +76,7 @@ compileBtn.addEventListener("click", async () => {
 
   try {
     const files = baboonEditor.getFiles();
-    const result = await compile(files);
+    const result = await compile(files, currentOptions);
     preview.setResult(result);
   } catch (e) {
     preview.setResult({

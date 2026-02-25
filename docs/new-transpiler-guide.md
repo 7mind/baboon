@@ -27,7 +27,8 @@ This guide walks you through implementing a full-featured code generation backen
 21. [TextTree Usage Guide](#texttree-usage-guide)
 22. [Service and Pragma Support](#service-and-pragma-support)
 23. [Transport Plumbing (separate doc)](transport-plumbing.md)
-24. [Common Pitfalls](#common-pitfalls)
+24. [Step 17: Update the Playground](#step-17-update-the-playground)
+25. [Common Pitfalls](#common-pitfalls)
 
 ---
 
@@ -1584,6 +1585,42 @@ Both modes must be supported and toggled via `--$lang-wrapped-adt-branch-codecs=
 
 ---
 
+## Step 17: Update the Playground
+
+The Baboon Playground (`baboon-playground/`) is a browser-based editor that uses the Scala.js compiler API to compile `.baboon` files and preview output for all target languages. When adding a new backend, update the playground so users can see generated code for your language.
+
+### 1. Add the language to the compiler wrapper
+
+In `baboon-playground/src/compiler.ts`:
+
+- Add the language key to the `ALL_LANGUAGES` array (e.g., `"$lang"`)
+- Add a display name entry to `LANGUAGE_DISPLAY_NAMES` (e.g., `$lang: "$LANG"`)
+- Add a Monaco language ID mapping to `LANGUAGE_TO_MONACO` (e.g., `$lang: "go"` — use the closest built-in Monaco language)
+- Add the file extension mapping to `EXTENSION_TO_LANGUAGE` (e.g., `".$ext": "$lang"`)
+
+### 2. Add language-specific options (if needed)
+
+If your language introduces options beyond the shared set, update `baboon-playground/src/options.ts`:
+
+- Add new fields to the `CompilerOptions` interface
+- Add default values to `DEFAULT_OPTIONS`
+- Add entries to the `OPTION_DEFS` array with label and description
+- Update `buildTargets()` in `compiler.ts` to pass the new options to the compiler API
+
+### 3. Rebuild the playground
+
+After updating the Scala.js compiler (Step 11), rebuild the playground's compiler bundle:
+
+```bash
+# Rebuild Scala.js output
+sbt baboonJS/fullLinkJS
+
+# Copy to playground and build
+mdl :playground
+```
+
+---
+
 ## Checklist
 
 Before considering your backend complete, verify:
@@ -1614,3 +1651,4 @@ Before considering your backend complete, verify:
 - [ ] `flake.nix` updated with language toolchain
 - [ ] `.gitignore` updated
 - [ ] Existing `test-manual-*` actions depend on `test-gen-compat-$lang`
+- [ ] Playground updated: language added to `ALL_LANGUAGES`, display names, Monaco mapping, extension mapping

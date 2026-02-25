@@ -37,6 +37,27 @@ body {
   color: #e0e0e0;
 }
 
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.options-btn {
+  padding: 6px 16px;
+  background: #3c3c3c;
+  color: #cccccc;
+  border: 1px solid #555555;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.options-btn:hover {
+  background: #505050;
+}
+
 .compile-btn {
   padding: 6px 20px;
   background: #0e639c;
@@ -56,6 +77,125 @@ body {
   background: #3c3c3c;
   color: #888888;
   cursor: not-allowed;
+}
+
+/* Options panel */
+.options-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.options-overlay.visible {
+  display: flex;
+}
+
+.options-panel {
+  background: #252526;
+  border: 1px solid #3c3c3c;
+  border-radius: 8px;
+  width: 480px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.options-scroll-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.options-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.options-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.options-close-btn {
+  background: none;
+  border: none;
+  color: #cccccc;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.options-close-btn:hover {
+  background: #3c3c3c;
+}
+
+.options-section {
+  padding: 4px 0;
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.options-section:last-child {
+  border-bottom: none;
+}
+
+.options-section-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #888888;
+  padding: 8px 16px 4px;
+  background: #252526;
+}
+
+.options-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.options-row:hover {
+  background: #2a2d2e;
+}
+
+.options-checkbox {
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: #0e639c;
+}
+
+.options-label-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.options-label-name {
+  font-size: 13px;
+  color: #e0e0e0;
+}
+
+.options-label-desc {
+  font-size: 12px;
+  color: #888888;
 }
 
 /* Main content */
