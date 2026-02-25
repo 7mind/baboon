@@ -7,6 +7,7 @@
 [![VSCode Extension](https://img.shields.io/badge/VSCode-Extension-blue)](https://marketplace.visualstudio.com/items?itemName=SeptimalMind.baboon-vscode)
 [![Nix](https://img.shields.io/badge/Built%20with-Nix-5277C3.svg?logo=nixos&logoColor=white)](https://builtwithnix.org)
 [![Nix Flake](https://img.shields.io/badge/Nix-Flake-blue.svg)](https://nixos.wiki/wiki/Flakes)
+[![Playground](https://img.shields.io/badge/Try-Playground-green)](https://7mind.github.io/baboon/)
 
 *Let the Baboon do the monkey job.*
 

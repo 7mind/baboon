@@ -1,0 +1,58 @@
+name: Deploy Playground
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: deploy-playground
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: 7mind/github-env@minimal
+        with:
+          setup-nix: true
+
+      - name: Build Scala.js compiler
+        run: |
+          nix develop --command sbt '++2.13 baboonJS/fullLinkJS'
+
+      - name: Copy compiler to playground
+        run: |
+          JS_DIST_DIR="./baboon-compiler/.js/target/scala-2.13/baboon-opt"
+          COMPILER_DIR="./baboon-playground/public/compiler"
+          mkdir -p "$COMPILER_DIR"
+          cp "${JS_DIST_DIR}/"*.js "$COMPILER_DIR"/
+          cp "${JS_DIST_DIR}/"*.js.map "$COMPILER_DIR"/ 2>/dev/null || true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Build playground
+        run: |
+          cd baboon-playground
+          npm ci
+          npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: baboon-playground/dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

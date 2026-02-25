@@ -106,6 +106,7 @@ export class OptionsPanel {
   private panel: HTMLElement;
   private scrollBody: HTMLElement;
   private options: CompilerOptions;
+  private expandedLanguages: Set<BaboonTargetLanguage> = new Set();
   private onChange: (options: CompilerOptions) => void;
 
   constructor(onChange: (options: CompilerOptions) => void) {
@@ -231,21 +232,36 @@ export class OptionsPanel {
     const section = document.createElement("div");
     section.className = "options-section";
 
-    section.appendChild(this.renderSectionTitle(LANGUAGE_DISPLAY_NAMES[lang]));
+    const expanded = this.expandedLanguages.has(lang);
 
-    const langOpts = this.options.languages[lang];
+    const titleEl = this.renderCollapsibleTitle(
+      LANGUAGE_DISPLAY_NAMES[lang],
+      expanded,
+      () => {
+        if (expanded) {
+          this.expandedLanguages.delete(lang);
+        } else {
+          this.expandedLanguages.add(lang);
+        }
+        this.render();
+      },
+    );
+    section.appendChild(titleEl);
 
-    for (const def of LANGUAGE_OPTION_DEFS) {
-      section.appendChild(this.renderCheckbox(
-        def.label,
-        def.description,
-        langOpts[def.key],
-        (checked) => {
-          langOpts[def.key] = checked;
-          this.onChange(this.options);
-          this.render();
-        },
-      ));
+    if (expanded) {
+      const langOpts = this.options.languages[lang];
+      for (const def of LANGUAGE_OPTION_DEFS) {
+        section.appendChild(this.renderCheckbox(
+          def.label,
+          def.description,
+          langOpts[def.key],
+          (checked) => {
+            langOpts[def.key] = checked;
+            this.onChange(this.options);
+            this.render();
+          },
+        ));
+      }
     }
 
     return section;
@@ -255,6 +271,26 @@ export class OptionsPanel {
     const title = document.createElement("div");
     title.className = "options-section-title";
     title.textContent = text;
+    return title;
+  }
+
+  private renderCollapsibleTitle(
+    text: string,
+    expanded: boolean,
+    onToggle: () => void,
+  ): HTMLElement {
+    const title = document.createElement("div");
+    title.className = "options-section-title collapsible";
+    title.addEventListener("click", onToggle);
+
+    const arrow = document.createElement("span");
+    arrow.className = "options-collapse-arrow";
+    arrow.textContent = expanded ? "\u25BE" : "\u25B8";
+    title.appendChild(arrow);
+
+    const label = document.createTextNode(text);
+    title.appendChild(label);
+
     return title;
   }
 

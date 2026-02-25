@@ -164,6 +164,21 @@ body {
   background: #252526;
 }
 
+.options-section-title.collapsible {
+  cursor: pointer;
+  user-select: none;
+}
+
+.options-section-title.collapsible:hover {
+  color: #cccccc;
+}
+
+.options-collapse-arrow {
+  display: inline-block;
+  width: 14px;
+  font-size: 12px;
+}
+
 .options-row {
   display: flex;
   align-items: flex-start;
