@@ -1,6 +1,6 @@
 package example
 
-import convtest.testpkg.{AllBasicTypes, AllBasicTypes_JsonCodec, AllBasicTypes_UEBACodec}
+import convtest.testpkg.{AllBasicTypes, AllBasicTypes_JsonCodec, AllBasicTypes_BinCodec}
 import baboon.runtime.shared.{BaboonCodecContext, ByteString, LEDataInputStream, LEDataOutputStream}
 import io.circe.parser.parse
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
@@ -61,7 +61,7 @@ object CompatMain {
     val baos       = new ByteArrayOutputStream()
     val uebaWriter = new LEDataOutputStream(baos)
     try {
-      AllBasicTypes_UEBACodec.instance.encode(ctx, uebaWriter, data)
+      AllBasicTypes_BinCodec.instance.encode(ctx, uebaWriter, data)
       uebaWriter.flush()
       val uebaBytes = baos.toByteArray
       val path      = Paths.get(outputDir).resolve("all-basic-types.ueba")
@@ -89,7 +89,7 @@ object CompatMain {
           val bais       = new ByteArrayInputStream(bytes)
           val uebaReader = new LEDataInputStream(bais)
           try {
-            AllBasicTypes_UEBACodec.instance.decode(ctx, uebaReader) match {
+            AllBasicTypes_BinCodec.instance.decode(ctx, uebaReader) match {
               case Right(d)  => d
               case Left(err) => throw new RuntimeException(s"UEBA decode failed: $err")
             }
@@ -139,7 +139,7 @@ object CompatMain {
         val baos = new ByteArrayOutputStream()
         val w    = new LEDataOutputStream(baos)
         try {
-          AllBasicTypes_UEBACodec.instance.encode(ctx, w, data)
+          AllBasicTypes_BinCodec.instance.encode(ctx, w, data)
           w.flush()
         } finally {
           w.close()
@@ -148,7 +148,7 @@ object CompatMain {
         val bais    = new ByteArrayInputStream(reBytes)
         val r       = new LEDataInputStream(bais)
         try {
-          AllBasicTypes_UEBACodec.instance.decode(ctx, r) match {
+          AllBasicTypes_BinCodec.instance.decode(ctx, r) match {
             case Right(reDecoded) =>
               if (data != reDecoded) {
                 System.err.println("UEBA roundtrip mismatch")

@@ -136,7 +136,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
         )).mkString("-")
 
         val tin  = trans.asScType(conv.sourceTpe, srcDom, evo).fullyQualified
-        def tout = trans.asScType(conv.targetTpe, domain, evo)
+        val tout = trans.asScType(conv.targetTpe, domain, evo)
 
         val meta = q"""override def versionFrom: $scString = "${srcVer.v.toString}"
                       |override def versionTo: $scString = "${domain.version.v.toString}"
