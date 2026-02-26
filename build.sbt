@@ -5,7 +5,7 @@ import sbtcrossproject.CrossPlugin.autoImport.{crossProject, CrossType}
 import scala.sys.process.*
 
 lazy val refreshFlakeTask = taskKey[Unit]("Refresh flake.nix")
-// lazy val isMacOS: Boolean = System.getProperty("os.name").toLowerCase.contains("mac")
+lazy val isLinux: Boolean = System.getProperty("os.name").toLowerCase.contains("linux")
 
 ThisBuild / scalaVersion := "2.13.16"
 
@@ -126,7 +126,13 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
       "--enable-https",
       "--enable-http",
       "-march=compatibility"
-    ),
+    ) ++ (if (isLinux) {
+      val muslLib = sys.env.getOrElse("BABOON_MUSL_LIB", "")
+      val zlibStaticMusl = sys.env.getOrElse("BABOON_ZLIB_STATIC_MUSL", "")
+      Seq("--static", "--libc=musl") ++
+        (if (muslLib.nonEmpty) Seq(s"-H:CLibraryPath=$muslLib") else Seq.empty) ++
+        (if (zlibStaticMusl.nonEmpty) Seq(s"-H:CLibraryPath=$zlibStaticMusl") else Seq.empty)
+    } else Seq.empty),
     run / fork := true,
     refreshFlakeTask := {
       val log = streams.value.log

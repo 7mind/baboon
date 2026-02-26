@@ -47,11 +47,19 @@
             inherit version;
             pname = "baboon";
             src = ./.;
-            nativeBuildInputs = sbtSetup.nativeBuildInputs ++ [ pkgs.curl ];
+            nativeBuildInputs = sbtSetup.nativeBuildInputs ++ [ pkgs.curl ]
+              ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+                pkgs.musl
+                pkgs.pkgsMusl.zlib.static
+              ];
             inherit (sbtSetup) JAVA_HOME;
 
             buildPhase = ''
               ${sbtSetup.setupScript}
+              ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+                export BABOON_MUSL_LIB="${pkgs.musl}/lib"
+                export BABOON_ZLIB_STATIC_MUSL="${pkgs.pkgsMusl.zlib.static}/lib"
+              ''}
               ${pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
                 HOME="$TMPDIR" \
                 SBT_OPTS="-Duser.home=$TMPDIR -Dsbt.global.base=$TMPDIR/.sbt -Dsbt.ivy.home=$TMPDIR/.ivy2 -Divy.home=$TMPDIR/.ivy2 -Dsbt.boot.directory=$TMPDIR/.sbt/boot" \
@@ -103,7 +111,14 @@
           ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
             swift
             swiftpm
+            pkgs.musl
+            pkgs.pkgsMusl.zlib.static
           ];
+
+          shellHook = pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+            export BABOON_MUSL_LIB="${pkgs.musl}/lib"
+            export BABOON_ZLIB_STATIC_MUSL="${pkgs.pkgsMusl.zlib.static}/lib"
+          '';
         };
       }
     );
