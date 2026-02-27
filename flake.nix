@@ -40,6 +40,31 @@
           inherit pkgs coursierCache;
           jdk = pkgs.graalvmPackages.graalvm-ce;
         };
+
+        # GraalVM --libc=musl needs a musl cross-compiler and musl CLibraryPaths.
+        # The Nix native-image wrapper injects glibc CLibraryPaths which conflict
+        # with musl, so we create a custom wrapper that bypasses the Nix glibc
+        # injection and provides musl paths instead.
+        # GraalVM only supports --libc=musl on x86_64-linux (not aarch64).
+        # Only referenced in isX86Linux guards; Nix laziness prevents evaluation elsewhere.
+        isX86Linux = system == "x86_64-linux";
+        arch = pkgs.stdenv.hostPlatform.parsed.cpu.name;
+        muslCc = pkgs.pkgsMusl.stdenv.cc;
+        muslZlibStatic = pkgs.pkgsMusl.zlib.static;
+        graalvm = pkgs.graalvmPackages.graalvm-ce;
+
+        muslGccAlias = pkgs.runCommand "musl-gcc-alias" {} ''
+          mkdir -p $out/bin
+          ln -s ${muslCc}/bin/cc $out/bin/${arch}-linux-musl-gcc
+        '';
+
+        nativeImageMusl = pkgs.writeShellScriptBin "native-image" ''
+          export PATH="${muslGccAlias}/bin:${muslCc}/bin:$PATH"
+          exec "${graalvm}/lib/svm/bin/native-image" \
+            -H:CLibraryPath=${pkgs.musl}/lib \
+            -H:CLibraryPath=${muslZlibStatic}/lib \
+            "$@"
+        '';
       in
       {
         packages = rec {
@@ -47,11 +72,17 @@
             inherit version;
             pname = "baboon";
             src = ./.;
-            nativeBuildInputs = sbtSetup.nativeBuildInputs ++ [ pkgs.curl ];
+            nativeBuildInputs = sbtSetup.nativeBuildInputs ++ [ pkgs.curl ]
+              ++ pkgs.lib.optionals isX86Linux [
+                nativeImageMusl
+              ];
             inherit (sbtSetup) JAVA_HOME;
 
             buildPhase = ''
               ${sbtSetup.setupScript}
+              ${pkgs.lib.optionalString isX86Linux ''
+                export PATH="${nativeImageMusl}/bin:$PATH"
+              ''}
               ${pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
                 HOME="$TMPDIR" \
                 SBT_OPTS="-Duser.home=$TMPDIR -Dsbt.global.base=$TMPDIR/.sbt -Dsbt.ivy.home=$TMPDIR/.ivy2 -Divy.home=$TMPDIR/.ivy2 -Dsbt.boot.directory=$TMPDIR/.sbt/boot" \
@@ -70,41 +101,45 @@
           default = baboon;
         };
 
-        devShells.default = pkgs.mkShell {
-          nativeBuildInputs = with pkgs.buildPackages; [
-            ncurses
-            gitMinimal
-            nix
-            graalvmPackages.graalvm-ce
-            coursier
+        devShells.default = pkgs.mkShell ({
+          nativeBuildInputs =
+            pkgs.lib.optionals isX86Linux [
+              nativeImageMusl
+            ] ++
+            (with pkgs.buildPackages; [
+              ncurses
+              gitMinimal
+              nix
+              graalvmPackages.graalvm-ce
+              coursier
 
-            pkgs.sbt
-            dotnet-sdk_9
+              pkgs.sbt
+              dotnet-sdk_9
 
-            coreutils
-            shellspec
-            zip
+              coreutils
+              shellspec
+              zip
 
-            rsync
+              rsync
 
-            rustc
-            cargo
+              rustc
+              cargo
 
-            squish-find-the-brains.packages.${system}.generate-lockfile
-            mudyla.packages.${system}.default
-            nodejs_24
+              squish-find-the-brains.packages.${system}.generate-lockfile
+              mudyla.packages.${system}.default
+              nodejs_24
 
-            kotlin
-            gradle
+              kotlin
+              gradle
 
-            maven
+              maven
 
-            dart
-          ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-            swift
-            swiftpm
-          ];
-        };
+              dart
+            ]) ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+              pkgs.buildPackages.swift
+              pkgs.buildPackages.swiftpm
+            ];
+        });
       }
     );
 }
