@@ -100,44 +100,45 @@
         };
 
         devShells.default = pkgs.mkShell {
-          nativeBuildInputs = with pkgs.buildPackages; [
-            ncurses
-            gitMinimal
-            nix
-            graalvmPackages.graalvm-ce
-            coursier
+          # nativeImageMusl must come BEFORE graalvm so it shadows graalvm's native-image on PATH.
+          # shellHook is unreliable with `nix develop --command`, so we rely on nativeBuildInputs ordering.
+          nativeBuildInputs =
+            pkgs.lib.optionals pkgs.stdenv.isLinux [
+              nativeImageMusl
+            ] ++
+            (with pkgs.buildPackages; [
+              ncurses
+              gitMinimal
+              nix
+              graalvmPackages.graalvm-ce
+              coursier
 
-            pkgs.sbt
-            dotnet-sdk_9
+              pkgs.sbt
+              dotnet-sdk_9
 
-            coreutils
-            shellspec
-            zip
+              coreutils
+              shellspec
+              zip
 
-            rsync
+              rsync
 
-            rustc
-            cargo
+              rustc
+              cargo
 
-            squish-find-the-brains.packages.${system}.generate-lockfile
-            mudyla.packages.${system}.default
-            nodejs_24
+              squish-find-the-brains.packages.${system}.generate-lockfile
+              mudyla.packages.${system}.default
+              nodejs_24
 
-            kotlin
-            gradle
+              kotlin
+              gradle
 
-            maven
+              maven
 
-            dart
-          ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-            swift
-            swiftpm
-          ];
-
-          # Prepend our musl-aware native-image wrapper before the Nix GraalVM one
-          shellHook = pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-            export PATH="${nativeImageMusl}/bin:$PATH"
-          '';
+              dart
+            ]) ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+              pkgs.buildPackages.swift
+              pkgs.buildPackages.swiftpm
+            ];
         };
       }
     );
