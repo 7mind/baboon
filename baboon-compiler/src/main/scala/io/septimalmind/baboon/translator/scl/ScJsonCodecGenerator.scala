@@ -103,7 +103,7 @@ class ScJsonCodecGenerator(
     }
 
     val meta = renderMeta(defn, scDomainTreeTools.makeCodecMeta(defn))
-    q"""object ${cName.asName} extends $cParent {
+    q"""object ${cName.name} extends $cParent {
        |  ${baseMethods.joinNN().shift(2).trim}
        |
        |  ${meta.joinN().shift(2).trim}
@@ -445,7 +445,7 @@ class ScJsonCodecGenerator(
   }
 
   def codecName(name: ScValue.ScType): ScValue.ScType = {
-    ScValue.ScType(name.pkg, s"${name.name}_JsonCodec", name.fq)
+    ScValue.ScType(name.pkg, s"${name.name}_JsonCodec", name.inObject)
   }
 
   override def codecMeta(defn: DomainMember.User, name: ScValue.ScType): Option[CodecMeta] = {

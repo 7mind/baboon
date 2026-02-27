@@ -128,7 +128,7 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
 
     val oms = new java.io.ByteArrayOutputStream()
     val bw  = new baboon.runtime.shared.LEDataOutputStream(oms)
-    testpkg.pkg0.i1.testcall.In_UEBACodec.instance.encode(ctx, bw, testpkg.pkg0.i1.testcall.In())
+    testpkg.pkg0.i1.testcall.In_BinCodec.instance.encode(ctx, bw, testpkg.pkg0.i1.testcall.In())
     bw.flush()
     val inputBytes = oms.toByteArray
 
@@ -138,7 +138,7 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
       case Right(outputBytes) =>
         val ims = new java.io.ByteArrayInputStream(outputBytes)
         val br  = new baboon.runtime.shared.LEDataInputStream(ims)
-        val decoded = testpkg.pkg0.i1.testcall.Out_UEBACodec.instance
+        val decoded = testpkg.pkg0.i1.testcall.Out_BinCodec.instance
           .decode(ctx, br)
           .fold(ex => fail(ex.toString), identity)
         decoded.i00 shouldBe 42
@@ -164,7 +164,7 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
 
     val oms = new java.io.ByteArrayOutputStream()
     val bw  = new baboon.runtime.shared.LEDataOutputStream(oms)
-    testpkg.pkg0.i1.testcall.In_UEBACodec.instance.encode(ctx, bw, testpkg.pkg0.i1.testcall.In())
+    testpkg.pkg0.i1.testcall.In_BinCodec.instance.encode(ctx, bw, testpkg.pkg0.i1.testcall.In())
     bw.flush()
     val inputBytes = oms.toByteArray
 
@@ -203,7 +203,7 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
 
     val oms = new java.io.ByteArrayOutputStream()
     val bw  = new baboon.runtime.shared.LEDataOutputStream(oms)
-    testpkg.pkg0.i2.noerrcall.In_UEBACodec.instance.encode(ctx, bw, testpkg.pkg0.i2.noerrcall.In(value = 456))
+    testpkg.pkg0.i2.noerrcall.In_BinCodec.instance.encode(ctx, bw, testpkg.pkg0.i2.noerrcall.In(value = 456))
     bw.flush()
     val inputBytes = oms.toByteArray
 
@@ -213,7 +213,7 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
       case Right(outputBytes) =>
         val ims = new java.io.ByteArrayInputStream(outputBytes)
         val br  = new baboon.runtime.shared.LEDataInputStream(ims)
-        val decoded = testpkg.pkg0.i2.noerrcall.Out_UEBACodec.instance
+        val decoded = testpkg.pkg0.i2.noerrcall.Out_BinCodec.instance
           .decode(ctx, br)
           .fold(ex => fail(ex.toString), identity)
         decoded.result shouldBe "result_456"

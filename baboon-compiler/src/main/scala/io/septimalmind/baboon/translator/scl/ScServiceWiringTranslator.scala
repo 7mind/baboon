@@ -33,12 +33,12 @@ object ScServiceWiringTranslator {
 
     private def jsonCodecName(typeId: TypeId.User): ScValue.ScType = {
       val srcRef = trans.toScTypeRefKeepForeigns(typeId, domain, evo)
-      ScValue.ScType(srcRef.pkg, s"${srcRef.name}_JsonCodec", srcRef.fq)
+      ScValue.ScType(srcRef.pkg, s"${srcRef.name}_JsonCodec", fq = srcRef.fq)
     }
 
     private def uebaCodecName(typeId: TypeId.User): ScValue.ScType = {
       val srcRef = trans.toScTypeRefKeepForeigns(typeId, domain, evo)
-      ScValue.ScType(srcRef.pkg, s"${srcRef.name}_UEBACodec", srcRef.fq)
+      ScValue.ScType(srcRef.pkg, s"${srcRef.name}_BinCodec", fq = srcRef.fq)
     }
 
     private def renderContainer(error: String, success: String): String = {
@@ -155,7 +155,6 @@ object ScServiceWiringTranslator {
 
     private def renderFq(tree: TextTree[ScValue]): String = tree.mapRender {
       case t: ScValue.ScType     => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
-      case t: ScValue.ScTypeName => t.name
     }
 
     // ========== noErrors mode ==========

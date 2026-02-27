@@ -5,6 +5,8 @@ import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.scl.ScTypes.*
+import io.septimalmind.baboon.translator.scl.ScValue.ScPackageId
+import io.septimalmind.baboon.translator.typescript.TsValue
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources, scl}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
@@ -155,34 +157,60 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def renderTree(o: ScDefnTranslator.Output): String = {
-    // TODO: better representation
-    val usedTypes = o.tree.values.collect { case t: ScValue.ScType => t }.distinct
+    val usedTypes = o.tree.values.collect { case t: ScValue.ScType => t }
       .filterNot(_.predef)
       .filterNot(_.fq)
       .filterNot(_.pkg == o.pkg)
-      .filterNot(t => t.pkg.parts.startsWith(o.pkg.parts))
       .sortBy(_.toString)
+      .distinct
 
-    val imports = usedTypes.map(p => q"import ${p.pkg.parts.mkString(".")}.${p.name}").joinN()
+    val (samePkg, otherPkg) = usedTypes.partition(_.pkg.parts.startsWith(o.pkg.parts))
+
+    val (sameNameOtherPkgs, diffNameOtherPkgs) =
+      otherPkg.partition(tpe => usedTypes.count(used => used.name == tpe.name && used.inObject == tpe.inObject) > 1)
+
+    val (sameNameThisPkg, diffNameThisPkg) =
+      samePkg.partition(tpe => usedTypes.count(used => used.name == tpe.name && used.inObject == tpe.inObject) > 1)
+
+    val sameNameSet = (sameNameThisPkg ++ sameNameOtherPkgs).toSet
+
+    val imports = (diffNameThisPkg ++ diffNameOtherPkgs)
+      .groupBy(_.pkg)
+      .map {
+        case (pkg, types) =>
+          val (objectTypes, nonObjectTypes) = types.partition(_.inObject.nonEmpty)
+          val objectNames = objectTypes.collect { case ScValue.ScType(pkgId, _, Some(obj), _, _) if !pkgId.parts.startsWith(o.pkg.parts) => obj }.distinct
+          val all         = (objectNames ++ nonObjectTypes.map(_.name)).distinct
+          val allImports =
+            if (all.size == 1) {
+              q".${all.head}"
+            } else {
+              q".{${all.mkString(", ")}}"
+            }
+          if (all.nonEmpty) {
+            q"import ${pkg.parts.mkString(".")}$allImports"
+          } else q""
+      }.toList.joinN()
+
+    val mappedTree =
+      o.tree.map {
+        case tpe: ScValue.ScType =>
+          if (sameNameSet.contains(tpe)) tpe.fullyQualified
+          else tpe
+      }
 
     val full = if (o.doNotModify) {
-      o.tree
+      mappedTree
     } else {
-      Seq(
-        Seq(imports),
-        Seq(o.tree),
-      ).flatten.joinNN()
+      q"""$imports
+         |
+         |${mappedTree}""".stripMargin
     }
 
     full.mapRender {
-      case t: ScValue.ScTypeName => t.name
-      case t: ScValue.ScType if !t.fq =>
-        if (o.pkg == t.pkg || !t.pkg.parts.startsWith(o.pkg.parts)) {
-          t.name
-        } else {
-          (t.pkg.parts :+ t.name).mkString(".")
-        }
-      case t: ScValue.ScType => (t.pkg.parts :+ t.name).mkString(".")
+      case t: ScValue.ScType if t.fq                     => (t.pkg.parts :+ t.name).mkString(".")
+      case ScValue.ScType(_, name, Some(inObject), _, _) => s"$inObject.$name"
+      case t: ScValue.ScType                             => t.name
     }
   }
 
