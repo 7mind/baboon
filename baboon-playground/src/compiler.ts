@@ -12,10 +12,17 @@ interface JSOutputFile {
   product: string;
 }
 
+interface JSCompilationError {
+  message: string;
+  file?: string;
+  line?: number;
+  column?: number;
+}
+
 interface JSCompilationResult {
   success: boolean;
   files?: JSOutputFile[];
-  errors?: string[];
+  errors?: JSCompilationError[];
 }
 
 interface JSLangOptions {
@@ -101,10 +108,17 @@ export interface OutputFile {
   product: string;
 }
 
+export interface CompilationError {
+  message: string;
+  file: string | null;
+  line: number | null;
+  column: number | null;
+}
+
 export interface CompilationResult {
   success: boolean;
   filesByLanguage: Map<string, OutputFile[]>;
-  errors: string[];
+  errors: CompilationError[];
 }
 
 const ALL_LANGUAGES = [
@@ -217,7 +231,7 @@ async function getCompiler(): Promise<BaboonCompilerAPI> {
 // To replicate this in the browser, we resolve includes client-side: inline
 // .bmo content into .baboon files, then pass only .baboon files to compile().
 
-const INCLUDE_REGEX = /^(\s*)include\s+"([^"]+)"\s*$/gm;
+const INCLUDE_LINE_REGEX = /^(\s*)include\s+"([^"]+)"\s*$/;
 
 function collectDirectoryInputs(paths: Iterable<string>): Set<string> {
   const dirs = new Set<string>();
@@ -247,37 +261,92 @@ function resolveIncludePath(
   return null;
 }
 
-function resolveIncludes(
+interface SourceLocation {
+  file: string;
+  line: number;
+}
+
+interface ResolveResult {
+  content: string;
+  sourceMap: SourceLocation[];
+}
+
+function resolveIncludesWithMap(
   content: string,
+  sourceFile: string,
   allFiles: Map<string, string>,
   directoryInputs: Set<string>,
   visited: Set<string>,
-): string {
-  return content.replace(INCLUDE_REGEX, (_match, indent: string, includePath: string) => {
+): ResolveResult {
+  const inputLines = content.split("\n");
+  const outputLines: string[] = [];
+  const sourceMap: SourceLocation[] = [];
+
+  for (let i = 0; i < inputLines.length; i++) {
+    const line = inputLines[i];
+    const match = line.match(INCLUDE_LINE_REGEX);
+
+    if (!match) {
+      outputLines.push(line);
+      sourceMap.push({ file: sourceFile, line: i + 1 });
+      continue;
+    }
+
+    const [, indent, includePath] = match;
     const resolved = resolveIncludePath(directoryInputs, includePath, allFiles);
+
     if (resolved === null) {
-      return `${indent}// [playground] include not found: ${includePath}`;
+      outputLines.push(`${indent}// [playground] include not found: ${includePath}`);
+      sourceMap.push({ file: sourceFile, line: i + 1 });
+    } else if (visited.has(resolved)) {
+      outputLines.push(`${indent}// [playground] circular include skipped: ${includePath}`);
+      sourceMap.push({ file: sourceFile, line: i + 1 });
+    } else {
+      visited.add(resolved);
+      const included = allFiles.get(resolved)!;
+      const nested = resolveIncludesWithMap(included, resolved, allFiles, directoryInputs, visited);
+      const nestedLines = nested.content.split("\n");
+      for (let j = 0; j < nestedLines.length; j++) {
+        outputLines.push(nestedLines[j]);
+        sourceMap.push(nested.sourceMap[j] ?? { file: resolved, line: j + 1 });
+      }
     }
-    if (visited.has(resolved)) {
-      return `${indent}// [playground] circular include skipped: ${includePath}`;
-    }
-    visited.add(resolved);
-    const included = allFiles.get(resolved)!;
-    return resolveIncludes(included, allFiles, directoryInputs, visited);
-  });
+  }
+
+  return { content: outputLines.join("\n"), sourceMap };
 }
 
-function prepareInputs(files: Map<string, string>): JSInputFile[] {
+interface PreparedInputs {
+  inputs: JSInputFile[];
+  sourceMaps: Map<string, SourceLocation[]>;
+}
+
+function prepareInputs(files: Map<string, string>): PreparedInputs {
   const directoryInputs = collectDirectoryInputs(files.keys());
   const inputs: JSInputFile[] = [];
+  const sourceMaps = new Map<string, SourceLocation[]>();
   for (const [path, content] of files) {
     if (!path.endsWith(".baboon")) {
       continue;
     }
-    const resolved = resolveIncludes(content, files, directoryInputs, new Set([path]));
-    inputs.push({ path, content: resolved });
+    const result = resolveIncludesWithMap(content, path, files, directoryInputs, new Set([path]));
+    inputs.push({ path, content: result.content });
+    sourceMaps.set(path, result.sourceMap);
   }
-  return inputs;
+  return { inputs, sourceMaps };
+}
+
+function remapErrorLocation(
+  error: CompilationError,
+  sourceMaps: Map<string, SourceLocation[]>,
+): CompilationError {
+  if (error.file === null || error.line === null) return error;
+  const map = sourceMaps.get(error.file);
+  if (!map) return error;
+  const idx = error.line - 1;
+  if (idx < 0 || idx >= map.length) return error;
+  const loc = map[idx];
+  return { ...error, file: loc.file, line: loc.line };
 }
 
 function buildTargets(options: CompilerOptions): JSCompilerTarget[] {
@@ -298,7 +367,7 @@ export async function compile(
 ): Promise<CompilationResult> {
   const compiler = await getCompiler();
 
-  const inputs = prepareInputs(files);
+  const { inputs, sourceMaps } = prepareInputs(files);
   const targets = buildTargets(options);
 
   const result = await compiler.compile({
@@ -307,10 +376,23 @@ export async function compile(
   });
 
   if (!result.success) {
+    const errors: CompilationError[] = result.errors
+      ? result.errors.map((e) =>
+          remapErrorLocation(
+            {
+              message: e.message,
+              file: e.file ?? null,
+              line: e.line ?? null,
+              column: e.column ?? null,
+            },
+            sourceMaps,
+          ),
+        )
+      : [{ message: "Unknown compilation error", file: null, line: null, column: null }];
     return {
       success: false,
       filesByLanguage: new Map(),
-      errors: result.errors ?? ["Unknown compilation error"],
+      errors,
     };
   }
 
@@ -350,11 +432,9 @@ export interface TypeInfo {
 export async function loadModel(files: Map<string, string>): Promise<BaboonLoadedModel> {
   const compiler = await getCompiler();
   const dict: Record<string, string> = {};
-  const directoryInputs = collectDirectoryInputs(files.keys());
-  for (const [path, content] of files) {
-    if (path.endsWith(".baboon")) {
-      dict[path] = resolveIncludes(content, files, directoryInputs, new Set([path]));
-    }
+  const { inputs } = prepareInputs(files);
+  for (const input of inputs) {
+    dict[input.path] = input.content;
   }
   return compiler.load(dict);
 }

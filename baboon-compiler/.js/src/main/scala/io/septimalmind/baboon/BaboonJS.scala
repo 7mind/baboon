@@ -4,7 +4,8 @@ import distage.*
 import io.circe.Json
 import io.circe.parser.parse as parseJson
 import io.septimalmind.baboon.parser.BaboonParser
-import io.septimalmind.baboon.parser.model.FSPath
+import io.septimalmind.baboon.parser.model.{FSPath, InputOffset, InputPointer}
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, IssuePrinter, ParserIssue, TyperIssue, VerificationIssue}
 import io.septimalmind.baboon.scheme.BaboonSchemeRenderer
 import io.septimalmind.baboon.translator.BaboonAbstractTranslator
 import io.septimalmind.baboon.explore.RandomJsonGenerator
@@ -55,12 +56,33 @@ object BaboonJS {
   }
 
   /**
+    * Structured compilation error with optional source location
+    */
+  trait JSCompilationError extends js.Object {
+    val message: String
+    val file: js.UndefOr[String]
+    val line: js.UndefOr[Int]
+    val column: js.UndefOr[Int]
+  }
+
+  private def createJSCompilationError(message: String, file: Option[String], line: Option[Int], column: Option[Int]): JSCompilationError = {
+    val obj = js.Dynamic.literal(message = message)
+    file.foreach(f => obj.updateDynamic("file")(f))
+    line.foreach(l => obj.updateDynamic("line")(l))
+    column.foreach(c => obj.updateDynamic("column")(c))
+    obj.asInstanceOf[JSCompilationError]
+  }
+
+  class BaboonCompilationException(val issues: NEList[BaboonIssue])
+    extends RuntimeException(s"Compilation failed with ${issues.toList.size} issues")
+
+  /**
     * Compilation result
     */
   trait JSCompilationResult extends js.Object {
     val success: Boolean
     val files: js.UndefOr[js.Array[JSOutputFile]]
-    val errors: js.UndefOr[js.Array[String]]
+    val errors: js.UndefOr[js.Array[JSCompilationError]]
   }
 
   object JSCompilationResult {
@@ -72,7 +94,7 @@ object BaboonJS {
         ).asInstanceOf[JSCompilationResult]
     }
 
-    def failure(errors: js.Array[String]): JSCompilationResult = {
+    def failure(errors: js.Array[JSCompilationError]): JSCompilationResult = {
       js.Dynamic
         .literal(
           success = false,
@@ -794,14 +816,26 @@ object BaboonJS {
           }*)
           JSCompilationResult.success(jsFiles)
       }.recover {
+        case e: BaboonCompilationException =>
+          JSCompilationResult.failure(issuesToStructuredErrors(e.issues))
         case e: Throwable =>
-          JSCompilationResult.failure(js.Array(s"Compilation failed: ${e.getMessage}\n${e.getStackTrace.mkString("\n")}"))
+          JSCompilationResult.failure(js.Array(createJSCompilationError(
+            s"Compilation failed: ${e.getMessage}\n${e.getStackTrace.mkString("\n")}",
+            None, None, None,
+          )))
       }.toJSPromise
     } catch {
+      case e: BaboonCompilationException =>
+        Future
+          .successful(JSCompilationResult.failure(issuesToStructuredErrors(e.issues)))
+          .toJSPromise
       case e: Throwable =>
         Future
           .successful(
-            JSCompilationResult.failure(js.Array(s"Compilation failed: ${e.getMessage}\n${e.getStackTrace.mkString("\n")}"))
+            JSCompilationResult.failure(js.Array(createJSCompilationError(
+              s"Compilation failed: ${e.getMessage}\n${e.getStackTrace.mkString("\n")}",
+              None, None, None,
+            )))
           ).toJSPromise
     }
   }
@@ -825,7 +859,7 @@ object BaboonJS {
           (loader: BaboonLoaderJS[F]) =>
             (for {
               family <- loader.load(inputs.toList)
-            } yield family).leftMap(issues => new RuntimeException(s"Loading failure: $issues"))
+            } yield family).leftMap(issues => new BaboonCompilationException(issues))
         }
     )
   }
@@ -847,13 +881,13 @@ object BaboonJS {
         .NoCycles[F[Throwable, _]]()
         .produceRun(m, Activation(BaboonModeAxis.Compiler)) {
           (loader: BaboonLoaderJS[F], logger: BLogger, loc: Locator) =>
-            (for {
-              loadedModels <- loader.load(inputs.toList)
+            for {
+              loadedModels <- loader.load(inputs.toList).leftMap(issues => new BaboonCompilationException(issues))
               files <- F.traverse(targets) {
                 target =>
                   processTarget[F](loc, logger, loadedModels, target)
               }
-            } yield files.flatten).leftMap(issues => new RuntimeException(s"Failure: $issues"))
+            } yield files.flatten
         }
     )
   }
@@ -894,7 +928,7 @@ object BaboonJS {
             _ <- F.maybeSuspend {
               logger.message(s"${target.id}: done, ${files.size} files generated")
             }
-          } yield files).leftMap(issues => new RuntimeException(s"Failure: $issues"))
+          } yield files).leftMap(issues => new BaboonCompilationException(issues))
       }
 
   }
@@ -1329,5 +1363,126 @@ object BaboonJS {
   private def parsePkg(pkgString: String): Pkg = {
     val parts = pkgString.split("\\.").toList
     Pkg(NEList.unsafeFrom(parts))
+  }
+
+  import IssuePrinter.*
+
+  private def issuesToStructuredErrors(issues: NEList[BaboonIssue]): js.Array[JSCompilationError] = {
+    js.Array(issues.toList.map(issueToStructuredError)*)
+  }
+
+  private def issueToStructuredError(issue: BaboonIssue): JSCompilationError = {
+    val message = issue.stringify
+    val pointer = extractIssueInputPointer(issue)
+    pointer match {
+      case Some(sok: InputPointer.StartOffsetKnown) =>
+        createJSCompilationError(message, Some(sok.file.asString), Some(sok.start.line), Some(sok.start.column))
+      case Some(fk: InputPointer.FileKnown) =>
+        createJSCompilationError(message, Some(fk.file.asString), None, None)
+      case _ =>
+        createJSCompilationError(message, None, None, None)
+    }
+  }
+
+  private def extractIssueInputPointer(issue: BaboonIssue): Option[InputPointer] = {
+    issue match {
+      case BaboonIssue.Parser(pi) =>
+        pi match {
+          case ParserIssue.ParserFailed(error, path) =>
+            val parts = error.extra.input.prettyIndex(error.index).split(":")
+            if (parts.length >= 2) {
+              val line = parts(0).toInt
+              val col  = parts(1).toInt
+              Some(InputPointer.Offset(path, InputOffset(error.index, line, col)))
+            } else {
+              Some(InputPointer.JustFile(path))
+            }
+          case ParserIssue.IncludeNotFound(path) =>
+            Some(InputPointer.JustFile(FSPath.parse(NEString.unsafeFrom(path))))
+        }
+      case BaboonIssue.Typer(ti)        => extractTyperIssuePointer(ti)
+      case BaboonIssue.Verification(vi) => extractVerificationIssuePointer(vi)
+      case BaboonIssue.Evolution(_)     => None
+      case BaboonIssue.IO(_)            => None
+      case BaboonIssue.Translation(_)   => None
+      case BaboonIssue.RuntimeCodec(_)  => None
+    }
+  }
+
+  private def extractTyperIssuePointer(issue: TyperIssue): Option[InputPointer] = {
+    import TyperIssue._
+    issue match {
+      case GenericTyperIssue(_, meta)            => Some(meta.pos)
+      case NameNotFound(_, _, meta)              => Some(meta.pos)
+      case MissingTypeId(_, _, meta)             => Some(meta.pos)
+      case NonUniqueFields(_, _, meta)           => Some(meta.pos)
+      case EmptyEnum(_, meta)                    => Some(meta.pos)
+      case EmptyAdt(_, meta)                     => Some(meta.pos)
+      case BadTypeName(_, meta)                  => Some(meta.pos)
+      case BadFieldName(_, meta)                 => Some(meta.pos)
+      case BadEnumName(_, meta)                  => Some(meta.pos)
+      case CircularInheritance(_, meta)          => Some(meta.pos)
+      case NonUniqueEnumBranches(_, _, meta)     => Some(meta.pos)
+      case NonUniqueForeignEntries(_, _, meta)   => Some(meta.pos)
+      case UnknownForeignLang(_, _, meta)        => Some(meta.pos)
+      case EmptyGenericArgs(_, meta)             => Some(meta.pos)
+      case NonUniqueTypedefs(_, meta)            => Some(meta.pos)
+      case NonUniqueScope(_, meta)               => Some(meta.pos)
+      case UnexpectedScoping(_, meta)            => Some(meta.pos)
+      case UnexpectedBuiltin(_, _, meta)         => Some(meta.pos)
+      case UnexpectedNonBuiltin(_, _, _, meta)   => Some(meta.pos)
+      case ScopedRefToNamespacedGeneric(_, meta) => Some(meta.pos)
+      case UnexpectedScopeLookup(_, meta)        => Some(meta.pos)
+      case NamSeqeNotFound(_, _, meta)           => Some(meta.pos)
+      case DuplicatedTypes(_, meta)              => Some(meta.pos)
+      case WrongParent(_, _, meta)               => Some(meta.pos)
+      case MissingContractFields(_, _, meta)     => Some(meta.pos)
+      case BadInheritance(_, meta)               => Some(meta.pos)
+      case NonUniqueMethodNames(_, _, meta)      => Some(meta.pos)
+      case ServiceMissingOutput(_, _, meta)      => Some(meta.pos)
+      case ServiceMultipleOutputs(_, _, _, meta) => Some(meta.pos)
+      case ServiceMultipleErrors(_, _, _, meta)  => Some(meta.pos)
+      case DagError(_, meta)                     => Some(meta.pos)
+      case ScalarExpected(_, meta)               => Some(meta.pos)
+      case CollectionExpected(_, meta)           => Some(meta.pos)
+      case ScopeCannotBeEmpty(member)            => Some(member.meta.pos)
+      case EmptyPackageId(header)                => Some(header.meta.pos)
+      case DuplicatedTypedefs(model, _)          => Some(model.header.meta.pos)
+      case _: NonUniqueDomainVersions            => None
+      case _: EmptyDomainFamily                  => None
+      case _: NonUniqueLineages                  => None
+      case _: NonUniqueRawDomainVersion          => None
+      case _: EmptyFamily                        => None
+      case _: EmptyFamilyReload                  => None
+      case _: TodoTyperIssue                     => None
+      case InvalidRtMapping(_, _, meta)          => Some(meta.pos)
+    }
+  }
+
+  private def extractVerificationIssuePointer(issue: VerificationIssue): Option[InputPointer] = {
+    import VerificationIssue._
+    issue match {
+      case ConflictingDtoFields(_, _, meta)                     => Some(meta.pos)
+      case ConflictingEnumBranches(_, _, meta)                  => Some(meta.pos)
+      case ConflictingAdtBranches(_, _, meta)                   => Some(meta.pos)
+      case BadFieldNames(_, _, meta)                            => Some(meta.pos)
+      case EmptyEnumDef(_, meta)                                => Some(meta.pos)
+      case EitherAllOrNoneEnumMembersMustHaveConstants(_, meta) => Some(meta.pos)
+      case WrongEnumConstant(_, meta)                           => Some(meta.pos)
+      case EmptyAdtDef(_, meta)                                 => Some(meta.pos)
+      case UnderscoredDefinitionRetained(_, meta)               => Some(meta.pos)
+      case PathologicGenerics(_, _, meta)                       => Some(meta.pos)
+      case SetsCantContainGenerics(_, _, meta)                  => Some(meta.pos)
+      case MapKeysShouldNotBeGeneric(_, _, meta)                => Some(meta.pos)
+      case _: LockedVersionModified                             => None
+      case _: MissingTypeDef                                    => None
+      case _: ReferentialCyclesFound                            => None
+      case _: IncorrectRootFound                                => None
+      case _: ConflictingTypeIds                                => None
+      case _: MissingEvoDiff                                    => None
+      case _: MissingEvoConversion                              => None
+      case _: BrokenConversion                                  => None
+      case _: IncorrectConversionApplication                    => None
+    }
   }
 }

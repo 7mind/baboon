@@ -452,6 +452,27 @@ export class BaboonEditor {
     return result;
   }
 
+  focusLocation(file: string, line: number, column: number): void {
+    if (this.files.has(file)) {
+      this.selectFile(file);
+      this.revealPosition(line, column);
+      return;
+    }
+    for (const path of this.files.keys()) {
+      if (path.endsWith(file) || file.endsWith(path)) {
+        this.selectFile(path);
+        this.revealPosition(line, column);
+        return;
+      }
+    }
+  }
+
+  private revealPosition(line: number, column: number): void {
+    this.editor.revealLineInCenter(line);
+    this.editor.setPosition({ lineNumber: line, column: column });
+    this.editor.focus();
+  }
+
   layout(): void {
     this.editor.layout();
   }

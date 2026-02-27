@@ -429,14 +429,43 @@ body {
   margin-bottom: 12px;
 }
 
-.error-message {
+.error-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.error-item {
+  padding: 8px 12px;
+  background: #2d2020;
+  border-radius: 4px;
+  border-left: 3px solid #f48771;
+}
+
+.error-item-clickable {
+  cursor: pointer;
+}
+
+.error-item-clickable:hover {
+  background: #3d2828;
+}
+
+.error-location {
+  display: block;
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-size: 12px;
+  color: #d4a0a0;
+  margin-bottom: 4px;
+}
+
+.error-location:empty {
+  display: none;
+}
+
+.error-message-text {
   font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
   font-size: 13px;
   color: #f48771;
-  background: #2d2020;
-  padding: 12px;
-  border-radius: 4px;
-  margin-bottom: 8px;
   white-space: pre-wrap;
   word-break: break-word;
 }

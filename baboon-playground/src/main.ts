@@ -76,6 +76,10 @@ app.appendChild(mainContent);
 const baboonEditor = new BaboonEditor(mainContent);
 const preview = new Preview(mainContent);
 
+preview.setNavigateToErrorCallback((file, line, column) => {
+  baboonEditor.focusLocation(file, line, column);
+});
+
 let currentOptions: CompilerOptions = structuredClone(DEFAULT_OPTIONS);
 
 const optionsPanel = new OptionsPanel((options) => {
@@ -159,7 +163,12 @@ compileBtn.addEventListener("click", async () => {
     preview.setResult({
       success: false,
       filesByLanguage: new Map(),
-      errors: [e instanceof Error ? e.message : String(e)],
+      errors: [{
+        message: e instanceof Error ? e.message : String(e),
+        file: null,
+        line: null,
+        column: null,
+      }],
     });
   } finally {
     compiling = false;

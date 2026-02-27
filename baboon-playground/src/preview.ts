@@ -4,6 +4,7 @@ import { FileTree } from "./file-tree.ts";
 import {
   type BaboonTargetLanguage,
   type CompilationResult,
+  type CompilationError,
   type OutputFile,
   TARGET_LANGUAGES,
   LANGUAGE_DISPLAY_NAMES,
@@ -23,6 +24,7 @@ export class Preview {
   private result: CompilationResult | null = null;
   private selectedLanguage: BaboonTargetLanguage = "typescript";
   private filesByPath: Map<string, OutputFile> = new Map();
+  private onNavigateToError: ((file: string, line: number, column: number) => void) | null = null;
 
   constructor(parent: HTMLElement) {
     this.container = document.createElement("div");
@@ -97,6 +99,10 @@ export class Preview {
     this.showPlaceholder();
   }
 
+  setNavigateToErrorCallback(callback: (file: string, line: number, column: number) => void): void {
+    this.onNavigateToError = callback;
+  }
+
   setResult(result: CompilationResult): void {
     this.result = result;
 
@@ -160,21 +166,55 @@ export class Preview {
     }
   }
 
-  private showErrors(errors: string[]): void {
+  private showErrors(errors: CompilationError[]): void {
     this.contentPanel.style.display = "none";
     this.errorPanel.style.display = "block";
     this.errorPanel.innerHTML = "";
 
     const heading = document.createElement("div");
     heading.className = "error-heading";
-    heading.textContent = "Compilation Errors";
+    heading.textContent = `Compilation Errors (${errors.length})`;
     this.errorPanel.appendChild(heading);
 
+    const errorList = document.createElement("div");
+    errorList.className = "error-list";
+    this.errorPanel.appendChild(errorList);
+
     for (const error of errors) {
-      const errorEl = document.createElement("pre");
-      errorEl.className = "error-message";
-      errorEl.textContent = error;
-      this.errorPanel.appendChild(errorEl);
+      const errorItem = document.createElement("div");
+      errorItem.className = "error-item";
+
+      const hasLocation = error.file !== null && error.line !== null;
+      if (hasLocation) {
+        errorItem.classList.add("error-item-clickable");
+      }
+
+      if (error.file !== null) {
+        const locationEl = document.createElement("span");
+        locationEl.className = "error-location";
+        const parts: string[] = [error.file];
+        if (error.line !== null) {
+          parts.push(String(error.line));
+          if (error.column !== null) {
+            parts.push(String(error.column));
+          }
+        }
+        locationEl.textContent = parts.join(":");
+        errorItem.appendChild(locationEl);
+      }
+
+      const messageEl = document.createElement("div");
+      messageEl.className = "error-message-text";
+      messageEl.textContent = error.message;
+      errorItem.appendChild(messageEl);
+
+      if (hasLocation) {
+        errorItem.addEventListener("click", () => {
+          this.onNavigateToError?.(error.file!, error.line!, error.column ?? 1);
+        });
+      }
+
+      errorList.appendChild(errorItem);
     }
   }
 
