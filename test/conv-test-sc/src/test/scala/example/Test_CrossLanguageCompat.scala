@@ -1,6 +1,6 @@
 package example
 
-import convtest.testpkg.{AllBasicTypes, AllBasicTypes_JsonCodec, AllBasicTypes_UEBACodec}
+import convtest.testpkg.{AllBasicTypes, AllBasicTypes_JsonCodec, AllBasicTypes_BinCodec}
 import baboon.runtime.shared.{BaboonCodecContext, LEDataInputStream}
 import org.scalatest.flatspec.AnyFlatSpec
 import java.io.FileInputStream
