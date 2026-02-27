@@ -80,6 +80,7 @@
               ${sbtSetup.setupScript}
               ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
                 export PATH="${nativeImageMusl}/bin:$PATH"
+                export BABOON_NATIVE_IMAGE="${nativeImageMusl}/bin/native-image"
               ''}
               ${pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
                 HOME="$TMPDIR" \
@@ -99,9 +100,7 @@
           default = baboon;
         };
 
-        devShells.default = pkgs.mkShell {
-          # nativeImageMusl must come BEFORE graalvm so it shadows graalvm's native-image on PATH.
-          # shellHook is unreliable with `nix develop --command`, so we rely on nativeBuildInputs ordering.
+        devShells.default = pkgs.mkShell ({
           nativeBuildInputs =
             pkgs.lib.optionals pkgs.stdenv.isLinux [
               nativeImageMusl
@@ -139,7 +138,10 @@
               pkgs.buildPackages.swift
               pkgs.buildPackages.swiftpm
             ];
-        };
+        } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          # Bypass PATH resolution: SBT's graalVMNativeImageCommand reads this env var
+          BABOON_NATIVE_IMAGE = "${nativeImageMusl}/bin/native-image";
+        });
       }
     );
 }
