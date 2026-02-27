@@ -10,7 +10,7 @@ import io.septimalmind.baboon.typer.model.{BaboonFamily, BaboonLineage, Domain, 
 import izumi.distage.Subcontext
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.nonempty.NEList
-import izumi.fundamentals.platform.resources.IzResources
+import io.septimalmind.baboon.translator.BaboonRuntimeResources
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.platform.strings.TextTree.Quote
@@ -124,7 +124,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
     def rt(path: String, resource: String): PyDefnTranslator.Output = {
       PyDefnTranslator.Output(
         path,
-        TextTree.text(IzResources.readAsString(resource).get),
+        TextTree.text(BaboonRuntimeResources.read(resource)),
         pyBaboonSharedRuntimeModule,
         CompilerProduct.Runtime,
       )

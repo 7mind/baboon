@@ -10,7 +10,7 @@ import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
-import izumi.fundamentals.platform.resources.IzResources
+import io.septimalmind.baboon.translator.BaboonRuntimeResources
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -201,14 +201,14 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
         List(
           RsDefnTranslator.Output(
             "baboon_runtime.rs",
-            TextTree.text(IzResources.readAsString("baboon-runtime/rust/baboon_runtime.rs").get),
+            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/rust/baboon_runtime.rs")),
             RsValue.RsCrateId(NEList("crate")),
             CompilerProduct.Runtime,
             doNotModify = true,
           ),
           RsDefnTranslator.Output(
             "baboon_service_wiring.rs",
-            TextTree.text(IzResources.readAsString("baboon-runtime/rust/baboon_service_wiring.rs").get),
+            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/rust/baboon_service_wiring.rs")),
             RsValue.RsCrateId(NEList("crate")),
             CompilerProduct.Runtime,
             doNotModify = true,
@@ -226,7 +226,7 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
         List(
           RsDefnTranslator.Output(
             "baboon_fixture.rs",
-            TextTree.text(IzResources.readAsString("baboon-runtime/rust/baboon_fixture.rs").get),
+            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/rust/baboon_fixture.rs")),
             RsValue.RsCrateId(NEList("crate")),
             CompilerProduct.FixtureRuntime,
             doNotModify = true,

@@ -11,7 +11,7 @@ import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
-import izumi.fundamentals.platform.resources.IzResources
+import io.septimalmind.baboon.translator.BaboonRuntimeResources
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -102,7 +102,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         List(
           TsDefnTranslator.Output(
             "BaboonSharedRuntime.ts",
-            TextTree.text(IzResources.readAsString("baboon-runtime/typescript/BaboonSharedRuntime.ts").get),
+            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonSharedRuntime.ts")),
             tsBaboonRuntimeShared,
             CompilerProduct.Runtime,
             doNotModify = true,
@@ -120,7 +120,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         List(
           TsDefnTranslator.Output(
             "BaboonSharedFixture.ts",
-            TextTree.text(IzResources.readAsString("baboon-runtime/typescript/BaboonSharedFixture.ts").get),
+            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonSharedFixture.ts")),
             tsBaboonRuntimeShared,
             CompilerProduct.Runtime,
             doNotModify = true,

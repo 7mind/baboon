@@ -10,7 +10,7 @@ import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
-import izumi.fundamentals.platform.resources.IzResources
+import io.septimalmind.baboon.translator.BaboonRuntimeResources
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -141,7 +141,7 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
     def fix(path: String, resource: String): DtDefnTranslator.Output = {
       DtDefnTranslator.Output(
         path,
-        TextTree.text(IzResources.readAsString(resource).get),
+        TextTree.text(BaboonRuntimeResources.read(resource)),
         DtTypes.baboonFixturePkg,
         CompilerProduct.FixtureRuntime,
         doNotModify = true,
@@ -232,7 +232,7 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
     def rt(path: String, resource: String): DtDefnTranslator.Output = {
       DtDefnTranslator.Output(
         path,
-        TextTree.text(IzResources.readAsString(resource).get),
+        TextTree.text(BaboonRuntimeResources.read(resource)),
         DtTypes.baboonRuntimePkg,
         CompilerProduct.Runtime,
         doNotModify = true,

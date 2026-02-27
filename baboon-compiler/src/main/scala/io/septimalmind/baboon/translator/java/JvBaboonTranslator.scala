@@ -10,7 +10,7 @@ import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
-import izumi.fundamentals.platform.resources.IzResources
+import io.septimalmind.baboon.translator.BaboonRuntimeResources
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -145,7 +145,7 @@ class JvBaboonTranslator[F[+_, +_]: Error2](
     def fix(path: String, resource: String): JvDefnTranslator.Output = {
       JvDefnTranslator.Output(
         path,
-        TextTree.text(IzResources.readAsString(resource).get),
+        TextTree.text(BaboonRuntimeResources.read(resource)),
         JvTypes.baboonFixturePkg,
         CompilerProduct.FixtureRuntime,
         doNotModify = true,
@@ -208,7 +208,7 @@ class JvBaboonTranslator[F[+_, +_]: Error2](
     def rt(path: String, resource: String, preprocessResource: String => String = identity): JvDefnTranslator.Output = {
       JvDefnTranslator.Output(
         path,
-        TextTree.text(IzResources.readAsString(resource).map(preprocessResource).get),
+        TextTree.text(preprocessResource(BaboonRuntimeResources.read(resource))),
         JvTypes.baboonRuntimePkg,
         CompilerProduct.Runtime,
         doNotModify = true,

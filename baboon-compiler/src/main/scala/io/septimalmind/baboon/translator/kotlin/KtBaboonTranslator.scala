@@ -10,7 +10,7 @@ import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
-import izumi.fundamentals.platform.resources.IzResources
+import io.septimalmind.baboon.translator.BaboonRuntimeResources
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -146,7 +146,7 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
         List(
           KtDefnTranslator.Output(
             "BaboonFixtureShared.kt",
-            TextTree.text(IzResources.readAsString("baboon-runtime/kotlin/BaboonFixtureShared.kt").get),
+            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/kotlin/BaboonFixtureShared.kt")),
             KtTypes.baboonFixturePkg,
             CompilerProduct.FixtureRuntime,
             doNotModify = true,
@@ -215,7 +215,7 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
     def rt(path: String, resource: String, preprocessResource: String => String = identity): KtDefnTranslator.Output = {
       KtDefnTranslator.Output(
         path,
-        TextTree.text(IzResources.readAsString(resource).map(preprocessResource).get),
+        TextTree.text(preprocessResource(BaboonRuntimeResources.read(resource))),
         KtTypes.baboonRuntimePkg,
         CompilerProduct.Runtime,
         doNotModify = true,

@@ -12,7 +12,7 @@ import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
 import izumi.fundamentals.collections.nonempty.NEList
-import izumi.fundamentals.platform.resources.IzResources
+import io.septimalmind.baboon.translator.BaboonRuntimeResources
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -385,7 +385,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
     def rt(path: String, res: String) = {
       CSDefnTranslator.Output(
         path,
-        Some(TextTree.text(IzResources.readAsString(res).get)),
+        Some(TextTree.text(BaboonRuntimeResources.read(res))),
         CSTypes.baboonRuntimePkg,
         CompilerProduct.Runtime,
         doNotModify = true,
@@ -413,7 +413,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
     if (target.output.products.contains(CompilerProduct.FixtureRuntime)) {
       val testRuntime = CSDefnTranslator.Output(
         "BaboonFixtureShared.cs",
-        Some(TextTree.text(IzResources.readAsString("baboon-runtime/cs/BaboonFixtureShared.cs").get)),
+        Some(TextTree.text(BaboonRuntimeResources.read("baboon-runtime/cs/BaboonFixtureShared.cs"))),
         CSTypes.baboonFixturePkg,
         CompilerProduct.FixtureRuntime,
         doNotModify = true,
