@@ -6,6 +6,7 @@ import scala.sys.process.*
 
 lazy val refreshFlakeTask = taskKey[Unit]("Refresh flake.nix")
 lazy val isLinux: Boolean = System.getProperty("os.name").toLowerCase.contains("linux")
+lazy val isAmd64: Boolean = System.getProperty("os.arch") == "amd64"
 
 ThisBuild / scalaVersion := "2.13.16"
 
@@ -117,7 +118,6 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
   .jvmConfigure(_.enablePlugins(GraalVMNativeImagePlugin, UniversalPlugin))
   .jvmSettings(
     GraalVMNativeImage / mainClass := Some("io.septimalmind.baboon.Baboon"),
-    graalVMNativeImageCommand := sys.env.getOrElse("BABOON_NATIVE_IMAGE", "native-image"),
     graalVMNativeImageOptions ++= Seq(
       "-H:-CheckToolchain", // fixes Darwin builds under Nix
       "-H:+UnlockExperimentalVMOptions",
@@ -127,7 +127,7 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
       "--enable-https",
       "--enable-http",
       "-march=compatibility"
-    ) ++ (if (isLinux) Seq("--static", "--libc=musl") else Seq.empty),
+    ) ++ (if (isLinux && isAmd64) Seq("--static", "--libc=musl") else Seq.empty),
     run / fork := true,
     refreshFlakeTask := {
       val log = streams.value.log

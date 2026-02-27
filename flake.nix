@@ -45,7 +45,9 @@
         # The Nix native-image wrapper injects glibc CLibraryPaths which conflict
         # with musl, so we create a custom wrapper that bypasses the Nix glibc
         # injection and provides musl paths instead.
-        # Only referenced in isLinux guards; Nix laziness prevents evaluation on Darwin.
+        # GraalVM only supports --libc=musl on x86_64-linux (not aarch64).
+        # Only referenced in isX86Linux guards; Nix laziness prevents evaluation elsewhere.
+        isX86Linux = system == "x86_64-linux";
         arch = pkgs.stdenv.hostPlatform.parsed.cpu.name;
         muslCc = pkgs.pkgsMusl.stdenv.cc;
         muslZlibStatic = pkgs.pkgsMusl.zlib.static;
@@ -71,16 +73,15 @@
             pname = "baboon";
             src = ./.;
             nativeBuildInputs = sbtSetup.nativeBuildInputs ++ [ pkgs.curl ]
-              ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+              ++ pkgs.lib.optionals isX86Linux [
                 nativeImageMusl
               ];
             inherit (sbtSetup) JAVA_HOME;
 
             buildPhase = ''
               ${sbtSetup.setupScript}
-              ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+              ${pkgs.lib.optionalString isX86Linux ''
                 export PATH="${nativeImageMusl}/bin:$PATH"
-                export BABOON_NATIVE_IMAGE="${nativeImageMusl}/bin/native-image"
               ''}
               ${pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
                 HOME="$TMPDIR" \
@@ -102,7 +103,7 @@
 
         devShells.default = pkgs.mkShell ({
           nativeBuildInputs =
-            pkgs.lib.optionals pkgs.stdenv.isLinux [
+            pkgs.lib.optionals isX86Linux [
               nativeImageMusl
             ] ++
             (with pkgs.buildPackages; [
@@ -138,9 +139,6 @@
               pkgs.buildPackages.swift
               pkgs.buildPackages.swiftpm
             ];
-        } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
-          # Bypass PATH resolution: SBT's graalVMNativeImageCommand reads this env var
-          BABOON_NATIVE_IMAGE = "${nativeImageMusl}/bin/native-image";
         });
       }
     );
