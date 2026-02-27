@@ -47,13 +47,13 @@
         # injection and provides musl paths instead.
         # Only referenced in isLinux guards; Nix laziness prevents evaluation on Darwin.
         arch = pkgs.stdenv.hostPlatform.parsed.cpu.name;
-        muslCc = pkgs.pkgsCross.musl64.stdenv.cc;
+        muslCc = pkgs.pkgsMusl.stdenv.cc;
         muslZlibStatic = pkgs.pkgsMusl.zlib.static;
         graalvm = pkgs.graalvmPackages.graalvm-ce;
 
         muslGccAlias = pkgs.runCommand "musl-gcc-alias" {} ''
           mkdir -p $out/bin
-          ln -s ${muslCc}/bin/${arch}-unknown-linux-musl-gcc $out/bin/${arch}-linux-musl-gcc
+          ln -s ${muslCc}/bin/cc $out/bin/${arch}-linux-musl-gcc
         '';
 
         nativeImageMusl = pkgs.writeShellScriptBin "native-image" ''
