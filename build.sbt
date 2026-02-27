@@ -126,13 +126,7 @@ lazy val baboon = crossProject(JSPlatform, JVMPlatform)
       "--enable-https",
       "--enable-http",
       "-march=compatibility"
-    ) ++ (if (isLinux) {
-      val muslLib = sys.env.getOrElse("BABOON_MUSL_LIB", "")
-      val zlibStaticMusl = sys.env.getOrElse("BABOON_ZLIB_STATIC_MUSL", "")
-      Seq("--static", "--libc=musl") ++
-        (if (muslLib.nonEmpty) Seq(s"-H:CLibraryPath=$muslLib") else Seq.empty) ++
-        (if (zlibStaticMusl.nonEmpty) Seq(s"-H:CLibraryPath=$zlibStaticMusl") else Seq.empty)
-    } else Seq.empty),
+    ) ++ (if (isLinux) Seq("--static", "--libc=musl") else Seq.empty),
     run / fork := true,
     refreshFlakeTask := {
       val log = streams.value.log

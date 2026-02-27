@@ -40,6 +40,29 @@
           inherit pkgs coursierCache;
           jdk = pkgs.graalvmPackages.graalvm-ce;
         };
+
+        # GraalVM --libc=musl needs a musl cross-compiler and musl CLibraryPaths.
+        # The Nix native-image wrapper injects glibc CLibraryPaths which conflict
+        # with musl, so we create a custom wrapper that bypasses the Nix glibc
+        # injection and provides musl paths instead.
+        # Only referenced in isLinux guards; Nix laziness prevents evaluation on Darwin.
+        arch = pkgs.stdenv.hostPlatform.parsed.cpu.name;
+        muslCc = pkgs.pkgsCross.musl64.stdenv.cc;
+        muslZlibStatic = pkgs.pkgsMusl.zlib.static;
+        graalvm = pkgs.graalvmPackages.graalvm-ce;
+
+        muslGccAlias = pkgs.runCommand "musl-gcc-alias" {} ''
+          mkdir -p $out/bin
+          ln -s ${muslCc}/bin/${arch}-unknown-linux-musl-gcc $out/bin/${arch}-linux-musl-gcc
+        '';
+
+        nativeImageMusl = pkgs.writeShellScriptBin "native-image" ''
+          export PATH="${muslGccAlias}/bin:${muslCc}/bin:$PATH"
+          exec "${graalvm}/lib/svm/bin/native-image" \
+            -H:CLibraryPath=${pkgs.musl}/lib \
+            -H:CLibraryPath=${muslZlibStatic}/lib \
+            "$@"
+        '';
       in
       {
         packages = rec {
@@ -49,16 +72,14 @@
             src = ./.;
             nativeBuildInputs = sbtSetup.nativeBuildInputs ++ [ pkgs.curl ]
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-                pkgs.musl
-                pkgs.pkgsMusl.zlib.static
+                nativeImageMusl
               ];
             inherit (sbtSetup) JAVA_HOME;
 
             buildPhase = ''
               ${sbtSetup.setupScript}
               ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-                export BABOON_MUSL_LIB="${pkgs.musl}/lib"
-                export BABOON_ZLIB_STATIC_MUSL="${pkgs.pkgsMusl.zlib.static}/lib"
+                export PATH="${nativeImageMusl}/bin:$PATH"
               ''}
               ${pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
                 HOME="$TMPDIR" \
@@ -111,13 +132,11 @@
           ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
             swift
             swiftpm
-            pkgs.musl
-            pkgs.pkgsMusl.zlib.static
           ];
 
+          # Prepend our musl-aware native-image wrapper before the Nix GraalVM one
           shellHook = pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-            export BABOON_MUSL_LIB="${pkgs.musl}/lib"
-            export BABOON_ZLIB_STATIC_MUSL="${pkgs.pkgsMusl.zlib.static}/lib"
+            export PATH="${nativeImageMusl}/bin:$PATH"
           '';
         };
       }
