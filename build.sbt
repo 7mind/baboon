@@ -10,6 +10,8 @@ lazy val isAmd64: Boolean = System.getProperty("os.arch") == "amd64"
 
 ThisBuild / scalaVersion := "2.13.16"
 
+lazy val izumiVersion = "1.2.24"
+
 // Shared settings for both JVM and JS
 lazy val sharedSettings = Seq(
   name := "baboon",
@@ -20,7 +22,10 @@ lazy val sharedSettings = Seq(
     "fundamentals-language",
     "fundamentals-collections",
     "distage-core",
-  ).map("io.7mind.izumi" %%% _ % "1.2.23"),
+  ).map("io.7mind.izumi" %%% _ % izumiVersion),
+  libraryDependencies ++= Seq(
+    "io.github.classgraph" % "classgraph" % "4.8.181"
+  ),
   libraryDependencies ++= Seq(
     "org.scala-lang.modules" %%% "scala-parser-combinators" % "2.4.0"
   ),
@@ -74,45 +79,17 @@ lazy val sharedSettings = Seq(
   )
 )
 
-lazy val generateRuntimeResources = Def.task {
-  val resourceDir = (ThisBuild / baseDirectory).value / "baboon-compiler" / "src" / "main" / "resources" / "baboon-runtime"
-  val outputFile = (Compile / sourceManaged).value / "BaboonRuntimeResources.scala"
-  val files = (resourceDir ** "*").get.filter(_.isFile).sortBy(_.getAbsolutePath)
-  val encoder = java.util.Base64.getEncoder
-  val entries = files.map { f =>
-    val relativePath = "baboon-runtime/" + resourceDir.toPath.relativize(f.toPath).toString.replace('\\', '/')
-    val encoded = encoder.encodeToString(IO.readBytes(f))
-    s""""$relativePath" -> new String(_root_.java.util.Base64.getDecoder.decode("$encoded"), "UTF-8")"""
-  }
-  val source =
-    s"""package io.septimalmind.baboon.translator
-       |
-       |object BaboonRuntimeResources {
-       |  private val resources: Map[String, String] = Map(
-       |    ${entries.mkString(",\n    ")}
-       |  )
-       |
-       |  def read(path: String): String = {
-       |    resources.getOrElse(path, throw new RuntimeException(s"Runtime resource not found: $$path, available: $${resources.keys.mkString(", ")}"))
-       |  }
-       |}
-       |""".stripMargin
-  IO.write(outputFile, source)
-  Seq(outputFile)
-}
-
 // Cross-platform project with CrossType.Pure
 lazy val baboon = crossProject(JSPlatform, JVMPlatform)
   .crossType(CrossType.Pure)
   .in(file("baboon-compiler"))
   .settings(sharedSettings)
-  .settings(Compile / sourceGenerators += generateRuntimeResources.taskValue)
   .jvmSettings(
     Compile / unmanagedResourceDirectories += baseDirectory.value / "src" / "main" / "resources",
     libraryDependencies ++= Seq(
       "com.github.alexarchambault" %% "case-app" % "2.1.0-M30",
       "org.jline" % "jline" % "3.26.3",
-      "io.7mind.izumi" %% "distage-testkit-scalatest" % "1.2.23" % Test
+      "io.7mind.izumi" %% "distage-testkit-scalatest" % izumiVersion % Test
     )
   )
   .jvmConfigure(_.enablePlugins(GraalVMNativeImagePlugin, UniversalPlugin))
