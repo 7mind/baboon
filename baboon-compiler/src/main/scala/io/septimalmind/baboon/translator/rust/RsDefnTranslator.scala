@@ -545,10 +545,11 @@ object RsDefnTranslator {
             case t: RsValue.RsType     => if (t.predef) t.name else (t.crate.parts :+ t.name).mkString("::")
             case t: RsValue.RsTypeName => t.name
           }
+          val inStr  = inType.mapRender(rsFqName)
           val outStr = outType.map(_.mapRender(rsFqName)).getOrElse("")
           val errStr = errType.map(_.mapRender(rsFqName))
           val retStr = resolved.renderReturnType(outStr, errStr, "()")
-          q"fn ${toSnakeCase(m.name.name)}(&self, ${ctxParam}arg: $inType) -> $retStr;"
+          q"fn ${toSnakeCase(m.name.name)}(&self, ${ctxParam}arg: $inStr) -> $retStr;"
       }
       val genericParam = resolvedCtx match {
         case ResolvedServiceContext.AbstractContext(tn, _) => s"<$tn>"

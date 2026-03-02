@@ -1,0 +1,10 @@
+name: dt_service
+description: Baboon Dart petstore service
+version: 0.0.1
+
+environment:
+  sdk: ^3.0.0
+
+dependencies:
+  baboon_runtime:
+    path: packages/baboon_runtime

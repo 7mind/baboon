@@ -29,7 +29,14 @@ object KtServiceWiringTranslator {
       ServiceContextResolver.resolve(domain, "kotlin", target.language.serviceContext, target.language.pragmas)
 
     private val hasJsonCodecs: Boolean = codecs.exists(_.isInstanceOf[KtJsonCodecGenerator])
-    private val hasUebaCodecs: Boolean = codecs.exists(_.isInstanceOf[KtUEBACodecGenerator])
+
+    private def hasActiveUebaCodecs(service: Typedef.Service): Boolean = {
+      codecs.exists { c =>
+        c.isInstanceOf[KtUEBACodecGenerator] && service.methods.forall { m =>
+          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+        }
+      }
+    }
 
     private val resultKtType: Option[KtValue.KtType] = resolved.resultType.map {
       rt =>
@@ -183,7 +190,7 @@ object KtServiceWiringTranslator {
         else None
 
       val uebaMethod =
-        if (hasUebaCodecs)
+        if (hasActiveUebaCodecs(service))
           Some(generateNoErrorsUebaMethod(service))
         else None
 
@@ -291,7 +298,7 @@ object KtServiceWiringTranslator {
         else None
 
       val uebaMethod =
-        if (hasUebaCodecs)
+        if (hasActiveUebaCodecs(service))
           Some(generateErrorsUebaMethod(service))
         else None
 

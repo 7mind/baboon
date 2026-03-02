@@ -28,7 +28,14 @@ object DtServiceWiringTranslator {
       ServiceContextResolver.resolve(domain, "dart", target.language.serviceContext, target.language.pragmas)
 
     private val hasJsonCodecs: Boolean = codecs.exists(_.id == "Json")
-    private val hasUebaCodecs: Boolean = codecs.exists(_.id == "Ueba")
+
+    private def hasActiveUebaCodecs(service: Typedef.Service): Boolean = {
+      codecs.exists { c =>
+        c.id == "Ueba" && service.methods.forall { m =>
+          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+        }
+      }
+    }
 
     private def jsonCodecName(typeId: TypeId.User): DtValue.DtType = {
       val srcRef       = trans.toDtTypeRefKeepForeigns(typeId, domain, evo)
@@ -117,7 +124,7 @@ object DtServiceWiringTranslator {
         else None
 
       val uebaMethod =
-        if (hasUebaCodecs)
+        if (hasActiveUebaCodecs(service))
           Some(generateNoErrorsUebaMethod(service))
         else None
 
@@ -226,7 +233,7 @@ object DtServiceWiringTranslator {
         else None
 
       val uebaMethod =
-        if (hasUebaCodecs)
+        if (hasActiveUebaCodecs(service))
           Some(generateErrorsUebaMethod(service))
         else None
 
