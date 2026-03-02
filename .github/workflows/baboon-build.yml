@@ -155,11 +155,26 @@ jobs:
             --baboon baboon-compiler/.jvm/target/graalvm-native-image/baboon \
             --target ./target/acceptance \
             --parallelism "$(nproc)"
+      - name: Run service acceptance tests
+        run: |
+          chmod +x baboon-compiler/.jvm/target/graalvm-native-image/baboon
+          nix develop --ignore-environment \
+            --keep HOME \
+            --keep USER \
+            --keep CI \
+            --keep GITHUB_ACTIONS \
+            --command python3 test/acceptance/run_service_acceptance.py \
+            --baboon baboon-compiler/.jvm/target/graalvm-native-image/baboon \
+            --target ./target/service-acceptance \
+            --parallelism "$(nproc)"
       - name: Write step summary
         if: always()
         run: |
           if [ -f ./target/acceptance/acceptance-summary.md ]; then
             cat ./target/acceptance/acceptance-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f ./target/service-acceptance/service-summary.md ]; then
+            cat ./target/service-acceptance/service-summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Upload acceptance report
         uses: actions/upload-artifact@v4
@@ -170,6 +185,9 @@ jobs:
             target/acceptance/acceptance-report.html
             target/acceptance/acceptance-results.json
             target/acceptance/acceptance-summary.md
+            target/service-acceptance/service-report.html
+            target/service-acceptance/service-results.json
+            target/service-acceptance/service-summary.md
 
   validate-flake:
     strategy:

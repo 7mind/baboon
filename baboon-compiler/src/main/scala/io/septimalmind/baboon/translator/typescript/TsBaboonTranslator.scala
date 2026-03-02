@@ -131,10 +131,20 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def renderTree(o: TsDefnTranslator.Output): String = {
+    def relativeImportPath(srcModulePath: List[String], tgtModulePath: List[String]): String = {
+      val srcDir          = srcModulePath.dropRight(1)
+      val tgtDir          = tgtModulePath.dropRight(1)
+      val tgtName         = tgtModulePath.last
+      val commonPrefixLen = srcDir.zip(tgtDir).takeWhile { case (a, b) => a == b }.size
+      val levelsUp        = srcDir.size - commonPrefixLen
+      val remainingPath   = (tgtDir.drop(commonPrefixLen) :+ tgtName).mkString("/")
+      if (levelsUp == 0) s"./$remainingPath" else s"${"../" * levelsUp}$remainingPath"
+    }
+
     def baboonTypeImport(moduleId: TsModuleId, types: String): TextTree[TsValue] = {
       if (o.module.path.startsWith(tsFileTools.definitionsBasePkg)) {
-        val baboonPkg    = o.module.path.dropWhile(part => tsFileTools.definitionsBasePkg.contains(part))
-        val pathToModule = (0 until baboonPkg.size - 1).map(_ => "../").mkString("")
+        val afterBase    = o.module.path.drop(tsFileTools.definitionsBasePkg.size)
+        val pathToModule = (0 until afterBase.size - 1).map(_ => "../").mkString("")
         q"import {$types} from '$pathToModule${moduleId.path.mkString("")}'"
       } else {
         val pathToCommonParent = (0 until o.module.path.size - 1).map(_ => "../").mkString("")
@@ -144,8 +154,8 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
 
     def definitionImport(moduleId: TsModuleId, types: String): TextTree[TsValue] = {
       if (o.module.path.startsWith(tsFileTools.definitionsBasePkg)) {
-        val baboonPkg = moduleId.path.dropWhile(part => o.module.path.contains(part))
-        q"import {$types} from './${baboonPkg.mkString("/")}'"
+        val importPath = relativeImportPath(o.module.path, moduleId.path)
+        q"import {$types} from '$importPath'"
       } else {
         val pathToCommonParent = (0 until o.module.path.size - 1).map(_ => "../").mkString("")
         q"import {$types} from '$pathToCommonParent${moduleId.path.mkString("/")}'"
@@ -153,15 +163,8 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     }
 
     def fixtureImport(moduleId: TsModuleId, types: String): TextTree[TsValue] = {
-      if (o.module.path.startsWith(tsFileTools.fixturesBasePkg)) {
-        val baboonPkg = moduleId.path.dropWhile(part => o.module.path.contains(part))
-        q"import {$types} from './${baboonPkg.mkString("/")}'"
-      } else {
-        val baboonPkg    = moduleId.path.dropWhile(part => o.module.path.contains(part))
-        val diff         = baboonPkg.size - 1
-        val parentImport = (0 until diff).map(_ => "../").mkString("")
-        q"import {$types} from '$parentImport${baboonPkg.mkString("/")}'"
-      }
+      val importPath = relativeImportPath(o.module.path, moduleId.path)
+      q"import {$types} from '$importPath'"
     }
 
     val usedTypes = o.tree.values.collect { case t: TsValue.TsType => t }

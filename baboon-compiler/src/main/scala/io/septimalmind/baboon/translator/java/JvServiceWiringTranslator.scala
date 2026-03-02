@@ -28,7 +28,14 @@ object JvServiceWiringTranslator {
       ServiceContextResolver.resolve(domain, "java", target.language.serviceContext, target.language.pragmas)
 
     private val hasJsonCodecs: Boolean = codecs.exists(_.isInstanceOf[JvJsonCodecGenerator])
-    private val hasUebaCodecs: Boolean = codecs.exists(_.isInstanceOf[JvUEBACodecGenerator])
+
+    private def hasActiveUebaCodecs(service: Typedef.Service): Boolean = {
+      codecs.exists { c =>
+        c.isInstanceOf[JvUEBACodecGenerator] && service.methods.forall { m =>
+          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+        }
+      }
+    }
 
     private val resultJvType: Option[JvValue.JvType] = resolved.resultType.map {
       rt =>
@@ -155,7 +162,7 @@ object JvServiceWiringTranslator {
         else None
 
       val uebaMethod =
-        if (hasUebaCodecs)
+        if (hasActiveUebaCodecs(service))
           Some(generateNoErrorsUebaMethod(service))
         else None
 
@@ -262,7 +269,7 @@ object JvServiceWiringTranslator {
         else None
 
       val uebaMethod =
-        if (hasUebaCodecs)
+        if (hasActiveUebaCodecs(service))
           Some(generateErrorsUebaMethod(service))
         else None
 

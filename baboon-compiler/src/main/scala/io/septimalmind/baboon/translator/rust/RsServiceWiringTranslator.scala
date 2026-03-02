@@ -30,7 +30,14 @@ object RsServiceWiringTranslator {
       ServiceContextResolver.resolve(domain, "rust", target.language.serviceContext, target.language.pragmas)
 
     private val hasJsonCodecs: Boolean = codecs.exists(_.isInstanceOf[RsJsonCodecGenerator])
-    private val hasUebaCodecs: Boolean = codecs.exists(_.isInstanceOf[RsUEBACodecGenerator])
+
+    private def hasActiveUebaCodecs(service: Typedef.Service): Boolean = {
+      codecs.exists { c =>
+        c.isInstanceOf[RsUEBACodecGenerator] && service.methods.forall { m =>
+          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+        }
+      }
+    }
 
     private lazy val rtCrate: RsValue.RsCrateId = {
       val baseCrate = trans.toRsCrate(domain.id, domain.version, evo)
@@ -140,7 +147,7 @@ object RsServiceWiringTranslator {
         else None
 
       val uebaFn =
-        if (hasUebaCodecs)
+        if (hasActiveUebaCodecs(service))
           Some(generateNoErrorsUebaFn(service, svcName, svcType))
         else None
 
@@ -243,7 +250,7 @@ object RsServiceWiringTranslator {
         else None
 
       val uebaFn =
-        if (hasUebaCodecs)
+        if (hasActiveUebaCodecs(service))
           Some(generateErrorsUebaFn(service, svcName, svcType))
         else None
 

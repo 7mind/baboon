@@ -31,7 +31,14 @@ object TsServiceWiringTranslator {
       ServiceContextResolver.resolve(domain, "typescript", target.language.serviceContext, target.language.pragmas)
 
     private val jsonCodec: Option[TsCodecTranslator] = codecs.find(_.isInstanceOf[TsJsonCodecGenerator])
-    private val binCodec: Option[TsCodecTranslator]  = codecs.find(_.isInstanceOf[TsUEBACodecGenerator])
+
+    private def activeBinCodec(service: Typedef.Service): Option[TsCodecTranslator] = {
+      codecs.find { c =>
+        c.isInstanceOf[TsUEBACodecGenerator] && service.methods.forall { m =>
+          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+        }
+      }
+    }
 
     private val isBuiltinEither: Boolean = resolved.resultType.contains("BaboonEither")
 
@@ -161,7 +168,7 @@ object TsServiceWiringTranslator {
         }
 
       val uebaFn =
-        binCodec match {
+        activeBinCodec(service) match {
           case Some(codec) => Some(generateNoErrorsUebaFn(service, svcType, codec))
           case None        => None
         }
@@ -271,7 +278,7 @@ object TsServiceWiringTranslator {
         }
 
       val uebaFn =
-        binCodec match {
+        activeBinCodec(service) match {
           case Some(codec) => Some(generateErrorsUebaFn(service, svcType, codec))
           case None        => None
         }

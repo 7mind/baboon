@@ -180,9 +180,9 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
         if (o.pkg == t.pkg || !t.pkg.parts.startsWith(o.pkg.parts)) {
           t.name
         } else {
-          (t.pkg.parts :+ t.name).mkString(".")
+          s"_root_.${(t.pkg.parts :+ t.name).mkString(".")}"
         }
-      case t: ScValue.ScType => (t.pkg.parts :+ t.name).mkString(".")
+      case t: ScValue.ScType => s"_root_.${(t.pkg.parts :+ t.name).mkString(".")}"
     }
   }
 

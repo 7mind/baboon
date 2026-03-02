@@ -173,15 +173,19 @@ class SwJsonCodecGenerator(
         q"$escaped: try ${mkDecoder(f.name.name, f.tpe, q"jsonObj")}"
     }
 
-    val mainEnc = q"""return [
-                     |    ${encFields.joinN().shift(4).trim}
-                     |]""".stripMargin
+    val encodedMap = if (encFields.nonEmpty) {
+      q"""[
+         |    ${encFields.joinN().shift(4).trim}
+         |]""".stripMargin
+    } else {
+      q"[String: Any]()"
+    }
+
+    val mainEnc = q"return $encodedMap"
 
     val encBody = d.id.owner match {
       case Owner.Adt(_) if target.language.wrappedAdtBranchCodecs =>
-        val innerMap = q"""[
-                          |    ${encFields.joinN().shift(4).trim}
-                          |]""".stripMargin
+        val innerMap = encodedMap
         q"""return ${wrapAdtBranchEncoder(d.id.name.name, innerMap)}"""
       case _ => mainEnc
     }

@@ -358,7 +358,7 @@ object ScDefnTranslator {
               val out = m.out.map(trans.asScRef(_, domain, evo))
               val err = m.err.map(trans.asScRef(_, domain, evo))
               val scFqName: ScValue => String = {
-                case t: ScValue.ScType     => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
+                case t: ScValue.ScType     => if (t.predef) t.name else s"_root_.${(t.pkg.parts :+ t.name).mkString(".")}"
                 case t: ScValue.ScTypeName => t.name
               }
               val outStr = out.map(_.mapRender(scFqName)).getOrElse("")

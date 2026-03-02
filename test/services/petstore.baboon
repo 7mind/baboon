@@ -1,0 +1,59 @@
+model petstore.api
+
+version "1.0.0"
+
+enum PetStatus {
+  Available
+  Pending
+  Sold
+}
+
+data Pet {
+  id: i64
+  name: str
+  status: PetStatus
+  tag: opt[str]
+}
+
+root service PetStore {
+  def addPet (
+    data in {
+      name: str
+      status: PetStatus
+      tag: opt[str]
+    }
+
+    data out {
+      pet: Pet
+    }
+  )
+
+  def getPet (
+    data in {
+      id: i64
+    }
+
+    data out {
+      pet: Pet
+    }
+  )
+
+  def listPets (
+    data in {
+    }
+
+    data out {
+      pets: lst[Pet]
+    }
+  )
+
+  def deletePet (
+    data in {
+      id: i64
+    }
+
+    data out {
+      deleted: bit
+    }
+  )
+}

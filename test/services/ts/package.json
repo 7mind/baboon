@@ -1,0 +1,16 @@
+{
+  "name": "baboon-petstore-ts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "server": "tsx src/main.ts server",
+    "client": "tsx src/main.ts client"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "tsx": "~4.19.0",
+    "typescript": "~5.7.0"
+  }
+}
