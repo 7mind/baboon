@@ -45,7 +45,7 @@ object ScServiceWiringTranslator {
 
     private def uebaCodecName(typeId: TypeId.User): ScValue.ScType = {
       val srcRef = trans.toScTypeRefKeepForeigns(typeId, domain, evo)
-      ScValue.ScType(srcRef.pkg, s"${srcRef.name}_BinCodec", fq = srcRef.fq)
+      ScValue.ScType(srcRef.pkg, s"${srcRef.name}_UEBACodec", fq = srcRef.fq)
     }
 
     private def renderContainer(error: String, success: String): String = {

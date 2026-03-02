@@ -171,7 +171,7 @@ class ScUEBACodecGenerator(
         val branchNs   = q"${adt.id.name.name}"
         val branchName = m.name.name
         val fqBranch   = q"$branchNs.$branchName"
-        val cName      = q"${fqBranch}_BinCodec"
+        val cName      = q"${fqBranch}_UEBACodec"
 
         val castedName = branchName.toLowerCase
 
@@ -534,7 +534,7 @@ class ScUEBACodecGenerator(
   }
 
   def codecName(name: ScValue.ScType): ScValue.ScType = {
-    ScValue.ScType(name.pkg, s"${name.name}_BinCodec", name.inObject)
+    ScValue.ScType(name.pkg, s"${name.name}_UEBACodec", name.inObject)
   }
 
   override def codecMeta(defn: DomainMember.User, name: ScValue.ScType): Option[CodecMeta] = {
