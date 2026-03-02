@@ -37,6 +37,21 @@ body {
   color: #e0e0e0;
 }
 
+.header-status {
+  font-size: 13px;
+  color: #888888;
+  font-style: italic;
+}
+
+.header-status-hidden {
+  display: none;
+}
+
+.header-status-error {
+  color: #f48771;
+  font-style: normal;
+}
+
 .header-actions {
   display: flex;
   gap: 8px;
@@ -54,8 +69,13 @@ body {
   font-weight: 500;
 }
 
-.header-btn:hover {
+.header-btn:hover:not(:disabled) {
   background: #505050;
+}
+
+.header-btn:disabled {
+  color: #666666;
+  cursor: not-allowed;
 }
 
 .compile-btn {

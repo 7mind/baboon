@@ -2,7 +2,7 @@ import "./style.css";
 import { registerBaboonLanguage } from "./baboon-language.ts";
 import { BaboonEditor } from "./editor.ts";
 import { Preview } from "./preview.ts";
-import { compile } from "./compiler.ts";
+import { compile, initCompiler } from "./compiler.ts";
 import { OptionsPanel, DEFAULT_OPTIONS } from "./options.ts";
 import type { CompilerOptions } from "./options.ts";
 import { CodecToolsPanel } from "./codec-tools.ts";
@@ -36,6 +36,11 @@ const title = document.createElement("h1");
 title.className = "app-title";
 title.textContent = "Baboon Playground";
 header.appendChild(title);
+
+const headerStatus = document.createElement("span");
+headerStatus.className = "header-status";
+headerStatus.textContent = "Loading compiler\u2026";
+header.appendChild(headerStatus);
 
 const headerActions = document.createElement("div");
 headerActions.className = "header-actions";
@@ -180,4 +185,17 @@ compileBtn.addEventListener("click", async () => {
 window.addEventListener("resize", () => {
   baboonEditor.layout();
   preview.layout();
+});
+
+compileBtn.disabled = true;
+codecsBtn.disabled = true;
+
+initCompiler().then(() => {
+  headerStatus.textContent = "";
+  headerStatus.classList.add("header-status-hidden");
+  compileBtn.disabled = false;
+  codecsBtn.disabled = false;
+}).catch((e) => {
+  headerStatus.textContent = `Compiler load failed: ${e instanceof Error ? e.message : String(e)}`;
+  headerStatus.classList.add("header-status-error");
 });
