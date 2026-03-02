@@ -208,21 +208,24 @@ function installSha256Polyfill(): void {
   }
 }
 
-let compilerInstance: BaboonCompilerAPI | null = null;
+let compilerPromise: Promise<BaboonCompilerAPI> | null = null;
 
-async function getCompiler(): Promise<BaboonCompilerAPI> {
-  if (compilerInstance) {
-    return compilerInstance;
+function getCompiler(): Promise<BaboonCompilerAPI> {
+  if (!compilerPromise) {
+    compilerPromise = (async () => {
+      installSha256Polyfill();
+      const compilerUrl = new URL("./compiler/main.js", document.baseURI).href;
+      const module = await import(/* @vite-ignore */ compilerUrl) as {
+        BaboonCompiler: BaboonCompilerAPI;
+      };
+      return module.BaboonCompiler;
+    })();
   }
+  return compilerPromise;
+}
 
-  installSha256Polyfill();
-
-  const compilerUrl = new URL("./compiler/main.js", document.baseURI).href;
-  const module = await import(/* @vite-ignore */ compilerUrl) as {
-    BaboonCompiler: BaboonCompilerAPI;
-  };
-  compilerInstance = module.BaboonCompiler;
-  return compilerInstance;
+export function initCompiler(): Promise<BaboonCompilerAPI> {
+  return getCompiler();
 }
 
 // The Scala.js compiler API passes all inputs both to the top-level parser
@@ -439,23 +442,19 @@ export async function loadModel(files: Map<string, string>): Promise<BaboonLoade
   return compiler.load(dict);
 }
 
-export function listTypes(model: BaboonLoadedModel): TypeInfo[] {
-  if (!compilerInstance) {
-    throw new Error("Compiler not loaded");
-  }
-  return compilerInstance.listTypes(model);
+export async function listTypes(model: BaboonLoadedModel): Promise<TypeInfo[]> {
+  const compiler = await getCompiler();
+  return compiler.listTypes(model);
 }
 
-export function generateRandom(
+export async function generateRandom(
   model: BaboonLoadedModel,
   pkg: string,
   version: string,
   typeId: string,
-): { success: boolean; json?: string; error?: string } {
-  if (!compilerInstance) {
-    throw new Error("Compiler not loaded");
-  }
-  return compilerInstance.generateRandom(model, pkg, version, typeId);
+): Promise<{ success: boolean; json?: string; error?: string }> {
+  const compiler = await getCompiler();
+  return compiler.generateRandom(model, pkg, version, typeId);
 }
 
 export async function encodeToUeba(
