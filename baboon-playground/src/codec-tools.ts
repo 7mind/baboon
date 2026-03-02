@@ -162,7 +162,7 @@ export class CodecToolsPanel {
 
     try {
       this.model = await loadModel(files);
-      this.types = listTypes(this.model);
+      this.types = await listTypes(this.model);
       this.populateTypeSelector();
       this.setStatus(`Loaded ${this.types.length} types`);
     } catch (e) {
@@ -217,13 +217,13 @@ export class CodecToolsPanel {
     ) ?? null;
   }
 
-  private onGenerate(): void {
+  private async onGenerate(): Promise<void> {
     if (!this.model || !this.selectedType) {
       this.setStatus("No type selected", true);
       return;
     }
 
-    const result = generateRandom(
+    const result = await generateRandom(
       this.model,
       this.selectedType.pkg,
       this.selectedType.version,
