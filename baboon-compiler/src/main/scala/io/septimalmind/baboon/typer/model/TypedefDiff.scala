@@ -8,6 +8,8 @@ object TypedefDiff {
   case class EnumDiff(ops: List[EnumOp]) extends TypedefDiff
   case class DtoDiff(ops: List[DtoOp]) extends TypedefDiff
   case class AdtDiff(ops: List[AdtOp]) extends TypedefDiff
+  case class ServiceDiff(ops: List[ServiceOp]) extends TypedefDiff
+  case class ContractDiff(ops: List[ContractOp]) extends TypedefDiff
 }
 
 sealed trait AbstractOp
@@ -40,4 +42,21 @@ object AdtOp {
   case class AddBranch(id: TypeId.User) extends AdtOp
   case class RemoveBranch(id: TypeId.User) extends AdtOp
   case class KeepBranch(id: TypeId.User, modification: RefModification) extends AdtOp
+}
+
+sealed trait ServiceOp extends AbstractOp
+object ServiceOp {
+  case class AddMethod(m: Typedef.MethodDef) extends ServiceOp
+  case class RemoveMethod(m: Typedef.MethodDef) extends ServiceOp
+  case class KeepMethod(m: Typedef.MethodDef) extends ServiceOp
+}
+
+sealed trait ContractOp extends AbstractOp
+object ContractOp {
+  case class AddField(f: Field) extends ContractOp
+  case class RemoveField(f: Field) extends ContractOp
+  case class KeepField(f: Field) extends ContractOp
+  case class AddContract(id: TypeId.User) extends ContractOp
+  case class RemoveContract(id: TypeId.User) extends ContractOp
+  case class KeepContract(id: TypeId.User) extends ContractOp
 }

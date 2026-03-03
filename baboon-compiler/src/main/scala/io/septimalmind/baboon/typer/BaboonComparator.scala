@@ -280,6 +280,10 @@ object BaboonComparator {
           diffAdts(changes, a1, a2)
         case (d1: Typedef.Dto, d2: Typedef.Dto) =>
           diffDtos(changes, d1, d2)
+        case (s1: Typedef.Service, s2: Typedef.Service) =>
+          diffServices(s1, s2)
+        case (c1: Typedef.Contract, c2: Typedef.Contract) =>
+          diffContracts(c1, c2)
         case (o1, o2) =>
           F.fail(BaboonIssue.of(EvolutionIssue.MismatchingTypedefs(o1, o2)))
       }
@@ -491,6 +495,62 @@ object BaboonComparator {
 
         TypedefDiff.DtoDiff(ops)
       }
+    }
+
+    private def diffServices(
+      s1: Typedef.Service,
+      s2: Typedef.Service,
+    ): F[NEList[BaboonIssue], TypedefDiff] = {
+      val methods1 = s1.methods.map(m => (m.name, m)).toMap
+      val methods2 = s2.methods.map(m => (m.name, m)).toMap
+
+      val names1 = methods1.keySet
+      val names2 = methods2.keySet
+
+      val removedMethods = names1.diff(names2)
+      val addedMethods   = names2.diff(names1)
+      val keptMethods    = names1.intersect(names2)
+
+      val ops = List(
+        removedMethods.map(name => ServiceOp.RemoveMethod(methods1(name))),
+        addedMethods.map(name => ServiceOp.AddMethod(methods2(name))),
+        keptMethods.map(name => ServiceOp.KeepMethod(methods2(name))),
+      ).flatten
+
+      F.pure(TypedefDiff.ServiceDiff(ops))
+    }
+
+    private def diffContracts(
+      c1: Typedef.Contract,
+      c2: Typedef.Contract,
+    ): F[NEList[BaboonIssue], TypedefDiff] = {
+      val fields1 = c1.fields.map(f => (f.name, f)).toMap
+      val fields2 = c2.fields.map(f => (f.name, f)).toMap
+
+      val fieldNames1 = fields1.keySet
+      val fieldNames2 = fields2.keySet
+
+      val removedFields = fieldNames1.diff(fieldNames2)
+      val addedFields   = fieldNames2.diff(fieldNames1)
+      val keptFields    = fieldNames1.intersect(fieldNames2)
+
+      val contracts1 = c1.contracts.toSet
+      val contracts2 = c2.contracts.toSet
+
+      val removedContracts = contracts1.diff(contracts2)
+      val addedContracts   = contracts2.diff(contracts1)
+      val keptContracts    = contracts1.intersect(contracts2)
+
+      val ops = List(
+        removedFields.map(name => ContractOp.RemoveField(fields1(name))),
+        addedFields.map(name => ContractOp.AddField(fields2(name))),
+        keptFields.map(name => ContractOp.KeepField(fields2(name))),
+        removedContracts.map(id => ContractOp.RemoveContract(id)),
+        addedContracts.map(id => ContractOp.AddContract(id)),
+        keptContracts.map(id => ContractOp.KeepContract(id)),
+      ).flatten
+
+      F.pure(TypedefDiff.ContractDiff(ops))
     }
 
     private def figureOutModification(

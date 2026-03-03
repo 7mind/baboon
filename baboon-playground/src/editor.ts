@@ -2,98 +2,136 @@ import * as monaco from "monaco-editor";
 import { BABOON_LANGUAGE_ID } from "./baboon-language.ts";
 
 const DEFAULT_FILES: Record<string, string> = {
-  "models/pkg/shared.bmo": `data Address {
-  street: str
-  city: str
-  zip: str
-  country: str
-}
-
-data Timestamp {
-  created: tsu
-  updated: tsu
-}
-`,
-
-  "models/pkg/v1.baboon": `model example.playground
+  "models/petstore/v1.baboon": `model petstore.api
 version "1.0.0"
 
-include "shared.bmo"
-
-enum Status {
-  Active = 1
-  Inactive = 2
+enum PetStatus {
+  Available
+  Pending
+  Sold
 }
 
-root data User : derived[json] {
-  id: uid
+data Pet {
+  id: i64
   name: str
-  email: str
-  address: Address
-  timestamps: Timestamp
-  status: Status
-  tags: lst[str]
+  status: PetStatus
+  tag: opt[str]
 }
 
-root adt PaymentMethod {
-  data CreditCard {
-    pan: str
-    holder: str
-    expiry: str
-  }
-  data BankTransfer {
-    iban: str
-    bic: str
-  }
-}
+root service PetStore {
+  def addPet (
+    data in {
+      name: str
+      status: PetStatus
+      tag: opt[str]
+    }
+    data out {
+      pet: Pet
+    }
+  )
 
-root data AppConfig {
-  appName: str
-  debug: bit
+  def getPet (
+    data in {
+      id: i64
+    }
+    data out {
+      pet: Pet
+    }
+  )
+
+  def listPets (
+    data in {
+    }
+    data out {
+      pets: lst[Pet]
+    }
+  )
+
+  def deletePet (
+    data in {
+      id: i64
+    }
+    data out {
+      deleted: bit
+    }
+  )
 }
 `,
 
-  "models/pkg/v2.baboon": `model example.playground
+  "models/petstore/v2.baboon": `model petstore.api
 version "2.0.0"
 
-include "shared.bmo"
-
-// Import all types from v1; redefined types below override imported ones,
-// types not redefined (e.g. AppConfig) are preserved unmodified.
 import "1.0.0" { * }
 
-// Evolved types are just redefined in the new version
-enum Status {
-  Active = 1
-  Inactive = 2
-  Suspended = 3
+// New status value
+enum PetStatus {
+  Available
+  Pending
+  Sold
+  Reserved
 }
 
-root data User : derived[json] {
-  id: uid
+// New optional field
+data Pet {
+  id: i64
   name: str
-  email: str
-  address: Address
-  timestamps: Timestamp
-  status: Status
-  phone: opt[str]
-  labels: set[str]
+  status: PetStatus
+  tag: opt[str]
+  category: opt[str]
 }
 
-root adt PaymentMethod {
-  data CreditCard {
-    pan: str
-    holder: str
-    expiry: str
-  }
-  data BankTransfer {
-    iban: str
-    bic: str
-  }
-  data Wallet {
-    provider: str
-    token: str
-  }
+root service PetStore {
+  def addPet (
+    data in {
+      name: str
+      status: PetStatus
+      tag: opt[str]
+      category: opt[str]
+    }
+    data out {
+      pet: Pet
+    }
+  )
+
+  def getPet (
+    data in {
+      id: i64
+    }
+    data out {
+      pet: Pet
+    }
+  )
+
+  def listPets (
+    data in {
+    }
+    data out {
+      pets: lst[Pet]
+    }
+  )
+
+  def deletePet (
+    data in {
+      id: i64
+    }
+    data out {
+      deleted: bit
+    }
+  )
+
+  // New method in v2
+  def updatePet (
+    data in {
+      id: i64
+      name: opt[str]
+      status: opt[PetStatus]
+      tag: opt[str]
+      category: opt[str]
+    }
+    data out {
+      pet: Pet
+    }
+  )
 }
 `,
 };
