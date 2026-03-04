@@ -459,7 +459,7 @@ pub mod time_formats {
 // --- Binary encoding/decoding tools ---
 
 pub mod bin_tools {
-    use chrono::{DateTime, FixedOffset, NaiveDateTime, Offset, TimeZone, Utc};
+    use chrono::{DateTime, FixedOffset, Offset, Utc};
     use rust_decimal::Decimal;
     use std::io::{Read, Write};
     use uuid::Uuid;

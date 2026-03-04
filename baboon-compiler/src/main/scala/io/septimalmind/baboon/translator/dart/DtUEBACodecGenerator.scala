@@ -169,7 +169,7 @@ class DtUEBACodecGenerator(
         }
 
         val decBody = if (target.language.wrappedAdtBranchCodecs) {
-          q"""return ($cName.instance as $cName).decodeBranch(ctx, reader);"""
+          q"""return $cName.instance.decodeBranch(ctx, reader);"""
         } else {
           q"""return $cName.instance.decode(ctx, reader);"""
         }

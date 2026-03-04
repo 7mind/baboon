@@ -137,6 +137,13 @@ class RsConversionTranslator[F[+_, +_]: Error2](
               case _                                          => throw new IllegalStateException("DTO expected")
             }
             val ops = c.ops.map(o => o.targetField -> o).toMap
+            val usesFrom = dto.fields.exists { f =>
+              ops(f) match {
+                case _: FieldOp.InitializeWithDefault => false
+                case _                                => true
+              }
+            }
+            val fromParam = if (usesFrom) "from" else "_from"
             val assigns = dto.fields.map {
               f =>
                 val op  = ops(f)
@@ -189,7 +196,7 @@ class RsConversionTranslator[F[+_, +_]: Error2](
             List(
               RsRenderedConversion(
                 fname,
-                q"""pub fn $fnName(from: &$tin) -> $tout {
+                q"""pub fn $fnName($fromParam: &$tin) -> $tout {
                    |    $tout {
                    |        ${assigns.joinN().shift(8).trim}
                    |    }

@@ -1,6 +1,7 @@
 name: dt_stub
 description: Baboon Dart test stub
 version: 0.0.1
+publish_to: none
 
 environment:
   sdk: ^3.0.0

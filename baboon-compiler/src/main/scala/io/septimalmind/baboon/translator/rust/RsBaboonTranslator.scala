@@ -297,9 +297,7 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       .sorted
 
     val allows = List(
-      q"#![allow(dead_code)]",
       q"#![allow(unused_imports)]",
-      q"#![allow(unused_variables)]",
       q"#![allow(non_camel_case_types)]",
       q"#![allow(non_snake_case)]",
     )
