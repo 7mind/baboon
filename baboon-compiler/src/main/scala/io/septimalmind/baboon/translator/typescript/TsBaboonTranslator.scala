@@ -173,14 +173,17 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       .filterNot(_.predef)
       .distinct
 
+    val aliasMap = buildAliasMap(usedTypes)
+
     val typesByModule = usedTypes.groupBy(_.moduleId).toList.sortBy { case (moduleId, types) => moduleId.path.size + types.size }.reverse
 
     val importsByModule =
       typesByModule.map {
         case (moduleId, types) =>
           val typesString = types.map {
-            case TsType(_, name, Some(alias), _) => s"$name as $alias"
-            case t: TsValue.TsType               => t.name
+            case t if aliasMap.contains(t)          => s"${t.name} as ${aliasMap(t)}"
+            case TsType(_, name, Some(alias), _)    => s"$name as $alias"
+            case t: TsValue.TsType                  => t.name
           }.mkString(", ")
           if (moduleId.path.startsWith(tsFileTools.definitionsBasePkg)) {
             definitionImport(moduleId, typesString)
@@ -198,8 +201,25 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     val full = Seq(allImports, o.tree).joinNN()
 
     full.mapRender {
-      case TsValue.TsType(_, _, Some(alias), _) => alias
-      case t: TsValue.TsType                    => t.name
+      case t: TsValue.TsType if aliasMap.contains(t) => aliasMap(t)
+      case TsValue.TsType(_, _, Some(alias), _)      => alias
+      case t: TsValue.TsType                         => t.name
+    }
+  }
+
+  private def buildAliasMap(usedTypes: Seq[TsType]): Map[TsType, String] = {
+    val conflicting = usedTypes.groupBy(_.name).filter(_._2.size > 1)
+    conflicting.flatMap {
+      case (name, group) =>
+        val paths      = group.map(t => t -> t.moduleId.path)
+        val commonLen  = paths.map(_._2).reduce((a, b) => a.zip(b).takeWhile { case (x, y) => x == y }.map(_._1)).size
+        paths.map {
+          case (t, path) =>
+            val distinguishing = path.drop(commonLen).dropRight(1)
+            val prefix = if (distinguishing.nonEmpty) distinguishing.mkString("_")
+                         else path.dropRight(1).lastOption.getOrElse("m")
+            t -> s"${prefix}_$name"
+        }
     }
   }
 

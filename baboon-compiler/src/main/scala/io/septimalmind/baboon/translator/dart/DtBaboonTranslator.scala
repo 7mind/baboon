@@ -157,38 +157,78 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def renderTree(o: DtDefnTranslator.Output): String = {
+    if (o.doNotModify) {
+      return o.tree.mapRender {
+        case t: DtValue.DtTypeName => trans.escapeDartKeyword(t.name)
+        case t: DtValue.DtType if t.fq =>
+          (t.pkg.parts :+ trans.escapeDartKeyword(t.name)).mkString(".")
+        case t: DtValue.DtType =>
+          trans.escapeDartKeyword(t.name)
+      }
+    }
+
+    val currentFileName = o.path.split('/').last.stripSuffix(".dart")
+    val usedTypes = o.tree.values.collect { case t: DtValue.DtType => t }.distinct
+      .filterNot(_.predef)
+      .filterNot(_.fq)
+      .sortBy(_.toString)
+
+    val filePrefixMap = buildFilePrefixMap(usedTypes)
+
     val rendered = o.tree.mapRender {
       case t: DtValue.DtTypeName => trans.escapeDartKeyword(t.name)
       case t: DtValue.DtType if t.fq =>
         (t.pkg.parts :+ trans.escapeDartKeyword(t.name)).mkString(".")
       case t: DtValue.DtType =>
-        trans.escapeDartKeyword(t.name)
+        filePrefixMap.get(dtFileKey(t)) match {
+          case Some(prefix) => s"$prefix.${trans.escapeDartKeyword(t.name)}"
+          case None         => trans.escapeDartKeyword(t.name)
+        }
     }
 
-    if (o.doNotModify) {
+    val importLines = usedTypes.flatMap {
+      p =>
+        resolveImport(p, o.module, currentFileName, filePrefixMap)
+    }.distinct.sorted
+
+    if (importLines.isEmpty) {
       rendered
     } else {
-      val currentFileName = o.path.split('/').last.stripSuffix(".dart")
-      val usedTypes = o.tree.values.collect { case t: DtValue.DtType => t }.distinct
-        .filterNot(_.predef)
-        .filterNot(_.fq)
-        .sortBy(_.toString)
-
-      val importLines = usedTypes.flatMap {
-        p =>
-          resolveImport(p, o.module, currentFileName)
-      }.distinct.sorted
-
-      if (importLines.isEmpty) {
-        rendered
-      } else {
-        val importsBlock = importLines.mkString("\n")
-        s"$importsBlock\n\n$rendered"
-      }
+      val importsBlock = importLines.mkString("\n")
+      s"$importsBlock\n\n$rendered"
     }
   }
 
-  private def resolveImport(t: DtValue.DtType, currentModule: DtValue.DtPackageId, currentFileName: String): Option[String] = {
+  private def dtFileKey(t: DtValue.DtType): String = {
+    val fileName = t.importAs.getOrElse(trans.toSnakeCase(t.name))
+    s"${t.pkg.parts.toList.mkString("/")}/$fileName"
+  }
+
+  private def buildFilePrefixMap(usedTypes: Seq[DtValue.DtType]): Map[String, String] = {
+    val nameConflicts = usedTypes
+      .groupBy(t => trans.escapeDartKeyword(t.name))
+      .filter(_._2.size > 1)
+      .keySet
+
+    val conflictingFileKeys = usedTypes
+      .filter(t => nameConflicts.contains(trans.escapeDartKeyword(t.name)))
+      .map(dtFileKey)
+      .distinct
+
+    conflictingFileKeys.map {
+      key =>
+        val parts  = key.split('/').filter(_.nonEmpty)
+        val prefix = parts.takeRight(2).mkString("_")
+        key -> prefix
+    }.toMap
+  }
+
+  private def resolveImport(
+    t: DtValue.DtType,
+    currentModule: DtValue.DtPackageId,
+    currentFileName: String,
+    filePrefixMap: Map[String, String],
+  ): Option[String] = {
     if (t.pkg == baboonRuntimePkg) {
       Some("import 'package:baboon_runtime/baboon_runtime.dart';")
     } else if (t.pkg == baboonFixturePkg) {
@@ -203,15 +243,16 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
       val typePath    = t.pkg.parts.toList.mkString("/")
       val fileName    = t.importAs.getOrElse(trans.toSnakeCase(t.name))
       val currentPath = currentModule.parts.toList.mkString("/")
+      val asClause    = filePrefixMap.get(dtFileKey(t)).map(p => s" as $p").getOrElse("")
       if (typePath == currentPath) {
         if (fileName == currentFileName) {
           None // Skip self-import
         } else {
-          Some(s"import '$fileName.dart';")
+          Some(s"import '$fileName.dart'$asClause;")
         }
       } else {
         val relativePath = makeRelativePath(currentPath, s"$typePath/$fileName.dart")
-        Some(s"import '$relativePath';")
+        Some(s"import '$relativePath'$asClause;")
       }
     }
   }
