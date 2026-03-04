@@ -164,13 +164,13 @@ package baboon.runtime.shared {
     private val TYPE_IDENTIFIER_KEY           = "$t"
 
     def writeBin(meta: BaboonTypeMeta, writer: LEDataOutputStream): Unit = {
-      writer.write(META_VERSION_1)
+      writer.write(META_VERSION_1.toInt)
       BaboonBinTools.writeString(writer, meta.domainIdentifier)
       BaboonBinTools.writeString(writer, meta.domainVersion)
       if (meta.domainVersion == meta.domainVersionMinCompat) {
-        writer.write(0.toByte)
+        writer.write(0)
       } else {
-        writer.write(1.toByte)
+        writer.write(1)
         BaboonBinTools.writeString(writer, meta.domainVersionMinCompat)
       }
       BaboonBinTools.writeString(writer, meta.typeIdentifier)

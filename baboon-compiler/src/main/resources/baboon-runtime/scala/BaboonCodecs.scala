@@ -193,7 +193,7 @@ package baboon.runtime.shared {
     private val registry = mutable.Map.empty[String, Lazy[BaboonCodecData]]
 
     def register(id: String, codec: Lazy[BaboonCodecData]): Unit = {
-      registry.put(id, codec)
+      val _ = registry.put(id, codec)
     }
 
     def find(id: String): Lazy[BaboonCodecData] = {

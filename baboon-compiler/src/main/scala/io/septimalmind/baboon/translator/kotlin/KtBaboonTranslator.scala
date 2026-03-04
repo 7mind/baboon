@@ -269,12 +269,16 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
       val conversionRegs = convs.flatMap(_.reg.iterator.toSeq).toSeq
       val missing        = convs.flatMap(_.missing.iterator.toSeq).toSeq
 
+      val traitSuppress = if (missing.nonEmpty) "@Suppress(\"DEPRECATION\") " else ""
+      val classSuppress = if (conversionRegs.nonEmpty) "@Suppress(\"DEPRECATION\") " else ""
+      val isLatestVersion = domain.version == lineage.evolution.latest
+      val codecSuppress   = if (!isLatestVersion) "@Suppress(\"DEPRECATION\") " else ""
       val converter =
-        q"""interface RequiredConversions {
+        q"""${traitSuppress}interface RequiredConversions {
            |    ${missing.joinN().shift(4).trim}
            |}
            |
-           |class BaboonConversions(private val required: RequiredConversions) : $baboonAbstractConversions() {
+           |${classSuppress}class BaboonConversions(private val required: RequiredConversions) : $baboonAbstractConversions() {
            |    init {
            |      ${conversionRegs.joinN().shift(6).trim}
            |    }
@@ -288,7 +292,7 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
 
       val codecs = regsMap.map {
         case (codecId, regs) =>
-          q"""object BaboonCodecs${codecId.capitalize} : ${abstractBaboonCodec(codecId)}() {
+          q"""${codecSuppress}object BaboonCodecs${codecId.capitalize} : ${abstractBaboonCodec(codecId)}() {
              |  init {
              |    ${regs.toList.map(c => q"register($c)").joinN().shift(4).trim}
              |  }

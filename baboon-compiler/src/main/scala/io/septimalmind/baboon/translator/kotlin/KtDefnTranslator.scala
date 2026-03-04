@@ -182,7 +182,7 @@ object KtDefnTranslator {
         if (isLatestVersion || tree.isEmpty) {
           tree
         } else {
-          q"""@Deprecated("Version ${domain.version.v.toString} is deprecated, you should migrate to ${evo.latest.v.toString}")
+          q"""@Suppress("DEPRECATION") @Deprecated("Version ${domain.version.v.toString} is deprecated, you should migrate to ${evo.latest.v.toString}")
              |$tree""".stripMargin
         }
       }
@@ -231,7 +231,9 @@ object KtDefnTranslator {
     ): DefnRepr = {
       val genMarker = if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
       val mainMeta  = ktDomainTreeTools.makeDataMeta(defn)
-      val codecMeta = codecs.flatMap(_.codecMeta(defn, name).map(_.member))
+      val codecMeta = codecs.flatMap(_.codecMeta(defn, name).map(_.member)).map {
+        m => if (isLatestVersion) m else q"""@Suppress("DEPRECATION") $m"""
+      }
 
       defn.defn match {
         case dto: Typedef.Dto =>

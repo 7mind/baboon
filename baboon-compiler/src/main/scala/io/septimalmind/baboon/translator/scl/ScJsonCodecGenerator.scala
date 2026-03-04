@@ -221,9 +221,10 @@ class ScJsonCodecGenerator(
            |""".stripMargin
       } else q"Right($name())"
 
+    val jsonObjectPattern = if (d.fields.nonEmpty) "jsonObject" else "_"
     val decBody =
       q"""wire.asObject match {
-         |  case Some(jsonObject) => ${decoderForExpr.shift(4).trim}
+         |  case Some($jsonObjectPattern) => ${decoderForExpr.shift(4).trim}
          |  case _ => Left(new $javaIllegalArgumentException("Cannot decode $$wire to ${name.name}: object expected"))
          |}
          |""".stripMargin

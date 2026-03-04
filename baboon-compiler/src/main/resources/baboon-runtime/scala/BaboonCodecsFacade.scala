@@ -29,11 +29,11 @@ package baboon.runtime.shared {
     }
 
     def register(facade: BaboonCodecsFacade): Unit = {
-      facade.domainVersions.foreach { case (id, versions) => domainVersions.put(id, versions) }
-      facade.versionsCodecsJson.foreach { case (id, codec) => versionsCodecsJson.put(id, codec) }
-      facade.versionsCodecsBin.foreach { case (id, codec) => versionsCodecsBin.put(id, codec) }
-      facade.versionsConversions.foreach { case (id, conversion) => versionsConversions.put(id, conversion) }
-      facade.versionsMeta.foreach { case (id, meta) => versionsMeta.put(id, meta) }
+      facade.domainVersions.foreach { case (id, versions) => val _ = domainVersions.put(id, versions) }
+      facade.versionsCodecsJson.foreach { case (id, codec) => val _ = versionsCodecsJson.put(id, codec) }
+      facade.versionsCodecsBin.foreach { case (id, codec) => val _ = versionsCodecsBin.put(id, codec) }
+      facade.versionsConversions.foreach { case (id, conversion) => val _ = versionsConversions.put(id, conversion) }
+      facade.versionsMeta.foreach { case (id, meta) => val _ = versionsMeta.put(id, meta) }
     }
 
     def register(
@@ -44,10 +44,10 @@ package baboon.runtime.shared {
       meta: => BaboonMeta,
     ): BaboonDomainVersion = {
       register(domainVersion)
-      versionsCodecsJson.put(domainVersion, Lazy(codecsJson))
-      versionsCodecsBin.put(domainVersion, Lazy(codecsBin))
-      versionsConversions.put(domainVersion, Lazy(conversions))
-      versionsMeta.put(domainVersion, Lazy(meta))
+      val _ = versionsCodecsJson.put(domainVersion, Lazy(codecsJson))
+      val _ = versionsCodecsBin.put(domainVersion, Lazy(codecsBin))
+      val _ = versionsConversions.put(domainVersion, Lazy(conversions))
+      val _ = versionsMeta.put(domainVersion, Lazy(meta))
       domainVersion
     }
 
@@ -57,8 +57,8 @@ package baboon.runtime.shared {
       codecsBin: => AbstractBaboonUebaCodecs,
     ): BaboonDomainVersion = {
       register(domainVersion)
-      versionsCodecsJson.put(domainVersion, Lazy(codecsJson))
-      versionsCodecsBin.put(domainVersion, Lazy(codecsBin))
+      val _ = versionsCodecsJson.put(domainVersion, Lazy(codecsJson))
+      val _ = versionsCodecsBin.put(domainVersion, Lazy(codecsBin))
       domainVersion
     }
 
@@ -69,9 +69,9 @@ package baboon.runtime.shared {
       meta: => BaboonMeta,
     ): BaboonDomainVersion = {
       register(domainVersion)
-      versionsCodecsJson.put(domainVersion, Lazy(codecsJson))
-      versionsCodecsBin.put(domainVersion, Lazy(codecsBin))
-      versionsMeta.put(domainVersion, Lazy(meta))
+      val _ = versionsCodecsJson.put(domainVersion, Lazy(codecsJson))
+      val _ = versionsCodecsBin.put(domainVersion, Lazy(codecsBin))
+      val _ = versionsMeta.put(domainVersion, Lazy(meta))
       domainVersion
     }
 
@@ -80,7 +80,7 @@ package baboon.runtime.shared {
       conversions: => AbstractBaboonConversions,
     ): BaboonDomainVersion = {
       register(domainVersion)
-      versionsConversions.put(domainVersion, Lazy(conversions))
+      val _ = versionsConversions.put(domainVersion, Lazy(conversions))
       domainVersion
     }
 
@@ -90,7 +90,7 @@ package baboon.runtime.shared {
     )(implicit d: DummyImplicit
     ): BaboonDomainVersion = {
       register(domainVersion)
-      versionsMeta.put(domainVersion, Lazy(meta))
+      val _ = versionsMeta.put(domainVersion, Lazy(meta))
       domainVersion
     }
 
@@ -98,7 +98,7 @@ package baboon.runtime.shared {
       Future {
         versionsCodecsJson.values.foreach(_.value)
         versionsCodecsBin.values.foreach(_.value)
-      }.recover(_ => ())
+      }.recover(_ => ()): @scala.annotation.nowarn("cat=w-flag-value-discard")
     }
 
     def verify(): Unit = {
@@ -425,7 +425,7 @@ package baboon.runtime.shared {
     }
 
     private def register(domainVersion: BaboonDomainVersion): BaboonDomainVersion = {
-      domainVersions
+      val _ = domainVersions
         .updateWith(domainVersion.domainIdentifier) {
           case Some(versions) => Some(if (versions.contains(domainVersion)) versions else versions.appended(domainVersion).sortBy(_.version))
           case None           => Some(List(domainVersion))
