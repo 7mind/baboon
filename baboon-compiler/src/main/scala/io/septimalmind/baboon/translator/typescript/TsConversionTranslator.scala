@@ -197,7 +197,7 @@ class TsConversionTranslator[F[+_, +_]: Error2](
                 fname,
                 q"""export function $fnName(from: $tin): $tout {
                    |    return new $tout (
-                   |        ${assigns.joinN().shift(8).trim}
+                   |        ${assigns.join(",\n").shift(8).trim}
                    |    )
                    |}""".stripMargin,
                 Some(q"$fnName"),

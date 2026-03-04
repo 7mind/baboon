@@ -51,7 +51,8 @@ object RsCodecTestsTranslator {
           case _: RsJsonCodecGenerator =>
             val jsonRoundTrip = definition.defn match {
               case _: Typedef.Adt =>
-                q"""let fixtures = super::${fixtureMethod}_all(&mut rnd);
+                q"""let mut rnd = crate::baboon_fixture::BaboonRandom::new();
+                   |let fixtures = super::${fixtureMethod}_all(&mut rnd);
                    |for fixture in fixtures {
                    |    let json = serde_json::to_value(&fixture).expect("JSON encode failed");
                    |    let decoded: $srcRef = serde_json::from_value(json.clone()).expect("JSON decode failed");
@@ -64,7 +65,8 @@ object RsCodecTestsTranslator {
                    |    assert_eq!(fixture, decoded);
                    |}""".stripMargin
               case _ =>
-                q"""let fixture = super::$fixtureMethod(&mut rnd);
+                q"""let mut rnd = crate::baboon_fixture::BaboonRandom::new();
+                   |let fixture = super::$fixtureMethod(&mut rnd);
                    |let json = serde_json::to_value(&fixture).expect("JSON encode failed");
                    |let decoded: $srcRef = serde_json::from_value(json.clone()).expect("JSON decode failed");
                    |assert_eq!(fixture, decoded);""".stripMargin
@@ -73,7 +75,6 @@ object RsCodecTestsTranslator {
             q"""#[test]
                |fn test_${testFnName}_json_codec() {
                |    for _ in 0..${target.generic.codecTestIterations.toString} {
-               |        let mut rnd = crate::baboon_fixture::BaboonRandom::new();
                |        ${jsonRoundTrip.shift(8).trim}
                |    }
                |}
@@ -100,7 +101,8 @@ object RsCodecTestsTranslator {
           case _: RsUEBACodecGenerator =>
             val uebaRoundTrip = definition.defn match {
               case _: Typedef.Adt =>
-                q"""let fixtures = super::${fixtureMethod}_all(&mut rnd);
+                q"""let mut rnd = crate::baboon_fixture::BaboonRandom::new();
+                   |let fixtures = super::${fixtureMethod}_all(&mut rnd);
                    |for fixture in fixtures {
                    |    let mut buf = Vec::new();
                    |    crate::baboon_runtime::BaboonBinEncode::encode_ueba(&fixture, &ctx, &mut buf).expect("UEBA encode failed");
@@ -117,7 +119,8 @@ object RsCodecTestsTranslator {
                    |    assert_eq!(fixture, decoded);
                    |}""".stripMargin
               case _ =>
-                q"""let fixture = super::$fixtureMethod(&mut rnd);
+                q"""let mut rnd = crate::baboon_fixture::BaboonRandom::new();
+                   |let fixture = super::$fixtureMethod(&mut rnd);
                    |let mut buf = Vec::new();
                    |crate::baboon_runtime::BaboonBinEncode::encode_ueba(&fixture, &ctx, &mut buf).expect("UEBA encode failed");
                    |let mut cursor = std::io::Cursor::new(&buf);
@@ -129,7 +132,6 @@ object RsCodecTestsTranslator {
                |fn test_${testFnName}_ueba_codec() {
                |    let ctx = crate::baboon_runtime::BaboonCodecContext::Default;
                |    for _ in 0..${target.generic.codecTestIterations.toString} {
-               |        let mut rnd = crate::baboon_fixture::BaboonRandom::new();
                |        ${uebaRoundTrip.shift(8).trim}
                |    }
                |}""".stripMargin

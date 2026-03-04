@@ -165,7 +165,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
 
         val rendered = conv match {
           case _: Conversion.CustomConversionRequired =>
-            val classDef = q"""|abstract class $className
+            val classDef = q"""|@Suppress("DEPRECATION") abstract class $className
                                |  : $baboonAbstractConversion<$tin, $tout>($tin::class.java, $tout::class.java) {
                                |    abstract override fun <C> doConvert(
                                |      context: C?,
@@ -199,7 +199,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
                 val mappingLiteral = s"mapOf(${mappingEntries.mkString(", ")})"
                 q"$mappingLiteral.getOrDefault(from.name, from.name)"
               }
-            val classDef = q"""|object $className
+            val classDef = q"""|@Suppress("DEPRECATION") object $className
                                |  : $baboonAbstractConversion<$tin, $tout>($tin::class.java, $tout::class.java) {
                                |    override fun <C> doConvert(
                                |      context: C?,
@@ -221,7 +221,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
             } :+ q"else -> throw $javaIllegalArgumentException(\"Bad input: \" + from)"
 
             val classDef = q"""
-                              |object $className
+                              |@Suppress("DEPRECATION") object $className
                               |  : $baboonAbstractConversion<$tin, $tout>($tin::class.java, $tout::class.java) {
                               |    override fun <C> doConvert(
                               |      context: C?,
@@ -262,15 +262,24 @@ class KtConversionTranslator[F[+_, +_]: Error2](
                       case _ => throw new IllegalStateException("Unsupported target field type")
                     }
 
-                  case _: FieldOp.WrapIntoCollection => q"listOf(_from.$fld) as ${trans.asKtRef(f.tpe, domain, evo)}"
+                  case w: FieldOp.WrapIntoCollection =>
+                    w.targetField.tpe match {
+                      case TypeRef.Constructor(TypeId.Builtins.set, _) => q"setOf(_from.$fld)"
+                      case TypeRef.Constructor(TypeId.Builtins.opt, _) => q"_from.$fld"
+                      case _                                           => q"listOf(_from.$fld)"
+                    }
                   case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"_from.$fld", 1, Some(o.oldTpe))
                   case o: FieldOp.SwapCollectionType => swapCollType(q"_from.$fld", o, 0)
                   case o: FieldOp.Rename             => transfer(o.targetField.tpe, q"_from.${o.sourceFieldName.name}", 1)
                   case o: FieldOp.Redef =>
                     val srcFieldRef = q"_from.${o.sourceFieldName.name}"
                     o.modify match {
-                      case _: FieldOp.WrapIntoCollection =>
-                        q"listOf($srcFieldRef) as ${trans.asKtRef(f.tpe, domain, evo)}"
+                      case w: FieldOp.WrapIntoCollection =>
+                        w.targetField.tpe match {
+                          case TypeRef.Constructor(TypeId.Builtins.set, _) => q"setOf($srcFieldRef)"
+                          case TypeRef.Constructor(TypeId.Builtins.opt, _) => srcFieldRef
+                          case _                                           => q"listOf($srcFieldRef)"
+                        }
                       case m: FieldOp.ExpandPrecision =>
                         transfer(m.newTpe, srcFieldRef, 1, Some(m.oldTpe))
                       case m: FieldOp.SwapCollectionType =>
@@ -281,7 +290,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
             }
             val ctorArgs = dto.fields.map(f => q"${f.name.name} = ${f.name.name.toLowerCase}")
             val classDef = q"""
-                              |object $className
+                              |@Suppress("DEPRECATION") object $className
                               |  : $baboonAbstractConversion<$tin, $tout>($tin::class.java, $tout::class.java) {
                               |    override fun <C> doConvert(
                               |      context: C?,

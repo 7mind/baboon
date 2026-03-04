@@ -161,6 +161,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       .filterNot(_.fq)
       .filterNot(_.pkg == o.pkg)
       .filterNot(t => t.pkg.parts.startsWith(o.pkg.parts))
+      .filterNot(_.name.contains('.'))
       .sortBy(_.toString)
 
     val imports = usedTypes.map(p => q"import ${p.pkg.parts.mkString(".")}.${p.name}").joinN()
@@ -243,12 +244,15 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       val conversionRegs = convs.flatMap(_.reg.iterator.toSeq).toSeq
       val missing        = convs.flatMap(_.missing.iterator.toSeq).toSeq
 
+      val requiredParamAnnotation = if (missing.isEmpty) "@scala.annotation.nowarn(\"msg=never used\") " else ""
+      val traitNowarn             = if (missing.nonEmpty) "@scala.annotation.nowarn(\"cat=deprecation\") " else ""
+      val classNowarn             = if (conversionRegs.nonEmpty) "@scala.annotation.nowarn(\"cat=deprecation\") " else ""
       val converter =
-        q"""trait RequiredConversions {
+        q"""${traitNowarn}trait RequiredConversions {
            |    ${missing.joinN().shift(4).trim}
            |}
            |
-           |class BaboonConversions(required: RequiredConversions) extends $baboonAbstractConversions {
+           |${classNowarn}class BaboonConversions(${requiredParamAnnotation}required: RequiredConversions) extends $baboonAbstractConversions {
            |    ${conversionRegs.joinN().shift(4).trim}
            |
            |    override def versionsFrom: $scList[$scString] = $scList(${toCurrent.map(_.from.v.toString).map(v => s"\"$v\"").mkString(", ")})
@@ -258,9 +262,11 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       import izumi.fundamentals.collections.IzCollections.*
       val regsMap = defnOut.flatMap(_.codecReg).toMultimap.view.mapValues(_.flatten).toMap
 
+      val isLatestVersion        = domain.version == lineage.evolution.latest
+      val deprecationAnnotation  = if (isLatestVersion) q"" else q"""@scala.annotation.nowarn("cat=deprecation") """
       val codecs = regsMap.map {
         case (codecId, regs) =>
-          q"""object BaboonCodecs${codecId.capitalize} extends ${abstractBaboonCodec(codecId)}{
+          q"""${deprecationAnnotation}object BaboonCodecs${codecId.capitalize} extends ${abstractBaboonCodec(codecId)}{
              |  ${regs.toList.map(c => q"register($c)").joinN().shift(2).trim}
              |}""".stripMargin
       }.toList.joinNN()

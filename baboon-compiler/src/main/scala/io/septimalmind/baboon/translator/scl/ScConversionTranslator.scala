@@ -145,7 +145,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
 
         val rendered = conv match {
           case _: Conversion.CustomConversionRequired =>
-            val classDef = q"""|abstract class $className
+            val classDef = q"""|@scala.annotation.nowarn("cat=deprecation") abstract class $className
                                |  extends $baboonAbstractConversion[$tin, $tout] {
                                |    def doConvert[C](
                                |      context: $scOption[C],
@@ -179,7 +179,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
                 val mappingLiteral = s"Map(${mappingEntries.mkString(", ")})"
                 q"$mappingLiteral.getOrElse(from.toString, from.toString)"
               }
-            val classDef = q"""|object $className
+            val classDef = q"""|@scala.annotation.nowarn("cat=deprecation") object $className
                                |  extends $baboonAbstractConversion[$tin, $tout] {
                                |    override def doConvert[C](
                                |      context: $scOption[C],
@@ -201,7 +201,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             } :+ q"case other => throw new $javaIllegalArgumentException(s\"Bad input: $$other\")"
 
             val classDef = q"""
-                              |object $className
+                              |@scala.annotation.nowarn("cat=deprecation") object $className
                               |  extends $baboonAbstractConversion[$tin, $tout] {
                               |    override def doConvert[C](
                               |      context: $scOption[C],
@@ -247,7 +247,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
                     }
 
                   case _: FieldOp.WrapIntoCollection => q"$scList(_from.$fld).asInstanceOf[${trans.asScRef(f.tpe, domain, evo)}]"
-                  case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"_from.$fld", 1)
+                  case o: FieldOp.ExpandPrecision    => transfer(o.newTpe, q"_from.$fld", 1, Some(o.oldTpe))
                   case o: FieldOp.SwapCollectionType => swapCollType(q"_from.$fld", o, 0)
                   case o: FieldOp.Rename             => transfer(o.targetField.tpe, q"_from.${o.sourceFieldName.name}", 1)
                   case o: FieldOp.Redef =>
@@ -256,7 +256,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
                       case _: FieldOp.WrapIntoCollection =>
                         q"$scList($srcFieldRef).asInstanceOf[${trans.asScRef(f.tpe, domain, evo)}]"
                       case m: FieldOp.ExpandPrecision =>
-                        transfer(m.newTpe, srcFieldRef, 1)
+                        transfer(m.newTpe, srcFieldRef, 1, Some(m.oldTpe))
                       case m: FieldOp.SwapCollectionType =>
                         swapCollType(srcFieldRef, m, 0)
                     }
@@ -265,7 +265,7 @@ class ScConversionTranslator[F[+_, +_]: Error2](
             }
             val ctorArgs = dto.fields.map(f => q"${f.name.name.toLowerCase}")
             val classDef = q"""
-                              |object $className
+                              |@scala.annotation.nowarn("cat=deprecation") object $className
                               |  extends $baboonAbstractConversion[$tin, $tout] {
                               |    override def doConvert[C](
                               |      context: $scOption[C],

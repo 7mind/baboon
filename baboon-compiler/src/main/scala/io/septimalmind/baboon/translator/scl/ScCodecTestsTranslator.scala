@@ -40,7 +40,7 @@ object ScCodecTestsTranslator {
         case _ if !isLatestVersion                                      => None
         case _ =>
           val testClass =
-            q"""class ${srcRef.name}_tests extends $anyFlatSpec {
+            q"""@scala.annotation.nowarn("cat=w-flag-value-discard") class ${srcRef.name}_tests extends $anyFlatSpec {
                |  ${makeTest(definition, srcRef)}
                |}
                |""".stripMargin

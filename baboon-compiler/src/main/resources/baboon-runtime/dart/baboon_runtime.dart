@@ -676,21 +676,25 @@ class BaboonDateTimeOffset {
 // --- Conversions ---
 
 abstract class AbstractConversion<F, T> {
-  T convert(F from);
+  T doConvert(dynamic context, AbstractBaboonConversions conversions, F from);
+  String get versionFrom;
+  String get versionTo;
+  String get typeId;
 }
 
 abstract class AbstractBaboonConversions {
-  final Map<String, Function> _registry = {};
+  final Map<String, AbstractConversion> _registry = {};
 
-  void register(String typeId, Function factory) {
-    _registry[typeId] = factory;
+  void register(AbstractConversion conversion) {
+    _registry[conversion.typeId] = conversion;
   }
 
-  T? convertIfPresent<F, T>(String typeId, F from) {
-    final factory = _registry[typeId];
-    if (factory == null) return null;
-    final conversion = factory() as AbstractConversion<F, T>;
-    return conversion.convert(from);
+  dynamic convertWithContext(dynamic context, dynamic from, String fromTypeId, String toTypeId) {
+    final conversion = _registry[fromTypeId];
+    if (conversion == null) {
+      throw ArgumentError('No conversion registered for typeId: $fromTypeId');
+    }
+    return conversion.doConvert(context, this, from);
   }
 
   List<String> get versionsFrom;

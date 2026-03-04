@@ -229,7 +229,9 @@ object ScDefnTranslator {
     ): DefnRepr = {
       val genMarker = if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
       val mainMeta  = scDomainTreeTools.makeDataMeta(defn)
-      val codecMeta = codecs.flatMap(_.codecMeta(defn, name).map(_.member))
+      val codecMeta = codecs.flatMap(_.codecMeta(defn, name).map(_.member)).map {
+        m => if (isLatestVersion) m else q"""@scala.annotation.nowarn("cat=deprecation") $m"""
+      }
 
       defn.defn match {
         case dto: Typedef.Dto =>

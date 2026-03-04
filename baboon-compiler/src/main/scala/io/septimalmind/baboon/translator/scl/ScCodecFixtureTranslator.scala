@@ -21,6 +21,10 @@ object ScCodecFixtureTranslator {
     domain: Domain,
     evo: BaboonEvolution,
   ) extends ScCodecFixtureTranslator {
+    private val isLatestVersion = domain.version == evo.latest
+    private val deprecationNowarn: TextTree[ScValue] =
+      if (isLatestVersion) q""
+      else q"""@scala.annotation.nowarn("cat=deprecation") """
 
     override def translate(
       definition: DomainMember.User
@@ -80,13 +84,20 @@ object ScCodecFixtureTranslator {
       val generatedFields = dto.fields.map(f => genType(f.tpe))
       val fullType        = translator.toScTypeRefKeepForeigns(dto.id, domain, evo)
 
-      q"""object ${fixtureTpe(dto.id)} {
-         |  def random(rnd: $baboonRandom): $fullType =
-         |    $fullType(
-         |      ${generatedFields.join(",\n").shift(6).trim}
-         |    )
-         |}
-         |""".stripMargin
+      if (dto.fields.isEmpty) {
+        q"""${deprecationNowarn}object ${fixtureTpe(dto.id)} {
+           |  @scala.annotation.nowarn("msg=never used") def random(rnd: $baboonRandom): $fullType = $fullType()
+           |}
+           |""".stripMargin
+      } else {
+        q"""${deprecationNowarn}object ${fixtureTpe(dto.id)} {
+           |  def random(rnd: $baboonRandom): $fullType =
+           |    $fullType(
+           |      ${generatedFields.join(",\n").shift(6).trim}
+           |    )
+           |}
+           |""".stripMargin
+      }
     }
 
     private def doTranslateAdt(adt: Typedef.Adt): TextTree[ScValue] = {
@@ -98,7 +109,7 @@ object ScCodecFixtureTranslator {
       val membersFixtures   = members.sortBy(_.id.toString).map(doTranslateDto)
       val membersGenerators = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name}_Fixture.random")
 
-      q"""object ${fixtureTpe(adt.id)} {
+      q"""${deprecationNowarn}object ${fixtureTpe(adt.id)} {
          |  def random(rnd: $baboonRandom): $adtName = {
          |    rnd.oneOf($scList(
          |      ${membersGenerators.join(",\n").shift(6).trim}

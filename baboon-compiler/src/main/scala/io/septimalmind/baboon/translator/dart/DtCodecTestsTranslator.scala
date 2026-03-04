@@ -58,7 +58,6 @@ object DtCodecTestsTranslator {
                |import 'package:baboon_runtime/baboon_fixture.dart';
                |import 'dart:io';
                |import 'dart:convert';
-               |import 'dart:typed_data';
                |import '$typeImport';
                |$fixtureImportLine
                |

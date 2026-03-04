@@ -190,7 +190,7 @@ Run Rust tests with regular ADT codecs.
 ```bash
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/rs-stub"
-cargo test
+RUSTFLAGS="-D warnings" cargo test
 popd
 
 ret success:bool=true
@@ -246,6 +246,7 @@ Run Dart tests with regular ADT codecs.
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
 pushd "$TEST_DIR/dt-stub"
 dart pub get
+dart analyze --fatal-warnings
 dart test
 popd
 
@@ -448,7 +449,7 @@ Run Rust tests with wrapped ADT codecs.
 ```bash
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
 pushd "$TEST_DIR/rs-stub"
-cargo test
+RUSTFLAGS="-D warnings" cargo test
 popd
 
 ret success:bool=true
@@ -504,6 +505,7 @@ Run Dart tests with wrapped ADT codecs.
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
 pushd "$TEST_DIR/dt-stub"
 dart pub get
+dart analyze --fatal-warnings
 dart test
 popd
 

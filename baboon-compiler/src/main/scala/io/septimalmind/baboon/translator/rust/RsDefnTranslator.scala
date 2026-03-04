@@ -27,6 +27,7 @@ object RsDefnTranslator {
     product: CompilerProduct,
     doNotModify: Boolean = false,
     isModFile: Boolean   = false,
+    isAdt: Boolean       = false,
   )
 
   class RsDefnTranslatorImpl[F[+_, +_]: Applicative2](
@@ -59,6 +60,7 @@ object RsDefnTranslator {
         allDefs,
         trans.toRsCrate(domain.id, domain.version, evo),
         CompilerProduct.Definition,
+        isAdt = defn.defn.isInstanceOf[Typedef.Adt],
       )
 
       val wiringOutput = wiringTranslator

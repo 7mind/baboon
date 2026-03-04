@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, FixedOffset, Utc};
 use rand::Rng;
 use rust_decimal::Decimal;
 use std::collections::{BTreeMap, BTreeSet};
@@ -84,9 +84,8 @@ impl BaboonRandom {
         // Generate a random timestamp with millisecond precision (matching other languages)
         let secs = self.rng.gen_range(0i64..2000000000i64);
         let millis = self.rng.gen_range(0u32..1000u32);
-        let dt = NaiveDateTime::from_timestamp_opt(secs, millis * 1_000_000)
-            .unwrap_or_else(|| NaiveDateTime::from_timestamp_opt(0, 0).unwrap());
-        Utc.from_utc_datetime(&dt)
+        DateTime::from_timestamp(secs, millis * 1_000_000)
+            .unwrap_or_else(|| DateTime::from_timestamp(0, 0).unwrap())
     }
 
     pub fn next_tso(&mut self) -> DateTime<FixedOffset> {
@@ -94,9 +93,9 @@ impl BaboonRandom {
         let millis = self.rng.gen_range(0u32..1000u32);
         let offset_hours = self.rng.gen_range(-12i32..=12i32);
         let offset = FixedOffset::east_opt(offset_hours * 3600).unwrap();
-        let dt = NaiveDateTime::from_timestamp_opt(secs, millis * 1_000_000)
-            .unwrap_or_else(|| NaiveDateTime::from_timestamp_opt(0, 0).unwrap());
-        offset.from_utc_datetime(&dt)
+        let dt = DateTime::from_timestamp(secs, millis * 1_000_000)
+            .unwrap_or_else(|| DateTime::from_timestamp(0, 0).unwrap());
+        dt.with_timezone(&offset)
     }
 
     pub fn next_bit(&mut self) -> bool {

@@ -40,8 +40,9 @@ object RsCodecFixtureTranslator {
           q"${toSnakeCase(f.name.name)}: ${genType(f.tpe)},"
       }
       val fullType = translator.toRsTypeRefKeepForeigns(dto.id, domain, evo)
+      val rndParam = if (dto.fields.isEmpty) "_rnd" else "rnd"
 
-      q"""pub fn ${fixtureFnName(dto.id)}(rnd: &mut crate::baboon_fixture::BaboonRandom) -> $fullType {
+      q"""pub fn ${fixtureFnName(dto.id)}($rndParam: &mut crate::baboon_fixture::BaboonRandom) -> $fullType {
          |    $fullType {
          |        ${generatedFields.joinN().shift(8).trim}
          |    }
@@ -84,8 +85,9 @@ object RsCodecFixtureTranslator {
           q"${toSnakeCase(f.name.name)}: ${genType(f.tpe)},"
       }
       val fullType = translator.toRsTypeRefKeepForeigns(dto.id, domain, evo)
+      val rndParam = if (dto.fields.isEmpty) "_rnd" else "rnd"
 
-      q"""fn ${fixtureFnName(dto.id)}(rnd: &mut crate::baboon_fixture::BaboonRandom) -> $fullType {
+      q"""fn ${fixtureFnName(dto.id)}($rndParam: &mut crate::baboon_fixture::BaboonRandom) -> $fullType {
          |    $fullType {
          |        ${generatedFields.joinN().shift(8).trim}
          |    }

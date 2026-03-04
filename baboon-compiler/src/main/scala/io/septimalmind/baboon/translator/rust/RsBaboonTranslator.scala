@@ -114,15 +114,18 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
     outputs: List[RsDefnTranslator.Output],
     conflicting: List[RsDefnTranslator.Output],
   ): Out[List[RsDefnTranslator.Output]] = {
-    val allPaths      = outputs.filterNot(_.doNotModify).map(_.path)
+    val nonModified   = outputs.filterNot(_.doNotModify)
+    val allPaths      = nonModified.map(_.path)
+    val adtPaths      = nonModified.filter(_.isAdt).map(_.path.stripSuffix(".rs")).toSet
     val conflictByDir = conflicting.groupBy(_.path.stripSuffix(".rs"))
-    val mods          = generateModFilesForPaths(allPaths, conflictByDir, CompilerProduct.Definition)
+    val mods          = generateModFilesForPaths(allPaths, conflictByDir, adtPaths, CompilerProduct.Definition)
     F.pure(mods)
   }
 
   private def generateModFilesForPaths(
     paths: List[String],
     conflictContent: Map[String, List[RsDefnTranslator.Output]],
+    adtPaths: Set[String],
     product: CompilerProduct,
   ): List[RsDefnTranslator.Output] = {
     if (paths.isEmpty) return Nil
@@ -164,9 +167,13 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
         val allModNames = (fileModNames ++ childDirs.toList).sorted.distinct
         val modDecls = allModNames.flatMap {
           name =>
-            val escaped = escapeRustKeyword(name)
+            val escaped  = escapeRustKeyword(name)
+            val fullPath = if (prefix.isEmpty) name else s"$dir/$name"
             if (childDirs.contains(name)) {
               // Directory module: declare but don't re-export (avoids name clashes with versioned modules)
+              List(q"pub mod $escaped;")
+            } else if (adtPaths.contains(fullPath)) {
+              // ADT module: declare but don't glob-re-export (branch structs would conflict with other ADTs/types)
               List(q"pub mod $escaped;")
             } else {
               // File module: declare and re-export so types/functions are accessible from parent
@@ -290,9 +297,7 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       .sorted
 
     val allows = List(
-      q"#![allow(dead_code)]",
       q"#![allow(unused_imports)]",
-      q"#![allow(unused_variables)]",
       q"#![allow(non_camel_case_types)]",
       q"#![allow(non_snake_case)]",
     )

@@ -5,6 +5,7 @@
         <Nullable>enable</Nullable>
         <RootNamespace>ConversionsTest</RootNamespace>
         <TargetFramework>net9.0</TargetFramework>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
 
     <ItemGroup>

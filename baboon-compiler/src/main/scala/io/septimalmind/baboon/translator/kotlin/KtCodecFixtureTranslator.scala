@@ -21,6 +21,9 @@ object KtCodecFixtureTranslator {
     domain: Domain,
     evo: BaboonEvolution,
   ) extends KtCodecFixtureTranslator {
+    private val isLatestVersion = domain.version == evo.latest
+    private val deprecationSuppress: TextTree[KtValue] =
+      if (isLatestVersion) q"" else q"""@Suppress("DEPRECATION") """
 
     override def translate(
       definition: DomainMember.User
@@ -78,7 +81,7 @@ object KtCodecFixtureTranslator {
       val generatedFields = dto.fields.map(f => genType(f.tpe))
       val fullType        = translator.toKtTypeRefKeepForeigns(dto.id, domain, evo)
 
-      q"""object ${fixtureTpe(dto.id)} {
+      q"""${deprecationSuppress}object ${fixtureTpe(dto.id)} {
          |  fun random(rnd: $baboonRandom): $fullType =
          |    $fullType(
          |      ${generatedFields.join(",\n").shift(6).trim}
@@ -97,7 +100,7 @@ object KtCodecFixtureTranslator {
       val membersGenerators  = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name}_Fixture::random")
       val membersDirectCalls = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name}_Fixture.random(rnd)")
 
-      q"""object ${fixtureTpe(adt.id)} {
+      q"""${deprecationSuppress}object ${fixtureTpe(adt.id)} {
          |  fun random(rnd: $baboonRandom): $adtName {
          |    return rnd.oneOf(listOf(
          |      ${membersGenerators.join(",\n").shift(6).trim}

@@ -151,6 +151,8 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
       .filterNot(_.moduleId == o.module)
       .distinct
 
+    val aliasMap = buildAliasMap(usedTypes)
+
     val (versioned, usual) = usedTypes.partition(_.versioned)
 
     val versionPkgImports = versioned
@@ -178,12 +180,13 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
 
     val usualImportsByModule = usual.groupBy(_.moduleId).toList.sortBy { case (moduleId, types) => moduleId.path.size + types.size }.reverse.map {
       case (module, types) =>
+        val typesString = types.map { t =>
+          aliasMap.get(t).map(a => s"${t.name} as $a").getOrElse(t.name)
+        }.mkString(", ")
         if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule || module == pyBaboonConversionsModule || module == pyBaboonServiceWiringModule) {
-          val baseString  = pyFileTools.definitionsBasePkg.mkString(".")
-          val typesString = types.map(_.name).mkString(", ")
+          val baseString = pyFileTools.definitionsBasePkg.mkString(".")
           q"from $baseString.${module.module} import $typesString"
         } else {
-          val typesString = types.map(_.name).mkString(", ")
           q"from ${module.path.mkString(".")} import $typesString"
         }
     }
@@ -193,7 +196,23 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
     val full = Seq(allImports, o.tree).joinNN()
 
     full.mapRender {
-      case t: PyValue.PyType => t.name
+      case t: PyValue.PyType => aliasMap.getOrElse(t, t.name)
+    }
+  }
+
+  private def buildAliasMap(usedTypes: Seq[PyValue.PyType]): Map[PyValue.PyType, String] = {
+    val conflicting = usedTypes.groupBy(_.name).filter(_._2.size > 1)
+    conflicting.flatMap {
+      case (name, group) =>
+        val paths      = group.map(t => t -> t.moduleId.path.toList)
+        val commonLen  = paths.map(_._2).reduce((a, b) => a.zip(b).takeWhile { case (x, y) => x == y }.map(_._1)).size
+        paths.map {
+          case (t, path) =>
+            val distinguishing = path.drop(commonLen).dropRight(1)
+            val prefix = if (distinguishing.nonEmpty) distinguishing.mkString("_")
+                         else path.dropRight(1).lastOption.getOrElse("m")
+            t -> s"${prefix}_$name"
+        }
     }
   }
 

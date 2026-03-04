@@ -179,10 +179,10 @@ class RsUEBACodecGenerator(
        |
        |${branchDecodeFnTree}impl crate::baboon_runtime::BaboonBinEncode for ${name.asName} {
        |    fn encode_ueba(&self, ctx: &crate::baboon_runtime::BaboonCodecContext, writer: &mut dyn std::io::Write) -> std::io::Result<()> {
-       |        let value = self;
+       |        ${if (dto.fields.nonEmpty) "let value = self;" else "let _value = self;"}
        |        ${encPrefixTree}if ctx.use_indices() {
        |            crate::baboon_runtime::bin_tools::write_byte(writer, 0x01)?;
-       |            let mut buffer: Vec<u8> = Vec::new();
+       |            let ${if (dto.fields.nonEmpty) "mut " else ""}buffer: Vec<u8> = Vec::new();
        |            ${indexedEncFields.joinN().shift(12).trim}
        |            writer.write_all(&buffer)?;
        |        } else {
@@ -216,7 +216,7 @@ class RsUEBACodecGenerator(
     q"""$indexedImpl
        |
        |impl crate::baboon_runtime::BaboonBinEncode for ${name.asName} {
-       |    fn encode_ueba(&self, ctx: &crate::baboon_runtime::BaboonCodecContext, writer: &mut dyn std::io::Write) -> std::io::Result<()> {
+       |    fn encode_ueba(&self, _ctx: &crate::baboon_runtime::BaboonCodecContext, writer: &mut dyn std::io::Write) -> std::io::Result<()> {
        |        match self {
        |            ${encBranches.joinN().shift(12).trim}
        |        }
@@ -225,7 +225,7 @@ class RsUEBACodecGenerator(
        |}
        |
        |impl crate::baboon_runtime::BaboonBinDecode for ${name.asName} {
-       |    fn decode_ueba(ctx: &crate::baboon_runtime::BaboonCodecContext, reader: &mut dyn std::io::Read) -> Result<Self, Box<dyn std::error::Error>> {
+       |    fn decode_ueba(_ctx: &crate::baboon_runtime::BaboonCodecContext, reader: &mut dyn std::io::Read) -> Result<Self, Box<dyn std::error::Error>> {
        |        let tag = crate::baboon_runtime::bin_tools::read_byte(reader)?;
        |        match tag {
        |            ${decBranches.joinN().shift(12).trim}

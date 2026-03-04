@@ -36,7 +36,13 @@ class DtConversionTranslator[F[+_, +_]: Error2](
   private val srcVer = srcDom.version
   type Out[T] = F[NEList[BaboonIssue], T]
 
-  private def transfer(newTpe: TypeRef, oldRef: TextTree[DtValue], depth: Int, maybeOldTpe: Option[TypeRef] = None): TextTree[DtValue] = {
+  private def transfer(
+    newTpe: TypeRef,
+    oldRef: TextTree[DtValue],
+    depth: Int,
+    maybeOldTpe: Option[TypeRef] = None,
+    isPromotable: Boolean = false,
+  ): TextTree[DtValue] = {
     import io.septimalmind.baboon.translator.FQNSymbol.*
 
     val oldTpe         = maybeOldTpe.getOrElse(newTpe)
@@ -45,7 +51,7 @@ class DtConversionTranslator[F[+_, +_]: Error2](
 
     (newTpe, oldTpe) match {
       case (c: TypeRef.Constructor, s: TypeRef.Scalar) =>
-        val headTransfer = transfer(c.args.head, oldRef, depth + 1, Some(s))
+        val headTransfer = transfer(c.args.head, oldRef, depth + 1, Some(s), isPromotable)
         c.id match {
           case TypeId.Builtins.opt =>
             q"$headTransfer"
@@ -62,7 +68,7 @@ class DtConversionTranslator[F[+_, +_]: Error2](
       case (TypeRef.Scalar(_), c: TypeRef.Constructor) =>
         throw new IllegalStateException(s"Unsupported scalar to constructor conversion: ${c.id}")
       case (cn: TypeRef.Constructor, co: TypeRef.Constructor) =>
-        transferConstructor(oldRef, depth, cn, co)
+        transferConstructor(oldRef, depth, cn, co, isPromotable)
     }
   }
 
@@ -71,11 +77,12 @@ class DtConversionTranslator[F[+_, +_]: Error2](
     depth: Int,
     cn: TypeRef.Constructor,
     co: TypeRef.Constructor,
+    isPromotable: Boolean,
   ): TextTree[DtValue] = {
     val tmp = q"e${depth.toString}"
     cn match {
       case c: TypeRef.Constructor if c.id == TypeId.Builtins.lst =>
-        q"$oldRef.map(($tmp) => ${transfer(c.args.head, tmp, depth + 1, Some(co.args.head))}).toList()"
+        q"$oldRef.map(($tmp) => ${transfer(c.args.head, tmp, depth + 1, Some(co.args.head), isPromotable = true)}).toList()"
 
       case c: TypeRef.Constructor if c.id == TypeId.Builtins.map =>
         val keyRef   = c.args.head
@@ -83,12 +90,13 @@ class DtConversionTranslator[F[+_, +_]: Error2](
         val kv       = q"$tmp.key"
         val vv       = q"$tmp.value"
 
-        q"Map.fromEntries($oldRef.entries.map(($tmp) => MapEntry(${transfer(keyRef, kv, depth + 1, Some(co.args.head))}, ${transfer(valueRef, vv, depth + 1, Some(co.args.last))})))"
+        q"Map.fromEntries($oldRef.entries.map(($tmp) => MapEntry(${transfer(keyRef, kv, depth + 1, Some(co.args.head), isPromotable = false)}, ${transfer(valueRef, vv, depth + 1, Some(co.args.last), isPromotable = false)})))"
       case c: TypeRef.Constructor if c.id == TypeId.Builtins.set =>
-        q"$oldRef.map(($tmp) => ${transfer(c.args.head, tmp, depth + 1, Some(co.args.head))}).toSet()"
+        q"$oldRef.map(($tmp) => ${transfer(c.args.head, tmp, depth + 1, Some(co.args.head), isPromotable = true)}).toSet()"
       case c: TypeRef.Constructor if c.id == TypeId.Builtins.opt =>
-        val inner = transfer(c.args.head, tmp, depth + 1, Some(co.args.head))
-        q"($oldRef != null) ? (() { final $tmp = $oldRef!; return $inner; })() : null"
+        val inner      = transfer(c.args.head, tmp, depth + 1, Some(co.args.head), isPromotable = true)
+        val nonNullRef = if (isPromotable) oldRef else q"$oldRef!"
+        q"($oldRef != null) ? (() { final $tmp = $nonNullRef; return $inner; })() : null"
       case c =>
         throw new IllegalStateException(s"Unsupported constructor type: ${c.id}")
     }
@@ -106,7 +114,11 @@ class DtConversionTranslator[F[+_, +_]: Error2](
       else {
         builtinConversion(s.id, os.id) match {
           case Some(method) => q"$method($oldRef)"
-          case None         => q"$oldRef as $newTypeRefTree"
+          case None =>
+            val newDtType = trans.asDtType(s.id, domain, evo)
+            val oldDtType = trans.asDtType(os.id, srcDom, evo)
+            if (newDtType == oldDtType) oldRef
+            else q"$oldRef as $newTypeRefTree"
         }
       }
 
@@ -150,6 +162,7 @@ class DtConversionTranslator[F[+_, +_]: Error2](
         val fname = (Seq("from", srcVer.v.toString) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
           s"${trans.toSnakeCase(conv.sourceTpe.name.name)}.dart"
         )).mkString("-")
+        val convRef = DtValue.DtType(pkg, className, importAs = Some(fname.stripSuffix(".dart")))
 
         val tin  = trans.asDtType(conv.sourceTpe, srcDom, evo).fullyQualified
         def tout = trans.asDtType(conv.targetTpe, domain, evo)
@@ -213,7 +226,7 @@ class DtConversionTranslator[F[+_, +_]: Error2](
                               |    ${meta.shift(4).trim}
                               |}
                   """.stripMargin.trim
-            val regtree = q"register($className.instance);"
+            val regtree = q"register($convRef.instance);"
             List(RenderedConversion(fname, tools.inLib(classDef), Some(regtree), None))
 
           case c: Conversion.CopyAdtBranchByName =>
@@ -239,7 +252,7 @@ class DtConversionTranslator[F[+_, +_]: Error2](
                               |    ${meta.shift(4).trim}
                               |}
                   """.stripMargin.trim
-            val regtree = q"register($className.instance);"
+            val regtree = q"register($convRef.instance);"
             List(RenderedConversion(fname, tools.inLib(classDef), Some(regtree), None))
 
           case c: Conversion.DtoConversion =>
@@ -257,11 +270,11 @@ class DtConversionTranslator[F[+_, +_]: Error2](
                   case o: FieldOp.Transfer => transfer(o.targetField.tpe, q"from.$fld", 1)
                   case o: FieldOp.InitializeWithDefault =>
                     o.targetField.tpe match {
-                      case TypeRef.Constructor(id, _) =>
+                      case TypeRef.Constructor(id, args) =>
                         id match {
-                          case TypeId.Builtins.lst => q"[]"
-                          case TypeId.Builtins.set => q"{}"
-                          case TypeId.Builtins.map => q"{}"
+                          case TypeId.Builtins.lst => q"<${trans.asDtRef(args.head, domain, evo)}>[]"
+                          case TypeId.Builtins.set => q"<${trans.asDtRef(args.head, domain, evo)}>{}"
+                          case TypeId.Builtins.map => q"<${trans.asDtRef(args.head, domain, evo)}, ${trans.asDtRef(args.last, domain, evo)}>{}"
                           case TypeId.Builtins.opt => q"null"
                           case _                   => throw new IllegalStateException(s"Unsupported constructor type: $id")
                         }
@@ -322,7 +335,7 @@ class DtConversionTranslator[F[+_, +_]: Error2](
                               |    ${meta.shift(4).trim}
                               |}
                   """.stripMargin.trim
-            val regtree = q"register($className.instance);"
+            val regtree = q"register($convRef.instance);"
             List(RenderedConversion(fname, tools.inLib(classDef), Some(regtree), None))
         }
 
@@ -341,38 +354,41 @@ class DtConversionTranslator[F[+_, +_]: Error2](
 
     (oldId, newId) match {
       case (TypeId.Builtins.opt, TypeId.Builtins.lst) =>
-        q"""($fieldRef != null) ? [(() { final e = $fieldRef!; return ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}; })()] : <${trans.asDtRef(
-            newArgs.head,
-            domain,
-            evo,
-          )}>[]"""
+        q"""($fieldRef != null) ? [(() { final e = $fieldRef!; return ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)}; })()] : <${trans
+            .asDtRef(
+              newArgs.head,
+              domain,
+              evo,
+            )}>[]"""
       case (TypeId.Builtins.opt, TypeId.Builtins.set) =>
-        q"""($fieldRef != null) ? {(() { final e = $fieldRef!; return ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}; })()} : <${trans.asDtRef(
-            newArgs.head,
-            domain,
-            evo,
-          )}>{}"""
+        q"""($fieldRef != null) ? {(() { final e = $fieldRef!; return ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)}; })()} : <${trans
+            .asDtRef(
+              newArgs.head,
+              domain,
+              evo,
+            )}>{}"""
       case (TypeId.Builtins.opt, TypeId.Builtins.opt) =>
-        q"""($fieldRef != null) ? (() { final e = $fieldRef!; return ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}; })() : null"""
+        q"""($fieldRef != null) ? (() { final e = $fieldRef!; return ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)}; })() : null"""
 
       case (TypeId.Builtins.lst, TypeId.Builtins.lst) =>
-        q"""$fieldRef.map((e) => ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}).toList()"""
+        q"""$fieldRef.map((e) => ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)}).toList()"""
       case (TypeId.Builtins.lst, TypeId.Builtins.set) =>
-        q"""$fieldRef.map((e) => ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}).toSet()"""
+        q"""$fieldRef.map((e) => ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)}).toSet()"""
 
       case (TypeId.Builtins.set, TypeId.Builtins.lst) =>
-        q"""$fieldRef.map((e) => ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}).toList()"""
+        q"""$fieldRef.map((e) => ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)}).toList()"""
       case (TypeId.Builtins.set, TypeId.Builtins.set) =>
-        q"""$fieldRef.map((e) => ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head))}).toSet()"""
+        q"""$fieldRef.map((e) => ${transfer(newArgs.head, tmp, depth, Some(oldArgs.head), isPromotable = true)}).toSet()"""
 
       case (TypeId.Builtins.map, TypeId.Builtins.map) =>
         val kv = q"entry.key"
         val vv = q"entry.value"
-        q"""Map.fromEntries($fieldRef.entries.map((entry) => MapEntry(${transfer(newArgs.head, kv, 1, Some(oldArgs.head))}, ${transfer(
+        q"""Map.fromEntries($fieldRef.entries.map((entry) => MapEntry(${transfer(newArgs.head, kv, 1, Some(oldArgs.head), isPromotable = false)}, ${transfer(
             newArgs.last,
             vv,
             1,
             Some(oldArgs.last),
+            isPromotable = false,
           )})))"""
       case _ =>
         throw new IllegalStateException("Unsupported collection swap")
