@@ -732,9 +732,9 @@ pub mod bin_tools {
 
         let secs = epoch_ms / 1000;
         let nanos = ((epoch_ms % 1000) * 1_000_000) as u32;
-        let dt = NaiveDateTime::from_timestamp_opt(secs, nanos)
+        let dt = DateTime::from_timestamp(secs, nanos)
             .ok_or("Invalid timestamp")?;
-        Ok(Utc.from_utc_datetime(&dt))
+        Ok(dt)
     }
 
     pub fn read_timestamp_offset(
@@ -753,8 +753,8 @@ pub mod bin_tools {
             .ok_or("Invalid offset")?;
         let secs = epoch_ms / 1000;
         let nanos = ((epoch_ms % 1000) * 1_000_000) as u32;
-        let dt = NaiveDateTime::from_timestamp_opt(secs, nanos)
+        let dt = DateTime::from_timestamp(secs, nanos)
             .ok_or("Invalid timestamp")?;
-        Ok(offset.from_utc_datetime(&dt))
+        Ok(dt.with_timezone(&offset))
     }
 }

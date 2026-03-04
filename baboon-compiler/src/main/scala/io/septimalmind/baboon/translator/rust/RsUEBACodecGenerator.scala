@@ -179,10 +179,10 @@ class RsUEBACodecGenerator(
        |
        |${branchDecodeFnTree}impl crate::baboon_runtime::BaboonBinEncode for ${name.asName} {
        |    fn encode_ueba(&self, ctx: &crate::baboon_runtime::BaboonCodecContext, writer: &mut dyn std::io::Write) -> std::io::Result<()> {
-       |        let value = self;
+       |        ${if (dto.fields.nonEmpty) "let value = self;" else "let _value = self;"}
        |        ${encPrefixTree}if ctx.use_indices() {
        |            crate::baboon_runtime::bin_tools::write_byte(writer, 0x01)?;
-       |            let mut buffer: Vec<u8> = Vec::new();
+       |            let ${if (dto.fields.nonEmpty) "mut " else ""}buffer: Vec<u8> = Vec::new();
        |            ${indexedEncFields.joinN().shift(12).trim}
        |            writer.write_all(&buffer)?;
        |        } else {

@@ -16,7 +16,6 @@ import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
 class TsBaboonTranslator[F[+_, +_]: Error2](
-  trans: TsTypeTranslator,
   convTransFac: TsConversionTranslator.Factory[F],
   defnTranslator: Subcontext[TsDefnTranslator[F]],
   target: TsTarget,
@@ -228,8 +227,6 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     lineage: BaboonLineage,
     toCurrent: Set[EvolutionStep],
   ): Out[List[TsDefnTranslator.Output]] = {
-    val module = trans.toTsModule(domain.id, domain.version, lineage.evolution, tsFileTools.definitionsBasePkg)
-
     for {
       convs <-
         F.flatSequenceAccumErrors {
@@ -249,10 +246,13 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       val basename = tsFileTools.basename(domain, lineage.evolution)
       convs.toList.map {
         conv =>
+          val outputPath   = s"$basename/${conv.fname}"
+          val moduleParts  = tsFileTools.definitionsBasePkg ++ outputPath.stripSuffix(".ts").split('/').toList
+          val convModule   = TsModuleId(moduleParts)
           TsDefnTranslator.Output(
-            s"$basename/${conv.fname}",
+            outputPath,
             conv.conv,
-            module,
+            convModule,
             CompilerProduct.Conversion,
           )
       }

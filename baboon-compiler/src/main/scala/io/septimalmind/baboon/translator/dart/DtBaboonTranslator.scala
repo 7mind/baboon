@@ -167,18 +167,24 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
       }
     }
 
+    val currentDir      = o.path.split('/').dropRight(1).mkString("/")
     val currentFileName = o.path.split('/').last.stripSuffix(".dart")
-    val usedTypes = o.tree.values.collect { case t: DtValue.DtType => t }.distinct
+    val allUsedTypes = o.tree.values.collect { case t: DtValue.DtType => t }.distinct
       .filterNot(_.predef)
-      .filterNot(_.fq)
       .sortBy(_.toString)
 
-    val filePrefixMap = buildFilePrefixMap(usedTypes)
+    val (fqTypes, normalTypes) = allUsedTypes.partition(_.fq)
+
+    val filePrefixMap = buildFilePrefixMap(normalTypes)
+    val fqPrefixMap   = buildFqPrefixMap(fqTypes)
 
     val rendered = o.tree.mapRender {
       case t: DtValue.DtTypeName => trans.escapeDartKeyword(t.name)
       case t: DtValue.DtType if t.fq =>
-        (t.pkg.parts :+ trans.escapeDartKeyword(t.name)).mkString(".")
+        fqPrefixMap.get(fqFileKey(t)) match {
+          case Some(prefix) => s"$prefix.${trans.escapeDartKeyword(t.name)}"
+          case None         => trans.escapeDartKeyword(t.name)
+        }
       case t: DtValue.DtType =>
         filePrefixMap.get(dtFileKey(t)) match {
           case Some(prefix) => s"$prefix.${trans.escapeDartKeyword(t.name)}"
@@ -186,10 +192,13 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
         }
     }
 
-    val importLines = usedTypes.flatMap {
-      p =>
-        resolveImport(p, o.module, currentFileName, filePrefixMap)
-    }.distinct.sorted
+    val normalImports = normalTypes.flatMap {
+      p => resolveImport(p, o.module, currentFileName, filePrefixMap)
+    }
+    val fqImports = fqTypes.flatMap {
+      p => resolveFqImport(p, currentDir, fqPrefixMap)
+    }
+    val importLines = (normalImports ++ fqImports).distinct.sorted
 
     if (importLines.isEmpty) {
       rendered
@@ -202,6 +211,51 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
   private def dtFileKey(t: DtValue.DtType): String = {
     val fileName = t.importAs.getOrElse(trans.toSnakeCase(t.name))
     s"${t.pkg.parts.toList.mkString("/")}/$fileName"
+  }
+
+  private def fqFileKey(t: DtValue.DtType): String = {
+    val fileName = t.importAs.getOrElse(trans.toSnakeCase(t.name))
+    s"${t.pkg.parts.toList.mkString("/")}/$fileName"
+  }
+
+  private def buildFqPrefixMap(fqTypes: Seq[DtValue.DtType]): Map[String, String] = {
+    fqTypes.map { t =>
+      val key      = fqFileKey(t)
+      val fileName = t.importAs.getOrElse(trans.toSnakeCase(t.name))
+      val pkgParts = t.pkg.parts.toList
+      val versionIdx = pkgParts.indexWhere(p => p.startsWith("v") && p.length > 1 && p.lift(1).exists(_.isDigit))
+      val prefixParts = if (versionIdx >= 0) pkgParts.drop(versionIdx) :+ fileName
+                        else pkgParts :+ fileName
+      key -> prefixParts.mkString("_")
+    }.toMap
+  }
+
+  private def moduleSegmentToFilesystem(segment: String): String = {
+    if (segment.matches("v\\d+(_\\d+)*")) {
+      segment.stripPrefix("v").replace('_', '.')
+    } else segment
+  }
+
+  private def resolveFqImport(
+    t: DtValue.DtType,
+    currentDir: String,
+    fqPrefixMap: Map[String, String],
+  ): Option[String] = {
+    if (t.pkg == dartCorePkg) {
+      None // dart:core is implicitly imported
+    } else if (t.pkg == baboonRuntimePkg) {
+      Some("import 'package:baboon_runtime/baboon_runtime.dart';")
+    } else if (t.pkg == baboonFixturePkg) {
+      Some("import 'package:baboon_runtime/baboon_fixture.dart';")
+    } else {
+      val fileName     = t.importAs.getOrElse(trans.toSnakeCase(t.name))
+      val typePath     = t.pkg.parts.toList.map(moduleSegmentToFilesystem).mkString("/")
+      val fullFilePath = s"$typePath/$fileName.dart"
+      val relativePath = makeRelativePath(currentDir, fullFilePath)
+      val key          = fqFileKey(t)
+      val prefix       = fqPrefixMap.getOrElse(key, "fq")
+      Some(s"import '$relativePath' as $prefix;")
+    }
   }
 
   private def buildFilePrefixMap(usedTypes: Seq[DtValue.DtType]): Map[String, String] = {
@@ -229,7 +283,9 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
     currentFileName: String,
     filePrefixMap: Map[String, String],
   ): Option[String] = {
-    if (t.pkg == baboonRuntimePkg) {
+    if (t.pkg == dartCorePkg) {
+      None // dart:core is implicitly imported
+    } else if (t.pkg == baboonRuntimePkg) {
       Some("import 'package:baboon_runtime/baboon_runtime.dart';")
     } else if (t.pkg == baboonFixturePkg) {
       Some("import 'package:baboon_runtime/baboon_fixture.dart';")
@@ -335,10 +391,9 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
       } else q""
 
       val converter =
-        q"""class BaboonConversions extends $baboonAbstractConversions {
+        q"""$missingIface
+           |class BaboonConversions extends $baboonAbstractConversions {
            |  $ctorParam
-           |
-           |  ${missingIface.shift(2).trim}
            |
            |  BaboonConversions($ctorParamDecl) {
            |    ${ctorBody.shift(4).trim}

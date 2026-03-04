@@ -404,7 +404,7 @@ class TsUEBACodecGenerator(
   }
 
   override def codecMeta(definition: DomainMember.User, name: TsValue.TsType): Option[TextTree[TsValue]] = {
-    if (isActive(definition.id)) {
+    if (isActive(definition.id) && !enquiries.hasForeignType(definition, domain)) {
       definition.defn match {
         case _: Typedef.Adt =>
           Some(q"""binCodec(): ${codecName(name)} {

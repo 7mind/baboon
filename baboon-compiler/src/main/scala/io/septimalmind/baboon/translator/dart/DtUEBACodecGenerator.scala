@@ -330,8 +330,8 @@ class DtUEBACodecGenerator(
     dto.fields.map {
       field =>
         val fieldRef   = q"value.${field.name.name}"
-        val enc        = mkEncoder(field.tpe, fieldRef, q"writer")
-        val bufferEnc  = mkEncoder(field.tpe, fieldRef, q"buffer")
+        val enc        = mkEncoder(field.tpe, fieldRef, q"writer", 0)
+        val bufferEnc  = mkEncoder(field.tpe, fieldRef, q"buffer", 0)
         val decoder    = mkDecoder(field.tpe)
         val decodeTree = q"${field.name.name}: $decoder"
 
@@ -439,7 +439,7 @@ class DtUEBACodecGenerator(
     }
   }
 
-  private def mkEncoder(tpe: TypeRef, ref: TextTree[DtValue], wref: TextTree[DtValue]): TextTree[DtValue] = {
+  private def mkEncoder(tpe: TypeRef, ref: TextTree[DtValue], wref: TextTree[DtValue], depth: Int): TextTree[DtValue] = {
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
@@ -470,7 +470,7 @@ class DtUEBACodecGenerator(
               case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
                 f.bindings.get(BaboonLang.Dart) match {
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
-                    mkEncoder(aliasedRef, ref, wref)
+                    mkEncoder(aliasedRef, ref, wref, depth)
                   case _ =>
                     val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
                     q"""$targetTpe.instance.encode(ctx, $wref, $ref);"""
@@ -483,30 +483,31 @@ class DtUEBACodecGenerator(
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
+            val nonNullRef = if (depth > 0) ref else q"$ref!"
             q"""if ($ref == null) {
                |  $wref.writeBool(false);
                |} else {
                |  $wref.writeBool(true);
-               |  ${mkEncoder(c.args.head, q"$ref!", wref).shift(2).trim}
+               |  ${mkEncoder(c.args.head, nonNullRef, wref, depth + 1).shift(2).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.map =>
             q"""$wref.writeI32($ref.length);
                |for (final entry in $ref.entries) {
-               |  ${mkEncoder(c.args.head, q"entry.key", wref).shift(2).trim}
-               |  ${mkEncoder(c.args.last, q"entry.value", wref).shift(2).trim}
+               |  ${mkEncoder(c.args.head, q"entry.key", wref, depth + 1).shift(2).trim}
+               |  ${mkEncoder(c.args.last, q"entry.value", wref, depth + 1).shift(2).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.lst =>
             q"""$wref.writeI32($ref.length);
                |for (final item in $ref) {
-               |  ${mkEncoder(c.args.head, q"item", wref).shift(2).trim}
+               |  ${mkEncoder(c.args.head, q"item", wref, depth + 1).shift(2).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.set =>
             q"""$wref.writeI32($ref.length);
                |for (final item in $ref) {
-               |  ${mkEncoder(c.args.head, q"item", wref).shift(2).trim}
+               |  ${mkEncoder(c.args.head, q"item", wref, depth + 1).shift(2).trim}
                |}""".stripMargin
 
           case o =>

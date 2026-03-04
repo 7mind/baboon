@@ -267,7 +267,8 @@ class DtJsonCodecGenerator(
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
-            q"""$ref == null ? null : ${mkEncoder(c.args.head, q"$ref!", depth + 1)}"""
+            val nonNullRef = if (depth > 0) ref else q"$ref!"
+            q"""$ref == null ? null : ${mkEncoder(c.args.head, nonNullRef, depth + 1)}"""
           case TypeId.Builtins.map =>
             val varName  = s"e$depth"
             val keyEnc   = encodeKey(c.args.head, q"$varName.key")
