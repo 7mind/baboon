@@ -155,35 +155,60 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def renderTree(o: ScDefnTranslator.Output): String = {
-    // TODO: better representation
-    val usedTypes = o.tree.values.collect { case t: ScValue.ScType => t }.distinct
+    val usedTypes = o.tree.values.collect { case t: ScValue.ScType => t }
       .filterNot(_.predef)
       .filterNot(_.fq)
       .filterNot(_.pkg == o.pkg)
-      .filterNot(t => t.pkg.parts.startsWith(o.pkg.parts))
-      .filterNot(_.name.contains('.'))
       .sortBy(_.toString)
+      .distinct
 
-    val imports = usedTypes.map(p => q"import ${p.pkg.parts.mkString(".")}.${p.name}").joinN()
+    val (samePkg, otherPkg) = usedTypes.partition(_.pkg.parts.startsWith(o.pkg.parts))
+
+    val (sameNameOtherPkgs, diffNameOtherPkgs) =
+      otherPkg.partition(tpe => usedTypes.count(used => used.name == tpe.name && used.inObject == tpe.inObject) > 1)
+
+    val (sameNameThisPkg, diffNameThisPkg) =
+      samePkg.partition(tpe => usedTypes.count(used => used.name == tpe.name && used.inObject == tpe.inObject) > 1)
+
+    val sameNameSet = (sameNameThisPkg ++ sameNameOtherPkgs).toSet
+
+    val imports = (diffNameThisPkg ++ diffNameOtherPkgs)
+      .groupBy(_.pkg)
+      .map {
+        case (pkg, types) =>
+          val (objectTypes, nonObjectTypes) = types.partition(_.inObject.nonEmpty)
+          val objectNames = objectTypes.collect { case ScValue.ScType(pkgId, _, Some(obj), _, _) if !pkgId.parts.startsWith(o.pkg.parts) => obj }.distinct
+          val all         = (objectNames ++ nonObjectTypes.map(_.name)).distinct
+          val allImports =
+            if (all.size == 1) {
+              q".${all.head}"
+            } else {
+              q".{${all.mkString(", ")}}"
+            }
+          if (all.nonEmpty) {
+            q"import ${pkg.parts.mkString(".")}$allImports"
+          } else q""
+      }.toList.joinN()
+
+    val mappedTree =
+      o.tree.map {
+        case tpe: ScValue.ScType =>
+          if (sameNameSet.contains(tpe)) tpe.fullyQualified
+          else tpe
+      }
 
     val full = if (o.doNotModify) {
-      o.tree
+      mappedTree
     } else {
-      Seq(
-        Seq(imports),
-        Seq(o.tree),
-      ).flatten.joinNN()
+      q"""$imports
+         |
+         |${mappedTree}""".stripMargin
     }
 
     full.mapRender {
-      case t: ScValue.ScTypeName => t.name
-      case t: ScValue.ScType if !t.fq =>
-        if (o.pkg == t.pkg || !t.pkg.parts.startsWith(o.pkg.parts)) {
-          t.name
-        } else {
-          s"_root_.${(t.pkg.parts :+ t.name).mkString(".")}"
-        }
-      case t: ScValue.ScType => s"_root_.${(t.pkg.parts :+ t.name).mkString(".")}"
+      case t: ScValue.ScType if t.fq                     => (t.pkg.parts :+ t.name).mkString(".")
+      case ScValue.ScType(_, name, Some(inObject), _, _) => s"$inObject.$name"
+      case t: ScValue.ScType                             => t.name
     }
   }
 
@@ -244,15 +269,16 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       val conversionRegs = convs.flatMap(_.reg.iterator.toSeq).toSeq
       val missing        = convs.flatMap(_.missing.iterator.toSeq).toSeq
 
-      val requiredParamAnnotation = if (missing.isEmpty) "@scala.annotation.nowarn(\"msg=never used\") " else ""
-      val traitNowarn             = if (missing.nonEmpty) "@scala.annotation.nowarn(\"cat=deprecation\") " else ""
-      val classNowarn             = if (conversionRegs.nonEmpty) "@scala.annotation.nowarn(\"cat=deprecation\") " else ""
+      val requiredParam =
+        if (missing.isEmpty) q"@scala.annotation.unused required: RequiredConversions"
+        else q"required: RequiredConversions"
+
       val converter =
-        q"""${traitNowarn}trait RequiredConversions {
+        q"""trait RequiredConversions {
            |    ${missing.joinN().shift(4).trim}
            |}
            |
-           |${classNowarn}class BaboonConversions(${requiredParamAnnotation}required: RequiredConversions) extends $baboonAbstractConversions {
+           |class BaboonConversions($requiredParam) extends $baboonAbstractConversions {
            |    ${conversionRegs.joinN().shift(4).trim}
            |
            |    override def versionsFrom: $scList[$scString] = $scList(${toCurrent.map(_.from.v.toString).map(v => s"\"$v\"").mkString(", ")})
@@ -262,11 +288,9 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       import izumi.fundamentals.collections.IzCollections.*
       val regsMap = defnOut.flatMap(_.codecReg).toMultimap.view.mapValues(_.flatten).toMap
 
-      val isLatestVersion        = domain.version == lineage.evolution.latest
-      val deprecationAnnotation  = if (isLatestVersion) q"" else q"""@scala.annotation.nowarn("cat=deprecation") """
       val codecs = regsMap.map {
         case (codecId, regs) =>
-          q"""${deprecationAnnotation}object BaboonCodecs${codecId.capitalize} extends ${abstractBaboonCodec(codecId)}{
+          q"""object BaboonCodecs${codecId.capitalize} extends ${abstractBaboonCodec(codecId)}{
              |  ${regs.toList.map(c => q"register($c)").joinN().shift(2).trim}
              |}""".stripMargin
       }.toList.joinNN()

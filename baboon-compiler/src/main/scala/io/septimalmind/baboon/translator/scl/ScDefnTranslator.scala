@@ -64,14 +64,15 @@ object ScDefnTranslator {
     }
 
     private def doTranslate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val repr = makeFullRepr(defn, inNs = true)
+      val repr   = makeFullRepr(defn, inNs = true)
+      val srcRef = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
 
       val registrations = codecs.toList.map(codec => codec.id -> repr.codecs.flatMap(reg => reg.trees.get(codec.id).map(expr => q"${reg.tpeId}, $expr")))
 
       val mainOutput = Output(
         getOutputPath(defn),
         repr.defn,
-        trans.toScPkg(domain.id, domain.version, evo),
+        srcRef.pkg,
         CompilerProduct.Definition,
         codecReg = registrations,
       )
@@ -100,12 +101,13 @@ object ScDefnTranslator {
     }
 
     private def doTranslateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
+      val srcRef         = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
       val fixtureTreeOut = makeFixtureRepr(defn).map {
         fixtureTreeWithNs =>
           Output(
             getOutputPath(defn, suffix = Some("_Fixture")),
             fixtureTreeWithNs,
-            trans.toScPkg(domain.id, domain.version, evo),
+            srcRef.pkg,
             CompilerProduct.Fixture,
           )
       }
@@ -129,12 +131,13 @@ object ScDefnTranslator {
       }
     }
     private def doTranslateTest(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
+      val srcRef       = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
       val codecTestOut = makeTestRepr(defn).map {
         codecTestWithNS =>
           Output(
             getOutputPath(defn, suffix = Some("_Tests")),
             codecTestWithNS,
-            trans.toScPkg(domain.id, domain.version, evo),
+            srcRef.pkg,
             CompilerProduct.Test,
           )
       }
@@ -211,7 +214,7 @@ object ScDefnTranslator {
             .sortBy(_.getClass.getName)
             .flatMap(
               codec =>
-                if (codec.isActive(d.id)) List(codec.id -> q"$baboonLazy(${codec.codecName(srcRef).copy(fq = true)})")
+                if (codec.isActive(d.id)) List(codec.id -> q"$baboonLazy(${codec.codecName(srcRef)})")
                 else Nil
             )
           List(CodecReg(defn.id, scTypeRef, srcRef, q"\"${defn.id.toString}\"", codecsReg.toMap))
@@ -253,25 +256,25 @@ object ScDefnTranslator {
           val classMetaFields  = mainMeta.map(mt => q"override ${mt.refValueField}")
 
           DefnRepr(
-            q"""final case class ${name.asName}(
+            q"""final case class ${name.name}(
                |  ${paramsList.shift(2).trim}
                |)$extendsClauseDto {
                |  ${classMetaFields.joinN().shift(2).trim}
                |}
                |
-               |object ${name.asName} {
+               |object ${name.name} {
                |  ${objectMetaFields.joinN().shift(2).trim}
                |}""".stripMargin,
             Nil,
           )
 
         case e: Typedef.Enum =>
-          val traitTree = q"sealed trait ${name.asName}"
+          val traitTree = q"sealed trait ${name.name}"
 
           val cases = e.members.map {
             m =>
               val obj = m.name.capitalize
-              q"case object $obj extends ${name.asName}"
+              q"case object $obj extends ${name.name}"
           }.toList
 
           val parseCases = e.members.map {
@@ -287,17 +290,17 @@ object ScDefnTranslator {
           }.toList
 
           val companion =
-            q"""object ${name.asName} extends $baboonEnum[${name.asName}] {
+            q"""object ${name.name} extends $baboonEnum[${name.name}] {
                |  ${cases.joinN().shift(2).trim}
                |  
-               |  def parse(s: $scString): $scOption[${name.asName}] = {
+               |  def parse(s: $scString): $scOption[${name.name}] = {
                |    s match {
                |      ${parseCases.joinN().shift(6).trim}
                |      case _ => None
                |    }
                |  }
                |  
-               |  def all: $scList[${name.asName}] = $scList(
+               |  def all: $scList[${name.name}] = $scList(
                |    ${names.join(",\n").shift(4).trim}
                |  ) 
                |}""".stripMargin
@@ -306,7 +309,7 @@ object ScDefnTranslator {
         case adt: Typedef.Adt =>
           val parents          = adt.contracts.map(c => trans.toScTypeRefKeepForeigns(c, domain, evo)) :+ genMarker
           val extendsClauseAdt = if (parents.nonEmpty) q" extends ${parents.map(t => q"$t").join(" with ")}" else q""
-          val sealedTrait      = q"""sealed trait ${name.asName}$extendsClauseAdt""".stripMargin
+          val sealedTrait      = q"""sealed trait ${name.name}$extendsClauseAdt""".stripMargin
           val memberTrees = adt.members.map {
             mid =>
               domain.defs.meta.nodes(mid) match {
@@ -323,7 +326,7 @@ object ScDefnTranslator {
                |  ${classMetaFields.joinN().shift(2).trim}
                |}
                |
-               |object ${name.asName} {
+               |object ${name.name} {
                |  ${memberTrees.map(_.defn).toList.joinNN().shift(2).trim}
                |  ${objectMetaFields.joinN().shift(2).trim}
                |}""".stripMargin,
@@ -340,7 +343,7 @@ object ScDefnTranslator {
           val extendsClause = if (parents.nonEmpty) q" extends ${parents.map(t => q"$t").join(" with ")}" else q""
           val body          = if (methods.nonEmpty) methods.joinN() else q""
           DefnRepr(
-            q"""trait ${name.asName}$extendsClause {
+            q"""trait ${name.name}$extendsClause {
                |    ${body.shift(4).trim}
                |}""".stripMargin,
             Nil,
@@ -360,8 +363,7 @@ object ScDefnTranslator {
               val out = m.out.map(trans.asScRef(_, domain, evo))
               val err = m.err.map(trans.asScRef(_, domain, evo))
               val scFqName: ScValue => String = {
-                case t: ScValue.ScType     => if (t.predef) t.name else s"_root_.${(t.pkg.parts :+ t.name).mkString(".")}"
-                case t: ScValue.ScTypeName => t.name
+                case t: ScValue.ScType     => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
               }
               val outStr = out.map(_.mapRender(scFqName)).getOrElse("")
               val errStr = err.map(_.mapRender(scFqName))
@@ -378,7 +380,7 @@ object ScDefnTranslator {
           val traitTypeParam = if (typeParams.nonEmpty) typeParams.mkString("[", ", ", "]") else ""
           val body           = if (methods.nonEmpty) methods.joinN() else q""
           DefnRepr(
-            q"""trait ${name.asName}$traitTypeParam {
+            q"""trait ${name.name}$traitTypeParam {
                |    ${body.shift(4).trim}
                |}""".stripMargin,
             Nil,

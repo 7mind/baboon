@@ -13,19 +13,20 @@ object ScValue {
       ScPackageId(NEList.unsafeFrom(pkg.split('.').toList))
   }
 
-  case class ScType(pkg: ScValue.ScPackageId, name: String, fq: Boolean = false, predef: Boolean = false) extends ScValue {
-    def fullyQualified: ScType = this.copy(fq = true)
-    def asName: ScTypeName     = ScTypeName(name)
-
+  case class ScType(
+    pkg: ScValue.ScPackageId,
+    name: String,
+    inObject: Option[String] = None,
+    fq: Boolean              = false,
+    predef: Boolean          = false,
+  ) extends ScValue {
+    def fullyQualified: ScType    = this.copy(fq = true)
     override def toString: String = s"${pkg.parts.mkString(".")}#$name"
   }
 
-  case class ScTypeName(name: String) extends ScValue
-
   implicit object FQNScValue extends FQNSymbol[ScValue] {
     override def fullyQualified(value: ScValue): ScValue = value match {
-      case t: ScType     => t.fullyQualified
-      case n: ScTypeName => n
+      case t: ScType => t.fullyQualified
     }
   }
 }
