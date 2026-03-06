@@ -64,14 +64,15 @@ object ScDefnTranslator {
     }
 
     private def doTranslate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val repr = makeFullRepr(defn, inNs = true)
+      val repr   = makeFullRepr(defn, inNs = true)
+      val srcRef = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
 
       val registrations = codecs.toList.map(codec => codec.id -> repr.codecs.flatMap(reg => reg.trees.get(codec.id).map(expr => q"${reg.tpeId}, $expr")))
 
       val mainOutput = Output(
         getOutputPath(defn),
         repr.defn,
-        trans.toScPkg(domain.id, domain.version, evo),
+        srcRef.pkg,
         CompilerProduct.Definition,
         codecReg = registrations,
       )
@@ -100,12 +101,13 @@ object ScDefnTranslator {
     }
 
     private def doTranslateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
+      val srcRef         = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
       val fixtureTreeOut = makeFixtureRepr(defn).map {
         fixtureTreeWithNs =>
           Output(
             getOutputPath(defn, suffix = Some("_Fixture")),
             fixtureTreeWithNs,
-            trans.toScPkg(domain.id, domain.version, evo),
+            srcRef.pkg,
             CompilerProduct.Fixture,
           )
       }
@@ -129,12 +131,13 @@ object ScDefnTranslator {
       }
     }
     private def doTranslateTest(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
+      val srcRef       = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
       val codecTestOut = makeTestRepr(defn).map {
         codecTestWithNS =>
           Output(
             getOutputPath(defn, suffix = Some("_Tests")),
             codecTestWithNS,
-            trans.toScPkg(domain.id, domain.version, evo),
+            srcRef.pkg,
             CompilerProduct.Test,
           )
       }
