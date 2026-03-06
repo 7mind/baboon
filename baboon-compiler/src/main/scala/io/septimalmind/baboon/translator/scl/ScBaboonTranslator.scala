@@ -5,8 +5,6 @@ import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.scl.ScTypes.*
-import io.septimalmind.baboon.translator.scl.ScValue.ScPackageId
-import io.septimalmind.baboon.translator.typescript.TsValue
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources, scl}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
@@ -271,12 +269,16 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       val conversionRegs = convs.flatMap(_.reg.iterator.toSeq).toSeq
       val missing        = convs.flatMap(_.missing.iterator.toSeq).toSeq
 
+      val requiredParam =
+        if (missing.isEmpty) q"@scala.annotation.unused required: RequiredConversions"
+        else q"required: RequiredConversions"
+
       val converter =
         q"""trait RequiredConversions {
            |    ${missing.joinN().shift(4).trim}
            |}
            |
-           |class BaboonConversions(required: RequiredConversions) extends $baboonAbstractConversions {
+           |class BaboonConversions($requiredParam) extends $baboonAbstractConversions {
            |    ${conversionRegs.joinN().shift(4).trim}
            |
            |    override def versionsFrom: $scList[$scString] = $scList(${toCurrent.map(_.from.v.toString).map(v => s"\"$v\"").mkString(", ")})
