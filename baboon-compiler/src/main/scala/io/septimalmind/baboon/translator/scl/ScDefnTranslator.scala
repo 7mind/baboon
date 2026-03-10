@@ -362,8 +362,13 @@ object ScDefnTranslator {
               val in  = trans.asScRef(m.sig, domain, evo)
               val out = m.out.map(trans.asScRef(_, domain, evo))
               val err = m.err.map(trans.asScRef(_, domain, evo))
+              val servicePkgParts           = name.pkg.parts.toList
               val scFqName: ScValue => String = {
-                case t: ScValue.ScType     => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
+                case t: ScValue.ScType if t.predef => t.name
+                case t: ScValue.ScType =>
+                  val typeParts = (t.pkg.parts :+ t.name).toList
+                  if (typeParts.startsWith(servicePkgParts)) typeParts.drop(servicePkgParts.size).mkString(".")
+                  else typeParts.mkString(".")
               }
               val outStr = out.map(_.mapRender(scFqName)).getOrElse("")
               val errStr = err.map(_.mapRender(scFqName))

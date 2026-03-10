@@ -205,8 +205,12 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
          |${mappedTree}""".stripMargin
     }
 
+    val oPkgParts = o.pkg.parts.toList
     full.mapRender {
-      case t: ScValue.ScType if t.fq                     => (t.pkg.parts :+ t.name).mkString(".")
+      case t: ScValue.ScType if t.fq =>
+        val typeParts = (t.pkg.parts :+ t.name).toList
+        if (typeParts.startsWith(oPkgParts)) typeParts.drop(oPkgParts.size).mkString(".")
+        else typeParts.mkString(".")
       case ScValue.ScType(_, name, Some(inObject), _, _) => s"$inObject.$name"
       case t: ScValue.ScType                             => t.name
     }
