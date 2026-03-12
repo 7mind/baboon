@@ -35,7 +35,7 @@ object ScDomainTreeTools {
     }
 
     private def mainMeta(defn: DomainMember.User): List[MetaField] = {
-      val ref = typeTranslator.asScType(defn.id, domain, evolution).fullyQualified
+      val ref = typeTranslator.asScType(defn.id, domain, evolution)
       val baboonDomainVersion = MetaField(
         q"def baboonDomainVersion: $scString",
         q"\"${domain.version.v.toString}\"",
@@ -57,7 +57,7 @@ object ScDomainTreeTools {
     private def adtMeta(defn: DomainMember.User): List[MetaField] = {
       defn.id.owner match {
         case Owner.Adt(id) =>
-          val adtRef = typeTranslator.asScType(defn.id, domain, evolution).fullyQualified
+          val adtRef = typeTranslator.asScType(defn.id, domain, evolution)
           val adtTypeIdentifier = MetaField(
             q"def baboonAdtTypeIdentifier: $scString",
             q"\"${id.toString}\"",
@@ -74,7 +74,7 @@ object ScDomainTreeTools {
     }
 
     private def sameInVersion(defn: DomainMember.User): List[MetaField] = {
-      val ref             = typeTranslator.asScType(defn.id, domain, evolution).fullyQualified
+      val ref             = typeTranslator.asScType(defn.id, domain, evolution)
       val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id).sameIn.map(v => s"\"${v.v.toString}\"")
       val sameInVersion = MetaField(
         q"def baboonSameInVersions: $scList[$scString]",

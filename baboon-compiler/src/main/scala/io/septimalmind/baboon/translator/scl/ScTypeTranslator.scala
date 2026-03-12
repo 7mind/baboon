@@ -110,12 +110,14 @@ class ScTypeTranslator {
     val fullPrefix    = pkg.parts ++ ownerAsPrefix
 
     val fullPkg = tid.owner match {
-      case Owner.Adt(_) =>
-        ScPackageId(pkg.parts ++ ownerAsPrefix)
-      case _ =>
-        ScPackageId(fullPrefix)
+      case Owner.Adt(_) => ScPackageId(pkg.parts ++ ownerAsPrefix)
+      case _            => ScPackageId(fullPrefix)
     }
-    ScType(fullPkg, tid.name.name.capitalize)
+    val inObject = tid.owner match {
+      case Owner.Adt(id) => Some(id.name.name)
+      case _             => None
+    }
+    ScType(fullPkg, tid.name.name.capitalize, inObject)
   }
 
   private def renderOwner(owner: Owner): Seq[String] = {
