@@ -66,23 +66,28 @@ if [[ "$(uname)" == "Linux" ]]; then
       exit 1
     fi
 
-    shopt -s nullglob
-    swift_libdispatch_candidates=(/nix/store/*swift-corelibs-libdispatch-"$SWIFT_VERSION"*/lib)
-    shopt -u nullglob
+    # Resolve libdispatch from the swift binary's nix closure to avoid
+    # picking up unrelated store paths from other derivations/architectures
+    SWIFT_REAL="$(readlink -f "$SWIFT_BIN")"
+    SWIFT_STORE_PATH="$(echo "$SWIFT_REAL" | sed -n 's|^\(/nix/store/[^/]*\)/.*|\1|p')"
+    if [[ -z "$SWIFT_STORE_PATH" ]]; then
+      echo "Unable to determine nix store path for swift binary: $SWIFT_REAL" >&2
+      exit 1
+    fi
 
     swift_libdispatch_matches=()
-    for candidate in "${swift_libdispatch_candidates[@]}"; do
-      if [[ "$candidate" == *-dev/lib ]]; then
-        continue
+    while IFS= read -r dep; do
+      lib="$dep/lib"
+      if [[ "$dep" == *swift-corelibs-libdispatch-"$SWIFT_VERSION" && "$dep" != *-dev ]]; then
+        if [[ -f "$lib/libdispatch.so" || -f "$lib/libdispatch.so.5" ]]; then
+          swift_libdispatch_matches+=("$lib")
+        fi
       fi
-      if [[ -f "$candidate/libdispatch.so" || -f "$candidate/libdispatch.so.5" ]]; then
-        swift_libdispatch_matches+=("$candidate")
-      fi
-    done
+    done < <(nix-store -qR "$SWIFT_STORE_PATH")
 
     if [[ ${#swift_libdispatch_matches[@]} -ne 1 ]]; then
-      echo "Expected exactly one runtime swift-corelibs-libdispatch path for Swift $SWIFT_VERSION, found ${#swift_libdispatch_matches[@]}" >&2
-      printf 'Candidates:\n%s\n' "${swift_libdispatch_candidates[@]}" >&2 || true
+      echo "Expected exactly one runtime swift-corelibs-libdispatch in closure of $SWIFT_STORE_PATH for Swift $SWIFT_VERSION, found ${#swift_libdispatch_matches[@]}" >&2
+      printf '%s\n' "${swift_libdispatch_matches[@]}" >&2 || true
       exit 1
     fi
 
