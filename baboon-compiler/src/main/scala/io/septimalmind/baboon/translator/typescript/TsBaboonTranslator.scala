@@ -232,19 +232,22 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       .filterNot(_.isBarrel)
       .filter(_.path.endsWith(".ts"))
 
+    // Group files by their direct parent directory
     val byDir = definitionOutputs.groupBy { o =>
       val idx = o.path.lastIndexOf('/')
       if (idx >= 0) o.path.substring(0, idx) else ""
     }
 
-    val barrels = byDir.toList.sortBy(_._1).flatMap {
+    // Generate per-directory barrels (each barrel only re-exports direct files, never sub-barrels)
+    // Skip root directory (runtime-only files, not useful in barrel)
+    val perDirBarrels = byDir.toList.filter(_._1.nonEmpty).sortBy(_._1).flatMap {
       case (dir, files) =>
         val reexports = files.sortBy(_.path).map { f =>
-          val fname   = f.path.drop(dir.length + 1).stripSuffix(".ts")
+          val fname = f.path.drop(dir.length + 1).stripSuffix(".ts")
           TextTree.text[TsValue](s"export * from './$fname$sfx';")
         }
         if (reexports.nonEmpty) {
-          val barrelPath   = if (dir.isEmpty) "index.ts" else s"$dir/index.ts"
+          val barrelPath   = s"$dir/index.ts"
           val barrelModule = TsModuleId(tsFileTools.definitionsBasePkg ++ barrelPath.stripSuffix(".ts").split('/').toList)
           val tree         = reexports.reduce((a, b) => q"$a\n$b")
           Some(
@@ -260,27 +263,10 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         } else None
     }
 
-    // Root barrel that re-exports subdirectory barrels
-    val subBarrels = barrels.filter(_.path.count(_ == '/') > 0)
-    if (subBarrels.nonEmpty) {
-      val rootReexports = subBarrels.map { b =>
-        val relPath = b.path.stripSuffix(".ts")
-        TextTree.text[TsValue](s"export * from './$relPath$sfx';")
-      }
-      val rootTree   = rootReexports.reduce((a, b) => q"$a\n$b")
-      val rootModule = TsModuleId(tsFileTools.definitionsBasePkg ++ List("index"))
-      val rootBarrel = TsDefnTranslator.Output(
-        "index.ts",
-        rootTree,
-        rootModule,
-        CompilerProduct.Definition,
-        doNotModify = true,
-        isBarrel    = true,
-      )
-      barrels.filterNot(_.path == "index.ts") :+ rootBarrel
-    } else {
-      barrels
-    }
+    // No root barrel — it would cause name collisions across domain versions,
+    // namespaces, and service inline types. Per-directory barrels provide the
+    // key benefit: import { MyType, MyService } from './generated/my/domain'
+    perDirBarrels
   }
 
   private def generateConversions(
