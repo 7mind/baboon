@@ -257,13 +257,17 @@ object TsDefnTranslator {
         case TypeRef.Constructor(TypeId.Builtins.set, _) =>
           q"Array.from($ref)"
         case TypeRef.Constructor(TypeId.Builtins.map, args) =>
-          val keyIsString = args.head match {
-            case TypeRef.Scalar(TypeId.Builtins.str) => true
-            case TypeRef.Scalar(TypeId.Builtins.uid) => true
-            case _                                   => false
+          val isRecord = typeTranslator.isStringKeyMap(tpe)
+          if (isRecord) q"$ref" // already a Record — JSON-friendly as-is
+          else {
+            val keyIsString = args.head match {
+              case TypeRef.Scalar(TypeId.Builtins.str) => true
+              case TypeRef.Scalar(TypeId.Builtins.uid) => true
+              case _                                   => false
+            }
+            if (keyIsString) q"Object.fromEntries($ref)"
+            else q"Array.from($ref.entries())"
           }
-          if (keyIsString) q"Object.fromEntries($ref)"
-          else q"Array.from($ref.entries())"
         case TypeRef.Constructor(TypeId.Builtins.lst, _) =>
           q"$ref"
         case TypeRef.Constructor(TypeId.Builtins.opt, args) =>
