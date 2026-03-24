@@ -229,6 +229,16 @@ case class TsCLIOptions(
   serviceContextParameterName: Option[String],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
+  @HelpMessage("Generate async service interfaces with Promise return types (default: false)")
+  tsAsyncServices: Option[Boolean],
+  @HelpMessage("Use Record<string,V> instead of Map<string,V> for string-keyed maps (default: false)")
+  tsMapsAsRecords: Option[Boolean],
+  @HelpMessage("Use ISO string instead of BaboonDateTimeUtc wrapper for timestamps (default: false)")
+  tsTimestampsAsStrings: Option[Boolean],
+  @HelpMessage("Use Date object instead of BaboonDateTimeUtc wrapper for timestamps (default: false)")
+  tsTimestampsAsDates: Option[Boolean],
+  @HelpMessage("Use lowercase string values for enums (default: false)")
+  tsEnumLowercaseValues: Option[Boolean],
 ) extends SharedCLIOptions
 
 case class KtCLIOptions(

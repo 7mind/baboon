@@ -201,6 +201,33 @@ object TsDefnTranslator {
 
       val implementsClause = if (parents.nonEmpty) q"implements ${parents.map(tpe => q"$tpe").join(", ")}" else q""
 
+      val toJsonFields = dto.fields.map { f =>
+        val ref = s"this._${f.name.name}"
+        q"${f.name.name}: ${toJsonFieldExpr(f.tpe, ref)}"
+      }
+
+      val toJsonMethod =
+        q"""public toJSON(): Record<string, unknown> {
+           |    return {
+           |        ${toJsonFields.join(",\n").shift(8).trim}
+           |    };
+           |}""".stripMargin
+
+      val withParamFields = dto.fields.map { f =>
+        q"${f.name.name}?: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}"
+      }
+
+      val withArgs = dto.fields.map { f =>
+        q"'${f.name.name}' in overrides ? overrides.${f.name.name}! : this._${f.name.name}"
+      }
+
+      val withMethod =
+        q"""public with(overrides: {${withParamFields.join("; ")}}): $name {
+           |    return new $name(
+           |        ${withArgs.join(",\n").shift(8).trim}
+           |    );
+           |}""".stripMargin
+
       DefnRepr(
         q"""export class $name $implementsClause {
            |    ${fields.joinN().shift(4).trim}
@@ -211,16 +238,52 @@ object TsDefnTranslator {
            |
            |    ${getters.joinN().shift(4).trim}
            |
+           |    ${toJsonMethod.shift(4).trim}
+           |
+           |    ${withMethod.shift(4).trim}
+           |
            |    ${meta.joinN().shift(4).trim}
            |}""".stripMargin.trim,
         Nil,
       )
     }
 
+    private def toJsonFieldExpr(tpe: TypeRef, ref: String): TextTree[TsValue] = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.bytes) =>
+          q"Array.from($ref)"
+        case TypeRef.Scalar(_) =>
+          q"$ref"
+        case TypeRef.Constructor(TypeId.Builtins.set, _) =>
+          q"Array.from($ref)"
+        case TypeRef.Constructor(TypeId.Builtins.map, args) =>
+          val keyIsString = args.head match {
+            case TypeRef.Scalar(TypeId.Builtins.str) => true
+            case TypeRef.Scalar(TypeId.Builtins.uid) => true
+            case _                                   => false
+          }
+          if (keyIsString) q"Object.fromEntries($ref)"
+          else q"Array.from($ref.entries())"
+        case TypeRef.Constructor(TypeId.Builtins.lst, _) =>
+          q"$ref"
+        case TypeRef.Constructor(TypeId.Builtins.opt, args) =>
+          val inner = toJsonFieldExpr(args.head, ref)
+          if (inner.toString == ref) q"$ref"
+          else q"$ref !== undefined ? $inner : undefined"
+        case _ =>
+          q"$ref"
+      }
+    }
+
     private def makeEnumRepr(enum: Typedef.Enum): DefnRepr = {
       val enumName      = enum.id.name.name
       val branchesNames = enum.members.map(_.name)
-      val branches      = branchesNames.map(name => q"$name = \"$name\"").toSeq
+      val lowercaseValues = target.language.enumLowercaseValues
+      val branches = branchesNames.map { name =>
+        val value = if (lowercaseValues) name.toLowerCase else name
+        q"$name = \"$value\""
+      }.toSeq
+      val parseComparison = if (lowercaseValues) "v === s.toLowerCase()" else "v === s"
       DefnRepr(
         q"""export enum $enumName {
            |    ${branches.join(",\n").shift(4).trim}
@@ -231,7 +294,7 @@ object TsDefnTranslator {
            |] as const;
            |
            |export function ${enumName}_parse(s: string): $enumName {
-           |    const found = ${enumName}_values.find(v => v === s);
+           |    const found = ${enumName}_values.find(v => $parseComparison);
            |    if (found === undefined) {
            |        throw new Error("Unknown $enumName variant: " + s);
            |    }
@@ -285,6 +348,7 @@ object TsDefnTranslator {
     private def makeServiceRepr(defn: DomainMember.User, name: TsType): DefnRepr = {
       val resolved    = ServiceResultResolver.resolve(domain, "typescript", target.language.serviceResult, target.language.pragmas)
       val resolvedCtx = ServiceContextResolver.resolve(domain, "typescript", target.language.serviceContext, target.language.pragmas)
+      val isAsync     = target.language.asyncServices
       val ctxParam = resolvedCtx match {
         case ResolvedServiceContext.NoContext               => ""
         case ResolvedServiceContext.AbstractContext(tn, pn) => s"$pn: $tn, "
@@ -297,7 +361,7 @@ object TsDefnTranslator {
           val outType = m.out.map(typeTranslator.asTsRef(_, domain, evo, tsFileTools.definitionsBasePkg))
           val errType = m.err.map(typeTranslator.asTsRef(_, domain, evo, tsFileTools.definitionsBasePkg))
 
-          val retTree: TextTree[TsValue] = if (resolved.noErrors || errType.isEmpty) {
+          val baseRetTree: TextTree[TsValue] = if (resolved.noErrors || errType.isEmpty) {
             outType.getOrElse(q"void")
           } else {
             val isBuiltinEither = resolved.resultType.contains("BaboonEither")
@@ -313,6 +377,7 @@ object TsDefnTranslator {
               q"any"
             }
           }
+          val retTree: TextTree[TsValue] = if (isAsync) q"Promise<$baseRetTree>" else baseRetTree
           q"${m.name.name}(${ctxParam}arg: $inType): $retTree;"
       }
       val genericParam = resolvedCtx match {

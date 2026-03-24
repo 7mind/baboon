@@ -114,7 +114,7 @@ class ScopeBuilder[F[+_, +_]: Error2] {
                 out
               }
           }
-          out <- wrapScope(service, sub)
+          out <- if (sub.isEmpty) F.pure(mkLeaf(service)) else wrapScope(service, sub)
         } yield {
           out
         }

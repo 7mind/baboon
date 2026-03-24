@@ -447,6 +447,11 @@ object BaboonJS {
                 serviceResult               = ServiceResultConfig.typescriptDefault,
                 serviceContext              = ServiceContextConfig.default,
                 pragmas                     = Map.empty,
+                asyncServices               = false,
+                mapsAsRecords               = false,
+                timestampsUtcMode           = "wrapper",
+                timestampsOffsetMode        = "wrapper",
+                enumLowercaseValues         = false,
               ),
             )
           case "kotlin" =>

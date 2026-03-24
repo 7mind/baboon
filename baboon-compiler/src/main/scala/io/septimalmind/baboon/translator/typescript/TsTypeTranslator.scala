@@ -1,12 +1,17 @@
 package io.septimalmind.baboon.translator.typescript
 
+import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.translator.typescript.TsTypes.*
 import io.septimalmind.baboon.translator.typescript.TsValue.{TsModuleId, TsType}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
-class TsTypeTranslator {
+class TsTypeTranslator(target: TsTarget) {
+  private val mapsAsRecords: Boolean       = target.language.mapsAsRecords
+  private val timestampsUtcMode: String    = target.language.timestampsUtcMode
+  private val timestampsOffsetMode: String = target.language.timestampsOffsetMode
+
   def asTsRef(
     tpe: TypeRef,
     domain: Domain,
@@ -33,10 +38,29 @@ class TsTypeTranslator {
       case TypeRef.Constructor(id, args) if id == TypeId.Builtins.opt =>
         q"${asTsRef(args.head, domain, evo, pkgBase)} | undefined"
 
+      case TypeRef.Constructor(id, args) if id == TypeId.Builtins.map && mapsAsRecords && isStringKey(args.head) =>
+        val valRef = asTsRef(args.toSeq(1), domain, evo, pkgBase)
+        q"$tsRecord<$tsString, $valRef>"
+
       case TypeRef.Constructor(id, args) =>
         val tpe   = asTsType(id, domain, evo, pkgBase)
         val targs = args.map(asTsRef(_, domain, evo, pkgBase))
         q"$tpe<${targs.toSeq.join(", ")}>"
+    }
+  }
+
+  def isStringKeyMap(tpe: TypeRef): Boolean = {
+    tpe match {
+      case TypeRef.Constructor(TypeId.Builtins.map, args) => mapsAsRecords && isStringKey(args.head)
+      case _                                              => false
+    }
+  }
+
+  private def isStringKey(tpe: TypeRef): Boolean = {
+    tpe match {
+      case TypeRef.Scalar(TypeId.Builtins.str) => true
+      case TypeRef.Scalar(TypeId.Builtins.uid) => true
+      case _                                   => false
     }
   }
 
@@ -59,9 +83,19 @@ class TsTypeTranslator {
           case TypeId.Builtins.str                       => tsString
           case TypeId.Builtins.bytes                     => tsBytes
           case TypeId.Builtins.uid                       => tsString
-          case TypeId.Builtins.tsu                       => tsBaboonDateTimeUtc
-          case TypeId.Builtins.tso                       => tsBaboonDateTimeOffset
-          case TypeId.Builtins.bit                       => tsBoolean
+          case TypeId.Builtins.tsu =>
+            timestampsUtcMode match {
+              case "string" => tsString
+              case "date"   => tsDate
+              case _        => tsBaboonDateTimeUtc
+            }
+          case TypeId.Builtins.tso =>
+            timestampsOffsetMode match {
+              case "string" => tsString
+              case "date"   => tsDate
+              case _        => tsBaboonDateTimeOffset
+            }
+          case TypeId.Builtins.bit => tsBoolean
 
           case other => throw new IllegalArgumentException(s"Unexpected: $other")
         }

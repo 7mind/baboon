@@ -295,8 +295,18 @@ class TsUEBACodecGenerator(
           case TypeId.Builtins.str   => q"$tsBinTools.writeString($w, $ref);"
           case TypeId.Builtins.bytes => q"$tsBinTools.writeBytes($w, $ref);"
           case TypeId.Builtins.uid   => q"$tsBinTools.writeUuid($w, $ref);"
-          case TypeId.Builtins.tsu   => q"$tsBinTools.writeTimestampUtc($w, $ref);"
-          case TypeId.Builtins.tso   => q"$tsBinTools.writeTimestampOffset($w, $ref);"
+          case TypeId.Builtins.tsu =>
+            target.language.timestampsUtcMode match {
+              case "string" => q"$tsBinTools.writeTimestampUtc($w, $tsBaboonDateTimeUtc.fromISO($ref));"
+              case "date"   => q"$tsBinTools.writeTimestampUtc($w, $tsBaboonDateTimeUtc.fromDate($ref));"
+              case _        => q"$tsBinTools.writeTimestampUtc($w, $ref);"
+            }
+          case TypeId.Builtins.tso =>
+            target.language.timestampsOffsetMode match {
+              case "string" => q"$tsBinTools.writeTimestampOffset($w, $tsBaboonDateTimeOffset.fromISO($ref));"
+              case "date"   => q"$tsBinTools.writeTimestampOffset($w, $tsBaboonDateTimeOffset.fromISO($ref.toISOString()));"
+              case _        => q"$tsBinTools.writeTimestampOffset($w, $ref);"
+            }
           case u: TypeId.User =>
             domain.defs.meta.nodes.get(u) match {
               case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
@@ -335,11 +345,21 @@ class TsUEBACodecGenerator(
                |    ${mkEncoder(args.head, q"item", writer).shift(4).trim}
                |}""".stripMargin
           case TypeId.Builtins.map =>
-            q"""$tsBinTools.writeI32($w, $ref.size);
-               |for (const [k, v] of $ref) {
-               |    ${mkEncoder(args.head, q"k", writer).shift(4).trim}
-               |    ${mkEncoder(args.last, q"v", writer).shift(4).trim}
-               |}""".stripMargin
+            val isRecord = typeTranslator.isStringKeyMap(tpe)
+            if (isRecord) {
+              q"""const entries_$w = Object.entries($ref);
+                 |$tsBinTools.writeI32($w, entries_$w.length);
+                 |for (const [k, v] of entries_$w) {
+                 |    ${mkEncoder(args.head, q"k", writer).shift(4).trim}
+                 |    ${mkEncoder(args.last, q"v", writer).shift(4).trim}
+                 |}""".stripMargin
+            } else {
+              q"""$tsBinTools.writeI32($w, $ref.size);
+                 |for (const [k, v] of $ref) {
+                 |    ${mkEncoder(args.head, q"k", writer).shift(4).trim}
+                 |    ${mkEncoder(args.last, q"v", writer).shift(4).trim}
+                 |}""".stripMargin
+            }
           case o => throw new RuntimeException(s"BUG: Unexpected collection type: $o")
         }
     }
@@ -364,8 +384,18 @@ class TsUEBACodecGenerator(
           case TypeId.Builtins.str   => q"$tsBinTools.readString(reader)"
           case TypeId.Builtins.bytes => q"$tsBinTools.readBytes(reader)"
           case TypeId.Builtins.uid   => q"$tsBinTools.readUuid(reader)"
-          case TypeId.Builtins.tsu   => q"$tsBinTools.readTimestampUtc(reader)"
-          case TypeId.Builtins.tso   => q"$tsBinTools.readTimestampOffset(reader)"
+          case TypeId.Builtins.tsu =>
+            target.language.timestampsUtcMode match {
+              case "string" => q"$tsBinTools.readTimestampUtc(reader).toISOString()"
+              case "date"   => q"$tsBinTools.readTimestampUtc(reader).date"
+              case _        => q"$tsBinTools.readTimestampUtc(reader)"
+            }
+          case TypeId.Builtins.tso =>
+            target.language.timestampsOffsetMode match {
+              case "string" => q"$tsBinTools.readTimestampOffset(reader).toISOString()"
+              case "date"   => q"$tsBinTools.readTimestampOffset(reader).date"
+              case _        => q"$tsBinTools.readTimestampOffset(reader)"
+            }
           case u: TypeId.User =>
             domain.defs.meta.nodes.get(u) match {
               case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
@@ -393,7 +423,12 @@ class TsUEBACodecGenerator(
           case TypeId.Builtins.set =>
             q"new Set(Array.from({ length: $tsBinTools.readI32(reader) }, () => ${mkDecoder(args.head)}))"
           case TypeId.Builtins.map =>
-            q"new Map(Array.from({ length: $tsBinTools.readI32(reader) }, () => [${mkDecoder(args.head)}, ${mkDecoder(args.last)}] as const))"
+            val isRecord = typeTranslator.isStringKeyMap(tpe)
+            if (isRecord) {
+              q"Object.fromEntries(Array.from({ length: $tsBinTools.readI32(reader) }, () => [${mkDecoder(args.head)}, ${mkDecoder(args.last)}] as const))"
+            } else {
+              q"new Map(Array.from({ length: $tsBinTools.readI32(reader) }, () => [${mkDecoder(args.head)}, ${mkDecoder(args.last)}] as const))"
+            }
           case o => throw new RuntimeException(s"BUG: Unexpected collection type: $o")
         }
     }

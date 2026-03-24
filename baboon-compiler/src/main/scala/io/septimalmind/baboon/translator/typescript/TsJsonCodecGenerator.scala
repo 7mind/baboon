@@ -174,9 +174,17 @@ class TsJsonCodecGenerator(
           case TypeId.Builtins.bytes =>
             q"$tsBinTools.hexEncode($ref)"
           case TypeId.Builtins.tsu =>
-            q"$ref.toISOString()"
+            target.language.timestampsUtcMode match {
+              case "string" => ref
+              case "date"   => q"$ref.toISOString()"
+              case _        => q"$ref.toISOString()"
+            }
           case TypeId.Builtins.tso =>
-            q"$ref.toISOString()"
+            target.language.timestampsOffsetMode match {
+              case "string" => ref
+              case "date"   => q"$ref.toISOString()"
+              case _        => q"$ref.toISOString()"
+            }
           case u: TypeId.User =>
             domain.defs.meta.nodes.get(u) match {
               case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
@@ -203,7 +211,10 @@ class TsJsonCodecGenerator(
             q"Array.from($ref).map(item => ${mkJsonEncoder(args.head, q"item")})"
           case TypeId.Builtins.map =>
             val keyType = args.head
+            val isRecord = trans.isStringKeyMap(tpe)
             keyType match {
+              case TypeRef.Scalar(TypeId.Builtins.str) if isRecord =>
+                q"Object.fromEntries(Object.entries($ref).map(([k, v]) => [k, ${mkJsonEncoder(args.last, q"v")}]))"
               case TypeRef.Scalar(TypeId.Builtins.str) =>
                 q"Object.fromEntries(Array.from($ref.entries()).map(([k, v]) => [k, ${mkJsonEncoder(args.last, q"v")}]))"
               case _ =>
@@ -231,9 +242,17 @@ class TsJsonCodecGenerator(
           case TypeId.Builtins.bytes =>
             q"$tsBinTools.hexDecode($ref as string)"
           case TypeId.Builtins.tsu =>
-            q"$tsBaboonDateTimeUtc.fromISO($ref as string)"
+            target.language.timestampsUtcMode match {
+              case "string" => q"$ref as string"
+              case "date"   => q"new Date($ref as string)"
+              case _        => q"$tsBaboonDateTimeUtc.fromISO($ref as string)"
+            }
           case TypeId.Builtins.tso =>
-            q"$tsBaboonDateTimeOffset.fromISO($ref as string)"
+            target.language.timestampsOffsetMode match {
+              case "string" => q"$ref as string"
+              case "date"   => q"new Date($ref as string)"
+              case _        => q"$tsBaboonDateTimeOffset.fromISO($ref as string)"
+            }
           case u: TypeId.User =>
             domain.defs.meta.nodes.get(u) match {
               case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
@@ -261,8 +280,11 @@ class TsJsonCodecGenerator(
           case TypeId.Builtins.set =>
             q"new Set(($ref as unknown[]).map(item => ${mkJsonDecoder(args.head, q"item")}))"
           case TypeId.Builtins.map =>
-            val keyType = args.head
+            val keyType  = args.head
+            val isRecord = trans.isStringKeyMap(tpe)
             keyType match {
+              case TypeRef.Scalar(TypeId.Builtins.str) if isRecord =>
+                q"Object.fromEntries(Object.entries($ref as Record<string, unknown>).map(([k, v]) => [k, ${mkJsonDecoder(args.last, q"v")}]))"
               case TypeRef.Scalar(TypeId.Builtins.str) =>
                 q"new Map(Object.entries($ref as Record<string, unknown>).map(([k, v]) => [k, ${mkJsonDecoder(args.last, q"v")}]))"
               case _ =>

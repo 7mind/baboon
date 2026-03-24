@@ -307,6 +307,13 @@ root service I2 {
     )
 }
 
+root service I3 {
+    def refOnlyCall (
+        in = T7_Empty
+        out = T7_Empty
+    )
+}
+
 root data T14_FieldRename {
   newName: str was oldName
   unchanged: i32

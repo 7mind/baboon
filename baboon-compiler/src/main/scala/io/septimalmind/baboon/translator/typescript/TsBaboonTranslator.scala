@@ -29,10 +29,12 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       translated <- translateFamily(family)
       runtime    <- sharedRuntime
       fixture    <- sharedFixture
+      barrels = generateBarrels(translated ++ runtime)
       rendered = (
         translated ++
           runtime ++
-          fixture
+          fixture ++
+          barrels
       ).map {
         o =>
           val content = renderTree(o)
@@ -221,6 +223,63 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
                          else path.dropRight(1).lastOption.getOrElse("m")
             t -> s"${prefix}_$name"
         }
+    }
+  }
+
+  private def generateBarrels(outputs: List[TsDefnTranslator.Output]): List[TsDefnTranslator.Output] = {
+    val sfx = target.language.importSuffix
+    val definitionOutputs = outputs.filter(o => o.product == CompilerProduct.Definition || o.product == CompilerProduct.Runtime)
+      .filterNot(_.isBarrel)
+      .filter(_.path.endsWith(".ts"))
+
+    val byDir = definitionOutputs.groupBy { o =>
+      val idx = o.path.lastIndexOf('/')
+      if (idx >= 0) o.path.substring(0, idx) else ""
+    }
+
+    val barrels = byDir.toList.sortBy(_._1).flatMap {
+      case (dir, files) =>
+        val reexports = files.sortBy(_.path).map { f =>
+          val fname   = f.path.drop(dir.length + 1).stripSuffix(".ts")
+          TextTree.text[TsValue](s"export * from './$fname$sfx';")
+        }
+        if (reexports.nonEmpty) {
+          val barrelPath   = if (dir.isEmpty) "index.ts" else s"$dir/index.ts"
+          val barrelModule = TsModuleId(tsFileTools.definitionsBasePkg ++ barrelPath.stripSuffix(".ts").split('/').toList)
+          val tree         = reexports.reduce((a, b) => q"$a\n$b")
+          Some(
+            TsDefnTranslator.Output(
+              barrelPath,
+              tree,
+              barrelModule,
+              CompilerProduct.Definition,
+              doNotModify = true,
+              isBarrel    = true,
+            )
+          )
+        } else None
+    }
+
+    // Root barrel that re-exports subdirectory barrels
+    val subBarrels = barrels.filter(_.path.count(_ == '/') > 0)
+    if (subBarrels.nonEmpty) {
+      val rootReexports = subBarrels.map { b =>
+        val relPath = b.path.stripSuffix(".ts")
+        TextTree.text[TsValue](s"export * from './$relPath$sfx';")
+      }
+      val rootTree   = rootReexports.reduce((a, b) => q"$a\n$b")
+      val rootModule = TsModuleId(tsFileTools.definitionsBasePkg ++ List("index"))
+      val rootBarrel = TsDefnTranslator.Output(
+        "index.ts",
+        rootTree,
+        rootModule,
+        CompilerProduct.Definition,
+        doNotModify = true,
+        isBarrel    = true,
+      )
+      barrels.filterNot(_.path == "index.ts") :+ rootBarrel
+    } else {
+      barrels
     }
   }
 

@@ -17,7 +17,9 @@ object TsTypes {
   val tsBytes: TsType   = TsType.predef("Uint8Array")
   val tsArray: TsType   = TsType.predef("Array")
   val tsMap: TsType     = TsType.predef("Map")
+  val tsRecord: TsType  = TsType.predef("Record")
   val tsSet: TsType     = TsType.predef("Set")
+  val tsDate: TsType    = TsType.predef("Date")
   val tsBigInt: TsType  = TsType.predef("bigint")
 
   // ts types

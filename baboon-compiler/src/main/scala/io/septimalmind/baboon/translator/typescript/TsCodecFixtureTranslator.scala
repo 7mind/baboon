@@ -112,7 +112,11 @@ object TsCodecFixtureTranslator {
             case Builtins.set =>
               q"new Set(Array.from({ length: rnd.nextUSize(5) }, () => ${genType(args.head)}))"
             case Builtins.map =>
-              q"new Map(Array.from({ length: rnd.nextUSize(5) }, () => [${genType(args(0))}, ${genType(args(1))}] as const))"
+              val isRecord = translator.isStringKeyMap(TypeRef.Constructor(id, args))
+              if (isRecord)
+                q"Object.fromEntries(Array.from({ length: rnd.nextUSize(5) }, () => [${genType(args(0))}, ${genType(args(1))}] as const))"
+              else
+                q"new Map(Array.from({ length: rnd.nextUSize(5) }, () => [${genType(args(0))}, ${genType(args(1))}] as const))"
             case Builtins.opt =>
               q"(rnd.nextBit() ? ${genType(args.head)} : undefined)"
             case t => throw new IllegalArgumentException(s"Unexpected collection type: $t")
@@ -136,8 +140,18 @@ object TsCodecFixtureTranslator {
         case TypeId.Builtins.str   => q"rnd.nextString()"
         case TypeId.Builtins.bytes => q"rnd.nextBytes()"
         case TypeId.Builtins.uid   => q"rnd.nextUid()"
-        case TypeId.Builtins.tsu   => q"rnd.nextTsu()"
-        case TypeId.Builtins.tso   => q"rnd.nextTso()"
+        case TypeId.Builtins.tsu =>
+          translator.asTsType(TypeId.Builtins.tsu, domain, evo) match {
+            case TsTypes.tsString => q"rnd.nextTsu().toISOString()"
+            case TsTypes.tsDate  => q"rnd.nextTsu().date"
+            case _               => q"rnd.nextTsu()"
+          }
+        case TypeId.Builtins.tso =>
+          translator.asTsType(TypeId.Builtins.tso, domain, evo) match {
+            case TsTypes.tsString => q"rnd.nextTso().toISOString()"
+            case TsTypes.tsDate  => q"rnd.nextTso().date"
+            case _               => q"rnd.nextTso()"
+          }
         case TypeId.Builtins.bit   => q"rnd.nextBit()"
 
         case u: TypeId.User if enquiries.isEnum(tpe, domain) =>

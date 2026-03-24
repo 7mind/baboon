@@ -226,6 +226,11 @@ final case class TsOptions(
   serviceResult: ServiceResultConfig,
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
+  asyncServices: Boolean,
+  mapsAsRecords: Boolean,
+  timestampsUtcMode: String,
+  timestampsOffsetMode: String,
+  enumLowercaseValues: Boolean,
 )
 
 final case class KtOptions(

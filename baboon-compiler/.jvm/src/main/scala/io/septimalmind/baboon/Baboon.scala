@@ -357,6 +357,15 @@ object Baboon {
                             serviceResult               = mkServiceResult(opts, ServiceResultConfig.typescriptDefault),
                             serviceContext              = mkServiceContext(opts),
                             pragmas                     = parsePragmas(opts.pragma),
+                            asyncServices               = opts.tsAsyncServices.getOrElse(false),
+                            mapsAsRecords               = opts.tsMapsAsRecords.getOrElse(false),
+                            timestampsUtcMode = if (opts.tsTimestampsAsStrings.getOrElse(false)) "string"
+                                                else if (opts.tsTimestampsAsDates.getOrElse(false)) "date"
+                                                else "wrapper",
+                            timestampsOffsetMode = if (opts.tsTimestampsAsStrings.getOrElse(false)) "string"
+                                                   else if (opts.tsTimestampsAsDates.getOrElse(false)) "date"
+                                                   else "wrapper",
+                            enumLowercaseValues         = opts.tsEnumLowercaseValues.getOrElse(false),
                           ),
                         )
                     }
