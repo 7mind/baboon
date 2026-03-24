@@ -27,118 +27,142 @@ import java.nio.file.Paths
 object Baboon {
   private type EitherF[+e, +a] = Either[e, a]
 
-  private val helpText: String =
-    """Usage: baboon [options] <modality> [modality-options] [<modality> [modality-options] ...]
-      |
-      |Global options:
-      |  --model <file>           A *.baboon file to process (can be repeated)
-      |  --model-dir <dir>        A directory to recursively read *.baboon files from (can be repeated)
-      |  --lock-file <file>       A file used to track model signatures
-      |  --meta-write-evolution-json <file>  Write evolution metadata as JSON
-      |  --debug                  Enable debug output
-      |  --help                   Show this help message
-      |
-      |Modalities:
-      |  :cs                      Generate C# code
-      |  :scala                   Generate Scala code
-      |  :python                  Generate Python code
-      |  :rust                    Generate Rust code
-      |  :typescript              Generate TypeScript code
-      |  :kotlin                  Generate Kotlin code
-      |  :java                    Generate Java 21 code
-      |  :dart                    Generate Dart 3+ code
-      |  :swift                   Generate Swift 5.9+ code
-      |  :lsp                     Start LSP server
-      |  :explore                 Start interactive explorer
-      |  :scheme                  Emit a cleaned-up single .baboon file for a domain version
-      |
-      |Common transpiler options (apply to all language modalities):
-      |  --output <dir>           Output directory for generated code (required)
-      |  --fixture-output <dir>   Output directory for generated fixtures
-      |  --test-output <dir>      Output directory for generated tests
-      |  --runtime <with|only|without>  Runtime generation mode (default: with)
-      |  --disable-conversions    Do not generate conversions (default: false)
-      |  --omit-most-recent-version-suffix-from-paths       Remove version segment from paths for most recent version
-      |  --omit-most-recent-version-suffix-from-namespaces  Remove version segment from namespaces for most recent version
-      |  --codec-test-iterations <n>  Number of iterations for generated codec tests (default: 500)
-      |  --ext-allow-cleanup <ext>    File extensions safe to delete during cleanup (can be repeated)
-      |  --generate-json-codecs          Generate JSON codecs (default: true)
-      |  --generate-ueba-codecs          Generate UEBA binary codecs (default: true)
-      |  --generate-json-codecs-by-default  Generate JSON codecs even for types without derived[json]
-      |  --generate-ueba-codecs-by-default  Generate UEBA codecs even for types without derived[ueba]
-      |  --enable-deprecated-encoders    Generate encoders for deprecated versions (CS, Scala, Python, Kotlin, Java)
-      |  --pragma <key=value>     Set a pragma value (can be repeated)
-      |
-      |Service generation options (apply to all language modalities):
-      |  --service-result-no-errors           Methods return success type only, no error wrapping
-      |  --service-result-type <type>         Wrapper type for service results (e.g. 'Either')
-      |  --service-result-pattern <pattern>   Pattern for result type (e.g. '<$error, $success>')
-      |  --service-context-mode <mode>        Context parameter mode: none, abstract, type (default: none)
-      |  --service-context-type <name>        Context type name (default: Ctx)
-      |  --service-context-parameter-name <name>  Context parameter name (default: ctx)
-      |
-      |HKT options (Scala, Kotlin only):
-      |  --service-result-hkt               Use HKT type parameter for service result
-      |  --service-result-hkt-name <name>   HKT type parameter name (e.g. 'F')
-      |  --service-result-hkt-signature <sig>  HKT type parameter signature (e.g. '[+_, +_]')
-      |
-      |C# options (:cs):
-      |  --cs-obsolete-errors           Generate obsolete errors instead of deprecations
-      |  --cs-exclude-global-usings     Do not generate usings for System, System.Collections.Generic and System.Linq
-      |  --cs-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
-      |  --cs-write-evolution-dict      Add evolution metadata as a C# dictionary
-      |  --deduplicate                  Apply code deduplication (default: true)
-      |  --generate-index-writers       Generate UEBA index writers (default: true)
-      |
-      |Scala options (:scala):
-      |  --sc-write-evolution-dict       Add evolution metadata as a Scala dictionary
-      |  --sc-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
-      |
-      |Python options (:python):
-      |  --py-write-evolution-dict       Add evolution metadata as a Python dictionary
-      |  --py-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
-      |
-      |Rust options (:rust):
-      |  --rs-write-evolution-dict       Add evolution metadata as a Rust dictionary
-      |  --rs-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
-      |
-      |TypeScript options (:typescript):
-      |  --ts-write-evolution-dict       Add evolution metadata as a TypeScript dictionary
-      |  --ts-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
-      |  --ts-import-suffix <suffix>     Suffix for relative import paths (e.g. '.js' for Node16/NodeNext)
-      |
-      |Kotlin options (:kotlin):
-      |  --kt-write-evolution-dict       Add evolution metadata as a Kotlin dictionary
-      |  --kt-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
-      |
-      |Java options (:java):
-      |  --jv-write-evolution-dict       Add evolution metadata as a Java dictionary
-      |  --jv-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
-      |
-      |Dart options (:dart):
-      |  --dt-write-evolution-dict       Add evolution metadata as a Dart dictionary
-      |  --dt-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
-      |
-      |Swift options (:swift):
-      |  --sw-write-evolution-dict       Add evolution metadata as a Swift dictionary
-      |  --sw-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
-      |
-      |Scheme options (:scheme):
-      |  --domain <name>          Domain name (e.g., 'my.domain.name')
-      |  --version <version>      Version string (e.g., '1.0.0')
-      |  --target <file>          Target output file path
-      |
-      |LSP options (:lsp):
-      |  --port <port>            TCP port to listen on (default: stdio)
-      |
-      |Examples:
-      |  baboon --model-dir ./models :cs --output ./out/cs :scala --output ./out/scala
-      |  baboon --model-dir ./models :cs --output ./out/cs --generate-json-codecs-by-default=true
-      |  baboon --model-dir ./models :lsp
-      |  baboon --model-dir ./models :lsp --port 5007
-      |  baboon --model-dir ./models :explore
-      |  baboon --model-dir ./models :scheme --domain=my.pkg --version=1.0.0 --target=./cleaned.baboon
-      |""".stripMargin
+  /** Names of args inherited from GenericTranspilerCLIOptions, SharedCLIOptions, and ScalaHktCLIOptions
+    * (camelCase, matching case-app's Arg.name). These are documented in the "Common transpiler options" /
+    * "Service generation options" / "HKT options" sections of the help text.
+    */
+  private val sharedArgNames: Set[String] = Set(
+    // GenericTranspilerCLIOptions
+    "output", "fixtureOutput", "testOutput", "runtime", "disableConversions",
+    "omitMostRecentVersionSuffixFromPaths", "omitMostRecentVersionSuffixFromNamespaces",
+    "codecTestIterations",
+    // SharedCLIOptions
+    "extAllowCleanup",
+    "serviceResultNoErrors", "serviceResultType", "serviceResultPattern",
+    "serviceContextMode", "serviceContextType", "serviceContextParameterName",
+    "pragma",
+    "generateJsonCodecs", "generateUebaCodecs",
+    "generateJsonCodecsByDefault", "generateUebaCodecsByDefault",
+    "enableDeprecatedEncoders",
+    // ScalaHktCLIOptions
+    "serviceResultHkt", "serviceResultHktName", "serviceResultHktSignature",
+  )
+
+  private def camelToKebab(s: String): String = {
+    val sb = new StringBuilder
+    s.foreach { c =>
+      if (c.isUpper && sb.nonEmpty) sb.append('-')
+      sb.append(c.toLower)
+    }
+    sb.toString
+  }
+
+  private def formatLanguageHelp[T](label: String, modality: String)(implicit help: caseapp.core.help.Help[T]): String = {
+    val languageArgs = help.args
+      .filterNot(_.noHelp)
+      .filterNot(a => sharedArgNames.contains(a.name.name))
+
+    if (languageArgs.isEmpty) return s"$label options (:$modality):\n  (no language-specific options)\n"
+
+    val lines = languageArgs.map { arg =>
+      val flag  = s"--${camelToKebab(arg.name.name)}"
+      val value = arg.valueDescription
+        .map(_.description)
+        .filterNot(d => d == "true/false" || d == "bool?" || d == "boolean")
+        .fold("")(v => s" <$v>")
+      val desc  = arg.helpMessage.fold("")(_.message)
+      s"  $flag$value  $desc"
+    }
+    s"$label options (:$modality):\n${lines.mkString("\n")}\n"
+  }
+
+  private val helpText: String = {
+    import caseapp.core.help.Help
+
+    val languageSections = Seq(
+      formatLanguageHelp[CsCLIOptions]("C#", "cs"),
+      formatLanguageHelp[ScCLIOptions]("Scala", "scala"),
+      formatLanguageHelp[PyCLIOptions]("Python", "python"),
+      formatLanguageHelp[RsCLIOptions]("Rust", "rust"),
+      formatLanguageHelp[TsCLIOptions]("TypeScript", "typescript"),
+      formatLanguageHelp[KtCLIOptions]("Kotlin", "kotlin"),
+      formatLanguageHelp[JvCLIOptions]("Java", "java"),
+      formatLanguageHelp[DtCLIOptions]("Dart", "dart"),
+      formatLanguageHelp[SwCLIOptions]("Swift", "swift"),
+    ).mkString("\n")
+
+    s"""Usage: baboon [options] <modality> [modality-options] [<modality> [modality-options] ...]
+       |
+       |Global options:
+       |  --model <file>           A *.baboon file to process (can be repeated)
+       |  --model-dir <dir>        A directory to recursively read *.baboon files from (can be repeated)
+       |  --lock-file <file>       A file used to track model signatures
+       |  --meta-write-evolution-json <file>  Write evolution metadata as JSON
+       |  --debug                  Enable debug output
+       |  --help                   Show this help message
+       |
+       |Modalities:
+       |  :cs                      Generate C# code
+       |  :scala                   Generate Scala code
+       |  :python                  Generate Python code
+       |  :rust                    Generate Rust code
+       |  :typescript              Generate TypeScript code
+       |  :kotlin                  Generate Kotlin code
+       |  :java                    Generate Java 21 code
+       |  :dart                    Generate Dart 3+ code
+       |  :swift                   Generate Swift 5.9+ code
+       |  :lsp                     Start LSP server
+       |  :explore                 Start interactive explorer
+       |  :scheme                  Emit a cleaned-up single .baboon file for a domain version
+       |
+       |Common transpiler options (apply to all language modalities):
+       |  --output <dir>           Output directory for generated code (required)
+       |  --fixture-output <dir>   Output directory for generated fixtures
+       |  --test-output <dir>      Output directory for generated tests
+       |  --runtime <with|only|without>  Runtime generation mode (default: with)
+       |  --disable-conversions    Do not generate conversions (default: false)
+       |  --omit-most-recent-version-suffix-from-paths       Remove version segment from paths for most recent version
+       |  --omit-most-recent-version-suffix-from-namespaces  Remove version segment from namespaces for most recent version
+       |  --codec-test-iterations <n>  Number of iterations for generated codec tests (default: 500)
+       |  --ext-allow-cleanup <ext>    File extensions safe to delete during cleanup (can be repeated)
+       |  --generate-json-codecs          Generate JSON codecs (default: true)
+       |  --generate-ueba-codecs          Generate UEBA binary codecs (default: true)
+       |  --generate-json-codecs-by-default  Generate JSON codecs even for types without derived[json]
+       |  --generate-ueba-codecs-by-default  Generate UEBA codecs even for types without derived[ueba]
+       |  --enable-deprecated-encoders    Generate encoders for deprecated versions (CS, Scala, Python, Kotlin, Java)
+       |  --pragma <key=value>     Set a pragma value (can be repeated)
+       |
+       |Service generation options (apply to all language modalities):
+       |  --service-result-no-errors           Methods return success type only, no error wrapping
+       |  --service-result-type <type>         Wrapper type for service results (e.g. 'Either')
+       |  --service-result-pattern <pattern>   Pattern for result type (e.g. '<$$error, $$success>')
+       |  --service-context-mode <mode>        Context parameter mode: none, abstract, type (default: none)
+       |  --service-context-type <name>        Context type name (default: Ctx)
+       |  --service-context-parameter-name <name>  Context parameter name (default: ctx)
+       |
+       |HKT options (Scala, Kotlin only):
+       |  --service-result-hkt               Use HKT type parameter for service result
+       |  --service-result-hkt-name <name>   HKT type parameter name (e.g. 'F')
+       |  --service-result-hkt-signature <sig>  HKT type parameter signature (e.g. '[+_, +_]')
+       |
+       |$languageSections
+       |Scheme options (:scheme):
+       |  --domain <name>          Domain name (e.g., 'my.domain.name')
+       |  --version <version>      Version string (e.g., '1.0.0')
+       |  --target <file>          Target output file path
+       |
+       |LSP options (:lsp):
+       |  --port <port>            TCP port to listen on (default: stdio)
+       |
+       |Examples:
+       |  baboon --model-dir ./models :cs --output ./out/cs :scala --output ./out/scala
+       |  baboon --model-dir ./models :cs --output ./out/cs --generate-json-codecs-by-default=true
+       |  baboon --model-dir ./models :lsp
+       |  baboon --model-dir ./models :lsp --port 5007
+       |  baboon --model-dir ./models :explore
+       |  baboon --model-dir ./models :scheme --domain=my.pkg --version=1.0.0 --target=./cleaned.baboon
+       |""".stripMargin
+  }
 
   def main(args: Array[String]): Unit = {
     val artifact  = implicitly[IzArtifactMaterializer]

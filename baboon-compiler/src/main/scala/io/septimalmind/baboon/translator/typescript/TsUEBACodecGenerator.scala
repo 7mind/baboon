@@ -200,14 +200,17 @@ class TsUEBACodecGenerator(
   }
 
   private def genEnumCodec(name: TsValue.TsType, e: Typedef.Enum): (TextTree[TsValue], TextTree[TsValue]) = {
+    val lowercaseValues = target.language.enumLowercaseValues
     val encBranches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        q"""case "${m.name.capitalize}": $tsBinTools.writeByte(writer, ${idx.toString}); break;"""
+        val value = if (lowercaseValues) m.name.toLowerCase else m.name.capitalize
+        q"""case "$value": $tsBinTools.writeByte(writer, ${idx.toString}); break;"""
     }
 
     val decBranches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        q"""case ${idx.toString}: return "${m.name.capitalize}" as ${name.name};"""
+        val value = if (lowercaseValues) m.name.toLowerCase else m.name.capitalize
+        q"""case ${idx.toString}: return "$value" as ${name.name};"""
     }
 
     (
