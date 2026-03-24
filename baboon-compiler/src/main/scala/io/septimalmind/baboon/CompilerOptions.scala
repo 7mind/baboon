@@ -218,6 +218,7 @@ final case class RsOptions(
 final case class TsOptions(
   writeEvolutionDict: Boolean,
   wrappedAdtBranchCodecs: Boolean,
+  importSuffix: String,
   generateJsonCodecs: Boolean,
   generateUebaCodecs: Boolean,
   generateUebaCodecsByDefault: Boolean,

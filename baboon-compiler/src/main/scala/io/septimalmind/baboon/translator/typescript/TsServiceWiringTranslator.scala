@@ -30,7 +30,13 @@ object TsServiceWiringTranslator {
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "typescript", target.language.serviceContext, target.language.pragmas)
 
-    private val jsonCodec: Option[TsCodecTranslator] = codecs.find(_.isInstanceOf[TsJsonCodecGenerator])
+    private def activeJsonCodec(service: Typedef.Service): Option[TsCodecTranslator] = {
+      codecs.find { c =>
+        c.isInstanceOf[TsJsonCodecGenerator] && service.methods.forall { m =>
+          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+        }
+      }
+    }
 
     private def activeBinCodec(service: Typedef.Service): Option[TsCodecTranslator] = {
       codecs.find { c =>
@@ -162,7 +168,7 @@ object TsServiceWiringTranslator {
       val svcType = typeTranslator.asTsType(service.id, domain, evo, tsFileTools.definitionsBasePkg)
 
       val jsonFn =
-        jsonCodec match {
+        activeJsonCodec(service) match {
           case Some(codec) => Some(generateNoErrorsJsonFn(service, svcType, codec))
           case None        => None
         }
@@ -272,7 +278,7 @@ object TsServiceWiringTranslator {
       val svcType = typeTranslator.asTsType(service.id, domain, evo, tsFileTools.definitionsBasePkg)
 
       val jsonFn =
-        jsonCodec match {
+        activeJsonCodec(service) match {
           case Some(codec) => Some(generateErrorsJsonFn(service, svcType, codec))
           case None        => None
         }

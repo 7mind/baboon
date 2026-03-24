@@ -29,7 +29,13 @@ object RsServiceWiringTranslator {
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "rust", target.language.serviceContext, target.language.pragmas)
 
-    private val hasJsonCodecs: Boolean = codecs.exists(_.isInstanceOf[RsJsonCodecGenerator])
+    private def hasActiveJsonCodecs(service: Typedef.Service): Boolean = {
+      codecs.exists { c =>
+        c.isInstanceOf[RsJsonCodecGenerator] && service.methods.forall { m =>
+          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+        }
+      }
+    }
 
     private def hasActiveUebaCodecs(service: Typedef.Service): Boolean = {
       codecs.exists { c =>
@@ -142,7 +148,7 @@ object RsServiceWiringTranslator {
       val svcType = trans.asRsType(service.id, domain, evo)
 
       val jsonFn =
-        if (hasJsonCodecs)
+        if (hasActiveJsonCodecs(service))
           Some(generateNoErrorsJsonFn(service, svcName, svcType))
         else None
 
@@ -245,7 +251,7 @@ object RsServiceWiringTranslator {
       val svcType = trans.asRsType(service.id, domain, evo)
 
       val jsonFn =
-        if (hasJsonCodecs)
+        if (hasActiveJsonCodecs(service))
           Some(generateErrorsJsonFn(service, svcName, svcType))
         else None
 

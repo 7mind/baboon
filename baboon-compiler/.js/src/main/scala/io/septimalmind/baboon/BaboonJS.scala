@@ -439,6 +439,7 @@ object BaboonJS {
               language = TsOptions(
                 writeEvolutionDict          = opts.writeEvolutionDict.getOrElse(false),
                 wrappedAdtBranchCodecs      = opts.wrappedAdtBranchCodecs.getOrElse(false),
+                importSuffix                = "",
                 generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),

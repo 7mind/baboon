@@ -130,6 +130,8 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def renderTree(o: TsDefnTranslator.Output): String = {
+    val sfx = target.language.importSuffix
+
     def relativeImportPath(srcModulePath: List[String], tgtModulePath: List[String]): String = {
       val srcDir          = srcModulePath.dropRight(1)
       val tgtDir          = tgtModulePath.dropRight(1)
@@ -137,17 +139,17 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       val commonPrefixLen = srcDir.zip(tgtDir).takeWhile { case (a, b) => a == b }.size
       val levelsUp        = srcDir.size - commonPrefixLen
       val remainingPath   = (tgtDir.drop(commonPrefixLen) :+ tgtName).mkString("/")
-      if (levelsUp == 0) s"./$remainingPath" else s"${"../" * levelsUp}$remainingPath"
+      if (levelsUp == 0) s"./$remainingPath$sfx" else s"${"../" * levelsUp}$remainingPath$sfx"
     }
 
     def baboonTypeImport(moduleId: TsModuleId, types: String): TextTree[TsValue] = {
       if (o.module.path.startsWith(tsFileTools.definitionsBasePkg)) {
         val afterBase    = o.module.path.drop(tsFileTools.definitionsBasePkg.size)
         val pathToModule = (0 until afterBase.size - 1).map(_ => "../").mkString("")
-        q"import {$types} from '$pathToModule${moduleId.path.mkString("")}'"
+        q"import {$types} from '$pathToModule${moduleId.path.mkString("")}$sfx'"
       } else {
         val pathToCommonParent = (0 until o.module.path.size - 1).map(_ => "../").mkString("")
-        q"import {$types} from '$pathToCommonParent${tsFileTools.definitionsBasePkg.mkString("/")}/${moduleId.path.mkString("")}'"
+        q"import {$types} from '$pathToCommonParent${tsFileTools.definitionsBasePkg.mkString("/")}/${moduleId.path.mkString("")}$sfx'"
       }
     }
 
@@ -157,7 +159,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         q"import {$types} from '$importPath'"
       } else {
         val pathToCommonParent = (0 until o.module.path.size - 1).map(_ => "../").mkString("")
-        q"import {$types} from '$pathToCommonParent${moduleId.path.mkString("/")}'"
+        q"import {$types} from '$pathToCommonParent${moduleId.path.mkString("/")}$sfx'"
       }
     }
 

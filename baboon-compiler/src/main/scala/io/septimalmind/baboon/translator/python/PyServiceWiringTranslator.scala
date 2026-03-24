@@ -31,7 +31,13 @@ object PyServiceWiringTranslator {
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "python", target.language.serviceContext, target.language.pragmas)
 
-    private val hasJsonCodecs: Boolean = codecs.exists(_.isInstanceOf[PyJsonCodecGenerator])
+    private def hasActiveJsonCodecs(service: Typedef.Service): Boolean = {
+      codecs.exists { c =>
+        c.isInstanceOf[PyJsonCodecGenerator] && service.methods.forall { m =>
+          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+        }
+      }
+    }
 
     private def hasActiveUebaCodecs(service: Typedef.Service): Boolean = {
       codecs.exists { c =>
@@ -146,7 +152,7 @@ object PyServiceWiringTranslator {
       val svcType = typeTranslator.asPyType(service.id, domain, evolution, fileTools.definitionsBasePkg)
 
       val jsonFn =
-        if (hasJsonCodecs)
+        if (hasActiveJsonCodecs(service))
           Some(generateNoErrorsJsonFn(service, svcName, svcType))
         else None
 
@@ -235,7 +241,7 @@ object PyServiceWiringTranslator {
       val svcType = typeTranslator.asPyType(service.id, domain, evolution, fileTools.definitionsBasePkg)
 
       val jsonFn =
-        if (hasJsonCodecs)
+        if (hasActiveJsonCodecs(service))
           Some(generateErrorsJsonFn(service, svcName, svcType))
         else None
 

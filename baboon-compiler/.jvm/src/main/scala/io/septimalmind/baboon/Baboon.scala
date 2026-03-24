@@ -105,6 +105,7 @@ object Baboon {
       |TypeScript options (:typescript):
       |  --ts-write-evolution-dict       Add evolution metadata as a TypeScript dictionary
       |  --ts-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
+      |  --ts-import-suffix <suffix>     Suffix for relative import paths (e.g. '.js' for Node16/NodeNext)
       |
       |Kotlin options (:kotlin):
       |  --kt-write-evolution-dict       Add evolution metadata as a Kotlin dictionary
@@ -348,6 +349,7 @@ object Baboon {
                           language = TsOptions(
                             writeEvolutionDict          = opts.tsWriteEvolutionDict.getOrElse(false),
                             wrappedAdtBranchCodecs      = opts.tsWrappedAdtBranchCodecs.getOrElse(false),
+                            importSuffix                = opts.tsImportSuffix.getOrElse(""),
                             generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
                             generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                             generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),

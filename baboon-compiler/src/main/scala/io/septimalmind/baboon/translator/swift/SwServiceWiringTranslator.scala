@@ -28,7 +28,13 @@ object SwServiceWiringTranslator {
     private val resolvedCtx: ResolvedServiceContext =
       ServiceContextResolver.resolve(domain, "swift", target.language.serviceContext, target.language.pragmas)
 
-    private val hasJsonCodecs: Boolean = codecs.exists(_.id == "Json")
+    private def hasActiveJsonCodecs(service: Typedef.Service): Boolean = {
+      codecs.exists { c =>
+        c.id == "Json" && service.methods.forall { m =>
+          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+        }
+      }
+    }
 
     private def hasActiveUebaCodecs(service: Typedef.Service): Boolean = {
       codecs.exists { c =>
@@ -120,7 +126,7 @@ object SwServiceWiringTranslator {
       val svcName = service.id.name.name
 
       val jsonMethod =
-        if (hasJsonCodecs)
+        if (hasActiveJsonCodecs(service))
           Some(generateNoErrorsJsonMethod(service))
         else None
 
@@ -230,7 +236,7 @@ object SwServiceWiringTranslator {
       val svcName = service.id.name.name
 
       val jsonMethod =
-        if (hasJsonCodecs)
+        if (hasActiveJsonCodecs(service))
           Some(generateErrorsJsonMethod(service))
         else None
 

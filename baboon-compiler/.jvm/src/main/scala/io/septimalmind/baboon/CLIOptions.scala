@@ -205,6 +205,8 @@ case class TsCLIOptions(
   tsWriteEvolutionDict: Option[Boolean],
   @HelpMessage("Every ADT branch will encode ADT metadata and expect it in the decoder")
   tsWrappedAdtBranchCodecs: Option[Boolean],
+  @HelpMessage("Suffix to append to relative import paths (e.g. '.js' for Node16/NodeNext module resolution)")
+  tsImportSuffix: Option[String],
   @HelpMessage("Generate JSON codecs")
   generateJsonCodecs: Option[Boolean],
   @HelpMessage("Generate UEBA codecs")
