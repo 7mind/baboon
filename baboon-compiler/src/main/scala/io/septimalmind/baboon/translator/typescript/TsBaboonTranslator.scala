@@ -226,6 +226,13 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     }
   }
 
+  /** Extract type names that a file defines (types whose module matches the file's own module). */
+  private def exportedNames(output: TsDefnTranslator.Output): Set[String] = {
+    output.tree.values
+      .collect { case t: TsValue.TsType if t.moduleId == output.module && !t.predef => t.name }
+      .toSet
+  }
+
   private def generateBarrels(outputs: List[TsDefnTranslator.Output]): List[TsDefnTranslator.Output] = {
     val sfx = target.language.importSuffix
     val definitionOutputs = outputs.filter(o => o.product == CompilerProduct.Definition || o.product == CompilerProduct.Runtime)
@@ -238,14 +245,46 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       if (idx >= 0) o.path.substring(0, idx) else ""
     }
 
-    // Generate per-directory barrels (each barrel only re-exports direct files, never sub-barrels)
-    // Skip root directory (runtime-only files, not useful in barrel)
+    // Generate per-directory barrels with collision detection.
+    // Skip root directory (runtime-only files, not useful in barrel).
     val perDirBarrels = byDir.toList.filter(_._1.nonEmpty).sortBy(_._1).flatMap {
       case (dir, files) =>
-        val reexports = files.sortBy(_.path).map { f =>
-          val fname = f.path.drop(dir.length + 1).stripSuffix(".ts")
-          TextTree.text[TsValue](s"export * from './$fname$sfx';")
+        val sortedFiles = files.sortBy(_.path)
+
+        // Collect exported names per file and detect collisions across files in this directory
+        val fileExports = sortedFiles.map(f => (f, exportedNames(f)))
+        val nameCount   = fileExports.flatMap(_._2).groupBy(identity).view.mapValues(_.size).toMap
+        val colliding   = nameCount.filter(_._2 > 1).keySet
+
+        val reexports = if (colliding.isEmpty) {
+          // No collisions — simple export * for all files
+          sortedFiles.map { f =>
+            val fname = f.path.drop(dir.length + 1).stripSuffix(".ts")
+            TextTree.text[TsValue](s"export * from './$fname$sfx';")
+          }
+        } else {
+          // Has collisions — files with colliding names get individual qualified re-exports,
+          // files without collisions get export *
+          fileExports.flatMap {
+            case (f, names) =>
+              val fname        = f.path.drop(dir.length + 1).stripSuffix(".ts")
+              val myCollisions = names.intersect(colliding)
+              if (myCollisions.isEmpty) {
+                List(TextTree.text[TsValue](s"export * from './$fname$sfx';"))
+              } else {
+                val safeNames    = names -- colliding
+                val qualifier    = fname.replace('.', '_').replace('-', '_').replace('/', '_')
+                val safeExport   = if (safeNames.nonEmpty) {
+                  List(TextTree.text[TsValue](s"export { ${safeNames.toList.sorted.mkString(", ")} } from './$fname$sfx';"))
+                } else Nil
+                val qualifiedExports = myCollisions.toList.sorted.map { name =>
+                  TextTree.text[TsValue](s"export { $name as ${qualifier}_$name } from './$fname$sfx';")
+                }
+                safeExport ++ qualifiedExports
+              }
+          }
         }
+
         if (reexports.nonEmpty) {
           val barrelPath   = s"$dir/index.ts"
           val barrelModule = TsModuleId(tsFileTools.definitionsBasePkg ++ barrelPath.stripSuffix(".ts").split('/').toList)
@@ -263,9 +302,6 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         } else None
     }
 
-    // No root barrel — it would cause name collisions across domain versions,
-    // namespaces, and service inline types. Per-directory barrels provide the
-    // key benefit: import { MyType, MyService } from './generated/my/domain'
     perDirBarrels
   }
 
