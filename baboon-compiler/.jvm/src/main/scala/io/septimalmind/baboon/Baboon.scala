@@ -28,7 +28,7 @@ object Baboon {
   private type EitherF[+e, +a] = Either[e, a]
 
   private val helpText: String =
-    """Usage: baboon [options] [:cs [cs-options] | :scala [scala-options] | :lsp [lsp-options] | :explore]
+    """Usage: baboon [options] <modality> [modality-options] [<modality> [modality-options] ...]
       |
       |Global options:
       |  --model <file>           A *.baboon file to process (can be repeated)
@@ -41,6 +41,7 @@ object Baboon {
       |Modalities:
       |  :cs                      Generate C# code
       |  :scala                   Generate Scala code
+      |  :python                  Generate Python code
       |  :rust                    Generate Rust code
       |  :typescript              Generate TypeScript code
       |  :kotlin                  Generate Kotlin code
@@ -51,38 +52,87 @@ object Baboon {
       |  :explore                 Start interactive explorer
       |  :scheme                  Emit a cleaned-up single .baboon file for a domain version
       |
+      |Common transpiler options (apply to all language modalities):
+      |  --output <dir>           Output directory for generated code (required)
+      |  --fixture-output <dir>   Output directory for generated fixtures
+      |  --test-output <dir>      Output directory for generated tests
+      |  --runtime <with|only|without>  Runtime generation mode (default: with)
+      |  --disable-conversions    Do not generate conversions (default: false)
+      |  --omit-most-recent-version-suffix-from-paths       Remove version segment from paths for most recent version
+      |  --omit-most-recent-version-suffix-from-namespaces  Remove version segment from namespaces for most recent version
+      |  --codec-test-iterations <n>  Number of iterations for generated codec tests (default: 500)
+      |  --ext-allow-cleanup <ext>    File extensions safe to delete during cleanup (can be repeated)
+      |  --generate-json-codecs          Generate JSON codecs (default: true)
+      |  --generate-ueba-codecs          Generate UEBA binary codecs (default: true)
+      |  --generate-json-codecs-by-default  Generate JSON codecs even for types without derived[json]
+      |  --generate-ueba-codecs-by-default  Generate UEBA codecs even for types without derived[ueba]
+      |  --enable-deprecated-encoders    Generate encoders for deprecated versions (CS, Scala, Python, Kotlin, Java)
+      |  --pragma <key=value>     Set a pragma value (can be repeated)
+      |
+      |Service generation options (apply to all language modalities):
+      |  --service-result-no-errors           Methods return success type only, no error wrapping
+      |  --service-result-type <type>         Wrapper type for service results (e.g. 'Either')
+      |  --service-result-pattern <pattern>   Pattern for result type (e.g. '<$error, $success>')
+      |  --service-context-mode <mode>        Context parameter mode: none, abstract, type (default: none)
+      |  --service-context-type <name>        Context type name (default: Ctx)
+      |  --service-context-parameter-name <name>  Context parameter name (default: ctx)
+      |
+      |HKT options (Scala, Kotlin only):
+      |  --service-result-hkt               Use HKT type parameter for service result
+      |  --service-result-hkt-name <name>   HKT type parameter name (e.g. 'F')
+      |  --service-result-hkt-signature <sig>  HKT type parameter signature (e.g. '[+_, +_]')
+      |
+      |C# options (:cs):
+      |  --cs-obsolete-errors           Generate obsolete errors instead of deprecations
+      |  --cs-exclude-global-usings     Do not generate usings for System, System.Collections.Generic and System.Linq
+      |  --cs-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
+      |  --cs-write-evolution-dict      Add evolution metadata as a C# dictionary
+      |  --deduplicate                  Apply code deduplication (default: true)
+      |  --generate-index-writers       Generate UEBA index writers (default: true)
+      |
+      |Scala options (:scala):
+      |  --sc-write-evolution-dict       Add evolution metadata as a Scala dictionary
+      |  --sc-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
+      |
+      |Python options (:python):
+      |  --py-write-evolution-dict       Add evolution metadata as a Python dictionary
+      |  --py-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
+      |
+      |Rust options (:rust):
+      |  --rs-write-evolution-dict       Add evolution metadata as a Rust dictionary
+      |  --rs-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
+      |
+      |TypeScript options (:typescript):
+      |  --ts-write-evolution-dict       Add evolution metadata as a TypeScript dictionary
+      |  --ts-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
+      |
+      |Kotlin options (:kotlin):
+      |  --kt-write-evolution-dict       Add evolution metadata as a Kotlin dictionary
+      |  --kt-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
+      |
+      |Java options (:java):
+      |  --jv-write-evolution-dict       Add evolution metadata as a Java dictionary
+      |  --jv-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
+      |
+      |Dart options (:dart):
+      |  --dt-write-evolution-dict       Add evolution metadata as a Dart dictionary
+      |  --dt-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
+      |
+      |Swift options (:swift):
+      |  --sw-write-evolution-dict       Add evolution metadata as a Swift dictionary
+      |  --sw-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
+      |
       |Scheme options (:scheme):
       |  --domain <name>          Domain name (e.g., 'my.domain.name')
       |  --version <version>      Version string (e.g., '1.0.0')
       |  --target <file>          Target output file path
-      |
-      |C# options (:cs):
-      |  --output <dir>           Output directory for generated code
-      |  --fixture-output <dir>   Output directory for generated fixtures
-      |  --runtime <only|with|without>  Runtime generation mode
-      |  --cs-obsolete-errors     Generate obsolete errors instead of deprecations
-      |  --cs-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
-      |  --deduplicate            Apply code deduplication (default: true)
-      |
-      |Scala options (:scala):
-      |  --output <dir>           Output directory for generated code
-      |  --fixture-output <dir>   Output directory for generated fixtures
-      |  --runtime <only|with|without>  Runtime generation mode
-      |  --sc-write-evolution-dict  Add evolution metadata as Scala dictionary
-      |  --sc-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
-      |
-      |Rust options (:rust):
-      |  --output <dir>           Output directory for generated code
-      |  --fixture-output <dir>   Output directory for generated fixtures
-      |  --runtime <only|with|without>  Runtime generation mode
-      |  --rs-write-evolution-dict  Add evolution metadata as Rust dictionary
-      |  --rs-wrapped-adt-branch-codecs  ADT branches encode/expect metadata
       |
       |LSP options (:lsp):
       |  --port <port>            TCP port to listen on (default: stdio)
       |
       |Examples:
       |  baboon --model-dir ./models :cs --output ./out/cs :scala --output ./out/scala
+      |  baboon --model-dir ./models :cs --output ./out/cs --generate-json-codecs-by-default=true
       |  baboon --model-dir ./models :lsp
       |  baboon --model-dir ./models :lsp --port 5007
       |  baboon --model-dir ./models :explore
