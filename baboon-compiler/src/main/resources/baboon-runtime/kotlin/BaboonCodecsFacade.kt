@@ -39,6 +39,7 @@ open class BaboonCodecsFacade {
         facade.versionsMeta.forEach { (id, meta) -> versionsMeta[id] = meta }
     }
 
+    // @baboon:json-start
     fun register(
         domainVersion: BaboonDomainVersion,
         codecsJson: () -> AbstractBaboonJsonCodecs,
@@ -47,16 +48,13 @@ open class BaboonCodecsFacade {
         meta: () -> BaboonMeta,
     ): BaboonDomainVersion {
         registerVersion(domainVersion)
-        // @baboon:json-start
         versionsCodecsJson[domainVersion] = Lazy(codecsJson)
-        // @baboon:json-end
         versionsCodecsBin[domainVersion] = Lazy(codecsBin)
         versionsConversions[domainVersion] = Lazy(conversions)
         versionsMeta[domainVersion] = Lazy(meta)
         return domainVersion
     }
 
-    // @baboon:json-start
     fun register(
         domainVersion: BaboonDomainVersion,
         codecsJson: () -> AbstractBaboonJsonCodecs,
@@ -77,7 +75,40 @@ open class BaboonCodecsFacade {
         registerVersion(domainVersion)
         versionsCodecsJson[domainVersion] = Lazy(codecsJson)
         versionsCodecsBin[domainVersion] = Lazy(codecsBin)
-        // @baboon:json-end
+        versionsMeta[domainVersion] = Lazy(meta)
+        return domainVersion
+    }
+    // @baboon:json-end
+
+    fun registerBin(
+        domainVersion: BaboonDomainVersion,
+        codecsBin: () -> AbstractBaboonUebaCodecs,
+        conversions: () -> AbstractBaboonConversions,
+        meta: () -> BaboonMeta,
+    ): BaboonDomainVersion {
+        registerVersion(domainVersion)
+        versionsCodecsBin[domainVersion] = Lazy(codecsBin)
+        versionsConversions[domainVersion] = Lazy(conversions)
+        versionsMeta[domainVersion] = Lazy(meta)
+        return domainVersion
+    }
+
+    fun registerBin(
+        domainVersion: BaboonDomainVersion,
+        codecsBin: () -> AbstractBaboonUebaCodecs,
+    ): BaboonDomainVersion {
+        registerVersion(domainVersion)
+        versionsCodecsBin[domainVersion] = Lazy(codecsBin)
+        return domainVersion
+    }
+
+    fun registerBin(
+        domainVersion: BaboonDomainVersion,
+        codecsBin: () -> AbstractBaboonUebaCodecs,
+        meta: () -> BaboonMeta,
+    ): BaboonDomainVersion {
+        registerVersion(domainVersion)
+        versionsCodecsBin[domainVersion] = Lazy(codecsBin)
         versionsMeta[domainVersion] = Lazy(meta)
         return domainVersion
     }
@@ -159,17 +190,15 @@ open class BaboonCodecsFacade {
         val uv = json["${'$'}uv"]?.toString()?.trim('"') ?: v
         return BaboonTypeMeta(BaboonTypeMetaCodec.META_VERSION, d, v, uv, t)
     }
+
+    private fun getJsonCodec(typeMeta: BaboonTypeMeta, exact: Boolean): BaboonCodecData {
+        return getCodec(versionsCodecsJson, typeMeta, exact)
+    }
     // @baboon:json-end
 
     private fun getBinCodec(typeMeta: BaboonTypeMeta, exact: Boolean): BaboonCodecData {
         return getCodec(versionsCodecsBin, typeMeta, exact)
     }
-
-    // @baboon:json-start
-    private fun getJsonCodec(typeMeta: BaboonTypeMeta, exact: Boolean): BaboonCodecData {
-        return getCodec(versionsCodecsJson, typeMeta, exact)
-    }
-    // @baboon:json-end
 
     private fun <TCodecs : AbstractBaboonCodecs> getCodec(
         versionsCodecs: ConcurrentHashMap<BaboonDomainVersion, Lazy<TCodecs>>,

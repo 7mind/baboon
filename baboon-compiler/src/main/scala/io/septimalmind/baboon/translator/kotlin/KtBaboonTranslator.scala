@@ -304,6 +304,7 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
 
       import izumi.fundamentals.collections.IzCollections.*
       val regsMap = defnOut.flatMap(_.codecReg).toMultimap.view.mapValues(_.flatten).toMap
+        .filter { case (codecId, _) => codecId != "Json" || target.language.generateJsonCodecs }
 
       val codecs = regsMap.map {
         case (codecId, regs) =>
