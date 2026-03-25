@@ -68,10 +68,12 @@ object KtDefnTranslator {
 
       val registrations = codecs.toList.map(codec => codec.id -> repr.codecs.flatMap(reg => reg.trees.get(codec.id).map(expr => q"${reg.tpeId}, $expr")))
 
+      val srcRef = trans.toKtTypeRefKeepForeigns(defn.id, domain, evo)
+
       val mainOutput = Output(
         getOutputPath(defn),
         repr.defn,
-        trans.toKtPkg(domain.id, domain.version, evo),
+        srcRef.pkg,
         CompilerProduct.Definition,
         codecReg = registrations,
       )
@@ -275,7 +277,7 @@ object KtDefnTranslator {
 
           val emptyClassMethods = if (!hasFields) {
             q"""
-               |override fun equals(other: Any?): Boolean = other is ${name.asName}
+               |override fun equals(other: kotlin.Any?): Boolean = other is ${name.asName}
                |override fun hashCode(): Int = ${name.asName.hashCode.toString}
                |override fun toString(): String = "${name.asName}()"
                |""".stripMargin

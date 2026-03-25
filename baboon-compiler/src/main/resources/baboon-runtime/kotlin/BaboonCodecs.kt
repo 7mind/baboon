@@ -1,7 +1,9 @@
 package baboon.runtime.shared
 
+// @baboon:json-start
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+// @baboon:json-end
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -29,6 +31,7 @@ interface BaboonCodecContext {
 
 interface BaboonCodec<T> : BaboonCodecData
 
+// @baboon:json-start
 interface BaboonJsonCodec<T> : BaboonCodec<T> {
     fun encode(ctx: BaboonCodecContext, instance: T): JsonElement
     fun decode(ctx: BaboonCodecContext, wire: JsonElement): T
@@ -53,6 +56,7 @@ interface BaboonJsonCodec<T> : BaboonCodec<T> {
             throw UnsupportedOperationException("Encoder not available for deprecated version")
     }
 }
+// @baboon:json-end
 
 interface BaboonBinCodec<T> : BaboonCodec<T> {
     fun encode(ctx: BaboonCodecContext, writer: LEDataOutputStream, instance: T)
@@ -136,5 +140,7 @@ open class AbstractBaboonCodecs {
     }
 }
 
+// @baboon:json-start
 open class AbstractBaboonJsonCodecs : AbstractBaboonCodecs()
+// @baboon:json-end
 open class AbstractBaboonUebaCodecs : AbstractBaboonCodecs()

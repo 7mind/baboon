@@ -1,9 +1,11 @@
 package baboon.runtime.shared
 
+// @baboon:json-start
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+// @baboon:json-end
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -11,7 +13,9 @@ import java.util.concurrent.ConcurrentHashMap
 open class BaboonCodecsFacade {
     private val CONTENT_JSON_KEY = "${'$'}c"
 
+    // @baboon:json-start
     private val versionsCodecsJson = ConcurrentHashMap<BaboonDomainVersion, Lazy<AbstractBaboonJsonCodecs>>()
+    // @baboon:json-end
     private val versionsCodecsBin = ConcurrentHashMap<BaboonDomainVersion, Lazy<AbstractBaboonUebaCodecs>>()
     private val versionsConversions = ConcurrentHashMap<BaboonDomainVersion, Lazy<AbstractBaboonConversions>>()
     private val versionsMeta = ConcurrentHashMap<BaboonDomainVersion, Lazy<BaboonMeta>>()
@@ -27,7 +31,9 @@ open class BaboonCodecsFacade {
 
     fun register(facade: BaboonCodecsFacade) {
         facade.domainVersions.forEach { (id, versions) -> domainVersions[id] = versions }
+        // @baboon:json-start
         facade.versionsCodecsJson.forEach { (id, codec) -> versionsCodecsJson[id] = codec }
+        // @baboon:json-end
         facade.versionsCodecsBin.forEach { (id, codec) -> versionsCodecsBin[id] = codec }
         facade.versionsConversions.forEach { (id, conversion) -> versionsConversions[id] = conversion }
         facade.versionsMeta.forEach { (id, meta) -> versionsMeta[id] = meta }
@@ -41,13 +47,16 @@ open class BaboonCodecsFacade {
         meta: () -> BaboonMeta,
     ): BaboonDomainVersion {
         registerVersion(domainVersion)
+        // @baboon:json-start
         versionsCodecsJson[domainVersion] = Lazy(codecsJson)
+        // @baboon:json-end
         versionsCodecsBin[domainVersion] = Lazy(codecsBin)
         versionsConversions[domainVersion] = Lazy(conversions)
         versionsMeta[domainVersion] = Lazy(meta)
         return domainVersion
     }
 
+    // @baboon:json-start
     fun register(
         domainVersion: BaboonDomainVersion,
         codecsJson: () -> AbstractBaboonJsonCodecs,
@@ -68,6 +77,7 @@ open class BaboonCodecsFacade {
         registerVersion(domainVersion)
         versionsCodecsJson[domainVersion] = Lazy(codecsJson)
         versionsCodecsBin[domainVersion] = Lazy(codecsBin)
+        // @baboon:json-end
         versionsMeta[domainVersion] = Lazy(meta)
         return domainVersion
     }
@@ -119,6 +129,7 @@ open class BaboonCodecsFacade {
         return decodeFromBin(ledInputStream)
     }
 
+    // @baboon:json-start
     @Suppress("UNCHECKED_CAST")
     fun <T : BaboonGenerated> encodeToJson(ctx: BaboonCodecContext, value: T): JsonElement {
         val typeMeta = BaboonTypeMeta.from(value)
@@ -148,14 +159,17 @@ open class BaboonCodecsFacade {
         val uv = json["${'$'}uv"]?.toString()?.trim('"') ?: v
         return BaboonTypeMeta(BaboonTypeMetaCodec.META_VERSION, d, v, uv, t)
     }
+    // @baboon:json-end
 
     private fun getBinCodec(typeMeta: BaboonTypeMeta, exact: Boolean): BaboonCodecData {
         return getCodec(versionsCodecsBin, typeMeta, exact)
     }
 
+    // @baboon:json-start
     private fun getJsonCodec(typeMeta: BaboonTypeMeta, exact: Boolean): BaboonCodecData {
         return getCodec(versionsCodecsJson, typeMeta, exact)
     }
+    // @baboon:json-end
 
     private fun <TCodecs : AbstractBaboonCodecs> getCodec(
         versionsCodecs: ConcurrentHashMap<BaboonDomainVersion, Lazy<TCodecs>>,

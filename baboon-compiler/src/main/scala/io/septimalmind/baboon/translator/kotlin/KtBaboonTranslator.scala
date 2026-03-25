@@ -222,11 +222,26 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
       )
     }
     if (target.output.products.contains(CompilerProduct.Runtime)) {
+      val jsonEnabled = target.language.generateJsonCodecs
+
+      def stripJsonSections(content: String): String = {
+        if (jsonEnabled) content
+        else {
+          var inJsonSection = false
+          content.linesIterator.flatMap { line =>
+            if (line.trim == "// @baboon:json-start") { inJsonSection = true; None }
+            else if (line.trim == "// @baboon:json-end") { inJsonSection = false; None }
+            else if (inJsonSection) None
+            else Some(line)
+          }.mkString("\n")
+        }
+      }
+
       F.pure(
         List(
           rt("BaboonByteString.kt", "baboon-runtime/kotlin/BaboonByteString.kt"),
-          rt("BaboonCodecs.kt", "baboon-runtime/kotlin/BaboonCodecs.kt"),
-          rt("BaboonCodecsFacade.kt", "baboon-runtime/kotlin/BaboonCodecsFacade.kt"),
+          rt("BaboonCodecs.kt", "baboon-runtime/kotlin/BaboonCodecs.kt", stripJsonSections),
+          rt("BaboonCodecsFacade.kt", "baboon-runtime/kotlin/BaboonCodecsFacade.kt", stripJsonSections),
           rt("BaboonConversions.kt", "baboon-runtime/kotlin/BaboonConversions.kt"),
           rt("BaboonEither.kt", "baboon-runtime/kotlin/BaboonEither.kt"),
           rt("BaboonExceptions.kt", "baboon-runtime/kotlin/BaboonExceptions.kt"),
