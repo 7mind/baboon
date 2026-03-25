@@ -10,6 +10,8 @@ import izumi.fundamentals.platform.strings.TextTree.*
 trait KtServiceWiringTranslator {
   def translate(defn: DomainMember.User): Option[TextTree[KtValue]]
 
+  def translateClient(defn: DomainMember.User): Option[TextTree[KtValue]]
+
   def translateServiceRt(domain: Domain): Option[TextTree[KtValue]]
 }
 
@@ -517,6 +519,96 @@ object KtServiceWiringTranslator {
          |      rt.fail<$bweFq, ByteArray>($bweFq.NoMatchingMethod(method))
          |  }
          |}""".stripMargin
+    }
+
+    // ========== Client stub generation ==========
+
+    override def translateClient(defn: DomainMember.User): Option[TextTree[KtValue]] = {
+      defn.defn match {
+        case service: Typedef.Service =>
+          val svcName      = service.id.name.name
+          val hasUeba      = hasActiveUebaCodecs(service)
+          val hasJson      = hasActiveJsonCodecs(service)
+          if (!hasUeba && !hasJson) return None
+
+          val clientMethods = service.methods.flatMap { m =>
+            val inTypeId  = m.sig.id.asInstanceOf[TypeId.User]
+            val inTypeRef = trans.asKtRef(m.sig, domain, evo)
+            val outTypeRef = m.out.map(t => trans.asKtRef(t, domain, evo))
+            val retType    = outTypeRef.getOrElse(q"Unit")
+
+            val uebaMethod = if (hasUeba) {
+              val inCodec = uebaCodecName(inTypeId)
+              val decodeOut = m.out match {
+                case Some(outRef) =>
+                  val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
+                  q"return $outCodec.instance.decode(ctx, $binaryInput($byteArrayInputStream(resp)))"
+                case None => q"return Unit as $retType"
+              }
+              Some(
+                q"""suspend fun ${m.name.name}(arg: $inTypeRef, ctx: $baboonCodecContext = $baboonCodecContext.Default): $retType {
+                   |  val baos = $byteArrayOutputStream()
+                   |  val writer = $binaryOutput(baos)
+                   |  $inCodec.instance.encode(ctx, writer, arg)
+                   |  writer.flush()
+                   |  val resp = transportUeba("$svcName", "${m.name.name}", baos.toByteArray())
+                   |  ${decodeOut.shift(2).trim}
+                   |}""".stripMargin
+              )
+            } else None
+
+            val jsonMethod = if (hasJson) {
+              val inCodec = jsonCodecName(inTypeId)
+              val decodeOut = m.out match {
+                case Some(outRef) =>
+                  val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
+                  q"return $outCodec.decode($baboonCodecContext.Default, $kotlinxJson.parseToJsonElement(resp))"
+                case None => q"return Unit as $retType"
+              }
+              Some(
+                q"""suspend fun ${m.name.name}Json(arg: $inTypeRef): $retType {
+                   |  val encoded = $inCodec.encode($baboonCodecContext.Default, arg).toString()
+                   |  val resp = transportJson("$svcName", "${m.name.name}", encoded)
+                   |  ${decodeOut.shift(2).trim}
+                   |}""".stripMargin
+              )
+            } else None
+
+            uebaMethod.toList ++ jsonMethod.toList
+          }
+
+          if (clientMethods.isEmpty) return None
+
+          val transportFields = List(
+            if (hasUeba) Some(q"private val transportUeba: suspend (service: String, method: String, data: ByteArray) -> ByteArray") else None,
+            if (hasJson) Some(q"private val transportJson: suspend (service: String, method: String, data: String) -> String") else None,
+          ).flatten
+
+          val ctorParams = List(
+            if (hasUeba) Some(q"transportUeba: suspend (service: String, method: String, data: ByteArray) -> ByteArray") else None,
+            if (hasJson) Some(q"transportJson: suspend (service: String, method: String, data: String) -> String") else None,
+          ).flatten
+
+          val ctorAssigns = List(
+            if (hasUeba) Some(q"this.transportUeba = transportUeba") else None,
+            if (hasJson) Some(q"this.transportJson = transportJson") else None,
+          ).flatten
+
+          Some(
+            q"""class ${svcName}Client(
+               |  ${ctorParams.join(",\n").shift(2).trim}
+               |) {
+               |  ${transportFields.joinN().shift(2).trim}
+               |
+               |  init {
+               |    ${ctorAssigns.joinN().shift(4).trim}
+               |  }
+               |
+               |  ${clientMethods.joinNN().shift(2).trim}
+               |}""".stripMargin
+          )
+        case _ => None
+      }
     }
   }
 }

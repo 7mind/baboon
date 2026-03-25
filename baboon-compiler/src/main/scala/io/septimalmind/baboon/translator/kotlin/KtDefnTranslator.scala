@@ -91,7 +91,20 @@ object KtDefnTranslator {
             )
         }.toList
 
-      F.pure(mainOutput :: wiringOutput)
+      val clientOutput = wiringTranslator
+        .translateClient(defn).map {
+          clientTree =>
+            val pkg     = trans.toKtPkg(domain.id, domain.version, evo)
+            val wrapped = ktTrees.inPkg(pkg.parts.toSeq, clientTree)
+            Output(
+              getOutputPath(defn, suffix = Some("Client")),
+              wrapped,
+              pkg,
+              CompilerProduct.Definition,
+            )
+        }.toList
+
+      F.pure(mainOutput :: wiringOutput ::: clientOutput)
     }
 
     override def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
@@ -434,8 +447,8 @@ object KtDefnTranslator {
 
       defn.defn.id.owner match {
         case Owner.Toplevel => s"$fbase/$fname"
-        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString("_")}.$fname"
-        case Owner.Adt(id)  => s"$fbase/${id.name.name.toLowerCase}.$fname"
+        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString("/")}/$fname"
+        case Owner.Adt(id)  => s"$fbase/${id.name.name.toLowerCase}/$fname"
       }
     }
   }
