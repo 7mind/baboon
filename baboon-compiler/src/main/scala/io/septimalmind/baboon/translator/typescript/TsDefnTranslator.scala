@@ -17,6 +17,7 @@ trait TsDefnTranslator[F[+_, +_]] {
   def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[TsDefnTranslator.Output]]
   def translateTests(defn: DomainMember.User): F[NEList[BaboonIssue], List[TsDefnTranslator.Output]]
   def translateServiceRt(): F[NEList[BaboonIssue], List[TsDefnTranslator.Output]]
+  def translateDispatcher(): F[NEList[BaboonIssue], List[TsDefnTranslator.Output]]
 }
 
 object TsDefnTranslator {
@@ -72,9 +73,14 @@ object TsDefnTranslator {
       F.pure(wiringTranslator.translateServiceRt().toList)
     }
 
+    override def translateDispatcher(): F[NEList[BaboonIssue], List[Output]] = {
+      F.pure(wiringTranslator.translateDispatcher().toList)
+    }
+
     private def doTranslate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val repr = makeFullRepr(defn)
+      val repr   = makeFullRepr(defn)
       val wiring = wiringTranslator.translate(defn)
+      val client = wiringTranslator.translateClient(defn)
       val all = List(
         Output(
           getOutputPath(defn),
@@ -82,7 +88,7 @@ object TsDefnTranslator {
           typeTranslator.toTsModule(defn.id, domain.version, evo, tsFileTools.definitionsBasePkg),
           CompilerProduct.Definition,
         )
-      ) ++ wiring
+      ) ++ wiring ++ client
       F.pure(all)
     }
 
@@ -228,6 +234,21 @@ object TsDefnTranslator {
            |    );
            |}""".stripMargin
 
+      val fromPlainParamFields = dto.fields.map { f =>
+        q"${f.name.name}: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}"
+      }
+
+      val fromPlainArgs = dto.fields.map { f =>
+        q"obj.${f.name.name}"
+      }
+
+      val fromPlainMethod =
+        q"""public static fromPlain(obj: {${fromPlainParamFields.join("; ")}}): $name {
+           |    return new $name(
+           |        ${fromPlainArgs.join(",\n").shift(8).trim}
+           |    );
+           |}""".stripMargin
+
       DefnRepr(
         q"""export class $name $implementsClause {
            |    ${fields.joinN().shift(4).trim}
@@ -241,6 +262,8 @@ object TsDefnTranslator {
            |    ${toJsonMethod.shift(4).trim}
            |
            |    ${withMethod.shift(4).trim}
+           |
+           |    ${fromPlainMethod.shift(4).trim}
            |
            |    ${meta.joinN().shift(4).trim}
            |}""".stripMargin.trim,
@@ -320,12 +343,19 @@ object TsDefnTranslator {
           }
       }
 
+      val typeGuards = adt.members.toList.map { mid =>
+        val branchName = mid.name.name
+        q"export function is$branchName(value: $name): value is $branchName { return value instanceof $branchName; }"
+      }
+
       DefnRepr(
         q"""export type $name = ${adt.members.toList.map(m => q"${m.name.name}").join(" | ")}
            |
            |export const $name = {
            |    ${meta.join(",\n").shift(4).trim}
            |} as const
+           |
+           |${typeGuards.joinN().trim}
            |
            |${memberTrees.map(_.defn).toList.joinNN().trim}
            |""".stripMargin,

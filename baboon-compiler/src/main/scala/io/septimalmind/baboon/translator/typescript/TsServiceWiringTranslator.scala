@@ -11,7 +11,11 @@ import izumi.fundamentals.platform.strings.TextTree.*
 trait TsServiceWiringTranslator {
   def translate(defn: DomainMember.User): Option[TsDefnTranslator.Output]
 
+  def translateClient(defn: DomainMember.User): Option[TsDefnTranslator.Output]
+
   def translateServiceRt(): Option[TsDefnTranslator.Output]
+
+  def translateDispatcher(): Option[TsDefnTranslator.Output]
 }
 
 object TsServiceWiringTranslator {
@@ -141,8 +145,225 @@ object TsServiceWiringTranslator {
       }
     }
 
+    override def translateClient(defn: DomainMember.User): Option[TsDefnTranslator.Output] = {
+      defn.defn match {
+        case service: Typedef.Service =>
+          val svcType = typeTranslator.asTsType(service.id, domain, evo, tsFileTools.definitionsBasePkg)
+          val jsonCodec = activeJsonCodec(service)
+          val binCodec  = activeBinCodec(service)
+
+          val clientMethods = service.methods.flatMap { m =>
+            val inTypeRef  = typeTranslator.asTsType(m.sig.id.asInstanceOf[TypeId.User], domain, evo, tsFileTools.definitionsBasePkg)
+            val inType     = typeTranslator.asTsRef(m.sig, domain, evo, tsFileTools.definitionsBasePkg)
+            val outType    = m.out.map(typeTranslator.asTsRef(_, domain, evo, tsFileTools.definitionsBasePkg))
+            val retType    = outType.getOrElse(q"void")
+
+            val jsonMethod = jsonCodec.map { codec =>
+              val inCodec = codec.codecName(inTypeRef)
+              val decodeOut = m.out match {
+                case Some(outRef) =>
+                  val outTypeRef = typeTranslator.asTsType(outRef.id.asInstanceOf[TypeId.User], domain, evo, tsFileTools.definitionsBasePkg)
+                  val outCodec   = codec.codecName(outTypeRef)
+                  q"return $outCodec.instance.decode($tsBaboonCodecContext.Default, JSON.parse(resp)) as $retType;"
+                case None => q"return undefined as unknown as $retType;"
+              }
+              q"""public async ${m.name.name}Json(${ctxParamDecl}arg: $inType): Promise<$retType> {
+                 |    const encoded = JSON.stringify($inCodec.instance.encode($tsBaboonCodecContext.Default, arg));
+                 |    const resp = await this.transportJson("${svcType.name}", "${m.name.name}", encoded);
+                 |    ${decodeOut.shift(4).trim}
+                 |}""".stripMargin
+            }
+
+            val uebaMethod = binCodec.map { codec =>
+              val inCodec = codec.codecName(inTypeRef)
+              val decodeOut = m.out match {
+                case Some(outRef) =>
+                  val outTypeRef = typeTranslator.asTsType(outRef.id.asInstanceOf[TypeId.User], domain, evo, tsFileTools.definitionsBasePkg)
+                  val outCodec   = codec.codecName(outTypeRef)
+                  q"return $outCodec.instance.decode(ctx, new $tsBaboonBinReader(resp));"
+                case None => q"return undefined as unknown as $retType;"
+              }
+              q"""public async ${m.name.name}(${ctxParamDecl}arg: $inType, ctx: $tsBaboonCodecContext = $tsBaboonCodecContext.Default): Promise<$retType> {
+                 |    const writer = new $tsBaboonBinWriter();
+                 |    $inCodec.instance.encode(ctx, arg, writer);
+                 |    const resp = await this.transportUeba("${svcType.name}", "${m.name.name}", writer.toBytes());
+                 |    ${decodeOut.shift(4).trim}
+                 |}""".stripMargin
+            }
+
+            uebaMethod.toList ++ jsonMethod.toList
+          }
+
+          if (clientMethods.isEmpty) return None
+
+          val transportFields = List(
+            binCodec.map(_ => q"private readonly transportUeba: (service: string, method: string, data: Uint8Array) => Promise<Uint8Array>"),
+            jsonCodec.map(_ => q"private readonly transportJson: (service: string, method: string, data: string) => Promise<string>"),
+          ).flatten
+
+          val ctorParams = List(
+            binCodec.map(_ => q"transportUeba: (service: string, method: string, data: Uint8Array) => Promise<Uint8Array>"),
+            jsonCodec.map(_ => q"transportJson: (service: string, method: string, data: string) => Promise<string>"),
+          ).flatten
+
+          val ctorAssigns = List(
+            binCodec.map(_ => q"this.transportUeba = transportUeba;"),
+            jsonCodec.map(_ => q"this.transportJson = transportJson;"),
+          ).flatten
+
+          val clientTree =
+            q"""export class ${svcType.name}Client {
+               |    ${transportFields.joinN().shift(4).trim}
+               |
+               |    constructor(${ctorParams.join(", ")}) {
+               |        ${ctorAssigns.joinN().shift(8).trim}
+               |    }
+               |
+               |    ${clientMethods.joinNN().shift(4).trim}
+               |}""".stripMargin
+
+          val clientPath   = getClientPath(defn)
+          val clientModule = TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ clientPath.stripSuffix(".ts").split('/').toList)
+
+          Some(
+            TsDefnTranslator.Output(
+              clientPath,
+              clientTree,
+              clientModule,
+              CompilerProduct.Definition,
+            )
+          )
+        case _ => None
+      }
+    }
+
+    override def translateDispatcher(): Option[TsDefnTranslator.Output] = {
+      val services = domain.defs.meta.nodes.values.collect {
+        case DomainMember.User(_, s: Typedef.Service, _, _) => s
+      }.toList.sortBy(_.id.name.name)
+
+      if (services.isEmpty) return None
+
+      val binCodecActive  = services.exists(activeBinCodec(_).isDefined)
+      val jsonCodecActive = services.exists(activeJsonCodec(_).isDefined)
+      if (!binCodecActive && !jsonCodecActive) return None
+
+      val retTypeUeba = if (isAsync) "Promise<Uint8Array>" else "Uint8Array"
+      val retTypeJson = if (isAsync) "Promise<string>" else "string"
+
+      val implFields = services.map { s =>
+        val svcType = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
+        q"${s.id.name.name}: $svcType"
+      }
+
+      val uebaFn = if (binCodecActive) {
+        val cases = services.flatMap { s =>
+          activeBinCodec(s).map { _ =>
+            val svcType     = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
+            val wiringFnRef = TsValue.TsType(
+              TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ getWiringPathForService(s).stripSuffix(".ts").split('/').toList),
+              s"invokeUeba_${svcType.name}",
+            )
+            if (resolved.noErrors) {
+              q"""case "${s.id.name.name}":
+                 |    return ${awaitPrefix}$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, ${ctxArgPass}ctx);""".stripMargin
+            } else {
+              q"""case "${s.id.name.name}":
+                 |    return ${awaitPrefix}$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, rt, ${ctxArgPass}ctx);""".stripMargin
+            }
+          }
+        }
+
+        val rtParam = if (resolved.noErrors) "" else s"rt: $ibaboonServiceRt, "
+
+        Some(
+          q"""export ${asyncPrefix}function dispatchUeba(
+             |    serviceName: string,
+             |    methodName: string,
+             |    data: Uint8Array,
+             |    impls: {${implFields.join("; ")}},
+             |    ${rtParam}${ctxParamDecl}ctx: $tsBaboonCodecContext
+             |): $retTypeUeba {
+             |    switch (serviceName) {
+             |        ${cases.joinN().shift(8).trim}
+             |        default:
+             |            throw new $baboonWiringException({ tag: 'NoMatchingMethod', method: { serviceName, methodName } });
+             |    }
+             |}""".stripMargin
+        )
+      } else None
+
+      val jsonFn = if (jsonCodecActive) {
+        val cases = services.flatMap { s =>
+          activeJsonCodec(s).map { _ =>
+            val svcType     = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
+            val wiringFnRef = TsValue.TsType(
+              TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ getWiringPathForService(s).stripSuffix(".ts").split('/').toList),
+              s"invokeJson_${svcType.name}",
+            )
+            if (resolved.noErrors) {
+              q"""case "${s.id.name.name}":
+                 |    return ${awaitPrefix}$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, ${ctxArgPass}ctx);""".stripMargin
+            } else {
+              q"""case "${s.id.name.name}":
+                 |    return ${awaitPrefix}$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, rt, ${ctxArgPass}ctx);""".stripMargin
+            }
+          }
+        }
+
+        val rtParam = if (resolved.noErrors) "" else s"rt: $ibaboonServiceRt, "
+
+        Some(
+          q"""export ${asyncPrefix}function dispatchJson(
+             |    serviceName: string,
+             |    methodName: string,
+             |    data: string,
+             |    impls: {${implFields.join("; ")}},
+             |    ${rtParam}${ctxParamDecl}ctx: $tsBaboonCodecContext
+             |): $retTypeJson {
+             |    switch (serviceName) {
+             |        ${cases.joinN().shift(8).trim}
+             |        default:
+             |            throw new $baboonWiringException({ tag: 'NoMatchingMethod', method: { serviceName, methodName } });
+             |    }
+             |}""".stripMargin
+        )
+      } else None
+
+      val tree = Seq(uebaFn, jsonFn).flatten.joinNN()
+      val dispatcherPath   = s"$fbase/baboon-dispatcher.ts"
+      val dispatcherModule = TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ dispatcherPath.stripSuffix(".ts").split('/').toList)
+
+      Some(
+        TsDefnTranslator.Output(
+          dispatcherPath,
+          tree,
+          dispatcherModule,
+          CompilerProduct.Definition,
+        )
+      )
+    }
+
     private def getWiringPath(defn: DomainMember.User): String = {
       val fname = s"${typeTranslator.camelToKebab(defn.defn.id.name.name)}-wiring.ts"
+      defn.defn.id.owner match {
+        case Owner.Toplevel => s"$fbase/$fname"
+        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString("/")}/$fname"
+        case Owner.Adt(id)  => s"$fbase/${typeTranslator.camelToKebab(id.name.name)}/$fname"
+      }
+    }
+
+    private def getWiringPathForService(service: Typedef.Service): String = {
+      val fname = s"${typeTranslator.camelToKebab(service.id.name.name)}-wiring.ts"
+      service.id.owner match {
+        case Owner.Toplevel => s"$fbase/$fname"
+        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString("/")}/$fname"
+        case Owner.Adt(id)  => s"$fbase/${typeTranslator.camelToKebab(id.name.name)}/$fname"
+      }
+    }
+
+    private def getClientPath(defn: DomainMember.User): String = {
+      val fname = s"${typeTranslator.camelToKebab(defn.defn.id.name.name)}-client.ts"
       defn.defn.id.owner match {
         case Owner.Toplevel => s"$fbase/$fname"
         case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString("/")}/$fname"
