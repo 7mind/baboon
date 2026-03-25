@@ -343,9 +343,13 @@ object TsDefnTranslator {
           }
       }
 
-      val typeGuards = adt.members.toList.map { mid =>
-        val branchName = mid.name.name
-        q"export function is$branchName(value: $name): value is $branchName { return value instanceof $branchName; }"
+      val typeGuards = adt.members.toList.flatMap { mid =>
+        domain.defs.meta.nodes(mid) match {
+          case DomainMember.User(_, _: Typedef.Dto, _, _) =>
+            val branchName = mid.name.name
+            Some(q"export function is$branchName(value: $name): value is $branchName { return value instanceof $branchName; }")
+          case _ => None // skip contracts/interfaces — instanceof doesn't work on them
+        }
       }
 
       DefnRepr(
