@@ -350,11 +350,15 @@ class TsUEBACodecGenerator(
           case TypeId.Builtins.map =>
             val isRecord = typeTranslator.isStringKeyMap(tpe)
             if (isRecord) {
-              q"""const entries_$w = Object.entries($ref);
-                 |$tsBinTools.writeI32($w, entries_$w.length);
-                 |for (const [k, v] of entries_$w) {
-                 |    ${mkEncoder(args.head, q"k", writer).shift(4).trim}
-                 |    ${mkEncoder(args.last, q"v", writer).shift(4).trim}
+              // Wrap in a block to avoid duplicate `const` declarations when
+              // multiple Record-typed map fields exist in the same DTO
+              q"""{
+                 |    const entries = Object.entries($ref);
+                 |    $tsBinTools.writeI32($w, entries.length);
+                 |    for (const [k, v] of entries) {
+                 |        ${mkEncoder(args.head, q"k", writer).shift(8).trim}
+                 |        ${mkEncoder(args.last, q"v", writer).shift(8).trim}
+                 |    }
                  |}""".stripMargin
             } else {
               q"""$tsBinTools.writeI32($w, $ref.size);
