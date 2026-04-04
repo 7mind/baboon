@@ -29,4 +29,8 @@ object RawTLDef {
     override def setRoot(root: Boolean): Namespace = this
     override def root: Boolean                     = false
   }
+  case class Alias(value: RawAlias) extends RawTLDef {
+    override def setRoot(root: Boolean): Alias = this
+    override def root: Boolean                 = false
+  }
 }

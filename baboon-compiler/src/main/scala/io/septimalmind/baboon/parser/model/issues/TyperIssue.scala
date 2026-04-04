@@ -120,6 +120,8 @@ object TyperIssue {
 
   case class DuplicatedTypes(dupes: Set[TypeId], meta: RawNodeMeta) extends TyperIssue
 
+  case class CircularAlias(name: RawTypeName, meta: RawNodeMeta) extends TyperIssue
+
   case class WrongParent(id: TypeId.User, id1: TypeId, meta: RawNodeMeta) extends TyperIssue
 
   implicit val todoPrinter: IssuePrinter[TodoTyperIssue] =
@@ -339,6 +341,7 @@ object TyperIssue {
         case _: RawContract  => "Contract"
         case _: RawNamespace => "Namespace"
         case _: RawService   => "Service"
+        case _: RawAlias     => "Alias"
       }
       s"""${extractLocation(issue.member.meta)}
          |Found an empty $memberType: ${issue.member.name.name}
@@ -424,6 +427,13 @@ object TyperIssue {
          |Members: ${issue.names
           .map(_.name)
           .mkString} are not found in scope: ${issue.scope.name.name}
+         |""".stripMargin
+    }
+
+  implicit val circularAliasPrinter: IssuePrinter[CircularAlias] =
+    (issue: CircularAlias) => {
+      s"""${extractLocation(issue.meta)}
+         |Circular type alias detected for: ${issue.name.name}
          |""".stripMargin
     }
 

@@ -449,6 +449,8 @@ object BaboonFamilyManager {
           collectFilesFromDefn(value)
         case RawTLDef.Namespace(value) =>
           collectFilesFromDefn(value)
+        case RawTLDef.Alias(value) =>
+          collectFilesFromDefn(value)
       }
     }
 
@@ -503,6 +505,8 @@ object BaboonFamilyManager {
           filesFromMeta(namespace.meta) ++ namespace.defns.flatMap(collectFiles).toSet
         case service: io.septimalmind.baboon.parser.model.RawService =>
           filesFromMeta(service.meta) ++ service.defns.flatMap(filesFromFunc).toSet
+        case alias: io.septimalmind.baboon.parser.model.RawAlias =>
+          filesFromMeta(alias.meta)
       }
     }
 

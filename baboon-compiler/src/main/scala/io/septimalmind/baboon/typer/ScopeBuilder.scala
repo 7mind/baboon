@@ -130,6 +130,9 @@ class ScopeBuilder[F[+_, +_]: Error2] {
 
       case f: RawForeign =>
         F.pure(mkLeaf(f))
+
+      case alias: RawAlias =>
+        F.pure(mkLeaf(alias))
     }
   }
 

@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.typer
 
-import io.septimalmind.baboon.parser.model.{RawAdt, RawDefn, RawDtoMember, RawDtoid, ScopedRef}
+import io.septimalmind.baboon.parser.model.{RawAdt, RawAlias, RawDefn, RawDtoMember, RawDtoid, ScopedRef}
 import io.septimalmind.baboon.typer.model.BinReprLen.Variable
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.Typedef.{Contract, ForeignMapping}
@@ -200,6 +200,8 @@ object BaboonEnquiries {
           }.flatten.toSet
         case a: RawAdt =>
           a.contracts.map(_.contract.tpe).toSet
+        case _: RawAlias =>
+          Set.empty
         case _ =>
           Set.empty
       }

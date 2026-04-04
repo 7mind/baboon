@@ -56,6 +56,34 @@ root data T16_AliasedForeign : derived[json], derived[ueba] {
   mapScalar: map[str, AliasedScalar]
 }
 
+// Type aliases
+type BinaryData = bytes
+type StringList = lst[str]
+type OptionalInt = opt[i32]
+type IntMap = map[str, i32]
+type EnumAlias = T1_E1
+type AdtAlias = T4_A1
+type ChainedAlias = BinaryData
+type DoubleChain = ChainedAlias
+
+root data T17_Aliases : derived[json], derived[ueba] {
+  binary: BinaryData
+  names: StringList
+  maybeInt: OptionalInt
+  lookup: IntMap
+  chainedBinary: ChainedAlias
+  doubleChained: DoubleChain
+  enumField: EnumAlias
+  adtField: AdtAlias
+}
+
+ns aliasns {
+  type NsAlias = str
+  root data T18_NsAlias : derived[json], derived[ueba] {
+    value: NsAlias
+  }
+}
+
 root data F1 {
    fld0: ForeignStruct
    fld1: opt[ForeignStruct]

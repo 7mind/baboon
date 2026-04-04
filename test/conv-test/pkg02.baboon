@@ -99,6 +99,14 @@ root adt AdtBranchRename {
   }
 }
 
+type AliasedStr = str
+type AliasedList = lst[str]
+
+root data AliasTest {
+  s: AliasedStr
+  l: AliasedList
+}
+
 ns ns1 {
   ns ns2 {
     root data D2 : was[D1] {

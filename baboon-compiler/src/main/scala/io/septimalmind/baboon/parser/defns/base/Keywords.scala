@@ -35,6 +35,7 @@ trait Keywords {
   def was[$: P]: P[Unit]       = kw("was")
   def drop[$: P]: P[Unit]      = kw("drop")
   def pragma[$: P]: P[Unit]    = kw("pragma")
+  def `type`[$: P]: P[Unit]    = kw("type")
 
   def apply[T](kw: => P[Unit], defparser: => P[T])(implicit v: P[?]): P[T] = {
     import fastparse.ScalaWhitespace.whitespace

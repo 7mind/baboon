@@ -88,6 +88,7 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
       case ScopedRefToNamespacedGeneric(prefix, meta)   => (Some(meta), s"Scoped ref to namespaced generic: ${prefix.map(_.name).mkString(".")}")
       case UnexpectedScopeLookup(_, meta)               => (Some(meta), "Unexpected scope lookup")
       case NamSeqeNotFound(names, _, meta)              => (Some(meta), s"Names not found: ${names.map(_.name).mkString(".")}")
+      case CircularAlias(name, meta)                     => (Some(meta), s"Circular type alias: ${name.name}")
       case DuplicatedTypes(dupes, meta)                 => (Some(meta), s"Duplicate types: ${dupes.map(_.name.name).mkString(", ")}")
       case WrongParent(id, parent, meta)                => (Some(meta), s"Wrong parent for ${id.name.name}: ${parent.name.name}")
       case MissingContractFields(id, fields, meta)      => (Some(meta), s"Missing contract fields in ${id.name.name}: ${fields.map(_.name.name).mkString(", ")}")

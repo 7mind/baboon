@@ -32,6 +32,12 @@ trait ScopeSupport[F[+_, +_]] {
     pkg: Pkg,
     meta: RawNodeMeta,
   ): F[NEList[BaboonIssue], TypeId.User]
+
+  def resolveAlias(
+    prefix: List[RawTypeName],
+    name: RawTypeName,
+    scope: Scope[ExtendedRawDefn],
+  ): Option[RawTypeRef]
 }
 
 object ScopeSupport {
@@ -276,6 +282,20 @@ object ScopeSupport {
           headScope.flatMap(nested => findScope(value, nested))
         case None =>
           headScope
+      }
+    }
+
+    def resolveAlias(
+      prefix: List[RawTypeName],
+      name: RawTypeName,
+      scope: Scope[ExtendedRawDefn],
+    ): Option[RawTypeRef] = {
+      val needle = prefix.map(_.name).map(ScopeName.apply) ++: NEList(ScopeName(name.name))
+      findScope(needle, scope).flatMap { found =>
+        found.defn.defn match {
+          case alias: RawAlias => Some(alias.target)
+          case _               => None
+        }
       }
     }
 

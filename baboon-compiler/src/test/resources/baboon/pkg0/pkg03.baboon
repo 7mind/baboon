@@ -314,6 +314,15 @@ root service I3 {
     )
 }
 
+// Type aliases in v3
+type MyStr = str
+type MyList = lst[MyStr]
+
+root data T_Alias_V3 : derived[json], derived[ueba] {
+  f1: MyStr
+  f2: MyList
+}
+
 root data T14_FieldRename {
   newName: str was oldName
   unchanged: i32

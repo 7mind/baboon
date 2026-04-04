@@ -54,6 +54,8 @@ class BaboonTranslator[F[+_, +_]: Error2](
 
       // namespace itself is not a typedef :3
       case _: RawNamespace => F.pure(List.empty)
+      // alias is resolved transparently at usage sites
+      case _: RawAlias => F.pure(List.empty)
       case s: RawService =>
         convertService(id, root, s, thisScope).map(_.toList)
     }
@@ -409,19 +411,30 @@ class BaboonTranslator[F[+_, +_]: Error2](
   private def convertTpe(
     tpe: RawTypeRef,
     meta: RawNodeMeta,
+    aliasChain: Set[String] = Set.empty,
   ): F[NEList[BaboonIssue], TypeRef] = {
     tpe match {
       case RawTypeRef.Simple(name, prefix) =>
-        for {
-          id <- scopeSupport.resolveTypeId(prefix, name, defn, pkg, meta)
-          asScalar <- id match {
-            case scalar: TypeId.Scalar =>
-              F.pure(scalar)
-            case _ =>
-              F.fail(BaboonIssue.of(TyperIssue.ScalarExpected(id, meta)))
-          }
-        } yield {
-          TypeRef.Scalar(asScalar)
+        scopeSupport.resolveAlias(prefix, name, defn) match {
+          case Some(target) =>
+            val key = (prefix.map(_.name) :+ name.name).mkString(".")
+            if (aliasChain.contains(key)) {
+              F.fail(BaboonIssue.of(TyperIssue.CircularAlias(name, meta)))
+            } else {
+              convertTpe(target, meta, aliasChain + key)
+            }
+          case None =>
+            for {
+              id <- scopeSupport.resolveTypeId(prefix, name, defn, pkg, meta)
+              asScalar <- id match {
+                case scalar: TypeId.Scalar =>
+                  F.pure(scalar)
+                case _ =>
+                  F.fail(BaboonIssue.of(TyperIssue.ScalarExpected(id, meta)))
+              }
+            } yield {
+              TypeRef.Scalar(asScalar)
+            }
         }
       case RawTypeRef.Constructor(name, params, prefix) =>
         for {
@@ -435,7 +448,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
             case _ =>
               F.fail(BaboonIssue.of(TyperIssue.CollectionExpected(id, meta)))
           }
-          args <- F.traverseAccumErrors(params.toList)(convertTpe(_, meta))
+          args <- F.traverseAccumErrors(params.toList)(convertTpe(_, meta, aliasChain))
           nel <- F.fromOption(BaboonIssue.of(TyperIssue.EmptyGenericArgs(id, meta))) {
             NEList.from(args)
           }

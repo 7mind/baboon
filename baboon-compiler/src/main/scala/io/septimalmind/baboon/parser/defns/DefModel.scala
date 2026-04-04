@@ -70,7 +70,7 @@ class DefModel(
         defn.setRoot(root.nonEmpty)
     }
 
-    P(main | namespace)
+    P(main | namespace | alias)
   }
 
   def modelContent[$: P]: P[(Option[RawImport], RawContent)] = {
@@ -114,4 +114,12 @@ class DefModel(
     defService.service.map(RawTLDef.Service(false, _))
   def namespace[$: P]: P[RawTLDef.Namespace] =
     namespaceDef.map(RawTLDef.Namespace(_))
+
+  def alias[$: P]: P[RawTLDef.Alias] = {
+    import fastparse.ScalaWhitespace.whitespace
+    P(meta.withMeta(kw(kw.`type`, idt.symbol ~ "=" ~ defDto.typeRef))).map {
+      case (meta, (name, target)) =>
+        RawTLDef.Alias(RawAlias(RawTypeName(name), target, meta))
+    }
+  }
 }

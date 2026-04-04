@@ -1440,6 +1440,7 @@ object BaboonJS {
       case ScopedRefToNamespacedGeneric(_, meta) => Some(meta.pos)
       case UnexpectedScopeLookup(_, meta)        => Some(meta.pos)
       case NamSeqeNotFound(_, _, meta)           => Some(meta.pos)
+      case CircularAlias(_, meta)                => Some(meta.pos)
       case DuplicatedTypes(_, meta)              => Some(meta.pos)
       case WrongParent(_, _, meta)               => Some(meta.pos)
       case MissingContractFields(_, _, meta)     => Some(meta.pos)
