@@ -180,9 +180,10 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
               val reexport = target.language.reexportMode match {
                 case "none" => false
                 case "selective" =>
-                  // Only re-export if not a wiring, client, conversion, fixture, or test module
+                  // Only re-export if not a wiring, client, conversion, or test module
+                  // Note: _fixture must be re-exported because generated tests and cross-fixture references use super::
                   val isInfraModule = name.endsWith("_wiring") || name.endsWith("_client") || name.startsWith("from_") ||
-                    name.endsWith("_fixture") || name.endsWith("_tests")
+                    name.endsWith("_tests")
                   !isInfraModule
                 case _ => true // "all" (default)
               }
@@ -350,6 +351,11 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
     val hasUuids = allTypes.contains(TypeId.Builtins.uid)
     val hasDecimals = allTypes.contains(TypeId.Builtins.f128)
     val hasJsonCodecs = target.language.generateJsonCodecs
+    // lenient_numeric (requires serde_json) is used whenever any field contains i64/u64
+    val hasLenientNumeric = allTypes.exists {
+      case TypeId.Builtins.i64 | TypeId.Builtins.u64 => true
+      case _                                         => false
+    }
 
     val deps = scala.collection.mutable.ListBuffer.empty[String]
     deps += """serde = { version = "1", features = ["derive"] }"""
@@ -360,7 +366,7 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
 
     val defaultFeatures = scala.collection.mutable.ListBuffer.empty[String]
     if (hasDecimals) defaultFeatures += """"decimal""""
-    if (hasJsonCodecs || hasDecimals) defaultFeatures += """"json-helpers""""
+    if (hasJsonCodecs || hasDecimals || hasLenientNumeric) defaultFeatures += """"json-helpers""""
     if (hasTimestamps) defaultFeatures += """"timestamps""""
     if (hasUuids) defaultFeatures += """"uuids""""
 

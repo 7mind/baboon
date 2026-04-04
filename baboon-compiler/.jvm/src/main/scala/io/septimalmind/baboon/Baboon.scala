@@ -360,7 +360,7 @@ object Baboon {
                             pragmas                     = parsePragmas(opts.pragma),
                             asyncServices               = opts.rsAsyncServices.getOrElse(false),
                             cratePrefix                 = opts.rsCratePrefix.getOrElse("crate"),
-                            reexportMode                = opts.rsReexportMode.getOrElse("all"),
+                            reexportMode                = opts.rsReexportMode.getOrElse("selective"),
                             edition                     = opts.rsEdition.getOrElse("2024"),
                           ),
                         )

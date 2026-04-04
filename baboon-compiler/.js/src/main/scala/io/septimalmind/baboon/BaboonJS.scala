@@ -432,7 +432,7 @@ object BaboonJS {
                 pragmas                     = Map.empty,
                 asyncServices               = opts.asyncServices.getOrElse(false),
                 cratePrefix                 = "crate",
-                reexportMode                = "all",
+                reexportMode                = "selective",
                 edition                     = "2024",
               ),
             )

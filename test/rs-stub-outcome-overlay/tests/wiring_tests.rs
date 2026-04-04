@@ -8,7 +8,8 @@ use baboon_rs_stub::testpkg::pkg0::i2::I2;
 use baboon_rs_stub::testpkg::pkg0::i2::noerrcall::input::In as I2_noErrCall_in;
 use baboon_rs_stub::testpkg::pkg0::i2::noerrcall::out::Out as I2_noErrCall_out;
 use baboon_rs_stub::testpkg::pkg0::t7_empty::T7_Empty;
-use baboon_rs_stub::testpkg::pkg0::{invoke_json_I1, invoke_ueba_I1, invoke_json_I2, invoke_ueba_I2};
+use baboon_rs_stub::testpkg::pkg0::i1_wiring::{invoke_json_I1, invoke_ueba_I1};
+use baboon_rs_stub::testpkg::pkg0::i2_wiring::{invoke_json_I2, invoke_ueba_I2};
 
 struct MockI1;
 impl I1 for MockI1 {

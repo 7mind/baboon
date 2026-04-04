@@ -198,7 +198,7 @@ case class RsCLIOptions(
   rsAsyncServices: Option[Boolean],
   @HelpMessage("Crate prefix for generated code (default: crate)")
   rsCratePrefix: Option[String],
-  @HelpMessage("Module re-export mode: all, none, selective (default: all)")
+  @HelpMessage("Module re-export mode: all, none, selective (default: selective)")
   rsReexportMode: Option[String],
   @HelpMessage("Rust edition for generated Cargo.toml (default: 2024)")
   rsEdition: Option[String],

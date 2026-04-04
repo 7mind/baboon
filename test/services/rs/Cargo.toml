@@ -11,3 +11,10 @@ uuid = { version = "1", features = ["v4", "serde"] }
 rust_decimal = { version = "1", features = ["serde-with-str"] }
 tiny_http = "0.12"
 ureq = "2"
+
+[features]
+default = ["decimal", "json-helpers", "timestamps", "uuids"]
+decimal = []
+json-helpers = []
+timestamps = []
+uuids = []
