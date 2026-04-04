@@ -793,7 +793,15 @@ package baboon.runtime.shared {
       val ts_offsetMs         = ts_offsetDt.getOffset.getTotalSeconds * 1000L
       // Convert UTC to local time by adding offset (C# expects local ticks)
       val ts_dotNetLocalTicksMs = ts_dotNetUtcTicksMs + ts_offsetMs
-      val ts_kind: Byte         = if (ts_offsetDt.getOffset.getTotalSeconds == 0) 1.toByte else 0.toByte
+      val ts_kind: Byte = {
+        val offsetSecs = ts_offsetDt.getOffset.getTotalSeconds
+        if (offsetSecs == 0) 1.toByte // UTC
+        else {
+          // Match C# DetectKind: if offset matches the local timezone's offset for this instant, it's Local (2)
+          val localOffset = java.time.ZoneId.systemDefault().getRules.getOffset(ts_offsetDt.toInstant)
+          if (offsetSecs == localOffset.getTotalSeconds) 2.toByte else 0.toByte
+        }
+      }
 
       // Write dotNetLocalTicksMs (8 bytes, little-endian)
       wref.writeByte((ts_dotNetLocalTicksMs & 0xFF).toInt)
