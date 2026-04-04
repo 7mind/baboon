@@ -135,13 +135,13 @@ object RsServiceWiringTranslator {
                 val decodeResult = m.out match {
                   case Some(_) =>
                     q"""let mut cursor = std::io::Cursor::new(resp);
-                       |Ok($baboonBinDecode::decode_ueba(ctx, &mut cursor)?)""".stripMargin
+                       |Ok($baboonBinDecode::decode_ueba(&self.ctx, &mut cursor)?)""".stripMargin
                   case None => q"Ok(())"
                 }
                 Some(
-                  q"""pub ${asyncKw}fn ${toSnakeCase(m.name.name)}(&self, ctx: &$baboonCodecContext, ${ctxParamDecl}arg: $inFq) -> Result<$outFq, Box<dyn std::error::Error>> {
+                  q"""pub ${asyncKw}fn ${toSnakeCase(m.name.name)}(&self, ${ctxParamDecl}arg: $inFq) -> Result<$outFq, Box<dyn std::error::Error>> {
                      |    let mut buf = Vec::new();
-                     |    $baboonBinEncode::encode_ueba(&arg, ctx, &mut buf)?;
+                     |    $baboonBinEncode::encode_ueba(&arg, &self.ctx, &mut buf)?;
                      |    let resp = (self.transport_ueba)("$svcName", "${m.name.name}", &buf)$awaitSuffix?;
                      |    ${decodeResult.shift(4).trim}
                      |}""".stripMargin
@@ -179,7 +179,7 @@ object RsServiceWiringTranslator {
           if (hasUeba) {
             if (isAsync) {
               typeParams += "TU"
-              whereClauses += s"TU: Fn(&str, &str, &[u8]) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, Box<dyn std::error::Error>>>>>"
+              whereClauses += s"TU: Fn(&str, &str, &[u8]) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>>> + Send>> + Send + Sync"
             } else {
               typeParams += "TU"
               whereClauses += "TU: Fn(&str, &str, &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>>"
@@ -191,7 +191,7 @@ object RsServiceWiringTranslator {
           if (hasJson) {
             if (isAsync) {
               typeParams += "TJ"
-              whereClauses += s"TJ: Fn(&str, &str, &str) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, Box<dyn std::error::Error>>>>>"
+              whereClauses += s"TJ: Fn(&str, &str, &str) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, Box<dyn std::error::Error + Send + Sync>>> + Send>> + Send + Sync"
             } else {
               typeParams += "TJ"
               whereClauses += "TJ: Fn(&str, &str, &str) -> Result<String, Box<dyn std::error::Error>>"
@@ -199,6 +199,11 @@ object RsServiceWiringTranslator {
             fields += q"transport_json: TJ,"
             ctorParams += q"transport_json: TJ"
             ctorAssigns += q"transport_json,"
+          }
+          if (hasUeba) {
+            fields += q"ctx: $baboonCodecContext,"
+            ctorParams += q"ctx: $baboonCodecContext"
+            ctorAssigns += q"ctx,"
           }
 
           val typeParamStr = typeParams.mkString(", ")
@@ -248,6 +253,12 @@ object RsServiceWiringTranslator {
     private val isAsync: Boolean    = target.language.asyncServices
     private val asyncKw: String     = if (isAsync) "async " else ""
     private val awaitSuffix: String = if (isAsync) ".await" else ""
+
+    private def implParam(svcType: RsValue.RsType): String = {
+      val gp = genericParam
+      if (isAsync) s"impl_: &(impl ${renderFq(q"$svcType")}$gp + Send + Sync)"
+      else s"impl_: &dyn ${renderFq(q"$svcType")}$gp"
+    }
 
     private def renderFq(tree: TextTree[RsValue]): String = tree.mapRender {
       case t: RsValue.RsType     => if (t.predef) t.name else (t.crate.parts :+ t.name).mkString("::")
@@ -301,7 +312,7 @@ object RsServiceWiringTranslator {
       q"""pub ${asyncKw}fn invoke_json_$svcName$genericParam(
          |    method: &$baboonMethodId,
          |    data: &str,
-         |    impl_: &dyn $svcType$genericParam,
+         |    ${implParam(svcType)},
          |    ${ctxParamDecl}_ctx: &$baboonCodecContext,
          |) -> Result<String, $baboonWiringError> {
          |    match method.method_name.as_str() {
@@ -337,7 +348,7 @@ object RsServiceWiringTranslator {
       q"""pub ${asyncKw}fn invoke_ueba_$svcName$genericParam(
          |    method: &$baboonMethodId,
          |    data: &[u8],
-         |    impl_: &dyn $svcType$genericParam,
+         |    ${implParam(svcType)},
          |    ctx: &$baboonCodecContext,
          |) -> Result<Vec<u8>, $baboonWiringError> {
          |    match method.method_name.as_str() {
@@ -468,7 +479,7 @@ object RsServiceWiringTranslator {
       q"""pub ${asyncKw}fn invoke_json_$svcName<Rt: $ibaboonServiceRt>$genericParam(
          |    method: &$baboonMethodId,
          |    data: &str,
-         |    impl_: &dyn $svcType$genericParam,
+         |    ${implParam(svcType)},
          |    rt: &Rt,
          |    ${ctxParamDecl}_ctx: &$baboonCodecContext,
          |) -> $wiringRetType {
@@ -570,7 +581,7 @@ object RsServiceWiringTranslator {
       q"""pub ${asyncKw}fn invoke_ueba_$svcName<Rt: $ibaboonServiceRt>$genericParam(
          |    method: &$baboonMethodId,
          |    data: &[u8],
-         |    impl_: &dyn $svcType$genericParam,
+         |    ${implParam(svcType)},
          |    rt: &Rt,
          |    ctx: &$baboonCodecContext,
          |) -> $wiringRetType {

@@ -200,6 +200,8 @@ case class RsCLIOptions(
   rsCratePrefix: Option[String],
   @HelpMessage("Module re-export mode: all, none, selective (default: all)")
   rsReexportMode: Option[String],
+  @HelpMessage("Rust edition for generated Cargo.toml (default: 2024)")
+  rsEdition: Option[String],
 ) extends SharedCLIOptions
 
 case class TsCLIOptions(

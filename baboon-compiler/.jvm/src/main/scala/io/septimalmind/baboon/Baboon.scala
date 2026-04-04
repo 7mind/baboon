@@ -361,6 +361,7 @@ object Baboon {
                             asyncServices               = opts.rsAsyncServices.getOrElse(false),
                             cratePrefix                 = opts.rsCratePrefix.getOrElse("crate"),
                             reexportMode                = opts.rsReexportMode.getOrElse("all"),
+                            edition                     = opts.rsEdition.getOrElse("2024"),
                           ),
                         )
                     }

@@ -353,27 +353,32 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
 
     val deps = scala.collection.mutable.ListBuffer.empty[String]
     deps += """serde = { version = "1", features = ["derive"] }"""
-    if (hasJsonCodecs) {
-      deps += """serde_json = "1""""
-    }
-    if (hasTimestamps) {
-      deps += """chrono = { version = "0.4", features = ["serde"] }"""
-    }
-    if (hasUuids) {
-      deps += """uuid = { version = "1", features = ["v4", "serde"] }"""
-    }
-    if (hasDecimals) {
-      deps += """rust_decimal = { version = "1", features = ["serde-with-str"] }"""
-    }
+    deps += """serde_json = { version = "1", optional = true }"""
+    deps += """rust_decimal = { version = "1", features = ["serde-with-str"], optional = true }"""
+    deps += """chrono = { version = "0.4", features = ["serde"], optional = true }"""
+    deps += """uuid = { version = "1", features = ["v4", "serde"], optional = true }"""
+
+    val defaultFeatures = scala.collection.mutable.ListBuffer.empty[String]
+    if (hasDecimals) defaultFeatures += """"decimal""""
+    if (hasJsonCodecs || hasDecimals) defaultFeatures += """"json-helpers""""
+    if (hasTimestamps) defaultFeatures += """"timestamps""""
+    if (hasUuids) defaultFeatures += """"uuids""""
 
     val content =
       s"""[package]
          |name = "baboon-generated"
          |version = "0.1.0"
-         |edition = "2021"
+         |edition = "${target.language.edition}"
          |
          |[dependencies]
          |${deps.mkString("\n")}
+         |
+         |[features]
+         |default = [${defaultFeatures.mkString(", ")}]
+         |decimal = ["dep:rust_decimal"]
+         |json-helpers = ["dep:serde_json"]
+         |timestamps = ["dep:chrono"]
+         |uuids = ["dep:uuid"]
          |""".stripMargin
 
     List(

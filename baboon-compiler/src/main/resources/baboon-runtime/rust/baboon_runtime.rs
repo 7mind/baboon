@@ -131,44 +131,52 @@ impl BaboonBinDecode for Vec<u8> {
     }
 }
 
+#[cfg(feature = "decimal")]
 impl BaboonBinEncode for rust_decimal::Decimal {
     fn encode_ueba(&self, _ctx: &BaboonCodecContext, writer: &mut dyn Write) -> std::io::Result<()> {
         bin_tools::write_decimal(writer, self)
     }
 }
+#[cfg(feature = "decimal")]
 impl BaboonBinDecode for rust_decimal::Decimal {
     fn decode_ueba(_ctx: &BaboonCodecContext, reader: &mut dyn Read) -> Result<Self, Box<dyn std::error::Error>> {
         bin_tools::read_decimal(reader)
     }
 }
 
+#[cfg(feature = "uuids")]
 impl BaboonBinEncode for uuid::Uuid {
     fn encode_ueba(&self, _ctx: &BaboonCodecContext, writer: &mut dyn Write) -> std::io::Result<()> {
         bin_tools::write_uuid(writer, self)
     }
 }
+#[cfg(feature = "uuids")]
 impl BaboonBinDecode for uuid::Uuid {
     fn decode_ueba(_ctx: &BaboonCodecContext, reader: &mut dyn Read) -> Result<Self, Box<dyn std::error::Error>> {
         bin_tools::read_uuid(reader)
     }
 }
 
+#[cfg(feature = "timestamps")]
 impl BaboonBinEncode for chrono::DateTime<chrono::Utc> {
     fn encode_ueba(&self, _ctx: &BaboonCodecContext, writer: &mut dyn Write) -> std::io::Result<()> {
         bin_tools::write_timestamp(writer, self)
     }
 }
+#[cfg(feature = "timestamps")]
 impl BaboonBinDecode for chrono::DateTime<chrono::Utc> {
     fn decode_ueba(_ctx: &BaboonCodecContext, reader: &mut dyn Read) -> Result<Self, Box<dyn std::error::Error>> {
         bin_tools::read_timestamp_utc(reader)
     }
 }
 
+#[cfg(feature = "timestamps")]
 impl BaboonBinEncode for chrono::DateTime<chrono::FixedOffset> {
     fn encode_ueba(&self, _ctx: &BaboonCodecContext, writer: &mut dyn Write) -> std::io::Result<()> {
         bin_tools::write_timestamp(writer, self)
     }
 }
+#[cfg(feature = "timestamps")]
 impl BaboonBinDecode for chrono::DateTime<chrono::FixedOffset> {
     fn decode_ueba(_ctx: &BaboonCodecContext, reader: &mut dyn Read) -> Result<Self, Box<dyn std::error::Error>> {
         bin_tools::read_timestamp_offset(reader)
@@ -260,6 +268,7 @@ pub mod opt_hex_bytes {
 
 // --- Serde helpers for Decimal ---
 
+#[cfg(all(feature = "decimal", feature = "json-helpers"))]
 pub mod decimal_as_number {
     use rust_decimal::Decimal;
     use serde::{Deserialize, Deserializer, Serializer};
@@ -290,6 +299,7 @@ pub mod decimal_as_number {
     }
 }
 
+#[cfg(all(feature = "decimal", feature = "json-helpers"))]
 pub mod opt_decimal_as_number {
     use rust_decimal::Decimal;
     use serde::{Deserialize, Deserializer, Serializer};
@@ -334,6 +344,7 @@ pub mod opt_decimal_as_number {
 
 // --- Serde helper for lenient numeric deserialization (accepts both JSON numbers and strings) ---
 
+#[cfg(feature = "json-helpers")]
 pub mod lenient_numeric {
     use serde::Deserializer;
 
@@ -418,6 +429,7 @@ pub mod lenient_numeric {
 
 // --- Serde helpers for timestamps ---
 
+#[cfg(feature = "timestamps")]
 pub mod tsu_serde {
     use chrono::{DateTime, Utc};
     use serde::{Deserialize, Deserializer, Serializer};
@@ -438,6 +450,7 @@ pub mod tsu_serde {
     }
 }
 
+#[cfg(feature = "timestamps")]
 pub mod tso_serde {
     use chrono::{DateTime, FixedOffset};
     use serde::{Deserialize, Deserializer, Serializer};
@@ -460,6 +473,7 @@ pub mod tso_serde {
 
 // --- Time format helpers ---
 
+#[cfg(feature = "timestamps")]
 pub mod time_formats {
     use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
 
@@ -501,9 +515,12 @@ pub mod time_formats {
 // --- Binary encoding/decoding tools ---
 
 pub mod bin_tools {
+    #[cfg(feature = "timestamps")]
     use chrono::{DateTime, FixedOffset, Offset, Utc};
+    #[cfg(feature = "decimal")]
     use rust_decimal::Decimal;
     use std::io::{Read, Write};
+    #[cfg(feature = "uuids")]
     use uuid::Uuid;
 
     // --- Writers ---
@@ -556,6 +573,7 @@ pub mod bin_tools {
         writer.write_all(&value.to_le_bytes())
     }
 
+    #[cfg(feature = "decimal")]
     pub fn write_decimal(writer: &mut dyn Write, value: &Decimal) -> std::io::Result<()> {
         // .NET decimal format: lo (i32), mid (i32), hi (i32), flags (i32)
         // flags: sign in bit 31, scale in bits 16-23
@@ -600,6 +618,7 @@ pub mod bin_tools {
         writer.write_all(value)
     }
 
+    #[cfg(feature = "uuids")]
     pub fn write_uuid(writer: &mut dyn Write, value: &Uuid) -> std::io::Result<()> {
         // .NET GUID mixed-endian format: reverse bytes 0-3, 4-5, 6-7
         let bytes = value.as_bytes();
@@ -611,8 +630,10 @@ pub mod bin_tools {
         writer.write_all(&guid_bytes)
     }
 
+    #[cfg(feature = "timestamps")]
     const DOTNET_EPOCH_OFFSET_MS: i64 = 62135596800000;
 
+    #[cfg(feature = "timestamps")]
     pub fn write_timestamp<Tz: chrono::TimeZone>(
         writer: &mut dyn Write,
         value: &DateTime<Tz>,
@@ -704,6 +725,7 @@ pub mod bin_tools {
         Ok(f64::from_le_bytes(buf))
     }
 
+    #[cfg(feature = "decimal")]
     pub fn read_decimal(reader: &mut dyn Read) -> Result<Decimal, Box<dyn std::error::Error>> {
         // .NET decimal format: lo (i32), mid (i32), hi (i32), flags (i32)
         let lo = read_i32(reader)? as u32;
@@ -750,6 +772,7 @@ pub mod bin_tools {
         Ok(buf)
     }
 
+    #[cfg(feature = "uuids")]
     pub fn read_uuid(reader: &mut dyn Read) -> Result<Uuid, Box<dyn std::error::Error>> {
         // .NET GUID mixed-endian format: reverse bytes 0-3, 4-5, 6-7
         let mut buf = [0u8; 16];
@@ -761,6 +784,7 @@ pub mod bin_tools {
         Ok(Uuid::from_bytes(buf))
     }
 
+    #[cfg(feature = "timestamps")]
     pub fn read_timestamp_utc(
         reader: &mut dyn Read,
     ) -> Result<DateTime<Utc>, Box<dyn std::error::Error>> {
@@ -779,6 +803,7 @@ pub mod bin_tools {
         Ok(dt)
     }
 
+    #[cfg(feature = "timestamps")]
     pub fn read_timestamp_offset(
         reader: &mut dyn Read,
     ) -> Result<DateTime<FixedOffset>, Box<dyn std::error::Error>> {

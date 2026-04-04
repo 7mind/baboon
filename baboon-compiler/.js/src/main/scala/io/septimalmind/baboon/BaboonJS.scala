@@ -433,6 +433,7 @@ object BaboonJS {
                 asyncServices               = opts.asyncServices.getOrElse(false),
                 cratePrefix                 = "crate",
                 reexportMode                = "all",
+                edition                     = "2024",
               ),
             )
           case "typescript" =>

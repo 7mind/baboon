@@ -216,6 +216,7 @@ final case class RsOptions(
   asyncServices: Boolean,
   cratePrefix: String,
   reexportMode: String,
+  edition: String,
 )
 
 final case class TsOptions(
