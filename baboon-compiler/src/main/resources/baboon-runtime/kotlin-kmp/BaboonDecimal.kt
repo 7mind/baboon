@@ -69,8 +69,36 @@ data class BaboonDecimal(val lo: Int, val mid: Int, val hi: Int, val flags: Int)
 
         fun fromDouble(d: Double): BaboonDecimal {
             if (d == 0.0) return ZERO
-            val s = d.toBigDecimal().toPlainString()
+            val s = doubleToPlainString(d)
             return fromString(s)
+        }
+
+        private fun doubleToPlainString(d: Double): String {
+            val s = d.toString()
+            if ('E' !in s && 'e' !in s) return s
+            val eIdx = s.indexOfFirst { it == 'E' || it == 'e' }
+            val mantissa = s.substring(0, eIdx)
+            val exponent = s.substring(eIdx + 1).toInt()
+            val negative = mantissa.startsWith("-")
+            val digits = mantissa.replace("-", "").replace(".", "")
+            val dotIdx = mantissa.indexOf('.')
+            val intDigits = if (dotIdx >= 0) (if (negative) dotIdx - 1 else dotIdx) else digits.length
+            val newDotPos = intDigits + exponent
+            return buildString {
+                if (negative) append('-')
+                if (newDotPos <= 0) {
+                    append("0.")
+                    repeat(-newDotPos) { append('0') }
+                    append(digits)
+                } else if (newDotPos >= digits.length) {
+                    append(digits)
+                    repeat(newDotPos - digits.length) { append('0') }
+                } else {
+                    append(digits.substring(0, newDotPos))
+                    append('.')
+                    append(digits.substring(newDotPos))
+                }
+            }
         }
 
         fun fromString(s: String): BaboonDecimal {

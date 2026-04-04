@@ -179,6 +179,12 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
         .filterNot(t => t.pkg.parts.startsWith(o.pkg.parts))
         .sortBy(_.toString)
 
+      val needsUuidOptIn = target.language.multiplatform && {
+        val kotlinUuidPkg = parseKtPkg("kotlin.uuid")
+        o.tree.values.collect { case t: KtValue.KtType => t }.exists(_.pkg == kotlinUuidPkg)
+      }
+      val fileAnnotations = if (needsUuidOptIn) "@file:OptIn(kotlin.uuid.ExperimentalUuidApi::class)\n\n" else ""
+
       val kotlinxJsonExtImports = if (usedTypes.exists(_.pkg == kotlinxJsonPkg)) {
         List(
           "import kotlinx.serialization.json.jsonObject",
@@ -198,15 +204,17 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
           s"import ${p.pkg.parts.mkString(".")}.$importName"
       }.distinct ++ kotlinxJsonExtImports
 
-      if (importLines.isEmpty) {
+      if (importLines.isEmpty && fileAnnotations.isEmpty) {
         rendered
       } else {
-        val importsBlock = importLines.mkString("\n")
+        val importsBlock = if (importLines.nonEmpty) importLines.mkString("\n") else ""
         val lines        = rendered.split("\n", 2)
         if (lines.length == 2 && lines(0).startsWith("package ")) {
-          s"${lines(0)}\n\n$importsBlock\n\n${lines(1).stripLeading()}"
+          val importsPart = if (importsBlock.nonEmpty) s"\n\n$importsBlock" else ""
+          s"$fileAnnotations${lines(0)}$importsPart\n\n${lines(1).stripLeading()}"
         } else {
-          s"$importsBlock\n\n$rendered"
+          val importsPart = if (importsBlock.nonEmpty) s"$importsBlock\n\n" else ""
+          s"$fileAnnotations$importsPart$rendered"
         }
       }
     }

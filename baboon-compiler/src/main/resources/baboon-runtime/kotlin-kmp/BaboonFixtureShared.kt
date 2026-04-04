@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalUuidApi::class)
+
 package baboon.fixture
 
 import baboon.runtime.shared.BaboonDecimal
@@ -81,7 +83,6 @@ class BaboonRandomImpl(private val rnd: Random) : BaboonRandom {
         return BaboonOffsetDateTime(instant, UtcOffset(seconds = offsetHours * 3600))
     }
 
-    @OptIn(ExperimentalUuidApi::class)
     override fun nextUid(): Uuid = Uuid.random()
     override fun nextString(): String {
         val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"

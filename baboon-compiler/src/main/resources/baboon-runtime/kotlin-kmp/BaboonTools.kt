@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalUuidApi::class)
+
 package baboon.runtime.shared
 
 import kotlinx.datetime.Instant
@@ -6,7 +8,6 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 object BaboonBinTools {
-    @OptIn(ExperimentalUuidApi::class)
     fun readUid(s: BaboonBinaryReader): Uuid {
         val bytes = ByteArray(16)
         s.readFully(bytes)
@@ -20,7 +21,6 @@ object BaboonBinTools {
         return Uuid.fromByteArray(bytes)
     }
 
-    @OptIn(ExperimentalUuidApi::class)
     fun writeUid(writer: BaboonBinaryWriter, v: Uuid) {
         val bytes = v.toByteArray()
 

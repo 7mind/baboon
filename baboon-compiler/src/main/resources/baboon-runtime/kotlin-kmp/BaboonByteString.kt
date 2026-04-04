@@ -47,7 +47,12 @@ class ByteString private constructor(private val bytes: ByteArray) : Comparable<
 
     override fun toString(): String = bytes.decodeToString()
 
-    fun toHexString(): String = bytes.joinToString("") { "%02X".format(it) }
+    fun toHexString(): String {
+        val hex = "0123456789ABCDEF"
+        return bytes.joinToString("") { b ->
+            "${hex[(b.toInt() shr 4) and 0xF]}${hex[b.toInt() and 0xF]}"
+        }
+    }
 
     fun substring(startIndex: Int, length: Int): ByteString {
         require(startIndex >= 0 && startIndex < bytes.size) { "Start index: $$startIndex" }

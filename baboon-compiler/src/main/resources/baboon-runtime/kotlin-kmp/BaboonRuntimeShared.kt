@@ -27,22 +27,10 @@ interface BaboonEnum<T> {
     fun all(): List<T>
 }
 
-class Lazy<T>(private val initializer: () -> T) {
-    @Volatile
-    private var _value: T? = null
-
-    val value: T
-        get() {
-            _value?.let { return it }
-            synchronized(this) {
-                _value?.let { return it }
-                val computed = initializer()
-                _value = computed
-                return computed
-            }
-        }
-
-    val isValueCreated: Boolean get() = _value != null
+class Lazy<T>(initializer: () -> T) {
+    private val delegate: kotlin.Lazy<T> = kotlin.lazy(initializer)
+    val value: T get() = delegate.value
+    val isValueCreated: Boolean get() = delegate.isInitialized()
 }
 
 interface BaboonSingleton<T> {
@@ -101,9 +89,8 @@ data class BaboonTypeMeta(
 
     companion object {
         fun from(value: BaboonGenerated): BaboonTypeMeta {
-            val typeIdentifier = when {
-                value is BaboonAdtMemberMeta && value::class.let { kc -> kc.supertypes.any { it.toString().contains("BaboonGenerated") } } ->
-                    (value as BaboonAdtMemberMeta).baboonAdtTypeIdentifier
+            val typeIdentifier = when (value) {
+                is BaboonAdtMemberMeta -> value.baboonAdtTypeIdentifier
                 else -> value.baboonTypeIdentifier
             }
             return BaboonTypeMeta(

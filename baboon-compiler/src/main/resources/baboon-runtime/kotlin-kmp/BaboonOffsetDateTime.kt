@@ -26,8 +26,8 @@ data class BaboonOffsetDateTime(
         val millis = (localMs % 1000).let { if (it < 0) it + 1000 else it }
 
         // Calculate date components from epoch seconds (adjusted for offset)
-        val days = Math.floorDiv(localSeconds, 86400).toInt()
-        val timeOfDay = Math.floorMod(localSeconds, 86400).toInt()
+        val days = floorDiv(localSeconds, 86400L).toInt()
+        val timeOfDay = floorMod(localSeconds, 86400L).toInt()
         val hours = timeOfDay / 3600
         val minutes = (timeOfDay % 3600) / 60
         val seconds = timeOfDay % 60
@@ -49,12 +49,19 @@ data class BaboonOffsetDateTime(
         val offsetH = absOffset / 3600
         val offsetM = (absOffset % 3600) / 60
 
-        return "%04d-%02d-%02dT%02d:%02d:%02d.%03d%s%02d:%02d".format(
-            year, m, d, hours, minutes, seconds, millis, sign, offsetH, offsetM
-        )
+        return "${pad(year, 4)}-${pad(m, 2)}-${pad(d, 2)}T${pad(hours, 2)}:${pad(minutes, 2)}:${pad(seconds, 2)}.${pad(millis.toInt(), 3)}$sign${pad(offsetH, 2)}:${pad(offsetM, 2)}"
     }
 
     companion object {
+        private fun pad(v: Int, n: Int): String = v.toString().padStart(n, '0')
+
+        private fun floorDiv(x: Long, y: Long): Long {
+            val r = x / y
+            return if ((x xor y) < 0 && r * y != x) r - 1 else r
+        }
+
+        private fun floorMod(x: Long, y: Long): Long = x - floorDiv(x, y) * y
+
         fun fromEpochMilliseconds(epochMs: Long, offsetSeconds: Int): BaboonOffsetDateTime {
             return BaboonOffsetDateTime(
                 Instant.fromEpochMilliseconds(epochMs),
