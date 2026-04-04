@@ -634,8 +634,7 @@ object RsDefnTranslator {
     */
   def escapeRustModuleName(s: String): String = {
     s match {
-      case "in"  => "input"
-      case "out" => "output"
+      case "in" => "input"
       case kw if isRustKeyword(kw) => s"${kw}_"
       case other => other
     }
