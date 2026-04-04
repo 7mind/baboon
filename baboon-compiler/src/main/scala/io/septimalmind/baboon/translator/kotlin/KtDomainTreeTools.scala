@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.kotlin
 
 import io.septimalmind.baboon.translator.kotlin.KtDomainTreeTools.MetaField
-import io.septimalmind.baboon.translator.kotlin.KtTypes.{javaClass, ktList, ktString}
+import io.septimalmind.baboon.translator.kotlin.KtTypes.{ktList, ktString}
 import io.septimalmind.baboon.typer.model.*
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
@@ -25,7 +25,10 @@ object KtDomainTreeTools {
     domain: Domain,
     evolution: BaboonEvolution,
     typeTranslator: KtTypeTranslator,
+    ktTypes: KtTypes,
   ) extends KtDomainTreeTools {
+    import ktTypes.*
+
     override def makeDataMeta(defn: DomainMember.User): List[MetaField] = {
       mainMeta(defn) ++ sameInVersion(defn) ++ adtMeta(defn)
     }
@@ -65,7 +68,7 @@ object KtDomainTreeTools {
           )
           val baboonAdtType = MetaField(
             q"val baboonAdtType: $javaClass<*>",
-            q"${typeTranslator.asKtType(id, domain, evolution)}::class.java",
+            q"${typeTranslator.asKtType(id, domain, evolution)}${classRefSuffix}",
             q"$adtRef.baboonAdtType",
           )
           List(adtTypeIdentifier, baboonAdtType)

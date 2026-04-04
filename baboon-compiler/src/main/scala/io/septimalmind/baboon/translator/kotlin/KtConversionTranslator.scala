@@ -26,6 +26,7 @@ object KtConversionTranslator {
 
 class KtConversionTranslator[F[+_, +_]: Error2](
   trans: KtTypeTranslator,
+  ktTypes: KtTypes,
   pkg: KtPackageId,
   srcDom: Domain @Id("source"),
   domain: Domain @Id("current"),
@@ -111,7 +112,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
 
     val baboonGenerated = iBaboonGenerated
     val conv =
-      q"conversions.convertWithContext<C>(context, $oldRef as $baboonGenerated, $oldTypeRefTree::class.java, $newTypeRefTree::class.java) as $newTypeRefTree"
+      q"conversions.convertWithContext<C>(context, $oldRef as $baboonGenerated, $oldTypeRefTree${ktTypes.classRefSuffix}, $newTypeRefTree${ktTypes.classRefSuffix}) as $newTypeRefTree"
 
     s.id match {
       case _: TypeId.Builtin => direct
@@ -166,7 +167,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
         val rendered = conv match {
           case _: Conversion.CustomConversionRequired =>
             val classDef = q"""|@Suppress("DEPRECATION") abstract class $className
-                               |  : $baboonAbstractConversion<$tin, $tout>($tin::class.java, $tout::class.java) {
+                               |  : $baboonAbstractConversion<$tin, $tout>($tin${ktTypes.classRefSuffix}, $tout${ktTypes.classRefSuffix}) {
                                |    abstract override fun <C> doConvert(
                                |      context: C?,
                                |      conversions: $baboonAbstractConversions,
@@ -200,7 +201,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
                 q"$mappingLiteral.getOrDefault(from.name, from.name)"
               }
             val classDef = q"""|@Suppress("DEPRECATION") object $className
-                               |  : $baboonAbstractConversion<$tin, $tout>($tin::class.java, $tout::class.java) {
+                               |  : $baboonAbstractConversion<$tin, $tout>($tin${ktTypes.classRefSuffix}, $tout${ktTypes.classRefSuffix}) {
                                |    override fun <C> doConvert(
                                |      context: C?,
                                |      conversions: $baboonAbstractConversions,
@@ -222,7 +223,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
 
             val classDef = q"""
                               |@Suppress("DEPRECATION") object $className
-                              |  : $baboonAbstractConversion<$tin, $tout>($tin::class.java, $tout::class.java) {
+                              |  : $baboonAbstractConversion<$tin, $tout>($tin${ktTypes.classRefSuffix}, $tout${ktTypes.classRefSuffix}) {
                               |    override fun <C> doConvert(
                               |      context: C?,
                               |      conversions: $baboonAbstractConversions,
@@ -291,7 +292,7 @@ class KtConversionTranslator[F[+_, +_]: Error2](
             val ctorArgs = dto.fields.map(f => q"${f.name.name} = ${f.name.name.toLowerCase}")
             val classDef = q"""
                               |@Suppress("DEPRECATION") object $className
-                              |  : $baboonAbstractConversion<$tin, $tout>($tin::class.java, $tout::class.java) {
+                              |  : $baboonAbstractConversion<$tin, $tout>($tin${ktTypes.classRefSuffix}, $tout${ktTypes.classRefSuffix}) {
                               |    override fun <C> doConvert(
                               |      context: C?,
                               |      conversions: $baboonAbstractConversions,

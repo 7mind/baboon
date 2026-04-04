@@ -16,6 +16,7 @@ class KtJsonCodecGenerator(
   domain: Domain,
   evo: BaboonEvolution,
   ktDomainTreeTools: KtDomainTreeTools,
+  ktTypes: KtTypes,
 ) extends KtCodecTranslator {
 
   override def translate(defn: DomainMember.User, ktRef: KtValue.KtType, srcRef: KtValue.KtType): Option[TextTree[KtValue]] = {
@@ -229,7 +230,7 @@ class KtJsonCodecGenerator(
           case TypeId.Builtins.u64   => q"$jsonPrimitive($ref.toLong())"
           case TypeId.Builtins.f32   => q"$jsonPrimitive($ref)"
           case TypeId.Builtins.f64   => q"$jsonPrimitive($ref)"
-          case TypeId.Builtins.f128  => q"$jsonPrimitive($ref.toPlainString())"
+          case TypeId.Builtins.f128  => if (ktTypes.multiplatform) q"$jsonPrimitive($ref.toString())" else q"$jsonPrimitive($ref.toPlainString())"
           case TypeId.Builtins.str   => q"$jsonPrimitive($ref)"
           case TypeId.Builtins.bytes => q"$jsonPrimitive($ref.toHexString())"
           case u: TypeId.User =>
@@ -282,10 +283,10 @@ class KtJsonCodecGenerator(
             case TypeId.Builtins.u64   => q"$ref.jsonPrimitive.long.toULong()"
             case TypeId.Builtins.f32   => q"$ref.jsonPrimitive.float"
             case TypeId.Builtins.f64   => q"$ref.jsonPrimitive.double"
-            case TypeId.Builtins.f128  => q"java.math.BigDecimal($ref.jsonPrimitive.content)"
+            case TypeId.Builtins.f128  => if (ktTypes.multiplatform) q"${ktTypes.ktBigDecimal}.fromString($ref.jsonPrimitive.content)" else q"java.math.BigDecimal($ref.jsonPrimitive.content)"
             case TypeId.Builtins.str   => q"$ref.jsonPrimitive.content"
             case TypeId.Builtins.bytes => q"$ktByteString.fromHexString($ref.jsonPrimitive.content)"
-            case TypeId.Builtins.uid   => q"java.util.UUID.fromString($ref.jsonPrimitive.content)"
+            case TypeId.Builtins.uid   => if (ktTypes.multiplatform) q"kotlin.uuid.Uuid.parse($ref.jsonPrimitive.content)" else q"java.util.UUID.fromString($ref.jsonPrimitive.content)"
             case TypeId.Builtins.tsu   => q"$baboonTimeFormats.parseTsu($ref.jsonPrimitive.content)"
             case TypeId.Builtins.tso   => q"$baboonTimeFormats.parseTso($ref.jsonPrimitive.content)"
             case u: TypeId.User =>
@@ -337,10 +338,10 @@ class KtJsonCodecGenerator(
             case TypeId.Builtins.u64   => q"$ref.toULong()"
             case TypeId.Builtins.f32   => q"$ref.toFloat()"
             case TypeId.Builtins.f64   => q"$ref.toDouble()"
-            case TypeId.Builtins.f128  => q"java.math.BigDecimal($ref)"
+            case TypeId.Builtins.f128  => if (ktTypes.multiplatform) q"${ktTypes.ktBigDecimal}.fromString($ref)" else q"java.math.BigDecimal($ref)"
             case TypeId.Builtins.str   => q"$ref"
             case TypeId.Builtins.bytes => q"$ktByteString.fromHexString($ref)"
-            case TypeId.Builtins.uid   => q"java.util.UUID.fromString($ref)"
+            case TypeId.Builtins.uid   => if (ktTypes.multiplatform) q"kotlin.uuid.Uuid.parse($ref)" else q"java.util.UUID.fromString($ref)"
             case TypeId.Builtins.tsu   => q"$baboonTimeFormats.parseTsu($ref)"
             case TypeId.Builtins.tso   => q"$baboonTimeFormats.parseTso($ref)"
             case u: TypeId.User =>

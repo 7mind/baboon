@@ -416,6 +416,7 @@ object Baboon {
                             serviceResult               = mkServiceResult(opts, ServiceResultConfig.kotlinDefault),
                             serviceContext              = mkServiceContext(opts),
                             pragmas                     = parsePragmas(opts.pragma),
+                            multiplatform               = opts.ktMultiplatform.getOrElse(false),
                           ),
                         )
                     }

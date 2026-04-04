@@ -227,6 +227,7 @@ class BaboonCommonKtModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[KtFileTools].from[KtFileTools.KtFileToolsImpl]
   make[KtTreeTools].from[KtTreeTools.KtTreeToolsImpl]
 
+  make[KtTypes].from { (target: CompilerTarget.KtTarget) => new KtTypes(target.language.multiplatform) }
   make[KtTypeTranslator]
   makeFactory[KtConversionTranslator.Factory[F]]
 

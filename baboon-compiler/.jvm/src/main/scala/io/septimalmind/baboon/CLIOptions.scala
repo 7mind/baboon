@@ -286,6 +286,8 @@ case class KtCLIOptions(
   serviceContextParameterName: Option[String],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
+  @HelpMessage("Generate Kotlin Multiplatform compatible code (default: false)")
+  ktMultiplatform: Option[Boolean],
 ) extends SharedCLIOptions
   with ScalaHktCLIOptions
 

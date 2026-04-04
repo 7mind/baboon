@@ -22,7 +22,9 @@ object KtServiceWiringTranslator {
     codecs: Set[KtCodecTranslator],
     domain: Domain,
     evo: BaboonEvolution,
+    ktTypes: KtTypes,
   ) extends KtServiceWiringTranslator {
+    import ktTypes.*
 
     private val resolved: ResolvedServiceResult =
       ServiceResultResolver.resolve(domain, "kotlin", target.language.serviceResult, target.language.pragmas)
@@ -49,6 +51,37 @@ object KtServiceWiringTranslator {
     private val resultKtType: Option[KtValue.KtType] = resolved.resultType.map {
       rt =>
         KtValue.KtType(baboonRuntimePkg, rt)
+    }
+
+    // Helper: create binary writer and get bytes
+    private def mkWriterSetup(writerVar: String): TextTree[KtValue] = {
+      if (ktTypes.multiplatform) {
+        q"val $writerVar = $binaryOutput()"
+      } else {
+        q"""val ${writerVar}_stream = $byteArrayOutputStream()
+           |val $writerVar = $binaryOutput(${writerVar}_stream)""".stripMargin
+      }
+    }
+
+    private def mkWriterGetBytes(writerVar: String): TextTree[KtValue] = {
+      if (ktTypes.multiplatform) q"$writerVar.toByteArray()"
+      else q"${writerVar}_stream.toByteArray()"
+    }
+
+    // Helper: create binary reader from bytes
+    private def mkReaderSetup(readerVar: String, dataExpr: String): TextTree[KtValue] = {
+      if (ktTypes.multiplatform) {
+        q"val $readerVar = $binaryInput($dataExpr)"
+      } else {
+        q"""val ${readerVar}_stream = $byteArrayInputStream($dataExpr)
+           |val $readerVar = $binaryInput(${readerVar}_stream)""".stripMargin
+      }
+    }
+
+    // Helper: create inline reader expression
+    private def mkInlineReader(dataExpr: String): TextTree[KtValue] = {
+      if (ktTypes.multiplatform) q"$binaryInput($dataExpr)"
+      else q"$binaryInput($byteArrayInputStream($dataExpr))"
     }
 
     private def jsonCodecName(typeId: TypeId.User): KtValue.KtType = {
@@ -259,11 +292,9 @@ object KtServiceWiringTranslator {
           val encodeOutput = m.out match {
             case Some(outRef) =>
               val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
-              q"""val oms = $byteArrayOutputStream()
-                 |val bw = $binaryOutput(oms)
+              q"""${mkWriterSetup("bw")}
                  |$outCodec.instance.encode(ctx, bw, result)
-                 |bw.flush()
-                 |oms.toByteArray()""".stripMargin
+                 |${mkWriterGetBytes("bw")}""".stripMargin
             case None =>
               q"ByteArray(0)"
           }
@@ -274,8 +305,7 @@ object KtServiceWiringTranslator {
           }
 
           q""""${m.name.name}" -> {
-             |  val ims = $byteArrayInputStream(data)
-             |  val br = $binaryInput(ims)
+             |  ${mkReaderSetup("br", "data")}
              |  val decoded = $inCodec.instance.decode(ctx, br)
              |  $callExpr
              |  ${encodeOutput.shift(2).trim}
@@ -430,8 +460,7 @@ object KtServiceWiringTranslator {
 
           val decodeStep =
             q"""val input: ${ct(bweFq, renderFq(inRef))} = try {
-               |  val ims = $byteArrayInputStream(data)
-               |  val br = $binaryInput(ims)
+               |  ${mkReaderSetup("br", "data")}
                |  rt.pure<$bweFq, $inRef>($inCodec.instance.decode(ctx, br))
                |} catch (ex: Throwable) {
                |  rt.fail<$bweFq, $inRef>($bweFq.DecoderFailed(method, ex))
@@ -466,11 +495,9 @@ object KtServiceWiringTranslator {
                  |}
                  |rt.flatMap<$bweFq, $outType, ByteArray>(output) { v ->
                  |  try {
-                 |    val oms = $byteArrayOutputStream()
-                 |    val bw = $binaryOutput(oms)
+                 |    ${mkWriterSetup("bw").shift(4).trim}
                  |    $outCodec.instance.encode(ctx, bw, v)
-                 |    bw.flush()
-                 |    rt.pure<$bweFq, ByteArray>(oms.toByteArray())
+                 |    rt.pure<$bweFq, ByteArray>(${mkWriterGetBytes("bw")})
                  |  } catch (ex: Throwable) {
                  |    rt.fail<$bweFq, ByteArray>($bweFq.EncoderFailed(method, ex))
                  |  }
@@ -542,16 +569,14 @@ object KtServiceWiringTranslator {
               val decodeOut = m.out match {
                 case Some(outRef) =>
                   val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
-                  q"return $outCodec.instance.decode(ctx, $binaryInput($byteArrayInputStream(resp)))"
+                  q"return $outCodec.instance.decode(ctx, ${mkInlineReader("resp")})"
                 case None => q"return Unit as $retType"
               }
               Some(
                 q"""suspend fun ${m.name.name}(arg: $inTypeRef, ctx: $baboonCodecContext = $baboonCodecContext.Default): $retType {
-                   |  val baos = $byteArrayOutputStream()
-                   |  val writer = $binaryOutput(baos)
+                   |  ${mkWriterSetup("writer").shift(2).trim}
                    |  $inCodec.instance.encode(ctx, writer, arg)
-                   |  writer.flush()
-                   |  val resp = transportUeba("$svcName", "${m.name.name}", baos.toByteArray())
+                   |  val resp = transportUeba("$svcName", "${m.name.name}", ${mkWriterGetBytes("writer")})
                    |  ${decodeOut.shift(2).trim}
                    |}""".stripMargin
               )

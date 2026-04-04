@@ -142,11 +142,12 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
 
   private def sharedFixture(): Out[List[KtDefnTranslator.Output]] = {
     if (target.output.products.contains(CompilerProduct.FixtureRuntime)) {
+      val rtDir = if (target.language.multiplatform) "baboon-runtime/kotlin-kmp" else "baboon-runtime/kotlin"
       F.pure(
         List(
           KtDefnTranslator.Output(
             "BaboonFixtureShared.kt",
-            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/kotlin/BaboonFixtureShared.kt")),
+            TextTree.text(BaboonRuntimeResources.read(s"$rtDir/BaboonFixtureShared.kt")),
             KtTypes.baboonFixturePkg,
             CompilerProduct.FixtureRuntime,
             doNotModify = true,
@@ -237,20 +238,29 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
         }
       }
 
-      F.pure(
-        List(
-          rt("BaboonByteString.kt", "baboon-runtime/kotlin/BaboonByteString.kt"),
-          rt("BaboonCodecs.kt", "baboon-runtime/kotlin/BaboonCodecs.kt", stripJsonSections),
-          rt("BaboonCodecsFacade.kt", "baboon-runtime/kotlin/BaboonCodecsFacade.kt", stripJsonSections),
-          rt("BaboonConversions.kt", "baboon-runtime/kotlin/BaboonConversions.kt"),
-          rt("BaboonEither.kt", "baboon-runtime/kotlin/BaboonEither.kt"),
-          rt("BaboonExceptions.kt", "baboon-runtime/kotlin/BaboonExceptions.kt"),
-          rt("BaboonRuntimeShared.kt", "baboon-runtime/kotlin/BaboonRuntimeShared.kt"),
-          rt("BaboonServiceWiring.kt", "baboon-runtime/kotlin/BaboonServiceWiring.kt"),
-          rt("BaboonTools.kt", "baboon-runtime/kotlin/BaboonTools.kt"),
-          rt("BaboonTimeFormats.kt", "baboon-runtime/kotlin/BaboonTimeFormats.kt"),
-        )
+      val rtDir = if (target.language.multiplatform) "baboon-runtime/kotlin-kmp" else "baboon-runtime/kotlin"
+
+      val baseFiles = List(
+        rt("BaboonByteString.kt", s"$rtDir/BaboonByteString.kt"),
+        rt("BaboonCodecs.kt", s"$rtDir/BaboonCodecs.kt", stripJsonSections),
+        rt("BaboonCodecsFacade.kt", s"$rtDir/BaboonCodecsFacade.kt", stripJsonSections),
+        rt("BaboonConversions.kt", s"$rtDir/BaboonConversions.kt"),
+        rt("BaboonEither.kt", s"$rtDir/BaboonEither.kt"),
+        rt("BaboonExceptions.kt", s"$rtDir/BaboonExceptions.kt"),
+        rt("BaboonRuntimeShared.kt", s"$rtDir/BaboonRuntimeShared.kt"),
+        rt("BaboonServiceWiring.kt", s"$rtDir/BaboonServiceWiring.kt"),
+        rt("BaboonTools.kt", s"$rtDir/BaboonTools.kt"),
+        rt("BaboonTimeFormats.kt", s"$rtDir/BaboonTimeFormats.kt"),
       )
+
+      val kmpExtraFiles = if (target.language.multiplatform) {
+        List(
+          rt("BaboonDecimal.kt", s"$rtDir/BaboonDecimal.kt"),
+          rt("BaboonOffsetDateTime.kt", s"$rtDir/BaboonOffsetDateTime.kt"),
+        )
+      } else Nil
+
+      F.pure(baseFiles ++ kmpExtraFiles)
     } else {
       F.pure(List.empty)
     }

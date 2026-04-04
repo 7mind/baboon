@@ -16,7 +16,12 @@ class KtUEBACodecGenerator(
   domain: Domain,
   evo: BaboonEvolution,
   ktDomainTreeTools: KtDomainTreeTools,
+  ktTypes: KtTypes,
 ) extends KtCodecTranslator {
+  import ktTypes.*
+
+  // In KMP mode, the buffer IS the BaboonBinaryWriter; in JVM mode, it's the ByteArrayOutputStream
+  private val bufferSizeExpr: String = if (ktTypes.multiplatform) "fakeWriter.size()" else "writeMemoryStream.size()"
 
   override def translate(
     defn: DomainMember.User,
@@ -261,25 +266,36 @@ class KtUEBACodecGenerator(
       fields.map(_._1).joinN(),
     ).filterNot(_.isEmpty).joinN()
 
+    val indexedBody = if (ktTypes.multiplatform) {
+      q"""header = (header.toInt() or 1).toByte()
+         |writer.writeByte(header.toInt())
+         |val fakeWriter = $binaryOutput()
+         |@Suppress("UNUSED_VARIABLE") val _init = Unit
+         |${fields.map(_._3).joinN().trim}
+         |writer.write(fakeWriter.toByteArray())""".stripMargin
+    } else {
+      q"""header = (header.toInt() or 1).toByte()
+         |writer.writeByte(header.toInt())
+         |val writeMemoryStream = $byteArrayOutputStream()
+         |try {
+         |  val fakeWriter = $binaryOutput(writeMemoryStream)
+         |  try {
+         |    ${fields.map(_._3).joinN().shift(4).trim}
+         |  } finally {
+         |    fakeWriter.close()
+         |  }
+         |  writeMemoryStream.flush()
+         |  writer.write(writeMemoryStream.toByteArray())
+         |} finally {
+         |  writeMemoryStream.close()
+         |}""".stripMargin
+    }
+
     val fenc =
       q"""var header: $ktByte = 0
          |
          |if (ctx.useIndices) {
-         |  header = (header.toInt() or 1).toByte()
-         |  writer.writeByte(header.toInt())
-         |  val writeMemoryStream = $byteArrayOutputStream()
-         |  try {
-         |    val fakeWriter = $binaryOutput(writeMemoryStream)
-         |    try {
-         |      ${fields.map(_._3).joinN().shift(6).trim}
-         |    } finally {
-         |      fakeWriter.close()
-         |    }
-         |    writeMemoryStream.flush()
-         |    writer.write(writeMemoryStream.toByteArray())
-         |  } finally {
-         |    writeMemoryStream.close()
-         |  }
+         |  ${indexedBody.shift(2).trim}
          |} else {
          |  ${noIndex.shift(2).trim}
          |}
@@ -342,9 +358,9 @@ class KtUEBACodecGenerator(
           case BinReprLen.Fixed(bytes) =>
             q"""{
                |  // ${field.toString}
-               |  val before = writeMemoryStream.size()
+               |  val before = $bufferSizeExpr
                |  ${fakeEnc.shift(2).trim}
-               |  val after = writeMemoryStream.size()
+               |  val after = $bufferSizeExpr
                |  val length = after - before
                |  assert(length == ${bytes.toString})
                |}""".stripMargin
@@ -366,10 +382,10 @@ class KtUEBACodecGenerator(
 
             q"""{
                |  // ${field.toString}
-               |  val before = writeMemoryStream.size()
+               |  val before = $bufferSizeExpr
                |  writer.writeInt(before)
                |  ${fakeEnc.shift(2).trim}
-               |  val after = writeMemoryStream.size()
+               |  val after = $bufferSizeExpr
                |  val length = after - before
                |  writer.writeInt(length)
                |  ${sanityChecks.shift(2).trim}
@@ -398,13 +414,15 @@ class KtUEBACodecGenerator(
               case TypeId.Builtins.f32 => q"wire.readFloat()"
               case TypeId.Builtins.f64 => q"wire.readDouble()"
 
-              case TypeId.Builtins.f128  => q"$baboonBinTools.readBigDecimal(wire)"
+              case TypeId.Builtins.f128  => if (ktTypes.multiplatform) q"$baboonBinTools.readBaboonDecimal(wire)" else q"$baboonBinTools.readBigDecimal(wire)"
               case TypeId.Builtins.str   => q"$baboonBinTools.readString(wire)"
               case TypeId.Builtins.bytes => q"$baboonBinTools.readByteString(wire)"
 
               case TypeId.Builtins.uid => q"$baboonBinTools.readUid(wire)"
-              case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-                q"$baboonBinTools.readTimestamp(wire)"
+              case TypeId.Builtins.tsu =>
+                if (ktTypes.multiplatform) q"$baboonBinTools.readTimestamp(wire)" else q"$baboonBinTools.readTimestamp(wire)"
+              case TypeId.Builtins.tso =>
+                if (ktTypes.multiplatform) q"$baboonBinTools.readTimestampOffset(wire)" else q"$baboonBinTools.readTimestamp(wire)"
 
               case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
@@ -426,7 +444,8 @@ class KtUEBACodecGenerator(
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
-            q"""(if (wire.read() == 0) null else ${mkDecoder(c.args.head)})"""
+            val readByteExpr = if (ktTypes.multiplatform) "wire.readByte().toInt()" else "wire.read()"
+            q"""(if ($readByteExpr == 0) null else ${mkDecoder(c.args.head)})"""
           case TypeId.Builtins.map =>
             val keyDecoder   = mkDecoder(c.args.head)
             val valueDecoder = mkDecoder(c.args.last)
@@ -458,12 +477,14 @@ class KtUEBACodecGenerator(
               case TypeId.Builtins.u64   => q"$wref.writeLong($ref.toLong())"
               case TypeId.Builtins.f32   => q"$wref.writeFloat($ref)"
               case TypeId.Builtins.f64   => q"$wref.writeDouble($ref)"
-              case TypeId.Builtins.f128  => q"$baboonBinTools.writeBigDecimal($wref, $ref)"
+              case TypeId.Builtins.f128  => if (ktTypes.multiplatform) q"$baboonBinTools.writeBaboonDecimal($wref, $ref)" else q"$baboonBinTools.writeBigDecimal($wref, $ref)"
               case TypeId.Builtins.str   => q"$baboonBinTools.writeString($wref, $ref)"
               case TypeId.Builtins.bytes => q"$baboonBinTools.writeByteString($wref, $ref)"
               case TypeId.Builtins.uid   => q"$baboonBinTools.writeUid($wref, $ref)"
-              case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-                q"$baboonBinTools.writeTimestamp($wref, $ref)"
+              case TypeId.Builtins.tsu =>
+                if (ktTypes.multiplatform) q"$baboonBinTools.writeTimestamp($wref, $ref)" else q"$baboonBinTools.writeTimestamp($wref, $ref)"
+              case TypeId.Builtins.tso =>
+                if (ktTypes.multiplatform) q"$baboonBinTools.writeTimestampOffset($wref, $ref)" else q"$baboonBinTools.writeTimestamp($wref, $ref)"
               case o =>
                 throw new RuntimeException(s"BUG: Unexpected type: $o")
             }

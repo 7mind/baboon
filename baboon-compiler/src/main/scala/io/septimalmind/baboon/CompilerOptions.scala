@@ -247,6 +247,7 @@ final case class KtOptions(
   serviceResult: ServiceResultConfig,
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
+  multiplatform: Boolean,
 )
 
 final case class JvOptions(

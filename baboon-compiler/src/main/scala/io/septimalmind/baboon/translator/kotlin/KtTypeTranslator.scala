@@ -7,7 +7,8 @@ import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
-class KtTypeTranslator {
+class KtTypeTranslator(ktTypes: KtTypes) {
+  import ktTypes.*
   def asKtRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[KtValue] = {
     tpe match {
       case TypeRef.Scalar(uid: TypeId.User) =>
@@ -64,7 +65,8 @@ class KtTypeTranslator {
           case TypeId.Builtins.str                       => ktString
           case TypeId.Builtins.bytes                     => ktByteString
           case TypeId.Builtins.uid                       => ktUid
-          case TypeId.Builtins.tso | TypeId.Builtins.tsu => ktTime
+          case TypeId.Builtins.tsu => ktTimeTsu
+          case TypeId.Builtins.tso => ktTimeTso
           case TypeId.Builtins.bit                       => ktBoolean
 
           case other => throw new IllegalArgumentException(s"Unexpected: $other")

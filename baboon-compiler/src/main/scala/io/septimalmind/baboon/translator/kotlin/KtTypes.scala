@@ -3,6 +3,73 @@ package io.septimalmind.baboon.translator.kotlin
 import io.septimalmind.baboon.translator.kotlin.KtValue.{KtPackageId, KtType}
 import izumi.fundamentals.collections.nonempty.NEList
 
+class KtTypes(val multiplatform: Boolean) {
+  import KtTypes.*
+
+  // Platform-dependent type mappings
+  val ktUid: KtType = if (multiplatform) {
+    KtType(parseKtPkg("kotlin.uuid"), "Uuid")
+  } else {
+    KtType(javaUtilPkg, "UUID")
+  }
+
+  val ktBigDecimal: KtType = if (multiplatform) {
+    KtType(baboonRuntimePkg, "BaboonDecimal")
+  } else {
+    KtType(javaMathPkg, "BigDecimal")
+  }
+
+  // tsu maps to Instant (both JVM and KMP can parse, but different packages)
+  val ktTimeTsu: KtType = if (multiplatform) {
+    KtType(parseKtPkg("kotlinx.datetime"), "Instant")
+  } else {
+    KtType(javaTimePkg, "OffsetDateTime")
+  }
+
+  // tso maps to OffsetDateTime (JVM) or BaboonOffsetDateTime (KMP)
+  val ktTimeTso: KtType = if (multiplatform) {
+    KtType(baboonRuntimePkg, "BaboonOffsetDateTime")
+  } else {
+    KtType(javaTimePkg, "OffsetDateTime")
+  }
+
+  // Binary I/O types
+  val binaryInput: KtType = if (multiplatform) {
+    KtType(baboonRuntimePkg, "BaboonBinaryReader")
+  } else {
+    KtType(baboonRuntimePkg, "LEDataInputStream")
+  }
+
+  val binaryOutput: KtType = if (multiplatform) {
+    KtType(baboonRuntimePkg, "BaboonBinaryWriter")
+  } else {
+    KtType(baboonRuntimePkg, "LEDataOutputStream")
+  }
+
+  // ByteArray stream types (JVM only, KMP uses BaboonBinaryWriter/Reader directly)
+  val byteArrayOutputStream: KtType = if (multiplatform) {
+    KtType(baboonRuntimePkg, "BaboonBinaryWriter") // KMP: use writer directly
+  } else {
+    KtType(javaIoPkg, "ByteArrayOutputStream")
+  }
+
+  val byteArrayInputStream: KtType = if (multiplatform) {
+    KtType(baboonRuntimePkg, "BaboonBinaryReader") // KMP: use reader directly
+  } else {
+    KtType(javaIoPkg, "ByteArrayInputStream")
+  }
+
+  // ADT metadata: Class<*> on JVM, KClass<*> on KMP
+  val javaClass: KtType = if (multiplatform) {
+    KtType(parseKtPkg("kotlin.reflect"), "KClass")
+  } else {
+    KtType(javaLangPkg, "Class", predef = true)
+  }
+
+  // Expression for getting class reference
+  val classRefSuffix: String = if (multiplatform) "::class" else "::class.java"
+}
+
 object KtTypes {
   // baboon packages
   val baboonRuntimePkg: KtPackageId = parseKtPkg("baboon.runtime.shared")
@@ -36,8 +103,6 @@ object KtTypes {
   val baboonBinCodecIndexed: KtType           = KtType(baboonRuntimePkg, "BaboonBinCodecIndexed")
   val baboonCodecContext: KtType              = KtType(baboonRuntimePkg, "BaboonCodecContext")
   def abstractBaboonCodec(id: String): KtType = KtType(baboonRuntimePkg, s"AbstractBaboon${id}Codecs")
-  val binaryInput: KtType                     = KtType(baboonRuntimePkg, "LEDataInputStream")
-  val binaryOutput: KtType                    = KtType(baboonRuntimePkg, "LEDataOutputStream")
   val baboonTimeFormats: KtType               = KtType(baboonRuntimePkg, "BaboonTimeFormats")
   val baboonLazy: KtType                      = KtType(baboonRuntimePkg, "Lazy")
   val baboonBinTools: KtType                  = KtType(baboonRuntimePkg, "BaboonBinTools")
@@ -71,6 +136,7 @@ object KtTypes {
   val ktUnit: KtType      = KtType(kotlinPkg, "Unit", predef = true)
   val ktByteArray: KtType = KtType(kotlinPkg, "ByteArray", predef = true)
   val ktAny: KtType       = KtType(kotlinPkg, "Any", predef = true)
+  val ktString: KtType    = KtType(kotlinPkg, "String", predef = true)
 
   // kotlin collections
   val ktList: KtType = KtType(kotlinPkg, "List", predef = true)
@@ -80,25 +146,16 @@ object KtTypes {
   val kotlinCollPkg: KtPackageId = parseKtPkg("kotlin.collections")
   val ktMutableMap: KtType       = KtType(kotlinCollPkg, "mutableMapOf", predef = true)
 
-  // java
+  // java (used by JVM mode; KMP mode replaces these via instance members)
   val javaLangPkg: KtPackageId             = parseKtPkg("java.lang")
-  val ktString: KtType                     = KtType(javaLangPkg, "String", predef = true)
   val genericException: KtType             = KtType(javaLangPkg, "RuntimeException", predef = true)
-  val javaClass: KtType                    = KtType(javaLangPkg, "Class", predef = true)
   val javaIllegalArgumentException: KtType = KtType(javaLangPkg, "IllegalArgumentException", predef = true)
 
   val javaUtilPkg: KtPackageId = parseKtPkg("java.util")
-  val ktUid: KtType            = KtType(javaUtilPkg, "UUID")
-
   val javaMathPkg: KtPackageId = parseKtPkg("java.math")
-  val ktBigDecimal: KtType     = KtType(javaMathPkg, "BigDecimal")
-
   val javaTimePkg: KtPackageId = parseKtPkg("java.time")
-  val ktTime: KtType           = KtType(javaTimePkg, "OffsetDateTime")
 
   val javaIoPkg: KtPackageId        = parseKtPkg("java.io")
-  val byteArrayOutputStream: KtType = KtType(javaIoPkg, "ByteArrayOutputStream")
-  val byteArrayInputStream: KtType  = KtType(javaIoPkg, "ByteArrayInputStream")
   val javaFile: KtType              = KtType(javaIoPkg, "File")
 
   val javaNioFilePkg: KtPackageId = parseKtPkg("java.nio.file")

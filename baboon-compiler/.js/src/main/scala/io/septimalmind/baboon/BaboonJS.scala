@@ -283,6 +283,7 @@ object BaboonJS {
     val generateUebaCodecsByDefault: js.UndefOr[Boolean]
     val generateJsonCodecsByDefault: js.UndefOr[Boolean]
     val asyncServices: js.UndefOr[Boolean]
+    val multiplatform: js.UndefOr[Boolean]
   }
 
   @js.native
@@ -475,6 +476,7 @@ object BaboonJS {
                 serviceResult               = ServiceResultConfig.kotlinDefault,
                 serviceContext              = ServiceContextConfig.default,
                 pragmas                     = Map.empty,
+                multiplatform               = opts.multiplatform.getOrElse(false),
               ),
             )
           case "java" =>

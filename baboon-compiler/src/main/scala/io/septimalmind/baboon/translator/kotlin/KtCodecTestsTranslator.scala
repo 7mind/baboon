@@ -25,7 +25,10 @@ object KtCodecTestsTranslator {
     target: KtTarget,
     domain: Domain,
     evo: BaboonEvolution,
+    ktTypes: KtTypes,
   ) extends KtCodecTestsTranslator {
+    import ktTypes.*
+
     override def translate(
       definition: DomainMember.User,
       ktRef: KtValue.KtType,
@@ -94,14 +97,23 @@ object KtCodecTestsTranslator {
              |}
              |
              |private fun uebaCompare(context: $baboonCodecContext, fixture: $srcRef, clue: String): ByteArray {
-             |  val baos = $byteArrayOutputStream()
-             |  val dos = $binaryOutput(baos)
-             |  $codecName.instance.encode(context, dos, fixture)
-             |
-             |  val bytes = baos.toByteArray()
-             |
-             |  val bais = $byteArrayInputStream(bytes)
-             |  val dis = $binaryInput(bais)
+             |  ${if (ktTypes.multiplatform) {
+              q"""val dos = $binaryOutput()
+                 |  $codecName.instance.encode(context, dos, fixture)
+                 |
+                 |  val bytes = dos.toByteArray()
+                 |
+                 |  val dis = $binaryInput(bytes)""".stripMargin
+            } else {
+              q"""val baos = $byteArrayOutputStream()
+                 |  val dos = $binaryOutput(baos)
+                 |  $codecName.instance.encode(context, dos, fixture)
+                 |
+                 |  val bytes = baos.toByteArray()
+                 |
+                 |  val bais = $byteArrayInputStream(bytes)
+                 |  val dis = $binaryInput(bais)""".stripMargin
+            }}
              |  val dec = $codecName.instance.decode(context, dis)
              |  $ktAssertEquals(fixture, dec, clue)
              |
