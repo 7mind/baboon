@@ -14,7 +14,7 @@ pub fn run(host: &str, port: u16) {
     post(host, port, "/reset", "");
 
     // Add Buddy
-    let add_buddy_in = crate::petstore::api::petstore::addpet::r#in::In {
+    let add_buddy_in = crate::petstore::api::petstore::addpet::input::In {
         name: "Buddy".to_string(),
         status: PetStatus::Available,
         tag: Some("dog".to_string()),
@@ -31,7 +31,7 @@ pub fn run(host: &str, port: u16) {
     );
 
     // Add Whiskers
-    let add_whiskers_in = crate::petstore::api::petstore::addpet::r#in::In {
+    let add_whiskers_in = crate::petstore::api::petstore::addpet::input::In {
         name: "Whiskers".to_string(),
         status: PetStatus::Pending,
         tag: Some("cat".to_string()),
@@ -48,7 +48,7 @@ pub fn run(host: &str, port: u16) {
     );
 
     // List pets (expect 2)
-    let list_in = crate::petstore::api::petstore::listpets::r#in::In {};
+    let list_in = crate::petstore::api::petstore::listpets::input::In {};
     let list_json = serde_json::to_string(&list_in).unwrap();
     let list_resp = post(host, port, "/PetStore/listPets", &list_json);
     let list_out: crate::petstore::api::petstore::listpets::out::Out =
@@ -60,7 +60,7 @@ pub fn run(host: &str, port: u16) {
     );
 
     // Get Buddy
-    let get_buddy_in = crate::petstore::api::petstore::getpet::r#in::In { id: buddy_id };
+    let get_buddy_in = crate::petstore::api::petstore::getpet::input::In { id: buddy_id };
     let get_buddy_json = serde_json::to_string(&get_buddy_in).unwrap();
     let get_buddy_resp = post(host, port, "/PetStore/getPet", &get_buddy_json);
     let get_buddy_out: crate::petstore::api::petstore::getpet::out::Out =
@@ -82,7 +82,7 @@ pub fn run(host: &str, port: u16) {
     );
 
     // Delete Whiskers
-    let delete_in = crate::petstore::api::petstore::deletepet::r#in::In { id: whiskers_id };
+    let delete_in = crate::petstore::api::petstore::deletepet::input::In { id: whiskers_id };
     let delete_json = serde_json::to_string(&delete_in).unwrap();
     let delete_resp = post(host, port, "/PetStore/deletePet", &delete_json);
     let delete_out: crate::petstore::api::petstore::deletepet::out::Out =

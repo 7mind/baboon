@@ -74,7 +74,18 @@ object RsDefnTranslator {
             )
         }.toList
 
-      F.pure(mainOutput :: wiringOutput)
+      val clientOutput = wiringTranslator
+        .translateClient(defn).map {
+          clientTree =>
+            Output(
+              getOutputPath(defn, suffix = Some("_client")),
+              clientTree,
+              trans.toRsCrate(domain.id, domain.version, evo),
+              CompilerProduct.Definition,
+            )
+        }.toList
+
+      F.pure(mainOutput :: wiringOutput ::: clientOutput)
     }
 
     override def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
@@ -218,10 +229,17 @@ object RsDefnTranslator {
         q""
       }
 
-      q"""$derives
-         |pub struct ${name.asName} {
-         |    ${fieldsList.shift(4).trim}
-         |}
+      val structDef = if (dto.fields.isEmpty) {
+        q"""$derives
+           |pub struct ${name.asName} {}""".stripMargin
+      } else {
+        q"""$derives
+           |pub struct ${name.asName} {
+           |    ${fieldsList.shift(4).trim}
+           |}""".stripMargin
+      }
+
+      q"""$structDef
          |
          |$ordImpls$customSerialize""".stripMargin
     }
@@ -257,7 +275,7 @@ object RsDefnTranslator {
           f =>
             val fld = toSnakeCase(f.name.name)
             if (hasDirectFloat(f.tpe)) {
-              q"""match baboon_total_cmp_ser(&self.$fld, &other.$fld) {
+              q"""match self.$fld.total_cmp(&other.$fld) {
                  |    std::cmp::Ordering::Equal => {},
                  |    ord => return ord,
                  |}""".stripMargin
@@ -284,11 +302,6 @@ object RsDefnTranslator {
            |
            |impl Ord for ${name.asName} {
            |    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-           |        fn baboon_total_cmp_ser<T: serde::Serialize>(a: &T, b: &T) -> std::cmp::Ordering {
-           |            let ja = serde_json::to_string(a).unwrap_or_default();
-           |            let jb = serde_json::to_string(b).unwrap_or_default();
-           |            ja.cmp(&jb)
-           |        }
            |        ${fieldComparisons.joinN().shift(8).trim}
            |        std::cmp::Ordering::Equal
            |    }
@@ -298,9 +311,8 @@ object RsDefnTranslator {
 
     private def hasDirectFloat(tpe: TypeRef): Boolean = {
       tpe match {
-        case TypeRef.Scalar(TypeId.Builtins.f32)  => true
-        case TypeRef.Scalar(TypeId.Builtins.f64)  => true
-        case TypeRef.Scalar(TypeId.Builtins.f128) => true
+        case TypeRef.Scalar(TypeId.Builtins.f32) => true
+        case TypeRef.Scalar(TypeId.Builtins.f64) => true
         case TypeRef.Constructor(_, args)         => args.exists(hasDirectFloat)
         case _                                    => false
       }
@@ -485,11 +497,16 @@ object RsDefnTranslator {
       val deBranches = dataMembers.map {
         mid =>
           val branchName = mid.name.name.capitalize
-          val branchType = trans.asRsType(mid, domain, evo)
-          q""""$branchName" => {
-             |    let v: ${branchType.asName} = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
-             |    Ok(${name.asName}::$branchName(v))
-             |}""".stripMargin
+          q""""$branchName" => Ok(${name.asName}::$branchName(map.next_value()?)),"""
+      }
+
+      val branchNames = dataMembers.map(_.name.name.capitalize)
+      val branchNamesLit = branchNames.map(n => s""""$n"""").mkString(", ")
+
+      val displayBranches = dataMembers.map {
+        mid =>
+          val branchName = mid.name.name.capitalize
+          q"""${name.asName}::$branchName(v) => write!(f, "${name.name}::$branchName({:?})", v),"""
       }
 
       q"""${branchStructs.toList.joinNN()}
@@ -505,15 +522,34 @@ object RsDefnTranslator {
          |
          |impl<'de> serde::Deserialize<'de> for ${name.asName} {
          |    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-         |        let map: std::collections::BTreeMap<String, serde_json::Value> = serde::Deserialize::deserialize(deserializer)?;
-         |        let (key, value) = map.into_iter().next()
-         |            .ok_or_else(|| serde::de::Error::custom("expected single-key map for ADT"))?;
-         |        match key.as_str() {
-         |            ${deBranches.toList.joinN().shift(12).trim}
-         |            _ => Err(serde::de::Error::custom(format!("unknown ADT branch: {}", key))),
+         |        struct AdtVisitor;
+         |        impl<'de> serde::de::Visitor<'de> for AdtVisitor {
+         |            type Value = ${name.asName};
+         |            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+         |                write!(f, "a single-key map representing ${name.name}")
+         |            }
+         |            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+         |                let key: String = map.next_key()?
+         |                    .ok_or_else(|| serde::de::Error::custom("expected single-key map for ADT"))?;
+         |                match key.as_str() {
+         |                    ${deBranches.toList.joinN().shift(20).trim}
+         |                    _ => Err(serde::de::Error::unknown_variant(&key, &[$branchNamesLit])),
+         |                }
+         |            }
+         |        }
+         |        deserializer.deserialize_map(AdtVisitor)
+         |    }
+         |}
+         |
+         |impl std::fmt::Display for ${name.asName} {
+         |    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+         |        match self {
+         |            ${displayBranches.toList.joinN().shift(12).trim}
          |        }
          |    }
-         |}""".stripMargin
+         |}
+         |
+         |impl std::error::Error for ${name.asName} {}""".stripMargin
     }
 
     private def makeContractRepr(defn: DomainMember.User, name: RsType): TextTree[RsValue] = {
@@ -550,8 +586,9 @@ object RsDefnTranslator {
           val inStr  = inType.mapRender(rsFqName)
           val outStr = outType.map(_.mapRender(rsFqName)).getOrElse("")
           val errStr = errType.map(_.mapRender(rsFqName))
-          val retStr = resolved.renderReturnType(outStr, errStr, "()")
-          q"fn ${toSnakeCase(m.name.name)}(&self, ${ctxParam}arg: $inStr) -> $retStr;"
+          val retStr    = resolved.renderReturnType(outStr, errStr, "()")
+          val asyncKw   = if (target.language.asyncServices) "async " else ""
+          q"${asyncKw}fn ${toSnakeCase(m.name.name)}(&self, ${ctxParam}arg: $inStr) -> $retStr;"
       }
       val genericParam = resolvedCtx match {
         case ResolvedServiceContext.AbstractContext(tn, _) => s"<$tn>"
@@ -564,13 +601,14 @@ object RsDefnTranslator {
     }
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
-      val fbase = rsFiles.basename(domain, evo)
-      val fname = s"${toSnakeCaseFileName(defn.id.name.name)}${suffix.getOrElse("")}.rs"
+      val fbase    = rsFiles.basename(domain, evo)
+      val baseName = escapeRustModuleName(toSnakeCaseFileName(defn.id.name.name))
+      val fname    = s"$baseName${suffix.getOrElse("")}.rs"
 
       defn.defn.id.owner match {
         case Owner.Toplevel => s"$fbase/$fname"
-        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString("/")}/$fname"
-        case Owner.Adt(id)  => s"$fbase/${toSnakeCaseFileName(id.name.name)}/$fname"
+        case Owner.Ns(path) => s"$fbase/${path.map(n => escapeRustModuleName(n.name.toLowerCase)).mkString("/")}/$fname"
+        case Owner.Adt(id)  => s"$fbase/${escapeRustModuleName(toSnakeCaseFileName(id.name.name))}/$fname"
       }
     }
   }
@@ -579,13 +617,27 @@ object RsDefnTranslator {
     toSnakeCaseRaw(s)
   }
 
+  private val rustKeywords: Set[String] = Set(
+    "type", "self", "super", "crate", "mod", "fn", "let", "mut", "ref", "match", "if", "else", "while", "for", "loop", "break", "continue",
+    "return", "struct", "enum", "trait", "impl", "use", "pub", "as", "in", "where", "async", "await", "dyn", "move", "static", "const", "unsafe",
+    "extern", "true", "false",
+  )
+
+  def isRustKeyword(s: String): Boolean = rustKeywords.contains(s)
+
   def escapeRustKeyword(s: String): String = {
+    if (isRustKeyword(s)) s"r#$s" else s
+  }
+
+  /** Escape a Rust keyword for use as a module/file name.
+    * Uses readable alternative names instead of `r#` prefix to avoid issues with filenames and compound identifiers.
+    */
+  def escapeRustModuleName(s: String): String = {
     s match {
-      case "type" | "self" | "super" | "crate" | "mod" | "fn" | "let" | "mut" | "ref" | "match" | "if" | "else" | "while" | "for" | "loop" | "break" | "continue" |
-          "return" | "struct" | "enum" | "trait" | "impl" | "use" | "pub" | "as" | "in" | "where" | "async" | "await" | "dyn" | "move" | "static" | "const" | "unsafe" |
-          "extern" | "true" | "false" =>
-        s"r#$s"
-      case _ => s
+      case "in"  => "input"
+      case "out" => "output"
+      case kw if isRustKeyword(kw) => s"${kw}_"
+      case other => other
     }
   }
 

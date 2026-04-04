@@ -28,7 +28,7 @@ impl PetStoreImpl {
 impl PetStore for PetStoreImpl {
     fn add_pet(
         &self,
-        arg: crate::petstore::api::petstore::addpet::r#in::In,
+        arg: crate::petstore::api::petstore::addpet::input::In,
     ) -> crate::petstore::api::petstore::addpet::out::Out {
         let mut pets = self.pets.lock().unwrap();
         let mut next_id = self.next_id.lock().unwrap();
@@ -46,7 +46,7 @@ impl PetStore for PetStoreImpl {
 
     fn get_pet(
         &self,
-        arg: crate::petstore::api::petstore::getpet::r#in::In,
+        arg: crate::petstore::api::petstore::getpet::input::In,
     ) -> crate::petstore::api::petstore::getpet::out::Out {
         let pets = self.pets.lock().unwrap();
         let pet = pets.get(&arg.id).expect(&format!("Pet with id {} not found", arg.id));
@@ -55,7 +55,7 @@ impl PetStore for PetStoreImpl {
 
     fn list_pets(
         &self,
-        _arg: crate::petstore::api::petstore::listpets::r#in::In,
+        _arg: crate::petstore::api::petstore::listpets::input::In,
     ) -> crate::petstore::api::petstore::listpets::out::Out {
         let pets = self.pets.lock().unwrap();
         let mut pet_list: Vec<Pet> = pets.values().cloned().collect();
@@ -65,7 +65,7 @@ impl PetStore for PetStoreImpl {
 
     fn delete_pet(
         &self,
-        arg: crate::petstore::api::petstore::deletepet::r#in::In,
+        arg: crate::petstore::api::petstore::deletepet::input::In,
     ) -> crate::petstore::api::petstore::deletepet::out::Out {
         let mut pets = self.pets.lock().unwrap();
         let deleted = pets.remove(&arg.id).is_some();

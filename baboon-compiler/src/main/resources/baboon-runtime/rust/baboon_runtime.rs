@@ -131,11 +131,13 @@ impl BaboonBinDecode for Vec<u8> {
     }
 }
 
+#[cfg(feature = "rust_decimal")]
 impl BaboonBinEncode for rust_decimal::Decimal {
     fn encode_ueba(&self, _ctx: &BaboonCodecContext, writer: &mut dyn Write) -> std::io::Result<()> {
         bin_tools::write_decimal(writer, self)
     }
 }
+#[cfg(feature = "rust_decimal")]
 impl BaboonBinDecode for rust_decimal::Decimal {
     fn decode_ueba(_ctx: &BaboonCodecContext, reader: &mut dyn Read) -> Result<Self, Box<dyn std::error::Error>> {
         bin_tools::read_decimal(reader)
@@ -258,38 +260,44 @@ pub mod opt_hex_bytes {
     }
 }
 
-// --- Serde helpers for Decimal (as JSON number) ---
+// --- Serde helpers for Decimal ---
 
+#[cfg(feature = "rust_decimal")]
 pub mod decimal_as_number {
     use rust_decimal::Decimal;
-    use serde::{Deserialize, Deserializer, Serializer};
+    use serde::{Deserializer, Serializer};
     use std::str::FromStr;
 
     pub fn serialize<S: Serializer>(value: &Decimal, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::Serialize;
-        let s = value.normalize().to_string();
-        let n: serde_json::Number =
-            serde_json::Number::from_str(&s).unwrap_or_else(|_| serde_json::Number::from(0));
-        n.serialize(serializer)
+        // Serialize as string to preserve precision
+        serializer.serialize_str(&value.normalize().to_string())
     }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Decimal, D::Error> {
-        let value = serde_json::Value::deserialize(deserializer)?;
-        match &value {
-            serde_json::Value::Number(n) => {
-                Decimal::from_str(&n.to_string()).map(|d| d.normalize()).map_err(serde::de::Error::custom)
+        struct DecimalVisitor;
+        impl<'de> serde::de::Visitor<'de> for DecimalVisitor {
+            type Value = Decimal;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "a number or string representing a decimal")
             }
-            serde_json::Value::String(s) => {
-                Decimal::from_str(s).map(|d| d.normalize()).map_err(serde::de::Error::custom)
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Decimal, E> {
+                Decimal::from_str(v).map(|d| d.normalize()).map_err(E::custom)
             }
-            _ => Err(serde::de::Error::custom(format!(
-                "Expected number or string for Decimal, got: {}",
-                value
-            ))),
+            fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Decimal, E> {
+                Decimal::try_from(v).map(|d| d.normalize()).map_err(E::custom)
+            }
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Decimal, E> {
+                Ok(Decimal::from(v).normalize())
+            }
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Decimal, E> {
+                Ok(Decimal::from(v).normalize())
+            }
         }
+        deserializer.deserialize_any(DecimalVisitor)
     }
 }
 
+#[cfg(feature = "rust_decimal")]
 pub mod opt_decimal_as_number {
     use rust_decimal::Decimal;
     use serde::{Deserializer, Serializer};
@@ -307,70 +315,117 @@ pub mod opt_decimal_as_number {
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Option<Decimal>, D::Error> {
-        use serde::Deserialize;
-        use std::str::FromStr;
-        let opt: Option<serde_json::Value> = Option::deserialize(deserializer)?;
-        match opt {
-            Some(serde_json::Value::Null) => Ok(None),
-            Some(serde_json::Value::Number(n)) => {
-                let d = rust_decimal::Decimal::from_str(&n.to_string())
-                    .map(|d| d.normalize())
-                    .map_err(serde::de::Error::custom)?;
-                Ok(Some(d))
+        struct OptDecimalVisitor;
+        impl<'de> serde::de::Visitor<'de> for OptDecimalVisitor {
+            type Value = Option<Decimal>;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "a number, string, or null representing an optional decimal")
             }
-            Some(serde_json::Value::String(s)) => {
-                let d = rust_decimal::Decimal::from_str(&s)
-                    .map(|d| d.normalize())
-                    .map_err(serde::de::Error::custom)?;
-                Ok(Some(d))
+            fn visit_none<E: serde::de::Error>(self) -> Result<Option<Decimal>, E> {
+                Ok(None)
             }
-            Some(other) => Err(serde::de::Error::custom(format!(
-                "Expected number, string, or null for Option<Decimal>, got: {}",
-                other
-            ))),
-            None => Ok(None),
+            fn visit_unit<E: serde::de::Error>(self) -> Result<Option<Decimal>, E> {
+                Ok(None)
+            }
+            fn visit_some<D2: Deserializer<'de>>(self, deserializer: D2) -> Result<Option<Decimal>, D2::Error> {
+                super::decimal_as_number::deserialize(deserializer).map(Some)
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Option<Decimal>, E> {
+                use std::str::FromStr;
+                Decimal::from_str(v).map(|d| Some(d.normalize())).map_err(E::custom)
+            }
+            fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Option<Decimal>, E> {
+                Decimal::try_from(v).map(|d| Some(d.normalize())).map_err(E::custom)
+            }
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Option<Decimal>, E> {
+                Ok(Some(Decimal::from(v).normalize()))
+            }
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Option<Decimal>, E> {
+                Ok(Some(Decimal::from(v).normalize()))
+            }
         }
+        deserializer.deserialize_option(OptDecimalVisitor)
     }
 }
 
 // --- Serde helper for lenient numeric deserialization (accepts both JSON numbers and strings) ---
 
 pub mod lenient_numeric {
-    use serde::{Deserialize, Deserializer, de::DeserializeOwned};
+    use serde::Deserializer;
 
-    fn transform_strings_to_numbers(value: serde_json::Value) -> serde_json::Value {
-        match value {
-            serde_json::Value::String(s) => {
-                if let Ok(n) = s.parse::<i64>() {
-                    serde_json::Value::Number(n.into())
-                } else if let Ok(n) = s.parse::<u64>() {
-                    serde_json::Value::Number(n.into())
-                } else {
-                    serde_json::Value::String(s)
+    /// Deserializes an i64 that may be encoded as either a JSON number or a JSON string.
+    pub mod i64 {
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<i64, D::Error> {
+            struct I64Visitor;
+            impl<'de> serde::de::Visitor<'de> for I64Visitor {
+                type Value = i64;
+                fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    write!(f, "an i64 as number or string")
+                }
+                fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<i64, E> { Ok(v) }
+                fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<i64, E> {
+                    i64::try_from(v).map_err(E::custom)
+                }
+                fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<i64, E> {
+                    v.parse::<i64>().map_err(E::custom)
                 }
             }
-            serde_json::Value::Array(arr) => {
-                serde_json::Value::Array(arr.into_iter().map(transform_strings_to_numbers).collect())
-            }
-            serde_json::Value::Object(map) => {
-                serde_json::Value::Object(
-                    map.into_iter()
-                        .map(|(k, v)| (k, transform_strings_to_numbers(v)))
-                        .collect(),
-                )
-            }
-            other => other,
+            deserializer.deserialize_any(I64Visitor)
         }
     }
 
+    /// Deserializes a u64 that may be encoded as either a JSON number or a JSON string.
+    pub mod u64 {
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+            struct U64Visitor;
+            impl<'de> serde::de::Visitor<'de> for U64Visitor {
+                type Value = u64;
+                fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    write!(f, "a u64 as number or string")
+                }
+                fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<u64, E> {
+                    u64::try_from(v).map_err(E::custom)
+                }
+                fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<u64, E> { Ok(v) }
+                fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<u64, E> {
+                    v.parse::<u64>().map_err(E::custom)
+                }
+            }
+            deserializer.deserialize_any(U64Visitor)
+        }
+    }
+
+    /// Backwards-compatible top-level deserialize for direct i64/u64 fields.
+    /// Falls back to string parsing if the value is a string.
     pub fn deserialize<'de, T, D>(deserializer: D) -> Result<T, D::Error>
     where
-        T: DeserializeOwned,
+        T: std::str::FromStr + serde::Deserialize<'de>,
+        <T as std::str::FromStr>::Err: std::fmt::Display,
         D: Deserializer<'de>,
     {
-        let value = serde_json::Value::deserialize(deserializer)?;
-        let transformed = transform_strings_to_numbers(value);
-        T::deserialize(transformed).map_err(serde::de::Error::custom)
+        struct LenientVisitor<T>(std::marker::PhantomData<T>);
+        impl<'de, T> serde::de::Visitor<'de> for LenientVisitor<T>
+        where
+            T: std::str::FromStr + serde::Deserialize<'de>,
+            <T as std::str::FromStr>::Err: std::fmt::Display,
+        {
+            type Value = T;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "a number or string")
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<T, E> {
+                v.parse::<T>().map_err(E::custom)
+            }
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<T, E> {
+                let s = v.to_string();
+                s.parse::<T>().map_err(E::custom)
+            }
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<T, E> {
+                let s = v.to_string();
+                s.parse::<T>().map_err(E::custom)
+            }
+        }
+        deserializer.deserialize_any(LenientVisitor(std::marker::PhantomData))
     }
 }
 
@@ -460,6 +515,7 @@ pub mod time_formats {
 
 pub mod bin_tools {
     use chrono::{DateTime, FixedOffset, Offset, Utc};
+    #[cfg(feature = "rust_decimal")]
     use rust_decimal::Decimal;
     use std::io::{Read, Write};
     use uuid::Uuid;
@@ -514,6 +570,7 @@ pub mod bin_tools {
         writer.write_all(&value.to_le_bytes())
     }
 
+    #[cfg(feature = "rust_decimal")]
     pub fn write_decimal(writer: &mut dyn Write, value: &Decimal) -> std::io::Result<()> {
         // .NET decimal format: lo (i32), mid (i32), hi (i32), flags (i32)
         // flags: sign in bit 31, scale in bits 16-23
@@ -662,6 +719,7 @@ pub mod bin_tools {
         Ok(f64::from_le_bytes(buf))
     }
 
+    #[cfg(feature = "rust_decimal")]
     pub fn read_decimal(reader: &mut dyn Read) -> Result<Decimal, Box<dyn std::error::Error>> {
         // .NET decimal format: lo (i32), mid (i32), hi (i32), flags (i32)
         let lo = read_i32(reader)? as u32;

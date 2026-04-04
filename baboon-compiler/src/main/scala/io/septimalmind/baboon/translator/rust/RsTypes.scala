@@ -3,10 +3,12 @@ package io.septimalmind.baboon.translator.rust
 import io.septimalmind.baboon.translator.rust.RsValue.{RsCrateId, RsType}
 import izumi.fundamentals.collections.nonempty.NEList
 
-object RsTypes {
+class RsTypes(val cratePrefix: String) {
+  private def parseCrate(path: String): RsCrateId = RsCrateId(NEList.unsafeFrom(path.split("::").toList))
+
   // baboon runtime
-  val baboonRuntimeCrate: RsCrateId = parseCrate("crate::baboon_runtime")
-  val baboonFixtureCrate: RsCrateId = parseCrate("crate::baboon_fixture")
+  val baboonRuntimeCrate: RsCrateId = parseCrate(s"$cratePrefix::baboon_runtime")
+  val baboonFixtureCrate: RsCrateId = parseCrate(s"$cratePrefix::baboon_fixture")
 
   // baboon metadata markers
   val baboonGenerated: RsType       = RsType(baboonRuntimeCrate, "BaboonGenerated")
@@ -22,7 +24,7 @@ object RsTypes {
   val baboonTimeFormats: RsType  = RsType(baboonRuntimeCrate, "time_formats")
 
   // baboon service wiring types
-  val baboonServiceWiringCrate: RsCrateId = parseCrate("crate::baboon_service_wiring")
+  val baboonServiceWiringCrate: RsCrateId = parseCrate(s"$cratePrefix::baboon_service_wiring")
   val baboonMethodId: RsType              = RsType(baboonServiceWiringCrate, "BaboonMethodId")
   val baboonWiringError: RsType           = RsType(baboonServiceWiringCrate, "BaboonWiringError")
 
@@ -38,9 +40,11 @@ object RsTypes {
   val decimalSerde: RsType     = RsType(baboonRuntimeCrate, "decimal_as_number")
   val optHexBytesSerde: RsType = RsType(baboonRuntimeCrate, "opt_hex_bytes")
   val optDecimalSerde: RsType  = RsType(baboonRuntimeCrate, "opt_decimal_as_number")
+}
 
+object RsTypes {
   // Rust std
-  val stdCrate: RsCrateId = parseCrate("std")
+  val stdCrate: RsCrateId = RsTypes.parseCrate("std")
 
   // Rust primitive types (predef - don't need imports)
   val rsBool: RsType   = RsType(stdCrate, "bool", predef = true)
@@ -57,7 +61,7 @@ object RsTypes {
   val rsString: RsType = RsType(stdCrate, "String", predef = true)
 
   // Rust std collections
-  val stdCollectionsCrate: RsCrateId = parseCrate("std::collections")
+  val stdCollectionsCrate: RsCrateId = RsTypes.parseCrate("std::collections")
   val rsBTreeMap: RsType             = RsType(stdCollectionsCrate, "BTreeMap")
   val rsBTreeSet: RsType             = RsType(stdCollectionsCrate, "BTreeSet")
 
@@ -68,10 +72,10 @@ object RsTypes {
   val rsBox: RsType    = RsType(stdCrate, "Box", predef = true)
 
   // External crates
-  val uuidCrate: RsCrateId = parseCrate("uuid")
+  val uuidCrate: RsCrateId = RsTypes.parseCrate("uuid")
   val rsUuid: RsType       = RsType(uuidCrate, "Uuid")
 
-  val chronoCrate: RsCrateId  = parseCrate("chrono")
+  val chronoCrate: RsCrateId  = RsTypes.parseCrate("chrono")
   val rsDateTimeUtc: RsType   = RsType(chronoCrate, "DateTime<chrono::Utc>")
   val rsDateTimeFixed: RsType = RsType(chronoCrate, "DateTime<chrono::FixedOffset>")
   // For rendering simple type names in generics
@@ -79,14 +83,14 @@ object RsTypes {
   val rsChronoFixedOffset: RsType = RsType(chronoCrate, "FixedOffset")
   val rsChronoDateTime: RsType    = RsType(chronoCrate, "DateTime")
 
-  val decimalCrate: RsCrateId = parseCrate("rust_decimal")
+  val decimalCrate: RsCrateId = RsTypes.parseCrate("rust_decimal")
   val rsDecimal: RsType       = RsType(decimalCrate, "Decimal")
 
   // serde
-  val serdeCrate: RsCrateId     = parseCrate("serde")
+  val serdeCrate: RsCrateId     = RsTypes.parseCrate("serde")
   val rsSerialize: RsType       = RsType(serdeCrate, "Serialize")
   val rsDeserialize: RsType     = RsType(serdeCrate, "Deserialize")
-  val serdeJsonCrate: RsCrateId = parseCrate("serde_json")
+  val serdeJsonCrate: RsCrateId = RsTypes.parseCrate("serde_json")
   val rsSerdeJsonValue: RsType  = RsType(serdeJsonCrate, "Value")
 
   def parseCrate(path: String): RsCrateId = RsCrateId(NEList.unsafeFrom(path.split("::").toList))

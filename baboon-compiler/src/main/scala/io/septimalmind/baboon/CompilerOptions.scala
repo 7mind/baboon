@@ -213,6 +213,9 @@ final case class RsOptions(
   serviceResult: ServiceResultConfig,
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
+  asyncServices: Boolean,
+  cratePrefix: String,
+  reexportMode: String,
 )
 
 final case class TsOptions(

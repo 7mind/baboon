@@ -2,11 +2,11 @@ use baboon_rs_stub::baboon_runtime::{BaboonCodecContext, BaboonBinEncode, Baboon
 use baboon_rs_stub::baboon_service_wiring::{BaboonMethodId, BaboonWiringError};
 use baboon_rs_stub::custom_containers::{MyResult, ResultServiceRt};
 use baboon_rs_stub::testpkg::pkg0::i1::I1;
-use baboon_rs_stub::testpkg::pkg0::i1::testcall::r#in::In as I1_testCall_in;
+use baboon_rs_stub::testpkg::pkg0::i1::testcall::input::In as I1_testCall_in;
 use baboon_rs_stub::testpkg::pkg0::i1::testcall::out::Out as I1_testCall_out;
 use baboon_rs_stub::testpkg::pkg0::i1::testcall::err::Err as I1_testCall_err;
 use baboon_rs_stub::testpkg::pkg0::i2::I2;
-use baboon_rs_stub::testpkg::pkg0::i2::noerrcall::r#in::In as I2_noErrCall_in;
+use baboon_rs_stub::testpkg::pkg0::i2::noerrcall::input::In as I2_noErrCall_in;
 use baboon_rs_stub::testpkg::pkg0::i2::noerrcall::out::Out as I2_noErrCall_out;
 use baboon_rs_stub::testpkg::pkg0::t7_empty::T7_Empty;
 use baboon_rs_stub::testpkg::pkg0::{invoke_json_I1, invoke_ueba_I1, invoke_json_I2, invoke_ueba_I2};

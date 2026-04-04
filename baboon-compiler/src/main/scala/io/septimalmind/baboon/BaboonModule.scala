@@ -173,6 +173,7 @@ class BaboonCommonRsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[RsFileTools].from[RsFileTools.RsFileToolsImpl]
   make[RsTreeTools].from[RsTreeTools.RsTreeToolsImpl]
 
+  make[RsTypes].from { (target: CompilerTarget.RsTarget) => new RsTypes(target.language.cratePrefix) }
   make[RsTypeTranslator]
   makeFactory[RsConversionTranslator.Factory[F]]
 

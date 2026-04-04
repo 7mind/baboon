@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.translator.rust
 
-import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustKeyword, toSnakeCaseRaw}
+import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustKeyword, escapeRustModuleName, toSnakeCaseRaw}
 import io.septimalmind.baboon.translator.rust.RsTypes.*
 import io.septimalmind.baboon.translator.rust.RsValue.{RsCrateId, RsType}
 import io.septimalmind.baboon.typer.model.*
@@ -16,7 +16,7 @@ object RsTypeTranslator {
   }
 }
 
-class RsTypeTranslator {
+class RsTypeTranslator(rsTypes: RsTypes) {
   import RsTypeTranslator.HexSerdeKind
 
   def asRsRef(tpe: TypeRef, domain: Domain, evo: BaboonEvolution): TextTree[RsValue] = {
@@ -113,7 +113,7 @@ class RsTypeTranslator {
       base :+ verString
     }
 
-    RsCrateId(NEList.unsafeFrom(("crate" +: segments).toList))
+    RsCrateId(NEList.unsafeFrom((rsTypes.cratePrefix +: segments).toList))
   }
 
   private def asRsTypeDerefForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): RsType = {
@@ -146,7 +146,7 @@ class RsTypeTranslator {
         RsCrateId(NEList.unsafeFrom((crate.parts ++ ownerAsPrefix).toList))
       case _ =>
         // Each type has its own file/module, so add the module name (snake_case of type name)
-        val moduleName = escapeRustKeyword(toSnakeCaseRaw(tid.name.name))
+        val moduleName = escapeRustModuleName(toSnakeCaseRaw(tid.name.name))
         RsCrateId(NEList.unsafeFrom((crate.parts ++ ownerAsPrefix :+ moduleName).toList))
     }
     RsType(fullCrate, tid.name.name.capitalize)
@@ -155,8 +155,8 @@ class RsTypeTranslator {
   private def renderOwner(owner: Owner): Seq[String] = {
     owner match {
       case Owner.Toplevel => Seq.empty
-      case Owner.Ns(path) => path.map(s => escapeRustKeyword(s.name.toLowerCase))
-      case Owner.Adt(id)  => renderOwner(id.owner) :+ escapeRustKeyword(toSnakeCaseRaw(id.name.name))
+      case Owner.Ns(path) => path.map(s => escapeRustModuleName(s.name.toLowerCase))
+      case Owner.Adt(id)  => renderOwner(id.owner) :+ escapeRustModuleName(toSnakeCaseRaw(id.name.name))
     }
   }
 

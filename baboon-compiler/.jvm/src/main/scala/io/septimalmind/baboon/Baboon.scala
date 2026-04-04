@@ -358,6 +358,9 @@ object Baboon {
                             serviceResult               = mkServiceResult(opts, ServiceResultConfig.rustDefault),
                             serviceContext              = mkServiceContext(opts),
                             pragmas                     = parsePragmas(opts.pragma),
+                            asyncServices               = opts.rsAsyncServices.getOrElse(false),
+                            cratePrefix                 = opts.rsCratePrefix.getOrElse("crate"),
+                            reexportMode                = opts.rsReexportMode.getOrElse("all"),
                           ),
                         )
                     }
@@ -533,7 +536,7 @@ object Baboon {
 
     val safeToRemove = NEList.from(opts.extAllowCleanup) match {
       case Some(value) => value.toSet
-      case None        => Set("meta", "cs", "json", "scala", "py", "pyc", "rs", "ts", "kt", "java", "dart", "swift")
+      case None        => Set("meta", "cs", "json", "scala", "py", "pyc", "rs", "ts", "kt", "java", "dart", "swift", "toml")
     }
 
     val outOpts = OutputOptions(

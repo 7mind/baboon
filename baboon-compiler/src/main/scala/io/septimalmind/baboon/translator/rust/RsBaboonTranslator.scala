@@ -4,7 +4,7 @@ import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.RsTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
-import io.septimalmind.baboon.translator.rust.RsDefnTranslator.escapeRustKeyword
+import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustKeyword, escapeRustModuleName}
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
@@ -48,7 +48,8 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       allModFiles <- generateModFiles(translated, conflicting)
       modFiles     = allModFiles.filterNot(_.path == "mod.rs")
       libFile      = generateLibRs(normal ++ runtime ++ fixture ++ modFiles)
-      rendered = (normal ++ runtime ++ fixture ++ modFiles ++ libFile).map {
+      cargoToml    = generateCargoToml(family)
+      rendered = (normal ++ runtime ++ fixture ++ modFiles ++ libFile ++ cargoToml).map {
         o =>
           val content = renderTree(o)
           (o.path, OutputFile(content, o.product))
@@ -167,7 +168,7 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
         val allModNames = (fileModNames ++ childDirs.toList).sorted.distinct
         val modDecls = allModNames.flatMap {
           name =>
-            val escaped  = escapeRustKeyword(name)
+            val escaped  = escapeRustModuleName(name)
             val fullPath = if (prefix.isEmpty) name else s"$dir/$name"
             if (childDirs.contains(name)) {
               // Directory module: declare but don't re-export (avoids name clashes with versioned modules)
@@ -176,8 +177,17 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
               // ADT module: declare but don't glob-re-export (branch structs would conflict with other ADTs/types)
               List(q"pub mod $escaped;")
             } else {
-              // File module: declare and re-export so types/functions are accessible from parent
-              List(q"pub mod $escaped;", q"pub use $escaped::*;")
+              val reexport = target.language.reexportMode match {
+                case "none" => false
+                case "selective" =>
+                  // Only re-export if not a wiring, client, conversion, fixture, or test module
+                  val isInfraModule = name.endsWith("_wiring") || name.endsWith("_client") || name.startsWith("from_") ||
+                    name.endsWith("_fixture") || name.endsWith("_tests")
+                  !isInfraModule
+                case _ => true // "all" (default)
+              }
+              if (reexport) List(q"pub mod $escaped;", q"pub use $escaped::*;")
+              else List(q"pub mod $escaped;")
             }
         }
 
@@ -300,11 +310,15 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       q"#![allow(unused_imports)]",
       q"#![allow(non_camel_case_types)]",
       q"#![allow(non_snake_case)]",
+      q"#![allow(dead_code)]",
+      q"#![allow(unused_variables)]",
+      q"#![allow(clippy::too_many_arguments)]",
+      q"#![allow(clippy::large_enum_variant)]",
     )
 
     val modDecls = topLevelModules.map {
       name =>
-        val escaped = escapeRustKeyword(name)
+        val escaped = escapeRustModuleName(name)
         q"pub mod $escaped;"
     }
 
@@ -314,6 +328,58 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       RsDefnTranslator.Output(
         "lib.rs",
         tree,
+        RsValue.RsCrateId(NEList("crate")),
+        CompilerProduct.Definition,
+        doNotModify = true,
+      )
+    )
+  }
+
+  private def generateCargoToml(family: BaboonFamily): List[RsDefnTranslator.Output] = {
+    // Only generate Cargo.toml as a custom metadata file - written to the output dir only when CustomMeta is requested
+    if (!target.output.products.contains(CompilerProduct.Runtime)) return Nil
+
+    import io.septimalmind.baboon.typer.model.TypeId
+
+    val allTypes = family.domains.toMap.values.flatMap(_.versions.toMap.values).flatMap(_.defs.meta.nodes.keys).toSet
+
+    val hasTimestamps = allTypes.exists {
+      case TypeId.Builtins.tsu | TypeId.Builtins.tso => true
+      case _                                         => false
+    }
+    val hasUuids = allTypes.contains(TypeId.Builtins.uid)
+    val hasDecimals = allTypes.contains(TypeId.Builtins.f128)
+    val hasJsonCodecs = target.language.generateJsonCodecs
+
+    val deps = scala.collection.mutable.ListBuffer.empty[String]
+    deps += """serde = { version = "1", features = ["derive"] }"""
+    if (hasJsonCodecs) {
+      deps += """serde_json = "1""""
+    }
+    if (hasTimestamps) {
+      deps += """chrono = { version = "0.4", features = ["serde"] }"""
+    }
+    if (hasUuids) {
+      deps += """uuid = { version = "1", features = ["v4", "serde"] }"""
+    }
+    if (hasDecimals) {
+      deps += """rust_decimal = { version = "1", features = ["serde-with-str"] }"""
+    }
+
+    val content =
+      s"""[package]
+         |name = "baboon-generated"
+         |version = "0.1.0"
+         |edition = "2021"
+         |
+         |[dependencies]
+         |${deps.mkString("\n")}
+         |""".stripMargin
+
+    List(
+      RsDefnTranslator.Output(
+        "Cargo.toml",
+        TextTree.text(content),
         RsValue.RsCrateId(NEList("crate")),
         CompilerProduct.Definition,
         doNotModify = true,

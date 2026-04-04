@@ -11,6 +11,8 @@ import izumi.fundamentals.platform.strings.TextTree.*
 trait RsServiceWiringTranslator {
   def translate(defn: DomainMember.User): Option[TextTree[RsValue]]
 
+  def translateClient(defn: DomainMember.User): Option[TextTree[RsValue]]
+
   def translateServiceRt(domain: Domain): Option[TextTree[RsValue]]
 }
 
@@ -21,7 +23,9 @@ object RsServiceWiringTranslator {
     codecs: Set[RsCodecTranslator],
     domain: Domain,
     evo: BaboonEvolution,
+    rsTypes: RsTypes,
   ) extends RsServiceWiringTranslator {
+    import rsTypes.*
 
     private val resolved: ResolvedServiceResult =
       ServiceResultResolver.resolve(domain, "rust", target.language.serviceResult, target.language.pragmas)
@@ -114,6 +118,116 @@ object RsServiceWiringTranslator {
       }
     }
 
+    override def translateClient(defn: DomainMember.User): Option[TextTree[RsValue]] = {
+      defn.defn match {
+        case service: Typedef.Service =>
+          val svcName = service.id.name.name
+          val hasJson = hasActiveJsonCodecs(service)
+          val hasUeba = hasActiveUebaCodecs(service)
+          if (!hasJson && !hasUeba) return None
+
+          val clientMethods = service.methods.flatMap {
+            m =>
+              val inFq  = inTypeFq(m)
+              val outFq = m.out.map(o => renderFq(q"${trans.asRsRef(o, domain, evo)}")).getOrElse("()")
+
+              val uebaMethod = if (hasUeba) {
+                val decodeResult = m.out match {
+                  case Some(_) =>
+                    q"""let mut cursor = std::io::Cursor::new(resp);
+                       |Ok($baboonBinDecode::decode_ueba(ctx, &mut cursor)?)""".stripMargin
+                  case None => q"Ok(())"
+                }
+                Some(
+                  q"""pub ${asyncKw}fn ${toSnakeCase(m.name.name)}(&self, ctx: &$baboonCodecContext, ${ctxParamDecl}arg: $inFq) -> Result<$outFq, Box<dyn std::error::Error>> {
+                     |    let mut buf = Vec::new();
+                     |    $baboonBinEncode::encode_ueba(&arg, ctx, &mut buf)?;
+                     |    let resp = (self.transport_ueba)("$svcName", "${m.name.name}", &buf)$awaitSuffix?;
+                     |    ${decodeResult.shift(4).trim}
+                     |}""".stripMargin
+                )
+              } else None
+
+              val jsonMethod = if (hasJson) {
+                val decodeResult = m.out match {
+                  case Some(_) =>
+                    q"""let decoded: $outFq = serde_json::from_str(&resp)?;
+                       |Ok(decoded)""".stripMargin
+                  case None => q"Ok(())"
+                }
+                Some(
+                  q"""pub ${asyncKw}fn ${toSnakeCase(m.name.name)}_json(&self, ${ctxParamDecl}arg: $inFq) -> Result<$outFq, Box<dyn std::error::Error>> {
+                     |    let encoded = serde_json::to_string(&arg)?;
+                     |    let resp = (self.transport_json)("$svcName", "${m.name.name}", &encoded)$awaitSuffix?;
+                     |    ${decodeResult.shift(4).trim}
+                     |}""".stripMargin
+                )
+              } else None
+
+              uebaMethod.toList ++ jsonMethod.toList
+          }
+
+          if (clientMethods.isEmpty) return None
+
+          // Build type params and fields
+          val typeParams      = scala.collection.mutable.ListBuffer.empty[String]
+          val whereClauses    = scala.collection.mutable.ListBuffer.empty[String]
+          val fields          = scala.collection.mutable.ListBuffer.empty[TextTree[RsValue]]
+          val ctorParams      = scala.collection.mutable.ListBuffer.empty[TextTree[RsValue]]
+          val ctorAssigns     = scala.collection.mutable.ListBuffer.empty[TextTree[RsValue]]
+
+          if (hasUeba) {
+            if (isAsync) {
+              typeParams += "TU"
+              whereClauses += s"TU: Fn(&str, &str, &[u8]) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, Box<dyn std::error::Error>>>>>"
+            } else {
+              typeParams += "TU"
+              whereClauses += "TU: Fn(&str, &str, &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>>"
+            }
+            fields += q"transport_ueba: TU,"
+            ctorParams += q"transport_ueba: TU"
+            ctorAssigns += q"transport_ueba,"
+          }
+          if (hasJson) {
+            if (isAsync) {
+              typeParams += "TJ"
+              whereClauses += s"TJ: Fn(&str, &str, &str) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, Box<dyn std::error::Error>>>>>"
+            } else {
+              typeParams += "TJ"
+              whereClauses += "TJ: Fn(&str, &str, &str) -> Result<String, Box<dyn std::error::Error>>"
+            }
+            fields += q"transport_json: TJ,"
+            ctorParams += q"transport_json: TJ"
+            ctorAssigns += q"transport_json,"
+          }
+
+          val typeParamStr = typeParams.mkString(", ")
+          val whereStr     = whereClauses.map(w => q"    $w,").toList.joinN()
+
+          val clientTree =
+            q"""pub struct ${svcName}Client<$typeParamStr>
+               |where
+               |${whereStr.shift(0).trim}
+               |{
+               |    ${fields.toList.joinN().shift(4).trim}
+               |}
+               |
+               |impl<$typeParamStr> ${svcName}Client<$typeParamStr>
+               |where
+               |${whereStr.shift(0).trim}
+               |{
+               |    pub fn new(${ctorParams.toList.join(", ")}) -> Self {
+               |        Self { ${ctorAssigns.toList.join(" ")} }
+               |    }
+               |
+               |    ${clientMethods.joinNN().shift(4).trim}
+               |}""".stripMargin
+
+          Some(clientTree)
+        case _ => None
+      }
+    }
+
     private def ctxParamDecl: String = resolvedCtx match {
       case ResolvedServiceContext.NoContext               => ""
       case ResolvedServiceContext.AbstractContext(tn, pn) => s"$pn: $tn, "
@@ -130,6 +244,10 @@ object RsServiceWiringTranslator {
       case ResolvedServiceContext.AbstractContext(tn, _) => s"<$tn>"
       case _                                             => ""
     }
+
+    private val isAsync: Boolean    = target.language.asyncServices
+    private val asyncKw: String     = if (isAsync) "async " else ""
+    private val awaitSuffix: String = if (isAsync) ".await" else ""
 
     private def renderFq(tree: TextTree[RsValue]): String = tree.mapRender {
       case t: RsValue.RsType     => if (t.predef) t.name else (t.crate.parts :+ t.name).mkString("::")
@@ -167,10 +285,10 @@ object RsServiceWiringTranslator {
 
           val encodeAndReturn = m.out match {
             case Some(_) =>
-              q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded);
+              q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded)$awaitSuffix;
                  |serde_json::to_string(&result).map_err(|e| $baboonWiringError::EncoderFailed(method.clone(), Box::new(e)))""".stripMargin
             case None =>
-              q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded);
+              q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded)$awaitSuffix;
                  |Ok("null".to_string())""".stripMargin
           }
 
@@ -180,7 +298,7 @@ object RsServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""pub fn invoke_json_$svcName$genericParam(
+      q"""pub ${asyncKw}fn invoke_json_$svcName$genericParam(
          |    method: &$baboonMethodId,
          |    data: &str,
          |    impl_: &dyn $svcType$genericParam,
@@ -200,12 +318,12 @@ object RsServiceWiringTranslator {
 
           val encodeAndReturn = m.out match {
             case Some(_) =>
-              q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded);
+              q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded)$awaitSuffix;
                  |let mut out_buf = Vec::new();
                  |$baboonBinEncode::encode_ueba(&result, ctx, &mut out_buf).map_err(|e| $baboonWiringError::EncoderFailed(method.clone(), Box::new(e)))?;
                  |Ok(out_buf)""".stripMargin
             case None =>
-              q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded);
+              q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}decoded)$awaitSuffix;
                  |Ok(Vec::new())""".stripMargin
           }
 
@@ -216,7 +334,7 @@ object RsServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""pub fn invoke_ueba_$svcName$genericParam(
+      q"""pub ${asyncKw}fn invoke_ueba_$svcName$genericParam(
          |    method: &$baboonMethodId,
          |    data: &[u8],
          |    impl_: &dyn $svcType$genericParam,
@@ -281,16 +399,26 @@ object RsServiceWiringTranslator {
 
           val callAndEncodeStep = m.out match {
             case Some(_) =>
-              val callBody = if (hasErrType) {
-                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                   |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
-                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                   |}""".stripMargin
+              val callBody = if (isAsync) {
+                if (hasErrType) {
+                  q"""let call_result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
+                     |rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err)))""".stripMargin
+                } else {
+                  q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
+                     |rt.pure$pureHint(result)""".stripMargin
+                }
               } else {
-                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                   |    Ok(result) => rt.pure$pureHint(result),
-                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                   |}""".stripMargin
+                if (hasErrType) {
+                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                     |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
+                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                     |}""".stripMargin
+                } else {
+                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                     |    Ok(result) => rt.pure$pureHint(result),
+                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                     |}""".stripMargin
+                }
               }
 
               q"""let output = rt.flat_map$flatMapHint(input, |v| {
@@ -304,16 +432,26 @@ object RsServiceWiringTranslator {
                  |})""".stripMargin
 
             case None =>
-              val callBody = if (hasErrType) {
-                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                   |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
-                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                   |}""".stripMargin
+              val callBody = if (isAsync) {
+                if (hasErrType) {
+                  q"""let call_result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
+                     |rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err)))""".stripMargin
+                } else {
+                  q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
+                     |rt.pure$pureHint("null".to_string())""".stripMargin
+                }
               } else {
-                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                   |    Ok(_) => rt.pure$pureHint("null".to_string()),
-                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                   |}""".stripMargin
+                if (hasErrType) {
+                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                     |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
+                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                     |}""".stripMargin
+                } else {
+                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                     |    Ok(_) => rt.pure$pureHint("null".to_string()),
+                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                     |}""".stripMargin
+                }
               }
 
               q"""rt.flat_map$flatMapHint(input, |v| {
@@ -327,7 +465,7 @@ object RsServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""pub fn invoke_json_$svcName<Rt: $ibaboonServiceRt>$genericParam(
+      q"""pub ${asyncKw}fn invoke_json_$svcName<Rt: $ibaboonServiceRt>$genericParam(
          |    method: &$baboonMethodId,
          |    data: &str,
          |    impl_: &dyn $svcType$genericParam,
@@ -362,16 +500,26 @@ object RsServiceWiringTranslator {
 
           val callAndEncodeStep = m.out match {
             case Some(_) =>
-              val callBody = if (hasErrType) {
-                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                   |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
-                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                   |}""".stripMargin
+              val callBody = if (isAsync) {
+                if (hasErrType) {
+                  q"""let call_result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
+                     |rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err)))""".stripMargin
+                } else {
+                  q"""let result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
+                     |rt.pure$pureHint(result)""".stripMargin
+                }
               } else {
-                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                   |    Ok(result) => rt.pure$pureHint(result),
-                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                   |}""".stripMargin
+                if (hasErrType) {
+                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                     |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
+                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                     |}""".stripMargin
+                } else {
+                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                     |    Ok(result) => rt.pure$pureHint(result),
+                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                     |}""".stripMargin
+                }
               }
 
               q"""let output = rt.flat_map$flatMapHint(input, |v| {
@@ -386,16 +534,26 @@ object RsServiceWiringTranslator {
                  |})""".stripMargin
 
             case None =>
-              val callBody = if (hasErrType) {
-                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                   |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
-                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                   |}""".stripMargin
+              val callBody = if (isAsync) {
+                if (hasErrType) {
+                  q"""let call_result = impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
+                     |rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err)))""".stripMargin
+                } else {
+                  q"""impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v).await;
+                     |rt.pure$pureHint(Vec::new())""".stripMargin
+                }
               } else {
-                q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
-                   |    Ok(_) => rt.pure$pureHint(Vec::new()),
-                   |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
-                   |}""".stripMargin
+                if (hasErrType) {
+                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                     |    Ok(call_result) => rt.left_map$lmHint(call_result, |err| $bweFq::CallFailed(method.clone(), Box::new(err))),
+                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                     |}""".stripMargin
+                } else {
+                  q"""match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| impl_.${toSnakeCase(m.name.name)}(${ctxArgPass}v))) {
+                     |    Ok(_) => rt.pure$pureHint(Vec::new()),
+                     |    Err(panic) => rt.fail($bweFq::CallFailed(method.clone(), panic)),
+                     |}""".stripMargin
+                }
               }
 
               q"""rt.flat_map$flatMapHint(input, |v| {
@@ -409,7 +567,7 @@ object RsServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""pub fn invoke_ueba_$svcName<Rt: $ibaboonServiceRt>$genericParam(
+      q"""pub ${asyncKw}fn invoke_ueba_$svcName<Rt: $ibaboonServiceRt>$genericParam(
          |    method: &$baboonMethodId,
          |    data: &[u8],
          |    impl_: &dyn $svcType$genericParam,

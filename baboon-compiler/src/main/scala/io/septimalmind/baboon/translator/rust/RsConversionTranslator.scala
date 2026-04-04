@@ -2,7 +2,7 @@ package io.septimalmind.baboon.translator.rust
 
 import distage.Id
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
-import io.septimalmind.baboon.translator.rust.RsDefnTranslator.toSnakeCase
+import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{toSnakeCase, toSnakeCaseFileName, escapeRustModuleName}
 import io.septimalmind.baboon.translator.rust.RsValue.RsCrateId
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.FieldOp
@@ -55,7 +55,7 @@ class RsConversionTranslator[F[+_, +_]: Error2](
 
   def makeConvs: Out[List[RsRenderedConversion]] = {
     def makeName(prefix: String, conv: Conversion): String =
-      (Seq(prefix) ++ conv.sourceTpe.owner.asPseudoPkg ++ Seq(
+      (Seq(prefix) ++ conv.sourceTpe.owner.asPseudoPkg.map(s => escapeRustModuleName(s.toLowerCase)) ++ Seq(
         conv.sourceTpe.name.name,
         "from",
         srcVer.v.toString.replace('.', '_'),
@@ -66,8 +66,8 @@ class RsConversionTranslator[F[+_, +_]: Error2](
     F.flatTraverseAccumErrors(targetedConversions) {
       conv =>
         val fnName = toSnakeCase(makeName("convert", conv))
-        val fname = (Seq("from", srcVer.v.toString.replace('.', '_')) ++ conv.sourceTpe.owner.asPseudoPkg.map(_.toLowerCase) ++ Seq(
-          s"${toSnakeCase(conv.sourceTpe.name.name)}.rs"
+        val fname = (Seq("from", srcVer.v.toString.replace('.', '_')) ++ conv.sourceTpe.owner.asPseudoPkg.map(s => escapeRustModuleName(s.toLowerCase)) ++ Seq(
+          s"${toSnakeCaseFileName(conv.sourceTpe.name.name)}.rs"
         )).mkString("_")
 
         val tin  = trans.asRsType(conv.sourceTpe, srcDom, evo).fullyQualified

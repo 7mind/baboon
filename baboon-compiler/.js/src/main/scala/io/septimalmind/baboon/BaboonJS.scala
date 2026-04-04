@@ -282,6 +282,7 @@ object BaboonJS {
     val generateUebaCodecs: js.UndefOr[Boolean]
     val generateUebaCodecsByDefault: js.UndefOr[Boolean]
     val generateJsonCodecsByDefault: js.UndefOr[Boolean]
+    val asyncServices: js.UndefOr[Boolean]
   }
 
   @js.native
@@ -428,6 +429,9 @@ object BaboonJS {
                 serviceResult               = ServiceResultConfig.rustDefault,
                 serviceContext              = ServiceContextConfig.default,
                 pragmas                     = Map.empty,
+                asyncServices               = opts.asyncServices.getOrElse(false),
+                cratePrefix                 = "crate",
+                reexportMode                = "all",
               ),
             )
           case "typescript" =>

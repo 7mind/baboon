@@ -194,6 +194,12 @@ case class RsCLIOptions(
   serviceContextParameterName: Option[String],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
+  @HelpMessage("Generate async service interfaces (default: false)")
+  rsAsyncServices: Option[Boolean],
+  @HelpMessage("Crate prefix for generated code (default: crate)")
+  rsCratePrefix: Option[String],
+  @HelpMessage("Module re-export mode: all, none, selective (default: all)")
+  rsReexportMode: Option[String],
 ) extends SharedCLIOptions
 
 case class TsCLIOptions(
