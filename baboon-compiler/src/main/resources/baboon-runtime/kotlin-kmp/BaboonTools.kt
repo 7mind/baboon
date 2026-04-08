@@ -8,6 +8,7 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 object BaboonBinTools {
+    private const val DOTNET_EPOCH_OFFSET_MS = 62135596800000L
     fun readUid(s: BaboonBinaryReader): Uuid {
         val bytes = ByteArray(16)
         s.readFully(bytes)
@@ -91,38 +92,41 @@ object BaboonBinTools {
     }
 
     fun readTimestamp(wire: BaboonBinaryReader): Instant {
-        val millis = wire.readLong()
+        val dotNetLocalMs = wire.readLong()
         val offsetMillis = wire.readLong()
         @Suppress("UNUSED_VARIABLE")
         val kind = wire.readByte()
-        val epochMs = millis - offsetMillis
+        val dotNetUtcMs = dotNetLocalMs - offsetMillis
+        val epochMs = dotNetUtcMs - DOTNET_EPOCH_OFFSET_MS
         return Instant.fromEpochMilliseconds(epochMs)
     }
 
     fun readTimestampOffset(wire: BaboonBinaryReader): BaboonOffsetDateTime {
-        val millis = wire.readLong()
+        val dotNetLocalMs = wire.readLong()
         val offsetMillis = wire.readLong()
         @Suppress("UNUSED_VARIABLE")
         val kind = wire.readByte()
-        val epochMs = millis - offsetMillis
+        val dotNetUtcMs = dotNetLocalMs - offsetMillis
+        val epochMs = dotNetUtcMs - DOTNET_EPOCH_OFFSET_MS
         val offsetSeconds = (offsetMillis / 1000).toInt()
         return BaboonOffsetDateTime.fromEpochMilliseconds(epochMs, offsetSeconds)
     }
 
     fun writeTimestamp(writer: BaboonBinaryWriter, ref: Instant) {
         val epochMs = ref.toEpochMilliseconds()
-        val offsetMs = 0L // UTC
-        writer.writeLong(epochMs + offsetMs)
-        writer.writeLong(offsetMs)
+        val dotNetUtcMs = epochMs + DOTNET_EPOCH_OFFSET_MS
+        writer.writeLong(dotNetUtcMs) // local = UTC when offset = 0
+        writer.writeLong(0L) // offset = 0 for UTC
         writer.writeByte(1) // kind = UTC
     }
 
     fun writeTimestampOffset(writer: BaboonBinaryWriter, ref: BaboonOffsetDateTime) {
         val epochMs = ref.instant.toEpochMilliseconds()
+        val dotNetUtcMs = epochMs + DOTNET_EPOCH_OFFSET_MS
         val offsetMs = ref.offset.totalSeconds * 1000L
-        val localMs = epochMs + offsetMs
+        val dotNetLocalMs = dotNetUtcMs + offsetMs
         val kind: Byte = if (ref.offset.totalSeconds == 0) 1 else 0
-        writer.writeLong(localMs)
+        writer.writeLong(dotNetLocalMs)
         writer.writeLong(offsetMs)
         writer.writeByte(kind.toInt())
     }
