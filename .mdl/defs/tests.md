@@ -31,7 +31,7 @@ TEST_DIR="./target/test-regular"
 
 # Create temporary test directories
 mkdir -p "$TEST_DIR"
-rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/jv-stub" "$TEST_DIR/dt-stub" "$TEST_DIR/sw-stub"
+rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/kt-stub-kmp" "$TEST_DIR/jv-stub" "$TEST_DIR/dt-stub" "$TEST_DIR/sw-stub"
 
 # Copy stub projects, excluding generated and build artifacts
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
@@ -46,6 +46,8 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules'
   ./test/ts-stub/ "$TEST_DIR/ts-stub/"
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --exclude='.gradle' \
   ./test/kt-stub/ "$TEST_DIR/kt-stub/"
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --exclude='.gradle' \
+  ./test/kt-stub-kmp/ "$TEST_DIR/kt-stub-kmp/"
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
   ./test/jv-stub/ "$TEST_DIR/jv-stub/"
 rsync -a --exclude='generated-*' --exclude='.dart_tool' --exclude='pubspec.lock' \
@@ -133,6 +135,21 @@ $BABOON_BIN \
 # Move Dart runtime files into the baboon_runtime package
 mv "$TEST_DIR/dt-stub/lib/baboon_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 mv "$TEST_DIR/dt-stub/lib/baboon_fixture.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+
+# Generate KMP Kotlin code (separate invocation with --kt-multiplatform=true)
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon.lock \
+  :kotlin \
+  --output "$TEST_DIR/kt-stub-kmp/src/main/kotlin/generated-main" \
+  --test-output "$TEST_DIR/kt-stub-kmp/src/test/kotlin/generated-tests" \
+  --fixture-output "$TEST_DIR/kt-stub-kmp/src/main/kotlin/generated-fixtures" \
+  --kt-write-evolution-dict=true \
+  --kt-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --kt-multiplatform=true
 
 ret success:bool=true
 ret test_dir:string="$TEST_DIR"
@@ -225,6 +242,19 @@ popd
 ret success:bool=true
 ```
 
+# action: test-kotlin-kmp-regular
+
+Run Kotlin Multiplatform tests with regular ADT codecs.
+
+```bash
+TEST_DIR="${action.test-gen-regular-adt.test_dir}"
+pushd "$TEST_DIR/kt-stub-kmp"
+gradle --no-daemon clean test
+popd
+
+ret success:bool=true
+```
+
 # action: test-java-regular
 
 Run Java tests with regular ADT codecs.
@@ -290,7 +320,7 @@ TEST_DIR="./target/test-wrapped"
 
 # Create temporary test directories
 mkdir -p "$TEST_DIR"
-rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/jv-stub" "$TEST_DIR/dt-stub" "$TEST_DIR/sw-stub"
+rm -rf "$TEST_DIR/cs-stub" "$TEST_DIR/sc-stub" "$TEST_DIR/py-stub" "$TEST_DIR/rs-stub" "$TEST_DIR/ts-stub" "$TEST_DIR/kt-stub" "$TEST_DIR/kt-stub-kmp" "$TEST_DIR/jv-stub" "$TEST_DIR/dt-stub" "$TEST_DIR/sw-stub"
 
 # Copy stub projects, excluding generated and build artifacts
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='bin' --exclude='obj' --exclude='target' --exclude='project/target' \
@@ -305,6 +335,8 @@ rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='node_modules'
   ./test/ts-stub/ "$TEST_DIR/ts-stub/"
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --exclude='.gradle' \
   ./test/kt-stub/ "$TEST_DIR/kt-stub/"
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --exclude='.gradle' \
+  ./test/kt-stub-kmp/ "$TEST_DIR/kt-stub-kmp/"
 rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
   ./test/jv-stub/ "$TEST_DIR/jv-stub/"
 rsync -a --exclude='generated-*' --exclude='.dart_tool' --exclude='pubspec.lock' \
@@ -392,6 +424,21 @@ $BABOON_BIN \
 # Move Dart runtime files into the baboon_runtime package
 mv "$TEST_DIR/dt-stub/lib/baboon_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 mv "$TEST_DIR/dt-stub/lib/baboon_fixture.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+
+# Generate KMP Kotlin code (separate invocation with --kt-multiplatform=true)
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon.lock \
+  :kotlin \
+  --output "$TEST_DIR/kt-stub-kmp/src/main/kotlin/generated-main" \
+  --test-output "$TEST_DIR/kt-stub-kmp/src/test/kotlin/generated-tests" \
+  --fixture-output "$TEST_DIR/kt-stub-kmp/src/main/kotlin/generated-fixtures" \
+  --kt-write-evolution-dict=true \
+  --kt-wrapped-adt-branch-codecs=true \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --kt-multiplatform=true
 
 ret success:bool=true
 ret test_dir:string="$TEST_DIR"
@@ -484,6 +531,19 @@ popd
 ret success:bool=true
 ```
 
+# action: test-kotlin-kmp-wrapped
+
+Run Kotlin Multiplatform tests with wrapped ADT codecs.
+
+```bash
+TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
+pushd "$TEST_DIR/kt-stub-kmp"
+gradle --no-daemon clean test
+popd
+
+ret success:bool=true
+```
+
 # action: test-java-wrapped
 
 Run Java tests with wrapped ADT codecs.
@@ -569,6 +629,13 @@ $BABOON_BIN \
   :swift \
   --output ./test/conv-test-sw/Generated
 
+# Generate KMP Kotlin conv-test code
+$BABOON_BIN \
+  --model-dir ./test/conv-test \
+  :kotlin \
+  --output ./test/conv-test-kt-kmp/src/main/kotlin/generated-main \
+  --kt-multiplatform=true
+
 # Move Dart runtime files into the baboon_runtime package
 mv ./test/conv-test-dt/lib/generated/baboon_runtime.dart ./test/conv-test-dt/packages/baboon_runtime/lib/
 
@@ -597,6 +664,20 @@ Generate compatibility test files using Kotlin.
 dep action.test-gen-manual
 
 pushd ./test/conv-test-kt
+gradle --no-daemon run
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-compat-kotlin-kmp
+
+Generate compatibility test files using Kotlin Multiplatform.
+
+```bash
+dep action.test-gen-manual
+
+pushd ./test/conv-test-kt-kmp
 gradle --no-daemon run
 popd
 
@@ -844,6 +925,29 @@ dep action.test-gen-compat-dart
 dep action.test-gen-compat-swift
 
 pushd ./test/conv-test-kt
+gradle --no-daemon test
+popd
+
+ret success:bool=true
+```
+
+# action: test-manual-kotlin-kmp
+
+Run Kotlin Multiplatform cross-language compatibility tests.
+
+```bash
+dep action.test-gen-compat-scala
+dep action.test-gen-compat-cs
+dep action.test-gen-compat-python
+dep action.test-gen-compat-rust
+dep action.test-gen-compat-typescript
+dep action.test-gen-compat-kotlin
+dep action.test-gen-compat-kotlin-kmp
+dep action.test-gen-compat-java
+dep action.test-gen-compat-dart
+dep action.test-gen-compat-swift
+
+pushd ./test/conv-test-kt-kmp
 gradle --no-daemon test
 popd
 
@@ -1743,6 +1847,7 @@ dep action.test-python-regular
 dep action.test-rust-regular
 dep action.test-typescript-regular
 dep action.test-kotlin-regular
+dep action.test-kotlin-kmp-regular
 dep action.test-java-regular
 dep action.test-dart-regular
 dep action.test-swift-regular
@@ -1752,6 +1857,7 @@ dep action.test-python-wrapped
 dep action.test-rust-wrapped
 dep action.test-typescript-wrapped
 dep action.test-kotlin-wrapped
+dep action.test-kotlin-kmp-wrapped
 dep action.test-java-wrapped
 dep action.test-dart-wrapped
 dep action.test-swift-wrapped
@@ -1760,6 +1866,7 @@ dep action.test-manual-scala
 dep action.test-manual-rust
 dep action.test-manual-typescript
 dep action.test-manual-kotlin
+dep action.test-manual-kotlin-kmp
 dep action.test-manual-java
 dep action.test-manual-dart
 dep action.test-manual-swift

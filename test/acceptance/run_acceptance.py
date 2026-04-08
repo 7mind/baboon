@@ -36,6 +36,7 @@ class Lang(Enum):
     RUST = "rust"
     TYPESCRIPT = "typescript"
     KOTLIN = "kotlin"
+    KOTLIN_KMP = "kotlin-kmp"
     JAVA = "java"
     DART = "dart"
     SWIFT = "swift"
@@ -60,6 +61,7 @@ LANG_DISPLAY = {
     Lang.RUST: "Rust",
     Lang.TYPESCRIPT: "TypeScript",
     Lang.KOTLIN: "Kotlin",
+    Lang.KOTLIN_KMP: "Kotlin KMP",
     Lang.JAVA: "Java",
     Lang.DART: "Dart",
     Lang.SWIFT: "Swift",
@@ -97,6 +99,7 @@ class LangConfig:
     write_cmd: object  # callable(abs_output_dir, format_str) -> (cmd_list, use_shell)
     read_cmd: object   # callable(abs_file_path) -> (cmd_list, use_shell)
     rsync_excludes: list = field(default_factory=list)
+    extra_baboon_flags: list = field(default_factory=list)
 
 
 def _shell_cmd(shell_str: str):
@@ -214,6 +217,24 @@ LANG_CONFIGS: dict[Lang, LangConfig] = {
             False,
         ),
         rsync_excludes=["build", ".gradle", "generated-main"],
+    ),
+    Lang.KOTLIN_KMP: LangConfig(
+        dir_name="conv-test-kt-kmp",
+        baboon_target=":kotlin",
+        baboon_output="src/main/kotlin/generated-main",
+        build_cmds=[
+            (["gradle", "--no-daemon", "build", "-x", "test"], False),
+        ],
+        write_cmd=lambda d, f: (
+            ["gradle", "--no-daemon", "run", f"--args=write {d} {f}"],
+            False,
+        ),
+        read_cmd=lambda p: (
+            ["gradle", "--no-daemon", "run", f"--args=read {p}"],
+            False,
+        ),
+        rsync_excludes=["build", ".gradle", "generated-main"],
+        extra_baboon_flags=["--kt-multiplatform=true"],
     ),
     Lang.JAVA: LangConfig(
         dir_name="conv-test-jv",
@@ -431,7 +452,11 @@ async def run_codegen(
     """Run baboon compiler to generate code for all languages."""
     cmd = [baboon_bin, "--model-dir", str(target_dir / "conv-test")]
 
-    for lang in langs:
+    # Separate languages that need extra baboon flags (they require a separate invocation)
+    extra_flag_langs = [l for l in langs if LANG_CONFIGS[l].extra_baboon_flags]
+    normal_langs = [l for l in langs if not LANG_CONFIGS[l].extra_baboon_flags]
+
+    for lang in normal_langs:
         config = LANG_CONFIGS[lang]
         output_path = str(target_dir / config.dir_name / config.baboon_output)
         cmd.extend([config.baboon_target, "--output", output_path])
@@ -454,6 +479,24 @@ async def run_codegen(
             )
             if dart_gen.exists():
                 shutil.move(str(dart_gen), str(dart_pkg))
+
+    if result.status != Status.PASSED:
+        return result
+
+    # Run separate codegen for languages that need extra baboon flags
+    for lang in extra_flag_langs:
+        config = LANG_CONFIGS[lang]
+        extra_cmd = [
+            baboon_bin, "--model-dir", str(target_dir / "conv-test"),
+            config.baboon_target,
+            "--output", str(target_dir / config.dir_name / config.baboon_output),
+            *config.extra_baboon_flags,
+        ]
+        extra_result = await run_subprocess_unsemaphored(
+            extra_cmd, cwd=str(target_dir), timeout=timeout
+        )
+        if extra_result.status != Status.PASSED:
+            return extra_result
 
     return result
 

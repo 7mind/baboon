@@ -23,11 +23,11 @@ mdl :build :test
 
 # Run specific test suites independently:
 # - Regular ADT tests
-mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular :test-rust-regular :test-typescript-regular :test-kotlin-regular :test-java-regular :test-dart-regular :test-swift-regular
+mdl :build :test-gen-regular-adt :test-cs-regular :test-scala-regular :test-rust-regular :test-typescript-regular :test-kotlin-regular :test-kotlin-kmp-regular :test-java-regular :test-dart-regular :test-swift-regular
 # - Wrapped ADT tests
-mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped :test-rust-wrapped :test-typescript-wrapped :test-kotlin-wrapped :test-java-wrapped :test-dart-wrapped :test-swift-wrapped
+mdl :build :test-gen-wrapped-adt :test-cs-wrapped :test-scala-wrapped :test-rust-wrapped :test-typescript-wrapped :test-kotlin-wrapped :test-kotlin-kmp-wrapped :test-java-wrapped :test-dart-wrapped :test-swift-wrapped
 # - Manual/compatibility tests
-mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-gen-compat-rust :test-gen-compat-typescript :test-gen-compat-kotlin :test-gen-compat-java :test-gen-compat-dart :test-gen-compat-swift :test-manual-cs :test-manual-scala :test-manual-rust :test-manual-typescript :test-manual-kotlin :test-manual-java :test-manual-dart :test-manual-swift
+mdl :build :test-gen-manual :test-gen-compat-scala :test-gen-compat-cs :test-gen-compat-rust :test-gen-compat-typescript :test-gen-compat-kotlin :test-gen-compat-kotlin-kmp :test-gen-compat-java :test-gen-compat-dart :test-gen-compat-swift :test-manual-cs :test-manual-scala :test-manual-rust :test-manual-typescript :test-manual-kotlin :test-manual-kotlin-kmp :test-manual-java :test-manual-dart :test-manual-swift
 
 # Run complete build pipeline (format, build, test)
 mdl :full-build
