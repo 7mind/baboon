@@ -199,6 +199,44 @@ foreign Money: derived[json], derived[ueba] {
 - Each entry maps a language tag (`cs`, `sc`, `ts`, `kt`, `jv`, etc.) to a fully qualified type name.
 - Optional `with { key = "value" }` attributes are implementation hints for the backend.
 
+## Type aliases
+
+Type aliases give alternative names to existing types. They are resolved transparently during compilation and are not emitted into target languages — at usage sites, the alias is replaced by its target type.
+
+```baboon
+type BinaryData = bytes
+type StringList = lst[str]
+type OptionalInt = opt[i32]
+type IntMap = map[str, i32]
+```
+
+Aliases can reference user-defined types or other aliases (chains are resolved recursively):
+
+```baboon
+type UserId = uid
+type UserIdAlias = UserId    // resolves to uid
+
+root data UserProfile {
+  id: UserIdAlias            // compiled as uid
+  tags: StringList           // compiled as lst[str]
+  payload: BinaryData        // compiled as bytes
+}
+```
+
+Aliases can be declared at the top level or inside namespaces:
+
+```baboon
+ns billing {
+  type Amount = f64
+
+  root data Invoice {
+    total: Amount            // compiled as f64
+  }
+}
+```
+
+Aliases cannot be declared inside ADTs or other type definitions, and they cannot be marked `root` (since they produce no output).
+
 ## Built-in types and collections
 
 Primitives: `i08`, `i16`, `i32`, `i64`, `u08`, `u16`, `u32`, `u64`, `f32`, `f64`, `f128`, `str`, `bytes`, `uid`, `bit`, `tsu` (UTC timestamp), `tso` (offset timestamp).

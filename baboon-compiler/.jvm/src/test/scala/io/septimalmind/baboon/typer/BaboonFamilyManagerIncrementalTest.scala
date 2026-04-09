@@ -157,6 +157,7 @@ class BaboonFamilyManagerIncrementalTest extends AnyWordSpec with Matchers {
         Set.empty,
         Map.empty,
         Map.empty,
+        List.empty,
       )
     }
   }

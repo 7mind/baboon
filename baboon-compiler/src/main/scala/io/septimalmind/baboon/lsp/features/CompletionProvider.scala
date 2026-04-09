@@ -17,17 +17,21 @@ class CompletionProvider(
     "model",
     "version",
     "import",
+    "include",
     "root",
     "data",
+    "struct",
     "adt",
     "enum",
     "foreign",
-    "mixin",
     "contract",
     "service",
+    "ns",
     "pragma",
     "derived",
     "was",
+    "drop",
+    "type",
   )
 
   private val builtinTypes = Seq(
@@ -246,8 +250,27 @@ class CompletionProvider(
                 }
             }
         }.toSeq
-        logger.message(LspLogging.Context, s"getTypeCompletions: found ${types.size} types")
-        types
+        val aliasCompletions = family.domains.toMap.values.flatMap {
+          lineage =>
+            lineage.versions.toMap.values.flatMap {
+              domain =>
+                domain.aliases.map {
+                  a =>
+                    CompletionItem(
+                      label      = a.name.name,
+                      kind       = Some(CompletionItemKind.TypeParameter),
+                      detail     = Some(s"type alias = ${a.target.render}"),
+                      insertText = Some(a.name.name),
+                      sortText   = Some(s"0_${a.name.name}"),
+                      filterText = Some(a.name.name),
+                    )
+                }
+            }
+        }.toSeq
+
+        val all = types ++ aliasCompletions
+        logger.message(LspLogging.Context, s"getTypeCompletions: found ${all.size} types (${aliasCompletions.size} aliases)")
+        all
     }
       .getOrElse(Seq.empty)
   }

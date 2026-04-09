@@ -1,6 +1,7 @@
 package io.septimalmind.baboon.explore.commands
 
 import io.septimalmind.baboon.explore.{Colors, EitherF, ExploreContext, TypeRenderer}
+import io.septimalmind.baboon.parser.model.RawAlias
 import io.septimalmind.baboon.typer.model.DomainMember
 
 import scala.util.matching.Regex
@@ -35,8 +36,13 @@ object TypesCommand extends Command {
             case (ver, dom) =>
               val renderer = new TypeRenderer(dom)
               val types    = collectTypes(dom.defs.meta.nodes.values.toSeq, filter, regexFilter, useRegex)
-              if (types.nonEmpty) {
+              val aliases  = collectAliases(dom.aliases, filter, regexFilter, useRegex)
+              if (types.nonEmpty || aliases.nonEmpty) {
                 sb.append(s"${Colors.CYAN}${pkg.path.mkString(".")} v:$ver${Colors.RESET}\n")
+                aliases.foreach {
+                  a =>
+                    sb.append(s"  ${renderer.renderAliasName(a)}\n")
+                }
                 types.foreach {
                   u =>
                     sb.append(s"  ${renderer.renderTypeName(u)}\n")
@@ -52,10 +58,15 @@ object TypesCommand extends Command {
         case Some(dom) =>
           val renderer = new TypeRenderer(dom)
           val types    = collectTypes(dom.defs.meta.nodes.values.toSeq, filter, regexFilter, useRegex)
-          if (types.isEmpty) {
+          val aliases  = collectAliases(dom.aliases, filter, regexFilter, useRegex)
+          if (types.isEmpty && aliases.isEmpty) {
             sb.append(s"${Colors.DIM}No types found${filter.map(f => s" matching '$f'").getOrElse("")}${Colors.RESET}")
           } else {
             sb.append(s"${Colors.CYAN}Types${filter.map(f => s" matching '$f'").getOrElse("")}:${Colors.RESET}\n")
+            aliases.foreach {
+              a =>
+                sb.append(s"  ${renderer.renderAliasName(a)}\n")
+            }
             types.foreach {
               u =>
                 sb.append(s"  ${renderer.renderTypeName(u)}\n")
@@ -84,6 +95,23 @@ object TypesCommand extends Command {
           case _                         => true
         }
     }.sortBy(_.id.name.name)
+  }
+
+  private def collectAliases(
+    aliases: List[RawAlias],
+    filter: Option[String],
+    regexFilter: Option[Regex],
+    useRegex: Boolean,
+  ): Seq[RawAlias] = {
+    aliases.filter {
+      a =>
+        val name = a.name.name
+        (filter, regexFilter) match {
+          case (_, Some(regex))          => regex.findFirstIn(name).isDefined
+          case (Some(f), _) if !useRegex => name.toLowerCase.contains(f.toLowerCase)
+          case _                         => true
+        }
+    }.sortBy(_.name.name)
   }
 
   def complete(args: Seq[String], ctx: ExploreContext[EitherF]): Seq[String] = {

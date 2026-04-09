@@ -16,12 +16,17 @@ object ShowCommand extends Command {
           case None =>
             Left("No domain selected. Use 'switch <domain>' first.")
           case Some(dom) =>
+            val renderer = new TypeRenderer(dom)
             ctx.findType(typeName) match {
-              case None =>
-                Left(s"Type not found: $typeName")
               case Some(member) =>
-                val renderer = new TypeRenderer(dom)
                 Right(renderer.render(member))
+              case None =>
+                ctx.findAlias(typeName) match {
+                  case Some(alias) =>
+                    Right(renderer.renderAlias(alias))
+                  case None =>
+                    Left(s"Type not found: $typeName")
+                }
             }
         }
     }
@@ -29,8 +34,10 @@ object ShowCommand extends Command {
 
   def complete(args: Seq[String], ctx: ExploreContext[EitherF]): Seq[String] = {
     val partial = args.lastOption.getOrElse("")
-    ctx.allTypeIds
-      .map(_.name.name)
+    val typeNames = ctx.allTypeIds.map(_.name.name)
+    val aliasNames = ctx.allAliases.map(_.name.name)
+    (typeNames ++ aliasNames)
       .filter(_.toLowerCase.contains(partial.toLowerCase))
+      .sorted
   }
 }

@@ -33,7 +33,7 @@ object BaboonTyper {
     rootExtractor: RootExtractor,
   ) extends BaboonTyper[F] {
 
-    private case class TyperOutput(defs: List[DomainMember], renames: Map[TypeId.User, TypeId.User])
+    private case class TyperOutput(defs: List[DomainMember], renames: Map[TypeId.User, TypeId.User], aliases: List[RawAlias])
 
     override def process(
       model: RawDomain
@@ -74,8 +74,9 @@ object BaboonTyper {
         refMeta     <- makeRefMeta(graph.meta.nodes)
         derivations <- computeDerivations(graph.meta.nodes)
         renames      = typed.renames
+        aliases      = typed.aliases
       } yield {
-        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations, roots.keySet, renames, model.pragmas.map(p => (p.key, p.value)).toMap)
+        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations, roots.keySet, renames, model.pragmas.map(p => (p.key, p.value)).toMap, aliases)
       }
     }
 
@@ -404,8 +405,12 @@ object BaboonTyper {
           (initial.map(m => (m.id, m)) ++ out.toSeq)
             .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueTypedefs(e, meta)))
         }
+        aliases = flattened.flatMap(s => s.defn.defn match {
+          case a: RawAlias => Some(a)
+          case _           => None
+        })
       } yield {
-        TyperOutput(indexed.values.toList, renames)
+        TyperOutput(indexed.values.toList, renames, aliases)
       }
     }
 

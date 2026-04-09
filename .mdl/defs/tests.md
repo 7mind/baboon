@@ -841,10 +841,12 @@ ret success:bool=true
 
 # action: test-sbt-basic
 
-Run basic SBT tests.
+Run basic SBT tests. Depends on test-cs-regular because RTCodecTest reads
+JSON/UEBA files produced by C# tests.
 
 ```bash
 dep action.build
+dep action.test-cs-regular
 sbt +test
 
 ret success:bool=true

@@ -39,6 +39,7 @@ Generates:
 - Evolution-aware codegen: derives migrations when possible, emits stubs when manual work is required
 - Set-based structural inheritance with `+`, `-`, and `^` operators
 - Algebraic data types (`adt`), DTOs (`data`) and enums.
+- Type aliases for convenience (`type Name = TargetType`)
 - Basic form of nominal inheritance (`contract`)
 - Namespaces, includes, and imports
 - Collections (`opt`, `lst`, `set`, `map`) and timestamps/UID primitives
@@ -123,7 +124,7 @@ See [docs/explorer-mode.md](docs/explorer-mode.md) for a full command reference.
 7. (*) Comments are not preserved in the transpiler output
 8. (*) No structural inheritance information is preserved in the transpiler output
 9. (*) Only integer constants may be associated with enum members
-10. (*) No newtypes/type aliases
+10. No newtypes (type aliases are supported, newtypes are not)
 11. (*) No inheritance-based lenses/projections/conversions
 
 Points marked with (*) will/may be improved in the future.

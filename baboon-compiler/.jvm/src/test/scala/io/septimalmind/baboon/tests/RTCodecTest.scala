@@ -88,11 +88,11 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
                }
              }
 
-             // Process JSON files
+             // Process JSON files (produced by C# tests - requires test-cs-regular to have run)
              jsonDir: java.nio.file.Path = Paths.get("target/test-regular/target/cs/json-default")
              _ <- F.fromEither {
                if (!Files.exists(jsonDir)) {
-                 Left(new RuntimeException(s"JSON test directory not found: $jsonDir"))
+                 Left(new RuntimeException(s"JSON test directory not found: $jsonDir (test-cs-regular must run before test-sbt-basic)"))
                } else {
                  Right(())
                }

@@ -118,7 +118,7 @@ baboon \
 
 Baboon files support:
 - **Structural inheritance**: Using `+` (union), `-` (subtraction), `^` (intersection)
-- **Type categories**: DTOs, ADTs, enums, foreign types
+- **Type categories**: DTOs, ADTs, enums, foreign types, type aliases
 - **Collections**: Lists, sets, dictionaries, options
 - **Annotations**: `@root` (entry points); `: derived[json]`, `: derived[ueba]` (request codecs)
 - **Evolution**: Automatic schema migration where possible

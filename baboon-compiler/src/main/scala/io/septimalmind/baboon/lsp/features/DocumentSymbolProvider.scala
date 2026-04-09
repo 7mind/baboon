@@ -50,7 +50,24 @@ class DocumentSymbolProvider(
           }
         }
 
-        inFile.map(u => createSymbol(u, family.domains.toMap.values.flatMap(_.versions.toMap.values).head))
+        val aliasSymbols = family.domains.toMap.values.flatMap {
+          lineage =>
+            lineage.versions.toMap.values.flatMap {
+              domain =>
+                domain.aliases.filter(a => isInFile(a.meta.pos, filePath)).map {
+                  a =>
+                    val range = a.meta.pos match {
+                      case full: InputPointer.Full     => positionConverter.fromInputPointer(full)
+                      case offset: InputPointer.Offset => positionConverter.fromStartOffset(offset)
+                      case _                           => Range.zero
+                    }
+                    DocumentSymbol(a.name.name, SymbolKind.TypeParameter, range, range)
+                }
+            }
+        }.toSeq
+
+        val typeSymbols = inFile.map(u => createSymbol(u, family.domains.toMap.values.flatMap(_.versions.toMap.values).head))
+        (typeSymbols ++ aliasSymbols).sortBy(_.name)
     }
   }
 

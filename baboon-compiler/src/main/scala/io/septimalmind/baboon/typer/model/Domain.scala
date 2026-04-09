@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.typer.model
 
-import io.septimalmind.baboon.parser.model.RawMemberMeta
+import io.septimalmind.baboon.parser.model.{RawAlias, RawMemberMeta}
 import izumi.fundamentals.graphs.DG
 import izumi.fundamentals.graphs.tools.cycles.LoopDetector
 
@@ -16,6 +16,7 @@ case class Domain(
   roots: Set[TypeId],
   renames: Map[TypeId.User, TypeId.User],
   pragmas: Map[String, String],
+  aliases: List[RawAlias],
 ) {
 
   import izumi.fundamentals.platform.strings.IzString.*

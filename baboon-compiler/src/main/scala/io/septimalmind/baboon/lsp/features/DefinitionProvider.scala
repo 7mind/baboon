@@ -44,30 +44,43 @@ class DefinitionProvider(
     }
   }
 
+  private def locationFromPos(pos: InputPointer): Option[Location] = {
+    pos match {
+      case full: InputPointer.Full =>
+        Some(Location(positionConverter.pathToUri(full.file.asString), positionConverter.fromInputPointer(full)))
+      case offset: InputPointer.Offset =>
+        Some(Location(positionConverter.pathToUri(offset.file.asString), positionConverter.fromStartOffset(offset)))
+      case file: InputPointer.JustFile =>
+        Some(Location(positionConverter.pathToUri(file.file.asString), Range.zero))
+      case InputPointer.Undefined =>
+        None
+    }
+  }
+
   private def findTypeDefinition(typeName: String): Option[Location] = {
     workspaceState.getFamily.flatMap {
       family =>
-        family.domains.toMap.values.flatMap {
+        val fromMembers = family.domains.toMap.values.flatMap {
           lineage =>
             lineage.versions.toMap.values.flatMap {
               domain =>
                 domain.defs.meta.nodes.values.collectFirst {
-                  case u: DomainMember.User if u.id.name.name == typeName =>
-                    u.meta.pos match {
-                      case full: InputPointer.Full =>
-                        val range = positionConverter.fromInputPointer(full)
-                        Location(positionConverter.pathToUri(full.file.asString), range)
-                      case offset: InputPointer.Offset =>
-                        val range = positionConverter.fromStartOffset(offset)
-                        Location(positionConverter.pathToUri(offset.file.asString), range)
-                      case file: InputPointer.JustFile =>
-                        Location(positionConverter.pathToUri(file.file.asString), Range.zero)
-                      case InputPointer.Undefined =>
-                        null
-                    }
-                }.filter(_ != null)
+                  case u: DomainMember.User if u.id.name.name == typeName => u.meta.pos
+                }.flatMap(locationFromPos)
             }
         }.headOption
+
+        fromMembers.orElse {
+          family.domains.toMap.values.flatMap {
+            lineage =>
+              lineage.versions.toMap.values.flatMap {
+                domain =>
+                  domain.aliases.collectFirst {
+                    case a if a.name.name == typeName => a.meta.pos
+                  }.flatMap(locationFromPos)
+              }
+          }.headOption
+        }
     }
   }
 }

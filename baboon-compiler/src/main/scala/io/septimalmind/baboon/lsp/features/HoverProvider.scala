@@ -58,7 +58,7 @@ class HoverProvider(
   private def findTypeInfo(typeName: String): Option[String] = {
     workspaceState.getFamily.flatMap {
       family =>
-        family.domains.toMap.values.flatMap {
+        val fromMembers = family.domains.toMap.values.flatMap {
           lineage =>
             lineage.versions.toMap.values.flatMap {
               domain =>
@@ -68,6 +68,19 @@ class HoverProvider(
                 }
             }
         }.headOption
+
+        fromMembers.orElse {
+          family.domains.toMap.values.flatMap {
+            lineage =>
+              lineage.versions.toMap.values.flatMap {
+                domain =>
+                  domain.aliases.collectFirst {
+                    case a if a.name.name == typeName =>
+                      s"```baboon\ntype ${a.name.name} = ${a.target.render}\n```\n\n---\n*Package: ${domain.id}*"
+                  }
+              }
+          }.headOption
+        }
     }
   }
 
@@ -79,7 +92,7 @@ class HoverProvider(
       case _: Typedef.Adt      => "adt"
       case _: Typedef.Enum     => "enum"
       case _: Typedef.Foreign  => "foreign"
-      case _: Typedef.Contract => "mixin"
+      case _: Typedef.Contract => "contract"
       case _: Typedef.Service  => "service"
     }
 

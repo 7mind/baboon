@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.explore
 
-import io.septimalmind.baboon.parser.model.{InputPointer, RawMemberMeta}
+import io.septimalmind.baboon.parser.model.{InputPointer, RawAlias, RawMemberMeta}
 import io.septimalmind.baboon.typer.model.*
 
 class TypeRenderer(domain: Domain) {
@@ -92,7 +92,7 @@ class TypeRenderer(domain: Domain) {
         sb.append("}")
 
       case contract: Typedef.Contract =>
-        sb.append(s"${BLUE}mixin$RESET $GREEN${contract.id.name.name}$RESET")
+        sb.append(s"${BLUE}contract$RESET $GREEN${contract.id.name.name}$RESET")
         if (contract.contracts.nonEmpty) {
           sb.append(s" $CYAN:$RESET ${contract.contracts.map(_.name.name).mkString(", ")}")
         }
@@ -150,7 +150,7 @@ class TypeRenderer(domain: Domain) {
         sb.append(s"${BLUE}foreign$RESET $GREEN${foreign.id.name.name}$RESET")
 
       case contract: Typedef.Contract =>
-        sb.append(s"${BLUE}mixin$RESET $GREEN${contract.id.name.name}$RESET")
+        sb.append(s"${BLUE}contract$RESET $GREEN${contract.id.name.name}$RESET")
 
       case service: Typedef.Service =>
         sb.append(s"${BLUE}service$RESET $GREEN${service.id.name.name}$RESET")
@@ -170,13 +170,28 @@ class TypeRenderer(domain: Domain) {
     case u: TypeId.User    => s"$GREEN${u.name.name}$RESET"
   }
 
+  def renderAlias(alias: RawAlias): String = {
+    val sb = new StringBuilder
+    sb.append(s"${BLUE}type$RESET $GREEN${alias.name.name}$RESET = ${alias.target.render}")
+    sb.append("\n\n")
+    val location = InputPointer.format(alias.meta.pos)
+    if (location.nonEmpty) {
+      sb.append(s"$DIM${location.mkString("\n")}$RESET")
+    }
+    sb.toString()
+  }
+
+  def renderAliasName(alias: RawAlias): String = {
+    s"${BLUE}type$RESET $GREEN${alias.name.name}$RESET = ${alias.target.render}"
+  }
+
   def renderTypeName(member: DomainMember.User): String = {
     val kind = member.defn match {
       case _: Typedef.Dto      => s"${BLUE}data$RESET"
       case _: Typedef.Adt      => s"${BLUE}adt$RESET"
       case _: Typedef.Enum     => s"${BLUE}enum$RESET"
       case _: Typedef.Foreign  => s"${BLUE}foreign$RESET"
-      case _: Typedef.Contract => s"${BLUE}mixin$RESET"
+      case _: Typedef.Contract => s"${BLUE}contract$RESET"
       case _: Typedef.Service  => s"${BLUE}service$RESET"
     }
     val rootMarker = if (member.root) s"$MAGENTA@root$RESET " else ""
