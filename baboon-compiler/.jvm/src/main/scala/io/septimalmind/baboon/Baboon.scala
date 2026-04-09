@@ -98,6 +98,7 @@ object Baboon {
        |  --model-dir <dir>        A directory to recursively read *.baboon files from (can be repeated)
        |  --lock-file <file>       A file used to track model signatures
        |  --meta-write-evolution-json <file>  Write evolution metadata as JSON
+       |  --emit-only <domains>    Comma-separated list of domain names to generate code for (all are still parsed/typed)
        |  --debug                  Enable debug output
        |  --help                   Show this help message
        |
@@ -495,6 +496,13 @@ object Baboon {
             val directoryInputs  = generalOptions._1.modelDir.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
             val individualInputs = generalOptions._1.model.map(s => FSPath.parse(NEString.unsafeFrom(s))).toSet
 
+            val emitOnly = generalOptions._1.emitOnly.map {
+              raw =>
+                raw.split(',').map(_.trim).filter(_.nonEmpty).map {
+                  s => Pkg(NEList.unsafeFrom(s.split('.').toList))
+                }.toSet
+            }
+
             val options = CompilerOptions(
               debug                    = generalOptions._1.debug.getOrElse(false),
               individualInputs         = individualInputs,
@@ -502,6 +510,7 @@ object Baboon {
               targets                  = launchArgs,
               metaWriteEvolutionJsonTo = generalOptions._1.metaWriteEvolutionJson.map(s => FSPath.parse(NEString.unsafeFrom(s))),
               lockFile                 = generalOptions._1.lockFile.map(s => FSPath.parse(NEString.unsafeFrom(s))),
+              emitOnly                 = emitOnly,
             )
 
             import izumi.distage.modules.support.unsafe.EitherSupport.{defaultModuleEither, quasiIOEither, quasiIORunnerEither}
@@ -697,6 +706,7 @@ object Baboon {
       targets                  = Seq.empty,
       metaWriteEvolutionJsonTo = None,
       lockFile                 = None,
+      emitOnly                 = None,
     )
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
     import PathTools.*
@@ -760,6 +770,7 @@ object Baboon {
       targets                  = Seq.empty,
       metaWriteEvolutionJsonTo = None,
       lockFile                 = None,
+      emitOnly                 = None,
     )
     val m = new BaboonModuleJvm[EitherF](options, parallelAccumulatingOps2)
     import PathTools.*
@@ -821,6 +832,7 @@ object Baboon {
       targets                  = Seq.empty,
       metaWriteEvolutionJsonTo = None,
       lockFile                 = None,
+      emitOnly                 = None,
     )
     val m = new BaboonModuleJvm[F](options, ParallelErrorAccumulatingOps2[F])
 

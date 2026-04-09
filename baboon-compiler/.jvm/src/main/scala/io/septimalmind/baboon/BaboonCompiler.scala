@@ -8,7 +8,7 @@ import io.septimalmind.baboon.typer.model.{BaboonFamily, Pkg, Version}
 import io.septimalmind.baboon.util.{BLogger, BaboonMetagen}
 import izumi.functional.bio.unsafe.MaybeSuspend2
 import izumi.functional.bio.{Error2, F}
-import izumi.fundamentals.collections.nonempty.NEList
+import izumi.fundamentals.collections.nonempty.{NEList, NEMap}
 import izumi.fundamentals.platform.files.IzFiles
 
 import java.nio.charset.StandardCharsets
@@ -56,19 +56,31 @@ object BaboonCompiler {
         _ <- writeEvolutionJson(target, model)
         _ <- lockfileManager.validateLock(model)
 
-        _          <- F.maybeSuspend(logger.message(s"${target.id}: generating output..."))
-        translated <- translator.translate(model)
-
-        _ <- F.traverseAccumErrors_(translated.files.iterator) {
-          case (relativePath, output) =>
-            F.traverse_(target.output.targetPathFor(output)) {
-              targetDirectory =>
-                val targetPath = targetDirectory.resolve(relativePath)
-                writeFile(output, targetPath)
-            }
+        maybeFiltered = options.emitOnly match {
+          case Some(allowed) =>
+            val filtered = model.domains.toMap.filter { case (pkg, _) => allowed.contains(pkg) }
+            NEMap.from(filtered).map(nemap => model.copy(domains = nemap))
+          case None => Some(model)
         }
-        _ <- F.maybeSuspend(logger.message(s"${target.id}: done"))
 
+        _ <- maybeFiltered match {
+          case Some(filteredModel) =>
+            for {
+              _          <- F.maybeSuspend(logger.message(s"${target.id}: generating output..."))
+              translated <- translator.translate(filteredModel)
+              _ <- F.traverseAccumErrors_(translated.files.iterator) {
+                case (relativePath, output) =>
+                  F.traverse_(target.output.targetPathFor(output)) {
+                    targetDirectory =>
+                      val targetPath = targetDirectory.resolve(relativePath)
+                      writeFile(output, targetPath)
+                  }
+              }
+              _ <- F.maybeSuspend(logger.message(s"${target.id}: done"))
+            } yield {}
+          case None =>
+            F.maybeSuspend(logger.message(s"${target.id}: --emit-only matched no domains, skipping code generation"))
+        }
       } yield {}
     }
 

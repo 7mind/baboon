@@ -414,4 +414,6 @@ case class CLIOptions(
   debug: Option[Boolean],
   @HelpMessage("Path to a file to which the compiler will write evolution metadata as a JSON")
   metaWriteEvolutionJson: Option[String],
+  @HelpMessage("Comma-separated list of domain names to generate code for (e.g. 'my.domain,other.pkg'). All domains are still parsed and typed.")
+  emitOnly: Option[String],
 )

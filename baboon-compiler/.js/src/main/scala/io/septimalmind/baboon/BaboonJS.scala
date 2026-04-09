@@ -678,6 +678,7 @@ object BaboonJS {
       debug                    = debug,
       targets                  = toCompilerTargets(targets),
       metaWriteEvolutionJsonTo = None,
+      emitOnly                 = None,
     )
   }
 

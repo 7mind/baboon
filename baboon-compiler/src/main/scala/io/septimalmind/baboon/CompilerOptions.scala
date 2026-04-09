@@ -2,6 +2,7 @@ package io.septimalmind.baboon
 
 import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.translator.OutputFile
+import io.septimalmind.baboon.typer.model.Pkg
 
 sealed trait CompilerTarget {
   def id: String
@@ -345,6 +346,7 @@ final case class CompilerOptions(
   debug: Boolean,
   targets: Seq[CompilerTarget],
   metaWriteEvolutionJsonTo: Option[FSPath],
+  emitOnly: Option[Set[Pkg]],
 )
 
 sealed trait CompilerProduct
