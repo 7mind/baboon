@@ -1,0 +1,12 @@
+[submodule "editors/baboon-vscode"]
+	path = editors/baboon-vscode
+	url = git@github.com:7mind/baboon-vscode.git
+	branch = main
+[submodule "editors/baboon-intellij"]
+	path = editors/baboon-intellij
+	url = git@github.com:7mind/baboon-intellij.git
+	branch = main
+[submodule "editors/baboon-zed"]
+	path = editors/baboon-zed
+	url = git@github.com:7mind/baboon-zed.git
+	branch = main

@@ -1909,3 +1909,14 @@ python3 test/acceptance/run_acceptance.py \
 
 ret success:bool=true
 ```
+
+# action: test-editors
+
+Test editor extension grammars against real baboon files.
+Requires tree-sitter, node, and a C compiler on PATH.
+
+```bash
+bash test/editors/test-tree-sitter.sh .
+
+ret success:bool=true
+```

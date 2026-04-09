@@ -127,6 +127,19 @@ jobs:
           path: |
             baboon-compiler/.jvm/target/graalvm-native-image/**
 
+  test-editors:
+    name: test-editors
+    runs-on:
+      - ubuntu-latest
+    steps:
+      - uses: 7mind/github-env@minimal
+        with:
+          setup-nix: true
+      - name: Init submodules
+        run: git submodule update --init --recursive
+      - name: Test editor grammars
+        run: nix develop --command bash test/editors/test-tree-sitter.sh .
+
   acceptance-tests:
     name: acceptance-tests
     runs-on:

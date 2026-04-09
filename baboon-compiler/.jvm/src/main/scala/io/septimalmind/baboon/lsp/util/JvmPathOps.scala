@@ -11,7 +11,7 @@ object JvmPathOps extends PathOps {
   }
 
   override def uriToPath(uri: String): String = {
-    new URI(uri).getPath
+    Paths.get(new URI(uri)).toString
   }
 
   override def normalizePath(path: String): String = {
