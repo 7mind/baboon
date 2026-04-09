@@ -33,7 +33,6 @@ trait Keywords {
   def namespace[$: P]: P[Unit] = kw("ns")
   def derived[$: P]: P[Unit]   = kw("derived")
   def was[$: P]: P[Unit]       = kw("was")
-  def drop[$: P]: P[Unit]      = kw("drop")
   def pragma[$: P]: P[Unit]    = kw("pragma")
   def `type`[$: P]: P[Unit]    = kw("type")
 

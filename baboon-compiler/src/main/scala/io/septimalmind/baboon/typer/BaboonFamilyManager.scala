@@ -449,7 +449,7 @@ object BaboonFamilyManager {
           collectFilesFromDefn(value)
         case RawTLDef.Namespace(value) =>
           collectFilesFromDefn(value)
-        case RawTLDef.Alias(value) =>
+        case RawTLDef.Alias(_, value) =>
           collectFilesFromDefn(value)
       }
     }

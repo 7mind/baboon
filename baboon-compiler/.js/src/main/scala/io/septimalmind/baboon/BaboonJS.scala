@@ -750,6 +750,15 @@ object BaboonJS {
             case _ => // skip builtins
           }
         }
+        for (alias <- domain.aliases) {
+          result.push(JSTypeInfo(
+            pkg     = pkg.toString,
+            version = version.toString,
+            id      = s"type:${alias.name.name}",
+            name    = alias.name.name,
+            kind    = "alias",
+          ))
+        }
       }
     }
 

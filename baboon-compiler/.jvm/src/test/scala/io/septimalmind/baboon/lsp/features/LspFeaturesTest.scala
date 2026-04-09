@@ -143,7 +143,7 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
             "model", "version", "import", "include", "root",
             "data", "struct", "adt", "enum", "foreign",
             "contract", "service", "ns", "pragma", "derived",
-            "was", "drop", "type",
+            "was", "type",
           )
           expectedKeywords.foreach { kw =>
             assert(labels.contains(kw), s"Completion should include keyword '$kw', got: ${labels.filter(_.length < 15)}")

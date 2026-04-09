@@ -30,7 +30,6 @@ class CompletionProvider(
     "pragma",
     "derived",
     "was",
-    "drop",
     "type",
   )
 
@@ -259,7 +258,7 @@ class CompletionProvider(
                     CompletionItem(
                       label      = a.name.name,
                       kind       = Some(CompletionItemKind.TypeParameter),
-                      detail     = Some(s"type alias = ${a.target.render}"),
+                      detail     = Some(s"type alias = ${a.targetRepr}"),
                       insertText = Some(a.name.name),
                       sortText   = Some(s"0_${a.name.name}"),
                       filterText = Some(a.name.name),

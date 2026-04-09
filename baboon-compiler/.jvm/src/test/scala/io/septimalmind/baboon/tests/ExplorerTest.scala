@@ -3,12 +3,14 @@ package io.septimalmind.baboon.tests
 import io.septimalmind.baboon.BaboonLoader
 import io.septimalmind.baboon.explore.commands.{ShowCommand, TypesCommand}
 import io.septimalmind.baboon.explore.{ExploreContext, ExploreInputs, TypeRenderer}
+import io.septimalmind.baboon.parser.BaboonParser
+import io.septimalmind.baboon.parser.model.FSPath
 import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
 import io.septimalmind.baboon.typer.BaboonEnquiries.BaboonEnquiriesImpl
-import io.septimalmind.baboon.typer.BaboonRuntimeCodec
+import io.septimalmind.baboon.typer.{BaboonFamilyManager, BaboonRuntimeCodec}
 import io.septimalmind.baboon.typer.model._
 import izumi.functional.bio.Error2
-import izumi.fundamentals.collections.nonempty.NEList
+import izumi.fundamentals.collections.nonempty.{NEList, NEString}
 import izumi.reflect.TagKK
 
 final class ExplorerTest extends ExplorerTestBase[Either]
@@ -214,6 +216,54 @@ abstract class ExplorerTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exte
               case _: Typedef.Service  => assert(rendered.contains("service"), s"${member.id.name.name}: expected 'service' keyword")
             }
           }
+        }
+    }
+  }
+
+  "root type alias" should {
+    "retain the underlying type in the domain graph" in {
+      (loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F]) =>
+        withExploreCtx(loader, codec, v1) { ctx =>
+          val dom = ctx.currentDomain.get
+
+          // NotReferenced is not directly a root, but `root type RetainedAlias = NotReferenced`
+          // should cause it to be retained in the domain graph
+          assert(
+            ctx.findType("NotReferenced").isDefined,
+            s"NotReferenced should be retained via root alias. " +
+            s"Excluded: ${dom.excludedIds.map(_.name.name)}, " +
+            s"Aliases: ${dom.aliases.map(a => s"${if (a.root) "root " else ""}${a.name.name}=${a.targetRepr}").mkString(", ")}"
+          )
+
+          // Verify the alias itself is marked as root
+          val retainedAlias = ctx.findAlias("RetainedAlias")
+          assert(retainedAlias.isDefined, "RetainedAlias should exist")
+          assert(retainedAlias.get.root, "RetainedAlias should be marked as root")
+        }
+    }
+  }
+
+  "circular alias detection" should {
+    "report error for circular aliases" in {
+      (manager: BaboonFamilyManager[F]) =>
+        import izumi.functional.bio.F
+
+        val circularModel =
+          """model test.circular
+            |version "1.0.0"
+            |type A = B
+            |type B = A
+            |root data Dummy { f: A }
+            |""".stripMargin
+
+        val input = BaboonParser.Input(
+          FSPath.parse(NEString.unsafeFrom("circular-test.baboon")),
+          circularModel,
+        )
+
+        F.attempt(manager.load(List(input))).map {
+          case Left(_)  => () // expected - circular aliases should fail
+          case Right(_) => fail("Circular aliases should cause a compilation error")
         }
     }
   }

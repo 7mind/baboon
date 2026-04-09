@@ -33,7 +33,7 @@ object BaboonTyper {
     rootExtractor: RootExtractor,
   ) extends BaboonTyper[F] {
 
-    private case class TyperOutput(defs: List[DomainMember], renames: Map[TypeId.User, TypeId.User], aliases: List[RawAlias])
+    private case class TyperOutput(defs: List[DomainMember], renames: Map[TypeId.User, TypeId.User], aliases: List[AliasInfo])
 
     override def process(
       model: RawDomain
@@ -48,7 +48,13 @@ object BaboonTyper {
             .map(d => (d.id, d))
             .toUniqueMap(e => BaboonIssue.of(TyperIssue.DuplicatedTypedefs(model, e)))
         }
-        roots = rootExtractor.roots(indexedDefs)
+        directRoots = rootExtractor.roots(indexedDefs)
+        // Root aliases contribute their resolved targets to the root set
+        aliasRootIds: Set[TypeId] = typed.aliases.filter(_.root).flatMap { a =>
+          enquiries.explode(a.resolvedTarget)
+        }.toSet
+        aliasRoots = indexedDefs.filter { case (k, _) => aliasRootIds.contains(k) }
+        roots = directRoots ++ aliasRoots
         predecessors <- buildDependencies(
           indexedDefs,
           roots,
@@ -405,12 +411,11 @@ object BaboonTyper {
           (initial.map(m => (m.id, m)) ++ out.toSeq)
             .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueTypedefs(e, meta)))
         }
-        aliases = flattened.flatMap(s => s.defn.defn match {
-          case a: RawAlias => Some(a)
-          case _           => None
-        })
+        aliases <- F.traverseAccumErrors(flattened.filter(_.defn.defn.isInstanceOf[RawAlias])) { scope =>
+          translator(pkg, scope, out).resolveAliasInfo().map(_.get)
+        }
       } yield {
-        TyperOutput(indexed.values.toList, renames, aliases)
+        TyperOutput(indexed.values.toList, renames, aliases.toList)
       }
     }
 

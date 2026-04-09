@@ -63,8 +63,16 @@ object BaboonSchemeRenderer {
       renderPragmas(sb, domain)
       sb.append("\n")
 
+      // Render aliases grouped by namespace
+      val (toplevelAliases, _) = domain.aliases.partition(_.owner == Owner.Toplevel)
+      toplevelAliases.sortBy(_.name.name).foreach { a =>
+        val rootPrefix = if (a.root) "root " else ""
+        sb.append(s"\n${rootPrefix}type ${a.name.name} = ${a.targetRepr}")
+      }
+
       renderGroup(sb, grouped, userNodes, reverseDeps, domain, indent = "")
 
+      // Namespaced aliases are rendered within their namespace blocks via renderGroup
       Right(sb.toString().trim + "\n")
     }
 
@@ -203,6 +211,7 @@ object BaboonSchemeRenderer {
       reverseDeps: Map[TypeId, Set[TypeId.User]],
       domain: Domain,
       indent: String,
+      nsPath: List[String] = List.empty,
     ): Unit = {
       groups.foreach {
         case TopLevelDef(id) =>
@@ -212,7 +221,18 @@ object BaboonSchemeRenderer {
           }
         case NamespaceBlock(name, children) =>
           sb.append(s"\n${indent}ns $name {\n")
-          renderGroup(sb, children, userNodes, reverseDeps, domain, indent + "  ")
+          val childPath = nsPath :+ name
+          // Render aliases in this namespace
+          domain.aliases.filter { a =>
+            a.owner match {
+              case Owner.Ns(path) => path.map(_.name).toList == childPath
+              case _              => false
+            }
+          }.sortBy(_.name.name).foreach { a =>
+            val rootPrefix = if (a.root) "root " else ""
+            sb.append(s"${indent}  ${rootPrefix}type ${a.name.name} = ${a.targetRepr}\n")
+          }
+          renderGroup(sb, children, userNodes, reverseDeps, domain, indent + "  ", childPath)
           sb.append(s"$indent}\n")
       }
     }

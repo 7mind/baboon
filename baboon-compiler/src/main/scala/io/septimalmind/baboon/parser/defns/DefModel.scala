@@ -65,12 +65,12 @@ class DefModel(
   def member[$: P]: P[RawTLDef] = {
     import fastparse.ScalaWhitespace.whitespace
 
-    val main = P(kw.root.!.? ~ (choice | dto | adt | foreign | contract | service)).map {
+    val main = P(kw.root.!.? ~ (choice | dto | adt | foreign | contract | service | alias)).map {
       case (root, defn) =>
         defn.setRoot(root.nonEmpty)
     }
 
-    P(main | namespace | alias)
+    P(main | namespace)
   }
 
   def modelContent[$: P]: P[(Option[RawImport], RawContent)] = {
@@ -119,7 +119,7 @@ class DefModel(
     import fastparse.ScalaWhitespace.whitespace
     P(meta.withMeta(kw(kw.`type`, idt.symbol ~ "=" ~ defDto.typeRef))).map {
       case (meta, (name, target)) =>
-        RawTLDef.Alias(RawAlias(RawTypeName(name), target, meta))
+        RawTLDef.Alias(false, RawAlias(RawTypeName(name), target, meta))
     }
   }
 }

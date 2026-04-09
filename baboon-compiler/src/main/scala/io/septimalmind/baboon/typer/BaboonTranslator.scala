@@ -39,6 +39,19 @@ class BaboonTranslator[F[+_, +_]: Error2](
     }
   }
 
+  def resolveAliasInfo(): F[NEList[BaboonIssue], Option[AliasInfo]] = {
+    defn.defn.defn match {
+      case alias: RawAlias =>
+        for {
+          resolved <- convertTpe(alias.target, alias.meta)
+          owner    <- scopeSupport.ownerOf(defn, pkg)
+        } yield {
+          Some(AliasInfo(TypeName(alias.name.name), owner, alias.target.render, resolved, alias.meta, defn.defn.gcRoot))
+        }
+      case _ => F.pure(None)
+    }
+  }
+
   private def convertMember(
     id: TypeId.User,
     defn: ExtendedRawDefn,

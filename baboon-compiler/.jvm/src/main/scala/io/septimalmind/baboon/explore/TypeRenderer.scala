@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.explore
 
-import io.septimalmind.baboon.parser.model.{InputPointer, RawAlias, RawMemberMeta}
+import io.septimalmind.baboon.parser.model.{InputPointer, RawMemberMeta}
 import io.septimalmind.baboon.typer.model.*
 
 class TypeRenderer(domain: Domain) {
@@ -170,9 +170,12 @@ class TypeRenderer(domain: Domain) {
     case u: TypeId.User    => s"$GREEN${u.name.name}$RESET"
   }
 
-  def renderAlias(alias: RawAlias): String = {
+  def renderAlias(alias: AliasInfo): String = {
     val sb = new StringBuilder
-    sb.append(s"${BLUE}type$RESET $GREEN${alias.name.name}$RESET = ${alias.target.render}")
+    if (alias.root) {
+      sb.append(s"$MAGENTA@root$RESET ")
+    }
+    sb.append(s"${BLUE}type$RESET $GREEN${alias.name.name}$RESET = ${alias.targetRepr}")
     sb.append("\n\n")
     val location = InputPointer.format(alias.meta.pos)
     if (location.nonEmpty) {
@@ -181,8 +184,9 @@ class TypeRenderer(domain: Domain) {
     sb.toString()
   }
 
-  def renderAliasName(alias: RawAlias): String = {
-    s"${BLUE}type$RESET $GREEN${alias.name.name}$RESET = ${alias.target.render}"
+  def renderAliasName(alias: AliasInfo): String = {
+    val rootMarker = if (alias.root) s"$MAGENTA@root$RESET " else ""
+    s"$rootMarker${BLUE}type$RESET $GREEN${alias.name.name}$RESET = ${alias.targetRepr}"
   }
 
   def renderTypeName(member: DomainMember.User): String = {

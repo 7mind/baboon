@@ -2,7 +2,6 @@ package io.septimalmind.baboon.explore
 
 import io.circe.Json
 import io.septimalmind.baboon.{BaboonLoader, PathTools}
-import io.septimalmind.baboon.parser.model.RawAlias
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.{BaboonEnquiries, BaboonRuntimeCodec}
@@ -89,10 +88,10 @@ class ExploreContext[F[+_, +_]: Error2: MaybeSuspend2](
   def findTypeId(name: String): Option[TypeId.User] =
     findType(name).map(_.id)
 
-  def allAliases: Seq[RawAlias] =
+  def allAliases: Seq[AliasInfo] =
     currentDomain.toSeq.flatMap(_.aliases).sortBy(_.name.name)
 
-  def findAlias(name: String): Option[RawAlias] =
+  def findAlias(name: String): Option[AliasInfo] =
     currentDomain.flatMap(_.aliases.find(_.name.name == name))
 
   def parsePkg(pkgStr: String): Option[Pkg] = {

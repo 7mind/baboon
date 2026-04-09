@@ -38,6 +38,11 @@ trait ScopeSupport[F[+_, +_]] {
     name: RawTypeName,
     scope: Scope[ExtendedRawDefn],
   ): Option[RawTypeRef]
+
+  def ownerOf(
+    scope: NestedScope[ExtendedRawDefn],
+    pkg: Pkg,
+  ): F[NEList[BaboonIssue], Owner]
 }
 
 object ScopeSupport {
@@ -283,6 +288,13 @@ object ScopeSupport {
         case None =>
           headScope
       }
+    }
+
+    def ownerOf(
+      scope: NestedScope[ExtendedRawDefn],
+      pkg: Pkg,
+    ): F[NEList[BaboonIssue], Owner] = {
+      pathToOwner(asPath(scope), pkg)
     }
 
     def resolveAlias(

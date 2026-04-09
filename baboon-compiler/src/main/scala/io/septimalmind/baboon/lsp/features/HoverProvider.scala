@@ -76,7 +76,7 @@ class HoverProvider(
                 domain =>
                   domain.aliases.collectFirst {
                     case a if a.name.name == typeName =>
-                      s"```baboon\ntype ${a.name.name} = ${a.target.render}\n```\n\n---\n*Package: ${domain.id}*"
+                      s"```baboon\ntype ${a.name.name} = ${a.targetRepr}\n```\n\n---\n*Package: ${domain.id}*"
                   }
               }
           }.headOption

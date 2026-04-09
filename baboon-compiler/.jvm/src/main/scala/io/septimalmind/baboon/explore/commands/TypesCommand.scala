@@ -1,8 +1,7 @@
 package io.septimalmind.baboon.explore.commands
 
 import io.septimalmind.baboon.explore.{Colors, EitherF, ExploreContext, TypeRenderer}
-import io.septimalmind.baboon.parser.model.RawAlias
-import io.septimalmind.baboon.typer.model.DomainMember
+import io.septimalmind.baboon.typer.model.{AliasInfo, DomainMember}
 
 import scala.util.matching.Regex
 
@@ -98,11 +97,11 @@ object TypesCommand extends Command {
   }
 
   private def collectAliases(
-    aliases: List[RawAlias],
+    aliases: List[AliasInfo],
     filter: Option[String],
     regexFilter: Option[Regex],
     useRegex: Boolean,
-  ): Seq[RawAlias] = {
+  ): Seq[AliasInfo] = {
     aliases.filter {
       a =>
         val name = a.name.name

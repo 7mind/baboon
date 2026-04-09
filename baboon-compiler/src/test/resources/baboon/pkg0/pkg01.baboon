@@ -65,6 +65,7 @@ type EnumAlias = T1_E1
 type AdtAlias = T4_A1
 type ChainedAlias = BinaryData
 type DoubleChain = ChainedAlias
+root type RetainedAlias = NotReferenced
 
 root data T17_Aliases : derived[json], derived[ueba] {
   binary: BinaryData
