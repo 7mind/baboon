@@ -14,6 +14,8 @@ import io.septimalmind.baboon.translator.scl.*
 import io.septimalmind.baboon.translator.dart.*
 import io.septimalmind.baboon.translator.java.*
 import io.septimalmind.baboon.translator.kotlin.*
+import io.septimalmind.baboon.translator.graphql.*
+import io.septimalmind.baboon.translator.openapi.*
 import io.septimalmind.baboon.translator.swift.*
 import io.septimalmind.baboon.translator.typescript.*
 import io.septimalmind.baboon.typer.*
@@ -173,7 +175,7 @@ class BaboonCommonRsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[RsFileTools].from[RsFileTools.RsFileToolsImpl]
   make[RsTreeTools].from[RsTreeTools.RsTreeToolsImpl]
 
-  make[RsTypes].from { (target: CompilerTarget.RsTarget) => new RsTypes(target.language.cratePrefix) }
+  make[RsTypes].from((target: CompilerTarget.RsTarget) => new RsTypes(target.language.cratePrefix))
   make[RsTypeTranslator]
   makeFactory[RsConversionTranslator.Factory[F]]
 
@@ -227,7 +229,7 @@ class BaboonCommonKtModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[KtFileTools].from[KtFileTools.KtFileToolsImpl]
   make[KtTreeTools].from[KtTreeTools.KtTreeToolsImpl]
 
-  make[KtTypes].from { (target: CompilerTarget.KtTarget) => new KtTypes(target.language.multiplatform) }
+  make[KtTypes].from((target: CompilerTarget.KtTarget) => new KtTypes(target.language.multiplatform))
   make[KtTypeTranslator]
   makeFactory[KtConversionTranslator.Factory[F]]
 
@@ -315,4 +317,22 @@ class BaboonCommonSwModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
   make[SwBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
   many[BaboonAbstractTranslator[F]]
     .ref[SwBaboonTranslator[F]]
+}
+
+class BaboonCommonGqlModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
+  include(new SharedTranspilerModule[F])
+
+  make[GqlTypeTranslator]
+  make[GqlBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
+  many[BaboonAbstractTranslator[F]]
+    .ref[GqlBaboonTranslator[F]]
+}
+
+class BaboonCommonOasModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
+  include(new SharedTranspilerModule[F])
+
+  make[OasTypeTranslator]
+  make[OasBaboonTranslator[F]].aliased[BaboonAbstractTranslator[F]]
+  many[BaboonAbstractTranslator[F]]
+    .ref[OasBaboonTranslator[F]]
 }

@@ -155,8 +155,8 @@ object KtTypes {
   val javaMathPkg: KtPackageId = parseKtPkg("java.math")
   val javaTimePkg: KtPackageId = parseKtPkg("java.time")
 
-  val javaIoPkg: KtPackageId        = parseKtPkg("java.io")
-  val javaFile: KtType              = KtType(javaIoPkg, "File")
+  val javaIoPkg: KtPackageId = parseKtPkg("java.io")
+  val javaFile: KtType       = KtType(javaIoPkg, "File")
 
   val javaNioFilePkg: KtPackageId = parseKtPkg("java.nio.file")
   val javaNioFiles: KtType        = KtType(javaNioFilePkg, "Files")

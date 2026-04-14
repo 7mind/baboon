@@ -35,18 +35,22 @@ object TsServiceWiringTranslator {
       ServiceContextResolver.resolve(domain, "typescript", target.language.serviceContext, target.language.pragmas)
 
     private def activeJsonCodec(service: Typedef.Service): Option[TsCodecTranslator] = {
-      codecs.find { c =>
-        c.isInstanceOf[TsJsonCodecGenerator] && service.methods.forall { m =>
-          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
-        }
+      codecs.find {
+        c =>
+          c.isInstanceOf[TsJsonCodecGenerator] && service.methods.forall {
+            m =>
+              c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+          }
       }
     }
 
     private def activeBinCodec(service: Typedef.Service): Option[TsCodecTranslator] = {
-      codecs.find { c =>
-        c.isInstanceOf[TsUEBACodecGenerator] && service.methods.forall { m =>
-          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
-        }
+      codecs.find {
+        c =>
+          c.isInstanceOf[TsUEBACodecGenerator] && service.methods.forall {
+            m =>
+              c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+          }
       }
     }
 
@@ -148,50 +152,53 @@ object TsServiceWiringTranslator {
     override def translateClient(defn: DomainMember.User): Option[TsDefnTranslator.Output] = {
       defn.defn match {
         case service: Typedef.Service =>
-          val svcType = typeTranslator.asTsType(service.id, domain, evo, tsFileTools.definitionsBasePkg)
+          val svcType   = typeTranslator.asTsType(service.id, domain, evo, tsFileTools.definitionsBasePkg)
           val jsonCodec = activeJsonCodec(service)
           val binCodec  = activeBinCodec(service)
 
-          val clientMethods = service.methods.flatMap { m =>
-            val inTypeRef  = typeTranslator.asTsType(m.sig.id.asInstanceOf[TypeId.User], domain, evo, tsFileTools.definitionsBasePkg)
-            val inType     = typeTranslator.asTsRef(m.sig, domain, evo, tsFileTools.definitionsBasePkg)
-            val outType    = m.out.map(typeTranslator.asTsRef(_, domain, evo, tsFileTools.definitionsBasePkg))
-            val retType    = outType.getOrElse(q"void")
+          val clientMethods = service.methods.flatMap {
+            m =>
+              val inTypeRef = typeTranslator.asTsType(m.sig.id.asInstanceOf[TypeId.User], domain, evo, tsFileTools.definitionsBasePkg)
+              val inType    = typeTranslator.asTsRef(m.sig, domain, evo, tsFileTools.definitionsBasePkg)
+              val outType   = m.out.map(typeTranslator.asTsRef(_, domain, evo, tsFileTools.definitionsBasePkg))
+              val retType   = outType.getOrElse(q"void")
 
-            val jsonMethod = jsonCodec.map { codec =>
-              val inCodec = codec.codecName(inTypeRef)
-              val decodeOut = m.out match {
-                case Some(outRef) =>
-                  val outTypeRef = typeTranslator.asTsType(outRef.id.asInstanceOf[TypeId.User], domain, evo, tsFileTools.definitionsBasePkg)
-                  val outCodec   = codec.codecName(outTypeRef)
-                  q"return $outCodec.instance.decode($tsBaboonCodecContext.Default, JSON.parse(resp)) as $retType;"
-                case None => q"return undefined as unknown as $retType;"
+              val jsonMethod = jsonCodec.map {
+                codec =>
+                  val inCodec = codec.codecName(inTypeRef)
+                  val decodeOut = m.out match {
+                    case Some(outRef) =>
+                      val outTypeRef = typeTranslator.asTsType(outRef.id.asInstanceOf[TypeId.User], domain, evo, tsFileTools.definitionsBasePkg)
+                      val outCodec   = codec.codecName(outTypeRef)
+                      q"return $outCodec.instance.decode($tsBaboonCodecContext.Default, JSON.parse(resp)) as $retType;"
+                    case None => q"return undefined as unknown as $retType;"
+                  }
+                  q"""public async ${m.name.name}Json(${ctxParamDecl}arg: $inType): Promise<$retType> {
+                     |    const encoded = JSON.stringify($inCodec.instance.encode($tsBaboonCodecContext.Default, arg));
+                     |    const resp = await this.transportJson("${svcType.name}", "${m.name.name}", encoded);
+                     |    ${decodeOut.shift(4).trim}
+                     |}""".stripMargin
               }
-              q"""public async ${m.name.name}Json(${ctxParamDecl}arg: $inType): Promise<$retType> {
-                 |    const encoded = JSON.stringify($inCodec.instance.encode($tsBaboonCodecContext.Default, arg));
-                 |    const resp = await this.transportJson("${svcType.name}", "${m.name.name}", encoded);
-                 |    ${decodeOut.shift(4).trim}
-                 |}""".stripMargin
-            }
 
-            val uebaMethod = binCodec.map { codec =>
-              val inCodec = codec.codecName(inTypeRef)
-              val decodeOut = m.out match {
-                case Some(outRef) =>
-                  val outTypeRef = typeTranslator.asTsType(outRef.id.asInstanceOf[TypeId.User], domain, evo, tsFileTools.definitionsBasePkg)
-                  val outCodec   = codec.codecName(outTypeRef)
-                  q"return $outCodec.instance.decode(ctx, new $tsBaboonBinReader(resp));"
-                case None => q"return undefined as unknown as $retType;"
+              val uebaMethod = binCodec.map {
+                codec =>
+                  val inCodec = codec.codecName(inTypeRef)
+                  val decodeOut = m.out match {
+                    case Some(outRef) =>
+                      val outTypeRef = typeTranslator.asTsType(outRef.id.asInstanceOf[TypeId.User], domain, evo, tsFileTools.definitionsBasePkg)
+                      val outCodec   = codec.codecName(outTypeRef)
+                      q"return $outCodec.instance.decode(ctx, new $tsBaboonBinReader(resp));"
+                    case None => q"return undefined as unknown as $retType;"
+                  }
+                  q"""public async ${m.name.name}(${ctxParamDecl}arg: $inType, ctx: $tsBaboonCodecContext = $tsBaboonCodecContext.Default): Promise<$retType> {
+                     |    const writer = new $tsBaboonBinWriter();
+                     |    $inCodec.instance.encode(ctx, arg, writer);
+                     |    const resp = await this.transportUeba("${svcType.name}", "${m.name.name}", writer.toBytes());
+                     |    ${decodeOut.shift(4).trim}
+                     |}""".stripMargin
               }
-              q"""public async ${m.name.name}(${ctxParamDecl}arg: $inType, ctx: $tsBaboonCodecContext = $tsBaboonCodecContext.Default): Promise<$retType> {
-                 |    const writer = new $tsBaboonBinWriter();
-                 |    $inCodec.instance.encode(ctx, arg, writer);
-                 |    const resp = await this.transportUeba("${svcType.name}", "${m.name.name}", writer.toBytes());
-                 |    ${decodeOut.shift(4).trim}
-                 |}""".stripMargin
-            }
 
-            uebaMethod.toList ++ jsonMethod.toList
+              uebaMethod.toList ++ jsonMethod.toList
           }
 
           if (clientMethods.isEmpty) return None
@@ -251,27 +258,30 @@ object TsServiceWiringTranslator {
       val retTypeUeba = if (isAsync) "Promise<Uint8Array>" else "Uint8Array"
       val retTypeJson = if (isAsync) "Promise<string>" else "string"
 
-      val implFields = services.map { s =>
-        val svcType = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
-        q"${s.id.name.name}: $svcType"
+      val implFields = services.map {
+        s =>
+          val svcType = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
+          q"${s.id.name.name}: $svcType"
       }
 
       val uebaFn = if (binCodecActive) {
-        val cases = services.flatMap { s =>
-          activeBinCodec(s).map { _ =>
-            val svcType     = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
-            val wiringFnRef = TsValue.TsType(
-              TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ getWiringPathForService(s).stripSuffix(".ts").split('/').toList),
-              s"invokeUeba_${svcType.name}",
-            )
-            if (resolved.noErrors) {
-              q"""case "${s.id.name.name}":
-                 |    return ${awaitPrefix}$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, ${ctxArgPass}ctx);""".stripMargin
-            } else {
-              q"""case "${s.id.name.name}":
-                 |    return ${awaitPrefix}$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, rt, ${ctxArgPass}ctx);""".stripMargin
+        val cases = services.flatMap {
+          s =>
+            activeBinCodec(s).map {
+              _ =>
+                val svcType = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
+                val wiringFnRef = TsValue.TsType(
+                  TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ getWiringPathForService(s).stripSuffix(".ts").split('/').toList),
+                  s"invokeUeba_${svcType.name}",
+                )
+                if (resolved.noErrors) {
+                  q"""case "${s.id.name.name}":
+                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, ${ctxArgPass}ctx);""".stripMargin
+                } else {
+                  q"""case "${s.id.name.name}":
+                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, rt, ${ctxArgPass}ctx);""".stripMargin
+                }
             }
-          }
         }
 
         val rtParam = if (resolved.noErrors) "" else s"rt: $ibaboonServiceRt, "
@@ -282,7 +292,7 @@ object TsServiceWiringTranslator {
              |    methodName: string,
              |    data: Uint8Array,
              |    impls: {${implFields.join("; ")}},
-             |    ${rtParam}${ctxParamDecl}ctx: $tsBaboonCodecContext
+             |    $rtParam${ctxParamDecl}ctx: $tsBaboonCodecContext
              |): $retTypeUeba {
              |    switch (serviceName) {
              |        ${cases.joinN().shift(8).trim}
@@ -294,21 +304,23 @@ object TsServiceWiringTranslator {
       } else None
 
       val jsonFn = if (jsonCodecActive) {
-        val cases = services.flatMap { s =>
-          activeJsonCodec(s).map { _ =>
-            val svcType     = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
-            val wiringFnRef = TsValue.TsType(
-              TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ getWiringPathForService(s).stripSuffix(".ts").split('/').toList),
-              s"invokeJson_${svcType.name}",
-            )
-            if (resolved.noErrors) {
-              q"""case "${s.id.name.name}":
-                 |    return ${awaitPrefix}$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, ${ctxArgPass}ctx);""".stripMargin
-            } else {
-              q"""case "${s.id.name.name}":
-                 |    return ${awaitPrefix}$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, rt, ${ctxArgPass}ctx);""".stripMargin
+        val cases = services.flatMap {
+          s =>
+            activeJsonCodec(s).map {
+              _ =>
+                val svcType = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
+                val wiringFnRef = TsValue.TsType(
+                  TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ getWiringPathForService(s).stripSuffix(".ts").split('/').toList),
+                  s"invokeJson_${svcType.name}",
+                )
+                if (resolved.noErrors) {
+                  q"""case "${s.id.name.name}":
+                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, ${ctxArgPass}ctx);""".stripMargin
+                } else {
+                  q"""case "${s.id.name.name}":
+                     |    return $awaitPrefix$wiringFnRef({ serviceName, methodName }, data, impls.${s.id.name.name}, rt, ${ctxArgPass}ctx);""".stripMargin
+                }
             }
-          }
         }
 
         val rtParam = if (resolved.noErrors) "" else s"rt: $ibaboonServiceRt, "
@@ -319,7 +331,7 @@ object TsServiceWiringTranslator {
              |    methodName: string,
              |    data: string,
              |    impls: {${implFields.join("; ")}},
-             |    ${rtParam}${ctxParamDecl}ctx: $tsBaboonCodecContext
+             |    $rtParam${ctxParamDecl}ctx: $tsBaboonCodecContext
              |): $retTypeJson {
              |    switch (serviceName) {
              |        ${cases.joinN().shift(8).trim}
@@ -330,7 +342,7 @@ object TsServiceWiringTranslator {
         )
       } else None
 
-      val tree = Seq(uebaFn, jsonFn).flatten.joinNN()
+      val tree             = Seq(uebaFn, jsonFn).flatten.joinNN()
       val dispatcherPath   = s"$fbase/baboon-dispatcher.ts"
       val dispatcherModule = TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ dispatcherPath.stripSuffix(".ts").split('/').toList)
 
@@ -385,8 +397,8 @@ object TsServiceWiringTranslator {
 
     private val isAsync: Boolean = target.language.asyncServices
 
-    private val asyncPrefix: String  = if (isAsync) "async " else ""
-    private val awaitPrefix: String  = if (isAsync) "await " else ""
+    private val asyncPrefix: String = if (isAsync) "async " else ""
+    private val awaitPrefix: String = if (isAsync) "await " else ""
 
     // ========== noErrors mode ==========
 
@@ -594,7 +606,10 @@ object TsServiceWiringTranslator {
             if (hasErrType) {
               q"""try {
                  |    const callResult = await impl.${m.name.name}(${ctxArgPass}decoded);
-                 |    return rt.leftMap(callResult, (err: unknown) => ({ tag: 'CallFailed' as const, method, domainError: err })) as unknown as ${renderContainer("BaboonWiringError", wireType)};
+                 |    return rt.leftMap(callResult, (err: unknown) => ({ tag: 'CallFailed' as const, method, domainError: err })) as unknown as ${renderContainer(
+                  "BaboonWiringError",
+                  wireType,
+                )};
                  |} catch (ex: unknown) {
                  |    return rt.fail<$baboonWiringError, $wireType>({ tag: 'CallFailed', method, domainError: ex });
                  |}""".stripMargin
@@ -686,13 +701,15 @@ object TsServiceWiringTranslator {
       svcType: TsValue.TsType,
       codec: TsCodecTranslator,
     ): TextTree[TsValue] = {
-      val cases = service.methods.map { m =>
-        generateErrorsMethodBody(
-          m, codec,
-          decodeRef => q"$decodeRef.instance.decode($tsBaboonCodecContext.Default, JSON.parse(data))",
-          (encodeRef, _) => q"JSON.stringify($encodeRef.instance.encode($tsBaboonCodecContext.Default, v))",
-          "string",
-        )
+      val cases = service.methods.map {
+        m =>
+          generateErrorsMethodBody(
+            m,
+            codec,
+            decodeRef => q"$decodeRef.instance.decode($tsBaboonCodecContext.Default, JSON.parse(data))",
+            (encodeRef, _) => q"JSON.stringify($encodeRef.instance.encode($tsBaboonCodecContext.Default, v))",
+            "string",
+          )
       }.join("\n")
 
       q"""export ${asyncPrefix}function invokeJson_${svcType.name}(
@@ -715,13 +732,15 @@ object TsServiceWiringTranslator {
       svcType: TsValue.TsType,
       codec: TsCodecTranslator,
     ): TextTree[TsValue] = {
-      val cases = service.methods.map { m =>
-        generateErrorsMethodBody(
-          m, codec,
-          decodeRef => q"(() => { const reader = new $tsBaboonBinReader(data); return $decodeRef.instance.decode(ctx, reader); })()",
-          (encodeRef, _) => q"(() => { const writer = new $tsBaboonBinWriter(); $encodeRef.instance.encode(ctx, v, writer); return writer.toBytes(); })()",
-          "Uint8Array",
-        )
+      val cases = service.methods.map {
+        m =>
+          generateErrorsMethodBody(
+            m,
+            codec,
+            decodeRef => q"(() => { const reader = new $tsBaboonBinReader(data); return $decodeRef.instance.decode(ctx, reader); })()",
+            (encodeRef, _) => q"(() => { const writer = new $tsBaboonBinWriter(); $encodeRef.instance.encode(ctx, v, writer); return writer.toBytes(); })()",
+            "Uint8Array",
+          )
       }.join("\n")
 
       q"""export ${asyncPrefix}function invokeUeba_${svcType.name}(

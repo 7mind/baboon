@@ -210,7 +210,7 @@ class TsJsonCodecGenerator(
           case TypeId.Builtins.set =>
             q"Array.from($ref).map(item => ${mkJsonEncoder(args.head, q"item")})"
           case TypeId.Builtins.map =>
-            val keyType = args.head
+            val keyType  = args.head
             val isRecord = trans.isStringKeyMap(tpe)
             keyType match {
               case TypeRef.Scalar(TypeId.Builtins.str) if isRecord =>

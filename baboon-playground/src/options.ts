@@ -4,6 +4,10 @@ import {
   LANGUAGE_DISPLAY_NAMES,
 } from "./compiler.ts";
 
+// Schema-only backends don't have codec/evolution options
+const SCHEMA_ONLY_LANGUAGES: ReadonlySet<string> = new Set(["graphql", "openapi"]);
+const CODEC_LANGUAGES = TARGET_LANGUAGES.filter((l) => !SCHEMA_ONLY_LANGUAGES.has(l));
+
 export interface GenericOptions {
   disableConversions: boolean;
 }
@@ -143,7 +147,7 @@ export class OptionsPanel {
     this.scrollBody.innerHTML = "";
     this.scrollBody.appendChild(this.renderGenericSection());
     this.scrollBody.appendChild(this.renderGlobalLanguageSection());
-    for (const lang of TARGET_LANGUAGES) {
+    for (const lang of CODEC_LANGUAGES) {
       this.scrollBody.appendChild(this.renderLanguageSection(lang));
     }
   }
@@ -190,7 +194,7 @@ export class OptionsPanel {
   private computeGlobalState(key: keyof LanguageOptions): boolean | null {
     let allTrue = true;
     let allFalse = true;
-    for (const lang of TARGET_LANGUAGES) {
+    for (const lang of CODEC_LANGUAGES) {
       if (this.options.languages[lang][key]) {
         allFalse = false;
       } else {
@@ -215,7 +219,7 @@ export class OptionsPanel {
         def.description,
         state === true,
         (checked) => {
-          for (const lang of TARGET_LANGUAGES) {
+          for (const lang of CODEC_LANGUAGES) {
             this.options.languages[lang][def.key] = checked;
           }
           this.onChange(this.options);

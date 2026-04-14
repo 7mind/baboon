@@ -69,6 +69,20 @@ object CompilerTargetJS {
     generic: GenericOptions,
     language: SwOptions,
   ) extends CompilerTargetJS
+
+  case class GqlTarget(
+    id: String,
+    output: OutputOptionsJS,
+    generic: GenericOptions,
+    language: GqlOptions,
+  ) extends CompilerTargetJS
+
+  case class OasTarget(
+    id: String,
+    output: OutputOptionsJS,
+    generic: GenericOptions,
+    language: OasOptions,
+  ) extends CompilerTargetJS
 }
 
 final case class OutputOptionsJS(

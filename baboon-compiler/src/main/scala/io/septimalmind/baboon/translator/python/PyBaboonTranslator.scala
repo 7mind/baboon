@@ -180,8 +180,9 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
 
     val usualImportsByModule = usual.groupBy(_.moduleId).toList.sortBy { case (moduleId, types) => moduleId.path.size + types.size }.reverse.map {
       case (module, types) =>
-        val typesString = types.map { t =>
-          aliasMap.get(t).map(a => s"${t.name} as $a").getOrElse(t.name)
+        val typesString = types.map {
+          t =>
+            aliasMap.get(t).map(a => s"${t.name} as $a").getOrElse(t.name)
         }.mkString(", ")
         if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule || module == pyBaboonConversionsModule || module == pyBaboonServiceWiringModule) {
           val baseString = pyFileTools.definitionsBasePkg.mkString(".")
@@ -204,13 +205,14 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
     val conflicting = usedTypes.groupBy(_.name).filter(_._2.size > 1)
     conflicting.flatMap {
       case (name, group) =>
-        val paths      = group.map(t => t -> t.moduleId.path.toList)
-        val commonLen  = paths.map(_._2).reduce((a, b) => a.zip(b).takeWhile { case (x, y) => x == y }.map(_._1)).size
+        val paths     = group.map(t => t -> t.moduleId.path.toList)
+        val commonLen = paths.map(_._2).reduce((a, b) => a.zip(b).takeWhile { case (x, y) => x == y }.map(_._1)).size
         paths.map {
           case (t, path) =>
             val distinguishing = path.drop(commonLen).dropRight(1)
-            val prefix = if (distinguishing.nonEmpty) distinguishing.mkString("_")
-                         else path.dropRight(1).lastOption.getOrElse("m")
+            val prefix =
+              if (distinguishing.nonEmpty) distinguishing.mkString("_")
+              else path.dropRight(1).lastOption.getOrElse("m")
             t -> s"${prefix}_$name"
         }
     }

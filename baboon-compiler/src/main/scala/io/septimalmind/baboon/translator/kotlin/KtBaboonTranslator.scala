@@ -237,11 +237,12 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
         if (jsonEnabled) content
         else {
           var inJsonSection = false
-          content.linesIterator.flatMap { line =>
-            if (line.trim == "// @baboon:json-start") { inJsonSection = true; None }
-            else if (line.trim == "// @baboon:json-end") { inJsonSection = false; None }
-            else if (inJsonSection) None
-            else Some(line)
+          content.linesIterator.flatMap {
+            line =>
+              if (line.trim == "// @baboon:json-start") { inJsonSection = true; None }
+              else if (line.trim == "// @baboon:json-end") { inJsonSection = false; None }
+              else if (inJsonSection) None
+              else Some(line)
           }.mkString("\n")
         }
       }
@@ -302,8 +303,8 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
       val conversionRegs = convs.flatMap(_.reg.iterator.toSeq).toSeq
       val missing        = convs.flatMap(_.missing.iterator.toSeq).toSeq
 
-      val traitSuppress = if (missing.nonEmpty) "@Suppress(\"DEPRECATION\") " else ""
-      val classSuppress = if (conversionRegs.nonEmpty) "@Suppress(\"DEPRECATION\") " else ""
+      val traitSuppress   = if (missing.nonEmpty) "@Suppress(\"DEPRECATION\") " else ""
+      val classSuppress   = if (conversionRegs.nonEmpty) "@Suppress(\"DEPRECATION\") " else ""
       val isLatestVersion = domain.version == lineage.evolution.latest
       val codecSuppress   = if (!isLatestVersion) "@Suppress(\"DEPRECATION\") " else ""
       val converter =
@@ -321,8 +322,8 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
            |}""".stripMargin
 
       import izumi.fundamentals.collections.IzCollections.*
-      val regsMap = defnOut.flatMap(_.codecReg).toMultimap.view.mapValues(_.flatten).toMap
-        .filter { case (codecId, _) => codecId != "Json" || target.language.generateJsonCodecs }
+      val regsMap =
+        defnOut.flatMap(_.codecReg).toMultimap.view.mapValues(_.flatten).toMap.filter { case (codecId, _) => codecId != "Json" || target.language.generateJsonCodecs }
 
       val codecs = regsMap.map {
         case (codecId, regs) =>

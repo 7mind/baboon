@@ -33,26 +33,40 @@ object Baboon {
     */
   private val sharedArgNames: Set[String] = Set(
     // GenericTranspilerCLIOptions
-    "output", "fixtureOutput", "testOutput", "runtime", "disableConversions",
-    "omitMostRecentVersionSuffixFromPaths", "omitMostRecentVersionSuffixFromNamespaces",
+    "output",
+    "fixtureOutput",
+    "testOutput",
+    "runtime",
+    "disableConversions",
+    "omitMostRecentVersionSuffixFromPaths",
+    "omitMostRecentVersionSuffixFromNamespaces",
     "codecTestIterations",
     // SharedCLIOptions
     "extAllowCleanup",
-    "serviceResultNoErrors", "serviceResultType", "serviceResultPattern",
-    "serviceContextMode", "serviceContextType", "serviceContextParameterName",
+    "serviceResultNoErrors",
+    "serviceResultType",
+    "serviceResultPattern",
+    "serviceContextMode",
+    "serviceContextType",
+    "serviceContextParameterName",
     "pragma",
-    "generateJsonCodecs", "generateUebaCodecs",
-    "generateJsonCodecsByDefault", "generateUebaCodecsByDefault",
+    "generateJsonCodecs",
+    "generateUebaCodecs",
+    "generateJsonCodecsByDefault",
+    "generateUebaCodecsByDefault",
     "enableDeprecatedEncoders",
     // ScalaHktCLIOptions
-    "serviceResultHkt", "serviceResultHktName", "serviceResultHktSignature",
+    "serviceResultHkt",
+    "serviceResultHktName",
+    "serviceResultHktSignature",
   )
 
   private def camelToKebab(s: String): String = {
     val sb = new StringBuilder
-    s.foreach { c =>
-      if (c.isUpper && sb.nonEmpty) sb.append('-')
-      sb.append(c.toLower)
+    s.foreach {
+      c =>
+        if (c.isUpper && sb.nonEmpty) sb.append('-')
+        sb.append(c.toLower)
     }
     sb.toString
   }
@@ -64,14 +78,15 @@ object Baboon {
 
     if (languageArgs.isEmpty) return s"$label options (:$modality):\n  (no language-specific options)\n"
 
-    val lines = languageArgs.map { arg =>
-      val flag  = s"--${camelToKebab(arg.name.name)}"
-      val value = arg.valueDescription
-        .map(_.description)
-        .filterNot(d => d == "true/false" || d == "bool?" || d == "boolean")
-        .fold("")(v => s" <$v>")
-      val desc  = arg.helpMessage.fold("")(_.message)
-      s"  $flag$value  $desc"
+    val lines = languageArgs.map {
+      arg =>
+        val flag = s"--${camelToKebab(arg.name.name)}"
+        val value = arg.valueDescription
+          .map(_.description)
+          .filterNot(d => d == "true/false" || d == "bool?" || d == "boolean")
+          .fold("")(v => s" <$v>")
+        val desc = arg.helpMessage.fold("")(_.message)
+        s"  $flag$value  $desc"
     }
     s"$label options (:$modality):\n${lines.mkString("\n")}\n"
   }
@@ -89,6 +104,8 @@ object Baboon {
       formatLanguageHelp[JvCLIOptions]("Java", "java"),
       formatLanguageHelp[DtCLIOptions]("Dart", "dart"),
       formatLanguageHelp[SwCLIOptions]("Swift", "swift"),
+      formatLanguageHelp[GqlCLIOptions]("GraphQL", "graphql"),
+      formatLanguageHelp[OasCLIOptions]("OpenAPI", "openapi"),
     ).mkString("\n")
 
     s"""Usage: baboon [options] <modality> [modality-options] [<modality> [modality-options] ...]
@@ -112,6 +129,8 @@ object Baboon {
        |  :java                    Generate Java 21 code
        |  :dart                    Generate Dart 3+ code
        |  :swift                   Generate Swift 5.9+ code
+       |  :graphql                 Generate GraphQL SDL schemas
+       |  :openapi                 Generate OpenAPI 3.1 component schemas
        |  :lsp                     Start LSP server
        |  :explore                 Start interactive explorer
        |  :scheme                  Emit a cleaned-up single .baboon file for a domain version
@@ -388,13 +407,15 @@ object Baboon {
                             pragmas                     = parsePragmas(opts.pragma),
                             asyncServices               = opts.tsAsyncServices.getOrElse(false),
                             mapsAsRecords               = opts.tsMapsAsRecords.getOrElse(false),
-                            timestampsUtcMode = if (opts.tsTimestampsAsStrings.getOrElse(false)) "string"
-                                                else if (opts.tsTimestampsAsDates.getOrElse(false)) "date"
-                                                else "wrapper",
-                            timestampsOffsetMode = if (opts.tsTimestampsAsStrings.getOrElse(false)) "string"
-                                                   else if (opts.tsTimestampsAsDates.getOrElse(false)) "date"
-                                                   else "wrapper",
-                            enumLowercaseValues         = opts.tsEnumLowercaseValues.getOrElse(false),
+                            timestampsUtcMode =
+                              if (opts.tsTimestampsAsStrings.getOrElse(false)) "string"
+                              else if (opts.tsTimestampsAsDates.getOrElse(false)) "date"
+                              else "wrapper",
+                            timestampsOffsetMode =
+                              if (opts.tsTimestampsAsStrings.getOrElse(false)) "string"
+                              else if (opts.tsTimestampsAsDates.getOrElse(false)) "date"
+                              else "wrapper",
+                            enumLowercaseValues = opts.tsEnumLowercaseValues.getOrElse(false),
                           ),
                         )
                     }
@@ -489,6 +510,34 @@ object Baboon {
                           ),
                         )
                     }
+                  case "graphql" =>
+                    CaseApp.parse[GqlCLIOptions](roleArgs).leftMap(e => s"Can't parse graphql CLI: $e").map {
+                      case (opts, _) =>
+                        val shopts = mkGenericOpts(opts)
+
+                        CompilerTarget.GqlTarget(
+                          id      = "GraphQL",
+                          output  = shopts.outOpts,
+                          generic = shopts.genericOpts,
+                          language = GqlOptions(
+                            pragmas = parsePragmas(opts.pragma)
+                          ),
+                        )
+                    }
+                  case "openapi" =>
+                    CaseApp.parse[OasCLIOptions](roleArgs).leftMap(e => s"Can't parse openapi CLI: $e").map {
+                      case (opts, _) =>
+                        val shopts = mkGenericOpts(opts)
+
+                        CompilerTarget.OasTarget(
+                          id      = "OpenAPI",
+                          output  = shopts.outOpts,
+                          generic = shopts.genericOpts,
+                          language = OasOptions(
+                            pragmas = parsePragmas(opts.pragma)
+                          ),
+                        )
+                    }
                   case r => Left(s"Unknown role id: $r")
                 }
             }
@@ -498,9 +547,10 @@ object Baboon {
 
             val emitOnly = generalOptions._1.emitOnly.map {
               raw =>
-                raw.split(',').map(_.trim).filter(_.nonEmpty).map {
-                  s => Pkg(NEList.unsafeFrom(s.split('.').toList))
-                }.toSet
+                raw
+                  .split(',').map(_.trim).filter(_.nonEmpty).map {
+                    s => Pkg(NEList.unsafeFrom(s.split('.').toList))
+                  }.toSet
             }
 
             val options = CompilerOptions(
@@ -547,7 +597,7 @@ object Baboon {
 
     val safeToRemove = NEList.from(opts.extAllowCleanup) match {
       case Some(value) => value.toSet
-      case None        => Set("meta", "cs", "json", "scala", "py", "pyc", "rs", "ts", "kt", "java", "dart", "swift", "toml")
+      case None        => Set("meta", "cs", "json", "scala", "py", "pyc", "rs", "ts", "kt", "java", "dart", "swift", "toml", "graphql")
     }
 
     val outOpts = OutputOptions(
@@ -628,6 +678,10 @@ object Baboon {
         new BaboonJvmDtModule[F](t)
       case t: CompilerTarget.SwTarget =>
         new BaboonJvmSwModule[F](t)
+      case t: CompilerTarget.GqlTarget =>
+        new BaboonJvmGqlModule[F](t)
+      case t: CompilerTarget.OasTarget =>
+        new BaboonJvmOasModule[F](t)
     }
 
     Injector
