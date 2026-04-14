@@ -9,6 +9,12 @@
 [![Nix Flake](https://img.shields.io/badge/Nix-Flake-blue.svg)](https://nixos.wiki/wiki/Flakes)
 [![Playground](https://img.shields.io/badge/Try-Playground-green)](https://7mind.github.io/baboon/)
 
+<p align="center">
+  <a href="https://7mind.github.io/baboon/">
+    <img src="https://img.shields.io/badge/%F0%9F%90%92%20TRY%20ME%20%E2%80%94%20Online%20Playground-blue?style=for-the-badge&logoColor=white" alt="Try Me — Online Playground" height="40"/>
+  </a>
+</p>
+
 *Let the Baboon do the monkey job.*
 
 Baboon is a minimal Data Modeling Language and compiler that provides ergonomic, declarative schemas and enforces reliable schema evolution. The compiler runs as a fast immutable multi-phase DAG transform, and is easy to understand and maintain.
