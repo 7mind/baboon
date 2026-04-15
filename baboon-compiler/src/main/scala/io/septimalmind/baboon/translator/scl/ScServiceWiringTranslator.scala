@@ -29,18 +29,22 @@ object ScServiceWiringTranslator {
       ServiceContextResolver.resolve(domain, "scala", target.language.serviceContext, target.language.pragmas)
 
     private def hasActiveJsonCodecs(service: Typedef.Service): Boolean = {
-      codecs.exists { c =>
-        c.isInstanceOf[ScJsonCodecGenerator] && service.methods.forall { m =>
-          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
-        }
+      codecs.exists {
+        c =>
+          c.isInstanceOf[ScJsonCodecGenerator] && service.methods.forall {
+            m =>
+              c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+          }
       }
     }
 
     private def hasActiveUebaCodecs(service: Typedef.Service): Boolean = {
-      codecs.exists { c =>
-        c.isInstanceOf[ScUEBACodecGenerator] && service.methods.forall { m =>
-          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
-        }
+      codecs.exists {
+        c =>
+          c.isInstanceOf[ScUEBACodecGenerator] && service.methods.forall {
+            m =>
+              c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+          }
       }
     }
 
@@ -167,7 +171,7 @@ object ScServiceWiringTranslator {
     }
 
     private def renderFq(tree: TextTree[ScValue]): String = tree.mapRender {
-      case t: ScValue.ScType     => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
+      case t: ScValue.ScType => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
     }
 
     // ========== noErrors mode ==========

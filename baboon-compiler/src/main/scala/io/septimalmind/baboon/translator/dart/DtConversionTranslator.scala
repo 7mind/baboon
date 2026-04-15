@@ -41,7 +41,7 @@ class DtConversionTranslator[F[+_, +_]: Error2](
     oldRef: TextTree[DtValue],
     depth: Int,
     maybeOldTpe: Option[TypeRef] = None,
-    isPromotable: Boolean = false,
+    isPromotable: Boolean        = false,
   ): TextTree[DtValue] = {
     import io.septimalmind.baboon.translator.FQNSymbol.*
 

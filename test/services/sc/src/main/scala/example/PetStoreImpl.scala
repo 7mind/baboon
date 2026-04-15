@@ -5,7 +5,7 @@ import scala.collection.mutable
 
 class PetStoreImpl extends petstore.api.PetStore {
   private val idCounter = new AtomicLong(0)
-  private val pets = mutable.Map.empty[Long, petstore.api.Pet]
+  private val pets      = mutable.Map.empty[Long, petstore.api.Pet]
 
   def reset(): Unit = {
     idCounter.set(0)
@@ -15,10 +15,10 @@ class PetStoreImpl extends petstore.api.PetStore {
   override def addPet(arg: petstore.api.petstore.addpet.In): petstore.api.petstore.addpet.Out = {
     val id = idCounter.incrementAndGet()
     val pet = petstore.api.Pet(
-      id = id,
-      name = arg.name,
+      id     = id,
+      name   = arg.name,
       status = arg.status,
-      tag = arg.tag,
+      tag    = arg.tag,
     )
     pets.put(id, pet)
     petstore.api.petstore.addpet.Out(pet)

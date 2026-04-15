@@ -178,7 +178,7 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
               List(q"pub mod $escaped;")
             } else {
               val reexport = target.language.reexportMode match {
-                case "none" => false
+                case "none"      => false
                 case "selective" =>
                   // Only re-export if not a wiring, client, conversion, or test module
                   // Note: _fixture must be re-exported because generated tests and cross-fixture references use super::
@@ -348,8 +348,8 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       case TypeId.Builtins.tsu | TypeId.Builtins.tso => true
       case _                                         => false
     }
-    val hasUuids = allTypes.contains(TypeId.Builtins.uid)
-    val hasDecimals = allTypes.contains(TypeId.Builtins.f128)
+    val hasUuids      = allTypes.contains(TypeId.Builtins.uid)
+    val hasDecimals   = allTypes.contains(TypeId.Builtins.f128)
     val hasJsonCodecs = target.language.generateJsonCodecs
     // lenient_numeric (requires serde_json) is used whenever any field contains i64/u64
     val hasLenientNumeric = allTypes.exists {

@@ -32,18 +32,22 @@ object PyServiceWiringTranslator {
       ServiceContextResolver.resolve(domain, "python", target.language.serviceContext, target.language.pragmas)
 
     private def hasActiveJsonCodecs(service: Typedef.Service): Boolean = {
-      codecs.exists { c =>
-        c.isInstanceOf[PyJsonCodecGenerator] && service.methods.forall { m =>
-          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
-        }
+      codecs.exists {
+        c =>
+          c.isInstanceOf[PyJsonCodecGenerator] && service.methods.forall {
+            m =>
+              c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+          }
       }
     }
 
     private def hasActiveUebaCodecs(service: Typedef.Service): Boolean = {
-      codecs.exists { c =>
-        c.isInstanceOf[PyUEBACodecGenerator] && service.methods.forall { m =>
-          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
-        }
+      codecs.exists {
+        c =>
+          c.isInstanceOf[PyUEBACodecGenerator] && service.methods.forall {
+            m =>
+              c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+          }
       }
     }
 

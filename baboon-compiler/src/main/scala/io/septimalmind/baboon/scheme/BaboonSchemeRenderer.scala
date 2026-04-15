@@ -65,9 +65,10 @@ object BaboonSchemeRenderer {
 
       // Render aliases grouped by namespace
       val (toplevelAliases, _) = domain.aliases.partition(_.owner == Owner.Toplevel)
-      toplevelAliases.sortBy(_.name.name).foreach { a =>
-        val rootPrefix = if (a.root) "root " else ""
-        sb.append(s"\n${rootPrefix}type ${a.name.name} = ${a.targetRepr}")
+      toplevelAliases.sortBy(_.name.name).foreach {
+        a =>
+          val rootPrefix = if (a.root) "root " else ""
+          sb.append(s"\n${rootPrefix}type ${a.name.name} = ${a.targetRepr}")
       }
 
       renderGroup(sb, grouped, userNodes, reverseDeps, domain, indent = "")
@@ -223,14 +224,16 @@ object BaboonSchemeRenderer {
           sb.append(s"\n${indent}ns $name {\n")
           val childPath = nsPath :+ name
           // Render aliases in this namespace
-          domain.aliases.filter { a =>
-            a.owner match {
-              case Owner.Ns(path) => path.map(_.name).toList == childPath
-              case _              => false
-            }
-          }.sortBy(_.name.name).foreach { a =>
-            val rootPrefix = if (a.root) "root " else ""
-            sb.append(s"${indent}  ${rootPrefix}type ${a.name.name} = ${a.targetRepr}\n")
+          domain.aliases.filter {
+            a =>
+              a.owner match {
+                case Owner.Ns(path) => path.map(_.name).toList == childPath
+                case _              => false
+              }
+          }.sortBy(_.name.name).foreach {
+            a =>
+              val rootPrefix = if (a.root) "root " else ""
+              sb.append(s"$indent  ${rootPrefix}type ${a.name.name} = ${a.targetRepr}\n")
           }
           renderGroup(sb, children, userNodes, reverseDeps, domain, indent + "  ", childPath)
           sb.append(s"$indent}\n")

@@ -74,6 +74,20 @@ object CompilerTarget {
     generic: GenericOptions,
     language: SwOptions,
   ) extends CompilerTarget
+
+  case class GqlTarget(
+    id: String,
+    output: OutputOptions,
+    generic: GenericOptions,
+    language: GqlOptions,
+  ) extends CompilerTarget
+
+  case class OasTarget(
+    id: String,
+    output: OutputOptions,
+    generic: GenericOptions,
+    language: OasOptions,
+  ) extends CompilerTarget
 }
 
 final case class HktConfig(
@@ -287,6 +301,14 @@ final case class SwOptions(
   serviceResult: ServiceResultConfig,
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
+)
+
+final case class GqlOptions(
+  pragmas: Map[String, String]
+)
+
+final case class OasOptions(
+  pragmas: Map[String, String]
 )
 
 final case class GenericOptions(

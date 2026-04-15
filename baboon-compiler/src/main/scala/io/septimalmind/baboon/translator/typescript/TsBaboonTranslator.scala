@@ -29,7 +29,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       translated <- translateFamily(family)
       runtime    <- sharedRuntime
       fixture    <- sharedFixture
-      barrels = generateBarrels(translated ++ runtime)
+      barrels     = generateBarrels(translated ++ runtime)
       rendered = (
         translated ++
           runtime ++
@@ -185,9 +185,9 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       typesByModule.map {
         case (moduleId, types) =>
           val typesString = types.map {
-            case t if aliasMap.contains(t)          => s"${t.name} as ${aliasMap(t)}"
-            case TsType(_, name, Some(alias), _)    => s"$name as $alias"
-            case t: TsValue.TsType                  => t.name
+            case t if aliasMap.contains(t)       => s"${t.name} as ${aliasMap(t)}"
+            case TsType(_, name, Some(alias), _) => s"$name as $alias"
+            case t: TsValue.TsType               => t.name
           }.mkString(", ")
           if (moduleId.path.startsWith(tsFileTools.definitionsBasePkg)) {
             definitionImport(moduleId, typesString)
@@ -215,13 +215,14 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     val conflicting = usedTypes.groupBy(_.name).filter(_._2.size > 1)
     conflicting.flatMap {
       case (name, group) =>
-        val paths      = group.map(t => t -> t.moduleId.path)
-        val commonLen  = paths.map(_._2).reduce((a, b) => a.zip(b).takeWhile { case (x, y) => x == y }.map(_._1)).size
+        val paths     = group.map(t => t -> t.moduleId.path)
+        val commonLen = paths.map(_._2).reduce((a, b) => a.zip(b).takeWhile { case (x, y) => x == y }.map(_._1)).size
         paths.map {
           case (t, path) =>
             val distinguishing = path.drop(commonLen).dropRight(1)
-            val prefix = if (distinguishing.nonEmpty) distinguishing.mkString("_")
-                         else path.dropRight(1).lastOption.getOrElse("m")
+            val prefix =
+              if (distinguishing.nonEmpty) distinguishing.mkString("_")
+              else path.dropRight(1).lastOption.getOrElse("m")
             t -> s"${prefix}_$name"
         }
     }
@@ -229,21 +230,21 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
 
   /** Extract type names that a file defines (types whose module matches the file's own module). */
   private def exportedNames(output: TsDefnTranslator.Output): Set[String] = {
-    output.tree.values
-      .collect { case t: TsValue.TsType if t.moduleId == output.module && !t.predef => t.name }
-      .toSet
+    output.tree.values.collect { case t: TsValue.TsType if t.moduleId == output.module && !t.predef => t.name }.toSet
   }
 
   private def generateBarrels(outputs: List[TsDefnTranslator.Output]): List[TsDefnTranslator.Output] = {
     val sfx = target.language.importSuffix
-    val definitionOutputs = outputs.filter(o => o.product == CompilerProduct.Definition || o.product == CompilerProduct.Runtime)
+    val definitionOutputs = outputs
+      .filter(o => o.product == CompilerProduct.Definition || o.product == CompilerProduct.Runtime)
       .filterNot(_.isBarrel)
       .filter(_.path.endsWith(".ts"))
 
     // Group files by their direct parent directory
-    val byDir = definitionOutputs.groupBy { o =>
-      val idx = o.path.lastIndexOf('/')
-      if (idx >= 0) o.path.substring(0, idx) else ""
+    val byDir = definitionOutputs.groupBy {
+      o =>
+        val idx = o.path.lastIndexOf('/')
+        if (idx >= 0) o.path.substring(0, idx) else ""
     }
 
     // Generate per-directory barrels with collision detection.
@@ -259,9 +260,10 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
 
         val reexports = if (colliding.isEmpty) {
           // No collisions — simple export * for all files
-          sortedFiles.map { f =>
-            val fname = f.path.drop(dir.length + 1).stripSuffix(".ts")
-            TextTree.text[TsValue](s"export * from './$fname$sfx';")
+          sortedFiles.map {
+            f =>
+              val fname = f.path.drop(dir.length + 1).stripSuffix(".ts")
+              TextTree.text[TsValue](s"export * from './$fname$sfx';")
           }
         } else {
           // Has collisions — files with colliding names get individual qualified re-exports,
@@ -273,13 +275,14 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
               if (myCollisions.isEmpty) {
                 List(TextTree.text[TsValue](s"export * from './$fname$sfx';"))
               } else {
-                val safeNames    = names -- colliding
-                val qualifier    = fname.replace('.', '_').replace('-', '_').replace('/', '_')
-                val safeExport   = if (safeNames.nonEmpty) {
+                val safeNames = names -- colliding
+                val qualifier = fname.replace('.', '_').replace('-', '_').replace('/', '_')
+                val safeExport = if (safeNames.nonEmpty) {
                   List(TextTree.text[TsValue](s"export { ${safeNames.toList.sorted.mkString(", ")} } from './$fname$sfx';"))
                 } else Nil
-                val qualifiedExports = myCollisions.toList.sorted.map { name =>
-                  TextTree.text[TsValue](s"export { $name as ${qualifier}_$name } from './$fname$sfx';")
+                val qualifiedExports = myCollisions.toList.sorted.map {
+                  name =>
+                    TextTree.text[TsValue](s"export { $name as ${qualifier}_$name } from './$fname$sfx';")
                 }
                 safeExport ++ qualifiedExports
               }
@@ -330,9 +333,9 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       val basename = tsFileTools.basename(domain, lineage.evolution)
       convs.toList.map {
         conv =>
-          val outputPath   = s"$basename/${conv.fname}"
-          val moduleParts  = tsFileTools.definitionsBasePkg ++ outputPath.stripSuffix(".ts").split('/').toList
-          val convModule   = TsModuleId(moduleParts)
+          val outputPath  = s"$basename/${conv.fname}"
+          val moduleParts = tsFileTools.definitionsBasePkg ++ outputPath.stripSuffix(".ts").split('/').toList
+          val convModule  = TsModuleId(moduleParts)
           TsDefnTranslator.Output(
             outputPath,
             conv.conv,

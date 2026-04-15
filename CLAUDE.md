@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Baboon is a Domain Modeling Language (DML) compiler with schema evolution support. It compiles `.baboon` domain model files to multiple target languages (Scala, C#, Python, Rust, TypeScript, Kotlin, Java, Dart, Swift) with automatic JSON and UEBA codec generation.
+Baboon is a Domain Modeling Language (DML) compiler with schema evolution support. It compiles `.baboon` domain model files to multiple target languages (Scala, C#, Python, Rust, TypeScript, Kotlin, Java, Dart, Swift) with automatic JSON and UEBA codec generation. It also supports schema-only output formats (GraphQL SDL, OpenAPI 3.1).
 
 ## Essential Commands
 
@@ -108,6 +108,8 @@ baboon \
    - `java/` - Java code generation with Jackson JSON codecs and UEBA binary codecs
    - `dart/` - Dart code generation with dart:convert JSON codecs and UEBA binary codecs
    - `swift/` - Swift code generation with JSONSerialization JSON codecs and UEBA binary codecs
+   - `graphql/` - GraphQL SDL schema generation (type definitions only, no codecs)
+   - `openapi/` - OpenAPI 3.1 JSON Schema generation (component schemas only, no codecs)
    - Each generator produces source files, codec implementations and conversions from lower versions to higher ones
 
 5. **Runtime Support (`src/main/resources/baboon-runtime/`)**
@@ -146,7 +148,7 @@ Baboon files support:
 
 - Unit tests for individual components
 - Integration tests with full compilation cycles
-- Generated code tests in `test/cs-stub/`, `test/sc-stub/`, `test/py-stub/`, `test/rs-stub/`, `test/ts-stub/`, `test/kt-stub/`, `test/jv-stub/`, `test/dt-stub/`, and `test/sw-stub/`
+- Generated code tests in `test/cs-stub/`, `test/sc-stub/`, `test/py-stub/`, `test/rs-stub/`, `test/ts-stub/`, `test/kt-stub/`, `test/jv-stub/`, `test/dt-stub/`, `test/sw-stub/`, `test/gql-stub/`, and `test/oas-stub/`
 - Cross-platform compatibility tests in `test/conv-test-{cs,sc,py,rs,ts,kt,jv,dt,sw}/` (verifies JSON/UEBA interop across all languages)
 - Evolution tests validating schema migration
 

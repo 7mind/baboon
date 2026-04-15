@@ -131,6 +131,8 @@ const ALL_LANGUAGES = [
   "java",
   "dart",
   "swift",
+  "graphql",
+  "openapi",
 ] as const;
 
 export type BaboonTargetLanguage = (typeof ALL_LANGUAGES)[number];
@@ -147,6 +149,8 @@ export const LANGUAGE_DISPLAY_NAMES: Record<BaboonTargetLanguage, string> = {
   java: "Java",
   dart: "Dart",
   swift: "Swift",
+  graphql: "GraphQL",
+  openapi: "OpenAPI",
 };
 
 export const LANGUAGE_TO_MONACO: Record<BaboonTargetLanguage, string> = {
@@ -159,6 +163,8 @@ export const LANGUAGE_TO_MONACO: Record<BaboonTargetLanguage, string> = {
   java: "java",
   dart: "dart",
   swift: "swift",
+  graphql: "graphql",
+  openapi: "json",
 };
 
 const EXTENSION_TO_LANGUAGE: Record<string, BaboonTargetLanguage> = {
@@ -171,9 +177,14 @@ const EXTENSION_TO_LANGUAGE: Record<string, BaboonTargetLanguage> = {
   ".java": "java",
   ".dart": "dart",
   ".swift": "swift",
+  ".graphql": "graphql",
 };
 
-function detectLanguageByExtension(path: string): BaboonTargetLanguage | null {
+function detectLanguageByPath(path: string): BaboonTargetLanguage | null {
+  // OpenAPI files are named openapi.json — detect by filename before extension
+  if (path.endsWith("/openapi.json") || path === "openapi.json") {
+    return "openapi";
+  }
   for (const [ext, lang] of Object.entries(EXTENSION_TO_LANGUAGE)) {
     if (path.endsWith(ext)) {
       return lang;
@@ -352,14 +363,19 @@ function remapErrorLocation(
   return { ...error, file: loc.file, line: loc.line };
 }
 
+// Schema-only backends that don't support codec/evolution options
+const SCHEMA_ONLY_LANGUAGES: ReadonlySet<string> = new Set(["graphql", "openapi"]);
+
 function buildTargets(options: CompilerOptions): JSCompilerTarget[] {
   const generic: JSGenericOptions = {
     disableConversions: options.generic.disableConversions,
   };
   return ALL_LANGUAGES.map((language) => {
-    const langOpts: JSLangOptions = options.languages[language];
     const target: JSCompilerTarget = { language, generic };
-    target[language] = langOpts;
+    if (!SCHEMA_ONLY_LANGUAGES.has(language)) {
+      const langOpts: JSLangOptions = options.languages[language];
+      target[language] = langOpts;
+    }
     return target;
   });
 }
@@ -405,7 +421,7 @@ export async function compile(
   }
 
   for (const file of result.files ?? []) {
-    const lang = detectLanguageByExtension(file.path);
+    const lang = detectLanguageByPath(file.path);
     if (lang) {
       filesByLanguage.get(lang)!.push({
         path: file.path,
