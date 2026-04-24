@@ -2,7 +2,7 @@ package io.septimalmind.baboon.translator.rust
 
 import distage.Id
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
-import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{toSnakeCase, toSnakeCaseFileName, escapeRustModuleName}
+import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustModuleName, toSnakeCase, toSnakeCaseFileName}
 import io.septimalmind.baboon.translator.rust.RsValue.RsCrateId
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.FieldOp
@@ -137,11 +137,12 @@ class RsConversionTranslator[F[+_, +_]: Error2](
               case _                                          => throw new IllegalStateException("DTO expected")
             }
             val ops = c.ops.map(o => o.targetField -> o).toMap
-            val usesFrom = dto.fields.exists { f =>
-              ops(f) match {
-                case _: FieldOp.InitializeWithDefault => false
-                case _                                => true
-              }
+            val usesFrom = dto.fields.exists {
+              f =>
+                ops(f) match {
+                  case _: FieldOp.InitializeWithDefault => false
+                  case _                                => true
+                }
             }
             val fromParam = if (usesFrom) "from" else "_from"
             val assigns = dto.fields.map {

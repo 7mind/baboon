@@ -202,7 +202,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
     } else {
       q"""$imports
          |
-         |${mappedTree}""".stripMargin
+         |$mappedTree""".stripMargin
     }
 
     val oPkgParts = o.pkg.parts.toList

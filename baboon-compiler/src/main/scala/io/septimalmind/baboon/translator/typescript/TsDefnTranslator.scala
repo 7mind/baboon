@@ -207,9 +207,10 @@ object TsDefnTranslator {
 
       val implementsClause = if (parents.nonEmpty) q"implements ${parents.map(tpe => q"$tpe").join(", ")}" else q""
 
-      val toJsonFields = dto.fields.map { f =>
-        val ref = s"this._${f.name.name}"
-        q"${f.name.name}: ${toJsonFieldExpr(f.tpe, ref)}"
+      val toJsonFields = dto.fields.map {
+        f =>
+          val ref = s"this._${f.name.name}"
+          q"${f.name.name}: ${toJsonFieldExpr(f.tpe, ref)}"
       }
 
       val toJsonMethod =
@@ -219,12 +220,14 @@ object TsDefnTranslator {
            |    };
            |}""".stripMargin
 
-      val withParamFields = dto.fields.map { f =>
-        q"${f.name.name}?: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}"
+      val withParamFields = dto.fields.map {
+        f =>
+          q"${f.name.name}?: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}"
       }
 
-      val withArgs = dto.fields.map { f =>
-        q"'${f.name.name}' in overrides ? overrides.${f.name.name}! : this._${f.name.name}"
+      val withArgs = dto.fields.map {
+        f =>
+          q"'${f.name.name}' in overrides ? overrides.${f.name.name}! : this._${f.name.name}"
       }
 
       val withMethod =
@@ -234,12 +237,14 @@ object TsDefnTranslator {
            |    );
            |}""".stripMargin
 
-      val fromPlainParamFields = dto.fields.map { f =>
-        q"${f.name.name}: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}"
+      val fromPlainParamFields = dto.fields.map {
+        f =>
+          q"${f.name.name}: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}"
       }
 
-      val fromPlainArgs = dto.fields.map { f =>
-        q"obj.${f.name.name}"
+      val fromPlainArgs = dto.fields.map {
+        f =>
+          q"obj.${f.name.name}"
       }
 
       val fromPlainMethod =
@@ -303,12 +308,13 @@ object TsDefnTranslator {
     }
 
     private def makeEnumRepr(enum: Typedef.Enum): DefnRepr = {
-      val enumName      = enum.id.name.name
-      val branchesNames = enum.members.map(_.name)
+      val enumName        = enum.id.name.name
+      val branchesNames   = enum.members.map(_.name)
       val lowercaseValues = target.language.enumLowercaseValues
-      val branches = branchesNames.map { name =>
-        val value = if (lowercaseValues) name.toLowerCase else name
-        q"$name = \"$value\""
+      val branches = branchesNames.map {
+        name =>
+          val value = if (lowercaseValues) name.toLowerCase else name
+          q"$name = \"$value\""
       }.toSeq
       val parseComparison = if (lowercaseValues) "v === s.toLowerCase()" else "v === s"
       DefnRepr(
@@ -343,13 +349,14 @@ object TsDefnTranslator {
           }
       }
 
-      val typeGuards = adt.members.toList.flatMap { mid =>
-        domain.defs.meta.nodes(mid) match {
-          case DomainMember.User(_, _: Typedef.Dto, _, _) =>
-            val branchName = mid.name.name
-            Some(q"export function is$branchName(value: $name): value is $branchName { return value instanceof $branchName; }")
-          case _ => None // skip contracts/interfaces — instanceof doesn't work on them
-        }
+      val typeGuards = adt.members.toList.flatMap {
+        mid =>
+          domain.defs.meta.nodes(mid) match {
+            case DomainMember.User(_, _: Typedef.Dto, _, _) =>
+              val branchName = mid.name.name
+              Some(q"export function is$branchName(value: $name): value is $branchName { return value instanceof $branchName; }")
+            case _ => None // skip contracts/interfaces — instanceof doesn't work on them
+          }
       }
 
       DefnRepr(

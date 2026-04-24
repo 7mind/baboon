@@ -143,16 +143,16 @@ object TsCodecFixtureTranslator {
         case TypeId.Builtins.tsu =>
           translator.asTsType(TypeId.Builtins.tsu, domain, evo) match {
             case TsTypes.tsString => q"rnd.nextTsu().toISOString()"
-            case TsTypes.tsDate  => q"rnd.nextTsu().date"
-            case _               => q"rnd.nextTsu()"
+            case TsTypes.tsDate   => q"rnd.nextTsu().date"
+            case _                => q"rnd.nextTsu()"
           }
         case TypeId.Builtins.tso =>
           translator.asTsType(TypeId.Builtins.tso, domain, evo) match {
             case TsTypes.tsString => q"rnd.nextTso().toISOString()"
-            case TsTypes.tsDate  => q"rnd.nextTso().date"
-            case _               => q"rnd.nextTso()"
+            case TsTypes.tsDate   => q"rnd.nextTso().date"
+            case _                => q"rnd.nextTso()"
           }
-        case TypeId.Builtins.bit   => q"rnd.nextBit()"
+        case TypeId.Builtins.bit => q"rnd.nextBit()"
 
         case u: TypeId.User if enquiries.isEnum(tpe, domain) =>
           val enumType   = translator.asTsType(u, domain, evo, tsFileTools.definitionsBasePkg)

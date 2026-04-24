@@ -219,14 +219,16 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def buildFqPrefixMap(fqTypes: Seq[DtValue.DtType]): Map[String, String] = {
-    fqTypes.map { t =>
-      val key      = fqFileKey(t)
-      val fileName = t.importAs.getOrElse(trans.toSnakeCase(t.name))
-      val pkgParts = t.pkg.parts.toList
-      val versionIdx = pkgParts.indexWhere(p => p.startsWith("v") && p.length > 1 && p.lift(1).exists(_.isDigit))
-      val prefixParts = if (versionIdx >= 0) pkgParts.drop(versionIdx) :+ fileName
-                        else pkgParts :+ fileName
-      key -> prefixParts.mkString("_")
+    fqTypes.map {
+      t =>
+        val key        = fqFileKey(t)
+        val fileName   = t.importAs.getOrElse(trans.toSnakeCase(t.name))
+        val pkgParts   = t.pkg.parts.toList
+        val versionIdx = pkgParts.indexWhere(p => p.startsWith("v") && p.length > 1 && p.lift(1).exists(_.isDigit))
+        val prefixParts =
+          if (versionIdx >= 0) pkgParts.drop(versionIdx) :+ fileName
+          else pkgParts :+ fileName
+        key -> prefixParts.mkString("_")
     }.toMap
   }
 

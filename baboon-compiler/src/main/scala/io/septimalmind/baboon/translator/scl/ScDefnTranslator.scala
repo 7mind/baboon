@@ -101,7 +101,7 @@ object ScDefnTranslator {
     }
 
     private def doTranslateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val srcRef         = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
+      val srcRef = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
       val fixtureTreeOut = makeFixtureRepr(defn).map {
         fixtureTreeWithNs =>
           Output(
@@ -131,7 +131,7 @@ object ScDefnTranslator {
       }
     }
     private def doTranslateTest(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
-      val srcRef       = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
+      val srcRef = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
       val codecTestOut = makeTestRepr(defn).map {
         codecTestWithNS =>
           Output(
@@ -359,10 +359,10 @@ object ScDefnTranslator {
           }
           val methods = service.methods.map {
             m =>
-              val in  = trans.asScRef(m.sig, domain, evo)
-              val out = m.out.map(trans.asScRef(_, domain, evo))
-              val err = m.err.map(trans.asScRef(_, domain, evo))
-              val servicePkgParts           = name.pkg.parts.toList
+              val in              = trans.asScRef(m.sig, domain, evo)
+              val out             = m.out.map(trans.asScRef(_, domain, evo))
+              val err             = m.err.map(trans.asScRef(_, domain, evo))
+              val servicePkgParts = name.pkg.parts.toList
               val scFqName: ScValue => String = {
                 case t: ScValue.ScType if t.predef => t.name
                 case t: ScValue.ScType =>

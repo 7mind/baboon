@@ -73,8 +73,7 @@ object BaboonJS {
     obj.asInstanceOf[JSCompilationError]
   }
 
-  class BaboonCompilationException(val issues: NEList[BaboonIssue])
-    extends RuntimeException(s"Compilation failed with ${issues.toList.size} issues")
+  class BaboonCompilationException(val issues: NEList[BaboonIssue]) extends RuntimeException(s"Compilation failed with ${issues.toList.size} issues")
 
   /**
     * Compilation result
@@ -330,7 +329,7 @@ object BaboonJS {
   private def createOutputOptions(generic: js.UndefOr[JSGenericOptions]): OutputOptionsJS = {
     val g = generic.getOrElse(js.Dynamic.literal().asInstanceOf[JSGenericOptions])
     OutputOptionsJS(
-      safeToRemoveExtensions = Set("meta", "cs", "json", "scala", "kt", "py", "rs", "ts", "java", "dart", "swift"),
+      safeToRemoveExtensions = Set("meta", "cs", "json", "scala", "kt", "py", "rs", "ts", "java", "dart", "swift", "graphql"),
       runtime                = parseRuntimeOpt(g.runtime),
       generateConversions    = !g.disableConversions.getOrElse(false),
       generateTests          = g.generateTests.getOrElse(false),
@@ -535,6 +534,20 @@ object BaboonJS {
                 pragmas                     = Map.empty,
               ),
             )
+          case "graphql" =>
+            CompilerTargetJS.GqlTarget(
+              id       = "GraphQL",
+              output   = createOutputOptions(target.generic),
+              generic  = createGenericOptions(target.generic),
+              language = GqlOptions(pragmas = Map.empty),
+            )
+          case "openapi" =>
+            CompilerTargetJS.OasTarget(
+              id       = "OpenAPI",
+              output   = createOutputOptions(target.generic),
+              generic  = createGenericOptions(target.generic),
+              language = OasOptions(pragmas = Map.empty),
+            )
           case other => throw new IllegalArgumentException(s"Unknown target language: $other")
         }
     }
@@ -652,17 +665,37 @@ object BaboonJS {
     )
   }
 
+  private def toGqlTarget(target: CompilerTargetJS.GqlTarget): CompilerTarget.GqlTarget = {
+    CompilerTarget.GqlTarget(
+      id       = target.id,
+      output   = toOutputOptions(target.output),
+      generic  = target.generic,
+      language = target.language,
+    )
+  }
+
+  private def toOasTarget(target: CompilerTargetJS.OasTarget): CompilerTarget.OasTarget = {
+    CompilerTarget.OasTarget(
+      id       = target.id,
+      output   = toOutputOptions(target.output),
+      generic  = target.generic,
+      language = target.language,
+    )
+  }
+
   private def toCompilerTargets(targets: Seq[CompilerTargetJS]): Seq[CompilerTarget] = {
     targets.map {
-      case t: CompilerTargetJS.CSTarget => toCSTarget(t)
-      case t: CompilerTargetJS.ScTarget => toScTarget(t)
-      case t: CompilerTargetJS.PyTarget => toPyTarget(t)
-      case t: CompilerTargetJS.RsTarget => toRsTarget(t)
-      case t: CompilerTargetJS.TsTarget => toTsTarget(t)
-      case t: CompilerTargetJS.KtTarget => toKtTarget(t)
-      case t: CompilerTargetJS.JvTarget => toJvTarget(t)
-      case t: CompilerTargetJS.DtTarget => toDtTarget(t)
-      case t: CompilerTargetJS.SwTarget => toSwTarget(t)
+      case t: CompilerTargetJS.CSTarget  => toCSTarget(t)
+      case t: CompilerTargetJS.ScTarget  => toScTarget(t)
+      case t: CompilerTargetJS.PyTarget  => toPyTarget(t)
+      case t: CompilerTargetJS.RsTarget  => toRsTarget(t)
+      case t: CompilerTargetJS.TsTarget  => toTsTarget(t)
+      case t: CompilerTargetJS.KtTarget  => toKtTarget(t)
+      case t: CompilerTargetJS.JvTarget  => toJvTarget(t)
+      case t: CompilerTargetJS.DtTarget  => toDtTarget(t)
+      case t: CompilerTargetJS.SwTarget  => toSwTarget(t)
+      case t: CompilerTargetJS.GqlTarget => toGqlTarget(t)
+      case t: CompilerTargetJS.OasTarget => toOasTarget(t)
     }
   }
 
@@ -740,25 +773,29 @@ object BaboonJS {
               }
               // skip ADT branch members (they're owned by their parent ADT)
               if (!user.ownedByAdt) {
-                result.push(JSTypeInfo(
-                  pkg     = pkg.toString,
-                  version = version.toString,
-                  id      = typeId.toString,
-                  name    = user.defn.id.name.name,
-                  kind    = kind,
-                ))
+                result.push(
+                  JSTypeInfo(
+                    pkg     = pkg.toString,
+                    version = version.toString,
+                    id      = typeId.toString,
+                    name    = user.defn.id.name.name,
+                    kind    = kind,
+                  )
+                )
               }
             case _ => // skip builtins
           }
         }
         for (alias <- domain.aliases) {
-          result.push(JSTypeInfo(
-            pkg     = pkg.toString,
-            version = version.toString,
-            id      = s"type:${alias.name.name}",
-            name    = alias.name.name,
-            kind    = "alias",
-          ))
+          result.push(
+            JSTypeInfo(
+              pkg     = pkg.toString,
+              version = version.toString,
+              id      = s"type:${alias.name.name}",
+              name    = alias.name.name,
+              kind    = "alias",
+            )
+          )
         }
       }
     }
@@ -777,15 +814,13 @@ object BaboonJS {
     typeId: String,
   ): JSGenerateResult = {
     try {
-      val family      = model.asInstanceOf[BaboonLoadedModelImpl].family
-      val parsedPkg   = parsePkg(pkg)
-      val parsedVer   = Version.parse(version)
-      val enquiries   = new BaboonEnquiries.BaboonEnquiriesImpl
+      val family    = model.asInstanceOf[BaboonLoadedModelImpl].family
+      val parsedPkg = parsePkg(pkg)
+      val parsedVer = Version.parse(version)
+      val enquiries = new BaboonEnquiries.BaboonEnquiriesImpl
 
-      val lineage = family.domains.toMap.getOrElse(parsedPkg,
-        throw new RuntimeException(s"Package not found: $pkg"))
-      val domain = lineage.versions.toMap.getOrElse(parsedVer,
-        throw new RuntimeException(s"Version not found: $version"))
+      val lineage = family.domains.toMap.getOrElse(parsedPkg, throw new RuntimeException(s"Package not found: $pkg"))
+      val domain  = lineage.versions.toMap.getOrElse(parsedVer, throw new RuntimeException(s"Version not found: $version"))
 
       val member = domain.defs.meta.nodes.collectFirst {
         case (tid, m: DomainMember.User) if tid.toString == typeId => m
@@ -842,10 +877,16 @@ object BaboonJS {
         case e: BaboonCompilationException =>
           JSCompilationResult.failure(issuesToStructuredErrors(e.issues))
         case e: Throwable =>
-          JSCompilationResult.failure(js.Array(createJSCompilationError(
-            s"Compilation failed: ${e.getMessage}\n${e.getStackTrace.mkString("\n")}",
-            None, None, None,
-          )))
+          JSCompilationResult.failure(
+            js.Array(
+              createJSCompilationError(
+                s"Compilation failed: ${e.getMessage}\n${e.getStackTrace.mkString("\n")}",
+                None,
+                None,
+                None,
+              )
+            )
+          )
       }.toJSPromise
     } catch {
       case e: BaboonCompilationException =>
@@ -855,10 +896,16 @@ object BaboonJS {
       case e: Throwable =>
         Future
           .successful(
-            JSCompilationResult.failure(js.Array(createJSCompilationError(
-              s"Compilation failed: ${e.getMessage}\n${e.getStackTrace.mkString("\n")}",
-              None, None, None,
-            )))
+            JSCompilationResult.failure(
+              js.Array(
+                createJSCompilationError(
+                  s"Compilation failed: ${e.getMessage}\n${e.getStackTrace.mkString("\n")}",
+                  None,
+                  None,
+                  None,
+                )
+              )
+            )
           ).toJSPromise
     }
   }
@@ -925,15 +972,17 @@ object BaboonJS {
     m: DefaultModule[F[Throwable, _]],
   ): F[Throwable, Seq[OutputFileWithPath]] = {
     val module = target match {
-      case t: CompilerTargetJS.CSTarget => new BaboonJsCSModule[F](toCSTarget(t))
-      case t: CompilerTargetJS.ScTarget => new BaboonJsScModule[F](toScTarget(t))
-      case t: CompilerTargetJS.PyTarget => new BaboonJsPyModule[F](toPyTarget(t))
-      case t: CompilerTargetJS.RsTarget => new BaboonJsRsModule[F](toRsTarget(t))
-      case t: CompilerTargetJS.TsTarget => new BaboonJsTsModule[F](toTsTarget(t))
-      case t: CompilerTargetJS.KtTarget => new BaboonJsKtModule[F](toKtTarget(t))
-      case t: CompilerTargetJS.JvTarget => new BaboonJsJvModule[F](toJvTarget(t))
-      case t: CompilerTargetJS.DtTarget => new BaboonJsDtModule[F](toDtTarget(t))
-      case t: CompilerTargetJS.SwTarget => new BaboonJsSwModule[F](toSwTarget(t))
+      case t: CompilerTargetJS.CSTarget  => new BaboonJsCSModule[F](toCSTarget(t))
+      case t: CompilerTargetJS.ScTarget  => new BaboonJsScModule[F](toScTarget(t))
+      case t: CompilerTargetJS.PyTarget  => new BaboonJsPyModule[F](toPyTarget(t))
+      case t: CompilerTargetJS.RsTarget  => new BaboonJsRsModule[F](toRsTarget(t))
+      case t: CompilerTargetJS.TsTarget  => new BaboonJsTsModule[F](toTsTarget(t))
+      case t: CompilerTargetJS.KtTarget  => new BaboonJsKtModule[F](toKtTarget(t))
+      case t: CompilerTargetJS.JvTarget  => new BaboonJsJvModule[F](toJvTarget(t))
+      case t: CompilerTargetJS.DtTarget  => new BaboonJsDtModule[F](toDtTarget(t))
+      case t: CompilerTargetJS.SwTarget  => new BaboonJsSwModule[F](toSwTarget(t))
+      case t: CompilerTargetJS.GqlTarget => new BaboonJsGqlModule[F](toGqlTarget(t))
+      case t: CompilerTargetJS.OasTarget => new BaboonJsOasModule[F](toOasTarget(t))
     }
 
     Injector

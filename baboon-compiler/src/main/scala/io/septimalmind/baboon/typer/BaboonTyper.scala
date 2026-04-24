@@ -50,11 +50,13 @@ object BaboonTyper {
         }
         directRoots = rootExtractor.roots(indexedDefs)
         // Root aliases contribute their resolved targets to the root set
-        aliasRootIds: Set[TypeId] = typed.aliases.filter(_.root).flatMap { a =>
-          enquiries.explode(a.resolvedTarget)
-        }.toSet
+        aliasRootIds: Set[TypeId] = typed.aliases
+          .filter(_.root).flatMap {
+            a =>
+              enquiries.explode(a.resolvedTarget)
+          }.toSet
         aliasRoots = indexedDefs.filter { case (k, _) => aliasRootIds.contains(k) }
-        roots = directRoots ++ aliasRoots
+        roots      = directRoots ++ aliasRoots
         predecessors <- buildDependencies(
           indexedDefs,
           roots,
@@ -411,8 +413,9 @@ object BaboonTyper {
           (initial.map(m => (m.id, m)) ++ out.toSeq)
             .toUniqueMap(e => BaboonIssue.of(TyperIssue.NonUniqueTypedefs(e, meta)))
         }
-        aliases <- F.traverseAccumErrors(flattened.filter(_.defn.defn.isInstanceOf[RawAlias])) { scope =>
-          translator(pkg, scope, out).resolveAliasInfo().map(_.get)
+        aliases <- F.traverseAccumErrors(flattened.filter(_.defn.defn.isInstanceOf[RawAlias])) {
+          scope =>
+            translator(pkg, scope, out).resolveAliasInfo().map(_.get)
         }
       } yield {
         TyperOutput(indexed.values.toList, renames, aliases.toList)

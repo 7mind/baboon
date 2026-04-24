@@ -1837,12 +1837,88 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-graphql
+
+Generate GraphQL SDL schemas and validate them.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-graphql"
+
+rm -rf "$TEST_DIR"
+mkdir -p "$TEST_DIR"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  :graphql \
+  --output "$TEST_DIR" \
+  --disable-conversions=true \
+  --runtime=without
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-graphql
+
+Validate generated GraphQL schemas using graphql-js buildSchema.
+
+```bash
+TEST_DIR="${action.test-gen-graphql.test_dir}"
+
+pushd ./test/gql-stub
+npm install
+node validate.mjs "../../$TEST_DIR"
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-openapi
+
+Generate OpenAPI 3.1 component schemas and validate them.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-openapi"
+
+rm -rf "$TEST_DIR"
+mkdir -p "$TEST_DIR"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  :openapi \
+  --output "$TEST_DIR" \
+  --disable-conversions=true \
+  --runtime=without
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-openapi
+
+Validate generated OpenAPI schemas using swagger-parser.
+
+```bash
+TEST_DIR="${action.test-gen-openapi.test_dir}"
+
+pushd ./test/oas-stub
+npm install
+node validate.mjs "../../$TEST_DIR"
+popd
+
+ret success:bool=true
+```
+
 # action: test
 
 Run complete test suite (orchestrator action).
 
 ```bash
 dep action.test-sbt-basic
+dep action.test-graphql
+dep action.test-openapi
 dep action.test-cs-regular
 dep action.test-scala-regular
 dep action.test-python-regular

@@ -13,6 +13,7 @@ generated-*/
 # Temporary test directories for parallel test execution
 target/test-regular/
 target/test-wrapped/
+target/test-graphql/
 
 src/test/resources/internal
 

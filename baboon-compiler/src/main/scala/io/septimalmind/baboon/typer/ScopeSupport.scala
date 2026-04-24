@@ -303,11 +303,12 @@ object ScopeSupport {
       scope: Scope[ExtendedRawDefn],
     ): Option[RawTypeRef] = {
       val needle = prefix.map(_.name).map(ScopeName.apply) ++: NEList(ScopeName(name.name))
-      findScope(needle, scope).flatMap { found =>
-        found.defn.defn match {
-          case alias: RawAlias => Some(alias.target)
-          case _               => None
-        }
+      findScope(needle, scope).flatMap {
+        found =>
+          found.defn.defn match {
+            case alias: RawAlias => Some(alias.target)
+            case _               => None
+          }
       }
     }
 

@@ -1,0 +1,11 @@
+{
+  "name": "baboon-openapi-test",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node validate.mjs"
+  },
+  "dependencies": {
+    "@apidevtools/swagger-parser": "^10.1.1"
+  }
+}

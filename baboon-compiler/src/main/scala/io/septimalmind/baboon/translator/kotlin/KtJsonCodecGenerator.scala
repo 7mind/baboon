@@ -272,23 +272,25 @@ class KtJsonCodecGenerator(
       tpe match {
         case TypeRef.Scalar(id) =>
           id match {
-            case TypeId.Builtins.bit   => q"$ref.jsonPrimitive.boolean"
-            case TypeId.Builtins.i08   => q"$ref.jsonPrimitive.int.toByte()"
-            case TypeId.Builtins.i16   => q"$ref.jsonPrimitive.int.toShort()"
-            case TypeId.Builtins.i32   => q"$ref.jsonPrimitive.int"
-            case TypeId.Builtins.i64   => q"$ref.jsonPrimitive.long"
-            case TypeId.Builtins.u08   => q"$ref.jsonPrimitive.int.toUByte()"
-            case TypeId.Builtins.u16   => q"$ref.jsonPrimitive.int.toUShort()"
-            case TypeId.Builtins.u32   => q"$ref.jsonPrimitive.long.toUInt()"
-            case TypeId.Builtins.u64   => q"$ref.jsonPrimitive.long.toULong()"
-            case TypeId.Builtins.f32   => q"$ref.jsonPrimitive.float"
-            case TypeId.Builtins.f64   => q"$ref.jsonPrimitive.double"
-            case TypeId.Builtins.f128  => if (ktTypes.multiplatform) q"${ktTypes.ktBigDecimal}.fromString($ref.jsonPrimitive.content)" else q"java.math.BigDecimal($ref.jsonPrimitive.content)"
+            case TypeId.Builtins.bit => q"$ref.jsonPrimitive.boolean"
+            case TypeId.Builtins.i08 => q"$ref.jsonPrimitive.int.toByte()"
+            case TypeId.Builtins.i16 => q"$ref.jsonPrimitive.int.toShort()"
+            case TypeId.Builtins.i32 => q"$ref.jsonPrimitive.int"
+            case TypeId.Builtins.i64 => q"$ref.jsonPrimitive.long"
+            case TypeId.Builtins.u08 => q"$ref.jsonPrimitive.int.toUByte()"
+            case TypeId.Builtins.u16 => q"$ref.jsonPrimitive.int.toUShort()"
+            case TypeId.Builtins.u32 => q"$ref.jsonPrimitive.long.toUInt()"
+            case TypeId.Builtins.u64 => q"$ref.jsonPrimitive.long.toULong()"
+            case TypeId.Builtins.f32 => q"$ref.jsonPrimitive.float"
+            case TypeId.Builtins.f64 => q"$ref.jsonPrimitive.double"
+            case TypeId.Builtins.f128 =>
+              if (ktTypes.multiplatform) q"${ktTypes.ktBigDecimal}.fromString($ref.jsonPrimitive.content)" else q"java.math.BigDecimal($ref.jsonPrimitive.content)"
             case TypeId.Builtins.str   => q"$ref.jsonPrimitive.content"
             case TypeId.Builtins.bytes => q"$ktByteString.fromHexString($ref.jsonPrimitive.content)"
-            case TypeId.Builtins.uid   => if (ktTypes.multiplatform) q"kotlin.uuid.Uuid.parse($ref.jsonPrimitive.content)" else q"java.util.UUID.fromString($ref.jsonPrimitive.content)"
-            case TypeId.Builtins.tsu   => q"$baboonTimeFormats.parseTsu($ref.jsonPrimitive.content)"
-            case TypeId.Builtins.tso   => q"$baboonTimeFormats.parseTso($ref.jsonPrimitive.content)"
+            case TypeId.Builtins.uid =>
+              if (ktTypes.multiplatform) q"kotlin.uuid.Uuid.parse($ref.jsonPrimitive.content)" else q"java.util.UUID.fromString($ref.jsonPrimitive.content)"
+            case TypeId.Builtins.tsu => q"$baboonTimeFormats.parseTsu($ref.jsonPrimitive.content)"
+            case TypeId.Builtins.tso => q"$baboonTimeFormats.parseTso($ref.jsonPrimitive.content)"
             case u: TypeId.User =>
               domain.defs.meta.nodes(u) match {
                 case DomainMember.User(_, f: Typedef.Foreign, _, _) =>

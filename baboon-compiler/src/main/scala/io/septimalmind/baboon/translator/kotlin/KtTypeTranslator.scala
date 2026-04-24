@@ -51,23 +51,23 @@ class KtTypeTranslator(ktTypes: KtTypes) {
     tpe match {
       case b: TypeId.BuiltinScalar =>
         b match {
-          case TypeId.Builtins.i08                       => ktByte
-          case TypeId.Builtins.u08                       => ktUByte
-          case TypeId.Builtins.i16                       => ktShort
-          case TypeId.Builtins.u16                       => ktUShort
-          case TypeId.Builtins.i32                       => ktInt
-          case TypeId.Builtins.u32                       => ktUInt
-          case TypeId.Builtins.i64                       => ktLong
-          case TypeId.Builtins.u64                       => ktULong
-          case TypeId.Builtins.f32                       => ktFloat
-          case TypeId.Builtins.f64                       => ktDouble
-          case TypeId.Builtins.f128                      => ktBigDecimal
-          case TypeId.Builtins.str                       => ktString
-          case TypeId.Builtins.bytes                     => ktByteString
-          case TypeId.Builtins.uid                       => ktUid
-          case TypeId.Builtins.tsu => ktTimeTsu
-          case TypeId.Builtins.tso => ktTimeTso
-          case TypeId.Builtins.bit                       => ktBoolean
+          case TypeId.Builtins.i08   => ktByte
+          case TypeId.Builtins.u08   => ktUByte
+          case TypeId.Builtins.i16   => ktShort
+          case TypeId.Builtins.u16   => ktUShort
+          case TypeId.Builtins.i32   => ktInt
+          case TypeId.Builtins.u32   => ktUInt
+          case TypeId.Builtins.i64   => ktLong
+          case TypeId.Builtins.u64   => ktULong
+          case TypeId.Builtins.f32   => ktFloat
+          case TypeId.Builtins.f64   => ktDouble
+          case TypeId.Builtins.f128  => ktBigDecimal
+          case TypeId.Builtins.str   => ktString
+          case TypeId.Builtins.bytes => ktByteString
+          case TypeId.Builtins.uid   => ktUid
+          case TypeId.Builtins.tsu   => ktTimeTsu
+          case TypeId.Builtins.tso   => ktTimeTso
+          case TypeId.Builtins.bit   => ktBoolean
 
           case other => throw new IllegalArgumentException(s"Unexpected: $other")
         }

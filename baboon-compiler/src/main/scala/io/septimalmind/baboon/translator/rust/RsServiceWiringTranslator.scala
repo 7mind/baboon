@@ -34,18 +34,22 @@ object RsServiceWiringTranslator {
       ServiceContextResolver.resolve(domain, "rust", target.language.serviceContext, target.language.pragmas)
 
     private def hasActiveJsonCodecs(service: Typedef.Service): Boolean = {
-      codecs.exists { c =>
-        c.isInstanceOf[RsJsonCodecGenerator] && service.methods.forall { m =>
-          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
-        }
+      codecs.exists {
+        c =>
+          c.isInstanceOf[RsJsonCodecGenerator] && service.methods.forall {
+            m =>
+              c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+          }
       }
     }
 
     private def hasActiveUebaCodecs(service: Typedef.Service): Boolean = {
-      codecs.exists { c =>
-        c.isInstanceOf[RsUEBACodecGenerator] && service.methods.forall { m =>
-          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
-        }
+      codecs.exists {
+        c =>
+          c.isInstanceOf[RsUEBACodecGenerator] && service.methods.forall {
+            m =>
+              c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+          }
       }
     }
 
@@ -170,11 +174,11 @@ object RsServiceWiringTranslator {
           if (clientMethods.isEmpty) return None
 
           // Build type params and fields
-          val typeParams      = scala.collection.mutable.ListBuffer.empty[String]
-          val whereClauses    = scala.collection.mutable.ListBuffer.empty[String]
-          val fields          = scala.collection.mutable.ListBuffer.empty[TextTree[RsValue]]
-          val ctorParams      = scala.collection.mutable.ListBuffer.empty[TextTree[RsValue]]
-          val ctorAssigns     = scala.collection.mutable.ListBuffer.empty[TextTree[RsValue]]
+          val typeParams   = scala.collection.mutable.ListBuffer.empty[String]
+          val whereClauses = scala.collection.mutable.ListBuffer.empty[String]
+          val fields       = scala.collection.mutable.ListBuffer.empty[TextTree[RsValue]]
+          val ctorParams   = scala.collection.mutable.ListBuffer.empty[TextTree[RsValue]]
+          val ctorAssigns  = scala.collection.mutable.ListBuffer.empty[TextTree[RsValue]]
 
           if (hasUeba) {
             if (isAsync) {

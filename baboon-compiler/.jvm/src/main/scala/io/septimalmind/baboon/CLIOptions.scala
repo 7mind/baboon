@@ -361,6 +361,48 @@ case class DtCLIOptions(
   pragma: List[String],
 ) extends SharedCLIOptions
 
+case class GqlCLIOptions(
+  @Recurse
+  generic: GenericTranspilerCLIOptions,
+  @HelpMessage("Allow to erase target directory even if files with these extensions exist there. Default: graphql,json,meta")
+  extAllowCleanup: List[String],
+  @HelpMessage("Set a pragma value (key=value, repeatable)")
+  pragma: List[String],
+  @HelpMessage("Unused, present for CLI compatibility")
+  serviceResultNoErrors: Option[Boolean],
+  @HelpMessage("Unused, present for CLI compatibility")
+  serviceResultType: Option[String],
+  @HelpMessage("Unused, present for CLI compatibility")
+  serviceResultPattern: Option[String],
+  @HelpMessage("Unused, present for CLI compatibility")
+  serviceContextMode: Option[String],
+  @HelpMessage("Unused, present for CLI compatibility")
+  serviceContextType: Option[String],
+  @HelpMessage("Unused, present for CLI compatibility")
+  serviceContextParameterName: Option[String],
+) extends SharedCLIOptions
+
+case class OasCLIOptions(
+  @Recurse
+  generic: GenericTranspilerCLIOptions,
+  @HelpMessage("Allow to erase target directory even if files with these extensions exist there. Default: json,meta")
+  extAllowCleanup: List[String],
+  @HelpMessage("Set a pragma value (key=value, repeatable)")
+  pragma: List[String],
+  @HelpMessage("Unused, present for CLI compatibility")
+  serviceResultNoErrors: Option[Boolean],
+  @HelpMessage("Unused, present for CLI compatibility")
+  serviceResultType: Option[String],
+  @HelpMessage("Unused, present for CLI compatibility")
+  serviceResultPattern: Option[String],
+  @HelpMessage("Unused, present for CLI compatibility")
+  serviceContextMode: Option[String],
+  @HelpMessage("Unused, present for CLI compatibility")
+  serviceContextType: Option[String],
+  @HelpMessage("Unused, present for CLI compatibility")
+  serviceContextParameterName: Option[String],
+) extends SharedCLIOptions
+
 case class SchemeCLIOptions(
   @HelpMessage("Domain name (e.g., 'my.domain.name')")
   domain: String,

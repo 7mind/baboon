@@ -86,6 +86,16 @@ class BaboonJsSwModule[F[+_, +_]: Error2: TagKK](compilerTarget: CompilerTarget.
   make[CompilerTarget.SwTarget].fromValue(compilerTarget)
 }
 
+class BaboonJsGqlModule[F[+_, +_]: Error2: TagKK](compilerTarget: CompilerTarget.GqlTarget) extends ModuleDef {
+  include(new BaboonCommonGqlModule[F]())
+  make[CompilerTarget.GqlTarget].fromValue(compilerTarget)
+}
+
+class BaboonJsOasModule[F[+_, +_]: Error2: TagKK](compilerTarget: CompilerTarget.OasTarget) extends ModuleDef {
+  include(new BaboonCommonOasModule[F]())
+  make[CompilerTarget.OasTarget].fromValue(compilerTarget)
+}
+
 class BaboonCodecModuleJS[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
   parOps: ParallelErrorAccumulatingOps2[F]
 ) extends ModuleDef {

@@ -33,18 +33,22 @@ object KtServiceWiringTranslator {
       ServiceContextResolver.resolve(domain, "kotlin", target.language.serviceContext, target.language.pragmas)
 
     private def hasActiveJsonCodecs(service: Typedef.Service): Boolean = {
-      codecs.exists { c =>
-        c.isInstanceOf[KtJsonCodecGenerator] && service.methods.forall { m =>
-          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
-        }
+      codecs.exists {
+        c =>
+          c.isInstanceOf[KtJsonCodecGenerator] && service.methods.forall {
+            m =>
+              c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+          }
       }
     }
 
     private def hasActiveUebaCodecs(service: Typedef.Service): Boolean = {
-      codecs.exists { c =>
-        c.isInstanceOf[KtUEBACodecGenerator] && service.methods.forall { m =>
-          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
-        }
+      codecs.exists {
+        c =>
+          c.isInstanceOf[KtUEBACodecGenerator] && service.methods.forall {
+            m =>
+              c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+          }
       }
     }
 
@@ -553,53 +557,54 @@ object KtServiceWiringTranslator {
     override def translateClient(defn: DomainMember.User): Option[TextTree[KtValue]] = {
       defn.defn match {
         case service: Typedef.Service =>
-          val svcName      = service.id.name.name
-          val hasUeba      = hasActiveUebaCodecs(service)
-          val hasJson      = hasActiveJsonCodecs(service)
+          val svcName = service.id.name.name
+          val hasUeba = hasActiveUebaCodecs(service)
+          val hasJson = hasActiveJsonCodecs(service)
           if (!hasUeba && !hasJson) return None
 
-          val clientMethods = service.methods.flatMap { m =>
-            val inTypeId  = m.sig.id.asInstanceOf[TypeId.User]
-            val inTypeRef = trans.asKtRef(m.sig, domain, evo)
-            val outTypeRef = m.out.map(t => trans.asKtRef(t, domain, evo))
-            val retType    = outTypeRef.getOrElse(q"Unit")
+          val clientMethods = service.methods.flatMap {
+            m =>
+              val inTypeId   = m.sig.id.asInstanceOf[TypeId.User]
+              val inTypeRef  = trans.asKtRef(m.sig, domain, evo)
+              val outTypeRef = m.out.map(t => trans.asKtRef(t, domain, evo))
+              val retType    = outTypeRef.getOrElse(q"Unit")
 
-            val uebaMethod = if (hasUeba) {
-              val inCodec = uebaCodecName(inTypeId)
-              val decodeOut = m.out match {
-                case Some(outRef) =>
-                  val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
-                  q"return $outCodec.instance.decode(ctx, ${mkInlineReader("resp")})"
-                case None => q"return Unit as $retType"
-              }
-              Some(
-                q"""suspend fun ${m.name.name}(arg: $inTypeRef, ctx: $baboonCodecContext = $baboonCodecContext.Default): $retType {
-                   |  ${mkWriterSetup("writer").shift(2).trim}
-                   |  $inCodec.instance.encode(ctx, writer, arg)
-                   |  val resp = transportUeba("$svcName", "${m.name.name}", ${mkWriterGetBytes("writer")})
-                   |  ${decodeOut.shift(2).trim}
-                   |}""".stripMargin
-              )
-            } else None
+              val uebaMethod = if (hasUeba) {
+                val inCodec = uebaCodecName(inTypeId)
+                val decodeOut = m.out match {
+                  case Some(outRef) =>
+                    val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
+                    q"return $outCodec.instance.decode(ctx, ${mkInlineReader("resp")})"
+                  case None => q"return Unit as $retType"
+                }
+                Some(
+                  q"""suspend fun ${m.name.name}(arg: $inTypeRef, ctx: $baboonCodecContext = $baboonCodecContext.Default): $retType {
+                     |  ${mkWriterSetup("writer").shift(2).trim}
+                     |  $inCodec.instance.encode(ctx, writer, arg)
+                     |  val resp = transportUeba("$svcName", "${m.name.name}", ${mkWriterGetBytes("writer")})
+                     |  ${decodeOut.shift(2).trim}
+                     |}""".stripMargin
+                )
+              } else None
 
-            val jsonMethod = if (hasJson) {
-              val inCodec = jsonCodecName(inTypeId)
-              val decodeOut = m.out match {
-                case Some(outRef) =>
-                  val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
-                  q"return $outCodec.decode($baboonCodecContext.Default, $kotlinxJson.parseToJsonElement(resp))"
-                case None => q"return Unit as $retType"
-              }
-              Some(
-                q"""suspend fun ${m.name.name}Json(arg: $inTypeRef): $retType {
-                   |  val encoded = $inCodec.encode($baboonCodecContext.Default, arg).toString()
-                   |  val resp = transportJson("$svcName", "${m.name.name}", encoded)
-                   |  ${decodeOut.shift(2).trim}
-                   |}""".stripMargin
-              )
-            } else None
+              val jsonMethod = if (hasJson) {
+                val inCodec = jsonCodecName(inTypeId)
+                val decodeOut = m.out match {
+                  case Some(outRef) =>
+                    val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
+                    q"return $outCodec.decode($baboonCodecContext.Default, $kotlinxJson.parseToJsonElement(resp))"
+                  case None => q"return Unit as $retType"
+                }
+                Some(
+                  q"""suspend fun ${m.name.name}Json(arg: $inTypeRef): $retType {
+                     |  val encoded = $inCodec.encode($baboonCodecContext.Default, arg).toString()
+                     |  val resp = transportJson("$svcName", "${m.name.name}", encoded)
+                     |  ${decodeOut.shift(2).trim}
+                     |}""".stripMargin
+                )
+              } else None
 
-            uebaMethod.toList ++ jsonMethod.toList
+              uebaMethod.toList ++ jsonMethod.toList
           }
 
           if (clientMethods.isEmpty) return None

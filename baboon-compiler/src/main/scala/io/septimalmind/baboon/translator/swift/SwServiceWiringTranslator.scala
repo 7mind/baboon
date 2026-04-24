@@ -29,18 +29,22 @@ object SwServiceWiringTranslator {
       ServiceContextResolver.resolve(domain, "swift", target.language.serviceContext, target.language.pragmas)
 
     private def hasActiveJsonCodecs(service: Typedef.Service): Boolean = {
-      codecs.exists { c =>
-        c.id == "Json" && service.methods.forall { m =>
-          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
-        }
+      codecs.exists {
+        c =>
+          c.id == "Json" && service.methods.forall {
+            m =>
+              c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+          }
       }
     }
 
     private def hasActiveUebaCodecs(service: Typedef.Service): Boolean = {
-      codecs.exists { c =>
-        c.id == "Ueba" && service.methods.forall { m =>
-          c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
-        }
+      codecs.exists {
+        c =>
+          c.id == "Ueba" && service.methods.forall {
+            m =>
+              c.isActive(m.sig.id) && m.out.forall(o => c.isActive(o.id))
+          }
       }
     }
 

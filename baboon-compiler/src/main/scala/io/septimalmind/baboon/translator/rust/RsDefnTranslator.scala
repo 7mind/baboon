@@ -313,8 +313,8 @@ object RsDefnTranslator {
       tpe match {
         case TypeRef.Scalar(TypeId.Builtins.f32) => true
         case TypeRef.Scalar(TypeId.Builtins.f64) => true
-        case TypeRef.Constructor(_, args)         => args.exists(hasDirectFloat)
-        case _                                    => false
+        case TypeRef.Constructor(_, args)        => args.exists(hasDirectFloat)
+        case _                                   => false
       }
     }
 
@@ -500,7 +500,7 @@ object RsDefnTranslator {
           q""""$branchName" => Ok(${name.asName}::$branchName(map.next_value()?)),"""
       }
 
-      val branchNames = dataMembers.map(_.name.name.capitalize)
+      val branchNames    = dataMembers.map(_.name.name.capitalize)
       val branchNamesLit = branchNames.map(n => s""""$n"""").mkString(", ")
 
       val displayBranches = dataMembers.map {
@@ -583,11 +583,11 @@ object RsDefnTranslator {
             case t: RsValue.RsType     => if (t.predef) t.name else (t.crate.parts :+ t.name).mkString("::")
             case t: RsValue.RsTypeName => t.name
           }
-          val inStr  = inType.mapRender(rsFqName)
-          val outStr = outType.map(_.mapRender(rsFqName)).getOrElse("")
-          val errStr = errType.map(_.mapRender(rsFqName))
-          val retStr    = resolved.renderReturnType(outStr, errStr, "()")
-          val asyncKw   = if (target.language.asyncServices) "async " else ""
+          val inStr   = inType.mapRender(rsFqName)
+          val outStr  = outType.map(_.mapRender(rsFqName)).getOrElse("")
+          val errStr  = errType.map(_.mapRender(rsFqName))
+          val retStr  = resolved.renderReturnType(outStr, errStr, "()")
+          val asyncKw = if (target.language.asyncServices) "async " else ""
           q"${asyncKw}fn ${toSnakeCase(m.name.name)}(&self, ${ctxParam}arg: $inStr) -> $retStr;"
       }
       val genericParam = resolvedCtx match {
@@ -618,9 +618,43 @@ object RsDefnTranslator {
   }
 
   private val rustKeywords: Set[String] = Set(
-    "type", "self", "super", "crate", "mod", "fn", "let", "mut", "ref", "match", "if", "else", "while", "for", "loop", "break", "continue",
-    "return", "struct", "enum", "trait", "impl", "use", "pub", "as", "in", "where", "async", "await", "dyn", "move", "static", "const", "unsafe",
-    "extern", "true", "false",
+    "type",
+    "self",
+    "super",
+    "crate",
+    "mod",
+    "fn",
+    "let",
+    "mut",
+    "ref",
+    "match",
+    "if",
+    "else",
+    "while",
+    "for",
+    "loop",
+    "break",
+    "continue",
+    "return",
+    "struct",
+    "enum",
+    "trait",
+    "impl",
+    "use",
+    "pub",
+    "as",
+    "in",
+    "where",
+    "async",
+    "await",
+    "dyn",
+    "move",
+    "static",
+    "const",
+    "unsafe",
+    "extern",
+    "true",
+    "false",
   )
 
   def isRustKeyword(s: String): Boolean = rustKeywords.contains(s)
@@ -634,9 +668,9 @@ object RsDefnTranslator {
     */
   def escapeRustModuleName(s: String): String = {
     s match {
-      case "in" => "input"
+      case "in"                    => "input"
       case kw if isRustKeyword(kw) => s"${kw}_"
-      case other => other
+      case other                   => other
     }
   }
 
