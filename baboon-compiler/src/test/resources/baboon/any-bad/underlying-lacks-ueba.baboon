@@ -1,0 +1,11 @@
+model my.bad.nouse
+
+version "1.0.0"
+
+data Foo {
+  x: i32
+}
+
+root data Holder {
+  f: any[Foo]
+}

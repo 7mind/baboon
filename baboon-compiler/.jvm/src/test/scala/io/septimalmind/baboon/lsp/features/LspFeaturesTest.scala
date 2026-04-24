@@ -32,10 +32,13 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
     import izumi.fundamentals.platform.files.IzFiles
 
     val basePath = java.nio.file.Paths.get("./baboon-compiler/src/test/resources/baboon").toAbsolutePath.normalize()
-    // Collect all .baboon files from the test resources
+    // Collect all .baboon files from the test resources. Intentionally-invalid fixtures live under
+    // `any-bad/` (driven by AnyFrontEndTest) and must be excluded here — loading them would fail
+    // family construction with the very issues those fixtures exist to assert on.
     val allFiles = IzFiles
       .walk(basePath.toFile).toList
       .filter(p => p.toFile.isFile && p.toFile.getName.endsWith(".baboon"))
+      .filterNot(p => p.toAbsolutePath.normalize().startsWith(basePath.resolve("any-bad")))
 
     val inputs = allFiles.map {
       f =>

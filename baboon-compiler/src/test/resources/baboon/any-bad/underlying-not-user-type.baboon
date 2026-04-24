@@ -1,0 +1,7 @@
+model my.bad.notuser
+
+version "1.0.0"
+
+root data Holder {
+  f: any[i32]
+}

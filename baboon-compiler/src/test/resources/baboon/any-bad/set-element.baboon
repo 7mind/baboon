@@ -1,0 +1,7 @@
+model my.bad.setelem
+
+version "1.0.0"
+
+root data Holder {
+  f: set[any]
+}

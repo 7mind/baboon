@@ -1,0 +1,7 @@
+model my.bad.mapkey
+
+version "1.0.0"
+
+root data Holder {
+  f: map[any, str]
+}

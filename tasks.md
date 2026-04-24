@@ -8,7 +8,7 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ## Milestones (high-level)
 
-- [~] **M1** — Compiler front-end (parser, typer, validator). No codegen.
+- [x] **M1** — Compiler front-end (parser, typer, validator). No codegen.
 - [ ] **M2** — Scala end-to-end (runtime + UEBA codegen + JSON codegen + round-trip tests).
 - [ ] **M3** — C# end-to-end.
 - [ ] **M4** — Rust end-to-end.
@@ -31,7 +31,7 @@ Detail in `docs/drafts/20260424-1738-any-opaque-plan.md` §3. One line per PR he
 - [x] **PR 1.1** — Parser + raw AST (`RawTypeRef.AnyRef`, qualifier tokens).
 - [x] **PR 1.2** — Typed AST + typer + mechanical placeholder cascade across all pattern-match sites (option (a) per Q5.1). `TypeRef.Any`, `AnyVariant`, `Builtins.any`, `BinReprLen` hook, translator placeholders.
 - [x] **PR 1.3** — Validator rules (map-key rejection, `derived[ueba]` check, generic-arg policy).
-- [ ] **PR 1.4** — Compile-only end-to-end fixture tests.
+- [x] **PR 1.4** — Compile-only end-to-end fixture tests.
 
 ---
 
@@ -61,6 +61,11 @@ My recommendation is **(a)**: one big PR, mechanical, everything stays consisten
 ---
 
 ## Completed
+
+- **PR 1.4** (2026-04-24) — Compile-only E2E fixture tests closing M1. Added five `.baboon` fixtures: `any-ok/pkg.baboon` exercising all 6 DSL variants plus 3 nested positions (`opt[any]`, `lst[any[Inner]]`, `map[str, any]`); and four `any-bad/` files each isolating a single validator rule (`underlying-not-user-type.baboon` / `underlying-lacks-ueba.baboon` / `map-key.baboon` / `set-element.baboon`). New `AnyFrontEndTest` drives the full parser→typer→comparator→validator pipeline via `BaboonLoader[F].load(List[Path])` — same layer `BaboonTest.loadPkg` uses. Five tests: one positive, four negative; each negative asserts via `ClassTag`-based `assertProducesIssue[T]` that the expected `VerificationIssue` subclass fires. Collateral: `LspFeaturesTest` gained a one-line `filterNot` excluding `any-bad/` from its tree-walk, because LSP tests load every `.baboon` under `src/test/resources/baboon/` into a single family, and deliberately-broken fixtures break family construction. Verification: `sbt "testOnly *AnyFrontEndTest"` → 5/5; `sbt test` → 180/180 + 3 pre-existing cancels; `mdl :build` clean. One adversarial review round, clean pass. Surprises:
+  - **LSP test tree-walk collision**: `LspFeaturesTest` walks every `.baboon` fixture under `baboon/` — negative fixtures had to be filtered out explicitly. Future PRs adding new `*-bad/` fixture directories should also update this filter. An alternative (moving fixtures outside `baboon/`) would split test resources awkwardly; the in-place filter is preferred.
+  - **`BaboonLoader` vs `BaboonFamilyManager`**: `BaboonLoader` is the thinner file-I/O + family-pipeline wrapper, already used by `BaboonTest.loadPkg`. Mirroring that entry point kept the test shape consistent with existing fixture-driven tests.
+  - **`IzResources.getPath`** works on both directories and single files; the driver uses that dual behavior to point positive tests at a directory and negative tests at individual files, preserving single-rule assertion precision.
 
 - **PR 1.3** (2026-04-24) — Validator rules for `any`. Added four dedicated issue types (`AnyUnderlyingNotUserType`, `AnyUnderlyingLacksUebaDerivation`, `AnyAsMapKey`, `AnyAsSetElement`) and three validator passes: `checkAnyFields` (walks Dto/Contract/Adt/Service owners' field-lists), `checkAnyAsMapKey`, `checkAnyAsSetElement`. Both recursion passes walk into `Constructor.args` so `opt[map[any, str]]` and `lst[set[any[Foo]]]` are rejected at any wrapping depth. Service methods use synthetic pseudo-`Field`s named `<method>.{sig|out|err}` to reuse the field-list reporting shape uniformly. `Typedef.Adt.fields` (flattened contract inheritance) is walked directly — not just via branch-DTO redundancy. LSP cascade (`DiagnosticsProvider`, `WorkspaceState`, `BaboonJS`) extended with the four new cases. 19-case `AnyValidatorTest` covers positives (single/nested valid shapes), negatives (each of the four rules), deep-nesting regressions (opt/lst/set wrappers), Foreign rejection, standalone Contract, Service method OUT slot, and Adt own-fields. Verification: `sbt "testOnly *AnyValidatorTest"` → 19/19; `sbt test` → 175/175 + 3 pre-existing cancels; `mdl :build` clean. Two adversarial review rounds, 19 defects logged (D13/D14/D19 deferred as known limitations or future refactors; rest resolved). Key surprises:
   - **Build-break in `BaboonJS.scala`**: round-1 missed an exhaustive `VerificationIssue` match site in the JS bridge (separate from `DiagnosticsProvider`/`WorkspaceState`). Fixed in round 2. Future PRs adding new issue types should grep `VerificationIssue` exhaustive matches across BOTH JVM and JS bridges.

@@ -1,0 +1,27 @@
+model my.ok
+
+version "1.0.0"
+
+data Inner : derived[ueba] {
+  x: i32
+}
+
+root data Holder {
+  // variant A: bare
+  fAny: any
+  // variant B: domain:this
+  fDomainThis: any[domain:this]
+  // variant C: domain:current
+  fDomainCurrent: any[domain:current]
+  // variant D1: typed underlying
+  fUnderlying: any[Inner]
+  // variant D2: domain:this + underlying
+  fThisUnderlying: any[domain:this, Inner]
+  // variant D3: domain:current + underlying
+  fCurrentUnderlying: any[domain:current, Inner]
+
+  // nested positions (legitimate)
+  fOpt: opt[any]
+  fLst: lst[any[Inner]]
+  fMapValue: map[str, any]
+}
