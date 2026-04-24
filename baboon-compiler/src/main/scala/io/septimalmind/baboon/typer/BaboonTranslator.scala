@@ -468,6 +468,9 @@ class BaboonTranslator[F[+_, +_]: Error2](
         } yield {
           TypeRef.Constructor(asCollection, nel)
         }
+      case _: RawTypeRef.AnyRef =>
+        // PR 1.1: parser-only. Typer support lands in PR 1.2 (TypeRef.Any + AnyVariant).
+        throw new RuntimeException("BUG: `any` typed AST not yet implemented (PR 1.2 scope)")
     }
   }
 

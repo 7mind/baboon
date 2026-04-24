@@ -21,18 +21,59 @@ class DefDto(context: ParserContext, meta: DefMeta) {
     idt.symbolSeq.map(s => ScopedRef(NEList.unsafeFrom(s.map(p => RawTypeName(p)).toList)))
   }
 
+  private def anyQualifier[$: P]: P[RawTypeRef.AnyRef.Qual] = {
+    // Qualifier tokens have no internal whitespace (e.g. `domain: this` must not parse).
+    // Pin the no-whitespace contract at compile time: if a future edit introduces a `~` inside
+    // this body it will use `NoWhitespace`, preserving the strict behavior instead of silently
+    // inheriting the caller's `SingleLineWhitespace`. `.discard()` keeps the implicit in scope
+    // without triggering the "unused import" warning when no `~` is currently present.
+    import fastparse.NoWhitespace.noWhitespaceImplicit
+    noWhitespaceImplicit.discard()
+    P("domain:this").map(_ => RawTypeRef.AnyRef.DomainThis) |
+    P("domain:current").map(_ => RawTypeRef.AnyRef.DomainCurrent)
+  }
+
+  private def anyTypeRefArgs[$: P]: P[(Option[RawTypeRef.AnyRef.Qual], Option[RawTypeRef])] = {
+    import fastparse.SingleLineWhitespace.whitespace
+    // Strict arg order: qualifier first (optional), then underlying typeRef (optional). Empty brackets rejected.
+    //
+    // Leading `CharsWhileIn(" \t", 0)` explicitly consumes any spaces/tabs between the `any`
+    // identifier and `[`. We cannot rely on the surrounding implicit: this parser is invoked
+    // from a `flatMap` continuation in `typeRef`, which does not insert a `~` boundary before
+    // the call site. Without this, `any [T]` silently truncates to `Simple("any", Nil)` and the
+    // `[T]` tail dangles — the exact partial-consume failure mode described in D15.
+    P(
+      CharsWhileIn(" \t", 0) ~ "[" ~/ (
+        (anyQualifier ~ ("," ~ typeRef).?).map { case (q, t) => (Some(q): Option[RawTypeRef.AnyRef.Qual], t) } |
+        typeRef.map(t => (None: Option[RawTypeRef.AnyRef.Qual], Some(t)))
+      ) ~ "]"
+    )
+  }
+
   def typeRef[$: P]: P[RawTypeRef] = {
     import fastparse.SingleLineWhitespace.whitespace
-    (nonGenericTypeRef ~ typeParams.?).map {
-      case (ref, params) =>
+    // `any` is syntactically special ONLY when it appears as `any[...]` at the head of a typeRef.
+    // Bare `any` and prefixed forms like `foo.any` / `any.Foo` are parsed as ordinary identifiers;
+    // the typer decides whether the identifier resolves to the builtin or to a user type.
+    //
+    // We parse the identifier path atomically first (no backtrack hazards after `"any"` consumes
+    // 3 chars), then branch: when the head is exactly `any` (single segment, no prefix), route
+    // to `anyTypeRefArgs` if `[` follows; otherwise fall through to the generic shape.
+    nonGenericTypeRef.flatMap {
+      ref =>
         val name   = ref.path.last.name
         val prefix = ref.path.toList.init
 
-        params match {
-          case Some(value) =>
-            RawTypeRef.Constructor(RawTypeName(name), value, prefix)
-          case None =>
-            RawTypeRef.Simple(RawTypeName(name), prefix)
+        if (name == "any" && prefix.isEmpty) {
+          // Head is bare `any`. If brackets follow, interpret as the any-builtin syntax; otherwise
+          // treat as an ordinary identifier.
+          anyTypeRefArgs.map { case (q, u) => RawTypeRef.AnyRef(q, u): RawTypeRef } |
+          Pass(RawTypeRef.Simple(RawTypeName(name), prefix): RawTypeRef)
+        } else {
+          typeParams.?.map {
+            case Some(value) => RawTypeRef.Constructor(RawTypeName(name), value, prefix)
+            case None        => RawTypeRef.Simple(RawTypeName(name), prefix)
+          }
         }
     }
   }
