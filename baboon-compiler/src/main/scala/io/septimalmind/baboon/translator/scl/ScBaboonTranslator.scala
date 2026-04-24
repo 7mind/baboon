@@ -230,6 +230,7 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
     if (target.output.products.contains(CompilerProduct.Runtime)) {
       F.pure(
         List(
+          rt("BaboonAnyOpaque.scala", "baboon-runtime/scala/BaboonAnyOpaque.scala"),
           rt("BaboonByteString.scala", "baboon-runtime/scala/BaboonByteString.scala", _.replace("""[\\s:-]""", """[\\\\s:-]""")),
           rt("BaboonCodecs.scala", "baboon-runtime/scala/BaboonCodecs.scala"),
           rt("BaboonCodecsFacade.scala", "baboon-runtime/scala/BaboonCodecsFacade.scala"),

@@ -9,7 +9,7 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 ## Milestones (high-level)
 
 - [x] **M1** — Compiler front-end (parser, typer, validator). No codegen.
-- [ ] **M2** — Scala end-to-end (runtime + UEBA codegen + JSON codegen + round-trip tests).
+- [~] **M2** — Scala end-to-end (runtime + UEBA codegen + JSON codegen + round-trip tests).
 - [ ] **M3** — C# end-to-end.
 - [ ] **M4** — Rust end-to-end.
 - [ ] **M5** — Kotlin end-to-end.
@@ -32,6 +32,18 @@ Detail in `docs/drafts/20260424-1738-any-opaque-plan.md` §3. One line per PR he
 - [x] **PR 1.2** — Typed AST + typer + mechanical placeholder cascade across all pattern-match sites (option (a) per Q5.1). `TypeRef.Any`, `AnyVariant`, `Builtins.any`, `BinReprLen` hook, translator placeholders.
 - [x] **PR 1.3** — Validator rules (map-key rejection, `derived[ueba]` check, generic-arg policy).
 - [x] **PR 1.4** — Compile-only end-to-end fixture tests.
+
+---
+
+## Milestone 2 — PR breakdown
+
+Detail in `docs/drafts/20260424-1738-any-opaque-plan.md` §4. One line per PR here; sub-tasks stay in the plan doc.
+
+- [x] **PR 2.1** — Scala runtime additions: `AnyOpaque`/`AnyMeta` ADT, `AnyMetaCodec` helpers, `decodeAny` facade.
+- [~] **PR 2.0** — (inserted after PR 2.1) relocate PR 1.4's `any-bad/*.baboon` fixtures outside the compiler's model-dir codegen path so `mdl :test-gen-regular-adt` stops failing. See defect PR-04-D11. **Blocks PR 2.2+.**
+- [ ] **PR 2.2** — Scala UEBA codec emission (`ScUEBACodecGenerator` for `TypeRef.Any`).
+- [ ] **PR 2.3** — Scala JSON codec emission (`ScJsonCodecGenerator` for `TypeRef.Any`).
+- [ ] **PR 2.4** — Scala stub tests + round-trip + cross-format.
 
 ---
 
@@ -61,6 +73,14 @@ My recommendation is **(a)**: one big PR, mechanical, everything stays consisten
 ---
 
 ## Completed
+
+- **PR 2.1** (2026-04-24) — Scala runtime additions opening M2. New `BaboonAnyOpaque.scala` carries the locked language surface: `AnyMeta(kind: Byte, domain/version/typeid: Option[String])` with four `require`s (presence-matches-each-bit × 3 + `VALID_KINDS` membership rejecting reserved bytes `0x04`/`0x05`), sealed `AnyOpaque` trait with `AnyOpaqueUeba(bytes)` / `AnyOpaqueJson(json)` branches, and `object AnyMetaCodec` exposing `writeBin`/`readBin` (kind-byte + ULEB128-prefixed UTF-8 strings via `BaboonBinTools.writeString`, fixed order domain→version→typeid, no outer framing — that's PR 2.2's concern) plus `writeJson`/`readJson` emitting the envelope `{$ak, $ad?, $av?, $at?}`. `readJson` returns `Either[BaboonCodecException, AnyMeta]` (matches `decodeFromJson` discipline, anticipates PR 2.3's codec pipeline). `BaboonCodecsFacade` gained `decodeAny(opaque): BaboonValue[BaboonGenerated]` delegating through the existing `getBinCodec`/`getJsonCodec` + compat dispatcher by synthesising a `BaboonTypeMeta` from `AnyMeta`'s three strings; `Left(DecoderFailure)` when meta lacks any required field. One-line addition to `ScBaboonTranslator.sharedRuntime()` registers the new template file. 13-case `AnyMetaCodecSpec` covers all six binary + six JSON round-trips, `require` negatives (bit-mismatch × 3 + reserved-kind × 1), byte-count assertions, non-ASCII UTF-8, empty strings, 128-byte strings (multi-byte ULEB128 prefix), `readJson` Left paths (missing required + forbidden present + non-numeric `$ak`), and `decodeAny` Left paths (UEBA + JSON) against an empty `new BaboonCodecsFacade {}`. Verification: `sbt compile` clean, `mdl :build` produces native binary, 13/13 `AnyMetaCodecSpec` pass in the codegen'd `target/test-regular/sc-stub/` copy, full `sc-stub` suite 72/72. Two adversarial review rounds, 11 defects logged (10 PR-local, all resolved in round 2; 1 — D11 — pre-existing PR 1.4 blocker tracked as PR 2.0). Key surprises:
+  - **Reserved meta-kind bytes matter now**: spec says `0x04`/`0x05` are "reserved for future use", but the bitmask-only `require` silently accepted them. Fix adds a `VALID_KINDS` Set and a fourth `require`. Future language ports must also reject reserved bytes — any one that doesn't is a forward-compat hazard.
+  - **Scala `Set[Byte]` gotcha**: `Set(0x00, 0x01, ...)` is `Set[Int]`; must explicitly `.toByte` each element (or use `Set[Byte](0x00.toByte, ...)`). Used in D01's fix.
+  - **`readJson` error-channel discipline**: initial implementation threw `BaboonCodecException` to match `readBin`'s throw-on-bad-wire contract. But JSON codec pipelines (PR 2.3) use `Either`-threaded error channels throughout. Aligning now (D02) saves churn later. Binary path still throws — binary is trust-the-wire, JSON is user-facing parse.
+  - **PR 1.4 fixture collision with `mdl` actions** (D11 / PR 2.0): PR 1.4's `any-bad/*.baboon` negative fixtures live under `baboon-compiler/src/test/resources/baboon/`, which the `mdl :test-gen-regular-adt` action feeds to the compiler as `--model-dir`. That broke the canonical e2e build-and-test gate for all M2 work. Worked around in PR 2.1 by running `baboon` manually against a curated model subset; PR 2.0 relocates the fixtures before PR 2.2. Lesson for future `-bad`/negative-fixture PRs: place them outside the `baboon/` subtree to avoid overlap with e2e codegen actions.
+  - **`mdl :fmt` hazard**: still live — round 1 executor had to revert four reformatted translator files. Formatting via `sbt scalafmtOnly` or `cs launch scalafmt` on named files only is the documented path.
+  - **Test file in `test/sc-stub/` references only-generated symbols**: `AnyMetaCodecSpec.scala` compiles only in the rsync'd target copy. Header comment (D05) documents the constraint; this is the same constraint every existing stub test inherits silently.
 
 - **PR 1.4** (2026-04-24) — Compile-only E2E fixture tests closing M1. Added five `.baboon` fixtures: `any-ok/pkg.baboon` exercising all 6 DSL variants plus 3 nested positions (`opt[any]`, `lst[any[Inner]]`, `map[str, any]`); and four `any-bad/` files each isolating a single validator rule (`underlying-not-user-type.baboon` / `underlying-lacks-ueba.baboon` / `map-key.baboon` / `set-element.baboon`). New `AnyFrontEndTest` drives the full parser→typer→comparator→validator pipeline via `BaboonLoader[F].load(List[Path])` — same layer `BaboonTest.loadPkg` uses. Five tests: one positive, four negative; each negative asserts via `ClassTag`-based `assertProducesIssue[T]` that the expected `VerificationIssue` subclass fires. Collateral: `LspFeaturesTest` gained a one-line `filterNot` excluding `any-bad/` from its tree-walk, because LSP tests load every `.baboon` under `src/test/resources/baboon/` into a single family, and deliberately-broken fixtures break family construction. Verification: `sbt "testOnly *AnyFrontEndTest"` → 5/5; `sbt test` → 180/180 + 3 pre-existing cancels; `mdl :build` clean. One adversarial review round, clean pass. Surprises:
   - **LSP test tree-walk collision**: `LspFeaturesTest` walks every `.baboon` fixture under `baboon/` — negative fixtures had to be filtered out explicitly. Future PRs adding new `*-bad/` fixture directories should also update this filter. An alternative (moving fixtures outside `baboon/`) would split test resources awkwardly; the in-place filter is preferred.

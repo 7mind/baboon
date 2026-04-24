@@ -360,7 +360,85 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 **Location:** all new `Any*` issues' `meta` field
 **Description:** For a Service method violating, diagnostics point at the `service` declaration line, not the parameter. Consistent with existing `MapKeysShouldNotBeGeneric` etc.
 **Fix:** No action. If a future PR adds per-method/per-field positions to `Field`/`MethodDef`, these issues will benefit too.
+
+---
+
+## PR-04 — Scala runtime additions (M2 PR 2.1)
+
+### [PR-04-D01] `AnyMetaCodec` silently accepts reserved meta-kind values `0x04`, `0x05`
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/scala/BaboonAnyOpaque.scala:31-34,47`
+**Description:** The six locked kind bytes are `{0x07, 0x03, 0x01, 0x06, 0x02, 0x00}`. Spec v1 §Wire format says "Unused combinations `0x04`, `0x05` are reserved for future use." Current `AnyMeta` `require` checks only that Option-presence matches the bitmask; they do not restrict `kind` to locked values. `AnyMeta(kind=0x04, Some("d"), None, None)` constructs cleanly; `readBin`/`readJson` will accept it; `writeBin` will round-trip. If a future Baboon version legitimately assigns semantics to `0x04`, older readers and writers that happen to produce `0x04` data today silently mis-parse under the new semantics. The spec calls these "reserved" — today's code must reject them.
+**Fix:** Added `private val VALID_KINDS: Set[Byte]` in `AnyMetaCodec` companion holding the six locked kinds; added a fourth `require` in `AnyMeta` asserting membership. Reserved bytes now throw at construction. Regression test in `AnyMetaCodecSpec` asserts `AnyMeta(0x04.toByte, Some("d"), None, None)` throws.
+
+### [PR-04-D02] `readJson` throws `BaboonCodecException.DecoderFailure`; asymmetric with `readBin` and with `BaboonTypeMetaCodec.readMeta` precedent
+**Status:** resolved
 **Severity:** minor
-**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/graphql/GqlBaboonTranslator.scala:124-131` (`builtinCustomScalars` set) and `:264-273` (`collectScalarsFromRef`)
-**Description:** D07's fix has `GqlTypeTranslator.typeRefStr`/`typeRefIdent` return `"BaboonAny"` for `TypeRef.Any`. But `GqlBaboonTranslator` — which collects custom scalars at schema-emission time — has `builtinCustomScalars` not containing `BaboonAny`, and `collectScalarsFromRef` has a silent `case _ =>` fallthrough that ignores `TypeRef.Any`. A model with `any` fields will produce a GraphQL schema referencing `scalar BaboonAny` without declaring it — invalid SDL.
-**Suggested fix:** Add `"BaboonAny"` to `builtinCustomScalars` and add an explicit case in `collectScalarsFromRef` for `TypeRef.Any` that returns `Set("BaboonAny")` (plus recursion into `underlying` if present). Per user guidance ("schemas are demo-only"), this is preferred over the fail-fast alternative — produces a valid, usable schema.
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/scala/BaboonAnyOpaque.scala:73-109`
+**Description:** See original description above.
+**Fix:** `readJson` now returns `Either[BaboonCodecException, AnyMeta]`; `readOptString` returns `Either[BaboonCodecException, Option[String]]`; errors thread through a single for-comprehension. Tests updated to assert `Left(...)` plus message content.
+
+### [PR-04-D03] `decodeAny` JSON branch uses `case e: Throwable =>` partial-function form; asymmetric with the UEBA branch and with `decodeFromBin`
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/scala/BaboonCodecsFacade.scala:197-203`
+**Description:** See original description above.
+**Fix:** JSON branch rewritten to `.left.map(e => BaboonCodecException.DecoderFailure(...))`, matching the UEBA branch and `decodeFromBin`.
+
+### [PR-04-D04] `decodeAny`'s Left (incomplete-meta) path has no test
+**Status:** resolved
+**Severity:** minor
+**Location:** `test/sc-stub/src/test/scala/runtime/AnyMetaCodecSpec.scala:181-199`
+**Description:** See original description above.
+**Fix:** Two new tests exercise `decodeAny`'s Left path (UEBA and JSON branches) against an anonymous `new BaboonCodecsFacade {}` with kind=0x01 meta (only typeid); assertions verify `Left(DecoderFailure(...))` with message mentioning "domain" and "version".
+
+### [PR-04-D05] `AnyMetaCodecSpec.scala` in the source tree references generated symbols and only compiles in the rsync'd `target/test-regular/sc-stub/` copy
+**Status:** resolved
+**Severity:** minor
+**Location:** `test/sc-stub/src/test/scala/runtime/AnyMetaCodecSpec.scala:1-6`
+**Description:** See original description above.
+**Fix:** Added a file-header NOTE comment explaining the codegen dependency. No build.sbt exclude convention exists in `test/sc-stub/` to match; the header comment is the minimum-impact approach.
+
+### [PR-04-D06] `decodeAny` builds synthetic `BaboonTypeMeta` with `domainVersionMinCompat = version`; no comment explains the implication
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/scala/BaboonCodecsFacade.scala:174`
+**Description:** See original description above.
+**Fix:** One-line comment added above the synthetic `BaboonTypeMeta(...)` construction.
+
+### [PR-04-D07] Test failure-message uses `\\$$ad` which renders as literal `\$ad`
+**Status:** resolved
+**Severity:** nit
+**Location:** `test/sc-stub/src/test/scala/runtime/AnyMetaCodecSpec.scala:163,170,...`
+**Description:** See original description above.
+**Fix:** Removed the spurious `\\` from the `s"..."` error-message assertions.
+
+### [PR-04-D08] `writeJson` mutates a `var obj` instead of building the JSON via fold or a single `Json.obj(...)` call
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/scala/BaboonAnyOpaque.scala:64-71`
+**Description:** See original description above.
+**Fix:** `writeJson` rebuilt as a `List[(String, Json)]` assembled via Option-folds, then emitted via `Json.fromFields(pairs)`. No mutable state.
+
+### [PR-04-D09] Test coverage gaps: non-ASCII UTF-8, empty strings, long strings (multi-byte ULEB128), malformed JSON value types
+**Status:** resolved
+**Severity:** nit
+**Location:** `test/sc-stub/src/test/scala/runtime/AnyMetaCodecSpec.scala:88-133,173-179`
+**Description:** See original description above. Note on JSON side: Circe's `Decoder[Int]` accepts numeric strings (`"1"` → `1`), so the defect's literal "string instead of int" must use a non-numeric literal to exercise the rejection.
+**Fix:** Added four tests — (a) non-ASCII UTF-8 round-trip (binary); (b) empty string round-trip (binary); (c) 128-byte string round-trip (verifies multi-byte ULEB128 prefix `0x80 0x01`); (d) `readJson` with `$ak` as the non-numeric literal `"not-a-number"` → Left.
+
+### [PR-04-D10] `BaboonAnyOpaque.scala` imports `DecodingFailure` but only uses it as an unnecessary explicit type annotation
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/scala/BaboonAnyOpaque.scala:3,74-75`
+**Description:** See original description above.
+**Fix:** Dropped the explicit `Either[DecodingFailure, Byte]` annotation; after the D02 rewrite the `DecodingFailure` import was unused, so it was also removed.
+
+### [PR-04-D11] `mdl :test-gen-regular-adt` action is broken by PR 1.4's `any-bad/*.baboon` fixtures living in the compiler's model-dir codegen path — blocks all M2 e2e validation
+**Status:** open
+**Severity:** major (blocks PR 2.2+; **not** a defect introduced by PR 2.1 — surfaced by it)
+**Location:** `baboon-compiler/src/test/resources/baboon/any-bad/*.baboon` (introduced by PR 1.4, commit `0864b46`); `.mdl/defs/*.yaml` action definitions that feed the whole `baboon/` directory to the compiler as `--model-dir`.
+**Description:** The four `any-bad/` fixtures are intentionally invalid `.baboon` files added by PR 1.4 as negative-path unit-test inputs. They live under the same `src/test/resources/baboon/` directory that the `mdl :test-gen-regular-adt` / `:test-gen-wrapped-adt` actions hand to the `baboon` binary as `--model-dir`. Compilation of those fixtures fails, `baboon` exits non-zero, codegen never runs. PR 2.1 dodged this by running `baboon` manually against a curated subset of models. PR 2.2 onward cannot — codec-emission work needs the full codegen pipeline green.
+**Root cause:** Unit-test negative fixtures were placed inside the e2e codegen input tree. PR 1.4 filtered them out of `LspFeaturesTest`'s tree-walk but did not consider the `mdl` action's consumption of the same directory.
+**Suggested fix:** Dedicated small PR between PR 2.1 and PR 2.2 (call it **PR 2.0**). Preferred approach: move `any-bad/*.baboon` to `baboon-compiler/src/test/resources/baboon-fixtures-bad/` (outside the `baboon/` codegen root); update `AnyFrontEndTest`'s `IzResources.getPath("baboon/any-bad/...")` references to the new path. Alternative: teach the `mdl :test-gen-regular-adt` action to pass `--exclude-dir any-bad` (requires a compiler CLI change). Option A is cleaner — fixtures never belonged under a codegen path. Track as `[ ] PR 2.0` in `tasks.md` M2 breakdown.

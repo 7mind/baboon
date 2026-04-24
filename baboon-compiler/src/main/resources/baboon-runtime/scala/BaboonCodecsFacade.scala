@@ -166,6 +166,58 @@ package baboon.runtime.shared {
       )
     }
 
+    def decodeAny(opaque: AnyOpaque): BaboonValue[BaboonGenerated] = {
+      val meta = opaque.meta
+      (meta.domain, meta.version, meta.typeid) match {
+        case (Some(domain), Some(version), Some(typeid)) =>
+          // AnyMeta does not carry a min-compat version; forward-version migration is unavailable for any-payloads.
+          val typeMeta = BaboonTypeMeta(
+            BaboonTypeMetaCodec.META_VERSION,
+            domain,
+            version,
+            version,
+            typeid,
+          )
+          opaque match {
+            case AnyOpaqueUeba(_, bytes) =>
+              for {
+                codec <- getBinCodec(typeMeta, exact = false)
+                result <- codec
+                  .decode(BaboonCodecContext.Compact, new LEDataInputStream(new ByteArrayInputStream(bytes))).left.map(
+                    e =>
+                      BaboonCodecException.DecoderFailure(
+                        s"decodeAny: cannot decode UEBA payload of type [$domain.$typeid] of version '$version'.",
+                        e,
+                      )
+                  )
+              } yield result
+            case AnyOpaqueJson(_, json) =>
+              for {
+                codec <- getJsonCodec(typeMeta, exact = false)
+                result <- codec
+                  .decode(BaboonCodecContext.Compact, json).left.map(
+                    e =>
+                      BaboonCodecException.DecoderFailure(
+                        s"decodeAny: cannot decode JSON payload of type [$domain.$typeid] of version '$version'.",
+                        e,
+                      )
+                  )
+              } yield result
+          }
+        case _ =>
+          val missing = List(
+            if (meta.domain.isEmpty) Some("domain") else None,
+            if (meta.version.isEmpty) Some("version") else None,
+            if (meta.typeid.isEmpty) Some("typeid") else None,
+          ).flatten.mkString(", ")
+          Left(
+            BaboonCodecException.DecoderFailure(
+              s"decodeAny requires meta.domain/version/typeid; got kind 0x${(meta.kind & 0xFF).toHexString} which lacks: $missing"
+            )
+          )
+      }
+    }
+
     def decodeFromBin(reader: LEDataInputStream): BaboonValue[BaboonGenerated] = {
       for {
         typeMeta <- BaboonTypeMeta
