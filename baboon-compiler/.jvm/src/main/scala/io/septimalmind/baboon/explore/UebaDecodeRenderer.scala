@@ -121,6 +121,8 @@ class UebaDecodeRenderer(domain: Domain, enquiries: BaboonEnquiries) {
 
       case TypeRef.Constructor(id, args) =>
         renderConstructor(sb, reader, tracker, id, args.toList, s"$indent${field.name.name}", depth)
+
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("UebaDecodeRenderer.renderField")
     }
   }
 
@@ -251,6 +253,7 @@ class UebaDecodeRenderer(domain: Domain, enquiries: BaboonEnquiries) {
         }
       case TypeRef.Constructor(id, args) =>
         renderConstructor(sb, reader, tracker, id, args.toList, label, depth)
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("UebaDecodeRenderer.renderTypeRef")
     }
   }
 
@@ -298,6 +301,7 @@ class UebaDecodeRenderer(domain: Domain, enquiries: BaboonEnquiries) {
             }
           case _ =>
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("UebaDecodeRenderer.skipTypeRef")
     }
   }
 

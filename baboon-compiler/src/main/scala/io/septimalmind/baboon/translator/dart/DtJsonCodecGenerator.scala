@@ -282,6 +282,7 @@ class DtJsonCodecGenerator(
             q"""$ref.map(($varName) => ${mkEncoder(c.args.head, q"$varName", depth + 1)}).toList()"""
           case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("DtJsonCodecGenerator.mkEncoder")
     }
   }
 
@@ -336,6 +337,7 @@ class DtJsonCodecGenerator(
               q"""Map.fromEntries(($ref as Map<String, dynamic>).entries.map(($varName) => MapEntry($keyDec, $valueDec)))"""
             case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
+        case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("DtJsonCodecGenerator.decodeElement")
       }
     }
 

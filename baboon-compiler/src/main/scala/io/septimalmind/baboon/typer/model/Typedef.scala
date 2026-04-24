@@ -98,6 +98,43 @@ object TypeRef {
     override def toString: String = s"""${id.toString}${args.mkString("[", ",", "]")}"""
   }
 
+  // `any` opaque field. `variant` encodes which meta components appear on the wire;
+  // `underlying.isDefined` distinguishes the D1/D2/D3 typed variants from A/B/C.
+  case class Any(variant: AnyVariant, underlying: Option[TypeRef]) extends TypeRef {
+    override def id: TypeId = TypeId.AnyType
+    override def toString: String = variant match {
+      case AnyVariant.Global  => underlying.fold("#any")(u => s"#any[$u]")
+      case AnyVariant.ThisDom => underlying.fold("#any[domain:this]")(u => s"#any[domain:this,$u]")
+      case AnyVariant.Current => underlying.fold("#any[domain:current]")(u => s"#any[domain:current,$u]")
+    }
+  }
+
+  sealed trait AnyVariant
+  object AnyVariant {
+
+    /** Variant A (`any`) / D1 (`any[T]`) — domain + version + typeid on the wire. */
+    case object Global extends AnyVariant
+
+    /** Variant B (`any[domain:this]`) / D2 (`any[domain:this, T]`) — version + typeid on the wire. */
+    case object ThisDom extends AnyVariant
+
+    /** Variant C (`any[domain:current]`) / D3 (`any[domain:current, T]`) — typeid only on the wire. */
+    case object Current extends AnyVariant
+
+    /** Meta-kind byte per the design spec §"Meta-kind byte table".
+      * Bit 0 = typeid present, bit 1 = version present, bit 2 = domain present.
+      * `underlying` present ⇒ typeid is known statically ⇒ typeid bit is 0.
+      */
+    def metaKindByte(v: AnyVariant, hasUnderlying: Boolean): Byte = {
+      val typeidBit = if (hasUnderlying) 0 else 1
+      val (domainBit, versionBit) = v match {
+        case Global  => (1, 1)
+        case ThisDom => (0, 1)
+        case Current => (0, 0)
+      }
+      ((domainBit << 2) | (versionBit << 1) | typeidBit).toByte
+    }
+  }
 }
 
 sealed trait Owner {

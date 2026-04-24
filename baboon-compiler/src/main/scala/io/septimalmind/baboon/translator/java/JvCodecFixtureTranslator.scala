@@ -128,6 +128,7 @@ object JvCodecFixtureTranslator {
               case Builtins.opt => q"rnd.mkOptional(() -> ${gen(args.head)})"
               case t            => throw new IllegalArgumentException(s"Unexpected collection type: $t")
             }
+          case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("JvCodecFixtureTranslator.genType")
         }
       }
 

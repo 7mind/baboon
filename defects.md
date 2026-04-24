@@ -130,3 +130,98 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/defns/DefDto.scala:26` (around `anyQualifier`)
 **Description:** `anyQualifier` is designed to forbid whitespace around `:`. It does so by not using `~` inside its body, relying on the absence of whitespace-implicit. But there's nothing in the code that enforces this at compile time — a future editor could add `~` inside and the negative test `reject any[domain: this]` would be the only guard. Fragile.
 **Suggested fix:** Add `import fastparse.NoWhitespace.noWhitespaceImplicit` inside `anyQualifier` to make the contract explicit and fail-fast on edits. OR expand the in-code comment to a loud warning about what a regression would look like.
+
+---
+
+## PR-02 — Typed AST + typer + placeholder cascade
+
+### [PR-02-D01] `processRefs` new `TypeRef.Any` arm is shallow; comment overstates what it does
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonEnquiries.scala:135-140`
+**Description:** The arm walks `underlying.toList.flatMap(u => domain.defs.meta.nodes(u.id))`, which only reaches one structural level of the underlying type. The pre-existing `TypeRef.Constructor` arm has the same shallow pattern. Not broken, but the comment "surface any foreign refs it carries" overpromises.
+**Fix:** Softened the comment to: "Surface the underlying's top-level ref if it's a user type. Structural deep-walking into the underlying's fields is left to future passes (matches the shallow behaviour of the `TypeRef.Constructor` arm above)." Code unchanged.
+
+### [PR-02-D02] `isCompatibleChange` comment overstates the spec's evolution rule
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TypeInfo.scala:150-154`
+**Description:** Comment claims "Per spec §Evolution: any variant change or underlying-type change is breaking." The spec only asserts breaking for mismatched pairs; silent about e.g. `any[T] → any` (drop underlying, widening). Returning `false` is safe for PR 1.2, but the comment would mislead PR 1.3.
+**Fix:** Softened comment to flag PR 1.2 conservatism and PR 1.3's expected refinement. `false` return kept — still correct.
+
+### [PR-02-D03] LSP `HoverProvider` and `BaboonSchemeRenderer` throw on `TypeRef.Any` — breaks interactive tooling for any model with `any` fields
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/lsp/features/HoverProvider.scala:179`; `baboon-compiler/src/main/scala/io/septimalmind/baboon/scheme/BaboonSchemeRenderer.scala:472`
+**Description:** LSP hover renderer and scheme JSON renderer both invoke `anyNotSupportedYet`, which throws. LSP runs continuously in the editor; scheme renderer is invoked whenever `:scheme` output is requested. Throwing here crashes/disables hover and scheme output for any domain containing `any` — before codec milestones complete. This is a user-facing hostile behavior different in kind from codec placeholders (which only fire on explicit codegen).
+**Fix:** Both sites now render the DSL form verbatim (e.g. `any`, `any[domain:this]`, `any[domain:current, Inner]`) instead of throwing. `BaboonSchemeRenderer` produces free-form type text (not JSON) as part of reconstructing `.baboon` source — the DSL form fits the surrounding `renderTypeRef` output. Both surfaces now handle `TypeRef.Any` without crashing; existing `SchemeRoundtripTest` suite continues to pass.
+
+### [PR-02-D04] Missing test + undocumented behavior: unprefixed `any` reference always resolves to builtin, shadowing any top-level user type/alias named `any`
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonTranslator.scala:430-432`; `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/AnyTyperTest.scala`
+**Description:** The new `case RawTypeRef.Simple(RawTypeName("any"), Nil)` arm intercepts before `scopeSupport.resolveAlias`. A top-level `data any {...}` or `alias any = ...` is silently shadowed when referenced as unprefixed `any`. The existing "user type named any" test covers only the nested/prefixed case. This is intentional but undocumented.
+**Fix:** Expanded the in-code comment in `BaboonTranslator.convertTpe` to state the shadowing rule explicitly (including the back-compat note that `data any {}` remains definable but only reachable via prefix). Added a test in `AnyTyperTest` that defines a top-level `data any { x: i32 }` next to `root data Holder { f: any }` and asserts `Holder.f.tpe == TypeRef.Any(Global, None)`. The DSL does not currently support a top-level `alias any = ...` syntax, so only data-type shadowing is exercised (noted in the test comment).
+
+### [PR-02-D05] `AnyVariant` is placed at top level of `Typedef.scala`; convention is to nest inside the companion of its parent
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/model/Typedef.scala:121`
+**Description:** `TypeRef` companion nests `Scalar`/`Constructor`/`Any`. `Typedef` companion nests `Dto`/`Enum`/`Adt`/etc. `AnyVariant` is used only by `TypeRef.Any` and should nest inside `object TypeRef`.
+**Fix:** Moved `sealed trait AnyVariant` + `object AnyVariant { ... metaKindByte ... }` inside `object TypeRef`. Access point is now `TypeRef.AnyVariant.{Global,ThisDom,Current}`. Added `import ... .TypeRef.AnyVariant` in `BaboonEnquiries.scala`, `BaboonTranslator.scala`, and `AnyTyperTest.scala` (the three sites that reference `AnyVariant` unqualified). No other import changes were required.
+
+### [PR-02-D06] `anyNotSupportedYet` helper placed inside `object TypeRef` alongside data constructors — reads oddly
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/model/Typedef.scala:117-118`
+**Description:** Utility lives next to `Scalar`/`Constructor`/`Any`. When PR 1.3+ removes placeholders, deleting the helper will require another touch to `Typedef.scala`.
+**Fix:** Extracted to `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/model/AnyPlaceholder.scala`. Call sites updated from `TypeRef.anyNotSupportedYet(...)` to `AnyPlaceholder.notSupportedYet(...)` across the ~47 cascade files. Added explicit `AnyPlaceholder` import in `PyCodecFixtureTranslator.scala` (the only file with a non-wildcard typer-model import). All other files use wildcard imports and need no change.
+
+### [PR-02-D07] Silent fallthrough to pre-existing `case _ =>` catch-alls produces unhelpful / misleading errors when `TypeRef.Any` appears at runtime
+**Status:** resolved
+**Severity:** minor
+**Location:** Files with pre-existing `case _ =>` that weren't modified: e.g. `translator/rust/RsConversionTranslator.scala:169`, `translator/typescript/TsConversionTranslator.scala:168`, `translator/graphql/GqlTypeTranslator.scala:67` (produces garbage `BaboonUnknown_any`), `translator/openapi/OasTypeTranslator.scala:86`, `translator/csharp/CSTypeInfo.scala:112` (returns default values silently).
+**Description:** The cascade policy assumed all sites were exhaustive matches that require a new arm. Sites with pre-existing `case _ =>` catch-alls don't need one to compile — but `TypeRef.Any` falls through into generic errors ("Unsupported target field type", garbage names like `BaboonUnknown_any`, or silent default returns) that don't mention `any` or the site. Defeats the purpose of the `anyNotSupportedYet(site)` helper's grep-able error messages.
+**Fix:** Added preemptive `case _: TypeRef.Any => AnyPlaceholder.notSupportedYet(site)` arms above the pre-existing catch-alls in all five flagged files (all confirmed outside the PR 1.2 diff). Schema-only sites (`GqlTypeTranslator` `typeRefStr` and `typeRefIdent`; `OasTypeTranslator` `typeRefSchema`) use sensible placeholders instead of the placeholder throw — `"BaboonAny"` for GraphQL (both arms) and `{"type":"object","description":"any (baboon-any envelope)"}` for OpenAPI — because the schema renderers must keep working before M11/M12. Non-schema sites (`RsConversionTranslator.InitializeWithDefault`, `TsConversionTranslator.InitializeWithDefault`, `CSTypeInfo.isCSValueType`) use `AnyPlaceholder.notSupportedYet(site)` matching the rest of the cascade. Files touched: `RsConversionTranslator.scala`, `TsConversionTranslator.scala`, `GqlTypeTranslator.scala` (2 arms), `OasTypeTranslator.scala`, `CSTypeInfo.scala` — 5 files, 6 new arms.
+
+### [PR-02-D08] Missing test: top-level `data any { ... }` + unprefixed reference (see D04)
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/AnyTyperTest.scala`
+**Description:** See D04; this is the test-side of the same gap.
+**Fix:** Covered by D04's fix — added a test under `"user type named `any`" should` that exercises the shadowing rule.
+
+### [PR-02-D09] Missing test: `any[<builtin>]` (e.g. `any[i32]`) and `any[<constructor>]` (e.g. `any[lst[Inner]]`)
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/AnyTyperTest.scala:20-37`
+**Description:** All D1/D2/D3 typed-variant tests use `any[UserDTO]`. The typer presumably handles `any[i32]` and `any[lst[...]]` fine, but without tests PR 1.3 has no regression guard on the typed AST shape.
+**Fix:** Added `e: any[i32]` and `g: any[lst[Inner]]` to the `Outer` DTO fixture in `AnyTyperTest`, plus two assertions confirming `TypeRef.Any(Global, Some(TypeRef.Scalar(Builtins.i32)))` and `TypeRef.Any(Global, Some(TypeRef.Constructor(lst, [Scalar(Inner)])))`.
+
+### [PR-02-D10] Comment in `BaboonEnquiries.wrap(TypeRef.Any)` overstates coupling to spec §Evolution
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonEnquiries.scala:350-358`
+**Description:** Comment says `shallowId` "changes when either shifts (evolution-breaking changes per spec §Evolution)". But compatibility is handled by `TypeInfo.isCompatibleChange`, not `shallowId`. `shallowId` differentiation serves structural equality, not evolution enforcement.
+**Fix:** Reworded comment to: "Inline variant + underlying into the shallow id so each `any` shape has a distinct structural identity (used for equality / diff reports; evolution compatibility is enforced separately by `TypeInfo.isCompatibleChange`)."
+
+### [PR-02-D11] `BinReprLen.Unknown()` for `TypeRef.Any` is pessimistic; could use `Range(minFloor, None)`
+**Status:** resolved (accepted — deliberate conservatism until wire format is locked)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonEnquiries.scala:411-414`
+**Description:** The wire format has a non-zero floor; `Range(min, None)` would be more precise. But `Unknown()` is safely conservative.
+**Fix:** No action in PR 1.2. Revisit when wire format encoding lands in PR 2.2.
+
+### [PR-02-D12] Cascade arms in F-effect contexts use `throw` instead of `F.fail` — bypasses structured error reporting
+**Status:** resolved (accepted — placeholders removed per-language in M2+)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/csharp/CSConversionTranslator.scala:239` and similar in dart/java/scala/swift conversion translators.
+**Description:** Sites inside F-context (bifunctor error channel) normally use `F.fail(BaboonIssue.of(...))`. New `Any` arms use `throw`, which typechecks because `Nothing <: F[...]` but bypasses the effect system.
+**Fix:** No action in PR 1.2. Placeholders will be replaced per-language in M2+ with real logic that uses `F.fail` where appropriate.
+
+### [PR-02-D13] GraphQL schema references `scalar BaboonAny` but never declares it — malformed SDL for any model using `any`
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/graphql/GqlBaboonTranslator.scala:124-131` (`builtinCustomScalars` set) and `:264-273` (`collectScalarsFromRef`)
+**Description:** D07's fix has `GqlTypeTranslator.typeRefStr`/`typeRefIdent` return `"BaboonAny"` for `TypeRef.Any`. But `GqlBaboonTranslator` — which collects custom scalars at schema-emission time — has `builtinCustomScalars` not containing `BaboonAny`, and `collectScalarsFromRef` has a silent `case _ =>` fallthrough that ignores `TypeRef.Any`. A model with `any` fields will produce a GraphQL schema referencing `scalar BaboonAny` without declaring it — invalid SDL.
+**Suggested fix:** Add `"BaboonAny"` to `builtinCustomScalars` and add an explicit case in `collectScalarsFromRef` for `TypeRef.Any` that returns `Set("BaboonAny")` (plus recursion into `underlying` if present). Per user guidance ("schemas are demo-only"), this is preferred over the fail-fast alternative — produces a valid, usable schema.

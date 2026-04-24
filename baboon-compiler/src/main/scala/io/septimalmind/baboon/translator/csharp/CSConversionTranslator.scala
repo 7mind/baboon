@@ -236,6 +236,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                           }
                         case _: TypeRef.Scalar =>
                           F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
+                        case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("CSConversionTranslator.InitializeWithDefault")
                       }
 
                     case o: FieldOp.WrapIntoCollection =>
@@ -443,6 +444,7 @@ class CSConversionTranslator[F[+_, +_]: Error2](
           case o =>
             throw new IllegalStateException(s"BUG: unsupported conversion $o, ref=$ref, depth=$depth")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("CSConversionTranslator.transfer")
     }
     out
 //    q"/* ${srcDom.version.toString} -> ${domain.version.toString} ${cold.mapRender(_.toString)} -> ${cnew.mapRender(_.toString)} */ $out"

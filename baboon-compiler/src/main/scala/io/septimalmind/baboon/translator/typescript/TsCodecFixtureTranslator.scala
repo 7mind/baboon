@@ -121,6 +121,7 @@ object TsCodecFixtureTranslator {
               q"(rnd.nextBit() ? ${genType(args.head)} : undefined)"
             case t => throw new IllegalArgumentException(s"Unexpected collection type: $t")
           }
+        case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("TsCodecFixtureTranslator.genType")
       }
     }
 

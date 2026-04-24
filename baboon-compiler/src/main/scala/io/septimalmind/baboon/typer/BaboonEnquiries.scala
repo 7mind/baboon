@@ -4,6 +4,7 @@ import io.septimalmind.baboon.parser.model.{RawAdt, RawAlias, RawDefn, RawDtoMem
 import io.septimalmind.baboon.typer.model.BinReprLen.Variable
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.Typedef.{Contract, ForeignMapping}
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import io.septimalmind.baboon.typer.model.{BaboonLang, BinReprLen, Domain, DomainMember, Field, Owner, ShallowSchemaId, TypeId, TypeRef, Typedef}
 import izumi.fundamentals.collections.nonempty.NESet
 import izumi.fundamentals.graphs.struct.AdjacencyList
@@ -65,6 +66,10 @@ object BaboonEnquiries {
         }
       case TypeRef.Constructor(id, args) =>
         TypeRef.Constructor(id, args.map(a => resolveBaboonRef(a, domain, lang)))
+      case TypeRef.Any(variant, underlying) =>
+        // Resolve foreign refs inside the optional underlying type; the `any` wrapper itself is
+        // structural and carries no foreign mapping of its own.
+        TypeRef.Any(variant, underlying.map(u => resolveBaboonRef(u, domain, lang)))
       case _ => tpe
     }
   }
@@ -128,6 +133,14 @@ object BaboonEnquiries {
                 case _: DomainMember.Builtin => None
                 case u: DomainMember.User    => Some(u.defn)
               }
+          case TypeRef.Any(_, underlying) =>
+            // Surface the underlying's top-level ref if it's a user type. Structural deep-walking
+            // into the underlying's fields is left to future passes (matches the shallow behaviour
+            // of the `TypeRef.Constructor` arm above).
+            underlying.toList.flatMap(u => List(domain.defs.meta.nodes(u.id))).flatMap {
+              case _: DomainMember.Builtin => None
+              case u: DomainMember.User    => Some(u.defn)
+            }
         }
         collectForeignType(tail ++ moreToCheck, foreignType, seen)
       }
@@ -258,6 +271,10 @@ object BaboonEnquiries {
         case TypeRef.Constructor(id, args) =>
           seen += id
           Set(id) ++ args.toList.flatMap(a => explode(a))
+        case TypeRef.Any(_, underlying) =>
+          // Per plan §PR 1.2: `any` underlying is a *soft* dep (evolvability); never contributes
+          // the `Builtins.any` id itself. Walk into underlying if present; empty otherwise.
+          underlying.toList.flatMap(explode).toSet
       }
 
       doExplode(tpe)
@@ -333,6 +350,16 @@ object BaboonEnquiries {
         s"{${wrap(s.id)}}"
       case c: TypeRef.Constructor =>
         s"{${wrap(c.id)}${c.args.toList.map(wrap).mkString("[", ",", "]")}"
+      case a: TypeRef.Any =>
+        // Inline variant + underlying into the shallow id so each `any` shape has a distinct
+        // structural identity (used for equality / diff reports; evolution compatibility is
+        // enforced separately by `TypeInfo.isCompatibleChange`).
+        val variantTag = a.variant match {
+          case AnyVariant.Global  => "g"
+          case AnyVariant.ThisDom => "t"
+          case AnyVariant.Current => "c"
+        }
+        s"{#any;$variantTag;${a.underlying.map(wrap).getOrElse("")}}"
     }
 
     override def allRefs(defn: DomainMember): Set[TypeRef] = {
@@ -342,6 +369,10 @@ object BaboonEnquiries {
             case s: TypeId.BuiltinScalar =>
               Set(TypeRef.Scalar(s))
             case _: TypeId.BuiltinCollection =>
+              Set.empty
+            case TypeId.AnyType =>
+              // The `any` builtin carries no standalone TypeRef (it only appears as TypeRef.Any with
+              // variant + underlying). Nothing to surface at the domain-member level.
               Set.empty
           }
         case u: DomainMember.User =>
@@ -381,6 +412,10 @@ object BaboonEnquiries {
         BinReprLen.Unknown()
       } else {
         tpe match {
+          case _: TypeRef.Any =>
+            // `any` on the wire is always [length][meta-length][kind][meta][blob], so length is
+            // neither fixed nor a narrow range — treat it as Unknown.
+            BinReprLen.Unknown()
           case id: TypeRef.Scalar =>
             scalarLen(dom, id, visited + tpe)
 

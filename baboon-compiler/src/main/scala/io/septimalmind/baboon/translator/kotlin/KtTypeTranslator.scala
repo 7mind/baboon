@@ -34,6 +34,7 @@ class KtTypeTranslator(ktTypes: KtTypes) {
         val tpe   = asKtType(id, domain, evo)
         val targs = args.map(asKtRef(_, domain, evo))
         q"$tpe<${targs.toSeq.join(", ")}>"
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("KtTypeTranslator.asKtRef")
     }
   }
 

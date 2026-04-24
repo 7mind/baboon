@@ -163,6 +163,7 @@ class TypeRenderer(domain: Domain) {
     case TypeRef.Scalar(id) => renderTypeId(id)
     case TypeRef.Constructor(id, args) =>
       s"$CYAN${id.name.name}$RESET[${args.toList.map(renderTypeRef).mkString(", ")}]"
+    case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("TypeRenderer.renderTypeRef")
   }
 
   private def renderTypeId(id: TypeId): String = id match {

@@ -45,7 +45,10 @@ object TypeInfo {
     private final val scalars = integers ++ floats ++ varlens ++ stringy ++ timestamps ++ Set(
       bit
     )
-    private final val all: Set[TypeId.Builtin] = scalars ++ collections
+    // `any` is a first-class builtin (distinct from scalar and collection). Included here so the
+    // domain's node table holds `DomainMember.Builtin(AnyType)`, and id-based lookups for
+    // `TypeRef.Any` succeed the same way they do for other builtins.
+    private final val all: Set[TypeId.Builtin] = scalars ++ collections ++ Set(TypeId.Builtins.any)
 
     private final val collIds     = collections.toSet[TypeId]
     private final val seqColls    = seqCollections.toSet[TypeId]
@@ -56,6 +59,10 @@ object TypeInfo {
 
     def comparator(ref: TypeRef): ComparatorType = {
       ref match {
+        case _: TypeRef.Any =>
+          // `AnyOpaque` is a language-surface reference type (UEBA-bytes or JSON payload);
+          // identity-level comparison matches the ADT contract.
+          ComparatorType.ObjectEquals
         case TypeRef.Scalar(id) =>
           if (scalarsSet.contains(id)) {
             ComparatorType.Direct
@@ -140,6 +147,12 @@ object TypeInfo {
             canBeWrappedIntoCollection(o, n)
           case (o: TypeRef.Constructor, n: TypeRef.Constructor) =>
             canChangeCollectionType(o, n)
+          // PR 1.2 treats all mismatched `TypeRef.Any` pairs as incompatible as a conservative
+          // placeholder. PR 1.3 will refine per spec §Evolution — e.g. `any[T] → any` (dropping
+          // underlying to widen) is likely safe. Matches with identical variant + underlying are
+          // already accepted via the `ro == rn` guard above.
+          case (_: TypeRef.Any, _) => false
+          case (_, _: TypeRef.Any) => false
         }
       }
 

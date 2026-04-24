@@ -9,7 +9,7 @@ class OasTypeTranslator {
       case u: DomainMember.User =>
         u.defn match {
           case f: Typedef.Foreign => Some(f.id -> f.runtimeMapping)
-          case _                 => None
+          case _                  => None
         }
     }.flatten.toMap
   }
@@ -51,7 +51,7 @@ class OasTypeTranslator {
       case TypeId.Builtins.tsu   => ("string", Some("date-time"), Map.empty)
       case TypeId.Builtins.tso   => ("string", Some("date-time"), Map.empty)
       case TypeId.Builtins.bytes => ("string", Some("byte"), Map.empty)
-      case other => throw new IllegalArgumentException(s"Unexpected builtin scalar in OpenAPI backend: ${other.name.name}")
+      case other                 => throw new IllegalArgumentException(s"Unexpected builtin scalar in OpenAPI backend: ${other.name.name}")
     }
   }
 
@@ -83,6 +83,9 @@ class OasTypeTranslator {
 
       case TypeRef.Constructor(TypeId.Builtins.map, args) =>
         mapSchema(args.head, args.tail.head)
+      case _: TypeRef.Any =>
+        // Schema-only placeholder until M12 (OpenAPI) lands the real representation for `any`.
+        """{"type": "object", "description": "any (baboon-any envelope)"}"""
       case other =>
         throw new IllegalArgumentException(s"Unexpected type reference in OpenAPI backend: ${other.id.name.name}")
     }
@@ -136,13 +139,13 @@ class OasTypeTranslator {
 
   def escapeJson(s: String): String = {
     s.flatMap {
-      case '"'  => "\\\""
-      case '\\' => "\\\\"
-      case '\n' => "\\n"
-      case '\r' => "\\r"
-      case '\t' => "\\t"
+      case '"'           => "\\\""
+      case '\\'          => "\\\\"
+      case '\n'          => "\\n"
+      case '\r'          => "\\r"
+      case '\t'          => "\\t"
       case c if c < 0x20 => f"\\u${c.toInt}%04x"
-      case c    => c.toString
+      case c             => c.toString
     }
   }
 }

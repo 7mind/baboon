@@ -165,7 +165,8 @@ class TsConversionTranslator[F[+_, +_]: Error2](
                           case TypeId.Builtins.opt => q"undefined"
                           case _                   => throw new IllegalStateException(s"Unsupported constructor type: $id")
                         }
-                      case _ => throw new IllegalStateException("Unsupported target field type")
+                      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("TsConversionTranslator.InitializeWithDefault")
+                      case _              => throw new IllegalStateException("Unsupported target field type")
                     }
                   case _: FieldOp.WrapIntoCollection =>
                     val innerExpr = if (hasUserType(f.tpe)) jsonConvert(q"from.$fld") else q"from.$fld"

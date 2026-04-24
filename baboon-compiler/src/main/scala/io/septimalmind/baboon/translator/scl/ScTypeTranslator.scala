@@ -30,6 +30,7 @@ class ScTypeTranslator {
         val tpe   = asScType(id, domain, evo)
         val targs = args.map(asScRef(_, domain, evo))
         q"$tpe[${targs.toSeq.join(", ")}]"
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("ScTypeTranslator.asScRef")
     }
   }
 

@@ -67,6 +67,7 @@ class RandomJsonGenerator(domain: Domain, enquiries: BaboonEnquiries) {
     tpe match {
       case TypeRef.Scalar(id)            => generateScalar(id)
       case TypeRef.Constructor(id, args) => generateConstructor(id, args.toList)
+      case _: TypeRef.Any                => AnyPlaceholder.notSupportedYet("RandomJsonGenerator.generateTypeRef")
     }
   }
 

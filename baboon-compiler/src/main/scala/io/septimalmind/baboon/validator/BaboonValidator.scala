@@ -249,7 +249,11 @@ object BaboonValidator {
             } else {
               args.exists(a => isDoubleOption(a, path :+ id))
             }
-
+          case _: TypeRef.Any =>
+            // `any` carries no generics, so it cannot form a double-option chain. The PR 1.3
+            // validator will handle `any`-specific rules (map key, derived[ueba]); PR 1.2 only
+            // needs a safe pass-through here.
+            false
         }
       }
 

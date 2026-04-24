@@ -60,6 +60,8 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
         val tpe   = asCsType(id, domain, evolution, mutableCollections)
         val targs = args.map(asCsRef(_, domain, evolution))
         q"$tpe<${targs.toSeq.join(", ")}>"
+
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("CSTypeTranslator.asCsRef")
     }
   }
 

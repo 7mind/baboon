@@ -77,6 +77,7 @@ class SwTypeTranslator {
         val tpe   = asSwType(id, domain, evo)
         val targs = args.map(asSwRef(_, domain, evo))
         q"$tpe<${targs.toSeq.join(", ")}>"
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("SwTypeTranslator.asSwRef")
     }
   }
 

@@ -177,6 +177,7 @@ object EvoCommand extends Command {
     case TypeRef.Scalar(id) => formatTypeId(id)
     case TypeRef.Constructor(id, args) =>
       s"${Colors.CYAN}${id.name.name}${Colors.RESET}[${args.toList.map(formatTypeRef).mkString(", ")}]"
+    case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("EvoCommand.formatTypeRef")
   }
 
   private def formatTypeId(id: TypeId): String = id match {

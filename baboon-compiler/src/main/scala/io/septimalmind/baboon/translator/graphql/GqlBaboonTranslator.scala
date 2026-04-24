@@ -128,6 +128,7 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
       "BaboonDateTimeUtc",
       "BaboonDateTimeOffset",
       "BaboonBytes",
+      "BaboonAny",
     )
 
     val usedScalars = collectUsedCustomScalars(members, foreignResolutions)
@@ -267,6 +268,8 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
         Set(typeTranslator.scalarName(id)).filter(_.startsWith("Baboon"))
       case TypeRef.Constructor(_, args) =>
         args.toList.flatMap(collectScalarsFromRef).toSet
+      case TypeRef.Any(_, underlying) =>
+        Set("BaboonAny") ++ underlying.toList.flatMap(collectScalarsFromRef).toSet
       case _ =>
         Set.empty
     }

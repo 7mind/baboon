@@ -135,6 +135,7 @@ object BaboonRules {
                           true
                         case c: TypeRef.Constructor =>
                           !types.hasDefaultValue(c)
+                        case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("BaboonRules.incompatibleAdditions")
                       }
                   }
                   compatibleAdditions = additions.diff(incompatibleAdditions)

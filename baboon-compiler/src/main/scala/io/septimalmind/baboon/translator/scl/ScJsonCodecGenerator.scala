@@ -318,6 +318,7 @@ class ScJsonCodecGenerator(
             q"$circeJson.fromValues($ref.map(e => ${mkEncoder(c.args.head, q"e")}))"
           case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("ScJsonCodecGenerator.mkEncoder")
     }
   }
 
@@ -425,6 +426,7 @@ class ScJsonCodecGenerator(
             case TypeId.Builtins.set => q"$circeDecodeSet(${getDecoder(args.head)})"
             case o                   => throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
+        case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("ScJsonCodecGenerator.getDecoder")
       }
     }
 

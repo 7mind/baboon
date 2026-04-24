@@ -17,6 +17,15 @@ object TypeId {
     override def toString: String = s"#${name.name}"
   }
 
+  // `any` is a distinguished builtin that intentionally does NOT extend `Scalar` or
+  // `BuiltinCollection`. It can only appear on a `TypeRef.Any`, never on `TypeRef.Scalar`
+  // or `TypeRef.Constructor` — so pattern-matches that branch on `Scalar`/`Constructor`
+  // cannot silently absorb an `any` reference.
+  case object AnyType extends Builtin {
+    override def name: TypeName   = TypeName("any")
+    override def toString: String = s"#${name.name}"
+  }
+
   case class User(pkg: Pkg, owner: Owner, name: TypeName) extends TypeId with Scalar {
     override def toString: String = {
       s"$pkg/$owner#${name.name}"
@@ -56,6 +65,7 @@ object TypeId {
     final val lst = BuiltinCollection(TypeName("lst"))
     final val set = BuiltinCollection(TypeName("set"))
 
+    final val any: AnyType.type = AnyType
   }
 
   sealed trait ComparatorType

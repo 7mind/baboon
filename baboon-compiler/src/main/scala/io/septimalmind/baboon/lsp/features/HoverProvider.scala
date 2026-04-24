@@ -176,5 +176,15 @@ class HoverProvider(
     case TypeRef.Scalar(id) => id.name.name
     case TypeRef.Constructor(id, args) =>
       s"${id.name.name}[${args.toList.map(renderTypeRef).mkString(", ")}]"
+    case a: TypeRef.Any =>
+      // Render the DSL form so hover works on models containing `any` fields before the per-language
+      // codec milestones (M2..M10) land. No exception here — LSP hover must remain functional.
+      val qualifier = a.variant match {
+        case TypeRef.AnyVariant.Global  => None
+        case TypeRef.AnyVariant.ThisDom => Some("domain:this")
+        case TypeRef.AnyVariant.Current => Some("domain:current")
+      }
+      val inside = (qualifier.toList ++ a.underlying.toList.map(renderTypeRef)).mkString(", ")
+      if (inside.isEmpty) "any" else s"any[$inside]"
   }
 }

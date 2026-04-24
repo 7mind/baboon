@@ -264,6 +264,7 @@ class KtJsonCodecGenerator(
             q"""$buildJsonArray { $ref.forEach { e -> add(${mkEncoder(c.args.head, q"e")}) } }"""
           case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("KtJsonCodecGenerator.mkEncoder")
     }
   }
 
@@ -322,6 +323,7 @@ class KtJsonCodecGenerator(
               q"$ref.jsonObject.entries.associate { e -> ($keyDec) to $valueDec }"
             case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
+        case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("KtJsonCodecGenerator.decodeElement")
       }
     }
 

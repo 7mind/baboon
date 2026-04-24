@@ -457,6 +457,7 @@ class KtUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("KtUEBACodecGenerator.mkDecoder")
     }
   }
 
@@ -536,6 +537,7 @@ class KtUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("KtUEBACodecGenerator.mkEncoder")
     }
   }
 

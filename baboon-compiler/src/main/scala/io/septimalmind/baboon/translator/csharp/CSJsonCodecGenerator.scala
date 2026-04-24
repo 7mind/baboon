@@ -347,6 +347,7 @@ class CSJsonCodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("CSJsonCodecGenerator.mkEncoder")
     }
   }
 
@@ -462,6 +463,7 @@ class CSJsonCodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("CSJsonCodecGenerator.mkDecoder")
     }
 
   }

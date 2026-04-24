@@ -4,6 +4,7 @@ import io.septimalmind.baboon.parser.model.*
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TyperIssue}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Scope.NestedScope
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import io.septimalmind.baboon.typer.model.Typedef.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
@@ -427,6 +428,16 @@ class BaboonTranslator[F[+_, +_]: Error2](
     aliasChain: Set[String] = Set.empty,
   ): F[NEList[BaboonIssue], TypeRef] = {
     tpe match {
+      // Bare `any` (unprefixed, no brackets) always resolves to `TypeRef.Any(Global, None)` —
+      // this match fires BEFORE `scopeSupport.resolveAlias`, so top-level user types or aliases
+      // literally named `any` are shadowed when referenced unprefixed. Nested / prefixed
+      // references (`foo.any`, `my.pkg.any`) fall through to normal scope lookup.
+      //
+      // Back-compat note: the parser preserves `any` as a legal user type name (PR 1.1). A
+      // top-level `data any { ... }` still exists in `domain.defs.meta.nodes`, but it cannot be
+      // referenced via bare `any`; callers must use a prefix (e.g. `nested.any`).
+      case RawTypeRef.Simple(RawTypeName("any"), Nil) =>
+        F.pure(TypeRef.Any(AnyVariant.Global, None))
       case RawTypeRef.Simple(name, prefix) =>
         scopeSupport.resolveAlias(prefix, name, defn) match {
           case Some(target) =>
@@ -468,9 +479,16 @@ class BaboonTranslator[F[+_, +_]: Error2](
         } yield {
           TypeRef.Constructor(asCollection, nel)
         }
-      case _: RawTypeRef.AnyRef =>
-        // PR 1.1: parser-only. Typer support lands in PR 1.2 (TypeRef.Any + AnyVariant).
-        throw new RuntimeException("BUG: `any` typed AST not yet implemented (PR 1.2 scope)")
+      case RawTypeRef.AnyRef(qualifier, underlying) =>
+        val variant = qualifier match {
+          case None                                  => AnyVariant.Global
+          case Some(RawTypeRef.AnyRef.DomainThis)    => AnyVariant.ThisDom
+          case Some(RawTypeRef.AnyRef.DomainCurrent) => AnyVariant.Current
+        }
+        underlying match {
+          case None      => F.pure(TypeRef.Any(variant, None))
+          case Some(raw) => convertTpe(raw, meta, aliasChain).map(u => TypeRef.Any(variant, Some(u)))
+        }
     }
   }
 

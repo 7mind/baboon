@@ -455,6 +455,7 @@ class JvUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("JvUEBACodecGenerator.mkDecoder")
     }
   }
 
@@ -531,6 +532,7 @@ class JvUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("JvUEBACodecGenerator.mkEncoder")
     }
   }
 

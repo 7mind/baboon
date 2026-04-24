@@ -130,6 +130,7 @@ object KtCodecFixtureTranslator {
               case Builtins.opt => q"rnd.mkNullable { ${gen(args.head)} }"
               case t            => throw new IllegalArgumentException(s"Unexpected collection type: $t")
             }
+          case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("KtCodecFixtureTranslator.genType")
         }
       }
 

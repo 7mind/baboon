@@ -54,6 +54,7 @@ class RsTypeTranslator(rsTypes: RsTypes) {
             q"$rsBTreeMap<$key, $value>"
           case o => throw new IllegalArgumentException(s"Unexpected collection type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("RsTypeTranslator.asRsRef")
     }
   }
 

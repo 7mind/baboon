@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.python
 import io.septimalmind.baboon.translator.python.PyTypes.{baboonFixture, pyList, pyStaticMethod}
 import io.septimalmind.baboon.translator.python.PyValue.PyType
 import io.septimalmind.baboon.typer.BaboonEnquiries
-import io.septimalmind.baboon.typer.model.{BaboonEvolution, BaboonLang, Domain, DomainMember, TypeId, TypeRef, Typedef}
+import io.septimalmind.baboon.typer.model.{AnyPlaceholder, BaboonEvolution, BaboonLang, Domain, DomainMember, TypeId, TypeRef, Typedef}
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
@@ -115,6 +115,7 @@ object PyCodecFixtureTranslator {
             case Builtins.opt => q"$baboonFixture.next_optional(lambda: ${genType(args.head)})"
             case t            => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
           }
+        case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("PyCodecFixtureTranslator.genType")
       }
     }
 

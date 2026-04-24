@@ -295,6 +295,7 @@ class JvJsonCodecGenerator(
               )}); } return $arrName; }).get()"""
           case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("JvJsonCodecGenerator.mkEncoder")
     }
   }
 
@@ -370,6 +371,7 @@ class JvJsonCodecGenerator(
                 )}>(); for (var $varName : (Iterable<java.util.Map.Entry<String, $jsonNode>>) () -> $ref.fields()) { map.put($keyDec, $valueDec); } return map; }).get()"""
             case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
+        case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("JvJsonCodecGenerator.decodeElement")
       }
     }
 

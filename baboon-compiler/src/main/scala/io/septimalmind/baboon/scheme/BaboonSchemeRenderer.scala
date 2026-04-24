@@ -469,6 +469,16 @@ object BaboonSchemeRenderer {
       case TypeRef.Scalar(id) => id.name.name
       case TypeRef.Constructor(id, args) =>
         s"${id.name.name}[${args.toList.map(renderTypeRef).mkString(", ")}]"
+      case a: TypeRef.Any =>
+        // Scheme output reproduces the DSL surface syntax; render `any` forms verbatim so models
+        // containing `any` fields can be rendered before codec milestones land.
+        val qualifier = a.variant match {
+          case TypeRef.AnyVariant.Global  => None
+          case TypeRef.AnyVariant.ThisDom => Some("domain:this")
+          case TypeRef.AnyVariant.Current => Some("domain:current")
+        }
+        val inside = (qualifier.toList ++ a.underlying.toList.map(renderTypeRef)).mkString(", ")
+        if (inside.isEmpty) "any" else s"any[$inside]"
     }
   }
 }

@@ -133,6 +133,7 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
           case _ =>
             enquiries.isEnum(tpe, domain) || foreignTypeIsValueType(id, domain)
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("CSTypeInfo.isCSValueType")
       case _ =>
         foreignTypeIsValueType(tpe.id, domain)
     }

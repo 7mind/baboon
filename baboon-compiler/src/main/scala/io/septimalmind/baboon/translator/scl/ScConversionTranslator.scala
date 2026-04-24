@@ -63,6 +63,8 @@ class ScConversionTranslator[F[+_, +_]: Error2](
         throw new IllegalStateException(s"Unsupported scalar to constructor conversion: ${c.id}")
       case (cn: TypeRef.Constructor, co: TypeRef.Constructor) =>
         transferConstructor(oldRef, depth, cn, co)
+      case (_: TypeRef.Any, _) => AnyPlaceholder.notSupportedYet("ScConversionTranslator.transfer(new any)")
+      case (_, _: TypeRef.Any) => AnyPlaceholder.notSupportedYet("ScConversionTranslator.transfer(old any)")
 
     }
   }

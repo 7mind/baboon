@@ -33,6 +33,7 @@ class DtTypeTranslator {
         val tpe   = asDtType(id, domain, evo)
         val targs = args.map(asDtRef(_, domain, evo))
         q"$tpe<${targs.toSeq.join(", ")}>"
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("DtTypeTranslator.asDtRef")
     }
   }
 

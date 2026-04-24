@@ -222,6 +222,7 @@ class TsJsonCodecGenerator(
             }
           case o => throw new RuntimeException(s"BUG: Unexpected collection type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("TsJsonCodecGenerator.mkJsonEncoder")
     }
   }
 
@@ -292,6 +293,7 @@ class TsJsonCodecGenerator(
             }
           case o => throw new RuntimeException(s"BUG: Unexpected collection type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("TsJsonCodecGenerator.mkJsonDecoder")
     }
   }
 

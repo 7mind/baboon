@@ -128,6 +128,7 @@ object CSCodecFixtureTranslator {
               case t =>
                 throw new IllegalArgumentException(s"Unexpected collection type: $t")
             }
+          case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("CSCodecFixtureTranslator.genType")
         }
       }
 
@@ -143,6 +144,7 @@ object CSCodecFixtureTranslator {
           case TypeRef.Constructor(Builtins.map, args) => q"${translator.asCsType(Builtins.map, domain, evo)}<${render(args.head)}, ${render(args.last)}>"
           case TypeRef.Constructor(id, args)           => q"${translator.asCsType(id, domain, evo)}<${render(args.head)}>"
           case TypeRef.Scalar(id)                      => q"${translator.asCsType(id, domain, evo)}"
+          case _: TypeRef.Any                          => AnyPlaceholder.notSupportedYet("CSCodecFixtureTranslator.renderCollectionTypeArgument")
         }
       }
 

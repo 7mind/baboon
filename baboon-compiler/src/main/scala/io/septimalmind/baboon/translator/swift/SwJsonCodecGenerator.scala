@@ -266,6 +266,7 @@ class SwJsonCodecGenerator(
             q"""Array($ref).map { $varName in ${mkEncoder(c.args.head, q"$varName", depth + 1)} as Any }"""
           case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("SwJsonCodecGenerator.mkEncoder")
     }
   }
 
@@ -314,6 +315,7 @@ class SwJsonCodecGenerator(
               q"""Dictionary(uniqueKeysWithValues: try ($ref as! [String: Any]).map { $varName in ($keyDec, $valueDec) })"""
             case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
+        case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("SwJsonCodecGenerator.decodeElement")
       }
     }
 

@@ -330,6 +330,7 @@ class RsUEBACodecGenerator(
                |}""".stripMargin
           case o => throw new RuntimeException(s"BUG: Unexpected collection type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("RsUEBACodecGenerator.mkEncoder")
     }
   }
 
@@ -398,6 +399,7 @@ class RsUEBACodecGenerator(
                |}""".stripMargin
           case o => throw new RuntimeException(s"BUG: Unexpected collection type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("RsUEBACodecGenerator.mkDecoder")
     }
   }
 

@@ -384,6 +384,7 @@ class PyUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("PyUEBACodecGenerator.mkEncoder")
     }
   }
 
@@ -442,6 +443,7 @@ class PyUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("PyUEBACodecGenerator.mkDecoder")
     }
   }
 

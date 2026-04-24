@@ -113,6 +113,7 @@ object RsCodecFixtureTranslator {
               q"if rnd.next_bit() { Some(${genType(args.head)}) } else { None }"
             case t => throw new IllegalArgumentException(s"Unexpected collection type: $t")
           }
+        case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("RsCodecFixtureTranslator.genType")
       }
     }
 

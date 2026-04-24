@@ -166,7 +166,8 @@ class RsConversionTranslator[F[+_, +_]: Error2](
                           case TypeId.Builtins.opt => q"None"
                           case _                   => throw new IllegalStateException(s"Unsupported constructor type: $id")
                         }
-                      case _ => throw new IllegalStateException("Unsupported target field type")
+                      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("RsConversionTranslator.InitializeWithDefault")
+                      case _              => throw new IllegalStateException("Unsupported target field type")
                     }
                   case _: FieldOp.WrapIntoCollection =>
                     val innerExpr = if (hasUserType(f.tpe)) serdeConvert(q"from.$fld") else q"from.$fld.clone()"

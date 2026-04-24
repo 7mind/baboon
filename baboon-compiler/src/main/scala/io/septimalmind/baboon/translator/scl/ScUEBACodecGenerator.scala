@@ -437,6 +437,7 @@ class ScUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("ScUEBACodecGenerator.mkDecoder")
     }
 
   }
@@ -518,6 +519,7 @@ class ScUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("ScUEBACodecGenerator.mkEncoder")
     }
   }
 

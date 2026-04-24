@@ -259,6 +259,7 @@ object BaboonRuntimeCodec {
       tpe match {
         case TypeRef.Scalar(id)            => encodeScalar(dom, id, json, writer, indexed)
         case TypeRef.Constructor(id, args) => encodeConstructor(dom, id, args.toList, json, writer, indexed)
+        case _: TypeRef.Any                => AnyPlaceholder.notSupportedYet("BaboonRuntimeCodec.encodeTypeRef")
       }
     }
 
@@ -266,6 +267,7 @@ object BaboonRuntimeCodec {
       tpe match {
         case TypeRef.Scalar(id)            => decodeScalar(dom, id, reader)
         case TypeRef.Constructor(id, args) => decodeConstructor(dom, id, args.toList, reader)
+        case _: TypeRef.Any                => AnyPlaceholder.notSupportedYet("BaboonRuntimeCodec.decodeTypeRef")
       }
     }
 

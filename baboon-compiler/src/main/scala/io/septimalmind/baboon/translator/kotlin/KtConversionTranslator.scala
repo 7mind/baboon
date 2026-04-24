@@ -64,6 +64,8 @@ class KtConversionTranslator[F[+_, +_]: Error2](
         throw new IllegalStateException(s"Unsupported scalar to constructor conversion: ${c.id}")
       case (cn: TypeRef.Constructor, co: TypeRef.Constructor) =>
         transferConstructor(oldRef, depth, cn, co)
+      case (_: TypeRef.Any, _) => AnyPlaceholder.notSupportedYet("KtConversionTranslator.transfer(new any)")
+      case (_, _: TypeRef.Any) => AnyPlaceholder.notSupportedYet("KtConversionTranslator.transfer(old any)")
     }
   }
 

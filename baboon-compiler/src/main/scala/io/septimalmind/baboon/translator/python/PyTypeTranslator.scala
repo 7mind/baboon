@@ -34,6 +34,7 @@ final class PyTypeTranslator {
         val tpe   = asPyType(id, domain, evolution, pkgBase)
         val targs = args.map(asPyRef(_, domain, evolution, pkgBase))
         q"$tpe[${targs.toSeq.join(", ")}]"
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("PyTypeTranslator.asPyRef")
     }
   }
 

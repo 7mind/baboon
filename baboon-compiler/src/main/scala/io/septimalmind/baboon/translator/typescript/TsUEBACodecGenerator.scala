@@ -369,6 +369,7 @@ class TsUEBACodecGenerator(
             }
           case o => throw new RuntimeException(s"BUG: Unexpected collection type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("TsUEBACodecGenerator.mkEncoder")
     }
   }
 
@@ -438,6 +439,7 @@ class TsUEBACodecGenerator(
             }
           case o => throw new RuntimeException(s"BUG: Unexpected collection type: $o")
         }
+      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("TsUEBACodecGenerator.mkDecoder")
     }
   }
 

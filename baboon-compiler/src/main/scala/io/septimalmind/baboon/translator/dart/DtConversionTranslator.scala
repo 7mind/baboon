@@ -69,6 +69,8 @@ class DtConversionTranslator[F[+_, +_]: Error2](
         throw new IllegalStateException(s"Unsupported scalar to constructor conversion: ${c.id}")
       case (cn: TypeRef.Constructor, co: TypeRef.Constructor) =>
         transferConstructor(oldRef, depth, cn, co, isPromotable)
+      case (_: TypeRef.Any, _) => AnyPlaceholder.notSupportedYet("DtConversionTranslator.transfer(new any)")
+      case (_, _: TypeRef.Any) => AnyPlaceholder.notSupportedYet("DtConversionTranslator.transfer(old any)")
     }
   }
 
