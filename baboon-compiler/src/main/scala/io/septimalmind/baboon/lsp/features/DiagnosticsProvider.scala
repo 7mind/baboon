@@ -141,6 +141,14 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
         (Some(meta), s"Sets can't contain generics in ${dto.id.name.name}: ${fields.map(_.name.name).mkString(", ")}")
       case MapKeysShouldNotBeGeneric(dto, fields, meta) =>
         (Some(meta), s"Map keys should not be generic in ${dto.id.name.name}: ${fields.map(_.name.name).mkString(", ")}")
+      case AnyUnderlyingNotUserType(owner, fields, meta) =>
+        (Some(meta), s"`any[T]` underlying must be a user-defined DTO/ADT/Enum in ${owner.id.name.name}: ${fields.map(_.name.name).mkString(", ")}")
+      case AnyUnderlyingLacksUebaDerivation(owner, fields, meta) =>
+        (Some(meta), s"`any[T]` underlying lacks `: derived[ueba]` in ${owner.id.name.name}: ${fields.map(_.name.name).mkString(", ")}")
+      case AnyAsMapKey(owner, fields, meta) =>
+        (Some(meta), s"`any` cannot be a map key in ${owner.id.name.name}: ${fields.map(_.name.name).mkString(", ")}")
+      case AnyAsSetElement(owner, fields, meta) =>
+        (Some(meta), s"`any` cannot be a set element in ${owner.id.name.name}: ${fields.map(_.name.name).mkString(", ")}")
       case LockedVersionModified(pkg, version) =>
         (None, s"Locked version modified: $pkg@$version")
       case MissingTypeDef(domain, missing) =>

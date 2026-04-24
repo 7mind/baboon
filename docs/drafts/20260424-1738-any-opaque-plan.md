@@ -94,7 +94,7 @@ The design spec locks the wire format, JSON envelope, language-surface ADT, vali
 - `any` generic-arg policy: reject `set[any]` (hash undefined), allow `opt[any]`, `lst[any]`, `map[K, any]` for value position — pending user confirmation.
 
 **Files to touch.**
-- `baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala` — add `checkAnyFields` pass inside `validateDomain`; extend `checkComplexMapKeys` to reject `TypeRef.Any` as a map key.
+- `baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala` — add `checkAnyFields`, `checkAnyAsMapKey`, `checkAnyAsSetElement` passes inside `validateDomain`. Dedicated `Any...` issue types rather than extending the existing `MapKeysShouldNotBeGeneric`/`SetsCantContainGenerics` — keeps the `any`-specific error message clear.
 - `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/issues/VerificationIssue.scala` — new issue subclasses: `AnyUnderlyingLacksUebaDerivation`, `AnyUnderlyingNotUserType`, `AnyAsMapKey`, `AnyAsSetElement`.
 
 **Acceptance criteria.** Validator tests (new `AnyValidatorTest`) that:

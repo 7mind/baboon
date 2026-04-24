@@ -221,6 +221,145 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 
 ### [PR-02-D13] GraphQL schema references `scalar BaboonAny` but never declares it — malformed SDL for any model using `any`
 **Status:** resolved
+
+---
+
+## PR-03 — Validator rules
+
+### [PR-03-D01] Non-exhaustive match in `BaboonJS.scala` breaks `baboonJS/compile`
+**Status:** resolved
+**Severity:** major (build-breaking on JS target)
+**Location:** `baboon-compiler/.js/src/main/scala/io/septimalmind/baboon/BaboonJS.scala:1537`
+**Description:** PR 1.3 added 4 new `VerificationIssue` subclasses. The executor updated the JVM-side LSP exhaustive matches (`DiagnosticsProvider`, `WorkspaceState`) but missed a structurally-identical exhaustive match in the JS bridge. `baboonJS/compile` fails with `match may not be exhaustive … AnyAsMapKey, AnyAsSetElement, AnyUnderlyingLacksUebaDerivation, AnyUnderlyingNotUserType`. Any `sbt test` / `sbt compile` / `mdl :full-build` touching the JS target fails.
+**Root cause:** Cascade site not on the reviewer's or executor's list.
+**Suggested fix:** Add cases for all four new issue types in `BaboonJS.scala:1537` mirroring the `DiagnosticsProvider` fix shape.
+
+### [PR-03-D02] `checkAnyAsMapKey` doesn't recurse into wrapper collections; `opt[map[any, str]]` silently accepted
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala` (checkAnyAsMapKey)
+**Description:** The check only pattern-matches the direct field type. `opt[map[any, str]]`, `lst[map[any, str]]`, and deeper nestings all pass validation silently. The spec forbids `any` as a map key wherever the map appears; wrapping in `opt`/`lst` must not launder the violation.
+**Suggested fix:** Walk into `Constructor.args` recursively — same pattern as `collectAnyUnderlyings` in `checkAnyUnderlying` which correctly recurses.
+
+### [PR-03-D03] `checkAnyAsSetElement` has the same non-recursion bug as D02
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala` (checkAnyAsSetElement)
+**Description:** `lst[set[any]]`, `opt[set[any]]` silently accepted.
+**Suggested fix:** Recurse, same shape as D02.
+
+### [PR-03-D04] `checkAnyFields` only visits `Typedef.Dto`; skips standalone `Contract`, `Adt.fields`, and `Service` method signatures
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala` (checkAnyFields)
+**Description:** `case d: Typedef.Dto => … ; case _ => F.unit`. Consequences:
+- `contract C { f: any[i32] }` with no DTO inheriting → silently accepted.
+- `Typedef.Adt` has `fields: List[Field]` (flattened contracts) that are never inspected. Today relying on DTO-branch redundancy; fragile.
+- `Typedef.Service.MethodDef(sig, out, err)` — type refs in method signatures go uninspected.
+**Suggested fix:** Extend `checkAnyFields` to handle `Typedef.Contract`, `Typedef.Adt` (inspect its own `fields`), and `Typedef.Service` (inspect method sig/out/err TypeRefs). Use the existing helper that walks a TypeRef recursively.
+
+### [PR-03-D05] Plan says "extend `checkComplexMapKeys` to reject `TypeRef.Any`"; executor added a separate check
+**Status:** resolved (plan updated to match implementation)
+**Severity:** minor (plan vs impl drift)
+**Location:** `docs/drafts/20260424-1738-any-opaque-plan.md` §PR 1.3; `BaboonValidator.scala` (checkAnyAsMapKey)
+**Description:** Executor's reasoning — separate issue type produces cleaner errors — is defensible. But the plan drifted.
+**Fix:** Update the plan text to say "add dedicated `checkAnyAsMapKey` / `checkAnyAsSetElement` passes that produce specific `AnyAsMapKey`/`AnyAsSetElement` issue types, distinct from the generic `MapKeysShouldNotBeGeneric`/`SetsCantContainGenerics`." No code change.
+
+### [PR-03-D06] `checkAnyFields` top comment claims Foreign-with-runtime-mapping is allowed; `isUserDataType` rejects all Foreigns
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala:319-320` and `:368-381`
+**Description:** Top comment says "DTO/ADT/Enum, or Foreign with a runtime mapping". Actual `isUserDataType` only accepts Dto/Adt/Enum. A second comment at :364-367 correctly says "foreign types are rejected per the spec". The comments contradict.
+**Suggested fix:** Remove the "Foreign with runtime mapping" clause from the top comment. Keep the lower comment; extend to note rationale (foreign types have no intrinsic ueba codec the validator can reason about).
+
+### [PR-03-D07] `checkAnyAsMapKey` comment overclaims `checkComplexMapKeys` coverage
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala:413-415`
+**Description:** Comment says "Nested maps (e.g. `map[map[any, ...], ...]`) are already rejected by `checkComplexMapKeys`". The existing `checkComplexMapKeys` is itself non-recursive — the claim happens to be true for the narrow example but implies general coverage that doesn't exist.
+**Suggested fix:** Reword to match reality: "This check is non-recursive by itself; deeper positions are caught by `checkAnyFields`'s own recursion (after D02 fix)." Or remove the aspirational cross-reference.
+
+### [PR-03-D08] Missing test: `map[any[Foo], V]` rejection when underlying is valid
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/AnyValidatorTest.scala`
+**Suggested fix:** Add test: `data Foo : derived[ueba] {}` + `map[any[Foo], str]` → `AnyAsMapKey` (not `AnyUnderlyingLacksUebaDerivation`).
+
+### [PR-03-D09] Missing test: `set[any[Foo]]` rejection when underlying is valid
+**Status:** resolved
+**Severity:** minor
+**Location:** same file
+**Suggested fix:** Add test; expect `AnyAsSetElement`.
+
+### [PR-03-D10] Missing test: `any[Foreign]` with runtime mapping and without — document behavior
+**Status:** resolved
+**Severity:** minor
+**Location:** same file
+**Description:** Executor said Foreign types are rejected unconditionally. No test locks this in. `AnyUnderlyingNotUserType` phrasing is user-hostile for Foreign ("Foreign IS user-defined").
+**Suggested fix:** Add a test covering `any[Foreign]`. If keeping the current issue type, update its message to mention Foreign explicitly ("must be a DTO/ADT/Enum — Foreign types are not supported as `any` payloads yet"). If a dedicated `AnyUnderlyingForeign` issue is warranted, add it — but current rejection via existing issue is acceptable given the message is tweaked.
+
+### [PR-03-D11] Missing test: standalone contract with invalid `any`
+**Status:** resolved
+**Severity:** minor
+**Location:** same file
+**Description:** Directly tied to D04. Once D04 is fixed, add a test that a bare `contract C { f: any[i32] }` (no inheriting DTO) produces `AnyUnderlyingNotUserType`.
+**Suggested fix:** Add test.
+
+### [PR-03-D12] Missing deep-nesting negative tests (ties to D02/D03 fixes)
+**Status:** resolved
+**Severity:** minor
+**Location:** same file
+**Description:** `opt[map[any, str]]`, `lst[set[any]]`, `opt[set[any]]` all pass silently today (D02/D03). Regression-guarding tests would have caught this pre-review.
+**Suggested fix:** Add 3 tests, one per deep-nesting case; each should produce the expected issue type.
+
+### [PR-03-D13] Validator ignores `generateUebaCodecsByDefault` target flag; translators honour it
+**Status:** resolved (deferred — out of PR 1.3 scope, flagged for M2+)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala` (checkAnyUnderlying derivation check)
+**Description:** Translators check `target.language.generateUebaCodecsByDefault || derivationRequests.contains(id)`; validator only checks the second half. Means validator might reject a type that a codec-by-default target would happily generate codecs for.
+**Fix:** No action in PR 1.3. Flag for M2+ when per-target flags enter the validator's knowledge.
+
+### [PR-03-D14] No blessed helper for `hasUebaDerivation(typeId)`; incantation duplicated across codegen + validator
+**Status:** resolved (deferred — refactor candidate, out of PR 1.3 scope)
+**Severity:** nit
+**Location:** multiple translator files
+**Description:** `domain.derivationRequests.getOrElse(RawMemberMeta.Derived("ueba"), Set.empty).contains(id)` appears in 20+ places.
+**Fix:** No action in PR 1.3. Future refactor: introduce `Domain.hasUebaDerivation(id)` helper.
+
+### [PR-03-D15] Widened issue case classes field name `dto: Typedef.User` misleading when value is Contract/Adt/Service
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/issues/VerificationIssue.scala` (four `Any*` issue case classes)
+**Description:** Field name `dto` was correct when issues were `Typedef.Dto`-only. After D04 widening to `Typedef.User`, the field reads misleadingly. Test `i.dto.isInstanceOf[Typedef.Contract]` makes the awkwardness concrete.
+**Suggested fix:** Rename field `dto` → `owner` in all four widened issues. Update all access sites (`BaboonValidator.scala`, `AnyValidatorTest.scala`, `DiagnosticsProvider.scala`, `WorkspaceState.scala`, `BaboonJS.scala`, `VerificationIssue.scala` printers).
+
+### [PR-03-D16] `AnyUnderlyingNotUserType` printer conflates two separately-reported rules
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/issues/VerificationIssue.scala:243`
+**Description:** Message says ``"`any[T]` requires T to be a user-defined DTO/ADT/Enum with `: derived[ueba]`."`` — but the `derived[ueba]` clause is a separate rule reported by `AnyUnderlyingLacksUebaDerivation`. For `any[i32]` the suffix is non-actionable.
+**Suggested fix:** First line: ``"`any[T]` requires T to be a user-defined DTO/ADT/Enum."`` Keep the separate note about foreign types on the next line. Drop the `: derived[ueba]` clause — that's the sibling issue's concern.
+
+### [PR-03-D17] Service method `any`-walk path has zero direct test coverage
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/AnyValidatorTest.scala`
+**Description:** D04 added synthetic `<method>.{sig|out|err}` pseudo-Field walking for Service methods. Zero tests exercise it.
+**Suggested fix:** Add at least one test: a service method `def m(any[i32]): X` reports `AnyUnderlyingNotUserType`; `i.owner.isInstanceOf[Typedef.Service]`; offending pseudo-field name ends in `.sig`.
+
+### [PR-03-D18] Adt own-fields `any`-walk path has zero direct test coverage
+**Status:** resolved
+**Severity:** nit
+**Location:** same file
+**Description:** D04 added `case a: Typedef.Adt => checkAnyOnFields(domain, a, a.fields, ...)`. ADT own fields come from flattened contracts. Nothing tests that path directly.
+**Suggested fix:** Add a test: an ADT `adt A is BadContract { data B {} }` where `contract BadContract { f: any[i32] }` — assert an issue fires with `owner.isInstanceOf[Typedef.Adt]`.
+
+### [PR-03-D19] Diagnostic position for Service/Adt issues points at owner def, not method/branch site
+**Status:** resolved (accepted — consistent with existing validator style)
+**Severity:** nit (observation)
+**Location:** all new `Any*` issues' `meta` field
+**Description:** For a Service method violating, diagnostics point at the `service` declaration line, not the parameter. Consistent with existing `MapKeysShouldNotBeGeneric` etc.
+**Fix:** No action. If a future PR adds per-method/per-field positions to `Field`/`MethodDef`, these issues will benefit too.
 **Severity:** minor
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/graphql/GqlBaboonTranslator.scala:124-131` (`builtinCustomScalars` set) and `:264-273` (`collectScalarsFromRef`)
 **Description:** D07's fix has `GqlTypeTranslator.typeRefStr`/`typeRefIdent` return `"BaboonAny"` for `TypeRef.Any`. But `GqlBaboonTranslator` — which collects custom scalars at schema-emission time — has `builtinCustomScalars` not containing `BaboonAny`, and `collectScalarsFromRef` has a silent `case _ =>` fallthrough that ignores `TypeRef.Any`. A model with `any` fields will produce a GraphQL schema referencing `scalar BaboonAny` without declaring it — invalid SDL.

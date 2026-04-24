@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.validator
 
-import io.septimalmind.baboon.parser.model.RawNodeMeta
+import io.septimalmind.baboon.parser.model.{RawMemberMeta, RawNodeMeta}
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.parser.model.issues.VerificationIssue
 import io.septimalmind.baboon.parser.model.issues.VerificationIssue.ConversionIssue
@@ -58,6 +58,7 @@ object BaboonValidator {
         _ <- checkUniqueness(domain)
         _ <- checkShape(domain)
         _ <- checkPathologicGenerics(domain)
+        _ <- checkAnyFields(domain)
         _ <- checkRoots(domain)
       } yield {}
 
@@ -307,6 +308,185 @@ object BaboonValidator {
 
       F.when(badFields.nonEmpty)(
         F.fail(BaboonIssue.of(VerificationIssue.MapKeysShouldNotBeGeneric(dto, badFields, meta)))
+      )
+    }
+
+    // Enforces the PR 1.3 validator rules for `any` / `AnyOpaque` fields.
+    // See docs/drafts/20260424-1738-any-opaque-fields.md §"Validator rules".
+    //
+    // Rules:
+    //   (1) Underlying T of `any[T]` (variants D1/D2/D3) must be a user-defined type
+    //       (DTO/ADT/Enum) — not a builtin scalar, not a collection, not a nested `any`,
+    //       not a foreign type. Foreign types have no intrinsic ueba codec the validator
+    //       can reason about; this restriction may be relaxed in a future milestone if
+    //       Foreign types gain a ueba-derivation mechanism.
+    //   (2) Underlying T must carry `derived[ueba]`.
+    //       TODO (M2+): also require `derived[json]` when JSON codegen is enabled for the
+    //       containing type. PR 1.3 scope is ueba only.
+    //   (3) `any` cannot appear as a map key (any nesting depth).
+    //   (4) `any` cannot appear as a set element (any nesting depth).
+    //   (5) Other positions (`opt[any]`, `lst[any]`, map value) are allowed.
+    //
+    // Coverage extends across all `Typedef.User` shapes that carry TypeRefs: Dto fields,
+    // Contract fields, Adt own fields (flattened contracts), and Service method
+    // sig/out/err. A Contract's fields are also visible on every inheriting DTO; both
+    // sites report independently — duplication is acceptable and matches the style of
+    // other validators in this file (e.g. `validateFields`).
+    private def checkAnyFields(
+      domain: Domain
+    ): F[NEList[BaboonIssue], Unit] = {
+      F.traverseAccumErrors_(domain.defs.meta.nodes.values) {
+        case _: DomainMember.Builtin =>
+          F.unit
+        case u: DomainMember.User =>
+          u.defn match {
+            case d: Typedef.Dto =>
+              checkAnyOnFields(domain, d, d.fields, u.meta)
+            case c: Typedef.Contract =>
+              checkAnyOnFields(domain, c, c.fields, u.meta)
+            case a: Typedef.Adt =>
+              checkAnyOnFields(domain, a, a.fields, u.meta)
+            case s: Typedef.Service =>
+              // Synthesise pseudo-fields whose names point at the offending method slot
+              // (`<methodName>.sig`, `<methodName>.out`, `<methodName>.err`). The Field
+              // type is the ergonomic carrier the issue printers expect; nothing here
+              // is round-tripped through codegen.
+              val pseudo: List[Field] = s.methods.flatMap { m =>
+                val sigF = Field(FieldName(s"${m.name.name}.sig"), m.sig, None)
+                val outF = m.out.map(t => Field(FieldName(s"${m.name.name}.out"), t, None))
+                val errF = m.err.map(t => Field(FieldName(s"${m.name.name}.err"), t, None))
+                List(sigF) ++ outF.toList ++ errF.toList
+              }
+              checkAnyOnFields(domain, s, pseudo, u.meta)
+            case _ =>
+              F.unit
+          }
+      }
+    }
+
+    private def checkAnyOnFields(
+      domain: Domain,
+      owner: Typedef.User,
+      fields: List[Field],
+      meta: RawNodeMeta,
+    ): F[NEList[BaboonIssue], Unit] = {
+      for {
+        _ <- checkAnyUnderlying(domain, owner, fields, meta)
+        _ <- checkAnyAsMapKey(owner, fields, meta)
+        _ <- checkAnyAsSetElement(owner, fields, meta)
+      } yield {}
+    }
+
+    private def checkAnyUnderlying(
+      domain: Domain,
+      owner: Typedef.User,
+      fields: List[Field],
+      meta: RawNodeMeta,
+    ): F[NEList[BaboonIssue], Unit] = {
+      // Collect every `TypeRef.Any(_, Some(u))` reachable through the field type.
+      // We only inspect the shape of `u` — the typer has already ensured `u` is well-formed.
+      def collectAnyUnderlyings(t: TypeRef): List[TypeRef] = t match {
+        case _: TypeRef.Scalar => Nil
+        case c: TypeRef.Constructor =>
+          c.args.toList.flatMap(collectAnyUnderlyings)
+        case TypeRef.Any(_, None) =>
+          Nil
+        case TypeRef.Any(_, Some(u)) =>
+          u :: collectAnyUnderlyings(u)
+      }
+
+      // Underlying shape check: only `TypeRef.Scalar(user)` where the user type is a DTO,
+      // ADT, or Enum passes. Builtins, collections, nested `any`, services, contracts, and
+      // foreign types are rejected per the spec. Rationale: foreign types have no intrinsic
+      // ueba codec the validator can reason about; this restriction may be relaxed in a
+      // future milestone if Foreign types gain a ueba-derivation mechanism.
+      def isUserDataType(t: TypeRef): Boolean = t match {
+        case TypeRef.Scalar(id: TypeId.User) =>
+          domain.defs.meta.nodes.get(id).exists {
+            case DomainMember.User(_, defn, _, _) =>
+              defn match {
+                case _: Typedef.Dto  => true
+                case _: Typedef.Adt  => true
+                case _: Typedef.Enum => true
+                case _               => false
+              }
+            case _ => false
+          }
+        case _ => false
+      }
+
+      val uebaDerivation = domain.derivationRequests
+        .getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId])
+
+      def hasUeba(t: TypeRef): Boolean = t match {
+        case TypeRef.Scalar(id: TypeId.User) => uebaDerivation.contains(id)
+        case _                               => false
+      }
+
+      val notUserTypeFields = fields.filter {
+        f => collectAnyUnderlyings(f.tpe).exists(u => !isUserDataType(u))
+      }
+
+      // Only check the ueba derivation for fields where the underlying IS a valid user type —
+      // otherwise the "not user type" issue already fires and dominates.
+      val lacksUebaFields = fields.filter {
+        f =>
+          val underlyings = collectAnyUnderlyings(f.tpe)
+          underlyings.nonEmpty && underlyings.forall(isUserDataType) && underlyings.exists(u => !hasUeba(u))
+      }
+
+      for {
+        _ <- F.when(notUserTypeFields.nonEmpty)(
+          F.fail(BaboonIssue.of(VerificationIssue.AnyUnderlyingNotUserType(owner = owner, badFields = notUserTypeFields, meta = meta)))
+        )
+        _ <- F.when(lacksUebaFields.nonEmpty)(
+          F.fail(BaboonIssue.of(VerificationIssue.AnyUnderlyingLacksUebaDerivation(owner = owner, badFields = lacksUebaFields, meta = meta)))
+        )
+      } yield {}
+    }
+
+    // Recursive — walks every nested map position and reports the field if any of them has
+    // `any` in the key slot. Does not rely on `checkComplexMapKeys`, which is non-recursive
+    // and only rejects builtin-collection keys at the top level.
+    private def checkAnyAsMapKey(
+      owner: Typedef.User,
+      fields: List[Field],
+      meta: RawNodeMeta,
+    ): F[NEList[BaboonIssue], Unit] = {
+      def anyAsMapKey(t: TypeRef): Boolean = t match {
+        case TypeRef.Constructor(TypeId.Builtins.map, args) =>
+          args.head.isInstanceOf[TypeRef.Any] || args.toList.exists(anyAsMapKey)
+        case TypeRef.Constructor(_, args) =>
+          args.toList.exists(anyAsMapKey)
+        case _ => false
+      }
+
+      val badFields = fields.filter(f => anyAsMapKey(f.tpe))
+
+      F.when(badFields.nonEmpty)(
+        F.fail(BaboonIssue.of(VerificationIssue.AnyAsMapKey(owner = owner, badFields = badFields, meta = meta)))
+      )
+    }
+
+    // Recursive — walks every nested set position and reports the field if any of them has
+    // `any` as the element type.
+    private def checkAnyAsSetElement(
+      owner: Typedef.User,
+      fields: List[Field],
+      meta: RawNodeMeta,
+    ): F[NEList[BaboonIssue], Unit] = {
+      def anyAsSetElement(t: TypeRef): Boolean = t match {
+        case TypeRef.Constructor(TypeId.Builtins.set, args) =>
+          args.head.isInstanceOf[TypeRef.Any] || args.toList.exists(anyAsSetElement)
+        case TypeRef.Constructor(_, args) =>
+          args.toList.exists(anyAsSetElement)
+        case _ => false
+      }
+
+      val badFields = fields.filter(f => anyAsSetElement(f.tpe))
+
+      F.when(badFields.nonEmpty)(
+        F.fail(BaboonIssue.of(VerificationIssue.AnyAsSetElement(owner = owner, badFields = badFields, meta = meta)))
       )
     }
 

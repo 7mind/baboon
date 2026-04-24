@@ -1547,6 +1547,10 @@ object BaboonJS {
       case PathologicGenerics(_, _, meta)                       => Some(meta.pos)
       case SetsCantContainGenerics(_, _, meta)                  => Some(meta.pos)
       case MapKeysShouldNotBeGeneric(_, _, meta)                => Some(meta.pos)
+      case AnyUnderlyingNotUserType(_, _, meta)                 => Some(meta.pos)
+      case AnyUnderlyingLacksUebaDerivation(_, _, meta)         => Some(meta.pos)
+      case AnyAsMapKey(_, _, meta)                              => Some(meta.pos)
+      case AnyAsSetElement(_, _, meta)                          => Some(meta.pos)
       case _: LockedVersionModified                             => None
       case _: MissingTypeDef                                    => None
       case _: ReferentialCyclesFound                            => None

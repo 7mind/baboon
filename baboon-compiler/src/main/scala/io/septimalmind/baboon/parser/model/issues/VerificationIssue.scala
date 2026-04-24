@@ -62,6 +62,23 @@ object VerificationIssue {
 
   case class MapKeysShouldNotBeGeneric(dto: Typedef.Dto, badFields: List[Field], meta: RawNodeMeta) extends VerificationIssue
 
+  // `any[T]` rule: T must be a user-defined DTO/ADT/Enum. Builtin scalars, collections,
+  // nested `any`, and foreign types are rejected. The owner is any `Typedef.User`
+  // — DTOs, Contracts, ADTs (own fields), and Services (method sig/out/err) all
+  // participate. For Service methods, badFields synthesises a Field whose name is
+  // `<methodName>.{sig|out|err}` and whose tpe is the offending TypeRef.
+  case class AnyUnderlyingNotUserType(owner: Typedef.User, badFields: List[Field], meta: RawNodeMeta) extends VerificationIssue
+
+  // `any[T]` rule: T must carry `derived[ueba]`. Checked via `Domain.derivationRequests`.
+  // TODO (M2+): also require `derived[json]` when JSON codegen is enabled for the containing type.
+  case class AnyUnderlyingLacksUebaDerivation(owner: Typedef.User, badFields: List[Field], meta: RawNodeMeta) extends VerificationIssue
+
+  // `any` cannot appear as a map key (no stable hash/equality).
+  case class AnyAsMapKey(owner: Typedef.User, badFields: List[Field], meta: RawNodeMeta) extends VerificationIssue
+
+  // `any` cannot appear as a set element (no stable hash/equality).
+  case class AnyAsSetElement(owner: Typedef.User, badFields: List[Field], meta: RawNodeMeta) extends VerificationIssue
+
   implicit val lockedVersionModifiedPrinter: IssuePrinter[LockedVersionModified] =
     (issue: LockedVersionModified) => {
       s"""Model ${issue.pkg.toString}@${issue.version} was modified but it's not the latest version so it's locked with the lockfile""".stripMargin
@@ -217,6 +234,40 @@ object VerificationIssue {
       s"""${extractLocation(issue.meta)}
          |DTO: ${issue.dto.id.toString}
          |Has map fields with generic key:${issue.badFields.niceList()}
+         |""".stripMargin
+    }
+
+  implicit val anyUnderlyingNotUserTypePrinter: IssuePrinter[AnyUnderlyingNotUserType] =
+    (issue: AnyUnderlyingNotUserType) => {
+      s"""${extractLocation(issue.meta)}
+         |In: ${issue.owner.id.toString}
+         |`any[T]` requires T to be a user-defined DTO/ADT/Enum.
+         |Primitive types, collections, and foreign types are not supported as `any` payloads yet.
+         |Offending fields:${issue.badFields.niceList()}
+         |""".stripMargin
+    }
+
+  implicit val anyUnderlyingLacksUebaDerivationPrinter: IssuePrinter[AnyUnderlyingLacksUebaDerivation] =
+    (issue: AnyUnderlyingLacksUebaDerivation) => {
+      s"""${extractLocation(issue.meta)}
+         |In: ${issue.owner.id.toString}
+         |Has `any[T]` fields whose T lacks `: derived[ueba]`:${issue.badFields.niceList()}
+         |""".stripMargin
+    }
+
+  implicit val anyAsMapKeyPrinter: IssuePrinter[AnyAsMapKey] =
+    (issue: AnyAsMapKey) => {
+      s"""${extractLocation(issue.meta)}
+         |In: ${issue.owner.id.toString}
+         |Has map fields with `any` key (disallowed: `any` has no stable hash/equality):${issue.badFields.niceList()}
+         |""".stripMargin
+    }
+
+  implicit val anyAsSetElementPrinter: IssuePrinter[AnyAsSetElement] =
+    (issue: AnyAsSetElement) => {
+      s"""${extractLocation(issue.meta)}
+         |In: ${issue.owner.id.toString}
+         |Has set fields with `any` element (disallowed: `any` has no stable hash/equality):${issue.badFields.niceList()}
          |""".stripMargin
     }
 
