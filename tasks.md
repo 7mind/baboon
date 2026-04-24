@@ -29,7 +29,7 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 Detail in `docs/drafts/20260424-1738-any-opaque-plan.md` §3. One line per PR here; sub-tasks stay in the plan doc.
 
 - [x] **PR 1.1** — Parser + raw AST (`RawTypeRef.AnyRef`, qualifier tokens).
-- [ ] **PR 1.2** — Typed AST + typer (`TypeRef.Any`, `AnyVariant`, `Builtins.any`, `BinReprLen` hook).
+- [!] **PR 1.2** — Typed AST + typer (`TypeRef.Any`, `AnyVariant`, `Builtins.any`, `BinReprLen` hook). **Blocked**: see "Open questions / blockers" below — adding a new sealed case to `TypeRef` cascades through **64 files** pattern-matching on `TypeRef.Scalar`/`TypeRef.Constructor`. Plan underestimated this surface. Needs user decision on how to scope the cascade before execution.
 - [ ] **PR 1.3** — Validator rules (map-key rejection, `derived[ueba]` check, generic-arg policy).
 - [ ] **PR 1.4** — Compile-only end-to-end fixture tests.
 
@@ -47,7 +47,14 @@ Detail in `docs/drafts/20260424-1738-any-opaque-plan.md` §3. One line per PR he
 - [x] **Q2 — `any` in generic arg positions** (2026-04-24): reject `set[any]` and `any` as map key; allow `opt[any]`/`lst[any]`/`map[K, any]` (value position). Lands in PR 1.3. Spec updated.
 - [ ] **Q3 — GraphQL/OpenAPI schema representation**: custom scalar vs. wrapper object vs. `oneOf`. Blocks M11/M12 only. Defer.
 - [ ] **Q4 — Python UEBA emission**: confirm Python target emits UEBA. Blocks M10 only. Defer.
-- [x] **Q5 — Translator-site cascade**: PR 1.2 emits `throw RuntimeException("BUG: any field reached translator before M2+")` placeholders in each translator's `TypeRef` match; removed per-language per milestone.
+- [x] **Q5 — Translator-site cascade**: PR 1.2 emits `throw RuntimeException("BUG: any field reached translator before M2+")` placeholders in each translator's `TypeRef` match; removed per-language per milestone. **Open issue (Q5.1)** — surface is 64 files, far larger than plan estimate. See blocker below.
+- [ ] **Q5.1 — PR 1.2 surface explosion (blocker)**: `grep TypeRef.Scalar|TypeRef.Constructor` returns 64 source files (not just 9 translator `UEBACodecGenerator`s — also `TypeTranslator`, `JsonCodecGenerator`, `CodecFixtureTranslator`, `ConversionTranslator`, `DefnTranslator`, and `BaboonSchemeRenderer` per language). Adding `TypeRef.Any` as a new sealed case forces a placeholder in every one of these 64 sites, making "PR 1.2" a 64-file mechanical change that's ostensibly "compiler front-end" but touches every translator. Options for the user to decide between:
+  - **(a) One huge mechanical PR 1.2**: accept the 64-file cascade. PR is big but every site is a trivial `case _: TypeRef.Any => throw RuntimeException("BUG: `any` unsupported for <language> until M<N>")`. Violates CLAUDE.md §5 "Surgical Changes" in surface but each file change is surgical in depth.
+  - **(b) Split PR 1.2 into front-end-only + per-language cascade PRs**: PR 1.2 changes only `TypeRef` + `BaboonTranslator` + `BaboonEnquiries` + compiler tests. Compilation fails elsewhere. Then PR 1.2-ext (or PR 1.3): add placeholders across all 64 sites, one commit. This matches the spirit of the plan's §PR 1.2 Risks note but creates a genuinely broken build between the two commits.
+  - **(c) Represent `any` without a new sealed `TypeRef` case**: reuse `TypeRef.Constructor(TypeId.Builtins.any, args)` where args encode variant + underlying. Requires inventing a synthetic encoding (e.g. args.head = typeref-for-underlying, args.tail = qualifier-tag-as-typeref). No cascade, but the typed AST becomes less honest and every consumer that inspects `args` needs special-case knowledge. Compromises the "types encode domain concepts" principle.
+  - **(d) Represent `any`'s variant + underlying on the Field, not the TypeRef**: add a sibling `AnyMeta` field on `Field` (or the typed DTO member) alongside `tpe`. `tpe` becomes `TypeRef.Scalar(TypeId.Builtins.any)` — a plain scalar, no cascade. Variant + underlying live on the field. Clean cascade-wise but splits "what type is this field" between two places (weird for users of the typed AST).
+
+My recommendation is **(a)**: one big PR, mechanical, everything stays consistent at every commit. Each of the 64 cases is a one-line throw; total diff is 64 × 3 lines ≈ 200 lines of trivial additions. But this is your call — (b) risks a broken build between commits, (c)/(d) compromise the AST design.
 
 ---
 
