@@ -70,7 +70,7 @@ abstract class AnyFrontEndTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
 
     "reject any[i32] (underlying not user type)" in {
       (loader: BaboonLoader[F]) =>
-        val paths = resolveBaboonFiles("baboon/any-bad/underlying-not-user-type.baboon")
+        val paths = resolveBaboonFiles("baboon-fixtures-bad/any-bad/underlying-not-user-type.baboon")
         for {
           outcome <- runPipeline(loader, paths)
         } yield {
@@ -80,7 +80,7 @@ abstract class AnyFrontEndTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
 
     "reject any[Foo] without ueba derivation" in {
       (loader: BaboonLoader[F]) =>
-        val paths = resolveBaboonFiles("baboon/any-bad/underlying-lacks-ueba.baboon")
+        val paths = resolveBaboonFiles("baboon-fixtures-bad/any-bad/underlying-lacks-ueba.baboon")
         for {
           outcome <- runPipeline(loader, paths)
         } yield {
@@ -90,7 +90,7 @@ abstract class AnyFrontEndTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
 
     "reject map[any, str] (any as map key)" in {
       (loader: BaboonLoader[F]) =>
-        val paths = resolveBaboonFiles("baboon/any-bad/map-key.baboon")
+        val paths = resolveBaboonFiles("baboon-fixtures-bad/any-bad/map-key.baboon")
         for {
           outcome <- runPipeline(loader, paths)
         } yield {
@@ -100,7 +100,7 @@ abstract class AnyFrontEndTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
 
     "reject set[any] (any as set element)" in {
       (loader: BaboonLoader[F]) =>
-        val paths = resolveBaboonFiles("baboon/any-bad/set-element.baboon")
+        val paths = resolveBaboonFiles("baboon-fixtures-bad/any-bad/set-element.baboon")
         for {
           outcome <- runPipeline(loader, paths)
         } yield {
