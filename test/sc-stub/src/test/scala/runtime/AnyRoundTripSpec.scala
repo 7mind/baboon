@@ -24,26 +24,15 @@ class AnyRoundTripSpec extends AnyFunSuite {
   // cross-format helpers and decodeAny can resolve `(domain, version, typeid)` triples.
   // We deliberately avoid relying on a global/static facade so this spec stays self-contained.
   //
-  // BaboonCodecsFacade.getCodec branches on (modelVersion vs minVersion vs maxVersion). For
-  // single-version domains (modelVersion == min == max), the non-`exact` cases fall through to
-  // the catch-all "Unsupported domain version" error — a latent defect in the runtime predating
-  // PR 2.4. The `decodeFromBin`, `decodeAny`, and cross-convert helpers all use `exact=false`,
-  // so they would all break here. The workaround is to register a synthetic future-version
-  // (2.0.0) for the same domain — bumping `max` past `model` so the second case-arm matches and
-  // `getCodecMaxCompat` is reached. The synthetic version's meta is shared with 1.0.0; nothing
-  // looks it up because `versionsMeta.get(modelVersion=1.0.0)` succeeds first.
+  // PR 2.5 fixed PR-07-D02 (single-version domain falling through getCodec's case-match for
+  // `exact=false` lookups). The earlier workaround — registering a synthetic 2.0.0 to bump
+  // `max` past `model` — is no longer needed.
   private def freshFacade(): BaboonCodecsFacade = {
     val f = new BaboonCodecsFacade {}
     f.register(
       BaboonDomainVersion(my.ok.Holder.baboonDomainIdentifier, my.ok.Holder.baboonDomainVersion),
       my.ok.BaboonCodecsJson,
       my.ok.BaboonCodecsUeba,
-      my.ok.BaboonMetadata,
-    )
-    // Synthetic newer version (no codecs) so 1.0.0 is treated as "not the latest" and dispatches
-    // through getCodecMaxCompat.
-    f.register(
-      BaboonDomainVersion(my.ok.Holder.baboonDomainIdentifier, "2.0.0"),
       my.ok.BaboonMetadata,
     )
     f

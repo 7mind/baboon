@@ -391,6 +391,35 @@ class AnyMetaCodecSpec extends AnyFunSuite {
     assert(msg.contains("version"), s"expected message to mention 'version': $msg")
   }
 
+  // PR-07-D02 regression: single-version domain (min == max == model) used to fall through every
+  // case-arm of getCodec when called with `exact=false` and produce
+  // `Left(CodecNotFound("Unsupported domain version"))`. All non-exact codec lookups
+  // (`decodeFromBin`, `decodeAny`, `jsonToUebaBytes`, `uebaToJson`) routed through this branch and
+  // were broken for any domain with a single registered version. PR 2.4 worked around this by
+  // registering a synthetic future-version. The fix in PR 2.5 lets the `v == maxVersion` arm match
+  // regardless of the `exact` flag — for the latest-and-only registered version there is nothing
+  // newer to compat-convert through.
+  test("PR-07-D02: jsonToUebaBytes succeeds against a single-version registered domain (no synthetic future-version workaround)") {
+    val facade = new BaboonCodecsFacade {}
+    facade.register(
+      BaboonDomainVersion(my.ok.Holder.baboonDomainIdentifier, my.ok.Holder.baboonDomainVersion),
+      my.ok.BaboonCodecsJson,
+      my.ok.BaboonCodecsUeba,
+      my.ok.BaboonMetadata,
+    )
+    // No synthetic 2.0.0 — just one registered version. Pre-fix this returned
+    // Left(CodecNotFound("Unsupported domain version '...'.")).
+    val meta = AnyMeta(
+      0x07.toByte,
+      Some(my.ok.Holder.baboonDomainIdentifier),
+      Some(my.ok.Holder.baboonDomainVersion),
+      Some("my.ok/:#Inner"),
+    )
+    val innerJson = my.ok.Inner_JsonCodec.encode(BaboonCodecContext.Compact, my.ok.Inner(7))
+    val result    = facade.jsonToUebaBytes(meta, innerJson)
+    assert(result.isRight, s"expected Right(bytes) for single-version domain lookup, got: $result")
+  }
+
   test("AnyOpaqueUeba equality compares bytes by content, not reference") {
     val meta = AnyMeta(0x07.toByte, Some("d"), Some("v"), Some("t"))
 

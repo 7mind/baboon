@@ -523,6 +523,13 @@ package baboon.runtime.shared {
           // it's a model of latest version, get last version codec
           case v if exact && v.version == maxVersion.version =>
             getCodecExact(versionsCodecs, modelVersion, typeMeta.typeIdentifier)
+          // non-exact lookup at the latest registered version: route to exact lookup. Without this
+          // arm a single-version domain (minVersion == maxVersion == modelVersion) falls through
+          // every other arm and yields "Unsupported domain version" because the strictly-less-than
+          // bound on the next arm excludes equality. There is nothing newer than `max` to
+          // compat-convert through, so exact lookup is the right answer.
+          case v if !exact && v.version == maxVersion.version =>
+            getCodecExact(versionsCodecs, modelVersion, typeMeta.typeIdentifier)
           // it's a model of outdated version, we should read it with max compat codec
           case v if v.version >= minVersion.version && v.version < maxVersion.version =>
             getCodecMaxCompat(versionsCodecs, modelVersion, maxVersion, typeMeta.typeIdentifier)
