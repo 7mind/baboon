@@ -225,6 +225,20 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
             doNotModify = true,
           ),
           RsDefnTranslator.Output(
+            "any_opaque.rs",
+            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/rust/any_opaque.rs")),
+            RsValue.RsCrateId(NEList("crate")),
+            CompilerProduct.Runtime,
+            doNotModify = true,
+          ),
+          RsDefnTranslator.Output(
+            "baboon_codecs_facade.rs",
+            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/rust/baboon_codecs_facade.rs")),
+            RsValue.RsCrateId(NEList("crate")),
+            CompilerProduct.Runtime,
+            doNotModify = true,
+          ),
+          RsDefnTranslator.Output(
             "baboon_service_wiring.rs",
             TextTree.text(BaboonRuntimeResources.read("baboon-runtime/rust/baboon_service_wiring.rs")),
             RsValue.RsCrateId(NEList("crate")),
@@ -359,7 +373,7 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
 
     val deps = scala.collection.mutable.ListBuffer.empty[String]
     deps += """serde = { version = "1", features = ["derive"] }"""
-    deps += """serde_json = { version = "1", optional = true }"""
+    deps += """serde_json = { version = "1", features = ["preserve_order"], optional = true }"""
     deps += """rust_decimal = { version = "1", features = ["serde-with-str"], optional = true }"""
     deps += """chrono = { version = "0.4", features = ["serde"], optional = true }"""
     deps += """uuid = { version = "1", features = ["v4", "serde"], optional = true }"""

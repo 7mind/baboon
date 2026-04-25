@@ -742,3 +742,90 @@ The two `encodeAnyField` helpers (UEBA + JSON) need an additional parameter for 
 **Location:** `BaboonCodecs.cs:34-58`.
 **Description:** Reviewer noted that the `BaboonCodecContext` extension (adding `BaboonCodecsFacade? Facade` + `WithFacade(...)` factory) appears in the diff stat but was not flagged in the round-1 review nor in the round-2 fix list, suggesting scope drift. **However:** this extension was in PR 3.1's original brief from the start (the third bullet of "What this PR delivers"), per Q6 option (a) decision. It is core PR 3.1 work — not a fix for D01-D12. Round-2 reviewer flagged it as drift because the fix-round task focuses only on D01-D12, but the original PR 3.1 work itself is in scope.
 **Fix (PR 3.1 round 2):** No code change. Documented as false positive.
+
+---
+
+## PR-11 — Rust runtime + facade port (M4 PR 4.1)
+
+### [PR-11-D01] `encode_to_bin_with_override` does not write the type-meta wire prefix
+**Status:** resolved
+**Severity:** major (cross-language wire-format incompatible)
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/rust/baboon_codecs_facade.rs:757`.
+**Description:** Code has `let _ = type_meta_override; // Reserved: format-specific meta-prefix not yet wired in Rust runtime.` Scala (`BaboonCodecsFacade.scala:155-160`) and C# (`BaboonCodecsFacade.cs:172-175`) both write `(typeMetaOverride ?? typeMeta).WriteBin(writer)` BEFORE the body. Rust-encoded binary lacks the `[meta-version:u8][domain:string][version:string][has-min-compat:u8][min-compat?:string][type-id:string]` prefix. `DecodeFromBin` from Scala/C# fails at the very first byte. Cross-language interop is broken.
+**Suggested fix:** Build `BaboonTypeMeta` from `value` (or use `type_meta_override`), call `BaboonTypeMetaCodec::write_bin(meta, writer)` before `codec.encode_ueba(ctx, writer, value)`. Mirror Scala's order exactly.
+**Fix (PR 4.1 round 2):** Added `baboon_type_meta_codec` private module to `baboon_codecs_facade.rs` mirroring C# `BaboonTypeMetaCodec.WriteBin`. `encode_to_bin_with_declared_trait` (and `encode_to_bin_with_override` which delegates) now calls `baboon_type_meta_codec::write_bin(effective, &mut buf)` before invoking the codec body. `effective = type_meta_override.unwrap_or(&type_meta)`. Test `pr11_d01_encode_to_bin_writes_type_meta_prefix` asserts the first byte equals `META_VERSION_1` and the buffer round-trips through `decode_from_bin`. `baboon_codecs_facade.rs:858-915` (encode), `baboon_codecs_facade.rs:201-285` (codec module).
+
+### [PR-11-D02] `decode_from_bin` and `decode_from_json` entry points are missing entirely
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/rust/baboon_codecs_facade.rs` (no implementation).
+**Description:** Brief explicitly required encode/decode entry points. C# implements `DecodeFromBin(BinaryReader)` (line 420), `DecodeFromBin(byte[])` (line 451), `DecodeFromJson(JToken)` (line 498), `DecodeFromJson(string)` (line 533). Rust facade can encode but not decode. Combined with D01, the facade is unusable for round-trip wire I/O.
+**Suggested fix:** Port the C# decode methods. `decode_from_bin(reader)` reads via `BaboonTypeMetaCodec::read_bin` → `get_codec(type_meta, exact=false)` → invoke `binary_codec.decode_ueba(ctx, reader)` → wrap in `Box<dyn BaboonGeneratedDyn>`. Symmetric for JSON. Both return `Result<Box<dyn BaboonGeneratedDyn>, BaboonCodecError>`.
+**Fix (PR 4.1 round 2):** Added four entry points: `decode_from_bin<R: Read>(reader)`, `decode_from_bin_bytes(bytes)`, `decode_from_json(value)` (returns `Result<Option<…>, _>` — `Ok(None)` when the JSON is not a meta envelope, mirroring C#'s nullable-of-IBaboonGenerated semantics), `decode_from_json_str(s)`. All use `exact = false` for codec lookup. `BaboonAnyBinCodec::decode_dyn` and `BaboonAnyJsonCodec::decode_json_dyn` already existed on the trait surface — reused. `baboon_codecs_facade.rs:1003-1083`. Tests: `pr11_d02_decode_from_bin_round_trip`, `pr11_d02_decode_from_json_round_trip`, `pr11_d02_decode_from_json_returns_none_for_non_envelope`, `pr11_d02_decode_from_json_str_works`.
+
+### [PR-11-D03] `convert<TFrom, TTo>` cross-version conversion is missing entirely
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/rust/baboon_codecs_facade.rs` (no implementation).
+**Description:** Brief explicitly required `convert<TFrom,TTo>`. C# implements step-wise version walk with ADT-aware conversion matching (lines 548-630). Rust has no equivalent. Without it, `decode_from_bin_latest` (a follow-up) and any user-facing version-migration call cannot work.
+**Suggested fix:** Port the C# implementation: iterate domain versions in registered order; for each version, look up conversions, find matching `Conversion` (with ADT-awareness via `BaboonAdtMemberMeta`), apply, propagate. Return `Result<TTo, BaboonCodecError>`.
+**Fix (PR 4.1 round 2):** Implemented `convert(value)` step-wise version walk mirroring C# lines 548-630: skip versions where `current.version() >= to_version.version()`; lookup conversions via `versions_conversions`; filter candidates whose `type_from()` matches either the value's runtime `TypeId` *or* the ADT root `TypeId` (via `BaboonAdtMemberMetaDyn::baboon_adt_type_id_dyn`); pick the highest-`version_to_parsed()`. Plus `convert_typed::<TTo>(value)` typed wrapper that uses `BaboonGeneratedDyn::into_any() -> Box<dyn Any>` and `Box::downcast::<TTo>()`. Identity short-circuit checks `TypeId::of::<TTo>()` first. `baboon_codecs_facade.rs:1085-1196`. Tests: `pr11_d03_convert_v1_to_v2`, `pr11_d03_convert_typed_returns_target`, `pr11_d03_convert_unknown_domain_yields_converter_failure`.
+
+### [PR-11-D04] `BaboonTypeMeta` synthesis in encode paths lacks ADT-awareness and min-compat resolution
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon_codecs_facade.rs:751-752, 783-784`.
+**Description:** Code passes `value.baboon_domain_version_dyn()` *twice* for both `domain_version` and `domain_version_min_compat`, so `$uv` is **never emitted** in JSON envelopes and binary meta-prefix `has-min-compat=0` always. Scala (`BaboonRuntimeShared.scala:138`) and C# (`BaboonTypeMeta.cs:110`) pull `value.BaboonSameInVersions()[0]`. Additionally, the ADT-trait detection that switches `typeIdentifier` to `BaboonAdtTypeIdentifier()` for trait-typed values is missing. To carry that information through type-erasure, `BaboonGeneratedDyn` needs `baboon_same_in_versions_dyn()` accessor and an `BaboonAdtMemberMetaDyn` sibling trait.
+**Suggested fix:** Extend `BaboonGeneratedDyn` with `baboon_same_in_versions_dyn() -> Vec<String>`. Mirror C#'s `BaboonTypeMeta.From(value, declaredType)`: pull `same_in_versions[0]` for min-compat; if `declared_type` corresponds to an ADT trait and value implements `BaboonAdtMemberMetaDyn`, use `baboon_adt_type_identifier_dyn()` instead of `baboon_type_identifier_dyn()`.
+**Fix (PR 4.1 round 2):** Extended `BaboonGeneratedDyn` with: `baboon_same_in_versions_dyn() -> Vec<String>`, `into_any(self: Box<Self>) -> Box<dyn Any>`, `as_adt_member_meta_dyn() -> Option<&dyn BaboonAdtMemberMetaDyn>` (default `None`), `baboon_type_id_dyn() -> TypeId` (default via `as_any().type_id()`). Added sibling `BaboonAdtMemberMetaDyn` trait with `baboon_adt_type_identifier_dyn()` and `baboon_adt_type_id_dyn()`. Added private `type_meta_from(value, is_adt_trait)` helper: pulls `same_in_versions[0]` (asserts non-empty — fail-fast on codegen invariant violation per PR-08-D02 lesson), and when `is_adt_trait` uses the ADT identifier via the sentinel hook. `encode_to_*_with_override` now delegate to `encode_to_*_with_declared_trait(..., false)`; the trait-aware variants are exposed for codegen to call when the static type is a trait. `baboon_codecs_facade.rs:19-65, 826-866`. Tests: `pr11_d04_min_compat_from_same_in_versions_first`, `pr11_d04_no_uv_when_min_compat_equals_current`, `pr11_d04_min_compat_in_binary_prefix`. Decision: chose the sentinel-hook shape (`as_adt_member_meta_dyn`) over a flag-based protocol; pure flag (`is_adt_trait`) survives only at the encode entry-point.
+
+### [PR-11-D05] JSON envelope key ordering will differ from Scala/C# at runtime
+**Status:** resolved
+**Severity:** major
+**Location:** `test/rs-stub/Cargo.toml` (`serde_json` dependency); manifests in `any_opaque.rs:271-283` (`AnyOpaque::Serialize`) and `baboon_codecs_facade.rs:799-820` (envelope build).
+**Description:** Rust `serde_json::Map` defaults to `BTreeMap` (alphabetical key order). C# `JObject` and Scala `circe` preserve insertion order. Rust outputs `{"$ad","$ak","$at","$av","$c"}` (lexical); Scala/C# output `{"$ak","$ad","$av","$at","$c"}`. PR 4.3 cross-language conv-tests with exact-string equality will fail.
+**Suggested fix:** Enable `serde_json/preserve_order` feature in `test/rs-stub/Cargo.toml` (and the runtime template's `Cargo.toml` template). One-line dependency change.
+**Fix (PR 4.1 round 2):** Enabled `preserve_order` feature in two places: `test/rs-stub/Cargo.toml:8` (added to existing features array) and codegen template `RsBaboonTranslator.scala:376` (`serde_json = { version = "1", features = ["preserve_order"], optional = true }`). Test `pr11_d05_any_opaque_json_preserves_key_insertion_order` asserts the serialized AnyOpaque JSON contains `$ak < $ad < $av < $at < $c` substring positions.
+
+### [PR-11-D06] `BaboonAnyConversions` trait is a no-op marker; conversion subsystem is unreachable
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon_codecs_facade.rs:55` — `pub trait BaboonAnyConversions: Send + Sync {}`.
+**Description:** Trait body is empty. Together with D03 (missing `convert`), registered conversions are inaccessible. The protocol that C# uses (`AbstractBaboonConversions.FindConversions` / `IConversion.TypeFrom` / `Convert(value, conversion)`) has no Rust analog. Codec generators (PR 4.2+) will emit conversion-bearing codecs that the facade can't invoke.
+**Suggested fix:** Define the trait surface mirroring C#: `find_conversions(&self, value: &dyn BaboonGeneratedDyn) -> Vec<Box<dyn BaboonAnyConversion>>` and `convert(&self, value: Box<dyn BaboonGeneratedDyn>, conversion: &dyn BaboonAnyConversion) -> Result<Box<dyn BaboonGeneratedDyn>, BaboonCodecError>`. Add `BaboonAnyConversion` trait with `type_from() -> std::any::TypeId` and `version_to() -> &str`. Codec generators in PR 4.2+ implement these traits per conversion type.
+**Fix (PR 4.1 round 2):** Defined `BaboonAnyConversion` with `type_from() -> TypeId`, `version_from() -> &str`, `version_to() -> &str`, `type_id() -> &str`, plus default `version_to_parsed() -> Result<BaboonVersion, BaboonCodecError>`. Defined `BaboonAnyConversions` with `find_conversions(&self, value) -> Vec<Arc<dyn BaboonAnyConversion>>` and `convert(&self, value, conversion) -> Result<…>`. `Arc` (not `Box`) chosen for `find_conversions` return — conversion records are cheap-shareable and the facade's `convert` walk needs to outlive the candidate iteration. Codec generators in PR 4.2+ implement these per conversion. ADT-aware filtering (D03's loop) checks both runtime `TypeId` and `BaboonAdtMemberMetaDyn::baboon_adt_type_id_dyn`; PR 4.2's emitter must populate `as_adt_member_meta_dyn` for ADT branch types. `baboon_codecs_facade.rs:73-114`. Test: `pr11_d06_find_and_convert_via_trait`.
+
+### [PR-11-D07] Cross-facade `register(BaboonCodecsFacade other)` merge is missing
+**Status:** resolved (deferred)
+**Severity:** low
+**Location:** `baboon_codecs_facade.rs` (no implementation).
+**Description:** C# `BaboonCodecsFacade.cs:45-52` allows merging another facade's registrations into self. Rust port omits. Only matters for downstream integrators composing facades.
+**Suggested fix:** Defer — YAGNI for M4 critical path. Add if M13 (cross-language interop) needs it.
+
+### [PR-11-D08] Test file disclaimer comment is a workflow papercut
+**Status:** resolved (deferred)
+**Severity:** trivial
+**Location:** `test/rs-stub/tests/any_meta_codec_tests.rs:1-5`.
+**Description:** Disclaimer says `cargo test` directly may fail with missing symbols because `lib.rs` source-tree version doesn't declare the new modules; codegen-emitted `lib.rs` does. The proper fix is a build-system convention.
+**Suggested fix:** Defer. Match the existing rs-stub convention.
+
+### [PR-11-D09] Test file uses `use baboon_rs_stub::any_opaque::{...}` paths that source-tree `lib.rs` doesn't expose
+**Status:** resolved (deferred)
+**Severity:** trivial
+**Location:** `tests/any_meta_codec_tests.rs:6-12`.
+**Description:** Same as D08.
+**Suggested fix:** Defer.
+
+### [PR-11-D10] `LazyCodec::get` has a brief race window during concurrent first-access
+**Status:** resolved (deferred)
+**Severity:** minor
+**Location:** `baboon_codecs_facade.rs` (`LazyCodec::get`).
+**Description:** Two threads reaching empty cell simultaneously; one populates while the other observes `init=None ∧ cell=empty` for a brief window. The expect-message ("LazyCodec missing both init and value") may panic spuriously under contention. Acceptable in practice (only triggers on concurrent first-access of the same key); panic message is informative.
+**Suggested fix:** Defer. C#'s `Lazy<T>` handles this internally; Rust equivalent requires careful coordination via `OnceLock::get_or_init` (not available with thunk-takeable semantics on stable). Revisit if production contention surfaces.
+
+### [PR-11-D11] `LazyCodec::from_value` silently discards `cell.set` Result
+**Status:** resolved (deferred)
+**Severity:** trivial
+**Location:** `baboon_codecs_facade.rs` (`LazyCodec::from_value`).
+**Description:** `let _ = cell.set(...)` on a fresh `OnceLock`. Functionally harmless (cell is fresh so set always succeeds).
+**Suggested fix:** Use `.expect("fresh OnceLock")` to surface logic errors if the constructor invariant ever breaks.

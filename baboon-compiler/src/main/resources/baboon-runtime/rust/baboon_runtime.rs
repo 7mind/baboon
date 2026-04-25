@@ -1,12 +1,39 @@
 use std::io::{Read, Write};
+use std::sync::Arc;
 
 // --- Codec Context ---
+//
+// `WithFacade` is the construction path for codec contexts that thread a `BaboonCodecsFacade`
+// through generated codec calls — required for `any`-feature cross-format conversion (Q6
+// option (a) in the design plan; mirrors Scala/C# `BaboonCodecContext.WithFacade`). Construct
+// via `BaboonCodecContext::with_facade(use_indices, facade)`. PartialEq is intentionally not
+// derived for this variant — the facade has no value-equality semantics; instead the rest of
+// the code matches exhaustively.
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum BaboonCodecContext {
     Default,
     Indexed,
     Compact,
+    WithFacade {
+        use_indices: bool,
+        facade: Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>,
+    },
+}
+
+impl PartialEq for BaboonCodecContext {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (BaboonCodecContext::Default, BaboonCodecContext::Default) => true,
+            (BaboonCodecContext::Indexed, BaboonCodecContext::Indexed) => true,
+            (BaboonCodecContext::Compact, BaboonCodecContext::Compact) => true,
+            (
+                BaboonCodecContext::WithFacade { use_indices: a, facade: fa },
+                BaboonCodecContext::WithFacade { use_indices: b, facade: fb },
+            ) => a == b && Arc::ptr_eq(fa, fb),
+            _ => false,
+        }
+    }
 }
 
 impl Default for BaboonCodecContext {
@@ -17,7 +44,28 @@ impl Default for BaboonCodecContext {
 
 impl BaboonCodecContext {
     pub fn use_indices(&self) -> bool {
-        matches!(self, BaboonCodecContext::Indexed)
+        match self {
+            BaboonCodecContext::Indexed => true,
+            BaboonCodecContext::WithFacade { use_indices, .. } => *use_indices,
+            _ => false,
+        }
+    }
+
+    /// Returns the embedded `BaboonCodecsFacade` reference for `WithFacade`-constructed contexts;
+    /// `None` for the bare `Default`/`Indexed`/`Compact` singletons. Codec-generator-emitted code
+    /// (PR 4.2+) uses this when an `any` field requires cross-format conversion.
+    pub fn facade(&self) -> Option<&Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>> {
+        match self {
+            BaboonCodecContext::WithFacade { facade, .. } => Some(facade),
+            _ => None,
+        }
+    }
+
+    pub fn with_facade(
+        use_indices: bool,
+        facade: Arc<crate::baboon_codecs_facade::BaboonCodecsFacade>,
+    ) -> Self {
+        BaboonCodecContext::WithFacade { use_indices, facade }
     }
 }
 
