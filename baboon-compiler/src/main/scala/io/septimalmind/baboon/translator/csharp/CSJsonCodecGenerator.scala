@@ -7,6 +7,7 @@ import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -119,7 +120,8 @@ class CSJsonCodecGenerator(
       }
     }
 
-    val methods = encoderMethods ++ decoderMethods
+    val anyHelpers: List[TextTree[CSValue]] = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
+    val methods                             = encoderMethods ++ decoderMethods ++ anyHelpers
 
     q"""public class ${cName.asName} : $cParent
        |{
@@ -347,7 +349,7 @@ class CSJsonCodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("CSJsonCodecGenerator.mkEncoder")
+      case a: TypeRef.Any => mkAnyEncoder(a, ref)
     }
   }
 
@@ -463,9 +465,140 @@ class CSJsonCodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("CSJsonCodecGenerator.mkDecoder")
+      case a: TypeRef.Any => mkAnyDecoder(a, ref)
     }
 
+  }
+
+  // Per-codec-object helpers consolidating the any-field JSON envelope encode/decode (kind check,
+  // cross-format conversion via facade, envelope `$ak/$ad/$av/$at/$c` build & disassemble).
+  // Emitted at most once per codec object that has any any-bearing fields. Mirrors PR 2.3
+  // (`ScJsonCodecGenerator.anyFieldHelpers`) and PR 3.2's UEBA helper shape.
+  private def anyFieldHelpers: TextTree[CSValue] = {
+    q"""private const string AnyEnvelopeContentKey = "$$c";
+       |
+       |private $nsJToken EncodeAnyField(
+       |    $baboonCodecContext ctx,
+       |    byte expectedKind,
+       |    $csString? staticDomain,
+       |    $csString? staticVersion,
+       |    $csString? staticTypeid,
+       |    $baboonAnyOpaque value)
+       |{
+       |    if (value.Meta.Kind != expectedKind)
+       |    {
+       |        throw new $baboonCodecException.EncoderFailure(
+       |            $$"any: meta-kind 0x{value.Meta.Kind & 0xFF:x2} does not match field-declared 0x{expectedKind & 0xFF:x2}");
+       |    }
+       |    $nsJToken anyInner;
+       |    if (value is $baboonAnyOpaqueJson anyJson)
+       |    {
+       |        anyInner = anyJson.Json;
+       |    }
+       |    else if (value is $baboonAnyOpaqueUeba anyUeba)
+       |    {
+       |        var f = ctx.Facade ?? throw new $baboonCodecException.EncoderFailure(
+       |            "Cannot encode AnyOpaqueUeba into JSON without a facade reference. Pass BaboonCodecContext.WithFacade(useIndices, facade) into Encode(), or supply AnyOpaqueJson directly.");
+       |        var anyConvResult = f.UebaToJson(anyUeba.Meta, anyUeba.Bytes, staticDomain, staticVersion, staticTypeid);
+       |        if (anyConvResult is $either<$baboonCodecException, $nsJToken>.Left anyConvL)
+       |        {
+       |            throw anyConvL.Value;
+       |        }
+       |        anyInner = (($either<$baboonCodecException, $nsJToken>.Right)anyConvResult).Value;
+       |    }
+       |    else
+       |    {
+       |        throw new $baboonCodecException.EncoderFailure(
+       |            $$"unexpected AnyOpaque subclass: {value.GetType()}");
+       |    }
+       |    var anyEnvelope = ($nsJObject)$baboonAnyMetaCodec.WriteJson(value.Meta);
+       |    anyEnvelope.Add(AnyEnvelopeContentKey, anyInner);
+       |    return anyEnvelope;
+       |}
+       |
+       |private $baboonAnyOpaqueJson DecodeAnyField(byte expectedKind, $nsJToken? wire)
+       |{
+       |    if (wire is null)
+       |    {
+       |        throw new $baboonCodecException.DecoderFailure(
+       |            "any: missing JSON envelope (null token)");
+       |    }
+       |    var anyMetaResult = $baboonAnyMetaCodec.ReadJson(wire);
+       |    if (anyMetaResult is $either<$baboonCodecException, $baboonAnyMeta>.Left anyMetaL)
+       |    {
+       |        throw anyMetaL.Value;
+       |    }
+       |    var anyMeta = (($either<$baboonCodecException, $baboonAnyMeta>.Right)anyMetaResult).Value;
+       |    if (anyMeta.Kind != expectedKind)
+       |    {
+       |        throw new $baboonCodecException.DecoderFailure(
+       |            $$"any: wire kind 0x{anyMeta.Kind & 0xFF:x2} does not match field-declared 0x{expectedKind & 0xFF:x2}");
+       |    }
+       |    var anyContent = wire[AnyEnvelopeContentKey];
+       |    if (anyContent is null)
+       |    {
+       |        throw new $baboonCodecException.DecoderFailure(
+       |            $$"any: JSON envelope missing '{AnyEnvelopeContentKey}' content key");
+       |    }
+       |    return new $baboonAnyOpaqueJson(anyMeta, anyContent);
+       |}""".stripMargin
+  }
+
+  // Deep walk (mirrors PR 3.2's UEBA `hasAnyField` and PR 2.3's Scala helper): a codec object needs
+  // the any-field helpers if any direct or nested-via-Constructor-arg field has type `any`.
+  private def hasAnyField(defn: DomainMember.User): Boolean = {
+    def hasAny(tpe: TypeRef): Boolean = tpe match {
+      case _: TypeRef.Any         => true
+      case _: TypeRef.Scalar      => false
+      case c: TypeRef.Constructor => c.args.exists(hasAny)
+    }
+    defn.defn match {
+      case d: Typedef.Dto => d.fields.exists(f => hasAny(f.tpe))
+      case _              => false
+    }
+  }
+
+  // Encode delegates to the per-codec-object `EncodeAnyField` helper; this site wires the expected
+  // kind byte and the field's static (codec-gen-time) fallbacks for cross-format meta resolution.
+  // See `anyStaticFallbacks` below.
+  private def mkAnyEncoder(a: TypeRef.Any, ref: TextTree[CSValue]): TextTree[CSValue] = {
+    val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
+    val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
+    q"EncodeAnyField(ctx, ($csByte)$expectedHex, $staticDom, $staticVer, $staticTid, $ref)"
+  }
+
+  // Decode delegates to the per-codec-object `DecodeAnyField` helper. JSON decode never cross-
+  // converts (always returns `AnyOpaqueJson` from JSON wire); user calls `facade.DecodeAny(opaque)`
+  // for typed resolution. No `ctx` / no static fallbacks needed at the decode site.
+  private def mkAnyDecoder(a: TypeRef.Any, ref: TextTree[CSValue]): TextTree[CSValue] = {
+    val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
+    q"DecodeAnyField(($csByte)$expectedHex, $ref)"
+  }
+
+  // Static fallbacks for the cross-format facade helper (`UebaToJson`). The wire `meta` may omit
+  // components that are pinned by the field's static declaration; the codec emits whatever is
+  // statically known so the facade can fill the gaps. See `BaboonCodecsFacade.BuildSyntheticTypeMeta`
+  // for the merge semantics. Per spec table:
+  //   A=(None,None,None), B=(currentDomain,None,None), C=(currentDomain,currentVersion,None),
+  //   D1=(None,None,underlyingFqid), D2=(currentDomain,None,underlyingFqid),
+  //   D3=(currentDomain,currentVersion,underlyingFqid).
+  private def anyStaticFallbacks(a: TypeRef.Any): (TextTree[CSValue], TextTree[CSValue], TextTree[CSValue]) = {
+    val none                     = q"($csString?)null"
+    def some(s: String)          = q"""($csString?)"$s""""
+    val currentDomain: String    = domain.id.toString
+    val currentDomainVer: String = domain.version.v.toString
+    val typeidStatic = a.underlying match {
+      case Some(u) => some(u.id.toString)
+      case None    => none
+    }
+    val (domainStatic, versionStatic) = a.variant match {
+      case AnyVariant.Global  => (none, none)
+      case AnyVariant.ThisDom => (some(currentDomain), none)
+      case AnyVariant.Current => (some(currentDomain), some(currentDomainVer))
+    }
+    (domainStatic, versionStatic, typeidStatic)
   }
 
   def codecName(id: TypeId.User): CSValue.CSType = {
