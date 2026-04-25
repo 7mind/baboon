@@ -52,7 +52,12 @@ object CSCodecTestsTranslator {
     }
 
     private def makeTest(definition: DomainMember.User, srcRef: CSValue.CSType): TextTree[CSValue] = {
-      val fixture = makeFixture(definition, domain, evo)
+      // PR-07-D01 (C# analog): per-codec fixture variants. UEBA codec test uses the
+      // `AnyOpaqueUeba`-bearing fixture (`Random`); JSON codec test uses the `AnyOpaqueJson`-bearing
+      // fixture (`RandomJson`). Each fixture matches its codec's native any-field branch so round-
+      // trip avoids cross-format conversion and never needs `BaboonCodecContext.WithFacade`.
+      val uebaFixture = makeFixture(definition, domain, evo, useJsonAny = false)
+      val jsonFixture = makeFixture(definition, domain, evo, useJsonAny = true)
       codecs
         .filter(_.isActive(definition.id)).map {
           case jsonCodec: CSJsonCodecGenerator =>
@@ -67,7 +72,7 @@ object CSCodecTestsTranslator {
                |}
                |
                |private void jsonCodecTestImpl($baboonCodecContext context, $csString clue) {
-               |    ${fixture.shift(4).trim}
+               |    ${jsonFixture.shift(4).trim}
                |    ${body.shift(4).trim}
                |}
                |""".stripMargin
@@ -93,7 +98,7 @@ object CSCodecTestsTranslator {
                |}
                |
                |private void uebaCodecTestImpl($baboonCodecContext context, $csString clue) {
-               |    ${fixture.shift(4).trim}
+               |    ${uebaFixture.shift(4).trim}
                |    ${body.shift(4).trim}
                |}
                |""".stripMargin
@@ -108,11 +113,14 @@ object CSCodecTestsTranslator {
       definition: DomainMember.User,
       domain: Domain,
       evolution: BaboonEvolution,
+      useJsonAny: Boolean,
     ): TextTree[CSValue] = {
+      val randomMethod    = if (useJsonAny) "RandomJson" else "Random"
+      val randomAllMethod = if (useJsonAny) "RandomAllJson" else "RandomAll"
       definition.defn match {
         case e: Typedef.Enum => q"var fixture = $baboonFixture.NextRandomEnum<${e.id.name.name}>();"
-        case _: Typedef.Adt  => q"var fixtures = ${typeTranslator.asCsType(definition.id, domain, evolution)}_Fixture.RandomAll();"
-        case _               => q"var fixture = ${typeTranslator.asCsType(definition.id, domain, evolution)}_Fixture.Random();"
+        case _: Typedef.Adt  => q"var fixtures = ${typeTranslator.asCsType(definition.id, domain, evolution)}_Fixture.$randomAllMethod();"
+        case _               => q"var fixture = ${typeTranslator.asCsType(definition.id, domain, evolution)}_Fixture.$randomMethod();"
       }
     }
 

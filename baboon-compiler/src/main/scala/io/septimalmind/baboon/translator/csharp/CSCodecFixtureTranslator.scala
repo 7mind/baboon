@@ -45,17 +45,35 @@ object CSCodecFixtureTranslator {
       }
     }
 
+    // Branch selector for any-field fixture payloads. PR-07-D01 (C# analog): the auto-test round-trips
+    // a fixture through a single codec; if the fixture's `AnyOpaque` branch matches the codec
+    // direction, no facade is needed and equality holds. We emit two parallel methods (`Random` for
+    // the UEBA branch, `RandomJson` for the JSON branch) so each test path picks its native branch.
+    // Recursive calls into nested user-type fixtures must propagate the same choice.
+    private sealed trait FixtureFormat
+    private case object FixUeba extends FixtureFormat
+    private case object FixJson extends FixtureFormat
+
     private def doTranslateDto(dto: Typedef.Dto): TextTree[CSValue] = {
-      val generatedFields = dto.fields.map(f => genType(f.tpe))
-      val fullType        = translator.asCsType(dto.id, domain, evo)
+      val fullType = translator.asCsType(dto.id, domain, evo)
+
+      def body(format: FixtureFormat): TextTree[CSValue] = {
+        val generatedFields = dto.fields.map(f => genType(f.tpe, format))
+        q"""return new $fullType(
+           |    ${generatedFields.join(",\n").shift(4).trim}
+           |);""".stripMargin
+      }
 
       q"""public static class ${dto.id.name.name.capitalize}_Fixture
          |{
          |    public static $fullType Random()
          |    {
-         |        return new $fullType(
-         |            ${generatedFields.join(",\n").shift(12).trim}
-         |        );
+         |        ${body(FixUeba).shift(8).trim}
+         |    }
+         |
+         |    public static $fullType RandomJson()
+         |    {
+         |        ${body(FixJson).shift(8).trim}
          |    }
          |}
          |""".stripMargin
@@ -74,7 +92,22 @@ object CSCodecFixtureTranslator {
           q"${memberFixture}_Fixture.Random()"
       }
 
+      val membersGeneratorsJson = members.sortBy(_.id.toString).map[TextTree[CSValue]] {
+        dto =>
+          val memberFixture = q"${dto.id.name.name}"
+          q"${memberFixture}_Fixture.RandomJson()"
+      }
+
       val membersBranches = membersGenerators.zipWithIndex.map {
+        case (generator, idx) =>
+          q"""if (rnd == ${idx.toString})
+             |{
+             |    return $generator;
+             |}
+             |""".stripMargin
+      }
+
+      val membersBranchesJson = membersGeneratorsJson.zipWithIndex.map {
         case (generator, idx) =>
           q"""if (rnd == ${idx.toString})
              |{
@@ -91,10 +124,23 @@ object CSCodecFixtureTranslator {
          |        throw new $csArgumentException();
          |    }
          |
+         |    public static ${adt.id.name.name} RandomJson() {
+         |        var rnd = $baboonFixture.NextInt32(${members.size.toString});
+         |        ${membersBranchesJson.join("\n").shift(8).trim}
+         |        throw new $csArgumentException();
+         |    }
+         |
          |    public static $csList<${adt.id.name.name}> RandomAll() {
          |        return new $csList<${adt.id.name.name}>
          |        {
          |            ${membersGenerators.join(",\n").shift(12).trim}
+         |        };
+         |    }
+         |
+         |    public static $csList<${adt.id.name.name}> RandomAllJson() {
+         |        return new $csList<${adt.id.name.name}>
+         |        {
+         |            ${membersGeneratorsJson.join(",\n").shift(12).trim}
          |        };
          |    }
          |
@@ -103,10 +149,10 @@ object CSCodecFixtureTranslator {
          |""".stripMargin
     }
 
-    private def genType(tpe: TypeRef): TextTree[CSValue] = {
+    private def genType(tpe: TypeRef, format: FixtureFormat): TextTree[CSValue] = {
       def gen(tpe: TypeRef): TextTree[CSValue] = {
         BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Cs) match {
-          case tpe: TypeRef.Scalar => genScalar(tpe)
+          case tpe: TypeRef.Scalar => genScalar(tpe, format)
           case TypeRef.Constructor(id, args) =>
             id match {
               case Builtins.lst =>
@@ -129,22 +175,20 @@ object CSCodecFixtureTranslator {
               case t =>
                 throw new IllegalArgumentException(s"Unexpected collection type: $t")
             }
-          case a: TypeRef.Any => genAnyFixture(a)
+          case a: TypeRef.Any => genAnyFixture(a, format)
         }
       }
 
       gen(tpe)
     }
 
-    // Branch-matching fixtures (mirroring Scala's PR-07-D01 fix) belong to PR 3.4. PR 3.2 emits the
-    // `AnyOpaqueUeba` branch only — auto-tests for the JSON path will need a `randomJson` companion
-    // alongside this `genType` callsite, plus a `FixtureFormat` selector. For now both UEBA and JSON
-    // tests round-trip the UEBA branch; the JSON test path will pass once PR 3.4 splits the fixture.
-    // Bytes are empty: the fixture only has to compile and yield a value with the right meta-kind;
-    // the encoder asserts `meta.Kind == expectedKind` and copies the bytes through verbatim.
+    // Stable, declaration-driven `AnyOpaque` value. We don't randomise the meta because the meta
+    // must match the field's declared variant exactly — encoder validates the kind byte. Bytes are
+    // empty (UEBA branch) or `JValue.CreateNull()` (JSON branch). The typeid string is only used by
+    // typed-variant kinds (D1/D2/D3) where `hasUnderlying` is false on the meta side.
     private val FixtureAnyPayloadTypeId: String = "my.test.AnyFixturePayload"
 
-    private def genAnyFixture(a: TypeRef.Any): TextTree[CSValue] = {
+    private def genAnyFixture(a: TypeRef.Any, format: FixtureFormat): TextTree[CSValue] = {
       val hasUnderlying = a.underlying.isDefined
       val kindHex       = "0x%02x".format(AnyVariant.metaKindByte(a.variant, hasUnderlying) & 0xFF)
       val domainStr     = q""""${domain.id.toString}""""
@@ -163,7 +207,15 @@ object CSCodecFixtureTranslator {
           (q"($csString?)null", q"($csString?)null", tid)
       }
 
-      q"new $baboonAnyOpaqueUeba(new $baboonAnyMeta(($csByte)$kindHex, $domainExpr, $versionExpr, $typeidExpr), $csArray.Empty<$csByte>())"
+      val meta = q"new $baboonAnyMeta(($csByte)$kindHex, $domainExpr, $versionExpr, $typeidExpr)"
+      // PR-07-D01 (C# analog): branch must match codec direction so round-trip avoids cross-format
+      // conversion (which requires `WithFacade` ctx). UEBA codec test uses `AnyOpaqueUeba(meta, [])`;
+      // JSON codec test uses `AnyOpaqueJson(meta, JValue.CreateNull())`. Both are wire-equivalent
+      // to themselves under their native codec — equality holds.
+      format match {
+        case FixUeba => q"new $baboonAnyOpaqueUeba($meta, $csArray.Empty<$csByte>())"
+        case FixJson => q"new $baboonAnyOpaqueJson($meta, $nsJValue.CreateNull())"
+      }
     }
 
     private def renderCollectionTypeArgument(
@@ -183,7 +235,7 @@ object CSCodecFixtureTranslator {
       render(tpe)
     }
 
-    private def genScalar(tpe: TypeRef.Scalar): TextTree[CSValue] = {
+    private def genScalar(tpe: TypeRef.Scalar, format: FixtureFormat): TextTree[CSValue] = {
       tpe.id match {
         case TypeId.Builtins.i08 => q"$baboonFixture.NextSByte()"
         case TypeId.Builtins.i16 => q"$baboonFixture.NextInt16()"
@@ -208,7 +260,14 @@ object CSCodecFixtureTranslator {
         case TypeId.Builtins.bit => q"$baboonFixture.NextBoolean()"
 
         case id: TypeId.User if enquiries.isEnum(tpe, domain) => q"$baboonFixture.NextRandomEnum<${translator.asCsType(id, domain, evo).fullyQualified}>()"
-        case TypeId.User(_, _, name)                          => q"${name.name}_Fixture.Random()"
+        case TypeId.User(_, _, name) =>
+          // Propagate the codec branch into nested user-type fixtures so any-fields nested in
+          // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (C# analog).
+          val method = format match {
+            case FixUeba => q"Random"
+            case FixJson => q"RandomJson"
+          }
+          q"${name.name}_Fixture.$method()"
 
         case t =>
           throw new IllegalArgumentException(s"Unexpected scalar type: $t")
