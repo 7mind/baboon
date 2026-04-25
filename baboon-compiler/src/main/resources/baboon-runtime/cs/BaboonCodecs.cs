@@ -34,16 +34,26 @@ namespace Baboon.Runtime.Shared
 
     public class BaboonCodecContext
     {
-        private BaboonCodecContext(bool useIndexes)
+        // Accept null facade for the bare singletons (Compact/Indexed). The runtime helper
+        // `WithFacade(...)` is the single intended construction path for ctxes that thread
+        // a facade through generated codec calls — see PR 3.1's facade plumbing for the
+        // `any`-feature cross-format conversion (Q6 option (a) in the design plan).
+        private BaboonCodecContext(bool useIndexes, BaboonCodecsFacade? facade)
         {
             UseIndices = useIndexes;
+            Facade = facade;
         }
 
         public bool UseIndices { get; }
 
-        public static BaboonCodecContext Indexed { get; } = new(true);
-        public static BaboonCodecContext Compact { get; } = new(false);
+        public BaboonCodecsFacade? Facade { get; }
+
+        public static BaboonCodecContext Indexed { get; } = new(true, null);
+        public static BaboonCodecContext Compact { get; } = new(false, null);
         public static BaboonCodecContext Default { get; } = Compact;
+
+        public static BaboonCodecContext WithFacade(bool useIndices, BaboonCodecsFacade facade) =>
+            new(useIndices, facade);
     }
 
     public interface IBaboonCodec<T> : IBaboonCodecData

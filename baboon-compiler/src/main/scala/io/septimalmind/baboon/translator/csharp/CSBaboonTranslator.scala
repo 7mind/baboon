@@ -397,7 +397,11 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
         List(
           rt(s"BaboonRuntimeShared.cs", "baboon-runtime/cs/BaboonRuntimeShared.cs"),
           rt(s"BaboonCodecs.cs", "baboon-runtime/cs/BaboonCodecs.cs"),
+          rt(s"BaboonCodecsFacade.cs", "baboon-runtime/cs/BaboonCodecsFacade.cs"),
           rt(s"BaboonConversions.cs", "baboon-runtime/cs/BaboonConversions.cs"),
+          rt(s"BaboonExceptions.cs", "baboon-runtime/cs/BaboonExceptions.cs"),
+          rt(s"BaboonTypeMeta.cs", "baboon-runtime/cs/BaboonTypeMeta.cs"),
+          rt(s"AnyOpaque.cs", "baboon-runtime/cs/AnyOpaque.cs"),
           rt(s"BaboonTools.cs", "baboon-runtime/cs/BaboonTools.cs"),
           rt(s"BaboonTime.cs", "baboon-runtime/cs/BaboonTime.cs"),
           rt(s"BaboonByteString.cs", "baboon-runtime/cs/BaboonByteString.cs"),

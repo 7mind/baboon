@@ -619,3 +619,126 @@ The two `encodeAnyField` helpers (UEBA + JSON) need an additional parameter for 
 **Description:** When a domain has only one registered version, `minVersion == maxVersion`. `getCodec` with `exact=false` matches the lookup version against the case-arm conditions: `v == maxVersion.version` requires `exact=true` (skipped); `v >= minVersion.version && v < maxVersion.version` requires strictly-less-than (false when min==max==v); `v < minVersion.version` (false). Falls through to "Unsupported domain version" `Left`. All `decodeFromBin`, `decodeAny`, and the new `jsonToUebaBytes` / `uebaToJson` use `exact=false` and break for single-version domains. Masked in production because no existing test exercises the facade for single-version codec lookup — codecs are normally called directly.
 **Suggested fix:** Relax `<` to `<=` in the second arm, OR add an explicit `case v if v == maxVersion.version && !exact` branch routing to `getCodecExact`. One-line fix. Add a regression test against a single-version domain. **NOT in PR 2.4's scope** unless required to unblock test infrastructure; PR 2.4 worked around by registering a synthetic future version. Track for next session as a small dedicated PR.
 **Fix (PR 2.5):** Added an explicit `case v if !exact && v.version == maxVersion.version` arm next to the existing `exact && v.version == maxVersion.version` arm; both route to `getCodecExact`. Kept the two arms (rather than dropping the `exact` guard from the original) because the runtime is compiled with `-Wunused:_` + `-Wconf:any:error` and removing the guard makes the `exact` parameter unused, fatal-warning. Semantics: when the lookup version equals the latest registered version, exact lookup is correct regardless of the `exact` flag — there is nothing newer to compat-convert through. `getCodecMaxCompat`'s strictly-less-than arm and the deprecated-version arm are unchanged. Single-version domains (min == max == model) now resolve through the new arm. Regression test: `AnyMetaCodecSpec.scala` "PR-07-D02: jsonToUebaBytes succeeds against a single-version registered domain (no synthetic future-version workaround)" — registers `my.ok` once, calls `jsonToUebaBytes`, expects `Right(...)`. Workaround in `AnyRoundTripSpec.scala`'s `freshFacade()` (synthetic 2.0.0 registration) removed; spec still passes. Verification: `target/test-regular/sc-stub` `sbt test` → 47 succeeded, 0 failed, 4 cancelled (matches PR 2.4's baseline + 1 new regression test). Files: `BaboonCodecsFacade.scala` (+7 lines: 2 case + 5 comment), `AnyMetaCodecSpec.scala` (regression test, ~30 lines), `AnyRoundTripSpec.scala` (workaround block removed, ~13 lines deleted).
+
+---
+
+## PR-08 — C# runtime + facade port (M3 PR 3.1)
+
+### [PR-08-D01] `BaboonTypeMetaCodec.ReadMeta(JToken)` ignores `$mv` meta-version key — wire-format divergence from Scala
+**Status:** resolved
+**Severity:** medium (forward-compat correctness)
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/cs/BaboonTypeMeta.cs:189-213`.
+**Description:** Scala `readMeta(json)` (`BaboonRuntimeShared.scala:197-205`) checks `$mv`: if present and != "1", returns `None`; if absent, falls through to v1 read. The C# port reads `$d`/`$v`/`$t`/`$uv` directly without checking `$mv`. C# would accept `$mv = "2"` envelopes as v1, which Scala rejects.
+**Suggested fix:** Mirror the Scala `$mv` check: read `$mv` from cursor; if it parses to a byte and equals `META_VERSION_1`, fall through to v1 read; if absent, fall through; otherwise return `None` (or `Either.Left`).
+**Fix (PR 3.1 round 2):** `BaboonTypeMetaCodec.ReadMeta(JToken)` now reads `$mv` first: if absent → falls through to v1 read; if present but not a String → returns `null`; if string but not parseable as byte or != `MetaVersion1` → returns `null`; otherwise falls through to v1 read. Promoted `META_VERSION_1` to a public const for test access. Three regression tests added in `AnyMetaCodecTests`: `$mv = "2"` rejected, missing `$mv` accepted via v1, explicit `$mv = "1"` accepted via v1.
+
+### [PR-08-D02] `BaboonTypeMeta.From` fallback masks empty `BaboonSameInVersions` instead of failing fast
+**Status:** resolved
+**Severity:** medium (CLAUDE.md fail-fast violation)
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/cs/BaboonTypeMeta.cs:106-110`.
+**Description:** Code used `sameInVersions.Count > 0 ? sameInVersions[0] : value.BaboonDomainVersion()`. Scala (`BaboonRuntimeShared.scala:138`) uses `value.baboonSameInVersions.head` which throws on empty list — codegen invariant.
+**Suggested fix:** Drop the conditional; index `sameInVersions[0]` and let it throw `IndexOutOfRangeException` on the invariant violation.
+**Fix (PR 3.1 round 2):** Replaced ternary with direct `[0]` indexing; added a one-line WHY comment naming the codegen invariant (mirrors Scala).
+
+### [PR-08-D03] `DecodeFromJson(JToken)` codec-lookup failure semantics differ from Scala
+**Status:** resolved (deferred) — C# Left is the more honest behavior; Scala's `_.toOption` collapse swallows the codec-not-found Left into `Right(None)`. Judgment call: keep C# semantics, treat the "Mirrors Scala" comment as the only follow-up.
+**Severity:** low
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/cs/BaboonCodecsFacade.cs:511-516`.
+**Description:** Scala `decodeFromJson(value: Json)` (`BaboonCodecsFacade.scala:393-400`) wraps codec-lookup in `Try(...).toEither.left.map(...).map(_.toOption)` — the trailing `_.toOption` collapses an inner Left (codec not found) into `Right(None)`. C# returns Left. C#'s behavior is preferable per fail-fast, but the comment claims "Mirrors Scala". Either fix the comment or align behavior.
+**Suggested fix:** Defer — C# is the more honest behavior. Update only the inline comment to note the deliberate divergence.
+
+### [PR-08-D04] `DecodeFromJson(string)` error semantics differ from Scala
+**Status:** resolved (deferred) — same disposition as D03: C# catches malformed-JSON into Left; Scala throws via `parse(...).toOption.get`. C# is more honest; defer.
+**Severity:** low
+**Location:** `BaboonCodecsFacade.cs` (the string overload of `DecodeFromJson`).
+**Description:** Scala uses `parse(value).toOption.get` which throws on malformed JSON; C# catches into Left. Same pattern as D03 — C# is more honest, but inconsistent with the "mirrors Scala" promise.
+**Suggested fix:** Defer with comment update — same disposition as D03.
+
+### [PR-08-D05] `Version` record name clashes with `System.Version`
+**Status:** resolved
+**Severity:** low
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/cs/BaboonTypeMeta.cs:22`.
+**Description:** Latent ambiguity (CS0104) for any user code combining `using Baboon.Runtime.Shared;` + `using System;` + bare `Version`. Scala doesn't have a stdlib `Version` to clash with — C# does.
+**Suggested fix:** Rename to `BaboonVersion` to match the rest of the `Baboon*` namespace convention. Update all references inside the runtime template.
+**Fix (PR 3.1 round 2):** Renamed type `Version` → `BaboonVersion` in `BaboonTypeMeta.cs`; updated 5 references across `BaboonCodecsFacade.cs` (lines 36, 588, 593, 735) and internal references in `BaboonTypeMeta.cs:22-65`. `BaboonDomainVersion.Version` property NAME (returns `BaboonVersion`) intentionally kept — semantic property naming preserved. No clashes with `AnyMeta.Version` (string property).
+
+### [PR-08-D06] `AnyOpaqueJson` content equality is implemented (`JToken.DeepEquals`) but untested
+**Status:** resolved
+**Severity:** low
+**Location:** `test/cs-stub/BaboonTests/AnyMetaCodecTests.cs:307-320`.
+**Description:** PR-05-D08's byte[] reference-identity trap has a JSON analog: `JToken.Equals(object)` is reference-based by default; `JToken.DeepEquals(t1, t2)` is the content-aware static method. The C# implementation uses `DeepEquals` correctly but no regression test locks it in.
+**Suggested fix:** Add a test paralleling the `AnyOpaqueUeba` equality block.
+**Fix (PR 3.1 round 2):** Added `AnyOpaqueJson_compares_json_by_content_not_reference` test asserting (a) two `AnyOpaqueJson` over content-equal-but-distinct `JObject` instances are `==`, (b) their hash codes match, (c) content-different JSON yields not-equal. Mirrors the `AnyOpaqueUeba` byte[] equality test.
+
+### [PR-08-D07] Missing public API methods compared to Scala facade
+**Status:** resolved (deferred) — none of `TryConvert`, `DecodeFromBinLatest`, `DecodeFromJsonLatest`, `EncodeToJsonString`, `Preload` block PR 3.2/3.3. PR 3.4's tests will surface any actually needed; add then.
+**Severity:** low
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/cs/BaboonCodecsFacade.cs`.
+**Description:** C# port omits Scala-side conveniences: `TryConvert<TI, TO>`, `DecodeFromBinLatest` (3 overloads), `DecodeFromJsonLatest` (3 overloads), `EncodeToJsonString` (2 overloads), `Preload`. None block PR 3.2/3.3; PR 3.4's tests may need some.
+**Suggested fix:** Defer to PR 3.4. If 3.4's tests need any, add then; otherwise leave omitted.
+
+### [PR-08-D08] Sloppy version comparison in `Convert<>` reconstructs `BaboonDomainVersion` per loop iteration
+**Status:** resolved (deferred) — internal hot path; reconstruction cost is negligible; not worth churn in PR 3.1.
+**Severity:** trivial
+**Location:** `BaboonCodecsFacade.cs:573-574`.
+**Description:** Reconstructs `BaboonDomainVersion` inside the loop guard. Hoist outside.
+**Suggested fix:** Defer — internal hot path; performance impact negligible.
+
+### [PR-08-D09] Default parameter on `BaboonTypeMeta.From(value, declaredType = null)`
+**Status:** resolved
+**Severity:** trivial
+**Location:** `BaboonTypeMeta.cs:90` (`BaboonTypeMeta.From` signature).
+**Description:** CLAUDE.md "no default parameters or optional chaining for required values". `declaredType` is always supplied at call sites; the default is unjustified.
+**Suggested fix:** Drop the default; require `declaredType` explicitly at call sites.
+**Fix (PR 3.1 round 2):** Dropped `= null`. Both call sites in `BaboonCodecsFacade.cs:172, 467` already pass `typeof(T)` explicitly; no call-site changes needed.
+
+### [PR-08-D10] `BaboonBinTools` two-method passthrough wrapper of `BinaryWriter.Write(string)`
+**Status:** resolved (deferred) — kept for parity with Scala/Kotlin sibling `BaboonBinTools` API surface; future codec-gen may target it explicitly.
+**Severity:** trivial
+**Location:** `BaboonTypeMeta.cs:202-218`.
+**Description:** Adds nothing functionally; rationale is parity with sibling-language API surfaces. If generated codec code targets `BaboonBinTools.WriteString` for cross-language symmetry, keep. Otherwise drop.
+**Suggested fix:** Defer — mirrors Scala's `BaboonBinTools` API surface; future codec-gen may target it explicitly.
+
+### [PR-08-D11] `BaboonBinTools` placed in `BaboonTypeMeta.cs` instead of `BaboonTools.cs`
+**Status:** resolved
+**Severity:** trivial
+**Location:** `BaboonTools.cs:167-184` (post-fix).
+**Description:** Inconsistent with file-per-concept layout (`BaboonTools.cs` already exists).
+**Suggested fix:** Move `BaboonBinTools` to `BaboonTools.cs`.
+**Fix (PR 3.1 round 2):** Moved `BaboonBinTools` from `BaboonTypeMeta.cs` to `BaboonTools.cs:167-184`. Same namespace; no `using` changes required.
+
+### [PR-08-D12] Error-message brace-typo cleanup vs. Scala
+**Status:** resolved (deferred) — cosmetic only; C# interpolation already produces the correct text. No action.
+**Severity:** trivial
+**Location:** `BaboonCodecsFacade.cs:727,746`.
+**Description:** Scala has stray literal braces (`'{$modelVersion}'` typo); C# silently fixes via interpolation. Cosmetic only.
+**Suggested fix:** No action.
+
+### [PR-08-D13] Round-2 reviewer flagged: missing `**Fix:**` lines on resolved defect entries
+**Status:** resolved
+**Severity:** trivial (process / ledger hygiene)
+**Location:** `defects.md` PR-08 block — D01, D02, D05, D06, D09, D11 entries originally flipped status to resolved without adding `**Fix:**` lines documenting what was actually done.
+**Description:** Convention (per `[PR-07-D02]` reference) is to keep `**Suggested fix:**` and ADD a `**Fix (PR x.y):**` line below it summarizing what landed. The PR 3.1 round-2 fix subagent flipped statuses but left only the inline status-rationale phrasing, no `Fix:` line.
+**Fix (PR 3.1 round 2):** Orchestrator added `**Fix (PR 3.1 round 2):**` lines retroactively to D01/D02/D05/D06/D09/D11 entries, summarizing what landed. Deferred entries (D03/D04/D07/D08/D10/D12) retain their inline rationale on the Status line — the convention for `resolved (deferred)` differs from `resolved (with code)` and doesn't require a separate Fix line.
+
+### [PR-08-D14] Round-2 reviewer flagged: 147/147 dotnet test claim unverifiable
+**Status:** resolved
+**Severity:** medium (verification gap, claim-to-evidence)
+**Location:** Process — fix subagent's verification claim vs. reproducible evidence.
+**Description:** Reviewer could not reproduce `dotnet test 147/147` because `mdl :test-gen-regular-adt` is blocked at C# codegen by `any-ok/pkg.baboon` triggering the PR 1.2 placeholder cascade (`BUG: any field reached CSTypeTranslator.asCsRef`).
+**Fix (PR 3.1 round 2 — orchestrator-verified):** Reproduced the workflow: temporarily moved `any-ok/` aside (`mv baboon-compiler/src/test/resources/baboon/any-ok /tmp/any-ok-stash`), `rm -rf target/test-regular`, ran `mdl :build :test-gen-regular-adt` → success, then `cd target/test-regular/cs-stub && dotnet test -c Release` → **`Passed!  - Failed: 0, Passed: 147, Skipped: 0, Total: 147`**. Restored `any-ok/` after verification. Claim verified. Process note: workaround (stash `any-ok` for verification) will not be needed once PR 3.2/3.3 land — they unblock the C# `any` placeholder. Until then, it's the documented PR 3.1 verification path.
+
+### [PR-08-D15] Round-2 reviewer flagged: D01 fix description overstates test count (3 vs. 2 regression + 1 happy path)
+**Status:** resolved
+**Severity:** trivial
+**Location:** `test/cs-stub/BaboonTests/AnyMetaCodecTests.cs` `BaboonTypeMetaCodec_ReadJson_*` tests.
+**Description:** D01's fix added 3 tests, but only 2 were regression-of-bug (rejection) — the third was a happy-path explicit-`$mv="1"` regression. Reviewer noted the "non-string $mv" and "unparseable $mv byte" rejection arms in source code have no direct test coverage despite being reachable on inspection.
+**Suggested fix:** Add a 4th test asserting `BaboonTypeMetaCodec.ReadMeta(json_with_mv_as_int_or_garbage)` returns `null`.
+**Fix (PR 3.1 round 2):** Added a test asserting `$mv` as a JSON number (not string) returns `null`, and another asserting `$mv` as a non-numeric string returns `null`. `AnyMetaCodecTests.cs` test count: 37 → 39.
+
+### [PR-08-D16] Round-2 reviewer flagged: `BaboonCodecContext.Facade`/`WithFacade` extension was not in PR 3.1's stated D01-D12 fix scope
+**Status:** resolved (false positive)
+**Severity:** trivial (process)
+**Location:** `BaboonCodecs.cs:34-58`.
+**Description:** Reviewer noted that the `BaboonCodecContext` extension (adding `BaboonCodecsFacade? Facade` + `WithFacade(...)` factory) appears in the diff stat but was not flagged in the round-1 review nor in the round-2 fix list, suggesting scope drift. **However:** this extension was in PR 3.1's original brief from the start (the third bullet of "What this PR delivers"), per Q6 option (a) decision. It is core PR 3.1 work — not a fix for D01-D12. Round-2 reviewer flagged it as drift because the fix-round task focuses only on D01-D12, but the original PR 3.1 work itself is in scope.
+**Fix (PR 3.1 round 2):** No code change. Documented as false positive.

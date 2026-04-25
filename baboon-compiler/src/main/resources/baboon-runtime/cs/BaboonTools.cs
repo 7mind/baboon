@@ -164,6 +164,24 @@ namespace Baboon.Runtime.Shared
         }
     }
     
+    public static class BaboonBinTools
+    {
+        // Wire-compatible with Scala's BaboonBinTools.writeString (ULEB128-prefixed UTF-8).
+        // .NET's BinaryWriter.Write(string) uses a 7-bit-encoded length prefix (= ULEB128) followed
+        // by UTF-8 bytes. BinaryReader.ReadString() is symmetric. Provided here for explicit
+        // call sites that want to emphasise the wire-format guarantee, and for parity with
+        // Scala/Kotlin sibling runtimes.
+        public static void WriteString(BinaryWriter writer, string s)
+        {
+            writer.Write(s);
+        }
+
+        public static string ReadString(BinaryReader reader)
+        {
+            return reader.ReadString();
+        }
+    }
+
     public static class BaboonTestTools
     {
         public static void WriteBinaryFile(string filePath, byte[] data)
