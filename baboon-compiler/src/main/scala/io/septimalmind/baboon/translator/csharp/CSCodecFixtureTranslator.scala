@@ -4,6 +4,7 @@ import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
@@ -128,11 +129,41 @@ object CSCodecFixtureTranslator {
               case t =>
                 throw new IllegalArgumentException(s"Unexpected collection type: $t")
             }
-          case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("CSCodecFixtureTranslator.genType")
+          case a: TypeRef.Any => genAnyFixture(a)
         }
       }
 
       gen(tpe)
+    }
+
+    // Branch-matching fixtures (mirroring Scala's PR-07-D01 fix) belong to PR 3.4. PR 3.2 emits the
+    // `AnyOpaqueUeba` branch only — auto-tests for the JSON path will need a `randomJson` companion
+    // alongside this `genType` callsite, plus a `FixtureFormat` selector. For now both UEBA and JSON
+    // tests round-trip the UEBA branch; the JSON test path will pass once PR 3.4 splits the fixture.
+    // Bytes are empty: the fixture only has to compile and yield a value with the right meta-kind;
+    // the encoder asserts `meta.Kind == expectedKind` and copies the bytes through verbatim.
+    private val FixtureAnyPayloadTypeId: String = "my.test.AnyFixturePayload"
+
+    private def genAnyFixture(a: TypeRef.Any): TextTree[CSValue] = {
+      val hasUnderlying = a.underlying.isDefined
+      val kindHex       = "0x%02x".format(AnyVariant.metaKindByte(a.variant, hasUnderlying) & 0xFF)
+      val domainStr     = q""""${domain.id.toString}""""
+      val versionStr    = q""""${domain.version.v.toString}""""
+      val typeidStr     = q""""$FixtureAnyPayloadTypeId""""
+
+      val (domainExpr, versionExpr, typeidExpr) = a.variant match {
+        case AnyVariant.Global =>
+          val tid = if (hasUnderlying) q"($csString?)null" else q"($csString?)$typeidStr"
+          (q"($csString?)$domainStr", q"($csString?)$versionStr", tid)
+        case AnyVariant.ThisDom =>
+          val tid = if (hasUnderlying) q"($csString?)null" else q"($csString?)$typeidStr"
+          (q"($csString?)null", q"($csString?)$versionStr", tid)
+        case AnyVariant.Current =>
+          val tid = if (hasUnderlying) q"($csString?)null" else q"($csString?)$typeidStr"
+          (q"($csString?)null", q"($csString?)null", tid)
+      }
+
+      q"new $baboonAnyOpaqueUeba(new $baboonAnyMeta(($csByte)$kindHex, $domainExpr, $versionExpr, $typeidExpr), $csArray.Empty<$csByte>())"
     }
 
     private def renderCollectionTypeArgument(
@@ -144,7 +175,8 @@ object CSCodecFixtureTranslator {
           case TypeRef.Constructor(Builtins.map, args) => q"${translator.asCsType(Builtins.map, domain, evo)}<${render(args.head)}, ${render(args.last)}>"
           case TypeRef.Constructor(id, args)           => q"${translator.asCsType(id, domain, evo)}<${render(args.head)}>"
           case TypeRef.Scalar(id)                      => q"${translator.asCsType(id, domain, evo)}"
-          case _: TypeRef.Any                          => AnyPlaceholder.notSupportedYet("CSCodecFixtureTranslator.renderCollectionTypeArgument")
+          // Mirrors `CSTypeTranslator.asCsRef` — a collection element of type `any` is `AnyOpaque`.
+          case _: TypeRef.Any                          => q"$baboonAnyOpaque"
         }
       }
 

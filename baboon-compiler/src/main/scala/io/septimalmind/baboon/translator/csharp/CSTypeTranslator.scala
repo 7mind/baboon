@@ -61,7 +61,9 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
         val targs = args.map(asCsRef(_, domain, evolution))
         q"$tpe<${targs.toSeq.join(", ")}>"
 
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("CSTypeTranslator.asCsRef")
+      // The variant only affects wire shape, not the surface C# type. Both `AnyOpaqueUeba` and
+      // `AnyOpaqueJson` are subclasses of `AnyOpaque`; field-level type is the abstract base.
+      case _: TypeRef.Any => q"${CSTypes.baboonAnyOpaque}"
     }
   }
 

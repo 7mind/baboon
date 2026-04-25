@@ -133,7 +133,9 @@ class CSTypeInfo(target: CSTarget, enquiries: BaboonEnquiries) {
           case _ =>
             enquiries.isEnum(tpe, domain) || foreignTypeIsValueType(id, domain)
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("CSTypeInfo.isCSValueType")
+      // `AnyOpaque` is an abstract reference class (see baboon-runtime/cs/AnyOpaque.cs); it is never
+      // a C# value type. Variant differences don't change the surface type — only the wire shape.
+      case _: TypeRef.Any => false
       case _ =>
         foreignTypeIsValueType(tpe.id, domain)
     }

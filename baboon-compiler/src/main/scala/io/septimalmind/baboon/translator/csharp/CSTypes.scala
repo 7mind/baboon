@@ -77,6 +77,14 @@ object CSTypes {
 
   val iBaboonMeta: CSType = CSType(baboonRuntimePkg, "IBaboonMeta", fq = false, CSTypeOrigin.Other)
 
+  // any-feature runtime types (PR 3.1)
+  val baboonAnyOpaque: CSType      = CSType(baboonRuntimePkg, "AnyOpaque", fq = false, CSTypeOrigin.Other)
+  val baboonAnyOpaqueUeba: CSType  = CSType(baboonRuntimePkg, "AnyOpaqueUeba", fq = false, CSTypeOrigin.Other)
+  val baboonAnyOpaqueJson: CSType  = CSType(baboonRuntimePkg, "AnyOpaqueJson", fq = false, CSTypeOrigin.Other)
+  val baboonAnyMeta: CSType        = CSType(baboonRuntimePkg, "AnyMeta", fq = false, CSTypeOrigin.Other)
+  val baboonAnyMetaCodec: CSType   = CSType(baboonRuntimePkg, "AnyMetaCodec", fq = false, CSTypeOrigin.Other)
+  val baboonCodecException: CSType = CSType(baboonRuntimePkg, "BaboonCodecException", fq = false, CSTypeOrigin.Other)
+
   // Baboon type
   val rpDateTime: CSType = CSType(baboonTimePkg, "RpDateTime", fq = false, CSTypeOrigin.Other)
 
@@ -122,8 +130,9 @@ object CSTypes {
   val csDouble: CSType  = CSType(csSystemPkg, "Double", fq = false, CSTypeOrigin.Other)
   val csDecimal: CSType = CSType(csSystemPkg, "Decimal", fq = false, CSTypeOrigin.Other)
 
-  val csTpe: CSType  = CSType(csSystemPkg, "Type", fq = false, CSTypeOrigin.Other)
-  val csLazy: CSType = CSType(csSystemPkg, "Lazy", fq = false, CSTypeOrigin.Other)
+  val csTpe: CSType   = CSType(csSystemPkg, "Type", fq = false, CSTypeOrigin.Other)
+  val csLazy: CSType  = CSType(csSystemPkg, "Lazy", fq = false, CSTypeOrigin.Other)
+  val csArray: CSType = CSType(csSystemPkg, "Array", fq = false, CSTypeOrigin.Other)
 
   val csEnum: CSType              = CSType(csSystemPkg, "Enum", fq = false, CSTypeOrigin.Other)
   val csDateTime: CSType          = CSType(csSystemPkg, "DateTime", fq = false, CSTypeOrigin.Other)

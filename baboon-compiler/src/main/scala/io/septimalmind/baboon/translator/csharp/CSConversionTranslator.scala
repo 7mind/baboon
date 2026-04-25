@@ -236,7 +236,12 @@ class CSConversionTranslator[F[+_, +_]: Error2](
                           }
                         case _: TypeRef.Scalar =>
                           F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
-                        case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("CSConversionTranslator.InitializeWithDefault")
+                        // `any` fields require a meta header that's bound to the field's variant; there
+                        // is no schema-agnostic default. The validator forbids adding new `any` fields
+                        // without an explicit migration path, so this branch is best-effort fail-fast
+                        // — if it fires, evolution rules let through a case they shouldn't have.
+                        case _: TypeRef.Any =>
+                          F.fail(BaboonIssue.of(TranslationIssue.TranslationBug()))
                       }
 
                     case o: FieldOp.WrapIntoCollection =>
@@ -444,7 +449,15 @@ class CSConversionTranslator[F[+_, +_]: Error2](
           case o =>
             throw new IllegalStateException(s"BUG: unsupported conversion $o, ref=$ref, depth=$depth")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("CSConversionTranslator.transfer")
+      // `any` payload is opaque (bytes / JToken); we never auto-convert between `any` and a non-`any`
+      // type (validator forbids it). Same-variant cross-version transfer is just a reference copy —
+      // the surface ADT is the same `AnyOpaque` and the wire bytes carry their own meta header,
+      // independent of the schema version of the containing DTO. Variant or underlying changes are
+      // breaking per spec §Evolution and should be rejected by `BaboonRules.incompatibleAdditions`.
+      // The C# `transfer` only sees the new type at this site (no `oldTpe` for a plain `Transfer`
+      // op), so we trust the evolution layer and emit a direct cast — mirrors Scala's `oldRef`
+      // copy when `newA == oldA`.
+      case _: TypeRef.Any => direct
     }
     out
 //    q"/* ${srcDom.version.toString} -> ${domain.version.toString} ${cold.mapRender(_.toString)} -> ${cnew.mapRender(_.toString)} */ $out"
