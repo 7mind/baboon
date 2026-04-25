@@ -81,24 +81,40 @@ object ScCodecFixtureTranslator {
       q"${id.name.name.capitalize}_Fixture"
     }
 
-    private def doTranslateDto(dto: Typedef.Dto): TextTree[ScValue] = {
-      val generatedFields = dto.fields.map(f => genType(f.tpe))
-      val fullType        = translator.toScTypeRefKeepForeigns(dto.id, domain, evo)
+    // Branch selector for any-field fixture payloads. PR-07-D01: tests round-trip a fixture through a
+    // single codec; if the fixture's `AnyOpaque` branch matches the codec direction, no facade is
+    // needed and equality holds. We emit two parallel methods (`random` for the UEBA branch,
+    // `randomJson` for the JSON branch) so each test path picks its native branch. The recursive
+    // call into nested user-type fixtures must propagate the same choice.
+    private sealed trait FixtureFormat
+    private case object FixUeba extends FixtureFormat
+    private case object FixJson extends FixtureFormat
 
-      if (dto.fields.isEmpty) {
-        q"""${deprecationNowarn}object ${fixtureTpe(dto.id)} {
-           |  @scala.annotation.nowarn("msg=never used") def random(rnd: $baboonRandom): $fullType = $fullType()
-           |}
-           |""".stripMargin
-      } else {
-        q"""${deprecationNowarn}object ${fixtureTpe(dto.id)} {
-           |  def random(rnd: $baboonRandom): $fullType =
-           |    $fullType(
-           |      ${generatedFields.join(",\n").shift(6).trim}
-           |    )
-           |}
-           |""".stripMargin
+    private def doTranslateDto(dto: Typedef.Dto): TextTree[ScValue] = {
+      val fullType = translator.toScTypeRefKeepForeigns(dto.id, domain, evo)
+
+      def body(format: FixtureFormat): TextTree[ScValue] = {
+        if (dto.fields.isEmpty) {
+          q"$fullType()"
+        } else {
+          val generatedFields = dto.fields.map(f => genType(f.tpe, format))
+          q"""$fullType(
+             |  ${generatedFields.join(",\n").shift(2).trim}
+             |)""".stripMargin
+        }
       }
+
+      val nowarn =
+        if (dto.fields.isEmpty) q"""@scala.annotation.nowarn("msg=never used") """ else q""
+
+      q"""${deprecationNowarn}object ${fixtureTpe(dto.id)} {
+         |  ${nowarn}def random(rnd: $baboonRandom): $fullType =
+         |    ${body(FixUeba).shift(4).trim}
+         |
+         |  ${nowarn}def randomJson(rnd: $baboonRandom): $fullType =
+         |    ${body(FixJson).shift(4).trim}
+         |}
+         |""".stripMargin
     }
 
     private def doTranslateAdt(adt: Typedef.Adt): TextTree[ScValue] = {
@@ -107,8 +123,9 @@ object ScCodecFixtureTranslator {
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
-      val membersFixtures   = members.sortBy(_.id.toString).map(doTranslateDto)
-      val membersGenerators = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name}_Fixture.random")
+      val membersFixtures       = members.sortBy(_.id.toString).map(doTranslateDto)
+      val membersGenerators     = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name}_Fixture.random")
+      val membersGeneratorsJson = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name}_Fixture.randomJson")
 
       q"""${deprecationNowarn}object ${fixtureTpe(adt.id)} {
          |  def random(rnd: $baboonRandom): $adtName = {
@@ -122,16 +139,28 @@ object ScCodecFixtureTranslator {
          |      ${membersGenerators.map(g => q"$g(rnd)").join(",\n").shift(6).trim}
          |    )
          |  }
-         |  
+         |
+         |  def randomJson(rnd: $baboonRandom): $adtName = {
+         |    rnd.oneOf($scList(
+         |      ${membersGeneratorsJson.join(",\n").shift(6).trim}
+         |    ))
+         |  }
+         |
+         |  def randomAllJson(rnd: $baboonRandom): $scList[$adtName] = {
+         |    $scList(
+         |      ${membersGeneratorsJson.map(g => q"$g(rnd)").join(",\n").shift(6).trim}
+         |    )
+         |  }
+         |
          |  ${membersFixtures.joinN().shift(2).trim}
          |}
          |""".stripMargin
     }
 
-    private def genType(tpe: TypeRef): TextTree[ScValue] = {
+    private def genType(tpe: TypeRef, format: FixtureFormat): TextTree[ScValue] = {
       def gen(tpe: TypeRef): TextTree[ScValue] = {
         BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Scala) match {
-          case tpe: TypeRef.Scalar => genScalar(tpe)
+          case tpe: TypeRef.Scalar => genScalar(tpe, format)
           case TypeRef.Constructor(id, args) =>
             id match {
               case Builtins.lst => q"rnd.mkList(${gen(args.head)})"
@@ -140,7 +169,7 @@ object ScCodecFixtureTranslator {
               case Builtins.opt => q"rnd.mkOption(${gen(args.head)})"
               case t            => throw new IllegalArgumentException(s"Unexpected collection type: $t")
             }
-          case a: TypeRef.Any => genAnyFixture(a)
+          case a: TypeRef.Any => genAnyFixture(a, format)
         }
       }
 
@@ -156,7 +185,7 @@ object ScCodecFixtureTranslator {
     // hook in PR 2.4).
     private val FixtureAnyPayloadTypeId: String = "my.test.AnyFixturePayload"
 
-    private def genAnyFixture(a: TypeRef.Any): TextTree[ScValue] = {
+    private def genAnyFixture(a: TypeRef.Any, format: FixtureFormat): TextTree[ScValue] = {
       val hasUnderlying = a.underlying.isDefined
       val kindHex       = "0x%02x".format(AnyVariant.metaKindByte(a.variant, hasUnderlying) & 0xFF)
 
@@ -177,10 +206,18 @@ object ScCodecFixtureTranslator {
           (q"$scOption.empty[$scString]", q"$scOption.empty[$scString]", tid)
       }
 
-      q"$baboonAnyOpaqueUeba($baboonAnyMeta($kindHex.toByte, $domainExpr, $versionExpr, $typeidExpr), $scArray.emptyByteArray)"
+      val meta = q"$baboonAnyMeta($kindHex.toByte, $domainExpr, $versionExpr, $typeidExpr)"
+      // PR-07-D01: branch must match codec direction so round-trip avoids cross-format conversion
+      // (which requires `WithFacade` ctx). UEBA codec test uses `AnyOpaqueUeba(meta, [])`; JSON codec
+      // test uses `AnyOpaqueJson(meta, Json.Null)`. Both are wire-equivalent to themselves under
+      // their native codec — equality holds.
+      format match {
+        case FixUeba => q"$baboonAnyOpaqueUeba($meta, $scArray.emptyByteArray)"
+        case FixJson => q"$baboonAnyOpaqueJson($meta, $circeJson.Null)"
+      }
     }
 
-    private def genScalar(tpe: TypeRef.Scalar): TextTree[ScValue] = {
+    private def genScalar(tpe: TypeRef.Scalar, format: FixtureFormat): TextTree[ScValue] = {
       tpe.id match {
         case TypeId.Builtins.i08 => q"rnd.nextI08()"
         case TypeId.Builtins.i16 => q"rnd.nextI16()"
@@ -206,7 +243,14 @@ object ScCodecFixtureTranslator {
         case TypeId.Builtins.bit => q"rnd.nextBit()"
 
         case TypeId.User(_, _, name) if enquiries.isEnum(tpe, domain) => q"rnd.mkEnum(${name.name})"
-        case u: TypeId.User                                           => q"${u.name.name}_Fixture.random(rnd)"
+        case u: TypeId.User =>
+          // Propagate the codec branch into nested user-type fixtures so any-fields nested in
+          // sub-DTOs/ADTs match the same codec direction. See PR-07-D01.
+          val method = format match {
+            case FixUeba => q"random"
+            case FixJson => q"randomJson"
+          }
+          q"${u.name.name}_Fixture.$method(rnd)"
 
         case t => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
       }

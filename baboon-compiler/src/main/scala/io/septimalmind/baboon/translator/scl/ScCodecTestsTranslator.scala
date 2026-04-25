@@ -49,12 +49,18 @@ object ScCodecTestsTranslator {
     }
 
     private def makeTest(definition: DomainMember.User, srcRef: ScValue.ScType): TextTree[ScValue] = {
-      val fixture = makeFixture(definition, domain, evo)
+      // PR-07-D01: per-codec fixture variants. UEBA codec test uses the `AnyOpaqueUeba`-bearing
+      // fixture (`random`); JSON codec test uses the `AnyOpaqueJson`-bearing fixture (`randomJson`).
+      // Each fixture matches its codec's native any-field branch so round-trip avoids cross-format
+      // conversion and never needs `BaboonCodecContext.WithFacade`.
+      val uebaFixture = makeFixture(definition, domain, evo, useJsonAny = false)
+      val jsonFixture = makeFixture(definition, domain, evo, useJsonAny = true)
       codecs
         .filter(_.isActive(definition.id)).map {
           case jsonCodec: ScJsonCodecGenerator =>
             val body      = jsonCodecAssertions(definition)
             val codecName = jsonCodec.codecName(srcRef)
+            val fixture   = jsonFixture
 
             q"""
              |"${srcRef.toString}" should "support JSON codec" in {
@@ -96,6 +102,7 @@ object ScCodecTestsTranslator {
           case uebaCodec: ScUEBACodecGenerator =>
             val body      = uebaCodecAssertions(definition)
             val codecName = uebaCodec.codecName(srcRef)
+            val fixture   = uebaFixture
             q"""
              |"${srcRef.toString}" should "support UEBA codec" in {
              |  (0 to ${target.generic.codecTestIterations.toString}).foreach {
@@ -152,11 +159,14 @@ object ScCodecTestsTranslator {
       definition: DomainMember.User,
       domain: Domain,
       evolution: BaboonEvolution,
+      useJsonAny: Boolean,
     ): TextTree[ScValue] = {
+      val randomMethod    = if (useJsonAny) "randomJson" else "random"
+      val randomAllMethod = if (useJsonAny) "randomAllJson" else "randomAll"
       definition.defn match {
         case e: Typedef.Enum => q"val fixture = rnd.randomElement(${e.id.name.name}.all)"
-        case _: Typedef.Adt  => q"val fixtures = ${typeTranslator.asScType(definition.id, domain, evolution)}_Fixture.randomAll(rnd)"
-        case _               => q"val fixture = ${typeTranslator.asScType(definition.id, domain, evolution)}_Fixture.random(rnd)"
+        case _: Typedef.Adt  => q"val fixtures = ${typeTranslator.asScType(definition.id, domain, evolution)}_Fixture.$randomAllMethod(rnd)"
+        case _               => q"val fixture = ${typeTranslator.asScType(definition.id, domain, evolution)}_Fixture.$randomMethod(rnd)"
       }
     }
 
