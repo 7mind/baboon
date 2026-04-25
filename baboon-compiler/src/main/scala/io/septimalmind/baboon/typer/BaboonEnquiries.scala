@@ -125,14 +125,34 @@ object BaboonEnquiries {
               case u: DomainMember.User    => Some(u.defn)
             }).flatten
           case TypeRef.Constructor(_, args) =>
-            args
-              .map(_.id)
-              .map(domain.defs.meta.nodes(_))
-              .toList
-              .flatMap {
-                case _: DomainMember.Builtin => None
-                case u: DomainMember.User    => Some(u.defn)
-              }
+            // A Constructor arg may itself be a TypeRef.Any (e.g. `lst[any[Inner]]`). Skip
+            // those at the id-lookup layer — `TypeId.AnyType` is filtered out of
+            // `domain.defs.meta.nodes` by the graph-pruning pass — and surface the underlying
+            // user type, if any, for the foreign-type walk.
+            //
+            // NOTE (PR-05-D06): this walk is intentionally shallow — it descends one level into
+            // Constructor.args, matching the pre-PR-2.2 catch-all shape. A nested case like
+            // `lst[opt[any[Inner]]]` will not surface `Inner`: the outer Constructor sees an inner
+            // `Constructor(opt, ...)`, falls through to the generic id-lookup branch, finds a
+            // builtin (`opt`), and stops. Deep-recursing here is straightforward (call back into
+            // the outer `processRefs` over `args`) but is out of scope for PR 2.2; this comment
+            // preserves the limitation as a known-issue marker. TODO: deep-recurse for richer
+            // models (`lst[opt[any[Inner]]]`, `map[K, opt[any[Inner]]]`, etc.).
+            args.toList.flatMap {
+              case TypeRef.Any(_, underlying) =>
+                underlying.toList.flatMap {
+                  u =>
+                    domain.defs.meta.nodes(u.id) match {
+                      case _: DomainMember.Builtin => None
+                      case d: DomainMember.User    => Some(d.defn)
+                    }
+                }
+              case other =>
+                domain.defs.meta.nodes(other.id) match {
+                  case _: DomainMember.Builtin => None
+                  case d: DomainMember.User    => Some(d.defn)
+                }
+            }
           case TypeRef.Any(_, underlying) =>
             // Surface the underlying's top-level ref if it's a user type. Structural deep-walking
             // into the underlying's fields is left to future passes (matches the shallow behaviour

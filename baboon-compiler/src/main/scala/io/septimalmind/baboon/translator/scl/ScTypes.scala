@@ -58,6 +58,14 @@ object ScTypes {
   val scByteString: ScType                    = ScType(baboonRuntimePkg, "ByteString")
   val baboonRandom: ScType                    = ScType(baboonFixturePkg, "BaboonRandom")
 
+  // baboon `any` opaque field runtime types (PR 2.1)
+  val baboonAnyOpaque: ScType      = ScType(baboonRuntimePkg, "AnyOpaque")
+  val baboonAnyOpaqueUeba: ScType  = ScType(baboonRuntimePkg, "AnyOpaqueUeba")
+  val baboonAnyOpaqueJson: ScType  = ScType(baboonRuntimePkg, "AnyOpaqueJson")
+  val baboonAnyMeta: ScType        = ScType(baboonRuntimePkg, "AnyMeta")
+  val baboonAnyMetaCodec: ScType   = ScType(baboonRuntimePkg, "AnyMetaCodec")
+  val baboonCodecException: ScType = ScType(baboonRuntimePkg, "BaboonCodecException")
+
   // baboon service wiring types
   val baboonMethodId: ScType        = ScType(baboonRuntimePkg, "BaboonMethodId")
   val baboonWiringError: ScType     = ScType(baboonRuntimePkg, "BaboonWiringError")

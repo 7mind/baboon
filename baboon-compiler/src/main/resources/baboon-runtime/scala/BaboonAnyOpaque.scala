@@ -6,7 +6,15 @@ package baboon.runtime.shared {
     def meta: AnyMeta
   }
 
-  final case class AnyOpaqueUeba(meta: AnyMeta, bytes: Array[Byte]) extends AnyOpaque
+  final case class AnyOpaqueUeba(meta: AnyMeta, bytes: Array[Byte]) extends AnyOpaque {
+    // case-class default equals/hashCode use reference identity on Array[Byte];
+    // override to content-wise comparison so decoded payloads round-trip correctly.
+    override def equals(other: Any): Boolean = other match {
+      case that: AnyOpaqueUeba => meta == that.meta && java.util.Arrays.equals(bytes, that.bytes)
+      case _                   => false
+    }
+    override def hashCode(): Int = 31 * meta.hashCode() + java.util.Arrays.hashCode(bytes)
+  }
 
   final case class AnyOpaqueJson(meta: AnyMeta, json: Json) extends AnyOpaque
 
@@ -59,6 +67,33 @@ package baboon.runtime.shared {
       val version = if ((kind & VERSION_BIT) != 0) Some(BaboonBinTools.readString(reader)) else None
       val typeid  = if ((kind & TYPEID_BIT) != 0) Some(BaboonBinTools.readString(reader)) else None
       AnyMeta(kind, domain, version, typeid)
+    }
+
+    // Counting wrapper used to track bytes consumed during a meta read. Named (not anonymous)
+    // so callers can read the count without enabling -language:reflectiveCalls.
+    private final class CountingInputStream(in: java.io.InputStream) extends java.io.FilterInputStream(in) {
+      var count: Int = 0
+      override def read(): Int = {
+        val b = super.read()
+        if (b >= 0) count += 1
+        b
+      }
+      override def read(b: Array[Byte], off: Int, len: Int): Int = {
+        val n = super.read(b, off, len)
+        if (n > 0) count += n
+        n
+      }
+    }
+
+    // Reads meta and returns (meta, bytesRead). Callers that know the on-wire `meta-length`
+    // window can skip any extra bytes left in the window — that's how forward-compat with future
+    // meta extensions works (spec §wire-format: "meta-length lets a reader skip the meta block
+    // and/or future meta extensions without parsing them").
+    def readBinWithLength(reader: LEDataInputStream): (AnyMeta, Int) = {
+      val counting = new CountingInputStream(reader)
+      val wrapped  = new LEDataInputStream(counting)
+      val meta     = readBin(wrapped)
+      (meta, counting.count)
     }
 
     def writeJson(meta: AnyMeta): Json = {

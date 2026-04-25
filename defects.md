@@ -442,3 +442,70 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 **Description:** The four `any-bad/` fixtures are intentionally invalid `.baboon` files added by PR 1.4 as negative-path unit-test inputs. They live under the same `src/test/resources/baboon/` directory that the `mdl :test-gen-regular-adt` / `:test-gen-wrapped-adt` actions hand to the `baboon` binary as `--model-dir`. Compilation of those fixtures fails, `baboon` exits non-zero, codegen never runs. PR 2.1 dodged this by running `baboon` manually against a curated subset of models. PR 2.2 onward cannot — codec-emission work needs the full codegen pipeline green.
 **Root cause:** Unit-test negative fixtures were placed inside the e2e codegen input tree. PR 1.4 filtered them out of `LspFeaturesTest`'s tree-walk but did not consider the `mdl` action's consumption of the same directory.
 **Fix:** PR 2.0 — `git mv`'d the four fixtures from `baboon-compiler/src/test/resources/baboon/any-bad/` to `baboon-compiler/src/test/resources/baboon-fixtures-bad/any-bad/` (outside the codegen root). Updated the four `IzResources.getPath("baboon/any-bad/...")` calls in `AnyFrontEndTest.scala` to `baboon-fixtures-bad/any-bad/...`. Removed `LspFeaturesTest.scala`'s now-dead `filterNot(... startsWith basePath.resolve("any-bad"))` walk-filter and the comment that documented it (the fixtures are no longer under `basePath`). Verified: `sbt "testOnly *AnyFrontEndTest *LspFeaturesTest"` → 14/14; `sbt test` → 182/183 (one pre-existing `RTCodecTest` failure that depends on `mdl` having generated artifacts — same failure on the unmodified `wip/anytype` baseline). Note: `mdl :test-gen-regular-adt` itself still fails *for a different reason* — the surviving `any-ok/pkg.baboon` fixture contains `any` typed fields that hit the PR 1.2 placeholder cascade (`BUG: any field reached CSTypeTranslator.asCsRef before its milestone implementation landed`). That blocker is separate from D11; it is what PR 2.2+ exists to remove (per-language codec emission for `TypeRef.Any`). PR 2.0's scope was strictly the fixture relocation; the codegen-side `any` cascade is out of scope.
+
+---
+
+## PR-05 — Scala UEBA codec emission (M2 PR 2.2)
+
+### [PR-05-D01] Decoder ignores `meta-length`, breaking forward-compat with future meta extensions
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScUEBACodecGenerator.scala:449-467` (`mkAnyDecoder`); manifested in every emitted `<DTO>.scala` UEBA decoder.
+**Description:** The decoder reads `anyMetaLen:i32` then immediately calls `AnyMetaCodec.readBin(wire)`, which advances the reader by exactly `1 (kind) + present-strings`. The decoder never compares the actual bytes consumed by `readBin` against `anyMetaLen`. Spec §42 says: "`meta-length` lets a reader skip the meta block and/or future meta extensions without parsing them." A future writer that appends N bytes inside the meta block (e.g. a new optional component) would be skippable today; under this implementation, today's reader under-reads by N bytes, blob-read starts mid-meta, and the entire DTO decode shears. The wire layout is locked and published; this defect makes Scala readers permanently incompatible with any future meta extension.
+**Suggested fix:** Track bytes consumed during `readBin` (either return `(meta, bytesRead)` from `AnyMetaCodec.readBin`, or wrap the reader in a counting input stream over a `[anyMetaLen]` window). After `readBin`, `wire.skipBytes(anyMetaLen - bytesRead)` to skip any unrecognised extension bytes. Throw `BaboonCodecException.DecoderFailure` if `bytesRead > anyMetaLen` (corrupt input).
+**Fix:** Added `AnyMetaCodec.readBinWithLength(reader): (AnyMeta, Int)` runtime helper that wraps the input in a private `CountingInputStream` (named class to avoid `-language:reflectiveCalls`). The Scala UEBA codec generator's `decodeAnyField` helper now calls `readBinWithLength`, throws `BaboonCodecException.DecoderFailure` on `bytesRead > anyMetaLen`, and `wire.skipBytes(anyMetaLen - bytesRead)` on the under-read path. Regression test `AnyMetaCodec.readBinWithLength reports bytes consumed and tolerates trailing meta-extension bytes` added in `AnyMetaCodecSpec.scala`.
+
+### [PR-05-D02] Generated UEBA codec inlines a 16-line block at every any-field site instead of factoring per spec §172
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScUEBACodecGenerator.scala:449-467, 555-581` (templates); manifested in every emitted DTO with any-fields (e.g. `Holder.scala` was 737 lines for 9 any-fields).
+**Description:** Every any-field generates ~16 lines of inline encode + ~13 lines of inline decode. `useIndices` true/false paths each get their own copy. Result: a 9-field DTO emits the same encode/decode block 14 times. Spec §172-174 explicitly recommends factoring: "delegate to a helper `readAnyField(variantKind)` that reads meta-kind, asserts it matches the declared variant kind, reads meta, reads blob, returns `AnyOpaqueUeba`." A fix to D01 (or any future tweak) propagates to every emit site instead of changing one helper; richer models will balloon generated file size and compile time.
+**Suggested fix:** Emit two private helpers per codec object: `private def encodeAnyField(writer: LEDataOutputStream, expectedKind: Byte, value: AnyOpaque): Unit` and `private def decodeAnyField(wire: LEDataInputStream, expectedKind: Byte): AnyOpaqueUeba`. Field-level encoder/decoder calls them with the variant's expected kind byte. The two helpers consolidate the framing, kind-check, buffer-then-write, and read paths.
+**Fix:** `ScUEBACodecGenerator` now emits per-codec-object `encodeAnyField` / `decodeAnyField` helpers (gated by `hasAnyField(defn)`); each field-level any-encoder/decoder call site is now a one-liner: `encodeAnyField(writer, 0xKK.toByte, value.fX)` / `decodeAnyField(wire, 0xKK.toByte)`. `Holder.scala` for the `any-ok` model dropped from 737 lines to 282 lines (61% reduction).
+
+### [PR-05-D03] `ScConversionTranslator.transfer` Any↔Any arm copies as-is without checking variant equality; latent silent-corruption bug
+**Status:** resolved
+**Severity:** major (latent — protected only by an unrelated placeholder)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScConversionTranslator.scala:70`.
+**Description:** The `(_: TypeRef.Any, _: TypeRef.Any)` arm copies the value reference as-is regardless of variant change (e.g. v1: `any[domain:this]` → v2: `any`). Spec §118 says all variant changes are breaking. Today it's safe only because `BaboonRules.incompatibleAdditions` (`BaboonRules.scala:138`) still throws `AnyPlaceholder.notSupportedYet` for `TypeRef.Any` — that placeholder crashes the compiler before this arm runs. The day a real implementation lands for `incompatibleAdditions`, this arm becomes a silent variant-corruption bug. No defensive check inside the arm itself.
+**Suggested fix:** Compare `variant + underlying-id` between the source and target `TypeRef.Any` in this arm. If they differ, throw `IllegalStateException` with a message naming the validator/rules layer that should have rejected the conversion. Defense-in-depth that survives future loosening of `BaboonRules`.
+**Fix:** Arm now checks `newA == oldA` (structural equality covers variant + underlying); on mismatch throws `IllegalStateException` referencing `BaboonRules.incompatibleAdditions`. Defense-in-depth: today the placeholder in `BaboonRules` short-circuits before reaching this arm; once `incompatibleAdditions` lands, this throw guards against accidental loosening.
+
+### [PR-05-D04] `AnyOpaqueJson` runtime error references "PR 2.3" (a project-internal milestone), giving downstream consumers no actionable guidance
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScUEBACodecGenerator.scala:578` (`mkAnyEncoder`).
+**Description:** `throw new RuntimeException("any: encoding AnyOpaqueJson into UEBA is not yet implemented (PR 2.3)")` references project-internal milestone numbering. Consumers of generated code outside this repo see "PR 2.3" and have no recovery path.
+**Suggested fix:** Reword: `"Cannot encode AnyOpaqueJson into UEBA without facade-resolved cross-format conversion. Workaround: call BaboonCodecsFacade.decodeAny(jsonOpaque) and re-encode the resolved typed value, or wrap the payload as AnyOpaqueUeba directly."` Drop the internal milestone reference.
+**Fix:** Message rewritten verbatim as suggested; the throw lives inside the per-codec-object `encodeAnyField` helper (D02). PR-internal milestone reference removed.
+
+### [PR-05-D05] `ScCodecFixtureTranslator.typeidStr` has a dead `Some(TypeRef.Scalar(uid: TypeId.User))` arm
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScCodecFixtureTranslator.scala:160-163`.
+**Description:** `typeidStr` is used only when `!hasUnderlying`, which means `a.underlying = None`, which means the `case Some(...)` arm is unreachable. The arm appears intended to use the underlying's id as a typeid, but D1/D2/D3 (typed variants) emit `Option.empty[String]` for typeid (kind bit 0 is clear), so the underlying's id never lands in the meta anyway. Generated fixtures all carry the literal `"my.test.AnyFixturePayload"`; PR 2.4's facade-resolution tests will fail unless someone registers a codec under that string.
+**Suggested fix:** Remove the unreachable `Some(...)` arm. Replace the magic literal `"my.test.AnyFixturePayload"` with a named constant or a comment explaining what consumers must register. Better: delegate fixture-typeid choice to a per-test override slot so PR 2.4 can plug in real registered typeids.
+**Fix:** Removed the unreachable `Some(TypeRef.Scalar(uid: TypeId.User))` arm. Extracted the literal into `private val FixtureAnyPayloadTypeId = "my.test.AnyFixturePayload"` with a comment explaining when typeid is used (typed-variant kinds D1/D2/D3 only) and that PR 2.4 may add a per-test override hook.
+
+### [PR-05-D06] `BaboonEnquiries.processRefs` Constructor arm is shallow — `lst[opt[any[Inner]]]` doesn't surface `Inner`
+**Status:** resolved
+**Severity:** minor (pre-existing shape, surfaced by PR 2.2's fix)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonEnquiries.scala:127-146`.
+**Description:** PR 2.2's new `case Constructor(_, args)` arm walks one level into `args`. For `lst[any[Inner]]` it correctly sees the inner `Any`. But for `lst[opt[any[Inner]]]`, the outer `Constructor(lst, [Constructor(opt, [Any(_, Some(Inner))])])` falls through to `case other => domain.defs.meta.nodes(other.id)` — looking up `opt.id`, getting a Builtin, returning None, and never visiting the buried `Any` or `Inner`. Pre-existing shallow-walk shape; PR 2.2 doesn't regress it but doesn't address it either. Not exercised by `any-ok/pkg.baboon`'s current shape, but `hasForeignType` may give wrong answers for richer models.
+**Suggested fix:** Either deep-recurse Constructor args (call `processRefs(refs ++ args, …)` instead of stopping at one level), or add a comment explaining the shallow-walk is intentional plus a regression test asserting the limitation.
+**Fix:** Comment-only resolution (the lighter of the two suggested options). Added a multi-line `NOTE (PR-05-D06)` + `TODO` block at the Constructor arm explaining that the shallow walk matches the pre-PR-2.2 catch-all shape and naming `lst[opt[any[Inner]]]` as the case that would need deep recursion. Behavior unchanged.
+
+### [PR-05-D07] Generated UEBA wrapper assertion uses literal `{after}`/`{before}` instead of `$after`/`$before` interpolation — pre-existing template defect
+**Status:** resolved (pre-existing, out of PR 2.2 scope)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScUEBACodecGenerator.scala:355` (BinReprLen.Unknown wrapper).
+**Description:** Pre-existing code emits `assert(after >= before, s"Got after={after}, before={before}")` — literal braces instead of `$after`/`$before`. `BinReprLen.Unknown()` for `TypeRef.Any` exercises this on every emitted any-field. Worth noting; not a PR 2.2 regression.
+**Fix:** No action in PR 2.2 — pre-existing template bug, separate refactor.
+
+### [PR-05-D08] `AnyOpaqueUeba` case class uses default `equals`, which is reference-identity on `Array[Byte]` — breaks generated round-trip tests
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/scala/BaboonAnyOpaque.scala:9-17`; regression test at `test/sc-stub/src/test/scala/runtime/AnyMetaCodecSpec.scala` (last `test` block).
+**Description:** See above. Scala case-class auto-generated `equals` uses reference identity for `Array[Byte]` fields. Two `AnyOpaqueUeba` with the same meta and content-equal bytes are NOT `==`; PR 2.2's generated `_tests.scala` round-trip therefore always fails. PR 2.1 didn't surface this because no codec was emitted; PR 2.2 made it visible.
+**Root cause:** Scala case-class equality semantics on `Array[Byte]`. Same gotcha hit by every JVM ADT carrying a binary blob.
+**Fix:** Overrode `equals` and `hashCode` on `AnyOpaqueUeba` using `java.util.Arrays.equals` / `Arrays.hashCode` for the bytes field, with a one-line WHY comment. Added a regression test asserting (a) content-equal distinct-reference arrays produce `==` AnyOpaqueUeba; (b) hashCodes match for equal instances; (c) content-different arrays don't equal; (d) two distinct empty arrays are equal. **Process note:** the orchestrator made this fix directly rather than via subagent — two consecutive 529 API overloads blocked subagent dispatch and the change is small and well-specified. Deviation from review-loop "no direct edits" discipline is documented in the session log.

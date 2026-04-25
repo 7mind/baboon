@@ -7,6 +7,7 @@ import io.septimalmind.baboon.translator.scl.ScDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.scl.ScTypes.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -70,6 +71,70 @@ class ScUEBACodecGenerator(
           )
       }
     } else None
+  }
+
+  // Per-codec-object helpers consolidating the any-field framing, kind-check, and
+  // buffer-then-write / read-then-skip paths — emitted at most once per codec object.
+  // See spec §172 (factor any-field encode/decode into helpers).
+  private def anyFieldHelpers: TextTree[ScValue] = {
+    q"""private def encodeAnyField(writer: $binaryOutput, expectedKind: $scByte, value: $baboonAnyOpaque): $scUnit = {
+       |  value match {
+       |    case anyUeba: $baboonAnyOpaqueUeba =>
+       |      if (anyUeba.meta.kind != expectedKind) {
+       |        throw new $genericException(s"any: meta-kind mismatch on encode: expected 0x$${(expectedKind & 0xFF).toHexString}, got 0x$${(anyUeba.meta.kind & 0xFF).toHexString}")
+       |      }
+       |      val anyMetaBuf    = new $byteArrayOutputStream()
+       |      val anyMetaWriter = new $binaryOutput(anyMetaBuf)
+       |      try {
+       |        $baboonAnyMetaCodec.writeBin(anyUeba.meta, anyMetaWriter)
+       |      } finally {
+       |        anyMetaWriter.close()
+       |      }
+       |      val anyMetaBytes = anyMetaBuf.toByteArray
+       |      val anyLength    = 4 + anyMetaBytes.length + anyUeba.bytes.length
+       |      writer.writeInt(anyLength)
+       |      writer.writeInt(anyMetaBytes.length)
+       |      writer.write(anyMetaBytes)
+       |      writer.write(anyUeba.bytes)
+       |    case _: $baboonAnyOpaqueJson =>
+       |      throw new $genericException("Cannot encode AnyOpaqueJson into UEBA without facade-resolved cross-format conversion. Workaround: call BaboonCodecsFacade.decodeAny(jsonOpaque) and re-encode the resolved typed value, or wrap the payload as AnyOpaqueUeba directly.")
+       |  }
+       |}
+       |
+       |private def decodeAnyField(wire: $binaryInput, expectedKind: $scByte): $baboonAnyOpaqueUeba = {
+       |  val anyLength            = wire.readInt()
+       |  val anyMetaLen           = wire.readInt()
+       |  val (anyMeta, anyMetaBytesRead) = $baboonAnyMetaCodec.readBinWithLength(wire)
+       |  if (anyMetaBytesRead > anyMetaLen) {
+       |    throw $baboonCodecException.DecoderFailure(s"any: meta consumed $$anyMetaBytesRead bytes but meta-length=$$anyMetaLen")
+       |  }
+       |  if (anyMetaBytesRead < anyMetaLen) {
+       |    // Skip future meta extension bytes within the meta-length window (forward-compat).
+       |    wire.skipBytes(anyMetaLen - anyMetaBytesRead)
+       |  }
+       |  if (anyMeta.kind != expectedKind) {
+       |    throw new $genericException(s"any: meta-kind mismatch: expected 0x$${(expectedKind & 0xFF).toHexString}, got 0x$${(anyMeta.kind & 0xFF).toHexString}")
+       |  }
+       |  val anyBlobLen = anyLength - 4 - anyMetaLen
+       |  if (anyBlobLen < 0) {
+       |    throw new $genericException(s"any: negative blob length $$anyBlobLen (length=$$anyLength, metaLen=$$anyMetaLen)")
+       |  }
+       |  val anyBlob = new $scArray[$scByte](anyBlobLen)
+       |  wire.readFully(anyBlob)
+       |  $baboonAnyOpaqueUeba(anyMeta, anyBlob)
+       |}""".stripMargin
+  }
+
+  private def hasAnyField(defn: DomainMember.User): Boolean = {
+    def hasAny(tpe: TypeRef): Boolean = tpe match {
+      case _: TypeRef.Any         => true
+      case _: TypeRef.Scalar      => false
+      case c: TypeRef.Constructor => c.args.exists(hasAny)
+    }
+    defn.defn match {
+      case d: Typedef.Dto => d.fields.exists(f => hasAny(f.tpe))
+      case _              => false
+    }
   }
 
   private def genCodec(
@@ -147,10 +212,13 @@ class ScUEBACodecGenerator(
     val parents = List(cParent, q"$baboonBinCodecIndexed")
     val meta    = renderMeta(defn, scDomainTreeTools.makeCodecMeta(defn))
 
+    val anyHelpers: List[TextTree[ScValue]] = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
+    val tail                                = (anyHelpers ++ meta).joinNN()
+
     q"""object ${cName.name} extends ${parents.join(" with ")} {
        |  ${baseMethods.joinNN().shift(2).trim}
        |
-       |  ${meta.joinN().shift(2).trim}
+       |  ${tail.shift(2).trim}
        |
        |  override protected def LazyInstance: $baboonLazy[$codecIface] = $baboonLazy($cName)
        |  override def instance: $codecIface = LazyInstance.value
@@ -437,9 +505,20 @@ class ScUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("ScUEBACodecGenerator.mkDecoder")
+      case a: TypeRef.Any => mkAnyDecoder(a)
     }
 
+  }
+
+  // Wire layout (locked, see docs/drafts/20260424-1738-any-opaque-fields.md §"Wire format"):
+  //   length:i32 | meta-length:i32 | meta-kind:u8 | meta-strings | blob
+  // length covers everything after itself; meta-length covers (kind + strings); blob runs the rest.
+  // The actual framing/kind-check/skip-extension logic lives in the per-codec-object
+  // `decodeAnyField` helper emitted by `anyFieldHelpers`; this just wires the expected kind in.
+  private def mkAnyDecoder(a: TypeRef.Any): TextTree[ScValue] = {
+    val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
+    q"""decodeAnyField(wire, $expectedHex.toByte)"""
   }
 
   private def mkEncoder(tpe: TypeRef, ref: TextTree[ScValue], wref: TextTree[ScValue]): TextTree[ScValue] = {
@@ -519,8 +598,16 @@ class ScUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("ScUEBACodecGenerator.mkEncoder")
+      case a: TypeRef.Any => mkAnyEncoder(a, ref, wref)
     }
+  }
+
+  // Encode delegates to the per-codec-object `encodeAnyField` helper emitted by
+  // `anyFieldHelpers`. This site only wires the expected kind byte for the field's variant.
+  private def mkAnyEncoder(a: TypeRef.Any, ref: TextTree[ScValue], wref: TextTree[ScValue]): TextTree[ScValue] = {
+    val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
+    q"""encodeAnyField($wref, $expectedHex.toByte, $ref)"""
   }
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[ScValue]] = {

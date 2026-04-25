@@ -113,6 +113,30 @@ class AnyMetaCodecSpec extends AnyFunSuite {
     assert(round == meta)
   }
 
+  test("AnyMetaCodec.readBinWithLength reports bytes consumed and tolerates trailing meta-extension bytes") {
+    // Write a valid kind 0x07 meta plus 5 bytes of "future meta extension" garbage at the end.
+    val meta = AnyMeta(0x07.toByte, Some("d"), Some("v"), Some("t"))
+    val baos = new ByteArrayOutputStream()
+    val out  = new LEDataOutputStream(baos)
+    AnyMetaCodec.writeBin(meta, out)
+    out.flush()
+    val metaBytes = baos.toByteArray
+    val tail      = Array[Byte](0x11, 0x22, 0x33, 0x44, 0x55)
+
+    val combined = metaBytes ++ tail
+    val in       = new LEDataInputStream(new ByteArrayInputStream(combined))
+
+    val (parsed, bytesRead) = AnyMetaCodec.readBinWithLength(in)
+    assert(parsed == meta, s"expected $meta, got $parsed")
+    assert(bytesRead == metaBytes.length, s"expected $metaBytes.length bytes consumed, got $bytesRead")
+
+    // Caller would skip (anyMetaLen - bytesRead) bytes within the on-wire meta-length window.
+    // Simulate the codec-generator's skip:
+    val anyMetaLen = metaBytes.length + tail.length // outer wire claims this much meta
+    val skipped    = in.skipBytes(anyMetaLen - bytesRead)
+    assert(skipped == tail.length, s"expected to skip ${tail.length} trailing meta-extension bytes, skipped $skipped")
+  }
+
   test("AnyMetaCodec.writeBin/readBin round-trip for string >= 128 bytes (multi-byte ULEB128 prefix)") {
     val longStr = "a" * 128 // exactly 128 ASCII bytes, triggers 2-byte ULEB128 prefix
     val meta    = AnyMeta(0x01.toByte, None, None, Some(longStr))
@@ -196,5 +220,21 @@ class AnyMetaCodecSpec extends AnyFunSuite {
     val msg = result.swap.toOption.get.getMessage
     assert(msg.contains("domain"), s"expected message to mention 'domain': $msg")
     assert(msg.contains("version"), s"expected message to mention 'version': $msg")
+  }
+
+  test("AnyOpaqueUeba equality compares bytes by content, not reference") {
+    val meta = AnyMeta(0x07.toByte, Some("d"), Some("v"), Some("t"))
+
+    val a = AnyOpaqueUeba(meta, Array[Byte](1, 2, 3))
+    val b = AnyOpaqueUeba(meta, Array[Byte](1, 2, 3))
+    assert(a == b, "content-equal arrays must yield equal AnyOpaqueUeba")
+    assert(a.hashCode() == b.hashCode(), "equal AnyOpaqueUeba must have equal hashCode")
+
+    val c = AnyOpaqueUeba(meta, Array[Byte](1, 2, 4))
+    assert(a != c, "content-different arrays must yield non-equal AnyOpaqueUeba")
+
+    val emptyA = AnyOpaqueUeba(meta, Array.emptyByteArray)
+    val emptyB = AnyOpaqueUeba(meta, new Array[Byte](0))
+    assert(emptyA == emptyB, "two distinct empty arrays must yield equal AnyOpaqueUeba")
   }
 }

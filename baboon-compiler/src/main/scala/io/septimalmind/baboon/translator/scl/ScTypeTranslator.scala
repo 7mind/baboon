@@ -30,7 +30,9 @@ class ScTypeTranslator {
         val tpe   = asScType(id, domain, evo)
         val targs = args.map(asScRef(_, domain, evo))
         q"$tpe[${targs.toSeq.join(", ")}]"
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("ScTypeTranslator.asScRef")
+      // All `any` variants surface to user code as the same opaque ADT; the variant only
+      // affects wire/JSON envelope shape (see ScUEBACodecGenerator / ScJsonCodecGenerator).
+      case _: TypeRef.Any => q"$baboonAnyOpaque"
     }
   }
 
