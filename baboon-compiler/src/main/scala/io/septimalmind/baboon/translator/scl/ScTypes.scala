@@ -149,8 +149,10 @@ object ScTypes {
   val scalaCirceDecoder: ScPackageId    = parseScPkg("io.circe.Decoder")
   val scalaCirceKeyDecoder: ScPackageId = parseScPkg("io.circe.KeyDecoder")
 
-  val circeJson       = ScType(scalaCirce, "Json")
-  val circeKeyDecoder = ScType(scalaCirce, "KeyDecoder")
+  val circeJson            = ScType(scalaCirce, "Json")
+  val circeKeyDecoder      = ScType(scalaCirce, "KeyDecoder")
+  val circeDecoder         = ScType(scalaCirce, "Decoder")
+  val circeDecodingFailure = ScType(scalaCirce, "DecodingFailure")
 
   val circeDecodeBoolean    = ScType(scalaCirceDecoder, "decodeBoolean")
   val circeDecodeFloat      = ScType(scalaCirceDecoder, "decodeFloat")

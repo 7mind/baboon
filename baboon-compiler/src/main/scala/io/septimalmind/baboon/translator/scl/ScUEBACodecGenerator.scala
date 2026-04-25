@@ -77,28 +77,45 @@ class ScUEBACodecGenerator(
   // buffer-then-write / read-then-skip paths — emitted at most once per codec object.
   // See spec §172 (factor any-field encode/decode into helpers).
   private def anyFieldHelpers: TextTree[ScValue] = {
-    q"""private def encodeAnyField(writer: $binaryOutput, expectedKind: $scByte, value: $baboonAnyOpaque): $scUnit = {
-       |  value match {
-       |    case anyUeba: $baboonAnyOpaqueUeba =>
-       |      if (anyUeba.meta.kind != expectedKind) {
-       |        throw new $genericException(s"any: meta-kind mismatch on encode: expected 0x$${(expectedKind & 0xFF).toHexString}, got 0x$${(anyUeba.meta.kind & 0xFF).toHexString}")
-       |      }
-       |      val anyMetaBuf    = new $byteArrayOutputStream()
-       |      val anyMetaWriter = new $binaryOutput(anyMetaBuf)
-       |      try {
-       |        $baboonAnyMetaCodec.writeBin(anyUeba.meta, anyMetaWriter)
-       |      } finally {
-       |        anyMetaWriter.close()
-       |      }
-       |      val anyMetaBytes = anyMetaBuf.toByteArray
-       |      val anyLength    = 4 + anyMetaBytes.length + anyUeba.bytes.length
-       |      writer.writeInt(anyLength)
-       |      writer.writeInt(anyMetaBytes.length)
-       |      writer.write(anyMetaBytes)
-       |      writer.write(anyUeba.bytes)
-       |    case _: $baboonAnyOpaqueJson =>
-       |      throw new $genericException("Cannot encode AnyOpaqueJson into UEBA without facade-resolved cross-format conversion. Workaround: call BaboonCodecsFacade.decodeAny(jsonOpaque) and re-encode the resolved typed value, or wrap the payload as AnyOpaqueUeba directly.")
+    q"""private def encodeAnyField(
+       |  ctx: $baboonCodecContext,
+       |  writer: $binaryOutput,
+       |  expectedKind: $scByte,
+       |  staticDomain: $scOption[$scString],
+       |  staticVersion: $scOption[$scString],
+       |  staticTypeid: $scOption[$scString],
+       |  value: $baboonAnyOpaque,
+       |): $scUnit = {
+       |  if (value.meta.kind != expectedKind) {
+       |    throw $baboonCodecException.EncoderFailure(s"any: meta-kind mismatch on encode: expected 0x$${(expectedKind & 0xFF).toHexString}, got 0x$${(value.meta.kind & 0xFF).toHexString}")
        |  }
+       |  val anyBytes: $scArray[$scByte] = value match {
+       |    case anyUeba: $baboonAnyOpaqueUeba =>
+       |      anyUeba.bytes
+       |    case anyJson: $baboonAnyOpaqueJson =>
+       |      val f = ctx.facade.getOrElse(
+       |        throw $baboonCodecException.EncoderFailure(
+       |          "Cannot encode AnyOpaqueJson into UEBA without a facade reference. Pass BaboonCodecContext.WithFacade(useIndices, facade) into encode(), or supply AnyOpaqueUeba directly."
+       |        )
+       |      )
+       |      f.jsonToUebaBytes(anyJson.meta, anyJson.json, staticDomain, staticVersion, staticTypeid) match {
+       |        case Right(b) => b
+       |        case Left(e)  => throw e
+       |      }
+       |  }
+       |  val anyMetaBuf    = new $byteArrayOutputStream()
+       |  val anyMetaWriter = new $binaryOutput(anyMetaBuf)
+       |  try {
+       |    $baboonAnyMetaCodec.writeBin(value.meta, anyMetaWriter)
+       |  } finally {
+       |    anyMetaWriter.close()
+       |  }
+       |  val anyMetaBytes = anyMetaBuf.toByteArray
+       |  val anyLength    = 4 + anyMetaBytes.length + anyBytes.length
+       |  writer.writeInt(anyLength)
+       |  writer.writeInt(anyMetaBytes.length)
+       |  writer.write(anyMetaBytes)
+       |  writer.write(anyBytes)
        |}
        |
        |private def decodeAnyField(wire: $binaryInput, expectedKind: $scByte): $baboonAnyOpaqueUeba = {
@@ -603,11 +620,34 @@ class ScUEBACodecGenerator(
   }
 
   // Encode delegates to the per-codec-object `encodeAnyField` helper emitted by
-  // `anyFieldHelpers`. This site only wires the expected kind byte for the field's variant.
+  // `anyFieldHelpers`. This site wires the expected kind byte and the field's static
+  // (codec-gen-time) fallbacks for cross-format meta resolution; see `anyStaticFallbacks`.
   private def mkAnyEncoder(a: TypeRef.Any, ref: TextTree[ScValue], wref: TextTree[ScValue]): TextTree[ScValue] = {
-    val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
-    val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
-    q"""encodeAnyField($wref, $expectedHex.toByte, $ref)"""
+    val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
+    val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
+    q"""encodeAnyField(ctx, $wref, $expectedHex.toByte, $staticDom, $staticVer, $staticTid, $ref)"""
+  }
+
+  // Static fallbacks for the cross-format facade helpers (`jsonToUebaBytes` / `uebaToJson`).
+  // The wire `meta` may omit components that are pinned by the field's static declaration; the
+  // codec emits whatever is statically known so the facade can fill the gaps. See
+  // `BaboonCodecsFacade.buildSyntheticTypeMeta` for the merge semantics.
+  private def anyStaticFallbacks(a: TypeRef.Any): (TextTree[ScValue], TextTree[ScValue], TextTree[ScValue]) = {
+    val none                     = q"_root_.scala.None"
+    def some(s: String)          = q"""_root_.scala.Some("$s")"""
+    val currentDomain: String    = domain.id.toString
+    val currentDomainVer: String = domain.version.v.toString
+    val typeidStatic = a.underlying match {
+      case Some(u) => some(u.id.toString)
+      case None    => none
+    }
+    val (domainStatic, versionStatic) = a.variant match {
+      case AnyVariant.Global  => (none, none)
+      case AnyVariant.ThisDom => (some(currentDomain), none)
+      case AnyVariant.Current => (some(currentDomain), some(currentDomainVer))
+    }
+    (domainStatic, versionStatic, typeidStatic)
   }
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[ScValue]] = {

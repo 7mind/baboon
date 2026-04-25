@@ -18,6 +18,11 @@ package baboon.runtime.shared {
 
   trait BaboonCodecContext {
     def useIndices: Boolean
+    // Optional facade reference, supplied only when an `any`-bearing codec needs to cross-convert
+    // between UEBA and JSON branches (`AnyOpaqueJson` → UEBA, `AnyOpaqueUeba` → JSON). Defaults to
+    // `None` so existing call sites stay compatible; users who need cross-convert pass
+    // `BaboonCodecContext.WithFacade(useIndices, facade)` instead of `Compact`/`Indexed`.
+    def facade: Option[BaboonCodecsFacade] = None
   }
   object BaboonCodecContext {
     val Default: BaboonCodecContext = Compact
@@ -28,6 +33,10 @@ package baboon.runtime.shared {
 
     object Compact extends BaboonCodecContext {
       override def useIndices: Boolean = false
+    }
+
+    final case class WithFacade(useIndices: Boolean, baboonFacade: BaboonCodecsFacade) extends BaboonCodecContext {
+      override def facade: Option[BaboonCodecsFacade] = Some(baboonFacade)
     }
   }
 

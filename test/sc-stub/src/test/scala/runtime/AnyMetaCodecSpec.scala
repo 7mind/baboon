@@ -222,6 +222,175 @@ class AnyMetaCodecSpec extends AnyFunSuite {
     assert(msg.contains("version"), s"expected message to mention 'version': $msg")
   }
 
+  test("BaboonCodecContext.WithFacade exposes facade; Compact/Indexed do not") {
+    val facade = new BaboonCodecsFacade {}
+    assert(BaboonCodecContext.Compact.facade.isEmpty)
+    assert(BaboonCodecContext.Indexed.facade.isEmpty)
+
+    val withFacadeCompact = BaboonCodecContext.WithFacade(useIndices = false, facade)
+    assert(withFacadeCompact.facade.contains(facade))
+    assert(!withFacadeCompact.useIndices)
+
+    val withFacadeIndexed = BaboonCodecContext.WithFacade(useIndices = true, facade)
+    assert(withFacadeIndexed.facade.contains(facade))
+    assert(withFacadeIndexed.useIndices)
+  }
+
+  test("jsonToUebaBytes Left path: incomplete meta") {
+    val facade = new BaboonCodecsFacade {}
+    val meta   = AnyMeta(0x01.toByte, None, None, Some("T")) // kind C: only typeid
+    val result = facade.jsonToUebaBytes(meta, Json.Null)
+    assert(result.isLeft, s"expected Left, got $result")
+    val msg = result.swap.toOption.get.getMessage
+    assert(msg.contains("domain"), s"expected message to mention 'domain': $msg")
+    assert(msg.contains("version"), s"expected message to mention 'version': $msg")
+  }
+
+  test("uebaToJson Left path: incomplete meta") {
+    val facade = new BaboonCodecsFacade {}
+    val meta   = AnyMeta(0x01.toByte, None, None, Some("T")) // kind C: only typeid
+    val result = facade.uebaToJson(meta, Array.empty[Byte])
+    assert(result.isLeft, s"expected Left, got $result")
+    val msg = result.swap.toOption.get.getMessage
+    assert(msg.contains("domain"), s"expected message to mention 'domain': $msg")
+    assert(msg.contains("version"), s"expected message to mention 'version': $msg")
+  }
+
+  test("jsonToUebaBytes Left path: no codec registered") {
+    val facade = new BaboonCodecsFacade {}
+    // Complete meta but no domain registered → CodecNotFound from getCodec.
+    val meta   = AnyMeta(0x07.toByte, Some("com.example.unknown"), Some("1.0.0"), Some("Unknown"))
+    val result = facade.jsonToUebaBytes(meta, Json.obj("x" -> Json.fromInt(1)))
+    assert(result.isLeft, s"expected Left, got $result")
+    assert(result.swap.toOption.get.isInstanceOf[BaboonCodecException.CodecNotFound], s"expected CodecNotFound, got ${result.swap.toOption.get}")
+  }
+
+  test("uebaToJson Left path: no codec registered") {
+    val facade = new BaboonCodecsFacade {}
+    val meta   = AnyMeta(0x07.toByte, Some("com.example.unknown"), Some("1.0.0"), Some("Unknown"))
+    val result = facade.uebaToJson(meta, Array.empty[Byte])
+    assert(result.isLeft, s"expected Left, got $result")
+    assert(result.swap.toOption.get.isInstanceOf[BaboonCodecException.CodecNotFound], s"expected CodecNotFound, got ${result.swap.toOption.get}")
+  }
+
+  // Locks in the encoder envelope invariant. The JSON encoder builds the wire envelope as
+  // `AnyMetaCodec.writeJson(meta).mapObject(_.add("$c", inner))`. If `writeJson` ever returned a
+  // non-object Json, `mapObject` would silently no-op and the `$c` key would be dropped. (D08.)
+  test("AnyMetaCodec.writeJson always returns a JSON object across all six kind bytes") {
+    cases.foreach {
+      case (kind, dom, ver, tid) =>
+        val meta = AnyMeta(kind, dom, ver, tid)
+        val json = AnyMetaCodec.writeJson(meta)
+        assert(json.isObject, s"writeJson must return an object for kind 0x${(kind & 0xFF).toHexString}, got: $json")
+    }
+  }
+
+  test("jsonToUebaBytes static-fallback: missing meta.domain falls back to staticDomain") {
+    val facade = new BaboonCodecsFacade {}
+    // kind 0x03 (B): no domain on wire, version + typeid present.
+    val meta   = AnyMeta(0x03.toByte, None, Some("1.0.0"), Some("T"))
+    val result = facade.jsonToUebaBytes(meta, Json.Null, staticDomain = Some("com.example.unknown"))
+    // Should reach codec lookup (fail with CodecNotFound), not the missing-meta DecoderFailure.
+    assert(result.isLeft, s"expected Left, got $result")
+    assert(
+      result.swap.toOption.get.isInstanceOf[BaboonCodecException.CodecNotFound],
+      s"expected CodecNotFound (static fallback wired), got ${result.swap.toOption.get}",
+    )
+  }
+
+  test("jsonToUebaBytes static-fallback: missing meta.version falls back to staticVersion") {
+    val facade = new BaboonCodecsFacade {}
+    // kind 0x05 is reserved; use kind 0x01 (only typeid) and supply both staticDomain + staticVersion.
+    val meta   = AnyMeta(0x01.toByte, None, None, Some("T"))
+    val result = facade.jsonToUebaBytes(meta, Json.Null, staticDomain = Some("com.example.unknown"), staticVersion = Some("1.0.0"))
+    assert(result.isLeft, s"expected Left, got $result")
+    assert(
+      result.swap.toOption.get.isInstanceOf[BaboonCodecException.CodecNotFound],
+      s"expected CodecNotFound (static fallback wired), got ${result.swap.toOption.get}",
+    )
+  }
+
+  test("jsonToUebaBytes static-fallback: missing meta.typeid falls back to staticTypeid") {
+    val facade = new BaboonCodecsFacade {}
+    // kind 0x06 (D1): domain + version on wire, typeid absent.
+    val meta   = AnyMeta(0x06.toByte, Some("com.example.unknown"), Some("1.0.0"), None)
+    val result = facade.jsonToUebaBytes(meta, Json.Null, staticTypeid = Some("Inner"))
+    assert(result.isLeft, s"expected Left, got $result")
+    assert(
+      result.swap.toOption.get.isInstanceOf[BaboonCodecException.CodecNotFound],
+      s"expected CodecNotFound (static fallback wired), got ${result.swap.toOption.get}",
+    )
+  }
+
+  test("jsonToUebaBytes static-fallback: D3 (no meta on wire) requires all three statics") {
+    val facade = new BaboonCodecsFacade {}
+    // kind 0x00 (D3): nothing on wire.
+    val meta = AnyMeta(0x00.toByte, None, None, None)
+    val result = facade.jsonToUebaBytes(
+      meta,
+      Json.Null,
+      staticDomain  = Some("com.example.unknown"),
+      staticVersion = Some("1.0.0"),
+      staticTypeid  = Some("Inner"),
+    )
+    assert(result.isLeft, s"expected Left, got $result")
+    assert(
+      result.swap.toOption.get.isInstanceOf[BaboonCodecException.CodecNotFound],
+      s"expected CodecNotFound (static fallback wired), got ${result.swap.toOption.get}",
+    )
+  }
+
+  test("jsonToUebaBytes static-fallback: meta wins over static (override semantics)") {
+    val facade = new BaboonCodecsFacade {}
+    // meta has all three present; statics differ — meta should win, so resolution targets meta.domain.
+    val meta = AnyMeta(0x07.toByte, Some("com.example.metawins"), Some("1.0.0"), Some("MetaT"))
+    val result = facade.jsonToUebaBytes(
+      meta,
+      Json.Null,
+      staticDomain  = Some("com.example.staticloses"),
+      staticVersion = Some("9.9.9"),
+      staticTypeid  = Some("StaticT"),
+    )
+    // No domain registered for either, so this must fail with CodecNotFound. The error message
+    // should reference meta.domain ("metawins"), not the static ("staticloses").
+    assert(result.isLeft, s"expected Left, got $result")
+    val e = result.swap.toOption.get
+    assert(e.isInstanceOf[BaboonCodecException.CodecNotFound], s"expected CodecNotFound, got $e")
+    assert(
+      e.getMessage.contains("metawins"),
+      s"expected error to reference wire-meta domain 'metawins' (override semantics), got: ${e.getMessage}",
+    )
+  }
+
+  test("uebaToJson static-fallback: D3 wire (no meta components) resolves via statics") {
+    val facade = new BaboonCodecsFacade {}
+    val meta   = AnyMeta(0x00.toByte, None, None, None)
+    val result = facade.uebaToJson(
+      meta,
+      Array.empty[Byte],
+      staticDomain  = Some("com.example.unknown"),
+      staticVersion = Some("1.0.0"),
+      staticTypeid  = Some("Inner"),
+    )
+    assert(result.isLeft, s"expected Left, got $result")
+    assert(
+      result.swap.toOption.get.isInstanceOf[BaboonCodecException.CodecNotFound],
+      s"expected CodecNotFound (static fallback wired), got ${result.swap.toOption.get}",
+    )
+  }
+
+  test("decodeAny still requires complete meta (no static fallback for user-facing path)") {
+    // Regression: PR 2.3 added static-fallback support to the cross-format helpers; decodeAny
+    // (PR 2.1) is user-facing without static context and must keep its all-Some-required contract.
+    val facade = new BaboonCodecsFacade {}
+    val meta   = AnyMeta(0x01.toByte, None, None, Some("T"))
+    val result = facade.decodeAny(AnyOpaqueUeba(meta, Array.empty[Byte]))
+    assert(result.isLeft, s"expected Left, got $result")
+    val msg = result.swap.toOption.get.getMessage
+    assert(msg.contains("domain"), s"expected message to mention 'domain': $msg")
+    assert(msg.contains("version"), s"expected message to mention 'version': $msg")
+  }
+
   test("AnyOpaqueUeba equality compares bytes by content, not reference") {
     val meta = AnyMeta(0x07.toByte, Some("d"), Some("v"), Some("t"))
 

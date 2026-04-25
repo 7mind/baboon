@@ -168,16 +168,8 @@ package baboon.runtime.shared {
 
     def decodeAny(opaque: AnyOpaque): BaboonValue[BaboonGenerated] = {
       val meta = opaque.meta
-      (meta.domain, meta.version, meta.typeid) match {
-        case (Some(domain), Some(version), Some(typeid)) =>
-          // AnyMeta does not carry a min-compat version; forward-version migration is unavailable for any-payloads.
-          val typeMeta = BaboonTypeMeta(
-            BaboonTypeMetaCodec.META_VERSION,
-            domain,
-            version,
-            version,
-            typeid,
-          )
+      buildSyntheticTypeMeta(meta).flatMap {
+        typeMeta =>
           opaque match {
             case AnyOpaqueUeba(_, bytes) =>
               for {
@@ -186,7 +178,7 @@ package baboon.runtime.shared {
                   .decode(BaboonCodecContext.Compact, new LEDataInputStream(new ByteArrayInputStream(bytes))).left.map(
                     e =>
                       BaboonCodecException.DecoderFailure(
-                        s"decodeAny: cannot decode UEBA payload of type [$domain.$typeid] of version '$version'.",
+                        s"decodeAny: cannot decode UEBA payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
                         e,
                       )
                   )
@@ -198,21 +190,131 @@ package baboon.runtime.shared {
                   .decode(BaboonCodecContext.Compact, json).left.map(
                     e =>
                       BaboonCodecException.DecoderFailure(
-                        s"decodeAny: cannot decode JSON payload of type [$domain.$typeid] of version '$version'.",
+                        s"decodeAny: cannot decode JSON payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
                         e,
                       )
                   )
               } yield result
           }
+      }
+    }
+
+    // Cross-format helper: decode an `AnyOpaqueJson` payload via the registered JSON codec, then
+    // re-encode it via the registered UEBA codec. Used by codec generators when the encoder side
+    // is UEBA but the user supplied an `AnyOpaqueJson`.
+    //
+    // The wire `meta` may omit components that the field's static declaration already pins down
+    // (variants B/C/D1/D2/D3). The codec generator passes the static fallbacks; runtime `meta.X`
+    // takes precedence over `staticX` to preserve override semantics. The call fails with a
+    // `DecoderFailure` only when a component is still missing after the fallback merge.
+    //
+    // Default `None` values are deliberately permitted on this user-facing helper; the codec
+    // generator always supplies all three. User code calling this directly must provide whatever
+    // static context it has, or accept the all-`None` semantics (= no static fallback).
+    def jsonToUebaBytes(
+      meta: AnyMeta,
+      json: Json,
+      staticDomain: Option[String]  = None,
+      staticVersion: Option[String] = None,
+      staticTypeid: Option[String]  = None,
+    ): BaboonValue[Array[Byte]] = {
+      for {
+        typeMeta  <- buildSyntheticTypeMeta(meta, staticDomain, staticVersion, staticTypeid)
+        jsonCodec <- getJsonCodec(typeMeta, exact = false)
+        binCodec  <- getBinCodec(typeMeta, exact = false)
+        typed <- jsonCodec
+          .decode(BaboonCodecContext.Compact, json).left.map(
+            e =>
+              BaboonCodecException.DecoderFailure(
+                s"jsonToUebaBytes: cannot decode JSON payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
+                e,
+              )
+          )
+        bytes <- Try {
+          val baos = new ByteArrayOutputStream()
+          val out  = new LEDataOutputStream(baos)
+          try {
+            binCodec.encode(BaboonCodecContext.Compact, out, typed)
+          } finally {
+            out.close()
+          }
+          baos.toByteArray
+        }.toEither.left.map(
+          e =>
+            BaboonCodecException.EncoderFailure(
+              s"jsonToUebaBytes: cannot encode UEBA payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
+              e,
+            )
+        )
+      } yield bytes
+    }
+
+    // Cross-format helper: symmetric to `jsonToUebaBytes`. Decode an `AnyOpaqueUeba` payload via the
+    // registered UEBA codec, then re-encode it via the registered JSON codec. See `jsonToUebaBytes`
+    // for the static-fallback contract.
+    def uebaToJson(
+      meta: AnyMeta,
+      bytes: Array[Byte],
+      staticDomain: Option[String]  = None,
+      staticVersion: Option[String] = None,
+      staticTypeid: Option[String]  = None,
+    ): BaboonValue[Json] = {
+      for {
+        typeMeta  <- buildSyntheticTypeMeta(meta, staticDomain, staticVersion, staticTypeid)
+        binCodec  <- getBinCodec(typeMeta, exact = false)
+        jsonCodec <- getJsonCodec(typeMeta, exact = false)
+        typed <- binCodec
+          .decode(BaboonCodecContext.Compact, new LEDataInputStream(new ByteArrayInputStream(bytes))).left.map(
+            e =>
+              BaboonCodecException.DecoderFailure(
+                s"uebaToJson: cannot decode UEBA payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
+                e,
+              )
+          )
+        json <- Try(jsonCodec.encode(BaboonCodecContext.Compact, typed)).toEither.left.map(
+          e =>
+            BaboonCodecException.EncoderFailure(
+              s"uebaToJson: cannot encode JSON payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
+              e,
+            )
+        )
+      } yield json
+    }
+
+    // Synthesise a `BaboonTypeMeta` from an `AnyMeta` plus optional static fallbacks.
+    // `AnyMeta` does not carry a min-compat version; forward-version migration is unavailable for
+    // any-payloads, so `domainVersionMinCompat = version`. `meta.X` takes precedence over `staticX`
+    // when both are present (override semantics — wire data wins). `decodeAny` (PR 2.1) calls this
+    // with all-`None` statics so its limitation to variant A is preserved.
+    private def buildSyntheticTypeMeta(
+      meta: AnyMeta,
+      staticDomain: Option[String]  = None,
+      staticVersion: Option[String] = None,
+      staticTypeid: Option[String]  = None,
+    ): BaboonValue[BaboonTypeMeta] = {
+      val domainOpt  = meta.domain.orElse(staticDomain)
+      val versionOpt = meta.version.orElse(staticVersion)
+      val typeidOpt  = meta.typeid.orElse(staticTypeid)
+      (domainOpt, versionOpt, typeidOpt) match {
+        case (Some(domain), Some(version), Some(typeid)) =>
+          Right(
+            BaboonTypeMeta(
+              BaboonTypeMetaCodec.META_VERSION,
+              domain,
+              version,
+              version,
+              typeid,
+            )
+          )
         case _ =>
           val missing = List(
-            if (meta.domain.isEmpty) Some("domain") else None,
-            if (meta.version.isEmpty) Some("version") else None,
-            if (meta.typeid.isEmpty) Some("typeid") else None,
+            if (domainOpt.isEmpty) Some("domain") else None,
+            if (versionOpt.isEmpty) Some("version") else None,
+            if (typeidOpt.isEmpty) Some("typeid") else None,
           ).flatten.mkString(", ")
           Left(
             BaboonCodecException.DecoderFailure(
-              s"decodeAny requires meta.domain/version/typeid; got kind 0x${(meta.kind & 0xFF).toHexString} which lacks: $missing"
+              s"AnyMeta requires domain/version/typeid for facade resolution; got kind 0x${(meta.kind & 0xFF).toHexString} which lacks: $missing"
             )
           )
       }
