@@ -54,7 +54,9 @@ class RsTypeTranslator(rsTypes: RsTypes) {
             q"$rsBTreeMap<$key, $value>"
           case o => throw new IllegalArgumentException(s"Unexpected collection type: $o")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("RsTypeTranslator.asRsRef")
+      // The variant only affects wire shape, not the surface Rust type. Both `AnyOpaqueUeba` and
+      // `AnyOpaqueJson` are constructors of the `AnyOpaque` enum; field-level type is the enum.
+      case _: TypeRef.Any => q"${rsTypes.baboonAnyOpaque}"
     }
   }
 

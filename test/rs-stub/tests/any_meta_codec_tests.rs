@@ -902,3 +902,72 @@ fn pr11_d06_find_and_convert_via_trait() {
     let v2 = result.as_any().downcast_ref::<SampleV2>().expect("V2");
     assert_eq!(v2.payload, 60);
 }
+
+// ===== PR-12 round-2 regression =====
+
+// ----- D01: decode_any_field rejects negative i32 length-prefixes with a structured error.
+//
+// Without the fix, `read_i32(...) as usize` on a negative wire value casts to `0xFFFF_FFFF...`
+// and downstream `4 + any_meta_length` panics in debug (overflow) or wraps in release. The
+// fix reads i32 explicitly, checks `< 0`, and returns `Err("any: negative ...")`.
+//
+// We exercise the helper end-to-end by encoding a real Holder, then patching the first 4
+// bytes after the compact-mode marker (= `total_length` of the first any-field) to a
+// hand-crafted `0xFF 0xFF 0xFF 0xFF` (= -1 in two's-complement i32 LE).
+
+#[test]
+fn pr12_d01_decode_any_field_rejects_negative_total_length() {
+    use baboon_rs_stub::baboon_runtime::{BaboonBinDecode, BaboonBinEncode};
+    use baboon_rs_stub::my::ok::holder::Holder;
+
+    let ctx = BaboonCodecContext::Compact;
+    let mut rnd = baboon_rs_stub::baboon_fixture::BaboonRandom::new();
+    let fixture = baboon_rs_stub::my::ok::random_holder(&mut rnd);
+    let mut buf = Vec::new();
+    fixture.encode_ueba(&ctx, &mut buf).expect("encode");
+
+    // Compact mode: buf[0] = 0x00 marker, buf[1..5] = total_length(i32 LE) of f_any.
+    assert!(buf.len() >= 5, "expected at least 5 bytes; got {}", buf.len());
+    assert_eq!(buf[0], 0x00, "expected compact-mode marker");
+    buf[1] = 0xFF;
+    buf[2] = 0xFF;
+    buf[3] = 0xFF;
+    buf[4] = 0xFF;
+
+    let mut cursor = Cursor::new(&buf);
+    let res = <Holder as BaboonBinDecode>::decode_ueba(&ctx, &mut cursor);
+    let err = res.err().expect("expected Err for corrupted negative length");
+    let msg = format!("{}", err);
+    assert!(
+        msg.contains("negative"),
+        "expected error message to contain 'negative'; got: {}", msg
+    );
+}
+
+#[test]
+fn pr12_d01_decode_any_field_rejects_negative_meta_length() {
+    use baboon_rs_stub::baboon_runtime::{BaboonBinDecode, BaboonBinEncode};
+    use baboon_rs_stub::my::ok::holder::Holder;
+
+    let ctx = BaboonCodecContext::Compact;
+    let mut rnd = baboon_rs_stub::baboon_fixture::BaboonRandom::new();
+    let fixture = baboon_rs_stub::my::ok::random_holder(&mut rnd);
+    let mut buf = Vec::new();
+    fixture.encode_ueba(&ctx, &mut buf).expect("encode");
+
+    // Compact mode: buf[5..9] = meta_length(i32 LE) of f_any. Patch to -1 LE.
+    assert!(buf.len() >= 9, "expected at least 9 bytes; got {}", buf.len());
+    buf[5] = 0xFF;
+    buf[6] = 0xFF;
+    buf[7] = 0xFF;
+    buf[8] = 0xFF;
+
+    let mut cursor = Cursor::new(&buf);
+    let res = <Holder as BaboonBinDecode>::decode_ueba(&ctx, &mut cursor);
+    let err = res.err().expect("expected Err for corrupted negative meta-length");
+    let msg = format!("{}", err);
+    assert!(
+        msg.contains("negative"),
+        "expected error message to contain 'negative'; got: {}", msg
+    );
+}

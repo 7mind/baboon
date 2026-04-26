@@ -433,12 +433,12 @@ pub mod any_meta_codec {
     /// Counting wrapper: tracks bytes consumed during a meta read so the calling codec can
     /// skip any extra meta-extension bytes left in the on-wire `meta-length` window. Mirrors
     /// PR-05-D01 (Scala's `CountingInputStream`/C#'s `BaseStream.Position` diff).
-    struct CountingReader<'a, R: Read> {
+    struct CountingReader<'a, R: Read + ?Sized> {
         inner: &'a mut R,
         count: usize,
     }
 
-    impl<'a, R: Read> Read for CountingReader<'a, R> {
+    impl<'a, R: Read + ?Sized> Read for CountingReader<'a, R> {
         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
             let n = self.inner.read(buf)?;
             self.count += n;
@@ -448,7 +448,8 @@ pub mod any_meta_codec {
 
     /// Reads meta and returns (meta, bytes_read). Forward-compat: callers that know the
     /// on-wire `meta-length` window skip any trailing future-extension bytes.
-    pub fn read_bin_with_length<R: Read>(reader: &mut R) -> Result<(AnyMeta, usize), BaboonCodecError> {
+    /// `?Sized` allows passing `&mut dyn Read` from codec generators.
+    pub fn read_bin_with_length<R: Read + ?Sized>(reader: &mut R) -> Result<(AnyMeta, usize), BaboonCodecError> {
         let mut counting = CountingReader { inner: reader, count: 0 };
         let meta = read_bin(&mut counting)?;
         Ok((meta, counting.count))

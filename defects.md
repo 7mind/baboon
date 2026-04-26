@@ -829,3 +829,43 @@ The two `encodeAnyField` helpers (UEBA + JSON) need an additional parameter for 
 **Location:** `baboon_codecs_facade.rs` (`LazyCodec::from_value`).
 **Description:** `let _ = cell.set(...)` on a fresh `OnceLock`. Functionally harmless (cell is fresh so set always succeeds).
 **Suggested fix:** Use `.expect("fresh OnceLock")` to surface logic errors if the constructor invariant ever breaks.
+
+---
+
+## PR-12 — Rust UEBA codec emission (M4 PR 4.2)
+
+### [PR-12-D01] Decoder lacks negative i32 sanity checks before usize cast (corruption can panic instead of error)
+**Status:** resolved
+**Severity:** medium (hostile/corrupt-wire panic vs structured error)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/rust/RsUEBACodecGenerator.scala` (`decode_any_field` helper; emitted in DTO codec modules).
+**Description:** `let any_total_length = bin_tools::read_i32(wire)? as usize;` and `let any_meta_length = bin_tools::read_i32(wire)? as usize;` — a hostile or corrupt wire can deliver `i32 ≤ 0`; cast to `usize` produces a giant value (e.g. `-1i32 as usize` = `0xFFFF_FFFF_FFFF_FFFF` on 64-bit). Subsequent `4 + any_meta_length` panics in debug mode (overflow) or wraps in release, defeating the structured `BaboonCodecError` error path. Sibling impls handle this: C# (`CSUEBACodecGenerator.scala:473-477`) checks `if (anyMetaLength < 0)` explicitly; Scala (`ScUEBACodecGenerator.scala:135-138`) uses signed Int and checks `anyBlobLen < 0`.
+**Suggested fix:** Read into `i32`, check `< 0` explicitly, then cast to `usize`. E.g.:
+```rust
+let any_total_length_i = bin_tools::read_i32(wire)?;
+if any_total_length_i < 0 { return Err(BaboonCodecError::DecoderFailure(format!("any: negative total-length {}", any_total_length_i))); }
+let any_total_length = any_total_length_i as usize;
+```
+Same for `any_meta_length`. Also check `any_total_length < 4 + any_meta_length` before computing `blob_len` (matches Scala's `anyBlobLen < 0` check).
+**Fix (PR 4.2 round 2):** `RsUEBACodecGenerator.scala:113-127` `decode_any_field` helper now reads `i32` into `any_total_length_i` / `any_meta_length_i`, returns `Err(format!("any: negative total-length {}", _).into())` (resp. meta-length) when negative, then casts to `usize`. Matches local convention — the helper's error type is `Box<dyn std::error::Error>` and existing arms already use `format!(...).into()`. The existing `if any_total_length < 4 + any_meta_length` check is preserved (still valid post-cast since both are now non-negative). Tests `pr12_d01_decode_any_field_rejects_negative_total_length` and `pr12_d01_decode_any_field_rejects_negative_meta_length` (in `test/rs-stub/tests/any_meta_codec_tests.rs`) encode a real `Holder` with `Compact` ctx, mutate the relevant 4-byte i32 LE prefix to `0xFF FF FF FF` (= -1), drive `Holder::decode_ueba`, and assert `Err(...)` whose `Display` contains the substring `"negative"`.
+
+### [PR-12-D02] Unused `RsTypes` declarations for any-opaque symbols; codec emitter uses hardcoded paths
+**Status:** resolved
+**Severity:** low (hygiene / mistaken-API-surface)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/rust/RsTypes.scala:12-21`.
+**Description:** PR 4.2 added typed `RsType` values `baboonAnyOpaqueUeba`, `baboonAnyOpaqueJson`, `baboonAnyMeta`, `baboonAnyMetaCodec`, `baboonCodecError`, `baboonCodecsFacadeCrate` — but the codec generator emits hardcoded path strings like `q"crate::any_opaque::AnyOpaqueUeba"` etc. throughout `anyFieldHelpers`, `mkAnyEncoder`, `mkAnyDecoder`, and the fixture translator. Only `baboonAnyOpaque` is actually consumed (via `RsTypeTranslator`). Effects: (a) dead declarations; (b) `RsTypes` becomes a misleading registry; (c) string-paths bypass the import/use tracking the typed `RsType` mechanism is meant to provide.
+**Suggested fix:** Either remove the unused declarations, or rewrite the codec emitter to use the `RsType` references in the q-templates (matching the C# `$baboonAnyOpaqueUeba`-style emission). Removing is the minimal-impact fix; rewriting is the more-aligned-with-convention fix. Pick based on whichever costs less to maintain — if `RsTypes` is the canonical convention for runtime references, rewrite; otherwise remove.
+**Fix (PR 4.2 round 2):** Chose path (a) — remove. Decision rationale: `RsUEBACodecGenerator` and `RsCodecFixtureTranslator` already string-path *every* runtime reference (`crate::baboon_runtime::*`, `crate::any_opaque::*`, `crate::baboon_codecs_facade::*`), not just any-opaque ones — none of `baboonGenerated`, `baboonAdtMemberMeta`, `baboonMeta`, `baboonBinTools`, `baboonTimeFormats`, `baboonAbstractConversion`, `baboonRandom`, `*Serde`, etc. are referenced anywhere either. Adding only the any-opaque types via `$rsType` while leaving the rest as strings would be the half-applied state the defect warns against. Path (a) aligns with the existing string-path convention. Removed: `baboonCodecsFacadeCrate`, `baboonAnyOpaqueUeba`, `baboonAnyOpaqueJson`, `baboonAnyMeta`, `baboonAnyMetaCodec`, `baboonCodecError`. Kept: `baboonAnyOpaqueCrate` (anchors `baboonAnyOpaque`) and `baboonAnyOpaque` (consumed by `RsTypeTranslator`). `RsTypes.scala:12-16` (post-fix).
+
+### [PR-12-D03] `&&AnyOpaque` argument passing in collection-loop encoder call sites is stylistically noisy
+**Status:** resolved (deferred) — cosmetic; auto-deref handles the call. Address if a Rust linter / clippy rule flags it.
+**Severity:** nit
+**Location:** `RsUEBACodecGenerator.scala` (emitted output); manifests in generated `Holder.rs` for `Some(v)` and `for item in (...).iter()` loops.
+**Description:** `v`/`item` in those contexts is already `&AnyOpaque`, but the emitter passes `&v`/`&item`, producing `&&AnyOpaque`. Rust auto-derefs so this compiles, but it's stylistically noisy.
+**Suggested fix:** Defer — cosmetic; auto-deref handles the call. Address if a Rust linter / clippy rule flags it.
+
+### [PR-12-D04] Forward-compat skip allocates a heap buffer per-call
+**Status:** resolved (deferred) — runs only on forward-compat extension bytes (rare in practice). Revisit if profiling surfaces overhead.
+**Severity:** nit
+**Location:** `RsUEBACodecGenerator.scala` (`decode_any_field` skip arm).
+**Description:** `let mut any_skip = vec![0u8; any_meta_length - any_bytes_read]; wire.read_exact(&mut any_skip)?;` — for large skip values this is a wasteful heap allocation. A stack buffer (`[0u8; 256]`) in a loop, or `std::io::copy(&mut wire.take(n), &mut std::io::sink())`, would avoid the heap.
+**Suggested fix:** Defer — runs only on forward-compat extension bytes (rare in practice). Revisit if profiling surfaces overhead.

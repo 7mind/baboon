@@ -5,6 +5,7 @@ import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.rust.RsDefnTranslator.toSnakeCase
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -18,7 +19,7 @@ class RsUEBACodecGenerator(
 
   override def translate(defn: DomainMember.User, rsRef: RsValue.RsType, srcRef: RsValue.RsType): Option[TextTree[RsValue]] = {
     if (isActive(defn.id)) {
-      defn.defn match {
+      val body = defn.defn match {
         case d: Typedef.Dto      => Some(genDtoCodec(defn, rsRef, d))
         case e: Typedef.Enum     => Some(genEnumCodec(defn, rsRef, e))
         case a: Typedef.Adt      => Some(genAdtCodec(defn, rsRef, a))
@@ -26,7 +27,176 @@ class RsUEBACodecGenerator(
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
       }
+      // Prepend per-codec any-field helpers (free module-level functions) when the DTO has any
+      // any-bearing field. Mirrors PR 3.2 (C# `EncodeAnyField`/`DecodeAnyField`) and PR 2.2
+      // (Scala `encodeAnyField`/`decodeAnyField`). One emission per DTO file because the codec
+      // generator's output is concatenated into the DTO's `.rs` module.
+      body.map {
+        b =>
+          if (hasAnyField(defn)) {
+            q"""${anyFieldHelpers}
+               |
+               |$b""".stripMargin
+          } else b
+      }
     } else None
+  }
+
+  // Deep walk (mirrors Scala's hasAnyField): a codec object needs the any-field helpers if any
+  // direct or nested-via-Constructor-arg field has type `any`.
+  private def hasAnyField(defn: DomainMember.User): Boolean = {
+    def hasAny(tpe: TypeRef): Boolean = tpe match {
+      case _: TypeRef.Any         => true
+      case _: TypeRef.Scalar      => false
+      case c: TypeRef.Constructor => c.args.exists(hasAny)
+    }
+    defn.defn match {
+      case d: Typedef.Dto => d.fields.exists(f => hasAny(f.tpe))
+      case _              => false
+    }
+  }
+
+  // Per-codec free module-level helpers consolidating the any-field framing, kind-check, and
+  // buffer-then-write / read-then-skip paths. Mirrors `ScUEBACodecGenerator.anyFieldHelpers` and
+  // `CSUEBACodecGenerator.anyFieldHelpers`. Wire layout (locked, see
+  // docs/drafts/20260424-1738-any-opaque-fields.md §"Wire format"):
+  //   length:i32 | meta-length:i32 | meta-kind:u8 | meta-strings | blob
+  // length covers everything after itself; meta-length covers (kind + strings); blob runs the
+  // rest. The helpers wrap `BaboonCodecError` into `std::io::Error` for the encoder (which
+  // returns `std::io::Result<()>`) and into `Box<dyn std::error::Error>` for the decoder
+  // (which already uses that error type).
+  private def anyFieldHelpers: TextTree[RsValue] = {
+    q"""fn encode_any_field(
+       |    ctx: &crate::baboon_runtime::BaboonCodecContext,
+       |    writer: &mut dyn std::io::Write,
+       |    expected_kind: u8,
+       |    static_domain: Option<&str>,
+       |    static_version: Option<&str>,
+       |    static_typeid: Option<&str>,
+       |    value: &crate::any_opaque::AnyOpaque,
+       |) -> std::io::Result<()> {
+       |    if value.meta().kind != expected_kind {
+       |        return Err(std::io::Error::new(
+       |            std::io::ErrorKind::InvalidData,
+       |            format!(
+       |                "any: meta-kind 0x{:02x} does not match field-declared 0x{:02x}",
+       |                value.meta().kind, expected_kind
+       |            ),
+       |        ));
+       |    }
+       |    let any_blob: Vec<u8> = match value {
+       |        crate::any_opaque::AnyOpaque::Ueba(u) => u.bytes.clone(),
+       |        crate::any_opaque::AnyOpaque::Json(j) => {
+       |            let f = ctx.facade().ok_or_else(|| std::io::Error::new(
+       |                std::io::ErrorKind::InvalidData,
+       |                "Cannot encode AnyOpaque::Json into UEBA without a facade reference. Construct the codec context via BaboonCodecContext::with_facade(use_indices, facade), or supply AnyOpaque::Ueba directly."
+       |            ))?;
+       |            f.json_to_ueba_bytes(&j.meta, &j.json, static_domain, static_version, static_typeid)
+       |                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{}", e)))?
+       |        }
+       |    };
+       |    // Buffer the meta to count its byte length precisely (the on-wire `meta-length` field).
+       |    let mut any_meta_buf: Vec<u8> = Vec::new();
+       |    crate::any_opaque::any_meta_codec::write_bin(value.meta(), &mut any_meta_buf)?;
+       |    let any_total_length: i32 = (4 + any_meta_buf.len() + any_blob.len()) as i32;
+       |    crate::baboon_runtime::bin_tools::write_i32(writer, any_total_length)?;
+       |    crate::baboon_runtime::bin_tools::write_i32(writer, any_meta_buf.len() as i32)?;
+       |    writer.write_all(&any_meta_buf)?;
+       |    writer.write_all(&any_blob)?;
+       |    Ok(())
+       |}
+       |
+       |fn decode_any_field(
+       |    wire: &mut dyn std::io::Read,
+       |    expected_kind: u8,
+       |) -> Result<crate::any_opaque::AnyOpaqueUeba, Box<dyn std::error::Error>> {
+       |    let any_total_length_i = crate::baboon_runtime::bin_tools::read_i32(wire)?;
+       |    if any_total_length_i < 0 {
+       |        return Err(format!(
+       |            "any: negative total-length {}", any_total_length_i
+       |        ).into());
+       |    }
+       |    let any_total_length = any_total_length_i as usize;
+       |    let any_meta_length_i = crate::baboon_runtime::bin_tools::read_i32(wire)?;
+       |    if any_meta_length_i < 0 {
+       |        return Err(format!(
+       |            "any: negative meta-length {}", any_meta_length_i
+       |        ).into());
+       |    }
+       |    let any_meta_length = any_meta_length_i as usize;
+       |    if any_total_length < 4 + any_meta_length {
+       |        return Err(format!(
+       |            "any: total-length {} smaller than 4 + meta-length {}",
+       |            any_total_length, any_meta_length
+       |        ).into());
+       |    }
+       |    let (any_meta, any_bytes_read) = crate::any_opaque::any_meta_codec::read_bin_with_length(wire)
+       |        .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
+       |    if any_bytes_read > any_meta_length {
+       |        return Err(format!(
+       |            "any: meta-bytes-read {} exceeded meta-length window {}",
+       |            any_bytes_read, any_meta_length
+       |        ).into());
+       |    }
+       |    if any_bytes_read < any_meta_length {
+       |        // Forward-compat: skip future meta-extension bytes within the meta-length window.
+       |        let mut any_skip = vec![0u8; any_meta_length - any_bytes_read];
+       |        wire.read_exact(&mut any_skip)?;
+       |    }
+       |    if any_meta.kind != expected_kind {
+       |        return Err(format!(
+       |            "any: wire kind 0x{:02x} does not match field-declared 0x{:02x}",
+       |            any_meta.kind, expected_kind
+       |        ).into());
+       |    }
+       |    let any_blob_len = any_total_length - 4 - any_meta_length;
+       |    let mut any_blob = vec![0u8; any_blob_len];
+       |    wire.read_exact(&mut any_blob)?;
+       |    Ok(crate::any_opaque::AnyOpaqueUeba::new(any_meta, any_blob))
+       |}""".stripMargin
+  }
+
+  // Encode delegates to the per-DTO `encode_any_field` helper. This site wires the expected kind
+  // byte and the field's static (codec-gen-time) fallbacks for cross-format meta resolution.
+  // See `anyStaticFallbacks` for the per-variant table.
+  private def mkAnyEncoder(a: TypeRef.Any, ref: TextTree[RsValue], wref: TextTree[RsValue]): TextTree[RsValue] = {
+    val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
+    val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
+    q"encode_any_field(ctx, $wref, ${expectedHex}u8, $staticDom, $staticVer, $staticTid, &$ref)?;"
+  }
+
+  // Decode delegates to the per-DTO `decode_any_field` helper, returning an `AnyOpaqueUeba`
+  // wrapped into the `AnyOpaque::Ueba` enum variant so the surface field type matches
+  // `RsTypeTranslator.asRsRef(TypeRef.Any) = AnyOpaque`.
+  private def mkAnyDecoder(a: TypeRef.Any): TextTree[RsValue] = {
+    val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
+    q"crate::any_opaque::AnyOpaque::Ueba(decode_any_field(reader, ${expectedHex}u8)?)"
+  }
+
+  // Static fallbacks for the cross-format facade helpers (`json_to_ueba_bytes`/`ueba_to_json`).
+  // The wire `meta` may omit components that are pinned by the field's static declaration; the
+  // codec emits whatever is statically known so the facade can fill the gaps. See
+  // `BaboonCodecsFacade::build_synthetic_type_meta` for the merge semantics. Per spec table:
+  //   A=(None,None,None), B=(currentDomain,None,None), C=(currentDomain,currentVersion,None),
+  //   D1=(None,None,underlyingFqid), D2=(currentDomain,None,underlyingFqid),
+  //   D3=(currentDomain,currentVersion,underlyingFqid).
+  private def anyStaticFallbacks(a: TypeRef.Any): (TextTree[RsValue], TextTree[RsValue], TextTree[RsValue]) = {
+    val none                     = q"None"
+    def some(s: String)          = q"""Some("$s")"""
+    val currentDomain: String    = domain.id.toString
+    val currentDomainVer: String = domain.version.v.toString
+    val typeidStatic = a.underlying match {
+      case Some(u) => some(u.id.toString)
+      case None    => none
+    }
+    val (domainStatic, versionStatic) = a.variant match {
+      case AnyVariant.Global  => (none, none)
+      case AnyVariant.ThisDom => (some(currentDomain), none)
+      case AnyVariant.Current => (some(currentDomain), some(currentDomainVer))
+    }
+    (domainStatic, versionStatic, typeidStatic)
   }
 
   private def needsBox(tpe: TypeRef): Boolean = {
@@ -330,7 +500,7 @@ class RsUEBACodecGenerator(
                |}""".stripMargin
           case o => throw new RuntimeException(s"BUG: Unexpected collection type: $o")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("RsUEBACodecGenerator.mkEncoder")
+      case a: TypeRef.Any => mkAnyEncoder(a, ref, writer)
     }
   }
 
@@ -399,7 +569,7 @@ class RsUEBACodecGenerator(
                |}""".stripMargin
           case o => throw new RuntimeException(s"BUG: Unexpected collection type: $o")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("RsUEBACodecGenerator.mkDecoder")
+      case a: TypeRef.Any => mkAnyDecoder(a)
     }
   }
 

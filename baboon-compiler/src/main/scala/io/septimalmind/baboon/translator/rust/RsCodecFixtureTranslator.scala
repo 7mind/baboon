@@ -5,6 +5,7 @@ import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{toSnakeCase, toS
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -113,8 +114,45 @@ object RsCodecFixtureTranslator {
               q"if rnd.next_bit() { Some(${genType(args.head)}) } else { None }"
             case t => throw new IllegalArgumentException(s"Unexpected collection type: $t")
           }
-        case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("RsCodecFixtureTranslator.genType")
+        case a: TypeRef.Any => genAnyFixture(a)
       }
+    }
+
+    // Branch-matching fixtures (mirroring Scala's PR-07-D01 fix and C# PR 3.4) belong to PR 4.3.
+    // PR 4.2 emits the `AnyOpaqueUeba` branch only — auto-tests for the JSON path will need a
+    // companion that emits `AnyOpaqueJson`, plus a `FixtureFormat` selector. For now both UEBA
+    // and JSON tests round-trip via the UEBA branch; the JSON path test will pass once PR 4.3
+    // splits the fixture. Bytes are empty: the fixture only has to compile and yield a value
+    // with the right meta-kind; the encoder asserts `meta.kind == expectedKind` and copies the
+    // bytes through verbatim. `AnyMeta::new` returns Result; `expect` surfaces logic errors
+    // clearly (the codegen-emitted variants are always valid by construction).
+    private val FixtureAnyPayloadTypeId: String = "my.test.AnyFixturePayload"
+
+    private def genAnyFixture(a: TypeRef.Any): TextTree[RsValue] = {
+      val hasUnderlying = a.underlying.isDefined
+      val kindHex       = "0x%02x".format(AnyVariant.metaKindByte(a.variant, hasUnderlying) & 0xFF)
+
+      val domainStr  = q""""${domain.id.toString}""""
+      val versionStr = q""""${domain.version.v.toString}""""
+      val typeidStr  = q""""$FixtureAnyPayloadTypeId""""
+
+      val (domainExpr, versionExpr, typeidExpr) = a.variant match {
+        case AnyVariant.Global =>
+          val tid = if (hasUnderlying) q"None" else q"Some($typeidStr.to_string())"
+          (q"Some($domainStr.to_string())", q"Some($versionStr.to_string())", tid)
+        case AnyVariant.ThisDom =>
+          val tid = if (hasUnderlying) q"None" else q"Some($typeidStr.to_string())"
+          (q"None", q"Some($versionStr.to_string())", tid)
+        case AnyVariant.Current =>
+          val tid = if (hasUnderlying) q"None" else q"Some($typeidStr.to_string())"
+          (q"None", q"None", tid)
+      }
+
+      q"""crate::any_opaque::AnyOpaque::Ueba(crate::any_opaque::AnyOpaqueUeba::new(
+         |    crate::any_opaque::AnyMeta::new($kindHex, $domainExpr, $versionExpr, $typeidExpr)
+         |        .expect("BUG: codegen-emitted any-fixture meta must be valid"),
+         |    Vec::new(),
+         |))""".stripMargin
     }
 
     private def genScalar(tpe: TypeRef.Scalar): TextTree[RsValue] = {

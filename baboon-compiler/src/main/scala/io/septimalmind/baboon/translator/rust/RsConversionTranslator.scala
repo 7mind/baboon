@@ -166,7 +166,16 @@ class RsConversionTranslator[F[+_, +_]: Error2](
                           case TypeId.Builtins.opt => q"None"
                           case _                   => throw new IllegalStateException(s"Unsupported constructor type: $id")
                         }
-                      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("RsConversionTranslator.InitializeWithDefault")
+                      // `any` fields require a meta header bound to the field's variant; there is
+                      // no schema-agnostic default value. The validator forbids adding new `any`
+                      // fields without an explicit migration path, so this branch is best-effort
+                      // fail-fast — if it fires, evolution rules let through a case they shouldn't.
+                      // Matches sibling branches in this match (IllegalStateException). PR 3.2
+                      // CSConversionTranslator went via F.fail(TranslationBug); the surrounding
+                      // Rust code uses local-throw convention for unsupported defaults so we
+                      // follow that convention here.
+                      case _: TypeRef.Any =>
+                        throw new IllegalStateException("BUG: `any` field has no schema-agnostic default; evolution rules should reject InitializeWithDefault on Any")
                       case _              => throw new IllegalStateException("Unsupported target field type")
                     }
                   case _: FieldOp.WrapIntoCollection =>

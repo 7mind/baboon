@@ -252,23 +252,36 @@ object RsDefnTranslator {
     }
 
     private def dtoDerives(dto: Typedef.Dto): TextTree[RsValue] = {
-      val hasNonOrd     = dto.fields.exists(f => hasDirectFloat(f.tpe))
-      val wrappedBranch = isWrappedAdtBranch(dto)
-      (hasNonOrd, wrappedBranch) match {
-        case (_, true) if hasNonOrd =>
-          q"#[derive(Clone, Debug, serde::Deserialize)]"
-        case (_, true) =>
-          q"#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]"
-        case (true, false) =>
-          q"#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]"
-        case (false, false) =>
-          q"#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]"
-      }
+      val hasNonOrd      = dto.fields.exists(f => hasDirectFloat(f.tpe))
+      val hasUnorderable = dto.fields.exists(f => hasAnyField(f.tpe))
+      val wrappedBranch  = isWrappedAdtBranch(dto)
+      // Three independent axes:
+      // - hasNonOrd (floats): PartialEq/Eq/Ord/PartialOrd are emitted manually via total_cmp.
+      // - hasUnorderable (any): PartialEq is derived (AnyOpaque has PartialEq); no Eq/Ord because
+      //   serde_json::Value has no total ordering and JSON-source bytes can be byte-different but
+      //   semantically equal — Eq is misleading.
+      // - wrappedBranch: encoded as an inline ADT branch — no Serialize derive (handled by ADT).
+      val serdeDerives =
+        if (wrappedBranch) "serde::Deserialize"
+        else "serde::Serialize, serde::Deserialize"
+
+      val cmpDerives =
+        if (hasNonOrd) ""
+        else if (hasUnorderable) "PartialEq, "
+        else "PartialEq, Eq, PartialOrd, Ord, "
+
+      q"#[derive(Clone, Debug, ${cmpDerives}${serdeDerives})]"
     }
 
     private def dtoOrdImpls(dto: Typedef.Dto, name: RsType): TextTree[RsValue] = {
-      val hasNonOrd = dto.fields.exists(f => hasDirectFloat(f.tpe))
-      if (!hasNonOrd) {
+      val hasNonOrd      = dto.fields.exists(f => hasDirectFloat(f.tpe))
+      val hasUnorderable = dto.fields.exists(f => hasAnyField(f.tpe))
+      if (hasUnorderable) {
+        // `any` fields carry payloads (UEBA bytes / serde_json::Value) without total ordering.
+        // Skip Ord/Eq entirely; users get only `PartialEq` (derived) for value comparison.
+        // The manual `total_cmp` path used for floats is not applicable here.
+        q""
+      } else if (!hasNonOrd) {
         q""
       } else {
         val fieldComparisons = dto.fields.map {
@@ -315,6 +328,14 @@ object RsDefnTranslator {
         case TypeRef.Scalar(TypeId.Builtins.f64) => true
         case TypeRef.Constructor(_, args)        => args.exists(hasDirectFloat)
         case _                                   => false
+      }
+    }
+
+    private def hasAnyField(tpe: TypeRef): Boolean = {
+      tpe match {
+        case _: TypeRef.Any         => true
+        case _: TypeRef.Scalar      => false
+        case c: TypeRef.Constructor => c.args.exists(hasAnyField)
       }
     }
 
