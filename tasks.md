@@ -14,7 +14,7 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 - [x] **M4** — Rust end-to-end.
 - [x] **M5** — Kotlin end-to-end.
 - [x] **M6** — Java end-to-end.
-- [ ] **M7** — TypeScript end-to-end.
+- [~] **M7** — TypeScript end-to-end.
 - [ ] **M8** — Dart end-to-end.
 - [ ] **M9** — Swift end-to-end.
 - [ ] **M10** — Python end-to-end.
@@ -91,6 +91,17 @@ Pre-flight: Java runtime **lacks** `BaboonCodecsFacade.java` (same Q-α gap as C
 
 ---
 
+## Milestone 7 — PR breakdown
+
+Pre-flight: TypeScript runtime is sparse (2 files: `BaboonSharedRuntime.ts`, `BaboonSharedFixture.ts`); **lacks** `BaboonCodecsFacade.ts` (Q-α applies). 4-PR breakdown matches M3/M6.
+
+- [x] **PR 7.1** — TypeScript runtime: `AnyOpaque` discriminated union + `AnyMeta` interface + `AnyMetaCodec` (binary + JSON), full `BaboonCodecsFacade` port, extend `BaboonCodecContext` with optional facade.
+- [ ] **PR 7.2** — TypeScript UEBA codec emission (`TsUEBACodecGenerator` for `TypeRef.Any`); clear `TsTypeTranslator`/`TsCodecFixtureTranslator`/`TsConversionTranslator` placeholders.
+- [ ] **PR 7.3** — TypeScript JSON codec emission (function-based codecs); clear `TsJsonCodecGenerator` placeholders.
+- [ ] **PR 7.4** — TypeScript round-trip tests + branch-matching fixture fix.
+
+---
+
 ## Cross-cutting architectural notes (locked)
 
 - [x] **Wire layout**: `[length:i32][meta-length:i32][meta-kind:u8][meta:strings][blob]`. Signed i32, little-endian. See plan §6.2.
@@ -118,6 +129,8 @@ My recommendation is **(a)**: one big PR, mechanical, everything stays consisten
 ---
 
 ## Completed
+
+- **PR 7.1** (2026-04-26) — Opens M7. Substantial scope: 2 new TS runtime files + ~431 lines added to `BaboonSharedRuntime.ts`. `BaboonAnyOpaque.ts` (304 lines): frozen `AnyMeta` interface + `createAnyMeta` factory with 4 invariant checks (PR-04-D01 incl. reserved-kind 0x04/0x05); `AnyOpaque` discriminated union (`tag: "Ueba" | "Json"`); content-equality helpers `anyOpaqueEquals`/`uint8ArrayEquals`; `AnyMetaCodec` frozen object with `writeBin`/`readBin`/`readBinWithLength` (PR-05-D01) + `writeJson`/`readJson` (Either-returning per PR-04-D02). `BaboonCodecsFacade.ts` (588 lines): full port mirroring C#/Java — registry via `Map<string,...>` keyed by `domain@version` string, register/verify/encode-decode entry points, `decodeAny`, `jsonToUebaBytes`/`uebaToJson` with three optional static fallbacks per PR-06-D01, `getCodec` with PR-07-D02 single-version-domain fix; `convert<>` typed-stub returning `BaboonConverterFailure` (Java PR-17-D05 precedent — TS conversions API doesn't expose generic dispatch yet). `BaboonSharedRuntime.ts` extended with `BaboonException`/`BaboonCodecException` 5-variant hierarchy; `BaboonVersion`/`BaboonDomainVersion`/`BaboonTypeMeta`/`BaboonTypeMetaCodec` (with `$mv` check per PR-08-D01); `BaboonMeta`/`BaboonCodecData`/`BaboonBinCodec`/`BaboonJsonCodec` interfaces; `AbstractBaboonCodecs` registry base. **`BaboonCodecContext` enum→class promotion** preserves `===`-equality on static singletons (`Default`/`Compact`/`Indexed`) so existing generator-emitted code (`ctx === BaboonCodecContext.Indexed`) keeps working. Type-only import of `BaboonCodecsFacade` from `BaboonSharedRuntime.ts` breaks the module cycle. 54-test Vitest suite (was 50; +4 from D02 regression). One adversarial review round, 6 defects logged (PR-19-D01..D06). **Resolved with code**: D01 (CRITICAL — over-escaped regex literals `\\d`/`\\.`  in 5 sites broke `BaboonVersion.parse` and `$mv` check, propagating to `getCodec` and the entire facade; executor's "50/50 pass" claim was untrue, independent run showed 47/50 with 3 facade-dead failures; fix replaces with `\d`/`\.` everywhere including 3 pre-existing offenders from commit `b4ca37f3`), D02 (medium — `useAdtIdentifier` flag exposed on `BaboonTypeMeta.from` but never wired through encoders; fix adds optional param to `encodeToBin`/`encodeToJson` with cross-language semantics in jsdoc + 4 regression tests). **Resolved-deferred**: D03 (process — verification claim subsumed by D01 fix), D04 (cosmetic exact-parity with C#/Java), D05 (pre-existing `readByte` past-end-of-buffer trap), D06 (cosmetic versionMinCompat empty-string conflation). Verification: `sbt compile` clean; `mdl :build` clean; codegen on no-`any` subset clean; **`npx vitest run` → 54/54 pass; `npx tsc --noEmit` clean**; `grep '\\\\d\|\\\\\\.'` against runtime file shows zero matches. Files: 2 new TS runtime + 1 modified TS runtime + 1 modified compiler-source (`TsBaboonTranslator.scala`) + 1 narrowed `.gitignore` + 1 new test file + ledger.
 
 - **PR 6.4** (2026-04-26) — Java round-trip tests + branch-matching fixture fix. **Closes M6.** Mirror PR 2.4/3.4/4.3/5.4. `JvCodecFixtureTranslator` introduced `FixtureFormat` ADT (`FixUeba`/`FixJson`) at object level; emits two parallel methods per DTO (`random` UEBA-branch, `randomJson` JSON-branch with `NullNode.getInstance()`); ADTs gain `randomAll`/`randomAllJson`. `JvCodecTestsTranslator.makeFixture(useJsonAny: Boolean)` selects branch-matching fixture per codec arm — auto-tests now hit native branches in both directions, no `withFacade` ctx needed. Hand-written `test/jv-stub/src/test/java/runtime/AnyRoundTripTest.java` (14 JUnit5 tests, 456 lines): per-variant UEBA + JSON round-trip × 6 with full Holder + nested positions; UEBA Compact + Indexed (Java codegen emits real statement blocks for indexed mode, unlike Kotlin per PR-15-D01 — Java is unaffected); cross-format JSON-Holder→UEBA + UEBA-Holder→JSON; D3 isolated proving PR 6.1 static fallback resolves end-to-end; `facade.decodeAny` for both branches; forward-compat skip-by-length; fail-fast missing-facade × 2; JSON envelope shape lock-in. **PR-18-N01 fix included**: added Surefire `<includes>` block in `test/jv-stub/pom.xml` (`*Test.java`, `*Tests.java`, `*_tests.java`); without this, auto-generated `*_tests.java` (lowercase t) compile but never run. Verification confirms the fix is load-bearing: stripping the `<includes>` block runs only 55 tests; restoring recovers all 59. Verification: `sbt compile` clean; `mdl :build` clean; `mdl :test-gen-regular-adt` clean (without `any-ok/` aside — same M3/M4/M5 close pattern); `mvn test` → **59 passed / 0 failed / 0 errors**:
   - `runtime.AnyRoundTripTest`: 14 (new this PR)

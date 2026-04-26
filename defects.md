@@ -975,3 +975,49 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Location:** `BaboonCodecsFacade.java:437-441` (javadoc explicitly notes the gap).
 **Description:** Java's existing `AbstractBaboonConversions` indexes by `(from-class → to-class)` pair without `findConversions(value)` introspection that C#'s multi-step walk requires. PR 6.1 ships single-step; multi-step requires a deeper conversion-API rework. Note: Kotlin runtime *also* lacks `convert<>` entirely, so Java's partial-shape is actually ahead of Kotlin's parity.
 **Fix:** Defer — needs a coordinated cross-runtime conversion-API enhancement, larger than PR 6.1's scope.
+
+---
+
+## PR-19 — TypeScript runtime + facade port (M7 PR 7.1)
+
+### [PR-19-D01] Regex literals over-escaped in runtime template — breaks `BaboonVersion.parse` and `$mv` check, breaks `getCodec` and the entire facade
+**Status:** resolved
+**Severity:** critical (entire facade unusable as committed)
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/typescript/BaboonSharedRuntime.ts:832, 1039` (new in PR 7.1); plus pre-existing offenders at lines 239, 276, 550 from commit `b4ca37f3`.
+**Description:** PR 7.1 wrote `if (!/^-?\\d+$/.test(...))` in two new sites. The `embedSources` macro reads file bytes verbatim and writes them to the generated TS — backslashes are NOT processed by Scala-string-literal interpolation. So at runtime in TypeScript, `/\\d/` matches "literal backslash + d", not "any digit". `BaboonVersion.from("1.2.3")` therefore always throws `BaboonException("Expected to have version in format x.y.z, got 1.2.3. Invalid major value.")`. Via `BaboonDomainVersion.version()` → `getCodec` lookup, this propagates to every encode/decode call that crosses a version comparison. The executor's "50/50 pass" verification was untrue — independent run shows 3 failures (`BaboonVersion parses x.y.z`, `BaboonTypeMeta.readMetaJson accepts $mv=1`, `getCodec single-version-domain regression`).
+**Fix:** Replaced `\\d` → `\d` and `\\.` → `\.` at all five sites in `BaboonSharedRuntime.ts` (lines 239, 276, 550, 832, 1039) — the two new PR 7.1 sites plus the three pre-existing offenders adjacent to them. Verified by `grep '\\\\d\|\\\\\\.'` returning no matches and `npx vitest run` reporting 50/50 pass on the pre-D02 suite (was 47/50). After D02's regression test was added: 54/54 pass.
+
+### [PR-19-D02] `useAdtIdentifier` flag exposed in `BaboonTypeMeta.from` but never wired by encoder paths
+**Status:** resolved
+**Severity:** medium (cross-language semantic divergence for ADT-typed encode paths)
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/typescript/BaboonCodecsFacade.ts` (encodeToBin/encodeToJson call sites).
+**Description:** `BaboonTypeMeta.from(value, useAdtIdentifier=false)` accepts the flag, but `encodeToBin` / `encodeToJson` always call with `useAdtIdentifier=false` (default). Java/C#/Kotlin select the ADT type identifier when the static declared type is the ADT trait/interface; TS has no runtime types so the executor exposed a boolean knob — but no caller wires it. Encoding an ADT-typed reference desyncs from other runtimes (encodes the concrete branch's id when other runtimes write the ADT id).
+**Fix:** Added an optional `useAdtIdentifier: boolean = false` parameter to both `BaboonCodecsFacade.encodeToBin` and `BaboonCodecsFacade.encodeToJson`; both now thread the flag into `BaboonTypeMeta.from(value, useAdtIdentifier)`. JSDoc on each method documents the cross-language semantics — Java/C#/Kotlin select the ADT identifier from the static declared type, TS has no runtime generics so the caller must opt in. Default false preserves concrete-branch semantics; true is for callers encoding through an ADT-typed reference. Regression tests added under `encodeToBin / encodeToJson useAdtIdentifier plumbing (PR-19-D02)` in `test/ts-stub/src/runtime-tests/AnyMetaCodec.test.ts` — uses a hand-rolled `StubAdtBranchGenerated` that exposes `baboonTypeIdentifier()="BranchT"` and `baboonAdtTypeIdentifier="AdtT"`. Four new tests verify both encoders produce the concrete-branch typeid by default and the ADT typeid when `useAdtIdentifier=true`. Total 54/54 pass.
+
+### [PR-19-D03] Executor's "50/50 pass" verification claim was untrue
+**Status:** resolved (process note — subsumed by D01 fix)
+**Severity:** trivial (process)
+**Location:** PR 7.1 executor's report.
+**Description:** Independent reviewer run showed 47/50 with three named failures, all caused by D01's regex bug. Either the executor never ran the tests, or ran them locally with the regex corrected and forgot to commit the fix. Process lesson: future review-loop verifications should reproduce exact `npx vitest run` against the committed runtime files.
+**Fix:** Subsumed by D01 — once D01's regex fix lands, the verification is reproducible.
+
+### [PR-19-D04] `verify()` reports "must have codecs" when meta is missing — exact parity with C#/Java
+**Status:** resolved (deferred — exact parity with C# `BaboonCodecsFacade.cs:125-128` and Java equivalent)
+**Severity:** trivial (cosmetic)
+**Location:** `BaboonCodecsFacade.ts:167`.
+**Description:** Same as PR-17-D02 (Java): `verify()` throws `BaboonCodecNotFound("must have codecs for")` when the meta registry lacks `dv`. Should mention "meta", not "codecs". Exact parity with C#/Java; not a regression.
+**Fix:** Defer to a future cross-runtime cleanup PR.
+
+### [PR-19-D05] `BaboonBinReader.readByte()` may return `undefined` past end-of-buffer; AnyMetaCodec.readBin is a new caller of this trapdoor
+**Status:** open (defer — pre-existing; minor)
+**Severity:** minor (pre-existing strictness gap)
+**Location:** `BaboonSharedRuntime.ts` (BaboonBinReader.readByte) — pre-existing; new caller `AnyMetaCodec.readBin:200`.
+**Description:** `readByte()` declares `: number` but returns `this.buf[this.pos]` which is `number | undefined` under strict mode. Past end-of-buffer reads return `undefined` and `kind & DOMAIN_BIT` becomes NaN, propagating silently. Pre-existing trap; PR 7.1's `AnyMetaCodec.readBin` is a new caller.
+**Suggested fix:** Defer — pre-existing concern. Add bounds-check in `readByte()` (or change return type to `number | undefined` and force callers to guard).
+
+### [PR-19-D06] `BaboonTypeMeta.versionMinCompat()` treats empty-string as absent (silent fallthrough)
+**Status:** open (defer — minor)
+**Severity:** minor
+**Location:** `BaboonSharedRuntime.ts` (`versionMinCompat()`).
+**Description:** `if (!this.domainVersionMinCompat || ...) return undefined`. Empty string is falsy in JS, so empty-string `domainVersionMinCompat` is treated as absent. Conflates "absent" and "explicit empty". Won't bite in practice (codegen always emits a real value when present), but silent.
+**Suggested fix:** Defer — minor. Either explicit `=== null` check or document the conflation.

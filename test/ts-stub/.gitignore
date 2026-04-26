@@ -1,3 +1,4 @@
 node_modules/
 dist/
-src/
+src/generated/
+src/baboontests/

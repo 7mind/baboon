@@ -1,9 +1,46 @@
 // --- Codec Context ---
 
-export enum BaboonCodecContext {
-    Default = "Default",
-    Indexed = "Indexed",
-    Compact = "Compact",
+// Type-only import keeps the runtime module graph acyclic: `BaboonCodecsFacade.ts` imports the
+// `BaboonCodecContext` class from this file, so we cannot pull the runtime symbol back the other
+// way. `import type` gets erased after type-checking.
+import type { BaboonCodecsFacade } from "./BaboonCodecsFacade";
+
+/**
+ * Codec context: pairs a `useIndices` flag with an optional `BaboonCodecsFacade` reference. The
+ * facade is threaded through generated codec calls so the `any`-feature cross-format conversion
+ * (UEBA <-> JSON) can resolve codecs by `(domain, version, typeid)` from an `AnyMeta` envelope.
+ *
+ * Was an `enum` in earlier TS runtimes (matching Java pre-promotion). Promoted to a class so a
+ * per-instance facade can be carried; the public-static `Default` / `Compact` / `Indexed`
+ * singletons preserve call-site compatibility (`BaboonCodecContext.Compact` etc. still resolves
+ * the same way; `ctx === BaboonCodecContext.Indexed` reference-equality still works).
+ *
+ * Mirrors PR 6.1 (Java) plumbing — Q6 option (a) in the design plan.
+ */
+export class BaboonCodecContext {
+    private readonly _useIndices: boolean;
+    private readonly _facade: BaboonCodecsFacade | undefined;
+
+    private constructor(useIndices: boolean, facade: BaboonCodecsFacade | undefined) {
+        this._useIndices = useIndices;
+        this._facade = facade;
+    }
+
+    public get useIndices(): boolean {
+        return this._useIndices;
+    }
+
+    public get facade(): BaboonCodecsFacade | undefined {
+        return this._facade;
+    }
+
+    public static readonly Indexed: BaboonCodecContext = new BaboonCodecContext(true, undefined);
+    public static readonly Compact: BaboonCodecContext = new BaboonCodecContext(false, undefined);
+    public static readonly Default: BaboonCodecContext = BaboonCodecContext.Compact;
+
+    public static withFacade(useIndices: boolean, facade: BaboonCodecsFacade): BaboonCodecContext {
+        return new BaboonCodecContext(useIndices, facade);
+    }
 }
 
 // --- Binary Writer ---
@@ -199,7 +236,7 @@ export class BaboonDateTimeUtc {
     }
 
     toISOString(): string {
-        return this.date.toISOString().replace(/(\\.\\d{3})\\d*Z$/, "$1Z");
+        return this.date.toISOString().replace(/(\.\d{3})\d*Z$/, "$1Z");
     }
 
     getTime(): number {
@@ -236,7 +273,7 @@ export class BaboonDateTimeOffset {
         if (s.endsWith("Z") || s.endsWith("z")) {
             return 0;
         }
-        const match = s.match(/([+-])(\\d{2}):(\\d{2})$/);
+        const match = s.match(/([+-])(\d{2}):(\d{2})$/);
         if (match) {
             const sign = match[1] === "+" ? 1 : -1;
             const hours = parseInt(match[2], 10);
@@ -510,7 +547,7 @@ export class BinTools {
             }
             str = str.slice(0, str.length - scale) + "." + str.slice(str.length - scale);
             // Remove trailing zeros after decimal point
-            str = str.replace(/\\.?0+$/, "") || "0";
+            str = str.replace(/\.?0+$/, "") || "0";
         }
 
         if (isNeg && str !== "0") {
@@ -663,5 +700,437 @@ export class Lazy<T> {
 
     get isValueCreated(): boolean {
         return this.initialized;
+    }
+}
+
+// --- BaboonException ---
+
+export class BaboonException extends Error {
+    constructor(message: string, options?: { cause?: unknown }) {
+        super(message);
+        this.name = "BaboonException";
+        if (options && options.cause !== undefined) {
+            (this as { cause?: unknown }).cause = options.cause;
+        }
+    }
+}
+
+// --- BaboonCodecException ---
+
+/**
+ * Typed codec error hierarchy. Mirrors C# / Java sealed exception hierarchies. Subclasses are
+ * brand-tagged via `kind` so consumers can `switch` on a discriminated string instead of relying
+ * on `instanceof` (which is also fine, both forms work).
+ */
+export abstract class BaboonCodecException extends BaboonException {
+    public abstract readonly kind:
+        | "EncoderFailure"
+        | "DecoderFailure"
+        | "ConverterFailure"
+        | "CodecNotFound"
+        | "ConversionNotFound";
+
+    constructor(message: string, options?: { cause?: unknown }) {
+        super(message, options);
+        this.name = "BaboonCodecException";
+    }
+}
+
+export class BaboonEncoderFailure extends BaboonCodecException {
+    public readonly kind = "EncoderFailure" as const;
+    constructor(message: string, options?: { cause?: unknown }) {
+        super(message, options);
+        this.name = "BaboonEncoderFailure";
+    }
+}
+
+export class BaboonDecoderFailure extends BaboonCodecException {
+    public readonly kind = "DecoderFailure" as const;
+    constructor(message: string, options?: { cause?: unknown }) {
+        super(message, options);
+        this.name = "BaboonDecoderFailure";
+    }
+}
+
+export class BaboonConverterFailure extends BaboonCodecException {
+    public readonly kind = "ConverterFailure" as const;
+    constructor(message: string, options?: { cause?: unknown }) {
+        super(message, options);
+        this.name = "BaboonConverterFailure";
+    }
+}
+
+export class BaboonCodecNotFound extends BaboonCodecException {
+    public readonly kind = "CodecNotFound" as const;
+    constructor(message: string) {
+        super(message);
+        this.name = "BaboonCodecNotFound";
+    }
+}
+
+export class BaboonConversionNotFound extends BaboonCodecException {
+    public readonly kind = "ConversionNotFound" as const;
+    constructor(message: string) {
+        super(message);
+        this.name = "BaboonConversionNotFound";
+    }
+}
+
+// --- BaboonVersion ---
+
+/**
+ * Parsed semver-shaped version (`major.minor.patch`). Named `BaboonVersion` (not `Version`) to
+ * avoid clashes with global / DOM `Version` ambient types — same defensive renaming as the
+ * other runtimes (PR-08-D05 lesson).
+ */
+export class BaboonVersion {
+    public readonly major: number;
+    public readonly minor: number;
+    public readonly patch: number;
+
+    constructor(major: number, minor: number, patch: number) {
+        this.major = major;
+        this.minor = minor;
+        this.patch = patch;
+    }
+
+    public compareTo(other: BaboonVersion): number {
+        // PR-12-D01: TS `number` is a double; differences here are integer comparisons of
+        // already-validated parsed components. Use explicit `<`/`>` rather than `a - b` to
+        // sidestep any float subtraction surprises.
+        if (this.major < other.major) return -1;
+        if (this.major > other.major) return 1;
+        if (this.minor < other.minor) return -1;
+        if (this.minor > other.minor) return 1;
+        if (this.patch < other.patch) return -1;
+        if (this.patch > other.patch) return 1;
+        return 0;
+    }
+
+    public equals(other: BaboonVersion): boolean {
+        return this.compareTo(other) === 0;
+    }
+
+    public toString(): string {
+        return `${this.major}.${this.minor}.${this.patch}`;
+    }
+
+    public static from(version: string): BaboonVersion {
+        const chunks = version.split(".");
+        if (chunks.length < 3) {
+            throw new BaboonException(`Expected to have version in format x.y.z, got ${version}`);
+        }
+        return new BaboonVersion(
+            BaboonVersion.parse(chunks[0]!, "major", version),
+            BaboonVersion.parse(chunks[1]!, "minor", version),
+            BaboonVersion.parse(chunks[2]!, "patch", version),
+        );
+    }
+
+    private static parse(s: string, slot: string, version: string): number {
+        const trimmed = s.trim();
+        if (!/^-?\d+$/.test(trimmed)) {
+            throw new BaboonException(
+                `Expected to have version in format x.y.z, got ${version}. Invalid ${slot} value.`,
+            );
+        }
+        return parseInt(trimmed, 10);
+    }
+}
+
+// --- BaboonDomainVersion ---
+
+export class BaboonDomainVersion {
+    public readonly domainIdentifier: string;
+    public readonly domainVersion: string;
+
+    constructor(domainIdentifier: string, domainVersion: string) {
+        this.domainIdentifier = domainIdentifier;
+        this.domainVersion = domainVersion;
+    }
+
+    public version(): BaboonVersion {
+        return BaboonVersion.from(this.domainVersion);
+    }
+
+    public equals(other: BaboonDomainVersion): boolean {
+        return this.domainIdentifier === other.domainIdentifier && this.domainVersion === other.domainVersion;
+    }
+
+    public key(): string {
+        return `${this.domainIdentifier}@${this.domainVersion}`;
+    }
+
+    public toString(): string {
+        return `${this.domainIdentifier}:${this.domainVersion}`;
+    }
+}
+
+// --- BaboonTypeMeta ---
+
+/**
+ * Per-payload type-meta envelope written ahead of UEBA / JSON-encoded values. Mirrors C#/Java
+ * `BaboonTypeMeta`. `domainVersionMinCompat` defaults to `domainVersion` when wire-omitted.
+ *
+ * `readMeta` (binary + JSON) returns `undefined` for unrecognised meta-versions per PR-08-D01:
+ * an unknown `$mv` reads as "I cannot decode this" not "this is malformed", so the caller can
+ * skip / forward-compat rather than throw.
+ */
+export class BaboonTypeMeta {
+    public readonly metaVersion: number;
+    public readonly domainIdentifier: string;
+    public readonly domainVersion: string;
+    public readonly domainVersionMinCompat: string;
+    public readonly typeIdentifier: string;
+
+    constructor(
+        metaVersion: number,
+        domainIdentifier: string,
+        domainVersion: string,
+        domainVersionMinCompat: string,
+        typeIdentifier: string,
+    ) {
+        this.metaVersion = metaVersion;
+        this.domainIdentifier = domainIdentifier;
+        this.domainVersion = domainVersion;
+        this.domainVersionMinCompat = domainVersionMinCompat;
+        this.typeIdentifier = typeIdentifier;
+    }
+
+    public versionRef(): BaboonDomainVersion {
+        return new BaboonDomainVersion(this.domainIdentifier, this.domainVersion);
+    }
+
+    public versionMinCompat(): BaboonDomainVersion | undefined {
+        if (!this.domainVersionMinCompat || this.domainVersionMinCompat === this.domainVersion) {
+            return undefined;
+        }
+        return new BaboonDomainVersion(this.domainIdentifier, this.domainVersionMinCompat);
+    }
+
+    public writeBin(writer: BaboonBinWriter): void {
+        BaboonTypeMetaCodec.writeBin(this, writer);
+    }
+
+    public writeJson(): Record<string, unknown> {
+        return BaboonTypeMetaCodec.writeJson(this);
+    }
+
+    /**
+     * Reflectively pulls the Baboon metadata fields off a generated value. Generated TS classes
+     * expose `baboonDomainIdentifier()`, `baboonDomainVersion()`, `baboonTypeIdentifier()`,
+     * `baboonSameInVersions()` and (for ADT branches) `baboonAdtTypeIdentifier`. When the
+     * caller's declared static type is the ADT trait — flagged via `useAdtIdentifier=true` — the
+     * encoder envelope must use the ADT's type identifier so the decoder can dispatch. The
+     * trait/branch decision is the caller's, mirroring Java's `declaredType` reflection check.
+     *
+     * PR-08-D02: `baboonSameInVersions()` MUST be non-empty for any registered type. We index
+     * `[0]` directly so a violation throws rather than silently masquerading.
+     */
+    public static from(value: BaboonGenerated, useAdtIdentifier: boolean = false): BaboonTypeMeta {
+        let typeIdentifier: string;
+        if (useAdtIdentifier && BaboonTypeMeta.isAdtMember(value)) {
+            typeIdentifier = value.baboonAdtTypeIdentifier;
+        } else {
+            typeIdentifier = value.baboonTypeIdentifier();
+        }
+        const sameIn = value.baboonSameInVersions();
+        if (sameIn.length === 0) {
+            throw new BaboonException(
+                `baboonSameInVersions() is empty for type ${value.baboonTypeIdentifier()}`,
+            );
+        }
+        return new BaboonTypeMeta(
+            BaboonTypeMetaCodec.META_VERSION,
+            value.baboonDomainIdentifier(),
+            value.baboonDomainVersion(),
+            sameIn[0]!,
+            typeIdentifier,
+        );
+    }
+
+    private static isAdtMember(value: BaboonGenerated): value is BaboonAdtMemberMeta {
+        return typeof (value as { baboonAdtTypeIdentifier?: unknown }).baboonAdtTypeIdentifier === "string";
+    }
+
+    public static readMeta(reader: BaboonBinReader): BaboonTypeMeta | undefined {
+        return BaboonTypeMetaCodec.readBin(reader);
+    }
+
+    public static readMetaJson(json: unknown): BaboonTypeMeta | undefined {
+        return BaboonTypeMetaCodec.readJson(json);
+    }
+
+    public equals(other: BaboonTypeMeta): boolean {
+        return this.metaVersion === other.metaVersion
+            && this.domainIdentifier === other.domainIdentifier
+            && this.domainVersion === other.domainVersion
+            && this.domainVersionMinCompat === other.domainVersionMinCompat
+            && this.typeIdentifier === other.typeIdentifier;
+    }
+}
+
+export class BaboonTypeMetaCodec {
+    public static readonly META_VERSION_1: number = 1;
+    public static readonly META_VERSION: number = BaboonTypeMetaCodec.META_VERSION_1;
+
+    public static readonly META_VERSION_KEY = "$mv";
+    public static readonly DOMAIN_IDENTIFIER_KEY = "$d";
+    public static readonly DOMAIN_VERSION_KEY = "$v";
+    public static readonly DOMAIN_VERSION_MIN_COMPAT_KEY = "$uv";
+    public static readonly TYPE_IDENTIFIER_KEY = "$t";
+
+    public static writeBin(meta: BaboonTypeMeta, writer: BaboonBinWriter): void {
+        BinTools.writeByte(writer, BaboonTypeMetaCodec.META_VERSION & 0xFF);
+        BinTools.writeString(writer, meta.domainIdentifier);
+        BinTools.writeString(writer, meta.domainVersion);
+        if (meta.domainVersion === meta.domainVersionMinCompat) {
+            BinTools.writeByte(writer, 0);
+        } else {
+            BinTools.writeByte(writer, 1);
+            BinTools.writeString(writer, meta.domainVersionMinCompat);
+        }
+        BinTools.writeString(writer, meta.typeIdentifier);
+    }
+
+    public static readBin(reader: BaboonBinReader): BaboonTypeMeta | undefined {
+        const metaVersion = BinTools.readByte(reader);
+        if (metaVersion !== BaboonTypeMetaCodec.META_VERSION_1) return undefined;
+
+        const domainIdentifier = BinTools.readString(reader);
+        const domainVersion = BinTools.readString(reader);
+        const hasMinCompat = BinTools.readByte(reader);
+        const domainVersionMinCompat = hasMinCompat === 1 ? BinTools.readString(reader) : domainVersion;
+        const typeIdentifier = BinTools.readString(reader);
+
+        return new BaboonTypeMeta(
+            BaboonTypeMetaCodec.META_VERSION,
+            domainIdentifier,
+            domainVersion,
+            domainVersionMinCompat,
+            typeIdentifier,
+        );
+    }
+
+    public static writeJson(meta: BaboonTypeMeta): Record<string, unknown> {
+        const obj: Record<string, unknown> = {};
+        obj[BaboonTypeMetaCodec.DOMAIN_IDENTIFIER_KEY] = meta.domainIdentifier;
+        obj[BaboonTypeMetaCodec.DOMAIN_VERSION_KEY] = meta.domainVersion;
+        obj[BaboonTypeMetaCodec.TYPE_IDENTIFIER_KEY] = meta.typeIdentifier;
+        if (meta.domainVersion !== meta.domainVersionMinCompat) {
+            obj[BaboonTypeMetaCodec.DOMAIN_VERSION_MIN_COMPAT_KEY] = meta.domainVersionMinCompat;
+        }
+        return obj;
+    }
+
+    /**
+     * Mirrors Scala/C#/Java (PR-08-D01): if `$mv` is present and not "1", reject (return
+     * `undefined`); if absent, fall through to v1 read. JSON `$mv` is a string for parity with
+     * the existing wire format across languages.
+     */
+    public static readJson(json: unknown): BaboonTypeMeta | undefined {
+        if (typeof json !== "object" || json === null || Array.isArray(json)) return undefined;
+        const obj = json as Record<string, unknown>;
+
+        const mvNode = obj[BaboonTypeMetaCodec.META_VERSION_KEY];
+        if (mvNode !== undefined) {
+            if (typeof mvNode !== "string") return undefined;
+            // PR-12-D01: bound parse explicitly; reject anything that isn't a clean integer.
+            if (!/^-?\d+$/.test(mvNode)) return undefined;
+            const mv = parseInt(mvNode, 10);
+            if (mv !== BaboonTypeMetaCodec.META_VERSION_1) return undefined;
+        }
+
+        const d = obj[BaboonTypeMetaCodec.DOMAIN_IDENTIFIER_KEY];
+        const v = obj[BaboonTypeMetaCodec.DOMAIN_VERSION_KEY];
+        const t = obj[BaboonTypeMetaCodec.TYPE_IDENTIFIER_KEY];
+        if (typeof d !== "string" || typeof v !== "string" || typeof t !== "string") return undefined;
+
+        const uvNode = obj[BaboonTypeMetaCodec.DOMAIN_VERSION_MIN_COMPAT_KEY];
+        const uv = typeof uvNode === "string" ? uvNode : v;
+
+        return new BaboonTypeMeta(BaboonTypeMetaCodec.META_VERSION, d, v, uv, t);
+    }
+}
+
+// --- Codec interfaces ---
+
+/**
+ * Marker interface implemented by all codec types. Lets the codec registry hold a heterogeneous
+ * lazy-codec map keyed by type identifier without losing the ability to dispatch generically.
+ * Mirrors Java `BaboonCodecData` / C# `IBaboonCodecData`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+export interface BaboonCodecData {
+}
+
+export interface BaboonBinCodec<T> extends BaboonCodecData {
+    encode(ctx: BaboonCodecContext, writer: BaboonBinWriter, value: T): void;
+    decode(ctx: BaboonCodecContext, reader: BaboonBinReader): T;
+}
+
+export interface BaboonJsonCodec<T> extends BaboonCodecData {
+    encode(ctx: BaboonCodecContext, value: T): unknown;
+    decode(ctx: BaboonCodecContext, wire: unknown): T;
+}
+
+// --- BaboonMeta (per-version "same-in-versions" lookup) ---
+
+export interface BaboonMeta {
+    sameInVersions(typeId: string): string[];
+}
+
+// --- AbstractBaboonCodecs registry base ---
+
+/**
+ * Shared codec-registry base. Holds a single map of `typeId -> Lazy<BaboonCodecData>` so the
+ * facade's generic `getCodec` can iterate either the JSON or UEBA registry uniformly.
+ * Mirrors C# `AbstractBaboonCodecs` / Java `AbstractBaboonCodecs`.
+ */
+export abstract class AbstractBaboonCodecs {
+    private readonly codecs: Map<string, Lazy<BaboonCodecData>> = new Map();
+
+    protected registerData(typeId: string, codec: Lazy<BaboonCodecData>): void {
+        this.codecs.set(typeId, codec);
+    }
+
+    public find(typeId: string): Lazy<BaboonCodecData> {
+        const v = this.codecs.get(typeId);
+        if (v === undefined) {
+            throw new BaboonException(`No codec registered for ${typeId}`);
+        }
+        return v;
+    }
+
+    public tryFind(typeId: string): Lazy<BaboonCodecData> | undefined {
+        return this.codecs.get(typeId);
+    }
+}
+
+export abstract class AbstractBaboonJsonCodecs extends AbstractBaboonCodecs {
+    public register(typeId: string, codec: Lazy<BaboonJsonCodec<unknown>>): void {
+        this.registerData(typeId, codec as Lazy<BaboonCodecData>);
+    }
+
+    public getCodec<T>(typeId: string): BaboonJsonCodec<T> {
+        const codec = this.tryFind(typeId);
+        if (codec === undefined) {
+            throw new BaboonException(`No JSON codec registered for ${typeId}`);
+        }
+        return codec.value as BaboonJsonCodec<T>;
+    }
+}
+
+export abstract class AbstractBaboonUebaCodecs extends AbstractBaboonCodecs {
+    public register(typeId: string, codec: Lazy<BaboonBinCodec<unknown>>): void {
+        this.registerData(typeId, codec as Lazy<BaboonCodecData>);
+    }
+
+    public getCodec<T>(typeId: string): BaboonBinCodec<T> {
+        const codec = this.tryFind(typeId);
+        if (codec === undefined) {
+            throw new BaboonException(`No UEBA codec registered for ${typeId}`);
+        }
+        return codec.value as BaboonBinCodec<T>;
     }
 }

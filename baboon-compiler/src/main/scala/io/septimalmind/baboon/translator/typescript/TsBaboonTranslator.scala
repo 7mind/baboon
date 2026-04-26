@@ -108,7 +108,21 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
             tsBaboonRuntimeShared,
             CompilerProduct.Runtime,
             doNotModify = true,
-          )
+          ),
+          TsDefnTranslator.Output(
+            "BaboonAnyOpaque.ts",
+            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonAnyOpaque.ts")),
+            tsBaboonRuntimeShared,
+            CompilerProduct.Runtime,
+            doNotModify = true,
+          ),
+          TsDefnTranslator.Output(
+            "BaboonCodecsFacade.ts",
+            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonCodecsFacade.ts")),
+            tsBaboonRuntimeShared,
+            CompilerProduct.Runtime,
+            doNotModify = true,
+          ),
         )
       )
     } else {
