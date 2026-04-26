@@ -7,6 +7,7 @@ import io.septimalmind.baboon.translator.kotlin.KtDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.kotlin.KtTypes.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -63,8 +64,9 @@ class KtJsonCodecGenerator(
            |}""".stripMargin.trim
       )
 
-    val baseMethods = encodeMethod ++ decodeMethod
-    val cName       = codecName(srcRef)
+    val anyHelpers: List[TextTree[KtValue]] = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
+    val baseMethods                         = encodeMethod ++ decodeMethod ++ anyHelpers
+    val cName                               = codecName(srcRef)
     val meta        = renderMeta(defn, ktDomainTreeTools.makeCodecMeta(defn))
 
     val cParent = if (isEncoderEnabled) {
@@ -264,7 +266,7 @@ class KtJsonCodecGenerator(
             q"""$buildJsonArray { $ref.forEach { e -> add(${mkEncoder(c.args.head, q"e")}) } }"""
           case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("KtJsonCodecGenerator.mkEncoder")
+      case a: TypeRef.Any => mkAnyEncoder(a, ref)
     }
   }
 
@@ -323,7 +325,7 @@ class KtJsonCodecGenerator(
               q"$ref.jsonObject.entries.associate { e -> ($keyDec) to $valueDec }"
             case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
-        case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("KtJsonCodecGenerator.decodeElement")
+        case a: TypeRef.Any => mkAnyDecoder(a, ref)
       }
     }
 
@@ -379,6 +381,126 @@ class KtJsonCodecGenerator(
       case _ =>
         q"""${decodeElement(tpe, q"""$jsonObjRef["$fieldName"]!!""")}"""
     }
+  }
+
+  // Deep walk (mirrors Scala/C#/Rust/Kt-UEBA `hasAnyField`): a codec object needs the any-field
+  // helpers if any direct or nested-via-Constructor-arg field has type `any`.
+  private def hasAnyField(defn: DomainMember.User): Boolean = {
+    def hasAny(tpe: TypeRef): Boolean = tpe match {
+      case _: TypeRef.Any         => true
+      case _: TypeRef.Scalar      => false
+      case c: TypeRef.Constructor => c.args.exists(hasAny)
+    }
+    defn.defn match {
+      case d: Typedef.Dto => d.fields.exists(f => hasAny(f.tpe))
+      case _              => false
+    }
+  }
+
+  // Encode delegates to the per-codec-object `encodeAnyField` helper. This site wires the expected
+  // kind byte and the field's static (codec-gen-time) fallbacks for cross-format meta resolution.
+  private def mkAnyEncoder(a: TypeRef.Any, ref: TextTree[KtValue]): TextTree[KtValue] = {
+    val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
+    val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
+    q"encodeAnyField(ctx, ${expectedHex}.toByte(), $staticDom, $staticVer, $staticTid, $ref)"
+  }
+
+  // Decode delegates to the per-codec-object `decodeAnyField` helper. JSON decode never cross-
+  // converts (always returns `AnyOpaqueJson` from JSON wire); user calls `facade.decodeAny(opaque)`
+  // for typed resolution. No `ctx` / no static fallbacks needed at the decode site.
+  private def mkAnyDecoder(a: TypeRef.Any, ref: TextTree[KtValue]): TextTree[KtValue] = {
+    val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
+    q"decodeAnyField(${expectedHex}.toByte(), $ref)"
+  }
+
+  // Static fallbacks for the cross-format facade helper (`uebaToJson`). The wire `meta` may omit
+  // components that are pinned by the field's static declaration; the codec emits whatever is
+  // statically known so the facade can fill the gaps. See
+  // `BaboonCodecsFacade.buildSyntheticTypeMeta` for the merge semantics. Per spec table:
+  //   A=(null,null,null), B=(currentDomain,null,null), C=(currentDomain,currentVersion,null),
+  //   D1=(null,null,underlyingFqid), D2=(currentDomain,null,underlyingFqid),
+  //   D3=(currentDomain,currentVersion,underlyingFqid).
+  // Duplicated across Scala/C#/Rust/Kt-UEBA/Kt-JSON — extraction deferred (see PR 4.2 ledger
+  // entry's DRY analysis): textual emission diverges by language flavor.
+  private def anyStaticFallbacks(a: TypeRef.Any): (TextTree[KtValue], TextTree[KtValue], TextTree[KtValue]) = {
+    val none                     = q"null"
+    def some(s: String)          = q""""$s""""
+    val currentDomain: String    = domain.id.toString
+    val currentDomainVer: String = domain.version.v.toString
+    val typeidStatic = a.underlying match {
+      case Some(u) => some(u.id.toString)
+      case None    => none
+    }
+    val (domainStatic, versionStatic) = a.variant match {
+      case AnyVariant.Global  => (none, none)
+      case AnyVariant.ThisDom => (some(currentDomain), none)
+      case AnyVariant.Current => (some(currentDomain), some(currentDomainVer))
+    }
+    (domainStatic, versionStatic, typeidStatic)
+  }
+
+  // Per-codec-object helpers consolidating the any-field JSON envelope encode/decode (kind check,
+  // cross-format conversion via facade, envelope `$ak/$ad/$av/$at/$c` build & disassemble).
+  // Emitted at most once per codec object that has any any-bearing fields. Mirrors PR 5.2's
+  // `KtUEBACodecGenerator.anyFieldHelpers` and PR 3.3's C# JSON helper shape. PR-06-D08 lesson:
+  // `AnyMetaCodec.writeJson` returns `JsonElement` typed but always produces a `JsonObject` —
+  // we cast to `JsonObject` to add the `$c` envelope key. The const `'$c'` source escape uses
+  // Kotlin's `${'$'}c` form so the literal compiles to `$c` (matching the runtime constant
+  // contract).
+  private def anyFieldHelpers: TextTree[KtValue] = {
+    q"""private val anyEnvelopeContentKey: String = "$${'$$'}c"
+       |
+       |private fun encodeAnyField(
+       |    ctx: $baboonCodecContext,
+       |    expectedKind: Byte,
+       |    staticDomain: String?,
+       |    staticVersion: String?,
+       |    staticTypeid: String?,
+       |    value: $baboonAnyOpaque,
+       |): $jsonElement {
+       |    if (value.meta.kind != expectedKind) {
+       |        throw $baboonCodecException.EncoderFailure(
+       |            "any: meta-kind 0x" + (value.meta.kind.toInt() and 0xFF).toString(16).padStart(2, '0') +
+       |            " does not match field-declared 0x" + (expectedKind.toInt() and 0xFF).toString(16).padStart(2, '0')
+       |        )
+       |    }
+       |    val anyInner: $jsonElement = when (value) {
+       |        is $baboonAnyOpaqueJson -> value.json
+       |        is $baboonAnyOpaqueUeba -> {
+       |            val anyFacade = ctx.facade ?: throw $baboonCodecException.EncoderFailure(
+       |                "Cannot encode AnyOpaqueUeba into JSON without a facade reference. Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), or supply AnyOpaqueJson directly."
+       |            )
+       |            val anyConvResult = anyFacade.uebaToJson(value.meta, value.bytes, staticDomain, staticVersion, staticTypeid)
+       |            when (anyConvResult) {
+       |                is $baboonEither.Left -> throw anyConvResult.value
+       |                is $baboonEither.Right -> anyConvResult.value
+       |            }
+       |        }
+       |    }
+       |    val anyMetaJson = $baboonAnyMetaCodec.writeJson(value.meta) as $jsonObject
+       |    return $jsonObject(anyMetaJson.toMutableMap().apply { put(anyEnvelopeContentKey, anyInner) })
+       |}
+       |
+       |private fun decodeAnyField(expectedKind: Byte, wire: $jsonElement): $baboonAnyOpaqueJson {
+       |    val anyMetaResult = $baboonAnyMetaCodec.readJson(wire)
+       |    val anyMeta = when (anyMetaResult) {
+       |        is $baboonEither.Left -> throw anyMetaResult.value
+       |        is $baboonEither.Right -> anyMetaResult.value
+       |    }
+       |    if (anyMeta.kind != expectedKind) {
+       |        throw $baboonCodecException.DecoderFailure(
+       |            "any: wire kind 0x" + (anyMeta.kind.toInt() and 0xFF).toString(16).padStart(2, '0') +
+       |            " does not match field-declared 0x" + (expectedKind.toInt() and 0xFF).toString(16).padStart(2, '0')
+       |        )
+       |    }
+       |    val anyContent = (wire as? $jsonObject)?.get(anyEnvelopeContentKey)
+       |        ?: throw $baboonCodecException.DecoderFailure(
+       |            "any: JSON envelope missing '" + anyEnvelopeContentKey + "' content key"
+       |        )
+       |    return $baboonAnyOpaqueJson(anyMeta, anyContent)
+       |}""".stripMargin
   }
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[KtValue]] = {
