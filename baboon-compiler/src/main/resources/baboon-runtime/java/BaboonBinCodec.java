@@ -3,7 +3,7 @@ package baboon.runtime.shared;
 import java.util.ArrayList;
 import java.util.List;
 
-public interface BaboonBinCodec<T> {
+public interface BaboonBinCodec<T> extends BaboonCodecData {
     void encode(BaboonCodecContext ctx, LEDataOutputStream output, T value) throws Exception;
     T decode(BaboonCodecContext ctx, LEDataInputStream input) throws Exception;
 

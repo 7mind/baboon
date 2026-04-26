@@ -2,7 +2,7 @@ package baboon.runtime.shared;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
-public interface BaboonJsonCodec<T> {
+public interface BaboonJsonCodec<T> extends BaboonCodecData {
     JsonNode encode(BaboonCodecContext ctx, T value);
     T decode(BaboonCodecContext ctx, JsonNode wire);
 

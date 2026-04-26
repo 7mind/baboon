@@ -936,3 +936,42 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Location:** `test/kt-stub-kmp/`.
 **Description:** `kt-stub-kmp` still has no `src/test/` source set. The new `AnyRoundTripTest.kt` runs only against JVM `test/kt-stub`. PR 5.4 does not address PR-14-D02 — adding a parallel test source set would significantly expand the scope (Kotlin runtime types are largely identical between JVM and KMP, and the per-domain code generation is identical, so any regressions surfaced by KMP testing would also surface in JVM testing — the marginal value is low).
 **Suggested fix:** Defer to a future hygiene PR or M-cleanup. PR-14-D02's recommendation stands.
+
+---
+
+## PR-17 — Java runtime + facade port (M6 PR 6.1)
+
+### [PR-17-D01] `mdl :test-gen-regular-adt` requires `any-ok/` stashed (Java codegen for TypeRef.Any not yet landed)
+**Status:** resolved (deferred — process note; same as M3/M4/M5 closure pattern).
+**Severity:** trivial (process)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/java/JvTypeTranslator.scala:37` and similar Python/etc. placeholders.
+**Description:** Java codegen for `TypeRef.Any` lands in PR 6.2; until then, all-language `mdl :test-gen-regular-adt` requires `any-ok/` stashed. Same pattern documented for M3/M4/M5 closures.
+**Fix:** No code action. Will resolve naturally as PR 6.2/6.3/6.4 + Python milestones land.
+
+### [PR-17-D02] `verify()` reports "must have codecs" when meta is missing — exact parity with C#
+**Status:** resolved (deferred — exact parity with C# `BaboonCodecsFacade.cs:125-128`)
+**Severity:** trivial (cosmetic)
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/java/BaboonCodecsFacade.java:125`.
+**Description:** Throws `CodecNotFound("Baboon codecs must have codecs for " + dv + " registered.")` when the meta registry lacks `dv`. Should say "meta", not "codecs". Exact parity with C# — both runtimes have the same wording. Worth a unified one-line cleanup across all runtimes, but not regressed by Java port.
+**Fix:** Defer to a future cross-runtime cleanup PR.
+
+### [PR-17-D03] `register(BaboonCodecsFacade other)` overwrites instead of merges — exact parity with C#
+**Status:** resolved (deferred — exact parity with C#)
+**Severity:** trivial (parity-preserved)
+**Location:** `BaboonCodecsFacade.java:50`.
+**Description:** `domainVersions.put(e.getKey(), e.getValue())` replaces the destination's version list rather than merging. C# (`BaboonCodecsFacade.cs:47`) does the same `_domainVersions[id] = versions`. Exact parity, not a regression.
+**Fix:** Defer.
+
+### [PR-17-D04] `decodeFromJson(JsonNode)` returns `Right(null)` on missing envelope — exact parity with C#
+**Status:** resolved (deferred — exact parity)
+**Severity:** trivial (parity-preserved)
+**Location:** `BaboonCodecsFacade.java:226-231`.
+**Description:** When `BaboonTypeMeta.readMeta(value)` returns null, or `$c` is missing, the call returns `BaboonEither.right(null)`. Mirrors C# nullable-of-IBaboonGenerated semantics (PR-08-D03).
+**Fix:** Defer (consistent with PR-08-D03's deferral rationale).
+
+### [PR-17-D05] `convert<>` is single-step pair-lookup only; multi-step chain deferred
+**Status:** resolved (deferred — documented limitation; Java is ahead of Kotlin's parity)
+**Severity:** low
+**Location:** `BaboonCodecsFacade.java:437-441` (javadoc explicitly notes the gap).
+**Description:** Java's existing `AbstractBaboonConversions` indexes by `(from-class → to-class)` pair without `findConversions(value)` introspection that C#'s multi-step walk requires. PR 6.1 ships single-step; multi-step requires a deeper conversion-API rework. Note: Kotlin runtime *also* lacks `convert<>` entirely, so Java's partial-shape is actually ahead of Kotlin's parity.
+**Fix:** Defer — needs a coordinated cross-runtime conversion-API enhancement, larger than PR 6.1's scope.

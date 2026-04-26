@@ -13,7 +13,7 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 - [x] **M3** — C# end-to-end.
 - [x] **M4** — Rust end-to-end.
 - [x] **M5** — Kotlin end-to-end.
-- [ ] **M6** — Java end-to-end.
+- [~] **M6** — Java end-to-end.
 - [ ] **M7** — TypeScript end-to-end.
 - [ ] **M8** — Dart end-to-end.
 - [ ] **M9** — Swift end-to-end.
@@ -80,6 +80,17 @@ Detail in `docs/drafts/20260424-1738-any-opaque-plan.md` §5 M5. Pre-flight: Kot
 
 ---
 
+## Milestone 6 — PR breakdown
+
+Pre-flight: Java runtime **lacks** `BaboonCodecsFacade.java` (same Q-α gap as C#/Rust). 4-PR breakdown matches M3 (C#) shape.
+
+- [x] **PR 6.1** — Java runtime: `AnyOpaque` sealed interface + `AnyMeta` record + `AnyMetaCodec` (binary + Jackson JSON), full `BaboonCodecsFacade` port (single-step `convert<>` only — multi-step deferred), extend `BaboonCodecContext` (enum→class).
+- [ ] **PR 6.2** — Java UEBA codec emission (`JvUEBACodecGenerator` for `TypeRef.Any`); clear `JvTypeTranslator`/`JvCodecFixtureTranslator`/`JvConversionTranslator` placeholders.
+- [ ] **PR 6.3** — Java JSON codec emission (Jackson); clear `JvJsonCodecGenerator` placeholders.
+- [ ] **PR 6.4** — Java round-trip tests + branch-matching fixture fix.
+
+---
+
 ## Cross-cutting architectural notes (locked)
 
 - [x] **Wire layout**: `[length:i32][meta-length:i32][meta-kind:u8][meta:strings][blob]`. Signed i32, little-endian. See plan §6.2.
@@ -107,6 +118,8 @@ My recommendation is **(a)**: one big PR, mechanical, everything stays consisten
 ---
 
 ## Completed
+
+- **PR 6.1** (2026-04-26) — Opens M6. Substantial scope: 8 new Java runtime files including the full `BaboonCodecsFacade.java` port (Java had no facade analog — same gap as C#/Rust per PR-08/PR-11 precedents). New files: `BaboonCodecException.java` (5-variant hierarchy), `BaboonCodecData.java` (marker interface), `AbstractBaboonCodecs.java` (shared registry base; existing JSON/UEBA codec abstracts retrofitted to extend it), `BaboonVersion.java`/`BaboonDomainVersion.java`/`BaboonTypeMeta.java` (records with PR-08-D01 `$mv` check, PR-08-D02 fail-fast on empty `BaboonSameInVersions`, ADT-aware identifier selection), `BaboonAnyOpaque.java` (sealed `AnyOpaque` interface with `AnyOpaqueUeba` hand-rolled `equals`/`hashCode` per PR-05-D08, `AnyOpaqueJson` record (Jackson `JsonNode.equals` content-wise per PR-08-D06), `AnyMetaCodec` static helper with all the locked-spec helpers including `readBinWithLength` per PR-05-D01 and `readJson` returning `BaboonEither` per PR-04-D02), `BaboonCodecsFacade.java` (full port mirroring C#: ConcurrentHashMap registry, register overloads, verify, encode/decode entry points, `decodeAny`, `jsonToUebaBytes`/`uebaToJson` with statics per PR-06-D01, `getCodec` with PR-07-D02 fix). Modified files: `BaboonCodecContext.java` promoted from `enum` to `final class` preserving the public-static `Default`/`Compact`/`Indexed` API + `useIndices()` instance method + new nullable `facade` + `withFacade` factory; `BaboonBinCodec.java`/`BaboonJsonCodec.java` extend new `BaboonCodecData` marker; `AbstractBaboonJsonCodecs.java`/`AbstractBaboonUebaCodecs.java` extend new shared base; `JvBaboonTranslator.scala:218-244` registers 8 new resource files. **Java idiom decisions**: records for `AnyMeta`/`AnyOpaqueJson`/`BaboonTypeMeta`/`BaboonDomainVersion`/`BaboonVersion`; hand-rolled `final class` for `AnyOpaqueUeba` (record auto-equals on `byte[]` is reference-identity); sealed interface `AnyOpaque permits AnyOpaqueUeba, AnyOpaqueJson`; container class `BaboonAnyOpaque` for nesting. **Verify-via-reflection** in `BaboonTypeMeta.from`: Java codegen emits `baboon*` metadata as `public static final` fields, not interface methods, so reflective lookup is required (minimal-touch approach for PR 6.1; future enhancement could redesign codegen to expose them through a `BaboonGenerated` interface). **`convert<>` partial**: single-step pair-lookup only — Java's existing `AbstractBaboonConversions` indexes by `(from-class → to-class)` without `findConversions(value)` introspection that C#'s multi-step walk requires. Documented in javadoc; Java is ahead of Kotlin's parity (Kotlin lacks `convert` entirely). **`embedSources` macro caching**: required `sbt clean compile` once after `version.split("\\.")` → `version.split("[.]")` fix (the macro pipeline rejected the escaped string). 41-test JUnit5 `AnyMetaCodecTest.java` mirrors PR 3.1's 39-test scope. Verification: `sbt clean compile` clean; `mdl :build` clean; `mdl :test-gen-regular-adt` with `any-ok/` aside clean; `mvn test` against jv-stub → 41/41 + all generated regular-adt Java tests pass under `-Werror`. One adversarial review round, 5 deferrals (PR-17-D01..D05): D01 process note (same `any-ok/` stash workaround as M3/M4/M5), D02/D03/D04 exact-parity with C# (cosmetic/legacy), D05 `convert<>` deferred multi-step. Zero new defects in Java-specific code. Files: 8 new + 5 modified Java runtime + 1 modified compiler-source + 1 new test + ledger.
 
 - **PR 5.4** (2026-04-26) — Kotlin round-trip tests + branch-matching fixture fix. **Closes M5.** Mirror PR 2.4 (Scala) / PR 3.4 (C#) / PR 4.3 (Rust) patterns. `KtCodecFixtureTranslator` gained `FixtureFormat` ADT (`FixUeba`/`FixJson`) and emits two parallel methods per DTO (`random` UEBA-branch, `randomJson` JSON-branch with `JsonNull` payload). ADTs gain `randomAll`/`randomAllJson`. Nested user-type fixture calls propagate format via method-name selection. `KtCodecTestsTranslator.makeFixture(useJsonAny: Boolean)` selects branch-matching fixture per codec arm. Auto-tests now hit native branches; no `withFacade` ctx needed. Hand-written `test/kt-stub/src/test/kotlin/runtime/AnyRoundTripTest.kt` (13 JUnit5 tests): per-variant UEBA + JSON round-trip × 6 + JSON+UEBA decode kind-byte assertions; cross-format JSON-Holder→UEBA + UEBA-Holder→JSON; D3 isolated proving PR 5.1 static fallback resolves end-to-end; `facade.decodeAny` for both branches; forward-compat skip-by-length; fail-fast missing-facade × 2 directions; JSON envelope shape lock-in. The previously-failing `Holder should support JSON codec` (PR-07-D01 Kotlin analog) is now green via branch-matching fixture fix. **Discovered pre-existing Kotlin codegen bug** PR-15-D01: `KtUEBACodecGenerator` emits `{ ... }` per-field blocks in indexed branch which Kotlin parses as unused lambda expressions, breaking indexed UEBA for any DTO with fields (NOT specific to `any`/M5). Worked around by removing the indexed-mode round-trip test from `AnyRoundTripTest.kt`; bug tracked in PR-15 block. KMP test parity continued deferral (PR-15-D02 extends PR-14-D02). One adversarial review round, clean per `any`-feature scope. Verification: `sbt compile` clean; `mdl :build` clean; Kotlin codegen + `gradle test` → **117 passed / 0 failed**; KMP `gradle build` clean (compile-only). Files: 2 translator files + 1 new test file + ledger.
 

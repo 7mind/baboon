@@ -1,18 +1,13 @@
 package baboon.runtime.shared;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import java.util.*;
-
-public abstract class AbstractBaboonJsonCodecs {
-    private final Map<String, Lazy<? extends BaboonJsonCodec<?>>> codecs = new LinkedHashMap<>();
-
+public abstract class AbstractBaboonJsonCodecs extends AbstractBaboonCodecs {
     protected void register(String typeId, Lazy<? extends BaboonJsonCodec<?>> codec) {
-        codecs.put(typeId, codec);
+        registerData(typeId, codec);
     }
 
     @SuppressWarnings("unchecked")
     public <T> BaboonJsonCodec<T> getCodec(String typeId) {
-        Lazy<? extends BaboonJsonCodec<?>> codec = codecs.get(typeId);
+        Lazy<? extends BaboonCodecData> codec = tryFind(typeId);
         if (codec == null) {
             throw new BaboonException("No JSON codec registered for " + typeId);
         }
