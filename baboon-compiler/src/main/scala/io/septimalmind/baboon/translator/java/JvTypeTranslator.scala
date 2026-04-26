@@ -34,7 +34,7 @@ class JvTypeTranslator {
         val tpe   = asJvType(id, domain, evo)
         val targs = args.map(asJvBoxedRef(_, domain, evo))
         q"$tpe<${targs.toSeq.join(", ")}>"
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("JvTypeTranslator.asJvRef")
+      case _: TypeRef.Any => q"$baboonAnyOpaque"
     }
   }
 

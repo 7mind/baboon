@@ -5,6 +5,7 @@ import io.septimalmind.baboon.translator.java.JvTypes.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -128,11 +129,40 @@ object JvCodecFixtureTranslator {
               case Builtins.opt => q"rnd.mkOptional(() -> ${gen(args.head)})"
               case t            => throw new IllegalArgumentException(s"Unexpected collection type: $t")
             }
-          case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("JvCodecFixtureTranslator.genType")
+          case a: TypeRef.Any => genAnyFixture(a)
         }
       }
 
       gen(tpe)
+    }
+
+    // PR 6.2: UEBA-only single-branch fixture. PR 6.4 will add a parallel JSON branch and a
+    // `FixtureFormat` selector (mirrors PR 3.4 / PR 4.3 / PR 5.4 branch-matching fix). The bytes
+    // are empty: the fixture only has to compile and yield a value with the right meta-kind; the
+    // encoder asserts `meta.kind() == expectedKind` and copies the bytes through verbatim.
+    private val FixtureAnyPayloadTypeId: String = "my.test.AnyFixturePayload"
+
+    private def genAnyFixture(a: TypeRef.Any): TextTree[JvValue] = {
+      val hasUnderlying = a.underlying.isDefined
+      val kindHex       = "0x%02x".format(AnyVariant.metaKindByte(a.variant, hasUnderlying) & 0xFF)
+      val domainStr     = q""""${domain.id.toString}""""
+      val versionStr    = q""""${domain.version.v.toString}""""
+      val typeidStr     = q""""$FixtureAnyPayloadTypeId""""
+
+      val nullTree = q"null"
+      val (domainExpr, versionExpr, typeidExpr) = a.variant match {
+        case AnyVariant.Global =>
+          val tid = if (hasUnderlying) nullTree else typeidStr
+          (domainStr, versionStr, tid)
+        case AnyVariant.ThisDom =>
+          val tid = if (hasUnderlying) nullTree else typeidStr
+          (nullTree, versionStr, tid)
+        case AnyVariant.Current =>
+          val tid = if (hasUnderlying) nullTree else typeidStr
+          (nullTree, nullTree, tid)
+      }
+
+      q"new $baboonAnyOpaqueUeba(new $baboonAnyMeta((byte)$kindHex, $domainExpr, $versionExpr, $typeidExpr), new byte[0])"
     }
 
     private def genScalar(tpe: TypeRef.Scalar): TextTree[JvValue] = {

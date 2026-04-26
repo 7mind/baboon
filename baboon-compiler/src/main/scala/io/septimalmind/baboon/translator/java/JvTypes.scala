@@ -54,6 +54,16 @@ object JvTypes {
   val baboonAbstractConversion: JvType  = JvType(baboonRuntimePkg, "AbstractConversion")
   val baboonAbstractConversions: JvType = JvType(baboonRuntimePkg, "AbstractBaboonConversions")
 
+  // baboon any-feature surface types (PR 6.1 runtime; consumed by PR 6.2+ codec emitters).
+  val baboonAnyOpaqueOuter: JvType   = JvType(baboonRuntimePkg, "BaboonAnyOpaque")
+  val baboonAnyOpaque: JvType        = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyOpaque")
+  val baboonAnyOpaqueUeba: JvType    = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyOpaqueUeba")
+  val baboonAnyOpaqueJson: JvType    = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyOpaqueJson")
+  val baboonAnyMeta: JvType          = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyMeta")
+  val baboonAnyMetaCodec: JvType     = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyMetaCodec")
+  val baboonCodecException: JvType   = JvType(baboonRuntimePkg, "BaboonCodecException")
+  val baboonEither: JvType           = JvType(baboonRuntimePkg, "BaboonEither")
+
   // java.lang
   val javaLangPkg: JvPackageId             = parseJvPkg("java.lang")
   val jvBoolean: JvType                    = JvType(javaLangPkg, "boolean", predef = true)

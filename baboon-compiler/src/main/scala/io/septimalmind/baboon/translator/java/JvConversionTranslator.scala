@@ -63,8 +63,23 @@ class JvConversionTranslator[F[+_, +_]: Error2](
         throw new IllegalStateException(s"Unsupported scalar to constructor conversion: ${c.id}")
       case (cn: TypeRef.Constructor, co: TypeRef.Constructor) =>
         transferConstructor(oldRef, depth, cn, co)
-      case (_: TypeRef.Any, _) => AnyPlaceholder.notSupportedYet("JvConversionTranslator.transfer(new any)")
-      case (_, _: TypeRef.Any) => AnyPlaceholder.notSupportedYet("JvConversionTranslator.transfer(old any)")
+      // `any` payload is opaque (bytes / JsonNode); we never auto-convert between `any` and a
+      // non-`any` type (validator forbids it). When both old and new are `any` AND their (variant,
+      // underlying) pair is identical, copy the reference as-is — the surface ADT is the same
+      // `AnyOpaque` and the wire bytes carry their own meta header, independent of the schema
+      // version of the containing DTO. Variant or underlying changes are breaking per spec
+      // §Evolution and should have been rejected by `BaboonRules.incompatibleAdditions`; we emit a
+      // defensive throw in case that layer is ever loosened.
+      case (newA: TypeRef.Any, oldA: TypeRef.Any) =>
+        if (newA == oldA) oldRef
+        else
+          throw new IllegalStateException(
+            s"BUG: conversion of `any` field across variant or underlying change is breaking and should have been rejected by BaboonRules.incompatibleAdditions: $oldA -> $newA"
+          )
+      case (_: TypeRef.Any, other) =>
+        throw new IllegalStateException(s"BUG: cannot auto-convert field of type $other to `any` (not allowed by evolution rules)")
+      case (other, _: TypeRef.Any) =>
+        throw new IllegalStateException(s"BUG: cannot auto-convert `any` field to type $other (not allowed by evolution rules)")
     }
   }
 

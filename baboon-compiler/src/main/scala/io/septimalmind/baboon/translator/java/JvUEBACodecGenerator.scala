@@ -7,6 +7,7 @@ import io.septimalmind.baboon.translator.java.JvDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.java.JvTypes.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -121,13 +122,15 @@ class JvUEBACodecGenerator(
          |}""".stripMargin
     )
 
+    val anyHelpers: List[TextTree[JvValue]] = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
+
     val baseMethods = encoderMethods ++ decoderMethods
       ++ branchDecoder.map {
         body =>
           q"""public $name decodeBranch($baboonCodecContext ctx, $binaryInput input) throws Exception {
              |  ${body.shift(2).trim}
              |}""".stripMargin
-      }.toList ++ indexMethods
+      }.toList ++ indexMethods ++ anyHelpers
 
     val codecIface = q"$baboonBinCodec<$name>"
     val cName      = codecName(srcRef, defn.defn.id.owner)
@@ -455,7 +458,7 @@ class JvUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("JvUEBACodecGenerator.mkDecoder")
+      case a: TypeRef.Any => mkAnyDecoder(a)
     }
   }
 
@@ -532,8 +535,169 @@ class JvUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("JvUEBACodecGenerator.mkEncoder")
+      case a: TypeRef.Any => mkAnyEncoder(a, ref, wref)
     }
+  }
+
+  // Deep walk (mirrors Scala/C#/Rust/Kotlin hasAnyField): a codec object needs the any-field
+  // helpers if any direct or nested-via-Constructor-arg field has type `any`.
+  private def hasAnyField(defn: DomainMember.User): Boolean = {
+    def hasAny(tpe: TypeRef): Boolean = tpe match {
+      case _: TypeRef.Any         => true
+      case _: TypeRef.Scalar      => false
+      case c: TypeRef.Constructor => c.args.exists(hasAny)
+    }
+    defn.defn match {
+      case d: Typedef.Dto => d.fields.exists(f => hasAny(f.tpe))
+      case _              => false
+    }
+  }
+
+  // Encode delegates to the per-codec-object `encodeAnyField` helper. This site wires the expected
+  // kind byte and the field's static (codec-gen-time) fallbacks for cross-format meta resolution.
+  // See `anyStaticFallbacks` for the per-variant table.
+  private def mkAnyEncoder(a: TypeRef.Any, ref: TextTree[JvValue], wref: TextTree[JvValue]): TextTree[JvValue] = {
+    val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
+    val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
+    q"encodeAnyField(ctx, $wref, (byte)$expectedHex, $staticDom, $staticVer, $staticTid, $ref);"
+  }
+
+  // Decode delegates to the per-codec-object `decodeAnyField` helper, returning an
+  // `AnyOpaqueUeba` (the helper's narrow return type — `mkDecoder`'s field type position is
+  // `AnyOpaque`, the supertype, so this widens implicitly via Java sealed-interface assignment).
+  private def mkAnyDecoder(a: TypeRef.Any): TextTree[JvValue] = {
+    val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
+    q"decodeAnyField(input, (byte)$expectedHex)"
+  }
+
+  // Static fallbacks for the cross-format facade helpers (`jsonToUebaBytes`/`uebaToJson`). The
+  // wire `meta` may omit components that are pinned by the field's static declaration; the codec
+  // emits whatever is statically known so the facade can fill the gaps. See
+  // `BaboonCodecsFacade.buildSyntheticTypeMeta` for the merge semantics. Per spec table:
+  //   A=(null,null,null), B=(currentDomain,null,null), C=(currentDomain,currentVersion,null),
+  //   D1=(null,null,underlyingFqid), D2=(currentDomain,null,underlyingFqid),
+  //   D3=(currentDomain,currentVersion,underlyingFqid).
+  // Duplicated across Scala/C#/Rust/Kotlin/Java — extraction deferred (textual emission diverges
+  // by language flavor; see PR 4.2 ledger entry's DRY analysis).
+  private def anyStaticFallbacks(a: TypeRef.Any): (TextTree[JvValue], TextTree[JvValue], TextTree[JvValue]) = {
+    val none                     = q"(String)null"
+    def some(s: String)          = q""""$s""""
+    val currentDomain: String    = domain.id.toString
+    val currentDomainVer: String = domain.version.v.toString
+    val typeidStatic = a.underlying match {
+      case Some(u) => some(u.id.toString)
+      case None    => none
+    }
+    val (domainStatic, versionStatic) = a.variant match {
+      case AnyVariant.Global  => (none, none)
+      case AnyVariant.ThisDom => (some(currentDomain), none)
+      case AnyVariant.Current => (some(currentDomain), some(currentDomainVer))
+    }
+    (domainStatic, versionStatic, typeidStatic)
+  }
+
+  // Per-codec-object helpers consolidating the any-field framing, kind-check, and
+  // buffer-then-write / read-then-skip paths — emitted at most once per codec object that has any
+  // any-bearing field. Mirrors `CSUEBACodecGenerator.anyFieldHelpers`,
+  // `RsUEBACodecGenerator.anyFieldHelpers`, and `KtUEBACodecGenerator.anyFieldHelpers`. Wire
+  // layout (locked, see docs/drafts/20260424-1738-any-opaque-fields.md §"Wire format"):
+  //   length:i32 | meta-length:i32 | meta-kind:u8 | meta-strings | blob
+  //
+  // Negative-i32 sanity guards on the on-wire lengths run before any size arithmetic — Java `int`
+  // is 32-bit signed and `4 + Integer.MIN_VALUE` overflows silently otherwise (PR-12-D01 lesson
+  // applied to Java).
+  private def anyFieldHelpers: TextTree[JvValue] = {
+    q"""private void encodeAnyField(
+       |    $baboonCodecContext ctx,
+       |    $binaryOutput writer,
+       |    byte expectedKind,
+       |    String staticDomain,
+       |    String staticVersion,
+       |    String staticTypeid,
+       |    $baboonAnyOpaque value
+       |) throws Exception {
+       |  if (value.meta().kind() != expectedKind) {
+       |    throw new $baboonCodecException.EncoderFailure(
+       |        "any: meta-kind 0x" + String.format("%02x", value.meta().kind() & 0xFF) +
+       |        " does not match field-declared 0x" + String.format("%02x", expectedKind & 0xFF));
+       |  }
+       |  byte[] anyBlob;
+       |  if (value instanceof $baboonAnyOpaqueUeba anyUeba) {
+       |    anyBlob = anyUeba.bytes();
+       |  } else if (value instanceof $baboonAnyOpaqueJson anyJson) {
+       |    var anyFacade = ctx.facade();
+       |    if (anyFacade == null) {
+       |      throw new $baboonCodecException.EncoderFailure(
+       |          "Cannot encode AnyOpaqueJson into UEBA without a facade reference. Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), or supply AnyOpaqueUeba directly.");
+       |    }
+       |    var anyConvResult = anyFacade.jsonToUebaBytes(anyJson.meta(), anyJson.json(), staticDomain, staticVersion, staticTypeid);
+       |    if (anyConvResult instanceof $baboonEither.Left<$baboonCodecException, byte[]> anyConvL) {
+       |      throw anyConvL.value();
+       |    }
+       |    anyBlob = (($baboonEither.Right<$baboonCodecException, byte[]>) anyConvResult).value();
+       |  } else {
+       |    throw new $baboonCodecException.EncoderFailure(
+       |        "unexpected AnyOpaque subclass: " + value.getClass().getName());
+       |  }
+       |  // Buffer the meta to count its byte length precisely (the on-wire `meta-length` field).
+       |  var anyMetaBuf = new $byteArrayOutputStream();
+       |  var anyMetaWriter = new $binaryOutput(anyMetaBuf);
+       |  $baboonAnyMetaCodec.writeBin(value.meta(), anyMetaWriter);
+       |  anyMetaWriter.flush();
+       |  byte[] anyMetaBytes = anyMetaBuf.toByteArray();
+       |  int anyTotalLength = 4 + anyMetaBytes.length + anyBlob.length;
+       |  writer.writeInt(anyTotalLength);
+       |  writer.writeInt(anyMetaBytes.length);
+       |  writer.write(anyMetaBytes);
+       |  writer.write(anyBlob);
+       |}
+       |
+       |private $baboonAnyOpaqueUeba decodeAnyField($binaryInput wire, byte expectedKind) throws Exception {
+       |  int anyTotalLength = wire.readInt();
+       |  if (anyTotalLength < 0) {
+       |    throw new $baboonCodecException.DecoderFailure(
+       |        "any: negative total-length " + anyTotalLength);
+       |  }
+       |  int anyMetaLength = wire.readInt();
+       |  if (anyMetaLength < 0) {
+       |    throw new $baboonCodecException.DecoderFailure(
+       |        "any: negative meta-length " + anyMetaLength);
+       |  }
+       |  if (anyTotalLength < 4 + anyMetaLength) {
+       |    throw new $baboonCodecException.DecoderFailure(
+       |        "any: total-length " + anyTotalLength + " smaller than 4 + meta-length " + anyMetaLength);
+       |  }
+       |  var anyReadResult = $baboonAnyMetaCodec.readBinWithLength(wire);
+       |  var anyMeta = anyReadResult.meta();
+       |  int anyBytesRead = anyReadResult.bytesRead();
+       |  if (anyBytesRead > anyMetaLength) {
+       |    throw new $baboonCodecException.DecoderFailure(
+       |        "any: meta bytes-read " + anyBytesRead + " exceeded meta-length window " + anyMetaLength);
+       |  }
+       |  if (anyBytesRead < anyMetaLength) {
+       |    // Forward-compat: skip future meta-extension bytes within the meta-length window.
+       |    int anySkip = anyMetaLength - anyBytesRead;
+       |    byte[] anySkipBuf = wire.readNBytes(anySkip);
+       |    if (anySkipBuf.length != anySkip) {
+       |      throw new $baboonCodecException.DecoderFailure(
+       |          "any: short read while skipping meta-extension bytes, expected " + anySkip + " got " + anySkipBuf.length);
+       |    }
+       |  }
+       |  if (anyMeta.kind() != expectedKind) {
+       |    throw new $baboonCodecException.DecoderFailure(
+       |        "any: wire kind 0x" + String.format("%02x", anyMeta.kind() & 0xFF) +
+       |        " does not match field-declared 0x" + String.format("%02x", expectedKind & 0xFF));
+       |  }
+       |  int anyBlobLen = anyTotalLength - 4 - anyMetaLength;
+       |  byte[] anyBlob = wire.readNBytes(anyBlobLen);
+       |  if (anyBlob.length != anyBlobLen) {
+       |    throw new $baboonCodecException.DecoderFailure(
+       |        "any: short read on blob, expected " + anyBlobLen + " got " + anyBlob.length);
+       |  }
+       |  return new $baboonAnyOpaqueUeba(anyMeta, anyBlob);
+       |}""".stripMargin
   }
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[JvValue]] = {
