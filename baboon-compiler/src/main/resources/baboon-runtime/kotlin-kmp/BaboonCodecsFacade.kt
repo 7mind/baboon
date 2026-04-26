@@ -202,7 +202,7 @@ open class BaboonCodecsFacade {
     ): BaboonCodecData {
         val versions = domainVersions[typeMeta.domainIdentifier]
             ?.takeIf { it.isNotEmpty() }
-            ?: throw BaboonCodecException.CodecNotFound("Unknown domain $${typeMeta.domainIdentifier}.")
+            ?: throw BaboonCodecException.CodecNotFound("Unknown domain ${typeMeta.domainIdentifier}.")
 
         val minVersion = versions.first()
         val maxVersion = versions.last()
@@ -215,6 +215,12 @@ open class BaboonCodecsFacade {
 
         return when {
             exact && modelVersion.version == maxVersion.version ->
+                getCodecExact(versionsCodecs, modelVersion, typeMeta.typeIdentifier)
+            // PR-07-D02 fix: non-exact lookup at the latest registered version routes to exact
+            // lookup. Without this arm a single-version domain (min == max == model) falls through
+            // every other arm because the next one's strict `<` excludes equality, producing a
+            // misleading "Unsupported domain version" error. Mirrors Scala/C# fix.
+            !exact && modelVersion.version == maxVersion.version ->
                 getCodecExact(versionsCodecs, modelVersion, typeMeta.typeIdentifier)
             modelVersion.version >= minVersion.version && modelVersion.version < maxVersion.version ->
                 getCodecMaxCompat(versionsCodecs, modelVersion, maxVersion, typeMeta.typeIdentifier)
@@ -263,5 +269,188 @@ open class BaboonCodecsFacade {
             versions.sortBy { it.version }
         }
         return domainVersion
+    }
+
+    /** Decode an `AnyOpaque` payload via the registered codec for `(meta.domain, meta.version,
+     *  meta.typeid)`. User-facing — `meta` must carry all three components (variant A only). For
+     *  variants B/C/D1/D2/D3 use `jsonToUebaBytes`/`uebaToJson` (cross-format helpers with static
+     *  fallbacks). PR-04-D02. */
+    fun decodeAny(opaque: AnyOpaque): Either<BaboonCodecException, BaboonGenerated> {
+        val meta = opaque.meta
+        return try {
+            val typeMetaResult = buildSyntheticTypeMeta(meta, null, null, null)
+            when (typeMetaResult) {
+                is Either.Left -> typeMetaResult
+                is Either.Right -> {
+                    val typeMeta = typeMetaResult.value
+                    when (opaque) {
+                        is AnyOpaqueUeba -> {
+                            @Suppress("UNCHECKED_CAST")
+                            val codec = getBinCodec(typeMeta, exact = false) as BaboonBinCodec<BaboonGenerated>
+                            try {
+                                val reader = BaboonBinaryReader(opaque.bytes)
+                                Either.Right(codec.decode(BaboonCodecContext.Compact, reader))
+                            } catch (e: Throwable) {
+                                Either.Left(
+                                    BaboonCodecException.DecoderFailure(
+                                        "decodeAny: cannot decode UEBA payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
+                                        e,
+                                    )
+                                )
+                            }
+                        }
+                        // @baboon:json-start
+                        is AnyOpaqueJson -> {
+                            @Suppress("UNCHECKED_CAST")
+                            val codec = getJsonCodec(typeMeta, exact = false) as BaboonJsonCodec<BaboonGenerated>
+                            try {
+                                Either.Right(codec.decode(BaboonCodecContext.Compact, opaque.json))
+                            } catch (e: Throwable) {
+                                Either.Left(
+                                    BaboonCodecException.DecoderFailure(
+                                        "decodeAny: cannot decode JSON payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
+                                        e,
+                                    )
+                                )
+                            }
+                        }
+                        // @baboon:json-end
+                    }
+                }
+            }
+        } catch (e: BaboonCodecException) {
+            Either.Left(e)
+        }
+    }
+
+    // @baboon:json-start
+    /** Cross-format helper: decode an `AnyOpaqueJson` payload via the registered JSON codec, then
+     *  re-encode via UEBA. Static fallbacks fill components missing from the wire `meta` (variants
+     *  B/C/D1/D2/D3). Wire data wins (override semantics). See PR-06-D01. */
+    fun jsonToUebaBytes(
+        meta: AnyMeta,
+        json: JsonElement,
+        staticDomain: String? = null,
+        staticVersion: String? = null,
+        staticTypeid: String? = null,
+    ): Either<BaboonCodecException, ByteArray> {
+        return try {
+            val typeMetaResult = buildSyntheticTypeMeta(meta, staticDomain, staticVersion, staticTypeid)
+            when (typeMetaResult) {
+                is Either.Left -> typeMetaResult
+                is Either.Right -> {
+                    val typeMeta = typeMetaResult.value
+                    @Suppress("UNCHECKED_CAST")
+                    val jsonCodec = getJsonCodec(typeMeta, exact = false) as BaboonJsonCodec<BaboonGenerated>
+                    @Suppress("UNCHECKED_CAST")
+                    val binCodec = getBinCodec(typeMeta, exact = false) as BaboonBinCodec<BaboonGenerated>
+                    val typed = try {
+                        jsonCodec.decode(BaboonCodecContext.Compact, json)
+                    } catch (e: Throwable) {
+                        return Either.Left(
+                            BaboonCodecException.DecoderFailure(
+                                "jsonToUebaBytes: cannot decode JSON payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
+                                e,
+                            )
+                        )
+                    }
+                    try {
+                        val writer = BaboonBinaryWriter()
+                        binCodec.encode(BaboonCodecContext.Compact, writer, typed)
+                        Either.Right(writer.toByteArray())
+                    } catch (e: Throwable) {
+                        Either.Left(
+                            BaboonCodecException.EncoderFailure(
+                                "jsonToUebaBytes: cannot encode UEBA payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
+                                e,
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (e: BaboonCodecException) {
+            Either.Left(e)
+        }
+    }
+
+    /** Cross-format helper symmetric to `jsonToUebaBytes`. */
+    fun uebaToJson(
+        meta: AnyMeta,
+        bytes: ByteArray,
+        staticDomain: String? = null,
+        staticVersion: String? = null,
+        staticTypeid: String? = null,
+    ): Either<BaboonCodecException, JsonElement> {
+        return try {
+            val typeMetaResult = buildSyntheticTypeMeta(meta, staticDomain, staticVersion, staticTypeid)
+            when (typeMetaResult) {
+                is Either.Left -> typeMetaResult
+                is Either.Right -> {
+                    val typeMeta = typeMetaResult.value
+                    @Suppress("UNCHECKED_CAST")
+                    val binCodec = getBinCodec(typeMeta, exact = false) as BaboonBinCodec<BaboonGenerated>
+                    @Suppress("UNCHECKED_CAST")
+                    val jsonCodec = getJsonCodec(typeMeta, exact = false) as BaboonJsonCodec<BaboonGenerated>
+                    val typed = try {
+                        val reader = BaboonBinaryReader(bytes)
+                        binCodec.decode(BaboonCodecContext.Compact, reader)
+                    } catch (e: Throwable) {
+                        return Either.Left(
+                            BaboonCodecException.DecoderFailure(
+                                "uebaToJson: cannot decode UEBA payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
+                                e,
+                            )
+                        )
+                    }
+                    try {
+                        Either.Right(jsonCodec.encode(BaboonCodecContext.Compact, typed))
+                    } catch (e: Throwable) {
+                        Either.Left(
+                            BaboonCodecException.EncoderFailure(
+                                "uebaToJson: cannot encode JSON payload of type [${typeMeta.domainIdentifier}.${typeMeta.typeIdentifier}] of version '${typeMeta.domainVersion}'.",
+                                e,
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (e: BaboonCodecException) {
+            Either.Left(e)
+        }
+    }
+    // @baboon:json-end
+
+    /** Synthesise a `BaboonTypeMeta` from an `AnyMeta` plus optional static fallbacks. Wire data
+     *  wins (override semantics). PR-06-D01. */
+    private fun buildSyntheticTypeMeta(
+        meta: AnyMeta,
+        staticDomain: String?,
+        staticVersion: String?,
+        staticTypeid: String?,
+    ): Either<BaboonCodecException, BaboonTypeMeta> {
+        val domain = meta.domain ?: staticDomain
+        val version = meta.version ?: staticVersion
+        val typeid = meta.typeid ?: staticTypeid
+        if (domain != null && version != null && typeid != null) {
+            return Either.Right(
+                BaboonTypeMeta(
+                    BaboonTypeMetaCodec.META_VERSION,
+                    domain,
+                    version,
+                    version,
+                    typeid,
+                )
+            )
+        }
+        val missing = buildList {
+            if (domain == null) add("domain")
+            if (version == null) add("version")
+            if (typeid == null) add("typeid")
+        }.joinToString(", ")
+        return Either.Left(
+            BaboonCodecException.DecoderFailure(
+                "AnyMeta requires domain/version/typeid for facade resolution; got kind 0x${(meta.kind.toInt() and 0xFF).toString(16)} which lacks: $missing"
+            )
+        )
     }
 }

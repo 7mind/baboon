@@ -139,6 +139,11 @@ object BaboonBinTools {
 class BaboonBinaryReader(private val data: ByteArray) {
     private var pos = 0
 
+    /** Current absolute read offset within the underlying byte buffer (PR 5.1: lets
+     *  `AnyMetaCodec.readBinWithLength` measure bytes consumed by a meta read for the
+     *  forward-compat `meta-length` window-skip). */
+    val position: Int get() = pos
+
     fun readByte(): Byte {
         check(pos < data.size) { "End of data" }
         return data[pos++]

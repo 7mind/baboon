@@ -880,3 +880,29 @@ Same for `any_meta_length`. Also check `any_total_length < 4 + any_meta_length` 
 **Location:** `test/rs-stub/tests/any_round_trip_tests.rs:502-515` (`json_envelope_key_order_is_ak_first`).
 **Description:** Test asserts `$ak < $ad` and `$ad < $c` substring positions but doesn't lock `$av < $at` ordering between them. A regression that swapped `$av`↔`$at` or moved any of `$ad/$av/$at` after `$c` would not be caught. Mirrors a similar Scala/C# laxity. The `json_envelope_carries_ak_and_optional_ad_av_at_and_content_key` test already validates exact set membership; `serde_json/preserve_order` is enabled crate-wide (PR-11-D05) so insertion order is structurally enforced.
 **Fix:** Deferred — cosmetic, no functional gap. Extension to assert `$ak < $ad < $av < $at < $c` is a 3-line change for any future hygiene PR.
+
+---
+
+## PR-14 — Kotlin runtime additions (M5 PR 5.1)
+
+### [PR-14-D01] Stray literal `$` characters in KMP facade error messages
+**Status:** resolved
+**Severity:** cosmetic
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/kotlin-kmp/BaboonCodecsFacade.kt:296,311,352,364,400,410`.
+**Description:** See above. JVM variant uses single `${...}` correctly; KMP had `$${...}` (literal `$` + interpolation).
+**Suggested fix:** Drop the extra `$` in all six sites; messages should match JVM facade verbatim.
+**Fix (PR 5.1 round 2):** Sed-replaced `$${typeMeta.` → `${typeMeta.` in all 6 sites; KMP variant now matches JVM. Orchestrator-direct edit (6-line cosmetic fix; subagent loop overhead not justified for mechanical sed).
+
+### [PR-14-D02] KMP runtime variant has zero test parity with JVM
+**Status:** open (defer — coverage gap, not blocking)
+**Severity:** medium-low
+**Location:** `test/kt-stub-kmp/` (no `src/test/` tree).
+**Description:** The 34 `AnyMetaCodecTest` cases run only against `test/kt-stub/` (JVM). KMP `BaboonAnyOpaque.kt` and the new `BaboonBinaryReader.position` getter are exercised by gradle compile-only. Off-by-one risks in `readBinWithLength`'s position-delta byte-counting are unobserved. PR-14-D01's stray-`$` divergence between JVM and KMP variants went undetected because no KMP test ever observed the error message text. Note: `kt-stub-kmp/build.gradle.kts` is configured as `kotlin("jvm")` not `kotlin-multiplatform`, so this is purely a project-config-naming oddity, not a multiplatform-runtime concern.
+**Suggested fix:** Defer to a future hygiene PR. Add a JUnit5 test source set to `kt-stub-kmp` mirroring `kt-stub`'s `AnyMetaCodecTest`. Could share via a `commonTest` source set if KMP is ever properly configured as multiplatform.
+
+### [PR-14-D03] Verification protocol omits `any-ok/` stash precondition for `mdl :test-gen-regular-adt`
+**Status:** resolved (documentation noted in M5 session log when written)
+**Severity:** trivial (process)
+**Location:** Session/PR documentation.
+**Description:** PR 5.1's executor verification claims `mdl :test-gen-regular-adt` clean without explicitly noting the `any-ok/` stash precondition. The all-language action still trips on the Kotlin and Python placeholder cascades (via `KtTypeTranslator.asKtRef` and `PyTypeTranslator`). Future reviewers reading the brief verbatim will mis-set expectations.
+**Fix:** Documented in M5 close session log when M5 closes. Mirrors the M4 PR-4.1 session-log note about Python placeholder gating the all-language action.

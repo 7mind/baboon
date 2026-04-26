@@ -14,8 +14,21 @@ interface BaboonCodecData {
 interface BaboonCodecContext {
     val useIndices: Boolean
 
+    /** Optional facade reference, threaded through generated codec calls so the `any`-feature
+     *  cross-format conversion (UEBA ↔ JSON) can resolve codecs by `(domain, version, typeid)`
+     *  from an `AnyMeta` envelope. `null` for the bare `Compact` / `Indexed` singletons;
+     *  `withFacade(...)` is the single intended construction path for ctxes that thread a facade.
+     *  See PR 5.1 plumbing. */
+    val facade: BaboonCodecsFacade? get() = null
+
     companion object {
         val Default: BaboonCodecContext = Compact
+
+        fun withFacade(useIndices: Boolean, baboonFacade: BaboonCodecsFacade): BaboonCodecContext =
+            object : BaboonCodecContext {
+                override val useIndices: Boolean = useIndices
+                override val facade: BaboonCodecsFacade = baboonFacade
+            }
     }
 
     object Indexed : BaboonCodecContext {

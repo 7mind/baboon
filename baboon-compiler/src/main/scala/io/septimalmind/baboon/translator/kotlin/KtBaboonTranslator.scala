@@ -250,6 +250,7 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
       val rtDir = if (target.language.multiplatform) "baboon-runtime/kotlin-kmp" else "baboon-runtime/kotlin"
 
       val baseFiles = List(
+        rt("BaboonAnyOpaque.kt", s"$rtDir/BaboonAnyOpaque.kt", stripJsonSections),
         rt("BaboonByteString.kt", s"$rtDir/BaboonByteString.kt"),
         rt("BaboonCodecs.kt", s"$rtDir/BaboonCodecs.kt", stripJsonSections),
         rt("BaboonCodecsFacade.kt", s"$rtDir/BaboonCodecsFacade.kt", stripJsonSections),
