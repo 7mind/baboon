@@ -5,6 +5,7 @@ import io.septimalmind.baboon.translator.typescript.TsValue.{TsModuleId, TsType}
 object TsTypes {
   // baboon modules
   val tsBaboonRuntimeShared: TsModuleId = TsModuleId("BaboonSharedRuntime")
+  val tsBaboonAnyOpaqueModule: TsModuleId = TsModuleId("BaboonAnyOpaque")
   val tsFixtureShared: TsModuleId       = TsModuleId("BaboonSharedFixture")
 
   // node modules
@@ -24,6 +25,17 @@ object TsTypes {
 
   // ts types
   val tsReadFile: TsType = TsType(nodeFsModule, "readFileSync")
+
+  // any-feature runtime types (BaboonAnyOpaque module)
+  val tsBaboonAnyOpaque: TsType        = TsType(tsBaboonAnyOpaqueModule, "AnyOpaque")
+  val tsBaboonAnyMeta: TsType          = TsType(tsBaboonAnyOpaqueModule, "AnyMeta")
+  val tsBaboonCreateAnyMeta: TsType    = TsType(tsBaboonAnyOpaqueModule, "createAnyMeta")
+  val tsBaboonAnyOpaqueUebaCtor: TsType = TsType(tsBaboonAnyOpaqueModule, "anyOpaqueUeba")
+  val tsBaboonAnyMetaCodec: TsType     = TsType(tsBaboonAnyOpaqueModule, "AnyMetaCodec")
+
+  // any-feature failures (BaboonSharedRuntime module)
+  val tsBaboonEncoderFailure: TsType = TsType(tsBaboonRuntimeShared, "BaboonEncoderFailure")
+  val tsBaboonDecoderFailure: TsType = TsType(tsBaboonRuntimeShared, "BaboonDecoderFailure")
 
   // Runtime types
   val tsBaboonDecimal: TsType             = TsType(tsBaboonRuntimeShared, "BaboonDecimal")

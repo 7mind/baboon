@@ -1021,3 +1021,37 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Location:** `BaboonSharedRuntime.ts` (`versionMinCompat()`).
 **Description:** `if (!this.domainVersionMinCompat || ...) return undefined`. Empty string is falsy in JS, so empty-string `domainVersionMinCompat` is treated as absent. Conflates "absent" and "explicit empty". Won't bite in practice (codegen always emits a real value when present), but silent.
 **Suggested fix:** Defer — minor. Either explicit `=== null` check or document the conflation.
+
+## PR-20 — TypeScript UEBA codec emission (M7 PR 7.2)
+
+### [PR-20-D01] `TextTree.text(...)` over runtime-resource content runs `StringContext.processEscapes` on file bytes — crashes codegen on `\.`/`\d` regex literals
+**Status:** resolved
+**Severity:** critical (TS codegen crash for any project with `--ts` enabled, since `BaboonSharedRuntime.ts` contains `replace(/(\.\d{3})\d*Z$/, "$1Z")`)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsBaboonTranslator.scala:107,114,121,139` (pre-PR-7.1 site at 107,139; PR 7.1 added 114,121).
+**Description:** `TsBaboonTranslator.sharedRuntime` / `sharedFixture` wrap embedded runtime file content via `TextTree.text(...)` (which produces a `StringNode`). When `renderTree` calls `mapRender`, every `StringNode` is run through `StringContext.processEscapes` (`TextTree.scala:125`). The runtime files contain literal TS regex `replace(/(\.\d{3})\d*Z$/, ...)` — the `\.` and `\d` sequences are not Scala escape sequences, so `processEscapes` throws `InvalidEscapeException`. PR-19-D03 process note confirms this was missed by PR 7.1's verification: codegen crashes the moment `:typescript` runtime emission is exercised against any model. Sister bug to PR-19-D01 (which addressed Scala-source-level over-escapes) — the same conceptual mistake at a different layer.
+**Fix:** Replaced `TextTree.text(BaboonRuntimeResources.read(...))` with `TextTree.verbatim(BaboonRuntimeResources.read(...))` at all four sites in `TsBaboonTranslator.scala` (`sharedRuntime` runtime + AnyOpaque + Facade outputs, `sharedFixture` output). `VerbatimNode` skips `processEscapes` and writes file bytes through unmodified — correct for embedded foreign-language source. Verified: `mdl :test-gen-regular-adt` codegen now clean against the full pre-PR-7.2 model set (no `any`-bearing types) including TS runtime emission; round-trip `holder_ueba_codec` test passes 500 iterations after PR 7.2's any-codec lands.
+
+### [PR-20-D02] `BaboonAnyOpaque` runtime module imports as bare specifier instead of relative path
+**Status:** resolved
+**Severity:** medium (runtime-resolution failure under Node ESM — module specifier without `./` / `../` is treated as a package lookup)
+**Location:** `TsBaboonTranslator.renderTree` — module-id matching block at line 210.
+**Description:** Generated `Holder.ts` emitted `import {AnyOpaque, ...} from 'BaboonAnyOpaque'` (no relative-path prefix) because the matching block treated only `tsBaboonRuntimeShared` and `tsFixtureShared` as runtime-shared modules. The new `tsBaboonAnyOpaqueModule` fell through to the default emission branch (`'${moduleId.path.mkString("/")}'`), producing a bare specifier. Node ESM resolves bare specifiers as npm packages, so generated code wouldn't run.
+**Fix:** Added `moduleId == tsBaboonAnyOpaqueModule` to the matching predicate. `BaboonAnyOpaque` now resolves through `baboonTypeImport` like the other runtime modules — emits relative path (`'../../BaboonAnyOpaque'` from `my/ok/Holder.ts`). Verified by reading generated `Holder.ts`: import line is now `from '../../BaboonAnyOpaque'`.
+
+---
+
+## PR-20 — TS UEBA codec emission + critical pre-existing PR 7.1 fixes (M7 PR 7.2)
+
+### [PR-20-D01] `TsBaboonTranslator.sharedRuntime`/`sharedFixture` used `TextTree.text` which runs `StringContext.processEscapes` — codegen crashed on TS regex
+**Status:** resolved (in PR 7.2 scope expansion — was load-bearing pre-existing PR 7.1 defect)
+**Severity:** critical (TS codegen fully broken for runtime-file emission)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsBaboonTranslator.scala` (4 sites of `TextTree.text(...)` for runtime resource content).
+**Description:** `TextTree.text` invokes `StringContext.processEscapes` via `mapRender`'s StringNode path. Literal TS regex like `/(\.\d{3})\d*Z$/` in `BaboonSharedRuntime.ts` source contains `\.` and `\d` byte sequences that aren't valid Scala-string escapes, so processEscapes throws `InvalidEscapeException`. Codegen crashes any time `:typescript` produces runtime files. Sister-bug to PR-19-D01 at a different layer (PR-19-D01 was about regex authoring; PR-20-D01 is about how the macro-streamed-bytes are wrapped before render).
+**Fix (in PR 7.2):** Replaced `TextTree.text(...)` → `TextTree.verbatim(...)` at all 4 sites — verbatim render bypasses StringContext.processEscapes.
+
+### [PR-20-D02] Generated TS emits bare `import {...} from 'BaboonAnyOpaque'` instead of relative path — Node ESM resolves bare specifiers as packages
+**Status:** resolved (in PR 7.2 scope expansion — was load-bearing pre-existing PR 7.1 defect)
+**Severity:** medium (TS codegen output unusable in Node ESM context)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsBaboonTranslator.scala` `renderTree`.
+**Description:** `BaboonAnyOpaque.ts` runtime module wasn't in the runtime-shared module-id matcher, so generated DTOs emitted bare-specifier imports that Node ESM treats as package lookups (fails). Other runtime modules (`tsBaboonRuntimeShared`, `tsFixtureShared`) had the correct relative-path resolution.
+**Fix (in PR 7.2):** Extended `renderTree`'s runtime-shared matcher to include `tsBaboonAnyOpaqueModule`; now resolves through `baboonTypeImport` like sibling modules.

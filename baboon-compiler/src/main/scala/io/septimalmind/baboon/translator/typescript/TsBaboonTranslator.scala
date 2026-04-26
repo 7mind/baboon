@@ -4,7 +4,7 @@ import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
-import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonRuntimeShared, tsFixtureShared}
+import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonAnyOpaqueModule, tsBaboonRuntimeShared, tsFixtureShared}
 import io.septimalmind.baboon.translator.typescript.TsValue.{TsModuleId, TsType}
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
@@ -104,21 +104,21 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         List(
           TsDefnTranslator.Output(
             "BaboonSharedRuntime.ts",
-            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonSharedRuntime.ts")),
+            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonSharedRuntime.ts")),
             tsBaboonRuntimeShared,
             CompilerProduct.Runtime,
             doNotModify = true,
           ),
           TsDefnTranslator.Output(
             "BaboonAnyOpaque.ts",
-            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonAnyOpaque.ts")),
+            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonAnyOpaque.ts")),
             tsBaboonRuntimeShared,
             CompilerProduct.Runtime,
             doNotModify = true,
           ),
           TsDefnTranslator.Output(
             "BaboonCodecsFacade.ts",
-            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonCodecsFacade.ts")),
+            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonCodecsFacade.ts")),
             tsBaboonRuntimeShared,
             CompilerProduct.Runtime,
             doNotModify = true,
@@ -136,7 +136,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         List(
           TsDefnTranslator.Output(
             "BaboonSharedFixture.ts",
-            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonSharedFixture.ts")),
+            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/typescript/BaboonSharedFixture.ts")),
             tsBaboonRuntimeShared,
             CompilerProduct.Runtime,
             doNotModify = true,
@@ -207,7 +207,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
             definitionImport(moduleId, typesString)
           } else if (moduleId.path.startsWith(tsFileTools.fixturesBasePkg) && tsFileTools.fixturesBasePkg.nonEmpty) {
             fixtureImport(moduleId, typesString)
-          } else if (moduleId == tsBaboonRuntimeShared || moduleId == tsFixtureShared) {
+          } else if (moduleId == tsBaboonRuntimeShared || moduleId == tsFixtureShared || moduleId == tsBaboonAnyOpaqueModule) {
             baboonTypeImport(moduleId, typesString)
           } else {
             q"import {$typesString} from '${moduleId.path.mkString("/")}'"

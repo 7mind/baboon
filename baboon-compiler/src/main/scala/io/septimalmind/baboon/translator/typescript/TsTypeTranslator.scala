@@ -46,7 +46,7 @@ class TsTypeTranslator(target: TsTarget) {
         val tpe   = asTsType(id, domain, evo, pkgBase)
         val targs = args.map(asTsRef(_, domain, evo, pkgBase))
         q"$tpe<${targs.toSeq.join(", ")}>"
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("TsTypeTranslator.asTsRef")
+      case _: TypeRef.Any => q"$tsBaboonAnyOpaque"
     }
   }
 
