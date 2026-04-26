@@ -135,6 +135,8 @@ $BABOON_BIN \
 # Move Dart runtime files into the baboon_runtime package
 mv "$TEST_DIR/dt-stub/lib/baboon_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 mv "$TEST_DIR/dt-stub/lib/baboon_fixture.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_any_opaque.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_codecs_facade.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 
 # Generate KMP Kotlin code (separate invocation with --kt-multiplatform=true)
 $BABOON_BIN \
@@ -424,6 +426,8 @@ $BABOON_BIN \
 # Move Dart runtime files into the baboon_runtime package
 mv "$TEST_DIR/dt-stub/lib/baboon_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 mv "$TEST_DIR/dt-stub/lib/baboon_fixture.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_any_opaque.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_codecs_facade.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 
 # Generate KMP Kotlin code (separate invocation with --kt-multiplatform=true)
 $BABOON_BIN \
@@ -638,6 +642,8 @@ $BABOON_BIN \
 
 # Move Dart runtime files into the baboon_runtime package
 mv ./test/conv-test-dt/lib/generated/baboon_runtime.dart ./test/conv-test-dt/packages/baboon_runtime/lib/
+mv ./test/conv-test-dt/lib/generated/baboon_any_opaque.dart ./test/conv-test-dt/packages/baboon_runtime/lib/
+mv ./test/conv-test-dt/lib/generated/baboon_codecs_facade.dart ./test/conv-test-dt/packages/baboon_runtime/lib/
 
 ret success:bool=true
 ```

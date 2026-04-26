@@ -1055,3 +1055,56 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsBaboonTranslator.scala` `renderTree`.
 **Description:** `BaboonAnyOpaque.ts` runtime module wasn't in the runtime-shared module-id matcher, so generated DTOs emitted bare-specifier imports that Node ESM treats as package lookups (fails). Other runtime modules (`tsBaboonRuntimeShared`, `tsFixtureShared`) had the correct relative-path resolution.
 **Fix (in PR 7.2):** Extended `renderTree`'s runtime-shared matcher to include `tsBaboonAnyOpaqueModule`; now resolves through `baboonTypeImport` like sibling modules.
+
+---
+
+## PR-22 — Dart runtime + facade port (M8 PR 8.1)
+
+### [PR-22-D01] Dart `BaboonTypeMeta.readMetaJson` accepts numeric `$mv=1` — cross-runtime divergence
+**Status:** resolved
+**Severity:** medium (wire-format inconsistency)
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/dart/baboon_runtime.dart:1071-1074`; test at `test/dt-stub/test/runtime/any_meta_codec_test.dart:544`.
+**Description:** See above.
+**Fix:** Dropped the `mv != 1` clause; check is now `if (mv != null && mv != '1') return null` — string-only, matching Java/TS spec. Test flipped from "accepts numeric" to "rejects numeric" asserting `null` return. Orchestrator-direct edit (3-line surgical fix).
+
+### [PR-22-D02] `BaboonTypeMeta.from` casts to `BaboonMetaProvider`/`BaboonAdtMember` but PR 8.1 codegen doesn't emit those interfaces yet
+**Status:** open (deferred — staged rollout; PR 8.2/8.3 will add interfaces to codegen)
+**Severity:** medium (staged rollout time-bomb)
+**Location:** `baboon_runtime.dart:1099`.
+**Description:** Codegen in `DtBaboonTranslator.scala` and friends does NOT emit `implements BaboonMetaProvider` on generated DTOs/ADTs. Verified: `BaboonMetaProvider` symbol appears nowhere under `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/dart`. Same for `BaboonAdtMember`. Consequence: encoding against currently-generated values via the new facade triggers cast-failure → `BaboonEncoderFailure`. Quiet correctness bug for `useAdtIdentifier=true` path: `value is BaboonAdtMember` is false (line 1100) so falls back silently to concrete-branch typeid.
+**Fix:** Defer to PR 8.2/8.3 — those PRs will emit the interfaces on generated DTOs as part of clearing the codec-gen placeholders.
+
+### [PR-22-D03] Dead defensive `value is! Map` check in `decodeFromJson` after `readMetaJson` already returned
+**Status:** resolved
+**Severity:** trivial (style)
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/dart/baboon_codecs_facade.dart:243-246`.
+**Description:** See above.
+**Fix:** Removed the redundant `is! Map` check; promoted to a single `final asMap = value as Map` cast (with WHY comment citing PR-22-D03). Updated downstream `value.containsKey` → `asMap.containsKey`. Orchestrator-direct edit.
+
+### [PR-22-D04] `BaboonCodecContext` is `abstract class`, not `sealed` (benign)
+**Status:** resolved (clarifying note — not a defect)
+**Severity:** trivial (documentation accuracy)
+**Location:** `baboon_runtime.dart` `BaboonCodecContext` declaration.
+**Description:** Executor's "enum→sealed-class promotion" wording overstated. Class is `abstract`, not `sealed`. No `switch (ctx)` exists in runtime/facade — all dispatch via `useIndices`/`facade` getters, so user-subclassing is harmless. Benign.
+**Fix:** No code action. Documentation-only note in PR 8.1's Completed entry.
+
+### [PR-22-D05] `convert<T>` ignores `toTypeId` parameter (pre-existing in `convertWithContext`)
+**Status:** open (deferred — pre-existing, not introduced by PR 8.1)
+**Severity:** low
+**Location:** `baboon_codecs_facade.dart:470` and `baboon_runtime.dart:746` (pre-existing `AbstractBaboonConversions.convertWithContext`).
+**Description:** Registry keys conversions by `fromTypeId` only; `toTypeId` is unused at lookup. If a model has multiple conversions from one source type, the wrong one would silently run. Pre-existing in `convertWithContext`; the new facade lifts it to public surface.
+**Fix:** Defer — cross-runtime sweep candidate. Not on PR 8.1's critical path.
+
+### [PR-22-D06] Pre-existing Dart regex bugs `\\d` inside `r'...'` raw strings
+**Status:** open (deferred — pre-existing per `git blame` to `0e63032a` Feb 2026)
+**Severity:** medium (live bug in `BaboonDateTimeOffset` JSON round-trip + decimal trailing-zero stripping)
+**Location:** `baboon_runtime.dart:502, 606`.
+**Description:** Sister bug to PR-19-D01/PR-20-D01 from TS land. In Dart raw strings `r'\\d'` is literal `\\d` (4 chars: `\`, `\`, `d`); the regex compiler sees `\\d` = escaped-backslash + literal-d, never matches a digit. Manifests as `T6_D1`/`T6_D2` `BaboonDateTimeOffset` JSON round-trip failures (offset zone collapses to UTC).
+**Fix:** Defer — pre-existing, separate cleanup PR.
+
+### [PR-22-D07] `conv-test-dt` mudyla block doesn't move `baboon_fixture.dart` while regular/wrapped do
+**Status:** open (deferred — likely intentional asymmetry)
+**Severity:** trivial
+**Location:** `.mdl/defs/tests.md:644-646` vs `:136-139` and `:427-430`.
+**Description:** If `conv-test` model never emits a `baboon_fixture.dart`, this is correct. If it does, file would be left behind in `lib/generated/`.
+**Fix:** Defer — pre-existing asymmetry; verify when conv-test is exercised.

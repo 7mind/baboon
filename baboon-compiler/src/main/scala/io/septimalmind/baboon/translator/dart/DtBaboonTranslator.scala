@@ -141,7 +141,7 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
     def fix(path: String, resource: String): DtDefnTranslator.Output = {
       DtDefnTranslator.Output(
         path,
-        TextTree.text(BaboonRuntimeResources.read(resource)),
+        TextTree.verbatim(BaboonRuntimeResources.read(resource)),
         DtTypes.baboonFixturePkg,
         CompilerProduct.FixtureRuntime,
         doNotModify = true,
@@ -331,7 +331,7 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
     def rt(path: String, resource: String): DtDefnTranslator.Output = {
       DtDefnTranslator.Output(
         path,
-        TextTree.text(BaboonRuntimeResources.read(resource)),
+        TextTree.verbatim(BaboonRuntimeResources.read(resource)),
         DtTypes.baboonRuntimePkg,
         CompilerProduct.Runtime,
         doNotModify = true,
@@ -340,7 +340,9 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
     if (target.output.products.contains(CompilerProduct.Runtime)) {
       F.pure(
         List(
-          rt("baboon_runtime.dart", "baboon-runtime/dart/baboon_runtime.dart")
+          rt("baboon_runtime.dart", "baboon-runtime/dart/baboon_runtime.dart"),
+          rt("baboon_any_opaque.dart", "baboon-runtime/dart/baboon_any_opaque.dart"),
+          rt("baboon_codecs_facade.dart", "baboon-runtime/dart/baboon_codecs_facade.dart"),
         )
       )
     } else {

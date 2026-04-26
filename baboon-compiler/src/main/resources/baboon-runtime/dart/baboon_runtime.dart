@@ -3,28 +3,80 @@ import 'dart:convert';
 
 // --- Metadata Interfaces ---
 
+/// Marker for every generated DTO/ADT/enum value. Dart static fields are not reachable through
+/// interface dispatch, so the facade leans on the [BaboonMetaProvider] instance accessors
+/// (added below) — generated code in PR 8.2/8.3 emits both the static-const meta (existing) and
+/// the instance getters (new) so [BaboonTypeMeta.from] can read meta from a value of unknown
+/// concrete type.
 abstract interface class BaboonGenerated {}
 
 abstract interface class BaboonGeneratedLatest implements BaboonGenerated {}
 
+/// Marker for ADT branch types. The matching `static const String baboonAdtTypeIdentifier` is
+/// emitted by codegen on the generated class; instance access for the facade goes via the
+/// [BaboonAdtMember] mixin (added below) when PR 8.2/8.3 land.
 abstract interface class BaboonAdtMemberMeta {
   static const String baboonAdtTypeIdentifier = '';
 }
 
-abstract interface class BaboonMeta {
+// --- Codec Context ---
+
+/// Marker base for `BaboonCodecsFacade` so [BaboonCodecContext] can carry an optional facade
+/// reference without an import cycle between `baboon_runtime.dart` and `baboon_codecs_facade.dart`.
+/// The real facade lives in `baboon_codecs_facade.dart` and extends this base.
+abstract class BaboonCodecsFacadeBase {
+  const BaboonCodecsFacadeBase();
+}
+
+/// Codec context. Exposes [useIndices] (UEBA index emission) and an optional [facade] reference
+/// threaded through generated codec calls so the `any`-feature cross-format conversion
+/// (UEBA <-> JSON) can resolve codecs by `(domain, version, typeid)` from an `AnyMeta` envelope.
+/// `null` for the bare [defaultCtx]/[indexed]/[compact] singletons; [withFacade] is the single
+/// intended construction path for ctxes that thread a facade. Mirrors Scala/C#/Java/Kotlin/TS.
+abstract class BaboonCodecContext {
+  const BaboonCodecContext();
+
+  bool get useIndices;
+  BaboonCodecsFacadeBase? get facade => null;
+
+  static const BaboonCodecContext defaultCtx = _BaboonCodecContextCompact();
+  static const BaboonCodecContext compact = _BaboonCodecContextCompact();
+  static const BaboonCodecContext indexed = _BaboonCodecContextIndexed();
+
+  static BaboonCodecContext withFacade(bool useIndices, BaboonCodecsFacadeBase facade) =>
+      _BaboonCodecContextWithFacade(useIndices, facade);
+}
+
+class _BaboonCodecContextCompact extends BaboonCodecContext {
+  const _BaboonCodecContextCompact();
+  @override
+  bool get useIndices => false;
+}
+
+class _BaboonCodecContextIndexed extends BaboonCodecContext {
+  const _BaboonCodecContextIndexed();
+  @override
+  bool get useIndices => true;
+}
+
+class _BaboonCodecContextWithFacade extends BaboonCodecContext {
+  final bool _useIndices;
+  final BaboonCodecsFacadeBase _facade;
+  const _BaboonCodecContextWithFacade(this._useIndices, this._facade);
+  @override
+  bool get useIndices => _useIndices;
+  @override
+  BaboonCodecsFacadeBase get facade => _facade;
+}
+
+// --- Codec Data ---
+
+/// Static metadata exposed by every generated codec — used by [BaboonCodecsFacade] to look up
+/// codecs by `(domain, version, typeid)`. Mirrors Kotlin's `BaboonCodecData` interface.
+abstract class BaboonCodecData {
   String get baboonDomainVersion;
   String get baboonDomainIdentifier;
   String get baboonTypeIdentifier;
-}
-
-// --- Codec Context ---
-
-enum BaboonCodecContext {
-  defaultCtx,
-  indexed,
-  compact;
-
-  bool get useIndices => this == BaboonCodecContext.indexed;
 }
 
 // --- JSON Codecs ---
@@ -339,6 +391,8 @@ class BaboonBinReader {
       : _buf = data,
         _view = ByteData.view(data.buffer, data.offsetInBytes, data.length),
         _pos = 0;
+
+  int get position => _pos;
 
   int readU8() {
     final v = _buf[_pos];
@@ -701,24 +755,46 @@ abstract class AbstractBaboonConversions {
   String get versionTo;
 }
 
-class AbstractBaboonJsonCodecs {
-  final Map<String, BaboonJsonCodec> _codecs = {};
+/// Base for the per-domain-version codec registries. Generated `BaboonCodecs{Json,Ueba}` classes
+/// extend [AbstractBaboonJsonCodecs] / [AbstractBaboonUebaCodecs] (which inherit this) and call
+/// [register] for each codec on construction.
+class AbstractBaboonCodecs {
+  final Map<String, Lazy<BaboonCodecData>> _codecs = {};
 
+  /// Codegen-friendly registration. The factory is wrapped in a [Lazy] so codec instantiation
+  /// is deferred until the registry is first consulted via [tryFind] / [find].
   void register(String typeId, Function factory) {
-    _codecs[typeId] = factory() as BaboonJsonCodec;
+    _codecs[typeId] = Lazy<BaboonCodecData>(() => factory() as BaboonCodecData);
   }
 
-  BaboonJsonCodec? codecFor(String typeId) => _codecs[typeId];
+  /// Direct lazy registration — used by tests / advanced wiring that already produces a [Lazy].
+  void registerLazy(String typeId, Lazy<BaboonCodecData> codec) {
+    _codecs[typeId] = codec;
+  }
+
+  Lazy<BaboonCodecData>? tryFind(String typeId) => _codecs[typeId];
+
+  Lazy<BaboonCodecData> find(String typeId) {
+    final c = _codecs[typeId];
+    if (c == null) throw StateError('Codec not found: $typeId');
+    return c;
+  }
 }
 
-class AbstractBaboonUebaCodecs {
-  final Map<String, BaboonBinCodec> _codecs = {};
-
-  void register(String typeId, Function factory) {
-    _codecs[typeId] = factory() as BaboonBinCodec;
+class AbstractBaboonJsonCodecs extends AbstractBaboonCodecs {
+  /// Legacy lookup — predates the facade port. Returns the JSON codec or null.
+  BaboonJsonCodec? codecFor(String typeId) {
+    final lazy = tryFind(typeId);
+    return lazy?.value as BaboonJsonCodec?;
   }
+}
 
-  BaboonBinCodec? codecFor(String typeId) => _codecs[typeId];
+class AbstractBaboonUebaCodecs extends AbstractBaboonCodecs {
+  /// Legacy lookup — predates the facade port. Returns the binary codec or null.
+  BaboonBinCodec? codecFor(String typeId) {
+    final lazy = tryFind(typeId);
+    return lazy?.value as BaboonBinCodec?;
+  }
 }
 
 // --- Service Wiring ---
@@ -808,6 +884,308 @@ bool baboonDeepEquals(dynamic a, dynamic b) {
     return true;
   }
   return a == b;
+}
+
+// --- Lazy ---
+
+/// Single-shot lazy initializer. Computes once on first [value] access and caches the result.
+/// Mirrors Kotlin's `Lazy` semantics (the AtomicReference flavour used by other runtimes); Dart
+/// is single-threaded per isolate so a plain field guard suffices.
+class Lazy<T> {
+  final T Function() _initializer;
+  T? _value;
+  bool _computed = false;
+
+  Lazy(this._initializer);
+
+  T get value {
+    if (!_computed) {
+      _value = _initializer();
+      _computed = true;
+    }
+    return _value as T;
+  }
+
+  bool get isValueCreated => _computed;
+}
+
+// --- Exceptions ---
+
+class BaboonException implements Exception {
+  final String message;
+  final Object? cause;
+  const BaboonException(this.message, [this.cause]);
+
+  @override
+  String toString() => 'BaboonException: $message';
+}
+
+/// Sealed hierarchy mirroring Kotlin's `BaboonCodecException`. Codec/conversion failures thread
+/// through `BaboonEither<BaboonCodecException, T>` per PR-04-D02 — JSON decode is user-facing
+/// and never throws; binary decode trusts the wire and may throw.
+sealed class BaboonCodecException implements Exception {
+  final String message;
+  final Object? cause;
+  const BaboonCodecException(this.message, [this.cause]);
+
+  @override
+  String toString() => '$runtimeType: $message';
+}
+
+class BaboonEncoderFailure extends BaboonCodecException {
+  const BaboonEncoderFailure(super.message, [super.cause]);
+}
+
+class BaboonDecoderFailure extends BaboonCodecException {
+  const BaboonDecoderFailure(super.message, [super.cause]);
+}
+
+class BaboonConverterFailure extends BaboonCodecException {
+  const BaboonConverterFailure(super.message, [super.cause]);
+}
+
+class BaboonCodecNotFound extends BaboonCodecException {
+  const BaboonCodecNotFound(super.message);
+}
+
+class BaboonConversionNotFound extends BaboonCodecException {
+  const BaboonConversionNotFound(super.message);
+}
+
+// --- Version / DomainVersion / TypeMeta ---
+
+/// Per-version "what types are unchanged since me" lookup. Each generated `BaboonMetadata`
+/// implementation provides this.
+abstract class BaboonMeta {
+  List<String> sameInVersions(String typeId);
+}
+
+/// Semver-shaped 3-tuple for `getCodec`'s version-window math. PR-19-D01 lesson: regex literals
+/// in template files are read verbatim — escape `\d` once (single backslash); the embedSources
+/// macro does NOT process Scala-string escapes on file bytes.
+class BaboonVersion implements Comparable<BaboonVersion> {
+  final int major;
+  final int minor;
+  final int patch;
+
+  const BaboonVersion(this.major, this.minor, this.patch);
+
+  static BaboonVersion from(String version) {
+    final chunks = version.split('.');
+    if (chunks.length != 3) {
+      throw BaboonException('Expected to have version in format x.y.z, got $version');
+    }
+    final major = int.tryParse(chunks[0].trim());
+    final minor = int.tryParse(chunks[1].trim());
+    final patch = int.tryParse(chunks[2].trim());
+    if (major == null) {
+      throw BaboonException('Expected to have version in format x.y.z, got $version. Invalid major value.');
+    }
+    if (minor == null) {
+      throw BaboonException('Expected to have version in format x.y.z, got $version. Invalid minor value.');
+    }
+    if (patch == null) {
+      throw BaboonException('Expected to have version in format x.y.z, got $version. Invalid patch value.');
+    }
+    return BaboonVersion(major, minor, patch);
+  }
+
+  @override
+  int compareTo(BaboonVersion other) {
+    final c1 = major.compareTo(other.major);
+    if (c1 != 0) return c1;
+    final c2 = minor.compareTo(other.minor);
+    if (c2 != 0) return c2;
+    return patch.compareTo(other.patch);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BaboonVersion && major == other.major && minor == other.minor && patch == other.patch;
+
+  @override
+  int get hashCode => Object.hash(major, minor, patch);
+
+  @override
+  String toString() => '$major.$minor.$patch';
+}
+
+class BaboonDomainVersion {
+  final String domainIdentifier;
+  final String domainVersion;
+  late final BaboonVersion _version = BaboonVersion.from(domainVersion);
+
+  BaboonDomainVersion(this.domainIdentifier, this.domainVersion);
+
+  BaboonVersion get version => _version;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BaboonDomainVersion &&
+          domainIdentifier == other.domainIdentifier &&
+          domainVersion == other.domainVersion;
+
+  @override
+  int get hashCode => Object.hash(domainIdentifier, domainVersion);
+
+  @override
+  String toString() => '$domainIdentifier:$domainVersion';
+}
+
+/// On-wire type meta envelope. Mirrors Kotlin's `BaboonTypeMeta`.
+class BaboonTypeMeta {
+  final int metaVersion;
+  final String domainIdentifier;
+  final String domainVersion;
+  final String domainVersionMinCompat;
+  final String typeIdentifier;
+
+  const BaboonTypeMeta(
+    this.metaVersion,
+    this.domainIdentifier,
+    this.domainVersion,
+    this.domainVersionMinCompat,
+    this.typeIdentifier,
+  );
+
+  BaboonDomainVersion versionRef() => BaboonDomainVersion(domainIdentifier, domainVersion);
+
+  BaboonDomainVersion? versionMinCompat() {
+    if (domainVersionMinCompat.isEmpty) return null;
+    if (domainVersionMinCompat == domainVersion) return null;
+    return BaboonDomainVersion(domainIdentifier, domainVersionMinCompat);
+  }
+
+  void writeBin(BaboonBinWriter writer) {
+    BaboonTypeMetaCodec.writeBin(this, writer);
+  }
+
+  Map<String, dynamic> writeJson() => BaboonTypeMetaCodec.writeJson(this);
+
+  /// PR-08-D01: tolerate absent `\$mv` (treat as v1) and reject explicit `\$mv != "1"` (forward-
+  /// compat: future meta versions return null so the facade reports a typed decode failure).
+  static BaboonTypeMeta? readMetaJson(Object? json) {
+    if (json is! Map) return null;
+    final mv = json[r'$mv'];
+    // PR-22-D01: spec says `$mv` is a JSON string (not number); Java/TS enforce string-only.
+    // Tolerate absent (v1 by default) and string "1"; reject everything else.
+    if (mv != null && mv != '1') return null;
+    final d = json[r'$d'];
+    final v = json[r'$v'];
+    final t = json[r'$t'];
+    if (d is! String || v is! String || t is! String) return null;
+    final uv = json[r'$uv'];
+    final minCompat = (uv is String) ? uv : v;
+    return BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion, d, v, minCompat, t);
+  }
+
+  static BaboonTypeMeta? readMetaBin(BaboonBinReader reader) =>
+      BaboonTypeMetaCodec.readMeta(reader);
+
+  /// Build a meta from a generated value. Optionally use the ADT type identifier when encoding
+  /// through an ADT-typed reference (PR-19-D02 — Dart, like TS, has no runtime generics so the
+  /// caller must opt in).
+  static BaboonTypeMeta from(BaboonGenerated value, {bool useAdtIdentifier = false}) {
+    final meta = value as BaboonMetaProvider;
+    final typeId = useAdtIdentifier && value is BaboonAdtMember
+        ? (value as BaboonAdtMember).baboonAdtTypeIdentifier
+        : meta.baboonTypeIdentifier;
+    final sameIn = meta.baboonSameInVersions;
+    // PR-08-D02 fail-fast: a generator emitting an empty `sameInVersions` is a bug; prefer a
+    // typed throw at meta construction to "decoded null" later in the facade.
+    if (sameIn.isEmpty) {
+      throw BaboonException(
+        'BaboonTypeMeta.from: empty baboonSameInVersions for type [${meta.baboonDomainIdentifier}.$typeId]',
+      );
+    }
+    return BaboonTypeMeta(
+      BaboonTypeMetaCodec.metaVersion,
+      meta.baboonDomainIdentifier,
+      meta.baboonDomainVersion,
+      sameIn.first,
+      typeId,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BaboonTypeMeta &&
+          metaVersion == other.metaVersion &&
+          domainIdentifier == other.domainIdentifier &&
+          domainVersion == other.domainVersion &&
+          domainVersionMinCompat == other.domainVersionMinCompat &&
+          typeIdentifier == other.typeIdentifier;
+
+  @override
+  int get hashCode => Object.hash(metaVersion, domainIdentifier, domainVersion, domainVersionMinCompat, typeIdentifier);
+
+  @override
+  String toString() => 'BaboonTypeMeta($domainIdentifier.$typeIdentifier@$domainVersion)';
+}
+
+class BaboonTypeMetaCodec {
+  static const int metaVersion = 1;
+
+  static void writeBin(BaboonTypeMeta meta, BaboonBinWriter writer) {
+    writer.writeU8(metaVersion);
+    writer.writeString(meta.domainIdentifier);
+    writer.writeString(meta.domainVersion);
+    if (meta.domainVersion == meta.domainVersionMinCompat) {
+      writer.writeU8(0);
+    } else {
+      writer.writeU8(1);
+      writer.writeString(meta.domainVersionMinCompat);
+    }
+    writer.writeString(meta.typeIdentifier);
+  }
+
+  static BaboonTypeMeta? readMeta(BaboonBinReader reader) {
+    final v = reader.readU8();
+    if (v == 1) return _readMetaV1(reader);
+    return null;
+  }
+
+  static BaboonTypeMeta _readMetaV1(BaboonBinReader reader) {
+    final d = reader.readString();
+    final dv = reader.readString();
+    final hasMinCompat = reader.readU8();
+    final mc = hasMinCompat == 1 ? reader.readString() : dv;
+    final t = reader.readString();
+    return BaboonTypeMeta(metaVersion, d, dv, mc, t);
+  }
+
+  static Map<String, dynamic> writeJson(BaboonTypeMeta meta) {
+    final obj = <String, dynamic>{
+      r'$mv': '1',
+      r'$d': meta.domainIdentifier,
+      r'$v': meta.domainVersion,
+      r'$t': meta.typeIdentifier,
+    };
+    if (meta.domainVersion != meta.domainVersionMinCompat) {
+      obj[r'$uv'] = meta.domainVersionMinCompat;
+    }
+    return obj;
+  }
+}
+
+/// Shape exposed by every generated value. Dart-side generated DTOs already declare the three
+/// `baboonDomain*`/`baboonType*` static-style instance accessors plus `baboonSameInVersions`
+/// (added in PR 8.x). Cast through this typed surface keeps the facade-side meta extraction
+/// clear at the call site rather than `dynamic` access.
+abstract class BaboonMetaProvider {
+  String get baboonDomainVersion;
+  String get baboonDomainIdentifier;
+  String get baboonTypeIdentifier;
+  List<String> get baboonSameInVersions;
+}
+
+/// Implemented by generated ADT branches. Mirrors Kotlin's `BaboonAdtMemberMeta` for the
+/// `useAdtIdentifier` path used when encoding through an ADT-typed reference (PR-19-D02).
+abstract class BaboonAdtMember {
+  String get baboonAdtTypeIdentifier;
 }
 
 int baboonDeepHashCode(dynamic value) {
