@@ -13,7 +13,7 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 - [x] **M3** — C# end-to-end.
 - [x] **M4** — Rust end-to-end.
 - [x] **M5** — Kotlin end-to-end.
-- [~] **M6** — Java end-to-end.
+- [x] **M6** — Java end-to-end.
 - [ ] **M7** — TypeScript end-to-end.
 - [ ] **M8** — Dart end-to-end.
 - [ ] **M9** — Swift end-to-end.
@@ -87,7 +87,7 @@ Pre-flight: Java runtime **lacks** `BaboonCodecsFacade.java` (same Q-α gap as C
 - [x] **PR 6.1** — Java runtime: `AnyOpaque` sealed interface + `AnyMeta` record + `AnyMetaCodec` (binary + Jackson JSON), full `BaboonCodecsFacade` port (single-step `convert<>` only — multi-step deferred), extend `BaboonCodecContext` (enum→class).
 - [x] **PR 6.2** — Java UEBA codec emission (`JvUEBACodecGenerator` for `TypeRef.Any`); cleared `JvTypeTranslator`/`JvCodecFixtureTranslator`/`JvConversionTranslator` placeholders.
 - [x] **PR 6.3** — Java JSON codec emission (Jackson); cleared `JvJsonCodecGenerator` placeholders.
-- [ ] **PR 6.4** — Java round-trip tests + branch-matching fixture fix.
+- [x] **PR 6.4** — Java round-trip tests + branch-matching fixture fix. Closes M6.
 
 ---
 
@@ -118,6 +118,14 @@ My recommendation is **(a)**: one big PR, mechanical, everything stays consisten
 ---
 
 ## Completed
+
+- **PR 6.4** (2026-04-26) — Java round-trip tests + branch-matching fixture fix. **Closes M6.** Mirror PR 2.4/3.4/4.3/5.4. `JvCodecFixtureTranslator` introduced `FixtureFormat` ADT (`FixUeba`/`FixJson`) at object level; emits two parallel methods per DTO (`random` UEBA-branch, `randomJson` JSON-branch with `NullNode.getInstance()`); ADTs gain `randomAll`/`randomAllJson`. `JvCodecTestsTranslator.makeFixture(useJsonAny: Boolean)` selects branch-matching fixture per codec arm — auto-tests now hit native branches in both directions, no `withFacade` ctx needed. Hand-written `test/jv-stub/src/test/java/runtime/AnyRoundTripTest.java` (14 JUnit5 tests, 456 lines): per-variant UEBA + JSON round-trip × 6 with full Holder + nested positions; UEBA Compact + Indexed (Java codegen emits real statement blocks for indexed mode, unlike Kotlin per PR-15-D01 — Java is unaffected); cross-format JSON-Holder→UEBA + UEBA-Holder→JSON; D3 isolated proving PR 6.1 static fallback resolves end-to-end; `facade.decodeAny` for both branches; forward-compat skip-by-length; fail-fast missing-facade × 2; JSON envelope shape lock-in. **PR-18-N01 fix included**: added Surefire `<includes>` block in `test/jv-stub/pom.xml` (`*Test.java`, `*Tests.java`, `*_tests.java`); without this, auto-generated `*_tests.java` (lowercase t) compile but never run. Verification confirms the fix is load-bearing: stripping the `<includes>` block runs only 55 tests; restoring recovers all 59. Verification: `sbt compile` clean; `mdl :build` clean; `mdl :test-gen-regular-adt` clean (without `any-ok/` aside — same M3/M4/M5 close pattern); `mvn test` → **59 passed / 0 failed / 0 errors**:
+  - `runtime.AnyRoundTripTest`: 14 (new this PR)
+  - `runtime.AnyMetaCodecTest`: 41 (PR 6.1 baseline)
+  - `my.ok.Holder_tests`: 2 (auto-generated; previously PR-07-D01 trap, now green via branch-matching)
+  - `my.ok.Inner_tests`: 2 (auto-generated; previously skipped by Surefire pattern, now invoked)
+
+  No KMP equivalent for Java (no Java multiplatform target). One adversarial review round, clean per `any`-feature scope. Files modified: 2 translator files + 1 new test file + 1 modified `pom.xml` + ledger.
 
 - **PR 6.3** (2026-04-26) — Java JSON codec emission for `TypeRef.Any` (Jackson). Cleared the last 2 Java placeholders (`JvJsonCodecGenerator.{mkEncoder,decodeElement}`). All Java `AnyPlaceholder` references now zero. Per-codec helpers `encodeAnyField`/`decodeAnyField` mirror PR 6.2's UEBA shape. Encoder: kind-check; native `AnyOpaqueJson` direct → `(ObjectNode) AnyMetaCodec.writeJson(meta).set(ANY_CONTENT_KEY, inner)`; cross-format `AnyOpaqueUeba` → `ctx.facade().uebaToJson(...)`; null-facade → typed `EncoderFailure` with `BaboonCodecContext.withFacade` workaround guidance. Decoder: `AnyMetaCodec.readJson(wire)` Either-unwrap → kind-check → `(wire instanceof ObjectNode)` check → `wire.get(ANY_CONTENT_KEY)` → `AnyOpaqueJson`. Java 21 generic instanceof patterns destructure `BaboonEither.Left/Right<BaboonCodecException, JsonNode>`. PR-08-D06 lesson: `(ObjectNode)` cast on `writeJson` applies the always-object invariant. `hasAnyField` and `anyStaticFallbacks` duplicated as 7th instance (Scala/C# JSON/C# UEBA/Rust/Kotlin/Java UEBA/Java JSON); deferred extraction per ledger. One adversarial review round, clean — zero new defects (PR-19 block omitted). Verification: `sbt compile` clean; `mdl :build` clean; codegen against full models (incl. `any-ok/`) with JSON-by-default clean; `mvn compile` `-Werror --release 21` clean; `mvn test-compile` clean. Files: 1 (`JvJsonCodecGenerator.scala`, +129/-5) + ledger.
 

@@ -49,7 +49,13 @@ object JvCodecTestsTranslator {
     }
 
     private def makeTest(definition: DomainMember.User, srcRef: JvValue.JvType): TextTree[JvValue] = {
-      val fixture = makeFixture(definition, domain, evo)
+      // PR-07-D01 (Java analog): per-codec fixture variants. UEBA codec test uses the
+      // `AnyOpaqueUeba`-bearing fixture (`random`); JSON codec test uses the
+      // `AnyOpaqueJson`-bearing fixture (`randomJson`). Each fixture matches its codec's native
+      // any-field branch so round-trip avoids cross-format conversion and never needs a
+      // `BaboonCodecContext.withFacade` ctx.
+      val uebaFixture = makeFixture(definition, domain, evo, useJsonAny = false)
+      val jsonFixture = makeFixture(definition, domain, evo, useJsonAny = true)
       codecs
         .filter(_.isActive(definition.id)).map {
           case jsonCodec: JvJsonCodecGenerator =>
@@ -65,7 +71,7 @@ object JvCodecTestsTranslator {
              |}
              |
              |private void jsonCodecTestImpl($baboonCodecContext context, $baboonRandom rnd, String clue) throws Exception {
-             |  ${fixture.shift(2).trim}
+             |  ${jsonFixture.shift(2).trim}
              |  ${body.shift(2).trim}
              |}
              |
@@ -90,7 +96,7 @@ object JvCodecTestsTranslator {
              |}
              |
              |private void uebaCodecTestImpl($baboonCodecContext context, $baboonRandom rnd, String clue) throws Exception {
-             |  ${fixture.shift(2).trim}
+             |  ${uebaFixture.shift(2).trim}
              |  ${body.shift(2).trim}
              |}
              |
@@ -121,14 +127,17 @@ object JvCodecTestsTranslator {
       definition: DomainMember.User,
       domain: Domain,
       evolution: BaboonEvolution,
+      useJsonAny: Boolean,
     ): TextTree[JvValue] = {
+      val randomMethod    = if (useJsonAny) "randomJson" else "random"
+      val randomAllMethod = if (useJsonAny) "randomAllJson" else "randomAll"
       definition.defn match {
         case e: Typedef.Enum =>
           q"var fixture = ${e.id.name.name}.all().get(rnd.nextInt(${e.id.name.name}.all().size()));"
         case _: Typedef.Adt =>
-          q"var fixtures = ${typeTranslator.asJvType(definition.id, domain, evolution)}_Fixture.randomAll(rnd);"
+          q"var fixtures = ${typeTranslator.asJvType(definition.id, domain, evolution)}_Fixture.$randomAllMethod(rnd);"
         case _ =>
-          q"var fixture = ${typeTranslator.asJvType(definition.id, domain, evolution)}_Fixture.random(rnd);"
+          q"var fixture = ${typeTranslator.asJvType(definition.id, domain, evolution)}_Fixture.$randomMethod(rnd);"
       }
     }
 

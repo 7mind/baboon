@@ -47,6 +47,18 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
+                <configuration>
+                    <!-- PR-18-N01 (Java analog): generated codec tests are emitted as `<Type>_tests.java`
+                         (lowercase `t` and underscore separator). Surefire's defaults match `*Test.java`,
+                         `*Tests.java`, and `Test*.java` only — without the explicit include below the
+                         auto-generated tests compile but never run. Combined with PR 6.4's branch-matching
+                         fixtures this enables the JSON+UEBA round-trip tests for `any-ok`. -->
+                    <includes>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                        <include>**/*_tests.java</include>
+                    </includes>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>

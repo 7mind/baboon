@@ -15,6 +15,16 @@ trait JvCodecFixtureTranslator {
 }
 
 object JvCodecFixtureTranslator {
+  // Branch selector for any-field fixture payloads. PR-07-D01 (Java analog): the auto-test
+  // round-trips a fixture through a single codec; if the fixture's `AnyOpaque` branch matches
+  // the codec direction, no facade is needed and equality holds. We emit two parallel methods
+  // per DTO (`random` for the UEBA branch, `randomJson` for the JSON branch) so each test path
+  // picks its native branch. Recursive calls into nested user-type fixtures must propagate the
+  // same choice.
+  private sealed trait FixtureFormat
+  private case object FixUeba extends FixtureFormat
+  private case object FixJson extends FixtureFormat
+
   final class Impl(
     target: JvTarget,
     translator: JvTypeTranslator,
@@ -76,14 +86,22 @@ object JvCodecFixtureTranslator {
     }
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[JvValue] = {
-      val generatedFields = dto.fields.map(f => genType(f.tpe))
-      val fullType        = translator.toJvTypeRefKeepForeigns(dto.id, domain, evo)
+      val fullType = translator.toJvTypeRefKeepForeigns(dto.id, domain, evo)
+
+      def body(format: FixtureFormat): TextTree[JvValue] = {
+        val generatedFields = dto.fields.map(f => genType(f.tpe, format))
+        q"""return new $fullType(
+           |  ${generatedFields.join(",\n").shift(2).trim}
+           |);""".stripMargin
+      }
 
       q"""public final class ${fixtureTpeName(dto.id)} {
          |  public static $fullType random($baboonRandom rnd) {
-         |    return new $fullType(
-         |      ${generatedFields.join(",\n").shift(6).trim}
-         |    );
+         |    ${body(FixUeba).shift(4).trim}
+         |  }
+         |
+         |  public static $fullType randomJson($baboonRandom rnd) {
+         |    ${body(FixJson).shift(4).trim}
          |  }
          |}
          |""".stripMargin
@@ -95,14 +113,23 @@ object JvCodecFixtureTranslator {
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
-      val membersFixtures    = members.sortBy(_.id.toString).map(doTranslateDto)
-      val membersGenerators  = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name}_Fixture::random")
-      val membersDirectCalls = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name}_Fixture.random(rnd)")
+      val sortedMembers          = members.sortBy(_.id.toString)
+      val membersFixtures        = sortedMembers.map(doTranslateDto)
+      val membersGenerators      = sortedMembers.map(dto => q"${dto.id.name.name}_Fixture::random")
+      val membersGeneratorsJson  = sortedMembers.map(dto => q"${dto.id.name.name}_Fixture::randomJson")
+      val membersDirectCalls     = sortedMembers.map(dto => q"${dto.id.name.name}_Fixture.random(rnd)")
+      val membersDirectCallsJson = sortedMembers.map(dto => q"${dto.id.name.name}_Fixture.randomJson(rnd)")
 
       q"""public final class ${fixtureTpeName(adt.id)} {
          |  public static $fullType random($baboonRandom rnd) {
          |    return rnd.oneOf($jvList.of(
          |      ${membersGenerators.join(",\n").shift(6).trim}
+         |    ));
+         |  }
+         |
+         |  public static $fullType randomJson($baboonRandom rnd) {
+         |    return rnd.oneOf($jvList.of(
+         |      ${membersGeneratorsJson.join(",\n").shift(6).trim}
          |    ));
          |  }
          |
@@ -112,15 +139,21 @@ object JvCodecFixtureTranslator {
          |    );
          |  }
          |
+         |  public static $jvList<$fullType> randomAllJson($baboonRandom rnd) {
+         |    return $jvList.of(
+         |      ${membersDirectCallsJson.join(",\n").shift(6).trim}
+         |    );
+         |  }
+         |
          |  ${membersFixtures.joinN().shift(2).trim}
          |}
          |""".stripMargin
     }
 
-    private def genType(tpe: TypeRef): TextTree[JvValue] = {
+    private def genType(tpe: TypeRef, format: FixtureFormat): TextTree[JvValue] = {
       def gen(tpe: TypeRef): TextTree[JvValue] = {
         BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Java) match {
-          case tpe: TypeRef.Scalar => genScalar(tpe)
+          case tpe: TypeRef.Scalar => genScalar(tpe, format)
           case TypeRef.Constructor(id, args) =>
             id match {
               case Builtins.lst => q"rnd.mkList(() -> ${gen(args.head)})"
@@ -129,20 +162,22 @@ object JvCodecFixtureTranslator {
               case Builtins.opt => q"rnd.mkOptional(() -> ${gen(args.head)})"
               case t            => throw new IllegalArgumentException(s"Unexpected collection type: $t")
             }
-          case a: TypeRef.Any => genAnyFixture(a)
+          case a: TypeRef.Any => genAnyFixture(a, format)
         }
       }
 
       gen(tpe)
     }
 
-    // PR 6.2: UEBA-only single-branch fixture. PR 6.4 will add a parallel JSON branch and a
-    // `FixtureFormat` selector (mirrors PR 3.4 / PR 4.3 / PR 5.4 branch-matching fix). The bytes
-    // are empty: the fixture only has to compile and yield a value with the right meta-kind; the
-    // encoder asserts `meta.kind() == expectedKind` and copies the bytes through verbatim.
+    // Stable, declaration-driven `AnyOpaque` fixture value. We don't randomise the meta because the
+    // meta must match the field's declared variant exactly — encoder validates the kind byte. UEBA
+    // branch uses empty bytes; JSON branch uses Jackson `NullNode.getInstance()`.
+    //
+    // The typeid string is only used by untyped-variant kinds (A/B/C) where the wire carries a
+    // typeid; D1/D2/D3 have `hasUnderlying=true` and the meta typeid component is absent.
     private val FixtureAnyPayloadTypeId: String = "my.test.AnyFixturePayload"
 
-    private def genAnyFixture(a: TypeRef.Any): TextTree[JvValue] = {
+    private def genAnyFixture(a: TypeRef.Any, format: FixtureFormat): TextTree[JvValue] = {
       val hasUnderlying = a.underlying.isDefined
       val kindHex       = "0x%02x".format(AnyVariant.metaKindByte(a.variant, hasUnderlying) & 0xFF)
       val domainStr     = q""""${domain.id.toString}""""
@@ -162,10 +197,19 @@ object JvCodecFixtureTranslator {
           (nullTree, nullTree, tid)
       }
 
-      q"new $baboonAnyOpaqueUeba(new $baboonAnyMeta((byte)$kindHex, $domainExpr, $versionExpr, $typeidExpr), new byte[0])"
+      val meta = q"new $baboonAnyMeta((byte)$kindHex, $domainExpr, $versionExpr, $typeidExpr)"
+      // PR-07-D01 (Java analog): branch must match codec direction so round-trip avoids cross-
+      // format conversion (which requires `withFacade` ctx). UEBA codec test uses
+      // `AnyOpaqueUeba(meta, new byte[0])`; JSON codec test uses
+      // `AnyOpaqueJson(meta, NullNode.getInstance())`. Both are wire-equivalent to themselves
+      // under their native codec — equality holds.
+      format match {
+        case FixUeba => q"new $baboonAnyOpaqueUeba($meta, new byte[0])"
+        case FixJson => q"new $baboonAnyOpaqueJson($meta, $nullNode.getInstance())"
+      }
     }
 
-    private def genScalar(tpe: TypeRef.Scalar): TextTree[JvValue] = {
+    private def genScalar(tpe: TypeRef.Scalar, format: FixtureFormat): TextTree[JvValue] = {
       tpe.id match {
         case TypeId.Builtins.i08 => q"rnd.nextI08()"
         case TypeId.Builtins.i16 => q"rnd.nextI16()"
@@ -191,7 +235,14 @@ object JvCodecFixtureTranslator {
         case TypeId.Builtins.bit => q"rnd.nextBit()"
 
         case TypeId.User(_, _, name) if enquiries.isEnum(tpe, domain) => q"rnd.mkEnum(${name.name}.class, ${name.name}.values())"
-        case u: TypeId.User                                           => q"${u.name.name}_Fixture.random(rnd)"
+        case u: TypeId.User =>
+          // Propagate the codec branch into nested user-type fixtures so any-fields nested in
+          // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (Java analog).
+          val method = format match {
+            case FixUeba => q"random"
+            case FixJson => q"randomJson"
+          }
+          q"${u.name.name}_Fixture.$method(rnd)"
 
         case t => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
       }
