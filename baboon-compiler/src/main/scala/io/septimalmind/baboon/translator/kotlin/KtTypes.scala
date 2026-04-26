@@ -99,6 +99,15 @@ object KtTypes {
   val baboonBinCodecBaseGeneratedAdt: KtType      = KtType(baboonRuntimePkg, "BaboonBinCodec.BaseGeneratedAdt")
   val baboonBinCodecNoEncoderGeneratedAdt: KtType = KtType(baboonRuntimePkg, "BaboonBinCodec.NoEncoderGeneratedAdt")
 
+  // baboon any-opaque types (PR 5.1 runtime)
+  val baboonAnyOpaque: KtType      = KtType(baboonRuntimePkg, "AnyOpaque")
+  val baboonAnyOpaqueUeba: KtType  = KtType(baboonRuntimePkg, "AnyOpaqueUeba")
+  val baboonAnyOpaqueJson: KtType  = KtType(baboonRuntimePkg, "AnyOpaqueJson")
+  val baboonAnyMeta: KtType        = KtType(baboonRuntimePkg, "AnyMeta")
+  val baboonAnyMetaCodec: KtType   = KtType(baboonRuntimePkg, "AnyMetaCodec")
+  val baboonCodecException: KtType = KtType(baboonRuntimePkg, "BaboonCodecException")
+  val baboonEither: KtType         = KtType(baboonRuntimePkg, "Either")
+
   // baboon types
   val baboonBinCodecIndexed: KtType           = KtType(baboonRuntimePkg, "BaboonBinCodecIndexed")
   val baboonCodecContext: KtType              = KtType(baboonRuntimePkg, "BaboonCodecContext")
