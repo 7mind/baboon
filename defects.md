@@ -869,3 +869,14 @@ Same for `any_meta_length`. Also check `any_total_length < 4 + any_meta_length` 
 **Location:** `RsUEBACodecGenerator.scala` (`decode_any_field` skip arm).
 **Description:** `let mut any_skip = vec![0u8; any_meta_length - any_bytes_read]; wire.read_exact(&mut any_skip)?;` — for large skip values this is a wasteful heap allocation. A stack buffer (`[0u8; 256]`) in a loop, or `std::io::copy(&mut wire.take(n), &mut std::io::sink())`, would avoid the heap.
 **Suggested fix:** Defer — runs only on forward-compat extension bytes (rare in practice). Revisit if profiling surfaces overhead.
+
+---
+
+## PR-13 — Rust round-trip tests + branch-matching fixture fix (M4 PR 4.3)
+
+### [PR-13-D01] JSON envelope key-order test only checks 2 of 4 inter-key orderings
+**Status:** resolved (deferred) — cosmetic; underlying invariant enforced structurally by `serde_json/preserve_order` + the envelope-set-membership test.
+**Severity:** nit
+**Location:** `test/rs-stub/tests/any_round_trip_tests.rs:502-515` (`json_envelope_key_order_is_ak_first`).
+**Description:** Test asserts `$ak < $ad` and `$ad < $c` substring positions but doesn't lock `$av < $at` ordering between them. A regression that swapped `$av`↔`$at` or moved any of `$ad/$av/$at` after `$c` would not be caught. Mirrors a similar Scala/C# laxity. The `json_envelope_carries_ak_and_optional_ad_av_at_and_content_key` test already validates exact set membership; `serde_json/preserve_order` is enabled crate-wide (PR-11-D05) so insertion order is structurally enforced.
+**Fix:** Deferred — cosmetic, no functional gap. Extension to assert `$ak < $ad < $av < $at < $c` is a 3-line change for any future hygiene PR.

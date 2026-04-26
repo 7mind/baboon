@@ -35,18 +35,37 @@ object RsCodecFixtureTranslator {
       }
     }
 
+    // Branch selector for any-field fixture payloads. PR-07-D01 (Rust analog): the auto-test
+    // round-trips a fixture through a single codec; if the fixture's `AnyOpaque` branch matches
+    // the codec direction, no facade is needed and equality holds. We emit two parallel
+    // functions per DTO (`random_<n>` for the UEBA branch, `random_<n>_json` for the JSON
+    // branch) so each test path picks its native branch. Recursive calls into nested user-type
+    // fixtures must propagate the same choice.
+    private sealed trait FixtureFormat
+    private case object FixUeba extends FixtureFormat
+    private case object FixJson extends FixtureFormat
+
     private def doTranslateDto(dto: Typedef.Dto): TextTree[RsValue] = {
-      val generatedFields = dto.fields.map {
-        f =>
-          q"${toSnakeCase(f.name.name)}: ${genType(f.tpe)},"
-      }
       val fullType = translator.toRsTypeRefKeepForeigns(dto.id, domain, evo)
+
+      def body(format: FixtureFormat): TextTree[RsValue] = {
+        val generatedFields = dto.fields.map {
+          f =>
+            q"${toSnakeCase(f.name.name)}: ${genType(f.tpe, format)},"
+        }
+        q"""$fullType {
+           |    ${generatedFields.joinN().shift(4).trim}
+           |}""".stripMargin
+      }
+
       val rndParam = if (dto.fields.isEmpty) "_rnd" else "rnd"
 
       q"""pub fn ${fixtureFnName(dto.id)}($rndParam: &mut crate::baboon_fixture::BaboonRandom) -> $fullType {
-         |    $fullType {
-         |        ${generatedFields.joinN().shift(8).trim}
-         |    }
+         |    ${body(FixUeba).shift(4).trim}
+         |}
+         |
+         |pub fn ${fixtureFnNameJson(dto.id)}($rndParam: &mut crate::baboon_fixture::BaboonRandom) -> $fullType {
+         |    ${body(FixJson).shift(4).trim}
          |}""".stripMargin
     }
 
@@ -56,14 +75,21 @@ object RsCodecFixtureTranslator {
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
-      val membersFixtures = members.sortBy(_.id.toString).map(doTranslateDtoPrivate)
+      val membersFixtures = members.sortBy(_.id.toString).flatMap(d => List(doTranslateDtoPrivate(d, FixUeba), doTranslateDtoPrivate(d, FixJson)))
+
       val membersGenerators = members.sortBy(_.id.toString).map {
         dto =>
           val branchName = dto.id.name.name.capitalize
           q"$adtName::$branchName(${fixtureFnName(dto.id)}(rnd))"
       }
+      val membersGeneratorsJson = members.sortBy(_.id.toString).map {
+        dto =>
+          val branchName = dto.id.name.name.capitalize
+          q"$adtName::$branchName(${fixtureFnNameJson(dto.id)}(rnd))"
+      }
 
-      val randomAllEntries = membersGenerators.map(g => q"$g,")
+      val randomAllEntries     = membersGenerators.map(g => q"$g,")
+      val randomAllEntriesJson = membersGeneratorsJson.map(g => q"$g,")
 
       q"""pub fn ${fixtureFnName(adt.id)}(rnd: &mut crate::baboon_fixture::BaboonRandom) -> $adtName {
          |    let all = ${fixtureFnName(adt.id)}_all(rnd);
@@ -77,18 +103,34 @@ object RsCodecFixtureTranslator {
          |    ]
          |}
          |
+         |pub fn ${fixtureFnNameJson(adt.id)}(rnd: &mut crate::baboon_fixture::BaboonRandom) -> $adtName {
+         |    let all = ${fixtureFnNameJson(adt.id)}_all(rnd);
+         |    let idx = rnd.next_usize(all.len());
+         |    all.into_iter().nth(idx).unwrap()
+         |}
+         |
+         |pub fn ${fixtureFnNameJson(adt.id)}_all(rnd: &mut crate::baboon_fixture::BaboonRandom) -> Vec<$adtName> {
+         |    vec![
+         |        ${randomAllEntriesJson.joinN().shift(8).trim}
+         |    ]
+         |}
+         |
          |${membersFixtures.joinNN()}""".stripMargin
     }
 
-    private def doTranslateDtoPrivate(dto: Typedef.Dto): TextTree[RsValue] = {
+    private def doTranslateDtoPrivate(dto: Typedef.Dto, format: FixtureFormat): TextTree[RsValue] = {
       val generatedFields = dto.fields.map {
         f =>
-          q"${toSnakeCase(f.name.name)}: ${genType(f.tpe)},"
+          q"${toSnakeCase(f.name.name)}: ${genType(f.tpe, format)},"
       }
       val fullType = translator.toRsTypeRefKeepForeigns(dto.id, domain, evo)
       val rndParam = if (dto.fields.isEmpty) "_rnd" else "rnd"
+      val name = format match {
+        case FixUeba => fixtureFnName(dto.id)
+        case FixJson => fixtureFnNameJson(dto.id)
+      }
 
-      q"""fn ${fixtureFnName(dto.id)}($rndParam: &mut crate::baboon_fixture::BaboonRandom) -> $fullType {
+      q"""fn $name($rndParam: &mut crate::baboon_fixture::BaboonRandom) -> $fullType {
          |    $fullType {
          |        ${generatedFields.joinN().shift(8).trim}
          |    }
@@ -99,36 +141,36 @@ object RsCodecFixtureTranslator {
       s"random_${toSnakeCaseRaw(id.name.name)}"
     }
 
-    private def genType(tpe: TypeRef): TextTree[RsValue] = {
+    private def fixtureFnNameJson(id: TypeId): String = {
+      s"random_${toSnakeCaseRaw(id.name.name)}_json"
+    }
+
+    private def genType(tpe: TypeRef, format: FixtureFormat): TextTree[RsValue] = {
       BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Rust) match {
-        case tpe: TypeRef.Scalar => genScalar(tpe)
+        case tpe: TypeRef.Scalar => genScalar(tpe, format)
         case TypeRef.Constructor(id, args) =>
           id match {
             case Builtins.lst =>
-              q"""{ let n = rnd.next_usize(5); (0..n).map(|_| ${genType(args.head)}).collect::<Vec<_>>() }"""
+              q"""{ let n = rnd.next_usize(5); (0..n).map(|_| ${genType(args.head, format)}).collect::<Vec<_>>() }"""
             case Builtins.set =>
-              q"""{ let n = rnd.next_usize(5); (0..n).map(|_| ${genType(args.head)}).collect::<std::collections::BTreeSet<_>>() }"""
+              q"""{ let n = rnd.next_usize(5); (0..n).map(|_| ${genType(args.head, format)}).collect::<std::collections::BTreeSet<_>>() }"""
             case Builtins.map =>
-              q"""{ let n = rnd.next_usize(5); (0..n).map(|_| (${genType(args(0))}, ${genType(args(1))})).collect::<std::collections::BTreeMap<_, _>>() }"""
+              q"""{ let n = rnd.next_usize(5); (0..n).map(|_| (${genType(args(0), format)}, ${genType(args(1), format)})).collect::<std::collections::BTreeMap<_, _>>() }"""
             case Builtins.opt =>
-              q"if rnd.next_bit() { Some(${genType(args.head)}) } else { None }"
+              q"if rnd.next_bit() { Some(${genType(args.head, format)}) } else { None }"
             case t => throw new IllegalArgumentException(s"Unexpected collection type: $t")
           }
-        case a: TypeRef.Any => genAnyFixture(a)
+        case a: TypeRef.Any => genAnyFixture(a, format)
       }
     }
 
-    // Branch-matching fixtures (mirroring Scala's PR-07-D01 fix and C# PR 3.4) belong to PR 4.3.
-    // PR 4.2 emits the `AnyOpaqueUeba` branch only — auto-tests for the JSON path will need a
-    // companion that emits `AnyOpaqueJson`, plus a `FixtureFormat` selector. For now both UEBA
-    // and JSON tests round-trip via the UEBA branch; the JSON path test will pass once PR 4.3
-    // splits the fixture. Bytes are empty: the fixture only has to compile and yield a value
-    // with the right meta-kind; the encoder asserts `meta.kind == expectedKind` and copies the
-    // bytes through verbatim. `AnyMeta::new` returns Result; `expect` surfaces logic errors
-    // clearly (the codegen-emitted variants are always valid by construction).
+    // Stable, declaration-driven `AnyOpaque` value. Meta must match the field's declared variant
+    // exactly — encoder validates the kind byte. UEBA branch uses empty bytes; JSON branch uses
+    // `serde_json::Value::Null`. The typeid string is only used by typed-variant kinds (D1/D2/D3)
+    // where `hasUnderlying` is false on the meta side.
     private val FixtureAnyPayloadTypeId: String = "my.test.AnyFixturePayload"
 
-    private def genAnyFixture(a: TypeRef.Any): TextTree[RsValue] = {
+    private def genAnyFixture(a: TypeRef.Any, format: FixtureFormat): TextTree[RsValue] = {
       val hasUnderlying = a.underlying.isDefined
       val kindHex       = "0x%02x".format(AnyVariant.metaKindByte(a.variant, hasUnderlying) & 0xFF)
 
@@ -148,14 +190,29 @@ object RsCodecFixtureTranslator {
           (q"None", q"None", tid)
       }
 
-      q"""crate::any_opaque::AnyOpaque::Ueba(crate::any_opaque::AnyOpaqueUeba::new(
-         |    crate::any_opaque::AnyMeta::new($kindHex, $domainExpr, $versionExpr, $typeidExpr)
-         |        .expect("BUG: codegen-emitted any-fixture meta must be valid"),
-         |    Vec::new(),
-         |))""".stripMargin
+      val meta =
+        q"""crate::any_opaque::AnyMeta::new($kindHex, $domainExpr, $versionExpr, $typeidExpr)
+           |    .expect("BUG: codegen-emitted any-fixture meta must be valid")""".stripMargin
+
+      // PR-07-D01 (Rust analog): branch must match codec direction so round-trip avoids cross-
+      // format conversion (which requires `with_facade` ctx). UEBA codec test uses
+      // `AnyOpaqueUeba(meta, [])`; JSON codec test uses `AnyOpaqueJson(meta, Value::Null)`. Both
+      // are wire-equivalent to themselves under their native codec — equality holds.
+      format match {
+        case FixUeba =>
+          q"""crate::any_opaque::AnyOpaque::Ueba(crate::any_opaque::AnyOpaqueUeba::new(
+             |    ${meta.shift(4).trim},
+             |    Vec::new(),
+             |))""".stripMargin
+        case FixJson =>
+          q"""crate::any_opaque::AnyOpaque::Json(crate::any_opaque::AnyOpaqueJson::new(
+             |    ${meta.shift(4).trim},
+             |    serde_json::Value::Null,
+             |))""".stripMargin
+      }
     }
 
-    private def genScalar(tpe: TypeRef.Scalar): TextTree[RsValue] = {
+    private def genScalar(tpe: TypeRef.Scalar, format: FixtureFormat): TextTree[RsValue] = {
       tpe.id match {
         case TypeId.Builtins.i08   => q"rnd.next_i08()"
         case TypeId.Builtins.i16   => q"rnd.next_i16()"
@@ -179,7 +236,13 @@ object RsCodecFixtureTranslator {
           val enumType = translator.asRsType(u, domain, evo)
           q"rnd.mk_enum(&$enumType::all())"
         case u: TypeId.User =>
-          q"super::${fixtureFnName(u)}(rnd)"
+          // Propagate the codec branch into nested user-type fixtures so any-fields nested in
+          // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (Rust analog).
+          val name = format match {
+            case FixUeba => fixtureFnName(u)
+            case FixJson => fixtureFnNameJson(u)
+          }
+          q"super::$name(rnd)"
         case t => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
       }
     }

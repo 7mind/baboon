@@ -43,16 +43,22 @@ object RsCodecTestsTranslator {
     }
 
     private def makeTests(definition: DomainMember.User, srcRef: RsValue.RsType): TextTree[RsValue] = {
-      val testFnName    = toSnakeCaseRaw(srcRef.name)
-      val fixtureMethod = fixtureMethodName(definition)
+      val testFnName        = toSnakeCaseRaw(srcRef.name)
+      val fixtureMethod     = fixtureMethodName(definition)
+      val fixtureMethodJson = s"${fixtureMethod}_json"
 
+      // PR-07-D01 (Rust analog): per-codec fixture variants. UEBA codec test uses the
+      // `AnyOpaqueUeba`-bearing fixture (`random_*`); JSON codec test uses the
+      // `AnyOpaqueJson`-bearing fixture (`random_*_json`). Each fixture matches its codec's
+      // native any-field branch so round-trip avoids cross-format conversion and never needs a
+      // `BaboonCodecContext::with_facade` ctx.
       val jsonTests = codecs
         .filter(_.isActive(definition.id)).collect {
           case _: RsJsonCodecGenerator =>
             val jsonRoundTrip = definition.defn match {
               case _: Typedef.Adt =>
                 q"""let mut rnd = crate::baboon_fixture::BaboonRandom::new();
-                   |let fixtures = super::${fixtureMethod}_all(&mut rnd);
+                   |let fixtures = super::${fixtureMethodJson}_all(&mut rnd);
                    |for fixture in fixtures {
                    |    let json = serde_json::to_value(&fixture).expect("JSON encode failed");
                    |    let decoded: $srcRef = serde_json::from_value(json.clone()).expect("JSON decode failed");
@@ -66,7 +72,7 @@ object RsCodecTestsTranslator {
                    |}""".stripMargin
               case _ =>
                 q"""let mut rnd = crate::baboon_fixture::BaboonRandom::new();
-                   |let fixture = super::$fixtureMethod(&mut rnd);
+                   |let fixture = super::$fixtureMethodJson(&mut rnd);
                    |let json = serde_json::to_value(&fixture).expect("JSON encode failed");
                    |let decoded: $srcRef = serde_json::from_value(json.clone()).expect("JSON decode failed");
                    |assert_eq!(fixture, decoded);""".stripMargin
