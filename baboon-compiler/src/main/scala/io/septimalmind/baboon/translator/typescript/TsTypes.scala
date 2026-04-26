@@ -31,6 +31,7 @@ object TsTypes {
   val tsBaboonAnyMeta: TsType          = TsType(tsBaboonAnyOpaqueModule, "AnyMeta")
   val tsBaboonCreateAnyMeta: TsType    = TsType(tsBaboonAnyOpaqueModule, "createAnyMeta")
   val tsBaboonAnyOpaqueUebaCtor: TsType = TsType(tsBaboonAnyOpaqueModule, "anyOpaqueUeba")
+  val tsBaboonAnyOpaqueJsonCtor: TsType = TsType(tsBaboonAnyOpaqueModule, "anyOpaqueJson")
   val tsBaboonAnyMetaCodec: TsType     = TsType(tsBaboonAnyOpaqueModule, "AnyMetaCodec")
 
   // any-feature failures (BaboonSharedRuntime module)
