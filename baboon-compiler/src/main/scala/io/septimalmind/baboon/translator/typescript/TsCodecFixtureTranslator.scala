@@ -13,6 +13,16 @@ trait TsCodecFixtureTranslator {
 }
 
 object TsCodecFixtureTranslator {
+  // Branch selector for any-field fixture payloads. PR-07-D01 (TS analog): the auto-test
+  // round-trips a fixture through a single codec; if the fixture's `AnyOpaque` branch matches
+  // the codec direction, no facade is needed and equality holds. We emit two parallel functions
+  // per DTO (`random_*` for the UEBA branch, `random_*_json` for the JSON branch) so each test
+  // path picks its native branch. Recursive calls into nested user-type fixtures must propagate
+  // the same choice. Mirrors PR 2.4 / 3.4 / 4.3 / 5.4 / 6.4 patterns.
+  private sealed trait FixtureFormat
+  private case object FixUeba extends FixtureFormat
+  private case object FixJson extends FixtureFormat
+
   final class TsCodecFixtureTranslatorImpl(
     translator: TsTypeTranslator,
     enquiries: BaboonEnquiries,
@@ -37,16 +47,21 @@ object TsCodecFixtureTranslator {
     }
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[TsValue] = {
-      val generatedFields = dto.fields.map {
-        f =>
-          q"${genType(f.tpe)},"
-      }
       val fullType = translator.asTsTypeKeepForeigns(dto.id, domain, evo, tsFileTools.definitionsBasePkg)
 
-      q"""export function ${fixtureFnName(dto.id)}(rnd: $baboonRandom): $fullType {
-         |    return new $fullType (
-         |        ${generatedFields.joinN().shift(8).trim}
-         |    )
+      def body(format: FixtureFormat): TextTree[TsValue] = {
+        val generatedFields = dto.fields.map(f => q"${genType(f.tpe, format)},")
+        q"""return new $fullType (
+           |    ${generatedFields.joinN().shift(4).trim}
+           |)""".stripMargin
+      }
+
+      q"""export function ${fixtureFnName(dto.id, FixUeba)}(rnd: $baboonRandom): $fullType {
+         |    ${body(FixUeba).shift(4).trim}
+         |}
+         |
+         |export function ${fixtureFnName(dto.id, FixJson)}(rnd: $baboonRandom): $fullType {
+         |    ${body(FixJson).shift(4).trim}
          |}""".stripMargin
     }
 
@@ -56,23 +71,34 @@ object TsCodecFixtureTranslator {
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
-      val membersFixtures = members.sortBy(_.id.toString).map(doTranslateDtoPrivate)
-      val membersGenerators = members.sortBy(_.id.toString).map {
-        dto =>
-          q"${fixtureFnName(dto.id)}(rnd)"
-      }
+      val sortedMembers          = members.sortBy(_.id.toString)
+      val membersFixtures        = sortedMembers.map(doTranslateDtoPrivate)
+      val uebaCalls              = sortedMembers.map(dto => q"${fixtureFnName(dto.id, FixUeba)}(rnd)")
+      val jsonCalls              = sortedMembers.map(dto => q"${fixtureFnName(dto.id, FixJson)}(rnd)")
+      val uebaAllEntries         = uebaCalls.map(g => q"$g,")
+      val jsonAllEntries         = jsonCalls.map(g => q"$g,")
 
-      val randomAllEntries = membersGenerators.map(g => q"$g,")
-
-      q"""export function ${fixtureFnName(adt.id)}(rnd: $baboonRandom): $adtName {
-         |    const all = ${fixtureFnName(adt.id)}_all(rnd);
+      q"""export function ${fixtureFnName(adt.id, FixUeba)}(rnd: $baboonRandom): $adtName {
+         |    const all = ${fixtureFnName(adt.id, FixUeba)}_all(rnd);
          |    const idx = rnd.nextUSize(all.length);
          |    return all[idx];
          |}
          |
-         |export function ${fixtureFnName(adt.id)}_all(rnd: $baboonRandom): $adtName[] {
+         |export function ${fixtureFnName(adt.id, FixUeba)}_all(rnd: $baboonRandom): $adtName[] {
          |    return [
-         |        ${randomAllEntries.joinN().shift(8).trim}
+         |        ${uebaAllEntries.joinN().shift(8).trim}
+         |    ];
+         |}
+         |
+         |export function ${fixtureFnName(adt.id, FixJson)}(rnd: $baboonRandom): $adtName {
+         |    const all = ${fixtureFnName(adt.id, FixJson)}_all(rnd);
+         |    const idx = rnd.nextUSize(all.length);
+         |    return all[idx];
+         |}
+         |
+         |export function ${fixtureFnName(adt.id, FixJson)}_all(rnd: $baboonRandom): $adtName[] {
+         |    return [
+         |        ${jsonAllEntries.joinN().shift(8).trim}
          |    ];
          |}
          |
@@ -80,60 +106,70 @@ object TsCodecFixtureTranslator {
     }
 
     private def doTranslateDtoPrivate(dto: Typedef.Dto): TextTree[TsValue] = {
-      val generatedFields = dto.fields.map {
-        f =>
-          q"${genType(f.tpe)},"
-      }
       val fullType = translator.asTsTypeKeepForeigns(dto.id, domain, evo, tsFileTools.definitionsBasePkg)
 
-      q"""function ${fixtureFnName(dto.id)}(rnd: $baboonRandom): $fullType {
-         |    return new $fullType (
-         |        ${generatedFields.joinN().shift(8).trim}
-         |    )
+      def body(format: FixtureFormat): TextTree[TsValue] = {
+        val generatedFields = dto.fields.map(f => q"${genType(f.tpe, format)},")
+        q"""return new $fullType (
+           |    ${generatedFields.joinN().shift(4).trim}
+           |)""".stripMargin
+      }
+
+      q"""function ${fixtureFnName(dto.id, FixUeba)}(rnd: $baboonRandom): $fullType {
+         |    ${body(FixUeba).shift(4).trim}
+         |}
+         |
+         |function ${fixtureFnName(dto.id, FixJson)}(rnd: $baboonRandom): $fullType {
+         |    ${body(FixJson).shift(4).trim}
          |}""".stripMargin
     }
 
-    private def fixtureFnName(id: TypeId): String = {
-      s"random_${translator.camelToKebab(id.name.name).replace('-', '_')}"
+    private def fixtureFnName(id: TypeId, format: FixtureFormat): String = {
+      val base = s"random_${translator.camelToKebab(id.name.name).replace('-', '_')}"
+      format match {
+        case FixUeba => base
+        case FixJson => s"${base}_json"
+      }
     }
 
-    private def fixtureFnRef(id: TypeId.User): TsValue.TsType = {
+    private def fixtureFnRef(id: TypeId.User, format: FixtureFormat): TsValue.TsType = {
       val userType      = translator.asTsTypeKeepForeigns(id, domain, evo, tsFileTools.fixturesBasePkg)
       val partsList     = userType.moduleId.path
       val fixtureModule = TsValue.TsModuleId(partsList.init :+ (partsList.last + ".fixture"))
-      TsValue.TsType(fixtureModule, fixtureFnName(id))
+      TsValue.TsType(fixtureModule, fixtureFnName(id, format))
     }
 
-    private def genType(tpe: TypeRef): TextTree[TsValue] = {
+    private def genType(tpe: TypeRef, format: FixtureFormat): TextTree[TsValue] = {
       BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Typescript) match {
-        case tpe: TypeRef.Scalar => genScalar(tpe)
+        case tpe: TypeRef.Scalar => genScalar(tpe, format)
         case TypeRef.Constructor(id, args) =>
           id match {
             case Builtins.lst =>
-              q"Array.from({ length: rnd.nextUSize(5) }, () => ${genType(args.head)})"
+              q"Array.from({ length: rnd.nextUSize(5) }, () => ${genType(args.head, format)})"
             case Builtins.set =>
-              q"new Set(Array.from({ length: rnd.nextUSize(5) }, () => ${genType(args.head)}))"
+              q"new Set(Array.from({ length: rnd.nextUSize(5) }, () => ${genType(args.head, format)}))"
             case Builtins.map =>
               val isRecord = translator.isStringKeyMap(TypeRef.Constructor(id, args))
               if (isRecord)
-                q"Object.fromEntries(Array.from({ length: rnd.nextUSize(5) }, () => [${genType(args(0))}, ${genType(args(1))}] as const))"
+                q"Object.fromEntries(Array.from({ length: rnd.nextUSize(5) }, () => [${genType(args(0), format)}, ${genType(args(1), format)}] as const))"
               else
-                q"new Map(Array.from({ length: rnd.nextUSize(5) }, () => [${genType(args(0))}, ${genType(args(1))}] as const))"
+                q"new Map(Array.from({ length: rnd.nextUSize(5) }, () => [${genType(args(0), format)}, ${genType(args(1), format)}] as const))"
             case Builtins.opt =>
-              q"(rnd.nextBit() ? ${genType(args.head)} : undefined)"
+              q"(rnd.nextBit() ? ${genType(args.head, format)} : undefined)"
             case t => throw new IllegalArgumentException(s"Unexpected collection type: $t")
           }
-        case a: TypeRef.Any => genAnyFixture(a)
+        case a: TypeRef.Any => genAnyFixture(a, format)
       }
     }
 
     // Stable, declaration-driven `AnyOpaque` fixture value. The meta must match the field's
-    // declared variant exactly — encoder validates the kind byte. PR 7.2 emits the UEBA branch
-    // only (`anyOpaqueUeba(meta, new Uint8Array(0))`); PR 7.4 will introduce `FixtureFormat` and
-    // a JSON-format branch. Mirrors Java/Kotlin precedent.
+    // declared variant exactly — encoder validates the kind byte. UEBA branch uses an empty
+    // `Uint8Array(0)` payload; JSON branch uses `null` (the canonical empty unknown payload).
+    // PR-07-D01 (TS analog): branch must match codec direction so round-trip avoids cross-format
+    // conversion (which requires `withFacade` ctx). Mirrors Java/Kotlin/Rust precedent.
     private val FixtureAnyPayloadTypeId: String = "my.test.AnyFixturePayload"
 
-    private def genAnyFixture(a: TypeRef.Any): TextTree[TsValue] = {
+    private def genAnyFixture(a: TypeRef.Any, format: FixtureFormat): TextTree[TsValue] = {
       val hasUnderlying = a.underlying.isDefined
       val kindByte      = AnyVariant.metaKindByte(a.variant, hasUnderlying) & 0xFF
       val kindHex       = "0x%02x".format(kindByte)
@@ -153,10 +189,13 @@ object TsCodecFixtureTranslator {
           (nullTree, nullTree, tid)
       }
       val meta = q"$tsBaboonCreateAnyMeta($kindHex, $domainExpr, $versionExpr, $typeidExpr)"
-      q"$tsBaboonAnyOpaqueUebaCtor($meta, new Uint8Array(0))"
+      format match {
+        case FixUeba => q"$tsBaboonAnyOpaqueUebaCtor($meta, new Uint8Array(0))"
+        case FixJson => q"$tsBaboonAnyOpaqueJsonCtor($meta, null)"
+      }
     }
 
-    private def genScalar(tpe: TypeRef.Scalar): TextTree[TsValue] = {
+    private def genScalar(tpe: TypeRef.Scalar, format: FixtureFormat): TextTree[TsValue] = {
       tpe.id match {
         case TypeId.Builtins.i08   => q"rnd.nextI08()"
         case TypeId.Builtins.i16   => q"rnd.nextI16()"
@@ -191,7 +230,9 @@ object TsCodecFixtureTranslator {
           val enumValues = TsValue.TsType(enumType.moduleId, s"${enumType.name}_values")
           q"rnd.mkEnum($enumValues)"
         case u: TypeId.User =>
-          val fnRef = fixtureFnRef(u)
+          // Propagate the codec branch into nested user-type fixtures so any-fields nested in
+          // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (TS analog).
+          val fnRef = fixtureFnRef(u, format)
           q"$fnRef(rnd)"
         case t => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
       }

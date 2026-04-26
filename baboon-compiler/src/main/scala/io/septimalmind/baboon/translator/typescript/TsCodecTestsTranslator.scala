@@ -46,7 +46,7 @@ object TsCodecTestsTranslator {
 
     private def makeTests(definition: DomainMember.User, srcRef: TsValue.TsType): TextTree[TsValue] = {
       val testFnName        = typeTranslator.camelToKebab(srcRef.name).replace('-', '_')
-      val fixtureMethodName = s"random_${typeTranslator.camelToKebab(definition.id.name.name).replace('-', '_')}"
+      val fixtureBaseName   = s"random_${typeTranslator.camelToKebab(definition.id.name.name).replace('-', '_')}"
       val fixtureModule = typeTranslator.toTsModule(
         definition.id,
         domain.version,
@@ -54,8 +54,15 @@ object TsCodecTestsTranslator {
         tsFileTools.fixturesBasePkg,
         ".fixture",
       )
-      val fixtureFn    = TsValue.TsType(fixtureModule, fixtureMethodName)
-      val fixtureFnAll = TsValue.TsType(fixtureModule, s"${fixtureMethodName}_all")
+      // PR-07-D01 (TS analog): per-codec fixture variants. UEBA codec test uses the
+      // `AnyOpaqueUeba`-bearing fixture (`random_*`); JSON codec test uses the
+      // `AnyOpaqueJson`-bearing fixture (`random_*_json`). Each fixture matches its codec's
+      // native any-field branch so round-trip avoids cross-format conversion and never needs a
+      // `BaboonCodecContext.withFacade` ctx.
+      val fixtureFnUeba    = TsValue.TsType(fixtureModule, fixtureBaseName)
+      val fixtureFnUebaAll = TsValue.TsType(fixtureModule, s"${fixtureBaseName}_all")
+      val fixtureFnJson    = TsValue.TsType(fixtureModule, s"${fixtureBaseName}_json")
+      val fixtureFnJsonAll = TsValue.TsType(fixtureModule, s"${fixtureBaseName}_json_all")
 
       val valuesRef = TsValue.TsType(srcRef.moduleId, s"${srcRef.name}_values")
 
@@ -65,7 +72,7 @@ object TsCodecTestsTranslator {
             val jsonCodec = jsonCodecGenerator.codecName(srcRef)
             val jsonRoundTrip = definition.defn match {
               case _: Typedef.Adt =>
-                q"""const fixtures = $fixtureFnAll(rnd);
+                q"""const fixtures = $fixtureFnJsonAll(rnd);
                    |for (const fixture of fixtures) {
                    |    const json = $jsonCodec.instance.encode($tsBaboonCodecContext.Default, fixture);
                    |    const decoded = $jsonCodec.instance.decode($tsBaboonCodecContext.Default, json);
@@ -78,7 +85,7 @@ object TsCodecTestsTranslator {
                    |    expect(decoded).toStrictEqual(fixture);
                    |}""".stripMargin
               case _ =>
-                q"""const fixture = $fixtureFn(rnd);
+                q"""const fixture = $fixtureFnJson(rnd);
                    |const json = $jsonCodec.instance.encode($tsBaboonCodecContext.Default, fixture);
                    |const decoded = $jsonCodec.instance.decode($tsBaboonCodecContext.Default, json);
                    |expect(decoded).toStrictEqual(fixture);""".stripMargin
@@ -109,7 +116,7 @@ object TsCodecTestsTranslator {
             val binCodec = uebaCodecGenerator.codecName(srcRef)
             val uebaRoundTrip = definition.defn match {
               case _: Typedef.Adt =>
-                q"""const fixtures = $fixtureFnAll(rnd);
+                q"""const fixtures = $fixtureFnUebaAll(rnd);
                    |for (const fixture of fixtures) {
                    |    const writer = new $tsBaboonBinWriter();
                    |    $binCodec.instance.encode(ctx, fixture, writer);
@@ -126,7 +133,7 @@ object TsCodecTestsTranslator {
                    |    expect(decoded).toStrictEqual(fixture);
                    |}""".stripMargin
               case _ =>
-                q"""const fixture = $fixtureFn(rnd);
+                q"""const fixture = $fixtureFnUeba(rnd);
                    |const writer = new $tsBaboonBinWriter();
                    |$binCodec.instance.encode(ctx, fixture, writer);
                    |const reader = new $tsBaboonBinReader(writer.toBytes());
