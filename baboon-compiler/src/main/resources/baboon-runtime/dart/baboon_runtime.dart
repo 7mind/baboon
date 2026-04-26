@@ -480,6 +480,23 @@ class BaboonBinReader {
     return Uint8List.fromList(bytes);
   }
 
+  /// Read exactly [count] raw bytes from the wire (no length prefix). Used by the `any`-field
+  /// decoder helper to extract the meta-bytes window and the trailing blob within a pre-known
+  /// length frame. PR 8.2 — needed to read the framed payload that already has its length on the
+  /// wire as a separate i32.
+  Uint8List readNBytes(int count) {
+    final bytes = _buf.sublist(_pos, _pos + count);
+    _pos += count;
+    return Uint8List.fromList(bytes);
+  }
+
+  /// Skip [count] raw bytes without materialising them. Used by the `any`-field decoder helper to
+  /// honour the meta-length window (forward-compat: ignore future meta-extension bytes that the
+  /// current readBin doesn't understand). PR 8.2.
+  void skipBytes(int count) {
+    _pos += count;
+  }
+
   BaboonDecimal readDecimal() {
     // .NET decimal format: lo (i32), mid (i32), hi (i32), flags (i32) = 16 bytes
     final lo = BigInt.from(_readRawU32());

@@ -31,6 +31,29 @@ object DtTypes {
   val baboonBinCodecBaseGeneratedAdt: DtType      = DtType(baboonRuntimePkg, "BaboonBinCodecBaseGeneratedAdt")
   val baboonBinCodecNoEncoderGeneratedAdt: DtType = DtType(baboonRuntimePkg, "BaboonBinCodecNoEncoderGeneratedAdt")
 
+  // baboon `any`-feature types (PR 8.2). The runtime ships these in two separate Dart files —
+  // `baboon_any_opaque.dart` (sealed `AnyOpaque` + `AnyMeta` + `AnyMetaCodec`) and
+  // `baboon_codecs_facade.dart` (concrete `BaboonCodecsFacade` carrying `jsonToUebaBytes` /
+  // `uebaToJson`). The base abstract type `BaboonCodecsFacadeBase` lives in `baboon_runtime.dart`
+  // (already imported) so `ctx.facade` typechecks; the codec downcasts to the concrete facade
+  // when invoking the cross-format helpers.
+  val baboonAnyOpaquePkg: DtPackageId = parseDtPkg("baboon.any.opaque")
+  val baboonAnyOpaque: DtType         = DtType(baboonAnyOpaquePkg, "AnyOpaque")
+  val baboonAnyOpaqueUeba: DtType     = DtType(baboonAnyOpaquePkg, "AnyOpaqueUeba")
+  val baboonAnyOpaqueJson: DtType     = DtType(baboonAnyOpaquePkg, "AnyOpaqueJson")
+  val baboonAnyMeta: DtType           = DtType(baboonAnyOpaquePkg, "AnyMeta")
+  val baboonAnyMetaCodec: DtType      = DtType(baboonAnyOpaquePkg, "AnyMetaCodec")
+
+  val baboonCodecsFacadePkg: DtPackageId = parseDtPkg("baboon.codecs.facade")
+  val baboonCodecsFacade: DtType         = DtType(baboonCodecsFacadePkg, "BaboonCodecsFacade")
+
+  // facade-failure types — already in `baboon_runtime.dart`.
+  val baboonEncoderFailure: DtType = DtType(baboonRuntimePkg, "BaboonEncoderFailure")
+  val baboonDecoderFailure: DtType = DtType(baboonRuntimePkg, "BaboonDecoderFailure")
+  val baboonLeft: DtType           = DtType(baboonRuntimePkg, "BaboonLeft")
+  val baboonRight: DtType          = DtType(baboonRuntimePkg, "BaboonRight")
+  val baboonCodecException: DtType = DtType(baboonRuntimePkg, "BaboonCodecException")
+
   // baboon types
   val baboonBinCodecIndexed: DtType = DtType(baboonRuntimePkg, "BaboonBinCodecIndexed")
   val baboonCodecContext: DtType    = DtType(baboonRuntimePkg, "BaboonCodecContext")

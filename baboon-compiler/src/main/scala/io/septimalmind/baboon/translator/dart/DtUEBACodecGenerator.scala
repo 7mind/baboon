@@ -8,6 +8,7 @@ import io.septimalmind.baboon.translator.dart.DtTypes.*
 import io.septimalmind.baboon.translator.dart.DtValue.DtType
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -104,13 +105,15 @@ class DtUEBACodecGenerator(
          |}""".stripMargin
     )
 
+    val anyHelpers: List[TextTree[DtValue]] = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
+
     val baseMethods = encoderMethods ++ decoderMethods
       ++ branchDecoder.map {
         body =>
           q"""$name decodeBranch($baboonCodecContext ctx, $baboonBinReader reader) {
              |  ${body.shift(2).trim}
              |}""".stripMargin
-      }.toList ++ List(indexGetter)
+      }.toList ++ List(indexGetter) ++ anyHelpers
 
     val cName = codecName(srcRef)
 
@@ -436,7 +439,7 @@ class DtUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("DtUEBACodecGenerator.mkDecoder")
+      case a: TypeRef.Any => mkAnyDecoder(a)
     }
   }
 
@@ -514,8 +517,182 @@ class DtUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("DtUEBACodecGenerator.mkEncoder")
+      case a: TypeRef.Any => mkAnyEncoder(a, ref, wref)
     }
+  }
+
+  // Deep walk (mirrors Scala/C#/Rust/Kotlin/Java/TS hasAnyField): a codec class needs the any-field
+  // helpers if any direct or nested-via-Constructor-arg field has type `any`.
+  private def hasAnyField(defn: DomainMember.User): Boolean = {
+    def hasAny(tpe: TypeRef): Boolean = tpe match {
+      case _: TypeRef.Any         => true
+      case _: TypeRef.Scalar      => false
+      case c: TypeRef.Constructor => c.args.exists(hasAny)
+    }
+    defn.defn match {
+      case d: Typedef.Dto => d.fields.exists(f => hasAny(f.tpe))
+      case _              => false
+    }
+  }
+
+  // Encode delegates to the per-codec-class `encodeAnyField` helper. This site wires the expected
+  // kind byte and the field's static (codec-gen-time) fallbacks for cross-format meta resolution.
+  // See `anyStaticFallbacks` for the per-variant table.
+  private def mkAnyEncoder(a: TypeRef.Any, ref: TextTree[DtValue], wref: TextTree[DtValue]): TextTree[DtValue] = {
+    val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
+    val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
+    q"encodeAnyField(ctx, $wref, $expectedHex, $staticDom, $staticVer, $staticTid, $ref);"
+  }
+
+  // Decode delegates to the per-codec-class `decodeAnyField` helper, returning an `AnyOpaqueUeba`
+  // (the helper's narrow return type — `mkDecoder`'s field type position is `AnyOpaque`, the
+  // sealed supertype, so the upcast is implicit).
+  private def mkAnyDecoder(a: TypeRef.Any): TextTree[DtValue] = {
+    val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
+    q"decodeAnyField(reader, $expectedHex)"
+  }
+
+  // Static fallbacks for the cross-format facade helpers (`jsonToUebaBytes`/`uebaToJson`). The
+  // wire `meta` may omit components that are pinned by the field's static declaration; the codec
+  // emits whatever is statically known so the facade can fill the gaps. See
+  // `BaboonCodecsFacade._buildSyntheticTypeMeta` for the merge semantics. Per spec table:
+  //   A=(null,null,null), B=(currentDomain,null,null), C=(currentDomain,currentVersion,null),
+  //   D1=(null,null,underlyingFqid), D2=(currentDomain,null,underlyingFqid),
+  //   D3=(currentDomain,currentVersion,underlyingFqid).
+  // Duplicated across Scala/C#/Rust/Kotlin/Java/TS/Dart — extraction deferred (textual emission
+  // diverges by language flavor; see PR 4.2 ledger entry's DRY analysis).
+  private def anyStaticFallbacks(a: TypeRef.Any): (TextTree[DtValue], TextTree[DtValue], TextTree[DtValue]) = {
+    val none                     = q"null"
+    def some(s: String)          = q""""$s""""
+    val currentDomain: String    = domain.id.toString
+    val currentDomainVer: String = domain.version.v.toString
+    val typeidStatic = a.underlying match {
+      case Some(u) => some(u.id.toString)
+      case None    => none
+    }
+    val (domainStatic, versionStatic) = a.variant match {
+      case AnyVariant.Global  => (none, none)
+      case AnyVariant.ThisDom => (some(currentDomain), none)
+      case AnyVariant.Current => (some(currentDomain), some(currentDomainVer))
+    }
+    (domainStatic, versionStatic, typeidStatic)
+  }
+
+  // Per-codec-class helpers consolidating the any-field framing, kind-check, and
+  // buffer-then-write / read-then-skip paths — emitted at most once per codec class that has any
+  // any-bearing field. Mirrors `JvUEBACodecGenerator.anyFieldHelpers` and
+  // `TsUEBACodecGenerator.anyFieldHelpers`. Wire layout (locked, see
+  // docs/drafts/20260424-1738-any-opaque-fields.md §"Wire format"):
+  //   length:i32 | meta-length:i32 | meta-kind:u8 | meta-strings | blob
+  //
+  // PR-12-D01 lesson applied (Dart): Dart `int` is 64-bit so the failure mode differs from JVM
+  // wraparound, but explicit negative-i32 sanity guards on the on-wire lengths keep the error
+  // message specific (rather than letting the sublist call throw a generic RangeError).
+  //
+  // Cast-via-`as`: `ctx.facade` returns the `BaboonCodecsFacadeBase` opaque base (chosen by PR 8.1
+  // to break the `baboon_runtime.dart` <-> `baboon_codecs_facade.dart` import cycle). The concrete
+  // facade class carries `jsonToUebaBytes`; the cast is safe because `BaboonCodecContext.withFacade`
+  // is the only construction path and accepts the same hierarchy.
+  private def anyFieldHelpers: TextTree[DtValue] = {
+    q"""void encodeAnyField(
+       |    $baboonCodecContext ctx,
+       |    $baboonBinWriter writer,
+       |    int expectedKind,
+       |    String? staticDomain,
+       |    String? staticVersion,
+       |    String? staticTypeid,
+       |    $baboonAnyOpaque value,
+       |) {
+       |  if (value.meta.kind != expectedKind) {
+       |    throw $baboonEncoderFailure(
+       |      'any: meta-kind 0x' + (value.meta.kind & 0xFF).toRadixString(16).padLeft(2, '0') +
+       |      ' does not match field-declared 0x' + (expectedKind & 0xFF).toRadixString(16).padLeft(2, '0'),
+       |    );
+       |  }
+       |  $dtUint8List anyBlob;
+       |  switch (value) {
+       |    case $baboonAnyOpaqueUeba(:final bytes):
+       |      anyBlob = bytes;
+       |    case $baboonAnyOpaqueJson(:final meta, :final json):
+       |      final anyFacadeBase = ctx.facade;
+       |      if (anyFacadeBase == null) {
+       |        throw $baboonEncoderFailure(
+       |          'Cannot encode AnyOpaqueJson into UEBA without a facade reference. '
+       |          'Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), '
+       |          'or supply AnyOpaqueUeba directly.',
+       |        );
+       |      }
+       |      // Downcast to the concrete facade — the marker base is empty by design (PR 8.1
+       |      // import-cycle break). Construction goes through BaboonCodecContext.withFacade
+       |      // which only accepts BaboonCodecsFacadeBase, but real callers pass BaboonCodecsFacade.
+       |      final anyFacade = anyFacadeBase as $baboonCodecsFacade;
+       |      final anyConvResult = anyFacade.jsonToUebaBytes(
+       |        meta,
+       |        json,
+       |        staticDomain: staticDomain,
+       |        staticVersion: staticVersion,
+       |        staticTypeid: staticTypeid,
+       |      );
+       |      switch (anyConvResult) {
+       |        case $baboonLeft(:final value):
+       |          throw value;
+       |        case $baboonRight(:final value):
+       |          anyBlob = value;
+       |      }
+       |  }
+       |  // Buffer the meta to count its byte length precisely (the on-wire `meta-length` field).
+       |  final anyMetaBuf = $baboonBinWriter();
+       |  $baboonAnyMetaCodec.writeBin(value.meta, anyMetaBuf);
+       |  final anyMetaBytes = anyMetaBuf.toBytes();
+       |  final anyTotalLength = 4 + anyMetaBytes.length + anyBlob.length;
+       |  writer.writeI32(anyTotalLength);
+       |  writer.writeI32(anyMetaBytes.length);
+       |  writer.writeAll(anyMetaBytes);
+       |  writer.writeAll(anyBlob);
+       |}
+       |
+       |$baboonAnyOpaque decodeAnyField($baboonBinReader wire, int expectedKind) {
+       |  final anyTotalLength = wire.readI32();
+       |  if (anyTotalLength < 0) {
+       |    throw $baboonDecoderFailure(
+       |      'any: negative total-length $$anyTotalLength',
+       |    );
+       |  }
+       |  final anyMetaLength = wire.readI32();
+       |  if (anyMetaLength < 0) {
+       |    throw $baboonDecoderFailure(
+       |      'any: negative meta-length $$anyMetaLength',
+       |    );
+       |  }
+       |  if (anyTotalLength < 4 + anyMetaLength) {
+       |    throw $baboonDecoderFailure(
+       |      'any: total-length $$anyTotalLength smaller than 4 + meta-length $$anyMetaLength',
+       |    );
+       |  }
+       |  final anyReadResult = $baboonAnyMetaCodec.readBinWithLength(wire);
+       |  final anyMeta = anyReadResult.$$1;
+       |  final anyBytesRead = anyReadResult.$$2;
+       |  if (anyBytesRead > anyMetaLength) {
+       |    throw $baboonDecoderFailure(
+       |      'any: meta bytes-read $$anyBytesRead exceeded meta-length window $$anyMetaLength',
+       |    );
+       |  }
+       |  if (anyBytesRead < anyMetaLength) {
+       |    // Forward-compat: skip future meta-extension bytes within the meta-length window.
+       |    wire.skipBytes(anyMetaLength - anyBytesRead);
+       |  }
+       |  if (anyMeta.kind != expectedKind) {
+       |    throw $baboonDecoderFailure(
+       |      'any: wire kind 0x' + (anyMeta.kind & 0xFF).toRadixString(16).padLeft(2, '0') +
+       |      ' does not match field-declared 0x' + (expectedKind & 0xFF).toRadixString(16).padLeft(2, '0'),
+       |    );
+       |  }
+       |  final anyBlobLen = anyTotalLength - 4 - anyMetaLength;
+       |  final anyBlob = wire.readNBytes(anyBlobLen);
+       |  return $baboonAnyOpaqueUeba(anyMeta, anyBlob);
+       |}""".stripMargin
   }
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[DtValue]] = {

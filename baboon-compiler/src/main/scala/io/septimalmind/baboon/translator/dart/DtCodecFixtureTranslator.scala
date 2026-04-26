@@ -4,6 +4,7 @@ import io.septimalmind.baboon.translator.dart.DtTypes.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -111,11 +112,36 @@ object DtCodecFixtureTranslator {
               case Builtins.opt => q"rnd.mkNullable(() => ${gen(args.head)})"
               case t            => throw new IllegalArgumentException(s"Unexpected collection type: $t")
             }
-          case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("DtCodecFixtureTranslator.genType")
+          case a: TypeRef.Any => genAnyFixture(a)
         }
       }
 
       gen(tpe)
+    }
+
+    // Stable, declaration-driven `AnyOpaque` fixture value. We don't randomise the meta because the
+    // meta must match the field's declared variant exactly — encoder validates the kind byte. PR 8.4
+    // will branch this on a UEBA / JSON format axis (mirroring Java/Kotlin/TS); for now PR 8.2 emits
+    // only the UEBA branch with empty bytes. The encoder kind-check + facade-less path means the
+    // generated round-trip test will exercise the AnyOpaqueUeba branch.
+    private val FixtureAnyPayloadTypeId: String = "my.test.AnyFixturePayload"
+
+    private def genAnyFixture(a: TypeRef.Any): TextTree[DtValue] = {
+      val hasUnderlying = a.underlying.isDefined
+      val kindByte      = AnyVariant.metaKindByte(a.variant, hasUnderlying) & 0xFF
+      val kindHex       = "0x%02x".format(kindByte)
+      val domainStr     = q""""${domain.id.toString}""""
+      val versionStr    = q""""${domain.version.v.toString}""""
+      val typeidStr     = q""""$FixtureAnyPayloadTypeId""""
+      val nullTree      = q"null"
+      val tid           = if (hasUnderlying) nullTree else typeidStr
+      val (domainExpr, versionExpr, typeidExpr) = a.variant match {
+        case AnyVariant.Global  => (domainStr, versionStr, tid)
+        case AnyVariant.ThisDom => (nullTree, versionStr, tid)
+        case AnyVariant.Current => (nullTree, nullTree, tid)
+      }
+      val meta = q"$baboonAnyMeta($kindHex, $domainExpr, $versionExpr, $typeidExpr)"
+      q"$baboonAnyOpaqueUeba($meta, $dtUint8List(0))"
     }
 
     private def genScalar(tpe: TypeRef.Scalar): TextTree[DtValue] = {

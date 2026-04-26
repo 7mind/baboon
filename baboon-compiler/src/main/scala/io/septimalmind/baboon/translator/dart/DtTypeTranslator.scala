@@ -33,7 +33,11 @@ class DtTypeTranslator {
         val tpe   = asDtType(id, domain, evo)
         val targs = args.map(asDtRef(_, domain, evo))
         q"$tpe<${targs.toSeq.join(", ")}>"
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("DtTypeTranslator.asDtRef")
+      case _: TypeRef.Any =>
+        // `any`-typed field surface type. The Dart sealed-class `AnyOpaque` covers both
+        // `AnyOpaqueUeba` and `AnyOpaqueJson` branches. Variant / underlying are wire-only;
+        // they don't change the surface type. Mirrors C#/Java/Kotlin/TS.
+        q"$baboonAnyOpaque"
     }
   }
 

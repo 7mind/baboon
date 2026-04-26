@@ -247,6 +247,10 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
       None // dart:core is implicitly imported
     } else if (t.pkg == baboonRuntimePkg) {
       Some("import 'package:baboon_runtime/baboon_runtime.dart';")
+    } else if (t.pkg == baboonAnyOpaquePkg) {
+      Some("import 'package:baboon_runtime/baboon_any_opaque.dart';")
+    } else if (t.pkg == baboonCodecsFacadePkg) {
+      Some("import 'package:baboon_runtime/baboon_codecs_facade.dart';")
     } else if (t.pkg == baboonFixturePkg) {
       Some("import 'package:baboon_runtime/baboon_fixture.dart';")
     } else {
@@ -289,6 +293,10 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
       None // dart:core is implicitly imported
     } else if (t.pkg == baboonRuntimePkg) {
       Some("import 'package:baboon_runtime/baboon_runtime.dart';")
+    } else if (t.pkg == baboonAnyOpaquePkg) {
+      Some("import 'package:baboon_runtime/baboon_any_opaque.dart';")
+    } else if (t.pkg == baboonCodecsFacadePkg) {
+      Some("import 'package:baboon_runtime/baboon_codecs_facade.dart';")
     } else if (t.pkg == baboonFixturePkg) {
       Some("import 'package:baboon_runtime/baboon_fixture.dart';")
     } else if (t.pkg == dartTypedDataPkg) {
