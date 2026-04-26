@@ -52,7 +52,13 @@ object KtCodecTestsTranslator {
     }
 
     private def makeTest(definition: DomainMember.User, srcRef: KtValue.KtType): TextTree[KtValue] = {
-      val fixture = makeFixture(definition, domain, evo)
+      // PR-07-D01 (Kotlin analog): per-codec fixture variants. UEBA codec test uses the
+      // `AnyOpaqueUeba`-bearing fixture (`random`); JSON codec test uses the
+      // `AnyOpaqueJson`-bearing fixture (`randomJson`). Each fixture matches its codec's native
+      // any-field branch so round-trip avoids cross-format conversion and never needs a
+      // `BaboonCodecContext.withFacade` ctx.
+      val uebaFixture = makeFixture(definition, domain, evo, useJsonAny = false)
+      val jsonFixture = makeFixture(definition, domain, evo, useJsonAny = true)
       codecs
         .filter(_.isActive(definition.id)).map {
           case jsonCodec: KtJsonCodecGenerator =>
@@ -68,7 +74,7 @@ object KtCodecTestsTranslator {
              |}
              |
              |private fun jsonCodecTestImpl(context: $baboonCodecContext, rnd: $baboonRandom, clue: String) {
-             |  ${fixture.shift(2).trim}
+             |  ${jsonFixture.shift(2).trim}
              |  ${body.shift(2).trim}
              |}
              |
@@ -92,7 +98,7 @@ object KtCodecTestsTranslator {
              |}
              |
              |private fun uebaCodecTestImpl(context: $baboonCodecContext, rnd: $baboonRandom, clue: String) {
-             |  ${fixture.shift(2).trim}
+             |  ${uebaFixture.shift(2).trim}
              |  ${body.shift(2).trim}
              |}
              |
@@ -131,11 +137,14 @@ object KtCodecTestsTranslator {
       definition: DomainMember.User,
       domain: Domain,
       evolution: BaboonEvolution,
+      useJsonAny: Boolean,
     ): TextTree[KtValue] = {
+      val randomMethod    = if (useJsonAny) "randomJson" else "random"
+      val randomAllMethod = if (useJsonAny) "randomAllJson" else "randomAll"
       definition.defn match {
         case e: Typedef.Enum => q"val fixture = rnd.randomElement(${e.id.name.name}.all())"
-        case _: Typedef.Adt  => q"val fixtures = ${typeTranslator.asKtType(definition.id, domain, evolution)}_Fixture.randomAll(rnd)"
-        case _               => q"val fixture = ${typeTranslator.asKtType(definition.id, domain, evolution)}_Fixture.random(rnd)"
+        case _: Typedef.Adt  => q"val fixtures = ${typeTranslator.asKtType(definition.id, domain, evolution)}_Fixture.$randomAllMethod(rnd)"
+        case _               => q"val fixture = ${typeTranslator.asKtType(definition.id, domain, evolution)}_Fixture.$randomMethod(rnd)"
       }
     }
 

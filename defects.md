@@ -906,3 +906,33 @@ Same for `any_meta_length`. Also check `any_total_length < 4 + any_meta_length` 
 **Location:** Session/PR documentation.
 **Description:** PR 5.1's executor verification claims `mdl :test-gen-regular-adt` clean without explicitly noting the `any-ok/` stash precondition. The all-language action still trips on the Kotlin and Python placeholder cascades (via `KtTypeTranslator.asKtRef` and `PyTypeTranslator`). Future reviewers reading the brief verbatim will mis-set expectations.
 **Fix:** Documented in M5 close session log when M5 closes. Mirrors the M4 PR-4.1 session-log note about Python placeholder gating the all-language action.
+
+---
+
+## PR-15 — Kotlin round-trip tests + branch-matching fixture fix (M5 PR 5.4)
+
+### [PR-15-D01] Kotlin generated UEBA codec wraps each indexed-mode field encode in a `{ ... }` block expression — Kotlin parses these as unused lambdas, so indexed-encode emits no field content
+**Status:** open (pre-existing codegen bug, surfaced by PR 5.4 round-trip test exploration; out of M5 scope)
+**Severity:** high (Indexed UEBA mode is silently broken for any DTO with fields, all languages including pre-PR 5.x cases)
+**Location:** Generated `*_UEBACodec.encode(...)` in `target/test-regular/kt-stub/src/main/kotlin/generated-main/**/*.kt` (e.g. `my/ok/Holder.kt:163-265`); emitter at `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/kotlin/KtUEBACodecGenerator.scala` (per-field block emission for the `useIndices=true` arm).
+**Description:** The Kotlin codegen wraps each per-field index/encode block in `{ ... }`:
+```kotlin
+{
+  // fAny: #any
+  val before = writeMemoryStream.size()
+  writer.writeInt(before)
+  encodeAnyField(ctx, fakeWriter, ...)
+  val after = writeMemoryStream.size()
+  ...
+}
+```
+In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression value*, not a statement block — the lambda is constructed and discarded without being invoked. Result: nothing inside any of the 9 blocks runs in the indexed-encode path. The wire ends up with just `[header=0x01]` followed by an empty `writeMemoryStream` — no offset/length pairs, no content. Decode then EOF's at the first index entry read. The Compact (non-indexed) branch uses bare statements (no curly wrapping) and works correctly.
+**Suggested fix:** Either drop the curly braces in `KtUEBACodecGenerator`'s indexed emission (the `// fXxx: ...` comment markers are sufficient visual separators), or change them to `run { ... }` blocks (which evaluate the lambda). Same patch applies to the JVM and KMP variants.
+**Reproduction:** Removed in PR 5.4 — the originally-attempted `ueba_round_trip_withUseIndicesTrue_preservesContent()` test surfaced this. Replaced with an inline comment explaining the deferral. The Scala/C#/Rust analogs of that test pass because their codegen emits real statement blocks.
+
+### [PR-15-D02] KMP test parity still deferred (was open in PR-14-D02)
+**Status:** open (continued deferral, scope expansion)
+**Severity:** medium-low
+**Location:** `test/kt-stub-kmp/`.
+**Description:** `kt-stub-kmp` still has no `src/test/` source set. The new `AnyRoundTripTest.kt` runs only against JVM `test/kt-stub`. PR 5.4 does not address PR-14-D02 — adding a parallel test source set would significantly expand the scope (Kotlin runtime types are largely identical between JVM and KMP, and the per-domain code generation is identical, so any regressions surfaced by KMP testing would also surface in JVM testing — the marginal value is low).
+**Suggested fix:** Defer to a future hygiene PR or M-cleanup. PR-14-D02's recommendation stands.

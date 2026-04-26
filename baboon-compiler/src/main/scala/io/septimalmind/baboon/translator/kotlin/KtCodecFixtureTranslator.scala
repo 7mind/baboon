@@ -41,6 +41,16 @@ object KtCodecFixtureTranslator {
       }
     }
 
+    // Branch selector for any-field fixture payloads. PR-07-D01 (Kotlin analog): the auto-test
+    // round-trips a fixture through a single codec; if the fixture's `AnyOpaque` branch matches
+    // the codec direction, no facade is needed and equality holds. We emit two parallel functions
+    // per DTO (`random` for the UEBA branch, `randomJson` for the JSON branch) so each test path
+    // picks its native branch. Recursive calls into nested user-type fixtures must propagate the
+    // same choice.
+    private sealed trait FixtureFormat
+    private case object FixUeba extends FixtureFormat
+    private case object FixJson extends FixtureFormat
+
     override def fixtureTpe(definition: DomainMember.User): Option[TextTree[KtValue]] = {
       target.output.fixturesOutput.flatMap {
         _ =>
@@ -79,14 +89,21 @@ object KtCodecFixtureTranslator {
     }
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[KtValue] = {
-      val generatedFields = dto.fields.map(f => genType(f.tpe))
-      val fullType        = translator.toKtTypeRefKeepForeigns(dto.id, domain, evo)
+      val fullType = translator.toKtTypeRefKeepForeigns(dto.id, domain, evo)
+
+      def body(format: FixtureFormat): TextTree[KtValue] = {
+        val generatedFields = dto.fields.map(f => genType(f.tpe, format))
+        q"""$fullType(
+           |  ${generatedFields.join(",\n").shift(2).trim}
+           |)""".stripMargin
+      }
 
       q"""${deprecationSuppress}object ${fixtureTpe(dto.id)} {
          |  fun random(rnd: $baboonRandom): $fullType =
-         |    $fullType(
-         |      ${generatedFields.join(",\n").shift(6).trim}
-         |    )
+         |    ${body(FixUeba).shift(4).trim}
+         |
+         |  fun randomJson(rnd: $baboonRandom): $fullType =
+         |    ${body(FixJson).shift(4).trim}
          |}
          |""".stripMargin
     }
@@ -97,14 +114,23 @@ object KtCodecFixtureTranslator {
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
-      val membersFixtures    = members.sortBy(_.id.toString).map(doTranslateDto)
-      val membersGenerators  = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name}_Fixture::random")
-      val membersDirectCalls = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name}_Fixture.random(rnd)")
+      val sortedMembers          = members.sortBy(_.id.toString)
+      val membersFixtures        = sortedMembers.map(doTranslateDto)
+      val membersGenerators      = sortedMembers.map(dto => q"${dto.id.name.name}_Fixture::random")
+      val membersGeneratorsJson  = sortedMembers.map(dto => q"${dto.id.name.name}_Fixture::randomJson")
+      val membersDirectCalls     = sortedMembers.map(dto => q"${dto.id.name.name}_Fixture.random(rnd)")
+      val membersDirectCallsJson = sortedMembers.map(dto => q"${dto.id.name.name}_Fixture.randomJson(rnd)")
 
       q"""${deprecationSuppress}object ${fixtureTpe(adt.id)} {
          |  fun random(rnd: $baboonRandom): $adtName {
          |    return rnd.oneOf(listOf(
          |      ${membersGenerators.join(",\n").shift(6).trim}
+         |    ))
+         |  }
+         |
+         |  fun randomJson(rnd: $baboonRandom): $adtName {
+         |    return rnd.oneOf(listOf(
+         |      ${membersGeneratorsJson.join(",\n").shift(6).trim}
          |    ))
          |  }
          |
@@ -114,15 +140,21 @@ object KtCodecFixtureTranslator {
          |    )
          |  }
          |
+         |  fun randomAllJson(rnd: $baboonRandom): List<$adtName> {
+         |    return listOf(
+         |      ${membersDirectCallsJson.join(",\n").shift(6).trim}
+         |    )
+         |  }
+         |
          |  ${membersFixtures.joinN().shift(2).trim}
          |}
          |""".stripMargin
     }
 
-    private def genType(tpe: TypeRef): TextTree[KtValue] = {
+    private def genType(tpe: TypeRef, format: FixtureFormat): TextTree[KtValue] = {
       def gen(tpe: TypeRef): TextTree[KtValue] = {
         BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Kotlin) match {
-          case tpe: TypeRef.Scalar => genScalar(tpe)
+          case tpe: TypeRef.Scalar => genScalar(tpe, format)
           case TypeRef.Constructor(id, args) =>
             id match {
               case Builtins.lst => q"rnd.mkList { ${gen(args.head)} }"
@@ -131,7 +163,7 @@ object KtCodecFixtureTranslator {
               case Builtins.opt => q"rnd.mkNullable { ${gen(args.head)} }"
               case t            => throw new IllegalArgumentException(s"Unexpected collection type: $t")
             }
-          case a: TypeRef.Any => genAnyFixture(a)
+          case a: TypeRef.Any => genAnyFixture(a, format)
         }
       }
 
@@ -139,15 +171,14 @@ object KtCodecFixtureTranslator {
     }
 
     // Stable, declaration-driven `AnyOpaque` fixture value. We don't randomise the meta because the
-    // meta must match the field's declared variant exactly — encoder validates the kind byte. PR 5.2
-    // emits the UEBA branch only (single-branch fixture); PR 5.4 will add the JSON branch via a
-    // `FixtureFormat` selector mirroring PR 3.4 / PR 4.3.
+    // meta must match the field's declared variant exactly — encoder validates the kind byte. UEBA
+    // branch uses empty bytes; JSON branch uses `JsonNull` (kotlinx.serialization).
     //
     // The typeid string is only used by untyped-variant kinds (A/B/C) where the wire carries a
     // typeid; D1/D2/D3 have `hasUnderlying=true` and the meta typeid component is absent.
     private val FixtureAnyPayloadTypeId: String = "my.test.AnyFixturePayload"
 
-    private def genAnyFixture(a: TypeRef.Any): TextTree[KtValue] = {
+    private def genAnyFixture(a: TypeRef.Any, format: FixtureFormat): TextTree[KtValue] = {
       val hasUnderlying = a.underlying.isDefined
       val kindHex       = "0x%02x".format(AnyVariant.metaKindByte(a.variant, hasUnderlying) & 0xFF)
       val domainStr     = q""""${domain.id.toString}""""
@@ -168,10 +199,17 @@ object KtCodecFixtureTranslator {
       }
 
       val meta = q"$baboonAnyMeta(${kindHex}.toByte(), $domainExpr, $versionExpr, $typeidExpr)"
-      q"$baboonAnyOpaqueUeba($meta, byteArrayOf())"
+      // PR-07-D01 (Kotlin analog): branch must match codec direction so round-trip avoids cross-
+      // format conversion (which requires `withFacade` ctx). UEBA codec test uses
+      // `AnyOpaqueUeba(meta, byteArrayOf())`; JSON codec test uses `AnyOpaqueJson(meta, JsonNull)`.
+      // Both are wire-equivalent to themselves under their native codec — equality holds.
+      format match {
+        case FixUeba => q"$baboonAnyOpaqueUeba($meta, byteArrayOf())"
+        case FixJson => q"$baboonAnyOpaqueJson($meta, $jsonNull)"
+      }
     }
 
-    private def genScalar(tpe: TypeRef.Scalar): TextTree[KtValue] = {
+    private def genScalar(tpe: TypeRef.Scalar, format: FixtureFormat): TextTree[KtValue] = {
       tpe.id match {
         case TypeId.Builtins.i08 => q"rnd.nextI08()"
         case TypeId.Builtins.i16 => q"rnd.nextI16()"
@@ -197,7 +235,14 @@ object KtCodecFixtureTranslator {
         case TypeId.Builtins.bit => q"rnd.nextBit()"
 
         case TypeId.User(_, _, name) if enquiries.isEnum(tpe, domain) => q"rnd.mkEnum(${name.name})"
-        case u: TypeId.User                                           => q"${u.name.name}_Fixture.random(rnd)"
+        case u: TypeId.User =>
+          // Propagate the codec branch into nested user-type fixtures so any-fields nested in
+          // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (Kotlin analog).
+          val method = format match {
+            case FixUeba => q"random"
+            case FixJson => q"randomJson"
+          }
+          q"${u.name.name}_Fixture.$method(rnd)"
 
         case t => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
       }
