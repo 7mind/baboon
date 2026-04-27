@@ -135,7 +135,13 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
     val scalarsToEmit = (builtinCustomScalars.intersect(usedScalars).toList ++ foreignScalars).sorted
 
     scalarsToEmit.foreach { s =>
-      sb.append(s"scalar $s\n")
+      scalarDescription(s) match {
+        case Some(desc) =>
+          sb.append(desc)
+          sb.append(s"scalar $s\n")
+        case None =>
+          sb.append(s"scalar $s\n")
+      }
     }
     if (scalarsToEmit.nonEmpty) sb.append("\n")
 
@@ -260,6 +266,40 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
         case _ => Nil
       }
     }.toSet
+  }
+
+  /** GraphQL block-string description for a custom scalar.
+    *
+    * Returns a complete `"""..."""` block (with trailing newline) ready to be
+    * emitted before a `scalar X` declaration, or `None` if the scalar is
+    * self-explanatory.
+    */
+  private def scalarDescription(name: String): Option[String] = {
+    name match {
+      case "BaboonAny" =>
+        // Triple-quote sequences are produced via concatenation since Scala
+        // triple-quoted strings cannot contain `"""` directly.
+        val tq = "\"\"\""
+        val body =
+          """Opaque any-envelope. JSON serialization of a baboon AnyOpaque value.
+            |
+            |Wire shape: {"$ak":<int>, "$ad"?:str, "$av"?:str, "$at"?:str, "$c":<inner>}
+            |  $ak — meta-kind byte (bit 0 = typeid, bit 1 = version, bit 2 = domain)
+            |  $ad — domain string, present iff bit 2 set
+            |  $av — version string, present iff bit 1 set
+            |  $at — typeid string, present iff bit 0 set
+            |  $c  — inner payload (typed JSON value or UEBA base64-bytes)
+            |
+            |Kind bytes (from the locked `any` qualifier table):
+            |  0x07 — variant A (`any`)                          — domain + version + typeid
+            |  0x03 — variant B (`any[domain:this]`)             — version + typeid
+            |  0x01 — variant C (`any[domain:current]`)          — typeid only
+            |  0x06 — variant D1 (`any[T]`)                      — domain + version (typeid static)
+            |  0x02 — variant D2 (`any[domain:this, T]`)         — version (typeid static)
+            |  0x00 — variant D3 (`any[domain:current, T]`)      — none on the wire""".stripMargin
+        Some(s"$tq\n$body\n$tq\n")
+      case _ => None
+    }
   }
 
   private def collectScalarsFromRef(ref: TypeRef): Set[String] = {

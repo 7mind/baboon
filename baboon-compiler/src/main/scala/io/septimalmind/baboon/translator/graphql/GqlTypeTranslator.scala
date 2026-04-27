@@ -65,7 +65,11 @@ class GqlTypeTranslator {
       case TypeRef.Constructor(TypeId.Builtins.map, args) =>
         s"[${mapEntryTypeName(args.head, args.tail.head)}!]"
       case _: TypeRef.Any =>
-        // Schema-only placeholder until M11 (GraphQL) lands the real representation for `any`.
+        // GraphQL has no native any-type. We emit a custom scalar `BaboonAny` whose
+        // declaration is documented with the JSON envelope shape and kind-byte table
+        // (see `GqlBaboonTranslator.BaboonAnyDescription`). All `any[...]` qualifier
+        // variants collapse to the same scalar at the SDL level — qualifier metadata
+        // lives in the JSON envelope, not the schema.
         "BaboonAny"
       case other =>
         s"BaboonUnknown_${other.id.name.name}"
@@ -127,7 +131,8 @@ class GqlTypeTranslator {
       case TypeRef.Constructor(TypeId.Builtins.map, args) =>
         s"Map_${typeRefIdent(args.head)}_${typeRefIdent(args.tail.head)}"
       case _: TypeRef.Any =>
-        // Schema-only placeholder until M11 (GraphQL) lands the real representation for `any`.
+        // Same `BaboonAny` scalar as `typeRefStr` — collapses all qualifier variants
+        // for purposes of generated identifier names (e.g. map-entry helper types).
         "BaboonAny"
       case other =>
         s"Unknown_${other.id.name.name}"
