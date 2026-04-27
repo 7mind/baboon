@@ -1065,7 +1065,11 @@ export interface BaboonCodecData {
 }
 
 export interface BaboonBinCodec<T> extends BaboonCodecData {
-    encode(ctx: BaboonCodecContext, writer: BaboonBinWriter, value: T): void;
+    // PR 13.2 fix: signature corrected to match `TsUEBACodecGenerator` codegen — codecs emit
+    // `(ctx, value, writer)`. Old interface declared `(ctx, writer, value)` which silently
+    // diverged from the codegen and broke `BaboonCodecsFacade.jsonToUebaBytes` cross-format
+    // conversion (discovered in PR 13.2 / PR-26-D01).
+    encode(ctx: BaboonCodecContext, value: T, writer: BaboonBinWriter): void;
     decode(ctx: BaboonCodecContext, reader: BaboonBinReader): T;
 }
 

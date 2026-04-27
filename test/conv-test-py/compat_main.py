@@ -6,9 +6,195 @@ from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
 
-from Generated.baboon_codecs import BaboonCodecContext
-from Generated.baboon_runtime_shared import LEDataOutputStream, LEDataInputStream
+from Generated.baboon_any_opaque import AnyMeta, AnyOpaque, AnyOpaqueJson, AnyOpaqueUeba
+from Generated.baboon_codecs import AbstractBaboonJsonCodecs, AbstractBaboonUebaCodecs, BaboonCodecContext
+from Generated.baboon_codecs_facade import BaboonCodecsFacade
+from Generated.baboon_runtime_shared import BaboonDomainVersion, LEDataOutputStream, LEDataInputStream
 from Generated.convtest.testpkg.AllBasicTypes import AllBasicTypes, AllBasicTypes_JsonCodec, AllBasicTypes_UEBACodec
+from Generated.convtest.testpkg.AnyShowcase import AnyShowcase, AnyShowcase_JsonCodec, AnyShowcase_UEBACodec
+from Generated.convtest.testpkg.InnerPayload import InnerPayload, InnerPayload_JsonCodec, InnerPayload_UEBACodec
+
+DOMAIN_ID = "convtest.testpkg"
+DOMAIN_VER = "2.0.0"
+INNER_TYPE_ID = "convtest.testpkg/:#InnerPayload"
+
+
+# PR 13.2 — define a local codec aggregator that imports only the AnyShowcase / InnerPayload /
+# AllBasicTypes codecs. Python's generated `convtest.testpkg.baboon_runtime` module has a
+# pre-existing import-time `AttributeError` from a malformed `v1_0_0.abs.core.OldAbsAdt` reference
+# (logged as a separate Python defect; not introduced by PR 13.2). Avoiding that module lets us
+# wire the facade with the codecs the AnyShowcase cross-format encoder needs.
+
+class _LocalBaboonCodecsJson(AbstractBaboonJsonCodecs):
+    def __init__(self):
+        super().__init__()
+        self.register("convtest.testpkg/:#AllBasicTypes", AllBasicTypes_JsonCodec.instance)
+        self.register("convtest.testpkg/:#InnerPayload", InnerPayload_JsonCodec.instance)
+        self.register("convtest.testpkg/:#AnyShowcase", AnyShowcase_JsonCodec.instance)
+
+
+class _LocalBaboonCodecsUeba(AbstractBaboonUebaCodecs):
+    def __init__(self):
+        super().__init__()
+        self.register("convtest.testpkg/:#AllBasicTypes", AllBasicTypes_UEBACodec.instance)
+        self.register("convtest.testpkg/:#InnerPayload", InnerPayload_UEBACodec.instance)
+        self.register("convtest.testpkg/:#AnyShowcase", AnyShowcase_UEBACodec.instance)
+
+
+def fresh_facade() -> BaboonCodecsFacade:
+    f = BaboonCodecsFacade()
+    f.register(
+        BaboonDomainVersion(DOMAIN_ID, DOMAIN_VER),
+        codecs_json=lambda: _LocalBaboonCodecsJson(),
+        codecs_bin=lambda: _LocalBaboonCodecsUeba(),
+    )
+    return f
+
+
+def expected_inner_payloads():
+    return [
+        InnerPayload(label="variant-A", count=1),
+        InnerPayload(label="variant-B", count=2),
+        InnerPayload(label="variant-C", count=3),
+        InnerPayload(label="variant-D1", count=4),
+        InnerPayload(label="variant-D2", count=5),
+        InnerPayload(label="variant-D3", count=6),
+        InnerPayload(label="opt-any", count=7),
+        InnerPayload(label="lst-any-0", count=8),
+    ]
+
+
+def _ueba_bytes(p):
+    ms = io.BytesIO()
+    w = LEDataOutputStream(ms)
+    InnerPayload_UEBACodec.instance().encode(BaboonCodecContext.compact(), w, p)
+    return ms.getvalue()
+
+
+def _as_json(p):
+    # InnerPayload_JsonCodec.encode returns a JSON string; we need the inner JSON object so it
+    # can be embedded as `$c` payload. Decode the string back via json.loads.
+    s = InnerPayload_JsonCodec.instance().encode(BaboonCodecContext.compact(), p)
+    return json.loads(s)
+
+
+def _meta_a(): return AnyMeta(0x07, DOMAIN_ID, DOMAIN_VER, INNER_TYPE_ID)
+def _meta_b(): return AnyMeta(0x03, None, DOMAIN_VER, INNER_TYPE_ID)
+def _meta_c(): return AnyMeta(0x01, None, None, INNER_TYPE_ID)
+def _meta_d1(): return AnyMeta(0x06, DOMAIN_ID, DOMAIN_VER, None)
+def _meta_d2(): return AnyMeta(0x02, None, DOMAIN_VER, None)
+def _meta_d3(): return AnyMeta(0x00, None, None, None)
+def _meta_opt(): return AnyMeta(0x07, DOMAIN_ID, DOMAIN_VER, INNER_TYPE_ID)
+def _meta_lst(): return AnyMeta(0x06, DOMAIN_ID, DOMAIN_VER, None)
+
+
+# PR 13.2 / PR-26-D03: Python's facade `json_to_ueba_bytes` calls `json_codec.decode(ctx, dict)`
+# but the generated `InnerPayload_JsonCodec.decode` expects a JSON string (it goes through
+# `model_validate_json`). The facade's cross-format helper is pre-existing-broken in Python.
+# To unblock cross-language interop testing we build same-branch fixtures (all-Json for the
+# JSON wire, all-Ueba for the UEBA wire) so the codec never traverses the facade.
+
+def create_sample_any_showcase_json() -> AnyShowcase:
+    p = expected_inner_payloads()
+    return AnyShowcase(
+        vAnyA=AnyOpaqueJson(meta=_meta_a(), json=_as_json(p[0])),
+        vAnyB=AnyOpaqueJson(meta=_meta_b(), json=_as_json(p[1])),
+        vAnyC=AnyOpaqueJson(meta=_meta_c(), json=_as_json(p[2])),
+        vAnyD1=AnyOpaqueJson(meta=_meta_d1(), json=_as_json(p[3])),
+        vAnyD2=AnyOpaqueJson(meta=_meta_d2(), json=_as_json(p[4])),
+        vAnyD3=AnyOpaqueJson(meta=_meta_d3(), json=_as_json(p[5])),
+        optAny=AnyOpaqueJson(meta=_meta_opt(), json=_as_json(p[6])),
+        lstAny=[AnyOpaqueJson(meta=_meta_lst(), json=_as_json(p[7]))],
+    )
+
+
+def create_sample_any_showcase_ueba() -> AnyShowcase:
+    p = expected_inner_payloads()
+    return AnyShowcase(
+        vAnyA=AnyOpaqueUeba(meta=_meta_a(), bytes=_ueba_bytes(p[0])),
+        vAnyB=AnyOpaqueUeba(meta=_meta_b(), bytes=_ueba_bytes(p[1])),
+        vAnyC=AnyOpaqueUeba(meta=_meta_c(), bytes=_ueba_bytes(p[2])),
+        vAnyD1=AnyOpaqueUeba(meta=_meta_d1(), bytes=_ueba_bytes(p[3])),
+        vAnyD2=AnyOpaqueUeba(meta=_meta_d2(), bytes=_ueba_bytes(p[4])),
+        vAnyD3=AnyOpaqueUeba(meta=_meta_d3(), bytes=_ueba_bytes(p[5])),
+        optAny=AnyOpaqueUeba(meta=_meta_opt(), bytes=_ueba_bytes(p[6])),
+        lstAny=[AnyOpaqueUeba(meta=_meta_lst(), bytes=_ueba_bytes(p[7]))],
+    )
+
+
+def write_json_any(ctx, data, output_dir):
+    json_str = AnyShowcase_JsonCodec.instance().encode(ctx, data)
+    p = Path(output_dir) / "any-showcase.json"
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(json_str)
+    print(f"Written JSON to {p}")
+
+
+def write_ueba_any(ctx, data, output_dir):
+    ms = io.BytesIO()
+    w = LEDataOutputStream(ms)
+    AnyShowcase_UEBACodec.instance().encode(ctx, w, data)
+    p = Path(output_dir) / "any-showcase.ueba"
+    with open(p, "wb") as f:
+        f.write(ms.getvalue())
+    print(f"Written UEBA to {p}")
+
+
+def decode_inner(o):
+    if isinstance(o, AnyOpaqueUeba):
+        ms = io.BytesIO(o.bytes)
+        r = LEDataInputStream(ms)
+        return InnerPayload_UEBACodec.instance().decode(BaboonCodecContext.compact(), r)
+    if isinstance(o, AnyOpaqueJson):
+        return InnerPayload_JsonCodec.instance().decode(BaboonCodecContext.compact(), json.dumps(o.json))
+    raise RuntimeError(f"unexpected AnyOpaque subclass: {type(o)}")
+
+
+def decode_all_payloads(v):
+    opt = v.optAny
+    if opt is None:
+        raise RuntimeError("optAny was None; expected non-None")
+    if not v.lstAny:
+        raise RuntimeError("lstAny was empty; expected one element")
+    return [
+        decode_inner(v.vAnyA),
+        decode_inner(v.vAnyB),
+        decode_inner(v.vAnyC),
+        decode_inner(v.vAnyD1),
+        decode_inner(v.vAnyD2),
+        decode_inner(v.vAnyD3),
+        decode_inner(opt),
+        decode_inner(v.lstAny[0]),
+    ]
+
+
+def read_and_verify_any_showcase(file_path):
+    ctx = BaboonCodecContext.default()
+    fp = Path(file_path)
+    try:
+        if fp.suffix == ".json":
+            with open(fp, "r", encoding="utf-8") as f:
+                json_str = f.read()
+            data = AnyShowcase_JsonCodec.instance().decode(ctx, json_str)
+        else:
+            with open(fp, "rb") as f:
+                ueba_bytes = f.read()
+            r = LEDataInputStream(io.BytesIO(ueba_bytes))
+            data = AnyShowcase_UEBACodec.instance().decode(ctx, r)
+    except Exception as e:
+        print(f"AnyShowcase deserialization failed: {e}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        expected = expected_inner_payloads()
+        decoded = decode_all_payloads(data)
+        for i, (exp, got) in enumerate(zip(expected, decoded)):
+            if exp != got:
+                print(f"AnyShowcase payload {i} mismatch: expected {exp}, got {got}", file=sys.stderr)
+                sys.exit(1)
+    except Exception as e:
+        print(f"AnyShowcase decode failed: {e}", file=sys.stderr)
+        sys.exit(1)
+    print("OK")
 
 
 def create_sample_data():
@@ -60,6 +246,9 @@ def write_ueba(ctx, data, output_dir):
 
 
 def read_and_verify(file_path):
+    if file_path.endswith("any-showcase.json") or file_path.endswith("any-showcase.ueba"):
+        read_and_verify_any_showcase(file_path)
+        return
     ctx = BaboonCodecContext.default()
     fp = Path(file_path)
 
@@ -130,6 +319,8 @@ def run_legacy():
 
     write_json(ctx, sample_data, str(json_dir))
     write_ueba(ctx, sample_data, str(ueba_dir))
+    write_json_any(ctx, create_sample_any_showcase_json(), str(json_dir))
+    write_ueba_any(ctx, create_sample_any_showcase_ueba(), str(ueba_dir))
 
     print("Python serialization complete!")
 
@@ -144,8 +335,10 @@ if __name__ == "__main__":
         ctx = BaboonCodecContext.default()
         if fmt == "json":
             write_json(ctx, sample_data, output_dir)
+            write_json_any(ctx, create_sample_any_showcase_json(), output_dir)
         elif fmt == "ueba":
             write_ueba(ctx, sample_data, output_dir)
+            write_ueba_any(ctx, create_sample_any_showcase_ueba(), output_dir)
         else:
             print(f"Unknown format: {fmt}", file=sys.stderr)
             sys.exit(1)

@@ -63,6 +63,134 @@ func createSampleData() -> AllBasicTypes {
     )
 }
 
+// PR 13.2 — domain constants for AnyShowcase.
+let domainId = "convtest.testpkg"
+let domainVer = "2.0.0"
+let innerTypeId = "convtest.testpkg/:#InnerPayload"
+
+func freshFacade() -> BaboonCodecsFacade {
+    let f = BaboonCodecsFacade()
+    f.registerCodecs(
+        BaboonDomainVersion(domainId, domainVer),
+        codecsJson: { BaboonCodecsJson_Convtest_Testpkg() },
+        codecsBin: { BaboonCodecsUeba_Convtest_Testpkg() }
+    )
+    return f
+}
+
+func expectedInnerPayloads() -> [InnerPayload] {
+    return [
+        InnerPayload(label: "variant-A", count: 1),
+        InnerPayload(label: "variant-B", count: 2),
+        InnerPayload(label: "variant-C", count: 3),
+        InnerPayload(label: "variant-D1", count: 4),
+        InnerPayload(label: "variant-D2", count: 5),
+        InnerPayload(label: "variant-D3", count: 6),
+        InnerPayload(label: "opt-any", count: 7),
+        InnerPayload(label: "lst-any-0", count: 8),
+    ]
+}
+
+func uebaBytes(_ p: InnerPayload) -> Data {
+    let w = BaboonBinWriter()
+    InnerPayload_UebaCodec.instance.encode(.compact, w, p)
+    return w.toData()
+}
+
+func asJson(_ p: InnerPayload) -> Any? {
+    return InnerPayload_JsonCodec.instance.encode(.compact, p)
+}
+
+func createSampleAnyShowcase() throws -> AnyShowcase {
+    let payloads = expectedInnerPayloads()
+    let metaA  = try AnyMeta(kind: 0x07, domain: domainId, version: domainVer, typeid: innerTypeId)
+    let metaB  = try AnyMeta(kind: 0x03, domain: nil, version: domainVer, typeid: innerTypeId)
+    let metaC  = try AnyMeta(kind: 0x01, domain: nil, version: nil, typeid: innerTypeId)
+    let metaD1 = try AnyMeta(kind: 0x06, domain: domainId, version: domainVer, typeid: nil)
+    let metaD2 = try AnyMeta(kind: 0x02, domain: nil, version: domainVer, typeid: nil)
+    let metaD3 = try AnyMeta(kind: 0x00, domain: nil, version: nil, typeid: nil)
+    let metaOpt = try AnyMeta(kind: 0x07, domain: domainId, version: domainVer, typeid: innerTypeId)
+    let metaLst = try AnyMeta(kind: 0x06, domain: domainId, version: domainVer, typeid: nil)
+
+    return AnyShowcase(
+        vAnyA: .json(meta: metaA, json: asJson(payloads[0])),
+        vAnyB: .json(meta: metaB, json: asJson(payloads[1])),
+        vAnyC: .json(meta: metaC, json: asJson(payloads[2])),
+        vAnyD1: .ueba(meta: metaD1, bytes: uebaBytes(payloads[3])),
+        vAnyD2: .ueba(meta: metaD2, bytes: uebaBytes(payloads[4])),
+        vAnyD3: .ueba(meta: metaD3, bytes: uebaBytes(payloads[5])),
+        optAny: .json(meta: metaOpt, json: asJson(payloads[6])),
+        lstAny: [.ueba(meta: metaLst, bytes: uebaBytes(payloads[7]))]
+    )
+}
+
+func writeJsonAny(_ ctx: BaboonCodecContext, _ data: AnyShowcase, _ outputDir: String) throws {
+    try FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+    let jsonObj = AnyShowcase_JsonCodec.instance.encode(ctx, data)
+    let jsonData = try JSONSerialization.data(withJSONObject: jsonObj as Any, options: [.prettyPrinted, .sortedKeys])
+    let path = "\(outputDir)/any-showcase.json"
+    try jsonData.write(to: URL(fileURLWithPath: path))
+    print("Written JSON to \(path)")
+}
+
+func writeUebaAny(_ ctx: BaboonCodecContext, _ data: AnyShowcase, _ outputDir: String) throws {
+    try FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+    let w = BaboonBinWriter()
+    AnyShowcase_UebaCodec.instance.encode(ctx, w, data)
+    let path = "\(outputDir)/any-showcase.ueba"
+    try w.toData().write(to: URL(fileURLWithPath: path))
+    print("Written UEBA to \(path)")
+}
+
+func decodeInner(_ o: AnyOpaque) throws -> InnerPayload {
+    switch o {
+    case .ueba(_, let bytes):
+        let r = BaboonBinReader(bytes)
+        return try InnerPayload_UebaCodec.instance.decode(.compact, r)
+    case .json(_, let json):
+        return try InnerPayload_JsonCodec.instance.decode(.compact, json as Any)
+    }
+}
+
+func decodeAllPayloads(_ v: AnyShowcase) throws -> [InnerPayload] {
+    guard let opt = v.optAny else {
+        throw BaboonCodecException.decoderFailure("optAny was nil; expected non-nil", nil)
+    }
+    guard let lst0 = v.lstAny.first else {
+        throw BaboonCodecException.decoderFailure("lstAny was empty; expected one element", nil)
+    }
+    return [
+        try decodeInner(v.vAnyA),
+        try decodeInner(v.vAnyB),
+        try decodeInner(v.vAnyC),
+        try decodeInner(v.vAnyD1),
+        try decodeInner(v.vAnyD2),
+        try decodeInner(v.vAnyD3),
+        try decodeInner(opt),
+        try decodeInner(lst0),
+    ]
+}
+
+func readAndVerifyAnyShowcase(_ filePath: String) throws {
+    let data: AnyShowcase
+    if filePath.hasSuffix(".json") {
+        let raw = try Data(contentsOf: URL(fileURLWithPath: filePath))
+        let json = try JSONSerialization.jsonObject(with: raw, options: [.fragmentsAllowed])
+        data = try AnyShowcase_JsonCodec.instance.decode(.defaultCtx, json)
+    } else {
+        let raw = try Data(contentsOf: URL(fileURLWithPath: filePath))
+        let r = BaboonBinReader(raw)
+        data = try AnyShowcase_UebaCodec.instance.decode(.defaultCtx, r)
+    }
+    let expected = expectedInnerPayloads()
+    let decoded = try decodeAllPayloads(data)
+    for i in 0..<expected.count {
+        if expected[i] != decoded[i] {
+            fail("AnyShowcase payload \(i) mismatch: expected \(expected[i]), got \(decoded[i])")
+        }
+    }
+}
+
 func writeJson(_ data: AllBasicTypes, _ outputDir: String) throws {
     try FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
     let jsonObj = AllBasicTypes_JsonCodec.instance.encode(.defaultCtx, data)
@@ -82,6 +210,10 @@ func writeUeba(_ data: AllBasicTypes, _ outputDir: String) throws {
 }
 
 func readAndVerify(_ filePath: String) throws {
+    if filePath.hasSuffix("any-showcase.json") || filePath.hasSuffix("any-showcase.ueba") {
+        try readAndVerifyAnyShowcase(filePath)
+        return
+    }
     let data: AllBasicTypes
     if filePath.hasSuffix(".json") {
         let raw = try Data(contentsOf: URL(fileURLWithPath: filePath))
@@ -124,9 +256,13 @@ func readAndVerify(_ filePath: String) throws {
 
 func runLegacy() throws {
     let sampleData = createSampleData()
+    let sampleAny = try createSampleAnyShowcase()
     let baseDir = URL(fileURLWithPath: "../../target/compat-test").standardizedFileURL.path
+    let facadeCtx = BaboonCodecContext.withFacade(false, freshFacade())
     try writeJson(sampleData, "\(baseDir)/swift-json")
     try writeUeba(sampleData, "\(baseDir)/swift-ueba")
+    try writeJsonAny(facadeCtx, sampleAny, "\(baseDir)/swift-json")
+    try writeUebaAny(facadeCtx, sampleAny, "\(baseDir)/swift-ueba")
     print("Swift serialization complete!")
 }
 
@@ -138,13 +274,17 @@ do {
             fail("Usage: CompatMain write <outputDir> <json|ueba>")
         }
         let sampleData = createSampleData()
+        let sampleAny = try createSampleAnyShowcase()
+        let facadeCtx = BaboonCodecContext.withFacade(false, freshFacade())
         let outputDir = args[1]
         let format = args[2]
         switch format {
         case "json":
             try writeJson(sampleData, outputDir)
+            try writeJsonAny(facadeCtx, sampleAny, outputDir)
         case "ueba":
             try writeUeba(sampleData, outputDir)
+            try writeUebaAny(facadeCtx, sampleAny, outputDir)
         default:
             fail("Unknown format: \(format)")
         }

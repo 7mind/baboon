@@ -3,17 +3,28 @@ package example;
 import convtest.testpkg.AllBasicTypes;
 import convtest.testpkg.AllBasicTypes_JsonCodec;
 import convtest.testpkg.AllBasicTypes_UEBACodec;
+import convtest.testpkg.AnyShowcase;
+import convtest.testpkg.AnyShowcase_JsonCodec;
+import convtest.testpkg.AnyShowcase_UEBACodec;
+import convtest.testpkg.InnerPayload;
+import convtest.testpkg.InnerPayload_JsonCodec;
+import convtest.testpkg.InnerPayload_UEBACodec;
+import baboon.runtime.shared.BaboonAnyOpaque;
 import baboon.runtime.shared.BaboonCodecContext;
 import baboon.runtime.shared.LEDataInputStream;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -172,5 +183,149 @@ public class CrossLanguageTest {
         var file = baseDir.resolve("swift-ueba/all-basic-types.ueba");
         org.junit.jupiter.api.Assumptions.assumeTrue(Files.exists(file), "Swift UEBA file not found, skipping");
         assertBasicFields(readUebaFile("swift"), "Swift UEBA");
+    }
+
+    // -----------------------------------------------------------------------------
+    // AnyShowcase cross-language tests (M13 / PR 13.2)
+    // -----------------------------------------------------------------------------
+
+    private static final List<InnerPayload> EXPECTED_ANY_PAYLOADS = List.of(
+        new InnerPayload("variant-A", 1),
+        new InnerPayload("variant-B", 2),
+        new InnerPayload("variant-C", 3),
+        new InnerPayload("variant-D1", 4),
+        new InnerPayload("variant-D2", 5),
+        new InnerPayload("variant-D3", 6),
+        new InnerPayload("opt-any", 7),
+        new InnerPayload("lst-any-0", 8)
+    );
+
+    private AnyShowcase readAnyShowcaseJson(String source) throws Exception {
+        var file = baseDir.resolve(source + "-json/any-showcase.json");
+        var jsonStr = Files.readString(file, StandardCharsets.UTF_8);
+        var json = mapper.readTree(jsonStr);
+        return AnyShowcase_JsonCodec.INSTANCE.decode(ctx, json);
+    }
+
+    private AnyShowcase readAnyShowcaseUeba(String source) throws Exception {
+        var file = baseDir.resolve(source + "-ueba/any-showcase.ueba");
+        try (var fis = new FileInputStream(file.toFile())) {
+            var reader = new LEDataInputStream(fis);
+            return AnyShowcase_UEBACodec.INSTANCE.decode(ctx, reader);
+        }
+    }
+
+    private InnerPayload decodeInner(BaboonAnyOpaque.AnyOpaque o) throws Exception {
+        if (o instanceof BaboonAnyOpaque.AnyOpaqueUeba u) {
+            var bais = new ByteArrayInputStream(u.bytes());
+            var r = new LEDataInputStream(bais);
+            try {
+                return InnerPayload_UEBACodec.INSTANCE.decode(BaboonCodecContext.Compact, r);
+            } finally {
+                r.close();
+            }
+        } else if (o instanceof BaboonAnyOpaque.AnyOpaqueJson j) {
+            return InnerPayload_JsonCodec.INSTANCE.decode(BaboonCodecContext.Compact, j.json());
+        }
+        throw new IllegalStateException("unexpected AnyOpaque subclass: " + o.getClass());
+    }
+
+    private List<InnerPayload> decodeAllPayloads(AnyShowcase v) throws Exception {
+        var optAny = v.optAny().orElseThrow(() -> new IllegalStateException("optAny was empty"));
+        if (v.lstAny().isEmpty()) throw new IllegalStateException("lstAny was empty");
+        var lst0 = v.lstAny().get(0);
+        return List.of(
+            decodeInner(v.vAnyA()),
+            decodeInner(v.vAnyB()),
+            decodeInner(v.vAnyC()),
+            decodeInner(v.vAnyD1()),
+            decodeInner(v.vAnyD2()),
+            decodeInner(v.vAnyD3()),
+            decodeInner(optAny),
+            decodeInner(lst0)
+        );
+    }
+
+    private void assertAnyShowcase(String source, String fmt, AnyShowcase v) throws Exception {
+        var decoded = decodeAllPayloads(v);
+        assertEquals(EXPECTED_ANY_PAYLOADS.size(), decoded.size(), source + " " + fmt + " payload count mismatch");
+        for (int i = 0; i < EXPECTED_ANY_PAYLOADS.size(); i++) {
+            assertEquals(EXPECTED_ANY_PAYLOADS.get(i), decoded.get(i),
+                source + " " + fmt + " payload " + i + " mismatch");
+        }
+    }
+
+    @Test public void anyShowcaseJavaJson() throws Exception   { assertAnyShowcase("java",   "JSON", readAnyShowcaseJson("java")); }
+    @Test public void anyShowcaseJavaUeba() throws Exception   { assertAnyShowcase("java",   "UEBA", readAnyShowcaseUeba("java")); }
+    @Test public void anyShowcaseScalaJson() throws Exception  { assertAnyShowcase("scala",  "JSON", readAnyShowcaseJson("scala")); }
+    @Test public void anyShowcaseScalaUeba() throws Exception  { assertAnyShowcase("scala",  "UEBA", readAnyShowcaseUeba("scala")); }
+    @Test public void anyShowcaseCsJson() throws Exception     { assertAnyShowcase("cs",     "JSON", readAnyShowcaseJson("cs")); }
+    @Test public void anyShowcaseCsUeba() throws Exception     { assertAnyShowcase("cs",     "UEBA", readAnyShowcaseUeba("cs")); }
+    @Test public void anyShowcaseRustJson() throws Exception   { assertAnyShowcase("rust",   "JSON", readAnyShowcaseJson("rust")); }
+    @Test public void anyShowcaseRustUeba() throws Exception   { assertAnyShowcase("rust",   "UEBA", readAnyShowcaseUeba("rust")); }
+
+    @Test public void anyShowcasePythonJson() throws Exception {
+        var f = baseDir.resolve("python-json/any-showcase.json");
+        Assumptions.assumeTrue(Files.exists(f), "python any-showcase JSON file not found, skipping");
+        assertAnyShowcase("python", "JSON", readAnyShowcaseJson("python"));
+    }
+    @Test public void anyShowcasePythonUeba() throws Exception {
+        var f = baseDir.resolve("python-ueba/any-showcase.ueba");
+        Assumptions.assumeTrue(Files.exists(f), "python any-showcase UEBA file not found, skipping");
+        assertAnyShowcase("python", "UEBA", readAnyShowcaseUeba("python"));
+    }
+    @Test public void anyShowcaseTypeScriptJson() throws Exception {
+        var f = baseDir.resolve("typescript-json/any-showcase.json");
+        Assumptions.assumeTrue(Files.exists(f), "typescript any-showcase JSON file not found, skipping");
+        assertAnyShowcase("typescript", "JSON", readAnyShowcaseJson("typescript"));
+    }
+    @Test public void anyShowcaseTypeScriptUeba() throws Exception {
+        var f = baseDir.resolve("typescript-ueba/any-showcase.ueba");
+        Assumptions.assumeTrue(Files.exists(f), "typescript any-showcase UEBA file not found, skipping");
+        assertAnyShowcase("typescript", "UEBA", readAnyShowcaseUeba("typescript"));
+    }
+    @Test public void anyShowcaseKotlinJson() throws Exception {
+        var f = baseDir.resolve("kotlin-json/any-showcase.json");
+        Assumptions.assumeTrue(Files.exists(f), "kotlin any-showcase JSON file not found, skipping");
+        assertAnyShowcase("kotlin", "JSON", readAnyShowcaseJson("kotlin"));
+    }
+    @Test public void anyShowcaseKotlinUeba() throws Exception {
+        var f = baseDir.resolve("kotlin-ueba/any-showcase.ueba");
+        Assumptions.assumeTrue(Files.exists(f), "kotlin any-showcase UEBA file not found, skipping");
+        assertAnyShowcase("kotlin", "UEBA", readAnyShowcaseUeba("kotlin"));
+    }
+    @Test public void anyShowcaseDartJson() throws Exception {
+        var f = baseDir.resolve("dart-json/any-showcase.json");
+        Assumptions.assumeTrue(Files.exists(f), "dart any-showcase JSON file not found, skipping");
+        assertAnyShowcase("dart", "JSON", readAnyShowcaseJson("dart"));
+    }
+    @Test public void anyShowcaseDartUeba() throws Exception {
+        var f = baseDir.resolve("dart-ueba/any-showcase.ueba");
+        Assumptions.assumeTrue(Files.exists(f), "dart any-showcase UEBA file not found, skipping");
+        assertAnyShowcase("dart", "UEBA", readAnyShowcaseUeba("dart"));
+    }
+    @Test public void anyShowcaseSwiftJson() throws Exception {
+        var f = baseDir.resolve("swift-json/any-showcase.json");
+        Assumptions.assumeTrue(Files.exists(f), "swift any-showcase JSON file not found, skipping");
+        assertAnyShowcase("swift", "JSON", readAnyShowcaseJson("swift"));
+    }
+    @Test public void anyShowcaseSwiftUeba() throws Exception {
+        var f = baseDir.resolve("swift-ueba/any-showcase.ueba");
+        Assumptions.assumeTrue(Files.exists(f), "swift any-showcase UEBA file not found, skipping");
+        assertAnyShowcase("swift", "UEBA", readAnyShowcaseUeba("swift"));
+    }
+
+    @Test
+    public void anyShowcaseUebaByteIdenticalJavaScala() throws Exception {
+        var javaBytes = Files.readAllBytes(baseDir.resolve("java-ueba/any-showcase.ueba"));
+        var scalaBytes = Files.readAllBytes(baseDir.resolve("scala-ueba/any-showcase.ueba"));
+        assertArrayEquals(javaBytes, scalaBytes, "Java and Scala UEBA bytes diverged");
+    }
+
+    @Test
+    public void anyShowcaseUebaByteIdenticalJavaCs() throws Exception {
+        var javaBytes = Files.readAllBytes(baseDir.resolve("java-ueba/any-showcase.ueba"));
+        var csBytes = Files.readAllBytes(baseDir.resolve("cs-ueba/any-showcase.ueba"));
+        assertArrayEquals(javaBytes, csBytes, "Java and C# UEBA bytes diverged");
     }
 }

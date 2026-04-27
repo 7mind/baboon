@@ -2,16 +2,176 @@ import * as fs from "fs";
 import * as path from "path";
 import {fileURLToPath} from "url";
 import {AllBasicTypes} from "./generated/convtest/testpkg/AllBasicTypes";
+import {AnyShowcase} from "./generated/convtest/testpkg/AnyShowcase";
+import {InnerPayload} from "./generated/convtest/testpkg/InnerPayload";
 import {
+    AbstractBaboonJsonCodecs,
+    AbstractBaboonUebaCodecs,
     BaboonBinReader,
     BaboonBinWriter,
     BaboonCodecContext,
     BaboonDateTimeOffset,
     BaboonDateTimeUtc,
-    BaboonDecimal
+    BaboonDecimal,
+    BaboonDomainVersion,
+    Lazy,
 } from "./generated/BaboonSharedRuntime";
+import {BaboonCodecsFacade} from "./generated/BaboonCodecsFacade";
+import {AnyMeta, AnyOpaque, anyOpaqueJson, anyOpaqueUeba, createAnyMeta} from "./generated/BaboonAnyOpaque";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const DOMAIN_ID = "convtest.testpkg";
+const DOMAIN_VER = "2.0.0";
+const INNER_TYPE_ID = "convtest.testpkg/:#InnerPayload";
+
+class BaboonCodecsJson extends AbstractBaboonJsonCodecs {
+    constructor() {
+        super();
+        this.register("convtest.testpkg/:#AllBasicTypes", new Lazy(() => AllBasicTypes.jsonCodec()));
+        this.register("convtest.testpkg/:#InnerPayload", new Lazy(() => InnerPayload.jsonCodec()));
+        this.register("convtest.testpkg/:#AnyShowcase", new Lazy(() => AnyShowcase.jsonCodec()));
+    }
+}
+
+class BaboonCodecsUeba extends AbstractBaboonUebaCodecs {
+    constructor() {
+        super();
+        this.register("convtest.testpkg/:#AllBasicTypes", new Lazy(() => AllBasicTypes.binCodec()));
+        this.register("convtest.testpkg/:#InnerPayload", new Lazy(() => InnerPayload.binCodec()));
+        this.register("convtest.testpkg/:#AnyShowcase", new Lazy(() => AnyShowcase.binCodec()));
+    }
+}
+
+function freshFacade(): BaboonCodecsFacade {
+    const f = new BaboonCodecsFacade();
+    f.registerCodecs(
+        new BaboonDomainVersion(DOMAIN_ID, DOMAIN_VER),
+        () => new BaboonCodecsJson(),
+        () => new BaboonCodecsUeba(),
+    );
+    return f;
+}
+
+function expectedInnerPayloads(): InnerPayload[] {
+    return [
+        new InnerPayload("variant-A", 1),
+        new InnerPayload("variant-B", 2),
+        new InnerPayload("variant-C", 3),
+        new InnerPayload("variant-D1", 4),
+        new InnerPayload("variant-D2", 5),
+        new InnerPayload("variant-D3", 6),
+        new InnerPayload("opt-any", 7),
+        new InnerPayload("lst-any-0", 8),
+    ];
+}
+
+function uebaBytes(p: InnerPayload): Uint8Array {
+    const w = new BaboonBinWriter();
+    InnerPayload.binCodec().encode(BaboonCodecContext.Compact, p, w);
+    return w.toBytes();
+}
+
+function asJson(p: InnerPayload): unknown {
+    return InnerPayload.jsonCodec().encode(BaboonCodecContext.Compact, p);
+}
+
+function createSampleAnyShowcase(): AnyShowcase {
+    const payloads = expectedInnerPayloads();
+    const [a, b, c, d1, d2, d3, optP, lstP] = payloads;
+
+    const metaA: AnyMeta  = createAnyMeta(0x07, DOMAIN_ID, DOMAIN_VER, INNER_TYPE_ID);
+    const metaB: AnyMeta  = createAnyMeta(0x03, null, DOMAIN_VER, INNER_TYPE_ID);
+    const metaC: AnyMeta  = createAnyMeta(0x01, null, null, INNER_TYPE_ID);
+    const metaD1: AnyMeta = createAnyMeta(0x06, DOMAIN_ID, DOMAIN_VER, null);
+    const metaD2: AnyMeta = createAnyMeta(0x02, null, DOMAIN_VER, null);
+    const metaD3: AnyMeta = createAnyMeta(0x00, null, null, null);
+    const metaOpt: AnyMeta = createAnyMeta(0x07, DOMAIN_ID, DOMAIN_VER, INNER_TYPE_ID);
+    const metaLst: AnyMeta = createAnyMeta(0x06, DOMAIN_ID, DOMAIN_VER, null);
+
+    return new AnyShowcase(
+        anyOpaqueJson(metaA, asJson(a)),
+        anyOpaqueJson(metaB, asJson(b)),
+        anyOpaqueJson(metaC, asJson(c)),
+        anyOpaqueUeba(metaD1, uebaBytes(d1)),
+        anyOpaqueUeba(metaD2, uebaBytes(d2)),
+        anyOpaqueUeba(metaD3, uebaBytes(d3)),
+        anyOpaqueJson(metaOpt, asJson(optP)),
+        [anyOpaqueUeba(metaLst, uebaBytes(lstP))],
+    );
+}
+
+function writeJsonAny(ctx: BaboonCodecContext, data: AnyShowcase, outputDir: string): void {
+    fs.mkdirSync(outputDir, {recursive: true});
+    const json = JSON.stringify(AnyShowcase.jsonCodec().encode(ctx, data), null, 2);
+    const p = path.join(outputDir, "any-showcase.json");
+    fs.writeFileSync(p, json);
+    console.log(`Written JSON to ${p}`);
+}
+
+function writeUebaAny(ctx: BaboonCodecContext, data: AnyShowcase, outputDir: string): void {
+    fs.mkdirSync(outputDir, {recursive: true});
+    const w = new BaboonBinWriter();
+    AnyShowcase.binCodec().encode(ctx, data, w);
+    const p = path.join(outputDir, "any-showcase.ueba");
+    fs.writeFileSync(p, w.toBytes());
+    console.log(`Written UEBA to ${p}`);
+}
+
+function decodeInner(o: AnyOpaque): InnerPayload {
+    if (o.tag === "Ueba") {
+        return InnerPayload.binCodec().decode(BaboonCodecContext.Compact, new BaboonBinReader(o.bytes));
+    }
+    return InnerPayload.jsonCodec().decode(BaboonCodecContext.Compact, o.json);
+}
+
+function decodeAllPayloads(v: AnyShowcase): InnerPayload[] {
+    if (v.optAny === undefined || v.optAny === null) throw new Error("optAny was empty; expected non-null");
+    if (v.lstAny.length === 0) throw new Error("lstAny was empty; expected one element");
+    return [
+        decodeInner(v.vAnyA),
+        decodeInner(v.vAnyB),
+        decodeInner(v.vAnyC),
+        decodeInner(v.vAnyD1),
+        decodeInner(v.vAnyD2),
+        decodeInner(v.vAnyD3),
+        decodeInner(v.optAny),
+        decodeInner(v.lstAny[0]),
+    ];
+}
+
+function readAndVerifyAnyShowcase(filePath: string): void {
+    const ctx = BaboonCodecContext.Default;
+    let data: AnyShowcase;
+    try {
+        if (filePath.endsWith(".json")) {
+            const jsonStr = fs.readFileSync(filePath, "utf-8");
+            const json = JSON.parse(jsonStr);
+            data = AnyShowcase.jsonCodec().decode(ctx, json);
+        } else {
+            const bytes = fs.readFileSync(filePath);
+            const r = new BaboonBinReader(new Uint8Array(bytes));
+            data = AnyShowcase.binCodec().decode(ctx, r);
+        }
+    } catch (e) {
+        console.error(`AnyShowcase deserialization failed: ${e}`);
+        process.exit(1);
+    }
+    try {
+        const expected = expectedInnerPayloads();
+        const decoded = decodeAllPayloads(data!);
+        for (let i = 0; i < expected.length; i++) {
+            if (expected[i].label !== decoded[i].label || expected[i].count !== decoded[i].count) {
+                console.error(`AnyShowcase payload ${i} mismatch: expected (${expected[i].label}, ${expected[i].count}), got (${decoded[i].label}, ${decoded[i].count})`);
+                process.exit(1);
+            }
+        }
+    } catch (e) {
+        console.error(`AnyShowcase decode failed: ${e}`);
+        process.exit(1);
+    }
+    console.log("OK");
+}
 
 function createSampleData(): AllBasicTypes {
     return new AllBasicTypes(
@@ -64,6 +224,10 @@ function writeUeba(data: AllBasicTypes, outputDir: string): void {
 }
 
 function readAndVerify(filePath: string): void {
+    if (filePath.endsWith("any-showcase.json") || filePath.endsWith("any-showcase.ueba")) {
+        readAndVerifyAnyShowcase(filePath);
+        return;
+    }
     const ctx = BaboonCodecContext.Default;
     let data: AllBasicTypes;
 
@@ -127,10 +291,16 @@ function readAndVerify(filePath: string): void {
 
 function runLegacy(): void {
     const sampleData = createSampleData();
+    const sampleAny = createSampleAnyShowcase();
+    const facadeCtx = BaboonCodecContext.withFacade(false, freshFacade());
 
     const baseDir = path.resolve(__dirname, "../../../target/compat-test");
-    writeJson(sampleData, path.join(baseDir, "typescript-json"));
-    writeUeba(sampleData, path.join(baseDir, "typescript-ueba"));
+    const tsJsonDir = path.join(baseDir, "typescript-json");
+    const tsUebaDir = path.join(baseDir, "typescript-ueba");
+    writeJson(sampleData, tsJsonDir);
+    writeUeba(sampleData, tsUebaDir);
+    writeJsonAny(facadeCtx, sampleAny, tsJsonDir);
+    writeUebaAny(facadeCtx, sampleAny, tsUebaDir);
 
     console.log("TypeScript serialization complete!");
 }
@@ -140,10 +310,14 @@ if (args[0] === "write") {
     const outputDir = args[1];
     const format = args[2];
     const sampleData = createSampleData();
+    const sampleAny = createSampleAnyShowcase();
+    const facadeCtx = BaboonCodecContext.withFacade(false, freshFacade());
     if (format === "json") {
         writeJson(sampleData, outputDir);
+        writeJsonAny(facadeCtx, sampleAny, outputDir);
     } else if (format === "ueba") {
         writeUeba(sampleData, outputDir);
+        writeUebaAny(facadeCtx, sampleAny, outputDir);
     } else {
         console.error(`Unknown format: ${format}`);
         process.exit(1);

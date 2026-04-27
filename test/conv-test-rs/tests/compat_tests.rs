@@ -1,4 +1,5 @@
-use baboon_conv_test_rs::convtest::testpkg::AllBasicTypes;
+use baboon_conv_test_rs::convtest::testpkg::{AllBasicTypes, AnyShowcase, InnerPayload};
+use baboon_conv_test_rs::any_opaque::AnyOpaque;
 use baboon_conv_test_rs::baboon_runtime::{BaboonBinDecode, BaboonCodecContext};
 use std::fs;
 use std::path::PathBuf;
@@ -195,4 +196,208 @@ fn test_read_swift_ueba() {
     }
     let data = read_ueba_file("swift");
     assert_basic_fields(&data, "Swift UEBA");
+}
+
+// -----------------------------------------------------------------------------
+// AnyShowcase cross-language tests (M13 / PR 13.2)
+// -----------------------------------------------------------------------------
+
+fn expected_any_payloads() -> Vec<InnerPayload> {
+    vec![
+        InnerPayload { label: "variant-A".to_string(),  count: 1 },
+        InnerPayload { label: "variant-B".to_string(),  count: 2 },
+        InnerPayload { label: "variant-C".to_string(),  count: 3 },
+        InnerPayload { label: "variant-D1".to_string(), count: 4 },
+        InnerPayload { label: "variant-D2".to_string(), count: 5 },
+        InnerPayload { label: "variant-D3".to_string(), count: 6 },
+        InnerPayload { label: "opt-any".to_string(),    count: 7 },
+        InnerPayload { label: "lst-any-0".to_string(),  count: 8 },
+    ]
+}
+
+fn read_any_showcase_json(source: &str) -> AnyShowcase {
+    let path = base_dir().join(format!("{}-json/any-showcase.json", source));
+    let json_str = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", path, e));
+    serde_json::from_str(&json_str)
+        .unwrap_or_else(|e| panic!("Failed to parse AnyShowcase JSON from {:?}: {}", path, e))
+}
+
+fn read_any_showcase_ueba(source: &str) -> AnyShowcase {
+    let path = base_dir().join(format!("{}-ueba/any-showcase.ueba", source));
+    let bytes = fs::read(&path)
+        .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", path, e));
+    let ctx = BaboonCodecContext::Default;
+    let mut cursor = std::io::Cursor::new(&bytes);
+    AnyShowcase::decode_ueba(&ctx, &mut cursor)
+        .unwrap_or_else(|e| panic!("Failed to decode AnyShowcase UEBA from {:?}: {}", path, e))
+}
+
+fn decode_inner(o: &AnyOpaque) -> InnerPayload {
+    match o {
+        AnyOpaque::Ueba(u) => {
+            let mut cursor = std::io::Cursor::new(&u.bytes);
+            InnerPayload::decode_ueba(&BaboonCodecContext::Compact, &mut cursor)
+                .unwrap_or_else(|e| panic!("InnerPayload UEBA decode failed: {}", e))
+        }
+        AnyOpaque::Json(j) => serde_json::from_value(j.json.clone())
+            .unwrap_or_else(|e| panic!("InnerPayload JSON decode failed: {}", e)),
+    }
+}
+
+fn decode_all_payloads(v: &AnyShowcase) -> Vec<InnerPayload> {
+    let opt = v.opt_any.as_ref().expect("optAny was None; expected Some");
+    let lst0 = v.lst_any.first().expect("lstAny was empty; expected one element");
+    vec![
+        decode_inner(&v.v_any_a),
+        decode_inner(&v.v_any_b),
+        decode_inner(&v.v_any_c),
+        decode_inner(&v.v_any_d1),
+        decode_inner(&v.v_any_d2),
+        decode_inner(&v.v_any_d3),
+        decode_inner(opt),
+        decode_inner(lst0),
+    ]
+}
+
+fn assert_any_showcase(source: &str, fmt: &str, decoded: Vec<InnerPayload>) {
+    let expected = expected_any_payloads();
+    assert_eq!(decoded.len(), expected.len(), "{} {} payload count mismatch", source, fmt);
+    for (i, (exp, got)) in expected.iter().zip(decoded.iter()).enumerate() {
+        assert_eq!(exp, got, "{} {} payload {} mismatch", source, fmt, i);
+    }
+}
+
+#[test]
+fn test_any_showcase_rust_json() {
+    let v = read_any_showcase_json("rust");
+    assert_any_showcase("rust", "JSON", decode_all_payloads(&v));
+}
+
+#[test]
+fn test_any_showcase_rust_ueba() {
+    let v = read_any_showcase_ueba("rust");
+    assert_any_showcase("rust", "UEBA", decode_all_payloads(&v));
+}
+
+#[test]
+fn test_any_showcase_scala_json() {
+    let v = read_any_showcase_json("scala");
+    assert_any_showcase("scala", "JSON", decode_all_payloads(&v));
+}
+
+#[test]
+fn test_any_showcase_scala_ueba() {
+    let v = read_any_showcase_ueba("scala");
+    assert_any_showcase("scala", "UEBA", decode_all_payloads(&v));
+}
+
+#[test]
+fn test_any_showcase_cs_json() {
+    let v = read_any_showcase_json("cs");
+    assert_any_showcase("cs", "JSON", decode_all_payloads(&v));
+}
+
+#[test]
+fn test_any_showcase_cs_ueba() {
+    let v = read_any_showcase_ueba("cs");
+    assert_any_showcase("cs", "UEBA", decode_all_payloads(&v));
+}
+
+#[test]
+fn test_any_showcase_python_json() {
+    let path = base_dir().join("python-json/any-showcase.json");
+    if !path.exists() { println!("Skipping python any-showcase JSON - file not found"); return; }
+    assert_any_showcase("python", "JSON", decode_all_payloads(&read_any_showcase_json("python")));
+}
+
+#[test]
+fn test_any_showcase_python_ueba() {
+    let path = base_dir().join("python-ueba/any-showcase.ueba");
+    if !path.exists() { println!("Skipping python any-showcase UEBA - file not found"); return; }
+    assert_any_showcase("python", "UEBA", decode_all_payloads(&read_any_showcase_ueba("python")));
+}
+
+#[test]
+fn test_any_showcase_typescript_json() {
+    let path = base_dir().join("typescript-json/any-showcase.json");
+    if !path.exists() { println!("Skipping typescript any-showcase JSON - file not found"); return; }
+    assert_any_showcase("typescript", "JSON", decode_all_payloads(&read_any_showcase_json("typescript")));
+}
+
+#[test]
+fn test_any_showcase_typescript_ueba() {
+    let path = base_dir().join("typescript-ueba/any-showcase.ueba");
+    if !path.exists() { println!("Skipping typescript any-showcase UEBA - file not found"); return; }
+    assert_any_showcase("typescript", "UEBA", decode_all_payloads(&read_any_showcase_ueba("typescript")));
+}
+
+#[test]
+fn test_any_showcase_kotlin_json() {
+    let path = base_dir().join("kotlin-json/any-showcase.json");
+    if !path.exists() { println!("Skipping kotlin any-showcase JSON - file not found"); return; }
+    assert_any_showcase("kotlin", "JSON", decode_all_payloads(&read_any_showcase_json("kotlin")));
+}
+
+#[test]
+fn test_any_showcase_kotlin_ueba() {
+    let path = base_dir().join("kotlin-ueba/any-showcase.ueba");
+    if !path.exists() { println!("Skipping kotlin any-showcase UEBA - file not found"); return; }
+    assert_any_showcase("kotlin", "UEBA", decode_all_payloads(&read_any_showcase_ueba("kotlin")));
+}
+
+#[test]
+fn test_any_showcase_java_json() {
+    let path = base_dir().join("java-json/any-showcase.json");
+    if !path.exists() { println!("Skipping java any-showcase JSON - file not found"); return; }
+    assert_any_showcase("java", "JSON", decode_all_payloads(&read_any_showcase_json("java")));
+}
+
+#[test]
+fn test_any_showcase_java_ueba() {
+    let path = base_dir().join("java-ueba/any-showcase.ueba");
+    if !path.exists() { println!("Skipping java any-showcase UEBA - file not found"); return; }
+    assert_any_showcase("java", "UEBA", decode_all_payloads(&read_any_showcase_ueba("java")));
+}
+
+#[test]
+fn test_any_showcase_dart_json() {
+    let path = base_dir().join("dart-json/any-showcase.json");
+    if !path.exists() { println!("Skipping dart any-showcase JSON - file not found"); return; }
+    assert_any_showcase("dart", "JSON", decode_all_payloads(&read_any_showcase_json("dart")));
+}
+
+#[test]
+fn test_any_showcase_dart_ueba() {
+    let path = base_dir().join("dart-ueba/any-showcase.ueba");
+    if !path.exists() { println!("Skipping dart any-showcase UEBA - file not found"); return; }
+    assert_any_showcase("dart", "UEBA", decode_all_payloads(&read_any_showcase_ueba("dart")));
+}
+
+#[test]
+fn test_any_showcase_swift_json() {
+    let path = base_dir().join("swift-json/any-showcase.json");
+    if !path.exists() { println!("Skipping swift any-showcase JSON - file not found"); return; }
+    assert_any_showcase("swift", "JSON", decode_all_payloads(&read_any_showcase_json("swift")));
+}
+
+#[test]
+fn test_any_showcase_swift_ueba() {
+    let path = base_dir().join("swift-ueba/any-showcase.ueba");
+    if !path.exists() { println!("Skipping swift any-showcase UEBA - file not found"); return; }
+    assert_any_showcase("swift", "UEBA", decode_all_payloads(&read_any_showcase_ueba("swift")));
+}
+
+#[test]
+fn test_any_showcase_ueba_byte_identical_rust_scala() {
+    let rust_bytes = fs::read(base_dir().join("rust-ueba/any-showcase.ueba")).expect("rust UEBA");
+    let scala_bytes = fs::read(base_dir().join("scala-ueba/any-showcase.ueba")).expect("scala UEBA");
+    assert_eq!(rust_bytes, scala_bytes, "Rust and Scala UEBA bytes diverged");
+}
+
+#[test]
+fn test_any_showcase_ueba_byte_identical_rust_cs() {
+    let rust_bytes = fs::read(base_dir().join("rust-ueba/any-showcase.ueba")).expect("rust UEBA");
+    let cs_bytes = fs::read(base_dir().join("cs-ueba/any-showcase.ueba")).expect("cs UEBA");
+    assert_eq!(rust_bytes, cs_bytes, "Rust and C# UEBA bytes diverged");
 }

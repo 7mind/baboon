@@ -179,7 +179,11 @@ object DtDefnTranslator {
             .sortBy(_.getClass.getName)
             .flatMap(
               codec =>
-                if (codec.isActive(d.id)) List(codec.id -> q"() => ${codec.codecName(srcRef).copy(fq = true)}")
+                // PR 13.2 fix (PR-26-D02): Dart per-domain codec aggregator was registering the
+                // codec class type literal (e.g. `InnerPayload_JsonCodec`) instead of the instance.
+                // The runtime then `as BaboonCodecData`-cast the `Type` and threw. Append `.instance`
+                // so the registration produces the singleton object the runtime expects.
+                if (codec.isActive(d.id)) List(codec.id -> q"() => ${codec.codecName(srcRef).copy(fq = true)}.instance")
                 else Nil
             )
           List(CodecReg(defn.id, dtTypeRef, srcRef, q"'${defn.id.toString}'", codecsReg.toMap))

@@ -3,7 +3,21 @@ package example
 import convtest.testpkg.AllBasicTypes
 import convtest.testpkg.AllBasicTypes_JsonCodec
 import convtest.testpkg.AllBasicTypes_UEBACodec
+import convtest.testpkg.AnyShowcase
+import convtest.testpkg.AnyShowcase_JsonCodec
+import convtest.testpkg.AnyShowcase_UEBACodec
+import convtest.testpkg.InnerPayload
+import convtest.testpkg.InnerPayload_JsonCodec
+import convtest.testpkg.InnerPayload_UEBACodec
+import convtest.testpkg.BaboonCodecsJson
+import convtest.testpkg.BaboonCodecsUeba
+import baboon.runtime.shared.AnyMeta
+import baboon.runtime.shared.AnyOpaque
+import baboon.runtime.shared.AnyOpaqueJson
+import baboon.runtime.shared.AnyOpaqueUeba
 import baboon.runtime.shared.BaboonCodecContext
+import baboon.runtime.shared.BaboonCodecsFacade
+import baboon.runtime.shared.BaboonDomainVersion
 import baboon.runtime.shared.ByteString
 import baboon.runtime.shared.LEDataInputStream
 import baboon.runtime.shared.LEDataOutputStream
@@ -19,6 +33,10 @@ import java.time.ZoneOffset
 import java.util.UUID
 import kotlin.system.exitProcess
 
+private const val DOMAIN_ID = "convtest.testpkg"
+private const val DOMAIN_VER = "2.0.0"
+private const val INNER_TYPE_ID = "convtest.testpkg/:#InnerPayload"
+
 fun main(args: Array<String>) {
     when {
         args.size >= 3 && args[0] == "write" -> {
@@ -26,10 +44,18 @@ fun main(args: Array<String>) {
             val format = args[2]
             File(outputDir).mkdirs()
             val sampleData = createSampleData()
+            val sampleAny = createSampleAnyShowcase()
             val ctx = BaboonCodecContext.Default
+            val facadeCtx = BaboonCodecContext.withFacade(false, freshFacade())
             when (format) {
-                "json" -> writeJson(ctx, sampleData, outputDir)
-                "ueba" -> writeUeba(ctx, sampleData, outputDir)
+                "json" -> {
+                    writeJson(ctx, sampleData, outputDir)
+                    writeJsonAny(facadeCtx, sampleAny, outputDir)
+                }
+                "ueba" -> {
+                    writeUeba(ctx, sampleData, outputDir)
+                    writeUebaAny(facadeCtx, sampleAny, outputDir)
+                }
                 else -> {
                     System.err.println("Unknown format: $format")
                     exitProcess(1)
@@ -47,6 +73,7 @@ fun main(args: Array<String>) {
 
 private fun runLegacy() {
     val sampleData = createSampleData()
+    val sampleAny = createSampleAnyShowcase()
     val baseDir = File("../../target/compat-test").absoluteFile.normalize()
     val kotlinJsonDir = File(baseDir, "kotlin-json")
     val kotlinUebaDir = File(baseDir, "kotlin-ueba")
@@ -55,10 +82,167 @@ private fun runLegacy() {
     kotlinUebaDir.mkdirs()
 
     val ctx = BaboonCodecContext.Default
+    val facadeCtx = BaboonCodecContext.withFacade(false, freshFacade())
     writeJson(ctx, sampleData, kotlinJsonDir.absolutePath)
     writeUeba(ctx, sampleData, kotlinUebaDir.absolutePath)
+    writeJsonAny(facadeCtx, sampleAny, kotlinJsonDir.absolutePath)
+    writeUebaAny(facadeCtx, sampleAny, kotlinUebaDir.absolutePath)
 
     println("Kotlin serialization complete!")
+}
+
+private fun freshFacade(): BaboonCodecsFacade {
+    val f = BaboonCodecsFacade()
+    f.register(
+        BaboonDomainVersion(DOMAIN_ID, DOMAIN_VER),
+        { BaboonCodecsJson },
+        { BaboonCodecsUeba },
+    )
+    return f
+}
+
+private fun expectedInnerPayloads(): List<InnerPayload> = listOf(
+    InnerPayload("variant-A", 1),
+    InnerPayload("variant-B", 2),
+    InnerPayload("variant-C", 3),
+    InnerPayload("variant-D1", 4),
+    InnerPayload("variant-D2", 5),
+    InnerPayload("variant-D3", 6),
+    InnerPayload("opt-any", 7),
+    InnerPayload("lst-any-0", 8),
+)
+
+private fun uebaBytes(p: InnerPayload): ByteArray {
+    val baos = ByteArrayOutputStream()
+    val out = LEDataOutputStream(baos)
+    try {
+        InnerPayload_UEBACodec.encode(BaboonCodecContext.Compact, out, p)
+        out.flush()
+    } finally {
+        out.close()
+    }
+    return baos.toByteArray()
+}
+
+private fun asJson(p: InnerPayload): JsonElement =
+    InnerPayload_JsonCodec.encode(BaboonCodecContext.Compact, p)
+
+private fun createSampleAnyShowcase(): AnyShowcase {
+    val payloads = expectedInnerPayloads()
+    val a = payloads[0]; val b = payloads[1]; val c = payloads[2]
+    val d1 = payloads[3]; val d2 = payloads[4]; val d3 = payloads[5]
+    val optP = payloads[6]; val lstP = payloads[7]
+
+    val metaA  = AnyMeta(0x07.toByte(), DOMAIN_ID, DOMAIN_VER, INNER_TYPE_ID)
+    val metaB  = AnyMeta(0x03.toByte(), null, DOMAIN_VER, INNER_TYPE_ID)
+    val metaC  = AnyMeta(0x01.toByte(), null, null, INNER_TYPE_ID)
+    val metaD1 = AnyMeta(0x06.toByte(), DOMAIN_ID, DOMAIN_VER, null)
+    val metaD2 = AnyMeta(0x02.toByte(), null, DOMAIN_VER, null)
+    val metaD3 = AnyMeta(0x00.toByte(), null, null, null)
+    val metaOpt = AnyMeta(0x07.toByte(), DOMAIN_ID, DOMAIN_VER, INNER_TYPE_ID)
+    val metaLst = AnyMeta(0x06.toByte(), DOMAIN_ID, DOMAIN_VER, null)
+
+    return AnyShowcase(
+        vAnyA  = AnyOpaqueJson(metaA,  asJson(a)),
+        vAnyB  = AnyOpaqueJson(metaB,  asJson(b)),
+        vAnyC  = AnyOpaqueJson(metaC,  asJson(c)),
+        vAnyD1 = AnyOpaqueUeba(metaD1, uebaBytes(d1)),
+        vAnyD2 = AnyOpaqueUeba(metaD2, uebaBytes(d2)),
+        vAnyD3 = AnyOpaqueUeba(metaD3, uebaBytes(d3)),
+        optAny = AnyOpaqueJson(metaOpt, asJson(optP)),
+        lstAny = listOf(AnyOpaqueUeba(metaLst, uebaBytes(lstP))),
+    )
+}
+
+private fun writeJsonAny(ctx: BaboonCodecContext, data: AnyShowcase, outputDir: String) {
+    val json: JsonElement = AnyShowcase_JsonCodec.encode(ctx, data)
+    val jsonStr = json.toString()
+    val path = File(outputDir, "any-showcase.json")
+    path.writeText(jsonStr, Charsets.UTF_8)
+    println("Written JSON to ${path.absolutePath}")
+}
+
+private fun writeUebaAny(ctx: BaboonCodecContext, data: AnyShowcase, outputDir: String) {
+    val baos = ByteArrayOutputStream()
+    val out = LEDataOutputStream(baos)
+    try {
+        AnyShowcase_UEBACodec.encode(ctx, out, data)
+        out.flush()
+        val bytes = baos.toByteArray()
+        val path = File(outputDir, "any-showcase.ueba")
+        path.writeBytes(bytes)
+        println("Written UEBA to ${path.absolutePath}")
+    } finally {
+        out.close()
+    }
+}
+
+private fun decodeInner(o: AnyOpaque): InnerPayload {
+    return when (o) {
+        is AnyOpaqueUeba -> {
+            val r = LEDataInputStream(ByteArrayInputStream(o.bytes))
+            try {
+                InnerPayload_UEBACodec.decode(BaboonCodecContext.Compact, r)
+            } finally {
+                r.close()
+            }
+        }
+        is AnyOpaqueJson -> InnerPayload_JsonCodec.decode(BaboonCodecContext.Compact, o.json)
+    }
+}
+
+private fun decodeAllPayloads(v: AnyShowcase): List<InnerPayload> {
+    val opt = v.optAny ?: error("optAny was null; expected non-null")
+    val lst0 = v.lstAny.firstOrNull() ?: error("lstAny was empty; expected one element")
+    return listOf(
+        decodeInner(v.vAnyA),
+        decodeInner(v.vAnyB),
+        decodeInner(v.vAnyC),
+        decodeInner(v.vAnyD1),
+        decodeInner(v.vAnyD2),
+        decodeInner(v.vAnyD3),
+        decodeInner(opt),
+        decodeInner(lst0),
+    )
+}
+
+private fun readAndVerifyAnyShowcase(filePath: String) {
+    val ctx = BaboonCodecContext.Default
+    val file = File(filePath)
+    val data: AnyShowcase = try {
+        if (filePath.endsWith(".json")) {
+            val jsonStr = file.readText(Charsets.UTF_8)
+            val jsonElement = Json.parseToJsonElement(jsonStr)
+            AnyShowcase_JsonCodec.decode(ctx, jsonElement)
+        } else {
+            val bytes = file.readBytes()
+            val r = LEDataInputStream(ByteArrayInputStream(bytes))
+            try {
+                AnyShowcase_UEBACodec.decode(ctx, r)
+            } finally {
+                r.close()
+            }
+        }
+    } catch (e: Exception) {
+        System.err.println("AnyShowcase deserialization failed: ${e.message}")
+        exitProcess(1)
+        return
+    }
+
+    try {
+        val expected = expectedInnerPayloads()
+        val decoded = decodeAllPayloads(data)
+        for (i in expected.indices) {
+            if (expected[i] != decoded[i]) {
+                System.err.println("AnyShowcase payload $i mismatch: expected ${expected[i]}, got ${decoded[i]}")
+                exitProcess(1)
+            }
+        }
+    } catch (e: Exception) {
+        System.err.println("AnyShowcase decode failed: ${e.message}")
+        exitProcess(1)
+    }
+    println("OK")
 }
 
 private fun writeJson(ctx: BaboonCodecContext, data: AllBasicTypes, outputDir: String) {
@@ -85,6 +269,10 @@ private fun writeUeba(ctx: BaboonCodecContext, data: AllBasicTypes, outputDir: S
 }
 
 private fun readAndVerify(filePath: String) {
+    if (filePath.endsWith("any-showcase.json") || filePath.endsWith("any-showcase.ueba")) {
+        readAndVerifyAnyShowcase(filePath)
+        return
+    }
     val ctx = BaboonCodecContext.Default
     val file = File(filePath)
     val data: AllBasicTypes

@@ -386,7 +386,11 @@ export class BaboonCodecsFacade {
 
         try {
             const writer = new BaboonBinWriter();
-            binCodec.encode(BaboonCodecContext.Compact, writer, typed);
+            // PR 13.2 fix: TS UEBA codec signature is (ctx, value, writer), not (ctx, writer, value).
+            // The interface declaration in `BaboonSharedRuntime.ts` is misleading; the codegen
+            // (TsUEBACodecGenerator) emits `(ctx, value, writer)` and the interface should match.
+            // Argument order corrected here so cross-format JSON→UEBA conversion works.
+            binCodec.encode(BaboonCodecContext.Compact, typed, writer);
             return right(writer.toBytes());
         } catch (e) {
             return leftCodecException(new BaboonEncoderFailure(
