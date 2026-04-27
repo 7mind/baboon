@@ -55,6 +55,28 @@ class OasTypeTranslator {
     }
   }
 
+  /** Inline JSON Schema fragment for the `AnyOpaque` JSON envelope.
+    *
+    * Properties are the locked `$ak`/`$ad`/`$av`/`$at`/`$c` keys; `$ak` and `$c`
+    * are required, the three meta strings are kind-byte conditional and listed
+    * as optional (kind-byte conditional `if`/`then` constraints are intentionally
+    * omitted for readability — see the `description` for the kind-byte table).
+    */
+  val baboonAnySchema: String = {
+    """{"type": "object", "title": "BaboonAny", """ +
+      """"description": "Opaque any-envelope. JSON serialization of a baboon AnyOpaque value: """ +
+      """{\"$ak\":<int>, \"$ad\"?:str, \"$av\"?:str, \"$at\"?:str, \"$c\":<inner>}. """ +
+      """$ak kind byte: 0x07=A(any), 0x03=B(any[domain:this]), 0x01=C(any[domain:current]), """ +
+      """0x06=D1(any[T]), 0x02=D2(any[domain:this,T]), 0x00=D3(any[domain:current,T]).", """ +
+      """"properties": {""" +
+      """"$ak": {"type": "integer", "minimum": 0, "maximum": 7}, """ +
+      """"$ad": {"type": "string"}, """ +
+      """"$av": {"type": "string"}, """ +
+      """"$at": {"type": "string"}, """ +
+      """"$c": {}""" +
+      """}, "required": ["$ak", "$c"]}"""
+  }
+
   /** Inline JSON Schema fragment for a type reference.
     *
     * Returns a JSON string (without surrounding braces or commas) that can be
@@ -84,8 +106,12 @@ class OasTypeTranslator {
       case TypeRef.Constructor(TypeId.Builtins.map, args) =>
         mapSchema(args.head, args.tail.head)
       case _: TypeRef.Any =>
-        // Schema-only placeholder until M12 (OpenAPI) lands the real representation for `any`.
-        """{"type": "object", "description": "any (baboon-any envelope)"}"""
+        // OpenAPI / JSON Schema fragment for the locked `AnyOpaque` JSON envelope.
+        // Documents the on-wire keys ($ak/$ad/$av/$at/$c) and the kind-byte range
+        // (0x00..0x07, see GraphQL `BaboonAny` description for the kind table).
+        // Inlined directly rather than `$ref`-ed because OpenAPI emission is
+        // schema-only (no shared component registry) and this fragment is small.
+        baboonAnySchema
       case other =>
         throw new IllegalArgumentException(s"Unexpected type reference in OpenAPI backend: ${other.id.name.name}")
     }
