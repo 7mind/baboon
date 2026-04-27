@@ -38,6 +38,16 @@ jobs:
       - uses: 7mind/github-env@minimal
         with:
           setup-nix: ${{ matrix.preconfigured != true }}
+      - name: Allow unprivileged user namespaces (bwrap)
+        # Ubuntu 24.04 AppArmor restricts unprivileged user namespaces by
+        # default. Our flake's `appleSwift` output wraps the Apple toolchain
+        # in `pkgs.buildFHSEnv` (bubblewrap-based), which needs them; without
+        # this `bwrap: setting up uid map: Permission denied` kills any
+        # action that touches Swift.
+        run: |
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          fi
       - name: Check deps and build
         if: startsWith(github.ref, 'refs/tags/')
         run: nix develop --command mdl --github-actions :build :test
@@ -148,6 +158,13 @@ jobs:
       - uses: 7mind/github-env@minimal
         with:
           setup-nix: true
+      - name: Allow unprivileged user namespaces (bwrap)
+        # Ubuntu 24.04 AppArmor restricts unprivileged user namespaces; the
+        # flake's FHS-wrapped Apple Swift toolchain uses bwrap and needs them.
+        run: |
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          fi
       - name: Build baboon binary
         run: |
           nix develop --ignore-environment \
