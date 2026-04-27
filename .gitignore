@@ -4,6 +4,8 @@ __pycache__
 Cargo.lock
 baboon.json
 .idea
+.claude/
+debug/
 *.DotSettings.user
 .mdl/runs
 
