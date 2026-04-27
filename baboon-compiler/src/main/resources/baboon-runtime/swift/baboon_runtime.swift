@@ -399,6 +399,7 @@ public class BaboonBinWriter {
     }
 
     public func writeAll(_ data: Data) {
+        if data.isEmpty { return }
         ensureCapacity(data.count)
         data.copyBytes(to: &buf[position], count: data.count)
         position += data.count
