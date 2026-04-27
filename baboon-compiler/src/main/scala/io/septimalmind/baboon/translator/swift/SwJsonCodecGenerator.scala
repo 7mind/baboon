@@ -6,6 +6,7 @@ import io.septimalmind.baboon.translator.swift.SwCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.swift.SwDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.swift.SwTypes.*
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -59,8 +60,9 @@ class SwJsonCodecGenerator(
            |}""".stripMargin.trim
       )
 
-    val baseMethods = encodeMethod ++ decodeMethod
-    val cName       = codecName(srcRef)
+    val anyHelpers: List[TextTree[SwValue]] = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
+    val baseMethods                         = encodeMethod ++ decodeMethod ++ anyHelpers
+    val cName                               = codecName(srcRef)
     val meta        = renderMeta(defn, swDomainTreeTools.makeCodecMeta(defn))
 
     val cParent = if (isEncoderEnabled) {
@@ -266,7 +268,7 @@ class SwJsonCodecGenerator(
             q"""Array($ref).map { $varName in ${mkEncoder(c.args.head, q"$varName", depth + 1)} as Any }"""
           case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("SwJsonCodecGenerator.mkEncoder")
+      case a: TypeRef.Any => mkAnyEncoder(a, ref)
     }
   }
 
@@ -315,7 +317,7 @@ class SwJsonCodecGenerator(
               q"""Dictionary(uniqueKeysWithValues: try ($ref as! [String: Any]).map { $varName in ($keyDec, $valueDec) })"""
             case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
-        case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("SwJsonCodecGenerator.decodeElement")
+        case a: TypeRef.Any => mkAnyDecoder(a, ref)
       }
     }
 
@@ -366,6 +368,186 @@ class SwJsonCodecGenerator(
       case _ =>
         q"""${decodeElement(tpe, q"""$jsonObjRef["$fieldName"]!""", 0)}"""
     }
+  }
+
+  // Deep walk (mirrors Scala/C#/Rust/Kotlin/Java/TS/Dart `hasAnyField`): a codec class needs the
+  // any-field helpers if any direct or nested-via-Constructor-arg field has type `any`.
+  private def hasAnyField(defn: DomainMember.User): Boolean = {
+    def hasAny(tpe: TypeRef): Boolean = tpe match {
+      case _: TypeRef.Any         => true
+      case _: TypeRef.Scalar      => false
+      case c: TypeRef.Constructor => c.args.exists(hasAny)
+    }
+    defn.defn match {
+      case d: Typedef.Dto => d.fields.exists(f => hasAny(f.tpe))
+      case _              => false
+    }
+  }
+
+  // Encode delegates to the per-codec-class `encodeAnyField` helper. This site wires the expected
+  // kind byte and the field's static (codec-gen-time) fallbacks for cross-format meta resolution.
+  // See `anyStaticFallbacks` for the per-variant table.
+  private def mkAnyEncoder(a: TypeRef.Any, ref: TextTree[SwValue]): TextTree[SwValue] = {
+    val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
+    val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
+    q"encodeAnyField(ctx, $expectedHex, $staticDom, $staticVer, $staticTid, $ref)"
+  }
+
+  // Decode delegates to the per-codec-class `decodeAnyField` helper. JSON decode never cross-
+  // converts (always returns `AnyOpaque.json` from JSON wire); user calls `facade.decodeAny(opaque)`
+  // for typed resolution. No `ctx` / no static fallbacks needed at the decode site. The `try`
+  // prefix is mandatory inside `.map`-style closure bodies (Swift does not propagate throws
+  // implicitly through closures); at the top-level field site the redundant outer `try` from
+  // `decFields` (`q"$escaped: try …"`) merely composes — Swift accepts redundant `try try`. This
+  // matches the existing convention for `Typedef.User`'s `q"try $targetTpe.instance.decode(...)"`
+  // emission in `decodeElement`.
+  private def mkAnyDecoder(a: TypeRef.Any, ref: TextTree[SwValue]): TextTree[SwValue] = {
+    val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
+    val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
+    q"try decodeAnyField($expectedHex, $ref)"
+  }
+
+  // Static fallbacks for the cross-format facade helper (`uebaToJson`). The wire `meta` may omit
+  // components that are pinned by the field's static declaration; the codec emits whatever is
+  // statically known so the facade can fill the gaps. See
+  // `BaboonCodecsFacade.buildSyntheticTypeMeta` for the merge semantics. Per spec table:
+  //   A=(nil,nil,nil), B=(currentDomain,nil,nil), C=(currentDomain,currentVersion,nil),
+  //   D1=(nil,nil,underlyingFqid), D2=(currentDomain,nil,underlyingFqid),
+  //   D3=(currentDomain,currentVersion,underlyingFqid).
+  // Duplicated across Scala/C#/Rust/Kotlin/Java/TS/Dart UEBA + JSON sites — extraction deferred
+  // (textual emission diverges by language flavor; see PR 4.2 ledger entry's DRY analysis).
+  // 12th instance.
+  private def anyStaticFallbacks(a: TypeRef.Any): (TextTree[SwValue], TextTree[SwValue], TextTree[SwValue]) = {
+    val none                     = q"nil"
+    def some(s: String)          = q""""$s""""
+    val currentDomain: String    = domain.id.toString
+    val currentDomainVer: String = domain.version.v.toString
+    val typeidStatic = a.underlying match {
+      case Some(u) => some(u.id.toString)
+      case None    => none
+    }
+    val (domainStatic, versionStatic) = a.variant match {
+      case AnyVariant.Global  => (none, none)
+      case AnyVariant.ThisDom => (some(currentDomain), none)
+      case AnyVariant.Current => (some(currentDomain), some(currentDomainVer))
+    }
+    (domainStatic, versionStatic, typeidStatic)
+  }
+
+  // Per-codec-class helpers consolidating the any-field JSON envelope encode/decode (kind check,
+  // cross-format conversion via facade, envelope `$ak/$ad/$av/$at/$c` build & disassemble).
+  // Emitted at most once per codec class that has any any-bearing fields. Mirrors PR 6.3's Java
+  // helper shape and PR 8.3's Dart shape. Kind-check on encode runs before any envelope construction.
+  //
+  // Cast-via-`as?`: `ctx.facade` returns `BaboonCodecsFacadeBase?` (PR 9.1 import-cycle break).
+  // The concrete facade carries `uebaToJson`; the cast is safe because
+  // `BaboonCodecContext.withFacade` is the only construction path and accepts the same hierarchy.
+  // Mirrors the symmetric cast used by `SwUEBACodecGenerator.anyFieldHelpers` (PR 9.2).
+  //
+  // The encoder helper is non-throwing: `encode(...)` on `BaboonJsonCodecBase` is non-throwing
+  // (see `baboon_runtime.swift` line 100), so kind-mismatch / null-facade / facade-returned-failure
+  // paths use `preconditionFailure`. Mirrors the symmetric Swift type-erasure pattern in
+  // `AnyBaboonJsonEncoder.encodeAnyValue` and the UEBA helper. The `decodeAnyField` helper IS
+  // `throws` since the base `decode(...)` is `throws` — uses typed
+  // `BaboonCodecException.decoderFailure`.
+  //
+  // PR-08-D06 lesson: `AnyMetaCodec.writeJson` returns mutable `[String: Any]` already (Swift
+  // dictionaries are value types), so adding the `$c` envelope key needs no cast (cf. Java where
+  // an `(ObjectNode)` cast is required since the static type is `JsonNode`).
+  private def anyFieldHelpers: TextTree[SwValue] = {
+    q"""private func encodeAnyField(
+       |    _ ctx: $baboonCodecContext,
+       |    _ expectedKind: UInt8,
+       |    _ staticDomain: String?,
+       |    _ staticVersion: String?,
+       |    _ staticTypeid: String?,
+       |    _ value: $baboonAnyOpaque
+       |) -> Any {
+       |    if value.meta.kind != expectedKind {
+       |        preconditionFailure(
+       |            "any: meta-kind 0x\\(String(format: \"%02x\", value.meta.kind & 0xFF)) " +
+       |            "does not match field-declared 0x\\(String(format: \"%02x\", expectedKind & 0xFF))"
+       |        )
+       |    }
+       |    let anyInner: Any?
+       |    switch value {
+       |    case .json(_, let jsonValue):
+       |        anyInner = jsonValue
+       |    case .ueba(let uebaMeta, let uebaBytes):
+       |        guard let anyFacadeBase = ctx.facade else {
+       |            preconditionFailure(
+       |                "Cannot encode AnyOpaque.ueba into JSON without a facade reference. " +
+       |                "Pass BaboonCodecContext.withFacade(useIndices, facade) into encode(), " +
+       |                "or supply AnyOpaque.json directly."
+       |            )
+       |        }
+       |        // Downcast to the concrete facade — the marker base is empty by design (PR 9.1
+       |        // import-cycle break). Construction goes through BaboonCodecContext.withFacade
+       |        // which only accepts BaboonCodecsFacadeBase, but real callers pass BaboonCodecsFacade.
+       |        guard let anyFacade = anyFacadeBase as? $baboonCodecsFacade else {
+       |            preconditionFailure(
+       |                "BaboonCodecContext.facade is not a BaboonCodecsFacade: " +
+       |                "\\(type(of: anyFacadeBase))"
+       |            )
+       |        }
+       |        let anyConvResult = anyFacade.uebaToJson(
+       |            uebaMeta,
+       |            uebaBytes,
+       |            staticDomain: staticDomain,
+       |            staticVersion: staticVersion,
+       |            staticTypeid: staticTypeid
+       |        )
+       |        switch anyConvResult {
+       |        case .failure(let err):
+       |            preconditionFailure("any: uebaToJson failed: \\(err)")
+       |        case .success(let json):
+       |            anyInner = json
+       |        }
+       |    }
+       |    var anyEnvelope = $baboonAnyMetaCodec.writeJson(value.meta)
+       |    // Swift `[String: Any]` treats `dict[k] = nil` as "remove key" — use NSNull() so the
+       |    // content envelope key is preserved when the inner JSON is null (PR-08-D06 analog:
+       |    // keep wire-shape consistent with Java/Dart/TS regardless of payload-null state).
+       |    anyEnvelope[$baboonAnyMetaCodec.ANY_CONTENT_KEY] = anyInner ?? NSNull()
+       |    return anyEnvelope
+       |}
+       |
+       |private func decodeAnyField(_ expectedKind: UInt8, _ wire: Any) throws -> $baboonAnyOpaque {
+       |    guard let anyEnvelope = wire as? [String: Any] else {
+       |        throw $baboonCodecException.decoderFailure(
+       |            "any: JSON envelope must be an object",
+       |            nil
+       |        )
+       |    }
+       |    let anyMetaResult = $baboonAnyMetaCodec.readJson(anyEnvelope)
+       |    let anyMeta: $baboonAnyMeta
+       |    switch anyMetaResult {
+       |    case .failure(let err):
+       |        throw err
+       |    case .success(let m):
+       |        anyMeta = m
+       |    }
+       |    if anyMeta.kind != expectedKind {
+       |        throw $baboonCodecException.decoderFailure(
+       |            "any: wire kind 0x\\(String(format: \"%02x\", anyMeta.kind & 0xFF)) " +
+       |            "does not match field-declared 0x\\(String(format: \"%02x\", expectedKind & 0xFF))",
+       |            nil
+       |        )
+       |    }
+       |    guard anyEnvelope.keys.contains($baboonAnyMetaCodec.ANY_CONTENT_KEY) else {
+       |        throw $baboonCodecException.decoderFailure(
+       |            "any: JSON envelope missing '\\($baboonAnyMetaCodec.ANY_CONTENT_KEY)' content key",
+       |            nil
+       |        )
+       |    }
+       |    // `keys.contains(...)` confirmed presence above; the value can still be NSNull() for an
+       |    // explicit JSON null payload — pass through to the AnyOpaque.json variant. Swift
+       |    // dictionary lookup returns `Any?` (None means absent — already excluded), so the
+       |    // force-unwrap is safe inside the contains-guard.
+       |    let anyContent = anyEnvelope[$baboonAnyMetaCodec.ANY_CONTENT_KEY]!
+       |    return .json(meta: anyMeta, json: anyContent)
+       |}""".stripMargin
   }
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[SwValue]] = {
