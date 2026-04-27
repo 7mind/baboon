@@ -28,7 +28,7 @@ class DefService(
 
   def method[$: P]: P[RawFunc] = {
     import fastparse.ScalaWhitespace.whitespace
-    P(meta.member("def", struct.enclosed(sigpart.rep()))).map {
+    P(meta.member("def", shorthandSig | struct.enclosed(sigpart.rep()))).map {
       case (meta, name, member) =>
         RawFunc(name, member, meta)
     }
@@ -36,6 +36,20 @@ class DefService(
 
   def sigpart[$: P]: P[RawFuncArg] = {
     sigstruct | inlineSigpart
+  }
+
+  def shorthandSig[$: P]: P[Seq[RawFuncArg]] = {
+    import fastparse.ScalaWhitespace.whitespace
+    ("(" ~ shorthandRef("in") ~ ")" ~ ":" ~ shorthandRef("out") ~ ("!!" ~ shorthandRef("err")).?).map {
+      case (in, out, errOpt) =>
+        Seq(in, out) ++ errOpt.toSeq
+    }
+  }
+
+  private def shorthandRef[$: P](markerName: String): P[RawFuncArg.Ref] = {
+    meta.withMeta(dto.typeRef).map {
+      case (meta, ref) => RawFuncArg.Ref(ref, markerName, meta)
+    }
   }
 
   def sigstruct[$: P]: P[RawFuncArg.Ref] = {

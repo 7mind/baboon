@@ -314,6 +314,11 @@ root service I3 {
     )
 }
 
+root service I4 {
+    def shortNoErr(T7_Empty): T7_Empty
+    def shortWithErr(T7_Empty): T7_Empty !! T7_Empty
+}
+
 // Type aliases in v3
 type MyStr = str
 type MyList = lst[MyStr]
