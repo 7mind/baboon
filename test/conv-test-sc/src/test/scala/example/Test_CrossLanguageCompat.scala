@@ -1,9 +1,19 @@
 package example
 
-import convtest.testpkg.{AllBasicTypes, AllBasicTypes_JsonCodec, AllBasicTypes_UEBACodec}
-import baboon.runtime.shared.{BaboonCodecContext, LEDataInputStream}
+import convtest.testpkg.{
+  AllBasicTypes,
+  AllBasicTypes_JsonCodec,
+  AllBasicTypes_UEBACodec,
+  AnyShowcase,
+  AnyShowcase_JsonCodec,
+  AnyShowcase_UEBACodec,
+  InnerPayload,
+  InnerPayload_JsonCodec,
+  InnerPayload_UEBACodec,
+}
+import baboon.runtime.shared.{AnyOpaque, AnyOpaqueJson, AnyOpaqueUeba, BaboonCodecContext, LEDataInputStream}
 import org.scalatest.flatspec.AnyFlatSpec
-import java.io.FileInputStream
+import java.io.{ByteArrayInputStream, FileInputStream}
 import java.nio.file.{Files, Paths}
 import java.nio.charset.StandardCharsets
 import io.circe.parser.parse
@@ -159,5 +169,126 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
     val file = baseDir.resolve("swift-ueba/all-basic-types.ueba")
     assume(Files.exists(file), "Swift UEBA file not found, skipping")
     assertBasicFields(readUebaFile("swift", "Swift UEBA"), "Swift UEBA")
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // AnyShowcase cross-language tests (M13 / PR 13.1) — Scala + C# baseline.
+  //
+  // Both languages serialize an `AnyShowcase` DTO with one slot per `any` variant (A/B/C/D1/D2/D3
+  // + opt + lst). Each slot holds an `InnerPayload(label, count)` whose label/count is unique per
+  // slot. Reading either language's fixture and decoding the inner payloads must yield the same
+  // sequence of InnerPayload values.
+  //
+  // PR 13.2 will fan out to the remaining 7 languages (Rust/Kotlin/KMP/Java/TS/Dart/Swift/Python).
+  // ---------------------------------------------------------------------------------------------
+
+  private val expectedAnyPayloads: Seq[InnerPayload] = Seq(
+    InnerPayload("variant-A", 1),
+    InnerPayload("variant-B", 2),
+    InnerPayload("variant-C", 3),
+    InnerPayload("variant-D1", 4),
+    InnerPayload("variant-D2", 5),
+    InnerPayload("variant-D3", 6),
+    InnerPayload("opt-any", 7),
+    InnerPayload("lst-any-0", 8),
+  )
+
+  private def readAnyShowcaseJson(source: String): AnyShowcase = {
+    val file    = baseDir.resolve(s"$source-json/any-showcase.json")
+    val jsonStr = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+    val json    = parse(jsonStr).getOrElse(fail(s"Failed to parse $source any-showcase JSON from $file"))
+    AnyShowcase_JsonCodec.instance.decode(ctx, json) match {
+      case Right(d)  => d
+      case Left(err) => fail(s"Failed to decode $source any-showcase JSON: $err")
+    }
+  }
+
+  private def readAnyShowcaseUeba(source: String): AnyShowcase = {
+    val file = baseDir.resolve(s"$source-ueba/any-showcase.ueba")
+    val fis  = new FileInputStream(file.toFile)
+    try {
+      val r = new LEDataInputStream(fis)
+      AnyShowcase_UEBACodec.instance.decode(ctx, r) match {
+        case Right(d)  => d
+        case Left(err) => fail(s"Failed to decode $source any-showcase UEBA: $err")
+      }
+    } finally {
+      fis.close()
+    }
+  }
+
+  // Decode an AnyOpaque whose payload is known to be InnerPayload. This bypasses
+  // facade.decodeAny — the partial-meta variants (B/C/D1/D2/D3) lack the full (domain, version,
+  // typeid) triple required for facade resolution; their statics live in the codec generator only.
+  // For cross-language interop the pertinent property is that the inner-payload bytes/json are
+  // recoverable from the AnyOpaque content slot, which is what the InnerPayload_*Codec verifies.
+  private def decodeInner(o: AnyOpaque): InnerPayload = o match {
+    case AnyOpaqueUeba(_, bytes) =>
+      val r = new LEDataInputStream(new ByteArrayInputStream(bytes))
+      try {
+        InnerPayload_UEBACodec.instance.decode(BaboonCodecContext.Compact, r) match {
+          case Right(p)  => p
+          case Left(err) => fail(s"Inner UEBA decode failed: ${err.getMessage}")
+        }
+      } finally {
+        r.close()
+      }
+    case AnyOpaqueJson(_, json) =>
+      InnerPayload_JsonCodec.instance.decode(BaboonCodecContext.Compact, json) match {
+        case Right(p)  => p
+        case Left(err) => fail(s"Inner JSON decode failed: ${err.getMessage}")
+      }
+  }
+
+  private def decodeAllPayloads(v: AnyShowcase): Seq[InnerPayload] = {
+    val slots: Seq[AnyOpaque] = Seq(
+      v.vAnyA,
+      v.vAnyB,
+      v.vAnyC,
+      v.vAnyD1,
+      v.vAnyD2,
+      v.vAnyD3,
+      v.optAny.getOrElse(fail("optAny was None; expected Some")),
+      v.lstAny.headOption.getOrElse(fail("lstAny was empty; expected one element")),
+    )
+    slots.map(decodeInner)
+  }
+
+  "AnyShowcase JSON" should "decode Scala-emitted fixture into the expected payloads" in {
+    val decoded = decodeAllPayloads(readAnyShowcaseJson("scala"))
+    assert(decoded == expectedAnyPayloads)
+  }
+
+  it should "decode C#-emitted fixture into the expected payloads" in {
+    val decoded = decodeAllPayloads(readAnyShowcaseJson("cs"))
+    assert(decoded == expectedAnyPayloads)
+  }
+
+  it should "produce the same payloads from Scala and C# JSON fixtures" in {
+    val scala = decodeAllPayloads(readAnyShowcaseJson("scala"))
+    val cs    = decodeAllPayloads(readAnyShowcaseJson("cs"))
+    assert(scala == cs)
+  }
+
+  "AnyShowcase UEBA" should "decode Scala-emitted fixture into the expected payloads" in {
+    val decoded = decodeAllPayloads(readAnyShowcaseUeba("scala"))
+    assert(decoded == expectedAnyPayloads)
+  }
+
+  it should "decode C#-emitted fixture into the expected payloads" in {
+    val decoded = decodeAllPayloads(readAnyShowcaseUeba("cs"))
+    assert(decoded == expectedAnyPayloads)
+  }
+
+  it should "produce the same payloads from Scala and C# UEBA fixtures" in {
+    val scala = decodeAllPayloads(readAnyShowcaseUeba("scala"))
+    val cs    = decodeAllPayloads(readAnyShowcaseUeba("cs"))
+    assert(scala == cs)
+  }
+
+  it should "produce byte-identical Scala and C# UEBA fixtures" in {
+    val scalaBytes = Files.readAllBytes(baseDir.resolve("scala-ueba/any-showcase.ueba"))
+    val csBytes    = Files.readAllBytes(baseDir.resolve("cs-ueba/any-showcase.ueba"))
+    assert(java.util.Arrays.equals(scalaBytes, csBytes), "Scala and C# UEBA bytes diverged")
   }
 }

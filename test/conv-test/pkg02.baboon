@@ -18,6 +18,22 @@ root data TransferOpt {
   ml: map[str, lst[Adt0]]
 }
 
+root data InnerPayload : derived[json], derived[ueba] {
+  label: str
+  count: i32
+}
+
+root data AnyShowcase : derived[json], derived[ueba] {
+  vAnyA:  any
+  vAnyB:  any[domain:this]
+  vAnyC:  any[domain:current]
+  vAnyD1: any[InnerPayload]
+  vAnyD2: any[domain:this, InnerPayload]
+  vAnyD3: any[domain:current, InnerPayload]
+  optAny: opt[any]
+  lstAny: lst[any[InnerPayload]]
+}
+
 root data AllBasicTypes: derived[json], derived[ueba] {
   vi8: i08
   vi16: i16

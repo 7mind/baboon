@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
+using System.Linq;
 using System.Text;
 using Convtest.Testpkg;
 using Baboon.Runtime.Shared;
@@ -13,6 +14,11 @@ namespace ConvTest
 {
     public static class CompatMain
     {
+        // Domain constants — match the convtest.testpkg domain at version 2.0.0 (where AnyShowcase + InnerPayload live).
+        private const string DomainId = "convtest.testpkg";
+        private const string DomainVer = "2.0.0";
+        private const string InnerTypeId = "convtest.testpkg/:#InnerPayload";
+
         public static void Main(string[] args)
         {
             if (args.Length >= 1 && args[0] == "write")
@@ -21,15 +27,19 @@ namespace ConvTest
                 var format = args[2];
                 Directory.CreateDirectory(outputDir);
                 var sampleData = CreateSampleData();
+                var sampleAny = CreateSampleAnyShowcase();
                 var ctx = BaboonCodecContext.Default;
+                var facadeCtx = BaboonCodecContext.WithFacade(useIndices: false, FreshFacade());
 
                 if (format == "json")
                 {
                     WriteJson(ctx, sampleData, outputDir);
+                    WriteJsonAny(facadeCtx, sampleAny, outputDir);
                 }
                 else if (format == "ueba")
                 {
                     WriteUeba(ctx, sampleData, outputDir);
+                    WriteUebaAny(facadeCtx, sampleAny, outputDir);
                 }
                 else
                 {
@@ -51,6 +61,7 @@ namespace ConvTest
         private static void RunLegacy()
         {
             var sampleData = CreateSampleData();
+            var sampleAny = CreateSampleAnyShowcase();
 
             var baseDir = Path.GetFullPath(Path.Combine("..", "..", "target", "compat-test"));
             var csJsonDir = Path.Combine(baseDir, "cs-json");
@@ -60,8 +71,11 @@ namespace ConvTest
             Directory.CreateDirectory(csUebaDir);
 
             var ctx = BaboonCodecContext.Default;
+            var facadeCtx = BaboonCodecContext.WithFacade(useIndices: false, FreshFacade());
             WriteJson(ctx, sampleData, csJsonDir);
             WriteUeba(ctx, sampleData, csUebaDir);
+            WriteJsonAny(facadeCtx, sampleAny, csJsonDir);
+            WriteUebaAny(facadeCtx, sampleAny, csUebaDir);
 
             Console.WriteLine("C# serialization complete!");
         }
@@ -95,8 +109,40 @@ namespace ConvTest
             Console.WriteLine($"Written UEBA to {uebaPath}");
         }
 
+        private static void WriteJsonAny(BaboonCodecContext ctx, AnyShowcase data, string outputDir)
+        {
+            var jsonToken = AnyShowcase_JsonCodec.Instance.Encode(ctx, data);
+            var settings = new JsonSerializerSettings { DateTimeZoneHandling = DateTimeZoneHandling.Utc };
+            var jsonStr = JsonConvert.SerializeObject(jsonToken, Formatting.Indented, settings);
+            var jsonPath = Path.Combine(outputDir, "any-showcase.json");
+            File.WriteAllText(jsonPath, jsonStr, new UTF8Encoding(false));
+            Console.WriteLine($"Written JSON to {jsonPath}");
+        }
+
+        private static void WriteUebaAny(BaboonCodecContext ctx, AnyShowcase data, string outputDir)
+        {
+            byte[] bytes;
+            using (var ms = new MemoryStream())
+            {
+                using (var bw = new BinaryWriter(ms))
+                {
+                    AnyShowcase_UEBACodec.Instance.Encode(ctx, bw, data);
+                }
+                ms.Flush();
+                bytes = ms.ToArray();
+            }
+            var path = Path.Combine(outputDir, "any-showcase.ueba");
+            File.WriteAllBytes(path, bytes);
+            Console.WriteLine($"Written UEBA to {path}");
+        }
+
         private static void ReadAndVerify(string filePath)
         {
+            if (filePath.EndsWith("any-showcase.json") || filePath.EndsWith("any-showcase.ueba"))
+            {
+                ReadAndVerifyAnyShowcase(filePath);
+                return;
+            }
             var ctx = BaboonCodecContext.Default;
             AllBasicTypes data;
 
@@ -190,6 +236,52 @@ namespace ConvTest
             Console.WriteLine("OK");
         }
 
+        private static void ReadAndVerifyAnyShowcase(string filePath)
+        {
+            // Decode-side does not require a facade (see Scala CompatMain comment).
+            var ctx = BaboonCodecContext.Default;
+            AnyShowcase data;
+            try
+            {
+                if (filePath.EndsWith(".json"))
+                {
+                    var jsonStr = File.ReadAllText(filePath, Encoding.UTF8);
+                    JToken jsonToken;
+                    using (var reader = new JsonTextReader(new StringReader(jsonStr)))
+                    {
+                        reader.DateParseHandling = DateParseHandling.None;
+                        jsonToken = JToken.Load(reader);
+                    }
+                    data = AnyShowcase_JsonCodec.Instance.Decode(ctx, jsonToken);
+                }
+                else
+                {
+                    var bytes = File.ReadAllBytes(filePath);
+                    using var ms = new MemoryStream(bytes);
+                    using var br = new BinaryReader(ms);
+                    data = AnyShowcase_UEBACodec.Instance.Decode(ctx, br);
+                }
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine($"AnyShowcase deserialization failed: {e.Message}");
+                Environment.Exit(1);
+                return;
+            }
+
+            var expected = ExpectedInnerPayloads();
+            var decoded = DecodeAllPayloads(data);
+            for (var i = 0; i < expected.Count; i++)
+            {
+                if (!expected[i].Equals(decoded[i]))
+                {
+                    Console.Error.WriteLine($"AnyShowcase payload {i} mismatch: expected {expected[i]}, got {decoded[i]}");
+                    Environment.Exit(1);
+                }
+            }
+            Console.WriteLine("OK");
+        }
+
         private static AllBasicTypes CreateSampleData()
         {
             return new AllBasicTypes(
@@ -240,6 +332,122 @@ namespace ConvTest
                     { "more", new List<Int64> { 4L, 5L, 6L } }
                 }.ToImmutableDictionary()
             );
+        }
+
+        // Expected logical InnerPayload contents per AnyShowcase slot, in deterministic order:
+        // [vAnyA, vAnyB, vAnyC, vAnyD1, vAnyD2, vAnyD3, optAny, lstAny[0]].
+        // Must match the Scala fixture exactly so cross-language reads produce the same payloads.
+        private static IReadOnlyList<InnerPayload> ExpectedInnerPayloads()
+        {
+            return new List<InnerPayload>
+            {
+                new InnerPayload("variant-A", 1),
+                new InnerPayload("variant-B", 2),
+                new InnerPayload("variant-C", 3),
+                new InnerPayload("variant-D1", 4),
+                new InnerPayload("variant-D2", 5),
+                new InnerPayload("variant-D3", 6),
+                new InnerPayload("opt-any", 7),
+                new InnerPayload("lst-any-0", 8),
+            };
+        }
+
+        // Decode every AnyOpaque slot directly via InnerPayload_*Codec — facade.DecodeAny is not
+        // used because partial-meta variants (B/C/D1/D2/D3) lack the full triple required for
+        // facade resolution. The wire format guarantees the inner payload is decodable; that's
+        // what the cross-language test asserts.
+        private static IReadOnlyList<InnerPayload> DecodeAllPayloads(AnyShowcase v)
+        {
+            var slots = new List<AnyOpaque>
+            {
+                v.VAnyA,
+                v.VAnyB,
+                v.VAnyC,
+                v.VAnyD1,
+                v.VAnyD2,
+                v.VAnyD3,
+                v.OptAny ?? throw new InvalidOperationException("optAny was null; expected non-null"),
+                v.LstAny.FirstOrDefault() ?? throw new InvalidOperationException("lstAny was empty; expected one element"),
+            };
+            return slots.Select(DecodeInner).ToList();
+        }
+
+        private static InnerPayload DecodeInner(AnyOpaque o)
+        {
+            switch (o)
+            {
+                case AnyOpaqueUeba ueba:
+                    using (var ms = new MemoryStream(ueba.Bytes))
+                    using (var br = new BinaryReader(ms))
+                    {
+                        return InnerPayload_UEBACodec.Instance.Decode(BaboonCodecContext.Compact, br);
+                    }
+                case AnyOpaqueJson json:
+                    return InnerPayload_JsonCodec.Instance.Decode(BaboonCodecContext.Compact, json.Json);
+                default:
+                    throw new InvalidOperationException($"unexpected AnyOpaque subclass: {o.GetType()}");
+            }
+        }
+
+        // A facade with the convtest.testpkg/2.0.0 codecs registered so cross-format conversions can
+        // resolve InnerPayload via (domain, version, typeid). The 3-arg Register overload skips the
+        // conversions/meta wires which the cross-format helpers do not need.
+        private static BaboonCodecsFacade FreshFacade()
+        {
+            var f = new BaboonCodecsFacade();
+            f.Register(
+                new BaboonDomainVersion(DomainId, DomainVer),
+                () => BaboonCodecsJson.Instance,
+                () => BaboonCodecsUeba.Instance);
+            return f;
+        }
+
+        // Build the canonical AnyShowcase fixture. Layout MUST mirror Scala's createSampleAnyShowcase
+        // so cross-language reads observe identical payloads.
+        private static AnyShowcase CreateSampleAnyShowcase()
+        {
+            var payloads = ExpectedInnerPayloads();
+            var a = payloads[0]; var b = payloads[1]; var c = payloads[2];
+            var d1 = payloads[3]; var d2 = payloads[4]; var d3 = payloads[5];
+            var optP = payloads[6]; var lstP = payloads[7];
+
+            byte[] UebaBytes(InnerPayload p)
+            {
+                using var ms = new MemoryStream();
+                using (var bw = new BinaryWriter(ms))
+                {
+                    InnerPayload_UEBACodec.Instance.Encode(BaboonCodecContext.Compact, bw, p);
+                }
+                ms.Flush();
+                return ms.ToArray();
+            }
+            JToken AsJson(InnerPayload p) => InnerPayload_JsonCodec.Instance.Encode(BaboonCodecContext.Compact, p);
+
+            // Untyped variants A/B/C: AnyOpaqueJson with full wire meta (typeid present so cross-
+            // format encoder can resolve InnerPayload from the wire alone).
+            var metaA = new AnyMeta(0x07, DomainId, DomainVer, InnerTypeId);
+            var metaB = new AnyMeta(0x03, null, DomainVer, InnerTypeId);
+            var metaC = new AnyMeta(0x01, null, null, InnerTypeId);
+
+            // Typed variants D1/D2/D3: meta omits whatever the kind byte says is absent; statics fill in.
+            var metaD1 = new AnyMeta(0x06, DomainId, DomainVer, null);
+            var metaD2 = new AnyMeta(0x02, null, DomainVer, null);
+            var metaD3 = new AnyMeta(0x00, null, null, null);
+
+            // Mix branches: A/B/C as JSON, D1/D2/D3 as UEBA, opt as JSON, lst element as UEBA.
+            // Forces cross-format conversion in both directions through the facade for both wire formats.
+            return new AnyShowcase(
+                VAnyA: new AnyOpaqueJson(metaA, AsJson(a)),
+                VAnyB: new AnyOpaqueJson(metaB, AsJson(b)),
+                VAnyC: new AnyOpaqueJson(metaC, AsJson(c)),
+                VAnyD1: new AnyOpaqueUeba(metaD1, UebaBytes(d1)),
+                VAnyD2: new AnyOpaqueUeba(metaD2, UebaBytes(d2)),
+                VAnyD3: new AnyOpaqueUeba(metaD3, UebaBytes(d3)),
+                OptAny: new AnyOpaqueJson(new AnyMeta(0x07, DomainId, DomainVer, InnerTypeId), AsJson(optP)),
+                LstAny: new List<AnyOpaque>
+                {
+                    new AnyOpaqueUeba(new AnyMeta(0x06, DomainId, DomainVer, null), UebaBytes(lstP)),
+                });
         }
     }
 }

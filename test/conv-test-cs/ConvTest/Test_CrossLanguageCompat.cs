@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Convtest.Testpkg;
@@ -223,6 +224,138 @@ namespace ConvTest
             var file = Path.Combine(baseDir, "swift-ueba", "all-basic-types.ueba");
             if (!File.Exists(file)) { Assert.Ignore("Swift UEBA file not found, skipping"); return; }
             AssertBasicFields(ReadUebaFile("swift", "Swift UEBA"), "Swift UEBA");
+        }
+
+        // ----------------------------------------------------------------------------------------
+        // AnyShowcase cross-language tests (M13 / PR 13.1) — Scala + C# baseline.
+        //
+        // Mirror the Scala Test_CrossLanguageCompat additions. Each language emits an AnyShowcase
+        // fixture with one slot per `any` variant (A/B/C/D1/D2/D3 + opt + lst); decoding either
+        // language's fixture must yield the same canonical sequence of InnerPayload values.
+        //
+        // PR 13.2 will fan out to the remaining 7 languages.
+        // ----------------------------------------------------------------------------------------
+
+        private static IReadOnlyList<InnerPayload> ExpectedAnyPayloads()
+        {
+            return new List<InnerPayload>
+            {
+                new InnerPayload("variant-A", 1),
+                new InnerPayload("variant-B", 2),
+                new InnerPayload("variant-C", 3),
+                new InnerPayload("variant-D1", 4),
+                new InnerPayload("variant-D2", 5),
+                new InnerPayload("variant-D3", 6),
+                new InnerPayload("opt-any", 7),
+                new InnerPayload("lst-any-0", 8),
+            };
+        }
+
+        private AnyShowcase ReadAnyShowcaseJson(string source)
+        {
+            var file = Path.Combine(baseDir, $"{source}-json", "any-showcase.json");
+            var jsonStr = File.ReadAllText(file, Encoding.UTF8);
+            using var reader = new JsonTextReader(new StringReader(jsonStr))
+                { DateParseHandling = DateParseHandling.None };
+            var jsonToken = JToken.Load(reader);
+            return AnyShowcase_JsonCodec.Instance.Decode(ctx, jsonToken);
+        }
+
+        private AnyShowcase ReadAnyShowcaseUeba(string source)
+        {
+            var file = Path.Combine(baseDir, $"{source}-ueba", "any-showcase.ueba");
+            var bytes = File.ReadAllBytes(file);
+            using var ms = new MemoryStream(bytes);
+            using var reader = new BinaryReader(ms);
+            return AnyShowcase_UEBACodec.Instance.Decode(ctx, reader);
+        }
+
+        // Decode the inner InnerPayload directly via InnerPayload_*Codec — facade.DecodeAny is not
+        // used because partial-meta variants (B/C/D1/D2/D3) lack the full (domain, version,
+        // typeid) triple required for facade resolution.
+        private static InnerPayload DecodeInner(AnyOpaque o)
+        {
+            switch (o)
+            {
+                case AnyOpaqueUeba ueba:
+                    using (var ms = new MemoryStream(ueba.Bytes))
+                    using (var br = new BinaryReader(ms))
+                    {
+                        return InnerPayload_UEBACodec.Instance.Decode(BaboonCodecContext.Compact, br);
+                    }
+                case AnyOpaqueJson json:
+                    return InnerPayload_JsonCodec.Instance.Decode(BaboonCodecContext.Compact, json.Json);
+                default:
+                    throw new InvalidOperationException($"unexpected AnyOpaque subclass: {o.GetType()}");
+            }
+        }
+
+        private static IReadOnlyList<InnerPayload> DecodeAllPayloads(AnyShowcase v)
+        {
+            var slots = new List<AnyOpaque>
+            {
+                v.VAnyA,
+                v.VAnyB,
+                v.VAnyC,
+                v.VAnyD1,
+                v.VAnyD2,
+                v.VAnyD3,
+                v.OptAny ?? throw new InvalidOperationException("optAny was null; expected non-null"),
+                v.LstAny.FirstOrDefault() ?? throw new InvalidOperationException("lstAny was empty; expected one element"),
+            };
+            return slots.Select(DecodeInner).ToList();
+        }
+
+        [Test]
+        public void AnyShowcase_JSON_Should_Decode_Scala_Emitted_Into_Expected_Payloads()
+        {
+            var decoded = DecodeAllPayloads(ReadAnyShowcaseJson("scala"));
+            Assert.That(decoded, Is.EqualTo(ExpectedAnyPayloads()));
+        }
+
+        [Test]
+        public void AnyShowcase_JSON_Should_Decode_CSharp_Emitted_Into_Expected_Payloads()
+        {
+            var decoded = DecodeAllPayloads(ReadAnyShowcaseJson("cs"));
+            Assert.That(decoded, Is.EqualTo(ExpectedAnyPayloads()));
+        }
+
+        [Test]
+        public void AnyShowcase_JSON_Should_Produce_Same_Payloads_From_Scala_And_CSharp_Fixtures()
+        {
+            var scala = DecodeAllPayloads(ReadAnyShowcaseJson("scala"));
+            var cs = DecodeAllPayloads(ReadAnyShowcaseJson("cs"));
+            Assert.That(cs, Is.EqualTo(scala));
+        }
+
+        [Test]
+        public void AnyShowcase_UEBA_Should_Decode_Scala_Emitted_Into_Expected_Payloads()
+        {
+            var decoded = DecodeAllPayloads(ReadAnyShowcaseUeba("scala"));
+            Assert.That(decoded, Is.EqualTo(ExpectedAnyPayloads()));
+        }
+
+        [Test]
+        public void AnyShowcase_UEBA_Should_Decode_CSharp_Emitted_Into_Expected_Payloads()
+        {
+            var decoded = DecodeAllPayloads(ReadAnyShowcaseUeba("cs"));
+            Assert.That(decoded, Is.EqualTo(ExpectedAnyPayloads()));
+        }
+
+        [Test]
+        public void AnyShowcase_UEBA_Should_Produce_Same_Payloads_From_Scala_And_CSharp_Fixtures()
+        {
+            var scala = DecodeAllPayloads(ReadAnyShowcaseUeba("scala"));
+            var cs = DecodeAllPayloads(ReadAnyShowcaseUeba("cs"));
+            Assert.That(cs, Is.EqualTo(scala));
+        }
+
+        [Test]
+        public void AnyShowcase_UEBA_Should_Produce_Byte_Identical_Scala_And_CSharp_Fixtures()
+        {
+            var scalaBytes = File.ReadAllBytes(Path.Combine(baseDir, "scala-ueba", "any-showcase.ueba"));
+            var csBytes = File.ReadAllBytes(Path.Combine(baseDir, "cs-ueba", "any-showcase.ueba"));
+            Assert.That(csBytes, Is.EqualTo(scalaBytes), "Scala and C# UEBA bytes diverged");
         }
     }
 }

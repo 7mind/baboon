@@ -1,7 +1,31 @@
 package example
 
-import convtest.testpkg.{AllBasicTypes, AllBasicTypes_JsonCodec, AllBasicTypes_UEBACodec}
-import baboon.runtime.shared.{BaboonCodecContext, ByteString, LEDataInputStream, LEDataOutputStream}
+import convtest.testpkg.{
+  AllBasicTypes,
+  AllBasicTypes_JsonCodec,
+  AllBasicTypes_UEBACodec,
+  AnyShowcase,
+  AnyShowcase_JsonCodec,
+  AnyShowcase_UEBACodec,
+  BaboonCodecsJson,
+  BaboonCodecsUeba,
+  InnerPayload,
+  InnerPayload_JsonCodec,
+  InnerPayload_UEBACodec,
+}
+import baboon.runtime.shared.{
+  AnyMeta,
+  AnyOpaque,
+  AnyOpaqueJson,
+  AnyOpaqueUeba,
+  BaboonCodecContext,
+  BaboonCodecsFacade,
+  BaboonDomainVersion,
+  ByteString,
+  LEDataInputStream,
+  LEDataOutputStream,
+}
+import io.circe.Json
 import io.circe.parser.parse
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 import java.nio.file.{Files, Paths}
@@ -10,16 +34,27 @@ import java.util.UUID
 import scala.collection.immutable.{List, Map, Set}
 
 object CompatMain {
+  // Domain constants — match the convtest.testpkg domain at version 2.0.0 (where AnyShowcase + InnerPayload live).
+  private val DomainId    = "convtest.testpkg"
+  private val DomainVer   = "2.0.0"
+  private val InnerTypeId = "convtest.testpkg/:#InnerPayload"
+
   def main(args: Array[String]): Unit = {
     args.toList match {
       case "write" :: outputDir :: format :: Nil =>
         val dir = Paths.get(outputDir).toAbsolutePath.normalize()
         Files.createDirectories(dir)
         val sampleData = createSampleData()
+        val sampleAny  = createSampleAnyShowcase()
         val ctx        = BaboonCodecContext.Default
+        val facadeCtx  = BaboonCodecContext.WithFacade(useIndices = false, freshFacade())
         format match {
-          case "json" => writeJson(ctx, sampleData, dir.toString)
-          case "ueba" => writeUeba(ctx, sampleData, dir.toString)
+          case "json" =>
+            writeJson(ctx, sampleData, dir.toString)
+            writeJsonAny(facadeCtx, sampleAny, dir.toString)
+          case "ueba" =>
+            writeUeba(ctx, sampleData, dir.toString)
+            writeUebaAny(facadeCtx, sampleAny, dir.toString)
           case _ =>
             System.err.println(s"Unknown format: $format")
             sys.exit(1)
@@ -35,6 +70,7 @@ object CompatMain {
 
   private def runLegacy(): Unit = {
     val sampleData = createSampleData()
+    val sampleAny  = createSampleAnyShowcase()
     val baseDir    = Paths.get("../../target/compat-test").toAbsolutePath.normalize()
 
     val scalaJsonDir = baseDir.resolve("scala-json")
@@ -42,9 +78,12 @@ object CompatMain {
     Files.createDirectories(scalaJsonDir)
     Files.createDirectories(scalaUebaDir)
 
-    val ctx = BaboonCodecContext.Default
+    val ctx       = BaboonCodecContext.Default
+    val facadeCtx = BaboonCodecContext.WithFacade(useIndices = false, freshFacade())
     writeJson(ctx, sampleData, scalaJsonDir.toString)
     writeUeba(ctx, sampleData, scalaUebaDir.toString)
+    writeJsonAny(facadeCtx, sampleAny, scalaJsonDir.toString)
+    writeUebaAny(facadeCtx, sampleAny, scalaUebaDir.toString)
 
     println("Scala serialization complete!")
   }
@@ -72,7 +111,34 @@ object CompatMain {
     }
   }
 
+  private def writeJsonAny(ctx: BaboonCodecContext, data: AnyShowcase, outputDir: String): Unit = {
+    val json    = AnyShowcase_JsonCodec.instance.encode(ctx, data)
+    val jsonStr = json.spaces2
+    val path    = Paths.get(outputDir).resolve("any-showcase.json")
+    Files.write(path, jsonStr.getBytes("UTF-8"))
+    println(s"Written JSON to $path")
+  }
+
+  private def writeUebaAny(ctx: BaboonCodecContext, data: AnyShowcase, outputDir: String): Unit = {
+    val baos = new ByteArrayOutputStream()
+    val out  = new LEDataOutputStream(baos)
+    try {
+      AnyShowcase_UEBACodec.instance.encode(ctx, out, data)
+      out.flush()
+      val bytes = baos.toByteArray
+      val path  = Paths.get(outputDir).resolve("any-showcase.ueba")
+      Files.write(path, bytes)
+      println(s"Written UEBA to $path")
+    } finally {
+      out.close()
+    }
+  }
+
   private def readAndVerify(filePath: String): Unit = {
+    if (filePath.endsWith("any-showcase.json") || filePath.endsWith("any-showcase.ueba")) {
+      readAndVerifyAnyShowcase(filePath)
+      return
+    }
     val ctx  = BaboonCodecContext.Default
     val path = Paths.get(filePath)
     val data: AllBasicTypes =
@@ -171,6 +237,52 @@ object CompatMain {
     println("OK")
   }
 
+  private def readAndVerifyAnyShowcase(filePath: String): Unit = {
+    // Decode-side does not require a facade: AnyShowcase decode produces only same-branch
+    // AnyOpaque values (JSON wire → AnyOpaqueJson, UEBA wire → AnyOpaqueUeba), and we then decode
+    // the inner payload directly via InnerPayload_*Codec.
+    val ctx       = BaboonCodecContext.Default
+    val path      = Paths.get(filePath)
+    val data: AnyShowcase =
+      try {
+        if (filePath.endsWith(".json")) {
+          val jsonStr = new String(Files.readAllBytes(path), "UTF-8")
+          val json    = parse(jsonStr).getOrElse(throw new RuntimeException(s"Failed to parse JSON from $filePath"))
+          AnyShowcase_JsonCodec.instance.decode(ctx, json) match {
+            case Right(d)  => d
+            case Left(err) => throw new RuntimeException(s"AnyShowcase JSON decode failed: $err")
+          }
+        } else {
+          val bytes = Files.readAllBytes(path)
+          val r     = new LEDataInputStream(new ByteArrayInputStream(bytes))
+          try {
+            AnyShowcase_UEBACodec.instance.decode(ctx, r) match {
+              case Right(d)  => d
+              case Left(err) => throw new RuntimeException(s"AnyShowcase UEBA decode failed: $err")
+            }
+          } finally {
+            r.close()
+          }
+        }
+      } catch {
+        case e: Exception =>
+          System.err.println(s"AnyShowcase deserialization failed: ${e.getMessage}")
+          sys.exit(1)
+          throw new RuntimeException("unreachable")
+      }
+
+    val expected = expectedInnerPayloads()
+    val decoded  = decodeAllPayloads(data)
+    expected.zip(decoded).zipWithIndex.foreach {
+      case ((exp, got), idx) =>
+        if (exp != got) {
+          System.err.println(s"AnyShowcase payload $idx mismatch: expected $exp, got $got")
+          sys.exit(1)
+        }
+    }
+    println("OK")
+  }
+
   private def createSampleData(): AllBasicTypes = {
     AllBasicTypes(
       vi8        = 42.toByte,
@@ -197,6 +309,124 @@ object CompatMain {
       voptLst    = Some(List("nested", "list", "values")),
       vlstOpt    = List(Some(10), None, Some(20), Some(30)),
       vmapLst    = Map("numbers" -> List(1L, 2L, 3L), "more" -> List(4L, 5L, 6L)),
+    )
+  }
+
+  // Expected logical InnerPayload contents per AnyShowcase slot, in deterministic order:
+  // [vAnyA, vAnyB, vAnyC, vAnyD1, vAnyD2, vAnyD3, optAny, lstAny[0]].
+  // Each language emits the same sequence so cross-language reads can compare positionally.
+  // Distinct labels guard against field-shuffling regressions in any one language's emitter.
+  private def expectedInnerPayloads(): Seq[InnerPayload] = Seq(
+    InnerPayload("variant-A", 1),
+    InnerPayload("variant-B", 2),
+    InnerPayload("variant-C", 3),
+    InnerPayload("variant-D1", 4),
+    InnerPayload("variant-D2", 5),
+    InnerPayload("variant-D3", 6),
+    InnerPayload("opt-any", 7),
+    InnerPayload("lst-any-0", 8),
+  )
+
+  // Resolve every AnyOpaque slot in a decoded AnyShowcase to a typed InnerPayload by decoding the
+  // payload directly via InnerPayload_*Codec. We deliberately do NOT use facade.decodeAny for the
+  // partial-meta variants (B/C/D1/D2/D3): decodeAny requires fully-populated meta on the input
+  // (domain + version + typeid) and the wire only carries what each variant's kind byte claims.
+  // The whole point of this test is to verify that cross-language UEBA/JSON encoding preserves the
+  // inner payload bytes/json in the AnyOpaque content slot — we don't need facade resolution to
+  // assert that. (facade.decodeAny is exercised by per-language stub tests.)
+  private def decodeAllPayloads(v: AnyShowcase): Seq[InnerPayload] = {
+    val opaques: Seq[AnyOpaque] = Seq(
+      v.vAnyA,
+      v.vAnyB,
+      v.vAnyC,
+      v.vAnyD1,
+      v.vAnyD2,
+      v.vAnyD3,
+      v.optAny.getOrElse(throw new RuntimeException("optAny was None; expected Some")),
+      v.lstAny.headOption.getOrElse(throw new RuntimeException("lstAny was empty; expected one element")),
+    )
+    opaques.map(decodeInner)
+  }
+
+  // Decode an AnyOpaque whose payload is known to be InnerPayload.
+  private def decodeInner(o: AnyOpaque): InnerPayload = o match {
+    case AnyOpaqueUeba(_, bytes) =>
+      val r = new LEDataInputStream(new ByteArrayInputStream(bytes))
+      try {
+        InnerPayload_UEBACodec.instance.decode(BaboonCodecContext.Compact, r) match {
+          case Right(p)  => p
+          case Left(err) => throw new RuntimeException(s"InnerPayload UEBA decode failed: ${err.getMessage}")
+        }
+      } finally {
+        r.close()
+      }
+    case AnyOpaqueJson(_, json) =>
+      InnerPayload_JsonCodec.instance.decode(BaboonCodecContext.Compact, json) match {
+        case Right(p)  => p
+        case Left(err) => throw new RuntimeException(s"InnerPayload JSON decode failed: ${err.getMessage}")
+      }
+  }
+
+  // A facade with the convtest.testpkg/2.0.0 codecs registered so cross-format conversions and
+  // decodeAny can resolve InnerPayload via (domain, version, typeid). Conversions/meta are not
+  // wired — the cross-format helpers only need the codec sides.
+  private def freshFacade(): BaboonCodecsFacade = {
+    val f = new BaboonCodecsFacade {}
+    val _ = f.register(BaboonDomainVersion(DomainId, DomainVer), BaboonCodecsJson, BaboonCodecsUeba)
+    f
+  }
+
+  // Build the canonical AnyShowcase fixture. Untyped variants (A/B/C) carry full meta on wire so
+  // any decoder can resolve InnerPayload from the wire alone. Typed variants (D1/D2/D3) carry only
+  // the meta bits their kind byte claims; statics fill the rest at decode time.
+  // All slots use the JSON branch (AnyOpaqueJson) for the JSON-side encode and the UEBA branch
+  // (AnyOpaqueUeba) for the UEBA-side encode by re-building the holder for each format. We expose
+  // a single AnyShowcase factory and let the writer pick the appropriate ctx; cross-format encode
+  // resolves via the facade for branches that don't match the target wire format.
+  private def createSampleAnyShowcase(): AnyShowcase = {
+    val payloads = expectedInnerPayloads()
+    val (a, b, c, d1, d2, d3, optP, lstP) =
+      (payloads(0), payloads(1), payloads(2), payloads(3), payloads(4), payloads(5), payloads(6), payloads(7))
+
+    // Pre-compute UEBA bytes and JSON for each payload.
+    def uebaBytes(p: InnerPayload): Array[Byte] = {
+      val baos = new ByteArrayOutputStream()
+      val out  = new LEDataOutputStream(baos)
+      try {
+        InnerPayload_UEBACodec.instance.encode(BaboonCodecContext.Compact, out, p)
+        out.flush()
+      } finally {
+        out.close()
+      }
+      baos.toByteArray
+    }
+    def asJson(p: InnerPayload): Json = InnerPayload_JsonCodec.instance.encode(BaboonCodecContext.Compact, p)
+
+    // Untyped variants A/B/C: AnyOpaqueJson with full wire meta; cross-format encoder will resolve
+    // to UEBA via the wire-typeid lookup. We pick JSON here so the JSON-side encode is native and
+    // the UEBA-side encode exercises facade.jsonToUebaBytes (covers PR 2.3 cross-format plumbing).
+    val metaA = AnyMeta(0x07.toByte, Some(DomainId), Some(DomainVer), Some(InnerTypeId))
+    val metaB = AnyMeta(0x03.toByte, None, Some(DomainVer), Some(InnerTypeId))
+    val metaC = AnyMeta(0x01.toByte, None, None, Some(InnerTypeId))
+
+    // Typed variants D1/D2/D3: meta omits whatever the kind byte says is absent; statics resolve.
+    val metaD1 = AnyMeta(0x06.toByte, Some(DomainId), Some(DomainVer), None)
+    val metaD2 = AnyMeta(0x02.toByte, None, Some(DomainVer), None)
+    val metaD3 = AnyMeta(0x00.toByte, None, None, None)
+
+    // For maximum cross-format coverage, we mix branches: A/B/C as JSON branch, D1/D2/D3 as UEBA
+    // branch. The JSON-side encoder will cross-convert D1/D2/D3 (UEBA→JSON) via the facade; the
+    // UEBA-side encoder will cross-convert A/B/C (JSON→UEBA) via the facade. opt/lst use one of
+    // each to cover both branches in nested positions.
+    AnyShowcase(
+      vAnyA  = AnyOpaqueJson(metaA, asJson(a)),
+      vAnyB  = AnyOpaqueJson(metaB, asJson(b)),
+      vAnyC  = AnyOpaqueJson(metaC, asJson(c)),
+      vAnyD1 = AnyOpaqueUeba(metaD1, uebaBytes(d1)),
+      vAnyD2 = AnyOpaqueUeba(metaD2, uebaBytes(d2)),
+      vAnyD3 = AnyOpaqueUeba(metaD3, uebaBytes(d3)),
+      optAny = Some(AnyOpaqueJson(AnyMeta(0x07.toByte, Some(DomainId), Some(DomainVer), Some(InnerTypeId)), asJson(optP))),
+      lstAny = List(AnyOpaqueUeba(AnyMeta(0x06.toByte, Some(DomainId), Some(DomainVer), None), uebaBytes(lstP))),
     )
   }
 }
