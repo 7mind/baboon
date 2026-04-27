@@ -1,10 +1,11 @@
 package io.septimalmind.baboon.translator.python
 
-import io.septimalmind.baboon.translator.python.PyTypes.{baboonFixture, pyList, pyStaticMethod}
+import io.septimalmind.baboon.translator.python.PyTypes.{baboonAnyMeta, baboonAnyOpaqueUeba, baboonFixture, pyList, pyStaticMethod}
 import io.septimalmind.baboon.translator.python.PyValue.PyType
 import io.septimalmind.baboon.typer.BaboonEnquiries
-import io.septimalmind.baboon.typer.model.{AnyPlaceholder, BaboonEvolution, BaboonLang, Domain, DomainMember, TypeId, TypeRef, Typedef}
+import io.septimalmind.baboon.typer.model.{BaboonEvolution, BaboonLang, Domain, DomainMember, TypeId, TypeRef, Typedef}
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
@@ -21,6 +22,11 @@ object PyCodecFixtureTranslator {
     pyFileTools: PyFileTools,
     domain: Domain,
   ) extends PyCodecFixtureTranslator {
+    // Synthetic typeid for `any` fixture payloads in the A/B/C variants where the wire format
+    // carries the typeid string. The string is opaque from the wire-format perspective; PR 10.4
+    // will register a real codec for this typeid in the JSON-branch parallel fixtures.
+    private val AnyFixturePayloadTypeId: String = "my.test.AnyFixturePayload"
+
     override def translate(defn: DomainMember.User): Option[TextTree[PyValue]] = {
       defn.defn match {
         case _ if enquiries.hasForeignType(defn, domain, BaboonLang.Py) => None
@@ -115,7 +121,33 @@ object PyCodecFixtureTranslator {
             case Builtins.opt => q"$baboonFixture.next_optional(lambda: ${genType(args.head)})"
             case t            => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
           }
-        case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("PyCodecFixtureTranslator.genType")
+        // Variant-aware UEBA-branch fixture: emits `AnyOpaqueUeba(AnyMeta(kind=0xKK, ...), b'')`.
+        // The meta carries the components the wire format puts on-wire — i.e. those whose bit
+        // is set in the kind byte. For D-variants (`underlying.isDefined`) typeid is statically
+        // known via the surrounding type position, so it is NOT on the wire and meta-typeid is
+        // None. For A/B/C variants the typeid is on the wire and the fixture stamps a synthetic
+        // type-id string (`AnyFixturePayloadTypeId`). Mirrors `DtCodecFixtureTranslator.genAnyFixture`
+        // / `JvCodecFixtureTranslator` shape. PR 10.4 will introduce the `FixtureFormat` ADT and
+        // a parallel `random_json` method emitting `AnyOpaqueJson` for the JSON branch.
+        case a: TypeRef.Any =>
+          val hasUnderlying = a.underlying.isDefined
+          val kindByte      = AnyVariant.metaKindByte(a.variant, hasUnderlying) & 0xFF
+          val kindHex       = "0x%02x".format(kindByte)
+          val currentDom    = domain.id.toString
+          val currentVer    = domain.version.v.toString
+          val typeidStr     = q"""typeid="$AnyFixturePayloadTypeId""""
+          val typeidNull    = q"typeid=None"
+          val typeidArg     = if (hasUnderlying) typeidNull else typeidStr
+          val domainStr     = q"""domain="$currentDom""""
+          val domainNull    = q"domain=None"
+          val versionStr    = q"""version="$currentVer""""
+          val versionNull   = q"version=None"
+          val (domainArg, versionArg) = a.variant match {
+            case AnyVariant.Global  => (domainStr, versionStr)
+            case AnyVariant.ThisDom => (domainNull, versionStr)
+            case AnyVariant.Current => (domainNull, versionNull)
+          }
+          q"$baboonAnyOpaqueUeba($baboonAnyMeta(kind=$kindHex, $domainArg, $versionArg, $typeidArg), b'')"
       }
     }
 

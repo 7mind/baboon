@@ -6,6 +6,7 @@ import io.septimalmind.baboon.translator.python.PyTypes.*
 import io.septimalmind.baboon.translator.python.PyValue.PyType
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.Quote
 
@@ -82,10 +83,12 @@ class PyUEBACodecGenerator(
     } else Nil
 
     val decoderMethod = List(
-      q"""def decode(self, ctx: $baboonCodecContext, wire: $baboonLEDataInputStream) -> $name:
+      q"""def decode(self, ctx: $baboonCodecContext, wire: $baboonLEDataInputStream) -> $name: 
          |    ${dec.shift(4).trim}
          |""".stripMargin
     )
+
+    val anyHelpers: List[TextTree[PyValue]] = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
 
     val baseMethods = encoderMethod ++ decoderMethod ++
       branchDecoder.map {
@@ -93,7 +96,7 @@ class PyUEBACodecGenerator(
           q"""def decode_branch(self, ctx: $baboonCodecContext, wire: $baboonLEDataInputStream) -> $name: 
              |    ${body.shift(4).trim}
              |""".stripMargin
-      } ++ indexMethods
+      } ++ indexMethods ++ anyHelpers
 
     val cName = q"${srcRef.name}_UEBACodec"
     val cType = q"'${codecType(defn.id)}'"
@@ -384,7 +387,7 @@ class PyUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("PyUEBACodecGenerator.mkEncoder")
+      case a: TypeRef.Any => mkAnyEncoder(a, ref, writerRef)
     }
   }
 
@@ -443,8 +446,155 @@ class PyUEBACodecGenerator(
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("PyUEBACodecGenerator.mkDecoder")
+      case a: TypeRef.Any => mkAnyDecoder(a)
     }
+  }
+
+  // Deep walk (mirrors Scala/C#/Rust/Kotlin/Java/TS/Dart/Swift `hasAnyField`): a codec class
+  // needs the any-field helpers if any direct or nested-via-Constructor-arg field has type `any`.
+  private def hasAnyField(defn: DomainMember.User): Boolean = {
+    def hasAny(tpe: TypeRef): Boolean = tpe match {
+      case _: TypeRef.Any         => true
+      case _: TypeRef.Scalar      => false
+      case c: TypeRef.Constructor => c.args.exists(hasAny)
+    }
+    defn.defn match {
+      case d: Typedef.Dto => d.fields.exists(f => hasAny(f.tpe))
+      case _              => false
+    }
+  }
+
+  // Encode delegates to the per-codec-class `_encode_any_field` helper. This site wires the
+  // expected kind byte and the field's static (codec-gen-time) fallbacks for cross-format meta
+  // resolution. See `anyStaticFallbacks` for the per-variant table.
+  private def mkAnyEncoder(a: TypeRef.Any, ref: TextTree[PyValue], wref: TextTree[PyValue]): TextTree[PyValue] = {
+    val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined) & 0xFF
+    val expectedHex                       = "0x%02x".format(expectedKind)
+    val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
+    q"self._encode_any_field(ctx, $wref, $expectedHex, $staticDom, $staticVer, $staticTid, $ref)"
+  }
+
+  // Decode delegates to the per-codec-class `_decode_any_field` helper, returning an
+  // `AnyOpaqueUeba`. Field-position type is `AnyOpaque`; the helper's narrow return type
+  // widens implicitly via duck-typing.
+  private def mkAnyDecoder(a: TypeRef.Any): TextTree[PyValue] = {
+    val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined) & 0xFF
+    val expectedHex  = "0x%02x".format(expectedKind)
+    q"self._decode_any_field(wire, $expectedHex)"
+  }
+
+  // Static fallbacks for the cross-format facade helpers (`json_to_ueba_bytes`/`ueba_to_json`).
+  // The wire `meta` may omit components that are pinned by the field's static declaration; the
+  // codec emits whatever is statically known so the facade can fill the gaps. See
+  // `BaboonCodecsFacade._build_synthetic_type_meta` for the merge semantics. Per spec table:
+  //   A=(None,None,None), B=(currentDomain,None,None), C=(currentDomain,currentVersion,None),
+  //   D1=(None,None,underlyingFqid), D2=(currentDomain,None,underlyingFqid),
+  //   D3=(currentDomain,currentVersion,underlyingFqid).
+  // 13th instance of this duplication across UEBA + JSON generators — extraction deferred per
+  // ledger (textual emission diverges by language flavor).
+  private def anyStaticFallbacks(a: TypeRef.Any): (TextTree[PyValue], TextTree[PyValue], TextTree[PyValue]) = {
+    val none                     = q"None"
+    def some(s: String)          = q""""$s""""
+    val currentDomain: String    = domain.id.toString
+    val currentDomainVer: String = domain.version.v.toString
+    val typeidStatic = a.underlying match {
+      case Some(u) => some(u.id.toString)
+      case None    => none
+    }
+    val (domainStatic, versionStatic) = a.variant match {
+      case AnyVariant.Global  => (none, none)
+      case AnyVariant.ThisDom => (some(currentDomain), none)
+      case AnyVariant.Current => (some(currentDomain), some(currentDomainVer))
+    }
+    (domainStatic, versionStatic, typeidStatic)
+  }
+
+  // Per-codec-class helpers consolidating the any-field framing, kind-check, and
+  // buffer-then-write / read-then-skip paths — emitted at most once per codec class that has
+  // any any-bearing field. Mirrors `JvUEBACodecGenerator.anyFieldHelpers` /
+  // `DtUEBACodecGenerator.anyFieldHelpers`. Wire layout (locked, see
+  // docs/drafts/20260424-1738-any-opaque-fields.md §"Wire format"):
+  //   length:i32 | meta-length:i32 | meta-kind:u8 | meta-strings | blob
+  //
+  // PR-12-D01 lesson applied: explicit negative-i32 sanity guards on BOTH on-wire lengths
+  // before any size arithmetic — Python `int` is unbounded but the wire format uses signed i32
+  // and the slice arithmetic must operate on validated non-negative values.
+  //
+  // Cast vs base-method: `ctx.facade` is `Optional[BaboonCodecsFacade]` directly on the context
+  // (PR 10.1 design — Python doesn't have the runtime-cycle issue C++/Swift had), so the helper
+  // accesses it without a cast.
+  private def anyFieldHelpers: TextTree[PyValue] = {
+    q"""def _encode_any_field(self, ctx: $baboonCodecContext, writer: $baboonLEDataOutputStream, expected_kind: $pyInt, static_domain, static_version, static_typeid, value: $baboonAnyOpaque) -> None:
+       |    if value.meta.kind != expected_kind:
+       |        raise $baboonCodecException.EncoderFailure(
+       |            f"any: meta-kind 0x{value.meta.kind & 0xFF:02x} does not match field-declared 0x{expected_kind & 0xFF:02x}"
+       |        )
+       |    if isinstance(value, $baboonAnyOpaqueUeba):
+       |        any_blob = value.bytes
+       |    elif isinstance(value, $baboonAnyOpaqueJson):
+       |        if ctx.facade is None:
+       |            raise $baboonCodecException.EncoderFailure(
+       |                "Cannot encode AnyOpaqueJson into UEBA without a facade reference. Pass BaboonCodecContext.with_facade(use_indices, facade) into encode(), or supply AnyOpaqueUeba directly."
+       |            )
+       |        any_conv_result = ctx.facade.json_to_ueba_bytes(value.meta, value.json, static_domain=static_domain, static_version=static_version, static_typeid=static_typeid)
+       |        if isinstance(any_conv_result, $baboonLeftType):
+       |            raise any_conv_result.value
+       |        any_blob = any_conv_result.value
+       |    else:
+       |        raise $baboonCodecException.EncoderFailure(
+       |            f"unexpected AnyOpaque subclass: {type(value).__name__}"
+       |        )
+       |    # Buffer the meta to count its byte length precisely (the on-wire `meta-length` field).
+       |    any_meta_buf = $pyBytesIO()
+       |    any_meta_writer = $baboonLEDataOutputStream(any_meta_buf)
+       |    $baboonAnyMetaCodec.write_bin(any_meta_writer, value.meta)
+       |    any_meta_bytes = any_meta_buf.getvalue()
+       |    any_total_length = 4 + len(any_meta_bytes) + len(any_blob)
+       |    writer.write_i32(any_total_length)
+       |    writer.write_i32(len(any_meta_bytes))
+       |    writer.write(any_meta_bytes)
+       |    writer.write(any_blob)
+       |
+       |def _decode_any_field(self, wire: $baboonLEDataInputStream, expected_kind: $pyInt) -> $baboonAnyOpaque:
+       |    any_total_length = wire.read_i32()
+       |    if any_total_length < 0:
+       |        raise $baboonCodecException.DecoderFailure(
+       |            f"any: negative total-length {any_total_length}"
+       |        )
+       |    any_meta_length = wire.read_i32()
+       |    if any_meta_length < 0:
+       |        raise $baboonCodecException.DecoderFailure(
+       |            f"any: negative meta-length {any_meta_length}"
+       |        )
+       |    if any_total_length < 4 + any_meta_length:
+       |        raise $baboonCodecException.DecoderFailure(
+       |            f"any: total-length {any_total_length} smaller than 4 + meta-length {any_meta_length}"
+       |        )
+       |    any_meta, any_bytes_read = $baboonAnyMetaCodec.read_bin_with_length(wire)
+       |    if any_bytes_read > any_meta_length:
+       |        raise $baboonCodecException.DecoderFailure(
+       |            f"any: meta bytes-read {any_bytes_read} exceeded meta-length window {any_meta_length}"
+       |        )
+       |    if any_bytes_read < any_meta_length:
+       |        # Forward-compat: skip future meta-extension bytes within the meta-length window.
+       |        any_skip = any_meta_length - any_bytes_read
+       |        any_skip_buf = wire.stream.read(any_skip)
+       |        if len(any_skip_buf) != any_skip:
+       |            raise $baboonCodecException.DecoderFailure(
+       |                f"any: short read while skipping meta-extension bytes, expected {any_skip} got {len(any_skip_buf)}"
+       |            )
+       |    if any_meta.kind != expected_kind:
+       |        raise $baboonCodecException.DecoderFailure(
+       |            f"any: wire kind 0x{any_meta.kind & 0xFF:02x} does not match field-declared 0x{expected_kind & 0xFF:02x}"
+       |        )
+       |    any_blob_len = any_total_length - 4 - any_meta_length
+       |    any_blob = wire.stream.read(any_blob_len)
+       |    if len(any_blob) != any_blob_len:
+       |        raise $baboonCodecException.DecoderFailure(
+       |            f"any: short read on blob, expected {any_blob_len} got {len(any_blob)}"
+       |        )
+       |    return $baboonAnyOpaqueUeba(any_meta, any_blob)
+       |""".stripMargin
   }
 
   private def genForeignTypesBodies(name: PyType): (TextTree[PyValue], TextTree[PyValue]) = {

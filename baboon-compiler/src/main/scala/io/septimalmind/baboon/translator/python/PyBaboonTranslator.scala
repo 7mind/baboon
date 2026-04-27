@@ -185,7 +185,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           t =>
             aliasMap.get(t).map(a => s"${t.name} as $a").getOrElse(t.name)
         }.mkString(", ")
-        if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule || module == pyBaboonConversionsModule || module == pyBaboonServiceWiringModule) {
+        if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule || module == pyBaboonConversionsModule || module == pyBaboonServiceWiringModule || module == pyBaboonAnyOpaqueModule || module == pyBaboonExceptionsModule) {
           val baseString = pyFileTools.definitionsBasePkg.mkString(".")
           q"from $baseString.${module.module} import $typesString"
         } else {

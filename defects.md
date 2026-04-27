@@ -1126,9 +1126,28 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Fix:** Unpacked `(found, codec) = lazy_codecs.value.try_find(type_identifier)` and returned `codec` directly. In scope — `decode_any` and the cross-format helpers transitively depend on `_get_codec_exact`.
 
 ### [PR-23-D03] Pre-existing `BaboonTypeMetaCodec.write_bin` calls non-existent `writer.write_string(writer, ...)` method
-**Status:** open (deferred — separate code path, not exercised by PR 10.1)
+**Status:** open (deferred — confirmed not exercised by PR 10.2 either)
 **Severity:** medium (live bug in the binary type-meta encoder for the existing facade, not the `any`-feature)
 **Location:** `baboon_runtime_shared.py:568-577`.
 **Description:** `LEDataOutputStream` exposes `write_str(self, s)` (1-arg) but the type-meta codec calls `writer.write_string(writer, meta.domain_identifier)` (2-arg call to a non-existent name). Manifests as `AttributeError: 'LEDataOutputStream' object has no attribute 'write_string'` whenever a binary `BaboonTypeMeta` envelope is encoded. Sister of D01/D02 — the existing facade's binary path is also dead.
-**Fix:** Defer — out of scope for PR 10.1 (PR 10.2 owns Python UEBA codec emission and may exercise this path; or a separate cleanup PR).
+**Fix:** Defer — out of scope for PR 10.1 and PR 10.2. PR 10.2 verified: its UEBA codec emission does not call the binary type-meta encoder (codec generators emit only field encoders; type-meta is only invoked by the facade's `_encode_to_bin_stream`, which is the user-facing top-level entry). PR 10.4's round-trip tests may need to exercise the facade's `encode_to_bin` path; the fix should land there or in a dedicated cleanup PR.
+
+---
+
+## PR-24 — Python UEBA codec emission (M10 PR 10.2)
+
+### [PR-24-D01] Pydantic `BaseModel` rejects `AnyOpaque` ABC unless `arbitrary_types_allowed=True`
+**Status:** resolved (in scope — required for PR 10.2's UEBA emission to load at all)
+**Severity:** blocker (`Holder` model class would not even import — `PydanticSchemaGenerationError: Unable to generate pydantic-core schema for AnyOpaque`)
+**Location:** `PyDefnTranslator.scala:genDtoPydanticModelConf`.
+**Description:** Surfaced during PR 10.2 verification of `holder` round-trip: the surface field type for `TypeRef.Any` is the runtime ABC `AnyOpaque`, which is not a pydantic-recognised primitive nor a `BaseModel` subclass, and pydantic fails at class-creation time when generating its core schema. Pre-PR-10.2, no Python-emitted DTO carried `any` so the gap was latent.
+**Fix:** Extended `genDtoPydanticModelConf` to add `arbitrary_types_allowed=True` to the `model_config` `ConfigDict` whenever any field's `tpe` recursively contains a `TypeRef.Any` (direct or via `lst[any]`/`opt[any]`/`map[K, any]`). The flag has no effect on DTOs without `any`-typed fields, so no impact on existing DTOs. Equivalent in spirit to the existing `ser_json_bytes='hex'` and `json_encoders={Decimal: str}` opt-in switches gated on the field-type set.
+
+### [PR-24-D02] Initial fixture emission inverted meta-string presence (kind-byte vs. static-fallback confusion)
+**Status:** resolved (caught by adversarial self-review during PR 10.2 verification)
+**Severity:** would-have-blocked (fixture would always raise `ValueError` from `AnyMeta.__post_init__` invariant check)
+**Location:** `PyCodecFixtureTranslator.scala:genType`.
+**Description:** First-pass emission used the static-fallback table (A=(None,None,None) ... D3=(currentDomain, currentVersion, underlyingFqid)) directly as the meta values — which is the OPPOSITE of what the wire format demands. The kind byte's bits indicate which components are ON THE WIRE (and therefore which the meta MUST carry); the static fallbacks are what fills the GAPS (i.e. the components NOT on the wire). For variant A (kind 0x07, all bits set), the meta must carry domain + version + typeid; static fallbacks contribute nothing. The runtime's `AnyMeta.__post_init__` enforces this invariant strictly — first run failed with `ValueError: AnyMeta: domain presence (False) does not match kind 0x07 bit 2`.
+**Fix:** Inverted the meta-presence logic to mirror Dart `DtCodecFixtureTranslator.genAnyFixture` / Java equivalents: meta carries `currentDomain` for A/D1 (Global variant), `currentVersion` for A/B/D1/D2 (Global+ThisDom variants), `AnyFixturePayloadTypeId` for A/B/C (no underlying), `null` for typeid in D-variants (statically known). Confirmed against emitted `Holder.fixture.py` for all 6 variants — meta-presence per variant matches the kind-byte bits.
+
 

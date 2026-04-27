@@ -430,7 +430,18 @@ object PyDefnTranslator {
           List(q"json_encoders={Decimal: str}")
         } else Nil
 
-      val configs = List(frozen, serializeByAlias, serializeJsonBytesAsHex, serializeDecimalAsJsonNumber).flatten
+      // pydantic doesn't know how to validate the runtime `AnyOpaque` ABC; opt into
+      // arbitrary-types when any field carries an `any`-typed payload (direct or nested via a
+      // constructor like `lst[any]` / `opt[any]` / `map[str, any]`).
+      def hasAnyType(tpe: TypeRef): Boolean = tpe match {
+        case _: TypeRef.Any         => true
+        case _: TypeRef.Scalar      => false
+        case c: TypeRef.Constructor => c.args.exists(hasAnyType)
+      }
+      val arbitraryTypesAllowed =
+        if (dtoFields.exists(f => hasAnyType(f.tpe))) Some(q"arbitrary_types_allowed=True") else None
+
+      val configs = List(frozen, serializeByAlias, serializeJsonBytesAsHex, serializeDecimalAsJsonNumber, arbitraryTypesAllowed).flatten
 
       q"""model_config = $pydanticConfigDict(
          |    ${configs.join(",\n").shift(4).trim}

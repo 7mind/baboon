@@ -34,7 +34,10 @@ final class PyTypeTranslator {
         val tpe   = asPyType(id, domain, evolution, pkgBase)
         val targs = args.map(asPyRef(_, domain, evolution, pkgBase))
         q"$tpe[${targs.toSeq.join(", ")}]"
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("PyTypeTranslator.asPyRef")
+      // `any`-typed fields surface as the language-neutral `AnyOpaque` ABC. Variant + underlying
+      // affect the wire format (kind byte / static fallbacks) but not the surface type — the
+      // variant-aware emission lives in PyUEBACodecGenerator's helpers, not here.
+      case _: TypeRef.Any => q"$baboonAnyOpaque"
     }
   }
 

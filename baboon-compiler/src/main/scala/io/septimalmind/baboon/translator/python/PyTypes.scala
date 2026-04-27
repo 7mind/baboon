@@ -9,6 +9,8 @@ object PyTypes {
   val pyBaboonSharedRuntimeModule: PyModuleId = PyModuleId(s"baboon_runtime_shared")
   val pyBaboonCodecsModule: PyModuleId        = PyModuleId(s"baboon_codecs")
   val pyBaboonConversionsModule: PyModuleId   = PyModuleId(s"baboon_conversions")
+  val pyBaboonAnyOpaqueModule: PyModuleId     = PyModuleId(s"baboon_any_opaque")
+  val pyBaboonExceptionsModule: PyModuleId    = PyModuleId(s"baboon_exceptions")
 
   // python modules
   val pyBuiltins: PyModuleId       = PyModuleId("builtins")
@@ -65,6 +67,16 @@ object PyTypes {
   val baboonLEDataOutputStream: PyType = PyType(pyBaboonSharedRuntimeModule, "LEDataOutputStream")
   val baboonLEDataInputStream: PyType  = PyType(pyBaboonSharedRuntimeModule, "LEDataInputStream")
   val baboonLazy: PyType               = PyType(pyBaboonSharedRuntimeModule, "Lazy")
+
+  // baboon `any` opaque
+  val baboonAnyOpaque: PyType     = PyType(pyBaboonAnyOpaqueModule, "AnyOpaque")
+  val baboonAnyOpaqueUeba: PyType = PyType(pyBaboonAnyOpaqueModule, "AnyOpaqueUeba")
+  val baboonAnyOpaqueJson: PyType = PyType(pyBaboonAnyOpaqueModule, "AnyOpaqueJson")
+  val baboonAnyMeta: PyType       = PyType(pyBaboonAnyOpaqueModule, "AnyMeta")
+  val baboonAnyMetaCodec: PyType  = PyType(pyBaboonAnyOpaqueModule, "AnyMetaCodec")
+
+  // baboon exceptions
+  val baboonCodecException: PyType = PyType(pyBaboonExceptionsModule, "BaboonCodecException")
 
   // python
 
