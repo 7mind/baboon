@@ -524,6 +524,21 @@ public class BaboonBinReader {
         return bytes
     }
 
+    /// PR 9.2: read raw `count` bytes (no length prefix). Used by the `any`-field decoder for the
+    /// blob payload — the wire `total-length` already gates the count, so we can copy in a single
+    /// `subdata` call instead of looping `readU8()`. Mirrors Dart's PR 8.2 `readNBytes`.
+    public func readNBytes(_ count: Int) -> Data {
+        let bytes = data.subdata(in: (data.startIndex + pos)..<(data.startIndex + pos + count))
+        pos += count
+        return bytes
+    }
+
+    /// PR 9.2: advance the read cursor past `count` bytes without returning them. Used by the
+    /// `any`-field forward-compat skip-trailer (PR-05-D01). Mirrors Dart's PR 8.2 `skipBytes`.
+    public func skipBytes(_ count: Int) {
+        pos += count
+    }
+
     public func readDecimal() -> BaboonDecimal {
         // .NET decimal format: lo (i32), mid (i32), hi (i32), flags (i32) = 16 bytes
         let lo = UInt64(readRawU32())

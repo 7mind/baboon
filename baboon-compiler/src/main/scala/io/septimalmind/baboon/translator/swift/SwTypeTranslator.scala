@@ -77,7 +77,10 @@ class SwTypeTranslator {
         val tpe   = asSwType(id, domain, evo)
         val targs = args.map(asSwRef(_, domain, evo))
         q"$tpe<${targs.toSeq.join(", ")}>"
-      case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("SwTypeTranslator.asSwRef")
+      // `any`-typed fields surface as the bundled `AnyOpaque` Swift enum (PR 9.1 runtime). The
+      // `variant` / `underlying` distinction is encoded in the wire `meta` byte at codec time, not
+      // in the Swift surface type — every `any` field is a `AnyOpaque` regardless of variant.
+      case _: TypeRef.Any => q"$baboonAnyOpaque"
     }
   }
 

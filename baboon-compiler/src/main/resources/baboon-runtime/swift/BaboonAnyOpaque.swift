@@ -88,7 +88,7 @@ public struct AnyMeta: Equatable, Hashable, CustomStringConvertible {
 // JSON variant, `[String: Any]` does not have a synthesised `Equatable` (heterogeneous values),
 // so we override `==` to use `baboonDeepEquals`. Marked `indirect` because `AnyOpaqueJson`'s
 // payload may itself contain nested `AnyOpaque` references in cross-language scenarios.
-public indirect enum AnyOpaque: Equatable, CustomStringConvertible {
+public indirect enum AnyOpaque: Equatable, Hashable, CustomStringConvertible {
     case ueba(meta: AnyMeta, bytes: Data)
     case json(meta: AnyMeta, json: Any?)
 
@@ -107,6 +107,23 @@ public indirect enum AnyOpaque: Equatable, CustomStringConvertible {
             return m1 == m2 && baboonDeepEquals(j1, j2)
         default:
             return false
+        }
+    }
+
+    // Hand-rolled `hash(into:)` because the `.json` case carries `Any?` which has no synthesised
+    // Hashable. Generated DTOs require `Hashable` conformance — adding it here lets DTOs that
+    // include `any` fields still synthesise their own conformance. Mirrors Java's hand-rolled
+    // hashCode in `BaboonAnyOpaque.java` and Dart's custom hashCode in `baboon_any_opaque.dart`.
+    public func hash(into hasher: inout Hasher) {
+        switch self {
+        case .ueba(let m, let b):
+            hasher.combine(0)
+            hasher.combine(m)
+            hasher.combine(b)
+        case .json(let m, let j):
+            hasher.combine(1)
+            hasher.combine(m)
+            hasher.combine(baboonDeepHashCode(j))
         }
     }
 

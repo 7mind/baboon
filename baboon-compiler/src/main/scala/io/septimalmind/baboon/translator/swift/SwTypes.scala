@@ -54,6 +54,15 @@ object SwTypes {
   val baboonAbstractConversion: SwType  = SwType(baboonRuntimePkg, "AbstractConversion")
   val baboonAbstractConversions: SwType = SwType(baboonRuntimePkg, "AbstractBaboonConversions")
 
+  // baboon `any`-feature surface types (PR 9.2). All live in the bundled `BaboonRuntime` Swift
+  // module — no per-file imports needed (the module ships `baboon_runtime.swift`,
+  // `BaboonAnyOpaque.swift`, and `BaboonCodecsFacade.swift` together).
+  val baboonAnyOpaque: SwType      = SwType(baboonRuntimePkg, "AnyOpaque")
+  val baboonAnyMeta: SwType        = SwType(baboonRuntimePkg, "AnyMeta")
+  val baboonAnyMetaCodec: SwType   = SwType(baboonRuntimePkg, "AnyMetaCodec")
+  val baboonCodecsFacade: SwType   = SwType(baboonRuntimePkg, "BaboonCodecsFacade")
+  val baboonCodecException: SwType = SwType(baboonRuntimePkg, "BaboonCodecException")
+
   // Swift predef types
   val swStdlibPkg: SwPackageId     = parseSwPkg("swift.stdlib")
   val swFoundationPkg: SwPackageId = parseSwPkg("swift.foundation")

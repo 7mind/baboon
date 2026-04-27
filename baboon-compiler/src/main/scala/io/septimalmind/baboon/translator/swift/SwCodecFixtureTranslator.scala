@@ -4,6 +4,7 @@ import io.septimalmind.baboon.translator.swift.SwTypes.*
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
+import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
 
@@ -119,11 +120,39 @@ object SwCodecFixtureTranslator {
               case Builtins.opt => q"rnd.mkOptional { ${gen(args.head)} }"
               case t            => throw new IllegalArgumentException(s"Unexpected collection type: $t")
             }
-          case _: TypeRef.Any => AnyPlaceholder.notSupportedYet("SwCodecFixtureTranslator.genType")
+          case a: TypeRef.Any => genAnyFixture(a)
         }
       }
 
       gen(tpe)
+    }
+
+    // Stable, declaration-driven `AnyOpaque` fixture value. We don't randomise the meta because the
+    // meta must match the field's declared variant exactly — encoder validates the kind byte. PR 9.4
+    // will branch this on a UEBA / JSON format axis (mirroring Java/Dart/TS); for now PR 9.2 emits
+    // only the UEBA branch with empty bytes. The encoder kind-check + facade-less path means the
+    // generated round-trip test will exercise the AnyOpaqueUeba branch.
+    private val FixtureAnyPayloadTypeId: String = "my.test.AnyFixturePayload"
+
+    private def genAnyFixture(a: TypeRef.Any): TextTree[SwValue] = {
+      val hasUnderlying = a.underlying.isDefined
+      val kindByte      = AnyVariant.metaKindByte(a.variant, hasUnderlying) & 0xFF
+      val kindHex       = "0x%02x".format(kindByte)
+      val domainStr     = q""""${domain.id.toString}""""
+      val versionStr    = q""""${domain.version.v.toString}""""
+      val typeidStr     = q""""$FixtureAnyPayloadTypeId""""
+      val nilTree       = q"nil"
+      val tid           = if (hasUnderlying) nilTree else typeidStr
+      val (domainExpr, versionExpr, typeidExpr) = a.variant match {
+        case AnyVariant.Global  => (domainStr, versionStr, tid)
+        case AnyVariant.ThisDom => (nilTree, versionStr, tid)
+        case AnyVariant.Current => (nilTree, nilTree, tid)
+      }
+      // `AnyMeta.init` is `throws` (validates the kind/bit-mask invariants); fixture generation
+      // happens at runtime so we wrap with `try!` — invariants are constructed deterministically
+      // from the field's variant so the throw can never fire here.
+      val meta = q"try! $baboonAnyMeta(kind: $kindHex, domain: $domainExpr, version: $versionExpr, typeid: $typeidExpr)"
+      q"$baboonAnyOpaque.ueba(meta: $meta, bytes: Data())"
     }
 
     private def genScalar(tpe: TypeRef.Scalar): TextTree[SwValue] = {
