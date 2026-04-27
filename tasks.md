@@ -124,6 +124,17 @@ Pre-flight: Swift lacks `BaboonCodecsFacade.swift` (Q-α gap). 4-PR breakdown ma
 
 ---
 
+## Milestone 10 — PR breakdown
+
+Pre-flight: Python runtime **already has** `baboon_codecs_facade.py` (like Kotlin M5). Python emits both UEBA (`PyUEBACodecGenerator`) and JSON (`PyJsonCodecGenerator`) — Q4 resolved by inspection. 4-PR breakdown matches M5/M6/M7/M8/M9. PR 1.2 placeholders located: 6 sites across `PyTypeTranslator`, `PyConversionTranslator` (×2), `PyCodecFixtureTranslator`, `PyUEBACodecGenerator` (×2). `PyJsonCodecGenerator` has no `TypeRef.Any` placeholder yet — PR 10.1 must add it before clearing in PR 10.3 (or PR 10.3 must add + clear in one shot).
+
+- [ ] **PR 10.1** — Python runtime: `AnyOpaque` sealed hierarchy + `AnyMeta` dataclass + `AnyMetaCodec` (binary + JSON) + `BaboonCodecContext` extension with optional facade ref + `BaboonCodecsFacade.{decodeAny, jsonToUebaBytes, uebaToJson}` static-fallback parameters; preemptive PR-07-D02 fix in existing Python facade.
+- [ ] **PR 10.2** — Python UEBA codec emission; clear `PyTypeTranslator`/`PyConversionTranslator`/`PyCodecFixtureTranslator`/`PyUEBACodecGenerator` placeholders.
+- [ ] **PR 10.3** — Python JSON codec emission; clear `PyJsonCodecGenerator` placeholders (add the `TypeRef.Any` case if missing first).
+- [ ] **PR 10.4** — Python round-trip tests + branch-matching fixture fix. Closes M10.
+
+---
+
 ## Cross-cutting architectural notes (locked)
 
 - [x] **Wire layout**: `[length:i32][meta-length:i32][meta-kind:u8][meta:strings][blob]`. Signed i32, little-endian. See plan §6.2.
@@ -135,7 +146,7 @@ Pre-flight: Swift lacks `BaboonCodecsFacade.swift` (Q-α gap). 4-PR breakdown ma
 - [x] **Q1 — JSON envelope key collision** (2026-04-24): rename envelope keys to `$ak`/`$ad`/`$av`/`$at`/`$c`. Lands in PR 2.1/2.3. Spec + plan updated.
 - [x] **Q2 — `any` in generic arg positions** (2026-04-24): reject `set[any]` and `any` as map key; allow `opt[any]`/`lst[any]`/`map[K, any]` (value position). Lands in PR 1.3. Spec updated.
 - [x] **Q3 — GraphQL/OpenAPI schema representation** (2026-04-24): user latitude — these outputs are demo-only, any reasonable representation is fine. Implementer's call during M11/M12. Recommended default: `any` → custom scalar `BaboonAny` in GraphQL, free-form object (`{"type":"object","description":"opaque any-envelope"}`) in OpenAPI. Revisit only if a concrete consumer needs stricter schemas.
-- [ ] **Q4 — Python UEBA emission**: confirm Python target emits UEBA. Blocks M10 only. Defer.
+- [x] **Q4 — Python UEBA emission** (2026-04-26, resolved by inspection at M10 open): Python emits both UEBA (`PyUEBACodecGenerator.scala`, 478 lines) and JSON (`PyJsonCodecGenerator.scala`, 133 lines). Existing `baboon_codecs_facade.py` runtime already in place (like Kotlin M5). M10 follows the M5 4-PR template.
 - [x] **Q6 — Cross-format facade plumbing for `any` encoding** (2026-04-25, resolved: option (a)). Extend `BaboonCodecContext` with `def facade: Option[BaboonCodecsFacade]` (default `None`), add a `WithFacade(useIndices, baboonFacade)` factory. Codec generators thread `ctx` + per-variant static fallbacks (`staticDomain/staticVersion/staticTypeid`) into `encodeAnyField` helpers (decoder helpers don't take `ctx` — strict warnings reject unused params). Cross-convert helpers `BaboonCodecsFacade.{jsonToUebaBytes, uebaToJson}` accept `(meta, payload, staticDomain?, staticVersion?, staticTypeid?)` and merge via `meta.X.orElse(staticX)` (wire wins). Per-variant static emission per spec table: A=`(None,None,None)`, B=`(currentDomain,None,None)`, C=`(currentDomain,currentVersion,None)`, D1=`(None,None,underlyingFqid)`, D2=`(currentDomain,None,underlyingFqid)`, D3=`(currentDomain,currentVersion,underlyingFqid)`. Lands in PR 2.3 (also retroactively closed PR 2.2's deferred `AnyOpaqueJson` UEBA-encoder branch). Other languages will follow the same pattern in M3+. Options (b)/(c)/(d) considered and rejected (see `docs/logs/20260425-0256-m2-pr22-complete.md` §"Three options").
 - [x] **Q5 — Translator-site cascade**: PR 1.2 emits `throw RuntimeException("BUG: any field reached translator before M2+")` placeholders in each translator's `TypeRef` match; removed per-language per milestone. **Open issue (Q5.1)** — surface is 64 files, far larger than plan estimate. See blocker below.
 - [x] **Q5.1 — PR 1.2 surface explosion** (2026-04-24, resolved: option (a)). User chose one mechanical PR covering all pattern-match sites with placeholder throws. Original analysis below for record.
