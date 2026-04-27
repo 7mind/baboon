@@ -301,11 +301,7 @@ if ! command -v swift &> /dev/null; then
 fi
 
 TEST_DIR="${action.test-gen-regular-adt.test_dir}"
-if [[ "$(uname)" == "Linux" ]]; then
-  ./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" build
-else
-  ./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
-fi
+./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
 
 ret success:bool=true
 ```
@@ -592,11 +588,7 @@ if ! command -v swift &> /dev/null; then
 fi
 
 TEST_DIR="${action.test-gen-wrapped-adt.test_dir}"
-if [[ "$(uname)" == "Linux" ]]; then
-  ./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" build
-else
-  ./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
-fi
+./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test
 
 ret success:bool=true
 ```

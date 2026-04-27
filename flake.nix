@@ -65,6 +65,141 @@
             -H:CLibraryPath=${muslZlibStatic}/lib \
             "$@"
         '';
+
+        # ---------------------------------------------------------------
+        # Swift toolchain (Linux only)
+        # ---------------------------------------------------------------
+        # nixpkgs `pkgs.swift` on Linux compiles but `swift test` fails: it
+        # crashes on a missing `libIndexStore.so` (genuine nixpkgs gap, not a
+        # wiring issue) and the swiftpm manifest binaries don't have rpaths
+        # propagated to libdispatch. Apple's official Linux tarball bundles
+        # all corelibs consistently, so we vendor it via FOD + autoPatchelf.
+        #
+        # The bundled clang then needs an FHS-style filesystem to find CRT
+        # objects (Scrt1.o, crti.o, libgcc_s) at link time — nixpkgs doesn't
+        # populate /usr/lib. We wrap each Swift entrypoint in `buildFHSEnv`,
+        # which is the canonical nix idiom for "Apple/Google prebuilt
+        # toolchain on NixOS" (same pattern as `vscode-fhs`, `appimage-run`,
+        # JetBrains IDEs).
+        #
+        # Trade-off: ~700 MiB tarball (cached after first build), but
+        # reproducible (FOD-hashed) and matches the Swift CI runs against.
+        appleSwiftToolchain =
+          let
+            swiftVersion = "5.10.1";
+            ubuntuVersion = "22.04";
+            ubuntuTag = builtins.replaceStrings ["."] [""] ubuntuVersion;
+            isAarch64 = pkgs.stdenv.hostPlatform.isAarch64;
+            archSuffix = if isAarch64 then "-aarch64" else "";
+            urlSuffix  = if isAarch64 then "-aarch64" else "";
+            tarballHash =
+              if isAarch64 then
+                "sha256-hxsA8Kf5bg0o2lOyMhgckAp1QMtL43/kkWwVq0Efg8k="
+              else
+                "sha256-yrG//9M7eevUn0t0db72x+stYM85SMvGk9Ya+r0jwoI=";
+          in
+          pkgs.stdenv.mkDerivation {
+            pname = "swift-apple";
+            version = swiftVersion;
+            src = pkgs.fetchurl {
+              url = "https://download.swift.org/swift-${swiftVersion}-release/ubuntu${ubuntuTag}${urlSuffix}/swift-${swiftVersion}-RELEASE/swift-${swiftVersion}-RELEASE-ubuntu${ubuntuVersion}${archSuffix}.tar.gz";
+              hash = tarballHash;
+            };
+            nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+            buildInputs = with pkgs; [
+              stdenv.cc.cc.lib
+              zlib
+              ncurses5
+              libxml2_13         # libxml2.so.2 — needed by swift-test, FoundationXML, lldb
+              sqlite
+              python3
+              libuuid
+              icu
+              libedit
+              curl
+              libxcrypt-legacy   # libcrypt.so.1
+            ];
+            # lldb-only deps that nixpkgs doesn't ship at the expected SONAME.
+            # Swift build/test work fine; only debugging would hit them.
+            autoPatchelfIgnoreMissingDeps = [
+              "libpython3.10.so.1.0"
+              "libedit.so.2"
+            ];
+            installPhase = ''
+              runHook preInstall
+              mkdir -p $out
+              cp -R usr/* $out/
+              runHook postInstall
+            '';
+            dontStrip = true;
+          };
+
+        # FHS-wrapped Swift entrypoints. Inside the FHS env, Apple's bundled
+        # clang sees /usr/lib/x86_64-linux-gnu/Scrt1.o, libgcc_s, etc. exactly
+        # where it expects them. Each entrypoint is a thin wrapper that enters
+        # the FHS env and re-execs the real binary.
+        #
+        # Why one wrapper per entrypoint: swiftpm spawns subprocesses (swiftc,
+        # swift-frontend, clang, lld) by absolute path against the toolchain's
+        # bin dir. We can't redirect those mid-run, so we run the *parent*
+        # (`swift` / `swift-build` / `swift-test`) inside FHS and let it spawn
+        # whatever it wants — the children inherit the FHS namespace.
+        mkSwiftFhs = entrypoint: pkgs.buildFHSEnv {
+          name = entrypoint;
+          targetPkgs = fhsPkgs: with fhsPkgs; [
+            appleSwiftToolchain
+            # CRT + linker bits clang/ld.gold look for under /usr/lib.
+            glibc glibc.dev
+            gcc-unwrapped gcc-unwrapped.lib
+            binutils
+            # Runtime deps the swift test binary loads at startup.
+            zlib ncurses5 libxml2_13 sqlite libuuid icu libedit curl
+            libxcrypt-legacy
+            python3
+            # IANA timezone database — Foundation's `TimeZone(identifier:)` looks
+            # up zone files under /usr/share/zoneinfo. Without this, fixtures
+            # that build random dates crash on `TimeZone(identifier: "UTC")!`
+            # returning nil.
+            tzdata
+          ];
+          runScript = entrypoint;
+          # Pass through XDG / HOME / build-output dirs so swiftpm caches +
+          # outputs end up where the user expects, not in the FHS overlay.
+          extraBwrapArgs = [];
+          unsharePid = false;
+          unshareUser = false;
+          unshareIpc = false;
+          unshareNet = false;
+          unshareUts = false;
+          unshareCgroup = false;
+        };
+
+        appleSwift = pkgs.symlinkJoin {
+          name = "swift-fhs-suite";
+          paths = builtins.map mkSwiftFhs [
+            "swift"
+            "swiftc"
+            "swift-build"
+            "swift-test"
+            "swift-package"
+            "swift-run"
+            "sourcekit-lsp"
+          ];
+          meta = {
+            description = "Apple Swift 5.10.1 toolchain (FHS-wrapped, Linux)";
+            longDescription = ''
+              Apple's official Swift toolchain (downloaded from swift.org) wrapped in
+              `pkgs.buildFHSEnv` so the bundled clang, swiftpm, lldb, etc. find their
+              CRT/runtime dependencies on NixOS where /usr/lib doesn't exist.
+              Provides `swift`, `swiftc`, `swift-build`, `swift-test`, `swift-package`,
+              `swift-run`, `sourcekit-lsp`. Drop-in replacement for `pkgs.swift` on Linux
+              including full `swift test` + XCTest support.
+            '';
+            mainProgram = "swift";
+            platforms = pkgs.lib.platforms.linux;
+            license = pkgs.lib.licenses.asl20;
+          };
+        };
       in
       {
         packages = rec {
@@ -135,6 +270,25 @@
           };
 
           default = baboon;
+        } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          # ---------------------------------------------------------------
+          # Swift toolchain outputs (Linux-only, x86_64 + aarch64)
+          # ---------------------------------------------------------------
+          # Public flake API for downstream consumers that need a working
+          # `swift test` on NixOS. Use as:
+          #
+          #   inputs.baboon.url = "github:7mind/baboon";
+          #   environment.systemPackages = [ inputs.baboon.packages.${system}.swift ];
+          #
+          # Or in a devShell:
+          #
+          #   buildInputs = [ inputs.baboon.packages.${system}.swift ];
+          #
+          # `swift` is the combined suite (all Swift entrypoints under bin/).
+          # `swift-toolchain-unwrapped` is the raw Apple tarball after autoPatchelf,
+          # exposed for advanced users who want to wrap it themselves.
+          swift = appleSwift;
+          swift-toolchain-unwrapped = appleSwiftToolchain;
         };
 
         devShells.default = pkgs.mkShell ({
@@ -173,8 +327,11 @@
 
               dart
             ]) ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-              pkgs.buildPackages.swift
-              pkgs.buildPackages.swiftpm
+              # Apple Swift toolchain (FOD + buildFHSEnv) — see `appleSwiftToolchain`
+              # and `mkSwiftFhs` above. Replaces nixpkgs `swift` + `swiftpm` because
+              # those can't run `swift test` on Linux due to missing libIndexStore.so
+              # and broken libdispatch rpaths.
+              appleSwift
             ];
         });
       }

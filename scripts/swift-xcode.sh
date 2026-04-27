@@ -57,7 +57,14 @@ fi
 
 if [[ "$(uname)" == "Linux" ]]; then
   SWIFT_BIN="$(command -v swift)"
-  if [[ "$SWIFT_BIN" == /nix/store/* ]]; then
+  SWIFT_REAL="$(readlink -f "$SWIFT_BIN")"
+
+  # The FHS-wrapped Apple toolchain (flake's `appleSwift` output) bundles its
+  # own libdispatch / Foundation / XCTest inside the bwrap-ed env, so the
+  # closure-walking dance below isn't needed and would actually fail (no
+  # `swift-corelibs-libdispatch-*` in its closure). Detect the wrapper by the
+  # `-bwrap` suffix on the resolved binary (buildFHSEnv emits `<name>-bwrap`).
+  if [[ "$SWIFT_REAL" != *-bwrap && "$SWIFT_REAL" != *-bwrap/* && "$SWIFT_BIN" == /nix/store/* ]]; then
     SWIFT_TARGET_INFO="$(swiftc -print-target-info)"
     SWIFT_STDLIB="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["paths"]["runtimeLibraryPaths"][0])' <<< "$SWIFT_TARGET_INFO")"
     SWIFT_VERSION="$(swift --version | sed -n 's/^Swift version \([0-9][0-9.]*\).*/\1/p' | head -n1)"
@@ -68,7 +75,6 @@ if [[ "$(uname)" == "Linux" ]]; then
 
     # Resolve libdispatch from the swift binary's nix closure to avoid
     # picking up unrelated store paths from other derivations/architectures
-    SWIFT_REAL="$(readlink -f "$SWIFT_BIN")"
     SWIFT_STORE_PATH="$(echo "$SWIFT_REAL" | sed -n 's|^\(/nix/store/[^/]*\)/.*|\1|p')"
     if [[ -z "$SWIFT_STORE_PATH" ]]; then
       echo "Unable to determine nix store path for swift binary: $SWIFT_REAL" >&2
