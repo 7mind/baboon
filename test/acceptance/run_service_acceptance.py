@@ -537,15 +537,23 @@ async def run_codegen(
     result = await run_subprocess(cmd, cwd=str(target_dir), timeout=timeout)
 
     if result.status == Status.PASSED:
-        # Dart runtime file move
+        # Dart runtime file move — emitted at the top of `lib/generated/`, but consumed via
+        # `package:baboon_runtime/<file>.dart`, so they have to live under
+        # `packages/baboon_runtime/lib/`. Mirrors the `mv` chain in `.mdl/defs/tests.md` for the
+        # `test-gen-compat-dart` action.
         if Lang.DART in langs:
-            dart_gen = target_dir / "dt" / "lib" / "generated" / "baboon_runtime.dart"
-            dart_pkg = (
-                target_dir / "dt" / "packages" / "baboon_runtime" / "lib" / "baboon_runtime.dart"
+            dart_pkg_lib = (
+                target_dir / "dt" / "packages" / "baboon_runtime" / "lib"
             )
-            if dart_gen.exists():
-                dart_pkg.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(dart_gen), str(dart_pkg))
+            dart_pkg_lib.mkdir(parents=True, exist_ok=True)
+            for runtime_file in (
+                "baboon_runtime.dart",
+                "baboon_any_opaque.dart",
+                "baboon_codecs_facade.dart",
+            ):
+                src = target_dir / "dt" / "lib" / "generated" / runtime_file
+                if src.exists():
+                    shutil.move(str(src), str(dart_pkg_lib / runtime_file))
 
         apply_codegen_patches(target_dir, langs)
 
