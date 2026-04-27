@@ -79,7 +79,13 @@ object DtCodecTestsTranslator {
     }
 
     private def makeTest(definition: DomainMember.User, srcRef: DtValue.DtType): TextTree[DtValue] = {
-      val fixture = makeFixture(definition, domain, evo)
+      // PR-07-D01 (Dart analog): per-codec fixture variants. UEBA codec test uses the
+      // `AnyOpaqueUeba`-bearing fixture (`random`); JSON codec test uses the
+      // `AnyOpaqueJson`-bearing fixture (`randomJson`). Each fixture matches its codec's native
+      // any-field branch so round-trip avoids cross-format conversion and never needs a
+      // `BaboonCodecContext.withFacade` ctx.
+      val uebaFixture = makeFixture(definition, domain, evo, useJsonAny = false)
+      val jsonFixture = makeFixture(definition, domain, evo, useJsonAny = true)
       codecs
         .filter(_.isActive(definition.id)).map {
           codec =>
@@ -93,7 +99,7 @@ object DtCodecTestsTranslator {
                |test('JSON codec round-trip', () {
                |  for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++) {
                |    final rnd = $baboonRandomFactory.create();
-               |    ${fixture.shift(4).trim}
+               |    ${jsonFixture.shift(4).trim}
                |    ${assertions.shift(4).trim}
                |  }
                |});
@@ -113,7 +119,7 @@ object DtCodecTestsTranslator {
                |test('UEBA compact codec round-trip', () {
                |  for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++) {
                |    final rnd = $baboonRandomFactory.create();
-               |    ${fixture.shift(4).trim}
+               |    ${uebaFixture.shift(4).trim}
                |    ${compactAssertions.shift(4).trim}
                |  }
                |});
@@ -121,7 +127,7 @@ object DtCodecTestsTranslator {
                |test('UEBA indexed codec round-trip', () {
                |  for (var i = 0; i < ${target.generic.codecTestIterations.toString}; i++) {
                |    final rnd = $baboonRandomFactory.create();
-               |    ${fixture.shift(4).trim}
+               |    ${uebaFixture.shift(4).trim}
                |    ${indexedAssertions.shift(4).trim}
                |  }
                |});
@@ -143,16 +149,19 @@ object DtCodecTestsTranslator {
       definition: DomainMember.User,
       domain: Domain,
       evolution: BaboonEvolution,
+      useJsonAny: Boolean,
     ): TextTree[DtValue] = {
-      val dtType      = typeTranslator.asDtType(definition.id, domain, evolution)
-      val fixtureName = s"${definition.id.name.name.capitalize}_Fixture"
+      val dtType          = typeTranslator.asDtType(definition.id, domain, evolution)
+      val fixtureName     = s"${definition.id.name.name.capitalize}_Fixture"
+      val randomMethod    = if (useJsonAny) "randomJson" else "random"
+      val randomAllMethod = if (useJsonAny) "randomAllJson" else "randomAll"
       definition.defn match {
         case e: Typedef.Enum =>
           q"final fixture = $dtType.values[rnd.nextIntRange($dtType.values.length)];"
         case _: Typedef.Adt =>
-          q"final fixtures = $fixtureName.randomAll(rnd);"
+          q"final fixtures = $fixtureName.$randomAllMethod(rnd);"
         case _ =>
-          q"final fixture = $fixtureName.random(rnd);"
+          q"final fixture = $fixtureName.$randomMethod(rnd);"
       }
     }
 
@@ -225,7 +234,7 @@ object DtCodecTestsTranslator {
       val typeId    = definition.id.render
       q"""test('Cross-language JSON writing', () {
          |  final rnd = $baboonRandomFactory.create();
-         |  ${makeFixture(definition, domain, evo).shift(2).trim}
+         |  ${makeFixture(definition, domain, evo, useJsonAny = true).shift(2).trim}
          |  ${makeJsonWriteBody(definition, srcRef).shift(2).trim}
          |});
          |""".stripMargin
@@ -269,7 +278,7 @@ object DtCodecTestsTranslator {
       val typeId    = definition.id.render
       q"""test('Cross-language UEBA writing', () {
          |  final rnd = $baboonRandomFactory.create();
-         |  ${makeFixture(definition, domain, evo).shift(2).trim}
+         |  ${makeFixture(definition, domain, evo, useJsonAny = false).shift(2).trim}
          |  ${makeUebaWriteBody(definition, srcRef).shift(2).trim}
          |});
          |""".stripMargin

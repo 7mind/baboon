@@ -14,6 +14,16 @@ trait DtCodecFixtureTranslator {
 }
 
 object DtCodecFixtureTranslator {
+  // Branch selector for any-field fixture payloads. PR-07-D01 (Dart analog): the auto-generated
+  // round-trip test exercises a fixture through a single codec; if the fixture's `AnyOpaque`
+  // branch matches the codec direction, no facade is needed and equality holds. We emit two
+  // parallel methods per DTO (`random` for the UEBA branch, `randomJson` for the JSON branch)
+  // so each test path picks its native branch. Recursive calls into nested user-type fixtures
+  // must propagate the same choice. Mirrors PR 2.4 / 3.4 / 4.3 / 5.4 / 6.4 / 7.4 patterns.
+  private sealed trait FixtureFormat
+  private case object FixUeba extends FixtureFormat
+  private case object FixJson extends FixtureFormat
+
   final class Impl(
     translator: DtTypeTranslator,
     enquiries: BaboonEnquiries,
@@ -64,16 +74,20 @@ object DtCodecFixtureTranslator {
     private def doTranslateDto(dto: Typedef.Dto): TextTree[DtValue] = {
       val fullType = translator.toDtTypeRefKeepForeigns(dto.id, domain, evo)
 
-      val generatedFields = dto.fields.map {
-        f =>
-          q"${f.name.name}: ${genType(f.tpe)}"
+      def body(format: FixtureFormat): TextTree[DtValue] = {
+        val generatedFields = dto.fields.map(f => q"${f.name.name}: ${genType(f.tpe, format)}")
+        q"""return $fullType(
+           |  ${generatedFields.join(",\n").shift(2).trim}
+           |);""".stripMargin
       }
 
       q"""class ${fixtureTpeName(dto.id)} {
          |  static $fullType random($baboonRandom rnd) {
-         |    return $fullType(
-         |      ${generatedFields.join(",\n").shift(6).trim}
-         |    );
+         |    ${body(FixUeba).shift(4).trim}
+         |  }
+         |
+         |  static $fullType randomJson($baboonRandom rnd) {
+         |    ${body(FixJson).shift(4).trim}
          |  }
          |}
          |""".stripMargin
@@ -85,25 +99,33 @@ object DtCodecFixtureTranslator {
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
-      val membersFixtures    = members.sortBy(_.id.toString).map(doTranslateDto)
-      val membersDirectCalls = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name.capitalize}_Fixture.random(rnd)")
+      val sortedMembers          = members.sortBy(_.id.toString)
+      val membersFixtures        = sortedMembers.map(doTranslateDto)
+      val membersDirectCalls     = sortedMembers.map(dto => q"${dto.id.name.name.capitalize}_Fixture.random(rnd)")
+      val membersDirectCallsJson = sortedMembers.map(dto => q"${dto.id.name.name.capitalize}_Fixture.randomJson(rnd)")
 
       q"""${membersFixtures.joinN()}
          |
          |class ${fixtureTpeName(adt.id)} {
          |  static $fullType random($baboonRandom rnd) => rnd.oneOf(randomAll(rnd));
          |
+         |  static $fullType randomJson($baboonRandom rnd) => rnd.oneOf(randomAllJson(rnd));
+         |
          |  static List<$fullType> randomAll($baboonRandom rnd) => [
          |    ${membersDirectCalls.join(",\n").shift(4).trim}
+         |  ];
+         |
+         |  static List<$fullType> randomAllJson($baboonRandom rnd) => [
+         |    ${membersDirectCallsJson.join(",\n").shift(4).trim}
          |  ];
          |}
          |""".stripMargin
     }
 
-    private def genType(tpe: TypeRef): TextTree[DtValue] = {
+    private def genType(tpe: TypeRef, format: FixtureFormat): TextTree[DtValue] = {
       def gen(tpe: TypeRef): TextTree[DtValue] = {
         BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Dart) match {
-          case tpe: TypeRef.Scalar => genScalar(tpe)
+          case tpe: TypeRef.Scalar => genScalar(tpe, format)
           case TypeRef.Constructor(id, args) =>
             id match {
               case Builtins.lst => q"rnd.mkList(() => ${gen(args.head)})"
@@ -112,21 +134,22 @@ object DtCodecFixtureTranslator {
               case Builtins.opt => q"rnd.mkNullable(() => ${gen(args.head)})"
               case t            => throw new IllegalArgumentException(s"Unexpected collection type: $t")
             }
-          case a: TypeRef.Any => genAnyFixture(a)
+          case a: TypeRef.Any => genAnyFixture(a, format)
         }
       }
 
       gen(tpe)
     }
 
-    // Stable, declaration-driven `AnyOpaque` fixture value. We don't randomise the meta because the
-    // meta must match the field's declared variant exactly — encoder validates the kind byte. PR 8.4
-    // will branch this on a UEBA / JSON format axis (mirroring Java/Kotlin/TS); for now PR 8.2 emits
-    // only the UEBA branch with empty bytes. The encoder kind-check + facade-less path means the
-    // generated round-trip test will exercise the AnyOpaqueUeba branch.
+    // Stable, declaration-driven `AnyOpaque` fixture value. The meta must match the field's
+    // declared variant exactly — encoder validates the kind byte. UEBA branch uses an empty
+    // `Uint8List(0)` payload; JSON branch uses `null` (Dart `Object?` allows null as canonical
+    // empty payload). PR-07-D01 (Dart analog): branch must match codec direction so round-trip
+    // avoids cross-format conversion (which requires `withFacade` ctx). Mirrors C#/Java/Kotlin/
+    // Rust/TS precedent.
     private val FixtureAnyPayloadTypeId: String = "my.test.AnyFixturePayload"
 
-    private def genAnyFixture(a: TypeRef.Any): TextTree[DtValue] = {
+    private def genAnyFixture(a: TypeRef.Any, format: FixtureFormat): TextTree[DtValue] = {
       val hasUnderlying = a.underlying.isDefined
       val kindByte      = AnyVariant.metaKindByte(a.variant, hasUnderlying) & 0xFF
       val kindHex       = "0x%02x".format(kindByte)
@@ -141,10 +164,13 @@ object DtCodecFixtureTranslator {
         case AnyVariant.Current => (nullTree, nullTree, tid)
       }
       val meta = q"$baboonAnyMeta($kindHex, $domainExpr, $versionExpr, $typeidExpr)"
-      q"$baboonAnyOpaqueUeba($meta, $dtUint8List(0))"
+      format match {
+        case FixUeba => q"$baboonAnyOpaqueUeba($meta, $dtUint8List(0))"
+        case FixJson => q"$baboonAnyOpaqueJson($meta, null)"
+      }
     }
 
-    private def genScalar(tpe: TypeRef.Scalar): TextTree[DtValue] = {
+    private def genScalar(tpe: TypeRef.Scalar, format: FixtureFormat): TextTree[DtValue] = {
       tpe.id match {
         case TypeId.Builtins.i08 => q"rnd.nextI08()"
         case TypeId.Builtins.i16 => q"rnd.nextI16()"
@@ -179,7 +205,13 @@ object DtCodecFixtureTranslator {
             case _                => translator.toSnakeCase(u.name.name)
           }
           val fixtureType = DtValue.DtType(fixturePkg, s"${u.name.name.capitalize}_Fixture", importAs = Some(s"${importAsFileName}_fixture"))
-          q"$fixtureType.random(rnd)"
+          // Propagate the codec branch into nested user-type fixtures so any-fields nested in
+          // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (Dart analog).
+          val method = format match {
+            case FixUeba => "random"
+            case FixJson => "randomJson"
+          }
+          q"$fixtureType.$method(rnd)"
 
         case t => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
       }
