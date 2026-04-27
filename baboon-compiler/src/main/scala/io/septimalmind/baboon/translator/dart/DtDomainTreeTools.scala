@@ -15,9 +15,14 @@ object DtDomainTreeTools {
     signature: TextTree[DtValue],
     value: TextTree[DtValue],
     refValue: TextTree[DtValue],
+    name: String,
+    typeAnn: TextTree[DtValue],
+    isCodecData: Boolean,
   ) {
     def valueField: TextTree[DtValue]    = q"$signature = $value;"
     def refValueField: TextTree[DtValue] = q"$signature = $refValue;"
+    def valueGetter: TextTree[DtValue]   = q"@override\n$typeAnn get $name => $value;"
+    def refValueGetter: TextTree[DtValue] = q"@override\n$typeAnn get $name => $refValue;"
   }
 
   final class DtDomainTreeToolsImpl(
@@ -39,16 +44,25 @@ object DtDomainTreeTools {
         q"static const String baboonDomainVersion",
         q"'${domain.version.v.toString}'",
         q"$ref.baboonDomainVersion",
+        "baboonDomainVersion",
+        q"String",
+        isCodecData = true,
       )
       val baboonDomainIdentifier = MetaField(
         q"static const String baboonDomainIdentifier",
         q"'${defn.id.pkg.toString}'",
         q"$ref.baboonDomainIdentifier",
+        "baboonDomainIdentifier",
+        q"String",
+        isCodecData = true,
       )
       val baboonTypeIdentifier = MetaField(
         q"static const String baboonTypeIdentifier",
         q"'${defn.id.toString}'",
         q"$ref.baboonTypeIdentifier",
+        "baboonTypeIdentifier",
+        q"String",
+        isCodecData = true,
       )
       List(baboonDomainVersion, baboonDomainIdentifier, baboonTypeIdentifier)
     }
@@ -61,6 +75,9 @@ object DtDomainTreeTools {
             q"static const String baboonAdtTypeIdentifier",
             q"'${id.toString}'",
             q"$adtRef.baboonAdtTypeIdentifier",
+            "baboonAdtTypeIdentifier",
+            q"String",
+            isCodecData = false,
           )
           List(adtTypeIdentifier)
         case _ => Nil
@@ -74,6 +91,9 @@ object DtDomainTreeTools {
         q"static const List<String> baboonSameInVersions",
         q"[${unmodifiedSince.mkString(", ")}]",
         q"$ref.baboonSameInVersions",
+        "baboonSameInVersions",
+        q"List<String>",
+        isCodecData = false,
       )
       List(sameInVersion)
     }

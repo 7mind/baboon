@@ -81,7 +81,7 @@ abstract class BaboonCodecData {
 
 // --- JSON Codecs ---
 
-abstract class BaboonJsonCodec<T> {
+abstract class BaboonJsonCodec<T> implements BaboonCodecData {
   const BaboonJsonCodec();
 
   T decode(BaboonCodecContext ctx, dynamic wire);
@@ -115,7 +115,7 @@ abstract class BaboonJsonCodecNoEncoderGeneratedAdt<T> extends BaboonJsonCodecNo
 
 // --- Binary Codecs ---
 
-abstract class BaboonBinCodec<T> {
+abstract class BaboonBinCodec<T> implements BaboonCodecData {
   const BaboonBinCodec();
 
   T decode(BaboonCodecContext ctx, BaboonBinReader reader);
@@ -516,7 +516,7 @@ class BaboonBinReader {
       }
       str = '${str.substring(0, str.length - scale)}.${str.substring(str.length - scale)}';
       // Remove trailing zeros after decimal point
-      str = str.replaceAll(RegExp(r'\\.?0+$$'), '');
+      str = str.replaceAll(RegExp(r'\.?0+$'), '');
       if (str.isEmpty) str = '0';
     }
 
@@ -620,7 +620,7 @@ class BaboonTimeFormats {
   }
 
   static BaboonDateTimeOffset parseOffset(String s) {
-    final offsetPattern = RegExp(r'([+-])(\\d{2}):(\\d{2})$');
+    final offsetPattern = RegExp(r'([+-])(\d{2}):(\d{2})$');
     final match = offsetPattern.firstMatch(s);
     if (match != null) {
       final sign = match.group(1) == '+' ? 1 : -1;

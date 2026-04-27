@@ -58,12 +58,10 @@ const metaD3 = () => createAnyMeta(0x00, null, null, null);
 
 const SAMPLE_INNER = new Inner(42);
 
-// Generated codecs use the order `(ctx, value, writer)` for UEBA `encode`, but the registry
-// `BaboonBinCodec<T>` interface uses `(ctx, writer, value)`. Wrap so the facade's cross-convert
-// can call the codec with the interface order. This adapter pattern matches the StubBinCodec
-// shape in AnyMetaCodec.test.ts.
+// Thin adapter so the registry can hold a stable handle. Generated codecs implement
+// BaboonBinCodec<T> directly with parameter order `(ctx, value, writer)` matching the interface.
 class InnerBinAdapter implements BaboonBinCodec<Inner> {
-    public encode(ctx: BaboonCodecContext, writer: BaboonBinWriter, value: Inner): void {
+    public encode(ctx: BaboonCodecContext, value: Inner, writer: BaboonBinWriter): void {
         Inner_UEBACodec.instance.encode(ctx, value, writer);
     }
     public decode(ctx: BaboonCodecContext, reader: BaboonBinReader): Inner {
@@ -72,7 +70,7 @@ class InnerBinAdapter implements BaboonBinCodec<Inner> {
 }
 
 class HolderBinAdapter implements BaboonBinCodec<Holder> {
-    public encode(ctx: BaboonCodecContext, writer: BaboonBinWriter, value: Holder): void {
+    public encode(ctx: BaboonCodecContext, value: Holder, writer: BaboonBinWriter): void {
         Holder_UEBACodec.instance.encode(ctx, value, writer);
     }
     public decode(ctx: BaboonCodecContext, reader: BaboonBinReader): Holder {

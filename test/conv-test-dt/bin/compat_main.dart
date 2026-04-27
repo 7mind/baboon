@@ -3,22 +3,17 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:baboon_runtime/baboon_any_opaque.dart';
+import 'package:baboon_runtime/baboon_codecs_facade.dart';
 import 'package:baboon_runtime/baboon_runtime.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/all_basic_types.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/any_showcase.dart';
+import 'package:conv_test_dt/generated/convtest/testpkg/baboon_codecs_json.dart';
+import 'package:conv_test_dt/generated/convtest/testpkg/baboon_codecs_ueba.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/inner_payload.dart';
 
 const String _domainId = 'convtest.testpkg';
 const String _domainVer = '2.0.0';
 const String _innerTypeId = 'convtest.testpkg/:#InnerPayload';
-
-// PR 13.2 / PR-26-D02: Dart facade is currently broken — `AbstractBaboonCodecs.register` casts
-// the registered codec to `BaboonCodecData` but Dart codec classes do not implement that
-// interface. Cross-format encoding via `BaboonCodecsFacade.uebaToJson`/`jsonToUebaBytes`
-// therefore fails. To unblock cross-language interop testing, the Dart fixture uses
-// AnyOpaqueJson for the JSON wire emission and AnyOpaqueUeba for the UEBA wire emission so the
-// codec never needs facade-resolution. The defect is logged for follow-up; cross-format coverage
-// is exercised by Scala/C#/Java/Kotlin/KMP/TS where the facade works.
 
 List<InnerPayload> _expectedInnerPayloads() => [
       InnerPayload(label: 'variant-A', count: 1),
@@ -40,40 +35,32 @@ Uint8List _uebaBytes(InnerPayload p) {
 Object? _asJson(InnerPayload p) =>
     InnerPayload_JsonCodec.instance.encode(BaboonCodecContext.compact, p);
 
-AnyMeta _metaA() => AnyMeta(0x07, _domainId, _domainVer, _innerTypeId);
-AnyMeta _metaB() => AnyMeta(0x03, null, _domainVer, _innerTypeId);
-AnyMeta _metaC() => AnyMeta(0x01, null, null, _innerTypeId);
-AnyMeta _metaD1() => AnyMeta(0x06, _domainId, _domainVer, null);
-AnyMeta _metaD2() => AnyMeta(0x02, null, _domainVer, null);
-AnyMeta _metaD3() => AnyMeta(0x00, null, null, null);
-AnyMeta _metaOpt() => AnyMeta(0x07, _domainId, _domainVer, _innerTypeId);
-AnyMeta _metaLst() => AnyMeta(0x06, _domainId, _domainVer, null);
-
-AnyShowcase _createSampleAnyShowcaseJson() {
-  final p = _expectedInnerPayloads();
-  return AnyShowcase(
-    vAnyA: AnyOpaqueJson(_metaA(), _asJson(p[0])),
-    vAnyB: AnyOpaqueJson(_metaB(), _asJson(p[1])),
-    vAnyC: AnyOpaqueJson(_metaC(), _asJson(p[2])),
-    vAnyD1: AnyOpaqueJson(_metaD1(), _asJson(p[3])),
-    vAnyD2: AnyOpaqueJson(_metaD2(), _asJson(p[4])),
-    vAnyD3: AnyOpaqueJson(_metaD3(), _asJson(p[5])),
-    optAny: AnyOpaqueJson(_metaOpt(), _asJson(p[6])),
-    lstAny: [AnyOpaqueJson(_metaLst(), _asJson(p[7]))],
+// Facade with convtest.testpkg/2.0.0 codecs registered so the cross-format encoder can resolve
+// `(domain, version, typeid)` triples for jsonToUebaBytes / uebaToJson conversions.
+BaboonCodecsFacade _freshFacade() {
+  final facade = BaboonCodecsFacade();
+  facade.registerCodecs(
+    BaboonDomainVersion(_domainId, _domainVer),
+    codecsJson: () => BaboonCodecsJson(),
+    codecsBin: () => BaboonCodecsUeba(),
   );
+  return facade;
 }
 
-AnyShowcase _createSampleAnyShowcaseUeba() {
+// Canonical AnyShowcase fixture mirroring Scala/C#/Java: A/B/C as AnyOpaqueJson, D1/D2/D3 as
+// AnyOpaqueUeba, optAny on the JSON branch, lstAny on the UEBA branch. Each wire format encoder
+// will cross-convert the off-branch payloads via the facade — exercising both directions.
+AnyShowcase _createSampleAnyShowcase() {
   final p = _expectedInnerPayloads();
   return AnyShowcase(
-    vAnyA: AnyOpaqueUeba(_metaA(), _uebaBytes(p[0])),
-    vAnyB: AnyOpaqueUeba(_metaB(), _uebaBytes(p[1])),
-    vAnyC: AnyOpaqueUeba(_metaC(), _uebaBytes(p[2])),
-    vAnyD1: AnyOpaqueUeba(_metaD1(), _uebaBytes(p[3])),
-    vAnyD2: AnyOpaqueUeba(_metaD2(), _uebaBytes(p[4])),
-    vAnyD3: AnyOpaqueUeba(_metaD3(), _uebaBytes(p[5])),
-    optAny: AnyOpaqueUeba(_metaOpt(), _uebaBytes(p[6])),
-    lstAny: [AnyOpaqueUeba(_metaLst(), _uebaBytes(p[7]))],
+    vAnyA: AnyOpaqueJson(AnyMeta(0x07, _domainId, _domainVer, _innerTypeId), _asJson(p[0])),
+    vAnyB: AnyOpaqueJson(AnyMeta(0x03, null, _domainVer, _innerTypeId), _asJson(p[1])),
+    vAnyC: AnyOpaqueJson(AnyMeta(0x01, null, null, _innerTypeId), _asJson(p[2])),
+    vAnyD1: AnyOpaqueUeba(AnyMeta(0x06, _domainId, _domainVer, null), _uebaBytes(p[3])),
+    vAnyD2: AnyOpaqueUeba(AnyMeta(0x02, null, _domainVer, null), _uebaBytes(p[4])),
+    vAnyD3: AnyOpaqueUeba(AnyMeta(0x00, null, null, null), _uebaBytes(p[5])),
+    optAny: AnyOpaqueJson(AnyMeta(0x07, _domainId, _domainVer, _innerTypeId), _asJson(p[6])),
+    lstAny: [AnyOpaqueUeba(AnyMeta(0x06, _domainId, _domainVer, null), _uebaBytes(p[7]))],
   );
 }
 
@@ -283,13 +270,14 @@ void readAndVerify(String filePath) {
 
 void runLegacy() {
   final sampleData = createSampleData();
+  final sampleAny = _createSampleAnyShowcase();
   final baseDir = Directory('../../target/compat-test').absolute.path;
-  final ctx = BaboonCodecContext.defaultCtx;
+  final facadeCtx = BaboonCodecContext.withFacade(false, _freshFacade());
 
   writeJson(sampleData, '$baseDir/dart-json');
   writeUeba(sampleData, '$baseDir/dart-ueba');
-  writeJsonAny(ctx, _createSampleAnyShowcaseJson(), '$baseDir/dart-json');
-  writeUebaAny(ctx, _createSampleAnyShowcaseUeba(), '$baseDir/dart-ueba');
+  writeJsonAny(facadeCtx, sampleAny, '$baseDir/dart-json');
+  writeUebaAny(facadeCtx, sampleAny, '$baseDir/dart-ueba');
 
   print('Dart serialization complete!');
 }
@@ -299,15 +287,16 @@ void main(List<String> args) {
     final outputDir = args[1];
     final format = args[2];
     final sampleData = createSampleData();
-    final ctx = BaboonCodecContext.defaultCtx;
+    final sampleAny = _createSampleAnyShowcase();
+    final facadeCtx = BaboonCodecContext.withFacade(false, _freshFacade());
     switch (format) {
       case 'json':
         writeJson(sampleData, outputDir);
-        writeJsonAny(ctx, _createSampleAnyShowcaseJson(), outputDir);
+        writeJsonAny(facadeCtx, sampleAny, outputDir);
         break;
       case 'ueba':
         writeUeba(sampleData, outputDir);
-        writeUebaAny(ctx, _createSampleAnyShowcaseUeba(), outputDir);
+        writeUebaAny(facadeCtx, sampleAny, outputDir);
         break;
       default:
         stderr.writeln('Unknown format: $format');

@@ -39,10 +39,13 @@ AnyMeta metaD3() => AnyMeta(0x00, null, null, null);
 const Inner SAMPLE_INNER = Inner(x: 42);
 
 // Generated Dart codecs use the runtime's expected `(ctx, writer, value)` ordering for UEBA
-// encode (unlike TS) — no argument-order shim is needed. They do NOT, however, declare
-// `implements BaboonCodecData`; the registry's lazy factory casts to `BaboonCodecData` so we
-// wrap each codec in a tiny adapter that forwards encode/decode and exposes the typeId triple.
-// Mirrors the `_StubBinCodec`/`_StubJsonCodec` pattern used in `any_meta_codec_test.dart`.
+// encode (unlike TS) — no argument-order shim is needed. The base classes
+// `BaboonJsonCodec`/`BaboonBinCodec` `implements BaboonCodecData` and codegen now emits
+// instance getters delegating to the data class statics, so the registry's lazy factory cast
+// works directly on the generated `*_JsonCodec.instance`/`*_UebaCodec.instance` singletons.
+// These adapters remain to wire the abstract `BaboonGenerated`-typed registry interface to the
+// concrete typed codec; mirrors the `_StubBinCodec`/`_StubJsonCodec` pattern used in
+// `any_meta_codec_test.dart`.
 
 class _InnerBinAdapter extends BaboonBinCodecBase<BaboonGenerated> implements BaboonCodecData {
   @override

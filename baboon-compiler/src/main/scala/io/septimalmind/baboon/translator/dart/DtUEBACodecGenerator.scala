@@ -696,14 +696,18 @@ class DtUEBACodecGenerator(
   }
 
   private def renderMeta(defn: DomainMember.User, meta: List[MetaField]): List[TextTree[DtValue]] = {
+    val (asValue, asRef): (MetaField => TextTree[DtValue], MetaField => TextTree[DtValue]) = (
+      m => if (m.isCodecData) m.valueGetter else m.valueField,
+      m => if (m.isCodecData) m.refValueGetter else m.refValueField,
+    )
     defn.defn match {
-      case _: Typedef.Enum => meta.map(_.valueField)
+      case _: Typedef.Enum => meta.map(asValue)
       case f: Typedef.Foreign =>
         f.bindings.get(BaboonLang.Dart) match {
-          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => meta.map(_.refValueField)
-          case _                                                                  => meta.map(_.valueField)
+          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => meta.map(asRef)
+          case _                                                                  => meta.map(asValue)
         }
-      case _ => meta.map(_.refValueField)
+      case _ => meta.map(asRef)
     }
   }
 
