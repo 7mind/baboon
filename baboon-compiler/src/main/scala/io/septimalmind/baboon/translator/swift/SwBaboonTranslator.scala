@@ -198,7 +198,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
     def fix(path: String, resource: String): SwDefnTranslator.Output = {
       SwDefnTranslator.Output(
         path,
-        TextTree.text(BaboonRuntimeResources.read(resource)),
+        TextTree.verbatim(BaboonRuntimeResources.read(resource)),
         SwTypes.baboonFixturePkg,
         CompilerProduct.FixtureRuntime,
         doNotModify = true,
@@ -251,7 +251,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
     def rt(path: String, resource: String): SwDefnTranslator.Output = {
       SwDefnTranslator.Output(
         path,
-        TextTree.text(BaboonRuntimeResources.read(resource)),
+        TextTree.verbatim(BaboonRuntimeResources.read(resource)),
         SwTypes.baboonRuntimePkg,
         CompilerProduct.Runtime,
         doNotModify = true,
@@ -260,7 +260,9 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
     if (target.output.products.contains(CompilerProduct.Runtime)) {
       F.pure(
         List(
-          rt("BaboonRuntime/baboon_runtime.swift", "baboon-runtime/swift/baboon_runtime.swift")
+          rt("BaboonRuntime/baboon_runtime.swift", "baboon-runtime/swift/baboon_runtime.swift"),
+          rt("BaboonRuntime/BaboonAnyOpaque.swift", "baboon-runtime/swift/BaboonAnyOpaque.swift"),
+          rt("BaboonRuntime/BaboonCodecsFacade.swift", "baboon-runtime/swift/BaboonCodecsFacade.swift"),
         )
       )
     } else {

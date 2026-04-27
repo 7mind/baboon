@@ -35,7 +35,7 @@ public class BaboonRandom {
         let intPart = Int.random(in: -499999...499999, using: &rng)
         let fracPart = Int.random(in: 0...999999, using: &rng)
         let fracStr = String(format: "%06d", fracPart)
-        return BaboonDecimal("\\(intPart).\\(fracStr)")
+        return BaboonDecimal("\(intPart).\(fracStr)")
     }
 
     public func nextString() -> String {

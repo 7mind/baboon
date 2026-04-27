@@ -24,20 +24,67 @@ public protocol BaboonMeta {
     static var baboonDomainVersion: String { get }
     static var baboonDomainIdentifier: String { get }
     static var baboonTypeIdentifier: String { get }
+
+    // PR 9.1: per-domain-version metadata registries (the generated `BaboonMetadata_*` classes)
+    // expose `sameInVersions(typeId)` for the facade's max-compat lookup. Conformance is added
+    // by codegen when PR 9.2/9.3 wire the BaboonMeta protocol onto the metadata registry class.
+    // Until then, the facade only consumes this method via the Lazy-stored value, so missing
+    // conformance only manifests when codecs from older versions are looked up.
+    func sameInVersions(_ typeId: String) -> [String]
 }
 
 // --- Codec Context ---
 
-public enum BaboonCodecContext {
-    case defaultCtx
-    case indexed
-    case compact
+// Marker base for `BaboonCodecsFacade` so [BaboonCodecContext] can carry an optional facade
+// reference without an import cycle. The real facade lives in `BaboonCodecsFacade.swift` and
+// extends this base.
+open class BaboonCodecsFacadeBase {
+    public init() {}
+}
 
-    public static let `default` = BaboonCodecContext.defaultCtx
+// Codec context. Exposes [useIndices] (UEBA index emission) and an optional [facade] reference
+// threaded through generated codec calls so the `any`-feature cross-format conversion
+// (UEBA <-> JSON) can resolve codecs by `(domain, version, typeid)` from an `AnyMeta` envelope.
+// `nil` for the bare [defaultCtx]/[indexed]/[compact] singletons; [withFacade] is the single
+// intended construction path for ctxes that thread a facade. Mirrors Scala/C#/Java/Kotlin/TS/Dart.
+//
+// PR 9.1: promoted from Swift enum to class so subclassing can carry an optional facade
+// reference. Existing static accessors (`.defaultCtx`, `.compact`, `.indexed`, `.default`)
+// preserved; `useIndices` preserved as a property; new `facade` getter defaults to `nil`.
+open class BaboonCodecContext {
+    public init() {}
 
-    public var useIndices: Bool {
-        return self == .indexed
+    open var useIndices: Bool { return false }
+    open var facade: BaboonCodecsFacadeBase? { return nil }
+
+    public static let defaultCtx: BaboonCodecContext = BaboonCodecContextCompact()
+    public static let `default`: BaboonCodecContext = BaboonCodecContextCompact()
+    public static let compact: BaboonCodecContext = BaboonCodecContextCompact()
+    public static let indexed: BaboonCodecContext = BaboonCodecContextIndexed()
+
+    public static func withFacade(_ useIndices: Bool, _ facade: BaboonCodecsFacadeBase) -> BaboonCodecContext {
+        return BaboonCodecContextWithFacade(useIndices: useIndices, facade: facade)
     }
+}
+
+public final class BaboonCodecContextCompact: BaboonCodecContext {
+    public override var useIndices: Bool { return false }
+}
+
+public final class BaboonCodecContextIndexed: BaboonCodecContext {
+    public override var useIndices: Bool { return true }
+}
+
+public final class BaboonCodecContextWithFacade: BaboonCodecContext {
+    private let _useIndices: Bool
+    private let _facade: BaboonCodecsFacadeBase
+    public init(useIndices: Bool, facade: BaboonCodecsFacadeBase) {
+        self._useIndices = useIndices
+        self._facade = facade
+        super.init()
+    }
+    public override var useIndices: Bool { return _useIndices }
+    public override var facade: BaboonCodecsFacadeBase? { return _facade }
 }
 
 // --- JSON Codecs ---
@@ -372,6 +419,9 @@ public class BaboonBinReader {
         self.data = data
     }
 
+    /// PR 9.1: expose the read cursor for `AnyMetaCodec.readBinWithLength` (PR-05-D01).
+    public var position: Int { return pos }
+
     public func readU8() -> UInt8 {
         let v = data[data.startIndex + pos]
         pos += 1
@@ -650,13 +700,13 @@ public class BaboonTimeFormats {
         let sec = String(format: "%02d", comps.second!)
         let localEpochMillis = baboonEpochMillis(localDate)
         let ms = String(format: "%03d", Int((localEpochMillis % 1000 + 1000) % 1000))
-        let base = "\\(y)-\\(m)-\\(d)T\\(h):\\(min):\\(sec).\\(ms)"
+        let base = "\(y)-\(m)-\(d)T\(h):\(min):\(sec).\(ms)"
 
         let sign = dto.offsetMillis >= 0 ? "+" : "-"
         let absOffset = abs(Int(dto.offsetMillis))
         let hours = String(format: "%02d", absOffset / 3600000)
         let minutes = String(format: "%02d", (absOffset % 3600000) / 60000)
-        return "\\(base)\\(sign)\\(hours):\\(minutes)"
+        return "\(base)\(sign)\(hours):\(minutes)"
     }
 
     public static func parseUtc(_ s: String) -> Date {
@@ -903,7 +953,7 @@ open class AbstractBaboonConversions {
 
     public func convertWithContext<F, T>(_ context: Any?, _ from: F, _ sourceTypeId: String, _ targetTypeId: String) -> T {
         guard let factory = registry[targetTypeId] else {
-            fatalError("No conversion registered for type: \\(targetTypeId)")
+            fatalError("No conversion registered for type: \(targetTypeId)")
         }
         let conversion = factory() as! AbstractConversion<F, T>
         return conversion.doConvert(context, self, from)
@@ -913,30 +963,86 @@ open class AbstractBaboonConversions {
     open var versionTo: String { "" }
 }
 
+// --- Codec type erasure (PR 9.1) ---
+//
+// Swift generics are invariant: a `BaboonBinCodecBase<ConcreteT>` is NOT a
+// `BaboonBinCodecBase<Any>`. The facade dispatches against `Any`-typed codec slots by going
+// through these non-generic protocols, which the generic base classes conform to via extensions.
+public protocol AnyBaboonBinDecoder: AnyObject {
+    func decodeAnyValue(_ ctx: BaboonCodecContext, _ reader: BaboonBinReader) throws -> Any
+}
+
+public protocol AnyBaboonBinEncoder: AnyObject {
+    func encodeAnyValue(_ ctx: BaboonCodecContext, _ writer: BaboonBinWriter, _ value: Any)
+}
+
+public protocol AnyBaboonJsonDecoder: AnyObject {
+    func decodeAnyValue(_ ctx: BaboonCodecContext, _ wire: Any) throws -> Any
+}
+
+public protocol AnyBaboonJsonEncoder: AnyObject {
+    func encodeAnyValue(_ ctx: BaboonCodecContext, _ value: Any) -> Any
+}
+
+extension BaboonBinCodec: AnyBaboonBinDecoder {
+    public func decodeAnyValue(_ ctx: BaboonCodecContext, _ reader: BaboonBinReader) throws -> Any {
+        return try decode(ctx, reader)
+    }
+}
+
+extension BaboonBinCodecBase: AnyBaboonBinEncoder {
+    public func encodeAnyValue(_ ctx: BaboonCodecContext, _ writer: BaboonBinWriter, _ value: Any) {
+        guard let typed = value as? T else {
+            preconditionFailure("AnyBaboonBinEncoder: value of type \(type(of: value)) is not assignable to expected codec type")
+        }
+        encode(ctx, writer, typed)
+    }
+}
+
+extension BaboonJsonCodec: AnyBaboonJsonDecoder {
+    public func decodeAnyValue(_ ctx: BaboonCodecContext, _ wire: Any) throws -> Any {
+        return try decode(ctx, wire)
+    }
+}
+
+extension BaboonJsonCodecBase: AnyBaboonJsonEncoder {
+    public func encodeAnyValue(_ ctx: BaboonCodecContext, _ value: Any) -> Any {
+        guard let typed = value as? T else {
+            preconditionFailure("AnyBaboonJsonEncoder: value of type \(type(of: value)) is not assignable to expected codec type")
+        }
+        return encode(ctx, typed)
+    }
+}
+
+// PR 9.1: storage and `codecFor` made non-generic (`Any?`) so the facade can dispatch through
+// the typed runtime classes without a covariant `BaboonBinCodec<Any>` cast (Swift generics are
+// invariant — a `BaboonBinCodec<ConcreteT>` is NOT a `BaboonBinCodec<Any>`). Generated registers
+// emit `{ () -> Any in TheCodec.instance }` and the facade casts to the type-erased
+// `AnyBaboonBin{Encoder,Decoder}` / `AnyBaboonJson{Encoder,Decoder}` protocols at lookup.
 open class AbstractBaboonJsonCodecs {
-    private var codecs: [String: BaboonJsonCodec<Any>] = [:]
+    private var codecs: [String: Any] = [:]
 
     public init() {}
 
     public func register(_ typeId: String, _ factory: () -> Any) {
-        codecs[typeId] = factory() as? BaboonJsonCodec<Any>
+        codecs[typeId] = factory()
     }
 
-    public func codecFor(_ typeId: String) -> BaboonJsonCodec<Any>? {
+    public func codecFor(_ typeId: String) -> Any? {
         return codecs[typeId]
     }
 }
 
 open class AbstractBaboonUebaCodecs {
-    private var codecs: [String: BaboonBinCodec<Any>] = [:]
+    private var codecs: [String: Any] = [:]
 
     public init() {}
 
     public func register(_ typeId: String, _ factory: () -> Any) {
-        codecs[typeId] = factory() as? BaboonBinCodec<Any>
+        codecs[typeId] = factory()
     }
 
-    public func codecFor(_ typeId: String) -> BaboonBinCodec<Any>? {
+    public func codecFor(_ typeId: String) -> Any? {
         return codecs[typeId]
     }
 }
@@ -970,4 +1076,379 @@ public struct BaboonWiringException: Error {
 public enum BaboonEither<L, R> {
     case left(L)
     case right(R)
+}
+
+// --- Codec Exceptions (PR 9.1) ---
+//
+// Sealed hierarchy mirroring Dart/Java/Kotlin/TS `BaboonCodecException`. Codec/conversion failures
+// thread through `Result<T, BaboonCodecException>` per PR-04-D02 — JSON decode is user-facing
+// and never throws via this hierarchy; binary decode trusts the wire and may throw.
+public enum BaboonCodecException: Error, CustomStringConvertible {
+    case encoderFailure(String, Error?)
+    case decoderFailure(String, Error?)
+    case converterFailure(String, Error?)
+    case codecNotFound(String)
+    case conversionNotFound(String)
+
+    public var message: String {
+        switch self {
+        case .encoderFailure(let m, _): return m
+        case .decoderFailure(let m, _): return m
+        case .converterFailure(let m, _): return m
+        case .codecNotFound(let m): return m
+        case .conversionNotFound(let m): return m
+        }
+    }
+
+    public var cause: Error? {
+        switch self {
+        case .encoderFailure(_, let c): return c
+        case .decoderFailure(_, let c): return c
+        case .converterFailure(_, let c): return c
+        default: return nil
+        }
+    }
+
+    public var description: String {
+        let label: String
+        switch self {
+        case .encoderFailure: label = "BaboonEncoderFailure"
+        case .decoderFailure: label = "BaboonDecoderFailure"
+        case .converterFailure: label = "BaboonConverterFailure"
+        case .codecNotFound: label = "BaboonCodecNotFound"
+        case .conversionNotFound: label = "BaboonConversionNotFound"
+        }
+        return "\(label): \(message)"
+    }
+}
+
+// --- Lazy (single-shot) ---
+//
+// Single-shot lazy initializer. Computes once on first [value] access and caches the result.
+// Mirrors Dart `Lazy` semantics. Swift is not single-threaded; we guard with NSLock.
+public final class BaboonLazy<T> {
+    private var initializer: (() -> T)?
+    private var _value: T?
+    private let lock = NSLock()
+
+    public init(_ initializer: @escaping () -> T) {
+        self.initializer = initializer
+    }
+
+    public var value: T {
+        lock.lock()
+        defer { lock.unlock() }
+        if let v = _value { return v }
+        guard let init_ = initializer else {
+            preconditionFailure("BaboonLazy: missing both init and value")
+        }
+        let v = init_()
+        _value = v
+        initializer = nil
+        return v
+    }
+
+    public var isValueCreated: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _value != nil
+    }
+}
+
+// --- Codec Data ---
+//
+// Static metadata exposed by every generated codec — used by [BaboonCodecsFacade] to look up
+// codecs by `(domain, version, typeid)`. Mirrors Dart/Kotlin `BaboonCodecData`.
+public protocol BaboonCodecData: AnyObject {
+    var baboonDomainVersion: String { get }
+    var baboonDomainIdentifier: String { get }
+    var baboonTypeIdentifier: String { get }
+}
+
+// --- Generated meta accessors (instance-side) ---
+//
+// Shape exposed by generated values. Codegen for Swift currently only emits the static-side
+// `BaboonMeta` constants on each DTO; PR 9.2/9.3 will emit the instance-side accessors below.
+// Until then, `BaboonTypeMeta.from` requires the value to conform to this protocol — staged
+// rollout, mirrors PR-22-D02 (Dart) and PR-19-D02 (TS).
+public protocol BaboonMetaProvider {
+    var baboonDomainVersion: String { get }
+    var baboonDomainIdentifier: String { get }
+    var baboonTypeIdentifier: String { get }
+    var baboonSameInVersions: [String] { get }
+}
+
+// Implemented by generated ADT branches. Mirrors Kotlin/Dart `BaboonAdtMember` for the
+// `useAdtIdentifier` path used when encoding through an ADT-typed reference (PR-19-D02).
+public protocol BaboonAdtMember {
+    var baboonAdtTypeIdentifier: String { get }
+}
+
+// --- Version / DomainVersion / TypeMeta ---
+//
+// PR-19-D01 lesson: regex literals in template files are read verbatim — but Swift runtime files
+// in this project go through `processEscapes` (see PR-20-D01 sister-bug). We use only manual
+// numeric parsing, no regex; safe regardless.
+
+public struct BaboonVersion: Comparable, Hashable, CustomStringConvertible {
+    public let major: Int
+    public let minor: Int
+    public let patch: Int
+
+    public init(major: Int, minor: Int, patch: Int) {
+        self.major = major
+        self.minor = minor
+        self.patch = patch
+    }
+
+    public static func from(_ version: String) throws -> BaboonVersion {
+        let chunks = version.split(separator: ".", omittingEmptySubsequences: false)
+        if chunks.count != 3 {
+            throw BaboonException("Expected to have version in format x.y.z, got \(version)")
+        }
+        guard let major = Int(chunks[0].trimmingCharacters(in: .whitespaces)) else {
+            throw BaboonException("Expected to have version in format x.y.z, got \(version). Invalid major value.")
+        }
+        guard let minor = Int(chunks[1].trimmingCharacters(in: .whitespaces)) else {
+            throw BaboonException("Expected to have version in format x.y.z, got \(version). Invalid minor value.")
+        }
+        guard let patch = Int(chunks[2].trimmingCharacters(in: .whitespaces)) else {
+            throw BaboonException("Expected to have version in format x.y.z, got \(version). Invalid patch value.")
+        }
+        return BaboonVersion(major: major, minor: minor, patch: patch)
+    }
+
+    public static func < (lhs: BaboonVersion, rhs: BaboonVersion) -> Bool {
+        if lhs.major != rhs.major { return lhs.major < rhs.major }
+        if lhs.minor != rhs.minor { return lhs.minor < rhs.minor }
+        return lhs.patch < rhs.patch
+    }
+
+    public var description: String { return "\(major).\(minor).\(patch)" }
+}
+
+public struct BaboonException: Error, CustomStringConvertible {
+    public let message: String
+    public let cause: Error?
+    public init(_ message: String, _ cause: Error? = nil) {
+        self.message = message
+        self.cause = cause
+    }
+    public var description: String { return "BaboonException: \(message)" }
+}
+
+public struct BaboonDomainVersion: Hashable, CustomStringConvertible {
+    public let domainIdentifier: String
+    public let domainVersion: String
+
+    public init(_ domainIdentifier: String, _ domainVersion: String) {
+        self.domainIdentifier = domainIdentifier
+        self.domainVersion = domainVersion
+    }
+
+    public func version() throws -> BaboonVersion {
+        return try BaboonVersion.from(domainVersion)
+    }
+
+    public var description: String { return "\(domainIdentifier):\(domainVersion)" }
+}
+
+// On-wire type meta envelope. Mirrors Dart/Kotlin `BaboonTypeMeta`.
+public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
+    public let metaVersion: Int
+    public let domainIdentifier: String
+    public let domainVersion: String
+    public let domainVersionMinCompat: String
+    public let typeIdentifier: String
+
+    public init(
+        _ metaVersion: Int,
+        _ domainIdentifier: String,
+        _ domainVersion: String,
+        _ domainVersionMinCompat: String,
+        _ typeIdentifier: String
+    ) {
+        self.metaVersion = metaVersion
+        self.domainIdentifier = domainIdentifier
+        self.domainVersion = domainVersion
+        self.domainVersionMinCompat = domainVersionMinCompat
+        self.typeIdentifier = typeIdentifier
+    }
+
+    public func versionRef() -> BaboonDomainVersion {
+        return BaboonDomainVersion(domainIdentifier, domainVersion)
+    }
+
+    public func versionMinCompat() -> BaboonDomainVersion? {
+        if domainVersionMinCompat.isEmpty { return nil }
+        if domainVersionMinCompat == domainVersion { return nil }
+        return BaboonDomainVersion(domainIdentifier, domainVersionMinCompat)
+    }
+
+    public func writeBin(_ writer: BaboonBinWriter) {
+        BaboonTypeMetaCodec.writeBin(self, writer)
+    }
+
+    public func writeJson() -> [String: Any] {
+        return BaboonTypeMetaCodec.writeJson(self)
+    }
+
+    // PR-08-D01 / PR-22-D01: tolerate absent `$mv` (treat as v1) and reject explicit `$mv != "1"`.
+    // Spec: `$mv` is a JSON string; numbers are rejected.
+    public static func readMetaJson(_ json: Any?) -> BaboonTypeMeta? {
+        guard let obj = json as? [String: Any] else { return nil }
+        if let mv = obj["$mv"] {
+            guard let mvStr = mv as? String, mvStr == "1" else { return nil }
+        }
+        guard let d = obj["$d"] as? String else { return nil }
+        guard let v = obj["$v"] as? String else { return nil }
+        guard let t = obj["$t"] as? String else { return nil }
+        let minCompat = (obj["$uv"] as? String) ?? v
+        return BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion, d, v, minCompat, t)
+    }
+
+    public static func readMetaBin(_ reader: BaboonBinReader) -> BaboonTypeMeta? {
+        return BaboonTypeMetaCodec.readMeta(reader)
+    }
+
+    // Build a meta from a generated value. Optionally use the ADT type identifier when encoding
+    // through an ADT-typed reference (PR-19-D02). Throws when the value does not conform to
+    // [BaboonMetaProvider] — staged rollout: PR 9.2/9.3 will conform generated DTOs.
+    public static func from(_ value: Any, useAdtIdentifier: Bool = false) throws -> BaboonTypeMeta {
+        guard let meta = value as? BaboonMetaProvider else {
+            throw BaboonException(
+                "BaboonTypeMeta.from: value of type \(type(of: value)) does not conform to BaboonMetaProvider; " +
+                "generated DTOs gain this conformance in PR 9.2/9.3."
+            )
+        }
+        let typeId: String
+        if useAdtIdentifier, let adt = value as? BaboonAdtMember {
+            typeId = adt.baboonAdtTypeIdentifier
+        } else {
+            typeId = meta.baboonTypeIdentifier
+        }
+        let sameIn = meta.baboonSameInVersions
+        // PR-08-D02 fail-fast: a generator emitting an empty `sameInVersions` is a bug.
+        if sameIn.isEmpty {
+            throw BaboonException(
+                "BaboonTypeMeta.from: empty baboonSameInVersions for type [\(meta.baboonDomainIdentifier).\(typeId)]"
+            )
+        }
+        return BaboonTypeMeta(
+            BaboonTypeMetaCodec.metaVersion,
+            meta.baboonDomainIdentifier,
+            meta.baboonDomainVersion,
+            sameIn[0],
+            typeId
+        )
+    }
+
+    public var description: String {
+        return "BaboonTypeMeta(\(domainIdentifier).\(typeIdentifier)@\(domainVersion))"
+    }
+}
+
+public enum BaboonTypeMetaCodec {
+    public static let metaVersion: Int = 1
+
+    public static func writeBin(_ meta: BaboonTypeMeta, _ writer: BaboonBinWriter) {
+        writer.writeU8(UInt8(metaVersion))
+        writer.writeString(meta.domainIdentifier)
+        writer.writeString(meta.domainVersion)
+        if meta.domainVersion == meta.domainVersionMinCompat {
+            writer.writeU8(0)
+        } else {
+            writer.writeU8(1)
+            writer.writeString(meta.domainVersionMinCompat)
+        }
+        writer.writeString(meta.typeIdentifier)
+    }
+
+    public static func readMeta(_ reader: BaboonBinReader) -> BaboonTypeMeta? {
+        let v = Int(reader.readU8())
+        if v == 1 { return readMetaV1(reader) }
+        return nil
+    }
+
+    private static func readMetaV1(_ reader: BaboonBinReader) -> BaboonTypeMeta {
+        let d = reader.readString()
+        let dv = reader.readString()
+        let hasMinCompat = reader.readU8()
+        let mc = hasMinCompat == 1 ? reader.readString() : dv
+        let t = reader.readString()
+        return BaboonTypeMeta(metaVersion, d, dv, mc, t)
+    }
+
+    public static func writeJson(_ meta: BaboonTypeMeta) -> [String: Any] {
+        var obj: [String: Any] = [
+            "$mv": "1",
+            "$d": meta.domainIdentifier,
+            "$v": meta.domainVersion,
+            "$t": meta.typeIdentifier,
+        ]
+        if meta.domainVersion != meta.domainVersionMinCompat {
+            obj["$uv"] = meta.domainVersionMinCompat
+        }
+        return obj
+    }
+}
+
+// --- Deep Equality / HashCode for JSON-shaped values ---
+//
+// Used by `AnyOpaqueJson` content equality. Swift `[String: Any]` and `[Any]` use reference /
+// default Equatable rules under `==`; we walk the structure to compare leaves.
+public func baboonDeepEquals(_ a: Any?, _ b: Any?) -> Bool {
+    if a == nil && b == nil { return true }
+    if a == nil || b == nil { return false }
+    if let am = a as? [String: Any], let bm = b as? [String: Any] {
+        if am.count != bm.count { return false }
+        for (k, v) in am {
+            guard bm.keys.contains(k) else { return false }
+            if !baboonDeepEquals(v, bm[k]!) { return false }
+        }
+        return true
+    }
+    if let al = a as? [Any], let bl = b as? [Any] {
+        if al.count != bl.count { return false }
+        for i in 0..<al.count {
+            if !baboonDeepEquals(al[i], bl[i]) { return false }
+        }
+        return true
+    }
+    if let an = a as? NSNumber, let bn = b as? NSNumber {
+        return an == bn
+    }
+    if let s1 = a as? String, let s2 = b as? String { return s1 == s2 }
+    if let i1 = a as? Int, let i2 = b as? Int { return i1 == i2 }
+    if let d1 = a as? Double, let d2 = b as? Double { return d1 == d2 }
+    if let b1 = a as? Bool, let b2 = b as? Bool { return b1 == b2 }
+    // Fallback: cross-cast to NSObject (covers NSNull and most boxed types)
+    if let ao = a as? NSObject, let bo = b as? NSObject { return ao.isEqual(bo) }
+    return false
+}
+
+public func baboonDeepHashCode(_ value: Any?) -> Int {
+    guard let v = value else { return 0 }
+    if let m = v as? [String: Any] {
+        var h: Int = 0
+        // unordered hash
+        for (k, val) in m {
+            h ^= k.hashValue &+ baboonDeepHashCode(val)
+        }
+        return h
+    }
+    if let l = v as? [Any] {
+        var h: Int = 17
+        for item in l {
+            h = h &* 31 &+ baboonDeepHashCode(item)
+        }
+        return h
+    }
+    if let s = v as? String { return s.hashValue }
+    if let i = v as? Int { return i.hashValue }
+    if let d = v as? Double { return d.hashValue }
+    if let b = v as? Bool { return b.hashValue }
+    if let n = v as? NSNumber { return n.hashValue }
+    if let o = v as? NSObject { return o.hash }
+    return 0
 }
