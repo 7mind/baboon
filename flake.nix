@@ -98,6 +98,42 @@
               cp baboon-compiler/.jvm/target/graalvm-native-image/baboon $out/bin/baboon
             '';
           };
+
+          # JVM-based distribution: a collection of jars plus a launcher script,
+          # produced by sbt-native-packager's Universal/stage. Builds much faster
+          # than the native-image binary and is useful when GraalVM is not
+          # available or not desired.
+          baboon-jvm = pkgs.stdenv.mkDerivation {
+            inherit version;
+            pname = "baboon-jvm";
+            src = ./.;
+            nativeBuildInputs = sbtSetup.nativeBuildInputs ++ [ pkgs.makeWrapper ];
+            inherit (sbtSetup) JAVA_HOME;
+
+            buildPhase = ''
+              ${sbtSetup.setupScript}
+              ${pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
+                HOME="$TMPDIR" \
+                SBT_OPTS="-Duser.home=$TMPDIR -Dsbt.global.base=$TMPDIR/.sbt -Dsbt.ivy.home=$TMPDIR/.ivy2 -Divy.home=$TMPDIR/.ivy2 -Dsbt.boot.directory=$TMPDIR/.sbt/boot" \
+                sbt baboonJVM/Universal/stage
+              ''}
+              ${pkgs.lib.optionalString (!pkgs.stdenv.isDarwin) ''
+                sbt baboonJVM/Universal/stage
+              ''}
+            '';
+
+            installPhase = ''
+              mkdir -p $out/share $out/bin
+              # The launcher script resolves lib_dir as ../lib relative to its
+              # own location, so the staged bin/ + lib/ layout must be preserved.
+              cp -r baboon-compiler/.jvm/target/universal/stage $out/share/baboon-jvm
+              chmod +x $out/share/baboon-jvm/bin/baboon
+              makeWrapper $out/share/baboon-jvm/bin/baboon $out/bin/baboon-jvm \
+                --set JAVA_HOME ${pkgs.jdk.home} \
+                --prefix PATH : ${pkgs.jdk}/bin
+            '';
+          };
+
           default = baboon;
         };
 
