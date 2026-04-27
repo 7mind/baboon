@@ -1,6 +1,4 @@
-// PR 9.4 (issue #69 phase 9.4 / closes M9): hand-written round-trip and cross-format tests for
-// `any` fields. Mirrors Scala's AnyRoundTripSpec (PR 2.4) / C# (PR 3.4) / Rust (PR 4.3) /
-// Kotlin (PR 5.4) / Java (PR 6.4) / TypeScript (PR 7.4) / Dart (PR 8.4). Exercises the `any-ok`
+// Hand-written round-trip and cross-format tests for `any` fields. Exercises the `any-ok`
 // fixture's six DSL variants:
 //   A=any                        → kind 0x07
 //   B=any[domain:this]           → kind 0x03
@@ -10,29 +8,13 @@
 //   D3=any[domain:current, Inner]→ kind 0x00
 // plus the three nested positions (opt/lst/map-value).
 //
-// NOTE: This test references generated MyOk symbols (`Holder`, `Inner`, `Holder_UebaCodec`, ...)
-// produced into this stub only when codegen runs against the full model set including `any-ok/`.
-// To run this test against codegen output, the consumer must:
-//   1. Run baboon codegen with `any-ok/` present in the model dir, populating `Sources/MyOk/`.
-//   2. Add a `MyOk` target to Package.swift (path `Sources/MyOk`, deps `BaboonRuntime`) and add
-//      `MyOk` to the BaboonTests test target deps. The source-tree Package.swift omits `MyOk`
-//      because baboon's codegen `cleanupTargetPaths` wipes Sources/ before each run, so an empty
-//      `MyOk/` placeholder cannot survive the standard `:test-gen-regular-adt` flow when `any-ok/`
-//      is moved aside (the PR 9.2/9.3 baseline workflow per ledger).
-//   3. XCTest must be available (works on macOS Xcode and Swift Linux with corelibs-xctest).
-// Sandbox baseline (PR 9.1/9.2/9.3): XCTest module is missing under nix bwrap on Linux Swift
-// 5.10.1, so end-to-end `swift test` cannot run here — the file is shape-checked by the file
-// editor and the codegen-only workflow is verified to emit the matching fixture branches.
-//
-// Coverage gap vs Java/Kotlin/TS/Dart: Swift's generated codec helpers use `preconditionFailure`
-// (a runtime trap) for missing-facade / kind-mismatch / facade-returned-failure rather than a
-// catchable `BaboonEncoderFailure`. This is a deliberate Swift-codegen design choice (PR 9.2/9.3
-// ledger entries: `BaboonBinCodecBase.encode` and `BaboonJsonCodecBase.encode` are non-throwing
-// per PR 9.1's locked contract, so the helpers cannot `throw`). Consequently the "fail-fast
-// missing-facade" tests that other languages run as `assertThrows`/`expect(...).throwsA(...)`
-// have no XCTest equivalent here — Swift `preconditionFailure` cannot be caught by an XCTest.
-// Documented in PR 9.4 ledger; the remaining 12 round-trip + cross-format tests cover the
-// meaningful behaviors.
+// Coverage note: Swift's generated codec helpers use `preconditionFailure` (a runtime trap) for
+// missing-facade / kind-mismatch / facade-returned-failure rather than a catchable
+// `BaboonEncoderFailure`. This is a deliberate codegen design choice — `BaboonBinCodecBase.encode`
+// and `BaboonJsonCodecBase.encode` are non-throwing per the runtime's locked contract, so the
+// helpers can't `throw`. Consequently the "fail-fast missing-facade" tests that other languages
+// run as `assertThrows`/`expect(...).throwsA(...)` have no XCTest equivalent here. The remaining
+// round-trip + cross-format tests cover the meaningful behaviors.
 
 import XCTest
 import Foundation

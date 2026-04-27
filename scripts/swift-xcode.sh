@@ -55,58 +55,9 @@ if ! command -v swift >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ "$(uname)" == "Linux" ]]; then
-  SWIFT_BIN="$(command -v swift)"
-  SWIFT_REAL="$(readlink -f "$SWIFT_BIN")"
-
-  # The FHS-wrapped Apple toolchain (flake's `appleSwift` output) bundles its
-  # own libdispatch / Foundation / XCTest inside the bwrap-ed env, so the
-  # closure-walking dance below isn't needed and would actually fail (no
-  # `swift-corelibs-libdispatch-*` in its closure). Detect the wrapper by the
-  # `-bwrap` suffix on the resolved binary (buildFHSEnv emits `<name>-bwrap`).
-  if [[ "$SWIFT_REAL" != *-bwrap && "$SWIFT_REAL" != *-bwrap/* && "$SWIFT_BIN" == /nix/store/* ]]; then
-    SWIFT_TARGET_INFO="$(swiftc -print-target-info)"
-    SWIFT_STDLIB="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["paths"]["runtimeLibraryPaths"][0])' <<< "$SWIFT_TARGET_INFO")"
-    SWIFT_VERSION="$(swift --version | sed -n 's/^Swift version \([0-9][0-9.]*\).*/\1/p' | head -n1)"
-    if [[ -z "$SWIFT_VERSION" ]]; then
-      echo "Unable to detect Swift version from 'swift --version'" >&2
-      exit 1
-    fi
-
-    # Resolve libdispatch from the swift binary's nix closure to avoid
-    # picking up unrelated store paths from other derivations/architectures
-    SWIFT_STORE_PATH="$(echo "$SWIFT_REAL" | sed -n 's|^\(/nix/store/[^/]*\)/.*|\1|p')"
-    if [[ -z "$SWIFT_STORE_PATH" ]]; then
-      echo "Unable to determine nix store path for swift binary: $SWIFT_REAL" >&2
-      exit 1
-    fi
-
-    swift_libdispatch_matches=()
-    while IFS= read -r dep; do
-      lib="$dep/lib"
-      if [[ "$dep" == *swift-corelibs-libdispatch-"$SWIFT_VERSION" && "$dep" != *-dev ]]; then
-        if [[ -f "$lib/libdispatch.so" || -f "$lib/libdispatch.so.5" ]]; then
-          swift_libdispatch_matches+=("$lib")
-        fi
-      fi
-    done < <(nix-store -qR "$SWIFT_STORE_PATH")
-
-    if [[ ${#swift_libdispatch_matches[@]} -ne 1 ]]; then
-      echo "Expected exactly one runtime swift-corelibs-libdispatch in closure of $SWIFT_STORE_PATH for Swift $SWIFT_VERSION, found ${#swift_libdispatch_matches[@]}" >&2
-      printf '%s\n' "${swift_libdispatch_matches[@]}" >&2 || true
-      exit 1
-    fi
-
-    SWIFT_LIBDISPATCH="${swift_libdispatch_matches[0]}"
-    if [[ ! -d "$SWIFT_STDLIB" || ! -d "$SWIFT_LIBDISPATCH" ]]; then
-      echo "Swift runtime libraries are not available: SWIFT_STDLIB=$SWIFT_STDLIB SWIFT_LIBDISPATCH=$SWIFT_LIBDISPATCH" >&2
-      exit 1
-    fi
-
-    export LD_LIBRARY_PATH="$SWIFT_LIBDISPATCH:$SWIFT_STDLIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-  fi
-fi
-
+# Linux: the flake's `appleSwift` output (FHS-wrapped Apple toolchain) is the
+# expected swift on Linux. It bundles libdispatch / Foundation / XCTest under
+# the bwrap-ed env, so no LD_LIBRARY_PATH plumbing is needed here.
 pushd "$SWIFT_PROJECT_DIR" >/dev/null
 swift "$@"
 popd >/dev/null
