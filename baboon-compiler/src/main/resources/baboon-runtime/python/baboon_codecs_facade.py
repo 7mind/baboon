@@ -4,7 +4,16 @@ from typing import Dict, List, Type, Tuple
 from .baboon_codecs import *
 from .baboon_conversions import *
 from .baboon_runtime_shared import *
-from baboon_exceptions import *
+from .baboon_any_opaque import (
+    AnyMeta,
+    AnyMetaCodec,
+    AnyOpaque,
+    AnyOpaqueJson,
+    AnyOpaqueUeba,
+    ANY_CONTENT_KEY,
+)
+from .baboon_exceptions import *
+from .baboon_service_wiring import BaboonEither, BaboonLeft, BaboonRight
 
 TI = TypeVar("TI", bound=BaboonGenerated)
 TO = TypeVar("TO", bound=BaboonGeneratedLatest)
@@ -272,6 +281,12 @@ class BaboonCodecsFacade:
         # it's a model of latest version, get last version codec
         if exact and model_version.version == max_version.version:
             return self._get_codec_exact(versions_codecs, model_version, type_meta.type_identifier)
+        # PR-07-D02 fix: non-exact lookup at the latest registered version routes to exact
+        # lookup. Without this arm a single-version domain (min == max == model) falls through
+        # every other arm because the next one's strict `<` excludes equality, producing a
+        # misleading "Unsupported domain version" error. Mirrors Scala/C#/Rust/Kotlin/Java/TS/Dart/Swift fix.
+        elif (not exact) and model_version.version == max_version.version:
+            return self._get_codec_exact(versions_codecs, model_version, type_meta.type_identifier)
         # it's a model of outdated version, we should read it with max compat codec
         elif min_version.version <= model_version.version < max_version.version:
             return self._get_codec_max_compat(versions_codecs, model_version, max_version, type_meta.type_identifier)
@@ -286,21 +301,24 @@ class BaboonCodecsFacade:
     def _get_codec_exact(self,
                          versions_codecs: Dict[BaboonDomainVersion, Lazy],
                          domain_version: BaboonDomainVersion,
-                         type_identifier: str) -> Tuple[Optional[Exception], Optional[BaboonCodecData]]:
+                         type_identifier: str) -> BaboonCodecData:
         lazy_codecs = versions_codecs.get(domain_version)
         if not lazy_codecs:
             raise BaboonCodecException.CodecNotFound(
                 f"No codecs registered for domain version '{domain_version}'."
             )
 
-        codec_lazy = lazy_codecs.value.try_find(type_identifier)
-        if not codec_lazy:
+        # `AbstractBaboonCodecs.try_find` returns `(bool, BaboonCodecData | None)` —
+        # not a `Lazy[BaboonCodecData]` (which is the cross-language convention). The
+        # codec instance is already realised by the registered factory inside `try_find`.
+        found, codec = lazy_codecs.value.try_find(type_identifier)
+        if not found or codec is None:
             raise BaboonCodecException.CodecNotFound(
                 f"No codec found for type [{domain_version.domain_version}.{type_identifier}] "
                 f"of version '{domain_version.version}'."
             )
 
-        return codec_lazy.value
+        return codec
 
     def _get_codec_max_compat(self,
                               versions_codecs: Dict[BaboonDomainVersion, Lazy],
@@ -340,3 +358,198 @@ class BaboonCodecsFacade:
             if domain_version not in versions:
                 versions.append(domain_version)
                 versions.sort(key=lambda v: v.version.version)
+
+    # ----- `any`-feature cross-format helpers (PR 10.1) -----------------------------------
+
+    def decode_any(self, opaque: AnyOpaque) -> BaboonEither:
+        """Decode an `AnyOpaque` payload via the registered codec for `(meta.domain,
+        meta.version, meta.typeid)`. User-facing — `meta` must carry all three components
+        (variant A only). For variants B/C/D1/D2/D3 use the cross-format helpers
+        (`json_to_ueba_bytes` / `ueba_to_json`) which accept static fallbacks. PR-04-D02:
+        errors thread through `BaboonEither` rather than raising.
+        """
+        meta = opaque.meta
+        type_meta_result = self._build_synthetic_type_meta(meta, None, None, None)
+        if isinstance(type_meta_result, BaboonLeft):
+            return type_meta_result
+        type_meta = type_meta_result.value
+
+        try:
+            if isinstance(opaque, AnyOpaqueUeba):
+                codec = self._get_bin_codec(type_meta, exact=False)
+                try:
+                    reader = LEDataInputStream(BytesIO(opaque.bytes))
+                    return BaboonRight(codec.decode(BaboonCodecContext.Compact, reader))
+                except Exception as e:
+                    return BaboonLeft(
+                        BaboonCodecException.DecoderFailure(
+                            f"decode_any: cannot decode UEBA payload of type "
+                            f"[{type_meta.domain_identifier}.{type_meta.type_identifier}] "
+                            f"of version '{type_meta.domain_version}'.",
+                            e,
+                        )
+                    )
+            elif isinstance(opaque, AnyOpaqueJson):
+                codec = self._get_json_codec(type_meta, exact=False)
+                try:
+                    return BaboonRight(codec.decode(BaboonCodecContext.Compact, opaque.json))
+                except Exception as e:
+                    return BaboonLeft(
+                        BaboonCodecException.DecoderFailure(
+                            f"decode_any: cannot decode JSON payload of type "
+                            f"[{type_meta.domain_identifier}.{type_meta.type_identifier}] "
+                            f"of version '{type_meta.domain_version}'.",
+                            e,
+                        )
+                    )
+            else:
+                return BaboonLeft(
+                    BaboonCodecException.DecoderFailure(
+                        f"decode_any: unsupported AnyOpaque subtype {type(opaque).__name__}"
+                    )
+                )
+        except BaboonCodecException as e:
+            return BaboonLeft(e)
+
+    def json_to_ueba_bytes(
+        self,
+        meta: AnyMeta,
+        json_value,
+        static_domain: Optional[str] = None,
+        static_version: Optional[str] = None,
+        static_typeid: Optional[str] = None,
+    ) -> BaboonEither:
+        """Cross-format helper: decode a JSON payload via the registered JSON codec, then
+        re-encode it via the registered UEBA codec. Static fallbacks fill components missing
+        from the wire `meta` (variants B/C/D1/D2/D3 — codec-generation-time knowledge); wire
+        data wins when both are present (override semantics). See PR-06-D01.
+
+        Default-`None` parameters are deliberate on this user-facing helper; codec generators
+        always supply all three.
+        """
+        type_meta_result = self._build_synthetic_type_meta(meta, static_domain, static_version, static_typeid)
+        if isinstance(type_meta_result, BaboonLeft):
+            return type_meta_result
+        type_meta = type_meta_result.value
+
+        try:
+            json_codec = self._get_json_codec(type_meta, exact=False)
+            bin_codec = self._get_bin_codec(type_meta, exact=False)
+        except BaboonCodecException as e:
+            return BaboonLeft(e)
+
+        try:
+            typed = json_codec.decode(BaboonCodecContext.Compact, json_value)
+        except Exception as e:
+            return BaboonLeft(
+                BaboonCodecException.DecoderFailure(
+                    f"json_to_ueba_bytes: cannot decode JSON payload of type "
+                    f"[{type_meta.domain_identifier}.{type_meta.type_identifier}] "
+                    f"of version '{type_meta.domain_version}'.",
+                    e,
+                )
+            )
+
+        try:
+            buf = BytesIO()
+            writer = LEDataOutputStream(buf)
+            bin_codec.encode(BaboonCodecContext.Compact, writer, typed)
+            return BaboonRight(buf.getvalue())
+        except Exception as e:
+            return BaboonLeft(
+                BaboonCodecException.EncoderFailure(
+                    f"json_to_ueba_bytes: cannot encode UEBA payload of type "
+                    f"[{type_meta.domain_identifier}.{type_meta.type_identifier}] "
+                    f"of version '{type_meta.domain_version}'.",
+                    e,
+                )
+            )
+
+    def ueba_to_json(
+        self,
+        meta: AnyMeta,
+        ueba_bytes: bytes,
+        static_domain: Optional[str] = None,
+        static_version: Optional[str] = None,
+        static_typeid: Optional[str] = None,
+    ) -> BaboonEither:
+        """Cross-format helper symmetric to `json_to_ueba_bytes`. Decode a UEBA payload via
+        the registered UEBA codec, then re-encode it via the registered JSON codec.
+        """
+        type_meta_result = self._build_synthetic_type_meta(meta, static_domain, static_version, static_typeid)
+        if isinstance(type_meta_result, BaboonLeft):
+            return type_meta_result
+        type_meta = type_meta_result.value
+
+        try:
+            bin_codec = self._get_bin_codec(type_meta, exact=False)
+            json_codec = self._get_json_codec(type_meta, exact=False)
+        except BaboonCodecException as e:
+            return BaboonLeft(e)
+
+        try:
+            reader = LEDataInputStream(BytesIO(ueba_bytes))
+            typed = bin_codec.decode(BaboonCodecContext.Compact, reader)
+        except Exception as e:
+            return BaboonLeft(
+                BaboonCodecException.DecoderFailure(
+                    f"ueba_to_json: cannot decode UEBA payload of type "
+                    f"[{type_meta.domain_identifier}.{type_meta.type_identifier}] "
+                    f"of version '{type_meta.domain_version}'.",
+                    e,
+                )
+            )
+
+        try:
+            return BaboonRight(json_codec.encode(BaboonCodecContext.Compact, typed))
+        except Exception as e:
+            return BaboonLeft(
+                BaboonCodecException.EncoderFailure(
+                    f"ueba_to_json: cannot encode JSON payload of type "
+                    f"[{type_meta.domain_identifier}.{type_meta.type_identifier}] "
+                    f"of version '{type_meta.domain_version}'.",
+                    e,
+                )
+            )
+
+    def _build_synthetic_type_meta(
+        self,
+        meta: AnyMeta,
+        static_domain: Optional[str],
+        static_version: Optional[str],
+        static_typeid: Optional[str],
+    ) -> BaboonEither:
+        """Synthesise a `BaboonTypeMeta` from an `AnyMeta` plus optional static fallbacks.
+        `AnyMeta` does not carry a min-compat version; forward-version migration is unavailable
+        for any-payloads, so `domain_version_min_compat = domain_version`. `meta.X` takes
+        precedence over `staticX` (override semantics — wire data wins). `decode_any` calls
+        with all-None statics so its variant-A-only contract is preserved (PR-06-D01).
+        """
+        domain = meta.domain if meta.domain is not None else static_domain
+        version = meta.version if meta.version is not None else static_version
+        typeid = meta.typeid if meta.typeid is not None else static_typeid
+
+        if domain is not None and version is not None and typeid is not None:
+            return BaboonRight(
+                BaboonTypeMeta(
+                    meta_version=BaboonTypeMetaCodec.META_VERSION,
+                    domain_identifier=domain,
+                    domain_version=version,
+                    domain_version_min_compat=version,
+                    type_identifier=typeid,
+                )
+            )
+
+        missing_parts = []
+        if domain is None:
+            missing_parts.append("domain")
+        if version is None:
+            missing_parts.append("version")
+        if typeid is None:
+            missing_parts.append("typeid")
+        return BaboonLeft(
+            BaboonCodecException.DecoderFailure(
+                f"AnyMeta requires domain/version/typeid for facade resolution; "
+                f"got kind 0x{(meta.kind & 0xFF):02x} which lacks: {', '.join(missing_parts)}"
+            )
+        )

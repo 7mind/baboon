@@ -139,6 +139,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           rt("baboon_exceptions.py", "baboon-runtime/python/baboon_exceptions.py"),
           rt("baboon_codecs.py", "baboon-runtime/python/baboon_codecs.py"),
           rt("baboon_service_wiring.py", "baboon-runtime/python/baboon_service_wiring.py"),
+          rt("baboon_any_opaque.py", "baboon-runtime/python/baboon_any_opaque.py"),
           PyDefnTranslator.Output("__init__.py", TextTree.text(""), pyBaboonSharedRuntimeModule, CompilerProduct.Runtime),
         )
       )

@@ -3,7 +3,7 @@
 
 
 from abc import ABC, abstractmethod
-from typing import TypeVar, Generic
+from typing import Any, Optional, TypeVar, Generic
 
 from pydantic import BaseModel
 
@@ -138,20 +138,45 @@ class NoBinEncoderGeneratedAdt(BaboonBinCodecGeneratedAdt[T, TCodec]):
         )
 
 class BaboonCodecContext:
-    def __init__(self, use_indices: bool):
+    # `Indexed`/`Compact`/`Default` are stable class-attribute singletons assigned after the
+    # class body. Generator-emitted code may use `ctx is BaboonCodecContext.Indexed`-style
+    # identity checks (mirrors the cross-language pattern used in TS/Dart/Swift/Kotlin/Java);
+    # the existing `compact()`/`indexed()`/`default()` classmethods are retained for backwards
+    # compatibility and now return the same singleton instances.
+    Indexed: 'BaboonCodecContext'
+    Compact: 'BaboonCodecContext'
+    Default: 'BaboonCodecContext'
+
+    def __init__(self, use_indices: bool, facade: Optional[Any] = None):
         self.use_indices = use_indices
+        # `facade` is threaded through generated codec calls so the `any`-feature cross-format
+        # conversion (UEBA <-> JSON) can resolve codecs by `(domain, version, typeid)` from an
+        # `AnyMeta` envelope. `None` for the bare `Compact`/`Indexed` singletons; `with_facade`
+        # is the single intended construction path for ctxes that thread a facade. See PR 10.1
+        # plumbing (Q6 option (a) — same shape as Scala/C#/Rust/Kotlin/Java/TS/Dart/Swift).
+        self.facade = facade
 
     @classmethod
-    def indexed(cls):
-        return cls(True)
+    def indexed(cls) -> 'BaboonCodecContext':
+        return cls.Indexed
 
     @classmethod
-    def compact(cls):
-        return cls(False)
+    def compact(cls) -> 'BaboonCodecContext':
+        return cls.Compact
 
     @classmethod
-    def default(cls):
-        return cls(False)
+    def default(cls) -> 'BaboonCodecContext':
+        return cls.Default
+
+    @classmethod
+    def with_facade(cls, use_indices: bool, facade) -> 'BaboonCodecContext':
+        return cls(use_indices, facade)
+
+
+# Stable singletons — `is`-equality preserved across all uses (PR 10.1).
+BaboonCodecContext.Indexed = BaboonCodecContext(True)
+BaboonCodecContext.Compact = BaboonCodecContext(False)
+BaboonCodecContext.Default = BaboonCodecContext.Compact
 
 class BaboonIndexEntry(BaseModel):
     offset: int

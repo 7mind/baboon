@@ -1108,3 +1108,27 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Location:** `.mdl/defs/tests.md:644-646` vs `:136-139` and `:427-430`.
 **Description:** If `conv-test` model never emits a `baboon_fixture.dart`, this is correct. If it does, file would be left behind in `lib/generated/`.
 **Fix:** Defer — pre-existing asymmetry; verify when conv-test is exercised.
+
+## PR-23 — Python runtime additions (M10 PR 10.1)
+
+### [PR-23-D01] Pre-existing `baboon_codecs_facade.py` import typo (`from baboon_exceptions` missing leading dot)
+**Status:** resolved with code (PR 10.1 surgical fix)
+**Severity:** medium-high (would have broken any in-package import of the facade — facade unreachable)
+**Location:** `baboon_codecs_facade.py:7` (pre-PR 10.1).
+**Description:** The 3 sibling imports use relative form (`from .baboon_codecs import *`, etc.); only `from baboon_exceptions import *` was bare. In a package context (every codegen path), the bare form raises `ModuleNotFoundError`. The facade was effectively dead code.
+**Fix:** Changed to `from .baboon_exceptions import *` (in scope — required for PR 10.1's `decode_any`/`json_to_ueba_bytes`/`ueba_to_json` to be importable).
+
+### [PR-23-D02] Pre-existing `_get_codec_exact` returned `lazy.value` from `try_find` tuple
+**Status:** resolved with code (PR 10.1 surgical fix)
+**Severity:** high (every facade codec lookup raised `AttributeError`)
+**Location:** `baboon_codecs_facade.py:_get_codec_exact` (pre-PR 10.1).
+**Description:** `AbstractBaboonCodecs.try_find` returns `(bool, BaboonCodecData | None)` (already-realised codec instance, not a `Lazy`); the facade treated the return as a `Lazy` and accessed `.value`, raising `AttributeError`. Surfaced by PR 10.1's facade smoke tests; pre-existing because the rest of the facade was also dead (broken `BaboonCodecContext.Compact` access until this PR added the singleton class attributes).
+**Fix:** Unpacked `(found, codec) = lazy_codecs.value.try_find(type_identifier)` and returned `codec` directly. In scope — `decode_any` and the cross-format helpers transitively depend on `_get_codec_exact`.
+
+### [PR-23-D03] Pre-existing `BaboonTypeMetaCodec.write_bin` calls non-existent `writer.write_string(writer, ...)` method
+**Status:** open (deferred — separate code path, not exercised by PR 10.1)
+**Severity:** medium (live bug in the binary type-meta encoder for the existing facade, not the `any`-feature)
+**Location:** `baboon_runtime_shared.py:568-577`.
+**Description:** `LEDataOutputStream` exposes `write_str(self, s)` (1-arg) but the type-meta codec calls `writer.write_string(writer, meta.domain_identifier)` (2-arg call to a non-existent name). Manifests as `AttributeError: 'LEDataOutputStream' object has no attribute 'write_string'` whenever a binary `BaboonTypeMeta` envelope is encoded. Sister of D01/D02 — the existing facade's binary path is also dead.
+**Fix:** Defer — out of scope for PR 10.1 (PR 10.2 owns Python UEBA codec emission and may exercise this path; or a separate cleanup PR).
+
