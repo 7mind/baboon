@@ -564,17 +564,24 @@ class BaboonTypeMetaCodec:
 
     @staticmethod
     def write_bin(meta: BaboonTypeMeta, writer: LEDataOutputStream) -> None:
-        writer.write_i32(BaboonTypeMetaCodec.META_VERSION_1)
-        writer.write_string(writer, meta.domain_identifier)
-        writer.write_string(writer, meta.domain_version)
+        # PR-23-D03 fix (PR 10.4): pre-existing bugs.
+        #   1) `writer.write_string(writer, ...)` — there is no `write_string` method on
+        #      `LEDataOutputStream`; the correct API is `write_str(s)` (single arg). The
+        #      double-`writer` argument also passed `writer` where a `str` was required.
+        #   2) `writer.write_i32(...)` for the meta version — the symmetric reader uses
+        #      `read_byte()` and compares with `1`, so the version prefix is a single byte,
+        #      not a 4-byte i32. Mirrors `BaboonMetaCodec.writeBin` in Scala/C#/Java/etc.
+        writer.write_byte(BaboonTypeMetaCodec.META_VERSION_1)
+        writer.write_str(meta.domain_identifier)
+        writer.write_str(meta.domain_version)
 
         if meta.domain_version == meta.domain_version_min_compat:
             writer.write_byte(0)
         else:
             writer.write_byte(1)
-            writer.write_string(writer, meta.domain_version_min_compat)
+            writer.write_str(meta.domain_version_min_compat)
 
-        writer.write_string(writer, meta.type_identifier)
+        writer.write_str(meta.type_identifier)
 
     @staticmethod
     def write_json(meta: BaboonTypeMeta) -> dict[str, str]:

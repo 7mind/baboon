@@ -47,7 +47,13 @@ object PyCodecTestTranslator {
     }
 
     private def makeTest(defn: DomainMember.User, srcRef: PyType): TextTree[PyValue] = {
-      val fixture = makeFixture(defn)
+      // PR-07-D01 (Python analog): per-codec fixture variants. UEBA codec test uses the
+      // `AnyOpaqueUeba`-bearing fixture (`random`); JSON codec test uses the
+      // `AnyOpaqueJson`-bearing fixture (`random_json`). Each fixture matches its codec's native
+      // any-field branch so round-trip avoids cross-format conversion and never needs a
+      // `BaboonCodecContext.with_facade` ctx.
+      val uebaFixture = makeFixture(defn, useJsonAny = false)
+      val jsonFixture = makeFixture(defn, useJsonAny = true)
       codecs.map {
         case jsonCodec: PyJsonCodecGenerator =>
           val codec = jsonCodec.codecType(defn.id)
@@ -65,10 +71,10 @@ object PyCodecTestTranslator {
              |        cs_json = f.read()
              |        decoded = $codec.instance().decode($baboonCodecContext.default(), cs_json)
              |        self.json_compare(decoded)
-             |    
+             |
              |def json_codec_test_impl(self):
-             |    ${fixture.shift(4).trim}
-             |    ${body.shift(4).trim}    
+             |    ${jsonFixture.shift(4).trim}
+             |    ${body.shift(4).trim}
              |
              |def json_compare(self, fixture):
              |    fixtureJson    = $codec.instance().encode($baboonCodecContext.default(), fixture)
@@ -83,7 +89,7 @@ object PyCodecTestTranslator {
              |        self.ueba_codec_test_impl($baboonCodecContext.default())
              |
              |def ueba_codec_test_impl(self, context):
-             |    ${fixture.shift(4).trim}
+             |    ${uebaFixture.shift(4).trim}
              |    ${body.shift(4).trim}
              |
              |def test_ueba_produced_by_cs_codecs(self):
@@ -138,17 +144,19 @@ object PyCodecTestTranslator {
       }
     }
 
-    private def makeFixture(defn: DomainMember.User): TextTree[PyValue] = {
+    private def makeFixture(defn: DomainMember.User, useJsonAny: Boolean): TextTree[PyValue] = {
+      val randomMethod    = if (useJsonAny) "random_json" else "random"
+      val randomAllMethod = if (useJsonAny) "random_all_json" else "random_all"
       defn.defn match {
         case _: Typedef.Enum =>
           val enumTpe = typeTranslator.asPyType(defn.id, domain, evolution, pyFileTools.definitionsBasePkg)
           q"fixture = $baboonFixture.next_random_enum($enumTpe)"
         case _: Typedef.Adt =>
           val fixtureType = fixtureTranslator.fixtureType(defn.id)
-          q"fixtures = $fixtureType.random_all()"
+          q"fixtures = $fixtureType.$randomAllMethod()"
         case _ =>
           val fixtureType = fixtureTranslator.fixtureType(defn.id)
-          q"fixture = $fixtureType.random()"
+          q"fixture = $fixtureType.$randomMethod()"
       }
     }
   }

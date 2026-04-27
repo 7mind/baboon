@@ -1126,11 +1126,11 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Fix:** Unpacked `(found, codec) = lazy_codecs.value.try_find(type_identifier)` and returned `codec` directly. In scope — `decode_any` and the cross-format helpers transitively depend on `_get_codec_exact`.
 
 ### [PR-23-D03] Pre-existing `BaboonTypeMetaCodec.write_bin` calls non-existent `writer.write_string(writer, ...)` method
-**Status:** open (deferred — confirmed not exercised by PR 10.2 either)
+**Status:** resolved (PR 10.4 — fixed alongside the round-trip tests' facade plumbing)
 **Severity:** medium (live bug in the binary type-meta encoder for the existing facade, not the `any`-feature)
-**Location:** `baboon_runtime_shared.py:568-577`.
-**Description:** `LEDataOutputStream` exposes `write_str(self, s)` (1-arg) but the type-meta codec calls `writer.write_string(writer, meta.domain_identifier)` (2-arg call to a non-existent name). Manifests as `AttributeError: 'LEDataOutputStream' object has no attribute 'write_string'` whenever a binary `BaboonTypeMeta` envelope is encoded. Sister of D01/D02 — the existing facade's binary path is also dead.
-**Fix:** Defer — out of scope for PR 10.1 and PR 10.2. PR 10.2 verified: its UEBA codec emission does not call the binary type-meta encoder (codec generators emit only field encoders; type-meta is only invoked by the facade's `_encode_to_bin_stream`, which is the user-facing top-level entry). PR 10.4's round-trip tests may need to exercise the facade's `encode_to_bin` path; the fix should land there or in a dedicated cleanup PR.
+**Location:** `baboon_runtime_shared.py:565-583`.
+**Description:** `LEDataOutputStream` exposes `write_str(self, s)` (1-arg) but the type-meta codec called `writer.write_string(writer, meta.domain_identifier)` (2-arg call to a non-existent name). Manifests as `AttributeError: 'LEDataOutputStream' object has no attribute 'write_string'` whenever a binary `BaboonTypeMeta` envelope is encoded. Sister of D01/D02 — the existing facade's binary path was also dead. A second co-located bug also fixed: `writer.write_i32(META_VERSION_1)` paired with a `read_byte()` reader, so the version prefix was a 4-byte i32 on write but a 1-byte read — asymmetric. Both fixed: write a single byte (`write_byte`), pass `meta.X` directly to `write_str`. Mirrors Scala's `writer.write(META_VERSION_1.toInt) + BaboonBinTools.writeString(writer, ...)`.
+**Fix:** Surgical 5-line edit in `BaboonTypeMetaCodec.write_bin`. Not exercised by the new PR 10.4 round-trip tests (which exercise the codecs' direct encode/decode paths, not `BaboonCodecsFacade.encode_to_bin`), but unblocks the next user of the facade's binary path.
 
 ---
 

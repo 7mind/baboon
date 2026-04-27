@@ -1,6 +1,6 @@
 package io.septimalmind.baboon.translator.python
 
-import io.septimalmind.baboon.translator.python.PyTypes.{baboonAnyMeta, baboonAnyOpaqueUeba, baboonFixture, pyList, pyStaticMethod}
+import io.septimalmind.baboon.translator.python.PyTypes.{baboonAnyMeta, baboonAnyOpaqueJson, baboonAnyOpaqueUeba, baboonFixture, pyList, pyStaticMethod}
 import io.septimalmind.baboon.translator.python.PyValue.PyType
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.{BaboonEvolution, BaboonLang, Domain, DomainMember, TypeId, TypeRef, Typedef}
@@ -15,6 +15,16 @@ trait PyCodecFixtureTranslator {
 }
 
 object PyCodecFixtureTranslator {
+  // Branch selector for any-field fixture payloads. PR-07-D01 (Python analog): the auto-generated
+  // round-trip test exercises a fixture through a single codec; if the fixture's `AnyOpaque`
+  // branch matches the codec direction, no facade is needed and equality holds. We emit two
+  // parallel methods per DTO (`random` for the UEBA branch, `random_json` for the JSON branch)
+  // so each test path picks its native branch. Recursive calls into nested user-type fixtures
+  // must propagate the same choice. Mirrors PR 2.4 / 3.4 / 4.3 / 5.4 / 6.4 / 7.4 / 8.4 / 9.4.
+  private sealed trait FixtureFormat
+  private case object FixUeba extends FixtureFormat
+  private case object FixJson extends FixtureFormat
+
   final class PyCodecFixtureTranslatorImpl(
     typeTranslator: PyTypeTranslator,
     enquiries: BaboonEnquiries,
@@ -23,8 +33,8 @@ object PyCodecFixtureTranslator {
     domain: Domain,
   ) extends PyCodecFixtureTranslator {
     // Synthetic typeid for `any` fixture payloads in the A/B/C variants where the wire format
-    // carries the typeid string. The string is opaque from the wire-format perspective; PR 10.4
-    // will register a real codec for this typeid in the JSON-branch parallel fixtures.
+    // carries the typeid string. The string is opaque from the wire-format perspective; the
+    // test-emitted JSON-branch parallel fixtures use the same string for symmetry.
     private val AnyFixturePayloadTypeId: String = "my.test.AnyFixturePayload"
 
     override def translate(defn: DomainMember.User): Option[TextTree[PyValue]] = {
@@ -41,7 +51,9 @@ object PyCodecFixtureTranslator {
     }
 
     private def doTranslateDto(dto: Typedef.Dto): TextTree[PyValue] = {
-      val generatedFields = dto.fields.map(f => q"${f.name.name}=${genType(f.tpe)}")
+      def fields(format: FixtureFormat): TextTree[PyValue] =
+        dto.fields.map(f => q"${f.name.name}=${genType(f.tpe, format)}").join(",\n")
+
       val dtoType = typeTranslator
         .asPyType(dto.id, domain, evolution, pkgBase = pyFileTools.definitionsBasePkg)
 
@@ -49,7 +61,13 @@ object PyCodecFixtureTranslator {
          |    @$pyStaticMethod
          |    def random() -> $dtoType:
          |        return $dtoType(
-         |            ${generatedFields.join(",\n").shift(12).trim}
+         |            ${fields(FixUeba).shift(12).trim}
+         |        )
+         |
+         |    @$pyStaticMethod
+         |    def random_json() -> $dtoType:
+         |        return $dtoType(
+         |            ${fields(FixJson).shift(12).trim}
          |        )
          |""".stripMargin
     }
@@ -59,8 +77,10 @@ object PyCodecFixtureTranslator {
         .flatMap(m => domain.defs.meta.nodes.get(m))
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
-      val membersFixtures   = members.sortBy(_.id.toString).map(dto => doTranslateDto(dto))
-      val membersGenerators = members.sortBy(_.id.toString).map(dto => q"${dto.id.name.name.capitalize}_Fixture.random()")
+      val sortedMembers       = members.sortBy(_.id.toString)
+      val membersFixtures     = sortedMembers.map(dto => doTranslateDto(dto))
+      val membersGenerators   = sortedMembers.map(dto => q"${dto.id.name.name.capitalize}_Fixture.random()")
+      val membersGeneratorsJ  = sortedMembers.map(dto => q"${dto.id.name.name.capitalize}_Fixture.random_json()")
 
       val adtType = typeTranslator
         .asPyType(adt.id, domain, evolution, pkgBase = pyFileTools.definitionsBasePkg)
@@ -71,16 +91,26 @@ object PyCodecFixtureTranslator {
          |        return $baboonFixture.oneof(${adt.id.name.name.capitalize}_Fixture.random_all())
          |
          |    @$pyStaticMethod
+         |    def random_json() -> $adtType:
+         |        return $baboonFixture.oneof(${adt.id.name.name.capitalize}_Fixture.random_all_json())
+         |
+         |    @$pyStaticMethod
          |    def random_all() -> $pyList[$adtType]:
          |        return [
          |            ${membersGenerators.join(",\n").shift(12).trim}
+         |        ]
+         |
+         |    @$pyStaticMethod
+         |    def random_all_json() -> $pyList[$adtType]:
+         |        return [
+         |            ${membersGeneratorsJ.join(",\n").shift(12).trim}
          |        ]
          |
          |${membersFixtures.joinN().trim}
          |""".stripMargin
     }
 
-    private def genType(tpe: TypeRef): TextTree[PyValue] = {
+    private def genType(tpe: TypeRef, format: FixtureFormat): TextTree[PyValue] = {
       BaboonEnquiries.resolveBaboonRef(tpe, domain, BaboonLang.Py) match {
         case s: TypeRef.Scalar =>
           s.id match {
@@ -110,25 +140,33 @@ object PyCodecFixtureTranslator {
             case id: TypeId.User if enquiries.isEnum(tpe, domain) =>
               val tpe = typeTranslator.asPyType(id, domain, evolution, pyFileTools.definitionsBasePkg)
               q"$baboonFixture.next_random_enum($tpe)"
-            case u: TypeId.User => q"${fixtureType(u)}.random()"
-            case t              => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
+            case u: TypeId.User =>
+              // Propagate the codec branch into nested user-type fixtures so any-fields nested in
+              // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (Python analog).
+              val method = format match {
+                case FixUeba => "random"
+                case FixJson => "random_json"
+              }
+              q"${fixtureType(u)}.$method()"
+            case t => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
           }
         case TypeRef.Constructor(id, args) =>
           id match {
-            case Builtins.lst => q"$baboonFixture.next_list(lambda: ${genType(args.head)})"
-            case Builtins.set => q"$baboonFixture.next_set(lambda: ${genType(args.head)})"
-            case Builtins.map => q"$baboonFixture.next_dict(lambda: ${genType(args.head)}, lambda: ${genType(args.last)})"
-            case Builtins.opt => q"$baboonFixture.next_optional(lambda: ${genType(args.head)})"
+            case Builtins.lst => q"$baboonFixture.next_list(lambda: ${genType(args.head, format)})"
+            case Builtins.set => q"$baboonFixture.next_set(lambda: ${genType(args.head, format)})"
+            case Builtins.map => q"$baboonFixture.next_dict(lambda: ${genType(args.head, format)}, lambda: ${genType(args.last, format)})"
+            case Builtins.opt => q"$baboonFixture.next_optional(lambda: ${genType(args.head, format)})"
             case t            => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
           }
-        // Variant-aware UEBA-branch fixture: emits `AnyOpaqueUeba(AnyMeta(kind=0xKK, ...), b'')`.
-        // The meta carries the components the wire format puts on-wire — i.e. those whose bit
-        // is set in the kind byte. For D-variants (`underlying.isDefined`) typeid is statically
-        // known via the surrounding type position, so it is NOT on the wire and meta-typeid is
-        // None. For A/B/C variants the typeid is on the wire and the fixture stamps a synthetic
-        // type-id string (`AnyFixturePayloadTypeId`). Mirrors `DtCodecFixtureTranslator.genAnyFixture`
-        // / `JvCodecFixtureTranslator` shape. PR 10.4 will introduce the `FixtureFormat` ADT and
-        // a parallel `random_json` method emitting `AnyOpaqueJson` for the JSON branch.
+        // Variant-aware any-field fixture. The meta carries the components the wire format puts
+        // on-wire — i.e. those whose bit is set in the kind byte. For D-variants
+        // (`underlying.isDefined`) typeid is statically known via the surrounding type position,
+        // so it is NOT on the wire and meta-typeid is None. For A/B/C variants the typeid is on
+        // the wire and the fixture stamps a synthetic type-id string. The branch is selected by
+        // `format`: `FixUeba` emits `AnyOpaqueUeba(meta, b'')`; `FixJson` emits
+        // `AnyOpaqueJson(meta, None)` (Python's idiomatic null in `Any` position; mirrors the
+        // Swift `NSNull()` decision in PR 9.4 — generated JSON encoders accept `None` as the
+        // `$c` content payload).
         case a: TypeRef.Any =>
           val hasUnderlying = a.underlying.isDefined
           val kindByte      = AnyVariant.metaKindByte(a.variant, hasUnderlying) & 0xFF
@@ -147,7 +185,11 @@ object PyCodecFixtureTranslator {
             case AnyVariant.ThisDom => (domainNull, versionStr)
             case AnyVariant.Current => (domainNull, versionNull)
           }
-          q"$baboonAnyOpaqueUeba($baboonAnyMeta(kind=$kindHex, $domainArg, $versionArg, $typeidArg), b'')"
+          val meta = q"$baboonAnyMeta(kind=$kindHex, $domainArg, $versionArg, $typeidArg)"
+          format match {
+            case FixUeba => q"$baboonAnyOpaqueUeba($meta, b'')"
+            case FixJson => q"$baboonAnyOpaqueJson($meta, None)"
+          }
       }
     }
 
