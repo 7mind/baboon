@@ -64,7 +64,13 @@ object SwCodecTestsTranslator {
     }
 
     private def makeTest(definition: DomainMember.User, srcRef: SwType): TextTree[SwValue] = {
-      val fixture = makeFixture(definition, domain, evo)
+      // PR-07-D01 (Swift analog): per-codec fixture variants. UEBA codec test uses the
+      // `AnyOpaque.ueba`-bearing fixture (`random`); JSON codec test uses the
+      // `AnyOpaque.json`-bearing fixture (`randomJson`). Each fixture matches its codec's native
+      // any-field branch so round-trip avoids cross-format conversion and never needs a
+      // `BaboonCodecContext.withFacade` ctx.
+      val uebaFixture = makeFixture(definition, domain, evo, useJsonAny = false)
+      val jsonFixture = makeFixture(definition, domain, evo, useJsonAny = true)
       codecs
         .filter(_.isActive(definition.id)).map {
           codec =>
@@ -78,7 +84,7 @@ object SwCodecTestsTranslator {
                |func testJsonRoundTrip() throws {
                |    for _ in 0..<${target.generic.codecTestIterations.toString} {
                |        let rnd = $baboonRandomFactory.create()
-               |        ${fixture.shift(8).trim}
+               |        ${jsonFixture.shift(8).trim}
                |        ${assertions.shift(8).trim}
                |    }
                |}
@@ -98,7 +104,7 @@ object SwCodecTestsTranslator {
                |func testUebaCompactRoundTrip() throws {
                |    for _ in 0..<${target.generic.codecTestIterations.toString} {
                |        let rnd = $baboonRandomFactory.create()
-               |        ${fixture.shift(8).trim}
+               |        ${uebaFixture.shift(8).trim}
                |        ${compactAssertions.shift(8).trim}
                |    }
                |}
@@ -106,7 +112,7 @@ object SwCodecTestsTranslator {
                |func testUebaIndexedRoundTrip() throws {
                |    for _ in 0..<${target.generic.codecTestIterations.toString} {
                |        let rnd = $baboonRandomFactory.create()
-               |        ${fixture.shift(8).trim}
+               |        ${uebaFixture.shift(8).trim}
                |        ${indexedAssertions.shift(8).trim}
                |    }
                |}
@@ -128,16 +134,19 @@ object SwCodecTestsTranslator {
       definition: DomainMember.User,
       domain: Domain,
       evolution: BaboonEvolution,
+      useJsonAny: Boolean,
     ): TextTree[SwValue] = {
-      val swType      = typeTranslator.asSwType(definition.id, domain, evolution)
-      val fixtureName = typeTranslator.fixtureClassName(definition.id, domain, evolution)
+      val swType          = typeTranslator.asSwType(definition.id, domain, evolution)
+      val fixtureName     = typeTranslator.fixtureClassName(definition.id, domain, evolution)
+      val randomMethod    = if (useJsonAny) "randomJson" else "random"
+      val randomAllMethod = if (useJsonAny) "randomAllJson" else "randomAll"
       definition.defn match {
         case _: Typedef.Enum =>
           q"let fixture = $swType.all[rnd.nextIntRange($swType.all.count)]"
         case _: Typedef.Adt =>
-          q"let fixtures = $fixtureName.randomAll(rnd)"
+          q"let fixtures = $fixtureName.$randomAllMethod(rnd)"
         case _ =>
-          q"let fixture = $fixtureName.random(rnd)"
+          q"let fixture = $fixtureName.$randomMethod(rnd)"
       }
     }
 
@@ -207,7 +216,7 @@ object SwCodecTestsTranslator {
       val typeId    = definition.id.render
       q"""func testCrossLanguageJsonWrite() throws {
          |    let rnd = $baboonRandomFactory.create()
-         |    ${makeFixture(definition, domain, evo).shift(4).trim}
+         |    ${makeFixture(definition, domain, evo, useJsonAny = true).shift(4).trim}
          |    ${makeJsonWriteBody(definition, srcRef).shift(4).trim}
          |}
          |""".stripMargin
@@ -252,7 +261,7 @@ object SwCodecTestsTranslator {
       val typeId    = definition.id.render
       q"""func testCrossLanguageUebaWrite() throws {
          |    let rnd = $baboonRandomFactory.create()
-         |    ${makeFixture(definition, domain, evo).shift(4).trim}
+         |    ${makeFixture(definition, domain, evo, useJsonAny = false).shift(4).trim}
          |    ${makeUebaWriteBody(definition, srcRef).shift(4).trim}
          |}
          |""".stripMargin

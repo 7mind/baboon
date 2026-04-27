@@ -6,3 +6,4 @@ Tests/BaboonTests/*.swift
 !Tests/BaboonTests/.gitkeep
 # Hand-written runtime tests (PR 9.1+) live alongside the codegen-emitted tests; whitelist by name.
 !Tests/BaboonTests/AnyMetaCodecTests.swift
+!Tests/BaboonTests/AnyRoundTripTests.swift

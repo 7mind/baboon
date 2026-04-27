@@ -14,6 +14,16 @@ trait SwCodecFixtureTranslator {
 }
 
 object SwCodecFixtureTranslator {
+  // Branch selector for any-field fixture payloads. PR-07-D01 (Swift analog): the auto-generated
+  // round-trip test exercises a fixture through a single codec; if the fixture's `AnyOpaque`
+  // branch matches the codec direction, no facade is needed and equality holds. We emit two
+  // parallel methods per DTO (`random` for the UEBA branch, `randomJson` for the JSON branch)
+  // so each test path picks its native branch. Recursive calls into nested user-type fixtures
+  // must propagate the same choice. Mirrors PR 2.4 / 3.4 / 4.3 / 5.4 / 6.4 / 7.4 / 8.4 patterns.
+  private sealed trait FixtureFormat
+  private case object FixUeba extends FixtureFormat
+  private case object FixJson extends FixtureFormat
+
   final class Impl(
     translator: SwTypeTranslator,
     enquiries: BaboonEnquiries,
@@ -64,15 +74,22 @@ object SwCodecFixtureTranslator {
     private def doTranslateDto(dto: Typedef.Dto): TextTree[SwValue] = {
       val fullType = translator.toSwTypeRefKeepForeigns(dto.id, domain, evo)
 
-      val generatedFields = dto.fields.map {
-        f =>
-          q"${translator.escapeSwiftKeyword(f.name.name)}: ${genType(f.tpe)}"
+      def fields(format: FixtureFormat): TextTree[SwValue] = {
+        dto.fields.map { f =>
+          q"${translator.escapeSwiftKeyword(f.name.name)}: ${genType(f.tpe, format)}"
+        }.join(",\n")
       }
 
       q"""public class ${fixtureTpeName(dto.id)} {
          |    public static func random(_ rnd: $baboonRandom) -> $fullType {
          |        return $fullType(
-         |            ${generatedFields.join(",\n").shift(12).trim}
+         |            ${fields(FixUeba).shift(12).trim}
+         |        )
+         |    }
+         |
+         |    public static func randomJson(_ rnd: $baboonRandom) -> $fullType {
+         |        return $fullType(
+         |            ${fields(FixJson).shift(12).trim}
          |        )
          |    }
          |}
@@ -85,12 +102,14 @@ object SwCodecFixtureTranslator {
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
-      val membersFixtures = members.sortBy(_.id.toString).map(doTranslateDto)
-      val membersDirectCalls = members.sortBy(_.id.toString).map {
-        dto =>
-          val caseName = dto.id.name.name.head.toLower.toString + dto.id.name.name.tail
-          q".$caseName(${fixtureTpeName(dto.id)}.random(rnd))"
+      val sortedMembers   = members.sortBy(_.id.toString)
+      val membersFixtures = sortedMembers.map(doTranslateDto)
+      def caseCalls(method: String): List[TextTree[SwValue]] = sortedMembers.map { dto =>
+        val caseName = dto.id.name.name.head.toLower.toString + dto.id.name.name.tail
+        q".$caseName(${fixtureTpeName(dto.id)}.$method(rnd))"
       }
+      val membersDirectCalls     = caseCalls("random")
+      val membersDirectCallsJson = caseCalls("randomJson")
 
       q"""${membersFixtures.joinN()}
          |
@@ -99,19 +118,29 @@ object SwCodecFixtureTranslator {
          |        return rnd.oneOf(randomAll(rnd))
          |    }
          |
+         |    public static func randomJson(_ rnd: $baboonRandom) -> $fullType {
+         |        return rnd.oneOf(randomAllJson(rnd))
+         |    }
+         |
          |    public static func randomAll(_ rnd: $baboonRandom) -> [$fullType] {
          |        return [
          |            ${membersDirectCalls.join(",\n").shift(12).trim}
+         |        ]
+         |    }
+         |
+         |    public static func randomAllJson(_ rnd: $baboonRandom) -> [$fullType] {
+         |        return [
+         |            ${membersDirectCallsJson.join(",\n").shift(12).trim}
          |        ]
          |    }
          |}
          |""".stripMargin
     }
 
-    private def genType(tpe: TypeRef): TextTree[SwValue] = {
+    private def genType(tpe: TypeRef, format: FixtureFormat): TextTree[SwValue] = {
       def gen(tpe: TypeRef): TextTree[SwValue] = {
         tpe match {
-          case tpe: TypeRef.Scalar => genScalar(tpe)
+          case tpe: TypeRef.Scalar => genScalar(tpe, format)
           case TypeRef.Constructor(id, args) =>
             id match {
               case Builtins.lst => q"rnd.mkList { ${gen(args.head)} }"
@@ -120,21 +149,23 @@ object SwCodecFixtureTranslator {
               case Builtins.opt => q"rnd.mkOptional { ${gen(args.head)} }"
               case t            => throw new IllegalArgumentException(s"Unexpected collection type: $t")
             }
-          case a: TypeRef.Any => genAnyFixture(a)
+          case a: TypeRef.Any => genAnyFixture(a, format)
         }
       }
 
       gen(tpe)
     }
 
-    // Stable, declaration-driven `AnyOpaque` fixture value. We don't randomise the meta because the
-    // meta must match the field's declared variant exactly — encoder validates the kind byte. PR 9.4
-    // will branch this on a UEBA / JSON format axis (mirroring Java/Dart/TS); for now PR 9.2 emits
-    // only the UEBA branch with empty bytes. The encoder kind-check + facade-less path means the
-    // generated round-trip test will exercise the AnyOpaqueUeba branch.
+    // Stable, declaration-driven `AnyOpaque` fixture value. The meta must match the field's
+    // declared variant exactly — encoder validates the kind byte. UEBA branch uses an empty
+    // `Data()` payload; JSON branch uses `NSNull()` (Swift's idiomatic null in `Any` position;
+    // mirrors the `?? NSNull()` decision in PR 9.3 for JSON-null content payloads — see the
+    // `[String: Any]` deletion-on-nil gotcha noted in `SwJsonCodecGenerator.encodeAnyField`).
+    // PR-07-D01 (Swift analog): branch must match codec direction so round-trip avoids
+    // cross-format conversion (which requires `withFacade` ctx).
     private val FixtureAnyPayloadTypeId: String = "my.test.AnyFixturePayload"
 
-    private def genAnyFixture(a: TypeRef.Any): TextTree[SwValue] = {
+    private def genAnyFixture(a: TypeRef.Any, format: FixtureFormat): TextTree[SwValue] = {
       val hasUnderlying = a.underlying.isDefined
       val kindByte      = AnyVariant.metaKindByte(a.variant, hasUnderlying) & 0xFF
       val kindHex       = "0x%02x".format(kindByte)
@@ -152,10 +183,13 @@ object SwCodecFixtureTranslator {
       // happens at runtime so we wrap with `try!` — invariants are constructed deterministically
       // from the field's variant so the throw can never fire here.
       val meta = q"try! $baboonAnyMeta(kind: $kindHex, domain: $domainExpr, version: $versionExpr, typeid: $typeidExpr)"
-      q"$baboonAnyOpaque.ueba(meta: $meta, bytes: Data())"
+      format match {
+        case FixUeba => q"$baboonAnyOpaque.ueba(meta: $meta, bytes: Data())"
+        case FixJson => q"$baboonAnyOpaque.json(meta: $meta, json: NSNull())"
+      }
     }
 
-    private def genScalar(tpe: TypeRef.Scalar): TextTree[SwValue] = {
+    private def genScalar(tpe: TypeRef.Scalar, format: FixtureFormat): TextTree[SwValue] = {
       tpe.id match {
         case TypeId.Builtins.i08 => q"rnd.nextI08()"
         case TypeId.Builtins.i16 => q"rnd.nextI16()"
@@ -188,7 +222,13 @@ object SwCodecFixtureTranslator {
           val fixtureClassName = translator.fixtureClassName(u, domain, evo)
           val fixtureFileName  = s"${translator.toSnakeCase(translator.toSwTypeRefKeepForeigns(u, domain, evo).name)}_fixture"
           val fixtureType      = SwValue.SwType(fixturePkg, fixtureClassName, importAs = Some(fixtureFileName))
-          q"$fixtureType.random(rnd)"
+          // Propagate the codec branch into nested user-type fixtures so any-fields nested in
+          // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (Swift analog).
+          val method = format match {
+            case FixUeba => "random"
+            case FixJson => "randomJson"
+          }
+          q"$fixtureType.$method(rnd)"
 
         case t => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
       }
