@@ -211,6 +211,7 @@ class DtJsonCodecGenerator(
         case TypeId.Builtins.uid   => q"$ref"
         case TypeId.Builtins.f128  => q"$ref.value"
         case TypeId.Builtins.bytes => q"$ref.toHexString()"
+        case TypeId.Builtins.u64   => q"BigInt.from($ref).toUnsigned(64).toString()"
         case _: TypeId.Builtin     => q"$ref.toString()"
         case uid: TypeId.User =>
           domain.defs.meta.nodes(uid) match {
@@ -240,8 +241,10 @@ class DtJsonCodecGenerator(
       case TypeRef.Scalar(id) =>
         id match {
           case TypeId.Builtins.bit                                                                   => q"$ref"
-          case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 | TypeId.Builtins.i64 => q"$ref"
-          case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 | TypeId.Builtins.u64 => q"$ref"
+          case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 => q"$ref"
+          case TypeId.Builtins.i64                                             => q"$ref.toString()"
+          case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 => q"$ref"
+          case TypeId.Builtins.u64                                             => q"BigInt.from($ref).toUnsigned(64).toString()"
           case TypeId.Builtins.f32 | TypeId.Builtins.f64                                             => q"$ref"
           case TypeId.Builtins.f128                                                                  => q"$ref.value"
           case TypeId.Builtins.str                                                                   => q"$ref"
@@ -298,7 +301,7 @@ class DtJsonCodecGenerator(
             case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 => q"($ref as num).toInt()"
             case TypeId.Builtins.i64                                             => q"($ref is String ? int.parse($ref as String) : ($ref as num).toInt())"
             case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 => q"($ref as num).toInt()"
-            case TypeId.Builtins.u64                                             => q"($ref is String ? int.parse($ref as String) : ($ref as num).toInt())"
+            case TypeId.Builtins.u64                                             => q"($ref is String ? BigInt.parse($ref as String).toSigned(64).toInt() : ($ref as num).toInt())"
             case TypeId.Builtins.f32 | TypeId.Builtins.f64                       => q"($ref as num).toDouble()"
             case TypeId.Builtins.f128                                            => q"$baboonDecimal($ref is String ? $ref as String : $ref.toString())"
             case TypeId.Builtins.str                                             => q"$ref as String"
@@ -349,7 +352,8 @@ class DtJsonCodecGenerator(
           id match {
             case TypeId.Builtins.bit                                                                   => q"$ref == 'true'"
             case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 | TypeId.Builtins.i64 => q"int.parse($ref)"
-            case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 | TypeId.Builtins.u64 => q"int.parse($ref)"
+            case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 => q"int.parse($ref)"
+            case TypeId.Builtins.u64                                               => q"BigInt.parse($ref).toSigned(64).toInt()"
             case TypeId.Builtins.f32                                                                   => q"double.parse($ref)"
             case TypeId.Builtins.f64                                                                   => q"double.parse($ref)"
             case TypeId.Builtins.f128                                                                  => q"$baboonDecimal($ref)"
