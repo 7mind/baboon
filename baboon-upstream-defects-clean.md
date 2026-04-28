@@ -3,7 +3,7 @@
 Bugs and codegen surprises in **Baboon 0.0.185** discovered while building a
 non-trivial multi-target client.
 
-Status: `[ ]` open · `[~]` fix in progress upstream · `[x]` fixed upstream
+Status: `[ ]` open · `[~]` fix in progress upstream · `[x]` fixed upstream · `[?]` cannot reproduce / misdiagnosed
 
 Backends covered: **Scala** (battle-tested), **TypeScript** (production use,
 rough edges), **Kotlin** (battle-tested), **Swift** (not yet prod-tested —
@@ -14,7 +14,7 @@ expect new defects).
 ## Scala backend
 
 ### [BAB-S01] `*_Wiring.scala` for ns-scoped services emitted in wrong package
-**Status:** open · **Severity:** major
+**Status:** fixed (PR-27, 2026-04-28) · **Severity:** major
 **Symptom:** When a `root service` lives inside an `ns <name> { ... }` block,
 Baboon emits per-service `<Service>_Wiring.scala` in the model's *root*
 package but references the service trait by its unqualified name. The trait
@@ -24,7 +24,8 @@ itself is correctly placed in `<root>.<ns>`. The wiring file fails to compile.
 qualify the trait reference in the existing root-placed file.
 
 ### [BAB-S02] Enum case-name mismatch between case-object emission and UEBA encoder match arms
-**Status:** open · **Severity:** major
+**Status:** fixed (PR-27 Scala, PR-28 Kotlin, PR-29 C#/Java/Python/Dart, 2026-04-28) · **Severity:** major
+**Note (cross-language wire format):** non-Pascal-case enum members serialize differently across languages — Pascal-convention backends (Scala/Kotlin/C#/Java/Python/Rust) emit capitalized strings via `value.toString()`/`.name`; raw-allowed backends (TypeScript/Dart/Swift) emit raw. No shared spec. Tracked as separate follow-up (PR-29-D02 in defects.md).
 **Symptom:** When source enum members are written lowercase or snake_case
 (e.g. `cafe`, `bar_pub`), the Scala generator emits case objects with a
 capitalised first letter (`Cafe`, `BarPub`) but the UEBA encoder's `match`
@@ -36,22 +37,21 @@ preserving the source identifier verbatim in the enum-value string codec
 output and emitting the Scala identifier with a deterministic transform.
 
 ### [BAB-S04] Codec emission requires opt-in (and CLI flags are undocumented)
-**Status:** open · **Severity:** minor (DX)
-**Symptom:** Baboon emits UEBA + JSON codecs only when explicitly requested,
+**Status:** cannot reproduce — flags ARE documented in `--help` (closed 2026-04-28) · **Severity:** minor (DX)
+**Symptom (as reported):** Baboon emits UEBA + JSON codecs only when explicitly requested,
 either per-type (`: derived[ueba], derived[json]` in the schema) or globally
 via `--generate-ueba-codecs-by-default=true` / `--generate-json-codecs-by-
-default=true`. Both flags default `false`. Both are absent from
+default=true`. Both flags default `false`. Both reportedly absent from
 `baboon --help` but present in `CLIOptions.scala` as
 `generateUebaCodecsByDefault` / `generateJsonCodecsByDefault`.
-**Fix idea:** either flip the defaults to `true`, or add the flags to
-`--help` output.
+**Resolution:** Verified against current `baboon-compiler/.jvm/src/main/scala/io/septimalmind/baboon/CLIOptions.scala:100-107` (and 9 backend variants) — both flags carry `@HelpMessage` annotations, so caseapp renders them in `--help`. Reporter likely had a stale CLI binary on PATH. The defaults staying `false` is intentional (codec emission is opt-in).
 
 ---
 
 ## TypeScript backend
 
 ### [BAB-T01] Strict-mode tsconfig produces ~615 errors against generated output
-**Status:** open · **Severity:** moderate
+**Status:** fixed (PR-29, 2026-04-28) · **Severity:** moderate
 **Symptom:** Baboon's TS output, against a strict tsconfig
 (`verbatimModuleSyntax`, `noImplicitReturns`, `noUncheckedIndexedAccess`),
 emits ~615 type errors in three classes:
@@ -71,7 +71,7 @@ default branches in ADT encoders; bounds-check `readByte` (return
 `undefined`).
 
 ### [BAB-T02] Bundler `MISSING_EXPORT` on type-only symbols imported as values
-**Status:** open · **Severity:** moderate
+**Status:** fixed (PR-29, 2026-04-28) · **Severity:** moderate
 **Symptom:** Baboon's `BaboonSharedRuntime.ts` exports several names as TS
 interfaces only. Rolldown (and other esbuild-style bundlers) fail
 `MISSING_EXPORT` when downstream code does `import { Foo, … }` at value
@@ -88,7 +88,7 @@ a runtime stub.
 ## Kotlin backend
 
 ### [BAB-K01] `*ServiceWiring.kt` for ns-scoped services emitted in wrong package
-**Status:** open · **Severity:** major
+**Status:** fixed (PR-28, 2026-04-28) · **Severity:** major
 **Symptom:** Direct Kotlin-target counterpart of [BAB-S01]. When a `root
 service` lives inside an `ns <name> { ... }` block, Baboon emits per-service
 `<ns>.<Service>ServiceWiring.kt` files at `<output>/<root>/<ns>.<Service>ServiceWiring.kt`
@@ -103,7 +103,7 @@ unqualified name (e.g. `FooService`) while the trait itself lives in
 existing root-placed file.
 
 ### [BAB-K02] Generated codecs trip Kotlin's named-argument-supertype warning
-**Status:** open · **Severity:** trivial (warning only)
+**Status:** fixed (PR-28, 2026-04-28) · **Severity:** trivial (warning only)
 **Symptom:** Every emitted `*_UEBACodec` companion at v0.0.185 declares
 `encode(ctx, writer, value)` while its supertype `BaseGenerated` declares
 the third parameter `instance`. Kotlin emits a non-fatal warning at every
@@ -116,14 +116,14 @@ named arguments." With `-Werror` it would fail.
 abstract class and the codegen template.
 
 ### [BAB-K03] `*_UEBACodec.encode` overrides emit unnecessary type casts
-**Status:** open · **Severity:** minor (compile warning only)
+**Status:** fixed (PR-28, 2026-04-28) · **Severity:** minor (compile warning only)
 **Symptom:** Kotlin compiler emits `No cast needed.` warnings (~196 sites
 in a non-trivial schema) across the generated `*_UEBACodec.kt` files. The
 encoder bodies cast values to types they're already statically known to be.
 **Fix idea:** drop the redundant casts in the UEBA encoder template.
 
 ### [BAB-K04] Generated decoders apply unnecessary `!!` non-null assertions on already-non-null receivers
-**Status:** open · **Severity:** minor (compile warning only)
+**Status:** fixed (PR-28, 2026-04-28) · **Severity:** minor (compile warning only)
 **Symptom:** Kotlin compiler emits `Unnecessary non-null assertion (!!)
 on a non-null receiver of type 'X'.` at every site where the decoder
 template applies `!!` to a receiver that the type system already knows
@@ -132,7 +132,8 @@ is non-null.
 already a non-null Kotlin type.
 
 ### [BAB-K05] Generated codec emits a redundant conversion-method call
-**Status:** open · **Severity:** nit
+**Status:** unverified — needs reporter reproducer (deferred 2026-04-28) · **Severity:** nit
+**Triage note:** Triage pass against PR-28's regenerated kt-stub did not surface a `Redundant call of conversion method.` warning. Without the reporter's exact source model, the offending site cannot be located. Likely candidates: a `.toX()` chain in `KtUEBACodecGenerator.scala` (e.g. `(header.toInt() or 1).toByte()` at line ~273; or `wire.readByte().toInt()`) on a value already of the target type. Reopen when reporter supplies a sample model + the exact warning location.
 **Symptom:** Kotlin compiler emits `Redundant call of conversion method.`
 at one site in a generated codec body.
 **Fix idea:** drop the redundant conversion in the affected template.
@@ -144,7 +145,7 @@ at one site in a generated codec body.
 Defect IDs use prefix `BAB-W` ("W" for sWift; "S" is taken by Scala).
 
 ### [BAB-W01] JSON decoder bodies emit doubled `try try` keyword
-**Status:** open · **Severity:** moderate (warning only)
+**Status:** fixed (PR-30, 2026-04-28) · **Severity:** moderate (warning only)
 **Symptom:** Every emitted `*_JsonCodec.decode(...)` body wraps recursive
 `Codec.decode(ctx, ...)` calls (and a few `BaboonTimeFormats.parseUtc`
 calls) with two consecutive `try` keywords:
@@ -163,7 +164,7 @@ has a JSON codec (hundreds of sites in a non-trivial schema).
 generator when emitting recursive-decoder field assignments.
 
 ### [BAB-W02] Optional-string JSON decoder uses force-cast in optional context
-**Status:** open · **Severity:** minor (warning only)
+**Status:** fixed (PR-30, 2026-04-28) · **Severity:** minor (warning only)
 **Symptom:** Generated JSON decoders for optional `str` fields emit:
 ```swift
 field: try { let v = jsonObj["field"];
@@ -186,7 +187,7 @@ drop the `!` (the `v` is already known non-nil by the guard) — emit
 `if let` / early return.
 
 ### [BAB-W03] Generated codecs emit a residual stream of `try`-on-non-throwing warnings
-**Status:** open · **Severity:** minor (warnings only)
+**Status:** fixed (PR-30, 2026-04-28) · **Severity:** minor (warnings only)
 **Symptom:** Baboon's Swift JSON decoder template emits a `try` keyword in
 front of every field expression regardless of whether the expression
 actually throws. After collapsing the BAB-W01 doubled-`try` and stripping
@@ -238,7 +239,7 @@ the unused `carry` variable unused (or remove the declaration) and switch
 `digits`/`comps` from `var` to `let`.
 
 ### [BAB-W04] Swift UEBA reader traps on truncated/invalid input instead of throwing
-**Status:** open · **Severity:** major
+**Status:** fixed (PR-30, 2026-04-28) · **Severity:** major
 **Symptom:** Baboon's Swift UEBA reader in `BaboonRuntime/baboon_runtime.swift`
 unconditionally trusts the byte stream — `readString`, `readBytes` and
 `readUuid` all index `data` and force-unwrap `String(data:encoding:.utf8)`
@@ -278,16 +279,25 @@ single guard rather than per-byte branches.
 ## CLI / build-tool issues
 
 ### [BAB-C01] CLI flags `--omit-most-recent-version-suffix-*` removed without notice
-**Status:** open · **Severity:** trivial
-**Symptom:** Pre-v0.0.185 invocations referenced
-`--omit-most-recent-version-suffix-*` flags. They no longer exist in v0.0.185;
-that behaviour is now the default. Anyone porting an older Baboon invocation
-will get an "unknown flag" error.
-**Fix idea:** keep removed flags as no-op aliases for one minor version with
-a deprecation warning, then drop.
+**Status:** cannot reproduce — flags ARE present (closed 2026-04-28) · **Severity:** trivial
+**Symptom (as reported):** Pre-v0.0.185 invocations referenced
+`--omit-most-recent-version-suffix-*` flags. They reportedly no longer exist in v0.0.185;
+that behaviour was claimed to be the default.
+**Resolution:** Verified against current `baboon-compiler/.jvm/src/main/scala/io/septimalmind/baboon/CLIOptions.scala:21-23` — both `omitMostRecentVersionSuffixFromPaths` and `omitMostRecentVersionSuffixFromNamespaces` are still present in `GenericTranspilerCLIOptions`. Reporter may have been on a transient pre-release that omitted them, or confused with a different `omit-*` flag.
 
 ---
 
 ## Resolved (kept for archive — remove when next Baboon bump lands)
 
-(none yet — every entry above is open as of 2026-04-26.)
+As of 2026-04-28 review-loop session:
+
+- **Fixed in this branch (`wip/anytype`)**: BAB-S01, BAB-S02, BAB-T01, BAB-T02, BAB-K01, BAB-K02, BAB-K03, BAB-K04, BAB-W01, BAB-W02, BAB-W03, BAB-W04 — see `tasks.md` Completed entries for PR-27..PR-30.
+- **Cannot reproduce / misdiagnosed**: BAB-S04 (CLI flags ARE in `--help`), BAB-C01 (`--omit-most-recent-version-suffix-*` flags still present).
+- **Unverified — needs reporter reproducer**: BAB-K05.
+
+Cross-cutting follow-up (not on the original list, surfaced by review):
+- Cross-language wire-format spec for non-Pascal-case enum members is undefined — see PR-29-D02 in `defects.md`.
+- TS UEBA codec internal divergence (latent — not exercised after fixture rollback) — PR-29-D03.
+- Pre-existing Scala `CopyEnumByName` conversion bug for renamed non-Pascal-case enum members — PR-27-D01.
+- Pre-existing Kotlin self-cast `($cName as $cName)` in ADT decoders — PR-28-D04.
+- Pre-existing Dart-from-Swift JSON cross-language test silently skips because the swift JSON fixture file isn't produced — PR-30-D07.
