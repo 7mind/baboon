@@ -1352,3 +1352,57 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Location:** `test/conv-test-dt/test/testpkg/pkg0/t6_d1_test.dart`, `t6_d2_test.dart`; ultimately `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/swift/SwJsonCodecGenerator.scala`
 **Description:** Reproduced on `main` HEAD with `git stash` of all PR-29 changes — Dart's `Cross-language JSON reading from swift` for T6_D1 and T6_D2 fails. T6_D1/D2 are DTOs (no enum involvement). Swift's JSON output diverges from Dart's expectation in some way; pre-dates PR-27/PR-28/PR-29. Likely related to Swift's W01/W03 `try try` over-emission or W02 force-cast — but those are warnings, not wire-format issues. Could be optional-field NSNull handling.
 **Suggested fix:** Investigate Swift JSON output for T6_D1 vs what Dart's decoder expects. Likely a missing-field / `null`-vs-missing distinction. Out of PR-29 scope — addressed under PR-30 (Swift).
+
+---
+
+## PR-30 — Swift backend upstream-defect fixes (BAB-W01..W04)
+
+### [PR-30-D01] UEBA `Any` decoder still emitted `try try decodeAnyField(...)` after first execution pass
+**Status:** resolved
+**Severity:** major (was blocking-class W01 incompletion)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/swift/SwUEBACodecGenerator.scala:509` (in `mkAnyDecoder`)
+**Description:** First-pass execution updated JSON-side `mkAnyDecoder` but missed UEBA-side. `mkAnyDecoder` returns `(expr, mayThrow=true)` so the call site adds a `try`; if the inner expression already has its own `try`, the result is doubled. 9 sites in regular sw-stub regen + 7 in conv-test-sw.
+**Fix:** Dropped inner `try` from `q"try decodeAnyField(reader, $expectedHex)"` → `q"decodeAnyField(reader, $expectedHex)"`. Mirrors JSON-side change.
+
+### [PR-30-D02] W02 force-cast warning was NOT actually fixed by `q"v!" → q"v"`
+**Status:** resolved
+**Severity:** major (entire W02 stated fix turned out to be cosmetic — column shift only)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/swift/SwJsonCodecGenerator.scala:298` (str scalar emission), `:391` (opt closure)
+**Description:** Initial fix changed `q"v!"` → `q"v"` for the optional-string ternary closure, expecting Swift's runtime guard `v is NSNull || v == nil` to narrow the type. Swift's static type-checker does NOT consider the runtime guard, so `v as! String` is still parsed as a forced cast in optional context — same warning class persists 64-for-64 instances.
+**Root cause:** Type-narrowing semantics misunderstanding. Swift's diagnostic itself suggests "add parentheses around the cast to silence this warning" — that's the canonical escape hatch.
+**Fix:** Two-part: (a) `decodeElement` str branch wraps forced-cast in parens — `q"$ref as! String"` → `q"($ref as! String)"`. (b) Reverted the opt closure to `q"v!"` (force-unwrap) so non-string element types continue receiving non-optional `Any` (and as a side effect resolves PR-30-D03's coercion regression). Verified: `treating a forced downcast` warnings → 0; `expression implicitly coerced from 'Any?' to 'Any'` → 0.
+
+### [PR-30-D03] First-pass W02 attempt regressed 69 new `Any?`→`Any` implicit-coercion warnings
+**Status:** resolved (resolved by D02's two-part fix)
+**Severity:** moderate (regression of comparable size to W02's intended fix)
+**Location:** `SwJsonCodecGenerator.scala:391` opt-closure inner-element decode call
+**Description:** Replacing `v!` (Any) with `v` (Any?) caused all non-string inner-element decoders (User, Any, lst, etc.) to receive `Any?` where they expected `Any`, producing 69 new "expression implicitly coerced from 'Any?' to 'Any'" warnings.
+**Fix:** Resolved as side-effect of PR-30-D02's revert to `v!` plus paren-wrap on the str-cast site.
+
+### [PR-30-D04] Hand-written test stub `AnyMetaCodecTests.swift` not updated for new `throws` API
+**Status:** resolved
+**Severity:** moderate (compile error in `test/sw-stub/`)
+**Location:** `test/sw-stub/Tests/BaboonTests/AnyMetaCodecTests.swift:326-333`
+**Description:** PR-30 made `BaboonTypeMeta.readMetaBin` `throws`. Test `testBaboonTypeMeta_writeBin_readMetaBin_roundtrip` was not marked `throws` and called the function without `try`.
+**Fix:** Marked function `throws`; prefixed `try` to the call.
+
+### [PR-30-D05] `readBytes()` doesn't validate non-negative length before bounds check
+**Status:** resolved
+**Severity:** minor (latent crash on adversarial input — pre-existing in spirit, exposed by W04 work)
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/swift/baboon_runtime.swift` `readBytes()` function
+**Description:** `let length = Int(readI32())` — readI32 is signed, can be negative. Guard `pos + length <= data.count` accepts negative length. `subdata(in: pos..<pos+length)` then traps on the reversed range. Defeats W04's stated goal.
+**Fix:** Added `length >= 0 &&` to the guard. `readString()` is unaffected (uses unsigned VLQ); `readUuid()` uses fixed 16-byte length.
+
+### [PR-30-D06] `mayThrow` propagation false-negative risk if `decodeKey` is later extended to throwing types
+**Status:** open (informational — doesn't surface in current tree)
+**Severity:** nit
+**Location:** `SwJsonCodecGenerator.scala` map-decoder aggregator (~line 340)
+**Description:** Map decoder returns `(mapExpr, valThr)` — propagates only the value's `mayThrow`, ignoring the key. Today's `decodeKey` only handles non-throwing scalars (would `BUG` on User-keyed maps), so the omission doesn't surface. Tracking note for future maintainers.
+**Suggested fix:** When `decodeKey` learns to handle throwing types, change aggregation to `(mapExpr, keyThr || valThr)`.
+
+### [PR-30-D07] PR-29-D06 status clarification: pre-existing dart-from-swift JSON failure is a fragile-skip, not "no fix needed"
+**Status:** open (deferred — fragile skip)
+**Severity:** minor
+**Location:** `target/test-regular/dt-stub/test/testpkg/pkg0/t6_d{1,2}_test.dart` (regenerated test); guard checks `target/test-regular/target/swift/json-default/...` which doesn't exist
+**Description:** Reviewer flagged that PR-29-D06 dismissal was correct in effect (test is silently skipped because the JSON fixture file isn't present in the regenerated tree) but wrong in reasoning. The original failure mode could resurface immediately if the swift fixture pipeline ever populates `target/test-regular/target/swift/json-default/`.
+**Suggested fix:** Investigate the swift JSON fixture pipeline; either fix the fixture-emitting step so the file IS produced (and then debug whatever the actual cross-language mismatch is), or document the skip as intentional.

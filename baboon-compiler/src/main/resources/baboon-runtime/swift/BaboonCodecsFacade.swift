@@ -175,7 +175,11 @@ public class BaboonCodecsFacade: BaboonCodecsFacadeBase {
 
     public func decodeFromBin(_ reader: BaboonBinReader) -> Result<Any, BaboonCodecException> {
         let typeMeta: BaboonTypeMeta?
-        typeMeta = BaboonTypeMeta.readMetaBin(reader)
+        do {
+            typeMeta = try BaboonTypeMeta.readMetaBin(reader)
+        } catch {
+            return .failure(.decoderFailure("Cannot decode binary type meta", error))
+        }
         guard let tm = typeMeta else {
             return .failure(.decoderFailure("Cannot decode binary type meta", nil))
         }

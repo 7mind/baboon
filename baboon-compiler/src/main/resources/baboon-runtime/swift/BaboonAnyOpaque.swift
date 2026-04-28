@@ -168,9 +168,9 @@ public enum AnyMetaCodec {
 
     public static func readBin(_ reader: BaboonBinReader) throws -> AnyMeta {
         let kind = reader.readU8()
-        let domain = (kind & DOMAIN_BIT) != 0 ? reader.readString() : nil
-        let version = (kind & VERSION_BIT) != 0 ? reader.readString() : nil
-        let typeid = (kind & TYPEID_BIT) != 0 ? reader.readString() : nil
+        let domain = (kind & DOMAIN_BIT) != 0 ? try reader.readString() : nil
+        let version = (kind & VERSION_BIT) != 0 ? try reader.readString() : nil
+        let typeid = (kind & TYPEID_BIT) != 0 ? try reader.readString() : nil
         return try AnyMeta(kind: kind, domain: domain, version: version, typeid: typeid)
     }
 

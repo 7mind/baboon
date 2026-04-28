@@ -8,6 +8,9 @@ private func baboonEpochMillis(_ date: Date) -> Int64 {
 
 public enum BaboonCodecError: Error {
     case invalidInput(String)
+    case truncated(String)
+    case invalidUtf8
+    case invalidUuid
 }
 
 // --- Metadata Interfaces ---
@@ -314,8 +317,7 @@ public class BaboonBinWriter {
         var mantissa: (lo: UInt32, mid: UInt32, hi: UInt32) = (0, 0, 0)
 
         // Parse mantissa as 96-bit integer
-        var carry: UInt64 = 0
-        var digits = Array(mantissaStr.utf8).map { UInt64($0 - 48) }
+        let digits = Array(mantissaStr.utf8).map { UInt64($0 - 48) }
         // Convert decimal digits to 96-bit binary
         var bigVal: [UInt32] = [0, 0, 0] // lo, mid, hi
         for digit in digits {
@@ -503,7 +505,7 @@ public class BaboonBinReader {
         return readU8() != 0
     }
 
-    public func readString() -> String {
+    public func readString() throws -> String {
         // 7-bit VLQ decoding for string length (compatible with .NET BinaryReader)
         var length = 0
         var shift = 0
@@ -513,13 +515,22 @@ public class BaboonBinReader {
             shift += 7
             if (byteRead & 0x80) == 0 { break }
         }
+        guard pos + length <= data.count else {
+            throw BaboonCodecError.truncated("readString: need \(length) bytes at pos \(pos), only \(data.count - pos) available")
+        }
         let bytes = data.subdata(in: (data.startIndex + pos)..<(data.startIndex + pos + length))
         pos += length
-        return String(data: bytes, encoding: .utf8)!
+        guard let str = String(data: bytes, encoding: .utf8) else {
+            throw BaboonCodecError.invalidUtf8
+        }
+        return str
     }
 
-    public func readBytes() -> Data {
+    public func readBytes() throws -> Data {
         let length = Int(readI32())
+        guard length >= 0 && pos + length <= data.count else {
+            throw BaboonCodecError.truncated("readBytes: need \(length) bytes at pos \(pos), only \(data.count - pos) available")
+        }
         let bytes = data.subdata(in: (data.startIndex + pos)..<(data.startIndex + pos + length))
         pos += length
         return bytes
@@ -601,7 +612,10 @@ public class BaboonBinReader {
         return UInt32(littleEndian: v)
     }
 
-    public func readUuid() -> UUID {
+    public func readUuid() throws -> UUID {
+        guard pos + 16 <= data.count else {
+            throw BaboonCodecError.truncated("readUuid: need 16 bytes at pos \(pos), only \(data.count - pos) available")
+        }
         var bytes = [UInt8](repeating: 0, count: 16)
         for i in 0..<16 {
             bytes[i] = data[data.startIndex + pos + i]
@@ -625,7 +639,10 @@ public class BaboonBinReader {
         for i in 10..<16 {
             hex += hexByte(bytes[i])
         }
-        return UUID(uuidString: hex)!
+        guard let uuid = UUID(uuidString: hex) else {
+            throw BaboonCodecError.invalidUuid
+        }
+        return uuid
     }
 
     public func readTsu() -> Date {
@@ -707,7 +724,7 @@ public class BaboonTimeFormats {
         let localDate = utcDate.addingTimeInterval(Double(offsetSeconds))
 
         let calendar = Calendar(identifier: .gregorian)
-        var comps = calendar.dateComponents(in: TimeZone(secondsFromGMT: 0)!, from: localDate)
+        let comps = calendar.dateComponents(in: TimeZone(secondsFromGMT: 0)!, from: localDate)
         let y = String(format: "%04d", comps.year!)
         let m = String(format: "%02d", comps.month!)
         let d = String(format: "%02d", comps.day!)
@@ -1323,8 +1340,8 @@ public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
         return BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion, d, v, minCompat, t)
     }
 
-    public static func readMetaBin(_ reader: BaboonBinReader) -> BaboonTypeMeta? {
-        return BaboonTypeMetaCodec.readMeta(reader)
+    public static func readMetaBin(_ reader: BaboonBinReader) throws -> BaboonTypeMeta? {
+        return try BaboonTypeMetaCodec.readMeta(reader)
     }
 
     // Build a meta from a generated value. Optionally use the ADT type identifier when encoding
@@ -1380,18 +1397,18 @@ public enum BaboonTypeMetaCodec {
         writer.writeString(meta.typeIdentifier)
     }
 
-    public static func readMeta(_ reader: BaboonBinReader) -> BaboonTypeMeta? {
+    public static func readMeta(_ reader: BaboonBinReader) throws -> BaboonTypeMeta? {
         let v = Int(reader.readU8())
-        if v == 1 { return readMetaV1(reader) }
+        if v == 1 { return try readMetaV1(reader) }
         return nil
     }
 
-    private static func readMetaV1(_ reader: BaboonBinReader) -> BaboonTypeMeta {
-        let d = reader.readString()
-        let dv = reader.readString()
+    private static func readMetaV1(_ reader: BaboonBinReader) throws -> BaboonTypeMeta {
+        let d = try reader.readString()
+        let dv = try reader.readString()
         let hasMinCompat = reader.readU8()
-        let mc = hasMinCompat == 1 ? reader.readString() : dv
-        let t = reader.readString()
+        let mc = hasMinCompat == 1 ? try reader.readString() : dv
+        let t = try reader.readString()
         return BaboonTypeMeta(metaVersion, d, dv, mc, t)
     }
 

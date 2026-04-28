@@ -171,8 +171,9 @@ class SwJsonCodecGenerator(
 
     val decFields = d.fields.map {
       f =>
-        val escaped = trans.escapeSwiftKeyword(f.name.name)
-        q"$escaped: try ${mkDecoder(f.name.name, f.tpe, q"jsonObj")}"
+        val escaped              = trans.escapeSwiftKeyword(f.name.name)
+        val (expr, mayThrow)     = mkDecoder(f.name.name, f.tpe, q"jsonObj")
+        if (mayThrow) q"$escaped: try $expr" else q"$escaped: $expr"
     }
 
     val encodedMap = if (encFields.nonEmpty) {
@@ -272,52 +273,74 @@ class SwJsonCodecGenerator(
     }
   }
 
-  private def mkDecoder(fieldName: String, tpe: TypeRef, jsonObjRef: TextTree[SwValue]): TextTree[SwValue] = {
-    def decodeElement(tpe: TypeRef, ref: TextTree[SwValue], depth: Int): TextTree[SwValue] = {
+  // Returns (expression, mayThrow) so the call site at line 175 can emit `try` only when needed.
+  private def mkDecoder(fieldName: String, tpe: TypeRef, jsonObjRef: TextTree[SwValue]): (TextTree[SwValue], Boolean) = {
+    // Returns (expression, mayThrow). `mayThrow` is true when the expression contains a throwing
+    // call at its top level (i.e. needs `try` at the call site). Nested `try` inside closures
+    // are handled inline — only the outermost `try` requirement is surfaced here.
+    def decodeElement(tpe: TypeRef, ref: TextTree[SwValue], depth: Int): (TextTree[SwValue], Boolean) = {
       val varName = s"e$depth"
       tpe match {
         case TypeRef.Scalar(id) =>
           id match {
-            case TypeId.Builtins.bit   => q"$ref as! Bool"
-            case TypeId.Builtins.i08   => q"Int8(truncatingIfNeeded: ($ref as! NSNumber).intValue)"
-            case TypeId.Builtins.i16   => q"Int16(truncatingIfNeeded: ($ref as! NSNumber).intValue)"
-            case TypeId.Builtins.i32   => q"Int32(truncatingIfNeeded: ($ref as! NSNumber).intValue)"
-            case TypeId.Builtins.i64   => q"($ref is String ? Int64($ref as! String)! : Int64(truncatingIfNeeded: ($ref as! NSNumber).int64Value))"
-            case TypeId.Builtins.u08   => q"UInt8(truncatingIfNeeded: ($ref as! NSNumber).intValue)"
-            case TypeId.Builtins.u16   => q"UInt16(truncatingIfNeeded: ($ref as! NSNumber).intValue)"
-            case TypeId.Builtins.u32   => q"UInt32(truncatingIfNeeded: ($ref as! NSNumber).intValue)"
-            case TypeId.Builtins.u64   => q"($ref is String ? UInt64($ref as! String)! : UInt64(truncatingIfNeeded: ($ref as! NSNumber).uint64Value))"
-            case TypeId.Builtins.f32   => q"Float(($ref as! NSNumber).doubleValue)"
-            case TypeId.Builtins.f64   => q"($ref as! NSNumber).doubleValue"
-            case TypeId.Builtins.f128  => q"$baboonDecimal($ref is String ? $ref as! String : String(describing: $ref))"
-            case TypeId.Builtins.str   => q"$ref as! String"
-            case TypeId.Builtins.uid   => q"UUID(uuidString: $ref as! String)!"
-            case TypeId.Builtins.bytes => q"$baboonByteStringTools.fromHexString($ref as! String)"
-            case TypeId.Builtins.tsu   => q"$baboonTimeFormats.parseUtc($ref as! String)"
-            case TypeId.Builtins.tso   => q"$baboonTimeFormats.parseOffset($ref as! String)"
+            case TypeId.Builtins.bit   => (q"$ref as! Bool",                                                                            false)
+            case TypeId.Builtins.i08   => (q"Int8(truncatingIfNeeded: ($ref as! NSNumber).intValue)",                                   false)
+            case TypeId.Builtins.i16   => (q"Int16(truncatingIfNeeded: ($ref as! NSNumber).intValue)",                                  false)
+            case TypeId.Builtins.i32   => (q"Int32(truncatingIfNeeded: ($ref as! NSNumber).intValue)",                                  false)
+            case TypeId.Builtins.i64   => (q"($ref is String ? Int64($ref as! String)! : Int64(truncatingIfNeeded: ($ref as! NSNumber).int64Value))", false)
+            case TypeId.Builtins.u08   => (q"UInt8(truncatingIfNeeded: ($ref as! NSNumber).intValue)",                                  false)
+            case TypeId.Builtins.u16   => (q"UInt16(truncatingIfNeeded: ($ref as! NSNumber).intValue)",                                 false)
+            case TypeId.Builtins.u32   => (q"UInt32(truncatingIfNeeded: ($ref as! NSNumber).intValue)",                                 false)
+            case TypeId.Builtins.u64   => (q"($ref is String ? UInt64($ref as! String)! : UInt64(truncatingIfNeeded: ($ref as! NSNumber).uint64Value))", false)
+            case TypeId.Builtins.f32   => (q"Float(($ref as! NSNumber).doubleValue)",                                                   false)
+            case TypeId.Builtins.f64   => (q"($ref as! NSNumber).doubleValue",                                                          false)
+            case TypeId.Builtins.f128  => (q"$baboonDecimal($ref is String ? $ref as! String : String(describing: $ref))",              false)
+            case TypeId.Builtins.str   => (q"($ref as! String)",                                                                         false)
+            case TypeId.Builtins.uid   => (q"UUID(uuidString: $ref as! String)!",                                                       false)
+            case TypeId.Builtins.bytes => (q"$baboonByteStringTools.fromHexString($ref as! String)",                                    false)
+            case TypeId.Builtins.tsu   => (q"$baboonTimeFormats.parseUtc($ref as! String)",                                             false)
+            case TypeId.Builtins.tso   => (q"$baboonTimeFormats.parseOffset($ref as! String)",                                          false)
             case u: TypeId.User =>
               val targetTpe = codecName(trans.toSwTypeRefKeepForeigns(u, domain, evo))
-              q"try $targetTpe.instance.decode(ctx, $ref)"
+              (q"$targetTpe.instance.decode(ctx, $ref)", true)
             case o =>
               throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
         case c: TypeRef.Constructor =>
           c.id match {
             case TypeId.Builtins.opt =>
-              q"""$ref is NSNull || $ref == nil ? nil : ${decodeElement(c.args.head, ref, depth + 1)}"""
+              // Do NOT add inner `try` — if innerThrows is true, the enclosing `lst`/`map`/`set`
+              // adds `try` at the closure-element site, which covers the throwing call inside the
+              // ternary branch (Swift allows one outermost `try` to cover nested calls:
+              // `try (cond ? f() : nil)` is valid). This avoids the `try try` double-emit.
+              val (innerExpr, innerThrows) = decodeElement(c.args.head, ref, depth + 1)
+              (q"""$ref is NSNull || $ref == nil ? nil : $innerExpr""", innerThrows)
             case TypeId.Builtins.lst =>
-              val elemDec = decodeElement(c.args.head, q"$varName", depth + 1)
-              q"""try ($ref as! [Any]).map { $varName in $elemDec }"""
+              val (elemDec, elemThrows) = decodeElement(c.args.head, q"$varName", depth + 1)
+              if (elemThrows) {
+                (q"""($ref as! [Any]).map { $varName in try $elemDec }""", true)
+              } else {
+                (q"""($ref as! [Any]).map { $varName in $elemDec }""", false)
+              }
             case TypeId.Builtins.set =>
-              val elemDec = decodeElement(c.args.head, q"$varName", depth + 1)
-              q"""Set(try ($ref as! [Any]).map { $varName in $elemDec })"""
+              val (elemDec, elemThrows) = decodeElement(c.args.head, q"$varName", depth + 1)
+              if (elemThrows) {
+                (q"""Set(($ref as! [Any]).map { $varName in try $elemDec })""", true)
+              } else {
+                (q"""Set(($ref as! [Any]).map { $varName in $elemDec })""", false)
+              }
             case TypeId.Builtins.map =>
-              val keyDec   = decodeKey(c.args.head, q"$varName.key")
-              val valueDec = decodeElement(c.args.last, q"$varName.value", depth + 1)
-              q"""Dictionary(uniqueKeysWithValues: try ($ref as! [String: Any]).map { $varName in ($keyDec, $valueDec) })"""
+              val keyDec             = decodeKey(c.args.head, q"$varName.key")
+              val (valueDec, valThr) = decodeElement(c.args.last, q"$varName.value", depth + 1)
+              val mapExpr = if (valThr) {
+                q"""Dictionary(uniqueKeysWithValues: ($ref as! [String: Any]).map { $varName in ($keyDec, try $valueDec) })"""
+              } else {
+                q"""Dictionary(uniqueKeysWithValues: ($ref as! [String: Any]).map { $varName in ($keyDec, $valueDec) })"""
+              }
+              (mapExpr, valThr)
             case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
-        case a: TypeRef.Any => mkAnyDecoder(a, ref)
+        case a: TypeRef.Any => (mkAnyDecoder(a, ref), true)
       }
     }
 
@@ -364,9 +387,17 @@ class SwJsonCodecGenerator(
 
     tpe match {
       case TypeRef.Constructor(id, args) if id.name.name == "opt" =>
-        q"""{ let v = $jsonObjRef["$fieldName"]; return v is NSNull || v == nil ? nil : ${decodeElement(args.head, q"v!", 0)} }()"""
+        // Use force-unwrap `v!` — the closure body has already guarded against nil/NSNull, so
+        // `v!` is safe and avoids `Any?`→`Any` coercion warnings in non-string decoders. The
+        // `str` branch emits `(v! as! String)` (parens added) to silence Swift's forced-downcast
+        // warning in optional context.
+        val (innerExpr, innerThrows) = decodeElement(args.head, q"v!", 0)
+        val innerWithTry = if (innerThrows) q"try $innerExpr" else innerExpr
+        val closureExpr  = q"""{ let v = $jsonObjRef["$fieldName"]; return v is NSNull || v == nil ? nil : $innerWithTry }()"""
+        (closureExpr, innerThrows)
       case _ =>
-        q"""${decodeElement(tpe, q"""$jsonObjRef["$fieldName"]!""", 0)}"""
+        val (expr, throws) = decodeElement(tpe, q"""$jsonObjRef["$fieldName"]!""", 0)
+        (expr, throws)
     }
   }
 
@@ -394,18 +425,13 @@ class SwJsonCodecGenerator(
     q"encodeAnyField(ctx, $expectedHex, $staticDom, $staticVer, $staticTid, $ref)"
   }
 
-  // Decode delegates to the per-codec-class `decodeAnyField` helper. JSON decode never cross-
-  // converts (always returns `AnyOpaque.json` from JSON wire); user calls `facade.decodeAny(opaque)`
-  // for typed resolution. No `ctx` / no static fallbacks needed at the decode site. The `try`
-  // prefix is mandatory inside `.map`-style closure bodies (Swift does not propagate throws
-  // implicitly through closures); at the top-level field site the redundant outer `try` from
-  // `decFields` (`q"$escaped: try …"`) merely composes — Swift accepts redundant `try try`. This
-  // matches the existing convention for `Typedef.User`'s `q"try $targetTpe.instance.decode(...)"`
-  // emission in `decodeElement`.
+  // Decode delegates to the per-codec-class `decodeAnyField` helper. Returns the bare call
+  // expression without `try` — the caller (`decodeElement`) surfaces `mayThrow = true` so the
+  // outer field-assignment site adds `try` exactly once.
   private def mkAnyDecoder(a: TypeRef.Any, ref: TextTree[SwValue]): TextTree[SwValue] = {
     val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
     val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
-    q"try decodeAnyField($expectedHex, $ref)"
+    q"decodeAnyField($expectedHex, $ref)"
   }
 
   // Static fallbacks for the cross-format facade helper (`uebaToJson`). The wire `meta` may omit

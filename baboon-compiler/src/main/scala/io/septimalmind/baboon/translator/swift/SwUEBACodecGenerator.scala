@@ -301,12 +301,12 @@ class SwUEBACodecGenerator(
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[SwValue], TextTree[SwValue], TextTree[SwValue])] = {
     dto.fields.map {
       field =>
-        val escaped    = trans.escapeSwiftKeyword(field.name.name)
-        val fieldRef   = q"value.$escaped"
-        val enc        = mkEncoder(field.tpe, fieldRef, q"writer")
-        val bufferEnc  = mkEncoder(field.tpe, fieldRef, q"buffer")
-        val decoder    = mkDecoder(field.tpe)
-        val decodeTree = q"$escaped: $decoder"
+        val escaped              = trans.escapeSwiftKeyword(field.name.name)
+        val fieldRef             = q"value.$escaped"
+        val enc                  = mkEncoder(field.tpe, fieldRef, q"writer")
+        val bufferEnc            = mkEncoder(field.tpe, fieldRef, q"buffer")
+        val (decoder, mayThrow)  = mkDecoder(field.tpe)
+        val decodeTree           = if (mayThrow) q"$escaped: try $decoder" else q"$escaped: $decoder"
 
         val w = domain.refMeta(field.tpe).len match {
           case BinReprLen.Fixed(bytes) =>
@@ -350,55 +350,63 @@ class SwUEBACodecGenerator(
     }
   }
 
-  private def mkDecoder(tpe: TypeRef): TextTree[SwValue] = {
+  // Returns (expression, mayThrow). `mayThrow` is true when the expression contains a top-level
+  // throwing call that needs `try` at the parent site (e.g. inside a closure body or ternary).
+  private def mkDecoder(tpe: TypeRef): (TextTree[SwValue], Boolean) = {
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
           case s: TypeId.BuiltinScalar =>
             s match {
-              case TypeId.Builtins.bit => q"reader.readBool()"
-              case TypeId.Builtins.i08 => q"reader.readI8()"
-              case TypeId.Builtins.i16 => q"reader.readI16()"
-              case TypeId.Builtins.i32 => q"reader.readI32()"
-              case TypeId.Builtins.i64 => q"reader.readI64()"
-              case TypeId.Builtins.u08 => q"reader.readU8()"
-              case TypeId.Builtins.u16 => q"reader.readU16()"
-              case TypeId.Builtins.u32 => q"reader.readU32()"
-              case TypeId.Builtins.u64 => q"reader.readU64()"
-              case TypeId.Builtins.f32 => q"reader.readF32()"
-              case TypeId.Builtins.f64 => q"reader.readF64()"
-
-              case TypeId.Builtins.f128  => q"reader.readDecimal()"
-              case TypeId.Builtins.str   => q"reader.readString()"
-              case TypeId.Builtins.bytes => q"reader.readBytes()"
-
-              case TypeId.Builtins.uid => q"reader.readUuid()"
-              case TypeId.Builtins.tsu => q"reader.readTsu()"
-              case TypeId.Builtins.tso => q"reader.readTso()"
-
+              case TypeId.Builtins.bit   => (q"reader.readBool()",    false)
+              case TypeId.Builtins.i08   => (q"reader.readI8()",      false)
+              case TypeId.Builtins.i16   => (q"reader.readI16()",     false)
+              case TypeId.Builtins.i32   => (q"reader.readI32()",     false)
+              case TypeId.Builtins.i64   => (q"reader.readI64()",     false)
+              case TypeId.Builtins.u08   => (q"reader.readU8()",      false)
+              case TypeId.Builtins.u16   => (q"reader.readU16()",     false)
+              case TypeId.Builtins.u32   => (q"reader.readU32()",     false)
+              case TypeId.Builtins.u64   => (q"reader.readU64()",     false)
+              case TypeId.Builtins.f32   => (q"reader.readF32()",     false)
+              case TypeId.Builtins.f64   => (q"reader.readF64()",     false)
+              case TypeId.Builtins.f128  => (q"reader.readDecimal()", false)
+              case TypeId.Builtins.str   => (q"reader.readString()",  true)
+              case TypeId.Builtins.bytes => (q"reader.readBytes()",   true)
+              case TypeId.Builtins.uid   => (q"reader.readUuid()",    true)
+              case TypeId.Builtins.tsu   => (q"reader.readTsu()",     false)
+              case TypeId.Builtins.tso   => (q"reader.readTso()",     false)
               case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
             val targetTpe = codecName(trans.toSwTypeRefKeepForeigns(u, domain, evo))
-            q"""try $targetTpe.instance.decode(ctx, reader)"""
+            (q"$targetTpe.instance.decode(ctx, reader)", true)
         }
       case c: TypeRef.Constructor =>
         c.id match {
           case TypeId.Builtins.opt =>
-            val innerDecoder = mkDecoder(c.args.head)
-            q"""(reader.readBool() ? $innerDecoder : nil)"""
+            val (innerDecoder, innerThrows) = mkDecoder(c.args.head)
+            // Do NOT add inner `try` — if innerThrows is true, the parent adds `try` at the call
+            // site which covers throwing calls inside the ternary branch (Swift allows outermost
+            // `try` to cover nested throwing calls: `try (cond ? f() : nil)` is valid).
+            (q"""(reader.readBool() ? $innerDecoder : nil)""", innerThrows)
           case TypeId.Builtins.map =>
-            val keyDecoder   = mkDecoder(c.args.head)
-            val valueDecoder = mkDecoder(c.args.last)
-            q"""try Dictionary(uniqueKeysWithValues: (0..<Int(reader.readI32())).map { _ in ($keyDecoder, $valueDecoder) })"""
+            val (keyDecoder, keyThrows)     = mkDecoder(c.args.head)
+            val (valueDecoder, valueThrows) = mkDecoder(c.args.last)
+            val keyExpr   = if (keyThrows) q"try $keyDecoder" else keyDecoder
+            val valueExpr = if (valueThrows) q"try $valueDecoder" else valueDecoder
+            (q"""Dictionary(uniqueKeysWithValues: (0..<Int(reader.readI32())).map { _ in ($keyExpr, $valueExpr) })""", keyThrows || valueThrows)
           case TypeId.Builtins.lst =>
-            q"""try (0..<Int(reader.readI32())).map { _ in ${mkDecoder(c.args.head)} }"""
+            val (elemDecoder, elemThrows) = mkDecoder(c.args.head)
+            val elemExpr = if (elemThrows) q"try $elemDecoder" else elemDecoder
+            (q"""(0..<Int(reader.readI32())).map { _ in $elemExpr }""", elemThrows)
           case TypeId.Builtins.set =>
-            q"""Set(try (0..<Int(reader.readI32())).map { _ in ${mkDecoder(c.args.head)} })"""
+            val (elemDecoder, elemThrows) = mkDecoder(c.args.head)
+            val elemExpr = if (elemThrows) q"try $elemDecoder" else elemDecoder
+            (q"""Set((0..<Int(reader.readI32())).map { _ in $elemExpr })""", elemThrows)
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")
         }
-      case a: TypeRef.Any => mkAnyDecoder(a)
+      case a: TypeRef.Any => (mkAnyDecoder(a), true)
     }
   }
 
@@ -498,7 +506,7 @@ class SwUEBACodecGenerator(
   private def mkAnyDecoder(a: TypeRef.Any): TextTree[SwValue] = {
     val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
     val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
-    q"try decodeAnyField(reader, $expectedHex)"
+    q"decodeAnyField(reader, $expectedHex)"
   }
 
   // Static fallbacks for the cross-format facade helpers (`jsonToUebaBytes`/`uebaToJson`). The

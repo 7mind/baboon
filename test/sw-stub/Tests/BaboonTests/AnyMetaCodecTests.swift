@@ -323,12 +323,12 @@ final class AnyMetaCodecTests: XCTestCase {
         XCTAssertNil(BaboonTypeMeta.readMetaJson(json))
     }
 
-    func testBaboonTypeMeta_writeBin_readMetaBin_roundtrip() {
+    func testBaboonTypeMeta_writeBin_readMetaBin_roundtrip() throws {
         let m = BaboonTypeMeta(1, "my.dom", "2.0.0", "1.0.0", "Foo")
         let writer = BaboonBinWriter()
         m.writeBin(writer)
         let reader = BaboonBinReader(writer.toData())
-        let parsed = BaboonTypeMeta.readMetaBin(reader)
+        let parsed = try BaboonTypeMeta.readMetaBin(reader)
         XCTAssertEqual(parsed, m)
     }
 
