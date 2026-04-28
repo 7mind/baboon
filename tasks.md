@@ -24,6 +24,30 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 - [x] **M14** — Upstream-defect triage and fixes (Scala/Kotlin/TS/Swift backends + CLI). Source: `baboon-upstream-defects-clean.md`.
 - [x] **M15** — M14 follow-ups + failing Dart cross-language test fix.
 - [x] **M16** — M15 closeout: validator predicate, cross-language enum coverage, JVM runtime tests, hygiene bundle, Dart/Swift path-coupling.
+- [~] **M17** — M16 hygiene closeout: BaboonValidator filter symmetry (PR-36-D03), Scala UEBA template restructure (PR-39-D03), generalize `crossLanguageFixturePath` helper across remaining 6 backends (PR-40-D07). Plus formal wontfix on PR-40-D08 (sbt macro-cache) and PR-35-D08 (runtime decode error enrichment).
+- [ ] **M18** — BAB-A01: identifier types (`id` keyword, parseable `<Name>:<ver>#fields:values:{nested}` repr, escaping scheme, free `id<->data` conversion when shape matches).
+- [ ] **M19** — BAB-A02: allow root-data wrappers around primitives (and primitive type-aliases, identifier types) as JSON map keys; delegate to inner-primitive codec.
+- [ ] **M20** — BAB-A03: ADT branch inheritance / cross-ADT branch reuse (`adt X { + ErrorAtom ... }` plus subtraction/intersection per field-set semantics).
+
+---
+
+## Milestone 17 — PR breakdown
+
+Detail in `docs/drafts/20260429-0022-m17-cleanup-plan.md`. Three independent hygiene fixes; can be sequenced in any order. **Note:** PR-42 reclassified by planning subagent — defect [PR-39-D03] mischaracterised the failure mode (Scala UEBA enum codec is not actually misaligned today, only template-shape inconsistent with Dart/Java/Kotlin). PR-42 is therefore a **refactor for symmetry**, not a bug fix; commit message must say so.
+
+- [x] **PR-41** — `BaboonValidator` filter symmetry (PR-36-D03). Applied same `.collect { case (id: TypeId.User, _) => id: TypeId }.toSet` to `nextIds`, mirroring `prevIds`. Behaviourally a no-op (verified via `sbt baboonJVM/test` 193/193 pass).
+- [ ] **PR-42** — `ScUEBACodecGenerator` enum template restructure (PR-39-D03). Different shape from Dart/Java/Kotlin (string-interpolation `|${...shift(2)}` vs `q"""...""".trim`). Restructure to match cleaner pattern; verify generated Scala enum codecs have uniform indentation.
+- [ ] **PR-43** — Generalize `crossLanguageFixturePath` helper across remaining 6 backends (PR-40-D07): Scala / Kotlin (incl. KMP) / Java / TypeScript / Rust / Python codec test translators currently use hardcoded relative paths that happen to work because they only read `target/cs/...`. Emit equivalent helper + bootstrap loud-fail per backend.
+
+---
+
+## Milestones 18–20 — feature plans (planned, not started)
+
+Plan docs landed; user reviews open questions before dispatch.
+
+- [ ] **M18** — BAB-A01 identifier types. Plan: `docs/drafts/20260429-0029-m18-bab-a01-identifiers-plan.md`. 9 open questions (reverse-parse scope, language-rollout staging, repr versioning).
+- [ ] **M19** — BAB-A02 user-DTO map keys. Plan: `docs/drafts/20260429-0024-m19-bab-a02-map-keys-plan.md`. Recommended ordering: M19 before M18 (smaller, no dependency).
+- [ ] **M20** — BAB-A03 ADT branch inheritance. Plan: `docs/drafts/20260429-0025-m20-bab-a03-adt-inheritance-plan.md`. Recommendation: re-emit semantics over reference semantics.
 
 ---
 

@@ -1522,11 +1522,11 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Suggested fix:** Add focused tests in `baboon-compiler/.jvm/src/test/scala/.../BaboonRuntimeCodecEnumTest.scala`.
 
 ### [PR-35-D08] Runtime codec error message could include both source and wire forms
-**Status:** resolved (cosmetic; deferred for clarity)
+**Status:** resolved (wontfix — design-incompatible)
 **Severity:** nit
 **Location:** `BaboonRuntimeCodec.scala:192`
 **Description:** Error message lists Pascal forms only. Could be enriched to show both source and wire forms for diagnostic purposes.
-**Fix:** Accepted as-is. Optional enrichment.
+**Fix:** Closed as wontfix (2026-04-29). Runtime codec only sees the wire form on the decode path; "source name" does not exist at the call site. Adding it would require either (a) plumbing source-name through every codec call or (b) embedding a source→wire map per enum at codec construction. Both are disproportionate to the diagnostic value.
 
 ### [PR-35-D09] `enumLowercaseValues` flag undocumented at the option-definition site
 **Status:** resolved (deferred)
@@ -1568,11 +1568,11 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Fix:** Will be addressed in M16 commit message naming PR-36 (orchestrator-level — tasks.md PR-row already uses correct form per ledger update).
 
 ### [PR-36-D03] `nextIds` and `prevIds` use asymmetric type filters
-**Status:** resolved (deferred — cosmetic)
+**Status:** resolved (fixed in PR-41, 2026-04-29)
 **Severity:** nit
-**Location:** `BaboonValidator.scala:595-599`
-**Description:** `nextIds = next.defs.meta.nodes.keySet` (all TypeIds incl Builtin) vs `prevIds` filtered to TypeId.User via `.collect`. All diff entries are User types in practice (asserted in `BaboonComparator.scala:219`), so harmless today. Reads asymmetric.
-**Suggested fix:** Apply same `.collect { case (id: TypeId.User, _) => id }` to nextIds, or drop filter on prevIds. Defer — symmetric-filter consistency is cosmetic.
+**Location:** `BaboonValidator.scala:595-601` (post-fix)
+**Description:** `nextIds = next.defs.meta.nodes.keySet` (all TypeIds incl Builtin) vs `prevIds` filtered to TypeId.User via `.collect`. All diff entries are User types in practice (asserted in `BaboonComparator.scala:219`), so harmless today. Read asymmetric.
+**Fix:** Applied the same `.collect { case (id: TypeId.User, _) => id: TypeId }.toSet` to `nextIds`, mirroring `prevIds`. Verified no-op behaviour: `diff.diffs.keySet ⊆ TypeId.User` per `BaboonComparator.scala:219` runtime assertion (`assert(changed.forall(_.isInstanceOf[TypeId.User]))`); `nextIds` is only consumed by `diffIds.diff(nextIds).diff(prevIds)` so removing Builtin keys cannot perturb the result. `sbt baboonJVM/test` 193/193 pass post-change.
 
 ---
 
@@ -1661,10 +1661,10 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Suggested fix:** Generalize the helper pattern — emit equivalent `crossLanguageFixturePath` helpers in Scala/Kotlin/Java/TS/Rust/Python codec test translators. Out of PR-40 scope; tracked for a future hygiene PR.
 
 ### [PR-40-D08] sbt resource-cache stale-bug: changes to runtime resource files don't trigger recompile
-**Status:** open (build-system fragility; not introduced by PR-40)
+**Status:** resolved (wontfix — upstream sbt/macro caching limitation)
 **Severity:** minor
-**Description:** `BaboonRuntimeResources.scala` uses `PortableResource.embedSources` macro; sbt's incremental compiler does not detect changes to the embedded resource files (`cross_language_fixture_path.dart`, `CrossLanguageFixturePath.swift`, etc.). After editing such resources, `sbt clean baboonJVM/compile` is required to re-embed. Encountered during PR-40 fix iteration: `mdl :build :test-gen-regular-adt` emitted stale (PR-40 first-pass) helper content because `BaboonRuntimeResources$.class` was cached from before my edits.
-**Suggested fix:** Configure sbt's `unmanagedResources` watcher to invalidate `BaboonRuntimeResources` on any baboon-runtime/* change, OR document the `sbt clean` requirement clearly. Out of PR-40 scope.
+**Description:** `BaboonRuntimeResources.scala` uses `PortableResource.embedSources` macro; sbt's incremental compiler does not detect changes to the embedded resource files (`cross_language_fixture_path.dart`, `CrossLanguageFixturePath.swift`, etc.). After editing such resources, `sbt clean baboonJVM/compile` is required to re-embed.
+**Fix:** Closed as wontfix (2026-04-29). This is a known interaction between sbt's incremental compilation and Scala 3 macro inline expansion: macro-embedded resource bytes are baked at compile time and the sbt change-tracker does not register the macro's transitive resource dependency. Workarounds (`unmanagedResources` watcher, custom `sourceGenerators` task) add build complexity for a dev-only ergonomic issue. The `sbt clean` requirement is acceptable when editing `baboon-runtime/*` resources.
 
 ---
 

@@ -592,7 +592,9 @@ object BaboonValidator {
       diff: BaboonDiff,
       ruleset: BaboonRuleset,
     ): F[NEList[BaboonIssue], Unit] = {
-      val nextIds = next.defs.meta.nodes.keySet
+      val nextIds = next.defs.meta.nodes.collect {
+        case (id: TypeId.User, _) => id: TypeId
+      }.toSet
       val diffIds = diff.diffs.keySet
       val prevIds = prev.defs.meta.nodes.collect {
         case (id: TypeId.User, _) => id: TypeId
