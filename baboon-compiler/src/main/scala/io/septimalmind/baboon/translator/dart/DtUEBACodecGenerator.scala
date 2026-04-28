@@ -232,13 +232,13 @@ class DtUEBACodecGenerator(
 
     (
       q"""switch (value) {
-         |  ${encBranches.joinN().shift(2)}
+         |  ${encBranches.joinN().shift(2).trim}
          |}
          """.stripMargin,
       q"""final asByte = reader.readU8();
          |
          |switch (asByte) {
-         |  ${decBranches.joinN().shift(2)}
+         |  ${decBranches.joinN().shift(2).trim}
          |  default:
          |    throw ArgumentError('Cannot decode to ${name.name}: no matching value for ordinal $$asByte');
          |}

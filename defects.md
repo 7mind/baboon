@@ -1548,3 +1548,64 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Location:** `docs/drafts/20260428-1700-enum-wire-format-spec.md`
 **Description:** Per-backend impact table puts C# alongside no-change backends; could be misread. C# and JVM runtime are tightened (case-insensitive removed).
 **Fix:** Accepted; the Migration Implications section explicitly calls out the C#/JVM tightening (D05 fix).
+
+---
+
+## PR-36 — Validator predicate corrected (rename + recompute + flip)
+
+### [PR-36-D01] `MissingEvoDiff` case-class field name + printer message described old (inverted) semantics
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/issues/VerificationIssue.scala:42,164`
+**Description:** PR-36 renamed local val `missingDiffs → orphanDiffs` in `BaboonValidator.scala` but the case class `MissingEvoDiff(prev, next, missingDiffs: Set[TypeId])` and its printer ("Missing differences:...") still described the OLD inverted semantics. Operators reading the runtime error would be misdirected. Per CLAUDE.md "no backwards compatibility in internal code", refactor freely.
+**Fix:** Renamed case class field `missingDiffs → orphanDiffs`. Updated printer to "Orphan differences (entries pointing at types absent from both versions):...". All callers use positional/pattern-`_` so no caller updates needed.
+
+### [PR-36-D02] tasks.md PR-36 description didn't mention the `.diff(prevIds)` rename-handling
+**Status:** resolved
+**Severity:** nit
+**Location:** `tasks.md:34`
+**Description:** Task ledger said "recompute as `diffIds.diff(nextIds)`". Actual implementation uses `diffIds.diff(nextIds).diff(prevIds)` — the additional `.diff(prevIds)` accommodates rename diffs (keyed by oldId, in `prevIds` but not `nextIds`). Plan/code drift.
+**Fix:** Will be addressed in M16 commit message naming PR-36 (orchestrator-level — tasks.md PR-row already uses correct form per ledger update).
+
+### [PR-36-D03] `nextIds` and `prevIds` use asymmetric type filters
+**Status:** resolved (deferred — cosmetic)
+**Severity:** nit
+**Location:** `BaboonValidator.scala:595-599`
+**Description:** `nextIds = next.defs.meta.nodes.keySet` (all TypeIds incl Builtin) vs `prevIds` filtered to TypeId.User via `.collect`. All diff entries are User types in practice (asserted in `BaboonComparator.scala:219`), so harmless today. Reads asymmetric.
+**Suggested fix:** Apply same `.collect { case (id: TypeId.User, _) => id }` to nextIds, or drop filter on prevIds. Defer — symmetric-filter consistency is cosmetic.
+
+---
+
+## PR-38 — JVM runtime codec enum tests
+
+### [PR-38-D01] "Decoder emits Pascal" test was actually a round-trip; didn't isolate decoder behavior
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/typer/BaboonRuntimeCodecEnumTest.scala` (third test case)
+**Description:** Test described as "decoder emits Pascal wire name, not the raw source member name" but it encoded `Cafe` via `codec.encode` then decoded — a round-trip. If both encoder and decoder regressed to lowercase, the test would still pass.
+**Fix:** Replaced encode-decode round-trip with direct synthetic-bytes call: `codec.decode(family, pkg, version, typeId, Vector(0.toByte))`. Now exercises only the decoder's wire-name conversion in isolation.
+
+---
+
+## PR-39 — Hygiene bundle (Scaladoc + Dart UEBA indentation + spec doc)
+
+### [PR-39-D01] Same enum codec misalignment bug existed in Java + Kotlin UEBA generators
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/java/JvUEBACodecGenerator.scala:250,256`; `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/kotlin/KtUEBACodecGenerator.scala:239,245`
+**Description:** PR-39 fixed `joinN().shift(2)` → `joinN().shift(2).trim` for Dart UEBA enum bodies. The IDENTICAL pattern existed in Java's and Kotlin's UEBA `genEnumBodies`, with confirmed misaligned output in regenerated `T1_E1_UEBACodec.java` and `T1_E1.kt` (first arm at column 8, subsequent at column 6).
+**Fix:** Applied `.trim` at all 4 sites (Java enc/dec + Kotlin enc/dec). Verified post-fix that wrapped Java + Kotlin enum codecs have uniform 6-space indentation. Note: ScUEBACodecGenerator uses a different shape (string-interpolation template) — different structural problem; deferred for separate analysis.
+
+### [PR-39-D02] Spec-doc adequacy claim accepted without text-level verification
+**Status:** resolved (deferred)
+**Severity:** nit
+**Location:** `docs/drafts/20260428-1700-enum-wire-format-spec.md`
+**Description:** Reviewer flagged that "verified already adequate" wasn't accompanied by text-level confirmation of all expected coverage points. Low-value follow-up; doc adequacy was confirmed by inspection.
+**Fix:** Accepted as-is.
+
+### [PR-39-D03] Scala UEBA enum generator has parallel indent issue (different shape)
+**Status:** open (deferred — different shape needs separate analysis)
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScUEBACodecGenerator.scala:311,317`
+**Description:** Reviewer noted Scala UEBA uses string-interpolation template `|${...shift(2)}` rather than `q"""...joinN().shift(2)"""`. First arm lands at column 0, subsequent at column 2 — opposite-direction misalignment from Dart/Java/Kotlin.
+**Suggested fix:** Restructure the Scala UEBA template to match the cleaner `q"""...""".trim` pattern used by other backends. Out of PR-39 scope; tracked for follow-up.

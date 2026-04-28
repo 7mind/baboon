@@ -236,13 +236,13 @@ class KtUEBACodecGenerator(
 
     (
       q"""when (instance) {
-         |  ${branches.map(_._1).joinN().shift(2)}
+         |  ${branches.map(_._1).joinN().shift(2).trim}
          |}
          """.stripMargin,
       q"""val asByte = wire.readByte().toInt()
          |
          |return when (asByte) {
-         |  ${branches.map(_._2).joinN().shift(2)}
+         |  ${branches.map(_._2).joinN().shift(2).trim}
          |  else -> throw $genericException("Cannot decode to ${name.name}: no matching value")
          |}
          |""".stripMargin,

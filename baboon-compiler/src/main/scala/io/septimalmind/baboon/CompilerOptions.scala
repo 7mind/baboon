@@ -249,6 +249,14 @@ final case class TsOptions(
   mapsAsRecords: Boolean,
   timestampsUtcMode: String,
   timestampsOffsetMode: String,
+  /** TS-only backward-compat escape hatch.
+    *
+    * When `true`, TypeScript emits and decodes lowercase enum wire values (the pre-PR-35 form).
+    * Default `false`. Not honored by other backends; using this flag with cross-language deployment
+    * will break wire-format compatibility.
+    *
+    * See `docs/drafts/20260428-1700-enum-wire-format-spec.md`.
+    */
   enumLowercaseValues: Boolean,
 )
 

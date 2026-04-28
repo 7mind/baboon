@@ -247,13 +247,13 @@ class JvUEBACodecGenerator(
 
     (
       q"""switch (value) {
-         |  ${branches.map(_._1).joinN().shift(2)}
+         |  ${branches.map(_._1).joinN().shift(2).trim}
          |}
          """.stripMargin,
       q"""int asByte = input.readByte() & 0xFF;
          |
          |return switch (asByte) {
-         |  ${branches.map(_._2).joinN().shift(2)}
+         |  ${branches.map(_._2).joinN().shift(2).trim}
          |  default -> throw new $genericException("Cannot decode to ${name.name}: no matching value for ordinal " + asByte);
          |};
          |""".stripMargin,
