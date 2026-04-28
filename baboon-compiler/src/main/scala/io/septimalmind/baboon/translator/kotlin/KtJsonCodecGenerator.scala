@@ -51,7 +51,7 @@ class KtJsonCodecGenerator(
     val encodeMethod =
       if (isEncoderEnabled) {
         List(
-          q"""override fun encode(ctx: $baboonCodecContext, value: $name): $jsonElement {
+          q"""override fun encode(ctx: $baboonCodecContext, instance: $name): $jsonElement {
              |  ${enc.shift(2).trim}
              |}
              |""".stripMargin.trim
@@ -123,7 +123,7 @@ class KtJsonCodecGenerator(
 
         (
           q"""is $fqBranch -> {
-             |  val $branchRef = value as $fqBranch
+             |  val $branchRef = instance
              |  $branchEncoder
              |}""".stripMargin,
           q""""$branchName" -> ${fqBranch}_JsonCodec.decode(ctx, entry.value)""",
@@ -131,7 +131,7 @@ class KtJsonCodecGenerator(
     }
 
     (
-      q"""return when (value) {
+      q"""return when (instance) {
          |  ${branches.map(_._1).joinN().shift(2).trim}
          |}""".stripMargin,
       q"""val jsonObj = wire.jsonObject
@@ -145,7 +145,7 @@ class KtJsonCodecGenerator(
 
   private def genEnumBodies(name: KtValue.KtType): (TextTree[KtValue], TextTree[KtValue]) = {
     (
-      q"""return $jsonPrimitive(value.name)""",
+      q"""return $jsonPrimitive(instance.name)""",
       q"""val str = wire.jsonPrimitive.content
          |return $name.parse(str.trim()) ?: throw IllegalArgumentException("Cannot decode to ${name.name}: no matching value for $$str")""".stripMargin,
     )
@@ -154,7 +154,7 @@ class KtJsonCodecGenerator(
   private def genDtoBodies(name: KtValue.KtType, d: Typedef.Dto): (TextTree[KtValue], TextTree[KtValue]) = {
     val encFields = d.fields.map {
       f =>
-        val fieldRef = q"value.${f.name.name}"
+        val fieldRef = q"instance.${f.name.name}"
         val enc      = mkEncoder(f.tpe, fieldRef)
         q"""put("${f.name.name}", $enc)"""
     }

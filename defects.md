@@ -1245,3 +1245,49 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Location:** `tasks.md`
 **Description:** `tasks.md` adds M14 + PR-28..PR-31 entries, beyond PR-27's strict scope.
 **Fix:** Accepted. Per review-loop skill discipline, milestone bookkeeping is orchestrator-level and may land alongside the first PR. Subsequent PRs only mutate their own task entries.
+
+---
+
+## PR-28 — Kotlin backend upstream-defect fixes (BAB-K01..K04 + parallel S02)
+
+### [PR-28-D01] Executor's `-Werror` validation claim is narrower than reported
+**Status:** resolved (claim narrowed; no code change)
+**Severity:** nit
+**Location:** verification reporting; gradle modules at `test/kt-stub/build.gradle.kts:27`, `test/kt-stub-kmp/build.gradle.kts:28`, `test/conv-test-kt/build.gradle.kts`, `test/conv-test-kt-kmp/build.gradle.kts`, `test/services/kt/build.gradle.kts`
+**Description:** Executor stated `allWarningsAsErrors.set(true)` "already in build.gradle.kts; all tests passed under that policy". Reality: only `kt-stub/build.gradle.kts:27` has `set(true)`; the kmp + conv-test variants explicitly `set(false)` or omit the flag. So `-Werror` validation only covers `kt-stub`.
+**Fix:** Accepted with narrowed scope — `kt-stub` is the canonical defect-source dir for K02/K03/K04 (warning-class defects). Extending the policy to other modules is a separate hygiene PR.
+
+### [PR-28-D02] Enum-name capitalization fix is parallel BAB-S02 (not in PR-28's plan row)
+**Status:** resolved (intentional; necessary to make K0x fixtures compile)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/kotlin/KtUEBACodecGenerator.scala:230` (genEnumBodies — `val obj = m.name.capitalize`)
+**Description:** Plan row for PR-28 lists only K01..K04. Executor added the Kotlin counterpart of BAB-S02 (enum-case-name mismatch UEBA vs case-objects) since the new `T_NsPascal { cafe; bar_pub }` fixture exposed the same bug on the Kotlin side. Without it, `:test-kotlin-regular` would have failed regenerating against pkg03.
+**Fix:** Accepted. Extending PR-28's stated scope to "Kotlin parallel of BAB-S02" is correct and follows the same `.capitalize` transform PR-27 used.
+
+### [PR-28-D03] `encodeAnyField` private helper still uses `value` parameter name
+**Status:** resolved (cosmetic — no override risk on private helpers)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/kotlin/KtJsonCodecGenerator.scala:461`, `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/kotlin/KtUEBACodecGenerator.scala:639`
+**Description:** Public `encode` was renamed `value → instance` (K02 fix), but the private helper `encodeAnyField` retained `value`. No correctness issue (private; no override conflict).
+**Fix:** Accepted. Per CLAUDE.md §5, leave untouched unless a follow-up PR consolidates naming.
+
+### [PR-28-D04] Pre-existing self-cast `($cName as $cName)` survives `-Werror` in kt-stub
+**Status:** open (pre-existing, deferred — out of PR-28 scope)
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/kotlin/KtUEBACodecGenerator.scala:196` emits `($cName as $cName).decodeBranch(ctx, wire)`. Visible in `target/test-wrapped/kt-stub/.../1.0.0/T4_A1.kt:296,298,300` and `T5_A1.kt:142`.
+**Description:** Literal self-cast (same FQN both sides). Should fire Kotlin's `USELESS_CAST` warning; under `kt-stub`'s `-Werror` policy this should fail compilation, yet `:test-kotlin-wrapped` reports PASS. Either Kotlin tolerates this shape on object singletons, or the warnings-as-errors policy is not actually exercised here. Pre-existing (blame `cc1d34c` 2026-02-16).
+**Suggested fix:** Drop the redundant cast in the codegen template. Verify `-Werror` is active for the affected stub module. Out of PR-28 scope.
+
+### [PR-28-D05] Generated UEBA enum codec output has misaligned `when` arms
+**Status:** resolved (pre-existing template quirk — out of PR-28 scope)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/kotlin/KtUEBACodecGenerator.scala:239,245`
+**Description:** `joinN().shift(2)` without `.trim` produces misaligned arms in generated `T_NsPascal.kt:60-61`. Cosmetic; compiles fine.
+**Fix:** Accepted as pre-existing template quirk.
+
+### [PR-28-D06] Redundant `val branchVal = instance` alias in ADT branches
+**Status:** resolved (cosmetic; aliases are harmless)
+**Severity:** nit
+**Location:** `KtUEBACodecGenerator.scala`/`KtJsonCodecGenerator.scala` ADT-branch emission
+**Description:** After K03 fix, branches emit `val branchVal = instance` immediately after `is X ->`. Kotlin smart-casts `instance` directly; alias is redundant.
+**Fix:** Accepted — removing aliases expands PR-28's surface beyond declared scope.

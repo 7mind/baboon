@@ -81,7 +81,7 @@ object KtDefnTranslator {
       val wiringOutput = wiringTranslator
         .translate(defn).map {
           wiringTree =>
-            val pkg     = trans.toKtPkg(domain.id, domain.version, evo)
+            val pkg     = srcRef.pkg
             val wrapped = ktTrees.inPkg(pkg.parts.toSeq, wiringTree)
             Output(
               getOutputPath(defn, suffix = Some("Wiring")),
@@ -94,7 +94,7 @@ object KtDefnTranslator {
       val clientOutput = wiringTranslator
         .translateClient(defn).map {
           clientTree =>
-            val pkg     = trans.toKtPkg(domain.id, domain.version, evo)
+            val pkg     = srcRef.pkg
             val wrapped = ktTrees.inPkg(pkg.parts.toSeq, clientTree)
             Output(
               getOutputPath(defn, suffix = Some("Client")),

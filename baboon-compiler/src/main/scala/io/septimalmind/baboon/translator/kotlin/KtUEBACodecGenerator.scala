@@ -45,7 +45,7 @@ class KtUEBACodecGenerator(
         case (enc, dec) =>
           val insulatedEnc =
             q"""if (this !== LazyInstance.value) {
-               |  LazyInstance.value.encode(ctx, writer, value)
+               |  LazyInstance.value.encode(ctx, writer, instance)
                |  return
                |}
                |
@@ -111,7 +111,7 @@ class KtUEBACodecGenerator(
 
     val encoderMethods = if (isEncoderEnabled) {
       List(
-        q"""override fun encode(ctx: $baboonCodecContext, writer: $binaryOutput, value: $name) {
+        q"""override fun encode(ctx: $baboonCodecContext, writer: $binaryOutput, instance: $name) {
            |  ${enc.shift(2).trim}
            |}
            |""".stripMargin
@@ -200,7 +200,7 @@ class KtUEBACodecGenerator(
 
         (
           q"""is $fqBranch -> {
-             |  val $castedName = value as $fqBranch
+             |  val $castedName = instance
              |  ${encBody.shift(2).trim}
              |}""".stripMargin,
           q"""${idx.toString} -> $decBody
@@ -209,7 +209,7 @@ class KtUEBACodecGenerator(
     }
 
     (
-      q"""when (value) {
+      q"""when (instance) {
          |  ${branches.map(_._1).joinN().shift(2).trim}
          |}
          |""".stripMargin,
@@ -227,14 +227,15 @@ class KtUEBACodecGenerator(
   private def genEnumBodies(name: KtValue.KtType, e: Typedef.Enum): (TextTree[KtValue], TextTree[KtValue]) = {
     val branches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
+        val obj = m.name.capitalize
         (
-          q"$name.${m.name} -> writer.writeByte(${idx.toString})",
-          q"${idx.toString} -> $name.${m.name}",
+          q"$name.$obj -> writer.writeByte(${idx.toString})",
+          q"${idx.toString} -> $name.$obj",
         )
     }
 
     (
-      q"""when (value) {
+      q"""when (instance) {
          |  ${branches.map(_._1).joinN().shift(2)}
          |}
          """.stripMargin,
@@ -351,7 +352,7 @@ class KtUEBACodecGenerator(
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[KtValue], TextTree[KtValue], TextTree[KtValue])] = {
     dto.fields.map {
       field =>
-        val fieldRef   = q"value.${field.name.name}"
+        val fieldRef   = q"instance.${field.name.name}"
         val enc        = mkEncoder(field.tpe, fieldRef, q"writer")
         val fakeEnc    = mkEncoder(field.tpe, fieldRef, q"fakeWriter")
         val decoder    = mkDecoder(field.tpe)
@@ -515,7 +516,7 @@ class KtUEBACodecGenerator(
                |  $wref.writeByte(0)
                |} else {
                |  $wref.writeByte(1)
-               |  ${mkEncoder(c.args.head, q"$ref!!", wref).shift(2).trim}
+               |  ${mkEncoder(c.args.head, q"$ref", wref).shift(2).trim}
                |}""".stripMargin
 
           case TypeId.Builtins.map =>

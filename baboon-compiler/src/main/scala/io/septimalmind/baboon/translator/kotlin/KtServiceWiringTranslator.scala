@@ -353,6 +353,13 @@ object KtServiceWiringTranslator {
 
     private val bweFq: String = renderFq(q"$baboonWiringError")
 
+    // IBaboonServiceRt is always emitted in the domain root package; use the FQ name
+    // so that wiring objects inside a namespace sub-package can still reference it.
+    private val iBaboonServiceRtFq: String = {
+      val rootPkg = trans.toKtPkg(domain.id, domain.version, evo)
+      (rootPkg.parts.toList :+ "IBaboonServiceRt").mkString(".")
+    }
+
     private def ct(error: String, success: String): String = renderContainer(error, success)
 
     private def generateErrorsJsonMethod(service: Typedef.Service): TextTree[KtValue] = {
@@ -443,7 +450,7 @@ object KtServiceWiringTranslator {
          |  method: $baboonMethodId,
          |  data: String,
          |  impl: $svcName$svcTypeArg,
-         |  rt: IBaboonServiceRt$rtTypeArg,
+         |  rt: $iBaboonServiceRtFq$rtTypeArg,
          |  ${ctxParamDecl}ctx: $baboonCodecContext): $wiringRetType {
          |  return when (method.methodName) {
          |    ${cases.shift(4).trim}
@@ -542,7 +549,7 @@ object KtServiceWiringTranslator {
          |  method: $baboonMethodId,
          |  data: ByteArray,
          |  impl: $svcName$svcTypeArg,
-         |  rt: IBaboonServiceRt$rtTypeArg,
+         |  rt: $iBaboonServiceRtFq$rtTypeArg,
          |  ${ctxParamDecl}ctx: $baboonCodecContext): $wiringRetType {
          |  return when (method.methodName) {
          |    ${cases.shift(4).trim}
