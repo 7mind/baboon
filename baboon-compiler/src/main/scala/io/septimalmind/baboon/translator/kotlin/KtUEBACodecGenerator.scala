@@ -193,7 +193,7 @@ class KtUEBACodecGenerator(
         }
 
         val decBody = if (target.language.wrappedAdtBranchCodecs) {
-          q"""($cName as $cName).decodeBranch(ctx, wire)"""
+          q"""$cName.decodeBranch(ctx, wire)"""
         } else {
           q"""$cName.instance.decode(ctx, wire)"""
         }
