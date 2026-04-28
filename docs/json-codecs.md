@@ -41,6 +41,76 @@ Map keys are always strings in JSON. The string form depends on the key type:
 - Branch selection is structural: the caller chooses which branch codec to call. With `wrappedAdtBranchCodecs=true` the encoder wraps branches in a single‑entry object keyed by the branch name; the decoder unwraps accordingly.
 - Contract fields are enforced at typechecking; codecs simply serialize the resulting field set.
 
+## Any fields
+
+A field of type `any` (or any of its qualified forms — see [`docs/language-features.md#polymorphic-any-fields`](language-features.md#polymorphic-any-fields)) serializes as a single object envelope that wraps the inner JSON payload:
+
+```json
+{
+  "$ak": <kind>,
+  "$ad": "<domain>",
+  "$av": "<version>",
+  "$at": "<typeid>",
+  "$c":  <inner JSON value>
+}
+```
+
+- `$ak` (any-kind) — integer 0–7. Bitmask: bit 0 = typeid, bit 1 = version, bit 2 = domain. Kinds `0x04`/`0x05` are reserved.
+- `$ad` (any-domain) — present iff bit 2 set in `$ak`.
+- `$av` (any-version) — present iff bit 1 set in `$ak`.
+- `$at` (any-typeid) — present iff bit 0 set in `$ak`.
+- `$c` (content) — the inner payload's JSON form; any JSON value (object, array, primitive, or `null`).
+
+The `$a*` prefix is deliberate: it avoids colliding with `BaboonTypeMetaCodec`'s top-level `$d`/`$v`/`$t` keys, so an `any` envelope handed to `BaboonTypeMeta.readMeta` reads zero meta fields and falls through cleanly instead of misinterpreting the payload.
+
+### Variants
+
+| DSL form | `$ak` | Keys present (besides `$ak` + `$c`) |
+|---|---|---|
+| `any` | `7` | `$ad`, `$av`, `$at` |
+| `any[domain:this]` | `3` | `$av`, `$at` |
+| `any[domain:current]` | `1` | `$at` |
+| `any[T]` | `6` | `$ad`, `$av` |
+| `any[domain:this, T]` | `2` | `$av` |
+| `any[domain:current, T]` | `0` | — |
+
+For typed forms (D1/D2/D3), the receiver knows the inner type at the schema level so `$at` is omitted from the wire. The remaining meta on the wire is whatever the kind byte still claims.
+
+### Worked example
+
+Schema:
+```baboon
+data InnerPayload : derived[json] {
+  label: str
+  count: i32
+}
+
+data Holder : derived[json] {
+  f: any[InnerPayload]   // variant D1, $ak = 6
+}
+```
+
+Value `{ f = AnyOpaqueJson(meta = (kind=0x06, domain="my.ok", version="1.0.0", typeid=null), json = {label: "hi", count: 7}) }`:
+
+```json
+{
+  "f": {
+    "$ak": 6,
+    "$ad": "my.ok",
+    "$av": "1.0.0",
+    "$c": { "label": "hi", "count": 7 }
+  }
+}
+```
+
+The same `Holder` written via the UEBA codec produces a byte-canonical UEBA `any` field; either format round-trips through any of the 9 generated languages identically.
+
+### Cross-format conversion
+
+To emit a JSON-branch value (`AnyOpaqueJson(meta, json)`) into the UEBA wire — or a UEBA-branch value (`AnyOpaqueUeba(meta, bytes)`) into JSON — the encoder needs a codec registry on the context. Pass one via `BaboonCodecContext.withFacade(useIndices, facade)`. Without it the encoder fails fast with a typed `BaboonEncoderFailure`.
+
+For application code that just wants typed payloads regardless of which wire the value arrived on, `BaboonCodecsFacade.decodeAny(opaque)` does the lookup and decode for you.
+
 ## Determinism and formatting
 
 - Arrays and objects are written in declaration order of fields.

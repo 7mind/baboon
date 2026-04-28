@@ -34,6 +34,77 @@ UEBA has a sister format, [SICK](https://github.com/7mind/sick), which is an ind
 - DTO/ADT/contract branches: fields encoded in declaration order.
 - ADT branches: written as the branch payload followed by branch metadata when wrapped codecs are enabled; by default branches are emitted without an envelope (caller knows the concrete branch).
 
+## Any fields
+
+A field of type `any` (or any of its qualified forms — see [`docs/language-features.md#polymorphic-any-fields`](language-features.md#polymorphic-any-fields)) is encoded as a self‑describing length‑prefixed envelope so any reader can skip it without the inner codec:
+
+```
+any_field := length:i32        // bytes after this i32 (= 4 + meta-length + blob length)
+             meta-length:i32   // bytes of (meta-kind + meta-strings)
+             meta-kind:u8      // bitmask: bit 0 = typeid, bit 1 = version, bit 2 = domain
+             meta:bytes        // length-prefixed UTF-8 strings, in fixed order:
+                               //   domain  (iff bit 2 set)
+                               //   version (iff bit 1 set)
+                               //   typeid  (iff bit 0 set)
+             blob:bytes        // UEBA-encoded payload; runs to (length - 4 - meta-length) bytes
+```
+
+Strings inside the meta block use the same `str` convention as the rest of UEBA (varint length + UTF‑8). All numeric fields are little‑endian signed `i32`.
+
+Six valid kind bytes correspond to the six DSL forms:
+
+| Variant | Kind | Meta on wire |
+|---|---|---|
+| `any` | `0x07` | domain + version + typeid |
+| `any[domain:this]` | `0x03` | version + typeid |
+| `any[domain:current]` | `0x01` | typeid |
+| `any[T]` | `0x06` | domain + version |
+| `any[domain:this, T]` | `0x02` | version |
+| `any[domain:current, T]` | `0x00` | (none) |
+
+Kinds `0x04` and `0x05` are reserved.
+
+### Forward-compat skip
+
+`length` and `meta-length` are both intentional. A reader that only knows about today's meta layout can:
+
+- read `length` then seek `length` bytes ahead to skip the field entirely (e.g. a proxy forwarding bytes verbatim), OR
+- read `meta-length` and seek to its end without parsing meta extensions added by future versions, then read the `blob`.
+
+Both directions stay byte‑canonical: re-emitting an `AnyOpaqueUeba(meta, bytes)` produces identical bytes to the originating writer.
+
+### Worked example
+
+Schema:
+```baboon
+data InnerPayload : derived[ueba] {
+  label: str
+  count: i32
+}
+
+data Holder : derived[ueba] {
+  f: any[InnerPayload]   // variant D1, kind 0x06
+}
+```
+
+Encoding `{ f = AnyOpaqueUeba(meta = (kind=0x06, domain="my.ok", version="1.0.0", typeid=null), bytes = <UEBA(InnerPayload("hi", 7))>) }`:
+
+```
+00          18 00 00 00         ; length = 24 (everything after this i32)
+04          0D 00 00 00         ; meta-length = 13 (kind + 2 strings + their varints)
+08          06                  ; meta-kind = 0x06 (domain + version, no typeid)
+09          05                  ; varint len("my.ok") = 5
+0A          6D 79 2E 6F 6B      ; "my.ok"
+0F          05                  ; varint len("1.0.0") = 5
+10          31 2E 30 2E 30      ; "1.0.0"
+15          02 68 69            ; blob: varint(2), "hi" (InnerPayload.label)
+18          07 00 00 00         ; blob: i32 InnerPayload.count = 7
+```
+
+Layout sizes: `length` (4) + `meta-length` (4) + meta-kind (1) + meta-strings (12) + blob (7) = 28 bytes total. `length=24` covers bytes 04..1B (everything after the length i32). `meta-length=13` covers bytes 08..14 (the kind byte + the two length-prefixed strings).
+
+Cross-format payloads (an `AnyOpaqueJson` written to UEBA, or an `AnyOpaqueUeba` written to JSON) require the encoder to have a codec registry on the context — pass one via `BaboonCodecContext.withFacade(useIndices, facade)`. Without it, the encoder fails fast.
+
 ## Indexing
 
 When `BaboonCodecContext.Indexed` is used and a codec implements `BaboonBinCodecIndexed`, payloads can start with a one‑byte header indicating index presence. Index entries are pairs of `i32` offset/length per indexed element; offsets must be monotonically increasing. This is mainly used by generated codecs with `generateIndexWriters` enabled on C#.

@@ -252,6 +252,71 @@ data InventorySnapshot {
 }
 ```
 
+## Polymorphic `any` fields
+
+`any` is a builtin field type that carries an *opaque envelope* — a length-prefixed payload plus a metadata header — letting you defer (or partially defer) the choice of inner type to runtime while keeping the outer record's shape stable across versions. Six syntactic forms cover the common cases:
+
+| # | Syntax | Inner static type | Wire-meta carries |
+|---|---|---|---|
+| A | `any` | unknown | domain + version + typeid |
+| B | `any[domain:this]` | unknown, but the wire's domain is asserted to match the field's declaring domain | version + typeid |
+| C | `any[domain:current]` | unknown, but both the wire's domain and version are asserted to match the field's declaring (domain, version) | typeid |
+| D1 | `any[T]` | `T` from any domain | domain + version |
+| D2 | `any[domain:this, T]` | `T` in the declaring domain | version |
+| D3 | `any[domain:current, T]` | `T` in the declaring (domain, version) | — |
+
+In all six forms, an outer `length` prefix means a reader without the inner codec can still skip the field byte-accurately and forward the envelope unchanged — useful for proxies, evolution, and partial decoders. Forms A/B/C are the "polymorphic" cases where the inner type is identified at decode time by the meta-`typeid`. Forms D1/D2/D3 statically lock the inner type at the schema level; the meta still carries everything the field's kind doesn't statically pin down.
+
+```baboon
+data InnerPayload : derived[ueba] {
+  label: str
+  count: i32
+}
+
+root data Holder : derived[json], derived[ueba] {
+  // polymorphic — runtime decides the inner type
+  fAny:           any                              // full meta on wire
+  fDomainThis:    any[domain:this]                 // domain implied; wire carries version + typeid
+  fDomainCurrent: any[domain:current]              // domain + version implied; wire carries typeid
+
+  // typed polymorphism — inner type fixed by the schema
+  fUnderlying:        any[InnerPayload]                 // domain + version on wire
+  fThisUnderlying:    any[domain:this, InnerPayload]    // version on wire
+  fCurrentUnderlying: any[domain:current, InnerPayload] // nothing on wire (everything implied)
+
+  // any in nested positions
+  fOpt:    opt[any]
+  fLst:    lst[any[InnerPayload]]
+  fMapVal: map[str, any]
+}
+```
+
+`any` is permitted in field positions and inside `opt`, `lst`, and as a `map` value. It is **not** permitted as a `set` element or `map` key — set/map identity needs a stable hashable representation and `AnyOpaque` deliberately avoids comparing across the JSON/binary branches.
+
+The inner type referenced by D1/D2/D3 must itself derive UEBA (`: derived[ueba]`) — otherwise the cross-format conversion path can't materialize bytes from a JSON-branch payload.
+
+### Generated language surface
+
+Each target language exposes a sealed two-branch ADT (idiomatic spelling per language) for any-typed fields:
+
+- **`AnyOpaqueUeba(meta, bytes)`** — value originated from the binary wire; carries opaque bytes.
+- **`AnyOpaqueJson(meta, json)`** — value originated from the JSON wire; carries a parsed JSON value.
+
+`meta` is `AnyMeta(kind, domain?, version?, typeid?)`. The kind byte is a bitmask (bit 0 = typeid, bit 1 = version, bit 2 = domain), giving the table above. Construction-time invariant checks reject reserved/inconsistent kind bytes.
+
+Both branches round-trip natively in their own format with no codec lookup. To go between formats — emit a JSON-branch value as UEBA, or vice versa — the encoder needs a codec registry; pass one through `BaboonCodecContext.withFacade(useIndices, baboonFacade)`. For purely typed-payload code (your application layer), `BaboonCodecsFacade.decodeAny(opaque)` resolves the meta's typeid through the facade and returns a typed value, so callers don't deal with the envelope at all.
+
+### Wire representations
+
+- **UEBA** wire layout: `[length:i32][meta-length:i32][meta-kind:u8][meta-strings ULEB128]+[blob]`. See [`docs/ueba-format.md`](ueba-format.md#any-fields) for the full spec.
+- **JSON** envelope: `{"$ak": <kind>, "$ad"?: <domain>, "$av"?: <version>, "$at"?: <typeid>, "$c": <inner JSON>}`. See [`docs/json-codecs.md`](json-codecs.md#any-fields) for details.
+
+Both wires are byte-canonical across all 9 generated languages: the same fixture round-trips through any pair of languages identically.
+
+### Schema evolution
+
+`any` field changes are **breaking**: changing the variant (A → B, D1 → D2 etc.), changing the underlying type for D1/D2/D3, or adding/removing an `any` field all require an explicit migration stub. The compiler does not auto-derive transformations for `any`-bearing fields — too much depends on runtime payload data the typer can't see.
+
 ## Derivations and codegen
 
 Attach derivations on any type to request generated typeclass instances:

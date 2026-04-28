@@ -45,6 +45,7 @@ Generates:
 - Evolution-aware codegen: derives migrations when possible, emits stubs when manual work is required
 - Set-based structural inheritance with `+`, `-`, and `^` operators
 - Algebraic data types (`adt`), DTOs (`data`) and enums.
+- [Polymorphic `any` fields](docs/language-features.md#polymorphic-any-fields) — opaque envelope for runtime-typed payloads with byte-canonical cross-language wire format.
 - Type aliases for convenience (`type Name = TargetType`)
 - Basic form of nominal inheritance (`contract`)
 - Namespaces, includes, and imports
