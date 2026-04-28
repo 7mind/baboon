@@ -5,7 +5,7 @@ use std::fs;
 use std::io::Cursor;
 use std::path::PathBuf;
 
-use baboon_conv_test_rs::convtest::testpkg::{AllBasicTypes, AnyShowcase, InnerPayload};
+use baboon_conv_test_rs::convtest::testpkg::{AllBasicTypes, AnyShowcase, InnerPayload, WireEnum};
 use baboon_conv_test_rs::any_opaque::{AnyMeta, AnyOpaque, AnyOpaqueJson, AnyOpaqueUeba};
 use baboon_conv_test_rs::baboon_runtime::{BaboonBinEncode, BaboonBinDecode, BaboonCodecContext};
 use uuid::Uuid;
@@ -67,6 +67,8 @@ fn create_sample_data() -> AllBasicTypes {
             m.insert("more".to_string(), vec![4i64, 5, 6]);
             m
         },
+        // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
+        v_wire_enum: WireEnum::Cafe,
     }
 }
 

@@ -10,6 +10,7 @@ import 'package:conv_test_dt/generated/convtest/testpkg/any_showcase.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/baboon_codecs_json.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/baboon_codecs_ueba.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/inner_payload.dart';
+import 'package:conv_test_dt/generated/convtest/testpkg/wire_enum.dart';
 
 const String _domainId = 'convtest.testpkg';
 const String _domainVer = '2.0.0';
@@ -178,6 +179,8 @@ AllBasicTypes createSampleData() {
       'numbers': [1, 2, 3],
       'more': [4, 5, 6]
     },
+    // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
+    vWireEnum: WireEnum.Cafe,
   );
 }
 

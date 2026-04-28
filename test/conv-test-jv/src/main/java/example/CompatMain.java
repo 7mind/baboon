@@ -11,6 +11,7 @@ import convtest.testpkg.InnerPayload_JsonCodec;
 import convtest.testpkg.InnerPayload_UEBACodec;
 import convtest.testpkg.BaboonCodecsJson;
 import convtest.testpkg.BaboonCodecsUeba;
+import convtest.testpkg.WireEnum;
 import baboon.runtime.shared.BaboonAnyOpaque;
 import baboon.runtime.shared.BaboonCodecContext;
 import baboon.runtime.shared.BaboonCodecsFacade;
@@ -394,7 +395,9 @@ public class CompatMain {
             Map.of("one", 1, "two", 2, "three", 3),
             Optional.of(List.of("nested", "list", "values")),
             List.of(Optional.of(10), Optional.empty(), Optional.of(20), Optional.of(30)),
-            Map.of("numbers", List.of(1L, 2L, 3L), "more", List.of(4L, 5L, 6L))
+            Map.of("numbers", List.of(1L, 2L, 3L), "more", List.of(4L, 5L, 6L)),
+            // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
+            WireEnum.Cafe
         );
     }
 }

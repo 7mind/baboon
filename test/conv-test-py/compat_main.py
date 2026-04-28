@@ -13,6 +13,7 @@ from Generated.baboon_runtime_shared import BaboonDomainVersion, LEDataOutputStr
 from Generated.convtest.testpkg.AllBasicTypes import AllBasicTypes, AllBasicTypes_JsonCodec, AllBasicTypes_UEBACodec
 from Generated.convtest.testpkg.AnyShowcase import AnyShowcase, AnyShowcase_JsonCodec, AnyShowcase_UEBACodec
 from Generated.convtest.testpkg.InnerPayload import InnerPayload, InnerPayload_JsonCodec, InnerPayload_UEBACodec
+from Generated.convtest.testpkg.WireEnum import WireEnum
 
 DOMAIN_ID = "convtest.testpkg"
 DOMAIN_VER = "2.0.0"
@@ -223,6 +224,8 @@ def create_sample_data():
         voptLst=["nested", "list", "values"],
         vlstOpt=[10, None, 20, 30],
         vmapLst={"numbers": [1, 2, 3], "more": [4, 5, 6]},
+        # Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
+        vWireEnum=WireEnum.Cafe,
     )
 
 

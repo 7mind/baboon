@@ -59,7 +59,9 @@ func createSampleData() -> AllBasicTypes {
         vmapStrI32: ["one": 1, "two": 2, "three": 3],
         voptLst: ["nested", "list", "values"],
         vlstOpt: [10, nil, 20, 30],
-        vmapLst: ["numbers": [1, 2, 3], "more": [4, 5, 6]]
+        vmapLst: ["numbers": [1, 2, 3], "more": [4, 5, 6]],
+        // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
+        vWireEnum: WireEnum.Cafe
     )
 }
 

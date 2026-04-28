@@ -330,7 +330,10 @@ namespace ConvTest
                 {
                     { "numbers", new List<Int64> { 1L, 2L, 3L } },
                     { "more", new List<Int64> { 4L, 5L, 6L } }
-                }.ToImmutableDictionary()
+                }.ToImmutableDictionary(),
+
+                // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
+                VWireEnum: WireEnum.Cafe
             );
         }
 

@@ -34,6 +34,16 @@ root data AnyShowcase : derived[json], derived[ueba] {
   lstAny: lst[any[InnerPayload]]
 }
 
+// Cross-language wire-format coverage for non-Pascal-case enum members.
+// Wire names are canonical Pascal (capitalize first char only; underscores
+// are NOT word boundaries, so `bar_pub` -> `Bar_pub`). Used inside
+// AllBasicTypes below so existing all-basic-types.{json,ueba} fixtures
+// exercise the enum across all 10 backends.
+enum WireEnum : derived[json], derived[ueba] {
+  cafe
+  bar_pub
+}
+
 root data AllBasicTypes: derived[json], derived[ueba] {
   vi8: i08
   vi16: i16
@@ -66,6 +76,8 @@ root data AllBasicTypes: derived[json], derived[ueba] {
   voptLst: opt[lst[str]]
   vlstOpt: lst[opt[i32]]
   vmapLst: map[str, lst[i64]]
+
+  vWireEnum: WireEnum
 }
 
 // Renamed types from v1.0.0

@@ -1665,3 +1665,14 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Severity:** minor
 **Description:** `BaboonRuntimeResources.scala` uses `PortableResource.embedSources` macro; sbt's incremental compiler does not detect changes to the embedded resource files (`cross_language_fixture_path.dart`, `CrossLanguageFixturePath.swift`, etc.). After editing such resources, `sbt clean baboonJVM/compile` is required to re-embed. Encountered during PR-40 fix iteration: `mdl :build :test-gen-regular-adt` emitted stale (PR-40 first-pass) helper content because `BaboonRuntimeResources$.class` was cached from before my edits.
 **Suggested fix:** Configure sbt's `unmanagedResources` watcher to invalidate `BaboonRuntimeResources` on any baboon-runtime/* change, OR document the `sbt clean` requirement clearly. Out of PR-40 scope.
+
+---
+
+## PR-37 — Cross-language enum coverage in convtest model
+
+### [PR-37-D01] Executor stalled on mdl progress monitoring; orchestrator completed verification
+**Status:** resolved
+**Severity:** nit
+**Location:** subagent execution flow
+**Description:** PR-37 executor made all 11 file edits correctly (10 compat_main.* + pkg02.baboon) but stalled while waiting for `mdl` build output to monitor, returning a single sentence "Still empty after multiple minutes. Let me wait for the monitor." instead of a structured summary.
+**Fix:** Orchestrator manually verified the changes via `git diff` and ran the cross-language compat matrix (`mdl :test-gen-compat-{cs,sc,rs,ts,kt,jv,dt,sw,py}`) — all green. Spot-checked `target/compat-test/<lang>-json/all-basic-types.json` across all 10 backends — every fixture contains `"vWireEnum": "Cafe"` confirming Pascal-canonical wire format.

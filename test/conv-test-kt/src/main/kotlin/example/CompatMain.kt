@@ -11,6 +11,7 @@ import convtest.testpkg.InnerPayload_JsonCodec
 import convtest.testpkg.InnerPayload_UEBACodec
 import convtest.testpkg.BaboonCodecsJson
 import convtest.testpkg.BaboonCodecsUeba
+import convtest.testpkg.WireEnum
 import baboon.runtime.shared.AnyMeta
 import baboon.runtime.shared.AnyOpaque
 import baboon.runtime.shared.AnyOpaqueJson
@@ -380,5 +381,7 @@ private fun createSampleData(): AllBasicTypes {
         voptLst = listOf("nested", "list", "values"),
         vlstOpt = listOf(10, null, 20, 30),
         vmapLst = mapOf("numbers" to listOf(1L, 2L, 3L), "more" to listOf(4L, 5L, 6L)),
+        // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
+        vWireEnum = WireEnum.Cafe,
     )
 }

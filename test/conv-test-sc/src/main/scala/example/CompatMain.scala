@@ -12,6 +12,7 @@ import convtest.testpkg.{
   InnerPayload,
   InnerPayload_JsonCodec,
   InnerPayload_UEBACodec,
+  WireEnum,
 }
 import baboon.runtime.shared.{
   AnyMeta,
@@ -309,6 +310,8 @@ object CompatMain {
       voptLst    = Some(List("nested", "list", "values")),
       vlstOpt    = List(Some(10), None, Some(20), Some(30)),
       vmapLst    = Map("numbers" -> List(1L, 2L, 3L), "more" -> List(4L, 5L, 6L)),
+      // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
+      vWireEnum  = WireEnum.Cafe,
     )
   }
 

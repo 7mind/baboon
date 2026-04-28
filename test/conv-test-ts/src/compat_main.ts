@@ -4,6 +4,7 @@ import {fileURLToPath} from "url";
 import {AllBasicTypes} from "./generated/convtest/testpkg/AllBasicTypes";
 import {AnyShowcase} from "./generated/convtest/testpkg/AnyShowcase";
 import {InnerPayload} from "./generated/convtest/testpkg/InnerPayload";
+import {WireEnum} from "./generated/convtest/testpkg/WireEnum";
 import {
     AbstractBaboonJsonCodecs,
     AbstractBaboonUebaCodecs,
@@ -202,6 +203,8 @@ function createSampleData(): AllBasicTypes {
             ["numbers", [1n, 2n, 3n]],
             ["more", [4n, 5n, 6n]],
         ]),
+        // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
+        WireEnum.Cafe,
     );
 }
 
