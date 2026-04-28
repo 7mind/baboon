@@ -1200,3 +1200,48 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Location:** `test/conv-test-py/Generated/convtest/testpkg/from_1_0_0_abs_core_OldAbsAdt.py:9`.
 **Description:** `Convert__abs__core__OldAbsAdt__From__1_0_0` declares `AbstractConversion[v1_0_0.abs.core.OldAbsAdt.OldAbsAdt, NewAbsAdt]`, but the imported `Generated.convtest.testpkg.v1_0_0.abs.core` module does not expose an `OldAbsAdt` attribute under that path. Importing `baboon_runtime` (which transitively imports the conversion) fails at module load with `AttributeError: module 'Generated.convtest.testpkg.v1_0_0.abs.core' has no attribute 'OldAbsAdt'`. This is a generator/path-mapping issue — the Python codegen for old-version conversion modules emits a path that the Python module loader cannot resolve through the auto-generated `__init__.py`s. Pre-existing; the CLAUDE.md notes for PR 13.2 flagged "test-manual-python has a pre-existing failure".
 **Fix:** Out of scope for PR 13.2. PR 13.2's `compat_main.py` and the new `test_any_showcase.py` import only the codecs they need (sidestepping `Generated.convtest.testpkg.baboon_runtime`) and define a local in-file `AbstractBaboonJsonCodecs`/`AbstractBaboonUebaCodecs` aggregator subclass when a facade is needed. Permanent fix would be in the Python codegen path-resolution for `from_1_0_0_*` conversion modules.
+
+## PR-27 — Scala backend upstream-defect fixes (BAB-S01, BAB-S02)
+
+### [PR-27-D01] Pre-existing CopyEnumByName conversion broken for non-Pascal-case renamed enum members
+**Status:** open (pre-existing, deferred — out of PR-27 scope)
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScConversionTranslator.scala:187-210` with `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonRules.scala:45-55`
+**Description:** `mappingEntries` are emitted as `"<rawPrev>" -> "<rawNew>"` keyed by raw user-typed names (lowercase / snake_case in the affected case). Generated code does `Map(...).getOrElse(from.toString, from.toString)` then `tout.parse(...)`. But `from.toString` returns the *capitalized* case-object name (e.g., `Cafe`), so the mapping is never matched. Falls through to `parse("Cafe")` which silently returns wrong result. Pre-dates PR-27; PR-27's S02 fix only realigned UEBA codec arms with the already-capitalized case-objects.
+**Root cause:** Raw-vs-capitalized enum-name divergence between `BaboonRules` (operates on AST names) and `ScDefnTranslator:276/282/288` (capitalizes for case-object emission). Conversion translator picked up the raw side.
+**Suggested fix:** Either capitalize the keys in `mappingEntries` to match the case-object name, or emit a parse-aware mapping. Best done together with the helper extraction in PR-27-D03. Add a v2/v3 enum rename to `pkg0/pkg0[12].baboon` to surface this in regression tests.
+
+### [PR-27-D02] `IBaboonServiceRt` FQN computed via raw string concatenation instead of `renderFq(q"…")`
+**Status:** resolved (accepted — does not affect correctness)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScServiceWiringTranslator.scala:308-313`
+**Description:** Codebase convention for FQN strings inside this translator is `renderFq(q"$someScType")` (see line 306 `bweFq = renderFq(q"$baboonWiringError")`). Executor instead built the FQ string with `(rootPkg.parts.toList :+ "IBaboonServiceRt").mkString(".")`. Works correctly because `IBaboonServiceRt` is not a registered `ScType`, but slightly inconsistent.
+**Fix:** Accepted as-is. CLAUDE.md §5 (surgical changes) advises against unrelated refactors; introducing a new `ScType` entry crosses scope. Logged for awareness — if a future change registers `IBaboonServiceRt` as `ScType`, migrate this site to `renderFq`.
+
+### [PR-27-D03] Enum-member capitalization transform duplicated across 4 sites
+**Status:** resolved (plan-sanctioned — option (b) explicitly accepted)
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScDefnTranslator.scala:276,282,288` and `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScUEBACodecGenerator.scala:302`
+**Description:** Plan proposed (a) centralized helper or (b) fix at the UEBA site. Executor took (b). Risk: a new codec generator that re-references `m.name` raw will recurrence the bug.
+**Fix:** Accepted per plan. Future helper-extraction tied to PR-27-D01 follow-up.
+
+### [PR-27-D04] `pkg03.baboon` fixture lacks trailing newline
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/src/test/resources/baboon/pkg0/pkg03.baboon` (last byte)
+**Description:** Diff shows `\ No newline at end of file`. Other `.baboon` fixtures end with `\n`. POSIX-incompliant.
+**Fix:** Appended a single `\n` to end of file. Verified `tail -c 1 | xxd` reports `0a`.
+
+### [PR-27-D05] Coverage gap — no v1/v2 precursor of the new fixtures
+**Status:** resolved (deferred — out of PR-27 scope)
+**Severity:** minor
+**Location:** `baboon-compiler/src/test/resources/baboon/pkg0/pkg01.baboon`, `pkg02.baboon`
+**Description:** Both new fixtures (`T_NsPascal`, `ns svcns { service NsScopedSvc }`) appear only in pkg03 (v3.0.0). Conversion machinery is not exercised against the new shapes. Plan was scoped to additive v3-only fixtures.
+**Fix:** Deferred to PR-27-D01 follow-up — the conversion-rename test would naturally surface the pre-existing CopyEnumByName bug.
+
+### [PR-27-D06] Scope adjacency — `tasks.md` carries M14 milestone bookkeeping beyond PR-27
+**Status:** resolved (intentional — milestone-level orchestration)
+**Severity:** nit
+**Location:** `tasks.md`
+**Description:** `tasks.md` adds M14 + PR-28..PR-31 entries, beyond PR-27's strict scope.
+**Fix:** Accepted. Per review-loop skill discipline, milestone bookkeeping is orchestrator-level and may land alongside the first PR. Subsequent PRs only mutate their own task entries.

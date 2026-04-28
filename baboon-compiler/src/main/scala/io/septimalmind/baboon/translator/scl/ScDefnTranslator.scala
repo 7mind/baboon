@@ -80,7 +80,7 @@ object ScDefnTranslator {
       val wiringOutput = wiringTranslator
         .translate(defn).map {
           wiringTree =>
-            val pkg     = trans.toScPkg(domain.id, domain.version, evo)
+            val pkg     = srcRef.pkg
             val wrapped = scTrees.inNs(pkg.parts.toSeq, wiringTree)
             Output(
               getOutputPath(defn, suffix = Some("_Wiring")),

@@ -299,9 +299,10 @@ class ScUEBACodecGenerator(
   private def genEnumBodies(name: ScValue.ScType, e: Typedef.Enum): (TextTree[ScValue.ScType], TextTree[ScValue.ScType]) = {
     val branches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
+        val obj = m.name.capitalize
         (
-          q"case $name.${m.name} => writer.writeByte(${idx.toString})",
-          q"case ${idx.toString} => Right($name.${m.name})",
+          q"case $name.$obj => writer.writeByte(${idx.toString})",
+          q"case ${idx.toString} => Right($name.$obj)",
         )
     }
 

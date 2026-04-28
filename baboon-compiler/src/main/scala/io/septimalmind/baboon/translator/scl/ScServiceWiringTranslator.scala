@@ -305,6 +305,13 @@ object ScServiceWiringTranslator {
 
     private val bweFq: String = renderFq(q"$baboonWiringError")
 
+    // IBaboonServiceRt is always emitted in the domain root package; use the FQ name
+    // so that wiring objects inside a namespace sub-package can still reference it.
+    private val iBaboonServiceRtFq: String = {
+      val rootPkg = trans.toScPkg(domain.id, domain.version, evo)
+      (rootPkg.parts.toList :+ "IBaboonServiceRt").mkString(".")
+    }
+
     private def ct(error: String, success: String): String = renderContainer(error, success)
 
     private def generateErrorsJsonMethod(service: Typedef.Service): TextTree[ScValue] = {
@@ -400,7 +407,7 @@ object ScServiceWiringTranslator {
          |  method: $baboonMethodId,
          |  data: String,
          |  impl: $svcName$svcTypeArg,
-         |  rt: IBaboonServiceRt$rtTypeArg,
+         |  rt: $iBaboonServiceRtFq$rtTypeArg,
          |  ${ctxParamDecl}ctx: $baboonCodecContext): $wiringRetType = {
          |  method.methodName match {
          |    ${cases.shift(4).trim}
@@ -507,7 +514,7 @@ object ScServiceWiringTranslator {
          |  method: $baboonMethodId,
          |  data: Array[Byte],
          |  impl: $svcName$svcTypeArg,
-         |  rt: IBaboonServiceRt$rtTypeArg,
+         |  rt: $iBaboonServiceRtFq$rtTypeArg,
          |  ${ctxParamDecl}ctx: $baboonCodecContext): $wiringRetType = {
          |  method.methodName match {
          |    ${cases.shift(4).trim}

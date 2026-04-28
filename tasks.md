@@ -21,6 +21,19 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 - [x] **M11** — GraphQL schema emission.
 - [x] **M12** — OpenAPI schema emission.
 - [x] **M13** — Cross-language interop tests.
+- [~] **M14** — Upstream-defect triage and fixes (Scala/Kotlin/TS/Swift backends + CLI). Source: `baboon-upstream-defects-clean.md`.
+
+---
+
+## Milestone 14 — PR breakdown
+
+Detail in `docs/drafts/20260428-1100-upstream-defects-plan.md`. Triage covered 14 defects: 11 REAL, 2 misdiagnosed (S04, C01), 1 unverified (K05).
+
+- [x] **PR-27** — Scala fixes: BAB-S01 (ns-scoped `*_Wiring.scala` wrong package) + BAB-S02 (enum-case-name mismatch UEBA vs case-objects).
+- [ ] **PR-28** — Kotlin fixes: BAB-K01 (ns-scoped `*ServiceWiring.kt` wrong package), BAB-K02 (param-name supertype mismatch), BAB-K03 (redundant cast in ADT branch), BAB-K04 (redundant `!!` on non-null receiver).
+- [ ] **PR-29** — TypeScript fixes: BAB-T01 (strict-mode tsconfig errors: TS1484/TS7030/TS2322) + BAB-T02 (bundler MISSING_EXPORT on type-only imports).
+- [ ] **PR-30** — Swift fixes: BAB-W01 (doubled `try try`) + BAB-W02 (force-cast in optional context) + BAB-W03 (residual `try`-on-non-throwing) + BAB-W04 (UEBA reader traps on truncated input — major).
+- [ ] **PR-31** — Documentation closure for misdiagnosed/unverified entries (S04, C01, K05).
 
 ---
 
@@ -187,6 +200,12 @@ My recommendation is **(a)**: one big PR, mechanical, everything stays consisten
 ---
 
 ## Completed
+
+- **PR-27** (2026-04-28) — Scala backend upstream-defect fixes (BAB-S01, BAB-S02). Three source-side edits + one fixture file. **What shipped:** (a) `ScDefnTranslator.scala:83` — wiring's `pkg` now derives from `srcRef.pkg` (ns-aware) instead of `trans.toScPkg(domain.id, ...)` (root-only). (b) `ScServiceWiringTranslator.scala` — added FQN qualification of `IBaboonServiceRt` in `generateErrors{Json,Ueba}Method`, since the wiring object now lives in a sub-package and the bare reference no longer resolves. (c) `ScUEBACodecGenerator.scala:302` — UEBA enum-codec arms now emit `${m.name.capitalize}` matching `ScDefnTranslator:276/282/288`. (d) `pkg0/pkg03.baboon` fixture — added `enum T_NsPascal { cafe; bar_pub }` with holder + `ns svcns { root service NsScopedSvc { ... } }` to lock both regressions in. Verification: `sbt baboonJVM/compile` clean, `sbt baboonJVM/test` 182/182 (one pre-existing C# artifact dependency unrelated), `mdl :test-gen-regular-adt :test-scala-regular` PASS, `mdl :test-gen-wrapped-adt :test-scala-wrapped` PASS, all `sc-wiring-{either,hkt,outcome,result}` actions PASS. Six review-loop defects logged as PR-27-D01..D06: D04 fixed (trailing newline); D02 accepted nit (FQN string concat vs `renderFq` — does not affect correctness); D03 accepted per plan (option (b) was sanctioned); D01 deferred (pre-existing CopyEnumByName conversion bug for non-Pascal-case renamed enum members in `ScConversionTranslator.scala:187-210` + `BaboonRules.scala:45-55` — surfaces only when v1→v2 enum rename uses non-Pascal-case names; orthogonal to PR-27 scope); D05 deferred (no v1/v2 precursor of new fixtures — coverage gap, would surface D01); D06 accepted (M14 milestone bookkeeping in `tasks.md` is intentional orchestrator-level state). Notes / surprises:
+  - **Knock-on FQN qualification**: not in the plan; emerged because moving the wiring file into a sub-package made the bare `IBaboonServiceRt` reference (defined at `<root>.IBaboonServiceRt`) unresolvable. Fix mirrors how `translateServiceRt` constructs the `IBaboonServiceRt` package via `trans.toScPkg(domain.id, ...)`.
+  - **`.capitalize` semantics**: only first character is uppercased. `bar_pub` → `Bar_pub`, NOT `BarPub`. Defect tracker's wording suggested a snake-to-camel transform but Baboon doesn't apply one. UEBA fix mirrors `ScDefnTranslator` exactly (option-(b) per plan).
+  - **Latent CopyEnumByName**: the conversion translator emits raw lowercase mappings keyed by `from.toString` which returns capitalized names — silent miss-then-`parse` path. Surfaces only with renamed non-Pascal-case enum members across versions. Pre-existing — see PR-27-D01.
+  - **Fixture placement**: fixtures live at `baboon-compiler/src/test/resources/baboon/pkg0/pkg03.baboon`; pkg03 is a leaf v3 (no further evolution), avoiding the `mdl :test-gen-regular-adt` collision pattern noted in PR 1.4 / PR 2.0 — unlike `any-bad/` fixtures which had to relocate, additive non-broken pkg03 fixtures pass the model-dir feed cleanly.
 
 - **PR 13.2** (2026-04-27) — Cross-language interop for `any` — fan-out to 8 languages. **Closes M13.** Mirrors PR 13.1 across Rust, Java, Kotlin, Kotlin-KMP, TypeScript, Dart, Swift, Python. Each language's `CompatMain` now writes `any-showcase.{json,ueba}` fixtures alongside `all-basic-types.*`, and each language's `Test_CrossLanguageCompat` reads all 9 other languages' AnyShowcase fixtures and asserts logical equality of all 6 any-variant slots + nested opt/lst positions. **All 10 languages produce byte-identical UEBA fixtures** (md5 `d0efc6462fac8443140926a324b88d23` across `target/compat-test/{scala,cs,rust,java,kotlin,kotlin-kmp,typescript,dart,swift,python}-ueba/any-showcase.ueba`) — the strongest cross-language wire-format proof. JSON fixtures decode equivalently across all languages; whitespace differs by pretty-printer choice. Per-language verification:
   - **Rust** (`test/conv-test-rs/`) — 44 tests pass (added 18 AnyShowcase tests including 2 byte-identical-UEBA assertions). Same-format branch construction (Rust generates no per-domain `BaboonCodecsJson`/`BaboonCodecsUeba` aggregator and no `BaboonAnyJsonCodec`/`BaboonAnyBinCodec` impls for InnerPayload, so cross-format conversion through the facade is unavailable; same-branch encoding yields byte-identical UEBA + decode-equivalent JSON without needing facade-resolution).
