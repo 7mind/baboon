@@ -168,7 +168,8 @@ class TsJsonCodecGenerator(
     }
 
     (
-      q"${encCases.toList.joinN().shift(4).trim}",
+      q"""${encCases.toList.joinN().shift(4).trim}
+         |throw new Error("Unhandled ADT branch: " + (value as {constructor?: {name?: string}}).constructor?.name);""".stripMargin,
       q"""const obj = json as Record<string, unknown>;
          |const key = Object.keys(obj)[0];
          |switch (key) {

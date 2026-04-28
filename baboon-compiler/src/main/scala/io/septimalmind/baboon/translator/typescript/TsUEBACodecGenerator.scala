@@ -51,9 +51,9 @@ class TsUEBACodecGenerator(
 
     val encodeMethod =
       List(
-        q"""public encode(ctx: $tsBaboonCodecContext, value: $name, writer: $tsBaboonBinWriter): unknown {
+        q"""public encode(ctx: $tsBaboonCodecContext, value: $name, writer: $tsBaboonBinWriter): void {
            |    if (this !== $cName.lazyInstance.value) {
-           |      return $cName.lazyInstance.value.encode(ctx, value, writer)
+           |        $cName.lazyInstance.value.encode(ctx, value, writer); return;
            |    }
            |
            |    ${enc.shift(4).trim}
@@ -239,12 +239,14 @@ class TsUEBACodecGenerator(
         val codecType  = codecName(branchType)
         if (target.language.wrappedAdtBranchCodecs) {
           q"""if (value instanceof $branchName) {
-             |    $codecType.instance.encode(ctx, value, writer)
+             |    $codecType.instance.encode(ctx, value, writer);
+             |    return;
              |}""".stripMargin
         } else {
           q"""if (value instanceof $branchName) {
              |    $tsBinTools.writeByte(writer, ${idx.toString});
              |    $codecType.instance.encode(ctx, value, writer);
+             |    return;
              |}""".stripMargin
         }
     }
@@ -272,7 +274,8 @@ class TsUEBACodecGenerator(
        |    }
        |}""".stripMargin
     (
-      q"${encBranches.joinN().shift(4).trim}",
+      q"""${encBranches.joinN().shift(4).trim}
+         |throw new Error("Unhandled ADT branch: " + (value as {constructor?: {name?: string}}).constructor?.name);""".stripMargin,
       q"""const tag = $tsBinTools.readByte(reader);
          |switch (tag) {
          |    ${decBranches.joinN().shift(8).trim}

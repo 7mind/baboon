@@ -15,9 +15,9 @@ import {
     BaboonBinWriter,
     BaboonCodecException,
     BaboonDecoderFailure,
-    BaboonEither,
     BinTools,
 } from "./BaboonSharedRuntime";
+import type { BaboonEither } from "./BaboonSharedRuntime";
 
 // --- AnyMeta -----------------------------------------------------------------------------------
 

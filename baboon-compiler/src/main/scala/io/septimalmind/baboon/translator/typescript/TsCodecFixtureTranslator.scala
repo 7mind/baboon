@@ -81,7 +81,7 @@ object TsCodecFixtureTranslator {
       q"""export function ${fixtureFnName(adt.id, FixUeba)}(rnd: $baboonRandom): $adtName {
          |    const all = ${fixtureFnName(adt.id, FixUeba)}_all(rnd);
          |    const idx = rnd.nextUSize(all.length);
-         |    return all[idx];
+         |    return all[idx]!;
          |}
          |
          |export function ${fixtureFnName(adt.id, FixUeba)}_all(rnd: $baboonRandom): $adtName[] {
@@ -93,7 +93,7 @@ object TsCodecFixtureTranslator {
          |export function ${fixtureFnName(adt.id, FixJson)}(rnd: $baboonRandom): $adtName {
          |    const all = ${fixtureFnName(adt.id, FixJson)}_all(rnd);
          |    const idx = rnd.nextUSize(all.length);
-         |    return all[idx];
+         |    return all[idx]!;
          |}
          |
          |export function ${fixtureFnName(adt.id, FixJson)}_all(rnd: $baboonRandom): $adtName[] {

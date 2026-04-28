@@ -237,15 +237,16 @@ class CSUEBACodecGenerator(
   private def genEnumBodies(name: CSValue.CSType, e: Typedef.Enum) = {
     val branches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
+        val obj = m.name.capitalize
         (
-          q"""if (value == $name.${m.name})
+          q"""if (value == $name.$obj)
              |{
              |   writer.Write((byte)${idx.toString});
              |   return;
              |}""".stripMargin,
           q"""if (asByte == ${idx.toString})
              |{
-             |   return $name.${m.name};
+             |   return $name.$obj;
              |}""".stripMargin,
         )
     }

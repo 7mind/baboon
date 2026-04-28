@@ -104,7 +104,10 @@ export class BaboonBinReader {
     }
 
     readByte(): number {
-        const v = this.buf[this.pos];
+        if (this.pos >= this.buf.length) {
+            throw new BaboonDecoderFailure(`UEBA: unexpected end of input at position ${this.pos}`);
+        }
+        const v = this.buf[this.pos]!;
         this.pos += 1;
         return v;
     }
@@ -275,9 +278,9 @@ export class BaboonDateTimeOffset {
         }
         const match = s.match(/([+-])(\d{2}):(\d{2})$/);
         if (match) {
-            const sign = match[1] === "+" ? 1 : -1;
-            const hours = parseInt(match[2], 10);
-            const minutes = parseInt(match[3], 10);
+            const sign = match[1]! === "+" ? 1 : -1;
+            const hours = parseInt(match[2]!, 10);
+            const minutes = parseInt(match[3]!, 10);
             return sign * (hours * 3600 + minutes * 60) * 1000;
         }
         return 0;
@@ -450,10 +453,10 @@ export class BinTools {
         }
         // Swap for .NET GUID mixed-endian: reverse 0-3, 4-5, 6-7
         const guid = new Uint8Array(16);
-        guid[0] = bytes[3]; guid[1] = bytes[2]; guid[2] = bytes[1]; guid[3] = bytes[0];
-        guid[4] = bytes[5]; guid[5] = bytes[4];
-        guid[6] = bytes[7]; guid[7] = bytes[6];
-        for (let i = 8; i < 16; i++) guid[i] = bytes[i];
+        guid[0] = bytes[3]!; guid[1] = bytes[2]!; guid[2] = bytes[1]!; guid[3] = bytes[0]!;
+        guid[4] = bytes[5]!; guid[5] = bytes[4]!;
+        guid[6] = bytes[7]!; guid[7] = bytes[6]!;
+        for (let i = 8; i < 16; i++) guid[i] = bytes[i]!;
         writer.writeBytes(guid);
     }
 
@@ -581,10 +584,10 @@ export class BinTools {
         const raw = reader.readBytes(16);
         const bytes = new Uint8Array(16);
         // Reverse .NET swaps: 0-3, 4-5, 6-7
-        bytes[0] = raw[3]; bytes[1] = raw[2]; bytes[2] = raw[1]; bytes[3] = raw[0];
-        bytes[4] = raw[5]; bytes[5] = raw[4];
-        bytes[6] = raw[7]; bytes[7] = raw[6];
-        for (let i = 8; i < 16; i++) bytes[i] = raw[i];
+        bytes[0] = raw[3]!; bytes[1] = raw[2]!; bytes[2] = raw[1]!; bytes[3] = raw[0]!;
+        bytes[4] = raw[5]!; bytes[5] = raw[4]!;
+        bytes[6] = raw[7]!; bytes[7] = raw[6]!;
+        for (let i = 8; i < 16; i++) bytes[i] = raw[i]!;
 
         const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
         return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;

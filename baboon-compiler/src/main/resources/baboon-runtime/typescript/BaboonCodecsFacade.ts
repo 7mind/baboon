@@ -15,38 +15,37 @@
 //   PR-08-D02  `BaboonTypeMeta.from` indexes `[0]` directly so empty `sameInVersions` fails fast
 
 import {
-    AbstractBaboonConversions,
     AbstractBaboonCodecs,
     AbstractBaboonJsonCodecs,
     AbstractBaboonUebaCodecs,
     BaboonBinReader,
     BaboonBinWriter,
-    BaboonBinCodec,
     BaboonCodecContext,
-    BaboonCodecData,
     BaboonCodecException,
     BaboonCodecNotFound,
     BaboonConversionNotFound,
     BaboonConverterFailure,
     BaboonDecoderFailure,
     BaboonDomainVersion,
-    BaboonEither,
     BaboonEncoderFailure,
     BaboonException,
-    BaboonGenerated,
-    BaboonJsonCodec,
-    BaboonMeta,
     BaboonTypeMeta,
     BaboonTypeMetaCodec,
     BaboonVersion,
     Lazy,
 } from "./BaboonSharedRuntime";
+import type {
+    AbstractBaboonConversions,
+    BaboonBinCodec,
+    BaboonCodecData,
+    BaboonEither,
+    BaboonGenerated,
+    BaboonJsonCodec,
+    BaboonMeta,
+} from "./BaboonSharedRuntime";
 
-import {
-    AnyMeta,
-    AnyMetaCodec,
-    AnyOpaque,
-} from "./BaboonAnyOpaque";
+import { AnyMetaCodec } from "./BaboonAnyOpaque";
+import type { AnyMeta, AnyOpaque } from "./BaboonAnyOpaque";
 
 const CONTENT_JSON_KEY = "$c";
 
@@ -192,7 +191,7 @@ export class BaboonCodecsFacade {
         try {
             const writer = new BaboonBinWriter();
             (typeMetaOverride !== undefined ? typeMetaOverride : typeMeta).writeBin(writer);
-            codec.encode(ctx, writer, value);
+            codec.encode(ctx, value, writer);
             return right(writer.toBytes());
         } catch (e) {
             return leftCodecException(new BaboonEncoderFailure(

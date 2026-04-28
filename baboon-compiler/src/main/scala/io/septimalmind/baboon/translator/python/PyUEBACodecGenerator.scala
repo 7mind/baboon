@@ -146,13 +146,14 @@ class PyUEBACodecGenerator(
   private def genEnumBodies(enum: Typedef.Enum): (TextTree[PyValue], TextTree[PyValue]) = {
     val branches = enum.members.zipWithIndex.toList.map {
       case (m, i) =>
+        val obj = m.name.capitalize
         (
-          q"""if value.value == "${m.name}":
+          q"""if value.value == "$obj":
              |    wire.write_byte(${i.toString})
              |    return
              |""".stripMargin,
           q"""if as_byte == ${i.toString}:
-             |    return ${enum.id.name.name.capitalize}.${m.name}
+             |    return ${enum.id.name.name.capitalize}.$obj
              |""".stripMargin,
         )
     }

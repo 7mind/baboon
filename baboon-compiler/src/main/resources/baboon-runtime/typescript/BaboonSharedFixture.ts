@@ -107,6 +107,6 @@ export class BaboonRandom {
 
     mkEnum<T>(values: ReadonlyArray<T>): T {
         const idx = Math.floor(Math.random() * values.length);
-        return values[idx];
+        return values[idx]!;
     }
 }

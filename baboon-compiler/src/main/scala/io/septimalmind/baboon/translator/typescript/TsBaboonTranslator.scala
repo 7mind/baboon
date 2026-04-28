@@ -196,22 +196,39 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     val typesByModule = usedTypes.groupBy(_.moduleId).toList.sortBy { case (moduleId, types) => moduleId.path.size + types.size }.reverse
 
     val importsByModule =
-      typesByModule.map {
+      typesByModule.flatMap {
         case (moduleId, types) =>
-          val typesString = types.map {
-            case t if aliasMap.contains(t)       => s"${t.name} as ${aliasMap(t)}"
-            case TsType(_, name, Some(alias), _) => s"$name as $alias"
-            case t: TsValue.TsType               => t.name
+          // Partition into type-only and value-bearing
+          val (typeOnlyTypes, valueTypes) = types.partition(_.typeOnly)
+
+          def typeString(ts: Seq[TsType]): String = ts.map {
+            case t if aliasMap.contains(t)          => s"${t.name} as ${aliasMap(t)}"
+            case TsType(_, name, Some(alias), _, _) => s"$name as $alias"
+            case t: TsValue.TsType                  => t.name
           }.mkString(", ")
-          if (moduleId.path.startsWith(tsFileTools.definitionsBasePkg)) {
-            definitionImport(moduleId, typesString)
-          } else if (moduleId.path.startsWith(tsFileTools.fixturesBasePkg) && tsFileTools.fixturesBasePkg.nonEmpty) {
-            fixtureImport(moduleId, typesString)
-          } else if (moduleId == tsBaboonRuntimeShared || moduleId == tsFixtureShared || moduleId == tsBaboonAnyOpaqueModule) {
-            baboonTypeImport(moduleId, typesString)
-          } else {
-            q"import {$typesString} from '${moduleId.path.mkString("/")}'"
+
+          def mkImportFor(tsList: Seq[TsType], importType: Boolean): Option[TextTree[TsValue]] = {
+            if (tsList.isEmpty) None
+            else {
+              val keyword     = if (importType) "type " else ""
+              val typesString = keyword + typeString(tsList)
+              val result = if (moduleId.path.startsWith(tsFileTools.definitionsBasePkg)) {
+                definitionImport(moduleId, typesString)
+              } else if (moduleId.path.startsWith(tsFileTools.fixturesBasePkg) && tsFileTools.fixturesBasePkg.nonEmpty) {
+                fixtureImport(moduleId, typesString)
+              } else if (moduleId == tsBaboonRuntimeShared || moduleId == tsFixtureShared || moduleId == tsBaboonAnyOpaqueModule) {
+                baboonTypeImport(moduleId, typesString)
+              } else {
+                q"import {$typesString} from '${moduleId.path.mkString("/")}'"
+              }
+              Some(result)
+            }
           }
+
+          List(
+            mkImportFor(typeOnlyTypes, importType = true),
+            mkImportFor(valueTypes, importType = false),
+          ).flatten
       }
 
     val allImports = importsByModule.joinN()
@@ -220,7 +237,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
 
     full.mapRender {
       case t: TsValue.TsType if aliasMap.contains(t) => aliasMap(t)
-      case TsValue.TsType(_, _, Some(alias), _)      => alias
+      case TsValue.TsType(_, _, Some(alias), _, _)   => alias
       case t: TsValue.TsType                         => t.name
     }
   }
@@ -242,9 +259,28 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     }
   }
 
-  /** Extract type names that a file defines (types whose module matches the file's own module). */
-  private def exportedNames(output: TsDefnTranslator.Output): Set[String] = {
-    output.tree.values.collect { case t: TsValue.TsType if t.moduleId == output.module && !t.predef => t.name }.toSet
+  /** Extract type names that a file defines (types whose module matches the file's own module).
+    * Returns a map from name to typeOnly flag (true = type-only, false = value-bearing). */
+  private def exportedNames(output: TsDefnTranslator.Output): Map[String, Boolean] = {
+    output.tree.values.collect {
+      case t: TsValue.TsType if t.moduleId == output.module && !t.predef => t.name -> t.typeOnly
+    }.toMap
+  }
+
+  /** Render a named re-export line, splitting type-only and value-bearing names into separate statements. */
+  private def namedReexports(
+    nameToTypeOnly: Map[String, Boolean],
+    names: Iterable[String],
+    renderName: String => String,
+    from: String,
+  ): List[TextTree[TsValue]] = {
+    val sorted    = names.toList.sorted
+    val typeOnly  = sorted.filter(n => nameToTypeOnly.getOrElse(n, false))
+    val valueBearing = sorted.filterNot(n => nameToTypeOnly.getOrElse(n, false))
+    List(
+      if (typeOnly.nonEmpty) Some(TextTree.text[TsValue](s"export type { ${typeOnly.map(renderName).mkString(", ")} } from '$from';")) else None,
+      if (valueBearing.nonEmpty) Some(TextTree.text[TsValue](s"export { ${valueBearing.map(renderName).mkString(", ")} } from '$from';")) else None,
+    ).flatten
   }
 
   private def generateBarrels(outputs: List[TsDefnTranslator.Output]): List[TsDefnTranslator.Output] = {
@@ -269,7 +305,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
 
         // Collect exported names per file and detect collisions across files in this directory
         val fileExports = sortedFiles.map(f => (f, exportedNames(f)))
-        val nameCount   = fileExports.flatMap(_._2).groupBy(identity).view.mapValues(_.size).toMap
+        val nameCount   = fileExports.flatMap(_._2.keys).groupBy(identity).view.mapValues(_.size).toMap
         val colliding   = nameCount.filter(_._2 > 1).keySet
 
         val reexports = if (colliding.isEmpty) {
@@ -283,7 +319,8 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
           // Has collisions — files with colliding names get individual qualified re-exports,
           // files without collisions get export *
           fileExports.flatMap {
-            case (f, names) =>
+            case (f, nameMap) =>
+              val names        = nameMap.keySet
               val fname        = f.path.drop(dir.length + 1).stripSuffix(".ts")
               val myCollisions = names.intersect(colliding)
               if (myCollisions.isEmpty) {
@@ -291,14 +328,11 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
               } else {
                 val safeNames = names -- colliding
                 val qualifier = fname.replace('.', '_').replace('-', '_').replace('/', '_')
-                val safeExport = if (safeNames.nonEmpty) {
-                  List(TextTree.text[TsValue](s"export { ${safeNames.toList.sorted.mkString(", ")} } from './$fname$sfx';"))
+                val safeExports = if (safeNames.nonEmpty) {
+                  namedReexports(nameMap, safeNames, identity, s"./$fname$sfx")
                 } else Nil
-                val qualifiedExports = myCollisions.toList.sorted.map {
-                  name =>
-                    TextTree.text[TsValue](s"export { $name as ${qualifier}_$name } from './$fname$sfx';")
-                }
-                safeExport ++ qualifiedExports
+                val qualifiedExports = namedReexports(nameMap, myCollisions, n => s"$n as ${qualifier}_$n", s"./$fname$sfx")
+                safeExports ++ qualifiedExports
               }
           }
         }

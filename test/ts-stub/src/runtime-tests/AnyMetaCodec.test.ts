@@ -387,7 +387,7 @@ class StubGenerated implements BaboonGenerated {
 }
 
 class StubBinCodec implements BaboonBinCodec<BaboonGenerated> {
-    public encode(_ctx: BaboonCodecContext, writer: BaboonBinWriter, _value: BaboonGenerated): void {
+    public encode(_ctx: BaboonCodecContext, _value: BaboonGenerated, writer: BaboonBinWriter): void {
         BinTools.writeByte(writer, 0x42);
     }
     public decode(_ctx: BaboonCodecContext, reader: BaboonBinReader): BaboonGenerated {

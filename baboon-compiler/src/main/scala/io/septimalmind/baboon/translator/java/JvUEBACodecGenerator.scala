@@ -238,9 +238,10 @@ class JvUEBACodecGenerator(
   private def genEnumBodies(name: JvValue.JvType, e: Typedef.Enum): (TextTree[JvValue], TextTree[JvValue]) = {
     val branches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
+        val obj = m.name.capitalize
         (
-          q"case ${m.name} -> output.writeByte(${idx.toString});",
-          q"case ${idx.toString} -> $name.${m.name};",
+          q"case $obj -> output.writeByte(${idx.toString});",
+          q"case ${idx.toString} -> $name.$obj;",
         )
     }
 

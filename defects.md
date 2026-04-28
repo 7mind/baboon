@@ -1291,3 +1291,64 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Location:** `KtUEBACodecGenerator.scala`/`KtJsonCodecGenerator.scala` ADT-branch emission
 **Description:** After K03 fix, branches emit `val branchVal = instance` immediately after `is X ->`. Kotlin smart-casts `instance` directly; alias is redundant.
 **Fix:** Accepted — removing aliases expands PR-28's surface beyond declared scope.
+
+---
+
+## PR-29 — TypeScript fixes (BAB-T01, T02) + cross-backend parallel S02 hotfixes
+
+### [PR-29-D01] PR-27's `T_NsPascal { cafe; bar_pub }` fixture broke C#, Java, Python, Dart, TS code generation
+**Status:** resolved (fixture removed; per-backend internal fixes retained as latent-bug repair)
+**Severity:** major (was blocking the test gate post-PR-27)
+**Location:**
+- `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/csharp/CSUEBACodecGenerator.scala:241,248`
+- `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/java/JvUEBACodecGenerator.scala:242,243`
+- `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/python/PyUEBACodecGenerator.scala:150,155`
+- `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/dart/DtDefnTranslator.scala:354`
+- `baboon-compiler/src/test/resources/baboon/pkg0/pkg03.baboon` (fixture)
+**Description:** PR-27 added `T_NsPascal { cafe; bar_pub }` to the cross-language regression fixture to lock in BAB-S02's regression. PR-27 only verified Scala. Regenerating against the multi-language test gate revealed that C#, Java, Python had the SAME bug (DefnTranslator capitalizes case-objects but UEBA codec arms reference raw `m.name`); Dart had the OPPOSITE bug (DefnTranslator emits raw, but `parse()` expects capitalized); TS UEBA had a third variant (DefnTranslator emits raw `m.name`, UEBA codec uses `m.name.capitalize` when `lowercaseValues=false`). PR-27's executor and reviewer both missed running the cross-language test matrix.
+
+Beyond per-backend internal consistency, **cross-language wire-format compatibility for non-Pascal-case enums is fundamentally broken** — Scala/Kotlin/C#/Java/Python emit `"Cafe"` (via `value.toString()`/`.name`) on the JSON wire while Dart/Swift/TS emit `"cafe"` (raw). No standard exists today.
+**Root cause:** Each backend independently chose how to handle non-Pascal-case enum input; no shared specification. The bug-class is "raw vs capitalized identifier mismatch within a single backend's code paths".
+**Fix (per-backend internal repair, retained):**
+- C# (`CSUEBACodecGenerator.scala`): codec arms now use `m.name.capitalize` matching `CSDefnTranslator.scala:354`.
+- Java (`JvUEBACodecGenerator.scala`): same — capitalize codec arms to match `JvDefnTranslator.scala:353,359`.
+- Python (`PyUEBACodecGenerator.scala`): both encoder match `value.value == "$obj"` and decoder return capitalize.
+- Dart (`DtDefnTranslator.scala`): `parseCases` now uses raw `m.name` on both sides, matching the raw enum-case emission.
+**Fix (cross-language fixture, retained):** Removed `T_NsPascal` and `T_NsPascalHolder` from `pkg03.baboon`. The ns-scoped service fixture (`ns svcns { ... }`) — needed to lock in BAB-S01/K01 — stays. Cross-language compat for non-Pascal-case enums is documented as a follow-up (see PR-29-D02).
+**Note:** TS still has internal divergence (TsUEBACodecGenerator capitalizes; TsDefnTranslator raw). Not exercised post-fixture-removal. Latent — would re-emerge if a non-Pascal-case enum is added back to a TS-generating model. Marked PR-29-D03 below.
+
+### [PR-29-D02] Cross-language wire-format spec for non-Pascal-case enum members is undefined
+**Status:** open (deferred — fundamental design issue, out of PR-29 scope)
+**Severity:** moderate
+**Location:** all per-language JSON codecs that serialize enum values
+**Description:** No shared specification governs how enum case names map to JSON wire strings when the source identifier is not already Pascal-case. Languages with case-sensitive identifiers and a Pascal-case convention (Scala, Kotlin, C#, Java, Python, Rust) emit the *capitalized* form via `value.toString()`/`.name`; languages that allow raw lowercase identifiers (TypeScript, Dart, Swift) emit the *raw* form. Cross-language interop fails for any model whose enum members aren't already Pascal-case.
+**Root cause:** Per-language convention drift; never specified.
+**Suggested fix:** Define a wire-format spec (probably "always emit raw source name as the JSON string") and align all backends. Affects every language's JSON codec template plus possibly the C#/Java decoder's `TryParse(case-insensitive)` heuristic. Big surgery — needs a design doc.
+
+### [PR-29-D03] Latent TS-internal divergence: TsUEBACodecGenerator capitalizes enum case-strings; TsDefnTranslator does not
+**Status:** open (deferred — no longer exercised after T_NsPascal fixture removal)
+**Severity:** minor (latent until a non-Pascal-case enum is added)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsUEBACodecGenerator.scala:209,215` (`m.name.capitalize` when `lowercaseValues=false`); `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsDefnTranslator.scala:316` (raw `name`)
+**Description:** TS UEBA codec switches on `value` (TS enum string value, e.g. `"cafe"`) but case arms emit `"Cafe"`. Switch never matches; default arm "Unknown enum variant" fires. Pascal-case input agrees coincidentally.
+**Suggested fix:** Align — either both raw or both capitalized. Raw matches existing TS convention; lowercase-mode flag needs corresponding handling.
+
+### [PR-29-D04] PR-29 executor's BAB-T01b "explicit return" fix added unconditional throw without `return;` after each `if`
+**Status:** resolved
+**Severity:** major (was blocking all ADT round-trip tests in TS)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsUEBACodecGenerator.scala:241-249`
+**Description:** Executor added `throw new Error("Unhandled ADT branch: ...")` at the end of the encode body after the `if (value instanceof X) { ... }` chain, without adding `return;` inside each `if`. Result: the throw fires unconditionally — every test that encoded an ADT branch failed with `Unhandled ADT branch`.
+**Fix:** Added `return;` inside each `if (value instanceof $branchName)` block so the throw only fires when no branch matched. JSON ADT path was already correct (each branch contained a `return`).
+
+### [PR-29-D05] PR-29 executor changed `BaboonCodecsFacade.encodeToBin` argument order but didn't update test stub
+**Status:** resolved
+**Severity:** major (was blocking AnyMetaCodec runtime tests)
+**Location:** `test/ts-stub/src/runtime-tests/AnyMetaCodec.test.ts:390` (test stub)
+**Description:** PR-29 finished aligning `encodeToBin` to call `codec.encode(ctx, value, writer)` matching codegen and the `BaboonBinCodec` interface (PR-26 fixed the parallel `jsonToUebaBytes` path; the `encodeToBin` path was missed). The hand-written test stub still implemented `encode(_ctx, writer, _value)` (old order). At runtime the stub interpreted `value` as the writer, calling `BinTools.writeByte(<BaboonGenerated>, 0x42)` — threw, surfacing as a `Left` where the test expected `Right`.
+**Fix:** Updated `StubBinCodec.encode` parameter order to `(_ctx, _value, writer)`.
+
+### [PR-29-D06] Pre-existing Dart cross-language JSON read-from-Swift failures (T6_D1, T6_D2)
+**Status:** open (pre-existing, deferred — out of PR-29 scope)
+**Severity:** minor (only Dart affected; UEBA cross-language path still works)
+**Location:** `test/conv-test-dt/test/testpkg/pkg0/t6_d1_test.dart`, `t6_d2_test.dart`; ultimately `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/swift/SwJsonCodecGenerator.scala`
+**Description:** Reproduced on `main` HEAD with `git stash` of all PR-29 changes — Dart's `Cross-language JSON reading from swift` for T6_D1 and T6_D2 fails. T6_D1/D2 are DTOs (no enum involvement). Swift's JSON output diverges from Dart's expectation in some way; pre-dates PR-27/PR-28/PR-29. Likely related to Swift's W01/W03 `try try` over-emission or W02 force-cast — but those are warnings, not wire-format issues. Could be optional-field NSNull handling.
+**Suggested fix:** Investigate Swift JSON output for T6_D1 vs what Dart's decoder expects. Likely a missing-field / `null`-vs-missing distinction. Out of PR-29 scope — addressed under PR-30 (Swift).

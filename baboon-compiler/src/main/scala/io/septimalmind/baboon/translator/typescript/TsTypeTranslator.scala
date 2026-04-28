@@ -124,7 +124,12 @@ class TsTypeTranslator(target: TsTarget) {
     pkgBase: List[String],
   ): TsType = {
     val module = toTsModule(tid, domain.version, evolution, pkgBase)
-    TsType(module, s"${tid.name.name.capitalize}")
+    val isTypeOnly = domain.defs.meta.nodes.get(tid).exists {
+      case DomainMember.User(_, _: Typedef.Contract, _, _) => true
+      case DomainMember.User(_, _: Typedef.Service, _, _)  => true
+      case _                                               => false
+    }
+    TsType(module, s"${tid.name.name.capitalize}", typeOnly = isTypeOnly)
   }
 
   def toTsModule(

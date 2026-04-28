@@ -15,6 +15,7 @@ object TsValue {
     name: String,
     alias: Option[String] = None,
     predef: Boolean       = false,
+    typeOnly: Boolean     = false,
   ) extends TsValue {
     def withAlias(alias: String): TsType = {
       this.copy(alias = Some(alias))

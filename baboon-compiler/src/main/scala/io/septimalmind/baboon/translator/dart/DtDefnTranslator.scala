@@ -351,8 +351,7 @@ object DtDefnTranslator {
 
       val parseCases = e.members.map {
         m =>
-          val obj = m.name.capitalize
-          q"'$obj' => $obj,"
+          q"'${m.name}' => ${m.name},"
       }.toList
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
