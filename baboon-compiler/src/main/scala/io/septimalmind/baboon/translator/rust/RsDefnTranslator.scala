@@ -5,7 +5,7 @@ import io.septimalmind.baboon.CompilerTarget.RsTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.rust.RsValue.RsType
-import io.septimalmind.baboon.typer.BaboonEnquiries
+import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Applicative2, F}
 import izumi.fundamentals.collections.nonempty.NEList
@@ -391,22 +391,22 @@ object RsDefnTranslator {
     private def makeEnumRepr(e: Typedef.Enum, name: RsType): TextTree[RsValue] = {
       val variants = e.members.map {
         m =>
-          q"${m.name.capitalize},"
+          q"${EnumWireStyle.wireName(m.name)},"
       }.toList
 
       val parseCases = e.members.map {
         m =>
-          q""""${m.name.capitalize}" => Ok(${name.asName}::${m.name.capitalize}),"""
+          q""""${EnumWireStyle.wireName(m.name)}" => Ok(${name.asName}::${EnumWireStyle.wireName(m.name)}),"""
       }.toList
 
       val displayCases = e.members.map {
         m =>
-          q"""${name.asName}::${m.name.capitalize} => write!(f, "${m.name.capitalize}"),"""
+          q"""${name.asName}::${EnumWireStyle.wireName(m.name)} => write!(f, "${EnumWireStyle.wireName(m.name)}"),"""
       }.toList
 
       val allVariants = e.members.map {
         m =>
-          q"${name.asName}::${m.name.capitalize},"
+          q"${name.asName}::${EnumWireStyle.wireName(m.name)},"
       }.toList
 
       q"""#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]

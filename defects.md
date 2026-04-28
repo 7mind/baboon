@@ -1467,3 +1467,84 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Location:** `ScEnumConversionTest.scala:124-131`
 **Description:** `!rendered.contains("\"cafe\"")` matches partial words. Brittle.
 **Fix:** Accepted. The test's primary positive assertions (`contains("\"Cafe\" -> \"CoffeeShop\"")`) are strong; negative assertions are belt-and-suspenders. Tightening with regex was deemed not worth the complexity.
+
+---
+
+## PR-35 — Cross-language enum wire-format spec + 9-backend implementation
+
+### [PR-35-D01] TypeScript in-memory enum identifier diverged from canonical Pascal wire form
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsDefnTranslator.scala:316-317`
+**Description:** First-pass PR-35 emitted TS enum as `cafe = "Cafe"` (raw identifier, Pascal value) — diverged from spec doc claim that "the two are deliberately aligned". Other backends use Pascal in-memory; only TS exposed lowercase to user code.
+**Fix:** When `lowercaseValues=false` (the default canonical Pascal mode), both identifier and string-value now use `EnumWireStyle.wireName(m.name)`. Generated `T_NsPascal.ts` now shows `Cafe = "Cafe"`, `Bar_pub = "Bar_pub"`. `_values` array updated to reference the Pascal identifiers.
+
+### [PR-35-D02] `EnumWireStyle.wireName` not used uniformly across the 6 Pascal-emitting backends
+**Status:** resolved
+**Severity:** minor
+**Location:** 13 sites across `Sc/Kt/Jv/Py/CS/Rs DefnTranslator+UEBACodecGenerator` plus `ScConversionTranslator.scala:191`
+**Description:** Helper existed but only Dart/Swift/TS routed through it. Pascal-emitting backends still hardcoded `m.name.capitalize`. DRY violation; future change to `wireName` would silently desync those backends.
+**Fix:** All 13 enum-member-emitting sites now route through `EnumWireStyle.wireName(m.name)`. `RsUEBACodecGenerator.scala:376,381` was a missed site in the original scope; caught and updated.
+
+### [PR-35-D03] No unit test for `EnumWireStyle.wireName` edge cases
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/typer/EnumWireStyleTest.scala` (new)
+**Description:** `.capitalize` semantics are subtle (only first char; underscores not word boundaries). Without a unit test pinning these, a future contributor "fixing" `wireName` to do real Pascal-case conversion would silently break wire compatibility.
+**Fix:** Added 6-case test covering `cafe → Cafe`, `bar_pub → Bar_pub` (NOT `BarPub`), `Already → Already`, `"" → ""`, `_foo → _foo`, `1foo → 1foo`. Also enriched `EnumWireStyle.scala` Scaladoc to clarify underscore-boundary semantics.
+
+### [PR-35-D04] C# decoder still accepted numeric strings (`"0"` decoded as first enum value)
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/csharp/CSJsonCodecGenerator.scala:219`
+**Description:** `Enum.TryParse` accepts numeric strings (decoded as ordinal) and comma-separated lists. Spec says exact-match only.
+**Fix:** Added `&& result.ToString() == asStr` guard after `TryParse` succeeds. Generated decoder now rejects `"0"`, `"Cafe, Bar_pub"`, etc. and only accepts exact-string Pascal match.
+
+### [PR-35-D05] Migration notes silent on C# / JVM runtime codec wire-format break
+**Status:** resolved
+**Severity:** major
+**Location:** `docs/drafts/20260428-1700-enum-wire-format-spec.md` Migration Implications section
+**Description:** Doc mentioned TS/Dart/Swift wire-format break but was silent on C# tightening (dropped `ignoreCase=true`) and JVM runtime codec lowercase-normalization removal. Both are real wire-format breaks.
+**Fix:** Added paragraph: "C# decoders previously accepted case-insensitive matches and the JVM runtime codec previously normalised inputs to lowercase. Both now require exact Pascal-case matches. Clients sending `"cafe"`, `"CAFE"`, `"CaFe"` etc. will be rejected post-upgrade."
+
+### [PR-35-D06] T_NsPascal regression fixture is per-language, NOT in cross-language compat fixtures (any-showcase / all-basic-types)
+**Status:** open (deferred — significant scope to add)
+**Severity:** major (coverage gap)
+**Location:** `baboon-compiler/src/test/resources/baboon/pkg0/pkg03.baboon` (T_NsPascal lives in pkg0); `target/compat-test/{lang}-{json,ueba}/` (showcase fixtures contain no enum members)
+**Description:** PR-35 reinstated `T_NsPascal { cafe; bar_pub }` in pkg0/pkg03.baboon (per-language stub) but NOT in `convtest.testpkg` (cross-language compat fixture). The compat-test fixtures (`any-showcase.json`, `all-basic-types.json`) contain ZERO enum members. So per-language regression is locked, but cross-language byte-identity for non-Pascal-case enums has no automated test. If a single backend silently regresses to lowercase enum wire form, per-language tests pass (round-trip against itself) but wire interop is broken.
+**Suggested fix:** Add an enum-with-non-Pascal-source-name field to `convtest.testpkg` model (so it appears in any-showcase compat fixtures and is checked across all 9 languages byte-by-byte), or extend the compat-test runner to include `T_NsPascalHolder` explicitly. Significant scope — touches every language's `compat_main.*` file.
+
+### [PR-35-D07] No unit test for the JVM runtime codec's enum encode/decode tightening
+**Status:** open (deferred — minor)
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonRuntimeCodec.scala:189-209`
+**Description:** Runtime codec was tightened (lowercase-trim removed, exact-match decode) but no focused unit test asserts: (a) encoder emits Pascal for non-Pascal source, (b) decoder rejects lowercase wire input with `UnknownEnumValue`, (c) decoder accepts Pascal. Current verification is end-to-end via `sbt baboonJVM/test`.
+**Suggested fix:** Add focused tests in `baboon-compiler/.jvm/src/test/scala/.../BaboonRuntimeCodecEnumTest.scala`.
+
+### [PR-35-D08] Runtime codec error message could include both source and wire forms
+**Status:** resolved (cosmetic; deferred for clarity)
+**Severity:** nit
+**Location:** `BaboonRuntimeCodec.scala:192`
+**Description:** Error message lists Pascal forms only. Could be enriched to show both source and wire forms for diagnostic purposes.
+**Fix:** Accepted as-is. Optional enrichment.
+
+### [PR-35-D09] `enumLowercaseValues` flag undocumented at the option-definition site
+**Status:** resolved (deferred)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/CompilerOptions.scala:252`
+**Description:** Flag has no scaladoc; spec doc explains semantics but a developer reading CompilerOptions has no context.
+**Suggested fix:** Add scaladoc above the field. Defer to a separate cleanup PR.
+
+### [PR-35-D10] Pre-existing Dart UEBA encode arm indentation
+**Status:** resolved (pre-existing template artifact)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/dart/DtUEBACodecGenerator.scala:223`
+**Description:** Generated Dart UEBA switch shows misaligned indentation (8-space first case, 6-space rest). Pre-existing template artifact untouched by PR-35.
+**Fix:** Accepted as pre-existing.
+
+### [PR-35-D11] Spec doc per-backend impact table could clarify decoder changes
+**Status:** resolved (cosmetic)
+**Severity:** nit
+**Location:** `docs/drafts/20260428-1700-enum-wire-format-spec.md`
+**Description:** Per-backend impact table puts C# alongside no-change backends; could be misread. C# and JVM runtime are tightened (case-insensitive removed).
+**Fix:** Accepted; the Migration Implications section explicitly calls out the C#/JVM tightening (D05 fix).

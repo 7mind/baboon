@@ -5,6 +5,7 @@ import io.septimalmind.baboon.CompilerTarget.KtTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.kotlin.KtValue.KtType
+import io.septimalmind.baboon.typer.EnumWireStyle
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Applicative2, F}
 import izumi.fundamentals.collections.nonempty.NEList
@@ -311,13 +312,13 @@ object KtDefnTranslator {
         case e: Typedef.Enum =>
           val cases = e.members.map {
             m =>
-              val obj = m.name.capitalize
+              val obj = EnumWireStyle.wireName(m.name)
               q"$obj"
           }.toList
 
           val parseCases = e.members.map {
             m =>
-              val obj = m.name.capitalize
+              val obj = EnumWireStyle.wireName(m.name)
               q"\"$obj\" to $obj"
           }.toList
 

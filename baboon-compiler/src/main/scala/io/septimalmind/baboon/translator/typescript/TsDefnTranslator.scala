@@ -6,6 +6,7 @@ import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonGenerated, tsBaboonGeneratedLatest, tsBaboonRuntimeShared}
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.typescript.TsValue.TsType
+import io.septimalmind.baboon.typer.EnumWireStyle
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Applicative2, F}
 import izumi.fundamentals.collections.nonempty.NEList
@@ -309,13 +310,15 @@ object TsDefnTranslator {
 
     private def makeEnumRepr(enum: Typedef.Enum): DefnRepr = {
       val enumName        = enum.id.name.name
-      val branchesNames   = enum.members.map(_.name)
       val lowercaseValues = target.language.enumLowercaseValues
-      val branches = branchesNames.map {
-        name =>
-          val value = if (lowercaseValues) name.toLowerCase else name
-          q"$name = \"$value\""
+      val branches = enum.members.map {
+        m =>
+          val pascal = EnumWireStyle.wireName(m.name)
+          val value  = if (lowercaseValues) pascal.toLowerCase else pascal
+          val ident  = if (lowercaseValues) m.name else pascal
+          q"$ident = \"$value\""
       }.toSeq
+      val pascalNames     = enum.members.map(m => EnumWireStyle.wireName(m.name))
       val parseComparison = if (lowercaseValues) "v === s.toLowerCase()" else "v === s"
       DefnRepr(
         q"""export enum $enumName {
@@ -323,7 +326,7 @@ object TsDefnTranslator {
            |}
            |
            |export const ${enumName}_values: ReadonlyArray<$enumName> = [
-           |    ${branchesNames.map(branchName => q"$enumName.$branchName").toList.join(",\n").shift(4).trim}
+           |    ${pascalNames.map(pn => q"$enumName.$pn").toList.join(",\n").shift(4).trim}
            |] as const;
            |
            |export function ${enumName}_parse(s: string): $enumName {

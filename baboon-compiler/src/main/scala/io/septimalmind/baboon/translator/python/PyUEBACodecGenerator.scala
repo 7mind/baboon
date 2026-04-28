@@ -4,7 +4,7 @@ import io.septimalmind.baboon.CompilerTarget.PyTarget
 import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.python.PyTypes.*
 import io.septimalmind.baboon.translator.python.PyValue.PyType
-import io.septimalmind.baboon.typer.BaboonEnquiries
+import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
@@ -146,7 +146,7 @@ class PyUEBACodecGenerator(
   private def genEnumBodies(enum: Typedef.Enum): (TextTree[PyValue], TextTree[PyValue]) = {
     val branches = enum.members.zipWithIndex.toList.map {
       case (m, i) =>
-        val obj = m.name.capitalize
+        val obj = EnumWireStyle.wireName(m.name)
         (
           q"""if value.value == "$obj":
              |    wire.write_byte(${i.toString})

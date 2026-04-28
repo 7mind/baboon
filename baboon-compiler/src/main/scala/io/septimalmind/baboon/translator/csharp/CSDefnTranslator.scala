@@ -8,7 +8,7 @@ import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.{CSPackageId, CSType, CSTypeOrigin}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.ComparatorType
-import io.septimalmind.baboon.typer.{BaboonEnquiries, TypeInfo}
+import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle, TypeInfo}
 import izumi.functional.bio.{Applicative2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
@@ -351,7 +351,7 @@ object CSDefnTranslator {
           val branches =
             e.members.map {
               m =>
-                val base = q"""${m.name.capitalize}"""
+                val base = q"""${EnumWireStyle.wireName(m.name)}"""
                 m.const match {
                   case Some(value) => q"""$base = ${value.toString}"""
                   case None        => base

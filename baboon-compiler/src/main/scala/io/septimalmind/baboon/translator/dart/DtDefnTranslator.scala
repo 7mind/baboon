@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.dart
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.dart.DtValue.DtType
+import io.septimalmind.baboon.typer.EnumWireStyle
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Applicative2, F}
 import izumi.fundamentals.collections.nonempty.NEList
@@ -346,12 +347,13 @@ object DtDefnTranslator {
     ): DefnRepr = {
       val cases = e.members.map {
         m =>
-          q"${m.name}"
+          q"${EnumWireStyle.wireName(m.name)}"
       }.toList
 
       val parseCases = e.members.map {
         m =>
-          q"'${m.name}' => ${m.name},"
+          val pascal = EnumWireStyle.wireName(m.name)
+          q"'$pascal' => $pascal,"
       }.toList
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta

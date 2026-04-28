@@ -6,7 +6,7 @@ import io.septimalmind.baboon.translator.dart.DtCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.dart.DtDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.dart.DtTypes.*
 import io.septimalmind.baboon.translator.dart.DtValue.DtType
-import io.septimalmind.baboon.typer.BaboonEnquiries
+import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
@@ -220,12 +220,14 @@ class DtUEBACodecGenerator(
   private def genEnumBodies(name: DtType, e: Typedef.Enum): (TextTree[DtValue], TextTree[DtValue]) = {
     val encBranches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        q"case $name.${m.name}: writer.writeU8(${idx.toString}); break;"
+        val pascal = EnumWireStyle.wireName(m.name)
+        q"case $name.$pascal: writer.writeU8(${idx.toString}); break;"
     }
 
     val decBranches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        q"case ${idx.toString}: return $name.${m.name};"
+        val pascal = EnumWireStyle.wireName(m.name)
+        q"case ${idx.toString}: return $name.$pascal;"
     }
 
     (

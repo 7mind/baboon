@@ -5,7 +5,7 @@ import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.csharp.CSCodecTranslator.{CodecArguments, CodecMeta}
 import io.septimalmind.baboon.translator.csharp.CSTypes.*
 import io.septimalmind.baboon.translator.csharp.CSValue.CSTypeOrigin
-import io.septimalmind.baboon.typer.BaboonEnquiries
+import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
@@ -237,7 +237,7 @@ class CSUEBACodecGenerator(
   private def genEnumBodies(name: CSValue.CSType, e: Typedef.Enum) = {
     val branches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        val obj = m.name.capitalize
+        val obj = EnumWireStyle.wireName(m.name)
         (
           q"""if (value == $name.$obj)
              |{

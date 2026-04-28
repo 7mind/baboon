@@ -3,6 +3,7 @@ package io.septimalmind.baboon.translator.swift
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.swift.SwValue.SwType
+import io.septimalmind.baboon.typer.EnumWireStyle
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Applicative2, F}
 import izumi.fundamentals.collections.nonempty.NEList
@@ -313,7 +314,8 @@ object SwDefnTranslator {
     ): DefnRepr = {
       val cases = e.members.map {
         m =>
-          q"""case ${m.name} = "${m.name}""""
+          val pascal = EnumWireStyle.wireName(m.name)
+          q"""case $pascal = "$pascal""""
       }.toList
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta

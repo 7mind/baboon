@@ -5,7 +5,7 @@ import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.scl.ScCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.scl.ScDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.scl.ScTypes.*
-import io.septimalmind.baboon.typer.BaboonEnquiries
+import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
@@ -299,7 +299,7 @@ class ScUEBACodecGenerator(
   private def genEnumBodies(name: ScValue.ScType, e: Typedef.Enum): (TextTree[ScValue.ScType], TextTree[ScValue.ScType]) = {
     val branches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        val obj = m.name.capitalize
+        val obj = EnumWireStyle.wireName(m.name)
         (
           q"case $name.$obj => writer.writeByte(${idx.toString})",
           q"case ${idx.toString} => Right($name.$obj)",

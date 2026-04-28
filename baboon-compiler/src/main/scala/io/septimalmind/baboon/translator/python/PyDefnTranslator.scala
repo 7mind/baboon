@@ -6,7 +6,7 @@ import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.python.PyTypes.*
 import io.septimalmind.baboon.translator.python.PyValue.{PyModuleId, PyType}
-import io.septimalmind.baboon.typer.BaboonEnquiries
+import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Applicative2, F}
 import izumi.fundamentals.collections.nonempty.NEList
@@ -251,7 +251,7 @@ object PyDefnTranslator {
           )
 
         case enum: Typedef.Enum =>
-          val branches = enum.members.map(m => q"${m.name.capitalize} = \"${m.name.capitalize}\"").toSeq
+          val branches = enum.members.map(m => q"${EnumWireStyle.wireName(m.name)} = \"${EnumWireStyle.wireName(m.name)}\"").toSeq
           PyDefnRepr(
             q"""|class ${enum.id.name.name.capitalize}($pyEnum):
                 |    ${branches.joinN().shift(4).trim}

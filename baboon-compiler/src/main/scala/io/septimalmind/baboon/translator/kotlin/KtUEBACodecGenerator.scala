@@ -5,7 +5,7 @@ import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.kotlin.KtCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.kotlin.KtDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.kotlin.KtTypes.*
-import io.septimalmind.baboon.typer.BaboonEnquiries
+import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
@@ -227,7 +227,7 @@ class KtUEBACodecGenerator(
   private def genEnumBodies(name: KtValue.KtType, e: Typedef.Enum): (TextTree[KtValue], TextTree[KtValue]) = {
     val branches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        val obj = m.name.capitalize
+        val obj = EnumWireStyle.wireName(m.name)
         (
           q"$name.$obj -> writer.writeByte(${idx.toString})",
           q"${idx.toString} -> $name.$obj",

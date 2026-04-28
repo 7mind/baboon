@@ -5,6 +5,7 @@ import io.septimalmind.baboon.CompilerTarget.ScTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.scl.ScValue.ScType
+import io.septimalmind.baboon.typer.EnumWireStyle
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Applicative2, F}
 import izumi.fundamentals.collections.nonempty.NEList
@@ -273,19 +274,19 @@ object ScDefnTranslator {
 
           val cases = e.members.map {
             m =>
-              val obj = m.name.capitalize
+              val obj = EnumWireStyle.wireName(m.name)
               q"case object $obj extends ${name.name}"
           }.toList
 
           val parseCases = e.members.map {
             m =>
-              val obj = m.name.capitalize
+              val obj = EnumWireStyle.wireName(m.name)
               q"case \"$obj\" => Some($obj)"
           }.toList
 
           val names = e.members.map {
             m =>
-              val obj = m.name.capitalize
+              val obj = EnumWireStyle.wireName(m.name)
               q"$obj"
           }.toList
 

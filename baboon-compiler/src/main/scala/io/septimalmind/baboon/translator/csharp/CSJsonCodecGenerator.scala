@@ -210,13 +210,13 @@ class CSJsonCodecGenerator(
   ): (TextTree[CSValue.CSType], TextTree[CSValue.CSType]) = {
     (
       q"return $nsJValue.CreateString(value.ToString());",
-      q"""var asStr = wire.Value<String>()?.ToLower().Trim('"');
+      q"""var asStr = wire.Value<String>()?.Trim('"');
          |if (asStr == null)
          |{
          |    throw new $csArgumentException($$"Cannot decode {wire} to ${name.name}: string expected");
          |}
          |
-         |if ($name.TryParse(asStr, true, out $name result))
+         |if ($name.TryParse(asStr, out $name result) && result.ToString() == asStr)
          |{
          |    return result;
          |}

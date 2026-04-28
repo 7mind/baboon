@@ -189,10 +189,10 @@ object BaboonRuntimeCodec {
       json.asString match {
         case None => F.fail(RuntimeCodecIssue.ExpectedJsonString(enum.id.toString, json))
         case Some(s) =>
-          val str = s.toLowerCase.trim
-          val idx = enum.members.toList.indexWhere(_.name.toLowerCase == str)
+          val str = s.trim
+          val idx = enum.members.toList.indexWhere(m => EnumWireStyle.wireName(m.name) == str)
           if (idx < 0) {
-            F.fail(RuntimeCodecIssue.UnknownEnumValue(enum.id, str, enum.members.toList.map(_.name)))
+            F.fail(RuntimeCodecIssue.UnknownEnumValue(enum.id, str, enum.members.toList.map(m => EnumWireStyle.wireName(m.name))))
           } else {
             writer.writeByte(idx)
             F.unit
@@ -206,7 +206,7 @@ object BaboonRuntimeCodec {
       if (idx >= enum.members.size) {
         F.fail(RuntimeCodecIssue.InvalidEnumIndex(enum.id, idx, enum.members.size - 1))
       } else {
-        F.pure(Json.fromString(enum.members.toList(idx).name))
+        F.pure(Json.fromString(EnumWireStyle.wireName(enum.members.toList(idx).name)))
       }
     }
 

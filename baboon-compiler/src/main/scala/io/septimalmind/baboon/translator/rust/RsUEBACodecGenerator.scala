@@ -3,7 +3,7 @@ package io.septimalmind.baboon.translator.rust
 import io.septimalmind.baboon.CompilerTarget.RsTarget
 import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.rust.RsDefnTranslator.toSnakeCase
-import io.septimalmind.baboon.typer.BaboonEnquiries
+import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
@@ -373,12 +373,12 @@ class RsUEBACodecGenerator(
   private def genEnumCodec(defn: DomainMember.User, name: RsValue.RsType, e: Typedef.Enum): TextTree[RsValue] = {
     val encBranches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        q"""${name.asName}::${m.name.capitalize} => crate::baboon_runtime::bin_tools::write_byte(writer, ${idx.toString})?,"""
+        q"""${name.asName}::${EnumWireStyle.wireName(m.name)} => crate::baboon_runtime::bin_tools::write_byte(writer, ${idx.toString})?,"""
     }
 
     val decBranches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        q"""${idx.toString} => Ok(${name.asName}::${m.name.capitalize}),"""
+        q"""${idx.toString} => Ok(${name.asName}::${EnumWireStyle.wireName(m.name)}),"""
     }
 
     val indexedImpl = genIndexedImpl(defn, name)

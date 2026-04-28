@@ -4,7 +4,7 @@ import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.translator.typescript.TsTypes.*
 import io.septimalmind.baboon.translator.typescript.TsValue.TsType
-import io.septimalmind.baboon.typer.BaboonEnquiries
+import io.septimalmind.baboon.typer.{BaboonEnquiries, EnumWireStyle}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
@@ -206,13 +206,13 @@ class TsUEBACodecGenerator(
     val lowercaseValues = target.language.enumLowercaseValues
     val encBranches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        val value = if (lowercaseValues) m.name.toLowerCase else m.name.capitalize
+        val value = if (lowercaseValues) m.name.toLowerCase else EnumWireStyle.wireName(m.name)
         q"""case "$value": $tsBinTools.writeByte(writer, ${idx.toString}); break;"""
     }
 
     val decBranches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        val value = if (lowercaseValues) m.name.toLowerCase else m.name.capitalize
+        val value = if (lowercaseValues) m.name.toLowerCase else EnumWireStyle.wireName(m.name)
         q"""case ${idx.toString}: return "$value" as ${name.name};"""
     }
 

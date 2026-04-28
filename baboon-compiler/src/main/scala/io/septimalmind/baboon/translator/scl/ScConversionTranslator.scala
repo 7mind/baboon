@@ -5,6 +5,7 @@ import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue
 import io.septimalmind.baboon.translator.scl.ScBaboonTranslator.RenderedConversion
 import io.septimalmind.baboon.translator.scl.ScTypes.*
 import io.septimalmind.baboon.translator.scl.ScValue.ScPackageId
+import io.septimalmind.baboon.typer.EnumWireStyle
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.Conversion.FieldOp
 import izumi.functional.bio.{Error2, F}
@@ -187,8 +188,8 @@ class ScConversionTranslator[F[+_, +_]: Error2](
           case c: Conversion.CopyEnumByName =>
             val mappingEntries = c.memberMapping.map {
               case (fromName, toName) =>
-                // capitalize to match the case-object .toString form emitted by ScDefnTranslator
-                s""""${fromName.capitalize}" -> "${toName.capitalize}""""
+                // EnumWireStyle.wireName to match the case-object .toString form emitted by ScDefnTranslator
+                s""""${EnumWireStyle.wireName(fromName)}" -> "${EnumWireStyle.wireName(toName)}""""
             }
             val mappedExpr =
               if (mappingEntries.isEmpty) {

@@ -338,6 +338,16 @@ root data T15_FieldRenameWithTypeChange {
   keepField: str
 }
 
+// BAB-S02: enum with non-Pascal-case member names; UEBA codec must use capitalized names
+enum T_NsPascal : derived[ueba] {
+  cafe
+  bar_pub
+}
+
+root data T_NsPascalHolder {
+  s: T_NsPascal
+}
+
 // BAB-S01: service inside a namespace; wiring file must be in ns package
 ns svcns {
   root data NsSvcRequest {

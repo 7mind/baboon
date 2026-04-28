@@ -6,6 +6,7 @@ import io.septimalmind.baboon.translator.swift.SwCodecTranslator.CodecMeta
 import io.septimalmind.baboon.translator.swift.SwDomainTreeTools.MetaField
 import io.septimalmind.baboon.translator.swift.SwTypes.*
 import io.septimalmind.baboon.translator.swift.SwValue.SwType
+import io.septimalmind.baboon.typer.EnumWireStyle
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
 import izumi.fundamentals.platform.strings.TextTree
@@ -193,12 +194,14 @@ class SwUEBACodecGenerator(
   private def genEnumBodies(name: SwType, e: Typedef.Enum): (TextTree[SwValue], TextTree[SwValue]) = {
     val encBranches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        q"case .${m.name}: writer.writeU8(${idx.toString})"
+        val pascal = EnumWireStyle.wireName(m.name)
+        q"case .$pascal: writer.writeU8(${idx.toString})"
     }
 
     val decBranches = e.members.zipWithIndex.toList.map {
       case (m, idx) =>
-        q"case ${idx.toString}: return ${name.asDeclName}.${m.name}"
+        val pascal = EnumWireStyle.wireName(m.name)
+        q"case ${idx.toString}: return ${name.asDeclName}.$pascal"
     }
 
     (
