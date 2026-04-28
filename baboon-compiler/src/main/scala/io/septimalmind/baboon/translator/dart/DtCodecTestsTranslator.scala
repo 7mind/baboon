@@ -52,6 +52,7 @@ object DtCodecTestsTranslator {
             val fixtureImport = makeTestToLibImport(testPath, fixturePath)
             s"import '$fixtureImport';"
           } else ""
+          val helperImport = makeTestHelperImport(testPath)
           val testFile =
             q"""import 'package:test/test.dart';
                |import 'package:baboon_runtime/baboon_runtime.dart';
@@ -60,9 +61,13 @@ object DtCodecTestsTranslator {
                |import 'dart:convert';
                |import '$typeImport';
                |$fixtureImportLine
+               |import '$helperImport';
                |
                |void main() {
                |  group('${srcRef.name}', () {
+               |    setUpAll(() {
+               |      assertCrossLanguageFixtureRootExists();
+               |    });
                |    ${testBody.shift(4).trim}
                |  });
                |}
@@ -76,6 +81,14 @@ object DtCodecTestsTranslator {
       val upLevels = testDir.length + 1 // +1 to escape out of the test/ directory
       val prefix   = "../" * upLevels + "lib/"
       prefix + libPath
+    }
+
+    // Returns the relative import path from the test file to the shared
+    // cross_language_fixture_path.dart helper, which lives at the root of
+    // the test output directory.
+    private def makeTestHelperImport(testPath: String): String = {
+      val depth = testPath.split('/').init.length
+      "../" * depth + "cross_language_fixture_path.dart"
     }
 
     private def makeTest(definition: DomainMember.User, srcRef: DtValue.DtType): TextTree[DtValue] = {
@@ -216,14 +229,15 @@ object DtCodecTestsTranslator {
       val readTests = languages.map {
         lang =>
           q"""test('Cross-language JSON reading from $lang', () {
-             |  final file = File('../../../../../target/$lang/json-default/$typeId.json');
+             |  final path = crossLanguageFixturePath('$lang', '$typeId.json', 'json-default');
+             |  final file = File(path);
              |  if (file.existsSync()) {
              |    final content = file.readAsStringSync();
              |    final json = jsonDecode(content);
              |    final decoded = $codecName.instance.decode($baboonCodecContext.defaultCtx, json);
              |    expect(decoded, isNotNull);
              |  }
-             |}, skip: !File('../../../../../target/$lang/json-default/$typeId.json').existsSync());
+             |}, skip: !File(crossLanguageFixturePath('$lang', '$typeId.json', 'json-default')).existsSync());
              |""".stripMargin
       }
       readTests.joinNN()
@@ -247,7 +261,7 @@ object DtCodecTestsTranslator {
         case _: Typedef.Adt => "fixtures.first"
         case _              => "fixture"
       }
-      q"""final outFile = File('../../../../../target/dart/json-default/$typeId.json');
+      q"""final outFile = File(crossLanguageFixturePath('dart', '$typeId.json', 'json-default'));
          |outFile.parent.createSync(recursive: true);
          |final encoded = $codecName.instance.encode($baboonCodecContext.defaultCtx, $fixtureVar);
          |outFile.writeAsStringSync(jsonEncode(encoded));""".stripMargin
@@ -260,14 +274,15 @@ object DtCodecTestsTranslator {
       val readTests = languages.map {
         lang =>
           q"""test('Cross-language UEBA reading from $lang', () {
-             |  final file = File('../../../../../target/$lang/ueba-default/$typeId.ueba');
+             |  final path = crossLanguageFixturePath('$lang', '$typeId.ueba', 'ueba-default');
+             |  final file = File(path);
              |  if (file.existsSync()) {
              |    final bytes = file.readAsBytesSync();
              |    final reader = $baboonBinTools.createReader(bytes);
              |    final decoded = $codecName.instance.decode($baboonCodecContext.compact, reader);
              |    expect(decoded, isNotNull);
              |  }
-             |}, skip: !File('../../../../../target/$lang/ueba-default/$typeId.ueba').existsSync());
+             |}, skip: !File(crossLanguageFixturePath('$lang', '$typeId.ueba', 'ueba-default')).existsSync());
              |""".stripMargin
       }
       readTests.joinNN()
@@ -291,7 +306,7 @@ object DtCodecTestsTranslator {
         case _: Typedef.Adt => "fixtures.first"
         case _              => "fixture"
       }
-      q"""final outFile = File('../../../../../target/dart/ueba-default/$typeId.ueba');
+      q"""final outFile = File(crossLanguageFixturePath('dart', '$typeId.ueba', 'ueba-default'));
          |outFile.parent.createSync(recursive: true);
          |final writer = $baboonBinTools.createWriter();
          |$codecName.instance.encode($baboonCodecContext.compact, writer, $fixtureVar);

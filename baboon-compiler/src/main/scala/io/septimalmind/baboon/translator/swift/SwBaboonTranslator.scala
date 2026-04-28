@@ -30,7 +30,8 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
       translated <- translateFamily(family)
       runtime    <- sharedRuntime()
       fixture    <- sharedFixture()
-      allOutputs  = translated ++ runtime ++ fixture
+      testHelper <- sharedTestHelper()
+      allOutputs  = translated ++ runtime ++ fixture ++ testHelper
       rendered = allOutputs.map {
         o =>
           val content = renderTree(o)
@@ -211,6 +212,24 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
         )
       )
     } else F.pure(Nil)
+  }
+
+  private def sharedTestHelper(): Out[List[SwDefnTranslator.Output]] = {
+    if (target.output.products.contains(CompilerProduct.Test)) {
+      F.pure(
+        List(
+          SwDefnTranslator.Output(
+            "CrossLanguageFixturePath.swift",
+            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/swift/CrossLanguageFixturePath.swift")),
+            SwTypes.baboonRuntimePkg,
+            CompilerProduct.Test,
+            doNotModify = true,
+          )
+        )
+      )
+    } else {
+      F.pure(List.empty)
+    }
   }
 
   private def renderTree(o: SwDefnTranslator.Output): String = {

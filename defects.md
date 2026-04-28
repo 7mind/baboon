@@ -1609,3 +1609,59 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScUEBACodecGenerator.scala:311,317`
 **Description:** Reviewer noted Scala UEBA uses string-interpolation template `|${...shift(2)}` rather than `q"""...joinN().shift(2)"""`. First arm lands at column 0, subsequent at column 2 — opposite-direction misalignment from Dart/Java/Kotlin.
 **Suggested fix:** Restructure the Scala UEBA template to match the cleaner `q"""...""".trim` pattern used by other backends. Out of PR-39 scope; tracked for follow-up.
+
+---
+
+## PR-40 — Cross-language test path-coupling fix (Dart + Swift)
+
+### [PR-40-D01] First-pass `.git` walk-up resolved to wrong `target/` directory; tests silently skipped en masse
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/dart/cross_language_fixture_path.dart`; `baboon-compiler/src/main/resources/baboon-runtime/swift/CrossLanguageFixturePath.swift`
+**Description:** First-pass PR-40 helper walked up to the first `.git` (= repo root) and then appended `target/<lang>/...`. But other languages write fixtures inside the test isolation directory at `<repoRoot>/target/test-{regular,wrapped}/target/<lang>/...`. The helper's resolved path landed at `<repoRoot>/target/<lang>/...` — a sibling of the actual fixture dir. Result: every cross-language read silently skipped via per-test `existsSync()`/`fileExists()` guards. Plus dart/swift writes leaked OUT of test isolation into `<repoRoot>/target/{dart,swift}/...` (real repo target, not the isolated one).
+**Root cause:** `.git` is at repo root; fixture root is at `<repoRoot>/target/test-{regular,wrapped}/`. Walk-up overshoots by one level.
+**Fix:** Replaced `.git` walk-up with sentinel-based resolution: walk up until a directory `D` contains BOTH a subdir literally named `target/` AND at least one subdir whose name ends with `-stub`. That uniquely identifies the test-isolation root. Helper now resolves `<isolation-root>/target/<lang>/<format>/<type>.json`.
+
+### [PR-40-D02] Silent-skip mode preserved; per-test `existsSync()` masked path errors
+**Status:** resolved (per-test skip retained for legitimate "peer hasn't written yet" case; bootstrap-time check covers wrong-root case)
+**Severity:** major
+**Location:** generated test files (Dart `setUpAll`, Swift class-level `setUp`)
+**Description:** First-pass PR-40 verification of `BABOON_CROSS_LANG_FIXTURE_ROOT=/tmp/nonexistent` showing 546 dart tests skipped without failure was a CONFIRMATION of the original silent-skip defect, not a fix. Tests still pass-by-accident.
+**Fix:** Added bootstrap sanity assertion at test setup time (Dart `setUpAll(() => assertCrossLanguageFixtureRootExists())`; Swift `override class func setUp() { ... assertCrossLanguageFixtureRootExists() }`). If the resolved fixture root doesn't exist, fails LOUDLY (Dart `StateError`, Swift `fatalError` crashing the runner with diagnostic message). Per-test `existsSync()` skip is RETAINED for the legitimate case where a peer language hasn't written its fixture yet (running `:test-dart-regular` without sibling languages run first); the bootstrap check ensures "skip" only ever means "peer fixture not yet written", never "wrong directory".
+
+### [PR-40-D03] Dart fixture writes leaked out of test isolation into real repo `target/`
+**Status:** resolved (subsumed by D01 fix — correct anchor → correct write paths)
+**Severity:** major
+**Location:** generated dart code calling `crossLanguageJsonWrite`/`crossLanguageUebaWrite`
+**Description:** First-pass helper resolved write paths to `<repoRoot>/target/dart/...` (sibling of test-regular), violating the test isolation guarantee. Re-running tests no longer hermetically destroyed old fixtures.
+**Fix:** Resolved by D01 fix — sentinel-based resolution lands at `<repoRoot>/target/test-regular/target/dart/...` correctly inside test isolation. Verified: `<repoRoot>/target/dart` and `<repoRoot>/target/swift` no longer exist post-test-run.
+
+### [PR-40-D04] Helper `pkg = baboonRuntimePkg` but path placed at test-stub root
+**Status:** resolved (deferred — works under `doNotModify=true`; cosmetic)
+**Severity:** nit
+**Location:** `DtBaboonTranslator.sharedTestHelper()`, `SwBaboonTranslator.sharedTestHelper()`
+**Description:** Reviewer noted the `Output` is built with `baboonRuntimePkg` (= `baboon.runtime.shared`) but path is at the bare test root. Footgun for future code paths that use the `pkg` field for placement.
+**Fix:** Accepted as-is. `doNotModify=true` masks the inconsistency. Future cleanup if any code path actually consumes the `pkg` field for placement.
+
+### [PR-40-D05] Walk-up termination ambiguity in nested git repos / submodules
+**Status:** resolved (no longer relevant — no .git walk-up after D01 fix)
+**Severity:** n/a
+**Description:** Reviewer flagged that `.git` walk-up could pick a sibling repo's `.git` in CI. The redesigned helper walks up looking for the `*-stub + target/` sibling directory, not `.git`. Concern moot.
+
+### [PR-40-D06] Env-var override accepted nonexistent paths without validation
+**Status:** resolved
+**Severity:** minor
+**Description:** First-pass helper accepted the env var without validating existence; nonexistent paths silently fell through to skip mode.
+**Fix:** Bootstrap sanity assertion (D02 fix) catches this. With `BABOON_CROSS_LANG_FIXTURE_ROOT=/tmp/nonexistent`, the test bootstrap loudly fails with a clear diagnostic rather than silently skipping.
+
+### [PR-40-D07] Cross-language fragility class still exists in other languages (Scala/Kotlin/Java/TS/Rust/Python)
+**Status:** open (deferred — PR-40 was scoped to Dart + Swift)
+**Severity:** minor
+**Description:** Other languages also use 5-dot or shorter relative paths for cross-language reads; they happen to work because they only read from `target/cs/...` (the canonical writer). If C# ever changes its CWD or output depth, those tests break too.
+**Suggested fix:** Generalize the helper pattern — emit equivalent `crossLanguageFixturePath` helpers in Scala/Kotlin/Java/TS/Rust/Python codec test translators. Out of PR-40 scope; tracked for a future hygiene PR.
+
+### [PR-40-D08] sbt resource-cache stale-bug: changes to runtime resource files don't trigger recompile
+**Status:** open (build-system fragility; not introduced by PR-40)
+**Severity:** minor
+**Description:** `BaboonRuntimeResources.scala` uses `PortableResource.embedSources` macro; sbt's incremental compiler does not detect changes to the embedded resource files (`cross_language_fixture_path.dart`, `CrossLanguageFixturePath.swift`, etc.). After editing such resources, `sbt clean baboonJVM/compile` is required to re-embed. Encountered during PR-40 fix iteration: `mdl :build :test-gen-regular-adt` emitted stale (PR-40 first-pass) helper content because `BaboonRuntimeResources$.class` was cached from before my edits.
+**Suggested fix:** Configure sbt's `unmanagedResources` watcher to invalidate `BaboonRuntimeResources` on any baboon-runtime/* change, OR document the `sbt clean` requirement clearly. Out of PR-40 scope.

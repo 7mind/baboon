@@ -27,10 +27,11 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
 
   override def translate(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
     for {
-      translated <- translateFamily(family)
-      runtime    <- sharedRuntime()
-      fixture    <- sharedFixture()
-      rendered = (translated ++ runtime ++ fixture).map {
+      translated  <- translateFamily(family)
+      runtime     <- sharedRuntime()
+      fixture     <- sharedFixture()
+      testHelper  <- sharedTestHelper()
+      rendered = (translated ++ runtime ++ fixture ++ testHelper).map {
         o =>
           val content = renderTree(o)
           (o.path, OutputFile(content, o.product))
@@ -154,6 +155,24 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
         )
       )
     } else F.pure(Nil)
+  }
+
+  private def sharedTestHelper(): Out[List[DtDefnTranslator.Output]] = {
+    if (target.output.products.contains(CompilerProduct.Test)) {
+      F.pure(
+        List(
+          DtDefnTranslator.Output(
+            "cross_language_fixture_path.dart",
+            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/dart/cross_language_fixture_path.dart")),
+            DtTypes.baboonRuntimePkg,
+            CompilerProduct.Test,
+            doNotModify = true,
+          )
+        )
+      )
+    } else {
+      F.pure(List.empty)
+    }
   }
 
   private def renderTree(o: DtDefnTranslator.Output): String = {

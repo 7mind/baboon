@@ -56,6 +56,11 @@ object SwCodecTestsTranslator {
                |@testable import $moduleName
                |
                |final class ${testClassName}_Tests: XCTestCase {
+               |    override class func setUp() {
+               |        super.setUp()
+               |        assertCrossLanguageFixtureRootExists()
+               |    }
+               |
                |    ${testBody.shift(4).trim}
                |}
                |""".stripMargin
@@ -199,7 +204,7 @@ object SwCodecTestsTranslator {
       val readTests = languages.map {
         lang =>
           q"""func testCrossLanguageJsonReadFrom_$lang() throws {
-             |    let url = URL(fileURLWithPath: "../../../../../target/$lang/json-default/$typeId.json")
+             |    let url = URL(fileURLWithPath: crossLanguageFixturePath("$lang", "$typeId.json", "json-default"))
              |    guard FileManager.default.fileExists(atPath: url.path) else { return }
              |    let data = try Data(contentsOf: url)
              |    let json = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
@@ -229,9 +234,10 @@ object SwCodecTestsTranslator {
         case _: Typedef.Adt => "fixtures.first!"
         case _              => "fixture"
       }
-      q"""let outDir = URL(fileURLWithPath: "../../../../../target/swift/json-default")
+      q"""let outPath = crossLanguageFixturePath("swift", "$typeId.json", "json-default")
+         |let outDir = URL(fileURLWithPath: outPath).deletingLastPathComponent()
          |try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
-         |let outFile = outDir.appendingPathComponent("$typeId.json")
+         |let outFile = URL(fileURLWithPath: outPath)
          |let encoded = $codecName.instance.encode($baboonCodecContext.defaultCtx, $fixtureVar)
          |let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
          |try jsonData.write(to: outFile)""".stripMargin
@@ -244,7 +250,7 @@ object SwCodecTestsTranslator {
       val readTests = languages.map {
         lang =>
           q"""func testCrossLanguageUebaReadFrom_$lang() throws {
-             |    let url = URL(fileURLWithPath: "../../../../../target/$lang/ueba-default/$typeId.ueba")
+             |    let url = URL(fileURLWithPath: crossLanguageFixturePath("$lang", "$typeId.ueba", "ueba-default"))
              |    guard FileManager.default.fileExists(atPath: url.path) else { return }
              |    let bytes = try Data(contentsOf: url)
              |    let reader = $baboonBinTools.createReader(bytes)
@@ -274,9 +280,10 @@ object SwCodecTestsTranslator {
         case _: Typedef.Adt => "fixtures.first!"
         case _              => "fixture"
       }
-      q"""let outDir = URL(fileURLWithPath: "../../../../../target/swift/ueba-default")
+      q"""let outPath = crossLanguageFixturePath("swift", "$typeId.ueba", "ueba-default")
+         |let outDir = URL(fileURLWithPath: outPath).deletingLastPathComponent()
          |try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
-         |let outFile = outDir.appendingPathComponent("$typeId.ueba")
+         |let outFile = URL(fileURLWithPath: outPath)
          |let writer = $baboonBinTools.createWriter()
          |$codecName.instance.encode($baboonCodecContext.compact, writer, $fixtureVar)
          |try writer.toData().write(to: outFile)""".stripMargin
