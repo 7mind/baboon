@@ -24,14 +24,11 @@ abstract class ScEnumConversionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModu
 
   // Two-version in-memory fixture: v1 has non-Pascal enum members; v2 renames some of them.
   // - MyEnum has members 'cafe' and 'bar_pub' renamed to 'coffeeShop' and 'tapRoom'.
-  // - Stable is a separate DTO that never changes, so 'missingDiffs' in the evolution
-  //   validator is non-empty (preventing the MissingEvoDiff invariant check from firing).
   private val v1Body =
     """model test.enum.rename
       |version "1.0.0"
       |enum MyEnum { Alpha  cafe  bar_pub }
       |root data Holder { e: MyEnum }
-      |root data Stable { x: i32 }
       |""".stripMargin
 
   private val v2Body =
@@ -44,7 +41,6 @@ abstract class ScEnumConversionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModu
       |  tapRoom : was[bar_pub]
       |}
       |root data Holder { e: MyEnum }
-      |root data Stable { x: i32 }
       |""".stripMargin
 
   "ScConversionTranslator CopyEnumByName" should {

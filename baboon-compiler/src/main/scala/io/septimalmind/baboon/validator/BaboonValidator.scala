@@ -592,20 +592,22 @@ object BaboonValidator {
       diff: BaboonDiff,
       ruleset: BaboonRuleset,
     ): F[NEList[BaboonIssue], Unit] = {
-      val nextIds      = next.defs.meta.nodes.keySet
-      val diffIds      = diff.diffs.keySet
-      val missingDiffs = nextIds.diff(diffIds)
-
+      val nextIds = next.defs.meta.nodes.keySet
+      val diffIds = diff.diffs.keySet
       val prevIds = prev.defs.meta.nodes.collect {
         case (id: TypeId.User, _) => id: TypeId
       }.toSet
+      // Diffs for changed types are keyed by the shared type ID (present in nextIds).
+      // Diffs for renamed types are keyed by the OLD type ID (present in prevIds, not nextIds).
+      // A truly orphan diff entry is one that belongs to neither version.
+      val orphanDiffs        = diffIds.diff(nextIds).diff(prevIds)
       val conversionIds      = ruleset.conversions.map(_.sourceTpe).toSet[TypeId]
       val missingConversions = prevIds.diff(conversionIds)
       val extraConversions   = conversionIds.diff(prevIds)
 
       for {
-        _ <- F.when(missingDiffs.isEmpty)(
-          F.fail(BaboonIssue.of(VerificationIssue.MissingEvoDiff(prev, next, missingDiffs)))
+        _ <- F.when(orphanDiffs.nonEmpty)(
+          F.fail(BaboonIssue.of(VerificationIssue.MissingEvoDiff(prev, next, orphanDiffs)))
         )
         _ <- F.when(
           missingConversions.nonEmpty || extraConversions.nonEmpty

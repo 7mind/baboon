@@ -39,7 +39,7 @@ object VerificationIssue {
 
   case class UnderscoredDefinitionRetained(s: DomainMember.User, meta: RawNodeMeta) extends VerificationIssue
 
-  case class MissingEvoDiff(prev: Domain, next: Domain, missingDiffs: Set[TypeId]) extends VerificationIssue with BaboonBug
+  case class MissingEvoDiff(prev: Domain, next: Domain, orphanDiffs: Set[TypeId]) extends VerificationIssue with BaboonBug
 
   case class MissingEvoConversion(prev: Domain, next: Domain, missingConversions: Set[TypeId], extraConversions: Set[TypeId]) extends VerificationIssue with BaboonBug
 
@@ -161,7 +161,7 @@ object VerificationIssue {
   implicit val missingEvoDiffPrinter: IssuePrinter[MissingEvoDiff] =
     new BugPrinter[MissingEvoDiff] {
       override def errorMessage(bug: MissingEvoDiff): String = {
-        s"""Missing differences:${bug.missingDiffs.niceList()}
+        s"""Orphan differences (entries pointing at types absent from both versions):${bug.orphanDiffs.niceList()}
            |In model: ${bug.prev.id}
            |""".stripMargin
       }
