@@ -187,7 +187,8 @@ class ScConversionTranslator[F[+_, +_]: Error2](
           case c: Conversion.CopyEnumByName =>
             val mappingEntries = c.memberMapping.map {
               case (fromName, toName) =>
-                s""""$fromName" -> "$toName""""
+                // capitalize to match the case-object .toString form emitted by ScDefnTranslator
+                s""""${fromName.capitalize}" -> "${toName.capitalize}""""
             }
             val mappedExpr =
               if (mappingEntries.isEmpty) {
