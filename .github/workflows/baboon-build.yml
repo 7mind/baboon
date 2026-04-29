@@ -245,8 +245,24 @@ jobs:
           cache: 'sbt'
           native-image-job-reports: true
       - name: Install rsync
+        # `choco install` exits 0 even when the community feed is unavailable
+        # (e.g. 503), leaving the runner without rsync; the failure only
+        # surfaces ~5 min later inside `mdl :test`. Retry on transient errors
+        # and verify the binary is actually on PATH before declaring success.
         shell: pwsh
-        run: choco install rsync -y
+        run: |
+          $maxRetries = 5
+          for ($i = 1; $i -le $maxRetries; $i++) {
+            Write-Host "rsync install attempt $i/$maxRetries"
+            choco install rsync -y --no-progress
+            if (Get-Command rsync -ErrorAction SilentlyContinue) {
+              rsync --version
+              exit 0
+            }
+            Start-Sleep -Seconds 10
+          }
+          Write-Error "rsync not on PATH after $maxRetries attempts"
+          exit 1
       - name: Set up Dart SDK
         uses: dart-lang/setup-dart@v1
       - name: Install mudyla
