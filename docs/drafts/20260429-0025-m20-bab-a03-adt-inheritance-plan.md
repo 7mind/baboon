@@ -198,3 +198,55 @@ PR M20.3 (fixtures + cross-language):
 - `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonTranslator.scala`
 - `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonEnquiries.scala`
 - `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/issues/TyperIssue.scala`
+
+---
+
+## Decisions captured (2026-04-29)
+
+User answers in `docs/drafts/20260429-0950-m18-m19-m20-open-questions.md`. Plan body above stands; the deltas below override where they conflict.
+
+### Sequencing
+- **Final order: M18 → M19 → M20.** M20 is independent of M18/M19; ships last per user preference.
+
+### Q-M20-1 — Re-emit semantics: confirmed
+User adds: "we should just insert copies of each branch at AST level — that's the easiest approach". See Q-FU-3 for the precise expansion stage.
+
+### Q-M20-2 — Name-collision policy: confirmed (a) error
+Reject with `DuplicatedAdtBranches`.
+
+### Q-M20-3 — Selective inclusion `+ X { Foo, Bar }`: NOT in M20
+User: "we don't need this feature at all. Agreed on subtraction." Skip.
+
+### Q-M20-4 — Empty intersection: confirmed error.
+
+### Q-M20-5 — Chained inclusions: confirmed
+User: "expand our dependency extractor and make an early pass adding the branch copies". Toposort-ordered processing handles transitivity automatically.
+
+### Q-M20-6 — Annotation copying on re-emit: confirmed yes.
+
+### Q-M20-7 — Position of include lines: confirmed anywhere among branches.
+
+### Q-M20-8 — Contracts + includes interaction: confirmed
+User: "We should get that automatically if we insert branches at AST level in an early stage of the typer."
+
+### Q-FU-2 — Subtraction syntax: dot-prefixed `- X.Foo` allowed; `+ X.Foo` optional
+**Final rule:**
+- `+ X` — include all branches from `X`. Required.
+- `- X` — subtract all branches from `X`. Required.
+- `- X.Foo` — subtract single named branch `Foo` from `X`. Required (the dot-prefix earlier ruled out at Q-M20-2 is allowed for subtraction).
+- `+ X.Foo` — selective inclusion of single branch. **Optional** — implement only if it's trivial to keep aligned with `- X.Foo` parsing; otherwise skip. Not a requested feature.
+
+Decision per implementation pass: if grammar/typer changes for `- X.Foo` cleanly extend to `+ X.Foo`, ship both; if asymmetric extension, skip `+ X.Foo`.
+
+### Q-FU-3 — Expansion stage: typer-early pass (b), with positioning hint
+**Final rule:** expansion lives in the typer, not the raw-AST rewriter. Suggested concrete location per user: in `runTyper`, after types have been ordered by toposort but before the main `foldLeft` over types — re-evaluate positioning if a different stage proves easier during execution.
+
+The plan's §3 "Detailed re-emit algorithm" stands in spirit, with these clarifications:
+- The expansion is a single pre-pass over the toposort-ordered list of `RawAdt`s.
+- For each ADT in topo order, the pre-pass rewrites the `RawAdt.members` list by replacing `IncludeAll(ref)` arms with the literal `RawAdtMemberDto` entries pulled from the included ADT's `RawAdt.members` (which, by topo-order, has already been expanded if it itself uses `+`).
+- After the pre-pass, the standard `BaboonTranslator.convertAdt` flow runs over the rewritten `RawAdt`s — no special-case logic needed in `convertAdt` itself.
+- Subtraction (`- X`, `- X.Foo`) and intersection (`^ X`) are applied during the same pre-pass after include expansion.
+- Cycle detection: extend `BaboonEnquiries.hardDepsOfRawDefn` with the new `RawAdtMember` ref types so the toposort sees them; existing `Toposort.cycleBreaking` flags `A + B; B + A` cycles via `CircularInheritance`.
+- Cross-version include rejection: easy because the resolved ref's `Pkg` differs from the receiving ADT's `Pkg`; the validator catches with `CrossVersionAdtInclusion`.
+
+This gives the user's "AST-level insertion" intent (the rewrite is structural, not semantic) while reusing the existing scope/ref-resolution machinery (the rewrite operates on resolved refs, not raw text).

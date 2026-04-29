@@ -382,3 +382,55 @@ If Q1 says deferred: skip; mark as M19+ candidate.
 - /home/pavel/work/safe/baboon-projects/baboon/baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/model/Typedef.scala
 - /home/pavel/work/safe/baboon-projects/baboon/baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonTranslator.scala
 - /home/pavel/work/safe/baboon-projects/baboon/baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala
+
+---
+
+## Decisions captured (2026-04-29)
+
+User answers in `docs/drafts/20260429-0950-m18-m19-m20-open-questions.md`. Plan body above stands; the deltas below override where they conflict.
+
+### Sequencing
+- **Final order: M18 → M19 → M20.** Reverses the §6 recommendation (which was M19 → M18). M19 depends on M18's parser/repr machinery for the multi-field-`id`-as-map-key case (Q-M19-6).
+
+### Q-M18-1 — Reverse-parse scope: ALL 9 LANGUAGES (was: Scala-only)
+Parsers must ship in all 9 backends, not just Scala. Justification per user: needed by M19 to support multi-field `id` types as JSON map keys (the parsing path is how multi-field key codecs reverse the toString form).
+
+**PR-49 (M18.6) is no longer optional and no longer Scala-only.** Reshape per-language parser delivery:
+- Recommend bundling parsers WITH the per-language toString work in PR-47 (M18.4) so each backend's identifier shipment is one cohesive PR. PR-46 (M18.3) keeps Scala as the reference implementation + property tests; PR-47 ships toString + parse across all 9 with cross-language repr/parse equivalence tests.
+- If the bundled PR-47 gets unwieldy, fallback split: PR-47a (toString, all 9), PR-47b (parsers, all 9).
+
+### Q-M18-2 — Bundle toString into one PR: confirmed (a).
+
+### Q-M18-3 — `id` inside `adt` branches deferred to M20: confirmed.
+
+### Q-M18-4 — Pkg/owner in repr: confirmed (a) simple type name.
+
+### Q-M18-5 — Versioned-only repr: confirmed (a). User adds: "this form is not intended to be used in versioning workflows; while we want it to be parseable, we do NOT expose parsers in an easy-to-use form" — see Q-FU-4 for parser visibility.
+
+### Q-M18-6 — Float scope + primitives list: confirmed.
+
+### Q-M18-7 — GraphQL/OpenAPI: confirmed (a) object types, no special-casing in M18.
+
+### Q-M18-8 — Derivation: USER OVERRIDE — follow `data` rules
+Override of recommended (a) implicit always-derive. **Final rule:** `id` types follow the same `: derived[json]`/`: derived[ueba]` annotation + compiler-flag rules as `data` classes. No automatic derivation.
+
+Implication: a user who declares `id Foo { v: uid }` without any `derived` clause gets no JSON or UEBA codec by default. Map-key eligibility (M19) requires the `id` type to have `derived[json]` (and `derived[ueba]` if used in UEBA position) — see Q-FU-1 for the validator rule.
+
+### Q-M18-9 — `id` keyword + field names: confirmed
+User clarifies: keywords are context-dependent in baboon's parser. `id` is fine as a field name (e.g., `data User { id: uid; name: str }`) since field-name positions don't allow keyword tokens to shadow identifiers. Verify the existing parser rule already supports this; add a unit test.
+
+### Q-FU-1 — Map-key without JSON derivation: validator rejects
+Validator must reject any `id` or `data` wrapper used as a JSON map key without `derived[json]`. Same rule for `derived[ueba]` if UEBA position. New `TyperIssue.MapKeyMissingDerivation(owner, badField, missingDerivation)` issue type. Lands in PR M19.1 alongside `checkUserMapKeysEligibility`.
+
+### Q-FU-4 — Parser visibility: internal/codec-namespace
+Override of plan's implicit "public companion `parse`". **Final rule:** parsers live on a separate codec / internal-style namespace per language, NOT as primary public static methods on the type. Concrete per-language conventions (subject to refinement during PR-47):
+- Scala: `<TypeName>Codec.parseRepr(s)` — co-located with the codec object, NOT as `<TypeName>.parse(s)` on the companion.
+- Kotlin / Java: `<TypeName>Codec.parseRepr(s)` static method, not on the type's companion/builder.
+- C#: `<TypeName>Codec.ParseRepr(string)` static, not on the type itself.
+- Rust: `crate::<lang>::<typename>::parse_repr(s)` in a module path the codec uses; do NOT `impl FromStr` (that would advertise it as canonical).
+- TypeScript: `<typeNameCodec>.parseRepr(s)` exported from the codec module, not as a static on the class.
+- Dart: `<TypeName>Codec.parseRepr(s)` static, not on the class.
+- Swift: `<TypeName>Codec.parseRepr(_:)` static, not on the type.
+- Python: `<TypeName>Codec.parse_repr(s)` static method on the codec class, not on the dataclass.
+
+Goal: the parser is reachable when needed (map-key codec emission, user's deliberate use) but doesn't show up as the obvious "how do I get my id from a string" answer in IDE autocomplete on the type. The toString form is the canonical user-facing surface.

@@ -25,9 +25,9 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 - [x] **M15** — M14 follow-ups + failing Dart cross-language test fix.
 - [x] **M16** — M15 closeout: validator predicate, cross-language enum coverage, JVM runtime tests, hygiene bundle, Dart/Swift path-coupling.
 - [~] **M17** — M16 hygiene closeout: BaboonValidator filter symmetry (PR-36-D03), Scala UEBA template restructure (PR-39-D03), generalize `crossLanguageFixturePath` helper across remaining 6 backends (PR-40-D07). Plus formal wontfix on PR-40-D08 (sbt macro-cache) and PR-35-D08 (runtime decode error enrichment).
-- [ ] **M18** — BAB-A01: identifier types (`id` keyword, parseable `<Name>:<ver>#fields:values:{nested}` repr, escaping scheme, free `id<->data` conversion when shape matches).
-- [ ] **M19** — BAB-A02: allow root-data wrappers around primitives (and primitive type-aliases, identifier types) as JSON map keys; delegate to inner-primitive codec.
-- [ ] **M20** — BAB-A03: ADT branch inheritance / cross-ADT branch reuse (`adt X { + ErrorAtom ... }` plus subtraction/intersection per field-set semantics).
+- [ ] **M18** — BAB-A01: identifier types (`id` keyword, parseable `<Name>:<ver>#fields:values:{nested}` repr, escaping scheme, free `id<->data` conversion when shape matches). **Sequenced first** per user — provides parser/repr machinery M19 depends on.
+- [ ] **M19** — BAB-A02: allow user-defined DTOs (any single-primitive-field `data`, ANY `id` type incl. multi-field) as JSON map keys. Multi-field id keys leverage M18's parse/repr. **Depends on M18.**
+- [ ] **M20** — BAB-A03: ADT branch inheritance / cross-ADT branch reuse (`adt X { + ErrorAtom ... }` plus subtraction). Independent; ships last per user preference.
 
 ---
 
@@ -41,13 +41,15 @@ Detail in `docs/drafts/20260429-0022-m17-cleanup-plan.md`. Three independent hyg
 
 ---
 
-## Milestones 18–20 — feature plans (planned, not started)
+## Milestones 18–20 — feature plans (decisions captured, ready to dispatch)
 
-Plan docs landed; user reviews open questions before dispatch.
+Plan docs + user decisions in `docs/drafts/`. **Final order: M18 → M19 → M20.** Each plan has a "Decisions captured (2026-04-29)" appendix reflecting user answers to all 25+4 open questions.
 
-- [ ] **M18** — BAB-A01 identifier types. Plan: `docs/drafts/20260429-0029-m18-bab-a01-identifiers-plan.md`. 9 open questions (reverse-parse scope, language-rollout staging, repr versioning).
-- [ ] **M19** — BAB-A02 user-DTO map keys. Plan: `docs/drafts/20260429-0024-m19-bab-a02-map-keys-plan.md`. Recommended ordering: M19 before M18 (smaller, no dependency).
-- [ ] **M20** — BAB-A03 ADT branch inheritance. Plan: `docs/drafts/20260429-0025-m20-bab-a03-adt-inheritance-plan.md`. Recommendation: re-emit semantics over reference semantics.
+- [ ] **M18** — BAB-A01 identifier types. Plan: `docs/drafts/20260429-0029-m18-bab-a01-identifiers-plan.md`. **Key decisions:** parsers in all 9 languages (not Scala-only); follow `data` derivation rules (no auto-derive); parsers live on internal/codec namespace, not on the type itself; `id` reserved as keyword but allowed as field name.
+- [ ] **M19** — BAB-A02 user-DTO map keys. Plan: `docs/drafts/20260429-0024-m19-bab-a02-map-keys-plan.md`. **Depends on M18.** Key decisions: any single-primitive-field DTO eligible (not just root); ANY `id` type eligible incl. multi-field (via M18 parser); validator rejects map-key types lacking `derived[json]`/`[ueba]`; floats asymmetric (reject for wrappers, allow builtin); foreign types accepted at user's responsibility.
+- [ ] **M20** — BAB-A03 ADT branch inheritance. Plan: `docs/drafts/20260429-0025-m20-bab-a03-adt-inheritance-plan.md`. Independent of M18/M19. Key decisions: re-emit at typer-early stage (in `runTyper` after toposort, before main `foldLeft`); `+ X` / `- X` / `- X.Foo` syntax; `+ X.Foo` optional; collisions error; chained inclusions auto-expand via toposort.
+
+**Open questions answered:** `docs/drafts/20260429-0950-m18-m19-m20-open-questions.md` is the canonical decision log.
 
 ---
 
