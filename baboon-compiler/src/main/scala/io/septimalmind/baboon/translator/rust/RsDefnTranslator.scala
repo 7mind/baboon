@@ -737,7 +737,7 @@ object RsDefnTranslator {
     while (i < s.length) {
       val c = s.charAt(i)
       if (c.isUpper) {
-        if (i > 0 && s.charAt(i - 1).isLower) {
+        if (i > 0 && (s.charAt(i - 1).isLower || s.charAt(i - 1).isDigit)) {
           result += '_'
         } else if (i > 0 && i + 1 < s.length && s.charAt(i + 1).isLower && s.charAt(i - 1).isUpper) {
           result += '_'

@@ -26,9 +26,22 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 - [x] **M16** — M15 closeout: validator predicate, cross-language enum coverage, JVM runtime tests, hygiene bundle, Dart/Swift path-coupling.
 - [x] **M17** — M16 hygiene closeout: BaboonValidator filter symmetry (PR-36-D03), Scala UEBA template restructure (PR-39-D03), generalize `crossLanguageFixturePath` helper across remaining 6 backends (PR-40-D07) + CI hot-fix (PR-44). Plus formal wontfix on PR-40-D08 (sbt macro-cache) and PR-35-D08 (runtime decode error enrichment).
 - [x] **M21** — Round-2 upstream defect fixes: Rust wiring snake_case (BAB-R01, PR-45 `3fd4ea8`), Rust `BaboonGenerated` trait impls for cross-stack parity (BAB-R02, PR-46 `357bc1e`), typer crash on absent `data in {}` (BAB-G01, PR-47 `9ad9d2f`), Scala JSON Map-key non-determinism (BAB-J01, PR-48 `b4c3f91`). Filed follow-ups for Swift codec hash-order (BAB-S0x), CS/Java map iter-order (BAB-C04, BAB-J03), `toSnakeCase` digit edge case (PR-45-D01), `ServiceMultipleInputs` negative-fixture coverage gap (PR-47-D01).
+- [~] **M22** — M21 follow-up cleanup: Swift codec sort (BAB-S0x), C# map sort (BAB-C04), Java map sort (BAB-J03), `toSnakeCase` digit edge case (PR-45-D01), `ServiceMultipleInputs` negative fixture (PR-47-D01). Serialised execution per M21 lesson.
 - [ ] **M18** — BAB-A01: identifier types (`id` keyword, parseable `<Name>:<ver>#fields:values:{nested}` repr, escaping scheme, free `id<->data` conversion when shape matches). **Sequenced first** per user — provides parser/repr machinery M19 depends on.
 - [ ] **M19** — BAB-A02: allow user-defined DTOs (any single-primitive-field `data`, ANY `id` type incl. multi-field) as JSON map keys. Multi-field id keys leverage M18's parse/repr. **Depends on M18.**
 - [ ] **M20** — BAB-A03: ADT branch inheritance / cross-ADT branch reuse (`adt X { + ErrorAtom ... }` plus subtraction). Independent; ships last per user preference.
+
+---
+
+## Milestone 22 — PR breakdown
+
+Detail per defect ledger entries; small mechanical fixes batched together. Serialised execution (no parallel agents on shared working tree per M21 lesson).
+
+- [ ] **PR-49** — BAB-S0x: Swift codec hash-ordered Dictionary. Fix: enforce `.sortedKeys` at the JSON-write boundary in runtime helpers (canonical fix per audit), OR sort at codec emit time. Investigation deciding which approach.
+- [ ] **PR-50** — BAB-C04: C# `BaboonTools.WriteMap` runtime helper sorts iteration by stringified key.
+- [ ] **PR-51** — BAB-J03: Java JSON codec emit sorts `entrySet()` by stringified key.
+- [x] **PR-52** — PR-45-D01: `toSnakeCase` digit edge case (`Foo2Bar` → `foo2_bar`). Extended first guard `prev.isLower` → `prev.isLower || prev.isDigit`. New `RsToSnakeCaseTest` (6/6 PASS).
+- [ ] **PR-53** — PR-47-D01: add negative fixture/unit test exercising `ServiceMultipleInputs` (rejects `def m ( data in {} data in {} data out {} )`).
 
 ---
 

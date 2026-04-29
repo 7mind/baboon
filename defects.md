@@ -1729,11 +1729,11 @@ First match wins. Plus an `anchor`/`fixtureRoot` split: `assertCrossLanguageFixt
 **Suggested fix:** sort entrySet by stringified key in the emitted iteration. Out of PR-48 scope.
 
 ### [PR-45-D01] `toSnakeCase` does not insert underscore after digit-adjacent caps
-**Status:** open
-**Severity:** nit (no current fixture exercises it)
-**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/rust/RsDefnTranslator.scala:730-752`
-**Description:** Algorithm only inserts `_` when `prev.isLower` or wedged between a lowercase-following-uppercase pair. A digit between an uppercase prefix and the next uppercase word suppresses the underscore: `Foo2Bar` → `foo2bar` (not `foo2_bar`); `I2WithFoo` → `i2with_foo` (not `i2_with_foo`). Behaves correctly for current service-name conventions (e.g. `I1` → `i1`, `PetStore` → `pet_store`).
-**Suggested fix:** extend the first guard to `prev.isLower || prev.isDigit`. Out of PR-45 scope; would only be triggered by service names like `Foo2Bar` which no current fixture uses.
+**Status:** resolved (PR-52, 2026-04-29)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/rust/RsDefnTranslator.scala:740`
+**Description:** Algorithm only inserted `_` when `prev.isLower` or wedged between a lowercase-following-uppercase pair. A digit between an uppercase prefix and the next uppercase word suppressed the underscore: `Foo2Bar` → `foo2bar` (not `foo2_bar`).
+**Fix:** Extended the first guard from `prev.isLower` to `prev.isLower || prev.isDigit`. New `RsToSnakeCaseTest` covers 6 cases including digit-adjacent caps (`Foo2Bar`→`foo2_bar`, `I2WithFoo`→`i2_with_foo`, `V3HttpClient`→`v3_http_client`), pre-existing patterns (PascalCase, snake_case idempotency, single-letter+digit, all-caps, Rust keyword `r#` escape). `mdl :test-rs-wiring-either :test-rust-regular` PASS (no service fixture currently uses digit-adjacent-caps shape so regression-impact is null).
 
 ### [PR-47-D01] No negative fixture exercising `ServiceMultipleInputs`
 **Status:** open
