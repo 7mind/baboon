@@ -1,0 +1,9 @@
+model my.bad.identifier.foreignref
+
+version "1.0.0"
+
+foreign Inner {}
+
+root id Bad {
+  v: Inner
+}

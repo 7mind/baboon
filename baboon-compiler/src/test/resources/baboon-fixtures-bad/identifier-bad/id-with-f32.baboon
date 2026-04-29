@@ -1,0 +1,7 @@
+model my.bad.identifier.f32
+
+version "1.0.0"
+
+root id Bad {
+  v: f32
+}

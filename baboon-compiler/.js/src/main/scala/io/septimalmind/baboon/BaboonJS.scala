@@ -1552,6 +1552,10 @@ object BaboonJS {
       case AnyUnderlyingLacksUebaDerivation(_, _, meta)         => Some(meta.pos)
       case AnyAsMapKey(_, _, meta)                              => Some(meta.pos)
       case AnyAsSetElement(_, _, meta)                          => Some(meta.pos)
+      case IdentifierFieldFloatType(_, _, meta)                 => Some(meta.pos)
+      case IdentifierFieldCollection(_, _, meta)                => Some(meta.pos)
+      case IdentifierFieldUserNotIdentifier(_, _, meta)         => Some(meta.pos)
+      case IdentifierFieldAny(_, _, meta)                       => Some(meta.pos)
       case _: LockedVersionModified                             => None
       case _: MissingTypeDef                                    => None
       case _: ReferentialCyclesFound                            => None

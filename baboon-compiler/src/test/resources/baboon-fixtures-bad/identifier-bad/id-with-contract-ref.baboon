@@ -1,0 +1,11 @@
+model my.bad.identifier.contractref
+
+version "1.0.0"
+
+contract Inner {
+  x: i32
+}
+
+root id Bad {
+  v: Inner
+}

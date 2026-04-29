@@ -1759,3 +1759,52 @@ Both tests pass. The dual-path coverage clarifies: `ServiceMultipleInputs` is th
 **Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/defns/base/Keywords.scala:22-24 (vs untouched lines 25-38)
 **Description:** PR-54 added `def identifier[$: P]: P[Unit] = kw("id")` and incidentally reformatted the adjacent `model` (line 22) and `data` (line 23) `=` column to a wider indent, presumably so the new `identifier` line aligns. The remaining 14 keyword definitions on lines 25–38 (`contract`, `service`, `choice`, `adt`, `foreign`, `root`, `version`, `import`, `include`, `namespace`, `derived`, `was`, `pragma`, `type`) keep the original 5-space pre-`=` whitespace, so the `=` column is now misaligned across the block. Cosmetic only — no functional impact. Violates CLAUDE.md §5 (Surgical Changes): "Don't 'improve' adjacent code, comments, or formatting" / "Match existing style, even if you'd do it differently."
 **Fix:** Reverted the alignment changes on lines 22–23 (`model` and `data`), restoring their original 5-space pre-`=` whitespace. The new `identifier` line uses the same 5-space indent style as the rest of the block — `=` columns don't all align across the longer-named keywords, but this matches the file's prior aesthetic. Final `git diff Keywords.scala` shows exactly one added line and zero modifications to existing lines. `sbt baboonJVM/compile` clean; `IdentifierParserAndTyperTest` 6/6 PASS.
+
+## [PR-55-D01] LSP diagnostic for `IdentifierFieldUserNotIdentifier` drops the offending type name (CLI shows it)
+**Status:** resolved
+**Severity:** nit
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/lsp/features/DiagnosticsProvider.scala:158
+**Description:** The CLI printer renders `'v' references user type 'Inner', which is not an 'id'`, exposing the offending TypeId to the user. The LSP variant only renders the field name: `references non-'id' type(s): v`. The case class carries `List[(Field, TypeId)]`; LSP discards the second element. The user gets less information in the IDE than at the CLI for the same issue.
+**Fix:** `DiagnosticsProvider.scala:158` — changed `fields.map(_._1.name.name).mkString(", ")` to `fields.map { case (f, t) => s"${f.name.name} → ${t.name.name}" }.mkString(", ")`. LSP now renders e.g. `identifier 'Bad' references non-`id` type(s): v → Inner` instead of just `... v`. Compile clean; tests still pass.
+
+## [PR-55-D02] Float-rejection test fixture covers only `f64`, not `f32` or `f128`
+**Status:** resolved
+**Severity:** nit
+**Location:** baboon-compiler/src/test/resources/baboon-fixtures-bad/identifier-bad/id-with-float.baboon
+**Description:** The validator's `floatTypes = Set(f32, f64, f128)` is correct in code, but only `f64` is exercised by a fixture. If a future refactor drops `f32` or `f128` from the set (e.g., a typo or a refactor that keeps just one constant), no test catches it. Equivalence partition test discipline says one fixture per primitive is enough, but parameterised coverage prevents silent regressions.
+**Fix:** Added `id-with-f32.baboon` (`id Bad { v: f32 }`) and `id-with-f128.baboon` (`id Bad { v: f128 }`) fixtures plus two corresponding `IdentifierValidatorTest` tests asserting `IdentifierFieldFloatType` for each.
+
+## [PR-55-D03] Missing fixture coverage for non-data, non-adt user types (enum, contract, foreign) as id field
+**Status:** resolved
+**Severity:** nit
+**Location:** baboon-compiler/src/test/resources/baboon-fixtures-bad/identifier-bad/
+**Description:** The validator code uses `isIdentifierDto(uid)` (returns false for ANY non-`id`-Dto, including enum/contract/foreign), so behaviour is correct — but tests only cover `data` and `adt` references. A regression that narrowed the predicate (e.g. `case _: Typedef.Adt | _: Typedef.Dto if !isId => reject`) would still pass the current tests while silently letting `enum`/`foreign`/`contract` slip through.
+**Fix:** Added `id-with-enum-ref.baboon`, `id-with-contract-ref.baboon`, `id-with-foreign-ref.baboon` fixtures (foreign uses `foreign Inner {}` with empty body — parser allows zero `foreignMember.rep()` and typer's `convertForeign` handles empty `langEntries`) plus three corresponding tests asserting `IdentifierFieldUserNotIdentifier`. All three fixtures parse + type-check successfully and exercise the validator path.
+
+## [PR-55-D04] Missing `opt[uid]`, `set[uid]`, `map[uid, str]` fixtures (only `lst` covered for collection rejection)
+**Status:** resolved
+**Severity:** nit
+**Location:** baboon-compiler/src/test/resources/baboon-fixtures-bad/identifier-bad/id-with-collection.baboon
+**Description:** The validator catches all `TypeRef.Constructor` shapes uniformly, so `opt`, `set`, `map` are all correctly rejected — but only `lst` has a fixture. If a future refactor changed `opt` to a special-cased TypeRef shape (not implausible — `opt` already has `checkDoubleOptions` special-casing), the lst-only test wouldn't catch it.
+**Fix:** Added `id-with-opt.baboon`, `id-with-set.baboon`, `id-with-map.baboon` fixtures plus three corresponding tests asserting `IdentifierFieldCollection`.
+
+## [PR-55-D05] Validator short-circuits on first failure; `id Bad { vs: lst[i32], v: f64 }` reports only one of two issues
+**Status:** resolved (deferred — consistent with surrounding `checkAnyFields` pattern; refactoring would expand PR scope)
+**Severity:** nit
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala:157-170 (sequential `_ <-` in `checkIdentifierFields`)
+**Description:** An identifier with multiple problem fields surfaces only the first issue type. User fixes one issue, recompiles, sees the next. Annoying but matches the surrounding `checkAnyFields` style exactly.
+**Fix:** Deferred. Surgical-changes discipline says don't refactor surrounding-style patterns in scope of a feature PR. If aggregation is desired across the validator, that's a separate hygiene PR touching all `for-yield` validation chains.
+
+## [PR-55-D06] `IdentifierFieldAny` doc-comment claims it's "defensive / redundant with checkAnyFields", but it's actually the sole rejection path for plain `any` in id fields
+**Status:** resolved
+**Severity:** minor (doc-comment only)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/issues/VerificationIssue.scala:95-97
+**Description:** The comment on `IdentifierFieldAny` claims the rule is "defensive — in practice `checkAnyFields` already rejects `any` in identifiers". This is factually wrong. `checkAnyFields` only rejects three patterns: malformed `any[X]` underlyings (`AnyUnderlyingNotAllowed`), `any` as map key (`AnyAsMapKey`), and `any` as set element (`AnyAsSetElement`). A plain `v: any` scalar field in a DTO passes `checkAnyFields` unconditionally — the test `id-with-any.baboon` (`v: any`) confirms this, since `IdentifierFieldAny` is the issue raised. The misleading comment could lead a future reader to believe the rule can be removed without behavior change.
+**Fix:** Replaced the three-line comment with: "`any` is not allowed in identifiers. This is the SOLE rejection path for a plain `any` scalar field in an `id` DTO — `checkAnyFields` only rejects `any[X]` underlyings, `any` as map key, and `any` as set element." Compile clean; `IdentifierValidatorTest` 14/14 PASS; no other lines modified.
+
+## [PR-55-D07] `checkIdentifierFields` short-circuits across rule categories — multiple violations in one id DTO surface one-at-a-time
+**Status:** resolved (deferred — consistent with surrounding `checkAnyFields` pattern; same class as PR-55-D05)
+**Severity:** minor (UX)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala:157-169
+**Description:** An `id` DTO that violates two rule categories (e.g., one field is a collection AND another is a float) surfaces only the FIRST violation. User fixes, re-runs, sees the next. Annoying but matches the surrounding `checkAnyFields` pattern (same as PR-55-D05).
+**Fix:** Deferred. Same disposition as PR-55-D05 — surgical-changes discipline says don't refactor surrounding-style patterns in scope of a feature PR. Aggregating across validator chains is a separate hygiene PR.

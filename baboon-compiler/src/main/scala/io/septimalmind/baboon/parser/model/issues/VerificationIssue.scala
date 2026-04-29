@@ -79,6 +79,24 @@ object VerificationIssue {
   // `any` cannot appear as a set element (no stable hash/equality).
   case class AnyAsSetElement(owner: Typedef.User, badFields: List[Field], meta: RawNodeMeta) extends VerificationIssue
 
+  // `id` field-type rules: float types (f32/f64/f128) are not allowed in identifiers
+  // because float toString is locale-sensitive and not bit-stable across languages.
+  case class IdentifierFieldFloatType(owner: Typedef.User, badFields: List[Field], meta: RawNodeMeta) extends VerificationIssue
+
+  // `id` field-type rules: collections (lst/set/map/opt) are not allowed in identifiers;
+  // only primitive or nested-identifier scalar fields are permitted.
+  case class IdentifierFieldCollection(owner: Typedef.User, badFields: List[Field], meta: RawNodeMeta) extends VerificationIssue
+
+  // `id` field-type rules: a user-defined type referenced from an `id` field must itself
+  // be an `id` type. Regular `data`, `adt`, `enum`, `foreign`, `service`, and `contract`
+  // references are rejected. Carries the offending TypeId for the diagnostic message.
+  case class IdentifierFieldUserNotIdentifier(owner: Typedef.User, badFields: List[(Field, TypeId)], meta: RawNodeMeta) extends VerificationIssue
+
+  // `any` is not allowed in identifiers. This is the SOLE rejection path for a
+  // plain `any` scalar field in an `id` DTO — `checkAnyFields` only rejects
+  // `any[X]` underlyings, `any` as map key, and `any` as set element.
+  case class IdentifierFieldAny(owner: Typedef.User, badFields: List[Field], meta: RawNodeMeta) extends VerificationIssue
+
   implicit val lockedVersionModifiedPrinter: IssuePrinter[LockedVersionModified] =
     (issue: LockedVersionModified) => {
       s"""Model ${issue.pkg.toString}@${issue.version} was modified but it's not the latest version so it's locked with the lockfile""".stripMargin
@@ -294,6 +312,38 @@ object VerificationIssue {
   implicit val wrongEnumConstantPrinter: IssuePrinter[WrongEnumConstant] = issue => {
     s"""Enum constants must be within Int.MinValue..Int.MaxValue range ${issue.e.id.toString}""".stripMargin
   }
+
+  implicit val identifierFieldFloatTypePrinter: IssuePrinter[IdentifierFieldFloatType] =
+    (issue: IdentifierFieldFloatType) => {
+      val badDesc = issue.badFields.map(f => s"'${f.name.name}' (type: ${f.tpe})").mkString(", ")
+      s"""${extractLocation(issue.meta)}
+         |identifier '${issue.owner.id.name.name}': field $badDesc has float type; floats are not allowed in identifiers
+         |""".stripMargin
+    }
+
+  implicit val identifierFieldCollectionPrinter: IssuePrinter[IdentifierFieldCollection] =
+    (issue: IdentifierFieldCollection) => {
+      val badDesc = issue.badFields.map(f => s"'${f.name.name}'").mkString(", ")
+      s"""${extractLocation(issue.meta)}
+         |identifier '${issue.owner.id.name.name}': field $badDesc is a collection; identifiers may only contain primitive or nested-identifier scalar fields
+         |""".stripMargin
+    }
+
+  implicit val identifierFieldUserNotIdentifierPrinter: IssuePrinter[IdentifierFieldUserNotIdentifier] =
+    (issue: IdentifierFieldUserNotIdentifier) => {
+      val badDesc = issue.badFields.map { case (f, t) => s"'${f.name.name}' references user type '${t.name.name}', which is not an `id`" }.mkString("; ")
+      s"""${extractLocation(issue.meta)}
+         |identifier '${issue.owner.id.name.name}': $badDesc
+         |""".stripMargin
+    }
+
+  implicit val identifierFieldAnyPrinter: IssuePrinter[IdentifierFieldAny] =
+    (issue: IdentifierFieldAny) => {
+      val badDesc = issue.badFields.map(f => s"'${f.name.name}'").mkString(", ")
+      s"""${extractLocation(issue.meta)}
+         |identifier '${issue.owner.id.name.name}': field $badDesc has type 'any'; 'any' fields are not allowed in identifiers
+         |""".stripMargin
+    }
 
   private def extractLocation(meta: RawNodeMeta): String = {
     meta.pos match {

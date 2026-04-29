@@ -1,0 +1,7 @@
+model my.bad.identifier.any
+
+version "1.0.0"
+
+root id Bad {
+  v: any
+}

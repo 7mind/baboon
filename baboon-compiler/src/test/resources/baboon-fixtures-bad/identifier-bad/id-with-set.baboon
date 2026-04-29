@@ -1,0 +1,7 @@
+model my.bad.identifier.set
+
+version "1.0.0"
+
+root id Bad {
+  vs: set[uid]
+}

@@ -59,6 +59,7 @@ object BaboonValidator {
         _ <- checkShape(domain)
         _ <- checkPathologicGenerics(domain)
         _ <- checkAnyFields(domain)
+        _ <- checkIdentifierFields(domain)
         _ <- checkRoots(domain)
       } yield {}
 
@@ -112,6 +113,66 @@ object BaboonValidator {
       f.map(_.tpe)
         .map(ref => ref.id) // we ignore generic options, BIGs termninate loops, this might change
         .forall(terminatesLoop(_, domain, npath))
+    }
+
+    // Enforces the PR-55 (M18.2) field-type rules for `id` (isIdentifier == true) DTOs.
+    // Rules per plan §2.2:
+    //   (1) Collections (any TypeRef.Constructor) are rejected → IdentifierFieldCollection.
+    //   (2) Float scalars (f32/f64/f128) are rejected → IdentifierFieldFloatType.
+    //   (3) TypeRef.Any is rejected → IdentifierFieldAny.
+    //   (4) User-defined types that are not themselves `id` DTOs are rejected
+    //       → IdentifierFieldUserNotIdentifier.
+    //   All other scalars (bit, i08…u64, str, uid, tsu, tso, bytes, nested `id`) are accepted.
+    private def checkIdentifierFields(
+      domain: Domain
+    ): F[NEList[BaboonIssue], Unit] = {
+      val floatTypes: Set[TypeId] = Set(TypeId.Builtins.f32, TypeId.Builtins.f64, TypeId.Builtins.f128)
+
+      def isIdentifierDto(id: TypeId.User): Boolean = {
+        domain.defs.meta.nodes.get(id).exists {
+          case DomainMember.User(_, d: Typedef.Dto, _, _) => d.isIdentifier
+          case _                                           => false
+        }
+      }
+
+      F.traverseAccumErrors_(domain.defs.meta.nodes.values) {
+        case _: DomainMember.Builtin =>
+          F.unit
+        case u: DomainMember.User =>
+          u.defn match {
+            case d: Typedef.Dto if d.isIdentifier =>
+              val collectionFields = d.fields.filter(f => f.tpe.isInstanceOf[TypeRef.Constructor])
+              val floatFields      = d.fields.filter {
+                f => f.tpe match {
+                  case TypeRef.Scalar(b) => floatTypes.contains(b)
+                  case _                 => false
+                }
+              }
+              val anyFields        = d.fields.filter(f => f.tpe.isInstanceOf[TypeRef.Any])
+              val userNotIdFields: List[(Field, TypeId)] = d.fields.collect {
+                case f @ Field(_, TypeRef.Scalar(uid: TypeId.User), _) if !isIdentifierDto(uid) =>
+                  (f, uid: TypeId)
+              }
+
+              for {
+                _ <- F.when(collectionFields.nonEmpty)(
+                  F.fail(BaboonIssue.of(VerificationIssue.IdentifierFieldCollection(d, collectionFields, u.meta)))
+                )
+                _ <- F.when(floatFields.nonEmpty)(
+                  F.fail(BaboonIssue.of(VerificationIssue.IdentifierFieldFloatType(d, floatFields, u.meta)))
+                )
+                _ <- F.when(anyFields.nonEmpty)(
+                  F.fail(BaboonIssue.of(VerificationIssue.IdentifierFieldAny(d, anyFields, u.meta)))
+                )
+                _ <- F.when(userNotIdFields.nonEmpty)(
+                  F.fail(BaboonIssue.of(VerificationIssue.IdentifierFieldUserNotIdentifier(d, userNotIdFields, u.meta)))
+                )
+              } yield {}
+
+            case _ =>
+              F.unit
+          }
+      }
     }
 
     private def checkRoots(
