@@ -1748,3 +1748,14 @@ Note (b) "sort at codec emit time" considered — moot because `JSONSerializatio
 - `multiple-inputs-ref.baboon`: `def m (in = InA in = InB out = Out)` — ref form, no scope-level duplicate registration; `convertService`'s `ServiceMultipleInputs` defensive check fires. **Test asserts `TyperIssue.ServiceMultipleInputs`.**
 - `multiple-inputs-inline.baboon`: `def m (data in {x:i32} data in {y:i32} data out {r:str})` — inline form. Each inline struct registers `ScopeName(in)`; duplicates collide in the scope tree before `convertService` runs. **Test asserts `TyperIssue.NonUniqueScope`** — earlier rejection path.
 Both tests pass. The dual-path coverage clarifies: `ServiceMultipleInputs` is the canonical defensive check but only reachable for the ref form; the more common inline-struct form is rejected one pass earlier with a generic-scope-conflict error message. Both rejection paths are now locked in.
+
+---
+
+## PR-54
+
+## [PR-54-D01] Keywords.scala alignment regression — adjacent-code reformatting violates surgical-changes discipline
+**Status:** resolved
+**Severity:** nit
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/defns/base/Keywords.scala:22-24 (vs untouched lines 25-38)
+**Description:** PR-54 added `def identifier[$: P]: P[Unit] = kw("id")` and incidentally reformatted the adjacent `model` (line 22) and `data` (line 23) `=` column to a wider indent, presumably so the new `identifier` line aligns. The remaining 14 keyword definitions on lines 25–38 (`contract`, `service`, `choice`, `adt`, `foreign`, `root`, `version`, `import`, `include`, `namespace`, `derived`, `was`, `pragma`, `type`) keep the original 5-space pre-`=` whitespace, so the `=` column is now misaligned across the block. Cosmetic only — no functional impact. Violates CLAUDE.md §5 (Surgical Changes): "Don't 'improve' adjacent code, comments, or formatting" / "Match existing style, even if you'd do it differently."
+**Fix:** Reverted the alignment changes on lines 22–23 (`model` and `data`), restoring their original 5-space pre-`=` whitespace. The new `identifier` line uses the same 5-space indent style as the rest of the block — `=` columns don't all align across the longer-named keywords, but this matches the file's prior aesthetic. Final `git diff Keywords.scala` shows exactly one added line and zero modifications to existing lines. `sbt baboonJVM/compile` clean; `IdentifierParserAndTyperTest` 6/6 PASS.

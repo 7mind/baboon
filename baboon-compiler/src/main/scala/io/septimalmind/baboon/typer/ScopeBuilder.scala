@@ -134,6 +134,9 @@ class ScopeBuilder[F[+_, +_]: Error2] {
       case dto: RawDto =>
         F.pure(mkLeaf(dto))
 
+      case identifier: RawIdentifier =>
+        F.pure(mkLeaf(identifier))
+
       case contract: RawContract =>
         F.pure(mkLeaf(contract))
 

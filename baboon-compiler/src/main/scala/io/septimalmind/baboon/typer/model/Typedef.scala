@@ -40,7 +40,7 @@ object Typedef {
     def id: TypeId.User
   }
 
-  case class Dto(id: TypeId.User, fields: List[Field], contracts: List[TypeId.User]) extends User
+  case class Dto(id: TypeId.User, fields: List[Field], contracts: List[TypeId.User], isIdentifier: Boolean = false) extends User
 
   case class Enum(id: TypeId.User, members: NEList[EnumMember]) extends User
 

@@ -15,6 +15,8 @@ sealed trait RawDtoid {
 }
 case class RawDto(name: RawTypeName, members: Seq[RawDtoMember], derived: Set[RawMemberMeta], meta: RawNodeMeta) extends RawDefn with RawDtoid
 
+case class RawIdentifier(name: RawTypeName, members: Seq[RawDtoMember], derived: Set[RawMemberMeta], meta: RawNodeMeta) extends RawDefn with RawDtoid
+
 case class RawContract(name: RawTypeName, members: Seq[RawDtoMember], meta: RawNodeMeta) extends RawDefn with RawDtoid
 
 case class RawEnum(name: RawTypeName, members: Seq[RawEnumMember], derived: Set[RawMemberMeta], meta: RawNodeMeta) extends RawDefn

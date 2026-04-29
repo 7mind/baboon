@@ -60,7 +60,8 @@ class BaboonTranslator[F[+_, +_]: Error2](
   ): F[NEList[BaboonIssue], List[DomainMember.User]] = {
     val root = defn.gcRoot
     defn.defn match {
-      case d: RawDto      => convertDto(id, root, d) { case (id, finalFields, contractRefs) => Typedef.Dto(id, finalFields, contractRefs) }.map(d => List(d))
+      case d: RawDto        => convertDto(id, root, d) { case (id, finalFields, contractRefs) => Typedef.Dto(id, finalFields, contractRefs) }.map(d => List(d))
+      case d: RawIdentifier => convertDto(id, root, d) { case (id, finalFields, contractRefs) => Typedef.Dto(id, finalFields, contractRefs, isIdentifier = true) }.map(d => List(d))
       case e: RawEnum     => converEnum(id, root, e).map(e => List(e))
       case a: RawAdt      => convertAdt(id, root, a, thisScope).map(_.toList)
       case f: RawForeign  => convertForeign(id, root, f).map(_.toList)
@@ -224,7 +225,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
       converted <- F.flatTraverseAccumErrors(dto.members) {
         case p: RawDtoMember.ContractRef =>
           dto match {
-            case _: RawDto =>
+            case _: RawDto | _: RawIdentifier =>
               contractContent(p, dto.meta, p.meta)
                 .map(_.flatMap(_.fields))
             case _: RawContract =>
@@ -253,7 +254,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
       }
 
       adtContracts <- dto match {
-        case _: RawDto =>
+        case _: RawDto | _: RawIdentifier =>
           id.owner match {
             case Owner.Adt(xid) =>
               defined(xid) match {
@@ -296,7 +297,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
 
       missingIrremovable = contractFields.distinct.diff(withoutRemoved.distinct)
       _ <- dto match {
-        case _: RawDto =>
+        case _: RawDto | _: RawIdentifier =>
           F.when(missingIrremovable.nonEmpty)(
             F.fail(BaboonIssue.of(TyperIssue.MissingContractFields(id, missingIrremovable, dto.meta)))
           )
@@ -312,8 +313,9 @@ class BaboonTranslator[F[+_, +_]: Error2](
       contractRefs = contracts.flatMap(_.refs).distinct
     } yield {
       val decls = dto match {
-        case d: RawDto      => d.derived
-        case _: RawContract => Set.empty[RawMemberMeta]
+        case d: RawDto        => d.derived
+        case d: RawIdentifier => d.derived
+        case _: RawContract   => Set.empty[RawMemberMeta]
       }
 
       DomainMember.User(
