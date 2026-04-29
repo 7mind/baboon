@@ -416,6 +416,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
 
       _ <- F.when(outargs.size != 1)(F.fail(BaboonIssue.of(TyperIssue.ServiceMissingOutput(svc.name.name, f.name, f.meta))))
       _ <- F.when(outargs.size > 1)(F.fail(BaboonIssue.of(TyperIssue.ServiceMultipleOutputs(svc.name.name, f.name, outargs.size, f.meta))))
+      _ <- F.when(inargs.size > 1)(F.fail(BaboonIssue.of(TyperIssue.ServiceMultipleInputs(svc.name.name, f.name, inargs.size, f.meta))))
       _ <- F.when(errargs.size > 1)(F.fail(BaboonIssue.of(TyperIssue.ServiceMultipleErrors(svc.name.name, f.name, errargs.size, f.meta))))
     } yield {
       MethodDef(MethodName(f.name), inargs.head, outargs.headOption, errargs.headOption)

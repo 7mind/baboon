@@ -365,3 +365,30 @@ ns svcns {
     )
   }
 }
+
+// BAB-G01: methods with no `data in` are syntactic sugar for `data in {}`.
+// Pre-fix the first method (no `in`) crashed the typer at
+// BaboonTranslator#convertMethod with NoSuchElementException("head of empty list")
+// from `inargs.head`. The second method exercises the regular path
+// with both `in` and `out` to ensure the desugaring does not regress
+// the explicit-in case.
+ns notifications {
+  root service Push {
+    def updated (
+      data out {
+        kind: str
+      }
+    )
+  }
+
+  root service Bidir {
+    def respond (
+      data in {
+        req: str
+      }
+      data out {
+        resp: str
+      }
+    )
+  }
+}

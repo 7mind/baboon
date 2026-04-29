@@ -94,6 +94,8 @@ object TyperIssue {
 
   case class ServiceMultipleOutputs(serviceName: String, methodName: String, count: Int, meta: RawNodeMeta) extends TyperIssue
 
+  case class ServiceMultipleInputs(serviceName: String, methodName: String, count: Int, meta: RawNodeMeta) extends TyperIssue
+
   case class ServiceMultipleErrors(serviceName: String, methodName: String, count: Int, meta: RawNodeMeta) extends TyperIssue
 
   case class ScopeCannotBeEmpty(member: RawDefn) extends TyperIssue
@@ -490,6 +492,12 @@ object TyperIssue {
   implicit val serviceMultipleOutputsPrinter: IssuePrinter[ServiceMultipleOutputs] = (issue: ServiceMultipleOutputs) => {
     s"""${extractLocation(issue.meta)}
        |Service ${issue.serviceName}, method ${issue.methodName}: has ${issue.count} output type definitions, expected exactly 1
+       |""".stripMargin
+  }
+
+  implicit val serviceMultipleInputsPrinter: IssuePrinter[ServiceMultipleInputs] = (issue: ServiceMultipleInputs) => {
+    s"""${extractLocation(issue.meta)}
+       |Service ${issue.serviceName}, method ${issue.methodName}: has ${issue.count} input type definitions, expected at most 1
        |""".stripMargin
   }
 

@@ -96,6 +96,7 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
       case NonUniqueMethodNames(svc, dupes, meta)       => (Some(meta), s"Duplicate methods in $svc: ${dupes.keys.mkString(", ")}")
       case ServiceMissingOutput(svc, method, meta)      => (Some(meta), s"Missing output in $svc.$method")
       case ServiceMultipleOutputs(svc, method, _, meta) => (Some(meta), s"Multiple outputs in $svc.$method")
+      case ServiceMultipleInputs(svc, method, _, meta)  => (Some(meta), s"Multiple inputs in $svc.$method")
       case ServiceMultipleErrors(svc, method, _, meta)  => (Some(meta), s"Multiple errors in $svc.$method")
       case DagError(e, meta)                            => (Some(meta), s"DAG error: $e")
       case ScalarExpected(id, meta)                     => (Some(meta), s"Scalar expected: ${id.name.name}")

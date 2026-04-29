@@ -133,6 +133,7 @@ class WorkspaceState(
       case NonUniqueMethodNames(_, _, meta)      => Some(meta.pos)
       case ServiceMissingOutput(_, _, meta)      => Some(meta.pos)
       case ServiceMultipleOutputs(_, _, _, meta) => Some(meta.pos)
+      case ServiceMultipleInputs(_, _, _, meta)  => Some(meta.pos)
       case ServiceMultipleErrors(_, _, _, meta)  => Some(meta.pos)
       case DagError(_, meta)                     => Some(meta.pos)
       case ScalarExpected(_, meta)               => Some(meta.pos)

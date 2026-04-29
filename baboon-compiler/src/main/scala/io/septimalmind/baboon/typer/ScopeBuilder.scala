@@ -103,8 +103,20 @@ class ScopeBuilder[F[+_, +_]: Error2] {
         }
 
       case service: RawService =>
+        // BAB-G01: desugar absent `data in` to an empty `data in {}` so the
+        // synthesised input struct is registered into the scope tree alongside
+        // genuinely-parsed inline structs. Without this, BaboonTranslator#convertArg
+        // would later fail to resolve the synthetic name.
+        val desugaredService = service.copy(defns = service.defns.map { f =>
+          val hasIn = f.sig.exists {
+            case RawFuncArg.Ref(_, marker, _) => marker.toLowerCase == "in"
+            case RawFuncArg.Struct(d)         => d.name.name.toLowerCase == "in"
+          }
+          if (hasIn) f
+          else f.copy(sig = RawFuncArg.Struct(RawDto(RawTypeName("in"), Nil, Set.empty, f.meta)) +: f.sig)
+        })
         for {
-          inlineDefns <- F.pure(service.defns.map(defn => (defn, defn.sig.collect { case s: RawFuncArg.Struct => s.defn })).filterNot(_._2.isEmpty))
+          inlineDefns <- F.pure(desugaredService.defns.map(defn => (defn, defn.sig.collect { case s: RawFuncArg.Struct => s.defn })).filterNot(_._2.isEmpty))
           sub <- F.traverseAccumErrors(inlineDefns) {
             case (func, defns) =>
               for {
@@ -114,7 +126,7 @@ class ScopeBuilder[F[+_, +_]: Error2] {
                 out
               }
           }
-          out <- if (sub.isEmpty) F.pure(mkLeaf(service)) else wrapScope(service, sub)
+          out <- if (sub.isEmpty) F.pure(mkLeaf(desugaredService)) else wrapScope(desugaredService, sub)
         } yield {
           out
         }
