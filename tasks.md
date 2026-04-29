@@ -41,7 +41,7 @@ Detail per defect ledger entries; small mechanical fixes batched together. Seria
 - [ ] **PR-50** — BAB-C04: C# `BaboonTools.WriteMap` runtime helper sorts iteration by stringified key.
 - [ ] **PR-51** — BAB-J03: Java JSON codec emit sorts `entrySet()` by stringified key.
 - [x] **PR-52** — PR-45-D01: `toSnakeCase` digit edge case (`Foo2Bar` → `foo2_bar`). Extended first guard `prev.isLower` → `prev.isLower || prev.isDigit`. New `RsToSnakeCaseTest` (6/6 PASS).
-- [ ] **PR-53** — PR-47-D01: add negative fixture/unit test exercising `ServiceMultipleInputs` (rejects `def m ( data in {} data in {} data out {} )`).
+- [x] **PR-53** — PR-47-D01: new `ServiceFrontEndTest` + two negative fixtures (ref-form → `ServiceMultipleInputs`; inline-form → `NonUniqueScope`). Discovered that scope-build catches inline duplicates one pass earlier than `convertService`; ref form is the canonical path for the defensive check. Both rejection paths locked.
 
 ---
 

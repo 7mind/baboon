@@ -1,0 +1,17 @@
+model my.bad.svcmulti.inline
+
+version "1.0.0"
+
+root service S {
+  def m (
+    data in {
+      x: i32
+    }
+    data in {
+      y: i32
+    }
+    data out {
+      r: str
+    }
+  )
+}

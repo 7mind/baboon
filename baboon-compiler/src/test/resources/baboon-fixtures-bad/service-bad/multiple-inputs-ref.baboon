@@ -1,0 +1,23 @@
+model my.bad.svcmulti
+
+version "1.0.0"
+
+root data InA {
+  x: i32
+}
+
+root data InB {
+  y: i32
+}
+
+root data Out {
+  r: str
+}
+
+root service S {
+  def m (
+    in = InA
+    in = InB
+    out = Out
+  )
+}
