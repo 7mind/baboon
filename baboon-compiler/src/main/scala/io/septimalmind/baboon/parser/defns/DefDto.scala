@@ -4,7 +4,7 @@ import fastparse.*
 import io.septimalmind.baboon.parser.{ParserContext, model}
 import io.septimalmind.baboon.parser.defns.base.{idt, kw, struct}
 import io.septimalmind.baboon.parser.model.RawDtoMember.ContractRef
-import io.septimalmind.baboon.parser.model.{RawContractRef, RawDto, RawDtoMember, RawField, RawFieldName, RawTypeName, RawTypeRef, ScopedRef}
+import io.septimalmind.baboon.parser.model.{RawContractRef, RawDto, RawDtoMember, RawField, RawFieldName, RawIdentifier, RawTypeName, RawTypeRef, ScopedRef}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.language.Quirks.Discarder
 
@@ -149,6 +149,13 @@ class DefDto(context: ParserContext, meta: DefMeta) {
     import fastparse.ScalaWhitespace.whitespace
     P(meta.member(kw.data, meta.derived ~ struct.enclosed(dto))).map {
       case (meta, name, (derived, members)) => RawDto(RawTypeName(name), members, derived, meta)
+    }
+  }
+
+  def identifierEnclosed[$: P]: P[RawIdentifier] = {
+    import fastparse.ScalaWhitespace.whitespace
+    P(meta.member(kw.identifier, meta.derived ~ struct.enclosed(dto))).map {
+      case (meta, name, (derived, members)) => RawIdentifier(RawTypeName(name), members, derived, meta)
     }
   }
 

@@ -193,11 +193,12 @@ object BaboonTyper {
         scope =>
           val rawDefn = scope.defn.defn
           val derived = rawDefn match {
-            case d: RawDto     => d.derived
-            case e: RawEnum    => e.derived
-            case a: RawAdt     => a.derived
-            case f: RawForeign => f.derived
-            case _             => Set.empty[RawMemberMeta]
+            case d: RawDto        => d.derived
+            case d: RawIdentifier => d.derived
+            case e: RawEnum       => e.derived
+            case a: RawAdt        => a.derived
+            case f: RawForeign    => f.derived
+            case _                => Set.empty[RawMemberMeta]
           }
           derived.collect {
             case RawMemberMeta.Was(ref: RawTypeRef.Simple) =>

@@ -65,7 +65,7 @@ class DefModel(
   def member[$: P]: P[RawTLDef] = {
     import fastparse.ScalaWhitespace.whitespace
 
-    val main = P(kw.root.!.? ~ (choice | dto | adt | foreign | contract | service | alias)).map {
+    val main = P(kw.root.!.? ~ (choice | identifier | dto | adt | foreign | contract | service | alias)).map {
       case (root, defn) =>
         defn.setRoot(root.nonEmpty)
     }
@@ -102,6 +102,8 @@ class DefModel(
 
   def choice[$: P]: P[RawTLDef.Enum] =
     defEnum.enumEnclosed.map(RawTLDef.Enum(false, _))
+  def identifier[$: P]: P[RawTLDef.Identifier] =
+    defDto.identifierEnclosed.map(RawTLDef.Identifier(false, _))
   def dto[$: P]: P[RawTLDef.DTO] =
     defDto.dtoEnclosed.map(RawTLDef.DTO(false, _))
   def adt[$: P]: P[RawTLDef.ADT] =

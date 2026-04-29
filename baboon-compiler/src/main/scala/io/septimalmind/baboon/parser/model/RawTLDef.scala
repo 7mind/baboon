@@ -13,6 +13,9 @@ object RawTLDef {
   case class DTO(root: Boolean, value: RawDto) extends RawTLDef {
     override def setRoot(root: Boolean): DTO = this.copy(root = root)
   }
+  case class Identifier(root: Boolean, value: RawIdentifier) extends RawTLDef {
+    override def setRoot(root: Boolean): Identifier = this.copy(root = root)
+  }
   case class ADT(root: Boolean, value: RawAdt) extends RawTLDef {
     override def setRoot(root: Boolean): ADT = this.copy(root = root)
   }

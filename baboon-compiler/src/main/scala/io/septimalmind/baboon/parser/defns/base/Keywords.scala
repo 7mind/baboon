@@ -21,6 +21,7 @@ trait Keywords {
 
   def model[$: P]: P[Unit]     = kw("model")
   def data[$: P]: P[Unit]      = kw("data", "struct")
+  def identifier[$: P]: P[Unit] = kw("id")
   def contract[$: P]: P[Unit]  = kw("contract")
   def service[$: P]: P[Unit]   = kw("service")
   def choice[$: P]: P[Unit]    = kw("enum")

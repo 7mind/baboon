@@ -439,6 +439,8 @@ object BaboonFamilyManager {
           collectFilesFromDefn(value)
         case RawTLDef.DTO(_, value) =>
           collectFilesFromDefn(value)
+        case RawTLDef.Identifier(_, value) =>
+          collectFilesFromDefn(value)
         case RawTLDef.ADT(_, value) =>
           collectFilesFromDefn(value)
         case RawTLDef.Foreign(_, value) =>
@@ -489,6 +491,8 @@ object BaboonFamilyManager {
       defn match {
         case dto: io.septimalmind.baboon.parser.model.RawDto =>
           filesFromMeta(dto.meta) ++ dto.members.flatMap(filesFromDtoMember).toSet
+        case identifier: io.septimalmind.baboon.parser.model.RawIdentifier =>
+          filesFromMeta(identifier.meta) ++ identifier.members.flatMap(filesFromDtoMember).toSet
         case contract: io.septimalmind.baboon.parser.model.RawContract =>
           filesFromMeta(contract.meta) ++ contract.members.flatMap(filesFromDtoMember).toSet
         case enum: io.septimalmind.baboon.parser.model.RawEnum =>
