@@ -66,6 +66,10 @@ object CSTypes {
   val either: CSType = CSType(baboonRuntimePkg, "Either", fq = false, CSTypeOrigin.Other)
   val unit: CSType   = CSType(baboonRuntimePkg, "Unit", fq = false, CSTypeOrigin.Other)
 
+  // Identifier-repr (PR-57a): runtime helper class and nested cursor.
+  val baboonIdRepr: CSType       = CSType(baboonRuntimePkg, "BaboonIdentifierRepr", fq = false, CSTypeOrigin.Other)
+  val baboonIdReprCursor: CSType = CSType(baboonRuntimePkg, "BaboonIdentifierRepr.Cursor", fq = false, CSTypeOrigin.Other)
+
   // Service wiring types
   val baboonMethodId: CSType        = CSType(baboonRuntimePkg, "BaboonMethodId", fq = false, CSTypeOrigin.Other)
   val baboonWiringError: CSType     = CSType(baboonRuntimePkg, "BaboonWiringError", fq = false, CSTypeOrigin.Other)
@@ -164,8 +168,11 @@ object CSTypes {
 
   val csInvariantCulture: CSType = CSType(csGlobalizationPkg, "CultureInfo", fq = false, CSTypeOrigin.Other)
   val csDateTimeStyles: CSType   = CSType(csGlobalizationPkg, "DateTimeStyles", fq = false, CSTypeOrigin.Other)
+  val csNumberStyles: CSType     = CSType(csGlobalizationPkg, "NumberStyles", fq = false, CSTypeOrigin.Other)
   val csDateTimeKind: CSType     = CSType(csSystemPkg, "DateTimeKind", fq = false, CSTypeOrigin.Other)
+  val csDateTimeOffset: CSType   = CSType(csSystemPkg, "DateTimeOffset", fq = false, CSTypeOrigin.Other)
   val csTimeZoneInfo: CSType     = CSType(csSystemPkg, "TimeZoneInfo", fq = false, CSTypeOrigin.Other)
+
 
   val debug: CSType = CSType(csDiagnosticsPkg, "Debug", fq = false, CSTypeOrigin.Other)
 

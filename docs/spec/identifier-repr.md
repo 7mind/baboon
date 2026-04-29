@@ -261,9 +261,15 @@ Per the schema's type for the field at position N:
 
 - **`bit`**: consume the literal characters `true` or `false`. Reject any
   other prefix.
-- **`i*`/`u*`**: consume `[+-]?[0-9]+` (signed for `i*`, unsigned for `u*`).
-  Stop at the first non-digit, which MUST be `:` (more fields) or end of
-  input (last field) or `}` (inside a nested context — see §5.6).
+- **`i*`**: consume `-?[0-9]+`. Stop at the first non-digit, which MUST be
+  `:` (more fields) or end of input (last field) or `}` (inside a nested
+  context — see §5.6). A leading `+` is NOT permitted; the canonical
+  `toString` never emits one.
+- **`u*`**: consume `[0-9]+` (no leading sign). Stop at the first non-digit,
+  which MUST be `:` (more fields) or end of input (last field) or `}`
+  (inside a nested context — see §5.6). Unsigned values MUST NOT have a
+  leading `+`; this is rejected by parsers across all backends. The
+  canonical `toString` never emits a sign for unsigned.
 - **`str`**: consume characters with backslash-handling per §4.2. A bare
   metachar `:` `#` `{` `}` is a structural boundary. A bare `\` followed by
   any of `\`, `#`, `:`, `{`, `}` produces the literal char and consumes

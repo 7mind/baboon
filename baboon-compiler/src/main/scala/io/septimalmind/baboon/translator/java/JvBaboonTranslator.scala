@@ -238,6 +238,7 @@ class JvBaboonTranslator[F[+_, +_]: Error2](
           rt("AbstractBaboonUebaCodecs.java", "baboon-runtime/java/AbstractBaboonUebaCodecs.java"),
           rt("BaboonCodecData.java", "baboon-runtime/java/BaboonCodecData.java"),
           rt("BaboonEither.java", "baboon-runtime/java/BaboonEither.java"),
+          rt("BaboonIdentifierRepr.java", "baboon-runtime/java/BaboonIdentifierRepr.java"),
           rt("BaboonException.java", "baboon-runtime/java/BaboonException.java"),
           rt("BaboonCodecException.java", "baboon-runtime/java/BaboonCodecException.java"),
           rt("BaboonVersion.java", "baboon-runtime/java/BaboonVersion.java"),
