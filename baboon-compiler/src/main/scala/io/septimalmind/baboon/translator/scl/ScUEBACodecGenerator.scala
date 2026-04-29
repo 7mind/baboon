@@ -308,13 +308,13 @@ class ScUEBACodecGenerator(
 
     (
       q"""value match {
-         |${branches.map(_._1).joinN().shift(2)}
+         |  ${branches.map(_._1).joinN().shift(2).trim}
          |}
          """.stripMargin,
       q"""val asByte = wire.readByte()
          |
          |asByte match {
-         |${branches.map(_._2).joinN().shift(2)}
+         |  ${branches.map(_._2).joinN().shift(2).trim}
          |  case _ => Left(new $genericException(s"Cannot decode {wire} to ${name.name}: no matching value"))
          |}
          |""".stripMargin,

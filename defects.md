@@ -1604,11 +1604,12 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Fix:** Accepted as-is.
 
 ### [PR-39-D03] Scala UEBA enum generator has parallel indent issue (different shape)
-**Status:** open (deferred — different shape needs separate analysis)
+**Status:** resolved (refactor for symmetry, not bug fix; PR-42, 2026-04-29)
 **Severity:** minor
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScUEBACodecGenerator.scala:311,317`
-**Description:** Reviewer noted Scala UEBA uses string-interpolation template `|${...shift(2)}` rather than `q"""...joinN().shift(2)"""`. First arm lands at column 0, subsequent at column 2 — opposite-direction misalignment from Dart/Java/Kotlin.
-**Suggested fix:** Restructure the Scala UEBA template to match the cleaner `q"""...""".trim` pattern used by other backends. Out of PR-39 scope; tracked for follow-up.
+**Description:** Reviewer noted Scala UEBA uses string-interpolation template `|${...shift(2)}` rather than `q"""...joinN().shift(2)"""`.
+**Root cause (corrected by PR-42 plan):** The original defect text mischaracterised the failure mode. Scala enum codec was NOT actually misaligned — the surrounding `genCodec` wrap normalised whitespace. The two `genEnumBodies` templates were the only `shift(2)` invocations in `ScUEBACodecGenerator.scala` that didn't follow the inline `${...joinN().shift(2).trim}` form used by the other 19 sites in the same file (and by Dart/Java/Kotlin UEBA generators).
+**Fix:** Refactored both templates to inline `${branches.map(_._N).joinN().shift(2).trim}` after `|  ` (2-space margin). Snapshot diff of regenerated `target/test-{regular,wrapped}/sc-stub/.../generated-main` against pre-change is empty — byte-identical output. `mdl :test-scala-{regular,wrapped}` PASS. This is a pure refactor for code-shape symmetry across enum-codec emission, not a bug fix.
 
 ---
 
