@@ -103,6 +103,30 @@ open class BaboonJsonCodecBase<T>: BaboonJsonCodec<T> {
     open func encode(_ ctx: BaboonCodecContext, _ value: T) -> Any {
         fatalError("Must override")
     }
+
+    // BAB-S0x: deterministic JSON-bytes encoding for end-user code.
+    //
+    // The generated codec's `encode` returns `Any` (a Swift `Dictionary` for object
+    // types). Swift `Dictionary` is hash-based; iterating it directly yields
+    // hash-ordered keys, and `JSONSerialization.data(withJSONObject:)` re-hashes
+    // unless `.sortedKeys` is passed in `options`. Compiler-emitted write sites
+    // (service wiring, generated tests) already pass `.sortedKeys`. End-user code
+    // that calls `encode(...)` and serialises the returned `Any` itself MUST also
+    // pass `.sortedKeys` — or use the helpers below.
+    //
+    // Always-deterministic helpers; recommend these over manual JSONSerialization.
+    public func encodeToJsonData(_ ctx: BaboonCodecContext, _ value: T) throws -> Data {
+        let encoded = encode(ctx, value)
+        return try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
+    }
+
+    public func encodeToJsonString(_ ctx: BaboonCodecContext, _ value: T) throws -> String {
+        let data = try encodeToJsonData(ctx, value)
+        guard let str = String(data: data, encoding: .utf8) else {
+            throw BaboonCodecException.encoderFailure("UTF-8 decode of JSON bytes failed", nil)
+        }
+        return str
+    }
 }
 
 open class BaboonJsonCodecBaseGenerated<T>: BaboonJsonCodecBase<T> {}

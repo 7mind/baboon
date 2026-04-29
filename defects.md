@@ -1708,11 +1708,15 @@ First match wins. Plus an `anchor`/`fixtureRoot` split: `assertCrossLanguageFixt
 ### Round-2 follow-ups filed
 
 ### [BAB-S0x] Swift JSON codec emits `Dictionary` without sort; conv-test driver hides it
-**Status:** open
+**Status:** resolved (PR-49, 2026-04-29)
 **Severity:** minor
-**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/swift/SwJsonCodecGenerator.scala:259-263`; runtime `baboon-compiler/src/main/resources/baboon-runtime/swift/baboon_runtime.swift:103`
-**Description:** Per BAB-J01 audit. The Swift codec emits `Dictionary(uniqueKeysWithValues: $ref.map { ... })` for maps — Swift `Dictionary` is hash-based, non-deterministic by construction. The conv-test driver at `test/conv-test-sw/Sources/CompatMain/main.swift:132,199` opts into `JSONSerialization.data(withJSONObject:, options: [.prettyPrinted, .sortedKeys])` which sorts at serialisation time, so cross-language tests pass. **End-user Swift code without `.sortedKeys` opt-in still observes hash-ordered output** for the same map across runs/processes. Wire spec is order-insensitive; affects only fixture-byte-determinism for Swift consumers using their own serialisation path.
-**Suggested fix:** either (a) change `BaboonCodecsFacade.swift` / runtime entry points to enforce `.sortedKeys` globally on the JSON-write boundary, or (b) sort at codec emit time before constructing the Dictionary. (b) is moot if `JSONSerialization` re-hashes (it does); (a) is the canonical fix. Out of PR-48 scope; defect text named Scala only.
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/swift/baboon_runtime.swift:107-130` (new `encodeToJsonData` / `encodeToJsonString` helpers on `BaboonJsonCodecBase`)
+**Description:** Per BAB-J01 audit. The Swift codec emitted `Dictionary(uniqueKeysWithValues: $ref.map { ... })` for maps — Swift `Dictionary` is hash-based. Compiler-emitted serialisation sites (service wiring `SwServiceWiringTranslator.scala:159,309`, generated tests `SwCodecTestsTranslator.scala:242`) already passed `[.sortedKeys, .fragmentsAllowed]` to `JSONSerialization.data(withJSONObject:, options:)`. The gap was end-user Swift code that called `codec.encode(ctx, value)` and serialised the returned `Any` themselves without `.sortedKeys`.
+**Fix:** Added two always-deterministic helpers to `BaboonJsonCodecBase<T>`:
+- `encodeToJsonData(ctx, value) throws -> Data` — wraps `encode` + `JSONSerialization.data(withJSONObject:, options: [.sortedKeys, .fragmentsAllowed])`.
+- `encodeToJsonString(ctx, value) throws -> String` — UTF-8 wrapper over `encodeToJsonData`.
+End-user Swift code that uses these helpers gets deterministic output by construction. Existing `encode` API unchanged (same `Any` return contract); users who call it directly still need `.sortedKeys` themselves but a doc-comment block above the helpers explains the trade-off and recommends the helper path.
+Note (b) "sort at codec emit time" considered — moot because `JSONSerialization` re-hashes Swift `Dictionary`. Note (c) "change `encode` return type" considered — breaking API change rejected. (a) was the canonical fix. Verified `mdl :test-swift-regular`, `:test-swift-wrapped`, `:test-gen-compat-swift` PASS.
 
 ### [BAB-C04] C# JSON codec map emit relies on user-supplied collection iteration order
 **Status:** resolved (PR-50, 2026-04-29)
