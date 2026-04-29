@@ -280,9 +280,14 @@ class JvJsonCodecGenerator(
           case TypeId.Builtins.opt =>
             q"""$ref.isPresent() ? ${mkEncoder(c.args.head, q"$ref.get()", depth + 1)} : $nullNode.getInstance()"""
           case TypeId.Builtins.map =>
-            val keyEnc   = encodeKey(c.args.head, q"$varName.getKey()")
-            val valueEnc = mkEncoder(c.args.last, q"$varName.getValue()", depth + 1)
-            q"""((java.util.function.Supplier<$jsonNode>) () -> { var $objName = $jsonNodeFactory.instance.objectNode(); for (var $varName : $ref.entrySet()) { $objName.set($keyEnc, $valueEnc); } return $objName; }).get()"""
+            val keyEnc      = encodeKey(c.args.head, q"$varName.getKey()")
+            val valueEnc    = mkEncoder(c.args.last, q"$varName.getValue()", depth + 1)
+            val sortedName  = s"sortedEntries$depth"
+            // BAB-J03: sort entrySet by stringified key before emit. Insulates against
+            // user-supplied Map collections (HashMap, ImmutableCollections$MapN, ...) whose
+            // iteration order depends on hash codes / runtime state. Mirrors Scala's
+            // sortBy(_._1.toString) contract from PR-48 / BAB-J01.
+            q"""((java.util.function.Supplier<$jsonNode>) () -> { var $objName = $jsonNodeFactory.instance.objectNode(); var $sortedName = new java.util.ArrayList<>($ref.entrySet()); $sortedName.sort((a, b) -> String.valueOf(a.getKey()).compareTo(String.valueOf(b.getKey()))); for (var $varName : $sortedName) { $objName.set($keyEnc, $valueEnc); } return $objName; }).get()"""
           case TypeId.Builtins.lst =>
             q"""((java.util.function.Supplier<$jsonNode>) () -> { var $arrName = $jsonNodeFactory.instance.arrayNode(); for (var $varName : $ref) { $arrName.add(${mkEncoder(
                 c.args.head,

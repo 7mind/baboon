@@ -1722,11 +1722,11 @@ First match wins. Plus an `anchor`/`fixtureRoot` split: `assertCrossLanguageFixt
 **Fix:** `WriteMap` now sorts by `e.Key?.ToString() ?? string.Empty` with `StringComparer.Ordinal` before iterating. Mirrors the Scala `sortBy(_._1.toString)` contract from PR-48. Verified `mdl :test-cs-regular`, `:test-cs-wiring-either`, `:test-gen-compat-cs` PASS — JSON wire-format consumers tolerate any key order so cross-language interop unchanged.
 
 ### [BAB-J03] Java JSON codec map emit relies on user-supplied collection iteration order
-**Status:** open
+**Status:** resolved (PR-51, 2026-04-29)
 **Severity:** minor
-**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/java/JvJsonCodecGenerator.scala:282-285`
-**Description:** Generated Java/Jackson JSON codec iterates `java.util.Map` via `entrySet()` in user-supplied order. `Map.of(...)` returns `ImmutableCollections$MapN` with unspecified iteration order; `HashMap` non-deterministic. Same root cause as BAB-J01.
-**Suggested fix:** sort entrySet by stringified key in the emitted iteration. Out of PR-48 scope.
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/java/JvJsonCodecGenerator.scala:285-291`
+**Description:** Generated Java/Jackson JSON codec iterated `java.util.Map` via `$ref.entrySet()` in user-supplied order. `Map.of(...)` returns `ImmutableCollections$MapN` with unspecified iteration order; `HashMap` non-deterministic.
+**Fix:** Emit copies the entrySet into an `ArrayList`, sorts via `(a, b) -> String.valueOf(a.getKey()).compareTo(String.valueOf(b.getKey()))`, then iterates the sorted list. Sort key uses `String.valueOf` to handle null safely (consistent with C# fix in PR-50). Mirrors Scala's `sortBy(_._1.toString)` contract from PR-48. Verified `mdl :test-java-regular`, `:test-java-wrapped`, `:test-gen-compat-java` PASS.
 
 ### [PR-45-D01] `toSnakeCase` does not insert underscore after digit-adjacent caps
 **Status:** resolved (PR-52, 2026-04-29)
