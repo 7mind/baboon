@@ -1681,3 +1681,15 @@ First match wins. Plus an `anchor`/`fixtureRoot` split: `assertCrossLanguageFixt
 **Location:** subagent execution flow
 **Description:** PR-37 executor made all 11 file edits correctly (10 compat_main.* + pkg02.baboon) but stalled while waiting for `mdl` build output to monitor, returning a single sentence "Still empty after multiple minutes. Let me wait for the monitor." instead of a structured summary.
 **Fix:** Orchestrator manually verified the changes via `git diff` and ran the cross-language compat matrix (`mdl :test-gen-compat-{cs,sc,rs,ts,kt,jv,dt,sw,py}`) — all green. Spot-checked `target/compat-test/<lang>-json/all-basic-types.json` across all 10 backends — every fixture contains `"vWireEnum": "Cafe"` confirming Pascal-canonical wire format.
+
+---
+
+## PR-44 — Cross-language fixture path: NAMED-branch matcher relaxation (CI hot-fix)
+
+### [PR-44-D01] PR-43's NAMED-branch matcher only accepts test-regular/test-wrapped, fails on wiring isolation dirs (test-rs-wiring-either etc.)
+**Status:** resolved (PR-44, 2026-04-29)
+**Severity:** major
+**Location:** all 6 helpers under `baboon-compiler/src/main/resources/baboon-runtime/{scala,typescript,rust,python,dart,swift}/`
+**Description:** PR-43 (and PR-40 for Dt/Sw) implemented a layered sentinel walk-up: STRICT (target/ + *-stub sibling) then NAMED (basename in {test-regular, test-wrapped} + *-stub sibling). Both PR-40's plan and PR-43's plan only enumerated the regular/wrapped isolation dirs; mdl in fact uses many more isolation dirs of the form `target/test-<lang>-wiring-{either,result,outcome,hkt,...}/` (per `.mdl/defs/tests.md` lines 1040, 1091, 1142, 1191, 1239, 1287, 1335, 1386, 1436, …). When CI ran `mdl :test-rs-wiring-either`, walk-up from `target/test-rs-wiring-either/rs-stub/` failed: STRICT failed (no peer language had populated `<isolation>/target/`), NAMED failed (basename `test-rs-wiring-either` matched neither hardcoded value). Result: 117 Rust tests panicked with "Could not locate cross-language fixture root" — full CI red. Reproduced locally pre-fix; fixed and verified.
+**Root cause:** the planner audited only `:test-{lang}-{regular,wrapped}` actions, not the wiring-variant matrix. The NAMED-branch matcher should have been general from day one.
+**Fix:** Relaxed the NAMED-branch matcher in all 6 helpers from `name == "test-regular" || name == "test-wrapped"` to `name.startsWith("test-")`. The `*-stub` sibling co-requirement keeps it unique to baboon's test-isolation layout. Updated doc comments and diagnostic strings in all 6 files. Verified locally: `mdl :test-rs-wiring-either` PASS (was failing); `mdl :test-{sc,ts}-wiring-either` PASS; `mdl :test-{rust,scala,dart}-regular` PASS (regression check). Closes the CI failure on `wip/anytype` head `1c117d1`.

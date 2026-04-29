@@ -15,10 +15,12 @@ Resolution:
        a. STRICT: directory D contains a literal "target/" subdirectory
           AND at least one "*-stub/" sibling. (Works whenever any peer
           language has already populated <isolation>/target/<lang>/...)
-       b. NAMED: directory D's name is exactly "test-regular" or
-          "test-wrapped" AND D contains at least one "*-stub/" sibling.
-          (Works on the very first language run, before any peer has
-          created <isolation>/target/.)
+       b. NAMED: directory D's name starts with "test-" AND D contains
+          at least one "*-stub/" sibling. Covers test-regular,
+          test-wrapped, test-<lang>-wiring-*, and any future mdl
+          test-isolation conventions of the same shape. (Works on the
+          very first language run, before any peer has created
+          <isolation>/target/.)
     Both rules identify D = <isolation>; the fixture root is D/target.
  3. If neither succeeds, raise RuntimeError -- never silently fall back.
 
@@ -67,7 +69,7 @@ def _resolve_once():
             stub = _has_stub_sibling(dir_)
             strict_match = stub and os.path.isdir(os.path.join(dir_, "target"))
             name = os.path.basename(dir_)
-            named_match = stub and name in ("test-regular", "test-wrapped")
+            named_match = stub and name.startswith("test-")
             if strict_match or named_match:
                 _cached_anchor = dir_
                 _cached_fixture_root = os.path.join(dir_, "target")
@@ -80,10 +82,9 @@ def _resolve_once():
         raise RuntimeError(
             'Could not locate cross-language fixture root. Walked up from "{}" '
             'looking for either: (a) a directory containing "target/" and at '
-            'least one "*-stub/" sibling, or (b) a directory named '
-            '"test-regular" or "test-wrapped" containing at least one '
-            '"*-stub/" sibling. Set BABOON_CROSS_LANG_FIXTURE_ROOT to '
-            "override.".format(start_dir)
+            'least one "*-stub/" sibling, or (b) a directory whose name starts '
+            'with "test-" and that contains at least one "*-stub/" sibling. '
+            "Set BABOON_CROSS_LANG_FIXTURE_ROOT to override.".format(start_dir)
         )
 
 

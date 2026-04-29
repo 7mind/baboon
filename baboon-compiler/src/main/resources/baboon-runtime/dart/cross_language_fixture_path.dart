@@ -2,12 +2,14 @@ import 'dart:io';
 
 // Cross-language fixture path resolution for generated tests.
 //
-// Layout (per mdl test-gen-{regular,wrapped}-adt actions):
-//   <repoRoot>/target/test-{regular,wrapped}/         <-- "test isolation root"
+// Layout (per mdl test-gen-* actions):
+//   <repoRoot>/target/test-<isolation>/              <-- "test isolation root"
 //     |-- <lang>-stub/                                <-- per-language stub dir
 //     |     |-- ...                                   <-- dart test runs from here
 //     |-- target/                                     <-- "fixture root"
 //           |-- <lang>/<format>/<type>                <-- cross-language fixture files
+//
+// <isolation> is one of: regular, wrapped, <lang>-wiring-{either,result,outcome,hkt,...}
 //
 // Resolution:
 //  1. BABOON_CROSS_LANG_FIXTURE_ROOT env var, if set, used verbatim as the
@@ -17,10 +19,10 @@ import 'dart:io';
 //        a. STRICT: directory D contains a literal "target/" subdirectory
 //           AND at least one "*-stub/" sibling. (Works whenever any peer
 //           language has already populated <isolation>/target/<lang>/...)
-//        b. NAMED: directory D's name is exactly "test-regular" or
-//           "test-wrapped" AND D contains at least one "*-stub/" sibling.
-//           (Works on the very first language run, before any peer has
-//           created <isolation>/target/.)
+//        b. NAMED: directory D's name starts with "test-" AND D contains
+//           at least one "*-stub/" sibling. Covers test-regular,
+//           test-wrapped, test-<lang>-wiring-*, and any future mdl
+//           test-isolation conventions of the same shape.
 //     Both rules identify D = <isolation>; the fixture root is D/target.
 //  3. If neither succeeds, throw StateError -- never silently fall back.
 //
@@ -77,7 +79,7 @@ String _walkUpFromCwd() {
     final stub = _hasStubSibling(dir);
     final strictMatch = stub && Directory('${dir.path}/target').existsSync();
     final name = _dirName(dir);
-    final namedMatch = stub && (name == 'test-regular' || name == 'test-wrapped');
+    final namedMatch = stub && name.startsWith('test-');
     if (strictMatch || namedMatch) {
       return dir.path;
     }
@@ -87,7 +89,7 @@ String _walkUpFromCwd() {
         'Could not locate cross-language fixture root. Walked up from '
         '"${startDir.path}" looking for either: (a) a directory containing '
         '"target/" and at least one "*-stub/" sibling, or (b) a directory '
-        'named "test-regular" or "test-wrapped" containing at least one '
+        'whose name starts with "test-" and that contains at least one '
         '"*-stub/" sibling. Set BABOON_CROSS_LANG_FIXTURE_ROOT to override.',
       );
     }

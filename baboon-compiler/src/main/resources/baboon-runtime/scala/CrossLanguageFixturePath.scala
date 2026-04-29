@@ -19,10 +19,12 @@ import java.nio.file.{Files, Path, Paths}
 //        a. STRICT: directory D contains a literal "target/" subdirectory
 //           AND at least one "*-stub/" sibling. (Works whenever any peer
 //           language has already populated <isolation>/target/<lang>/...)
-//        b. NAMED: directory D's name is exactly "test-regular" or
-//           "test-wrapped" AND D contains at least one "*-stub/" sibling.
-//           (Works on the very first language run, before any peer has
-//           created <isolation>/target/.)
+//        b. NAMED: directory D's name starts with "test-" AND D contains
+//           at least one "*-stub/" sibling. Covers test-regular,
+//           test-wrapped, test-<lang>-wiring-*, and any future mdl
+//           test-isolation conventions of the same shape. (Works on the
+//           very first language run, before any peer has created
+//           <isolation>/target/.)
 //     Both rules identify D = <isolation>; the fixture root is D/target.
 //  3. If neither succeeds, throw IllegalStateException -- never silently
 //     fall back.
@@ -79,14 +81,14 @@ object CrossLanguageFixturePath {
       val stub         = hasStubSibling(dir)
       val strictMatch  = stub && Files.isDirectory(dir.resolve("target"))
       val name         = Option(dir.getFileName).map(_.toString).getOrElse("")
-      val namedMatch   = stub && (name == "test-regular" || name == "test-wrapped")
+      val namedMatch   = stub && name.startsWith("test-")
       if (strictMatch || namedMatch) {
         return dir.toString
       }
       val parent = dir.getParent
       if (parent == null || parent == dir) {
         throw new IllegalStateException(
-          s"""Could not locate cross-language fixture root. Walked up from "$startDir" looking for either: (a) a directory containing "target/" and at least one "*-stub/" sibling, or (b) a directory named "test-regular" or "test-wrapped" containing at least one "*-stub/" sibling. Set BABOON_CROSS_LANG_FIXTURE_ROOT to override."""
+          s"""Could not locate cross-language fixture root. Walked up from "$startDir" looking for either: (a) a directory containing "target/" and at least one "*-stub/" sibling, or (b) a directory whose name starts with "test-" and that contains at least one "*-stub/" sibling. Set BABOON_CROSS_LANG_FIXTURE_ROOT to override."""
         )
       }
       dir = parent
