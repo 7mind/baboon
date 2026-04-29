@@ -1693,3 +1693,51 @@ First match wins. Plus an `anchor`/`fixtureRoot` split: `assertCrossLanguageFixt
 **Description:** PR-43 (and PR-40 for Dt/Sw) implemented a layered sentinel walk-up: STRICT (target/ + *-stub sibling) then NAMED (basename in {test-regular, test-wrapped} + *-stub sibling). Both PR-40's plan and PR-43's plan only enumerated the regular/wrapped isolation dirs; mdl in fact uses many more isolation dirs of the form `target/test-<lang>-wiring-{either,result,outcome,hkt,...}/` (per `.mdl/defs/tests.md` lines 1040, 1091, 1142, 1191, 1239, 1287, 1335, 1386, 1436, …). When CI ran `mdl :test-rs-wiring-either`, walk-up from `target/test-rs-wiring-either/rs-stub/` failed: STRICT failed (no peer language had populated `<isolation>/target/`), NAMED failed (basename `test-rs-wiring-either` matched neither hardcoded value). Result: 117 Rust tests panicked with "Could not locate cross-language fixture root" — full CI red. Reproduced locally pre-fix; fixed and verified.
 **Root cause:** the planner audited only `:test-{lang}-{regular,wrapped}` actions, not the wiring-variant matrix. The NAMED-branch matcher should have been general from day one.
 **Fix:** Relaxed the NAMED-branch matcher in all 6 helpers from `name == "test-regular" || name == "test-wrapped"` to `name.startsWith("test-")`. The `*-stub` sibling co-requirement keeps it unique to baboon's test-isolation layout. Updated doc comments and diagnostic strings in all 6 files. Verified locally: `mdl :test-rs-wiring-either` PASS (was failing); `mdl :test-{sc,ts}-wiring-either` PASS; `mdl :test-{rust,scala,dart}-regular` PASS (regression check). Closes the CI failure on `wip/anytype` head `1c117d1`.
+
+---
+
+## M21 — Round-2 upstream defects: closeout
+
+### Status flips for the four M21 defects
+
+- **[BAB-R01]** — resolved (PR-45, `3fd4ea8`, 2026-04-29). Snake-cased the four wrapper-fn emit sites in `RsServiceWiringTranslator.scala` via the existing `toSnakeCase` helper. Hand-written caller updates in `test/rs-stub-{either,outcome,result}-overlay/tests/wiring_tests.rs` and `test/services/rs/src/server.rs`. `${svcName}Client` types preserved as PascalCase (Rust types follow `non_camel_case_types`).
+- **[BAB-R02]** — resolved (PR-46, `357bc1e`, 2026-04-29). New `RsDomainTreeTools` mirrors Sw/Kt/Ts; emits `impl BaboonGenerated for X` per Dto/Enum/Adt parent + each branch, plus conditional `BaboonGeneratedLatest` and `BaboonAdtMemberMeta`. Contracts/Services/Foreigns skipped (matches Swift). 138 impls in regular tree; cross-stack parity strict-string-compare verified for `T6_D2`, `T5_A1`+branches, `Clash`, service In/Out, v1_0_0 vs latest. Dyn-trait emission (`BaboonGeneratedDyn` / `BaboonAdtMemberMetaDyn`) intentionally out of scope — runtime comments defer to a future PR.
+- **[BAB-G01]** — resolved (PR-47, `9ad9d2f`, 2026-04-29). Desugar fired at `ScopeBuilder` (not `convertService` — synthetic struct needs scope registration). Synthesises `RawDto(RawTypeName("in"), Nil, Set.empty, f.meta)` for service methods lacking an `in` marker (covers both `RawFuncArg.Ref` and `RawFuncArg.Struct` cases). Plus `ServiceMultipleInputs` defensive issue mirroring `ServiceMultipleOutputs`, with LSP plumbing.
+- **[BAB-J01]** — resolved (PR-48, `b4c3f91`, 2026-04-29). `ScJsonCodecGenerator.scala:378` now sorts keys by `_._1.toString` before iterating. Sw codec layer not fixed in this PR (filed as BAB-S0x below).
+
+### Round-2 follow-ups filed
+
+### [BAB-S0x] Swift JSON codec emits `Dictionary` without sort; conv-test driver hides it
+**Status:** open
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/swift/SwJsonCodecGenerator.scala:259-263`; runtime `baboon-compiler/src/main/resources/baboon-runtime/swift/baboon_runtime.swift:103`
+**Description:** Per BAB-J01 audit. The Swift codec emits `Dictionary(uniqueKeysWithValues: $ref.map { ... })` for maps — Swift `Dictionary` is hash-based, non-deterministic by construction. The conv-test driver at `test/conv-test-sw/Sources/CompatMain/main.swift:132,199` opts into `JSONSerialization.data(withJSONObject:, options: [.prettyPrinted, .sortedKeys])` which sorts at serialisation time, so cross-language tests pass. **End-user Swift code without `.sortedKeys` opt-in still observes hash-ordered output** for the same map across runs/processes. Wire spec is order-insensitive; affects only fixture-byte-determinism for Swift consumers using their own serialisation path.
+**Suggested fix:** either (a) change `BaboonCodecsFacade.swift` / runtime entry points to enforce `.sortedKeys` globally on the JSON-write boundary, or (b) sort at codec emit time before constructing the Dictionary. (b) is moot if `JSONSerialization` re-hashes (it does); (a) is the canonical fix. Out of PR-48 scope; defect text named Scala only.
+
+### [BAB-C04] C# JSON codec map emit relies on user-supplied collection iteration order
+**Status:** open
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/cs/BaboonTools.cs:161-164` (`WriteMap` helper); generators in `CSJsonCodecGenerator.scala`
+**Description:** Generated C# JSON codec iterates `Dictionary` / `IReadOnlyDictionary` in user-supplied order via `value.Select(enc)` in `BaboonTools.WriteMap`. Determinism depends on the user choosing an insertion-ordered collection. Same root cause as BAB-J01.
+**Suggested fix:** sort at runtime helper level (`WriteMap` enumerates `value.OrderBy(kv => kv.Key.ToString())` or equivalent), keeping codec emit untouched. Out of PR-48 scope.
+
+### [BAB-J03] Java JSON codec map emit relies on user-supplied collection iteration order
+**Status:** open
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/java/JvJsonCodecGenerator.scala:282-285`
+**Description:** Generated Java/Jackson JSON codec iterates `java.util.Map` via `entrySet()` in user-supplied order. `Map.of(...)` returns `ImmutableCollections$MapN` with unspecified iteration order; `HashMap` non-deterministic. Same root cause as BAB-J01.
+**Suggested fix:** sort entrySet by stringified key in the emitted iteration. Out of PR-48 scope.
+
+### [PR-45-D01] `toSnakeCase` does not insert underscore after digit-adjacent caps
+**Status:** open
+**Severity:** nit (no current fixture exercises it)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/rust/RsDefnTranslator.scala:730-752`
+**Description:** Algorithm only inserts `_` when `prev.isLower` or wedged between a lowercase-following-uppercase pair. A digit between an uppercase prefix and the next uppercase word suppresses the underscore: `Foo2Bar` → `foo2bar` (not `foo2_bar`); `I2WithFoo` → `i2with_foo` (not `i2_with_foo`). Behaves correctly for current service-name conventions (e.g. `I1` → `i1`, `PetStore` → `pet_store`).
+**Suggested fix:** extend the first guard to `prev.isLower || prev.isDigit`. Out of PR-45 scope; would only be triggered by service names like `Foo2Bar` which no current fixture uses.
+
+### [PR-47-D01] No negative fixture exercising `ServiceMultipleInputs`
+**Status:** open
+**Severity:** nit
+**Location:** `baboon-compiler/src/test/resources/baboon/`
+**Description:** PR-47 added the `ServiceMultipleInputs` defensive check (rejects user-supplied `data in {} data in {} data out {}`) with LSP plumbing, but no fixture exercises it. Reviewer cannot confirm the diagnostic surfaces correctly. The check mirrors `ServiceMultipleOutputs` exactly so symbolic correctness is high; empirical coverage gap remains.
+**Suggested fix:** add a small failing-input fixture (or compiler unit test) that asserts `ServiceMultipleInputs` fires for `def m ( data in {} data in {} data out {} )`. Trivial to add in a follow-up.

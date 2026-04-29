@@ -24,10 +24,22 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 - [x] **M14** — Upstream-defect triage and fixes (Scala/Kotlin/TS/Swift backends + CLI). Source: `baboon-upstream-defects-clean.md`.
 - [x] **M15** — M14 follow-ups + failing Dart cross-language test fix.
 - [x] **M16** — M15 closeout: validator predicate, cross-language enum coverage, JVM runtime tests, hygiene bundle, Dart/Swift path-coupling.
-- [~] **M17** — M16 hygiene closeout: BaboonValidator filter symmetry (PR-36-D03), Scala UEBA template restructure (PR-39-D03), generalize `crossLanguageFixturePath` helper across remaining 6 backends (PR-40-D07). Plus formal wontfix on PR-40-D08 (sbt macro-cache) and PR-35-D08 (runtime decode error enrichment).
+- [x] **M17** — M16 hygiene closeout: BaboonValidator filter symmetry (PR-36-D03), Scala UEBA template restructure (PR-39-D03), generalize `crossLanguageFixturePath` helper across remaining 6 backends (PR-40-D07) + CI hot-fix (PR-44). Plus formal wontfix on PR-40-D08 (sbt macro-cache) and PR-35-D08 (runtime decode error enrichment).
+- [x] **M21** — Round-2 upstream defect fixes: Rust wiring snake_case (BAB-R01, PR-45 `3fd4ea8`), Rust `BaboonGenerated` trait impls for cross-stack parity (BAB-R02, PR-46 `357bc1e`), typer crash on absent `data in {}` (BAB-G01, PR-47 `9ad9d2f`), Scala JSON Map-key non-determinism (BAB-J01, PR-48 `b4c3f91`). Filed follow-ups for Swift codec hash-order (BAB-S0x), CS/Java map iter-order (BAB-C04, BAB-J03), `toSnakeCase` digit edge case (PR-45-D01), `ServiceMultipleInputs` negative-fixture coverage gap (PR-47-D01).
 - [ ] **M18** — BAB-A01: identifier types (`id` keyword, parseable `<Name>:<ver>#fields:values:{nested}` repr, escaping scheme, free `id<->data` conversion when shape matches). **Sequenced first** per user — provides parser/repr machinery M19 depends on.
 - [ ] **M19** — BAB-A02: allow user-defined DTOs (any single-primitive-field `data`, ANY `id` type incl. multi-field) as JSON map keys. Multi-field id keys leverage M18's parse/repr. **Depends on M18.**
 - [ ] **M20** — BAB-A03: ADT branch inheritance / cross-ADT branch reuse (`adt X { + ErrorAtom ... }` plus subtraction). Independent; ships last per user preference.
+
+---
+
+## Milestone 21 — PR breakdown
+
+Detail in `docs/drafts/20260429-1205-m21-round2-defects-plan.md`. Four upstream-reported defects, four independent fix surfaces. All four PRs landed in disjoint files; could have run in parallel modulo working-tree contention (which surfaced and was managed via per-PR commit-after-review).
+
+- [x] **PR-45** — BAB-R01: Rust wiring wrappers PascalCase → snake_case via `toSnakeCase` helper. 4 emit sites + 4 hand-written caller stubs (`test/rs-stub-{either,outcome,result}-overlay/.../wiring_tests.rs`, `test/services/rs/src/server.rs`).
+- [x] **PR-46** — BAB-R02: emit `impl BaboonGenerated for X` (+ `BaboonGeneratedLatest` and `BaboonAdtMemberMeta` markers conditionally) on every Rust DTO/Enum/ADT-parent/ADT-branch. New `RsDomainTreeTools` mirrors Sw/Kt/Ts. 138 impls per regular tree; cross-stack parity strict-string-compare verified. Dyn-trait emission deferred per runtime comments.
+- [x] **PR-47** — BAB-G01: typer crash on absent `data in {}`. Desugar in `ScopeBuilder` (NOT `convertService` — synthetic struct needs scope registration); plus defensive `ServiceMultipleInputs` issue mirroring `ServiceMultipleOutputs`, with LSP plumbing.
+- [x] **PR-48** — BAB-J01: Scala JSON codec sorts `Map[K, V]` keys lexicographically by `_._1.toString` before iterating. Sw audit showed conv-test driver opts into `.sortedKeys` but codec emit layer is still hash-ordered (filed BAB-S0x follow-up).
 
 ---
 
