@@ -64,6 +64,10 @@ object JvTypes {
   val baboonCodecException: JvType   = JvType(baboonRuntimePkg, "BaboonCodecException")
   val baboonEither: JvType           = JvType(baboonRuntimePkg, "BaboonEither")
 
+  // Identifier-repr (PR-57a): runtime helper class and nested cursor.
+  val baboonIdRepr: JvType           = JvType(baboonRuntimePkg, "BaboonIdentifierRepr")
+  val baboonIdReprCursor: JvType     = JvType(baboonRuntimePkg, "BaboonIdentifierRepr.Cursor")
+
   // java.lang
   val javaLangPkg: JvPackageId             = parseJvPkg("java.lang")
   val jvBoolean: JvType                    = JvType(javaLangPkg, "boolean", predef = true)

@@ -336,16 +336,31 @@ object CSDefnTranslator {
                |}""".stripMargin,
           )
 
-          val members = eq ++ meta
-          DefnRepr(
+          // Identifier toString + parseRepr (PR-57a / spec: docs/spec/identifier-repr.md).
+          // Emitted only when `dto.isIdentifier == true`. Wire format:
+          // <SimpleName>:<version>#field:value:field:value:{<NestedName>:<version>#…}
+          val identifierToStringOverride: TextTree[CSValue] =
+            if (dto.isIdentifier) renderIdentifierToString(dto, name) else q""
+
+          val identifierCodecObject: TextTree[CSValue] =
+            if (dto.isIdentifier) renderIdentifierCodecClass(dto, name) else q""
+
+          val members = (eq ++ meta) ++ (if (dto.isIdentifier) Seq(identifierToStringOverride) else Seq.empty)
+          val mainTree =
             q"""[$serializable]
                |public sealed record ${name.asName}(
                |    ${constructorArgs.shift(4).trim}
                |)$parents {
                |    ${members.join("\n\n").shift(4).trim}
-               |}""".stripMargin,
-            List.empty,
-          )
+               |}""".stripMargin
+
+          val combined =
+            if (dto.isIdentifier) q"""$mainTree
+                                     |
+                                     |$identifierCodecObject""".stripMargin
+            else mainTree
+
+          DefnRepr(combined, List.empty)
 
         case e: Typedef.Enum =>
           val branches =
@@ -545,6 +560,361 @@ object CSDefnTranslator {
           val cmp = renderComparator(q"left", q"right", valComp)
           q"$BaboonTools.MapEquals($ref, $oref, (left, right) => $cmp)"
       }
+    }
+
+    // ----- Identifier toString + parseRepr emission (PR-57a) -----
+    // Spec contract: docs/spec/identifier-repr.md. Mirrors ScDefnTranslator
+    // section but uses C# stdlib + BaboonIdentifierRepr runtime helper.
+
+    private sealed trait IdentifierFieldKind
+    private object IdentifierFieldKind {
+      case object Bit              extends IdentifierFieldKind
+      case object SignedInt        extends IdentifierFieldKind /* i08/i16/i32/i64 */
+      case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
+      case object UnsignedLong     extends IdentifierFieldKind /* u64 */
+      case object Str              extends IdentifierFieldKind
+      case object Uid              extends IdentifierFieldKind
+      case object Tsu              extends IdentifierFieldKind
+      case object Tso              extends IdentifierFieldKind
+      case object Bytes            extends IdentifierFieldKind
+      final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
+    }
+
+    private def identifierFieldKind(tpe: TypeRef): IdentifierFieldKind = {
+      tpe match {
+        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
+          import TypeId.Builtins.*
+          b match {
+            case `bit`                         => IdentifierFieldKind.Bit
+            case `i08` | `i16` | `i32` | `i64` => IdentifierFieldKind.SignedInt
+            case `u08` | `u16` | `u32`         => IdentifierFieldKind.UnsignedSmallInt
+            case `u64`                         => IdentifierFieldKind.UnsignedLong
+            case `str`                         => IdentifierFieldKind.Str
+            case `uid`                         => IdentifierFieldKind.Uid
+            case `tsu`                         => IdentifierFieldKind.Tsu
+            case `tso`                         => IdentifierFieldKind.Tso
+            case `bytes`                       => IdentifierFieldKind.Bytes
+            case other =>
+              throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
+          }
+        case TypeRef.Scalar(uid: TypeId.User) =>
+          IdentifierFieldKind.NestedId(uid)
+        case other =>
+          throw new IllegalStateException(s"Identifier field has unsupported TypeRef $other; validator should have rejected this.")
+      }
+    }
+
+    private def renderFieldValueExpr(csFieldName: String, kind: IdentifierFieldKind): TextTree[CSValue] = {
+      kind match {
+        case IdentifierFieldKind.Bit          => q"$baboonIdRepr.BitToString(this.$csFieldName)"
+        case IdentifierFieldKind.SignedInt    => q"this.$csFieldName.ToString($csInvariantCulture.InvariantCulture)"
+        case IdentifierFieldKind.UnsignedSmallInt =>
+          // u08/u16/u32 already map to C# unsigned types; ToString(InvariantCulture) is
+          // unsigned-correct unlike Java/Scala where the same value is signed.
+          q"this.$csFieldName.ToString($csInvariantCulture.InvariantCulture)"
+        case IdentifierFieldKind.UnsignedLong => q"$baboonIdRepr.U64ToString(this.$csFieldName)"
+        case IdentifierFieldKind.Str          => q"$baboonIdRepr.EscapeStr(this.$csFieldName)"
+        case IdentifierFieldKind.Uid          =>
+          // Guid.ToString() default form is 32 lowercase hex digits with hyphens (RFC 4122).
+          // Spec §3 mandates this exact form.
+          q"this.$csFieldName.ToString()"
+        case IdentifierFieldKind.Tsu          => q"$baboonIdRepr.TsuToString(this.$csFieldName.DateTimeOffset)"
+        case IdentifierFieldKind.Tso          => q"$baboonIdRepr.TsoToString(this.$csFieldName.DateTimeOffset)"
+        case IdentifierFieldKind.Bytes        => q"$baboonIdRepr.BytesToHex(this.$csFieldName)"
+        case IdentifierFieldKind.NestedId(_)  => q""""{" + this.$csFieldName.ToString() + "}""""
+      }
+    }
+
+    private def renderIdentifierToString(dto: Typedef.Dto, name: CSType): TextTree[CSValue] = {
+      val simpleName = name.name
+      val versionStr = domain.version.toString
+      val header     = s"$simpleName:$versionStr#"
+
+      val fieldExprs: List[TextTree[CSValue]] = dto.fields.map {
+        f =>
+          val srcFieldName = f.name.name
+          val csFieldName  = srcFieldName.capitalize
+          val kind         = identifierFieldKind(f.tpe)
+          val valueExpr    = renderFieldValueExpr(csFieldName, kind)
+          // The repr field name is the source name per spec §2.1.
+          q""""$srcFieldName:" + ($valueExpr)"""
+      }
+
+      val joinedFields = if (fieldExprs.isEmpty) q""""""""
+      else fieldExprs.toSeq.join(""" + ":" + """)
+
+      q"""public override string ToString()
+         |{
+         |    return "$header" + ${joinedFields};
+         |}""".stripMargin
+    }
+
+    private def signedNarrowCast(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.i08) => "(sbyte)"
+        case TypeRef.Scalar(TypeId.Builtins.i16) => "(short)"
+        case TypeRef.Scalar(TypeId.Builtins.i32) => "(int)"
+        case TypeRef.Scalar(TypeId.Builtins.i64) => ""
+        case other                               => throw new IllegalStateException(s"signedNarrowCast on non-signed-int: $other")
+      }
+    }
+
+    private def signedRangeCheck(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.i08) => "v >= -128L && v <= 127L"
+        case TypeRef.Scalar(TypeId.Builtins.i16) => "v >= -32768L && v <= 32767L"
+        case TypeRef.Scalar(TypeId.Builtins.i32) => "v >= -2147483648L && v <= 2147483647L"
+        case TypeRef.Scalar(TypeId.Builtins.i64) => "true"
+        case other                               => throw new IllegalStateException(s"signedRangeCheck on non-signed-int: $other")
+      }
+    }
+
+    private def signedTypeName(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.i08) => "i08"
+        case TypeRef.Scalar(TypeId.Builtins.i16) => "i16"
+        case TypeRef.Scalar(TypeId.Builtins.i32) => "i32"
+        case TypeRef.Scalar(TypeId.Builtins.i64) => "i64"
+        case other                               => throw new IllegalStateException(s"signedTypeName on non-signed-int: $other")
+      }
+    }
+
+    private def unsignedSmallNarrowCast(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.u08) => "(byte)"
+        case TypeRef.Scalar(TypeId.Builtins.u16) => "(ushort)"
+        case TypeRef.Scalar(TypeId.Builtins.u32) => "(uint)"
+        case other                               => throw new IllegalStateException(s"unsignedSmallNarrowCast on non-u08/u16/u32: $other")
+      }
+    }
+
+    private def unsignedSmallRangeCheck(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.u08) => "v <= 255UL"
+        case TypeRef.Scalar(TypeId.Builtins.u16) => "v <= 65535UL"
+        case TypeRef.Scalar(TypeId.Builtins.u32) => "v <= 4294967295UL"
+        case other                               => throw new IllegalStateException(s"unsignedSmallRangeCheck on non-u08/u16/u32: $other")
+      }
+    }
+
+    private def unsignedSmallTypeName(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.u08) => "u08"
+        case TypeRef.Scalar(TypeId.Builtins.u16) => "u16"
+        case TypeRef.Scalar(TypeId.Builtins.u32) => "u32"
+        case other                               => throw new IllegalStateException(s"unsignedSmallTypeName on non-u08/u16/u32: $other")
+      }
+    }
+
+    private def renderIdentifierCodecClass(dto: Typedef.Dto, name: CSType): TextTree[CSValue] = {
+      val simpleName      = name.name
+      val versionStr      = domain.version.toString
+      val codecClassName  = s"${name.name}Codec"
+
+      // Per-field decoder. Operates on `cursor`. Accumulates decoded values
+      // into local vars `<srcFieldName>_v` and finally constructs the type.
+      val fieldDecoders: List[TextTree[CSValue]] = dto.fields.zipWithIndex.map {
+        case (f, idx) =>
+          val srcFieldName = f.name.name
+          val rawVar       = s"${srcFieldName}_raw"
+          val valVar       = s"${srcFieldName}_v"
+          val isLast       = idx == dto.fields.length - 1
+          val kind         = identifierFieldKind(f.tpe)
+          val tpe          = trans.asCsRef(f.tpe, domain, evo)
+
+          val parseHead =
+            q"""{
+               |    var __r = $baboonIdRepr.ParseFieldName(cursor, "$srcFieldName");
+               |    if (__r is $either<string, $unit>.Left __l) return $either.Left<string, $name>(__l.Value);
+               |}""".stripMargin
+
+          val parseValue: TextTree[CSValue] = kind match {
+            case IdentifierFieldKind.Bit =>
+              q"""var $rawVar = cursor.ReadUntilStructural();
+                 |bool $valVar;
+                 |{
+                 |    var __r = $baboonIdRepr.ParseBit($rawVar);
+                 |    if (__r is $either<string, bool>.Left __l) return $either.Left<string, $name>(__l.Value);
+                 |    $valVar = (($either<string, bool>.Right)__r).Value;
+                 |}""".stripMargin
+            case IdentifierFieldKind.SignedInt =>
+              val rangeCheck = signedRangeCheck(f.tpe)
+              val typeName   = signedTypeName(f.tpe)
+              val cast       = signedNarrowCast(f.tpe)
+              // i64 has the full long range — no narrow check needed (and emitting
+              // `if (!(true))` triggers C# CS0162 "unreachable code" on the rejection branch).
+              val rangeBlock =
+                if (rangeCheck == "true") q""
+                else
+                  q"""    if (!($rangeCheck))
+                     |    {
+                     |        return $either.Left<string, $name>("$typeName out of range for field $srcFieldName: " + $rawVar);
+                     |    }
+                     |""".stripMargin
+              q"""var $rawVar = cursor.ReadUntilStructural();
+                 |$tpe $valVar;
+                 |{
+                 |    if (!long.TryParse($rawVar, $csNumberStyles.AllowLeadingSign, $csInvariantCulture.InvariantCulture, out var v))
+                 |    {
+                 |        return $either.Left<string, $name>("could not parse signed integer for field $srcFieldName: " + $rawVar);
+                 |    }
+                 |${rangeBlock}    $valVar = $cast v;
+                 |}""".stripMargin
+            case IdentifierFieldKind.UnsignedSmallInt =>
+              val rangeCheck = unsignedSmallRangeCheck(f.tpe)
+              val typeName   = unsignedSmallTypeName(f.tpe)
+              val cast       = unsignedSmallNarrowCast(f.tpe)
+              q"""var $rawVar = cursor.ReadUntilStructural();
+                 |$tpe $valVar;
+                 |{
+                 |    if (!ulong.TryParse($rawVar, $csNumberStyles.None, $csInvariantCulture.InvariantCulture, out var v))
+                 |    {
+                 |        return $either.Left<string, $name>("could not parse unsigned integer for field $srcFieldName: " + $rawVar);
+                 |    }
+                 |    if (!($rangeCheck))
+                 |    {
+                 |        return $either.Left<string, $name>("$typeName out of range for field $srcFieldName: " + $rawVar);
+                 |    }
+                 |    $valVar = $cast v;
+                 |}""".stripMargin
+            case IdentifierFieldKind.UnsignedLong =>
+              q"""var $rawVar = cursor.ReadUntilStructural();
+                 |ulong $valVar;
+                 |{
+                 |    if (!ulong.TryParse($rawVar, $csNumberStyles.None, $csInvariantCulture.InvariantCulture, out var v))
+                 |    {
+                 |        return $either.Left<string, $name>("could not parse u64 for field $srcFieldName: " + $rawVar);
+                 |    }
+                 |    $valVar = v;
+                 |}""".stripMargin
+            case IdentifierFieldKind.Str =>
+              q"""string $valVar;
+                 |{
+                 |    var __r = cursor.ReadStrField();
+                 |    if (__r is $either<string, string>.Left __l) return $either.Left<string, $name>(__l.Value);
+                 |    $valVar = (($either<string, string>.Right)__r).Value;
+                 |}""".stripMargin
+            case IdentifierFieldKind.Uid =>
+              // Spec §5.4 mandates lowercase hex form. Validate before delegating to
+              // Guid.Parse (which accepts mixed/uppercase).
+              q"""var $rawVar = cursor.ReadUntilStructural();
+                 |$csGuid $valVar;
+                 |{
+                 |    if (!$baboonIdRepr.UidLowerRegex.IsMatch($rawVar))
+                 |    {
+                 |        return $either.Left<string, $name>("uid not in canonical lowercase form for field $srcFieldName: " + $rawVar);
+                 |    }
+                 |    if (!$csGuid.TryParseExact($rawVar, "D", out var v))
+                 |    {
+                 |        return $either.Left<string, $name>("could not parse uid for field $srcFieldName: " + $rawVar);
+                 |    }
+                 |    $valVar = v;
+                 |}""".stripMargin
+            case IdentifierFieldKind.Tsu =>
+              // tsu fixed-width lexeme: 24 chars `yyyy-MM-ddTHH:mm:ss.SSSZ` per spec §3 / §5.4.
+              q"""string $rawVar;
+                 |{
+                 |    var __rf = cursor.ReadFixed(24);
+                 |    if (__rf is $either<string, string>.Left __l) return $either.Left<string, $name>(__l.Value);
+                 |    $rawVar = (($either<string, string>.Right)__rf).Value;
+                 |}
+                 |$rpDateTime $valVar;
+                 |{
+                 |    var __r = $baboonIdRepr.ParseTsuRepr($rawVar);
+                 |    if (__r is $either<string, $csDateTime>.Left __l) return $either.Left<string, $name>(__l.Value);
+                 |    var __dt = (($either<string, $csDateTime>.Right)__r).Value;
+                 |    $valVar = new $rpDateTime(__dt);
+                 |}""".stripMargin
+            case IdentifierFieldKind.Tso =>
+              // tso fixed-width lexeme: 29 chars `yyyy-MM-ddTHH:mm:ss.SSS±HH:MM` per spec §3 / §5.4.
+              q"""string $rawVar;
+                 |{
+                 |    var __rf = cursor.ReadFixed(29);
+                 |    if (__rf is $either<string, string>.Left __l) return $either.Left<string, $name>(__l.Value);
+                 |    $rawVar = (($either<string, string>.Right)__rf).Value;
+                 |}
+                 |$rpDateTime $valVar;
+                 |{
+                 |    var __r = $baboonIdRepr.ParseTsoRepr($rawVar);
+                 |    if (__r is $either<string, $csDateTimeOffset>.Left __l) return $either.Left<string, $name>(__l.Value);
+                 |    var __dto = (($either<string, $csDateTimeOffset>.Right)__r).Value;
+                 |    $valVar = new $rpDateTime(__dto);
+                 |}""".stripMargin
+            case IdentifierFieldKind.Bytes =>
+              q"""var $rawVar = cursor.ReadUntilStructural();
+                 |$csByteString $valVar;
+                 |{
+                 |    var __r = $baboonIdRepr.ParseBytesHex($rawVar);
+                 |    if (__r is $either<string, $csByteString>.Left __l) return $either.Left<string, $name>(__l.Value);
+                 |    $valVar = (($either<string, $csByteString>.Right)__r).Value;
+                 |}""".stripMargin
+            case IdentifierFieldKind.NestedId(uid) =>
+              val nestedTpe   = trans.asCsTypeKeepForeigns(uid, domain, evo)
+              val nestedCodec = CSType(nestedTpe.pkg, s"${nestedTpe.name}Codec", fq = false, CSTypeOrigin.Other)
+              q"""{
+                 |    var __r = cursor.Expect('{');
+                 |    if (__r is $either<string, $unit>.Left __l) return $either.Left<string, $name>(__l.Value);
+                 |}
+                 |$nestedTpe $valVar;
+                 |{
+                 |    var __r = $nestedCodec.ParseRepr(cursor);
+                 |    if (__r is $either<string, $nestedTpe>.Left __l) return $either.Left<string, $name>(__l.Value);
+                 |    $valVar = (($either<string, $nestedTpe>.Right)__r).Value;
+                 |}
+                 |{
+                 |    var __r = cursor.Expect('}');
+                 |    if (__r is $either<string, $unit>.Left __l) return $either.Left<string, $name>(__l.Value);
+                 |}""".stripMargin
+          }
+
+          val sep =
+            if (isLast) q""
+            else
+              q"""{
+                 |    var __r = cursor.Expect(':');
+                 |    if (__r is $either<string, $unit>.Left __l) return $either.Left<string, $name>(__l.Value);
+                 |}""".stripMargin
+
+          q"""$parseHead
+             |$parseValue
+             |$sep""".stripMargin.trim
+      }
+
+      val constructorArgs = dto.fields.map {
+        f =>
+          val srcFieldName = f.name.name
+          val csFieldName  = srcFieldName.capitalize
+          q"$csFieldName: ${srcFieldName}_v"
+      }.toSeq
+
+      val ctor =
+        if (constructorArgs.nonEmpty) q"new $name(${constructorArgs.join(", ")})"
+        else q"new $name()"
+
+      val body = (fieldDecoders :+ q"return $either.Right<string, $name>($ctor);").joinNN()
+
+      q"""public static class $codecClassName {
+         |    /// <summary>Parse the canonical identifier repr per docs/spec/identifier-repr.md.
+         |    /// Schema-directed parser: walks declared field order and dispatches per
+         |    /// field type. Returns Left on any malformed input.</summary>
+         |    public static $either<string, $name> ParseRepr(string s)
+         |    {
+         |        var cursor = new $baboonIdReprCursor(s);
+         |        var inner  = ParseRepr(cursor);
+         |        if (inner is $either<string, $name>.Left l) return l;
+         |        if (!cursor.AtEnd) return $either.Left<string, $name>("unexpected trailing input at " + cursor.Position);
+         |        return inner;
+         |    }
+         |
+         |    public static $either<string, $name> ParseRepr($baboonIdReprCursor cursor)
+         |    {
+         |        {
+         |            var __r = $baboonIdRepr.ParseHeader(cursor, "$simpleName", "$versionStr");
+         |            if (__r is $either<string, $unit>.Left __l) return $either.Left<string, $name>(__l.Value);
+         |        }
+         |        ${body.shift(8).trim}
+         |    }
+         |}""".stripMargin
     }
   }
 }

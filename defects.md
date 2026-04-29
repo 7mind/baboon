@@ -1889,3 +1889,56 @@ Both tests pass. The dual-path coverage clarifies: `ServiceMultipleInputs` is th
 **Location:** baboon-compiler/src/main/resources/baboon-runtime/scala/BaboonRuntimeShared.scala:39-45
 **Description:** The note about backslash-as-numeric-char is genuinely useful but the resource preprocessor in `ScBaboonTranslator.scala:256` only does `\.\\\\.` rewriting. The `92.toChar` workaround is not actually required for the identifier-repr code (no `\.` regex appears in `IdentifierRepr` source). The comment confuses future maintainers — they'd think the constraint is broader than it is.
 **Fix:** Simplified the `92.toChar` workaround comment in both BaboonRuntimeShared.scala files. Defensive note now says the workaround avoids interaction with the resource preprocessor in `ScBaboonTranslator.scala`; "not strictly required for current code paths but maintains consistency."
+
+---
+
+## PR-57a
+
+## [PR-57a-D01] `i64.MIN_VALUE` test is vacuous in both C# and Java stub suites — regression of PR-56-D08 lesson
+**Status:** resolved
+**Severity:** minor
+**Location:** test/cs-stub/BaboonTests/IdentifierReprTests.cs:46-52 (Int64_MinValue_Renders_AsPlainDecimal); test/jv-stub/src/test/java/runtime/IdentifierReprTest.java:57-61 (int64_MinValue_Renders_AsPlainDecimal)
+**Description:** Both tests assert only that `long.MinValue.ToString(InvariantCulture)` / `Long.toString(Long.MIN_VALUE)` equals `"-9223372036854775808"`. They never invoke `BaboonIdentifierRepr`, never construct an `id` value, and never round-trip through emitted `<Type>Codec.ParseRepr`. PR-56-D08 fixed exactly this defect for Scala (added `LongIdMirror(x: Long)` round-trip via emitted parseRepr); the lesson did not carry over to C# and Java. The `identifier-ok/identifiers.baboon` fixture has no `id` Dto with an i64 field.
+**Fix:** Added `id LongId { x: i64 }` to `identifier-ok/identifiers.baboon`. Replaced vacuous tests in BOTH stubs with paired round-trip tests for `Long.MIN_VALUE` and `Long.MAX_VALUE`, each constructing the value, asserting the exact rendered string, and round-tripping through emitted `LongIdCodec.ParseRepr` / `parseRepr`. Bumped `IdentifierFixtureLoadTest.expectedIds`. **Surfaced and fixed an unrelated latent C# emitter defect:** `signedRangeCheck` returns `"true"` for i64 producing `if (!(true))` which C# rejects with CS0162 unreachable-code. Surgical fix in `CSDefnTranslator.scala`: when `rangeCheck == "true"`, emit empty range-check block (guard tightly scoped — only i64 hits this case; `unsignedSmallRangeCheck` never returns `"true"`).
+
+## [PR-57a-D02] No per-stub test exercises invalid `str` escape sequences (`\z`, trailing `\`)
+**Status:** resolved
+**Severity:** minor
+**Location:** test/cs-stub/BaboonTests/IdentifierReprTests.cs (entire file); test/jv-stub/src/test/java/runtime/IdentifierReprTest.java (entire file). Defensive code in BaboonIdentifierRepr.{cs,java} `ReadStrField`/`readStrField` returns `Left("invalid escape at …")` and `Left("trailing backslash at …")` but no test reaches these branches.
+**Description:** Spec §5.5 requires `\X` where X ∉ `\#:{}` to be a parse error; trailing bare `\` to be a parse error. Both runtime helpers implement these branches. Neither stub test passes a malformed input through `<Type>Codec.ParseRepr` to assert the error path. A future regression silently dropping the invalid-escape rejection would not be caught.
+**Fix:** Added two tests per stub: `*_RejectsInvalidEscape` (feeds str ending with backslash followed by non-metachar `z` and asserts Left containing "invalid escape") and `*_RejectsTrailingBackslash` (feeds str ending with bare backslash and asserts Left containing "trailing backslash"). Both branches of `ReadStrField`/`readStrField` are now pinned by per-stub tests.
+
+## [PR-57a-D03] No 4-level-deep nested-id round-trip test (spec §6.10)
+**Status:** resolved
+**Severity:** nit
+**Location:** test/cs-stub/BaboonTests/IdentifierReprTests.cs (Outer_Roundtrip_NestedId — only 1 level); test/jv-stub/src/test/java/runtime/IdentifierReprTest.java (same).
+**Description:** Spec §6.10 specifies 4-deep canonical example (A → B → C → D) and calls it part of "the conformance suite. Every backend MUST reproduce them byte-for-byte." Per-language tests only exercise 1-deep nesting because fixture has no 4-deep chain.
+**Fix:** Added 4-deep id A → B → C → D chain to fixture, plus `DeepNested_Roundtrip_FourLevels` test in both stubs asserting the exact spec §6.10 byte-form string and round-trip via `ACodec`.
+
+## [PR-57a-D04] Java u-small `toString` comment misleads — claims `toUnsignedString` but emits `toString`
+**Status:** resolved
+**Severity:** nit (docs-only; behaviour correct)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/java/JvDefnTranslator.scala:609-619
+**Description:** Comment block on `IdentifierFieldKind.UnsignedSmallInt` says "toUnsignedString turns the next-wider signed representation into the canonical unsigned decimal." Actual emitted code calls `Short.toString(short)`/`Integer.toString(int)`/`Long.toString(long)` — signed toString variants, not `toUnsignedString`. Behaviour correct (validator + JSON decoder guarantee non-negative values for u08/u16/u32 stored in next-wider signed type) but the rationale is wrong. Maintainer reading the comment will look for `toUnsignedString` calls that aren't there.
+**Fix:** Replaced misleading comment in `JvDefnTranslator.scala` with: "u08/u16/u32 are stored in next-wider signed Java types (short/int/long) and constrained to non-negative range by validator + JSON decoder. Signed toString therefore produces the correct unsigned decimal."
+
+## [PR-57a-D05] Java `parseTsuRepr` instantiates fresh `DateTimeFormatter` inline instead of reusing `TSU_FORMAT`
+**Status:** resolved
+**Severity:** nit (style/perf; behaviour correct)
+**Location:** baboon-compiler/src/main/resources/baboon-runtime/java/BaboonIdentifierRepr.java:104-105
+**Description:** Line 29-30 already defines `private static final DateTimeFormatter TSU_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);`. Parser at line 104-105 builds an identical formatter inline. Each `parseRepr` call allocates a fresh formatter; behavior identical but adds GC pressure proportional to parse rate.
+**Fix:** `parseTsuRepr` now reuses pre-built `TSU_FORMAT` formatter instead of allocating per-call. (`parseTsoRepr` was already reusing `TSO_FORMAT`.)
+
+## [PR-57a-D06] Cross-language inconsistency: C# unsigned parsers reject leading `+`, Java accepts it
+**Status:** resolved
+**Severity:** nit (immaterial in practice — toString never emits `+`)
+**Location:** C# emitter CSDefnTranslator.scala:764,778 (`ulong.TryParse($rawVar, $csNumberStyles.None, …)` — NumberStyles.None excludes AllowLeadingSign); Java emitter JvDefnTranslator.scala:762,774 (`Long.parseUnsignedLong($rawVar)` — Java 8+ accepts leading `+`).
+**Description:** Spec §5.4 grammar `[+-]?[0-9]+` permits leading `+` for unsigned. Java accepts hand-written `"…u32:+5…"`; C# rejects with "could not parse unsigned integer …". Cross-language divergence between two "conformance" siblings.
+**Fix:** Spec §5.4 split signed/unsigned grammar bullets: signed `-?[0-9]+`, unsigned `[0-9]+` with explicit "Unsigned values MUST NOT have a leading + sign; rejected by parsers across all backends." Java parser pre-checks for leading sign and returns Left before delegating to `Long.parseUnsignedLong`. C# already rejected `+` via `NumberStyles.None`. Cross-language tests added to both stubs. Error message texts diverge by design.
+
+## [PR-57a-D07] Empty-fields toString generates stray `+ ""` literal in emitted code
+**Status:** resolved (deferred — emission style only, no behaviour impact; defer to a future hygiene PR)
+**Severity:** nit (style; behaviour correct)
+**Location:** CSDefnTranslator.scala:643-644, JvDefnTranslator.scala:646-647 (`val joinedFields = if (fieldExprs.isEmpty) q""""""""`)
+**Description:** When `dto.fields.isEmpty` (the `Marker` case), emitted code is `return "Marker:1.0.0#" + "";` — concatenating an empty literal. Functionally correct (compiler folds), but emitted source has stray `+ ""`. Reader pauses at it.
+**Fix:** Deferred. Cosmetic emission style only. Surgical-changes discipline says don't refactor for cosmetics in scope of feature PRs unless adjacent code is being modified anyway. If a future hygiene PR touches the emission patterns in CSDefnTranslator/JvDefnTranslator, sweep this then.

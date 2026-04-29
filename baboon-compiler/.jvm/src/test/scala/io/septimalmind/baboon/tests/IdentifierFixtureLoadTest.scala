@@ -65,7 +65,7 @@ abstract class IdentifierFixtureLoadTestBase[F[+_, +_]: Error2: BaboonTestModule
               u.defn match { case d: Typedef.Dto => d; case _ => null }
           }.filter(_ != null).toList
 
-          val expectedIds = Set("PointId", "Mixed", "UInts", "Outer", "Marker")
+          val expectedIds = Set("PointId", "Mixed", "UInts", "Outer", "Marker", "LongId", "A", "B", "C", "D")
           val actualIds   = idDtos.filter(_.isIdentifier).map(_.id.name.name).toSet
 
           assert(

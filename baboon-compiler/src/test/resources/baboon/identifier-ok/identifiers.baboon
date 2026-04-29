@@ -34,3 +34,24 @@ root id Outer {
 // Empty-fields identifier.
 root id Marker {
 }
+
+// i64 boundary round-trips — exercises Long.MIN_VALUE / Long.MAX_VALUE through
+// the emitted code path (per spec §6.7).
+root id LongId {
+  x: i64
+}
+
+// 4-level deep nested-id chain — matches spec §6.10 conformance example
+// (A → B → C → D, each layer adds one `{...}` wrapper).
+root id A {
+  b: B
+}
+id B {
+  c: C
+}
+id C {
+  d: D
+}
+id D {
+  x: i32
+}
