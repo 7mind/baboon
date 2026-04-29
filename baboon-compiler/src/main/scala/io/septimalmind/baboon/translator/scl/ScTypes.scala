@@ -57,6 +57,8 @@ object ScTypes {
   val baboonBinTools: ScType                  = ScType(baboonRuntimePkg, "BaboonBinTools")
   val scByteString: ScType                    = ScType(baboonRuntimePkg, "ByteString")
   val baboonRandom: ScType                    = ScType(baboonFixturePkg, "BaboonRandom")
+  val baboonIdRepr: ScType                    = ScType(baboonRuntimePkg, "IdentifierRepr")
+  val baboonIdReprCursor: ScType              = ScType(baboonRuntimePkg, "Cursor", Some("IdentifierRepr"))
 
   // baboon `any` opaque field runtime types (PR 2.1)
   val baboonAnyOpaque: ScType      = ScType(baboonRuntimePkg, "AnyOpaque")

@@ -41,6 +41,8 @@ mdl :test-service-acceptance # service-flavour RPC wiring round-trips
 - macOS / Windows CI passes `--without-nix` (system tools, no nix shell).
 - **Local Kotlin OOM workaround:** `mdl :test` runs language test actions in parallel by default. On laptops with <16 GB RAM the Kotlin compiler daemon OOMs under the parallel matrix (documented in `docs/logs/20260428-2350-m16-closeout-log.md`). Run `mdl --seq :build :test` to force serial execution. Slower (~20 min) but completes on memory-constrained machines. CI uses default parallelism.
 
+**Resource files:** After modifying any file under `baboon-compiler/src/main/resources/baboon-runtime/`, run `sbt clean` before `sbt compile`. The `PortableResource.embedSources` macro caches resource contents per build, so incremental compile won't pick up resource changes.
+
 ### Build Commands
 ```bash
 # Format code
