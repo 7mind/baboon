@@ -4,97 +4,121 @@ import 'dart:io';
 //
 // Layout (per mdl test-gen-{regular,wrapped}-adt actions):
 //   <repoRoot>/target/test-{regular,wrapped}/         <-- "test isolation root"
-//     ├── <lang>-stub/                                <-- per-language stub dir
-//     │     └── ...                                   <-- dart/swift/etc test runs from here
-//     └── target/                                     <-- "fixture root"
-//           └── <lang>/<format>/<type>                <-- cross-language fixture files
-//
-// Both `dart test` (Dart) and `swift test` (Swift) are launched with cwd =
-// "<repoRoot>/target/test-{regular,wrapped}/<lang>-stub". So the test-isolation
-// root is always parent(cwd) under normal invocation.
+//     |-- <lang>-stub/                                <-- per-language stub dir
+//     |     |-- ...                                   <-- dart test runs from here
+//     |-- target/                                     <-- "fixture root"
+//           |-- <lang>/<format>/<type>                <-- cross-language fixture files
 //
 // Resolution:
-//  1. BABOON_CROSS_LANG_FIXTURE_ROOT env var — if set, used verbatim as the
-//     fixture root. Returns "$root/$lang/$format/$type".
-//  2. Walk up from cwd until we find a directory D such that:
-//        - D contains a subdir literally named "target", AND
-//        - D contains at least one subdir whose name ends with "-stub".
-//     That uniquely identifies the test-isolation root. Returns
-//     "D/target/$lang/$format/$type".
-//  3. If neither succeeds, throw — never silently fall back. Silent fallback
-//     was the failure mode the previous .git-walk-up version exhibited.
+//  1. BABOON_CROSS_LANG_FIXTURE_ROOT env var, if set, used verbatim as the
+//     fixture root.
+//  2. Walk up from cwd. The walk has two layered sentinel rules; the first
+//     ancestor matching either rule wins:
+//        a. STRICT: directory D contains a literal "target/" subdirectory
+//           AND at least one "*-stub/" sibling. (Works whenever any peer
+//           language has already populated <isolation>/target/<lang>/...)
+//        b. NAMED: directory D's name is exactly "test-regular" or
+//           "test-wrapped" AND D contains at least one "*-stub/" sibling.
+//           (Works on the very first language run, before any peer has
+//           created <isolation>/target/.)
+//     Both rules identify D = <isolation>; the fixture root is D/target.
+//  3. If neither succeeds, throw StateError -- never silently fall back.
 //
-// `crossLanguageFixtureRoot()` exposes the resolved fixture root for
-// bootstrap-time sanity checks. Tests should call `assertCrossLanguageFixtureRootExists()`
-// in `setUpAll` so a misconfigured root fails LOUDLY rather than silently
-// causing all per-test `existsSync()` guards to skip.
+// The assertion validates the "anchor" -- D itself in walk-up mode, or the
+// env-var path in override mode. The anchor is always guaranteed to exist
+// (mdl creates <isolation> before launching tests; env-var users supply a
+// real path). The fixture root D/target may not yet exist if no peer
+// language has written into it -- per-test existence guards handle that.
 
+String? _cachedAnchor;
 String? _cachedFixtureRoot;
 
-String _resolveFixtureRoot() {
-  final cached = _cachedFixtureRoot;
-  if (cached != null) return cached;
+void _resolve() {
+  if (_cachedFixtureRoot != null) return;
 
   final envRoot = Platform.environment['BABOON_CROSS_LANG_FIXTURE_ROOT'];
   if (envRoot != null) {
+    _cachedAnchor = envRoot;
     _cachedFixtureRoot = envRoot;
-    return envRoot;
+    return;
   }
 
-  var dir = Directory.current;
-  while (true) {
-    final hasTarget = Directory('${dir.path}/target').existsSync();
-    if (hasTarget) {
-      var hasStub = false;
-      try {
-        for (final entry in dir.listSync(followLinks: false)) {
-          if (entry is Directory) {
-            final name = entry.uri.pathSegments.where((s) => s.isNotEmpty).last;
-            if (name.endsWith('-stub')) {
-              hasStub = true;
-              break;
-            }
-          }
-        }
-      } on FileSystemException {
-        // unreadable dir — skip and continue walking up
-      }
-      if (hasStub) {
-        final root = '${dir.path}/target';
-        _cachedFixtureRoot = root;
-        return root;
-      }
-    }
-    final parent = dir.parent;
-    if (parent.path == dir.path) break;
-    dir = parent;
-  }
-
-  throw StateError(
-    'Could not locate cross-language fixture root. Walked up from '
-    '"${Directory.current.path}" looking for a directory containing both '
-    'a "target/" subdirectory and at least one "*-stub/" sibling. '
-    'Set BABOON_CROSS_LANG_FIXTURE_ROOT to override.',
-  );
+  final anchor = _walkUpFromCwd();
+  _cachedAnchor = anchor;
+  _cachedFixtureRoot = '$anchor/target';
 }
 
-String crossLanguageFixtureRoot() => _resolveFixtureRoot();
+bool _hasStubSibling(Directory dir) {
+  try {
+    for (final entry in dir.listSync(followLinks: false)) {
+      if (entry is Directory) {
+        final segments = entry.uri.pathSegments.where((s) => s.isNotEmpty).toList();
+        final name = segments.isEmpty ? '' : segments.last;
+        if (name.endsWith('-stub')) {
+          return true;
+        }
+      }
+    }
+  } on FileSystemException {
+    // unreadable, skip
+  }
+  return false;
+}
+
+String _dirName(Directory dir) {
+  final segments = dir.uri.pathSegments.where((s) => s.isNotEmpty).toList();
+  return segments.isEmpty ? '' : segments.last;
+}
+
+String _walkUpFromCwd() {
+  final startDir = Directory.current;
+  var dir = startDir;
+  while (true) {
+    final stub = _hasStubSibling(dir);
+    final strictMatch = stub && Directory('${dir.path}/target').existsSync();
+    final name = _dirName(dir);
+    final namedMatch = stub && (name == 'test-regular' || name == 'test-wrapped');
+    if (strictMatch || namedMatch) {
+      return dir.path;
+    }
+    final parent = dir.parent;
+    if (parent.path == dir.path) {
+      throw StateError(
+        'Could not locate cross-language fixture root. Walked up from '
+        '"${startDir.path}" looking for either: (a) a directory containing '
+        '"target/" and at least one "*-stub/" sibling, or (b) a directory '
+        'named "test-regular" or "test-wrapped" containing at least one '
+        '"*-stub/" sibling. Set BABOON_CROSS_LANG_FIXTURE_ROOT to override.',
+      );
+    }
+    dir = parent;
+  }
+}
+
+String crossLanguageFixtureRoot() {
+  _resolve();
+  return _cachedFixtureRoot!;
+}
 
 String crossLanguageFixturePath(String lang, String type, String format) {
-  final root = _resolveFixtureRoot();
+  final root = crossLanguageFixtureRoot();
   return '$root/$lang/$format/$type';
 }
 
-// Sanity check intended for `setUpAll`. Asserts the resolved fixture root
-// directory exists. If it does not, fails loudly with a diagnostic message
-// instead of letting per-test `existsSync()` guards silently skip every
-// cross-language read.
+// Sanity check intended for `setUpAll`. Unconditionally asserts the anchor
+// (walk-up matched directory, or env-var path) exists on disk and is a
+// directory. The anchor is guaranteed to exist by the mdl action layout
+// (the isolation root <repoRoot>/target/test-{regular,wrapped}/ is created
+// before tests launch). If walk-up failed it has already thrown; if env-var
+// pointed to a non-existent path, this catches it. Either way: loud-fail at
+// bootstrap rather than silent skip.
 void assertCrossLanguageFixtureRootExists() {
-  final root = _resolveFixtureRoot();
-  if (!Directory(root).existsSync()) {
+  _resolve();
+  final anchor = _cachedAnchor!;
+  if (!Directory(anchor).existsSync()) {
     throw StateError(
-      'Cross-language fixture root does not exist: "$root". '
-      'Either the path resolution is wrong, or the fixture root was not '
+      'Cross-language fixture anchor does not exist: "$anchor". '
+      'Either the path resolution is wrong, or the anchor was not '
       'created by the build. Set BABOON_CROSS_LANG_FIXTURE_ROOT to override.',
     );
   }

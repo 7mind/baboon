@@ -111,8 +111,16 @@ object ScTypes {
   val scTry: ScType             = ScType(scalaUtilPkg, "Try")
 
   // scalatest
-  val scalatestPkg: ScPackageId = parseScPkg("org.scalatest.flatspec")
-  val anyFlatSpec: ScType       = ScType(scalatestPkg, "AnyFlatSpec")
+  val scalatestPkg: ScPackageId      = parseScPkg("org.scalatest.flatspec")
+  val anyFlatSpec: ScType            = ScType(scalatestPkg, "AnyFlatSpec")
+  val scalatestRootPkg: ScPackageId  = parseScPkg("org.scalatest")
+  val beforeAndAfterAll: ScType      = ScType(scalatestRootPkg, "BeforeAndAfterAll")
+
+  // cross-language fixture helpers (test scope)
+  val crossLanguageFixturePath: ScType =
+    ScType(baboonRuntimePkg, "crossLanguageFixturePath", Some("CrossLanguageFixturePath"))
+  val assertCrossLanguageFixtureRootExists: ScType =
+    ScType(baboonRuntimePkg, "assertCrossLanguageFixtureRootExists", Some("CrossLanguageFixturePath"))
 
   // java
 

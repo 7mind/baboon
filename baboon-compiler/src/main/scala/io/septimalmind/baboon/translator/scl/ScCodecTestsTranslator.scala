@@ -40,7 +40,12 @@ object ScCodecTestsTranslator {
         case _ if !isLatestVersion                                      => None
         case _ =>
           val testClass =
-            q"""@scala.annotation.nowarn("cat=w-flag-value-discard") class ${srcRef.name}_tests extends $anyFlatSpec {
+            q"""@scala.annotation.nowarn("cat=w-flag-value-discard") class ${srcRef.name}_tests extends $anyFlatSpec with $beforeAndAfterAll {
+               |  override def beforeAll(): $scUnit = {
+               |    super.beforeAll()
+               |    $assertCrossLanguageFixtureRootExists()
+               |  }
+               |
                |  ${makeTest(definition, srcRef)}
                |}
                |""".stripMargin
@@ -88,7 +93,7 @@ object ScCodecTestsTranslator {
              |
              |def testScJson(context: $baboonCodecContext, clue: $scString): $scUnit = {
              |  val tpeid = "${definition.id.render}"
-             |  val f     = new $javaFile(s"./../target/cs/json-$$clue/$$tpeid.json")
+             |  val f     = new $javaFile($crossLanguageFixturePath("cs", s"$$tpeid.json", s"json-$$clue"))
              |  assume(f.exists())
              |  val b = $javaNioFiles.readAllBytes(f.toPath)
              |  import io.circe.parser.parse
@@ -123,7 +128,7 @@ object ScCodecTestsTranslator {
              |
              |def testScUeba(context: $baboonCodecContext, clue: $scString): $scUnit = {
              |  val tpeid = "${definition.id.render}"
-             |  val f     = new $javaFile(s"./../target/cs/ueba-$$clue/$$tpeid.uebin")
+             |  val f     = new $javaFile($crossLanguageFixturePath("cs", s"$$tpeid.uebin", s"ueba-$$clue"))
              |  assume(f.exists())
              |  val csUebaBytes = $javaNioFiles.readAllBytes(f.toPath)
              |  val bais = new java.io.ByteArrayInputStream(csUebaBytes)

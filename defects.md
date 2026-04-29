@@ -1656,10 +1656,14 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Fix:** Bootstrap sanity assertion (D02 fix) catches this. With `BABOON_CROSS_LANG_FIXTURE_ROOT=/tmp/nonexistent`, the test bootstrap loudly fails with a clear diagnostic rather than silently skipping.
 
 ### [PR-40-D07] Cross-language fragility class still exists in other languages (Scala/Kotlin/Java/TS/Rust/Python)
-**Status:** open (deferred — PR-40 was scoped to Dart + Swift)
+**Status:** resolved (PR-43, 2026-04-29)
 **Severity:** minor
-**Description:** Other languages also use 5-dot or shorter relative paths for cross-language reads; they happen to work because they only read from `target/cs/...` (the canonical writer). If C# ever changes its CWD or output depth, those tests break too.
-**Suggested fix:** Generalize the helper pattern — emit equivalent `crossLanguageFixturePath` helpers in Scala/Kotlin/Java/TS/Rust/Python codec test translators. Out of PR-40 scope; tracked for a future hygiene PR.
+**Description:** Other languages also used 5-dot or shorter relative paths for cross-language reads; they happened to work because they only read from `target/cs/...` (the canonical writer).
+**Audit at fix time:** Kotlin (incl. KMP) and Java had **no** cross-language reads (excluded from scope). Scala / TypeScript / Rust / Python had cross-language reads, scoped into PR-43.
+**Fix:** Emitted per-language `crossLanguageFixturePath` helpers analogous to the Dart/Swift ones from PR-40, with a **layered sentinel** improvement applied to all 6 helpers (also retro-applied to Dt/Sw for symmetry):
+1. STRICT walk-up: directory containing `target/` AND `*-stub` sibling (works after any peer language has populated fixtures).
+2. NAMED fallback: directory whose basename is exactly `test-regular` or `test-wrapped` AND contains `*-stub` sibling (works on first-language-alone case before any peer has populated `target/`).
+First match wins. Plus an `anchor`/`fixtureRoot` split: `assertCrossLanguageFixtureRootExists()` validates the always-existing isolation anchor (loud-fail at bootstrap), `crossLanguageFixturePath()` builds off `anchor/target` for downstream construction. Env-var override `BABOON_CROSS_LANG_FIXTURE_ROOT` still wins. Verified via independence check (`rm -rf target/test-regular && mdl :test-gen-regular-adt :test-{dart,scala,...}-regular`) and wrong-anchor smoke (env-var nonexistent → loud-fail with diagnostic).
 
 ### [PR-40-D08] sbt resource-cache stale-bug: changes to runtime resource files don't trigger recompile
 **Status:** resolved (wontfix — upstream sbt/macro caching limitation)

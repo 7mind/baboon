@@ -5,7 +5,7 @@ import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.{BaboonEvolution, BaboonLang, Domain, DomainMember, Typedef}
 import izumi.fundamentals.platform.strings.TextTree
 import izumi.fundamentals.platform.strings.TextTree.*
-import TsTypes.{baboonRandom, tsBaboonBinReader, tsBaboonBinWriter, tsBaboonCodecContext, tsReadFile, tsString}
+import TsTypes.{baboonRandom, tsAssertCrossLanguageFixtureRootExists, tsBaboonBinReader, tsBaboonBinWriter, tsBaboonCodecContext, tsCrossLanguageFixturePath, tsReadFile, tsString}
 
 trait TsCodecTestsTranslator {
   def translate(
@@ -40,7 +40,14 @@ object TsCodecTestsTranslator {
         case _ if !isLatestVersion                                           => None
         case _ =>
           val tests = makeTests(definition, srcRef)
-          if (tests.isEmpty) None else Some(tests)
+          if (tests.isEmpty) None
+          else {
+            val withBootstrap =
+              q"""beforeAll(() => { $tsAssertCrossLanguageFixtureRootExists(); });
+                 |
+                 |$tests""".stripMargin
+            Some(withBootstrap)
+          }
       }
     }
 
@@ -99,7 +106,7 @@ object TsCodecTestsTranslator {
                |});
                |
                |test("test_cs_json", () => {
-               |    const path = '../target/cs/json-default/${definition.id.render}.json'
+               |    const path = $tsCrossLanguageFixturePath('cs', '${definition.id.render}.json', 'json-default')
                |    const content = $tsReadFile(path, 'utf-8')
                |    const csJson = JSON.parse(content)
                |    const decoded = $jsonCodec.instance.decode($tsBaboonCodecContext.Default, csJson)
@@ -155,7 +162,7 @@ object TsCodecTestsTranslator {
                |});
                |
                |function testUeba(ctx: $tsBaboonCodecContext, clue: $tsString) {
-               |    const path = `../target/cs/ueba-$${clue}/${definition.id.render}.uebin`
+               |    const path = $tsCrossLanguageFixturePath('cs', '${definition.id.render}.uebin', `ueba-$${clue}`)
                |    const content = $tsReadFile(path)
                |    const reader = new $tsBaboonBinReader(content)
                |    const writer = new $tsBaboonBinWriter()

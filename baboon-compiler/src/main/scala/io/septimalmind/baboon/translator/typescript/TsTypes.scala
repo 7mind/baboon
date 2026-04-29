@@ -7,6 +7,7 @@ object TsTypes {
   val tsBaboonRuntimeShared: TsModuleId = TsModuleId("BaboonSharedRuntime")
   val tsBaboonAnyOpaqueModule: TsModuleId = TsModuleId("BaboonAnyOpaque")
   val tsFixtureShared: TsModuleId       = TsModuleId("BaboonSharedFixture")
+  val tsCrossLangFixtureModule: TsModuleId = TsModuleId("CrossLanguageFixturePath")
 
   // node modules
   val nodeFsModule: TsModuleId = TsModuleId("fs")
@@ -61,4 +62,10 @@ object TsTypes {
 
   // Fixture types
   val baboonRandom: TsType = TsType(tsFixtureShared, "BaboonRandom")
+
+  // cross-language fixture helpers (test scope)
+  val tsCrossLanguageFixturePath: TsType =
+    TsType(tsCrossLangFixtureModule, "crossLanguageFixturePath")
+  val tsAssertCrossLanguageFixtureRootExists: TsType =
+    TsType(tsCrossLangFixtureModule, "assertCrossLanguageFixtureRootExists")
 }

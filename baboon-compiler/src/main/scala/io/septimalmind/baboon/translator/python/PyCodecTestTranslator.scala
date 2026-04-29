@@ -40,6 +40,10 @@ object PyCodecTestTranslator {
         case _ =>
           val testClass =
             q"""class Test_${srcRef.name}_Tests($pyTestCase):
+               |    @classmethod
+               |    def setUpClass(cls):
+               |        $pyAssertCrossLanguageFixtureRootExists()
+               |
                |    ${makeTest(defn, srcRef)}
                |""".stripMargin
           Some(testClass)
@@ -67,7 +71,7 @@ object PyCodecTestTranslator {
              |
              |def cs_json_test(self, clue):
              |    tpeid = "${defn.id.render}"
-             |    with open(f"../target/cs/json-{clue}/{tpeid}.json", encoding="utf-8") as f:
+             |    with open($pyCrossLanguageFixturePath("cs", f"{tpeid}.json", f"json-{clue}"), encoding="utf-8") as f:
              |        cs_json = f.read()
              |        decoded = $codec.instance().decode($baboonCodecContext.default(), cs_json)
              |        self.json_compare(decoded)
@@ -98,7 +102,7 @@ object PyCodecTestTranslator {
              |
              |def cs_ueba_test(self, context, clue):
              |    tpeid = "${defn.id.render}"
-             |    with open(f"../target/cs/ueba-{clue}/{tpeid}.uebin", "rb") as f:
+             |    with open($pyCrossLanguageFixturePath("cs", f"{tpeid}.uebin", f"ueba-{clue}"), "rb") as f:
              |        cs_uebin = f.read()
              |        memory_stream = $pyBytesIO()
              |        input_stream = $baboonLEDataInputStream(memory_stream)

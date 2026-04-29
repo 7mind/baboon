@@ -30,7 +30,8 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
       translated <- translateFamily(family)
       runtime    <- sharedRuntime()
       fixture    <- sharedFixture()
-      rendered = (translated ++ runtime ++ fixture).map {
+      testHelper <- sharedTestHelper()
+      rendered = (translated ++ runtime ++ fixture ++ testHelper).map {
         o =>
           val content = renderTree(o)
           (o.path, OutputFile(content, o.product))
@@ -147,6 +148,22 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
             TextTree.text(BaboonRuntimeResources.read("baboon-runtime/scala/BaboonFixtureShared.scala")),
             ScTypes.baboonFixturePkg,
             CompilerProduct.FixtureRuntime,
+            doNotModify = true,
+          )
+        )
+      )
+    } else F.pure(Nil)
+  }
+
+  private def sharedTestHelper(): Out[List[ScDefnTranslator.Output]] = {
+    if (target.output.products.contains(CompilerProduct.Test)) {
+      F.pure(
+        List(
+          ScDefnTranslator.Output(
+            "CrossLanguageFixturePath.scala",
+            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/scala/CrossLanguageFixturePath.scala")),
+            ScTypes.baboonRuntimePkg,
+            CompilerProduct.Test,
             doNotModify = true,
           )
         )

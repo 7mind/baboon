@@ -29,7 +29,8 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
     for {
       translated <- translateFamily(family)
       runtime    <- sharedRuntime()
-      rendered = (translated ++ runtime).map {
+      testHelper <- sharedTestHelper()
+      rendered = (translated ++ runtime ++ testHelper).map {
         o =>
           val content = renderTree(o)
           (o.path, OutputFile(content, o.product))
@@ -146,6 +147,21 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
     } else F.pure(Nil)
   }
 
+  private def sharedTestHelper(): Out[List[PyDefnTranslator.Output]] = {
+    if (target.output.products.contains(CompilerProduct.Test)) {
+      F.pure(
+        List(
+          PyDefnTranslator.Output(
+            "cross_language_fixture_path.py",
+            TextTree.text(BaboonRuntimeResources.read("baboon-runtime/python/cross_language_fixture_path.py")),
+            pyCrossLanguageFixturePathModule,
+            CompilerProduct.Test,
+          )
+        )
+      )
+    } else F.pure(Nil)
+  }
+
   private def renderTree(o: PyDefnTranslator.Output): String = {
     val usedTypes = o.tree.values.collect { case t: PyValue.PyType => t }
       .filterNot(_.moduleId == pyBuiltins)
@@ -187,6 +203,13 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
         }.mkString(", ")
         if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule || module == pyBaboonConversionsModule || module == pyBaboonServiceWiringModule || module == pyBaboonAnyOpaqueModule || module == pyBaboonExceptionsModule) {
           val baseString = pyFileTools.definitionsBasePkg.mkString(".")
+          q"from $baseString.${module.module} import $typesString"
+        } else if (module == pyCrossLanguageFixturePathModule) {
+          // The cross-language fixture helper is emitted with CompilerProduct.Test,
+          // so the file lands under testsOutput (testsBasePkg), NOT under
+          // definitionsBasePkg. Imports must therefore be resolved against
+          // testsBasePkg.
+          val baseString = pyFileTools.testsBasePkg.mkString(".")
           q"from $baseString.${module.module} import $typesString"
         } else {
           q"from ${module.path.mkString(".")} import $typesString"

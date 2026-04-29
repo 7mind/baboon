@@ -80,6 +80,7 @@ object RsCodecTestsTranslator {
 
             q"""#[test]
                |fn test_${testFnName}_json_codec() {
+               |    crate::cross_language_fixture_path::assert_cross_language_fixture_root_exists();
                |    for _ in 0..${target.generic.codecTestIterations.toString} {
                |        ${jsonRoundTrip.shift(8).trim}
                |    }
@@ -87,9 +88,10 @@ object RsCodecTestsTranslator {
                |
                |#[test]
                |fn test_${testFnName}_json_cross_language() {
+               |    crate::cross_language_fixture_path::assert_cross_language_fixture_root_exists();
                |    let tpeid = "${definition.id.render}";
-               |    let path = format!("./../target/cs/json-default/{}.json", tpeid);
-               |    let path = std::path::Path::new(&path);
+               |    let path_string = crate::cross_language_fixture_path::cross_language_fixture_path("cs", &format!("{}.json", tpeid), "json-default");
+               |    let path = std::path::Path::new(&path_string);
                |    if !path.exists() {
                |        eprintln!("Skipping cross-language test: {:?} not found", path);
                |        return;
@@ -136,6 +138,7 @@ object RsCodecTestsTranslator {
 
             q"""#[test]
                |fn test_${testFnName}_ueba_codec() {
+               |    crate::cross_language_fixture_path::assert_cross_language_fixture_root_exists();
                |    let ctx = crate::baboon_runtime::BaboonCodecContext::Default;
                |    for _ in 0..${target.generic.codecTestIterations.toString} {
                |        ${uebaRoundTrip.shift(8).trim}

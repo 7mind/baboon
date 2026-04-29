@@ -6,11 +6,12 @@ object PyTypes {
   // baboon
 
   // baboon modules
-  val pyBaboonSharedRuntimeModule: PyModuleId = PyModuleId(s"baboon_runtime_shared")
-  val pyBaboonCodecsModule: PyModuleId        = PyModuleId(s"baboon_codecs")
-  val pyBaboonConversionsModule: PyModuleId   = PyModuleId(s"baboon_conversions")
-  val pyBaboonAnyOpaqueModule: PyModuleId     = PyModuleId(s"baboon_any_opaque")
-  val pyBaboonExceptionsModule: PyModuleId    = PyModuleId(s"baboon_exceptions")
+  val pyBaboonSharedRuntimeModule: PyModuleId   = PyModuleId(s"baboon_runtime_shared")
+  val pyBaboonCodecsModule: PyModuleId          = PyModuleId(s"baboon_codecs")
+  val pyBaboonConversionsModule: PyModuleId     = PyModuleId(s"baboon_conversions")
+  val pyBaboonAnyOpaqueModule: PyModuleId       = PyModuleId(s"baboon_any_opaque")
+  val pyBaboonExceptionsModule: PyModuleId      = PyModuleId(s"baboon_exceptions")
+  val pyCrossLanguageFixturePathModule: PyModuleId = PyModuleId(s"cross_language_fixture_path")
 
   // python modules
   val pyBuiltins: PyModuleId       = PyModuleId("builtins")
@@ -77,6 +78,12 @@ object PyTypes {
 
   // baboon exceptions
   val baboonCodecException: PyType = PyType(pyBaboonExceptionsModule, "BaboonCodecException")
+
+  // cross-language fixture helpers (test scope)
+  val pyCrossLanguageFixturePath: PyType =
+    PyType(pyCrossLanguageFixturePathModule, "cross_language_fixture_path")
+  val pyAssertCrossLanguageFixtureRootExists: PyType =
+    PyType(pyCrossLanguageFixturePathModule, "assert_cross_language_fixture_root_exists")
 
   // python
 

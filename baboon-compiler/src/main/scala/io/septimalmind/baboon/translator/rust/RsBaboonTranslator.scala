@@ -29,6 +29,7 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       translated <- translateFamily(family)
       runtime    <- sharedRuntime()
       fixture    <- sharedFixture()
+      testHelper <- sharedTestHelper()
 
       // Detect type/namespace conflicts: `foo.rs` conflicts with directory `foo/`
       // In Rust you can't have both — merge the type content into `foo/mod.rs`
@@ -47,9 +48,9 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
 
       allModFiles <- generateModFiles(translated, conflicting)
       modFiles     = allModFiles.filterNot(_.path == "mod.rs")
-      libFile      = generateLibRs(normal ++ runtime ++ fixture ++ modFiles)
+      libFile      = generateLibRs(normal ++ runtime ++ fixture ++ testHelper ++ modFiles)
       cargoToml    = generateCargoToml(family)
-      rendered = (normal ++ runtime ++ fixture ++ modFiles ++ libFile ++ cargoToml).map {
+      rendered = (normal ++ runtime ++ fixture ++ testHelper ++ modFiles ++ libFile ++ cargoToml).map {
         o =>
           val content = renderTree(o)
           (o.path, OutputFile(content, o.product))
@@ -261,6 +262,22 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
             TextTree.text(BaboonRuntimeResources.read("baboon-runtime/rust/baboon_fixture.rs")),
             RsValue.RsCrateId(NEList("crate")),
             CompilerProduct.FixtureRuntime,
+            doNotModify = true,
+          )
+        )
+      )
+    } else F.pure(Nil)
+  }
+
+  private def sharedTestHelper(): Out[List[RsDefnTranslator.Output]] = {
+    if (target.output.products.contains(CompilerProduct.Test)) {
+      F.pure(
+        List(
+          RsDefnTranslator.Output(
+            "cross_language_fixture_path.rs",
+            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/rust/cross_language_fixture_path.rs")),
+            RsValue.RsCrateId(NEList("crate")),
+            CompilerProduct.Test,
             doNotModify = true,
           )
         )

@@ -4,7 +4,7 @@ import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
-import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonAnyOpaqueModule, tsBaboonRuntimeShared, tsFixtureShared}
+import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonAnyOpaqueModule, tsBaboonRuntimeShared, tsCrossLangFixtureModule, tsFixtureShared}
 import io.septimalmind.baboon.translator.typescript.TsValue.{TsModuleId, TsType}
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
@@ -29,11 +29,13 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       translated <- translateFamily(family)
       runtime    <- sharedRuntime
       fixture    <- sharedFixture
+      testHelper <- sharedTestHelper
       barrels     = generateBarrels(translated ++ runtime)
       rendered = (
         translated ++
           runtime ++
           fixture ++
+          testHelper ++
           barrels
       ).map {
         o =>
@@ -146,6 +148,22 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     } else F.pure(Nil)
   }
 
+  private def sharedTestHelper: Out[List[TsDefnTranslator.Output]] = {
+    if (target.output.products.contains(CompilerProduct.Test)) {
+      F.pure(
+        List(
+          TsDefnTranslator.Output(
+            "CrossLanguageFixturePath.ts",
+            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/typescript/CrossLanguageFixturePath.ts")),
+            tsCrossLangFixtureModule,
+            CompilerProduct.Test,
+            doNotModify = true,
+          )
+        )
+      )
+    } else F.pure(Nil)
+  }
+
   private def renderTree(o: TsDefnTranslator.Output): String = {
     val sfx = target.language.importSuffix
 
@@ -160,13 +178,20 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     }
 
     def baboonTypeImport(moduleId: TsModuleId, types: String): TextTree[TsValue] = {
-      if (o.module.path.startsWith(tsFileTools.definitionsBasePkg)) {
-        val afterBase    = o.module.path.drop(tsFileTools.definitionsBasePkg.size)
+      // The cross-language fixture helper is emitted with CompilerProduct.Test,
+      // so the file lands under testsOutput (testBasePkg), NOT output
+      // (definitionsBasePkg). Imports for it must therefore be resolved against
+      // testBasePkg.
+      val targetBasePkg =
+        if (moduleId == tsCrossLangFixtureModule) tsFileTools.testBasePkg
+        else tsFileTools.definitionsBasePkg
+      if (o.module.path.startsWith(targetBasePkg)) {
+        val afterBase    = o.module.path.drop(targetBasePkg.size)
         val pathToModule = (0 until afterBase.size - 1).map(_ => "../").mkString("")
         q"import {$types} from '$pathToModule${moduleId.path.mkString("")}$sfx'"
       } else {
         val pathToCommonParent = (0 until o.module.path.size - 1).map(_ => "../").mkString("")
-        q"import {$types} from '$pathToCommonParent${tsFileTools.definitionsBasePkg.mkString("/")}/${moduleId.path.mkString("")}$sfx'"
+        q"import {$types} from '$pathToCommonParent${targetBasePkg.mkString("/")}/${moduleId.path.mkString("")}$sfx'"
       }
     }
 
@@ -216,7 +241,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
                 definitionImport(moduleId, typesString)
               } else if (moduleId.path.startsWith(tsFileTools.fixturesBasePkg) && tsFileTools.fixturesBasePkg.nonEmpty) {
                 fixtureImport(moduleId, typesString)
-              } else if (moduleId == tsBaboonRuntimeShared || moduleId == tsFixtureShared || moduleId == tsBaboonAnyOpaqueModule) {
+              } else if (moduleId == tsBaboonRuntimeShared || moduleId == tsFixtureShared || moduleId == tsBaboonAnyOpaqueModule || moduleId == tsCrossLangFixtureModule) {
                 baboonTypeImport(moduleId, typesString)
               } else {
                 q"import {$typesString} from '${moduleId.path.mkString("/")}'"
