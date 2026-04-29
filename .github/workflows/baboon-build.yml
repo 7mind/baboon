@@ -50,12 +50,27 @@ jobs:
           fi
       - name: Check deps and build
         if: startsWith(github.ref, 'refs/tags/')
-        run: nix develop --command bash scripts/check-ci.sh build
+        run: nix develop --command mdl --github-actions :build :test
       - name: Refresh deps and build
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        run: nix develop --command bash -c "mdl --github-actions :flake-refresh && scripts/check-ci.sh build"
+        run: nix develop --command mdl --github-actions :flake-refresh :build :test
       - name: Validate binary portability (outside Nix)
-        run: scripts/check-ci.sh smoke
+        # Deliberately inline (no `mdl :smoke`): the whole point of this step
+        # is to verify the binary runs without nix-shell environment leakage,
+        # and mdl is provisioned inside the nix shell. Source of truth for
+        # equivalent commands lives in `.mdl/defs/actions.md` action `smoke`;
+        # locally `mdl :smoke` runs the same shape.
+        run: |
+          chmod +x baboon-compiler/.jvm/target/graalvm-native-image/baboon
+          echo "=== file ==="
+          file baboon-compiler/.jvm/target/graalvm-native-image/baboon
+          echo "=== ldd ==="
+          ldd baboon-compiler/.jvm/target/graalvm-native-image/baboon 2>&1 || true
+          echo "=== smoke test ==="
+          baboon-compiler/.jvm/target/graalvm-native-image/baboon \
+            --model-dir ./test/conv-test \
+            :cs --output /tmp/baboon-validate-cs \
+            :scala --output /tmp/baboon-validate-sc
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -104,11 +119,9 @@ jobs:
       - name: Install mudyla
         run: pip install git+https://github.com/7mind/mudyla.git
       - name: Build (macOS)
-        env:
-          BABOON_CI_WITHOUT_NIX: "true"
-        run: bash scripts/check-ci.sh build
+        run: mdl --github-actions --without-nix :build :test
       - name: Validate binary portability
-        run: scripts/check-ci.sh smoke
+        run: mdl --github-actions --without-nix :smoke
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -126,7 +139,7 @@ jobs:
       - name: Init submodules
         run: git submodule update --init --recursive
       - name: Test editor grammars
-        run: nix develop --command bash scripts/check-ci.sh editors
+        run: nix develop --command mdl --github-actions :test-editors
 
   acceptance-tests:
     name: acceptance-tests
@@ -143,38 +156,24 @@ jobs:
           if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
             echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
           fi
-      - name: Build baboon binary
-        run: |
-          nix develop --ignore-environment \
-            --keep HOME \
-            --keep USER \
-            --keep CI \
-            --keep GITHUB_ACTIONS \
-            --command mdl --github-actions :build
+      # `:test-acceptance` and `:test-service-acceptance` each `dep action.build`,
+      # so mdl handles the binary build once and reuses it across both actions.
       - name: Run acceptance tests
         run: |
-          chmod +x baboon-compiler/.jvm/target/graalvm-native-image/baboon
           nix develop --ignore-environment \
             --keep HOME \
             --keep USER \
             --keep CI \
             --keep GITHUB_ACTIONS \
-            --command python3 test/acceptance/run_acceptance.py \
-            --baboon baboon-compiler/.jvm/target/graalvm-native-image/baboon \
-            --target ./target/acceptance \
-            --parallelism "$(nproc)"
+            --command mdl --github-actions :test-acceptance
       - name: Run service acceptance tests
         run: |
-          chmod +x baboon-compiler/.jvm/target/graalvm-native-image/baboon
           nix develop --ignore-environment \
             --keep HOME \
             --keep USER \
             --keep CI \
             --keep GITHUB_ACTIONS \
-            --command python3 test/acceptance/run_service_acceptance.py \
-            --baboon baboon-compiler/.jvm/target/graalvm-native-image/baboon \
-            --target ./target/service-acceptance \
-            --parallelism "$(nproc)"
+            --command mdl --github-actions :test-service-acceptance
       - name: Write step summary
         if: always()
         run: |
@@ -255,9 +254,7 @@ jobs:
         run: pip install git+https://github.com/7mind/mudyla.git
       - name: Build (windows)
         shell: bash
-        env:
-          BABOON_CI_WITHOUT_NIX: "true"
-        run: bash scripts/check-ci.sh build
+        run: mdl --github-actions --without-nix :build :test
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}

@@ -10,34 +10,36 @@ Baboon is a Domain Modeling Language (DML) compiler with schema evolution suppor
 
 This project uses [mudyla](https://github.com/7mind/mudyla) for build orchestration.
 
-### Pre-commit / pre-push verification — `scripts/check-ci.sh`
+### Pre-commit / pre-push verification — `mdl` targets
 
-**Run this before every commit and push. It is the single source of truth for the CI flow** — both `.github/workflows/baboon-build.yml` and humans invoke the same script, so what passes locally is what CI runs.
+**Run mdl with the appropriate target before every commit and push.** The same mdl actions are invoked by `.github/workflows/baboon-build.yml`, so what passes locally is what CI runs — single source of truth, defined in `.mdl/defs/{actions,tests}.md`.
 
 ```bash
-# Default: build + cross-compile (JVM + JS) + full test matrix.
-# Use this before every commit.
-bash scripts/check-ci.sh           # alias for: bash scripts/check-ci.sh build
+# Pre-commit (fast — build + cross-compile JVM/JS + full test matrix):
+mdl :build :test
 
-# Before pushing or after a non-trivial refactor:
-bash scripts/check-ci.sh all       # build + smoke + editors + acceptance
+# Pre-push or after non-trivial refactor (everything CI runs):
+mdl :ci
 
-# Individual modes (see scripts/check-ci.sh header for details):
-bash scripts/check-ci.sh smoke     # native-image binary portability + round-trip
-bash scripts/check-ci.sh editors   # tree-sitter editor grammar tests
-bash scripts/check-ci.sh acceptance# acceptance + service-acceptance harnesses
+# Individual targets (see .mdl/defs/{actions,tests}.md for definitions):
+mdl :build                   # GraalVM native-image build (triggers sbt +compile, JVM + JS)
+mdl :test                    # full per-language test matrix
+mdl :smoke                   # native-image binary portability + round-trip
+mdl :test-editors            # tree-sitter editor grammar tests
+mdl :test-acceptance         # cross-language serialization acceptance tests
+mdl :test-service-acceptance # service-flavour RPC wiring round-trips
 ```
 
-**Why this matters — historical failure modes the script catches:**
+**Why this matters — historical failure modes these targets catch:**
 
-- `sbt baboonJVM/compile` is **NOT** a CI-equivalent check. It builds only the JVM project. CI runs `sbt +compile` (cross-build for JVM + Scala.js), which has stricter `-Wconf` settings that promote inexhaustive-match warnings to errors. PR-47 (M21) shipped with green local `sbt baboonJVM/compile` but failed CI on `BaboonJS.scala` (commit `2de517b` fixed it). `scripts/check-ci.sh build` invokes `mdl :build :test` which triggers `sbt +compile` — the same path CI uses.
-- When adding a new `TyperIssue` case class, **three** exhaustive-match sites must be updated: `lsp/features/DiagnosticsProvider.scala`, `lsp/state/WorkspaceState.scala`, and `.js/src/main/scala/io/septimalmind/baboon/BaboonJS.scala`. The script's `+compile` cross-build catches missed JS-side updates.
+- `sbt baboonJVM/compile` is **NOT** a CI-equivalent check. It builds only the JVM project. CI runs `sbt +compile` (cross-build for JVM + Scala.js), which has stricter `-Wconf` settings that promote inexhaustive-match warnings to errors. PR-47 (M21) shipped with green local `sbt baboonJVM/compile` but failed CI on `BaboonJS.scala` (commit `2de517b` fixed it). `mdl :build :test` triggers `sbt +compile` — the same path CI uses.
+- When adding a new `TyperIssue` case class, **three** exhaustive-match sites must be updated: `lsp/features/DiagnosticsProvider.scala`, `lsp/state/WorkspaceState.scala`, and `.js/src/main/scala/io/septimalmind/baboon/BaboonJS.scala`. The `:build`/`:test` cross-build catches missed JS-side updates.
 
-**CI vs local:**
+**Flags & environment:**
 
-CI wraps invocations in nix (`nix develop --command bash scripts/check-ci.sh build`) and macOS/Windows set `BABOON_CI_WITHOUT_NIX=true` env var. Locally, either enter the devshell first (`nix develop`) or rely on system tools. `GITHUB_ACTIONS=true` triggers `mdl --github-actions` (CI-grouped log output) automatically — humans don't set it.
-
-**Local Kotlin OOM workaround:** `mdl :build :test` runs language test actions in parallel by default. On laptops with <16 GB RAM the Kotlin compiler daemon OOMs under the parallel matrix (documented in `docs/logs/.../m16-closeout-log.md`). Set `BABOON_CI_SEQ=true bash scripts/check-ci.sh build` to force `mdl --seq` (serial execution). Slower but completes on memory-constrained machines. CI uses default parallelism — this env var should NOT be set in CI.
+- CI passes `--github-actions` (CI-grouped log output) — humans don't set it.
+- macOS / Windows CI passes `--without-nix` (system tools, no nix shell).
+- **Local Kotlin OOM workaround:** `mdl :test` runs language test actions in parallel by default. On laptops with <16 GB RAM the Kotlin compiler daemon OOMs under the parallel matrix (documented in `docs/logs/20260428-2350-m16-closeout-log.md`). Run `mdl --seq :build :test` to force serial execution. Slower (~20 min) but completes on memory-constrained machines. CI uses default parallelism.
 
 ### Build Commands
 ```bash

@@ -1978,6 +1978,25 @@ python3 test/acceptance/run_acceptance.py \
 ret success:bool=true
 ```
 
+# action: test-service-acceptance
+
+Run service-flavour acceptance tests (RPC wiring round-trips). Sibling to
+`test-acceptance`; CI runs both. Wraps `test/acceptance/run_service_acceptance.py`.
+
+```bash
+dep action.build
+
+BABOON_BIN="${action.build.binary}"
+TARGET_DIR="./target/service-acceptance"
+
+python3 test/acceptance/run_service_acceptance.py \
+  --baboon "$BABOON_BIN" \
+  --target "$TARGET_DIR" \
+  --parallelism "$(nproc)"
+
+ret success:bool=true
+```
+
 # action: test-editors
 
 Test editor extension grammars against real baboon files.

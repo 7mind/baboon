@@ -334,3 +334,76 @@ dep action.test
 
 ret success:bool=true
 ```
+
+# action: smoke
+
+Native-image binary portability + simple round-trip smoke test. Mirrors the
+"Validate binary portability" CI step. Requires `:build` first; auto-resolved
+via `${action.build.binary}`.
+
+## definition
+
+```bash
+BIN="${action.build.binary}"
+chmod +x "$BIN"
+
+echo "=== file ==="
+file "$BIN"
+
+echo "=== ldd ==="
+ldd "$BIN" 2>&1 || true
+
+echo "=== smoke test ==="
+"$BIN" \
+    --model-dir ./test/conv-test \
+    :cs --output /tmp/baboon-validate-cs \
+    :scala --output /tmp/baboon-validate-sc
+
+ret success:bool=true
+```
+
+## definition when `platform: darwin`
+
+```bash
+BIN="${action.build.binary}"
+chmod +x "$BIN"
+
+echo "=== file ==="
+file "$BIN"
+
+echo "=== otool -L ==="
+otool -L "$BIN"
+
+echo "=== check no nix store references ==="
+if otool -L "$BIN" | grep -q /nix/store; then
+    echo "ERROR: binary has Nix store dependencies" >&2
+    exit 1
+fi
+
+echo "=== smoke test ==="
+"$BIN" \
+    --model-dir ./test/conv-test \
+    :cs --output /tmp/baboon-validate-cs \
+    :scala --output /tmp/baboon-validate-sc
+
+ret success:bool=true
+```
+
+# action: ci
+
+Full CI-equivalent verification: build + test matrix + binary smoke + editor
+grammars + acceptance harnesses. The single canonical pre-push command. CI
+YAML invokes `mdl :ci` (with `--github-actions` / `--without-nix` flags
+selected per-platform); humans use `mdl :build :test` for a fast pre-commit
+check and `mdl :ci` before push or after non-trivial refactors.
+
+```bash
+dep action.build
+dep action.test
+dep action.smoke
+dep action.test-editors
+dep action.test-acceptance
+dep action.test-service-acceptance
+
+ret success:bool=true
+```
