@@ -1942,3 +1942,35 @@ Both tests pass. The dual-path coverage clarifies: `ServiceMultipleInputs` is th
 **Location:** CSDefnTranslator.scala:643-644, JvDefnTranslator.scala:646-647 (`val joinedFields = if (fieldExprs.isEmpty) q""""""""`)
 **Description:** When `dto.fields.isEmpty` (the `Marker` case), emitted code is `return "Marker:1.0.0#" + "";` — concatenating an empty literal. Functionally correct (compiler folds), but emitted source has stray `+ ""`. Reader pauses at it.
 **Fix:** Deferred. Cosmetic emission style only. Surgical-changes discipline says don't refactor for cosmetics in scope of feature PRs unless adjacent code is being modified anyway. If a future hygiene PR touches the emission patterns in CSDefnTranslator/JvDefnTranslator, sweep this then.
+
+---
+
+## PR-57b
+
+## [PR-57b-D01] Kotlin emitter produces dead `if (!(true))` range-check block for i64 — regression of PR-57a-D01 fix
+**Status:** resolved
+**Severity:** minor (Kotlin doesn't error like C# CS0162; emitter still produces dead source)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/kotlin/KtDefnTranslator.scala (signedRangeCheck for i64 returns "true"); materialised at target/test-regular/kt-stub/src/main/kotlin/generated-main/identifier/ok/LongId.kt:70-72
+**Description:** PR-57a-D01 fixed exactly this pattern in `CSDefnTranslator.scala` (C# CS0162 unreachable-code error). The fix did not propagate to Kotlin. Kotlin compiles the dead block (kt-stub `allWarningsAsErrors=false` masks the constant-condition warning), but the emitted source contains `if (!(true)) { return Either.Left("i64 out of range...") }` — exactly the always-true range-check shape PR-57a-D01 explicitly called out as a defect. Reading the emitted code, a maintainer pauses on `if (!(true))`.
+**Fix:** Mirrored PR-57a CSDefnTranslator surgical fix in `KtDefnTranslator.scala`: when `signedRangeCheck == "true"`, emit empty `rangeBlock` instead of `if (!(true)) { ... }`. Tightly scoped — only i64 hits this case. Verified by inspecting regenerated `target/test-regular/kt-stub/.../LongId.kt`: dead `if (!(true))` block is gone; `mdl :test-kotlin-regular` and `:test-kotlin-kmp-regular` still pass.
+
+## [PR-57b-D02] `mixed_Roundtrip_EmptyBytes_AndUtcTimes` doesn't assert tsu/tso round-trip equality
+**Status:** resolved
+**Severity:** minor (test-coverage gap; existing assertions catch toString-rendering regressions via substring match but not parser regressions)
+**Location:** test/kt-stub/src/test/kotlin/runtime/IdentifierReprTest.kt:184-204; test/kt-stub-kmp/src/test/kotlin/runtime/IdentifierReprTest.kt:189-213
+**Description:** Test renders a `Mixed` with concrete `created` (tsu) and `scheduled` (tso) values, asserts a partial substring match on the toString form, then `parseRepr`s the string and only compares `active`, `id`, and `payload.size`. The `created`/`scheduled` round-trip identity is never asserted. A future regression in `parseTsuRepr` / `parseTsoRepr` returning a wrong instant would not be caught. Likely the same gap exists in PR-57a's Java/C# tests; tracked as a follow-up below for scope hygiene.
+**Fix:** Appended `assertEquals(src.created, got.created)` and `assertEquals(src.scheduled, got.scheduled)` to `mixed_Roundtrip_EmptyBytes_AndUtcTimes` in BOTH `kt-stub` and `kt-stub-kmp` test files. KMP `BaboonOffsetDateTime` is a data class so structural equality is correct. Both stubs still pass.
+
+## [PR-57b-D03] kt-stub-kmp uses `kotlin("jvm")` plugin, not `kotlin("multiplatform")` — KMP claim is JVM-tested only
+**Status:** resolved (deferred — pre-existing infrastructure limitation, not introduced by PR-57b; cannot be fixed in scope of M18.4b)
+**Severity:** nit (test-coverage gap; structurally cannot be addressed without converting kt-stub-kmp to true multiplatform)
+**Location:** test/kt-stub-kmp/build.gradle.kts:2 declares `plugins { kotlin("jvm") version "2.1.0" }`. There is no `kotlin("multiplatform")` plugin and no Native/JS/Wasm targets.
+**Description:** The KMP runtime helper in `kotlin-kmp/BaboonIdentifierRepr.kt` honours "no java.*" at SOURCE level (only kotlinx.datetime imports) but the kt-stub-kmp build ONLY compiles for JVM. A future regression introducing a `java.*` import or JVM-only stdlib call would not be caught by `mdl :test-kotlin-kmp-regular`.
+**Fix:** Deferred to a future hardening PR that converts `kt-stub-kmp` to `kotlin("multiplatform")` with at least one non-JVM target (typically `js(IR)` is cheapest to add). Out of scope for M18.4b.
+
+## [PR-57b-D04] Likely-existing tsu/tso round-trip equality gap in PR-57a's Java + C# tests (carryover from K-D02)
+**Status:** resolved (deferred — back-port lesson; if confirmed the gap exists, fix in a separate hygiene PR)
+**Severity:** nit (deferred test-coverage hygiene)
+**Location:** test/cs-stub/BaboonTests/IdentifierReprTests.cs (Mixed_Roundtrip_*); test/jv-stub/src/test/java/runtime/IdentifierReprTest.java (mixed_Roundtrip_*)
+**Description:** PR-57b's adversarial review observed that the same `Mixed` round-trip test in Java/C# probably has the same gap as Kotlin's K-D02 — asserts substring of toString but doesn't verify `created`/`scheduled` field equality after parseRepr. Not separately verified; the back-port lesson would only catch parser regressions in tsu/tso for those backends.
+**Fix:** Deferred to a hygiene PR. Reasoning: PR-57a is already shipped; back-porting test changes to it would expand PR-57b's surface beyond the Kotlin-only scope. The `IdentifierKotlinEmissionTest` and emission-test patterns will catch any large divergence in toString/parseRepr generators.
