@@ -150,6 +150,14 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
         (Some(meta), s"`any` cannot be a map key in ${owner.id.name.name}: ${fields.map(_.name.name).mkString(", ")}")
       case AnyAsSetElement(owner, fields, meta) =>
         (Some(meta), s"`any` cannot be a set element in ${owner.id.name.name}: ${fields.map(_.name.name).mkString(", ")}")
+      case IdentifierFieldFloatType(owner, fields, meta) =>
+        (Some(meta), s"identifier '${owner.id.name.name}' has float field(s): ${fields.map(_.name.name).mkString(", ")}")
+      case IdentifierFieldCollection(owner, fields, meta) =>
+        (Some(meta), s"identifier '${owner.id.name.name}' has collection field(s): ${fields.map(_.name.name).mkString(", ")}")
+      case IdentifierFieldUserNotIdentifier(owner, fields, meta) =>
+        (Some(meta), s"identifier '${owner.id.name.name}' references non-`id` type(s): ${fields.map { case (f, t) => s"${f.name.name} → ${t.name.name}" }.mkString(", ")}")
+      case IdentifierFieldAny(owner, fields, meta) =>
+        (Some(meta), s"identifier '${owner.id.name.name}' has `any` field(s): ${fields.map(_.name.name).mkString(", ")}")
       case LockedVersionModified(pkg, version) =>
         (None, s"Locked version modified: $pkg@$version")
       case MissingTypeDef(domain, missing) =>

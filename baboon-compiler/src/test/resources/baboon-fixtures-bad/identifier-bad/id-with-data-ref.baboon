@@ -1,0 +1,11 @@
+model my.bad.identifier.dataref
+
+version "1.0.0"
+
+data Inner {
+  x: i32
+}
+
+root id Bad {
+  v: Inner
+}

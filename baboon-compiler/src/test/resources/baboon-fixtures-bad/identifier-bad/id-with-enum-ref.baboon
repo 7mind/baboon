@@ -1,0 +1,12 @@
+model my.bad.identifier.enumref
+
+version "1.0.0"
+
+enum Inner {
+  A
+  B
+}
+
+root id Bad {
+  v: Inner
+}

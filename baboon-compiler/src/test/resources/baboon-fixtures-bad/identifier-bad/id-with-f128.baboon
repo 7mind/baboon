@@ -1,0 +1,7 @@
+model my.bad.identifier.f128
+
+version "1.0.0"
+
+root id Bad {
+  v: f128
+}

@@ -1,0 +1,11 @@
+model my.bad.identifier.adtref
+
+version "1.0.0"
+
+adt Inner {
+  data Foo { x: i32 }
+}
+
+root id Bad {
+  v: Inner
+}

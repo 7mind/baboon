@@ -1,0 +1,7 @@
+model my.bad.identifier.float
+
+version "1.0.0"
+
+root id Bad {
+  v: f64
+}

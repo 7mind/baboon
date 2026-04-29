@@ -1,0 +1,7 @@
+model my.bad.identifier.collection
+
+version "1.0.0"
+
+root id Bad {
+  vs: lst[uid]
+}

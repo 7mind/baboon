@@ -1,0 +1,11 @@
+model my.bad.identifier.cycle
+
+version "1.0.0"
+
+root id A {
+  b: B
+}
+
+id B {
+  a: A
+}
