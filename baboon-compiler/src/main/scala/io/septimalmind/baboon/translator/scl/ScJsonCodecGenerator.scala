@@ -375,7 +375,7 @@ class ScJsonCodecGenerator(
           case TypeId.Builtins.map =>
             val keyEnc   = encodeKey(c.args.head, q"e._1")
             val valueEnc = mkEncoder(c.args.last, q"e._2")
-            q"$circeJson.obj($ref.map(e => ($keyEnc, $valueEnc)).toList: _*)"
+            q"$circeJson.obj($ref.toList.sortBy(_._1.toString).map(e => ($keyEnc, $valueEnc)): _*)"
           case TypeId.Builtins.lst =>
             q"$circeJson.fromValues($ref.map(e => ${mkEncoder(c.args.head, q"e")}))"
           case TypeId.Builtins.set =>
