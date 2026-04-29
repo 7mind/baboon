@@ -41,6 +41,7 @@ object RsDefnTranslator {
     codecsFixture: RsCodecFixtureTranslator,
     enquiries: BaboonEnquiries,
     wiringTranslator: RsServiceWiringTranslator,
+    rsDomainTreeTools: RsDomainTreeTools,
   ) extends RsDefnTranslator[F] {
 
     override def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
@@ -53,7 +54,8 @@ object RsDefnTranslator {
     private def doTranslate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       val repr       = makeRepr(defn)
       val codecTrees = codecs.toList.flatMap(t => t.translate(defn, trans.asRsType(defn.id, domain, evo), trans.toRsTypeRefKeepForeigns(defn.id, domain, evo)).toList)
-      val allDefs    = (repr +: codecTrees).joinNN()
+      val metaTrees  = makeMetaImpls(defn)
+      val allDefs    = (repr +: codecTrees ++: metaTrees).joinNN()
 
       val mainOutput = Output(
         getOutputPath(defn),
@@ -143,6 +145,36 @@ object RsDefnTranslator {
           )
       }.toList
       F.pure(result)
+    }
+
+    private def makeMetaImpls(defn: DomainMember.User): List[TextTree[RsValue]] = {
+      val isLatestVersion = domain.version == evo.latest
+      val name            = trans.asRsType(defn.id, domain, evo)
+
+      defn.defn match {
+        case _: Typedef.Dto =>
+          List(rsDomainTreeTools.makeBaboonGeneratedImpl(defn, name, isLatestVersion))
+
+        case _: Typedef.Enum =>
+          List(rsDomainTreeTools.makeBaboonGeneratedImpl(defn, name, isLatestVersion))
+
+        case adt: Typedef.Adt =>
+          val parentImpl = rsDomainTreeTools.makeBaboonGeneratedImpl(defn, name, isLatestVersion)
+          val branchImpls = adt.dataMembers(domain).toList.flatMap {
+            mid =>
+              domain.defs.meta.nodes.get(mid) match {
+                case Some(mdefn: DomainMember.User) =>
+                  val branchName = trans.asRsType(mdefn.id, domain, evo)
+                  List(rsDomainTreeTools.makeBaboonGeneratedImpl(mdefn, branchName, isLatestVersion))
+                case _ => Nil
+              }
+          }
+          parentImpl :: branchImpls
+
+        case _: Typedef.Contract => Nil
+        case _: Typedef.Service  => Nil
+        case _: Typedef.Foreign  => Nil
+      }
     }
 
     private def makeRepr(defn: DomainMember.User): TextTree[RsValue] = {

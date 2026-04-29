@@ -164,6 +164,7 @@ class BaboonCommonRsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
     .localDependencies(List(DIKey[Domain], DIKey[BaboonEvolution]))
     .withSubmodule(new ModuleDef {
       make[RsDefnTranslator[F]].from[RsDefnTranslator.RsDefnTranslatorImpl[F]]
+      make[RsDomainTreeTools].from[RsDomainTreeTools.RsDomainTreeToolsImpl]
       make[RsCodecFixtureTranslator].from[RsCodecFixtureTranslator.RsCodecFixtureTranslatorImpl]
       make[RsCodecTestsTranslator].from[RsCodecTestsTranslator.Impl]
       make[RsServiceWiringTranslator].from[RsServiceWiringTranslator.Impl]
