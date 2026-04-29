@@ -49,6 +49,7 @@ object KtDefnTranslator {
     ktFiles: KtFileTools,
     ktTrees: KtTreeTools,
     trans: KtTypeTranslator,
+    ktTypes: KtTypes,
     codecs: Set[KtCodecTranslator],
     codecTests: KtCodecTestsTranslator,
     codecsFixture: KtCodecFixtureTranslator,
@@ -289,25 +290,51 @@ object KtDefnTranslator {
                |)""".stripMargin
           } else q"" // no-arg class
 
+          // Identifier toString override (PR-57b / spec: docs/spec/identifier-repr.md).
+          // Emitted only when `dto.isIdentifier == true`.
+          val identifierToStringOverride: TextTree[KtValue] =
+            if (dto.isIdentifier) renderIdentifierToString(dto, name) else q""
+
           val emptyClassMethods = if (!hasFields) {
+            // For empty-field id, replace the default toString with the spec form
+            // `<Name>:<version>#`. equals/hashCode keep their structural identity.
+            val toStringMethod =
+              if (dto.isIdentifier) identifierToStringOverride
+              else q"""override fun toString(): String = "${name.asName}()""""
             q"""
                |override fun equals(other: kotlin.Any?): Boolean = other is ${name.asName}
                |override fun hashCode(): Int = ${name.asName.hashCode.toString}
-               |override fun toString(): String = "${name.asName}()"
+               |$toStringMethod
                |""".stripMargin
           } else q""
 
-          DefnRepr(
+          // For non-empty id data classes, the toString override is appended to the body.
+          val nonEmptyExtra: TextTree[KtValue] =
+            if (dto.isIdentifier && hasFields) identifierToStringOverride else q""
+
+          val mainTree =
             q"""$classKeyword ${name.asName}$paramsBlock$parentsList {
                |  ${classMetaFields.joinN().shift(2).trim}
                |  ${emptyClassMethods.shift(2).trim}
+               |  ${nonEmptyExtra.shift(2).trim}
                |
                |  companion object {
                |    ${objectMetaFields.joinN().shift(4).trim}
                |  }
-               |}""".stripMargin,
-            Nil,
-          )
+               |}""".stripMargin
+
+          // Identifier <TypeName>Codec object (PR-57b Q-FU-4): parseRepr lives on a
+          // sibling top-level object, NOT on the data class companion, so it does not
+          // appear in IDE autocomplete on the type as the obvious "parse my id" entry.
+          val combined =
+            if (dto.isIdentifier) {
+              val codecObject = renderIdentifierCodecObject(dto, name)
+              q"""$mainTree
+                 |
+                 |$codecObject""".stripMargin
+            } else mainTree
+
+          DefnRepr(combined, Nil)
 
         case e: Typedef.Enum =>
           val cases = e.members.map {
@@ -452,5 +479,323 @@ object KtDefnTranslator {
         case Owner.Adt(id)  => s"$fbase/${id.name.name.toLowerCase}/$fname"
       }
     }
+
+    // ----- Identifier toString + parseRepr emission (PR-57b) -----
+    // Spec contract: docs/spec/identifier-repr.md. Mirrors ScDefnTranslator /
+    // JvDefnTranslator but uses Kotlin idiom (top-level objects, ULong unsigned
+    // arithmetic, Either with Left/Right subclasses).
+
+    private sealed trait IdentifierFieldKind
+    private object IdentifierFieldKind {
+      case object Bit              extends IdentifierFieldKind
+      case object SignedInt        extends IdentifierFieldKind /* i08/i16/i32/i64 */
+      case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
+      case object UnsignedLong     extends IdentifierFieldKind /* u64 */
+      case object Str              extends IdentifierFieldKind
+      case object Uid              extends IdentifierFieldKind
+      case object Tsu              extends IdentifierFieldKind
+      case object Tso              extends IdentifierFieldKind
+      case object Bytes            extends IdentifierFieldKind
+      final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
+    }
+
+    private def identifierFieldKind(tpe: TypeRef): IdentifierFieldKind = {
+      tpe match {
+        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
+          import TypeId.Builtins.*
+          b match {
+            case `bit`                         => IdentifierFieldKind.Bit
+            case `i08` | `i16` | `i32` | `i64` => IdentifierFieldKind.SignedInt
+            case `u08` | `u16` | `u32`         => IdentifierFieldKind.UnsignedSmallInt
+            case `u64`                         => IdentifierFieldKind.UnsignedLong
+            case `str`                         => IdentifierFieldKind.Str
+            case `uid`                         => IdentifierFieldKind.Uid
+            case `tsu`                         => IdentifierFieldKind.Tsu
+            case `tso`                         => IdentifierFieldKind.Tso
+            case `bytes`                       => IdentifierFieldKind.Bytes
+            case other =>
+              throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
+          }
+        case TypeRef.Scalar(uid: TypeId.User) =>
+          IdentifierFieldKind.NestedId(uid)
+        case other =>
+          throw new IllegalStateException(s"Identifier field has unsupported TypeRef $other; validator should have rejected this.")
+      }
+    }
+
+    private def renderFieldValueExpr(ktFieldName: String, kind: IdentifierFieldKind): TextTree[KtValue] = {
+      kind match {
+        case IdentifierFieldKind.Bit              => q"$baboonIdRepr.bitToString(this.$ktFieldName)"
+        // Kotlin's signed and unsigned-small primitive toString already produces
+        // canonical decimal (no locale, unsigned-small types render as unsigned).
+        case IdentifierFieldKind.SignedInt        => q"this.$ktFieldName.toString()"
+        case IdentifierFieldKind.UnsignedSmallInt => q"this.$ktFieldName.toString()"
+        case IdentifierFieldKind.UnsignedLong     => q"$baboonIdRepr.u64ToString(this.$ktFieldName)"
+        case IdentifierFieldKind.Str              => q"$baboonIdRepr.escapeStr(this.$ktFieldName)"
+        // UUID.toString() (java.util.UUID) and kotlin.uuid.Uuid.toString() both
+        // emit the canonical lowercase 36-char hyphenated form per RFC 4122.
+        case IdentifierFieldKind.Uid              => q"this.$ktFieldName.toString()"
+        case IdentifierFieldKind.Tsu              => q"$baboonIdRepr.tsuToString(this.$ktFieldName)"
+        case IdentifierFieldKind.Tso              => q"$baboonIdRepr.tsoToString(this.$ktFieldName)"
+        case IdentifierFieldKind.Bytes            => q"$baboonIdRepr.bytesToHex(this.$ktFieldName)"
+        case IdentifierFieldKind.NestedId(_)      => q""""{" + this.$ktFieldName.toString() + "}""""
+      }
+    }
+
+    private def renderIdentifierToString(dto: Typedef.Dto, name: KtValue.KtType): TextTree[KtValue] = {
+      val simpleName = name.name
+      val versionStr = domain.version.toString
+      val header     = s"$simpleName:$versionStr#"
+
+      val fieldExprs: List[TextTree[KtValue]] = dto.fields.map {
+        f =>
+          val srcFieldName = f.name.name
+          val kind         = identifierFieldKind(f.tpe)
+          val valueExpr    = renderFieldValueExpr(srcFieldName, kind)
+          q""""$srcFieldName:" + ($valueExpr)"""
+      }
+
+      val joinedFields =
+        if (fieldExprs.isEmpty) q""""""""
+        else fieldExprs.toSeq.join(""" + ":" + """)
+
+      q"""override fun toString(): String {
+         |  return "$header" + $joinedFields
+         |}""".stripMargin
+    }
+
+    private def signedRangeCheck(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.i08) => "v >= -128L && v <= 127L"
+        case TypeRef.Scalar(TypeId.Builtins.i16) => "v >= -32768L && v <= 32767L"
+        case TypeRef.Scalar(TypeId.Builtins.i32) => "v >= -2147483648L && v <= 2147483647L"
+        case TypeRef.Scalar(TypeId.Builtins.i64) => "true"
+        case other                               => throw new IllegalStateException(s"signedRangeCheck on non-signed-int: $other")
+      }
+    }
+
+    private def signedTypeName(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.i08) => "i08"
+        case TypeRef.Scalar(TypeId.Builtins.i16) => "i16"
+        case TypeRef.Scalar(TypeId.Builtins.i32) => "i32"
+        case TypeRef.Scalar(TypeId.Builtins.i64) => "i64"
+        case other                               => throw new IllegalStateException(s"signedTypeName on non-signed-int: $other")
+      }
+    }
+
+    private def signedNarrow(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.i08) => "toByte()"
+        case TypeRef.Scalar(TypeId.Builtins.i16) => "toShort()"
+        case TypeRef.Scalar(TypeId.Builtins.i32) => "toInt()"
+        case TypeRef.Scalar(TypeId.Builtins.i64) => "toLong()"
+        case other                               => throw new IllegalStateException(s"signedNarrow on non-signed-int: $other")
+      }
+    }
+
+    private def unsignedSmallNarrow(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.u08) => "toUByte()"
+        case TypeRef.Scalar(TypeId.Builtins.u16) => "toUShort()"
+        case TypeRef.Scalar(TypeId.Builtins.u32) => "toUInt()"
+        case other                               => throw new IllegalStateException(s"unsignedSmallNarrow on non-u08/u16/u32: $other")
+      }
+    }
+
+    private def unsignedSmallRangeCheck(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.u08) => "v >= 0L && v <= 255L"
+        case TypeRef.Scalar(TypeId.Builtins.u16) => "v >= 0L && v <= 65535L"
+        case TypeRef.Scalar(TypeId.Builtins.u32) => "v >= 0L && v <= 4294967295L"
+        case other                               => throw new IllegalStateException(s"unsignedSmallRangeCheck on non-u08/u16/u32: $other")
+      }
+    }
+
+    private def unsignedSmallTypeName(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.u08) => "u08"
+        case TypeRef.Scalar(TypeId.Builtins.u16) => "u16"
+        case TypeRef.Scalar(TypeId.Builtins.u32) => "u32"
+        case other                               => throw new IllegalStateException(s"unsignedSmallTypeName on non-u08/u16/u32: $other")
+      }
+    }
+
+    private def renderIdentifierCodecObject(dto: Typedef.Dto, name: KtValue.KtType): TextTree[KtValue] = {
+      val simpleName     = name.name
+      val versionStr     = domain.version.toString
+      val codecObjectName = s"${name.name}Codec"
+
+      val fieldDecoders: List[TextTree[KtValue]] = dto.fields.zipWithIndex.map {
+        case (f, idx) =>
+          val srcFieldName = f.name.name
+          val rawVar       = s"${srcFieldName}_raw"
+          val valVar       = s"${srcFieldName}_v"
+          val isLast       = idx == dto.fields.length - 1
+          val kind         = identifierFieldKind(f.tpe)
+          val tpe          = trans.asKtRef(f.tpe, domain, evo)
+
+          // All locals beyond `valVar` (which the constructor consumes) are scoped
+          // per-field with unique suffix names so multiple fields can declare them
+          // in the same enclosing function body without name collisions.
+          val rN     = s"${srcFieldName}_r"
+          val rNn    = s"${srcFieldName}_rn"
+          val rNb    = s"${srcFieldName}_rb"
+          val rNs    = s"${srcFieldName}_rs"
+          val rNh    = s"${srcFieldName}_rh"
+          val rNt    = s"${srcFieldName}_rt"
+          val rNrf   = s"${srcFieldName}_rrf"
+          val vL     = s"${srcFieldName}_vL"
+          val vU     = s"${srcFieldName}_vU"
+
+          val parseHead =
+            q"""val $rN = $baboonIdRepr.parseFieldName(cursor, "$srcFieldName")
+               |if ($rN is $baboonEither.Left) return $baboonEither.Left($rN.value)""".stripMargin
+
+          val parseValue: TextTree[KtValue] = kind match {
+            case IdentifierFieldKind.Bit =>
+              q"""val $rawVar = cursor.readUntilStructural()
+                 |val $rNb = $baboonIdRepr.parseBit($rawVar)
+                 |if ($rNb is $baboonEither.Left) return $baboonEither.Left($rNb.value)
+                 |val $valVar: $tpe = ($rNb as $baboonEither.Right).value""".stripMargin
+            case IdentifierFieldKind.SignedInt =>
+              val rangeCheck = signedRangeCheck(f.tpe)
+              val typeName   = signedTypeName(f.tpe)
+              val narrow     = signedNarrow(f.tpe)
+              // i64 covers the full Long range — signedRangeCheck returns "true" — so
+              // no range-check block is needed (mirrors CSDefnTranslator PR-57a-D01 fix).
+              val rangeBlock =
+                if (rangeCheck == "true") q""
+                else {
+                  val rc = rangeCheck.replace("v ", s"$vL ")
+                  q"""if (!($rc)) {
+                     |  return $baboonEither.Left("$typeName out of range for field $srcFieldName: " + $rawVar)
+                     |}
+                     |""".stripMargin
+                }
+              q"""val $rawVar = cursor.readUntilStructural()
+                 |val $vL = $rawVar.toLongOrNull()
+                 |  ?: return $baboonEither.Left("could not parse signed integer for field $srcFieldName: " + $rawVar)
+                 |${rangeBlock}val $valVar: $tpe = $vL.$narrow""".stripMargin
+            case IdentifierFieldKind.UnsignedSmallInt =>
+              // Range check operates on the parsed Long ($vL = vU.toLong()). Substitute
+              // the placeholder `v` with the field-scoped name to avoid collisions when
+              // multiple u-small fields appear in the same id.
+              val rangeCheck = unsignedSmallRangeCheck(f.tpe).replace("v ", s"$vL ")
+              val typeName   = unsignedSmallTypeName(f.tpe)
+              val narrow     = unsignedSmallNarrow(f.tpe)
+              // Reject leading sign (spec §5.4 D06) before delegating to toULongOrNull
+              // (which silently accepts `+`).
+              q"""val $rawVar = cursor.readUntilStructural()
+                 |if ($rawVar.isNotEmpty() && ($rawVar[0] == '+' || $rawVar[0] == '-')) {
+                 |  return $baboonEither.Left("unsigned value has leading sign for field $srcFieldName: " + $rawVar)
+                 |}
+                 |val $vU = $rawVar.toULongOrNull()
+                 |  ?: return $baboonEither.Left("could not parse unsigned integer for field $srcFieldName: " + $rawVar)
+                 |val $vL = $vU.toLong()
+                 |if (!($rangeCheck)) {
+                 |  return $baboonEither.Left("$typeName out of range for field $srcFieldName: " + $rawVar)
+                 |}
+                 |val $valVar: $tpe = $vU.$narrow""".stripMargin
+            case IdentifierFieldKind.UnsignedLong =>
+              q"""val $rawVar = cursor.readUntilStructural()
+                 |if ($rawVar.isNotEmpty() && ($rawVar[0] == '+' || $rawVar[0] == '-')) {
+                 |  return $baboonEither.Left("unsigned value has leading sign for field $srcFieldName: " + $rawVar)
+                 |}
+                 |val $valVar: $tpe = $rawVar.toULongOrNull()
+                 |  ?: return $baboonEither.Left("could not parse u64 for field $srcFieldName: " + $rawVar)""".stripMargin
+            case IdentifierFieldKind.Str =>
+              q"""val $rNs = cursor.readStrField()
+                 |if ($rNs is $baboonEither.Left) return $baboonEither.Left($rNs.value)
+                 |val $valVar: $tpe = ($rNs as $baboonEither.Right).value""".stripMargin
+            case IdentifierFieldKind.Uid =>
+              val uidType   = ktTypes.ktUid
+              val uidParse  =
+                if (target.language.multiplatform) q"$uidType.parse($rawVar)"
+                else q"$uidType.fromString($rawVar)"
+              q"""val $rawVar = cursor.readUntilStructural()
+                 |if (!$baboonIdRepr.isCanonicalUid($rawVar)) {
+                 |  return $baboonEither.Left("uid not in canonical lowercase form for field $srcFieldName: " + $rawVar)
+                 |}
+                 |val $valVar: $tpe = try {
+                 |  $uidParse
+                 |} catch (e: IllegalArgumentException) {
+                 |  return $baboonEither.Left("could not parse uid for field $srcFieldName: " + $rawVar)
+                 |}""".stripMargin
+            case IdentifierFieldKind.Tsu =>
+              q"""val $rNrf = cursor.readFixed(24)
+                 |if ($rNrf is $baboonEither.Left) return $baboonEither.Left($rNrf.value)
+                 |val $rawVar = ($rNrf as $baboonEither.Right).value
+                 |val $rNt = $baboonIdRepr.parseTsuRepr($rawVar)
+                 |if ($rNt is $baboonEither.Left) return $baboonEither.Left($rNt.value)
+                 |val $valVar: $tpe = ($rNt as $baboonEither.Right).value""".stripMargin
+            case IdentifierFieldKind.Tso =>
+              q"""val $rNrf = cursor.readFixed(29)
+                 |if ($rNrf is $baboonEither.Left) return $baboonEither.Left($rNrf.value)
+                 |val $rawVar = ($rNrf as $baboonEither.Right).value
+                 |val $rNt = $baboonIdRepr.parseTsoRepr($rawVar)
+                 |if ($rNt is $baboonEither.Left) return $baboonEither.Left($rNt.value)
+                 |val $valVar: $tpe = ($rNt as $baboonEither.Right).value""".stripMargin
+            case IdentifierFieldKind.Bytes =>
+              q"""val $rawVar = cursor.readUntilStructural()
+                 |val $rNh = $baboonIdRepr.parseBytesHex($rawVar)
+                 |if ($rNh is $baboonEither.Left) return $baboonEither.Left($rNh.value)
+                 |val $valVar: $tpe = ($rNh as $baboonEither.Right).value""".stripMargin
+            case IdentifierFieldKind.NestedId(uid) =>
+              val nestedTpe   = trans.toKtTypeRefKeepForeigns(uid, domain, evo)
+              val nestedCodec = KtType(nestedTpe.pkg, s"${nestedTpe.name}Codec")
+              val rOpen       = s"${srcFieldName}_ro"
+              val rClose      = s"${srcFieldName}_rc"
+              q"""val $rOpen = cursor.expect('{')
+                 |if ($rOpen is $baboonEither.Left) return $baboonEither.Left($rOpen.value)
+                 |val $rNn = $nestedCodec.parseRepr(cursor)
+                 |if ($rNn is $baboonEither.Left) return $baboonEither.Left($rNn.value)
+                 |val $valVar: $nestedTpe = ($rNn as $baboonEither.Right).value
+                 |val $rClose = cursor.expect('}')
+                 |if ($rClose is $baboonEither.Left) return $baboonEither.Left($rClose.value)""".stripMargin
+          }
+
+          val sep =
+            if (isLast) q""
+            else {
+              val rSep = s"${srcFieldName}_rsep"
+              q"""val $rSep = cursor.expect(':')
+                 |if ($rSep is $baboonEither.Left) return $baboonEither.Left($rSep.value)""".stripMargin
+            }
+
+          q"""$parseHead
+             |$parseValue
+             |$sep""".stripMargin.trim
+      }
+
+      val ctorArgs = dto.fields.map(f => q"${f.name.name}_v").toSeq
+      val ctor =
+        if (ctorArgs.nonEmpty) q"$name(${ctorArgs.join(", ")})"
+        else q"$name()"
+
+      val body = (fieldDecoders :+ q"return $baboonEither.Right($ctor)").joinNN()
+
+      q"""object $codecObjectName {
+         |  /** Parse the canonical identifier repr per docs/spec/identifier-repr.md.
+         |   *  Schema-directed parser: walks declared field order and dispatches per
+         |   *  field type. Returns Left on any malformed input. */
+         |  fun parseRepr(s: String): $baboonEither<String, $name> {
+         |    val cursor = $baboonIdReprCursor(s)
+         |    val inner = parseRepr(cursor)
+         |    if (inner is $baboonEither.Left) return inner
+         |    if (!cursor.atEnd()) return $baboonEither.Left("unexpected trailing input at " + cursor.position())
+         |    return inner
+         |  }
+         |
+         |  fun parseRepr(cursor: $baboonIdReprCursor): $baboonEither<String, $name> {
+         |    run {
+         |      val r = $baboonIdRepr.parseHeader(cursor, "$simpleName", "$versionStr")
+         |      if (r is $baboonEither.Left) return $baboonEither.Left(r.value)
+         |    }
+         |    ${body.shift(4).trim}
+         |  }
+         |}""".stripMargin
+    }
+
   }
 }

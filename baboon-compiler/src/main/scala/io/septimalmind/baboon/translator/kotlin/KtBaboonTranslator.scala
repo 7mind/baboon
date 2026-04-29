@@ -257,6 +257,7 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
         rt("BaboonConversions.kt", s"$rtDir/BaboonConversions.kt"),
         rt("BaboonEither.kt", s"$rtDir/BaboonEither.kt"),
         rt("BaboonExceptions.kt", s"$rtDir/BaboonExceptions.kt"),
+        rt("BaboonIdentifierRepr.kt", s"$rtDir/BaboonIdentifierRepr.kt"),
         rt("BaboonRuntimeShared.kt", s"$rtDir/BaboonRuntimeShared.kt"),
         rt("BaboonServiceWiring.kt", s"$rtDir/BaboonServiceWiring.kt"),
         rt("BaboonTools.kt", s"$rtDir/BaboonTools.kt"),
