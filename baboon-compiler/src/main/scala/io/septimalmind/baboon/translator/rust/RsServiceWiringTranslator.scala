@@ -313,7 +313,7 @@ object RsServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""pub ${asyncKw}fn invoke_json_$svcName$genericParam(
+      q"""pub ${asyncKw}fn invoke_json_${toSnakeCase(svcName)}$genericParam(
          |    method: &$baboonMethodId,
          |    data: &str,
          |    ${implParam(svcType)},
@@ -349,7 +349,7 @@ object RsServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""pub ${asyncKw}fn invoke_ueba_$svcName$genericParam(
+      q"""pub ${asyncKw}fn invoke_ueba_${toSnakeCase(svcName)}$genericParam(
          |    method: &$baboonMethodId,
          |    data: &[u8],
          |    ${implParam(svcType)},
@@ -480,7 +480,7 @@ object RsServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""pub ${asyncKw}fn invoke_json_$svcName<Rt: $ibaboonServiceRt>$genericParam(
+      q"""pub ${asyncKw}fn invoke_json_${toSnakeCase(svcName)}<Rt: $ibaboonServiceRt>$genericParam(
          |    method: &$baboonMethodId,
          |    data: &str,
          |    ${implParam(svcType)},
@@ -582,7 +582,7 @@ object RsServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""pub ${asyncKw}fn invoke_ueba_$svcName<Rt: $ibaboonServiceRt>$genericParam(
+      q"""pub ${asyncKw}fn invoke_ueba_${toSnakeCase(svcName)}<Rt: $ibaboonServiceRt>$genericParam(
          |    method: &$baboonMethodId,
          |    data: &[u8],
          |    ${implParam(svcType)},

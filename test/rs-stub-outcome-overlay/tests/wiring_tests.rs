@@ -8,8 +8,8 @@ use baboon_rs_stub::testpkg::pkg0::i2::I2;
 use baboon_rs_stub::testpkg::pkg0::i2::noerrcall::input::In as I2_noErrCall_in;
 use baboon_rs_stub::testpkg::pkg0::i2::noerrcall::out::Out as I2_noErrCall_out;
 use baboon_rs_stub::testpkg::pkg0::t7_empty::T7_Empty;
-use baboon_rs_stub::testpkg::pkg0::i1_wiring::{invoke_json_I1, invoke_ueba_I1};
-use baboon_rs_stub::testpkg::pkg0::i2_wiring::{invoke_json_I2, invoke_ueba_I2};
+use baboon_rs_stub::testpkg::pkg0::i1_wiring::{invoke_json_i1, invoke_ueba_i1};
+use baboon_rs_stub::testpkg::pkg0::i2_wiring::{invoke_json_i2, invoke_ueba_i2};
 
 struct MockI1;
 impl I1 for MockI1 {
@@ -44,7 +44,7 @@ fn i1_json_test_call_success() {
     let input_json = serde_json::to_string(&I1_testCall_in {}).unwrap();
     let rt = OutcomeServiceRt;
     let ctx = BaboonCodecContext::Default;
-    let result = invoke_json_I1(&method, &input_json, &MockI1, &rt, &ctx);
+    let result = invoke_json_i1(&method, &input_json, &MockI1, &rt, &ctx);
     match result {
         Outcome::Success(json_str) => {
             let decoded: I1_testCall_out = serde_json::from_str(&json_str).unwrap();
@@ -60,7 +60,7 @@ fn i1_json_test_call2_success() {
     let input_json = serde_json::to_string(&T7_Empty {}).unwrap();
     let rt = OutcomeServiceRt;
     let ctx = BaboonCodecContext::Default;
-    let result = invoke_json_I1(&method, &input_json, &MockI1, &rt, &ctx);
+    let result = invoke_json_i1(&method, &input_json, &MockI1, &rt, &ctx);
     assert!(matches!(result, Outcome::Success(_)));
 }
 
@@ -70,7 +70,7 @@ fn i1_json_domain_error() {
     let input_json = serde_json::to_string(&I1_testCall_in {}).unwrap();
     let rt = OutcomeServiceRt;
     let ctx = BaboonCodecContext::Default;
-    let result = invoke_json_I1(&method, &input_json, &FailingI1, &rt, &ctx);
+    let result = invoke_json_i1(&method, &input_json, &FailingI1, &rt, &ctx);
     match result {
         Outcome::Failure(err) => {
             assert!(err.downcast_ref::<BaboonWiringError>().is_some(), "Expected BaboonWiringError::CallFailed");
@@ -84,7 +84,7 @@ fn i1_json_unknown_method() {
     let method = BaboonMethodId { service_name: "I1".to_string(), method_name: "nonexistent".to_string() };
     let rt = OutcomeServiceRt;
     let ctx = BaboonCodecContext::Default;
-    let result = invoke_json_I1(&method, "{}", &MockI1, &rt, &ctx);
+    let result = invoke_json_i1(&method, "{}", &MockI1, &rt, &ctx);
     match result {
         Outcome::Failure(err) => {
             assert!(err.downcast_ref::<BaboonWiringError>().is_some(), "Expected BaboonWiringError");
@@ -98,7 +98,7 @@ fn i1_json_bad_input() {
     let method = BaboonMethodId { service_name: "I1".to_string(), method_name: "testCall".to_string() };
     let rt = OutcomeServiceRt;
     let ctx = BaboonCodecContext::Default;
-    let result = invoke_json_I1(&method, "not valid json!!", &MockI1, &rt, &ctx);
+    let result = invoke_json_i1(&method, "not valid json!!", &MockI1, &rt, &ctx);
     match result {
         Outcome::Failure(err) => {
             assert!(err.downcast_ref::<BaboonWiringError>().is_some(), "Expected BaboonWiringError::DecoderFailed");
@@ -114,7 +114,7 @@ fn i1_ueba_test_call_success() {
     let rt = OutcomeServiceRt;
     let mut writer = Vec::new();
     BaboonBinEncode::encode_ueba(&I1_testCall_in {}, &ctx, &mut writer).unwrap();
-    let result = invoke_ueba_I1(&method, &writer, &MockI1, &rt, &ctx);
+    let result = invoke_ueba_i1(&method, &writer, &MockI1, &rt, &ctx);
     match result {
         Outcome::Success(bytes) => {
             let mut cursor = std::io::Cursor::new(bytes);
@@ -130,7 +130,7 @@ fn i1_ueba_unknown_method() {
     let method = BaboonMethodId { service_name: "I1".to_string(), method_name: "nonexistent".to_string() };
     let rt = OutcomeServiceRt;
     let ctx = BaboonCodecContext::Default;
-    let result = invoke_ueba_I1(&method, &[], &MockI1, &rt, &ctx);
+    let result = invoke_ueba_i1(&method, &[], &MockI1, &rt, &ctx);
     assert!(matches!(result, Outcome::Failure(_)));
 }
 
@@ -140,7 +140,7 @@ fn i2_json_no_err_call_success() {
     let input_json = serde_json::to_string(&I2_noErrCall_in { value: 123 }).unwrap();
     let rt = OutcomeServiceRt;
     let ctx = BaboonCodecContext::Default;
-    let result = invoke_json_I2(&method, &input_json, &MockI2, &rt, &ctx);
+    let result = invoke_json_i2(&method, &input_json, &MockI2, &rt, &ctx);
     match result {
         Outcome::Success(json_str) => {
             let decoded: I2_noErrCall_out = serde_json::from_str(&json_str).unwrap();
@@ -157,7 +157,7 @@ fn i2_ueba_no_err_call_success() {
     let rt = OutcomeServiceRt;
     let mut writer = Vec::new();
     BaboonBinEncode::encode_ueba(&I2_noErrCall_in { value: 456 }, &ctx, &mut writer).unwrap();
-    let result = invoke_ueba_I2(&method, &writer, &MockI2, &rt, &ctx);
+    let result = invoke_ueba_i2(&method, &writer, &MockI2, &rt, &ctx);
     match result {
         Outcome::Success(bytes) => {
             let mut cursor = std::io::Cursor::new(bytes);

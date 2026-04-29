@@ -1,6 +1,6 @@
 use crate::baboon_runtime::BaboonCodecContext;
 use crate::baboon_service_wiring::BaboonMethodId;
-use crate::petstore::api::pet_store_wiring::invoke_json_PetStore;
+use crate::petstore::api::pet_store_wiring::invoke_json_pet_store;
 use crate::petstore_impl::PetStoreImpl;
 
 pub fn start(host: &str, port: u16) {
@@ -52,7 +52,7 @@ pub fn start(host: &str, port: u16) {
                 };
 
                 let result = match service_name.as_str() {
-                    "PetStore" => invoke_json_PetStore(&method_id, &body, &impl_, &ctx),
+                    "PetStore" => invoke_json_pet_store(&method_id, &body, &impl_, &ctx),
                     _ => {
                         let response = tiny_http::Response::from_string(format!("Unknown service: {}", service_name))
                             .with_status_code(404)
