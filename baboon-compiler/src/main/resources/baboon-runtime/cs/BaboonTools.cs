@@ -160,7 +160,11 @@ namespace Baboon.Runtime.Shared
 
         public static JToken WriteMap<TKey, TValue>(IEnumerable<KeyValuePair<TKey, TValue>> value, Func<KeyValuePair<TKey, TValue>, JProperty> enc)
         {
-            return new JObject(value.Select(enc));
+            // Sort by typed key's ToString form before emit. Matches the determinism
+            // contract Scala's ScJsonCodecGenerator now provides (sortBy(_._1.toString)).
+            // BAB-C04: insulates against user-supplied collections (HashMap, etc.) whose
+            // iteration order depends on hash codes / runtime state.
+            return new JObject(value.OrderBy(e => e.Key?.ToString() ?? string.Empty, StringComparer.Ordinal).Select(enc));
         }
     }
     

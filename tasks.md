@@ -38,7 +38,7 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 Detail per defect ledger entries; small mechanical fixes batched together. Serialised execution (no parallel agents on shared working tree per M21 lesson).
 
 - [ ] **PR-49** — BAB-S0x: Swift codec hash-ordered Dictionary. Fix: enforce `.sortedKeys` at the JSON-write boundary in runtime helpers (canonical fix per audit), OR sort at codec emit time. Investigation deciding which approach.
-- [ ] **PR-50** — BAB-C04: C# `BaboonTools.WriteMap` runtime helper sorts iteration by stringified key.
+- [x] **PR-50** — BAB-C04: `BaboonTools.WriteMap` runtime helper sorts by `e.Key?.ToString()` (ordinal) before iterating. Cross-language interop unaffected (JSON readers tolerate any key order).
 - [ ] **PR-51** — BAB-J03: Java JSON codec emit sorts `entrySet()` by stringified key.
 - [x] **PR-52** — PR-45-D01: `toSnakeCase` digit edge case (`Foo2Bar` → `foo2_bar`). Extended first guard `prev.isLower` → `prev.isLower || prev.isDigit`. New `RsToSnakeCaseTest` (6/6 PASS).
 - [x] **PR-53** — PR-47-D01: new `ServiceFrontEndTest` + two negative fixtures (ref-form → `ServiceMultipleInputs`; inline-form → `NonUniqueScope`). Discovered that scope-build catches inline duplicates one pass earlier than `convertService`; ref form is the canonical path for the defensive check. Both rejection paths locked.

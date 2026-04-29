@@ -1715,11 +1715,11 @@ First match wins. Plus an `anchor`/`fixtureRoot` split: `assertCrossLanguageFixt
 **Suggested fix:** either (a) change `BaboonCodecsFacade.swift` / runtime entry points to enforce `.sortedKeys` globally on the JSON-write boundary, or (b) sort at codec emit time before constructing the Dictionary. (b) is moot if `JSONSerialization` re-hashes (it does); (a) is the canonical fix. Out of PR-48 scope; defect text named Scala only.
 
 ### [BAB-C04] C# JSON codec map emit relies on user-supplied collection iteration order
-**Status:** open
+**Status:** resolved (PR-50, 2026-04-29)
 **Severity:** minor
-**Location:** `baboon-compiler/src/main/resources/baboon-runtime/cs/BaboonTools.cs:161-164` (`WriteMap` helper); generators in `CSJsonCodecGenerator.scala`
-**Description:** Generated C# JSON codec iterates `Dictionary` / `IReadOnlyDictionary` in user-supplied order via `value.Select(enc)` in `BaboonTools.WriteMap`. Determinism depends on the user choosing an insertion-ordered collection. Same root cause as BAB-J01.
-**Suggested fix:** sort at runtime helper level (`WriteMap` enumerates `value.OrderBy(kv => kv.Key.ToString())` or equivalent), keeping codec emit untouched. Out of PR-48 scope.
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/cs/BaboonTools.cs:165` (`WriteMap` helper)
+**Description:** Generated C# JSON codec iterated `Dictionary` / `IReadOnlyDictionary` in user-supplied order via `value.Select(enc)` in `BaboonTools.WriteMap`. Determinism depended on the user choosing an insertion-ordered collection.
+**Fix:** `WriteMap` now sorts by `e.Key?.ToString() ?? string.Empty` with `StringComparer.Ordinal` before iterating. Mirrors the Scala `sortBy(_._1.toString)` contract from PR-48. Verified `mdl :test-cs-regular`, `:test-cs-wiring-either`, `:test-gen-compat-cs` PASS — JSON wire-format consumers tolerate any key order so cross-language interop unchanged.
 
 ### [BAB-J03] Java JSON codec map emit relies on user-supplied collection iteration order
 **Status:** open
