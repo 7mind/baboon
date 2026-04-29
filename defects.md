@@ -1204,7 +1204,7 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 ## PR-27 — Scala backend upstream-defect fixes (BAB-S01, BAB-S02)
 
 ### [PR-27-D01] Pre-existing CopyEnumByName conversion broken for non-Pascal-case renamed enum members
-**Status:** open (pre-existing, deferred — out of PR-27 scope)
+**Status:** resolved (PR-34, M15, `1f1c500`, 2026-04-28; ledger hygiene flip 2026-04-29)
 **Severity:** minor
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScConversionTranslator.scala:187-210` with `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonRules.scala:45-55`
 **Description:** `mappingEntries` are emitted as `"<rawPrev>" -> "<rawNew>"` keyed by raw user-typed names (lowercase / snake_case in the affected case). Generated code does `Map(...).getOrElse(from.toString, from.toString)` then `tout.parse(...)`. But `from.toString` returns the *capitalized* case-object name (e.g., `Cafe`), so the mapping is never matched. Falls through to `parse("Cafe")` which silently returns wrong result. Pre-dates PR-27; PR-27's S02 fix only realigned UEBA codec arms with the already-capitalized case-objects.
@@ -1272,7 +1272,7 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Fix:** Accepted. Per CLAUDE.md §5, leave untouched unless a follow-up PR consolidates naming.
 
 ### [PR-28-D04] Pre-existing self-cast `($cName as $cName)` survives `-Werror` in kt-stub
-**Status:** open (pre-existing, deferred — out of PR-28 scope)
+**Status:** resolved (PR-33, M15, `e50b596`, 2026-04-28; ledger hygiene flip 2026-04-29)
 **Severity:** minor
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/kotlin/KtUEBACodecGenerator.scala:196` emits `($cName as $cName).decodeBranch(ctx, wire)`. Visible in `target/test-wrapped/kt-stub/.../1.0.0/T4_A1.kt:296,298,300` and `T5_A1.kt:142`.
 **Description:** Literal self-cast (same FQN both sides). Should fire Kotlin's `USELESS_CAST` warning; under `kt-stub`'s `-Werror` policy this should fail compilation, yet `:test-kotlin-wrapped` reports PASS. Either Kotlin tolerates this shape on object singletons, or the warnings-as-errors policy is not actually exercised here. Pre-existing (blame `cc1d34c` 2026-02-16).
@@ -1318,7 +1318,7 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Note:** TS still has internal divergence (TsUEBACodecGenerator capitalizes; TsDefnTranslator raw). Not exercised post-fixture-removal. Latent — would re-emerge if a non-Pascal-case enum is added back to a TS-generating model. Marked PR-29-D03 below.
 
 ### [PR-29-D02] Cross-language wire-format spec for non-Pascal-case enum members is undefined
-**Status:** open (deferred — fundamental design issue, out of PR-29 scope)
+**Status:** resolved (PR-35, M15, `6ea7217`, 2026-04-28; spec doc + 9-backend implementation. Ledger hygiene flip 2026-04-29)
 **Severity:** moderate
 **Location:** all per-language JSON codecs that serialize enum values
 **Description:** No shared specification governs how enum case names map to JSON wire strings when the source identifier is not already Pascal-case. Languages with case-sensitive identifiers and a Pascal-case convention (Scala, Kotlin, C#, Java, Python, Rust) emit the *capitalized* form via `value.toString()`/`.name`; languages that allow raw lowercase identifiers (TypeScript, Dart, Swift) emit the *raw* form. Cross-language interop fails for any model whose enum members aren't already Pascal-case.
@@ -1326,7 +1326,7 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Suggested fix:** Define a wire-format spec (probably "always emit raw source name as the JSON string") and align all backends. Affects every language's JSON codec template plus possibly the C#/Java decoder's `TryParse(case-insensitive)` heuristic. Big surgery — needs a design doc.
 
 ### [PR-29-D03] Latent TS-internal divergence: TsUEBACodecGenerator capitalizes enum case-strings; TsDefnTranslator does not
-**Status:** open (deferred — no longer exercised after T_NsPascal fixture removal)
+**Status:** resolved (subsumed by PR-35, M15, `6ea7217`, 2026-04-28; PR-35 unified TS identifier+value emission to Pascal canonical. Ledger hygiene flip 2026-04-29)
 **Severity:** minor (latent until a non-Pascal-case enum is added)
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsUEBACodecGenerator.scala:209,215` (`m.name.capitalize` when `lowercaseValues=false`); `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsDefnTranslator.scala:316` (raw `name`)
 **Description:** TS UEBA codec switches on `value` (TS enum string value, e.g. `"cafe"`) but case arms emit `"Cafe"`. Switch never matches; default arm "Unknown enum variant" fires. Pascal-case input agrees coincidentally.
@@ -1347,7 +1347,7 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Fix:** Updated `StubBinCodec.encode` parameter order to `(_ctx, _value, writer)`.
 
 ### [PR-29-D06] Pre-existing Dart cross-language JSON read-from-Swift failures (T6_D1, T6_D2)
-**Status:** open (pre-existing, deferred — out of PR-29 scope)
+**Status:** resolved (PR-32 Dart u64 wire-format fix, M15, `ceb5963`; PR-40 sentinel resolution + bootstrap loud-fail, M16, `c41a278`. Ledger hygiene flip 2026-04-29)
 **Severity:** minor (only Dart affected; UEBA cross-language path still works)
 **Location:** `test/conv-test-dt/test/testpkg/pkg0/t6_d1_test.dart`, `t6_d2_test.dart`; ultimately `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/swift/SwJsonCodecGenerator.scala`
 **Description:** Reproduced on `main` HEAD with `git stash` of all PR-29 changes — Dart's `Cross-language JSON reading from swift` for T6_D1 and T6_D2 fails. T6_D1/D2 are DTOs (no enum involvement). Swift's JSON output diverges from Dart's expectation in some way; pre-dates PR-27/PR-28/PR-29. Likely related to Swift's W01/W03 `try try` over-emission or W02 force-cast — but those are warnings, not wire-format issues. Could be optional-field NSNull handling.
@@ -1401,7 +1401,7 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Suggested fix:** When `decodeKey` learns to handle throwing types, change aggregation to `(mapExpr, keyThr || valThr)`.
 
 ### [PR-30-D07] PR-29-D06 status clarification: pre-existing dart-from-swift JSON failure is a fragile-skip, not "no fix needed"
-**Status:** open (deferred — fragile skip)
+**Status:** resolved (PR-40 bootstrap loud-fail + sentinel resolution, M16, `c41a278`; PR-43/PR-44 generalized + relaxed sentinel matcher across all 6 helpers. Ledger hygiene flip 2026-04-29)
 **Severity:** minor
 **Location:** `target/test-regular/dt-stub/test/testpkg/pkg0/t6_d{1,2}_test.dart` (regenerated test); guard checks `target/test-regular/target/swift/json-default/...` which doesn't exist
 **Description:** Reviewer flagged that PR-29-D06 dismissal was correct in effect (test is silently skipped because the JSON fixture file isn't present in the regenerated tree) but wrong in reasoning. The original failure mode could resurface immediately if the swift fixture pipeline ever populates `target/test-regular/target/swift/json-default/`.
@@ -1426,7 +1426,7 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Fix:** Split i64 from i8/i16/i32 in the field encoder; i64 now emits `$ref.toString()`. Dart `int` is 64-bit signed, so `.toString()` produces the correct decimal. Decoder's `int.parse($ref as String)` branch is now the active path; `($ref as num).toInt()` remains as permissive fallback.
 
 ### [PR-32-D03] BaboonValidator inverted predicate — `MissingEvoDiff` fires when missingDiffs is EMPTY
-**Status:** open (out of PR-32 scope; surfaced by PR-34 test fixture work)
+**Status:** resolved (PR-36, M17, `1145df1`, 2026-04-28; predicate flipped + renamed val to `orphanDiffs` + recomputed as `diffIds.diff(nextIds).diff(prevIds)` to handle rename-keyed-by-oldId. Ledger hygiene flip 2026-04-29)
 **Severity:** major
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala:607`
 **Description:** `F.when(missingDiffs.isEmpty)(F.fail(... MissingEvoDiff ...))` — fails when there are NO missing diffs. PR-34's test had to add a placeholder `Stable` DTO to keep `missingDiffs` non-empty, masking this validator bug per CLAUDE.md "no workarounds" principle.
@@ -1508,14 +1508,14 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Fix:** Added paragraph: "C# decoders previously accepted case-insensitive matches and the JVM runtime codec previously normalised inputs to lowercase. Both now require exact Pascal-case matches. Clients sending `"cafe"`, `"CAFE"`, `"CaFe"` etc. will be rejected post-upgrade."
 
 ### [PR-35-D06] T_NsPascal regression fixture is per-language, NOT in cross-language compat fixtures (any-showcase / all-basic-types)
-**Status:** open (deferred — significant scope to add)
+**Status:** resolved (PR-37, M16, `d0bc66e`, 2026-04-28; added `enum WireEnum { cafe; bar_pub }` and `vWireEnum: WireEnum` field to `convtest.testpkg/AllBasicTypes`; extended all 10 hand-written `compat_main.*` files. Ledger hygiene flip 2026-04-29)
 **Severity:** major (coverage gap)
 **Location:** `baboon-compiler/src/test/resources/baboon/pkg0/pkg03.baboon` (T_NsPascal lives in pkg0); `target/compat-test/{lang}-{json,ueba}/` (showcase fixtures contain no enum members)
 **Description:** PR-35 reinstated `T_NsPascal { cafe; bar_pub }` in pkg0/pkg03.baboon (per-language stub) but NOT in `convtest.testpkg` (cross-language compat fixture). The compat-test fixtures (`any-showcase.json`, `all-basic-types.json`) contain ZERO enum members. So per-language regression is locked, but cross-language byte-identity for non-Pascal-case enums has no automated test. If a single backend silently regresses to lowercase enum wire form, per-language tests pass (round-trip against itself) but wire interop is broken.
 **Suggested fix:** Add an enum-with-non-Pascal-source-name field to `convtest.testpkg` model (so it appears in any-showcase compat fixtures and is checked across all 9 languages byte-by-byte), or extend the compat-test runner to include `T_NsPascalHolder` explicitly. Significant scope — touches every language's `compat_main.*` file.
 
 ### [PR-35-D07] No unit test for the JVM runtime codec's enum encode/decode tightening
-**Status:** open (deferred — minor)
+**Status:** resolved (PR-38, M16, `0bd44d8`, 2026-04-28; new `BaboonRuntimeCodecEnumTest` with 3 focused tests including direct synthetic-bytes decode. Ledger hygiene flip 2026-04-29)
 **Severity:** minor
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonRuntimeCodec.scala:189-209`
 **Description:** Runtime codec was tightened (lowercase-trim removed, exact-match decode) but no focused unit test asserts: (a) encoder emits Pascal for non-Pascal source, (b) decoder rejects lowercase wire input with `UnknownEnumValue`, (c) decoder accepts Pascal. Current verification is end-to-end via `sbt baboonJVM/test`.
