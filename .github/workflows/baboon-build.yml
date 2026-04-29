@@ -50,22 +50,12 @@ jobs:
           fi
       - name: Check deps and build
         if: startsWith(github.ref, 'refs/tags/')
-        run: nix develop --command mdl --github-actions :build :test
+        run: nix develop --command bash scripts/check-ci.sh build
       - name: Refresh deps and build
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        run: nix develop --command mdl --github-actions :flake-refresh :build :test
+        run: nix develop --command bash -c "mdl --github-actions :flake-refresh && scripts/check-ci.sh build"
       - name: Validate binary portability (outside Nix)
-        run: |
-          chmod +x baboon-compiler/.jvm/target/graalvm-native-image/baboon
-          echo "=== file ==="
-          file baboon-compiler/.jvm/target/graalvm-native-image/baboon
-          echo "=== ldd ==="
-          ldd baboon-compiler/.jvm/target/graalvm-native-image/baboon 2>&1 || true
-          echo "=== smoke test ==="
-          baboon-compiler/.jvm/target/graalvm-native-image/baboon \
-            --model-dir ./test/conv-test \
-            :cs --output /tmp/baboon-validate-cs \
-            :scala --output /tmp/baboon-validate-sc
+        run: scripts/check-ci.sh smoke
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -114,23 +104,11 @@ jobs:
       - name: Install mudyla
         run: pip install git+https://github.com/7mind/mudyla.git
       - name: Build (macOS)
-        run: mdl --github-actions --without-nix :build :test
+        env:
+          BABOON_CI_WITHOUT_NIX: "true"
+        run: bash scripts/check-ci.sh build
       - name: Validate binary portability
-        run: |
-          echo "=== file ==="
-          file baboon-compiler/.jvm/target/graalvm-native-image/baboon
-          echo "=== otool -L ==="
-          otool -L baboon-compiler/.jvm/target/graalvm-native-image/baboon
-          echo "=== check no nix store references ==="
-          if otool -L baboon-compiler/.jvm/target/graalvm-native-image/baboon | grep -q /nix/store; then
-            echo "ERROR: binary has Nix store dependencies"
-            exit 1
-          fi
-          echo "=== smoke test ==="
-          baboon-compiler/.jvm/target/graalvm-native-image/baboon \
-            --model-dir ./test/conv-test \
-            :cs --output /tmp/baboon-validate-cs \
-            :scala --output /tmp/baboon-validate-sc
+        run: scripts/check-ci.sh smoke
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}
@@ -148,7 +126,7 @@ jobs:
       - name: Init submodules
         run: git submodule update --init --recursive
       - name: Test editor grammars
-        run: nix develop --command bash test/editors/test-tree-sitter.sh .
+        run: nix develop --command bash scripts/check-ci.sh editors
 
   acceptance-tests:
     name: acceptance-tests
@@ -277,7 +255,9 @@ jobs:
         run: pip install git+https://github.com/7mind/mudyla.git
       - name: Build (windows)
         shell: bash
-        run: mdl --github-actions --without-nix :build :test
+        env:
+          BABOON_CI_WITHOUT_NIX: "true"
+        run: bash scripts/check-ci.sh build
       - uses: actions/upload-artifact@v4
         with:
           name: baboon-${{ matrix.target }}

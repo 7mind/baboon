@@ -10,6 +10,35 @@ Baboon is a Domain Modeling Language (DML) compiler with schema evolution suppor
 
 This project uses [mudyla](https://github.com/7mind/mudyla) for build orchestration.
 
+### Pre-commit / pre-push verification — `scripts/check-ci.sh`
+
+**Run this before every commit and push. It is the single source of truth for the CI flow** — both `.github/workflows/baboon-build.yml` and humans invoke the same script, so what passes locally is what CI runs.
+
+```bash
+# Default: build + cross-compile (JVM + JS) + full test matrix.
+# Use this before every commit.
+bash scripts/check-ci.sh           # alias for: bash scripts/check-ci.sh build
+
+# Before pushing or after a non-trivial refactor:
+bash scripts/check-ci.sh all       # build + smoke + editors + acceptance
+
+# Individual modes (see scripts/check-ci.sh header for details):
+bash scripts/check-ci.sh smoke     # native-image binary portability + round-trip
+bash scripts/check-ci.sh editors   # tree-sitter editor grammar tests
+bash scripts/check-ci.sh acceptance# acceptance + service-acceptance harnesses
+```
+
+**Why this matters — historical failure modes the script catches:**
+
+- `sbt baboonJVM/compile` is **NOT** a CI-equivalent check. It builds only the JVM project. CI runs `sbt +compile` (cross-build for JVM + Scala.js), which has stricter `-Wconf` settings that promote inexhaustive-match warnings to errors. PR-47 (M21) shipped with green local `sbt baboonJVM/compile` but failed CI on `BaboonJS.scala` (commit `2de517b` fixed it). `scripts/check-ci.sh build` invokes `mdl :build :test` which triggers `sbt +compile` — the same path CI uses.
+- When adding a new `TyperIssue` case class, **three** exhaustive-match sites must be updated: `lsp/features/DiagnosticsProvider.scala`, `lsp/state/WorkspaceState.scala`, and `.js/src/main/scala/io/septimalmind/baboon/BaboonJS.scala`. The script's `+compile` cross-build catches missed JS-side updates.
+
+**CI vs local:**
+
+CI wraps invocations in nix (`nix develop --command bash scripts/check-ci.sh build`) and macOS/Windows set `BABOON_CI_WITHOUT_NIX=true` env var. Locally, either enter the devshell first (`nix develop`) or rely on system tools. `GITHUB_ACTIONS=true` triggers `mdl --github-actions` (CI-grouped log output) automatically — humans don't set it.
+
+**Local Kotlin OOM workaround:** `mdl :build :test` runs language test actions in parallel by default. On laptops with <16 GB RAM the Kotlin compiler daemon OOMs under the parallel matrix (documented in `docs/logs/.../m16-closeout-log.md`). Set `BABOON_CI_SEQ=true bash scripts/check-ci.sh build` to force `mdl --seq` (serial execution). Slower but completes on memory-constrained machines. CI uses default parallelism — this env var should NOT be set in CI.
+
 ### Build Commands
 ```bash
 # Format code
