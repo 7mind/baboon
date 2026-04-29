@@ -1,0 +1,36 @@
+model identifier.ok
+
+version "1.0.0"
+
+// Simple flat identifier — exercises i32 + str + escaping.
+root id PointId {
+  x: i32
+  label: str
+}
+
+// Mixed primitives — exercises bit + uid + bytes + tsu + tso.
+root id Mixed {
+  active: bit
+  id: uid
+  payload: bytes
+  created: tsu
+  scheduled: tso
+}
+
+// Unsigned integers — exercises u08/u16/u32/u64.
+root id UInts {
+  a: u08
+  b: u16
+  c: u32
+  d: u64
+}
+
+// Nested identifier — exercises {…} wrapper and recursive parseRepr.
+root id Outer {
+  ref: PointId
+  tag: str
+}
+
+// Empty-fields identifier.
+root id Marker {
+}

@@ -1808,3 +1808,84 @@ Both tests pass. The dual-path coverage clarifies: `ServiceMultipleInputs` is th
 **Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala:157-169
 **Description:** An `id` DTO that violates two rule categories (e.g., one field is a collection AND another is a float) surfaces only the FIRST violation. User fixes, re-runs, sees the next. Annoying but matches the surrounding `checkAnyFields` pattern (same as PR-55-D05).
 **Fix:** Deferred. Same disposition as PR-55-D05 — surgical-changes discipline says don't refactor surrounding-style patterns in scope of a feature PR. Aggregating across validator chains is a separate hygiene PR.
+
+---
+
+## PR-56
+
+## [PR-56-D01] `IdentifierRepr` mirror drift — runtime-shipped resource has `Cursor.advance()`, compile-side mirror does not
+**Status:** resolved
+**Severity:** major
+**Location:** baboon-compiler/src/main/resources/baboon-runtime/scala/BaboonRuntimeShared.scala:141 (defines `def advance(): Char`); baboon-compiler/src/main/scala/baboon/runtime/shared/BaboonRuntimeShared.scala:1088 (no advance method)
+**Description:** Executor claimed the two copies of `IdentifierRepr` are kept in sync. They are not. The runtime-shipped Cursor exposes `advance(): Char`; the compile-side mirror does not. Other smaller drifts (scaladoc, ordering of `parseBytesHex` checks). The mirror is the version the property test compiles against; the resource is what user code runs against. A future change using `cursor.advance()` from emitted code would compile against user-classpath but not against the compile-side mirror.
+**Fix:** Synced both `IdentifierRepr` blocks to byte-identical content (resource canonical, mirror updated to match). Key additions to mirror: `Cursor.advance(): Char`, full scaladoc on every public method. Verified by `diff <(awk ...) <(awk ...)` returning zero output.
+
+## [PR-56-D02] Spec §3 timestamp implementation note is misleading — claims match with `BaboonTimeFormats` JSON helper which uses different format
+**Status:** resolved
+**Severity:** major
+**Location:** docs/spec/identifier-repr.md:128-131
+**Description:** Spec §3 says timestamp formatting "matches the existing JSON wire format helper `BaboonTimeFormats.tsuFormat` / `.tsoFormat` (`yyyy-MM-dd'T'HH:mm:ss.SSSXXX`)". This is misleading. `BaboonTimeFormats` uses `XXX` which renders UTC as `Z` shorthand. The repr formats use `'Z'` literal for tsu (24 chars) and lowercase `xxx` for tso (29 chars, never `Z`). A backend implementer reading §3 alone might wire the existing JSON helper for repr emission. They would get tsu correct (XXX→Z for UTC matches `'Z'`) but **tso silently round-trip-breaks**: writer emits `Z`, parser expects 29-char `±HH:MM`, parse fails.
+**Fix:** Rewrote spec §3 timestamp note to call out the format DIFFERENCE between repr and `BaboonTimeFormats` (which uses XXX collapsing UTC to Z). Added explicit "Do NOT reuse `BaboonTimeFormats` for repr" warning.
+
+## [PR-56-D03] No automated test exercises the actual emitted Scala code; tests run against hand-coded mirrors
+**Status:** resolved
+**Severity:** major
+**Location:** baboon-compiler/.jvm/src/test/scala/baboon/runtime/shared/IdentifierReprPropertyTest.scala (uses hand-coded mirrors); baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/IdentifierFixtureLoadTest.scala (loads fixture but stops at validator)
+**Description:** The property test exercises 2118 round-trips against a hand-coded mirror of what the emitter is supposed to produce. The fixture-load test exercises parser+typer+validator only. **No test asserts that `ScDefnTranslator.renderIdentifierToString` / `renderIdentifierCodecObject` produce code matching the mirror.** A divergence in the emitter (string-quoting, narrowing logic, codec name) would NOT be caught in PR-56. Spec §8 calls Scala "the reference implementation" and PR-57's other 8 backends are slated to follow it, so an emitter defect not caught here cascades to all 8.
+**Fix:** Added new `IdentifierScalaEmissionTest.scala` running the in-memory ScTarget translator on `identifier-ok/identifiers.baboon` fixture and string-asserting against canonical patterns: `"PointId:1.0.0#"` header, `escapeStr` helper call, `object PointIdCodec` with `def parseRepr`, `readFixed(24)/readFixed(29)` (D10 spec § 5.4), `i32 out of range` and `u08 out of range` (D04 fix), `uid not in canonical lowercase form` (D05 fix). 1 test PASS.
+
+## [PR-56-D04] `signedNarrow` / `unsignedSmallNarrow` parsers silently truncate out-of-range values — violates fail-fast principle
+**Status:** resolved
+**Severity:** minor
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScDefnTranslator.scala:551-560, 671-688
+**Description:** For `id Foo { x: i08 }`, parsing repr `Foo:1.0.0#x:300` succeeds: `Try("300".toLong) = Success(300L)`, then `300L.toByte = 44`. User gets `Foo(44)` silently. Same for u08/u16 via `parseUnsignedLong` then `.toByte`/`.toShort`. i32 has same defect (`"3000000000".toLong = 3000000000L`, `.toInt = -1294967296`). Round-trip property holds for valid inputs but the parser silently coerces malformed inputs rather than failing fast (CLAUDE.md core principle).
+**Fix:** Added `signedRangeCheck` and `unsignedSmallRangeCheck` helpers in `ScDefnTranslator` emitting Long-comparison predicates for i08/i16/i32/u08/u16/u32 BEFORE narrowing. Out-of-range returns `Left(s"<type> out of range for field $fieldName: $raw")`. Verified by D03 emission test asserting the literal error strings appear in emitted Scala.
+
+## [PR-56-D05] Spec mandates lowercase uid hex but parser accepts mixed/uppercase via `UUID.fromString`
+**Status:** resolved
+**Severity:** minor
+**Location:** Spec docs/spec/identifier-repr.md:257 (`[0-9a-f]{8}-...`); Emitter baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScDefnTranslator.scala:574-578 (uses `UUID.fromString(raw)` which accepts mixed case)
+**Description:** `bytes` strict-lowercase enforcement (spec §3, parser `parseBytesHex`) is consistent. `uid` is inconsistent — spec §5.4 mandates lowercase regex but the emitted parser is case-insensitive (Java `UUID.fromString` accepts both). Inconsistent across primitive types.
+**Fix:** Added `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}` regex check before `UUID.fromString` in emitted parser code. Returns `Left(s"uid not in canonical lowercase form for field $fieldName: ...")` on mismatch. Verified by D03 emission test.
+
+## [PR-56-D06] Spec doesn't lock in version grammar for the parser (other backends might write looser parsers)
+**Status:** resolved
+**Severity:** minor
+**Location:** docs/spec/identifier-repr.md:91-96
+**Description:** §2.3 says "rendered exactly as `Version.toString` produces it". No EBNF or regex for the parser side. The runtime `Version.from` accepts only 3-segment `MAJOR.MINOR.PATCH`, but other backends might write looser parsers (e.g., accept `v1.2.3`, `1.2`, `1.2.3+build`). Other implementers should be told the exact grammar.
+**Fix:** Added EBNF block to spec §2.3: `version ::= digits "." digits "." digits`, `digits ::= [0-9]+`. Stated explicitly: "Parsers MUST require exactly three integer segments separated by `.`. No `v` prefix, no `+build` suffix, no shortened (1.0 / 1) forms" with leading-zero clarification.
+
+## [PR-56-D07] `renderFieldValueExpr` UnsignedSmallInt branch is dead code with wrong 32-bit mask for u08/u16 — landmine for future call sites
+**Status:** resolved
+**Severity:** minor
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScDefnTranslator.scala:471-475
+**Description:** For u08/u16 the `UnsignedSmallInt` branch in `renderFieldValueExpr` uses `0xFFFFFFFFL` (32-bit mask). Currently bypassed by special-casing in `renderIdentifierToString:507-512` which calls `renderUnsignedSmallInt(fieldName, b)` with correct 8/16-bit width-aware masks. Dead code today, but a future call site that doesn't special-case will silently emit wrong reprs.
+**Fix:** Replaced the dead `IdentifierFieldKind.UnsignedSmallInt` branch in `renderFieldValueExpr` with `throw new IllegalStateException("UnsignedSmallInt requires width-aware emission via renderUnsignedSmallInt")`. Future call sites that miss the special-case will fail loudly instead of silently emitting wrong reprs.
+
+## [PR-56-D08] `i64.MIN_VALUE` test is vacuous — tests Java stdlib not the helper / emitter
+**Status:** resolved
+**Severity:** minor
+**Location:** baboon-compiler/.jvm/src/test/scala/baboon/runtime/shared/IdentifierReprPropertyTest.scala:392-401
+**Description:** Test body only does `Long.MinValue.toString shouldBe "-9223372036854775808"; java.lang.Long.parseLong(s) shouldBe Long.MinValue` — vacuously asserts Java stdlib behaviour. Per spec §6.7 the canonical example is an `i64` field of an id rendering as `Foo:1.0.0#x:-9223372036854775808`. This test asserts none of that.
+**Fix:** Added `LongIdMirror(x: Long)` case class + `LongIdMirrorCodec` in `IdentifierReprPropertyTest.scala`. Replaced the vacuous Java-stdlib assertion with real round-trip: `LongIdMirror(Long.MinValue).toString shouldBe "LongIdMirror:1.0.0#x:-9223372036854775808"` followed by `parseRepr` round-trip equality. Added parallel `Long.MaxValue` test. Test count 28→30 (i64 MIN now real, MAX is new).
+
+## [PR-56-D09] Operational tribal knowledge — `sbt clean` required after modifying `src/main/resources/baboon-runtime/` resource files
+**Status:** resolved
+**Severity:** minor (process / docs)
+**Location:** CLAUDE.md (missing entry)
+**Description:** Executor's report mentions `PortableResource.embedSources` macro caches resource contents per build; `sbt incremental compile` doesn't pick up resource changes. Required `sbt clean baboonJVM/compile` after editing `BaboonRuntimeShared.scala`. Not in CLAUDE.md — next maintainer modifying a runtime resource will lose hours debugging stale-cache symptoms.
+**Fix:** Added a one-liner under "Pre-commit verification" → "Flags & environment" in CLAUDE.md: "**Resource files:** After modifying any file under `baboon-compiler/src/main/resources/baboon-runtime/`, run `sbt clean` before `sbt compile`. The `PortableResource.embedSources` macro caches resource contents per build."
+
+## [PR-56-D10] Spec §5.4 conflates "state machine" with "fixed-width" parsing for tsu/tso — wording unclear for backend implementers
+**Status:** resolved
+**Severity:** nit
+**Location:** docs/spec/identifier-repr.md:259-266
+**Description:** §5.4 states "these are NOT structural metachars while the parser is in the `tsu`-consume state. The fixed length is unambiguous because spec §3 mandates 3-digit milliseconds + UTC `Z` suffix." Reads correctly but conflates two techniques: spec is fixed-width, prose calls it "state machine". Future implementers might pick the wrong technique.
+**Fix:** Added bold sentence after the tso bullet in spec §5.4: "Implementations MUST use exact 24-char (`tsu`) / 29-char (`tso`) consumption, NOT metachar-delimited consumption." Locks down the consumption mechanism for future backend implementers.
+
+## [PR-56-D11] `92.toChar` workaround not strictly required for IdentifierRepr code — confusing comment
+**Status:** resolved
+**Severity:** nit
+**Location:** baboon-compiler/src/main/resources/baboon-runtime/scala/BaboonRuntimeShared.scala:39-45
+**Description:** The note about backslash-as-numeric-char is genuinely useful but the resource preprocessor in `ScBaboonTranslator.scala:256` only does `\.\\\\.` rewriting. The `92.toChar` workaround is not actually required for the identifier-repr code (no `\.` regex appears in `IdentifierRepr` source). The comment confuses future maintainers — they'd think the constraint is broader than it is.
+**Fix:** Simplified the `92.toChar` workaround comment in both BaboonRuntimeShared.scala files. Defensive note now says the workaround avoids interaction with the resource preprocessor in `ScBaboonTranslator.scala`; "not strictly required for current code paths but maintains consistency."
