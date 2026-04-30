@@ -149,9 +149,9 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
           outcome <- runPipeline(loader, paths)
         } yield {
           val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
-          val adtA   = expectedAdt(family, "my.ok.m20.chained", "A")
+          val adtA   = expectedAdt(family, "my.ok.m20.chained", "Lvl1")
           val branches = adtA.members.toList.map(_.name.name).toSet
-          // A `+ B`, B `+ C`, C { Foo, Bar } → A absorbs both via topo-ordered expansion.
+          // Lvl1 `+ Lvl2`, Lvl2 `+ Lvl3`, Lvl3 { Foo, Bar } → Lvl1 absorbs both via topo-ordered expansion.
           assert(branches == Set("Foo", "Bar"), s"expected {Foo, Bar} via chained include, got $branches")
         }
     }
@@ -177,9 +177,9 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
           outcome <- runPipeline(loader, paths)
         } yield {
           val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
-          val adt    = expectedAdt(family, "my.ok.m20.intersect", "X")
+          val adt    = expectedAdt(family, "my.ok.m20.intersect", "IntX")
           val branches = adt.members.toList.map(_.name.name).toSet
-          // X = (A ∪ ∅) ∩ B branch-names. A = {Foo, Bar, Baz}, B = {Foo, Bar, Other}; ∩ = {Foo, Bar}.
+          // IntX = (IntA ∪ ∅) ∩ IntB branch-names. IntA = {Foo, Bar, Baz}, IntB = {Foo, Bar, Other}; ∩ = {Foo, Bar}.
           assert(branches == Set("Foo", "Bar"), s"expected {Foo, Bar} from intersection, got $branches")
         }
     }

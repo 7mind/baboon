@@ -2,15 +2,15 @@ model my.ok.m20.chained
 
 version "1.0.0"
 
-adt C {
+adt Lvl3 {
    data Foo { x: i32 }
    data Bar { y: str }
 }
 
-adt B {
-   + C
+adt Lvl2 {
+   + Lvl3
 }
 
-root adt A {
-   + B
+root adt Lvl1 {
+   + Lvl2
 }

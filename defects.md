@@ -2206,3 +2206,42 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/AdtInheritanceExpander.scala (re-emit logic) + baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonTyper.scala:125-225 (`computeRenames`)
 **Description:** Re-emit copies source `RawDto` verbatim (including `derived` set, which may contain `was[OriginalName]` entries pointing at the SOURCE ADT's namespace). After re-emit under the receiving ADT, `computeRenames` resolves the `was` ref under the receiving scope, possibly silently misresolving. Plan + algorithm are both silent on whether to strip / preserve / rewrite `was` annotations during re-emit.
 **Fix:** Deferred. Concrete failure mode not yet identified; spec gap. Track for follow-up: either explicitly strip `was` on re-emit (clean), preserve them with semantic clarification, or document as user responsibility.
+
+---
+
+## PR-64
+
+## [PR-64-D01] Rust serde `visit_map` template uses hard-coded generic name `A` — shadows any user-defined ADT named `A`/`B`/`C`/etc.
+**Status:** resolved (deferred — latent codegen defect, not introduced by PR-64; fixture rename in D03 unblocks backends without touching the template)
+**Severity:** minor (any single-uppercase-letter ADT name triggers)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/rust/RsDefnTranslator.scala:1073 — `fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error>`
+**Description:** Hard-coded generic type parameter name `A` shadows any enum named `A` in scope. Reproduces with `cargo build` of `target/test-regular/rs-stub/` after `mdl :test-gen-regular-adt` against PR-63 m20-ok fixtures. `error[E0599]: no associated item named 'Foo' found for type parameter 'A'` at `src/my/ok/m20/chained/a.rs:246:36`. Defect pre-existed PR-63 (no fixture used a single-letter ADT named A/B/C before); PR-63 chained-include.baboon and intersect.baboon first surface the latent issue. Likely identical pattern in other backends — needs grep check across translators.
+**Fix:** Deferred. Real fix is to rename the generic in the Rust serde template (and similar in any backend) to `M`/`MA`/`MapAcc`/etc. Tracked as latent defect for cross-backend hygiene PR. Workaround in D03 (fixture rename) unblocks the symptom for now.
+
+## [PR-64-D02] `deepSchemaRepr` flattens ADT branches in declaration order without sorting — manual→sugared rewrite lands in `deepModified` not `unmodified` (plan §5 strict reading)
+**Status:** resolved (deferred — cosmetic deviation; both `unmodified` and `deepModified` paths produce derivable `CopyAdtBranchByName` so operationally non-breaking)
+**Severity:** nit (test classification only; both paths emit the same conversion)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonTyper.scala:303-304 (deepSchemaRepr); baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/AdtInheritanceExpander.scala:121 (`localMembers ++ includeBranches` ordering)
+**Description:** `deepSchemaRepr.flatMap(...)` does NOT sort ADT branches; v1 manual `[Forbidden, Bar]` declaration order ≠ v2 sugared `[Bar (local), Forbidden (from include)]` post-expansion. Different deep-ids → `deepModified` not `unmodified`. Plan §5 strict reading ("non-evolutionary if branch sets coincide") would require deep-id equality. Operationally harmless: `BaboonRules.sameLocalStruct = unmodified || deepChanged` treats both classifications identically, emitting `CopyAdtBranchByName` (derivable conversion).
+**Fix:** Deferred. Fix options: (a) sort branches in `deepSchemaRepr` (line 304: `.flatMap(...)` → `.sortBy(_.toString).flatMap(...)`); (b) have `AdtInheritanceExpander.expand` preserve source declaration order rather than `localMembers ++ includeBranches`. Either is a separate hygiene PR.
+
+## [PR-64-D03] PR-63 fixtures `chained-include.baboon`/`intersect.baboon` use single-letter ADT names that collide with Rust serde template generic
+**Status:** resolved
+**Severity:** minor (test fixture hygiene; unblocks 5 backend stubs)
+**Location:** baboon-compiler/src/test/resources/baboon/m20-ok/chained-include.baboon (`adt A`/`B`/`C`/`D`); baboon-compiler/src/test/resources/baboon/m20-ok/intersect.baboon (`adt A`/`B`)
+**Description:** Single-letter ADT names trigger the Rust serde-visitor generic shadowing in D01. Renaming to multi-letter names is a cheap workaround that unblocks `:test-rust-regular`/`:test-swift-regular`/`:test-kotlin-regular`/`:test-kotlin-kmp-regular`/`:test-scala-regular` (5 of 9 language stubs) without bandaid-patching the latent codegen defect.
+**Fix:** Renamed `chained-include.baboon` ADTs `A/B/C/D` → `Lvl1/Lvl2/Lvl3/Lvl4` and `intersect.baboon` `A/B/X` → `IntA/IntB/IntX`. Updated `M20AdtInheritanceFrontEndTest.scala` assertions accordingly. Result: 5 of 9 backends now PASS (`:test-cs-regular`, `:test-typescript-regular`, `:test-java-regular`, `:test-dart-regular`, `:test-python-regular`). 4 backends still fail with PRE-EXISTING defects unrelated to D03 (tracked as D04 Rust + D05 Scala/Kotlin/KMP/Swift): Rust hits the same serde-generic-name issue but at PR-61 deserializer position with PR-57a `id D`; Scala/Kotlin/KMP fail on m19 foreign type defects; Swift fails on SPM test target filename collision. All 25 M20AdtInheritance tests still pass after the rename.
+
+## [PR-64-D04] Pre-existing Rust serde-generic-name collision in PR-61 map-key deserializer with PR-57a `id D` — surfaced by D03 verification
+**Status:** resolved (deferred — pre-existing, not a PR-64 regression; same root cause as D01 but at a different generic position)
+**Severity:** minor (Rust stub fails to compile when both `id D` exists AND PR-61 map-key serde plumbing emits)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/rust/RsDefnTranslator.scala (PR-61's serde adapter module — `Deserialize<'de>::deserialize<D>(d: D)` parameter name `D` shadows struct `D` from `id D`)
+**Description:** PR-57a added `id D` (4-level deep chain) to `identifier-ok/identifiers.baboon`. PR-61 added per-K serde adapter modules with `fn deserialize<'de, D, V>(d: D)` parameter name `D`. When both ship, Rust compilation fails: `error[E0599]: no associated item named 'Foo' found for type parameter 'D'` at `identifier/ok/d.rs:81`. Same template-generic-name issue as D01 but at the deserializer position, not visit_map. Pre-existing on `wip/ids-and-adts` HEAD before PR-64.
+**Fix:** Deferred. Real fix is to rename the deserializer generic from `D` to `Dx`/`De`/`Deserer` in the PR-61 template. Track for the same cross-backend hygiene PR as D01.
+
+## [PR-64-D05] Pre-existing m19 foreign-type backend defects (Scala FStr_JsonCodec, Kotlin java.lang.String/kotlin.String, Swift SPM target filename collision)
+**Status:** resolved (deferred — pre-existing on bare HEAD before PR-64; multiple separate root causes spanning M19 wrapper-around-foreign work)
+**Severity:** minor (4 of 9 language stubs fail compilation: Scala, Kotlin/Kotlin-KMP, Swift; Rust failure tracked separately as D04)
+**Location:** Various m19-ok foreign fixtures; per-backend codegen
+**Description:** Multiple distinct pre-existing backend defects exposed by m19 wrapper-around-foreign fixtures: (a) Scala `FStr_JsonCodec` map encoding produces wrong type in `Holder.scala` — pre-existing wrapper-around-foreign codegen issue (PR-60-D05 family); (b) Kotlin (both JVM and KMP) `java.lang.String` vs `kotlin.String` type-mismatch in generated `FStr.kt`/`ItemKey.kt` — foreign type-mapping inconsistency; (c) Swift SPM "multiple producers" filename collision (`holder_test.swift`, `item_id_test.swift`, etc.) duplicated across m19 subdirectories in a flat `BaboonTests` target — Swift codegen needs subdirectory-qualified test target output. All four reproduce on bare HEAD `903f359` without any PR-64 changes.
+**Fix:** Deferred. Each is a distinct backend defect with its own root cause. Track for per-backend hygiene PRs after M20 closure.
