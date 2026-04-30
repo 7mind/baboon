@@ -31,6 +31,7 @@ object BaboonTyper {
     componentParsers: ComponentParsers[F],
     types: TypeInfo,
     rootExtractor: RootExtractor,
+    adtInheritanceExpander: AdtInheritanceExpander[F],
   ) extends BaboonTyper[F] {
 
     private case class TyperOutput(defs: List[DomainMember], renames: Map[TypeId.User, TypeId.User], aliases: List[AliasInfo])
@@ -390,8 +391,22 @@ object BaboonTyper {
         initial <- F.pure(
           types.allBuiltins.map(id => DomainMember.Builtin(id))
         )
-        builder   = new ScopeBuilder[F]()
-        scopes   <- builder.buildScopes(pkg, members, meta)
+        builder           = new ScopeBuilder[F]()
+        // Build an initial scope tree over the as-parsed (PR-62) raw AST so we can resolve
+        // `+ X` / `- X` / `^ X` refs in ADT bodies. The PR-63 typer-early pass uses this
+        // initial tree to rewrite each `RawAdt`'s member list, replacing inheritance arms with
+        // literal `RawAdtMemberDto` entries pulled from the referenced ADTs.
+        initialScopes    <- builder.buildScopes(pkg, members, meta)
+        initialFlattened  = flattenScopes(initialScopes)
+        initialOrdered   <- order(pkg, initialFlattened, meta)
+        expandedMembers  <- adtInheritanceExpander.expand(pkg, members, initialOrdered, meta)
+
+        // Re-build the scope tree over the rewritten defns so that re-emitted branches are
+        // registered as nested scopes under the receiving ADT (otherwise
+        // `convertAdt` → `scopeSupport.resolveUserTypeId` would fail to find the synthesized
+        // branch DTOs). After this point the `RawAdtMember.{Include, Exclude, Intersect}`
+        // arms have been desugared and the standard pipeline runs unchanged.
+        scopes   <- builder.buildScopes(pkg, expandedMembers, meta)
         flattened = flattenScopes(scopes)
         renames  <- computeRenames(pkg, flattened)
         ordered  <- order(pkg, flattened, meta)

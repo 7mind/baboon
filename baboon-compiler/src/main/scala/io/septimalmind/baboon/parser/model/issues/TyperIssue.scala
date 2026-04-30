@@ -126,6 +126,37 @@ object TyperIssue {
 
   case class WrongParent(id: TypeId.User, id1: TypeId, meta: RawNodeMeta) extends TyperIssue
 
+  /** Two or more branches in an ADT's expanded branch set share the same name (Q-M20-2).
+    * Carries the offending branch name and the source `TypeId`s contributing it.
+    */
+  case class DuplicatedAdtBranches(
+    adtId: TypeId.User,
+    branchName: String,
+    sources: List[TypeId],
+    meta: RawNodeMeta,
+  ) extends TyperIssue
+
+  /** An `+ X` / `- X` / `^ X` ref in an ADT body does not resolve to an ADT (or to a branch of an
+    * ADT). Carries the offending ref and a human-readable reason.
+    */
+  case class WrongAdtInclusion(
+    adtId: TypeId.User,
+    includeRef: ScopedRef,
+    reason: String,
+    meta: RawNodeMeta,
+  ) extends TyperIssue
+
+  /** An `+ X` / `- X` / `^ X` ref in an ADT body resolves to a type in a different package
+    * (cross-version inclusion). Forbidden because cross-version branch sharing would leak the
+    * source version into wire format.
+    */
+  case class CrossVersionAdtInclusion(
+    adtId: TypeId.User,
+    includeRef: ScopedRef,
+    includeId: TypeId,
+    meta: RawNodeMeta,
+  ) extends TyperIssue
+
   implicit val todoPrinter: IssuePrinter[TodoTyperIssue] =
     (issue: TodoTyperIssue) => {
       issue.descr
@@ -453,6 +484,30 @@ object TyperIssue {
     (issue: WrongParent) => {
       s"""${extractLocation(issue.meta)}
          |DTO parent is expected instead provided => name:${issue.id.toString} type:${issue.id1.name.name}
+         |""".stripMargin
+    }
+
+  implicit val duplicatedAdtBranchesPrinter: IssuePrinter[DuplicatedAdtBranches] =
+    (issue: DuplicatedAdtBranches) => {
+      val sourcesStr = issue.sources.map(_.toString).mkString(", ")
+      s"""${extractLocation(issue.meta)}
+         |ADT ${issue.adtId.toString} has duplicate branches named '${issue.branchName}' contributed by: $sourcesStr
+         |""".stripMargin
+    }
+
+  implicit val wrongAdtInclusionPrinter: IssuePrinter[WrongAdtInclusion] =
+    (issue: WrongAdtInclusion) => {
+      val refStr = issue.includeRef.path.toList.map(_.name).mkString(".")
+      s"""${extractLocation(issue.meta)}
+         |ADT ${issue.adtId.toString} has an invalid inheritance arm referencing '$refStr': ${issue.reason}
+         |""".stripMargin
+    }
+
+  implicit val crossVersionAdtInclusionPrinter: IssuePrinter[CrossVersionAdtInclusion] =
+    (issue: CrossVersionAdtInclusion) => {
+      val refStr = issue.includeRef.path.toList.map(_.name).mkString(".")
+      s"""${extractLocation(issue.meta)}
+         |ADT ${issue.adtId.toString} cannot include '$refStr' (resolved to ${issue.includeId.toString}) — cross-version ADT inclusion is forbidden
          |""".stripMargin
     }
 

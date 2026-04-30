@@ -2167,3 +2167,42 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/RawAdtMemberDto.scala (ExcludeBranch shape)
 **Description:** Plan §3 step 6 / §9 PR M20.1 specifies `ExcludeBranch(name, meta)` (just a name string). Implementation ships `ExcludeBranch(adtRef: ScopedRef, branchName: String, meta: RawNodeMeta)`. The implemented shape is richer and arguably more correct (lets `- A.Foo` and `- B.Foo` co-exist when both A and B have a `Foo` branch in scope post-include). Justified deviation but plan should be amended.
 **Fix:** Resolved by D01 fix. After unification, the parser emits `Exclude(ref: ScopedRef, meta)` with no separate `branchName` field — the typer pre-pass decides whether the ref names a whole ADT or an ADT.branch and produces the appropriate downstream representation.
+
+---
+
+## PR-63
+
+## [PR-63-D01] Cross-version test deferred on false premise — `CrossVersionAdtInclusion` is dead code with no test
+**Status:** resolved
+**Severity:** minor
+**Location:** baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/M20AdtInheritanceFrontEndTest.scala
+**Description:** Executor's report claims "single-file fixture flow doesn't accommodate two-version models" but `resolveBaboonFiles` already supports directory loading; existing fixtures (`baboon/pkg0/pkg01.baboon`+`pkg02.baboon`+`pkg03.baboon`, `baboon/rename-ns/pkg01.baboon`+`pkg02.baboon`) do exactly this. `CrossVersionAdtInclusion` issue + the resolve-arm code path that emits it are currently uncovered by any passing or failing test.
+**Fix:** Investigation revealed CrossVersionAdtInclusion is not exercisable from baboon source: ScopeSupport.resolveTypeId always constructs TypeId.User(pkg, ...) using the pkg passed from BaboonTyper.runTyper — a constant for the entire duration of processing one domain. Since each domain is typed independently and the scope tree is built from only that domain's definitions, every resolved ref gets the current domain's pkg. The check is defensive dead code (cannot fire from any baboon source file). Documented finding in class-level Scaladoc on AdtInheritanceExpander; no cross-version fixture created.
+
+## [PR-63-D02] "Desugaring equivalence" test compares branch names across separate domains, NOT deep schema IDs (plan §5 invariant unverified)
+**Status:** resolved
+**Severity:** minor (test coverage; algorithm assumed correct but unverified at the load-bearing invariant level)
+**Location:** baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/M20AdtInheritanceFrontEndTest.scala:163-180; fixtures baboon/m20-ok/desugar-equiv-{manual,sugared}.baboon
+**Description:** Plan §5 says "the source change `Foo, Bar` → `+ ErrorAtom; Foo, Bar` is non-evolutionary if the resulting branch sets coincide" and "essential" that deep schema id is identical. Current test compares branch *names* between two separate domains (`my.ok.m20.equivmanual` vs `my.ok.m20.equivsugared`); cannot compare deep schema IDs because `deepSchemaRepr` includes `enquiries.wrap(id)` which encodes the package — different packages → different deep IDs by construction. Test passes whether or not the plan §5 invariant actually holds.
+**Fix:** Confirmed deepSchemaRepr includes enquiries.wrap(id) which encodes u.pkg.path.mkString(".") — direct deep-schema-id comparison structurally impossible across different packages. Approach (b) — normalized structural comparison. Created single-domain fixture `desugar-equiv.baboon` (`my.ok.m20.equiv`, version 1.0.0) containing ErrorAtom, ManualVer (hand-written branches), SugaredVer (same via `+ ErrorAtom`). Replaced two-fixture test with single-fixture test that extracts both ADTs from the same domain, computes `Map[branchName → List["fieldName: typeReprString"]]` for each, and asserts equality. Catches any typer divergence in branch names or field types — the plan §5 invariant.
+
+## [PR-63-D03] `+ X.Foo` selective inclusion implemented but not tested
+**Status:** resolved (deferred — Q-FU-2 marks `+ X.Foo` as "Optional"; defensive paths in code are unreachable in practice)
+**Severity:** nit
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/AdtInheritanceExpander.scala:201-238
+**Description:** Branch-form path handles a resolved ref pointing at a single branch (`Owner.Adt` parent + branch name), but no positive fixture exercises it. Defensive paths "branch not found in parent ADT" and "ref's owner is Adt but parent ADT is not in expandedById" are also untested.
+**Fix:** Deferred per Q-FU-2 — `+ X.Foo` is "implement only if trivial; not a requested feature". Existing `- X.Foo` exclude-form has tests; include-form is symmetric and covered by the same code path. Track for future hygiene if usage emerges.
+
+## [PR-63-D04] `^ A; ^ B` semantic is union-of-targets not pairwise-intersection — matches plan §3 formula but counter-intuitive
+**Status:** resolved (deferred — matches plan §3 literal `∩ ⋃ intersectSets` formula; documentation gap only)
+**Severity:** nit
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/AdtInheritanceExpander.scala:104-128
+**Description:** Multiple `^` arms compose by union of intersect-target branches. Per plan §3 step 4 literal formula `∩ ⋃ intersectSets`, the semantic is "keep branches that appear in ANY intersect target". Reading "intersect" intuitively suggests per-arm intersection (keep only branches in ALL targets). No test fixture covers multiple `^` arms; algorithm docstring (lines 25-26) shows formula in shorthand without prose clarification.
+**Fix:** Deferred. Add a one-line comment clarifying "multiple `^` arms compose by union of targets per plan §3 formula" + a test fixture in a future hygiene PR. Behavior matches the plan; the code is correct.
+
+## [PR-63-D05] `derived[was]` rename annotation propagation on re-emitted branches is undefined behavior
+**Status:** resolved (deferred — plan + algorithm both silent on this; no concrete failure mode identified)
+**Severity:** nit
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/AdtInheritanceExpander.scala (re-emit logic) + baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonTyper.scala:125-225 (`computeRenames`)
+**Description:** Re-emit copies source `RawDto` verbatim (including `derived` set, which may contain `was[OriginalName]` entries pointing at the SOURCE ADT's namespace). After re-emit under the receiving ADT, `computeRenames` resolves the `was` ref under the receiving scope, possibly silently misresolving. Plan + algorithm are both silent on whether to strip / preserve / rewrite `was` annotations during re-emit.
+**Fix:** Deferred. Concrete failure mode not yet identified; spec gap. Track for follow-up: either explicitly strip `was` on re-emit (clean), preserve them with semantic clarification, or document as user responsibility.

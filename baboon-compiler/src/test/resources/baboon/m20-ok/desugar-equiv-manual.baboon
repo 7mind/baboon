@@ -1,0 +1,9 @@
+model my.ok.m20.equivmanual
+
+version "1.0.0"
+
+root adt SomeError {
+   data Foo { x: i32 }
+   data Bar { y: str }
+   data Baz { z: i32 }
+}

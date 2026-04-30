@@ -100,7 +100,14 @@ class ScopeBuilder[F[+_, +_]: Error2] {
             adt.members.collect { case d: RawAdtMemberDto => d; case d: RawAdtMemberContract => d }
               .map(m => buildScope(m.defn, isRoot = false, gen))
           }
-          out <- wrapScope(adt, sub)
+          // When an ADT has *only* inheritance arms (no concrete `data` members yet), treat it
+          // as a leaf during the initial scope build. The PR-63 typer-early pass uses this
+          // initial tree solely to resolve `+ X` / `- X` / `^ X` refs by *name* — it never
+          // descends into the ADT's branches at this stage. After the pre-pass rewrites every
+          // inheritance arm into literal `RawAdtMemberDto` entries, `runTyper` rebuilds the
+          // scope tree from scratch and the receiving ADT becomes a proper SubScope with its
+          // re-emitted branches registered as nested entries.
+          out <- if (sub.isEmpty) F.pure(mkLeaf(adt)) else wrapScope(adt, sub)
         } yield {
           out
         }

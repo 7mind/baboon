@@ -1,0 +1,11 @@
+model my.bad.m20.cycle
+
+version "1.0.0"
+
+adt A {
+   + B
+}
+
+root adt B {
+   + A
+}

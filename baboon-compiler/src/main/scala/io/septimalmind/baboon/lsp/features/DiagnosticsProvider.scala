@@ -92,6 +92,12 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
       case DuplicatedTypes(dupes, meta)                 => (Some(meta), s"Duplicate types: ${dupes.map(_.name.name).mkString(", ")}")
       case WrongParent(id, parent, meta)                => (Some(meta), s"Wrong parent for ${id.name.name}: ${parent.name.name}")
       case MissingContractFields(id, fields, meta)      => (Some(meta), s"Missing contract fields in ${id.name.name}: ${fields.map(_.name.name).mkString(", ")}")
+      case DuplicatedAdtBranches(id, branch, sources, meta) =>
+        (Some(meta), s"Duplicate ADT branches '$branch' in ${id.name.name}: contributed by ${sources.map(_.name.name).mkString(", ")}")
+      case WrongAdtInclusion(id, ref, reason, meta) =>
+        (Some(meta), s"Invalid ADT inheritance arm in ${id.name.name} referencing '${ref.path.toList.map(_.name).mkString(".")}': $reason")
+      case CrossVersionAdtInclusion(id, ref, includeId, meta) =>
+        (Some(meta), s"Cross-version ADT inclusion in ${id.name.name}: '${ref.path.toList.map(_.name).mkString(".")}' resolved to ${includeId.name.name}")
       case BadInheritance(bad, meta)                    => (Some(meta), s"Bad inheritance: ${bad.keys.map(_.name.name).mkString(", ")}")
       case NonUniqueMethodNames(svc, dupes, meta)       => (Some(meta), s"Duplicate methods in $svc: ${dupes.keys.mkString(", ")}")
       case ServiceMissingOutput(svc, method, meta)      => (Some(meta), s"Missing output in $svc.$method")

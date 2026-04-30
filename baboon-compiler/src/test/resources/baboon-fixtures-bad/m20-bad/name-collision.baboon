@@ -1,0 +1,12 @@
+model my.bad.m20.collision
+
+version "1.0.0"
+
+adt ErrorAtom {
+   data Foo { x: i32 }
+}
+
+root adt SomeError {
+   data Foo { y: str }
+   + ErrorAtom
+}

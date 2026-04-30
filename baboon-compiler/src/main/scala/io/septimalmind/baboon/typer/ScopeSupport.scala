@@ -46,7 +46,7 @@ trait ScopeSupport[F[+_, +_]] {
 }
 
 object ScopeSupport {
-  case class LookupResult(suffix: List[Scope[ExtendedRawDefn]], scope: LeafScope[ExtendedRawDefn])
+  case class LookupResult(suffix: List[Scope[ExtendedRawDefn]], scope: NestedScope[ExtendedRawDefn])
 
   class ScopeSupportImpl[F[+_, +_]: Error2](
     types: TypeInfo
@@ -101,7 +101,14 @@ object ScopeSupport {
           }
         case None =>
           in match {
-            case s: LeafScope[ExtendedRawDefn] =>
+            // Resolved scope may be a Leaf (concrete DTO / contract / enum / id / foreign /
+            // alias) OR a SubScope (a `RawAdt` or namespace). PR-63 (M20.2) widens the
+            // resolution surface: ADT inheritance refs like `+ ErrorAtom` legitimately point at
+            // the ADT's SubScope, and the dependency-extraction path in `BaboonTyper.deps`
+            // routes them through here. Per Q-FU-3, resolution succeeds for any NestedScope;
+            // downstream callers that only accept a leaf shape (e.g. `dtoParentToDefs`) check
+            // the resolved id's defn kind explicitly.
+            case s: NestedScope[ExtendedRawDefn] =>
               F.pure(LookupResult(suffix, s))
             case b =>
               F.fail(BaboonIssue.of(TyperIssue.UnexpectedScopeLookup(b, meta)))

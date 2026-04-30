@@ -1,0 +1,16 @@
+model my.ok.m20.chained
+
+version "1.0.0"
+
+adt C {
+   data Foo { x: i32 }
+   data Bar { y: str }
+}
+
+adt B {
+   + C
+}
+
+root adt A {
+   + B
+}

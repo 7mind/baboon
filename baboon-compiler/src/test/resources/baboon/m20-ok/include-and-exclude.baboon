@@ -1,0 +1,13 @@
+model my.ok.m20.exclude
+
+version "1.0.0"
+
+adt ErrorAtom {
+   data Forbidden { code: i32 }
+   data SomeBranch { x: i32 }
+}
+
+root adt SomeError {
+   + ErrorAtom
+   - ErrorAtom.SomeBranch
+}

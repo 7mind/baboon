@@ -1,0 +1,12 @@
+model my.ok.m20.simple
+
+version "1.0.0"
+
+adt ErrorAtom {
+   data Forbidden { code: i32 }
+}
+
+root adt SomeError {
+   + ErrorAtom
+   data Bar { x: i32 }
+}
