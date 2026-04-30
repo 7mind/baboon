@@ -28,7 +28,8 @@ object PyTypes {
   val pyCollections: PyModuleId    = PyModuleId("collections")
 
   // python external modules
-  val pydantic: PyModuleId = PyModuleId("pydantic")
+  val pydantic: PyModuleId     = PyModuleId("pydantic")
+  val pydanticCore: PyModuleId = PyModuleId("pydantic_core")
 
   // baboon meta
   val baboonMeta: PyType            = PyType(pyBaboonSharedRuntimeModule, "BaboonMeta")
@@ -143,6 +144,9 @@ object PyTypes {
   // json
   val pyJsonDumps = PyType(pyJson, "dumps")
   val pyJsonLoads = PyType(pyJson, "loads")
+
+  // pydantic_core
+  val pyToJsonablePython: PyType = PyType(pydanticCore, "to_jsonable_python")
 
   // uuid
   val pyUuid = PyType(pyUUUIDModule, "UUID")

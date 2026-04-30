@@ -289,6 +289,13 @@ class CSJsonCodecGenerator(
                     case _ =>
                       q"""${codecName(uid)}.Instance.Encode(ctx, $ref).ToString($nsFormatting.None)"""
                   }
+                // M19/PR-60: id types — emit canonical ToString (single- or multi-field).
+                case d: Typedef.Dto if d.isIdentifier =>
+                  q"$ref.ToString()"
+                // M19/PR-60: single-primitive-field wrappers — peel and recurse.
+                case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
+                  val inner = d.fields.head
+                  encodeKey(inner.tpe, q"$ref.${inner.name.name.capitalize}")
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -408,6 +415,17 @@ class CSJsonCodecGenerator(
                     case _ =>
                       q"""${codecName(uid)}.Instance.Decode(ctx, new $nsJValue($ref!))"""
                   }
+                // M19/PR-60: id types — call ParseRepr and unwrap Right (throw on Left).
+                case d: Typedef.Dto if d.isIdentifier =>
+                  val targetTpe      = trans.asCsTypeKeepForeigns(uid, domain, evo)
+                  val codecClassName = CSValue.CSType(targetTpe.pkg, s"${targetTpe.name}Codec", targetTpe.fq, targetTpe.origin)
+                  q"""((($either<string, $targetTpe>.Right)$codecClassName.ParseRepr($ref)).Value)"""
+                // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct.
+                case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
+                  val inner       = d.fields.head
+                  val targetTpe   = trans.asCsTypeKeepForeigns(uid, domain, evo)
+                  val innerDec    = decodeKey(inner.tpe, ref)
+                  q"new $targetTpe(${inner.name.name.capitalize}: $innerDec)"
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }

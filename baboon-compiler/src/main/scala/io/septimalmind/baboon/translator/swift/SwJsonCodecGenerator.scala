@@ -222,6 +222,13 @@ class SwJsonCodecGenerator(
               u.defn match {
                 case _: Typedef.Enum    => q"$ref.rawValue"
                 case _: Typedef.Foreign => q"String(describing: $ref)"
+                // M19/PR-60: id types — emit canonical description (single- or multi-field).
+                case d: Typedef.Dto if d.isIdentifier =>
+                  q"$ref.description"
+                // M19/PR-60: single-primitive-field wrappers — peel and recurse.
+                case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
+                  val inner = d.fields.head
+                  encodeKey(inner.tpe, q"$ref.${inner.name.name}")
                 case o                  => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
             case o => throw new RuntimeException(s"BUG: Type/usertype mismatch: $o")
@@ -375,6 +382,17 @@ class SwJsonCodecGenerator(
                     case _: Typedef.Foreign =>
                       val targetTpe = codecName(trans.toSwTypeRefKeepForeigns(u, domain, evo))
                       q"try $targetTpe.instance.decode(ctx, $ref)"
+                    // M19/PR-60: id types — call parseRepr and unwrap .right (fatalError on .left).
+                    case d: Typedef.Dto if d.isIdentifier =>
+                      val targetTpe   = trans.toSwTypeRefKeepForeigns(u, domain, evo)
+                      val nestedCodec = SwValue.SwType(targetTpe.pkg, s"${targetTpe.name}Codec")
+                      q"""{ () -> $targetTpe in guard case .right(let r) = $nestedCodec.parseRepr($ref) else { fatalError(\"Cannot parse id key: \\($ref)\") }; return r }()"""
+                    // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct.
+                    case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
+                      val inner     = d.fields.head
+                      val targetTpe = trans.toSwTypeRefKeepForeigns(u, domain, evo)
+                      val innerDec  = decodeKey(inner.tpe, ref)
+                      q"$targetTpe(${inner.name.name}: $innerDec)"
                     case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
                   }
                 case o => throw new RuntimeException(s"BUG: Type/usertype mismatch: $o")

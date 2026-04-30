@@ -2075,3 +2075,63 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/issues/VerificationIssue.scala (MultiFieldNonIdWrapper printer)
 **Description:** Prints "only single-primitive-field wrappers and `id` types are allowed", omitting enums and foreign types from the allowed list (which the validator does accept).
 **Fix:** Tightened `MultiFieldNonIdWrapper` printer in `VerificationIssue.scala:376` to include enums and foreign types in the allowed-list parenthetical: `"only single-primitive-field wrappers, \`id\` types, enums, and foreign types are allowed"`.
+
+---
+
+## PR-60
+
+## [PR-60-D01] TypeScript wrapper-around-numeric-builtin: decoder uses `string as number` type-system cast — string keys are NOT parsed at runtime
+**Status:** resolved
+**Severity:** major (round-trip breakage on TS for any wrapper around i08/i16/i32, u08/u16/u32, f32/f64, bit)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsJsonCodecGenerator.scala:300-303 (mkJsonKeyDecoder recursive base case)
+**Description:** `mkJsonKeyDecoder` for a wrapper `data K { v: i32 }` recurses on inner=i32 and falls to `mkJsonDecoder(tpe, ref)` which emits `q"$ref as number"`. JS map-key strings come from `Object.entries`, so `ref` is a `string` at runtime. `string as number` in TS is a type-system-only cast — at runtime the value remains the string `"42"`. Constructed `new K("42")` carries the wrong runtime type, breaking round-trip and any subsequent numeric arithmetic on `K.v`. Inner types affected: bit, i08-i32, u08-u32, f32/f64. (i64/u64/f128 use explicit `BigInt(...)` parse so those work.)
+**Fix:** Extracted new `parsePrimitiveKey(tpe, ref)` helper in `TsJsonCodecGenerator`. Recursive base case of `mkJsonKeyDecoder` now routes builtin keys through this helper instead of `mkJsonDecoder` (which emits TS-only `as <type>` casts). Each primitive maps to its proper JS-runtime parser: bit → `($ref === "true")`, i08-u32 → `parseInt($ref, 10)`, i64/u64 → `BigInt($ref)`, f32/f64 → `parseFloat($ref)`, f128 → `tsBaboonDecimal.fromString($ref)`, str/uid → `$ref` (already string), bytes → `tsBinTools.hexDecode($ref)`, tsu/tso → ISO-string parsing per project convention. `mkJsonDecoder` (value position) unchanged.
+
+## [PR-60-D02] Python non-any-bearing path: user-DTO/id map keys silently broken on encode AND definitively broken on decode
+**Status:** resolved
+**Severity:** major (round-trip breakage for any DTO containing `map[user-key, V]` where the parent DTO has no `any` field)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/python/PyJsonCodecGenerator.scala:120-123 (non-any-bearing emit path)
+**Description:** PR-60's any-bearing path got `mkJsonKeyEncoder`. The non-any-bearing path still uses raw Pydantic `value.model_dump_json()` / `name.model_validate_json(wire)`. For a parent DTO containing `m: map[ItemId, V]` where `ItemId` is a user-DTO/`id` Pydantic model: (a) Encode — Pydantic v2 `model_dump_json` on `dict[BaseModel, V]` does NOT deterministically use `__str__` for keys; behavior varies by Pydantic version. PR-57d emitted `__str__` on id types but no `@field_serializer` is wired on the parent DTO's map field. (b) Decode — `model_validate_json(wire)` cannot coerce a string key back into an `ItemId` Pydantic model; no `@field_validator` is emitted. Decode raises `ValidationError`.
+**Fix:** Approach (b) — extended walker. Added predicates `dtoHasUserKeyMapField`, `fieldHasUserKeyMap`, `dtoNeedsExplicitWalker`. `genDtoBodies` now triggers explicit-walker path on `dtoHasAnyField || dtoHasUserKeyMapField`. Walker (`mkJsonAnyEncoder`/`Decoder`) extended: scalar case emits `pydantic_core.to_jsonable_python($ref)` on encode, passes through on decode (Pydantic `model_validate` handles coercion); map decoder applies `mkJsonKeyDecoder` to keys. New `mkJsonKeyDecoder` for Python: id types via `<IdName>Codec.parse_repr($ref).value`, single-primitive wrapper via constructor reconstruction, Foreign passthrough (Pydantic coerces), defensive throw for unmatched user types. Added `pydantic_core` module + `pyToJsonablePython` PyType.
+
+## [PR-60-D03] Python any-bearing `mkJsonKeyEncoder` doesn't handle Foreign-typed map keys
+**Status:** resolved
+**Severity:** minor (validator accepts foreigns per Q-M19-7; codegen falls through to dict literal which json.dumps rejects)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/python/PyJsonCodecGenerator.scala:194-205 (mkJsonKeyEncoder match block)
+**Description:** Validator (PR-59) accepts `Typedef.Foreign` directly as a map-key user type (Q-M19-7). PR-60's `mkJsonKeyEncoder` only matches `isIdentifier` and single-field-non-empty-contracts wrapper cases. A Foreign-typed key falls through to `case _ => ref`, producing `{<ForeignInstance>: ...}` which `json.dumps` rejects unless the foreign happens to be JSON-serializable.
+**Fix:** Added `Typedef.Foreign` arm in Python `mkJsonKeyEncoder` emitting `str($ref)`. Mirrored same handling in new `mkJsonKeyDecoder` — Foreign returns ref unchanged (Pydantic's user-supplied codec handles coercion via `model_validate`).
+
+## [PR-60-D04] TS and Python silent fallback in mkJsonKey{En,De}coder — Q-M19-8 defensive-throw discipline violated
+**Status:** resolved
+**Severity:** minor (consistency / defensive-coverage; 6 backends throw, 2 silently fall through)
+**Location:** TS TsJsonCodecGenerator.scala:271-274,296-298; Python PyJsonCodecGenerator.scala:202
+**Description:** Per Q-M19-8 the validator-codegen contract says ineligible cases should reach a defensive throw. 6 backends with explicit case-arms (Sc/Cs/Kt/Jv/Dt/Sw) preserve `throw new RuntimeException("BUG: Unexpected key usertype: $o")`. TS and Python silently fall through to value-position encoder/decoder. A future validator gap would emit silently-wrong code in TS/Python while the other 6 crash loudly.
+**Fix:** Replaced silent `case _ => ref` / `case _ => mkJsonDecoder(tpe, ref)` fallbacks in `mkJsonKeyEncoder`/`mkJsonKeyDecoder` for BOTH TS and Python with defensive throws. TS uses `(() => { throw new Error(...) })()` IIFE; Python uses `(_ for _ in ()).throw(Exception(...))` (canonical idiom for raising in expression position — unreachable per Q-M19-8 contract).
+
+## [PR-60-D05] Wrapper-around-foreign: pre-existing Foreign-key encoder emits Json value where String required (surfaced by PR-60's wrapper recursion)
+**Status:** resolved (deferred — pre-existing across all 6 case-arm backends; surfaced but not introduced by PR-60; tracking separately)
+**Severity:** minor (pre-existing in Sc/Cs/Kt/Jv/Dt/Sw; runtime cross-language test would expose; m19-ok wrapper-around-foreign fixture compiles but doesn't run)
+**Location:** ScJsonCodecGenerator.scala:314-317 + parallel sites in Cs/Kt/Jv/Dt/Sw foreign-key encoder arms
+**Description:** PR-60 enables `data K { v: SomeForeign }` as a map key (validator accepts wrapper-around-foreign). PR-60's wrapper arm peels to inner.tpe = TypeRef.Scalar(SomeForeign-User) and calls `encodeKey` recursively, hitting the pre-existing Foreign arm. That arm emits `*_JsonCodec.instance.encode(ctx, $ref)` producing a JSON value, NOT a string. The caller expects a string for the map-key dispatch.
+**Fix:** Deferred. Pre-existing across 6 backends; PR-60 didn't introduce. Track for cross-backend hygiene PR alongside PR-60-D08 (TS direct-builtin tuple-array form).
+
+## [PR-60-D06] Rust deferral conceals a runtime serde_json crash, not just a missing fixture
+**Status:** resolved (deferred; PR-61 scope must explicitly include Rust map-key Serialize/Deserialize plumbing)
+**Severity:** minor (no current fixture exercises it but any user of Rust map[id, V] gets runtime "key must be a string" error from serde_json; reframing PR-61 captures the work)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/rust/RsJsonCodecGenerator.scala (no codegen surface)
+**Description:** Rust JSON codec is purely `serde_json::to_string(&self)` over derived `Serialize`. For `HashMap<ItemId, V>` with `ItemId` deriving the default serde `Serialize`, `serde_json` rejects struct serialization for keys with "key must be a string" at runtime — even though Rust has `impl Display for ItemId` from PR-57c, the default derive ignores Display. PR-60's "deferred to PR-61" framing under-sells: this is a runtime defect waiting for any Rust user of `map[id, V]`, not a fixture gap.
+**Fix:** Deferred. PR-61 (cross-language fixture extension) must explicitly add Rust map-key Serialize/Deserialize plumbing — either via `#[serde(with = "id_as_string_module")]` on each map[user-key, V] field OR custom `Serialize`/`Deserialize` impls on wrapper/id types. Update PR-61 brief accordingly.
+
+## [PR-60-D07] Inconsistent malformed-key error semantics across backends
+**Status:** resolved (deferred — cross-cutting; not a regression, just newly relevant due to PR-60's id parseRepr unwrap)
+**Severity:** minor (UX consistency; Scala silently None, others throw, Swift fatalError)
+**Location:** All 8 modified files, parseRepr unwrap arm
+**Description:** The `id` decoder arm extracts Right from parseRepr's Either differently per backend: Scala `.toOption` (silent None → downstream NoSuchElementException far from key); C#/Kotlin/Java/Dart cast to Right throws ClassCastException with no key/parse error context; Swift fatalError aborts process; TS as-cast to wrong shape produces undefined runtime error. A malformed wire input produces wildly different error semantics across backends.
+**Fix:** Deferred. Cross-cutting hygiene PR. At minimum, replace silent .toOption in Scala and the Swift fatalError with consistent throw semantics matching JVM languages.
+
+## [PR-60-D08] TS direct-i32-key still uses tuple-array form while wrapper-i32-key uses string-keyed-object — partial cross-language fix
+**Status:** resolved (deferred — pre-existing TS divergence, PR-60 fixed wrappers but left builtins untouched)
+**Severity:** nit (TS already incompatible with other backends for direct non-string-builtin keys; PR-60 didn't make it worse, only didn't fix it)
+**Location:** TsJsonCodecGenerator.scala line 241 (direct fallback) vs line 239 (wrapper path)
+**Description:** TS direct map-key for non-string builtins still uses tuple-array `[[k,v], …]`. Wrapper-around-the-same-builtin now uses string-keyed object. Cross-language compat tests would observe this: Scala emits `map[i32,V]` as string-keyed-object; TS emits as tuple-array.
+**Fix:** Deferred. Pre-existing TS divergence; clean fix would also unify direct-builtin-key path with wrapper path.
