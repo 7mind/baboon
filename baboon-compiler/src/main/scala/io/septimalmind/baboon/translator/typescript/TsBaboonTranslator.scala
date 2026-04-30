@@ -4,7 +4,7 @@ import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
-import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonAnyOpaqueModule, tsBaboonRuntimeShared, tsCrossLangFixtureModule, tsFixtureShared}
+import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonAnyOpaqueModule, tsBaboonIdReprModule, tsBaboonRuntimeShared, tsCrossLangFixtureModule, tsFixtureShared}
 import io.septimalmind.baboon.translator.typescript.TsValue.{TsModuleId, TsType}
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
@@ -125,6 +125,16 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
             CompilerProduct.Runtime,
             doNotModify = true,
           ),
+          TsDefnTranslator.Output(
+            "baboon-identifier-repr.ts",
+            // `verbatim` (not `text`): the file contains backslash characters
+            // (escape-handling) that would crash Scala's
+            // StringContext.processEscapes if routed through `text`.
+            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/typescript/baboon-identifier-repr.ts")),
+            tsBaboonIdReprModule,
+            CompilerProduct.Runtime,
+            doNotModify = true,
+          ),
         )
       )
     } else {
@@ -241,7 +251,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
                 definitionImport(moduleId, typesString)
               } else if (moduleId.path.startsWith(tsFileTools.fixturesBasePkg) && tsFileTools.fixturesBasePkg.nonEmpty) {
                 fixtureImport(moduleId, typesString)
-              } else if (moduleId == tsBaboonRuntimeShared || moduleId == tsFixtureShared || moduleId == tsBaboonAnyOpaqueModule || moduleId == tsCrossLangFixtureModule) {
+              } else if (moduleId == tsBaboonRuntimeShared || moduleId == tsFixtureShared || moduleId == tsBaboonAnyOpaqueModule || moduleId == tsBaboonIdReprModule || moduleId == tsCrossLangFixtureModule) {
                 baboonTypeImport(moduleId, typesString)
               } else {
                 q"import {$typesString} from '${moduleId.path.mkString("/")}'"

@@ -141,6 +141,15 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           rt("baboon_codecs.py", "baboon-runtime/python/baboon_codecs.py"),
           rt("baboon_service_wiring.py", "baboon-runtime/python/baboon_service_wiring.py"),
           rt("baboon_any_opaque.py", "baboon-runtime/python/baboon_any_opaque.py"),
+          PyDefnTranslator.Output(
+            "baboon_identifier_repr.py",
+            // `verbatim` (not `text`): the file contains backslash characters
+            // (escape-handling) that would crash Scala's
+            // StringContext.processEscapes if routed through `text`.
+            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/python/baboon_identifier_repr.py")),
+            pyBaboonSharedRuntimeModule,
+            CompilerProduct.Runtime,
+          ),
           PyDefnTranslator.Output("__init__.py", TextTree.text(""), pyBaboonSharedRuntimeModule, CompilerProduct.Runtime),
         )
       )
@@ -201,7 +210,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           t =>
             aliasMap.get(t).map(a => s"${t.name} as $a").getOrElse(t.name)
         }.mkString(", ")
-        if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule || module == pyBaboonConversionsModule || module == pyBaboonServiceWiringModule || module == pyBaboonAnyOpaqueModule || module == pyBaboonExceptionsModule) {
+        if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule || module == pyBaboonConversionsModule || module == pyBaboonServiceWiringModule || module == pyBaboonAnyOpaqueModule || module == pyBaboonExceptionsModule || module == pyBaboonIdReprModule) {
           val baseString = pyFileTools.definitionsBasePkg.mkString(".")
           q"from $baseString.${module.module} import $typesString"
         } else if (module == pyCrossLanguageFixturePathModule) {

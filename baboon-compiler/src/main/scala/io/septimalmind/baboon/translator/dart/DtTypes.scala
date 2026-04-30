@@ -64,6 +64,11 @@ object DtTypes {
   val baboonByteStringTools: DtType = DtType(baboonRuntimePkg, "BaboonByteStringTools")
   val baboonDecimal: DtType         = DtType(baboonRuntimePkg, "BaboonDecimal")
   val baboonDateTimeOffset: DtType  = DtType(baboonRuntimePkg, "BaboonDateTimeOffset")
+  // Identifier-repr runtime helpers (PR-57d)
+  val baboonIdReprPkg: DtPackageId = parseDtPkg("baboon.identifier.repr")
+  val baboonIdRepr: DtType         = DtType(baboonIdReprPkg, "BaboonIdRepr")
+  val baboonIdReprCursor: DtType   = DtType(baboonIdReprPkg, "BaboonIdReprCursor")
+  val baboonEither: DtType         = DtType(baboonRuntimePkg, "BaboonEither")
   val baboonRandom: DtType          = DtType(baboonFixturePkg, "BaboonRandom")
   val baboonRandomFactory: DtType   = DtType(baboonFixturePkg, "BaboonRandomFactory")
 

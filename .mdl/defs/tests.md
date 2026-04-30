@@ -137,6 +137,7 @@ mv "$TEST_DIR/dt-stub/lib/baboon_runtime.dart" "$TEST_DIR/dt-stub/packages/baboo
 mv "$TEST_DIR/dt-stub/lib/baboon_fixture.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 mv "$TEST_DIR/dt-stub/lib/baboon_any_opaque.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 mv "$TEST_DIR/dt-stub/lib/baboon_codecs_facade.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_identifier_repr.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 
 # Generate KMP Kotlin code (separate invocation with --kt-multiplatform=true)
 $BABOON_BIN \
@@ -197,6 +198,7 @@ python3 -m venv .venv
 if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
 python3 -m pip install -r requirements.txt
 python3 -m unittest discover -s BaboonTests/GeneratedTests/testpkg/pkg0
+python3 -m unittest discover -s BaboonTests/RuntimeTests
 popd
 
 ret success:bool=true
@@ -424,6 +426,7 @@ mv "$TEST_DIR/dt-stub/lib/baboon_runtime.dart" "$TEST_DIR/dt-stub/packages/baboo
 mv "$TEST_DIR/dt-stub/lib/baboon_fixture.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 mv "$TEST_DIR/dt-stub/lib/baboon_any_opaque.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 mv "$TEST_DIR/dt-stub/lib/baboon_codecs_facade.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_identifier_repr.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 
 # Generate KMP Kotlin code (separate invocation with --kt-multiplatform=true)
 $BABOON_BIN \
@@ -484,6 +487,7 @@ python3 -m venv .venv
 if [ -f ".venv/Scripts/activate" ]; then source .venv/Scripts/activate; else source .venv/bin/activate; fi
 python3 -m pip install -r requirements.txt
 python3 -m unittest discover -s BaboonTests/GeneratedTests/testpkg/pkg0
+python3 -m unittest discover -s BaboonTests/RuntimeTests
 popd
 
 ret success:bool=true
@@ -636,6 +640,7 @@ $BABOON_BIN \
 mv ./test/conv-test-dt/lib/generated/baboon_runtime.dart ./test/conv-test-dt/packages/baboon_runtime/lib/
 mv ./test/conv-test-dt/lib/generated/baboon_any_opaque.dart ./test/conv-test-dt/packages/baboon_runtime/lib/
 mv ./test/conv-test-dt/lib/generated/baboon_codecs_facade.dart ./test/conv-test-dt/packages/baboon_runtime/lib/
+mv ./test/conv-test-dt/lib/generated/baboon_identifier_repr.dart ./test/conv-test-dt/packages/baboon_runtime/lib/
 
 ret success:bool=true
 ```
