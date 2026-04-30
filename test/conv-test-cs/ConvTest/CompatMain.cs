@@ -66,9 +66,11 @@ namespace ConvTest
             var baseDir = Path.GetFullPath(Path.Combine("..", "..", "target", "compat-test"));
             var csJsonDir = Path.Combine(baseDir, "cs-json");
             var csUebaDir = Path.Combine(baseDir, "cs-ueba");
+            var csReprDir = Path.Combine(baseDir, "cs-repr");
 
             Directory.CreateDirectory(csJsonDir);
             Directory.CreateDirectory(csUebaDir);
+            Directory.CreateDirectory(csReprDir);
 
             var ctx = BaboonCodecContext.Default;
             var facadeCtx = BaboonCodecContext.WithFacade(useIndices: false, FreshFacade());
@@ -76,6 +78,7 @@ namespace ConvTest
             WriteUeba(ctx, sampleData, csUebaDir);
             WriteJsonAny(facadeCtx, sampleAny, csJsonDir);
             WriteUebaAny(facadeCtx, sampleAny, csUebaDir);
+            WritePointIdRepr(sampleData.VPointId, csReprDir);
 
             Console.WriteLine("C# serialization complete!");
         }
@@ -107,6 +110,18 @@ namespace ConvTest
             var uebaPath = Path.Combine(outputDir, "all-basic-types.ueba");
             File.WriteAllBytes(uebaPath, uebaBytes);
             Console.WriteLine($"Written UEBA to {uebaPath}");
+        }
+
+        // PR-57e (M18.4e) — cross-language identifier repr (toString) byte-identity.
+        // Per spec §7 the repr/toString form is a separate invariant from the JSON/UEBA wire bytes;
+        // we write it as a per-language artifact so the Scala-side test can assert all 10 backends
+        // produce byte-identical output for the same canonical PointId value.
+        private static void WritePointIdRepr(PointId pid, string outputDir)
+        {
+            var reprPath = Path.Combine(outputDir, "point-id.txt");
+            // No trailing newline — exact byte match across all languages.
+            File.WriteAllText(reprPath, pid.ToString(), new UTF8Encoding(false));
+            Console.WriteLine($"Written repr to {reprPath}");
         }
 
         private static void WriteJsonAny(BaboonCodecContext ctx, AnyShowcase data, string outputDir)
@@ -333,7 +348,12 @@ namespace ConvTest
                 }.ToImmutableDictionary(),
 
                 // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
-                VWireEnum: WireEnum.Cafe
+                VWireEnum: WireEnum.Cafe,
+
+                // Identifier (PR-57e). Wire form is `{"x": 42, "y": -7}` on JSON and two
+                // i32 LE values on UEBA — byte-identical to a `data` of the same shape
+                // per docs/spec/identifier-repr.md §1.3 / §7.
+                VPointId: new PointId(X: 42, Y: -7)
             );
         }
 

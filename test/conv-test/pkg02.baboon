@@ -44,6 +44,19 @@ enum WireEnum : derived[json], derived[ueba] {
   bar_pub
 }
 
+// Minimum-viable identifier (PR-57e / M18.4e) — used inside AllBasicTypes
+// so existing all-basic-types.{json,ueba} fixtures exercise an `id` type
+// across all 10 backends. Per spec §1.3 / §7, identifiers serialize byte-
+// identically to a `data` of the same shape on both wires, so the JSON form
+// is `{"x": <i32>, "y": <i32>}` and the UEBA form is two i32 LE values; the
+// repr toString format is independent and not part of the JSON/UEBA wire.
+// JSON+UEBA codecs are auto-derived because PointId is transitively
+// reachable from AllBasicTypes (which carries `derived[json], derived[ueba]`).
+id PointId {
+  x: i32
+  y: i32
+}
+
 root data AllBasicTypes: derived[json], derived[ueba] {
   vi8: i08
   vi16: i16
@@ -78,6 +91,8 @@ root data AllBasicTypes: derived[json], derived[ueba] {
   vmapLst: map[str, lst[i64]]
 
   vWireEnum: WireEnum
+
+  vPointId: PointId
 }
 
 // Renamed types from v1.0.0

@@ -10,6 +10,7 @@ import 'package:conv_test_dt/generated/convtest/testpkg/any_showcase.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/baboon_codecs_json.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/baboon_codecs_ueba.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/inner_payload.dart';
+import 'package:conv_test_dt/generated/convtest/testpkg/point_id.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/wire_enum.dart';
 
 const String _domainId = 'convtest.testpkg';
@@ -181,6 +182,10 @@ AllBasicTypes createSampleData() {
     },
     // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
     vWireEnum: WireEnum.Cafe,
+    // Identifier (PR-57e). Wire form is `{"x": 42, "y": -7}` on JSON and two
+    // i32 LE values on UEBA — byte-identical to a `data` of the same shape
+    // per docs/spec/identifier-repr.md §1.3 / §7.
+    vPointId: PointId(x: 42, y: -7),
   );
 }
 
@@ -271,6 +276,18 @@ void readAndVerify(String filePath) {
   print('OK');
 }
 
+// PR-57e (M18.4e) — cross-language identifier repr (toString) byte-identity.
+// Per spec §7 the repr/toString form is a separate invariant from the JSON/UEBA wire bytes;
+// we write it as a per-language artifact so the Scala-side test can assert all 10 backends
+// produce byte-identical output for the same canonical PointId value.
+void writePointIdRepr(PointId pid, String outputDir) {
+  Directory(outputDir).createSync(recursive: true);
+  final f = File('$outputDir/point-id.txt');
+  // No trailing newline — exact byte match across all languages.
+  f.writeAsStringSync(pid.toString());
+  print('Written repr to ${f.absolute.path}');
+}
+
 void runLegacy() {
   final sampleData = createSampleData();
   final sampleAny = _createSampleAnyShowcase();
@@ -281,6 +298,7 @@ void runLegacy() {
   writeUeba(sampleData, '$baseDir/dart-ueba');
   writeJsonAny(facadeCtx, sampleAny, '$baseDir/dart-json');
   writeUebaAny(facadeCtx, sampleAny, '$baseDir/dart-ueba');
+  writePointIdRepr(sampleData.vPointId, '$baseDir/dart-repr');
 
   print('Dart serialization complete!');
 }

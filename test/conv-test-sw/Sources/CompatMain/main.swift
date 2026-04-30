@@ -61,7 +61,11 @@ func createSampleData() -> AllBasicTypes {
         vlstOpt: [10, nil, 20, 30],
         vmapLst: ["numbers": [1, 2, 3], "more": [4, 5, 6]],
         // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
-        vWireEnum: WireEnum.Cafe
+        vWireEnum: WireEnum.Cafe,
+        // Identifier (PR-57e). Wire form is `{"x": 42, "y": -7}` on JSON and two
+        // i32 LE values on UEBA — byte-identical to a `data` of the same shape
+        // per docs/spec/identifier-repr.md §1.3 / §7.
+        vPointId: PointId(x: 42, y: -7)
     )
 }
 
@@ -256,6 +260,18 @@ func readAndVerify(_ filePath: String) throws {
     }
 }
 
+// PR-57e (M18.4e) — cross-language identifier repr (description) byte-identity.
+// Per spec §7 the repr form is a separate invariant from the JSON/UEBA wire bytes;
+// we write it as a per-language artifact so the Scala-side test can assert all 10 backends
+// produce byte-identical output for the same canonical PointId value.
+func writePointIdRepr(_ pid: PointId, _ outputDir: String) throws {
+    try FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+    let path = "\(outputDir)/point-id.txt"
+    // No trailing newline — exact byte match across all languages.
+    try pid.description.write(toFile: path, atomically: true, encoding: .utf8)
+    print("Written repr to \(path)")
+}
+
 func runLegacy() throws {
     let sampleData = createSampleData()
     let sampleAny = try createSampleAnyShowcase()
@@ -265,6 +281,7 @@ func runLegacy() throws {
     try writeUeba(sampleData, "\(baseDir)/swift-ueba")
     try writeJsonAny(facadeCtx, sampleAny, "\(baseDir)/swift-json")
     try writeUebaAny(facadeCtx, sampleAny, "\(baseDir)/swift-ueba")
+    try writePointIdRepr(sampleData.vPointId, "\(baseDir)/swift-repr")
     print("Swift serialization complete!")
 }
 

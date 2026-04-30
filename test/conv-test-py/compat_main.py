@@ -14,6 +14,7 @@ from Generated.convtest.testpkg.AllBasicTypes import AllBasicTypes, AllBasicType
 from Generated.convtest.testpkg.AnyShowcase import AnyShowcase, AnyShowcase_JsonCodec, AnyShowcase_UEBACodec
 from Generated.convtest.testpkg.InnerPayload import InnerPayload, InnerPayload_JsonCodec, InnerPayload_UEBACodec
 from Generated.convtest.testpkg.WireEnum import WireEnum
+from Generated.convtest.testpkg.PointId import PointId
 
 DOMAIN_ID = "convtest.testpkg"
 DOMAIN_VER = "2.0.0"
@@ -226,6 +227,10 @@ def create_sample_data():
         vmapLst={"numbers": [1, 2, 3], "more": [4, 5, 6]},
         # Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
         vWireEnum=WireEnum.Cafe,
+        # Identifier (PR-57e). Wire form is `{"x": 42, "y": -7}` on JSON and two
+        # i32 LE values on UEBA — byte-identical to a `data` of the same shape
+        # per docs/spec/identifier-repr.md §1.3 / §7.
+        vPointId=PointId(x=42, y=-7),
     )
 
 
@@ -309,6 +314,19 @@ def read_and_verify(file_path):
     print("OK")
 
 
+# PR-57e (M18.4e) — cross-language identifier repr (__repr__) byte-identity.
+# Per spec §7 the repr form is a separate invariant from the JSON/UEBA wire bytes;
+# we write it as a per-language artifact so the Scala-side test can assert all 10 backends
+# produce byte-identical output for the same canonical PointId value.
+def write_point_id_repr(pid, output_dir):
+    p = Path(output_dir) / "point-id.txt"
+    # No trailing newline — exact byte match across all languages. Python's __repr__ is the
+    # canonical parseable form for an identifier (matches spec convention).
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(repr(pid))
+    print(f"Written repr to {p}")
+
+
 def run_legacy():
     sample_data = create_sample_data()
     ctx = BaboonCodecContext.default()
@@ -316,14 +334,17 @@ def run_legacy():
     base_dir = Path("../../target/compat-test").resolve()
     json_dir = base_dir / "python-json"
     ueba_dir = base_dir / "python-ueba"
+    repr_dir = base_dir / "python-repr"
 
     json_dir.mkdir(parents=True, exist_ok=True)
     ueba_dir.mkdir(parents=True, exist_ok=True)
+    repr_dir.mkdir(parents=True, exist_ok=True)
 
     write_json(ctx, sample_data, str(json_dir))
     write_ueba(ctx, sample_data, str(ueba_dir))
     write_json_any(ctx, create_sample_any_showcase_json(), str(json_dir))
     write_ueba_any(ctx, create_sample_any_showcase_ueba(), str(ueba_dir))
+    write_point_id_repr(sample_data.vPointId, str(repr_dir))
 
     print("Python serialization complete!")
 

@@ -12,6 +12,7 @@ import convtest.testpkg.{
   InnerPayload,
   InnerPayload_JsonCodec,
   InnerPayload_UEBACodec,
+  PointId,
   WireEnum,
 }
 import baboon.runtime.shared.{
@@ -76,8 +77,10 @@ object CompatMain {
 
     val scalaJsonDir = baseDir.resolve("scala-json")
     val scalaUebaDir = baseDir.resolve("scala-ueba")
+    val scalaReprDir = baseDir.resolve("scala-repr")
     Files.createDirectories(scalaJsonDir)
     Files.createDirectories(scalaUebaDir)
+    Files.createDirectories(scalaReprDir)
 
     val ctx       = BaboonCodecContext.Default
     val facadeCtx = BaboonCodecContext.WithFacade(useIndices = false, freshFacade())
@@ -85,6 +88,7 @@ object CompatMain {
     writeUeba(ctx, sampleData, scalaUebaDir.toString)
     writeJsonAny(facadeCtx, sampleAny, scalaJsonDir.toString)
     writeUebaAny(facadeCtx, sampleAny, scalaUebaDir.toString)
+    writePointIdRepr(sampleData.vPointId, scalaReprDir.toString)
 
     println("Scala serialization complete!")
   }
@@ -110,6 +114,17 @@ object CompatMain {
     } finally {
       uebaWriter.close()
     }
+  }
+
+  // PR-57e (M18.4e) — cross-language identifier repr (toString) byte-identity.
+  // Per spec §7 the repr/toString form is a separate invariant from the JSON/UEBA wire bytes;
+  // we write it as a per-language artifact so the Scala-side test can assert all 10 backends
+  // produce byte-identical output for the same canonical PointId value.
+  private def writePointIdRepr(pid: PointId, outputDir: String): Unit = {
+    val path = Paths.get(outputDir).resolve("point-id.txt")
+    // No trailing newline — exact byte match across all languages.
+    Files.write(path, pid.toString.getBytes("UTF-8"))
+    println(s"Written repr to $path")
   }
 
   private def writeJsonAny(ctx: BaboonCodecContext, data: AnyShowcase, outputDir: String): Unit = {
@@ -312,6 +327,10 @@ object CompatMain {
       vmapLst    = Map("numbers" -> List(1L, 2L, 3L), "more" -> List(4L, 5L, 6L)),
       // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
       vWireEnum  = WireEnum.Cafe,
+      // Identifier (PR-57e). Wire form is `{"x": 42, "y": -7}` on JSON and two
+      // i32 LE values on UEBA — byte-identical to a `data` of the same shape
+      // per docs/spec/identifier-repr.md §1.3 / §7.
+      vPointId   = PointId(42, -7),
     )
   }
 

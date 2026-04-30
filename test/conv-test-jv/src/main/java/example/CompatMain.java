@@ -11,6 +11,7 @@ import convtest.testpkg.InnerPayload_JsonCodec;
 import convtest.testpkg.InnerPayload_UEBACodec;
 import convtest.testpkg.BaboonCodecsJson;
 import convtest.testpkg.BaboonCodecsUeba;
+import convtest.testpkg.PointId;
 import convtest.testpkg.WireEnum;
 import baboon.runtime.shared.BaboonAnyOpaque;
 import baboon.runtime.shared.BaboonCodecContext;
@@ -79,9 +80,11 @@ public class CompatMain {
         var baseDir = Path.of("../../target/compat-test").toAbsolutePath().normalize();
         var javaJsonDir = baseDir.resolve("java-json");
         var javaUebaDir = baseDir.resolve("java-ueba");
+        var javaReprDir = baseDir.resolve("java-repr");
 
         Files.createDirectories(javaJsonDir);
         Files.createDirectories(javaUebaDir);
+        Files.createDirectories(javaReprDir);
 
         var ctx = BaboonCodecContext.Default;
         var facadeCtx = BaboonCodecContext.withFacade(false, freshFacade());
@@ -89,6 +92,7 @@ public class CompatMain {
         writeUeba(ctx, sampleData, javaUebaDir.toString());
         writeJsonAny(facadeCtx, sampleAny, javaJsonDir.toString());
         writeUebaAny(facadeCtx, sampleAny, javaUebaDir.toString());
+        writePointIdRepr(sampleData.vPointId(), javaReprDir.toString());
 
         System.out.println("Java serialization complete!");
     }
@@ -115,6 +119,17 @@ public class CompatMain {
         } finally {
             uebaWriter.close();
         }
+    }
+
+    // PR-57e (M18.4e) — cross-language identifier repr (toString) byte-identity.
+    // Per spec §7 the repr/toString form is a separate invariant from the JSON/UEBA wire bytes;
+    // we write it as a per-language artifact so the Scala-side test can assert all 10 backends
+    // produce byte-identical output for the same canonical PointId value.
+    private static void writePointIdRepr(PointId pid, String outputDir) throws Exception {
+        var path = Path.of(outputDir).resolve("point-id.txt");
+        // No trailing newline — exact byte match across all languages.
+        Files.writeString(path, pid.toString(), StandardCharsets.UTF_8);
+        System.out.println("Written repr to " + path.toAbsolutePath());
     }
 
     private static void writeJsonAny(BaboonCodecContext ctx, AnyShowcase data, String outputDir) throws Exception {
@@ -397,7 +412,11 @@ public class CompatMain {
             List.of(Optional.of(10), Optional.empty(), Optional.of(20), Optional.of(30)),
             Map.of("numbers", List.of(1L, 2L, 3L), "more", List.of(4L, 5L, 6L)),
             // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
-            WireEnum.Cafe
+            WireEnum.Cafe,
+            // Identifier (PR-57e). Wire form is `{"x": 42, "y": -7}` on JSON and two
+            // i32 LE values on UEBA — byte-identical to a `data` of the same shape
+            // per docs/spec/identifier-repr.md §1.3 / §7.
+            new PointId(42, -7)
         );
     }
 }
