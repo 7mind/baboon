@@ -107,16 +107,37 @@ class KtTypeTranslator(ktTypes: KtTypes) {
     KtPackageId(segments)
   }
 
+  // Kotlin re-aliases these java.lang types as kotlin.* predef types.  Emitting
+  // `import java.lang.X` for them shadows the kotlin.* alias and causes a type-
+  // mismatch error at every use site where a literal (which is kotlin.String, etc.)
+  // appears.  Map them to the canonical kotlin.* KtType with predef=true so that
+  // no import is emitted and the short name resolves correctly.
+  private val jvmKotlinAliases: Map[String, KtType] = Map(
+    "java.lang.String"    -> ktString,
+    "java.lang.Boolean"   -> ktBoolean,
+    "java.lang.Byte"      -> ktByte,
+    "java.lang.Short"     -> ktShort,
+    "java.lang.Integer"   -> ktInt,
+    "java.lang.Long"      -> ktLong,
+    "java.lang.Float"     -> ktFloat,
+    "java.lang.Double"    -> ktDouble,
+    "java.lang.Character" -> KtType(kotlinPkg, "Char", predef = true),
+  )
+
   private def asKtTypeDerefForeigns(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): KtType = {
     domain.defs.meta.nodes(tid) match {
       case DomainMember.User(_, defn: Typedef.Foreign, _, _) =>
         defn.bindings.get(BaboonLang.Kotlin) match {
           case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
-            val parts = decl.split('.').toList
-            assert(parts.length > 1)
-            val pkg = parts.init
-            val id  = parts.last
-            KtType(KtPackageId(NEList.unsafeFrom(pkg)), id)
+            jvmKotlinAliases.get(decl) match {
+              case Some(ktAlias) => ktAlias
+              case None =>
+                val parts = decl.split('.').toList
+                assert(parts.length > 1)
+                val pkg = parts.init
+                val id  = parts.last
+                KtType(KtPackageId(NEList.unsafeFrom(pkg)), id)
+            }
           case _ =>
             toKtTypeRefKeepForeigns(tid, domain, evolution)
         }
