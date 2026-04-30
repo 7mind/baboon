@@ -11,6 +11,8 @@ import convtest.testpkg.InnerPayload_JsonCodec;
 import convtest.testpkg.InnerPayload_UEBACodec;
 import convtest.testpkg.BaboonCodecsJson;
 import convtest.testpkg.BaboonCodecsUeba;
+import convtest.testpkg.CompositeId;
+import convtest.testpkg.ItemId;
 import convtest.testpkg.PointId;
 import convtest.testpkg.WireEnum;
 import baboon.runtime.shared.BaboonAnyOpaque;
@@ -416,7 +418,25 @@ public class CompatMain {
             // Identifier (PR-57e). Wire form is `{"x": 42, "y": -7}` on JSON and two
             // i32 LE values on UEBA — byte-identical to a `data` of the same shape
             // per docs/spec/identifier-repr.md §1.3 / §7.
-            new PointId(42, -7)
+            new PointId(42, -7),
+            // PR-61 (M19.3) — id types as JSON map keys. Per PR-60 (M19.2) all id
+            // types — single- or multi-field — use canonical repr toString as the
+            // key form: e.g. `ItemId:2.0.0#v:00000000-0000-0000-0000-000000000001`.
+            // Canonical deterministic uuids ensure cross-language byte-identity.
+            Map.of(
+                new ItemId(UUID.fromString("00000000-0000-0000-0000-000000000001")), 1L,
+                new ItemId(UUID.fromString("00000000-0000-0000-0000-000000000002")), 2L
+            ),
+            Map.of(
+                new CompositeId(
+                    UUID.fromString("00000000-0000-0000-0000-0000000000aa"),
+                    UUID.fromString("00000000-0000-0000-0000-0000000000bb")
+                ), 100L,
+                new CompositeId(
+                    UUID.fromString("00000000-0000-0000-0000-0000000000cc"),
+                    UUID.fromString("00000000-0000-0000-0000-0000000000dd")
+                ), 200L
+            )
         );
     }
 }

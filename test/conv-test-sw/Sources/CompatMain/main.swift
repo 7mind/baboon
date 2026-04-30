@@ -65,7 +65,25 @@ func createSampleData() -> AllBasicTypes {
         // Identifier (PR-57e). Wire form is `{"x": 42, "y": -7}` on JSON and two
         // i32 LE values on UEBA — byte-identical to a `data` of the same shape
         // per docs/spec/identifier-repr.md §1.3 / §7.
-        vPointId: PointId(x: 42, y: -7)
+        vPointId: PointId(x: 42, y: -7),
+        // PR-61 (M19.3) — id types as JSON map keys. Per PR-60 (M19.2) all id
+        // types — single- or multi-field — use canonical repr description as the
+        // key form: e.g. `ItemId:2.0.0#v:00000000-0000-0000-0000-000000000001`.
+        // Canonical deterministic uuids ensure cross-language byte-identity.
+        vmapItemIdU32: [
+            ItemId(v: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!): 1,
+            ItemId(v: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!): 2,
+        ],
+        vmapCompositeIdU32: [
+            CompositeId(
+                tenant: UUID(uuidString: "00000000-0000-0000-0000-0000000000aa")!,
+                user:   UUID(uuidString: "00000000-0000-0000-0000-0000000000bb")!
+            ): 100,
+            CompositeId(
+                tenant: UUID(uuidString: "00000000-0000-0000-0000-0000000000cc")!,
+                user:   UUID(uuidString: "00000000-0000-0000-0000-0000000000dd")!
+            ): 200,
+        ]
     )
 }
 

@@ -353,7 +353,33 @@ namespace ConvTest
                 // Identifier (PR-57e). Wire form is `{"x": 42, "y": -7}` on JSON and two
                 // i32 LE values on UEBA — byte-identical to a `data` of the same shape
                 // per docs/spec/identifier-repr.md §1.3 / §7.
-                VPointId: new PointId(X: 42, Y: -7)
+                VPointId: new PointId(X: 42, Y: -7),
+                // PR-61 (M19.3) — id types as JSON map keys. Per PR-60 (M19.2) all id
+                // types — single- or multi-field — use canonical repr ToString as the
+                // key form: e.g. `ItemId:2.0.0#v:00000000-0000-0000-0000-000000000001`.
+                // Canonical deterministic uuids ensure cross-language byte-identity.
+                VmapItemIdU32: new Dictionary<ItemId, UInt32>
+                {
+                    { new ItemId(V: Guid.Parse("00000000-0000-0000-0000-000000000001")), 1u },
+                    { new ItemId(V: Guid.Parse("00000000-0000-0000-0000-000000000002")), 2u },
+                }.ToImmutableDictionary(),
+                VmapCompositeIdU32: new Dictionary<CompositeId, UInt32>
+                {
+                    {
+                        new CompositeId(
+                            Tenant: Guid.Parse("00000000-0000-0000-0000-0000000000aa"),
+                            User:   Guid.Parse("00000000-0000-0000-0000-0000000000bb")
+                        ),
+                        100u
+                    },
+                    {
+                        new CompositeId(
+                            Tenant: Guid.Parse("00000000-0000-0000-0000-0000000000cc"),
+                            User:   Guid.Parse("00000000-0000-0000-0000-0000000000dd")
+                        ),
+                        200u
+                    },
+                }.ToImmutableDictionary()
             );
         }
 

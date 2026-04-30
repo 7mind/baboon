@@ -15,6 +15,8 @@ from Generated.convtest.testpkg.AnyShowcase import AnyShowcase, AnyShowcase_Json
 from Generated.convtest.testpkg.InnerPayload import InnerPayload, InnerPayload_JsonCodec, InnerPayload_UEBACodec
 from Generated.convtest.testpkg.WireEnum import WireEnum
 from Generated.convtest.testpkg.PointId import PointId
+from Generated.convtest.testpkg.ItemId import ItemId
+from Generated.convtest.testpkg.CompositeId import CompositeId
 
 DOMAIN_ID = "convtest.testpkg"
 DOMAIN_VER = "2.0.0"
@@ -231,6 +233,24 @@ def create_sample_data():
         # i32 LE values on UEBA — byte-identical to a `data` of the same shape
         # per docs/spec/identifier-repr.md §1.3 / §7.
         vPointId=PointId(x=42, y=-7),
+        # PR-61 (M19.3) — id types as JSON map keys. Per PR-60 (M19.2) all id
+        # types — single- or multi-field — use canonical repr __str__ as the
+        # key form: e.g. `ItemId:2.0.0#v:00000000-0000-0000-0000-000000000001`.
+        # Canonical deterministic uuids ensure cross-language byte-identity.
+        vmapItemIdU32={
+            ItemId(v=UUID("00000000-0000-0000-0000-000000000001")): 1,
+            ItemId(v=UUID("00000000-0000-0000-0000-000000000002")): 2,
+        },
+        vmapCompositeIdU32={
+            CompositeId(
+                tenant=UUID("00000000-0000-0000-0000-0000000000aa"),
+                user=UUID("00000000-0000-0000-0000-0000000000bb"),
+            ): 100,
+            CompositeId(
+                tenant=UUID("00000000-0000-0000-0000-0000000000cc"),
+                user=UUID("00000000-0000-0000-0000-0000000000dd"),
+            ): 200,
+        },
     )
 
 

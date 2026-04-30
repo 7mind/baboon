@@ -5,7 +5,7 @@ use std::fs;
 use std::io::Cursor;
 use std::path::PathBuf;
 
-use baboon_conv_test_rs::convtest::testpkg::{AllBasicTypes, AnyShowcase, InnerPayload, PointId, WireEnum};
+use baboon_conv_test_rs::convtest::testpkg::{AllBasicTypes, AnyShowcase, CompositeId, InnerPayload, ItemId, PointId, WireEnum};
 use baboon_conv_test_rs::any_opaque::{AnyMeta, AnyOpaque, AnyOpaqueJson, AnyOpaqueUeba};
 use baboon_conv_test_rs::baboon_runtime::{BaboonBinEncode, BaboonBinDecode, BaboonCodecContext};
 use uuid::Uuid;
@@ -73,6 +73,40 @@ fn create_sample_data() -> AllBasicTypes {
         // i32 LE values on UEBA — byte-identical to a `data` of the same shape
         // per docs/spec/identifier-repr.md §1.3 / §7.
         v_point_id: PointId { x: 42, y: -7 },
+        // PR-61 (M19.3) — id types as JSON map keys. Per PR-60 (M19.2) all id
+        // types — single- or multi-field — use canonical repr toString as the
+        // key form: e.g. `ItemId:2.0.0#v:00000000-0000-0000-0000-000000000001`.
+        // Canonical deterministic uuids ensure cross-language byte-identity.
+        vmap_item_id_u32: {
+            let mut m = BTreeMap::new();
+            m.insert(
+                ItemId { v: Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap() },
+                1u32,
+            );
+            m.insert(
+                ItemId { v: Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap() },
+                2u32,
+            );
+            m
+        },
+        vmap_composite_id_u32: {
+            let mut m = BTreeMap::new();
+            m.insert(
+                CompositeId {
+                    tenant: Uuid::parse_str("00000000-0000-0000-0000-0000000000aa").unwrap(),
+                    user:   Uuid::parse_str("00000000-0000-0000-0000-0000000000bb").unwrap(),
+                },
+                100u32,
+            );
+            m.insert(
+                CompositeId {
+                    tenant: Uuid::parse_str("00000000-0000-0000-0000-0000000000cc").unwrap(),
+                    user:   Uuid::parse_str("00000000-0000-0000-0000-0000000000dd").unwrap(),
+                },
+                200u32,
+            );
+            m
+        },
     }
 }
 
