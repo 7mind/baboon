@@ -593,11 +593,119 @@ object RsDefnTranslator {
              |$parseRepr""".stripMargin
         } else q""
 
+      // PR-61 (M19.3): per-key-type serde adapter module so this DTO can appear
+      // as a JSON map key. See userMapKeyAdapterPath / fieldSerdeAttributes.
+      val mapKeyAdapter: TextTree[RsValue] =
+        if (isUserMapKeyEligibleDto(dto)) renderUserMapKeyAdapter(dto, name)
+        else q""
+
       q"""$structDef
          |
          |$ordImpls$customSerialize
          |
-         |$identifierImpls""".stripMargin
+         |$identifierImpls
+         |
+         |$mapKeyAdapter""".stripMargin
+    }
+
+    /** PR-61 (M19.3) — emit a per-key-type serde adapter module as a sibling of
+      * the struct, generic over the map value type V. Used by fields of shape
+      * `BTreeMap<Self, V>` via `#[serde(with = "<this_module>")]`.
+      *
+      * String form on the wire:
+      *   - id types         → `format!("{}", k)` (Display from PR-57c) ↔ parse_repr
+      *   - single-primitive → inner primitive's Display ↔ inner primitive parse
+      *
+      * Approach (b) per PR-61 brief: the wrapper's value-position Serialize is
+      * NOT overridden — wrappers/ids continue to JSON-serialize as objects when
+      * they appear in value position. Only the map-key path is rerouted.
+      */
+    private def renderUserMapKeyAdapter(dto: Typedef.Dto, name: RsType): TextTree[RsValue] = {
+      val modName = s"${toSnakeCase(name.name)}_as_map_key"
+
+      // Encode: per-key Self → String.
+      val encodeKey: TextTree[RsValue] =
+        if (dto.isIdentifier) q"format!(\"{}\", k)"
+        else {
+          // single-primitive-field wrapper — peel to the inner field and use
+          // the primitive's Display impl. Validator (isEligibleKey) guarantees
+          // the inner type is a non-float builtin scalar with a sensible string
+          // form on Display.
+          val inner   = dto.fields.head
+          val rsField = toSnakeCase(inner.name.name)
+          inner.tpe match {
+            case TypeRef.Scalar(TypeId.Builtins.bytes) =>
+              // Vec<u8> doesn't implement Display; reuse the runtime hex helper
+              // so this path matches the canonical baboon hex form used by
+              // the rest of the JSON wire.
+              q"crate::baboon_identifier_repr::bytes_to_hex(&k.$rsField)"
+            case TypeRef.Scalar(TypeId.Builtins.tsu) =>
+              q"crate::baboon_runtime::time_formats::format_tsu(&k.$rsField)"
+            case TypeRef.Scalar(TypeId.Builtins.tso) =>
+              q"crate::baboon_runtime::time_formats::format_tso(&k.$rsField)"
+            case _ =>
+              q"format!(\"{}\", k.$rsField)"
+          }
+        }
+
+      // Decode: per-key String → Self (with Result<_, String> error type).
+      val decodeKey: TextTree[RsValue] =
+        if (dto.isIdentifier) {
+          val codecMod = s"${toSnakeCase(name.name)}_repr_codec"
+          q"$codecMod::parse_repr(&s)"
+        } else {
+          val inner   = dto.fields.head
+          val rsField = toSnakeCase(inner.name.name)
+          val innerT  = trans.asRsRef(inner.tpe, domain, evo)
+          // Parse via str::parse; for primitive scalars Rust's FromStr matches
+          // Display's wire form. Bytes/timestamps require dedicated parsers.
+          val parseExpr: TextTree[RsValue] = inner.tpe match {
+            case TypeRef.Scalar(TypeId.Builtins.bytes) =>
+              q"crate::baboon_identifier_repr::parse_bytes_hex(&s)"
+            case TypeRef.Scalar(TypeId.Builtins.tsu) =>
+              q"crate::baboon_runtime::time_formats::parse_tsu(&s)"
+            case TypeRef.Scalar(TypeId.Builtins.tso) =>
+              q"crate::baboon_runtime::time_formats::parse_tso(&s)"
+            case _ =>
+              q"s.parse::<$innerT>().map_err(|e| format!(\"{}\", e))"
+          }
+          q"""$parseExpr.map(|v| ${name.asName} { $rsField: v })"""
+        }
+
+      q"""pub mod $modName {
+         |    use super::*;
+         |    use serde::Deserialize as _BaboonDeserialize;
+         |    use std::collections::BTreeMap;
+         |
+         |    pub fn serialize<S, V>(map: &BTreeMap<${name.asName}, V>, serializer: S) -> Result<S::Ok, S::Error>
+         |    where
+         |        S: serde::Serializer,
+         |        V: serde::Serialize,
+         |    {
+         |        use serde::ser::SerializeMap;
+         |        let mut m = serializer.serialize_map(Some(map.len()))?;
+         |        for (k, v) in map.iter() {
+         |            let key_str: String = $encodeKey;
+         |            m.serialize_entry(&key_str, v)?;
+         |        }
+         |        m.end()
+         |    }
+         |
+         |    pub fn deserialize<'de, D, V>(deserializer: D) -> Result<BTreeMap<${name.asName}, V>, D::Error>
+         |    where
+         |        D: serde::Deserializer<'de>,
+         |        V: serde::Deserialize<'de>,
+         |    {
+         |        let raw: BTreeMap<String, V> = BTreeMap::<String, V>::deserialize(deserializer)?;
+         |        let mut out: BTreeMap<${name.asName}, V> = BTreeMap::new();
+         |        for (s, v) in raw.into_iter() {
+         |            let key = $decodeKey
+         |                .map_err(serde::de::Error::custom)?;
+         |            out.insert(key, v);
+         |        }
+         |        Ok(out)
+         |    }
+         |}""".stripMargin
     }
 
     private def isWrappedAdtBranch(dto: Typedef.Dto): Boolean = {
@@ -740,8 +848,65 @@ object RsDefnTranslator {
       if (trans.needsLenientSerde(f.tpe)) {
         attrs += q"""#[serde(deserialize_with = "crate::baboon_runtime::lenient_numeric::deserialize")]"""
       }
+      // PR-61 (M19.3 / PR-60-D06): user-typed map keys.
+      // serde_json's default Serialize for `BTreeMap<K, V>` rejects non-string-shaped K
+      // with `key must be a string`. For `map[K, V]` where K is a user `id` (M18) or
+      // single-primitive-field `data` wrapper (M19), redirect through a per-K adapter
+      // module that converts K↔String via the existing Display / parse_repr machinery
+      // (id types) or by peeling to the inner primitive (single-field wrappers). The
+      // adapter module is emitted next to K's struct (see `userMapKeyAdapter` below).
+      userMapKeyAdapterPath(f.tpe).foreach { path =>
+        attrs += q"""#[serde(with = "$path")]"""
+      }
 
       attrs.toList
+    }
+
+    /** PR-61 (M19.3): if `f` is a top-level `map[K, V]` whose K is an eligible user
+      * key, return the FQ Rust path of the adapter module sibling to K's struct.
+      * Eligibility mirrors PR-59's validator (`isEligibleKey`): id types are eligible
+      * unconditionally; non-id `data` requires single-primitive-field shape with no
+      * contracts. We assume the validator has already rejected ineligible cases —
+      * here we only decide whether to attach the `#[serde(with = ...)]` attribute.
+      *
+      * Limited to the top-level `map[K, V]` shape (no `Option<BTreeMap<K, V>>` or
+      * nested `BTreeMap<K1, BTreeMap<K2, V>>` — adapter modules are field-scoped
+      * and serde's `with` attribute is applied to the field's full type).
+      */
+    private def userMapKeyAdapterPath(tpe: TypeRef): Option[String] = tpe match {
+      case TypeRef.Constructor(TypeId.Builtins.map, args) =>
+        args.head match {
+          case TypeRef.Scalar(uid: TypeId.User) =>
+            domain.defs.meta.nodes.get(uid) match {
+              case Some(DomainMember.User(_, dto: Typedef.Dto, _, _)) if isUserMapKeyEligibleDto(dto) =>
+                val rsT     = trans.toRsTypeRefKeepForeigns(uid, domain, evo)
+                val modName = s"${toSnakeCase(rsT.name)}_as_map_key"
+                Some((rsT.crate.parts.toSeq :+ modName).mkString("::"))
+              case _ => None
+            }
+          case _ => None
+        }
+      case _ => None
+    }
+
+    /** Mirrors `BaboonValidator.isEligibleKey` — DTO branch only. id types are
+      * always eligible (Q-M19-6); single-primitive-field non-contract DTOs are
+      * eligible if the inner field is a primitive scalar (no opt/collection,
+      * no float wrappers per Q-M19-2).
+      */
+    private def isUserMapKeyEligibleDto(dto: Typedef.Dto): Boolean = {
+      if (dto.isIdentifier) true
+      else if (dto.contracts.nonEmpty) false
+      else if (dto.fields.size != 1) false
+      else dto.fields.head.tpe match {
+        case _: TypeRef.Constructor => false
+        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
+          b match {
+            case TypeId.Builtins.f32 | TypeId.Builtins.f64 | TypeId.Builtins.f128 => false
+            case _                                                                 => true
+          }
+        case _ => false
+      }
     }
 
     private def makeEnumRepr(e: Typedef.Enum, name: RsType): TextTree[RsValue] = {

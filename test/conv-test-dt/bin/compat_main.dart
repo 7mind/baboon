@@ -10,6 +10,8 @@ import 'package:conv_test_dt/generated/convtest/testpkg/any_showcase.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/baboon_codecs_json.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/baboon_codecs_ueba.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/inner_payload.dart';
+import 'package:conv_test_dt/generated/convtest/testpkg/composite_id.dart';
+import 'package:conv_test_dt/generated/convtest/testpkg/item_id.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/point_id.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/wire_enum.dart';
 
@@ -186,6 +188,24 @@ AllBasicTypes createSampleData() {
     // i32 LE values on UEBA — byte-identical to a `data` of the same shape
     // per docs/spec/identifier-repr.md §1.3 / §7.
     vPointId: PointId(x: 42, y: -7),
+    // PR-61 (M19.3) — id types as JSON map keys. Per PR-60 (M19.2) all id
+    // types — single- or multi-field — use canonical repr toString as the
+    // key form: e.g. `ItemId:2.0.0#v:00000000-0000-0000-0000-000000000001`.
+    // Canonical deterministic uuids ensure cross-language byte-identity.
+    vmapItemIdU32: {
+      ItemId(v: '00000000-0000-0000-0000-000000000001'): 1,
+      ItemId(v: '00000000-0000-0000-0000-000000000002'): 2,
+    },
+    vmapCompositeIdU32: {
+      CompositeId(
+        tenant: '00000000-0000-0000-0000-0000000000aa',
+        user:   '00000000-0000-0000-0000-0000000000bb',
+      ): 100,
+      CompositeId(
+        tenant: '00000000-0000-0000-0000-0000000000cc',
+        user:   '00000000-0000-0000-0000-0000000000dd',
+      ): 200,
+    },
   );
 }
 

@@ -9,9 +9,11 @@ import convtest.testpkg.{
   AnyShowcase_UEBACodec,
   BaboonCodecsJson,
   BaboonCodecsUeba,
+  CompositeId,
   InnerPayload,
   InnerPayload_JsonCodec,
   InnerPayload_UEBACodec,
+  ItemId,
   PointId,
   WireEnum,
 }
@@ -331,6 +333,24 @@ object CompatMain {
       // i32 LE values on UEBA — byte-identical to a `data` of the same shape
       // per docs/spec/identifier-repr.md §1.3 / §7.
       vPointId   = PointId(42, -7),
+      // PR-61 (M19.3) — id types as JSON map keys. Per PR-60 (M19.2) all id
+      // types — single- or multi-field — use canonical repr toString as the
+      // key form: e.g. `ItemId:2.0.0#v:00000000-0000-0000-0000-000000000001`.
+      // Canonical deterministic uuids ensure cross-language byte-identity.
+      vmapItemIdU32 = Map(
+        ItemId(UUID.fromString("00000000-0000-0000-0000-000000000001")) -> 1,
+        ItemId(UUID.fromString("00000000-0000-0000-0000-000000000002")) -> 2,
+      ),
+      vmapCompositeIdU32 = Map(
+        CompositeId(
+          UUID.fromString("00000000-0000-0000-0000-0000000000aa"),
+          UUID.fromString("00000000-0000-0000-0000-0000000000bb"),
+        ) -> 100,
+        CompositeId(
+          UUID.fromString("00000000-0000-0000-0000-0000000000cc"),
+          UUID.fromString("00000000-0000-0000-0000-0000000000dd"),
+        ) -> 200,
+      ),
     )
   }
 

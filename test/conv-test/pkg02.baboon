@@ -57,6 +57,24 @@ id PointId {
   y: i32
 }
 
+// PR-61 (M19.3) — id types as JSON map keys, exercised across all 10 backends
+// via the `vmapItemIdU32` / `vmapCompositeIdU32` fields of `AllBasicTypes`.
+// Per PR-60 (M19.2) all id types — single- or multi-field — use the canonical
+// repr toString as the JSON map-key form, regardless of internal arity:
+//   - `ItemId`        : `ItemId:2.0.0#v:<uuid>`
+//   - `CompositeId`   : `CompositeId:2.0.0#tenant:<uuid>:user:<uuid>`
+// (See docs/spec/identifier-repr.md §1.) Both derive json+ueba so the validator's
+// Q-FU-1 derivation-parity check is satisfied — the owning AllBasicTypes is
+// `derived[json], derived[ueba]` and key types must derive both.
+id ItemId : derived[json], derived[ueba] {
+  v: uid
+}
+
+id CompositeId : derived[json], derived[ueba] {
+  tenant: uid
+  user: uid
+}
+
 root data AllBasicTypes: derived[json], derived[ueba] {
   vi8: i08
   vi16: i16
@@ -93,6 +111,13 @@ root data AllBasicTypes: derived[json], derived[ueba] {
   vWireEnum: WireEnum
 
   vPointId: PointId
+
+  // PR-61 (M19.3) — id types as JSON map keys.
+  // Single-primitive id: JSON key is the inner uid string.
+  vmapItemIdU32: map[ItemId, u32]
+  // Multi-field id: JSON key is the canonical repr toString
+  // (e.g. "CompositeId:2.0.0#tenant:<uuid>:user:<uuid>").
+  vmapCompositeIdU32: map[CompositeId, u32]
 }
 
 // Renamed types from v1.0.0
