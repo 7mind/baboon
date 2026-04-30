@@ -2038,3 +2038,40 @@ Both tests pass. The dual-path coverage clarifies: `ServiceMultipleInputs` is th
 **Location:** baboon-compiler/src/test/resources/baboon/identifier-evolution/{v1,v2,v3}.baboon
 **Description:** PR-58 added these three fixture files but `IdentifierConversionTest` uses inline `stripMargin` strings (mirroring `ScEnumConversionTest` pattern). The fixture files are unused by any test. Dead resources.
 **Fix:** Deleted unused fixture files `baboon-compiler/src/test/resources/baboon/identifier-evolution/{v1,v2,v3}.baboon` and the now-empty `identifier-evolution/` directory. The test uses inline `stripMargin` strings (mirrors `ScEnumConversionTest` pattern) and never read the fixture files.
+
+---
+
+## PR-59
+
+## [PR-59-D01] Q-FU-1 derivation-parity check is incomplete — only checks immediate map-key user type, not the recursion chain into wrapper inners
+**Status:** resolved
+**Severity:** major (structural — PR-60 codegen will collide with this)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala (checkUserMapKeysEligibility, around lines 211-369)
+**Description:** `checkUserMapKeysEligibility` validates derivation parity ONLY on the immediate map-key user type, not on each User type encountered during recursive eligibility reduction. Reproduction: `data Outer : derived[json] { v: Inner } data Inner { v: uid } root data Holder : derived[json] { m: map[Outer, str] }`. Validator currently passes (Outer has json derivation; Outer's inner Inner does not, but is silently accepted). PR-60 codegen will then fail with `BUG: Unexpected key usertype` at the Inner step because Inner has no JSON codec — violating Q-M19-8 ("validator catches before codegen, codegen BUG: throws are kept as defensive assertions only").
+**Fix:** Extended `isEligibleKey` to return `Either[..., List[TypeId.User]]` (the chain of every visited user type, outer wrapper to innermost). `checkOnFields` now consumes the chain via `F.traverseAccumErrors_(chain)`, applying Q-FU-1 derivation parity to EACH node — enums and foreign types skip the check via `skipDerivationCheck` guard. Added 2 new bad fixtures (`nested-wrapper-inner-without-json-derived.baboon`, `nested-id-inner-without-ueba-derived.baboon`) + 2 new negative tests asserting `MapKeyMissingDerivation` fires when the inner wrapper lacks the parent's derivation.
+
+## [PR-59-D02] Pattern order bug — `id Foo : SomeContract { ... }` rejected as `WrapperWithContracts` instead of accepted per Q-M19-6
+**Status:** resolved
+**Severity:** minor (narrow edge case — id-with-contracts; no fixture exercised)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala — pattern-match arms in `isEligibleKey` for `Typedef.Dto`
+**Description:** Pattern arms ordered as:
+```
+case d: Typedef.Dto if d.contracts.nonEmpty   => Left(WrapperWithContracts(u))
+case d: Typedef.Dto if d.isIdentifier         => Right(())
+```
+An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 and be rejected, contradicting Q-M19-6 ("ANY id is map-key eligible regardless of field count"). M18's parser/typer doesn't appear to forbid `id`-with-contracts at the source level (same convertDto path used for both data and id).
+**Fix:** Swapped pattern order in `isEligibleKey` so `case d: Typedef.Dto if d.isIdentifier` precedes `case d: Typedef.Dto if d.contracts.nonEmpty`. CONFIRMED `id` with contracts IS expressible at source level (parser's `identifierEnclosed` uses the same `dto` member parser as `dtoEnclosed`, which includes `extendedContractRef`). Added positive fixture `id-with-contracts.baboon` + 1 positive test confirming the `isIdentifier` branch fires correctly for `id ItemId : HasMeta : derived[json] { v: uid }`.
+
+## [PR-59-D03] Printer text for `IneligibleUserType` overstates allowed types
+**Status:** resolved
+**Severity:** nit (cosmetic)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/issues/VerificationIssue.scala (IneligibleUserType printer)
+**Description:** Prints "is an ADT, contract, or service (only DTOs, identifiers, enums, and foreign types are allowed)" but the same reason is also produced from the unreachable-fallback path where the user is unknown / a builtin user-id slot. Cosmetic.
+**Fix:** Tightened `IneligibleUserType` printer in `VerificationIssue.scala:384` from the misleading `"is an ADT, contract, or service (only DTOs, identifiers, enums, and foreign types are allowed)"` to the more accurate `"is not a valid map-key user type (must be a wrapper DTO, identifier, enum, or foreign type)"`. Better for the defensive-fallback path.
+
+## [PR-59-D04] Printer text for `MultiFieldNonIdWrapper` omits enums and foreign types from allowed list
+**Status:** resolved
+**Severity:** nit (cosmetic)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/issues/VerificationIssue.scala (MultiFieldNonIdWrapper printer)
+**Description:** Prints "only single-primitive-field wrappers and `id` types are allowed", omitting enums and foreign types from the allowed list (which the validator does accept).
+**Fix:** Tightened `MultiFieldNonIdWrapper` printer in `VerificationIssue.scala:376` to include enums and foreign types in the allowed-list parenthetical: `"only single-primitive-field wrappers, \`id\` types, enums, and foreign types are allowed"`.

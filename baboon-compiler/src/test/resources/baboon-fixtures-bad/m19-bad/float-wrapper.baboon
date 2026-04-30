@@ -1,0 +1,11 @@
+model my.bad.m19.floatwrapper
+
+version "1.0.0"
+
+data K {
+  v: f64
+}
+
+root data Holder {
+  m: map[K, i32]
+}

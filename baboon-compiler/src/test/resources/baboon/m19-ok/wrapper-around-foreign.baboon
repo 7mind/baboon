@@ -1,0 +1,23 @@
+model my.ok.m19.foreign
+
+version "1.0.0"
+
+foreign FStr {
+  cs = "System.String"
+  scala = "java.lang.String"
+  kotlin = "java.lang.String"
+  java = "java.lang.String"
+  py = "builtins.str"
+  rust = "std::string::String"
+  typescript = "string"
+  dart = "dart.core.String"
+  swift = "Swift.String"
+}
+
+data ItemKey : derived[json], derived[ueba] {
+  v: FStr
+}
+
+root data Holder : derived[json], derived[ueba] {
+  m: map[ItemKey, str]
+}

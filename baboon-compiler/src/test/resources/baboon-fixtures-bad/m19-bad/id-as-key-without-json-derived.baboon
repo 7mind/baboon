@@ -1,0 +1,11 @@
+model my.bad.m19.idnoderiv
+
+version "1.0.0"
+
+id ItemId {
+  v: uid
+}
+
+root data Holder : derived[json] {
+  m: map[ItemId, i32]
+}

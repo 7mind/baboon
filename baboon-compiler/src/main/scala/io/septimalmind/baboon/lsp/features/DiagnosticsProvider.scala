@@ -158,6 +158,10 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
         (Some(meta), s"identifier '${owner.id.name.name}' references non-`id` type(s): ${fields.map { case (f, t) => s"${f.name.name} → ${t.name.name}" }.mkString(", ")}")
       case IdentifierFieldAny(owner, fields, meta) =>
         (Some(meta), s"identifier '${owner.id.name.name}' has `any` field(s): ${fields.map(_.name.name).mkString(", ")}")
+      case IneligibleUserMapKey(owner, badField, reason, meta) =>
+        (Some(meta), s"map key field '${badField.name.name}' in ${owner.id.name.name} is ineligible: $reason")
+      case MapKeyMissingDerivation(owner, badField, keyType, missing, meta) =>
+        (Some(meta), s"map key field '${badField.name.name}' in ${owner.id.name.name}: key type ${keyType.name.name} lacks `: derived[$missing]`")
       case LockedVersionModified(pkg, version) =>
         (None, s"Locked version modified: $pkg@$version")
       case MissingTypeDef(domain, missing) =>

@@ -1,0 +1,11 @@
+model my.bad.m19.collection
+
+version "1.0.0"
+
+data K {
+  v: lst[u32]
+}
+
+root data Holder {
+  m: map[K, i32]
+}

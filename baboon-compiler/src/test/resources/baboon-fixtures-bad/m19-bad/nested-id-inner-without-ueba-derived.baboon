@@ -1,0 +1,19 @@
+model my.bad.nestedid
+
+version "1.0.0"
+
+// Inner is a non-id single-field wrapper that does NOT derive ueba.
+// Outer is a non-id single-field wrapper that DOES derive ueba, wrapping Inner.
+// The chain for map[Outer, str] is [Outer, Inner].
+// After the chain-based Q-FU-1 fix, Inner must also derive ueba — which it does not.
+data Inner {
+  v: uid
+}
+
+data Outer : derived[ueba] {
+  v: Inner
+}
+
+root data Holder : derived[ueba] {
+  m: map[Outer, str]
+}

@@ -1,0 +1,11 @@
+model my.ok.m19.direct
+
+version "1.0.0"
+
+data ItemId : derived[json], derived[ueba] {
+  v: uid
+}
+
+root data Holder : derived[json], derived[ueba] {
+  m: map[ItemId, str]
+}
