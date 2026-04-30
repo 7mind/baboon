@@ -226,6 +226,13 @@ class DtJsonCodecGenerator(
                     case _ =>
                       q"$ref.toString()"
                   }
+                // M19/PR-60: id types — emit canonical toString (single- or multi-field).
+                case d: Typedef.Dto if d.isIdentifier =>
+                  q"$ref.toString()"
+                // M19/PR-60: single-primitive-field wrappers — peel and recurse.
+                case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
+                  val inner = d.fields.head
+                  encodeKey(inner.tpe, q"$ref.${inner.name.name}")
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -377,6 +384,18 @@ class DtJsonCodecGenerator(
                           val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
                           q"$targetTpe.instance.decode(ctx, $ref)"
                       }
+                    // M19/PR-60: id types — call parseRepr and unwrap Right (cast throws on Left).
+                    case d: Typedef.Dto if d.isIdentifier =>
+                      val targetTpe   = trans.toDtTypeRefKeepForeigns(u, domain, evo)
+                      val nestedCodec = DtValue.DtType(targetTpe.pkg, s"${targetTpe.name}Codec",
+                                                       importAs = Some(trans.toSnakeCase(targetTpe.name)))
+                      q"($nestedCodec.parseRepr($ref) as $baboonRight<String, $targetTpe>).value"
+                    // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct (named arg).
+                    case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
+                      val inner     = d.fields.head
+                      val targetTpe = trans.toDtTypeRefKeepForeigns(u, domain, evo)
+                      val innerDec  = decodeKey(inner.tpe, ref)
+                      q"$targetTpe(${inner.name.name}: $innerDec)"
                     case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
                   }
                 case o => throw new RuntimeException(s"BUG: Type/usertype mismatch: $o")

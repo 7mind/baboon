@@ -316,6 +316,13 @@ class ScJsonCodecGenerator(
                       val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
                       q"""${targetTpe}_JsonCodec.instance.encode(ctx, $ref)"""
                   }
+                // M19/PR-60: id types — emit canonical toString (single- or multi-field).
+                case d: Typedef.Dto if d.isIdentifier =>
+                  q"$ref.toString"
+                // M19/PR-60: single-primitive-field wrappers — peel and recurse.
+                case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
+                  val inner = d.fields.head
+                  encodeKey(inner.tpe, q"$ref.${inner.name.name}")
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -453,6 +460,17 @@ class ScJsonCodecGenerator(
                           val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
                           q"$circeKeyDecoder.instance(s => ${targetTpe}_JsonCodec.instance.decode(ctx, $circeJson.fromString(s)).toOption)"
                       }
+                    // M19/PR-60: id types — call the parser-based round trip.
+                    case d: Typedef.Dto if d.isIdentifier =>
+                      val targetTpe   = trans.toScTypeRefKeepForeigns(uid, domain, evo)
+                      val nestedCodec = ScValue.ScType(targetTpe.pkg, s"${targetTpe.name}Codec", targetTpe.inObject)
+                      q"$circeKeyDecoder.instance(s => $nestedCodec.parseRepr(s).toOption)"
+                    // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct.
+                    case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
+                      val inner       = d.fields.head
+                      val targetTpe   = trans.toScTypeRefKeepForeigns(uid, domain, evo)
+                      val innerKeyDec = getKeyDecoder(inner.tpe)
+                      q"$circeKeyDecoder.instance(s => $innerKeyDec.apply(s).map(v => $targetTpe(${inner.name.name} = v)))"
                     case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
                   }
                 case o =>

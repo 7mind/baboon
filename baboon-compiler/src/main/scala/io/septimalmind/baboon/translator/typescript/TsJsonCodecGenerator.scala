@@ -233,6 +233,10 @@ class TsJsonCodecGenerator(
                 q"Object.fromEntries(Object.entries($ref).map(([k, v]) => [k, ${mkJsonEncoder(args.last, q"v")}]))"
               case TypeRef.Scalar(TypeId.Builtins.str) =>
                 q"Object.fromEntries(Array.from($ref.entries()).map(([k, v]) => [k, ${mkJsonEncoder(args.last, q"v")}]))"
+              // M19/PR-60: user-type map keys (wrapper/id) emit a string-keyed object via the
+              // canonical primitive-string key form (NOT the wrapper's value-position object form).
+              case _ if isUserMapKey(keyType) =>
+                q"Object.fromEntries(Array.from($ref.entries()).map(([k, v]) => [${mkJsonKeyEncoder(keyType, q"k")}, ${mkJsonEncoder(args.last, q"v")}]))"
               case _ =>
                 q"Array.from($ref.entries()).map(([k, v]) => [${mkJsonEncoder(args.head, q"k")}, ${mkJsonEncoder(args.last, q"v")}])"
             }
@@ -240,6 +244,104 @@ class TsJsonCodecGenerator(
         }
       case a: TypeRef.Any => mkAnyEncoder(a, ref)
     }
+  }
+
+  // M19/PR-60: detect user-type map keys (id types or single-primitive wrapper data)
+  // for the explicit primitive-string emission path. Validator (PR-59) gates eligibility.
+  private def isUserMapKey(tpe: TypeRef): Boolean = tpe match {
+    case TypeRef.Scalar(u: TypeId.User) =>
+      domain.defs.meta.nodes.get(u) match {
+        case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) =>
+          d.isIdentifier || (d.fields.size == 1 && d.contracts.isEmpty)
+        case _ => false
+      }
+    case _ => false
+  }
+
+  // M19/PR-60: encoder for user-type map keys. Produces a JS string expression suitable
+  // as a JSON object key. Single-primitive wrappers recurse on inner field; ids use toString().
+  private def mkJsonKeyEncoder(tpe: TypeRef, ref: TextTree[TsValue]): TextTree[TsValue] = tpe match {
+    case TypeRef.Scalar(u: TypeId.User) =>
+      domain.defs.meta.nodes.get(u) match {
+        case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.isIdentifier =>
+          q"$ref.toString()"
+        case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.fields.size == 1 && d.contracts.isEmpty =>
+          val inner = d.fields.head
+          mkJsonKeyEncoder(inner.tpe, q"$ref.${inner.name.name}")
+        case _ =>
+          // PR-60-D04: validator (PR-59) should reject any other user-type as a map key. If we
+          // land here, the validator missed a case — fail loudly rather than silently emit
+          // value-position output that may not be a string.
+          q"""(() => { throw new Error("BUG: Unexpected key usertype (validator should have rejected): " + JSON.stringify($ref)) })()"""
+      }
+    case _ =>
+      // Builtin scalar key — use String coercion of the value-position encoded form.
+      q"String(${mkJsonEncoder(tpe, ref)})"
+  }
+
+  // M19/PR-60: decoder for user-type map keys. Single-primitive wrappers recurse
+  // and construct via `new Wrapper({field: parsed})`; ids use codecObj.parseRepr.
+  private def mkJsonKeyDecoder(tpe: TypeRef, ref: TextTree[TsValue]): TextTree[TsValue] = tpe match {
+    case TypeRef.Scalar(u: TypeId.User) =>
+      domain.defs.meta.nodes.get(u) match {
+        case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.isIdentifier =>
+          val tsType   = trans.asTsTypeDerefForeign(u, domain, evo, tsFileTools.definitionsBasePkg)
+          val codecObj = tsType.name.head.toLower.toString + tsType.name.tail + "Codec"
+          val codecRef = TsValue.TsType(tsType.moduleId, codecObj)
+          q"((($codecRef.parseRepr($ref) as unknown) as { tag: \"Right\"; value: $tsType }).value)"
+        case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.fields.size == 1 && d.contracts.isEmpty =>
+          val inner    = d.fields.head
+          val tsType   = trans.asTsTypeDerefForeign(u, domain, evo, tsFileTools.definitionsBasePkg)
+          val innerDec = mkJsonKeyDecoder(inner.tpe, ref)
+          q"new $tsType($innerDec)"
+        case _ =>
+          // Validator (PR-59) should reject any other user-type as a map key. If we land here, the
+          // validator missed a case — fail loudly with a defensive throw rather than emit silently
+          // wrong code (PR-60-D04).
+          q"""(() => { throw new Error("BUG: Unexpected key usertype (validator should have rejected): " + JSON.stringify($ref)) })()"""
+      }
+    case _ =>
+      // PR-60-D01: builtin scalar key — `ref` is a string at runtime (from `Object.entries`/keys).
+      // The value-position `mkJsonDecoder` emits TS type-system casts (`$ref as number`) that do NOT
+      // parse the string at runtime. Emit the explicit JS-runtime parse for each primitive.
+      parsePrimitiveKey(tpe, ref)
+  }
+
+  // PR-60-D01: parse a JS string into the typed primitive value for a map-key position. Used by
+  // `mkJsonKeyDecoder` only — the value-position decoder consumes already-typed JSON values from
+  // the parsed wire form, while keys arrive as strings (`Object.keys`/`Object.entries` outputs).
+  private def parsePrimitiveKey(tpe: TypeRef, ref: TextTree[TsValue]): TextTree[TsValue] = tpe match {
+    case TypeRef.Scalar(id) =>
+      id match {
+        case TypeId.Builtins.bit =>
+          q"($ref === \"true\")"
+        case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 | TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 =>
+          q"parseInt($ref, 10)"
+        case TypeId.Builtins.i64 | TypeId.Builtins.u64 =>
+          q"BigInt($ref)"
+        case TypeId.Builtins.f32 | TypeId.Builtins.f64 =>
+          q"parseFloat($ref)"
+        case TypeId.Builtins.f128 =>
+          q"$tsBaboonDecimal.fromString($ref)"
+        case TypeId.Builtins.str | TypeId.Builtins.uid =>
+          ref
+        case TypeId.Builtins.bytes =>
+          q"$tsBinTools.hexDecode($ref)"
+        case TypeId.Builtins.tsu =>
+          target.language.timestampsUtcMode match {
+            case "string" => ref
+            case "date"   => q"new Date($ref)"
+            case _        => q"$tsBaboonDateTimeUtc.fromISO($ref)"
+          }
+        case TypeId.Builtins.tso =>
+          target.language.timestampsOffsetMode match {
+            case "string" => ref
+            case "date"   => q"new Date($ref)"
+            case _        => q"$tsBaboonDateTimeOffset.fromISO($ref)"
+          }
+        case o => throw new RuntimeException(s"BUG: Unexpected primitive key type: $o")
+      }
+    case o => throw new RuntimeException(s"BUG: Non-scalar in primitive-key position: $o")
   }
 
   private def mkJsonDecoder(tpe: TypeRef, ref: TextTree[TsValue]): TextTree[TsValue] = {
@@ -304,6 +406,10 @@ class TsJsonCodecGenerator(
                 q"Object.fromEntries(Object.entries($ref as Record<string, unknown>).map(([k, v]) => [k, ${mkJsonDecoder(args.last, q"v")}]))"
               case TypeRef.Scalar(TypeId.Builtins.str) =>
                 q"new Map(Object.entries($ref as Record<string, unknown>).map(([k, v]) => [k, ${mkJsonDecoder(args.last, q"v")}]))"
+              // M19/PR-60: user-type map keys decode from the string-keyed object emitted by
+              // `mkJsonKeyEncoder` — pair-up entries and reconstruct typed keys via parseRepr/peel.
+              case _ if isUserMapKey(keyType) =>
+                q"new Map(Object.entries($ref as Record<string, unknown>).map(([k, v]) => [${mkJsonKeyDecoder(keyType, q"k")}, ${mkJsonDecoder(args.last, q"v")}] as const))"
               case _ =>
                 q"new Map(Array.isArray($ref) ? ($ref as unknown[][]).map(([k, v]) => [${mkJsonDecoder(args.head, q"k")}, ${mkJsonDecoder(args.last, q"v")}] as const) : [])"
             }

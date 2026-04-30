@@ -107,29 +107,34 @@ final class PyJsonCodecGenerator(
   }
 
   private def genDtoBodies(name: PyType, dto: Typedef.Dto): (TextTree[PyValue], TextTree[PyValue]) = {
-    // For DTOs without `any`-bearing fields, fall through to pydantic's transparent
-    // `model_dump_json` / `model_validate_json` round-trip — pydantic knows every field type.
-    // For DTOs WITH `any`-bearing fields, pydantic cannot round-trip an `AnyOpaque` instance:
+    // For DTOs without `any`-bearing fields AND without `map[user-key, V]` fields, fall through to
+    // pydantic's transparent `model_dump_json` / `model_validate_json` round-trip — pydantic knows
+    // every field type. For DTOs WITH `any`-bearing fields, pydantic cannot round-trip an
+    // `AnyOpaque` instance:
     //   - `model_dump_json` doesn't know how to serialize the runtime ABC.
     //   - `model_validate_json` cannot reconstruct it from a raw envelope dict.
-    // We therefore split the DTO around the `any`-bearing fields: pydantic handles the rest via
-    // `model_dump(mode='json', exclude=any_fields)` / `model_validate(obj_with_any_filled)`,
-    // and we patch in the envelope-encoded `any` payloads manually. The resulting dict is then
-    // serialised with `json.dumps`. Direct counterpart of the per-field walks emitted by Java
-    // (PR 6.3) / TS (PR 7.3) / Dart (PR 8.3) / Swift (PR 9.3) JSON generators.
-    if (!dtoHasAnyField(dto)) {
+    // PR-60-D02: For DTOs containing `map[user-key, V]` fields (where the key is a user DTO/id/
+    // foreign), pydantic's `model_dump_json` is unreliable across versions for keys (does not
+    // deterministically use `__str__`) and `model_validate_json` cannot coerce a string key back
+    // into a Pydantic model (no field validator emitted).
+    // In both cases we split the DTO around the affected fields: pydantic handles the rest via
+    // `model_dump(mode='json', exclude=excluded_fields)` / `model_validate(obj_with_patches)`,
+    // and we patch in the explicit-walker output manually. The resulting dict is then serialised
+    // with `json.dumps`. Direct counterpart of the per-field walks emitted by Java (PR 6.3) /
+    // TS (PR 7.3) / Dart (PR 8.3) / Swift (PR 9.3) JSON generators.
+    if (!dtoNeedsExplicitWalker(dto)) {
       val encode = q"""return value.model_dump_json()""".stripMargin
       val decode = q"""return $name.model_validate_json(wire)""".stripMargin
       (encode, decode)
     } else {
-      val anyFieldNames = dto.fields.filter(f => fieldHasAny(f.tpe)).map(_.name.name)
-      val excludeSet    = anyFieldNames.map(n => q"'$n'").join(", ")
+      val walkedFieldNames = dto.fields.filter(f => fieldNeedsExplicitWalk(f.tpe)).map(_.name.name)
+      val excludeSet       = walkedFieldNames.map(n => q"'$n'").join(", ")
       val encodePatches = dto.fields.collect {
-        case f if fieldHasAny(f.tpe) =>
+        case f if fieldNeedsExplicitWalk(f.tpe) =>
           q"obj['${f.name.name}'] = ${mkJsonAnyEncoder(f.tpe, q"value.${f.name.name}")}"
       }
       val decodePatches = dto.fields.collect {
-        case f if fieldHasAny(f.tpe) =>
+        case f if fieldNeedsExplicitWalk(f.tpe) =>
           q"obj['${f.name.name}'] = ${mkJsonAnyDecoder(f.tpe, q"obj['${f.name.name}']")}"
       }
       val encode =
@@ -144,9 +149,10 @@ final class PyJsonCodecGenerator(
     }
   }
 
-  // Top-level field test: any direct or nested `any` reachable through Constructor args.
-  // Mirrors `PyUEBACodecGenerator.hasAnyField`; this 14th instance (7 UEBA + 7 JSON generators)
-  // is duplicated per-language per-codec — extraction deferred per ledger.
+  // Top-level field test: a codec class needs the any-field helpers if any direct or nested-via-
+  // Constructor-arg field has type `any`. Mirrors `PyUEBACodecGenerator.hasAnyField`; this 14th
+  // instance (7 UEBA + 7 JSON generators) is duplicated per-language per-codec — extraction
+  // deferred per ledger.
   private def hasAnyField(defn: DomainMember.User): Boolean = {
     defn.defn match {
       case d: Typedef.Dto => dtoHasAnyField(d)
@@ -162,10 +168,37 @@ final class PyJsonCodecGenerator(
     case c: TypeRef.Constructor => c.args.exists(fieldHasAny)
   }
 
-  // Builds an expression that produces a JSON-friendly Python value (dict/list/scalar) for an
-  // `any`-bearing field's value. Only navigates structures that may contain `any`; all-non-any
-  // sub-trees are passed through `value.model_dump(mode='json')` at the DTO level so this walker
-  // never has to know how to serialize primitives or user types.
+  // PR-60-D02: detect whether the DTO contains any `map[user-key, V]` fields where the key is a
+  // user type (DTO/id/foreign). Pydantic's transparent path mis-handles such keys; the explicit
+  // walker uses `mkJsonKeyEncoder`/`mkJsonKeyDecoder` to round-trip them as strings.
+  private def dtoHasUserKeyMapField(dto: Typedef.Dto): Boolean = dto.fields.exists(f => fieldHasUserKeyMap(f.tpe))
+
+  private def fieldHasUserKeyMap(tpe: TypeRef): Boolean = tpe match {
+    case _: TypeRef.Any    => false
+    case _: TypeRef.Scalar => false
+    case c: TypeRef.Constructor =>
+      val isMapWithUserKey = c.id == TypeId.Builtins.map && (c.args.head match {
+        case TypeRef.Scalar(_: TypeId.User) => true
+        case _                              => false
+      })
+      isMapWithUserKey || c.args.exists(fieldHasUserKeyMap)
+  }
+
+  // PR-60-D02: route a DTO through the explicit walker path when EITHER any-bearing OR user-key-
+  // map-bearing fields are present. The walker handles both cases; non-walked subtrees are passed
+  // through `pydantic_core.to_jsonable_python` (encode) / left untouched for Pydantic
+  // `model_validate` to coerce (decode).
+  private def dtoNeedsExplicitWalker(dto: Typedef.Dto): Boolean =
+    dtoHasAnyField(dto) || dtoHasUserKeyMapField(dto)
+
+  private def fieldNeedsExplicitWalk(tpe: TypeRef): Boolean =
+    fieldHasAny(tpe) || fieldHasUserKeyMap(tpe)
+
+  // Builds an expression that produces a JSON-friendly Python value (dict/list/scalar) for a
+  // walked field's value. Recurses only into subtrees that need explicit walking (any-bearing
+  // OR user-key-map). Subtrees that need NO explicit walking are passed through
+  // `pydantic_core.to_jsonable_python(ref)` — equivalent to what `model_dump(mode='json')` would
+  // have produced if we'd let it process the field naturally.
   private def mkJsonAnyEncoder(tpe: TypeRef, ref: TextTree[PyValue]): TextTree[PyValue] = tpe match {
     case a: TypeRef.Any => mkAnyEncoderCall(a, ref)
     case c: TypeRef.Constructor =>
@@ -175,18 +208,53 @@ final class PyJsonCodecGenerator(
         case TypeId.Builtins.lst | TypeId.Builtins.set =>
           q"[${mkJsonAnyEncoder(c.args.head, q"v")} for v in $ref]"
         case TypeId.Builtins.map =>
-          // Keys are non-`any` per typer (only DTO fields, opt/lst/set/map values, and contracts
-          // can carry `any` — never map keys); we fall through to `model_dump`-style key
-          // serialization which preserves the JSON key (str-only after `mode='json'`).
-          q"{k: ${mkJsonAnyEncoder(c.args.last, q"v")} for k, v in $ref.items()}"
-        case o => throw new RuntimeException(s"BUG: unexpected any-bearing constructor: $o")
+          // M19/PR-60: map-key handling. For user-DTO/`id`/foreign keys, the validator (PR-59)
+          // gates eligibility; we emit explicit primitive-string projection via `mkJsonKeyEncoder`
+          // so cross-language compat sees a flat string-keyed JSON object. For builtin keys,
+          // `mkJsonKeyEncoder` is identity (Pydantic model_dump_json handles primitive keys via
+          // mode='json'). The value side recurses only if needed.
+          val keyExpr = mkJsonKeyEncoder(c.args.head, q"k")
+          q"{$keyExpr: ${mkJsonAnyEncoder(c.args.last, q"v")} for k, v in $ref.items()}"
+        case o => throw new RuntimeException(s"BUG: unexpected walked-field constructor: $o")
       }
-    case s: TypeRef.Scalar => throw new RuntimeException(s"BUG: scalar in any-bearing path: $s")
+    case _: TypeRef.Scalar =>
+      // PR-60-D02: a scalar may legitimately appear inside a walked subtree (e.g. the value side
+      // of `map[user-key, V]` where V is itself a non-any-bearing scalar). Defer JSON conversion
+      // to Pydantic's `to_jsonable_python` — equivalent to what `model_dump(mode='json')` would
+      // have produced for that scalar.
+      q"$pyToJsonablePython($ref)"
+  }
+
+  // M19/PR-60: produces a JSON-serializable key (Python str/int/etc.) from a typed key. For
+  // single-primitive wrappers, peel via attribute access and recurse. For `id` types, use
+  // `str(k)` (PR-57d emits __str__ as the canonical repr). For builtins, return the value
+  // (Pydantic model_dump_json handles primitive keys via mode='json').
+  private def mkJsonKeyEncoder(tpe: TypeRef, ref: TextTree[PyValue]): TextTree[PyValue] = tpe match {
+    case TypeRef.Scalar(u: TypeId.User) =>
+      domain.defs.meta.nodes.get(u) match {
+        case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.isIdentifier =>
+          q"str($ref)"
+        case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.fields.size == 1 && d.contracts.isEmpty =>
+          val inner = d.fields.head
+          mkJsonKeyEncoder(inner.tpe, q"$ref.${inner.name.name}")
+        // PR-60-D03: foreign-typed keys — defensive str() coercion. The user-supplied codec
+        // may produce a non-string value; str() ensures `json.dumps` accepts it as an object key.
+        case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) =>
+          q"str($ref)"
+        case _ =>
+          // PR-60-D04: validator (PR-59) should reject any other user-type as a map key. If we
+          // land here, the validator missed a case — fail loudly rather than silently emit
+          // a non-string dict key that json.dumps would reject. `.throw()` on an empty
+          // generator is the canonical Python idiom for raising in expression position.
+          q"""(_ for _ in ()).throw(Exception(f"BUG: Unexpected key usertype (validator should have rejected): {repr($ref)}"))"""
+      }
+    case _ => ref
   }
 
   // Builds an expression that consumes a JSON-friendly Python value (dict/list/scalar) and
-  // returns a typed value (with `AnyOpaqueJson` instances at the `any` leaves). The decoder
-  // emits `model_validate(obj)` afterward to coerce the rest.
+  // returns a typed-or-coercible value. Recurses only into subtrees that need explicit walking;
+  // the subsequent `model_validate(obj)` call coerces the remaining (non-walked) leaves into
+  // typed objects.
   private def mkJsonAnyDecoder(tpe: TypeRef, ref: TextTree[PyValue]): TextTree[PyValue] = tpe match {
     case a: TypeRef.Any => mkAnyDecoderCall(a, ref)
     case c: TypeRef.Constructor =>
@@ -196,10 +264,46 @@ final class PyJsonCodecGenerator(
         case TypeId.Builtins.lst | TypeId.Builtins.set =>
           q"[${mkJsonAnyDecoder(c.args.head, q"v")} for v in $ref]"
         case TypeId.Builtins.map =>
-          q"{k: ${mkJsonAnyDecoder(c.args.last, q"v")} for k, v in $ref.items()}"
-        case o => throw new RuntimeException(s"BUG: unexpected any-bearing constructor: $o")
+          // PR-60-D02: rebuild typed keys via `mkJsonKeyDecoder` BEFORE handing the dict to
+          // Pydantic — `model_validate` cannot coerce a JSON string back into a Pydantic model,
+          // so the key must already be the typed form. For builtin keys (where `mkJsonKeyDecoder`
+          // is identity), Pydantic coerces normally.
+          val keyExpr = mkJsonKeyDecoder(c.args.head, q"k")
+          q"{$keyExpr: ${mkJsonAnyDecoder(c.args.last, q"v")} for k, v in $ref.items()}"
+        case o => throw new RuntimeException(s"BUG: unexpected walked-field constructor: $o")
       }
-    case s: TypeRef.Scalar => throw new RuntimeException(s"BUG: scalar in any-bearing path: $s")
+    case _: TypeRef.Scalar =>
+      // PR-60-D02: scalar leaves inside walked subtrees pass through unchanged — the subsequent
+      // `model_validate(obj)` call handles primitive/user-type coercion from JSON.
+      ref
+  }
+
+  // PR-60-D02: rebuild a typed key from a JSON-string key. Mirrors `mkJsonKeyEncoder`. For
+  // single-primitive wrappers, recurse and reconstruct via the wrapper's constructor; for `id`
+  // types, parse via `<IdName>Codec.parse_repr(s).value` (validator gates well-formedness — see
+  // PR-60-D07 for the deferred malformed-key error-semantics work). For foreigns and builtins,
+  // rely on Pydantic's coercion via `model_validate` at the call site.
+  private def mkJsonKeyDecoder(tpe: TypeRef, ref: TextTree[PyValue]): TextTree[PyValue] = tpe match {
+    case TypeRef.Scalar(u: TypeId.User) =>
+      domain.defs.meta.nodes.get(u) match {
+        case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.isIdentifier =>
+          val tpeRef     = typeTranslator.asPyTypeKeepForeigns(u, domain, evolution, pyFileTools.definitionsBasePkg)
+          val codecClass = PyType(tpeRef.moduleId, s"${tpeRef.name}Codec")
+          q"$codecClass.parse_repr($ref).value"
+        case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.fields.size == 1 && d.contracts.isEmpty =>
+          val inner    = d.fields.head
+          val tpeRef   = typeTranslator.asPyTypeKeepForeigns(u, domain, evolution, pyFileTools.definitionsBasePkg)
+          val innerDec = mkJsonKeyDecoder(inner.tpe, ref)
+          q"$tpeRef(${inner.name.name}=$innerDec)"
+        case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) =>
+          // Foreign-keyed wrapper: defer to Pydantic — `model_validate` will use the user-supplied
+          // codec to coerce the JSON-string into the foreign type.
+          ref
+        case _ =>
+          // PR-60-D04: validator (PR-59) should reject any other user-type as a map key.
+          q"""(_ for _ in ()).throw(Exception(f"BUG: Unexpected key usertype (validator should have rejected): {repr($ref)}"))"""
+      }
+    case _ => ref
   }
 
   private def mkAnyEncoderCall(a: TypeRef.Any, ref: TextTree[PyValue]): TextTree[PyValue] = {

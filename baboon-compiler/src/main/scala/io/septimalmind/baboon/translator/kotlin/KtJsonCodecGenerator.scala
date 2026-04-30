@@ -204,6 +204,13 @@ class KtJsonCodecGenerator(
                     case _ =>
                       q"$ref.toString()"
                   }
+                // M19/PR-60: id types — emit canonical toString (single- or multi-field).
+                case d: Typedef.Dto if d.isIdentifier =>
+                  q"$ref.toString()"
+                // M19/PR-60: single-primitive-field wrappers — peel and recurse.
+                case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
+                  val inner = d.fields.head
+                  encodeKey(inner.tpe, q"$ref.${inner.name.name}")
                 case o =>
                   throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
@@ -365,6 +372,17 @@ class KtJsonCodecGenerator(
                           val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
                           q"$targetTpe.decode(ctx, $jsonPrimitive($ref))"
                       }
+                    // M19/PR-60: id types — call parseRepr and unwrap Right (throw on Left).
+                    case d: Typedef.Dto if d.isIdentifier =>
+                      val targetTpe   = trans.toKtTypeRefKeepForeigns(u, domain, evo)
+                      val nestedCodec = KtValue.KtType(targetTpe.pkg, s"${targetTpe.name}Codec")
+                      q"($nestedCodec.parseRepr($ref) as $baboonEither.Right).value"
+                    // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct.
+                    case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
+                      val inner     = d.fields.head
+                      val targetTpe = trans.toKtTypeRefKeepForeigns(u, domain, evo)
+                      val innerDec  = decodeKey(inner.tpe, ref)
+                      q"$targetTpe($innerDec)"
                     case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
                   }
                 case o => throw new RuntimeException(s"BUG: Type/usertype mismatch: $o")
