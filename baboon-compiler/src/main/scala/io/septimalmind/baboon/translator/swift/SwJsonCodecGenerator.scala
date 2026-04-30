@@ -337,62 +337,76 @@ class SwJsonCodecGenerator(
                 (q"""Set(($ref as! [Any]).map { $varName in $elemDec })""", false)
               }
             case TypeId.Builtins.map =>
-              val keyDec             = decodeKey(c.args.head, q"$varName.key")
+              val (keyDec, keyThr)   = decodeKey(c.args.head, q"$varName.key")
               val (valueDec, valThr) = decodeElement(c.args.last, q"$varName.value", depth + 1)
+              val anyThr = keyThr || valThr
+              // `Dictionary(uniqueKeysWithValues:)` is `rethrows`: it re-throws whatever the
+              // mapping closure throws. If either the key or value decode uses `try`, the outer
+              // `Dictionary(...)` call must itself be marked with `try`.
               val mapExpr = if (valThr) {
                 q"""Dictionary(uniqueKeysWithValues: ($ref as! [String: Any]).map { $varName in ($keyDec, try $valueDec) })"""
               } else {
                 q"""Dictionary(uniqueKeysWithValues: ($ref as! [String: Any]).map { $varName in ($keyDec, $valueDec) })"""
               }
-              (mapExpr, valThr)
+              (mapExpr, anyThr)
             case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
         case a: TypeRef.Any => (mkAnyDecoder(a, ref), true)
       }
     }
 
-    def decodeKey(tpe: TypeRef, ref: TextTree[SwValue]): TextTree[SwValue] = {
+    // Returns (expression, mayThrow). `mayThrow` is true when the expression embeds `try` (i.e.
+    // the key decoder itself can throw — Foreign-Custom keys delegate to `instance.decode` which
+    // is `throws`; single-field wrappers over a throwing key type propagate the flag).
+    def decodeKey(tpe: TypeRef, ref: TextTree[SwValue]): (TextTree[SwValue], Boolean) = {
       tpe match {
         case TypeRef.Scalar(id) =>
           id match {
-            case TypeId.Builtins.bit   => q"$ref == \"true\""
-            case TypeId.Builtins.i08   => q"Int8($ref)!"
-            case TypeId.Builtins.i16   => q"Int16($ref)!"
-            case TypeId.Builtins.i32   => q"Int32($ref)!"
-            case TypeId.Builtins.i64   => q"Int64($ref)!"
-            case TypeId.Builtins.u08   => q"UInt8($ref)!"
-            case TypeId.Builtins.u16   => q"UInt16($ref)!"
-            case TypeId.Builtins.u32   => q"UInt32($ref)!"
-            case TypeId.Builtins.u64   => q"UInt64($ref)!"
-            case TypeId.Builtins.f32   => q"Float($ref)!"
-            case TypeId.Builtins.f64   => q"Double($ref)!"
-            case TypeId.Builtins.f128  => q"$baboonDecimal($ref)"
-            case TypeId.Builtins.str   => q"$ref"
-            case TypeId.Builtins.uid   => q"UUID(uuidString: $ref)!"
-            case TypeId.Builtins.bytes => q"$baboonByteStringTools.fromHexString($ref)"
-            case TypeId.Builtins.tsu   => q"$baboonTimeFormats.parseUtc($ref)"
-            case TypeId.Builtins.tso   => q"$baboonTimeFormats.parseOffset($ref)"
+            case TypeId.Builtins.bit   => (q"$ref == \"true\"", false)
+            case TypeId.Builtins.i08   => (q"Int8($ref)!", false)
+            case TypeId.Builtins.i16   => (q"Int16($ref)!", false)
+            case TypeId.Builtins.i32   => (q"Int32($ref)!", false)
+            case TypeId.Builtins.i64   => (q"Int64($ref)!", false)
+            case TypeId.Builtins.u08   => (q"UInt8($ref)!", false)
+            case TypeId.Builtins.u16   => (q"UInt16($ref)!", false)
+            case TypeId.Builtins.u32   => (q"UInt32($ref)!", false)
+            case TypeId.Builtins.u64   => (q"UInt64($ref)!", false)
+            case TypeId.Builtins.f32   => (q"Float($ref)!", false)
+            case TypeId.Builtins.f64   => (q"Double($ref)!", false)
+            case TypeId.Builtins.f128  => (q"$baboonDecimal($ref)", false)
+            case TypeId.Builtins.str   => (q"$ref", false)
+            case TypeId.Builtins.uid   => (q"UUID(uuidString: $ref)!", false)
+            case TypeId.Builtins.bytes => (q"$baboonByteStringTools.fromHexString($ref)", false)
+            case TypeId.Builtins.tsu   => (q"$baboonTimeFormats.parseUtc($ref)", false)
+            case TypeId.Builtins.tso   => (q"$baboonTimeFormats.parseOffset($ref)", false)
             case u: TypeId.User =>
               domain.defs.meta.nodes(u) match {
                 case ud: DomainMember.User =>
                   ud.defn match {
                     case _: Typedef.Enum =>
                       val targetTpe = trans.toSwTypeRefKeepForeigns(u, domain, evo)
-                      q"$targetTpe.parse($ref)!"
+                      (q"$targetTpe.parse($ref)!", false)
                     case _: Typedef.Foreign =>
-                      val targetTpe = codecName(trans.toSwTypeRefKeepForeigns(u, domain, evo))
-                      q"try $targetTpe.instance.decode(ctx, $ref)"
+                      // JSON map keys are always strings. For Custom-foreign types that are
+                      // Swift typealiases (e.g. `typealias FStr = String`), the encoded key
+                      // value IS the string; we recover it via a direct cast rather than
+                      // routing through the generated foreign codec (which emits `fatalError`
+                      // because the host is expected to provide a hand-written implementation).
+                      // This mirrors the Scala codec that constructs `ItemKey(v = keyString)`
+                      // directly without calling `FStr_JsonCodec` (PR-68-D01 fix).
+                      val foreignTpe = trans.toSwTypeRefKeepForeigns(u, domain, evo)
+                      (q"($ref as! $foreignTpe)", false)
                     // M19/PR-60: id types — call parseRepr and unwrap .right (fatalError on .left).
                     case d: Typedef.Dto if d.isIdentifier =>
                       val targetTpe   = trans.toSwTypeRefKeepForeigns(u, domain, evo)
                       val nestedCodec = SwValue.SwType(targetTpe.pkg, s"${targetTpe.name}Codec")
-                      q"""{ () -> $targetTpe in guard case .right(let r) = $nestedCodec.parseRepr($ref) else { fatalError(\"Cannot parse id key: \\($ref)\") }; return r }()"""
+                      (q"""{ () -> $targetTpe in guard case .right(let r) = $nestedCodec.parseRepr($ref) else { fatalError(\"Cannot parse id key: \\($ref)\") }; return r }()""", false)
                     // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct.
                     case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
-                      val inner     = d.fields.head
-                      val targetTpe = trans.toSwTypeRefKeepForeigns(u, domain, evo)
-                      val innerDec  = decodeKey(inner.tpe, ref)
-                      q"$targetTpe(${inner.name.name}: $innerDec)"
+                      val inner          = d.fields.head
+                      val targetTpe      = trans.toSwTypeRefKeepForeigns(u, domain, evo)
+                      val (innerDec, innerThr) = decodeKey(inner.tpe, ref)
+                      (q"$targetTpe(${inner.name.name}: $innerDec)", innerThr)
                     case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
                   }
                 case o => throw new RuntimeException(s"BUG: Type/usertype mismatch: $o")

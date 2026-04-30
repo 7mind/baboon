@@ -139,6 +139,24 @@ mv "$TEST_DIR/dt-stub/lib/baboon_any_opaque.dart" "$TEST_DIR/dt-stub/packages/ba
 mv "$TEST_DIR/dt-stub/lib/baboon_codecs_facade.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 mv "$TEST_DIR/dt-stub/lib/baboon_identifier_repr.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 
+# PR-68 (M23.4): Swift SPM splits BaboonTests into per-module .testTarget()s
+# (one per Tests/BaboonTests/<Module>/ subdirectory) to avoid `.o` filename
+# collisions on duplicate basenames (e.g. holder_test.swift in both
+# MyOkM19Direct and MyOkM19Foreign). Each per-module test target is its own
+# Swift module with path Tests/BaboonTests/<Module>; the codegen-emitted
+# CrossLanguageFixturePath.swift sits at Tests/BaboonTests/ top level and is
+# referenced (no import) from generated tests as if it were in the same
+# module. We materialize that by copying the helper into every per-module
+# subdirectory so each per-module target compiles its own copy.
+SW_BTESTS="$TEST_DIR/sw-stub/Tests/BaboonTests"
+if [ -f "$SW_BTESTS/CrossLanguageFixturePath.swift" ]; then
+  for sub in "$SW_BTESTS"/*/; do
+    [ -d "$sub" ] || continue
+    cp "$SW_BTESTS/CrossLanguageFixturePath.swift" "$sub"
+  done
+  rm -f "$SW_BTESTS/CrossLanguageFixturePath.swift"
+fi
+
 # Generate KMP Kotlin code (separate invocation with --kt-multiplatform=true)
 $BABOON_BIN \
   --model-dir ./baboon-compiler/src/test/resources/baboon/ \
@@ -427,6 +445,16 @@ mv "$TEST_DIR/dt-stub/lib/baboon_fixture.dart" "$TEST_DIR/dt-stub/packages/baboo
 mv "$TEST_DIR/dt-stub/lib/baboon_any_opaque.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 mv "$TEST_DIR/dt-stub/lib/baboon_codecs_facade.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 mv "$TEST_DIR/dt-stub/lib/baboon_identifier_repr.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+
+# PR-68 (M23.4): see test-gen-regular-adt for rationale.
+SW_BTESTS="$TEST_DIR/sw-stub/Tests/BaboonTests"
+if [ -f "$SW_BTESTS/CrossLanguageFixturePath.swift" ]; then
+  for sub in "$SW_BTESTS"/*/; do
+    [ -d "$sub" ] || continue
+    cp "$SW_BTESTS/CrossLanguageFixturePath.swift" "$sub"
+  done
+  rm -f "$SW_BTESTS/CrossLanguageFixturePath.swift"
+fi
 
 # Generate KMP Kotlin code (separate invocation with --kt-multiplatform=true)
 $BABOON_BIN \
