@@ -2020,3 +2020,21 @@ Both tests pass. The dual-path coverage clarifies: `ServiceMultipleInputs` is th
 **Location:** test/conv-test-*/.../compat_main.* (10 files); test/conv-test-sc/src/test/scala/example/Test_CrossLanguageCompat.scala (no repr-equivalence test method)
 **Description:** Plan §4.2 / tasks.md:94 claims "verifies all 9 backends produce byte-identical repr AND identifier wire bytes match equivalent `data` of the same shape". The wire-byte half is verified (JSON `{"x":42,"y":-7}` and UEBA `[0x00, 0x2A,0,0,0, 0xF9,0xFF,0xFF,0xFF]` cross-language identity). The toString-repr half is NOT exercised cross-language. No conv-test compat_main writes `vPointId.toString()` (or equivalent: C# ToString, Rust Display, Swift description, Python __repr__) to a disk artifact, and Test_CrossLanguageCompat has no test that reads such artifacts and asserts byte-identity. The toString machinery shipped in PR-56/PR-57a..d is currently only validated by Scala-side property tests + per-backend Identifier*EmissionTest string assertions on emitted source patterns — never by actually executing the generated toString in 9+ different runtimes and comparing output strings. Concrete failure mode: if Kotlin regressed to emit `PointId(x=42, y=-7)` (default data-class toString) instead of `PointId:2.0.0#x:42:y:-7`, no test in this suite would catch it. Per-backend emission tests assert on compiler-emitted source patterns inside Scala, not on resulting runtime behaviour.
 **Fix:** Extended each of the 10 compat_main files with a `writePointIdRepr` (or per-language equivalent) helper that calls per-backend toString idiom (C# `ToString`, Scala `toString`, Rust `format!("{}", ...)`, TS/Kt/Jv/Dt `toString()`, Swift `description`, Python `repr(...)`) and writes 23 bytes to `target/compat-test/<lang>-repr/point-id.txt` (no trailing newline). Added Scala-side test method `PR-57e-D01 identifier repr should be byte-identical across all 10 backends` in `Test_CrossLanguageCompat.scala`. All 10 backends produce byte-identical content `"PointId:2.0.0#x:42:y:-7"`. No per-emitter divergences surfaced — all 10 backends already implement the canonical spec format. Verified by `mdl :test-gen-compat-{all-10}` and `Test_CrossLanguageCompat` 34/34 PASS.
+
+---
+
+## PR-58
+
+## [PR-58-D01] Comment in `BaboonComparator.scala` overstates what `diffDtos` compares
+**Status:** resolved
+**Severity:** nit (docs-only)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonComparator.scala:282
+**Description:** New comment says "diffDtos compares fields and contracts only" but `diffDtos` (lines 426-502) compares only fields — `d.contracts` is never examined. (The contract comparison happens in `diffContracts` for `Typedef.Contract`.) Misleading for future maintainers.
+**Fix:** Changed "fields and contracts only" to "fields only" in `BaboonComparator.scala:282` comment. `diffDtos` only compares fields; contracts are handled in a separate `diffContracts` for `Typedef.Contract`.
+
+## [PR-58-D02] Unused fixture files `v1/v2/v3.baboon` — dead artifacts
+**Status:** resolved
+**Severity:** nit (cleanup)
+**Location:** baboon-compiler/src/test/resources/baboon/identifier-evolution/{v1,v2,v3}.baboon
+**Description:** PR-58 added these three fixture files but `IdentifierConversionTest` uses inline `stripMargin` strings (mirroring `ScEnumConversionTest` pattern). The fixture files are unused by any test. Dead resources.
+**Fix:** Deleted unused fixture files `baboon-compiler/src/test/resources/baboon/identifier-evolution/{v1,v2,v3}.baboon` and the now-empty `identifier-evolution/` directory. The test uses inline `stripMargin` strings (mirrors `ScEnumConversionTest` pattern) and never read the fixture files.

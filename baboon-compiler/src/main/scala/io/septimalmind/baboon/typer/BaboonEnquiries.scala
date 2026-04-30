@@ -305,6 +305,10 @@ object BaboonEnquiries {
         case id: DomainMember.Builtin => s"[builtin:${id.id.name.name}]"
         case u: DomainMember.User =>
           u.defn match {
+            // §5.1 (M18 identifiers plan): shallowId hashes fields and the type-id
+            // but NOT isIdentifier. This means a data→id or id→data change on a
+            // shape-preserving type produces the same shallowId and is classified as
+            // Unchanged by BaboonComparator (wire formats are byte-identical).
             case d: Typedef.Dto =>
               val members = d.fields.map {
                 f =>
