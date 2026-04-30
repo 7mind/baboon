@@ -2245,3 +2245,14 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Location:** Various m19-ok foreign fixtures; per-backend codegen
 **Description:** Multiple distinct pre-existing backend defects exposed by m19 wrapper-around-foreign fixtures: (a) Scala `FStr_JsonCodec` map encoding produces wrong type in `Holder.scala` — pre-existing wrapper-around-foreign codegen issue (PR-60-D05 family); (b) Kotlin (both JVM and KMP) `java.lang.String` vs `kotlin.String` type-mismatch in generated `FStr.kt`/`ItemKey.kt` — foreign type-mapping inconsistency; (c) Swift SPM "multiple producers" filename collision (`holder_test.swift`, `item_id_test.swift`, etc.) duplicated across m19 subdirectories in a flat `BaboonTests` target — Swift codegen needs subdirectory-qualified test target output. All four reproduce on bare HEAD `903f359` without any PR-64 changes.
 **Fix:** Deferred. Each is a distinct backend defect with its own root cause. Track for per-backend hygiene PRs after M20 closure.
+
+---
+
+## PR-65
+
+## [PR-65-D01] Pre-existing latent gap: `isUserMapKeyEligibleDto` doesn't handle `Typedef.Foreign` or `Typedef.Enum` — wrapper-around-foreign keys silently lack `#[serde(with=...)]` adapter
+**Status:** resolved (deferred — pre-existing since PR-61; surfaced during PR-65 scope expansion; latent because no `holder_tests.rs` exercises the wrapper-around-foreign JSON round-trip)
+**Severity:** minor (latent — only surfaces when wrapper-around-foreign JSON round-trip is exercised)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/rust/RsDefnTranslator.scala:914-918 (`isUserMapKeyEligibleDto`)
+**Description:** Validator's `isEligibleKey` (BaboonValidator.scala:223-281) accepts wrappers around foreigns (Q-M19-7) and enums. Rust's `isUserMapKeyEligibleDto` only handles the `Typedef.Dto` recursive case. Concrete witness: `m19-ok/wrapper-around-foreign.baboon` with `ItemKey { v: FStr }` and `Holder { m: map[ItemKey, str] }`. Validator approves; generated `target/test-regular/rs-stub/src/my/ok/m19/foreign/holder.rs` lacks `#[serde(with=...)]` and `item_key.rs` lacks the adapter module. Currently masked because no JSON round-trip test exercises that fixture.
+**Fix:** Deferred. Track for separate hygiene PR alongside PR-66 (Scala parallel) since the foreign-Custom map-key encoding bug surface is identical across backends.

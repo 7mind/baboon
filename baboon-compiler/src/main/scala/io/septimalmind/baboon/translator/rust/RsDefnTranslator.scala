@@ -627,24 +627,23 @@ object RsDefnTranslator {
       val encodeKey: TextTree[RsValue] =
         if (dto.isIdentifier) q"format!(\"{}\", k)"
         else {
-          // single-primitive-field wrapper — peel to the inner field and use
-          // the primitive's Display impl. Validator (isEligibleKey) guarantees
-          // the inner type is a non-float builtin scalar with a sensible string
-          // form on Display.
-          val inner   = dto.fields.head
-          val rsField = toSnakeCase(inner.name.name)
-          inner.tpe match {
+          // Single-primitive-field wrapper (possibly nested): peel to the leaf
+          // scalar and use its Display or dedicated serializer.
+          // peelWrapperChain is guaranteed to return Some here because
+          // isUserMapKeyEligibleDto already approved this DTO.
+          val (leafTpe, leafPath, _) = peelWrapperChain(dto, name).getOrElse(
+            throw new IllegalStateException(s"renderUserMapKeyAdapter: peelWrapperChain returned None for ${name.name}")
+          )
+          leafTpe match {
             case TypeRef.Scalar(TypeId.Builtins.bytes) =>
-              // Vec<u8> doesn't implement Display; reuse the runtime hex helper
-              // so this path matches the canonical baboon hex form used by
-              // the rest of the JSON wire.
-              q"crate::baboon_identifier_repr::bytes_to_hex(&k.$rsField)"
+              // Vec<u8> doesn't implement Display; reuse the runtime hex helper.
+              q"crate::baboon_identifier_repr::bytes_to_hex(&k.$leafPath)"
             case TypeRef.Scalar(TypeId.Builtins.tsu) =>
-              q"crate::baboon_runtime::time_formats::format_tsu(&k.$rsField)"
+              q"crate::baboon_runtime::time_formats::format_tsu(&k.$leafPath)"
             case TypeRef.Scalar(TypeId.Builtins.tso) =>
-              q"crate::baboon_runtime::time_formats::format_tso(&k.$rsField)"
+              q"crate::baboon_runtime::time_formats::format_tso(&k.$leafPath)"
             case _ =>
-              q"format!(\"{}\", k.$rsField)"
+              q"format!(\"{}\", k.$leafPath)"
           }
         }
 
@@ -654,12 +653,15 @@ object RsDefnTranslator {
           val codecMod = s"${toSnakeCase(name.name)}_repr_codec"
           q"$codecMod::parse_repr(&s)"
         } else {
-          val inner   = dto.fields.head
-          val rsField = toSnakeCase(inner.name.name)
-          val innerT  = trans.asRsRef(inner.tpe, domain, evo)
+          // Peel to the leaf scalar, parse it, then rewrap through every layer
+          // from innermost to outermost via chained .map calls.
+          val (leafTpe, _, wrappers) = peelWrapperChain(dto, name).getOrElse(
+            throw new IllegalStateException(s"renderUserMapKeyAdapter: peelWrapperChain returned None for ${name.name}")
+          )
+          val leafT = trans.asRsRef(leafTpe, domain, evo)
           // Parse via str::parse; for primitive scalars Rust's FromStr matches
           // Display's wire form. Bytes/timestamps require dedicated parsers.
-          val parseExpr: TextTree[RsValue] = inner.tpe match {
+          val parseExpr: TextTree[RsValue] = leafTpe match {
             case TypeRef.Scalar(TypeId.Builtins.bytes) =>
               q"crate::baboon_identifier_repr::parse_bytes_hex(&s)"
             case TypeRef.Scalar(TypeId.Builtins.tsu) =>
@@ -667,9 +669,13 @@ object RsDefnTranslator {
             case TypeRef.Scalar(TypeId.Builtins.tso) =>
               q"crate::baboon_runtime::time_formats::parse_tso(&s)"
             case _ =>
-              q"s.parse::<$innerT>().map_err(|e| format!(\"{}\", e))"
+              q"s.parse::<$leafT>().map_err(|e| format!(\"{}\", e))"
           }
-          q"""$parseExpr.map(|v| ${name.asName} { $rsField: v })"""
+          // wrappers is ordered innermost-first; chain .map(|v| Wrapper { field: v })
+          wrappers.foldLeft(parseExpr) {
+            case (acc, (fieldSnake, wrapRs)) =>
+              q"$acc.map(|v| ${wrapRs.asName} { $fieldSnake: v })"
+          }
         }
 
       q"""pub mod $modName {
@@ -691,9 +697,9 @@ object RsDefnTranslator {
          |        m.end()
          |    }
          |
-         |    pub fn deserialize<'de, D, V>(deserializer: D) -> Result<BTreeMap<${name.asName}, V>, D::Error>
+         |    pub fn deserialize<'de, __De, V>(deserializer: __De) -> Result<BTreeMap<${name.asName}, V>, __De::Error>
          |    where
-         |        D: serde::Deserializer<'de>,
+         |        __De: serde::Deserializer<'de>,
          |        V: serde::Deserialize<'de>,
          |    {
          |        let raw: BTreeMap<String, V> = BTreeMap::<String, V>::deserialize(deserializer)?;
@@ -891,8 +897,8 @@ object RsDefnTranslator {
 
     /** Mirrors `BaboonValidator.isEligibleKey` — DTO branch only. id types are
       * always eligible (Q-M19-6); single-primitive-field non-contract DTOs are
-      * eligible if the inner field is a primitive scalar (no opt/collection,
-      * no float wrappers per Q-M19-2).
+      * eligible if the inner field is a primitive scalar or a recursively-eligible
+      * nested wrapper (no opt/collection, no float wrappers per Q-M19-2).
       */
     private def isUserMapKeyEligibleDto(dto: Typedef.Dto): Boolean = {
       if (dto.isIdentifier) true
@@ -905,7 +911,45 @@ object RsDefnTranslator {
             case TypeId.Builtins.f32 | TypeId.Builtins.f64 | TypeId.Builtins.f128 => false
             case _                                                                 => true
           }
+        case TypeRef.Scalar(u: TypeId.User) =>
+          domain.defs.meta.nodes.get(u) match {
+            case Some(DomainMember.User(_, nested: Typedef.Dto, _, _)) => isUserMapKeyEligibleDto(nested)
+            case _                                                      => false
+          }
         case _ => false
+      }
+    }
+
+    /** For a non-identifier single-field wrapper DTO, peel through nested
+      * single-field wrappers to find the leaf builtin scalar TypeRef and the
+      * accessor path ("f1.f2.f3") and reconstruction chain (innermost-first list
+      * of (fieldSnakeName, RsType) pairs for wrapping back up on decode).
+      *
+      * Returns None for identifier types (those use parse_repr, not peeling).
+      * The returned path is relative to `k` for encode: `k.<path>`.
+      * The wrappers list is ordered innermost-to-outermost for .map chaining.
+      */
+    private def peelWrapperChain(dto: Typedef.Dto, rsName: RsType): Option[(TypeRef.Scalar, String, List[(String, RsType)])] = {
+      if (dto.isIdentifier) None
+      else if (dto.contracts.nonEmpty || dto.fields.size != 1) None
+      else {
+        val field      = dto.fields.head
+        val fieldSnake = toSnakeCase(field.name.name)
+        field.tpe match {
+          case s @ TypeRef.Scalar(_: TypeId.BuiltinScalar) =>
+            Some((s, fieldSnake, List((fieldSnake, rsName))))
+          case TypeRef.Scalar(u: TypeId.User) =>
+            domain.defs.meta.nodes.get(u) match {
+              case Some(DomainMember.User(_, nested: Typedef.Dto, _, _)) =>
+                val nestedRs = trans.toRsTypeRefKeepForeigns(u, domain, evo)
+                peelWrapperChain(nested, nestedRs).map {
+                  case (leafTpe, deepPath, innerWrappers) =>
+                    (leafTpe, s"$fieldSnake.$deepPath", innerWrappers :+ (fieldSnake, rsName))
+                }
+              case _ => None
+            }
+          case _ => None
+        }
       }
     }
 
@@ -1063,14 +1107,14 @@ object RsDefnTranslator {
          |$serImpl
          |
          |impl<'de> serde::Deserialize<'de> for ${name.asName} {
-         |    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+         |    fn deserialize<__De: serde::Deserializer<'de>>(deserializer: __De) -> Result<Self, __De::Error> {
          |        struct AdtVisitor;
          |        impl<'de> serde::de::Visitor<'de> for AdtVisitor {
          |            type Value = ${name.asName};
          |            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
          |                write!(f, "a single-key map representing ${name.name}")
          |            }
-         |            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+         |            fn visit_map<__M: serde::de::MapAccess<'de>>(self, mut map: __M) -> Result<Self::Value, __M::Error> {
          |                let key: String = map.next_key()?
          |                    .ok_or_else(|| serde::de::Error::custom("expected single-key map for ADT"))?;
          |                match key.as_str() {
