@@ -278,6 +278,10 @@ object BaboonComparator {
           diffEnums(e1, e2)
         case (a1: Typedef.Adt, a2: Typedef.Adt) =>
           diffAdts(changes, a1, a2)
+        // §5.1 (M18 identifiers plan): both `data` and `id` types are Typedef.Dto.
+        // diffDtos compares fields only — isIdentifier is deliberately
+        // ignored so that a data→id or id→data shape-preserving change is classified
+        // as Unchanged by the comparator (wire formats are byte-identical).
         case (d1: Typedef.Dto, d2: Typedef.Dto) =>
           diffDtos(changes, d1, d2)
         case (s1: Typedef.Service, s2: Typedef.Service) =>
