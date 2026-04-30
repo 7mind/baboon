@@ -10,9 +10,16 @@ class RsTypes(val cratePrefix: String) {
   val baboonRuntimeCrate: RsCrateId = parseCrate(s"$cratePrefix::baboon_runtime")
   val baboonFixtureCrate: RsCrateId = parseCrate(s"$cratePrefix::baboon_fixture")
   val baboonAnyOpaqueCrate: RsCrateId = parseCrate(s"$cratePrefix::any_opaque")
+  val baboonIdReprCrate: RsCrateId  = parseCrate(s"$cratePrefix::baboon_identifier_repr")
 
   // baboon any-opaque types (PR 4.1 runtime)
   val baboonAnyOpaque: RsType        = RsType(baboonAnyOpaqueCrate, "AnyOpaque")
+
+  // baboon identifier repr helpers (PR-57c). The Cursor type is referenced
+  // by emitted parseRepr code as a value/type. Module-level free functions
+  // (escape_str, parse_*, etc.) are emitted as plain `crate::baboon_identifier_repr::*`
+  // strings.
+  val baboonIdReprCursor: RsType  = RsType(baboonIdReprCrate, "Cursor")
 
   // baboon metadata markers
   val baboonGenerated: RsType       = RsType(baboonRuntimeCrate, "BaboonGenerated")
