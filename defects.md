@@ -2256,3 +2256,21 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/rust/RsDefnTranslator.scala:914-918 (`isUserMapKeyEligibleDto`)
 **Description:** Validator's `isEligibleKey` (BaboonValidator.scala:223-281) accepts wrappers around foreigns (Q-M19-7) and enums. Rust's `isUserMapKeyEligibleDto` only handles the `Typedef.Dto` recursive case. Concrete witness: `m19-ok/wrapper-around-foreign.baboon` with `ItemKey { v: FStr }` and `Holder { m: map[ItemKey, str] }`. Validator approves; generated `target/test-regular/rs-stub/src/my/ok/m19/foreign/holder.rs` lacks `#[serde(with=...)]` and `item_key.rs` lacks the adapter module. Currently masked because no JSON round-trip test exercises that fixture.
 **Fix:** Deferred. Track for separate hygiene PR alongside PR-66 (Scala parallel) since the foreign-Custom map-key encoding bug surface is identical across backends.
+
+---
+
+## PR-66
+
+## [PR-66-D01] Decoder asymmetry — encoder fix produces wire form decoder cannot read back (BLOCKER)
+**Status:** resolved
+**Severity:** major (blocks M23.2 closeout — round-trip property broken for Custom-foreign map keys)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScJsonCodecGenerator.scala (decoder branch in `getKeyDecoder` or analogous, complementary to lines 311-319 encoder branch fixed in PR-66)
+**Description:** PR-66 fixed encoder Foreign-Custom branch to emit `$ref.toString` (a `String`). Decoder branch unchanged — still routes through `${targetTpe}_JsonCodec.instance.decode(ctx, Json.fromString(s))`. For Custom foreigns the generator emits a stub `<Foreign>_JsonCodec` whose `decode` body is `throw new IllegalArgumentException(s"<TargetType> is a foreign type")`. So decode throws unconditionally. Reproduction: `target/test-regular/sc-stub/.../my/ok/m19/foreign/FStr.scala:15-21` decode body throws; `Holder.scala:44` invokes it. The existing test suite doesn't catch this because no spec in test/sc-stub exercises `m19/foreign/Holder_JsonCodec.encode → .decode` round-trip.
+**Fix:** `getKeyDecoder` Foreign branch now dispatches on `ForeignMapping`: `BaboonRef` → recurse as before; `Custom(decl, _)` where `decl == "java.lang.String"` → emit `circeDecodeKeyString` (identity — the JSON key string IS the Scala value); `Custom` with other decl or `None` → preserve old codec-dispatch path (throws). Round-trip test added to `test/sc-stub/src/test/scala/runtime/ForeignMapKeyRoundTripSpec.scala`. Pre-fix: generated `Holder.scala` produced a compile error (type mismatch: encoder emitted `(Json, Json)` pairs, not `(String, Json)`). Post-fix: compiles and round-trips cleanly.
+
+## [PR-66-D02] Latent: enum-keyed-map encoder produces `Json` not `String` (same defect class as D01, untriggered)
+**Status:** resolved
+**Severity:** minor (latent — exists since long before PR-66, no fixture currently exercises it)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScJsonCodecGenerator.scala lines 308-310 (Enum branch in encodeKey)
+**Description:** `q"""${targetTpe}_JsonCodec.instance.encode(ctx, $ref)"""` evaluates to `Json`, not `String`. Used inside `Json.obj(... .map(e => ($key, $value))...)` which requires `String` keys. Latent because `pkg0/pkg01.baboon:320 f: map[T13_1, i32]` is referenced but `T13_2_JsonCodec` is `NoEncoderGenerated` (older-version-only) — encoder path never exercised at runtime. Same defect class as D01.
+**Fix:** Folded into D01 fix. Enum branch in `encodeKey` now emits `q"$ref.toString"` — consistent with `genEnumBodies` which emits `Json.fromString(value.toString)` (so `value.toString` IS the JSON string key). The enum decoder path was already correct (it decoded via `parse(str)` from `Json.fromString(s)`).
