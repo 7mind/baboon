@@ -39,6 +39,11 @@ let package = Package(
             dependencies: ["BaboonRuntime"],
             path: "Sources/MyOk"
         ),
+        .target(
+            name: "IdentifierOk",
+            dependencies: ["BaboonRuntime"],
+            path: "Sources/IdentifierOk"
+        ),
         .testTarget(
             name: "BaboonTests",
             dependencies: [
@@ -49,6 +54,7 @@ let package = Package(
                 "RenameNs",
                 "RenameNs_v1_0_0",
                 "MyOk",
+                "IdentifierOk",
             ],
             path: "Tests/BaboonTests"
         ),

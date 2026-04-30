@@ -1974,3 +1974,14 @@ Both tests pass. The dual-path coverage clarifies: `ServiceMultipleInputs` is th
 **Location:** test/cs-stub/BaboonTests/IdentifierReprTests.cs (Mixed_Roundtrip_*); test/jv-stub/src/test/java/runtime/IdentifierReprTest.java (mixed_Roundtrip_*)
 **Description:** PR-57b's adversarial review observed that the same `Mixed` round-trip test in Java/C# probably has the same gap as Kotlin's K-D02 — asserts substring of toString but doesn't verify `created`/`scheduled` field equality after parseRepr. Not separately verified; the back-port lesson would only catch parser regressions in tsu/tso for those backends.
 **Fix:** Deferred to a hygiene PR. Reasoning: PR-57a is already shipped; back-porting test changes to it would expand PR-57b's surface beyond the Kotlin-only scope. The `IdentifierKotlinEmissionTest` and emission-test patterns will catch any large divergence in toString/parseRepr generators.
+
+---
+
+## PR-57c
+
+## [PR-57c-D01] Swift `Mixed` round-trip test omits `created`/`scheduled` equality assertions — regression of PR-57b-D02 carryover lesson
+**Status:** resolved
+**Severity:** minor (test gap; parser path correctly emits parseTsuRepr/parseTsoRepr but absence of round-trip equality means future tsu/tso parser regression would slip past Swift backend test)
+**Location:** test/sw-stub/Tests/BaboonTests/IdentifierReprTests.swift:236-238 (function testMixedRoundtripEmptyBytesAndUtcTimes)
+**Description:** Rust mirror test (test/rs-stub/tests/identifier_repr_tests.rs:213-214) asserts `assert_eq!(src.created, parsed.created)` AND `assert_eq!(src.scheduled, parsed.scheduled)`. Swift version asserts only `active`, `id`, `payload.count`. Carryover lesson PR-57b-D02 was explicit: Mixed round-trip MUST verify tsu/tso field equality. Round-trip equality on tsu/tso is the whole point of the shape pre-validators added to BaboonIdentifierRepr.swift; without these assertions a regression in parseTsuRepr/parseTsoRepr would not be caught.
+**Fix:** Added `XCTAssertEqual(src.created, got.created)` and `XCTAssertEqual(src.scheduled, got.scheduled)` to `testMixedRoundtripEmptyBytesAndUtcTimes`. Both `BaboonDateTimeOffset` and `Date` conform to `Equatable`; direct equality comparison works. Swift stub passes (`mdl :test-swift-regular` PASS).

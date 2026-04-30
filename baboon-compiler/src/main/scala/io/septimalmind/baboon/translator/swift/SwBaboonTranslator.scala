@@ -282,6 +282,7 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
           rt("BaboonRuntime/baboon_runtime.swift", "baboon-runtime/swift/baboon_runtime.swift"),
           rt("BaboonRuntime/BaboonAnyOpaque.swift", "baboon-runtime/swift/BaboonAnyOpaque.swift"),
           rt("BaboonRuntime/BaboonCodecsFacade.swift", "baboon-runtime/swift/BaboonCodecsFacade.swift"),
+          rt("BaboonRuntime/BaboonIdentifierRepr.swift", "baboon-runtime/swift/BaboonIdentifierRepr.swift"),
         )
       )
     } else {

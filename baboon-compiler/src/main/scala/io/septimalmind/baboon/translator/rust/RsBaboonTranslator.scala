@@ -246,6 +246,16 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
             CompilerProduct.Runtime,
             doNotModify = true,
           ),
+          RsDefnTranslator.Output(
+            "baboon_identifier_repr.rs",
+            // `verbatim` (not `text`): the file contains backslash characters
+            // (escape-handling, hex literals) that would crash Scala's
+            // StringContext.processEscapes if routed through `text`.
+            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/rust/baboon_identifier_repr.rs")),
+            RsValue.RsCrateId(NEList("crate")),
+            CompilerProduct.Runtime,
+            doNotModify = true,
+          ),
         )
       )
     } else {

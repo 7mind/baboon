@@ -42,7 +42,10 @@ object RsDefnTranslator {
     enquiries: BaboonEnquiries,
     wiringTranslator: RsServiceWiringTranslator,
     rsDomainTreeTools: RsDomainTreeTools,
+    rsTypes: RsTypes,
   ) extends RsDefnTranslator[F] {
+
+    private val baboonIdReprCursor: RsValue.RsType = rsTypes.baboonIdReprCursor
 
     override def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       defn.id.owner match {
@@ -201,6 +204,311 @@ object RsDefnTranslator {
       }
     }
 
+    // ----- Identifier toString + parse_repr emission (PR-57c) -----
+    // Spec contract: docs/spec/identifier-repr.md. Mirrors ScDefnTranslator and
+    // JvDefnTranslator/KtDefnTranslator sections but uses Rust idioms:
+    //   - `impl std::fmt::Display` (not ToString — Display is the canonical idiom)
+    //   - free function `pub fn parse_repr(s: &str) -> Result<Self, String>`
+    //     (NOT `impl FromStr` — Q-FU-4 keeps `.parse()` undiscoverable)
+    //   - `Result<T, String>` (not `Either`)
+    private sealed trait IdentifierFieldKind
+    private object IdentifierFieldKind {
+      case object Bit              extends IdentifierFieldKind
+      case object SignedInt        extends IdentifierFieldKind /* i08/i16/i32/i64 */
+      case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
+      case object UnsignedLong     extends IdentifierFieldKind /* u64 */
+      case object Str              extends IdentifierFieldKind
+      case object Uid              extends IdentifierFieldKind
+      case object Tsu              extends IdentifierFieldKind
+      case object Tso              extends IdentifierFieldKind
+      case object Bytes            extends IdentifierFieldKind
+      final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
+    }
+
+    private def identifierFieldKind(tpe: TypeRef): IdentifierFieldKind = {
+      tpe match {
+        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
+          import TypeId.Builtins.*
+          b match {
+            case `bit`                         => IdentifierFieldKind.Bit
+            case `i08` | `i16` | `i32` | `i64` => IdentifierFieldKind.SignedInt
+            case `u08` | `u16` | `u32`         => IdentifierFieldKind.UnsignedSmallInt
+            case `u64`                         => IdentifierFieldKind.UnsignedLong
+            case `str`                         => IdentifierFieldKind.Str
+            case `uid`                         => IdentifierFieldKind.Uid
+            case `tsu`                         => IdentifierFieldKind.Tsu
+            case `tso`                         => IdentifierFieldKind.Tso
+            case `bytes`                       => IdentifierFieldKind.Bytes
+            case other =>
+              throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
+          }
+        case TypeRef.Scalar(uid: TypeId.User) =>
+          IdentifierFieldKind.NestedId(uid)
+        case other =>
+          throw new IllegalStateException(s"Identifier field has unsupported TypeRef $other; validator should have rejected this.")
+      }
+    }
+
+    private def signedTypeName(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.i08) => "i08"
+        case TypeRef.Scalar(TypeId.Builtins.i16) => "i16"
+        case TypeRef.Scalar(TypeId.Builtins.i32) => "i32"
+        case TypeRef.Scalar(TypeId.Builtins.i64) => "i64"
+        case other                               => throw new IllegalStateException(s"signedTypeName on non-signed-int: $other")
+      }
+    }
+
+    private def signedRangeCheck(tpe: TypeRef, varName: String): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.i08) => s"$varName >= -128i64 && $varName <= 127i64"
+        case TypeRef.Scalar(TypeId.Builtins.i16) => s"$varName >= -32768i64 && $varName <= 32767i64"
+        case TypeRef.Scalar(TypeId.Builtins.i32) => s"$varName >= -2147483648i64 && $varName <= 2147483647i64"
+        case TypeRef.Scalar(TypeId.Builtins.i64) => "true"
+        case other                               => throw new IllegalStateException(s"signedRangeCheck on non-signed-int: $other")
+      }
+    }
+
+    private def signedNarrowFn(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.i08) => "as i8"
+        case TypeRef.Scalar(TypeId.Builtins.i16) => "as i16"
+        case TypeRef.Scalar(TypeId.Builtins.i32) => "as i32"
+        case TypeRef.Scalar(TypeId.Builtins.i64) => "as i64"
+        case other                               => throw new IllegalStateException(s"signedNarrowFn on non-signed-int: $other")
+      }
+    }
+
+    private def unsignedSmallTypeName(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.u08) => "u08"
+        case TypeRef.Scalar(TypeId.Builtins.u16) => "u16"
+        case TypeRef.Scalar(TypeId.Builtins.u32) => "u32"
+        case other                               => throw new IllegalStateException(s"unsignedSmallTypeName on non-u08/u16/u32: $other")
+      }
+    }
+
+    private def unsignedSmallRangeCheck(tpe: TypeRef, varName: String): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.u08) => s"$varName <= 255u64"
+        case TypeRef.Scalar(TypeId.Builtins.u16) => s"$varName <= 65535u64"
+        case TypeRef.Scalar(TypeId.Builtins.u32) => s"$varName <= 4294967295u64"
+        case other                               => throw new IllegalStateException(s"unsignedSmallRangeCheck on non-u08/u16/u32: $other")
+      }
+    }
+
+    private def unsignedSmallNarrowFn(tpe: TypeRef): String = {
+      tpe match {
+        case TypeRef.Scalar(TypeId.Builtins.u08) => "as u8"
+        case TypeRef.Scalar(TypeId.Builtins.u16) => "as u16"
+        case TypeRef.Scalar(TypeId.Builtins.u32) => "as u32"
+        case other                               => throw new IllegalStateException(s"unsignedSmallNarrowFn on non-u08/u16/u32: $other")
+      }
+    }
+
+    private def renderFieldValueExpr(rsFieldName: String, kind: IdentifierFieldKind): TextTree[RsValue] = {
+      kind match {
+        case IdentifierFieldKind.Bit              => q"crate::baboon_identifier_repr::bit_to_string(self.$rsFieldName)"
+        // Rust's primitive Display for signed integers produces canonical signed
+        // decimal; for u08/u16/u32 it produces unsigned decimal natively (Rust
+        // u-types are actually unsigned).
+        case IdentifierFieldKind.SignedInt        => q"self.$rsFieldName.to_string()"
+        case IdentifierFieldKind.UnsignedSmallInt => q"self.$rsFieldName.to_string()"
+        case IdentifierFieldKind.UnsignedLong     => q"crate::baboon_identifier_repr::u64_to_string(self.$rsFieldName)"
+        case IdentifierFieldKind.Str              => q"crate::baboon_identifier_repr::escape_str(&self.$rsFieldName)"
+        // uuid::Uuid Display is the lowercase 36-char hyphenated form per RFC 4122.
+        case IdentifierFieldKind.Uid              => q"self.$rsFieldName.to_string()"
+        case IdentifierFieldKind.Tsu              => q"crate::baboon_identifier_repr::tsu_to_string(&self.$rsFieldName)"
+        case IdentifierFieldKind.Tso              => q"crate::baboon_identifier_repr::tso_to_string(&self.$rsFieldName)"
+        case IdentifierFieldKind.Bytes            => q"crate::baboon_identifier_repr::bytes_to_hex(&self.$rsFieldName)"
+        case IdentifierFieldKind.NestedId(_)      => q"""format!("{{{}}}", self.$rsFieldName)"""
+      }
+    }
+
+    private def renderIdentifierDisplay(dto: Typedef.Dto, name: RsType): TextTree[RsValue] = {
+      val simpleName = name.name
+      val versionStr = domain.version.toString
+      val header     = s"$simpleName:$versionStr#"
+
+      // Build a single format-string-free expression that concatenates the
+      // canonical pieces. Rust's `+` for &str needs left-side String, so we
+      // build via String::push_str — equivalent but explicit.
+      val pushes = dto.fields.zipWithIndex.flatMap {
+        case (f, idx) =>
+          val srcFieldName = f.name.name
+          val rsFieldName  = toSnakeCase(srcFieldName)
+          val kind         = identifierFieldKind(f.tpe)
+          val valExpr      = renderFieldValueExpr(rsFieldName, kind)
+          val sep          = if (idx == 0) q"" else q"""out.push(':');"""
+          List(
+            sep,
+            q"""out.push_str("$srcFieldName:");""",
+            q"""out.push_str(&($valExpr));""",
+          )
+      }
+
+      val pushBlock = if (pushes.nonEmpty) pushes.joinN() else q""
+
+      q"""impl std::fmt::Display for ${name.asName} {
+         |    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+         |        let mut out = String::new();
+         |        out.push_str("$header");
+         |        ${pushBlock.shift(8).trim}
+         |        f.write_str(&out)
+         |    }
+         |}""".stripMargin
+    }
+
+    private def renderIdentifierParseRepr(dto: Typedef.Dto, name: RsType): TextTree[RsValue] = {
+      val simpleName = name.name
+      val versionStr = domain.version.toString
+
+      val fieldDecoders: List[TextTree[RsValue]] = dto.fields.zipWithIndex.map {
+        case (f, idx) =>
+          val srcFieldName = f.name.name
+          val valVar       = s"${toSnakeCase(srcFieldName)}_v"
+          val rawVar       = s"${toSnakeCase(srcFieldName)}_raw"
+          val isLast       = idx == dto.fields.length - 1
+          val kind         = identifierFieldKind(f.tpe)
+          val tpe          = trans.asRsRef(f.tpe, domain, evo)
+
+          val parseHead =
+            q"""crate::baboon_identifier_repr::parse_field_name(cursor, "$srcFieldName")?;"""
+
+          val parseValue: TextTree[RsValue] = kind match {
+            case IdentifierFieldKind.Bit =>
+              q"""let $rawVar = cursor.read_until_structural();
+                 |let $valVar: $tpe = crate::baboon_identifier_repr::parse_bit(&$rawVar)?;""".stripMargin
+            case IdentifierFieldKind.SignedInt =>
+              val typeName    = signedTypeName(f.tpe)
+              val rangeCheck  = signedRangeCheck(f.tpe, "v")
+              val narrow      = signedNarrowFn(f.tpe)
+              // i64 covers the full Long range — rangeCheck returns "true" — so
+              // no range-check block is needed (mirrors prior backends D01 fix).
+              val rangeBlock =
+                if (rangeCheck == "true") q""
+                else
+                  q"""if !($rangeCheck) {
+                     |    return Err(format!("$typeName out of range for field $srcFieldName: {}", $rawVar));
+                     |}""".stripMargin
+              q"""let $rawVar = cursor.read_until_structural();
+                 |let v: i64 = $rawVar.parse::<i64>()
+                 |    .map_err(|_| format!("could not parse signed integer for field $srcFieldName: {}", $rawVar))?;
+                 |${rangeBlock}
+                 |let $valVar: $tpe = v $narrow;""".stripMargin
+            case IdentifierFieldKind.UnsignedSmallInt =>
+              val typeName    = unsignedSmallTypeName(f.tpe)
+              val rangeCheck  = unsignedSmallRangeCheck(f.tpe, "v")
+              val narrow      = unsignedSmallNarrowFn(f.tpe)
+              q"""let $rawVar = cursor.read_until_structural();
+                 |if !$rawVar.is_empty() && (
+                 |    $rawVar.starts_with('+') || $rawVar.starts_with('-')
+                 |) {
+                 |    return Err(format!("unsigned value has leading sign for field $srcFieldName: {}", $rawVar));
+                 |}
+                 |let v: u64 = $rawVar.parse::<u64>()
+                 |    .map_err(|_| format!("could not parse unsigned integer for field $srcFieldName: {}", $rawVar))?;
+                 |if !($rangeCheck) {
+                 |    return Err(format!("$typeName out of range for field $srcFieldName: {}", $rawVar));
+                 |}
+                 |let $valVar: $tpe = v $narrow;""".stripMargin
+            case IdentifierFieldKind.UnsignedLong =>
+              q"""let $rawVar = cursor.read_until_structural();
+                 |if !$rawVar.is_empty() && (
+                 |    $rawVar.starts_with('+') || $rawVar.starts_with('-')
+                 |) {
+                 |    return Err(format!("unsigned value has leading sign for field $srcFieldName: {}", $rawVar));
+                 |}
+                 |let $valVar: $tpe = $rawVar.parse::<u64>()
+                 |    .map_err(|_| format!("could not parse u64 for field $srcFieldName: {}", $rawVar))?;""".stripMargin
+            case IdentifierFieldKind.Str =>
+              q"""let $valVar: $tpe = cursor.read_str_field()?;""".stripMargin
+            case IdentifierFieldKind.Uid =>
+              q"""let $rawVar = cursor.read_until_structural();
+                 |if !crate::baboon_identifier_repr::is_canonical_uid(&$rawVar) {
+                 |    return Err(format!("uid not in canonical lowercase form for field $srcFieldName: {}", $rawVar));
+                 |}
+                 |let $valVar: $tpe = $rawVar.parse::<uuid::Uuid>()
+                 |    .map_err(|_| format!("could not parse uid for field $srcFieldName: {}", $rawVar))?;""".stripMargin
+            case IdentifierFieldKind.Tsu =>
+              q"""let $rawVar = cursor.read_fixed(24)?;
+                 |let $valVar: $tpe = crate::baboon_identifier_repr::parse_tsu_repr(&$rawVar)?;""".stripMargin
+            case IdentifierFieldKind.Tso =>
+              q"""let $rawVar = cursor.read_fixed(29)?;
+                 |let $valVar: $tpe = crate::baboon_identifier_repr::parse_tso_repr(&$rawVar)?;""".stripMargin
+            case IdentifierFieldKind.Bytes =>
+              q"""let $rawVar = cursor.read_until_structural();
+                 |let $valVar: $tpe = crate::baboon_identifier_repr::parse_bytes_hex(&$rawVar)?;""".stripMargin
+            case IdentifierFieldKind.NestedId(uid) =>
+              val nestedTpe = trans.toRsTypeRefKeepForeigns(uid, domain, evo)
+              // The nested type's parse_repr_cursor lives in
+              // `<typename_snake>_repr_codec` inside its own module — see
+              // renderIdentifierParseRepr for naming rationale.
+              val nestedCodecModName = s"${toSnakeCase(nestedTpe.name)}_repr_codec"
+              val nestedFqPath = (nestedTpe.crate.parts.toSeq :+ nestedCodecModName :+ "parse_repr_cursor").mkString("::")
+              q"""cursor.expect('{')?;
+                 |let $valVar: $nestedTpe = $nestedFqPath(cursor)?;
+                 |cursor.expect('}')?;""".stripMargin
+          }
+
+          val sep = if (isLast) q"" else q"""cursor.expect(':')?;"""
+
+          q"""$parseHead
+             |$parseValue
+             |$sep""".stripMargin.trim
+      }
+
+      val ctorArgs = dto.fields.map {
+        f =>
+          val rsFieldName = toSnakeCase(f.name.name)
+          q"$rsFieldName: ${rsFieldName}_v,"
+      }
+
+      val ctor =
+        if (ctorArgs.nonEmpty)
+          q"""${name.asName} {
+             |    ${ctorArgs.joinN().shift(4).trim}
+             |}""".stripMargin
+        else q"${name.asName} {}"
+
+      val body = (fieldDecoders :+ q"Ok($ctor)").joinNN()
+
+      // Codec helpers live in a per-type-named inner module so the parent
+      // package module's `pub use *` glob re-export does NOT collide across
+      // sibling identifier types (each `pub mod foo_repr_codec` is unique).
+      // Callers reach these via
+      //   `crate::<pkg>::<typename_snake>::<typename_snake>_repr_codec::parse_repr(s)`.
+      // Two entry points:
+      //   - parse_repr(s: &str) — owns the cursor, requires fully consumed input.
+      //   - parse_repr_cursor(cursor: &mut Cursor) — partial parse, used by
+      //     nested-id dispatch from the parent codec.
+      val codecModName = s"${toSnakeCase(simpleName)}_repr_codec"
+      // `use super::*` pulls in the parent module's bindings: the `<TypeName>`
+      // struct itself, plus any external `use uuid::Uuid` / chrono / nested
+      // type imports rendered at the top of this file. Inner Rust modules
+      // do NOT inherit parent-scope imports.
+      q"""pub mod $codecModName {
+         |    use super::*;
+         |
+         |    /// Parse the canonical identifier repr per docs/spec/identifier-repr.md.
+         |    /// Schema-directed parser: walks declared field order and dispatches per
+         |    /// field type. Returns Err on any malformed input.
+         |    pub fn parse_repr(s: &str) -> Result<${name.asName}, String> {
+         |        let mut cursor = crate::baboon_identifier_repr::Cursor::new(s);
+         |        let inner = parse_repr_cursor(&mut cursor)?;
+         |        if !cursor.at_end() {
+         |            return Err(format!("unexpected trailing input at {}", cursor.position()));
+         |        }
+         |        Ok(inner)
+         |    }
+         |
+         |    pub fn parse_repr_cursor(cursor: &mut crate::baboon_identifier_repr::Cursor<'_>) -> Result<${name.asName}, String> {
+         |        crate::baboon_identifier_repr::parse_header(cursor, "$simpleName", "$versionStr")?;
+         |        ${body.shift(8).trim}
+         |    }
+         |}""".stripMargin
+    }
+
     private def makeDtoRepr(dto: Typedef.Dto, name: RsType): TextTree[RsValue] = {
       val fields = dto.fields.map {
         f =>
@@ -271,9 +579,25 @@ object RsDefnTranslator {
            |}""".stripMargin
       }
 
+      // Identifier toString + parse_repr emission (PR-57c / spec:
+      // docs/spec/identifier-repr.md). Emitted only when `dto.isIdentifier`.
+      // The `parse_repr` free function lives at module scope (sibling to the
+      // struct, addressable as `crate::<pkg>::<typename_snake>::parse_repr`)
+      // — NOT as `impl FromStr` (Q-FU-4: keeps `.parse()` undiscoverable).
+      val identifierImpls: TextTree[RsValue] =
+        if (dto.isIdentifier) {
+          val display   = renderIdentifierDisplay(dto, name)
+          val parseRepr = renderIdentifierParseRepr(dto, name)
+          q"""$display
+             |
+             |$parseRepr""".stripMargin
+        } else q""
+
       q"""$structDef
          |
-         |$ordImpls$customSerialize""".stripMargin
+         |$ordImpls$customSerialize
+         |
+         |$identifierImpls""".stripMargin
     }
 
     private def isWrappedAdtBranch(dto: Typedef.Dto): Boolean = {
