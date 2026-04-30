@@ -16,5 +16,11 @@ pub mod any_opaque;
 #[path = "generated/baboon_codecs_facade.rs"]
 pub mod baboon_codecs_facade;
 
+// Required by generated `point_id.rs` (PR-57e), which references
+// `crate::baboon_identifier_repr::{Cursor, parse_header, parse_field_name, ...}` for the
+// id toString/parseRepr machinery (docs/spec/identifier-repr.md).
+#[path = "generated/baboon_identifier_repr.rs"]
+pub mod baboon_identifier_repr;
+
 #[path = "generated/convtest/mod.rs"]
 pub mod convtest;

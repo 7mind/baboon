@@ -5,7 +5,7 @@ use std::fs;
 use std::io::Cursor;
 use std::path::PathBuf;
 
-use baboon_conv_test_rs::convtest::testpkg::{AllBasicTypes, AnyShowcase, InnerPayload, WireEnum};
+use baboon_conv_test_rs::convtest::testpkg::{AllBasicTypes, AnyShowcase, InnerPayload, PointId, WireEnum};
 use baboon_conv_test_rs::any_opaque::{AnyMeta, AnyOpaque, AnyOpaqueJson, AnyOpaqueUeba};
 use baboon_conv_test_rs::baboon_runtime::{BaboonBinEncode, BaboonBinDecode, BaboonCodecContext};
 use uuid::Uuid;
@@ -69,6 +69,10 @@ fn create_sample_data() -> AllBasicTypes {
         },
         // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
         v_wire_enum: WireEnum::Cafe,
+        // Identifier (PR-57e). Wire form is `{"x": 42, "y": -7}` on JSON and two
+        // i32 LE values on UEBA — byte-identical to a `data` of the same shape
+        // per docs/spec/identifier-repr.md §1.3 / §7.
+        v_point_id: PointId { x: 42, y: -7 },
     }
 }
 
@@ -311,12 +315,25 @@ fn decode_all_payloads(v: &AnyShowcase) -> Vec<InnerPayload> {
     ]
 }
 
+// PR-57e (M18.4e) — cross-language identifier repr (Display) byte-identity.
+// Per spec §7 the repr form is a separate invariant from the JSON/UEBA wire bytes;
+// we write it as a per-language artifact so the Scala-side test can assert all 10 backends
+// produce byte-identical output for the same canonical PointId value.
+fn write_point_id_repr(pid: &PointId, output_dir: &str) {
+    fs::create_dir_all(output_dir).expect("Failed to create repr output directory");
+    let path = PathBuf::from(output_dir).join("point-id.txt");
+    // No trailing newline — exact byte match across all languages.
+    fs::write(&path, format!("{}", pid)).expect("Failed to write PointId repr file");
+    println!("Written repr to {:?}", path);
+}
+
 fn run_legacy() {
     let sample_data = create_sample_data();
 
     let base_dir = PathBuf::from("../../target/compat-test");
     let rust_json_dir = base_dir.join("rust-json");
     let rust_ueba_dir = base_dir.join("rust-ueba");
+    let rust_repr_dir = base_dir.join("rust-repr");
     write_json(&sample_data, rust_json_dir.to_str().unwrap());
     write_ueba(&sample_data, rust_ueba_dir.to_str().unwrap());
 
@@ -324,6 +341,8 @@ fn run_legacy() {
     let any_ueba = create_sample_any_showcase_ueba();
     write_json_any(&any_json, rust_json_dir.to_str().unwrap());
     write_ueba_any(&any_ueba, rust_ueba_dir.to_str().unwrap());
+
+    write_point_id_repr(&sample_data.v_point_id, rust_repr_dir.to_str().unwrap());
 
     println!("Rust serialization complete!");
 }

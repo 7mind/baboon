@@ -11,6 +11,7 @@ import convtest.testpkg.InnerPayload_JsonCodec
 import convtest.testpkg.InnerPayload_UEBACodec
 import convtest.testpkg.BaboonCodecsJson
 import convtest.testpkg.BaboonCodecsUeba
+import convtest.testpkg.PointId
 import convtest.testpkg.WireEnum
 import baboon.runtime.shared.AnyMeta
 import baboon.runtime.shared.AnyOpaque
@@ -78,9 +79,11 @@ private fun runLegacy() {
     val baseDir = File("../../target/compat-test").absoluteFile.normalize()
     val kotlinJsonDir = File(baseDir, "kotlin-json")
     val kotlinUebaDir = File(baseDir, "kotlin-ueba")
+    val kotlinReprDir = File(baseDir, "kotlin-repr")
 
     kotlinJsonDir.mkdirs()
     kotlinUebaDir.mkdirs()
+    kotlinReprDir.mkdirs()
 
     val ctx = BaboonCodecContext.Default
     val facadeCtx = BaboonCodecContext.withFacade(false, freshFacade())
@@ -88,6 +91,7 @@ private fun runLegacy() {
     writeUeba(ctx, sampleData, kotlinUebaDir.absolutePath)
     writeJsonAny(facadeCtx, sampleAny, kotlinJsonDir.absolutePath)
     writeUebaAny(facadeCtx, sampleAny, kotlinUebaDir.absolutePath)
+    writePointIdRepr(sampleData.vPointId, kotlinReprDir.absolutePath)
 
     println("Kotlin serialization complete!")
 }
@@ -153,6 +157,17 @@ private fun createSampleAnyShowcase(): AnyShowcase {
         optAny = AnyOpaqueJson(metaOpt, asJson(optP)),
         lstAny = listOf(AnyOpaqueUeba(metaLst, uebaBytes(lstP))),
     )
+}
+
+// PR-57e (M18.4e) — cross-language identifier repr (toString) byte-identity.
+// Per spec §7 the repr/toString form is a separate invariant from the JSON/UEBA wire bytes;
+// we write it as a per-language artifact so the Scala-side test can assert all 10 backends
+// produce byte-identical output for the same canonical PointId value.
+private fun writePointIdRepr(pid: PointId, outputDir: String) {
+    val path = File(outputDir, "point-id.txt")
+    // No trailing newline — exact byte match across all languages.
+    path.writeText(pid.toString(), Charsets.UTF_8)
+    println("Written repr to ${path.absolutePath}")
 }
 
 private fun writeJsonAny(ctx: BaboonCodecContext, data: AnyShowcase, outputDir: String) {
@@ -383,5 +398,9 @@ private fun createSampleData(): AllBasicTypes {
         vmapLst = mapOf("numbers" to listOf(1L, 2L, 3L), "more" to listOf(4L, 5L, 6L)),
         // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
         vWireEnum = WireEnum.Cafe,
+        // Identifier (PR-57e). Wire form is `{"x": 42, "y": -7}` on JSON and two
+        // i32 LE values on UEBA — byte-identical to a `data` of the same shape
+        // per docs/spec/identifier-repr.md §1.3 / §7.
+        vPointId = PointId(x = 42, y = -7),
     )
 }

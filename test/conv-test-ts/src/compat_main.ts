@@ -5,6 +5,7 @@ import {AllBasicTypes} from "./generated/convtest/testpkg/AllBasicTypes";
 import {AnyShowcase} from "./generated/convtest/testpkg/AnyShowcase";
 import {InnerPayload} from "./generated/convtest/testpkg/InnerPayload";
 import {WireEnum} from "./generated/convtest/testpkg/WireEnum";
+import {PointId} from "./generated/convtest/testpkg/PointId";
 import {
     AbstractBaboonJsonCodecs,
     AbstractBaboonUebaCodecs,
@@ -205,6 +206,10 @@ function createSampleData(): AllBasicTypes {
         ]),
         // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
         WireEnum.Cafe,
+        // Identifier (PR-57e). Wire form is `{"x": 42, "y": -7}` on JSON and two
+        // i32 LE values on UEBA — byte-identical to a `data` of the same shape
+        // per docs/spec/identifier-repr.md §1.3 / §7.
+        new PointId(42, -7),
     );
 }
 
@@ -292,6 +297,18 @@ function readAndVerify(filePath: string): void {
     console.log("OK");
 }
 
+// PR-57e (M18.4e) — cross-language identifier repr (toString) byte-identity.
+// Per spec §7 the repr/toString form is a separate invariant from the JSON/UEBA wire bytes;
+// we write it as a per-language artifact so the Scala-side test can assert all 10 backends
+// produce byte-identical output for the same canonical PointId value.
+function writePointIdRepr(pid: PointId, outputDir: string): void {
+    fs.mkdirSync(outputDir, {recursive: true});
+    const reprPath = path.join(outputDir, "point-id.txt");
+    // No trailing newline — exact byte match across all languages.
+    fs.writeFileSync(reprPath, pid.toString(), {encoding: "utf-8"});
+    console.log(`Written repr to ${reprPath}`);
+}
+
 function runLegacy(): void {
     const sampleData = createSampleData();
     const sampleAny = createSampleAnyShowcase();
@@ -300,10 +317,12 @@ function runLegacy(): void {
     const baseDir = path.resolve(__dirname, "../../../target/compat-test");
     const tsJsonDir = path.join(baseDir, "typescript-json");
     const tsUebaDir = path.join(baseDir, "typescript-ueba");
+    const tsReprDir = path.join(baseDir, "typescript-repr");
     writeJson(sampleData, tsJsonDir);
     writeUeba(sampleData, tsUebaDir);
     writeJsonAny(facadeCtx, sampleAny, tsJsonDir);
     writeUebaAny(facadeCtx, sampleAny, tsUebaDir);
+    writePointIdRepr(sampleData.vPointId, tsReprDir);
 
     console.log("TypeScript serialization complete!");
 }
