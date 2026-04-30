@@ -1,0 +1,13 @@
+model my.ok.m20.equivsugared
+
+version "1.0.0"
+
+adt ErrorAtom {
+   data Foo { x: i32 }
+   data Bar { y: str }
+}
+
+root adt SomeError {
+   + ErrorAtom
+   data Baz { z: i32 }
+}

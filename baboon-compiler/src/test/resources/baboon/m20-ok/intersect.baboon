@@ -1,0 +1,20 @@
+model my.ok.m20.intersect
+
+version "1.0.0"
+
+adt A {
+   data Foo { x: i32 }
+   data Bar { y: str }
+   data Baz { z: i32 }
+}
+
+adt B {
+   data Foo { x: i32 }
+   data Bar { y: str }
+   data Other { o: i32 }
+}
+
+root adt X {
+   + A
+   ^ B
+}

@@ -1,0 +1,20 @@
+model my.ok.m20.equiv
+
+version "1.0.0"
+
+// Source ADT — its branches are absorbed via `+` by SugaredVer.
+adt ErrorAtom {
+  data Forbidden { reason: str }
+}
+
+// ManualVer: hand-written branches — no inclusion arms.
+root adt ManualVer {
+  data Forbidden { reason: str }
+  data Baz        { v: i32 }
+}
+
+// SugaredVer: identical branch set, authored via `+`.
+root adt SugaredVer {
+  + ErrorAtom
+  data Baz { v: i32 }
+}

@@ -1,0 +1,11 @@
+model my.bad.m20.nonadt
+
+version "1.0.0"
+
+data SomeData {
+  x: i32
+}
+
+root adt A {
+   + SomeData
+}

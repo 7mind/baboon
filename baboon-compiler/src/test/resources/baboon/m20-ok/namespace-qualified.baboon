@@ -1,0 +1,13 @@
+model my.ok.m20.nsqual
+
+version "1.0.0"
+
+ns sub {
+   adt MyAdt {
+      data Foo { x: i32 }
+   }
+}
+
+root adt E {
+   + sub.MyAdt
+}

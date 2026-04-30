@@ -1,0 +1,16 @@
+model my.bad.m20.emptyint
+
+version "1.0.0"
+
+adt A {
+   data Foo { x: i32 }
+}
+
+adt B {
+   data Bar { y: str }
+}
+
+root adt X {
+   + A
+   ^ B
+}
