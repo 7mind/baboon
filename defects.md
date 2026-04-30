@@ -1985,3 +1985,27 @@ Both tests pass. The dual-path coverage clarifies: `ServiceMultipleInputs` is th
 **Location:** test/sw-stub/Tests/BaboonTests/IdentifierReprTests.swift:236-238 (function testMixedRoundtripEmptyBytesAndUtcTimes)
 **Description:** Rust mirror test (test/rs-stub/tests/identifier_repr_tests.rs:213-214) asserts `assert_eq!(src.created, parsed.created)` AND `assert_eq!(src.scheduled, parsed.scheduled)`. Swift version asserts only `active`, `id`, `payload.count`. Carryover lesson PR-57b-D02 was explicit: Mixed round-trip MUST verify tsu/tso field equality. Round-trip equality on tsu/tso is the whole point of the shape pre-validators added to BaboonIdentifierRepr.swift; without these assertions a regression in parseTsuRepr/parseTsoRepr would not be caught.
 **Fix:** Added `XCTAssertEqual(src.created, got.created)` and `XCTAssertEqual(src.scheduled, got.scheduled)` to `testMixedRoundtripEmptyBytesAndUtcTimes`. Both `BaboonDateTimeOffset` and `Date` conform to `Equatable`; direct equality comparison works. Swift stub passes (`mdl :test-swift-regular` PASS).
+
+---
+
+## PR-57d
+
+## [PR-57d-D01] `test-python-wrapped` action does not run RuntimeTests (asymmetric with `test-python-regular`)
+**Status:** resolved
+**Severity:** minor (infrastructure wiring; runtime tests run only under regular-ADT matrix, not wrapped-ADT)
+**Location:** .mdl/defs/tests.md line 489 (`test-python-wrapped` action body)
+**Description:** `test-python-regular` runs `unittest discover -s BaboonTests/RuntimeTests` after the GeneratedTests discover. `test-python-wrapped` only runs the GeneratedTests discover. Runtime helper code is identical across the two matrices, so the lapse is asymmetric coverage rather than missed bugs — but it breaks the project convention that test files live under both stub-isolation copies.
+**Fix:** Added `python3 -m unittest discover -s BaboonTests/RuntimeTests` line to `test-python-wrapped` action body immediately after the GeneratedTests discover, matching `test-python-regular` pattern. Verified by `mdl :test-gen-regular-adt :test-python-wrapped`: RuntimeTests run with 100 tests passing in the wrapped matrix.
+
+## [PR-57d-D02] `test/dt-stub/.gitignore` missing entry for `packages/baboon_runtime/lib/baboon_identifier_repr.dart`
+**Status:** resolved
+**Severity:** minor (defensive — protects against accidental commit if developer runs codegen against source `test/dt-stub` instead of isolated `target/test-regular/dt-stub`)
+**Location:** test/dt-stub/.gitignore — sibling entries already exist for baboon_runtime.dart, baboon_fixture.dart, baboon_any_opaque.dart, baboon_codecs_facade.dart
+**Description:** PR-57d adds `mv "$TEST_DIR/dt-stub/lib/baboon_identifier_repr.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"` in `tests.md` but does NOT add the symmetric ignore line. If a developer accidentally runs codegen against the source `test/dt-stub` (not isolated target), the file would land in `packages/baboon_runtime/lib/baboon_identifier_repr.dart` (NOT ignored — would show up untracked or accidentally get committed).
+**Fix:** Added `packages/baboon_runtime/lib/baboon_identifier_repr.dart` to BOTH `test/dt-stub/.gitignore` and `test/conv-test-dt/.gitignore` (the analog file had the same defensive-ignore pattern and the same gap; updated symmetrically). No regression in `mdl :test-dart-regular`.
+
+## [PR-57d-D03] Project-wide: signed integer parsers across multiple backends silently accept leading `+` despite spec §5.4 prohibition
+**Status:** resolved (deferred — pre-existing project-wide gap; PR-57d propagates it for new languages but does NOT introduce it; out of scope for M18.4d; follow-up needed)
+**Severity:** minor (spec compliance; canonical toString never emits leading `+` so no normal round-trip hits it, but spec §5.4 explicitly says "A leading `+` is NOT permitted")
+**Location:** Python `int("+5")` returns 5 — `PyDefnTranslator` SignedInt/SignedLong decoders don't pre-check; Dart `int.tryParse("+5")` returns 5 — `DtDefnTranslator` same; likely also C#/Java/Kotlin/Rust/Swift signed decoders (unsigned decoders DO pre-check across all backends per PR-57a-D06; signed decoders never received the same treatment). TS i32/i64 use `^-?[0-9]+$` regex which correctly rejects.
+**Fix:** Deferred. Spec §5.4 says "A leading `+` is NOT permitted; the canonical `toString` never emits one." The pre-check needs to be added to SIGNED decoders in 8 of 9 backends (TS already has it). This is a cross-backend spec-compliance hygiene PR best done after the M18.4 fan-out completes; it touches every emitter and every per-stub test (which would also need a `+5` rejection assertion). Track for separate follow-up.

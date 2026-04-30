@@ -3,7 +3,25 @@ package io.septimalmind.baboon.translator.typescript
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonGenerated, tsBaboonGeneratedLatest, tsBaboonRuntimeShared}
+import io.septimalmind.baboon.translator.typescript.TsTypes.{
+  tsBaboonGenerated,
+  tsBaboonGeneratedLatest,
+  tsBaboonIdReprBitToString,
+  tsBaboonIdReprBytesToHex,
+  tsBaboonIdReprCursor,
+  tsBaboonIdReprEscapeStr,
+  tsBaboonIdReprIsCanonicalUid,
+  tsBaboonIdReprParseBit,
+  tsBaboonIdReprParseBytesHex,
+  tsBaboonIdReprParseFieldName,
+  tsBaboonIdReprParseHeader,
+  tsBaboonIdReprParseTso,
+  tsBaboonIdReprParseTsu,
+  tsBaboonIdReprTsoToString,
+  tsBaboonIdReprTsuToString,
+  tsBaboonIdReprU64ToString,
+  tsBaboonRuntimeShared,
+}
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.typescript.TsValue.TsType
 import io.septimalmind.baboon.typer.EnumWireStyle
@@ -255,7 +273,23 @@ object TsDefnTranslator {
            |    );
            |}""".stripMargin
 
-      DefnRepr(
+      // Identifier toString + parseRepr emission (PR-57d / spec:
+      // docs/spec/identifier-repr.md). Emitted only when `dto.isIdentifier`.
+      // The toString method lives on the class; the parser lives on a sibling
+      // exported `<typeName>Codec` object (Q-FU-4: NOT a static on the class).
+      val identifierToStringTree: TextTree[TsValue] =
+        if (dto.isIdentifier) renderIdentifierToString(dto, name) else q""
+      val identifierCodec: TextTree[TsValue] =
+        if (dto.isIdentifier) renderIdentifierCodecObject(dto, name) else q""
+
+      val membersBlock: TextTree[TsValue] =
+        if (dto.isIdentifier)
+          q"""${meta.joinN().trim}
+             |
+             |${identifierToStringTree.trim}""".stripMargin
+        else meta.joinN().trim
+
+      val classBody =
         q"""export class $name $implementsClause {
            |    ${fields.joinN().shift(4).trim}
            |
@@ -271,10 +305,17 @@ object TsDefnTranslator {
            |
            |    ${fromPlainMethod.shift(4).trim}
            |
-           |    ${meta.joinN().shift(4).trim}
-           |}""".stripMargin.trim,
-        Nil,
-      )
+           |    ${membersBlock.shift(4).trim}
+           |}""".stripMargin.trim
+
+      val combined =
+        if (dto.isIdentifier)
+          q"""$classBody
+             |
+             |$identifierCodec""".stripMargin
+        else classBody
+
+      DefnRepr(combined, Nil)
     }
 
     private def toJsonFieldExpr(tpe: TypeRef, ref: String): TextTree[TsValue] = {
@@ -459,6 +500,302 @@ object TsDefnTranslator {
         segments += q"${pat.substring(lastEnd)}"
       }
       segments.reduce((a, b) => q"$a$b")
+    }
+
+    // ----- Identifier toString + parseRepr emission (PR-57d) -----
+    // Spec: docs/spec/identifier-repr.md. Mirrors RsDefnTranslator + JvDefnTranslator
+    // patterns but uses TS idioms:
+    //   - `toString(): string` method on the class (Q-FU-4)
+    //   - exported `<typeName>Codec` object literal with `parseRepr` /
+    //     `parseReprCursor` static methods (Q-FU-4: NOT a static on the class —
+    //     keeps `MyId.parseRepr` undiscoverable in autocomplete).
+    private sealed trait IdentifierFieldKind
+    private object IdentifierFieldKind {
+      case object Bit              extends IdentifierFieldKind
+      case object SignedInt        extends IdentifierFieldKind /* i08/i16/i32 — number */
+      case object SignedLong       extends IdentifierFieldKind /* i64 — bigint */
+      case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 — number */
+      case object UnsignedLong     extends IdentifierFieldKind /* u64 — bigint */
+      case object Str              extends IdentifierFieldKind
+      case object Uid              extends IdentifierFieldKind
+      case object Tsu              extends IdentifierFieldKind
+      case object Tso              extends IdentifierFieldKind
+      case object Bytes            extends IdentifierFieldKind
+      final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
+    }
+
+    private def identifierFieldKind(tpe: TypeRef): IdentifierFieldKind = {
+      tpe match {
+        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
+          import TypeId.Builtins.*
+          b match {
+            case `bit`                   => IdentifierFieldKind.Bit
+            case `i08` | `i16` | `i32`   => IdentifierFieldKind.SignedInt
+            case `i64`                   => IdentifierFieldKind.SignedLong
+            case `u08` | `u16` | `u32`   => IdentifierFieldKind.UnsignedSmallInt
+            case `u64`                   => IdentifierFieldKind.UnsignedLong
+            case `str`                   => IdentifierFieldKind.Str
+            case `uid`                   => IdentifierFieldKind.Uid
+            case `tsu`                   => IdentifierFieldKind.Tsu
+            case `tso`                   => IdentifierFieldKind.Tso
+            case `bytes`                 => IdentifierFieldKind.Bytes
+            case other =>
+              throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
+          }
+        case TypeRef.Scalar(uid: TypeId.User) =>
+          IdentifierFieldKind.NestedId(uid)
+        case other =>
+          throw new IllegalStateException(s"Identifier field has unsupported TypeRef $other; validator should have rejected this.")
+      }
+    }
+
+    private def signedTypeName(tpe: TypeRef): String = tpe match {
+      case TypeRef.Scalar(TypeId.Builtins.i08) => "i08"
+      case TypeRef.Scalar(TypeId.Builtins.i16) => "i16"
+      case TypeRef.Scalar(TypeId.Builtins.i32) => "i32"
+      case other                               => throw new IllegalStateException(s"signedTypeName on non-signed-int: $other")
+    }
+
+    private def signedRangeCheck(tpe: TypeRef, varName: String): String = tpe match {
+      case TypeRef.Scalar(TypeId.Builtins.i08) => s"$varName >= -128 && $varName <= 127"
+      case TypeRef.Scalar(TypeId.Builtins.i16) => s"$varName >= -32768 && $varName <= 32767"
+      case TypeRef.Scalar(TypeId.Builtins.i32) => s"$varName >= -2147483648 && $varName <= 2147483647"
+      case other                               => throw new IllegalStateException(s"signedRangeCheck on non-signed-int: $other")
+    }
+
+    private def unsignedSmallTypeName(tpe: TypeRef): String = tpe match {
+      case TypeRef.Scalar(TypeId.Builtins.u08) => "u08"
+      case TypeRef.Scalar(TypeId.Builtins.u16) => "u16"
+      case TypeRef.Scalar(TypeId.Builtins.u32) => "u32"
+      case other                               => throw new IllegalStateException(s"unsignedSmallTypeName on non-u08/u16/u32: $other")
+    }
+
+    private def unsignedSmallRangeCheck(tpe: TypeRef, varName: String): String = tpe match {
+      case TypeRef.Scalar(TypeId.Builtins.u08) => s"$varName >= 0 && $varName <= 255"
+      case TypeRef.Scalar(TypeId.Builtins.u16) => s"$varName >= 0 && $varName <= 65535"
+      case TypeRef.Scalar(TypeId.Builtins.u32) => s"$varName >= 0 && $varName <= 4294967295"
+      case other                               => throw new IllegalStateException(s"unsignedSmallRangeCheck on non-u08/u16/u32: $other")
+    }
+
+    private def renderFieldValueExprTs(tsFieldName: String, kind: IdentifierFieldKind): TextTree[TsValue] = {
+      kind match {
+        case IdentifierFieldKind.Bit              => q"$tsBaboonIdReprBitToString(this._$tsFieldName)"
+        case IdentifierFieldKind.SignedInt        => q"this._$tsFieldName.toString()"
+        case IdentifierFieldKind.SignedLong       => q"this._$tsFieldName.toString()"
+        case IdentifierFieldKind.UnsignedSmallInt => q"this._$tsFieldName.toString()"
+        case IdentifierFieldKind.UnsignedLong     => q"$tsBaboonIdReprU64ToString(this._$tsFieldName)"
+        case IdentifierFieldKind.Str              => q"$tsBaboonIdReprEscapeStr(this._$tsFieldName)"
+        case IdentifierFieldKind.Uid              => q"this._$tsFieldName"
+        case IdentifierFieldKind.Tsu              => q"$tsBaboonIdReprTsuToString(this._$tsFieldName)"
+        case IdentifierFieldKind.Tso              => q"$tsBaboonIdReprTsoToString(this._$tsFieldName)"
+        case IdentifierFieldKind.Bytes            => q"$tsBaboonIdReprBytesToHex(this._$tsFieldName)"
+        case IdentifierFieldKind.NestedId(_)      => q"""("{" + this._$tsFieldName.toString() + "}")"""
+      }
+    }
+
+    private def renderIdentifierToString(dto: Typedef.Dto, name: TsType): TextTree[TsValue] = {
+      val simpleName = name.name
+      val versionStr = domain.version.toString
+      val header     = s"$simpleName:$versionStr#"
+
+      val fieldExprs: List[TextTree[TsValue]] = dto.fields.map {
+        f =>
+          val srcFieldName = f.name.name
+          val kind         = identifierFieldKind(f.tpe)
+          val valueExpr    = renderFieldValueExprTs(srcFieldName, kind)
+          q""""$srcFieldName:" + ($valueExpr)"""
+      }
+
+      val joinedFields =
+        if (fieldExprs.isEmpty) q""""""""
+        else fieldExprs.toSeq.join(""" + ":" + """)
+
+      q"""public toString(): string {
+         |    return "$header" + $joinedFields;
+         |}""".stripMargin
+    }
+
+    private def renderIdentifierCodecObject(dto: Typedef.Dto, name: TsType): TextTree[TsValue] = {
+      val simpleName = name.name
+      val versionStr = domain.version.toString
+      // Codec object name follows lower-camel convention from the type name:
+      // PointId → pointIdCodec
+      val codecObjName = name.name.head.toLower.toString + name.name.tail + "Codec"
+
+      val fieldDecoders: List[TextTree[TsValue]] = dto.fields.zipWithIndex.map {
+        case (f, idx) =>
+          val srcFieldName = f.name.name
+          val rawVar       = s"${srcFieldName}_raw"
+          val valVar       = s"${srcFieldName}_v"
+          val resVar       = s"${srcFieldName}_r"
+          val isLast       = idx == dto.fields.length - 1
+          val kind         = identifierFieldKind(f.tpe)
+
+          val parseHead =
+            q"""const ${srcFieldName}_fnr = $tsBaboonIdReprParseFieldName(cursor, "$srcFieldName");
+               |if (${srcFieldName}_fnr.tag === "Left") return { tag: "Left", value: ${srcFieldName}_fnr.value };""".stripMargin
+
+          val parseValue: TextTree[TsValue] = kind match {
+            case IdentifierFieldKind.Bit =>
+              q"""const $rawVar = cursor.readUntilStructural();
+                 |const $resVar = $tsBaboonIdReprParseBit($rawVar);
+                 |if ($resVar.tag === "Left") return { tag: "Left", value: $resVar.value };
+                 |const $valVar: boolean = $resVar.value;""".stripMargin
+            case IdentifierFieldKind.SignedInt =>
+              val typeName   = signedTypeName(f.tpe)
+              val parsedVar  = s"${srcFieldName}_n"
+              val rangeCheck = signedRangeCheck(f.tpe, parsedVar)
+              q"""const $rawVar = cursor.readUntilStructural();
+                 |if (!/^-?[0-9]+$$/.test($rawVar)) {
+                 |    return { tag: "Left", value: "could not parse signed integer for field $srcFieldName: " + $rawVar };
+                 |}
+                 |const $parsedVar = parseInt($rawVar, 10);
+                 |if (Number.isNaN($parsedVar)) {
+                 |    return { tag: "Left", value: "could not parse signed integer for field $srcFieldName: " + $rawVar };
+                 |}
+                 |if (!($rangeCheck)) {
+                 |    return { tag: "Left", value: "$typeName out of range for field $srcFieldName: " + $rawVar };
+                 |}
+                 |const $valVar: number = $parsedVar;""".stripMargin
+            case IdentifierFieldKind.SignedLong =>
+              // i64 in TS is bigint; range check is always true so elided per
+              // PR-57a-D01 carryover (no dead `if (!(true))` block).
+              q"""const $rawVar = cursor.readUntilStructural();
+                 |if (!/^-?[0-9]+$$/.test($rawVar)) {
+                 |    return { tag: "Left", value: "could not parse i64 for field $srcFieldName: " + $rawVar };
+                 |}
+                 |let $valVar: bigint;
+                 |try {
+                 |    $valVar = BigInt($rawVar);
+                 |} catch (_e) {
+                 |    return { tag: "Left", value: "could not parse i64 for field $srcFieldName: " + $rawVar };
+                 |}
+                 |if ($valVar < -9223372036854775808n || $valVar > 9223372036854775807n) {
+                 |    return { tag: "Left", value: "i64 out of range for field $srcFieldName: " + $rawVar };
+                 |}""".stripMargin
+            case IdentifierFieldKind.UnsignedSmallInt =>
+              val typeName   = unsignedSmallTypeName(f.tpe)
+              val parsedVar  = s"${srcFieldName}_n"
+              val rangeCheck = unsignedSmallRangeCheck(f.tpe, parsedVar)
+              q"""const $rawVar = cursor.readUntilStructural();
+                 |if ($rawVar.length > 0 && ($rawVar[0] === "+" || $rawVar[0] === "-")) {
+                 |    return { tag: "Left", value: "unsigned value has leading sign for field $srcFieldName: " + $rawVar };
+                 |}
+                 |if (!/^[0-9]+$$/.test($rawVar)) {
+                 |    return { tag: "Left", value: "could not parse unsigned integer for field $srcFieldName: " + $rawVar };
+                 |}
+                 |const $parsedVar = parseInt($rawVar, 10);
+                 |if (Number.isNaN($parsedVar)) {
+                 |    return { tag: "Left", value: "could not parse unsigned integer for field $srcFieldName: " + $rawVar };
+                 |}
+                 |if (!($rangeCheck)) {
+                 |    return { tag: "Left", value: "$typeName out of range for field $srcFieldName: " + $rawVar };
+                 |}
+                 |const $valVar: number = $parsedVar;""".stripMargin
+            case IdentifierFieldKind.UnsignedLong =>
+              q"""const $rawVar = cursor.readUntilStructural();
+                 |if ($rawVar.length > 0 && ($rawVar[0] === "+" || $rawVar[0] === "-")) {
+                 |    return { tag: "Left", value: "unsigned value has leading sign for field $srcFieldName: " + $rawVar };
+                 |}
+                 |if (!/^[0-9]+$$/.test($rawVar)) {
+                 |    return { tag: "Left", value: "could not parse u64 for field $srcFieldName: " + $rawVar };
+                 |}
+                 |let $valVar: bigint;
+                 |try {
+                 |    $valVar = BigInt($rawVar);
+                 |} catch (_e) {
+                 |    return { tag: "Left", value: "could not parse u64 for field $srcFieldName: " + $rawVar };
+                 |}
+                 |if ($valVar < 0n || $valVar > 18446744073709551615n) {
+                 |    return { tag: "Left", value: "u64 out of range for field $srcFieldName: " + $rawVar };
+                 |}""".stripMargin
+            case IdentifierFieldKind.Str =>
+              q"""const $resVar = cursor.readStrField();
+                 |if ($resVar.tag === "Left") return { tag: "Left", value: $resVar.value };
+                 |const $valVar: string = $resVar.value;""".stripMargin
+            case IdentifierFieldKind.Uid =>
+              q"""const $rawVar = cursor.readUntilStructural();
+                 |if (!$tsBaboonIdReprIsCanonicalUid($rawVar)) {
+                 |    return { tag: "Left", value: "uid not in canonical lowercase form for field $srcFieldName: " + $rawVar };
+                 |}
+                 |const $valVar: string = $rawVar;""".stripMargin
+            case IdentifierFieldKind.Tsu =>
+              q"""const ${srcFieldName}_rrf = cursor.readFixed(24);
+                 |if (${srcFieldName}_rrf.tag === "Left") return { tag: "Left", value: ${srcFieldName}_rrf.value };
+                 |const $rawVar = ${srcFieldName}_rrf.value;
+                 |const $resVar = $tsBaboonIdReprParseTsu($rawVar);
+                 |if ($resVar.tag === "Left") return { tag: "Left", value: $resVar.value };
+                 |const $valVar = $resVar.value;""".stripMargin
+            case IdentifierFieldKind.Tso =>
+              q"""const ${srcFieldName}_rrf = cursor.readFixed(29);
+                 |if (${srcFieldName}_rrf.tag === "Left") return { tag: "Left", value: ${srcFieldName}_rrf.value };
+                 |const $rawVar = ${srcFieldName}_rrf.value;
+                 |const $resVar = $tsBaboonIdReprParseTso($rawVar);
+                 |if ($resVar.tag === "Left") return { tag: "Left", value: $resVar.value };
+                 |const $valVar = $resVar.value;""".stripMargin
+            case IdentifierFieldKind.Bytes =>
+              q"""const $rawVar = cursor.readUntilStructural();
+                 |const $resVar = $tsBaboonIdReprParseBytesHex($rawVar);
+                 |if ($resVar.tag === "Left") return { tag: "Left", value: $resVar.value };
+                 |const $valVar: Uint8Array = $resVar.value;""".stripMargin
+            case IdentifierFieldKind.NestedId(uid) =>
+              val nestedTpe = typeTranslator.asTsTypeKeepForeigns(uid, domain, evo, tsFileTools.definitionsBasePkg)
+              val nestedCodecName = nestedTpe.name.head.toLower.toString + nestedTpe.name.tail + "Codec"
+              val nestedCodecRef = TsType(nestedTpe.moduleId, nestedCodecName)
+              q"""const ${srcFieldName}_ro = cursor.expect("{");
+                 |if (${srcFieldName}_ro.tag === "Left") return { tag: "Left", value: ${srcFieldName}_ro.value };
+                 |const $resVar = $nestedCodecRef.parseReprCursor(cursor);
+                 |if ($resVar.tag === "Left") return { tag: "Left", value: $resVar.value };
+                 |const $valVar = $resVar.value;
+                 |const ${srcFieldName}_rc = cursor.expect("}");
+                 |if (${srcFieldName}_rc.tag === "Left") return { tag: "Left", value: ${srcFieldName}_rc.value };""".stripMargin
+          }
+
+          val sep =
+            if (isLast) q""
+            else
+              q"""const ${srcFieldName}_rsep = cursor.expect(":");
+                 |if (${srcFieldName}_rsep.tag === "Left") return { tag: "Left", value: ${srcFieldName}_rsep.value };""".stripMargin
+
+          q"""$parseHead
+             |$parseValue
+             |$sep""".stripMargin.trim
+      }
+
+      val ctorArgs = dto.fields.map {
+        f =>
+          q"${f.name.name}_v"
+      }
+
+      val ctor =
+        if (ctorArgs.nonEmpty)
+          q"""new $name(
+             |  ${ctorArgs.join(",\n").shift(2).trim}
+             |)""".stripMargin
+        else q"new $name()"
+
+      val body = (fieldDecoders :+ q"""return { tag: "Right", value: $ctor };""").joinNN()
+
+      q"""export const $codecObjName = {
+         |    /** Parse the canonical identifier repr per docs/spec/identifier-repr.md.
+         |     * Schema-directed parser: walks declared field order and dispatches per
+         |     * field type. Returns `{tag:"Left",value:msg}` on any malformed input. */
+         |    parseRepr(s: string): { readonly tag: "Left"; readonly value: string } | { readonly tag: "Right"; readonly value: $name } {
+         |        const cursor = new $tsBaboonIdReprCursor(s);
+         |        const inner = $codecObjName.parseReprCursor(cursor);
+         |        if (inner.tag === "Left") return inner;
+         |        if (!cursor.atEnd()) {
+         |            return { tag: "Left", value: "unexpected trailing input at " + cursor.position() };
+         |        }
+         |        return inner;
+         |    },
+         |
+         |    parseReprCursor(cursor: $tsBaboonIdReprCursor): { readonly tag: "Left"; readonly value: string } | { readonly tag: "Right"; readonly value: $name } {
+         |        const __h = $tsBaboonIdReprParseHeader(cursor, "$simpleName", "$versionStr");
+         |        if (__h.tag === "Left") return { tag: "Left", value: __h.value };
+         |        ${body.shift(8).trim}
+         |    },
+         |} as const;""".stripMargin
     }
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {

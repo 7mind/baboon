@@ -272,6 +272,8 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
       Some("import 'package:baboon_runtime/baboon_codecs_facade.dart';")
     } else if (t.pkg == baboonFixturePkg) {
       Some("import 'package:baboon_runtime/baboon_fixture.dart';")
+    } else if (t.pkg == baboonIdReprPkg) {
+      Some("import 'package:baboon_runtime/baboon_identifier_repr.dart';")
     } else {
       val fileName     = t.importAs.getOrElse(trans.toSnakeCase(t.name))
       val typePath     = t.pkg.parts.toList.map(moduleSegmentToFilesystem).mkString("/")
@@ -318,6 +320,8 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
       Some("import 'package:baboon_runtime/baboon_codecs_facade.dart';")
     } else if (t.pkg == baboonFixturePkg) {
       Some("import 'package:baboon_runtime/baboon_fixture.dart';")
+    } else if (t.pkg == baboonIdReprPkg) {
+      Some("import 'package:baboon_runtime/baboon_identifier_repr.dart';")
     } else if (t.pkg == dartTypedDataPkg) {
       Some("import 'dart:typed_data';")
     } else if (t.pkg == dartConvertPkg) {
@@ -370,6 +374,13 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
           rt("baboon_runtime.dart", "baboon-runtime/dart/baboon_runtime.dart"),
           rt("baboon_any_opaque.dart", "baboon-runtime/dart/baboon_any_opaque.dart"),
           rt("baboon_codecs_facade.dart", "baboon-runtime/dart/baboon_codecs_facade.dart"),
+          DtDefnTranslator.Output(
+            "baboon_identifier_repr.dart",
+            TextTree.verbatim(BaboonRuntimeResources.read("baboon-runtime/dart/baboon_identifier_repr.dart")),
+            DtTypes.baboonIdReprPkg,
+            CompilerProduct.Runtime,
+            doNotModify = true,
+          ),
         )
       )
     } else {

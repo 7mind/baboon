@@ -312,7 +312,10 @@ object DtDefnTranslator {
            |int get hashCode => ${name.asName.hashCode.toString};""".stripMargin
       }
 
-      val toStringBody = if (hasFields) {
+      val toStringBody = if (dto.isIdentifier) {
+        // Identifier toString — spec docs/spec/identifier-repr.md, PR-57d.
+        renderIdentifierToString(dto, name)
+      } else if (hasFields) {
         val fieldStrings = dto.fields.map(f => q"${f.name.name}: $$${f.name.name}")
         q"""@override
            |String toString() => '${name.asName}(${fieldStrings.join(", ")})';""".stripMargin
@@ -321,7 +324,10 @@ object DtDefnTranslator {
            |String toString() => '${name.asName}()';""".stripMargin
       }
 
-      DefnRepr(
+      val identifierCodec: TextTree[DtValue] =
+        if (dto.isIdentifier) renderIdentifierCodecClass(dto, name) else q""
+
+      val classDefn =
         q"""class ${name.asName}$extendsClause {
            |  ${fieldsBlock.shift(2).trim}
            |
@@ -334,9 +340,16 @@ object DtDefnTranslator {
            |  ${hashCodeBody.shift(2).trim}
            |
            |  ${toStringBody.shift(2).trim}
-           |}""".stripMargin,
-        Nil,
-      )
+           |}""".stripMargin
+
+      val combined =
+        if (dto.isIdentifier)
+          q"""$classDefn
+             |
+             |$identifierCodec""".stripMargin
+        else classDefn
+
+      DefnRepr(combined, Nil)
     }
 
     private def renderEnum(
@@ -454,6 +467,282 @@ object DtDefnTranslator {
            |}""".stripMargin,
         Nil,
       )
+    }
+
+    // ----- Identifier toString + parseRepr emission (PR-57d) -----
+    // Spec: docs/spec/identifier-repr.md.
+    private sealed trait IdentifierFieldKind
+    private object IdentifierFieldKind {
+      case object Bit              extends IdentifierFieldKind
+      case object SignedInt        extends IdentifierFieldKind /* i08/i16/i32 */
+      case object SignedLong       extends IdentifierFieldKind /* i64 */
+      case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
+      case object UnsignedLong     extends IdentifierFieldKind /* u64 */
+      case object Str              extends IdentifierFieldKind
+      case object Uid              extends IdentifierFieldKind
+      case object Tsu              extends IdentifierFieldKind
+      case object Tso              extends IdentifierFieldKind
+      case object Bytes            extends IdentifierFieldKind
+      final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
+    }
+
+    private def identifierFieldKind(tpe: TypeRef): IdentifierFieldKind = {
+      tpe match {
+        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
+          import TypeId.Builtins.*
+          b match {
+            case `bit`                   => IdentifierFieldKind.Bit
+            case `i08` | `i16` | `i32`   => IdentifierFieldKind.SignedInt
+            case `i64`                   => IdentifierFieldKind.SignedLong
+            case `u08` | `u16` | `u32`   => IdentifierFieldKind.UnsignedSmallInt
+            case `u64`                   => IdentifierFieldKind.UnsignedLong
+            case `str`                   => IdentifierFieldKind.Str
+            case `uid`                   => IdentifierFieldKind.Uid
+            case `tsu`                   => IdentifierFieldKind.Tsu
+            case `tso`                   => IdentifierFieldKind.Tso
+            case `bytes`                 => IdentifierFieldKind.Bytes
+            case other =>
+              throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
+          }
+        case TypeRef.Scalar(uid: TypeId.User) =>
+          IdentifierFieldKind.NestedId(uid)
+        case other =>
+          throw new IllegalStateException(s"Identifier field has unsupported TypeRef $other; validator should have rejected this.")
+      }
+    }
+
+    private def signedTypeName(tpe: TypeRef): String = tpe match {
+      case TypeRef.Scalar(TypeId.Builtins.i08) => "i08"
+      case TypeRef.Scalar(TypeId.Builtins.i16) => "i16"
+      case TypeRef.Scalar(TypeId.Builtins.i32) => "i32"
+      case other                               => throw new IllegalStateException(s"signedTypeName on non-signed-int: $other")
+    }
+
+    private def signedRangeCheck(tpe: TypeRef, varName: String): String = tpe match {
+      case TypeRef.Scalar(TypeId.Builtins.i08) => s"$varName >= -128 && $varName <= 127"
+      case TypeRef.Scalar(TypeId.Builtins.i16) => s"$varName >= -32768 && $varName <= 32767"
+      case TypeRef.Scalar(TypeId.Builtins.i32) => s"$varName >= -2147483648 && $varName <= 2147483647"
+      case other                               => throw new IllegalStateException(s"signedRangeCheck on non-signed-int: $other")
+    }
+
+    private def unsignedSmallTypeName(tpe: TypeRef): String = tpe match {
+      case TypeRef.Scalar(TypeId.Builtins.u08) => "u08"
+      case TypeRef.Scalar(TypeId.Builtins.u16) => "u16"
+      case TypeRef.Scalar(TypeId.Builtins.u32) => "u32"
+      case other                               => throw new IllegalStateException(s"unsignedSmallTypeName on non-u08/u16/u32: $other")
+    }
+
+    private def unsignedSmallRangeCheck(tpe: TypeRef, varName: String): String = tpe match {
+      case TypeRef.Scalar(TypeId.Builtins.u08) => s"$varName >= 0 && $varName <= 255"
+      case TypeRef.Scalar(TypeId.Builtins.u16) => s"$varName >= 0 && $varName <= 65535"
+      case TypeRef.Scalar(TypeId.Builtins.u32) => s"$varName >= 0 && $varName <= 4294967295"
+      case other                               => throw new IllegalStateException(s"unsignedSmallRangeCheck on non-u08/u16/u32: $other")
+    }
+
+    private def renderIdentifierFieldValueExpr(dtFieldName: String, kind: IdentifierFieldKind): TextTree[DtValue] = {
+      kind match {
+        case IdentifierFieldKind.Bit              => q"$baboonIdRepr.bitToString($dtFieldName)"
+        case IdentifierFieldKind.SignedInt        => q"$dtFieldName.toString()"
+        case IdentifierFieldKind.SignedLong       => q"$dtFieldName.toString()"
+        case IdentifierFieldKind.UnsignedSmallInt => q"$dtFieldName.toString()"
+        case IdentifierFieldKind.UnsignedLong     => q"$baboonIdRepr.u64ToString($dtFieldName)"
+        case IdentifierFieldKind.Str              => q"$baboonIdRepr.escapeStr($dtFieldName)"
+        case IdentifierFieldKind.Uid              => q"$dtFieldName"
+        case IdentifierFieldKind.Tsu              => q"$baboonIdRepr.tsuToString($dtFieldName)"
+        case IdentifierFieldKind.Tso              => q"$baboonIdRepr.tsoToString($dtFieldName)"
+        case IdentifierFieldKind.Bytes            => q"$baboonIdRepr.bytesToHex($dtFieldName)"
+        case IdentifierFieldKind.NestedId(_)      => q"""'{$$$dtFieldName}'"""
+      }
+    }
+
+    private def renderIdentifierToString(dto: Typedef.Dto, name: DtType): TextTree[DtValue] = {
+      val simpleName = name.name
+      val versionStr = domain.version.toString
+      val header     = s"$simpleName:$versionStr#"
+
+      val fieldExprs: List[TextTree[DtValue]] = dto.fields.map {
+        f =>
+          val srcFieldName = f.name.name
+          val kind         = identifierFieldKind(f.tpe)
+          val valueExpr    = renderIdentifierFieldValueExpr(srcFieldName, kind)
+          q""""$srcFieldName:" + ($valueExpr)"""
+      }
+
+      val joinedFields =
+        if (fieldExprs.isEmpty) q""""""""
+        else fieldExprs.toSeq.join(""" + ":" + """)
+
+      q"""@override
+         |String toString() {
+         |  return "$header" + $joinedFields;
+         |}""".stripMargin
+    }
+
+    private def renderIdentifierCodecClass(dto: Typedef.Dto, name: DtType): TextTree[DtValue] = {
+      val simpleName    = name.name
+      val versionStr    = domain.version.toString
+      val codecClassName = s"${name.name}Codec"
+
+      val fieldDecoders: List[TextTree[DtValue]] = dto.fields.zipWithIndex.map {
+        case (f, idx) =>
+          val srcFieldName = f.name.name
+          val rawVar       = s"${srcFieldName}_raw"
+          val valVar       = s"${srcFieldName}_v"
+          val resVar       = s"${srcFieldName}_r"
+          val isLast       = idx == dto.fields.length - 1
+          val kind         = identifierFieldKind(f.tpe)
+          val tpe          = trans.asDtRef(f.tpe, domain, evo)
+
+          val parseHead =
+            q"""final ${srcFieldName}_fnr = $baboonIdRepr.parseFieldName(cursor, "$srcFieldName");
+               |if (${srcFieldName}_fnr is $baboonLeft<String, void>) return $baboonLeft(${srcFieldName}_fnr.value);""".stripMargin
+
+          val parseValue: TextTree[DtValue] = kind match {
+            case IdentifierFieldKind.Bit =>
+              q"""final $rawVar = cursor.readUntilStructural();
+                 |final $resVar = $baboonIdRepr.parseBit($rawVar);
+                 |if ($resVar is $baboonLeft<String, bool>) return $baboonLeft($resVar.value);
+                 |final bool $valVar = ($resVar as $baboonRight<String, bool>).value;""".stripMargin
+            case IdentifierFieldKind.SignedInt =>
+              val typeName   = signedTypeName(f.tpe)
+              val parsedVar  = s"${srcFieldName}_n"
+              val rangeCheck = signedRangeCheck(f.tpe, parsedVar)
+              q"""final $rawVar = cursor.readUntilStructural();
+                 |final $parsedVar = int.tryParse($rawVar);
+                 |if ($parsedVar == null) {
+                 |  return $baboonLeft("could not parse signed integer for field $srcFieldName: " + $rawVar);
+                 |}
+                 |if (!($rangeCheck)) {
+                 |  return $baboonLeft("$typeName out of range for field $srcFieldName: " + $rawVar);
+                 |}
+                 |final $tpe $valVar = $parsedVar;""".stripMargin
+            case IdentifierFieldKind.SignedLong =>
+              // i64 in Dart = `int` (signed 64-bit on native). Range check is
+              // always true so no dead block emitted (PR-57a-D01 carryover).
+              q"""final $rawVar = cursor.readUntilStructural();
+                 |final $valVar = int.tryParse($rawVar);
+                 |if ($valVar == null) {
+                 |  return $baboonLeft("could not parse i64 for field $srcFieldName: " + $rawVar);
+                 |}""".stripMargin
+            case IdentifierFieldKind.UnsignedSmallInt =>
+              val typeName   = unsignedSmallTypeName(f.tpe)
+              val parsedVar  = s"${srcFieldName}_n"
+              val rangeCheck = unsignedSmallRangeCheck(f.tpe, parsedVar)
+              q"""final $rawVar = cursor.readUntilStructural();
+                 |if ($rawVar.isNotEmpty && ($rawVar[0] == '+' || $rawVar[0] == '-')) {
+                 |  return $baboonLeft("unsigned value has leading sign for field $srcFieldName: " + $rawVar);
+                 |}
+                 |final $parsedVar = int.tryParse($rawVar);
+                 |if ($parsedVar == null) {
+                 |  return $baboonLeft("could not parse unsigned integer for field $srcFieldName: " + $rawVar);
+                 |}
+                 |if (!($rangeCheck)) {
+                 |  return $baboonLeft("$typeName out of range for field $srcFieldName: " + $rawVar);
+                 |}
+                 |final $tpe $valVar = $parsedVar;""".stripMargin
+            case IdentifierFieldKind.UnsignedLong =>
+              // Dart `int` is signed-64 native; values >= 2^63 wrap to negative.
+              // We parse via BigInt for the full unsigned range, then convert
+              // back via toSigned(64) so the runtime int matches u64-as-int.
+              val parsedVar = s"${srcFieldName}_big"
+              q"""final $rawVar = cursor.readUntilStructural();
+                 |if ($rawVar.isNotEmpty && ($rawVar[0] == '+' || $rawVar[0] == '-')) {
+                 |  return $baboonLeft("unsigned value has leading sign for field $srcFieldName: " + $rawVar);
+                 |}
+                 |final $parsedVar = BigInt.tryParse($rawVar);
+                 |if ($parsedVar == null || $parsedVar.isNegative || $parsedVar > BigInt.parse('18446744073709551615')) {
+                 |  return $baboonLeft("could not parse u64 for field $srcFieldName: " + $rawVar);
+                 |}
+                 |final int $valVar = $parsedVar.toSigned(64).toInt();""".stripMargin
+            case IdentifierFieldKind.Str =>
+              q"""final $resVar = cursor.readStrField();
+                 |if ($resVar is $baboonLeft<String, String>) return $baboonLeft($resVar.value);
+                 |final String $valVar = ($resVar as $baboonRight<String, String>).value;""".stripMargin
+            case IdentifierFieldKind.Uid =>
+              q"""final $rawVar = cursor.readUntilStructural();
+                 |if (!$baboonIdRepr.isCanonicalUid($rawVar)) {
+                 |  return $baboonLeft("uid not in canonical lowercase form for field $srcFieldName: " + $rawVar);
+                 |}
+                 |final String $valVar = $rawVar;""".stripMargin
+            case IdentifierFieldKind.Tsu =>
+              q"""final ${srcFieldName}_rrf = cursor.readFixed(24);
+                 |if (${srcFieldName}_rrf is $baboonLeft<String, String>) return $baboonLeft(${srcFieldName}_rrf.value);
+                 |final $rawVar = (${srcFieldName}_rrf as $baboonRight<String, String>).value;
+                 |final $resVar = $baboonIdRepr.parseTsuRepr($rawVar);
+                 |if ($resVar is $baboonLeft<String, DateTime>) return $baboonLeft($resVar.value);
+                 |final $tpe $valVar = ($resVar as $baboonRight<String, DateTime>).value;""".stripMargin
+            case IdentifierFieldKind.Tso =>
+              q"""final ${srcFieldName}_rrf = cursor.readFixed(29);
+                 |if (${srcFieldName}_rrf is $baboonLeft<String, String>) return $baboonLeft(${srcFieldName}_rrf.value);
+                 |final $rawVar = (${srcFieldName}_rrf as $baboonRight<String, String>).value;
+                 |final $resVar = $baboonIdRepr.parseTsoRepr($rawVar);
+                 |if ($resVar is $baboonLeft<String, $baboonDateTimeOffset>) return $baboonLeft($resVar.value);
+                 |final $tpe $valVar = ($resVar as $baboonRight<String, $baboonDateTimeOffset>).value;""".stripMargin
+            case IdentifierFieldKind.Bytes =>
+              q"""final $rawVar = cursor.readUntilStructural();
+                 |final $resVar = $baboonIdRepr.parseBytesHex($rawVar);
+                 |if ($resVar is $baboonLeft<String, $dtUint8List>) return $baboonLeft($resVar.value);
+                 |final $tpe $valVar = ($resVar as $baboonRight<String, $dtUint8List>).value;""".stripMargin
+            case IdentifierFieldKind.NestedId(uid) =>
+              val nestedTpe = trans.toDtTypeRefKeepForeigns(uid, domain, evo)
+              // The codec lives in the SAME file as the nested type (not a sibling
+              // file). importAs forces the resolver to use the type's file name.
+              val nestedCodec = DtType(nestedTpe.pkg, s"${nestedTpe.name}Codec",
+                                        importAs = Some(trans.toSnakeCase(nestedTpe.name)))
+              q"""final ${srcFieldName}_ro = cursor.expect("{");
+                 |if (${srcFieldName}_ro is $baboonLeft<String, void>) return $baboonLeft(${srcFieldName}_ro.value);
+                 |final $resVar = $nestedCodec.parseReprCursor(cursor);
+                 |if ($resVar is $baboonLeft<String, $nestedTpe>) return $baboonLeft($resVar.value);
+                 |final $nestedTpe $valVar = ($resVar as $baboonRight<String, $nestedTpe>).value;
+                 |final ${srcFieldName}_rc = cursor.expect("}");
+                 |if (${srcFieldName}_rc is $baboonLeft<String, void>) return $baboonLeft(${srcFieldName}_rc.value);""".stripMargin
+          }
+
+          val sep =
+            if (isLast) q""
+            else
+              q"""final ${srcFieldName}_rsep = cursor.expect(":");
+                 |if (${srcFieldName}_rsep is $baboonLeft<String, void>) return $baboonLeft(${srcFieldName}_rsep.value);""".stripMargin
+
+          q"""$parseHead
+             |$parseValue
+             |$sep""".stripMargin.trim
+      }
+
+      val ctorArgs = dto.fields.map {
+        f =>
+          q"${f.name.name}: ${f.name.name}_v"
+      }
+
+      val ctor =
+        if (ctorArgs.nonEmpty)
+          q"""${name.asName}(
+             |  ${ctorArgs.join(",\n").shift(2).trim}
+             |)""".stripMargin
+        else q"${name.asName}()"
+
+      val body = (fieldDecoders :+ q"return $baboonRight($ctor);").joinNN()
+
+      q"""class $codecClassName {
+         |  /// Parse the canonical identifier repr per docs/spec/identifier-repr.md.
+         |  /// Schema-directed parser: walks declared field order and dispatches per
+         |  /// field type. Returns [BaboonLeft] on any malformed input.
+         |  static $baboonEither<String, ${name.asName}> parseRepr(String s) {
+         |    final cursor = $baboonIdReprCursor(s);
+         |    final inner = parseReprCursor(cursor);
+         |    if (inner is $baboonLeft<String, ${name.asName}>) return inner;
+         |    if (!cursor.atEnd) {
+         |      return $baboonLeft("unexpected trailing input at " + cursor.position.toString());
+         |    }
+         |    return inner;
+         |  }
+         |
+         |  static $baboonEither<String, ${name.asName}> parseReprCursor($baboonIdReprCursor cursor) {
+         |    final h = $baboonIdRepr.parseHeader(cursor, "$simpleName", "$versionStr");
+         |    if (h is $baboonLeft<String, void>) return $baboonLeft(h.value);
+         |    ${body.shift(4).trim}
+         |  }
+         |}""".stripMargin
     }
 
     private def collectContractFieldNames(contracts: List[TypeId.User]): Set[String] = {

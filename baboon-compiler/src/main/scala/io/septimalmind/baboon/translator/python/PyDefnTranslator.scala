@@ -235,20 +235,39 @@ object PyDefnTranslator {
 
           val modelConfig = genDtoPydanticModelConf(dto.fields, dtoContracts.nonEmpty, jsonCodecActive)
 
+          // Identifier toString (`__repr__` / `__str__`) emission (PR-57d / spec:
+          // docs/spec/identifier-repr.md). Emitted only when `dto.isIdentifier`.
+          // The parser lives on a sibling `<TypeName>Codec` class
+          // (Q-FU-4: keeps it discoverable but not as `MyId.parse_repr`).
+          val identifierRepr: Option[TextTree[PyValue]] =
+            if (dto.isIdentifier) Some(renderIdentifierRepr(dto)) else None
+          val identifierCodec: Option[TextTree[PyValue]] =
+            if (dto.isIdentifier) Some(renderIdentifierCodecClass(dto)) else None
+
           val members =
             List(
               Some(dtoFieldsTrees.joinN()),
               Some(modelConfig),
               dtoProperties.map(_.joinN()),
               Some(mainMeta.joinN()),
+              identifierRepr,
             ).flatten
 
-          PyDefnRepr(
+          val classTree =
             q"""class ${dto.id.name.name.capitalize}($parents):
                |    ${members.joinNN().shift(4).trim}
-               |""".stripMargin,
-            List.empty,
-          )
+               |""".stripMargin
+
+          val combined = identifierCodec match {
+            case Some(codecTree) =>
+              q"""$classTree
+                 |
+                 |$codecTree
+                 |""".stripMargin
+            case None => classTree
+          }
+
+          PyDefnRepr(combined, List.empty)
 
         case enum: Typedef.Enum =>
           val branches = enum.members.map(m => q"${EnumWireStyle.wireName(m.name)} = \"${EnumWireStyle.wireName(m.name)}\"").toSeq
@@ -450,6 +469,302 @@ object PyDefnTranslator {
 
     private def mkParents(refs: List[PyType]): TextTree[PyValue] = {
       if (refs.isEmpty) q"" else q"${refs.map(s => q"$s").join(", ")}"
+    }
+
+    // ----- Identifier toString + parse_repr emission (PR-57d) -----
+    // Spec: docs/spec/identifier-repr.md. Mirrors the per-language emitters
+    // in PR-57a/b/c. Python idioms:
+    //   - `__repr__(self) -> str` method on the dataclass
+    //   - sibling `<TypeName>Codec` class with `@staticmethod parse_repr` (Q-FU-4)
+    //   - snake_case method names per PEP 8
+    private sealed trait IdentifierFieldKind
+    private object IdentifierFieldKind {
+      case object Bit              extends IdentifierFieldKind
+      case object SignedInt        extends IdentifierFieldKind /* i08/i16/i32 */
+      case object SignedLong       extends IdentifierFieldKind /* i64 */
+      case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
+      case object UnsignedLong     extends IdentifierFieldKind /* u64 */
+      case object Str              extends IdentifierFieldKind
+      case object Uid              extends IdentifierFieldKind
+      case object Tsu              extends IdentifierFieldKind
+      case object Tso              extends IdentifierFieldKind
+      case object Bytes            extends IdentifierFieldKind
+      final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
+    }
+
+    private def identifierFieldKindPy(tpe: TypeRef): IdentifierFieldKind = {
+      tpe match {
+        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
+          import TypeId.Builtins.*
+          b match {
+            case `bit`                   => IdentifierFieldKind.Bit
+            case `i08` | `i16` | `i32`   => IdentifierFieldKind.SignedInt
+            case `i64`                   => IdentifierFieldKind.SignedLong
+            case `u08` | `u16` | `u32`   => IdentifierFieldKind.UnsignedSmallInt
+            case `u64`                   => IdentifierFieldKind.UnsignedLong
+            case `str`                   => IdentifierFieldKind.Str
+            case `uid`                   => IdentifierFieldKind.Uid
+            case `tsu`                   => IdentifierFieldKind.Tsu
+            case `tso`                   => IdentifierFieldKind.Tso
+            case `bytes`                 => IdentifierFieldKind.Bytes
+            case other =>
+              throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
+          }
+        case TypeRef.Scalar(uid: TypeId.User) =>
+          IdentifierFieldKind.NestedId(uid)
+        case other =>
+          throw new IllegalStateException(s"Identifier field has unsupported TypeRef $other; validator should have rejected this.")
+      }
+    }
+
+    private def signedTypeNamePy(tpe: TypeRef): String = tpe match {
+      case TypeRef.Scalar(TypeId.Builtins.i08) => "i08"
+      case TypeRef.Scalar(TypeId.Builtins.i16) => "i16"
+      case TypeRef.Scalar(TypeId.Builtins.i32) => "i32"
+      case other                               => throw new IllegalStateException(s"signedTypeNamePy on non-signed-int: $other")
+    }
+
+    private def signedRangeCheckPy(tpe: TypeRef, varName: String): String = tpe match {
+      case TypeRef.Scalar(TypeId.Builtins.i08) => s"-128 <= $varName <= 127"
+      case TypeRef.Scalar(TypeId.Builtins.i16) => s"-32768 <= $varName <= 32767"
+      case TypeRef.Scalar(TypeId.Builtins.i32) => s"-2147483648 <= $varName <= 2147483647"
+      case other                               => throw new IllegalStateException(s"signedRangeCheckPy on non-signed-int: $other")
+    }
+
+    private def unsignedSmallTypeNamePy(tpe: TypeRef): String = tpe match {
+      case TypeRef.Scalar(TypeId.Builtins.u08) => "u08"
+      case TypeRef.Scalar(TypeId.Builtins.u16) => "u16"
+      case TypeRef.Scalar(TypeId.Builtins.u32) => "u32"
+      case other                               => throw new IllegalStateException(s"unsignedSmallTypeNamePy on non-u08/u16/u32: $other")
+    }
+
+    private def unsignedSmallRangeCheckPy(tpe: TypeRef, varName: String): String = tpe match {
+      case TypeRef.Scalar(TypeId.Builtins.u08) => s"0 <= $varName <= 255"
+      case TypeRef.Scalar(TypeId.Builtins.u16) => s"0 <= $varName <= 65535"
+      case TypeRef.Scalar(TypeId.Builtins.u32) => s"0 <= $varName <= 4294967295"
+      case other                               => throw new IllegalStateException(s"unsignedSmallRangeCheckPy on non-u08/u16/u32: $other")
+    }
+
+    private def renderIdentifierFieldValueExprPy(pyFieldName: String, kind: IdentifierFieldKind): TextTree[PyValue] = {
+      kind match {
+        case IdentifierFieldKind.Bit              => q"$baboonIdReprBitToString(self.$pyFieldName)"
+        case IdentifierFieldKind.SignedInt        => q"str(self.$pyFieldName)"
+        case IdentifierFieldKind.SignedLong       => q"str(self.$pyFieldName)"
+        case IdentifierFieldKind.UnsignedSmallInt => q"str(self.$pyFieldName)"
+        case IdentifierFieldKind.UnsignedLong     => q"$baboonIdReprU64ToString(self.$pyFieldName)"
+        case IdentifierFieldKind.Str              => q"$baboonIdReprEscapeStr(self.$pyFieldName)"
+        // UUID's str() is the lowercase canonical form per RFC 4122.
+        case IdentifierFieldKind.Uid              => q"str(self.$pyFieldName)"
+        case IdentifierFieldKind.Tsu              => q"$baboonIdReprTsuToString(self.$pyFieldName)"
+        case IdentifierFieldKind.Tso              => q"$baboonIdReprTsoToString(self.$pyFieldName)"
+        case IdentifierFieldKind.Bytes            => q"$baboonIdReprBytesToHex(self.$pyFieldName)"
+        case IdentifierFieldKind.NestedId(_)      => q"""f'{${"\"{\""}}{self.$pyFieldName!r}{${"\"}\""}}'""".stripMargin
+      }
+    }
+
+    private def renderIdentifierRepr(dto: Typedef.Dto): TextTree[PyValue] = {
+      val simpleName = dto.id.name.name.capitalize
+      val versionStr = domain.version.toString
+      val header     = s"$simpleName:$versionStr#"
+
+      val fieldExprs: List[TextTree[PyValue]] = dto.fields.map {
+        f =>
+          val srcFieldName = f.name.name
+          val kind         = identifierFieldKindPy(f.tpe)
+          val valueExpr    = renderIdentifierFieldValueExprPy(srcFieldName, kind)
+          q""""$srcFieldName:" + ($valueExpr)"""
+      }
+
+      val joinedFields =
+        if (fieldExprs.isEmpty) q""""""""
+        else fieldExprs.toSeq.join(""" + ":" + """)
+
+      q"""def __repr__(self) -> str:
+         |    return "$header" + $joinedFields
+         |
+         |def __str__(self) -> str:
+         |    return self.__repr__()
+         |""".stripMargin
+    }
+
+    private def renderIdentifierCodecClass(dto: Typedef.Dto): TextTree[PyValue] = {
+      val simpleName     = dto.id.name.name.capitalize
+      val versionStr     = domain.version.toString
+      val codecClassName = s"${simpleName}Codec"
+
+      val fieldDecoders: List[TextTree[PyValue]] = dto.fields.zipWithIndex.map {
+        case (f, idx) =>
+          val srcFieldName = f.name.name
+          val rawVar       = s"${srcFieldName}_raw"
+          val valVar       = s"${srcFieldName}_v"
+          val resVar       = s"${srcFieldName}_r"
+          val isLast       = idx == dto.fields.length - 1
+          val kind         = identifierFieldKindPy(f.tpe)
+
+          val parseHead =
+            q"""${srcFieldName}_fnr = $baboonIdReprParseFieldName(cursor, "$srcFieldName")
+               |if isinstance(${srcFieldName}_fnr, $baboonLeftType):
+               |    return ${srcFieldName}_fnr""".stripMargin
+
+          val parseValue: TextTree[PyValue] = kind match {
+            case IdentifierFieldKind.Bit =>
+              q"""$rawVar = cursor.read_until_structural()
+                 |$resVar = $baboonIdReprParseBit($rawVar)
+                 |if isinstance($resVar, $baboonLeftType):
+                 |    return $resVar
+                 |$valVar = $resVar.value""".stripMargin
+            case IdentifierFieldKind.SignedInt =>
+              val typeName   = signedTypeNamePy(f.tpe)
+              val parsedVar  = s"${srcFieldName}_n"
+              val rangeCheck = signedRangeCheckPy(f.tpe, parsedVar)
+              q"""$rawVar = cursor.read_until_structural()
+                 |try:
+                 |    $parsedVar = int($rawVar)
+                 |except ValueError:
+                 |    return $baboonLeftType(f"could not parse signed integer for field $srcFieldName: {$rawVar}")
+                 |if not ($rangeCheck):
+                 |    return $baboonLeftType(f"$typeName out of range for field $srcFieldName: {$rawVar}")
+                 |$valVar = $parsedVar""".stripMargin
+            case IdentifierFieldKind.SignedLong =>
+              // Python ints are arbitrary precision. i64 range check elided per
+              // PR-57a-D01 carryover (no dead `if not (always-true)` block).
+              q"""$rawVar = cursor.read_until_structural()
+                 |try:
+                 |    $valVar = int($rawVar)
+                 |except ValueError:
+                 |    return $baboonLeftType(f"could not parse i64 for field $srcFieldName: {$rawVar}")""".stripMargin
+            case IdentifierFieldKind.UnsignedSmallInt =>
+              val typeName   = unsignedSmallTypeNamePy(f.tpe)
+              val parsedVar  = s"${srcFieldName}_n"
+              val rangeCheck = unsignedSmallRangeCheckPy(f.tpe, parsedVar)
+              q"""$rawVar = cursor.read_until_structural()
+                 |if $rawVar and $rawVar[0] in ('+', '-'):
+                 |    return $baboonLeftType(f"unsigned value has leading sign for field $srcFieldName: {$rawVar}")
+                 |try:
+                 |    $parsedVar = int($rawVar)
+                 |except ValueError:
+                 |    return $baboonLeftType(f"could not parse unsigned integer for field $srcFieldName: {$rawVar}")
+                 |if not ($rangeCheck):
+                 |    return $baboonLeftType(f"$typeName out of range for field $srcFieldName: {$rawVar}")
+                 |$valVar = $parsedVar""".stripMargin
+            case IdentifierFieldKind.UnsignedLong =>
+              val parsedVar = s"${srcFieldName}_n"
+              q"""$rawVar = cursor.read_until_structural()
+                 |if $rawVar and $rawVar[0] in ('+', '-'):
+                 |    return $baboonLeftType(f"unsigned value has leading sign for field $srcFieldName: {$rawVar}")
+                 |try:
+                 |    $parsedVar = int($rawVar)
+                 |except ValueError:
+                 |    return $baboonLeftType(f"could not parse u64 for field $srcFieldName: {$rawVar}")
+                 |if not (0 <= $parsedVar <= 18446744073709551615):
+                 |    return $baboonLeftType(f"u64 out of range for field $srcFieldName: {$rawVar}")
+                 |$valVar = $parsedVar""".stripMargin
+            case IdentifierFieldKind.Str =>
+              q"""$resVar = cursor.read_str_field()
+                 |if isinstance($resVar, $baboonLeftType):
+                 |    return $resVar
+                 |$valVar = $resVar.value""".stripMargin
+            case IdentifierFieldKind.Uid =>
+              q"""$rawVar = cursor.read_until_structural()
+                 |if not $baboonIdReprIsCanonicalUid($rawVar):
+                 |    return $baboonLeftType(f"uid not in canonical lowercase form for field $srcFieldName: {$rawVar}")
+                 |try:
+                 |    $valVar = $pyUuid($rawVar)
+                 |except ValueError:
+                 |    return $baboonLeftType(f"could not parse uid for field $srcFieldName: {$rawVar}")""".stripMargin
+            case IdentifierFieldKind.Tsu =>
+              q"""${srcFieldName}_rrf = cursor.read_fixed(24)
+                 |if isinstance(${srcFieldName}_rrf, $baboonLeftType):
+                 |    return ${srcFieldName}_rrf
+                 |$rawVar = ${srcFieldName}_rrf.value
+                 |$resVar = $baboonIdReprParseTsu($rawVar)
+                 |if isinstance($resVar, $baboonLeftType):
+                 |    return $resVar
+                 |$valVar = $resVar.value""".stripMargin
+            case IdentifierFieldKind.Tso =>
+              q"""${srcFieldName}_rrf = cursor.read_fixed(29)
+                 |if isinstance(${srcFieldName}_rrf, $baboonLeftType):
+                 |    return ${srcFieldName}_rrf
+                 |$rawVar = ${srcFieldName}_rrf.value
+                 |$resVar = $baboonIdReprParseTso($rawVar)
+                 |if isinstance($resVar, $baboonLeftType):
+                 |    return $resVar
+                 |$valVar = $resVar.value""".stripMargin
+            case IdentifierFieldKind.Bytes =>
+              q"""$rawVar = cursor.read_until_structural()
+                 |$resVar = $baboonIdReprParseBytesHex($rawVar)
+                 |if isinstance($resVar, $baboonLeftType):
+                 |    return $resVar
+                 |$valVar = $resVar.value""".stripMargin
+            case IdentifierFieldKind.NestedId(uid) =>
+              val nestedTpe = typeTranslator.asPyTypeKeepForeigns(uid, domain, evolution, fileTools.definitionsBasePkg)
+              val nestedCodec = PyType(nestedTpe.moduleId, s"${nestedTpe.name}Codec")
+              q"""${srcFieldName}_ro = cursor.expect("{")
+                 |if isinstance(${srcFieldName}_ro, $baboonLeftType):
+                 |    return ${srcFieldName}_ro
+                 |$resVar = $nestedCodec.parse_repr_cursor(cursor)
+                 |if isinstance($resVar, $baboonLeftType):
+                 |    return $resVar
+                 |$valVar = $resVar.value
+                 |${srcFieldName}_rc = cursor.expect("}")
+                 |if isinstance(${srcFieldName}_rc, $baboonLeftType):
+                 |    return ${srcFieldName}_rc""".stripMargin
+          }
+
+          val sep =
+            if (isLast) q""
+            else
+              q"""${srcFieldName}_rsep = cursor.expect(":")
+                 |if isinstance(${srcFieldName}_rsep, $baboonLeftType):
+                 |    return ${srcFieldName}_rsep""".stripMargin
+
+          q"""$parseHead
+             |$parseValue
+             |$sep""".stripMargin.trim
+      }
+
+      val ctorArgs = dto.fields.map {
+        f =>
+          q"${f.name.name}=${f.name.name}_v"
+      }
+
+      val ctor =
+        if (ctorArgs.nonEmpty)
+          q"""$simpleName(
+             |    ${ctorArgs.join(",\n").shift(4).trim}
+             |)""".stripMargin
+        else q"$simpleName()"
+
+      val body = (fieldDecoders :+ q"return $baboonRightType($ctor)").joinNN()
+
+      val bodyForEmpty = if (fieldDecoders.isEmpty) {
+        // Empty-fields id: just emit the construction so we don't end up with
+        // an empty function body (Python requires at least `pass` or a stmt).
+        q"return $baboonRightType($ctor)"
+      } else body
+
+      q"""class $codecClassName:
+         |    \"\"\"Schema-directed parser for the canonical identifier repr per
+         |    docs/spec/identifier-repr.md. NOT a method on the dataclass — Q-FU-4.
+         |    \"\"\"
+         |
+         |    @$pyStaticMethod
+         |    def parse_repr(s: str) -> $baboonEitherType:
+         |        cursor = $baboonIdReprCursor(s)
+         |        inner = ${codecClassName}.parse_repr_cursor(cursor)
+         |        if isinstance(inner, $baboonLeftType):
+         |            return inner
+         |        if not cursor.at_end():
+         |            return $baboonLeftType(f"unexpected trailing input at {cursor.position()}")
+         |        return inner
+         |
+         |    @$pyStaticMethod
+         |    def parse_repr_cursor(cursor: $baboonIdReprCursor) -> $baboonEitherType:
+         |        h = $baboonIdReprParseHeader(cursor, "$simpleName", "$versionStr")
+         |        if isinstance(h, $baboonLeftType):
+         |            return h
+         |        ${bodyForEmpty.shift(8).trim}
+         |""".stripMargin
     }
 
     private def getOutputPath(defn: DomainMember.User, prefix: Option[String] = None, suffix: Option[String] = None): String = {

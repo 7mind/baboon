@@ -12,5 +12,6 @@ packages/baboon_runtime/lib/baboon_runtime.dart
 packages/baboon_runtime/lib/baboon_fixture.dart
 packages/baboon_runtime/lib/baboon_any_opaque.dart
 packages/baboon_runtime/lib/baboon_codecs_facade.dart
+packages/baboon_runtime/lib/baboon_identifier_repr.dart
 packages/baboon_runtime/.dart_tool/
 packages/baboon_runtime/pubspec.lock

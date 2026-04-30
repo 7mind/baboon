@@ -69,6 +69,23 @@ object PyTypes {
   val baboonLEDataInputStream: PyType  = PyType(pyBaboonSharedRuntimeModule, "LEDataInputStream")
   val baboonLazy: PyType               = PyType(pyBaboonSharedRuntimeModule, "Lazy")
 
+  // baboon identifier-repr runtime helpers (PR-57d)
+  val pyBaboonIdReprModule: PyModuleId = PyModuleId("baboon_identifier_repr")
+  val baboonIdReprCursor: PyType       = PyType(pyBaboonIdReprModule, "BaboonIdReprCursor")
+  val baboonIdReprEscapeStr: PyType    = PyType(pyBaboonIdReprModule, "escape_str")
+  val baboonIdReprBytesToHex: PyType   = PyType(pyBaboonIdReprModule, "bytes_to_hex")
+  val baboonIdReprTsuToString: PyType  = PyType(pyBaboonIdReprModule, "tsu_to_string")
+  val baboonIdReprTsoToString: PyType  = PyType(pyBaboonIdReprModule, "tso_to_string")
+  val baboonIdReprU64ToString: PyType  = PyType(pyBaboonIdReprModule, "u64_to_string")
+  val baboonIdReprBitToString: PyType  = PyType(pyBaboonIdReprModule, "bit_to_string")
+  val baboonIdReprParseTsu: PyType     = PyType(pyBaboonIdReprModule, "parse_tsu_repr")
+  val baboonIdReprParseTso: PyType     = PyType(pyBaboonIdReprModule, "parse_tso_repr")
+  val baboonIdReprParseBytesHex: PyType = PyType(pyBaboonIdReprModule, "parse_bytes_hex")
+  val baboonIdReprParseBit: PyType     = PyType(pyBaboonIdReprModule, "parse_bit")
+  val baboonIdReprIsCanonicalUid: PyType = PyType(pyBaboonIdReprModule, "is_canonical_uid")
+  val baboonIdReprParseHeader: PyType  = PyType(pyBaboonIdReprModule, "parse_header")
+  val baboonIdReprParseFieldName: PyType = PyType(pyBaboonIdReprModule, "parse_field_name")
+
   // baboon `any` opaque
   val baboonAnyOpaque: PyType     = PyType(pyBaboonAnyOpaqueModule, "AnyOpaque")
   val baboonAnyOpaqueUeba: PyType = PyType(pyBaboonAnyOpaqueModule, "AnyOpaqueUeba")
