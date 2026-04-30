@@ -31,7 +31,7 @@ target).
 ## Scala backend
 
 ### [BAB-S01] `*_Wiring.scala` for ns-scoped services emitted in wrong package
-**Status:** open · **Severity:** major
+**Status:** [x] fixed (closed by PR-27 / M14) · **Severity:** major
 **Symptom:** When a `root service` lives inside an `ns <name> { ... }` block,
 Baboon emits per-service `<Service>_Wiring.scala` in the model's *root*
 package but references the service trait by its unqualified name. The trait
@@ -65,7 +65,7 @@ root-placed file.
 ---
 
 ### [BAB-S03] User-defined DTOs rejected as JSON map keys
-**Status:** open · **Severity:** moderate
+**Status:** [x] fixed (closed by M19 / PR-59-PR-61) · **Severity:** moderate
 **Symptom:** Declaring `map[<UserType>, V]` (where `<UserType>` is a
 `root data` wrapper around a primitive) crashes `ScJsonCodecGenerator` with
 `Unexpected key usertype`. Only builtins, enums and foreign types are accepted
@@ -118,7 +118,7 @@ codec companions; `<Type>.codecUeba` is undefined at use sites.
 ---
 
 ### [BAB-S05] Cross-ADT branch reuse is not supported
-**Status:** open · **Severity:** minor
+**Status:** [x] fixed (closed by M20 / PR-62-PR-64) · **Severity:** minor
 **Symptom:** Baboon has no syntax for "this ADT has the same first N branches
 as `<OtherAdt>`". Every per-endpoint error ADT must literally re-list the
 common branches verbatim.
@@ -180,7 +180,7 @@ envelope.
 ## Kotlin backend
 
 ### [BAB-K01] `*ServiceWiring.kt` for ns-scoped services emitted in wrong package
-**Status:** open · **Severity:** major
+**Status:** [x] fixed (closed by PR-28 / M14) · **Severity:** major
 **Symptom:** Direct Kotlin-target counterpart of [BAB-S01]. When a `root
 service` lives inside an `ns <name> { ... }` block, Baboon emits per-service
 `<output>/<root>/<ns>.<Service>ServiceWiring.kt` files declared in
@@ -205,7 +205,7 @@ root-placed file.
 ---
 
 ### [BAB-K02] Generated codecs trip Kotlin's named-argument-supertype warning
-**Status:** open · **Severity:** trivial (warning only)
+**Status:** [x] fixed (verified clean post-PR-67) · **Severity:** trivial (warning only)
 **Symptom:** Every emitted `*_UEBACodec` companion declares
 `encode(ctx, writer, value)` while its supertype `BaseGenerated`
 declares the third parameter `instance`. Kotlin emits a non-fatal warning at
@@ -229,7 +229,7 @@ to `value` or override params to `instance`).
 ---
 
 ### [BAB-K05] Generated codec emits a redundant conversion-method call
-**Status:** open · **Severity:** nit
+**Status:** [x] fixed (verified clean post-PR-67) · **Severity:** nit
 **Symptom:** Kotlin compiler emits `Redundant call of conversion method.` at a
 single generated codec body (1 site in a mid-sized schema; exact site not
 narrowed).
@@ -258,7 +258,7 @@ a deprecation warning, then drop.
 ---
 
 ### [BAB-G02] Rust runtime + generated codecs don't compile — regression on baboon main `8788c832`
-**Status:** open · **Severity:** major
+**Status:** [x] mostly fixed (closed by ongoing runtime work; D-shadow residue closed by PR-65) · **Severity:** major
 **Symptom:** Generated Rust output fails to compile against the baboon-emitted
 runtime on baboon main HEAD `8788c832` (≈0.0.186-SNAPSHOT). Approximately 200
 errors in the runtime file itself, plus ≈175 in generated `.rs` files. Error
@@ -815,3 +815,13 @@ need.
 - BAB-R02: fixed by PR-46.
 - BAB-K03/K04: fixed by PR-33.
 - BAB-S02: fixed by PR-34/35 (schema migration deferred).
+
+## Resolved (closed by subsequent milestones M14–M23, 2026-04-30)
+
+- BAB-S01: fixed by PR-27 / M14. `*_Wiring.scala` for ns-scoped services now emitted at `<root>/<ns>/<Service>_Wiring.scala` in `package <root>.<ns>`.
+- BAB-K01: fixed by PR-28 / M14. Kotlin parallel — `*ServiceWiring.kt` now emitted in the correct package.
+- BAB-S03: fixed by M19 / PR-59-PR-61. User-defined DTOs (and `id` types) accepted as JSON map keys via wrapper-recursion validator + map-key codec emission across 8 backends.
+- BAB-S05: fixed by M20 / PR-62-PR-64. Cross-ADT branch reuse via `+ X` / `- X` / `^ X` / `+ X.Foo` / `- X.Foo` syntax shipped with re-emit semantics.
+- BAB-K02: fixed (verified clean post-PR-67). Generated codecs no longer trip Kotlin's named-argument-supertype warning.
+- BAB-K05: fixed (verified clean post-PR-67). No `Redundant call of conversion method.` warnings observed post-PR-67 across all 4 kotlin test runs.
+- BAB-G02: mostly fixed (ongoing runtime work + D-shadow residue closed by PR-65 / M23.1). Generic-name shadowing (`D`/`A`) renamed to `__De`/`__M` in `RsDefnTranslator.scala` serde templates.
