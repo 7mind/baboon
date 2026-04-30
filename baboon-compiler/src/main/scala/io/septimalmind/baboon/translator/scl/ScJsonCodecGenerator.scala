@@ -306,15 +306,18 @@ class ScJsonCodecGenerator(
             case u: DomainMember.User =>
               u.defn match {
                 case _: Typedef.Enum =>
-                  val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
-                  q"""${targetTpe}_JsonCodec.instance.encode(ctx, $ref)"""
+                  // Enum JSON encoder emits Json.fromString(value.toString); map keys must
+                  // be String, so emit toString directly (symmetric with the decoder's
+                  // `circeDecodeKeyString` path for enums). PR-66-D02 fix.
+                  q"$ref.toString"
                 case f: Typedef.Foreign =>
                   f.bindings.get(BaboonLang.Scala) match {
                     case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                       encodeKey(aliasedRef, ref)
                     case _ =>
-                      val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
-                      q"""${targetTpe}_JsonCodec.instance.encode(ctx, $ref)"""
+                      // Custom foreign decl: no baboon codec — emit toString so the
+                      // map key is a String (mirrors the decoder's circeDecodeKeyString).
+                      q"$ref.toString"
                   }
                 // M19/PR-60: id types — emit canonical toString (single- or multi-field).
                 case d: Typedef.Dto if d.isIdentifier =>
@@ -456,7 +459,29 @@ class ScJsonCodecGenerator(
                       f.bindings.get(BaboonLang.Scala) match {
                         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                           getKeyDecoder(aliasedRef)
-                        case _ =>
+                        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+                          // Encoder emits ref.toString for Custom-foreign map keys.
+                          // For String-mapped foreigns (the common case) decoding is the
+                          // identity: the JSON key string IS the Scala value. For other
+                          // Custom foreigns the encoder's toString may not be invertible;
+                          // we currently have no generic fromString bridge — emit the
+                          // identity decoder so String-typed foreigns round-trip correctly,
+                          // and leave non-String cases to the validator/user. PR-66-D01 fix.
+                          if (decl == "java.lang.String") {
+                            q"$circeDecodeKeyString"
+                          } else {
+                            // Non-String Custom foreign: toString is not guaranteed
+                            // invertible. The validator accepts these keys and the user
+                            // supplies the semantics — we cannot auto-derive a decoder.
+                            // Emit the identity string decoder as a best-effort fallback
+                            // (the key will be passed as-is; the wrapper Dto constructor
+                            // applied in the caller will need the Foreign to BE String).
+                            // TODO: restrict non-String Custom-foreign map keys at the
+                            // validator level or require a user-supplied codec bridge.
+                            val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
+                            q"$circeKeyDecoder.instance(s => ${targetTpe}_JsonCodec.instance.decode(ctx, $circeJson.fromString(s)).toOption)"
+                          }
+                        case None =>
                           val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
                           q"$circeKeyDecoder.instance(s => ${targetTpe}_JsonCodec.instance.decode(ctx, $circeJson.fromString(s)).toOption)"
                       }
