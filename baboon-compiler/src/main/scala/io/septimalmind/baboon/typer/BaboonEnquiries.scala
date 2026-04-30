@@ -232,7 +232,13 @@ object BaboonEnquiries {
               Seq.empty
           }.flatten.toSet
         case a: RawAdt =>
-          a.contracts.map(_.contract.tpe).toSet
+          val contractRefs = a.contracts.map(_.contract.tpe).toSet
+          val inheritanceRefs = a.members.collect {
+            case m: io.septimalmind.baboon.parser.model.RawAdtMember.Include   => Seq(m.ref)
+            case m: io.septimalmind.baboon.parser.model.RawAdtMember.Exclude   => Seq(m.ref)
+            case m: io.septimalmind.baboon.parser.model.RawAdtMember.Intersect => Seq(m.ref)
+          }.flatten.toSet
+          contractRefs ++ inheritanceRefs
         case _: RawAlias =>
           Set.empty
         case _ =>

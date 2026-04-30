@@ -335,7 +335,16 @@ class BaboonTranslator[F[+_, +_]: Error2](
   ): F[NEList[BaboonIssue], NEList[DomainMember.User]] = {
     for {
       converted <- F.sequenceAccumErrors {
-        adt.members.collect { case d: RawAdtMember => d }
+        // Fail fast: the M20 inheritance arms (Include, Exclude, Intersect) must be desugared
+        // by the PR-63 typer pre-pass before convertAdt is invoked. If any survive to this point
+        // the pre-pass is missing.
+        adt.members.foreach {
+          case _: RawAdtMember.Include   => throw new RuntimeException("BUG: RawAdtMember.Include reached convertAdt before PR-63 pre-pass")
+          case _: RawAdtMember.Exclude   => throw new RuntimeException("BUG: RawAdtMember.Exclude reached convertAdt before PR-63 pre-pass")
+          case _: RawAdtMember.Intersect => throw new RuntimeException("BUG: RawAdtMember.Intersect reached convertAdt before PR-63 pre-pass")
+          case _ =>
+        }
+        adt.members.collect { case d: RawAdtMemberDto => d; case d: RawAdtMemberContract => d }
           .map(
             member =>
               scopeSupport

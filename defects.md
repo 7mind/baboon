@@ -2135,3 +2135,35 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Location:** TsJsonCodecGenerator.scala line 241 (direct fallback) vs line 239 (wrapper path)
 **Description:** TS direct map-key for non-string builtins still uses tuple-array `[[k,v], …]`. Wrapper-around-the-same-builtin now uses string-keyed object. Cross-language compat tests would observe this: Scala emits `map[i32,V]` as string-keyed-object; TS emits as tuple-array.
 **Fix:** Deferred. Pre-existing TS divergence; clean fix would also unify direct-builtin-key path with wrapper path.
+
+---
+
+## PR-62
+
+## [PR-62-D01] Segment-count dispatch ambiguous — namespace-qualified ADT inclusion impossible
+**Status:** resolved
+**Severity:** major (blocker — feature unreachable for namespace-qualified ADTs)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/defns/DefAdt.scala:32,48 (`adtIncludeDef`/`adtExcludeDef` dispatch by segment count)
+**Description:** Both `adtIncludeDef` and `adtExcludeDef` interpret "1 segment → All, ≥2 segments → Branch" purely structurally on the parsed `ScopedRef`. There is no syntactic distinction at the parser level between a namespace-qualified ADT path (`test.sub.ErrorAtom` — the ADT lives in nested namespace `test.sub`) and an ADT-plus-branch-name path (`MyAdt.Foo`). A user who writes `+ test.sub.ErrorAtom` intending to include all branches of the namespace-qualified ADT `ErrorAtom` is silently re-interpreted as `IncludeBranch(adtRef=[test, sub], branchName="ErrorAtom")`. The PR-63 typer pre-pass would then fail to resolve `test.sub` as an ADT (it's a namespace) and emit a misleading error. The user cannot rewrite this under any escape syntax — the feature is unreachable for namespace-qualified ADTs. `pkg03.baboon` proves Baboon supports namespaced ADTs (`test.sub.TEST_SUB_A1`), so this is not hypothetical.
+**Fix:** Collapsed RawAdtMember from 5 variants to 3 (Include/Exclude/Intersect), each carrying unsplit ScopedRef. Removed segment-count dispatch in DefAdt.scala. PR-63's typer-early pass will resolve via scopeSupport.resolveScopedRef and decide All-vs-Branch in PR-63 (where namespace context is available). Updated BaboonEnquiries, BaboonFamilyManager, BaboonTranslator, ScopeBuilder consumers symmetrically. Added new test pinning multi-segment IncludeAll for namespace-qualified ADT (`+ pkg.subpkg.X` → `Include(ScopedRef([pkg, subpkg, X]))`).
+
+## [PR-62-D02] Test coverage gaps — multi-segment ADT references, negative cases, intersect-with-dot-ref
+**Status:** resolved
+**Severity:** minor
+**Location:** baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/AdtInheritanceParserTest.scala (9 happy-path tests)
+**Description:** Missing tests: (a) Multi-segment IncludeAll for namespaced ADT (`+ pkg.X` should be IncludeAll, not IncludeBranch — currently impossible per D01); (b) Negative tests: `+` with no ref, `+ .Foo` leading dot, trailing tokens; (c) IntersectAll interleaved with branch declarations (Q-M20-7); (d) `^ X.Foo` — currently silently accepted as IntersectAll with multi-segment ref but spec defines `^` only for whole-ADT intersect.
+**Fix:** Added 4 new tests to AdtInheritanceParserTest: (1) Intersect interleaved with branch declarations (Q-M20-7); (2) all 4 inheritance operators in one ADT (regression coverage); (3) parse-error for `+ }` (Include with no ref); (4) parse-error for `+ .Foo` (leading dot). Added `assertParseAdtFails` helper following AnyParserTest pattern. AdtInheritanceParserTest now 14/14 PASS.
+
+## [PR-62-D03] Field-naming inconsistency between All-arm and Branch-arm variants — minor cleanup opportunity
+**Status:** resolved (deferred — supersedes via D01 fix unifying the variants)
+**Severity:** nit
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/RawAdtMemberDto.scala (5-variant shape)
+**Description:** All-arms use `ref: ScopedRef`; Branch-arms use `adtRef: ScopedRef, branchName: String`. Consumers in `BaboonEnquiries.hardDepsOfRawDefn` and `BaboonFamilyManager.filesFromAdtMember` have to special-case `.ref` vs `.adtRef`. Not a defect per se — Branch-arm shape carries strictly more information.
+**Fix:** Resolved transitively by D01 fix. Collapsing to 3 variants (Include/Exclude/Intersect) each carrying unsplit `ScopedRef` removes the All/Branch field-naming asymmetry entirely.
+
+## [PR-62-D04] Plan deviation — implemented `ExcludeBranch(adtRef, branchName, meta)` is richer than plan spec
+**Status:** resolved (deferred — superseded by D01 fix; new shape carries unsplit ScopedRef)
+**Severity:** nit (plan documentation)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/RawAdtMemberDto.scala (ExcludeBranch shape)
+**Description:** Plan §3 step 6 / §9 PR M20.1 specifies `ExcludeBranch(name, meta)` (just a name string). Implementation ships `ExcludeBranch(adtRef: ScopedRef, branchName: String, meta: RawNodeMeta)`. The implemented shape is richer and arguably more correct (lets `- A.Foo` and `- B.Foo` co-exist when both A and B have a `Foo` branch in scope post-include). Justified deviation but plan should be amended.
+**Fix:** Resolved by D01 fix. After unification, the parser emits `Exclude(ref: ScopedRef, meta)` with no separate `branchName` field — the typer pre-pass decides whether the ref names a whole ADT or an ADT.branch and produces the appropriate downstream representation.

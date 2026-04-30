@@ -473,6 +473,21 @@ object BaboonFamilyManager {
       }
     }
 
+    private def filesFromAdtMember(member: io.septimalmind.baboon.parser.model.RawAdtMember): Set[FSPath] = {
+      member match {
+        case m: io.septimalmind.baboon.parser.model.RawAdtMemberDto =>
+          filesFromMeta(m.meta) ++ collectFilesFromDefn(m.defn)
+        case m: io.septimalmind.baboon.parser.model.RawAdtMemberContract =>
+          filesFromMeta(m.meta) ++ collectFilesFromDefn(m.defn)
+        case io.septimalmind.baboon.parser.model.RawAdtMember.Include(_, meta) =>
+          filesFromMeta(meta)
+        case io.septimalmind.baboon.parser.model.RawAdtMember.Exclude(_, meta) =>
+          filesFromMeta(meta)
+        case io.septimalmind.baboon.parser.model.RawAdtMember.Intersect(_, meta) =>
+          filesFromMeta(meta)
+      }
+    }
+
     private def filesFromFunc(func: io.septimalmind.baboon.parser.model.RawFunc): Set[FSPath] = {
       val argFiles = func.sig.flatMap(filesFromFuncArg).toSet
       filesFromMeta(func.meta) ++ argFiles
@@ -499,10 +514,7 @@ object BaboonFamilyManager {
           filesFromMeta(enum.meta) ++ enum.members.flatMap(m => filesFromMeta(m.meta)).toSet
         case adt: io.septimalmind.baboon.parser.model.RawAdt =>
           val contractFiles = adt.contracts.flatMap(c => filesFromMeta(c.meta)).toSet
-          filesFromMeta(adt.meta) ++ contractFiles ++ adt.members.flatMap {
-            member =>
-              filesFromMeta(member.meta) ++ collectFilesFromDefn(member.defn)
-          }.toSet
+          filesFromMeta(adt.meta) ++ contractFiles ++ adt.members.flatMap(filesFromAdtMember).toSet
         case foreign: io.septimalmind.baboon.parser.model.RawForeign =>
           filesFromMeta(foreign.meta)
         case namespace: io.septimalmind.baboon.parser.model.RawNamespace =>

@@ -94,7 +94,10 @@ class ScopeBuilder[F[+_, +_]: Error2] {
       case adt: RawAdt =>
         for {
           sub <- F.sequenceAccumErrors {
-            adt.members.collect { case d: RawAdtMember => d }
+            // Collect only members that define a concrete nested type; the M20 inheritance
+            // arms (Include, Exclude, Intersect) carry no inline defn — they are desugared
+            // in the PR-63 typer pre-pass.
+            adt.members.collect { case d: RawAdtMemberDto => d; case d: RawAdtMemberContract => d }
               .map(m => buildScope(m.defn, isRoot = false, gen))
           }
           out <- wrapScope(adt, sub)
