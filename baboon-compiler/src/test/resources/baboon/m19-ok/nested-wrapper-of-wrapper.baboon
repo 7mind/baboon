@@ -1,0 +1,15 @@
+model my.ok.m19.nested
+
+version "1.0.0"
+
+data ItemId : derived[json], derived[ueba] {
+  v: uid
+}
+
+data Outer : derived[json], derived[ueba] {
+  v: ItemId
+}
+
+root data Holder : derived[json], derived[ueba] {
+  m: map[Outer, str]
+}

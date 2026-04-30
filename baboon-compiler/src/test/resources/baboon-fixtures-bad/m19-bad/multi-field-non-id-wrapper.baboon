@@ -1,0 +1,12 @@
+model my.bad.m19.multifield
+
+version "1.0.0"
+
+data K {
+  a: u32
+  b: str
+}
+
+root data Holder {
+  m: map[K, i32]
+}

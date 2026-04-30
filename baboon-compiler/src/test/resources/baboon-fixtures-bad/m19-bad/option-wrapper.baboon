@@ -1,0 +1,11 @@
+model my.bad.m19.option
+
+version "1.0.0"
+
+data K {
+  v: opt[uid]
+}
+
+root data Holder {
+  m: map[K, i32]
+}

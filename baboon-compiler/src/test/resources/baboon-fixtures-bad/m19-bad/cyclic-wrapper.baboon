@@ -1,0 +1,15 @@
+model my.bad.m19.cycle
+
+version "1.0.0"
+
+data A {
+  v: B
+}
+
+data B {
+  v: A
+}
+
+root data Holder {
+  m: map[A, i32]
+}

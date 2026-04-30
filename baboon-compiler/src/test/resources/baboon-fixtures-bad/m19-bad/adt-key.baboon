@@ -1,0 +1,16 @@
+model my.bad.m19.adt
+
+version "1.0.0"
+
+adt K {
+  data A {
+    x: i32
+  }
+  data B {
+    y: str
+  }
+}
+
+root data Holder {
+  m: map[K, i32]
+}

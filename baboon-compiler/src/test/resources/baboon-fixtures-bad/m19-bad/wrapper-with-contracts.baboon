@@ -1,0 +1,16 @@
+model my.bad.m19.contracts
+
+version "1.0.0"
+
+contract C {
+  tag: str
+}
+
+data K {
+  is C
+  v: uid
+}
+
+root data Holder {
+  m: map[K, i32]
+}

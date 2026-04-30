@@ -612,9 +612,33 @@ object BaboonRuntimeCodec {
             case f: Typedef.Foreign =>
               f.runtimeMapping match {
                 case Some(typeRef) => encodeMapKey(dom, typeRef, key, writer)
-                case None          => F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(TypeRef.Scalar(u)))
+                case None          =>
+                  // M19/Q-M19-7: foreign types with no runtime mapping are accepted at face value;
+                  // the user provides the toString/parse codec. The cross-format facade encodes the
+                  // JSON-side canonical string verbatim into the UEBA binary.
+                  BaboonBinTools.writeString(writer, key)
+                  F.unit
               }
+            // M19/PR-59: relax to accept eligible single-primitive-field wrappers and `id` types.
+            // The validator (`checkUserMapKeysEligibility`) gates eligibility; this arm trusts it.
+            case d: Typedef.Dto if d.isIdentifier =>
+              if (d.fields.size == 1) {
+                // Single-primitive id: recurse on inner field's type. The JSON-side key is the
+                // canonical primitive string — no parser machinery needed.
+                encodeMapKey(dom, d.fields.head.tpe, key, writer)
+              } else {
+                // Multi-field id (Q-M19-6): the JSON-side key is the parser-canonical
+                // `<Name>:<ver>#fields:values:{nested}` string. The cross-format facade writes
+                // it verbatim to UEBA; PR-60 emits the proper per-language parseRepr/toString
+                // wiring on the codegen side.
+                BaboonBinTools.writeString(writer, key)
+                F.unit
+              }
+            case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
+              // Single-field non-id wrapper: recurse on inner field's type.
+              encodeMapKey(dom, d.fields.head.tpe, key, writer)
             case _ =>
+              // Defensive: validator should have rejected anything else (Q-M19-8).
               F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(TypeRef.Scalar(u)))
           }
         case _ =>
@@ -686,8 +710,20 @@ object BaboonRuntimeCodec {
             case f: Typedef.Foreign =>
               f.runtimeMapping match {
                 case Some(typeRef) => decodeMapKey(dom, typeRef, reader)
-                case None          => F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(TypeRef.Scalar(u)))
+                case None          =>
+                  // M19/Q-M19-7: foreign types with no runtime mapping decode as a verbatim string.
+                  F.pure(BaboonBinTools.readString(reader))
               }
+            // M19/PR-59 mirror of encodeMapKey relaxation.
+            case d: Typedef.Dto if d.isIdentifier =>
+              if (d.fields.size == 1) {
+                decodeMapKey(dom, d.fields.head.tpe, reader)
+              } else {
+                // Multi-field id: read the canonical-toString form back as a verbatim string.
+                F.pure(BaboonBinTools.readString(reader))
+              }
+            case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
+              decodeMapKey(dom, d.fields.head.tpe, reader)
             case _ =>
               F.fail(RuntimeCodecIssue.UnsupportedMapKeyType(TypeRef.Scalar(u)))
           }

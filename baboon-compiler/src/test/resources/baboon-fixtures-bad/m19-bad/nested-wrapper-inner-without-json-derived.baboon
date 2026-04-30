@@ -1,0 +1,15 @@
+model my.bad.nested
+
+version "1.0.0"
+
+data Inner {
+  v: uid
+}
+
+data Outer : derived[json] {
+  v: Inner
+}
+
+root data Holder : derived[json] {
+  m: map[Outer, str]
+}

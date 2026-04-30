@@ -97,6 +97,30 @@ object VerificationIssue {
   // `any[X]` underlyings, `any` as map key, and `any` as set element.
   case class IdentifierFieldAny(owner: Typedef.User, badFields: List[Field], meta: RawNodeMeta) extends VerificationIssue
 
+  // M19/BAB-A02: a user type used as a JSON map key fails the wrapper-eligibility
+  // procedure (single-primitive grounding, no contracts, no opt/collection field, etc.).
+  // `reason` carries the structured cause so the printer can surface an actionable error.
+  sealed trait IneligibleMapKeyReason
+  object IneligibleMapKeyReason {
+    case class MultiFieldNonIdWrapper(typeId: TypeId) extends IneligibleMapKeyReason
+    case class CollectionField(typeId: TypeId)        extends IneligibleMapKeyReason
+    case class OptionField(typeId: TypeId)            extends IneligibleMapKeyReason
+    case class WrapperWithContracts(typeId: TypeId)   extends IneligibleMapKeyReason
+    case class IneligibleUserType(typeId: TypeId)     extends IneligibleMapKeyReason
+    case class CyclicWrapper(typeId: TypeId)          extends IneligibleMapKeyReason
+    case class FloatWrapper(typeId: TypeId)           extends IneligibleMapKeyReason
+  }
+
+  // M19/BAB-A02: a `map[K, V]` field in `owner` whose `K` is a user type that fails the
+  // eligibility procedure (see `BaboonValidator.checkUserMapKeysEligibility`). Multi-field
+  // non-id DTOs, collection-/opt-wrapped wrappers, ADTs/contracts/services, cyclic wrappers,
+  // and float wrappers (Q-M19-2 asymmetric override) are rejected.
+  case class IneligibleUserMapKey(owner: Typedef.User, badField: Field, reason: IneligibleMapKeyReason, meta: RawNodeMeta) extends VerificationIssue
+
+  // M19/BAB-A02 / Q-FU-1: a `map[K, V]` field whose owner derives `json` (or `ueba`) and whose
+  // user-typed key K does not derive the same. `missing` is "json" or "ueba".
+  case class MapKeyMissingDerivation(owner: Typedef.User, badField: Field, keyType: TypeId, missing: String, meta: RawNodeMeta) extends VerificationIssue
+
   implicit val lockedVersionModifiedPrinter: IssuePrinter[LockedVersionModified] =
     (issue: LockedVersionModified) => {
       s"""Model ${issue.pkg.toString}@${issue.version} was modified but it's not the latest version so it's locked with the lockfile""".stripMargin
@@ -342,6 +366,39 @@ object VerificationIssue {
       val badDesc = issue.badFields.map(f => s"'${f.name.name}'").mkString(", ")
       s"""${extractLocation(issue.meta)}
          |identifier '${issue.owner.id.name.name}': field $badDesc has type 'any'; 'any' fields are not allowed in identifiers
+         |""".stripMargin
+    }
+
+  implicit val ineligibleUserMapKeyPrinter: IssuePrinter[IneligibleUserMapKey] =
+    (issue: IneligibleUserMapKey) => {
+      val reasonText = issue.reason match {
+        case IneligibleMapKeyReason.MultiFieldNonIdWrapper(t) =>
+          s"'${t.name.name}' is a multi-field DTO (only single-primitive-field wrappers, `id` types, enums, and foreign types are allowed)"
+        case IneligibleMapKeyReason.CollectionField(t) =>
+          s"'${t.name.name}' wraps a collection field (lst/set/map are not allowed in map keys)"
+        case IneligibleMapKeyReason.OptionField(t) =>
+          s"'${t.name.name}' wraps an `opt[_]` field (no stable string form for the absent case)"
+        case IneligibleMapKeyReason.WrapperWithContracts(t) =>
+          s"'${t.name.name}' is a DTO with contracts (only standalone single-primitive-field wrappers are allowed)"
+        case IneligibleMapKeyReason.IneligibleUserType(t) =>
+          s"'${t.name.name}' is not a valid map-key user type (must be a wrapper DTO, identifier, enum, or foreign type)"
+        case IneligibleMapKeyReason.CyclicWrapper(t) =>
+          s"'${t.name.name}' participates in a wrapper cycle"
+        case IneligibleMapKeyReason.FloatWrapper(t) =>
+          s"'${t.name.name}' grounds in a float type (f32/f64/f128 are rejected for wrappers; floats are still permitted as direct builtin keys)"
+      }
+      s"""${extractLocation(issue.meta)}
+         |In: ${issue.owner.id.toString}
+         |Map key field '${issue.badField.name.name}' is ineligible: $reasonText
+         |""".stripMargin
+    }
+
+  implicit val mapKeyMissingDerivationPrinter: IssuePrinter[MapKeyMissingDerivation] =
+    (issue: MapKeyMissingDerivation) => {
+      s"""${extractLocation(issue.meta)}
+         |In: ${issue.owner.id.toString}
+         |Map key field '${issue.badField.name.name}' uses key type '${issue.keyType.name.name}' which is missing `: derived[${issue.missing}]`.
+         |The owning type derives '${issue.missing}', so the key type must too.
          |""".stripMargin
     }
 

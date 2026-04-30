@@ -1,0 +1,12 @@
+model my.ok.m19.multiid
+
+version "1.0.0"
+
+id CompositeId : derived[json], derived[ueba] {
+  tenant: uid
+  user: uid
+}
+
+root data Holder : derived[json], derived[ueba] {
+  m: map[CompositeId, str]
+}

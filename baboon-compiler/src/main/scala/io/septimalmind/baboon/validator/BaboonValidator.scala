@@ -60,6 +60,7 @@ object BaboonValidator {
         _ <- checkPathologicGenerics(domain)
         _ <- checkAnyFields(domain)
         _ <- checkIdentifierFields(domain)
+        _ <- checkUserMapKeysEligibility(domain)
         _ <- checkRoots(domain)
       } yield {}
 
@@ -169,6 +170,202 @@ object BaboonValidator {
                 )
               } yield {}
 
+            case _ =>
+              F.unit
+          }
+      }
+    }
+
+    // M19/BAB-A02 (PR-59): rejects user-defined map-key types that are not eligible per the
+    // wrapper-eligibility procedure (plan §2.1, decisions Q-M19-1..7, Q-FU-1).
+    //
+    // Eligibility (recursive, with cycle protection via `seen`):
+    //   - TypeRef.Scalar(BuiltinScalar) — accepted (floats included; per Q-M19-2 only WRAPPER
+    //     floats are rejected, builtin floats remain accepted as direct map keys).
+    //   - TypeRef.Scalar(User) where User is:
+    //       Enum                                                         → accepted
+    //       Foreign                                                       → accepted (Q-M19-7:
+    //                                                                       any single-foreign-field
+    //                                                                       data is eligible; the
+    //                                                                       user supplies the codec)
+    //       Dto with contracts                                            → rejected (WrapperWithContracts)
+    //       Dto with isIdentifier=true                                    → accepted (Q-M19-6: ANY id
+    //                                                                       is eligible regardless of
+    //                                                                       field count; M18 already
+    //                                                                       guarantees no float fields)
+    //       Dto with exactly one field whose tpe is:
+    //         TypeRef.Constructor                                         → rejected (CollectionField,
+    //                                                                       also covers `opt[_]` since
+    //                                                                       opt is a Constructor)
+    //         TypeRef.Scalar(float builtin)                                → rejected (FloatWrapper, the
+    //                                                                       Q-M19-2 wrapper-asymmetry override)
+    //         otherwise                                                    → recurse
+    //       Dto with N≠1 fields and not isIdentifier                       → rejected (MultiFieldNonIdWrapper)
+    //       Adt | Contract | Service                                       → rejected (IneligibleUserType)
+    //
+    // After eligibility, Q-FU-1 derivation parity: when the owning type derives `json` (or `ueba`),
+    // any user-typed map key must derive the same. Builtins are exempt (always wire-supported).
+    //
+    // Cyclic wrappers are normally caught earlier by `checkLoops`; the `seen.contains(u)` arm here
+    // is a defensive safeguard for the recursion itself.
+    private def checkUserMapKeysEligibility(
+      domain: Domain
+    ): F[NEList[BaboonIssue], Unit] = {
+      import VerificationIssue.IneligibleMapKeyReason
+      import VerificationIssue.IneligibleMapKeyReason.*
+
+      val floatScalars: Set[TypeId] = Set(TypeId.Builtins.f32, TypeId.Builtins.f64, TypeId.Builtins.f128)
+
+      // Returns Right(chain) where chain is the ordered list of all user TypeIds visited
+      // (including the root key type and every intermediate wrapper), so the caller can
+      // apply the Q-FU-1 derivation-parity check to every node in the chain, not just
+      // the immediate key type.
+      def isEligibleKey(t: TypeRef, seen: Set[TypeId]): Either[IneligibleMapKeyReason, List[TypeId.User]] = t match {
+        case TypeRef.Scalar(_: TypeId.BuiltinScalar) =>
+          // Builtin scalars are always eligible as direct map keys, including floats
+          // (Q-M19-2: only WRAPPER floats are rejected; builtin floats stay accepted).
+          Right(Nil)
+        case TypeRef.Scalar(u: TypeId.User) if seen.contains(u) =>
+          Left(CyclicWrapper(u))
+        case TypeRef.Scalar(u: TypeId.User) =>
+          domain.defs.meta.nodes.get(u) match {
+            case Some(DomainMember.User(_, defn, _, _)) =>
+              defn match {
+                case _: Typedef.Enum =>
+                  Right(List(u))
+                case _: Typedef.Foreign =>
+                  // Q-M19-7: single-foreign-field data is map-key eligible at face value;
+                  // the user supplies the toString/parse codec and takes responsibility.
+                  Right(List(u))
+                case d: Typedef.Dto if d.isIdentifier =>
+                  // Q-M19-6: ANY id is eligible regardless of field count. M18's validator
+                  // (checkIdentifierFields) already guarantees: no floats, no collections,
+                  // no `any`, no non-id user refs. Multi-field ids reach the JSON map-key
+                  // codec via M18's parseRepr/toString machinery (PR-60 emits the wiring).
+                  Right(List(u))
+                case d: Typedef.Dto if d.contracts.nonEmpty =>
+                  Left(WrapperWithContracts(u))
+                case d: Typedef.Dto if d.fields.size == 1 =>
+                  val f = d.fields.head
+                  f.tpe match {
+                    case c: TypeRef.Constructor =>
+                      // opt[_] / lst[_] / set[_] / map[_,_] are all `Constructor`. Distinguish
+                      // opt for a more precise message; everything else is "collection".
+                      if (c.id == TypeId.Builtins.opt) Left(OptionField(u))
+                      else Left(CollectionField(u))
+                    case TypeRef.Scalar(b: TypeId.BuiltinScalar) if floatScalars.contains(b) =>
+                      // Q-M19-2 asymmetric override: a wrapper that grounds in float is rejected
+                      // even though a direct builtin float key is permitted.
+                      Left(FloatWrapper(u))
+                    case _ =>
+                      // Recurse into the single field, prepending `u` so every node in the
+                      // chain is returned to the caller for derivation-parity checking.
+                      isEligibleKey(f.tpe, seen + u).map(u :: _)
+                  }
+                case _: Typedef.Dto =>
+                  // N != 1 fields, not isIdentifier — multi-field non-id wrapper.
+                  Left(MultiFieldNonIdWrapper(u))
+                case _: Typedef.Adt | _: Typedef.Contract | _: Typedef.Service =>
+                  Left(IneligibleUserType(u))
+              }
+            case _ =>
+              // Unknown / builtin user-id slot — should not happen; treat as ineligible defensively.
+              Left(IneligibleUserType(u))
+          }
+        case _: TypeRef.Constructor =>
+          // Should be unreachable — `checkComplexMapKeys` already rejects nested-collection keys.
+          Left(IneligibleUserType(t.id))
+        case _: TypeRef.Any =>
+          // Should be unreachable — `checkAnyAsMapKey` already rejects `any` keys.
+          Left(IneligibleUserType(t.id))
+      }
+
+      // Per Q-FU-1: if the owning type EXPLICITLY derives `json` (resp. `ueba`), and the
+      // user-typed key does not EXPLICITLY derive the same, fail MapKeyMissingDerivation.
+      // Builtin keys skip this check.
+      //
+      // We use the per-user `DomainMember.User.derivations` set, NOT
+      // `domain.derivationRequests`: the latter is the *transitive* closure (every type
+      // reachable from a derived root inherits the derivation request) and would silently
+      // mask the missing derivation we are trying to detect.
+      val explicitlyDerived: Map[String, Set[TypeId]] = {
+        val pairs: Iterable[(String, TypeId)] = domain.defs.meta.nodes.values.collect {
+          case u: DomainMember.User =>
+            u.derivations.collect { case RawMemberMeta.Derived(k) => (k, u.id: TypeId) }
+        }.flatten
+        pairs.groupBy((p: (String, TypeId)) => p._1).view.mapValues(vs => vs.map((p: (String, TypeId)) => p._2).toSet).toMap
+      }
+      def derives(id: TypeId, kind: String): Boolean =
+        explicitlyDerived.getOrElse(kind, Set.empty[TypeId]).contains(id)
+
+      def collectMapKeyFields(t: TypeRef): List[TypeRef] = t match {
+        case TypeRef.Constructor(TypeId.Builtins.map, args) =>
+          val key  = args.head
+          val rest = args.toList.flatMap(collectMapKeyFields)
+          key :: rest
+        case TypeRef.Constructor(_, args) =>
+          args.toList.flatMap(collectMapKeyFields)
+        case _ => Nil
+      }
+
+      def checkOnFields(owner: Typedef.User, fields: List[Field], meta: RawNodeMeta, ownerId: TypeId): F[NEList[BaboonIssue], Unit] = {
+        val ownerJson = derives(ownerId, "json")
+        val ownerUeba = derives(ownerId, "ueba")
+
+        F.traverseAccumErrors_(fields) {
+          field =>
+            val keyTypes = collectMapKeyFields(field.tpe)
+            F.traverseAccumErrors_(keyTypes) {
+              keyTpe =>
+                isEligibleKey(keyTpe, Set.empty) match {
+                  case Left(reason) =>
+                    F.fail(BaboonIssue.of(VerificationIssue.IneligibleUserMapKey(owner, field, reason, meta)))
+                  case Right(chain) =>
+                    // Q-FU-1: apply derivation parity to EVERY user type visited during
+                    // eligibility (outer wrapper → innermost). Enums and foreign types are
+                    // wire-supported intrinsically (like builtins); skip them.
+                    F.traverseAccumErrors_(chain) { u =>
+                      val skipDerivationCheck = domain.defs.meta.nodes.get(u) match {
+                        case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) => true
+                        case Some(DomainMember.User(_, _: Typedef.Enum, _, _))    => true
+                        case _                                                     => false
+                      }
+                      if (skipDerivationCheck) F.unit
+                      else
+                        for {
+                          _ <- F.when(ownerJson && !derives(u, "json"))(
+                            F.fail(BaboonIssue.of(VerificationIssue.MapKeyMissingDerivation(owner, field, u, "json", meta)))
+                          )
+                          _ <- F.when(ownerUeba && !derives(u, "ueba"))(
+                            F.fail(BaboonIssue.of(VerificationIssue.MapKeyMissingDerivation(owner, field, u, "ueba", meta)))
+                          )
+                        } yield {}
+                    }
+                }
+            }
+        }
+      }
+
+      F.traverseAccumErrors_(domain.defs.meta.nodes.values) {
+        case _: DomainMember.Builtin =>
+          F.unit
+        case u: DomainMember.User =>
+          u.defn match {
+            case d: Typedef.Dto =>
+              checkOnFields(d, d.fields, u.meta, d.id)
+            case c: Typedef.Contract =>
+              checkOnFields(c, c.fields, u.meta, c.id)
+            case a: Typedef.Adt =>
+              checkOnFields(a, a.fields, u.meta, a.id)
+            case s: Typedef.Service =>
+              val pseudo: List[Field] = s.methods.flatMap {
+                m =>
+                  val sigF = Field(FieldName(s"${m.name.name}.sig"), m.sig, None)
+                  val outF = m.out.map(t => Field(FieldName(s"${m.name.name}.out"), t, None))
+                  val errF = m.err.map(t => Field(FieldName(s"${m.name.name}.err"), t, None))
+                  List(sigF) ++ outF.toList ++ errF.toList
+              }
+              checkOnFields(s, pseudo, u.meta, s.id)
             case _ =>
               F.unit
           }

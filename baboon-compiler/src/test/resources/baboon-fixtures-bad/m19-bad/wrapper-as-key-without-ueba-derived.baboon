@@ -1,0 +1,11 @@
+model my.bad.m19.wrapnoueba
+
+version "1.0.0"
+
+data ItemId {
+  v: uid
+}
+
+root data Holder : derived[ueba] {
+  m: map[ItemId, i32]
+}

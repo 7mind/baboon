@@ -1,0 +1,13 @@
+model my.ok.m19.alias
+
+version "1.0.0"
+
+data ItemId : derived[json], derived[ueba] {
+  v: uid
+}
+
+type ItemIdAlias = ItemId
+
+root data Holder : derived[json], derived[ueba] {
+  m: map[ItemIdAlias, str]
+}

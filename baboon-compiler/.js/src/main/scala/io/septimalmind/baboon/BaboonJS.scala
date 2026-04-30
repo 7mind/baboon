@@ -1556,6 +1556,8 @@ object BaboonJS {
       case IdentifierFieldCollection(_, _, meta)                => Some(meta.pos)
       case IdentifierFieldUserNotIdentifier(_, _, meta)         => Some(meta.pos)
       case IdentifierFieldAny(_, _, meta)                       => Some(meta.pos)
+      case IneligibleUserMapKey(_, _, _, meta)                  => Some(meta.pos)
+      case MapKeyMissingDerivation(_, _, _, _, meta)            => Some(meta.pos)
       case _: LockedVersionModified                             => None
       case _: MissingTypeDef                                    => None
       case _: ReferentialCyclesFound                            => None

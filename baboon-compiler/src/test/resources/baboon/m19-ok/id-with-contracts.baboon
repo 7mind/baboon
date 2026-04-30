@@ -1,0 +1,19 @@
+model my.ok.idcontracts
+
+version "1.0.0"
+
+contract HasMeta {
+  meta: str
+}
+
+// An id type that implements HasMeta (via the `is` member syntax) and derives json.
+// Tests that the `isIdentifier` branch in isEligibleKey takes priority over the
+// `contracts.nonEmpty` branch (D02 fix) — so an id with contracts is accepted.
+id ItemId : derived[json] {
+  is HasMeta
+  v: uid
+}
+
+root data Holder : derived[json] {
+  m: map[ItemId, str]
+}
