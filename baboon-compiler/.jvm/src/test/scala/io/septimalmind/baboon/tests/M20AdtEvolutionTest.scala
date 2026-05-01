@@ -77,15 +77,12 @@ abstract class M20AdtEvolutionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
     // a derivable `CopyAdtBranchByName` (NOT `CustomConversionRequired`).
     //
     // Note on `SomeError`'s classification: post-expansion `SomeError` lands in
-    // `deepModified`, not `unmodified`, because `BaboonTyper.deepSchemaRepr` includes
-    // ADT branches in declared order without sorting. v1 sources `Forbidden, Bar`
-    // literally; v2 produces `Bar` (local) followed by `Forbidden` (re-emitted from
-    // `+ ErrorAtom`) per the order in `AdtInheritanceExpander.expand` (`localMembers ++
-    // includeBranches`). Different declaration order -> different deep-id but identical
-    // shallow-id (which sorts members). `BaboonRules` treats `deepModified` and
-    // `unmodified` symmetrically via `sameLocalStruct = unmodified || deepChanged`
-    // (BaboonRules.scala:73), so `CopyAdtBranchByName` is the conversion produced for
-    // SomeError — the operational definition of "non-evolutionary".
+    // `unmodified` because PR-D sorted ADT branches in `BaboonTyper.deepSchemaRepr`
+    // before hashing. v1 sources `Forbidden, Bar` literally; v2's sugared expansion
+    // via `AdtInheritanceExpander` produces `Bar, Forbidden` (localMembers first then
+    // includeBranches). After sorting each branch repr by `mkString`, both orderings
+    // produce the identical deep-schema string, so deep IDs match and `SomeError`
+    // classifies as `unmodified`.
     "manual->sugared rewrite produces no breaking change in BaboonRules / BaboonComparator" in {
       (manager: BaboonFamilyManager[F]) =>
         for {
@@ -105,19 +102,16 @@ abstract class M20AdtEvolutionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
           val evo                    = lineage.evolution
           val diff                   = evo.diffs(step)
 
-          // SomeError must be classified as non-breaking: in unmodified, shallowModified,
-          // or deepModified — NOT fullyModified, NOT removed, NOT renamed. The current
-          // implementation places it in `deepModified` due to the branch-order asymmetry;
-          // we accept any of the three non-breaking buckets to keep the test resilient to
-          // future hygiene fixes (e.g. sorting branches in `deepSchemaRepr`).
-          val nonBreakingIds: Set[TypeId.User] =
-            (diff.changes.unmodified ++ diff.changes.shallowModified ++ diff.changes.deepModified)
-              .collect { case u: TypeId.User => u }
+          // SomeError must be classified as `unmodified`: after PR-D the branch sort in
+          // `BaboonTyper.deepSchemaRepr` makes the manual->sugared rewrite produce identical
+          // deep schema IDs regardless of declaration order.
+          val unmodifiedIds: Set[TypeId.User] =
+            diff.changes.unmodified.collect { case u: TypeId.User => u }
 
-          val someErrorNonBreaking = nonBreakingIds.filter(_.name.name == "SomeError")
+          val someErrorNonBreaking = unmodifiedIds.filter(_.name.name == "SomeError")
           assert(
             someErrorNonBreaking.size == 1,
-            s"Expected SomeError in {unmodified, shallowModified, deepModified} (non-breaking); " +
+            s"Expected SomeError in unmodified (identical deep schema IDs after branch sort); " +
               s"got unmodified=${diff.changes.unmodified}, shallowModified=${diff.changes.shallowModified}, " +
               s"deepModified=${diff.changes.deepModified}, fullyModified=${diff.changes.fullyModified}, " +
               s"removed=${diff.changes.removed}, renamed=${diff.changes.renamed}",
@@ -131,8 +125,8 @@ abstract class M20AdtEvolutionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
             s"Expected re-emitted Forbidden and local Bar in unmodified; got: $unmodifiedNames",
           )
 
-          // If SomeError appears in the per-type diff map (deepModified path), every op
-          // must be KeepBranch — no AddBranch / RemoveBranch.
+          // Unmodified types are absent from `diff.diffs`. If SomeError appears (it
+          // should not after the branch-sort fix), every op must still be KeepBranch.
           val someErrorId = someErrorNonBreaking.head
           diff.diffs.get(someErrorId) match {
             case None =>

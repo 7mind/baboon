@@ -301,10 +301,14 @@ object BaboonTyper {
                     List(s"{", m.name.name) ++ exploded ++ List("}")
                 }
                 val branches = List("{", "branches") ++ d.members.toList
-                  .flatMap(id => deepSchemaRepr(id, defs, nseen)) ++
+                  .map(id => deepSchemaRepr(id, defs, nseen))
+                  .sortBy(_.mkString)
+                  .flatten ++
                   List("}", "{", "contracts") ++
                   d.contracts
-                    .flatMap(id => deepSchemaRepr(id, defs, nseen)) ++ List("}")
+                    .map(id => deepSchemaRepr(id, defs, nseen))
+                    .sortBy(_.mkString)
+                    .flatten ++ List("}")
 
                 List(s"[adt:$self]") ++ content ++ branches ++ List(
                   s"/[adt:$self]"
