@@ -608,6 +608,10 @@ object DtDefnTranslator {
               val parsedVar  = s"${srcFieldName}_n"
               val rangeCheck = signedRangeCheck(f.tpe, parsedVar)
               q"""final $rawVar = cursor.readUntilStructural();
+                 |// Spec §5.4: signed integers must not carry a leading '+'.
+                 |if ($rawVar.isNotEmpty && $rawVar[0] == '+') {
+                 |  return $baboonLeft("signed integer must not have leading '+' for field $srcFieldName: " + $rawVar);
+                 |}
                  |final $parsedVar = int.tryParse($rawVar);
                  |if ($parsedVar == null) {
                  |  return $baboonLeft("could not parse signed integer for field $srcFieldName: " + $rawVar);
@@ -620,6 +624,10 @@ object DtDefnTranslator {
               // i64 in Dart = `int` (signed 64-bit on native). Range check is
               // always true so no dead block emitted (PR-57a-D01 carryover).
               q"""final $rawVar = cursor.readUntilStructural();
+                 |// Spec §5.4: signed integers must not carry a leading '+'.
+                 |if ($rawVar.isNotEmpty && $rawVar[0] == '+') {
+                 |  return $baboonLeft("signed integer must not have leading '+' for field $srcFieldName: " + $rawVar);
+                 |}
                  |final $valVar = int.tryParse($rawVar);
                  |if ($valVar == null) {
                  |  return $baboonLeft("could not parse i64 for field $srcFieldName: " + $rawVar);

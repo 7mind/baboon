@@ -754,6 +754,11 @@ object CSDefnTranslator {
               q"""var $rawVar = cursor.ReadUntilStructural();
                  |$tpe $valVar;
                  |{
+                 |    // Spec §5.4: signed integers must not carry a leading '+'.
+                 |    if ($rawVar.Length > 0 && $rawVar[0] == '+')
+                 |    {
+                 |        return $either.Left<string, $name>("signed integer must not have leading '+' for field $srcFieldName: " + $rawVar);
+                 |    }
                  |    if (!long.TryParse($rawVar, $csNumberStyles.AllowLeadingSign, $csInvariantCulture.InvariantCulture, out var v))
                  |    {
                  |        return $either.Left<string, $name>("could not parse signed integer for field $srcFieldName: " + $rawVar);

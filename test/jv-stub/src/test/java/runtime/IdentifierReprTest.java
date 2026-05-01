@@ -298,4 +298,24 @@ public class IdentifierReprTest {
         assertTrue(((String) left.value()).contains("leading sign"),
             "Expected 'leading sign' but got: " + left.value());
     }
+
+    // Spec §5.4 (PR-C): signed integer wire forms MUST NOT have a leading `+`.
+    @Test
+    void pointId_ParseRepr_RejectsLeadingPlusOnSignedInt() {
+        var bad = "PointId:1.0.0#x:+42:label:hello";
+        var parsed = PointIdCodec.parseRepr(bad);
+        var left = assertInstanceOf(BaboonEither.Left.class, parsed);
+        assertTrue(((String) left.value()).contains("leading '+'"),
+            "Expected leading '+' rejection but got: " + left.value());
+    }
+
+    // Spec §5.4 (PR-C): i64 signed field must also reject leading `+`.
+    @Test
+    void longId_ParseRepr_RejectsLeadingPlusOnI64() {
+        var bad = "LongId:1.0.0#x:+1";
+        var parsed = LongIdCodec.parseRepr(bad);
+        var left = assertInstanceOf(BaboonEither.Left.class, parsed);
+        assertTrue(((String) left.value()).contains("leading '+'"),
+            "Expected leading '+' rejection but got: " + left.value());
+    }
 }

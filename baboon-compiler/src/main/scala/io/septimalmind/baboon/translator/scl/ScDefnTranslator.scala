@@ -550,14 +550,20 @@ object ScDefnTranslator {
               val rangeCheck   = signedRangeCheck(f.tpe)
               val typeName     = signedTypeName(f.tpe)
               q"""val ${fieldName}_raw = cursor.readUntilStructural()
-                 |val ${fieldName}_v: $tpeRef = scala.util.Try(${fieldName}_raw.toLong).toOption match {
-                 |  case Some(v) =>
-                 |    if (!($rangeCheck)) {
-                 |      return Left(s\"$typeName out of range for field $fieldName: \" + ${fieldName}_raw)
-                 |    } else {
-                 |      v.${signedNarrow(f.tpe)}
-                 |    }
-                 |  case None    => return Left(s\"could not parse signed integer for field $fieldName: \" + ${fieldName}_raw)
+                 |val ${fieldName}_v: $tpeRef = {
+                 |  // Spec §5.4: signed integers must not carry a leading '+'.
+                 |  if (${fieldName}_raw.startsWith(\"+\")) {
+                 |    return Left(s\"signed integer must not have leading '+' for field $fieldName: \" + ${fieldName}_raw)
+                 |  }
+                 |  scala.util.Try(${fieldName}_raw.toLong).toOption match {
+                 |    case Some(v) =>
+                 |      if (!($rangeCheck)) {
+                 |        return Left(s\"$typeName out of range for field $fieldName: \" + ${fieldName}_raw)
+                 |      } else {
+                 |        v.${signedNarrow(f.tpe)}
+                 |      }
+                 |    case None    => return Left(s\"could not parse signed integer for field $fieldName: \" + ${fieldName}_raw)
+                 |  }
                  |}""".stripMargin
             case IdentifierFieldKind.UnsignedSmallInt =>
               val tpeRef     = trans.asScRef(f.tpe, domain, evo)

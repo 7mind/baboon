@@ -278,4 +278,24 @@ class IdentifierReprTest {
         assertTrue(((parsed as Either.Left).value).contains("leading sign"),
             "Expected 'leading sign' but got: ${parsed.value}")
     }
+
+    // Spec §5.4 (PR-C): signed integer wire forms MUST NOT have a leading `+`.
+    @Test
+    fun pointId_ParseRepr_RejectsLeadingPlusOnSignedInt() {
+        val bad = "PointId:1.0.0#x:+42:label:hello"
+        val parsed = PointIdCodec.parseRepr(bad)
+        assertTrue(parsed is Either.Left)
+        assertTrue(((parsed as Either.Left).value).contains("leading '+'"),
+            "Expected leading '+' rejection but got: ${(parsed as Either.Left).value}")
+    }
+
+    // Spec §5.4 (PR-C): i64 signed field must also reject leading `+`.
+    @Test
+    fun longId_ParseRepr_RejectsLeadingPlusOnI64() {
+        val bad = "LongId:1.0.0#x:+1"
+        val parsed = LongIdCodec.parseRepr(bad)
+        assertTrue(parsed is Either.Left)
+        assertTrue(((parsed as Either.Left).value).contains("leading '+'"),
+            "Expected leading '+' rejection but got: ${(parsed as Either.Left).value}")
+    }
 }

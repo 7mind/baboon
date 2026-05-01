@@ -490,6 +490,10 @@ object SwDefnTranslator {
                      |  return .left("$typeName out of range for field $srcFieldName: " + $rawVar)
                      |}""".stripMargin
               q"""let $rawVar = cursor.readUntilStructural()
+                 |// Spec §5.4: signed integers must not carry a leading '+'.
+                 |if !$rawVar.isEmpty && $rawVar.first == "+" {
+                 |  return .left("signed integer must not have leading '+' for field $srcFieldName: " + $rawVar)
+                 |}
                  |guard let v_long = Int64($rawVar) else {
                  |  return .left("could not parse signed integer for field $srcFieldName: " + $rawVar)
                  |}

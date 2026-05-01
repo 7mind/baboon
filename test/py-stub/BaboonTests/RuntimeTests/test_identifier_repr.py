@@ -158,6 +158,18 @@ class UIntsReprTest(unittest.TestCase):
         self.assertIsInstance(r, BaboonLeft)
         self.assertIn("leading sign", r.value)
 
+    # Spec §5.4 (PR-C): signed integer wire forms MUST NOT have a leading `+`.
+    def test_rejects_leading_plus_on_signed_i32(self):
+        r = PointIdCodec.parse_repr("PointId:1.0.0#x:+42:label:hello")
+        self.assertIsInstance(r, BaboonLeft)
+        self.assertIn("leading '+'", r.value)
+
+    # Spec §5.4 (PR-C): i64 signed field must also reject leading `+`.
+    def test_rejects_leading_plus_on_signed_i64(self):
+        r = LongIdCodec.parse_repr("LongId:1.0.0#x:+1")
+        self.assertIsInstance(r, BaboonLeft)
+        self.assertIn("leading '+'", r.value)
+
     def test_rejects_out_of_range_u08(self):
         r = UIntsCodec.parse_repr("UInts:1.0.0#a:256:b:0:c:0:d:0")
         self.assertIsInstance(r, BaboonLeft)

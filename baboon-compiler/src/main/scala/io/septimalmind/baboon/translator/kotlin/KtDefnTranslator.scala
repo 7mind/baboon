@@ -674,6 +674,10 @@ object KtDefnTranslator {
                      |""".stripMargin
                 }
               q"""val $rawVar = cursor.readUntilStructural()
+                 |// Spec §5.4: signed integers must not carry a leading '+'.
+                 |if ($rawVar.isNotEmpty() && $rawVar[0] == '+') {
+                 |  return $baboonEither.Left("signed integer must not have leading '+' for field $srcFieldName: " + $rawVar)
+                 |}
                  |val $vL = $rawVar.toLongOrNull()
                  |  ?: return $baboonEither.Left("could not parse signed integer for field $srcFieldName: " + $rawVar)
                  |${rangeBlock}val $valVar: $tpe = $vL.$narrow""".stripMargin

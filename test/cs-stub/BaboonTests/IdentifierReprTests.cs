@@ -311,5 +311,28 @@ namespace ConversionsTest
             Assert.That(left, Is.Not.Null, "Expected Left for leading `+`; got Right");
             StringAssert.Contains("could not parse", left!.Value);
         }
+
+        // Spec §5.4 (PR-C): signed integer wire forms MUST NOT have a leading `+`.
+        [Test]
+        public void PointId_ParseRepr_RejectsLeadingPlusOnSignedInt()
+        {
+            var bad = "PointId:1.0.0#x:+42:label:hello";
+            var parsed = PointIdCodec.ParseRepr(bad);
+            var left = parsed as Either<string, PointId>.Left;
+            Assert.That(left, Is.Not.Null, "Expected Left for leading `+` on signed int; got Right");
+            StringAssert.Contains("leading '+'", left!.Value);
+        }
+
+        // Spec §5.4 (PR-C): i64 signed field must also reject leading `+`.
+        [Test]
+        public void LongId_ParseRepr_RejectsLeadingPlusOnI64()
+        {
+            var bad = "LongId:1.0.0#x:+1";
+            var parsed = LongIdCodec.ParseRepr(bad);
+            var left = parsed as Either<string, LongId>.Left;
+            Assert.That(left, Is.Not.Null, "Expected Left for leading `+` on i64; got Right");
+            StringAssert.Contains("leading '+'", left!.Value);
+        }
     }
 }
+
