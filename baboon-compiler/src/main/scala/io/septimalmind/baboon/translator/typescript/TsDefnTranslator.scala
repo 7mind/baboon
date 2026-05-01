@@ -5,6 +5,7 @@ import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.typescript.TsTypes.{
   tsBaboonDecoderFailure,
+  tsBaboonEncoderFailure,
   tsBaboonGenerated,
   tsBaboonGeneratedLatest,
   tsBaboonIdReprBitToString,
@@ -150,7 +151,66 @@ object TsDefnTranslator {
         case adt: Typedef.Adt    => makeAdtRepr(defn, adt, name)
         case _: Typedef.Contract => makeContractRepr(defn, name)
         case _: Typedef.Service  => makeServiceRepr(defn, name)
-        case _: Typedef.Foreign  => DefnRepr(q"", Nil)
+        case f: Typedef.Foreign  => makeForeignKeyCodecRepr(f, name)
+      }
+    }
+
+    /** PR-I.1d (M24 Phase 3.1) — emit a `<Foreign>_KeyCodec` extension hook for
+      * every Custom-mapped TypeScript foreign declaration. The host application
+      * registers an implementation at boot which the JSON codec then uses to
+      * encode/decode map keys. For BaboonRef-mapped foreigns we emit nothing —
+      * the existing recursion into the aliased type covers the codec needs.
+      *
+      * Stringy foreigns (`string`) get a default identity impl so the common
+      * case works out of the box. Non-stringy foreigns get a stub default that
+      * throws BaboonDecoderFailure with an FQN-bearing diagnostic referring to
+      * the Host const (PR-I.1b-D01 lesson).
+      */
+    private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: TsType): DefnRepr = {
+      f.bindings.get(BaboonLang.Typescript) match {
+        case None                                                                  => DefnRepr(q"", Nil)
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef))    => DefnRepr(q"", Nil)
+        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+          // The codec/host names use the foreign's declared name (`FStr`) — not the deref'd
+          // mapped name (`string`) that `name` resolves to. The `value: $name` field type
+          // continues to use `name` so the signature reflects the host language type.
+          val srcRef    = typeTranslator.asTsTypeKeepForeigns(f.id, domain, evo, tsFileTools.definitionsBasePkg)
+          val codecName = s"${srcRef.name}_KeyCodec"
+          val hostName  = s"${srcRef.name}_KeyCodecHost"
+          val defaultName = s"_default${srcRef.name}_KeyCodec"
+          val instanceName = s"_${srcRef.name}_KeyCodec_instance"
+          // Stringy allowlist (PR-I-D06 pattern guidance: only the language's allowlist; no dead alternatives).
+          val isStringy = decl == "string"
+          // FQN for the diagnostic — TS modules don't have classical fully-qualified names like
+          // Java/Scala/C#, so we use `<module-path>.<host>` which is copy-pasteable into a
+          // debugger expression and unambiguous across multi-version emission (PR-I-D03).
+          val hostFqn   = s"${srcRef.moduleId.path.mkString(".")}.$hostName"
+          val defaultImpl = if (isStringy) {
+            q"""const $defaultName: $codecName = {
+               |    encodeKey: (v) => v,
+               |    decodeKey: (s) => s,
+               |};""".stripMargin
+          } else {
+            q"""const $defaultName: $codecName = {
+               |    encodeKey: (_v) => { throw new $tsBaboonEncoderFailure("$hostFqn is not registered; call $hostFqn.register(impl) at app boot."); },
+               |    decodeKey: (_s) => { throw new $tsBaboonDecoderFailure("$hostFqn is not registered; call $hostFqn.register(impl) at app boot."); },
+               |};""".stripMargin
+          }
+          val tree =
+            q"""export interface $codecName {
+               |    encodeKey(value: $name): string;
+               |    decodeKey(s: string): $name;
+               |}
+               |
+               |${defaultImpl}
+               |
+               |let $instanceName: $codecName = $defaultName;
+               |
+               |export const $hostName = {
+               |    register(impl: $codecName): void { $instanceName = impl; },
+               |    get instance(): $codecName { return $instanceName; },
+               |};""".stripMargin
+          DefnRepr(tree, Nil)
       }
     }
 

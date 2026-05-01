@@ -32,7 +32,13 @@ class TsJsonCodecGenerator(
   tsDomainTreeTools: TsDomainTreeTools,
 ) extends TsCodecTranslator {
   override def translate(defn: DomainMember.User, tsRef: TsValue.TsType, srcRef: TsValue.TsType): Option[TextTree[TsValue]] = {
-    if (isActive(defn.id) && !enquiries.hasForeignType(defn, domain)) {
+    // PR-I.1d (M24 Phase 3.1): the prior `&& !enquiries.hasForeignType(defn, domain)` short-circuit
+    // suppressed JsonCodec emission for any type containing a Custom-bound foreign — including
+    // single-primitive wrappers like `ItemKey { v: FStr }` and `Holder { m: map[ItemKey, str] }`.
+    // With the new `<F>_KeyCodecHost` hook (emitted from `TsDefnTranslator`'s foreign emit site),
+    // foreign keys flow through the registered impl, so the codec can be generated unconditionally.
+    // The UEBA gate in `TsUEBACodecGenerator` is left intact pending a UEBA-side hook (out of scope).
+    if (isActive(defn.id)) {
       (defn.defn match {
         case d: Typedef.Dto      => Some(genDtoCodec(d, srcRef))
         case _: Typedef.Enum     => Some(genEnumCodec(srcRef))
@@ -261,6 +267,19 @@ class TsJsonCodecGenerator(
           // PR-G (M24.2.2): enum keys — generated TS enums are string enums; the value itself
           // is a string suitable as a JSON object key.
           ref
+        case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
+          f.bindings.get(BaboonLang.Typescript) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+              mkJsonKeyEncoder(aliasedRef, ref)
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+              // PR-I.1d (M24 Phase 3.1): Custom-foreign map keys route through
+              // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
+              val srcRef  = trans.asTsTypeKeepForeigns(u, domain, evo, tsFileTools.definitionsBasePkg)
+              val hostTpe = TsValue.TsType(srcRef.moduleId, s"${srcRef.name}_KeyCodecHost")
+              q"$hostTpe.instance.encodeKey($ref)"
+            case None =>
+              throw new RuntimeException(s"BUG: Foreign type $u has no TypeScript binding")
+          }
         case _ =>
           // PR-60-D04: validator (PR-59) should reject any other user-type as a map key. If we
           // land here, the validator missed a case — fail loudly rather than silently emit
@@ -295,6 +314,23 @@ class TsJsonCodecGenerator(
           val tsType = trans.asTsTypeDerefForeign(u, domain, evo, tsFileTools.definitionsBasePkg)
           val parser = TsValue.TsType(tsType.moduleId, s"${tsType.name}_parse")
           q"$parser($ref)"
+        case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
+          f.bindings.get(BaboonLang.Typescript) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+              mkJsonKeyDecoder(aliasedRef, ref)
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+              // PR-I.1d (M24 Phase 3.1): Custom-foreign map keys route through
+              // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
+              // `catch (e: unknown)` (PR-I-D01 pattern guidance for TS): TS catches
+              // are `unknown`-typed by tsconfig `useUnknownInCatchVariables` default;
+              // we still discriminate Error-vs-everything-else only at the throw site.
+              val srcRef    = trans.asTsTypeKeepForeigns(u, domain, evo, tsFileTools.definitionsBasePkg)
+              val mapped    = trans.asTsType(u, domain, evo)
+              val hostTpe   = TsValue.TsType(srcRef.moduleId, s"${srcRef.name}_KeyCodecHost")
+              q"""((): $mapped => { try { return $hostTpe.instance.decodeKey($ref); } catch (e) { throw new $tsBaboonDecoderFailure("malformed key: " + $ref, { cause: e }); } })()"""
+            case None =>
+              throw new RuntimeException(s"BUG: Foreign type $u has no TypeScript binding")
+          }
         case _ =>
           // Validator (PR-59) should reject any other user-type as a map key. If we land here, the
           // validator missed a case — fail loudly with a defensive throw rather than emit silently
@@ -546,7 +582,9 @@ class TsJsonCodecGenerator(
   }
 
   override def codecMeta(definition: DomainMember.User, name: TsValue.TsType): Option[TextTree[TsValue]] = {
-    if (isActive(definition.id) && !enquiries.hasForeignType(definition, domain)) {
+    // PR-I.1d (M24 Phase 3.1): see PR-I.1d note in `translate()` above — codecMeta now mirrors the
+    // codec emission gate so the metadata accessor is co-emitted with the codec class.
+    if (isActive(definition.id)) {
       definition.defn match {
         case _: Typedef.Adt =>
           Some(q"""jsonCodec(): ${codecName(name)} {

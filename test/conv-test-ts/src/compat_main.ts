@@ -22,6 +22,11 @@ import {
 } from "./generated/BaboonSharedRuntime";
 import {BaboonCodecsFacade} from "./generated/BaboonCodecsFacade";
 import {AnyMeta, AnyOpaque, anyOpaqueJson, anyOpaqueUeba, createAnyMeta} from "./generated/BaboonAnyOpaque";
+// PR-I.1d (M24 Phase 3.1) — Custom-foreign KeyCodec hook fixture. Stringy
+// FStr foreign + ItemKey wrapper + ForeignKeyHolder round-trip exercises the
+// generated FStr_KeyCodecHost identity default impl.
+import {ForeignKeyHolder} from "./generated/convtest/m24foreign/ForeignKeyHolder";
+import {ItemKey} from "./generated/convtest/m24foreign/ItemKey";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -329,6 +334,27 @@ function writePointIdRepr(pid: PointId, outputDir: string): void {
     console.log(`Written repr to ${reprPath}`);
 }
 
+// PR-I.1d (M24 Phase 3.1) — Custom-foreign KeyCodec hook canonical fixture.
+// Map keys go through FStr_KeyCodecHost (default identity impl for the stringy
+// foreign), so the wire form is `{"m":{"alpha":"v1","beta":"v2"}}`.
+function createForeignKeyHolderSample(): ForeignKeyHolder {
+    return new ForeignKeyHolder(new Map<ItemKey, string>([
+        [new ItemKey("alpha"), "v1"],
+        [new ItemKey("beta"), "v2"],
+    ]));
+}
+
+function writeForeignKeyHolderJson(ctx: BaboonCodecContext, data: ForeignKeyHolder, outputDir: string): void {
+    fs.mkdirSync(outputDir, {recursive: true});
+    const json = ForeignKeyHolder.jsonCodec().encode(ctx, data);
+    // Compact (no indent) so byte-identity matches the canonical wire form
+    // `{"m":{"alpha":"v1","beta":"v2"}}` across backends.
+    const jsonStr = JSON.stringify(json);
+    const p = path.join(outputDir, "m24-foreign-keycodec.json");
+    fs.writeFileSync(p, jsonStr);
+    console.log(`Written JSON to ${p}`);
+}
+
 function runLegacy(): void {
     const sampleData = createSampleData();
     const sampleAny = createSampleAnyShowcase();
@@ -343,6 +369,7 @@ function runLegacy(): void {
     writeJsonAny(facadeCtx, sampleAny, tsJsonDir);
     writeUebaAny(facadeCtx, sampleAny, tsUebaDir);
     writePointIdRepr(sampleData.vPointId, tsReprDir);
+    writeForeignKeyHolderJson(BaboonCodecContext.Default, createForeignKeyHolderSample(), tsJsonDir);
 
     console.log("TypeScript serialization complete!");
 }
@@ -357,6 +384,7 @@ if (args[0] === "write") {
     if (format === "json") {
         writeJson(sampleData, outputDir);
         writeJsonAny(facadeCtx, sampleAny, outputDir);
+        writeForeignKeyHolderJson(BaboonCodecContext.Default, createForeignKeyHolderSample(), outputDir);
     } else if (format === "ueba") {
         writeUeba(sampleData, outputDir);
         writeUebaAny(facadeCtx, sampleAny, outputDir);
