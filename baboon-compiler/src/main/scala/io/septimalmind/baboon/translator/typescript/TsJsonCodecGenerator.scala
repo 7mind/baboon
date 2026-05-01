@@ -235,27 +235,16 @@ class TsJsonCodecGenerator(
                 q"Object.fromEntries(Array.from($ref.entries()).map(([k, v]) => [k, ${mkJsonEncoder(args.last, q"v")}]))"
               // M19/PR-60: user-type map keys (wrapper/id) emit a string-keyed object via the
               // canonical primitive-string key form (NOT the wrapper's value-position object form).
-              case _ if isUserMapKey(keyType) =>
-                q"Object.fromEntries(Array.from($ref.entries()).map(([k, v]) => [${mkJsonKeyEncoder(keyType, q"k")}, ${mkJsonEncoder(args.last, q"v")}]))"
+              // PR-G (M24.2.2): direct-builtin non-string keys also emit string-keyed-object form
+              // (was: tuple-array). String() coerces numeric/bool/uid/tsu/tso to a stringy key for
+              // cross-language consistency with Scala/Rust/Java/Kotlin/C#/Dart/Swift/Python.
               case _ =>
-                q"Array.from($ref.entries()).map(([k, v]) => [${mkJsonEncoder(args.head, q"k")}, ${mkJsonEncoder(args.last, q"v")}])"
+                q"Object.fromEntries(Array.from($ref.entries()).map(([k, v]) => [${mkJsonKeyEncoder(keyType, q"k")}, ${mkJsonEncoder(args.last, q"v")}]))"
             }
           case o => throw new RuntimeException(s"BUG: Unexpected collection type: $o")
         }
       case a: TypeRef.Any => mkAnyEncoder(a, ref)
     }
-  }
-
-  // M19/PR-60: detect user-type map keys (id types or single-primitive wrapper data)
-  // for the explicit primitive-string emission path. Validator (PR-59) gates eligibility.
-  private def isUserMapKey(tpe: TypeRef): Boolean = tpe match {
-    case TypeRef.Scalar(u: TypeId.User) =>
-      domain.defs.meta.nodes.get(u) match {
-        case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) =>
-          d.isIdentifier || (d.fields.size == 1 && d.contracts.isEmpty)
-        case _ => false
-      }
-    case _ => false
   }
 
   // M19/PR-60: encoder for user-type map keys. Produces a JS string expression suitable
@@ -268,6 +257,10 @@ class TsJsonCodecGenerator(
         case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.fields.size == 1 && d.contracts.isEmpty =>
           val inner = d.fields.head
           mkJsonKeyEncoder(inner.tpe, q"$ref.${inner.name.name}")
+        case Some(DomainMember.User(_, _: Typedef.Enum, _, _)) =>
+          // PR-G (M24.2.2): enum keys — generated TS enums are string enums; the value itself
+          // is a string suitable as a JSON object key.
+          ref
         case _ =>
           // PR-60-D04: validator (PR-59) should reject any other user-type as a map key. If we
           // land here, the validator missed a case — fail loudly rather than silently emit
@@ -296,6 +289,12 @@ class TsJsonCodecGenerator(
           val tsType   = trans.asTsTypeDerefForeign(u, domain, evo, tsFileTools.definitionsBasePkg)
           val innerDec = mkJsonKeyDecoder(inner.tpe, ref)
           q"new $tsType($innerDec)"
+        case Some(DomainMember.User(_, _: Typedef.Enum, _, _)) =>
+          // PR-G (M24.2.2): enum keys — parse via the generated `<EnumName>_parse` helper,
+          // matching the value-position enum decoder shape.
+          val tsType = trans.asTsTypeDerefForeign(u, domain, evo, tsFileTools.definitionsBasePkg)
+          val parser = TsValue.TsType(tsType.moduleId, s"${tsType.name}_parse")
+          q"$parser($ref)"
         case _ =>
           // Validator (PR-59) should reject any other user-type as a map key. If we land here, the
           // validator missed a case — fail loudly with a defensive throw rather than emit silently
@@ -316,13 +315,13 @@ class TsJsonCodecGenerator(
     case TypeRef.Scalar(id) =>
       id match {
         case TypeId.Builtins.bit =>
-          q"($ref === \"true\")"
+          q"""((__r: string) => { if (__r === "true") return true; if (__r === "false") return false; throw new $tsBaboonDecoderFailure("malformed key: " + __r); })($ref)"""
         case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 | TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 =>
-          q"parseInt($ref, 10)"
+          q"""((__r: string) => { const __n = parseInt(__r, 10); if (Number.isNaN(__n) || String(__n) !== __r) throw new $tsBaboonDecoderFailure("malformed key: " + __r); return __n; })($ref)"""
         case TypeId.Builtins.i64 | TypeId.Builtins.u64 =>
-          q"BigInt($ref)"
+          q"""((__r: string) => { try { return BigInt(__r); } catch (_e) { throw new $tsBaboonDecoderFailure("malformed key: " + __r); } })($ref)"""
         case TypeId.Builtins.f32 | TypeId.Builtins.f64 =>
-          q"parseFloat($ref)"
+          q"""((__r: string) => { const __n = parseFloat(__r); if (Number.isNaN(__n)) throw new $tsBaboonDecoderFailure("malformed key: " + __r); return __n; })($ref)"""
         case TypeId.Builtins.f128 =>
           q"$tsBaboonDecimal.fromString($ref)"
         case TypeId.Builtins.str | TypeId.Builtins.uid =>
@@ -332,13 +331,13 @@ class TsJsonCodecGenerator(
         case TypeId.Builtins.tsu =>
           target.language.timestampsUtcMode match {
             case "string" => ref
-            case "date"   => q"new Date($ref)"
+            case "date"   => q"""((__r: string) => { const __d = new Date(__r); if (Number.isNaN(__d.getTime())) throw new $tsBaboonDecoderFailure("malformed key: " + __r); return __d; })($ref)"""
             case _        => q"$tsBaboonDateTimeUtc.fromISO($ref)"
           }
         case TypeId.Builtins.tso =>
           target.language.timestampsOffsetMode match {
             case "string" => ref
-            case "date"   => q"new Date($ref)"
+            case "date"   => q"""((__r: string) => { const __d = new Date(__r); if (Number.isNaN(__d.getTime())) throw new $tsBaboonDecoderFailure("malformed key: " + __r); return __d; })($ref)"""
             case _        => q"$tsBaboonDateTimeOffset.fromISO($ref)"
           }
         case o => throw new RuntimeException(s"BUG: Unexpected primitive key type: $o")
@@ -410,10 +409,11 @@ class TsJsonCodecGenerator(
                 q"new Map(Object.entries($ref as Record<string, unknown>).map(([k, v]) => [k, ${mkJsonDecoder(args.last, q"v")}]))"
               // M19/PR-60: user-type map keys decode from the string-keyed object emitted by
               // `mkJsonKeyEncoder` — pair-up entries and reconstruct typed keys via parseRepr/peel.
-              case _ if isUserMapKey(keyType) =>
-                q"new Map(Object.entries($ref as Record<string, unknown>).map(([k, v]) => [${mkJsonKeyDecoder(keyType, q"k")}, ${mkJsonDecoder(args.last, q"v")}] as const))"
+              // PR-G (M24.2.2): direct-builtin non-string keys decode from the same string-keyed
+              // object form (was: tuple-array). `mkJsonKeyDecoder` dispatches to `parsePrimitiveKey`
+              // for builtin scalars (parseInt/BigInt/parseFloat/Date/etc).
               case _ =>
-                q"new Map(Array.isArray($ref) ? ($ref as unknown[][]).map(([k, v]) => [${mkJsonDecoder(args.head, q"k")}, ${mkJsonDecoder(args.last, q"v")}] as const) : [])"
+                q"new Map(Object.entries($ref as Record<string, unknown>).map(([k, v]) => [${mkJsonKeyDecoder(keyType, q"k")}, ${mkJsonDecoder(args.last, q"v")}] as const))"
             }
           case o => throw new RuntimeException(s"BUG: Unexpected collection type: $o")
         }

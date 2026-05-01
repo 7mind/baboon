@@ -4,6 +4,7 @@ import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.typescript.TsTypes.{
+  tsBaboonDecoderFailure,
   tsBaboonGenerated,
   tsBaboonGeneratedLatest,
   tsBaboonIdReprBitToString,
@@ -373,7 +374,7 @@ object TsDefnTranslator {
            |export function ${enumName}_parse(s: string): $enumName {
            |    const found = ${enumName}_values.find(v => $parseComparison);
            |    if (found === undefined) {
-           |        throw new Error("Unknown $enumName variant: " + s);
+           |        throw new $tsBaboonDecoderFailure("Unknown $enumName variant: " + s);
            |    }
            |    return found;
            |}""".stripMargin,
