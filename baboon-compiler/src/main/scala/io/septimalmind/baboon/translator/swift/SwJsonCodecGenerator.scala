@@ -383,23 +383,25 @@ class SwJsonCodecGenerator(
                 case ud: DomainMember.User =>
                   ud.defn match {
                     case _: Typedef.Enum =>
+                      // PR-F (M24): throw BaboonCodecException.decoderFailure on parse failure
+                      // for cross-language malformed-key consistency (replaces forced unwrap).
                       val targetTpe = trans.toSwTypeRefKeepForeigns(u, domain, evo)
-                      (q"$targetTpe.parse($ref)!", false)
+                      (q"""{ () throws -> $targetTpe in guard let __r = $targetTpe.parse($ref) else { throw $baboonCodecException.decoderFailure(\"malformed key: \\($ref)\", nil) }; return __r }()""", true)
                     case _: Typedef.Foreign =>
                       // JSON map keys are always strings. For Custom-foreign types that are
                       // Swift typealiases (e.g. `typealias FStr = String`), the encoded key
-                      // value IS the string; we recover it via a direct cast rather than
-                      // routing through the generated foreign codec (which emits `fatalError`
-                      // because the host is expected to provide a hand-written implementation).
-                      // This mirrors the Scala codec that constructs `ItemKey(v = keyString)`
-                      // directly without calling `FStr_JsonCodec` (PR-68-D01 fix).
+                      // value IS the string; we recover it via a conditional cast and
+                      // throw BaboonCodecException.decoderFailure when the cast fails so
+                      // behaviour is uniform across backends (PR-F / M24).
                       val foreignTpe = trans.toSwTypeRefKeepForeigns(u, domain, evo)
-                      (q"($ref as! $foreignTpe)", false)
-                    // M19/PR-60: id types — call parseRepr and unwrap .right (fatalError on .left).
+                      (q"""{ () throws -> $foreignTpe in guard let __r = $ref as? $foreignTpe else { throw $baboonCodecException.decoderFailure(\"malformed key: \\($ref)\", nil) }; return __r }()""", true)
+                    // M19/PR-60: id types — call parseRepr and unwrap .right.
+                    // PR-F (M24): throw BaboonCodecException.decoderFailure on .left for
+                    // cross-language malformed-key consistency (replaces fatalError).
                     case d: Typedef.Dto if d.isIdentifier =>
                       val targetTpe   = trans.toSwTypeRefKeepForeigns(u, domain, evo)
                       val nestedCodec = SwValue.SwType(targetTpe.pkg, s"${targetTpe.name}Codec")
-                      (q"""{ () -> $targetTpe in guard case .right(let r) = $nestedCodec.parseRepr($ref) else { fatalError(\"Cannot parse id key: \\($ref)\") }; return r }()""", false)
+                      (q"""{ () throws -> $targetTpe in guard case .right(let __r) = $nestedCodec.parseRepr($ref) else { throw $baboonCodecException.decoderFailure(\"malformed key: \\($ref)\", nil) }; return __r }()""", true)
                     // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct.
                     case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
                       val inner          = d.fields.head

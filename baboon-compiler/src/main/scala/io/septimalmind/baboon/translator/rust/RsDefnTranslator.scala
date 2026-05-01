@@ -710,7 +710,7 @@ object RsDefnTranslator {
          |        let mut out: BTreeMap<${name.asName}, V> = BTreeMap::new();
          |        for (s, v) in raw.into_iter() {
          |            let key = $decodeKey
-         |                .map_err(serde::de::Error::custom)?;
+         |                .map_err(|e| serde::de::Error::custom(format!("malformed key: {}", e)))?;
          |            out.insert(key, v);
          |        }
          |        Ok(out)

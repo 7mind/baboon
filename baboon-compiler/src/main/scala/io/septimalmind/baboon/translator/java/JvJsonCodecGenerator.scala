@@ -425,11 +425,13 @@ class JvJsonCodecGenerator(
                           val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
                           q"$targetTpe.INSTANCE.decode(ctx, new $textNode($ref))"
                       }
-                    // M19/PR-60: id types — call parseRepr and unwrap Right (cast throws on Left).
+                    // M19/PR-60: id types — call parseRepr and unwrap Right.
+                    // PR-F (M24): throw BaboonCodecException.DecoderFailure on Left for
+                    // cross-language malformed-key consistency (replaces unchecked cast).
                     case d: Typedef.Dto if d.isIdentifier =>
                       val targetTpe   = trans.toJvTypeRefKeepForeigns(u, domain, evo)
                       val nestedCodec = JvValue.JvType(targetTpe.pkg, s"${targetTpe.name}Codec")
-                      q"((($baboonEither.Right<String, $targetTpe>) $nestedCodec.parseRepr($ref)).value())"
+                      q"""((java.util.function.Supplier<$targetTpe>) () -> { var __e = $nestedCodec.parseRepr($ref); if (__e instanceof $baboonEither.Right<?,?> __r) { return ($targetTpe) __r.value(); } throw new $baboonCodecException.DecoderFailure("malformed key: " + $ref); }).get()"""
                     // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct.
                     case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
                       val inner     = d.fields.head

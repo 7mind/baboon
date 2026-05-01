@@ -454,7 +454,10 @@ class ScJsonCodecGenerator(
                   u.defn match {
                     case _: Typedef.Enum =>
                       val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
-                      q"$circeKeyDecoder.instance(s => ${targetTpe}_JsonCodec.instance.decode(ctx, $circeJson.fromString(s)).toOption)"
+                      // PR-F (M24): malformed map-key consistency — replace silent `.toOption`
+                      // with explicit Right/Left match that throws BaboonCodecException.DecoderFailure
+                      // on Left so cross-language behaviour is uniform.
+                      q"""$circeKeyDecoder.instance(s => ${targetTpe}_JsonCodec.instance.decode(ctx, $circeJson.fromString(s)) match { case Right(v) => Some(v); case Left(_) => throw $baboonCodecException.DecoderFailure(s"malformed key: $$s") })"""
                     case f: Typedef.Foreign =>
                       f.bindings.get(BaboonLang.Scala) match {
                         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
@@ -473,23 +476,21 @@ class ScJsonCodecGenerator(
                             // Non-String Custom foreign: toString is not guaranteed
                             // invertible. The validator accepts these keys and the user
                             // supplies the semantics — we cannot auto-derive a decoder.
-                            // Emit the identity string decoder as a best-effort fallback
-                            // (the key will be passed as-is; the wrapper Dto constructor
-                            // applied in the caller will need the Foreign to BE String).
-                            // TODO: restrict non-String Custom-foreign map keys at the
-                            // validator level or require a user-supplied codec bridge.
+                            // PR-F (M24): throw on Left so behaviour is uniform across backends.
                             val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
-                            q"$circeKeyDecoder.instance(s => ${targetTpe}_JsonCodec.instance.decode(ctx, $circeJson.fromString(s)).toOption)"
+                            q"""$circeKeyDecoder.instance(s => ${targetTpe}_JsonCodec.instance.decode(ctx, $circeJson.fromString(s)) match { case Right(v) => Some(v); case Left(_) => throw $baboonCodecException.DecoderFailure(s"malformed key: $$s") })"""
                           }
                         case None =>
                           val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
-                          q"$circeKeyDecoder.instance(s => ${targetTpe}_JsonCodec.instance.decode(ctx, $circeJson.fromString(s)).toOption)"
+                          // PR-F (M24): throw on Left for cross-language consistency.
+                          q"""$circeKeyDecoder.instance(s => ${targetTpe}_JsonCodec.instance.decode(ctx, $circeJson.fromString(s)) match { case Right(v) => Some(v); case Left(_) => throw $baboonCodecException.DecoderFailure(s"malformed key: $$s") })"""
                       }
                     // M19/PR-60: id types — call the parser-based round trip.
+                    // PR-F (M24): throw BaboonCodecException.DecoderFailure on parse failure.
                     case d: Typedef.Dto if d.isIdentifier =>
                       val targetTpe   = trans.toScTypeRefKeepForeigns(uid, domain, evo)
                       val nestedCodec = ScValue.ScType(targetTpe.pkg, s"${targetTpe.name}Codec", targetTpe.inObject)
-                      q"$circeKeyDecoder.instance(s => $nestedCodec.parseRepr(s).toOption)"
+                      q"""$circeKeyDecoder.instance(s => $nestedCodec.parseRepr(s) match { case Right(v) => Some(v); case Left(_) => throw $baboonCodecException.DecoderFailure(s"malformed key: $$s") })"""
                     // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct.
                     case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
                       val inner       = d.fields.head

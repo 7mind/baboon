@@ -288,7 +288,9 @@ class TsJsonCodecGenerator(
           val tsType   = trans.asTsTypeDerefForeign(u, domain, evo, tsFileTools.definitionsBasePkg)
           val codecObj = tsType.name.head.toLower.toString + tsType.name.tail + "Codec"
           val codecRef = TsValue.TsType(tsType.moduleId, codecObj)
-          q"((($codecRef.parseRepr($ref) as unknown) as { tag: \"Right\"; value: $tsType }).value)"
+          // PR-F (M24): throw BaboonDecoderFailure on Left for cross-language malformed-key
+          // consistency (replaces unchecked `as unknown as { tag: "Right" }` cast).
+          q"""((): $tsType => { const __e = $codecRef.parseRepr($ref); if (__e.tag === "Right") return __e.value; throw new $tsBaboonDecoderFailure("malformed key: " + $ref); })()"""
         case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.fields.size == 1 && d.contracts.isEmpty =>
           val inner    = d.fields.head
           val tsType   = trans.asTsTypeDerefForeign(u, domain, evo, tsFileTools.definitionsBasePkg)
