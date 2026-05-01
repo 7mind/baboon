@@ -17,6 +17,10 @@ import convtest.testpkg.CompositeId
 import convtest.testpkg.ItemId
 import convtest.testpkg.PointId
 import convtest.testpkg.WireEnum
+// PR-I.1b (M24 Phase 3.1) — Custom-foreign KeyCodec hook fixture.
+import convtest.m24foreign.ForeignKeyHolder
+import convtest.m24foreign.ForeignKeyHolder_JsonCodec
+import convtest.m24foreign.ItemKey
 import baboon.runtime.shared.AnyMeta
 import baboon.runtime.shared.AnyOpaque
 import baboon.runtime.shared.AnyOpaqueJson
@@ -96,8 +100,25 @@ private fun runLegacy() {
     writeJsonAny(facadeCtx, sampleAny, kotlinKmpJsonDir.absolutePath)
     writeUebaAny(facadeCtx, sampleAny, kotlinKmpUebaDir.absolutePath)
     writePointIdRepr(sampleData.vPointId, kotlinKmpReprDir.absolutePath)
+    writeForeignKeyHolderJson(ctx, createForeignKeyHolderSample(), kotlinKmpJsonDir.absolutePath)
 
     println("Kotlin KMP serialization complete!")
+}
+
+// PR-I.1b (M24 Phase 3.1) — Custom-foreign KeyCodec hook canonical fixture.
+private fun createForeignKeyHolderSample(): ForeignKeyHolder = ForeignKeyHolder(
+    m = linkedMapOf(
+        ItemKey("alpha") to "v1",
+        ItemKey("beta") to "v2",
+    )
+)
+
+private fun writeForeignKeyHolderJson(ctx: BaboonCodecContext, data: ForeignKeyHolder, outputDir: String) {
+    val json = ForeignKeyHolder_JsonCodec.encode(ctx, data)
+    val jsonStr = json.toString()
+    val path = File(outputDir, "m24-foreign-keycodec.json")
+    path.writeText(jsonStr, Charsets.UTF_8)
+    println("Written JSON to ${path.absolutePath}")
 }
 
 private fun freshFacade(): BaboonCodecsFacade {

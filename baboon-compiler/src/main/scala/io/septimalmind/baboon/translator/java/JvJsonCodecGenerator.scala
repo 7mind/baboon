@@ -224,8 +224,16 @@ class JvJsonCodecGenerator(
                   f.bindings.get(BaboonLang.Java) match {
                     case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                       encodeKey(aliasedRef, ref)
-                    case _ =>
-                      q"$ref.toString()"
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+                      // PR-I.1b (M24 Phase 3.1): Custom-foreign map keys route through
+                      // the emitted `<Foreign>_KeyCodecHost.instance()` extension hook.
+                      val hostTpe = JvValue.JvType(
+                        trans.toJvTypeRefKeepForeigns(uid, domain, evo).pkg,
+                        s"${trans.toJvTypeRefKeepForeigns(uid, domain, evo).name}_KeyCodecHost",
+                      )
+                      q"$hostTpe.instance().encodeKey($ref)"
+                    case None =>
+                      throw new RuntimeException(s"BUG: Foreign type $uid has no Java binding")
                   }
                 // M19/PR-60: id types — emit canonical toString (single- or multi-field).
                 case d: Typedef.Dto if d.isIdentifier =>
@@ -421,9 +429,18 @@ class JvJsonCodecGenerator(
                       f.bindings.get(BaboonLang.Java) match {
                         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                           decodeKey(aliasedRef, ref)
-                        case _ =>
-                          val targetTpe = codecName(trans.toJvTypeRefKeepForeigns(u, domain, evo), u.owner)
-                          q"$targetTpe.INSTANCE.decode(ctx, new $textNode($ref))"
+                        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+                          // PR-I.1b (M24 Phase 3.1): Custom-foreign map keys route through
+                          // the emitted `<Foreign>_KeyCodecHost.instance()` extension hook.
+                          // catch (Exception e) — NOT Throwable (PR-I-D01 pattern guidance):
+                          // Throwable would swallow Error (OOM/StackOverflow), which we want to
+                          // propagate to fail-fast.
+                          val srcRef    = trans.toJvTypeRefKeepForeigns(u, domain, evo)
+                          val derefTpe  = trans.asJvType(u, domain, evo)
+                          val hostTpe   = JvValue.JvType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost")
+                          q"""((java.util.function.Supplier<$derefTpe>) () -> { try { return $hostTpe.instance().decodeKey($ref); } catch (Exception e) { throw new $baboonCodecException.DecoderFailure("malformed key: " + $ref, e); } }).get()"""
+                        case None =>
+                          throw new RuntimeException(s"BUG: Foreign type $u has no Java binding")
                       }
                     // M19/PR-60: id types — call parseRepr and unwrap Right.
                     // PR-F (M24): throw BaboonCodecException.DecoderFailure on Left for

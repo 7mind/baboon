@@ -322,6 +322,41 @@ public class CrossLanguageTest {
         assertArrayEquals(javaBytes, scalaBytes, "Java and Scala UEBA bytes diverged");
     }
 
+    // --------------------------------------------------------------------------------------------
+    // PR-I.1b (M24 Phase 3.1) — Custom-foreign `<Foreign>_KeyCodec` extension hook (Java mirror)
+    //
+    // Mirrors the Scala reference test in Test_CrossLanguageCompat.scala: round-trip the Java-
+    // emitted m24-foreign-keycodec.json through ForeignKeyHolder_JsonCodec and assert byte-
+    // identity (PR-I-D02 pattern guidance) of the encoded JSON string against the canonical
+    // wire form `{"m":{"alpha":"v1","beta":"v2"}}`.
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    public void m24ForeignKeyCodecRoundTripJava() throws Exception {
+        var file = baseDir.resolve("java-json/m24-foreign-keycodec.json");
+        assertTrue(Files.exists(file), "Java m24-foreign-keycodec fixture not found: " + file);
+        var jsonStr = Files.readString(file, StandardCharsets.UTF_8);
+        var json = mapper.readTree(jsonStr);
+        var decoded = convtest.m24foreign.ForeignKeyHolder_JsonCodec.INSTANCE.decode(ctx, json);
+        var expectedMap = new java.util.LinkedHashMap<convtest.m24foreign.ItemKey, String>();
+        expectedMap.put(new convtest.m24foreign.ItemKey("alpha"), "v1");
+        expectedMap.put(new convtest.m24foreign.ItemKey("beta"), "v2");
+        var expected = new convtest.m24foreign.ForeignKeyHolder(expectedMap);
+        assertEquals(expected, decoded, "round-trip diverged");
+    }
+
+    @Test
+    public void m24ForeignKeyCodecCanonicalWireForm() throws Exception {
+        var sampleMap = new java.util.LinkedHashMap<convtest.m24foreign.ItemKey, String>();
+        sampleMap.put(new convtest.m24foreign.ItemKey("alpha"), "v1");
+        sampleMap.put(new convtest.m24foreign.ItemKey("beta"), "v2");
+        var sample = new convtest.m24foreign.ForeignKeyHolder(sampleMap);
+        var encoded = convtest.m24foreign.ForeignKeyHolder_JsonCodec.INSTANCE.encode(ctx, sample);
+        var actual = mapper.writeValueAsString(encoded);
+        var expected = "{\"m\":{\"alpha\":\"v1\",\"beta\":\"v2\"}}";
+        assertEquals(expected, actual, "FStr_KeyCodec wire form diverged");
+    }
+
     @Test
     public void anyShowcaseUebaByteIdenticalJavaCs() throws Exception {
         var javaBytes = Files.readAllBytes(baseDir.resolve("java-ueba/any-showcase.ueba"));

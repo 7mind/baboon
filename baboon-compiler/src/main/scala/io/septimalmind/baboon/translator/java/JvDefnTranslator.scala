@@ -276,7 +276,72 @@ object JvDefnTranslator {
         case service: Typedef.Service =>
           renderService(service, name)
 
-        case _: Typedef.Foreign => DefnRepr(q"", Nil, Nil)
+        case f: Typedef.Foreign => makeForeignKeyCodecRepr(f, name)
+      }
+    }
+
+    /** PR-I.1b (M24 Phase 3.1) — emit a `<Foreign>_KeyCodec` extension hook for
+      * every Custom-mapped Java foreign declaration. The host application
+      * registers an implementation at boot which the JSON codec then uses to
+      * encode/decode map keys. For BaboonRef-mapped foreigns we emit nothing —
+      * the existing recursion into the aliased type covers the codec needs.
+      *
+      * Stringy foreigns (`java.lang.String`) get a default identity impl so the
+      * common case works out of the box. Non-stringy foreigns get a stub
+      * default that throws BaboonCodecException.DecoderFailure with a clear
+      * "host has not registered" diagnostic (FQN — PR-I-D03 pattern guidance).
+      *
+      * Java requires a single public top-level type per file, so the interface
+      * and host go to two separate files via the codecDefs channel.
+      */
+    private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: JvType): DefnRepr = {
+      f.bindings.get(BaboonLang.Java) match {
+        case None                                                                  => DefnRepr(q"", Nil, Nil)
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef))    => DefnRepr(q"", Nil, Nil)
+        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+          val srcRef       = trans.toJvTypeRefKeepForeigns(f.id, domain, evo)
+          val codecName    = s"${srcRef.name}_KeyCodec"
+          val hostName     = s"${srcRef.name}_KeyCodecHost"
+          val codecFqn     = s"${srcRef.pkg.parts.mkString(".")}.$hostName"
+          // Stringy allowlist (PR-I-D06 pattern guidance: only the language's allowlist; no dead alternatives).
+          // Per asJvTypeDerefForeigns:134, single-segment decls are rejected by the deref guard, so
+          // "String" never reaches codegen — `java.lang.String` is the sole stringy decl for Java.
+          val isStringy    = decl == "java.lang.String"
+          val defaultImpl  = if (isStringy) {
+            q"""private static final class DefaultImpl implements $codecName {
+               |  @Override public $jvString encodeKey($name value) { return value; }
+               |  @Override public $name decodeKey($jvString s) { return s; }
+               |}""".stripMargin
+          } else {
+            q"""private static final class DefaultImpl implements $codecName {
+               |  private static $genericException fail() {
+               |    return new $baboonCodecException.DecoderFailure(\"$codecFqn is not registered; call $codecFqn.register(impl) at app boot.\", null);
+               |  }
+               |  @Override public $jvString encodeKey($name value) { throw fail(); }
+               |  @Override public $name decodeKey($jvString s) { throw fail(); }
+               |}""".stripMargin
+          }
+          val codecTree =
+            q"""public interface $codecName {
+               |  $jvString encodeKey($name value);
+               |  $name decodeKey($jvString s);
+               |}""".stripMargin
+          val hostTree =
+            q"""public final class $hostName {
+               |  private static volatile $codecName _instance = new DefaultImpl();
+               |  public static void register($codecName impl) { _instance = impl; }
+               |  public static $codecName instance() { return _instance; }
+               |
+               |  ${defaultImpl.shift(2).trim}
+               |}""".stripMargin
+          DefnRepr(
+            q"",
+            List(
+              CodecDef(codecName, f.id.owner, codecTree),
+              CodecDef(hostName, f.id.owner, hostTree),
+            ),
+            Nil,
+          )
       }
     }
 

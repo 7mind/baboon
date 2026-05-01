@@ -2552,3 +2552,26 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Severity:** nit
 **Description:** `register(impl)` silently replaces previous registration. No error/warning. Pattern that propagates to all 9 backends. Last-wins is the intended behavior (mirrors the M24 plan's "module-level mutable singleton" decision).
 **Fix:** Acceptable as-is. Future hygiene PR could add idempotent-or-throw variant if hosts request it.
+
+---
+
+## PR-I.1b (M24) — Java + Kotlin (incl. KMP) Custom-foreign KeyCodec hook
+
+## [PR-I.1b-D01] Java stub-throw diagnostic FQN points to interface, not host class
+**Status:** resolved
+**Severity:** major
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/java/JvDefnTranslator.scala:304-305
+**Description:** Java emits the KeyCodec interface and host class as TWO files (Java's "one public top-level type per file" rule). Initial PR-I.1b emitted the diagnostic as `"<pkg>.FStr_KeyCodec is not registered; call <pkg>.FStr_KeyCodec.register(impl) at app boot."` — but `register(impl)` lives on `FStr_KeyCodecHost`, not on the interface. Operators following the diagnostic would find no such method. Kotlin sibling got this right by using `hostName`. Stringy fixture (FStr) hides this because the identity default never throws.
+**Fix:** Changed `codecFqn = s"${srcRef.pkg.parts.mkString(".")}.$codecName"` to `codecFqn = s"${srcRef.pkg.parts.mkString(".")}.$hostName"`. Diagnostic now correctly references `<pkg>.FStr_KeyCodecHost.register(impl)`. Verified `mdl :test-java-regular` + `mdl :test-gen-compat-java` PASS.
+
+## [PR-I.1b-N01] No Java/Kotlin equivalent of M19 ForeignMapKeyRoundTripSpec
+**Status:** resolved (note-only; covered indirectly by canonical fixture)
+**Severity:** nit
+**Description:** Wrapper-around-foreign regression test exists only for Scala (`ForeignMapKeyRoundTripSpec.scala`) and Swift. The new m24-foreign-keycodec fixture exercises this path indirectly via `ItemKey { v: FStr }`. Dedicated Java/Kotlin spec would harden coverage parity.
+**Fix:** Acceptable as-is. Future hygiene PR could add per-language wrapper-around-foreign specs.
+
+## [PR-I.1b-N02] Kotlin @Suppress("DEPRECATION") emitted unconditionally on host
+**Status:** resolved (note-only; documented design choice)
+**Severity:** nit
+**Description:** Host object is annotated `@Suppress("DEPRECATION")` even when domain version is `latest` (no deprecation present). Kotlin doesn't error on unused suppressions. Comment in `KtDefnTranslator.scala` acknowledges. Closes the equivalent of Scala-side PR-I-D04 in-band because Kotlin codegen exercises non-latest version emission in regular-adt regression suite (Scala's PR-I-D04 was deferred for the same reason it's harder to fix in Scala — annotation grammar).
+**Fix:** Acceptable.

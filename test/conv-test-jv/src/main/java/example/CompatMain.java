@@ -15,6 +15,12 @@ import convtest.testpkg.CompositeId;
 import convtest.testpkg.ItemId;
 import convtest.testpkg.PointId;
 import convtest.testpkg.WireEnum;
+// PR-I.1b (M24 Phase 3.1) — Custom-foreign KeyCodec hook fixture. Stringy
+// foreign FStr maps to java.lang.String; the default identity FStr_KeyCodec
+// impl handles encode/decode of map keys without host registration.
+import convtest.m24foreign.ForeignKeyHolder;
+import convtest.m24foreign.ForeignKeyHolder_JsonCodec;
+import convtest.m24foreign.ItemKey;
 import baboon.runtime.shared.BaboonAnyOpaque;
 import baboon.runtime.shared.BaboonCodecContext;
 import baboon.runtime.shared.BaboonCodecsFacade;
@@ -95,8 +101,28 @@ public class CompatMain {
         writeJsonAny(facadeCtx, sampleAny, javaJsonDir.toString());
         writeUebaAny(facadeCtx, sampleAny, javaUebaDir.toString());
         writePointIdRepr(sampleData.vPointId(), javaReprDir.toString());
+        writeForeignKeyHolderJson(ctx, createForeignKeyHolderSample(), javaJsonDir.toString());
 
         System.out.println("Java serialization complete!");
+    }
+
+    // PR-I.1b (M24 Phase 3.1) — Custom-foreign KeyCodec hook canonical fixture.
+    // The map keys go through FStr_KeyCodec (default identity impl for the stringy
+    // foreign), so the wire form is `{"m":{"alpha":"v1","beta":"v2"}}`.
+    private static ForeignKeyHolder createForeignKeyHolderSample() {
+        var m = new java.util.LinkedHashMap<ItemKey, String>();
+        m.put(new ItemKey("alpha"), "v1");
+        m.put(new ItemKey("beta"), "v2");
+        return new ForeignKeyHolder(m);
+    }
+
+    private static void writeForeignKeyHolderJson(BaboonCodecContext ctx, ForeignKeyHolder data, String outputDir) throws Exception {
+        var json = ForeignKeyHolder_JsonCodec.INSTANCE.encode(ctx, data);
+        var mapper = new ObjectMapper();
+        var jsonStr = mapper.writeValueAsString(json);
+        var path = Path.of(outputDir).resolve("m24-foreign-keycodec.json");
+        Files.writeString(path, jsonStr, StandardCharsets.UTF_8);
+        System.out.println("Written JSON to " + path.toAbsolutePath());
     }
 
     private static void writeJson(BaboonCodecContext ctx, AllBasicTypes data, String outputDir) throws Exception {
