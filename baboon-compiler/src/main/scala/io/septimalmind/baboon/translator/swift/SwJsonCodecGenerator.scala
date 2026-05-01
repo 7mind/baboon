@@ -343,11 +343,10 @@ class SwJsonCodecGenerator(
               // `Dictionary(uniqueKeysWithValues:)` is `rethrows`: it re-throws whatever the
               // mapping closure throws. If either the key or value decode uses `try`, the outer
               // `Dictionary(...)` call must itself be marked with `try`.
-              val mapExpr = if (valThr) {
-                q"""Dictionary(uniqueKeysWithValues: ($ref as! [String: Any]).map { $varName in ($keyDec, try $valueDec) })"""
-              } else {
-                q"""Dictionary(uniqueKeysWithValues: ($ref as! [String: Any]).map { $varName in ($keyDec, $valueDec) })"""
-              }
+              // Emit `try` independently for key and value — four cases: both/key-only/val-only/neither.
+              val keyTok = if (keyThr) q"try $keyDec" else q"$keyDec"
+              val valTok = if (valThr) q"try $valueDec" else q"$valueDec"
+              val mapExpr = q"""Dictionary(uniqueKeysWithValues: ($ref as! [String: Any]).map { $varName in ($keyTok, $valTok) })"""
               (mapExpr, anyThr)
             case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
           }
