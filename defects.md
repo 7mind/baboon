@@ -2575,3 +2575,40 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Severity:** nit
 **Description:** Host object is annotated `@Suppress("DEPRECATION")` even when domain version is `latest` (no deprecation present). Kotlin doesn't error on unused suppressions. Comment in `KtDefnTranslator.scala` acknowledges. Closes the equivalent of Scala-side PR-I-D04 in-band because Kotlin codegen exercises non-latest version emission in regular-adt regression suite (Scala's PR-I-D04 was deferred for the same reason it's harder to fix in Scala — annotation grammar).
 **Fix:** Acceptable.
+
+---
+
+## PR-I.1c (M24) — C# Custom-foreign KeyCodec hook
+
+## [PR-I.1c-D01] CSType origin needed `.asDerived` wrapping for higher-twin resolution
+**Status:** resolved (in-band fix during executor pass)
+**Severity:** major (pre-fix)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/csharp/CSDefnTranslator.scala (host CSType construction)
+**Description:** First implementation passed `srcRef.origin` directly into the constructed `<F>_KeyCodecHost` CSType. For non-stringy foreigns (`ObscureInt → System.Int32`), `isUpgradeable` resolved the higher twin via `asCsType` (deref'd path), producing `pkg=[System]` after `higherTwin.copy(name=...)`. This rendered as `System.ObscureInt_KeyCodecHost`, breaking compilation in cs-stub T1_D1.
+**Fix:** Wrap origin with `.asDerived` (matching established C# pattern at `CSJsonCodecGenerator.scala:644` and `CSServiceWiringTranslator.scala:54,59`). `isUpgradeable` then takes the `derived=true` branch and resolves higher twins via `asCsTypeKeepForeigns`. Generated code now correctly emits `Testpkg.Pkg0.v2_0_0.ObscureInt_KeyCodecHost`. C#-specific concern not present in Scala/Java references.
+
+## [PR-I.1c-N01] Mixed-style backslash escaping in stub-throw diagnostic
+**Status:** resolved (note-only; works correctly via interpolator)
+**Severity:** nit
+**Location:** CSDefnTranslator.scala (non-stringy DefaultImpl branch)
+**Description:** Uses `\"$codecFqn ...\"` inside `q"""..."""` for the embedded C# string literal. `q` interpolator processes `\"` to literal quote, but inconsistent with `CSUEBACodecGenerator` and `CSJsonCodecGenerator` neighbours that use bare `"..."` inside `q"""..."""`.
+**Fix:** Acceptable. Future hygiene PR could unify on bare-quote style.
+
+## [PR-I.1c-N02] case None hard-fails replacing prior wildcard fallback
+**Status:** resolved (note-only; intentional fail-fast tightening)
+**Severity:** nit
+**Location:** CSJsonCodecGenerator.scala:298,434
+**Description:** Old code had wildcard `case _ =>` falling through to generic codec-based encode/decode. New code throws `RuntimeException("BUG: ...")` on `None` (no C# binding). PR-I-D05 mandates explicit Custom match, no wildcards — fail-fast behavior is intentional.
+**Fix:** Acceptable.
+
+## [PR-I.1c-N03] Cross-namespace FQN emit asserted-but-unverified
+**Status:** resolved (note-only; deferred follow-up)
+**Severity:** nit (latent)
+**Description:** Executor's claim about `T1_D1.cs` v1.0.0 referencing `Testpkg.Pkg0.v2_0_0.ObscureInt_KeyCodecHost` and `.asDerived` fixing `isUpgradeable` higher-twin resolution is not exercised by `m24-foreign-keycodec.baboon` (single-version, single-namespace model). If a downstream evolution test triggers wrong namespace path, that's a latent regression.
+**Fix:** Acceptable. Future evolution-style test PR could exercise this code path.
+
+## [PR-I.1c-N04] Test exercises wrapper-around-foreign indirectly, not direct map[FStr, V]
+**Status:** resolved (note-only)
+**Severity:** nit
+**Description:** `M24ForeignKeyCodecCanonicalWireForm` test uses `map[ItemKey, str]` where `ItemKey { v: FStr }` is a single-primitive wrapper. Encode/decode path hits M19 single-field-wrapper branch and recurses to FStr_KeyCodec — so the hook IS exercised, but indirectly. A direct `map[FStr, str]` field would test the path more directly.
+**Fix:** Acceptable. Future fixture PR could add direct-foreign-as-key field.

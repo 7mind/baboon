@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Text;
 using Convtest.Testpkg;
+using Convtest.M24foreign;
 using Baboon.Runtime.Shared;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -356,6 +358,49 @@ namespace ConvTest
             var scalaBytes = File.ReadAllBytes(Path.Combine(baseDir, "scala-ueba", "any-showcase.ueba"));
             var csBytes = File.ReadAllBytes(Path.Combine(baseDir, "cs-ueba", "any-showcase.ueba"));
             Assert.That(csBytes, Is.EqualTo(scalaBytes), "Scala and C# UEBA bytes diverged");
+        }
+
+        // ----------------------------------------------------------------------------------------
+        // PR-I.1c (M24 Phase 3.1) — Custom-foreign `<Foreign>_KeyCodec` extension hook (C# mirror)
+        //
+        // Mirrors the Scala reference in Test_CrossLanguageCompat.scala and the Java mirror in
+        // CrossLanguageTest.java: round-trip the C#-emitted m24-foreign-keycodec.json through
+        // ForeignKeyHolder_JsonCodec and assert byte-identity (PR-I-D02 pattern guidance) of the
+        // encoded JSON string against the canonical wire form `{"m":{"alpha":"v1","beta":"v2"}}`.
+        // ----------------------------------------------------------------------------------------
+
+        [Test]
+        public void M24ForeignKeyCodecRoundTripCSharp()
+        {
+            var file = Path.Combine(baseDir, "cs-json", "m24-foreign-keycodec.json");
+            Assert.That(File.Exists(file), $"C# m24-foreign-keycodec fixture not found: {file}");
+            var jsonStr = File.ReadAllText(file, Encoding.UTF8);
+            using var reader = new JsonTextReader(new StringReader(jsonStr))
+                { DateParseHandling = DateParseHandling.None };
+            var json = JToken.Load(reader);
+            var decoded = ForeignKeyHolder_JsonCodec.Instance.Decode(ctx, json);
+            var expectedMap = new Dictionary<ItemKey, String>
+            {
+                { new ItemKey("alpha"), "v1" },
+                { new ItemKey("beta"), "v2" },
+            }.ToImmutableDictionary();
+            var expected = new ForeignKeyHolder(expectedMap);
+            Assert.That(decoded, Is.EqualTo(expected), "round-trip diverged");
+        }
+
+        [Test]
+        public void M24ForeignKeyCodecCanonicalWireForm()
+        {
+            var sampleMap = new Dictionary<ItemKey, String>
+            {
+                { new ItemKey("alpha"), "v1" },
+                { new ItemKey("beta"), "v2" },
+            }.ToImmutableDictionary();
+            var sample = new ForeignKeyHolder(sampleMap);
+            var encoded = ForeignKeyHolder_JsonCodec.Instance.Encode(ctx, sample);
+            var actual = JsonConvert.SerializeObject(encoded, Formatting.None);
+            var expected = "{\"m\":{\"alpha\":\"v1\",\"beta\":\"v2\"}}";
+            Assert.That(actual, Is.EqualTo(expected), "FStr_KeyCodec wire form diverged");
         }
     }
 }
