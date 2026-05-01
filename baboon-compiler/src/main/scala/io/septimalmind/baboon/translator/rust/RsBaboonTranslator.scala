@@ -48,9 +48,11 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
 
       allModFiles <- generateModFiles(translated, conflicting)
       modFiles     = allModFiles.filterNot(_.path == "mod.rs")
-      libFile      = generateLibRs(normal ++ runtime ++ fixture ++ testHelper ++ modFiles)
+      allEmitted   = normal ++ runtime ++ fixture ++ testHelper ++ modFiles
+      libFile      = generateLibRs(allEmitted)
+      rootMod      = generateRootMod(allEmitted)
       cargoToml    = generateCargoToml(family)
-      rendered = (normal ++ runtime ++ fixture ++ testHelper ++ modFiles ++ libFile ++ cargoToml).map {
+      rendered = (allEmitted ++ libFile ++ rootMod ++ cargoToml).map {
         o =>
           val content = renderTree(o)
           (o.path, OutputFile(content, o.product))
@@ -336,10 +338,11 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
     }
   }
 
-  private def generateLibRs(allOutputs: List[RsDefnTranslator.Output]): List[RsDefnTranslator.Output] = {
-    val topLevelModules = allOutputs
+  private def topLevelModuleNames(allOutputs: List[RsDefnTranslator.Output]): List[String] = {
+    allOutputs
       .filterNot(_.isModFile)
       .filterNot(_.path == "lib.rs")
+      .filterNot(_.path == "mod.rs")
       .map {
         o =>
           val first = o.path.split('/').head
@@ -347,28 +350,49 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       }
       .distinct
       .sorted
+  }
 
-    val allows = List(
-      q"#![allow(unused_imports)]",
-      q"#![allow(non_camel_case_types)]",
-      q"#![allow(non_snake_case)]",
-      q"#![allow(dead_code)]",
-      q"#![allow(unused_variables)]",
-      q"#![allow(clippy::too_many_arguments)]",
-      q"#![allow(clippy::large_enum_variant)]",
-    )
+  private val crateAllows = List(
+    q"#![allow(unused_imports)]",
+    q"#![allow(non_camel_case_types)]",
+    q"#![allow(non_snake_case)]",
+    q"#![allow(dead_code)]",
+    q"#![allow(unused_variables)]",
+    q"#![allow(clippy::too_many_arguments)]",
+    q"#![allow(clippy::large_enum_variant)]",
+  )
 
-    val modDecls = topLevelModules.map {
+  private def modDeclsFor(names: List[String]): List[TextTree[RsValue]] = {
+    names.map {
       name =>
         val escaped = escapeRustModuleName(name)
         q"pub mod $escaped;"
     }
+  }
 
-    val tree = (allows ++ modDecls).joinN()
+  private def generateLibRs(allOutputs: List[RsDefnTranslator.Output]): List[RsDefnTranslator.Output] = {
+    val tree = (crateAllows ++ modDeclsFor(topLevelModuleNames(allOutputs))).joinN()
 
     List(
       RsDefnTranslator.Output(
         "lib.rs",
+        tree,
+        RsValue.RsCrateId(NEList("crate")),
+        CompilerProduct.Definition,
+        doNotModify = true,
+      )
+    )
+  }
+
+  private def generateRootMod(allOutputs: List[RsDefnTranslator.Output]): List[RsDefnTranslator.Output] = {
+    // Aggregator emitted alongside lib.rs. Consumers that re-include the generated tree
+    // from a hand-written lib.rs use this via `#[path = "generated/mod.rs"] mod baboon_generated;`
+    // — they get auto-routed top-level modules without hand-curating each `#[path]`.
+    val tree = (crateAllows ++ modDeclsFor(topLevelModuleNames(allOutputs))).joinN()
+
+    List(
+      RsDefnTranslator.Output(
+        "mod.rs",
         tree,
         RsValue.RsCrateId(NEList("crate")),
         CompilerProduct.Definition,
