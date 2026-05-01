@@ -310,4 +310,36 @@ class CrossLanguageTest {
         val cs = File(baseDir, "cs-ueba/any-showcase.ueba").readBytes()
         assertContentEquals(cs, k, "Kotlin and C# UEBA bytes diverged")
     }
+
+    // --------------------------------------------------------------------------------------------
+    // PR-I.1b (M24 Phase 3.1) — Custom-foreign `<Foreign>_KeyCodec` extension hook (Kotlin mirror)
+    // Round-trip + canonical wire-form (byte-identity per PR-I-D02 pattern guidance).
+    // --------------------------------------------------------------------------------------------
+
+    @Test fun m24ForeignKeyCodecRoundTripKotlin() {
+        val file = File(baseDir, "kotlin-json/m24-foreign-keycodec.json")
+        assertTrue(file.exists(), "Kotlin m24-foreign-keycodec fixture not found: $file")
+        val jsonStr = file.readText(Charsets.UTF_8)
+        val json = Json.parseToJsonElement(jsonStr)
+        val decoded = convtest.m24foreign.ForeignKeyHolder_JsonCodec.decode(ctx, json)
+        val expected = convtest.m24foreign.ForeignKeyHolder(
+            m = linkedMapOf(
+                convtest.m24foreign.ItemKey("alpha") to "v1",
+                convtest.m24foreign.ItemKey("beta") to "v2",
+            )
+        )
+        assertEquals(expected, decoded, "round-trip diverged")
+    }
+
+    @Test fun m24ForeignKeyCodecCanonicalWireForm() {
+        val sample = convtest.m24foreign.ForeignKeyHolder(
+            m = linkedMapOf(
+                convtest.m24foreign.ItemKey("alpha") to "v1",
+                convtest.m24foreign.ItemKey("beta") to "v2",
+            )
+        )
+        val encoded = convtest.m24foreign.ForeignKeyHolder_JsonCodec.encode(ctx, sample)
+        val expected = """{"m":{"alpha":"v1","beta":"v2"}}"""
+        assertEquals(expected, encoded.toString(), "FStr_KeyCodec wire form diverged")
+    }
 }

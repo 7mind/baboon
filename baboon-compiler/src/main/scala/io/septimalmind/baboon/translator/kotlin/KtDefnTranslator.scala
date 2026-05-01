@@ -454,7 +454,70 @@ object KtDefnTranslator {
             Nil,
           )
 
-        case _: Typedef.Foreign => DefnRepr(q"", Nil)
+        case f: Typedef.Foreign => DefnRepr(makeForeignKeyCodecRepr(f, name), Nil)
+      }
+    }
+
+    /** PR-I.1b (M24 Phase 3.1) — emit a `<Foreign>_KeyCodec` extension hook for
+      * every Custom-mapped Kotlin foreign declaration. Mirrors the Scala
+      * reference (PR-I.1a). The host application registers an implementation at
+      * boot which the JSON codec then uses to encode/decode map keys. For
+      * BaboonRef-mapped foreigns we emit nothing.
+      *
+      * Stringy foreigns (`kotlin.String` / `java.lang.String`) get a default
+      * identity impl. Non-stringy foreigns get a stub default that throws
+      * BaboonCodecException.DecoderFailure with an FQN diagnostic
+      * (PR-I-D03 pattern guidance).
+      *
+      * The same `object Host` pattern works on JVM (where @Volatile is honored)
+      * and on Native; on JS @Volatile is a no-op but the syntax compiles.
+      * Kotlin and Kotlin-KMP share this translator — no separate emit.
+      */
+    private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: KtType): TextTree[KtValue] = {
+      f.bindings.get(BaboonLang.Kotlin) match {
+        case None                                                                  => q""
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef))    => q""
+        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+          val srcRef    = trans.toKtTypeRefKeepForeigns(f.id, domain, evo)
+          val codecName = s"${srcRef.name}_KeyCodec"
+          val hostName  = s"${srcRef.name}_KeyCodecHost"
+          val codecFqn  = s"${srcRef.pkg.parts.mkString(".")}.$hostName"
+          // Stringy allowlist (PR-I-D06 pattern guidance): only the language's
+          // allowlist literals; no dead alternatives. asKtTypeDerefForeigns:135
+          // rejects single-segment decls so "String" never reaches codegen.
+          val isStringy = decl == "kotlin.String" || decl == "java.lang.String"
+          val defaultImpl = if (isStringy) {
+            q"""private object DefaultImpl : $codecName {
+               |  override fun encodeKey(value: $name): $ktString = value
+               |  override fun decodeKey(s: $ktString): $name = s
+               |}""".stripMargin
+          } else {
+            q"""private object DefaultImpl : $codecName {
+               |  private fun fail(): Nothing = throw $baboonCodecException.DecoderFailure(
+               |    \"$codecFqn is not registered; call $codecFqn.register(impl) at app boot.\", null
+               |  )
+               |  override fun encodeKey(value: $name): $ktString = fail()
+               |  override fun decodeKey(s: $ktString): $name = fail()
+               |}""".stripMargin
+          }
+          // @Suppress("DEPRECATION") on the host object — when the foreign emit lives in a
+          // non-latest domain version the interface gets a @Deprecated annotation via
+          // deprecatePrevious; the host object then references the deprecated interface and
+          // would otherwise trigger -Werror. Suppressing here is safe in both branches: in the
+          // latest-version case there is no deprecation to suppress.
+          q"""interface $codecName {
+             |  fun encodeKey(value: $name): $ktString
+             |  fun decodeKey(s: $ktString): $name
+             |}
+             |
+             |@Suppress("DEPRECATION")
+             |object $hostName {
+             |  @Volatile private var _instance: $codecName = DefaultImpl
+             |  fun register(impl: $codecName) { _instance = impl }
+             |  val instance: $codecName get() = _instance
+             |
+             |  ${defaultImpl.shift(2).trim}
+             |}""".stripMargin
       }
     }
 

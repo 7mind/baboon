@@ -201,8 +201,14 @@ class KtJsonCodecGenerator(
                   f.bindings.get(BaboonLang.Kotlin) match {
                     case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                       encodeKey(aliasedRef, ref)
-                    case _ =>
-                      q"$ref.toString()"
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+                      // PR-I.1b (M24 Phase 3.1): Custom-foreign map keys route through
+                      // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
+                      val srcRef  = trans.toKtTypeRefKeepForeigns(uid, domain, evo)
+                      val hostTpe = KtValue.KtType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost")
+                      q"$hostTpe.instance.encodeKey($ref)"
+                    case None =>
+                      throw new RuntimeException(s"BUG: Foreign type $uid has no Kotlin binding")
                   }
                 // M19/PR-60: id types — emit canonical toString (single- or multi-field).
                 case d: Typedef.Dto if d.isIdentifier =>
@@ -368,9 +374,16 @@ class KtJsonCodecGenerator(
                       f.bindings.get(BaboonLang.Kotlin) match {
                         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                           decodeKey(aliasedRef, ref)
-                        case _ =>
-                          val targetTpe = codecName(trans.toKtTypeRefKeepForeigns(u, domain, evo))
-                          q"$targetTpe.decode(ctx, $jsonPrimitive($ref))"
+                        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+                          // PR-I.1b (M24 Phase 3.1): Custom-foreign map keys route through
+                          // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
+                          // catch (e: Exception) — NOT Throwable (PR-I-D01 pattern guidance):
+                          // Throwable would swallow Error (OOM/StackOverflow), defeating fail-fast.
+                          val srcRef  = trans.toKtTypeRefKeepForeigns(u, domain, evo)
+                          val hostTpe = KtValue.KtType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost")
+                          q"""try { $hostTpe.instance.decodeKey($ref) } catch (__kc: Exception) { throw $baboonCodecException.DecoderFailure("malformed key: " + $ref, __kc) }"""
+                        case None =>
+                          throw new RuntimeException(s"BUG: Foreign type $u has no Kotlin binding")
                       }
                     // M19/PR-60: id types — call parseRepr and unwrap Right.
                     // PR-F (M24): throw BaboonCodecException.DecoderFailure on Left for

@@ -15,6 +15,12 @@ import convtest.testpkg.CompositeId
 import convtest.testpkg.ItemId
 import convtest.testpkg.PointId
 import convtest.testpkg.WireEnum
+// PR-I.1b (M24 Phase 3.1) — Custom-foreign KeyCodec hook fixture. Stringy
+// foreign FStr maps to java.lang.String; the default identity FStr_KeyCodec
+// impl handles encode/decode of map keys without host registration.
+import convtest.m24foreign.ForeignKeyHolder
+import convtest.m24foreign.ForeignKeyHolder_JsonCodec
+import convtest.m24foreign.ItemKey
 import baboon.runtime.shared.AnyMeta
 import baboon.runtime.shared.AnyOpaque
 import baboon.runtime.shared.AnyOpaqueJson
@@ -94,8 +100,27 @@ private fun runLegacy() {
     writeJsonAny(facadeCtx, sampleAny, kotlinJsonDir.absolutePath)
     writeUebaAny(facadeCtx, sampleAny, kotlinUebaDir.absolutePath)
     writePointIdRepr(sampleData.vPointId, kotlinReprDir.absolutePath)
+    writeForeignKeyHolderJson(ctx, createForeignKeyHolderSample(), kotlinJsonDir.absolutePath)
 
     println("Kotlin serialization complete!")
+}
+
+// PR-I.1b (M24 Phase 3.1) — Custom-foreign KeyCodec hook canonical fixture.
+// The map keys go through FStr_KeyCodec (default identity impl for the stringy
+// foreign), so the wire form is `{"m":{"alpha":"v1","beta":"v2"}}`.
+private fun createForeignKeyHolderSample(): ForeignKeyHolder = ForeignKeyHolder(
+    m = linkedMapOf(
+        ItemKey("alpha") to "v1",
+        ItemKey("beta") to "v2",
+    )
+)
+
+private fun writeForeignKeyHolderJson(ctx: BaboonCodecContext, data: ForeignKeyHolder, outputDir: String) {
+    val json = ForeignKeyHolder_JsonCodec.encode(ctx, data)
+    val jsonStr = json.toString()
+    val path = File(outputDir, "m24-foreign-keycodec.json")
+    path.writeText(jsonStr, Charsets.UTF_8)
+    println("Written JSON to ${path.absolutePath}")
 }
 
 private fun freshFacade(): BaboonCodecsFacade {
