@@ -184,6 +184,29 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
         }
     }
 
+    "multi-`^` arms compose by UNION of intersect targets, not pairwise intersection (PR-E / PR-63-D04)" in {
+      // Fixture: Result = (+ X + Y) ^ A ^ B
+      //   candidate set after includes: X∪Y branch names = {X1, Common, Y1}
+      //   intersectNames = ⋃{A,B} = {X1, Foo} ∪ {Y1, Bar} = {X1, Foo, Y1, Bar}
+      //   afterIntersect = {X1, Y1}  (Common is filtered out — not in any intersect target)
+      //
+      //   Counter-check: pairwise intersection A∩B = {} — that path would emit EmptyAdt,
+      //   which does NOT happen. Passing here proves union-of-targets semantics.
+      (loader: BaboonLoader[F]) =>
+        val paths = resolveBaboonFiles("baboon/m20-ok/multi-intersect.baboon")
+        for {
+          outcome <- runPipeline(loader, paths)
+        } yield {
+          val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val adt    = expectedAdt(family, "my.ok.m20.multi_intersect", "Result")
+          val branches = adt.members.toList.map(_.name.name).toSet
+          // Union-of-targets: X1 (in A) and Y1 (in B) survive; Common (in neither A nor B) is filtered.
+          assert(branches == Set("X1", "Y1"), s"expected {X1, Y1} from multi-^ union-of-targets, got $branches")
+          // Confirm pairwise-intersection false-negative: neither arm alone would keep both X1 and Y1.
+          assert(!branches.contains("Common"), s"Common should be filtered out by intersect, got $branches")
+        }
+    }
+
     "resolve namespace-qualified ADT include `+ sub.MyAdt` (PR-62-D01 invariant)" in {
       (loader: BaboonLoader[F]) =>
         val paths = resolveBaboonFiles("baboon/m20-ok/namespace-qualified.baboon")

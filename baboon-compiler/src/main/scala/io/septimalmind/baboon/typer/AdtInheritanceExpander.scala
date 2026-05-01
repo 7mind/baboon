@@ -123,6 +123,11 @@ class AdtInheritanceExpander[F[+_, +_]: Error2](
         val afterExclude: List[(RawAdtMember, TypeId)] =
           withSources.filterNot(p => excludeNames.contains(branchName(p._1)))
 
+        // Multiple `^` arms compose by UNION of intersect targets per plan §3 formula
+        // `candidates ∩ ⋃ intersectSets`. `intersectNames` is the union of branch names across
+        // ALL `^ X` arms (built via flatTraverseAccumErrors above). A branch survives if its name
+        // appears in ANY referenced intersect target — NOT pairwise-intersection across arms.
+        // This matches the plan §3 literal but reads counter-intuitively; intended.
         val afterIntersect: List[(RawAdtMember, TypeId)] =
           if (intersects.isEmpty) afterExclude
           else afterExclude.filter(p => intersectNames.contains(branchName(p._1)))
