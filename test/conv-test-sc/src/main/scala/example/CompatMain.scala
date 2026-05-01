@@ -17,6 +17,10 @@ import convtest.testpkg.{
   PointId,
   WireEnum,
 }
+// PR-I.1a (M24 Phase 3.1) — Custom-foreign KeyCodec hook fixture. Stringy
+// foreign FStr maps to java.lang.String; the default identity FStr_KeyCodec
+// impl handles encode/decode of map keys without host registration.
+import convtest.m24foreign.{ForeignKeyHolder, ForeignKeyHolder_JsonCodec, ItemKey}
 import baboon.runtime.shared.{
   AnyMeta,
   AnyOpaque,
@@ -91,8 +95,29 @@ object CompatMain {
     writeJsonAny(facadeCtx, sampleAny, scalaJsonDir.toString)
     writeUebaAny(facadeCtx, sampleAny, scalaUebaDir.toString)
     writePointIdRepr(sampleData.vPointId, scalaReprDir.toString)
+    writeForeignKeyHolderJson(ctx, createForeignKeyHolderSample(), scalaJsonDir.toString)
 
     println("Scala serialization complete!")
+  }
+
+  // PR-I.1a (M24 Phase 3.1) — Custom-foreign KeyCodec hook canonical fixture.
+  // The map keys go through FStr_KeyCodec (default identity impl for the stringy
+  // foreign), so the wire form is `{"m":{"alpha":"v1","beta":"v2"}}`.
+  private def createForeignKeyHolderSample(): ForeignKeyHolder = {
+    ForeignKeyHolder(
+      m = Map(
+        ItemKey(v = "alpha") -> "v1",
+        ItemKey(v = "beta")  -> "v2",
+      )
+    )
+  }
+
+  private def writeForeignKeyHolderJson(ctx: BaboonCodecContext, data: ForeignKeyHolder, outputDir: String): Unit = {
+    val json    = ForeignKeyHolder_JsonCodec.instance.encode(ctx, data)
+    val jsonStr = json.spaces2
+    val path    = Paths.get(outputDir).resolve("m24-foreign-keycodec.json")
+    Files.write(path, jsonStr.getBytes("UTF-8"))
+    println(s"Written JSON to $path")
   }
 
   private def writeJson(ctx: BaboonCodecContext, data: AllBasicTypes, outputDir: String): Unit = {

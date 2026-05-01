@@ -427,8 +427,58 @@ object ScDefnTranslator {
             Nil,
           )
 
-        case _: Typedef.Foreign => DefnRepr(q"", Nil)
+        case f: Typedef.Foreign => DefnRepr(makeForeignKeyCodecRepr(f, name), Nil)
 
+      }
+    }
+
+    /** PR-I.1a (M24 Phase 3.1): emit a `<Foreign>_KeyCodec` extension hook for
+      * every Custom-mapped Scala foreign declaration. The host application
+      * registers an implementation at boot which the JSON codec then uses to
+      * encode/decode map keys. For BaboonRef-mapped foreigns we emit nothing —
+      * the existing recursion into the aliased type covers the codec needs.
+      *
+      * Stringy foreigns (`java.lang.String`) get a default identity impl so the
+      * common case works out of the box. Non-stringy foreigns get a stub
+      * default that throws BaboonCodecException.DecoderFailure with a clear
+      * "host has not registered" message, giving the user a precise diagnostic
+      * if they forget to register.
+      */
+    private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: ScValue.ScType): TextTree[ScValue] = {
+      f.bindings.get(BaboonLang.Scala) match {
+        case None                                                          => q""
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => q""
+        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+          val srcRef       = trans.toScTypeRefKeepForeigns(f.id, domain, evo)
+          val traitName    = s"${srcRef.name}_KeyCodec"
+          val traitFqn     = s"${srcRef.pkg.parts.mkString(".")}.$traitName"
+          val isStringy    = decl == "java.lang.String"
+          val defaultBlock = if (isStringy) {
+            q"""private object DefaultImpl extends $traitName {
+               |  def encodeKey(value: $name): $scString = value
+               |  def decodeKey(s: $scString): $name = s
+               |}""".stripMargin
+          } else {
+            q"""private object DefaultImpl extends $traitName {
+               |  private def fail: Nothing = throw $baboonCodecException.DecoderFailure(
+               |    \"$traitFqn is not registered; call $traitFqn.register(impl) at app boot.\"
+               |  )
+               |  def encodeKey(value: $name): $scString = fail
+               |  def decodeKey(s: $scString): $name = fail
+               |}""".stripMargin
+          }
+          q"""trait $traitName {
+             |  def encodeKey(value: $name): $scString
+             |  def decodeKey(s: $scString): $name
+             |}
+             |
+             |object $traitName {
+             |  @volatile private var _instance: $traitName = DefaultImpl
+             |  def register(impl: $traitName): $scUnit = { _instance = impl }
+             |  def instance: $traitName = _instance
+             |
+             |  ${defaultBlock.shift(2).trim}
+             |}""".stripMargin
       }
     }
 

@@ -2488,3 +2488,67 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Severity:** nit
 **Description:** Both files emit identical content via shared `crateAllows ++ modDeclsFor(topLevelModuleNames(...))`. A future cleanup PR might attempt to "deduplicate" without realizing the two paths are intentional alternate aggregator entry points (lib.rs for in-place stubs like `rs-stub`; mod.rs for wrapper crates like `conv-test-rs`).
 **Fix:** Acceptable as-is. The `generateRootMod` doc comment notes "Aggregator emitted alongside lib.rs"; future maintainers can reach the same understanding by reading the helpers.
+
+---
+
+## PR-I.1a (M24) — Scala Custom-foreign KeyCodec hook (reference pattern)
+
+## [PR-I-D01] Decoder catch-Throwable swallows Error and ControlThrowable
+**Status:** resolved
+**Severity:** major
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScJsonCodecGenerator.scala:481
+**Description:** Initial PR-I.1a emitted `catch { case e: Throwable => throw BaboonCodecException.DecoderFailure(...) }`. `Throwable` includes `Error` (OOM, StackOverflow) and `ControlThrowable` (NonLocalReturnControl, scala.util.control.Breaks). Catching `Error` defeats fail-fast on JVM resource exhaustion; catching `ControlThrowable` corrupts non-local control flow. CRITICAL because PR-I.1a is the reference pattern that propagates to 8 other backends.
+**Fix:** Changed to `case e: Exception =>` (excludes both Error and ControlThrowable). `scala.util.control.NonFatal` would have been more idiomatic but isn't in `ScTypes.scala` symbol table; `Exception` matches the TextTree string-literal convention. **Pattern guidance for sub-PRs:** Java/Kotlin → `catch (Exception e)`; C# → `catch (Exception e)`; Dart → `on Exception catch (e)`; TS → `catch (e: unknown)` with type narrow; Python → `except Exception as e:`; Swift → `catch let e where !(e is FatalError)` or accept all `catch let e:` since Swift errors aren't `Throwable`-style; Rust → not applicable (Result-based).
+
+## [PR-I-D02] Test asserted Circe Json structural equality not byte-identity
+**Status:** resolved
+**Severity:** major
+**Location:** test/conv-test-sc/src/test/scala/example/Test_CrossLanguageCompat.scala (PR-I.1a foreign KeyCodec hook suite)
+**Description:** Initial test compared `encoded == expected` where both are `io.circe.Json` — structural, order-tolerant. M24's stated goal is cross-language wire-form parity (byte-identity). The test would have silently passed under key-reorder regression. CRITICAL because the assertion shape will be mirrored across 8 backends' tests.
+**Fix:** Changed to `assert(encoded.noSpaces == """{"m":{"alpha":"v1","beta":"v2"}}""", ...)` — byte-string comparison catches key reordering. **Pattern guidance for sub-PRs:** every backend's cross-language test for the m24-foreign-keycodec fixture must compare the serialized JSON STRING, not the parsed object.
+
+## [PR-I-D03] Stub-throw diagnostic referenced simple name not FQN
+**Status:** resolved
+**Severity:** major (UX-blocking when multi-version namespaces coexist)
+**Location:** ScDefnTranslator.scala (makeForeignKeyCodecRepr non-stringy branch)
+**Description:** Default-impl stub-throw message read `"<TraitName> is not registered; call <TraitName>.register(impl) at app boot."` with simple name only. When multiple version namespaces coexist (e.g. `convtest.m24foreign.v1_0_0.FStr_KeyCodec` vs `convtest.m24foreign.FStr_KeyCodec`), the message is ambiguous.
+**Fix:** Added `val traitFqn = s"${srcRef.pkg.parts.mkString(".")}.$traitName"` and used `traitFqn` in the error body. Generated message now reads e.g. `"convtest.m24foreign.FStr_KeyCodec is not registered; call convtest.m24foreign.FStr_KeyCodec.register(impl) at app boot."` — copy-pasteable as an import path. **Pattern guidance for sub-PRs:** include FQN in every backend's diagnostic (Java: fully-qualified class; Kotlin: package + name; C#: namespace + class; etc.).
+
+## [PR-I-D04] obsoletePrevious annotation only attaches to trait, not companion
+**Status:** resolved (deferred — Scala-specific annotation grammar nuance)
+**Severity:** major
+**Location:** ScDefnTranslator.scala:220 (`obsoletePrevious(repr.defn)`)
+**Description:** Result for non-latest versions: `@deprecated("...") trait FStr_KeyCodec { ... }\nobject FStr_KeyCodec { ... }`. Scala annotation grammar binds `@deprecated` to the immediately following declaration only; the companion `object` is NOT marked deprecated. Calling `FStr_KeyCodec.register(...)` on an old-version namespace produces no deprecation warning.
+**Fix:** Deferred. Pattern propagation to other backends doesn't share Scala's annotation grammar limitation (Java/Kotlin/etc. have different deprecation models). Future hygiene PR can apply `@deprecated` to both trait and companion in Scala.
+
+## [PR-I-D05] Encoder wildcard match swallows None Scala-binding case
+**Status:** resolved
+**Severity:** major
+**Location:** ScJsonCodecGenerator.scala:317 (encode-key Custom-foreign branch)
+**Description:** `case _ =>` caught both `Custom(decl, attrs)` and unmapped `None`. If a foreign with no Scala binding ever reached here, generated code would reference a `<Foreign>_KeyCodec` that was never emitted → compile error in generated code. Defensive contradiction.
+**Fix:** Changed to explicit `case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>` for Custom path, plus explicit `case None => throw new RuntimeException(...)` fallthrough that fails loudly on missing binding. **Pattern guidance for sub-PRs:** every backend's foreign-binding match should be explicit, not wildcarded.
+
+## [PR-I-D06] Dead `decl == "String"` branch in stringy detection
+**Status:** resolved
+**Severity:** minor
+**Location:** ScDefnTranslator.scala:454 (in `makeForeignKeyCodecRepr`)
+**Description:** `isStringy = decl == "java.lang.String" || decl == "String"`. Per `ScTypeTranslator.asScTypeDerefForeigns:96` `assert(parts.length > 1)`, single-segment decls never reach codegen.
+**Fix:** Simplified to `isStringy = decl == "java.lang.String"`. Dead alternative removed.
+
+## [PR-I-D07] Stringy default's try/catch is dead code (acceptable)
+**Status:** resolved (note-only)
+**Severity:** nit
+**Description:** Identity `decodeKey` for stringy customs cannot throw, so try/catch around it is unreachable. Acceptable for uniformity; one-line comment in generator could explain why we don't special-case stringy decoders.
+**Fix:** Acceptable as-is.
+
+## [PR-I-D08] Pre-PR fast-path lost for stringy customs
+**Status:** resolved (note-only)
+**Severity:** nit
+**Description:** Pre-PR-I.1a stringy customs decoded via Circe's `circeDecodeKeyString` (built-in, no closure allocation). Post-PR every stringy custom allocates a `KeyDecoder.instance` closure + traverses the registered impl. Negligible per call but multiplies by map cardinality. Conscious tradeoff for uniform cross-backend semantics over micro-perf.
+**Fix:** Acceptable as-is.
+
+## [PR-I-D09] register() has no double-registration guard
+**Status:** resolved (note-only — last-wins semantics documented)
+**Severity:** nit
+**Description:** `register(impl)` silently replaces previous registration. No error/warning. Pattern that propagates to all 9 backends. Last-wins is the intended behavior (mirrors the M24 plan's "module-level mutable singleton" decision).
+**Fix:** Acceptable as-is. Future hygiene PR could add idempotent-or-throw variant if hosts request it.

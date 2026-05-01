@@ -314,10 +314,18 @@ class ScJsonCodecGenerator(
                   f.bindings.get(BaboonLang.Scala) match {
                     case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                       encodeKey(aliasedRef, ref)
-                    case _ =>
-                      // Custom foreign decl: no baboon codec — emit toString so the
-                      // map key is a String (mirrors the decoder's circeDecodeKeyString).
-                      q"$ref.toString"
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+                      // PR-I.1a (M24 Phase 3.1): Custom-foreign map keys route through
+                      // the emitted `<Foreign>_KeyCodec` extension hook. The default
+                      // impl is identity for stringy foreigns; non-stringy foreigns
+                      // require host registration before first use.
+                      val keyCodecHost = ScValue.ScType(
+                        trans.toScTypeRefKeepForeigns(uid, domain, evo).pkg,
+                        s"${trans.toScTypeRefKeepForeigns(uid, domain, evo).name}_KeyCodec",
+                      )
+                      q"$keyCodecHost.instance.encodeKey($ref)"
+                    case None =>
+                      throw new RuntimeException(s"BUG: Foreign type $uid has no Scala binding")
                   }
                 // M19/PR-60: id types — emit canonical toString (single- or multi-field).
                 case d: Typedef.Dto if d.isIdentifier =>
@@ -462,28 +470,15 @@ class ScJsonCodecGenerator(
                       f.bindings.get(BaboonLang.Scala) match {
                         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                           getKeyDecoder(aliasedRef)
-                        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
-                          // Encoder emits ref.toString for Custom-foreign map keys.
-                          // For String-mapped foreigns (the common case) decoding is the
-                          // identity: the JSON key string IS the Scala value. For other
-                          // Custom foreigns the encoder's toString may not be invertible;
-                          // we currently have no generic fromString bridge — emit the
-                          // identity decoder so String-typed foreigns round-trip correctly,
-                          // and leave non-String cases to the validator/user. PR-66-D01 fix.
-                          if (decl == "java.lang.String") {
-                            q"$circeDecodeKeyString"
-                          } else {
-                            // Non-String Custom foreign: toString is not guaranteed
-                            // invertible. The validator accepts these keys and the user
-                            // supplies the semantics — we cannot auto-derive a decoder.
-                            // PR-F (M24): throw on Left so behaviour is uniform across backends.
-                            val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
-                            q"""$circeKeyDecoder.instance(s => ${targetTpe}_JsonCodec.instance.decode(ctx, $circeJson.fromString(s)) match { case Right(v) => Some(v); case Left(_) => throw $baboonCodecException.DecoderFailure(s"malformed key: $$s") })"""
-                          }
-                        case None =>
-                          val targetTpe = trans.toScTypeRefKeepForeigns(uid, domain, evo)
-                          // PR-F (M24): throw on Left for cross-language consistency.
-                          q"""$circeKeyDecoder.instance(s => ${targetTpe}_JsonCodec.instance.decode(ctx, $circeJson.fromString(s)) match { case Right(v) => Some(v); case Left(_) => throw $baboonCodecException.DecoderFailure(s"malformed key: $$s") })"""
+                        case _ =>
+                          // PR-I.1a (M24 Phase 3.1): Custom-foreign map keys route through
+                          // the emitted `<Foreign>_KeyCodec` extension hook. Behaviour is
+                          // uniform across stringy and non-stringy foreigns: the host's
+                          // decodeKey is invoked, and any thrown exception is normalized
+                          // to BaboonCodecException.DecoderFailure (PR-F invariant).
+                          val targetTpe   = trans.toScTypeRefKeepForeigns(uid, domain, evo)
+                          val keyCodecHost = ScValue.ScType(targetTpe.pkg, s"${targetTpe.name}_KeyCodec")
+                          q"""$circeKeyDecoder.instance(s => try { Some($keyCodecHost.instance.decodeKey(s)) } catch { case e: Exception => throw $baboonCodecException.DecoderFailure(s"malformed key: $$s", e) })"""
                       }
                     // M19/PR-60: id types — call the parser-based round trip.
                     // PR-F (M24): throw BaboonCodecException.DecoderFailure on parse failure.
