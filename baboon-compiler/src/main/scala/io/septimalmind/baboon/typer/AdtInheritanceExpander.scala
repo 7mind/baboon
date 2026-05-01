@@ -198,6 +198,15 @@ class AdtInheritanceExpander[F[+_, +_]: Error2](
       result <- expandedById.get(resolvedId) match {
         case Some(targetAdt) =>
           // All-form: copy every branch of the target ADT.
+          //
+          // M24 PR-J policy (b): `derived[json|ueba]` and `was[T]` annotations carried by each
+          // `RawAdtMemberDto.dto: RawDto` are preserved verbatim by this copy — the entire
+          // `RawDto` (including its `derived: Set[RawMemberMeta]`) rides along into the
+          // receiving ADT's member list. The receiving ADT becomes the resolution context for
+          // unprefixed `was` refs after `BaboonTyper.runTyper` rebuilds scopes over the
+          // expanded members and runs `computeRenames` over the new flattened scope tree
+          // (`Owner.Adt(receivingAdtId)` for re-emitted branches). See Q-PR-J in
+          // `20260429-0025-m20-bab-a03-adt-inheritance-plan.md`.
           F.pure(targetAdt.members.collect {
             case m: RawAdtMemberDto      => (m: RawAdtMember, resolvedId: TypeId)
             case m: RawAdtMemberContract => (m: RawAdtMember, resolvedId: TypeId)

@@ -2710,3 +2710,19 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Severity:** nit
 **Description:** `OnceLock` requires Rust 1.70+. Both `test/conv-test-rs/Cargo.toml` and `test/rs-stub/Cargo.toml` use `edition = "2021"` with no `rust-version` field. Toolchain version is implicit.
 **Fix:** Acceptable. Defensive hardening could add `rust-version = "1.70"` to both files.
+
+---
+
+## PR-J (M24) — derived[was] policy (b) preserve verbatim
+
+## [PR-J-N01] Test assertion 3 logically subsumed by assertion 2
+**Status:** resolved (note-only; intent documentation retained)
+**Severity:** nit
+**Description:** `M20DerivedWasPropagationTest` assertion 3 (`!v2.renames.get(outerBarNew).contains(innerFooOld)`) is logically subsumed by assertion 2 (`v2.renames.get(outerBarNew).contains(outerFooOld)`) since a Map has a unique value per key. Retained as documentation of intent / policy-(a) regression guard.
+**Fix:** Acceptable.
+
+## [PR-J-N02] Test verifies end-to-end renames not intermediate RawDto.derived state
+**Status:** resolved (note-only; right level of abstraction)
+**Severity:** nit
+**Description:** Test asserts `v2.renames` correctness (user-visible policy-b property) but does not directly assert that `RawAdtMemberDto.dto.derived` is non-empty on re-emitted `Outer.Bar` immediately after `AdtInheritanceExpander` runs. Right level of abstraction for the policy-b property; finer-grained internal-state test would matter only if future refactors decoupled the two stages.
+**Fix:** Acceptable.

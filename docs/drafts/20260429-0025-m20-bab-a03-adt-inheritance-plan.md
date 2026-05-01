@@ -250,3 +250,18 @@ The plan's §3 "Detailed re-emit algorithm" stands in spirit, with these clarifi
 - Cross-version include rejection: easy because the resolved ref's `Pkg` differs from the receiving ADT's `Pkg`; the validator catches with `CrossVersionAdtInclusion`.
 
 This gives the user's "AST-level insertion" intent (the rewrite is structural, not semantic) while reusing the existing scope/ref-resolution machinery (the rewrite operates on resolved refs, not raw text).
+
+### Q-PR-J — `derived[was]` propagation through ADT re-emit (M24 PR-J, 2026-05-01)
+
+**Question:** how should `derived[was]` annotations (i.e. `data X : was[Y] { ... }`) be handled when an ADT branch carrying such an annotation is re-emitted into another ADT via `+` ADT inclusion?
+
+**Decision:** policy (b) — preserve verbatim. The receiving ADT's scope is the resolution context; an unprefixed `was` ref resolves under the receiving ADT, not under the source ADT.
+
+Concretely: given `adt Inner { data Bar : was[Foo] { ... } }` and `adt Outer { + Inner }`, the re-emitted `Outer.Bar` carries `was[Foo]` verbatim, and the unprefixed `Foo` resolves to `(pkg, Owner.Adt(Outer), Foo)` — NOT `(pkg, Owner.Adt(Inner), Foo)`.
+
+**Rationale:**
+- Matches the existing `RawAdtMemberDto.dto: RawDto` shape: `RawDto.derived: Set[RawMemberMeta]` rides along with the DTO when `AdtInheritanceExpander` substitutes branches.
+- `BaboonTyper.runTyper` rebuilds the scope tree over the expanded members and runs `computeRenames` over the new flattened scope list, which gives each re-emitted branch `Owner.Adt(receivingAdtId)`. `computeRenames`'s empty-prefix branch then resolves the `was` target under the receiving ADT automatically.
+- No code change required to make this true — the behaviour falls out of the existing data flow. PR-J is documentation + test only.
+
+**Reference:** PR-J (M24 Phase 3.4); closes defects.md PR-63-D05. Clarifying comment added at `AdtInheritanceExpander.scala` All-form copy site; test at `M20DerivedWasPropagationTest` against fixture `m20-was-propagation/{v1,v2}.baboon`.
