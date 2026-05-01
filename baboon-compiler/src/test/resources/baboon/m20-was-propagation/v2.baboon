@@ -1,0 +1,13 @@
+model my.ok.m20.was_propagation
+
+version "2.0.0"
+
+import "1.0.0" { * }
+
+adt Inner {
+   data Bar : was[Foo] { x: i32 }
+}
+
+root adt Outer {
+   + Inner
+}
