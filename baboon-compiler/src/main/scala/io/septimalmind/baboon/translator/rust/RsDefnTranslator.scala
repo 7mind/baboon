@@ -895,10 +895,10 @@ object RsDefnTranslator {
       case _ => None
     }
 
-    /** Mirrors `BaboonValidator.isEligibleKey` — DTO branch only. id types are
-      * always eligible (Q-M19-6); single-primitive-field non-contract DTOs are
-      * eligible if the inner field is a primitive scalar or a recursively-eligible
-      * nested wrapper (no opt/collection, no float wrappers per Q-M19-2).
+    /** Mirrors `BaboonValidator.isEligibleKey` — DTO, Enum, and Foreign branches.
+      * id types are always eligible (Q-M19-6); single-primitive-field non-contract DTOs are
+      * eligible if the inner field is a primitive scalar, an enum, a foreign type, or a
+      * recursively-eligible nested wrapper (no opt/collection, no float wrappers per Q-M19-2).
       */
     private def isUserMapKeyEligibleDto(dto: Typedef.Dto): Boolean = {
       if (dto.isIdentifier) true
@@ -914,6 +914,10 @@ object RsDefnTranslator {
         case TypeRef.Scalar(u: TypeId.User) =>
           domain.defs.meta.nodes.get(u) match {
             case Some(DomainMember.User(_, nested: Typedef.Dto, _, _)) => isUserMapKeyEligibleDto(nested)
+            // Q-M19-7: enums round-trip via Display / parse; foreign types assume the host
+            // provides compatible Display / FromStr (PR-I will route through a dedicated KeyCodec).
+            case Some(DomainMember.User(_, _: Typedef.Enum, _, _))    => true
+            case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) => true
             case _                                                      => false
           }
         case _ => false
@@ -938,7 +942,7 @@ object RsDefnTranslator {
         field.tpe match {
           case s @ TypeRef.Scalar(_: TypeId.BuiltinScalar) =>
             Some((s, fieldSnake, List((fieldSnake, rsName))))
-          case TypeRef.Scalar(u: TypeId.User) =>
+          case s @ TypeRef.Scalar(u: TypeId.User) =>
             domain.defs.meta.nodes.get(u) match {
               case Some(DomainMember.User(_, nested: Typedef.Dto, _, _)) =>
                 val nestedRs = trans.toRsTypeRefKeepForeigns(u, domain, evo)
@@ -946,6 +950,13 @@ object RsDefnTranslator {
                   case (leafTpe, deepPath, innerWrappers) =>
                     (leafTpe, s"$fieldSnake.$deepPath", innerWrappers :+ (fieldSnake, rsName))
                 }
+              // Enum and Foreign leaves: treat the user scalar itself as the leaf.
+              // encode → format!("{}", k.<field>); decode → s.parse::<ForeignType>()
+              // then rewrap. trans.asRsRef dereferences Foreign → its host type for parse.
+              case Some(DomainMember.User(_, _: Typedef.Enum, _, _)) =>
+                Some((s, fieldSnake, List((fieldSnake, rsName))))
+              case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) =>
+                Some((s, fieldSnake, List((fieldSnake, rsName))))
               case _ => None
             }
           case _ => None
