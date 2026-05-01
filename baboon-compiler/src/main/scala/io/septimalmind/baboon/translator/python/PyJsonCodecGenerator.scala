@@ -54,8 +54,9 @@ final class PyJsonCodecGenerator(
       List(q"""def decode(self, context: $baboonCodecContext, wire: $pyStr) -> $name:
               |    ${dec.shift(4).trim}
               |""".stripMargin)
-    val anyHelpers: List[TextTree[PyValue]] = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
-    val baseMethods = encodeMethod ++ decodeMethod ++ anyHelpers
+    val anyHelpers: List[TextTree[PyValue]]       = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
+    val customKeyHelpers: List[TextTree[PyValue]] = if (hasCustomForeignMapKey(defn)) List(tryDecodeKeyHelper) else Nil
+    val baseMethods                               = encodeMethod ++ decodeMethod ++ anyHelpers ++ customKeyHelpers
     val cName       = q"${srcRef.name}_JsonCodec"
     val cType       = q"'${codecType(defn.id)}'"
 
@@ -168,6 +169,51 @@ final class PyJsonCodecGenerator(
     case c: TypeRef.Constructor => c.args.exists(fieldHasAny)
   }
 
+  // PR-I.2-D01: detect whether the DTO contains any `map[custom-foreign-key, V]` fields. When
+  // present, the codec class needs the `_try_decode_key` helper that wraps the host call in
+  // try/except and re-raises as `BaboonCodecException.DecoderFailure("malformed key: ...")` —
+  // Python expressions cannot contain try/except, so the wrap is factored into a class method
+  // callable from the dict-comprehension key expression via `self._try_decode_key(lambda: ..., k)`.
+  private def hasCustomForeignMapKey(defn: DomainMember.User): Boolean = defn.defn match {
+    case d: Typedef.Dto => dtoHasCustomForeignMapKey(d)
+    case _              => false
+  }
+
+  private def dtoHasCustomForeignMapKey(dto: Typedef.Dto): Boolean =
+    dto.fields.exists(f => fieldHasCustomForeignMapKey(f.tpe))
+
+  // Returns true iff `tpe` (used as a map key) transitively reaches a Custom-foreign via
+  // `mkJsonKeyDecoder`'s recursion paths: (a) direct Custom-foreign scalar, or (b) single-field
+  // wrapper DTO whose inner type reaches a Custom-foreign. Mirrors `mkJsonKeyDecoder`'s match arms
+  // so `_try_decode_key` is emitted exactly when the generated comprehension expression uses it.
+  private def keyTypeNeedsCustomForeignWrap(tpe: TypeRef): Boolean = tpe match {
+    case TypeRef.Scalar(u: TypeId.User) =>
+      domain.defs.meta.nodes.get(u) match {
+        case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
+          f.bindings.get(BaboonLang.Py) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+              keyTypeNeedsCustomForeignWrap(aliasedRef)
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) => true
+            case _                                                                  => false
+          }
+        case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.fields.size == 1 && d.contracts.isEmpty =>
+          keyTypeNeedsCustomForeignWrap(d.fields.head.tpe)
+        case _ => false
+      }
+    case _ => false
+  }
+
+  private def fieldHasCustomForeignMapKey(tpe: TypeRef): Boolean = tpe match {
+    case _: TypeRef.Any    => false
+    case _: TypeRef.Scalar => false
+    case c: TypeRef.Constructor =>
+      val isCustomForeignKeyMap = c.id == TypeId.Builtins.map && (c.args.head match {
+        case TypeRef.Scalar(_: TypeId.User) => keyTypeNeedsCustomForeignWrap(c.args.head)
+        case _                              => false
+      })
+      isCustomForeignKeyMap || c.args.exists(fieldHasCustomForeignMapKey)
+  }
+
   // PR-60-D02: detect whether the DTO contains any `map[user-key, V]` fields where the key is a
   // user type (DTO/id/foreign). Pydantic's transparent path mis-handles such keys; the explicit
   // walker uses `mkJsonKeyEncoder`/`mkJsonKeyDecoder` to round-trip them as strings.
@@ -237,10 +283,20 @@ final class PyJsonCodecGenerator(
         case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.fields.size == 1 && d.contracts.isEmpty =>
           val inner = d.fields.head
           mkJsonKeyEncoder(inner.tpe, q"$ref.${inner.name.name}")
-        // PR-60-D03: foreign-typed keys — defensive str() coercion. The user-supplied codec
-        // may produce a non-string value; str() ensures `json.dumps` accepts it as an object key.
-        case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) =>
-          q"str($ref)"
+        // PR-I.2 (M24 Phase 3.2): Custom-foreign map keys route through the emitted
+        // `<Foreign>_KeyCodecHost.instance()` extension hook (replaces PR-60-D03 silent
+        // str() coercion). Explicit Custom match (PR-I-D05 pattern guidance).
+        case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
+          f.bindings.get(BaboonLang.Py) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+              mkJsonKeyEncoder(aliasedRef, ref)
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+              val srcRef = typeTranslator.asPyTypeKeepForeigns(u, domain, evolution, pyFileTools.definitionsBasePkg)
+              val host   = PyType(srcRef.moduleId, s"${srcRef.name}_KeyCodecHost")
+              q"$host.instance().encode_key($ref)"
+            case None =>
+              throw new RuntimeException(s"BUG: Foreign type $u has no Python binding")
+          }
         case _ =>
           // PR-60-D04: validator (PR-59) should reject any other user-type as a map key. If we
           // land here, the validator missed a case — fail loudly rather than silently emit
@@ -301,10 +357,29 @@ final class PyJsonCodecGenerator(
           val tpeRef   = typeTranslator.asPyTypeKeepForeigns(u, domain, evolution, pyFileTools.definitionsBasePkg)
           val innerDec = mkJsonKeyDecoder(inner.tpe, ref)
           q"$tpeRef(${inner.name.name}=$innerDec)"
-        case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) =>
-          // Foreign-keyed wrapper: defer to Pydantic — `model_validate` will use the user-supplied
-          // codec to coerce the JSON-string into the foreign type.
-          ref
+        case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
+          // PR-I.2 (M24 Phase 3.2): Custom-foreign map keys route through the emitted
+          // `<Foreign>_KeyCodecHost.instance()` extension hook (replaces PR-60-D03 silent
+          // Pydantic-coerce fallback). `except Exception as e` (NOT bare `except` /
+          // `except BaseException`) keeps fail-fast on KeyboardInterrupt / SystemExit
+          // (PR-I-D01 pattern guidance). Explicit Custom match (PR-I-D05).
+          f.bindings.get(BaboonLang.Py) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+              mkJsonKeyDecoder(aliasedRef, ref)
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+              val srcRef = typeTranslator.asPyTypeKeepForeigns(u, domain, evolution, pyFileTools.definitionsBasePkg)
+              val host   = PyType(srcRef.moduleId, s"${srcRef.name}_KeyCodecHost")
+              // PR-I.2-D01: wrap the host call via `_try_decode_key` to re-raise any exception
+              // (including user-raised DecoderFailure with a custom message) as
+              // `DecoderFailure("malformed key: <repr>")`, matching the cross-backend invariant.
+              // A dict-comprehension key expression cannot contain try/except directly, so the
+              // wrap is factored into the `_try_decode_key` class method (emitted when
+              // `hasCustomForeignMapKey` is true). `except Exception` (not `BaseException`)
+              // lets KeyboardInterrupt / SystemExit propagate unimpeded (PR-I-D01 guidance).
+              q"self._try_decode_key(lambda: $host.instance().decode_key($ref), $ref)"
+            case None =>
+              throw new RuntimeException(s"BUG: Foreign type $u has no Python binding")
+          }
         case _ =>
           // PR-60-D04: validator (PR-59) should reject any other user-type as a map key.
           q"""(_ for _ in ()).throw(Exception(f"BUG: Unexpected key usertype (validator should have rejected): {repr($ref)}"))"""
@@ -407,6 +482,23 @@ final class PyJsonCodecGenerator(
        |        )
        |    any_content = wire[$baboonAnyMetaCodec.ANY_CONTENT_KEY]
        |    return $baboonAnyOpaqueJson(any_meta, any_content)
+       |""".stripMargin
+  }
+
+  // PR-I.2-D01: helper emitted into codec classes that have a Custom-foreign map key. Wraps the
+  // host `decode_key` call in try/except and re-raises as `DecoderFailure("malformed key: ...")`,
+  // matching the cross-backend invariant (Swift/Java/Kotlin/Dart/TS/C# all do the same wrap).
+  // A class-level method is necessary because Python expressions (including dict comprehensions)
+  // cannot contain try/except; the comprehension key expression uses
+  // `self._try_decode_key(lambda: host.instance().decode_key(k), k)` instead of a bare call.
+  // `except Exception` (not `BaseException`) lets KeyboardInterrupt / SystemExit propagate
+  // unimpeded, per PR-I-D01 pattern guidance.
+  private def tryDecodeKeyHelper: TextTree[PyValue] = {
+    q"""def _try_decode_key(self, fn, raw_repr):
+       |    try:
+       |        return fn()
+       |    except Exception as __e:
+       |        raise $baboonCodecException.DecoderFailure(f"malformed key: {repr(raw_repr)}") from __e
        |""".stripMargin
   }
 

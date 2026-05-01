@@ -1,6 +1,10 @@
 import Foundation
 import BaboonRuntime
 @testable import ConvtestTestpkg
+// PR-I.2 (M24 Phase 3.2) — Custom-foreign KeyCodec hook fixture. Stringy
+// FStr foreign + ItemKey wrapper + ForeignKeyHolder round-trip exercises the
+// generated FStr_KeyCodecHost identity default impl.
+import ConvtestM24foreign
 
 func fail(_ message: String) -> Never {
     fputs(message + "\n", stderr)
@@ -290,6 +294,28 @@ func writePointIdRepr(_ pid: PointId, _ outputDir: String) throws {
     print("Written repr to \(path)")
 }
 
+// PR-I.2 (M24 Phase 3.2) — Custom-foreign KeyCodec hook canonical fixture.
+// Map keys go through FStr_KeyCodecHost (default identity impl for the stringy
+// foreign), so the wire form is `{"m":{"alpha":"v1","beta":"v2"}}`.
+func createForeignKeyHolderSample() -> ForeignKeyHolder {
+    return ForeignKeyHolder(m: [
+        ItemKey(v: "alpha"): "v1",
+        ItemKey(v: "beta"): "v2",
+    ])
+}
+
+func writeForeignKeyHolderJson(_ ctx: BaboonCodecContext, _ data: ForeignKeyHolder, _ outputDir: String) throws {
+    try FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+    let jsonObj = ForeignKeyHolder_JsonCodec.instance.encode(ctx, data)
+    // Compact (no .prettyPrinted) so the byte-identity assertion against the canonical
+    // wire form `{"m":{"alpha":"v1","beta":"v2"}}` matches across backends. `.sortedKeys`
+    // gives deterministic key ordering on the outer object AND nested maps.
+    let jsonData = try JSONSerialization.data(withJSONObject: jsonObj as Any, options: [.sortedKeys])
+    let path = "\(outputDir)/m24-foreign-keycodec.json"
+    try jsonData.write(to: URL(fileURLWithPath: path))
+    print("Written JSON to \(path)")
+}
+
 func runLegacy() throws {
     let sampleData = createSampleData()
     let sampleAny = try createSampleAnyShowcase()
@@ -300,6 +326,7 @@ func runLegacy() throws {
     try writeJsonAny(facadeCtx, sampleAny, "\(baseDir)/swift-json")
     try writeUebaAny(facadeCtx, sampleAny, "\(baseDir)/swift-ueba")
     try writePointIdRepr(sampleData.vPointId, "\(baseDir)/swift-repr")
+    try writeForeignKeyHolderJson(.defaultCtx, createForeignKeyHolderSample(), "\(baseDir)/swift-json")
     print("Swift serialization complete!")
 }
 
@@ -319,6 +346,7 @@ do {
         case "json":
             try writeJson(sampleData, outputDir)
             try writeJsonAny(facadeCtx, sampleAny, outputDir)
+            try writeForeignKeyHolderJson(.defaultCtx, createForeignKeyHolderSample(), outputDir)
         case "ueba":
             try writeUeba(sampleData, outputDir)
             try writeUebaAny(facadeCtx, sampleAny, outputDir)

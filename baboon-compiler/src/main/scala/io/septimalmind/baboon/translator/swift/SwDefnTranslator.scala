@@ -234,11 +234,73 @@ object SwDefnTranslator {
       defn: DomainMember.User,
       name: SwType,
     ): DefnRepr = {
-      val target = trans.asSwRef(TypeRef.Scalar(defn.id), domain, evo)
-      DefnRepr(
-        q"public typealias ${name.asDeclName} = $target",
-        Nil,
-      )
+      val target    = trans.asSwRef(TypeRef.Scalar(defn.id), domain, evo)
+      val typealias = q"public typealias ${name.asDeclName} = $target"
+      val keyCodecBlock = defn.defn match {
+        case f: Typedef.Foreign => makeForeignKeyCodecRepr(f, name)
+        case _                  => q""
+      }
+      val combined =
+        if (keyCodecBlock.isEmpty) typealias
+        else
+          q"""$typealias
+             |
+             |$keyCodecBlock""".stripMargin
+      DefnRepr(combined, Nil)
+    }
+
+    /** PR-I.2 (M24 Phase 3.2) — emit a `<Foreign>_KeyCodec` extension hook for
+      * every Custom-mapped Swift foreign declaration. The host application
+      * registers an implementation at boot which the JSON codec then uses to
+      * encode/decode map keys. For BaboonRef-mapped foreigns we emit nothing —
+      * the existing recursion into the aliased type covers the codec needs.
+      *
+      * Stringy foreigns (`Swift.String` / `String`) get a default identity impl
+      * so the common case works out of the box. Non-stringy foreigns get a
+      * stub default that throws `BaboonCodecException.decoderFailure` with an
+      * FQN-bearing diagnostic referring to the Host enum (PR-I.1b-D01 lesson).
+      */
+    private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: SwType): TextTree[SwValue] = {
+      f.bindings.get(BaboonLang.Swift) match {
+        case None                                                                  => q""
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef))    => q""
+        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+          val srcRef    = trans.toSwTypeRefKeepForeigns(f.id, domain, evo)
+          val codecName = s"${srcRef.name}_KeyCodec"
+          val hostName  = s"${srcRef.name}_KeyCodecHost"
+          val hostFqn   = s"${srcRef.pkg.parts.mkString(".")}.$hostName"
+          // Stringy allowlist (PR-I-D06 pattern guidance: only the language's allowlist; no dead alternatives).
+          // Both the FQN form (`Swift.String`) and the bare identifier (`String`) are accepted because
+          // Swift code idiomatically references the type either way.
+          val isStringy = decl == "Swift.String" || decl == "String"
+          val defaultImpl = if (isStringy) {
+            q"""private struct DefaultImpl: $codecName {
+               |  func encodeKey(_ value: ${name.asDeclName}) -> $swString { return value }
+               |  func decodeKey(_ s: $swString) throws -> ${name.asDeclName} { return s }
+               |}""".stripMargin
+          } else {
+            q"""private struct DefaultImpl: $codecName {
+               |  func encodeKey(_ value: ${name.asDeclName}) -> $swString {
+               |    fatalError(\"$hostFqn is not registered; call $hostFqn.register(impl) at app boot.\")
+               |  }
+               |  func decodeKey(_ s: $swString) throws -> ${name.asDeclName} {
+               |    throw $baboonCodecException.decoderFailure(\"$hostFqn is not registered; call $hostFqn.register(impl) at app boot.\", nil)
+               |  }
+               |}""".stripMargin
+          }
+          q"""public protocol $codecName {
+             |  func encodeKey(_ value: ${name.asDeclName}) -> $swString
+             |  func decodeKey(_ s: $swString) throws -> ${name.asDeclName}
+             |}
+             |
+             |public enum $hostName {
+             |  nonisolated(unsafe) private static var _instance: $codecName = DefaultImpl()
+             |  public static func register(_ impl: $codecName) { _instance = impl }
+             |  public static var instance: $codecName { _instance }
+             |
+             |  ${defaultImpl.shift(2).trim}
+             |}""".stripMargin
+      }
     }
 
     private def renderDto(
