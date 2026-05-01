@@ -47,8 +47,8 @@ Detail in `docs/drafts/20260501-1009-m24-latents-closeout-plan.md`. 10 PRs acros
 - [x] **PR-E** (`60df7ab` + rename fix `eafdf74`) — `AdtInheritanceExpander` multi-`^` clarifying comment + test. Closes PR-63-D04.
 
 **Phase 2 — serial:**
-- [ ] **PR-F** — Cross-backend malformed-key error consistency (uniform `BaboonCodecException` across 8 backends). Closes PR-60-D07.
-- [ ] **PR-G** — TS direct-builtin tuple-array unification with wrapper string-keyed-object form. Closes PR-60-D08.
+- [x] **PR-F** (`fe618af`) — Cross-backend malformed-key error consistency (uniform `BaboonCodecException` across 9 backends + 9 negative-path tests). Closes PR-60-D07.
+- [~] **PR-G** — TS direct-builtin tuple-array unification with wrapper string-keyed-object form. Closes PR-60-D08.
 - [ ] **PR-H** — Rust conv-test `lib.rs` auto-routing via emitted `generated/mod.rs`. Closes M23-deferred Rust conv-test hand-curation latent.
 
 **Phase 3 — policy-gated serial:**
@@ -352,6 +352,19 @@ My recommendation is **(a)**: one big PR, mechanical, everything stays consisten
 ---
 
 ## Completed
+
+- **PR-F** (2026-05-01, M24 Phase 2.1, `fe618af`) — Cross-backend malformed map-key error consistency. Closes PR-60-D07. **What shipped:** uniform typed throw + message `"malformed key: <repr>"` across 9 backends, replacing 8 different mechanisms (silent `.toOption` discard, `fatalError`, unchecked casts, `unwrap()`, `ClassCastException`, `KeyError`, etc.). Per-backend (file:line shape):
+  - Scala 4 `.toOption` arms (`ScJsonCodecGenerator.scala:460,481,486,493`) → Right/Left match throwing `BaboonCodecException.DecoderFailure`.
+  - Kotlin (`KtJsonCodecGenerator.scala:379`) — unchecked `as Either.Right` cast → `when` expression.
+  - Java (`JvJsonCodecGenerator.scala:432`) — unchecked cast → `Supplier`-IIFE with `instanceof` pattern.
+  - C# (`CSJsonCodecGenerator.scala:422`) — unchecked cast → switch expression.
+  - Rust (`RsDefnTranslator.scala:713`) — `serde::de::Error::custom` map_err format-wrapped with `"malformed key: "` prefix.
+  - TypeScript (`TsJsonCodecGenerator.scala:291`) — `as unknown as { tag: "Right" }` cast → IIFE with tag check + `BaboonDecoderFailure`.
+  - Python (`PyJsonCodecGenerator.scala:292`) — naked `.value` → lambda + `isinstance(BaboonRight)` + generator-throw. (Walrus alternative blocked by Python conditional-expr eager evaluation; first attempt also tripped on dunder-prefix name mangling — final shape: single-call lambda binding the parse result once.)
+  - Dart (`DtJsonCodecGenerator.scala:392`) — `as BaboonRight` cast → `switch` expression.
+  - Swift (`SwJsonCodecGenerator.scala:387,397,402`) — three arms (Enum forced unwrap, Foreign-Custom `as!`, id `fatalError`) → throwing closure with `mayThrow=true`. PR-B's `keyThr || valThr` propagator wires the outer `try`. Scope decision: user-type arms only (id + Foreign-Custom + Enum); builtin-primitive parse arms (`Integer.parseInt` etc.) deliberately untouched — deferred follow-up. **One negative-path test per backend** (9 new files under `test/{sc,kt,jv,cs,rs,ts,py,dt,sw}-stub/`): each constructs JSON with a malformed `ItemId`-shaped map key, asserts the typed exception is thrown with message containing `"malformed key"`. **Adversarial review (1 round, 7 defects logged, 0 blockers):** PR-F-D01 Python test caught parent class — FIXED by adding `assertIn("DecoderFailure:", ...)` (Python runtime defines DecoderFailure as static factory, not subclass). PR-F-D02 Rust test missed variant pinning — FIXED with `matches!(err.classify(), Category::Data)` + `starts_with("malformed key: ")`. PR-F-D03 Scala throws across `Either[Throwable, T]` channel — note-only design tradeoff (Circe `KeyDecoder.instance(s => Option[T])` admits no Left propagation; cross-language consistency prioritized). PR-F-D04 cross-compat suite not exercised initially — addressed by post-implementation run (10/10 PASS). PR-F-D05/D06/D07 nits acceptable as-is (Java Supplier vs switch-expression; Python lambda vs explicit helper; tasks.md commit hygiene). **Verification:** `mdl --seq :build :test-gen-regular-adt :test-{cs,scala,rust,typescript,kotlin,kotlin-kmp,java,dart,swift,python}-regular` 13/13 PASS (499.5s). `mdl --seq :build :test-gen-compat-{cs,scala,rust,typescript,kotlin,kotlin-kmp,java,dart,swift}` 10/10 PASS — wire format invariance confirmed across all backends. Notes:
+  - **Python `BaboonCodecException.DecoderFailure` factory pattern** — runtime design predates PR-F; refactor to real subclass would mirror C#/Dart/Swift/Java/Kotlin shape but is out-of-scope for PR-F.
+  - **Builtin-primitive arms wrap deferred** — `Integer.parseInt` / `Float.parse` / `Int8(...)!` continue to surface native parse exceptions. If hosts request unified wrapping, follow-up PR.
 
 - **PR-A through PR-E + round-2 + PR-E rename** (2026-05-01, M24 Phase 1) — Closes 5 deferred latents from M23 in worktree-isolated parallel execution. **What shipped:**
   - **PR-A** (`6ad98ca`) — `RsDefnTranslator.scala`: added `Typedef.Foreign` and `Typedef.Enum` arms to `isUserMapKeyEligibleDto` (lines 903-921) and extended `peelWrapperChain` with foreign-leaf and enum-leaf cases (lines 932-954). New `test/rs-stub/tests/foreign_map_key_round_trip.rs` covers wrapper-around-foreign round-trip (mirrors PR-66 Scala). Closes PR-65-D01.

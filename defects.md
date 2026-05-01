@@ -2364,3 +2364,53 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Status:** resolved (false alarm — fixture confirmed minimal)
 **Severity:** nit
 **Description:** Reviewer challenged whether the fixture strictly requires multiple `^` arms to disambiguate union-of-targets from pairwise. Analysis: a "first-arm-only" semantics would yield `{X1}` (X1 in A; Y1 in B; Common in neither). That distinguishes from union-of-targets `{X1, Y1}`, so the fixture *does* require both arms. Fixture is minimal.
+
+---
+
+## PR-F (M24) — Cross-backend malformed map-key error consistency
+
+## [PR-F-D01] Python negative-path test catches parent class, not DecoderFailure
+**Status:** resolved
+**Severity:** minor
+**Location:** test/py-stub/BaboonTests/RuntimeTests/test_map_key_malformed.py:23
+**Description:** Initial test caught `BaboonCodecException` (the abstract parent) where every other backend's negative test catches the specific subclass. A regression that swallowed a true DecoderFailure and re-raised as a generic CodecNotFound containing "malformed key" would still satisfy. Root cause: Python runtime defines `DecoderFailure` as a `@staticmethod` factory, not a subclass — there is nothing to `assertRaises` against.
+**Fix:** Added second assertion `self.assertIn("DecoderFailure:", str(cm.exception))` to pin the factory tag in the exception message. Verified `mdl :test-python-regular` PASS.
+
+## [PR-F-D02] Rust negative-path test does not pin error category
+**Status:** resolved
+**Severity:** minor
+**Location:** test/rs-stub/tests/map_key_malformed_test.rs:17-22
+**Description:** Initial test asserted `result.expect_err()` and `msg.contains("malformed key")` — passes for any `serde_json::Error` whose Display contains "malformed key". Lacks variant pinning.
+**Fix:** Added `assert!(matches!(err.classify(), serde_json::error::Category::Data))` to pin the category and tightened substring assertion from `contains("malformed key")` to `starts_with("malformed key: ")` (probe-confirmed the message has no position-prefix prepended). Verified `mdl :test-rust-regular` PASS.
+
+## [PR-F-D03] Scala throw violates Either[Throwable, T] decode contract
+**Status:** resolved (note-only; documented design tradeoff)
+**Severity:** minor
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScJsonCodecGenerator.scala:460,481,486,493
+**Description:** Scala's `decode(ctx, wire): Either[Throwable, T]` channels other failures through `Left(throwable)`. PR-F throws across the `KeyDecoder.instance(s => Option[T])` closure boundary instead of routing through `Left`. Public `decode` signature lies — callers checking Right/Left will be surprised by an unhandled exception. Test had to use `intercept[...]` plus inner Right/Left match (double layering is itself evidence of channel mismatch).
+**Fix:** Documented as explicit cross-language design choice. Circe's `KeyDecoder.instance(s => Option[T])` admits no non-throwing failure mode that surfaces as a Left in `decodeJson` other than `None` — which would silently drop the entry, exactly the defect PR-F replaces. Cross-language consistency (every backend throws on malformed key) prioritized over local Scala discipline. Note-only; no code change.
+
+## [PR-F-D04] Cross-compat suite (`:test-gen-compat-*`) not exercised in initial verification
+**Status:** resolved
+**Severity:** nit
+**Location:** Headline verification command did not include cross-compat actions.
+**Description:** Error-text consistency is the stated PR-F goal. Wire format does not change but the cross-compat suite verifies positive-path agreement across emitters/decoders. PR-F touched the decode side of every backend.
+**Fix:** Ran `mdl --seq :build :test-gen-compat-{cs,scala,rust,typescript,kotlin,kotlin-kmp,java,dart,swift}` post-implementation — all 10 actions PASS. Wire format invariance confirmed.
+
+## [PR-F-D05] Java IIFE via Supplier is stylistic outlier vs switch expression
+**Status:** resolved (out-of-scope; style nit)
+**Severity:** nit
+**Description:** Java 21 `switch` expression with pattern matching would be more concise and exhaustiveness-checked. Chose Supplier-IIFE for template parity with Kotlin `when`. Not blocking.
+**Fix:** Acceptable as-is. Future Java codegen hygiene PR could unify on switch expressions.
+
+## [PR-F-D06] Python lambda IIFE non-idiomatic vs explicit helper
+**Status:** resolved (out-of-scope; style nit)
+**Severity:** nit
+**Description:** `(lambda __r: __r.value if isinstance(__r, BaboonRight) else (_ for _ in ()).throw(...))(parse_repr(ref))` is opaque. Generator-throw idiom is non-idiomatic Python. Reason: Python conditional expressions cannot raise statements directly.
+**Fix:** Acceptable as-is. Future Python codegen hygiene PR could emit a small module-level helper `_decode_id_map_key` and call it from each id-arm.
+
+## [PR-F-D07] tasks.md modified alongside compiler diff (commit hygiene)
+**Status:** resolved
+**Severity:** nit
+**Description:** Working tree had `tasks.md` modified alongside compiler changes. Commit hygiene: ledger should typically be staged separately or noted in commit body.
+**Fix:** PR-F commit body explains the bookkeeping change; tasks.md flip to `[x]` is in the Phase 2 closeout commit, not the PR-F implementation commit.
