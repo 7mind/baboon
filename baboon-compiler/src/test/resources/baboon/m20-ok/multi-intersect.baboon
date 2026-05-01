@@ -12,11 +12,13 @@ adt Y { data Y1 {} data Common {} }
 adt A { data X1 {} data Foo {} }
 adt B { data Y1 {} data Bar {} }
 
-// Result absorbs X∪Y = {X1, Common, Y1} as the candidate set, then intersects with
+// MiResult absorbs X∪Y = {X1, Common, Y1} as the candidate set, then intersects with
 // ⋃{A, B} = {X1, Foo, Y1, Bar}. Surviving branches: {X1, Y1}.
 // (If the compiler applied pairwise intersection (A∩B = {}) the result would be empty
 // and an EmptyAdt error would be emitted — which does NOT happen here.)
-root adt Result {
+// Named `MiResult` (not `Result`) to avoid shadowing Rust stdlib `Result<T, E>` in
+// generated code — same defect class as PR-64-D03 (chained-include rename).
+root adt MiResult {
   + X
   + Y
   ^ A
@@ -24,5 +26,5 @@ root adt Result {
 }
 
 root data Holder {
-  m: Result
+  m: MiResult
 }

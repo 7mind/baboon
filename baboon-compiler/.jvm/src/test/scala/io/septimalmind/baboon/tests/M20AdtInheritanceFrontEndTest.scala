@@ -185,7 +185,7 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
     }
 
     "multi-`^` arms compose by UNION of intersect targets, not pairwise intersection (PR-E / PR-63-D04)" in {
-      // Fixture: Result = (+ X + Y) ^ A ^ B
+      // Fixture: MiResult = (+ X + Y) ^ A ^ B
       //   candidate set after includes: X∪Y branch names = {X1, Common, Y1}
       //   intersectNames = ⋃{A,B} = {X1, Foo} ∪ {Y1, Bar} = {X1, Foo, Y1, Bar}
       //   afterIntersect = {X1, Y1}  (Common is filtered out — not in any intersect target)
@@ -198,7 +198,7 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
           outcome <- runPipeline(loader, paths)
         } yield {
           val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
-          val adt    = expectedAdt(family, "my.ok.m20.multi_intersect", "Result")
+          val adt    = expectedAdt(family, "my.ok.m20.multi_intersect", "MiResult")
           val branches = adt.members.toList.map(_.name.name).toSet
           // Union-of-targets: X1 (in A) and Y1 (in B) survive; Common (in neither A nor B) is filtered.
           assert(branches == Set("X1", "Y1"), s"expected {X1, Y1} from multi-^ union-of-targets, got $branches")
