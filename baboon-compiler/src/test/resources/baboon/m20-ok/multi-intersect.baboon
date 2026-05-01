@@ -1,0 +1,28 @@
+model my.ok.m20.multi_intersect
+
+version "1.0.0"
+
+// Source ADTs for include and intersect arms.
+adt X { data X1 {} data Common {} }
+adt Y { data Y1 {} data Common {} }
+
+// Intersect targets. A covers X1 (but not Y1). B covers Y1 (but not X1).
+// Pairwise intersection A∩B would yield {} (they are disjoint); union-of-targets
+// semantics (plan §3: `∩ ⋃ intersectSets`) yields {X1, Y1}.
+adt A { data X1 {} data Foo {} }
+adt B { data Y1 {} data Bar {} }
+
+// Result absorbs X∪Y = {X1, Common, Y1} as the candidate set, then intersects with
+// ⋃{A, B} = {X1, Foo, Y1, Bar}. Surviving branches: {X1, Y1}.
+// (If the compiler applied pairwise intersection (A∩B = {}) the result would be empty
+// and an EmptyAdt error would be emitted — which does NOT happen here.)
+root adt Result {
+  + X
+  + Y
+  ^ A
+  ^ B
+}
+
+root data Holder {
+  m: Result
+}
