@@ -325,6 +325,28 @@ final class IdentifierReprTests: XCTestCase {
         XCTAssertTrue(err.contains("leading sign"), "got: \(err)")
     }
 
+    // Spec §5.4 (PR-C): signed integer wire forms MUST NOT have a leading `+`.
+    func testPointIdParseReprRejectsLeadingPlusOnSignedInt() {
+        let bad = "PointId:1.0.0#x:+42:label:hello"
+        let parsed = PointIdCodec.parseRepr(bad)
+        guard case .left(let err) = parsed else {
+            XCTFail("Expected left")
+            return
+        }
+        XCTAssertTrue(err.contains("leading '+'"), "got: \(err)")
+    }
+
+    // Spec §5.4 (PR-C): i64 signed field must also reject leading `+`.
+    func testLongIdParseReprRejectsLeadingPlusOnI64() {
+        let bad = "LongId:1.0.0#x:+1"
+        let parsed = LongIdCodec.parseRepr(bad)
+        guard case .left(let err) = parsed else {
+            XCTFail("Expected left")
+            return
+        }
+        XCTAssertTrue(err.contains("leading '+'"), "got: \(err)")
+    }
+
     func testParseBytesHexRejectsUppercase() {
         let parsed = BaboonIdentifierRepr.parseBytesHex("AABB")
         guard case .left(let err) = parsed else {

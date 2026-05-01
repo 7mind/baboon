@@ -147,6 +147,14 @@ describe("IdentifierRepr — PointId (i32 + str)", () => {
         const r = pointIdCodec.parseRepr("PointId:1.0.0#x:1:label:hello:extra");
         expect(r.tag).toBe("Left");
     });
+
+    // Spec §5.4 (PR-C): signed integer wire forms MUST NOT have a leading `+`.
+    // TS regex `/^-?[0-9]+$/` already rejects `+` — this test locks it in.
+    test("rejects leading + on signed i32 (Spec §5.4)", () => {
+        const r = pointIdCodec.parseRepr("PointId:1.0.0#x:+42:label:hello");
+        expect(r.tag).toBe("Left");
+        if (r.tag === "Left") expect(r.value).toContain("could not parse signed integer");
+    });
 });
 
 describe("IdentifierRepr — LongId (i64)", () => {
@@ -168,6 +176,13 @@ describe("IdentifierRepr — LongId (i64)", () => {
         const r = longIdCodec.parseRepr(s);
         expect(r.tag).toBe("Right");
         if (r.tag === "Right") expect(r.value.x).toBe(9223372036854775807n);
+    });
+
+    // Spec §5.4 (PR-C): i64 signed field must also reject leading `+`.
+    test("rejects leading + on signed i64 (Spec §5.4)", () => {
+        const r = longIdCodec.parseRepr("LongId:1.0.0#x:+1");
+        expect(r.tag).toBe("Left");
+        if (r.tag === "Left") expect(r.value).toContain("could not parse i64");
     });
 });
 

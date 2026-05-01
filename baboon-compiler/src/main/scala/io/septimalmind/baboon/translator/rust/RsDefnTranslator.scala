@@ -392,6 +392,10 @@ object RsDefnTranslator {
                      |    return Err(format!("$typeName out of range for field $srcFieldName: {}", $rawVar));
                      |}""".stripMargin
               q"""let $rawVar = cursor.read_until_structural();
+                 |// Spec §5.4: signed integers must not carry a leading '+'.
+                 |if $rawVar.starts_with('+') {
+                 |    return Err(format!("signed integer must not have leading '+' for field $srcFieldName: {}", $rawVar));
+                 |}
                  |let v: i64 = $rawVar.parse::<i64>()
                  |    .map_err(|_| format!("could not parse signed integer for field $srcFieldName: {}", $rawVar))?;
                  |${rangeBlock}

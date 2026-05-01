@@ -292,6 +292,22 @@ fn uints_parse_repr_rejects_leading_plus() {
     assert!(err.contains("leading sign"), "got: {}", err);
 }
 
+// Spec §5.4 (PR-C): signed integer wire forms MUST NOT have a leading `+`.
+#[test]
+fn point_id_parse_repr_rejects_leading_plus_on_signed_int() {
+    let bad = "PointId:1.0.0#x:+42:label:hello";
+    let err = point_id_mod::point_id_repr_codec::parse_repr(bad).expect_err("expected parse error");
+    assert!(err.contains("leading '+'"), "got: {}", err);
+}
+
+// Spec §5.4 (PR-C): i64 signed field must also reject leading `+`.
+#[test]
+fn long_id_parse_repr_rejects_leading_plus_on_i64() {
+    let bad = "LongId:1.0.0#x:+1";
+    let err = long_id_mod::long_id_repr_codec::parse_repr(bad).expect_err("expected parse error");
+    assert!(err.contains("leading '+'"), "got: {}", err);
+}
+
 #[test]
 fn parse_bytes_hex_rejects_uppercase() {
     let err =

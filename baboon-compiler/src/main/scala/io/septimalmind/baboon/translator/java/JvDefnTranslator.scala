@@ -742,6 +742,10 @@ object JvDefnTranslator {
               val cast       = signedNarrow(f.tpe)
               q"""String $rawVar = cursor.readUntilStructural();
                  |$tpe $valVar;
+                 |// Spec §5.4: signed integers must not carry a leading '+'.
+                 |if (!$rawVar.isEmpty() && $rawVar.charAt(0) == '+') {
+                 |  return $baboonEither.left("signed integer must not have leading '+' for field $srcFieldName: " + $rawVar);
+                 |}
                  |try {
                  |  long v = Long.parseLong($rawVar);
                  |  if (!($rangeCheck)) {

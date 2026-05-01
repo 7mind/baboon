@@ -186,6 +186,24 @@ void main() {
       }
     });
 
+    // Spec §5.4 (PR-C): signed integer wire forms MUST NOT have a leading `+`.
+    test('rejects leading + on signed i32 (PointId)', () {
+      final r = PointIdCodec.parseRepr('PointId:1.0.0#x:+42:label:hello');
+      expect(r is BaboonLeft, true);
+      if (r is BaboonLeft<String, PointId>) {
+        expect(r.value.contains("leading '+'"), true);
+      }
+    });
+
+    // Spec §5.4 (PR-C): i64 signed field must also reject leading `+`.
+    test('rejects leading + on signed i64 (LongId)', () {
+      final r = LongIdCodec.parseRepr('LongId:1.0.0#x:+1');
+      expect(r is BaboonLeft, true);
+      if (r is BaboonLeft<String, LongId>) {
+        expect(r.value.contains("leading '+'"), true);
+      }
+    });
+
     test('rejects out-of-range u08', () {
       final r = UIntsCodec.parseRepr('UInts:1.0.0#a:256:b:0:c:0:d:0');
       expect(r is BaboonLeft, true);

@@ -618,6 +618,9 @@ object PyDefnTranslator {
               val parsedVar  = s"${srcFieldName}_n"
               val rangeCheck = signedRangeCheckPy(f.tpe, parsedVar)
               q"""$rawVar = cursor.read_until_structural()
+                 |# Spec §5.4: signed integers must not carry a leading '+'.
+                 |if $rawVar and $rawVar[0] == '+':
+                 |    return $baboonLeftType(f"signed integer must not have leading '+' for field $srcFieldName: {$rawVar}")
                  |try:
                  |    $parsedVar = int($rawVar)
                  |except ValueError:
@@ -629,6 +632,9 @@ object PyDefnTranslator {
               // Python ints are arbitrary precision. i64 range check elided per
               // PR-57a-D01 carryover (no dead `if not (always-true)` block).
               q"""$rawVar = cursor.read_until_structural()
+                 |# Spec §5.4: signed integers must not carry a leading '+'.
+                 |if $rawVar and $rawVar[0] == '+':
+                 |    return $baboonLeftType(f"signed integer must not have leading '+' for field $srcFieldName: {$rawVar}")
                  |try:
                  |    $valVar = int($rawVar)
                  |except ValueError:
