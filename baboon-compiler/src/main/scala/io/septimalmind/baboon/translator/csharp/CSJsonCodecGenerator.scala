@@ -286,8 +286,17 @@ class CSJsonCodecGenerator(
                   f.bindings.get(BaboonLang.Cs) match {
                     case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                       encodeKey(aliasedRef, ref)
-                    case _ =>
-                      q"""${codecName(uid)}.Instance.Encode(ctx, $ref).ToString($nsFormatting.None)"""
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+                      // PR-I.1c (M24 Phase 3.1): Custom-foreign map keys route through
+                      // the emitted `<Foreign>_KeyCodecHost.Instance` extension hook.
+                      // `.asDerived` is mandatory: it tells `isUpgradeable` to resolve
+                      // higher twins via `asCsTypeKeepForeigns` (preserving the user's
+                      // package), not via `asCsType` (which would deref to e.g. `System`).
+                      val srcRef  = trans.asCsTypeKeepForeigns(uid, domain, evo)
+                      val hostTpe = CSValue.CSType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost", srcRef.fq, CSTypeOrigin(uid, domain).asDerived)
+                      q"$hostTpe.Instance.EncodeKey($ref)"
+                    case None =>
+                      throw new RuntimeException(s"BUG: Foreign type $uid has no C# binding")
                   }
                 // M19/PR-60: id types — emit canonical ToString (single- or multi-field).
                 case d: Typedef.Dto if d.isIdentifier =>
@@ -412,8 +421,18 @@ class CSJsonCodecGenerator(
                   f.bindings.get(BaboonLang.Cs) match {
                     case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                       decodeKey(aliasedRef, ref)
-                    case _ =>
-                      q"""${codecName(uid)}.Instance.Decode(ctx, new $nsJValue($ref!))"""
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+                      // PR-I.1c (M24 Phase 3.1): Custom-foreign map keys route through
+                      // the emitted `<Foreign>_KeyCodecHost.Instance` extension hook.
+                      // catch (Exception e) — NOT broader (PR-I-D01 pattern guidance):
+                      // narrower than Throwable-equivalents would still propagate Errors.
+                      // `.asDerived` is mandatory (see encoder note above).
+                      val srcRef   = trans.asCsTypeKeepForeigns(uid, domain, evo)
+                      val derefTpe = trans.asCsType(uid, domain, evo)
+                      val hostTpe  = CSValue.CSType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost", srcRef.fq, CSTypeOrigin(uid, domain).asDerived)
+                      q"""((System.Func<$derefTpe>)(() => { try { return $hostTpe.Instance.DecodeKey($ref); } catch (Exception e) { throw new $baboonCodecException.DecoderFailure("malformed key: " + $ref, e); } }))()"""
+                    case None =>
+                      throw new RuntimeException(s"BUG: Foreign type $uid has no C# binding")
                   }
                 // M19/PR-60: id types — call ParseRepr and unwrap Right.
                 // PR-F (M24): throw BaboonCodecException.DecoderFailure on Left for

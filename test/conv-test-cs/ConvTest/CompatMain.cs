@@ -5,6 +5,10 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Convtest.Testpkg;
+// PR-I.1c (M24 Phase 3.1) — Custom-foreign KeyCodec hook fixture. Stringy
+// foreign FStr maps to System.String; the default identity FStr_KeyCodec
+// impl handles encode/decode of map keys without host registration.
+using Convtest.M24foreign;
 using Baboon.Runtime.Shared;
 using Baboon.Time;
 using Newtonsoft.Json;
@@ -79,8 +83,33 @@ namespace ConvTest
             WriteJsonAny(facadeCtx, sampleAny, csJsonDir);
             WriteUebaAny(facadeCtx, sampleAny, csUebaDir);
             WritePointIdRepr(sampleData.VPointId, csReprDir);
+            WriteForeignKeyHolderJson(ctx, CreateForeignKeyHolderSample(), csJsonDir);
 
             Console.WriteLine("C# serialization complete!");
+        }
+
+        // PR-I.1c (M24 Phase 3.1) — Custom-foreign KeyCodec hook canonical fixture.
+        // The map keys go through FStr_KeyCodec (default identity impl for the stringy
+        // foreign), so the wire form is `{"m":{"alpha":"v1","beta":"v2"}}`.
+        private static ForeignKeyHolder CreateForeignKeyHolderSample()
+        {
+            var m = new Dictionary<ItemKey, String>
+            {
+                { new ItemKey("alpha"), "v1" },
+                { new ItemKey("beta"), "v2" },
+            };
+            return new ForeignKeyHolder(m.ToImmutableDictionary());
+        }
+
+        private static void WriteForeignKeyHolderJson(BaboonCodecContext ctx, ForeignKeyHolder data, string outputDir)
+        {
+            var json = ForeignKeyHolder_JsonCodec.Instance.Encode(ctx, data);
+            // Compact (no Indented) so the byte-identity assertion against the canonical
+            // wire form `{"m":{"alpha":"v1","beta":"v2"}}` matches across backends.
+            var jsonStr = JsonConvert.SerializeObject(json, Formatting.None);
+            var path = Path.Combine(outputDir, "m24-foreign-keycodec.json");
+            File.WriteAllText(path, jsonStr, new UTF8Encoding(false));
+            Console.WriteLine($"Written JSON to {path}");
         }
 
         private static void WriteJson(BaboonCodecContext ctx, AllBasicTypes data, string outputDir)
@@ -446,8 +475,8 @@ namespace ConvTest
             var f = new BaboonCodecsFacade();
             f.Register(
                 new BaboonDomainVersion(DomainId, DomainVer),
-                () => BaboonCodecsJson.Instance,
-                () => BaboonCodecsUeba.Instance);
+                () => Convtest.Testpkg.BaboonCodecsJson.Instance,
+                () => Convtest.Testpkg.BaboonCodecsUeba.Instance);
             return f;
         }
 

@@ -428,7 +428,7 @@ object CSDefnTranslator {
             regs.toList.flatten,
           )
 
-        case _: Typedef.Foreign => DefnRepr(q"", List.empty)
+        case f: Typedef.Foreign => DefnRepr(makeForeignKeyCodecRepr(f, name), List.empty)
 
         case service: Typedef.Service =>
           val resolved    = ServiceResultResolver.resolve(domain, "cs", target.language.serviceResult, target.language.pragmas)
@@ -464,6 +464,58 @@ object CSDefnTranslator {
                |}""".stripMargin,
             List.empty,
           )
+      }
+    }
+
+    /** PR-I.1c (M24 Phase 3.1): emit a `<Foreign>_KeyCodec` extension hook for
+      * every Custom-mapped C# foreign declaration. The host application
+      * registers an implementation at boot which the JSON codec then uses to
+      * encode/decode map keys. For BaboonRef-mapped foreigns we emit nothing —
+      * the existing recursion into the aliased type covers the codec needs.
+      *
+      * Stringy foreigns (`string` / `System.String`) get a default identity
+      * impl so the common case works out of the box. Non-stringy foreigns get
+      * a stub default that throws BaboonCodecException.DecoderFailure with an
+      * FQN-bearing diagnostic referring to the Host class (PR-I.1b-D01).
+      *
+      * C# allows multiple top-level types per file, so the interface and the
+      * host class are emitted side-by-side in a single tree, sharing the
+      * existing namespace wrapper from `makeFullRepr`.
+      */
+    private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: CSValue.CSType): TextTree[CSValue] = {
+      f.bindings.get(BaboonLang.Cs) match {
+        case None                                                                  => q""
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef))    => q""
+        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+          val srcRef    = trans.asCsTypeKeepForeigns(f.id, domain, evo)
+          val codecName = s"${srcRef.name}_KeyCodec"
+          val hostName  = s"${srcRef.name}_KeyCodecHost"
+          val codecFqn  = s"${srcRef.pkg.parts.mkString(".")}.$hostName"
+          // Stringy allowlist (PR-I-D06 pattern guidance: only the language's allowlist; no dead alternatives).
+          val isStringy = decl == "string" || decl == "System.String"
+          val defaultImpl = if (isStringy) {
+            q"""private class DefaultImpl : $codecName {
+               |    public $csString EncodeKey($name value) => value;
+               |    public $name DecodeKey($csString s) => s;
+               |}""".stripMargin
+          } else {
+            q"""private class DefaultImpl : $codecName {
+               |    public $csString EncodeKey($name value) => throw new $baboonCodecException.DecoderFailure(\"$codecFqn is not registered; call $codecFqn.Register(impl) at app boot.\");
+               |    public $name DecodeKey($csString s) => throw new $baboonCodecException.DecoderFailure(\"$codecFqn is not registered; call $codecFqn.Register(impl) at app boot.\");
+               |}""".stripMargin
+          }
+          q"""public interface $codecName {
+             |    $csString EncodeKey($name value);
+             |    $name DecodeKey($csString s);
+             |}
+             |
+             |public static class $hostName {
+             |    private static volatile $codecName _instance = new DefaultImpl();
+             |    public static void Register($codecName impl) { _instance = impl; }
+             |    public static $codecName Instance => _instance;
+             |
+             |    ${defaultImpl.shift(4).trim}
+             |}""".stripMargin
       }
     }
 
