@@ -2656,3 +2656,27 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Severity:** nit
 **Description:** Dart still emits `FStr_JsonCodec` whose `encode/decode` throw `ArgumentError('String is a foreign type')`. TS cleanly omits this class. If a domain author exposes FStr in non-key value position, Dart will throw at codec-time while TS will not. Pre-existing asymmetry, not regression.
 **Fix:** Acceptable. Cross-backend Dart hygiene PR could unify with TS approach.
+
+---
+
+## PR-I.2 (M24) — Swift + Python Custom-foreign KeyCodec hook
+
+## [PR-I.2-D01] Python decoder omitted "malformed key:" prefix on host-thrown exceptions
+**Status:** resolved
+**Severity:** minor
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/python/PyJsonCodecGenerator.scala (Foreign-Custom decoder branch)
+**Description:** Initial PR-I.2 emitted bare `host.instance().decode_key($ref)` for Python — when user-supplied `decode_key` raises `ValueError` or any non-`DecoderFailure`, it propagated as the original exception type, diverging from cross-backend contract that PR-F established (`BaboonCodecException.DecoderFailure("malformed key: <repr>", cause)`). Even when user raises `DecoderFailure("custom diagnostic")`, message lacks `"malformed key:"` prefix.
+**Fix:** Added per-codec helper method `_try_decode_key(self, fn, raw_repr)` (Python expressions cannot contain try/except so the wrap is factored into a class method). Call site updated to `self._try_decode_key(lambda: host.instance().decode_key(ref), ref)`. Helper catches `except Exception` (not `BaseException`) per PR-I-D01 guidance, raises `BaboonCodecException.DecoderFailure(f"malformed key: {raw_repr}") from e`. Predicate `hasCustomForeignMapKey` (with recursion through single-field wrappers via `keyTypeNeedsCustomForeignWrap`) gates helper emission. Verified `mdl :test-python-regular` + `:test-gen-compat-python` PASS.
+
+## [PR-I.2-D02] Swift hasForeignType filter lift attempted then reverted
+**Status:** resolved (deferred — out of scope for keycodec hook)
+**Severity:** minor
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/swift/SwCodecFixtureTranslator.scala:38,58 + SwCodecTestsTranslator.scala:44
+**Description:** PR-68-D02 (M23 deferred) expected PR-I to lift `hasForeignType` filters in Swift fixture/test emitters. Lift attempted; reverted because `genScalar` at SwCodecFixtureTranslator:227 calls `${fixtureType}.random(rnd)` for User-typed scalars and `Typedef.Foreign => None` in `defnFixtureId` means no FStrFixture exists. Properly lifting requires teaching `genScalar` to deref Foreign user types into underlying scalar fixtures (e.g. `rnd.nextString()` for stringy `Swift.String`-mapped foreigns).
+**Fix:** Deferred. Out of scope for keycodec-hook PR. Existing in-band coverage (compat-main + new `M24ForeignKeyCodecTests` cross-language test) covers meaningful round-trip behavior. Future Swift fixture-emitter hygiene PR can complete.
+
+## [PR-I.2-N01] Swift nonisolated(unsafe) on _instance lacks contractual comment
+**Status:** resolved (note-only)
+**Severity:** nit
+**Description:** Emitted `KeyCodecHost` enum uses `nonisolated(unsafe) private static var _instance` to suppress Swift 6 strict-concurrency warning. `register` racing on it is undefined behavior at runtime; same pattern exists in PR-I.1a/b/c/d hosts. Comment doesn't acknowledge boot-time-only invocation contract.
+**Fix:** Acceptable. Documentation is consistent (or absent) across all 9 backends; future hygiene could add a uniform contract comment.

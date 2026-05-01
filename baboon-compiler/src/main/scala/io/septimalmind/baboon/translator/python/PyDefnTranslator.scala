@@ -404,9 +404,73 @@ object PyDefnTranslator {
                 |""".stripMargin,
             List.empty,
           )
-        case _: Typedef.Foreign => PyDefnRepr(q"", List.empty)
+        case f: Typedef.Foreign => makeForeignKeyCodecRepr(f)
       }
 
+    }
+
+    /** PR-I.2 (M24 Phase 3.2) — emit a `<Foreign>_KeyCodec` extension hook for
+      * every Custom-mapped Python foreign declaration. The host application
+      * registers an implementation at boot which the JSON codec then uses to
+      * encode/decode map keys. For BaboonRef-mapped foreigns we emit nothing —
+      * the existing recursion into the aliased type covers the codec needs.
+      *
+      * Stringy foreigns (`builtins.str` / `str`) get a default identity impl so
+      * the common case works out of the box. Non-stringy foreigns get a stub
+      * default that raises `BaboonCodecException.DecoderFailure` with an
+      * FQN-bearing diagnostic referring to the Host class (PR-I.1b-D01 lesson).
+      */
+    private def makeForeignKeyCodecRepr(f: Typedef.Foreign): PyDefnRepr = {
+      f.bindings.get(BaboonLang.Py) match {
+        case None                                                                  => PyDefnRepr(q"", List.empty)
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef))    => PyDefnRepr(q"", List.empty)
+        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+          // Names: the user-facing identifier (e.g. "FStr") is taken from the keep-foreigns
+          // accessor; the runtime Python type is the deref'd `pyRef` (e.g. `str` for `builtins.str`).
+          // Foreign types are not emitted as Python typealiases (see line 90+ of mkRepr — pre-PR
+          // emitted q"" for Foreign), so the user-facing name "FStr" doesn't exist as a Python
+          // identifier. Methods accept/return the runtime Python type directly.
+          val srcRef          = typeTranslator.asPyTypeKeepForeigns(f.id, domain, evolution, fileTools.definitionsBasePkg)
+          val pyRef           = typeTranslator.asPyType(f.id, domain, evolution, fileTools.definitionsBasePkg)
+          val codecName       = s"${srcRef.name}_KeyCodec"
+          val hostName        = s"${srcRef.name}_KeyCodecHost"
+          val hostFqn         = s"${srcRef.moduleId.path.toList.mkString(".")}.$hostName"
+          val instanceVar     = s"_${codecName}_instance"
+          val defaultImplName = s"_Default${codecName}"
+          // Stringy allowlist (PR-I-D06 pattern guidance: only the language's allowlist; no dead alternatives).
+          val isStringy = decl == "builtins.str" || decl == "str"
+          val defaultImpl = if (isStringy) {
+            q"""class $defaultImplName:
+               |    def encode_key(self, value: $pyRef) -> $pyStr:
+               |        return value
+               |    def decode_key(self, s: $pyStr) -> $pyRef:
+               |        return s""".stripMargin
+          } else {
+            q"""class $defaultImplName:
+               |    def encode_key(self, value: $pyRef) -> $pyStr:
+               |        raise $baboonCodecException.DecoderFailure(f"$hostFqn is not registered; call $hostFqn.register(impl) at app boot.")
+               |    def decode_key(self, s: $pyStr) -> $pyRef:
+               |        raise $baboonCodecException.DecoderFailure(f"$hostFqn is not registered; call $hostFqn.register(impl) at app boot.")""".stripMargin
+          }
+          val tree =
+            q"""class $codecName($pyProtocol):
+               |    def encode_key(self, value: $pyRef) -> $pyStr: ...
+               |    def decode_key(self, s: $pyStr) -> $pyRef: ...
+               |
+               |$defaultImpl
+               |
+               |$instanceVar: $codecName = $defaultImplName()
+               |
+               |class $hostName:
+               |    @$pyStaticMethod
+               |    def register(impl: $codecName) -> None:
+               |        global $instanceVar
+               |        $instanceVar = impl
+               |    @$pyStaticMethod
+               |    def instance() -> $codecName:
+               |        return $instanceVar""".stripMargin
+          PyDefnRepr(tree, List.empty)
+      }
     }
 
     private def genDtoFields(dtoFields: List[Field], contractsFields: Set[Field]): List[TextTree[PyValue]] = {

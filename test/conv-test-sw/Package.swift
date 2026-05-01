@@ -22,14 +22,25 @@ let package = Package(
                 .unsafeFlags(["-enable-testing"])
             ]
         ),
+        // PR-I.2 (M24 Phase 3.2) — convtest.m24foreign (custom-foreign KeyCodec hook
+        // canonical fixture). Stringy `FStr` foreign + ItemKey wrapper +
+        // ForeignKeyHolder map[ItemKey, str] root.
+        .target(
+            name: "ConvtestM24foreign",
+            dependencies: ["BaboonRuntime"],
+            path: "Generated/ConvtestM24foreign",
+            swiftSettings: [
+                .unsafeFlags(["-enable-testing"])
+            ]
+        ),
         .executableTarget(
             name: "CompatMain",
-            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0"],
+            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0", "ConvtestM24foreign"],
             path: "Sources/CompatMain"
         ),
         .testTarget(
             name: "CrossLanguageTests",
-            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0"],
+            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0", "ConvtestM24foreign"],
             path: "Tests/CrossLanguageTests"
         ),
     ]

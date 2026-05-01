@@ -17,6 +17,11 @@ from Generated.convtest.testpkg.WireEnum import WireEnum
 from Generated.convtest.testpkg.PointId import PointId
 from Generated.convtest.testpkg.ItemId import ItemId
 from Generated.convtest.testpkg.CompositeId import CompositeId
+# PR-I.2 (M24 Phase 3.2) — Custom-foreign KeyCodec hook fixture. Stringy
+# FStr foreign + ItemKey wrapper + ForeignKeyHolder round-trip exercises the
+# generated FStr_KeyCodecHost identity default impl.
+from Generated.convtest.m24foreign.ForeignKeyHolder import ForeignKeyHolder, ForeignKeyHolder_JsonCodec
+from Generated.convtest.m24foreign.ItemKey import ItemKey
 
 DOMAIN_ID = "convtest.testpkg"
 DOMAIN_VER = "2.0.0"
@@ -347,6 +352,24 @@ def write_point_id_repr(pid, output_dir):
     print(f"Written repr to {p}")
 
 
+# PR-I.2 (M24 Phase 3.2) — Custom-foreign KeyCodec hook canonical fixture.
+# Map keys go through FStr_KeyCodecHost (default identity impl for the stringy
+# foreign), so the wire form is `{"m":{"alpha":"v1","beta":"v2"}}`.
+def create_foreign_key_holder_sample() -> ForeignKeyHolder:
+    return ForeignKeyHolder(m={
+        ItemKey(v="alpha"): "v1",
+        ItemKey(v="beta"): "v2",
+    })
+
+
+def write_foreign_key_holder_json(ctx, data, output_dir):
+    json_str = ForeignKeyHolder_JsonCodec.instance().encode(ctx, data)
+    p = Path(output_dir) / "m24-foreign-keycodec.json"
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(json_str)
+    print(f"Written JSON to {p}")
+
+
 def run_legacy():
     sample_data = create_sample_data()
     ctx = BaboonCodecContext.default()
@@ -365,6 +388,7 @@ def run_legacy():
     write_json_any(ctx, create_sample_any_showcase_json(), str(json_dir))
     write_ueba_any(ctx, create_sample_any_showcase_ueba(), str(ueba_dir))
     write_point_id_repr(sample_data.vPointId, str(repr_dir))
+    write_foreign_key_holder_json(ctx, create_foreign_key_holder_sample(), str(json_dir))
 
     print("Python serialization complete!")
 
@@ -380,6 +404,7 @@ if __name__ == "__main__":
         if fmt == "json":
             write_json(ctx, sample_data, output_dir)
             write_json_any(ctx, create_sample_any_showcase_json(), output_dir)
+            write_foreign_key_holder_json(ctx, create_foreign_key_holder_sample(), output_dir)
         elif fmt == "ueba":
             write_ueba(ctx, sample_data, output_dir)
             write_ueba_any(ctx, create_sample_any_showcase_ueba(), output_dir)

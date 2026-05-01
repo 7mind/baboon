@@ -220,8 +220,24 @@ class SwJsonCodecGenerator(
           domain.defs.meta.nodes(uid) match {
             case u: DomainMember.User =>
               u.defn match {
-                case _: Typedef.Enum    => q"$ref.rawValue"
-                case _: Typedef.Foreign => q"String(describing: $ref)"
+                case _: Typedef.Enum => q"$ref.rawValue"
+                case f: Typedef.Foreign =>
+                  // PR-I.2 (M24 Phase 3.2): Custom-foreign map keys route through
+                  // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
+                  // BaboonRef-mapped foreigns recurse into the aliased type at the
+                  // call site (mkEncoder/decodeKey on a TypeRef.Scalar of TypeId.User
+                  // resolves the alias before reaching this match), so they never
+                  // surface here. Explicit Custom match (PR-I-D05 pattern guidance).
+                  f.bindings.get(BaboonLang.Swift) match {
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                      encodeKey(aliasedRef, ref)
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+                      val srcRef = trans.toSwTypeRefKeepForeigns(uid, domain, evo)
+                      val host   = SwValue.SwType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost")
+                      q"$host.instance.encodeKey($ref)"
+                    case None =>
+                      throw new RuntimeException(s"BUG: Foreign type $uid has no Swift binding")
+                  }
                 // M19/PR-60: id types — emit canonical description (single- or multi-field).
                 case d: Typedef.Dto if d.isIdentifier =>
                   q"$ref.description"
@@ -387,14 +403,22 @@ class SwJsonCodecGenerator(
                       // for cross-language malformed-key consistency (replaces forced unwrap).
                       val targetTpe = trans.toSwTypeRefKeepForeigns(u, domain, evo)
                       (q"""{ () throws -> $targetTpe in guard let __r = $targetTpe.parse($ref) else { throw $baboonCodecException.decoderFailure(\"malformed key: \\($ref)\", nil) }; return __r }()""", true)
-                    case _: Typedef.Foreign =>
-                      // JSON map keys are always strings. For Custom-foreign types that are
-                      // Swift typealiases (e.g. `typealias FStr = String`), the encoded key
-                      // value IS the string; we recover it via a conditional cast and
-                      // throw BaboonCodecException.decoderFailure when the cast fails so
-                      // behaviour is uniform across backends (PR-F / M24).
-                      val foreignTpe = trans.toSwTypeRefKeepForeigns(u, domain, evo)
-                      (q"""{ () throws -> $foreignTpe in guard let __r = $ref as? $foreignTpe else { throw $baboonCodecException.decoderFailure(\"malformed key: \\($ref)\", nil) }; return __r }()""", true)
+                    case f: Typedef.Foreign =>
+                      // PR-I.2 (M24 Phase 3.2): Custom-foreign map keys route through
+                      // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
+                      // mayThrow=true — PR-B plumbing wraps the outer `try` based on
+                      // (keyThr || valThr). `catch let e` (NOT broader) keeps fail-fast on
+                      // fatal/control errors (PR-I-D01 pattern guidance).
+                      f.bindings.get(BaboonLang.Swift) match {
+                        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
+                          decodeKey(aliasedRef, ref)
+                        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+                          val foreignTpe = trans.toSwTypeRefKeepForeigns(u, domain, evo)
+                          val host       = SwValue.SwType(foreignTpe.pkg, s"${foreignTpe.name}_KeyCodecHost")
+                          (q"""{ () throws -> $foreignTpe in do { return try $host.instance.decodeKey($ref) } catch let e { throw $baboonCodecException.decoderFailure(\"malformed key: \\($ref)\", e) } }()""", true)
+                        case None =>
+                          throw new RuntimeException(s"BUG: Foreign type $u has no Swift binding")
+                      }
                     // M19/PR-60: id types — call parseRepr and unwrap .right.
                     // PR-F (M24): throw BaboonCodecException.decoderFailure on .left for
                     // cross-language malformed-key consistency (replaces fatalError).
