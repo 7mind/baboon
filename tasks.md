@@ -30,7 +30,32 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 - [x] **M18** — BAB-A01: identifier types (`id` keyword, parseable `<Name>:<ver>#fields:values:{nested}` repr, escaping scheme, free `id<->data` conversion when shape matches). **Sequenced first** per user — provides parser/repr machinery M19 depends on. Shipped via PR-54 (parser+typer flag), PR-55 (validator), PR-56 (spec doc + Scala reference), PR-57a-e (per-language fan-out across 10 backends + cross-language byte-identity), PR-58 (id↔data conversion verification).
 - [x] **M19** — BAB-A02: user-DTO + id types as JSON map keys. Shipped via PR-59 (validator + runtime codec + 18 fixtures), PR-60 (JSON map-key codec emission across 8 of 9 backends), PR-61 (cross-language compat fixture extension + Rust serde plumbing).
 - [x] **M20** — BAB-A03: ADT branch inheritance / cross-ADT branch reuse (`adt X { + ErrorAtom ... }` plus subtraction). Shipped via PR-62 (parser + raw AST), PR-63 (typer-early expansion + 3 new TyperIssue codes), PR-64 (cross-language verification + evolution test).
-- [x] **M23** — Backend stubs unblock + upstream-defects cleanup. Shipped via PR-65 (Rust serde generic-name hygiene + nested-wrapper-chain recursion), PR-66 (Scala JSON map-key Foreign-Custom encoder + decoder symmetry + enum-key fix), PR-67 (Kotlin `java.lang.*` JVM-alias rewrite for both JVM + KMP), PR-68 (Swift SPM per-module testTarget split + Swift JSON Foreign-map-key codegen fix + round-trip test), PR-69 (close out resolved upstream-defects items in `baboon-upstream-defects.md`). Phase 1: fix 5 PRE-EXISTING `:test-{lang}-regular` failures (Rust generic-name shadowing, Scala Foreign-Custom map-key encoding, Kotlin/KMP `java.lang.*` JVM-alias mapping, Swift SPM flat-target filename collision). Phase 2: close out resolved-by-prior-work items in `baboon-upstream-defects.md`. Plan: `docs/drafts/20260430-1959-m23-backend-stubs-plus-upstream-defects.md`.
+- [x] **M23** — Backend stubs unblock + upstream-defects cleanup.
+- [~] **M24** — Latents closeout (10 PRs across 3 phases). Closes 13 deferred latents from M23 + cross-backend hygiene + 2 policy-gated changes (Custom-foreign `<Foreign>_KeyCodec` extension hook = policy (c); `derived[was]` re-emit = policy (b) preserve verbatim). Plan: `docs/drafts/20260501-1009-m24-latents-closeout-plan.md`. Phase 1 (PR-A..E + PR-E rename fix + round-2 fix) shipped 2026-05-01.
+
+---
+
+## Milestone 24 — PR breakdown
+
+Detail in `docs/drafts/20260501-1009-m24-latents-closeout-plan.md`. 10 PRs across 3 phases. Phase 1 (5 PRs) parallelizable via worktrees on disjoint files. Phase 2 + 3 serialized.
+
+**Phase 1 — parallel (worktree-isolated):** ✅ shipped 2026-05-01
+- [x] **PR-A** (`6ad98ca`) — Rust `isUserMapKeyEligibleDto` foreign+enum arms + `peelWrapperChain` extension. Closes PR-65-D01.
+- [x] **PR-B** (`030fb85`) — Swift `mapExpr` `anyThr` propagation fix in `SwJsonCodecGenerator`. Closes M23-deferred Swift `try`-asymmetry latent.
+- [x] **PR-C** (`7b0db3d` + round-2 `5827e54`) — Cross-backend signed-`+` rejection (Spec §5.4) across 9 backends. Closes PR-57d-D03.
+- [x] **PR-D** (`18328f1` + round-2 `5827e54`) — `BaboonTyper.deepSchemaRepr` add `.sortBy` so manual→sugared lands in `unmodified`. Closes PR-64-D02.
+- [x] **PR-E** (`60df7ab` + rename fix `eafdf74`) — `AdtInheritanceExpander` multi-`^` clarifying comment + test. Closes PR-63-D04.
+
+**Phase 2 — serial:**
+- [ ] **PR-F** — Cross-backend malformed-key error consistency (uniform `BaboonCodecException` across 8 backends). Closes PR-60-D07.
+- [ ] **PR-G** — TS direct-builtin tuple-array unification with wrapper string-keyed-object form. Closes PR-60-D08.
+- [ ] **PR-H** — Rust conv-test `lib.rs` auto-routing via emitted `generated/mod.rs`. Closes M23-deferred Rust conv-test hand-curation latent.
+
+**Phase 3 — policy-gated serial:**
+- [ ] **PR-I** — Custom-foreign `<Foreign>_KeyCodec` extension hook (policy (c)) across 9 backends. Closes PR-60-D03, PR-60-D05, PR-65-D01 (Rust foreign residue), PR-66 latent (Scala non-String Custom), PR-68-D02 (Swift `hasForeignType` filter lift). Hardest: Rust serde-with-adapter glue.
+- [ ] **PR-J** — `derived[was]` policy (b) preserve verbatim. Closes PR-63-D05. Test + plan-doc amendment only; behaviour already correct.
+
+**Skipped:** PR-63-D03 (`+ X.Foo` test) — Q-FU-2 disposition "Optional, not requested".
 
 ---
 
@@ -327,6 +352,21 @@ My recommendation is **(a)**: one big PR, mechanical, everything stays consisten
 ---
 
 ## Completed
+
+- **PR-A through PR-E + round-2 + PR-E rename** (2026-05-01, M24 Phase 1) — Closes 5 deferred latents from M23 in worktree-isolated parallel execution. **What shipped:**
+  - **PR-A** (`6ad98ca`) — `RsDefnTranslator.scala`: added `Typedef.Foreign` and `Typedef.Enum` arms to `isUserMapKeyEligibleDto` (lines 903-921) and extended `peelWrapperChain` with foreign-leaf and enum-leaf cases (lines 932-954). New `test/rs-stub/tests/foreign_map_key_round_trip.rs` covers wrapper-around-foreign round-trip (mirrors PR-66 Scala). Closes PR-65-D01.
+  - **PR-B** (`030fb85`) — `SwJsonCodecGenerator.scala` lines 339-351: changed map-arm decode from coarse `if (valThr) try Dictionary(...)` to per-token: `keyTok = if (keyThr) try $keyDec else $keyDec`, `valTok = if (valThr) try $valueDec else $valueDec`. 4-case key/val/both/neither try emission. Documentary anchor test at `test/sw-stub/Tests/RuntimeTests/MapKeyTryPropagationTests.swift`. Closes M23-deferred Swift try-asymmetry latent.
+  - **PR-C** (`7b0db3d` + round-2 `5827e54`) — Cross-backend signed-`+` rejection per Spec §5.4 across 9 backends. Per-language pre-check before the existing parser: Scala `ScDefnTranslator.scala:548` `Left(...)`, Kotlin `KtDefnTranslator.scala:661`, Java `JvDefnTranslator.scala:739`, C# `CSDefnTranslator.scala:740`, Rust `RsDefnTranslator.scala:382` `Err(...)`, Swift `SwDefnTranslator.scala:482`, Dart `DtDefnTranslator.scala:606+619`, Python `PyDefnTranslator.scala:616+628`. TS unchanged (regex already rejects). 9 stub-side tests. Round-2 strengthened Scala assertion from `contains("+")` to `contains("leading '+'")`. Closes PR-57d-D03.
+  - **PR-D** (`18328f1` + round-2 `5827e54`) — `BaboonTyper.scala:303-311` add `.sortBy(_.mkString(" "))` to ADT branches (and contracts for symmetry) before deep-schema repr flat-mapping. Manual→sugared rewrites now land in `unmodified` deterministically across compile-runs. Round-2 changed empty-separator `mkString` → `mkString(" ")` for injectivity. `M20AdtEvolutionTest` tightened from `unmodified ∪ shallowModified ∪ deepModified` to `unmodified` only. Closes PR-64-D02.
+  - **PR-E** (`60df7ab` + rename `eafdf74`) — `AdtInheritanceExpander.scala:104-128` clarifying comment: "Multiple `^` arms compose by UNION of intersect targets per plan §3 formula `candidates ∩ ⋃ intersectSets`. A branch survives if it appears in ANY referenced intersect target — NOT pairwise-intersection across arms." New fixture `m20-ok/multi-intersect.baboon` + `M20AdtInheritanceFrontEndTest` case proving union-of-targets semantics: `MiResult = (+ X + Y) ^ A ^ B` yields `{X1, Y1}` (Common filtered, X1 from A, Y1 from B). Counter-check: pairwise A∩B = {} would emit EmptyAdt — passing-without-error is the proof. Rename fix: `Result` → `MiResult` to avoid Rust stdlib `Result<T, E>` shadow (same defect class as PR-64-D03 chained-include rename). Closes PR-63-D04.
+  
+  **Adversarial review (1 round, 8 defects logged):** Two minor code defects fixed in round-2 (`5827e54`): PR-C-D01 tautological Scala assertion → tightened; PR-D-D01 join-ambiguous `_.mkString` → `_.mkString(" ")`. Two major coverage-gap defects ledger-deferred (close naturally under PR-I): PR-A-D01 enum-keyed-wrapper not exercised; PR-B-D01 throwing-key path unreachable until PR-I lands. Three nits closed as false-alarm or note-only (PR-D-D03 locale, PR-E-D01 fixture minimality, PR-E-D02 comment hygiene). One major resolved by rename: PR-E-D01 `Result` shadow.
+  
+  **Verification:** `mdl --seq :build :test-gen-regular-adt :test-cs-regular :test-scala-regular :test-rust-regular :test-typescript-regular :test-kotlin-regular :test-kotlin-kmp-regular :test-java-regular :test-dart-regular :test-swift-regular :test-python-regular` — all 13 actions PASS (527s wall). Round-2 verified via `sbt 'baboonJVM/testOnly *M20AdtEvolutionTest *M20AdtInheritanceFrontEndTest'` 12/12 + `mdl :test-scala-regular` PASS.
+  
+  **Notes:**
+  - **Worktree friction with sbt/jgit + mudyla**: jgit produced "couldn't find git objects" inside worktrees and mudyla's `find_project_root` requires `.git` to be a directory not a file. All 5 executors applied the workaround: symlink `objects` and `config` from main `.git` into worktree pseudo-git dir, then temporarily replace `.git` file with a symlink for mdl invocations. Worktree teardown required `rm -rf` + `git worktree prune` for two cases where the symlink was left in place.
+  - **`MiResult` rename**: third instance of M20-fixture-vs-Rust-stdlib collision after PR-64-D03 (chained-include `A/B/C/D`, intersect `A/B/X`). Future M20 fixtures should pre-emptively avoid `Result`, `Option`, `Vec`, `Box`, `String`, `Some`, `None`, `Ok`, `Err`.
 
 - **PR-69** (2026-05-01, M23.5) — Doc-only: close out resolved items in `baboon-upstream-defects.md`. Closes M23. **What shipped:** 7 status-line updates from `[ ] open` to fixed/resolved with PR-reference annotations: BAB-S01 (`[x] fixed (closed by PR-27 / M14)`), BAB-S03 (`[x] fixed (closed by M19 / PR-59-PR-61)`), BAB-S05 (`[x] fixed (closed by M20 / PR-62-PR-64)`), BAB-K01 (`[x] fixed (closed by PR-28 / M14)`), BAB-K02 (`[x] fixed (verified clean post-PR-67)`), BAB-K05 (`[x] fixed (verified clean post-PR-67)`), BAB-G02 (`[x] mostly fixed (closed by ongoing runtime work; D-shadow residue closed by PR-65)`). New summary section "Resolved (closed by subsequent milestones M14–M23, 2026-04-30)" appended listing all 7 items. Verification: `sbt baboonJVM/compile` clean. **No review-loop defects** — pure documentation update.
 
