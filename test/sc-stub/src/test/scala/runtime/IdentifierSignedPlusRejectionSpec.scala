@@ -18,7 +18,7 @@ class IdentifierSignedPlusRejectionSpec extends AnyFunSuite {
     val result = identifier.ok.PointIdCodec.parseRepr("PointId:1.0.0#x:+42:label:hello")
     assert(result.isLeft, s"expected Left but got: $result")
     val msg = result.left.getOrElse("")
-    assert(msg.contains("+"), s"error message should mention the offending value; got: $msg")
+    assert(msg.contains("leading '+'"), s"error message should mention the offending value; got: $msg")
   }
 
   // LongId has one i64 field (x).
@@ -26,6 +26,6 @@ class IdentifierSignedPlusRejectionSpec extends AnyFunSuite {
     val result = identifier.ok.LongIdCodec.parseRepr("LongId:1.0.0#x:+1")
     assert(result.isLeft, s"expected Left but got: $result")
     val msg = result.left.getOrElse("")
-    assert(msg.contains("+"), s"error message should mention the offending value; got: $msg")
+    assert(msg.contains("leading '+'"), s"error message should mention the offending value; got: $msg")
   }
 }

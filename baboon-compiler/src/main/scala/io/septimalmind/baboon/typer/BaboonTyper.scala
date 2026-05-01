@@ -302,12 +302,12 @@ object BaboonTyper {
                 }
                 val branches = List("{", "branches") ++ d.members.toList
                   .map(id => deepSchemaRepr(id, defs, nseen))
-                  .sortBy(_.mkString)
+                  .sortBy(_.mkString(" "))
                   .flatten ++
                   List("}", "{", "contracts") ++
                   d.contracts
                     .map(id => deepSchemaRepr(id, defs, nseen))
-                    .sortBy(_.mkString)
+                    .sortBy(_.mkString(" "))
                     .flatten ++ List("}")
 
                 List(s"[adt:$self]") ++ content ++ branches ++ List(
