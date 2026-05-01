@@ -2306,3 +2306,61 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Location:** defects.md (Rust counterpart at PR-65-D01; Scala precedent at PR-66 D01; Swift was implicit)
 **Description:** Reviewer flagged that the Swift counterpart to the Rust+Scala foreign-map-key defects was not yet recorded in defects.md. PR-68-D01 above is now that entry.
 **Fix:** Recording PR-68-D01 above closes this gap. Self-resolved.
+
+---
+
+## PR-A (M24) — Rust isUserMapKeyEligibleDto foreign+enum + peelWrapperChain
+
+## [PR-A-D01] Enum-keyed map-key wrapper has no fixture — new `Typedef.Enum` arm is untested
+**Status:** resolved (deferred coverage; ledger-tracked for follow-up)
+**Severity:** major (coverage)
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/rust/RsDefnTranslator.scala:923,960; test/rs-stub/tests/foreign_map_key_round_trip.rs
+**Description:** PR-A added Enum and Foreign leaves to `peelWrapperChain` and `isUserMapKeyEligibleDto`, but the round-trip test exercises only the Foreign arm (FStr → String). No fixture in `baboon-compiler/src/test/resources/baboon/` contains a wrapper-DTO whose single field is an enum used as a `map[K, V]` key. A regression silently turning the Enum arm to `false` would not be caught.
+**Fix:** Deferred. PR-I (Custom-foreign `<Foreign>_KeyCodec` extension hook) will add a dedicated cross-language compat fixture exercising `Holder { m: map[ItemKey, str] }` byte-identity across all 9 backends (per M24 plan §3); that fixture's expansion to the enum case is the natural site to fix this gap. Ledger entry retained as the trigger.
+
+## PR-B (M24) — Swift mapExpr anyThr propagation 4-case try emission
+
+## [PR-B-D01] Three of four documented try-emission cases are unverified at runtime
+**Status:** resolved (deferred coverage; ledger-tracked — PR-I subsumes by construction)
+**Severity:** major (coverage)
+**Location:** test/sw-stub/Tests/RuntimeTests/MapKeyTryPropagationTests.swift
+**Description:** The MapKeyTryPropagationTests file documents four cases (key+val both throw, key-only, val-only, neither) but exercises only `keyThr=false / valThr=false` — the only branch already correct under the pre-PR-B two-arm conditional. The defect class addressed by PR-B is `keyThr=true`, which only becomes reachable once PR-I emits typed throwing keyDecoder calls.
+**Fix:** Deferred. Once PR-I lands, the throwing-key path becomes reachable and the existing fixture round-trip implicitly exercises `keyThr=true`. The MapKeyTryPropagationTests file serves as a documentary anchor in the meantime; will be revisited under PR-I to add round-trip coverage of all four arms.
+
+## PR-C (M24) — Cross-backend signed-+ rejection per Spec §5.4
+
+## [PR-C-D01] Scala signed-`+` rejection test asserts a tautology
+**Status:** resolved
+**Severity:** major
+**Location:** test/sc-stub/src/test/scala/runtime/IdentifierSignedPlusRejectionSpec.scala:21,29
+**Description:** Both Scala assertions checked `msg.contains("+")`. The input string under test contains `+`, so any error reflecting the input back into the message would pass. Pre-fix behaviour (silently accepting the value) would correctly fail `result.isLeft`, but a regression that returned a Left echoing the input from a different code path would still pass. Mirror tests in Dart, Kotlin, Java use `contains("leading '+'")`.
+**Fix:** Both assertions changed from `msg.contains("+")` to `msg.contains("leading '+'")`. ScDefnTranslator.scala:556 emits `"signed integer must not have leading '+' for field $fieldName: ..."`, so the substring is guaranteed by the generator. Verified `sbt baboonJVM/testOnly` and `mdl :test-scala-regular` green.
+
+## PR-D (M24) — BaboonTyper.deepSchemaRepr ADT branch sort
+
+## [PR-D-D01] `sortBy(_.mkString)` join-ambiguity collisions
+**Status:** resolved
+**Severity:** minor
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonTyper.scala:305,310
+**Description:** Empty-separator `mkString` is non-injective: `["a","bc"]` and `["ab","c"]` both sort-key to `"abc"`. Scala `sortBy` is stable, so collisions fall back to declaration order — which is exactly what PR-D was removing. ADT branch reprs in current code begin with markers like `[adt:…]` so practical collisions are unlikely, but the invariant was unenforced.
+**Fix:** Both `.sortBy(_.mkString)` calls changed to `.sortBy(_.mkString(" "))`. NUL-equivalent ASCII separator never appears in identifier reprs. Verified `M20AdtEvolutionTest` + `M20AdtInheritanceFrontEndTest` green.
+
+## [PR-D-D02] M20AdtEvolutionTest tightened-assertion proof structure
+**Status:** resolved (note-only; assertion is correct given fixture but not independently load-bearing)
+**Severity:** minor
+**Description:** The narrowed assertion (`unmodified` only) proves `SomeError` is not in `deepModified`, but does not independently demonstrate that the manual→sugared rewrite is the cause — `SomeError` could be unmodified for other reasons. The fix is correct, the test passes given the fixture's structure.
+**Fix:** Acceptable as-is. A sibling negative test asserting branch-ordering would have differed pre-fix would tighten the proof but is optional and not blocking.
+
+## PR-E (M24) — AdtInheritanceExpander multi-^ union-of-targets clarifying comment + test
+
+## [PR-E-D01] `multi-intersect.baboon` ADT name `Result` shadows Rust stdlib `Result<T, E>`
+**Status:** resolved
+**Severity:** major
+**Location:** baboon-compiler/src/test/resources/baboon/m20-ok/multi-intersect.baboon
+**Description:** The fixture introduced `root adt Result { + X; + Y; ^ A; ^ B }`. Generated `multi_intersect/result.rs` failed to compile with 76 errors of the form `expected Result, found Result<Result, _>` because `Result` shadows Rust stdlib `Result<T, E>` at the file scope. Same defect class as PR-64-D03 (chained-include `A/B/C/D` and intersect `A/B/X` renames).
+**Fix:** Renamed `Result` → `MiResult` in the fixture; updated `M20AdtInheritanceFrontEndTest.scala` test assertion. Headline verification (build + 11 backend test suites) green at commit `eafdf74`.
+
+## [PR-E-D02] Multi-intersect fixture minimality (false alarm)
+**Status:** resolved (false alarm — fixture confirmed minimal)
+**Severity:** nit
+**Description:** Reviewer challenged whether the fixture strictly requires multiple `^` arms to disambiguate union-of-targets from pairwise. Analysis: a "first-arm-only" semantics would yield `{X1}` (X1 in A; Y1 in B; Common in neither). That distinguishes from union-of-targets `{X1, Y1}`, so the fixture *does* require both arms. Fixture is minimal.
