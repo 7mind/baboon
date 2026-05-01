@@ -415,11 +415,13 @@ class CSJsonCodecGenerator(
                     case _ =>
                       q"""${codecName(uid)}.Instance.Decode(ctx, new $nsJValue($ref!))"""
                   }
-                // M19/PR-60: id types — call ParseRepr and unwrap Right (throw on Left).
+                // M19/PR-60: id types — call ParseRepr and unwrap Right.
+                // PR-F (M24): throw BaboonCodecException.DecoderFailure on Left for
+                // cross-language malformed-key consistency (replaces unchecked cast).
                 case d: Typedef.Dto if d.isIdentifier =>
                   val targetTpe      = trans.asCsTypeKeepForeigns(uid, domain, evo)
                   val codecClassName = CSValue.CSType(targetTpe.pkg, s"${targetTpe.name}Codec", targetTpe.fq, targetTpe.origin)
-                  q"""((($either<string, $targetTpe>.Right)$codecClassName.ParseRepr($ref)).Value)"""
+                  q"""($codecClassName.ParseRepr($ref) switch { $either<string, $targetTpe>.Right __r => __r.Value, _ => throw new $baboonCodecException.DecoderFailure("malformed key: " + $ref) })"""
                 // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct.
                 case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
                   val inner       = d.fields.head

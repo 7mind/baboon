@@ -384,12 +384,14 @@ class DtJsonCodecGenerator(
                           val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
                           q"$targetTpe.instance.decode(ctx, $ref)"
                       }
-                    // M19/PR-60: id types — call parseRepr and unwrap Right (cast throws on Left).
+                    // M19/PR-60: id types — call parseRepr and unwrap Right.
+                    // PR-F (M24): throw BaboonDecoderFailure on Left for cross-language
+                    // malformed-key consistency (replaces unchecked cast).
                     case d: Typedef.Dto if d.isIdentifier =>
                       val targetTpe   = trans.toDtTypeRefKeepForeigns(u, domain, evo)
                       val nestedCodec = DtValue.DtType(targetTpe.pkg, s"${targetTpe.name}Codec",
                                                        importAs = Some(trans.toSnakeCase(targetTpe.name)))
-                      q"($nestedCodec.parseRepr($ref) as $baboonRight<String, $targetTpe>).value"
+                      q"""(switch ($nestedCodec.parseRepr($ref)) { $baboonRight<String, $targetTpe>(:final value) => value, _ => throw $baboonDecoderFailure('malformed key: ' + $ref) })"""
                     // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct (named arg).
                     case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
                       val inner     = d.fields.head

@@ -289,7 +289,13 @@ final class PyJsonCodecGenerator(
         case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.isIdentifier =>
           val tpeRef     = typeTranslator.asPyTypeKeepForeigns(u, domain, evolution, pyFileTools.definitionsBasePkg)
           val codecClass = PyType(tpeRef.moduleId, s"${tpeRef.name}Codec")
-          q"$codecClass.parse_repr($ref).value"
+          // PR-F (M24): throw BaboonCodecException.DecoderFailure on Left for cross-language
+          // malformed-key consistency. Use a single-call lambda to bind the parse result
+          // exactly once; Python expressions cannot raise directly, so we route the throw
+          // through the generator-throw idiom. (Walrus inside a conditional expression
+          // doesn't help here because the COND is evaluated before the true-branch's
+          // walrus bind.)
+          q"""(lambda __r: __r.value if isinstance(__r, $baboonRightType) else (_ for _ in ()).throw($baboonCodecException.DecoderFailure(f"malformed key: {$ref}")))($codecClass.parse_repr($ref))"""
         case Some(DomainMember.User(_, d: Typedef.Dto, _, _)) if d.fields.size == 1 && d.contracts.isEmpty =>
           val inner    = d.fields.head
           val tpeRef   = typeTranslator.asPyTypeKeepForeigns(u, domain, evolution, pyFileTools.definitionsBasePkg)
