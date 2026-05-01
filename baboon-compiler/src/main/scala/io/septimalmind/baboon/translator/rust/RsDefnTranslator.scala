@@ -199,8 +199,125 @@ object RsDefnTranslator {
         case _: Typedef.Service =>
           makeServiceRepr(defn, name)
 
-        case _: Typedef.Foreign =>
-          q""
+        case f: Typedef.Foreign =>
+          makeForeignKeyCodecRepr(f, name)
+      }
+    }
+
+    /** PR-I.3 (M24 Phase 3.3) — emit a `<Foreign>_KeyCodec` extension hook
+      * + sibling `<foreign>_as_map_key` serde adapter module for every
+      * Custom-mapped Rust foreign declaration. The host registers an
+      * implementation at boot via `register_<foreign>_keycodec`; serde
+      * routes map keys through it via the adapter module.
+      *
+      * Stringy customs ({"String", "&str", "std::string::String"}) get a
+      * default identity impl so the common case works out of the box.
+      * Non-stringy customs get a stub default whose `decode_key` returns
+      * Err(<FQN-bearing diagnostic>) — host MUST register before first use;
+      * `encode_key` panics with the same diagnostic since serializers don't
+      * accept Result on the encode side.
+      *
+      * BaboonRef-mapped foreigns skip emission — the existing recursion into
+      * the aliased type covers the codec needs.
+      */
+    private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: RsType): TextTree[RsValue] = {
+      f.bindings.get(BaboonLang.Rust) match {
+        case None                                                                  => q""
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef))    => q""
+        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+          val srcRef       = trans.toRsTypeRefKeepForeigns(f.id, domain, evo)
+          val foreignName  = srcRef.name
+          val snake        = toSnakeCase(foreignName)
+          val codecTrait   = s"${foreignName}_KeyCodec"
+          val defaultStruct = s"Default${foreignName}_KeyCodec"
+          val staticName   = s"${snake.toUpperCase}_KEYCODEC"
+          val getterName   = s"${snake}_keycodec"
+          val registerName = s"register_${snake}_keycodec"
+          val adapterMod   = s"${snake}_as_map_key"
+          val hostFqn      = (srcRef.crate.parts.toSeq :+ getterName).mkString("::")
+          val derefedTpe   = trans.asRsType(f.id, domain, evo)
+          // Stringy allowlist: only the actual Rust string type spellings the
+          // codegen emits (`std::string::String` is what `asRsType` produces for
+          // stringy Customs; `String` and `&str` are accepted as user-friendly
+          // aliases). PR-I-D06 pattern: per-language allowlist; no dead alts.
+          val isStringy = decl == "std::string::String" || decl == "String" || decl == "&str"
+
+          val defaultImpl = if (isStringy) {
+            q"""pub struct $defaultStruct;
+               |impl $codecTrait for $defaultStruct {
+               |    fn encode_key(&self, value: &${derefedTpe.asName}) -> String { value.clone() }
+               |    fn decode_key(&self, s: &str) -> Result<${derefedTpe.asName}, String> { Ok(s.to_owned()) }
+               |}""".stripMargin
+          } else {
+            // Non-stringy DefaultImpl: encode_key panics with FQN-bearing message
+            // (serde::Serializer cannot consume Result, and a String stub would
+            // produce malformed wire data). decode_key returns Err with the same
+            // message so deserializers surface a clear "register me" diagnostic.
+            // The panic-on-encode is intentional: silently emitting bogus keys
+            // is worse than a crash that points the host operator at the fix.
+            val msg = s"$hostFqn() is not registered; call $registerName(impl) at app boot."
+            q"""pub struct $defaultStruct;
+               |impl $codecTrait for $defaultStruct {
+               |    fn encode_key(&self, _value: &${derefedTpe.asName}) -> String {
+               |        panic!("$msg")
+               |    }
+               |    fn decode_key(&self, _s: &str) -> Result<${derefedTpe.asName}, String> {
+               |        Err("$msg".to_string())
+               |    }
+               |}""".stripMargin
+          }
+
+          q"""pub trait $codecTrait: Send + Sync {
+             |    fn encode_key(&self, value: &${derefedTpe.asName}) -> String;
+             |    fn decode_key(&self, s: &str) -> Result<${derefedTpe.asName}, String>;
+             |}
+             |
+             |${defaultImpl.trim}
+             |
+             |static $staticName: std::sync::OnceLock<Box<dyn $codecTrait>> = std::sync::OnceLock::new();
+             |
+             |pub fn $registerName(impl_: Box<dyn $codecTrait>) {
+             |    let _ = $staticName.set(impl_);
+             |}
+             |
+             |pub fn $getterName() -> &'static dyn $codecTrait {
+             |    $staticName.get_or_init(|| Box::new($defaultStruct)).as_ref()
+             |}
+             |
+             |pub mod $adapterMod {
+             |    use super::*;
+             |    use std::collections::BTreeMap;
+             |
+             |    pub fn serialize<S, V>(map: &BTreeMap<${derefedTpe.asName}, V>, serializer: S) -> Result<S::Ok, S::Error>
+             |    where
+             |        S: serde::Serializer,
+             |        V: serde::Serialize,
+             |    {
+             |        use serde::ser::SerializeMap;
+             |        let mut m = serializer.serialize_map(Some(map.len()))?;
+             |        for (k, v) in map.iter() {
+             |            let s: String = super::$getterName().encode_key(k);
+             |            m.serialize_entry(&s, v)?;
+             |        }
+             |        m.end()
+             |    }
+             |
+             |    pub fn deserialize<'de, __De, V>(deserializer: __De) -> Result<BTreeMap<${derefedTpe.asName}, V>, __De::Error>
+             |    where
+             |        __De: serde::Deserializer<'de>,
+             |        V: serde::Deserialize<'de>,
+             |    {
+             |        use serde::Deserialize as _BaboonDeserialize;
+             |        let raw: BTreeMap<String, V> = BTreeMap::<String, V>::deserialize(deserializer)?;
+             |        let mut out: BTreeMap<${derefedTpe.asName}, V> = BTreeMap::new();
+             |        for (s, v) in raw.into_iter() {
+             |            let key = super::$getterName().decode_key(&s)
+             |                .map_err(|e| serde::de::Error::custom(format!("malformed key: {}", e)))?;
+             |            out.insert(key, v);
+             |        }
+             |        Ok(out)
+             |    }
+             |}""".stripMargin
       }
     }
 
@@ -627,6 +744,26 @@ object RsDefnTranslator {
     private def renderUserMapKeyAdapter(dto: Typedef.Dto, name: RsType): TextTree[RsValue] = {
       val modName = s"${toSnakeCase(name.name)}_as_map_key"
 
+      // Helper: detect whether a leaf TypeRef.Scalar(User) refers to a
+      // Custom-mapped Foreign typedef. PR-I.3 routes such leaves through
+      // the foreign's `<foreign>_keycodec()` extension hook rather than
+      // the host type's Display/FromStr.
+      def customForeignKeyCodecGetter(leafTpe: TypeRef): Option[String] = leafTpe match {
+        case TypeRef.Scalar(uid: TypeId.User) =>
+          domain.defs.meta.nodes.get(uid) match {
+            case Some(DomainMember.User(_, fdef: Typedef.Foreign, _, _)) =>
+              fdef.bindings.get(BaboonLang.Rust) match {
+                case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+                  val srcRef = trans.toRsTypeRefKeepForeigns(uid, domain, evo)
+                  val getter = s"${toSnakeCase(srcRef.name)}_keycodec"
+                  Some((srcRef.crate.parts.toSeq :+ getter).mkString("::"))
+                case _ => None
+              }
+            case _ => None
+          }
+        case _ => None
+      }
+
       // Encode: per-key Self → String.
       val encodeKey: TextTree[RsValue] =
         if (dto.isIdentifier) q"format!(\"{}\", k)"
@@ -638,16 +775,23 @@ object RsDefnTranslator {
           val (leafTpe, leafPath, _) = peelWrapperChain(dto, name).getOrElse(
             throw new IllegalStateException(s"renderUserMapKeyAdapter: peelWrapperChain returned None for ${name.name}")
           )
-          leafTpe match {
-            case TypeRef.Scalar(TypeId.Builtins.bytes) =>
-              // Vec<u8> doesn't implement Display; reuse the runtime hex helper.
-              q"crate::baboon_identifier_repr::bytes_to_hex(&k.$leafPath)"
-            case TypeRef.Scalar(TypeId.Builtins.tsu) =>
-              q"crate::baboon_runtime::time_formats::format_tsu(&k.$leafPath)"
-            case TypeRef.Scalar(TypeId.Builtins.tso) =>
-              q"crate::baboon_runtime::time_formats::format_tso(&k.$leafPath)"
-            case _ =>
-              q"format!(\"{}\", k.$leafPath)"
+          customForeignKeyCodecGetter(leafTpe) match {
+            case Some(getterPath) =>
+              // PR-I.3 (M24 Phase 3.3): foreign leaf → route through host getter.
+              // `getterPath` is fully qualified (starts with `crate::`).
+              q"$getterPath().encode_key(&k.$leafPath)"
+            case None =>
+              leafTpe match {
+                case TypeRef.Scalar(TypeId.Builtins.bytes) =>
+                  // Vec<u8> doesn't implement Display; reuse the runtime hex helper.
+                  q"crate::baboon_identifier_repr::bytes_to_hex(&k.$leafPath)"
+                case TypeRef.Scalar(TypeId.Builtins.tsu) =>
+                  q"crate::baboon_runtime::time_formats::format_tsu(&k.$leafPath)"
+                case TypeRef.Scalar(TypeId.Builtins.tso) =>
+                  q"crate::baboon_runtime::time_formats::format_tso(&k.$leafPath)"
+                case _ =>
+                  q"format!(\"{}\", k.$leafPath)"
+              }
           }
         }
 
@@ -665,15 +809,22 @@ object RsDefnTranslator {
           val leafT = trans.asRsRef(leafTpe, domain, evo)
           // Parse via str::parse; for primitive scalars Rust's FromStr matches
           // Display's wire form. Bytes/timestamps require dedicated parsers.
-          val parseExpr: TextTree[RsValue] = leafTpe match {
-            case TypeRef.Scalar(TypeId.Builtins.bytes) =>
-              q"crate::baboon_identifier_repr::parse_bytes_hex(&s)"
-            case TypeRef.Scalar(TypeId.Builtins.tsu) =>
-              q"crate::baboon_runtime::time_formats::parse_tsu(&s)"
-            case TypeRef.Scalar(TypeId.Builtins.tso) =>
-              q"crate::baboon_runtime::time_formats::parse_tso(&s)"
-            case _ =>
-              q"s.parse::<$leafT>().map_err(|e| format!(\"{}\", e))"
+          // PR-I.3: foreign leaves route through the foreign's `<foreign>_keycodec()`
+          // hook so the host can plug in arbitrary string<->host encodings.
+          val parseExpr: TextTree[RsValue] = customForeignKeyCodecGetter(leafTpe) match {
+            case Some(getterPath) =>
+              q"$getterPath().decode_key(&s)"
+            case None =>
+              leafTpe match {
+                case TypeRef.Scalar(TypeId.Builtins.bytes) =>
+                  q"crate::baboon_identifier_repr::parse_bytes_hex(&s)"
+                case TypeRef.Scalar(TypeId.Builtins.tsu) =>
+                  q"crate::baboon_runtime::time_formats::parse_tsu(&s)"
+                case TypeRef.Scalar(TypeId.Builtins.tso) =>
+                  q"crate::baboon_runtime::time_formats::parse_tso(&s)"
+                case _ =>
+                  q"s.parse::<$leafT>().map_err(|e| format!(\"{}\", e))"
+              }
           }
           // wrappers is ordered innermost-first; chain .map(|v| Wrapper { field: v })
           wrappers.foldLeft(parseExpr) {
@@ -892,6 +1043,17 @@ object RsDefnTranslator {
                 val rsT     = trans.toRsTypeRefKeepForeigns(uid, domain, evo)
                 val modName = s"${toSnakeCase(rsT.name)}_as_map_key"
                 Some((rsT.crate.parts.toSeq :+ modName).mkString("::"))
+              // PR-I.3 (M24 Phase 3.3): direct foreign map key — route through
+              // the foreign's emitted `<foreign>_as_map_key` adapter (Custom only;
+              // BaboonRef-aliased foreigns reuse the aliased type's serde path).
+              case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
+                f.bindings.get(BaboonLang.Rust) match {
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+                    val rsT     = trans.toRsTypeRefKeepForeigns(uid, domain, evo)
+                    val modName = s"${toSnakeCase(rsT.name)}_as_map_key"
+                    Some((rsT.crate.parts.toSeq :+ modName).mkString("::"))
+                  case _ => None
+                }
               case _ => None
             }
           case _ => None
