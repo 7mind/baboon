@@ -2612,3 +2612,47 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Severity:** nit
 **Description:** `M24ForeignKeyCodecCanonicalWireForm` test uses `map[ItemKey, str]` where `ItemKey { v: FStr }` is a single-primitive wrapper. Encode/decode path hits M19 single-field-wrapper branch and recurses to FStr_KeyCodec — so the hook IS exercised, but indirectly. A direct `map[FStr, str]` field would test the path more directly.
 **Fix:** Acceptable. Future fixture PR could add direct-foreign-as-key field.
+
+---
+
+## PR-I.1d (M24) — Dart + TypeScript Custom-foreign KeyCodec hook
+
+## [PR-I.1d-D01] TS encode-side stub-throw used BaboonDecoderFailure instead of BaboonEncoderFailure
+**Status:** resolved
+**Severity:** minor
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsDefnTranslator.scala (non-stringy DefaultImpl encode branch)
+**Description:** Initial PR-I.1d emitted `encodeKey: (_v) => { throw new BaboonDecoderFailure("...") }` for non-stringy customs. Symmetry: encode-side should throw `BaboonEncoderFailure` (TS runtime exposes both classes).
+**Fix:** Added `tsBaboonEncoderFailure` to import list. Changed encode-side throw to `BaboonEncoderFailure`; decode-side stays `BaboonDecoderFailure`. Verified PASS.
+
+## [PR-I.1d-D02] TS decoder catch discarded the caught Exception
+**Status:** resolved
+**Severity:** minor
+**Location:** TsJsonCodecGenerator.scala (decode-key foreign Custom IIFE)
+**Description:** Initial emit was `throw new BaboonDecoderFailure("malformed key: " + $ref)` — discarded the caught `e`. TS runtime constructor signature is `(message: string, options?: { cause?: unknown })`.
+**Fix:** Changed to `throw new BaboonDecoderFailure("malformed key: " + $ref, { cause: e })`. Verified PASS.
+
+## [PR-I.1d-D03] Dart `_DefaultImpl` had latent file-scope collision risk
+**Status:** resolved
+**Severity:** nit
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/dart/DtDefnTranslator.scala
+**Description:** `class _DefaultImpl implements FStr_KeyCodec` at file scope. Today only one foreign per file so no collision, but latent if codegen ever batches multiple defs per file. C#/Java/Kotlin siblings name-space their defaults.
+**Fix:** Renamed to `_${codecName}DefaultImpl` (e.g. `_FStr_KeyCodecDefaultImpl`). Both class declaration and `_instance` initializer updated.
+
+## [PR-I.1d-N01] TS hasForeignType filter relaxation in JSON-side isActive gate
+**Status:** resolved (in-band scope expansion; correctly bounded)
+**Severity:** minor
+**Location:** TsJsonCodecGenerator.scala:35,555
+**Description:** Initial pre-PR TS gated codec emission on `&& !enquiries.hasForeignType(defn, domain)`. Without relaxation, `ForeignKeyHolder_JsonCodec` would not be emitted at all — the compat test would be non-runnable. Scoped relaxation to JSON only; UEBA gate (`TsUEBACodecGenerator`) intentionally left intact pending UEBA-side hook in future PR.
+**Fix:** Removed `&& !enquiries.hasForeignType` from JSON `isActive` gate; complementary `case _: Typedef.Foreign => None` inside `translate()` still prevents stray `<F>_JsonCodec` emission.
+
+## [PR-I.1d-N02] TS round-trip test bypasses ItemKey instance equality
+**Status:** resolved (note-only)
+**Severity:** nit
+**Description:** `m24-foreign-keycodec.test.ts` extracts `[k.v, v]` entries to a plain array and compares to literal entries — verifies content but not domain equality of `ItemKey` instances. Dart sidesteps this with `equals()` over content-equal instances.
+**Fix:** Acceptable. Future hardening could add instance-shape assertion.
+
+## [PR-I.1d-N03] Dart f_str.dart still emits dead FStr_JsonCodec stub
+**Status:** resolved (pre-existing; not introduced by PR-I.1d)
+**Severity:** nit
+**Description:** Dart still emits `FStr_JsonCodec` whose `encode/decode` throw `ArgumentError('String is a foreign type')`. TS cleanly omits this class. If a domain author exposes FStr in non-key value position, Dart will throw at codec-time while TS will not. Pre-existing asymmetry, not regression.
+**Fix:** Acceptable. Cross-backend Dart hygiene PR could unify with TS approach.

@@ -223,8 +223,15 @@ class DtJsonCodecGenerator(
                   f.bindings.get(BaboonLang.Dart) match {
                     case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                       encodeKey(aliasedRef, ref)
-                    case _ =>
-                      q"$ref.toString()"
+                    case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+                      // PR-I.1d (M24 Phase 3.1): Custom-foreign map keys route through
+                      // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
+                      val srcRef = trans.toDtTypeRefKeepForeigns(uid, domain, evo)
+                      val host   = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost",
+                                                  importAs = Some(trans.toSnakeCase(srcRef.name)))
+                      q"$host.instance.encodeKey($ref)"
+                    case None =>
+                      throw new RuntimeException(s"BUG: Foreign type $uid has no Dart binding")
                   }
                 // M19/PR-60: id types — emit canonical toString (single- or multi-field).
                 case d: Typedef.Dto if d.isIdentifier =>
@@ -380,9 +387,17 @@ class DtJsonCodecGenerator(
                       f.bindings.get(BaboonLang.Dart) match {
                         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                           decodeKey(aliasedRef, ref)
-                        case _ =>
-                          val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
-                          q"$targetTpe.instance.decode(ctx, $ref)"
+                        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
+                          // PR-I.1d (M24 Phase 3.1): Custom-foreign map keys route through
+                          // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
+                          // `on Exception catch (e)` (NOT broader): keeps fail-fast on Error /
+                          // ControlThrowable parity (PR-I-D01 pattern guidance).
+                          val srcRef = trans.toDtTypeRefKeepForeigns(u, domain, evo)
+                          val host   = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost",
+                                                      importAs = Some(trans.toSnakeCase(srcRef.name)))
+                          q"""(() { try { return $host.instance.decodeKey($ref); } on Exception catch (e) { throw $baboonDecoderFailure('malformed key: ' + $ref, e); } })()"""
+                        case None =>
+                          throw new RuntimeException(s"BUG: Foreign type $u has no Dart binding")
                       }
                     // M19/PR-60: id types — call parseRepr and unwrap Right.
                     // PR-F (M24): throw BaboonDecoderFailure on Left for cross-language

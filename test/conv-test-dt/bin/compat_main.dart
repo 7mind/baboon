@@ -14,6 +14,11 @@ import 'package:conv_test_dt/generated/convtest/testpkg/composite_id.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/item_id.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/point_id.dart';
 import 'package:conv_test_dt/generated/convtest/testpkg/wire_enum.dart';
+// PR-I.1d (M24 Phase 3.1) — Custom-foreign KeyCodec hook fixture. Stringy
+// FStr foreign + ItemKey wrapper + ForeignKeyHolder round-trip exercises the
+// generated FStr_KeyCodecHost identity default impl.
+import 'package:conv_test_dt/generated/convtest/m24foreign/foreign_key_holder.dart';
+import 'package:conv_test_dt/generated/convtest/m24foreign/item_key.dart';
 
 const String _domainId = 'convtest.testpkg';
 const String _domainVer = '2.0.0';
@@ -308,6 +313,27 @@ void writePointIdRepr(PointId pid, String outputDir) {
   print('Written repr to ${f.absolute.path}');
 }
 
+// PR-I.1d (M24 Phase 3.1) — Custom-foreign KeyCodec hook canonical fixture.
+// Map keys go through FStr_KeyCodecHost (default identity impl for the stringy
+// foreign), so the wire form is `{"m":{"alpha":"v1","beta":"v2"}}`.
+ForeignKeyHolder _createForeignKeyHolderSample() {
+  return ForeignKeyHolder(m: {
+    ItemKey(v: 'alpha'): 'v1',
+    ItemKey(v: 'beta'): 'v2',
+  });
+}
+
+void writeForeignKeyHolderJson(BaboonCodecContext ctx, ForeignKeyHolder data, String outputDir) {
+  Directory(outputDir).createSync(recursive: true);
+  final json = ForeignKeyHolder_JsonCodec.instance.encode(ctx, data);
+  // Compact (no indent) so the byte-identity assertion against the canonical
+  // wire form `{"m":{"alpha":"v1","beta":"v2"}}` matches across backends.
+  final jsonStr = jsonEncode(json);
+  final f = File('$outputDir/m24-foreign-keycodec.json');
+  f.writeAsStringSync(jsonStr);
+  print('Written JSON to ${f.absolute.path}');
+}
+
 void runLegacy() {
   final sampleData = createSampleData();
   final sampleAny = _createSampleAnyShowcase();
@@ -319,6 +345,7 @@ void runLegacy() {
   writeJsonAny(facadeCtx, sampleAny, '$baseDir/dart-json');
   writeUebaAny(facadeCtx, sampleAny, '$baseDir/dart-ueba');
   writePointIdRepr(sampleData.vPointId, '$baseDir/dart-repr');
+  writeForeignKeyHolderJson(BaboonCodecContext.defaultCtx, _createForeignKeyHolderSample(), '$baseDir/dart-json');
 
   print('Dart serialization complete!');
 }
@@ -334,6 +361,7 @@ void main(List<String> args) {
       case 'json':
         writeJson(sampleData, outputDir);
         writeJsonAny(facadeCtx, sampleAny, outputDir);
+        writeForeignKeyHolderJson(BaboonCodecContext.defaultCtx, _createForeignKeyHolderSample(), outputDir);
         break;
       case 'ueba':
         writeUeba(sampleData, outputDir);

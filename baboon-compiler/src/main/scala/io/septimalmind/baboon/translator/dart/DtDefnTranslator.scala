@@ -220,7 +220,60 @@ object DtDefnTranslator {
         case _: Typedef.Service =>
           renderService(defn, name)
 
-        case _: Typedef.Foreign => DefnRepr(q"", Nil)
+        case f: Typedef.Foreign => makeForeignKeyCodecRepr(f, name)
+      }
+    }
+
+    /** PR-I.1d (M24 Phase 3.1) — emit a `<Foreign>_KeyCodec` extension hook for
+      * every Custom-mapped Dart foreign declaration. The host application
+      * registers an implementation at boot which the JSON codec then uses to
+      * encode/decode map keys. For BaboonRef-mapped foreigns we emit nothing —
+      * the existing recursion into the aliased type covers the codec needs.
+      *
+      * Stringy foreigns (`dart.core.String` / `String`) get a default identity
+      * impl so the common case works out of the box. Non-stringy foreigns get
+      * a stub default that throws BaboonDecoderFailure with an FQN-bearing
+      * diagnostic referring to the Host class (PR-I.1b-D01 lesson).
+      */
+    private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: DtType): DefnRepr = {
+      f.bindings.get(BaboonLang.Dart) match {
+        case None                                                                  => DefnRepr(q"", Nil)
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef))    => DefnRepr(q"", Nil)
+        case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
+          val srcRef    = trans.toDtTypeRefKeepForeigns(f.id, domain, evo)
+          val codecName = s"${srcRef.name}_KeyCodec"
+          val hostName  = s"${srcRef.name}_KeyCodecHost"
+          val hostFqn   = s"${srcRef.pkg.parts.mkString(".")}.$hostName"
+          // Stringy allowlist (PR-I-D06 pattern guidance: only the language's allowlist; no dead alternatives).
+          // Both the FQN form (`dart.core.String`) and the bare identifier (`String`) are accepted because
+          // Dart code idiomatically references the type either way.
+          val isStringy = decl == "dart.core.String" || decl == "String"
+          val defaultImplName = s"_${codecName}DefaultImpl"
+          val defaultImpl = if (isStringy) {
+            q"""class $defaultImplName implements $codecName {
+               |  @override $dtString encodeKey($name value) => value;
+               |  @override $name decodeKey($dtString s) => s;
+               |}""".stripMargin
+          } else {
+            q"""class $defaultImplName implements $codecName {
+               |  @override $dtString encodeKey($name value) => throw $baboonDecoderFailure('$hostFqn is not registered; call $hostFqn.register(impl) at app boot.', null);
+               |  @override $name decodeKey($dtString s) => throw $baboonDecoderFailure('$hostFqn is not registered; call $hostFqn.register(impl) at app boot.', null);
+               |}""".stripMargin
+          }
+          val tree =
+            q"""abstract class $codecName {
+               |  $dtString encodeKey($name value);
+               |  $name decodeKey($dtString s);
+               |}
+               |
+               |class $hostName {
+               |  static $codecName _instance = $defaultImplName();
+               |  static void register($codecName impl) { _instance = impl; }
+               |  static $codecName get instance => _instance;
+               |}
+               |
+               |${defaultImpl}""".stripMargin
+          DefnRepr(tree, Nil)
       }
     }
 
