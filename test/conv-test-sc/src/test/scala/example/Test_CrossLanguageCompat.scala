@@ -388,4 +388,47 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
       assert(actual == expected, s"backend $lang repr should match canonical; expected '$expected', got '$actual'")
     }
   }
+
+  // --------------------------------------------------------------------------------------------
+  // PR-I.1a (M24 Phase 3.1) — Custom-foreign `<Foreign>_KeyCodec` extension hook
+  //
+  // The new fixture `m24-foreign-keycodec.baboon` declares a stringy custom foreign `FStr`
+  // (mapped to `java.lang.String` in Scala) used as the inner field of an `ItemKey` wrapper
+  // serving as a `map[ItemKey, str]` key. The codegen routes encode/decode through
+  // `FStr_KeyCodec.instance`, whose default identity impl handles stringy foreigns out of the
+  // box (no host registration required). Wire form is `{"m":{"alpha":"v1","beta":"v2"}}`.
+  //
+  // Subsequent sub-PRs (PR-I.1b through PR-I.3) will mirror this pattern in the other 8
+  // backends and extend this test to assert cross-language wire byte-identity.
+  // --------------------------------------------------------------------------------------------
+
+  "PR-I.1a foreign KeyCodec hook" should "round-trip Scala-emitted m24-foreign-keycodec JSON" in {
+    val file = baseDir.resolve("scala-json/m24-foreign-keycodec.json")
+    assert(Files.exists(file), s"Scala m24-foreign-keycodec fixture not found: $file")
+    val jsonStr = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+    val json    = parse(jsonStr).getOrElse(fail(s"Failed to parse $file"))
+    val decoded = convtest.m24foreign.ForeignKeyHolder_JsonCodec.instance.decode(ctx, json) match {
+      case Right(d)  => d
+      case Left(err) => fail(s"Failed to decode m24-foreign-keycodec JSON: $err")
+    }
+    val expected = convtest.m24foreign.ForeignKeyHolder(
+      m = Map(
+        convtest.m24foreign.ItemKey(v = "alpha") -> "v1",
+        convtest.m24foreign.ItemKey(v = "beta")  -> "v2",
+      )
+    )
+    assert(decoded == expected, s"round-trip diverged: got $decoded, expected $expected")
+  }
+
+  it should "produce the canonical wire form via the FStr_KeyCodec default identity impl" in {
+    val sample = convtest.m24foreign.ForeignKeyHolder(
+      m = Map(
+        convtest.m24foreign.ItemKey(v = "alpha") -> "v1",
+        convtest.m24foreign.ItemKey(v = "beta")  -> "v2",
+      )
+    )
+    val encoded        = convtest.m24foreign.ForeignKeyHolder_JsonCodec.instance.encode(ctx, sample)
+    val expectedString = """{"m":{"alpha":"v1","beta":"v2"}}"""
+    assert(encoded.noSpaces == expectedString, s"FStr_KeyCodec wire form diverged: got ${encoded.noSpaces}, expected $expectedString")
+  }
 }
