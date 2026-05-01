@@ -2414,3 +2414,61 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Severity:** nit
 **Description:** Working tree had `tasks.md` modified alongside compiler changes. Commit hygiene: ledger should typically be staged separately or noted in commit body.
 **Fix:** PR-F commit body explains the bookkeeping change; tasks.md flip to `[x]` is in the Phase 2 closeout commit, not the PR-F implementation commit.
+
+---
+
+## PR-G (M24) — TS direct-builtin map-key wire format unification
+
+## [PR-G-D01] No cross-language interop test for non-string builtin map keys
+**Status:** resolved (deferred coverage; ledger-tracked for follow-up)
+**Severity:** major (coverage)
+**Location:** test/conv-test/*.baboon (no `map[i64,X]`, `map[bool,X]`, `map[i32,X]`, etc.); test/conv-test-{cs,sc,rs,ts,kt,jv,dt,sw,py}/json-data/
+**Description:** PR-G's stated purpose is cross-language wire-format alignment for non-string builtin map keys. Cross-compat suite (`:test-gen-compat-*`) does not exercise non-string builtin map keys — only `map[str, ...]` and `map[ItemId/CompositeId, u32]`. The new `MapBuiltinKeyRoundTrip.test.ts` is TS-only: asserts wire is object-shape but never feeds the emitted JSON into another language's decoder. The 13/13 PASS headline + 9/9 cross-compat PASS are non-evidence about the wire-format alignment claim.
+**Fix:** Deferred to a follow-up cross-language fixture PR. The functional change is correct by construction (TS now uses `String(k)` wire form matching Scala `_._1.toString` + Rust `serde::ser::Serialize` + Java `String.valueOf` + others). A dedicated convtest fixture exercising `map[i64, str]` round-trip TS↔Scala/Rust/Java/Kotlin would close the verification gap. Ledger entry retained as the trigger.
+
+## [PR-G-D02] Bool key decoder silently coerced malformed input to `false`
+**Status:** resolved
+**Severity:** major
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsJsonCodecGenerator.scala (bit case in parsePrimitiveKey)
+**Description:** Initial PR-G emitted `($ref === "true")` for boolean key parse. Inputs `"True"`, `"TRUE"`, `"1"`, `""`, `"false"` all returned `false`. Inconsistent with PR-F's typed-throw discipline.
+**Fix:** Replaced with IIFE that throws `BaboonDecoderFailure("malformed key: " + __r)` for anything other than `"true"` or `"false"`. Verified `mdl :test-typescript-regular` PASS.
+
+## [PR-G-D03] Numeric/date key decoders silently produced NaN on malformed input
+**Status:** resolved
+**Severity:** major
+**Location:** TsJsonCodecGenerator.scala (i08/i16/i32/u08/u16/u32 parseInt path; i64/u64 BigInt path; f32/f64 parseFloat path; tsu/tso "date" mode `new Date` path)
+**Description:** `parseInt("abc",10)` → `NaN` silently; `parseFloat` similarly; `BigInt("abc")` threw plain `SyntaxError`; `new Date("garbage")` produced `Invalid Date`. None propagated as `BaboonDecoderFailure`. Corrupted JSON would silently produce a Map with NaN keys.
+**Fix:** Each case wrapped in IIFE with appropriate validity check (`Number.isNaN(__n) || String(__n) !== __r` for parseInt to also reject `"42abc"`-round-trip; `try/catch` around `BigInt`; `Number.isNaN(__n)` for parseFloat including rejecting `"NaN"` string; `isNaN(d.getTime())` for Date). All throw `BaboonDecoderFailure("malformed key: " + ref)`. The `fromISO` mode for tsu/tso is library-delegated and left unchanged (library does not throw on parse failure; out of scope for PR-G — track as latent if it becomes blocking).
+**Verification:** new malformed-key test in `MapBuiltinKeyRoundTrip.test.ts` exercises u08-keyed map decode of `{"not-a-number": 1}` and asserts the throw. `mdl :test-typescript-regular` PASS.
+
+## [PR-G-D04] Enum `_parse` helper throws plain Error not BaboonDecoderFailure
+**Status:** resolved
+**Severity:** major
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsDefnTranslator.scala:376
+**Description:** Pre-existing inconsistency that PR-G now exposes via the enum-keyed-map path. Previously enum keys fell through tuple-array form; PR-G's unification routes them through the canonical helper which calls `_parse`. A malformed enum key in a map throws plain `Error` instead of the typed `BaboonDecoderFailure` that PR-F established.
+**Fix:** Changed `throw new Error(...)` to `throw new BaboonDecoderFailure(...)` (preserves message). Added `tsBaboonDecoderFailure` to the imports list. Cross-cutting impact: all enum parse failures now throw the typed exception (not just map-key path) — strictly improves error-handling consistency. Verified `mdl :test-typescript-regular` PASS.
+
+## [PR-G-D05] MapBuiltinKeyRoundTrip.test.ts coverage is partial
+**Status:** resolved (test header docstring tightened; coverage gap acknowledged)
+**Severity:** minor
+**Location:** test/ts-stub/src/runtime-tests/MapBuiltinKeyRoundTrip.test.ts
+**Description:** File docstring promised coverage for "i32/i64/f32/f64/bool/uid/tsu/tso" but actual tests exercise only `uid`, `tso`, and now `u08` (round-trip + malformed-key). `i32`, `i64`, `f32`, `f64`, `bool`, `tsu` not exercised at this level. Coverage is fundamentally fixture-bound — no existing m20-ok fixture has `map[bool,_]`, `map[i64,_]`, etc.
+**Fix:** Acceptable as-is. Adding synthetic round-trip per missing type would require adding fields to existing fixtures. Tracked as deferred coverage gap; closes naturally when a richer convtest fixture lands (alongside PR-G-D01's cross-language fixture).
+
+## [PR-G-D06] Wire-shape assertion in test is loose
+**Status:** resolved (note-only)
+**Severity:** nit
+**Description:** Test uses dual `typeof === "object"` + `Array.isArray(...) === false` check. `expect(wire.f1).toEqual({...})` would have been stricter but the dual check is acceptable defence-in-depth.
+**Fix:** Acceptable as-is.
+
+## [PR-G-D07] tsu/tso fromISO precision for sub-millisecond timestamps
+**Status:** resolved (note-only; no new precision loss vs value-position decoding)
+**Severity:** nit
+**Description:** `new Date(iso).toISOString()` truncates to milliseconds. Both encoder modes ("string" and "date") use `.toISOString()` so precision loss matches value-position behaviour. Not a regression.
+**Fix:** Acceptable as-is.
+
+## [PR-G-D08] mkJsonKeyEncoder/Decoder enum case duplicates value-position logic
+**Status:** resolved (note-only; cross-reference comment recommended)
+**Severity:** nit
+**Description:** Enum encode/decode now exists in two paths: value-position (via codec.encode/decode) and map-key path (direct `_parse` helper). Both must stay in sync. Worth a comment.
+**Fix:** Acceptable; future hygiene PR could add a cross-reference comment.
