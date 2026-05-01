@@ -2472,3 +2472,19 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Severity:** nit
 **Description:** Enum encode/decode now exists in two paths: value-position (via codec.encode/decode) and map-key path (direct `_parse` helper). Both must stay in sync. Worth a comment.
 **Fix:** Acceptable; future hygiene PR could add a cross-reference comment.
+
+---
+
+## PR-H (M24) — Rust conv-test lib.rs auto-routing
+
+## [PR-H-D01] No positive guard against silent drops in topLevelModuleNames
+**Status:** resolved (note-only; cargo build is the existing sentinel)
+**Severity:** nit
+**Description:** A future filter regression that excludes a module from `topLevelModuleNames` would only be caught by a `cargo build` failure on the next codegen run. There's no positive translator-side test asserting the module list against a synthetic emit set.
+**Fix:** Acceptable as-is. `cargo build` failures produce a clear "module X not found in crate root" error — strictly better diagnostics than a string-match unit test. Future hygiene PR could add a Scala-side unit test for `topLevelModuleNames` if drift becomes a recurring failure mode.
+
+## [PR-H-D02] lib.rs/mod.rs identical content not commented
+**Status:** resolved (note-only)
+**Severity:** nit
+**Description:** Both files emit identical content via shared `crateAllows ++ modDeclsFor(topLevelModuleNames(...))`. A future cleanup PR might attempt to "deduplicate" without realizing the two paths are intentional alternate aggregator entry points (lib.rs for in-place stubs like `rs-stub`; mod.rs for wrapper crates like `conv-test-rs`).
+**Fix:** Acceptable as-is. The `generateRootMod` doc comment notes "Aggregator emitted alongside lib.rs"; future maintainers can reach the same understanding by reading the helpers.
