@@ -2680,3 +2680,33 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Severity:** nit
 **Description:** Emitted `KeyCodecHost` enum uses `nonisolated(unsafe) private static var _instance` to suppress Swift 6 strict-concurrency warning. `register` racing on it is undefined behavior at runtime; same pattern exists in PR-I.1a/b/c/d hosts. Comment doesn't acknowledge boot-time-only invocation contract.
 **Fix:** Acceptable. Documentation is consistent (or absent) across all 9 backends; future hygiene could add a uniform contract comment.
+
+---
+
+## PR-I.3 (M24) — Rust Custom-foreign KeyCodec hook (serde-with-adapter)
+
+## [PR-I.3-N01] OnceLock register-after-init silently no-ops
+**Status:** resolved (note-only; cross-backend asymmetry deferred)
+**Severity:** minor
+**Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/rust/RsDefnTranslator.scala (`register_<foreign>_keycodec` body)
+**Description:** Emitted `let _ = STATIC.set(impl_);` swallows the `Err` returned by `OnceLock::set` on second-call. If any code path triggers `<foreign>_keycodec()` before `register_*` runs (test setup ordering, lazy serde init), the Default impl gets installed and the host's later `register(...)` silently fails. For stringy customs harmless (default identity); for non-stringy customs the panic-on-encode default is what serde sees while the host appears registered. Asymmetric with other backends (Kotlin/Java/TS use mutable last-wins).
+**Fix:** Acceptable. Future hygiene PR could either (a) add `panic!` on `Err` from `set` for visibility, or (b) switch to `RwLock<Option<Box<dyn _>>>` for last-wins parity. Cross-backend Host concurrency contract is best addressed uniformly across all 9 backends, not Rust-only.
+
+## [PR-I.3-N02] Encode-side panic for non-stringy DefaultImpl is dormant but latent
+**Status:** resolved (note-only; pkg0 fixtures not in rs-stub/conv-test-rs corpus)
+**Severity:** minor
+**Location:** RsDefnTranslator.scala (`makeForeignKeyCodecRepr` non-stringy DefaultImpl::encode_key)
+**Description:** `encode_key` for non-stringy DefaultImpl panics with FQN-bearing message. `pkg0/pkg01.baboon` declares ObscureInt + `T1_D1.fm: map[ObscureInt, ObscureInt]` but pkg0 fixtures are not present in `test/rs-stub/` or `test/conv-test-rs/` corpus, so panic path is unreachable today. Future test additions of non-stringy fixtures without registering host impl would abort the test process rather than producing a clean error.
+**Fix:** Acceptable. Documented for future maintainers.
+
+## [PR-I.3-N03] Non-stringy decode_key Err message double-prefixes "malformed key:"
+**Status:** resolved (note-only; cosmetic)
+**Severity:** nit
+**Description:** Non-stringy default's `decode_key` returns `Err("crate::… is not registered; …")`. Adapter's deserialize maps via `format!("malformed key: {}", e)`. Net diagnostic: `malformed key: crate::… is not registered; call register_… at app boot.` — "malformed key:" prefix misleads when actual cause is "host not registered".
+**Fix:** Acceptable. Future polish could detect the FQN-sentinel and bypass the prefix.
+
+## [PR-I.3-N04] MSRV not pinned in conv-test-rs/rs-stub Cargo.toml
+**Status:** resolved (note-only; CI implicit)
+**Severity:** nit
+**Description:** `OnceLock` requires Rust 1.70+. Both `test/conv-test-rs/Cargo.toml` and `test/rs-stub/Cargo.toml` use `edition = "2021"` with no `rust-version` field. Toolchain version is implicit.
+**Fix:** Acceptable. Defensive hardening could add `rust-version = "1.70"` to both files.

@@ -8,6 +8,10 @@ use std::path::PathBuf;
 use baboon_conv_test_rs::convtest::testpkg::{AllBasicTypes, AnyShowcase, CompositeId, InnerPayload, ItemId, PointId, WireEnum};
 use baboon_conv_test_rs::any_opaque::{AnyMeta, AnyOpaque, AnyOpaqueJson, AnyOpaqueUeba};
 use baboon_conv_test_rs::baboon_runtime::{BaboonBinEncode, BaboonBinDecode, BaboonCodecContext};
+// PR-I.3 (M24 Phase 3.3) — Custom-foreign KeyCodec hook fixture. The stringy
+// `FStr` foreign maps to `std::string::String`; the default identity
+// `f_str_keycodec()` impl handles map-key encode/decode without host registration.
+use baboon_conv_test_rs::convtest::m24foreign::{ForeignKeyHolder, ItemKey};
 use uuid::Uuid;
 
 // Domain constants — match the convtest.testpkg domain at version 2.0.0 (where AnyShowcase + InnerPayload live).
@@ -361,6 +365,27 @@ fn write_point_id_repr(pid: &PointId, output_dir: &str) {
     println!("Written repr to {:?}", path);
 }
 
+// PR-I.3 (M24 Phase 3.3) — Custom-foreign KeyCodec hook canonical fixture.
+// The map keys go through `f_str_keycodec()` (default identity impl for the
+// stringy foreign), so the wire form is `{"m":{"alpha":"v1","beta":"v2"}}`.
+fn create_foreign_key_holder_sample() -> ForeignKeyHolder {
+    let mut m = BTreeMap::new();
+    m.insert(ItemKey { v: "alpha".to_string() }, "v1".to_string());
+    m.insert(ItemKey { v: "beta".to_string() },  "v2".to_string());
+    ForeignKeyHolder { m }
+}
+
+fn write_foreign_key_holder_json(data: &ForeignKeyHolder, output_dir: &str) {
+    fs::create_dir_all(output_dir).expect("Failed to create output directory");
+    // serde_json::to_string emits compact form (no spaces, no newlines), matching
+    // the canonical literal `{"m":{"alpha":"v1","beta":"v2"}}` used by the other
+    // 7 compact-emit backends (cs/dart/java/kotlin/kotlin-kmp/swift/typescript).
+    let json_str = serde_json::to_string(data).expect("Failed to serialize ForeignKeyHolder JSON");
+    let path = PathBuf::from(output_dir).join("m24-foreign-keycodec.json");
+    fs::write(&path, &json_str).expect("Failed to write ForeignKeyHolder JSON");
+    println!("Written JSON to {:?}", path);
+}
+
 fn run_legacy() {
     let sample_data = create_sample_data();
 
@@ -377,6 +402,9 @@ fn run_legacy() {
     write_ueba_any(&any_ueba, rust_ueba_dir.to_str().unwrap());
 
     write_point_id_repr(&sample_data.v_point_id, rust_repr_dir.to_str().unwrap());
+
+    let foreign_key_holder = create_foreign_key_holder_sample();
+    write_foreign_key_holder_json(&foreign_key_holder, rust_json_dir.to_str().unwrap());
 
     println!("Rust serialization complete!");
 }

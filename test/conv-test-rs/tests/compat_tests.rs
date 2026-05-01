@@ -1,6 +1,8 @@
 use baboon_conv_test_rs::convtest::testpkg::{AllBasicTypes, AnyShowcase, InnerPayload};
+use baboon_conv_test_rs::convtest::m24foreign::{ForeignKeyHolder, ItemKey};
 use baboon_conv_test_rs::any_opaque::AnyOpaque;
 use baboon_conv_test_rs::baboon_runtime::{BaboonBinDecode, BaboonCodecContext};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -400,4 +402,82 @@ fn test_any_showcase_ueba_byte_identical_rust_cs() {
     let rust_bytes = fs::read(base_dir().join("rust-ueba/any-showcase.ueba")).expect("rust UEBA");
     let cs_bytes = fs::read(base_dir().join("cs-ueba/any-showcase.ueba")).expect("cs UEBA");
     assert_eq!(rust_bytes, cs_bytes, "Rust and C# UEBA bytes diverged");
+}
+
+// -----------------------------------------------------------------------------
+// PR-I.3 (M24 Phase 3.3) — Custom-foreign `<Foreign>_KeyCodec` extension hook
+//
+// The m24-foreign-keycodec fixture declares a stringy custom foreign `FStr`
+// (mapped to `std::string::String` in Rust) used as the inner field of an
+// `ItemKey` wrapper serving as a `map[ItemKey, str]` key. The wrapper's serde
+// adapter routes encode/decode through `f_str_keycodec()`, whose default
+// identity impl handles stringy foreigns out of the box. Wire form is
+// `{"m":{"alpha":"v1","beta":"v2"}}` — byte-identical with the other 7
+// compact-emit backends.
+// -----------------------------------------------------------------------------
+
+#[test]
+fn test_pr_i3_foreign_keycodec_roundtrip() {
+    let path = base_dir().join("rust-json/m24-foreign-keycodec.json");
+    assert!(path.exists(), "Rust m24-foreign-keycodec fixture not found: {:?}", path);
+    let json_str = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", path, e));
+    let decoded: ForeignKeyHolder = serde_json::from_str(&json_str)
+        .unwrap_or_else(|e| panic!("Failed to decode m24-foreign-keycodec JSON: {}", e));
+    let mut expected_map = BTreeMap::new();
+    expected_map.insert(ItemKey { v: "alpha".to_string() }, "v1".to_string());
+    expected_map.insert(ItemKey { v: "beta".to_string() },  "v2".to_string());
+    let expected = ForeignKeyHolder { m: expected_map };
+    assert_eq!(decoded, expected, "round-trip diverged: got {:?}, expected {:?}", decoded, expected);
+}
+
+#[test]
+fn test_pr_i3_foreign_keycodec_canonical_wire_form() {
+    let mut m = BTreeMap::new();
+    m.insert(ItemKey { v: "alpha".to_string() }, "v1".to_string());
+    m.insert(ItemKey { v: "beta".to_string() },  "v2".to_string());
+    let sample = ForeignKeyHolder { m };
+    let encoded = serde_json::to_string(&sample).expect("ForeignKeyHolder encode");
+    let expected = r#"{"m":{"alpha":"v1","beta":"v2"}}"#;
+    assert_eq!(encoded, expected, "FStr_KeyCodec wire form diverged");
+}
+
+// Cross-backend byte-identity for m24-foreign-keycodec.json across the seven
+// compact-emit backends. Scala and Python emit pretty (whitespace) so they are
+// excluded from byte-identity (semantic equivalence is enforced by per-language
+// roundtrip tests).
+fn read_foreign_keycodec_bytes(source: &str) -> Option<Vec<u8>> {
+    let path = base_dir().join(format!("{}-json/m24-foreign-keycodec.json", source));
+    if !path.exists() {
+        return None;
+    }
+    Some(fs::read(&path).unwrap_or_else(|e| panic!("Failed to read {:?}: {}", path, e)))
+}
+
+#[test]
+fn test_pr_i3_foreign_keycodec_byte_identical_rust_cs() {
+    let rust = read_foreign_keycodec_bytes("rust").expect("rust m24-foreign-keycodec.json");
+    let cs   = read_foreign_keycodec_bytes("cs").expect("cs m24-foreign-keycodec.json");
+    assert_eq!(rust, cs, "Rust and C# m24-foreign-keycodec.json bytes diverged");
+}
+
+#[test]
+fn test_pr_i3_foreign_keycodec_byte_identical_rust_java() {
+    let rust = read_foreign_keycodec_bytes("rust").expect("rust m24-foreign-keycodec.json");
+    let java = read_foreign_keycodec_bytes("java").expect("java m24-foreign-keycodec.json");
+    assert_eq!(rust, java, "Rust and Java m24-foreign-keycodec.json bytes diverged");
+}
+
+#[test]
+fn test_pr_i3_foreign_keycodec_byte_identical_rust_kotlin() {
+    let rust   = read_foreign_keycodec_bytes("rust").expect("rust m24-foreign-keycodec.json");
+    let kotlin = read_foreign_keycodec_bytes("kotlin").expect("kotlin m24-foreign-keycodec.json");
+    assert_eq!(rust, kotlin, "Rust and Kotlin m24-foreign-keycodec.json bytes diverged");
+}
+
+#[test]
+fn test_pr_i3_foreign_keycodec_byte_identical_rust_typescript() {
+    let rust = read_foreign_keycodec_bytes("rust").expect("rust m24-foreign-keycodec.json");
+    let ts   = read_foreign_keycodec_bytes("typescript").expect("typescript m24-foreign-keycodec.json");
+    assert_eq!(rust, ts, "Rust and TypeScript m24-foreign-keycodec.json bytes diverged");
 }
