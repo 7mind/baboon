@@ -189,7 +189,11 @@ class KtJsonCodecGenerator(
   private def mkEncoder(tpe: TypeRef, ref: TextTree[KtValue]): TextTree[KtValue] = {
     def encodeKey(tpe: TypeRef, ref: TextTree[KtValue]): TextTree[KtValue] = {
       tpe.id match {
-        case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.format($ref)"
+        // PR-28.4 (M28): the Kotlin runtime exposes `formatTsu`/`formatTso` only;
+        // there is no generic `format`. Per-type dispatch matches the Scala
+        // generator (line 357-358) and PR-28.3 ±HH:MM canonicalisation contract.
+        case TypeId.Builtins.tsu                       => q"$baboonTimeFormats.formatTsu($ref)"
+        case TypeId.Builtins.tso                       => q"$baboonTimeFormats.formatTso($ref)"
         // Note: u64 → kotlin.ULong (per KtTypeTranslator). ULong.toString() is unsigned natively;
         // no special arm needed (PR-28.1-D02 audit confirmed).
         case _: TypeId.Builtin                         => q"$ref.toString()"

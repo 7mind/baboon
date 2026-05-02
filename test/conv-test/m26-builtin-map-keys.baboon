@@ -13,28 +13,37 @@ version "1.0.0"
 // `m26-builtin-map-keys.json` artifact, and the Scala-side cross-language
 // test asserts byte-identity across all 10 backends.
 //
-// Key types covered: i32, i64, u32, bit, uid (5 of 8 originally proposed).
+// Key types covered: i32, i64, u32, u64, bit, uid, tso (7 of 8 originally
+// proposed). PR-28.1 closed u64 (Scala KeyCodec defect fixed); PR-28.3
+// closed tso (canonical RFC-3339 +HH:MM offset wire form unified).
 // Dropped key types and reason:
 //   - f64: backend-divergent number-to-string canonicalization (Scala
-//     `42.0`, TS/JS `String(42.0) === "42"`); needs a dedicated f64 wire
-//     normalization PR.
-//   - u64: latent Scala codegen defect — `ScJsonCodecGenerator.scala`
-//     line 447 emits `BaboonJsonCodec.decodeLong` (a `Decoder[Long]`)
-//     where `KeyDecoder[Long]` is required for u64 map keys; compilation
-//     fails. The encode side emits Long.toString which itself diverges
-//     for negative two's-complement values vs. C# unsigned ulong. Tracked
-//     as a follow-up defect; outside the fixture-scope of PR-26.5.
-//   - tso: backend-divergent timezone-offset formatting (Scala `+00:00`
-//     via `XXX`, TS `Z` via `.toISOString()`); needs a dedicated tso
-//     wire normalization PR.
+//     `42.0`, TS/JS `String(42.0) === "42"`); deferred per PR-28.2-D01,
+//     architectural decision pending.
+//
+// All maps are single-entry to match the original 5/8 fixture pattern and
+// avoid latent per-backend sort-key divergence (BAB-J01 / BAB-C04 family
+// sort by typed-key `toString`, NOT by encoded wire-form key — divergent
+// for u64 boundary values and tso offsets where `OffsetDateTime.toString`
+// emits `Z` for UTC vs the encoded `+00:00`). Single-entry maps still
+// exercise the encoder/decoder paths for boundary values (UInt64.MaxValue,
+// PR-28.3 ±HH:MM offset) without triggering the sort divergence. Filed as
+// PR-28.4-D02 follow-up.
 //
 // Values are chosen to avoid signed/unsigned representation divergence:
 // u32 uses 7 (small positive, both signed and unsigned int32 representations
-// agree); i32 uses 42; i64 uses Long.MaxValue (non-negative).
+// agree); i32 uses 42; i64 uses Long.MaxValue (non-negative); u64 uses
+// UInt64.MaxValue (exercises canonical unsigned wire form per PR-28.1);
+// tso uses 2026-05-02T12:00:00.123+05:30 (non-UTC offset exercises PR-28.3
+// `+HH:MM` canonicalisation; ms=123 forces explicit fractional digits
+// across backends — Rust chrono and Python isoformat default to dropping
+// `.000`, so a non-zero millisecond value keeps wire output uniform).
 root data BuiltinMapKeyHolder : derived[json], derived[ueba] {
   mi32: map[i32, str]
   mi64: map[i64, str]
   mu32: map[u32, str]
+  mu64: map[u64, str]
   mbit: map[bit, str]
   muid: map[uid, str]
+  mtso: map[tso, str]
 }

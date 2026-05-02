@@ -402,13 +402,20 @@ def run_legacy():
 
 
 # PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+# PR-28.4 (M28) — extended with mu64 + mtso (mf64 deferred).
 def create_builtin_map_key_holder_sample() -> BuiltinMapKeyHolder:
     return BuiltinMapKeyHolder(
         mi32={42: "v32"},
         mi64={9223372036854775807: "vmax"},
         mu32={7: "vu32"},
+        # PR-28.4 (M28): u64 = (2**64 - 1) → canonical "18446744073709551615".
+        mu64={18446744073709551615: "vu64max"},
         mbit={True: "vt"},
         muid={UUID("00000000-0000-0000-0000-000000000001"): "vid"},
+        # PR-28.4 (M28): non-UTC tso offset (PR-28.3 ±HH:MM canonicalisation).
+        mtso={
+            datetime(2026, 5, 2, 12, 0, 0, 123000, tzinfo=timezone(timedelta(hours=5, minutes=30))): "vtso_ist",
+        },
     )
 
 

@@ -2971,3 +2971,81 @@ The current m24 baseline `1f1ef66abe5a9a24321c6e615851281d` and m26 baseline `08
 
 **Deferral rationale (one line):** TS + Swift JSON output pipelines own number rendering at the JSON-string level and cannot be redirected per-field without breaking the `JSON.stringify` / `JSONSerialization` public API contract; the architectural decision (custom stringifier vs schema-aware post-processor vs string-encoded f64) is a project-level call, not a PR-28.2 implementation choice.
 
+---
+
+## PR-28.4 (M28) — Extend m26 fixture with mu64 / mtso (mf64 deferred)
+
+### [PR-28.4-D01] m26 fixture covers only 5/8 originally-planned key types
+**Status:** resolved (mu64+mtso added; mf64 deferred per PR-28.2-D01)
+**Severity:** minor (coverage gap)
+**Location:** `test/conv-test/m26-builtin-map-keys.baboon`
+**Description:** PR-26.5 (M26) shipped m26 fixture with 5/8 key types; mu64/mf64/mtso were dropped due to wire-form divergences. PR-28.1 + PR-28.3 closed u64 + tso divergences; PR-28.2 deferred f64.
+**Fix:** Added `mu64` + `mtso` fields to m26 fixture; regenerated canonical JSON; locked new md5 in tasks.md M26-N02 note. mf64 remains tracked at PR-28.2-D01.
+
+### [PR-28.4-D02] Latent: generator-wide map-iteration sort uses typed-key `toString`, not encoded wire-form key
+**Status:** open (deferred — sidestepped via single-entry maps in m26 fixture)
+**Severity:** minor (latent; only manifests on multi-entry maps where typed-`toString` order ≠ encoded-key lex order)
+**Location:** All 9 codec-emitting backends. Reference sites:
+- Scala: `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScJsonCodecGenerator.scala:401` — `sortBy(_._1.toString)`
+- C#: `baboon-compiler/src/main/resources/baboon-runtime/cs/BaboonTools.cs:167` — `OrderBy(e => e.Key?.ToString() ?? string.Empty)`
+- Java: `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/java/JvJsonCodecGenerator.scala:310` — `compareTo(String.valueOf(...))`
+
+**Description:** Per BAB-J01 (Scala) / BAB-C04 (C#) / BAB-J03 (Java) the deterministic-map-encode contract is "sort by typed key's `toString`". For most key types the typed `toString` and the wire-form encoded key string agree (i32, str, uid, id-types where `toString` is the canonical repr, ...). They diverge for two builtin key types:
+
+- **u64**: typed Scala `Long.toString(-1L) = "-1"` (signed two's-complement) vs encoded `Long.toUnsignedString(-1L) = "18446744073709551615"`. C# typed `ulong.ToString() = "18446744073709551615"` (unsigned native). Sort by typed-`toString` puts UInt64.MaxValue *before* `0` on Scala (lex `"-1" < "0"`), *after* `0` on C# / Rust BTreeMap (numeric `0 < MaxValue`).
+- **tso**: typed Java `OffsetDateTime.toString` emits `Z` for UTC zero-offset (e.g. `"2026-05-02T12:00Z"`); encoded `BaboonTimeFormats.formatTso` emits `+00:00` per PR-28.3 (e.g. `"2026-05-02T12:00:00.000+00:00"`). Sort by typed-`toString` orders `+05:30` *before* `Z` lexically, but `+00:00` *before* `+05:30` in encoded form.
+
+For single-entry maps the divergence does not manifest (sort is a no-op). For multi-entry maps the wire form diverges across backends. PR-26.5 m26 fixture uses single-entry maps for all 5 covered key types; PR-28.4 follows the same pattern for the new `mu64`/`mtso` fields, sidestepping the divergence at the fixture level.
+
+**Root cause:** The deterministic-encode contract was designed when only str/i32/i64/u32 keys existed in fixtures; `_.toString` agreed with the encoded wire-form for all those cases. M28 adds u64 + tso to the cross-backend coverage matrix, where the agreement breaks.
+
+**Fix (deferred):** Generator-wide change: sort by the **encoded** key string (i.e. `sortBy(e => encodeKey(e._1))` in Scala, equivalent in 8 other backends). Scope:
+1. Scala `ScJsonCodecGenerator.scala:401`: change `sortBy(_._1.toString)` to use `encodeKey(c.args.head, q"e._1")` as the sort key.
+2. C# `BaboonTools.cs:WriteMap`: receive an `encodeKey` function; sort by its result before iterating.
+3. Java `JvJsonCodecGenerator.scala:310`: replace `String.valueOf(a.getKey())` with the result of the keyEnc lambda.
+4. Mirror in Kotlin / KMP / Rust / Dart / Python / TS / Swift codec generators (audit each).
+
+Wire-format impact: re-locks every existing fixture's md5 if it contains a multi-entry non-string map where the divergence applies. m24 baseline (custom-foreign FStr keys, identity stringy encoder) is unaffected. m26 baseline (single-entry maps) is unaffected. `AllBasicTypes.vmapStrI32`, `vmapItemIdU32`, `vmapCompositeIdU32` are unaffected (str / id-repr-toString agree with encoded-key form by construction).
+
+**Resolution path:** Pair with the Swift `.sortedKeys` outer-key alphabetisation fix (M26-N02 track (a)) in a coordinated 9-backend "canonical-encoded-key sort" PR.
+
+### [PR-28.4-D03] Python pydantic default datetime serializer emits microseconds where the other 8 backends emit milliseconds
+**Status:** open (deferred — sidestepped via parse-equivalence test for Python `mtso`)
+**Severity:** minor (cross-backend tso wire-form gap; semantic equivalence preserved)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/python/PyJsonCodecGenerator.scala` — `mkJsonKeyEncoder` falls through to identity for `datetime` map keys; pydantic's `model_dump_json` default emits `2026-05-02T12:00:00.123000+05:30` (6-digit microseconds).
+**Description:** PR-28.4 m26 fixture's `mtso` field emits canonical wire form `2026-05-02T12:00:00.123+05:30` (3-digit milliseconds) on 9 of 10 backends (post Swift outer-key parse-equivalence skip from PR-26.5-D01). Python's emit diverges to `.123000` (microseconds) because:
+- Pydantic v2 `model_dump_json` serializes `datetime` via `.isoformat()` which uses `microsecond` precision.
+- The codec generator's `mkJsonKeyEncoder` for builtin keys is identity (line ~290) — no per-type override for tso/tsu.
+- Other backends explicitly invoke `BaboonTimeFormats.formatTso` (or equivalent) which uses `.SSS` (3-digit milliseconds).
+
+**Root cause:** Python's JSON codec generator delegates datetime serialization to pydantic's defaults rather than emitting an explicit `formatTso`-equivalent call. Symmetric with how PR-26.5 originally couldn't include tso in m26 (later closed by PR-28.3 for the 9 non-Python backends), but Python was not part of the PR-28.3 scope (Python's tsu/tsu encode-key path was untested at that time).
+
+**Fix:** Add an explicit per-type override in `PyJsonCodecGenerator.scala` `mkJsonKeyEncoder`:
+```scala
+case TypeRef.Scalar(TypeId.Builtins.tso) => q"$baboonTimeFormats.format_tso($ref)"
+case TypeRef.Scalar(TypeId.Builtins.tsu) => q"$baboonTimeFormats.format_tsu($ref)"
+```
+Plus add `format_tso` / `format_tsu` helpers to `BaboonTimeFormats` Python runtime that emit `.SSS` (3-digit milliseconds) form. Decode side accepts both (3- and 6-digit fractional) per the existing tolerant parser.
+
+**Workaround:** PR-28.4 adds Python to the parse-equivalence list in `Test_CrossLanguageCompat.scala` (alongside Swift). Byte-identity verified for 8 of 10 backends; Python + Swift use parse-equivalence.
+
+### [PR-28.4-D04] Python UEBA `write_datetime` emits divergent `kind` byte semantics
+**Status:** open (deferred — sidestepped via m26 UEBA byte-identity covering 9-of-10 backends)
+**Severity:** major (latent UEBA cross-backend wire-form divergence; trips on any tso/tsu wire round-trip with the existing 9-backend canonical)
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/python/baboon_runtime_shared.py` — `LEDataOutputStream.write_datetime` line ~285:
+```python
+kind = 1 if offset_ms == 0 else 2
+self.write_byte(kind)
+```
+**Description:** Scala / 8 other backends use `kind ∈ {0=tso, 1=tsu}` per `BaboonTools.scala:encodeToBin(...)` (kind passed as parameter at the codec call-site: tso→0, tsu→1). Python uses `kind ∈ {1=offset==0, 2=offset!=0}` (no per-call dispatch — inferred from offset). Wire layouts:
+- Python kind=1 for UTC datetime ≡ Scala kind=1 (tsu) — accidental agreement when datetime IS tsu and offset==0.
+- Python kind=2 for non-UTC datetime ≢ Scala kind=0 (tso) — direct conflict.
+
+**Surfaced by:** PR-28.4's m26 fixture extension with `mtso: map[tso, str]` containing a non-UTC offset (`+05:30`). Scala emits kind=0; Python emits kind=2; UEBA wire bytes diverge at the kind-byte position. Exists pre-PR-28.4 but was untested cross-language until this PR (the only previous tso UEBA exposure was `AllBasicTypes.vtso` value-position which the acceptance test exercises via cross-language *decode* tolerance, NOT byte-identity).
+
+**Confirmation:** `md5sum target/compat-test/{python,scala}-ueba/all-basic-types.ueba` already shows divergent md5s pre-PR-28.4 — the divergence isn't introduced by PR-28.4 but is now load-bearing for the m26 byte-identity assertion.
+
+**Fix:** Align Python's `write_datetime` to take a `kind` parameter (or add `write_tso(d)` / `write_tsu(d)` siblings) emitting the canonical kind byte. Update the codec generator's tso/tsu encode call-sites to dispatch correctly. Symmetric `read_datetime` already accepts the kind byte (no change needed).
+
+**Workaround:** PR-28.4 covers UEBA byte-identity for 9 of 10 backends only (excludes Python). UEBA round-trip via JSON re-encode is exercised by `:test-acceptance` and passes (Python decode is tolerant of any kind byte; cross-language decode operates on semantic equivalence).
+

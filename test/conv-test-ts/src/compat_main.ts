@@ -386,8 +386,14 @@ function createBuiltinMapKeyHolderSample(): BuiltinMapKeyHolder {
         new Map<number, string>([[42, "v32"]]),
         new Map<bigint, string>([[9223372036854775807n, "vmax"]]),
         new Map<number, string>([[7, "vu32"]]),
+        // PR-28.4 (M28): u64 max exercises canonical unsigned wire form.
+        new Map<bigint, string>([[18446744073709551615n, "vu64max"]]),
         new Map<boolean, string>([[true, "vt"]]),
         new Map<string, string>([["00000000-0000-0000-0000-000000000001", "vid"]]),
+        // PR-28.4 (M28): non-UTC tso offset (PR-28.3 ±HH:MM).
+        new Map<BaboonDateTimeOffset, string>([
+            [BaboonDateTimeOffset.fromISO("2026-05-02T12:00:00.123+05:30"), "vtso_ist"],
+        ]),
     );
 }
 
