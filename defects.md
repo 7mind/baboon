@@ -2605,10 +2605,15 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Fix:** Changed `codecFqn = s"${srcRef.pkg.parts.mkString(".")}.$codecName"` to `codecFqn = s"${srcRef.pkg.parts.mkString(".")}.$hostName"`. Diagnostic now correctly references `<pkg>.FStr_KeyCodecHost.register(impl)`. Verified `mdl :test-java-regular` + `mdl :test-gen-compat-java` PASS.
 
 ## [PR-I.1b-N01] No Java/Kotlin equivalent of M19 ForeignMapKeyRoundTripSpec
-**Status:** resolved (note-only; covered indirectly by canonical fixture)
+**Status:** resolved
 **Severity:** nit
 **Description:** Wrapper-around-foreign regression test exists only for Scala (`ForeignMapKeyRoundTripSpec.scala`) and Swift. The new m24-foreign-keycodec fixture exercises this path indirectly via `ItemKey { v: FStr }`. Dedicated Java/Kotlin spec would harden coverage parity.
-**Fix:** Acceptable as-is. Future hygiene PR could add per-language wrapper-around-foreign specs.
+**Fix:** PR-26.6 (M26) added three explicit specs mirroring the Scala reference's structure against the M19 `my.ok.m19.foreign` fixture (Custom-foreign `FStr` → `String`, wrapper DTO `ItemKey { v: FStr }`, root `Holder { m: map[ItemKey, str] }`):
+- `test/jv-stub/src/test/java/runtime/ForeignMapKeyRoundTripTest.java` (3 JUnit5 tests)
+- `test/kt-stub/src/test/kotlin/runtime/ForeignMapKeyRoundTripTest.kt` (3 JUnit5 tests)
+- `test/kt-stub-kmp/src/test/kotlin/runtime/ForeignMapKeyRoundTripTest.kt` (3 JUnit5 tests)
+
+Each spec exercises (a) JSON encode → byte-identity assertion against canonical wire string `{"m":{"alpha":"1","beta":"2"}}` (PR-I-D02 byte-identity discipline), (b) JSON decode of the canonical wire string → structural equality with the source `Holder`, and (c) empty-map JSON round-trip. UEBA round-trip is intentionally NOT tested — `FStr_UEBACodec` throws `IllegalArgumentException("String is a foreign type")` (host is expected to supply a hand-written UEBA codec for Custom-foreign types); same omission as `ForeignMapKeyRoundTripTests.swift` and `ForeignMapKeyRoundTripSpec.scala`. Verification: `mdl :test-java-regular`, `mdl :test-kotlin-regular`, `mdl :test-kotlin-kmp-regular`, `mdl :test-gen-compat-java`, `mdl :test-gen-compat-kotlin`, `mdl :test-gen-compat-kotlin-kmp` all PASS; new tests report 3/3 passed across all three backends.
 
 ## [PR-I.1b-N02] Kotlin @Suppress("DEPRECATION") emitted unconditionally on host
 **Status:** resolved (note-only; documented design choice)
