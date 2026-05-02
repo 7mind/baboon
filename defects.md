@@ -2704,6 +2704,21 @@ Each spec exercises (a) JSON encode → byte-identity assertion against canonica
 
 ---
 
+## PR-26.7 (M26) — Dart UEBA non-stringy Custom-foreign codec class drop (round-2)
+
+## [PR-26.7-D01] Dart UEBA non-stringy Custom-foreign retained throwing-stub codec class
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/dart/DtUEBACodecGenerator.scala` (`translate`, `mkEncoder`, `mkDecoder`, `isActive`)
+**Description:** PR-26.7 round-1 dropped the `<F>_UebaCodec` throwing-stub class for stringy Custom-mapped foreigns and BaboonRef-mapped foreigns, but retained it for non-stringy Custom (e.g. `ObscureInt` mapped to `dart.core.int`). Round-1 rationale: a `(throw …)` expression substituted at the value-position call site tripped `dart analyze --fatal-warnings` dead_code on trailing constructor args. Reviewer flagged the residual asymmetry vs TS.
+**Fix:** Round-2 routes non-stringy Custom-mapped foreigns with a declared `runtimeMapping` (the model-level `rt = <type>` clause; `Typedef.Foreign.runtimeMapping: Option[TypeRef]`) through the underlying TypeRef's primitive UEBA encoder/decoder. `mkEncoder`/`mkDecoder` recurse on `f.runtimeMapping.get` instead of emitting `<F>_UebaCodec.instance.encode(...)` / `.decode(...)`. `translate` returns `None` for these foreigns, and `isActive` suppresses them so the per-domain `BaboonCodecsUeba` aggregator does not reference a dropped class. Non-stringy Custom WITHOUT `runtimeMapping` (e.g. `ForeignStruct`, no `rt` clause) keeps the throwing-stub class as before — no underlying primitive is declared, so an inline UEBA wire mapping is genuinely unavailable.
+
+The TS pattern at `TsUEBACodecGenerator.scala:319-329` does not actually deref to the underlying primitive — it routes to `<decl>_UEBACodec.instance.encode(...)` (a user-supplied codec by name); TS suppresses UEBA codec generation entirely for any DTO containing a Foreign field via `!enquiries.hasForeignType(...)` at `TsUEBACodecGenerator.scala:23`, so this call path is rarely exercised. Dart cannot adopt the `hasForeignType` suppression without breaking the m24-foreign-keycodec wire format (m24's `ForeignKeyHolder` contains `ItemKey { v: FStr }` and DOES need a UEBA codec for stringy-Custom-bearing types). Dart's `runtimeMapping` deref strategy gives full inline wire encoding for non-stringy Custom with declared rt, and is strictly stronger than the TS by-name reference for those cases.
+
+Verified `mdl :build :test-dart-regular :test-dart-wrapped :test-manual-dart :test-gen-compat-dart` PASS. `target/compat-test/dart-json/m24-foreign-keycodec.json` md5 baseline `1f1ef66abe5a9a24321c6e615851281d` preserved. Regenerated `target/test-wrapped/dt-stub/lib/testpkg/pkg0/2.0.0/obscure_int.dart` no longer contains `class ObscureInt_UebaCodec`; `target/test-wrapped/dt-stub/lib/testpkg/pkg0/2.0.0/t1_foreign_dto.dart` UEBA decode now reads `ft: reader.readI32()` and `fm: ... reader.readI32() ... reader.readI32() ...` directly. `ForeignStruct_UebaCodec` (no `rt` clause) remains as a throwing-stub class and is the documented residual asymmetry.
+
+---
+
 ## PR-I.2 (M24) — Swift + Python Custom-foreign KeyCodec hook
 
 ## [PR-I.2-D01] Python decoder omitted "malformed key:" prefix on host-thrown exceptions

@@ -30,18 +30,23 @@ class DtUEBACodecGenerator(
         case d: Typedef.Dto  => Some(genDtoBodies(dtRef, d))
         case e: Typedef.Enum => Some(genEnumBodies(dtRef, e))
         case a: Typedef.Adt  => Some(genAdtBodies(dtRef, a))
-        // PR-26.7 (M26): drop dead `<F>_UebaCodec` emission for stringy Custom-mapped foreigns
-        // (`dart.core.String` / bare `String`) and for BaboonRef-mapped foreigns. Stringy
-        // customs route through `writeString`/`readString` in `mkEncoder`/`mkDecoder`. Non-
-        // stringy customs retain the throwing-stub codec class — no clean inline UEBA wire
-        // mapping is available, and replacing the call-site with a `(throw …)` expression
-        // trips `dart analyze --fatal-warnings` dead_code on the trailing constructor args.
-        // Closes PR-I.1d-N03 for stringy customs (the FStr case in the defect).
+        // PR-26.7 round-2 (M26): drop dead `<F>_UebaCodec` emission for ALL Foreign typedefs
+        // when an inline UEBA wire mapping is available:
+        //   - BaboonRef-mapped: aliasedRef recurses through `mkEncoder`/`mkDecoder`.
+        //   - stringy Custom (`dart.core.String` / bare `String`): inlined as `writeString`/
+        //     `readString`.
+        //   - non-stringy Custom with `runtimeMapping` (e.g. `ObscureInt` with `rt = i32`):
+        //     recurses through `mkEncoder`/`mkDecoder` on the underlying TypeRef.
+        // Non-stringy Custom WITHOUT `runtimeMapping` (e.g. `ForeignStruct`) retains the
+        // throwing-stub codec class — no underlying primitive is declared, and the value-
+        // position call site references this class. Closes PR-I.1d-N03 / PR-26.7-D01.
         case f: Typedef.Foreign =>
           f.bindings.get(BaboonLang.Dart) match {
-            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_)))            => None
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
             case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _)))
                 if decl == "dart.core.String" || decl == "String" =>
+              None
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) if f.runtimeMapping.isDefined =>
               None
             case _ => Some(genForeignBodies(dtRef))
           }
@@ -432,8 +437,14 @@ class DtUEBACodecGenerator(
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _)))
                       if decl == "dart.core.String" || decl == "String" =>
                     q"reader.readString()"
-                  // Non-stringy Custom foreigns retain the throwing-stub `<F>_UebaCodec` —
-                  // see `translate` foreign branch.
+                  // PR-26.7 round-2 (M26): non-stringy Custom-mapped foreigns with a declared
+                  // `runtimeMapping` (e.g. `ObscureInt` with `rt = i32`) deref to the
+                  // underlying primitive's UEBA decoder. The `<F>_UebaCodec` class is no
+                  // longer emitted for these customs (closes PR-26.7-D01).
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) if f.runtimeMapping.isDefined =>
+                    mkDecoder(f.runtimeMapping.get)
+                  // Non-stringy Custom foreigns without `runtimeMapping` retain the throwing-
+                  // stub `<F>_UebaCodec` — see `translate` foreign branch.
                   case _ =>
                     val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
                     q"""$targetTpe.instance.decode(ctx, reader)"""
@@ -499,6 +510,9 @@ class DtUEBACodecGenerator(
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _)))
                       if decl == "dart.core.String" || decl == "String" =>
                     q"$wref.writeString($ref);"
+                  // PR-26.7 round-2 (M26): see `mkDecoder` analog.
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) if f.runtimeMapping.isDefined =>
+                    mkEncoder(f.runtimeMapping.get, ref, wref, depth)
                   case _ =>
                     val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
                     q"""$targetTpe.instance.encode(ctx, $wref, $ref);"""
@@ -747,20 +761,25 @@ class DtUEBACodecGenerator(
   }
 
   override def isActive(id: TypeId): Boolean = {
-    // PR-26.7 (M26): stringy Custom-mapped Foreign typedefs no longer get a `<F>_UebaCodec`
-    // class. Suppress them from `isActive` so the per-domain `BaboonCodecsUeba` aggregator
-    // (DtBaboonTranslator codec-registration loop) doesn't reference the dropped class.
-    // Non-stringy customs and BaboonRef-aliased foreigns still register normally.
-    val isStringyCustomForeign = domain.defs.meta.nodes.get(id).exists {
+    // PR-26.7 (M26): Foreign typedefs with an inline UEBA wire mapping no longer get a
+    // `<F>_UebaCodec` class. Suppress them from `isActive` so the per-domain
+    // `BaboonCodecsUeba` aggregator (DtBaboonTranslator codec-registration loop) doesn't
+    // reference a dropped class. Suppression covers:
+    //   - stringy Custom (`dart.core.String` / bare `String`) — round-1
+    //   - non-stringy Custom with `runtimeMapping` (e.g. `ObscureInt` with `rt = i32`) —
+    //     round-2 (closes PR-26.7-D01).
+    // BaboonRef-aliased foreigns are also suppressed via `isBaboonRefForeign`. Non-stringy
+    // Custom WITHOUT `runtimeMapping` still register a throwing-stub class.
+    val isInlineableCustomForeign = domain.defs.meta.nodes.get(id).exists {
       case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
         f.bindings.get(BaboonLang.Dart) match {
           case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
-            decl == "dart.core.String" || decl == "String"
+            decl == "dart.core.String" || decl == "String" || f.runtimeMapping.isDefined
           case _ => false
         }
       case _ => false
     }
-    !isStringyCustomForeign &&
+    !isInlineableCustomForeign &&
     !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Dart) &&
     target.language.generateUebaCodecs && (target.language.generateUebaCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId]).contains(id))
