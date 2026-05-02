@@ -177,32 +177,33 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
       .filterNot(_.moduleId == o.module)
       .distinct
 
-    val aliasMap = buildAliasMap(usedTypes)
-
     val (versioned, usual) = usedTypes.partition(_.versioned)
 
-    val versionPkgImports = versioned
-      .map(t => t.moduleId.pathToVersion -> t.moduleId).toMap
-      .map {
-        case (path, module) =>
-          q"from ${path.mkString(".")} import ${module.moduleVersionString.getOrElse("")}"
-      }.toList
+    // Versioned (cross-version) refs were previously emitted as `from <pkg> import v<X>`
+    // followed by attribute access `v<X>.<ns>.<module>.<Type>`. That works when the version
+    // package's `__init__.py` re-exports the leaf module, but breaks for namespaced types
+    // (`v<X>.<ns>.<module>` where intermediate namespace dirs are implicit-namespace packages
+    // without `__init__.py`s). Instead, emit per-leaf direct imports `from <full module path>
+    // import <Symbol> as <alias>` and rewrite the dereference to use `<alias>`. The alias is
+    // derived from the versioned type's flattened path so it is unique within the rendered
+    // module.
+    val versionedAliases: Map[PyValue.PyType, (String, String, String)] = versioned.map {
+      t =>
+        val parts      = t.name.split('.').toList
+        val symbolName = parts.last // class name within the type's `.py` module
+        val moduleFqn  = t.moduleId.path.mkString(".")
+        val alias      = parts.mkString("_")
+        t -> (moduleFqn, symbolName, alias)
+    }.toMap
 
-    val namespaceImports = versioned.filter {
-      t =>
-        val parts = t.name.split('.')
-        parts.length > 3
-    }.flatMap {
-      t =>
-        val parts         = t.name.split('.')
-        val versionPart   = parts.head
-        val namespacePart = parts(1)
-        val modulePart    = parts(2)
-        val pathToVersion = t.moduleId.pathToVersion
-        val nsImport      = q"from ${(pathToVersion :+ versionPart).mkString(".")} import $namespacePart"
-        val moduleImport  = q"from ${(pathToVersion :+ versionPart :+ namespacePart).mkString(".")} import $modulePart"
-        List(nsImport, moduleImport)
-    }.distinct.toList
+    val aliasMap = buildAliasMap(usual) ++ versionedAliases.map { case (t, (_, _, alias)) => t -> alias }
+
+    val versionedImports = versionedAliases.toList
+      .sortBy { case (_, (mod, sym, _)) => (mod, sym) }
+      .map {
+        case (_, (moduleFqn, symbolName, alias)) =>
+          q"from $moduleFqn import $symbolName as $alias"
+      }
 
     val usualImportsByModule = usual.groupBy(_.moduleId).toList.sortBy { case (moduleId, types) => moduleId.path.size + types.size }.reverse.map {
       case (module, types) =>
@@ -225,7 +226,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
         }
     }
 
-    val allImports = (usualImportsByModule ++ versionPkgImports ++ namespaceImports).joinN()
+    val allImports = (usualImportsByModule ++ versionedImports).joinN()
 
     val full = Seq(allImports, o.tree).joinNN()
 
