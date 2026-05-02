@@ -350,10 +350,16 @@ class _StubJsonCodec:
         self.baboon_type_identifier = "smoke.dom/:#Stub"
 
     def encode(self, ctx, value):
-        return {"x": value["x"]}
+        # Match real codegen contract: encode returns a JSON-text string
+        # (real codecs use pydantic.model_dump_json).
+        return json.dumps({"x": value["x"]})
 
     def decode(self, ctx, value):
-        return {"x": value["x"]}
+        # Match real codegen contract: decode takes a JSON-text string
+        # (real codecs use pydantic.model_validate_json). Parse it, then
+        # rebuild the stub return shape.
+        parsed = json.loads(value)
+        return {"x": parsed["x"]}
 
 
 class _StubBinCodecs(AbstractBaboonUebaCodecs):
@@ -404,7 +410,9 @@ class BaboonCodecsFacadeAnyTest(unittest.TestCase):
     def test_decode_any_json_round_trip(self):
         facade = _make_facade()
         meta = AnyMeta(0x07, "smoke.dom", "1.0.0", "smoke.dom/:#Stub")
-        opaque = AnyOpaqueJson(meta, {"x": "world"})
+        # decode_any passes opaque.json directly to codec.decode; real codecs call
+        # pydantic.model_validate_json which requires a JSON-text string. Match that contract.
+        opaque = AnyOpaqueJson(meta, json.dumps({"x": "world"}))
         result = facade.decode_any(opaque)
         self.assertIsInstance(result, BaboonRight, msg=str(result))
         self.assertEqual(result.value, {"x": "world"})
@@ -422,10 +430,11 @@ class BaboonCodecsFacadeAnyTest(unittest.TestCase):
         meta = AnyMeta(0x07, "smoke.dom", "1.0.0", "smoke.dom/:#Stub")
         result = facade.json_to_ueba_bytes(meta, {"x": "hi"})
         self.assertIsInstance(result, BaboonRight, msg=str(result))
-        # Round-trip back via ueba_to_json:
+        # Round-trip back via ueba_to_json. Real codegen's encode returns a JSON-text
+        # string (pydantic model_dump_json), so ueba_to_json's BaboonRight wraps a string.
         rev = facade.ueba_to_json(meta, result.value)
         self.assertIsInstance(rev, BaboonRight)
-        self.assertEqual(rev.value, {"x": "hi"})
+        self.assertEqual(json.loads(rev.value), {"x": "hi"})
 
     def test_json_to_ueba_bytes_with_static_fallbacks(self):
         # Variant D3 wire meta + full static fallbacks.
@@ -464,7 +473,8 @@ class BaboonCodecsFacadeAnyTest(unittest.TestCase):
         facade = _make_facade()
         meta = AnyMeta(0x07, "smoke.dom", "1.0.0", "smoke.dom/:#Stub")
         # decode_any uses exact=False; without the PR-07-D02 fix this would raise CodecNotFound.
-        opaque = AnyOpaqueJson(meta, {"x": "ok"})
+        # opaque.json must be JSON-text (pydantic model_validate_json contract).
+        opaque = AnyOpaqueJson(meta, json.dumps({"x": "ok"}))
         result = facade.decode_any(opaque)
         self.assertIsInstance(result, BaboonRight, msg=str(result))
 
