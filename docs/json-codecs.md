@@ -32,9 +32,51 @@ Baboon's generated JSON codecs aim for predictable, deterministic shapes that ro
 Map keys are always strings in JSON. The string form depends on the key type:
 
 - Builtins → `ToString`/`parse` of the scalar (timestamps use formatted strings; booleans/numbers use culture‑invariant formats).
-- Enums → encoded enum value to string.
-- Foreign types (when allowed as keys) → encoded using their codec and then `ToString()`.
-- Other user types are not permitted as map keys.
+- Enums → `toString` of the enum case (Pascal-cased canonical name; see the enum wire-format spec).
+- `id` types → the canonical identifier repr `<Name>:<ver>#field:value:...:{nested}` documented in [`docs/spec/identifier-repr.md`](spec/identifier-repr.md). Multi-field identifiers are permitted as keys.
+- Single-primitive-field wrapper DTOs (`data Foo { v: str }` etc.) → the inner field is peeled and serialized as the bare primitive, so keys appear in their inner-key form (e.g. plain strings for a `v: str` wrapper, decimal numbers for `v: i32`).
+- Foreign types (when allowed as keys) → encoded via the per-foreign `<Foreign>_KeyCodec` extension hook (see [Custom-foreign key codecs](#custom-foreign-key-codecs-m24--pr-i1a) below).
+- Other user types are not permitted as map keys; the validator rejects them at type-check time. Floats are asymmetric: `map[f64, V]` (builtin) is allowed, but `map[Wrapper, V]` where `Wrapper { v: f64 }` is rejected.
+
+Shipped: M19 / PR-59..PR-61 (id + DTO map keys), M24 / PR-I.1a..PR-I.3 (custom-foreign key codecs).
+
+### Custom-foreign key codecs (M24 / PR-I.1a)
+
+Foreign types mapped to a non-stringy host type (anything other than the host language's native string) need user-provided `encodeKey`/`decodeKey` to participate in JSON map-key conversion. Each backend emits a per-foreign extension hook so the user can register a codec at application boot.
+
+**Default behavior — stringy foreigns:** when the host-language declaration is the language's canonical string type (e.g. Scala `java.lang.String`, Java/Kotlin `String`, C# `System.String`/`string`, TypeScript `string`, Dart `String`/`dart.core.String`, Swift `Swift.String`/`String`, Python `builtins.str`/`str`, Rust `std::string::String`/`String`/`&str`), the emitted default implementation is identity round-trip — no host registration needed and the codec works out of the box.
+
+**Non-stringy foreigns:** the default implementation throws/panics with an FQN-bearing diagnostic of the form `<FQN>_KeyCodec is not registered; call <FQN>_KeyCodec.register(impl) at app boot.` The host MUST register an implementation before the first encode or decode.
+
+**Per-backend hook surface:**
+
+| Backend | Hook surface (per `foreign F`) |
+|---------|--------------------------------|
+| Scala | `trait F_KeyCodec` + companion `object F_KeyCodec` (with `register`, `instance`, private `DefaultImpl`) |
+| Java | `interface F_KeyCodec` + final class `F_KeyCodecHost` (`register` / `instance` static methods) |
+| Kotlin / Kotlin-KMP | `interface F_KeyCodec` + `object F_KeyCodecHost` |
+| C# | `public interface F_KeyCodec` + `public static class F_KeyCodecHost` (with `Register`, `Instance`, `EncodeKey`, `DecodeKey`) |
+| TypeScript | `export interface F_KeyCodec` + `export const F_KeyCodecHost = { register, get instance }` |
+| Dart | `abstract class F_KeyCodec` + `class F_KeyCodecHost` (static `_instance` + `register` + `instance` getter) |
+| Swift | `public protocol F_KeyCodec` + `public enum F_KeyCodecHost` (with `register` / `instance` / private `DefaultImpl`) |
+| Python | `class F_KeyCodec(Protocol)` + `class F_KeyCodecHost` (`@staticmethod register` / `instance`) |
+| Rust | `pub trait F_KeyCodec: Send + Sync` + `register_<f>_keycodec` / `<f>_keycodec()` accessors + serde adapter module `<f>_as_map_key` |
+
+**Sample registration (Scala) for a non-stringy custom foreign `ObscureInt`:**
+
+```scala
+// Stringy foreigns: no registration needed — default impl is identity.
+//
+// Non-stringy customs require the host to register before first encode/decode:
+ObscureInt_KeyCodec.register(new ObscureInt_KeyCodec {
+  def encodeKey(v: ObscureInt): String = v.toString
+  def decodeKey(s: String): ObscureInt = ObscureInt.parse(s)
+})
+```
+
+**Cross-language wire-form lock-in:** the canonical fixture `test/conv-test/m24-foreign-keycodec.baboon` (a stringy `FStr` foreign + `ItemKey { v: FStr }` + `ForeignKeyHolder { m: map[ItemKey, str] }`) emits `m24-foreign-keycodec.json` byte-identically (md5 `1f1ef66abe5a9a24321c6e615851281d`) across all 8 compact-emit backends (C#, Dart, Java, Kotlin, Kotlin-KMP, Rust, Swift, TypeScript). Scala and Python emit pretty by default, with in-test compact re-emit verifying the same wire form.
+
+Shipped: M24 / PR-I.1a (Scala reference) → PR-I.1b (Java/Kotlin/KMP) → PR-I.1c (C#) → PR-I.1d (Dart/TypeScript) → PR-I.2 (Swift/Python) → PR-I.3 (Rust).
 
 ## ADTs and contracts
 

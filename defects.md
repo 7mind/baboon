@@ -2883,3 +2883,14 @@ Verified `mdl :build :test-dart-regular :test-dart-wrapped :test-manual-dart :te
 **Description:** Generated Scala fails to compile when any model has `map[u64, _]` derived `[json]` — line 447 emits a value-decoder where a key-decoder is required. Plus encode side: `Long.toString(-1L)` yields `"-1"` (two's-complement signed), not the canonical unsigned `"18446744073709551615"`. Surfaced by M26-N02(b) follow-up audit.
 **Root cause:** M19 PR-60 (TS direct-builtin map-key wire format unification) added cross-backend KeyDecoder emission for builtin map-keys, but the Scala u64 path was missed: it used the existing value-side `decodeLong` helper instead of dedicated `KeyDecoder[Long]`. Encode side similarly used `toString` directly.
 **Fix:** Added `BaboonCodecs.decodeKeyU64: KeyDecoder[Long]` (parses via BigInt, validates u64 range, narrows to Long); `ScJsonCodecGenerator.scala:447` emits `decodeKeyU64`; encode-key u64 arm emits `java.lang.Long.toUnsignedString(_)`. Closes M26-N02(b).
+
+---
+
+## PR-28.6 — User-facing docs catch-up (M18-M27)
+
+### [PR-28.6-D01] User-facing docs lag behind compiler features by 5 milestones (M18-M27)
+**Status:** resolved (Wave 1; lock-in subsections deferred to Wave 2)
+**Severity:** minor
+**Location:** docs/language-features.md, docs/json-codecs.md, README.md
+**Description:** M18 (id keyword), M19 (id/DTO map keys), M20 (ADT branch inheritance), M24 (Custom-foreign KeyCodec hook), M26-M27 (m26 fixture coverage, editor parity) shipped without doc updates. Cross-cutting note M27-N01 captures the discipline going forward.
+**Fix:** PR-28.6 Wave 1 adds: id-keyword + ADT-inheritance + map-key sections in language-features.md; Custom-foreign KeyCodec subsection in json-codecs.md; Highlights bullets in README. f64 + tso canonical wire-form lock-in deferred to Wave 2 (post PR-28.2 + PR-28.3).

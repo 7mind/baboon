@@ -79,6 +79,112 @@ root data TransferOpt: derived[json], derived[ueba] {
 
 `TransferOpt` comes directly from `test/conv-test/pkg02.baboon` and illustrates optional values, lists, and maps used together.
 
+## Identifier types (`id`)
+
+The `id` keyword declares a record whose values are first-class identifiers. Identifier types are structurally identical to `data` records but carry a parseable canonical string representation that round-trips byte-identically across all 9 backends.
+
+```baboon
+id PointId : derived[json], derived[ueba] {
+  x: i32
+  y: i32
+}
+```
+
+- Field types are restricted to builtin scalars except floats (`bit`, `i08`..`i64`, `u08`..`u64`, `str`, `uid`, `tsu`, `tso`, `bytes`), nested `id` types, and aliases that resolve to one of the above. Floats (`f32`, `f64`, `f128`), collections (`opt`, `lst`, `set`, `map`), non-id user types, and `any` variants are rejected at validator time.
+- Multi-field identifiers are supported (e.g. composite keys).
+- Identifier types serialize on JSON and UEBA wires byte-identically to a `data` of the same shape; conversion between an `id` type and a `data` type with matching field shape is explicit but mechanical, so the two are interchangeable at the wire level.
+
+### Canonical repr
+
+Each identifier renders to the form `<Name>:<ver>#<field>:<value>:<field>:<value>:...`, with nested `id` values wrapped as `:{...}`. Five metacharacters (`\`, `#`, `:`, `{`, `}`) are escaped with a backslash. The full grammar, escape table, fixed-width `tsu`/`tso` rule, and per-type rendering table live in [`docs/spec/identifier-repr.md`](spec/identifier-repr.md).
+
+Round-trip example using the schema above:
+
+```scala
+val p = PointId(42, -7)
+p.toString
+// "PointId:2.0.0#x:42:y:-7"
+
+PointIdCodec.parseRepr("PointId:2.0.0#x:42:y:-7")
+// Right(PointId(42, -7))
+```
+
+The `parseRepr` entry point lives on the per-type internal codec object (`<TypeName>Codec` for Scala; analogous host objects/modules in the other backends), not on the type's companion. Each backend ships its own `parseRepr` whose output matches the spec byte-for-byte.
+
+Shipped: M18 / PR-54..PR-58.
+
+## ADT branch inheritance and subtraction
+
+ADTs can pull in branches from other ADTs using the same `+`, `^`, and `-` operators that `data` records use for structural inheritance. This lets you reuse error atoms, signal sets, or any other branch family across multiple ADTs without copy-pasting the constructors.
+
+```baboon
+adt Errors {
+  data NotFound {}
+  data Forbidden {}
+}
+
+adt UserErrors {
+  + Errors             // include every branch of Errors
+  data Banned {}       // plus a UserErrors-specific branch
+}
+
+adt AuthErrors {
+  + Errors
+  ^ Errors             // intersection — keep only branches present in both
+}
+
+adt PublicErrors {
+  + Errors
+  - Errors.NotFound    // exclude a single named branch
+}
+```
+
+- `+ X` re-emits every branch of ADT `X` into the current ADT.
+- `^ X` retains only branches whose constructor names appear in `X` as well — useful for projecting a wider error set down to a known subset.
+- `- X` drops every branch of `X`; `- X.Branch` drops a single named branch.
+- Chained inclusions auto-expand via toposort, so `+ A` where `A` itself does `+ B` pulls both A's and B's branches transparently.
+- Constructor-name collisions are a typer error.
+
+Branch reuse is a syntactic expansion at the typer-early stage; downstream codegen sees the fully-expanded constructor list. The expanded ADTs participate in evolution like any other ADT — adding/removing branches in a later version follows the standard rules in [Evolution workflow](#evolution-workflow).
+
+Shipped: M20 / PR-62..PR-64.
+
+## Identifier and DTO types as map keys
+
+Beyond builtin primitives and enums, the following user types are permitted as JSON/UEBA `map[K, V]` keys:
+
+- Any `data` record with exactly one primitive field (the wrapper "peels" to its inner key form on the wire).
+- Any `id` type, including multi-field identifiers (encoded via the canonical repr from the [`id` section](#identifier-types-id)).
+- Foreign types (accepted at the user's responsibility — see [Foreign types](#foreign-types) and the JSON map-keys section in [`docs/json-codecs.md`](json-codecs.md#map-keys)).
+
+Constraints enforced by the validator:
+
+- A user-typed key must declare `derived[json]` or `derived[ueba]` matching the codec used for the enclosing map.
+- Floats are asymmetric: `map[ItemKey, str]` where `ItemKey { v: f64 }` is **rejected** (wrappers around floats), but `map[f64, str]` (builtin float key) is **allowed**.
+- The validator rejects user-key types whose shape would render ambiguously on the wire.
+
+Example:
+
+```baboon
+data ItemKey : derived[json], derived[ueba] {
+  v: str
+}
+
+id OrderId : derived[json], derived[ueba] {
+  region: str
+  serial: u32
+}
+
+root data Inventory : derived[json], derived[ueba] {
+  byItem:  map[ItemKey, i32]
+  byOrder: map[OrderId, str]
+}
+```
+
+Cross-link: see the [Map keys](json-codecs.md#map-keys) section in `docs/json-codecs.md` for per-key-type wire rules.
+
+Shipped: M19 / PR-59..PR-61.
+
 ## Algebraic data types (ADTs)
 
 ADT members are nested `data` blocks inside an `adt`. Add constructors freely across versions; the evolution engine will scaffold conversions when safe.
