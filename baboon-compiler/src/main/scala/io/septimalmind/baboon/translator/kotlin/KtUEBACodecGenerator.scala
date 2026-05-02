@@ -274,7 +274,6 @@ class KtUEBACodecGenerator(
       q"""header = (header.toInt() or 1).toByte()
          |writer.writeByte(header.toInt())
          |val fakeWriter = $binaryOutput()
-         |@Suppress("UNUSED_VARIABLE") val _init = Unit
          |${fields.map(_._3).joinN().trim}
          |writer.write(fakeWriter.toByteArray())""".stripMargin
     } else {
