@@ -2697,10 +2697,10 @@ Each spec exercises (a) JSON encode → byte-identity assertion against canonica
 **Fix:** Acceptable. Future hardening could add instance-shape assertion.
 
 ## [PR-I.1d-N03] Dart f_str.dart still emits dead FStr_JsonCodec stub
-**Status:** resolved (pre-existing; not introduced by PR-I.1d)
+**Status:** resolved
 **Severity:** nit
 **Description:** Dart still emits `FStr_JsonCodec` whose `encode/decode` throw `ArgumentError('String is a foreign type')`. TS cleanly omits this class. If a domain author exposes FStr in non-key value position, Dart will throw at codec-time while TS will not. Pre-existing asymmetry, not regression.
-**Fix:** Acceptable. Cross-backend Dart hygiene PR could unify with TS approach.
+**Fix:** PR-26.7 (M26) flipped the Foreign branch in `DtJsonCodecGenerator.translate` to `case _: Typedef.Foreign => None` (mirrors TS `TsJsonCodecGenerator.scala:46`) and matched it in `DtUEBACodecGenerator.translate` for stringy Custom-mapped foreigns (`dart.core.String` / bare `String`); BaboonRef-mapped foreigns also drop. Value-position usage now inlines through `mkEncoder`/`mkDecoder`: JSON encode passes through `ref` and JSON decode emits `$ref as <DartType>`; UEBA stringy customs route through `writeString` / `readString`. Non-stringy UEBA customs retain the throwing-stub `<F>_UebaCodec` class because a `(throw …)` expression at the call site trips `dart analyze --fatal-warnings` dead_code on trailing constructor args. Both `isActive` predicates were updated to skip Foreign typedefs that no longer get a codec class so the per-domain `BaboonCodecsJson` / `BaboonCodecsUeba` aggregator does not reference dropped symbols. Dropped helper `genForeignBodies` from `DtJsonCodecGenerator` (UEBA helper retained for non-stringy path). Verified `mdl :build :test-dart-regular :test-dart-wrapped :test-manual-dart :test-gen-compat-dart` PASS; `target/compat-test/dart-json/m24-foreign-keycodec.json` md5 baseline `1f1ef66abe5a9a24321c6e615851281d` preserved; regenerated `test/conv-test-dt/lib/generated/convtest/m24foreign/f_str.dart` no longer contains `class FStr_JsonCodec` or `class FStr_UebaCodec` (KeyCodec / KeyCodecHost / DefaultImpl preserved).
 
 ---
 
