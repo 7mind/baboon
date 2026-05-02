@@ -33,13 +33,13 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 - [x] **M23** — Backend stubs unblock + upstream-defects cleanup.
 - [x] **M24** — Latents closeout. Closed 13 deferred latents from M23 + cross-backend hygiene + 2 policy-gated changes via 14 PRs across 3 phases (Phase 1: PR-A..E parallel; Phase 2: PR-F/G/H serial; Phase 3: PR-I.1a/1b/1c/1d/2/3 + PR-J). Custom-foreign `<Foreign>_KeyCodec` extension hook (policy c) implemented across all 9 backends with byte-identical wire form. `derived[was]` re-emit (policy b) preserve-verbatim documented + tested. Plan: `docs/drafts/20260501-1009-m24-latents-closeout-plan.md`. Final verification: 12/12 regular-adt + 10/10 cross-compat PASS.
 - [x] **M25** — Cross-backend hygiene. **Closed all 11 open defects** + 2 round-2/3-surfaced defects via 8 PRs across 2 waves (10 commits including round-2/3 fix follow-ups). UEBA correctness across backends restored (PR-15-D01 Kotlin indexed-mode block-expression bug fixed via `run { }` inline-statement-block). Plan: `docs/drafts/20260502-0059-m25-cross-backend-hygiene-plan.md`. Final verification: 11/11 regular-adt + 9/9 cross-language compat = 20/20 PASS. Post-M25 Windows-CI fix `9b83494` for pre-existing PR-57e-D02 Swift-skip on Windows runners.
-- [~] **M26** — Deferred-hygiene drain. Closes 9 deferred items + closes 1 zero-code reclassification + adds 4 cross-cutting notes. Plan: `docs/drafts/20260502-1020-m26-deferred-hygiene-drain-plan.md`. Close gate this time INCLUDES `:test-acceptance` + `:test-service-acceptance` (M25 process miss corrected).
+- [x] **M26** — Deferred-hygiene drain. **Closed 8 of 9 planned PRs + 1 round-2 follow-up.** Plan: inline in `tasks.md` Milestone 26 breakdown + closeout entry below (the working plan doc was lost during a stash-drop and not restored — closeout log captures the full content). PR-26.9 (Python canonical-shape) attempted, reverted, deferred to M27. Close gate (CI-equivalent): `mdl --seq :build :test` PASS (82 actions); `mdl :test-acceptance` PASS; `mdl :test-service-acceptance` PASS. The M25 process miss (close gate did not run acceptance targets) is corrected here.
 
 ---
 
 ## Milestone 26 — PR breakdown
 
-Detail in `docs/drafts/20260502-1020-m26-deferred-hygiene-drain-plan.md`. 9 PRs in 3 waves.
+Detail inline below (working plan doc lost during a stash-drop; closeout entry captures the equivalent content). 9 PRs in 3 waves.
 
 **Wave 1 — parallel (worktree-isolated):**
 - [ ] **PR-26.1** — Rust MSRV pin to 1.75. Closes PR-I.3-N04.
@@ -53,8 +53,8 @@ Detail in `docs/drafts/20260502-1020-m26-deferred-hygiene-drain-plan.md`. 9 PRs 
 - [ ] **PR-26.4** — Swift fixture emitter: deref'd Foreign in `genScalar` + lift `hasForeignType` filter. Closes PR-I.2-D02 + PR-68-D02.
 - [ ] **PR-26.2** — Cross-backend KeyCodec Host concurrency contract = last-wins (Rust brought into line with 8-backend majority). Closes PR-I.3-N01 + PR-I.1a-D09.
 
-**Wave 3 — gated:**
-- [ ] **PR-26.9** — Python JSON-codec canonical shape = parsed value (Shape A); drops `isinstance(json_value, str)` stop-gap. Closes M25-N03 + PR-25.2-D02.
+**Wave 3 — attempted, reverted, deferred to M27:**
+- [!] **PR-26.9** — Python JSON-codec canonical shape = parsed value (Shape A). Attempted in M26; reverted because `pydantic.model_validate(value, mode='json')` does not JSON-parse strings (only `model_validate_json` does), and the executor missed caller sites still passing strings — 26 errors in `:test-python-regular`. Highest-risk PR per plan; needs careful caller-site audit + possibly string-vs-parsed dispatch inside generated codec body. **Deferred to M27.** The PR-25.2-D02 round-3 `isinstance(json_value, str)` stop-gap remains in `baboon_codecs_facade.py:441-449` (still functional; the canonical shape stays Shape-A-with-stop-gap-tolerance until M27).
 
 ---
 
@@ -409,6 +409,39 @@ My recommendation is **(a)**: one big PR, mechanical, everything stays consisten
 ---
 
 ## Completed
+
+- **M26 close** (2026-05-02) — Deferred-hygiene drain. **8 of 9 PRs shipped + 1 round-2 follow-up + 1 stale-CI fix**. PR-26.9 deferred to M27.
+
+  | PR | Commit | Closes | Notes |
+  |---|---|---|---|
+  | (pre-M26) | `9b83494` | PR-57e-D02 | Skip PR-57e-D01 Swift repr check on Windows CI (where Swift toolchain absent). M18 latent surfaced by post-M25 CI run. |
+  | PR-26.8 | `a37bec0` (zero-code) | PR-17-D05 + M25-N02 | Audit confirmed Java's `AbstractBaboonConversions._registry` is already keyed on `(fromClass, toClass)` pair via name composition (`AbstractBaboonConversions.java:9`). The premise that Java had Dart's PR-22-D05 bug was a misread of the Dart parallel. PR-17-D05's actual content (multi-step chain composition) tracked at M26-N04 as a forward-feature, not hygiene. |
+  | PR-26.1 | `1c27318` | PR-I.3-N04 | Pinned `rust-version = "1.75"` in 3 hand-written `Cargo.toml` + 1 codegen template (`RsBaboonTranslator.scala:443`). Stable `OnceLock` (1.70) + `if-let chains` (1.65). |
+  | PR-26.6 | `816677f` | PR-I.1b-N01 | 3 new wrapper-around-foreign tests (Java/Kotlin/KMP) mirroring Scala `ForeignMapKeyRoundTripSpec`. JSON-only — UEBA Foreign-KeyCodec hook integration is a forward gap (`FStr_UEBACodec` throws across JVM family). |
+  | PR-26.3 | `ee8e39e` | PR-I-D04 | `ScDefnTranslator.makeForeignKeyCodecRepr` now returns `List[TextTree]` so `obsoletePrevious` annotates trait AND companion. New `ForeignKeyCodecDeprecationSpec` uses `scala.reflect.runtime.universe` to assert via `Symbol.annotations` (Java reflection won't fire — Scala `@deprecated` lowers to legacy classfile attribute, not `java.lang.Deprecated`). Used existing non-latest `testpkg.pkg0.v1_0_0.ObscureInt_KeyCodec` — no fixture extension needed. |
+  | PR-26.7 | `e12c50b` + r2 `e98fb67` | PR-I.1d-N03 | Round-1 dropped Dart Foreign codec emission for stringy Custom + BaboonRef. Round-2 routed non-stringy Custom with `runtimeMapping` (`rt = ...` clause) through underlying-primitive UEBA codec, achieving full TS-style unification. Non-stringy Custom WITHOUT `runtimeMapping` retains throwing-stub class (no underlying primitive to deref to — genuine asymmetry, not implementation convenience). m24 md5 baseline `1f1ef66abe5a9a24321c6e615851281d` preserved. |
+  | PR-26.5 | `d28256b` | PR-G-D01 | New `m26-builtin-map-keys.baboon` exercising 5 of 8 originally-planned non-string map-key types: i32, i64, u32, bit, uid. **Dropped 3:** u64 (Scala JSON codegen latent — `decodeLong` returns `Decoder[Long]` where `KeyDecoder[Long]` expected; tracked as M26-N02 follow-up); f64 (cross-backend number-to-string canonicalization divergence); tso (cross-backend timezone formatting divergence). 9 backends byte-identical; **Swift uses `JSONSerialization.sortedKeys`** which alphabetizes outer DTO keys → cross-language test uses parse-equivalence for Swift, byte-identity for the other 9. In-band C# bit-key fix: `.ToString().ToLowerInvariant()` (was `"True"`/`"False"`). Locked JSON canonical md5 `08db2871910dafaa2f53ed4c7c874598`; UEBA canonical md5 `7cfe0358e80ddf0a179fef0cb8f093bd`. |
+  | PR-26.4 | `041fef3` | PR-I.2-D02 + PR-68-D02 | `SwCodecFixtureTranslator.genScalar` Foreign-arm: BaboonRef recurses on aliased ref (incl. fallback for foreigns lacking a `swift =` binding via `aliasFromAnyBinding`); Custom dispatches via Swift-decl allowlist (Swift.String/Int{8..64}/UInt{8..64}/Float/Double/Bool/Foundation.Date/Foundation.UUID/Foundation.Data); unmapped throws at codegen with FQN. `hasForeignType` filter dropped at SwCodecFixtureTranslator only — `SwCodecTestsTranslator` analog **intentionally retained**: lifting it caused auto-emitted UEBA round-trips to SIGILL via `<F>_UebaCodec.fatalError` host stub. Hand-written `M24ForeignFixtureRoundTripTests.swift` covers JSON round-trip via PR-I.2's `FStr_KeyCodecHost` default-identity. |
+  | PR-26.2 | `fd63457` | PR-I.3-N01 + PR-I.1a-D09 | Rust `OnceLock<Box<dyn _>>` → `RwLock<Option<Arc<dyn _>>>` (last-wins). Lazy default-install on first read (Arc::new is not const so static initializes to None). Trait-object now `+ Send + Sync`-bounded. **10 new last-wins regression tests** (one per backend; ~30-78 lines each). Rust test fails pre-fix (silent no-op), passes post-fix; other 9 backends pass pre/post-fix (already last-wins). m24 baseline preserved across all 7 compact-emit backends. |
+
+  **Deferred to M27:** PR-26.9 (Python canonical-shape Shape A). Attempted; reverted because `pydantic.model_validate(value, mode='json')` does NOT JSON-parse strings (only `model_validate_json` does), and the executor missed caller sites still passing strings — 26 errors in `:test-python-regular`. Highest-risk PR per plan; needs careful caller-site audit + possibly string-vs-parsed dispatch inside generated codec body. PR-25.2-D02 round-3 stop-gap (`isinstance(json_value, str)` in `baboon_codecs_facade.py:441-449`) remains in place.
+
+  **Verification (M26 close gate — CI-equivalent):**
+  - `mdl --seq :build :test` — 82 actions PASS (full per-language matrix).
+  - `mdl :test-acceptance` — PASS.
+  - `mdl :test-service-acceptance` — PASS.
+  - **Wire format invariants:** m24-foreign-keycodec.json md5 `1f1ef66abe5a9a24321c6e615851281d` preserved across 7 compact-emit backends; new m26-builtin-map-keys.json md5 `08db2871910dafaa2f53ed4c7c874598` locked across 9-of-10 backends (Swift parse-equivalence).
+
+  **Cross-cutting invariants locked (during M26):**
+  - **M26-N01** — KeyCodec Host concurrency contract is `last-wins` (canonical, all 9 backends). Closed by PR-26.2.
+  - **M26-N02** — Cross-language non-string builtin map-key fixture coverage at `m26-builtin-map-keys.baboon`; covers 5 of 8 planned types; u64/f64/tso tracked as follow-ups (Scala JSON codegen latent; cross-backend canonicalization divergences). Closed by PR-26.5.
+  - **M26-N03** — Python `AnyOpaqueJson.json` canonical shape = parsed value (Shape A). **Deferred to M27** — surgical PR-25.2-D02 stop-gap remains; permanent shape alignment harder than planner anticipated.
+  - **M26-N04** — Java multi-step conversion chain composition is a forward-looking conversion-API feature, NOT deferred hygiene. Closed by PR-26.8 (re-disposition).
+
+  **Lessons for M27:**
+  - Pydantic `model_validate(value, mode='json')` does NOT auto-JSON-parse strings — only `model_validate_json(str)` does. Shape-A alignment requires either (a) caller-site audit to ensure ALL callers pass parsed values, OR (b) string-vs-parsed dispatch inside the generated codec body. Plan accordingly.
+  - Worktree friction recurred again: 4 of 9 PR worktrees were on stale base (`8788c83`) and required either reset or re-dispatch in main. Cause: mdl resolves `.git`-as-directory; worktree `.git`-as-file fallback walks up to main. Future: either land all PRs directly in main (no worktree isolation) or accept the cherry-pick + manual-merge friction as part of the loop cost.
+  - `:test` does NOT include `:test-manual-python` (only the other 8 backends' manual tests). Pre-existing PyConversionTranslator latent (`AbstractConversion.__init__()` missing args) surfaces only via `:test-manual-python`. NOT in CI gates either. Filed as future hygiene.
 
 - **M25 Wave 2 + round-2/3 closeout** (2026-05-02) — Final 4 commits closing M25:
 
