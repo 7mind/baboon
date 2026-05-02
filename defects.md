@@ -1088,11 +1088,14 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Fix:** No code action. Documentation-only note in PR 8.1's Completed entry.
 
 ### [PR-22-D05] `convert<T>` ignores `toTypeId` parameter (pre-existing in `convertWithContext`)
-**Status:** open (deferred — pre-existing, not introduced by PR 8.1)
+**Status:** resolved (PR-25.3, M25)
 **Severity:** low
 **Location:** `baboon_codecs_facade.dart:470` and `baboon_runtime.dart:746` (pre-existing `AbstractBaboonConversions.convertWithContext`).
 **Description:** Registry keys conversions by `fromTypeId` only; `toTypeId` is unused at lookup. If a model has multiple conversions from one source type, the wrong one would silently run. Pre-existing in `convertWithContext`; the new facade lifts it to public surface.
-**Fix:** Defer — cross-runtime sweep candidate. Not on PR 8.1's critical path.
+**Fix:** Three-part change in PR-25.3:
+- `baboon-compiler/src/main/resources/baboon-runtime/dart/baboon_runtime.dart:749-779` — added `String get toTypeId;` abstract member to `AbstractConversion`; restructured `AbstractBaboonConversions._registry` from `Map<String, AbstractConversion>` to `Map<String, Map<String, AbstractConversion>>` keyed first by `fromTypeId` then `toTypeId`; `register` writes both halves; `convertWithContext` now looks up the full pair and throws `ArgumentError` when either half is missing.
+- `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/dart/DtConversionTranslator.scala:187-191` — codegen now emits `@override String get toTypeId => '<targetTpe>';` alongside the existing `versionFrom`/`versionTo`/`typeId` getters for every generated conversion class (`CustomConversionRequired`, `CopyEnumByName`, `CopyAdtBranchByName`, `DtoConversion`).
+- `test/dt-stub/test/runtime/conversion_registry_test.dart` — new regression test registers two conversions from the same source type to two distinct targets and asserts that `convertWithContext` dispatches each correctly. Verified via `mdl :build :test-dart-regular :test-dart-wrapped :test-manual-dart :test-gen-compat-dart` (all pass; wire format byte-identical because conversion classes are not part of serialization). Java has the analogous defect (PR-17-D05) — out of scope here, tracked as M25-N02 cross-runtime parity follow-up.
 
 ### [PR-22-D06] Pre-existing Dart regex bugs `\\d` inside `r'...'` raw strings
 **Status:** resolved (post-M13 Dart cleanup)

@@ -751,19 +751,28 @@ abstract class AbstractConversion<F, T> {
   String get versionFrom;
   String get versionTo;
   String get typeId;
+  String get toTypeId;
 }
 
 abstract class AbstractBaboonConversions {
-  final Map<String, AbstractConversion> _registry = {};
+  // Keyed (fromTypeId -> toTypeId -> conversion). Models with multiple distinct
+  // conversions from a single source type would otherwise dispatch the wrong target
+  // (PR-22-D05). `convertWithContext` honours both halves of the key.
+  final Map<String, Map<String, AbstractConversion>> _registry = {};
 
   void register(AbstractConversion conversion) {
-    _registry[conversion.typeId] = conversion;
+    final byTo = _registry.putIfAbsent(conversion.typeId, () => {});
+    byTo[conversion.toTypeId] = conversion;
   }
 
   dynamic convertWithContext(dynamic context, dynamic from, String fromTypeId, String toTypeId) {
-    final conversion = _registry[fromTypeId];
+    final byTo = _registry[fromTypeId];
+    if (byTo == null) {
+      throw ArgumentError('No conversion registered for typeId: $fromTypeId -> $toTypeId');
+    }
+    final conversion = byTo[toTypeId];
     if (conversion == null) {
-      throw ArgumentError('No conversion registered for typeId: $fromTypeId');
+      throw ArgumentError('No conversion registered for typeId: $fromTypeId -> $toTypeId');
     }
     return conversion.doConvert(context, this, from);
   }
