@@ -894,11 +894,11 @@ Same for `any_meta_length`. Also check `any_total_length < 4 + any_meta_length` 
 **Fix (PR 5.1 round 2):** Sed-replaced `$${typeMeta.` → `${typeMeta.` in all 6 sites; KMP variant now matches JVM. Orchestrator-direct edit (6-line cosmetic fix; subagent loop overhead not justified for mechanical sed).
 
 ### [PR-14-D02] KMP runtime variant has zero test parity with JVM
-**Status:** open (defer — coverage gap, not blocking)
+**Status:** resolved
 **Severity:** medium-low
-**Location:** `test/kt-stub-kmp/` (no `src/test/` tree).
+**Location:** `test/kt-stub-kmp/src/test/kotlin/runtime/`.
 **Description:** The 34 `AnyMetaCodecTest` cases run only against `test/kt-stub/` (JVM). KMP `BaboonAnyOpaque.kt` and the new `BaboonBinaryReader.position` getter are exercised by gradle compile-only. Off-by-one risks in `readBinWithLength`'s position-delta byte-counting are unobserved. PR-14-D01's stray-`$` divergence between JVM and KMP variants went undetected because no KMP test ever observed the error message text. Note: `kt-stub-kmp/build.gradle.kts` is configured as `kotlin("jvm")` not `kotlin-multiplatform`, so this is purely a project-config-naming oddity, not a multiplatform-runtime concern.
-**Suggested fix:** Defer to a future hygiene PR. Add a JUnit5 test source set to `kt-stub-kmp` mirroring `kt-stub`'s `AnyMetaCodecTest`. Could share via a `commonTest` source set if KMP is ever properly configured as multiplatform.
+**Fix:** PR-25.5a (M25) mirrored the JVM `runtime/` test tree into `test/kt-stub-kmp/src/test/kotlin/runtime/` (`AnyMetaCodecTest.kt`, `AnyRoundTripTest.kt`, `MapKeyMalformedTest.kt`). Mechanical port; only adaptation is `LEDataInputStream`/`LEDataOutputStream` (JVM-only) → `BaboonBinaryReader`/`BaboonBinaryWriter` (KMP-direct buffer types) and dropping the `flush()`/`baos.toByteArray()` plumbing accordingly. `build.gradle.kts` already had the JUnit5 + `kotlin("test")` deps and `tasks.test { useJUnitPlatform() }` block, so no Gradle-side changes were needed. `mdl --seq :build :test-kotlin-kmp-regular :test-kotlin-kmp-wrapped` green; runtime suite reports 34+14+1 (=49) new test cases passing in both regular and wrapped configurations, joining the pre-existing 26 `IdentifierReprTest` cases.
 
 ### [PR-14-D03] Verification protocol omits `any-ok/` stash precondition for `mdl :test-gen-regular-adt`
 **Status:** resolved (documentation noted in M5 session log when written)
@@ -930,11 +930,11 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Fix:** PR-25.1 changed the per-field emission in `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/kotlin/KtUEBACodecGenerator.scala:362-396` (`fieldsOf`, both `BinReprLen.Fixed` and `BinReprLen.Variable` arms) from a bare `{ ... }` to `run { ... }`. Kotlin's `kotlin.run` is `inline`, so it produces no lambda allocation and zero runtime overhead while introducing a real statement-block scope per field — the per-field `val before/after/length` no longer collide across fields, and the inner statements actually execute, populating the indexed wire correctly. Bare-statement emission (the originally-suggested fix) was rejected because Kotlin scoping rules cause `val before` redeclaration errors when multiple fields share the surrounding `try { ... }` scope. The deferred regression test `ueba_round_trip_withUseIndicesTrue_preservesContent()` in `test/kt-stub/src/test/kotlin/runtime/AnyRoundTripTest.kt` was restored and now passes; full Kotlin matrix (JVM regular/wrapped + KMP regular/wrapped + compat-kotlin/compat-kotlin-kmp) is green.
 
 ### [PR-15-D02] KMP test parity still deferred (was open in PR-14-D02)
-**Status:** open (continued deferral, scope expansion)
+**Status:** resolved
 **Severity:** medium-low
-**Location:** `test/kt-stub-kmp/`.
+**Location:** `test/kt-stub-kmp/src/test/kotlin/runtime/`.
 **Description:** `kt-stub-kmp` still has no `src/test/` source set. The new `AnyRoundTripTest.kt` runs only against JVM `test/kt-stub`. PR 5.4 does not address PR-14-D02 — adding a parallel test source set would significantly expand the scope (Kotlin runtime types are largely identical between JVM and KMP, and the per-domain code generation is identical, so any regressions surfaced by KMP testing would also surface in JVM testing — the marginal value is low).
-**Suggested fix:** Defer to a future hygiene PR or M-cleanup. PR-14-D02's recommendation stands.
+**Fix:** Resolved jointly with PR-14-D02 by PR-25.5a (M25). The mirror covers `AnyRoundTripTest.kt` (14 cases incl. the indexed round-trip restored by PR-25.1) and the post-hoc-added `MapKeyMalformedTest.kt`. No KMP-emergent defects surfaced.
 
 ### [PR-25.1-D04] Dead `_init = Unit` workaround left in multiplatform indexed-body emission
 **Status:** resolved
