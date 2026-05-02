@@ -22,14 +22,14 @@ class DtJsonCodecGenerator(
   override def translate(defn: DomainMember.User, dtRef: DtValue.DtType, srcRef: DtValue.DtType): Option[TextTree[DtValue]] = {
     if (isActive(defn.id)) {
       (defn.defn match {
-        case d: Typedef.Dto  => Some(genDtoBodies(dtRef, d))
-        case _: Typedef.Enum => Some(genEnumBodies(dtRef))
-        case a: Typedef.Adt  => Some(genAdtBodies(dtRef, a))
-        case f: Typedef.Foreign =>
-          f.bindings.get(BaboonLang.Dart) match {
-            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
-            case _                                                                  => Some(genForeignBodies(dtRef))
-          }
+        case d: Typedef.Dto      => Some(genDtoBodies(dtRef, d))
+        case _: Typedef.Enum     => Some(genEnumBodies(dtRef))
+        case a: Typedef.Adt      => Some(genAdtBodies(dtRef, a))
+        // PR-26.7 (M26): mirror TS pattern (`TsJsonCodecGenerator.scala:46`) — emit no
+        // per-foreign codec class for any Foreign typedef. Value-position Custom-mapped
+        // foreigns inline through `mkEncoder`/`mkDecoder` (passthrough/cast) instead of
+        // routing through a `<F>_JsonCodec` class. Closes PR-I.1d-N03 (dead throwing-stub).
+        case _: Typedef.Foreign  => None
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
       }).map {
@@ -48,8 +48,8 @@ class DtJsonCodecGenerator(
   ): TextTree[DtValue] = {
     val isEncoderEnabled = domain.version == evo.latest
     val encReturnType = defn.defn match {
-      case _: Typedef.Enum | _: Typedef.Foreign => "dynamic"
-      case _                                    => "Map<String, dynamic>"
+      case _: Typedef.Enum => "dynamic"
+      case _               => "Map<String, dynamic>"
     }
     val encodeMethod =
       if (isEncoderEnabled) {
@@ -76,17 +76,15 @@ class DtJsonCodecGenerator(
 
     val cParent = if (isEncoderEnabled) {
       defn match {
-        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecBase<$name>"
-        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecBase<$name>"
-        case _ if defn.isAdt                                => q"$baboonJsonCodecBaseGeneratedAdt<$name>"
-        case _                                              => q"$baboonJsonCodecBaseGenerated<$name>"
+        case DomainMember.User(_, _: Typedef.Enum, _, _) => q"$baboonJsonCodecBase<$name>"
+        case _ if defn.isAdt                             => q"$baboonJsonCodecBaseGeneratedAdt<$name>"
+        case _                                           => q"$baboonJsonCodecBaseGenerated<$name>"
       }
     } else {
       defn match {
-        case DomainMember.User(_, _: Typedef.Enum, _, _)    => q"$baboonJsonCodecNoEncoder<$name>"
-        case DomainMember.User(_, _: Typedef.Foreign, _, _) => q"$baboonJsonCodecNoEncoder<$name>"
-        case _ if defn.isAdt                                => q"$baboonJsonCodecNoEncoderGeneratedAdt<$name>"
-        case _                                              => q"$baboonJsonCodecNoEncoderGenerated<$name>"
+        case DomainMember.User(_, _: Typedef.Enum, _, _) => q"$baboonJsonCodecNoEncoder<$name>"
+        case _ if defn.isAdt                             => q"$baboonJsonCodecNoEncoderGeneratedAdt<$name>"
+        case _                                           => q"$baboonJsonCodecNoEncoderGenerated<$name>"
       }
     }
 
@@ -99,13 +97,6 @@ class DtJsonCodecGenerator(
        |  ${meta.joinN().shift(2).trim}
        |}
        |""".stripMargin
-  }
-
-  private def genForeignBodies(name: DtValue.DtType): (TextTree[DtValue], TextTree[DtValue]) = {
-    (
-      q"""throw ArgumentError('${name.name} is a foreign type');""",
-      q"""throw ArgumentError('${name.name} is a foreign type');""",
-    )
   }
 
   private def wrapAdtBranchEncoder(
@@ -272,9 +263,12 @@ class DtJsonCodecGenerator(
                 f.bindings.get(BaboonLang.Dart) match {
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                     mkEncoder(aliasedRef, ref, depth)
-                  case _ =>
-                    val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
-                    q"$targetTpe.instance.encode(ctx, $ref)"
+                  // PR-26.7 (M26): Custom-mapped foreign in value position — passthrough
+                  // (mirrors `TsJsonCodecGenerator.scala:222` `case _ => ref`). The field's
+                  // Dart static type is the Custom-mapped underlying type (e.g. `String` for
+                  // `dart.core.String`), which `Map<String, dynamic>` accepts directly. No
+                  // per-foreign `<F>_JsonCodec` class is emitted (PR-I.1d-N03).
+                  case _ => ref
                 }
               case _ =>
                 val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
@@ -329,9 +323,12 @@ class DtJsonCodecGenerator(
                   f.bindings.get(BaboonLang.Dart) match {
                     case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                       decodeElement(aliasedRef, ref, depth)
+                    // PR-26.7 (M26): Custom-mapped foreign in value position — cast to the
+                    // Custom-mapped Dart type (mirrors TS `$ref as <TsType>` shape). No per-
+                    // foreign `<F>_JsonCodec` class is emitted (PR-I.1d-N03).
                     case _ =>
-                      val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
-                      q"$targetTpe.instance.decode(ctx, $ref)"
+                      val dartType = trans.asDtRef(TypeRef.Scalar(u), domain, evo)
+                      q"$ref as $dartType"
                   }
                 case _ =>
                   val targetTpe = codecName(trans.toDtTypeRefKeepForeigns(u, domain, evo))
@@ -586,12 +583,7 @@ class DtJsonCodecGenerator(
     )
     defn.defn match {
       case _: Typedef.Enum => meta.map(asValue)
-      case f: Typedef.Foreign =>
-        f.bindings.get(BaboonLang.Dart) match {
-          case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => meta.map(asRef)
-          case _                                                                  => meta.map(asValue)
-        }
-      case _ => meta.map(asRef)
+      case _               => meta.map(asRef)
     }
   }
 
@@ -607,6 +599,14 @@ class DtJsonCodecGenerator(
   }
 
   override def isActive(id: TypeId): Boolean = {
+    val isForeign = domain.defs.meta.nodes.get(id).exists {
+      case DomainMember.User(_, _: Typedef.Foreign, _, _) => true
+      case _                                              => false
+    }
+    // PR-26.7 (M26): Foreign typedefs no longer get a `<F>_JsonCodec` class (PR-I.1d-N03).
+    // Suppress them from `isActive` so the per-domain `BaboonCodecsJson` aggregator
+    // (DtBaboonTranslator codec-registration loop) doesn't reference the dropped class.
+    !isForeign &&
     !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Dart) &&
     target.language.generateJsonCodecs && (target.language.generateJsonCodecsByDefault || domain.derivationRequests
       .getOrElse(RawMemberMeta.Derived("json"), Set.empty[TypeId]).contains(id))
