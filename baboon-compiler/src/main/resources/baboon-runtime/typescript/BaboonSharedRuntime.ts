@@ -647,7 +647,12 @@ export interface BaboonGeneratedLatest extends BaboonGenerated {
 }
 
 export interface BaboonAdtMemberMeta extends BaboonGenerated {
-    readonly baboonAdtTypeIdentifier: string;
+    // PR-25.8 / PR-22-D02: declared as a method (not a property) to match the generated emission.
+    // `TsDomainTreeTools.adtMeta` emits `public baboonAdtTypeIdentifier() { return ... }`. The
+    // interface previously declared a `readonly ... : string` property which structurally rejected
+    // the method signature, so generated ADT branches did not satisfy the interface and
+    // `BaboonTypeMeta.from`'s `isAdtMember` typeguard always failed silently.
+    baboonAdtTypeIdentifier(): string;
 }
 
 // --- Service wiring types ---
@@ -928,7 +933,7 @@ export class BaboonTypeMeta {
     /**
      * Reflectively pulls the Baboon metadata fields off a generated value. Generated TS classes
      * expose `baboonDomainIdentifier()`, `baboonDomainVersion()`, `baboonTypeIdentifier()`,
-     * `baboonSameInVersions()` and (for ADT branches) `baboonAdtTypeIdentifier`. When the
+     * `baboonSameInVersions()` and (for ADT branches) `baboonAdtTypeIdentifier()`. When the
      * caller's declared static type is the ADT trait — flagged via `useAdtIdentifier=true` — the
      * encoder envelope must use the ADT's type identifier so the decoder can dispatch. The
      * trait/branch decision is the caller's, mirroring Java's `declaredType` reflection check.
@@ -939,7 +944,7 @@ export class BaboonTypeMeta {
     public static from(value: BaboonGenerated, useAdtIdentifier: boolean = false): BaboonTypeMeta {
         let typeIdentifier: string;
         if (useAdtIdentifier && BaboonTypeMeta.isAdtMember(value)) {
-            typeIdentifier = value.baboonAdtTypeIdentifier;
+            typeIdentifier = value.baboonAdtTypeIdentifier();
         } else {
             typeIdentifier = value.baboonTypeIdentifier();
         }
@@ -959,7 +964,11 @@ export class BaboonTypeMeta {
     }
 
     private static isAdtMember(value: BaboonGenerated): value is BaboonAdtMemberMeta {
-        return typeof (value as { baboonAdtTypeIdentifier?: unknown }).baboonAdtTypeIdentifier === "string";
+        // PR-25.8 / PR-22-D02: typeguard checks for a method (function-typed property), matching
+        // codegen — `TsDomainTreeTools.adtMeta` emits `baboonAdtTypeIdentifier()` as an instance
+        // method, not a `string`-valued property. The previous `=== "string"` check never matched
+        // and silently fell through to the concrete-branch type identifier.
+        return typeof (value as { baboonAdtTypeIdentifier?: unknown }).baboonAdtTypeIdentifier === "function";
     }
 
     public static readMeta(reader: BaboonBinReader): BaboonTypeMeta | undefined {

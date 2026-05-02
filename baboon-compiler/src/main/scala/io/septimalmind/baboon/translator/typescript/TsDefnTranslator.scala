@@ -4,6 +4,7 @@ import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.typescript.TsTypes.{
+  tsBaboonAdtMemberMeta,
   tsBaboonDecoderFailure,
   tsBaboonEncoderFailure,
   tsBaboonGenerated,
@@ -264,7 +265,12 @@ object TsDefnTranslator {
           }
         case _ => Seq.empty
       }
-      val parents = adtContracts ++ contractParents :+ genMarker
+      // PR-25.8 / PR-22-D02: ADT-branch DTOs additionally implement `BaboonAdtMemberMeta` so the
+      // `BaboonTypeMeta.from(value, useAdtIdentifier=true)` path on the runtime facade can
+      // structurally detect the ADT-branch shape and pull `baboonAdtTypeIdentifier()` instead of
+      // silently falling back to the concrete-branch type identifier.
+      val adtMemberMarker = if (defn.ownedByAdt) Seq(tsBaboonAdtMemberMeta) else Seq.empty
+      val parents = adtContracts ++ contractParents ++ adtMemberMarker :+ genMarker
 
       val fields = fieldsNameAndType.map {
         case (name, tpe) =>

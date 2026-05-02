@@ -1090,11 +1090,16 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Fix:** Dropped the `mv != 1` clause; check is now `if (mv != null && mv != '1') return null` — string-only, matching Java/TS spec. Test flipped from "accepts numeric" to "rejects numeric" asserting `null` return. Orchestrator-direct edit (3-line surgical fix).
 
 ### [PR-22-D02] `BaboonTypeMeta.from` casts to `BaboonMetaProvider`/`BaboonAdtMember` but PR 8.1 codegen doesn't emit those interfaces yet
-**Status:** open (deferred — staged rollout; PR 8.2/8.3 will add interfaces to codegen)
+**Status:** resolved (PR-25.8 — TS codegen + runtime alignment)
 **Severity:** medium (staged rollout time-bomb)
-**Location:** `baboon_runtime.dart:1099`.
-**Description:** Codegen in `DtBaboonTranslator.scala` and friends does NOT emit `implements BaboonMetaProvider` on generated DTOs/ADTs. Verified: `BaboonMetaProvider` symbol appears nowhere under `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/dart`. Same for `BaboonAdtMember`. Consequence: encoding against currently-generated values via the new facade triggers cast-failure → `BaboonEncoderFailure`. Quiet correctness bug for `useAdtIdentifier=true` path: `value is BaboonAdtMember` is false (line 1100) so falls back silently to concrete-branch typeid.
-**Fix:** Defer to PR 8.2/8.3 — those PRs will emit the interfaces on generated DTOs as part of clearing the codec-gen placeholders.
+**Location:** TS-side equivalent surface — `BaboonSharedRuntime.ts:649` (`BaboonAdtMemberMeta`), `TsDefnTranslator.scala:268` (DTO emission), `TsDomainTreeTools.scala:46` (ADT-id derivation). The original Dart `baboon_runtime.dart:1099` defect note generalised across runtimes; this entry tracks the TS half that PR-25.8 closes (Dart already gets the implements declaration via its own translator).
+**Description:** Codegen did NOT emit `implements BaboonAdtMemberMeta` on generated ADT-branch DTOs. Worse, the runtime interface declared `readonly baboonAdtTypeIdentifier: string` (a property), but `TsDomainTreeTools.adtMeta` emitted a method `baboonAdtTypeIdentifier()`. Consequence: `BaboonTypeMeta.from`'s `isAdtMember` typeguard (`typeof ... === "string"`) NEVER matched a real generated value, so `useAdtIdentifier=true` silently fell back to the concrete-branch type identifier. Reproduced in `MetaProviderInterface.test.ts` — pre-fix `adtMeta.typeIdentifier === concreteMeta.typeIdentifier`, both equal to the branch ID. A second TS-only defect was also surfaced and fixed: `TsDomainTreeTools.adtMeta` derived `BaboonAdtTypeIdentifier` from `defn.id` (the branch's own ID) instead of `defn.id.owner = Owner.Adt(parentId)` — so the constant returned the branch ID anyway, masking the runtime mismatch.
+**Fix:** PR-25.8 (TS-only):
+  1. `BaboonSharedRuntime.ts` — `BaboonAdtMemberMeta.baboonAdtTypeIdentifier` now declared as a method matching codegen; `BaboonTypeMeta.from` calls `value.baboonAdtTypeIdentifier()`; `isAdtMember` typeguard checks `=== "function"`.
+  2. `TsDefnTranslator.scala:268` — DTO `parents` list adds `tsBaboonAdtMemberMeta` when `defn.ownedByAdt`, so generated ADT-branch classes carry `implements BaboonAdtMemberMeta`.
+  3. `TsDomainTreeTools.scala:46` — `adtId` derived from `defn.id.owner match { case Owner.Adt(id) => id }` (mirrors Dart/C#/Java/Kotlin), so the emitted `BaboonAdtTypeIdentifier` constant points to the parent ADT.
+  4. `AnyMetaCodec.test.ts` `StubAdtBranchGenerated` updated from string-property to method form to mirror real codegen.
+  5. New regression `MetaProviderInterface.test.ts` exercises the structural contract (3 cases) — assigns generated values to `BaboonGenerated` / `BaboonAdtMemberMeta` interface variables and asserts that `BaboonTypeMeta.from(branch, true).typeIdentifier !== BaboonTypeMeta.from(branch, false).typeIdentifier`.
 
 ### [PR-22-D03] Dead defensive `value is! Map` check in `decodeFromJson` after `readMetaJson` already returned
 **Status:** resolved

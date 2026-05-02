@@ -435,9 +435,14 @@ describe("getCodec single-version-domain (PR-07-D02)", () => {
 /**
  * Stub that simultaneously satisfies `BaboonGenerated` (concrete-branch identifier) and
  * `BaboonAdtMemberMeta` (ADT identifier). Mirrors the shape generated for an ADT branch.
+ *
+ * PR-25.8 / PR-22-D02: `baboonAdtTypeIdentifier` is a method, not a property — matching the
+ * codegen emission (see `TsDomainTreeTools.adtMeta`). Earlier this stub used a `string` property,
+ * which incidentally aligned with a previous (incorrect) interface declaration but did NOT
+ * mirror real generated code.
  */
 class StubAdtBranchGenerated implements BaboonGenerated {
-    public readonly baboonAdtTypeIdentifier: string = "AdtT";
+    public baboonAdtTypeIdentifier(): string { return "AdtT"; }
     public baboonDomainVersion(): string { return "1.0.0"; }
     public baboonDomainIdentifier(): string { return "dom"; }
     public baboonSameInVersions(): string[] { return ["1.0.0"]; }
