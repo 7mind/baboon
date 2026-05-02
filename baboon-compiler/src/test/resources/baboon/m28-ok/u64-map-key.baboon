@@ -1,0 +1,7 @@
+model my.ok.m28.u64key
+
+version "1.0.0"
+
+root data Holder : derived[json], derived[ueba] {
+  m: map[u64, str]
+}
