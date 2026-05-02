@@ -983,11 +983,12 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Fix:** Defer (consistent with PR-08-D03's deferral rationale).
 
 ### [PR-17-D05] `convert<>` is single-step pair-lookup only; multi-step chain deferred
-**Status:** resolved (deferred — documented limitation; Java is ahead of Kotlin's parity)
+**Status:** resolved (verified — multi-step chain remains a forward feature; single-step pair-keying is correct and present)
 **Severity:** low
 **Location:** `BaboonCodecsFacade.java:437-441` (javadoc explicitly notes the gap).
 **Description:** Java's existing `AbstractBaboonConversions` indexes by `(from-class → to-class)` pair without `findConversions(value)` introspection that C#'s multi-step walk requires. PR 6.1 ships single-step; multi-step requires a deeper conversion-API rework. Note: Kotlin runtime *also* lacks `convert<>` entirely, so Java's partial-shape is actually ahead of Kotlin's parity.
 **Fix:** Defer — needs a coordinated cross-runtime conversion-API enhancement, larger than PR 6.1's scope.
+**Note (PR-26.8 reclassification):** Audited 2026-05-02: Java's `AbstractBaboonConversions._registry` is already keyed on the `(fromClass, toClass)` pair (line 9: `fromClass.getName() + "->" + toClass.getName()`; mirrored at line 15 lookup). Single-step pair-lookup is fine; deferred work is multi-step chain composition (v1→v3 via v1→v2 + v2→v3), which is a forward conversion-API feature, NOT hygiene. Tracked at M26-N04 in tasks.md.
 
 ---
 
@@ -2745,10 +2746,10 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Fix:** Acceptable. Future polish could detect the FQN-sentinel and bypass the prefix.
 
 ## [PR-I.3-N04] MSRV not pinned in conv-test-rs/rs-stub Cargo.toml
-**Status:** resolved (note-only; CI implicit)
+**Status:** resolved
 **Severity:** nit
 **Description:** `OnceLock` requires Rust 1.70+. Both `test/conv-test-rs/Cargo.toml` and `test/rs-stub/Cargo.toml` use `edition = "2021"` with no `rust-version` field. Toolchain version is implicit.
-**Fix:** Acceptable. Defensive hardening could add `rust-version = "1.70"` to both files.
+**Fix:** PR-26.1 (M26) pinned `rust-version = "1.75"` in 4 sites: 3 hand-written manifests (`test/conv-test-rs/Cargo.toml`, `test/rs-stub/Cargo.toml`, `test/services/rs/Cargo.toml`) plus the codegen-emitted Cargo template in `RsBaboonTranslator.scala` (~L438-453). 1.75 captures stable `OnceLock` (1.70) + if-let chains (1.65), conservative-yet-sufficient.
 
 ---
 
