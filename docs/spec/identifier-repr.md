@@ -507,7 +507,7 @@ Scala (PR-56) is the reference implementation. Key files:
 - **`<TypeName>Codec.parseRepr` emission:** same `ScDefnTranslator` —
   emits a sibling `<TypeName>Codec` object next to the case class /
   companion.
-- **Property test:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/IdentifierReprPropertyTest.scala`.
+- **Property test:** `baboon-compiler/.jvm/src/test/scala/baboon/runtime/shared/IdentifierReprPropertyTest.scala`.
 
 When implementing PR-57 for a non-Scala backend, START from this document.
 The Scala code is a faithful realization of this document, but the document

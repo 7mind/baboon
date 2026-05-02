@@ -2914,3 +2914,14 @@ Verified `mdl :build :test-dart-regular :test-dart-wrapped :test-manual-dart :te
 **Root cause:** PR-28.3 over-corrected. The canonical `tso = ±HH:MM` invariant is correct for tso (always offset-form). For tsu the legacy branching is load-bearing because tsu's source-side `RpDateTime` may carry a non-UTC Kind/offset that must round-trip exactly.
 **Fix:** Restored ternary in `TsuToString`: `(dt.DateTimeOffset.Offset.Ticks == 0 && dt.Kind == DateTimeKind.Utc) ? TsuDefault : TszDefault`. `TsoToString` unchanged (still always `TszDefault`).
 
+---
+
+## PR-28.5 — Stale package path in docs/spec/identifier-repr.md (M28)
+
+### [PR-28.5-D01] docs/spec/identifier-repr.md references stale test package directory
+**Status:** resolved
+**Severity:** nit
+**Location:** `docs/spec/identifier-repr.md:510`
+**Description:** Doc cited `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/IdentifierReprPropertyTest.scala` but the test file moved to `baboon-compiler/.jvm/src/test/scala/baboon/runtime/shared/IdentifierReprPropertyTest.scala`. M27-N03 tracked the path drift; M28 audit narrowed to this single doc reference (CLAUDE.md was already clean).
+**Fix:** Updated path to current canonical location.
+
