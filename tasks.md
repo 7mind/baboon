@@ -32,7 +32,7 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 - [x] **M20** — BAB-A03: ADT branch inheritance / cross-ADT branch reuse (`adt X { + ErrorAtom ... }` plus subtraction). Shipped via PR-62 (parser + raw AST), PR-63 (typer-early expansion + 3 new TyperIssue codes), PR-64 (cross-language verification + evolution test).
 - [x] **M23** — Backend stubs unblock + upstream-defects cleanup.
 - [x] **M24** — Latents closeout. Closed 13 deferred latents from M23 + cross-backend hygiene + 2 policy-gated changes via 14 PRs across 3 phases (Phase 1: PR-A..E parallel; Phase 2: PR-F/G/H serial; Phase 3: PR-I.1a/1b/1c/1d/2/3 + PR-J). Custom-foreign `<Foreign>_KeyCodec` extension hook (policy c) implemented across all 9 backends with byte-identical wire form. `derived[was]` re-emit (policy b) preserve-verbatim documented + tested. Plan: `docs/drafts/20260501-1009-m24-latents-closeout-plan.md`. Final verification: 12/12 regular-adt + 10/10 cross-compat PASS.
-- [~] **M25** — Cross-backend hygiene. Drain all 11 open defects from `defects.md`. UEBA correctness across backends top priority (PR-15-D01 Kotlin indexed-mode block-expression bug). Plan: `docs/drafts/20260502-0059-m25-cross-backend-hygiene-plan.md`. 8 PRs in 2 waves; Wave 1 parallel via worktrees.
+- [x] **M25** — Cross-backend hygiene. **Closed all 11 open defects** + 2 round-2/3-surfaced defects via 8 PRs across 2 waves (10 commits including round-2/3 fix follow-ups). UEBA correctness across backends restored (PR-15-D01 Kotlin indexed-mode block-expression bug fixed via `run { }` inline-statement-block). Plan: `docs/drafts/20260502-0059-m25-cross-backend-hygiene-plan.md`. Final verification: 11/11 regular-adt + 9/9 cross-language compat = 20/20 PASS.
 
 ---
 
@@ -48,9 +48,13 @@ Detail in `docs/drafts/20260502-0059-m25-cross-backend-hygiene-plan.md`. 8 PRs; 
 - [x] **PR-25.6** (`80c620d`, zero-code) — Verified Swift `mayThrow` propagation post-PR-I.2; closed PR-30-D06.
 - [x] **PR-25.7** (zero-code) — Verified Dart conv-test mudyla `baboon_fixture.dart` asymmetry intentional (`test-gen-manual` deliberately omits `--fixture-output` for all backends; manual-flavour conv-test uses hand-crafted compat fixtures). Documented in `.mdl/defs/tests.md:667-672`. Closed PR-22-D07.
 
-**Wave 2 — sequenced:**
-- [ ] **PR-25.5a** — KMP runtime test parity with JVM (mechanical port; gated on PR-25.1 to avoid suppressing the indexed-mode test). Closes PR-14-D02 + PR-15-D02.
-- [ ] **PR-25.8** — TS codegen emits `BaboonMetaProvider` / `BaboonAdtMember` interfaces. Closes PR-22-D02.
+**Wave 2 — sequenced:** ✅ both shipped 2026-05-02
+- [x] **PR-25.5a** (`ca92d2d`) — KMP runtime test parity with JVM. 3 test files mirrored (49 cases); all pass; no KMP-emergent defects. Closes PR-14-D02 + PR-15-D02.
+- [x] **PR-25.8** (`05148cd`) — TS codegen emits `BaboonAdtMemberMeta` for ADT-branch DTOs. Two coupled defects fixed in-band: runtime interface `baboonAdtTypeIdentifier` was string property but codegen emitted method (structural mismatch made `isAdtMember` typeguard never fire); `TsDomainTreeTools.adtMeta` derived `BaboonAdtTypeIdentifier` from branch's own ID, should be parent ADT's. Closes PR-22-D02.
+
+**Round-2 / round-3 follow-ups (Python regression):**
+- [x] **PR-25.2 round-2** (`6ada794`) — `_StubJsonCodec` in `test_any_meta_codec.py` aligned to string-in-string-out contract (matches real pydantic-backed codegen). Closes PR-25.2-D01.
+- [x] **PR-25.2 round-3** (`3bb2b29`) — facade `json_to_ueba_bytes` made tolerant of both shapes (parsed value OR already-serialized string) via `isinstance(json_value, str)` dispatch. Closes PR-25.2-D02 (a latent fixture-convention defect surfaced by round-1's unconditional `json.dumps`).
 
 ---
 
@@ -381,6 +385,27 @@ My recommendation is **(a)**: one big PR, mechanical, everything stays consisten
 ---
 
 ## Completed
+
+- **M25 Wave 2 + round-2/3 closeout** (2026-05-02) — Final 4 commits closing M25:
+
+  | PR | Commit | Closes | Notes |
+  |---|---|---|---|
+  | PR-25.5a | `ca92d2d` | PR-14-D02 + PR-15-D02 | KMP runtime test parity. Mirrored 3 JVM test files (49 cases) into `test/kt-stub-kmp/src/test/kotlin/runtime/`. Adaptations: JVM-only `LEDataInputStream`/`LEDataOutputStream` → KMP-direct `BaboonBinaryReader(ByteArray)` / `BaboonBinaryWriter()`; dropped `flush()` calls (KMP writer is self-buffering). All 49 cases pass on first try. **No KMP-emergent defects discovered** — JVM and KMP runtimes' public surfaces are byte-for-byte equivalent. KMP-specific reader/writer adaptations confirmed sound. |
+  | PR-25.8 | `05148cd` (cherry-picked from worktree `bf3d925` with stale-base merge resolved on imports) | PR-22-D02 | TS codegen emits `BaboonAdtMemberMeta` on ADT-branch DTOs. Surfaced and folded in 2 coupled defects: (1) runtime interface declared `baboonAdtTypeIdentifier` as string property but codegen emitted it as method — structural mismatch made `isAdtMember` typeguard never fire (silent-correctness bug); (2) `TsDomainTreeTools.adtMeta` derived `BaboonAdtTypeIdentifier` from `defn.id` (the branch's own ID) instead of `defn.id.owner = Owner.Adt(parentId)`. Aligned with Dart/C#/Java/Kotlin. Three new vitest cases in `MetaProviderInterface.test.ts` assert the structural contract. |
+  | PR-25.2 round-2 | `6ada794` | PR-25.2-D01 | `_StubJsonCodec` in `test_any_meta_codec.py` was using the old buggy dict contract. Round-1 reviewer flagged this as N02 but the executor mis-classified it as out-of-CI-gate. `.mdl/defs/tests.md:219` definitively gates `RuntimeTests/`. Fix: stub now does `json.dumps(...)` on encode and `json.loads(...)` on decode, matching real pydantic-backed contract. |
+  | PR-25.2 round-3 | `3bb2b29` | PR-25.2-D02 | Facade `json_to_ueba_bytes` round-1's unconditional `json.dumps(json_value)` broke fixtures that already store JSON-text strings in `AnyOpaqueJson.json` (per `build_json_holder_for_cross_convert` convention). Round-3: conditional `wire = json_value if isinstance(json_value, str) else json.dumps(json_value)`. Both fixture conventions now work. Latent contract ambiguity (parsed value vs serialized string) tracked at M25-N03. |
+
+  **Final verification (M25 close gate):**
+  - `mdl --seq :build :test-gen-regular-adt :test-{cs,scala,rust,typescript,kotlin,kotlin-kmp,java,dart,swift,python}-regular` — **11/11 PASS**.
+  - `mdl --seq :build :test-gen-compat-{cs,scala,rust,typescript,kotlin,kotlin-kmp,java,dart,swift}` — **9/9 PASS**.
+  - `command grep -n "Status:.*open" defects.md` — **zero matches** (only legend line surfaces). All 11 originally-open defects + 2 round-2/3-surfaced defects closed.
+
+  **M25 totals:** 8 PRs across 2 waves (Wave 1: 6 PRs parallel; Wave 2: 2 PRs parallel) + 2 round-2 fix-PRs + 1 round-3 fix-PR + 1 ledger-close commit = **12 commits**. **13 defects closed** (11 originally-open + PR-25.2-D01 + PR-25.2-D02). One defect (PR-19-D06) closed as `wontfix` with peer-runtime-parity rationale; rest closed as `resolved` or `resolved (verified)`.
+
+  **Round-2/3 process notes:**
+  - PR-25.4-R01 (cross-runtime divergence on empty-string `domainVersionMinCompat`) was the sharpest find — round-1 fix made TS the lone outlier among 8 runtimes; round-2 reverted with peer-parity comment + repurposed regression test. Lesson: **runtime-template changes need cross-runtime parity audit before semantics flip.**
+  - PR-25.2 surfaced an iceberg: round-1 fix (D03 surface) exposed D01 (stub used wrong contract) → round-2 fixed stub → round-2 exposed D02 (fixture used different contract) → round-3 made facade tolerant of both. Lesson: **stub codecs in test scaffolding should mirror real-codegen contracts; mismatch masks bugs in the system under test.**
+  - **Worktree friction recurred** (same as M24 Phase 1 + Wave 1): mdl resolves project-root via `.git`-as-directory, but worktrees use `.git`-as-file. Executors mirrored edits into main checkout for verification or landed directly. PR-25.5a + PR-25.2 round-2/3 ran serially in main. PR-25.8 worktree commit had to be cherry-picked with manual import-section conflict resolution (worktree based on stale `8788c83`).
 
 - **M25 Wave 1** (2026-05-02) — Cross-backend hygiene Wave 1: 6 PRs shipped, 7 open defects closed. **What shipped:**
 
