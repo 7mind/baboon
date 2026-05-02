@@ -7,7 +7,7 @@
 // Generated symbols are produced by mdl :test-gen-regular-adt under
 // target/test-regular/ts-stub/.
 
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 
 import { BaboonCodecContext } from "../generated/BaboonSharedRuntime";
 import { FStr_KeyCodecHost, type FStr_KeyCodec } from "../generated/my/ok/m19/foreign/FStr";
@@ -25,6 +25,13 @@ const identityCodec: FStr_KeyCodec = {
 };
 
 describe("PR-26.2 — KeyCodec Host last-wins", () => {
+    // PR-26.2-D01: restore identity impl after each test so the module-level
+    // FStr_KeyCodecHost singleton does not leak a PrefixCodec into sibling
+    // tests sharing the worker. Runs even on assertion failure.
+    afterEach(() => {
+        FStr_KeyCodecHost.register(identityCodec);
+    });
+
     test("register(B) after register(A) → encode observes B (NOT A)", () => {
         const ctx = BaboonCodecContext.Compact;
         const original = new Holder(new Map<ItemKey, string>([[new ItemKey("k"), "v"]]));
@@ -37,8 +44,5 @@ describe("PR-26.2 — KeyCodec Host last-wins", () => {
         const encodedB = JSON.stringify(Holder_JsonCodec.instance.encode(ctx, original));
         expect(encodedB).toContain("B:k");
         expect(encodedB).not.toContain("A:k");
-
-        // Restore identity-encoding default for any subsequent tests.
-        FStr_KeyCodecHost.register(identityCodec);
     });
 });

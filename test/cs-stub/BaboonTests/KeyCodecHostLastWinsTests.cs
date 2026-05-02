@@ -38,6 +38,15 @@ namespace ConversionsTest
             public string DecodeKey(string s) => s;
         }
 
+        // PR-26.2-D01: restore identity impl after each test so the global
+        // FStr_KeyCodecHost singleton does not leak a PrefixCodec into sibling
+        // tests sharing the AppDomain. Runs even on assertion failure.
+        [TearDown]
+        public void RestoreIdentity()
+        {
+            FStr_KeyCodecHost.Register(new IdentityCodec());
+        }
+
         [Test]
         public void RegisterBAfterRegisterAObservesB()
         {
@@ -55,9 +64,6 @@ namespace ConversionsTest
                 "PR-26.2 last-wins regression: expected B: prefix after re-register");
             Assert.That(encodedB, Does.Not.Contain("A:k"),
                 "PR-26.2 last-wins regression: A: prefix still present after B re-register");
-
-            // Restore identity-encoding default for any subsequent tests in this AppDomain.
-            FStr_KeyCodecHost.Register(new IdentityCodec());
         }
     }
 }
