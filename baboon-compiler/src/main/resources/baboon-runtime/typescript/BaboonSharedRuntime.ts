@@ -905,7 +905,8 @@ export class BaboonTypeMeta {
     }
 
     public versionMinCompat(): BaboonDomainVersion | undefined {
-        if (!this.domainVersionMinCompat || this.domainVersionMinCompat === this.domainVersion) {
+        // empty-string is an explicit value distinct from `domainVersion`; codegen always emits a real value when set.
+        if (this.domainVersionMinCompat === this.domainVersion) {
             return undefined;
         }
         return new BaboonDomainVersion(this.domainIdentifier, this.domainVersionMinCompat);
