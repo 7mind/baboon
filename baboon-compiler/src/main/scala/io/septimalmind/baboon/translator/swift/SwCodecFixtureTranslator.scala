@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.translator.swift
 
 import io.septimalmind.baboon.translator.swift.SwTypes.*
-import io.septimalmind.baboon.typer.BaboonEnquiries
+import io.septimalmind.baboon.typer.{BaboonEnquiries, ForeignResolution}
 import io.septimalmind.baboon.typer.model.*
 import io.septimalmind.baboon.typer.model.TypeId.Builtins
 import io.septimalmind.baboon.typer.model.TypeRef.AnyVariant
@@ -35,7 +35,9 @@ object SwCodecFixtureTranslator {
       definition: DomainMember.User
     ): Option[TextTree[SwValue]] = {
       definition.defn match {
-        case _ if enquiries.hasForeignType(definition, domain)     => None
+        // PR-26.4 (M26): hasForeignType filter lifted — `genScalar` now synthesizes deref'd
+        // Foreign fixtures (BaboonRef recurses on aliased ref; Custom dispatches via Swift-decl
+        // allowlist). Closes PR-I.2-D02 / PR-68-D02.
         case _ if enquiries.isRecursiveTypedef(definition, domain) => None
         case dto: Typedef.Dto                                      => Some(doTranslateDto(dto))
         case adt: Typedef.Adt                                      => Some(doTranslateAdt(adt))
@@ -55,7 +57,7 @@ object SwCodecFixtureTranslator {
         case _: DomainMember.Builtin => None
         case u: DomainMember.User =>
           u.defn match {
-            case _ if enquiries.hasForeignType(u, domain)     => None
+            // PR-26.4 (M26): hasForeignType filter lifted (see translate() above).
             case _ if enquiries.isRecursiveTypedef(u, domain) => None
             case _: Typedef.Contract                          => None
             case _: Typedef.Enum                              => None
@@ -217,6 +219,52 @@ object SwCodecFixtureTranslator {
         case u: TypeId.User if enquiries.isEnum(tpe, domain) =>
           val enumType = translator.toSwTypeRefKeepForeigns(u, domain, evo)
           q"rnd.mkEnum($enumType.all)"
+
+        // PR-26.4 (M26): explicit Foreign-arm. BaboonRef-mapped Foreigns recurse on the aliased
+        // ref (deref'd to the underlying scalar/collection). Custom-mapped Foreigns dispatch
+        // via the Swift-decl allowlist below to the matching `rnd` helper. Unmapped decls
+        // throw at codegen time per PR-I-D05 fail-loud discipline. Closes PR-I.2-D02 +
+        // PR-68-D02.
+        case u: TypeId.User if isForeign(u) =>
+          domain.defs.meta.nodes.get(u) match {
+            case Some(DomainMember.User(_, f: Typedef.Foreign, _, _)) =>
+              enquiries.resolveForeignBinding(f, BaboonLang.Swift) match {
+                case Some(ForeignResolution.BaboonAlias(aliasedRef)) =>
+                  // Recurse on the aliased ref so the synthesized value matches the underlying
+                  // wire/codec shape (e.g. `foreign AliasedScalar { swift = i64 }` → `nextI64()`,
+                  // `foreign AliasedCollection { swift = lst[str] }` → `rnd.mkList { rnd.nextString() }`).
+                  genType(aliasedRef, format)
+                case Some(ForeignResolution.CustomType(entry)) =>
+                  entry.mapping match {
+                    case Typedef.ForeignMapping.Custom(decl, _) =>
+                      genCustomForeignFixtureValue(decl, f.id)
+                    case Typedef.ForeignMapping.BaboonRef(_) =>
+                      // Unreachable: resolveForeignBinding routes BaboonRef to BaboonAlias.
+                      throw new IllegalStateException(
+                        s"BUG: CustomType resolution returned BaboonRef mapping for ${f.id}"
+                      )
+                  }
+                case None =>
+                  // No Swift binding declared. SwTypeTranslator.asSwTypeDerefForeigns falls back
+                  // to ANY binding's BaboonRef alias for type resolution; mirror that here so
+                  // fixtures synthesize against the same underlying scalar/collection. Common
+                  // case: `foreign AliasedScalar { scala=i64, cs=i64, ... }` (no swift entry) —
+                  // the type is a `typealias AliasedScalar = Int64` and we synthesize `nextI64()`.
+                  fallbackBaboonAliasFromAnyBinding(f) match {
+                    case Some(aliasedRef) => genType(aliasedRef, format)
+                    case None =>
+                      throw new IllegalArgumentException(
+                        s"Foreign type ${f.id} has no Swift binding and no BaboonRef alias in any " +
+                          "other-language binding; cannot synthesize fixture value"
+                      )
+                  }
+              }
+            case other =>
+              throw new IllegalStateException(
+                s"BUG: isForeign(${u}) returned true but lookup yielded $other"
+              )
+          }
+
         case u: TypeId.User =>
           val fixturePkg       = translator.effectiveSwPkg(u.owner, domain, evo)
           val fixtureClassName = translator.fixtureClassName(u, domain, evo)
@@ -231,6 +279,63 @@ object SwCodecFixtureTranslator {
           q"$fixtureType.$method(rnd)"
 
         case t => throw new IllegalArgumentException(s"Unexpected scalar type: $t")
+      }
+    }
+
+    private def isForeign(id: TypeId.User): Boolean = {
+      domain.defs.meta.nodes.get(id).exists {
+        case DomainMember.User(_, _: Typedef.Foreign, _, _) => true
+        case _                                              => false
+      }
+    }
+
+    // Mirrors `SwTypeTranslator.asSwTypeDerefForeigns`'s `aliasFromAnyBinding` fallback for the
+    // case where a Foreign declares no Swift binding but ANY other-language binding uses a
+    // BaboonRef alias (e.g. `foreign AliasedScalar { scala = i64 }` — Swift's type resolution
+    // picks i64 via this fallback). Returns the first BaboonRef-aliased TypeRef found (binding
+    // iteration order is the declaration order in the .baboon file via the underlying Map).
+    private def fallbackBaboonAliasFromAnyBinding(f: Typedef.Foreign): Option[TypeRef] = {
+      f.bindings.valuesIterator.collectFirst {
+        case Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(typeRef)) => typeRef
+      }
+    }
+
+    // PR-26.4 (M26): dispatch table for Custom-mapped Foreign decls. The allowlist must cover
+    // every Swift binding shape that appears in test fixtures and downstream models. Unmapped
+    // decls throw at codegen time per PR-I-D05 fail-loud discipline (ID-bearing message so the
+    // operator can extend the table). Audit at fix time: only `Swift.Int32` and the BaboonRef
+    // / decl `BaboonDefinitions.Foreign.TestForeignStruct` (Custom, no rnd binding for an
+    // opaque Custom struct — caller-defined; not in this allowlist) are present in
+    // `baboon-compiler/src/test/resources/baboon/pkg0/pkg01.baboon`. The allowlist below
+    // covers the universe of stdlib Swift bindings the hook is expected to synthesize.
+    private def genCustomForeignFixtureValue(decl: String, fid: TypeId.User): TextTree[SwValue] = {
+      decl match {
+        case "Swift.String" => q"rnd.nextString()"
+
+        case "Swift.Int8"  => q"rnd.nextI08()"
+        case "Swift.Int16" => q"rnd.nextI16()"
+        case "Swift.Int32" => q"rnd.nextI32()"
+        case "Swift.Int64" => q"rnd.nextI64()"
+
+        case "Swift.UInt8"  => q"rnd.nextU08()"
+        case "Swift.UInt16" => q"rnd.nextU16()"
+        case "Swift.UInt32" => q"rnd.nextU32()"
+        case "Swift.UInt64" => q"rnd.nextU64()"
+
+        case "Swift.Float"  => q"rnd.nextF32()"
+        case "Swift.Double" => q"rnd.nextF64()"
+        case "Swift.Bool"   => q"rnd.nextBool()"
+
+        case "Foundation.Date" => q"rnd.nextTsu()"
+        case "Foundation.UUID" => q"rnd.nextUuid()"
+        case "Foundation.Data" => q"rnd.nextBytes()"
+
+        case other =>
+          throw new IllegalArgumentException(
+            s"Unmapped Swift Custom-foreign decl '$other' for Foreign type $fid; extend " +
+              "SwCodecFixtureTranslator.genCustomForeignFixtureValue allowlist or switch the " +
+              "binding to a BaboonRef alias to recurse on the underlying scalar."
+          )
       }
     }
   }

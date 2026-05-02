@@ -41,6 +41,14 @@ object SwCodecTestsTranslator {
       val isLatestVersion = domain.version == evo.latest
 
       definition match {
+        // PR-26.4 (M26): the `hasForeignType` filter is intentionally retained on the
+        // *test-emission* side. Lifting it on the fixture side (see SwCodecFixtureTranslator)
+        // makes `<DTO>_Fixture.random(...)` symbols available, but the auto-generated UEBA
+        // round-trip would route through `<F>_UebaCodec` (a `fatalError` placeholder for
+        // host-supplied implementations) and trap at test runtime. Hand-written tests in
+        // `Tests/RuntimeTests/` exercise the JSON path (which works via PR-I.2's
+        // `KeyCodecHost`) — see `M24ForeignFixtureRoundTripTests.swift`. Closes
+        // PR-I.2-D02 + PR-68-D02.
         case d if enquiries.hasForeignType(d, domain)         => None
         case d if enquiries.isRecursiveTypedef(d, domain)     => None
         case d if d.defn.isInstanceOf[Typedef.NonDataTypedef] => None
