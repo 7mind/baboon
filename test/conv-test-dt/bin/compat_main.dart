@@ -19,6 +19,8 @@ import 'package:conv_test_dt/generated/convtest/testpkg/wire_enum.dart';
 // generated FStr_KeyCodecHost identity default impl.
 import 'package:conv_test_dt/generated/convtest/m24foreign/foreign_key_holder.dart';
 import 'package:conv_test_dt/generated/convtest/m24foreign/item_key.dart';
+// PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+import 'package:conv_test_dt/generated/convtest/m26builtinkeys/builtin_map_key_holder.dart';
 
 const String _domainId = 'convtest.testpkg';
 const String _domainVer = '2.0.0';
@@ -346,8 +348,39 @@ void runLegacy() {
   writeUebaAny(facadeCtx, sampleAny, '$baseDir/dart-ueba');
   writePointIdRepr(sampleData.vPointId, '$baseDir/dart-repr');
   writeForeignKeyHolderJson(BaboonCodecContext.defaultCtx, _createForeignKeyHolderSample(), '$baseDir/dart-json');
+  writeBuiltinMapKeyHolderJson(BaboonCodecContext.defaultCtx, _createBuiltinMapKeyHolderSample(), '$baseDir/dart-json');
+  writeBuiltinMapKeyHolderUeba(BaboonCodecContext.defaultCtx, _createBuiltinMapKeyHolderSample(), '$baseDir/dart-ueba');
 
   print('Dart serialization complete!');
+}
+
+// PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+BuiltinMapKeyHolder _createBuiltinMapKeyHolderSample() {
+  return BuiltinMapKeyHolder(
+    mi32: {42: 'v32'},
+    mi64: {9223372036854775807: 'vmax'},
+    mu32: {7: 'vu32'},
+    mbit: {true: 'vt'},
+    muid: {'00000000-0000-0000-0000-000000000001': 'vid'},
+  );
+}
+
+void writeBuiltinMapKeyHolderJson(BaboonCodecContext ctx, BuiltinMapKeyHolder data, String outputDir) {
+  Directory(outputDir).createSync(recursive: true);
+  final json = BuiltinMapKeyHolder_JsonCodec.instance.encode(ctx, data);
+  final jsonStr = jsonEncode(json);
+  final f = File('$outputDir/m26-builtin-map-keys.json');
+  f.writeAsStringSync(jsonStr);
+  print('Written JSON to ${f.absolute.path}');
+}
+
+void writeBuiltinMapKeyHolderUeba(BaboonCodecContext ctx, BuiltinMapKeyHolder data, String outputDir) {
+  Directory(outputDir).createSync(recursive: true);
+  final writer = BaboonBinWriter();
+  BuiltinMapKeyHolder_UebaCodec.instance.encode(ctx, writer, data);
+  final f = File('$outputDir/m26-builtin-map-keys.ueba');
+  f.writeAsBytesSync(writer.toBytes());
+  print('Written UEBA to ${f.absolute.path}');
 }
 
 void main(List<String> args) {

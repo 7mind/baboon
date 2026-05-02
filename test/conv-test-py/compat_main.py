@@ -22,6 +22,12 @@ from Generated.convtest.testpkg.CompositeId import CompositeId
 # generated FStr_KeyCodecHost identity default impl.
 from Generated.convtest.m24foreign.ForeignKeyHolder import ForeignKeyHolder, ForeignKeyHolder_JsonCodec
 from Generated.convtest.m24foreign.ItemKey import ItemKey
+# PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+from Generated.convtest.m26builtinkeys.BuiltinMapKeyHolder import (
+    BuiltinMapKeyHolder,
+    BuiltinMapKeyHolder_JsonCodec,
+    BuiltinMapKeyHolder_UEBACodec,
+)
 
 DOMAIN_ID = "convtest.testpkg"
 DOMAIN_VER = "2.0.0"
@@ -389,8 +395,40 @@ def run_legacy():
     write_ueba_any(ctx, create_sample_any_showcase_ueba(), str(ueba_dir))
     write_point_id_repr(sample_data.vPointId, str(repr_dir))
     write_foreign_key_holder_json(ctx, create_foreign_key_holder_sample(), str(json_dir))
+    write_builtin_map_key_holder_json(ctx, create_builtin_map_key_holder_sample(), str(json_dir))
+    write_builtin_map_key_holder_ueba(ctx, create_builtin_map_key_holder_sample(), str(ueba_dir))
 
     print("Python serialization complete!")
+
+
+# PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+def create_builtin_map_key_holder_sample() -> BuiltinMapKeyHolder:
+    return BuiltinMapKeyHolder(
+        mi32={42: "v32"},
+        mi64={9223372036854775807: "vmax"},
+        mu32={7: "vu32"},
+        mbit={True: "vt"},
+        muid={UUID("00000000-0000-0000-0000-000000000001"): "vid"},
+    )
+
+
+def write_builtin_map_key_holder_json(ctx, data, output_dir):
+    json_str = BuiltinMapKeyHolder_JsonCodec.instance().encode(ctx, data)
+    p = Path(output_dir) / "m26-builtin-map-keys.json"
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(json_str)
+    print(f"Written JSON to {p}")
+
+
+def write_builtin_map_key_holder_ueba(ctx, data, output_dir):
+    memory_stream = io.BytesIO()
+    ueba_writer = LEDataOutputStream(memory_stream)
+    BuiltinMapKeyHolder_UEBACodec.instance().encode(ctx, ueba_writer, data)
+    ueba_bytes = memory_stream.getvalue()
+    p = Path(output_dir) / "m26-builtin-map-keys.ueba"
+    with open(p, "wb") as f:
+        f.write(ueba_bytes)
+    print(f"Written UEBA to {p}")
 
 
 if __name__ == "__main__":

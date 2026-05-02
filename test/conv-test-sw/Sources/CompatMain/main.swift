@@ -5,6 +5,8 @@ import BaboonRuntime
 // FStr foreign + ItemKey wrapper + ForeignKeyHolder round-trip exercises the
 // generated FStr_KeyCodecHost identity default impl.
 import ConvtestM24foreign
+// PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+import ConvtestM26builtinkeys
 
 func fail(_ message: String) -> Never {
     fputs(message + "\n", stderr)
@@ -327,7 +329,38 @@ func runLegacy() throws {
     try writeUebaAny(facadeCtx, sampleAny, "\(baseDir)/swift-ueba")
     try writePointIdRepr(sampleData.vPointId, "\(baseDir)/swift-repr")
     try writeForeignKeyHolderJson(.defaultCtx, createForeignKeyHolderSample(), "\(baseDir)/swift-json")
+    try writeBuiltinMapKeyHolderJson(.defaultCtx, createBuiltinMapKeyHolderSample(), "\(baseDir)/swift-json")
+    try writeBuiltinMapKeyHolderUeba(.defaultCtx, createBuiltinMapKeyHolderSample(), "\(baseDir)/swift-ueba")
     print("Swift serialization complete!")
+}
+
+// PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+func createBuiltinMapKeyHolderSample() -> BuiltinMapKeyHolder {
+    return BuiltinMapKeyHolder(
+        mi32: [Int32(42): "v32"],
+        mi64: [Int64(9223372036854775807): "vmax"],
+        mu32: [UInt32(7): "vu32"],
+        mbit: [true: "vt"],
+        muid: [UUID(uuidString: "00000000-0000-0000-0000-000000000001")!: "vid"]
+    )
+}
+
+func writeBuiltinMapKeyHolderJson(_ ctx: BaboonCodecContext, _ data: BuiltinMapKeyHolder, _ outputDir: String) throws {
+    try FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+    let jsonObj = BuiltinMapKeyHolder_JsonCodec.instance.encode(ctx, data)
+    let jsonData = try JSONSerialization.data(withJSONObject: jsonObj as Any, options: [.sortedKeys])
+    let path = "\(outputDir)/m26-builtin-map-keys.json"
+    try jsonData.write(to: URL(fileURLWithPath: path))
+    print("Written JSON to \(path)")
+}
+
+func writeBuiltinMapKeyHolderUeba(_ ctx: BaboonCodecContext, _ data: BuiltinMapKeyHolder, _ outputDir: String) throws {
+    try FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+    let writer = BaboonBinWriter()
+    BuiltinMapKeyHolder_UebaCodec.instance.encode(ctx, writer, data)
+    let path = "\(outputDir)/m26-builtin-map-keys.ueba"
+    try writer.toData().write(to: URL(fileURLWithPath: path))
+    print("Written UEBA to \(path)")
 }
 
 let args = Array(CommandLine.arguments.dropFirst())

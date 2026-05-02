@@ -9,6 +9,8 @@ using Convtest.Testpkg;
 // foreign FStr maps to System.String; the default identity FStr_KeyCodec
 // impl handles encode/decode of map keys without host registration.
 using Convtest.M24foreign;
+// PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+using Convtest.M26builtinkeys;
 using Baboon.Runtime.Shared;
 using Baboon.Time;
 using Newtonsoft.Json;
@@ -84,8 +86,58 @@ namespace ConvTest
             WriteUebaAny(facadeCtx, sampleAny, csUebaDir);
             WritePointIdRepr(sampleData.VPointId, csReprDir);
             WriteForeignKeyHolderJson(ctx, CreateForeignKeyHolderSample(), csJsonDir);
+            WriteBuiltinMapKeyHolderJson(ctx, CreateBuiltinMapKeyHolderSample(), csJsonDir);
+            WriteBuiltinMapKeyHolderUeba(ctx, CreateBuiltinMapKeyHolderSample(), csUebaDir);
 
             Console.WriteLine("C# serialization complete!");
+        }
+
+        // PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+        // Closes PR-G-D01.
+        private static BuiltinMapKeyHolder CreateBuiltinMapKeyHolderSample()
+        {
+            var mi32 = new Dictionary<int, string> { { 42, "v32" } };
+            var mi64 = new Dictionary<long, string> { { 9223372036854775807L, "vmax" } };
+            var mu32 = new Dictionary<uint, string> { { 7u, "vu32" } };
+            var mbit = new Dictionary<bool, string> { { true, "vt" } };
+            var muid = new Dictionary<Guid, string>
+            {
+                { Guid.Parse("00000000-0000-0000-0000-000000000001"), "vid" },
+            };
+            return new BuiltinMapKeyHolder(
+                mi32.ToImmutableDictionary(),
+                mi64.ToImmutableDictionary(),
+                mu32.ToImmutableDictionary(),
+                mbit.ToImmutableDictionary(),
+                muid.ToImmutableDictionary());
+        }
+
+        private static void WriteBuiltinMapKeyHolderJson(BaboonCodecContext ctx, BuiltinMapKeyHolder data, string outputDir)
+        {
+            var json = BuiltinMapKeyHolder_JsonCodec.Instance.Encode(ctx, data);
+            // Compact form so the cross-language byte-identity assertion compares
+            // against the canonical reference JSON literally.
+            var jsonStr = JsonConvert.SerializeObject(json, Formatting.None);
+            var path = Path.Combine(outputDir, "m26-builtin-map-keys.json");
+            File.WriteAllText(path, jsonStr, new UTF8Encoding(false));
+            Console.WriteLine($"Written JSON to {path}");
+        }
+
+        private static void WriteBuiltinMapKeyHolderUeba(BaboonCodecContext ctx, BuiltinMapKeyHolder data, string outputDir)
+        {
+            byte[] bytes;
+            using (var ms = new MemoryStream())
+            {
+                using (var bw = new BinaryWriter(ms))
+                {
+                    BuiltinMapKeyHolder_UEBACodec.Instance.Encode(ctx, bw, data);
+                }
+                ms.Flush();
+                bytes = ms.ToArray();
+            }
+            var path = Path.Combine(outputDir, "m26-builtin-map-keys.ueba");
+            File.WriteAllBytes(path, bytes);
+            Console.WriteLine($"Written UEBA to {path}");
         }
 
         // PR-I.1c (M24 Phase 3.1) — Custom-foreign KeyCodec hook canonical fixture.

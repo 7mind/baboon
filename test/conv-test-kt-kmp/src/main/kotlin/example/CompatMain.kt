@@ -21,6 +21,10 @@ import convtest.testpkg.WireEnum
 import convtest.m24foreign.ForeignKeyHolder
 import convtest.m24foreign.ForeignKeyHolder_JsonCodec
 import convtest.m24foreign.ItemKey
+// PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+import convtest.m26builtinkeys.BuiltinMapKeyHolder
+import convtest.m26builtinkeys.BuiltinMapKeyHolder_JsonCodec
+import convtest.m26builtinkeys.BuiltinMapKeyHolder_UEBACodec
 import baboon.runtime.shared.AnyMeta
 import baboon.runtime.shared.AnyOpaque
 import baboon.runtime.shared.AnyOpaqueJson
@@ -101,8 +105,36 @@ private fun runLegacy() {
     writeUebaAny(facadeCtx, sampleAny, kotlinKmpUebaDir.absolutePath)
     writePointIdRepr(sampleData.vPointId, kotlinKmpReprDir.absolutePath)
     writeForeignKeyHolderJson(ctx, createForeignKeyHolderSample(), kotlinKmpJsonDir.absolutePath)
+    writeBuiltinMapKeyHolderJson(ctx, createBuiltinMapKeyHolderSample(), kotlinKmpJsonDir.absolutePath)
+    writeBuiltinMapKeyHolderUeba(ctx, createBuiltinMapKeyHolderSample(), kotlinKmpUebaDir.absolutePath)
 
     println("Kotlin KMP serialization complete!")
+}
+
+// PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+// KMP uses kotlin.uuid.Uuid (not java.util.UUID); u32 = UInt; u64 = ULong.
+private fun createBuiltinMapKeyHolderSample(): BuiltinMapKeyHolder = BuiltinMapKeyHolder(
+    mi32 = linkedMapOf(42 to "v32"),
+    mi64 = linkedMapOf(9223372036854775807L to "vmax"),
+    mu32 = linkedMapOf(7u to "vu32"),
+    mbit = linkedMapOf(true to "vt"),
+    muid = linkedMapOf(Uuid.parse("00000000-0000-0000-0000-000000000001") to "vid"),
+)
+
+private fun writeBuiltinMapKeyHolderJson(ctx: BaboonCodecContext, data: BuiltinMapKeyHolder, outputDir: String) {
+    val json = BuiltinMapKeyHolder_JsonCodec.encode(ctx, data)
+    val jsonStr = json.toString()
+    val path = File(outputDir, "m26-builtin-map-keys.json")
+    path.writeText(jsonStr, Charsets.UTF_8)
+    println("Written JSON to ${path.absolutePath}")
+}
+
+private fun writeBuiltinMapKeyHolderUeba(ctx: BaboonCodecContext, data: BuiltinMapKeyHolder, outputDir: String) {
+    val w = BaboonBinaryWriter()
+    BuiltinMapKeyHolder_UEBACodec.encode(ctx, w, data)
+    val path = File(outputDir, "m26-builtin-map-keys.ueba")
+    path.writeBytes(w.toByteArray())
+    println("Written UEBA to ${path.absolutePath}")
 }
 
 // PR-I.1b (M24 Phase 3.1) — Custom-foreign KeyCodec hook canonical fixture.

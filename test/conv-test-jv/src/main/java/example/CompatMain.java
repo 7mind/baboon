@@ -21,6 +21,10 @@ import convtest.testpkg.WireEnum;
 import convtest.m24foreign.ForeignKeyHolder;
 import convtest.m24foreign.ForeignKeyHolder_JsonCodec;
 import convtest.m24foreign.ItemKey;
+// PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+import convtest.m26builtinkeys.BuiltinMapKeyHolder;
+import convtest.m26builtinkeys.BuiltinMapKeyHolder_JsonCodec;
+import convtest.m26builtinkeys.BuiltinMapKeyHolder_UEBACodec;
 import baboon.runtime.shared.BaboonAnyOpaque;
 import baboon.runtime.shared.BaboonCodecContext;
 import baboon.runtime.shared.BaboonCodecsFacade;
@@ -102,8 +106,48 @@ public class CompatMain {
         writeUebaAny(facadeCtx, sampleAny, javaUebaDir.toString());
         writePointIdRepr(sampleData.vPointId(), javaReprDir.toString());
         writeForeignKeyHolderJson(ctx, createForeignKeyHolderSample(), javaJsonDir.toString());
+        writeBuiltinMapKeyHolderJson(ctx, createBuiltinMapKeyHolderSample(), javaJsonDir.toString());
+        writeBuiltinMapKeyHolderUeba(ctx, createBuiltinMapKeyHolderSample(), javaUebaDir.toString());
 
         System.out.println("Java serialization complete!");
+    }
+
+    // PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+    private static BuiltinMapKeyHolder createBuiltinMapKeyHolderSample() {
+        var mi32 = new java.util.LinkedHashMap<Integer, String>();
+        mi32.put(42, "v32");
+        var mi64 = new java.util.LinkedHashMap<Long, String>();
+        mi64.put(9223372036854775807L, "vmax");
+        var mu32 = new java.util.LinkedHashMap<Long, String>();
+        mu32.put(7L, "vu32");
+        var mbit = new java.util.LinkedHashMap<Boolean, String>();
+        mbit.put(true, "vt");
+        var muid = new java.util.LinkedHashMap<UUID, String>();
+        muid.put(UUID.fromString("00000000-0000-0000-0000-000000000001"), "vid");
+        return new BuiltinMapKeyHolder(mi32, mi64, mu32, mbit, muid);
+    }
+
+    private static void writeBuiltinMapKeyHolderJson(BaboonCodecContext ctx, BuiltinMapKeyHolder data, String outputDir) throws Exception {
+        var json = BuiltinMapKeyHolder_JsonCodec.INSTANCE.encode(ctx, data);
+        var mapper = new ObjectMapper();
+        var jsonStr = mapper.writeValueAsString(json);
+        var path = Path.of(outputDir).resolve("m26-builtin-map-keys.json");
+        Files.writeString(path, jsonStr, StandardCharsets.UTF_8);
+        System.out.println("Written JSON to " + path.toAbsolutePath());
+    }
+
+    private static void writeBuiltinMapKeyHolderUeba(BaboonCodecContext ctx, BuiltinMapKeyHolder data, String outputDir) throws Exception {
+        var baos = new ByteArrayOutputStream();
+        var uebaWriter = new LEDataOutputStream(baos);
+        try {
+            BuiltinMapKeyHolder_UEBACodec.INSTANCE.encode(ctx, uebaWriter, data);
+            uebaWriter.flush();
+        } finally {
+            uebaWriter.close();
+        }
+        var path = Path.of(outputDir).resolve("m26-builtin-map-keys.ueba");
+        Files.write(path, baos.toByteArray());
+        System.out.println("Written UEBA to " + path.toAbsolutePath());
     }
 
     // PR-I.1b (M24 Phase 3.1) — Custom-foreign KeyCodec hook canonical fixture.

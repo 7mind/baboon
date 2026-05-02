@@ -21,6 +21,10 @@ import convtest.testpkg.{
 // foreign FStr maps to java.lang.String; the default identity FStr_KeyCodec
 // impl handles encode/decode of map keys without host registration.
 import convtest.m24foreign.{ForeignKeyHolder, ForeignKeyHolder_JsonCodec, ItemKey}
+// PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+// Closes PR-G-D01. Locks parity for the 6 non-string builtin map-key types
+// already covered structurally by PR-G's TS unification.
+import convtest.m26builtinkeys.{BuiltinMapKeyHolder, BuiltinMapKeyHolder_JsonCodec, BuiltinMapKeyHolder_UEBACodec}
 import baboon.runtime.shared.{
   AnyMeta,
   AnyOpaque,
@@ -96,8 +100,51 @@ object CompatMain {
     writeUebaAny(facadeCtx, sampleAny, scalaUebaDir.toString)
     writePointIdRepr(sampleData.vPointId, scalaReprDir.toString)
     writeForeignKeyHolderJson(ctx, createForeignKeyHolderSample(), scalaJsonDir.toString)
+    writeBuiltinMapKeyHolderJson(ctx, createBuiltinMapKeyHolderSample(), scalaJsonDir.toString)
+    writeBuiltinMapKeyHolderUeba(ctx, createBuiltinMapKeyHolderSample(), scalaUebaDir.toString)
 
     println("Scala serialization complete!")
+  }
+
+  // PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+  // Canonical single-entry maps; each key uses the canonical string form
+  // produced by `value.toString` across all 10 backends for the safe subset
+  // (i32/i64 with positive values; u32/u64 with small positive values to
+  // avoid Scala signed-Long unsigned-encoding divergence; bit; uid).
+  private def createBuiltinMapKeyHolderSample(): BuiltinMapKeyHolder = {
+    BuiltinMapKeyHolder(
+      mi32 = Map(42                   -> "v32"),
+      mi64 = Map(9223372036854775807L -> "vmax"),
+      mu32 = Map(7                    -> "vu32"),
+      mbit = Map(true                 -> "vt"),
+      muid = Map(UUID.fromString("00000000-0000-0000-0000-000000000001") -> "vid"),
+    )
+  }
+
+  private def writeBuiltinMapKeyHolderJson(ctx: BaboonCodecContext, data: BuiltinMapKeyHolder, outputDir: String): Unit = {
+    val json    = BuiltinMapKeyHolder_JsonCodec.instance.encode(ctx, data)
+    // Compact form (`noSpaces`) so the cross-language byte-identity assertion
+    // can compare files literally. Reference fixture lives at
+    // `test/conv-test/json-data/m26-builtin-map-keys.json`.
+    val jsonStr = json.noSpaces
+    val path    = Paths.get(outputDir).resolve("m26-builtin-map-keys.json")
+    Files.write(path, jsonStr.getBytes("UTF-8"))
+    println(s"Written JSON to $path")
+  }
+
+  private def writeBuiltinMapKeyHolderUeba(ctx: BaboonCodecContext, data: BuiltinMapKeyHolder, outputDir: String): Unit = {
+    val baos       = new ByteArrayOutputStream()
+    val uebaWriter = new LEDataOutputStream(baos)
+    try {
+      BuiltinMapKeyHolder_UEBACodec.instance.encode(ctx, uebaWriter, data)
+      uebaWriter.flush()
+      val uebaBytes = baos.toByteArray
+      val path      = Paths.get(outputDir).resolve("m26-builtin-map-keys.ueba")
+      Files.write(path, uebaBytes)
+      println(s"Written UEBA to $path")
+    } finally {
+      uebaWriter.close()
+    }
   }
 
   // PR-I.1a (M24 Phase 3.1) — Custom-foreign KeyCodec hook canonical fixture.

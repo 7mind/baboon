@@ -1,0 +1,40 @@
+model convtest.m26builtinkeys
+
+version "1.0.0"
+
+// PR-26.5 (M26) — cross-language wire-form coverage for non-string builtin
+// map keys. Closes PR-G-D01.
+//
+// PR-G (M24 Phase 2.2) unified the TS direct-builtin map-key wire form with
+// the other 9 backends (string-keyed-object, was tuple-array). At that time
+// no convtest fixture exercised non-string builtin map keys, so the parity
+// claim was structural-only. This fixture locks the parity into the
+// cross-language compat matrix: each per-language CompatMain emits an
+// `m26-builtin-map-keys.json` artifact, and the Scala-side cross-language
+// test asserts byte-identity across all 10 backends.
+//
+// Key types covered: i32, i64, u32, bit, uid (5 of 8 originally proposed).
+// Dropped key types and reason:
+//   - f64: backend-divergent number-to-string canonicalization (Scala
+//     `42.0`, TS/JS `String(42.0) === "42"`); needs a dedicated f64 wire
+//     normalization PR.
+//   - u64: latent Scala codegen defect — `ScJsonCodecGenerator.scala`
+//     line 447 emits `BaboonJsonCodec.decodeLong` (a `Decoder[Long]`)
+//     where `KeyDecoder[Long]` is required for u64 map keys; compilation
+//     fails. The encode side emits Long.toString which itself diverges
+//     for negative two's-complement values vs. C# unsigned ulong. Tracked
+//     as a follow-up defect; outside the fixture-scope of PR-26.5.
+//   - tso: backend-divergent timezone-offset formatting (Scala `+00:00`
+//     via `XXX`, TS `Z` via `.toISOString()`); needs a dedicated tso
+//     wire normalization PR.
+//
+// Values are chosen to avoid signed/unsigned representation divergence:
+// u32 uses 7 (small positive, both signed and unsigned int32 representations
+// agree); i32 uses 42; i64 uses Long.MaxValue (non-negative).
+root data BuiltinMapKeyHolder : derived[json], derived[ueba] {
+  mi32: map[i32, str]
+  mi64: map[i64, str]
+  mu32: map[u32, str]
+  mbit: map[bit, str]
+  muid: map[uid, str]
+}
