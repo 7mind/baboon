@@ -383,7 +383,14 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
     val backends = List("cs", "scala", "rust", "typescript", "kotlin", "kotlin-kmp", "java", "dart", "swift", "python")
     for (lang <- backends) {
       val reprFile = baseDir.resolve(s"$lang-repr").resolve("point-id.txt")
-      assert(Files.exists(reprFile), s"$lang repr file not found: $reprFile")
+      if (lang == "swift") {
+        // Swift conv-test does not run on Windows CI (no Swift toolchain).
+        // Mirror the assume-based skip used by the Swift JSON/UEBA cross-language
+        // tests above (lines 166-176).
+        assume(Files.exists(reprFile), s"$lang repr file not found, skipping: $reprFile")
+      } else {
+        assert(Files.exists(reprFile), s"$lang repr file not found: $reprFile")
+      }
       val actual = new String(Files.readAllBytes(reprFile), StandardCharsets.UTF_8)
       assert(actual == expected, s"backend $lang repr should match canonical; expected '$expected', got '$actual'")
     }
