@@ -32,6 +32,25 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 - [x] **M20** — BAB-A03: ADT branch inheritance / cross-ADT branch reuse (`adt X { + ErrorAtom ... }` plus subtraction). Shipped via PR-62 (parser + raw AST), PR-63 (typer-early expansion + 3 new TyperIssue codes), PR-64 (cross-language verification + evolution test).
 - [x] **M23** — Backend stubs unblock + upstream-defects cleanup.
 - [x] **M24** — Latents closeout. Closed 13 deferred latents from M23 + cross-backend hygiene + 2 policy-gated changes via 14 PRs across 3 phases (Phase 1: PR-A..E parallel; Phase 2: PR-F/G/H serial; Phase 3: PR-I.1a/1b/1c/1d/2/3 + PR-J). Custom-foreign `<Foreign>_KeyCodec` extension hook (policy c) implemented across all 9 backends with byte-identical wire form. `derived[was]` re-emit (policy b) preserve-verbatim documented + tested. Plan: `docs/drafts/20260501-1009-m24-latents-closeout-plan.md`. Final verification: 12/12 regular-adt + 10/10 cross-compat PASS.
+- [~] **M25** — Cross-backend hygiene. Drain all 11 open defects from `defects.md`. UEBA correctness across backends top priority (PR-15-D01 Kotlin indexed-mode block-expression bug). Plan: `docs/drafts/20260502-0059-m25-cross-backend-hygiene-plan.md`. 8 PRs in 2 waves; Wave 1 parallel via worktrees.
+
+---
+
+## Milestone 25 — PR breakdown
+
+Detail in `docs/drafts/20260502-0059-m25-cross-backend-hygiene-plan.md`. 8 PRs; Wave 1 (6 PRs, parallel via worktrees) + Wave 2 (2 PRs, sequenced).
+
+**Wave 1 — parallel (worktree-isolated):**
+- [ ] **PR-25.1** — Kotlin UEBA indexed-mode `{ … }` block-expression fix (JVM + KMP). Closes PR-15-D01. **TOP PRIORITY — UEBA correctness.**
+- [ ] **PR-25.2** — Python facade hygiene bundle: `json_to_ueba_bytes` dict→string wrap + `from_<ver>_*` import path fix. Closes PR-26-D03 + PR-26-D04.
+- [ ] **PR-25.3** — Dart `convert<T>` `(from, to)` registry-key fix. Closes PR-22-D05.
+- [ ] **PR-25.4** — TS reader hygiene: `readByte()` past-EOF regression test + `versionMinCompat()` empty-string semantics. Closes PR-19-D05 + PR-19-D06.
+- [ ] **PR-25.6** (zero-code) — Verify Swift `mayThrow` propagation post-PR-I.2 and close PR-30-D06.
+- [x] **PR-25.7** (zero-code) — Verified Dart conv-test mudyla `baboon_fixture.dart` asymmetry intentional (`test-gen-manual` deliberately omits `--fixture-output` for all backends; manual-flavour conv-test uses hand-crafted compat fixtures). Documented in `.mdl/defs/tests.md:667-672`. Closed PR-22-D07.
+
+**Wave 2 — sequenced:**
+- [ ] **PR-25.5a** — KMP runtime test parity with JVM (mechanical port; gated on PR-25.1 to avoid suppressing the indexed-mode test). Closes PR-14-D02 + PR-15-D02.
+- [ ] **PR-25.8** — TS codegen emits `BaboonMetaProvider` / `BaboonAdtMember` interfaces. Closes PR-22-D02.
 
 ---
 
@@ -346,6 +365,9 @@ Per plan §M13: each language emits an `AnyShowcase` fixture with all six `any` 
 - [x] **Q4 — Python UEBA emission** (2026-04-26, resolved by inspection at M10 open): Python emits both UEBA (`PyUEBACodecGenerator.scala`, 478 lines) and JSON (`PyJsonCodecGenerator.scala`, 133 lines). Existing `baboon_codecs_facade.py` runtime already in place (like Kotlin M5). M10 follows the M5 4-PR template.
 - [x] **Q6 — Cross-format facade plumbing for `any` encoding** (2026-04-25, resolved: option (a)). Extend `BaboonCodecContext` with `def facade: Option[BaboonCodecsFacade]` (default `None`), add a `WithFacade(useIndices, baboonFacade)` factory. Codec generators thread `ctx` + per-variant static fallbacks (`staticDomain/staticVersion/staticTypeid`) into `encodeAnyField` helpers (decoder helpers don't take `ctx` — strict warnings reject unused params). Cross-convert helpers `BaboonCodecsFacade.{jsonToUebaBytes, uebaToJson}` accept `(meta, payload, staticDomain?, staticVersion?, staticTypeid?)` and merge via `meta.X.orElse(staticX)` (wire wins). Per-variant static emission per spec table: A=`(None,None,None)`, B=`(currentDomain,None,None)`, C=`(currentDomain,currentVersion,None)`, D1=`(None,None,underlyingFqid)`, D2=`(currentDomain,None,underlyingFqid)`, D3=`(currentDomain,currentVersion,underlyingFqid)`. Lands in PR 2.3 (also retroactively closed PR 2.2's deferred `AnyOpaqueJson` UEBA-encoder branch). Other languages will follow the same pattern in M3+. Options (b)/(c)/(d) considered and rejected (see `docs/logs/20260425-0256-m2-pr22-complete.md` §"Three options").
 - [x] **Q5 — Translator-site cascade**: PR 1.2 emits `throw RuntimeException("BUG: any field reached translator before M2+")` placeholders in each translator's `TypeRef` match; removed per-language per milestone. **Open issue (Q5.1)** — surface is 64 files, far larger than plan estimate. See blocker below.
+- [ ] **M25-N01 — Indexed-mode UEBA per-field block emission discipline.** In any backend whose syntax distinguishes "statement block" from "block expression" (Kotlin, Scala, Rust), per-field encode emissions inside indexed-mode body must be statements, not bare-braced expression values. Bare `{ ... }` in Kotlin statement position is a *lambda expression*, constructed-and-discarded without invoking. Drop braces (preferred — comment markers suffice) or use language-specific statement-block keywords. Symmetric with Compact mode emission. Lands in PR-25.1.
+- [ ] **M25-N02 — Cross-runtime conversion registry must key on `(fromTypeId, toTypeId)`, not `fromTypeId` alone.** Currently violated in Java (PR-17-D05, deferred) and Dart (PR-22-D05; fixed by PR-25.3). Models with multiple distinct conversions from a single source type silently dispatch wrong target. Java parity tracked for future hygiene PR.
+- [ ] **M25-N03 — Python facade `json_to_ueba_bytes` interface contract.** Python JSON codecs are stringly-typed (`def decode(self, ctx, wire: str)` via `pydantic.model_validate_json`). Facade's cross-format helper must `json.dumps()` the parsed JSON value before delegating. Surgical fix lands in PR-25.2; permanent fix (align Python JSON-codec generator to take/return parsed values) tracked.
 - [x] **Q5.1 — PR 1.2 surface explosion** (2026-04-24, resolved: option (a)). User chose one mechanical PR covering all pattern-match sites with placeholder throws. Original analysis below for record.
 
   `grep TypeRef.Scalar|TypeRef.Constructor` returns 64 source files (not just 9 translator `UEBACodecGenerator`s — also `TypeTranslator`, `JsonCodecGenerator`, `CodecFixtureTranslator`, `ConversionTranslator`, `DefnTranslator`, and `BaboonSchemeRenderer` per language). Adding `TypeRef.Any` as a new sealed case forces a placeholder in every one of these 64 sites, making "PR 1.2" a 64-file mechanical change that's ostensibly "compiler front-end" but touches every translator. Options for the user to decide between:

@@ -664,7 +664,12 @@ $BABOON_BIN \
   --output ./test/conv-test-kt-kmp/src/main/kotlin/generated-main \
   --kt-multiplatform=true
 
-# Move Dart runtime files into the baboon_runtime package
+# Move Dart runtime files into the baboon_runtime package.
+# NOTE: test-gen-manual deliberately does NOT pass --fixture-output to the
+# Baboon compiler for any backend (the manual-flavour conv-test exercises
+# hand-crafted compat fixtures, not generated random fixtures). Therefore
+# baboon_fixture.dart is not produced and not moved here, asymmetric to
+# test-gen-regular-adt and test-gen-wrapped-adt. (Closes PR-22-D07.)
 mv ./test/conv-test-dt/lib/generated/baboon_runtime.dart ./test/conv-test-dt/packages/baboon_runtime/lib/
 mv ./test/conv-test-dt/lib/generated/baboon_any_opaque.dart ./test/conv-test-dt/packages/baboon_runtime/lib/
 mv ./test/conv-test-dt/lib/generated/baboon_codecs_facade.dart ./test/conv-test-dt/packages/baboon_runtime/lib/

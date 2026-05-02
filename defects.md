@@ -1103,11 +1103,11 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Fix:** Replaced `\\d` → `\d` and `\\.` → `\.` (and `$$` → `$`) in both raw strings. Verified by `mdl :test-dart-regular` (175 pass / 0 fail, was 173 pass / 2 fail).
 
 ### [PR-22-D07] `conv-test-dt` mudyla block doesn't move `baboon_fixture.dart` while regular/wrapped do
-**Status:** open (deferred — likely intentional asymmetry)
+**Status:** resolved (intentional, documented)
 **Severity:** trivial
 **Location:** `.mdl/defs/tests.md:644-646` vs `:136-139` and `:427-430`.
 **Description:** If `conv-test` model never emits a `baboon_fixture.dart`, this is correct. If it does, file would be left behind in `lib/generated/`.
-**Fix:** Defer — pre-existing asymmetry; verify when conv-test is exercised.
+**Fix:** Verified by static inspection of `.mdl/defs/tests.md` lines 632-679 (the `test-gen-manual` action block): no `--fixture-output` flag is passed for any backend (Dart or otherwise), so no `baboon_fixture.dart` is produced — the absent `mv` is correct. The manual-flavour conv-test exercises hand-crafted compat fixtures, not generated random fixtures. Documented in `.mdl/defs/tests.md:667-672` (NOTE block immediately above the Dart `mv` lines in the `test-gen-manual` action). PR-25.7 (M25). No code change.
 
 ## PR-23 — Python runtime additions (M10 PR 10.1)
 
