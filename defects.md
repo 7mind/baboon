@@ -1394,11 +1394,12 @@ Beyond per-backend internal consistency, **cross-language wire-format compatibil
 **Fix:** Added `length >= 0 &&` to the guard. `readString()` is unaffected (uses unsigned VLQ); `readUuid()` uses fixed 16-byte length.
 
 ### [PR-30-D06] `mayThrow` propagation false-negative risk if `decodeKey` is later extended to throwing types
-**Status:** open (informational — doesn't surface in current tree)
+**Status:** resolved (verified post-PR-I.2)
 **Severity:** nit
 **Location:** `SwJsonCodecGenerator.scala` map-decoder aggregator (~line 340)
 **Description:** Map decoder returns `(mapExpr, valThr)` — propagates only the value's `mayThrow`, ignoring the key. Today's `decodeKey` only handles non-throwing scalars (would `BUG` on User-keyed maps), so the omission doesn't surface. Tracking note for future maintainers.
 **Suggested fix:** When `decodeKey` learns to handle throwing types, change aggregation to `(mapExpr, keyThr || valThr)`.
+**Fix:** Verified post-PR-I.2: SwJsonCodecGenerator map-decoder returns `(mapExpr, keyThr || valThr)` at `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/swift/SwJsonCodecGenerator.scala:358,366` (`anyThr = keyThr || valThr`; `(mapExpr, anyThr)`); throwing-key path correctly contributes to outer mayThrow. PR-I.2 Foreign-Custom decode-key emission returns `(decExpr, true)` at line 418. The original informational concern is addressed by current code.
 
 ### [PR-30-D07] PR-29-D06 status clarification: pre-existing dart-from-swift JSON failure is a fragile-skip, not "no fix needed"
 **Status:** resolved (PR-40 bootstrap loud-fail + sentinel resolution, M16, `c41a278`; PR-43/PR-44 generalized + relaxed sentinel matcher across all 6 helpers. Ledger hygiene flip 2026-04-29)
