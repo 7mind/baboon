@@ -550,6 +550,7 @@ async def run_codegen(
                 "baboon_runtime.dart",
                 "baboon_any_opaque.dart",
                 "baboon_codecs_facade.dart",
+                "baboon_identifier_repr.dart",
             ):
                 src = target_dir / "dt" / "lib" / "generated" / runtime_file
                 if src.exists():
