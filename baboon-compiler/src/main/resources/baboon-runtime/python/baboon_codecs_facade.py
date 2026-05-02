@@ -439,10 +439,14 @@ class BaboonCodecsFacade:
             return BaboonLeft(e)
 
         try:
-            # Python JSON codecs are stringly-typed (pydantic.model_validate_json under the
-            # hood); the cross-format facade receives a parsed JSON value (dict/list/primitive)
-            # so we serialise to text before delegating. Future hygiene tracked in M25-N03.
-            typed = json_codec.decode(BaboonCodecContext.Compact, json.dumps(json_value))
+            # Real-codegen `json_codec.decode` expects a JSON-text string (pydantic
+            # `model_validate_json`). Callers historically passed either a parsed JSON
+            # value (dict/list/primitive — per `AnyOpaqueJson.json` doc) or an already-
+            # serialized JSON-text string (per `build_json_holder_for_cross_convert`
+            # fixture pattern). Accept both: dump parsed values, pass strings through.
+            # Future hygiene tracked in M25-N03 (align Python JSON-codec interface).
+            wire = json_value if isinstance(json_value, str) else json.dumps(json_value)
+            typed = json_codec.decode(BaboonCodecContext.Compact, wire)
         except Exception as e:
             return BaboonLeft(
                 BaboonCodecException.DecoderFailure(
