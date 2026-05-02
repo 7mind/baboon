@@ -45,6 +45,9 @@ Generates:
 - Evolution-aware codegen: derives migrations when possible, emits stubs when manual work is required
 - Set-based structural inheritance with `+`, `-`, and `^` operators
 - Algebraic data types (`adt`), DTOs (`data`) and enums.
+- First-class [identifier types](docs/language-features.md#identifier-types-id) (`id` keyword) with parseable canonical repr (`<Name>:<ver>#field:value:...`) and free `id`↔`data` conversion when shapes match.
+- [ADT branch inheritance and subtraction](docs/language-features.md#adt-branch-inheritance-and-subtraction) (`+`, `^`, `-`) for cross-ADT branch reuse.
+- Cross-language wire-form parity verified by per-backend conv-test matrix: byte-identical JSON and UEBA fixtures across all 9 generated backends.
 - [Polymorphic `any` fields](docs/language-features.md#polymorphic-any-fields) — opaque envelope for runtime-typed payloads with byte-canonical cross-language wire format.
 - Type aliases for convenience (`type Name = TargetType`)
 - Basic form of nominal inheritance (`contract`)
