@@ -2555,11 +2555,11 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Fix:** Added `val traitFqn = s"${srcRef.pkg.parts.mkString(".")}.$traitName"` and used `traitFqn` in the error body. Generated message now reads e.g. `"convtest.m24foreign.FStr_KeyCodec is not registered; call convtest.m24foreign.FStr_KeyCodec.register(impl) at app boot."` — copy-pasteable as an import path. **Pattern guidance for sub-PRs:** include FQN in every backend's diagnostic (Java: fully-qualified class; Kotlin: package + name; C#: namespace + class; etc.).
 
 ## [PR-I-D04] obsoletePrevious annotation only attaches to trait, not companion
-**Status:** resolved (deferred — Scala-specific annotation grammar nuance)
+**Status:** resolved
 **Severity:** major
-**Location:** ScDefnTranslator.scala:220 (`obsoletePrevious(repr.defn)`)
+**Location:** ScDefnTranslator.scala:220 (`obsoletePrevious(repr.defn)`) and the foreign branch of `makeRepr` (`case f: Typedef.Foreign`).
 **Description:** Result for non-latest versions: `@deprecated("...") trait FStr_KeyCodec { ... }\nobject FStr_KeyCodec { ... }`. Scala annotation grammar binds `@deprecated` to the immediately following declaration only; the companion `object` is NOT marked deprecated. Calling `FStr_KeyCodec.register(...)` on an old-version namespace produces no deprecation warning.
-**Fix:** Deferred. Pattern propagation to other backends doesn't share Scala's annotation grammar limitation (Java/Kotlin/etc. have different deprecation models). Future hygiene PR can apply `@deprecated` to both trait and companion in Scala.
+**Fix:** PR-26.3 (M26). Lifted `obsoletePrevious` from a local helper inside `makeFullRepr` to a private class-level method so `makeRepr` can reuse it. Changed `makeForeignKeyCodecRepr` to return `List[TextTree[ScValue]]` (one tree for the trait, one for the companion object). The Foreign branch of `makeRepr` now applies `obsoletePrevious` per tree before joining: `parts.map(obsoletePrevious).joinNN()`. The outer `obsoletePrevious(repr.defn)` in `makeFullRepr` is bypassed for the Foreign case to avoid double-annotating the trait. Generated code on non-latest versions now reads `@deprecated(...) trait <F>_KeyCodec { ... } @deprecated(...) object <F>_KeyCodec { ... }`. Regression: `test/sc-stub/src/test/scala/runtime/ForeignKeyCodecDeprecationSpec.scala` uses `scala.reflect.runtime.universe` to assert both the trait and the companion `Symbol` carry `scala.deprecated` on the v1.0.0 emission of `testpkg.pkg0/ObscureInt_KeyCodec` (Custom non-stringy foreign). Pre-fix, the companion-side assertion failed with `annotations seen: List()`; post-fix, both pass.
 
 ## [PR-I-D05] Encoder wildcard match swallows None Scala-binding case
 **Status:** resolved

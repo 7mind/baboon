@@ -192,20 +192,29 @@ object ScDefnTranslator {
       testTreeWithNs
     }
 
+    /** Conditionally prepend `@deprecated(...)` to a tree on non-latest versions.
+      *
+      * Scala annotation grammar binds an annotation to the immediately
+      * following declaration only, so when a single TextTree carries multiple
+      * top-level decls (e.g. `trait X { ... }` plus its companion
+      * `object X { ... }`), prepending one annotation marks ONLY the trait —
+      * the companion is left un-annotated. Callers that emit multiple decls
+      * must call this helper per decl, not on the joined result. See PR-I-D04.
+      */
+    private def obsoletePrevious(tree: TextTree[ScValue]): TextTree[ScValue] = {
+      if (domain.version == evo.latest || tree.isEmpty) {
+        tree
+      } else {
+        q"""@${ScTypes.deprecated}("Version ${domain.version.v.toString} is deprecated, you should migrate to ${evo.latest.v.toString}")
+           |$tree""".stripMargin
+      }
+    }
+
     private def makeFullRepr(
       defn: DomainMember.User,
       inNs: Boolean,
     ): DefnRepr = {
       val isLatestVersion = domain.version == evo.latest
-
-      def obsoletePrevious(tree: TextTree[ScValue]): TextTree[ScValue] = {
-        if (isLatestVersion || tree.isEmpty) {
-          tree
-        } else {
-          q"""@${ScTypes.deprecated}("Version ${domain.version.v.toString} is deprecated, you should migrate to ${evo.latest.v.toString}")
-             |$tree""".stripMargin
-        }
-      }
 
       val scTypeRef = trans.asScType(defn.id, domain, evo)
       val srcRef    = trans.toScTypeRefKeepForeigns(defn.id, domain, evo)
@@ -217,7 +226,13 @@ object ScDefnTranslator {
           .flatMap(t => t.translate(defn, scTypeRef, srcRef).toList)
           .map(obsoletePrevious)
 
-      val defnRepr = obsoletePrevious(repr.defn)
+      // PR-I-D04: Foreign emits two top-level decls (trait + companion object)
+      // and applies obsoletePrevious per-decl inside makeRepr. Skip the outer
+      // annotation so we don't double-annotate the trait.
+      val defnRepr = defn.defn match {
+        case _: Typedef.Foreign => repr.defn
+        case _                  => obsoletePrevious(repr.defn)
+      }
 
       assert(defn.id.pkg == domain.id)
 
@@ -427,7 +442,13 @@ object ScDefnTranslator {
             Nil,
           )
 
-        case f: Typedef.Foreign => DefnRepr(makeForeignKeyCodecRepr(f, name), Nil)
+        case f: Typedef.Foreign =>
+          // PR-I-D04: Apply obsoletePrevious per-tree (trait + companion) so
+          // both decls receive the @deprecated annotation on non-latest
+          // versions. Joining first and annotating once would only mark the
+          // trait — see Scala annotation grammar.
+          val parts = makeForeignKeyCodecRepr(f, name).map(obsoletePrevious)
+          DefnRepr(parts.joinNN(), Nil)
 
       }
     }
@@ -443,11 +464,17 @@ object ScDefnTranslator {
       * default that throws BaboonCodecException.DecoderFailure with a clear
       * "host has not registered" message, giving the user a precise diagnostic
       * if they forget to register.
+      *
+      * Returns the trait and its companion object as SEPARATE TextTrees so
+      * that callers can apply per-decl annotations (e.g. `@deprecated` on
+      * non-latest versions). Joining first and annotating once would only mark
+      * the trait, leaving the companion object un-annotated — see PR-I-D04
+      * and Scala's annotation grammar.
       */
-    private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: ScValue.ScType): TextTree[ScValue] = {
+    private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: ScValue.ScType): List[TextTree[ScValue]] = {
       f.bindings.get(BaboonLang.Scala) match {
-        case None                                                          => q""
-        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => q""
+        case None                                                              => Nil
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => Nil
         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
           val srcRef       = trans.toScTypeRefKeepForeigns(f.id, domain, evo)
           val traitName    = s"${srcRef.name}_KeyCodec"
@@ -467,18 +494,20 @@ object ScDefnTranslator {
                |  def decodeKey(s: $scString): $name = fail
                |}""".stripMargin
           }
-          q"""trait $traitName {
-             |  def encodeKey(value: $name): $scString
-             |  def decodeKey(s: $scString): $name
-             |}
-             |
-             |object $traitName {
-             |  @volatile private var _instance: $traitName = DefaultImpl
-             |  def register(impl: $traitName): $scUnit = { _instance = impl }
-             |  def instance: $traitName = _instance
-             |
-             |  ${defaultBlock.shift(2).trim}
-             |}""".stripMargin
+          val traitTree =
+            q"""trait $traitName {
+               |  def encodeKey(value: $name): $scString
+               |  def decodeKey(s: $scString): $name
+               |}""".stripMargin
+          val companionTree =
+            q"""object $traitName {
+               |  @volatile private var _instance: $traitName = DefaultImpl
+               |  def register(impl: $traitName): $scUnit = { _instance = impl }
+               |  def instance: $traitName = _instance
+               |
+               |  ${defaultBlock.shift(2).trim}
+               |}""".stripMargin
+          List(traitTree, companionTree)
       }
     }
 
