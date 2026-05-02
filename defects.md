@@ -936,6 +936,20 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Description:** `kt-stub-kmp` still has no `src/test/` source set. The new `AnyRoundTripTest.kt` runs only against JVM `test/kt-stub`. PR 5.4 does not address PR-14-D02 — adding a parallel test source set would significantly expand the scope (Kotlin runtime types are largely identical between JVM and KMP, and the per-domain code generation is identical, so any regressions surfaced by KMP testing would also surface in JVM testing — the marginal value is low).
 **Suggested fix:** Defer to a future hygiene PR or M-cleanup. PR-14-D02's recommendation stands.
 
+### [PR-25.1-D04] Dead `_init = Unit` workaround left in multiplatform indexed-body emission
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/kotlin/KtUEBACodecGenerator.scala:~277`
+**Description:** With the prior `{ ... }` block form, `@Suppress("UNUSED_VARIABLE") val _init = Unit` served as a statement-position anchor against Kotlin's lambda-vs-block parse ambiguity. After PR-25.1 round-1 switched to `run { ... }` (unambiguous expression), this anchor became dead code in every emitted Kotlin codec.
+**Fix:** Removed the `_init = Unit` emission from the codegen template at line ~277. Generated codecs verified to parse correctly without it.
+
+### [PR-25.1-D05] Indexed-mode round-trip test relied on magic numeric threshold
+**Status:** resolved
+**Severity:** nit
+**Location:** `test/kt-stub/src/test/kotlin/runtime/AnyRoundTripTest.kt:164`
+**Description:** `assertTrue(bytes.size > 16)` is a fragile threshold: future codegen changes that shrink the indexed framing by even a few bytes (or grow the broken path's emission) drift the threshold. The real invariant under test — `assertEquals(original, decoded)` — already covered round-trip correctness independently.
+**Fix:** Dropped the size threshold. Replaced with `assertTrue(bytes.isNotEmpty())` as a soft floor; round-trip equality remains the primary invariant.
+
 ---
 
 ## PR-17 — Java runtime + facade port (M6 PR 6.1)
