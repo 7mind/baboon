@@ -83,6 +83,16 @@ package baboon.runtime.shared {
     val decodeKeyTso: KeyDecoder[OffsetDateTime]     = BaboonTimeFormats.parseTso(_).toOption
     val decodeKeyTsu: KeyDecoder[OffsetDateTime]     = BaboonTimeFormats.parseTsu(_).toOption
     val decodeKeyByteString: KeyDecoder[ByteString]  = ByteString.tryParse(_).toOption
+    // PR-28.1 (M28): u64 map keys carry the canonical unsigned wire form on the JSON
+    // string. circe ships only `decodeKeyLong` (signed two's-complement), which would
+    // reject "18446744073709551615" (= u64 max). Parse via BigInt, validate the
+    // unsigned-i64 range, then narrow to Long (two's-complement preserving). Symmetric
+    // with the value-side `Json.fromBigInt(BaboonBinTools.toUnsignedBigInt(_))` encoder.
+    val decodeKeyU64: KeyDecoder[Long] = KeyDecoder.instance { s =>
+      scala.util.Try(scala.math.BigInt(s)).toOption.flatMap { bi =>
+        if (bi >= 0 && bi < scala.math.BigInt(2).pow(64)) Some(bi.toLong) else None
+      }
+    }
 
     trait BaboonGeneratedJsonCodec[T <: BaboonGenerated, TCodec <: BaboonJsonCodec[T]] {
       self: Base[T, TCodec] =>

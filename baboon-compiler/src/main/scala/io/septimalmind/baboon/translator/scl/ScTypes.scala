@@ -37,6 +37,7 @@ object ScTypes {
   val baboonDecodeKeyTso: ScType            = ScType(baboonRuntimePkg, "decodeKeyTso", Some("BaboonJsonCodec"))
   val baboonDecodeKeyTsu: ScType            = ScType(baboonRuntimePkg, "decodeKeyTsu", Some("BaboonJsonCodec"))
   val baboonDecodeKeyByteString: ScType     = ScType(baboonRuntimePkg, "decodeKeyByteString", Some("BaboonJsonCodec"))
+  val baboonDecodeKeyU64: ScType            = ScType(baboonRuntimePkg, "decodeKeyU64", Some("BaboonJsonCodec"))
 
   val baboonBinCodec: ScType                      = ScType(baboonRuntimePkg, "BaboonBinCodec")
   val baboonBinCodecBase: ScType                  = ScType(baboonRuntimePkg, "Base", Some("BaboonBinCodec"))

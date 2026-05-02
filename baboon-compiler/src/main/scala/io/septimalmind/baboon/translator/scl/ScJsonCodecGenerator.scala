@@ -300,6 +300,11 @@ class ScJsonCodecGenerator(
     def encodeKey(tpe: TypeRef, ref: TextTree[ScValue]): TextTree[ScValue] = {
       tpe.id match {
         case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.format($ref)"
+        // PR-28.1 (M28): u64 map keys must carry the canonical unsigned wire form.
+        // `Long.toString(-1L)` yields "-1" (two's-complement signed); the canonical
+        // u64 max representation is "18446744073709551615". Symmetric with the
+        // value-side `Json.fromBigInt(BaboonBinTools.toUnsignedBigInt(_))`.
+        case TypeId.Builtins.u64                       => q"_root_.java.lang.Long.toUnsignedString($ref)"
         case _: TypeId.Builtin                         => q"$ref.toString"
         case uid: TypeId.User =>
           domain.defs.meta.nodes(uid) match {
@@ -444,7 +449,11 @@ class ScJsonCodecGenerator(
                 case TypeId.Builtins.u08 => q"$circeDecodeKeyByte"
                 case TypeId.Builtins.u16 => q"$circeDecodeKeyShort"
                 case TypeId.Builtins.u32 => q"$circeDecodeKeyInt"
-                case TypeId.Builtins.u64 => q"$baboonDecodeLong"
+                // PR-28.1 (M28): u64 map keys require KeyDecoder[Long]; the value-side
+                // `decodeLong: Decoder[Long]` was previously emitted here by mistake,
+                // causing generated code to fail type-check at the `circeKeyDecoder.instance(...)`
+                // site. Closes M26-N02(b) follow-up.
+                case TypeId.Builtins.u64 => q"$baboonDecodeKeyU64"
 
                 case TypeId.Builtins.f32   => q"$baboonDecodeKeyFloat"
                 case TypeId.Builtins.f64   => q"$circeDecodeKeyDouble"
