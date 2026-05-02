@@ -768,11 +768,11 @@ abstract class AbstractBaboonConversions {
   dynamic convertWithContext(dynamic context, dynamic from, String fromTypeId, String toTypeId) {
     final byTo = _registry[fromTypeId];
     if (byTo == null) {
-      throw ArgumentError('No conversion registered for typeId: $fromTypeId -> $toTypeId');
+      throw ArgumentError('No conversion registered for source typeId: $fromTypeId');
     }
     final conversion = byTo[toTypeId];
     if (conversion == null) {
-      throw ArgumentError('No conversion registered for typeId: $fromTypeId -> $toTypeId');
+      throw ArgumentError('No conversion from $fromTypeId to $toTypeId (source registered, target not)');
     }
     return conversion.doConvert(context, this, from);
   }

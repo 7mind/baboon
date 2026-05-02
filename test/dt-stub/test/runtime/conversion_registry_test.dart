@@ -89,23 +89,23 @@ void main() {
       expect((b as _TargetB).s, 's7');
     });
 
-    test('unknown fromTypeId throws', () {
+    test('unknown fromTypeId throws ArgumentError naming the source typeId', () {
       final conversions = _Conversions();
       conversions.register(_ConvSrcToA());
 
       expect(
         () => conversions.convertWithContext(null, _SrcValue(1), 'pkg/Unknown', _toIdA),
-        throwsA(isA<ArgumentError>()),
+        throwsA(predicate((e) => e is ArgumentError && e.message.toString().contains('source typeId'))),
       );
     });
 
-    test('known fromTypeId but unknown toTypeId throws', () {
+    test('known fromTypeId but unknown toTypeId throws ArgumentError noting target not registered', () {
       final conversions = _Conversions();
       conversions.register(_ConvSrcToA());
 
       expect(
         () => conversions.convertWithContext(null, _SrcValue(1), _fromId, 'pkg/Unknown'),
-        throwsA(isA<ArgumentError>()),
+        throwsA(predicate((e) => e is ArgumentError && e.message.toString().contains('target not'))),
       );
     });
   });

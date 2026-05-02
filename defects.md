@@ -2743,3 +2743,14 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Severity:** nit
 **Description:** Test asserts `v2.renames` correctness (user-visible policy-b property) but does not directly assert that `RawAdtMemberDto.dto.derived` is non-empty on re-emitted `Outer.Bar` immediately after `AdtInheritanceExpander` runs. Right level of abstraction for the policy-b property; finer-grained internal-state test would matter only if future refactors decoupled the two stages.
 **Fix:** Acceptable.
+
+---
+
+## PR-25.3
+
+### [PR-25.3-D01] convertWithContext error message coalesced two failure modes
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/dart/baboon_runtime.dart:768-778`
+**Description:** PR-25.3 round-1 spec required two distinct error messages distinguishing outer-key-miss (unknown `fromTypeId`) from inner-key-miss (known `fromTypeId`, unknown `toTypeId`). Implementation emitted the identical string in both arms; tests asserted only the exception type, not the message. Caller catching `ArgumentError` could not tell the two paths apart.
+**Fix:** Round-2 edit emits distinct messages: "source typeId" for outer-miss, "(source registered, target not)" for inner-miss. Test updated to assert message content via `throwsA(predicate(...))`.
