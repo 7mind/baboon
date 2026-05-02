@@ -904,9 +904,14 @@ export class BaboonTypeMeta {
         return new BaboonDomainVersion(this.domainIdentifier, this.domainVersion);
     }
 
+    // `versionMinCompat()` treats empty-string `domainVersionMinCompat` as absent
+    // for cross-runtime parity. Scala/Kotlin/KMP/Java/Swift/Dart runtimes all
+    // normalize empty/blank to None|null; TypeScript follows suit. Wire decoders
+    // substitute `domainVersionMinCompat = domainVersion` when the flag byte is 0,
+    // so the only way to observe `""` is from a non-conformant peer that wrote
+    // it explicitly — and that peer would not have meant it as a distinct value.
     public versionMinCompat(): BaboonDomainVersion | undefined {
-        // empty-string is an explicit value distinct from `domainVersion`; codegen always emits a real value when set.
-        if (this.domainVersionMinCompat === this.domainVersion) {
+        if (!this.domainVersionMinCompat || this.domainVersionMinCompat === this.domainVersion) {
             return undefined;
         }
         return new BaboonDomainVersion(this.domainIdentifier, this.domainVersionMinCompat);

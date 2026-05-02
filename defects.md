@@ -1029,11 +1029,20 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Fix:** PR-25.4 (M25) verification confirmed the bounds-check is already present in `BaboonSharedRuntime.ts:106-113` (`if (this.pos >= this.buf.length) throw new BaboonDecoderFailure(...)`); the defect is closed by inspection. A regression test in `test/ts-stub/src/runtime-tests/BinReader.test.ts` guards the contract: reading past EOF and reading from an empty buffer both throw `BaboonDecoderFailure`.
 
 ### [PR-19-D06] `BaboonTypeMeta.versionMinCompat()` treats empty-string as absent (silent fallthrough)
-**Status:** resolved
+**Status:** resolved (wontfix — consistent with peer runtimes)
 **Severity:** minor
 **Location:** `BaboonSharedRuntime.ts` (`versionMinCompat()`).
 **Description:** `if (!this.domainVersionMinCompat || ...) return undefined`. Empty string is falsy in JS, so empty-string `domainVersionMinCompat` is treated as absent. Conflates "absent" and "explicit empty". Won't bite in practice (codegen always emits a real value when present), but silent.
-**Fix:** PR-25.4 (M25) dropped the falsy `!this.domainVersionMinCompat` clause from `versionMinCompat()`, leaving only the equality check `domainVersionMinCompat === domainVersion`. A clarifying comment notes that empty-string is an explicit value distinct from `domainVersion`; codegen always emits a real value when set. Regression test in `test/ts-stub/src/runtime-tests/BinReader.test.ts` covers the empty-string case alongside the equal-version and distinct-version cases.
+**Fix:** Closed as wontfix per cross-runtime parity audit (PR-25.4 round-2 review). Empty-string `domainVersionMinCompat` is treated as absent (`undefined`) in TypeScript matching the established behavior of Scala, Kotlin, Kotlin-KMP, Java, Swift, and Dart runtimes (peer locations cited in PR-25.4-R01). Round-1 attempt to honor empty-string as an explicit value created cross-runtime semantic divergence and was reverted. A regression test now guards against drift in `test/ts-stub/src/runtime-tests/BinReader.test.ts`. The clarifying comment above `versionMinCompat()` in `BaboonSharedRuntime.ts` documents the intent.
+
+## PR-25.4
+
+### [PR-25.4-R01] Round-1 D06 fix introduced cross-runtime semantic divergence
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/typescript/BaboonSharedRuntime.ts:907-913`
+**Description:** PR-25.4 round-1 changed TS `versionMinCompat()` to honor empty-string as a present, distinct value. This made TS the lone outlier among eight runtimes (Scala/Kotlin/KMP/Java/Swift/Dart all normalize empty to absent). Asymmetric round-trip: a value written by a peer as `""` would decode to a non-undefined `BaboonDomainVersion` in TS but `None`/`null` everywhere else.
+**Fix:** Reverted the runtime change. Repurposed the regression test to guard the *peer-parity* invariant. Added a clarifying comment above `versionMinCompat()`. PR-19-D06 closed as wontfix with cross-runtime rationale.
 
 ## PR-20 — TypeScript UEBA codec emission (M7 PR 7.2)
 
