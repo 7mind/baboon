@@ -912,7 +912,7 @@ Same for `any_meta_length`. Also check `any_total_length < 4 + any_meta_length` 
 ## PR-15 — Kotlin round-trip tests + branch-matching fixture fix (M5 PR 5.4)
 
 ### [PR-15-D01] Kotlin generated UEBA codec wraps each indexed-mode field encode in a `{ ... }` block expression — Kotlin parses these as unused lambdas, so indexed-encode emits no field content
-**Status:** open (pre-existing codegen bug, surfaced by PR 5.4 round-trip test exploration; out of M5 scope)
+**Status:** resolved
 **Severity:** high (Indexed UEBA mode is silently broken for any DTO with fields, all languages including pre-PR 5.x cases)
 **Location:** Generated `*_UEBACodec.encode(...)` in `target/test-regular/kt-stub/src/main/kotlin/generated-main/**/*.kt` (e.g. `my/ok/Holder.kt:163-265`); emitter at `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/kotlin/KtUEBACodecGenerator.scala` (per-field block emission for the `useIndices=true` arm).
 **Description:** The Kotlin codegen wraps each per-field index/encode block in `{ ... }`:
@@ -927,8 +927,7 @@ Same for `any_meta_length`. Also check `any_total_length < 4 + any_meta_length` 
 }
 ```
 In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression value*, not a statement block — the lambda is constructed and discarded without being invoked. Result: nothing inside any of the 9 blocks runs in the indexed-encode path. The wire ends up with just `[header=0x01]` followed by an empty `writeMemoryStream` — no offset/length pairs, no content. Decode then EOF's at the first index entry read. The Compact (non-indexed) branch uses bare statements (no curly wrapping) and works correctly.
-**Suggested fix:** Either drop the curly braces in `KtUEBACodecGenerator`'s indexed emission (the `// fXxx: ...` comment markers are sufficient visual separators), or change them to `run { ... }` blocks (which evaluate the lambda). Same patch applies to the JVM and KMP variants.
-**Reproduction:** Removed in PR 5.4 — the originally-attempted `ueba_round_trip_withUseIndicesTrue_preservesContent()` test surfaced this. Replaced with an inline comment explaining the deferral. The Scala/C#/Rust analogs of that test pass because their codegen emits real statement blocks.
+**Fix:** PR-25.1 changed the per-field emission in `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/kotlin/KtUEBACodecGenerator.scala:362-396` (`fieldsOf`, both `BinReprLen.Fixed` and `BinReprLen.Variable` arms) from a bare `{ ... }` to `run { ... }`. Kotlin's `kotlin.run` is `inline`, so it produces no lambda allocation and zero runtime overhead while introducing a real statement-block scope per field — the per-field `val before/after/length` no longer collide across fields, and the inner statements actually execute, populating the indexed wire correctly. Bare-statement emission (the originally-suggested fix) was rejected because Kotlin scoping rules cause `val before` redeclaration errors when multiple fields share the surrounding `try { ... }` scope. The deferred regression test `ueba_round_trip_withUseIndicesTrue_preservesContent()` in `test/kt-stub/src/test/kotlin/runtime/AnyRoundTripTest.kt` was restored and now passes; full Kotlin matrix (JVM regular/wrapped + KMP regular/wrapped + compat-kotlin/compat-kotlin-kmp) is green.
 
 ### [PR-15-D02] KMP test parity still deferred (was open in PR-14-D02)
 **Status:** open (continued deferral, scope expansion)

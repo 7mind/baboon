@@ -360,7 +360,7 @@ class KtUEBACodecGenerator(
 
         val w = domain.refMeta(field.tpe).len match {
           case BinReprLen.Fixed(bytes) =>
-            q"""{
+            q"""run {
                |  // ${field.toString}
                |  val before = $bufferSizeExpr
                |  ${fakeEnc.shift(2).trim}
@@ -384,7 +384,7 @@ class KtUEBACodecGenerator(
                 ).joinN()
             }
 
-            q"""{
+            q"""run {
                |  // ${field.toString}
                |  val before = $bufferSizeExpr
                |  writer.writeInt(before)
