@@ -440,6 +440,7 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
          |name = "baboon-generated"
          |version = "0.1.0"
          |edition = "${target.language.edition}"
+         |rust-version = "1.75"
          |
          |[dependencies]
          |${deps.mkString("\n")}
