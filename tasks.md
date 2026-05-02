@@ -33,6 +33,27 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 - [x] **M23** — Backend stubs unblock + upstream-defects cleanup.
 - [x] **M24** — Latents closeout. Closed 13 deferred latents from M23 + cross-backend hygiene + 2 policy-gated changes via 14 PRs across 3 phases (Phase 1: PR-A..E parallel; Phase 2: PR-F/G/H serial; Phase 3: PR-I.1a/1b/1c/1d/2/3 + PR-J). Custom-foreign `<Foreign>_KeyCodec` extension hook (policy c) implemented across all 9 backends with byte-identical wire form. `derived[was]` re-emit (policy b) preserve-verbatim documented + tested. Plan: `docs/drafts/20260501-1009-m24-latents-closeout-plan.md`. Final verification: 12/12 regular-adt + 10/10 cross-compat PASS.
 - [x] **M25** — Cross-backend hygiene. **Closed all 11 open defects** + 2 round-2/3-surfaced defects via 8 PRs across 2 waves (10 commits including round-2/3 fix follow-ups). UEBA correctness across backends restored (PR-15-D01 Kotlin indexed-mode block-expression bug fixed via `run { }` inline-statement-block). Plan: `docs/drafts/20260502-0059-m25-cross-backend-hygiene-plan.md`. Final verification: 11/11 regular-adt + 9/9 cross-language compat = 20/20 PASS. Post-M25 Windows-CI fix `9b83494` for pre-existing PR-57e-D02 Swift-skip on Windows runners.
+- [~] **M28** — Wire-form parity hardening + docs catch-up. Closes M26-N02 follow-up tracks (b)+(c): Scala u64 JSON KeyDecoder + value encoder, f64 cross-backend canonicalisation (`<int>.<frac>` always), tso cross-backend canonicalisation (`±HH:MM` always). Extends m26 fixture to 8/8 builtin map-key types. Refreshes user-facing docs for M18-M27. Plan: `docs/drafts/20260502-1848-m28-wireform-parity-and-docs-plan.md`.
+
+---
+
+## Milestone 28 — PR breakdown
+
+Detail in `docs/drafts/20260502-1848-m28-wireform-parity-and-docs-plan.md`. 6 PRs in 2 waves.
+
+**Wave 1 — parallel (worktree-isolated except 28.1 main):**
+- [ ] **PR-28.1** — Scala `u64` JSON `KeyDecoder` + value encoder. Closes M26-N02(b).
+- [!] **PR-28.2** — f64 cross-backend canonicalisation `<int>.<frac>`. **Deferred a second time** (first deferral at M26 PR-26.5; second deferral at M28). Per-backend audit: 6 of 9 backends already emit `<int>.<frac>` natively (Scala/Rust/Kotlin/Java/Dart/Python); 3 backends (TS / Swift / C#) need fixes — but the TS and Swift fixes require either a public-API breaking change (replace `JSON.stringify` / `JSONSerialization` with a custom stringifier) or a non-trivial schema-aware post-processor at the JSON-string layer. The architectural choice (custom stringifier vs string-encoded f64 vs accept asymmetry) is a project-level decision, not a PR-28.2 implementation choice. Defect entry `[PR-28.2-D01]` filed with full per-backend audit table + resolution path. m24 + m26 baselines unaffected (no f64 field in either fixture today; PR-26.5 had already dropped f64 for the same reason). Closes M26-N02(c) f64 portion **only after the architectural decision is made**.
+- [ ] **PR-28.3** — tso cross-backend canonicalisation `±HH:MM`. Closes M26-N02(c) tso portion. Coordinated 9-backend PR.
+- [ ] **PR-28.5** — Stale package path in `docs/spec/identifier-repr.md:510`. (CLAUDE.md audit-clean; no change there.)
+- [ ] **PR-28.6** — Docs catch-up M18-M27 (`language-features.md`, `json-codecs.md`, `README.md`). M18/M19/M20/M24 sections in Wave 1; f64/tso lock-in deferred to Wave 2.
+
+**Wave 2 — sequenced after 28.1+28.2+28.3:**
+- [ ] **PR-28.4** — Extend `m26-builtin-map-keys.baboon` with `mu64`/`mf64`/`mtso`; re-lock md5; verify across 10 backends.
+- [ ] **PR-28.6 (lock-in)** — Add f64/tso canonical wire-form sections to `docs/json-codecs.md`.
+
+---
+
 - [x] **M27** — Editors + LSP catch-up to M18-M26 syntax. **6 PRs shipped** across 2 waves. Closed all 23 tree-sitter parse failures (M18 `id` + M20 ADT inheritance ops). Plan: `docs/drafts/20260502-1602-m27-editors-lsp-catchup-plan.md`. Final verification: `mdl :test-editors` PASS; `mdl :ci` close gate awaited.
 - [x] **M26** — Deferred-hygiene drain. **Closed 8 of 9 planned PRs + 1 round-2 follow-up.** Plan: inline in `tasks.md` Milestone 26 breakdown + closeout entry below (the working plan doc was lost during a stash-drop and not restored — closeout log captures the full content). PR-26.9 (Python canonical-shape) attempted, reverted, deferred to M27. Close gate (CI-equivalent): `mdl --seq :build :test` PASS (82 actions); `mdl :test-acceptance` PASS; `mdl :test-service-acceptance` PASS. The M25 process miss (close gate did not run acceptance targets) is corrected here.
 

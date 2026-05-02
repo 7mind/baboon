@@ -2925,3 +2925,49 @@ Verified `mdl :build :test-dart-regular :test-dart-wrapped :test-manual-dart :te
 **Description:** Doc cited `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/IdentifierReprPropertyTest.scala` but the test file moved to `baboon-compiler/.jvm/src/test/scala/baboon/runtime/shared/IdentifierReprPropertyTest.scala`. M27-N03 tracked the path drift; M28 audit narrowed to this single doc reference (CLAUDE.md was already clean).
 **Fix:** Updated path to current canonical location.
 
+---
+
+## PR-28.2 — f64 cross-backend canonicalisation (M28)
+
+### [PR-28.2-D01] Per-backend f64 JSON encode form diverges; TS/Swift/C# require non-trivial runtime intercepts
+**Status:** open (deferred — see deferral note below)
+**Severity:** major (cross-language wire-form parity gap; m24 + m26 fixtures unaffected, no f64 field today)
+**Location:** Encoder paths per backend:
+- TS: `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/typescript/TsJsonCodecGenerator.scala:188-225` (f64 falls through to default `ref` → consumer's `JSON.stringify`)
+- Swift: `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/swift/SwJsonCodecGenerator.scala:265` (`q"$ref"` → `JSONSerialization`)
+- C#: `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/csharp/CSJsonCodecGenerator.scala:338-339` (`new JValue($ref)` for any `_: TypeId.BuiltinScalar` including `f64`)
+
+**Description:** PR-28.2 of M28 plan called for canonical `<int>.<frac>` form across 9 codec-emitting backends (integer-valued doubles render `42.0`; fractional shortest round-trip; scientific only as IEEE-754 round-trip fallback). Static + runtime audit (probes via node, python3, dart, swift, javac, cargo) gives:
+
+| Backend | Native emit `42.0` | Native emit `0.1` | Native emit `1e100` | Action |
+|---|---|---|---|---|
+| Scala (Circe `Json.fromDouble`) | `42.0` | `0.1` | `1.0E100` | No-op |
+| C# (Newtonsoft `new JValue(double)`) | `42` | `0.1` | scientific | NEEDS FIX |
+| Rust (serde_json) | `42.0` (probe) | `0.1` | `1e100` | No-op |
+| TypeScript (`JSON.stringify`) | `42` (probe) | `0.1` | `1e+100` | NEEDS FIX |
+| Kotlin (kotlinx `JsonPrimitive(double).toString`) | `42.0` (Double.toString) | `0.1` | `1.0E100` | No-op |
+| Java (Jackson `DoubleNode.valueOf` → `NumberOutput.outputDouble`) | `42.0` | `0.1` | `1.0E100` | No-op |
+| Dart (`jsonEncode(42.0)`) | `42.0` (probe) | `0.1` | `1e+100` | No-op |
+| Swift (`JSONSerialization`) | `42` (probe) | `0.1` | `1e+100` | NEEDS FIX |
+| Python (`json.dumps(42.0)`) | `42.0` (probe) | `0.1` | `1e+100` | No-op |
+
+Also note residual cross-backend disagreement on scientific form (`1e100` vs `1e+100` vs `1.0E100`) regardless of integer-form fix.
+
+**Root cause:** Three backends own number→string rendering at the *root* of their JSON-output pipeline and do not let the codec-generator inject a canonical formatter for `f64` without restructuring:
+- **TypeScript:** the codec generator builds a plain JS object tree; `JSON.stringify` (called by the consumer) owns number rendering and offers no per-field hook for `42.0`-form. Forcing `42.0` requires either replacing the public `JSON.stringify` call site with a custom stringifier (breaks every existing consumer) or pre-tokenising f64 fields as string sentinels and post-processing the output (schema-aware structural walker).
+- **Swift:** identical shape — `JSONSerialization` owns number rendering; no per-key formatter hook. Fix requires hand-rolled JSON emit for f64-bearing positions, mirroring the PR-26.5 pattern but more invasive.
+- **C#:** Newtonsoft's `new JValue(double)` writes via the default writer which emits `42` (no `.0`). Tractable via a runtime helper that returns a `JRaw("42.0")` token, but still ~50-100 LOC + cross-backend KeyCodec interaction.
+
+**Why deferred:** Per the M28 plan-doc decision rule (≤3 backends and <200 LOC each → Option A; otherwise Option B), the C# fix alone is bounded but the TS + Swift fixes are NOT bounded without either a public-API breaking change (consumers can no longer use `JSON.stringify` / `JSONSerialization` directly) or a non-trivial schema-aware post-processor. That architectural fork is beyond a single PR-28.2 wave.
+
+The current m24 baseline `1f1ef66abe5a9a24321c6e615851281d` and m26 baseline `08db2871910dafaa2f53ed4c7c874598` are unaffected — neither fixture contains an f64 field today (PR-26.5 explicitly dropped f64 for this exact reason — see `tasks.md:90`). Wire-format byte-identity is preserved.
+
+**Resolution path (deferred to a future milestone, sequenced after architectural decision):**
+1. Decide canonical form authoritatively: either `<int>.<frac>` (current plan, requires TS/Swift/C# work) OR shortest-round-trip `42` (reverses plan, requires Scala/Java/Kotlin/Python/Dart/Rust pre-formatters and breaks Java/Kotlin/Scala native ergonomics) OR a *string-encoded f64* form (uniform across all backends but breaks JSON-number type for consumers).
+2. Pre-design TS public API: keep `JSON.stringify` or introduce `tsBaboonStringify`. Either choice cascades to every TS consumer — needs explicit project decision.
+3. Pre-design Swift public API: same shape.
+4. Once fixed, extend m26 fixture (PR-28.4) with `mf64: map[f64, str]` field and re-lock the md5 across all 10 backends.
+5. Add canonical-form section to `docs/json-codecs.md` (PR-28.6 Wave 2 lock-in).
+
+**Deferral rationale (one line):** TS + Swift JSON output pipelines own number rendering at the JSON-string level and cannot be redirected per-field without breaking the `JSON.stringify` / `JSONSerialization` public API contract; the architectural decision (custom stringifier vs schema-aware post-processor vs string-encoded f64) is a project-level call, not a PR-28.2 implementation choice.
+
