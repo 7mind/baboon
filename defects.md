@@ -1008,18 +1008,18 @@ In Kotlin, a top-level `{ ... }` in statement position is a *lambda expression v
 **Fix:** Defer to a future cross-runtime cleanup PR.
 
 ### [PR-19-D05] `BaboonBinReader.readByte()` may return `undefined` past end-of-buffer; AnyMetaCodec.readBin is a new caller of this trapdoor
-**Status:** open (defer — pre-existing; minor)
+**Status:** resolved (verified)
 **Severity:** minor (pre-existing strictness gap)
 **Location:** `BaboonSharedRuntime.ts` (BaboonBinReader.readByte) — pre-existing; new caller `AnyMetaCodec.readBin:200`.
 **Description:** `readByte()` declares `: number` but returns `this.buf[this.pos]` which is `number | undefined` under strict mode. Past end-of-buffer reads return `undefined` and `kind & DOMAIN_BIT` becomes NaN, propagating silently. Pre-existing trap; PR 7.1's `AnyMetaCodec.readBin` is a new caller.
-**Suggested fix:** Defer — pre-existing concern. Add bounds-check in `readByte()` (or change return type to `number | undefined` and force callers to guard).
+**Fix:** PR-25.4 (M25) verification confirmed the bounds-check is already present in `BaboonSharedRuntime.ts:106-113` (`if (this.pos >= this.buf.length) throw new BaboonDecoderFailure(...)`); the defect is closed by inspection. A regression test in `test/ts-stub/src/runtime-tests/BinReader.test.ts` guards the contract: reading past EOF and reading from an empty buffer both throw `BaboonDecoderFailure`.
 
 ### [PR-19-D06] `BaboonTypeMeta.versionMinCompat()` treats empty-string as absent (silent fallthrough)
-**Status:** open (defer — minor)
+**Status:** resolved
 **Severity:** minor
 **Location:** `BaboonSharedRuntime.ts` (`versionMinCompat()`).
 **Description:** `if (!this.domainVersionMinCompat || ...) return undefined`. Empty string is falsy in JS, so empty-string `domainVersionMinCompat` is treated as absent. Conflates "absent" and "explicit empty". Won't bite in practice (codegen always emits a real value when present), but silent.
-**Suggested fix:** Defer — minor. Either explicit `=== null` check or document the conflation.
+**Fix:** PR-25.4 (M25) dropped the falsy `!this.domainVersionMinCompat` clause from `versionMinCompat()`, leaving only the equality check `domainVersionMinCompat === domainVersion`. A clarifying comment notes that empty-string is an explicit value distinct from `domainVersion`; codegen always emits a real value when set. Regression test in `test/ts-stub/src/runtime-tests/BinReader.test.ts` covers the empty-string case alongside the equal-version and distinct-version cases.
 
 ## PR-20 — TypeScript UEBA codec emission (M7 PR 7.2)
 
