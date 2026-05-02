@@ -213,6 +213,11 @@ class JvJsonCodecGenerator(
         case TypeId.Builtins.uid   => q"$ref.toString()"
         case TypeId.Builtins.f128  => q"$ref.toPlainString()"
         case TypeId.Builtins.bytes => q"$ref.toHex()"
+        // PR-28.1-D02 (M28): u64 map keys carry the canonical unsigned wire form.
+        // String.valueOf(long) emits the signed representation, which collides with
+        // decode-side Long.parseUnsignedLong (rejects leading minus). Mirrors the
+        // Scala-side PR-28.1 fix.
+        case TypeId.Builtins.u64   => q"Long.toUnsignedString($ref)"
         case _: TypeId.Builtin     => q"String.valueOf($ref)"
         case uid: TypeId.User =>
           domain.defs.meta.nodes(uid) match {

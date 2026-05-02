@@ -2,7 +2,7 @@ package baboon.runtime.shared {
 
   import java.math.{BigDecimal, BigInteger}
   import java.nio.charset.StandardCharsets
-  import java.time.format.DateTimeFormatter
+  import java.time.format.{DateTimeFormatter, DateTimeFormatterBuilder}
   import java.time.{Instant, OffsetDateTime, ZoneOffset}
   import java.util.UUID
   import scala.util.Try
@@ -10,9 +10,16 @@ package baboon.runtime.shared {
   object BaboonTimeFormats {
 
     // Use 3 fractional digits (milliseconds) to match C# DateTime precision
-    // Use XXX (uppercase) to handle both '+00:00' and 'Z' for UTC
+    // tsu: UTC, render trailing 'Z' (XXX with offset 0 → "Z"); tsu owns Z semantics.
     val tsuFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
-    val tsoFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
+    // tso: explicit ±HH:MM always (UTC = "+00:00", NOT "Z"). PR-28.3 cross-backend
+    // canonicalisation — keeps tso ↔ tsu distinguishable on round-trip.
+    // appendOffset's second argument is the no-offset literal; setting it to "+00:00"
+    // forces zero-offset to render as "+00:00" rather than the default "Z".
+    val tsoFormat: DateTimeFormatter = new DateTimeFormatterBuilder()
+      .appendPattern("yyyy-MM-dd'T'HH:mm:ss.SSS")
+      .appendOffset("+HH:MM", "+00:00")
+      .toFormatter()
 
     def parseTso(s: String): Try[OffsetDateTime] = Try(OffsetDateTime.parse(s))
     def parseTsu(s: String): Try[OffsetDateTime] = Try(OffsetDateTime.parse(s))

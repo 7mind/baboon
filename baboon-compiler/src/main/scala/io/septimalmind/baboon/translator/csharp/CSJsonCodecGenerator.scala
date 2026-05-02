@@ -274,7 +274,9 @@ class CSJsonCodecGenerator(
   private def mkEncoder(tpe: TypeRef, ref: TextTree[CSValue], codecArgs: CodecArguments = CodecArguments.empty): TextTree[CSValue] = {
     def encodeKey(tpe: TypeRef, ref: TextTree[CSValue]): TextTree[CSValue] = {
       tpe.id match {
-        case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.ToString($ref)"
+        // PR-28.3 (M28): tso always renders ±HH:MM (UTC = "+00:00"); tsu renders trailing 'Z'.
+        case TypeId.Builtins.tsu                       => q"$baboonTimeFormats.TsuToString($ref)"
+        case TypeId.Builtins.tso                       => q"$baboonTimeFormats.TsoToString($ref)"
         // PR-26.5 (M26) — C# `bool.ToString()` returns "True"/"False" (capitalized),
         // diverging from the canonical lowercase wire form emitted by the other 9
         // backends (Scala/Rust/Java/Kotlin/KMP/TS/Dart/Swift/Python). Force lowercase
@@ -328,8 +330,11 @@ class CSJsonCodecGenerator(
             q"new $nsJValue($ref.Encode())"
           case TypeId.Builtins.uid =>
             q"new $nsJValue($ref.ToString())"
-          case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
-            q"new $nsJValue($baboonTimeFormats.ToString($ref))"
+          // PR-28.3 (M28): tso always renders ±HH:MM (UTC = "+00:00"); tsu renders trailing 'Z'.
+          case TypeId.Builtins.tsu =>
+            q"new $nsJValue($baboonTimeFormats.TsuToString($ref))"
+          case TypeId.Builtins.tso =>
+            q"new $nsJValue($baboonTimeFormats.TsoToString($ref))"
           case _: TypeId.BuiltinScalar =>
             q"new $nsJValue($ref)"
           case u: TypeId.User =>

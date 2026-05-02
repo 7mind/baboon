@@ -299,10 +299,8 @@ export class BaboonDateTimeOffset {
         const ss = localDate.getUTCSeconds().toString().padStart(2, "0");
         const ms = localDate.getUTCMilliseconds().toString().padStart(3, "0");
 
-        if (this.offsetMs === 0) {
-            return `${yyyy}-${MM}-${dd}T${HH}:${mm}:${ss}.${ms}Z`;
-        }
-
+        // PR-28.3 (M28): tso always renders explicit ±HH:MM (UTC = "+00:00", NOT "Z").
+        // tsu owns Z semantics; keeping tso ↔ tsu distinguishable on round-trip.
         const absOffset = Math.abs(this.offsetMs);
         const offsetSign = this.offsetMs >= 0 ? "+" : "-";
         const offsetHours = Math.floor(absOffset / 3600000).toString().padStart(2, "0");

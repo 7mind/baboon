@@ -190,6 +190,8 @@ class KtJsonCodecGenerator(
     def encodeKey(tpe: TypeRef, ref: TextTree[KtValue]): TextTree[KtValue] = {
       tpe.id match {
         case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.format($ref)"
+        // Note: u64 → kotlin.ULong (per KtTypeTranslator). ULong.toString() is unsigned natively;
+        // no special arm needed (PR-28.1-D02 audit confirmed).
         case _: TypeId.Builtin                         => q"$ref.toString()"
         case uid: TypeId.User =>
           domain.defs.meta.nodes(uid) match {

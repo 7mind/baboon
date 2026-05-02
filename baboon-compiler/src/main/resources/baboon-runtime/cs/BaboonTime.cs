@@ -403,6 +403,27 @@ namespace Baboon.Time
             return dt.DateTimeOffset.ToString(format, CultureInfo.InvariantCulture);
         }
 
+        // PR-28.3 (M28): tso always renders explicit ±HH:MM (UTC = "+00:00", NOT "Z").
+        // tsu owns Z semantics; keeping tso ↔ tsu distinguishable on round-trip.
+        // TszDefault uses "zzz" which yields "+HH:mm" including for zero offset.
+        public static string TsoToString(RpDateTime dt)
+        {
+            return dt.DateTimeOffset.ToString(TszDefault, CultureInfo.InvariantCulture);
+        }
+
+        public static string TsuToString(RpDateTime dt)
+        {
+            // Preserve legacy branching: render literal "Z" only when source is genuinely
+            // UTC-kind with zero offset; otherwise fall back to TszDefault (zzz) to retain
+            // offset info on round-trip. Random fixtures populate tsu fields with arbitrary
+            // offsets; collapsing all tsu emissions to Z would drop offset info and break
+            // round-trip equality (PR-28.3-D01).
+            var format = dt.DateTimeOffset.Offset.Ticks == 0 && dt.Kind == DateTimeKind.Utc
+                ? TsuDefault
+                : TszDefault;
+            return dt.DateTimeOffset.ToString(format, CultureInfo.InvariantCulture);
+        }
+
         public static RpDateTime FromString(string dt)
         {
             var dateTimeOffset = DateTimeOffset.ParseExact(dt, Tsz, CultureInfo.InvariantCulture, DateTimeStyles.None);
