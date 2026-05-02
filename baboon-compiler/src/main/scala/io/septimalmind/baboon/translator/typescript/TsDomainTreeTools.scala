@@ -43,8 +43,16 @@ object TsDomainTreeTools {
     }
 
     private def adtMeta(defn: DomainMember.User, source: TsType, isCodec: Boolean): List[TextTree[TsValue]] = {
-      val adtId = defn.id
-      val tpe   = typeTranslator.asTsType(adtId, domain, evolution, tsFileTools.definitionsBasePkg)
+      // PR-25.8 / PR-22-D02: For an ADT branch, the `BaboonAdtTypeIdentifier` must point to the
+      // parent ADT (visible via `defn.id.owner = Owner.Adt(parentId)`), not back to the branch
+      // itself. Using `defn.id` here was a pre-existing TS-only defect — Dart, C#, Java and Kotlin
+      // all correctly resolve via the `Owner.Adt(id)` projection. With the wrong value, the
+      // `useAdtIdentifier=true` path on `BaboonTypeMeta.from` would silently encode the branch's
+      // own type identifier instead of the ADT's, defeating the runtime dispatch contract.
+      val adtId = defn.id.owner match {
+        case Owner.Adt(id) => id
+        case _             => defn.id
+      }
       if (defn.isAdt && !isCodec) {
         List(
           q"BaboonAdtTypeIdentifier: '${adtId.toString}'"
