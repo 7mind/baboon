@@ -14,6 +14,7 @@ import my.ok.m19.foreign.FStr_KeyCodecHost
 import my.ok.m19.foreign.Holder
 import my.ok.m19.foreign.Holder_JsonCodec
 import my.ok.m19.foreign.ItemKey
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -28,6 +29,19 @@ class KeyCodecHostLastWinsTest {
             val pfx = "$tag:"
             return if (s.startsWith(pfx)) s.substring(pfx.length) else s
         }
+    }
+
+    private class IdentityCodec : FStr_KeyCodec {
+        override fun encodeKey(value: String): String = value
+        override fun decodeKey(s: String): String = s
+    }
+
+    // PR-26.2-D01: restore identity impl after each test so the global
+    // FStr_KeyCodecHost singleton does not leak a PrefixCodec into sibling
+    // tests sharing the JVM. Runs even on assertion failure.
+    @AfterEach
+    fun restoreIdentity() {
+        FStr_KeyCodecHost.register(IdentityCodec())
     }
 
     @Test
@@ -45,11 +59,5 @@ class KeyCodecHostLastWinsTest {
             "PR-26.2 last-wins regression: expected B: prefix after re-register, got $encodedB")
         assertFalse(encodedB.contains("A:k"),
             "PR-26.2 last-wins regression: A: prefix still present after B re-register, got $encodedB")
-
-        // Restore identity-encoding default for any subsequent tests in this JVM.
-        FStr_KeyCodecHost.register(object : FStr_KeyCodec {
-            override fun encodeKey(value: String): String = value
-            override fun decodeKey(s: String): String = s
-        })
     }
 }

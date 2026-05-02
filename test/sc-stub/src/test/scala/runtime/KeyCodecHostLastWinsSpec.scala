@@ -13,9 +13,10 @@
 package runtime
 
 import baboon.runtime.shared.BaboonCodecContext
+import org.scalatest.BeforeAndAfter
 import org.scalatest.funsuite.AnyFunSuite
 
-class KeyCodecHostLastWinsSpec extends AnyFunSuite {
+class KeyCodecHostLastWinsSpec extends AnyFunSuite with BeforeAndAfter {
 
   private val ctx = BaboonCodecContext.Compact
 
@@ -25,6 +26,19 @@ class KeyCodecHostLastWinsSpec extends AnyFunSuite {
       val pfx = s"$tag:"
       if (s.startsWith(pfx)) s.substring(pfx.length) else s
     }
+  }
+
+  private final class IdentityCodec extends my.ok.m19.foreign.FStr_KeyCodec {
+    def encodeKey(value: String): String = value
+    def decodeKey(s: String): String     = s
+  }
+
+  // PR-26.2-D01: restore identity impl after each test so the global
+  // FStr_KeyCodec singleton does not leak a PrefixCodec into sibling specs
+  // (e.g., ForeignMapKeyRoundTripSpec) sharing the JVM. Runs even on
+  // assertion failure, unlike the prior inline restore at end-of-test.
+  after {
+    my.ok.m19.foreign.FStr_KeyCodec.register(new IdentityCodec)
   }
 
   test("PR-26.2: register(B) after register(A) → encode observes B (last-wins, NOT A)") {
@@ -49,11 +63,5 @@ class KeyCodecHostLastWinsSpec extends AnyFunSuite {
       !encodedB.noSpaces.contains("A:k"),
       s"PR-26.2 last-wins regression: A: prefix still present after B re-register, got ${encodedB.noSpaces}",
     )
-
-    // Restore default impl so other tests in this JVM see identity-encoding FStr keys.
-    my.ok.m19.foreign.FStr_KeyCodec.register(new my.ok.m19.foreign.FStr_KeyCodec {
-      def encodeKey(value: String): String = value
-      def decodeKey(s: String): String = s
-    })
   }
 }

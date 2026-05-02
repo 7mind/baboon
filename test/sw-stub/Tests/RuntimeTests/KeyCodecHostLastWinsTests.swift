@@ -30,6 +30,14 @@ final class KeyCodecHostLastWinsTests: XCTestCase {
         func decodeKey(_ s: String) throws -> FStr { return s }
     }
 
+    // PR-26.2-D01: restore identity impl after each test so the global
+    // FStr_KeyCodecHost singleton does not leak a PrefixCodec into sibling
+    // tests sharing the process. Runs even on assertion failure.
+    override func tearDown() {
+        FStr_KeyCodecHost.register(IdentityCodec())
+        super.tearDown()
+    }
+
     func testRegisterBAfterRegisterAObservesB() throws {
         let original = Holder(m: [ItemKey(v: "k"): "v"])
 
@@ -48,8 +56,5 @@ final class KeyCodecHostLastWinsTests: XCTestCase {
                       "PR-26.2 last-wins regression: expected B: prefix after re-register, got \(stringB)")
         XCTAssertFalse(stringB.contains("A:k"),
                        "PR-26.2 last-wins regression: A: prefix still present after B re-register, got \(stringB)")
-
-        // Restore identity-encoding default for any subsequent tests in this process.
-        FStr_KeyCodecHost.register(IdentityCodec())
     }
 }

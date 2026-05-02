@@ -15,6 +15,7 @@ import my.ok.m19.foreign.FStr_KeyCodecHost;
 import my.ok.m19.foreign.Holder;
 import my.ok.m19.foreign.Holder_JsonCodec;
 import my.ok.m19.foreign.ItemKey;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -37,6 +38,19 @@ public class KeyCodecHostLastWinsTest {
         }
     }
 
+    private static final class IdentityCodec implements FStr_KeyCodec {
+        @Override public String encodeKey(String value) { return value; }
+        @Override public String decodeKey(String s) { return s; }
+    }
+
+    // PR-26.2-D01: restore identity impl after each test so the global
+    // FStr_KeyCodecHost singleton does not leak a PrefixCodec into sibling
+    // tests sharing the JVM. Runs even on assertion failure.
+    @AfterEach
+    public void restoreIdentity() {
+        FStr_KeyCodecHost.register(new IdentityCodec());
+    }
+
     @Test
     public void registerBAfterRegisterAObservesB() throws Exception {
         var m = new LinkedHashMap<ItemKey, String>();
@@ -54,11 +68,5 @@ public class KeyCodecHostLastWinsTest {
                 "PR-26.2 last-wins regression: expected B: prefix after re-register, got " + encodedB);
         assertFalse(encodedB.contains("A:k"),
                 "PR-26.2 last-wins regression: A: prefix still present after B re-register, got " + encodedB);
-
-        // Restore identity-encoding default for any subsequent tests in this JVM.
-        FStr_KeyCodecHost.register(new FStr_KeyCodec() {
-            @Override public String encodeKey(String value) { return value; }
-            @Override public String decodeKey(String s) { return s; }
-        });
     }
 }

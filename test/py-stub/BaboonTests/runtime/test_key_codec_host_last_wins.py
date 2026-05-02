@@ -46,6 +46,12 @@ class TestKeyCodecHostLastWins(unittest.TestCase):
     def setUp(self) -> None:
         self.ctx = BaboonCodecContext.COMPACT
 
+    # PR-26.2-D01: restore identity impl after each test so the module-global
+    # FStr_KeyCodecHost singleton does not leak a PrefixCodec into sibling
+    # tests sharing the interpreter. Runs even on assertion failure.
+    def tearDown(self) -> None:
+        FStr_KeyCodecHost.register(_IdentityCodec())
+
     def test_register_b_after_register_a_observes_b(self) -> None:
         original = Holder(m={ItemKey(v="k"): "v"})
 
@@ -66,9 +72,6 @@ class TestKeyCodecHostLastWins(unittest.TestCase):
             "A:k", encoded_b,
             f"PR-26.2 last-wins regression: A: prefix still present after B re-register, got {encoded_b}",
         )
-
-        # Restore identity-encoding default for any subsequent tests.
-        FStr_KeyCodecHost.register(_IdentityCodec())
 
 
 if __name__ == "__main__":

@@ -36,6 +36,13 @@ class _IdentityCodec implements FStr_KeyCodec {
 
 void main() {
   group('PR-26.2 — KeyCodec Host last-wins', () {
+    // PR-26.2-D01: restore identity impl after each test so the global
+    // FStr_KeyCodecHost singleton does not leak a PrefixCodec into sibling
+    // tests sharing the isolate. Runs even on assertion failure.
+    tearDown(() {
+      FStr_KeyCodecHost.register(_IdentityCodec());
+    });
+
     test('register(B) after register(A) → encode observes B (NOT A)', () {
       final ctx = BaboonCodecContext.compact;
       final original = Holder(m: {ItemKey(v: 'k'): 'v'});
@@ -51,9 +58,6 @@ void main() {
           reason: 'PR-26.2 last-wins regression: expected B: prefix after re-register');
       expect(encodedB, isNot(contains('A:k')),
           reason: 'PR-26.2 last-wins regression: A: prefix still present after B re-register');
-
-      // Restore identity-encoding default for any subsequent tests.
-      FStr_KeyCodecHost.register(_IdentityCodec());
     });
   });
 }

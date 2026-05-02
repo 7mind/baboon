@@ -45,8 +45,33 @@ impl FStr_KeyCodec for PrefixCodec {
     }
 }
 
+struct IdentityCodec;
+
+impl FStr_KeyCodec for IdentityCodec {
+    fn encode_key(&self, value: &String) -> String {
+        value.clone()
+    }
+    fn decode_key(&self, s: &str) -> Result<String, String> {
+        Ok(s.to_owned())
+    }
+}
+
+// PR-26.2-D01: a Drop-guard that re-registers the identity impl on scope exit
+// (including panic), so the global codec singleton does not leak a PrefixCodec
+// into any test that runs later in the same process. Cargo isolates integration
+// test FILES into separate processes, but tests within this file share state.
+struct IdentityRestoreGuard;
+
+impl Drop for IdentityRestoreGuard {
+    fn drop(&mut self) {
+        register_f_str_keycodec(Arc::new(IdentityCodec));
+    }
+}
+
 #[test]
 fn key_codec_host_last_wins() {
+    let _guard = IdentityRestoreGuard;
+
     let mut m = BTreeMap::new();
     m.insert(ItemKey { v: "k".to_string() }, "v".to_string());
     let sample = Holder { m };
