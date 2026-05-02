@@ -187,6 +187,7 @@ class DtConversionTranslator[F[+_, +_]: Error2](
         val meta = q"""@override String get versionFrom => '${srcVer.v.toString}';
                       |@override String get versionTo => '${domain.version.v.toString}';
                       |@override String get typeId => '${conv.sourceTpe.toString}';
+                      |@override String get toTypeId => '${conv.targetTpe.toString}';
                       """.stripMargin.trim
 
         val rendered = conv match {
