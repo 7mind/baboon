@@ -8,8 +8,14 @@ import java.time.format.DateTimeFormatterBuilder
 import java.time.temporal.ChronoField
 
 object BaboonTimeFormats {
+    // tsu: UTC, render trailing 'Z' for offset 0 (XXX); tsu owns Z semantics.
     val tsuFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
-    val tsoFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
+    // tso: explicit ±HH:MM always (UTC = "+00:00", NOT "Z"). PR-28.3 cross-backend
+    // canonicalisation — appendOffset's no-offset literal forces zero to "+00:00".
+    val tsoFormat: DateTimeFormatter = DateTimeFormatterBuilder()
+        .appendPattern("yyyy-MM-dd'T'HH:mm:ss.SSS")
+        .appendOffset("+HH:MM", "+00:00")
+        .toFormatter()
 
     private val flexibleParseFormat: DateTimeFormatter = DateTimeFormatterBuilder()
         .appendPattern("yyyy-MM-dd'T'HH:mm:ss")

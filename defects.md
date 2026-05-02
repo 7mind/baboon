@@ -2870,7 +2870,7 @@ Verified `mdl :build :test-dart-regular :test-dart-wrapped :test-manual-dart :te
 **Location:** `test/sc-stub/src/test/scala/runtime/KeyCodecHostLastWinsSpec.scala` (and the 9 sibling files in jv/kt/kmp/cs/dt/ts/sw/py/rs stubs)
 **Description:** PR-26.2 (M26 commit `fd63457`) added per-backend `KeyCodecHostLastWinsSpec`/`Test` files asserting the last-wins contract. The Scala spec registers `PrefixCodec("A")` to the global `FStr_KeyCodec` singleton then asserts impl B wins after re-register. The original spec attempted an inline restore at end-of-test, but that restore did NOT run when an earlier assertion in the same test failed (and the same window opens for cross-suite parallel execution under SBT/ScalaTest). Subsequent specs that share the JVM and the global singleton (e.g., `ForeignMapKeyRoundTripSpec`) saw the leaked `PrefixCodec("A")` and failed round-trip equality with `Holder(Map(ItemKey("A:alpha") -> "1", ...))` instead of the unprefixed expected value. Surfaced by `mdl --seq :build :test` running both specs in the same JVM (failure observed in `test-sc-wiring-result`; same vulnerability class exists in all 4 sc-wiring variants).
 **Root cause:** Cross-spec global-state leak via the runtime singleton. The original spec assumed test isolation that ScalaTest/SBT does not provide, and the inline end-of-test restore was bypassed on assertion failure. Sibling JVM-pool specs (Java/Kotlin/KMP) carry the same vulnerability shape; per-process-isolated runners (Cargo integration files, vitest workers, Python `unittest`, Dart, Swift `XCTest`) are practically immune but the same hygiene gap applies.
-**Fix:** Per-language teardown idiom that re-registers a fresh `IdentityCodec` *unconditionally* (runs even on assertion failure) — ScalaTest `BeforeAndAfter` `after`, JUnit5 `@AfterEach` (Java/Kotlin/Kotlin-KMP), NUnit `[TearDown]` (C#), Dart `tearDown`, vitest `afterEach`, XCTest `tearDown` override, Python `unittest.TestCase.tearDown`, Rust `Drop`-on-`IdentityRestoreGuard` (panic-safe). Inline end-of-test restore removed (replaced by the teardown). Wire format unchanged.
+**Fix:** Per-language teardown idiom that re-registers a fresh `IdentityCodec` *unconditionally* (runs even on assertion failure) — ScalaTest `BeforeAndAfter` `after`, JUnit5 `@AfterEach` (Java/Kotlin/Kotlin-KMP), NUnit `[TearDown]` (C#), Dart `tearDown`, vitest `afterEach`, XCTest `tearDown` override, Python `unittest.TestCase.tearDown`, Rust `Drop`-on-`IdentityRestoreGuard` (panic-safe). Inline end-of-test restore removed (replaced by the teardown). Wire format unchanged.<<<<<<< ours
 
 ---
 
@@ -2884,6 +2884,13 @@ Verified `mdl :build :test-dart-regular :test-dart-wrapped :test-manual-dart :te
 **Root cause:** M19 PR-60 (TS direct-builtin map-key wire format unification) added cross-backend KeyDecoder emission for builtin map-keys, but the Scala u64 path was missed: it used the existing value-side `decodeLong` helper instead of dedicated `KeyDecoder[Long]`. Encode side similarly used `toString` directly.
 **Fix:** Added `BaboonCodecs.decodeKeyU64: KeyDecoder[Long]` (parses via BigInt, validates u64 range, narrows to Long); `ScJsonCodecGenerator.scala:447` emits `decodeKeyU64`; encode-key u64 arm emits `java.lang.Long.toUnsignedString(_)`. Closes M26-N02(b).
 
+### [PR-28.1-D02] Java/Kotlin/KMP u64 map-key encode uses signed `String.valueOf` while decode parses unsigned
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/java/JvJsonCodecGenerator.scala:209-216`, `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/kotlin/KtJsonCodecGenerator.scala` (encodeKey site)
+**Description:** Java/Kotlin/KMP `encodeKey` for u64 fell through to the generic `String.valueOf($ref)` Builtin arm, which produces signed string for negative Long values. Decoder uses `Long.parseUnsignedLong` which rejects leading minus sign. Surfaced by PR-28.1's new `m28-ok/u64-map-key.baboon` fixture which produces `Long`-negative random values.
+**Fix:** Added explicit `TypeId.Builtins.u64 => Long.toUnsignedString($ref)` arm in encodeKey, matching the encoder/decoder asymmetry of u64 unsigned semantics. Mirrors PR-28.1's Scala-side fix. Audit confirmed Kotlin/KMP do not require an analogous fix: Kotlin u64 maps to `ULong`, whose `toString()` (the Kotlin Builtin catch-all) yields the unsigned representation natively, and the matching `decodeKey` uses `String.toULong()`. Only the Java backend exhibited the asymmetry.
+
 ---
 
 ## PR-28.6 — User-facing docs catch-up (M18-M27)
@@ -2894,3 +2901,16 @@ Verified `mdl :build :test-dart-regular :test-dart-wrapped :test-manual-dart :te
 **Location:** docs/language-features.md, docs/json-codecs.md, README.md
 **Description:** M18 (id keyword), M19 (id/DTO map keys), M20 (ADT branch inheritance), M24 (Custom-foreign KeyCodec hook), M26-M27 (m26 fixture coverage, editor parity) shipped without doc updates. Cross-cutting note M27-N01 captures the discipline going forward.
 **Fix:** PR-28.6 Wave 1 adds: id-keyword + ADT-inheritance + map-key sections in language-features.md; Custom-foreign KeyCodec subsection in json-codecs.md; Highlights bullets in README. f64 + tso canonical wire-form lock-in deferred to Wave 2 (post PR-28.2 + PR-28.3).
+
+---
+
+## PR-28.3 — tso cross-backend canonicalisation +HH:MM (M28)
+
+### [PR-28.3-D01] C# TsuToString unconditionally uses TsuDefault, drops offset on round-trip
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/cs/BaboonTime.cs:408-417`
+**Description:** PR-28.3's tsu/tso split set `TsuToString` to always use `TsuDefault` (literal `Z` format). This dropped offset info for `tsu` values whose backing `RpDateTime` has non-UTC `Kind` or non-zero `Offset.Ticks`. Random fixtures populate tsu fields with arbitrary offsets; pre-fix legacy `ToString(...)` branched on `(Offset.Ticks == 0 && Kind == Utc)` to choose between `TsuDefault` and `TszDefault`, preserving offset on round-trip. Surfaced by `mdl --seq :build :test`: 3 failures across `Mixed_Tests`, `T6_D1_Tests`, `T6_D2_Tests` `jsonCodecTest` cases.
+**Root cause:** PR-28.3 over-corrected. The canonical `tso = ±HH:MM` invariant is correct for tso (always offset-form). For tsu the legacy branching is load-bearing because tsu's source-side `RpDateTime` may carry a non-UTC Kind/offset that must round-trip exactly.
+**Fix:** Restored ternary in `TsuToString`: `(dt.DateTimeOffset.Offset.Ticks == 0 && dt.Kind == DateTimeKind.Utc) ? TsuDefault : TszDefault`. `TsoToString` unchanged (still always `TszDefault`).
+
