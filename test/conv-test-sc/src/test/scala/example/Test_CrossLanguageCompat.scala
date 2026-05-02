@@ -471,7 +471,13 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
 
   private def assertM26JsonParseEquivalent(lang: String): Unit = {
     val file = baseDir.resolve(s"$lang-json/m26-builtin-map-keys.json")
-    assert(Files.exists(file), s"$lang m26-builtin-map-keys.json not found: $file")
+    if (lang == "swift") {
+      // Swift conv-test does not run on Windows CI (no Swift toolchain).
+      // Mirror the assume-based skip used at lines 168/174/390.
+      assume(Files.exists(file), s"$lang m26-builtin-map-keys.json not found, skipping: $file")
+    } else {
+      assert(Files.exists(file), s"$lang m26-builtin-map-keys.json not found: $file")
+    }
     val actual = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
     val a      = parse(actual).getOrElse(fail(s"failed to parse $lang m26: $actual"))
     val c      = parse(canonicalM26Json).getOrElse(fail(s"failed to parse canonical m26"))
@@ -480,7 +486,13 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
 
   private def assertM26UebaByteIdentity(lang: String): Unit = {
     val file = baseDir.resolve(s"$lang-ueba/m26-builtin-map-keys.ueba")
-    assert(Files.exists(file), s"$lang m26-builtin-map-keys.ueba not found: $file")
+    if (lang == "swift") {
+      // Swift conv-test does not run on Windows CI (no Swift toolchain).
+      // Mirror the assume-based skip used at lines 168/174/390.
+      assume(Files.exists(file), s"$lang m26-builtin-map-keys.ueba not found, skipping: $file")
+    } else {
+      assert(Files.exists(file), s"$lang m26-builtin-map-keys.ueba not found: $file")
+    }
     val scalaFile = baseDir.resolve("scala-ueba/m26-builtin-map-keys.ueba")
     val actual    = Files.readAllBytes(file)
     val scala     = Files.readAllBytes(scalaFile)
