@@ -156,12 +156,15 @@ class AnyRoundTripTest {
         assertEquals(original, decoded)
     }
 
-    // Note: a `useIndices=true` round-trip test is intentionally absent here. The Kotlin codegen
-    // for indexed UEBA wraps each field's encode in a Kotlin `{ ... }` block expression — those
-    // are lambdas, not statements, so they are constructed and discarded without executing. The
-    // resulting wire is missing all field content. This is a pre-existing codegen bug unrelated
-    // to `any` / PR 5.4 and reproduces with any DTO that has fields. The Scala/C#/Rust analogs
-    // do exercise the indexed path because their codegen emits real statement blocks.
+    @Test
+    fun ueba_round_trip_withUseIndicesTrue_preservesContent() {
+        val original = buildUebaHolder()
+        val bytes = encodeUebaBytes(original, BaboonCodecContext.Indexed)
+        // Discriminator: broken emission produces only header bytes, well below 16.
+        assertTrue(bytes.size > 16, "Indexed-encoded body must contain real field content; got ${bytes.size} bytes")
+        val decoded = decodeUebaBytes(bytes, BaboonCodecContext.Indexed)
+        assertEquals(original, decoded)
+    }
 
     @Test
     fun ueba_decode_yieldsAnyOpaqueUebaWithMatchingKindBytes() {
