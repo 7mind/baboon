@@ -12,6 +12,8 @@ use baboon_conv_test_rs::baboon_runtime::{BaboonBinEncode, BaboonBinDecode, Babo
 // `FStr` foreign maps to `std::string::String`; the default identity
 // `f_str_keycodec()` impl handles map-key encode/decode without host registration.
 use baboon_conv_test_rs::convtest::m24foreign::{ForeignKeyHolder, ItemKey};
+// PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+use baboon_conv_test_rs::convtest::m26builtinkeys::BuiltinMapKeyHolder;
 use uuid::Uuid;
 
 // Domain constants — match the convtest.testpkg domain at version 2.0.0 (where AnyShowcase + InnerPayload live).
@@ -406,7 +408,44 @@ fn run_legacy() {
     let foreign_key_holder = create_foreign_key_holder_sample();
     write_foreign_key_holder_json(&foreign_key_holder, rust_json_dir.to_str().unwrap());
 
+    let builtin_map_key_holder = create_builtin_map_key_holder_sample();
+    write_builtin_map_key_holder_json(&builtin_map_key_holder, rust_json_dir.to_str().unwrap());
+    write_builtin_map_key_holder_ueba(&builtin_map_key_holder, rust_ueba_dir.to_str().unwrap());
+
     println!("Rust serialization complete!");
+}
+
+// PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+fn create_builtin_map_key_holder_sample() -> BuiltinMapKeyHolder {
+    let mut mi32: BTreeMap<i32, String> = BTreeMap::new();
+    mi32.insert(42, "v32".to_string());
+    let mut mi64: BTreeMap<i64, String> = BTreeMap::new();
+    mi64.insert(9223372036854775807, "vmax".to_string());
+    let mut mu32: BTreeMap<u32, String> = BTreeMap::new();
+    mu32.insert(7, "vu32".to_string());
+    let mut mbit: BTreeMap<bool, String> = BTreeMap::new();
+    mbit.insert(true, "vt".to_string());
+    let mut muid: BTreeMap<Uuid, String> = BTreeMap::new();
+    muid.insert(Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(), "vid".to_string());
+    BuiltinMapKeyHolder { mi32, mi64, mu32, mbit, muid }
+}
+
+fn write_builtin_map_key_holder_json(data: &BuiltinMapKeyHolder, output_dir: &str) {
+    fs::create_dir_all(output_dir).expect("Failed to create output directory");
+    let json_str = serde_json::to_string(data).expect("Failed to serialize BuiltinMapKeyHolder JSON");
+    let path = PathBuf::from(output_dir).join("m26-builtin-map-keys.json");
+    fs::write(&path, &json_str).expect("Failed to write BuiltinMapKeyHolder JSON");
+    println!("Written JSON to {:?}", path);
+}
+
+fn write_builtin_map_key_holder_ueba(data: &BuiltinMapKeyHolder, output_dir: &str) {
+    let ctx = BaboonCodecContext::Default;
+    fs::create_dir_all(output_dir).expect("Failed to create output directory");
+    let mut ueba_bytes = Vec::new();
+    data.encode_ueba(&ctx, &mut ueba_bytes).expect("Failed to encode UEBA");
+    let path = PathBuf::from(output_dir).join("m26-builtin-map-keys.ueba");
+    fs::write(&path, &ueba_bytes).expect("Failed to write UEBA file");
+    println!("Written UEBA to {:?}", path);
 }
 
 fn main() {

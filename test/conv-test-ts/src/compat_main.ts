@@ -27,6 +27,8 @@ import {AnyMeta, AnyOpaque, anyOpaqueJson, anyOpaqueUeba, createAnyMeta} from ".
 // generated FStr_KeyCodecHost identity default impl.
 import {ForeignKeyHolder} from "./generated/convtest/m24foreign/ForeignKeyHolder";
 import {ItemKey} from "./generated/convtest/m24foreign/ItemKey";
+// PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+import {BuiltinMapKeyHolder} from "./generated/convtest/m26builtinkeys/BuiltinMapKeyHolder";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -370,8 +372,41 @@ function runLegacy(): void {
     writeUebaAny(facadeCtx, sampleAny, tsUebaDir);
     writePointIdRepr(sampleData.vPointId, tsReprDir);
     writeForeignKeyHolderJson(BaboonCodecContext.Default, createForeignKeyHolderSample(), tsJsonDir);
+    writeBuiltinMapKeyHolderJson(BaboonCodecContext.Default, createBuiltinMapKeyHolderSample(), tsJsonDir);
+    writeBuiltinMapKeyHolderUeba(BaboonCodecContext.Default, createBuiltinMapKeyHolderSample(), tsUebaDir);
 
     console.log("TypeScript serialization complete!");
+}
+
+// PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+// TS u32 = number; i64 = bigint (per ts-stub generator). Per PR-G the wire
+// form for non-string builtin map keys is `{<String(k)>: <v>}`.
+function createBuiltinMapKeyHolderSample(): BuiltinMapKeyHolder {
+    return new BuiltinMapKeyHolder(
+        new Map<number, string>([[42, "v32"]]),
+        new Map<bigint, string>([[9223372036854775807n, "vmax"]]),
+        new Map<number, string>([[7, "vu32"]]),
+        new Map<boolean, string>([[true, "vt"]]),
+        new Map<string, string>([["00000000-0000-0000-0000-000000000001", "vid"]]),
+    );
+}
+
+function writeBuiltinMapKeyHolderJson(ctx: BaboonCodecContext, data: BuiltinMapKeyHolder, outputDir: string): void {
+    fs.mkdirSync(outputDir, {recursive: true});
+    const json = BuiltinMapKeyHolder.jsonCodec().encode(ctx, data);
+    const jsonStr = JSON.stringify(json);
+    const p = path.join(outputDir, "m26-builtin-map-keys.json");
+    fs.writeFileSync(p, jsonStr);
+    console.log(`Written JSON to ${p}`);
+}
+
+function writeBuiltinMapKeyHolderUeba(ctx: BaboonCodecContext, data: BuiltinMapKeyHolder, outputDir: string): void {
+    fs.mkdirSync(outputDir, {recursive: true});
+    const writer = new BaboonBinWriter();
+    BuiltinMapKeyHolder.binCodec().encode(ctx, data, writer);
+    const p = path.join(outputDir, "m26-builtin-map-keys.ueba");
+    fs.writeFileSync(p, writer.toBytes());
+    console.log(`Written UEBA to ${p}`);
 }
 
 const args = process.argv.slice(2);

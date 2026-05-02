@@ -438,4 +438,73 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
     val expectedString = """{"m":{"alpha":"v1","beta":"v2"}}"""
     assert(encoded.noSpaces == expectedString, s"FStr_KeyCodec wire form diverged: got ${encoded.noSpaces}, expected $expectedString")
   }
+
+  // --------------------------------------------------------------------------------------------
+  // PR-26.5 (M26) — non-string builtin map-key cross-language fixture (Closes PR-G-D01)
+  //
+  // PR-G (M24 Phase 2.2) unified the TS direct-builtin map-key wire form with the other 9
+  // backends but had no cross-language fixture exercising those paths. This block locks the
+  // parity by asserting byte-identity of `m26-builtin-map-keys.json` against the canonical
+  // reference fixture `test/conv-test/json-data/m26-builtin-map-keys.json` for every backend
+  // that produces deterministic, definition-order output (9 of 10 — Swift's `.sortedKeys`
+  // outer-object alphabetisation is documented as a known per-backend divergence and the
+  // Swift assertion uses parse-equivalence).
+  //
+  // UEBA wire is byte-identical across all 10 backends (writeBoolean/writeI32/writeUid all
+  // emit fixed-width LE bytes) and is asserted as such.
+  //
+  // Key types covered: i32, i64, u32, bit, uid (5 of 8 originally proposed; see fixture
+  // header for f64/u64/tso drop rationale).
+  // --------------------------------------------------------------------------------------------
+
+  private val canonicalM26Json: String = {
+    val refPath = Paths.get("../../test/conv-test/json-data/m26-builtin-map-keys.json")
+    new String(Files.readAllBytes(refPath), StandardCharsets.UTF_8)
+  }
+
+  private def assertM26JsonByteIdentity(lang: String): Unit = {
+    val file = baseDir.resolve(s"$lang-json/m26-builtin-map-keys.json")
+    assert(Files.exists(file), s"$lang m26-builtin-map-keys.json not found: $file")
+    val actual = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+    assert(actual == canonicalM26Json, s"$lang m26 JSON diverged from canonical:\n  expected: $canonicalM26Json\n  actual:   $actual")
+  }
+
+  private def assertM26JsonParseEquivalent(lang: String): Unit = {
+    val file = baseDir.resolve(s"$lang-json/m26-builtin-map-keys.json")
+    assert(Files.exists(file), s"$lang m26-builtin-map-keys.json not found: $file")
+    val actual = new String(Files.readAllBytes(file), StandardCharsets.UTF_8)
+    val a      = parse(actual).getOrElse(fail(s"failed to parse $lang m26: $actual"))
+    val c      = parse(canonicalM26Json).getOrElse(fail(s"failed to parse canonical m26"))
+    assert(a == c, s"$lang m26 JSON parse-form diverged from canonical: got $a, expected $c")
+  }
+
+  private def assertM26UebaByteIdentity(lang: String): Unit = {
+    val file = baseDir.resolve(s"$lang-ueba/m26-builtin-map-keys.ueba")
+    assert(Files.exists(file), s"$lang m26-builtin-map-keys.ueba not found: $file")
+    val scalaFile = baseDir.resolve("scala-ueba/m26-builtin-map-keys.ueba")
+    val actual    = Files.readAllBytes(file)
+    val scala     = Files.readAllBytes(scalaFile)
+    assert(java.util.Arrays.equals(actual, scala), s"$lang m26 UEBA bytes diverged from Scala canonical")
+  }
+
+  // 9-of-10 backends produce byte-identical canonical JSON output.
+  for (lang <- Seq("scala", "cs", "rust", "typescript", "kotlin", "kotlin-kmp", "java", "dart", "python")) {
+    s"PR-26.5 m26 builtin-map-keys JSON" should s"be byte-identical to the canonical reference for backend [$lang]" in {
+      assertM26JsonByteIdentity(lang)
+    }
+  }
+
+  // Swift uses JSONSerialization with `.sortedKeys` for deterministic output, which
+  // alphabetises the outer DTO keys — diverging from the 9-backend definition-order
+  // canonical. The wire content is semantically identical; assert parse-equivalence.
+  // Filed as upstream defect for harmonisation in a future PR.
+  it should "be parse-equivalent (outer keys alphabetised) for backend [swift]" in {
+    assertM26JsonParseEquivalent("swift")
+  }
+
+  "PR-26.5 m26 builtin-map-keys UEBA" should "be byte-identical to Scala canonical for all 10 backends" in {
+    for (lang <- Seq("scala", "cs", "rust", "typescript", "kotlin", "kotlin-kmp", "java", "dart", "swift", "python")) {
+      assertM26UebaByteIdentity(lang)
+    }
+  }
 }

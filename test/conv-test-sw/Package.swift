@@ -33,14 +33,24 @@ let package = Package(
                 .unsafeFlags(["-enable-testing"])
             ]
         ),
+        // PR-26.5 (M26) — convtest.m26builtinkeys (non-string builtin map-key
+        // cross-language fixture).
+        .target(
+            name: "ConvtestM26builtinkeys",
+            dependencies: ["BaboonRuntime"],
+            path: "Generated/ConvtestM26builtinkeys",
+            swiftSettings: [
+                .unsafeFlags(["-enable-testing"])
+            ]
+        ),
         .executableTarget(
             name: "CompatMain",
-            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0", "ConvtestM24foreign"],
+            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0", "ConvtestM24foreign", "ConvtestM26builtinkeys"],
             path: "Sources/CompatMain"
         ),
         .testTarget(
             name: "CrossLanguageTests",
-            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0", "ConvtestM24foreign"],
+            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0", "ConvtestM24foreign", "ConvtestM26builtinkeys"],
             path: "Tests/CrossLanguageTests"
         ),
     ]
