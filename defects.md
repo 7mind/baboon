@@ -2588,10 +2588,10 @@ An `id Foo : SomeContract { v: uid }` (id with contracts) would fire branch 1 an
 **Fix:** Acceptable as-is.
 
 ## [PR-I-D09] register() has no double-registration guard
-**Status:** resolved (note-only — last-wins semantics documented)
+**Status:** resolved (verified — last-wins is now uniformly enforced; tracked at M26-N01)
 **Severity:** nit
 **Description:** `register(impl)` silently replaces previous registration. No error/warning. Pattern that propagates to all 9 backends. Last-wins is the intended behavior (mirrors the M24 plan's "module-level mutable singleton" decision).
-**Fix:** Acceptable as-is. Future hygiene PR could add idempotent-or-throw variant if hosts request it.
+**Fix:** PR-26.2 (M26) re-disposed: last-wins is now the canonical cross-backend Host concurrency contract, with PR-26.2 bringing Rust into line (was the lone `OnceLock`-based outlier; see PR-I.3-N01). Per-backend regression tests added (10 new test files asserting register-A → register-B → observe-B) pin the contract — any future refactor toward an OnceLock-shaped impl will fail those tests. Future M26-N01 hygiene PR could add an idempotent-or-throw variant if hosts request it.
 
 ---
 
@@ -2746,11 +2746,11 @@ Verified `mdl :build :test-dart-regular :test-dart-wrapped :test-manual-dart :te
 ## PR-I.3 (M24) — Rust Custom-foreign KeyCodec hook (serde-with-adapter)
 
 ## [PR-I.3-N01] OnceLock register-after-init silently no-ops
-**Status:** resolved (note-only; cross-backend asymmetry deferred)
+**Status:** resolved
 **Severity:** minor
 **Location:** baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/rust/RsDefnTranslator.scala (`register_<foreign>_keycodec` body)
 **Description:** Emitted `let _ = STATIC.set(impl_);` swallows the `Err` returned by `OnceLock::set` on second-call. If any code path triggers `<foreign>_keycodec()` before `register_*` runs (test setup ordering, lazy serde init), the Default impl gets installed and the host's later `register(...)` silently fails. For stringy customs harmless (default identity); for non-stringy customs the panic-on-encode default is what serde sees while the host appears registered. Asymmetric with other backends (Kotlin/Java/TS use mutable last-wins).
-**Fix:** Acceptable. Future hygiene PR could either (a) add `panic!` on `Err` from `set` for visibility, or (b) switch to `RwLock<Option<Box<dyn _>>>` for last-wins parity. Cross-backend Host concurrency contract is best addressed uniformly across all 9 backends, not Rust-only.
+**Fix:** PR-26.2 (M26) switched the Rust emission from `OnceLock<Box<dyn _>>` to `RwLock<Option<Arc<dyn _>>>`. Rationale: `RwLock::new(None)` is const since Rust 1.63 (compatible with the 1.75 MSRV pinned in PR-26.1), but `Arc::new(...)` is not const, so the static initializes to `None` and the getter performs lazy Default-install under the write lock on first read. Re-calling `register_<foreign>_keycodec` overwrites the slot — last-wins, matching the 8 other backends (Scala/Java/Kotlin/KMP/C#/Dart/TypeScript/Swift/Python). Wire form unchanged: the trait dispatch path uses `<foreign>_keycodec().encode_key(...)`, which works on `Arc<dyn T>` via Deref. m24-foreign-keycodec.json md5 baseline `1f1ef66abe5a9a24321c6e615851281d` preserved. Per-backend regression tests added (10 new test files; one per backend including Rust) asserting register-A → register-B → observe-B. The Rust test failed pre-fix (verified locally against generated m19-ok corpus: encoded wire form was `{"m":{"A:k":"v"}}` after registering B because `OnceLock::set`'s `Err` return was silently dropped) and passes post-fix. The other 9 backends already had last-wins semantics — their regression tests pass pre- and post-fix and pin the contract against future refactor regressions.
 
 ## [PR-I.3-N02] Encode-side panic for non-stringy DefaultImpl is dormant but latent
 **Status:** resolved (note-only; pkg0 fixtures not in rs-stub/conv-test-rs corpus)

@@ -274,14 +274,28 @@ object RsDefnTranslator {
              |
              |${defaultImpl.trim}
              |
-             |static $staticName: std::sync::OnceLock<Box<dyn $codecTrait>> = std::sync::OnceLock::new();
+             |// PR-26.2 (M26) — last-wins concurrency contract (cross-backend parity).
+             |// `RwLock<Option<Arc<dyn _>>>` allows re-registration to overwrite (last-wins),
+             |// matching Scala/Java/Kotlin/KMP/C#/Dart/TypeScript/Swift/Python. Previous
+             |// `OnceLock<Box<dyn _>>` silently no-op'd on re-register (PR-I.3-N01).
+             |// Note: `Arc::new` is not const (Rust ≤ 1.75), so we lazily init under the
+             |// write lock on first read. `RwLock::new(None)` IS const (Rust ≥ 1.63).
+             |static $staticName: std::sync::RwLock<Option<std::sync::Arc<dyn $codecTrait>>> =
+             |    std::sync::RwLock::new(None);
              |
-             |pub fn $registerName(impl_: Box<dyn $codecTrait>) {
-             |    let _ = $staticName.set(impl_);
+             |pub fn $registerName(impl_: std::sync::Arc<dyn $codecTrait>) {
+             |    *$staticName.write().expect("poisoned RwLock") = Some(impl_);
              |}
              |
-             |pub fn $getterName() -> &'static dyn $codecTrait {
-             |    $staticName.get_or_init(|| Box::new($defaultStruct)).as_ref()
+             |pub fn $getterName() -> std::sync::Arc<dyn $codecTrait> {
+             |    if let Some(ref c) = *$staticName.read().expect("poisoned RwLock") {
+             |        return c.clone();
+             |    }
+             |    let mut w = $staticName.write().expect("poisoned RwLock");
+             |    if w.is_none() {
+             |        *w = Some(std::sync::Arc::new($defaultStruct));
+             |    }
+             |    w.as_ref().expect("just initialized").clone()
              |}
              |
              |pub mod $adapterMod {
