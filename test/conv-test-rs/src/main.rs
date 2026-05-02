@@ -416,6 +416,7 @@ fn run_legacy() {
 }
 
 // PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+// PR-28.4 (M28) — extended with mu64 + mtso (mf64 still deferred).
 fn create_builtin_map_key_holder_sample() -> BuiltinMapKeyHolder {
     let mut mi32: BTreeMap<i32, String> = BTreeMap::new();
     mi32.insert(42, "v32".to_string());
@@ -423,11 +424,23 @@ fn create_builtin_map_key_holder_sample() -> BuiltinMapKeyHolder {
     mi64.insert(9223372036854775807, "vmax".to_string());
     let mut mu32: BTreeMap<u32, String> = BTreeMap::new();
     mu32.insert(7, "vu32".to_string());
+    // PR-28.4: u64::MAX exercises canonical unsigned wire form. Single-entry
+    // map matches the fixture pattern (PR-28.4-D02).
+    let mut mu64: BTreeMap<u64, String> = BTreeMap::new();
+    mu64.insert(u64::MAX, "vu64max".to_string());
     let mut mbit: BTreeMap<bool, String> = BTreeMap::new();
     mbit.insert(true, "vt".to_string());
     let mut muid: BTreeMap<Uuid, String> = BTreeMap::new();
     muid.insert(Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(), "vid".to_string());
-    BuiltinMapKeyHolder { mi32, mi64, mu32, mbit, muid }
+    // PR-28.4: non-UTC tso offset (PR-28.3 ±HH:MM canonicalisation).
+    let mut mtso: BTreeMap<chrono::DateTime<FixedOffset>, String> = BTreeMap::new();
+    let dt = NaiveDateTime::new(
+        NaiveDate::from_ymd_opt(2026, 5, 2).unwrap(),
+        NaiveTime::from_hms_milli_opt(12, 0, 0, 123).unwrap(),
+    );
+    let ist_off = FixedOffset::east_opt(5 * 3600 + 30 * 60).unwrap();
+    mtso.insert(ist_off.from_local_datetime(&dt).unwrap(), "vtso_ist".to_string());
+    BuiltinMapKeyHolder { mi32, mi64, mu32, mu64, mbit, muid, mtso }
 }
 
 fn write_builtin_map_key_holder_json(data: &BuiltinMapKeyHolder, output_dir: &str) {

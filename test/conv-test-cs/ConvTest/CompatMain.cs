@@ -99,17 +99,32 @@ namespace ConvTest
             var mi32 = new Dictionary<int, string> { { 42, "v32" } };
             var mi64 = new Dictionary<long, string> { { 9223372036854775807L, "vmax" } };
             var mu32 = new Dictionary<uint, string> { { 7u, "vu32" } };
+            // PR-28.4 (M28): UInt64.MaxValue exercises canonical unsigned
+            // wire form "18446744073709551615". Single-entry map matches
+            // the fixture pattern (PR-28.4-D02).
+            var mu64 = new Dictionary<ulong, string>
+            {
+                { ulong.MaxValue, "vu64max" },
+            };
             var mbit = new Dictionary<bool, string> { { true, "vt" } };
             var muid = new Dictionary<Guid, string>
             {
                 { Guid.Parse("00000000-0000-0000-0000-000000000001"), "vid" },
             };
+            // PR-28.4 (M28): non-UTC tso offset exercises PR-28.3
+            // canonicalisation (±HH:MM).
+            var mtso = new Dictionary<RpDateTime, string>
+            {
+                { new RpDateTime(new DateTimeOffset(2026, 5, 2, 12, 0, 0, 123, new TimeSpan(5, 30, 0))), "vtso_ist" },
+            };
             return new BuiltinMapKeyHolder(
                 mi32.ToImmutableDictionary(),
                 mi64.ToImmutableDictionary(),
                 mu32.ToImmutableDictionary(),
+                mu64.ToImmutableDictionary(),
                 mbit.ToImmutableDictionary(),
-                muid.ToImmutableDictionary());
+                muid.ToImmutableDictionary(),
+                mtso.ToImmutableDictionary());
         }
 
         private static void WriteBuiltinMapKeyHolderJson(BaboonCodecContext ctx, BuiltinMapKeyHolder data, string outputDir)

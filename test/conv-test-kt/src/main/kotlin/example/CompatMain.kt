@@ -116,8 +116,14 @@ private fun createBuiltinMapKeyHolderSample(): BuiltinMapKeyHolder = BuiltinMapK
     mi32 = linkedMapOf(42 to "v32"),
     mi64 = linkedMapOf(9223372036854775807L to "vmax"),
     mu32 = linkedMapOf(7u to "vu32"),
+    // PR-28.4 (M28): u64 = ULong.MAX_VALUE → canonical "18446744073709551615".
+    mu64 = linkedMapOf(ULong.MAX_VALUE to "vu64max"),
     mbit = linkedMapOf(true to "vt"),
     muid = linkedMapOf(UUID.fromString("00000000-0000-0000-0000-000000000001") to "vid"),
+    // PR-28.4 (M28): non-UTC tso offset (PR-28.3 ±HH:MM canonicalisation).
+    mtso = linkedMapOf(
+        OffsetDateTime.of(2026, 5, 2, 12, 0, 0, 123 * 1000000, ZoneOffset.ofHoursMinutes(5, 30)) to "vtso_ist",
+    ),
 )
 
 private fun writeBuiltinMapKeyHolderJson(ctx: BaboonCodecContext, data: BuiltinMapKeyHolder, outputDir: String) {

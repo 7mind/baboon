@@ -116,8 +116,18 @@ object CompatMain {
       mi32 = Map(42                   -> "v32"),
       mi64 = Map(9223372036854775807L -> "vmax"),
       mu32 = Map(7                    -> "vu32"),
+      // PR-28.4 (M28): u64 = -1L is the signed Java Long encoding of
+      // UInt64.MaxValue (18446744073709551615). Single-entry map matches
+      // the 5/8 fixture pattern; multi-entry pairs trigger latent sort
+      // divergence (filed PR-28.4-D02). PR-28.1 closed the encoder defect.
+      mu64 = Map(-1L                  -> "vu64max"),
       mbit = Map(true                 -> "vt"),
       muid = Map(UUID.fromString("00000000-0000-0000-0000-000000000001") -> "vid"),
+      // PR-28.4 (M28): non-UTC tso offset exercising PR-28.3 ±HH:MM
+      // canonicalisation. Single-entry map matches fixture pattern.
+      mtso = Map(
+        OffsetDateTime.of(2026, 5, 2, 12, 0, 0, 123 * 1000000, ZoneOffset.ofHoursMinutes(5, 30)) -> "vtso_ist",
+      ),
     )
   }
 

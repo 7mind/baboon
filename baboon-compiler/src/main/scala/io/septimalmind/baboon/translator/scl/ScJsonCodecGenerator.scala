@@ -299,7 +299,11 @@ class ScJsonCodecGenerator(
   private def mkEncoder(tpe: TypeRef, ref: TextTree[ScValue]): TextTree[ScValue] = {
     def encodeKey(tpe: TypeRef, ref: TextTree[ScValue]): TextTree[ScValue] = {
       tpe.id match {
-        case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.format($ref)"
+        // PR-28.4 (M28): the runtime exposes `formatTsu`/`formatTso` only
+        // (no generic `format`). Per-type dispatch matches the value-side
+        // emission at line 357-358 and PR-28.3 ±HH:MM canonicalisation contract.
+        case TypeId.Builtins.tsu                       => q"$baboonTimeFormats.formatTsu($ref)"
+        case TypeId.Builtins.tso                       => q"$baboonTimeFormats.formatTso($ref)"
         // PR-28.1 (M28): u64 map keys must carry the canonical unsigned wire form.
         // `Long.toString(-1L)` yields "-1" (two's-complement signed); the canonical
         // u64 max representation is "18446744073709551615". Symmetric with the

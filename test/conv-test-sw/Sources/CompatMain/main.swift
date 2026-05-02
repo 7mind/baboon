@@ -335,13 +335,39 @@ func runLegacy() throws {
 }
 
 // PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+// PR-28.4 (M28) — extended with mu64 + mtso (mf64 deferred).
 func createBuiltinMapKeyHolderSample() -> BuiltinMapKeyHolder {
+    // PR-28.4: non-UTC tso offset (PR-28.3 ±HH:MM canonicalisation).
+    // Wall-clock 2026-05-02T12:00:00.123+05:30 = instant 2026-05-02T06:30:00.123Z.
+    var tsoUtcCal = Calendar(identifier: .gregorian)
+    tsoUtcCal.timeZone = TimeZone(secondsFromGMT: 0)!
+    var tsoIstUtcComps = DateComponents()
+    tsoIstUtcComps.year = 2026
+    tsoIstUtcComps.month = 5
+    tsoIstUtcComps.day = 2
+    tsoIstUtcComps.hour = 6
+    tsoIstUtcComps.minute = 30
+    tsoIstUtcComps.second = 0
+    tsoIstUtcComps.nanosecond = 123 * 1_000_000
+    let tsoIstUtcDate: Date = tsoUtcCal.date(from: tsoIstUtcComps)!
+    let tsoIstEpochSecs: Double = tsoIstUtcDate.timeIntervalSince1970
+    let tsoIstEpochMs: Int64 = Int64(tsoIstEpochSecs * 1000.0)
+    let tsoIstOffsetSecs: Int64 = Int64(5 * 3600 + 30 * 60)
+    let tsoIstOffsetMs: Int64 = tsoIstOffsetSecs * 1000
+    let tsoIst = BaboonDateTimeOffset(
+        epochMillis: tsoIstEpochMs,
+        offsetMillis: tsoIstOffsetMs,
+        kind: "offset"
+    )
     return BuiltinMapKeyHolder(
         mi32: [Int32(42): "v32"],
         mi64: [Int64(9223372036854775807): "vmax"],
         mu32: [UInt32(7): "vu32"],
+        // PR-28.4 (M28): u64 = UInt64.max → canonical "18446744073709551615".
+        mu64: [UInt64.max: "vu64max"],
         mbit: [true: "vt"],
-        muid: [UUID(uuidString: "00000000-0000-0000-0000-000000000001")!: "vid"]
+        muid: [UUID(uuidString: "00000000-0000-0000-0000-000000000001")!: "vid"],
+        mtso: [tsoIst: "vtso_ist"]
     )
 }
 

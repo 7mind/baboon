@@ -113,6 +113,7 @@ public class CompatMain {
     }
 
     // PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+    // PR-28.4 (M28) — extended with mu64 + mtso (mf64 deferred).
     private static BuiltinMapKeyHolder createBuiltinMapKeyHolderSample() {
         var mi32 = new java.util.LinkedHashMap<Integer, String>();
         mi32.put(42, "v32");
@@ -120,11 +121,18 @@ public class CompatMain {
         mi64.put(9223372036854775807L, "vmax");
         var mu32 = new java.util.LinkedHashMap<Long, String>();
         mu32.put(7L, "vu32");
+        // PR-28.4 (M28): u64 = -1L (signed Long encoding of UInt64.MaxValue).
+        // PR-28.1-D02 / PR-28.3 ensure encoder uses Long.toUnsignedString.
+        var mu64 = new java.util.LinkedHashMap<Long, String>();
+        mu64.put(-1L, "vu64max");
         var mbit = new java.util.LinkedHashMap<Boolean, String>();
         mbit.put(true, "vt");
         var muid = new java.util.LinkedHashMap<UUID, String>();
         muid.put(UUID.fromString("00000000-0000-0000-0000-000000000001"), "vid");
-        return new BuiltinMapKeyHolder(mi32, mi64, mu32, mbit, muid);
+        // PR-28.4 (M28): non-UTC tso offset (PR-28.3 ±HH:MM canonicalisation).
+        var mtso = new java.util.LinkedHashMap<OffsetDateTime, String>();
+        mtso.put(OffsetDateTime.of(2026, 5, 2, 12, 0, 0, 123 * 1000000, ZoneOffset.ofHoursMinutes(5, 30)), "vtso_ist");
+        return new BuiltinMapKeyHolder(mi32, mi64, mu32, mu64, mbit, muid, mtso);
     }
 
     private static void writeBuiltinMapKeyHolderJson(BaboonCodecContext ctx, BuiltinMapKeyHolder data, String outputDir) throws Exception {

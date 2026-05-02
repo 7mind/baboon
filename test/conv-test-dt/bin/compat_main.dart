@@ -355,13 +355,28 @@ void runLegacy() {
 }
 
 // PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
+// PR-28.4 (M28) — extended with mu64 + mtso (mf64 deferred).
 BuiltinMapKeyHolder _createBuiltinMapKeyHolderSample() {
+  // PR-28.4: non-UTC tso offset (PR-28.3 ±HH:MM canonicalisation).
+  // Wall-clock 2026-05-02T12:00:00.123+05:30 = instant 2026-05-02T06:30:00.123Z.
+  final tsoIst = BaboonDateTimeOffset(
+    epochMillis:
+        DateTime.utc(2026, 5, 2, 6, 30, 0, 123).millisecondsSinceEpoch,
+    offsetMillis: (5 * 3600 + 30 * 60) * 1000,
+    kind: 'offset',
+  );
   return BuiltinMapKeyHolder(
     mi32: {42: 'v32'},
     mi64: {9223372036854775807: 'vmax'},
     mu32: {7: 'vu32'},
+    // PR-28.4 (M28): u64 = -1 (signed-int encoding of UInt64.MaxValue).
+    // Dart u64 maps to dt `int` (signed 64-bit); encoder converts via
+    // BigInt.from(_).toUnsigned(64).toString() to canonical
+    // "18446744073709551615".
+    mu64: {-1: 'vu64max'},
     mbit: {true: 'vt'},
     muid: {'00000000-0000-0000-0000-000000000001': 'vid'},
+    mtso: {tsoIst: 'vtso_ist'},
   );
 }
 
