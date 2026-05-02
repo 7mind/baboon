@@ -2061,6 +2061,14 @@ Both tests pass. The dual-path coverage clarifies: `ServiceMultipleInputs` is th
 **Root cause:** M18 PR-57e (identifier types fan-out, 2026-04-29) added the cross-backend repr-byte-identity test but missed mirroring the Windows-Swift-absence skip pattern from the existing Swift-cross-language tests.
 **Fix:** Swift's existence check changed from `assert` to `assume`, mirroring the existing pattern at lines 166-176. Other 9 backends still hard-assert (they're always available on every CI platform).
 
+### [PR-26.5-D01] PR-26.5 m26 fixture cross-language tests assert Swift file existence on Windows CI
+**Status:** resolved
+**Severity:** major
+**Location:** `test/conv-test-sc/src/test/scala/example/Test_CrossLanguageCompat.scala:474, :483`
+**Description:** Same root cause as PR-57e-D02: Windows CI runs `mdl --without-nix :build :test` on a runner without a Swift toolchain; Swift's m26-builtin-map-keys.{json,ueba} outputs never produced. PR-26.5's m26 cross-language tests at lines 474 + 483 hard-assert file existence; tests fail on Windows CI. Sibling Swift cross-language tests at lines 168 + 174 (and post-PR-57e-D02 at line 390) correctly use `assume(...)` for the same skip pattern. The PR-26.5 author missed the cross-platform precedent. Surfaced post-M27 by Windows CI run.
+**Root cause:** PR-26.5 (M26 commit `d28256b`) authored cross-language tests for the new m26 fixture without mirroring the established Swift-skip pattern.
+**Fix:** Swift-specific existence checks changed from `assert` to `assume`, matching lines 168/174/390. Other 9 backends still hard-assert.
+
 ---
 
 ## PR-58
