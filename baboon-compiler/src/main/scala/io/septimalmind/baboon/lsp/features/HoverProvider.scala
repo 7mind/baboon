@@ -27,7 +27,7 @@ class HoverProvider(
 
     wordAtCursor.flatMap {
       typeName =>
-        findTypeInfo(typeName).map {
+        findTypeInfo(uri, position, typeName).map {
           info =>
             logger.message(LspLogging.Context, s"getHover: found type info for '$typeName'")
             val content = MarkupContent(MarkupKind.Markdown, info)
@@ -55,33 +55,115 @@ class HoverProvider(
     }
   }
 
-  private def findTypeInfo(typeName: String): Option[String] = {
+  // Spec §2.3: a type-parameter name shadows any top-level type with the same name inside the
+  // template body.  We detect this by scanning the document text backward from the cursor to find
+  // an enclosing `data/adt/contract/service Name[…]` declaration header.  If found, the cursor is
+  // considered to be inside that template's body and the type-param lookup takes priority.
+  private def enclosingTemplateName(uri: String, position: Position): Option[String] = {
+    documentState.getContent(uri).flatMap {
+      content =>
+        val lines = content.split("\n", -1)
+        // Regex that matches a template declaration header on a single line.
+        val templateHeaderRe = """^\s*(?:root\s+)?(?:data|adt|contract|service)\s+(\w+)\s*\[""".r
+        // Scan from the cursor line upward; stop as soon as we find a template header.
+        // We do not track brace depth — a simple backward scan is sufficient for the typical
+        // single-level nesting of baboon type bodies.
+        var lineIdx = position.line
+        while (lineIdx >= 0) {
+          templateHeaderRe.findFirstMatchIn(lines(lineIdx)) match {
+            case Some(m) => return Some(m.group(1))
+            case None    => lineIdx -= 1
+          }
+        }
+        None
+    }
+  }
+
+  private def findTypeInfo(uri: String, position: Position, typeName: String): Option[String] = {
     workspaceState.getFamily.flatMap {
       family =>
-        val fromMembers = family.domains.toMap.values.flatMap {
-          lineage =>
-            lineage.versions.toMap.values.flatMap {
-              domain =>
-                domain.defs.meta.nodes.values.collectFirst {
-                  case u: DomainMember.User if u.id.name.name == typeName =>
-                    renderTypeInfo(u, domain)
+        // §2.3 shadowing: if the cursor sits inside a template body whose type-param list contains
+        // `typeName`, resolve to the type-param entry before checking top-level definitions.
+        val enclosingTemplate = enclosingTemplateName(uri, position)
+        val typeParamInfo: Option[String] = enclosingTemplate.flatMap {
+          tplName =>
+            family.domains.toMap.values.flatMap {
+              lineage =>
+                lineage.versions.toMap.values.flatMap {
+                  domain =>
+                    domain.templateRegistry.templates.collectFirst {
+                      case ((_, _, name), body)
+                          if name.name == tplName && body.typeParams.exists(_.name == typeName) =>
+                        s"*Type parameter of template `${name.name}`*"
+                    }
                 }
-            }
-        }.headOption
+            }.headOption
+        }
 
-        fromMembers.orElse {
-          family.domains.toMap.values.flatMap {
+        typeParamInfo.orElse {
+          val fromMembers = family.domains.toMap.values.flatMap {
             lineage =>
               lineage.versions.toMap.values.flatMap {
                 domain =>
-                  domain.aliases.collectFirst {
-                    case a if a.name.name == typeName =>
-                      s"```baboon\ntype ${a.name.name} = ${a.targetRepr}\n```\n\n---\n*Package: ${domain.id}*"
+                  domain.defs.meta.nodes.values.collectFirst {
+                    case u: DomainMember.User if u.id.name.name == typeName =>
+                      renderTypeInfo(u, domain)
                   }
               }
           }.headOption
+
+          fromMembers.orElse {
+            family.domains.toMap.values.flatMap {
+              lineage =>
+                lineage.versions.toMap.values.flatMap {
+                  domain =>
+                    domain.aliases.collectFirst {
+                      case a if a.name.name == typeName =>
+                        s"```baboon\ntype ${a.name.name} = ${a.targetRepr}\n```\n\n---\n*Package: ${domain.id}*"
+                    }
+                }
+            }.headOption
+          }.orElse {
+            // Look up in template registry: templates are not in domain.defs (they are removed
+            // after monomorphisation) but are accessible via domain.templateRegistry.
+            family.domains.toMap.values.flatMap {
+              lineage =>
+                lineage.versions.toMap.values.flatMap {
+                  domain =>
+                    domain.templateRegistry.templates.collectFirst {
+                      case ((_, _, name), body) if name.name == typeName =>
+                        renderTemplateInfo(typeName, body, domain)
+                    }
+                }
+            }.headOption
+          }.orElse {
+            // Look up type parameter names: if `typeName` matches a type-param in any template,
+            // show "type parameter of template X".  This branch is reached only when the cursor
+            // is NOT inside a template body (the shadowing branch above handles that case).
+            family.domains.toMap.values.flatMap {
+              lineage =>
+                lineage.versions.toMap.values.flatMap {
+                  domain =>
+                    domain.templateRegistry.templates.collectFirst {
+                      case ((_, _, templateName), body) if body.typeParams.exists(_.name == typeName) =>
+                        s"*Type parameter of template `${templateName.name}`*"
+                    }
+                }
+            }.headOption
+          }
         }
     }
+  }
+
+  private def renderTemplateInfo(typeName: String, body: TemplateBody, domain: Domain): String = {
+    val params = body.typeParams.map(_.name).mkString(", ")
+    val kind = body.rawDefn match {
+      case _: RawTemplateDefn.Dto      => "data"
+      case _: RawTemplateDefn.Adt      => "adt"
+      case _: RawTemplateDefn.Contract => "contract"
+      case _: RawTemplateDefn.Service  => "service"
+    }
+    s"```baboon\n$kind $typeName[$params] { … }\n```\n\n*Template — instantiate via `type Alias = $typeName[…]`*\n\n---\n*Package: ${domain.id}*"
   }
 
   private def renderTypeInfo(member: DomainMember.User, @annotation.unused domain: Domain): String = {

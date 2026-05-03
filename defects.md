@@ -303,6 +303,52 @@ Verification: `grep -n 'RawTypeRef.Constructor docs/spec/generics.md` no matches
 
 ---
 
+## PR-29.8 — Diagnostics + LSP polish + tree-sitter grammar
+
+## [PR-29.8-D01] Tree-sitter changes uncommitted in 3-level submodule chain; PR cannot ship them as-is
+**Status:** resolved (reverted; deferred to dedicated tree-sitter PR with submodule coordination)
+**Severity:** major
+**Location:** `editors/baboon-zed` (outer-repo submodule pointer unchanged); `editors/baboon-zed/grammars/baboon/` (inner submodule modifications: `grammar.js`, `src/grammar.json`, `src/node-types.json`, `src/parser.c`, untracked `test/corpus/m29-templates.txt`).
+**Description:** PR-29.8 modifies `grammar.js` and regenerates the tree-sitter parser, plus adds corpus tests. These changes live in a 3-level submodule chain: outer `baboon` repo → submodule `editors/baboon-zed` → submodule `grammars/baboon`. The outer repo's `git diff --stat HEAD` shows `editors/baboon-zed | 0` — the submodule pointer has NOT moved. To actually ship the tree-sitter changes requires committing in `grammars/baboon`, then bumping the pointer in `editors/baboon-zed`, then bumping the pointer in the outer `baboon` repo. Each is a separate git repo with its own history and likely its own remote. `mdl :test-editors` passes only because it tests the dirty working tree.
+**Suggested fix:** Revert the tree-sitter working-tree changes from PR-29.8 and split into a separate dedicated tree-sitter PR that requires user authorisation for the submodule pointer bumps (cross-repo blast radius per CLAUDE.md cautious-action discipline). PR-29.8 ships LSP-polish only.
+
+## [PR-29.8-D02] Executor's claim "no LSP test infrastructure exists" is false; LspFeaturesTestBase is right there
+**Status:** resolved (round 2)
+**Severity:** major
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/lsp/features/LspFeaturesTest.scala` (296 lines, runs hover/definition/completion against a real compiled family).
+**Description:** Executor reported "No LSP unit tests shipped: no existing LSP test infrastructure". `LspFeaturesTest.scala` exists with `LspFeaturesTestBase` already wired against `pkg0/pkg01.baboon`. PR-29.8 added zero template/type-param hover/definition/completion tests despite having an obvious harness. The new code paths (template lookup in HoverProvider, registry lookup in DefinitionProvider, AliasRhsPosition in CompletionProvider) are unverified against any test fixture.
+**Suggested fix:** Add a template fixture (e.g. `pkg-templates.baboon`) and at least 4 tests using `LspFeaturesTestBase`: hover-on-template, hover-on-type-param-inside-body, def-on-template-from-alias-rhs, def-on-alias-of-template; plus 1 test for `AliasRhsPosition` completion surfacing templates.
+
+## [PR-29.8-D03] No template fixture in `src/test/resources/baboon/`; full compiler test matrix never exercises new LSP code paths
+**Status:** resolved (subsumed by D02 — fixture lands as part of LSP test harness)
+**Severity:** major
+**Location:** `baboon-compiler/src/test/resources/baboon/`.
+**Description:** No fixture under `baboon-compiler/src/test/resources/baboon/` contains a template. The wider compiler test matrix (`baboonJVM/test`) never exercises the LSP code-paths added here against any model containing templates. PR-29.8's "372/372" green is therefore vacuously true for the new arms.
+**Fix:** Subsumed by D02 — the template fixture for LSP tests doubles as the test-resource fixture exercising the new arms. PR-29.10 still owns the full cross-language acceptance `m29-ok/` fixture; PR-29.8's fixture can be smaller and LSP-focused.
+
+## [PR-29.8-D04] HoverProvider type-param shadowing not enforced — user sees top-level type info instead of type-param info
+**Status:** resolved (round 2 — option (a) enclosing-template detection)
+**Severity:** moderate (treat as major for correctness — silently wrong hover info)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/lsp/features/HoverProvider.scala:58-109`.
+**Description:** Lookup order is `defs` → `aliases` → `templateRegistry` → type-param. If a user writes both `data T {…}` (top-level) AND `data Page[T] {…}` (template with type-param `T`), hovering on `T` *anywhere* (including inside `Page`'s body) returns the top-level `T` info. This violates spec §2.3 ("type-param shadows top-level type within template body" — added per `[PR-29.1-D10]`).
+**Suggested fix:** Either (a) scope the type-param lookup with a textual heuristic (cursor inside `data Name[…] { ... }` block — check enclosing template), or (b) accept and document the limitation as a known LSP imprecision (with a TODO referencing future cursor-context infrastructure). Prefer (a).
+
+## [PR-29.8-D05] `renderTemplateInfo` uses queried identifier rather than registry's canonical name
+**Status:** resolved (deferred — cosmetic; recommend pulling canonical name from registry key)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/lsp/features/HoverProvider.scala:113`.
+**Description:** Parameter `typeName: String` takes the *queried* identifier rather than the registry's canonical `name.name`. Identifiers are exact-match today so no drift, but flagging.
+**Fix:** Defer; pull the canonical name from the registry key in a future cleanup.
+
+## [PR-29.8-D06] CompletionProvider regex misses qualified prefixes
+**Status:** resolved (deferred — known v1 limitation; add TODO)
+**Severity:** moderate
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/lsp/features/CompletionProvider.scala:131`.
+**Description:** Pattern `^\s*(?:root\s+)?type\s+\w+\s*=\s*(\w*)$` does not match `type Y = pkg.Pa` (the `.` breaks `\w*$`). Qualified template names get no completion.
+**Fix:** Defer; add TODO. Acceptable v1 limitation. Cross-namespace template instantiation is also gated by `[PR-29.5-D04]` / `[PR-29.7-D07]`.
+
+---
+
 ## PR-29.7 — Validator: forbidden positions; new TyperIssue cases for matrix items
 
 ## [PR-29.7-D01] Matrix #8 (`NotATemplate`) coverage too narrow — no test for non-template user DTO with brackets

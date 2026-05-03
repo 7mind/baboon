@@ -1,0 +1,30 @@
+model my.lsp.m29
+
+version "0.0.1"
+
+// Top-level type named T — used to verify that type-param T inside Page[T] shadows this.
+data T {
+  value: i32
+}
+
+// Template: Page[T] uses T as a type parameter.
+// When hovering on T inside this body, T should resolve to the type-param, NOT to top-level T above.
+data Page[T] {
+  items: lst[T]
+  total: u32
+}
+
+// Aliases that instantiate the template — used for go-to-definition tests.
+type IntPage = Page[i32]
+type StrPage = Page[str]
+
+// Regular type that references the alias — used for go-to-definition on alias reference.
+root data User {
+  page: IntPage
+  name: str
+}
+
+// A plain type without template — used for completion tests.
+root data Plain {
+  f: i32
+}

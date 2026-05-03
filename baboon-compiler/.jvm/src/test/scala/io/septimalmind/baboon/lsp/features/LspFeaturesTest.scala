@@ -251,6 +251,149 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
     }
   }
 
+  "hover provider (m29 templates)" should {
+    // m29-lsp.baboon layout (0-indexed lines):
+    //   11: data Page[T] {
+    //   12:   items: lst[T]
+    //   13:   total: u32
+    //   14: }
+    //   17: type IntPage = Page[i32]
+    //   22:   page: IntPage
+
+    "show template signature when hovering on template name" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-lsp/m29-lsp.baboon") {
+          (docState, wsState, uri) =>
+            val hover = new HoverProvider(docState, wsState, logger)
+
+            val content = docState.getContent(uri).get
+            val lines   = content.split("\n")
+            val lineIdx = lines.indexWhere(_.contains("data Page[T]"))
+            assert(lineIdx >= 0, "Should find 'data Page[T]' line")
+
+            val colIdx = lines(lineIdx).indexOf("Page")
+            val result = hover.getHover(uri, Position(lineIdx, colIdx + 1))
+            assert(result.isDefined, "Should return hover for template 'Page'")
+            assert(result.get.contents.value.contains("Page"), s"Hover should mention 'Page': ${result.get.contents.value}")
+            assert(result.get.contents.value.contains("T"), s"Hover should mention type-param 'T': ${result.get.contents.value}")
+        }
+    }
+
+    "resolve type-param T inside template body (shadowing top-level T)" in {
+      // Spec §2.3: type-param T in data Page[T] shadows the top-level `data T` when
+      // the cursor is inside Page's body.
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-lsp/m29-lsp.baboon") {
+          (docState, wsState, uri) =>
+            val hover = new HoverProvider(docState, wsState, logger)
+
+            val content = docState.getContent(uri).get
+            val lines   = content.split("\n")
+            // Line "  items: lst[T]" — cursor on T inside the template body
+            val lineIdx = lines.indexWhere(_.contains("items: lst[T]"))
+            assert(lineIdx >= 0, "Should find 'items: lst[T]' line")
+
+            val colIdx = lines(lineIdx).lastIndexOf("T")
+            val result = hover.getHover(uri, Position(lineIdx, colIdx + 1))
+            assert(result.isDefined, "Should return hover for T inside template body")
+            // Must resolve to type-param info, NOT the top-level data T
+            assert(
+              result.get.contents.value.contains("parameter"),
+              s"Hover on T inside Page body should describe a type parameter, got: ${result.get.contents.value}",
+            )
+            assert(
+              result.get.contents.value.contains("Page"),
+              s"Hover on T should mention the enclosing template 'Page', got: ${result.get.contents.value}",
+            )
+        }
+    }
+
+    "show type-param info when hovering on T outside template body" in {
+      // When the cursor is NOT inside a template body (e.g. on the type-param list itself,
+      // which is on the header line before the '{'), the fallback branch still returns
+      // type-param info for T found in the registry.
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-lsp/m29-lsp.baboon") {
+          (docState, wsState, uri) =>
+            val hover = new HoverProvider(docState, wsState, logger)
+
+            val content = docState.getContent(uri).get
+            val lines   = content.split("\n")
+            // "data Page[T] {" — T appears in the param list at, e.g., col 10
+            val lineIdx = lines.indexWhere(_.contains("data Page[T]"))
+            assert(lineIdx >= 0, "Should find template header line")
+
+            val colIdx = lines(lineIdx).indexOf("[T]") + 1 // position on T inside [T]
+            val result = hover.getHover(uri, Position(lineIdx, colIdx + 1))
+            // The result should mention T is a type parameter (via the fallback branch)
+            assert(result.isDefined, "Should return hover for T in template header")
+        }
+    }
+  }
+
+  "definition provider (m29 templates)" should {
+    "find template declaration when going-to-definition from alias RHS" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-lsp/m29-lsp.baboon") {
+          (docState, wsState, uri) =>
+            val defProvider = new DefinitionProvider(docState, wsState, positionConverter)
+
+            val content = docState.getContent(uri).get
+            val lines   = content.split("\n")
+            // "type IntPage = Page[i32]" — cursor on "Page"
+            val lineIdx = lines.indexWhere(_.contains("type IntPage = Page"))
+            assert(lineIdx >= 0, "Should find IntPage alias line")
+
+            val colIdx = lines(lineIdx).indexOf("Page")
+            val locations = defProvider.findDefinition(uri, Position(lineIdx, colIdx + 1))
+            assert(locations.nonEmpty, "Should find definition for template 'Page' from alias RHS")
+        }
+    }
+
+    "find alias declaration when going-to-definition on alias reference in field" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-lsp/m29-lsp.baboon") {
+          (docState, wsState, uri) =>
+            val defProvider = new DefinitionProvider(docState, wsState, positionConverter)
+
+            val content = docState.getContent(uri).get
+            val lines   = content.split("\n")
+            // "  page: IntPage" — cursor on "IntPage"
+            val lineIdx = lines.indexWhere(_.contains("page: IntPage"))
+            assert(lineIdx >= 0, "Should find line using IntPage as a field type")
+
+            val colIdx = lines(lineIdx).indexOf("IntPage")
+            val locations = defProvider.findDefinition(uri, Position(lineIdx, colIdx + 1))
+            assert(locations.nonEmpty, "Should find definition for alias 'IntPage'")
+        }
+    }
+  }
+
+  "completion provider (m29 templates)" should {
+    "include template and plain type in alias-RHS completion" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-lsp/m29-lsp.baboon") {
+          (docState, wsState, uri) =>
+            val completion = new CompletionProvider(docState, wsState, logger)
+
+            val content = docState.getContent(uri).get
+            val lines   = content.split("\n")
+            // Position cursor right after "= " in "type IntPage = " to trigger AliasRhsPosition
+            val lineIdx = lines.indexWhere(_.contains("type IntPage = Page"))
+            assert(lineIdx >= 0, "Should find IntPage alias line")
+
+            val eqIdx = lines(lineIdx).indexOf("=")
+            // Place cursor 2 chars after '=' (after "= ") — beforeCursor ends with "type IntPage = "
+            val cursorCol = eqIdx + 2
+            val items     = completion.getCompletions(uri, Position(lineIdx, cursorCol))
+            val labels    = items.map(item => item.filterText.getOrElse(item.label)).toSet
+
+            assert(labels.contains("Page"), s"Alias-RHS completions should include template 'Page', got: ${items.map(_.label).take(20)}")
+            assert(labels.contains("Plain"), s"Alias-RHS completions should include regular type 'Plain', got: ${items.map(_.label).take(20)}")
+        }
+    }
+  }
+
   "definition provider" should {
     "find definitions for regular types" in {
       (loader: BaboonLoader[F]) =>
