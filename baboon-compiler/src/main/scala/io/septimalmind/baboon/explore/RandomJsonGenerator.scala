@@ -11,7 +11,13 @@ import scala.util.Random
 class RandomJsonGenerator(domain: Domain, enquiries: BaboonEnquiries) {
   private val random = new Random()
 
-  private val isoFormatter = new DateTimeFormatterBuilder()
+  // M28-N01: tso = "±HH:MM" always (UTC = "+00:00", NOT "Z"); tsu retains "Z" for UTC.
+  // Mirrors the split in BaboonRuntimeCodec.scala (PR-29P.1 / PR-29P.4).
+  private val tsoFormatter = new DateTimeFormatterBuilder()
+    .appendPattern("yyyy-MM-dd'T'HH:mm:ss.SSS")
+    .appendOffset("+HH:MM", "+00:00")
+    .toFormatter()
+  private val tsuFormatter = new DateTimeFormatterBuilder()
     .appendPattern("yyyy-MM-dd'T'HH:mm:ss.SSS")
     .appendOffset("+HH:MM", "Z")
     .toFormatter()
@@ -100,15 +106,16 @@ class RandomJsonGenerator(domain: Domain, enquiries: BaboonEnquiries) {
       case `bytes` => Json.fromString(randomHexString(16))
       case `uid`   => Json.fromString(randomUUID())
       case `tsu` | `tso` =>
-        val year   = 2020 + random.nextInt(10)
-        val month  = 1 + random.nextInt(12)
-        val day    = 1 + random.nextInt(28)
-        val hour   = random.nextInt(24)
-        val minute = random.nextInt(60)
-        val second = random.nextInt(60)
-        val millis = random.nextInt(1000)
-        val dt     = OffsetDateTime.of(year, month, day, hour, minute, second, millis * 1000000, java.time.ZoneOffset.UTC)
-        Json.fromString(dt.format(isoFormatter))
+        val year      = 2020 + random.nextInt(10)
+        val month     = 1 + random.nextInt(12)
+        val day       = 1 + random.nextInt(28)
+        val hour      = random.nextInt(24)
+        val minute    = random.nextInt(60)
+        val second    = random.nextInt(60)
+        val millis    = random.nextInt(1000)
+        val dt        = OffsetDateTime.of(year, month, day, hour, minute, second, millis * 1000000, java.time.ZoneOffset.UTC)
+        val formatter = if (id == `tso`) tsoFormatter else tsuFormatter
+        Json.fromString(dt.format(formatter))
       case _ =>
         Json.fromString(s"<unknown scalar: ${id.name.name}>")
     }

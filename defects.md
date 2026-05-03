@@ -48,18 +48,18 @@ The escalation was correct. Round-1 closes with `resolved (note-only; superseded
 - Other backend runtime codecs (Cs, Ts, Rs, Kt, Jv) already received the equivalent fix via PR-28.3. The compiler-side `BaboonRuntimeCodec.scala` was the missed JVM-only site. Reviewer verified by grep across `baboon-compiler/src/main/resources/baboon-runtime/`.
 
 ## [PR-29P.1-D02] Regression test does not cover non-UTC tso offsets, leaving regression-guard incomplete for ±HH:MM other than `+00:00`
-**Status:** resolved (deferred to M29 follow-up)
+**Status:** resolved (PR-29P.4)
 **Severity:** minor
 **Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/RTCodecTest.scala:38-66`.
 **Description:** The new regression test only covers `tso` UTC-zero (`+00:00`) and `tsu` UTC (`Z`). It does not exercise non-UTC `tso` offsets like `+05:30` or `-08:00`. The patch is mechanically correct for non-UTC (both old and new formatters emit `+05:30` for non-zero offsets via `appendOffset("+HH:MM", _)`), so the regression risk is low — but a future change that, e.g., hard-codes `+00:00` output would silently break non-UTC tso while keeping this test green. The defect-of-record `[PR-29P.1-D01]` required a deterministic UTC-zero case "exercised on every CI run regardless of fixture seed"; that is met. Non-UTC offset coverage is a stricter bar that was not explicitly required.
-**Fix:** Defer to a separate widen-coverage PR in M29 (post-CI-green). Recorded as a `tasks.md` M29 follow-up.
+**Fix:** PR-29P.4 added two deterministic regression tests at `RTCodecTest.scala:71-117`: `roundtrip tso non-UTC offset +05:30 preserves offset (M28-N01)` and `roundtrip tso non-UTC offset -08:00 preserves offset (M28-N01)`. Both round-trip a `tso` value through `BaboonRuntimeCodec.encode → decode` and assert the offset string is byte-identical. Targeted run `sbt baboonJVM/testOnly io.septimalmind.baboon.tests.RTCodecTest` PASS (6 succeeded, 0 failed). Forward-looking guard against any future change that hard-codes `+00:00` (or `Z`) for `tso` — caught by these cases regardless of fixture seed. Adversarial review (Opus) noted the tests are forward-looking rather than fail-first against the original PR-29P.1 bug (because that bug only manifested at offset==0); this is per the defect's own acceptance criterion and intentional.
 
 ## [PR-29P.1-D03] `RandomJsonGenerator` carries the same buggy single-shared-formatter pattern in the `:example` REPL output
-**Status:** resolved (deferred to M29 follow-up)
-**Severity:** minor (deferred)
+**Status:** resolved (PR-29P.4)
+**Severity:** minor
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/explore/RandomJsonGenerator.scala:14-17, 102-111`.
 **Description:** `RandomJsonGenerator` uses a single shared formatter `appendOffset("+HH:MM", "Z")` for both `tsu` and `tso`. Generated examples for `tso` fields with UTC offset will print `Z`, misleading users about the canonical wire form. Consumers (verified): only `baboon-compiler/.js/src/main/scala/io/septimalmind/baboon/BaboonJS.scala:829` (JS REPL "generate" entrypoint) and `baboon-compiler/.jvm/src/main/scala/io/septimalmind/baboon/explore/commands/ExampleCommand.scala:23` (JVM `:example` command). Output is NOT roundtripped through codecs in production paths, so does not affect wire-format invariants. However, output IS user-facing in the REPL — a `tso` example showing `Z` would mislead users about M28-N01. Practical impact further bounded: `RandomJsonGenerator.scala:110` always emits `ZoneOffset.UTC`, so non-UTC variants don't materialise — the visible defect is only "tso example shows `Z` when it should show `+00:00`".
-**Fix:** Defer to a separate M29 follow-up PR. Apply the same split: `tsuFormatter` with `appendOffset("+HH:MM","Z")`, `tsoFormatter` with `appendOffset("+HH:MM","+00:00")`. Out of scope for the surgical CI-01 fix per CLAUDE.md §5.
+**Fix:** PR-29P.4 split the shared `isoFormatter` at `RandomJsonGenerator.scala:14-23` into `tsoFormatter` (`appendOffset("+HH:MM", "+00:00")`, M28-N01 first clause) + `tsuFormatter` (`appendOffset("+HH:MM", "Z")`, second clause), mirroring `BaboonRuntimeCodec.scala:32-40` shape. Generation site at L108-118 dispatches via `if (id == \`tso\`) tsoFormatter else tsuFormatter` (only `tsu` reaches the else branch given the outer `case \`tsu\` | \`tso\``). Verification: `sbt baboonJS/compile` PASS (cross-compile with no new JVM-only deps), `sbt baboonJVM/testOnly io.septimalmind.baboon.tests.RTCodecTest` PASS. Visible behavior change: `:example` REPL output for `tso` UTC-zero now prints `+00:00` instead of `Z` (no other behavioral change since `RandomJsonGenerator.scala:116` always emits `ZoneOffset.UTC`).
 
 ## [PR-29P.1-D04] Ledger hygiene — `tasks.md` PR-29P.1 / PR-29P.3 status flips deferred to orchestrator commit step
 **Status:** resolved (orchestrator close-out — performed inline with the PR-29P.1 commit)
@@ -122,3 +122,13 @@ External availability confirmed: sbt 1.11.7 returns `HTTP/2 200` from `repo1.mav
 **Location:** `tasks.md` Cross-cutting architectural notes.
 **Description:** The cross-cutting item asks whether the acceptance step needs the strict sandbox at all, or whether the flake closure is sufficient. Executor implicitly decided "no strict sandbox needed" by shipping option (a), but did not record the decision rationale anywhere. Future test-* actions that consider adopting `--ignore-environment` have no precedent to lean on.
 **Suggested fix:** PR-29P.3 session log should explicitly state: "acceptance and test-* jobs run under plain `nix develop`; `--ignore-environment` is not adopted as default because (1) GitHub-hosted runner injects load-bearing TLS/proxy/cache env vars not reachable through the flake closure, (2) `build-linux` operates without it successfully, (3) the previous use was load-bearing only for an unverified Swift-FHS-bwrap isolation hypothesis, and the same Swift artifacts compile under `build-linux` without the flag." Tick the tasks.md item.
+
+---
+
+## PR-29P.4 — M29-prep follow-up cleanup (D02 + D03)
+
+No defects raised against PR-29P.4. Adversarial review (Opus) cleared with three nit observations (none requiring fix):
+
+1. **nit — `RTCodecTest.scala:71-117` regression test posture.** The two new non-UTC tests are forward-looking guards, not fail-first reproductions of the original PR-29P.1 bug — that bug only manifested at offset==0, so non-zero offsets always passed. This is per the defect's own acceptance criterion ("non-UTC offset coverage exercised on every CI run regardless of fixture seed") and is documented in the inline test comment.
+2. **nit — `RTCodecTest.scala:71, 95` LOC.** The two test cases duplicate ~20 lines each, differing only in the offset literal. A table-driven helper would halve the LOC; deferred — refactor only justified if a third offset is added.
+3. **nit — `RandomJsonGenerator.scala:108-118` observable surface.** The split is correct, but L116 still hard-codes `ZoneOffset.UTC`, so the visible behavioral change is *only* "tso UTC-zero examples now print `+00:00` instead of `Z`". `tsuFormatter`'s `Z` literal is exercised only through the same UTC-zero path. This matches the D03 description and is intentional surgical scope.
