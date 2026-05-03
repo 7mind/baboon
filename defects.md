@@ -237,6 +237,31 @@ No defects raised against PR-29P.4. Adversarial review (Opus) cleared with three
 
 ---
 
+## PR-29.3 — Parser: alias instantiation RHS + alias-side `derived`
+
+## [PR-29.3-D01] PR-29.3 expanded beyond the plan's "test-only verification" scope to also add `RawAlias.derived` extension
+**Status:** resolved (orchestrator-deliberate scope expansion; documented)
+**Severity:** major (process-only — no shipped defect)
+**Location:** PR-29.3 brief vs `docs/drafts/20260503-2210-m29-generics-plan.md:382-409`.
+**Description:** Reviewer flagged that the plan-doc PR-29.3 brief said "AST/data-model changes: none" and "Touch list: likely none" — only test-only verification of the existing parser shape. The shipped PR also adds `RawAlias.derived: Set[RawMemberMeta]` and wires `meta.derived` into the alias parser, which the plan implicitly assigned to PR-29.4/PR-29.5.
+**Fix:** Orchestrator response — the scope expansion is intentional. PR-29.1 spec-doc review surfaced `[PR-29.1-D02]` (RawAlias has no `derived` field; spec ships un-implementable surface). The spec §5 intro paragraph commits to the parser-side extension. Bundling it into PR-29.3 (the parser-side alias PR) rather than PR-29.4 (typer-side registry) keeps parser changes co-located, avoids a partial spec→parser gap mid-milestone, and makes PR-29.4 cleanly typer-only. Recorded here so future loop iterations don't mis-read PR-29.3's diff against the original plan brief.
+
+## [PR-29.3-D02] `RawAlias.derivations` field name inconsistent with sibling `Raw*` types and spec §5 wording
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/RawDto.scala:32`; `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/defns/DefModel.scala:122-124`; `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/AliasInstantiationParserTest.scala:17, 19, 114, 119, 122, 124, 129`.
+**Description:** Every other `Raw*` definition uses `derived: Set[RawMemberMeta]` (singular). The new field on `RawAlias` was named `derivations` (plural). Spec §5 intro paragraph (`docs/spec/generics.md:461`) explicitly says "extends `RawAlias` to carry an optional `derived` set" — singular.
+**Fix:** Pure rename — `RawAlias.derivations` → `derived` in the case-class declaration, parser rule destructuring, and 7 test-file references (assertions + scaladoc). Verified no semantic overlap with `DomainMember.User.derivations` (separate type, kept as-is). Verification: `sbt baboonJVM/compile` PASS, `sbt baboonJS/compile` PASS, `sbt 'baboonJVM/testOnly *AliasInstantiation*'` PASS (9/9).
+
+## [PR-29.3-D03] `Set` field type discards source-order signal of `: derived[A], derived[B]` clause
+**Status:** resolved (deferred — matches sibling-type convention; future-codegen risk only)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/RawDto.scala:32`.
+**Description:** `derivations: Set[RawMemberMeta]` is unordered, so `Set(json, ueba) == Set(ueba, json)`. The comma-separated source carries source-order information that the parser discards. If PR-29.5 later wants deterministic emission ordering, the field type itself (`Set` vs `List`/`Vector`) would need to change. Sibling types use `Set` too, so this matches convention.
+**Fix:** Defer; flagging only as a future-deterministic-codegen risk. If PR-29.5 emission needs source-order, change all `Raw*.derived` types together, not just `RawAlias`.
+
+---
+
 ## PR-29.2 — Parser: type-param head on declarations
 
 ## [PR-29.2-D01] Negative test for non-bare-identifier type-param missing
