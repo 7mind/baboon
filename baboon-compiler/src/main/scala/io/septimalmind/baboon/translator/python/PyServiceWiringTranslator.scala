@@ -63,6 +63,72 @@ object PyServiceWiringTranslator {
       PyType(moduleId, typeName)
     }
 
+    // JSON encode/decode for both User types (via generated codec) and BuiltinScalar (inline).
+    // Python JSON codecs take/return `str` (raw JSON). For builtins, use json.loads/json.dumps.
+    private def jsonDecodeExpr(id: TypeId, data: TextTree[PyValue]): TextTree[PyValue] = id match {
+      case u: TypeId.User          => q"${jsonCodecType(u)}.instance().decode(ctx, $data)"
+      case _: TypeId.BuiltinScalar => q"$pyJsonLoads($data)"
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+    }
+
+    private def jsonEncodeExpr(id: TypeId, value: TextTree[PyValue]): TextTree[PyValue] = id match {
+      case u: TypeId.User          => q"${jsonCodecType(u)}.instance().encode(ctx, $value)"
+      case _: TypeId.BuiltinScalar => q"$pyJsonDumps($value)"
+      case other                   => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+    }
+
+    private def uebaDecodeExpr(id: TypeId, reader: TextTree[PyValue]): TextTree[PyValue] = id match {
+      case u: TypeId.User => q"${uebaCodecType(u)}.instance().decode(ctx, $reader)"
+      case b: TypeId.BuiltinScalar =>
+        b match {
+          case TypeId.Builtins.bit   => q"$reader.read_bool()"
+          case TypeId.Builtins.i08   => q"$reader.read_byte()"
+          case TypeId.Builtins.i16   => q"$reader.read_i16()"
+          case TypeId.Builtins.i32   => q"$reader.read_i32()"
+          case TypeId.Builtins.i64   => q"$reader.read_i64()"
+          case TypeId.Builtins.u08   => q"$reader.read_ubyte()"
+          case TypeId.Builtins.u16   => q"$reader.read_u16()"
+          case TypeId.Builtins.u32   => q"$reader.read_u32()"
+          case TypeId.Builtins.u64   => q"$reader.read_u64()"
+          case TypeId.Builtins.f32   => q"$reader.read_f32()"
+          case TypeId.Builtins.f64   => q"$reader.read_f64()"
+          case TypeId.Builtins.f128  => q"$reader.read_f128()"
+          case TypeId.Builtins.str   => q"$reader.read_string()"
+          case TypeId.Builtins.uid   => q"$reader.read_uuid()"
+          case TypeId.Builtins.tsu   => q"$reader.read_datetime()"
+          case TypeId.Builtins.tso   => q"$reader.read_datetime()"
+          case TypeId.Builtins.bytes => q"$reader.read_bytes()"
+          case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
+        }
+      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+    }
+
+    private def uebaEncodeStmt(id: TypeId, writer: TextTree[PyValue], value: TextTree[PyValue]): TextTree[PyValue] = id match {
+      case u: TypeId.User => q"${uebaCodecType(u)}.instance().encode(ctx, $writer, $value)"
+      case b: TypeId.BuiltinScalar =>
+        b match {
+          case TypeId.Builtins.bit   => q"$writer.write_bool($value)"
+          case TypeId.Builtins.i08   => q"$writer.write_byte($value)"
+          case TypeId.Builtins.i16   => q"$writer.write_i16($value)"
+          case TypeId.Builtins.i32   => q"$writer.write_i32($value)"
+          case TypeId.Builtins.i64   => q"$writer.write_i64($value)"
+          case TypeId.Builtins.u08   => q"$writer.write_ubyte($value)"
+          case TypeId.Builtins.u16   => q"$writer.write_u16($value)"
+          case TypeId.Builtins.u32   => q"$writer.write_u32($value)"
+          case TypeId.Builtins.u64   => q"$writer.write_u64($value)"
+          case TypeId.Builtins.f32   => q"$writer.write_f32($value)"
+          case TypeId.Builtins.f64   => q"$writer.write_f64($value)"
+          case TypeId.Builtins.f128  => q"$writer.write_f128($value)"
+          case TypeId.Builtins.str   => q"$writer.write_str($value)"
+          case TypeId.Builtins.uid   => q"$writer.write_uuid($value)"
+          case TypeId.Builtins.tsu   => q"$writer.write_datetime($value)"
+          case TypeId.Builtins.tso   => q"$writer.write_datetime($value)"
+          case TypeId.Builtins.bytes => q"$writer.write_bytes($value)"
+          case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
+        }
+      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+    }
+
     private lazy val serviceRtModule: PyModuleId = {
       val pathToModule = domain.id.path.toList
       val fullPath     = fileTools.definitionsBasePkg ++ pathToModule ++ List("BaboonServiceRt")
@@ -171,14 +237,12 @@ object PyServiceWiringTranslator {
     private def generateNoErrorsJsonFn(service: Typedef.Service, svcName: String, svcType: PyType): TextTree[PyValue] = {
       val cases = service.methods.map {
         m =>
-          val inCodec = jsonCodecType(m.sig.id.asInstanceOf[TypeId.User])
-
           val encodeAndReturn = m.out match {
             case Some(outRef) =>
-              val outCodec = jsonCodecType(outRef.id.asInstanceOf[TypeId.User])
+              val encExpr = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"result")
               q"""result = impl.${m.name.name}(${ctxArgPass}decoded)
                  |try:
-                 |    return $outCodec.instance().encode(ctx, result)
+                 |    return $encExpr
                  |except Exception as e:
                  |    raise $baboonWiringException($baboonEncoderFailed(method, e))""".stripMargin
             case None =>
@@ -187,9 +251,10 @@ object PyServiceWiringTranslator {
                  |""".stripMargin
           }
 
+          val decExpr = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"data")
           q"""if method.method_name == "${m.name.name}":
              |    try:
-             |        decoded = $inCodec.instance().decode(ctx, data)
+             |        decoded = $decExpr
              |    except Exception as e:
              |        raise $baboonWiringException($baboonDecoderFailed(method, e))
              |    ${encodeAndReturn.shift(4).trim}""".stripMargin
@@ -204,16 +269,14 @@ object PyServiceWiringTranslator {
     private def generateNoErrorsUebaFn(service: Typedef.Service, svcName: String, svcType: PyType): TextTree[PyValue] = {
       val cases = service.methods.map {
         m =>
-          val inCodec = uebaCodecType(m.sig.id.asInstanceOf[TypeId.User])
-
           val encodeAndReturn = m.out match {
             case Some(outRef) =>
-              val outCodec = uebaCodecType(outRef.id.asInstanceOf[TypeId.User])
+              val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"writer", q"result")
               q"""result = impl.${m.name.name}(${ctxArgPass}decoded)
                  |try:
                  |    output_stream = $pyBytesIO()
                  |    writer = $baboonLEDataOutputStream(output_stream)
-                 |    $outCodec.instance().encode(ctx, writer, result)
+                 |    $encStmt
                  |    return output_stream.getvalue()
                  |except Exception as e:
                  |    raise $baboonWiringException($baboonEncoderFailed(method, e))""".stripMargin
@@ -223,10 +286,11 @@ object PyServiceWiringTranslator {
                  |""".stripMargin
           }
 
+          val decExpr = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"reader")
           q"""if method.method_name == "${m.name.name}":
              |    try:
              |        reader = $baboonLEDataInputStream($pyBytesIO(data))
-             |        decoded = $inCodec.instance().decode(ctx, reader)
+             |        decoded = $decExpr
              |    except Exception as e:
              |        raise $baboonWiringException($baboonDecoderFailed(method, e))
              |    ${encodeAndReturn.shift(4).trim}""".stripMargin
@@ -260,19 +324,19 @@ object PyServiceWiringTranslator {
     private def generateErrorsJsonFn(service: Typedef.Service, svcName: String, svcType: PyType): TextTree[PyValue] = {
       val cases = service.methods.map {
         m =>
-          val inCodec    = jsonCodecType(m.sig.id.asInstanceOf[TypeId.User])
           val hasErrType = m.err.isDefined && !resolved.noErrors
+          val decExpr    = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"data")
 
           val decodeStep =
             q"""try:
-               |    decoded = $inCodec.instance().decode(ctx, data)
+               |    decoded = $decExpr
                |    input_val = rt.pure(decoded)
                |except Exception as e:
                |    input_val = rt.fail($baboonDecoderFailed(method, e))""".stripMargin
 
           val callAndEncodeStep = m.out match {
             case Some(outRef) =>
-              val outCodec = jsonCodecType(outRef.id.asInstanceOf[TypeId.User])
+              val encExpr = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
 
               val callBody = if (hasErrType) {
                 q"""def _call(v):
@@ -293,7 +357,7 @@ object PyServiceWiringTranslator {
                  |output = rt.flat_map(input_val, _call)
                  |def _encode(v):
                  |    try:
-                 |        return rt.pure($outCodec.instance().encode(ctx, v))
+                 |        return rt.pure($encExpr)
                  |    except Exception as e:
                  |        return rt.fail($baboonEncoderFailed(method, e))
                  |return rt.flat_map(output, _encode)""".stripMargin
@@ -333,20 +397,20 @@ object PyServiceWiringTranslator {
     private def generateErrorsUebaFn(service: Typedef.Service, svcName: String, svcType: PyType): TextTree[PyValue] = {
       val cases = service.methods.map {
         m =>
-          val inCodec    = uebaCodecType(m.sig.id.asInstanceOf[TypeId.User])
           val hasErrType = m.err.isDefined && !resolved.noErrors
+          val decExpr    = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"reader")
 
           val decodeStep =
             q"""try:
                |    reader = $baboonLEDataInputStream($pyBytesIO(data))
-               |    decoded = $inCodec.instance().decode(ctx, reader)
+               |    decoded = $decExpr
                |    input_val = rt.pure(decoded)
                |except Exception as e:
                |    input_val = rt.fail($baboonDecoderFailed(method, e))""".stripMargin
 
           val callAndEncodeStep = m.out match {
             case Some(outRef) =>
-              val outCodec = uebaCodecType(outRef.id.asInstanceOf[TypeId.User])
+              val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"writer", q"v")
 
               val callBody = if (hasErrType) {
                 q"""def _call(v):
@@ -369,7 +433,7 @@ object PyServiceWiringTranslator {
                  |    try:
                  |        output_stream = $pyBytesIO()
                  |        writer = $baboonLEDataOutputStream(output_stream)
-                 |        $outCodec.instance().encode(ctx, writer, v)
+                 |        $encStmt
                  |        return rt.pure(output_stream.getvalue())
                  |    except Exception as e:
                  |        return rt.fail($baboonEncoderFailed(method, e))

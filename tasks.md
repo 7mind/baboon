@@ -9,6 +9,12 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ---
 
+## Hotfixes
+
+- [x] **PR-29.10b** (2026-05-04) — service-wiring translators across all 9 backends made tolerant of `TypeId.BuiltinScalar` in method positions. Fixes the CI `ClassCastException` exposed by m29-ok's `Crud[i32, str]` templated service. Resolves [PR-29.10-D07] (end-to-end templated-service cross-language acceptance — petstore now exercises Crud through the live service-acceptance matrix). Verification: `mdl :test-service-acceptance` 81/81 with the fresh binary post `sbt clean;compile`.
+
+---
+
 ## Milestones (high-level)
 
 - [x] **M29-prep** — Pre-M29 CI hardening. Two defects fixed: CI-01 (BaboonRuntimeCodec tso UTC-zero `+00:00`↔`Z`), CI-02 (acceptance-tests sbt resolution under `--ignore-environment`). Both CI jobs green on `wip/ids-and-adts` (verified by user 2026-05-03; branch merged into `wip/generics`).

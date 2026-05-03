@@ -59,6 +59,84 @@ object CSServiceWiringTranslator {
       CSValue.CSType(srcRef.pkg, s"${srcRef.name}_UEBACodec", srcRef.fq, CSTypeOrigin(typeId, domain).asDerived)
     }
 
+    // JSON encode/decode for both User types (via generated codec) and BuiltinScalar (inline).
+    private def jsonDecodeExpr(id: TypeId, wire: TextTree[CSValue]): TextTree[CSValue] = id match {
+      case u: TypeId.User => q"${jsonCodecName(u)}.Instance.Decode(ctx, $wire)"
+      case b: TypeId.BuiltinScalar =>
+        val fref = q"$wire!"
+        b match {
+          case TypeId.Builtins.bit                       => q"$fref.Value<$csBoolean>()!"
+          case TypeId.Builtins.i08                       => q"$fref.Value<$csSByte>()!"
+          case TypeId.Builtins.i16                       => q"$fref.Value<$csInt16>()!"
+          case TypeId.Builtins.i32                       => q"$fref.Value<$csInt32>()!"
+          case TypeId.Builtins.i64                       => q"$fref.Value<$csInt64>()!"
+          case TypeId.Builtins.u08                       => q"$fref.Value<$csByte>()!"
+          case TypeId.Builtins.u16                       => q"$fref.Value<$csUInt16>()!"
+          case TypeId.Builtins.u32                       => q"$fref.Value<$csUInt32>()!"
+          case TypeId.Builtins.u64                       => q"$fref.Value<$csUInt64>()!"
+          case TypeId.Builtins.f32                       => q"$fref.Value<$csSingle>()!"
+          case TypeId.Builtins.f64                       => q"$fref.Value<$csDouble>()!"
+          case TypeId.Builtins.f128                      => q"$BaboonTools.ReadDecimalLenient($fref)"
+          case TypeId.Builtins.str                       => q"$fref.Value<$csString>()!"
+          case TypeId.Builtins.bytes                     => q"$csByteString.Parse($fref.Value<$csString>()!)"
+          case TypeId.Builtins.uid                       => q"$csGuid.Parse($fref.Value<$csString>()!)"
+          case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.FromString($fref.Value<$csString>()!)"
+          case other                                     => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
+        }
+      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+    }
+
+    private def jsonEncodeExpr(id: TypeId, value: TextTree[CSValue]): TextTree[CSValue] = id match {
+      case u: TypeId.User => q"${jsonCodecName(u)}.Instance.Encode(ctx, $value)"
+      case b: TypeId.BuiltinScalar =>
+        b match {
+          case TypeId.Builtins.bytes   => q"new $nsJValue($value.Encode())"
+          case TypeId.Builtins.uid     => q"new $nsJValue($value.ToString())"
+          case TypeId.Builtins.tsu     => q"new $nsJValue($baboonTimeFormats.TsuToString($value))"
+          case TypeId.Builtins.tso     => q"new $nsJValue($baboonTimeFormats.TsoToString($value))"
+          case TypeId.Builtins.bit     => q"new $nsJValue($value.ToString().ToLowerInvariant())"
+          case _: TypeId.BuiltinScalar => q"new $nsJValue($value)"
+        }
+      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+    }
+
+    private def uebaDecodeExpr(id: TypeId, br: TextTree[CSValue]): TextTree[CSValue] = id match {
+      case u: TypeId.User => q"${uebaCodecName(u)}.Instance.Decode(ctx, $br)"
+      case b: TypeId.BuiltinScalar =>
+        b match {
+          case TypeId.Builtins.bit                       => q"$br.ReadBoolean()"
+          case TypeId.Builtins.i08                       => q"$br.ReadSByte()"
+          case TypeId.Builtins.i16                       => q"$br.ReadInt16()"
+          case TypeId.Builtins.i32                       => q"$br.ReadInt32()"
+          case TypeId.Builtins.i64                       => q"$br.ReadInt64()"
+          case TypeId.Builtins.u08                       => q"$br.ReadByte()"
+          case TypeId.Builtins.u16                       => q"$br.ReadUInt16()"
+          case TypeId.Builtins.u32                       => q"$br.ReadUInt32()"
+          case TypeId.Builtins.u64                       => q"$br.ReadUInt64()"
+          case TypeId.Builtins.f32                       => q"$br.ReadSingle()"
+          case TypeId.Builtins.f64                       => q"$br.ReadDouble()"
+          case TypeId.Builtins.f128                      => q"$br.ReadDecimal()"
+          case TypeId.Builtins.str                       => q"$br.ReadString()"
+          case TypeId.Builtins.bytes                     => q"$csByteString.ReadBytes($br)"
+          case TypeId.Builtins.uid                       => q"new $csGuid($br.ReadBytes(16))"
+          case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.DecodeFromBin($br)"
+          case other                                     => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
+        }
+      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+    }
+
+    private def uebaEncodeStmt(id: TypeId, bw: TextTree[CSValue], value: TextTree[CSValue]): TextTree[CSValue] = id match {
+      case u: TypeId.User => q"${uebaCodecName(u)}.Instance.Encode(ctx, $bw, $value);"
+      case b: TypeId.BuiltinScalar =>
+        b match {
+          case TypeId.Builtins.bytes                     => q"$csByteString.WriteBytes($value, $bw);"
+          case TypeId.Builtins.uid                       => q"$bw.Write($value.ToByteArray());"
+          case TypeId.Builtins.tsu | TypeId.Builtins.tso => q"$baboonTimeFormats.EncodeToBin($value, $bw);"
+          case _: TypeId.BuiltinScalar                   => q"$bw.Write($value);"
+        }
+      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+    }
+
     private def renderContainer(error: String, success: String): String = {
       val p = resolved.pattern.get.replace("$error", error).replace("$success", success)
       s"${resolved.resultType.get}$p"
@@ -190,12 +268,12 @@ object CSServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
-          val inCodec = jsonCodecName(m.sig.id.asInstanceOf[TypeId.User])
+          val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
           val encodeOutput = m.out match {
             case Some(outRef) =>
-              val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
-              q"""var encoded = $outCodec.Instance.Encode(ctx, result);
+              val encOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"result")
+              q"""var encoded = $encOut;
                  |return encoded.ToString($nsFormatting.None);""".stripMargin
             case None =>
               q"""return "null";"""
@@ -209,7 +287,7 @@ object CSServiceWiringTranslator {
           q"""case "${m.name.name}":
              |{
              |    var wire = $nsJToken.Parse(data);
-             |    var decoded = $inCodec.Instance.Decode(ctx, wire);
+             |    var decoded = $decodeIn;
              |    $callExpr
              |    ${encodeOutput.shift(4).trim}
              |}""".stripMargin
@@ -234,14 +312,14 @@ object CSServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
-          val inCodec = uebaCodecName(m.sig.id.asInstanceOf[TypeId.User])
+          val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
           val encodeOutput = m.out match {
             case Some(outRef) =>
-              val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
+              val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"bw", q"result")
               q"""var oms = new $memoryStream();
                  |var bw = new $binaryWriter(oms);
-                 |$outCodec.Instance.Encode(ctx, bw, result);
+                 |$encStmt
                  |bw.Flush();
                  |return oms.ToArray();""".stripMargin
             case None =>
@@ -257,7 +335,7 @@ object CSServiceWiringTranslator {
              |{
              |    var ims = new $memoryStream(data);
              |    var br = new $binaryReader(ims);
-             |    var decoded = $inCodec.Instance.Decode(ctx, br);
+             |    var decoded = $decodeIn;
              |    $callExpr
              |    ${encodeOutput.shift(4).trim}
              |}""".stripMargin
@@ -314,15 +392,15 @@ object CSServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val inCodec = jsonCodecName(m.sig.id.asInstanceOf[TypeId.User])
-          val inRef   = trans.asCsRef(m.sig, domain, evo)
+          val inRef    = trans.asCsRef(m.sig, domain, evo)
+          val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
           val decodeStep =
             q"""${ct("BaboonWiringError", renderFq(inRef))} input;
                |try
                |{
                |    var wire = $nsJToken.Parse(data);
-               |    input = rt.Pure<$baboonWiringError, $inRef>($inCodec.Instance.Decode(ctx, wire));
+               |    input = rt.Pure<$baboonWiringError, $inRef>($decodeIn);
                |}
                |catch ($csException ex)
                |{
@@ -333,8 +411,8 @@ object CSServiceWiringTranslator {
 
           val callAndEncodeStep = m.out match {
             case Some(outRef) =>
-              val outType  = trans.asCsRef(outRef, domain, evo)
-              val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
+              val outType   = trans.asCsRef(outRef, domain, evo)
+              val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
 
               val callBody = if (hasErrType) {
                 val errType = trans.asCsRef(m.err.get, domain, evo)
@@ -367,7 +445,7 @@ object CSServiceWiringTranslator {
                  |{
                  |    try
                  |    {
-                 |        var encoded = $outCodec.Instance.Encode(ctx, v);
+                 |        var encoded = $encodeOut;
                  |        return rt.Pure<$baboonWiringError, $csString>(encoded.ToString($nsFormatting.None));
                  |    }
                  |    catch ($csException ex)
@@ -437,8 +515,8 @@ object CSServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val inCodec = uebaCodecName(m.sig.id.asInstanceOf[TypeId.User])
-          val inRef   = trans.asCsRef(m.sig, domain, evo)
+          val inRef    = trans.asCsRef(m.sig, domain, evo)
+          val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"br")
 
           val decodeStep =
             q"""${ct("BaboonWiringError", renderFq(inRef))} input;
@@ -446,7 +524,7 @@ object CSServiceWiringTranslator {
                |{
                |    var ms = new $memoryStream(data);
                |    var br = new $binaryReader(ms);
-               |    input = rt.Pure<$baboonWiringError, $inRef>($inCodec.Instance.Decode(ctx, br));
+               |    input = rt.Pure<$baboonWiringError, $inRef>($decodeIn);
                |}
                |catch ($csException ex)
                |{
@@ -457,8 +535,8 @@ object CSServiceWiringTranslator {
 
           val callAndEncodeStep = m.out match {
             case Some(outRef) =>
-              val outType  = trans.asCsRef(outRef, domain, evo)
-              val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
+              val outType = trans.asCsRef(outRef, domain, evo)
+              val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"bw", q"v")
 
               val callBody = if (hasErrType) {
                 val errType = trans.asCsRef(m.err.get, domain, evo)
@@ -493,7 +571,7 @@ object CSServiceWiringTranslator {
                  |    {
                  |        var oms = new $memoryStream();
                  |        var bw = new $binaryWriter(oms);
-                 |        $outCodec.Instance.Encode(ctx, bw, v);
+                 |        $encStmt
                  |        bw.Flush();
                  |        return rt.Pure<$baboonWiringError, byte[]>(oms.ToArray());
                  |    }

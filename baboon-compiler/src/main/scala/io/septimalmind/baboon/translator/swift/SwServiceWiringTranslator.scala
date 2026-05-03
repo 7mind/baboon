@@ -60,6 +60,108 @@ object SwServiceWiringTranslator {
       SwType(srcRef.pkg, s"${srcRef.name}_UebaCodec", srcRef.fq, importAs = Some(baseFileName))
     }
 
+    // JSON encode/decode for both User types (via generated codec) and BuiltinScalar (inline).
+    // Swift wiring JSON: wire is Any (from JSONSerialization.jsonObject), encode returns Any.
+    private def jsonDecodeExpr(id: TypeId, wire: TextTree[SwValue]): TextTree[SwValue] = id match {
+      case u: TypeId.User => q"try ${jsonCodecName(u)}.instance.decode(ctx, $wire)"
+      case b: TypeId.BuiltinScalar =>
+        b match {
+          case TypeId.Builtins.bit   => q"$wire as! Bool"
+          case TypeId.Builtins.i08   => q"Int8(truncatingIfNeeded: ($wire as! NSNumber).intValue)"
+          case TypeId.Builtins.i16   => q"Int16(truncatingIfNeeded: ($wire as! NSNumber).intValue)"
+          case TypeId.Builtins.i32   => q"Int32(truncatingIfNeeded: ($wire as! NSNumber).intValue)"
+          case TypeId.Builtins.i64   => q"($wire is String ? Int64($wire as! String)! : Int64(truncatingIfNeeded: ($wire as! NSNumber).int64Value))"
+          case TypeId.Builtins.u08   => q"UInt8(truncatingIfNeeded: ($wire as! NSNumber).intValue)"
+          case TypeId.Builtins.u16   => q"UInt16(truncatingIfNeeded: ($wire as! NSNumber).intValue)"
+          case TypeId.Builtins.u32   => q"UInt32(truncatingIfNeeded: ($wire as! NSNumber).intValue)"
+          case TypeId.Builtins.u64   => q"($wire is String ? UInt64($wire as! String)! : UInt64(truncatingIfNeeded: ($wire as! NSNumber).uint64Value))"
+          case TypeId.Builtins.f32   => q"Float(($wire as! NSNumber).doubleValue)"
+          case TypeId.Builtins.f64   => q"($wire as! NSNumber).doubleValue"
+          case TypeId.Builtins.f128  => q"$baboonDecimal($wire is String ? $wire as! String : String(describing: $wire))"
+          case TypeId.Builtins.str   => q"($wire as! String)"
+          case TypeId.Builtins.uid   => q"UUID(uuidString: $wire as! String)!"
+          case TypeId.Builtins.bytes => q"$baboonByteStringTools.fromHexString($wire as! String)"
+          case TypeId.Builtins.tsu   => q"$baboonTimeFormats.parseUtc($wire as! String)"
+          case TypeId.Builtins.tso   => q"$baboonTimeFormats.parseOffset($wire as! String)"
+          case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
+        }
+      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+    }
+
+    private def jsonEncodeExpr(id: TypeId, value: TextTree[SwValue]): TextTree[SwValue] = id match {
+      case u: TypeId.User => q"${jsonCodecName(u)}.instance.encode(ctx, $value)"
+      case b: TypeId.BuiltinScalar =>
+        b match {
+          case TypeId.Builtins.bit                                             => q"$value"
+          case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 => q"Int($value)"
+          case TypeId.Builtins.i64                                             => q"String($value)"
+          case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 => q"Int($value)"
+          case TypeId.Builtins.u64                                             => q"String($value)"
+          case TypeId.Builtins.f32                                             => q"Double($value)"
+          case TypeId.Builtins.f64                                             => q"$value"
+          case TypeId.Builtins.f128                                            => q"$value.stringValue"
+          case TypeId.Builtins.str                                             => q"$value"
+          case TypeId.Builtins.uid                                             => q"$value.uuidString"
+          case TypeId.Builtins.bytes                                           => q"$baboonByteStringTools.toHexString($value)"
+          case TypeId.Builtins.tsu                                             => q"$baboonTimeFormats.formatUtc($value)"
+          case TypeId.Builtins.tso                                             => q"$baboonTimeFormats.formatOffset($value)"
+          case other                                                           => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
+        }
+      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+    }
+
+    private def uebaDecodeExpr(id: TypeId, reader: TextTree[SwValue]): TextTree[SwValue] = id match {
+      case u: TypeId.User => q"try ${uebaCodecName(u)}.instance.decode(ctx, $reader)"
+      case b: TypeId.BuiltinScalar =>
+        b match {
+          case TypeId.Builtins.bit   => q"$reader.readBool()"
+          case TypeId.Builtins.i08   => q"$reader.readI8()"
+          case TypeId.Builtins.i16   => q"$reader.readI16()"
+          case TypeId.Builtins.i32   => q"$reader.readI32()"
+          case TypeId.Builtins.i64   => q"$reader.readI64()"
+          case TypeId.Builtins.u08   => q"$reader.readU8()"
+          case TypeId.Builtins.u16   => q"$reader.readU16()"
+          case TypeId.Builtins.u32   => q"$reader.readU32()"
+          case TypeId.Builtins.u64   => q"$reader.readU64()"
+          case TypeId.Builtins.f32   => q"$reader.readF32()"
+          case TypeId.Builtins.f64   => q"$reader.readF64()"
+          case TypeId.Builtins.f128  => q"$reader.readDecimal()"
+          case TypeId.Builtins.str   => q"try $reader.readString()"
+          case TypeId.Builtins.bytes => q"try $reader.readBytes()"
+          case TypeId.Builtins.uid   => q"try $reader.readUuid()"
+          case TypeId.Builtins.tsu   => q"$reader.readTsu()"
+          case TypeId.Builtins.tso   => q"$reader.readTso()"
+          case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
+        }
+      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+    }
+
+    private def uebaEncodeStmt(id: TypeId, writer: TextTree[SwValue], value: TextTree[SwValue]): TextTree[SwValue] = id match {
+      case u: TypeId.User => q"${uebaCodecName(u)}.instance.encode(ctx, $writer, $value)"
+      case b: TypeId.BuiltinScalar =>
+        b match {
+          case TypeId.Builtins.bit   => q"$writer.writeBool($value)"
+          case TypeId.Builtins.i08   => q"$writer.writeI8($value)"
+          case TypeId.Builtins.i16   => q"$writer.writeI16($value)"
+          case TypeId.Builtins.i32   => q"$writer.writeI32($value)"
+          case TypeId.Builtins.i64   => q"$writer.writeI64($value)"
+          case TypeId.Builtins.u08   => q"$writer.writeU8($value)"
+          case TypeId.Builtins.u16   => q"$writer.writeU16($value)"
+          case TypeId.Builtins.u32   => q"$writer.writeU32($value)"
+          case TypeId.Builtins.u64   => q"$writer.writeU64($value)"
+          case TypeId.Builtins.f32   => q"$writer.writeF32($value)"
+          case TypeId.Builtins.f64   => q"$writer.writeF64($value)"
+          case TypeId.Builtins.f128  => q"$writer.writeDecimal($value)"
+          case TypeId.Builtins.str   => q"$writer.writeString($value)"
+          case TypeId.Builtins.bytes => q"$writer.writeBytes($value)"
+          case TypeId.Builtins.uid   => q"$writer.writeUuid($value)"
+          case TypeId.Builtins.tsu   => q"$writer.writeTsu($value)"
+          case TypeId.Builtins.tso   => q"$writer.writeTso($value)"
+          case other                 => throw new RuntimeException(s"BUG: Unsupported builtin scalar in service wiring: $other")
+        }
+      case other => throw new RuntimeException(s"BUG: Non-scalar type in service wiring: $other")
+    }
+
     private def renderContainer(error: String, success: String): String = {
       val p        = resolved.pattern.get.replace("$error", error).replace("$success", success)
       val typeName = resolved.hkt.map(_.name).getOrElse(resolved.resultType.get)
@@ -150,12 +252,12 @@ object SwServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
-          val inCodec = jsonCodecName(m.sig.id.asInstanceOf[TypeId.User])
+          val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
           val encodeOutput = m.out match {
             case Some(outRef) =>
-              val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
-              q"""let encoded = $outCodec.instance.encode(ctx, result)
+              val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"result")
+              q"""let encoded = $encodeOut
                  |let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
                  |return String(data: jsonData, encoding: .utf8)!""".stripMargin
             case None =>
@@ -169,7 +271,7 @@ object SwServiceWiringTranslator {
 
           q""""${m.name.name}": {
              |    let wire = try JSONSerialization.jsonObject(with: data.data(using: .utf8)!, options: [.fragmentsAllowed])
-             |    let decoded = try $inCodec.instance.decode(ctx, wire)
+             |    let decoded = $decodeIn
              |    $callExpr
              |    ${encodeOutput.shift(4).trim}
              |},""".stripMargin
@@ -195,13 +297,13 @@ object SwServiceWiringTranslator {
       val svcName = service.id.name.name
       val cases = service.methods.map {
         m =>
-          val inCodec = uebaCodecName(m.sig.id.asInstanceOf[TypeId.User])
+          val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"reader")
 
           val encodeOutput = m.out match {
             case Some(outRef) =>
-              val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
+              val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"writer", q"result")
               q"""let writer = $baboonBinTools.createWriter()
-                 |$outCodec.instance.encode(ctx, writer, result)
+                 |$encStmt
                  |return writer.toData()""".stripMargin
             case None =>
               q"return Data()"
@@ -214,7 +316,7 @@ object SwServiceWiringTranslator {
 
           q""""${m.name.name}": {
              |    let reader = $baboonBinTools.createReader(data)
-             |    let decoded = try $inCodec.instance.decode(ctx, reader)
+             |    let decoded = $decodeIn
              |    $callExpr
              |    ${encodeOutput.shift(4).trim}
              |},""".stripMargin
@@ -266,14 +368,14 @@ object SwServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val inCodec = jsonCodecName(m.sig.id.asInstanceOf[TypeId.User])
-          val inRef   = trans.asSwRef(m.sig, domain, evo)
+          val inRef    = trans.asSwRef(m.sig, domain, evo)
+          val decodeIn = jsonDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"wire")
 
           val decodeStep =
             q"""var input: ${ct(bweFq, renderFq(inRef))}
                |do {
                |    let wire = try JSONSerialization.jsonObject(with: data.data(using: .utf8)!, options: [.fragmentsAllowed])
-               |    input = rt.pure(try $inCodec.instance.decode(ctx, wire))
+               |    input = rt.pure($decodeIn)
                |} catch {
                |    input = rt.fail($baboonWiringError.decoderFailed(method, error))
                |}""".stripMargin
@@ -282,7 +384,7 @@ object SwServiceWiringTranslator {
 
           val callAndEncodeStep = m.out match {
             case Some(outRef) =>
-              val outCodec = jsonCodecName(outRef.id.asInstanceOf[TypeId.User])
+              val encodeOut = jsonEncodeExpr(outRef.id.asInstanceOf[TypeId.Scalar], q"v")
 
               val callBody = if (hasErrType) {
                 q"""do {
@@ -305,7 +407,7 @@ object SwServiceWiringTranslator {
                  |}
                  |return rt.flatMap(output) { v in
                  |    do {
-                 |        let encoded = $outCodec.instance.encode(ctx, v)
+                 |        let encoded = $encodeOut
                  |        let jsonData = try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys, .fragmentsAllowed])
                  |        return rt.pure(String(data: jsonData, encoding: .utf8)!)
                  |    } catch {
@@ -365,14 +467,14 @@ object SwServiceWiringTranslator {
 
       val cases = service.methods.map {
         m =>
-          val inCodec = uebaCodecName(m.sig.id.asInstanceOf[TypeId.User])
-          val inRef   = trans.asSwRef(m.sig, domain, evo)
+          val inRef    = trans.asSwRef(m.sig, domain, evo)
+          val decodeIn = uebaDecodeExpr(m.sig.id.asInstanceOf[TypeId.Scalar], q"reader")
 
           val decodeStep =
             q"""var input: ${ct(bweFq, renderFq(inRef))}
                |do {
                |    let reader = $baboonBinTools.createReader(data)
-               |    input = rt.pure(try $inCodec.instance.decode(ctx, reader))
+               |    input = rt.pure($decodeIn)
                |} catch {
                |    input = rt.fail($baboonWiringError.decoderFailed(method, error))
                |}""".stripMargin
@@ -381,7 +483,7 @@ object SwServiceWiringTranslator {
 
           val callAndEncodeStep = m.out match {
             case Some(outRef) =>
-              val outCodec = uebaCodecName(outRef.id.asInstanceOf[TypeId.User])
+              val encStmt = uebaEncodeStmt(outRef.id.asInstanceOf[TypeId.Scalar], q"writer", q"v")
 
               val callBody = if (hasErrType) {
                 q"""do {
@@ -405,7 +507,7 @@ object SwServiceWiringTranslator {
                  |return rt.flatMap(output) { v in
                  |    do {
                  |        let writer = $baboonBinTools.createWriter()
-                 |        $outCodec.instance.encode(ctx, writer, v)
+                 |        $encStmt
                  |        return rt.pure(writer.toData())
                  |    } catch {
                  |        return rt.fail($baboonWiringError.encoderFailed(method, error))
