@@ -219,12 +219,15 @@ data X[T, T] { a: lst[T] }   // REJECTED — duplicate type parameter `T`
 
 #### 2.5.5 Self-reference in a template body (matrix #5)
 
-A template may not reference itself in its own body. See §4 for the full
-treatment; the direct field-position case is unconditionally rejected:
+A template may not reference itself in its own body. This is a special case
+of matrix #1 (field-position template instantiation forbidden by locked
+decision #3): the inner `X[T]` is a template instantiation in field position.
+§4 restates this rule and shows why container-mediated forms are also rejected
+on the same grounds (see §4.3).
 
 ```text
 data X[T] {
-  rec: X[T]   // REJECTED — template self-reference
+  rec: X[T]   // REJECTED — template instantiation in field position (matrix #1)
 }
 ```
 
@@ -389,70 +392,81 @@ diagram.
 
 ## 4. Self-reference and DAG-only structure
 
-The matrix-#5 worked example is at §2.5.5; this section discusses the
-choice of strict vs permissive interpretation.
+### 4.1 The governing rule
 
-### 4.1 Locked rule
+Locked decision #3 forbids template instantiation in any position other
+than the right-hand side of a type alias (matrix #1). Self-reference in a
+template body is therefore not a separate rule: it is a special case of
+matrix #1. Whenever a template names itself inside its own body, that
+occurrence is a template instantiation in field position and is rejected
+on exactly those grounds.
 
-Locked decision #2: self-reference is forbidden; only DAG-shaped graphs
-of templates and instantiations are valid.
+Locked decision #2 ('Self-reference is forbidden. Only DAG-shaped
+template-and-instantiation graphs are valid.') is enforced through this same
+mechanism in the template-and-instantiation graph; locked decision #3
+('alias-only instantiation') is the operational lever that makes the
+prohibition mechanical at parse/type time.
 
-### 4.2 Two interpretations
+### 4.2 Direct field-position case (matrix #5)
 
-The phrase "self-reference" admits two readings, distinguished here for
-clarity:
+```text
+data X[T] {
+  rec: X[T]   // REJECTED — template instantiation in field position (matrix #1)
+}
+```
 
-- **Direct field-position recursion.** A template body that names itself
-  (parameterised or not) directly in a field type position:
+The inner `X[T]` is a template instantiation expression in field position. Decision #3
+rejects it before the question of recursion is even reached. If the
+instantiation were somehow materialised it would produce `data Y { rec: Y }`
+for `type Y = X[...]`, which is direct self-referential recursion; but the
+rejection happens earlier, at the instantiation-position check.
 
-  ```text
-  data X[T] {
-    rec: X[T]   // direct self-reference
-  }
-  ```
+### 4.3 Container-mediated form is also rejected by matrix #1
 
-  This form is **forbidden unconditionally**. Materialising it would
-  produce `data Y { rec: Y }` for any `type Y = X[...]`, which is direct
-  recursion the type system cannot terminate.
+```text
+data Tree[T] {
+  children: lst[Tree[T]]   // REJECTED — template instantiation in field position (matrix #1)
+}
+```
 
-- **Container-mediated recursion.** A template body that names itself
-  through a builtin collection wrapper:
+The inner `Tree[T]` is equally a template instantiation expression in field
+position — the surrounding `lst[…]` is a builtin collection, not an alias
+RHS, so it provides no exemption from decision #3. This form is forbidden on the same
+grounds as the direct case.
 
-  ```text
-  data Tree[T] {
-    children: lst[Tree[T]]   // container-mediated self-reference
-  }
-  ```
+If this template were materialised it would produce
+`data IntTree { children: lst[IntTree] }`, a shape that
+`BaboonValidator.checkLoops` would accept for a hand-written non-template
+type. That acceptance does not retroactively permit the in-body instantiation
+that would have been required to derive it.
 
-  Materialising this form would produce
-  `data IntTree { children: lst[IntTree] }`, which is a valid recursive
-  shape that the existing non-template validator
-  (`BaboonValidator.checkLoops`) already accepts for hand-written
-  recursive types.
+### 4.4 Hand-written recursive types remain valid
 
-### 4.3 Default for M29: strict (Option A)
+Users who need a recursive container structure write the type directly
+without a template:
 
-This spec defaults to the strict reading: **container-mediated recursion
-within a template body is also forbidden in M29.** The rationale is the
-literal wording of locked decision #2 ("only DAG-shaped"), which by the
-strictest reading rejects any cycle in the template-and-instantiation
-graph regardless of whether a builtin collection mediates it.
+```text
+root adt RecTest1 {
+  data Branch1 { value: RecTest1 }
+  data Branch2 { value: i32 }
+}
 
-Users who need a recursive container structure can hand-write a
-non-template recursive type (the existing `checkLoops` permits this for
-non-template types — see `baboon-compiler/src/test/resources/baboon/pkg0/pkg03.baboon`
-lines 53-61, where `RecTest1` self-references directly via an ADT branch
-and `RecTest2` self-references through `opt[RecTest2]`) and reference that
-from any template that needs it.
+root adt RecTest2 {
+  data Branch1 { value: opt[RecTest2] }
+}
+```
 
-> **DESIGN NOTE:** this strict reading is the default chosen by the M29
-> plan; revisit if a use case demands container-mediated recursion within
-> a template body. The permissive reading (Option B) would limit the
-> self-reference detector to direct field-position recursion only and
-> defer container-mediated cycles to the existing `checkLoops` pass after
-> monomorphisation. Switching readings is a single-site change in the
-> validator plus a corresponding update to this section; the choice does
-> not affect any wire-format invariant.
+`BaboonValidator.checkLoops` (L69-87) and the `terminatesLoop` rule (L89-111)
+in `baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala`
+accept recursion when at least one termination path exists. Two fixtures
+demonstrate this: `RecTest1` (`pkg03.baboon:53-56`) uses **ADT-branch
+alternative termination** — `Branch1`'s direct self-reference is acceptable
+because `Branch2 { value: i32 }` terminates the ADT (the `terminatesLoop`
+ADT arm uses `exists`). `RecTest2` (`pkg03.baboon:59-61`) uses
+**option-mediated termination** — `opt[RecTest2]` terminates because `opt`
+is a builtin collection (the `_: DomainMember.Builtin` arm in
+`terminatesLoop`). A non-template recursive type can then be referenced from
+any template that needs it.
 
 ---
 
@@ -541,27 +555,39 @@ require separate milestones / decisions:
    pass.
 4. **Defaulted type parameters** (`X[T = i32]`). Sugar that does not
    affect the materialised wire form.
-5. **Field-position instantiation** (`field: Foo[Bar]`). Forbidden by
-   locked decision #3 and matrix #1.
-6. **Nested instantiation in alias RHS** (`type Y = Foo[Bar[i32]]`).
-   Forbidden by locked decision #3 and matrix #2.
-7. **Templated identifiers** (`id Foo[T] { ... }`). Identifier fields are
+5. **Templated identifiers** (`id Foo[T] { ... }`). Identifier fields are
    subject to a tightly controlled type set (M18) and templating opens
    wire-form questions independent of M29's monomorphisation question.
    The parser rejects `[…]` on `id` declarations.
-8. **Templates on ADT inheritance arms** (`+ Foo[T]`, `- Foo[T]`,
+6. **Templates on ADT inheritance arms** (`+ Foo[T]`, `- Foo[T]`,
    `^ Foo[T]`). M29 leaves `+` / `-` / `^` operating on non-templated
    names only (see §2.6).
-9. **Per-language reified generics in emitted source.** No backend emits
+7. **Per-language reified generics in emitted source.** No backend emits
    a generic type; every backend emits the monomorphised concrete type.
    This is the meaning of locked decision #4.
-10. **Evolution of templates as templates.** Locked decision #5: only the
+8. **Evolution of templates as templates.** Locked decision #5: only the
     materialised instances participate in `BaboonEvolution`. The
     evolution diff between two model versions is computed against each
     materialised concrete type independently, exactly as it is today for
     hand-written types. A template's body change affects every alias
     that instantiates it; the diff is observed at the alias-keyed
     concrete types, not at the template.
+9. **Alias-rewrite of in-body template instantiations.** The typer does
+    not structurally pattern-match a substituted template body against
+    existing top-level aliases in order to rewrite an in-body instantiation
+    to a reference to one. Concretely: even when a top-level alias
+    `type K = Tree[i32]` exists, a template body
+    `data Tree[T] { children: lst[Tree[T]] }` is rejected by matrix #1 —
+    the typer does not recognise that `lst[Tree[T]]` would substitute
+    to `lst[Tree[i32]]` and would match `lst[K]`. The acceptable form for
+    recursive container structures remains a hand-written non-template
+    recursive type (see §4.4). The reasons this path is excluded: the
+    match is order-dependent (works only when the matching alias already
+    exists at substitution time), it imposes a structural-equality scan
+    over the substituted body on every instantiation, and it would make
+    acceptance of a template body contingent on which other aliases happen
+    to be present in the same model version — a fragile and non-local
+    constraint.
 
 ---
 
