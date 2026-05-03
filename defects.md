@@ -237,6 +237,45 @@ No defects raised against PR-29P.4. Adversarial review (Opus) cleared with three
 
 ---
 
+## PR-29.2 — Parser: type-param head on declarations
+
+## [PR-29.2-D01] Negative test for non-bare-identifier type-param missing
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateHeadParserTest.scala:182-192`.
+**Description:** Brief required THREE negative tests (`data X[]`, `id Foo[T]`, and one for a non-bare-identifier in the bracket clause). The file ships only the first two. The omission matters because `idt.symbol` vs `typeRef` is the load-bearing distinction the spec calls out at §2.2: a regression that swaps `idt.symbol` for `typeRef` in `templateHead` would silently pass all current tests. The lock against `data X[lst[i32]] { … }` is the simplest contract test for this.
+**Fix:** Added two negative tests: `assertDtoFails("data X[lst[i32]] { f: i32 }")` (type constructor is not a bare identifier) and `assertDtoFails("data X[Foo.Bar] { f: i32 }")` (qualified name is not a bare identifier). Both pass; targeted gate `sbt baboonJVM/testOnly *TemplateHead*` PASS (18/18).
+
+## [PR-29.2-D02] No test demonstrates lowercase type-param parses successfully
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateHeadParserTest.scala:196-200`.
+**Description:** All positive tests use uppercase type-param names (`T`, `U`, `E`, `R`). Spec §2.2 explicitly states the parser does not enforce uppercase — convention only. No test demonstrates a lowercase type-param parses successfully. A future change tightening `templateHead` to require uppercase would slip past CI.
+**Fix:** Added positive test `parseDto("data X[t] { f: t }")` asserting `dto.typeParams == List(RawTypeName("t"))`. Locks the spec §2.2 "casing is convention only" contract. Targeted gate `sbt baboonJVM/testOnly *TemplateHead*` PASS (18/18).
+
+## [PR-29.2-D03] `typeParams` name overlap between field-position and declaration-head usages
+**Status:** resolved (deferred — defer to PR-29.7 if rename now risks PR-29.3 churn)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/defns/DefDto.scala:14-18` and `:25-29`.
+**Description:** Two near-identical bracket-list rules now coexist: the pre-existing `typeParams` (returns `NEList[RawTypeRef]`, used in field-position constructor refs at instantiation sites) and the new `templateHead` (returns `List[RawTypeName]`, used in declaration heads). Naming overlap is mild — `typeParams` for field-position refs is semantically arguments, not parameters — but the in-class neighbours invite future confusion.
+**Fix:** Defer; flagging only. Optional rename of the existing `typeParams` to `typeArgs` would clarify, but doing it now risks churn in PR-29.3 (alias instantiation RHS) which still uses the old `typeParams` rule. Revisit in PR-29.7 once the parser surface stabilises.
+
+## [PR-29.2-D04] Identifier rejection test brittle to spec §6.7 regression mode
+**Status:** resolved (deferred; documented test-strength gap, lower-priority than D01/D02)
+**Severity:** nit
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateHeadParserTest.scala:177` (approximate).
+**Description:** The `id Foo[T] { … }` test relies on the parser failing because `identifierEnclosed` does not consume `[T]` before `{`. The test asserts only `Parsed.Failure`, not the failure reason or position. If a future refactor adds optional `templateHead` to `identifierEnclosed` (silently violating spec §6.7), the test still passes only if some OTHER part of the body parse fails. The test is correct today but brittle to the exact regression spec §6.7 forbids.
+**Fix:** Defer; documented as a test-strength gap. PR-29.7 (validator + diagnostics) is a more natural home for a positive `TemplatedIdentifier` diagnostic that would also tighten this test.
+
+## [PR-29.2-D05] `typeParams = Nil` default may mask future plumbing gaps
+**Status:** resolved (deferred — by design until PR-29.4/PR-29.5)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/RawDto.scala:16,20,24,30` (approximate).
+**Description:** Default-value `typeParams: List[RawTypeName] = Nil` makes the field optional at construction. Plan §3.2 acknowledged this for source-compat, and only one external positional call site exists (`ScopeBuilder.scala:126`, 4-arg `RawDto` for synthetic `in` struct, which correctly defaults to `Nil`). Once PR-29.4/29.5 wires typer-side handling, the default-`Nil` path can mask "I forgot to plumb typeParams through".
+**Fix:** Defer until PR-29.4/PR-29.5. When typer support lands, drop the `= Nil` default and update the lone `ScopeBuilder` call site to pass `Nil` explicitly so future call sites cannot omit the field accidentally.
+
+---
+
 ### PR-29.1 round-2 fix summary (D01–D14)
 
 All 14 round-1 defects fixed in one round by a single Sonnet executor; round-2 reviewer (Opus) cleared with bottom-line `clean — no findings, all 14 round-1 defects resolved correctly with no regressions`. Per-defect results (final line numbers in `docs/spec/generics.md`):

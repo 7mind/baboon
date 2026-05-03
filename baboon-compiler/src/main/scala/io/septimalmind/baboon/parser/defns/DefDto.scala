@@ -17,6 +17,17 @@ class DefDto(context: ParserContext, meta: DefMeta) {
       .map(p => NEList.unsafeFrom(p.toList))
   }
 
+  /** Parses the optional type-parameter head `[T1, T2, …]` on a template declaration.
+    *
+    * Grammar: `"[" idt.symbol ("," idt.symbol)* "]"` — bare identifiers only (NOT typeRef), at
+    * least one parameter required so that `[]` produces a parse failure.
+    */
+  def templateHead[$: P]: P[List[RawTypeName]] = {
+    import fastparse.SingleLineWhitespace.whitespace
+    ("[" ~ idt.symbol.rep(min = 1, sep = ",") ~ "]")
+      .map(p => p.toList.map(RawTypeName.apply))
+  }
+
   def nonGenericTypeRef[$: P]: P[ScopedRef] = {
     idt.symbolSeq.map(s => ScopedRef(NEList.unsafeFrom(s.map(p => RawTypeName(p)).toList)))
   }
@@ -147,8 +158,9 @@ class DefDto(context: ParserContext, meta: DefMeta) {
 
   def dtoEnclosed[$: P]: P[RawDto] = {
     import fastparse.ScalaWhitespace.whitespace
-    P(meta.member(kw.data, meta.derived ~ struct.enclosed(dto))).map {
-      case (meta, name, (derived, members)) => RawDto(RawTypeName(name), members, derived, meta)
+    P(meta.member(kw.data, templateHead.? ~ meta.derived ~ struct.enclosed(dto))).map {
+      case (meta, name, (tps, derived, members)) =>
+        RawDto(RawTypeName(name), members, derived, meta, tps.getOrElse(Nil))
     }
   }
 

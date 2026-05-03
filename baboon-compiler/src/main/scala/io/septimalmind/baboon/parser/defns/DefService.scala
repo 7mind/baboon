@@ -15,9 +15,10 @@ class DefService(
 ) {
   Quirks.discard(context)
   def service[$: P]: P[RawService] = {
-    P(meta.member(kw.service, struct.enclosed(methods))).map {
-      case (meta, name, members) =>
-        RawService(RawTypeName(name), members, meta)
+    import fastparse.ScalaWhitespace.whitespace
+    P(meta.member(kw.service, dto.templateHead.? ~ struct.enclosed(methods))).map {
+      case (meta, name, (tps, members)) =>
+        RawService(RawTypeName(name), members, meta, tps.getOrElse(Nil))
     }
   }
 
