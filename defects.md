@@ -132,3 +132,128 @@ No defects raised against PR-29P.4. Adversarial review (Opus) cleared with three
 1. **nit — `RTCodecTest.scala:71-117` regression test posture.** The two new non-UTC tests are forward-looking guards, not fail-first reproductions of the original PR-29P.1 bug — that bug only manifested at offset==0, so non-zero offsets always passed. This is per the defect's own acceptance criterion ("non-UTC offset coverage exercised on every CI run regardless of fixture seed") and is documented in the inline test comment.
 2. **nit — `RTCodecTest.scala:71, 95` LOC.** The two test cases duplicate ~20 lines each, differing only in the offset literal. A table-driven helper would halve the LOC; deferred — refactor only justified if a third offset is added.
 3. **nit — `RandomJsonGenerator.scala:108-118` observable surface.** The split is correct, but L116 still hard-codes `ZoneOffset.UTC`, so the visible behavioral change is *only* "tso UTC-zero examples now print `+00:00` instead of `Z`". `tsuFormatter`'s `Z` literal is exercised only through the same UTC-zero path. This matches the D03 description and is intentional surgical scope.
+
+---
+
+## PR-29.1 — generics spec doc
+
+## [PR-29.1-D01] `derived` annotation syntax in spec uses double-colon form, contradicting actual grammar
+**Status:** resolved (round 2)
+**Severity:** major
+**Location:** `docs/spec/generics.md:466, 469-472, 489, 561-562, 569-577, 603, 610`.
+**Description:** Spec writes `: derived[json] : derived[ueba]` (two `:` clauses). Real grammar (`baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/defns/base/DefMeta.scala:67-72`) uses single `:` followed by comma-separated annotations: `: derived[json], derived[ueba]`. Confirmed by every fixture examined: `m28-ok/u64-map-key.baboon:5`, `pkg0/pkg01.baboon:5,52,70,83,104`. The spec's worked example §7 cannot compile under the real grammar.
+**Suggested fix:** Replace every double-colon form with single-colon comma-separated form throughout the spec.
+
+## [PR-29.1-D02] `RawAlias` carries no `derived` set today; spec presents un-implementable surface syntax without flagging the parser extension
+**Status:** resolved (round 2)
+**Severity:** major
+**Location:** `docs/spec/generics.md:466, 489, 569-577`; underlying source `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/RawDto.scala:32` (`RawAlias(name, target, meta)` — no derivation field).
+**Description:** Spec presents `type IntPage = Page[i32] : derived[json], derived[ueba]` as legal surface syntax (decision #6 propagation). The current alias parser does not consume a `derived` clause, and `RawAlias` has no field for one. The implementation plan §3.4 step 4 implicitly assumes the field exists. As written, the spec ships an instruction the parser cannot implement without an undocumented schema change. PR-29.2/PR-29.3 will need to extend `RawAlias` and the alias parser to carry a derivation set; the spec must say so.
+**Suggested fix:** Add a sentence to §2.4 (or §5): "M29 extends `RawAlias` to carry an optional `derived` set parsed in the same `: name[…], …` form used for DTO/ADT declarations. Pre-M29 aliases never carried derivation."
+
+## [PR-29.1-D03] Field-separator `;` used in DTO body example, not part of the grammar
+**Status:** resolved (round 2)
+**Severity:** major
+**Location:** `docs/spec/generics.md:362, 364, 366`.
+**Description:** Spec writes `data Page[T] { items: lst[T]; total: u32 }` using `;` as a field separator. The DTO grammar (`DefDto.scala:143-146`) uses `dtoMember.rep()` with `ScalaWhitespace`; fields separate on whitespace alone, `;` is not consumed. No fixture uses `;`.
+**Suggested fix:** Drop the semicolons; use newline or whitespace separation matching real fixtures.
+
+## [PR-29.1-D04] `adt Result[T, E] = …` uses non-existent `=` form for ADT declaration
+**Status:** resolved (round 2)
+**Severity:** major
+**Location:** `docs/spec/generics.md:21, 65-68`.
+**Description:** §1 line 21 introduces ADT templates as `adt Result[T, E] = …`, but the §2.1 example two pages later correctly uses `adt Result[T, E] { data Ok { … } data Err { … } }`. Real grammar (verified `m20-ok/simple-include.baboon`) uses block-body `adt Name { data … data … }`, never `adt Name = …`. The §1 form contradicts both real Baboon syntax and the spec's own §2.1 example.
+**Suggested fix:** Replace `adt Result[T, E] = ...` with `adt Result[T, E] { ... }` throughout §1 and any other introductory text. Cross-check `contract` and `service` similarly (D05).
+
+## [PR-29.1-D05] `contract Acked[T] = …` likewise wrong (no `=` form for contracts)
+**Status:** resolved (round 2)
+**Severity:** major
+**Location:** `docs/spec/generics.md:21`.
+**Description:** Same defect as PR-29.1-D04 for contracts. Real contract grammar (`DefContract.scala`) uses a body block, not `=`. Verify against any contract fixture.
+**Suggested fix:** Align §1 phrasing for contract declarations with the body-block form actually used in §2.1.
+
+## [PR-29.1-D06] Locked decision #6 silently broadened from `derived[…]` to enumerated `derived[json]` and `derived[ueba]`
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `docs/spec/generics.md:455-457`.
+**Description:** Spec quotes "`derived[json]` and `derived[ueba]` are written **only on the alias**". Locked decision #6 in `tasks.md` says "`derived[…]` written only on the alias". The spec's enumeration is substantively fine but excludes any future `derived[graphql]` etc.
+**Suggested fix:** Use `: derived[…]` matching `tasks.md`, not the two-kind enumeration.
+
+## [PR-29.1-D07] Two-aliases-different-derivation case unaddressed
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `docs/spec/generics.md:455-490` (§5).
+**Description:** A user reading §5 can ask: if `type IntPage = Page[i32] : derived[json]` and `type StrPage = Page[str] : derived[ueba]` instantiate the same template with different derivation sets, do they each get their own propagated set? §3.4 establishes that distinct aliases produce distinct types, so by composition each alias's derivation propagates independently — but the spec never says it.
+**Suggested fix:** Add one sentence to §5 confirming each alias's derivation propagates independently to its own materialised concrete type.
+
+## [PR-29.1-D08] Self-reference §4 escape-hatch claim unverified — "checkLoops permits container-mediated cycles for non-template types" lacks a fixture/test citation
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `docs/spec/generics.md:434-436`.
+**Description:** §4 tells readers needing recursive container structures to "hand-write a non-template recursive type … the existing `checkLoops` permits this for non-template types." Plausible (and consistent with the validator's documented behaviour), but the spec makes a load-bearing claim about the validator without citing a fixture or test that demonstrates it.
+**Suggested fix:** Cite a specific fixture (search `baboon-compiler/src/test/resources/baboon/` for any existing non-template type with a `lst[Self]` or `opt[Self]` field). If no such fixture exists, soften the claim or reference `BaboonValidator.checkLoops` source line.
+
+## [PR-29.1-D09] `: root` on a template body not addressed
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `docs/spec/generics.md` §5.
+**Description:** §7.1 uses `root type IntPage = …` (alias-side `root`), implying the alias is the canonical site for `root`, but no rule states this explicitly. A reader could ask: may `data Page[T]` itself carry `root`? By analogy with `derived` (decision #6), `root` should also be alias-only on templates — but the spec is silent.
+**Suggested fix:** Add one sentence to §5 (or a new §5.4): "Like `: derived[…]`, the `root` keyword applies only to aliases of templates, not to template declarations themselves."
+
+## [PR-29.1-D10] Type-param vs top-level type name collision unaddressed
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `docs/spec/generics.md` §2.2-§2.3.
+**Description:** Type-param names are bare identifiers (no casing rule per the parser). What if a template `data X[T] { f: T }` is declared in a domain that also has a top-level `data T { … }`? Spec must say either "type-param `T` shadows any same-named type within the body" or "is a name-collision error".
+**Suggested fix:** Add a sentence to §2.3 stating the resolution rule (likely "type-param shadows top-level types within the template body").
+
+## [PR-29.1-D11] `any[T]` substitution coverage not stated in spec
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `docs/spec/generics.md` §2.3.
+**Description:** Spec lists `any[T]` as a legal use of the type-param. The plan doc §5.10 flags this as a substitution-walker concern. Spec should at minimum state that `T` inside `any[T]` is substituted at monomorphisation.
+**Suggested fix:** Add a clarifying clause to §2.3: "…including the underlying type of `any[T]`, which is itself substituted at monomorphisation."
+
+## [PR-29.1-D12] Tone deviation from precedent — duplicate "document wins" preface
+**Status:** resolved (round 2)
+**Severity:** nit
+**Location:** `docs/spec/generics.md:11-12, 632-633`.
+**Description:** Repeats the "document wins, compiler is wrong" preface twice — once at the top, once at the very bottom. `identifier-repr.md` only says it once (line 8-9).
+**Suggested fix:** Trim the duplicate at the end of §8.
+
+## [PR-29.1-D13] §2.5.5 forward-pointer asymmetry with §4
+**Status:** resolved (round 2)
+**Severity:** nit
+**Location:** `docs/spec/generics.md:219-226`.
+**Description:** §2.5.5 references §4 for "the full treatment", but §4 discusses both readings of self-reference without citing §2.5.5 back. The reader entering at §4 has no signpost to find the matrix-#5 worked example.
+**Suggested fix:** Tighten the cross-reference: §4 should reference §2.5.5 for the matrix-#5 example.
+
+## [PR-29.1-D14] §2.5.6 defers diagnostic-name choice to future PR ambiguously
+**Status:** resolved (round 2)
+**Severity:** nit
+**Location:** `docs/spec/generics.md:228-241`.
+**Description:** §2.5.6 says diagnostic "may surface as a generic 'name not found' form unless PR-29.7 elects to ship a more specific `OrphanTypeParam` printer". Spec is the authority for surface behaviour; deferring the diagnostic-name decision to a future PR reads ambiguously. Other matrix-item subsections (e.g. §2.5.9, §5.3) handle this by stating "diagnostic name is finalised in PR-29.7" — match that pattern.
+**Suggested fix:** Either commit to the diagnostic name (`OrphanTypeParam`) or rewrite to match the §2.5.9/§5.3 pattern: "Diagnostic name finalised in PR-29.7."
+
+---
+
+### PR-29.1 round-2 fix summary (D01–D14)
+
+All 14 round-1 defects fixed in one round by a single Sonnet executor; round-2 reviewer (Opus) cleared with bottom-line `clean — no findings, all 14 round-1 defects resolved correctly with no regressions`. Per-defect results (final line numbers in `docs/spec/generics.md`):
+
+- **D01** (multiple sites: 486, 492, 587-588, 595-600, 629, 636) — replaced every `: derived[X] : derived[Y]` with `: derived[X], derived[Y]`. Verified against `pkg0/pkg01.baboon:5,52,70,83,104` and `DefMeta.scala:67-72`.
+- **D02** (lines 461-464) — added intro paragraph at the start of §5: "M29 extends `RawAlias` to carry an optional `derived` set parsed in the same `: name[…], …` form used for DTO/ADT declarations. Pre-M29 aliases never carried derivation."
+- **D03** (lines ~362-366) — rewrote `data Page[T] { items: lst[T]; total: u32 }` as multi-line newline-separated form.
+- **D04** (line 21 + residual at line 297 in §2.6 not in the original brief) — replaced `adt Result[T, E] = ...` with `adt Result[T, E] { ... }`. Cross-referenced spec §2.1 examples.
+- **D05** (line 21) — replaced `contract Acked[T] = ...` with `contract Acked[T] { ... }`. Verified contract block-body syntax against `pkg0/pkg03.baboon:75-78,89-91,136-144,149-151`.
+- **D06** (lines 468-471) — replaced enumerated wording with `: derived[…]` form, matching `tasks.md` decision #6.
+- **D07** (lines 473-476) — added paragraph after §5.1 confirming each alias's `derived` set propagates independently.
+- **D08** (lines 441-446) — added citation to `pkg0/pkg03.baboon:53-61` (`RecTest1` direct ADT-arm self-ref + `RecTest2` `opt[RecTest2]` container-mediated self-ref) — both non-template recursive types accepted by `BaboonValidator.checkLoops`. Round-2 reviewer verified the fixture cite exists and exercises the documented behaviour.
+- **D09** (lines 519-523) — added new §5.4 covering `root` keyword applies only to aliases of templates, not to template declarations themselves.
+- **D10** (lines 132-134) — added shadowing rule sentence to §2.3: "Within a template body, a type-param name shadows any same-named top-level type. Outside the template body, the top-level type is visible normally."
+- **D11** (lines 113-119, slight rewording) — added `any[T]` underlying-substitution clarification, restructured the §2.3 list to avoid `any[T]` duplication.
+- **D12** (line 632-633) — removed duplicate "document wins" preface at the bottom; kept the top one (matching `identifier-repr.md` precedent).
+- **D13** (lines 391-393) — added cross-reference at the start of §4 pointing back to §2.5.5 for the matrix-#5 example.
+- **D14** (lines 243-244) — rewrote §2.5.6 diagnostic-name aside to the §2.5.9/§5.3 pattern: `(NameNotFound or OrphanTypeParam) is finalised in PR-29.7`.
+
+Verification: round-2 reviewer (Opus) verified all 9 negative-test matrix items still appear in §2.5 in matrix order with their correct examples; locked-decision integrity vs `tasks.md:42-47` preserved; D04/D05 block-body syntax consistent across §1, §2.1, §2.6, §7; no sentence fragments, broken cross-references, duplicated paragraphs, or search-and-replace residue detected. Fixer caught one extra residual (§2.6 line 297 `adt X[T] = ...`) not in the original defect list — same shape as D04, applied same fix.
