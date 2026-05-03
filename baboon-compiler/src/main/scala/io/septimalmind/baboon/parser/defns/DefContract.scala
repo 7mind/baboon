@@ -9,9 +9,10 @@ import izumi.fundamentals.platform.language.Quirks
 class DefContract(context: ParserContext, meta: DefMeta, dto: DefDto) {
   Quirks.discard(context)
   def contractEnclosed[$: P]: P[RawContract] = {
-    P(meta.member(kw.contract, struct.enclosed(dto.dto))).map {
-      case (meta, name, members) =>
-        RawContract(RawTypeName(name), members, meta)
+    import fastparse.ScalaWhitespace.whitespace
+    P(meta.member(kw.contract, dto.templateHead.? ~ struct.enclosed(dto.dto))).map {
+      case (meta, name, (tps, members)) =>
+        RawContract(RawTypeName(name), members, meta, tps.getOrElse(Nil))
     }
   }
 }

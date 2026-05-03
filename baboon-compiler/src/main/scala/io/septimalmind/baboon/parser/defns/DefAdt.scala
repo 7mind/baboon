@@ -56,12 +56,12 @@ class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto, defContract:
 
   def adtEnclosed[$: P]: P[RawAdt] = {
     import fastparse.ScalaWhitespace.whitespace
-    P(meta.member(kw.adt, meta.derived ~ struct.enclosed(adt))).map {
-      case (meta, name, (derived, members)) =>
+    P(meta.member(kw.adt, defDto.templateHead.? ~ meta.derived ~ struct.enclosed(adt))).map {
+      case (meta, name, (tps, derived, members)) =>
         val typeMembers     = members.collect { case Right(m) => m }
         val contractMembers = members.collect { case Left(m) => m }
 
-        model.RawAdt(RawTypeName(name), typeMembers, contractMembers, derived, meta)
+        model.RawAdt(RawTypeName(name), typeMembers, contractMembers, derived, meta, tps.getOrElse(Nil))
     }
   }
 
