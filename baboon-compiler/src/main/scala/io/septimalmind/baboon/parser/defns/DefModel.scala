@@ -119,9 +119,9 @@ class DefModel(
 
   def alias[$: P]: P[RawTLDef.Alias] = {
     import fastparse.ScalaWhitespace.whitespace
-    P(meta.withMeta(kw(kw.`type`, idt.symbol ~ "=" ~ defDto.typeRef))).map {
-      case (meta, (name, target)) =>
-        RawTLDef.Alias(false, RawAlias(RawTypeName(name), target, meta))
+    P(meta.withMeta(kw(kw.`type`, idt.symbol ~ "=" ~ defDto.typeRef ~ meta.derived))).map {
+      case (meta, (name, target, derived)) =>
+        RawTLDef.Alias(false, RawAlias(RawTypeName(name), target, derived, meta))
     }
   }
 }

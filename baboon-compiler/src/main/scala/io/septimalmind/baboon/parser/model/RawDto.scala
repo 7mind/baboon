@@ -29,7 +29,7 @@ case class RawNamespace(name: RawTypeName, defns: Seq[RawTLDef], meta: RawNodeMe
 
 case class RawService(name: RawTypeName, defns: Seq[RawFunc], meta: RawNodeMeta, typeParams: List[RawTypeName] = Nil) extends RawDefn
 
-case class RawAlias(name: RawTypeName, target: RawTypeRef, meta: RawNodeMeta) extends RawDefn
+case class RawAlias(name: RawTypeName, target: RawTypeRef, derived: Set[RawMemberMeta] = Set.empty, meta: RawNodeMeta) extends RawDefn
 
 case class RawForeignEntryAttr(name: String, value: String)
 
