@@ -237,6 +237,72 @@ No defects raised against PR-29P.4. Adversarial review (Opus) cleared with three
 
 ---
 
+## PR-29.1a — Spec §4/§6 reframing
+
+## [PR-29.1a-D01] `BaboonValidator` line range citation imprecise (`L69-89`) — elides the named function's body
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `docs/spec/generics.md:456-457`.
+**Description:** §4.4 prose names "the `terminatesLoop` rule" but cites `L69-89`. Real layout: `checkLoops` lives at L69-87, `terminatesLoop` at L89-111. L89 is only the signature line of `terminatesLoop`; the rule body lives at L89-111. Cited range elides the named function's body.
+**Fix:** cite `L69–111` or split: "`checkLoops` (L69–87) and `terminatesLoop` (L89–111)".
+
+## [PR-29.1a-D02] `RecTest1` cited as "container-mediated cycle" but its mechanism is ADT-branch alternative termination
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `docs/spec/generics.md:445-454, 457-458`.
+**Description:** §4.4 frames both `RecTest1` and `RecTest2` as demonstrating "container-mediated cycles … via the `terminatesLoop` rule." Verified: `RecTest1`'s mechanism is the ADT-`exists` branch in `terminatesLoop` (`BaboonValidator.scala:102-103`, `d.members.exists(...)`) — `Branch2 { value: i32 }` terminates so the ADT terminates despite `Branch1` self-referencing directly. Only `RecTest2`'s `opt[RecTest2]` is genuinely container-mediated (via the `_: DomainMember.Builtin => true` arm at L95). The framing is imprecise.
+**Fix:** name both mechanisms ("ADT-branch alternative termination for `RecTest1`; option-mediated termination for `RecTest2`"), OR drop `RecTest1` from the example to keep the "container-mediated" framing tight. Prefer the first option to preserve audit trail.
+
+## [PR-29.1a-D03] File path wraps mid-string inside a backtick code-span
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `docs/spec/generics.md:456-457`.
+**Description:** The path string `baboon-compiler/src/main/scala/io/septimalmind/baboon/validator/BaboonValidator.scala:69-89` contains a literal newline + `baboon/validator/...` mid-token. Markdown inline code preserves whitespace; renderers vary on whether mid-token newlines collapse.
+**Fix:** pull the path onto one line; OR split into two backtick spans joined by prose.
+
+## [PR-29.1a-D04] Demoting locked decision #2 to "the consequence, not an independent mechanism" overstates the user-authorised reframe
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `docs/spec/generics.md:404-405`.
+**Description:** `tasks.md:43` lists decision #2 as a standalone locked decision ("Self-reference is forbidden. Only DAG-shaped …"). User's PR-29.1a brief agrees the `Tree[T]` case is subsumed by decision #3 but does not authorise rewriting decision #2 as merely "the consequence, not an independent mechanism." A reader reconciling `tasks.md` with the spec will see a contradiction.
+**Fix:** soften to "decision #2 is enforced through this same mechanism in the template-and-instantiation graph; decision #3 is the operational lever." Preserves decision #2's locked status while explaining how it is operationalised.
+
+## [PR-29.1a-D05] Spec leaks parser AST class name (`RawTypeRef.Constructor`) into a user-facing document
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `docs/spec/generics.md:415, 429`.
+**Description:** Other §2.5.x examples never reference parser internals. The new §4.2 / §4.3 use `RawTypeRef.Constructor` — exposes implementation vocabulary in a user-facing spec.
+**Fix:** replace with a user-facing phrase like "is a template instantiation expression in field position". The matrix #1 framing already supplies the rule.
+
+## [PR-29.1a-D06] §6 items 5 and 6 use "out of scope" framing for matrix #1 and #2 — these are forbidden, not deferred
+**Status:** resolved (round 2)
+**Severity:** minor (predates PR-29.1a; bundle here since §6 is being touched)
+**Location:** `docs/spec/generics.md:550-553`.
+**Description:** §6 ("Out of scope") items 5 and 6 list "Field-position instantiation (`field: Foo[Bar]`)" and "Nested instantiation in alias RHS (`type Y = Foo[Bar[i32]]`)". These are negative-test matrix items #1 and #2 — actively forbidden by decision #3, not deferred features. Reader confusion: "out of scope" reads as "not in M29; maybe in M30+", but these are permanently forbidden.
+**Fix:** relocate these two items out of §6 (Out of scope) — either into a separate "Forbidden — see §2.5.x" subsection at the end of §2, or fold the cross-reference into §2.5.1 / §2.5.2 prose. Bundling into PR-29.1a since §6 is already being touched.
+
+## [PR-29.1a-D07] §2.5.5 forward-pointer to §4 lacks explicit subsection number
+**Status:** resolved (round 2)
+**Severity:** nit
+**Location:** `docs/spec/generics.md:225`.
+**Description:** §2.5.5 says "§4 restates this rule and shows why container-mediated forms are also rejected on the same grounds" — implicitly forward-promises §4.3. Reads cleanly but a `(see §4.3)` would tighten the cross-reference.
+**Fix:** add the explicit subsection cross-reference.
+
+### PR-29.1a round-2 fix summary (D01–D07)
+
+All 7 round-1 defects fixed in one round by a single Sonnet executor. Per-defect actuals:
+
+- **D01 / D03** (jointly addressed by §4.4 closing-paragraph rewrite) — line range now precisely cites `BaboonValidator.checkLoops` (L69-87) and `terminatesLoop` (L89-111) on a single line; the wrapped path inside the backtick code-span eliminated by moving the path outside the inline code span.
+- **D02** — §4.4 rewritten to name each fixture's mechanism separately: `RecTest1` (`pkg03.baboon:53-56`) uses ADT-branch alternative termination via the `exists` arm; `RecTest2` (`pkg03.baboon:59-61`) uses option-mediated termination via the `_: DomainMember.Builtin` arm. The previous "container-mediated cycles via `terminatesLoop`" framing replaced with mechanism-accurate prose.
+- **D04** — §4.1 softened: decision #2 quote retained verbatim (`tasks.md:43` standalone-locked status preserved); reframe now reads "decision #2 is enforced through this same mechanism in the template-and-instantiation graph; decision #3 is the operational lever that makes the prohibition mechanical at parse/type time."
+- **D05** — §4.2 (L418) and §4.3 (L432) `RawTypeRef.Constructor` parser-internal name replaced with user-facing "a template instantiation expression in field position". Verification: `grep 'RawTypeRef.Constructor' docs/spec/generics.md` returns no matches.
+- **D06** (option (a) chosen) — §6 items 5 and 6 (matrix #1 / matrix #2 — actively forbidden, not deferred) removed entirely; relied on §2.5.1 / §2.5.2 worked counter-examples to carry the rule. §6 renumbered: former items 7-11 → 5-9. Only existing cross-reference to §6 (at §2.6 line 306) points to the section head, not a numbered item — remains valid.
+- **D07** — §2.5.5 forward-pointer to §4 now reads `(see §4.3)`.
+
+Verification: `grep -n 'RawTypeRef.Constructor docs/spec/generics.md` no matches; `grep -n 'L69-89'` and `grep -n 'L69–89'` no matches; cross-reference walk over §1, §2.5.5, §4.1-4.4, §6 confirms all anchors resolve post-edit. No new issues discovered during the fix pass.
+
+---
+
 ## PR-29.4 — Typer: template registry; templates never become `DomainMember`
 
 ## [PR-29.4-D01] `TemplateRegistry` built but discarded at `process` boundary; PR-29.5 has no consumer
