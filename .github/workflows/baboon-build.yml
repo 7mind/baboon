@@ -158,6 +158,9 @@ jobs:
           fi
       # `:test-acceptance` and `:test-service-acceptance` each `dep action.build`,
       # so mdl handles the binary build once and reuses it across both actions.
+      # Plain `nix develop --command` (no `--ignore-environment`): runner-injected
+      # env carries TLS trust chain that sbt-launcher needs for upstream Maven
+      # resolution. See defects.md [PR-29P.2-D01] for full root cause.
       - name: Run acceptance tests
         run: nix develop --command mdl --github-actions :test-acceptance
       - name: Run service acceptance tests

@@ -110,14 +110,14 @@ External availability confirmed: sbt 1.11.7 returns `HTTP/2 200` from `repo1.mav
 **Fix:** Env-diff captured at orchestration time; rationale documented in PR-29P.2-D01 root-cause. Live-CI verification gate deferred to PR-29P.3 close-out per `tasks.md` plan.
 
 ## [PR-29P.2-D05] No inline comment in the workflow memorialising the dropped-sandbox-flag decision
-**Status:** open (deferred to PR-29P.3 close-out)
+**Status:** resolved (PR-29P.3 close-out)
 **Severity:** nit
-**Location:** `.github/workflows/baboon-build.yml:159-164` (the two acceptance-tests steps).
+**Location:** `.github/workflows/baboon-build.yml:161-163` (above the two acceptance-tests steps).
 **Description:** Adjacent steps in the workflow carry inline comments explaining non-obvious choices. The two-month historical asymmetry (acceptance-tests alone using `--ignore-environment`) is not memorialised in-tree. A future agent seeing the diff in `git blame` would have no in-tree explanation. Out-of-scope for the surgical PR-29P.2 fix per CLAUDE.md §5.
-**Suggested fix:** Defer to PR-29P.3 close-out — add a one-line comment above the two steps along the lines of "# Plain `nix develop` (no --ignore-environment): runner-injected env carries TLS trust chain that sbt-launcher needs for upstream resolution. See defects.md PR-29P.2-D01."
+**Fix:** Three-line comment block added above the two acceptance-tests steps explaining the asymmetry vs `build-linux` and pointing at `defects.md [PR-29P.2-D01]` for full root-cause. Subagent-dispatched fix attempt encountered a worktree-stale-base issue (worktree shared a base predating PR-29P.2's workflow change, so the subagent saw `--ignore-environment` still present and wrote a comment describing the wrong state); orchestrator discarded that diff and wrote the correct comment inline in the canonical checkout. Documented as a process gap, not a defect of the underlying fix.
 
 ## [PR-29P.2-D06] Cross-cutting "Nix `--ignore-environment` policy" question not recorded as a decision
-**Status:** open (deferred to PR-29P.3 session log)
+**Status:** resolved (PR-29P.3 close-out — recorded in tasks.md cross-cutting notes and inline workflow comment)
 **Severity:** nit
 **Location:** `tasks.md` Cross-cutting architectural notes.
 **Description:** The cross-cutting item asks whether the acceptance step needs the strict sandbox at all, or whether the flake closure is sufficient. Executor implicitly decided "no strict sandbox needed" by shipping option (a), but did not record the decision rationale anywhere. Future test-* actions that consider adopting `--ignore-environment` have no precedent to lean on.
