@@ -65,6 +65,57 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
         }
     }
 
+    // PR-29P.4 [D02]: extend tso coverage to non-UTC offsets.
+    // Any future change that hard-codes "+00:00" (or "Z") for tso would silently break non-UTC
+    // offsets while keeping the UTC-zero test green — these cases guard against that regression.
+    "roundtrip tso non-UTC offset +05:30 preserves offset (M28-N01)" in {
+      (loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F]) =>
+        val rawJson =
+          """{
+            |  "f00": "x",
+            |  "f01": 1, "f02": 2, "f03": 3, "f04": 4,
+            |  "f05": -5, "f06": -6, "f07": -7, "f08": -8,
+            |  "f09": "2024-06-15T10:30:00.000+05:30",
+            |  "f10": "2024-06-15T05:00:00.000Z",
+            |  "f11": 1.5, "f12": 2.5, "f13": 3.5,
+            |  "f14": true
+            |}""".stripMargin
+        for {
+          fam       <- loadPkg(loader)
+          data: Json = io.circe.parser.parse(rawJson).toOption.get
+          encoded   <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("3.0.0"), "testpkg.pkg0/:#T6_D2", data, indexed = false)
+          decoded   <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("3.0.0"), "testpkg.pkg0/:#T6_D2", encoded)
+        } yield {
+          val origF09    = data.hcursor.downField("f09").as[String].toOption.get
+          val decodedF09 = decoded.hcursor.downField("f09").as[String].toOption.get
+          assert(decodedF09 == origF09, s"tso +05:30 must round-trip byte-identical. orig=$origF09 got=$decodedF09")
+        }
+    }
+
+    "roundtrip tso non-UTC offset -08:00 preserves offset (M28-N01)" in {
+      (loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F]) =>
+        val rawJson =
+          """{
+            |  "f00": "x",
+            |  "f01": 1, "f02": 2, "f03": 3, "f04": 4,
+            |  "f05": -5, "f06": -6, "f07": -7, "f08": -8,
+            |  "f09": "2024-12-01T08:00:00.000-08:00",
+            |  "f10": "2024-12-01T16:00:00.000Z",
+            |  "f11": 1.5, "f12": 2.5, "f13": 3.5,
+            |  "f14": true
+            |}""".stripMargin
+        for {
+          fam       <- loadPkg(loader)
+          data: Json = io.circe.parser.parse(rawJson).toOption.get
+          encoded   <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("3.0.0"), "testpkg.pkg0/:#T6_D2", data, indexed = false)
+          decoded   <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("3.0.0"), "testpkg.pkg0/:#T6_D2", encoded)
+        } yield {
+          val origF09    = data.hcursor.downField("f09").as[String].toOption.get
+          val decodedF09 = decoded.hcursor.downField("f09").as[String].toOption.get
+          assert(decodedF09 == origF09, s"tso -08:00 must round-trip byte-identical. orig=$origF09 got=$decodedF09")
+        }
+    }
+
     "roundtrip foreign types with rt binding through UEBA" in {
       (loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F]) =>
         for {
