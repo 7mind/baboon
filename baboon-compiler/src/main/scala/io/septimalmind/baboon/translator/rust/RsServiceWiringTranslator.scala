@@ -270,7 +270,7 @@ object RsServiceWiringTranslator {
     }
 
     private def inTypeFq(m: Typedef.MethodDef): String = {
-      val ref = trans.toRsTypeRefKeepForeigns(m.sig.id.asInstanceOf[TypeId.User], domain, evo)
+      val ref = trans.asRsType(m.sig.id, domain, evo)
       renderFq(q"$ref")
     }
 

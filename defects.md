@@ -303,6 +303,18 @@ Verification: `grep -n 'RawTypeRef.Constructor docs/spec/generics.md` no matches
 
 ---
 
+## PR-29.10b — Service-wiring translators handle TypeId.BuiltinScalar in method positions
+
+## [PR-29.10b-D01] All 9 service-wiring translators throw ClassCastException when a service method's arg/out/error position is a builtin scalar
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/{csharp,scl,java,kotlin,dart,swift,typescript,python,rust}/*ServiceWiringTranslator.scala` — multiple `m.sig.id.asInstanceOf[TypeId.User]` (and `outRef.id`, `errRef.id`) casts per file.
+**Description:** Pre-M29, all hand-written services (e.g. `petstore.baboon`) used user-defined types in method positions, so the unsafe casts in the per-backend wiring translators never fired. PR-29.10's `service Crud[K, V] { def get (K): V; def put (V): K }` materialised as `Crud[i32, str]` — method positions become `TypeId.BuiltinScalar` (i32, str). C# was the first to fail in CI: `java.lang.ClassCastException: TypeId$BuiltinScalar cannot be cast to TypeId$User at CSServiceWiringTranslator.scala:317`. All 9 backends share the same defect pattern.
+**Root cause:** Unsafe casts assumed `TypeId.User` for all method positions. M29 templates can validly produce builtin-scalar method positions (per spec §3 / locked decision #4: monomorphisation produces concrete types, including builtins). The codegen needed to be tolerant of both type kinds.
+**Fix:** Each per-backend wiring translator gained a set of helpers (`jsonDecodeExpr` / `jsonEncodeExpr` / `uebaDecodeExpr` / `uebaEncodeStmt` for backends with both formats; per-backend equivalents otherwise) that match on `TypeId` and dispatch to either the user-codec lookup (`jsonCodecName(u)` / `uebaCodecName(u)`) or an inline per-backend builtin-scalar encode/decode. Builtin coverage: bit, i08-i64, u08-u64, f32-f64, f128, str, bytes, uid, tsu, tso. Kotlin client-emit signatures additionally extended to take a `ctx: BaboonCodecContext = BaboonCodecContext.Default` default parameter so the helper-emitted `ctx` references resolve. Verification: `sbt baboonJVM/clean;baboonJVM/compile` PASS (82s), `mdl --seq :build :test-gen-cs-wiring-{either,result,outcome}` PASS (3/3), `mdl --seq :test-gen-{sc,ts,rs,py}-wiring-{either,result,outcome}+sc-hkt` PASS (16/16), `mdl --seq :build :test-service-acceptance` PASS (81/81 — petstore baseline + Crud[K,V] templated service exercised end-to-end across all 9 backends, 488.8s wall time). Resolves PR-29.10-D07.
+
+---
+
 ## PR-29.10 — m29-ok cross-language acceptance
 
 ## [PR-29.10-D01] Python JSON codec emits empty objects `{}` for ADT variants with fields
@@ -321,7 +333,7 @@ Verification: `grep -n 'RawTypeRef.Constructor docs/spec/generics.md` no matches
 **Fix (partial):** Round 2 added `service Crud[K, V] { def get (K): V; def put (V): K } / root type IntStrCrud = Crud[i32, str]` to `baboon-compiler/src/test/resources/baboon/m29-ok/m29.baboon`. This exercises the `RawTemplateDefn.Service` → `RawTLDef.Service` instantiation path in `TemplateInstantiator` (verified by `sbt baboonJVM/testOnly *M29*` 12/12). Round-2 reviewer correctly identified that this does NOT meet the brief's full intent: `:test-service-acceptance` runs against `test/services/petstore.baboon` (a SEPARATE fixture from the typer-test fixture), and petstore.baboon has no template. The 81/81 PASS for `:test-service-acceptance` is the petstore baseline — unaffected by adding Crud to the typer-test fixture. Cross-language end-to-end verification of templated-service monomorphisation is therefore deferred — see follow-up `[PR-29.10-D07]`.
 
 ## [PR-29.10-D07] Cross-language `:test-service-acceptance` does NOT exercise a templated service end-to-end
-**Status:** open
+**Status:** resolved (PR-29.10b — see [PR-29.10b-D01])
 **Severity:** major (deferred — explicit follow-up split from PR-29.10-D02 round 2)
 **Location:** `test/services/petstore.baboon` (no template); the 9 per-language service harnesses under `test/conv-test-{cs,sc,py,rs,ts,kt,jv,dt,sw}/` (no Crud-equivalent registered).
 **Description:** PR-29.10-D02's intent was "verify service-template monomorphisation end-to-end across all 9 backends via `:test-service-acceptance`". The round-2 partial fix added the template to the typer-test fixture (`baboon-compiler/src/test/resources/baboon/m29-ok/m29.baboon`) but did NOT extend `test/services/petstore.baboon` (the actual `:test-service-acceptance` consumer fixture) nor the per-language service harnesses. The 81/81 PASS is the petstore baseline — adding Crud to the typer-test fixture did not change the run set for service acceptance.
