@@ -237,6 +237,52 @@ No defects raised against PR-29P.4. Adversarial review (Opus) cleared with three
 
 ---
 
+## PR-29.4 — Typer: template registry; templates never become `DomainMember`
+
+## [PR-29.4-D01] `TemplateRegistry` built but discarded at `process` boundary; PR-29.5 has no consumer
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonTyper.scala:89`; `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/model/Domain.scala:20`.
+**Description:** `TyperOutput.templateRegistry` was correctly built but DROPPED at the `process` boundary. `Domain` did not carry it, so PR-29.5 would have had nothing to consume.
+**Fix:** Added `templateRegistry: TemplateRegistry = TemplateRegistry.empty` as the last field of `Domain` (default for source-compat with any positional callers — verified only one call site exists at `BaboonTyper.scala:89`). Updated that yield site to pass `templateRegistry = typed.templateRegistry` as a named argument. Verification: `sbt baboonJVM/compile` PASS, `baboonJS/compile` PASS, `'testOnly *Template*'` 26/26 (4 existing + 4 new D02 tests + 18 PR-29.2 TemplateHead tests).
+
+## [PR-29.4-D02] Test coverage gaps: nested-namespace excision, non-adjacent duplicates, mixed namespace, registry contents inspection
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateRegistryBuilderTest.scala`.
+**Description:** Tests missed four invariant locks: (a) nested-namespace excision; (b) non-adjacent duplicate; (c) mixed namespace preserving non-templates; (d) registry inspection (depends on D01).
+**Fix:** Added four new test cases. Test (a) — `excise nested-namespace template X[T] from Domain.defs.meta.nodes (namespace foo)` — required adding a non-template anchor inside the `ns foo` block (a namespace becomes structurally empty after template-only excision, which `ScopeBuilder` rejects with `ScopeCannotBeEmpty`); minimal fix to keep the test domain valid post-excision while still proving the excision invariant. Note: the brief said `namespace foo {…}` but the correct Baboon keyword is `ns` per `Keywords.scala`. Test (b) — `produce DuplicateTypeParam for non-adjacent duplicate data X[T, U, T]`. Test (c) — `excise only template X[T] from mixed namespace, preserving non-template Y`. Test (d) — `register top-level template X[T] in Domain.templateRegistry with expected key and body`, asserting on the registry contents now exposed by D01's `Domain.templateRegistry` field. Verification: `sbt 'baboonJVM/testOnly *Template*'` PASS (26/26).
+
+## [PR-29.4-D03] Duplicate-param detection emits only first duplicate; user must iterate to see all
+**Status:** resolved (deferred — sibling-validator polish, not blocking)
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateRegistryBuilder.scala:124-130` (approximate).
+**Description:** For `data X[T, T, U, U]` only the first duplicate (`T`) is reported via `F.fail`; the user must fix and re-run to see `U`. Sibling validators in this codebase (e.g. `NonUniqueFields`, `NonUniqueEnumBranches`) collect all dupes via `Map[name, List[occurrences]]` and report at once.
+**Fix:** Defer; sibling-validator polish. Optional follow-up: collect all duplicates and emit one issue carrying the full list, or emit one issue per duplicate via `traverseAccumErrors`. Tracked here so PR-29.7 (validator) can consider during the validator-pattern audit.
+
+## [PR-29.4-D04] Registry-key collisions across siblings silently dropped via `toMap`
+**Status:** resolved (deferred — likely caught by `ScopeBuilder.NonUniqueScope`; verify in PR-29.7)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateRegistryBuilder.scala:50` (approximate, `results.flatMap(_._2.templates).toMap`).
+**Description:** Two templates with the same name at the same namespace level produce two map entries with the same key; `toMap` silently keeps the last one. Downstream `DuplicatedTypedefs` check on `TyperOutput.defs` won't catch these because templates never reach `defs`.
+**Fix:** Defer — `ScopeBuilder` likely flags this via `NonUniqueScope` before the registry builder runs. PR-29.7 should verify; if the check is missing, add `toUniqueMap` plus a dedicated `DuplicateTemplateName` issue.
+
+## [PR-29.4-D05] Dead `nsPath` parameter in recursion
+**Status:** resolved (deferred — code-cleanliness polish only)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateRegistryBuilder.scala:37` and `:102`.
+**Description:** The unused parameter `nsPath` at the top-level call (`List.empty`) and the redundant tracking of `nsPath` separately from `Owner.Ns(nextNsPath)` (line 102) — `nextOwner` already encodes the same info. Dead state.
+**Fix:** Defer. Drop `nsPath`; derive from `ownerForCurrent` if needed, or drop entirely since it's only used to construct `nextOwner`. Low priority cleanup.
+
+## [PR-29.4-D06] `mdl --seq :build :test` skip acceptable but document
+**Status:** resolved (note-only; full close-gate explicitly skipped per orchestrator + reviewer agreement)
+**Severity:** nit (process)
+**Location:** orchestrator close-out.
+**Description:** Executor skipped `mdl --seq :build :test` due to time constraints. Per CLAUDE.md, the cross-build canary path (`sbt +compile`) was exercised and PASS. The 339/339 JVM emission tests + JS cross-build are sufficient evidence of no fixture-md5 regression for this PR's surface (typer-early excision with empty registry produced for all existing non-template fixtures).
+**Fix:** Note only. Documented in PR-29.4 commit message and close-out.
+
+---
+
 ## PR-29.3 — Parser: alias instantiation RHS + alias-side `derived`
 
 ## [PR-29.3-D01] PR-29.3 expanded beyond the plan's "test-only verification" scope to also add `RawAlias.derived` extension

@@ -1,0 +1,286 @@
+package io.septimalmind.baboon.tests
+
+import io.septimalmind.baboon.parser.BaboonParser
+import io.septimalmind.baboon.parser.model.{FSPath, RawTypeName}
+import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TyperIssue}
+import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
+import io.septimalmind.baboon.typer.BaboonTyper
+import io.septimalmind.baboon.typer.model.*
+import izumi.functional.bio.{Error2, F}
+import izumi.fundamentals.collections.nonempty.{NEList, NEString}
+import izumi.reflect.TagKK
+
+import scala.reflect.ClassTag
+
+/** PR-29.4 (M29) front-end pipeline tests for `TemplateRegistryBuilder`.
+  *
+  * Exercises the full path: parse → PR-29.4 template-registry pass → ADT inheritance expander →
+  * scope-build → type-check. Verifies:
+  *
+  *   1. (positive) A domain containing only `data X[T] { f: T }` (no alias) produces a
+  *      `Domain.defs.meta.nodes` that does NOT contain `X` as a `DomainMember`. The template is
+  *      excised before the typer ever resolves `T`.
+  *
+  *   2. (negative) `data X[T, T] { f: T }` (duplicate type param) produces
+  *      `TyperIssue.DuplicateTypeParam` (matrix #4).
+  *
+  *   3. (backwards-compat) A non-template domain continues to type-check and its member count
+  *      is unaffected by the new pass.
+  */
+final class TemplateRegistryBuilderTest extends TemplateRegistryBuilderTestBase[Either]
+
+abstract class TemplateRegistryBuilderTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] extends BaboonTest[F] {
+
+  // ─── helpers ─────────────────────────────────────────────────────────────────
+
+  private def makeInput(name: String, content: String): BaboonParser.Input =
+    BaboonParser.Input(FSPath.parse(NEString.unsafeFrom(name)), content)
+
+  private def runTyperFor(
+    parser: BaboonParser[F],
+    typer: BaboonTyper[F],
+    content: String,
+    name: String = "template-registry-test.baboon",
+  ): F[Nothing, Either[NEList[BaboonIssue], Domain]] = {
+    val input = makeInput(name, content)
+    parser.parse(input).flatMap(typer.process).map(Right(_): Either[NEList[BaboonIssue], Domain]).catchAll {
+      errs => F.pure(Left(errs): Either[NEList[BaboonIssue], Domain])
+    }
+  }
+
+  private def typerIssues(issues: NEList[BaboonIssue]): List[TyperIssue] =
+    issues.toList.collect { case BaboonIssue.Typer(ti) => ti }
+
+  private def assertProducesTyperIssue[T <: TyperIssue: ClassTag](
+    outcome: Either[NEList[BaboonIssue], Domain]
+  ): Unit = {
+    val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+    val ti     = typerIssues(issues)
+    val ct     = implicitly[ClassTag[T]]
+    assert(
+      ti.exists(ct.runtimeClass.isInstance),
+      s"expected ${ct.runtimeClass.getSimpleName}, got: $ti",
+    )
+  }
+
+  // ─── test fixtures ────────────────────────────────────────────────────────────
+
+  /** A domain with one template and no instantiation. The template must not appear as a
+    * DomainMember; the domain has no user-defined roots and therefore no reachable members.
+    */
+  private val templateOnlyDomain: String =
+    """model template.registry.test
+      |
+      |version "1.0.0"
+      |
+      |data X[T] {
+      |  f: i32
+      |}
+      |""".stripMargin
+
+  /** A domain with `data X[T, T]` — duplicate type parameter `T` (matrix #4). */
+  private val duplicateTypeParamDomain: String =
+    """model template.registry.test.neg
+      |
+      |version "1.0.0"
+      |
+      |data X[T, T] {
+      |  f: i32
+      |}
+      |""".stripMargin
+
+  /** A plain non-template domain for backwards-compat check. */
+  private val nonTemplateDomain: String =
+    """model template.registry.compat
+      |
+      |version "1.0.0"
+      |
+      |root data Foo {
+      |  x: i32
+      |  y: str
+      |}
+      |""".stripMargin
+
+  /** A domain with a template nested inside a namespace (alongside a non-template anchor so the
+    * namespace is not structurally empty after template excision).
+    */
+  private val nestedNamespaceTemplateDomain: String =
+    """model template.registry.ns
+      |
+      |version "1.0.0"
+      |
+      |ns foo {
+      |  data X[T] {
+      |    f: i32
+      |  }
+      |  root data Anchor {
+      |    v: i32
+      |  }
+      |}
+      |""".stripMargin
+
+  /** A domain with a non-adjacent duplicate type param: `data X[T, U, T]`. */
+  private val nonAdjacentDuplicateTypeParamDomain: String =
+    """model template.registry.test.neg2
+      |
+      |version "1.0.0"
+      |
+      |data X[T, U, T] {
+      |  f: i32
+      |}
+      |""".stripMargin
+
+  /** A domain mixing a template and a non-template under the same namespace. */
+  private val mixedNamespaceDomain: String =
+    """model template.registry.mixed
+      |
+      |version "1.0.0"
+      |
+      |ns foo {
+      |  data X[T] {
+      |    f: i32
+      |  }
+      |  root data Y {
+      |    f: i32
+      |  }
+      |}
+      |""".stripMargin
+
+  /** A top-level single-template domain used for registry contents inspection. */
+  private val singleTemplateDomain: String =
+    """model template.registry.test
+      |
+      |version "1.0.0"
+      |
+      |data X[T] {
+      |  f: i32
+      |}
+      |""".stripMargin
+
+  // ─── tests ────────────────────────────────────────────────────────────────────
+
+  "TemplateRegistryBuilder (PR-29.4)" should {
+
+    "excise template X[T] from Domain.defs.meta.nodes (positive: no instantiation)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, templateOnlyDomain)
+        } yield {
+          val domain = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val userTypeNames = domain.defs.meta.nodes.keys.collect { case u: TypeId.User => u.name.name }.toSet
+          assert(
+            !userTypeNames.contains("X"),
+            s"template X must not appear in Domain.defs.meta.nodes, but found user types: $userTypeNames",
+          )
+        }
+    }
+
+    "produce DuplicateTypeParam for data X[T, T] (negative: matrix #4)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, duplicateTypeParamDomain)
+        } yield {
+          assertProducesTyperIssue[TyperIssue.DuplicateTypeParam](outcome)
+        }
+    }
+
+    "DuplicateTypeParam carries the duplicate name and owner name" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, duplicateTypeParamDomain)
+        } yield {
+          val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val dupIssue = typerIssues(issues).collectFirst { case d: TyperIssue.DuplicateTypeParam => d }
+            .getOrElse(throw new AssertionError(s"no DuplicateTypeParam in: $issues"))
+          assert(dupIssue.name == "T", s"expected duplicate param name 'T', got '${dupIssue.name}'")
+          assert(dupIssue.ownerName == "X", s"expected owner name 'X', got '${dupIssue.ownerName}'")
+        }
+    }
+
+    "leave a non-template domain unaffected (backwards-compat)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, nonTemplateDomain)
+        } yield {
+          val domain = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val userTypeNames = domain.defs.meta.nodes.keys.collect { case u: TypeId.User => u.name.name }.toSet
+          assert(
+            userTypeNames.contains("Foo"),
+            s"expected Foo in domain.defs.meta.nodes, got: $userTypeNames",
+          )
+        }
+    }
+
+    "excise nested-namespace template X[T] from Domain.defs.meta.nodes (namespace foo)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, nestedNamespaceTemplateDomain)
+        } yield {
+          val domain = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val userTypeNames = domain.defs.meta.nodes.keys.collect {
+            case u: TypeId.User if u.owner == Owner.Ns(Seq(TypeName("foo"))) => u.name.name
+          }.toSet
+          assert(
+            !userTypeNames.contains("X"),
+            s"nested template X under namespace foo must not appear in Domain.defs.meta.nodes, but found: $userTypeNames",
+          )
+        }
+    }
+
+    "produce DuplicateTypeParam for non-adjacent duplicate data X[T, U, T]" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, nonAdjacentDuplicateTypeParamDomain)
+        } yield {
+          val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val dupIssue = typerIssues(issues).collectFirst { case d: TyperIssue.DuplicateTypeParam => d }
+            .getOrElse(throw new AssertionError(s"no DuplicateTypeParam in: $issues"))
+          assert(dupIssue.name == "T", s"expected duplicate param name 'T', got '${dupIssue.name}'")
+          assert(dupIssue.ownerName == "X", s"expected owner name 'X', got '${dupIssue.ownerName}'")
+        }
+    }
+
+    "excise only template X[T] from mixed namespace, preserving non-template Y" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, mixedNamespaceDomain)
+        } yield {
+          val domain = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val nsOwner = Owner.Ns(Seq(TypeName("foo")))
+          val nsUserNames = domain.defs.meta.nodes.keys.collect {
+            case u: TypeId.User if u.owner == nsOwner => u.name.name
+          }.toSet
+          assert(
+            !nsUserNames.contains("X"),
+            s"template X under namespace foo must not appear in Domain.defs.meta.nodes, but found: $nsUserNames",
+          )
+          assert(
+            nsUserNames.contains("Y"),
+            s"non-template Y under namespace foo must appear in Domain.defs.meta.nodes, but found: $nsUserNames",
+          )
+        }
+    }
+
+    "register top-level template X[T] in Domain.templateRegistry with expected key and body" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, singleTemplateDomain)
+        } yield {
+          val domain = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val registry = domain.templateRegistry
+          assert(
+            registry.templates.size == 1,
+            s"expected exactly 1 template in registry, got ${registry.templates.size}: ${registry.templates.keys}",
+          )
+          val expectedKey = (Pkg(NEList("template", "registry", "test")), Owner.Toplevel, TypeName("X"))
+          val body = registry.templates.get(expectedKey).getOrElse {
+            throw new AssertionError(s"expected key $expectedKey not found in registry; keys: ${registry.templates.keys}")
+          }
+          assert(
+            body.typeParams == List(RawTypeName("T")),
+            s"expected typeParams == List(RawTypeName(\"T\")), got: ${body.typeParams}",
+          )
+        }
+    }
+  }
+}

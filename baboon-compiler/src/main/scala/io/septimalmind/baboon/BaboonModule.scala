@@ -65,6 +65,7 @@ class BaboonModuleLogicModule[F[+_, +_]: Error2: MaybeSuspend2: TagKK](
   make[ScopeSupport[F]].from[ScopeSupport.ScopeSupportImpl[F]]
   make[ComponentParsers[F]].from[ComponentParsers.ComponentParsersImpl[F]]
   make[AdtInheritanceExpander[F]]
+  make[TemplateRegistryBuilder[F]].from[TemplateRegistryBuilder.Impl[F]]
   makeFactory[BaboonTranslator.Factory[F]]
   make[BaboonRuntimeCodec[F]].from[BaboonRuntimeCodec.BaboonRuntimeCodecImpl[F]]
 }

@@ -32,9 +32,10 @@ object BaboonTyper {
     types: TypeInfo,
     rootExtractor: RootExtractor,
     adtInheritanceExpander: AdtInheritanceExpander[F],
+    templateRegistryBuilder: TemplateRegistryBuilder[F],
   ) extends BaboonTyper[F] {
 
-    private case class TyperOutput(defs: List[DomainMember], renames: Map[TypeId.User, TypeId.User], aliases: List[AliasInfo])
+    private case class TyperOutput(defs: List[DomainMember], renames: Map[TypeId.User, TypeId.User], aliases: List[AliasInfo], templateRegistry: TemplateRegistry)
 
     override def process(
       model: RawDomain
@@ -85,7 +86,7 @@ object BaboonTyper {
         renames      = typed.renames
         aliases      = typed.aliases
       } yield {
-        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations, roots.keySet, renames, model.pragmas.map(p => (p.key, p.value)).toMap, aliases)
+        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations, roots.keySet, renames, model.pragmas.map(p => (p.key, p.value)).toMap, aliases, templateRegistry = typed.templateRegistry)
       }
     }
 
@@ -395,15 +396,21 @@ object BaboonTyper {
         initial <- F.pure(
           types.allBuiltins.map(id => DomainMember.Builtin(id))
         )
+        // PR-29.4: extract templates from the raw member list BEFORE any other pass sees them.
+        // Templates are registered in the TemplateRegistry and removed from the member list so
+        // that no `DomainMember` is ever produced for a template declaration.
+        registryResult           <- templateRegistryBuilder.build(pkg, members)
+        (nonTemplateMembers, templateRegistry) = registryResult
+
         builder           = new ScopeBuilder[F]()
         // Build an initial scope tree over the as-parsed (PR-62) raw AST so we can resolve
         // `+ X` / `- X` / `^ X` refs in ADT bodies. The PR-63 typer-early pass uses this
         // initial tree to rewrite each `RawAdt`'s member list, replacing inheritance arms with
         // literal `RawAdtMemberDto` entries pulled from the referenced ADTs.
-        initialScopes    <- builder.buildScopes(pkg, members, meta)
+        initialScopes    <- builder.buildScopes(pkg, nonTemplateMembers, meta)
         initialFlattened  = flattenScopes(initialScopes)
         initialOrdered   <- order(pkg, initialFlattened, meta)
-        expandedMembers  <- adtInheritanceExpander.expand(pkg, members, initialOrdered, meta)
+        expandedMembers  <- adtInheritanceExpander.expand(pkg, nonTemplateMembers, initialOrdered, meta)
 
         // Re-build the scope tree over the rewritten defns so that re-emitted branches are
         // registered as nested scopes under the receiving ADT (otherwise
@@ -438,7 +445,7 @@ object BaboonTyper {
             translator(pkg, scope, out).resolveAliasInfo().map(_.get)
         }
       } yield {
-        TyperOutput(indexed.values.toList, renames, aliases.toList)
+        TyperOutput(indexed.values.toList, renames, aliases.toList, templateRegistry)
       }
     }
 

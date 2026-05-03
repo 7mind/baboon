@@ -104,6 +104,7 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
       case ServiceMultipleOutputs(svc, method, _, meta) => (Some(meta), s"Multiple outputs in $svc.$method")
       case ServiceMultipleInputs(svc, method, _, meta)  => (Some(meta), s"Multiple inputs in $svc.$method")
       case ServiceMultipleErrors(svc, method, _, meta)  => (Some(meta), s"Multiple errors in $svc.$method")
+      case DuplicateTypeParam(name, ownerName, meta)     => (Some(meta), s"Duplicate type parameter '$name' in template '$ownerName'")
       case DagError(e, meta)                            => (Some(meta), s"DAG error: $e")
       case ScalarExpected(id, meta)                     => (Some(meta), s"Scalar expected: ${id.name.name}")
       case CollectionExpected(id, meta)                 => (Some(meta), s"Collection expected: ${id.name.name}")
