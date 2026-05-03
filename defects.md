@@ -9,19 +9,64 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 
 ## PR-29P.1 — Fix CI-01: RTCodecTest map-key ordering
 
-## [PR-29P.1-D01] `RTCodecTest` JSON→UEBA→JSON roundtrip fails on multi-entry maps under CI hash-iteration order
-**Status:** open
+## [PR-29P.1-D01] `RTCodecTest` JSON→UEBA→JSON roundtrip normalises `tso` UTC-zero offset from `+00:00` to `Z`, violating M28-N01
+**Status:** resolved (round 2; pending live-CI verification on `wip/ids-and-adts`)
 **Severity:** major
-**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/RTCodecTest.scala:124-127` (failing equality site); root cause expected in `ScUEBACodecGenerator.scala` and the equivalent emit in 8 sibling backends; m26 fixture under `baboon-compiler/src/main/resources/baboon-runtime/` and the fixture-emitter chain.
-**Description:** CI build job `build-linux-amd64` reports `1/308` test failures. The failing fixture is `T6_D1` in `testpkg.pkg0` v3.0.0; the diffed payload contains multi-entry maps (`fNewMap` with 3 string keys, `fPrecex4` with 12 stringified-i64 keys, plus `fSwapPrecex0..2` lists). Local M28 close-gate (`mdl --seq :build :test`) was green at 2026-05-02 (per `docs/logs/20260502-2247-m28-wireform-parity-and-docs-log.md`); CI fails on the same commit's merge head (`564d1ba`). Most plausible explanation: the encoder uses typed-key string ordering (`_._1.toString`) for map-iteration sort-key, while the decoder produces JSON whose object-entry order tracks UEBA insertion order = encoded-wire-form key order. The two orderings diverge for u64 (signed-vs-unsigned), tso (formatted with `±HH:MM`), and stringified-i64 keys. CI's JDK / GC / HashMap iteration policy provokes the divergence; local does not.
-**Root cause (hypothesis, must be confirmed by repro):** PR-28.4-D02 (archived predecessor ledger): "Generator-wide map-iteration sort-key uses `_._1.toString` (typed) rather than encoded wire-form key. Sidestepped via single-entry maps in m26 fixture." PR-28.4 then extended the m26 fixture with `mu64`+`mtso`, both of which can introduce multi-entry cases under randomised seeds. The deferral was incorrect — the bug is reachable.
-**Suggested fix:**
-1. Reproduce locally first (CLAUDE.md §6a). Capture the CI's `T6_D1` fixture seed by re-running `:test-gen-regular-adt`; if local passes, vary fixture seed or force HashMap iteration order to provoke divergence. Confirm failure-for-the-right-reason — i.e. ordering mismatch in a multi-entry u64/tso/i64 map, not a value corruption.
-2. Audit map-iteration emit across all 9 codec generators (`{Sc,Cs,Rs,Ts,Kt,Jv,Dt,Sw,Py}{UEBA,Json}CodecGenerator.scala`). Identify every site that emits a map sort by `_._1.toString` or equivalent typed key.
-3. Replace with encoded-wire-form-key sort (the same key form the decoder uses). Verify encode and decode paths agree.
-4. Add multi-entry-map regression to `RTCodecTest`'s fixture set and to the m26 fixture (multi-entry mu64 + mtso + mi64).
-5. Run `mdl --seq :build :test`, `:test-acceptance`, `:test-service-acceptance` to confirm green.
-6. Mark PR-28.4-D02 in the archived predecessor ledger as resolved here (cross-link).
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonRuntimeCodec.scala` (the encode/decode path used by `RTCodecTest`); failing equality site at `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/RTCodecTest.scala:124-127`. T6_D1 schema at `baboon-compiler/src/test/resources/baboon/pkg0/pkg03.baboon:230-269` declares `f09: tso`, `f10: tsu`.
+**Description:** CI build job `build-linux-amd64` reports `1/308` test failures. After ANSI-strip diff of the Expected vs Got blocks in the CI log (`/tmp/ci-build.log`, lines 21232-23597), the actual divergence is **a single value**: in one element of the `fSameCustomLst` list, `f09` (declared type `tso`) is:
+
+```diff
+-      "f09" : "6328-02-02T13:22:52.339+00:00",
++      "f09" : "6328-02-02T13:22:52.339Z",
+```
+
+Expected JSON (from the C# fixture file on disk) carries `+00:00`. Got JSON (after `BaboonRuntimeCodec.encode` → `BaboonRuntimeCodec.decode` round-trip) carries `Z`. Per **M28-N01** (locked, `docs/logs/20260502-2247-m28-wireform-parity-and-docs-log.md:50`): *"tso = `±HH:MM` always; UTC = `+00:00`, NOT `Z`. tsu retains `...Z` semantics for genuine UTC-Kind values."* The Got value is the wrong canonical form for `tso`.
+
+All other content (the multi-entry maps `fNewMap`/`fPrecex4`/`fSwapPrecex0..2`, the surrounding 1100+ JSON lines) is identical. The remaining diff entries are interleaved CI log lines from `IdentifierKotlinEmissionTest` running concurrently — log-stream noise, not value divergence.
+**Root cause (hypothesis updated):** `BaboonRuntimeCodec` does not honour M28-N01 for `tso`. Either the encode path collapses `+00:00` into a UTC-Kind sentinel (losing offset info), and the decode path re-emits as `Z`; or the decode path explicitly normalises offset-zero to `Z`. Needs source inspection of the runtime codec's tso handling. PR-28.3 fixed `tso ±HH:MM` canonicalisation in the **generated** codecs (Scala/Java/Kotlin/C#/TS) but appears not to have touched the **runtime** codec used by `BaboonRuntimeCodec` and consumed by `RTCodecTest`.
+**History — what was wrong with the round-1 hypothesis (now superseded):** Round-1 brief hypothesised PR-28.4-D02 (generator-wide map-iteration sort-key typed `_._1.toString`). PR-29P.1 round-1 executor (Opus, escalated rather than fixing) demonstrated:
+1. The hypothesis applies to *generator-emitted* codecs, not the *runtime* `BaboonRuntimeCodec` exercised by `RTCodecTest`.
+2. T6_D1's failing fields are not u64/tso/i64-keyed maps but a `tso` value inside a list element.
+3. circe `Json` object equality is order-INSENSITIVE (verified by class disassembly), so a "map ordering" hypothesis cannot make `==` fail.
+4. The C# fixture random generator does not produce u64 boundary values that would trigger typed-`toString` ↔ unsigned-numeric divergence.
+The escalation was correct. Round-1 closes with `resolved (note-only; superseded by corrected root cause in this entry's revision)`. Round 2 dispatches with the actual root cause above. PR-28.4-D02 (archived deferred) remains a real latent issue but is **not** the cause of CI-01.
+**Suggested fix (round 2):**
+1. **Reproduce locally** (CLAUDE.md §6a). The simplest repro: run `mdl :build :test-gen-regular-adt` to generate the fixture, locate `target/test-regular/cs-stub/.../T6_D1.json`, find a `tso` field whose value contains `+00:00`, then run `RTCodecTest.scala`'s "roundtrip JSON files through UEBA" case. If the local C# fixture random seed never picks `00:00` for any tso offset, force the case: write a minimal JSON file containing one `tso` field with `"...+00:00"` and feed it through `BaboonRuntimeCodec.encode`/`decode`. Confirm Got side returns `"...Z"` — that is the failing-for-the-right-reason check.
+2. **Locate the runtime codec's tso path.** `BaboonRuntimeCodec.scala` calls into `BaboonTimeFormats` (or equivalent) for tso encode/decode. Find the function that handles `tso`. Likely culprits:
+   - JVM `OffsetDateTime`/`ZonedDateTime` formatting where `ZoneOffset.UTC.toString` returns `"Z"` instead of `"+00:00"`.
+   - A `DateTimeFormatter` that uses `ISO_OFFSET_DATE_TIME` (which emits `Z` for UTC) instead of an explicit pattern that always emits `±HH:MM`.
+   - An `if (offset == 0) "Z" else …` branch.
+3. **Fix:** force the tso formatter to always emit `±HH:MM`, including `+00:00` for UTC. Mirror the fix shape used in PR-28.3's generated-codec path (see commit `b85fc30`, which fixed Scala/Java/Kotlin/C#/TS generated tso codecs); the same canonicalisation must apply here.
+4. **Add a regression test.** A unit test on `BaboonRuntimeCodec` (or `BaboonTimeFormats`) that round-trips `"...+00:00"` and asserts the output is `"...+00:00"`, not `"...Z"`. Also add a `tso`-with-UTC-zero-offset case to the deterministic fixture set used by `RTCodecTest` so the case is exercised on every CI run regardless of fixture seed.
+5. **Out of scope (do NOT include in this PR):** the M28 deferred PR-28.4-D02 (generator map-iteration sort-key) — that is a separate latent issue, not the cause of CI-01. Leave the archived deferred-defect note alone; do NOT mark it resolved here.
+6. Run `mdl --seq :build :test`, `:test-acceptance`, `:test-service-acceptance` to confirm green.
+
+**Fix:** Round 2 (executor: Opus, 70-min run). Split the single shared `isoFormatter` (`appendOffset("+HH:MM", "Z")`) in `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonRuntimeCodec.scala:26-40` into two named formatters: `tsuFormatter` (Z literal for UTC, retains M28-N01 second clause) + `tsoFormatter` (`+00:00` literal for UTC, satisfies M28-N01 first clause). Mirrors PR-28.3 (commit `b85fc30`) `BaboonTools.scala` shape behaviorally (different builder style, equivalent output). Encode-side parse arm at lines 428-437 widened from `OffsetDateTime.parse(value, isoFormatter)` (strict 3-digit fractional) to bare `OffsetDateTime.parse(value)` (`ISO_OFFSET_DATE_TIME`, accepts both `Z` and `±HH:MM` per M28-N01 decoder-tolerance clause; flexible fractional precision). Decode-side at lines 471-479 split single `tsu | tso` arm into two arms dispatching to per-type formatter. Regression test added in `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/RTCodecTest.scala:38-66` exercising both `tso +00:00` round-trip (failing case) and `tsu Z` round-trip (regression-guard for second M28-N01 clause); test runs end-to-end through `BaboonRuntimeCodec.encode → decode`, deterministic (not fixture-seed-dependent). Close gates: `mdl --seq :build :test` PASS (1623.7s, 308/308 RTCodecTest cases), `mdl :test-acceptance` PASS, `mdl :test-service-acceptance` PASS (6m 13s). Adversarial review (Opus) cleared with 3 minor/nit follow-ups (D02-D04 below), no blocking findings.
+
+**Cross-cuts:**
+- Round-1 hypothesis (PR-28.4-D02 generator map-iteration sort-key) was wrong; round-1 executor escalated correctly rather than guess-fixing. Round-1 contribution captured in PR-28.4-D02 archived ledger; that defect REMAINS DEFERRED — it is a separate latent issue, not the cause of CI-01.
+- Other backend runtime codecs (Cs, Ts, Rs, Kt, Jv) already received the equivalent fix via PR-28.3. The compiler-side `BaboonRuntimeCodec.scala` was the missed JVM-only site. Reviewer verified by grep across `baboon-compiler/src/main/resources/baboon-runtime/`.
+
+## [PR-29P.1-D02] Regression test does not cover non-UTC tso offsets, leaving regression-guard incomplete for ±HH:MM other than `+00:00`
+**Status:** resolved (deferred to M29 follow-up)
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/RTCodecTest.scala:38-66`.
+**Description:** The new regression test only covers `tso` UTC-zero (`+00:00`) and `tsu` UTC (`Z`). It does not exercise non-UTC `tso` offsets like `+05:30` or `-08:00`. The patch is mechanically correct for non-UTC (both old and new formatters emit `+05:30` for non-zero offsets via `appendOffset("+HH:MM", _)`), so the regression risk is low — but a future change that, e.g., hard-codes `+00:00` output would silently break non-UTC tso while keeping this test green. The defect-of-record `[PR-29P.1-D01]` required a deterministic UTC-zero case "exercised on every CI run regardless of fixture seed"; that is met. Non-UTC offset coverage is a stricter bar that was not explicitly required.
+**Fix:** Defer to a separate widen-coverage PR in M29 (post-CI-green). Recorded as a `tasks.md` M29 follow-up.
+
+## [PR-29P.1-D03] `RandomJsonGenerator` carries the same buggy single-shared-formatter pattern in the `:example` REPL output
+**Status:** resolved (deferred to M29 follow-up)
+**Severity:** minor (deferred)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/explore/RandomJsonGenerator.scala:14-17, 102-111`.
+**Description:** `RandomJsonGenerator` uses a single shared formatter `appendOffset("+HH:MM", "Z")` for both `tsu` and `tso`. Generated examples for `tso` fields with UTC offset will print `Z`, misleading users about the canonical wire form. Consumers (verified): only `baboon-compiler/.js/src/main/scala/io/septimalmind/baboon/BaboonJS.scala:829` (JS REPL "generate" entrypoint) and `baboon-compiler/.jvm/src/main/scala/io/septimalmind/baboon/explore/commands/ExampleCommand.scala:23` (JVM `:example` command). Output is NOT roundtripped through codecs in production paths, so does not affect wire-format invariants. However, output IS user-facing in the REPL — a `tso` example showing `Z` would mislead users about M28-N01. Practical impact further bounded: `RandomJsonGenerator.scala:110` always emits `ZoneOffset.UTC`, so non-UTC variants don't materialise — the visible defect is only "tso example shows `Z` when it should show `+00:00`".
+**Fix:** Defer to a separate M29 follow-up PR. Apply the same split: `tsuFormatter` with `appendOffset("+HH:MM","Z")`, `tsoFormatter` with `appendOffset("+HH:MM","+00:00")`. Out of scope for the surgical CI-01 fix per CLAUDE.md §5.
+
+## [PR-29P.1-D04] Ledger hygiene — `tasks.md` PR-29P.1 / PR-29P.3 status flips deferred to orchestrator commit step
+**Status:** resolved (orchestrator close-out — performed inline with the PR-29P.1 commit)
+**Severity:** nit
+**Location:** `tasks.md`.
+**Description:** Reviewer noted that at review time `PR-29P.1` was still `[~]` and `PR-29P.3` (close-out) was `[ ]` un-started, despite the local close gates being green. Per the loop's I3/I5 convention, ledger-status flips are orchestrator work performed at PR commit time, not subagent work. Closed by this commit's orchestrator update.
+**Fix:** Orchestrator updated `tasks.md`: `PR-29P.1` → `[x]` with full Completed entry; `PR-29P.3` advanced to `[~]` for live-CI verification.
 
 ---
 
