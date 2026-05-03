@@ -62,7 +62,14 @@ class CompletionProvider(
 
     val candidates = context match {
       case CompletionContext.TypePosition =>
+        // Field-type position: ordinary types and builtins only.
+        // Templates are not valid in field position (spec §2.5.1 / matrix #1).
         getTypeCompletions ++ getBuiltinCompletions
+
+      case CompletionContext.AliasRhsPosition =>
+        // Alias RHS position (after `type Name = `): templates are the primary new item here,
+        // plus ordinary types and builtins (a non-template alias is also valid).
+        getTypeCompletions ++ getBuiltinCompletions ++ getTemplateCompletions
 
       case CompletionContext.KeywordPosition =>
         getKeywordCompletions
@@ -100,6 +107,8 @@ class CompletionProvider(
   private sealed trait CompletionContext
   private object CompletionContext {
     case object TypePosition extends CompletionContext
+    // Alias RHS position: after `type Name = ` — templates are valid here (spec §2.4).
+    case object AliasRhsPosition extends CompletionContext
     case object KeywordPosition extends CompletionContext
     case object FieldName extends CompletionContext
     case object PragmaKeyPosition extends CompletionContext
@@ -117,6 +126,9 @@ class CompletionProvider(
             val line         = lines(position.line)
             val beforeCursor = line.take(position.character)
 
+            // Alias RHS: `type Name =` (with optional `root` prefix and optional word prefix).
+            // Templates are only valid on the RHS of a type alias (spec §2.4).
+            val aliasRhsPattern = """^\s*(?:root\s+)?type\s+\w+\s*=\s*(\w*)$""".r
             // Pattern to match type position with optional prefix: "field: TypePre" -> ("field: ", "TypePre")
             val typeWithPrefixPattern = """^(.*:\s*)(\w*)$""".r
             // Pattern for generic args: "opt[TypePre" or "map[K, ValuePre"
@@ -131,6 +143,8 @@ class CompletionProvider(
                 (CompletionContext.PragmaValuePosition(key), Some(prefix))
               case pragmaKeyPattern(prefix) =>
                 (CompletionContext.PragmaKeyPosition, Some(prefix))
+              case aliasRhsPattern(prefix) =>
+                (CompletionContext.AliasRhsPosition, Some(prefix))
               case typeWithPrefixPattern(_, prefix) =>
                 (CompletionContext.TypePosition, Some(prefix))
               case genericArgPattern(_, prefix) =>
@@ -212,6 +226,32 @@ class CompletionProvider(
     } else {
       Seq.empty
     }
+  }
+
+  private def getTemplateCompletions: Seq[CompletionItem] = {
+    workspaceState.getFamily.map {
+      family =>
+        family.domains.toMap.values.flatMap {
+          lineage =>
+            lineage.versions.toMap.values.flatMap {
+              domain =>
+                domain.templateRegistry.templates.map {
+                  case ((_, _, name), body) =>
+                    val arity      = body.typeParams.size
+                    val paramNames = body.typeParams.map(_.name).mkString(", ")
+                    val label      = s"${name.name}[$paramNames]"
+                    CompletionItem(
+                      label      = label,
+                      kind       = Some(CompletionItemKind.Class),
+                      detail     = Some(s"template (arity $arity)"),
+                      insertText = Some(name.name),
+                      sortText   = Some(s"0_${name.name}"),
+                      filterText = Some(name.name),
+                    )
+                }
+            }
+        }.toSeq
+    }.getOrElse(Seq.empty)
   }
 
   private def getTypeCompletions: Seq[CompletionItem] = {

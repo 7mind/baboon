@@ -3,7 +3,7 @@ package io.septimalmind.baboon.lsp.features
 import io.septimalmind.baboon.lsp.protocol.{Location, Position, Range}
 import io.septimalmind.baboon.lsp.state.{DocumentState, WorkspaceState}
 import io.septimalmind.baboon.lsp.util.PositionConverter
-import io.septimalmind.baboon.parser.model.InputPointer
+import io.septimalmind.baboon.parser.model.{InputPointer, RawNodeMeta}
 import io.septimalmind.baboon.typer.model._
 
 class DefinitionProvider(
@@ -80,7 +80,28 @@ class DefinitionProvider(
                   }.flatMap(locationFromPos)
               }
           }.headOption
+        }.orElse {
+          // Look up template declarations in the template registry.
+          // Templates are removed from domain.defs after monomorphisation but their
+          // source positions are preserved in the TemplateBody's rawDefn.
+          family.domains.toMap.values.flatMap {
+            lineage =>
+              lineage.versions.toMap.values.flatMap {
+                domain =>
+                  domain.templateRegistry.templates.collectFirst {
+                    case ((_, _, name), body) if name.name == typeName =>
+                      templateBodyMeta(body).pos
+                  }.flatMap(locationFromPos)
+              }
+          }.headOption
         }
     }
+  }
+
+  private def templateBodyMeta(body: TemplateBody): RawNodeMeta = body.rawDefn match {
+    case RawTemplateDefn.Dto(raw)      => raw.meta
+    case RawTemplateDefn.Adt(raw)      => raw.meta
+    case RawTemplateDefn.Contract(raw) => raw.meta
+    case RawTemplateDefn.Service(raw)  => raw.meta
   }
 }
