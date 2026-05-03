@@ -34,6 +34,7 @@ mdl :test-service-acceptance # service-flavour RPC wiring round-trips
 
 - `sbt baboonJVM/compile` is **NOT** a CI-equivalent check. It builds only the JVM project. CI runs `sbt +compile` (cross-build for JVM + Scala.js), which has stricter `-Wconf` settings that promote inexhaustive-match warnings to errors. PR-47 (M21) shipped with green local `sbt baboonJVM/compile` but failed CI on `BaboonJS.scala` (commit `2de517b` fixed it). `mdl :build :test` triggers `sbt +compile` — the same path CI uses.
 - When adding a new `TyperIssue` case class, **three** exhaustive-match sites must be updated: `lsp/features/DiagnosticsProvider.scala`, `lsp/state/WorkspaceState.scala`, and `.js/src/main/scala/io/septimalmind/baboon/BaboonJS.scala`. The `:build`/`:test` cross-build catches missed JS-side updates.
+- **M29 pattern (PR-29.7):** when a single PR introduces multiple new `TyperIssue` cases, **bundle them into one touch per exhaustive-match file** rather than updating each file once per case. PR-29.7 added three new cases (`TemplateNotInstantiated`, `NotATemplate`, `TemplateBodyCarriesDerived`) as 9 case arms total across 3 files — 3 file touches, not 9. Reduces the risk of CI red from a partially-applied exhaustive-match update mid-PR. PR-29.4 (`DuplicateTypeParam`), PR-29.5 (`TemplateArityMismatch`, `TemplateInstantiationInBody`), and PR-29.7 are the canonical M29 examples of the 3-site update pattern.
 
 **Flags & environment:**
 

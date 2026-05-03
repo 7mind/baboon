@@ -257,6 +257,9 @@ data X[T] { f: T }
 type Y = X      // REJECTED — template `X` referenced without instantiation
 ```
 
+This case fires the `TemplateNotInstantiated` diagnostic (introduced in
+PR-29.7): `Alias 'Y' references template 'X' without type arguments — use 'X[…]'`.
+
 #### 2.5.8 Instantiating a non-generic (matrix #8)
 
 A constructor expression `H[arg]` whose head `H` resolves to a non-template
@@ -266,6 +269,10 @@ alias, etc.) is rejected:
 ```text
 type Y = i32[X]   // REJECTED — `i32` is not a template
 ```
+
+This case fires the `NotATemplate` diagnostic (introduced in PR-29.7):
+`'i32' is not a template or builtin collection — cannot be used as a
+generic constructor head in alias 'Y'`.
 
 The existing builtin collections (`lst`, `set`, `opt`, `map`, `any`) are
 not templates either, but they accept their arguments through the
@@ -532,8 +539,9 @@ data Page[T] : derived[json] {   // REJECTED — derivation must live on the ali
 }
 ```
 
-The exact diagnostic name (`TemplateCarriesDerivation` or equivalent) is
-finalised in PR-29.7.
+The diagnostic name is `TemplateBodyCarriesDerived` (introduced in
+PR-29.7): `Template 'X' carries ':derived[…]' — write the annotation on
+the alias instead`.
 
 ### 5.4 `root` keyword applies only to aliases
 
@@ -593,6 +601,26 @@ require separate milestones / decisions:
     acceptance of a template body contingent on which other aliases happen
     to be present in the same model version — a fragile and non-local
     constraint.
+10. **Tree-sitter editor grammar for template syntax.** M29 does not ship
+    updated `grammar.js` / parser artefacts for the Baboon tree-sitter
+    grammar. The grammar changes live in a 3-level submodule chain
+    (`editors/baboon-zed` → `grammars/baboon`) that requires
+    user-authorised pointer bumps across separate git repositories.
+    Deferred to a dedicated submodule-coordination PR (`[PR-29.8-D01]`).
+11. **Cross-namespace template instantiation.** `type Y = my.ns.X[i32]`
+    (where `X` is declared in a sibling namespace) is not supported in
+    M29. Matrix #7 and matrix #2 enforcement in the typer is restricted
+    to same-namespace templates; a prefixed reference to a registered
+    template falls through to `NameNotFound` (`[PR-29.5-D04]`,
+    `[PR-29.7-D07]`). Requires a separate spec decision and scope-resolver
+    extension.
+12. **Cross-language end-to-end acceptance for templated services.** M29
+    verifies service-template monomorphisation at the typer unit-test
+    level and emits valid service code for all 9 backends. It does NOT
+    exercise a templated service through the full `:test-service-acceptance`
+    cross-language wire-round-trip harness. That would require extending
+    `test/services/petstore.baboon` and the 9 per-language service
+    harnesses (`[PR-29.10-D07]`). Deferred to a follow-up milestone.
 
 ---
 
@@ -675,6 +703,88 @@ between 1.0.0's `StrPage` and 1.0.1's `StrPage` is empty.
 The template `Page` does not participate in the evolution diff in either
 direction. This is the practical meaning of locked decision #5.
 
+### 7.3 The `m29-ok` fixture — full shape reference
+
+The canonical fixture at
+`baboon-compiler/src/test/resources/baboon/m29-ok/m29.baboon` defines
+three template declarations (one `data`, one `adt`, one `service`) and five
+alias instantiations in the same namespace `my.ok.m29`:
+
+```text
+model my.ok.m29
+
+version "1.0.0"
+
+data Item {
+  name:  str
+  price: f64
+}
+
+data Page[T] {
+  items: lst[T]
+  total: u32
+}
+
+adt Envelope[T, E] {
+  data Ok  { value: T }
+  data Err { error: E }
+}
+
+service Crud[K, V] {
+  def get (K): V
+  def put (V): K
+}
+
+root type IntPage        = Page[i32]          : derived[json], derived[ueba]
+root type StrPage        = Page[str]          : derived[json], derived[ueba]
+root type ItemPage       = Page[Item]         : derived[json], derived[ueba]
+root type IntStrEnvelope = Envelope[i32, str] : derived[json], derived[ueba]
+root type IntStrCrud     = Crud[i32, str]
+```
+
+After monomorphisation the typed model contains exactly the following
+user-defined types (templates `Page`, `Envelope`, `Crud` are absent):
+
+```text
+// From Page[i32]:
+root data IntPage : derived[json], derived[ueba] {
+  items: lst[i32]
+  total: u32
+}
+
+// From Page[str]:
+root data StrPage : derived[json], derived[ueba] {
+  items: lst[str]
+  total: u32
+}
+
+// From Page[Item] — user-type argument, resolved to the non-template DTO:
+root data ItemPage : derived[json], derived[ueba] {
+  items: lst[Item]
+  total: u32
+}
+
+// From Envelope[i32, str] — two-parameter ADT template:
+root adt IntStrEnvelope : derived[json], derived[ueba] {
+  data Ok  { value: i32 }
+  data Err { error: str }
+}
+
+// From Crud[i32, str] — service template:
+root service IntStrCrud {
+  def get (i32): str
+  def put (str): i32
+}
+```
+
+All 9 backends emit concrete types keyed by `IntPage`, `StrPage`,
+`ItemPage`, `IntStrEnvelope`, and `IntStrCrud` — no backend emits
+`Page<int>`, `Envelope<int, string>`, `Crud<int, string>`, or any
+parameterised form (locked decision #4). JSON and UEBA codecs are
+generated for the four `root type` aliases that carry
+`: derived[json], derived[ueba]`. No codec is generated for `IntStrCrud`
+(service templates do not carry derivation annotations).
+
 ---
 
 ## 8. Implementation reference
@@ -683,7 +793,8 @@ The implementation of templates is tracked in milestone M29, PRs
 PR-29.2 .. PR-29.11, per
 `docs/drafts/20260503-2210-m29-generics-plan.md`. See also `tasks.md`,
 section "Milestone M29 — PR breakdown", for the per-PR landing slots and
-their dependency order. The exact diagnostic strings emitted for each
-forbidden position in §2.5 are finalised in PR-29.7; the cycle
-diagnostic in §2.5.9 is finalised in PR-29.6; the codec-on-template
-diagnostic in §5.3 is finalised in PR-29.7.
+their dependency order. Diagnostic names for the forbidden positions in
+§2.5 and §5.3 are all finalised: `TemplateNotInstantiated` (§2.5.7,
+PR-29.7), `NotATemplate` (§2.5.8, PR-29.7), `TemplateBodyCarriesDerived`
+(§5.3, PR-29.7), `VerificationIssue.ReferentialCyclesFound` (§2.5.9,
+PR-29.6, existing validator diagnostic reused).
