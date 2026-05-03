@@ -23,10 +23,20 @@ object BaboonRuntimeCodec {
     private val F         = Error2[F]
     private val enquiries = new BaboonEnquiries.BaboonEnquiriesImpl()
 
-    // ISO 8601 formatters for timestamps with exactly 3 fractional digits (matching C# format)
-    private val isoFormatter = new DateTimeFormatterBuilder()
+    // ISO 8601 formatters for timestamps with exactly 3 fractional digits (matching C# format).
+    // M28-N01 (PR-28.3): tso = "±HH:MM" always (UTC = "+00:00", NOT "Z"); tsu retains "Z" for UTC.
+    // PR-29P.1 round-2: previously a single shared formatter used appendOffset("+HH:MM", "Z"),
+    // which collapsed UTC-zero offset to "Z" for both tso and tsu — wrong for tso.
+    // Mirrors the BaboonTools.scala (generated runtime) split landed in PR-28.3 (commit b85fc30).
+    // tsu: zero-offset literal "Z" — UTC renders as "...Z".
+    private val tsuFormatter = new DateTimeFormatterBuilder()
       .appendPattern("yyyy-MM-dd'T'HH:mm:ss.SSS")
       .appendOffset("+HH:MM", "Z")
+      .toFormatter()
+    // tso: zero-offset literal "+00:00" — UTC renders as "...+00:00".
+    private val tsoFormatter = new DateTimeFormatterBuilder()
+      .appendPattern("yyyy-MM-dd'T'HH:mm:ss.SSS")
+      .appendOffset("+HH:MM", "+00:00")
       .toFormatter()
 
     override def decode(family: BaboonFamily, pkg: Pkg, version: Version, idString: String, data: Vector[Byte]): F[BaboonIssue, Json] = {
@@ -418,7 +428,10 @@ object BaboonRuntimeCodec {
         case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
           json.asString match {
             case Some(value) =>
-              F.fromEither(Try(OffsetDateTime.parse(value, isoFormatter)).toEither.left.map(_ => RuntimeCodecIssue.InvalidTimestampString(value): BaboonIssue)).map {
+              // Parse tolerates both "Z" and "±HH:MM" forms (decoders must accept either per M28-N01
+              // forward-compat clause). OffsetDateTime.parse(value) uses ISO_OFFSET_DATE_TIME, which
+              // accepts both — no need to use a per-type formatter on the parse side.
+              F.fromEither(Try(OffsetDateTime.parse(value)).toEither.left.map(_ => RuntimeCodecIssue.InvalidTimestampString(value): BaboonIssue)).map {
                 offsetDt =>
                   BaboonBinTools.writeTimestamp(writer, offsetDt)
               }
@@ -458,9 +471,12 @@ object BaboonRuntimeCodec {
           F.pure(Json.fromString(BaboonBinTools.readByteString(reader).toHexString))
         case TypeId.Builtins.uid =>
           F.pure(Json.fromString(BaboonBinTools.readUid(reader).toString))
-        case TypeId.Builtins.tsu | TypeId.Builtins.tso =>
+        case TypeId.Builtins.tsu =>
           val offsetDt = BaboonBinTools.readTimestamp(reader)
-          F.pure(Json.fromString(offsetDt.format(isoFormatter)))
+          F.pure(Json.fromString(offsetDt.format(tsuFormatter)))
+        case TypeId.Builtins.tso =>
+          val offsetDt = BaboonBinTools.readTimestamp(reader)
+          F.pure(Json.fromString(offsetDt.format(tsoFormatter)))
         case other => F.fail(RuntimeCodecIssue.UnsupportedBuiltinScalar(other))
       }
     }

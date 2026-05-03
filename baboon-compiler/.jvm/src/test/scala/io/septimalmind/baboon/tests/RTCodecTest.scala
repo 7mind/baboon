@@ -31,6 +31,40 @@ abstract class RTCodecTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] exten
         }
     }
 
+    // PR-29P.1 round-2 regression: tso UTC-zero offset MUST round-trip as "+00:00", NOT "Z".
+    // M28-N01 invariant: tso = ±HH:MM always; UTC = "+00:00", NOT "Z". tsu retains "...Z".
+    // The runtime codec previously used a single isoFormatter with appendOffset("+HH:MM", "Z")
+    // for both tsu and tso, collapsing UTC-zero to "Z" on decode for tso fields.
+    "roundtrip tso UTC-zero offset preserves +00:00 (M28-N01)" in {
+      (loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F]) =>
+        // T6_D2 has f09: tso (and f10: tsu). Build minimal payload with tso UTC-zero
+        // expressed as "+00:00", and assert it round-trips identically.
+        val rawJson =
+          """{
+            |  "f00": "x",
+            |  "f01": 1, "f02": 2, "f03": 3, "f04": 4,
+            |  "f05": -5, "f06": -6, "f07": -7, "f08": -8,
+            |  "f09": "6328-02-02T13:22:52.339+00:00",
+            |  "f10": "2024-01-01T00:00:00.000Z",
+            |  "f11": 1.5, "f12": 2.5, "f13": 3.5,
+            |  "f14": true
+            |}""".stripMargin
+        for {
+          fam       <- loadPkg(loader)
+          data: Json = io.circe.parser.parse(rawJson).toOption.get
+          encoded   <- codec.encode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("3.0.0"), "testpkg.pkg0/:#T6_D2", data, indexed = false)
+          decoded   <- codec.decode(fam, Pkg(NEList("testpkg", "pkg0")), Version.parse("3.0.0"), "testpkg.pkg0/:#T6_D2", encoded)
+        } yield {
+          val origF09    = data.hcursor.downField("f09").as[String].toOption.get
+          val decodedF09 = decoded.hcursor.downField("f09").as[String].toOption.get
+          assert(decodedF09 == origF09, s"tso UTC-zero must round-trip as +00:00, not Z. orig=$origF09 got=$decodedF09")
+          // Also verify tsu still round-trips with "Z" (M28-N01 second clause: tsu retains Z semantics)
+          val origF10    = data.hcursor.downField("f10").as[String].toOption.get
+          val decodedF10 = decoded.hcursor.downField("f10").as[String].toOption.get
+          assert(decodedF10 == origF10, s"tsu UTC must round-trip as Z. orig=$origF10 got=$decodedF10")
+        }
+    }
+
     "roundtrip foreign types with rt binding through UEBA" in {
       (loader: BaboonLoader[F], codec: BaboonRuntimeCodec[F]) =>
         for {
