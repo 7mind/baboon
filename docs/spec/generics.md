@@ -282,8 +282,12 @@ type A = X[B]
 type B = X[A]   // REJECTED — cycle through alias instantiations
 ```
 
-The diagnostic name for this case (whether `TemplateInstantiationCycle`
-or the existing `CircularInheritance`) is finalised in PR-29.6 / PR-29.7.
+The cycle is caught by `BaboonValidator.checkLoops` as
+`VerificationIssue.ReferentialCyclesFound`, post-typer, post-monomorphisation.
+M29 reuses this existing validator-side diagnostic rather than introducing a
+dedicated `TemplateInstantiationCycle` typer-side diagnostic (CLAUDE.md §4
+simplicity); after monomorphisation the cycle takes the same form as any
+non-template referential cycle (`data A { f: B }; data B { f: A }`).
 
 ### 2.6 Interaction with ADT inheritance
 
