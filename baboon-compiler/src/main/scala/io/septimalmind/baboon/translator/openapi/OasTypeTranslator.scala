@@ -64,17 +64,17 @@ class OasTypeTranslator {
     */
   val baboonAnySchema: String = {
     """{"type": "object", "title": "BaboonAny", """ +
-      """"description": "Opaque any-envelope. JSON serialization of a baboon AnyOpaque value: """ +
-      """{\"$ak\":<int>, \"$ad\"?:str, \"$av\"?:str, \"$at\"?:str, \"$c\":<inner>}. """ +
-      """$ak kind byte: 0x07=A(any), 0x03=B(any[domain:this]), 0x01=C(any[domain:current]), """ +
-      """0x06=D1(any[T]), 0x02=D2(any[domain:this,T]), 0x00=D3(any[domain:current,T]).", """ +
-      """"properties": {""" +
-      """"$ak": {"type": "integer", "minimum": 0, "maximum": 7}, """ +
-      """"$ad": {"type": "string"}, """ +
-      """"$av": {"type": "string"}, """ +
-      """"$at": {"type": "string"}, """ +
-      """"$c": {}""" +
-      """}, "required": ["$ak", "$c"]}"""
+    """"description": "Opaque any-envelope. JSON serialization of a baboon AnyOpaque value: """ +
+    """{\"$ak\":<int>, \"$ad\"?:str, \"$av\"?:str, \"$at\"?:str, \"$c\":<inner>}. """ +
+    """$ak kind byte: 0x07=A(any), 0x03=B(any[domain:this]), 0x01=C(any[domain:current]), """ +
+    """0x06=D1(any[T]), 0x02=D2(any[domain:this,T]), 0x00=D3(any[domain:current,T]).", """ +
+    """"properties": {""" +
+    """"$ak": {"type": "integer", "minimum": 0, "maximum": 7}, """ +
+    """"$ad": {"type": "string"}, """ +
+    """"$av": {"type": "string"}, """ +
+    """"$at": {"type": "string"}, """ +
+    """"$c": {}""" +
+    """}, "required": ["$ak", "$c"]}"""
   }
 
   /** Inline JSON Schema fragment for a type reference.

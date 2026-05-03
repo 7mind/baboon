@@ -198,12 +198,10 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
 
     val aliasMap = buildAliasMap(usual) ++ versionedAliases.map { case (t, (_, _, alias)) => t -> alias }
 
-    val versionedImports = versionedAliases.toList
-      .sortBy { case (_, (mod, sym, _)) => (mod, sym) }
-      .map {
-        case (_, (moduleFqn, symbolName, alias)) =>
-          q"from $moduleFqn import $symbolName as $alias"
-      }
+    val versionedImports = versionedAliases.toList.sortBy { case (_, (mod, sym, _)) => (mod, sym) }.map {
+      case (_, (moduleFqn, symbolName, alias)) =>
+        q"from $moduleFqn import $symbolName as $alias"
+    }
 
     val usualImportsByModule = usual.groupBy(_.moduleId).toList.sortBy { case (moduleId, types) => moduleId.path.size + types.size }.reverse.map {
       case (module, types) =>

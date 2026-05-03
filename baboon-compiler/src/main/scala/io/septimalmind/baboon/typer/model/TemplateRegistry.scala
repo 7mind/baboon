@@ -14,10 +14,10 @@ import io.septimalmind.baboon.parser.model.{RawAdt, RawContract, RawDto, RawServ
   */
 sealed trait RawTemplateDefn
 object RawTemplateDefn {
-  case class Dto(raw: RawDto)           extends RawTemplateDefn
-  case class Adt(raw: RawAdt)           extends RawTemplateDefn
+  case class Dto(raw: RawDto) extends RawTemplateDefn
+  case class Adt(raw: RawAdt) extends RawTemplateDefn
   case class Contract(raw: RawContract) extends RawTemplateDefn
-  case class Service(raw: RawService)   extends RawTemplateDefn
+  case class Service(raw: RawService) extends RawTemplateDefn
 }
 
 /** Carry the template's declared type-parameter list and the cached raw body.

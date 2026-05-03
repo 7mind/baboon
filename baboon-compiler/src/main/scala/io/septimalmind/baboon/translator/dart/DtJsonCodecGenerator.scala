@@ -22,9 +22,9 @@ class DtJsonCodecGenerator(
   override def translate(defn: DomainMember.User, dtRef: DtValue.DtType, srcRef: DtValue.DtType): Option[TextTree[DtValue]] = {
     if (isActive(defn.id)) {
       (defn.defn match {
-        case d: Typedef.Dto      => Some(genDtoBodies(dtRef, d))
-        case _: Typedef.Enum     => Some(genEnumBodies(dtRef))
-        case a: Typedef.Adt      => Some(genAdtBodies(dtRef, a))
+        case d: Typedef.Dto  => Some(genDtoBodies(dtRef, d))
+        case _: Typedef.Enum => Some(genEnumBodies(dtRef))
+        case a: Typedef.Adt  => Some(genAdtBodies(dtRef, a))
         // PR-26.7 (M26): mirror TS pattern (`TsJsonCodecGenerator.scala:46`) — emit no
         // per-foreign codec class for any Foreign typedef. Value-position Custom-mapped
         // foreigns inline through `mkEncoder`/`mkDecoder` (passthrough/cast) instead of
@@ -218,8 +218,7 @@ class DtJsonCodecGenerator(
                       // PR-I.1d (M24 Phase 3.1): Custom-foreign map keys route through
                       // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
                       val srcRef = trans.toDtTypeRefKeepForeigns(uid, domain, evo)
-                      val host   = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost",
-                                                  importAs = Some(trans.toSnakeCase(srcRef.name)))
+                      val host   = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost", importAs = Some(trans.toSnakeCase(srcRef.name)))
                       q"$host.instance.encodeKey($ref)"
                     case None =>
                       throw new RuntimeException(s"BUG: Foreign type $uid has no Dart binding")
@@ -245,18 +244,18 @@ class DtJsonCodecGenerator(
     tpe match {
       case TypeRef.Scalar(id) =>
         id match {
-          case TypeId.Builtins.bit                                                                   => q"$ref"
+          case TypeId.Builtins.bit                                             => q"$ref"
           case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 => q"$ref"
           case TypeId.Builtins.i64                                             => q"$ref.toString()"
           case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 => q"$ref"
           case TypeId.Builtins.u64                                             => q"BigInt.from($ref).toUnsigned(64).toString()"
-          case TypeId.Builtins.f32 | TypeId.Builtins.f64                                             => q"$ref"
-          case TypeId.Builtins.f128                                                                  => q"$ref.value"
-          case TypeId.Builtins.str                                                                   => q"$ref"
-          case TypeId.Builtins.uid                                                                   => q"$ref"
-          case TypeId.Builtins.bytes                                                                 => q"$ref.toHexString()"
-          case TypeId.Builtins.tsu                                                                   => q"$baboonTimeFormats.formatUtc($ref)"
-          case TypeId.Builtins.tso                                                                   => q"$baboonTimeFormats.formatOffset($ref)"
+          case TypeId.Builtins.f32 | TypeId.Builtins.f64                       => q"$ref"
+          case TypeId.Builtins.f128                                            => q"$ref.value"
+          case TypeId.Builtins.str                                             => q"$ref"
+          case TypeId.Builtins.uid                                             => q"$ref"
+          case TypeId.Builtins.bytes                                           => q"$ref.toHexString()"
+          case TypeId.Builtins.tsu                                             => q"$baboonTimeFormats.formatUtc($ref)"
+          case TypeId.Builtins.tso                                             => q"$baboonTimeFormats.formatOffset($ref)"
           case u: TypeId.User =>
             domain.defs.meta.nodes(u) match {
               case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
@@ -309,14 +308,14 @@ class DtJsonCodecGenerator(
             case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 => q"($ref as num).toInt()"
             case TypeId.Builtins.i64                                             => q"($ref is String ? int.parse($ref as String) : ($ref as num).toInt())"
             case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 => q"($ref as num).toInt()"
-            case TypeId.Builtins.u64                                             => q"($ref is String ? BigInt.parse($ref as String).toSigned(64).toInt() : ($ref as num).toInt())"
-            case TypeId.Builtins.f32 | TypeId.Builtins.f64                       => q"($ref as num).toDouble()"
-            case TypeId.Builtins.f128                                            => q"$baboonDecimal($ref is String ? $ref as String : $ref.toString())"
-            case TypeId.Builtins.str                                             => q"$ref as String"
-            case TypeId.Builtins.uid                                             => q"$ref as String"
-            case TypeId.Builtins.bytes                                           => q"$baboonByteStringTools.fromHexString($ref as String)"
-            case TypeId.Builtins.tsu                                             => q"$baboonTimeFormats.parseUtc($ref as String)"
-            case TypeId.Builtins.tso                                             => q"$baboonTimeFormats.parseOffset($ref as String)"
+            case TypeId.Builtins.u64                       => q"($ref is String ? BigInt.parse($ref as String).toSigned(64).toInt() : ($ref as num).toInt())"
+            case TypeId.Builtins.f32 | TypeId.Builtins.f64 => q"($ref as num).toDouble()"
+            case TypeId.Builtins.f128                      => q"$baboonDecimal($ref is String ? $ref as String : $ref.toString())"
+            case TypeId.Builtins.str                       => q"$ref as String"
+            case TypeId.Builtins.uid                       => q"$ref as String"
+            case TypeId.Builtins.bytes                     => q"$baboonByteStringTools.fromHexString($ref as String)"
+            case TypeId.Builtins.tsu                       => q"$baboonTimeFormats.parseUtc($ref as String)"
+            case TypeId.Builtins.tso                       => q"$baboonTimeFormats.parseOffset($ref as String)"
             case u: TypeId.User =>
               domain.defs.meta.nodes(u) match {
                 case DomainMember.User(_, f: Typedef.Foreign, _, _) =>
@@ -363,8 +362,8 @@ class DtJsonCodecGenerator(
           id match {
             case TypeId.Builtins.bit                                                                   => q"$ref == 'true'"
             case TypeId.Builtins.i08 | TypeId.Builtins.i16 | TypeId.Builtins.i32 | TypeId.Builtins.i64 => q"int.parse($ref)"
-            case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32 => q"int.parse($ref)"
-            case TypeId.Builtins.u64                                               => q"BigInt.parse($ref).toSigned(64).toInt()"
+            case TypeId.Builtins.u08 | TypeId.Builtins.u16 | TypeId.Builtins.u32                       => q"int.parse($ref)"
+            case TypeId.Builtins.u64                                                                   => q"BigInt.parse($ref).toSigned(64).toInt()"
             case TypeId.Builtins.f32                                                                   => q"double.parse($ref)"
             case TypeId.Builtins.f64                                                                   => q"double.parse($ref)"
             case TypeId.Builtins.f128                                                                  => q"$baboonDecimal($ref)"
@@ -390,8 +389,7 @@ class DtJsonCodecGenerator(
                           // `on Exception catch (e)` (NOT broader): keeps fail-fast on Error /
                           // ControlThrowable parity (PR-I-D01 pattern guidance).
                           val srcRef = trans.toDtTypeRefKeepForeigns(u, domain, evo)
-                          val host   = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost",
-                                                      importAs = Some(trans.toSnakeCase(srcRef.name)))
+                          val host   = DtValue.DtType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost", importAs = Some(trans.toSnakeCase(srcRef.name)))
                           q"""(() { try { return $host.instance.decodeKey($ref); } on Exception catch (e) { throw $baboonDecoderFailure('malformed key: ' + $ref, e); } })()"""
                         case None =>
                           throw new RuntimeException(s"BUG: Foreign type $u has no Dart binding")
@@ -401,8 +399,7 @@ class DtJsonCodecGenerator(
                     // malformed-key consistency (replaces unchecked cast).
                     case d: Typedef.Dto if d.isIdentifier =>
                       val targetTpe   = trans.toDtTypeRefKeepForeigns(u, domain, evo)
-                      val nestedCodec = DtValue.DtType(targetTpe.pkg, s"${targetTpe.name}Codec",
-                                                       importAs = Some(trans.toSnakeCase(targetTpe.name)))
+                      val nestedCodec = DtValue.DtType(targetTpe.pkg, s"${targetTpe.name}Codec", importAs = Some(trans.toSnakeCase(targetTpe.name)))
                       q"""(switch ($nestedCodec.parseRepr($ref)) { $baboonRight<String, $targetTpe>(:final value) => value, _ => throw $baboonDecoderFailure('malformed key: ' + $ref) })"""
                     // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct (named arg).
                     case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>

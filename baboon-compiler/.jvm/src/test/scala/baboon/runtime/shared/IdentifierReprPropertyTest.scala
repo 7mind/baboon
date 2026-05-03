@@ -46,10 +46,10 @@ class IdentifierReprPropertyTest extends AnyWordSpec with Matchers {
     }
     def parseRepr(cursor: IdentifierRepr.Cursor): Either[String, FlatId] = {
       IdentifierRepr.parseHeader(cursor, "FlatId", V) match {
-        case Left(e)  => return Left(e); case _ => ()
+        case Left(e) => return Left(e); case _ => ()
       }
       IdentifierRepr.parseFieldName(cursor, "x") match {
-        case Left(e)  => return Left(e); case _ => ()
+        case Left(e) => return Left(e); case _ => ()
       }
       val xRaw = cursor.readUntilStructural()
       val x_v: Int = scala.util.Try(xRaw.toLong).toOption match {
@@ -58,7 +58,7 @@ class IdentifierReprPropertyTest extends AnyWordSpec with Matchers {
       }
       cursor.expect(':') match { case Left(e) => return Left(e); case _ => () }
       IdentifierRepr.parseFieldName(cursor, "name") match {
-        case Left(e)  => return Left(e); case _ => ()
+        case Left(e) => return Left(e); case _ => ()
       }
       val name_v = cursor.readStrField() match {
         case Right(v) => v
@@ -72,8 +72,8 @@ class IdentifierReprPropertyTest extends AnyWordSpec with Matchers {
   final case class MixedId(active: Boolean, b: ByteString, t: OffsetDateTime) {
     override def toString: String =
       s"MixedId:$V#" + "active:" + IdentifierRepr.bitToString(active) +
-        ":" + "b:" + IdentifierRepr.bytesToHex(b) +
-        ":" + "t:" + IdentifierRepr.tsuToString(t)
+      ":" + "b:" + IdentifierRepr.bytesToHex(b) +
+      ":" + "t:" + IdentifierRepr.tsuToString(t)
   }
   object MixedIdCodec {
     def parseRepr(s: String): Either[String, MixedId] = {
@@ -112,7 +112,7 @@ class IdentifierReprPropertyTest extends AnyWordSpec with Matchers {
   final case class OuterId(id: UUID, inner: FlatId) {
     override def toString: String =
       s"OuterId:$V#" + "id:" + id.toString +
-        ":" + "inner:" + "{" + inner.toString + "}"
+      ":" + "inner:" + "{" + inner.toString + "}"
   }
   object OuterIdCodec {
     def parseRepr(s: String): Either[String, OuterId] = {
@@ -265,9 +265,9 @@ class IdentifierReprPropertyTest extends AnyWordSpec with Matchers {
   // ----- Random generators -----
 
   private def randomMetacharStr(rng: Random, maxLen: Int): String = {
-    val len = rng.nextInt(maxLen + 1)
-    val sb  = new StringBuilder(len)
-    var i   = 0
+    val len      = rng.nextInt(maxLen + 1)
+    val sb       = new StringBuilder(len)
+    var i        = 0
     val alphabet = "ab\\#:{}c\n\t ÿ☃" // includes all 5 metachars and some non-ASCII
     while (i < len) {
       sb.append(alphabet.charAt(rng.nextInt(alphabet.length)))
@@ -300,7 +300,7 @@ class IdentifierReprPropertyTest extends AnyWordSpec with Matchers {
       val rng = new Random(0xCAFEBABEL)
       var i   = 0
       while (i < 1000) {
-        val v       = FlatId(rng.nextInt(), randomMetacharStr(rng, 20))
+        val v        = FlatId(rng.nextInt(), randomMetacharStr(rng, 20))
         val rendered = v.toString
         FlatIdCodec.parseRepr(rendered) match {
           case Right(parsed) => parsed shouldBe v
@@ -314,7 +314,7 @@ class IdentifierReprPropertyTest extends AnyWordSpec with Matchers {
       val rng = new Random(0xDEADBEEFL)
       var i   = 0
       while (i < 500) {
-        val v       = MixedId(rng.nextBoolean(), randomBytes(rng, 24), randomTsu(rng))
+        val v        = MixedId(rng.nextBoolean(), randomBytes(rng, 24), randomTsu(rng))
         val rendered = v.toString
         MixedIdCodec.parseRepr(rendered) match {
           case Right(parsed) => parsed shouldBe v
@@ -328,8 +328,8 @@ class IdentifierReprPropertyTest extends AnyWordSpec with Matchers {
       val rng = new Random(0xFEED1234L)
       var i   = 0
       while (i < 200) {
-        val nested  = FlatId(rng.nextInt(), randomMetacharStr(rng, 10))
-        val v       = OuterId(new UUID(rng.nextLong(), rng.nextLong()), nested)
+        val nested   = FlatId(rng.nextInt(), randomMetacharStr(rng, 10))
+        val v        = OuterId(new UUID(rng.nextLong(), rng.nextLong()), nested)
         val rendered = v.toString
         OuterIdCodec.parseRepr(rendered) match {
           case Right(parsed) => parsed shouldBe v
@@ -343,7 +343,7 @@ class IdentifierReprPropertyTest extends AnyWordSpec with Matchers {
       val rng = new Random(0xABCDEF01L)
       var i   = 0
       while (i < 200) {
-        val v       = D1(D2(D3(D4(rng.nextInt()))))
+        val v        = D1(D2(D3(D4(rng.nextInt()))))
         val rendered = v.toString
         D1Codec.parseRepr(rendered) match {
           case Right(parsed) => parsed shouldBe v
@@ -434,7 +434,7 @@ class IdentifierReprPropertyTest extends AnyWordSpec with Matchers {
     }
 
     "`bytes` of [0xff, 0xfe, 0x00] renders lowercase hex" in {
-      val v = MixedId(false, ByteString(0xff.toByte, 0xfe.toByte, 0x00.toByte), OffsetDateTime.parse("2026-04-29T12:34:56.789Z"))
+      val v = MixedId(false, ByteString(0xFF.toByte, 0xFE.toByte, 0x00.toByte), OffsetDateTime.parse("2026-04-29T12:34:56.789Z"))
       v.toString shouldBe "MixedId:1.0.0#active:false:b:fffe00:t:2026-04-29T12:34:56.789Z"
       MixedIdCodec.parseRepr(v.toString) shouldBe Right(v)
     }
@@ -501,7 +501,7 @@ class IdentifierReprPropertyTest extends AnyWordSpec with Matchers {
     }
 
     "§6.6 bytes with high bytes" in {
-      val v = MixedId(true, ByteString(0xff.toByte, 0xfe.toByte, 0x00.toByte), OffsetDateTime.parse("2026-01-01T00:00:00.000Z"))
+      val v = MixedId(true, ByteString(0xFF.toByte, 0xFE.toByte, 0x00.toByte), OffsetDateTime.parse("2026-01-01T00:00:00.000Z"))
       v.toString.contains("b:fffe00") shouldBe true
     }
 

@@ -380,8 +380,7 @@ abstract class AnyValidatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] 
           )
           // The Contract owner must appear in the issues (proves contract-side walk).
           val contractIssues = vi.collect {
-            case i: VerificationIssue.AnyUnderlyingNotUserType
-                if i.owner.isInstanceOf[Typedef.Contract] =>
+            case i: VerificationIssue.AnyUnderlyingNotUserType if i.owner.isInstanceOf[Typedef.Contract] =>
               i
           }
           assert(
@@ -486,8 +485,7 @@ abstract class AnyValidatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] 
           val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
           val vi     = verificationIssues(issues)
           val svcIssues = vi.collect {
-            case i: VerificationIssue.AnyUnderlyingNotUserType
-                if i.owner.isInstanceOf[Typedef.Service] =>
+            case i: VerificationIssue.AnyUnderlyingNotUserType if i.owner.isInstanceOf[Typedef.Service] =>
               i
           }
           assert(
@@ -533,8 +531,7 @@ abstract class AnyValidatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] 
             s"expected AnyUnderlyingNotUserType, got: $vi",
           )
           val adtIssues = vi.collect {
-            case i: VerificationIssue.AnyUnderlyingNotUserType
-                if i.owner.isInstanceOf[Typedef.Adt] =>
+            case i: VerificationIssue.AnyUnderlyingNotUserType if i.owner.isInstanceOf[Typedef.Adt] =>
               i
           }
           assert(

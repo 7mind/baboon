@@ -217,8 +217,8 @@ class JvJsonCodecGenerator(
         // String.valueOf(long) emits the signed representation, which collides with
         // decode-side Long.parseUnsignedLong (rejects leading minus). Mirrors the
         // Scala-side PR-28.1 fix.
-        case TypeId.Builtins.u64   => q"Long.toUnsignedString($ref)"
-        case _: TypeId.Builtin     => q"String.valueOf($ref)"
+        case TypeId.Builtins.u64 => q"Long.toUnsignedString($ref)"
+        case _: TypeId.Builtin   => q"String.valueOf($ref)"
         case uid: TypeId.User =>
           domain.defs.meta.nodes(uid) match {
             case u: DomainMember.User =>
@@ -300,9 +300,9 @@ class JvJsonCodecGenerator(
           case TypeId.Builtins.opt =>
             q"""$ref.isPresent() ? ${mkEncoder(c.args.head, q"$ref.get()", depth + 1)} : $nullNode.getInstance()"""
           case TypeId.Builtins.map =>
-            val keyEnc      = encodeKey(c.args.head, q"$varName.getKey()")
-            val valueEnc    = mkEncoder(c.args.last, q"$varName.getValue()", depth + 1)
-            val sortedName  = s"sortedEntries$depth"
+            val keyEnc     = encodeKey(c.args.head, q"$varName.getKey()")
+            val valueEnc   = mkEncoder(c.args.last, q"$varName.getValue()", depth + 1)
+            val sortedName = s"sortedEntries$depth"
             // BAB-J03: sort entrySet by stringified key before emit. Insulates against
             // user-supplied Map collections (HashMap, ImmutableCollections$MapN, ...) whose
             // iteration order depends on hash codes / runtime state. Mirrors Scala's
@@ -440,9 +440,9 @@ class JvJsonCodecGenerator(
                           // catch (Exception e) — NOT Throwable (PR-I-D01 pattern guidance):
                           // Throwable would swallow Error (OOM/StackOverflow), which we want to
                           // propagate to fail-fast.
-                          val srcRef    = trans.toJvTypeRefKeepForeigns(u, domain, evo)
-                          val derefTpe  = trans.asJvType(u, domain, evo)
-                          val hostTpe   = JvValue.JvType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost")
+                          val srcRef   = trans.toJvTypeRefKeepForeigns(u, domain, evo)
+                          val derefTpe = trans.asJvType(u, domain, evo)
+                          val hostTpe  = JvValue.JvType(srcRef.pkg, s"${srcRef.name}_KeyCodecHost")
                           q"""((java.util.function.Supplier<$derefTpe>) () -> { try { return $hostTpe.instance().decodeKey($ref); } catch (Exception e) { throw new $baboonCodecException.DecoderFailure("malformed key: " + $ref, e); } }).get()"""
                         case None =>
                           throw new RuntimeException(s"BUG: Foreign type $u has no Java binding")

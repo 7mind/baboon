@@ -231,7 +231,7 @@ fn create_m29ok_sample() -> M29OkHolder {
 
 fn write_m29ok_json(data: &M29OkHolder, output_dir: &str) {
     fs::create_dir_all(output_dir).expect("Failed to create output directory");
-    let json_str = serde_json::to_string(data).expect("Failed to serialize M29OkHolder to JSON");
+    let json_str = data.to_json().expect("Failed to serialize M29OkHolder to JSON");
     let path = PathBuf::from(output_dir).join("m29-ok.json");
     fs::write(&path, &json_str).expect("Failed to write M29OkHolder JSON");
     println!("Written JSON to {:?}", path);

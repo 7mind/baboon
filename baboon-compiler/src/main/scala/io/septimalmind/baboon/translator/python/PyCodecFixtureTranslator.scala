@@ -77,10 +77,10 @@ object PyCodecFixtureTranslator {
         .flatMap(m => domain.defs.meta.nodes.get(m))
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
-      val sortedMembers       = members.sortBy(_.id.toString)
-      val membersFixtures     = sortedMembers.map(dto => doTranslateDto(dto))
-      val membersGenerators   = sortedMembers.map(dto => q"${dto.id.name.name.capitalize}_Fixture.random()")
-      val membersGeneratorsJ  = sortedMembers.map(dto => q"${dto.id.name.name.capitalize}_Fixture.random_json()")
+      val sortedMembers      = members.sortBy(_.id.toString)
+      val membersFixtures    = sortedMembers.map(dto => doTranslateDto(dto))
+      val membersGenerators  = sortedMembers.map(dto => q"${dto.id.name.name.capitalize}_Fixture.random()")
+      val membersGeneratorsJ = sortedMembers.map(dto => q"${dto.id.name.name.capitalize}_Fixture.random_json()")
 
       val adtType = typeTranslator
         .asPyType(adt.id, domain, evolution, pkgBase = pyFileTools.definitionsBasePkg)

@@ -2,19 +2,7 @@ package io.septimalmind.baboon.translator.typescript
 
 import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.parser.model.RawMemberMeta
-import io.septimalmind.baboon.translator.typescript.TsTypes.{
-  tsBaboonAnyMetaCodec,
-  tsBaboonAnyOpaque,
-  tsBaboonAnyOpaqueJsonCtor,
-  tsBaboonCodecContext,
-  tsBaboonDateTimeOffset,
-  tsBaboonDateTimeUtc,
-  tsBaboonDecimal,
-  tsBaboonDecoderFailure,
-  tsBaboonEncoderFailure,
-  tsBaboonLazy,
-  tsBinTools,
-}
+import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonAnyMetaCodec, tsBaboonAnyOpaque, tsBaboonAnyOpaqueJsonCtor, tsBaboonCodecContext, tsBaboonDateTimeOffset, tsBaboonDateTimeUtc, tsBaboonDecimal, tsBaboonDecoderFailure, tsBaboonEncoderFailure, tsBaboonLazy, tsBinTools}
 import io.septimalmind.baboon.translator.typescript.TsValue.TsType
 import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
@@ -324,9 +312,9 @@ class TsJsonCodecGenerator(
               // `catch (e: unknown)` (PR-I-D01 pattern guidance for TS): TS catches
               // are `unknown`-typed by tsconfig `useUnknownInCatchVariables` default;
               // we still discriminate Error-vs-everything-else only at the throw site.
-              val srcRef    = trans.asTsTypeKeepForeigns(u, domain, evo, tsFileTools.definitionsBasePkg)
-              val mapped    = trans.asTsType(u, domain, evo)
-              val hostTpe   = TsValue.TsType(srcRef.moduleId, s"${srcRef.name}_KeyCodecHost")
+              val srcRef  = trans.asTsTypeKeepForeigns(u, domain, evo, tsFileTools.definitionsBasePkg)
+              val mapped  = trans.asTsType(u, domain, evo)
+              val hostTpe = TsValue.TsType(srcRef.moduleId, s"${srcRef.name}_KeyCodecHost")
               q"""((): $mapped => { try { return $hostTpe.instance.decodeKey($ref); } catch (e) { throw new $tsBaboonDecoderFailure("malformed key: " + $ref, { cause: e }); } })()"""
             case None =>
               throw new RuntimeException(s"BUG: Foreign type $u has no TypeScript binding")
@@ -367,14 +355,16 @@ class TsJsonCodecGenerator(
         case TypeId.Builtins.tsu =>
           target.language.timestampsUtcMode match {
             case "string" => ref
-            case "date"   => q"""((__r: string) => { const __d = new Date(__r); if (Number.isNaN(__d.getTime())) throw new $tsBaboonDecoderFailure("malformed key: " + __r); return __d; })($ref)"""
-            case _        => q"$tsBaboonDateTimeUtc.fromISO($ref)"
+            case "date" =>
+              q"""((__r: string) => { const __d = new Date(__r); if (Number.isNaN(__d.getTime())) throw new $tsBaboonDecoderFailure("malformed key: " + __r); return __d; })($ref)"""
+            case _ => q"$tsBaboonDateTimeUtc.fromISO($ref)"
           }
         case TypeId.Builtins.tso =>
           target.language.timestampsOffsetMode match {
             case "string" => ref
-            case "date"   => q"""((__r: string) => { const __d = new Date(__r); if (Number.isNaN(__d.getTime())) throw new $tsBaboonDecoderFailure("malformed key: " + __r); return __d; })($ref)"""
-            case _        => q"$tsBaboonDateTimeOffset.fromISO($ref)"
+            case "date" =>
+              q"""((__r: string) => { const __d = new Date(__r); if (Number.isNaN(__d.getTime())) throw new $tsBaboonDecoderFailure("malformed key: " + __r); return __d; })($ref)"""
+            case _ => q"$tsBaboonDateTimeOffset.fromISO($ref)"
           }
         case o => throw new RuntimeException(s"BUG: Unexpected primitive key type: $o")
       }

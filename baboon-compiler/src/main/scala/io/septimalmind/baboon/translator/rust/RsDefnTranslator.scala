@@ -222,20 +222,20 @@ object RsDefnTranslator {
       */
     private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: RsType): TextTree[RsValue] = {
       f.bindings.get(BaboonLang.Rust) match {
-        case None                                                                  => q""
-        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef))    => q""
+        case None                                                               => q""
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => q""
         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
-          val srcRef       = trans.toRsTypeRefKeepForeigns(f.id, domain, evo)
-          val foreignName  = srcRef.name
-          val snake        = toSnakeCase(foreignName)
-          val codecTrait   = s"${foreignName}_KeyCodec"
+          val srcRef        = trans.toRsTypeRefKeepForeigns(f.id, domain, evo)
+          val foreignName   = srcRef.name
+          val snake         = toSnakeCase(foreignName)
+          val codecTrait    = s"${foreignName}_KeyCodec"
           val defaultStruct = s"Default${foreignName}_KeyCodec"
-          val staticName   = s"${snake.toUpperCase}_KEYCODEC"
-          val getterName   = s"${snake}_keycodec"
-          val registerName = s"register_${snake}_keycodec"
-          val adapterMod   = s"${snake}_as_map_key"
-          val hostFqn      = (srcRef.crate.parts.toSeq :+ getterName).mkString("::")
-          val derefedTpe   = trans.asRsType(f.id, domain, evo)
+          val staticName    = s"${snake.toUpperCase}_KEYCODEC"
+          val getterName    = s"${snake}_keycodec"
+          val registerName  = s"register_${snake}_keycodec"
+          val adapterMod    = s"${snake}_as_map_key"
+          val hostFqn       = (srcRef.crate.parts.toSeq :+ getterName).mkString("::")
+          val derefedTpe    = trans.asRsType(f.id, domain, evo)
           // Stringy allowlist: only the actual Rust string type spellings the
           // codegen emits (`std::string::String` is what `asRsType` produces for
           // stringy Customs; `String` and `&str` are accepted as user-friendly
@@ -344,15 +344,15 @@ object RsDefnTranslator {
     //   - `Result<T, String>` (not `Either`)
     private sealed trait IdentifierFieldKind
     private object IdentifierFieldKind {
-      case object Bit              extends IdentifierFieldKind
-      case object SignedInt        extends IdentifierFieldKind /* i08/i16/i32/i64 */
+      case object Bit extends IdentifierFieldKind
+      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32/i64 */
       case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-      case object UnsignedLong     extends IdentifierFieldKind /* u64 */
-      case object Str              extends IdentifierFieldKind
-      case object Uid              extends IdentifierFieldKind
-      case object Tsu              extends IdentifierFieldKind
-      case object Tso              extends IdentifierFieldKind
-      case object Bytes            extends IdentifierFieldKind
+      case object UnsignedLong extends IdentifierFieldKind /* u64 */
+      case object Str extends IdentifierFieldKind
+      case object Uid extends IdentifierFieldKind
+      case object Tsu extends IdentifierFieldKind
+      case object Tso extends IdentifierFieldKind
+      case object Bytes extends IdentifierFieldKind
       final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
     }
 
@@ -439,7 +439,7 @@ object RsDefnTranslator {
 
     private def renderFieldValueExpr(rsFieldName: String, kind: IdentifierFieldKind): TextTree[RsValue] = {
       kind match {
-        case IdentifierFieldKind.Bit              => q"crate::baboon_identifier_repr::bit_to_string(self.$rsFieldName)"
+        case IdentifierFieldKind.Bit => q"crate::baboon_identifier_repr::bit_to_string(self.$rsFieldName)"
         // Rust's primitive Display for signed integers produces canonical signed
         // decimal; for u08/u16/u32 it produces unsigned decimal natively (Rust
         // u-types are actually unsigned).
@@ -448,11 +448,11 @@ object RsDefnTranslator {
         case IdentifierFieldKind.UnsignedLong     => q"crate::baboon_identifier_repr::u64_to_string(self.$rsFieldName)"
         case IdentifierFieldKind.Str              => q"crate::baboon_identifier_repr::escape_str(&self.$rsFieldName)"
         // uuid::Uuid Display is the lowercase 36-char hyphenated form per RFC 4122.
-        case IdentifierFieldKind.Uid              => q"self.$rsFieldName.to_string()"
-        case IdentifierFieldKind.Tsu              => q"crate::baboon_identifier_repr::tsu_to_string(&self.$rsFieldName)"
-        case IdentifierFieldKind.Tso              => q"crate::baboon_identifier_repr::tso_to_string(&self.$rsFieldName)"
-        case IdentifierFieldKind.Bytes            => q"crate::baboon_identifier_repr::bytes_to_hex(&self.$rsFieldName)"
-        case IdentifierFieldKind.NestedId(_)      => q"""format!("{{{}}}", self.$rsFieldName)"""
+        case IdentifierFieldKind.Uid         => q"self.$rsFieldName.to_string()"
+        case IdentifierFieldKind.Tsu         => q"crate::baboon_identifier_repr::tsu_to_string(&self.$rsFieldName)"
+        case IdentifierFieldKind.Tso         => q"crate::baboon_identifier_repr::tso_to_string(&self.$rsFieldName)"
+        case IdentifierFieldKind.Bytes       => q"crate::baboon_identifier_repr::bytes_to_hex(&self.$rsFieldName)"
+        case IdentifierFieldKind.NestedId(_) => q"""format!("{{{}}}", self.$rsFieldName)"""
       }
     }
 
@@ -511,9 +511,9 @@ object RsDefnTranslator {
               q"""let $rawVar = cursor.read_until_structural();
                  |let $valVar: $tpe = crate::baboon_identifier_repr::parse_bit(&$rawVar)?;""".stripMargin
             case IdentifierFieldKind.SignedInt =>
-              val typeName    = signedTypeName(f.tpe)
-              val rangeCheck  = signedRangeCheck(f.tpe, "v")
-              val narrow      = signedNarrowFn(f.tpe)
+              val typeName   = signedTypeName(f.tpe)
+              val rangeCheck = signedRangeCheck(f.tpe, "v")
+              val narrow     = signedNarrowFn(f.tpe)
               // i64 covers the full Long range — rangeCheck returns "true" — so
               // no range-check block is needed (mirrors prior backends D01 fix).
               val rangeBlock =
@@ -529,12 +529,12 @@ object RsDefnTranslator {
                  |}
                  |let v: i64 = $rawVar.parse::<i64>()
                  |    .map_err(|_| format!("could not parse signed integer for field $srcFieldName: {}", $rawVar))?;
-                 |${rangeBlock}
+                 |$rangeBlock
                  |let $valVar: $tpe = v $narrow;""".stripMargin
             case IdentifierFieldKind.UnsignedSmallInt =>
-              val typeName    = unsignedSmallTypeName(f.tpe)
-              val rangeCheck  = unsignedSmallRangeCheck(f.tpe, "v")
-              val narrow      = unsignedSmallNarrowFn(f.tpe)
+              val typeName   = unsignedSmallTypeName(f.tpe)
+              val rangeCheck = unsignedSmallRangeCheck(f.tpe, "v")
+              val narrow     = unsignedSmallNarrowFn(f.tpe)
               q"""let $rawVar = cursor.read_until_structural();
                  |if !$rawVar.is_empty() && (
                  |    $rawVar.starts_with('+') || $rawVar.starts_with('-')
@@ -580,7 +580,7 @@ object RsDefnTranslator {
               // `<typename_snake>_repr_codec` inside its own module — see
               // renderIdentifierParseRepr for naming rationale.
               val nestedCodecModName = s"${toSnakeCase(nestedTpe.name)}_repr_codec"
-              val nestedFqPath = (nestedTpe.crate.parts.toSeq :+ nestedCodecModName :+ "parse_repr_cursor").mkString("::")
+              val nestedFqPath       = (nestedTpe.crate.parts.toSeq :+ nestedCodecModName :+ "parse_repr_cursor").mkString("::")
               q"""cursor.expect('{')?;
                  |let $valVar: $nestedTpe = $nestedFqPath(cursor)?;
                  |cursor.expect('}')?;""".stripMargin
@@ -909,7 +909,7 @@ object RsDefnTranslator {
         else if (hasUnorderable) "PartialEq, "
         else "PartialEq, Eq, PartialOrd, Ord, "
 
-      q"#[derive(Clone, Debug, ${cmpDerives}${serdeDerives})]"
+      q"#[derive(Clone, Debug, $cmpDerives$serdeDerives)]"
     }
 
     private def dtoOrdImpls(dto: Typedef.Dto, name: RsType): TextTree[RsValue] = {
@@ -1030,8 +1030,9 @@ object RsDefnTranslator {
       // module that converts K↔String via the existing Display / parse_repr machinery
       // (id types) or by peeling to the inner primitive (single-field wrappers). The
       // adapter module is emitted next to K's struct (see `userMapKeyAdapter` below).
-      userMapKeyAdapterPath(f.tpe).foreach { path =>
-        attrs += q"""#[serde(with = "$path")]"""
+      userMapKeyAdapterPath(f.tpe).foreach {
+        path =>
+          attrs += q"""#[serde(with = "$path")]"""
       }
 
       attrs.toList
@@ -1084,24 +1085,25 @@ object RsDefnTranslator {
       if (dto.isIdentifier) true
       else if (dto.contracts.nonEmpty) false
       else if (dto.fields.size != 1) false
-      else dto.fields.head.tpe match {
-        case _: TypeRef.Constructor => false
-        case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
-          b match {
-            case TypeId.Builtins.f32 | TypeId.Builtins.f64 | TypeId.Builtins.f128 => false
-            case _                                                                 => true
-          }
-        case TypeRef.Scalar(u: TypeId.User) =>
-          domain.defs.meta.nodes.get(u) match {
-            case Some(DomainMember.User(_, nested: Typedef.Dto, _, _)) => isUserMapKeyEligibleDto(nested)
-            // Q-M19-7: enums round-trip via Display / parse; foreign types assume the host
-            // provides compatible Display / FromStr (PR-I will route through a dedicated KeyCodec).
-            case Some(DomainMember.User(_, _: Typedef.Enum, _, _))    => true
-            case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) => true
-            case _                                                      => false
-          }
-        case _ => false
-      }
+      else
+        dto.fields.head.tpe match {
+          case _: TypeRef.Constructor => false
+          case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
+            b match {
+              case TypeId.Builtins.f32 | TypeId.Builtins.f64 | TypeId.Builtins.f128 => false
+              case _                                                                => true
+            }
+          case TypeRef.Scalar(u: TypeId.User) =>
+            domain.defs.meta.nodes.get(u) match {
+              case Some(DomainMember.User(_, nested: Typedef.Dto, _, _)) => isUserMapKeyEligibleDto(nested)
+              // Q-M19-7: enums round-trip via Display / parse; foreign types assume the host
+              // provides compatible Display / FromStr (PR-I will route through a dedicated KeyCodec).
+              case Some(DomainMember.User(_, _: Typedef.Enum, _, _))    => true
+              case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) => true
+              case _                                                    => false
+            }
+          case _ => false
+        }
     }
 
     /** For a non-identifier single-field wrapper DTO, peel through nested

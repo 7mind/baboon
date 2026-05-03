@@ -173,7 +173,6 @@ object CSTypes {
   val csDateTimeOffset: CSType   = CSType(csSystemPkg, "DateTimeOffset", fq = false, CSTypeOrigin.Other)
   val csTimeZoneInfo: CSType     = CSType(csSystemPkg, "TimeZoneInfo", fq = false, CSTypeOrigin.Other)
 
-
   val debug: CSType = CSType(csDiagnosticsPkg, "Debug", fq = false, CSTypeOrigin.Other)
 
   val mkDict = q"BbnToDictionary()"

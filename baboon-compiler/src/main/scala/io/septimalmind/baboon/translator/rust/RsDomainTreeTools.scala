@@ -15,7 +15,7 @@ trait RsDomainTreeTools {
 
 object RsDomainTreeTools {
   final class RsDomainTreeToolsImpl(
-    domain: Domain,
+    domain: Domain
   ) extends RsDomainTreeTools {
 
     override def makeBaboonGeneratedImpl(

@@ -34,8 +34,7 @@ import izumi.reflect.TagKK
   */
 final class M20AdtEvolutionTest extends M20AdtEvolutionTestBase[Either]
 
-abstract class M20AdtEvolutionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule]
-    extends BaboonTest[F] {
+abstract class M20AdtEvolutionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] extends BaboonTest[F] {
 
   private def makeInput(name: String, body: String): BaboonParser.Input =
     BaboonParser.Input(FSPath.parse(NEString.unsafeFrom(name)), body)
@@ -112,9 +111,9 @@ abstract class M20AdtEvolutionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
           assert(
             someErrorNonBreaking.size == 1,
             s"Expected SomeError in unmodified (identical deep schema IDs after branch sort); " +
-              s"got unmodified=${diff.changes.unmodified}, shallowModified=${diff.changes.shallowModified}, " +
-              s"deepModified=${diff.changes.deepModified}, fullyModified=${diff.changes.fullyModified}, " +
-              s"removed=${diff.changes.removed}, renamed=${diff.changes.renamed}",
+            s"got unmodified=${diff.changes.unmodified}, shallowModified=${diff.changes.shallowModified}, " +
+            s"deepModified=${diff.changes.deepModified}, fullyModified=${diff.changes.fullyModified}, " +
+            s"removed=${diff.changes.removed}, renamed=${diff.changes.renamed}",
           )
 
           // Branches re-emitted from `+ ErrorAtom` must carry over with identical TypeId

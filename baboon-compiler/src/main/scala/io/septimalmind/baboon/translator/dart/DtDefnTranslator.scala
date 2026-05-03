@@ -237,8 +237,8 @@ object DtDefnTranslator {
       */
     private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: DtType): DefnRepr = {
       f.bindings.get(BaboonLang.Dart) match {
-        case None                                                                  => DefnRepr(q"", Nil)
-        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef))    => DefnRepr(q"", Nil)
+        case None                                                               => DefnRepr(q"", Nil)
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => DefnRepr(q"", Nil)
         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
           val srcRef    = trans.toDtTypeRefKeepForeigns(f.id, domain, evo)
           val codecName = s"${srcRef.name}_KeyCodec"
@@ -247,7 +247,7 @@ object DtDefnTranslator {
           // Stringy allowlist (PR-I-D06 pattern guidance: only the language's allowlist; no dead alternatives).
           // Both the FQN form (`dart.core.String`) and the bare identifier (`String`) are accepted because
           // Dart code idiomatically references the type either way.
-          val isStringy = decl == "dart.core.String" || decl == "String"
+          val isStringy       = decl == "dart.core.String" || decl == "String"
           val defaultImplName = s"_${codecName}DefaultImpl"
           val defaultImpl = if (isStringy) {
             q"""class $defaultImplName implements $codecName {
@@ -272,7 +272,7 @@ object DtDefnTranslator {
                |  static $codecName get instance => _instance;
                |}
                |
-               |${defaultImpl}""".stripMargin
+               |$defaultImpl""".stripMargin
           DefnRepr(tree, Nil)
       }
     }
@@ -526,16 +526,16 @@ object DtDefnTranslator {
     // Spec: docs/spec/identifier-repr.md.
     private sealed trait IdentifierFieldKind
     private object IdentifierFieldKind {
-      case object Bit              extends IdentifierFieldKind
-      case object SignedInt        extends IdentifierFieldKind /* i08/i16/i32 */
-      case object SignedLong       extends IdentifierFieldKind /* i64 */
+      case object Bit extends IdentifierFieldKind
+      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32 */
+      case object SignedLong extends IdentifierFieldKind /* i64 */
       case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-      case object UnsignedLong     extends IdentifierFieldKind /* u64 */
-      case object Str              extends IdentifierFieldKind
-      case object Uid              extends IdentifierFieldKind
-      case object Tsu              extends IdentifierFieldKind
-      case object Tso              extends IdentifierFieldKind
-      case object Bytes            extends IdentifierFieldKind
+      case object UnsignedLong extends IdentifierFieldKind /* u64 */
+      case object Str extends IdentifierFieldKind
+      case object Uid extends IdentifierFieldKind
+      case object Tsu extends IdentifierFieldKind
+      case object Tso extends IdentifierFieldKind
+      case object Bytes extends IdentifierFieldKind
       final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
     }
 
@@ -544,16 +544,16 @@ object DtDefnTranslator {
         case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
           import TypeId.Builtins.*
           b match {
-            case `bit`                   => IdentifierFieldKind.Bit
-            case `i08` | `i16` | `i32`   => IdentifierFieldKind.SignedInt
-            case `i64`                   => IdentifierFieldKind.SignedLong
-            case `u08` | `u16` | `u32`   => IdentifierFieldKind.UnsignedSmallInt
-            case `u64`                   => IdentifierFieldKind.UnsignedLong
-            case `str`                   => IdentifierFieldKind.Str
-            case `uid`                   => IdentifierFieldKind.Uid
-            case `tsu`                   => IdentifierFieldKind.Tsu
-            case `tso`                   => IdentifierFieldKind.Tso
-            case `bytes`                 => IdentifierFieldKind.Bytes
+            case `bit`                 => IdentifierFieldKind.Bit
+            case `i08` | `i16` | `i32` => IdentifierFieldKind.SignedInt
+            case `i64`                 => IdentifierFieldKind.SignedLong
+            case `u08` | `u16` | `u32` => IdentifierFieldKind.UnsignedSmallInt
+            case `u64`                 => IdentifierFieldKind.UnsignedLong
+            case `str`                 => IdentifierFieldKind.Str
+            case `uid`                 => IdentifierFieldKind.Uid
+            case `tsu`                 => IdentifierFieldKind.Tsu
+            case `tso`                 => IdentifierFieldKind.Tso
+            case `bytes`               => IdentifierFieldKind.Bytes
             case other =>
               throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
           }
@@ -632,8 +632,8 @@ object DtDefnTranslator {
     }
 
     private def renderIdentifierCodecClass(dto: Typedef.Dto, name: DtType): TextTree[DtValue] = {
-      val simpleName    = name.name
-      val versionStr    = domain.version.toString
+      val simpleName     = name.name
+      val versionStr     = domain.version.toString
       val codecClassName = s"${name.name}Codec"
 
       val fieldDecoders: List[TextTree[DtValue]] = dto.fields.zipWithIndex.map {
@@ -748,8 +748,7 @@ object DtDefnTranslator {
               val nestedTpe = trans.toDtTypeRefKeepForeigns(uid, domain, evo)
               // The codec lives in the SAME file as the nested type (not a sibling
               // file). importAs forces the resolver to use the type's file name.
-              val nestedCodec = DtType(nestedTpe.pkg, s"${nestedTpe.name}Codec",
-                                        importAs = Some(trans.toSnakeCase(nestedTpe.name)))
+              val nestedCodec = DtType(nestedTpe.pkg, s"${nestedTpe.name}Codec", importAs = Some(trans.toSnakeCase(nestedTpe.name)))
               q"""final ${srcFieldName}_ro = cursor.expect("{");
                  |if (${srcFieldName}_ro is $baboonLeft<String, void>) return $baboonLeft(${srcFieldName}_ro.value);
                  |final $resVar = $nestedCodec.parseReprCursor(cursor);

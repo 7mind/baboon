@@ -302,14 +302,14 @@ class ScJsonCodecGenerator(
         // PR-28.4 (M28): the runtime exposes `formatTsu`/`formatTso` only
         // (no generic `format`). Per-type dispatch matches the value-side
         // emission at line 357-358 and PR-28.3 ±HH:MM canonicalisation contract.
-        case TypeId.Builtins.tsu                       => q"$baboonTimeFormats.formatTsu($ref)"
-        case TypeId.Builtins.tso                       => q"$baboonTimeFormats.formatTso($ref)"
+        case TypeId.Builtins.tsu => q"$baboonTimeFormats.formatTsu($ref)"
+        case TypeId.Builtins.tso => q"$baboonTimeFormats.formatTso($ref)"
         // PR-28.1 (M28): u64 map keys must carry the canonical unsigned wire form.
         // `Long.toString(-1L)` yields "-1" (two's-complement signed); the canonical
         // u64 max representation is "18446744073709551615". Symmetric with the
         // value-side `Json.fromBigInt(BaboonBinTools.toUnsignedBigInt(_))`.
-        case TypeId.Builtins.u64                       => q"_root_.java.lang.Long.toUnsignedString($ref)"
-        case _: TypeId.Builtin                         => q"$ref.toString"
+        case TypeId.Builtins.u64 => q"_root_.java.lang.Long.toUnsignedString($ref)"
+        case _: TypeId.Builtin   => q"$ref.toString"
         case uid: TypeId.User =>
           domain.defs.meta.nodes(uid) match {
             case u: DomainMember.User =>
@@ -489,7 +489,7 @@ class ScJsonCodecGenerator(
                           // uniform across stringy and non-stringy foreigns: the host's
                           // decodeKey is invoked, and any thrown exception is normalized
                           // to BaboonCodecException.DecoderFailure (PR-F invariant).
-                          val targetTpe   = trans.toScTypeRefKeepForeigns(uid, domain, evo)
+                          val targetTpe    = trans.toScTypeRefKeepForeigns(uid, domain, evo)
                           val keyCodecHost = ScValue.ScType(targetTpe.pkg, s"${targetTpe.name}_KeyCodec")
                           q"""$circeKeyDecoder.instance(s => try { Some($keyCodecHost.instance.decodeKey(s)) } catch { case e: Exception => throw $baboonCodecException.DecoderFailure(s"malformed key: $$s", e) })"""
                       }

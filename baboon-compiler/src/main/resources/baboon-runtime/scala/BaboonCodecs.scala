@@ -88,10 +88,12 @@ package baboon.runtime.shared {
     // reject "18446744073709551615" (= u64 max). Parse via BigInt, validate the
     // unsigned-i64 range, then narrow to Long (two's-complement preserving). Symmetric
     // with the value-side `Json.fromBigInt(BaboonBinTools.toUnsignedBigInt(_))` encoder.
-    val decodeKeyU64: KeyDecoder[Long] = KeyDecoder.instance { s =>
-      scala.util.Try(scala.math.BigInt(s)).toOption.flatMap { bi =>
-        if (bi >= 0 && bi < scala.math.BigInt(2).pow(64)) Some(bi.toLong) else None
-      }
+    val decodeKeyU64: KeyDecoder[Long] = KeyDecoder.instance {
+      s =>
+        scala.util.Try(scala.math.BigInt(s)).toOption.flatMap {
+          bi =>
+            if (bi >= 0 && bi < scala.math.BigInt(2).pow(64)) Some(bi.toLong) else None
+        }
     }
 
     trait BaboonGeneratedJsonCodec[T <: BaboonGenerated, TCodec <: BaboonJsonCodec[T]] {

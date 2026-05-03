@@ -436,7 +436,7 @@ object PyDefnTranslator {
           val hostName        = s"${srcRef.name}_KeyCodecHost"
           val hostFqn         = s"${srcRef.moduleId.path.toList.mkString(".")}.$hostName"
           val instanceVar     = s"_${codecName}_instance"
-          val defaultImplName = s"_Default${codecName}"
+          val defaultImplName = s"_Default$codecName"
           // Stringy allowlist (PR-I-D06 pattern guidance: only the language's allowlist; no dead alternatives).
           val isStringy = decl == "builtins.str" || decl == "str"
           val defaultImpl = if (isStringy) {
@@ -543,16 +543,16 @@ object PyDefnTranslator {
     //   - snake_case method names per PEP 8
     private sealed trait IdentifierFieldKind
     private object IdentifierFieldKind {
-      case object Bit              extends IdentifierFieldKind
-      case object SignedInt        extends IdentifierFieldKind /* i08/i16/i32 */
-      case object SignedLong       extends IdentifierFieldKind /* i64 */
+      case object Bit extends IdentifierFieldKind
+      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32 */
+      case object SignedLong extends IdentifierFieldKind /* i64 */
       case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-      case object UnsignedLong     extends IdentifierFieldKind /* u64 */
-      case object Str              extends IdentifierFieldKind
-      case object Uid              extends IdentifierFieldKind
-      case object Tsu              extends IdentifierFieldKind
-      case object Tso              extends IdentifierFieldKind
-      case object Bytes            extends IdentifierFieldKind
+      case object UnsignedLong extends IdentifierFieldKind /* u64 */
+      case object Str extends IdentifierFieldKind
+      case object Uid extends IdentifierFieldKind
+      case object Tsu extends IdentifierFieldKind
+      case object Tso extends IdentifierFieldKind
+      case object Bytes extends IdentifierFieldKind
       final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
     }
 
@@ -561,16 +561,16 @@ object PyDefnTranslator {
         case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
           import TypeId.Builtins.*
           b match {
-            case `bit`                   => IdentifierFieldKind.Bit
-            case `i08` | `i16` | `i32`   => IdentifierFieldKind.SignedInt
-            case `i64`                   => IdentifierFieldKind.SignedLong
-            case `u08` | `u16` | `u32`   => IdentifierFieldKind.UnsignedSmallInt
-            case `u64`                   => IdentifierFieldKind.UnsignedLong
-            case `str`                   => IdentifierFieldKind.Str
-            case `uid`                   => IdentifierFieldKind.Uid
-            case `tsu`                   => IdentifierFieldKind.Tsu
-            case `tso`                   => IdentifierFieldKind.Tso
-            case `bytes`                 => IdentifierFieldKind.Bytes
+            case `bit`                 => IdentifierFieldKind.Bit
+            case `i08` | `i16` | `i32` => IdentifierFieldKind.SignedInt
+            case `i64`                 => IdentifierFieldKind.SignedLong
+            case `u08` | `u16` | `u32` => IdentifierFieldKind.UnsignedSmallInt
+            case `u64`                 => IdentifierFieldKind.UnsignedLong
+            case `str`                 => IdentifierFieldKind.Str
+            case `uid`                 => IdentifierFieldKind.Uid
+            case `tsu`                 => IdentifierFieldKind.Tsu
+            case `tso`                 => IdentifierFieldKind.Tso
+            case `bytes`               => IdentifierFieldKind.Bytes
             case other =>
               throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
           }
@@ -618,11 +618,11 @@ object PyDefnTranslator {
         case IdentifierFieldKind.UnsignedLong     => q"$baboonIdReprU64ToString(self.$pyFieldName)"
         case IdentifierFieldKind.Str              => q"$baboonIdReprEscapeStr(self.$pyFieldName)"
         // UUID's str() is the lowercase canonical form per RFC 4122.
-        case IdentifierFieldKind.Uid              => q"str(self.$pyFieldName)"
-        case IdentifierFieldKind.Tsu              => q"$baboonIdReprTsuToString(self.$pyFieldName)"
-        case IdentifierFieldKind.Tso              => q"$baboonIdReprTsoToString(self.$pyFieldName)"
-        case IdentifierFieldKind.Bytes            => q"$baboonIdReprBytesToHex(self.$pyFieldName)"
-        case IdentifierFieldKind.NestedId(_)      => q"""f'{${"\"{\""}}{self.$pyFieldName!r}{${"\"}\""}}'""".stripMargin
+        case IdentifierFieldKind.Uid         => q"str(self.$pyFieldName)"
+        case IdentifierFieldKind.Tsu         => q"$baboonIdReprTsuToString(self.$pyFieldName)"
+        case IdentifierFieldKind.Tso         => q"$baboonIdReprTsoToString(self.$pyFieldName)"
+        case IdentifierFieldKind.Bytes       => q"$baboonIdReprBytesToHex(self.$pyFieldName)"
+        case IdentifierFieldKind.NestedId(_) => q"""f'{${"\"{\""}}{self.$pyFieldName!r}{${"\"}\""}}'""".stripMargin
       }
     }
 
@@ -767,7 +767,7 @@ object PyDefnTranslator {
                  |    return $resVar
                  |$valVar = $resVar.value""".stripMargin
             case IdentifierFieldKind.NestedId(uid) =>
-              val nestedTpe = typeTranslator.asPyTypeKeepForeigns(uid, domain, evolution, fileTools.definitionsBasePkg)
+              val nestedTpe   = typeTranslator.asPyTypeKeepForeigns(uid, domain, evolution, fileTools.definitionsBasePkg)
               val nestedCodec = PyType(nestedTpe.moduleId, s"${nestedTpe.name}Codec")
               q"""${srcFieldName}_ro = cursor.expect("{")
                  |if isinstance(${srcFieldName}_ro, $baboonLeftType):
@@ -821,7 +821,7 @@ object PyDefnTranslator {
          |    @$pyStaticMethod
          |    def parse_repr(s: str) -> $baboonEitherType:
          |        cursor = $baboonIdReprCursor(s)
-         |        inner = ${codecClassName}.parse_repr_cursor(cursor)
+         |        inner = $codecClassName.parse_repr_cursor(cursor)
          |        if isinstance(inner, $baboonLeftType):
          |            return inner
          |        if not cursor.at_end():

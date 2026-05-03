@@ -36,7 +36,7 @@ import java.nio.file.{Files, Path, Paths}
 // language has written into it -- per-test existence guards handle that.
 
 object CrossLanguageFixturePath {
-  private var cachedAnchor:      Option[String] = None
+  private var cachedAnchor: Option[String]      = None
   private var cachedFixtureRoot: Option[String] = None
 
   private def resolve(): Unit = synchronized {
@@ -75,13 +75,13 @@ object CrossLanguageFixturePath {
   }
 
   private def walkUpFromCwd(): String = {
-    val startDir = Paths.get("").toAbsolutePath.normalize()
+    val startDir  = Paths.get("").toAbsolutePath.normalize()
     var dir: Path = startDir
     while (dir != null) {
-      val stub         = hasStubSibling(dir)
-      val strictMatch  = stub && Files.isDirectory(dir.resolve("target"))
-      val name         = Option(dir.getFileName).map(_.toString).getOrElse("")
-      val namedMatch   = stub && name.startsWith("test-")
+      val stub        = hasStubSibling(dir)
+      val strictMatch = stub && Files.isDirectory(dir.resolve("target"))
+      val name        = Option(dir.getFileName).map(_.toString).getOrElse("")
+      val namedMatch  = stub && name.startsWith("test-")
       if (strictMatch || namedMatch) {
         return dir.toString
       }

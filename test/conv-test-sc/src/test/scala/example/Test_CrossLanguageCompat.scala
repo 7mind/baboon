@@ -1,19 +1,6 @@
 package example
 
-import convtest.testpkg.{
-  AllBasicTypes,
-  AllBasicTypes_JsonCodec,
-  AllBasicTypes_UEBACodec,
-  AnyShowcase,
-  AnyShowcase_JsonCodec,
-  AnyShowcase_UEBACodec,
-  InnerPayload,
-  InnerPayload_JsonCodec,
-  InnerPayload_UEBACodec,
-  PointId,
-  PointId_JsonCodec,
-  PointId_UEBACodec,
-}
+import convtest.testpkg.{AllBasicTypes, AllBasicTypes_JsonCodec, AllBasicTypes_UEBACodec, AnyShowcase, AnyShowcase_JsonCodec, AnyShowcase_UEBACodec, InnerPayload, InnerPayload_JsonCodec, InnerPayload_UEBACodec, PointId, PointId_JsonCodec, PointId_UEBACodec}
 import baboon.runtime.shared.{AnyOpaque, AnyOpaqueJson, AnyOpaqueUeba, BaboonCodecContext, LEDataInputStream, LEDataOutputStream}
 import io.circe.Json
 import org.scalatest.flatspec.AnyFlatSpec
@@ -311,8 +298,8 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
   "PR-57e identifier wire format" should "produce JSON byte-identical to a data of the same shape" in {
     // For an `id` with two i32 fields, the JSON form is the same flat object a `data` would
     // produce: `{"x": 42, "y": -7}`. No envelope, no type tag.
-    val pid: PointId = PointId(x = 42, y = -7)
-    val encoded: Json = PointId_JsonCodec.instance.encode(ctx, pid)
+    val pid: PointId   = PointId(x = 42, y = -7)
+    val encoded: Json  = PointId_JsonCodec.instance.encode(ctx, pid)
     val expected: Json = Json.obj("x" -> Json.fromInt(42), "y" -> Json.fromInt(-7))
     assert(encoded == expected, s"id PointId JSON form diverged from data shape: $encoded")
   }
@@ -322,8 +309,8 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
     // UEBA form is identical to a `data` of the same shape: one header byte = 0x00, then
     // little-endian i32 for x, then little-endian i32 for y. 9 bytes total.
     val pid: PointId = PointId(x = 42, y = -7)
-    val baos = new ByteArrayOutputStream()
-    val w    = new LEDataOutputStream(baos)
+    val baos         = new ByteArrayOutputStream()
+    val w            = new LEDataOutputStream(baos)
     try {
       PointId_UEBACodec.instance.encode(ctx, w, pid)
       w.flush()
@@ -333,9 +320,15 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
     // Hand-construct the bytes a `data` of identical shape would produce. UEBA i32 is
     // little-endian (per LEDataOutputStream / spec). 42 = 0x2A 00 00 00 ; -7 = 0xF9 FF FF FF.
     val expected = Array[Byte](
-      0x00,                                                  // header: no indices, no extras
-      0x2A.toByte, 0x00, 0x00, 0x00,                         // x = 42 (i32 LE)
-      0xF9.toByte, 0xFF.toByte, 0xFF.toByte, 0xFF.toByte,    // y = -7 (i32 LE, two's complement)
+      0x00, // header: no indices, no extras
+      0x2A.toByte,
+      0x00,
+      0x00,
+      0x00, // x = 42 (i32 LE)
+      0xF9.toByte,
+      0xFF.toByte,
+      0xFF.toByte,
+      0xFF.toByte, // y = -7 (i32 LE, two's complement)
     )
     assert(
       java.util.Arrays.equals(actual, expected),
@@ -344,7 +337,7 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
   }
 
   it should "round-trip PointId through JSON" in {
-    val pid = PointId(x = 42, y = -7)
+    val pid     = PointId(x = 42, y = -7)
     val encoded = PointId_JsonCodec.instance.encode(ctx, pid)
     PointId_JsonCodec.instance.decode(ctx, encoded) match {
       case Right(decoded) => assert(decoded == pid)
@@ -353,7 +346,7 @@ class Test_CrossLanguageCompat extends AnyFlatSpec {
   }
 
   it should "round-trip PointId through UEBA" in {
-    val pid = PointId(x = 42, y = -7)
+    val pid  = PointId(x = 42, y = -7)
     val baos = new ByteArrayOutputStream()
     val w    = new LEDataOutputStream(baos)
     try {

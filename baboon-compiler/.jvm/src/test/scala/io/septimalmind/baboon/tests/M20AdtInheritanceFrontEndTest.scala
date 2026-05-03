@@ -83,9 +83,10 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
 
   /** Returns the single-version Domain for a package path. */
   private def domainFor(family: BaboonFamily, pkgPath: String): Domain = {
-    val lineage = family.domains.toMap.find(_._1.path.mkString(".") == pkgPath).getOrElse {
-      throw new AssertionError(s"no lineage for pkg '$pkgPath' in family with pkgs: ${family.domains.toMap.keys.map(_.path.mkString(".")).toList}")
-    }._2
+    val lineage = family.domains.toMap
+      .find(_._1.path.mkString(".") == pkgPath).getOrElse {
+        throw new AssertionError(s"no lineage for pkg '$pkgPath' in family with pkgs: ${family.domains.toMap.keys.map(_.path.mkString(".")).toList}")
+      }._2
     lineage.versions.toMap.values.head
   }
 
@@ -93,7 +94,9 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
     domain.defs.meta.nodes.values.collectFirst {
       case DomainMember.User(_, a: Typedef.Adt, _, _) if a.id.name.name == adtName => a
     }.getOrElse {
-      throw new AssertionError(s"no ADT '$adtName' in domain $pkgPath; ADTs found: ${domain.defs.meta.nodes.values.collect { case DomainMember.User(_, a: Typedef.Adt, _, _) => a.id.name.name }.toList}")
+      throw new AssertionError(
+        s"no ADT '$adtName' in domain $pkgPath; ADTs found: ${domain.defs.meta.nodes.values.collect { case DomainMember.User(_, a: Typedef.Adt, _, _) => a.id.name.name }.toList}"
+      )
     }
   }
 
@@ -103,15 +106,16 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
     * (TypeIds encode the owning ADT's identity, which differs between the two).
     */
   private def branchStructure(adt: Typedef.Adt, domain: Domain): Map[String, List[String]] = {
-    adt.members.toList.map { branchId =>
-      val branchName = branchId.name.name
-      val fieldSigs: List[String] = domain.defs.meta.nodes.get(branchId) match {
-        case Some(DomainMember.User(_, dto: Typedef.Dto, _, _)) =>
-          dto.fields.map(f => s"${f.name.name}: ${f.tpe}").sorted
-        case other =>
-          throw new AssertionError(s"branch $branchName resolved to unexpected node: $other")
-      }
-      branchName -> fieldSigs
+    adt.members.toList.map {
+      branchId =>
+        val branchName = branchId.name.name
+        val fieldSigs: List[String] = domain.defs.meta.nodes.get(branchId) match {
+          case Some(DomainMember.User(_, dto: Typedef.Dto, _, _)) =>
+            dto.fields.map(f => s"${f.name.name}: ${f.tpe}").sorted
+          case other =>
+            throw new AssertionError(s"branch $branchName resolved to unexpected node: $other")
+        }
+        branchName -> fieldSigs
     }.toMap
   }
 
@@ -125,19 +129,20 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
         for {
           outcome <- runPipeline(loader, paths)
         } yield {
-          val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
-          val adt    = expectedAdt(family, "my.ok.m20.simple", "SomeError")
+          val family      = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val adt         = expectedAdt(family, "my.ok.m20.simple", "SomeError")
           val branchNames = adt.members.toList.map(_.name.name).toSet
           // SomeError absorbs ErrorAtom.Forbidden plus its own Bar.
           assert(branchNames == Set("Forbidden", "Bar"), s"expected {Forbidden, Bar}, got $branchNames")
           // Q-M20-1: each re-emitted branch is owned by the receiving ADT, not the source.
-          adt.members.toList.foreach { branchId =>
-            branchId.owner match {
-              case Owner.Adt(parent) =>
-                assert(parent.name.name == "SomeError", s"branch ${branchId.name.name} should be owned by SomeError, got ${parent.name.name}")
-              case other =>
-                fail(s"branch ${branchId.name.name} owner expected Owner.Adt(SomeError), got $other")
-            }
+          adt.members.toList.foreach {
+            branchId =>
+              branchId.owner match {
+                case Owner.Adt(parent) =>
+                  assert(parent.name.name == "SomeError", s"branch ${branchId.name.name} should be owned by SomeError, got ${parent.name.name}")
+                case other =>
+                  fail(s"branch ${branchId.name.name} owner expected Owner.Adt(SomeError), got $other")
+              }
           }
         }
     }
@@ -148,8 +153,8 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
         for {
           outcome <- runPipeline(loader, paths)
         } yield {
-          val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
-          val adtA   = expectedAdt(family, "my.ok.m20.chained", "Lvl1")
+          val family   = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val adtA     = expectedAdt(family, "my.ok.m20.chained", "Lvl1")
           val branches = adtA.members.toList.map(_.name.name).toSet
           // Lvl1 `+ Lvl2`, Lvl2 `+ Lvl3`, Lvl3 { Foo, Bar } → Lvl1 absorbs both via topo-ordered expansion.
           assert(branches == Set("Foo", "Bar"), s"expected {Foo, Bar} via chained include, got $branches")
@@ -162,8 +167,8 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
         for {
           outcome <- runPipeline(loader, paths)
         } yield {
-          val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
-          val adt    = expectedAdt(family, "my.ok.m20.exclude", "SomeError")
+          val family   = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val adt      = expectedAdt(family, "my.ok.m20.exclude", "SomeError")
           val branches = adt.members.toList.map(_.name.name).toSet
           // SomeError = ErrorAtom { Forbidden, SomeBranch } − ErrorAtom.SomeBranch = { Forbidden }.
           assert(branches == Set("Forbidden"), s"expected {Forbidden}, got $branches")
@@ -176,8 +181,8 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
         for {
           outcome <- runPipeline(loader, paths)
         } yield {
-          val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
-          val adt    = expectedAdt(family, "my.ok.m20.intersect", "IntX")
+          val family   = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val adt      = expectedAdt(family, "my.ok.m20.intersect", "IntX")
           val branches = adt.members.toList.map(_.name.name).toSet
           // IntX = (IntA ∪ ∅) ∩ IntB branch-names. IntA = {Foo, Bar, Baz}, IntB = {Foo, Bar, Other}; ∩ = {Foo, Bar}.
           assert(branches == Set("Foo", "Bar"), s"expected {Foo, Bar} from intersection, got $branches")
@@ -197,8 +202,8 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
         for {
           outcome <- runPipeline(loader, paths)
         } yield {
-          val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
-          val adt    = expectedAdt(family, "my.ok.m20.multi_intersect", "MiResult")
+          val family   = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val adt      = expectedAdt(family, "my.ok.m20.multi_intersect", "MiResult")
           val branches = adt.members.toList.map(_.name.name).toSet
           // Union-of-targets: X1 (in A) and Y1 (in B) survive; Common (in neither A nor B) is filtered.
           assert(branches == Set("X1", "Y1"), s"expected {X1, Y1} from multi-^ union-of-targets, got $branches")
@@ -213,8 +218,8 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
         for {
           outcome <- runPipeline(loader, paths)
         } yield {
-          val family = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
-          val adt    = expectedAdt(family, "my.ok.m20.nsqual", "E")
+          val family   = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val adt      = expectedAdt(family, "my.ok.m20.nsqual", "E")
           val branches = adt.members.toList.map(_.name.name).toSet
           assert(branches == Set("Foo"), s"expected {Foo} from namespaced include, got $branches")
         }
@@ -240,10 +245,10 @@ abstract class M20AdtInheritanceFrontEndTestBase[F[+_, +_]: Error2: TagKK: Baboo
         for {
           outcome <- runPipeline(loader, paths)
         } yield {
-          val family  = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
-          val domain = domainFor(family, "my.ok.m20.equiv")
-          val manualAdt  = adtFromDomain(domain, "ManualVer", "my.ok.m20.equiv")
-          val sugaredAdt = adtFromDomain(domain, "SugaredVer", "my.ok.m20.equiv")
+          val family        = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val domain        = domainFor(family, "my.ok.m20.equiv")
+          val manualAdt     = adtFromDomain(domain, "ManualVer", "my.ok.m20.equiv")
+          val sugaredAdt    = adtFromDomain(domain, "SugaredVer", "my.ok.m20.equiv")
           val manualStruct  = branchStructure(manualAdt, domain)
           val sugaredStruct = branchStructure(sugaredAdt, domain)
           assert(

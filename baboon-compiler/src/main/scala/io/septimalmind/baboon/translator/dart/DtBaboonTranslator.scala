@@ -27,10 +27,10 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
 
   override def translate(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
     for {
-      translated  <- translateFamily(family)
-      runtime     <- sharedRuntime()
-      fixture     <- sharedFixture()
-      testHelper  <- sharedTestHelper()
+      translated <- translateFamily(family)
+      runtime    <- sharedRuntime()
+      fixture    <- sharedFixture()
+      testHelper <- sharedTestHelper()
       rendered = (translated ++ runtime ++ fixture ++ testHelper).map {
         o =>
           val content = renderTree(o)

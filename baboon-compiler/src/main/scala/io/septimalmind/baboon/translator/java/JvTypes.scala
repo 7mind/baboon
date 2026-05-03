@@ -55,18 +55,18 @@ object JvTypes {
   val baboonAbstractConversions: JvType = JvType(baboonRuntimePkg, "AbstractBaboonConversions")
 
   // baboon any-feature surface types (PR 6.1 runtime; consumed by PR 6.2+ codec emitters).
-  val baboonAnyOpaqueOuter: JvType   = JvType(baboonRuntimePkg, "BaboonAnyOpaque")
-  val baboonAnyOpaque: JvType        = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyOpaque")
-  val baboonAnyOpaqueUeba: JvType    = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyOpaqueUeba")
-  val baboonAnyOpaqueJson: JvType    = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyOpaqueJson")
-  val baboonAnyMeta: JvType          = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyMeta")
-  val baboonAnyMetaCodec: JvType     = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyMetaCodec")
-  val baboonCodecException: JvType   = JvType(baboonRuntimePkg, "BaboonCodecException")
-  val baboonEither: JvType           = JvType(baboonRuntimePkg, "BaboonEither")
+  val baboonAnyOpaqueOuter: JvType = JvType(baboonRuntimePkg, "BaboonAnyOpaque")
+  val baboonAnyOpaque: JvType      = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyOpaque")
+  val baboonAnyOpaqueUeba: JvType  = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyOpaqueUeba")
+  val baboonAnyOpaqueJson: JvType  = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyOpaqueJson")
+  val baboonAnyMeta: JvType        = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyMeta")
+  val baboonAnyMetaCodec: JvType   = JvType(baboonRuntimePkg, "BaboonAnyOpaque.AnyMetaCodec")
+  val baboonCodecException: JvType = JvType(baboonRuntimePkg, "BaboonCodecException")
+  val baboonEither: JvType         = JvType(baboonRuntimePkg, "BaboonEither")
 
   // Identifier-repr (PR-57a): runtime helper class and nested cursor.
-  val baboonIdRepr: JvType           = JvType(baboonRuntimePkg, "BaboonIdentifierRepr")
-  val baboonIdReprCursor: JvType     = JvType(baboonRuntimePkg, "BaboonIdentifierRepr.Cursor")
+  val baboonIdRepr: JvType       = JvType(baboonRuntimePkg, "BaboonIdentifierRepr")
+  val baboonIdReprCursor: JvType = JvType(baboonRuntimePkg, "BaboonIdentifierRepr.Cursor")
 
   // java.lang
   val javaLangPkg: JvPackageId             = parseJvPkg("java.lang")

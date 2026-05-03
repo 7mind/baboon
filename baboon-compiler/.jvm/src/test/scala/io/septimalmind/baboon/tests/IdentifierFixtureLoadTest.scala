@@ -20,8 +20,7 @@ import java.nio.file.Path
   */
 final class IdentifierFixtureLoadTest extends IdentifierFixtureLoadTestBase[Either]
 
-abstract class IdentifierFixtureLoadTestBase[F[+_, +_]: Error2: BaboonTestModule: izumi.reflect.TagKK]
-    extends BaboonTest[F] {
+abstract class IdentifierFixtureLoadTestBase[F[+_, +_]: Error2: BaboonTestModule: izumi.reflect.TagKK] extends BaboonTest[F] {
 
   private def resolveBaboonFiles(resourcePath: String): List[Path] = {
     val root = IzResources

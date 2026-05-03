@@ -262,7 +262,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
 
           List(
             mkImportFor(typeOnlyTypes, importType = true),
-            mkImportFor(valueTypes, importType = false),
+            mkImportFor(valueTypes, importType    = false),
           ).flatten
       }
 
@@ -295,7 +295,8 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
   }
 
   /** Extract type names that a file defines (types whose module matches the file's own module).
-    * Returns a map from name to typeOnly flag (true = type-only, false = value-bearing). */
+    * Returns a map from name to typeOnly flag (true = type-only, false = value-bearing).
+    */
   private def exportedNames(output: TsDefnTranslator.Output): Map[String, Boolean] = {
     output.tree.values.collect {
       case t: TsValue.TsType if t.moduleId == output.module && !t.predef => t.name -> t.typeOnly
@@ -309,8 +310,8 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     renderName: String => String,
     from: String,
   ): List[TextTree[TsValue]] = {
-    val sorted    = names.toList.sorted
-    val typeOnly  = sorted.filter(n => nameToTypeOnly.getOrElse(n, false))
+    val sorted       = names.toList.sorted
+    val typeOnly     = sorted.filter(n => nameToTypeOnly.getOrElse(n, false))
     val valueBearing = sorted.filterNot(n => nameToTypeOnly.getOrElse(n, false))
     List(
       if (typeOnly.nonEmpty) Some(TextTree.text[TsValue](s"export type { ${typeOnly.map(renderName).mkString(", ")} } from '$from';")) else None,

@@ -12,8 +12,7 @@ import izumi.reflect.TagKK
 
 final class IdentifierParserAndTyperTest extends IdentifierParserAndTyperTestBase[Either]
 
-abstract class IdentifierParserAndTyperTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule]
-    extends BaboonTest[F] {
+abstract class IdentifierParserAndTyperTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] extends BaboonTest[F] {
 
   private def makeInput(name: String, body: String): BaboonParser.Input =
     BaboonParser.Input(FSPath.parse(NEString.unsafeFrom(name)), body)
@@ -39,7 +38,7 @@ abstract class IdentifierParserAndTyperTestBase[F[+_, +_]: Error2: TagKK: Baboon
         for {
           parsed <- parser.parse(input)
         } yield {
-          val defs = parsed.members.defs
+          val defs  = parsed.members.defs
           val idDef = defs.collectFirst { case d: RawTLDef.Identifier => d }
           assert(idDef.isDefined, s"expected RawTLDef.Identifier in top-level defs, got: $defs")
           val id = idDef.get
@@ -68,7 +67,7 @@ abstract class IdentifierParserAndTyperTestBase[F[+_, +_]: Error2: TagKK: Baboon
         for {
           parsed <- parser.parse(input)
         } yield {
-          val defs = parsed.members.defs
+          val defs  = parsed.members.defs
           val idDef = defs.collectFirst { case d: RawTLDef.Identifier => d }
           assert(idDef.isDefined, s"expected RawTLDef.Identifier in top-level defs, got: $defs")
           val id = idDef.get
@@ -121,7 +120,7 @@ abstract class IdentifierParserAndTyperTestBase[F[+_, +_]: Error2: TagKK: Baboon
         for {
           parsed <- parser.parse(input)
         } yield {
-          val defs = parsed.members.defs
+          val defs   = parsed.members.defs
           val dtoDef = defs.collectFirst { case d: RawTLDef.DTO => d }
           assert(dtoDef.isDefined, s"expected a DTO def, got: $defs")
           val fieldNames = dtoDef.get.value.members.collect {

@@ -41,7 +41,7 @@ class ForeignKeyCodecDeprecationSpec extends AnyFunSuite {
     assert(
       hasDeprecated(traitSym),
       s"$traitSym should carry @deprecated on non-latest version (v1.0.0 of testpkg.pkg0); " +
-        s"annotations seen: ${traitSym.annotations}",
+      s"annotations seen: ${traitSym.annotations}",
     )
   }
 
@@ -52,8 +52,8 @@ class ForeignKeyCodecDeprecationSpec extends AnyFunSuite {
     assert(
       hasDeprecated(moduleSym),
       s"$moduleSym should ALSO carry @deprecated on non-latest version " +
-        s"(PR-I-D04: pre-fix, only the trait was annotated; the companion was not); " +
-        s"annotations seen: ${moduleSym.annotations}",
+      s"(PR-I-D04: pre-fix, only the trait was annotated; the companion was not); " +
+      s"annotations seen: ${moduleSym.annotations}",
     )
   }
 }

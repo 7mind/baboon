@@ -109,8 +109,8 @@ object KtTypes {
   val baboonEither: KtType         = KtType(baboonRuntimePkg, "Either")
 
   // Identifier repr runtime helper (PR-57b / spec: docs/spec/identifier-repr.md).
-  val baboonIdRepr: KtType         = KtType(baboonRuntimePkg, "BaboonIdentifierRepr")
-  val baboonIdReprCursor: KtType   = KtType(baboonRuntimePkg, "BaboonIdentifierRepr.Cursor")
+  val baboonIdRepr: KtType       = KtType(baboonRuntimePkg, "BaboonIdentifierRepr")
+  val baboonIdReprCursor: KtType = KtType(baboonRuntimePkg, "BaboonIdentifierRepr.Cursor")
 
   // baboon types
   val baboonBinCodecIndexed: KtType           = KtType(baboonRuntimePkg, "BaboonBinCodecIndexed")

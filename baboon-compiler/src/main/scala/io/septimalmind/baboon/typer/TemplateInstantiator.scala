@@ -22,7 +22,7 @@ import izumi.fundamentals.collections.nonempty.NEList
   *      recursively.
   *   5. If during the walk any `RawTypeRef.Constructor.name` resolves to a
   *      registered template (including self-reference), emit
-  *      `TemplateInstantiationInBody` (spec §4, matrix #1 / decision #3).
+  *      `TemplateInstantiationInForbiddenPosition` (spec §4, matrix #1 / decision #3).
   *   6. Synthesize the concrete `RawTLDef.{DTO|ADT|Contract|Service}` with
   *      - `name`   = alias name (locked decision #4)
   *      - `meta`   = alias meta
@@ -47,6 +47,16 @@ trait TemplateInstantiator[F[+_, +_]] {
 object TemplateInstantiator {
 
   class Impl[F[+_, +_]: Error2] extends TemplateInstantiator[F] {
+
+    // Canonical set of builtin constructor heads (collections + any).
+    // Derived from TypeId.Builtins so that adding a new builtin keeps this in sync automatically.
+    private val builtinConstructorNames: Set[String] = Set(
+      TypeId.Builtins.map.name.name,
+      TypeId.Builtins.opt.name.name,
+      TypeId.Builtins.lst.name.name,
+      TypeId.Builtins.set.name.name,
+      TypeId.Builtins.any.name.name,
+    )
 
     override def instantiate(
       pkg: Pkg,
@@ -90,7 +100,8 @@ object TemplateInstantiator {
                   // through — BaboonTranslator will handle it. Otherwise the user wrote
                   // something like `type Y = i32[X]`, which is matrix #8.
                   val headName = ctor.name.name
-                  val isBuiltin = Set("lst", "set", "opt", "map", "any").contains(headName)
+                  // Derived from TypeId.Builtins canonical constants — single source of truth.
+                  val isBuiltin = builtinConstructorNames.contains(headName)
                   if (isBuiltin) {
                     F.pure(List(aliasTL))
                   } else {
@@ -108,12 +119,15 @@ object TemplateInstantiator {
             case simple: RawTypeRef.Simple =>
               // Bare Simple reference (no brackets). Check whether the name refers to a
               // registered template. If so, the user forgot the type arguments — matrix #7.
+              // TODO [PR-29.5-D04 / PR-29.7-D07]: extend template detection to cross-namespace
+              //   prefixed refs (e.g. `ns.Foo`) once cross-namespace template instantiation is
+              //   spec'd. Currently out of scope per spec §6.
               val maybeTemplateKey = registry.templates.keys.find {
                 case (kPkg, kOwner, tname) =>
                   tname.name == simple.name.name &&
-                    kPkg == pkg &&
-                    kOwner == ownerForCurrent &&
-                    simple.prefix.isEmpty
+                  kPkg == pkg &&
+                  kOwner == ownerForCurrent &&
+                  simple.prefix.isEmpty
               }
               maybeTemplateKey match {
                 case Some(_) =>
@@ -176,16 +190,18 @@ object TemplateInstantiator {
       } else {
         // Matrix #2: type arguments must not themselves be template instantiations (spec §2.5.2).
         // Walk each argument; if it is a Constructor whose head names a registered template, reject.
+        // TODO [PR-29.5-D04 / PR-29.7-D07]: extend template detection to cross-namespace prefixed
+        //   refs (e.g. `ns.Foo[T]`) once cross-namespace template instantiation is spec'd.
+        //   Currently out of scope per spec §6.
         val badArg = args.collectFirst {
-          case argCtor: RawTypeRef.Constructor
-              if registry.templates.keys.exists { case (_, _, tname) => tname.name == argCtor.name.name && argCtor.prefix.isEmpty } =>
+          case argCtor: RawTypeRef.Constructor if registry.templates.keys.exists { case (_, _, tname) => tname.name == argCtor.name.name && argCtor.prefix.isEmpty } =>
             argCtor.name.name
         }
         badArg match {
           case Some(innerTemplate) =>
             F.fail(
               BaboonIssue.of(
-                TyperIssue.TemplateInstantiationInBody(
+                TyperIssue.TemplateInstantiationInForbiddenPosition(
                   containingTemplateName = templateKey._3.name,
                   instantiatedName       = innerTemplate,
                   meta                   = alias.meta,
@@ -398,7 +414,7 @@ object TemplateInstantiator {
       * - `RawTypeRef.Simple(p, Nil)` where `p` is a key in `substMap` → replace.
       * - `RawTypeRef.Constructor(name, params, prefix)` → recurse into params.
       *   Additionally checks whether `name` resolves to a registered template
-      *   (matrix #1 / spec §4): if so, emit `TemplateInstantiationInBody`.
+      *   (matrix #1 / spec §4): if so, emit `TemplateInstantiationInForbiddenPosition`.
       * - `RawTypeRef.AnyRef(qualifier, underlying)` → recurse into underlying if present.
       */
     private def substituteTypeRef(
@@ -425,16 +441,19 @@ object TemplateInstantiator {
           // in the registry using the same "owner = Toplevel" key used by TemplateRegistryBuilder.
           // Templates nested in namespaces are out of scope for PR-29.5 in-body check; the
           // flat (Toplevel) lookup catches the common case and the most dangerous one (self-ref).
+          // TODO [PR-29.5-D04 / PR-29.7-D07]: extend template detection to cross-namespace
+          //   prefixed refs (e.g. `ns.Foo[T]`) once cross-namespace template instantiation is
+          //   spec'd. Currently out of scope per spec §6.
           val maybeTemplateKey = registry.templates.keys.find {
             case (_, _, tname) => tname.name == name.name && prefix.isEmpty
           }
           maybeTemplateKey match {
             case Some(_) =>
               // Any RawTypeRef.Constructor over a template in field position is forbidden
-              // (spec §4, matrix #1: "template instantiation in field position").
+              // (spec §4, matrix #1 / decision #3).
               F.fail(
                 BaboonIssue.of(
-                  TyperIssue.TemplateInstantiationInBody(
+                  TyperIssue.TemplateInstantiationInForbiddenPosition(
                     containingTemplateName = templateName,
                     instantiatedName       = name.name,
                     meta                   = meta,

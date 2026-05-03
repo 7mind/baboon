@@ -63,7 +63,7 @@ class SwJsonCodecGenerator(
     val anyHelpers: List[TextTree[SwValue]] = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
     val baseMethods                         = encodeMethod ++ decodeMethod ++ anyHelpers
     val cName                               = codecName(srcRef)
-    val meta        = renderMeta(defn, swDomainTreeTools.makeCodecMeta(defn))
+    val meta                                = renderMeta(defn, swDomainTreeTools.makeCodecMeta(defn))
 
     val cParent = if (isEncoderEnabled) {
       defn match {
@@ -171,8 +171,8 @@ class SwJsonCodecGenerator(
 
     val decFields = d.fields.map {
       f =>
-        val escaped              = trans.escapeSwiftKeyword(f.name.name)
-        val (expr, mayThrow)     = mkDecoder(f.name.name, f.tpe, q"jsonObj")
+        val escaped          = trans.escapeSwiftKeyword(f.name.name)
+        val (expr, mayThrow) = mkDecoder(f.name.name, f.tpe, q"jsonObj")
         if (mayThrow) q"$escaped: try $expr" else q"$escaped: $expr"
     }
 
@@ -220,7 +220,7 @@ class SwJsonCodecGenerator(
           domain.defs.meta.nodes(uid) match {
             case u: DomainMember.User =>
               u.defn match {
-                case _: Typedef.Enum => q"$ref.rawValue"
+                case _: Typedef.Enum    => q"$ref.rawValue"
                 case f: Typedef.Foreign =>
                   // PR-I.2 (M24 Phase 3.2): Custom-foreign map keys route through
                   // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
@@ -245,7 +245,7 @@ class SwJsonCodecGenerator(
                 case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
                   val inner = d.fields.head
                   encodeKey(inner.tpe, q"$ref.${inner.name.name}")
-                case o                  => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
+                case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
               }
             case o => throw new RuntimeException(s"BUG: Type/usertype mismatch: $o")
           }
@@ -306,23 +306,23 @@ class SwJsonCodecGenerator(
       tpe match {
         case TypeRef.Scalar(id) =>
           id match {
-            case TypeId.Builtins.bit   => (q"$ref as! Bool",                                                                            false)
-            case TypeId.Builtins.i08   => (q"Int8(truncatingIfNeeded: ($ref as! NSNumber).intValue)",                                   false)
-            case TypeId.Builtins.i16   => (q"Int16(truncatingIfNeeded: ($ref as! NSNumber).intValue)",                                  false)
-            case TypeId.Builtins.i32   => (q"Int32(truncatingIfNeeded: ($ref as! NSNumber).intValue)",                                  false)
+            case TypeId.Builtins.bit   => (q"$ref as! Bool", false)
+            case TypeId.Builtins.i08   => (q"Int8(truncatingIfNeeded: ($ref as! NSNumber).intValue)", false)
+            case TypeId.Builtins.i16   => (q"Int16(truncatingIfNeeded: ($ref as! NSNumber).intValue)", false)
+            case TypeId.Builtins.i32   => (q"Int32(truncatingIfNeeded: ($ref as! NSNumber).intValue)", false)
             case TypeId.Builtins.i64   => (q"($ref is String ? Int64($ref as! String)! : Int64(truncatingIfNeeded: ($ref as! NSNumber).int64Value))", false)
-            case TypeId.Builtins.u08   => (q"UInt8(truncatingIfNeeded: ($ref as! NSNumber).intValue)",                                  false)
-            case TypeId.Builtins.u16   => (q"UInt16(truncatingIfNeeded: ($ref as! NSNumber).intValue)",                                 false)
-            case TypeId.Builtins.u32   => (q"UInt32(truncatingIfNeeded: ($ref as! NSNumber).intValue)",                                 false)
+            case TypeId.Builtins.u08   => (q"UInt8(truncatingIfNeeded: ($ref as! NSNumber).intValue)", false)
+            case TypeId.Builtins.u16   => (q"UInt16(truncatingIfNeeded: ($ref as! NSNumber).intValue)", false)
+            case TypeId.Builtins.u32   => (q"UInt32(truncatingIfNeeded: ($ref as! NSNumber).intValue)", false)
             case TypeId.Builtins.u64   => (q"($ref is String ? UInt64($ref as! String)! : UInt64(truncatingIfNeeded: ($ref as! NSNumber).uint64Value))", false)
-            case TypeId.Builtins.f32   => (q"Float(($ref as! NSNumber).doubleValue)",                                                   false)
-            case TypeId.Builtins.f64   => (q"($ref as! NSNumber).doubleValue",                                                          false)
-            case TypeId.Builtins.f128  => (q"$baboonDecimal($ref is String ? $ref as! String : String(describing: $ref))",              false)
-            case TypeId.Builtins.str   => (q"($ref as! String)",                                                                         false)
-            case TypeId.Builtins.uid   => (q"UUID(uuidString: $ref as! String)!",                                                       false)
-            case TypeId.Builtins.bytes => (q"$baboonByteStringTools.fromHexString($ref as! String)",                                    false)
-            case TypeId.Builtins.tsu   => (q"$baboonTimeFormats.parseUtc($ref as! String)",                                             false)
-            case TypeId.Builtins.tso   => (q"$baboonTimeFormats.parseOffset($ref as! String)",                                          false)
+            case TypeId.Builtins.f32   => (q"Float(($ref as! NSNumber).doubleValue)", false)
+            case TypeId.Builtins.f64   => (q"($ref as! NSNumber).doubleValue", false)
+            case TypeId.Builtins.f128  => (q"$baboonDecimal($ref is String ? $ref as! String : String(describing: $ref))", false)
+            case TypeId.Builtins.str   => (q"($ref as! String)", false)
+            case TypeId.Builtins.uid   => (q"UUID(uuidString: $ref as! String)!", false)
+            case TypeId.Builtins.bytes => (q"$baboonByteStringTools.fromHexString($ref as! String)", false)
+            case TypeId.Builtins.tsu   => (q"$baboonTimeFormats.parseUtc($ref as! String)", false)
+            case TypeId.Builtins.tso   => (q"$baboonTimeFormats.parseOffset($ref as! String)", false)
             case u: TypeId.User =>
               val targetTpe = codecName(trans.toSwTypeRefKeepForeigns(u, domain, evo))
               (q"$targetTpe.instance.decode(ctx, $ref)", true)
@@ -355,13 +355,13 @@ class SwJsonCodecGenerator(
             case TypeId.Builtins.map =>
               val (keyDec, keyThr)   = decodeKey(c.args.head, q"$varName.key")
               val (valueDec, valThr) = decodeElement(c.args.last, q"$varName.value", depth + 1)
-              val anyThr = keyThr || valThr
+              val anyThr             = keyThr || valThr
               // `Dictionary(uniqueKeysWithValues:)` is `rethrows`: it re-throws whatever the
               // mapping closure throws. If either the key or value decode uses `try`, the outer
               // `Dictionary(...)` call must itself be marked with `try`.
               // Emit `try` independently for key and value — four cases: both/key-only/val-only/neither.
-              val keyTok = if (keyThr) q"try $keyDec" else q"$keyDec"
-              val valTok = if (valThr) q"try $valueDec" else q"$valueDec"
+              val keyTok  = if (keyThr) q"try $keyDec" else q"$keyDec"
+              val valTok  = if (valThr) q"try $valueDec" else q"$valueDec"
               val mapExpr = q"""Dictionary(uniqueKeysWithValues: ($ref as! [String: Any]).map { $varName in ($keyTok, $valTok) })"""
               (mapExpr, anyThr)
             case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
@@ -402,7 +402,10 @@ class SwJsonCodecGenerator(
                       // PR-F (M24): throw BaboonCodecException.decoderFailure on parse failure
                       // for cross-language malformed-key consistency (replaces forced unwrap).
                       val targetTpe = trans.toSwTypeRefKeepForeigns(u, domain, evo)
-                      (q"""{ () throws -> $targetTpe in guard let __r = $targetTpe.parse($ref) else { throw $baboonCodecException.decoderFailure(\"malformed key: \\($ref)\", nil) }; return __r }()""", true)
+                      (
+                        q"""{ () throws -> $targetTpe in guard let __r = $targetTpe.parse($ref) else { throw $baboonCodecException.decoderFailure(\"malformed key: \\($ref)\", nil) }; return __r }()""",
+                        true,
+                      )
                     case f: Typedef.Foreign =>
                       // PR-I.2 (M24 Phase 3.2): Custom-foreign map keys route through
                       // the emitted `<Foreign>_KeyCodecHost.instance` extension hook.
@@ -415,7 +418,10 @@ class SwJsonCodecGenerator(
                         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) =>
                           val foreignTpe = trans.toSwTypeRefKeepForeigns(u, domain, evo)
                           val host       = SwValue.SwType(foreignTpe.pkg, s"${foreignTpe.name}_KeyCodecHost")
-                          (q"""{ () throws -> $foreignTpe in do { return try $host.instance.decodeKey($ref) } catch let e { throw $baboonCodecException.decoderFailure(\"malformed key: \\($ref)\", e) } }()""", true)
+                          (
+                            q"""{ () throws -> $foreignTpe in do { return try $host.instance.decodeKey($ref) } catch let e { throw $baboonCodecException.decoderFailure(\"malformed key: \\($ref)\", e) } }()""",
+                            true,
+                          )
                         case None =>
                           throw new RuntimeException(s"BUG: Foreign type $u has no Swift binding")
                       }
@@ -425,11 +431,14 @@ class SwJsonCodecGenerator(
                     case d: Typedef.Dto if d.isIdentifier =>
                       val targetTpe   = trans.toSwTypeRefKeepForeigns(u, domain, evo)
                       val nestedCodec = SwValue.SwType(targetTpe.pkg, s"${targetTpe.name}Codec")
-                      (q"""{ () throws -> $targetTpe in guard case .right(let __r) = $nestedCodec.parseRepr($ref) else { throw $baboonCodecException.decoderFailure(\"malformed key: \\($ref)\", nil) }; return __r }()""", true)
+                      (
+                        q"""{ () throws -> $targetTpe in guard case .right(let __r) = $nestedCodec.parseRepr($ref) else { throw $baboonCodecException.decoderFailure(\"malformed key: \\($ref)\", nil) }; return __r }()""",
+                        true,
+                      )
                     // M19/PR-60: single-primitive-field wrappers — peel and recurse, then construct.
                     case d: Typedef.Dto if d.fields.size == 1 && d.contracts.isEmpty =>
-                      val inner          = d.fields.head
-                      val targetTpe      = trans.toSwTypeRefKeepForeigns(u, domain, evo)
+                      val inner                = d.fields.head
+                      val targetTpe            = trans.toSwTypeRefKeepForeigns(u, domain, evo)
                       val (innerDec, innerThr) = decodeKey(inner.tpe, ref)
                       (q"$targetTpe(${inner.name.name}: $innerDec)", innerThr)
                     case o => throw new RuntimeException(s"BUG: Unexpected key usertype: $o")
@@ -449,8 +458,8 @@ class SwJsonCodecGenerator(
         // `str` branch emits `(v! as! String)` (parens added) to silence Swift's forced-downcast
         // warning in optional context.
         val (innerExpr, innerThrows) = decodeElement(args.head, q"v!", 0)
-        val innerWithTry = if (innerThrows) q"try $innerExpr" else innerExpr
-        val closureExpr  = q"""{ let v = $jsonObjRef["$fieldName"]; return v is NSNull || v == nil ? nil : $innerWithTry }()"""
+        val innerWithTry             = if (innerThrows) q"try $innerExpr" else innerExpr
+        val closureExpr              = q"""{ let v = $jsonObjRef["$fieldName"]; return v is NSNull || v == nil ? nil : $innerWithTry }()"""
         (closureExpr, innerThrows)
       case _ =>
         val (expr, throws) = decodeElement(tpe, q"""$jsonObjRef["$fieldName"]!""", 0)

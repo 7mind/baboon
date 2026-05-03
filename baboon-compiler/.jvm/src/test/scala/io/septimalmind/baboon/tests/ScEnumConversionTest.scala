@@ -86,11 +86,11 @@ abstract class ScEnumConversionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModu
           // Simulate what ScConversionTranslator emits.
           // The generated map must use .capitalize on both sides so that
           // from.toString (which returns the case-object name) finds a match.
-          val trans       = new ScTypeTranslator()
-          val tools       = new ScTreeTools.ScTreeToolsImpl()
-          val scPkg       = trans.toScPkg(pkg, v2, evo)
-          val translator  = new ScConversionTranslator[Either](trans, scPkg, srcDom, tgtDom, ruleset, tools, evo)
-          val convs       = translator.makeConvs.fold(errs => fail(s"makeConvs failed: $errs"), identity)
+          val trans      = new ScTypeTranslator()
+          val tools      = new ScTreeTools.ScTreeToolsImpl()
+          val scPkg      = trans.toScPkg(pkg, v2, evo)
+          val translator = new ScConversionTranslator[Either](trans, scPkg, srcDom, tgtDom, ruleset, tools, evo)
+          val convs      = translator.makeConvs.fold(errs => fail(s"makeConvs failed: $errs"), identity)
 
           // The rendered conversion source should contain capitalized keys matching case-object .toString.
           // Scala's .capitalize only uppercases the first character, leaving the rest unchanged.

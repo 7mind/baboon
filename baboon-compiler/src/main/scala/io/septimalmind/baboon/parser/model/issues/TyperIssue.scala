@@ -177,22 +177,26 @@ object TyperIssue {
     meta: RawNodeMeta,
   ) extends TyperIssue
 
-  /** A template instantiation expression appears in a field position inside a
-    * template body (spec §4, matrix #1 / locked decision #3).
+  /** A template instantiation appears in a position where it is forbidden
+    * (spec §4, matrix #1 / locked decision #3; or spec §2.5.2, matrix #2).
     *
-    * This covers both the direct self-reference case
-    * (`data X[T] { rec: X[T] }`) and the container-mediated case
-    * (`data Tree[T] { children: lst[Tree[T]] }`). In both cases the inner
-    * `X[…]` / `Tree[…]` is a template instantiation in field position, which
-    * is forbidden. The rejection happens at substitution time in
-    * `TemplateInstantiator`.
+    * Matrix #1 — instantiation inside a template body field:
+    *   `data X[T] { rec: X[T] }` — self-reference in body is forbidden.
+    *   `data Tree[T] { children: lst[Tree[T]] }` — container-mediated self-ref.
     *
-    * `containingTemplateName` — the template whose body contains the forbidden
-    *   instantiation.
-    * `instantiatedName` — the name of the template being (illegally) instantiated
-    *   in the body (often equal to `containingTemplateName` for self-reference).
+    * Matrix #2 — instantiation nested inside alias RHS type arguments:
+    *   `type Y = X[Z[i32]]` where both X and Z are templates — the inner
+    *   constructor `Z[…]` is a template instantiation in alias-arg position,
+    *   which is forbidden. Templates may only be instantiated as the right-hand
+    *   side of a top-level `type` alias (matrix #1 / decision #3).
+    *
+    * The rejection happens at substitution time in `TemplateInstantiator`.
+    *
+    * `containingTemplateName` — the template (or alias) whose body / args
+    *   contain the forbidden instantiation.
+    * `instantiatedName` — the name of the template being illegally instantiated.
     */
-  case class TemplateInstantiationInBody(
+  case class TemplateInstantiationInForbiddenPosition(
     containingTemplateName: String,
     instantiatedName: String,
     meta: RawNodeMeta,
@@ -670,10 +674,10 @@ object TyperIssue {
          |""".stripMargin
     }
 
-  implicit val templateInstantiationInBodyPrinter: IssuePrinter[TemplateInstantiationInBody] =
-    (issue: TemplateInstantiationInBody) => {
+  implicit val templateInstantiationInForbiddenPositionPrinter: IssuePrinter[TemplateInstantiationInForbiddenPosition] =
+    (issue: TemplateInstantiationInForbiddenPosition) => {
       s"""${extractLocation(issue.meta)}
-         |Template '${issue.containingTemplateName}' contains a template instantiation of '${issue.instantiatedName}' in field position — template instantiation is only permitted as the right-hand side of a type alias (spec §4, matrix #1)
+         |Template instantiation `${issue.instantiatedName}` is forbidden here — templates may only be instantiated as the right-hand side of a top-level `type` alias (matrix #1 / decision #3). Containing context: '${issue.containingTemplateName}'
          |""".stripMargin
     }
 

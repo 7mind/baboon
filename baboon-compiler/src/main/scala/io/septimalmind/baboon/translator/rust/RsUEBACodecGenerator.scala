@@ -34,7 +34,7 @@ class RsUEBACodecGenerator(
       body.map {
         b =>
           if (hasAnyField(defn)) {
-            q"""${anyFieldHelpers}
+            q"""$anyFieldHelpers
                |
                |$b""".stripMargin
           } else b

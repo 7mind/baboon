@@ -304,12 +304,12 @@ class SwUEBACodecGenerator(
   private def fieldsOf(dto: Typedef.Dto): List[(TextTree[SwValue], TextTree[SwValue], TextTree[SwValue])] = {
     dto.fields.map {
       field =>
-        val escaped              = trans.escapeSwiftKeyword(field.name.name)
-        val fieldRef             = q"value.$escaped"
-        val enc                  = mkEncoder(field.tpe, fieldRef, q"writer")
-        val bufferEnc            = mkEncoder(field.tpe, fieldRef, q"buffer")
-        val (decoder, mayThrow)  = mkDecoder(field.tpe)
-        val decodeTree           = if (mayThrow) q"$escaped: try $decoder" else q"$escaped: $decoder"
+        val escaped             = trans.escapeSwiftKeyword(field.name.name)
+        val fieldRef            = q"value.$escaped"
+        val enc                 = mkEncoder(field.tpe, fieldRef, q"writer")
+        val bufferEnc           = mkEncoder(field.tpe, fieldRef, q"buffer")
+        val (decoder, mayThrow) = mkDecoder(field.tpe)
+        val decodeTree          = if (mayThrow) q"$escaped: try $decoder" else q"$escaped: $decoder"
 
         val w = domain.refMeta(field.tpe).len match {
           case BinReprLen.Fixed(bytes) =>
@@ -361,24 +361,24 @@ class SwUEBACodecGenerator(
         id match {
           case s: TypeId.BuiltinScalar =>
             s match {
-              case TypeId.Builtins.bit   => (q"reader.readBool()",    false)
-              case TypeId.Builtins.i08   => (q"reader.readI8()",      false)
-              case TypeId.Builtins.i16   => (q"reader.readI16()",     false)
-              case TypeId.Builtins.i32   => (q"reader.readI32()",     false)
-              case TypeId.Builtins.i64   => (q"reader.readI64()",     false)
-              case TypeId.Builtins.u08   => (q"reader.readU8()",      false)
-              case TypeId.Builtins.u16   => (q"reader.readU16()",     false)
-              case TypeId.Builtins.u32   => (q"reader.readU32()",     false)
-              case TypeId.Builtins.u64   => (q"reader.readU64()",     false)
-              case TypeId.Builtins.f32   => (q"reader.readF32()",     false)
-              case TypeId.Builtins.f64   => (q"reader.readF64()",     false)
+              case TypeId.Builtins.bit   => (q"reader.readBool()", false)
+              case TypeId.Builtins.i08   => (q"reader.readI8()", false)
+              case TypeId.Builtins.i16   => (q"reader.readI16()", false)
+              case TypeId.Builtins.i32   => (q"reader.readI32()", false)
+              case TypeId.Builtins.i64   => (q"reader.readI64()", false)
+              case TypeId.Builtins.u08   => (q"reader.readU8()", false)
+              case TypeId.Builtins.u16   => (q"reader.readU16()", false)
+              case TypeId.Builtins.u32   => (q"reader.readU32()", false)
+              case TypeId.Builtins.u64   => (q"reader.readU64()", false)
+              case TypeId.Builtins.f32   => (q"reader.readF32()", false)
+              case TypeId.Builtins.f64   => (q"reader.readF64()", false)
               case TypeId.Builtins.f128  => (q"reader.readDecimal()", false)
-              case TypeId.Builtins.str   => (q"reader.readString()",  true)
-              case TypeId.Builtins.bytes => (q"reader.readBytes()",   true)
-              case TypeId.Builtins.uid   => (q"reader.readUuid()",    true)
-              case TypeId.Builtins.tsu   => (q"reader.readTsu()",     false)
-              case TypeId.Builtins.tso   => (q"reader.readTso()",     false)
-              case o => throw new RuntimeException(s"BUG: Unexpected type: $o")
+              case TypeId.Builtins.str   => (q"reader.readString()", true)
+              case TypeId.Builtins.bytes => (q"reader.readBytes()", true)
+              case TypeId.Builtins.uid   => (q"reader.readUuid()", true)
+              case TypeId.Builtins.tsu   => (q"reader.readTsu()", false)
+              case TypeId.Builtins.tso   => (q"reader.readTso()", false)
+              case o                     => throw new RuntimeException(s"BUG: Unexpected type: $o")
             }
           case u: TypeId.User =>
             val targetTpe = codecName(trans.toSwTypeRefKeepForeigns(u, domain, evo))
@@ -395,16 +395,16 @@ class SwUEBACodecGenerator(
           case TypeId.Builtins.map =>
             val (keyDecoder, keyThrows)     = mkDecoder(c.args.head)
             val (valueDecoder, valueThrows) = mkDecoder(c.args.last)
-            val keyExpr   = if (keyThrows) q"try $keyDecoder" else keyDecoder
-            val valueExpr = if (valueThrows) q"try $valueDecoder" else valueDecoder
+            val keyExpr                     = if (keyThrows) q"try $keyDecoder" else keyDecoder
+            val valueExpr                   = if (valueThrows) q"try $valueDecoder" else valueDecoder
             (q"""Dictionary(uniqueKeysWithValues: (0..<Int(reader.readI32())).map { _ in ($keyExpr, $valueExpr) })""", keyThrows || valueThrows)
           case TypeId.Builtins.lst =>
             val (elemDecoder, elemThrows) = mkDecoder(c.args.head)
-            val elemExpr = if (elemThrows) q"try $elemDecoder" else elemDecoder
+            val elemExpr                  = if (elemThrows) q"try $elemDecoder" else elemDecoder
             (q"""(0..<Int(reader.readI32())).map { _ in $elemExpr }""", elemThrows)
           case TypeId.Builtins.set =>
             val (elemDecoder, elemThrows) = mkDecoder(c.args.head)
-            val elemExpr = if (elemThrows) q"try $elemDecoder" else elemDecoder
+            val elemExpr                  = if (elemThrows) q"try $elemDecoder" else elemDecoder
             (q"""Set((0..<Int(reader.readI32())).map { _ in $elemExpr })""", elemThrows)
           case o =>
             throw new RuntimeException(s"BUG: Unexpected type: $o")

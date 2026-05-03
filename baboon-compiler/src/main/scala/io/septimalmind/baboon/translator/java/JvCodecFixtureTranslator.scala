@@ -235,7 +235,7 @@ object JvCodecFixtureTranslator {
         case TypeId.Builtins.bit => q"rnd.nextBit()"
 
         case TypeId.User(_, _, name) if enquiries.isEnum(tpe, domain) => q"rnd.mkEnum(${name.name}.class, ${name.name}.values())"
-        case u: TypeId.User =>
+        case u: TypeId.User                                           =>
           // Propagate the codec branch into nested user-type fixtures so any-fields nested in
           // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (Java analog).
           val method = format match {

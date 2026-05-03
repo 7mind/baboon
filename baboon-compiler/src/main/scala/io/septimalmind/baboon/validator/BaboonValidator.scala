@@ -132,7 +132,7 @@ object BaboonValidator {
       def isIdentifierDto(id: TypeId.User): Boolean = {
         domain.defs.meta.nodes.get(id).exists {
           case DomainMember.User(_, d: Typedef.Dto, _, _) => d.isIdentifier
-          case _                                           => false
+          case _                                          => false
         }
       }
 
@@ -143,13 +143,14 @@ object BaboonValidator {
           u.defn match {
             case d: Typedef.Dto if d.isIdentifier =>
               val collectionFields = d.fields.filter(f => f.tpe.isInstanceOf[TypeRef.Constructor])
-              val floatFields      = d.fields.filter {
-                f => f.tpe match {
-                  case TypeRef.Scalar(b) => floatTypes.contains(b)
-                  case _                 => false
-                }
+              val floatFields = d.fields.filter {
+                f =>
+                  f.tpe match {
+                    case TypeRef.Scalar(b) => floatTypes.contains(b)
+                    case _                 => false
+                  }
               }
-              val anyFields        = d.fields.filter(f => f.tpe.isInstanceOf[TypeRef.Any])
+              val anyFields = d.fields.filter(f => f.tpe.isInstanceOf[TypeRef.Any])
               val userNotIdFields: List[(Field, TypeId)] = d.fields.collect {
                 case f @ Field(_, TypeRef.Scalar(uid: TypeId.User), _) if !isIdentifierDto(uid) =>
                   (f, uid: TypeId)
@@ -324,22 +325,23 @@ object BaboonValidator {
                     // Q-FU-1: apply derivation parity to EVERY user type visited during
                     // eligibility (outer wrapper → innermost). Enums and foreign types are
                     // wire-supported intrinsically (like builtins); skip them.
-                    F.traverseAccumErrors_(chain) { u =>
-                      val skipDerivationCheck = domain.defs.meta.nodes.get(u) match {
-                        case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) => true
-                        case Some(DomainMember.User(_, _: Typedef.Enum, _, _))    => true
-                        case _                                                     => false
-                      }
-                      if (skipDerivationCheck) F.unit
-                      else
-                        for {
-                          _ <- F.when(ownerJson && !derives(u, "json"))(
-                            F.fail(BaboonIssue.of(VerificationIssue.MapKeyMissingDerivation(owner, field, u, "json", meta)))
-                          )
-                          _ <- F.when(ownerUeba && !derives(u, "ueba"))(
-                            F.fail(BaboonIssue.of(VerificationIssue.MapKeyMissingDerivation(owner, field, u, "ueba", meta)))
-                          )
-                        } yield {}
+                    F.traverseAccumErrors_(chain) {
+                      u =>
+                        val skipDerivationCheck = domain.defs.meta.nodes.get(u) match {
+                          case Some(DomainMember.User(_, _: Typedef.Foreign, _, _)) => true
+                          case Some(DomainMember.User(_, _: Typedef.Enum, _, _))    => true
+                          case _                                                    => false
+                        }
+                        if (skipDerivationCheck) F.unit
+                        else
+                          for {
+                            _ <- F.when(ownerJson && !derives(u, "json"))(
+                              F.fail(BaboonIssue.of(VerificationIssue.MapKeyMissingDerivation(owner, field, u, "json", meta)))
+                            )
+                            _ <- F.when(ownerUeba && !derives(u, "ueba"))(
+                              F.fail(BaboonIssue.of(VerificationIssue.MapKeyMissingDerivation(owner, field, u, "ueba", meta)))
+                            )
+                          } yield {}
                     }
                 }
             }
@@ -609,11 +611,12 @@ object BaboonValidator {
               // (`<methodName>.sig`, `<methodName>.out`, `<methodName>.err`). The Field
               // type is the ergonomic carrier the issue printers expect; nothing here
               // is round-tripped through codegen.
-              val pseudo: List[Field] = s.methods.flatMap { m =>
-                val sigF = Field(FieldName(s"${m.name.name}.sig"), m.sig, None)
-                val outF = m.out.map(t => Field(FieldName(s"${m.name.name}.out"), t, None))
-                val errF = m.err.map(t => Field(FieldName(s"${m.name.name}.err"), t, None))
-                List(sigF) ++ outF.toList ++ errF.toList
+              val pseudo: List[Field] = s.methods.flatMap {
+                m =>
+                  val sigF = Field(FieldName(s"${m.name.name}.sig"), m.sig, None)
+                  val outF = m.out.map(t => Field(FieldName(s"${m.name.name}.out"), t, None))
+                  val errF = m.err.map(t => Field(FieldName(s"${m.name.name}.err"), t, None))
+                  List(sigF) ++ outF.toList ++ errF.toList
               }
               checkAnyOnFields(domain, s, pseudo, u.meta)
             case _ =>

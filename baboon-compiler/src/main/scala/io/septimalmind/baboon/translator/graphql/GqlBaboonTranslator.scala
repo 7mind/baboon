@@ -74,9 +74,7 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
 
         val flattened = allFiles.flatMap(identity)
 
-        flattened.toUniqueMap(c =>
-          BaboonIssue.of(TranslationIssue.NonUniqueOutputFiles(c))
-        )
+        flattened.toUniqueMap(c => BaboonIssue.of(TranslationIssue.NonUniqueOutputFiles(c)))
       }
     } yield Sources(rendered)
   }
@@ -86,8 +84,8 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
       return List.empty
     }
 
-    val pkg = domain.id
-    val ver = domain.version
+    val pkg                = domain.id
+    val ver                = domain.version
     val foreignResolutions = typeTranslator.foreignTypeResolution(domain)
 
     val members = domain.defs.meta.nodes.values.collect {
@@ -100,20 +98,22 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
     }
 
     // Collect all map types used in fields (after resolution) so we can emit helper types
-    val allMapTypes = members.flatMap { m =>
-      m.defn match {
-        case dto: Typedef.Dto =>
-          resolvedFields(dto.fields).flatMap(f => typeTranslator.collectMapTypes(f.tpe))
-        case _ => Nil
-      }
+    val allMapTypes = members.flatMap {
+      m =>
+        m.defn match {
+          case dto: Typedef.Dto =>
+            resolvedFields(dto.fields).flatMap(f => typeTranslator.collectMapTypes(f.tpe))
+          case _ => Nil
+        }
     }.toSet
 
     // Collect foreign types without runtime mapping — emit as custom scalars
-    val foreignScalars = members.flatMap { m =>
-      m.defn match {
-        case f: Typedef.Foreign if f.runtimeMapping.isEmpty => Some(typeTranslator.typeName(f.id))
-        case _ => None
-      }
+    val foreignScalars = members.flatMap {
+      m =>
+        m.defn match {
+          case f: Typedef.Foreign if f.runtimeMapping.isEmpty => Some(typeTranslator.typeName(f.id))
+          case _                                              => None
+        }
     }.sorted.distinct
 
     val sb = new StringBuilder
@@ -131,17 +131,18 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
       "BaboonAny",
     )
 
-    val usedScalars = collectUsedCustomScalars(members, foreignResolutions)
+    val usedScalars   = collectUsedCustomScalars(members, foreignResolutions)
     val scalarsToEmit = (builtinCustomScalars.intersect(usedScalars).toList ++ foreignScalars).sorted
 
-    scalarsToEmit.foreach { s =>
-      scalarDescription(s) match {
-        case Some(desc) =>
-          sb.append(desc)
-          sb.append(s"scalar $s\n")
-        case None =>
-          sb.append(s"scalar $s\n")
-      }
+    scalarsToEmit.foreach {
+      s =>
+        scalarDescription(s) match {
+          case Some(desc) =>
+            sb.append(desc)
+            sb.append(s"scalar $s\n")
+          case None =>
+            sb.append(s"scalar $s\n")
+        }
     }
     if (scalarsToEmit.nonEmpty) sb.append("\n")
 
@@ -160,18 +161,19 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
     }
 
     // Emit type definitions (skip ADT-owned types — they are emitted by their parent ADT)
-    members.foreach { m =>
-      m.defn match {
-        case _: Typedef.NonDataTypedef => // skip services, contracts
-        case _: Typedef.Foreign        => // skip — handled as scalars or resolved via runtimeMapping
-        case _ if m.ownedByAdt         => // skip — emitted by parent ADT
-        case defn                      => emitTypedef(sb, defn, domain, foreignResolutions)
-      }
+    members.foreach {
+      m =>
+        m.defn match {
+          case _: Typedef.NonDataTypedef => // skip services, contracts
+          case _: Typedef.Foreign        => // skip — handled as scalars or resolved via runtimeMapping
+          case _ if m.ownedByAdt         => // skip — emitted by parent ADT
+          case defn                      => emitTypedef(sb, defn, domain, foreignResolutions)
+        }
     }
 
     val versionStr = ver.toString.replace(".", "_")
-    val pkgStr = pkg.path.toList.map(typeTranslator.sanitize).mkString("_")
-    val filename = s"$pkgStr/v$versionStr/schema.graphql"
+    val pkgStr     = pkg.path.toList.map(typeTranslator.sanitize).mkString("_")
+    val filename   = s"$pkgStr/v$versionStr/schema.graphql"
 
     List(filename -> OutputFile(sb.toString, CompilerProduct.Definition))
   }
@@ -208,8 +210,9 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
       sb.append(s"}\n\n")
     } else {
       sb.append(s"type $name {\n")
-      dto.fields.foreach { f =>
-        sb.append(s"  ${typeTranslator.sanitizeName(f.name.name)}: ${resolveFieldType(f.tpe, foreignResolutions)}\n")
+      dto.fields.foreach {
+        f =>
+          sb.append(s"  ${typeTranslator.sanitizeName(f.name.name)}: ${resolveFieldType(f.tpe, foreignResolutions)}\n")
       }
       sb.append(s"}\n\n")
     }
@@ -218,8 +221,9 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
   private def emitEnum(sb: StringBuilder, e: Typedef.Enum): Unit = {
     val name = typeTranslator.typeName(e.id)
     sb.append(s"enum $name {\n")
-    e.members.toList.foreach { m =>
-      sb.append(s"  ${typeTranslator.sanitizeEnumValue(m.name)}\n")
+    e.members.toList.foreach {
+      m =>
+        sb.append(s"  ${typeTranslator.sanitizeEnumValue(m.name)}\n")
     }
     sb.append(s"}\n\n")
   }
@@ -237,17 +241,18 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
     val dataMembers = adt.dataMembers(domain)
 
     // Emit each branch as a type (Baboon grammar only allows DTOs as ADT branches)
-    val branchNames = dataMembers.map { memberId =>
-      val branchName = typeTranslator.typeName(memberId)
-      domain.defs.meta.nodes.get(memberId).foreach {
-        case u: DomainMember.User =>
-          u.defn match {
-            case dto: Typedef.Dto => emitDto(sb, dto, foreignResolutions)
-            case _                => // skip non-DTO members (shouldn't happen per grammar)
-          }
-        case _ => // skip
-      }
-      branchName
+    val branchNames = dataMembers.map {
+      memberId =>
+        val branchName = typeTranslator.typeName(memberId)
+        domain.defs.meta.nodes.get(memberId).foreach {
+          case u: DomainMember.User =>
+            u.defn match {
+              case dto: Typedef.Dto => emitDto(sb, dto, foreignResolutions)
+              case _                => // skip non-DTO members (shouldn't happen per grammar)
+            }
+          case _ => // skip
+        }
+        branchName
     }
 
     sb.append(s"union $name = ${branchNames.mkString(" | ")}\n\n")
@@ -257,14 +262,15 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
     members: List[DomainMember.User],
     foreignResolutions: Map[TypeId.User, Option[TypeRef]],
   ): Set[String] = {
-    members.flatMap { m =>
-      m.defn match {
-        case dto: Typedef.Dto =>
-          dto.fields.flatMap(f => collectScalarsFromRef(typeTranslator.resolveTypeRef(f.tpe, foreignResolutions)))
-        case adt: Typedef.Adt =>
-          adt.fields.flatMap(f => collectScalarsFromRef(typeTranslator.resolveTypeRef(f.tpe, foreignResolutions)))
-        case _ => Nil
-      }
+    members.flatMap {
+      m =>
+        m.defn match {
+          case dto: Typedef.Dto =>
+            dto.fields.flatMap(f => collectScalarsFromRef(typeTranslator.resolveTypeRef(f.tpe, foreignResolutions)))
+          case adt: Typedef.Adt =>
+            adt.fields.flatMap(f => collectScalarsFromRef(typeTranslator.resolveTypeRef(f.tpe, foreignResolutions)))
+          case _ => Nil
+        }
     }.toSet
   }
 

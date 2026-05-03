@@ -155,7 +155,10 @@ object RsCodecFixtureTranslator {
             case Builtins.set =>
               q"""{ let n = rnd.next_usize(5); (0..n).map(|_| ${genType(args.head, format)}).collect::<std::collections::BTreeSet<_>>() }"""
             case Builtins.map =>
-              q"""{ let n = rnd.next_usize(5); (0..n).map(|_| (${genType(args(0), format)}, ${genType(args(1), format)})).collect::<std::collections::BTreeMap<_, _>>() }"""
+              q"""{ let n = rnd.next_usize(5); (0..n).map(|_| (${genType(args(0), format)}, ${genType(
+                  args(1),
+                  format,
+                )})).collect::<std::collections::BTreeMap<_, _>>() }"""
             case Builtins.opt =>
               q"if rnd.next_bit() { Some(${genType(args.head, format)}) } else { None }"
             case t => throw new IllegalArgumentException(s"Unexpected collection type: $t")

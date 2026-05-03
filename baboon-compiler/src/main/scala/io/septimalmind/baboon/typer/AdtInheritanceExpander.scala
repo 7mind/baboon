@@ -99,8 +99,8 @@ class AdtInheritanceExpander[F[+_, +_]: Error2](
       case d: RawAdtMemberDto      => d
       case c: RawAdtMemberContract => c
     }
-    val includes:   Seq[RawAdtMember.Include]   = adt.members.collect { case i: RawAdtMember.Include   => i }
-    val excludes:   Seq[RawAdtMember.Exclude]   = adt.members.collect { case e: RawAdtMember.Exclude   => e }
+    val includes: Seq[RawAdtMember.Include]     = adt.members.collect { case i: RawAdtMember.Include => i }
+    val excludes: Seq[RawAdtMember.Exclude]     = adt.members.collect { case e: RawAdtMember.Exclude => e }
     val intersects: Seq[RawAdtMember.Intersect] = adt.members.collect { case i: RawAdtMember.Intersect => i }
 
     for {
@@ -112,8 +112,8 @@ class AdtInheritanceExpander[F[+_, +_]: Error2](
         // Compute the candidate branch set. Set algebra is keyed by branch *name* — the last
         // segment of the source's type id — because re-emit gives each receiving ADT its own
         // branch identity.
-        val excludeNames:   Set[String] = excludeBranches.iterator.map { p => branchName(p._1) }.toSet
-        val intersectNames: Set[String] = intersectBranches.iterator.map { p => branchName(p._1) }.toSet
+        val excludeNames: Set[String]   = excludeBranches.iterator.map(p => branchName(p._1)).toSet
+        val intersectNames: Set[String] = intersectBranches.iterator.map(p => branchName(p._1)).toSet
 
         // Collect all candidate branches (local + included), tagging the source for collision
         // diagnostics. Local branches use the receiving ADT's id as their source.
@@ -226,29 +226,41 @@ class AdtInheritanceExpander[F[+_, +_]: Error2](
                   } match {
                     case Some(found) => F.pure(List(found))
                     case None =>
-                      F.fail(BaboonIssue.of(TyperIssue.WrongAdtInclusion(
-                        receivingAdtId,
-                        ref,
-                        s"$armKind ${ref.path.toList.map(_.name).mkString(".")}: branch '$needle' not found in ADT ${parentAdtId.name.name}",
-                        refMeta,
-                      )))
+                      F.fail(
+                        BaboonIssue.of(
+                          TyperIssue.WrongAdtInclusion(
+                            receivingAdtId,
+                            ref,
+                            s"$armKind ${ref.path.toList.map(_.name).mkString(".")}: branch '$needle' not found in ADT ${parentAdtId.name.name}",
+                            refMeta,
+                          )
+                        )
+                      )
                   }
                 case None =>
-                  F.fail(BaboonIssue.of(TyperIssue.WrongAdtInclusion(
-                    receivingAdtId,
-                    ref,
-                    s"$armKind ${ref.path.toList.map(_.name).mkString(".")}: parent ADT ${parentAdtId.name.name} not found among expanded ADTs",
-                    refMeta,
-                  )))
+                  F.fail(
+                    BaboonIssue.of(
+                      TyperIssue.WrongAdtInclusion(
+                        receivingAdtId,
+                        ref,
+                        s"$armKind ${ref.path.toList.map(_.name).mkString(".")}: parent ADT ${parentAdtId.name.name} not found among expanded ADTs",
+                        refMeta,
+                      )
+                    )
+                  )
               }
 
             case _ =>
-              F.fail(BaboonIssue.of(TyperIssue.WrongAdtInclusion(
-                receivingAdtId,
-                ref,
-                s"$armKind ${ref.path.toList.map(_.name).mkString(".")}: ref does not resolve to an ADT or a branch of an ADT",
-                refMeta,
-              )))
+              F.fail(
+                BaboonIssue.of(
+                  TyperIssue.WrongAdtInclusion(
+                    receivingAdtId,
+                    ref,
+                    s"$armKind ${ref.path.toList.map(_.name).mkString(".")}: ref does not resolve to an ADT or a branch of an ADT",
+                    refMeta,
+                  )
+                )
+              )
           }
       }
     } yield result
@@ -274,8 +286,8 @@ class AdtInheritanceExpander[F[+_, +_]: Error2](
         }
 
       case nsTL @ RawTLDef.Namespace(ns) =>
-        val nextNsPath = nsPath :+ TypeName(ns.name.name)
-        val nextOwner = Owner.Ns(nextNsPath)
+        val nextNsPath        = nsPath :+ TypeName(ns.name.name)
+        val nextOwner         = Owner.Ns(nextNsPath)
         val rewrittenChildren = substituteMembers(ns.defns, expandedById, pkg, nextOwner, nextNsPath)
         nsTL.copy(value = ns.copy(defns = rewrittenChildren))
 

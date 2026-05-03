@@ -39,15 +39,15 @@ object ScDefnTranslator {
     */
   sealed trait IdentifierFieldKind
   object IdentifierFieldKind {
-    case object Bit              extends IdentifierFieldKind
-    case object SignedInt        extends IdentifierFieldKind /* i08/i16/i32/i64 */
+    case object Bit extends IdentifierFieldKind
+    case object SignedInt extends IdentifierFieldKind /* i08/i16/i32/i64 */
     case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-    case object UnsignedLong     extends IdentifierFieldKind /* u64 */
-    case object Str              extends IdentifierFieldKind
-    case object Uid              extends IdentifierFieldKind
-    case object Tsu              extends IdentifierFieldKind
-    case object Tso              extends IdentifierFieldKind
-    case object Bytes            extends IdentifierFieldKind
+    case object UnsignedLong extends IdentifierFieldKind /* u64 */
+    case object Str extends IdentifierFieldKind
+    case object Uid extends IdentifierFieldKind
+    case object Tsu extends IdentifierFieldKind
+    case object Tso extends IdentifierFieldKind
+    case object Bytes extends IdentifierFieldKind
     final case class NestedId(id: io.septimalmind.baboon.typer.model.TypeId.User) extends IdentifierFieldKind
   }
 
@@ -473,13 +473,13 @@ object ScDefnTranslator {
       */
     private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: ScValue.ScType): List[TextTree[ScValue]] = {
       f.bindings.get(BaboonLang.Scala) match {
-        case None                                                              => Nil
+        case None                                                               => Nil
         case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => Nil
         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
-          val srcRef       = trans.toScTypeRefKeepForeigns(f.id, domain, evo)
-          val traitName    = s"${srcRef.name}_KeyCodec"
-          val traitFqn     = s"${srcRef.pkg.parts.mkString(".")}.$traitName"
-          val isStringy    = decl == "java.lang.String"
+          val srcRef    = trans.toScTypeRefKeepForeigns(f.id, domain, evo)
+          val traitName = s"${srcRef.name}_KeyCodec"
+          val traitFqn  = s"${srcRef.pkg.parts.mkString(".")}.$traitName"
+          val isStringy = decl == "java.lang.String"
           val defaultBlock = if (isStringy) {
             q"""private object DefaultImpl extends $traitName {
                |  def encodeKey(value: $name): $scString = value
@@ -521,15 +521,15 @@ object ScDefnTranslator {
         case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
           import TypeId.Builtins.*
           b match {
-            case `bit`                                       => IdentifierFieldKind.Bit
-            case `i08` | `i16` | `i32` | `i64`               => IdentifierFieldKind.SignedInt
-            case `u08` | `u16` | `u32`                       => IdentifierFieldKind.UnsignedSmallInt
-            case `u64`                                       => IdentifierFieldKind.UnsignedLong
-            case `str`                                       => IdentifierFieldKind.Str
-            case `uid`                                       => IdentifierFieldKind.Uid
-            case `tsu`                                       => IdentifierFieldKind.Tsu
-            case `tso`                                       => IdentifierFieldKind.Tso
-            case `bytes`                                     => IdentifierFieldKind.Bytes
+            case `bit`                         => IdentifierFieldKind.Bit
+            case `i08` | `i16` | `i32` | `i64` => IdentifierFieldKind.SignedInt
+            case `u08` | `u16` | `u32`         => IdentifierFieldKind.UnsignedSmallInt
+            case `u64`                         => IdentifierFieldKind.UnsignedLong
+            case `str`                         => IdentifierFieldKind.Str
+            case `uid`                         => IdentifierFieldKind.Uid
+            case `tsu`                         => IdentifierFieldKind.Tsu
+            case `tso`                         => IdentifierFieldKind.Tso
+            case `bytes`                       => IdentifierFieldKind.Bytes
             case other =>
               throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
           }
@@ -545,20 +545,20 @@ object ScDefnTranslator {
       */
     private def renderFieldValueExpr(fieldName: String, kind: IdentifierFieldKind): TextTree[ScValue] = {
       kind match {
-        case IdentifierFieldKind.Bit              => q"$baboonIdRepr.bitToString(this.${fieldName})"
-        case IdentifierFieldKind.SignedInt        => q"this.${fieldName}.toString"
+        case IdentifierFieldKind.Bit              => q"$baboonIdRepr.bitToString(this.$fieldName)"
+        case IdentifierFieldKind.SignedInt        => q"this.$fieldName.toString"
         case IdentifierFieldKind.UnsignedSmallInt =>
           // u08/u16/u32 require width-aware masking. The single 32-bit mask used
           // here would silently produce wrong values for u08/u16. All call sites
           // MUST special-case UnsignedSmallInt and dispatch to renderUnsignedSmallInt.
           throw new IllegalStateException("UnsignedSmallInt requires width-aware emission via renderUnsignedSmallInt")
-        case IdentifierFieldKind.UnsignedLong     => q"$baboonIdRepr.u64ToString(this.${fieldName})"
-        case IdentifierFieldKind.Str              => q"$baboonIdRepr.escapeStr(this.${fieldName})"
-        case IdentifierFieldKind.Uid              => q"this.${fieldName}.toString"
-        case IdentifierFieldKind.Tsu              => q"$baboonIdRepr.tsuToString(this.${fieldName})"
-        case IdentifierFieldKind.Tso              => q"$baboonIdRepr.tsoToString(this.${fieldName})"
-        case IdentifierFieldKind.Bytes            => q"$baboonIdRepr.bytesToHex(this.${fieldName})"
-        case IdentifierFieldKind.NestedId(_)      => q"\"{\" + this.${fieldName}.toString + \"}\""
+        case IdentifierFieldKind.UnsignedLong => q"$baboonIdRepr.u64ToString(this.$fieldName)"
+        case IdentifierFieldKind.Str          => q"$baboonIdRepr.escapeStr(this.$fieldName)"
+        case IdentifierFieldKind.Uid          => q"this.$fieldName.toString"
+        case IdentifierFieldKind.Tsu          => q"$baboonIdRepr.tsuToString(this.$fieldName)"
+        case IdentifierFieldKind.Tso          => q"$baboonIdRepr.tsoToString(this.$fieldName)"
+        case IdentifierFieldKind.Bytes        => q"$baboonIdRepr.bytesToHex(this.$fieldName)"
+        case IdentifierFieldKind.NestedId(_)  => q"\"{\" + this.$fieldName.toString + \"}\""
       }
     }
 
@@ -566,9 +566,9 @@ object ScDefnTranslator {
     private def renderUnsignedSmallInt(fieldName: String, b: TypeId.BuiltinScalar): TextTree[ScValue] = {
       import TypeId.Builtins.*
       b match {
-        case `u08` => q"((this.${fieldName}.toInt) & 0xFF).toString"
-        case `u16` => q"((this.${fieldName}.toInt) & 0xFFFF).toString"
-        case `u32` => q"(this.${fieldName}.toLong & 0xFFFFFFFFL).toString"
+        case `u08` => q"((this.$fieldName.toInt) & 0xFF).toString"
+        case `u16` => q"((this.$fieldName.toInt) & 0xFFFF).toString"
+        case `u32` => q"(this.$fieldName.toLong & 0xFFFFFFFFL).toString"
         case _     => throw new IllegalStateException(s"renderUnsignedSmallInt called with $b")
       }
     }
@@ -586,7 +586,7 @@ object ScDefnTranslator {
             case IdentifierFieldKind.UnsignedSmallInt =>
               f.tpe match {
                 case TypeRef.Scalar(b: TypeId.BuiltinScalar) => renderUnsignedSmallInt(fieldName, b)
-                case _ => throw new IllegalStateException(s"unexpected non-scalar for unsigned small int: ${f.tpe}")
+                case _                                       => throw new IllegalStateException(s"unexpected non-scalar for unsigned small int: ${f.tpe}")
               }
             case _ => renderFieldValueExpr(fieldName, kind)
           }
@@ -596,13 +596,13 @@ object ScDefnTranslator {
       val joinedFields = if (fieldExprs.isEmpty) q"\"\"" else fieldExprs.toSeq.join(" + \":\" + ")
 
       q"""override def toString: String = {
-         |  \"$header\" + ${joinedFields}
+         |  \"$header\" + $joinedFields
          |}""".stripMargin
     }
 
     private def renderIdentifierCodecObject(dto: Typedef.Dto, name: ScValue.ScType): TextTree[ScValue] = {
-      val simpleName = name.name
-      val versionStr = domain.version.toString
+      val simpleName      = name.name
+      val versionStr      = domain.version.toString
       val codecObjectName = s"${name.name}Codec"
 
       // Per-field decoder. Operates on `cursor` and accumulates the decoded value
@@ -613,9 +613,9 @@ object ScDefnTranslator {
           val isLast    = idx == dto.fields.length - 1
           val kind      = identifierFieldKind(f.tpe)
           val parseHead = q"""$baboonIdRepr.parseFieldName(cursor, \"$fieldName\") match {
-                            |  case Left(e)  => return Left(e)
-                            |  case Right(_) => ()
-                            |}""".stripMargin
+                             |  case Left(e)  => return Left(e)
+                             |  case Right(_) => ()
+                             |}""".stripMargin
 
           val parseValue: TextTree[ScValue] = kind match {
             case IdentifierFieldKind.Bit =>
@@ -625,9 +625,9 @@ object ScDefnTranslator {
                  |  case Left(e)  => return Left(e)
                  |}""".stripMargin
             case IdentifierFieldKind.SignedInt =>
-              val tpeRef       = trans.asScRef(f.tpe, domain, evo)
-              val rangeCheck   = signedRangeCheck(f.tpe)
-              val typeName     = signedTypeName(f.tpe)
+              val tpeRef     = trans.asScRef(f.tpe, domain, evo)
+              val rangeCheck = signedRangeCheck(f.tpe)
+              val typeName   = signedTypeName(f.tpe)
               q"""val ${fieldName}_raw = cursor.readUntilStructural()
                  |val ${fieldName}_v: $tpeRef = {
                  |  // Spec §5.4: signed integers must not carry a leading '+'.
@@ -740,12 +740,13 @@ object ScDefnTranslator {
       }
 
       val constructorArgs = dto.fields.map(f => q"${f.name.name} = ${f.name.name}_v").toSeq
-      val ctor = if (constructorArgs.nonEmpty) q"new ${name.name}(${constructorArgs.join(", ")})"
-                 else q"new ${name.name}()"
+      val ctor =
+        if (constructorArgs.nonEmpty) q"new ${name.name}(${constructorArgs.join(", ")})"
+        else q"new ${name.name}()"
 
       val body = (fieldDecoders :+ q"Right($ctor)").joinNN()
 
-      q"""object ${codecObjectName} {
+      q"""object $codecObjectName {
          |  /** Parse the canonical identifier repr per docs/spec/identifier-repr.md.
          |    * The parser is schema-directed: it walks the declared field order
          |    * and dispatches per field type. Returns Left(message) on any

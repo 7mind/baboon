@@ -296,18 +296,18 @@ object JvDefnTranslator {
       */
     private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: JvType): DefnRepr = {
       f.bindings.get(BaboonLang.Java) match {
-        case None                                                                  => DefnRepr(q"", Nil, Nil)
-        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef))    => DefnRepr(q"", Nil, Nil)
+        case None                                                               => DefnRepr(q"", Nil, Nil)
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => DefnRepr(q"", Nil, Nil)
         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
-          val srcRef       = trans.toJvTypeRefKeepForeigns(f.id, domain, evo)
-          val codecName    = s"${srcRef.name}_KeyCodec"
-          val hostName     = s"${srcRef.name}_KeyCodecHost"
-          val codecFqn     = s"${srcRef.pkg.parts.mkString(".")}.$hostName"
+          val srcRef    = trans.toJvTypeRefKeepForeigns(f.id, domain, evo)
+          val codecName = s"${srcRef.name}_KeyCodec"
+          val hostName  = s"${srcRef.name}_KeyCodecHost"
+          val codecFqn  = s"${srcRef.pkg.parts.mkString(".")}.$hostName"
           // Stringy allowlist (PR-I-D06 pattern guidance: only the language's allowlist; no dead alternatives).
           // Per asJvTypeDerefForeigns:134, single-segment decls are rejected by the deref guard, so
           // "String" never reaches codegen — `java.lang.String` is the sole stringy decl for Java.
-          val isStringy    = decl == "java.lang.String"
-          val defaultImpl  = if (isStringy) {
+          val isStringy = decl == "java.lang.String"
+          val defaultImpl = if (isStringy) {
             q"""private static final class DefaultImpl implements $codecName {
                |  @Override public $jvString encodeKey($name value) { return value; }
                |  @Override public $name decodeKey($jvString s) { return s; }
@@ -409,7 +409,7 @@ object JvDefnTranslator {
            |  return ${name.asName.hashCode.toString};
            |}
            |
-           |${toStringMethod}
+           |$toStringMethod
            |""".stripMargin
       } else q""
 
@@ -629,15 +629,15 @@ object JvDefnTranslator {
 
     private sealed trait IdentifierFieldKind
     private object IdentifierFieldKind {
-      case object Bit              extends IdentifierFieldKind
-      case object SignedInt        extends IdentifierFieldKind /* i08/i16/i32/i64 */
+      case object Bit extends IdentifierFieldKind
+      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32/i64 */
       case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-      case object UnsignedLong     extends IdentifierFieldKind /* u64 */
-      case object Str              extends IdentifierFieldKind
-      case object Uid              extends IdentifierFieldKind
-      case object Tsu              extends IdentifierFieldKind
-      case object Tso              extends IdentifierFieldKind
-      case object Bytes            extends IdentifierFieldKind
+      case object UnsignedLong extends IdentifierFieldKind /* u64 */
+      case object Str extends IdentifierFieldKind
+      case object Uid extends IdentifierFieldKind
+      case object Tsu extends IdentifierFieldKind
+      case object Tso extends IdentifierFieldKind
+      case object Bytes extends IdentifierFieldKind
       final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
     }
 
@@ -667,8 +667,8 @@ object JvDefnTranslator {
 
     private def renderFieldValueExpr(jvFieldName: String, kind: IdentifierFieldKind, f: Field): TextTree[JvValue] = {
       kind match {
-        case IdentifierFieldKind.Bit          => q"$baboonIdRepr.bitToString(this.$jvFieldName())"
-        case IdentifierFieldKind.SignedInt    =>
+        case IdentifierFieldKind.Bit       => q"$baboonIdRepr.bitToString(this.$jvFieldName())"
+        case IdentifierFieldKind.SignedInt =>
           // Java's primitive toString is locale-independent for integers.
           q"$jvBoxedLong.toString(this.$jvFieldName())"
         case IdentifierFieldKind.UnsignedSmallInt =>
@@ -679,17 +679,17 @@ object JvDefnTranslator {
             case TypeRef.Scalar(TypeId.Builtins.u08) => q"$jvBoxedShort.toString(this.$jvFieldName())"
             case TypeRef.Scalar(TypeId.Builtins.u16) => q"$jvBoxedInteger.toString(this.$jvFieldName())"
             case TypeRef.Scalar(TypeId.Builtins.u32) => q"$jvBoxedLong.toString(this.$jvFieldName())"
-            case other => throw new IllegalStateException(s"unexpected u-small kind: $other")
+            case other                               => throw new IllegalStateException(s"unexpected u-small kind: $other")
           }
         case IdentifierFieldKind.UnsignedLong => q"$baboonIdRepr.u64ToString(this.$jvFieldName())"
         case IdentifierFieldKind.Str          => q"$baboonIdRepr.escapeStr(this.$jvFieldName())"
         case IdentifierFieldKind.Uid          =>
           // UUID.toString() canonical form is 32 lowercase hex digits with hyphens (RFC 4122).
           q"this.$jvFieldName().toString()"
-        case IdentifierFieldKind.Tsu          => q"$baboonIdRepr.tsuToString(this.$jvFieldName())"
-        case IdentifierFieldKind.Tso          => q"$baboonIdRepr.tsoToString(this.$jvFieldName())"
-        case IdentifierFieldKind.Bytes        => q"$baboonIdRepr.bytesToHex(this.$jvFieldName())"
-        case IdentifierFieldKind.NestedId(_)  => q""""{" + this.$jvFieldName().toString() + "}""""
+        case IdentifierFieldKind.Tsu         => q"$baboonIdRepr.tsuToString(this.$jvFieldName())"
+        case IdentifierFieldKind.Tso         => q"$baboonIdRepr.tsoToString(this.$jvFieldName())"
+        case IdentifierFieldKind.Bytes       => q"$baboonIdRepr.bytesToHex(this.$jvFieldName())"
+        case IdentifierFieldKind.NestedId(_) => q""""{" + this.$jvFieldName().toString() + "}""""
       }
     }
 
@@ -707,12 +707,13 @@ object JvDefnTranslator {
           q""""$srcFieldName:" + ($valueExpr)"""
       }
 
-      val joinedFields = if (fieldExprs.isEmpty) q""""""""
-      else fieldExprs.toSeq.join(""" + ":" + """)
+      val joinedFields =
+        if (fieldExprs.isEmpty) q""""""""
+        else fieldExprs.toSeq.join(""" + ":" + """)
 
       q"""@Override
          |public String toString() {
-         |  return "$header" + ${joinedFields};
+         |  return "$header" + $joinedFields;
          |}""".stripMargin
     }
 

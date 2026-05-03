@@ -83,9 +83,7 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
 
         val flattened = allFiles.flatMap(identity)
 
-        flattened.toUniqueMap(c =>
-          BaboonIssue.of(TranslationIssue.NonUniqueOutputFiles(c))
-        )
+        flattened.toUniqueMap(c => BaboonIssue.of(TranslationIssue.NonUniqueOutputFiles(c)))
       }
     } yield Sources(rendered)
   }
@@ -95,22 +93,23 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
       return List.empty
     }
 
-    val pkg = domain.id
-    val ver = domain.version
+    val pkg                = domain.id
+    val ver                = domain.version
     val foreignResolutions = typeTranslator.foreignTypeResolution(domain)
 
     val members = domain.defs.meta.nodes.values.collect {
       case u: DomainMember.User => u
     }.toList.sortBy(_.id.toString)
 
-    val schemas = members.flatMap { m =>
-      m.defn match {
-        case _: Typedef.NonDataTypedef                       => None
-        case f: Typedef.Foreign if f.runtimeMapping.nonEmpty => None
-        case f: Typedef.Foreign                              => Some(renderForeignSchema(f))
-        case _ if m.ownedByAdt                               => None
-        case defn                                            => Some(renderTypedef(defn, domain, foreignResolutions))
-      }
+    val schemas = members.flatMap {
+      m =>
+        m.defn match {
+          case _: Typedef.NonDataTypedef                       => None
+          case f: Typedef.Foreign if f.runtimeMapping.nonEmpty => None
+          case f: Typedef.Foreign                              => Some(renderForeignSchema(f))
+          case _ if m.ownedByAdt                               => None
+          case defn                                            => Some(renderTypedef(defn, domain, foreignResolutions))
+        }
     }
 
     val schemasJson = schemas.mkString(",\n")
@@ -133,8 +132,8 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
          |""".stripMargin
 
     val versionStr = ver.toString.replace(".", "_")
-    val pkgStr = pkg.path.toList.map(typeTranslator.sanitize).mkString("_")
-    val filename = s"$pkgStr/v$versionStr/openapi.json"
+    val pkgStr     = pkg.path.toList.map(typeTranslator.sanitize).mkString("_")
+    val filename   = s"$pkgStr/v$versionStr/openapi.json"
 
     List(filename -> OutputFile(doc, CompilerProduct.Definition))
   }
@@ -154,7 +153,7 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
 
   private def renderDto(dto: Typedef.Dto, foreignResolutions: Map[TypeId.User, Option[TypeRef]]): String = {
     val name = typeTranslator.schemaName(dto.id)
-    val esc = typeTranslator.escapeJson _
+    val esc  = typeTranslator.escapeJson _
 
     if (dto.fields.isEmpty) {
       s"""      "${esc(name)}": {"type": "object"}"""
@@ -169,9 +168,10 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
           s""", "required": [$names]"""
         }
 
-      val propsJson = resolvedFields.map { f =>
-        val schema = typeTranslator.typeRefSchema(f.tpe)
-        s"""          "${esc(f.name.name)}": $schema"""
+      val propsJson = resolvedFields.map {
+        f =>
+          val schema = typeTranslator.typeRefSchema(f.tpe)
+          s"""          "${esc(f.name.name)}": $schema"""
       }.mkString(",\n")
 
       s"""      "${esc(name)}": {"type": "object"$requiredJson, "properties": {
@@ -181,8 +181,8 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def renderEnum(e: Typedef.Enum): String = {
-    val name = typeTranslator.schemaName(e.id)
-    val esc = typeTranslator.escapeJson _
+    val name   = typeTranslator.schemaName(e.id)
+    val esc    = typeTranslator.escapeJson _
     val values = e.members.toList.map(m => s""""${esc(m.name)}"""").mkString(", ")
     s"""      "${esc(name)}": {"type": "string", "enum": [$values]}"""
   }
@@ -193,28 +193,30 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
     foreignResolutions: Map[TypeId.User, Option[TypeRef]],
   ): String = {
     import Typedef.Adt.AdtSyntax
-    val name = typeTranslator.schemaName(adt.id)
-    val esc = typeTranslator.escapeJson _
+    val name        = typeTranslator.schemaName(adt.id)
+    val esc         = typeTranslator.escapeJson _
     val dataMembers = adt.dataMembers(domain)
 
     // Emit each branch schema inline, then the union
-    val branchSchemas = dataMembers.flatMap { memberId =>
-      domain.defs.meta.nodes.get(memberId).collect {
-        case u: DomainMember.User =>
-          u.defn match {
-            case dto: Typedef.Dto => renderDto(dto, foreignResolutions)
-            case e: Typedef.Enum  => renderEnum(e)
-            case other            => throw new IllegalArgumentException(s"Unexpected ADT branch type in OpenAPI backend: ${other.id}")
-          }
-      }
+    val branchSchemas = dataMembers.flatMap {
+      memberId =>
+        domain.defs.meta.nodes.get(memberId).collect {
+          case u: DomainMember.User =>
+            u.defn match {
+              case dto: Typedef.Dto => renderDto(dto, foreignResolutions)
+              case e: Typedef.Enum  => renderEnum(e)
+              case other            => throw new IllegalArgumentException(s"Unexpected ADT branch type in OpenAPI backend: ${other.id}")
+            }
+        }
     }
 
-    val branchRefs = dataMembers.map { memberId =>
-      val refName = typeTranslator.schemaName(memberId)
-      s"""{"$$ref": "#/components/schemas/${esc(refName)}"}"""
+    val branchRefs = dataMembers.map {
+      memberId =>
+        val refName = typeTranslator.schemaName(memberId)
+        s"""{"$$ref": "#/components/schemas/${esc(refName)}"}"""
     }
 
-    val refsJson = branchRefs.mkString(", ")
+    val refsJson  = branchRefs.mkString(", ")
     val adtSchema = s"""      "${esc(name)}": {"oneOf": [$refsJson]}"""
 
     if (branchSchemas.nonEmpty) {
@@ -228,7 +230,7 @@ class OasBaboonTranslator[F[+_, +_]: Error2](
 
   private def renderForeignSchema(f: Typedef.Foreign): String = {
     val name = typeTranslator.schemaName(f.id)
-    val esc = typeTranslator.escapeJson _
+    val esc  = typeTranslator.escapeJson _
     s"""      "${esc(name)}": {"type": "object", "description": "Foreign type: ${esc(name)}"}"""
   }
 
