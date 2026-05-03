@@ -1533,6 +1533,7 @@ object BaboonJS {
       case _: EmptyFamilyReload                  => None
       case _: TodoTyperIssue                     => None
       case InvalidRtMapping(_, _, meta)          => Some(meta.pos)
+      case DuplicateTypeParam(_, _, meta)        => Some(meta.pos)
     }
   }
 

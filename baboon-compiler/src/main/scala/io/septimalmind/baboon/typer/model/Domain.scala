@@ -17,6 +17,7 @@ case class Domain(
   renames: Map[TypeId.User, TypeId.User],
   pragmas: Map[String, String],
   aliases: List[AliasInfo],
+  templateRegistry: TemplateRegistry = TemplateRegistry.empty,
 ) {
 
   import izumi.fundamentals.platform.strings.IzString.*

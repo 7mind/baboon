@@ -157,6 +157,11 @@ object TyperIssue {
     meta: RawNodeMeta,
   ) extends TyperIssue
 
+  /** A template declaration has two or more type parameters with the same name (negative-test
+    * matrix #4: `data X[T, T] { … }`).
+    */
+  case class DuplicateTypeParam(name: String, ownerName: String, meta: RawNodeMeta) extends TyperIssue
+
   implicit val todoPrinter: IssuePrinter[TodoTyperIssue] =
     (issue: TodoTyperIssue) => {
       issue.descr
@@ -566,6 +571,13 @@ object TyperIssue {
   implicit val genericTyperIssue: IssuePrinter[GenericTyperIssue] = (issue: GenericTyperIssue) => {
     s"""${extractLocation(issue.meta)}: ${issue.message}""".stripMargin
   }
+
+  implicit val duplicateTypeParamPrinter: IssuePrinter[DuplicateTypeParam] =
+    (issue: DuplicateTypeParam) => {
+      s"""${extractLocation(issue.meta)}
+         |Template '${issue.ownerName}' declares duplicate type parameter '${issue.name}'
+         |""".stripMargin
+    }
 
   private def extractLocation(meta: RawNodeMeta): String = {
     meta.pos match {
