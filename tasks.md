@@ -21,7 +21,7 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 Detail: see `docs/archive/20260503-bab-any-anyopaque-ledgers/` for historical context, especially M28 close-out (`docs/logs/20260502-2247-m28-wireform-parity-and-docs-log.md`) which explicitly flagged PR-28.4-D02 (the prime suspect for CI-01).
 
 - [ ] **PR-29P.1** — Fix CI-01: `RTCodecTest` JSON→UEBA→JSON roundtrip fails on multi-entry maps. Audit generator-wide map-iteration sort-key emit across all 9 codec backends; replace typed `_._1.toString` with encoded-wire-form-key sort. Add multi-entry-map regression to RTCodecTest fixture and m26 fixture. Resolves PR-28.4-D02.
-- [ ] **PR-29P.2** — Fix CI-02: `acceptance-tests` sbt 1.11.7 resolution `forbidden` inside `nix develop --ignore-environment`. Pick lowest-blast-radius fix from (a) drop `--ignore-environment`, (b) flake-closure sbt-launcher, (c) prepend `:flake-refresh`.
+- [x] **PR-29P.2** — Fix CI-02: `acceptance-tests` sbt 1.11.7 resolution `forbidden` inside `nix develop --ignore-environment`. **Shipped option (a)** — dropped `--ignore-environment` + four `--keep` flags from both acceptance-tests steps. Pending live-CI verification (gate runs in PR-29P.3).
 - [ ] **PR-29P.3** — Close-out: confirm `mdl --seq :build :test`, `:test-acceptance`, `:test-service-acceptance` green locally; push and verify both CI jobs green; write session log.
 
 ---
@@ -74,4 +74,6 @@ Detail: see PR-29.1 spec doc once seeded. Locked design decisions from user 2026
 
 ## Completed
 
-(none yet for M29-prep)
+- **PR-29P.2** (2026-05-03) — Dropped `--ignore-environment` and four `--keep` flags (`HOME`, `USER`, `CI`, `GITHUB_ACTIONS`) from the two `acceptance-tests` steps in `.github/workflows/baboon-build.yml`. Result: acceptance and service-acceptance steps now run plain `nix develop --command mdl --github-actions :test-acceptance{,-service}`, matching the working `build-linux` reference. Verification: orchestrator captured local env-diff between `nix develop --ignore-environment --command env` and `nix develop --command env` — 95 vars stripped, including session/runner-injected ones; on GitHub-hosted runners these include the TLS-trust chain (`NIX_SSL_CERT_FILE` and/or `SSL_CERT_FILE`) needed by sbt-launcher's bootstrap HTTPS download. Adversarial review (Opus) returned 5 findings (1 minor + 4 nit/minor); all six PR-29P.2-Dxx defect entries land in `defects.md`. Two findings deferred explicitly to PR-29P.3 close-out (D05: in-tree comment; D06: cross-cutting policy decision in session log). Live-CI verification gate runs in PR-29P.3 after both PRs land.
+  - Surprises: original commit-history claim (executor → `646543f`) was inaccurate — flag was actually introduced in `ca0a354` (Swift backend, #50, Feb 2026) alongside the bwrap/Swift-FHS workaround. Substantive conclusion is unchanged but the corrected attribution lives in `[PR-29P.2-D01]` and `[PR-29P.2-D02]`.
+  - Constraint future work must respect: do NOT re-introduce `--ignore-environment` to any test-* CI step without (i) pinning `NIX_SSL_CERT_FILE` (or equivalent) into the flake closure or (ii) adding it to a `--keep` list. The flag strips runner-injected TLS trust on GitHub-hosted runners and is therefore incompatible with steps that need outbound HTTPS to public Maven/repo endpoints from inside the JVM.
