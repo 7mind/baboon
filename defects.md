@@ -303,6 +303,114 @@ Verification: `grep -n 'RawTypeRef.Constructor docs/spec/generics.md` no matches
 
 ---
 
+## PR-29.10 — m29-ok cross-language acceptance
+
+## [PR-29.10-D01] Python JSON codec emits empty objects `{}` for ADT variants with fields
+**Status:** resolved (round 2)
+**Severity:** major
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/python/PyJsonCodecGenerator.scala`.
+**Description:** For any ADT with field-bearing variants, the Python JSON codec generator emitted `value.model_dump_json()` which delegated to pydantic's default — producing `{"Ok":{}}` instead of `{"Ok":{"value":42}}`. PR-29.10's `m29-ok` fixture (which contains `adt Envelope[T, E] { data Ok { value: T } data Err { error: E } }` materialised as `IntStrEnvelope`) is the first cross-language acceptance fixture to exercise the path; pre-M29 CI was green because no existing fixture has an ADT-with-fields registered in `test/conv-test-py/compat_main.py`. Per user direction 2026-05-03: "Regardless if it's preexisting it should be fixed."
+**Root cause:** Pydantic v2's inherited `@model_serializer(mode='wrap')` on `IntStrEnvelope` dispatched `serializer(self)` using `IntStrEnvelope`'s field schema (zero fields), not the runtime subclass schema. This yielded `{"Ok":{}}` regardless of the actual variant's field values.
+**Fix:** Added `fieldHasAdt` helper (detects `TypeRef.Scalar(u)` where `u` resolves to `Typedef.Adt`) and `dtoHasAdtField`. Extended `dtoNeedsExplicitWalker` and `fieldNeedsExplicitWalk` to include ADT-typed fields. ADT scalar encoder branch now emits `json.loads(AdtCodec_JsonCodec.instance().encode(context, ref))` (delegates to the variant's own codec which produces the correct `{"Variant": {fields}}` shape). Decoder branch emits `AdtCodec_JsonCodec.instance().decode(context, json.dumps(ref))` (symmetric). Verification: full `mdl :test-acceptance` PASS — 200/200 (was 145/200 before fix; +55 newly-passing rows are the previously-broken Python ADT cases). Python-written m29-ok.json now contains `"okEnvelope": {"Ok": {"value": 42}}` and `"errEnvelope": {"Err": {"error": "oops"}}`, matching all other languages byte-identically.
+
+## [PR-29.10-D02] `:test-service-acceptance` not run; m29.baboon contains no service template
+**Status:** resolved (partial — typer-side path verified; cross-language service-acceptance for templated service deferred to follow-up `[PR-29.10-D07]`)
+**Severity:** major
+**Location:** `baboon-compiler/src/test/resources/baboon/m29-ok/m29.baboon` (no service in original; partial service template added round 2); PR-29.10 plan brief `docs/drafts/20260503-2210-m29-generics-plan.md:771-774` (the `:test-service-acceptance` gate); plan §5 cross-cut #9 line 915-918 ("PR-29.10's `:test-service-acceptance` MUST exercise at least one templated service").
+**Description:** PR-29.10's locked acceptance criteria require both `:test-acceptance` AND `:test-service-acceptance` green. The m29.baboon fixture contains data + ADT templates but no service template.
+**Fix (partial):** Round 2 added `service Crud[K, V] { def get (K): V; def put (V): K } / root type IntStrCrud = Crud[i32, str]` to `baboon-compiler/src/test/resources/baboon/m29-ok/m29.baboon`. This exercises the `RawTemplateDefn.Service` → `RawTLDef.Service` instantiation path in `TemplateInstantiator` (verified by `sbt baboonJVM/testOnly *M29*` 12/12). Round-2 reviewer correctly identified that this does NOT meet the brief's full intent: `:test-service-acceptance` runs against `test/services/petstore.baboon` (a SEPARATE fixture from the typer-test fixture), and petstore.baboon has no template. The 81/81 PASS for `:test-service-acceptance` is the petstore baseline — unaffected by adding Crud to the typer-test fixture. Cross-language end-to-end verification of templated-service monomorphisation is therefore deferred — see follow-up `[PR-29.10-D07]`.
+
+## [PR-29.10-D07] Cross-language `:test-service-acceptance` does NOT exercise a templated service end-to-end
+**Status:** open
+**Severity:** major (deferred — explicit follow-up split from PR-29.10-D02 round 2)
+**Location:** `test/services/petstore.baboon` (no template); the 9 per-language service harnesses under `test/conv-test-{cs,sc,py,rs,ts,kt,jv,dt,sw}/` (no Crud-equivalent registered).
+**Description:** PR-29.10-D02's intent was "verify service-template monomorphisation end-to-end across all 9 backends via `:test-service-acceptance`". The round-2 partial fix added the template to the typer-test fixture (`baboon-compiler/src/test/resources/baboon/m29-ok/m29.baboon`) but did NOT extend `test/services/petstore.baboon` (the actual `:test-service-acceptance` consumer fixture) nor the per-language service harnesses. The 81/81 PASS is the petstore baseline — adding Crud to the typer-test fixture did not change the run set for service acceptance.
+**Suggested fix:** Extend `test/services/petstore.baboon` with a templated service + root alias instantiation (e.g. `service Crud[K, V] { def get (K): V; def put (K, V): unit }; root type IntStrCrud = Crud[i32, str]`). Update the per-language service harnesses to register the new alias (mirror how `petstore`'s existing services are registered in each `test/conv-test-*/`). Run `mdl :test-service-acceptance` and confirm all 9 backends pass for IntStrCrud cross-language wire round-trips. Estimated scope: similar to the per-backend registration work already done in PR-29.10 for the data-side acceptance.
+
+## [PR-29.10-D03] Pre-existing-failure claims (KMP column, Python→Kotlin OOM) lack baseline diff verification
+**Status:** resolved (deferred — moot: post-D01 fix the run is 200/200, no remaining failure categories to verify)
+**Severity:** minor
+**Location:** PR-29.10 verification report.
+**Description:** Round 1 reported 145/200 with three failure categories. Round 2's D01 fix brought the run to 200/200 (per `target/acceptance/acceptance-summary.md`). The D03 baseline-diff investigation is no longer needed.
+**Fix:** Defer; moot — no remaining failures to categorise.
+
+## [PR-29.10-D04] Rust JSON path uses serde_json::to_string (not generated codec) — key ordering may diverge from cross-language source rows
+**Status:** resolved (deferred — full acceptance now 200/200, divergence not blocking; flagged for future polish)
+**Severity:** minor
+**Location:** `test/conv-test-rs/src/main.rs:235`.
+**Description:** Rust uses `serde_json::to_string(data)` (raw serde) instead of `M29OkHolder_JsonCodec.encode`. Other backends use the generated `_JsonCodec`. Key ordering will differ.
+**Fix:** Defer; full 200/200 acceptance includes Rust-as-source rows passing, so the divergence is tolerated by the cross-language harness. Flagged for future polish.
+
+## [PR-29.10-D05] Swift `readAndVerifyM29Ok` doesn't roundtrip (only spot-check decode)
+**Status:** resolved (deferred — full acceptance harness covers Swift roundtrips at the harness level, not just the Swift-internal verifier)
+**Severity:** minor
+**Location:** `test/conv-test-sw/Sources/CompatMain/main.swift` (`readAndVerifyM29Ok` function).
+**Description:** Other backends re-encode + re-decode + compare; Swift only checks `intPage.total == 3` and that envelope variants are `.ok` and `.err`.
+**Fix:** Defer; the cross-language acceptance harness verifies roundtrip at the cross-language level (Swift → JSON → other-language → JSON → Swift), so Swift's internal weakness is bounded. Flagged for future polish.
+
+## [PR-29.10-D06] No defects.md entries written by executor for the failure categories
+**Status:** resolved (orchestrator wrote D01-D05 inline)
+**Severity:** nit (process)
+**Location:** `defects.md`.
+**Description:** Per established M29 discipline (PR-29.5/29.7/29.8), every reviewer finding lands in defects.md. Executor's report deferred informally without ledger entries.
+**Fix:** Orchestrator wrote D01-D05 inline.
+
+## [PR-29.10-D08] Service template `def put (V): K` deviates from D02 brief (`def put (K, V): unit`)
+**Status:** resolved (deviation documented — parser does NOT support multi-arg shorthand; `unit` type does NOT exist in Baboon)
+**Severity:** minor
+**Location:** `baboon-compiler/src/test/resources/baboon/m29-ok/m29.baboon` (the `service Crud[K, V] { … }` block).
+**Description:** D02 brief suggested `def put (K, V): unit`. Round-2 executor used `def put (V): K`.
+**Root cause:** D02 brief was based on incorrect assumptions about Baboon service syntax. Investigation revealed:
+1. **Parser (`DefService.scala` `shorthandSig` rule L42-48):** the shorthand `"(" ~ shorthandRef("in") ~ ")" ~ ":" ~ shorthandRef("out")` accepts exactly ONE input type reference. There is no comma-separated multi-arg syntax in the shorthand. No existing fixture uses `def name (A, B): R` shape.
+2. **Typer (`BaboonTranslator.scala` `convertMethod` L430, L433):** typer enforces `inargs.size > 1` → `ServiceMultipleInputs` error. `MethodDef` accepts `inargs.head`, not a list. Maximum one input is a hard architectural constraint of the shorthand path.
+3. **`unit` type:** does not exist in Baboon's type system — no scalar, no builtin, no special token.
+**Fix:** Current shape `def put (V): K` is the only valid syntax for a 2-type-param service template using shorthand. Closest semantically-correct alternative would be the struct form `def put { data in { key: K; value: V } data out {} }`, but that is a different design decision not authorised by the brief. No file changed; deviation accepted with rationale documented here.
+**Constraint future work must respect:** Multi-arg service methods + `unit` return require the struct-arg path or new builtin-type work — out of M29 scope.
+
+## [PR-29.10-D09] JS cross-build NOT verified for the round-2 PyJsonCodecGenerator change
+**Status:** resolved (round 3)
+**Severity:** moderate
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/python/PyJsonCodecGenerator.scala` (shared `src/main/scala`).
+**Description:** Round-2 reports `mdl :build` PASS — but `:build` only runs JVM-side. CLAUDE.md historical PR-47/M21 risk: shared-source changes must be cross-build-verified.
+**Fix:** `nix develop --command sbt --batch baboonJS/compile` PASS (1s, fully cached). The PyJsonCodecGenerator change compiles cleanly for both JVM and JS targets; no exhaustive-match gaps on the JS side.
+
+## [PR-29.10-D09] JS cross-build NOT verified for the round-2 PyJsonCodecGenerator change
+**Status:** open
+**Severity:** moderate
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/python/PyJsonCodecGenerator.scala` (shared `src/main/scala`, compiled for both JVM and Scala.js).
+**Description:** Round-2 reports `mdl :build` PASS — but the `:build` action only runs `sbt baboonJVM/GraalVMNativeImage/packageBin` (JVM-only). CLAUDE.md explicitly warns: "`sbt baboonJVM/compile` is NOT a CI-equivalent check. CI runs `sbt +compile` (cross-build for JVM + Scala.js)." The PyJsonCodecGenerator change adds new pattern matching against `DomainMember.User(_, _: Typedef.Adt, _, _)` and uses `domain.defs.meta.nodes.get(u)`. Imports look fine; should be safe — but unverified.
+**Suggested fix:** Run `nix develop --command sbt --batch baboonJS/compile` (or `mdl :test` which includes cross-build via `sbt +compile`).
+
+## [PR-29.10-D03] Pre-existing-failure claims (KMP column, Python→Kotlin OOM) lack baseline diff verification
+**Status:** open
+**Severity:** minor
+**Location:** PR-29.10 verification report.
+**Description:** Executor reports 145/200 acceptance tests passing with three failure categories (Python ADT, Kotlin KMP column, Python→Kotlin OOM) asserted as pre-existing or out-of-scope. Reviewer flagged that no per-fixture row decomposition or baseline diff was provided. User confirmed pre-M29 CI was green, so any failure not present pre-PR-29.10 is a regression. KMP and Python→Kotlin OOM categories need either (a) row-level confirmation that they fire on existing fixtures too (truly pre-existing), or (b) explicit categorisation as M29-introduced regressions requiring fix.
+**Suggested fix:** Capture a pre-PR-29.10 baseline (`git stash` the PR-29.10 changes, run `mdl :test-acceptance`, capture failures, `git stash pop`). Diff failure sets. If KMP or Python→Kotlin OOM fail on existing-fixture rows pre-PR-29.10, they are pre-existing (defer with rationale). If they fail only on m29-ok rows, they are M29-introduced regressions requiring fix.
+
+## [PR-29.10-D04] Rust JSON path uses serde_json::to_string (not generated codec) — key ordering may diverge from cross-language source rows
+**Status:** open
+**Severity:** minor
+**Location:** `test/conv-test-rs/src/main.rs:235`.
+**Description:** Rust uses `serde_json::to_string(data)` (raw serde) instead of `M29OkHolder_JsonCodec.encode`. Other backends use the generated `_JsonCodec`. Key ordering will differ. May explain some Rust-as-source acceptance failures.
+**Suggested fix:** Verify whether Rust-as-source rows fail; if yes, route Rust through the generated codec. Existing Rust handling for `AllBasicTypes` uses `to_string_pretty` (line 124) — same inconsistency.
+
+## [PR-29.10-D05] Swift `readAndVerifyM29Ok` doesn't roundtrip (only spot-check decode)
+**Status:** open
+**Severity:** minor
+**Location:** `test/conv-test-sw/Sources/CompatMain/main.swift` (`readAndVerifyM29Ok` function).
+**Description:** Other backends re-encode + re-decode + compare; Swift only checks `intPage.total == 3` and that envelope variants are `.ok` and `.err`. A Swift backend that decoded `IntPage(items=[1,2,3], total=3)` as `IntPage(items=[], total=3)` would pass.
+**Suggested fix:** Mirror the Python/C#/Kotlin pattern: re-encode the decoded value and byte-compare against the input.
+
+## [PR-29.10-D06] No defects.md entries written by executor for the failure categories
+**Status:** resolved (orchestrator wrote D01-D05 inline)
+**Severity:** nit (process)
+**Location:** `defects.md`.
+**Description:** Per established M29 discipline (PR-29.5/29.7/29.8), every reviewer finding lands in defects.md. Executor's report deferred informally without ledger entries.
+**Fix:** Orchestrator wrote D01-D05 inline.
+
+---
+
 ## PR-29.8 — Diagnostics + LSP polish + tree-sitter grammar
 
 ## [PR-29.8-D01] Tree-sitter changes uncommitted in 3-level submodule chain; PR cannot ship them as-is

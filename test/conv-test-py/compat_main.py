@@ -28,6 +28,13 @@ from Generated.convtest.m26builtinkeys.BuiltinMapKeyHolder import (
     BuiltinMapKeyHolder_JsonCodec,
     BuiltinMapKeyHolder_UEBACodec,
 )
+# PR-29.10 (M29) — monomorphised template cross-language acceptance fixture.
+from Generated.convtest.m29ok.M29OkHolder import M29OkHolder, M29OkHolder_JsonCodec, M29OkHolder_UEBACodec
+from Generated.convtest.m29ok.IntPage import IntPage
+from Generated.convtest.m29ok.StrPage import StrPage
+from Generated.convtest.m29ok.Item import Item
+from Generated.convtest.m29ok.ItemPage import ItemPage
+from Generated.convtest.m29ok.IntStrEnvelope import IntStrEnvelope, IntStrEnvelope_JsonCodec, IntStrEnvelope_UEBACodec, Ok as EnvelopeOk, Err as EnvelopeErr
 
 DOMAIN_ID = "convtest.testpkg"
 DOMAIN_VER = "2.0.0"
@@ -265,6 +272,75 @@ def create_sample_data():
     )
 
 
+# PR-29.10 (M29) — monomorphised template acceptance fixture helpers.
+def create_m29ok_sample():
+    return M29OkHolder(
+        intPage     = IntPage(items=[1, 2, 3], total=3),
+        strPage     = StrPage(items=["hello", "world"], total=2),
+        itemPage    = ItemPage(items=[Item(name="Widget", price=9.99)], total=1),
+        okEnvelope  = EnvelopeOk(value=42),
+        errEnvelope = EnvelopeErr(error="oops"),
+    )
+
+
+def write_m29ok_json(ctx, data, output_dir):
+    json_str = M29OkHolder_JsonCodec.instance().encode(ctx, data)
+    p = Path(output_dir) / "m29-ok.json"
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(json_str)
+    print(f"Written JSON to {p}")
+
+
+def write_m29ok_ueba(ctx, data, output_dir):
+    ms = io.BytesIO()
+    w = LEDataOutputStream(ms)
+    M29OkHolder_UEBACodec.instance().encode(ctx, w, data)
+    p = Path(output_dir) / "m29-ok.ueba"
+    with open(p, "wb") as f:
+        f.write(ms.getvalue())
+    print(f"Written UEBA to {p}")
+
+
+def read_and_verify_m29ok(file_path):
+    ctx = BaboonCodecContext.default()
+    fp = Path(file_path)
+    try:
+        if fp.suffix == ".json":
+            with open(fp, "r", encoding="utf-8") as f:
+                json_str = f.read()
+            data = M29OkHolder_JsonCodec.instance().decode(ctx, json_str)
+        else:
+            with open(fp, "rb") as f:
+                ueba_bytes = f.read()
+            r = LEDataInputStream(io.BytesIO(ueba_bytes))
+            data = M29OkHolder_UEBACodec.instance().decode(ctx, r)
+    except Exception as e:
+        print(f"M29OkHolder deserialization failed: {e}", file=sys.stderr)
+        sys.exit(1)
+    # Roundtrip
+    try:
+        if fp.suffix == ".json":
+            re_encoded = M29OkHolder_JsonCodec.instance().encode(ctx, data)
+            re_decoded = M29OkHolder_JsonCodec.instance().decode(ctx, re_encoded)
+            if data != re_decoded:
+                print("M29OkHolder JSON roundtrip mismatch", file=sys.stderr)
+                sys.exit(1)
+        else:
+            ms = io.BytesIO()
+            w = LEDataOutputStream(ms)
+            M29OkHolder_UEBACodec.instance().encode(ctx, w, data)
+            re_bytes = ms.getvalue()
+            r = LEDataInputStream(io.BytesIO(re_bytes))
+            re_decoded = M29OkHolder_UEBACodec.instance().decode(ctx, r)
+            if data != re_decoded:
+                print("M29OkHolder UEBA roundtrip mismatch", file=sys.stderr)
+                sys.exit(1)
+    except Exception as e:
+        print(f"M29OkHolder roundtrip failed: {e}", file=sys.stderr)
+        sys.exit(1)
+    print("OK")
+
+
 def write_json(ctx, data, output_dir):
     json_str = AllBasicTypes_JsonCodec.instance().encode(ctx, data)
     json_file_path = Path(output_dir) / "all-basic-types.json"
@@ -287,6 +363,9 @@ def write_ueba(ctx, data, output_dir):
 def read_and_verify(file_path):
     if file_path.endswith("any-showcase.json") or file_path.endswith("any-showcase.ueba"):
         read_and_verify_any_showcase(file_path)
+        return
+    if file_path.endswith("m29-ok.json") or file_path.endswith("m29-ok.ueba"):
+        read_and_verify_m29ok(file_path)
         return
     ctx = BaboonCodecContext.default()
     fp = Path(file_path)
@@ -446,13 +525,16 @@ if __name__ == "__main__":
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         sample_data = create_sample_data()
         ctx = BaboonCodecContext.default()
+        m29_sample = create_m29ok_sample()
         if fmt == "json":
             write_json(ctx, sample_data, output_dir)
             write_json_any(ctx, create_sample_any_showcase_json(), output_dir)
             write_foreign_key_holder_json(ctx, create_foreign_key_holder_sample(), output_dir)
+            write_m29ok_json(ctx, m29_sample, output_dir)
         elif fmt == "ueba":
             write_ueba(ctx, sample_data, output_dir)
             write_ueba_any(ctx, create_sample_any_showcase_ueba(), output_dir)
+            write_m29ok_ueba(ctx, m29_sample, output_dir)
         else:
             print(f"Unknown format: {fmt}", file=sys.stderr)
             sys.exit(1)

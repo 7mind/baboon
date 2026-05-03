@@ -43,14 +43,24 @@ let package = Package(
                 .unsafeFlags(["-enable-testing"])
             ]
         ),
+        // PR-29.10 (M29) — convtest.m29ok (monomorphised-template cross-language
+        // wire-format fixture). IntPage/StrPage/ItemPage/IntStrEnvelope aliases.
+        .target(
+            name: "ConvtestM29ok",
+            dependencies: ["BaboonRuntime"],
+            path: "Generated/ConvtestM29ok",
+            swiftSettings: [
+                .unsafeFlags(["-enable-testing"])
+            ]
+        ),
         .executableTarget(
             name: "CompatMain",
-            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0", "ConvtestM24foreign", "ConvtestM26builtinkeys"],
+            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0", "ConvtestM24foreign", "ConvtestM26builtinkeys", "ConvtestM29ok"],
             path: "Sources/CompatMain"
         ),
         .testTarget(
             name: "CrossLanguageTests",
-            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0", "ConvtestM24foreign", "ConvtestM26builtinkeys"],
+            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0", "ConvtestM24foreign", "ConvtestM26builtinkeys", "ConvtestM29ok"],
             path: "Tests/CrossLanguageTests"
         ),
     ]

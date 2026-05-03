@@ -230,19 +230,40 @@ final class PyJsonCodecGenerator(
       isMapWithUserKey || c.args.exists(fieldHasUserKeyMap)
   }
 
+  // PR-29.10-D01: detect whether the DTO contains any field whose type is an ADT user type.
+  // When a DTO field is declared as an ADT base type (e.g. `okEnvelope: IntStrEnvelope`),
+  // pydantic's `model_dump_json()` uses the declared base-type schema for the `model_serializer`
+  // wrap handler — which has no fields — producing `{"VariantName": {}}` instead of
+  // `{"VariantName": {"field": value}}`. The explicit walker bypasses pydantic's path and
+  // dispatches directly to the ADT's JSON codec.
+  private def dtoHasAdtField(dto: Typedef.Dto): Boolean = dto.fields.exists(f => fieldHasAdt(f.tpe))
+
+  private def fieldHasAdt(tpe: TypeRef): Boolean = tpe match {
+    case TypeRef.Scalar(u: TypeId.User) =>
+      domain.defs.meta.nodes.get(u) match {
+        case Some(DomainMember.User(_, _: Typedef.Adt, _, _)) => true
+        case _                                                => false
+      }
+    case _: TypeRef.Scalar      => false
+    case _: TypeRef.Any         => false
+    case c: TypeRef.Constructor => c.args.exists(fieldHasAdt)
+  }
+
   // PR-60-D02: route a DTO through the explicit walker path when EITHER any-bearing OR user-key-
   // map-bearing fields are present. The walker handles both cases; non-walked subtrees are passed
   // through `pydantic_core.to_jsonable_python` (encode) / left untouched for Pydantic
   // `model_validate` to coerce (decode).
+  // PR-29.10-D01: also route when ADT-bearing fields are present (pydantic's inherited
+  // model_serializer loses subclass fields when serialized as a declared base-type field).
   private def dtoNeedsExplicitWalker(dto: Typedef.Dto): Boolean =
-    dtoHasAnyField(dto) || dtoHasUserKeyMapField(dto)
+    dtoHasAnyField(dto) || dtoHasUserKeyMapField(dto) || dtoHasAdtField(dto)
 
   private def fieldNeedsExplicitWalk(tpe: TypeRef): Boolean =
-    fieldHasAny(tpe) || fieldHasUserKeyMap(tpe)
+    fieldHasAny(tpe) || fieldHasUserKeyMap(tpe) || fieldHasAdt(tpe)
 
   // Builds an expression that produces a JSON-friendly Python value (dict/list/scalar) for a
-  // walked field's value. Recurses only into subtrees that need explicit walking (any-bearing
-  // OR user-key-map). Subtrees that need NO explicit walking are passed through
+  // walked field's value. Recurses only into subtrees that need explicit walking (any-bearing,
+  // user-key-map, OR ADT-bearing). Subtrees that need NO explicit walking are passed through
   // `pydantic_core.to_jsonable_python(ref)` — equivalent to what `model_dump(mode='json')` would
   // have produced if we'd let it process the field naturally.
   private def mkJsonAnyEncoder(tpe: TypeRef, ref: TextTree[PyValue]): TextTree[PyValue] = tpe match {
@@ -262,6 +283,24 @@ final class PyJsonCodecGenerator(
           val keyExpr = mkJsonKeyEncoder(c.args.head, q"k")
           q"{$keyExpr: ${mkJsonAnyEncoder(c.args.last, q"v")} for k, v in $ref.items()}"
         case o => throw new RuntimeException(s"BUG: unexpected walked-field constructor: $o")
+      }
+    case TypeRef.Scalar(u: TypeId.User) =>
+      // PR-29.10-D01: ADT fields must bypass pydantic's model_dump_json path and go through
+      // the explicit JSON codec. When pydantic serializes a field declared as an ADT base type
+      // (e.g. `okEnvelope: IntStrEnvelope`), the inherited model_serializer's `serializer(self)`
+      // handler uses the base-type schema (no fields), losing the subclass field values.
+      // We detect the ADT case here and emit a direct codec call: the result is a JSON string
+      // which we parse back to a dict for embedding in the parent object.
+      domain.defs.meta.nodes.get(u) match {
+        case Some(DomainMember.User(_, _: Typedef.Adt, _, _)) =>
+          val c = codecType(u)
+          q"$pyJsonLoads($c.instance().encode(context, $ref))"
+        case _ =>
+          // PR-60-D02: a scalar may legitimately appear inside a walked subtree (e.g. the value
+          // side of `map[user-key, V]` where V is itself a non-any-bearing scalar). Defer JSON
+          // conversion to Pydantic's `to_jsonable_python` — equivalent to `model_dump(mode='json')`
+          // for that scalar.
+          q"$pyToJsonablePython($ref)"
       }
     case _: TypeRef.Scalar =>
       // PR-60-D02: a scalar may legitimately appear inside a walked subtree (e.g. the value side
@@ -327,6 +366,21 @@ final class PyJsonCodecGenerator(
           val keyExpr = mkJsonKeyDecoder(c.args.head, q"k")
           q"{$keyExpr: ${mkJsonAnyDecoder(c.args.last, q"v")} for k, v in $ref.items()}"
         case o => throw new RuntimeException(s"BUG: unexpected walked-field constructor: $o")
+      }
+    case TypeRef.Scalar(u: TypeId.User) =>
+      // PR-29.10-D01: ADT fields must bypass pydantic's model_validate path and go through
+      // the explicit JSON codec. The field value in the parsed object is a JSON-decoded dict
+      // (e.g. `{"Ok": {"value": 42}}`); we re-encode it to a JSON string and pass it to the
+      // ADT codec's decode method, which uses the polymorphic model_validator to dispatch to
+      // the correct variant. Non-ADT user scalars pass through unchanged for Pydantic coercion.
+      domain.defs.meta.nodes.get(u) match {
+        case Some(DomainMember.User(_, _: Typedef.Adt, _, _)) =>
+          val c = codecType(u)
+          q"$c.instance().decode(context, $pyJsonDumps($ref))"
+        case _ =>
+          // PR-60-D02: scalar leaves inside walked subtrees pass through unchanged — the
+          // subsequent `model_validate(obj)` call handles primitive/user-type coercion from JSON.
+          ref
       }
     case _: TypeRef.Scalar =>
       // PR-60-D02: scalar leaves inside walked subtrees pass through unchanged — the subsequent

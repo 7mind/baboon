@@ -7,6 +7,8 @@ import BaboonRuntime
 import ConvtestM24foreign
 // PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
 import ConvtestM26builtinkeys
+// PR-29.10 (M29) — monomorphised-template cross-language wire-format fixture.
+import ConvtestM29ok
 
 func fail(_ message: String) -> Never {
     fputs(message + "\n", stderr)
@@ -244,6 +246,10 @@ func readAndVerify(_ filePath: String) throws {
         try readAndVerifyAnyShowcase(filePath)
         return
     }
+    if filePath.hasSuffix("m29-ok.json") || filePath.hasSuffix("m29-ok.ueba") {
+        try readAndVerifyM29Ok(filePath)
+        return
+    }
     let data: AllBasicTypes
     if filePath.hasSuffix(".json") {
         let raw = try Data(contentsOf: URL(fileURLWithPath: filePath))
@@ -316,6 +322,57 @@ func writeForeignKeyHolderJson(_ ctx: BaboonCodecContext, _ data: ForeignKeyHold
     let path = "\(outputDir)/m24-foreign-keycodec.json"
     try jsonData.write(to: URL(fileURLWithPath: path))
     print("Written JSON to \(path)")
+}
+
+// PR-29.10 (M29) — monomorphised-template cross-language wire-format fixture.
+func createM29OkSample() -> M29OkHolder {
+    return M29OkHolder(
+        intPage: IntPage(items: [Int32(1), Int32(2), Int32(3)], total: UInt32(3)),
+        strPage: StrPage(items: ["hello", "world"], total: UInt32(2)),
+        itemPage: ItemPage(items: [Item(name: "apple", price: 1.5), Item(name: "banana", price: 0.75)], total: UInt32(2)),
+        okEnvelope: .ok(IntStrEnvelope.Ok(value: Int32(42))),
+        errEnvelope: .err(IntStrEnvelope.Err(error: "oops"))
+    )
+}
+
+func writeM29OkJson(_ ctx: BaboonCodecContext, _ data: M29OkHolder, _ outputDir: String) throws {
+    try FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+    let jsonObj = M29OkHolder_JsonCodec.instance.encode(ctx, data)
+    let jsonData = try JSONSerialization.data(withJSONObject: jsonObj as Any, options: [.sortedKeys])
+    let path = "\(outputDir)/m29-ok.json"
+    try jsonData.write(to: URL(fileURLWithPath: path))
+    print("Written JSON to \(path)")
+}
+
+func writeM29OkUeba(_ ctx: BaboonCodecContext, _ data: M29OkHolder, _ outputDir: String) throws {
+    try FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+    let writer = BaboonBinWriter()
+    M29OkHolder_UebaCodec.instance.encode(ctx, writer, data)
+    let path = "\(outputDir)/m29-ok.ueba"
+    try writer.toData().write(to: URL(fileURLWithPath: path))
+    print("Written UEBA to \(path)")
+}
+
+func readAndVerifyM29Ok(_ filePath: String) throws {
+    let data: M29OkHolder
+    if filePath.hasSuffix(".json") {
+        let raw = try Data(contentsOf: URL(fileURLWithPath: filePath))
+        let json = try JSONSerialization.jsonObject(with: raw, options: [.fragmentsAllowed])
+        data = try M29OkHolder_JsonCodec.instance.decode(.defaultCtx, json)
+    } else {
+        let raw = try Data(contentsOf: URL(fileURLWithPath: filePath))
+        let r = BaboonBinReader(raw)
+        data = try M29OkHolder_UebaCodec.instance.decode(.defaultCtx, r)
+    }
+    guard data.intPage.total == UInt32(3) else {
+        fail("M29OkHolder intPage.total mismatch: expected 3, got \(data.intPage.total)")
+    }
+    guard case .ok = data.okEnvelope else {
+        fail("M29OkHolder okEnvelope is not Ok")
+    }
+    guard case .err = data.errEnvelope else {
+        fail("M29OkHolder errEnvelope is not Err")
+    }
 }
 
 func runLegacy() throws {
@@ -399,6 +456,7 @@ do {
         let sampleData = createSampleData()
         let sampleAny = try createSampleAnyShowcase()
         let facadeCtx = BaboonCodecContext.withFacade(false, freshFacade())
+        let m29Sample = createM29OkSample()
         let outputDir = args[1]
         let format = args[2]
         switch format {
@@ -406,9 +464,11 @@ do {
             try writeJson(sampleData, outputDir)
             try writeJsonAny(facadeCtx, sampleAny, outputDir)
             try writeForeignKeyHolderJson(.defaultCtx, createForeignKeyHolderSample(), outputDir)
+            try writeM29OkJson(.defaultCtx, m29Sample, outputDir)
         case "ueba":
             try writeUeba(sampleData, outputDir)
             try writeUebaAny(facadeCtx, sampleAny, outputDir)
+            try writeM29OkUeba(.defaultCtx, m29Sample, outputDir)
         default:
             fail("Unknown format: \(format)")
         }

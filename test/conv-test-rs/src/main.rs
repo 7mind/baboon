@@ -14,6 +14,9 @@ use baboon_conv_test_rs::baboon_runtime::{BaboonBinEncode, BaboonBinDecode, Babo
 use baboon_conv_test_rs::convtest::m24foreign::{ForeignKeyHolder, ItemKey};
 // PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
 use baboon_conv_test_rs::convtest::m26builtinkeys::BuiltinMapKeyHolder;
+// PR-29.10 (M29) — monomorphised template cross-language acceptance fixture.
+use baboon_conv_test_rs::convtest::m29ok::{M29OkHolder, IntPage, StrPage, Item, ItemPage};
+use baboon_conv_test_rs::convtest::m29ok::int_str_envelope::{IntStrEnvelope, Ok as EnvOk, Err as EnvErr};
 use uuid::Uuid;
 
 // Domain constants — match the convtest.testpkg domain at version 2.0.0 (where AnyShowcase + InnerPayload live).
@@ -215,6 +218,75 @@ fn create_sample_any_showcase_ueba() -> AnyShowcase {
     }
 }
 
+// PR-29.10 (M29) — monomorphised template acceptance fixture helpers.
+fn create_m29ok_sample() -> M29OkHolder {
+    M29OkHolder {
+        int_page:     IntPage  { items: vec![1, 2, 3],                                   total: 3 },
+        str_page:     StrPage  { items: vec!["hello".to_string(), "world".to_string()],  total: 2 },
+        item_page:    ItemPage { items: vec![Item { name: "Widget".to_string(), price: 9.99 }], total: 1 },
+        ok_envelope:  IntStrEnvelope::Ok(EnvOk { value: 42 }),
+        err_envelope: IntStrEnvelope::Err(EnvErr { error: "oops".to_string() }),
+    }
+}
+
+fn write_m29ok_json(data: &M29OkHolder, output_dir: &str) {
+    fs::create_dir_all(output_dir).expect("Failed to create output directory");
+    let json_str = serde_json::to_string(data).expect("Failed to serialize M29OkHolder to JSON");
+    let path = PathBuf::from(output_dir).join("m29-ok.json");
+    fs::write(&path, &json_str).expect("Failed to write M29OkHolder JSON");
+    println!("Written JSON to {:?}", path);
+}
+
+fn write_m29ok_ueba(data: &M29OkHolder, output_dir: &str) {
+    let ctx = BaboonCodecContext::Default;
+    fs::create_dir_all(output_dir).expect("Failed to create output directory");
+    let mut ueba_bytes = Vec::new();
+    data.encode_ueba(&ctx, &mut ueba_bytes).expect("Failed to encode M29OkHolder UEBA");
+    let path = PathBuf::from(output_dir).join("m29-ok.ueba");
+    fs::write(&path, &ueba_bytes).expect("Failed to write M29OkHolder UEBA");
+    println!("Written UEBA to {:?}", path);
+}
+
+fn read_and_verify_m29ok(file_path: &str) {
+    let ctx = BaboonCodecContext::Default;
+    let path = PathBuf::from(file_path);
+    let data: M29OkHolder = if file_path.ends_with(".json") {
+        let json_str = fs::read_to_string(&path)
+            .unwrap_or_else(|e| { eprintln!("Failed to read {:?}: {}", path, e); std::process::exit(1); });
+        serde_json::from_str(&json_str)
+            .unwrap_or_else(|e| { eprintln!("M29OkHolder JSON decode failed: {}", e); std::process::exit(1); })
+    } else {
+        let bytes = fs::read(&path)
+            .unwrap_or_else(|e| { eprintln!("Failed to read {:?}: {}", path, e); std::process::exit(1); });
+        let mut cursor = Cursor::new(&bytes);
+        M29OkHolder::decode_ueba(&ctx, &mut cursor)
+            .unwrap_or_else(|e| { eprintln!("M29OkHolder UEBA decode failed: {}", e); std::process::exit(1); })
+    };
+    // Roundtrip
+    if file_path.ends_with(".json") {
+        let re_encoded = serde_json::to_string(&data)
+            .unwrap_or_else(|e| { eprintln!("M29OkHolder JSON re-encode failed: {}", e); std::process::exit(1); });
+        let re_decoded: M29OkHolder = serde_json::from_str(&re_encoded)
+            .unwrap_or_else(|e| { eprintln!("M29OkHolder JSON roundtrip decode failed: {}", e); std::process::exit(1); });
+        if data != re_decoded {
+            eprintln!("M29OkHolder JSON roundtrip mismatch");
+            std::process::exit(1);
+        }
+    } else {
+        let mut re_bytes = Vec::new();
+        data.encode_ueba(&ctx, &mut re_bytes)
+            .unwrap_or_else(|e| { eprintln!("M29OkHolder UEBA re-encode failed: {}", e); std::process::exit(1); });
+        let mut cursor = Cursor::new(&re_bytes);
+        let re_decoded = M29OkHolder::decode_ueba(&ctx, &mut cursor)
+            .unwrap_or_else(|e| { eprintln!("M29OkHolder UEBA roundtrip decode failed: {}", e); std::process::exit(1); });
+        if data != re_decoded {
+            eprintln!("M29OkHolder UEBA roundtrip mismatch");
+            std::process::exit(1);
+        }
+    }
+    println!("OK");
+}
+
 fn write_json_any(data: &AnyShowcase, output_dir: &str) {
     fs::create_dir_all(output_dir).expect("Failed to create output directory");
     let json_str = serde_json::to_string_pretty(data).expect("Failed to serialize AnyShowcase to JSON");
@@ -236,6 +308,10 @@ fn write_ueba_any(data: &AnyShowcase, output_dir: &str) {
 fn read_and_verify(file_path: &str) {
     if file_path.ends_with("any-showcase.json") || file_path.ends_with("any-showcase.ueba") {
         read_and_verify_any_showcase(file_path);
+        return;
+    }
+    if file_path.ends_with("m29-ok.json") || file_path.ends_with("m29-ok.ueba") {
+        read_and_verify_m29ok(file_path);
         return;
     }
     let ctx = BaboonCodecContext::Default;
@@ -469,14 +545,17 @@ fn main() {
             let output_dir = &args[1];
             let format = &args[2];
             let sample_data = create_sample_data();
+            let m29_sample = create_m29ok_sample();
             match format.as_str() {
                 "json" => {
                     write_json(&sample_data, output_dir);
                     write_json_any(&create_sample_any_showcase_json(), output_dir);
+                    write_m29ok_json(&m29_sample, output_dir);
                 }
                 "ueba" => {
                     write_ueba(&sample_data, output_dir);
                     write_ueba_any(&create_sample_any_showcase_ueba(), output_dir);
+                    write_m29ok_ueba(&m29_sample, output_dir);
                 }
                 _ => {
                     eprintln!("Unknown format: {}", format);
