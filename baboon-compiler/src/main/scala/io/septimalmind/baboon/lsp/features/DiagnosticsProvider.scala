@@ -105,10 +105,16 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
       case ServiceMultipleInputs(svc, method, _, meta)  => (Some(meta), s"Multiple inputs in $svc.$method")
       case ServiceMultipleErrors(svc, method, _, meta)  => (Some(meta), s"Multiple errors in $svc.$method")
       case DuplicateTypeParam(name, ownerName, meta)     => (Some(meta), s"Duplicate type parameter '$name' in template '$ownerName'")
-      case TemplateArityMismatch(tname, owner, exp, act, meta) =>
-        (Some(meta), s"Template '$tname' instantiated in '$owner' with wrong arity: expected $exp, got $act")
+      case TemplateArityMismatch(tname, alias, exp, act, meta) =>
+        (Some(meta), s"Template '$tname' instantiated in alias '$alias' with wrong arity: expected $exp, got $act")
       case TemplateInstantiationInBody(containingName, instName, meta) =>
         (Some(meta), s"Template '$containingName' contains a forbidden template instantiation of '$instName' in field position")
+      case TemplateNotInstantiated(tname, alias, meta) =>
+        (Some(meta), s"Alias '$alias' references template '$tname' without type arguments — use '$tname[…]'")
+      case NotATemplate(head, alias, meta) =>
+        (Some(meta), s"'$head' is not a template or builtin collection — cannot be used as a generic constructor head in alias '$alias'")
+      case TemplateBodyCarriesDerived(tname, meta) =>
+        (Some(meta), s"Template '$tname' carries ':derived[…]' — write the annotation on the alias instead")
       case DagError(e, meta)                            => (Some(meta), s"DAG error: $e")
       case ScalarExpected(id, meta)                     => (Some(meta), s"Scalar expected: ${id.name.name}")
       case CollectionExpected(id, meta)                 => (Some(meta), s"Collection expected: ${id.name.name}")

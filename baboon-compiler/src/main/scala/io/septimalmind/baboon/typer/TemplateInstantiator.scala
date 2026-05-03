@@ -53,11 +53,7 @@ object TemplateInstantiator {
       members: Seq[RawTLDef],
       registry: TemplateRegistry,
     ): F[NEList[BaboonIssue], Seq[RawTLDef]] = {
-      if (registry.isEmpty) {
-        F.pure(members)
-      } else {
-        instantiateRecursive(pkg, members, registry, ownerForCurrent = Owner.Toplevel, nsPath = List.empty)
-      }
+      instantiateRecursive(pkg, members, registry, ownerForCurrent = Owner.Toplevel, nsPath = List.empty)
     }
 
     private def instantiateRecursive(
@@ -89,12 +85,53 @@ object TemplateInstantiator {
                 case Some(body) =>
                   instantiateAlias(pkg, root, alias, body, registry, key).map(List(_))
                 case None =>
-                  // RawTypeRef.Constructor whose head doesn't hit the registry — e.g. a builtin
-                  // collection used directly on an alias RHS (uncommon but possible). Pass through.
+                  // Constructor whose head doesn't hit the registry.
+                  // If the head is a builtin collection (lst, set, opt, map) or `any`, pass
+                  // through — BaboonTranslator will handle it. Otherwise the user wrote
+                  // something like `type Y = i32[X]`, which is matrix #8.
+                  val headName = ctor.name.name
+                  val isBuiltin = Set("lst", "set", "opt", "map", "any").contains(headName)
+                  if (isBuiltin) {
+                    F.pure(List(aliasTL))
+                  } else {
+                    F.fail(
+                      BaboonIssue.of(
+                        TyperIssue.NotATemplate(
+                          head      = headName,
+                          aliasName = alias.name.name,
+                          meta      = alias.meta,
+                        )
+                      )
+                    )
+                  }
+              }
+            case simple: RawTypeRef.Simple =>
+              // Bare Simple reference (no brackets). Check whether the name refers to a
+              // registered template. If so, the user forgot the type arguments — matrix #7.
+              val maybeTemplateKey = registry.templates.keys.find {
+                case (kPkg, kOwner, tname) =>
+                  tname.name == simple.name.name &&
+                    kPkg == pkg &&
+                    kOwner == ownerForCurrent &&
+                    simple.prefix.isEmpty
+              }
+              maybeTemplateKey match {
+                case Some(_) =>
+                  F.fail(
+                    BaboonIssue.of(
+                      TyperIssue.TemplateNotInstantiated(
+                        templateName = simple.name.name,
+                        aliasName    = alias.name.name,
+                        meta         = alias.meta,
+                      )
+                    )
+                  )
+                case None =>
+                  // Not a template — plain alias. Pass through.
                   F.pure(List(aliasTL))
               }
             case _ =>
-              // Simple or AnyRef alias target — not a template instantiation. Pass through.
+              // AnyRef alias target — not a template instantiation. Pass through.
               F.pure(List(aliasTL))
           }
 
@@ -129,7 +166,7 @@ object TemplateInstantiator {
           BaboonIssue.of(
             TyperIssue.TemplateArityMismatch(
               templateName = templateKey._3.name,
-              ownerName    = alias.name.name,
+              aliasName    = alias.name.name,
               expected     = body.typeParams.size,
               actual       = args.size,
               meta         = alias.meta,
@@ -137,73 +174,97 @@ object TemplateInstantiator {
           )
         )
       } else {
-        val substMap: Map[String, RawTypeRef] =
-          body.typeParams.map(_.name).zip(args).toMap
-
-        // Walk the template body and apply substitution.
-        body.rawDefn match {
-          case RawTemplateDefn.Dto(raw) =>
-            for {
-              rewrittenMembers <- substituteMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta)
-            } yield {
-              RawTLDef.DTO(
-                root,
-                raw.copy(
-                  name       = alias.name,
-                  members    = rewrittenMembers,
-                  // TODO PR-29.7: assert raw.derived.isEmpty — body-side derived is a spec error per spec §5.3
-                  derived    = alias.derived ++ raw.derived,
-                  meta       = alias.meta,
-                  typeParams = Nil,
-                ),
+        // Matrix #2: type arguments must not themselves be template instantiations (spec §2.5.2).
+        // Walk each argument; if it is a Constructor whose head names a registered template, reject.
+        val badArg = args.collectFirst {
+          case argCtor: RawTypeRef.Constructor
+              if registry.templates.keys.exists { case (_, _, tname) => tname.name == argCtor.name.name && argCtor.prefix.isEmpty } =>
+            argCtor.name.name
+        }
+        badArg match {
+          case Some(innerTemplate) =>
+            F.fail(
+              BaboonIssue.of(
+                TyperIssue.TemplateInstantiationInBody(
+                  containingTemplateName = templateKey._3.name,
+                  instantiatedName       = innerTemplate,
+                  meta                   = alias.meta,
+                )
               )
-            }
+            )
+          case None =>
+            val substMap: Map[String, RawTypeRef] =
+              body.typeParams.map(_.name).zip(args).toMap
 
-          case RawTemplateDefn.Adt(raw) =>
-            for {
-              rewrittenAdtMembers <- substituteAdtMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta)
-            } yield {
-              RawTLDef.ADT(
-                root,
-                raw.copy(
-                  name       = alias.name,
-                  members    = rewrittenAdtMembers,
-                  // TODO PR-29.7: assert raw.derived.isEmpty — body-side derived is a spec error per spec §5.3
-                  derived    = alias.derived ++ raw.derived,
-                  meta       = alias.meta,
-                  typeParams = Nil,
-                ),
-              )
-            }
+            // Walk the template body and apply substitution.
+            body.rawDefn match {
+              case RawTemplateDefn.Dto(raw) =>
+                // Body-side derived is rejected at registry-build time (TemplateBodyCarriesDerived,
+                // spec §5.3). By the time we reach this point the invariant holds.
+                assert(raw.derived.isEmpty, s"template body '${raw.name.name}' carries derived — should have been rejected by TemplateRegistryBuilder")
+                for {
+                  rewrittenMembers <- substituteMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta)
+                } yield {
+                  RawTLDef.DTO(
+                    root,
+                    raw.copy(
+                      name       = alias.name,
+                      members    = rewrittenMembers,
+                      derived    = alias.derived,
+                      meta       = alias.meta,
+                      typeParams = Nil,
+                    ),
+                  )
+                }
 
-          case RawTemplateDefn.Contract(raw) =>
-            for {
-              rewrittenMembers <- substituteMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta)
-            } yield {
-              RawTLDef.Contract(
-                root,
-                raw.copy(
-                  name       = alias.name,
-                  members    = rewrittenMembers,
-                  meta       = alias.meta,
-                  typeParams = Nil,
-                ),
-              )
-            }
+              case RawTemplateDefn.Adt(raw) =>
+                // Body-side derived is rejected at registry-build time (TemplateBodyCarriesDerived,
+                // spec §5.3). By the time we reach this point the invariant holds.
+                assert(raw.derived.isEmpty, s"template body '${raw.name.name}' carries derived — should have been rejected by TemplateRegistryBuilder")
+                for {
+                  rewrittenAdtMembers <- substituteAdtMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta)
+                } yield {
+                  RawTLDef.ADT(
+                    root,
+                    raw.copy(
+                      name       = alias.name,
+                      members    = rewrittenAdtMembers,
+                      derived    = alias.derived,
+                      meta       = alias.meta,
+                      typeParams = Nil,
+                    ),
+                  )
+                }
 
-          case RawTemplateDefn.Service(raw) =>
-            for {
-              rewrittenFuncs <- substituteFuncs(raw.defns, substMap, templateKey._3.name, registry, alias.meta)
-            } yield {
-              RawTLDef.Service(
-                root,
-                raw.copy(
-                  name       = alias.name,
-                  defns      = rewrittenFuncs,
-                  meta       = alias.meta,
-                  typeParams = Nil,
-                ),
-              )
+              case RawTemplateDefn.Contract(raw) =>
+                for {
+                  rewrittenMembers <- substituteMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta)
+                } yield {
+                  RawTLDef.Contract(
+                    root,
+                    raw.copy(
+                      name       = alias.name,
+                      members    = rewrittenMembers,
+                      meta       = alias.meta,
+                      typeParams = Nil,
+                    ),
+                  )
+                }
+
+              case RawTemplateDefn.Service(raw) =>
+                for {
+                  rewrittenFuncs <- substituteFuncs(raw.defns, substMap, templateKey._3.name, registry, alias.meta)
+                } yield {
+                  RawTLDef.Service(
+                    root,
+                    raw.copy(
+                      name       = alias.name,
+                      defns      = rewrittenFuncs,
+                      meta       = alias.meta,
+                      typeParams = Nil,
+                    ),
+                  )
+                }
             }
         }
       }

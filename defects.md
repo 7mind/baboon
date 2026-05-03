@@ -303,6 +303,59 @@ Verification: `grep -n 'RawTypeRef.Constructor docs/spec/generics.md` no matches
 
 ---
 
+## PR-29.7 — Validator: forbidden positions; new TyperIssue cases for matrix items
+
+## [PR-29.7-D01] Matrix #8 (`NotATemplate`) coverage too narrow — no test for non-template user DTO with brackets
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/M29ValidatorTest.scala:158-178`.
+**Description:** Only `type Y = i32[str]` (builtin scalar with brackets) is tested for `NotATemplate`. The pressure-point case `type Y = MyDto[i32]` (non-template user DTO with brackets) was explicitly listed in the per-matrix decision but is not exercised.
+**Suggested fix:** Add 1-2 fixtures and tests in `M29ValidatorTest.scala`: (a) `data MyDto { f: str }; type Y = MyDto[i32]` → fires `NotATemplate(head="MyDto", aliasName="Y")`. Optionally (b) negative regression `data MyTpl[T] { f: T }; type Y = MyTpl[i32]` → does NOT fire `NotATemplate` (already covered indirectly elsewhere but worth pinning).
+
+## [PR-29.7-D02] D03 (`TemplateBodyCarriesDerived`) has no negative test
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/M29ValidatorTest.scala:193-212`.
+**Description:** No test asserting that a template *without* `: derived[…]` builds successfully. A regression that fires `TemplateBodyCarriesDerived` spuriously on every template would not be caught here (other tests would catch it, but precision-pinning belongs in this file).
+**Suggested fix:** Add `data X[T] { f: T }; type Y = X[i32]` test asserting full pipeline succeeds and no `TemplateBodyCarriesDerived` issue is emitted.
+
+## [PR-29.7-D03] Matrix #7 (`TemplateNotInstantiated`) has no negative test
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/M29ValidatorTest.scala:134-153`.
+**Description:** No test asserting that `type Y = X` where `X` is a non-template DTO does NOT fire `TemplateNotInstantiated`. Same precision-pinning argument as `[PR-29.7-D02]`.
+**Suggested fix:** Add `data X { f: i32 }; type Y = X` test asserting full pipeline succeeds and no `TemplateNotInstantiated` issue is emitted.
+
+## [PR-29.7-D04] Spec §2.5.6 still reads "diagnostic finalised in PR-29.7" placeholder
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `docs/spec/generics.md:246-247` (approximate).
+**Description:** Spec §2.5.6 still has the placeholder "(NameNotFound or OrphanTypeParam) is finalised in PR-29.7" from PR-29.1a D14. PR-29.7's locked decision is to reuse `NameNotFound` and NOT introduce `OrphanTypeParam`. Spec was not updated.
+**Suggested fix:** Replace the placeholder with: "This case fires the existing `NameNotFound` diagnostic; no new typer issue is introduced (locked in PR-29.7 per CLAUDE.md §4 simplicity — `Type not found: T` is accurate and clear when `T` is referenced outside any template body)."
+
+## [PR-29.7-D05] `TemplateInstantiationInBody` misnomer for matrix #2; printer text mentions "field position"
+**Status:** resolved (deferred — rename touches PR-29.5's case-class shape; defer to a follow-up)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/issues/TyperIssue.scala:198-216`; `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala:179-194`.
+**Description:** Reuse of `TemplateInstantiationInBody` for matrix #2 (nested in alias args) is a misnomer — the violation site is "alias RHS arg position", not a template body. Diagnostic message text says "in field position", also wrong for matrix #2.
+**Fix:** Defer; rename to `TemplateInstantiationInForbiddenPosition` (or split into `TemplateInstantiationInBody` + `TemplateInstantiationInArgPosition`) is a follow-up in a future polish PR. Printer text update can ride with the rename.
+
+## [PR-29.7-D06] Hardcoded builtin-collection set duplicated from canonical builtin list
+**Status:** resolved (deferred — drift risk only; add TODO)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala:93` (approximate).
+**Description:** Hardcoded `Set("lst", "set", "opt", "map", "any")` duplicates the canonical builtin list (`TypeId.Builtins`). If a new builtin collection is added, this set will drift.
+**Fix:** Defer; add `// TODO: reference TypeId.Builtins shared constant rather than hardcoded set` at the site. Refactor when adding a new builtin collection.
+
+## [PR-29.7-D07] Prefixed reference to a registered template silently misses matrix #7 diagnostic
+**Status:** resolved (deferred — no spec'd cross-namespace template support yet)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala:111-116, 179-181`.
+**Description:** Matrix #7 lookup and matrix #2 arg-check both restrict to `prefix.isEmpty` and same-owner. A prefixed reference to a registered template (e.g. `type Y = my.ns.X` where `X` is a template in `my.ns`) would silently miss the matrix #7 diagnostic and fall through to `NameNotFound` later.
+**Fix:** Defer; add `// TODO: extend matrix #7 / #2 detection to handle cross-namespace template refs once cross-namespace template instantiation is spec'd (currently out of scope per spec §6)`.
+
+---
+
 ## PR-29.5 — Typer: monomorphisation via AST substitution; alias-id canonical
 
 ## [PR-29.5-D01] No test for ADT-template, Contract-template, or Service-template substitution

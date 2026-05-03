@@ -66,19 +66,23 @@ object TemplateRegistryBuilder {
       member match {
 
         case RawTLDef.DTO(_, raw) if raw.typeParams.nonEmpty =>
-          validateTypeParams(raw.typeParams, raw.name, raw.meta).map {
-            _ =>
-              val body = TemplateBody(raw.typeParams, RawTemplateDefn.Dto(raw))
-              val key  = (pkg, ownerForCurrent, TypeName(raw.name.name))
-              (List.empty, TemplateRegistry(Map(key -> body)))
+          for {
+            _ <- validateTypeParams(raw.typeParams, raw.name, raw.meta)
+            _ <- validateNoDerived(raw.name, raw.derived, raw.meta)
+          } yield {
+            val body = TemplateBody(raw.typeParams, RawTemplateDefn.Dto(raw))
+            val key  = (pkg, ownerForCurrent, TypeName(raw.name.name))
+            (List.empty, TemplateRegistry(Map(key -> body)))
           }
 
         case RawTLDef.ADT(_, raw) if raw.typeParams.nonEmpty =>
-          validateTypeParams(raw.typeParams, raw.name, raw.meta).map {
-            _ =>
-              val body = TemplateBody(raw.typeParams, RawTemplateDefn.Adt(raw))
-              val key  = (pkg, ownerForCurrent, TypeName(raw.name.name))
-              (List.empty, TemplateRegistry(Map(key -> body)))
+          for {
+            _ <- validateTypeParams(raw.typeParams, raw.name, raw.meta)
+            _ <- validateNoDerived(raw.name, raw.derived, raw.meta)
+          } yield {
+            val body = TemplateBody(raw.typeParams, RawTemplateDefn.Adt(raw))
+            val key  = (pkg, ownerForCurrent, TypeName(raw.name.name))
+            (List.empty, TemplateRegistry(Map(key -> body)))
           }
 
         case RawTLDef.Contract(_, raw) if raw.typeParams.nonEmpty =>
@@ -127,6 +131,21 @@ object TemplateRegistryBuilder {
           F.unit
         case first :: _ =>
           F.fail(BaboonIssue.of(TyperIssue.DuplicateTypeParam(first.name, ownerName.name, meta)))
+      }
+    }
+
+    /** Reject a template body that carries a `: derived[…]` annotation (spec §5.3,
+      * locked decision #6). Derivation must be written on the alias, not the template.
+      */
+    private def validateNoDerived(
+      templateName: RawTypeName,
+      derived: Set[RawMemberMeta],
+      meta: RawNodeMeta,
+    ): F[NEList[BaboonIssue], Unit] = {
+      if (derived.nonEmpty) {
+        F.fail(BaboonIssue.of(TyperIssue.TemplateBodyCarriesDerived(templateName.name, meta)))
+      } else {
+        F.unit
       }
     }
   }

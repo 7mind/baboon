@@ -171,7 +171,7 @@ object TyperIssue {
     */
   case class TemplateArityMismatch(
     templateName: String,
-    ownerName: String,
+    aliasName: String,
     expected: Int,
     actual: Int,
     meta: RawNodeMeta,
@@ -195,6 +195,54 @@ object TyperIssue {
   case class TemplateInstantiationInBody(
     containingTemplateName: String,
     instantiatedName: String,
+    meta: RawNodeMeta,
+  ) extends TyperIssue
+
+  /** An alias whose RHS is a bare (non-instantiated) reference to a template
+    * (negative-test matrix #7, spec §2.5.7).
+    *
+    * Example: `data X[T] { f: T }; type Y = X`
+    *
+    * Templates must be instantiated with type arguments; a bare reference without
+    * brackets is rejected. Detected in `TemplateInstantiator` when a
+    * `RawTypeRef.Simple` alias target names a registered template.
+    *
+    * `templateName` — the template being referenced without instantiation.
+    * `aliasName`    — the alias whose RHS carries the bare reference.
+    */
+  case class TemplateNotInstantiated(
+    templateName: String,
+    aliasName: String,
+    meta: RawNodeMeta,
+  ) extends TyperIssue
+
+  /** A constructor expression `H[arg]` whose head `H` is neither a builtin
+    * collection nor a registered template (negative-test matrix #8, spec §2.5.8).
+    *
+    * Example: `type Y = i32[X]`
+    *
+    * Detected in `TemplateInstantiator` when a `RawTypeRef.Constructor` alias
+    * target has a head that resolves to neither a template in the registry nor
+    * one of the builtin collections (`lst`, `set`, `opt`, `map`).
+    *
+    * `head`      — the name used in head position of the constructor.
+    * `aliasName` — the alias whose RHS carries the constructor.
+    */
+  case class NotATemplate(
+    head: String,
+    aliasName: String,
+    meta: RawNodeMeta,
+  ) extends TyperIssue
+
+  /** A template body carries a `: derived[…]` annotation, which is forbidden by
+    * locked decision #6 (spec §5.3). Derivation must be written on the alias, not
+    * on the template itself. Detected at registry-build time in
+    * `TemplateRegistryBuilder` (before the template body is ever instantiated).
+    *
+    * `templateName` — the template that illegally carries a `derived` annotation.
+    */
+  case class TemplateBodyCarriesDerived(
+    templateName: String,
     meta: RawNodeMeta,
   ) extends TyperIssue
 
@@ -618,7 +666,7 @@ object TyperIssue {
   implicit val templateArityMismatchPrinter: IssuePrinter[TemplateArityMismatch] =
     (issue: TemplateArityMismatch) => {
       s"""${extractLocation(issue.meta)}
-         |Template '${issue.templateName}' instantiated with wrong arity in '${issue.ownerName}': expected ${issue.expected} type argument(s), got ${issue.actual}
+         |Template '${issue.templateName}' instantiated with wrong arity in alias '${issue.aliasName}': expected ${issue.expected} type argument(s), got ${issue.actual}
          |""".stripMargin
     }
 
@@ -626,6 +674,27 @@ object TyperIssue {
     (issue: TemplateInstantiationInBody) => {
       s"""${extractLocation(issue.meta)}
          |Template '${issue.containingTemplateName}' contains a template instantiation of '${issue.instantiatedName}' in field position — template instantiation is only permitted as the right-hand side of a type alias (spec §4, matrix #1)
+         |""".stripMargin
+    }
+
+  implicit val templateNotInstantiatedPrinter: IssuePrinter[TemplateNotInstantiated] =
+    (issue: TemplateNotInstantiated) => {
+      s"""${extractLocation(issue.meta)}
+         |Alias '${issue.aliasName}' references template '${issue.templateName}' without type arguments — templates must be instantiated with brackets, e.g. '${issue.templateName}[T]' (spec §2.5.7, matrix #7)
+         |""".stripMargin
+    }
+
+  implicit val notATemplatePrinter: IssuePrinter[NotATemplate] =
+    (issue: NotATemplate) => {
+      s"""${extractLocation(issue.meta)}
+         |Alias '${issue.aliasName}' uses '${issue.head}' as a generic constructor head, but '${issue.head}' is not a template — only user-defined templates and builtin collections (lst, set, opt, map) may be used with type arguments (spec §2.5.8, matrix #8)
+         |""".stripMargin
+    }
+
+  implicit val templateBodyCarriesDerivedPrinter: IssuePrinter[TemplateBodyCarriesDerived] =
+    (issue: TemplateBodyCarriesDerived) => {
+      s"""${extractLocation(issue.meta)}
+         |Template '${issue.templateName}' carries a ':derived[…]' annotation, which is forbidden on template bodies — write the annotation on the instantiating alias instead (spec §5.3, locked decision #6)
          |""".stripMargin
     }
 
