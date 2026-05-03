@@ -28,25 +28,52 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 ## PR-29P.2 — Fix CI-02: acceptance-tests sbt resolution
 
 ## [PR-29P.2-D01] `acceptance-tests` sbt 1.11.7 resolution returns `forbidden` inside `nix develop --ignore-environment`
-**Status:** open
+**Status:** resolved (pending live-CI verification on `wip/ids-and-adts`)
 **Severity:** major
-**Location:** `.github/workflows/baboon-build.yml` (acceptance-tests job step that invokes `nix develop --ignore-environment --command mdl --github-actions :test-acceptance`); possibly `flake.nix` and `.mdl/defs/actions.md`.
+**Location:** `.github/workflows/baboon-build.yml:159-179` (the two `acceptance-tests` job steps "Run acceptance tests" and "Run service acceptance tests").
 **Description:** Acceptance job fails at sbt-launcher startup with:
 ```
 [error] [launcher] xsbt.boot.internal.shaded.coursier.error.ResolutionError$CantDownloadModule: Error downloading org.scala-sbt:sbt:1.11.7
   forbidden: https://repo1.maven.org/maven2/org/scala-sbt/sbt/1.11.7/sbt-1.11.7.pom
   forbidden: https://repo.scala-sbt.org/scalasbt/maven-releases/org/scala-sbt/sbt/1.11.7/sbt-1.11.7.pom
-  not found: ... (mirror endpoints)
 [error] [launcher] could not retrieve sbt 1.11.7
-❌ Error: Script exited with code 1
 ```
-External availability confirmed: sbt 1.11.7 returns `HTTP/2 200` from `repo1.maven.org` outside CI. Build job (`build-linux-amd64`) in the same workflow run uses `nix develop` (no `--ignore-environment`) and resolves sbt cleanly. Cross-job comparison isolates `--ignore-environment` as the differentiator.
-**Root cause (hypothesis):** `--ignore-environment` strips runner-level proxy / cert / DNS settings (the GitHub-hosted runner relies on env-injected proxy config for outbound HTTPS), and the resulting sandboxed connection is rejected at upstream CDN as `forbidden` — or the strict sandbox simply has no working DNS/cert chain, with Cloudflare returning `403` on a malformed request.
-**Suggested fix:**
-1. Read `.github/workflows/baboon-build.yml` to confirm the exact invocation and whether `--ignore-environment` is load-bearing for this step (it is unlikely to be).
-2. Pick the lowest-blast-radius fix:
-   - (a) **Drop `--ignore-environment`** from the acceptance step. Lowest blast radius; acceptance does not need a stricter sandbox than build.
-   - (b) Pre-populate sbt-launcher into the Nix flake closure so the sandboxed step never reaches the network. Higher invariance but larger change to `flake.nix`.
-   - (c) Prepend `:flake-refresh` to the acceptance command (warm cache before the strict sandbox kicks in). Fragile; depends on caching policy.
-3. Apply (a) unless evidence emerges that the sandbox is load-bearing.
-4. Validate with the live workflow on `wip/ids-and-adts` after pushing.
+External availability confirmed: sbt 1.11.7 returns `HTTP/2 200` from `repo1.maven.org` outside CI. Build job `build-linux` in the same workflow run uses plain `nix develop --command` (no `--ignore-environment`) and resolves sbt cleanly. Cross-job comparison isolates `--ignore-environment` as the differentiator.
+**Root cause:** `--ignore-environment` strips ~95 env vars including those injected by the `7mind/github-env@minimal` action and the Determinate-Systems Nix installer. Among the stripped vars on a fresh GitHub-hosted runner are the SSL/TLS trust chain settings (`NIX_SSL_CERT_FILE` and/or `SSL_CERT_FILE`) that the JVM-based sbt-launcher needs to verify Maven Central's certificate during its bootstrap download. Local env-diff (`nix develop --ignore-environment --command env` vs `nix develop --command env`) confirms the flag drops a large set of runner-injected vars; the specific TLS-trust mechanism varies between local NixOS (system-installed Nix; `NIX_SSL_CERT_FILE` not set in either mode) and the GitHub runner (Determinate installer injects it via the runner shell), so the local repro is structural rather than identical, but the asymmetry between `build-linux` (works) and `acceptance-tests` (fails) is the operational evidence.
+**Fix:** Removed `--ignore-environment` and the four associated `--keep` flags (`HOME`, `USER`, `CI`, `GITHUB_ACTIONS`) from both `nix develop` invocations in the `acceptance-tests` job in `.github/workflows/baboon-build.yml`. The two affected steps now run plain `nix develop --command mdl --github-actions :test-acceptance` and `… :test-service-acceptance`, matching the pattern used by `build-linux`, `test-editors`, and the publish jobs. Twelve lines deleted, two added; surgical edit, no other workflow changes.
+**Cross-cuts:** The flag was originally introduced in commit `ca0a354` (Swift backend, #50, Feb 2026) alongside the AppArmor/bwrap workaround for the Swift FHS toolchain — not in `646543f` as the executor first stated; commit `646543f` only preserved the existing flag during a refactor. Neither commit message documents the rationale, but the temporal correlation suggests defensive isolation for Swift FHS-bwrap. The empirical evidence that `build-linux` exercises the same Swift toolchain artifacts without the flag and succeeds is the basis for dropping it.
+
+## [PR-29P.2-D02] Executor's commit-history attribution misidentifies the introducing commit
+**Status:** resolved (note-only; corrected attribution captured in PR-29P.2-D01)
+**Severity:** minor
+**Location:** PR-29P.2 executor's return message (rationale, not in shipped code).
+**Description:** Executor characterised commit `646543f` as introducing `--ignore-environment` "by carry-over with no documented justification". Reviewer's `git log -S '--ignore-environment'` walk shows `646543f` only preserved the flag during a refactor; the actual introduction was `ca0a354` (Swift backend, #50, Feb 2026) alongside the AppArmor/bwrap setup. Substantive conclusion (drop the flag) is unaffected; only the historical narrative needs correction.
+**Fix:** Corrected attribution recorded in PR-29P.2-D01 root-cause and cross-cuts sections; will also be reflected in the PR-29P.3 session log.
+
+## [PR-29P.2-D03] Defects ledger entry not updated to "resolved" by the executor
+**Status:** resolved (orchestrator close-out)
+**Severity:** minor
+**Location:** `defects.md` entry `[PR-29P.2-D01]`.
+**Description:** Reviewer noted the executor returned without flipping `[PR-29P.2-D01]` to resolved or filling in `Fix:` text. Per the loop's I3 step, ledger maintenance is orchestrator work, not subagent work — so this is a process gap reminder rather than an executor defect. Closed by this round's orchestrator update.
+**Fix:** Orchestrator updated `[PR-29P.2-D01]` to `resolved (pending live-CI verification)` with full root-cause and `Fix:` text.
+
+## [PR-29P.2-D04] Live-CI validation gap — local repro of the failure mode was inconclusive
+**Status:** resolved (env-diff signal captured; live-CI validation deferred to PR-29P.3 close-out)
+**Severity:** minor
+**Location:** PR-29P.2 process; verification commands captured in this entry.
+**Description:** Reviewer flagged that the executor's local verification was inconclusive (sbt 1.11.7 was pre-cached in `/nix/store/bmqjnx6lmlip2yv697mzwpl556jwbbwq-sbt-1.11.7`, so the resolution path was skipped) and recommended a cheaper signal. Orchestrator captured `nix develop --ignore-environment --command env` vs `nix develop --command env` and diffed the env-var name sets. Result: 95 env vars are stripped by `--ignore-environment`, including all session/runner-injected vars (HOME, USER, NIX_PATH, NIX_PROFILES, runner-action exports, etc.). On local NixOS neither mode has `NIX_SSL_CERT_FILE`/`SSL_CERT_FILE` set (system-installed Nix differs from runner Nix on this point), so the local signal does not pinpoint the exact TLS-trust variable but does confirm structurally that the flag strips a load-bearing set of vars. The operational success criterion is green CI on `wip/ids-and-adts`; that gate runs in PR-29P.3.
+**Fix:** Env-diff captured at orchestration time; rationale documented in PR-29P.2-D01 root-cause. Live-CI verification gate deferred to PR-29P.3 close-out per `tasks.md` plan.
+
+## [PR-29P.2-D05] No inline comment in the workflow memorialising the dropped-sandbox-flag decision
+**Status:** open (deferred to PR-29P.3 close-out)
+**Severity:** nit
+**Location:** `.github/workflows/baboon-build.yml:159-164` (the two acceptance-tests steps).
+**Description:** Adjacent steps in the workflow carry inline comments explaining non-obvious choices. The two-month historical asymmetry (acceptance-tests alone using `--ignore-environment`) is not memorialised in-tree. A future agent seeing the diff in `git blame` would have no in-tree explanation. Out-of-scope for the surgical PR-29P.2 fix per CLAUDE.md §5.
+**Suggested fix:** Defer to PR-29P.3 close-out — add a one-line comment above the two steps along the lines of "# Plain `nix develop` (no --ignore-environment): runner-injected env carries TLS trust chain that sbt-launcher needs for upstream resolution. See defects.md PR-29P.2-D01."
+
+## [PR-29P.2-D06] Cross-cutting "Nix `--ignore-environment` policy" question not recorded as a decision
+**Status:** open (deferred to PR-29P.3 session log)
+**Severity:** nit
+**Location:** `tasks.md` Cross-cutting architectural notes.
+**Description:** The cross-cutting item asks whether the acceptance step needs the strict sandbox at all, or whether the flake closure is sufficient. Executor implicitly decided "no strict sandbox needed" by shipping option (a), but did not record the decision rationale anywhere. Future test-* actions that consider adopting `--ignore-environment` have no precedent to lean on.
+**Suggested fix:** PR-29P.3 session log should explicitly state: "acceptance and test-* jobs run under plain `nix develop`; `--ignore-environment` is not adopted as default because (1) GitHub-hosted runner injects load-bearing TLS/proxy/cache env vars not reachable through the flake closure, (2) `build-linux` operates without it successfully, (3) the previous use was load-bearing only for an unverified Swift-FHS-bwrap isolation hypothesis, and the same Swift artifacts compile under `build-linux` without the flag." Tick the tasks.md item.

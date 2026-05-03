@@ -159,21 +159,9 @@ jobs:
       # `:test-acceptance` and `:test-service-acceptance` each `dep action.build`,
       # so mdl handles the binary build once and reuses it across both actions.
       - name: Run acceptance tests
-        run: |
-          nix develop --ignore-environment \
-            --keep HOME \
-            --keep USER \
-            --keep CI \
-            --keep GITHUB_ACTIONS \
-            --command mdl --github-actions :test-acceptance
+        run: nix develop --command mdl --github-actions :test-acceptance
       - name: Run service acceptance tests
-        run: |
-          nix develop --ignore-environment \
-            --keep HOME \
-            --keep USER \
-            --keep CI \
-            --keep GITHUB_ACTIONS \
-            --command mdl --github-actions :test-service-acceptance
+        run: nix develop --command mdl --github-actions :test-service-acceptance
       - name: Write step summary
         if: always()
         run: |
