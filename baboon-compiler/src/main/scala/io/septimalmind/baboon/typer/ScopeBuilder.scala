@@ -123,7 +123,7 @@ class ScopeBuilder[F[+_, +_]: Error2] {
             case RawFuncArg.Struct(d)         => d.name.name.toLowerCase == "in"
           }
           if (hasIn) f
-          else f.copy(sig = RawFuncArg.Struct(RawDto(RawTypeName("in"), Nil, Set.empty, f.meta)) +: f.sig)
+          else f.copy(sig = RawFuncArg.Struct(RawDto(RawTypeName("in"), Nil, Set.empty, f.meta, Nil)) +: f.sig)
         })
         for {
           inlineDefns <- F.pure(desugaredService.defns.map(defn => (defn, defn.sig.collect { case s: RawFuncArg.Struct => s.defn })).filterNot(_._2.isEmpty))
