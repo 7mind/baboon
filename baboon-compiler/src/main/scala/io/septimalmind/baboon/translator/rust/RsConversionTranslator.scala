@@ -176,7 +176,7 @@ class RsConversionTranslator[F[+_, +_]: Error2](
                       // follow that convention here.
                       case _: TypeRef.Any =>
                         throw new IllegalStateException("BUG: `any` field has no schema-agnostic default; evolution rules should reject InitializeWithDefault on Any")
-                      case _              => throw new IllegalStateException("Unsupported target field type")
+                      case _ => throw new IllegalStateException("Unsupported target field type")
                     }
                   case _: FieldOp.WrapIntoCollection =>
                     val innerExpr = if (hasUserType(f.tpe)) serdeConvert(q"from.$fld") else q"from.$fld.clone()"

@@ -475,8 +475,8 @@ object KtDefnTranslator {
       */
     private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: KtType): TextTree[KtValue] = {
       f.bindings.get(BaboonLang.Kotlin) match {
-        case None                                                                  => q""
-        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef))    => q""
+        case None                                                               => q""
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => q""
         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
           val srcRef    = trans.toKtTypeRefKeepForeigns(f.id, domain, evo)
           val codecName = s"${srcRef.name}_KeyCodec"
@@ -550,15 +550,15 @@ object KtDefnTranslator {
 
     private sealed trait IdentifierFieldKind
     private object IdentifierFieldKind {
-      case object Bit              extends IdentifierFieldKind
-      case object SignedInt        extends IdentifierFieldKind /* i08/i16/i32/i64 */
+      case object Bit extends IdentifierFieldKind
+      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32/i64 */
       case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-      case object UnsignedLong     extends IdentifierFieldKind /* u64 */
-      case object Str              extends IdentifierFieldKind
-      case object Uid              extends IdentifierFieldKind
-      case object Tsu              extends IdentifierFieldKind
-      case object Tso              extends IdentifierFieldKind
-      case object Bytes            extends IdentifierFieldKind
+      case object UnsignedLong extends IdentifierFieldKind /* u64 */
+      case object Str extends IdentifierFieldKind
+      case object Uid extends IdentifierFieldKind
+      case object Tsu extends IdentifierFieldKind
+      case object Tso extends IdentifierFieldKind
+      case object Bytes extends IdentifierFieldKind
       final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
     }
 
@@ -588,7 +588,7 @@ object KtDefnTranslator {
 
     private def renderFieldValueExpr(ktFieldName: String, kind: IdentifierFieldKind): TextTree[KtValue] = {
       kind match {
-        case IdentifierFieldKind.Bit              => q"$baboonIdRepr.bitToString(this.$ktFieldName)"
+        case IdentifierFieldKind.Bit => q"$baboonIdRepr.bitToString(this.$ktFieldName)"
         // Kotlin's signed and unsigned-small primitive toString already produces
         // canonical decimal (no locale, unsigned-small types render as unsigned).
         case IdentifierFieldKind.SignedInt        => q"this.$ktFieldName.toString()"
@@ -597,11 +597,11 @@ object KtDefnTranslator {
         case IdentifierFieldKind.Str              => q"$baboonIdRepr.escapeStr(this.$ktFieldName)"
         // UUID.toString() (java.util.UUID) and kotlin.uuid.Uuid.toString() both
         // emit the canonical lowercase 36-char hyphenated form per RFC 4122.
-        case IdentifierFieldKind.Uid              => q"this.$ktFieldName.toString()"
-        case IdentifierFieldKind.Tsu              => q"$baboonIdRepr.tsuToString(this.$ktFieldName)"
-        case IdentifierFieldKind.Tso              => q"$baboonIdRepr.tsoToString(this.$ktFieldName)"
-        case IdentifierFieldKind.Bytes            => q"$baboonIdRepr.bytesToHex(this.$ktFieldName)"
-        case IdentifierFieldKind.NestedId(_)      => q""""{" + this.$ktFieldName.toString() + "}""""
+        case IdentifierFieldKind.Uid         => q"this.$ktFieldName.toString()"
+        case IdentifierFieldKind.Tsu         => q"$baboonIdRepr.tsuToString(this.$ktFieldName)"
+        case IdentifierFieldKind.Tso         => q"$baboonIdRepr.tsoToString(this.$ktFieldName)"
+        case IdentifierFieldKind.Bytes       => q"$baboonIdRepr.bytesToHex(this.$ktFieldName)"
+        case IdentifierFieldKind.NestedId(_) => q""""{" + this.$ktFieldName.toString() + "}""""
       }
     }
 
@@ -685,8 +685,8 @@ object KtDefnTranslator {
     }
 
     private def renderIdentifierCodecObject(dto: Typedef.Dto, name: KtValue.KtType): TextTree[KtValue] = {
-      val simpleName     = name.name
-      val versionStr     = domain.version.toString
+      val simpleName      = name.name
+      val versionStr      = domain.version.toString
       val codecObjectName = s"${name.name}Codec"
 
       val fieldDecoders: List[TextTree[KtValue]] = dto.fields.zipWithIndex.map {
@@ -701,15 +701,15 @@ object KtDefnTranslator {
           // All locals beyond `valVar` (which the constructor consumes) are scoped
           // per-field with unique suffix names so multiple fields can declare them
           // in the same enclosing function body without name collisions.
-          val rN     = s"${srcFieldName}_r"
-          val rNn    = s"${srcFieldName}_rn"
-          val rNb    = s"${srcFieldName}_rb"
-          val rNs    = s"${srcFieldName}_rs"
-          val rNh    = s"${srcFieldName}_rh"
-          val rNt    = s"${srcFieldName}_rt"
-          val rNrf   = s"${srcFieldName}_rrf"
-          val vL     = s"${srcFieldName}_vL"
-          val vU     = s"${srcFieldName}_vU"
+          val rN   = s"${srcFieldName}_r"
+          val rNn  = s"${srcFieldName}_rn"
+          val rNb  = s"${srcFieldName}_rb"
+          val rNs  = s"${srcFieldName}_rs"
+          val rNh  = s"${srcFieldName}_rh"
+          val rNt  = s"${srcFieldName}_rt"
+          val rNrf = s"${srcFieldName}_rrf"
+          val vL   = s"${srcFieldName}_vL"
+          val vU   = s"${srcFieldName}_vU"
 
           val parseHead =
             q"""val $rN = $baboonIdRepr.parseFieldName(cursor, "$srcFieldName")
@@ -776,8 +776,8 @@ object KtDefnTranslator {
                  |if ($rNs is $baboonEither.Left) return $baboonEither.Left($rNs.value)
                  |val $valVar: $tpe = ($rNs as $baboonEither.Right).value""".stripMargin
             case IdentifierFieldKind.Uid =>
-              val uidType   = ktTypes.ktUid
-              val uidParse  =
+              val uidType = ktTypes.ktUid
+              val uidParse =
                 if (target.language.multiplatform) q"$uidType.parse($rawVar)"
                 else q"$uidType.fromString($rawVar)"
               q"""val $rawVar = cursor.readUntilStructural()

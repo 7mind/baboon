@@ -565,7 +565,7 @@ class KtUEBACodecGenerator(
     val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
     val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
     val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
-    q"encodeAnyField(ctx, $wref, ${expectedHex}.toByte(), $staticDom, $staticVer, $staticTid, $ref)"
+    q"encodeAnyField(ctx, $wref, $expectedHex.toByte(), $staticDom, $staticVer, $staticTid, $ref)"
   }
 
   // Decode delegates to the per-codec-object `decodeAnyField` helper, returning an
@@ -574,7 +574,7 @@ class KtUEBACodecGenerator(
   private def mkAnyDecoder(a: TypeRef.Any): TextTree[KtValue] = {
     val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
     val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
-    q"decodeAnyField(wire, ${expectedHex}.toByte())"
+    q"decodeAnyField(wire, $expectedHex.toByte())"
   }
 
   // Static fallbacks for the cross-format facade helpers (`jsonToUebaBytes`/`uebaToJson`). The

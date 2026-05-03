@@ -1,35 +1,8 @@
 package example
 
-import convtest.testpkg.{
-  AllBasicTypes,
-  AllBasicTypes_JsonCodec,
-  AllBasicTypes_UEBACodec,
-  AnyShowcase,
-  AnyShowcase_JsonCodec,
-  AnyShowcase_UEBACodec,
-  BaboonCodecsJson,
-  BaboonCodecsUeba,
-  CompositeId,
-  InnerPayload,
-  InnerPayload_JsonCodec,
-  InnerPayload_UEBACodec,
-  ItemId,
-  PointId,
-  WireEnum,
-}
+import convtest.testpkg.{AllBasicTypes, AllBasicTypes_JsonCodec, AllBasicTypes_UEBACodec, AnyShowcase, AnyShowcase_JsonCodec, AnyShowcase_UEBACodec, BaboonCodecsJson, BaboonCodecsUeba, CompositeId, InnerPayload, InnerPayload_JsonCodec, InnerPayload_UEBACodec, ItemId, PointId, WireEnum}
 // PR-29.10 (M29) — monomorphised template cross-language acceptance fixture.
-import convtest.m29ok.{
-  IntPage,
-  IntPage_JsonCodec,
-  IntPage_UEBACodec,
-  M29OkHolder,
-  M29OkHolder_JsonCodec,
-  M29OkHolder_UEBACodec,
-  StrPage,
-  ItemPage,
-  IntStrEnvelope,
-  Item,
-}
+import convtest.m29ok.{IntPage, IntPage_JsonCodec, IntPage_UEBACodec, IntStrEnvelope, Item, ItemPage, M29OkHolder, M29OkHolder_JsonCodec, M29OkHolder_UEBACodec, StrPage}
 // PR-I.1a (M24 Phase 3.1) — Custom-foreign KeyCodec hook fixture. Stringy
 // foreign FStr maps to java.lang.String; the default identity FStr_KeyCodec
 // impl handles encode/decode of map keys without host registration.
@@ -38,18 +11,7 @@ import convtest.m24foreign.{ForeignKeyHolder, ForeignKeyHolder_JsonCodec, ItemKe
 // Closes PR-G-D01. Locks parity for the 6 non-string builtin map-key types
 // already covered structurally by PR-G's TS unification.
 import convtest.m26builtinkeys.{BuiltinMapKeyHolder, BuiltinMapKeyHolder_JsonCodec, BuiltinMapKeyHolder_UEBACodec}
-import baboon.runtime.shared.{
-  AnyMeta,
-  AnyOpaque,
-  AnyOpaqueJson,
-  AnyOpaqueUeba,
-  BaboonCodecContext,
-  BaboonCodecsFacade,
-  BaboonDomainVersion,
-  ByteString,
-  LEDataInputStream,
-  LEDataOutputStream,
-}
+import baboon.runtime.shared.{AnyMeta, AnyOpaque, AnyOpaqueJson, AnyOpaqueUeba, BaboonCodecContext, BaboonCodecsFacade, BaboonDomainVersion, ByteString, LEDataInputStream, LEDataOutputStream}
 import io.circe.Json
 import io.circe.parser.parse
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
@@ -73,7 +35,7 @@ object CompatMain {
         val sampleAny  = createSampleAnyShowcase()
         val ctx        = BaboonCodecContext.Default
         val facadeCtx  = BaboonCodecContext.WithFacade(useIndices = false, freshFacade())
-        val m29Sample = createM29OkSample()
+        val m29Sample  = createM29OkSample()
         format match {
           case "json" =>
             writeJson(ctx, sampleData, dir.toString)
@@ -129,26 +91,26 @@ object CompatMain {
   // avoid Scala signed-Long unsigned-encoding divergence; bit; uid).
   private def createBuiltinMapKeyHolderSample(): BuiltinMapKeyHolder = {
     BuiltinMapKeyHolder(
-      mi32 = Map(42                   -> "v32"),
+      mi32 = Map(42 -> "v32"),
       mi64 = Map(9223372036854775807L -> "vmax"),
-      mu32 = Map(7                    -> "vu32"),
+      mu32 = Map(7 -> "vu32"),
       // PR-28.4 (M28): u64 = -1L is the signed Java Long encoding of
       // UInt64.MaxValue (18446744073709551615). Single-entry map matches
       // the 5/8 fixture pattern; multi-entry pairs trigger latent sort
       // divergence (filed PR-28.4-D02). PR-28.1 closed the encoder defect.
-      mu64 = Map(-1L                  -> "vu64max"),
-      mbit = Map(true                 -> "vt"),
+      mu64 = Map(-1L -> "vu64max"),
+      mbit = Map(true -> "vt"),
       muid = Map(UUID.fromString("00000000-0000-0000-0000-000000000001") -> "vid"),
       // PR-28.4 (M28): non-UTC tso offset exercising PR-28.3 ±HH:MM
       // canonicalisation. Single-entry map matches fixture pattern.
       mtso = Map(
-        OffsetDateTime.of(2026, 5, 2, 12, 0, 0, 123 * 1000000, ZoneOffset.ofHoursMinutes(5, 30)) -> "vtso_ist",
+        OffsetDateTime.of(2026, 5, 2, 12, 0, 0, 123 * 1000000, ZoneOffset.ofHoursMinutes(5, 30)) -> "vtso_ist"
       ),
     )
   }
 
   private def writeBuiltinMapKeyHolderJson(ctx: BaboonCodecContext, data: BuiltinMapKeyHolder, outputDir: String): Unit = {
-    val json    = BuiltinMapKeyHolder_JsonCodec.instance.encode(ctx, data)
+    val json = BuiltinMapKeyHolder_JsonCodec.instance.encode(ctx, data)
     // Compact form (`noSpaces`) so the cross-language byte-identity assertion
     // can compare files literally. Reference fixture lives at
     // `test/conv-test/json-data/m26-builtin-map-keys.json`.
@@ -471,8 +433,8 @@ object CompatMain {
     // Decode-side does not require a facade: AnyShowcase decode produces only same-branch
     // AnyOpaque values (JSON wire → AnyOpaqueJson, UEBA wire → AnyOpaqueUeba), and we then decode
     // the inner payload directly via InnerPayload_*Codec.
-    val ctx       = BaboonCodecContext.Default
-    val path      = Paths.get(filePath)
+    val ctx  = BaboonCodecContext.Default
+    val path = Paths.get(filePath)
     val data: AnyShowcase =
       try {
         if (filePath.endsWith(".json")) {
@@ -540,11 +502,11 @@ object CompatMain {
       vlstOpt    = List(Some(10), None, Some(20), Some(30)),
       vmapLst    = Map("numbers" -> List(1L, 2L, 3L), "more" -> List(4L, 5L, 6L)),
       // Non-Pascal-case enum member; canonical JSON wire form is "Cafe" (PR-35-D06 regression guard).
-      vWireEnum  = WireEnum.Cafe,
+      vWireEnum = WireEnum.Cafe,
       // Identifier (PR-57e). Wire form is `{"x": 42, "y": -7}` on JSON and two
       // i32 LE values on UEBA — byte-identical to a `data` of the same shape
       // per docs/spec/identifier-repr.md §1.3 / §7.
-      vPointId   = PointId(42, -7),
+      vPointId = PointId(42, -7),
       // PR-61 (M19.3) — id types as JSON map keys. Per PR-60 (M19.2) all id
       // types — single- or multi-field — use canonical repr toString as the
       // key form: e.g. `ItemId:2.0.0#v:00000000-0000-0000-0000-000000000001`.

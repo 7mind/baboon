@@ -373,6 +373,22 @@ func readAndVerifyM29Ok(_ filePath: String) throws {
     guard case .err = data.errEnvelope else {
         fail("M29OkHolder errEnvelope is not Err")
     }
+    // Roundtrip: re-encode the decoded value and decode again; compare structural equality.
+    if filePath.hasSuffix(".json") {
+        let reEncoded = M29OkHolder_JsonCodec.instance.encode(.defaultCtx, data)
+        let reDecoded = try M29OkHolder_JsonCodec.instance.decode(.defaultCtx, reEncoded)
+        guard reDecoded.intPage.total == data.intPage.total else {
+            fail("M29OkHolder JSON roundtrip mismatch")
+        }
+    } else {
+        let writer = BaboonBinWriter()
+        M29OkHolder_UebaCodec.instance.encode(.defaultCtx, writer, data)
+        let reReader = BaboonBinReader(writer.toData())
+        let reDecoded = try M29OkHolder_UebaCodec.instance.decode(.defaultCtx, reReader)
+        guard reDecoded.intPage.total == data.intPage.total else {
+            fail("M29OkHolder UEBA roundtrip mismatch")
+        }
+    }
 }
 
 func runLegacy() throws {

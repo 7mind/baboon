@@ -117,13 +117,14 @@ class ScopeBuilder[F[+_, +_]: Error2] {
         // synthesised input struct is registered into the scope tree alongside
         // genuinely-parsed inline structs. Without this, BaboonTranslator#convertArg
         // would later fail to resolve the synthetic name.
-        val desugaredService = service.copy(defns = service.defns.map { f =>
-          val hasIn = f.sig.exists {
-            case RawFuncArg.Ref(_, marker, _) => marker.toLowerCase == "in"
-            case RawFuncArg.Struct(d)         => d.name.name.toLowerCase == "in"
-          }
-          if (hasIn) f
-          else f.copy(sig = RawFuncArg.Struct(RawDto(RawTypeName("in"), Nil, Set.empty, f.meta, Nil)) +: f.sig)
+        val desugaredService = service.copy(defns = service.defns.map {
+          f =>
+            val hasIn = f.sig.exists {
+              case RawFuncArg.Ref(_, marker, _) => marker.toLowerCase == "in"
+              case RawFuncArg.Struct(d)         => d.name.name.toLowerCase == "in"
+            }
+            if (hasIn) f
+            else f.copy(sig = RawFuncArg.Struct(RawDto(RawTypeName("in"), Nil, Set.empty, f.meta, Nil)) +: f.sig)
         })
         for {
           inlineDefns <- F.pure(desugaredService.defns.map(defn => (defn, defn.sig.collect { case s: RawFuncArg.Struct => s.defn })).filterNot(_._2.isEmpty))

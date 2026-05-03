@@ -198,7 +198,7 @@ object KtCodecFixtureTranslator {
           (nullTree, nullTree, tid)
       }
 
-      val meta = q"$baboonAnyMeta(${kindHex}.toByte(), $domainExpr, $versionExpr, $typeidExpr)"
+      val meta = q"$baboonAnyMeta($kindHex.toByte(), $domainExpr, $versionExpr, $typeidExpr)"
       // PR-07-D01 (Kotlin analog): branch must match codec direction so round-trip avoids cross-
       // format conversion (which requires `withFacade` ctx). UEBA codec test uses
       // `AnyOpaqueUeba(meta, byteArrayOf())`; JSON codec test uses `AnyOpaqueJson(meta, JsonNull)`.
@@ -235,7 +235,7 @@ object KtCodecFixtureTranslator {
         case TypeId.Builtins.bit => q"rnd.nextBit()"
 
         case TypeId.User(_, _, name) if enquiries.isEnum(tpe, domain) => q"rnd.mkEnum(${name.name})"
-        case u: TypeId.User =>
+        case u: TypeId.User                                           =>
           // Propagate the codec branch into nested user-type fixtures so any-fields nested in
           // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (Kotlin analog).
           val method = format match {

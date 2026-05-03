@@ -484,8 +484,8 @@ object CSDefnTranslator {
       */
     private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: CSValue.CSType): TextTree[CSValue] = {
       f.bindings.get(BaboonLang.Cs) match {
-        case None                                                                  => q""
-        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef))    => q""
+        case None                                                               => q""
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => q""
         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
           val srcRef    = trans.asCsTypeKeepForeigns(f.id, domain, evo)
           val codecName = s"${srcRef.name}_KeyCodec"
@@ -620,15 +620,15 @@ object CSDefnTranslator {
 
     private sealed trait IdentifierFieldKind
     private object IdentifierFieldKind {
-      case object Bit              extends IdentifierFieldKind
-      case object SignedInt        extends IdentifierFieldKind /* i08/i16/i32/i64 */
+      case object Bit extends IdentifierFieldKind
+      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32/i64 */
       case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-      case object UnsignedLong     extends IdentifierFieldKind /* u64 */
-      case object Str              extends IdentifierFieldKind
-      case object Uid              extends IdentifierFieldKind
-      case object Tsu              extends IdentifierFieldKind
-      case object Tso              extends IdentifierFieldKind
-      case object Bytes            extends IdentifierFieldKind
+      case object UnsignedLong extends IdentifierFieldKind /* u64 */
+      case object Str extends IdentifierFieldKind
+      case object Uid extends IdentifierFieldKind
+      case object Tsu extends IdentifierFieldKind
+      case object Tso extends IdentifierFieldKind
+      case object Bytes extends IdentifierFieldKind
       final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
     }
 
@@ -658,8 +658,8 @@ object CSDefnTranslator {
 
     private def renderFieldValueExpr(csFieldName: String, kind: IdentifierFieldKind): TextTree[CSValue] = {
       kind match {
-        case IdentifierFieldKind.Bit          => q"$baboonIdRepr.BitToString(this.$csFieldName)"
-        case IdentifierFieldKind.SignedInt    => q"this.$csFieldName.ToString($csInvariantCulture.InvariantCulture)"
+        case IdentifierFieldKind.Bit              => q"$baboonIdRepr.BitToString(this.$csFieldName)"
+        case IdentifierFieldKind.SignedInt        => q"this.$csFieldName.ToString($csInvariantCulture.InvariantCulture)"
         case IdentifierFieldKind.UnsignedSmallInt =>
           // u08/u16/u32 already map to C# unsigned types; ToString(InvariantCulture) is
           // unsigned-correct unlike Java/Scala where the same value is signed.
@@ -670,10 +670,10 @@ object CSDefnTranslator {
           // Guid.ToString() default form is 32 lowercase hex digits with hyphens (RFC 4122).
           // Spec §3 mandates this exact form.
           q"this.$csFieldName.ToString()"
-        case IdentifierFieldKind.Tsu          => q"$baboonIdRepr.TsuToString(this.$csFieldName.DateTimeOffset)"
-        case IdentifierFieldKind.Tso          => q"$baboonIdRepr.TsoToString(this.$csFieldName.DateTimeOffset)"
-        case IdentifierFieldKind.Bytes        => q"$baboonIdRepr.BytesToHex(this.$csFieldName)"
-        case IdentifierFieldKind.NestedId(_)  => q""""{" + this.$csFieldName.ToString() + "}""""
+        case IdentifierFieldKind.Tsu         => q"$baboonIdRepr.TsuToString(this.$csFieldName.DateTimeOffset)"
+        case IdentifierFieldKind.Tso         => q"$baboonIdRepr.TsoToString(this.$csFieldName.DateTimeOffset)"
+        case IdentifierFieldKind.Bytes       => q"$baboonIdRepr.BytesToHex(this.$csFieldName)"
+        case IdentifierFieldKind.NestedId(_) => q""""{" + this.$csFieldName.ToString() + "}""""
       }
     }
 
@@ -692,12 +692,13 @@ object CSDefnTranslator {
           q""""$srcFieldName:" + ($valueExpr)"""
       }
 
-      val joinedFields = if (fieldExprs.isEmpty) q""""""""
-      else fieldExprs.toSeq.join(""" + ":" + """)
+      val joinedFields =
+        if (fieldExprs.isEmpty) q""""""""
+        else fieldExprs.toSeq.join(""" + ":" + """)
 
       q"""public override string ToString()
          |{
-         |    return "$header" + ${joinedFields};
+         |    return "$header" + $joinedFields;
          |}""".stripMargin
     }
 
@@ -759,9 +760,9 @@ object CSDefnTranslator {
     }
 
     private def renderIdentifierCodecClass(dto: Typedef.Dto, name: CSType): TextTree[CSValue] = {
-      val simpleName      = name.name
-      val versionStr      = domain.version.toString
-      val codecClassName  = s"${name.name}Codec"
+      val simpleName     = name.name
+      val versionStr     = domain.version.toString
+      val codecClassName = s"${name.name}Codec"
 
       // Per-field decoder. Operates on `cursor`. Accumulates decoded values
       // into local vars `<srcFieldName>_v` and finally constructs the type.
@@ -815,7 +816,7 @@ object CSDefnTranslator {
                  |    {
                  |        return $either.Left<string, $name>("could not parse signed integer for field $srcFieldName: " + $rawVar);
                  |    }
-                 |${rangeBlock}    $valVar = $cast v;
+                 |$rangeBlock    $valVar = $cast v;
                  |}""".stripMargin
             case IdentifierFieldKind.UnsignedSmallInt =>
               val rangeCheck = unsignedSmallRangeCheck(f.tpe)

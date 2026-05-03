@@ -262,8 +262,8 @@ object SwDefnTranslator {
       */
     private def makeForeignKeyCodecRepr(f: Typedef.Foreign, name: SwType): TextTree[SwValue] = {
       f.bindings.get(BaboonLang.Swift) match {
-        case None                                                                  => q""
-        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef))    => q""
+        case None                                                               => q""
+        case Some(Typedef.ForeignEntry(_, _: Typedef.ForeignMapping.BaboonRef)) => q""
         case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) =>
           val srcRef    = trans.toSwTypeRefKeepForeigns(f.id, domain, evo)
           val codecName = s"${srcRef.name}_KeyCodec"
@@ -393,15 +393,15 @@ object SwDefnTranslator {
     // ----- Identifier toString + parseRepr emission (PR-57c) -----
     private sealed trait IdentifierFieldKind
     private object IdentifierFieldKind {
-      case object Bit              extends IdentifierFieldKind
-      case object SignedInt        extends IdentifierFieldKind /* i08/i16/i32/i64 */
+      case object Bit extends IdentifierFieldKind
+      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32/i64 */
       case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 */
-      case object UnsignedLong     extends IdentifierFieldKind /* u64 */
-      case object Str              extends IdentifierFieldKind
-      case object Uid              extends IdentifierFieldKind
-      case object Tsu              extends IdentifierFieldKind
-      case object Tso              extends IdentifierFieldKind
-      case object Bytes            extends IdentifierFieldKind
+      case object UnsignedLong extends IdentifierFieldKind /* u64 */
+      case object Str extends IdentifierFieldKind
+      case object Uid extends IdentifierFieldKind
+      case object Tsu extends IdentifierFieldKind
+      case object Tso extends IdentifierFieldKind
+      case object Bytes extends IdentifierFieldKind
       final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
     }
 
@@ -482,11 +482,11 @@ object SwDefnTranslator {
         case IdentifierFieldKind.UnsignedLong     => q"$baboonIdRepr.u64ToString(self.$swFieldName)"
         case IdentifierFieldKind.Str              => q"$baboonIdRepr.escapeStr(self.$swFieldName)"
         // UUID.uuidString in Foundation is uppercase; canonical lowercase per spec.
-        case IdentifierFieldKind.Uid              => q"self.$swFieldName.uuidString.lowercased()"
-        case IdentifierFieldKind.Tsu              => q"$baboonIdRepr.tsuToString(self.$swFieldName)"
-        case IdentifierFieldKind.Tso              => q"$baboonIdRepr.tsoToString(self.$swFieldName)"
-        case IdentifierFieldKind.Bytes            => q"$baboonIdRepr.bytesToHex(self.$swFieldName)"
-        case IdentifierFieldKind.NestedId(_)      => q""""{" + self.$swFieldName.description + "}""""
+        case IdentifierFieldKind.Uid         => q"self.$swFieldName.uuidString.lowercased()"
+        case IdentifierFieldKind.Tsu         => q"$baboonIdRepr.tsuToString(self.$swFieldName)"
+        case IdentifierFieldKind.Tso         => q"$baboonIdRepr.tsoToString(self.$swFieldName)"
+        case IdentifierFieldKind.Bytes       => q"$baboonIdRepr.bytesToHex(self.$swFieldName)"
+        case IdentifierFieldKind.NestedId(_) => q""""{" + self.$swFieldName.description + "}""""
       }
     }
 
@@ -542,9 +542,9 @@ object SwDefnTranslator {
                  |if case .left(let l) = $resVar { return .left(l) }
                  |guard case .right(let $valVar) = $resVar else { return .left("internal: bit decode") }""".stripMargin
             case IdentifierFieldKind.SignedInt =>
-              val typeName    = signedTypeName(f.tpe)
-              val rangeCheck  = signedRangeCheck(f.tpe, "v_long")
-              val narrow      = signedNarrow(f.tpe)
+              val typeName   = signedTypeName(f.tpe)
+              val rangeCheck = signedRangeCheck(f.tpe, "v_long")
+              val narrow     = signedNarrow(f.tpe)
               val rangeBlock =
                 if (rangeCheck == "true") q""
                 else
@@ -559,12 +559,12 @@ object SwDefnTranslator {
                  |guard let v_long = Int64($rawVar) else {
                  |  return .left("could not parse signed integer for field $srcFieldName: " + $rawVar)
                  |}
-                 |${rangeBlock}
+                 |$rangeBlock
                  |let $valVar: $tpe = $narrow(v_long)""".stripMargin
             case IdentifierFieldKind.UnsignedSmallInt =>
-              val typeName    = unsignedSmallTypeName(f.tpe)
-              val rangeCheck  = unsignedSmallRangeCheck(f.tpe, "v_ulong")
-              val narrow      = unsignedSmallNarrow(f.tpe)
+              val typeName   = unsignedSmallTypeName(f.tpe)
+              val rangeCheck = unsignedSmallRangeCheck(f.tpe, "v_ulong")
+              val narrow     = unsignedSmallNarrow(f.tpe)
               q"""let $rawVar = cursor.readUntilStructural()
                  |if !$rawVar.isEmpty && ($rawVar.first == "+" || $rawVar.first == "-") {
                  |  return .left("unsigned value has leading sign for field $srcFieldName: " + $rawVar)
@@ -616,7 +616,7 @@ object SwDefnTranslator {
                  |if case .left(let l) = $resVar { return .left(l) }
                  |guard case .right(let $valVar) = $resVar else { return .left("internal: bytes decode") }""".stripMargin
             case IdentifierFieldKind.NestedId(uid) =>
-              val nestedTpe = trans.toSwTypeRefKeepForeigns(uid, domain, evo)
+              val nestedTpe   = trans.toSwTypeRefKeepForeigns(uid, domain, evo)
               val nestedCodec = SwType(nestedTpe.pkg, s"${nestedTpe.name}Codec")
               q"""let ${swFieldName}_ro = cursor.expect("{")
                  |if case .left(let l) = ${swFieldName}_ro { return .left(l) }

@@ -3,28 +3,7 @@ package io.septimalmind.baboon.translator.typescript
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.TsTarget
 import io.septimalmind.baboon.parser.model.issues.BaboonIssue
-import io.septimalmind.baboon.translator.typescript.TsTypes.{
-  tsBaboonAdtMemberMeta,
-  tsBaboonDecoderFailure,
-  tsBaboonEncoderFailure,
-  tsBaboonGenerated,
-  tsBaboonGeneratedLatest,
-  tsBaboonIdReprBitToString,
-  tsBaboonIdReprBytesToHex,
-  tsBaboonIdReprCursor,
-  tsBaboonIdReprEscapeStr,
-  tsBaboonIdReprIsCanonicalUid,
-  tsBaboonIdReprParseBit,
-  tsBaboonIdReprParseBytesHex,
-  tsBaboonIdReprParseFieldName,
-  tsBaboonIdReprParseHeader,
-  tsBaboonIdReprParseTso,
-  tsBaboonIdReprParseTsu,
-  tsBaboonIdReprTsoToString,
-  tsBaboonIdReprTsuToString,
-  tsBaboonIdReprU64ToString,
-  tsBaboonRuntimeShared,
-}
+import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonAdtMemberMeta, tsBaboonDecoderFailure, tsBaboonEncoderFailure, tsBaboonGenerated, tsBaboonGeneratedLatest, tsBaboonIdReprBitToString, tsBaboonIdReprBytesToHex, tsBaboonIdReprCursor, tsBaboonIdReprEscapeStr, tsBaboonIdReprIsCanonicalUid, tsBaboonIdReprParseBit, tsBaboonIdReprParseBytesHex, tsBaboonIdReprParseFieldName, tsBaboonIdReprParseHeader, tsBaboonIdReprParseTso, tsBaboonIdReprParseTsu, tsBaboonIdReprTsoToString, tsBaboonIdReprTsuToString, tsBaboonIdReprU64ToString, tsBaboonRuntimeShared}
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.typescript.TsValue.TsType
 import io.septimalmind.baboon.typer.EnumWireStyle
@@ -175,17 +154,17 @@ object TsDefnTranslator {
           // The codec/host names use the foreign's declared name (`FStr`) — not the deref'd
           // mapped name (`string`) that `name` resolves to. The `value: $name` field type
           // continues to use `name` so the signature reflects the host language type.
-          val srcRef    = typeTranslator.asTsTypeKeepForeigns(f.id, domain, evo, tsFileTools.definitionsBasePkg)
-          val codecName = s"${srcRef.name}_KeyCodec"
-          val hostName  = s"${srcRef.name}_KeyCodecHost"
-          val defaultName = s"_default${srcRef.name}_KeyCodec"
+          val srcRef       = typeTranslator.asTsTypeKeepForeigns(f.id, domain, evo, tsFileTools.definitionsBasePkg)
+          val codecName    = s"${srcRef.name}_KeyCodec"
+          val hostName     = s"${srcRef.name}_KeyCodecHost"
+          val defaultName  = s"_default${srcRef.name}_KeyCodec"
           val instanceName = s"_${srcRef.name}_KeyCodec_instance"
           // Stringy allowlist (PR-I-D06 pattern guidance: only the language's allowlist; no dead alternatives).
           val isStringy = decl == "string"
           // FQN for the diagnostic — TS modules don't have classical fully-qualified names like
           // Java/Scala/C#, so we use `<module-path>.<host>` which is copy-pasteable into a
           // debugger expression and unambiguous across multi-version emission (PR-I-D03).
-          val hostFqn   = s"${srcRef.moduleId.path.mkString(".")}.$hostName"
+          val hostFqn = s"${srcRef.moduleId.path.mkString(".")}.$hostName"
           val defaultImpl = if (isStringy) {
             q"""const $defaultName: $codecName = {
                |    encodeKey: (v) => v,
@@ -203,7 +182,7 @@ object TsDefnTranslator {
                |    decodeKey(s: string): $name;
                |}
                |
-               |${defaultImpl}
+               |$defaultImpl
                |
                |let $instanceName: $codecName = $defaultName;
                |
@@ -270,7 +249,7 @@ object TsDefnTranslator {
       // structurally detect the ADT-branch shape and pull `baboonAdtTypeIdentifier()` instead of
       // silently falling back to the concrete-branch type identifier.
       val adtMemberMarker = if (defn.ownedByAdt) Seq(tsBaboonAdtMemberMeta) else Seq.empty
-      val parents = adtContracts ++ contractParents ++ adtMemberMarker :+ genMarker
+      val parents         = adtContracts ++ contractParents ++ adtMemberMarker :+ genMarker
 
       val fields = fieldsNameAndType.map {
         case (name, tpe) =>
@@ -578,16 +557,16 @@ object TsDefnTranslator {
     //     keeps `MyId.parseRepr` undiscoverable in autocomplete).
     private sealed trait IdentifierFieldKind
     private object IdentifierFieldKind {
-      case object Bit              extends IdentifierFieldKind
-      case object SignedInt        extends IdentifierFieldKind /* i08/i16/i32 — number */
-      case object SignedLong       extends IdentifierFieldKind /* i64 — bigint */
+      case object Bit extends IdentifierFieldKind
+      case object SignedInt extends IdentifierFieldKind /* i08/i16/i32 — number */
+      case object SignedLong extends IdentifierFieldKind /* i64 — bigint */
       case object UnsignedSmallInt extends IdentifierFieldKind /* u08/u16/u32 — number */
-      case object UnsignedLong     extends IdentifierFieldKind /* u64 — bigint */
-      case object Str              extends IdentifierFieldKind
-      case object Uid              extends IdentifierFieldKind
-      case object Tsu              extends IdentifierFieldKind
-      case object Tso              extends IdentifierFieldKind
-      case object Bytes            extends IdentifierFieldKind
+      case object UnsignedLong extends IdentifierFieldKind /* u64 — bigint */
+      case object Str extends IdentifierFieldKind
+      case object Uid extends IdentifierFieldKind
+      case object Tsu extends IdentifierFieldKind
+      case object Tso extends IdentifierFieldKind
+      case object Bytes extends IdentifierFieldKind
       final case class NestedId(id: TypeId.User) extends IdentifierFieldKind
     }
 
@@ -596,16 +575,16 @@ object TsDefnTranslator {
         case TypeRef.Scalar(b: TypeId.BuiltinScalar) =>
           import TypeId.Builtins.*
           b match {
-            case `bit`                   => IdentifierFieldKind.Bit
-            case `i08` | `i16` | `i32`   => IdentifierFieldKind.SignedInt
-            case `i64`                   => IdentifierFieldKind.SignedLong
-            case `u08` | `u16` | `u32`   => IdentifierFieldKind.UnsignedSmallInt
-            case `u64`                   => IdentifierFieldKind.UnsignedLong
-            case `str`                   => IdentifierFieldKind.Str
-            case `uid`                   => IdentifierFieldKind.Uid
-            case `tsu`                   => IdentifierFieldKind.Tsu
-            case `tso`                   => IdentifierFieldKind.Tso
-            case `bytes`                 => IdentifierFieldKind.Bytes
+            case `bit`                 => IdentifierFieldKind.Bit
+            case `i08` | `i16` | `i32` => IdentifierFieldKind.SignedInt
+            case `i64`                 => IdentifierFieldKind.SignedLong
+            case `u08` | `u16` | `u32` => IdentifierFieldKind.UnsignedSmallInt
+            case `u64`                 => IdentifierFieldKind.UnsignedLong
+            case `str`                 => IdentifierFieldKind.Str
+            case `uid`                 => IdentifierFieldKind.Uid
+            case `tsu`                 => IdentifierFieldKind.Tsu
+            case `tso`                 => IdentifierFieldKind.Tso
+            case `bytes`               => IdentifierFieldKind.Bytes
             case other =>
               throw new IllegalStateException(s"Identifier field has unsupported scalar $other; validator should have rejected this.")
           }
@@ -806,9 +785,9 @@ object TsDefnTranslator {
                  |if ($resVar.tag === "Left") return { tag: "Left", value: $resVar.value };
                  |const $valVar: Uint8Array = $resVar.value;""".stripMargin
             case IdentifierFieldKind.NestedId(uid) =>
-              val nestedTpe = typeTranslator.asTsTypeKeepForeigns(uid, domain, evo, tsFileTools.definitionsBasePkg)
+              val nestedTpe       = typeTranslator.asTsTypeKeepForeigns(uid, domain, evo, tsFileTools.definitionsBasePkg)
               val nestedCodecName = nestedTpe.name.head.toLower.toString + nestedTpe.name.tail + "Codec"
-              val nestedCodecRef = TsType(nestedTpe.moduleId, nestedCodecName)
+              val nestedCodecRef  = TsType(nestedTpe.moduleId, nestedCodecName)
               q"""const ${srcFieldName}_ro = cursor.expect("{");
                  |if (${srcFieldName}_ro.tag === "Left") return { tag: "Left", value: ${srcFieldName}_ro.value };
                  |const $resVar = $nestedCodecRef.parseReprCursor(cursor);

@@ -34,19 +34,24 @@ object TemplateRegistryBuilder {
       pkg: Pkg,
       members: Seq[RawTLDef],
     ): F[NEList[BaboonIssue], (Seq[RawTLDef], TemplateRegistry)] = {
-      buildRecursive(pkg, members, ownerForCurrent = Owner.Toplevel, nsPath = List.empty)
+      buildRecursive(pkg, members, ownerForCurrent = Owner.Toplevel)
     }
 
     private def buildRecursive(
       pkg: Pkg,
       members: Seq[RawTLDef],
       ownerForCurrent: Owner,
-      nsPath: List[TypeName],
     ): F[NEList[BaboonIssue], (Seq[RawTLDef], TemplateRegistry)] = {
 
-      F.traverseAccumErrors(members)(m => processMember(pkg, m, ownerForCurrent, nsPath)).map {
+      F.traverseAccumErrors(members)(m => processMember(pkg, m, ownerForCurrent)).map {
         results =>
           val filteredMembers = results.flatMap(_._1)
+          // note [PR-29.4-D04]: templates are removed from filteredMembers before ScopeBuilder
+          // runs, so ScopeBuilder.NonUniqueScope does NOT catch duplicate template names at the
+          // same namespace level. Two sibling templates with the same name would produce two
+          // registry entries with the same key; `toMap` silently keeps the last one. If this
+          // becomes a concern, replace with an explicit duplicate-detection step emitting a
+          // dedicated issue (e.g. DuplicateTemplateName) here, before ScopeBuilder.
           val mergedTemplates = results.flatMap(_._2.templates).toMap
           (filteredMembers, TemplateRegistry(mergedTemplates))
       }
@@ -61,7 +66,6 @@ object TemplateRegistryBuilder {
       pkg: Pkg,
       member: RawTLDef,
       ownerForCurrent: Owner,
-      nsPath: List[TypeName],
     ): F[NEList[BaboonIssue], (List[RawTLDef], TemplateRegistry)] = {
       member match {
 
@@ -102,9 +106,14 @@ object TemplateRegistryBuilder {
           }
 
         case nsTL @ RawTLDef.Namespace(ns) =>
-          val nextNsPath = nsPath :+ TypeName(ns.name.name)
-          val nextOwner  = Owner.Ns(nextNsPath)
-          buildRecursive(pkg, ns.defns, nextOwner, nextNsPath).map {
+          // Derive the next owner directly from the current namespace name; no separate
+          // nsPath threading needed since Owner.Ns already encodes the full path.
+          val nextOwner = ownerForCurrent match {
+            case Owner.Toplevel => Owner.Ns(List(TypeName(ns.name.name)))
+            case Owner.Ns(path) => Owner.Ns(path.toList :+ TypeName(ns.name.name))
+            case other          => Owner.Ns(other.asPseudoPkg.map(TypeName(_)) :+ TypeName(ns.name.name))
+          }
+          buildRecursive(pkg, ns.defns, nextOwner).map {
             case (rewrittenChildren, registry) =>
               val rewritten = nsTL.copy(value = ns.copy(defns = rewrittenChildren))
               (List(rewritten), registry)
@@ -115,8 +124,9 @@ object TemplateRegistryBuilder {
       }
     }
 
-    /** Validate a template's type-param list, emitting `DuplicateTypeParam` for repeated names
-      * (negative-test matrix #4).
+    /** Validate a template's type-param list, emitting one `DuplicateTypeParam` issue per
+      * repeated name (negative-test matrix #4). All duplicates are reported at once so the
+      * user does not have to fix and re-run iteratively.
       */
     private def validateTypeParams(
       typeParams: List[RawTypeName],
@@ -124,13 +134,12 @@ object TemplateRegistryBuilder {
       meta: RawNodeMeta,
     ): F[NEList[BaboonIssue], Unit] = {
       val seen  = scala.collection.mutable.HashSet.empty[String]
-      val dupes = typeParams.filter(p => !seen.add(p.name))
+      val dupes = typeParams.filter(p => !seen.add(p.name)).distinctBy(_.name)
 
-      dupes match {
-        case Nil =>
-          F.unit
-        case first :: _ =>
-          F.fail(BaboonIssue.of(TyperIssue.DuplicateTypeParam(first.name, ownerName.name, meta)))
+      val issues: List[BaboonIssue] = dupes.map(p => BaboonIssue.Typer(TyperIssue.DuplicateTypeParam(p.name, ownerName.name, meta)))
+      NEList.from(issues) match {
+        case Some(errors) => F.fail(errors)
+        case None         => F.unit
       }
     }
 

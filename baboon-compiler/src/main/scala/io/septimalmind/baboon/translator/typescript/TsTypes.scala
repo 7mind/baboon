@@ -4,10 +4,10 @@ import io.septimalmind.baboon.translator.typescript.TsValue.{TsModuleId, TsType}
 
 object TsTypes {
   // baboon modules
-  val tsBaboonRuntimeShared: TsModuleId = TsModuleId("BaboonSharedRuntime")
-  val tsBaboonAnyOpaqueModule: TsModuleId = TsModuleId("BaboonAnyOpaque")
-  val tsBaboonIdReprModule: TsModuleId  = TsModuleId("baboon-identifier-repr")
-  val tsFixtureShared: TsModuleId       = TsModuleId("BaboonSharedFixture")
+  val tsBaboonRuntimeShared: TsModuleId    = TsModuleId("BaboonSharedRuntime")
+  val tsBaboonAnyOpaqueModule: TsModuleId  = TsModuleId("BaboonAnyOpaque")
+  val tsBaboonIdReprModule: TsModuleId     = TsModuleId("baboon-identifier-repr")
+  val tsFixtureShared: TsModuleId          = TsModuleId("BaboonSharedFixture")
   val tsCrossLangFixtureModule: TsModuleId = TsModuleId("CrossLanguageFixturePath")
 
   // node modules
@@ -29,12 +29,12 @@ object TsTypes {
   val tsReadFile: TsType = TsType(nodeFsModule, "readFileSync")
 
   // any-feature runtime types (BaboonAnyOpaque module)
-  val tsBaboonAnyOpaque: TsType        = TsType(tsBaboonAnyOpaqueModule, "AnyOpaque", typeOnly = true)
-  val tsBaboonAnyMeta: TsType          = TsType(tsBaboonAnyOpaqueModule, "AnyMeta", typeOnly = true)
-  val tsBaboonCreateAnyMeta: TsType    = TsType(tsBaboonAnyOpaqueModule, "createAnyMeta")
+  val tsBaboonAnyOpaque: TsType         = TsType(tsBaboonAnyOpaqueModule, "AnyOpaque", typeOnly = true)
+  val tsBaboonAnyMeta: TsType           = TsType(tsBaboonAnyOpaqueModule, "AnyMeta", typeOnly = true)
+  val tsBaboonCreateAnyMeta: TsType     = TsType(tsBaboonAnyOpaqueModule, "createAnyMeta")
   val tsBaboonAnyOpaqueUebaCtor: TsType = TsType(tsBaboonAnyOpaqueModule, "anyOpaqueUeba")
   val tsBaboonAnyOpaqueJsonCtor: TsType = TsType(tsBaboonAnyOpaqueModule, "anyOpaqueJson")
-  val tsBaboonAnyMetaCodec: TsType     = TsType(tsBaboonAnyOpaqueModule, "AnyMetaCodec")
+  val tsBaboonAnyMetaCodec: TsType      = TsType(tsBaboonAnyOpaqueModule, "AnyMetaCodec")
 
   // any-feature failures (BaboonSharedRuntime module)
   val tsBaboonEncoderFailure: TsType = TsType(tsBaboonRuntimeShared, "BaboonEncoderFailure")
@@ -56,21 +56,21 @@ object TsTypes {
   val tsBaboonLazy: TsType                = TsType(tsBaboonRuntimeShared, "Lazy")
 
   // Identifier-repr runtime helpers (PR-57d)
-  val tsBaboonIdRepr: TsType         = TsType(tsBaboonIdReprModule, "escapeStr") // sentinel anchor; concrete helpers used directly via name
-  val tsBaboonIdReprCursor: TsType   = TsType(tsBaboonIdReprModule, "IdReprCursor")
-  val tsBaboonIdReprEscapeStr: TsType        = TsType(tsBaboonIdReprModule, "escapeStr")
-  val tsBaboonIdReprBytesToHex: TsType       = TsType(tsBaboonIdReprModule, "bytesToHex")
-  val tsBaboonIdReprTsuToString: TsType      = TsType(tsBaboonIdReprModule, "tsuToString")
-  val tsBaboonIdReprTsoToString: TsType      = TsType(tsBaboonIdReprModule, "tsoToString")
-  val tsBaboonIdReprU64ToString: TsType      = TsType(tsBaboonIdReprModule, "u64ToString")
-  val tsBaboonIdReprBitToString: TsType      = TsType(tsBaboonIdReprModule, "bitToString")
-  val tsBaboonIdReprParseTsu: TsType         = TsType(tsBaboonIdReprModule, "parseTsuRepr")
-  val tsBaboonIdReprParseTso: TsType         = TsType(tsBaboonIdReprModule, "parseTsoRepr")
-  val tsBaboonIdReprParseBytesHex: TsType    = TsType(tsBaboonIdReprModule, "parseBytesHex")
-  val tsBaboonIdReprParseBit: TsType         = TsType(tsBaboonIdReprModule, "parseBit")
-  val tsBaboonIdReprIsCanonicalUid: TsType   = TsType(tsBaboonIdReprModule, "isCanonicalUid")
-  val tsBaboonIdReprParseHeader: TsType      = TsType(tsBaboonIdReprModule, "parseHeader")
-  val tsBaboonIdReprParseFieldName: TsType   = TsType(tsBaboonIdReprModule, "parseFieldName")
+  val tsBaboonIdRepr: TsType               = TsType(tsBaboonIdReprModule, "escapeStr") // sentinel anchor; concrete helpers used directly via name
+  val tsBaboonIdReprCursor: TsType         = TsType(tsBaboonIdReprModule, "IdReprCursor")
+  val tsBaboonIdReprEscapeStr: TsType      = TsType(tsBaboonIdReprModule, "escapeStr")
+  val tsBaboonIdReprBytesToHex: TsType     = TsType(tsBaboonIdReprModule, "bytesToHex")
+  val tsBaboonIdReprTsuToString: TsType    = TsType(tsBaboonIdReprModule, "tsuToString")
+  val tsBaboonIdReprTsoToString: TsType    = TsType(tsBaboonIdReprModule, "tsoToString")
+  val tsBaboonIdReprU64ToString: TsType    = TsType(tsBaboonIdReprModule, "u64ToString")
+  val tsBaboonIdReprBitToString: TsType    = TsType(tsBaboonIdReprModule, "bitToString")
+  val tsBaboonIdReprParseTsu: TsType       = TsType(tsBaboonIdReprModule, "parseTsuRepr")
+  val tsBaboonIdReprParseTso: TsType       = TsType(tsBaboonIdReprModule, "parseTsoRepr")
+  val tsBaboonIdReprParseBytesHex: TsType  = TsType(tsBaboonIdReprModule, "parseBytesHex")
+  val tsBaboonIdReprParseBit: TsType       = TsType(tsBaboonIdReprModule, "parseBit")
+  val tsBaboonIdReprIsCanonicalUid: TsType = TsType(tsBaboonIdReprModule, "isCanonicalUid")
+  val tsBaboonIdReprParseHeader: TsType    = TsType(tsBaboonIdReprModule, "parseHeader")
+  val tsBaboonIdReprParseFieldName: TsType = TsType(tsBaboonIdReprModule, "parseFieldName")
 
   // Service wiring types
   val baboonMethodId: TsType        = TsType(tsBaboonRuntimeShared, "BaboonMethodId", typeOnly = true)

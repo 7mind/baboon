@@ -26,8 +26,8 @@ import scala.reflect.ClassTag
   *   - Nested-collection substitution: `map[str, lst[T]]` → `map[str, lst[i32]]`.
   *   - Alias chain: `type IP = IntPage` resolves transparently after materialisation.
   *   - Negative: arity mismatch → `TemplateArityMismatch` (matrix #3).
-  *   - Negative: direct self-reference → `TemplateInstantiationInBody` (matrix #5 / #1).
-  *   - Negative: container-mediated self-reference → `TemplateInstantiationInBody`
+  *   - Negative: direct self-reference → `TemplateInstantiationInForbiddenPosition` (matrix #5 / #1).
+  *   - Negative: container-mediated self-reference → `TemplateInstantiationInForbiddenPosition`
   *     (spec §4.3 / matrix #1).
   *   - Backwards-compat: a non-template domain produces unchanged `Domain.defs`.
   */
@@ -384,32 +384,32 @@ abstract class TemplateInstantiatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTest
         }
     }
 
-    "produce TemplateInstantiationInBody for direct self-reference data X[T] { rec: X[T] } (matrix #5 / #1)" in {
+    "produce TemplateInstantiationInForbiddenPosition for direct self-reference data X[T] { rec: X[T] } (matrix #5 / #1)" in {
       (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
         for {
           outcome <- runTyperFor(parser, typer, selfRefDomain)
         } yield {
-          assertProducesTyperIssue[TyperIssue.TemplateInstantiationInBody](outcome)
+          assertProducesTyperIssue[TyperIssue.TemplateInstantiationInForbiddenPosition](outcome)
         }
     }
 
-    "produce TemplateInstantiationInBody for container-mediated self-ref data Tree[T] { children: lst[Tree[T]] } (spec §4.3 / matrix #1)" in {
+    "produce TemplateInstantiationInForbiddenPosition for container-mediated self-ref data Tree[T] { children: lst[Tree[T]] } (spec §4.3 / matrix #1)" in {
       (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
         for {
           outcome <- runTyperFor(parser, typer, containerSelfRefDomain)
         } yield {
-          assertProducesTyperIssue[TyperIssue.TemplateInstantiationInBody](outcome)
+          assertProducesTyperIssue[TyperIssue.TemplateInstantiationInForbiddenPosition](outcome)
         }
     }
 
-    "TemplateInstantiationInBody carries containingTemplateName and instantiatedName" in {
+    "TemplateInstantiationInForbiddenPosition carries containingTemplateName and instantiatedName" in {
       (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
         for {
           outcome <- runTyperFor(parser, typer, selfRefDomain)
         } yield {
           val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
-          val issue = typerIssues(issues).collectFirst { case i: TyperIssue.TemplateInstantiationInBody => i }
-            .getOrElse(throw new AssertionError(s"no TemplateInstantiationInBody in: $issues"))
+          val issue = typerIssues(issues).collectFirst { case i: TyperIssue.TemplateInstantiationInForbiddenPosition => i }
+            .getOrElse(throw new AssertionError(s"no TemplateInstantiationInForbiddenPosition in: $issues"))
           assert(
             issue.containingTemplateName == "X",
             s"expected containingTemplateName='X', got '${issue.containingTemplateName}'",
@@ -448,24 +448,28 @@ abstract class TemplateInstantiatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTest
             case u: TypeId.User if u.name.name == "IntStrResult" => u
           }.getOrElse(throw new AssertionError("IntStrResult not found in domain"))
           val adt = domain.defs.meta.nodes(intStrResultId) match {
-            case u: DomainMember.User => u.defn match {
-              case a: Typedef.Adt => a
-              case other          => throw new AssertionError(s"expected Typedef.Adt for IntStrResult, got: $other")
-            }
+            case u: DomainMember.User =>
+              u.defn match {
+                case a: Typedef.Adt => a
+                case other          => throw new AssertionError(s"expected Typedef.Adt for IntStrResult, got: $other")
+              }
             case other => throw new AssertionError(s"expected DomainMember.User for IntStrResult, got: $other")
           }
           assert(adt.members.size == 2, s"expected 2 ADT branches, got ${adt.members.size}: ${adt.members}")
 
-          val okId = adt.members.toList.find(_.name.name == "Ok")
+          val okId = adt.members.toList
+            .find(_.name.name == "Ok")
             .getOrElse(throw new AssertionError(s"Ok branch not found in ${adt.members}"))
-          val errId = adt.members.toList.find(_.name.name == "Err")
+          val errId = adt.members.toList
+            .find(_.name.name == "Err")
             .getOrElse(throw new AssertionError(s"Err branch not found in ${adt.members}"))
 
           val okDto = domain.defs.meta.nodes(okId) match {
-            case u: DomainMember.User => u.defn match {
-              case d: Typedef.Dto => d
-              case other          => throw new AssertionError(s"expected Typedef.Dto for Ok branch, got: $other")
-            }
+            case u: DomainMember.User =>
+              u.defn match {
+                case d: Typedef.Dto => d
+                case other          => throw new AssertionError(s"expected Typedef.Dto for Ok branch, got: $other")
+              }
             case other => throw new AssertionError(s"expected DomainMember.User for Ok, got: $other")
           }
           assert(
@@ -474,10 +478,11 @@ abstract class TemplateInstantiatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTest
           )
 
           val errDto = domain.defs.meta.nodes(errId) match {
-            case u: DomainMember.User => u.defn match {
-              case d: Typedef.Dto => d
-              case other          => throw new AssertionError(s"expected Typedef.Dto for Err branch, got: $other")
-            }
+            case u: DomainMember.User =>
+              u.defn match {
+                case d: Typedef.Dto => d
+                case other          => throw new AssertionError(s"expected Typedef.Dto for Err branch, got: $other")
+              }
             case other => throw new AssertionError(s"expected DomainMember.User for Err, got: $other")
           }
           assert(
@@ -503,10 +508,11 @@ abstract class TemplateInstantiatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTest
             case u: TypeId.User if u.name.name == "IntAcked" => u
           }.getOrElse(throw new AssertionError("IntAcked not found in domain"))
           val contract = domain.defs.meta.nodes(intAckedId) match {
-            case u: DomainMember.User => u.defn match {
-              case c: Typedef.Contract => c
-              case other               => throw new AssertionError(s"expected Typedef.Contract for IntAcked, got: $other")
-            }
+            case u: DomainMember.User =>
+              u.defn match {
+                case c: Typedef.Contract => c
+                case other               => throw new AssertionError(s"expected Typedef.Contract for IntAcked, got: $other")
+              }
             case other => throw new AssertionError(s"expected DomainMember.User for IntAcked, got: $other")
           }
           assert(
@@ -536,13 +542,15 @@ abstract class TemplateInstantiatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTest
             case u: TypeId.User if u.name.name == "IntStrQuerier" => u
           }.getOrElse(throw new AssertionError("IntStrQuerier not found in domain"))
           val svc = domain.defs.meta.nodes(intStrQuerierId) match {
-            case u: DomainMember.User => u.defn match {
-              case s: Typedef.Service => s
-              case other              => throw new AssertionError(s"expected Typedef.Service for IntStrQuerier, got: $other")
-            }
+            case u: DomainMember.User =>
+              u.defn match {
+                case s: Typedef.Service => s
+                case other              => throw new AssertionError(s"expected Typedef.Service for IntStrQuerier, got: $other")
+              }
             case other => throw new AssertionError(s"expected DomainMember.User for IntStrQuerier, got: $other")
           }
-          val queryMethod = svc.methods.find(_.name.name == "query")
+          val queryMethod = svc.methods
+            .find(_.name.name == "query")
             .getOrElse(throw new AssertionError(s"query method not found in ${svc.methods}"))
           assert(
             queryMethod.sig == TypeRef.Scalar(TypeId.Builtins.i32),
@@ -571,10 +579,11 @@ abstract class TemplateInstantiatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTest
             case u: TypeId.User if u.name.name == "IntWrap" => u
           }.getOrElse(throw new AssertionError("IntWrap not found in domain"))
           val dto = domain.defs.meta.nodes(intWrapId) match {
-            case u: DomainMember.User => u.defn match {
-              case d: Typedef.Dto => d
-              case other          => throw new AssertionError(s"expected Typedef.Dto for IntWrap, got: $other")
-            }
+            case u: DomainMember.User =>
+              u.defn match {
+                case d: Typedef.Dto => d
+                case other          => throw new AssertionError(s"expected Typedef.Dto for IntWrap, got: $other")
+              }
             case other => throw new AssertionError(s"expected DomainMember.User for IntWrap, got: $other")
           }
           val expectedAnyType = TypeRef.Any(TypeRef.AnyVariant.Global, Some(TypeRef.Scalar(TypeId.Builtins.i32)))
@@ -592,19 +601,23 @@ abstract class TemplateInstantiatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTest
         for {
           outcome <- runTyperFor(parser, typer, namespacedTemplateDomain)
         } yield {
-          val domain = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val domain     = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
           val allUserIds = domain.defs.meta.nodes.keys.collect { case u: TypeId.User => u }.toSet
 
           // Y must appear under owner Ns("foo").
-          val yId = allUserIds.find(u => u.name.name == "Y" && u.owner == Owner.Ns(Seq(TypeName("foo"))))
-            .getOrElse(throw new AssertionError(
-              s"Y not found under Owner.Ns(foo), all user type ids: $allUserIds"
-            ))
+          val yId = allUserIds
+            .find(u => u.name.name == "Y" && u.owner == Owner.Ns(Seq(TypeName("foo"))))
+            .getOrElse(
+              throw new AssertionError(
+                s"Y not found under Owner.Ns(foo), all user type ids: $allUserIds"
+              )
+            )
           val dto = domain.defs.meta.nodes(yId) match {
-            case u: DomainMember.User => u.defn match {
-              case d: Typedef.Dto => d
-              case other          => throw new AssertionError(s"expected Typedef.Dto for foo.Y, got: $other")
-            }
+            case u: DomainMember.User =>
+              u.defn match {
+                case d: Typedef.Dto => d
+                case other          => throw new AssertionError(s"expected Typedef.Dto for foo.Y, got: $other")
+              }
             case other => throw new AssertionError(s"expected DomainMember.User for foo.Y, got: $other")
           }
           assert(

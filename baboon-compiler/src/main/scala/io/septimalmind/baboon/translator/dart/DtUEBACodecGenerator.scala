@@ -43,8 +43,7 @@ class DtUEBACodecGenerator(
         case f: Typedef.Foreign =>
           f.bindings.get(BaboonLang.Dart) match {
             case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(_))) => None
-            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _)))
-                if decl == "dart.core.String" || decl == "String" =>
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) if decl == "dart.core.String" || decl == "String" =>
               None
             case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) if f.runtimeMapping.isDefined =>
               None
@@ -434,8 +433,7 @@ class DtUEBACodecGenerator(
                   // PR-26.7 (M26): stringy Custom-mapped foreigns in value position — read as
                   // a UEBA string. The `<F>_UebaCodec` class is no longer emitted for stringy
                   // customs (closes PR-I.1d-N03 stringy case).
-                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _)))
-                      if decl == "dart.core.String" || decl == "String" =>
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) if decl == "dart.core.String" || decl == "String" =>
                     q"reader.readString()"
                   // PR-26.7 round-2 (M26): non-stringy Custom-mapped foreigns with a declared
                   // `runtimeMapping` (e.g. `ObscureInt` with `rt = i32`) deref to the
@@ -507,8 +505,7 @@ class DtUEBACodecGenerator(
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                     mkEncoder(aliasedRef, ref, wref, depth)
                   // PR-26.7 (M26): see `mkDecoder` analog.
-                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _)))
-                      if decl == "dart.core.String" || decl == "String" =>
+                  case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(decl, _))) if decl == "dart.core.String" || decl == "String" =>
                     q"$wref.writeString($ref);"
                   // PR-26.7 round-2 (M26): see `mkDecoder` analog.
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) if f.runtimeMapping.isDefined =>

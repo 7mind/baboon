@@ -69,8 +69,8 @@ object DtTypes {
   val baboonIdRepr: DtType         = DtType(baboonIdReprPkg, "BaboonIdRepr")
   val baboonIdReprCursor: DtType   = DtType(baboonIdReprPkg, "BaboonIdReprCursor")
   val baboonEither: DtType         = DtType(baboonRuntimePkg, "BaboonEither")
-  val baboonRandom: DtType          = DtType(baboonFixturePkg, "BaboonRandom")
-  val baboonRandomFactory: DtType   = DtType(baboonFixturePkg, "BaboonRandomFactory")
+  val baboonRandom: DtType         = DtType(baboonFixturePkg, "BaboonRandom")
+  val baboonRandomFactory: DtType  = DtType(baboonFixturePkg, "BaboonRandomFactory")
 
   // baboon service wiring types
   val baboonMethodId: DtType        = DtType(baboonRuntimePkg, "BaboonMethodId")

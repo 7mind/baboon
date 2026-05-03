@@ -228,7 +228,7 @@ object CSCodecFixtureTranslator {
           case TypeRef.Constructor(id, args)           => q"${translator.asCsType(id, domain, evo)}<${render(args.head)}>"
           case TypeRef.Scalar(id)                      => q"${translator.asCsType(id, domain, evo)}"
           // Mirrors `CSTypeTranslator.asCsRef` — a collection element of type `any` is `AnyOpaque`.
-          case _: TypeRef.Any                          => q"$baboonAnyOpaque"
+          case _: TypeRef.Any => q"$baboonAnyOpaque"
         }
       }
 
@@ -260,7 +260,7 @@ object CSCodecFixtureTranslator {
         case TypeId.Builtins.bit => q"$baboonFixture.NextBoolean()"
 
         case id: TypeId.User if enquiries.isEnum(tpe, domain) => q"$baboonFixture.NextRandomEnum<${translator.asCsType(id, domain, evo).fullyQualified}>()"
-        case TypeId.User(_, _, name) =>
+        case TypeId.User(_, _, name)                          =>
           // Propagate the codec branch into nested user-type fixtures so any-fields nested in
           // sub-DTOs/ADTs match the same codec direction. See PR-07-D01 (C# analog).
           val method = format match {

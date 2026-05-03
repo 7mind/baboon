@@ -344,7 +344,7 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
             val lineIdx = lines.indexWhere(_.contains("type IntPage = Page"))
             assert(lineIdx >= 0, "Should find IntPage alias line")
 
-            val colIdx = lines(lineIdx).indexOf("Page")
+            val colIdx    = lines(lineIdx).indexOf("Page")
             val locations = defProvider.findDefinition(uri, Position(lineIdx, colIdx + 1))
             assert(locations.nonEmpty, "Should find definition for template 'Page' from alias RHS")
         }
@@ -362,7 +362,7 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
             val lineIdx = lines.indexWhere(_.contains("page: IntPage"))
             assert(lineIdx >= 0, "Should find line using IntPage as a field type")
 
-            val colIdx = lines(lineIdx).indexOf("IntPage")
+            val colIdx    = lines(lineIdx).indexOf("IntPage")
             val locations = defProvider.findDefinition(uri, Position(lineIdx, colIdx + 1))
             assert(locations.nonEmpty, "Should find definition for alias 'IntPage'")
         }

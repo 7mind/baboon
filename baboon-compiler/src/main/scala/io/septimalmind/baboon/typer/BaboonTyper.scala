@@ -87,7 +87,21 @@ object BaboonTyper {
         renames      = typed.renames
         aliases      = typed.aliases
       } yield {
-        Domain(id, version, graph, excludedIds, typeMeta, loops, refMeta, derivations, roots.keySet, renames, model.pragmas.map(p => (p.key, p.value)).toMap, aliases, templateRegistry = typed.templateRegistry)
+        Domain(
+          id,
+          version,
+          graph,
+          excludedIds,
+          typeMeta,
+          loops,
+          refMeta,
+          derivations,
+          roots.keySet,
+          renames,
+          model.pragmas.map(p => (p.key, p.value)).toMap,
+          aliases,
+          templateRegistry = typed.templateRegistry,
+        )
       }
     }
 
@@ -400,18 +414,18 @@ object BaboonTyper {
         // PR-29.4: extract templates from the raw member list BEFORE any other pass sees them.
         // Templates are registered in the TemplateRegistry and removed from the member list so
         // that no `DomainMember` is ever produced for a template declaration.
-        registryResult           <- templateRegistryBuilder.build(pkg, members)
+        registryResult                        <- templateRegistryBuilder.build(pkg, members)
         (nonTemplateMembers, templateRegistry) = registryResult
 
-        builder           = new ScopeBuilder[F]()
+        builder = new ScopeBuilder[F]()
         // Build an initial scope tree over the as-parsed (PR-62) raw AST so we can resolve
         // `+ X` / `- X` / `^ X` refs in ADT bodies. The PR-63 typer-early pass uses this
         // initial tree to rewrite each `RawAdt`'s member list, replacing inheritance arms with
         // literal `RawAdtMemberDto` entries pulled from the referenced ADTs.
-        initialScopes    <- builder.buildScopes(pkg, nonTemplateMembers, meta)
-        initialFlattened  = flattenScopes(initialScopes)
-        initialOrdered   <- order(pkg, initialFlattened, meta)
-        expandedMembers  <- adtInheritanceExpander.expand(pkg, nonTemplateMembers, initialOrdered, meta)
+        initialScopes   <- builder.buildScopes(pkg, nonTemplateMembers, meta)
+        initialFlattened = flattenScopes(initialScopes)
+        initialOrdered  <- order(pkg, initialFlattened, meta)
+        expandedMembers <- adtInheritanceExpander.expand(pkg, nonTemplateMembers, initialOrdered, meta)
 
         // PR-29.5: instantiate template aliases. Every `RawTLDef.Alias` whose RHS is a
         // `RawTypeRef.Constructor` over a registered template is replaced by the corresponding

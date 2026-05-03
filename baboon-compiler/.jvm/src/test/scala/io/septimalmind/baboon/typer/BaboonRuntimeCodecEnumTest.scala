@@ -18,8 +18,7 @@ final class BaboonRuntimeCodecEnumTest extends BaboonRuntimeCodecEnumTestBase[Ei
 // - encoder matches members by wire name (Pascal), not raw name
 // - encoder rejects input that does not match any member's wire name
 // - decoder emits the Pascal wire name, not the raw member name
-abstract class BaboonRuntimeCodecEnumTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule]
-    extends BaboonTest[F] {
+abstract class BaboonRuntimeCodecEnumTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] extends BaboonTest[F] {
 
   // Single-version fixture: enum with non-Pascal member names.
   // Wire names: "cafe" -> "Cafe", "bar_pub" -> "Bar_pub" (via EnumWireStyle.wireName).

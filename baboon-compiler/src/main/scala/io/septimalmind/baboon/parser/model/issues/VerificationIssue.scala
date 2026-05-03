@@ -103,12 +103,12 @@ object VerificationIssue {
   sealed trait IneligibleMapKeyReason
   object IneligibleMapKeyReason {
     case class MultiFieldNonIdWrapper(typeId: TypeId) extends IneligibleMapKeyReason
-    case class CollectionField(typeId: TypeId)        extends IneligibleMapKeyReason
-    case class OptionField(typeId: TypeId)            extends IneligibleMapKeyReason
-    case class WrapperWithContracts(typeId: TypeId)   extends IneligibleMapKeyReason
-    case class IneligibleUserType(typeId: TypeId)     extends IneligibleMapKeyReason
-    case class CyclicWrapper(typeId: TypeId)          extends IneligibleMapKeyReason
-    case class FloatWrapper(typeId: TypeId)           extends IneligibleMapKeyReason
+    case class CollectionField(typeId: TypeId) extends IneligibleMapKeyReason
+    case class OptionField(typeId: TypeId) extends IneligibleMapKeyReason
+    case class WrapperWithContracts(typeId: TypeId) extends IneligibleMapKeyReason
+    case class IneligibleUserType(typeId: TypeId) extends IneligibleMapKeyReason
+    case class CyclicWrapper(typeId: TypeId) extends IneligibleMapKeyReason
+    case class FloatWrapper(typeId: TypeId) extends IneligibleMapKeyReason
   }
 
   // M19/BAB-A02: a `map[K, V]` field in `owner` whose `K` is a user type that fails the

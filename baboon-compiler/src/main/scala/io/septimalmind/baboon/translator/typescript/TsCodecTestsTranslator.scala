@@ -52,8 +52,8 @@ object TsCodecTestsTranslator {
     }
 
     private def makeTests(definition: DomainMember.User, srcRef: TsValue.TsType): TextTree[TsValue] = {
-      val testFnName        = typeTranslator.camelToKebab(srcRef.name).replace('-', '_')
-      val fixtureBaseName   = s"random_${typeTranslator.camelToKebab(definition.id.name.name).replace('-', '_')}"
+      val testFnName      = typeTranslator.camelToKebab(srcRef.name).replace('-', '_')
+      val fixtureBaseName = s"random_${typeTranslator.camelToKebab(definition.id.name.name).replace('-', '_')}"
       val fixtureModule = typeTranslator.toTsModule(
         definition.id,
         domain.version,

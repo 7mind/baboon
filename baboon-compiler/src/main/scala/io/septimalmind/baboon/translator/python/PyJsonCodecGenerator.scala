@@ -57,8 +57,8 @@ final class PyJsonCodecGenerator(
     val anyHelpers: List[TextTree[PyValue]]       = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
     val customKeyHelpers: List[TextTree[PyValue]] = if (hasCustomForeignMapKey(defn)) List(tryDecodeKeyHelper) else Nil
     val baseMethods                               = encodeMethod ++ decodeMethod ++ anyHelpers ++ customKeyHelpers
-    val cName       = q"${srcRef.name}_JsonCodec"
-    val cType       = q"'${codecType(defn.id)}'"
+    val cName                                     = q"${srcRef.name}_JsonCodec"
+    val cType                                     = q"'${codecType(defn.id)}'"
 
     val cParent = if (isEncoderEnabled) {
       defn match {
@@ -139,7 +139,7 @@ final class PyJsonCodecGenerator(
           q"obj['${f.name.name}'] = ${mkJsonAnyDecoder(f.tpe, q"obj['${f.name.name}']")}"
       }
       val encode =
-        q"""obj = value.model_dump(mode='json', exclude={${excludeSet}})
+        q"""obj = value.model_dump(mode='json', exclude={$excludeSet})
            |${encodePatches.joinN()}
            |return $pyJsonDumps(obj)""".stripMargin
       val decode =

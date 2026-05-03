@@ -26,8 +26,7 @@ import izumi.reflect.TagKK
   */
 final class IdentifierConversionTest extends IdentifierConversionTestBase[Either]
 
-abstract class IdentifierConversionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule]
-    extends BaboonTest[F] {
+abstract class IdentifierConversionTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] extends BaboonTest[F] {
 
   private def makeInput(name: String, body: String): BaboonParser.Input =
     BaboonParser.Input(FSPath.parse(NEString.unsafeFrom(name)), body)
@@ -99,7 +98,7 @@ abstract class IdentifierConversionTestBase[F[+_, +_]: Error2: TagKK: BaboonTest
           }
           assert(
             unmodifiedNames.contains("UserId"),
-            s"Expected UserId in unmodified for data→id; got unmodified=${unmodifiedNames}, shallowModified=${diff.changes.shallowModified}",
+            s"Expected UserId in unmodified for data→id; got unmodified=$unmodifiedNames, shallowModified=${diff.changes.shallowModified}",
           )
 
           // §5.2: BaboonRules must produce DtoConversion with Transfer for `u`.
@@ -149,7 +148,7 @@ abstract class IdentifierConversionTestBase[F[+_, +_]: Error2: TagKK: BaboonTest
           }
           assert(
             unmodifiedNames.contains("UserId"),
-            s"Expected UserId in unmodified for id→data; got unmodified=${unmodifiedNames}, shallowModified=${diff.changes.shallowModified}",
+            s"Expected UserId in unmodified for id→data; got unmodified=$unmodifiedNames, shallowModified=${diff.changes.shallowModified}",
           )
 
           // §5.2: DtoConversion with Transfer for the `u` field.

@@ -67,7 +67,7 @@ class KtJsonCodecGenerator(
     val anyHelpers: List[TextTree[KtValue]] = if (hasAnyField(defn)) List(anyFieldHelpers) else Nil
     val baseMethods                         = encodeMethod ++ decodeMethod ++ anyHelpers
     val cName                               = codecName(srcRef)
-    val meta        = renderMeta(defn, ktDomainTreeTools.makeCodecMeta(defn))
+    val meta                                = renderMeta(defn, ktDomainTreeTools.makeCodecMeta(defn))
 
     val cParent = if (isEncoderEnabled) {
       defn match {
@@ -192,11 +192,11 @@ class KtJsonCodecGenerator(
         // PR-28.4 (M28): the Kotlin runtime exposes `formatTsu`/`formatTso` only;
         // there is no generic `format`. Per-type dispatch matches the Scala
         // generator (line 357-358) and PR-28.3 ±HH:MM canonicalisation contract.
-        case TypeId.Builtins.tsu                       => q"$baboonTimeFormats.formatTsu($ref)"
-        case TypeId.Builtins.tso                       => q"$baboonTimeFormats.formatTso($ref)"
+        case TypeId.Builtins.tsu => q"$baboonTimeFormats.formatTsu($ref)"
+        case TypeId.Builtins.tso => q"$baboonTimeFormats.formatTso($ref)"
         // Note: u64 → kotlin.ULong (per KtTypeTranslator). ULong.toString() is unsigned natively;
         // no special arm needed (PR-28.1-D02 audit confirmed).
-        case _: TypeId.Builtin                         => q"$ref.toString()"
+        case _: TypeId.Builtin => q"$ref.toString()"
         case uid: TypeId.User =>
           domain.defs.meta.nodes(uid) match {
             case u: DomainMember.User =>
@@ -442,7 +442,7 @@ class KtJsonCodecGenerator(
     val expectedKind                      = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
     val expectedHex                       = "0x%02x".format(expectedKind & 0xFF)
     val (staticDom, staticVer, staticTid) = anyStaticFallbacks(a)
-    q"encodeAnyField(ctx, ${expectedHex}.toByte(), $staticDom, $staticVer, $staticTid, $ref)"
+    q"encodeAnyField(ctx, $expectedHex.toByte(), $staticDom, $staticVer, $staticTid, $ref)"
   }
 
   // Decode delegates to the per-codec-object `decodeAnyField` helper. JSON decode never cross-
@@ -451,7 +451,7 @@ class KtJsonCodecGenerator(
   private def mkAnyDecoder(a: TypeRef.Any, ref: TextTree[KtValue]): TextTree[KtValue] = {
     val expectedKind = AnyVariant.metaKindByte(a.variant, a.underlying.isDefined)
     val expectedHex  = "0x%02x".format(expectedKind & 0xFF)
-    q"decodeAnyField(${expectedHex}.toByte(), $ref)"
+    q"decodeAnyField($expectedHex.toByte(), $ref)"
   }
 
   // Static fallbacks for the cross-format facade helper (`uebaToJson`). The wire `meta` may omit

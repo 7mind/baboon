@@ -92,8 +92,7 @@ class HoverProvider(
                 lineage.versions.toMap.values.flatMap {
                   domain =>
                     domain.templateRegistry.templates.collectFirst {
-                      case ((_, _, name), body)
-                          if name.name == tplName && body.typeParams.exists(_.name == typeName) =>
+                      case ((_, _, name), body) if name.name == tplName && body.typeParams.exists(_.name == typeName) =>
                         s"*Type parameter of template `${name.name}`*"
                     }
                 }
@@ -132,7 +131,7 @@ class HoverProvider(
                   domain =>
                     domain.templateRegistry.templates.collectFirst {
                       case ((_, _, name), body) if name.name == typeName =>
-                        renderTemplateInfo(typeName, body, domain)
+                        renderTemplateInfo(name.name, body, domain)
                     }
                 }
             }.headOption
@@ -155,7 +154,7 @@ class HoverProvider(
     }
   }
 
-  private def renderTemplateInfo(typeName: String, body: TemplateBody, domain: Domain): String = {
+  private def renderTemplateInfo(canonicalName: String, body: TemplateBody, domain: Domain): String = {
     val params = body.typeParams.map(_.name).mkString(", ")
     val kind = body.rawDefn match {
       case _: RawTemplateDefn.Dto      => "data"
@@ -163,7 +162,7 @@ class HoverProvider(
       case _: RawTemplateDefn.Contract => "contract"
       case _: RawTemplateDefn.Service  => "service"
     }
-    s"```baboon\n$kind $typeName[$params] { … }\n```\n\n*Template — instantiate via `type Alias = $typeName[…]`*\n\n---\n*Package: ${domain.id}*"
+    s"```baboon\n$kind $canonicalName[$params] { … }\n```\n\n*Template — instantiate via `type Alias = $canonicalName[…]`*\n\n---\n*Package: ${domain.id}*"
   }
 
   private def renderTypeInfo(member: DomainMember.User, @annotation.unused domain: Domain): String = {

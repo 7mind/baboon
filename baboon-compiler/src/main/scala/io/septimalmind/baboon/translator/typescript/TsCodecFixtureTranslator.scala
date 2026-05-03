@@ -71,12 +71,12 @@ object TsCodecFixtureTranslator {
         .flatMap(domain.defs.meta.nodes.get)
         .collect { case DomainMember.User(_, d: Typedef.Dto, _, _) => d }
 
-      val sortedMembers          = members.sortBy(_.id.toString)
-      val membersFixtures        = sortedMembers.map(doTranslateDtoPrivate)
-      val uebaCalls              = sortedMembers.map(dto => q"${fixtureFnName(dto.id, FixUeba)}(rnd)")
-      val jsonCalls              = sortedMembers.map(dto => q"${fixtureFnName(dto.id, FixJson)}(rnd)")
-      val uebaAllEntries         = uebaCalls.map(g => q"$g,")
-      val jsonAllEntries         = jsonCalls.map(g => q"$g,")
+      val sortedMembers   = members.sortBy(_.id.toString)
+      val membersFixtures = sortedMembers.map(doTranslateDtoPrivate)
+      val uebaCalls       = sortedMembers.map(dto => q"${fixtureFnName(dto.id, FixUeba)}(rnd)")
+      val jsonCalls       = sortedMembers.map(dto => q"${fixtureFnName(dto.id, FixJson)}(rnd)")
+      val uebaAllEntries  = uebaCalls.map(g => q"$g,")
+      val jsonAllEntries  = jsonCalls.map(g => q"$g,")
 
       q"""export function ${fixtureFnName(adt.id, FixUeba)}(rnd: $baboonRandom): $adtName {
          |    const all = ${fixtureFnName(adt.id, FixUeba)}_all(rnd);

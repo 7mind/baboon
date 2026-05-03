@@ -66,32 +66,32 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
   private def extractTyperIssueInfo(issue: TyperIssue): (Option[RawNodeMeta], String) = {
     import TyperIssue._
     issue match {
-      case GenericTyperIssue(message, meta)             => (Some(meta), message)
-      case NameNotFound(_, name, meta)                  => (Some(meta), s"Type not found: ${name.path.head.name}")
-      case MissingTypeId(_, missing, meta)              => (Some(meta), s"Missing types: ${missing.map(_.name.name).mkString(", ")}")
-      case NonUniqueFields(id, dupes, meta)             => (Some(meta), s"Duplicate fields in ${id.name.name}: ${dupes.keys.mkString(", ")}")
-      case EmptyEnum(id, meta)                          => (Some(meta), s"Empty enum: ${id.name.name}")
-      case EmptyAdt(id, meta)                           => (Some(meta), s"Empty ADT: ${id.name.name}")
-      case BadTypeName(name, meta)                      => (Some(meta), s"Invalid type name: $name")
-      case BadFieldName(name, meta)                     => (Some(meta), s"Invalid field name: $name")
-      case BadEnumName(name, meta)                      => (Some(meta), s"Invalid enum member name: $name")
-      case CircularInheritance(error, meta)             => (Some(meta), s"Circular inheritance: $error")
-      case NonUniqueEnumBranches(dupes, id, meta)       => (Some(meta), s"Duplicate enum branches in ${id.name.name}: ${dupes.keys.mkString(", ")}")
-      case NonUniqueForeignEntries(dupes, id, meta)     => (Some(meta), s"Duplicate foreign entries in ${id.name.name}: ${dupes.keys.map(_.asString).mkString(", ")}")
-      case UnknownForeignLang(lang, id, meta)           => (Some(meta), s"Unknown foreign language '$lang' in ${id.name.name}")
-      case EmptyGenericArgs(id, meta)                   => (Some(meta), s"Empty generic args for ${id.name.name}")
-      case NonUniqueTypedefs(dupes, meta)               => (Some(meta), s"Duplicate typedefs: ${dupes.keys.map(_.name.name).mkString(", ")}")
-      case NonUniqueScope(dupes, meta)                  => (Some(meta), s"Duplicate scopes: ${dupes.keys.mkString(", ")}")
-      case UnexpectedScoping(scopes, meta)              => (Some(meta), s"Unexpected scoping: ${scopes.size} scopes")
-      case UnexpectedBuiltin(id, _, meta)               => (Some(meta), s"Unexpected builtin: ${id.name.name}")
-      case UnexpectedNonBuiltin(name, _, _, meta)       => (Some(meta), s"Unexpected non-builtin: ${name.name}")
-      case ScopedRefToNamespacedGeneric(prefix, meta)   => (Some(meta), s"Scoped ref to namespaced generic: ${prefix.map(_.name).mkString(".")}")
-      case UnexpectedScopeLookup(_, meta)               => (Some(meta), "Unexpected scope lookup")
-      case NamSeqeNotFound(names, _, meta)              => (Some(meta), s"Names not found: ${names.map(_.name).mkString(".")}")
-      case CircularAlias(name, meta)                    => (Some(meta), s"Circular type alias: ${name.name}")
-      case DuplicatedTypes(dupes, meta)                 => (Some(meta), s"Duplicate types: ${dupes.map(_.name.name).mkString(", ")}")
-      case WrongParent(id, parent, meta)                => (Some(meta), s"Wrong parent for ${id.name.name}: ${parent.name.name}")
-      case MissingContractFields(id, fields, meta)      => (Some(meta), s"Missing contract fields in ${id.name.name}: ${fields.map(_.name.name).mkString(", ")}")
+      case GenericTyperIssue(message, meta)           => (Some(meta), message)
+      case NameNotFound(_, name, meta)                => (Some(meta), s"Type not found: ${name.path.head.name}")
+      case MissingTypeId(_, missing, meta)            => (Some(meta), s"Missing types: ${missing.map(_.name.name).mkString(", ")}")
+      case NonUniqueFields(id, dupes, meta)           => (Some(meta), s"Duplicate fields in ${id.name.name}: ${dupes.keys.mkString(", ")}")
+      case EmptyEnum(id, meta)                        => (Some(meta), s"Empty enum: ${id.name.name}")
+      case EmptyAdt(id, meta)                         => (Some(meta), s"Empty ADT: ${id.name.name}")
+      case BadTypeName(name, meta)                    => (Some(meta), s"Invalid type name: $name")
+      case BadFieldName(name, meta)                   => (Some(meta), s"Invalid field name: $name")
+      case BadEnumName(name, meta)                    => (Some(meta), s"Invalid enum member name: $name")
+      case CircularInheritance(error, meta)           => (Some(meta), s"Circular inheritance: $error")
+      case NonUniqueEnumBranches(dupes, id, meta)     => (Some(meta), s"Duplicate enum branches in ${id.name.name}: ${dupes.keys.mkString(", ")}")
+      case NonUniqueForeignEntries(dupes, id, meta)   => (Some(meta), s"Duplicate foreign entries in ${id.name.name}: ${dupes.keys.map(_.asString).mkString(", ")}")
+      case UnknownForeignLang(lang, id, meta)         => (Some(meta), s"Unknown foreign language '$lang' in ${id.name.name}")
+      case EmptyGenericArgs(id, meta)                 => (Some(meta), s"Empty generic args for ${id.name.name}")
+      case NonUniqueTypedefs(dupes, meta)             => (Some(meta), s"Duplicate typedefs: ${dupes.keys.map(_.name.name).mkString(", ")}")
+      case NonUniqueScope(dupes, meta)                => (Some(meta), s"Duplicate scopes: ${dupes.keys.mkString(", ")}")
+      case UnexpectedScoping(scopes, meta)            => (Some(meta), s"Unexpected scoping: ${scopes.size} scopes")
+      case UnexpectedBuiltin(id, _, meta)             => (Some(meta), s"Unexpected builtin: ${id.name.name}")
+      case UnexpectedNonBuiltin(name, _, _, meta)     => (Some(meta), s"Unexpected non-builtin: ${name.name}")
+      case ScopedRefToNamespacedGeneric(prefix, meta) => (Some(meta), s"Scoped ref to namespaced generic: ${prefix.map(_.name).mkString(".")}")
+      case UnexpectedScopeLookup(_, meta)             => (Some(meta), "Unexpected scope lookup")
+      case NamSeqeNotFound(names, _, meta)            => (Some(meta), s"Names not found: ${names.map(_.name).mkString(".")}")
+      case CircularAlias(name, meta)                  => (Some(meta), s"Circular type alias: ${name.name}")
+      case DuplicatedTypes(dupes, meta)               => (Some(meta), s"Duplicate types: ${dupes.map(_.name.name).mkString(", ")}")
+      case WrongParent(id, parent, meta)              => (Some(meta), s"Wrong parent for ${id.name.name}: ${parent.name.name}")
+      case MissingContractFields(id, fields, meta)    => (Some(meta), s"Missing contract fields in ${id.name.name}: ${fields.map(_.name.name).mkString(", ")}")
       case DuplicatedAdtBranches(id, branch, sources, meta) =>
         (Some(meta), s"Duplicate ADT branches '$branch' in ${id.name.name}: contributed by ${sources.map(_.name.name).mkString(", ")}")
       case WrongAdtInclusion(id, ref, reason, meta) =>
@@ -104,31 +104,34 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
       case ServiceMultipleOutputs(svc, method, _, meta) => (Some(meta), s"Multiple outputs in $svc.$method")
       case ServiceMultipleInputs(svc, method, _, meta)  => (Some(meta), s"Multiple inputs in $svc.$method")
       case ServiceMultipleErrors(svc, method, _, meta)  => (Some(meta), s"Multiple errors in $svc.$method")
-      case DuplicateTypeParam(name, ownerName, meta)     => (Some(meta), s"Duplicate type parameter '$name' in template '$ownerName'")
+      case DuplicateTypeParam(name, ownerName, meta)    => (Some(meta), s"Duplicate type parameter '$name' in template '$ownerName'")
       case TemplateArityMismatch(tname, alias, exp, act, meta) =>
         (Some(meta), s"Template '$tname' instantiated in alias '$alias' with wrong arity: expected $exp, got $act")
-      case TemplateInstantiationInBody(containingName, instName, meta) =>
-        (Some(meta), s"Template '$containingName' contains a forbidden template instantiation of '$instName' in field position")
+      case TemplateInstantiationInForbiddenPosition(containingName, instName, meta) =>
+        (
+          Some(meta),
+          s"Template instantiation `$instName` is forbidden here — templates may only be instantiated as the right-hand side of a top-level `type` alias (matrix #1 / decision #3). Containing context: '$containingName'",
+        )
       case TemplateNotInstantiated(tname, alias, meta) =>
         (Some(meta), s"Alias '$alias' references template '$tname' without type arguments — use '$tname[…]'")
       case NotATemplate(head, alias, meta) =>
         (Some(meta), s"'$head' is not a template or builtin collection — cannot be used as a generic constructor head in alias '$alias'")
       case TemplateBodyCarriesDerived(tname, meta) =>
         (Some(meta), s"Template '$tname' carries ':derived[…]' — write the annotation on the alias instead")
-      case DagError(e, meta)                            => (Some(meta), s"DAG error: $e")
-      case ScalarExpected(id, meta)                     => (Some(meta), s"Scalar expected: ${id.name.name}")
-      case CollectionExpected(id, meta)                 => (Some(meta), s"Collection expected: ${id.name.name}")
-      case ScopeCannotBeEmpty(member)                   => (Some(member.meta), s"Scope cannot be empty: ${member.name.name}")
-      case EmptyPackageId(header)                       => (Some(header.meta), "Empty package ID")
-      case DuplicatedTypedefs(model, dupes)             => (Some(model.header.meta), s"Duplicate typedefs: ${dupes.keys.map(_.name.name).mkString(", ")}")
-      case NonUniqueDomainVersions(dupes)               => (None, s"Non-unique domain versions: ${dupes.keys.mkString(", ")}")
-      case EmptyDomainFamily(pkg)                       => (None, s"Empty domain family: $pkg")
-      case NonUniqueLineages(lineages)                  => (None, s"Non-unique lineages: ${lineages.keys.mkString(", ")}")
-      case NonUniqueRawDomainVersion(conflicts)         => (None, s"Non-unique raw domain versions: ${conflicts.keys.mkString(", ")}")
-      case EmptyFamily(_)                               => (None, "Empty family")
-      case EmptyFamilyReload(_)                         => (None, "Empty family")
-      case TodoTyperIssue(descr)                        => (None, s"TODO: $descr")
-      case InvalidRtMapping(id, reason, meta)           => (Some(meta), s"Invalid rt mapping in ${id.name.name}: $reason")
+      case DagError(e, meta)                    => (Some(meta), s"DAG error: $e")
+      case ScalarExpected(id, meta)             => (Some(meta), s"Scalar expected: ${id.name.name}")
+      case CollectionExpected(id, meta)         => (Some(meta), s"Collection expected: ${id.name.name}")
+      case ScopeCannotBeEmpty(member)           => (Some(member.meta), s"Scope cannot be empty: ${member.name.name}")
+      case EmptyPackageId(header)               => (Some(header.meta), "Empty package ID")
+      case DuplicatedTypedefs(model, dupes)     => (Some(model.header.meta), s"Duplicate typedefs: ${dupes.keys.map(_.name.name).mkString(", ")}")
+      case NonUniqueDomainVersions(dupes)       => (None, s"Non-unique domain versions: ${dupes.keys.mkString(", ")}")
+      case EmptyDomainFamily(pkg)               => (None, s"Empty domain family: $pkg")
+      case NonUniqueLineages(lineages)          => (None, s"Non-unique lineages: ${lineages.keys.mkString(", ")}")
+      case NonUniqueRawDomainVersion(conflicts) => (None, s"Non-unique raw domain versions: ${conflicts.keys.mkString(", ")}")
+      case EmptyFamily(_)                       => (None, "Empty family")
+      case EmptyFamilyReload(_)                 => (None, "Empty family")
+      case TodoTyperIssue(descr)                => (None, s"TODO: $descr")
+      case InvalidRtMapping(id, reason, meta)   => (Some(meta), s"Invalid rt mapping in ${id.name.name}: $reason")
     }
   }
 
@@ -172,7 +175,10 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
       case IdentifierFieldCollection(owner, fields, meta) =>
         (Some(meta), s"identifier '${owner.id.name.name}' has collection field(s): ${fields.map(_.name.name).mkString(", ")}")
       case IdentifierFieldUserNotIdentifier(owner, fields, meta) =>
-        (Some(meta), s"identifier '${owner.id.name.name}' references non-`id` type(s): ${fields.map { case (f, t) => s"${f.name.name} → ${t.name.name}" }.mkString(", ")}")
+        (
+          Some(meta),
+          s"identifier '${owner.id.name.name}' references non-`id` type(s): ${fields.map { case (f, t) => s"${f.name.name} → ${t.name.name}" }.mkString(", ")}",
+        )
       case IdentifierFieldAny(owner, fields, meta) =>
         (Some(meta), s"identifier '${owner.id.name.name}' has `any` field(s): ${fields.map(_.name.name).mkString(", ")}")
       case IneligibleUserMapKey(owner, badField, reason, meta) =>

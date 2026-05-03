@@ -258,7 +258,7 @@ abstract class IdentifierKotlinKmpEmissionTestBase[F[+_, +_]: Error2: TagKK: Bab
     )
 
   private val translatorModule: distage.Module = new BaboonJvmKtModule[Either](ktTarget)
-  private val combinedModule: distage.Module = baseModule overriddenBy translatorModule
+  private val combinedModule: distage.Module   = baseModule overriddenBy translatorModule
 
   override protected def config: TestConfig = super.config.copy(
     pluginConfig = PluginConfig.const(combinedModule.morph[PluginBase]),

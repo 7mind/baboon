@@ -146,6 +146,17 @@ abstract class TemplateRegistryBuilderTestBase[F[+_, +_]: Error2: TagKK: BaboonT
       |}
       |""".stripMargin
 
+  /** A domain with `data X[T, T, U, U]` — two distinct duplicate type parameters. */
+  private val multiDuplicateTypeParamDomain: String =
+    """model template.registry.test.neg3
+      |
+      |version "1.0.0"
+      |
+      |data X[T, T, U, U] {
+      |  f: i32
+      |}
+      |""".stripMargin
+
   /** A top-level single-template domain used for registry contents inspection. */
   private val singleTemplateDomain: String =
     """model template.registry.test
@@ -166,7 +177,7 @@ abstract class TemplateRegistryBuilderTestBase[F[+_, +_]: Error2: TagKK: BaboonT
         for {
           outcome <- runTyperFor(parser, typer, templateOnlyDomain)
         } yield {
-          val domain = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val domain        = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
           val userTypeNames = domain.defs.meta.nodes.keys.collect { case u: TypeId.User => u.name.name }.toSet
           assert(
             !userTypeNames.contains("X"),
@@ -202,7 +213,7 @@ abstract class TemplateRegistryBuilderTestBase[F[+_, +_]: Error2: TagKK: BaboonT
         for {
           outcome <- runTyperFor(parser, typer, nonTemplateDomain)
         } yield {
-          val domain = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val domain        = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
           val userTypeNames = domain.defs.meta.nodes.keys.collect { case u: TypeId.User => u.name.name }.toSet
           assert(
             userTypeNames.contains("Foo"),
@@ -240,12 +251,32 @@ abstract class TemplateRegistryBuilderTestBase[F[+_, +_]: Error2: TagKK: BaboonT
         }
     }
 
+    "produce two DuplicateTypeParam issues for data X[T, T, U, U] (all duplicates reported at once)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, multiDuplicateTypeParamDomain)
+        } yield {
+          val issues    = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val dupIssues = typerIssues(issues).collect { case d: TyperIssue.DuplicateTypeParam => d }
+          assert(
+            dupIssues.size == 2,
+            s"expected 2 DuplicateTypeParam issues (T and U), got ${dupIssues.size}: ${dupIssues.map(_.name)}",
+          )
+          val names = dupIssues.map(_.name).toSet
+          assert(names == Set("T", "U"), s"expected duplicate names {T, U}, got $names")
+          dupIssues.foreach {
+            d =>
+              assert(d.ownerName == "X", s"expected owner name 'X', got '${d.ownerName}'")
+          }
+        }
+    }
+
     "excise only template X[T] from mixed namespace, preserving non-template Y" in {
       (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
         for {
           outcome <- runTyperFor(parser, typer, mixedNamespaceDomain)
         } yield {
-          val domain = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val domain  = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
           val nsOwner = Owner.Ns(Seq(TypeName("foo")))
           val nsUserNames = domain.defs.meta.nodes.keys.collect {
             case u: TypeId.User if u.owner == nsOwner => u.name.name
@@ -266,7 +297,7 @@ abstract class TemplateRegistryBuilderTestBase[F[+_, +_]: Error2: TagKK: BaboonT
         for {
           outcome <- runTyperFor(parser, typer, singleTemplateDomain)
         } yield {
-          val domain = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val domain   = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
           val registry = domain.templateRegistry
           assert(
             registry.templates.size == 1,

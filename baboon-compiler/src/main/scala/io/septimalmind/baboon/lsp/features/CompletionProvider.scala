@@ -128,6 +128,9 @@ class CompletionProvider(
 
             // Alias RHS: `type Name =` (with optional `root` prefix and optional word prefix).
             // Templates are only valid on the RHS of a type alias (spec §2.4).
+            // TODO [PR-29.8-D06]: regex `\w*$` does not match qualified prefixes like `pkg.Pa`;
+            //   cross-namespace template completion is gated on cross-namespace template
+            //   instantiation work [PR-29.5-D04 / PR-29.7-D07].
             val aliasRhsPattern = """^\s*(?:root\s+)?type\s+\w+\s*=\s*(\w*)$""".r
             // Pattern to match type position with optional prefix: "field: TypePre" -> ("field: ", "TypePre")
             val typeWithPrefixPattern = """^(.*:\s*)(\w*)$""".r

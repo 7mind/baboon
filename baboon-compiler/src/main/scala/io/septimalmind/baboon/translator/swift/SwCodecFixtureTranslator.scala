@@ -77,8 +77,9 @@ object SwCodecFixtureTranslator {
       val fullType = translator.toSwTypeRefKeepForeigns(dto.id, domain, evo)
 
       def fields(format: FixtureFormat): TextTree[SwValue] = {
-        dto.fields.map { f =>
-          q"${translator.escapeSwiftKeyword(f.name.name)}: ${genType(f.tpe, format)}"
+        dto.fields.map {
+          f =>
+            q"${translator.escapeSwiftKeyword(f.name.name)}: ${genType(f.tpe, format)}"
         }.join(",\n")
       }
 
@@ -106,9 +107,10 @@ object SwCodecFixtureTranslator {
 
       val sortedMembers   = members.sortBy(_.id.toString)
       val membersFixtures = sortedMembers.map(doTranslateDto)
-      def caseCalls(method: String): List[TextTree[SwValue]] = sortedMembers.map { dto =>
-        val caseName = dto.id.name.name.head.toLower.toString + dto.id.name.name.tail
-        q".$caseName(${fixtureTpeName(dto.id)}.$method(rnd))"
+      def caseCalls(method: String): List[TextTree[SwValue]] = sortedMembers.map {
+        dto =>
+          val caseName = dto.id.name.name.head.toLower.toString + dto.id.name.name.tail
+          q".$caseName(${fixtureTpeName(dto.id)}.$method(rnd))"
       }
       val membersDirectCalls     = caseCalls("random")
       val membersDirectCallsJson = caseCalls("randomJson")
@@ -255,13 +257,13 @@ object SwCodecFixtureTranslator {
                     case None =>
                       throw new IllegalArgumentException(
                         s"Foreign type ${f.id} has no Swift binding and no BaboonRef alias in any " +
-                          "other-language binding; cannot synthesize fixture value"
+                        "other-language binding; cannot synthesize fixture value"
                       )
                   }
               }
             case other =>
               throw new IllegalStateException(
-                s"BUG: isForeign(${u}) returned true but lookup yielded $other"
+                s"BUG: isForeign($u) returned true but lookup yielded $other"
               )
           }
 
@@ -333,8 +335,8 @@ object SwCodecFixtureTranslator {
         case other =>
           throw new IllegalArgumentException(
             s"Unmapped Swift Custom-foreign decl '$other' for Foreign type $fid; extend " +
-              "SwCodecFixtureTranslator.genCustomForeignFixtureValue allowlist or switch the " +
-              "binding to a BaboonRef alias to recurse on the underlying scalar."
+            "SwCodecFixtureTranslator.genCustomForeignFixtureValue allowlist or switch the " +
+            "binding to a BaboonRef alias to recurse on the underlying scalar."
           )
       }
     }

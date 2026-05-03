@@ -36,9 +36,10 @@ abstract class M29TemplateCycleValidatorTestBase[F[+_, +_]: Error2: TagKK: Baboo
     BaboonParser.Input(FSPath.parse(NEString.unsafeFrom(name)), body)
 
   private def runValidator(manager: BaboonFamilyManager[F], name: String, body: String): F[Nothing, Either[NEList[BaboonIssue], BaboonFamily]] = {
-    manager.load(List(makeInput(name, body)))
+    manager
+      .load(List(makeInput(name, body)))
       .map(Right(_): Either[NEList[BaboonIssue], BaboonFamily])
-      .catchAll { errs => F.pure(Left(errs): Either[NEList[BaboonIssue], BaboonFamily]) }
+      .catchAll(errs => F.pure(Left(errs): Either[NEList[BaboonIssue], BaboonFamily]))
   }
 
   private def verificationIssues(issues: NEList[BaboonIssue]): List[VerificationIssue] =

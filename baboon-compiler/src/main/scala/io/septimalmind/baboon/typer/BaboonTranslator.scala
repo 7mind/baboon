@@ -60,8 +60,9 @@ class BaboonTranslator[F[+_, +_]: Error2](
   ): F[NEList[BaboonIssue], List[DomainMember.User]] = {
     val root = defn.gcRoot
     defn.defn match {
-      case d: RawDto        => convertDto(id, root, d) { case (id, finalFields, contractRefs) => Typedef.Dto(id, finalFields, contractRefs) }.map(d => List(d))
-      case d: RawIdentifier => convertDto(id, root, d) { case (id, finalFields, contractRefs) => Typedef.Dto(id, finalFields, contractRefs, isIdentifier = true) }.map(d => List(d))
+      case d: RawDto => convertDto(id, root, d) { case (id, finalFields, contractRefs) => Typedef.Dto(id, finalFields, contractRefs) }.map(d => List(d))
+      case d: RawIdentifier =>
+        convertDto(id, root, d) { case (id, finalFields, contractRefs) => Typedef.Dto(id, finalFields, contractRefs, isIdentifier = true) }.map(d => List(d))
       case e: RawEnum     => converEnum(id, root, e).map(e => List(e))
       case a: RawAdt      => convertAdt(id, root, a, thisScope).map(_.toList)
       case f: RawForeign  => convertForeign(id, root, f).map(_.toList)
@@ -342,7 +343,7 @@ class BaboonTranslator[F[+_, +_]: Error2](
           case _: RawAdtMember.Include   => throw new RuntimeException("BUG: RawAdtMember.Include reached convertAdt before PR-63 pre-pass")
           case _: RawAdtMember.Exclude   => throw new RuntimeException("BUG: RawAdtMember.Exclude reached convertAdt before PR-63 pre-pass")
           case _: RawAdtMember.Intersect => throw new RuntimeException("BUG: RawAdtMember.Intersect reached convertAdt before PR-63 pre-pass")
-          case _ =>
+          case _                         =>
         }
         adt.members.collect { case d: RawAdtMemberDto => d; case d: RawAdtMemberContract => d }
           .map(

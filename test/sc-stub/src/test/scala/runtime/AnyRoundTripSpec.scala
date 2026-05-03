@@ -38,7 +38,7 @@ class AnyRoundTripSpec extends AnyFunSuite {
     f
   }
 
-  private val facade: BaboonCodecsFacade = freshFacade()
+  private val facade: BaboonCodecsFacade                   = freshFacade()
   private val ctxWithFacade: BaboonCodecContext.WithFacade = BaboonCodecContext.WithFacade(useIndices = false, facade)
 
   // Domain/version/typeid strings the codec generator emits as static fallbacks.
@@ -96,7 +96,7 @@ class AnyRoundTripSpec extends AnyFunSuite {
       fThisUnderlying    = AnyOpaqueUeba(metaD2, innerBytes),
       fCurrentUnderlying = AnyOpaqueUeba(metaD3, innerBytes),
       fOpt               = Some(AnyOpaqueUeba(metaA, Array[Byte](7))), // opt[any] -> A variant
-      fLst               = List(AnyOpaqueUeba(metaD1, innerBytes)),    // lst[any[Inner]] -> D1 variant
+      fLst               = List(AnyOpaqueUeba(metaD1, innerBytes)), // lst[any[Inner]] -> D1 variant
       fMapValue          = Map("k1" -> AnyOpaqueUeba(metaA, Array[Byte](8))),
     )
   }
@@ -353,11 +353,11 @@ class AnyRoundTripSpec extends AnyFunSuite {
     // [1 byte header][i32 anyLength][i32 anyMetaLen][... metaBytes ...][... blob ...]
     // header byte is at offset 0.
     val headerLen          = 1
-    val anyLengthOffset    = headerLen           // 4 bytes
-    val anyMetaLenOffset   = headerLen + 4       // 4 bytes
+    val anyLengthOffset    = headerLen // 4 bytes
+    val anyMetaLenOffset   = headerLen + 4 // 4 bytes
     val anyMetaStartOffset = headerLen + 4 + 4
     // Read the original anyLength + anyMetaLen.
-    val origAnyLength = readI32LE(bytes, anyLengthOffset)
+    val origAnyLength  = readI32LE(bytes, anyLengthOffset)
     val origAnyMetaLen = readI32LE(bytes, anyMetaLenOffset)
 
     val extension     = Array[Byte](0x11, 0x22, 0x33, 0x44, 0x55)
@@ -366,7 +366,7 @@ class AnyRoundTripSpec extends AnyFunSuite {
 
     // Build a patched buffer:
     //   [header][i32 newAnyLength][i32 newAnyMetaLen][orig meta bytes][extension][blob][rest...]
-    val origMetaSlice = bytes.slice(anyMetaStartOffset, anyMetaStartOffset + origAnyMetaLen)
+    val origMetaSlice        = bytes.slice(anyMetaStartOffset, anyMetaStartOffset + origAnyMetaLen)
     val origBlobAndRestStart = anyMetaStartOffset + origAnyMetaLen
     val origBlobAndRest      = bytes.slice(origBlobAndRestStart, bytes.length)
 

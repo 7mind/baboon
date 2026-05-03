@@ -51,7 +51,7 @@ package baboon.runtime.shared {
     // The resource preprocessor in ScBaboonTranslator.scala mangles the literal
     // dot-escape sequence (used by Version.from below). Not strictly required
     // for code in this object today but maintained for consistency.
-    private val BS: Char  = 92.toChar  // ASCII backslash
+    private val BS: Char  = 92.toChar // ASCII backslash
     private val HSH: Char = '#'
     private val COL: Char = ':'
     private val OBR: Char = '{'
@@ -141,14 +141,14 @@ package baboon.runtime.shared {
     final class Cursor(val source: String) {
       private var pos: Int = 0
 
-      def position: Int    = pos
-      def atEnd: Boolean   = pos >= source.length
-      def peek: Char       = source.charAt(pos)
-      def advance(): Char  = { val c = source.charAt(pos); pos += 1; c }
+      def position: Int   = pos
+      def atEnd: Boolean  = pos >= source.length
+      def peek: Char      = source.charAt(pos)
+      def advance(): Char = { val c = source.charAt(pos); pos += 1; c }
 
       def expect(c: Char): Either[String, Unit] = {
         if (atEnd) Left(s"expected '$c' at $pos but reached end of input")
-        else if (peek != c) Left(s"expected '$c' at $pos but found '${peek}'")
+        else if (peek != c) Left(s"expected '$c' at $pos but found '$peek'")
         else { pos += 1; Right(()) }
       }
 

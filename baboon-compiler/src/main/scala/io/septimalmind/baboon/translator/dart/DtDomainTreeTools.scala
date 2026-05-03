@@ -19,9 +19,9 @@ object DtDomainTreeTools {
     typeAnn: TextTree[DtValue],
     isCodecData: Boolean,
   ) {
-    def valueField: TextTree[DtValue]    = q"$signature = $value;"
-    def refValueField: TextTree[DtValue] = q"$signature = $refValue;"
-    def valueGetter: TextTree[DtValue]   = q"@override\n$typeAnn get $name => $value;"
+    def valueField: TextTree[DtValue]     = q"$signature = $value;"
+    def refValueField: TextTree[DtValue]  = q"$signature = $refValue;"
+    def valueGetter: TextTree[DtValue]    = q"@override\n$typeAnn get $name => $value;"
     def refValueGetter: TextTree[DtValue] = q"@override\n$typeAnn get $name => $refValue;"
   }
 

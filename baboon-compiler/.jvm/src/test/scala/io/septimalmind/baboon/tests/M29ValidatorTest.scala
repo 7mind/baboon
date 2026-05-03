@@ -20,16 +20,17 @@ import scala.reflect.ClassTag
   *   - D03        — template body carries `derived` annotation (`TemplateBodyCarriesDerived`)
   *
   * Matrix #1 in-body (incl. self-reference and container-mediated) is already covered by
-  * `TemplateInstantiatorTest` (`TemplateInstantiationInBody`). Matrix #2 (nested template
-  * instantiation in alias RHS args) is also caught by `TemplateInstantiationInBody` during
-  * substitution (the inner template constructor is detected in `substituteTypeRef`).
+  * `TemplateInstantiatorTest` (`TemplateInstantiationInForbiddenPosition`). Matrix #2 (nested
+  * template instantiation in alias RHS args) is also caught by
+  * `TemplateInstantiationInForbiddenPosition` during substitution (the inner template
+  * constructor is detected in `substituteTypeRef`).
   *
   * Matrix #6 (`data Y { f: T }` outside a template) fires `NameNotFound` via the existing
   * `BaboonTranslator.convertTpe` path ("Type not found: T"). That diagnostic is clear and
   * accurate; no new case is added for matrix #6 (plan opt-out path).
   *
   * Regression test for matrix #2 (nested template in alias RHS args) confirms
-  * `TemplateInstantiationInBody` fires.
+  * `TemplateInstantiationInForbiddenPosition` fires.
   */
 final class M29ValidatorTest extends M29ValidatorTestBase[Either]
 
@@ -103,7 +104,7 @@ abstract class M29ValidatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] 
 
   /** Regression: matrix #2 — nested template instantiation in alias RHS args.
     * `type Y = X[Z[i32]]` where both X and Z are templates.
-    * Should fire `TemplateInstantiationInBody` (caught during substitution of X's body args).
+    * Should fire `TemplateInstantiationInForbiddenPosition` (caught during substitution of X's body args).
     */
   private val matrix2NestedTemplateInArgs: String =
     """model m29.validator.matrix2
@@ -179,7 +180,7 @@ abstract class M29ValidatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] 
           val issue = typerIssues(issues).collectFirst { case i: TyperIssue.TemplateNotInstantiated => i }
             .getOrElse(throw new AssertionError(s"no TemplateNotInstantiated in: $issues"))
           assert(issue.templateName == "X", s"expected templateName='X', got '${issue.templateName}'")
-          assert(issue.aliasName == "Y",    s"expected aliasName='Y',    got '${issue.aliasName}'")
+          assert(issue.aliasName == "Y", s"expected aliasName='Y',    got '${issue.aliasName}'")
         }
     }
 
@@ -202,7 +203,7 @@ abstract class M29ValidatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] 
           val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
           val issue = typerIssues(issues).collectFirst { case i: TyperIssue.NotATemplate => i }
             .getOrElse(throw new AssertionError(s"no NotATemplate in: $issues"))
-          assert(issue.head == "i32",  s"expected head='i32', got '${issue.head}'")
+          assert(issue.head == "i32", s"expected head='i32', got '${issue.head}'")
           assert(issue.aliasName == "Y", s"expected aliasName='Y', got '${issue.aliasName}'")
         }
     }
@@ -243,12 +244,12 @@ abstract class M29ValidatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] 
 
     // ── Matrix #2 regression ──────────────────────────────────────────────────
 
-    "matrix #2 regression: produce TemplateInstantiationInBody for nested template in alias RHS args `type Y = X[Z[i32]]`" in {
+    "matrix #2 regression: produce TemplateInstantiationInForbiddenPosition for nested template in alias RHS args `type Y = X[Z[i32]]`" in {
       (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
         for {
           outcome <- runTyperFor(parser, typer, matrix2NestedTemplateInArgs)
         } yield {
-          assertProducesTyperIssue[TyperIssue.TemplateInstantiationInBody](outcome)
+          assertProducesTyperIssue[TyperIssue.TemplateInstantiationInForbiddenPosition](outcome)
         }
     }
 
