@@ -25,6 +25,15 @@ import convtest.m24foreign.ItemKey;
 import convtest.m26builtinkeys.BuiltinMapKeyHolder;
 import convtest.m26builtinkeys.BuiltinMapKeyHolder_JsonCodec;
 import convtest.m26builtinkeys.BuiltinMapKeyHolder_UEBACodec;
+// PR-29.10 (M29) — monomorphised template cross-language acceptance fixture.
+import convtest.m29ok.M29OkHolder;
+import convtest.m29ok.M29OkHolder_JsonCodec;
+import convtest.m29ok.M29OkHolder_UEBACodec;
+import convtest.m29ok.IntPage;
+import convtest.m29ok.StrPage;
+import convtest.m29ok.Item;
+import convtest.m29ok.ItemPage;
+import convtest.m29ok.IntStrEnvelope;
 import baboon.runtime.shared.BaboonAnyOpaque;
 import baboon.runtime.shared.BaboonCodecContext;
 import baboon.runtime.shared.BaboonCodecsFacade;
@@ -65,14 +74,17 @@ public class CompatMain {
             var sampleAny = createSampleAnyShowcase();
             var ctx = BaboonCodecContext.Default;
             var facadeCtx = BaboonCodecContext.withFacade(false, freshFacade());
+            var m29Sample = createM29OkSample();
             switch (format) {
                 case "json" -> {
                     writeJson(ctx, sampleData, outputDir);
                     writeJsonAny(facadeCtx, sampleAny, outputDir);
+                    writeM29OkJson(ctx, m29Sample, outputDir);
                 }
                 case "ueba" -> {
                     writeUeba(ctx, sampleData, outputDir);
                     writeUebaAny(facadeCtx, sampleAny, outputDir);
+                    writeM29OkUeba(ctx, m29Sample, outputDir);
                 }
                 default -> {
                     System.err.println("Unknown format: " + format);
@@ -378,9 +390,109 @@ public class CompatMain {
         System.out.println("OK");
     }
 
+    // PR-29.10 (M29) — monomorphised template acceptance fixture helpers.
+    private static M29OkHolder createM29OkSample() {
+        return new M29OkHolder(
+            new IntPage(List.of(1, 2, 3), 3L),
+            new StrPage(List.of("hello", "world"), 2L),
+            new ItemPage(List.of(new Item("Widget", 9.99)), 1L),
+            new IntStrEnvelope.Ok(42),
+            new IntStrEnvelope.Err("oops")
+        );
+    }
+
+    private static void writeM29OkJson(BaboonCodecContext ctx, M29OkHolder data, String outputDir) throws Exception {
+        var mapper = new ObjectMapper();
+        var json = M29OkHolder_JsonCodec.INSTANCE.encode(ctx, data);
+        var jsonStr = mapper.writeValueAsString(json);
+        var path = Path.of(outputDir).resolve("m29-ok.json");
+        Files.writeString(path, jsonStr, StandardCharsets.UTF_8);
+        System.out.println("Written JSON to " + path.toAbsolutePath());
+    }
+
+    private static void writeM29OkUeba(BaboonCodecContext ctx, M29OkHolder data, String outputDir) throws Exception {
+        var baos = new ByteArrayOutputStream();
+        var w = new LEDataOutputStream(baos);
+        try {
+            M29OkHolder_UEBACodec.INSTANCE.encode(ctx, w, data);
+            w.flush();
+        } finally {
+            w.close();
+        }
+        var path = Path.of(outputDir).resolve("m29-ok.ueba");
+        Files.write(path, baos.toByteArray());
+        System.out.println("Written UEBA to " + path.toAbsolutePath());
+    }
+
+    private static void readAndVerifyM29Ok(String filePath) {
+        var ctx = BaboonCodecContext.Default;
+        var file = Path.of(filePath);
+        M29OkHolder data;
+        try {
+            if (filePath.endsWith(".json")) {
+                var jsonStr = Files.readString(file, StandardCharsets.UTF_8);
+                var mapper = new ObjectMapper();
+                var jsonNode = mapper.readTree(jsonStr);
+                data = M29OkHolder_JsonCodec.INSTANCE.decode(ctx, jsonNode);
+            } else {
+                var bytes = Files.readAllBytes(file);
+                var bais = new ByteArrayInputStream(bytes);
+                var r = new LEDataInputStream(bais);
+                try {
+                    data = M29OkHolder_UEBACodec.INSTANCE.decode(ctx, r);
+                } finally {
+                    r.close();
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("M29OkHolder deserialization failed: " + e.getMessage());
+            System.exit(1);
+            return;
+        }
+        // Roundtrip
+        try {
+            if (filePath.endsWith(".json")) {
+                var reEncoded = M29OkHolder_JsonCodec.INSTANCE.encode(ctx, data);
+                var reDecoded = M29OkHolder_JsonCodec.INSTANCE.decode(ctx, reEncoded);
+                if (!data.equals(reDecoded)) {
+                    System.err.println("M29OkHolder JSON roundtrip mismatch");
+                    System.exit(1);
+                }
+            } else {
+                var baos = new ByteArrayOutputStream();
+                var w = new LEDataOutputStream(baos);
+                try {
+                    M29OkHolder_UEBACodec.INSTANCE.encode(ctx, w, data);
+                    w.flush();
+                } finally {
+                    w.close();
+                }
+                var bais = new ByteArrayInputStream(baos.toByteArray());
+                var r = new LEDataInputStream(bais);
+                try {
+                    var reDecoded = M29OkHolder_UEBACodec.INSTANCE.decode(ctx, r);
+                    if (!data.equals(reDecoded)) {
+                        System.err.println("M29OkHolder UEBA roundtrip mismatch");
+                        System.exit(1);
+                    }
+                } finally {
+                    r.close();
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("M29OkHolder roundtrip failed: " + e.getMessage());
+            System.exit(1);
+        }
+        System.out.println("OK");
+    }
+
     private static void readAndVerify(String filePath) {
         if (filePath.endsWith("any-showcase.json") || filePath.endsWith("any-showcase.ueba")) {
             readAndVerifyAnyShowcase(filePath);
+            return;
+        }
+        if (filePath.endsWith("m29-ok.json") || filePath.endsWith("m29-ok.ueba")) {
+            readAndVerifyM29Ok(filePath);
             return;
         }
         var ctx = BaboonCodecContext.Default;

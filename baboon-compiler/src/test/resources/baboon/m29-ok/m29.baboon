@@ -30,3 +30,11 @@ root type StrPage = Page[str] : derived[json], derived[ueba]
 root type ItemPage = Page[Item] : derived[json], derived[ueba]
 
 root type IntStrEnvelope = Envelope[i32, str] : derived[json], derived[ueba]
+
+// service template: key-value CRUD shape.
+service Crud[K, V] {
+  def get (K): V
+  def put (V): K
+}
+
+root type IntStrCrud = Crud[i32, str]

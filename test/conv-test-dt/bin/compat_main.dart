@@ -21,6 +21,13 @@ import 'package:conv_test_dt/generated/convtest/m24foreign/foreign_key_holder.da
 import 'package:conv_test_dt/generated/convtest/m24foreign/item_key.dart';
 // PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
 import 'package:conv_test_dt/generated/convtest/m26builtinkeys/builtin_map_key_holder.dart';
+// PR-29.10 (M29) — monomorphised-template cross-language wire-format fixture.
+import 'package:conv_test_dt/generated/convtest/m29ok/m29_ok_holder.dart';
+import 'package:conv_test_dt/generated/convtest/m29ok/int_page.dart';
+import 'package:conv_test_dt/generated/convtest/m29ok/str_page.dart';
+import 'package:conv_test_dt/generated/convtest/m29ok/item.dart';
+import 'package:conv_test_dt/generated/convtest/m29ok/item_page.dart';
+import 'package:conv_test_dt/generated/convtest/m29ok/int_str_envelope.dart';
 
 const String _domainId = 'convtest.testpkg';
 const String _domainVer = '2.0.0';
@@ -242,6 +249,10 @@ void readAndVerify(String filePath) {
     readAndVerifyAnyShowcase(filePath);
     return;
   }
+  if (filePath.endsWith('m29-ok.json') || filePath.endsWith('m29-ok.ueba')) {
+    readAndVerifyM29Ok(filePath);
+    return;
+  }
   final ctx = BaboonCodecContext.defaultCtx;
   AllBasicTypes data;
 
@@ -398,6 +409,67 @@ void writeBuiltinMapKeyHolderUeba(BaboonCodecContext ctx, BuiltinMapKeyHolder da
   print('Written UEBA to ${f.absolute.path}');
 }
 
+// PR-29.10 (M29) — monomorphised-template cross-language wire-format fixture.
+M29OkHolder _createM29OkSample() {
+  return M29OkHolder(
+    intPage: IntPage(items: [1, 2, 3], total: 3),
+    strPage: StrPage(items: ['hello', 'world'], total: 2),
+    itemPage: ItemPage(items: [Item(name: 'apple', price: 1.5), Item(name: 'banana', price: 0.75)], total: 2),
+    okEnvelope: Ok(value: 42),
+    errEnvelope: Err(error: 'oops'),
+  );
+}
+
+void writeM29OkJson(BaboonCodecContext ctx, M29OkHolder data, String outputDir) {
+  Directory(outputDir).createSync(recursive: true);
+  final json = M29OkHolder_JsonCodec.instance.encode(ctx, data);
+  final jsonStr = jsonEncode(json);
+  final f = File('$outputDir/m29-ok.json');
+  f.writeAsStringSync(jsonStr);
+  print('Written JSON to ${f.absolute.path}');
+}
+
+void writeM29OkUeba(BaboonCodecContext ctx, M29OkHolder data, String outputDir) {
+  Directory(outputDir).createSync(recursive: true);
+  final writer = BaboonBinWriter();
+  M29OkHolder_UebaCodec.instance.encode(ctx, writer, data);
+  final f = File('$outputDir/m29-ok.ueba');
+  f.writeAsBytesSync(writer.toBytes());
+  print('Written UEBA to ${f.absolute.path}');
+}
+
+void readAndVerifyM29Ok(String filePath) {
+  final ctx = BaboonCodecContext.defaultCtx;
+  M29OkHolder data;
+  try {
+    if (filePath.endsWith('.json')) {
+      final jsonStr = File(filePath).readAsStringSync();
+      final json = jsonDecode(jsonStr);
+      data = M29OkHolder_JsonCodec.instance.decode(ctx, json);
+    } else {
+      final bytes = File(filePath).readAsBytesSync();
+      final reader = BaboonBinReader(Uint8List.fromList(bytes));
+      data = M29OkHolder_UebaCodec.instance.decode(ctx, reader);
+    }
+  } catch (e) {
+    stderr.writeln('M29OkHolder deserialization failed: $e');
+    exit(1);
+  }
+  if (data.intPage.total != 3) {
+    stderr.writeln('M29OkHolder intPage.total mismatch: expected 3, got ${data.intPage.total}');
+    exit(1);
+  }
+  if (data.okEnvelope is! Ok) {
+    stderr.writeln('M29OkHolder okEnvelope is not Ok');
+    exit(1);
+  }
+  if (data.errEnvelope is! Err) {
+    stderr.writeln('M29OkHolder errEnvelope is not Err');
+    exit(1);
+  }
+  print('OK');
+}
+
 void main(List<String> args) {
   if (args.length >= 3 && args[0] == 'write') {
     final outputDir = args[1];
@@ -405,15 +477,18 @@ void main(List<String> args) {
     final sampleData = createSampleData();
     final sampleAny = _createSampleAnyShowcase();
     final facadeCtx = BaboonCodecContext.withFacade(false, _freshFacade());
+    final m29Sample = _createM29OkSample();
     switch (format) {
       case 'json':
         writeJson(sampleData, outputDir);
         writeJsonAny(facadeCtx, sampleAny, outputDir);
         writeForeignKeyHolderJson(BaboonCodecContext.defaultCtx, _createForeignKeyHolderSample(), outputDir);
+        writeM29OkJson(BaboonCodecContext.defaultCtx, m29Sample, outputDir);
         break;
       case 'ueba':
         writeUeba(sampleData, outputDir);
         writeUebaAny(facadeCtx, sampleAny, outputDir);
+        writeM29OkUeba(BaboonCodecContext.defaultCtx, m29Sample, outputDir);
         break;
       default:
         stderr.writeln('Unknown format: $format');

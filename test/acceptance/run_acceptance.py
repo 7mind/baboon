@@ -572,11 +572,17 @@ async def read_and_verify(
     semaphore: asyncio.Semaphore,
     timeout: int,
 ) -> StepResult:
-    """Run deserializer for a (format, from, to) triplet."""
+    """Run deserializer for a (format, from, to) triplet.
+
+    Checks all-basic-types first, then m29-ok (PR-29.10 template acceptance).
+    Both files must pass; the first failure is returned.
+    """
     config = LANG_CONFIGS[to_lang]
     cwd = str(target_dir / config.dir_name)
 
     ext = fmt.value
+
+    # Primary fixture: all-basic-types
     file_path = str(
         (
             target_dir
@@ -585,11 +591,27 @@ async def read_and_verify(
             / f"all-basic-types.{ext}"
         ).resolve()
     )
-
     cmd, use_shell = config.read_cmd(file_path)
     async with _get_lang_lock(to_lang):
-        return await run_subprocess(
+        primary = await run_subprocess(
             cmd, cwd=cwd, semaphore=semaphore, timeout=timeout, use_shell=use_shell
+        )
+    if primary.status != Status.PASSED:
+        return primary
+
+    # PR-29.10 (M29) secondary fixture: m29-ok (monomorphised template acceptance).
+    m29_path = str(
+        (
+            target_dir
+            / "compat-data"
+            / f"{from_lang.value}-{fmt.value}"
+            / f"m29-ok.{ext}"
+        ).resolve()
+    )
+    cmd2, use_shell2 = config.read_cmd(m29_path)
+    async with _get_lang_lock(to_lang):
+        return await run_subprocess(
+            cmd2, cwd=cwd, semaphore=semaphore, timeout=timeout, use_shell=use_shell2
         )
 
 

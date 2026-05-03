@@ -5,6 +5,8 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Convtest.Testpkg;
+// PR-29.10 (M29) — monomorphised template cross-language acceptance fixture.
+using Convtest.M29ok;
 // PR-I.1c (M24 Phase 3.1) — Custom-foreign KeyCodec hook fixture. Stringy
 // foreign FStr maps to System.String; the default identity FStr_KeyCodec
 // impl handles encode/decode of map keys without host registration.
@@ -37,15 +39,18 @@ namespace ConvTest
                 var ctx = BaboonCodecContext.Default;
                 var facadeCtx = BaboonCodecContext.WithFacade(useIndices: false, FreshFacade());
 
+                var m29Sample = CreateM29OkSample();
                 if (format == "json")
                 {
                     WriteJson(ctx, sampleData, outputDir);
                     WriteJsonAny(facadeCtx, sampleAny, outputDir);
+                    WriteM29OkJson(ctx, m29Sample, outputDir);
                 }
                 else if (format == "ueba")
                 {
                     WriteUeba(ctx, sampleData, outputDir);
                     WriteUebaAny(facadeCtx, sampleAny, outputDir);
+                    WriteM29OkUeba(ctx, m29Sample, outputDir);
                 }
                 else
                 {
@@ -247,11 +252,124 @@ namespace ConvTest
             Console.WriteLine($"Written UEBA to {path}");
         }
 
+        // PR-29.10 (M29) — monomorphised template acceptance fixture helpers.
+        private static M29OkHolder CreateM29OkSample()
+        {
+            return new M29OkHolder(
+                IntPage:     new IntPage(Items: new List<int> { 1, 2, 3 }, Total: 3u),
+                StrPage:     new StrPage(Items: new List<string> { "hello", "world" }, Total: 2u),
+                ItemPage:    new ItemPage(Items: new List<Item> { new Item(Name: "Widget", Price: 9.99) }, Total: 1u),
+                OkEnvelope:  new IntStrEnvelope.Ok(Value: 42),
+                ErrEnvelope: new IntStrEnvelope.Err(Error: "oops")
+            );
+        }
+
+        private static void WriteM29OkJson(BaboonCodecContext ctx, M29OkHolder data, string outputDir)
+        {
+            var json    = M29OkHolder_JsonCodec.Instance.Encode(ctx, data);
+            var jsonStr = JsonConvert.SerializeObject(json, Formatting.None);
+            var path    = Path.Combine(outputDir, "m29-ok.json");
+            File.WriteAllText(path, jsonStr, new UTF8Encoding(false));
+            Console.WriteLine($"Written JSON to {path}");
+        }
+
+        private static void WriteM29OkUeba(BaboonCodecContext ctx, M29OkHolder data, string outputDir)
+        {
+            byte[] bytes;
+            using (var ms = new MemoryStream())
+            {
+                using (var bw = new BinaryWriter(ms))
+                {
+                    M29OkHolder_UEBACodec.Instance.Encode(ctx, bw, data);
+                }
+                ms.Flush();
+                bytes = ms.ToArray();
+            }
+            var path = Path.Combine(outputDir, "m29-ok.ueba");
+            File.WriteAllBytes(path, bytes);
+            Console.WriteLine($"Written UEBA to {path}");
+        }
+
+        private static void ReadAndVerifyM29Ok(string filePath)
+        {
+            var ctx = BaboonCodecContext.Default;
+            M29OkHolder data;
+            try
+            {
+                if (filePath.EndsWith(".json"))
+                {
+                    var jsonStr = File.ReadAllText(filePath, Encoding.UTF8);
+                    JToken jsonToken;
+                    using (var reader = new JsonTextReader(new StringReader(jsonStr)))
+                    {
+                        reader.DateParseHandling = DateParseHandling.None;
+                        jsonToken = JToken.Load(reader);
+                    }
+                    data = M29OkHolder_JsonCodec.Instance.Decode(ctx, jsonToken);
+                }
+                else
+                {
+                    var bytes = File.ReadAllBytes(filePath);
+                    using var ms = new MemoryStream(bytes);
+                    using var br = new BinaryReader(ms);
+                    data = M29OkHolder_UEBACodec.Instance.Decode(ctx, br);
+                }
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine($"M29OkHolder deserialization failed: {e.Message}");
+                Environment.Exit(1);
+                return;
+            }
+            // Roundtrip
+            try
+            {
+                if (filePath.EndsWith(".json"))
+                {
+                    var reEncoded = M29OkHolder_JsonCodec.Instance.Encode(ctx, data);
+                    var reDecoded = M29OkHolder_JsonCodec.Instance.Decode(ctx, reEncoded);
+                    if (!data.Equals(reDecoded))
+                    {
+                        Console.Error.WriteLine("M29OkHolder JSON roundtrip mismatch");
+                        Environment.Exit(1);
+                    }
+                }
+                else
+                {
+                    using var ms = new MemoryStream();
+                    using (var bw = new BinaryWriter(ms))
+                    {
+                        M29OkHolder_UEBACodec.Instance.Encode(ctx, bw, data);
+                    }
+                    var reBytes = ms.ToArray();
+                    using var ms2 = new MemoryStream(reBytes);
+                    using var br2 = new BinaryReader(ms2);
+                    var reDecoded = M29OkHolder_UEBACodec.Instance.Decode(ctx, br2);
+                    if (!data.Equals(reDecoded))
+                    {
+                        Console.Error.WriteLine("M29OkHolder UEBA roundtrip mismatch");
+                        Environment.Exit(1);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine($"M29OkHolder roundtrip failed: {e.Message}");
+                Environment.Exit(1);
+            }
+            Console.WriteLine("OK");
+        }
+
         private static void ReadAndVerify(string filePath)
         {
             if (filePath.EndsWith("any-showcase.json") || filePath.EndsWith("any-showcase.ueba"))
             {
                 ReadAndVerifyAnyShowcase(filePath);
+                return;
+            }
+            if (filePath.EndsWith("m29-ok.json") || filePath.EndsWith("m29-ok.ueba"))
+            {
+                ReadAndVerifyM29Ok(filePath);
                 return;
             }
             var ctx = BaboonCodecContext.Default;

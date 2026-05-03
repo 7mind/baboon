@@ -29,6 +29,13 @@ import {ForeignKeyHolder} from "./generated/convtest/m24foreign/ForeignKeyHolder
 import {ItemKey} from "./generated/convtest/m24foreign/ItemKey";
 // PR-26.5 (M26) — non-string builtin map-key cross-language fixture.
 import {BuiltinMapKeyHolder} from "./generated/convtest/m26builtinkeys/BuiltinMapKeyHolder";
+// PR-29.10 (M29) — monomorphised template cross-language acceptance fixture.
+import {M29OkHolder} from "./generated/convtest/m29ok/M29OkHolder";
+import {IntPage} from "./generated/convtest/m29ok/IntPage";
+import {StrPage} from "./generated/convtest/m29ok/StrPage";
+import {Item} from "./generated/convtest/m29ok/Item";
+import {ItemPage} from "./generated/convtest/m29ok/ItemPage";
+import {Ok as EnvelopeOk, Err as EnvelopeErr} from "./generated/convtest/m29ok/IntStrEnvelope";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -263,6 +270,10 @@ function readAndVerify(filePath: string): void {
         readAndVerifyAnyShowcase(filePath);
         return;
     }
+    if (filePath.endsWith("m29-ok.json") || filePath.endsWith("m29-ok.ueba")) {
+        readAndVerifyM29Ok(filePath);
+        return;
+    }
     const ctx = BaboonCodecContext.Default;
     let data: AllBasicTypes;
 
@@ -415,6 +426,80 @@ function writeBuiltinMapKeyHolderUeba(ctx: BaboonCodecContext, data: BuiltinMapK
     console.log(`Written UEBA to ${p}`);
 }
 
+// PR-29.10 (M29) — monomorphised template acceptance fixture helpers.
+function createM29OkSample(): M29OkHolder {
+    return new M29OkHolder(
+        new IntPage([1, 2, 3], 3),
+        new StrPage(["hello", "world"], 2),
+        new ItemPage([new Item("Widget", 9.99)], 1),
+        new EnvelopeOk(42),
+        new EnvelopeErr("oops"),
+    );
+}
+
+function writeM29OkJson(ctx: BaboonCodecContext, data: M29OkHolder, outputDir: string): void {
+    fs.mkdirSync(outputDir, {recursive: true});
+    const json = JSON.stringify(M29OkHolder.jsonCodec().encode(ctx, data));
+    const p = path.join(outputDir, "m29-ok.json");
+    fs.writeFileSync(p, json);
+    console.log(`Written JSON to ${p}`);
+}
+
+function writeM29OkUeba(ctx: BaboonCodecContext, data: M29OkHolder, outputDir: string): void {
+    fs.mkdirSync(outputDir, {recursive: true});
+    const w = new BaboonBinWriter();
+    M29OkHolder.binCodec().encode(ctx, data, w);
+    const p = path.join(outputDir, "m29-ok.ueba");
+    fs.writeFileSync(p, w.toBytes());
+    console.log(`Written UEBA to ${p}`);
+}
+
+function readAndVerifyM29Ok(filePath: string): void {
+    const ctx = BaboonCodecContext.Default;
+    let data: M29OkHolder;
+    try {
+        if (filePath.endsWith(".json")) {
+            const jsonStr = fs.readFileSync(filePath, "utf-8");
+            const json = JSON.parse(jsonStr);
+            data = M29OkHolder.jsonCodec().decode(ctx, json);
+        } else {
+            const bytes = fs.readFileSync(filePath);
+            const r = new BaboonBinReader(new Uint8Array(bytes));
+            data = M29OkHolder.binCodec().decode(ctx, r);
+        }
+    } catch (e) {
+        console.error(`M29OkHolder deserialization failed: ${e}`);
+        process.exit(1);
+    }
+    // Roundtrip
+    try {
+        if (filePath.endsWith(".json")) {
+            const reEncoded = M29OkHolder.jsonCodec().encode(ctx, data!);
+            const reDecoded = M29OkHolder.jsonCodec().decode(ctx, reEncoded);
+            // Structural equality check via JSON serialization
+            if (JSON.stringify(reEncoded) !== JSON.stringify(M29OkHolder.jsonCodec().encode(ctx, reDecoded))) {
+                console.error("M29OkHolder JSON roundtrip mismatch");
+                process.exit(1);
+            }
+        } else {
+            const w = new BaboonBinWriter();
+            M29OkHolder.binCodec().encode(ctx, data!, w);
+            const r = new BaboonBinReader(w.toBytes());
+            const reDecoded = M29OkHolder.binCodec().decode(ctx, r);
+            const w2 = new BaboonBinWriter();
+            M29OkHolder.binCodec().encode(ctx, reDecoded, w2);
+            if (w.toBytes().join(",") !== w2.toBytes().join(",")) {
+                console.error("M29OkHolder UEBA roundtrip mismatch");
+                process.exit(1);
+            }
+        }
+    } catch (e) {
+        console.error(`M29OkHolder roundtrip failed: ${e}`);
+        process.exit(1);
+    }
+    console.log("OK");
+}
+
 const args = process.argv.slice(2);
 if (args[0] === "write") {
     const outputDir = args[1];
@@ -422,13 +507,16 @@ if (args[0] === "write") {
     const sampleData = createSampleData();
     const sampleAny = createSampleAnyShowcase();
     const facadeCtx = BaboonCodecContext.withFacade(false, freshFacade());
+    const m29Sample = createM29OkSample();
     if (format === "json") {
         writeJson(sampleData, outputDir);
         writeJsonAny(facadeCtx, sampleAny, outputDir);
         writeForeignKeyHolderJson(BaboonCodecContext.Default, createForeignKeyHolderSample(), outputDir);
+        writeM29OkJson(BaboonCodecContext.Default, m29Sample, outputDir);
     } else if (format === "ueba") {
         writeUeba(sampleData, outputDir);
         writeUebaAny(facadeCtx, sampleAny, outputDir);
+        writeM29OkUeba(BaboonCodecContext.Default, m29Sample, outputDir);
     } else {
         console.error(`Unknown format: ${format}`);
         process.exit(1);

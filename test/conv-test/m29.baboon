@@ -1,0 +1,44 @@
+model convtest.m29ok
+
+version "1.0.0"
+
+// PR-29.10 (M29) — cross-language wire-format acceptance fixture for
+// monomorphised templates. Each alias is the materialised concrete type
+// emitted to every backend (spec §3.1 / locked decision #4).
+
+// A non-template DTO used as a concrete type argument below.
+data Item {
+  name:  str
+  price: f64
+}
+
+// data template: paged-results shape.
+data Page[T] {
+  items: lst[T]
+  total: u32
+}
+
+// adt template: result-or-error shape.
+adt Envelope[T, E] {
+  data Ok  { value: T }
+  data Err { error: E }
+}
+
+// Alias instantiations — these are the concrete types emitted to every backend.
+// The alias name becomes the materialised type identity (spec §3.1).
+
+root type IntPage       = Page[i32]       : derived[json], derived[ueba]
+root type StrPage       = Page[str]       : derived[json], derived[ueba]
+root type ItemPage      = Page[Item]      : derived[json], derived[ueba]
+root type IntStrEnvelope = Envelope[i32, str] : derived[json], derived[ueba]
+
+// Acceptance holder — bundles all four root aliases into a single
+// serialisable record so one write/read exercise covers all concrete
+// types produced by template monomorphisation in this fixture.
+root data M29OkHolder : derived[json], derived[ueba] {
+  intPage:       IntPage
+  strPage:       StrPage
+  itemPage:      ItemPage
+  okEnvelope:    IntStrEnvelope
+  errEnvelope:   IntStrEnvelope
+}
