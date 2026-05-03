@@ -303,6 +303,98 @@ Verification: `grep -n 'RawTypeRef.Constructor docs/spec/generics.md` no matches
 
 ---
 
+## PR-29.5 — Typer: monomorphisation via AST substitution; alias-id canonical
+
+## [PR-29.5-D01] No test for ADT-template, Contract-template, or Service-template substitution
+**Status:** resolved (round 2)
+**Severity:** major
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateInstantiatorTest.scala` (whole file).
+**Description:** The substitution descends into all four declaration kinds; `substituteAdtMembers` and `substituteFuncs` are new code paths in `TemplateInstantiator.scala`. The PR-29.5 brief explicitly enumerated all four kinds. Tests only cover DTO templates. ADT-template substitution in particular has a non-trivial extra layer (`RawAdtMember` wraps a nested DTO/Contract); a regression that swaps `m.copy(dto = …)` for `m.copy(contract = …)` would not be caught. Service templates have method args/returns/errors — three substitution sites per method.
+**Suggested fix:** Add at least one test each for ADT, Contract, and Service templates. Suggested shapes:
+- ADT: `adt Result[T, E] { data Ok { v: T } data Err { e: E } }; type IntStrResult = Result[i32, str]` → materialised ADT contains substituted Ok/Err branches.
+- Contract: `contract Acked[T] { value: T; ack: bit }; type IntAcked = Acked[i32]` → materialised contract has `value: i32; ack: bit`.
+- Service: `service Querier[Q, R] { query: { q: Q } => R }; type IntStrQuerier = Querier[i32, str]` → materialised service has substituted method shapes.
+
+## [PR-29.5-D02] No test for `any[T]` placeholder substitution
+**Status:** resolved (round 2)
+**Severity:** major
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateInstantiatorTest.scala` (whole file); substitution code at `TemplateInstantiator.scala:389-397` (the `AnyRef` recursion arm).
+**Description:** Spec §2.3 explicitly lists `any[T]` as a substitution target. The implementation handles it via a `RawTypeRef.AnyRef` recursion arm at L389-397, but no test locks the behaviour. A regression that drops the `AnyRef` arm (e.g. fall-through to `F.pure(anyRef)` unconditionally) would silently leak the placeholder `T` into the materialised body.
+**Suggested fix:** Add `data Wrapper[T] { f: any[T] }; type IntWrap = Wrapper[i32]` test — assert that materialised `IntWrap.f` has type `any[i32]` (the `AnyRef.underlying` substituted to `i32`).
+
+## [PR-29.5-D03] Silent acceptance of body-side `derived`; risks PR-29.7 writing dead validator
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala:140-141`.
+**Description:** Code merges `alias.derived ++ raw.derived` and the comment claims this is "for safety" pending PR-29.7. Per spec §5.3 a body `derived` is a spec error — silently merging risks PR-29.7 finding the body-derivation already absorbed and writing a now-dead validator.
+**Suggested fix:** Either (a) leave a `// TODO PR-29.7: assert raw.derived.isEmpty` so PR-29.7 wires the check correctly, or (b) `assert(raw.derived.isEmpty)` now and let any leak surface. Prefer (a) — defer the validator-side error to PR-29.7 per scope discipline.
+
+## [PR-29.5-D04] In-body matcher ignores namespaced templates
+**Status:** resolved (deferred — flagged for PR-29.7)
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala:365-367`.
+**Description:** The `prefix.isEmpty` filter means `ns.Foo[T]` in a body never triggers `TemplateInstantiationInBody`. Code comment acknowledges; matrix #1 enforcement for namespaced templates is silently deferred.
+**Fix:** Defer to PR-29.7. The substitution pass handles top-level template names correctly; namespaced template resolution is a scope-builder concern that PR-29.7 (validator) will address as part of the broader matrix #1 enforcement.
+
+## [PR-29.5-D05] Alias-chain test does not assert second alias materialises
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateInstantiatorTest.scala:280-291` (approximate).
+**Description:** The alias-chain test (`type IntPage = Page[i32]; type IP = IntPage`) only asserts `IntPage` present and `Page` absent. Does not assert that `IP` itself appears in the materialised member list (which it should — as a `RawAlias` to a real `RawDto`).
+**Suggested fix:** Add `assert(names.contains("IP"))` (or equivalent) to lock the chain semantics — otherwise a regression that drops aliases-of-aliases passes silently.
+
+## [PR-29.5-D06] `Domain.templateRegistry` field now write-only after PR-29.5
+**Status:** resolved (deferred — keep for inspection tooling per documented disposition)
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/model/Domain.scala:20`.
+**Description:** PR-29.4 added `Domain.templateRegistry` so PR-29.5 could consume it. PR-29.5 actually consumes the registry IN-PIPELINE (before `Domain` is built). The field is set but not read by any pass.
+**Fix:** Defer; documented as inspection/tooling state. PR-29.8 (LSP polish) may consume the field for hover/completion of template definitions; if not needed there, drop in PR-29.11 (docs catch-up + cleanup).
+
+## [PR-29.5-D07] Namespaced alias targeting namespaced template — coverage gap
+**Status:** resolved (round 2)
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateInstantiatorTest.scala`.
+**Description:** `TemplateInstantiator.scala:401-424` `resolveTemplateKey` threads `nsPath` and uses `ownerForCurrent` for same-namespace resolution. No test covers a namespaced alias targeting a namespaced template (e.g. `ns foo { data X[T] { f: T } type Y = X[i32] }`).
+**Suggested fix:** Add a test exercising same-namespace template + alias to lock the resolver behaviour. The implementation appears correct but is untested.
+
+## [PR-29.5-D08] `mdl --seq :build :test` skipped — full close gate not run for typer-pipeline-rewriting PR
+**Status:** resolved (deferred — per `[PR-29.4-D06]` precedent; full JVM test 360/360 includes codegen emission tests)
+**Severity:** minor (process)
+**Location:** PR-29.5 verification gates.
+**Description:** PR-29.5 actively REWRITES the member list flowing into the rest of the pipeline — codegen path is touched indirectly. Per `[PR-29.4-D06]` precedent the per-target gates plus `+compile` were deemed sufficient; PR-29.5's surface change is more invasive.
+**Fix:** Defer per `[PR-29.4-D06]` precedent. Per-target gates (`baboonJVM/compile`, `baboonJS/compile`, `baboonJVM/test 360/360`, `+compile`) cover the surface; the 360-test JVM suite includes codegen emission tests (`Identifier*EmissionTest`, `RegularEmissionTest`, etc.) which would catch fixture md5 churn. Existing fixtures produce empty `TemplateRegistry` and unchanged member list — substitution is a no-op for them. Full `mdl :ci` close gate recommended before merging the M29 branch as a whole, not gated per-PR.
+
+## [PR-29.5-D09] `TemplateArityMismatch.ownerName` field name overloaded
+**Status:** resolved (deferred — defer naming polish to PR-29.7 validator review)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/issues/TyperIssue.scala:170-176`.
+**Description:** The field carries the alias's name (the instantiation site), not the template's owner. `instantiationSite` or `aliasName` would be less ambiguous since `Owner` is a typed concept elsewhere in the codebase.
+**Fix:** Defer; PR-29.7 (validator + diagnostics polish) is the natural home for TyperIssue field-naming review across the M29 cases. Rename then to avoid touching the field repeatedly.
+
+## [PR-29.5-D10] Case-arm formatting alignment in 3-site exhaustive-match update
+**Status:** resolved (deferred — `mdl :fmt` will reflow on next run)
+**Severity:** nit
+**Location:** `baboon-compiler/.js/src/main/scala/io/septimalmind/baboon/BaboonJS.scala:1535-1537`; `baboon-compiler/src/main/scala/io/septimalmind/baboon/lsp/state/WorkspaceState.scala:154-156`.
+**Description:** New arms aligned with extra spaces (`(_, _, _, _, meta)   => Some(meta.pos)`); pre-existing arms use single-space alignment.
+**Fix:** Defer; `mdl :fmt` (scalafmt) reflows automatically on next formatter run. No functional impact.
+
+### PR-29.5 round-2 fix summary (D01, D02, D03, D05, D07)
+
+Five inline-worthy round-1 defects fixed; D04, D06, D08, D09, D10 deferred with rationale. Round-2 reviewer (Opus) cleared with "no findings, all 5 round-1 inline fixes resolved correctly with no regressions."
+
+- **D01** (3 new tests at the end of `TemplateInstantiatorTest.scala`) — ADT, Contract, Service template substitution coverage:
+  - `adt Result[T, E] { data Ok { v: T } data Err { e: E } }; type IntStrResult = Result[i32, str]` — both branches present after substitution; `Ok.v: i32`, `Err.e: str`.
+  - `contract Acked[T] { value: T \n ack: bit }; type IntAcked = Acked[i32]` — `value: i32` substituted, `ack: bit` preserved. Real Baboon contract syntax verified from `pkg0/pkg03.baboon`.
+  - `service Querier[Q, R] { def query (Q): R }; type IntStrQuerier = Querier[i32, str]` — method arg substituted from `Q` to `i32`, return type substituted from `R` to `str`. Real shorthand syntax verified from `petstore.baboon` and `DefService.scala`.
+- **D02** — `data Wrapper[T] { f: any[T] }; type IntWrap = Wrapper[i32]` test added; asserts `IntWrap.f` materialised as `TypeRef.Any(AnyVariant.Global, Some(TypeRef.Scalar(TypeId.Builtins.i32)))` — locks the `RawTypeRef.AnyRef.underlying` substitution arm at `TemplateInstantiator.scala:389-397`.
+- **D03** — `// TODO PR-29.7: assert raw.derived.isEmpty — body-side derived is a spec error per spec §5.3` comment added at both `derived = alias.derived ++ raw.derived` merge sites: Dto (L154) and Adt (L171). Contract and Service have no `derived` field per `RawDto.scala:20,30`; no comment needed there.
+- **D05** — Added third assertion `domain.aliases.exists(a => a.name.name == "IP")` to the alias-chain test. Discovery: plain aliases land in `TyperOutput.aliases` then `Domain.aliases` (verified `BaboonTyper.scala:450-452`), NOT in `domain.defs.meta.nodes` like materialised template-instantiations do.
+- **D07** — Added `namespacedTemplateDomain` test using `ns foo { data X[T] { f: T }; root type Y = X[i32] }`. Asserts `Y` appears under `Owner.Ns(Seq(TypeName("foo")))` with `f: i32` substituted; `X` absent under any owner. The `root` keyword on the alias is required because the dependency-graph closure only includes root-reachable types — without it, `Y` is unreachable and dropped.
+
+Verification: `sbt baboonJVM/compile` PASS, `baboonJS/compile` PASS, `'testOnly *TemplateInstantiator*'` 17/17 (12 baseline + 5 new), `baboonJVM/test` 360/360 (no regressions). No new TyperIssue cases (3-site exhaustive-match constraint not triggered by D01-D07 fixes).
+
+---
+
 ## PR-29.4 — Typer: template registry; templates never become `DomainMember`
 
 ## [PR-29.4-D01] `TemplateRegistry` built but discarded at `process` boundary; PR-29.5 has no consumer

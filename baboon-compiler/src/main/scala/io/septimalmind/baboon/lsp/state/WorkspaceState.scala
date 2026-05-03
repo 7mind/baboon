@@ -151,8 +151,10 @@ class WorkspaceState(
       case _: EmptyFamily                        => None
       case _: EmptyFamilyReload                  => None
       case _: TodoTyperIssue                     => None
-      case InvalidRtMapping(_, _, meta)          => Some(meta.pos)
-      case DuplicateTypeParam(_, _, meta)        => Some(meta.pos)
+      case InvalidRtMapping(_, _, meta)              => Some(meta.pos)
+      case DuplicateTypeParam(_, _, meta)            => Some(meta.pos)
+      case TemplateArityMismatch(_, _, _, _, meta)   => Some(meta.pos)
+      case TemplateInstantiationInBody(_, _, meta)   => Some(meta.pos)
     }
   }
 

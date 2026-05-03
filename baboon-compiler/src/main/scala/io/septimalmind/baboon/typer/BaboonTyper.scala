@@ -33,6 +33,7 @@ object BaboonTyper {
     rootExtractor: RootExtractor,
     adtInheritanceExpander: AdtInheritanceExpander[F],
     templateRegistryBuilder: TemplateRegistryBuilder[F],
+    templateInstantiator: TemplateInstantiator[F],
   ) extends BaboonTyper[F] {
 
     private case class TyperOutput(defs: List[DomainMember], renames: Map[TypeId.User, TypeId.User], aliases: List[AliasInfo], templateRegistry: TemplateRegistry)
@@ -412,12 +413,18 @@ object BaboonTyper {
         initialOrdered   <- order(pkg, initialFlattened, meta)
         expandedMembers  <- adtInheritanceExpander.expand(pkg, nonTemplateMembers, initialOrdered, meta)
 
+        // PR-29.5: instantiate template aliases. Every `RawTLDef.Alias` whose RHS is a
+        // `RawTypeRef.Constructor` over a registered template is replaced by the corresponding
+        // concrete `RawTLDef.{DTO|ADT|Contract|Service}` keyed by the alias's name (locked
+        // decision #4). Aliases NOT pointing at a template pass through unchanged.
+        instantiatedMembers <- templateInstantiator.instantiate(pkg, expandedMembers, templateRegistry)
+
         // Re-build the scope tree over the rewritten defns so that re-emitted branches are
         // registered as nested scopes under the receiving ADT (otherwise
         // `convertAdt` → `scopeSupport.resolveUserTypeId` would fail to find the synthesized
         // branch DTOs). After this point the `RawAdtMember.{Include, Exclude, Intersect}`
         // arms have been desugared and the standard pipeline runs unchanged.
-        scopes   <- builder.buildScopes(pkg, expandedMembers, meta)
+        scopes   <- builder.buildScopes(pkg, instantiatedMembers, meta)
         flattened = flattenScopes(scopes)
         renames  <- computeRenames(pkg, flattened)
         ordered  <- order(pkg, flattened, meta)

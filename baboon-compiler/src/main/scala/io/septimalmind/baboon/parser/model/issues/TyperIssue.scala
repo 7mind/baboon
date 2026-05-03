@@ -162,6 +162,42 @@ object TyperIssue {
     */
   case class DuplicateTypeParam(name: String, ownerName: String, meta: RawNodeMeta) extends TyperIssue
 
+  /** Arity mismatch at a template instantiation site (negative-test matrix #3):
+    * the number of type arguments does not equal the number of type parameters
+    * declared on the template.
+    *
+    * Example: `data X[T] { a: lst[T] }; type XInt = X[i32, str]`
+    * produces `TemplateArityMismatch("X", "XInt", expected=1, actual=2, …)`.
+    */
+  case class TemplateArityMismatch(
+    templateName: String,
+    ownerName: String,
+    expected: Int,
+    actual: Int,
+    meta: RawNodeMeta,
+  ) extends TyperIssue
+
+  /** A template instantiation expression appears in a field position inside a
+    * template body (spec §4, matrix #1 / locked decision #3).
+    *
+    * This covers both the direct self-reference case
+    * (`data X[T] { rec: X[T] }`) and the container-mediated case
+    * (`data Tree[T] { children: lst[Tree[T]] }`). In both cases the inner
+    * `X[…]` / `Tree[…]` is a template instantiation in field position, which
+    * is forbidden. The rejection happens at substitution time in
+    * `TemplateInstantiator`.
+    *
+    * `containingTemplateName` — the template whose body contains the forbidden
+    *   instantiation.
+    * `instantiatedName` — the name of the template being (illegally) instantiated
+    *   in the body (often equal to `containingTemplateName` for self-reference).
+    */
+  case class TemplateInstantiationInBody(
+    containingTemplateName: String,
+    instantiatedName: String,
+    meta: RawNodeMeta,
+  ) extends TyperIssue
+
   implicit val todoPrinter: IssuePrinter[TodoTyperIssue] =
     (issue: TodoTyperIssue) => {
       issue.descr
@@ -576,6 +612,20 @@ object TyperIssue {
     (issue: DuplicateTypeParam) => {
       s"""${extractLocation(issue.meta)}
          |Template '${issue.ownerName}' declares duplicate type parameter '${issue.name}'
+         |""".stripMargin
+    }
+
+  implicit val templateArityMismatchPrinter: IssuePrinter[TemplateArityMismatch] =
+    (issue: TemplateArityMismatch) => {
+      s"""${extractLocation(issue.meta)}
+         |Template '${issue.templateName}' instantiated with wrong arity in '${issue.ownerName}': expected ${issue.expected} type argument(s), got ${issue.actual}
+         |""".stripMargin
+    }
+
+  implicit val templateInstantiationInBodyPrinter: IssuePrinter[TemplateInstantiationInBody] =
+    (issue: TemplateInstantiationInBody) => {
+      s"""${extractLocation(issue.meta)}
+         |Template '${issue.containingTemplateName}' contains a template instantiation of '${issue.instantiatedName}' in field position — template instantiation is only permitted as the right-hand side of a type alias (spec §4, matrix #1)
          |""".stripMargin
     }
 
