@@ -155,6 +155,9 @@ class WorkspaceState(
       case DuplicateTypeParam(_, _, meta)            => Some(meta.pos)
       case TemplateArityMismatch(_, _, _, _, meta)   => Some(meta.pos)
       case TemplateInstantiationInBody(_, _, meta)   => Some(meta.pos)
+      case TemplateNotInstantiated(_, _, meta)       => Some(meta.pos)
+      case NotATemplate(_, _, meta)                  => Some(meta.pos)
+      case TemplateBodyCarriesDerived(_, meta)       => Some(meta.pos)
     }
   }
 

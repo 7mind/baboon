@@ -243,8 +243,9 @@ data Y {
 }
 ```
 
-The diagnostic name for this case (whether the existing `NameNotFound` or
-a more specific `OrphanTypeParam`) is finalised in PR-29.7.
+This case fires the existing `NameNotFound` diagnostic; no new typer issue is introduced
+(locked in PR-29.7 per CLAUDE.md §4 simplicity — `Type not found: T` is accurate and clear
+when `T` is referenced outside any template body).
 
 #### 2.5.7 Template referenced without instantiation (matrix #7)
 
