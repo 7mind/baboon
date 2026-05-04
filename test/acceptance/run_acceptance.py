@@ -569,28 +569,25 @@ async def read_and_verify(
     from_lang: Lang,
     to_lang: Lang,
     target_dir: Path,
+    blobs_root: Path,
     semaphore: asyncio.Semaphore,
     timeout: int,
 ) -> StepResult:
     """Run deserializer for a (format, from, to) triplet.
 
     Checks all-basic-types first, then m29-ok (PR-29.10 template acceptance).
-    Both files must pass; the first failure is returned.
+    Both files must pass; the first failure is returned. The m29-ok fixture
+    is skipped silently if the blob is absent (e.g. running against blobs
+    produced by a pre-M29 commit in cross-version compat checks).
     """
     config = LANG_CONFIGS[to_lang]
     cwd = str(target_dir / config.dir_name)
 
     ext = fmt.value
+    blob_dir = blobs_root / f"{from_lang.value}-{fmt.value}"
 
     # Primary fixture: all-basic-types
-    file_path = str(
-        (
-            target_dir
-            / "compat-data"
-            / f"{from_lang.value}-{fmt.value}"
-            / f"all-basic-types.{ext}"
-        ).resolve()
-    )
+    file_path = str((blob_dir / f"all-basic-types.{ext}").resolve())
     cmd, use_shell = config.read_cmd(file_path)
     async with _get_lang_lock(to_lang):
         primary = await run_subprocess(
@@ -600,14 +597,10 @@ async def read_and_verify(
         return primary
 
     # PR-29.10 (M29) secondary fixture: m29-ok (monomorphised template acceptance).
-    m29_path = str(
-        (
-            target_dir
-            / "compat-data"
-            / f"{from_lang.value}-{fmt.value}"
-            / f"m29-ok.{ext}"
-        ).resolve()
-    )
+    m29_blob = blob_dir / f"m29-ok.{ext}"
+    if not m29_blob.exists():
+        return primary
+    m29_path = str(m29_blob.resolve())
     cmd2, use_shell2 = config.read_cmd(m29_path)
     async with _get_lang_lock(to_lang):
         return await run_subprocess(
@@ -1081,6 +1074,35 @@ async def async_main():
         default=None,
         help="Subset of languages to test (default: all)",
     )
+    parser.add_argument(
+        "--source-root",
+        default=None,
+        help=(
+            "Override source tree from which models and conv-test-* projects "
+            "are taken (default: this script's repo root). Used by the "
+            "cross-version compat orchestrator to point a newer compiler at an "
+            "older checkout's models/projects."
+        ),
+    )
+    parser.add_argument(
+        "--phase",
+        choices=("all", "write", "read"),
+        default="all",
+        help=(
+            "all (default): run codegen, build, write, read. "
+            "write: stop after producing blobs in <target>/compat-data. "
+            "read: skip the write phase and read from --blobs-dir."
+        ),
+    )
+    parser.add_argument(
+        "--blobs-dir",
+        default=None,
+        help=(
+            "Directory containing per-(lang,fmt) blob subdirs to read in "
+            "--phase read (default: <target>/compat-data). Each subdir must "
+            "be named <lang>-<fmt> and contain all-basic-types.<ext>."
+        ),
+    )
     args = parser.parse_args()
 
     baboon_bin = str(Path(args.baboon).resolve())
@@ -1088,7 +1110,19 @@ async def async_main():
     target_dir.mkdir(parents=True, exist_ok=True)
 
     # Determine source root (where test/ directory lives)
-    source_root = Path(__file__).resolve().parent.parent.parent
+    if args.source_root:
+        source_root = Path(args.source_root).resolve()
+    else:
+        source_root = Path(__file__).resolve().parent.parent.parent
+
+    if args.blobs_dir:
+        blobs_root = Path(args.blobs_dir).resolve()
+    else:
+        blobs_root = target_dir / "compat-data"
+
+    if args.phase == "read" and not blobs_root.exists():
+        print(f"FATAL: --phase read requires existing blobs dir: {blobs_root}")
+        return 1
 
     if args.langs:
         lang_names = {l.value for l in Lang}
@@ -1111,7 +1145,10 @@ async def async_main():
 
     print(f"Baboon acceptance test suite")
     print(f"  Binary:      {baboon_bin}")
+    print(f"  Source root: {source_root}")
     print(f"  Target:      {target_dir}")
+    print(f"  Phase:       {args.phase}")
+    print(f"  Blobs dir:   {blobs_root}")
     print(f"  Parallelism: {args.parallelism}")
     print(f"  Languages:   {', '.join(LANG_DISPLAY[l] for l in langs)}")
     print(f"  Formats:     {', '.join(f.value for f in Format)}")
@@ -1164,25 +1201,47 @@ async def async_main():
         return 130
 
     # Phase 4: Serialize
-    print_phase("Phase 4: Serialize")
-    write_tasks = {}
-    for lang in langs:
-        if report.build_results[lang].status != Status.PASSED:
-            continue
-        for fmt in Format:
-            write_tasks[(lang, fmt)] = asyncio.create_task(
-                write_data(lang, fmt, target_dir, semaphore, args.timeout)
-            )
+    if args.phase in ("all", "write"):
+        print_phase("Phase 4: Serialize")
+        write_tasks = {}
+        for lang in langs:
+            if report.build_results[lang].status != Status.PASSED:
+                continue
+            for fmt in Format:
+                write_tasks[(lang, fmt)] = asyncio.create_task(
+                    write_data(lang, fmt, target_dir, semaphore, args.timeout)
+                )
 
-    for (lang, fmt), task in write_tasks.items():
-        result = await task
-        report.write_results[(lang, fmt)] = result
-        print_step(lang, f"write {fmt.value}", result)
+        for (lang, fmt), task in write_tasks.items():
+            result = await task
+            report.write_results[(lang, fmt)] = result
+            print_step(lang, f"write {fmt.value}", result)
 
-    if _shutting_down:
+        if _shutting_down:
+            report.total_duration_sec = time.monotonic() - start_time
+            write_all_reports(report, langs, target_dir)
+            return 130
+    else:
+        print_phase("Phase 4: Serialize (skipped — --phase read)")
+        # Synthesize PASSED write_results for langs whose blobs are present
+        # so the read-phase gating logic below treats them as eligible writers.
+        for lang in langs:
+            for fmt in Format:
+                blob = blobs_root / f"{lang.value}-{fmt.value}" / f"all-basic-types.{fmt.value}"
+                if blob.exists():
+                    report.write_results[(lang, fmt)] = StepResult(
+                        Status.PASSED, 0.0, "", "", 0
+                    )
+
+    if args.phase == "write":
         report.total_duration_sec = time.monotonic() - start_time
+        print_phase("Phase 6: Generate report (write-only)")
         write_all_reports(report, langs, target_dir)
-        return 130
+        # In write-only mode, success is gated on codegen + builds + writes.
+        all_writes_ok = all(
+            r.status == Status.PASSED for r in report.write_results.values()
+        ) and len(report.write_results) > 0
+        return 0 if all_writes_ok else 1
 
     # Phase 5: Deserialize and verify
     print_phase("Phase 5: Deserialize and verify")
@@ -1204,7 +1263,8 @@ async def async_main():
                 key = (fmt, from_lang, to_lang)
                 read_tasks[key] = asyncio.create_task(
                     read_and_verify(
-                        fmt, from_lang, to_lang, target_dir, semaphore, args.timeout
+                        fmt, from_lang, to_lang, target_dir, blobs_root,
+                        semaphore, args.timeout,
                     )
                 )
 
