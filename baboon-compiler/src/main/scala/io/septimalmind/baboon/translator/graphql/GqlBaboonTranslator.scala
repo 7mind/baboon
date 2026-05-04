@@ -167,7 +167,7 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
           case _: Typedef.NonDataTypedef => // skip services, contracts
           case _: Typedef.Foreign        => // skip — handled as scalars or resolved via runtimeMapping
           case _ if m.ownedByAdt         => // skip — emitted by parent ADT
-          case defn                      => emitTypedef(sb, defn, domain, foreignResolutions)
+          case defn                      => emitTypedef(sb, defn, m, domain, foreignResolutions)
         }
     }
 
@@ -181,18 +181,19 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
   private def emitTypedef(
     sb: StringBuilder,
     defn: Typedef.User,
+    member: DomainMember.User,
     domain: Domain,
     foreignResolutions: Map[TypeId.User, Option[TypeRef]],
   ): Unit = {
     defn match {
       case dto: Typedef.Dto =>
-        emitDto(sb, dto, foreignResolutions)
+        emitDto(sb, dto, member.docs, foreignResolutions)
 
       case e: Typedef.Enum =>
-        emitEnum(sb, e)
+        emitEnum(sb, e, member.docs)
 
       case adt: Typedef.Adt =>
-        emitAdt(sb, adt, domain, foreignResolutions)
+        emitAdt(sb, adt, member.docs, domain, foreignResolutions)
 
       case _ => // skip
     }
@@ -202,8 +203,9 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
     typeTranslator.fieldTypeStr(typeTranslator.resolveTypeRef(ref, foreignResolutions))
   }
 
-  private def emitDto(sb: StringBuilder, dto: Typedef.Dto, foreignResolutions: Map[TypeId.User, Option[TypeRef]]): Unit = {
+  private def emitDto(sb: StringBuilder, dto: Typedef.Dto, docs: Docs, foreignResolutions: Map[TypeId.User, Option[TypeRef]]): Unit = {
     val name = typeTranslator.typeName(dto.id)
+    sb.append(typeTranslator.renderGqlDescription(docs, ""))
     if (dto.fields.isEmpty) {
       sb.append(s"type $name {\n")
       sb.append(s"  _empty: Boolean\n")
@@ -212,14 +214,16 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
       sb.append(s"type $name {\n")
       dto.fields.foreach {
         f =>
+          sb.append(typeTranslator.renderGqlDescription(f.docs, "  "))
           sb.append(s"  ${typeTranslator.sanitizeName(f.name.name)}: ${resolveFieldType(f.tpe, foreignResolutions)}\n")
       }
       sb.append(s"}\n\n")
     }
   }
 
-  private def emitEnum(sb: StringBuilder, e: Typedef.Enum): Unit = {
+  private def emitEnum(sb: StringBuilder, e: Typedef.Enum, docs: Docs): Unit = {
     val name = typeTranslator.typeName(e.id)
+    sb.append(typeTranslator.renderGqlDescription(docs, ""))
     sb.append(s"enum $name {\n")
     e.members.toList.foreach {
       m =>
@@ -231,6 +235,7 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
   private def emitAdt(
     sb: StringBuilder,
     adt: Typedef.Adt,
+    docs: Docs,
     domain: Domain,
     foreignResolutions: Map[TypeId.User, Option[TypeRef]],
   ): Unit = {
@@ -247,7 +252,7 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
         domain.defs.meta.nodes.get(memberId).foreach {
           case u: DomainMember.User =>
             u.defn match {
-              case dto: Typedef.Dto => emitDto(sb, dto, foreignResolutions)
+              case dto: Typedef.Dto => emitDto(sb, dto, u.docs, foreignResolutions)
               case _                => // skip non-DTO members (shouldn't happen per grammar)
             }
           case _ => // skip
@@ -255,6 +260,7 @@ class GqlBaboonTranslator[F[+_, +_]: Error2](
         branchName
     }
 
+    sb.append(typeTranslator.renderGqlDescription(docs, ""))
     sb.append(s"union $name = ${branchNames.mkString(" | ")}\n\n")
   }
 

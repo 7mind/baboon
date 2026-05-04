@@ -4,6 +4,39 @@ import io.septimalmind.baboon.typer.model.*
 
 class GqlTypeTranslator {
 
+  /** Render a GraphQL block-string description for a `Docs` value.
+    *
+    * Returns the full description block (with trailing newline) ready to be
+    * prepended to a type, field, or argument declaration, or `""` for empty
+    * docs. Per spec §7.10: short single-line bodies use `"…"` (single-line
+    * block-string); multi-line bodies use `"""…"""`. Embedded `"""` sequences
+    * in the body are escaped to `\"\"\"` per the GraphQL specification.
+    *
+    * The `indent` parameter is prepended to the description line(s) so the
+    * output matches the surrounding context indentation.
+    */
+  def renderGqlDescription(docs: Docs, indent: String): String = {
+    val prefixLines = docs.prefix.map(_.cleaned.split("\n", -1).toList).getOrElse(Nil)
+    val suffixLines = docs.suffix.map(_.cleaned.split("\n", -1).toList).getOrElse(Nil)
+
+    if (prefixLines.isEmpty && suffixLines.isEmpty) return ""
+
+    val allLines: List[String] =
+      if (suffixLines.isEmpty) prefixLines
+      else if (prefixLines.isEmpty) suffixLines
+      else prefixLines ++ List("") ++ suffixLines
+
+    val tq       = "\"\"\""
+    val escaped  = allLines.map(_.replace(tq, "\\\"\\\"\\\""))
+
+    if (escaped.size == 1) {
+      s"""$indent"${escaped.head}"\n"""
+    } else {
+      val body = escaped.mkString("\n")
+      s"$indent$tq\n$body\n$indent$tq\n"
+    }
+  }
+
   def foreignTypeResolution(domain: Domain): Map[TypeId.User, Option[TypeRef]] = {
     domain.defs.meta.nodes.values.collect {
       case u: DomainMember.User =>
