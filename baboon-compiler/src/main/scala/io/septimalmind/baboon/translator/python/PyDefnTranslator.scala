@@ -54,6 +54,7 @@ object PyDefnTranslator {
     fileTools: PyFileTools,
     domain: Domain,
     wiringTranslator: PyServiceWiringTranslator,
+    pyTreeTools: PyTreeTools,
   ) extends PyDefnTranslator[F] {
     override def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       defn.id.owner match {
@@ -244,8 +245,17 @@ object PyDefnTranslator {
           val identifierCodec: Option[TextTree[PyValue]] =
             if (dto.isIdentifier) Some(renderIdentifierCodecClass(dto)) else None
 
+          val classDocstring = pyTreeTools.renderClassDocstring(
+            defn.docs,
+            dto.fields.map(f => f.name.name -> f.docs),
+            "    ",
+          )
+          val classDocTree: Option[TextTree[PyValue]] =
+            if (classDocstring.isEmpty) None else Some(q"$classDocstring")
+
           val members =
             List(
+              classDocTree,
               Some(dtoFieldsTrees.joinN()),
               Some(modelConfig),
               dtoProperties.map(_.joinN()),
@@ -271,9 +281,13 @@ object PyDefnTranslator {
 
         case enum: Typedef.Enum =>
           val branches = enum.members.map(m => q"${EnumWireStyle.wireName(m.name)} = \"${EnumWireStyle.wireName(m.name)}\"").toSeq
+          val enumDocstring = pyTreeTools.renderClassDocstring(defn.docs, Seq.empty, "    ")
+          val enumDocTree: Seq[TextTree[PyValue]] =
+            if (enumDocstring.isEmpty) Seq.empty else Seq(q"$enumDocstring")
+          val enumMembers = (enumDocTree ++ branches).joinN()
           PyDefnRepr(
             q"""|class ${enum.id.name.name.capitalize}($pyEnum):
-                |    ${branches.joinN().shift(4).trim}
+                |    ${enumMembers.shift(4).trim}
                 |""".stripMargin,
             List.empty,
           )
@@ -326,7 +340,12 @@ object PyDefnTranslator {
                     |""".stripMargin)
           } else None
 
+          val adtDocstring = pyTreeTools.renderClassDocstring(defn.docs, Seq.empty, "    ")
+          val adtDocTree: Option[TextTree[PyValue]] =
+            if (adtDocstring.isEmpty) None else Some(q"$adtDocstring")
+
           val members = List(
+            adtDocTree,
             jsonCodec,
             Some(mainMeta.joinN()),
           ).flatten
@@ -357,7 +376,11 @@ object PyDefnTranslator {
                  |    raise NotImplementedError
                  |""".stripMargin
           }
-          val allMethods = if (methods.isEmpty) q"pass" else methods.joinN()
+          val contractDocstring = pyTreeTools.renderClassDocstring(defn.docs, Seq.empty, "    ")
+          val contractDocTree: Option[TextTree[PyValue]] =
+            if (contractDocstring.isEmpty) None else Some(q"$contractDocstring")
+          val contractBody = contractDocTree.toList ++ (if (methods.isEmpty) List(q"pass") else methods)
+          val allMethods = contractBody.joinN()
           PyDefnRepr(
             q"""|class ${contract.id.name.name.capitalize}($parents):
                 |    ${allMethods.shift(4).trim}
@@ -386,12 +409,22 @@ object PyDefnTranslator {
                 val retStr                    = resolved.renderReturnType(outStr, errStr, "None")
                 q"${"\"" + retStr + "\""}"
               }
+              val methodDocstring = pyTreeTools.renderMethodDocstring(m.docs, "        ")
+              val methodDocTree: Option[TextTree[PyValue]] =
+                if (methodDocstring.isEmpty) None else Some(q"$methodDocstring")
+              val methodBodyParts: List[TextTree[PyValue]] =
+                methodDocTree.toList :+ q"raise NotImplementedError"
+              val methodBodyTree = methodBodyParts.joinN()
               q"""|@$pyAbstractMethod
                   |def ${m.name.name}(self, ${ctxParam}arg: $inType) -> $retAnnotation:
-                  |    raise NotImplementedError
+                  |    ${methodBodyTree.shift(4).trim}
                   |""".stripMargin
           }
-          val allMethods = if (methods.isEmpty) q"pass" else methods.joinN()
+          val serviceDocstring = pyTreeTools.renderClassDocstring(defn.docs, Seq.empty, "    ")
+          val serviceDocTree: Option[TextTree[PyValue]] =
+            if (serviceDocstring.isEmpty) None else Some(q"$serviceDocstring")
+          val serviceBody = serviceDocTree.toList ++ (if (methods.isEmpty) List(q"pass") else methods)
+          val allMethods = serviceBody.joinN()
           val classBases = resolvedCtx match {
             case ResolvedServiceContext.AbstractContext(tn, _) =>
               q"$pyABC, Generic[$tn]"

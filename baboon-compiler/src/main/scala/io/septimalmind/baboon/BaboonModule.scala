@@ -151,6 +151,7 @@ class BaboonCommonPyModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
     })
 
   make[PyFileTools].from[PyFileTools.ScFileToolsImpl]
+  make[PyTreeTools].from[PyTreeTools.PyTreeToolsImpl]
 
   make[PyTypeTranslator]
   makeFactory[PyConversionTranslator.Factory[F]]
