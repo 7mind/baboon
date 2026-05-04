@@ -121,7 +121,7 @@ fn create_sample_data() -> AllBasicTypes {
 
 fn write_json(data: &AllBasicTypes, output_dir: &str) {
     fs::create_dir_all(output_dir).expect("Failed to create output directory");
-    let json_str = serde_json::to_string_pretty(data).expect("Failed to serialize to JSON");
+    let json_str = data.to_json_pretty().expect("Failed to serialize to JSON");
     let json_path = PathBuf::from(output_dir).join("all-basic-types.json");
     fs::write(&json_path, &json_str).expect("Failed to write JSON file");
     println!("Written JSON to {:?}", json_path);
@@ -253,7 +253,7 @@ fn read_and_verify_m29ok(file_path: &str) {
     let data: M29OkHolder = if file_path.ends_with(".json") {
         let json_str = fs::read_to_string(&path)
             .unwrap_or_else(|e| { eprintln!("Failed to read {:?}: {}", path, e); std::process::exit(1); });
-        serde_json::from_str(&json_str)
+        M29OkHolder::from_json(&json_str)
             .unwrap_or_else(|e| { eprintln!("M29OkHolder JSON decode failed: {}", e); std::process::exit(1); })
     } else {
         let bytes = fs::read(&path)
@@ -264,9 +264,9 @@ fn read_and_verify_m29ok(file_path: &str) {
     };
     // Roundtrip
     if file_path.ends_with(".json") {
-        let re_encoded = serde_json::to_string(&data)
+        let re_encoded = data.to_json()
             .unwrap_or_else(|e| { eprintln!("M29OkHolder JSON re-encode failed: {}", e); std::process::exit(1); });
-        let re_decoded: M29OkHolder = serde_json::from_str(&re_encoded)
+        let re_decoded = M29OkHolder::from_json(&re_encoded)
             .unwrap_or_else(|e| { eprintln!("M29OkHolder JSON roundtrip decode failed: {}", e); std::process::exit(1); });
         if data != re_decoded {
             eprintln!("M29OkHolder JSON roundtrip mismatch");
@@ -289,7 +289,7 @@ fn read_and_verify_m29ok(file_path: &str) {
 
 fn write_json_any(data: &AnyShowcase, output_dir: &str) {
     fs::create_dir_all(output_dir).expect("Failed to create output directory");
-    let json_str = serde_json::to_string_pretty(data).expect("Failed to serialize AnyShowcase to JSON");
+    let json_str = data.to_json_pretty().expect("Failed to serialize AnyShowcase to JSON");
     let path = PathBuf::from(output_dir).join("any-showcase.json");
     fs::write(&path, &json_str).expect("Failed to write AnyShowcase JSON");
     println!("Written JSON to {:?}", path);
@@ -320,7 +320,7 @@ fn read_and_verify(file_path: &str) {
     let data: AllBasicTypes = if file_path.ends_with(".json") {
         let json_str = fs::read_to_string(&path)
             .unwrap_or_else(|e| { eprintln!("Failed to read {:?}: {}", path, e); std::process::exit(1); });
-        serde_json::from_str(&json_str)
+        AllBasicTypes::from_json(&json_str)
             .unwrap_or_else(|e| { eprintln!("Failed to parse JSON from {:?}: {}", path, e); std::process::exit(1); })
     } else if file_path.ends_with(".ueba") {
         let bytes = fs::read(&path)
@@ -348,9 +348,9 @@ fn read_and_verify(file_path: &str) {
 
     // Roundtrip
     if file_path.ends_with(".json") {
-        let re_encoded = serde_json::to_string(&data)
+        let re_encoded = data.to_json()
             .unwrap_or_else(|e| { eprintln!("JSON re-encode failed: {}", e); std::process::exit(1); });
-        let re_decoded: AllBasicTypes = serde_json::from_str(&re_encoded)
+        let re_decoded = AllBasicTypes::from_json(&re_encoded)
             .unwrap_or_else(|e| { eprintln!("JSON roundtrip decode failed: {}", e); std::process::exit(1); });
         if data != re_decoded {
             eprintln!("JSON roundtrip mismatch");
@@ -381,7 +381,7 @@ fn read_and_verify_any_showcase(file_path: &str) {
     let data: AnyShowcase = if file_path.ends_with(".json") {
         let json_str = fs::read_to_string(&path)
             .unwrap_or_else(|e| { eprintln!("Failed to read {:?}: {}", path, e); std::process::exit(1); });
-        serde_json::from_str(&json_str)
+        AnyShowcase::from_json(&json_str)
             .unwrap_or_else(|e| { eprintln!("AnyShowcase JSON decode failed: {}", e); std::process::exit(1); })
     } else {
         let bytes = fs::read(&path)
@@ -455,10 +455,10 @@ fn create_foreign_key_holder_sample() -> ForeignKeyHolder {
 
 fn write_foreign_key_holder_json(data: &ForeignKeyHolder, output_dir: &str) {
     fs::create_dir_all(output_dir).expect("Failed to create output directory");
-    // serde_json::to_string emits compact form (no spaces, no newlines), matching
+    // data.to_json() emits compact form (no spaces, no newlines), matching
     // the canonical literal `{"m":{"alpha":"v1","beta":"v2"}}` used by the other
     // 7 compact-emit backends (cs/dart/java/kotlin/kotlin-kmp/swift/typescript).
-    let json_str = serde_json::to_string(data).expect("Failed to serialize ForeignKeyHolder JSON");
+    let json_str = data.to_json().expect("Failed to serialize ForeignKeyHolder JSON");
     let path = PathBuf::from(output_dir).join("m24-foreign-keycodec.json");
     fs::write(&path, &json_str).expect("Failed to write ForeignKeyHolder JSON");
     println!("Written JSON to {:?}", path);
@@ -521,7 +521,7 @@ fn create_builtin_map_key_holder_sample() -> BuiltinMapKeyHolder {
 
 fn write_builtin_map_key_holder_json(data: &BuiltinMapKeyHolder, output_dir: &str) {
     fs::create_dir_all(output_dir).expect("Failed to create output directory");
-    let json_str = serde_json::to_string(data).expect("Failed to serialize BuiltinMapKeyHolder JSON");
+    let json_str = data.to_json().expect("Failed to serialize BuiltinMapKeyHolder JSON");
     let path = PathBuf::from(output_dir).join("m26-builtin-map-keys.json");
     fs::write(&path, &json_str).expect("Failed to write BuiltinMapKeyHolder JSON");
     println!("Written JSON to {:?}", path);
