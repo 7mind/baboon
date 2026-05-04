@@ -222,7 +222,10 @@ object CSDefnTranslator {
         .flatMap(t => t.translate(defn, csTypeRef, srcRef).toList)
         .map(obsoletePrevious)
 
-      val defnRepr = obsoletePrevious(repr.defn)
+      // D01 fix: apply obsoletePrevious BEFORE prependDocs so the emitted order
+      // is /// <summary>doc</summary> then [Obsolete] then the declaration,
+      // matching C# XML doc convention (doc-then-annotation-then-symbol).
+      val defnRepr = prependDocs(defn.docs, obsoletePrevious(repr.defn))
 
       assert(defn.id.pkg == domain.id)
 
@@ -255,6 +258,14 @@ object CSDefnTranslator {
       DefnRepr(content, allRegs)
     }
 
+    /** Prepend a C# XML doc comment block before a tree when `docs` is
+      * non-empty. Returns the tree unchanged when `docs` is empty.
+      */
+    private def prependDocs(docs: Docs, tree: TextTree[CSValue]): TextTree[CSValue] = {
+      val block = csTrees.renderDocs(docs, "")
+      if (block.isEmpty) tree else q"${block}$tree"
+    }
+
     private def makeRepr(defn: DomainMember.User, name: CSValue.CSType, isLatestVersion: Boolean): DefnRepr = {
       val genMarker = if (isLatestVersion) iBaboonGeneratedLatest else iBaboonGenerated
       val mainMeta  = csDomTrees.makeDataMeta(defn)
@@ -282,7 +293,11 @@ object CSDefnTranslator {
               (mname, tpe, f)
           }
 
-          val constructorArgs = outs.map { case (fname, tpe, _) => q"$tpe $fname" }.join(",\n")
+          val constructorArgs = outs.map {
+            case (fname, tpe, f) =>
+              val fieldEx = q"$tpe $fname"
+              prependDocs(f.docs, fieldEx)
+          }.join(",\n")
 
           val contractParents = dto.contracts.toSeq.map(c => q"${trans.asCsType(c, domain, evo)}")
 
@@ -446,10 +461,11 @@ object CSDefnTranslator {
                 case t: CSValue.CSType     => (t.pkg.parts :+ t.name).mkString(".")
                 case t: CSValue.CSTypeName => t.name
               }
-              val outStr = out.map(_.mapRender(csFqName)).getOrElse("")
-              val errStr = err.map(_.mapRender(csFqName))
-              val retStr = resolved.renderReturnType(outStr, errStr, "void")
-              q"""public $retStr ${m.name.name}($ctxParam${trans.asCsRef(m.sig, domain, evo)} arg);"""
+              val outStr   = out.map(_.mapRender(csFqName)).getOrElse("")
+              val errStr   = err.map(_.mapRender(csFqName))
+              val retStr   = resolved.renderReturnType(outStr, errStr, "void")
+              val methodEx = q"""public $retStr ${m.name.name}($ctxParam${trans.asCsRef(m.sig, domain, evo)} arg);"""
+              prependDocs(m.docs, methodEx)
           }.join("\n")
 
           val genericParam = resolvedCtx match {
@@ -545,9 +561,10 @@ object CSDefnTranslator {
     ): List[TextTree[CSValue]] = {
       fields.map {
         f =>
-          val tpe   = trans.asCsRef(f.tpe, domain, evo)
-          val mname = s"${f.name.name.capitalize}"
-          q"public $tpe $mname { get; }"
+          val tpe      = trans.asCsRef(f.tpe, domain, evo)
+          val mname    = s"${f.name.name.capitalize}"
+          val fieldEx  = q"public $tpe $mname { get; }"
+          prependDocs(f.docs, fieldEx)
       }
     }
 
