@@ -4,6 +4,22 @@ import io.septimalmind.baboon.typer.model.*
 
 class OasTypeTranslator {
 
+  /** Return the cleaned description text for a `Docs` value, or `None` for
+    * empty docs. Combines prefix and suffix with a newline separator when both
+    * are present. The caller is responsible for JSON-escaping the result with
+    * `escapeJson` before embedding it in a JSON string literal.
+    */
+  def renderOasDescription(docs: Docs): Option[String] = {
+    val prefixText = docs.prefix.map(_.cleaned)
+    val suffixText = docs.suffix.map(_.cleaned)
+    (prefixText, suffixText) match {
+      case (None, None)       => None
+      case (Some(p), None)    => Some(p)
+      case (None, Some(s))    => Some(s)
+      case (Some(p), Some(s)) => Some(s"$p\n$s")
+    }
+  }
+
   def foreignTypeResolution(domain: Domain): Map[TypeId.User, Option[TypeRef]] = {
     domain.defs.meta.nodes.values.collect {
       case u: DomainMember.User =>

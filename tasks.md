@@ -109,7 +109,7 @@ Detail: `docs/drafts/20260504-1213-m30-docstrings-plan.md`. 15 PRs total: 1 spec
 - [x] **PR-30.10** (2026-05-04, single round — clean) — Java backend emits Javadoc `/** … */` per spec §7.2 with HTML-escape (`<`, `>`, `&`) for body text. New `JvTreeTools.renderDocs`; wired in `JvDefnTranslator`. 6 emission tests; 481/481 full suite; no fixture churn.
 - [x] **PR-30.11** (2026-05-04, single round — clean) — Dart backend emits `///` doc comments per spec §7.8. New `DtTreeTools.renderDocs`; wired in `DtDefnTranslator`. 6 emission tests; 487/487 full suite; no fixture churn.
 - [x] **PR-30.12** (2026-05-04, single round — clean) — Swift backend emits `///` doc comments per spec §7.9. New `SwTreeTools.renderDocs`; wired in `SwDefnTranslator`. 6 emission tests; 493/493 full suite; no fixture churn.
-- [ ] **PR-30.13** — Backend: GraphQL SDL + OpenAPI 3.1 (bundled; `"""…"""` block-string + `description`).
+- [x] **PR-30.13** (2026-05-04, single round — clean) — GraphQL SDL emits `"…"` / `"""…"""` block-string descriptions per spec §7.10; OpenAPI 3.1 emits `"description"` JSON keys per spec §7.11. `renderGqlDescription` in `GqlTypeTranslator`; `renderOasDescription` in `OasTypeTranslator`; wired at type/field/enum/ADT-branch level in both translators. 10 emission tests (5 GQL + 5 OAS); 503/503 full suite; no fixture churn.
 - [ ] **PR-30.14** — LSP: hover surfaces docs; optional `CompletionItem.documentation`. No new `TyperIssue`, no 3-site exhaustive-match update.
 - [ ] **PR-30.15** — Cross-language smoke fixture `m30-ok/m30.baboon` covering every doc position; per-backend stub goldens; close-out + session log.
 
