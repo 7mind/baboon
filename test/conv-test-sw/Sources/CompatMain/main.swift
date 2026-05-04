@@ -221,6 +221,21 @@ func readAndVerifyAnyShowcase(_ filePath: String) throws {
             fail("AnyShowcase payload \(i) mismatch: expected \(expected[i]), got \(decoded[i])")
         }
     }
+    if filePath.hasSuffix(".json") {
+        let reEncoded = AnyShowcase_JsonCodec.instance.encode(.defaultCtx, data)
+        let reDecoded = try AnyShowcase_JsonCodec.instance.decode(.defaultCtx, reEncoded)
+        guard reDecoded == data else {
+            fail("AnyShowcase JSON roundtrip mismatch (structural)")
+        }
+    } else {
+        let writer = BaboonBinWriter()
+        AnyShowcase_UebaCodec.instance.encode(.defaultCtx, writer, data)
+        let reReader = BaboonBinReader(writer.toData())
+        let reDecoded = try AnyShowcase_UebaCodec.instance.decode(.defaultCtx, reReader)
+        guard reDecoded == data else {
+            fail("AnyShowcase UEBA roundtrip mismatch (structural)")
+        }
+    }
 }
 
 func writeJson(_ data: AllBasicTypes, _ outputDir: String) throws {
@@ -276,16 +291,16 @@ func readAndVerify(_ filePath: String) throws {
     if filePath.hasSuffix(".json") {
         let reEncoded = AllBasicTypes_JsonCodec.instance.encode(.defaultCtx, data)
         let reDecoded = try AllBasicTypes_JsonCodec.instance.decode(.defaultCtx, reEncoded)
-        guard reDecoded.vstr == data.vstr && reDecoded.vi32 == data.vi32 && reDecoded.vbit == data.vbit else {
-            fail("JSON roundtrip mismatch")
+        guard reDecoded == data else {
+            fail("AllBasicTypes JSON roundtrip mismatch (structural)")
         }
     } else {
         let writer = BaboonBinWriter()
         AllBasicTypes_UebaCodec.instance.encode(.defaultCtx, writer, data)
         let reReader = BaboonBinReader(writer.toData())
         let reDecoded = try AllBasicTypes_UebaCodec.instance.decode(.defaultCtx, reReader)
-        guard reDecoded.vstr == data.vstr && reDecoded.vi32 == data.vi32 && reDecoded.vbit == data.vbit else {
-            fail("UEBA roundtrip mismatch")
+        guard reDecoded == data else {
+            fail("AllBasicTypes UEBA roundtrip mismatch (structural)")
         }
     }
 }
@@ -377,16 +392,16 @@ func readAndVerifyM29Ok(_ filePath: String) throws {
     if filePath.hasSuffix(".json") {
         let reEncoded = M29OkHolder_JsonCodec.instance.encode(.defaultCtx, data)
         let reDecoded = try M29OkHolder_JsonCodec.instance.decode(.defaultCtx, reEncoded)
-        guard reDecoded.intPage.total == data.intPage.total else {
-            fail("M29OkHolder JSON roundtrip mismatch")
+        guard reDecoded == data else {
+            fail("M29OkHolder JSON roundtrip mismatch (structural)")
         }
     } else {
         let writer = BaboonBinWriter()
         M29OkHolder_UebaCodec.instance.encode(.defaultCtx, writer, data)
         let reReader = BaboonBinReader(writer.toData())
         let reDecoded = try M29OkHolder_UebaCodec.instance.decode(.defaultCtx, reReader)
-        guard reDecoded.intPage.total == data.intPage.total else {
-            fail("M29OkHolder UEBA roundtrip mismatch")
+        guard reDecoded == data else {
+            fail("M29OkHolder UEBA roundtrip mismatch (structural)")
         }
     }
 }
