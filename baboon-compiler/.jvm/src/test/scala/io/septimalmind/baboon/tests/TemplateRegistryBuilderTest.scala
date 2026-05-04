@@ -472,8 +472,8 @@ abstract class TemplateRegistryBuilderTestBase[F[+_, +_]: Error2: TagKK: BaboonT
           // Whatever ScopeBuilder does about the collision is a separate concern.
           // This assertion is ONLY about the absence of DuplicateTemplateName.
           val dupTemplateIssues = outcome match {
-            case Right(_)    => Nil
-            case Left(errs)  => typerIssues(errs).collect { case d: TyperIssue.DuplicateTemplateName => d }
+            case Right(_)   => Nil
+            case Left(errs) => typerIssues(errs).collect { case d: TyperIssue.DuplicateTemplateName => d }
           }
           assert(
             dupTemplateIssues.isEmpty,

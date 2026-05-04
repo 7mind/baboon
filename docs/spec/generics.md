@@ -607,13 +607,26 @@ require separate milestones / decisions:
     (`editors/baboon-zed` → `grammars/baboon`) that requires
     user-authorised pointer bumps across separate git repositories.
     Deferred to a dedicated submodule-coordination PR (`[PR-29.8-D01]`).
-11. **Cross-namespace template instantiation.** `type Y = my.ns.X[i32]`
-    (where `X` is declared in a sibling namespace) is not supported in
-    M29. Matrix #7 and matrix #2 enforcement in the typer is restricted
-    to same-namespace templates; a prefixed reference to a registered
-    template falls through to `NameNotFound` (`[PR-29.5-D04]`,
-    `[PR-29.7-D07]`). Requires a separate spec decision and scope-resolver
-    extension.
+11. **Cross-namespace template instantiation (alias-RHS, same package).**
+    Cross-namespace alias-RHS template instantiation within the same
+    package is supported in M29 (`[PR-29.15]`). `type Y = foo.X[i32]`
+    (where `X` is declared in namespace `foo` of the same package)
+    resolves correctly: the resolver honours the prefix and looks up the
+    template under `Owner.Ns([foo])`. Namespaces that contained only
+    template declarations are dropped from the scope tree after template
+    extraction so that an otherwise-empty namespace does not cause a
+    scope-build failure. The detection-side matchers for prefixed
+    templates in **forbidden positions** (bare alias-RHS without args —
+    matrix #7; nested template-instantiation in alias-RHS args — matrix
+    #2; in-body field-position instantiation — matrix #1) were also
+    extended in PR-29.15 to honour namespace-qualified references, closing
+    `[PR-29.5-D04]`, `[PR-29.7-D07]`, and `[PR-29.8-D06]`.
+    What remains **not** supported is **cross-package** instantiation:
+    the registry key includes `Pkg`, and `resolveTemplateKey` uses the
+    alias's current package. Lifting this would require extending the
+    registry and resolver to span packages and a scope-walker change to
+    disambiguate package vs namespace prefixes; deferred to a future
+    milestone.
 12. **Cross-language end-to-end acceptance for templated services.** M29
     verifies service-template monomorphisation at the typer unit-test
     level and emits valid service code for all 9 backends. It does NOT

@@ -146,6 +146,64 @@ abstract class M29ValidatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] 
       |root type Y = X[i32]
       |""".stripMargin
 
+  /** PR-29.15 Site A: `ns foo { data X[T] { f: T } } type Y = foo.X`
+    * Prefixed bare ref to a namespace-scoped template without type args — must fire TemplateNotInstantiated.
+    */
+  private val pr2915SiteA_PrefixedBareRef: String =
+    """model m29.validator.pr2915.siteA
+      |
+      |version "1.0.0"
+      |
+      |ns foo { data X[T] { f: T } }
+      |type Y = foo.X
+      |""".stripMargin
+
+  /** PR-29.15 Site B: `ns foo { data Inner[T] { f: T } } data X[T] { f: T } type Y = X[foo.Inner[i32]]`
+    * Nested template instantiation in alias-RHS args where the arg is in a different namespace —
+    * must fire TemplateInstantiationInForbiddenPosition.
+    */
+  private val pr2915SiteB_PrefixedNestedArg: String =
+    """model m29.validator.pr2915.siteB
+      |
+      |version "1.0.0"
+      |
+      |ns foo { data Inner[T] { f: T } }
+      |data X[T] { g: T }
+      |type Y = X[foo.Inner[i32]]
+      |""".stripMargin
+
+  /** PR-29.15 Site C: in-body field-position template instantiation with a namespace-qualified ref.
+    * `data Y[T] { rec: foo.X[T] }` with an instantiating alias `type Z = Y[i32]` —
+    * the check fires during materialisation of Y[i32], detecting that the body contains
+    * a forbidden in-body instantiation of the namespaced template foo.X.
+    */
+  private val pr2915SiteC_PrefixedInBodyRef: String =
+    """model m29.validator.pr2915.siteC
+      |
+      |version "1.0.0"
+      |
+      |ns foo { data X[T] { f: T } }
+      |data Y[T] { rec: foo.X[T] }
+      |type Z = Y[i32]
+      |""".stripMargin
+
+  /** PR-29.15-D03 regression: sibling template bare-name ref inside a namespace body.
+    * `data Y[T] { rec: X[T] }` where X is also in `ns foo` — bare X reference must fire
+    * TemplateInstantiationInForbiddenPosition even though X is not at Owner.Toplevel.
+    * The empty-prefix code path in substituteTypeRef must use any-owner lookup (not Toplevel-only).
+    */
+  private val pr2915D03_CrossNsInBodyRegression: String =
+    """model template.crossns.inbody.regression
+      |
+      |version "1.0.0"
+      |
+      |ns foo {
+      |  data X[T] { f: T }
+      |  data Y[T] { rec: X[T] }
+      |}
+      |type Z = foo.Y[i32]
+      |""".stripMargin
+
   /** D03: non-template alias `type Y = X` where X is a plain DTO — must succeed (no TemplateNotInstantiated). */
   private val d03NonTemplateAliasPositive: String =
     """model m29.validator.d03pos
@@ -291,6 +349,71 @@ abstract class M29ValidatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] 
           // Note: `type Y = X` resolves as a structural alias; no separate TypeId.User for Y is
           // emitted in domain.defs.meta.nodes — the domain contains X but not Y.
           assert(outcome.isRight, s"expected success, got: $outcome")
+        }
+    }
+
+    // ── PR-29.15: prefixed cross-namespace detection ───────────────────────────
+
+    // NOTE: prefixed forms drop the ns-prefix in the diagnostic's templateName/instantiatedName
+    // field; the diagnostic location (meta.pos) carries the source position that allows the
+    // reader to map back to the prefixed form.
+
+    "PR-29.15 Site A: produce TemplateNotInstantiated for `type Y = foo.X` where foo.X is a namespaced template (matrix #7 prefixed)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, pr2915SiteA_PrefixedBareRef)
+        } yield {
+          // templateName is the simple name extracted via simple.name.name (prefix dropped).
+          val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val issue = typerIssues(issues).collectFirst { case i: TyperIssue.TemplateNotInstantiated => i }
+            .getOrElse(throw new AssertionError(s"no TemplateNotInstantiated in: $issues"))
+          assert(issue.templateName == "X", s"expected templateName='X' (prefix dropped), got '${issue.templateName}'")
+          assert(issue.aliasName == "Y", s"expected aliasName='Y', got '${issue.aliasName}'")
+        }
+    }
+
+    "PR-29.15 Site B: produce TemplateInstantiationInForbiddenPosition for `type Y = X[foo.Inner[i32]]` where foo.Inner is a namespaced template (matrix #2 prefixed)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, pr2915SiteB_PrefixedNestedArg)
+        } yield {
+          // containingTemplateName is the outer alias template key (templateKey._3.name = "X");
+          // instantiatedName is the bad nested arg's simple name (argCtor.name.name = "Inner", prefix dropped).
+          val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val issue = typerIssues(issues).collectFirst { case i: TyperIssue.TemplateInstantiationInForbiddenPosition => i }
+            .getOrElse(throw new AssertionError(s"no TemplateInstantiationInForbiddenPosition in: $issues"))
+          assert(issue.containingTemplateName == "X", s"expected containingTemplateName='X', got '${issue.containingTemplateName}'")
+          assert(issue.instantiatedName == "Inner", s"expected instantiatedName='Inner' (prefix dropped), got '${issue.instantiatedName}'")
+        }
+    }
+
+    "PR-29.15 Site C: produce TemplateInstantiationInForbiddenPosition for `data Y[T] { rec: foo.X[T] }` where foo.X is a namespaced template (matrix #1 prefixed)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, pr2915SiteC_PrefixedInBodyRef)
+        } yield {
+          // containingTemplateName is the template being instantiated by the alias (templateKey._3.name = "Y");
+          // instantiatedName is the forbidden in-body ref's simple name (name.name = "X", prefix dropped).
+          val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val issue = typerIssues(issues).collectFirst { case i: TyperIssue.TemplateInstantiationInForbiddenPosition => i }
+            .getOrElse(throw new AssertionError(s"no TemplateInstantiationInForbiddenPosition in: $issues"))
+          assert(issue.containingTemplateName == "Y", s"expected containingTemplateName='Y', got '${issue.containingTemplateName}'")
+          assert(issue.instantiatedName == "X", s"expected instantiatedName='X' (prefix dropped), got '${issue.instantiatedName}'")
+        }
+    }
+
+    "PR-29.15-D03 regression: TemplateInstantiationInForbiddenPosition for bare sibling template ref inside namespace body (`ns foo { data X[T]; data Y[T] { rec: X[T] } }`)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, pr2915D03_CrossNsInBodyRegression)
+        } yield {
+          // X is a sibling template in Owner.Ns("foo"), not Owner.Toplevel.
+          // Empty-prefix substituteTypeRef must use any-owner lookup to catch this.
+          val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val issue = typerIssues(issues).collectFirst { case i: TyperIssue.TemplateInstantiationInForbiddenPosition => i }
+            .getOrElse(throw new AssertionError(s"no TemplateInstantiationInForbiddenPosition in: $issues"))
+          assert(issue.containingTemplateName == "Y", s"expected containingTemplateName='Y', got '${issue.containingTemplateName}'")
+          assert(issue.instantiatedName == "X", s"expected instantiatedName='X', got '${issue.instantiatedName}'")
         }
     }
   }
