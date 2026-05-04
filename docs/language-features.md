@@ -343,6 +343,106 @@ ns billing {
 
 Aliases cannot be declared inside ADTs or other type definitions, and they cannot be marked `root` (since they produce no output).
 
+## Templates (generics)
+
+User-defined templates parameterise a `data`, `adt`, `contract`, or `service` declaration over one or more type parameters. They are instantiated **only** through type aliases, and monomorphised at compile time so every backend emits a concrete type — there is no per-language reified generic in the output. The full specification is in [docs/spec/generics.md](spec/generics.md); the summary below covers the surface syntax.
+
+### Declaration
+
+```baboon
+data Page[T] {
+  items: lst[T]
+  total: u32
+}
+
+adt Result[T, E] {
+  data Ok  { value: T }
+  data Err { error: E }
+}
+
+contract Acked[T] {
+  value: T
+  ack:   bit
+}
+
+service Crud[K, V] {
+  def get (K): V
+  def put (V): K
+}
+```
+
+Type-parameter names are bare identifiers (single-letter `T` is conventional but not required). Within a template body, a type-param name shadows any same-named top-level type.
+
+### Instantiation (alias-only)
+
+Concrete types are produced by type aliases:
+
+```baboon
+data Item { name: str; price: f64 }
+
+root type IntPage   = Page[i32]
+root type StrPage   = Page[str]
+root type ItemPage  = Page[Item]              // user-type argument
+root type IntStrEnv = Result[i32, str]
+root type IntStrCrud = Crud[i32, str]
+```
+
+Locked decision: **the alias's name is the materialised type's identity** — generated code emits `IntPage`, `StrPage`, `ItemPage`, etc. No synthetic `Page<i32>` identifier is exposed. Two aliases with the same arguments still produce two distinct concrete types.
+
+### Codec annotations propagate from the alias
+
+`derived[…]` is written **only on the alias**, not on the template body, and propagates to the materialised type:
+
+```baboon
+root type IntPage : derived[json], derived[ueba] = Page[i32]
+```
+
+Each alias's derivation set is independent; you can derive different codecs for `IntPage` vs `StrPage` even when both instantiate `Page`.
+
+### Cross-namespace instantiation (same package)
+
+A top-level alias can target a template declared in a sibling namespace, and a namespaced alias can target a template in another namespace within the same package:
+
+```baboon
+ns foo {
+  data X[T] { f: T }
+}
+
+root type Y = foo.X[i32]                 // top-level alias → namespaced template
+
+ns bar {
+  root type Z = foo.X[str]               // cross-namespace alias
+}
+```
+
+Cross-**package** instantiation (template declared in a different `.baboon` file) is out of scope.
+
+### Forbidden positions (with diagnostics)
+
+The compiler rejects template references in any non-alias position. Each form below produces a precise diagnostic; see the negative test matrix in [the spec](spec/generics.md#25-forbidden-positions).
+
+- Field-position instantiation (`field: Page[i32]`) — forbidden; instantiate via an alias and reference the alias.
+- Nested instantiation in alias args (`type Y = Page[Result[i32, str]]`) — forbidden; introduce intermediate aliases.
+- Self-reference in a template body (`data X[T] { rec: X[T] }`, including container-mediated `data Tree[T] { children: lst[Tree[T]] }`) — forbidden; hand-write a non-template recursive type.
+- Arity mismatch, duplicate type-parameter name, template referenced without instantiation, instantiating a non-template, and cycles through aliases all produce dedicated diagnostics.
+
+### Evolution
+
+Templates themselves are not subject to migration; only the materialised concrete types (under their alias ids) participate in `BaboonEvolution`. A template body change affects every alias that instantiates it; the diff is observed at the alias-keyed concrete types, exactly as for hand-written types.
+
+### What is NOT supported
+
+Out-of-scope items (see [spec §6](spec/generics.md) for the full list):
+
+- Higher-kinded templates (`X[F[_]]`)
+- Variance annotations (`X[+T]`, `X[-T]`)
+- Where-clauses / type-class bounds (`X[T : SomeContract]`)
+- Defaulted type parameters (`X[T = i32]`)
+- Templated `id` declarations
+- Templates on ADT inheritance arms (`+ Foo[T]`, `- Foo[T]`, `^ Foo[T]`)
+- Cross-package template instantiation
+- Per-language reified generics in emitted source
+
 ## Built-in types and collections
 
 Primitives: `i08`, `i16`, `i32`, `i64`, `u08`, `u16`, `u32`, `u64`, `f32`, `f64`, `f128`, `str`, `bytes`, `uid`, `bit`, `tsu` (UTC timestamp), `tso` (offset timestamp).

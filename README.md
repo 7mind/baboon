@@ -49,6 +49,7 @@ Generates:
 - [ADT branch inheritance and subtraction](docs/language-features.md#adt-branch-inheritance-and-subtraction) (`+`, `^`, `-`) for cross-ADT branch reuse.
 - Cross-language wire-form parity verified by per-backend conv-test matrix: byte-identical JSON and UEBA fixtures across all 9 generated backends.
 - [Polymorphic `any` fields](docs/language-features.md#polymorphic-any-fields) — opaque envelope for runtime-typed payloads with byte-canonical cross-language wire format.
+- [User-defined templates](docs/language-features.md#templates-generics) (`data Page[T] { ... }`, `adt Result[T, E] { ... }`, `contract Acked[T] { ... }`, `service Crud[K, V] { ... }`) instantiated through type aliases (`type IntPage = Page[i32]`); monomorphised at compile time so codegen never sees a generic — every backend emits a concrete type. Same-package cross-namespace instantiation supported (`type Y = ns.Foo[i32]`). See [docs/spec/generics.md](docs/spec/generics.md) for the full spec.
 - Type aliases for convenience (`type Name = TargetType`)
 - Basic form of nominal inheritance (`contract`)
 - Namespaces, includes, and imports
@@ -126,16 +127,13 @@ See [docs/explorer-mode.md](docs/explorer-mode.md) for a full command reference.
 
 ## Limitations
 
-1. No templates
-2. Only Enums, DTOs and ADTs
-3. Nominal inheritance support is limited to trait model
-4. Generic/type constructor support is limited to builtin collections
-5. (*) This is a DML, not an IDL, service/interface definitions support is extremely limited at the moment
-7. (*) Comments are not preserved in the transpiler output
-8. (*) No structural inheritance information is preserved in the transpiler output
-9. (*) Only integer constants may be associated with enum members
-10. No newtypes (type aliases are supported, newtypes are not)
-11. (*) No inheritance-based lenses/projections/conversions
+1. Nominal inheritance support is limited to trait model
+2. Templates are monomorphised — no per-language reified generics in emitted source. Higher-kinded templates, variance annotations, where-clauses/bounds, and templates on `id` declarations or ADT inheritance arms are out of scope. Cross-package template instantiation (template declared in a different `.baboon` file) is also out of scope; same-package cross-namespace works. See [docs/spec/generics.md §6](docs/spec/generics.md) for the full deferred-items list.
+3. (*) Comments are not preserved in the transpiler output
+4. (*) No structural inheritance information is preserved in the transpiler output
+5. (*) Only integer constants may be associated with enum members
+6. No newtypes (type aliases are supported, newtypes are not)
+7. (*) No inheritance-based lenses/projections/conversions
 
 Points marked with (*) will/may be improved in the future.
 
