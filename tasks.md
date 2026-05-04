@@ -108,7 +108,7 @@ Detail: `docs/drafts/20260504-1213-m30-docstrings-plan.md`. 15 PRs total: 1 spec
 - [x] **PR-30.9** (2026-05-04, single round — clean) — Kotlin backend emits KDoc `/** … */` per spec §7.3. **KMP shares the JVM emitter** (`KtBaboonTranslator`/`KtDefnTranslator` shared; `multiplatform` flag controls only runtime library variant). New `KtTreeTools.renderDocs`; wired in `KtDefnTranslator`. 6 emission tests covering both targets; 475/475 full suite; no fixture churn.
 - [x] **PR-30.10** (2026-05-04, single round — clean) — Java backend emits Javadoc `/** … */` per spec §7.2 with HTML-escape (`<`, `>`, `&`) for body text. New `JvTreeTools.renderDocs`; wired in `JvDefnTranslator`. 6 emission tests; 481/481 full suite; no fixture churn.
 - [x] **PR-30.11** (2026-05-04, single round — clean) — Dart backend emits `///` doc comments per spec §7.8. New `DtTreeTools.renderDocs`; wired in `DtDefnTranslator`. 6 emission tests; 487/487 full suite; no fixture churn.
-- [ ] **PR-30.12** — Backend: Swift (`///`).
+- [x] **PR-30.12** (2026-05-04, single round — clean) — Swift backend emits `///` doc comments per spec §7.9. New `SwTreeTools.renderDocs`; wired in `SwDefnTranslator`. 6 emission tests; 493/493 full suite; no fixture churn.
 - [ ] **PR-30.13** — Backend: GraphQL SDL + OpenAPI 3.1 (bundled; `"""…"""` block-string + `description`).
 - [ ] **PR-30.14** — LSP: hover surfaces docs; optional `CompletionItem.documentation`. No new `TyperIssue`, no 3-site exhaustive-match update.
 - [ ] **PR-30.15** — Cross-language smoke fixture `m30-ok/m30.baboon` covering every doc position; per-backend stub goldens; close-out + session log.

@@ -55,6 +55,14 @@ object SwDefnTranslator {
   ) extends SwDefnTranslator[F] {
     import SwTypes.*
 
+    /** Prepend `///` doc lines before a tree when `docs` is non-empty.
+      * Returns the tree unchanged when `docs` is empty.
+      */
+    private def prependDocs(docs: Docs, tree: TextTree[SwValue]): TextTree[SwValue] = {
+      val block = swTrees.renderDocs(docs, "")
+      if (block.isEmpty) tree else q"${block}$tree"
+    }
+
     override def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       defn.id.owner match {
         case Owner.Adt(_) => F.pure(List.empty)
@@ -211,16 +219,19 @@ object SwDefnTranslator {
 
       defn.defn match {
         case dto: Typedef.Dto =>
-          renderDto(dto, name, genMarker, mainMeta, codecMeta)
+          val repr = renderDto(dto, name, genMarker, mainMeta, codecMeta)
+          repr.copy(defn = prependDocs(defn.docs, repr.defn))
 
         case e: Typedef.Enum =>
-          renderEnum(e, name, mainMeta, codecMeta)
+          val repr = renderEnum(e, name, mainMeta, codecMeta)
+          repr.copy(defn = prependDocs(defn.docs, repr.defn))
 
         case adt: Typedef.Adt =>
           renderAdt(defn, adt, name, genMarker, mainMeta, codecMeta)
 
         case contract: Typedef.Contract =>
-          renderContract(contract, name, genMarker)
+          val repr = renderContract(contract, name, genMarker)
+          repr.copy(defn = prependDocs(defn.docs, repr.defn))
 
         case _: Typedef.Service =>
           renderService(defn, name)
@@ -316,7 +327,7 @@ object SwDefnTranslator {
         f =>
           val t       = trans.asSwRef(f.tpe, domain, evo)
           val escaped = trans.escapeSwiftKeyword(f.name.name)
-          q"public let $escaped: $t"
+          prependDocs(f.docs, q"public let $escaped: $t")
       }
 
       val contractParents = dto.contracts.map(c => trans.toSwTypeRefKeepForeigns(c, domain, evo))
@@ -747,14 +758,17 @@ object SwDefnTranslator {
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
 
-      DefnRepr(
+      val adtEnum =
         q"""public indirect enum ${name.asDeclName}: Equatable, Hashable, $conformanceClause {
            |  ${memberDtos.shift(4).trim}
            |
            |  ${enumCases.joinN().shift(4).trim}
            |
            |  ${staticMetaFields.joinN().shift(4).trim}
-           |}""".stripMargin,
+           |}""".stripMargin
+
+      DefnRepr(
+        prependDocs(defn.docs, adtEnum),
         memberTrees.toList.flatMap(_.codecs),
       )
     }
@@ -768,7 +782,7 @@ object SwDefnTranslator {
         f =>
           val t       = trans.asSwRef(f.tpe, domain, evo)
           val escaped = trans.escapeSwiftKeyword(f.name.name)
-          q"var $escaped: $t { get }"
+          prependDocs(f.docs, q"var $escaped: $t { get }")
       }
       val contractParents   = contract.contracts.map(c => trans.toSwTypeRefKeepForeigns(c, domain, evo))
       val parents           = (contractParents :+ genMarker).distinct
@@ -790,19 +804,20 @@ object SwDefnTranslator {
       val service = defn.defn.asInstanceOf[Typedef.Service]
       val methods = service.methods.map {
         m =>
-          val in     = trans.asSwRef(m.sig, domain, evo)
-          val out    = m.out.map(trans.asSwRef(_, domain, evo))
-          val retStr = out.map(o => q" -> $o").getOrElse(q"")
-          q"func ${m.name.name}(arg: $in)$retStr"
+          val in      = trans.asSwRef(m.sig, domain, evo)
+          val out     = m.out.map(trans.asSwRef(_, domain, evo))
+          val retStr  = out.map(o => q" -> $o").getOrElse(q"")
+          val methodEx = q"func ${m.name.name}(arg: $in)$retStr"
+          prependDocs(m.docs, methodEx)
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
 
-      DefnRepr(
+      val serviceTree =
         q"""public protocol ${name.asDeclName} {
            |  ${body.shift(4).trim}
-           |}""".stripMargin,
-        Nil,
-      )
+           |}""".stripMargin
+
+      DefnRepr(prependDocs(defn.docs, serviceTree), Nil)
     }
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
