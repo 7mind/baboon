@@ -224,7 +224,7 @@ object JvDefnTranslator {
           }
       }
 
-      val defnRepr = deprecatePrevious(repr.defn)
+      val defnRepr = prependDocs(defn.docs, deprecatePrevious(repr.defn))
 
       assert(defn.id.pkg == domain.id)
 
@@ -278,6 +278,14 @@ object JvDefnTranslator {
 
         case f: Typedef.Foreign => makeForeignKeyCodecRepr(f, name)
       }
+    }
+
+    /** Prepend a Javadoc-style doc comment block before a tree when `docs` is
+      * non-empty. Returns the tree unchanged when `docs` is empty.
+      */
+    private def prependDocs(docs: Docs, tree: TextTree[JvValue]): TextTree[JvValue] = {
+      val block = jvTrees.renderDocs(docs, "")
+      if (block.isEmpty) tree else q"${block}$tree"
     }
 
     /** PR-I.1b (M24 Phase 3.1) — emit a `<Foreign>_KeyCodec` extension hook for
@@ -354,8 +362,9 @@ object JvDefnTranslator {
     ): DefnRepr = {
       val params = dto.fields.map {
         f =>
-          val t = trans.asJvRef(f.tpe, domain, evo)
-          q"$t ${f.name.name}"
+          val t         = trans.asJvRef(f.tpe, domain, evo)
+          val fieldTree = q"$t ${f.name.name}"
+          prependDocs(f.docs, fieldTree)
       }
       val paramsList = if (params.nonEmpty) params.join(",\n") else q""
 
@@ -527,8 +536,9 @@ object JvDefnTranslator {
     ): DefnRepr = {
       val methods = contract.fields.map {
         f =>
-          val t = trans.asJvRef(f.tpe, domain, evo)
-          q"$t ${f.name.name}();"
+          val t          = trans.asJvRef(f.tpe, domain, evo)
+          val methodTree = q"$t ${f.name.name}();"
+          prependDocs(f.docs, methodTree)
       }
       val contractParents = contract.contracts.map(c => trans.toJvTypeRefKeepForeigns(c, domain, evo))
       val adtParent = contract.id.owner match {
@@ -571,10 +581,11 @@ object JvDefnTranslator {
             case t: JvValue.JvType     => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
             case t: JvValue.JvTypeName => t.name
           }
-          val outStr = out.map(_.mapRender(jvFqName)).getOrElse("void")
-          val errStr = err.map(_.mapRender(jvFqName))
-          val retStr = resolved.renderReturnType(outStr, errStr, "void")
-          q"$retStr ${m.name.name}($ctxParam$in arg);"
+          val outStr     = out.map(_.mapRender(jvFqName)).getOrElse("void")
+          val errStr     = err.map(_.mapRender(jvFqName))
+          val retStr     = resolved.renderReturnType(outStr, errStr, "void")
+          val methodTree = q"$retStr ${m.name.name}($ctxParam$in arg);"
+          prependDocs(m.docs, methodTree)
       }
       val typeParams = Seq(
         resolved.traitTypeParam,
