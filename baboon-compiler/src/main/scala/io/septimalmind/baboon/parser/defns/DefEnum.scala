@@ -20,7 +20,7 @@ class DefEnum(@unused context: ParserContext, meta: DefMeta) {
     }
   }
   def enumVal[$: P]: P[RawEnumConst] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     (P("=") ~ constInt).map {
       v =>
         RawEnumConst.RawInt(v.toLong)
@@ -34,7 +34,7 @@ class DefEnum(@unused context: ParserContext, meta: DefMeta) {
     }
   }
   def enumMember[$: P]: P[RawEnumMember] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(meta.withMeta(enumMemberName ~ enumVal.? ~ enumMemberWas.?)).map {
       case (meta, (name, enumVal, prevName)) =>
         RawEnumMember(name, enumVal, prevName, meta)
@@ -42,19 +42,19 @@ class DefEnum(@unused context: ParserContext, meta: DefMeta) {
   }
 
   def defEnum[$: P]: P[Seq[RawEnumMember]] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(enumMember.rep())
   }
 
   // def sepEnumFreeForm[$: P]: P[Unit] = P("|" | ";" | ",")
 
   def sepEnum[$: P]: P[Unit] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P((sep.ws.rep(1) | sep.NLC).rep(1))
   }
 
   def enumEnclosed[$: P]: P[RawEnum] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(meta.member(kw.choice, meta.derived ~ struct.enclosed(defEnum(sepEnum)))).map {
       case (meta, name, (derived, members)) => RawEnum(RawTypeName(name), members, derived, meta)
     }

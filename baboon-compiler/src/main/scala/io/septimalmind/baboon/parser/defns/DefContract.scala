@@ -9,7 +9,7 @@ import izumi.fundamentals.platform.language.Quirks
 class DefContract(context: ParserContext, meta: DefMeta, dto: DefDto) {
   Quirks.discard(context)
   def contractEnclosed[$: P]: P[RawContract] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(meta.member(kw.contract, dto.templateHead.? ~ struct.enclosed(dto.dto))).map {
       case (meta, name, (tps, members)) =>
         RawContract(RawTypeName(name), members, meta, tps.getOrElse(Nil))

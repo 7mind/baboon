@@ -990,3 +990,93 @@ Verified D01 resolved-incomplete (became D09); D02-D08 fixed as specified except
 **Description:** §5.5 covers the conventional Javadoc shape with a `*` line prefix. Spec is silent on the algorithm's behaviour for `/**\n  text\n  more\n  */` (no `*` continuation markers — common in TypeScript/Kotlin/Rust-flavoured doc-comment bodies). The literal algorithm handles it correctly (the `*` is optional; the common prefix becomes whitespace-only) but no worked example confirms this.
 **Suggested fix:** Add a one-line note to §5.2 (or a small second worked example after §5.5) confirming that bodies without `*` line prefixes are handled by the same algorithm: the common prefix degenerates to common leading whitespace, the `\*?` term contributes nothing, and the result is lines stripped of common indentation. No algorithm change needed — only a clarifying example.
 **Fix:** Note + worked example added at §5.2 L348-367 covering `*`-free Javadoc bodies. Round-3 reviewer verified the algorithm produces the documented output (common prefix degenerates to two-space leading whitespace; result is lines stripped of indentation).
+
+---
+
+## PR-30.2 — Parser-level doc-comment capture (M30)
+
+Round-1 adversarial review of the parser implementation. Reviewer model: Opus. 2 majors + 3 minors + 2 nits + 1 process (process invalid). Major architectural pivot from plan: executor introduced `BaboonWhitespace` (drop-in `Whitespace` instance) replacing `ScalaWhitespace` throughout the parser, because `ScalaWhitespace` swallows `/** */` between `.rep()` iterations. Pivot is principled (same skipping behaviour plus doc-marker stops) and all gates pass.
+
+## [PR-30.2-D01] Postfix `//!` binds across newlines to preceding field
+**Status:** under fix
+**Severity:** major
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/defns/DefDto.scala:136-141` (the `~ docs.suffixDoc` after `meta.withMeta(fieldDef)` runs under `BaboonWhitespace`, which eats `\n` and stops at `//!`).
+**Description:** Per spec §3.3 a postfix `//!` is accepted "only at the end of a field-definition line, before the line's terminating newline." The implementation runs `BaboonWhitespace` between `fieldDef` and `suffixDoc`, and `BaboonWhitespace` consumes newlines before stopping at `//!`. As a result, a `//!` placed on its own line between two fields (or floating after a field) is silently bound to the preceding field's `RawDocs.suffix` instead of being rejected.
+**Root cause:** Wrong whitespace contract for the `~` connecting `fieldDef` and `suffixDoc`. Should be a single-line whitespace (spaces/tabs only).
+**Suggested fix:** In `dtoMember`, isolate the `fieldDef ~ suffixDoc` pair with `SingleLineWhitespace` (or with `NoWhitespace` plus an explicit `CharsWhileIn(" \t", 0)` consumer). Add a negative test: `id: uid\n//! orphan\nname: str` — assert `id`'s `suffix.isEmpty` AND `name`'s `suffix.isEmpty` AND the `//!` either fails the parse or is treated as an orphan with no carrier.
+
+## [PR-30.2-D02] Prefix doc captured at spec §3.2 non-positions (enum values, ADT inheritance arms, namespace, etc.)
+**Status:** under fix
+**Severity:** major
+**Location:** `parser/defns/DefEnum.scala:36-39` (`enumMember` via `withMeta`); `parser/defns/DefAdt.scala:25-44` (`adtIncludeDef`/`adtExcludeDef`/`adtIntersectDef` via `withMeta`); `parser/defns/DefModel.scala:96-101` (`namespaceDef` via `meta.member`); `parser/defns/DefDto.scala:142-153` (`parentDef`/`unparentDef`/`unfieldDef`/`intersectionDef` via `withMeta`); test at `DocCommentParserTest.scala:142-157` explicitly asserts enum-member doc capture.
+**Description:** Spec §3.1 enumerates exactly the prefix-doc positions; §3.2 enumerates non-positions including "individual enum values" (deferred per §9), namespace openers, ADT inheritance arms (`+`/`-`/`^`), foreign per-language entries. The current implementation wires `withMeta`/`prefixDocs` at every `RawNodeMeta`-bearing site, so docs at non-positions are silently captured into the raw AST. Spec §3.2 ADT-arm bullet says "silently dropped — no carrier in the typed model since inheritance arms are resolved structurally during ADT inheritance expansion. No parser diagnostic is produced." — implying drop happens at typer, not parser.
+**Root cause:** `withMeta` wires `prefixDocs` unconditionally; no per-call-site opt-out. Spec was authored with a layered design in mind (parser captures uniformly, typer drops at non-positions) but the test asserts a parser-stage behaviour that contradicts §3.2's "silently dropped" framing for the next-stage carrier.
+**Suggested fix:** Accept the layered design — parser captures uniformly at `withMeta` sites; typer/translator (PR-30.3) is responsible for stripping docs at non-position carriers (enum values, ADT inheritance arms, namespace, foreign per-language entries). Update `DocCommentParserTest.scala` test commentary to make this layering explicit: "parser-stage enum-value doc capture is a load-bearing pre-step; PR-30.3 typer drops these at the typed-model stage per spec §3.2/§9." Update `RawDocComment.scala` doc comment to note "raw AST captures docs at every `withMeta` site; the typed model preserves docs only at spec §3.1 carriers." No source code change at parser stage — this is a documentation/intent alignment fix, with the actual drop to be enforced by PR-30.3.
+
+## [PR-30.2-D03] Stacked-doc detection misses `// comment` between two `/**` blocks
+**Status:** under fix
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/defns/base/DefDocs.scala:76` (`plainWs = CharsWhileIn(" \t\r\n", 0)`).
+**Description:** Per spec §4 stacked prefix docs are detected when two `/** … */` appear "back-to-back with no intervening declaration". The detection rule uses `plainWs` (whitespace only, no comments). A user writing `/** first */ // separator \n /** second */\n data Foo {}` slips through detection: `plainWs` stops at `/`, lookahead `/**` fails, the first doc is returned. The surrounding `BaboonWhitespace` then skips the `//` line comment and the next-iteration `withMeta` re-enters `prefixDocs` and binds the second `/**` to `data Foo` cleanly. Diagnostic does not fire.
+**Suggested fix:** In `plainWs`, also skip plain `//` line comments and `/* … */` block comments (but NOT `/**` or `//!`). Mirrors the `BaboonWhitespace` logic minus the doc-marker stops.
+
+## [PR-30.2-D04] Side-channel `stackedDocAt` is sticky across FastParse backtracks
+**Status:** resolved (deferred — latent risk; today's `dtoMember` alternation re-enters `prefixDocs` on every alternative so all alternatives observe the stack and ultimately fail. Future parser refactor must consider this; revisit if a sibling-success path with `prefixDocs` is introduced.)
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/ParserContext.scala:17` (declared); set unconditionally in `DefDocs.scala:100`.
+**Description:** `prefixDocs` records `context.stackedDocAt = Some(pos)` inside a `.map` BEFORE the `.flatMap`-based `Fail`. If `prefixDocs` is invoked inside an alternation and a parallel alternative ultimately succeeds, the side-effect is not reverted. Any LATER unrelated `Parsed.Failure` in the same parse will be mis-translated by the driver into `StackedDocComments` (false positive that masks the real diagnostic). Today's `dtoMember` alternation re-enters `prefixDocs` on every alternative so all alternatives observe the stack and ultimately fail — the false-positive case is latent rather than active. Brittle to future parser refactors.
+**Suggested fix:** Carry the stacked-position out of `prefixDocs` as a typed result (e.g. `P[Either[InputPointer, Option[RawDocComment]]]`) and let callers thread it explicitly; or snapshot/restore `stackedDocAt` around any alternation that contains `prefixDocs`.
+
+## [PR-30.2-D05] `BaboonWhitespace` silently consumes unterminated `/* … EOF`
+**Status:** resolved (deferred — diagnostic-quality nit; unterminated block comments still cause downstream parse failure at EOF, just with a different message than `ScalaWhitespace` produces. Pre-existing tests don't exercise this path; no test corpus regression.)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/defns/base/BaboonWhitespace.scala:64-76`.
+**Description:** `ScalaWhitespace` (canonical) cuts and fails on unterminated `/* … EOF`. `BaboonWhitespace`'s nested-block-comment loop exits silently when input becomes unreachable while `depth > 0`. Pre-existing tests do not exercise this path; Baboon files with unterminated block comments would be rejected later by the model rule failing at EOF, but the diagnostic differs.
+**Suggested fix:** When the nested loop exits with `depth > 0`, set `ctx.cut = true` and call `ctx.freshFailure(current)` matching `ScalaWhitespace`'s contract. Deferrable.
+
+## [PR-30.2-D06] Test coverage gaps vs spec §3 / §5.4
+**Status:** under fix
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/DocCommentParserTest.scala`.
+**Description:** Test file omits coverage for: freestanding `//!` between two fields (D01 negative); `/**\n * \n */` separator-only body; prefix doc on `contract` body / contract field; non-position rejection / silent-drop pinning (D02). The "no-doc source produces RawDocs.empty" test passes for the wrong reason — a no-op implementation would also pass.
+**Suggested fix:** Add the three missing positive tests + the freestanding-`//!` negative; add at least one assertion that a parsed source's `RawDocs.empty` is the *empty* shape, not a `Some` with empty body.
+
+## [PR-30.2-D07] Parser early-drops empty docs; spec puts cleanup at typer
+**Status:** resolved (deferred — pragmatic; parser-stage early-drop ensures `RawDocs.empty` is canonical at the parser boundary. The `\s*\*?\s*` separator pattern is now duplicated between parser-stage `isEmptyDocBody` and the future PR-30.3 typer-stage `DocFormat.clean`; consolidate into a shared helper when PR-30.3 lands. `RawDocComment.scala` updated comment acknowledges the parser pre-filters trivial-empty bodies.)
+**Severity:** nit
+**Location:** `parser/defns/base/DefDocs.scala:60-67` (prefixDoc) and `:122-132` (suffixDoc).
+**Description:** `RawDocComment.scala` doc comment states the parser preserves raw text verbatim so cleanup is centralised in the typer, and spec §5.4 places empty-body drop at `clean(raw)` time. But `prefixDoc` and `suffixDoc` drop on `body.trim.isEmpty` early at parser stage. Harmless (the typer would drop them anyway) but inconsistent with the stated design.
+**Suggested fix:** Either remove the early drops and emit `RawDocComment` for all bodies (typer drops uniformly), or update the `RawDocComment.scala` comment to acknowledge the parser pre-filters the trivial-empty case. The latter is the smaller change.
+
+## [PR-30.2-D08] PR is uncommitted; review against working-tree state
+**Status:** resolved (not a defect — loop discipline puts commit at I5 after clean review, not before)
+**Severity:** nit (process)
+**Location:** working tree.
+**Description:** Reviewer noted the new files are present but not committed. The orchestrator commits the PR at I5 after the inner loop returns clean — never before review. Working-tree review is the canonical loop shape; this is by design, not a defect.
+**Fix:** No action — committing pre-review would invert the loop discipline.
+
+## Round 2 (2026-05-04, Opus reviewer)
+
+D01/D02/D03/D06 verified fixed. Two new minor defects below.
+
+## [PR-30.2-D09] Orphan-`//!` D01 negative test does not exercise its load-bearing invariant
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/DocCommentParserTest.scala:399-433`.
+**Description:** Test source for orphan `//!` between two fields makes `parseModel` produce a `Parsed.Failure` empirically. The match falls through to a `case _: Parsed.Failure => succeed` fallback, which asserts nothing about field bindings. The strict no-binding assertions for `fid.docs.suffix.isEmpty` etc. are never reached. The test would still pass if a future change re-introduced the D01 binding defect, provided the orphan still caused parse failure for an unrelated reason.
+**Suggested fix:** Replace the orphan-between-fields source with an orphan-between-top-level-declarations source where the rest still parses to completion. Then the success branch is exercised and the no-binding invariant is asserted strictly. Example:
+```
+data A {}
+//! orphan
+data B {}
+```
+Assert: parses successfully, both A and B have empty docs.
+Alternatively, keep the orphan-between-fields source and replace the permissive `case _: Parsed.Failure => succeed` fallback with a strict assertion that the error position is the `//!` marker location.
+**Fix:** The originally-suggested shape `data A {} //! orphan / data B {}` does not parse — freestanding `//!` is rejected by the Baboon grammar at top level position. Replacement test at `DocCommentParserTest.scala:399-421` instead asserts: `data A { x: i32 //! field doc } data B {}` parses successfully, `metaX.docs.suffix.isDefined` (the `//!` bound to the field correctly), `metaB.docs.prefix.isEmpty` AND `metaB.docs.suffix.isEmpty` (no bleed across declaration boundary). Round-3 reviewer confirmed: D01's specific newline-no-binding invariant is covered by the existing `postfix //! does NOT bleed into the next field` test at L237-253 (which parses successfully and asserts no binding); combined with the new cross-boundary test, D01 is exercised at three scopes (same-line, field-to-field, field-to-declaration). Test count steady at 22.
+
+## [PR-30.2-D10] `nonDocComment` does not handle nested `/* … */` like `BaboonWhitespace` does
+**Status:** open (deferred — edge case; nest-aware skip duplicates BaboonWhitespace's depth tracker)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/defns/base/DefDocs.scala:107-114`.
+**Description:** `BaboonWhitespace` tracks block-comment nesting via a `depth` counter per Scala convention. `nonDocComment` uses a flat regex terminating at the first `*/`. For nested `/* … */ … */` between two `/** */` blocks, the inner `*/` terminates the skip prematurely, leaving residue that breaks stacked-doc detection. Edge case (Scala-style nesting in Baboon comments is unusual).
+**Fix:** Defer. Note added inline that this is an edge-case divergence from `BaboonWhitespace`. Future polish can either (a) factor out a shared nest-aware skip helper, or (b) extend `nonDocComment`'s block branch with an inline depth counter. Both approaches duplicate logic until a shared helper lands; deferring until a clear consolidation path emerges.

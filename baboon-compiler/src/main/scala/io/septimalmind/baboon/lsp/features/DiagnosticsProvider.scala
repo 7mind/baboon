@@ -23,6 +23,16 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
             (parseErrorRange(error), s"Parse error: ${error.msg}", DiagnosticSeverity.Error)
           case ParserIssue.IncludeNotFound(path) =>
             (positionConverter.defaultRange, s"Include not found: $path", DiagnosticSeverity.Error)
+          case ParserIssue.StackedDocComments(pos) =>
+            val range = pos match {
+              case s: io.septimalmind.baboon.parser.model.InputPointer.StartOffsetKnown =>
+                positionConverter.fromInputOffset(s.start) match {
+                  case start => Range(start, Position(start.line, start.character + 1))
+                }
+              case _ =>
+                positionConverter.defaultRange
+            }
+            (range, "Stacked prefix doc comments — merge into a single `/** … */` block per declaration.", DiagnosticSeverity.Error)
         }
 
       case BaboonIssue.Typer(ti) =>

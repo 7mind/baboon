@@ -1471,6 +1471,8 @@ object BaboonJS {
             }
           case ParserIssue.IncludeNotFound(path) =>
             Some(InputPointer.JustFile(FSPath.parse(NEString.unsafeFrom(path))))
+          case ParserIssue.StackedDocComments(pos) =>
+            Some(pos)
         }
       case BaboonIssue.Typer(ti)        => extractTyperIssuePointer(ti)
       case BaboonIssue.Verification(vi) => extractVerificationIssuePointer(vi)

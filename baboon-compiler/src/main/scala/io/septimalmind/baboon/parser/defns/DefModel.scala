@@ -19,7 +19,7 @@ class DefModel(
   context.discard()
 
   def pragma[$: P]: P[RawPragma] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(kw(kw.pragma, pragmaKey ~ "=" ~ Literals.Literals.SimpleStr)).map {
       case (key, value) => RawPragma(key, value)
     }
@@ -31,7 +31,7 @@ class DefModel(
   }
 
   def model[$: P]: P[RawDomain] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(Start ~ header ~ version ~ pragma.rep() ~ modelContent ~ End).map {
       case (decl, version, pragmas, (imp, members)) =>
         RawDomain(decl, version, pragmas, imp, members)
@@ -47,7 +47,7 @@ class DefModel(
       .map(RawVersion.apply.tupled)
 
   def `import`[$: P]: P[RawImport] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
 
     meta
       .withMeta(P(kw(kw.`import`, Literals.Literals.SimpleStr) ~ "{" ~ "*" ~ "}" ~ ("without" ~ struct.enclosed(idt.symbol.rep())).?))
@@ -63,7 +63,7 @@ class DefModel(
       .map(RawInclude.apply.tupled)
 
   def member[$: P]: P[RawTLDef] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
 
     val main = P(kw.root.!.? ~ (choice | identifier | dto | adt | foreign | contract | service | alias)).map {
       case (root, defn) =>
@@ -74,7 +74,7 @@ class DefModel(
   }
 
   def modelContent[$: P]: P[(Option[RawImport], RawContent)] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     (include.rep() ~ member.rep() ~ (`import` ~ include.rep() ~ member.rep()).?).map {
       case (inc1, defs1, Some((imp, inc2, defs2))) =>
         (Some(imp), RawContent(inc1 ++ inc2, defs1 ++ defs2))
@@ -84,12 +84,12 @@ class DefModel(
   }
 
   def content[$: P]: P[RawContent] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     (include.rep() ~ member.rep()).map(RawContent.apply.tupled)
   }
 
   def contentEof[$: P]: P[RawContent] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     content ~ End
   }
 
@@ -118,7 +118,7 @@ class DefModel(
     namespaceDef.map(RawTLDef.Namespace(_))
 
   def alias[$: P]: P[RawTLDef.Alias] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(meta.withMeta(kw(kw.`type`, idt.symbol ~ "=" ~ defDto.typeRef ~ meta.derived))).map {
       case (meta, (name, target, derived)) =>
         RawTLDef.Alias(false, RawAlias(RawTypeName(name), target, derived, meta))
