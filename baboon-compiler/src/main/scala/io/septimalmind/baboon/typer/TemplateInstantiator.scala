@@ -93,7 +93,7 @@ object TemplateInstantiator {
               val key = resolveTemplateKey(pkg, ownerForCurrent, ctor)
               registry.templates.get(key) match {
                 case Some(body) =>
-                  instantiateAlias(pkg, root, alias, body, registry, key).map(List(_))
+                  instantiateAlias(pkg, root, alias, body, registry, key, ownerForCurrent).map(List(_))
                 case None =>
                   // Constructor whose head doesn't hit the registry.
                   // If the head is a builtin collection (lst, set, opt, map) or `any`, pass
@@ -119,15 +119,18 @@ object TemplateInstantiator {
             case simple: RawTypeRef.Simple =>
               // Bare Simple reference (no brackets). Check whether the name refers to a
               // registered template. If so, the user forgot the type arguments — matrix #7.
-              // TODO [PR-29.5-D04 / PR-29.7-D07]: extend template detection to cross-namespace
-              //   prefixed refs (e.g. `ns.Foo`) once cross-namespace template instantiation is
-              //   spec'd. Currently out of scope per spec §6.
+              // For prefixed forms (e.g. `ns.Foo`), resolve the owner from the prefix so that
+              // cross-namespace uninstantiated template references also produce the precise diagnostic.
+              val lookupOwner: Owner = if (simple.prefix.isEmpty) {
+                ownerForCurrent
+              } else {
+                Owner.Ns(simple.prefix.map(p => TypeName(p.name)))
+              }
               val maybeTemplateKey = registry.templates.keys.find {
                 case (kPkg, kOwner, tname) =>
                   tname.name == simple.name.name &&
                   kPkg == pkg &&
-                  kOwner == ownerForCurrent &&
-                  simple.prefix.isEmpty
+                  kOwner == lookupOwner
               }
               maybeTemplateKey match {
                 case Some(_) =>
@@ -154,7 +157,10 @@ object TemplateInstantiator {
           val nextOwner  = Owner.Ns(nextNsPath)
           instantiateRecursive(pkg, ns.defns, registry, nextOwner, nextNsPath).map {
             rewrittenChildren =>
-              List(nsTL.copy(value = ns.copy(defns = rewrittenChildren)))
+              // If all children were templates and were removed, drop the namespace entirely.
+              // Keeping an empty namespace would cause ScopeCannotBeEmpty in the scope-build phase.
+              if (rewrittenChildren.isEmpty) Nil
+              else List(nsTL.copy(value = ns.copy(defns = rewrittenChildren)))
           }
 
         case other =>
@@ -170,6 +176,7 @@ object TemplateInstantiator {
       body: TemplateBody,
       registry: TemplateRegistry,
       templateKey: (Pkg, Owner, TypeName),
+      ownerForCurrent: Owner,
     ): F[NEList[BaboonIssue], RawTLDef] = {
       val ctor = alias.target.asInstanceOf[RawTypeRef.Constructor]
       val args = ctor.params.toList
@@ -190,11 +197,15 @@ object TemplateInstantiator {
       } else {
         // Matrix #2: type arguments must not themselves be template instantiations (spec §2.5.2).
         // Walk each argument; if it is a Constructor whose head names a registered template, reject.
-        // TODO [PR-29.5-D04 / PR-29.7-D07]: extend template detection to cross-namespace prefixed
-        //   refs (e.g. `ns.Foo[T]`) once cross-namespace template instantiation is spec'd.
-        //   Currently out of scope per spec §6.
+        // For prefixed forms (e.g. `ns.Foo[T]`), resolve the owner from the prefix so that
+        // cross-namespace template-in-arg references also produce the precise diagnostic.
         val badArg = args.collectFirst {
-          case argCtor: RawTypeRef.Constructor if registry.templates.keys.exists { case (_, _, tname) => tname.name == argCtor.name.name && argCtor.prefix.isEmpty } =>
+          case argCtor: RawTypeRef.Constructor if {
+                val argOwner: Owner =
+                  if (argCtor.prefix.isEmpty) ownerForCurrent
+                  else Owner.Ns(argCtor.prefix.map(p => TypeName(p.name)))
+                registry.templates.keys.exists { case (kPkg, kOwner, tname) => tname.name == argCtor.name.name && kPkg == pkg && kOwner == argOwner }
+              } =>
             argCtor.name.name
         }
         badArg match {
@@ -219,7 +230,7 @@ object TemplateInstantiator {
                 // spec §5.3). By the time we reach this point the invariant holds.
                 assert(raw.derived.isEmpty, s"template body '${raw.name.name}' carries derived — should have been rejected by TemplateRegistryBuilder")
                 for {
-                  rewrittenMembers <- substituteMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta)
+                  rewrittenMembers <- substituteMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta, pkg)
                 } yield {
                   RawTLDef.DTO(
                     root,
@@ -238,7 +249,7 @@ object TemplateInstantiator {
                 // spec §5.3). By the time we reach this point the invariant holds.
                 assert(raw.derived.isEmpty, s"template body '${raw.name.name}' carries derived — should have been rejected by TemplateRegistryBuilder")
                 for {
-                  rewrittenAdtMembers <- substituteAdtMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta)
+                  rewrittenAdtMembers <- substituteAdtMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta, pkg)
                 } yield {
                   RawTLDef.ADT(
                     root,
@@ -254,7 +265,7 @@ object TemplateInstantiator {
 
               case RawTemplateDefn.Contract(raw) =>
                 for {
-                  rewrittenMembers <- substituteMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta)
+                  rewrittenMembers <- substituteMembers(raw.members, substMap, templateKey._3.name, registry, alias.meta, pkg)
                 } yield {
                   RawTLDef.Contract(
                     root,
@@ -269,7 +280,7 @@ object TemplateInstantiator {
 
               case RawTemplateDefn.Service(raw) =>
                 for {
-                  rewrittenFuncs <- substituteFuncs(raw.defns, substMap, templateKey._3.name, registry, alias.meta)
+                  rewrittenFuncs <- substituteFuncs(raw.defns, substMap, templateKey._3.name, registry, alias.meta, pkg)
                 } yield {
                   RawTLDef.Service(
                     root,
@@ -295,8 +306,9 @@ object TemplateInstantiator {
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
+      pkg: Pkg,
     ): F[NEList[BaboonIssue], Seq[RawDtoMember]] = {
-      F.traverseAccumErrors(members)(m => substituteDtoMember(m, substMap, templateName, registry, meta))
+      F.traverseAccumErrors(members)(m => substituteDtoMember(m, substMap, templateName, registry, meta, pkg))
     }
 
     private def substituteDtoMember(
@@ -305,14 +317,15 @@ object TemplateInstantiator {
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
+      pkg: Pkg,
     ): F[NEList[BaboonIssue], RawDtoMember] = {
       member match {
         case f @ RawDtoMember.FieldDef(field, fm) =>
-          substituteTypeRef(field.tpe, substMap, templateName, registry, fm).map {
+          substituteTypeRef(field.tpe, substMap, templateName, registry, fm, pkg).map {
             newTpe => f.copy(field = field.copy(tpe = newTpe))
           }
         case u @ RawDtoMember.UnfieldDef(field, fm) =>
-          substituteTypeRef(field.tpe, substMap, templateName, registry, fm).map {
+          substituteTypeRef(field.tpe, substMap, templateName, registry, fm, pkg).map {
             newTpe => u.copy(field = field.copy(tpe = newTpe))
           }
         case other =>
@@ -331,8 +344,9 @@ object TemplateInstantiator {
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
+      pkg: Pkg,
     ): F[NEList[BaboonIssue], Seq[RawAdtMember]] = {
-      F.traverseAccumErrors(members)(m => substituteAdtMember(m, substMap, templateName, registry, meta))
+      F.traverseAccumErrors(members)(m => substituteAdtMember(m, substMap, templateName, registry, meta, pkg))
     }
 
     private def substituteAdtMember(
@@ -341,14 +355,15 @@ object TemplateInstantiator {
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
+      pkg: Pkg,
     ): F[NEList[BaboonIssue], RawAdtMember] = {
       member match {
         case m: RawAdtMemberDto =>
-          substituteMembers(m.dto.members, substMap, templateName, registry, m.meta).map {
+          substituteMembers(m.dto.members, substMap, templateName, registry, m.meta, pkg).map {
             newMembers => m.copy(dto = m.dto.copy(members = newMembers))
           }
         case m: RawAdtMemberContract =>
-          substituteMembers(m.contract.members, substMap, templateName, registry, m.meta).map {
+          substituteMembers(m.contract.members, substMap, templateName, registry, m.meta, pkg).map {
             newMembers => m.copy(contract = m.contract.copy(members = newMembers))
           }
         case other =>
@@ -364,8 +379,9 @@ object TemplateInstantiator {
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
+      pkg: Pkg,
     ): F[NEList[BaboonIssue], Seq[RawFunc]] = {
-      F.traverseAccumErrors(funcs)(f => substituteFunc(f, substMap, templateName, registry, meta))
+      F.traverseAccumErrors(funcs)(f => substituteFunc(f, substMap, templateName, registry, meta, pkg))
     }
 
     private def substituteFunc(
@@ -374,8 +390,9 @@ object TemplateInstantiator {
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
+      pkg: Pkg,
     ): F[NEList[BaboonIssue], RawFunc] = {
-      F.traverseAccumErrors(func.sig)(arg => substituteArg(arg, substMap, templateName, registry, meta)).map {
+      F.traverseAccumErrors(func.sig)(arg => substituteArg(arg, substMap, templateName, registry, meta, pkg)).map {
         newSig => func.copy(sig = newSig)
       }
     }
@@ -386,21 +403,22 @@ object TemplateInstantiator {
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
+      pkg: Pkg,
     ): F[NEList[BaboonIssue], RawFuncArg] = {
       arg match {
         case r @ RawFuncArg.Ref(ref, marker, fm) =>
-          substituteTypeRef(ref, substMap, templateName, registry, fm).map {
+          substituteTypeRef(ref, substMap, templateName, registry, fm, pkg).map {
             newRef => r.copy(ref = newRef)
           }
         case s: RawFuncArg.Struct =>
           // Nested struct definitions — walk the members if it's a DTO or Contract.
           s.defn match {
             case dto: RawDto =>
-              substituteMembers(dto.members, substMap, templateName, registry, dto.meta).map {
+              substituteMembers(dto.members, substMap, templateName, registry, dto.meta, pkg).map {
                 newMembers => s.copy(defn = dto.copy(members = newMembers))
               }
             case contract: RawContract =>
-              substituteMembers(contract.members, substMap, templateName, registry, contract.meta).map {
+              substituteMembers(contract.members, substMap, templateName, registry, contract.meta, pkg).map {
                 newMembers => s.copy(defn = contract.copy(members = newMembers))
               }
             case other =>
@@ -415,6 +433,9 @@ object TemplateInstantiator {
       * - `RawTypeRef.Constructor(name, params, prefix)` → recurse into params.
       *   Additionally checks whether `name` resolves to a registered template
       *   (matrix #1 / spec §4): if so, emit `TemplateInstantiationInForbiddenPosition`.
+      *   For prefixed refs (e.g. `ns.Foo[T]`), the owner is derived from the prefix
+      *   so that cross-namespace in-body template instantiations also produce the precise
+      *   diagnostic (PR-29.15 closes [PR-29.5-D04]).
       * - `RawTypeRef.AnyRef(qualifier, underlying)` → recurse into underlying if present.
       */
     private def substituteTypeRef(
@@ -423,6 +444,7 @@ object TemplateInstantiator {
       templateName: String,
       registry: TemplateRegistry,
       meta: RawNodeMeta,
+      pkg: Pkg,
     ): F[NEList[BaboonIssue], RawTypeRef] = {
       ref match {
         case s @ RawTypeRef.Simple(name, Nil) =>
@@ -437,15 +459,20 @@ object TemplateInstantiator {
 
         case ctor @ RawTypeRef.Constructor(name, params, prefix) =>
           // Check whether the constructor's head names a registered template (matrix #1).
-          // We cannot do full scope resolution here (no scope context), but we can look up
-          // in the registry using the same "owner = Toplevel" key used by TemplateRegistryBuilder.
-          // Templates nested in namespaces are out of scope for PR-29.5 in-body check; the
-          // flat (Toplevel) lookup catches the common case and the most dangerous one (self-ref).
-          // TODO [PR-29.5-D04 / PR-29.7-D07]: extend template detection to cross-namespace
-          //   prefixed refs (e.g. `ns.Foo[T]`) once cross-namespace template instantiation is
-          //   spec'd. Currently out of scope per spec §6.
-          val maybeTemplateKey = registry.templates.keys.find {
-            case (_, _, tname) => tname.name == name.name && prefix.isEmpty
+          // For the empty-prefix case, restore the broad "any-owner same-pkg" lookup so that
+          // sibling templates referenced by bare name inside a namespace body are caught.
+          // Matrix #1 forbids any in-body instantiation of any template regardless of the
+          // template's owner, so narrow Owner.Toplevel lookup was a regression.
+          // For the non-empty-prefix case, use precise Owner.Ns(prefix) lookup.
+          val maybeTemplateKey = if (prefix.isEmpty) {
+            registry.templates.keys.find {
+              case (kPkg, _, tname) => kPkg == pkg && tname.name == name.name
+            }
+          } else {
+            val ctorOwner = Owner.Ns(prefix.map(p => TypeName(p.name)))
+            registry.templates.keys.find {
+              case (kPkg, kOwner, tname) => kPkg == pkg && kOwner == ctorOwner && tname.name == name.name
+            }
           }
           maybeTemplateKey match {
             case Some(_) =>
@@ -462,7 +489,7 @@ object TemplateInstantiator {
               )
             case None =>
               // Builtin collection or ordinary constructor — recurse into params.
-              F.traverseAccumErrors(params.toList)(p => substituteTypeRef(p, substMap, templateName, registry, meta)).map {
+              F.traverseAccumErrors(params.toList)(p => substituteTypeRef(p, substMap, templateName, registry, meta, pkg)).map {
                 newParams =>
                   ctor.copy(params = NEList.unsafeFrom(newParams))
               }
@@ -471,7 +498,7 @@ object TemplateInstantiator {
         case anyRef @ RawTypeRef.AnyRef(qualifier, underlying) =>
           underlying match {
             case Some(u) =>
-              substituteTypeRef(u, substMap, templateName, registry, meta).map {
+              substituteTypeRef(u, substMap, templateName, registry, meta, pkg).map {
                 newU => anyRef.copy(underlying = Some(newU))
               }
             case None =>

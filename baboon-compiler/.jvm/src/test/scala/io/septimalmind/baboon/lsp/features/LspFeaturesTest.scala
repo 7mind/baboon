@@ -392,6 +392,78 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
             assert(labels.contains("Plain"), s"Alias-RHS completions should include regular type 'Plain', got: ${items.map(_.label).take(20)}")
         }
     }
+
+    "PR-29.15: alias-RHS completion at empty prefix on NsIntPage line surfaces NsPage (AliasRhsPosition, unfiltered)" in {
+      // Regression guard for the un-prefixed case: cursor is right after "= ", so beforeCursor
+      // ends with "type NsIntPage = " and the captured prefix is empty. Both old \w* and new
+      // [\w.]* regexes match empty identically, so this test proves AliasRhsPosition fires and
+      // all templates are returned unfiltered — NOT that [\w.]* is exercised.
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-lsp/m29-lsp.baboon") {
+          (docState, wsState, uri) =>
+            val completion = new CompletionProvider(docState, wsState, logger)
+
+            val content = docState.getContent(uri).get
+            val lines   = content.split("\n")
+            // Line: "type NsIntPage = nstemplate.NsPage[i32]"
+            val lineIdx = lines.indexWhere(_.contains("type NsIntPage = nstemplate.NsPage"))
+            assert(lineIdx >= 0, "Should find NsIntPage alias line")
+
+            val eqIdx     = lines(lineIdx).indexOf("=")
+            val cursorCol = eqIdx + 2 // cursor after "= "; captured prefix is empty
+            val items     = completion.getCompletions(uri, Position(lineIdx, cursorCol))
+
+            val labels = items.map(item => item.filterText.getOrElse(item.label)).toSet
+            assert(
+              labels.contains("NsPage"),
+              s"Alias-RHS completions at empty prefix should include template 'NsPage', got: ${items.map(_.label).take(20)}",
+            )
+        }
+    }
+
+    "PR-29.15: alias-RHS completion with qualified prefix 'nstemplate.' does not leak keywords ([\\w.]* regex exercises the dot)" in {
+      // Exercises the [\w.]* regex with a dot-qualified prefix.
+      //
+      // Line: "type NsIntPage = nstemplate.NsPage[i32]"
+      // Cursor is placed right after the dot in "nstemplate." so that
+      //   beforeCursor = "type NsIntPage = nstemplate."
+      //
+      // Old \w* regex: "nstemplate." contains a dot, so (\w*)$ cannot consume the entire suffix
+      //   starting at "nstemplate." — the aliasRhsPattern match fails entirely, the context
+      //   falls through to CompletionContext.Unknown with empty prefix, and ALL items (including
+      //   keywords like "ns") are returned.
+      //
+      // New [\w.]* regex: "nstemplate." is consumed by ([\w.]*)$, the pattern matches with
+      //   prefix = "nstemplate.", AliasRhsPosition fires. Keywords are NOT included in the
+      //   candidate set for AliasRhsPosition, so "ns" must be absent from results.
+      //
+      // Therefore: the absence of keyword "ns" in the results distinguishes the two regexes.
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-lsp/m29-lsp.baboon") {
+          (docState, wsState, uri) =>
+            val completion = new CompletionProvider(docState, wsState, logger)
+
+            val content = docState.getContent(uri).get
+            val lines   = content.split("\n")
+            val lineIdx = lines.indexWhere(_.contains("type NsIntPage = nstemplate.NsPage"))
+            assert(lineIdx >= 0, "Should find NsIntPage alias line")
+
+            val line   = lines(lineIdx)
+            val dotIdx = line.indexOf("nstemplate.")
+            assert(dotIdx >= 0, "Should find 'nstemplate.' in the alias line")
+            // cursor right after the dot — beforeCursor = "type NsIntPage = nstemplate."
+            val cursorCol = dotIdx + "nstemplate.".length
+            val items     = completion.getCompletions(uri, Position(lineIdx, cursorCol))
+
+            // With AliasRhsPosition the candidate set is types + builtins + templates (no keywords).
+            // The keyword "ns" would appear only if CompletionContext.Unknown fired (old \w* regression).
+            val labels = items.map(item => item.filterText.getOrElse(item.label)).toSet
+            assert(
+              !labels.contains("ns"),
+              s"Keyword 'ns' must be absent in AliasRhsPosition (its presence means Unknown fired, i.e. old \\w* regression), got: ${items.map(_.label).take(30)}",
+            )
+        }
+    }
   }
 
   "definition provider" should {

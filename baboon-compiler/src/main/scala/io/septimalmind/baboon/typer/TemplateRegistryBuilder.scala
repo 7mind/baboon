@@ -130,8 +130,13 @@ object TemplateRegistryBuilder {
           }
           buildRecursive(pkg, ns.defns, nextOwner).map {
             case (rewrittenChildren, registry) =>
-              val rewritten = nsTL.copy(value = ns.copy(defns = rewrittenChildren))
-              (List(rewritten), registry)
+              // If all children were templates and were removed, drop the namespace entirely.
+              // Keeping an empty namespace would cause ScopeCannotBeEmpty in the initial scope-build phase.
+              if (rewrittenChildren.isEmpty) (List.empty, registry)
+              else {
+                val rewritten = nsTL.copy(value = ns.copy(defns = rewrittenChildren))
+                (List(rewritten), registry)
+              }
           }
 
         case other =>

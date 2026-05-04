@@ -461,11 +461,11 @@ Verification: `grep -n 'RawTypeRef.Constructor docs/spec/generics.md` no matches
 **Fix:** Defer; pull the canonical name from the registry key in a future cleanup.
 
 ## [PR-29.8-D06] CompletionProvider regex misses qualified prefixes
-**Status:** resolved (deferred — known v1 limitation; add TODO)
+**Status:** resolved (PR-29.15 — regex widened to `[\w.]*`)
 **Severity:** moderate
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/lsp/features/CompletionProvider.scala:131`.
-**Description:** Pattern `^\s*(?:root\s+)?type\s+\w+\s*=\s*(\w*)$` does not match `type Y = pkg.Pa` (the `.` breaks `\w*$`). Qualified template names get no completion.
-**Fix:** Defer; add TODO. Acceptable v1 limitation. Cross-namespace template instantiation is also gated by `[PR-29.5-D04]` / `[PR-29.7-D07]`.
+**Description:** Pattern `^\s*(?:root\s+)?type\s+\w+\s*=\s*(\w*)$` did not match `type Y = pkg.Pa` (the `.` breaks `\w*$`). Qualified template names got no completion.
+**Fix:** PR-29.15 (2026-05-04) — regex changed to `^\s*(?:root\s+)?type\s+\w+\s*=\s*([\w.]*)$`. The dot-inclusive character class accepts qualified prefixes like `foo.Pa`. Removed the `// TODO [PR-29.8-D06]` block. New LSP test in `LspFeaturesTest` exercises completion at `type NsIntPage = nstemplate.<cursor>` against the m29-lsp fixture's `nstemplate.NsPage[T]` template.
 
 ---
 
@@ -549,11 +549,21 @@ Verification: `grep -n 'RawTypeRef.Constructor docs/spec/generics.md` no matches
 **Suggested fix:** Either (a) leave a `// TODO PR-29.7: assert raw.derived.isEmpty` so PR-29.7 wires the check correctly, or (b) `assert(raw.derived.isEmpty)` now and let any leak surface. Prefer (a) — defer the validator-side error to PR-29.7 per scope discipline.
 
 ## [PR-29.5-D04] In-body matcher ignores namespaced templates
-**Status:** resolved (deferred — flagged for PR-29.7)
+**Status:** resolved (PR-29.15 — Site C in-body matcher now honours prefix; pkg threaded through substitution helpers)
 **Severity:** minor
-**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala:365-367`.
-**Description:** The `prefix.isEmpty` filter means `ns.Foo[T]` in a body never triggers `TemplateInstantiationInBody`. Code comment acknowledges; matrix #1 enforcement for namespaced templates is silently deferred.
-**Fix:** Defer to PR-29.7. The substitution pass handles top-level template names correctly; namespaced template resolution is a scope-builder concern that PR-29.7 (validator) will address as part of the broader matrix #1 enforcement.
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala` (substituteTypeRef and helpers).
+**Description:** The `prefix.isEmpty` filter at line 448 (and analogous matchers at lines 130 and 197) meant prefixed `ns.Foo[T]` in alias-RHS / nested-arg / in-body field positions silently fell through to `NameNotFound` instead of producing the precise diagnostic.
+**Fix:** PR-29.15 (2026-05-04) — three sites tightened in `TemplateInstantiator.scala`. Site A (line 130, matrix #7 detection): bare-Simple ref now uses `Owner.Ns(prefix)` lookup when prefix non-empty. Site B (line 197, matrix #2 nested-arg): inline prefix-aware owner resolution; threaded `ownerForCurrent` into `instantiateAlias`. Site C (line 448, matrix #1 in-body): `pkg` threaded through 8 substitution helpers; `ctorOwner` derived from prefix. Empty-namespace-drop also added in both `TemplateInstantiator.processMember` and `TemplateRegistryBuilder.buildRecursive` to fix the prerequisite `ScopeCannotBeEmpty` defect blocking the positive cross-namespace path. Tests: 2 positive (cross-ns alias-RHS) in TemplateInstantiatorTest, 3 negative (sites A/B/C) in M29ValidatorTest.
+
+## [PR-29.7-D07] Prefixed reference to a registered template silently misses matrix #7 diagnostic
+**Status:** resolved (PR-29.15 — Site A bare-Simple matcher now honours prefix)
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala:130`.
+**Description:** A prefixed bare-Simple alias RHS like `type Y = ns.Foo` (no brackets, where `ns.Foo` is a registered template) silently fell through to `NameNotFound` instead of `TemplateNotInstantiated`.
+**Fix:** PR-29.15 — Site A in-body of TemplateInstantiator's `processMember` Simple-arm now derives the lookup owner from the prefix (`Owner.Ns(prefix)`), matching the alias-RHS Constructor path's `resolveTemplateKey` semantics. New negative test in `M29ValidatorTest` (`PR-29.15 Site A`).
+
+## [PR-29.8-D06] CompletionProvider regex misses qualified prefixes (RESOLVED in PR-29.15)
+**Status:** see [PR-29.8-D06] entry above for original; PR-29.15 closes by widening regex `\w*` → `[\w.]*`.
 
 ## [PR-29.5-D05] Alias-chain test does not assert second alias materialises
 **Status:** resolved (round 2)
@@ -827,3 +837,58 @@ Closes `[PR-29.4-D04]`.
 **Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateRegistryBuilderTest.scala:411-419` (approximate).
 **Description:** Round-2 reviewer noted the D05 test uses precise filtering (`collect { case d: DuplicateTemplateName => d }` → `isEmpty`); the D01 cross-ns test uses the broader `outcome.isRight`. If an unrelated typer regression broke the fixture for a non-`DuplicateTemplateName` reason, D01 would falsely red.
 **Fix:** Defer; the fixture is minimal (two cross-ns templates + per-ns anchors) and well-formed. `isRight` failing on this fixture would itself signal a real regression. Precision improvement is worth doing in a future test-suite cleanup but not load-bearing for this PR's correctness.
+
+---
+
+## PR-29.15 — Cross-namespace template instantiation: verify + ratify (M29 deferred-drain)
+
+Closes `[PR-29.5-D04]`, `[PR-29.7-D07]`, `[PR-29.8-D06]`. Adversarial review (round 1) raised the following.
+
+## [PR-29.15-D01] LSP test does not actually exercise the new `[\w.]*` regex branch
+**Status:** resolved
+**Severity:** medium
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/lsp/features/LspFeaturesTest.scala:396-424`.
+**Description:** The new test places the cursor at `eqIdx + 2` (right after `= `), so `beforeCursor` ends with `"type NsIntPage = "` and the captured prefix is empty. The pre-PR-29.15 regex `\w*` and the new `[\w.]*` both match an empty string identically — the test passes against both. The new branch (a non-empty captured prefix containing a dot) is never exercised. The regex change is functionally untested.
+**Fix:** Existing test renamed to clarify it covers the empty-prefix case. New sibling test placed cursor at `dotIdx + "nstemplate.".length` so `beforeCursor = "type NsIntPage = nstemplate."`. With OLD `\w*` regex the alias-RHS pattern fails to match (dot breaks `\w*`), context falls to `Unknown`, and ALL items including keyword `"ns"` are returned. With NEW `[\w.]*` regex the pattern matches, context is `AliasRhsPosition`, keywords are excluded. Test asserts absence of keyword `"ns"` to distinguish the two regexes.
+
+## [PR-29.15-D02] M29ValidatorTest sites A/B/C do not pin diagnostic field values
+**Status:** resolved
+**Severity:** medium
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/M29ValidatorTest.scala:337-362` (approximate).
+**Description:** All three new tests use type-tag-only assertions (`assertProducesTyperIssue[TyperIssue.X](outcome)`). They never extract the issue and pin its field values. Production code at `TemplateInstantiator.scala:140` sets `templateName = simple.name.name` (i.e., `"X"`, prefix dropped). At line 478 the in-body match sets `instantiatedName = name.name` (also unprefixed). This is a deliberate design choice but is not pinned. A future refactor that changes the field to carry `"foo.X"` (qualified) — arguably a UX improvement — would silently change the diagnostic contract without any test failure.
+**Fix:** All three tests extended with pinned field-value assertions. Site A: `templateName == "X"` (prefix dropped per `simple.name.name` extraction), `aliasName == "Y"`. Site B: `containingTemplateName == "X"` (outer template), `instantiatedName == "Inner"` (bad nested arg, prefix dropped). Site C: `containingTemplateName == "Y"` (template body in which bad ref appears), `instantiatedName == "X"` (forbidden in-body ref, prefix dropped). NOTE comment above the three tests documents the prefix-drop behavior.
+
+## [PR-29.15-D03] In-body matrix #1 over-restricts when prefix is empty (regression vs old broad lookup)
+**Status:** resolved
+**Severity:** medium (regression)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala:464-466` (approximate, the in-body `ctorOwner` derivation).
+**Description:** OLD code at `substituteTypeRef` matched `(_, _, tname) => tname.name == name.name && prefix.isEmpty` — broad lookup with NO Pkg/Owner constraint. Bare-name `X` in any context was detected if ANY package/owner had a template named `X`. NEW code uses `kPkg == pkg && kOwner == ctorOwner` with `ctorOwner = Owner.Toplevel` for empty prefix — narrower than before. A template `data Y[T] { f: X[T] }` declared inside `ns foo` with sibling template `data X[T]` (also in `ns foo`) — bare reference — would NOT trigger matrix #1 with the new code. Per spec §4 / matrix #1, ALL field-position template instantiations are forbidden, regardless of which template they reference. The narrower lookup misses this case. The PR-29.15 commit deletes the `// TODO PR-29.5-D04 / PR-29.7-D07` comment that previously documented this as out-of-scope; the deletion implies "now full" coverage, but the unprefixed-namespaced case is still uncovered.
+**Fix:** Implemented option (b) — for empty prefix, restored broad `(kPkg, _, tname) => kPkg == pkg && tname.name == name.name` lookup (any owner in package); for non-empty prefix, kept precise `Owner.Ns(prefix)` lookup. Added regression test `pr2915D03_CrossNsInBodyRegression` in M29ValidatorTest: `ns foo { data X[T]; data Y[T] { rec: X[T] } } type Z = foo.Y[i32]` → fires `TemplateInstantiationInForbiddenPosition` with `containingTemplateName == "Y"` and `instantiatedName == "X"`.
+
+## [PR-29.15-D04] Negative-control coverage in TemplateInstantiatorTest is shallow for sites B/C positive companions
+**Status:** resolved (deferred — sites B/C positive companions covered indirectly by the matrix-#2/matrix-#1 absence in cross-ns positive tests)
+**Severity:** low
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateInstantiatorTest.scala`.
+**Description:** The two new positive tests cover site A's positive companion (alias-RHS that should succeed). They don't cover positive companions of site B (`type Y = X[foo.Inner]` where `Inner` is a non-template namespaced ref should succeed) and site C (in-body `foo.Inner` non-template reference should succeed).
+**Fix:** Defer; the existing positive tests indirectly exercise the same code paths because the matchers only fire when the looked-up key resolves to a registered template. A non-template `foo.Inner` reference would simply fall through to `NameNotFound` (or be resolved as a regular type), unchanged from prior behavior.
+
+## [PR-29.15-D05] `[\w.]*` regex accepts malformed sequences (`...`, `..foo..`)
+**Status:** resolved (deferred — comment-only nit; downstream filtering is benign-tolerant)
+**Severity:** low (nit)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/lsp/features/CompletionProvider.scala:131`.
+**Description:** The character class `[\w.]*` accepts `..` or `foo..bar.` as captured prefix. Capture flows only into `matchesCamelCase` for filtering (no crash, no security issue); UX consequence is a benign empty-result.
+**Fix:** Defer; add a one-line comment noting the regex is intentionally lax.
+
+## [PR-29.15-D06] Empty-namespace drop scope is broader than "namespaces emptied by template excision"
+**Status:** resolved (deferred — comment polish; no functional regression in test corpus)
+**Severity:** low (info)
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala:158-162` and `TemplateRegistryBuilder.scala:130-138` (approximate).
+**Description:** The drop is keyed on `rewrittenChildren.isEmpty` — drops any namespace whose children are all removed by template excision OR which originally contained no defns. A hypothetical source `ns foo {}` (deliberately empty) is also dropped. No fixture in the test corpus depends on emission of an empty namespace; `mdl :test-acceptance` 200/200 + `baboonJVM/test` 391/391 confirm no codegen impact.
+**Fix:** Defer; add a precise inline comment explaining the drop scope. Acceptable per the test corpus.
+
+## [PR-29.15-D07] `job.md` accidentally staged in PR-29.15 prep
+**Status:** resolved (orchestrator unstaged before commit)
+**Severity:** nit (hygiene)
+**Location:** `job.md` (untracked → became staged via prior executor working in canonical).
+**Description:** Reviewer noted `job.md` shows `A` in `git status --short`. The brief is not part of the PR.
+**Fix:** Orchestrator unstages before commit.

@@ -218,6 +218,26 @@ abstract class TemplateInstantiatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTest
       |}
       |""".stripMargin
 
+  /** PR-29.15 Test 1.1: top-level alias to template in a namespace (cross-namespace alias-RHS positive path). */
+  private val crossNsToplevelAliasDomain: String =
+    """model template.crossns.toplevel.alias
+      |
+      |version "1.0.0"
+      |
+      |ns foo { data X[T] { f: T } }
+      |root type Y = foo.X[i32]
+      |""".stripMargin
+
+  /** PR-29.15 Test 1.2: namespaced alias to template in a DIFFERENT same-package namespace. */
+  private val crossNsCrossNsAliasDomain: String =
+    """model template.crossns.crossns.alias
+      |
+      |version "1.0.0"
+      |
+      |ns foo { data X[T] { f: T } }
+      |ns bar { root type Y = foo.X[i32] }
+      |""".stripMargin
+
   /** Negative: arity mismatch — data X[T] { f: T }; type Y = X[i32, str] */
   private val arityMismatchDomain: String =
     """model template.instantiator.neg.arity
@@ -358,6 +378,70 @@ abstract class TemplateInstantiatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTest
             domain.aliases.exists(a => a.name.name == "IP"),
             s"expected IP in domain.aliases, got: ${domain.aliases.map(_.name.name)}",
           )
+        }
+    }
+
+    // ─── PR-29.15: cross-namespace alias-RHS positive path ───────────────────
+
+    "PR-29.15 Test 1.1: top-level alias to namespaced template materialises Y with f:i32, foo.X absent" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, crossNsToplevelAliasDomain)
+        } yield {
+          val domain     = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val allUserIds = domain.defs.meta.nodes.keys.collect { case u: TypeId.User => u }.toSet
+
+          // Y must appear under Owner.Toplevel.
+          val yId = allUserIds
+            .find(u => u.name.name == "Y" && u.owner == Owner.Toplevel)
+            .getOrElse(
+              throw new AssertionError(s"Y not found under Owner.Toplevel, all user type ids: $allUserIds")
+            )
+          val dto = domain.defs.meta.nodes(yId) match {
+            case u: DomainMember.User =>
+              u.defn match {
+                case d: Typedef.Dto => d
+                case other          => throw new AssertionError(s"expected Typedef.Dto for Y, got: $other")
+              }
+            case other => throw new AssertionError(s"expected DomainMember.User for Y, got: $other")
+          }
+          assert(
+            dto.fields.exists(f => f.name.name == "f" && f.tpe == TypeRef.Scalar(TypeId.Builtins.i32)),
+            s"expected Y.f: i32, got: ${dto.fields}",
+          )
+          // Template X must not appear in domain user types.
+          assert(!allUserIds.exists(u => u.name.name == "X"), s"template X must not appear in domain user types, got: $allUserIds")
+        }
+    }
+
+    "PR-29.15 Test 1.2: namespaced alias to template in different same-package namespace materialises bar.Y with f:i32, foo.X absent" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, crossNsCrossNsAliasDomain)
+        } yield {
+          val domain     = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val allUserIds = domain.defs.meta.nodes.keys.collect { case u: TypeId.User => u }.toSet
+
+          // Y must appear under Owner.Ns(Seq(TypeName("bar"))).
+          val yId = allUserIds
+            .find(u => u.name.name == "Y" && u.owner == Owner.Ns(Seq(TypeName("bar"))))
+            .getOrElse(
+              throw new AssertionError(s"Y not found under Owner.Ns(bar), all user type ids: $allUserIds")
+            )
+          val dto = domain.defs.meta.nodes(yId) match {
+            case u: DomainMember.User =>
+              u.defn match {
+                case d: Typedef.Dto => d
+                case other          => throw new AssertionError(s"expected Typedef.Dto for bar.Y, got: $other")
+              }
+            case other => throw new AssertionError(s"expected DomainMember.User for bar.Y, got: $other")
+          }
+          assert(
+            dto.fields.exists(f => f.name.name == "f" && f.tpe == TypeRef.Scalar(TypeId.Builtins.i32)),
+            s"expected bar.Y.f: i32, got: ${dto.fields}",
+          )
+          // Template X must not appear in domain user types.
+          assert(!allUserIds.exists(u => u.name.name == "X"), s"template X must not appear in domain user types, got: $allUserIds")
         }
     }
 

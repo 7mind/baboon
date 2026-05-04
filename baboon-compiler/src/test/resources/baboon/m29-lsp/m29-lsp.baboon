@@ -28,3 +28,11 @@ root data User {
 root data Plain {
   f: i32
 }
+
+// Namespaced template — used for PR-29.15 prefixed alias-RHS completion tests.
+ns nstemplate {
+  data NsPage[T] { items: lst[T] }
+}
+
+// Alias that uses the namespaced template — cursor in `type NsIntPage = nstemplate.` tests completion.
+type NsIntPage = nstemplate.NsPage[i32]
