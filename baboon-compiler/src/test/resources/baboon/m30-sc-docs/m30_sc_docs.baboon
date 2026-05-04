@@ -24,7 +24,11 @@ enum DocSeverity {
 
 /** Result or error. */
 adt DocResult {
-  data DocOk  { value: i32 }
+  /** Successful payload variant. */
+  data DocOk {
+    /** the carried payload */
+    value: i32
+  }
   data DocErr { message: str }
 }
 
