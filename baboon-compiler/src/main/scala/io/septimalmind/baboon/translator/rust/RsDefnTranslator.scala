@@ -35,6 +35,7 @@ object RsDefnTranslator {
     domain: Domain,
     evo: BaboonEvolution,
     rsFiles: RsFileTools,
+    rsTrees: RsTreeTools,
     trans: RsTypeTranslator,
     codecs: Set[RsCodecTranslator],
     codecTests: RsCodecTestsTranslator,
@@ -46,6 +47,14 @@ object RsDefnTranslator {
   ) extends RsDefnTranslator[F] {
 
     private val baboonIdReprCursor: RsValue.RsType = rsTypes.baboonIdReprCursor
+
+    /** Prepend `///` doc lines before a tree when `docs` is non-empty.
+      * Returns the tree unchanged when `docs` is empty.
+      */
+    private def prependDocs(docs: Docs, tree: TextTree[RsValue]): TextTree[RsValue] = {
+      val block = rsTrees.renderDocs(docs, "")
+      if (block.isEmpty) tree else q"${block}$tree"
+    }
 
     override def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       defn.id.owner match {
@@ -185,16 +194,16 @@ object RsDefnTranslator {
 
       defn.defn match {
         case dto: Typedef.Dto =>
-          makeDtoRepr(dto, name)
+          prependDocs(defn.docs, makeDtoRepr(dto, name))
 
         case e: Typedef.Enum =>
-          makeEnumRepr(e, name)
+          prependDocs(defn.docs, makeEnumRepr(e, name))
 
         case adt: Typedef.Adt =>
-          makeAdtRepr(adt, name)
+          makeAdtRepr(adt, name, defn.docs)
 
         case _: Typedef.Contract =>
-          makeContractRepr(defn, name)
+          prependDocs(defn.docs, makeContractRepr(defn, name))
 
         case _: Typedef.Service =>
           makeServiceRepr(defn, name)
@@ -651,8 +660,9 @@ object RsDefnTranslator {
           val t          = if (needsBox(f.tpe)) q"Box<$rawT>" else rawT
           val serdeAttrs = fieldSerdeAttributes(f)
           val attrLine   = if (serdeAttrs.nonEmpty) serdeAttrs.joinN() else q""
-          q"""$attrLine
+          val fieldEx    = q"""$attrLine
              |pub ${toSnakeCase(f.name.name)}: $t,""".stripMargin.trim
+          prependDocs(f.docs, fieldEx)
       }
       val fieldsList = if (fields.nonEmpty) fields.joinN() else q""
 
@@ -1203,9 +1213,9 @@ object RsDefnTranslator {
          |}""".stripMargin
     }
 
-    private def makeAdtRepr(adt: Typedef.Adt, name: RsType): TextTree[RsValue] = {
+    private def makeAdtRepr(adt: Typedef.Adt, name: RsType, adtDocs: Docs): TextTree[RsValue] = {
       val dataMembers = adt.dataMembers(domain)
-      // First, generate structs for each branch
+      // First, generate structs for each branch (with branch-level docs prepended)
       val branchStructs = dataMembers.map {
         mid =>
           domain.defs.meta.nodes(mid) match {
@@ -1213,7 +1223,7 @@ object RsDefnTranslator {
               mdefn.defn match {
                 case dto: Typedef.Dto =>
                   val branchName = trans.asRsType(dto.id, domain, evo)
-                  makeDtoRepr(dto, branchName)
+                  prependDocs(mdefn.docs, makeDtoRepr(dto, branchName))
                 case other =>
                   throw new RuntimeException(s"BUG: ADT member should be Dto, got: $other")
               }
@@ -1288,11 +1298,12 @@ object RsDefnTranslator {
           q"""${name.asName}::$branchName(v) => write!(f, "${name.name}::$branchName({:?})", v),"""
       }
 
+      val adtDocBlock = rsTrees.renderDocs(adtDocs, "")
       q"""${branchStructs.toList.joinNN()}
          |
          |${branchCodecs.toList.joinNN()}
          |
-         |#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+         |${adtDocBlock}#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
          |pub enum ${name.asName} {
          |    ${variants.toList.joinN().shift(4).trim}
          |}
@@ -1335,8 +1346,9 @@ object RsDefnTranslator {
       val contract = defn.defn.asInstanceOf[Typedef.Contract]
       val methods = contract.fields.map {
         f =>
-          val t = trans.asRsRef(f.tpe, domain, evo)
-          q"fn ${toSnakeCase(f.name.name)}(&self) -> &$t;"
+          val t       = trans.asRsRef(f.tpe, domain, evo)
+          val methodEx = q"fn ${toSnakeCase(f.name.name)}(&self) -> &$t;"
+          prependDocs(f.docs, methodEx)
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
       q"""pub trait ${name.asName} {
@@ -1362,21 +1374,23 @@ object RsDefnTranslator {
             case t: RsValue.RsType     => if (t.predef) t.name else (t.crate.parts :+ t.name).mkString("::")
             case t: RsValue.RsTypeName => t.name
           }
-          val inStr   = inType.mapRender(rsFqName)
-          val outStr  = outType.map(_.mapRender(rsFqName)).getOrElse("")
-          val errStr  = errType.map(_.mapRender(rsFqName))
-          val retStr  = resolved.renderReturnType(outStr, errStr, "()")
-          val asyncKw = if (target.language.asyncServices) "async " else ""
-          q"${asyncKw}fn ${toSnakeCase(m.name.name)}(&self, ${ctxParam}arg: $inStr) -> $retStr;"
+          val inStr    = inType.mapRender(rsFqName)
+          val outStr   = outType.map(_.mapRender(rsFqName)).getOrElse("")
+          val errStr   = errType.map(_.mapRender(rsFqName))
+          val retStr   = resolved.renderReturnType(outStr, errStr, "()")
+          val asyncKw  = if (target.language.asyncServices) "async " else ""
+          val methodEx = q"${asyncKw}fn ${toSnakeCase(m.name.name)}(&self, ${ctxParam}arg: $inStr) -> $retStr;"
+          prependDocs(m.docs, methodEx)
       }
       val genericParam = resolvedCtx match {
         case ResolvedServiceContext.AbstractContext(tn, _) => s"<$tn>"
         case _                                             => ""
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
-      q"""pub trait ${name.asName}$genericParam {
-         |    ${body.shift(4).trim}
-         |}""".stripMargin
+      val traitTree = q"""pub trait ${name.asName}$genericParam {
+                         |    ${body.shift(4).trim}
+                         |}""".stripMargin
+      prependDocs(defn.docs, traitTree)
     }
 
     private def getOutputPath(defn: DomainMember.User, suffix: Option[String] = None): String = {
