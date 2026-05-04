@@ -46,6 +46,46 @@ trait TemplateInstantiator[F[+_, +_]] {
 
 object TemplateInstantiator {
 
+  /** Merge alias-side and template-body-side `RawNodeMeta` to produce the
+    * synthesized concrete type's meta per spec §6 (Q1 lock).
+    *
+    * - The result's `pos` is the alias's `pos` (the user-visible site of the
+    *   monomorphisation; existing tests anchor diagnostics there).
+    * - The result's `docs.prefix` is computed as follows:
+    *   - both alias and template prefix docs present: synthesize a raw doc
+    *     whose body, after `DocFormat.cleanPrefix`, equals
+    *     `aliasCleaned + "\n\n" + templateCleaned`.
+    *   - only one present: use that one.
+    *   - neither: `None`.
+    * - `docs.suffix` is always `None` (alias and type declarations cannot
+    *   carry postfix `//!` per spec §3.3).
+    */
+  def mergeAliasAndTemplateMeta(aliasMeta: RawNodeMeta, templateMeta: RawNodeMeta): RawNodeMeta = {
+    val aliasPrefix    = aliasMeta.docs.prefix
+    val templatePrefix = templateMeta.docs.prefix
+
+    val mergedPrefix: Option[RawDocComment] = (aliasPrefix, templatePrefix) match {
+      case (None, None)             => None
+      case (Some(_), None)          => aliasPrefix
+      case (None, Some(_))          => templatePrefix
+      case (Some(aDoc), Some(tDoc)) =>
+        // Build a synthetic raw doc whose `cleanPrefix` output equals
+        // `aliasCleaned + "\n\n" + templateCleaned`. We construct the synthetic
+        // body without any `*` continuation markers and without leading
+        // whitespace so the `DocFormat` common-prefix calculation is a no-op
+        // (degenerate empty prefix), and the cleaned text round-trips to the
+        // expected merged form. The merged `pos` is the alias's `pos` since
+        // that is the user-facing site for the synthesized type.
+        val aliasCleaned    = DocFormat.cleanPrefix(aDoc.raw)
+        val templateCleaned = DocFormat.cleanPrefix(tDoc.raw)
+        val mergedBody      = s"$aliasCleaned\n\n$templateCleaned"
+        val syntheticRaw    = s"/**\n$mergedBody\n*/"
+        Some(RawDocComment(syntheticRaw, aDoc.pos))
+    }
+
+    aliasMeta.copy(docs = RawDocs(prefix = mergedPrefix, suffix = None))
+  }
+
   class Impl[F[+_, +_]: Error2] extends TemplateInstantiator[F] {
 
     // Canonical set of builtin constructor heads (collections + any).
@@ -223,6 +263,19 @@ object TemplateInstantiator {
             val substMap: Map[String, RawTypeRef] =
               body.typeParams.map(_.name).zip(args).toMap
 
+            // Per spec §6 (Q1 lock): the synthesized type's type-level doc is
+            // `aliasCleaned + "\n\n" + templateCleaned` when both are present;
+            // either alone when only one is. Field-level docs propagate
+            // verbatim from the template body via the substitution walk.
+            // We compute the merged meta once and reuse it for every variant.
+            val templateMeta = body.rawDefn match {
+              case RawTemplateDefn.Dto(r)      => r.meta
+              case RawTemplateDefn.Adt(r)      => r.meta
+              case RawTemplateDefn.Contract(r) => r.meta
+              case RawTemplateDefn.Service(r)  => r.meta
+            }
+            val mergedMeta = TemplateInstantiator.mergeAliasAndTemplateMeta(alias.meta, templateMeta)
+
             // Walk the template body and apply substitution.
             body.rawDefn match {
               case RawTemplateDefn.Dto(raw) =>
@@ -238,7 +291,7 @@ object TemplateInstantiator {
                       name       = alias.name,
                       members    = rewrittenMembers,
                       derived    = alias.derived,
-                      meta       = alias.meta,
+                      meta       = mergedMeta,
                       typeParams = Nil,
                     ),
                   )
@@ -257,7 +310,7 @@ object TemplateInstantiator {
                       name       = alias.name,
                       members    = rewrittenAdtMembers,
                       derived    = alias.derived,
-                      meta       = alias.meta,
+                      meta       = mergedMeta,
                       typeParams = Nil,
                     ),
                   )
@@ -272,7 +325,7 @@ object TemplateInstantiator {
                     raw.copy(
                       name       = alias.name,
                       members    = rewrittenMembers,
-                      meta       = alias.meta,
+                      meta       = mergedMeta,
                       typeParams = Nil,
                     ),
                   )
@@ -287,7 +340,7 @@ object TemplateInstantiator {
                     raw.copy(
                       name       = alias.name,
                       defns      = rewrittenFuncs,
-                      meta       = alias.meta,
+                      meta       = mergedMeta,
                       typeParams = Nil,
                     ),
                   )

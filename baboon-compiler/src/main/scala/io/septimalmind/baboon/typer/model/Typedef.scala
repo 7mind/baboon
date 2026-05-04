@@ -64,7 +64,7 @@ object Typedef {
   }
 
   case class MethodName(name: String) extends AnyVal
-  case class MethodDef(name: MethodName, sig: TypeRef, out: Option[TypeRef], err: Option[TypeRef])
+  case class MethodDef(name: MethodName, sig: TypeRef, out: Option[TypeRef], err: Option[TypeRef], docs: Docs = Docs.empty)
 
   case class Service(id: TypeId.User, methods: List[MethodDef]) extends User with NonDataTypedef
 
@@ -174,7 +174,31 @@ case class FieldName(name: String) {
   override def toString: String = s"$name"
 }
 
-case class Field(name: FieldName, tpe: TypeRef, prevName: Option[FieldName]) {
+/** A cleaned doc comment. `raw` preserves the verbatim source bytes captured
+  * by the parser (delimiters included). `cleaned` is the canonical plain-text
+  * representation per `docs/spec/docstrings.md` §5 (prefix Javadoc-style
+  * `/** … */` cleanup, postfix `//!` cleanup). Both forms are kept so that
+  * backends can pick whichever they need; the cleaning is performed once at
+  * the typer stage by `DocFormat.clean*` and is pure / deterministic /
+  * idempotent.
+  */
+case class DocComment(raw: String, cleaned: String)
+
+/** Typed-side doc-comment slot for `Field`, `MethodDef`, and
+  * `DomainMember.User`. `prefix` is a single block (Q3 lock —
+  * `docs/spec/docstrings.md` §4); `suffix` is field-only (`//!`).
+  *
+  * Empty / whitespace-only docs are silently dropped at lift time
+  * (`DocFormat.liftDocs`) per spec §5.4 — `Docs.empty` is the canonical
+  * "no doc" representation.
+  */
+case class Docs(prefix: Option[DocComment], suffix: Option[DocComment])
+
+object Docs {
+  val empty: Docs = Docs(None, None)
+}
+
+case class Field(name: FieldName, tpe: TypeRef, prevName: Option[FieldName], docs: Docs = Docs.empty) {
   override def toString: String = prevName match {
     case Some(prev) => s"$name: $tpe was $prev"
     case None       => s"$name: $tpe"
