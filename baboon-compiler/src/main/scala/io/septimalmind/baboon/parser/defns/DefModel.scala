@@ -65,9 +65,9 @@ class DefModel(
   def member[$: P]: P[RawTLDef] = {
     import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
 
-    val main = P(kw.root.!.? ~ (choice | identifier | dto | adt | foreign | contract | service | alias)).map {
-      case (root, defn) =>
-        defn.setRoot(root.nonEmpty)
+    val main = P(context.defDocs.prefixDocs ~ kw.root.!.? ~ (choice | identifier | dto | adt | foreign | contract | service | alias)).map {
+      case (prefixDoc, root, defn) =>
+        defn.setRoot(root.nonEmpty).withPrefixDoc(prefixDoc)
     }
 
     P(main | namespace)

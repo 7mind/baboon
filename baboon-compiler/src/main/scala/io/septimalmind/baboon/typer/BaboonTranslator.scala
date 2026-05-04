@@ -159,8 +159,14 @@ class BaboonTranslator[F[+_, +_]: Error2](
       _       <- SymbolNames.validFieldName(name, meta)
       tpe     <- convertTpe(field.tpe, meta)
       prevName = field.prevName.map(pn => FieldName(pn.name))
+      // Field-level docs are lifted from the field's RawNodeMeta. Both
+      // prefix `/** … */` and suffix `//!` flow through; layered drop is a
+      // no-op here because RawField positions do legally accept both
+      // (spec §3.1, §3.3). Empty/whitespace-only bodies are silently
+      // dropped inside `DocFormat.liftDocs` per spec §5.4.
+      docs = DocFormat.liftDocs(meta.docs)
     } yield {
-      Seq(Field(name, tpe, prevName))
+      Seq(Field(name, tpe, prevName, docs))
     }
   }
 
@@ -431,7 +437,12 @@ class BaboonTranslator[F[+_, +_]: Error2](
       _ <- F.when(inargs.size > 1)(F.fail(BaboonIssue.of(TyperIssue.ServiceMultipleInputs(svc.name.name, f.name, inargs.size, f.meta))))
       _ <- F.when(errargs.size > 1)(F.fail(BaboonIssue.of(TyperIssue.ServiceMultipleErrors(svc.name.name, f.name, errargs.size, f.meta))))
     } yield {
-      MethodDef(MethodName(f.name), inargs.head, outargs.headOption, errargs.headOption)
+      // Method-level docs come from the function's RawNodeMeta. Spec §3.1
+      // accepts only prefix `/** … */` here (postfix `//!` is field-only;
+      // the parser wires it on `fieldDef`, not on `def`), so any `suffix`
+      // captured by the uniform `withMeta` site would already be empty.
+      val methodDocs = DocFormat.liftDocs(f.meta.docs)
+      MethodDef(MethodName(f.name), inargs.head, outargs.headOption, errargs.headOption, methodDocs)
     }
   }
 

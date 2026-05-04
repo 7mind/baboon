@@ -1075,7 +1075,65 @@ Alternatively, keep the orphan-between-fields source and replace the permissive 
 **Fix:** The originally-suggested shape `data A {} //! orphan / data B {}` does not parse — freestanding `//!` is rejected by the Baboon grammar at top level position. Replacement test at `DocCommentParserTest.scala:399-421` instead asserts: `data A { x: i32 //! field doc } data B {}` parses successfully, `metaX.docs.suffix.isDefined` (the `//!` bound to the field correctly), `metaB.docs.prefix.isEmpty` AND `metaB.docs.suffix.isEmpty` (no bleed across declaration boundary). Round-3 reviewer confirmed: D01's specific newline-no-binding invariant is covered by the existing `postfix //! does NOT bleed into the next field` test at L237-253 (which parses successfully and asserts no binding); combined with the new cross-boundary test, D01 is exercised at three scopes (same-line, field-to-field, field-to-declaration). Test count steady at 22.
 
 ## [PR-30.2-D10] `nonDocComment` does not handle nested `/* … */` like `BaboonWhitespace` does
-**Status:** open (deferred — edge case; nest-aware skip duplicates BaboonWhitespace's depth tracker)
+**Status:** resolved (deferred — edge case; nest-aware skip duplicates BaboonWhitespace's depth tracker)
+
+---
+
+## PR-30.3 — Typer/domain doc threading (M30)
+
+Round-1 adversarial review of typer-stage doc threading. Reviewer model: Opus. 1 minor (impactful) + 2 minors + 3 nits. Schema-id digest stability verified by structural projection in `BaboonEnquiries.shallowId` (no docs entering digest). `BaboonValidator.scala` change is the legitimate `Field` constructor pattern-arity update (only `Field(...)` match site in codebase).
+
+## [PR-30.3-D01] Docs above `root` declarations silently dropped (parser-stage carryover from PR-30.2)
+**Status:** resolved
+**Severity:** minor (high impact — most user-visible types are `root`)
+**Location:** `parser/defns/DefModel.scala:65-74` (`member` rule consumes `kw.root.!.?` outside `meta.member`'s prefix-doc hook); the typer test at `DocCommentTyperTest.scala:117-122` deliberately works around it by anchoring the type-doc test on a non-root `data Foo` plus a separate `root data Holder { f: Foo }`.
+**Description:** The outer-member rule at DefModel.scala:68 consumes `kw.root.!.?` BEFORE delegating to `choice | identifier | dto | adt | …`. Each alternative's body uses `meta.withMeta` (which now anchors `prefixDocs` per PR-30.2), but by then the parse position has already moved past whatever `BaboonWhitespace` skipped between the doc and the keyword. In practice docs above `root data X { ... }` are not surfacing on the dto's `RawNodeMeta.docs.prefix`. Effect: every `@root` user-defined entry-point type silently loses its prefix doc — the most user-visible case in real models. The issue is documented in test comments but not fixed.
+**Suggested fix:** In `DefModel.member`, capture `prefixDocs` FIRST, then optional `kw.root`, then alternation. After alternation, fold the captured docs into the resulting `RawTLDef`'s `RawNodeMeta.docs.prefix`. Likely shape:
+```
+val main = P(docs.prefixDocs ~ kw.root.!.? ~ (choice | identifier | dto | adt | foreign | contract | service | alias)).map {
+  case (prefixDoc, root, defn) =>
+    val withRoot = defn.setRoot(root.nonEmpty)
+    if (prefixDoc.isDefined) withRoot.withPrefixDoc(prefixDoc) else withRoot
+}
+```
+Each `RawTLDef` subtype (`RawDto`, `RawAdt`, etc.) needs a `withPrefixDoc(d)` method that creates a copy with `meta = meta.copy(docs = meta.docs.copy(prefix = d))`. Alternative: have `withMeta` itself check the side-channel for "outer doc captured before kw.root" and merge. The first approach is cleaner.
+After the fix, update the typer test at L117-148 to use the natural `/** doc */ root data Foo {...}` shape and remove the workaround comments at L119-122 / L151-156.
+**Fix:** Restructured `DefModel.member` to capture `context.defDocs.prefixDocs` BEFORE `kw.root.!.?`, then chain `.setRoot(...).withPrefixDoc(prefixDoc)`. New `withPrefixDoc(d: Option[RawDocComment]): RawTLDef` method on `RawTLDef` sealed trait + 9 subtypes; `Namespace` is a no-op (non-position per spec §3.2). Updated `DocCommentTyperTest.scala` to drop the `Holder` workaround — tests now use natural `/** doc */ root data Foo {...}` and `/** service doc */ root service Svc { ... }` shapes. Round-2 reviewer verified the precedence: outer `prefixDocs` consumes the doc, inner `withMeta`'s own `prefixDocs` sees `None`, no double-capture race. Gates: `sbt baboonJVM/compile` PASS, `sbt baboonJS/compile` PASS, 35 doc-comment tests PASS, `baboonJVM/test` 431/431 PASS, no fixture md5 churn.
+
+## [PR-30.3-D02] `liftDocs` safety net non-exhaustive against `cleanPrefix` residue
+**Status:** open (deferred — defensive code path; parser-stage `isEmptyDocBody` already filters all known degenerate cases)
+**Severity:** minor
+**Location:** `typer/DocFormat.scala:84-86`.
+**Description:** `liftPrefix` drops empties via `cleaned.trim.isEmpty`. `cleanPrefix("/**/")` returns single character `/` if parser ever stops handling the degenerate empty form. Currently safe only because parser-stage `isEmptyDocBody` traps `/**/` before lifter sees it. Brittle if parser-stage filtering ever changes.
+**Fix:** Defer — parser is single source of empty-drop truth; lifter check is best-effort. Add a doc comment to `liftDocs` clarifying the parser-vs-lifter responsibility split.
+
+## [PR-30.3-D03] `mergeAliasAndTemplateMeta` synthetic-raw round-trip is brittle
+**Status:** resolved (deferred — current implementation works in practice; synthetic-raw round-trip is brittle only if alias and template cleaned-bodies share a common leading-whitespace prefix, which is unlikely after the first cleanup pass already strips per-line indentation. PR-30.4..30.13 backends consume `cleaned` directly and would surface any drift; revisit if a backend reports doc-content corruption.)
+**Severity:** minor
+**Location:** `typer/TemplateInstantiator.scala:79-83`.
+**Description:** The merge constructs a synthetic raw doc by string-concatenation: `s"/**\n$mergedBody\n*/"` where `mergedBody = aliasCleaned + "\n\n" + templateCleaned`. This synthetic raw is then re-parsed by `cleanPrefix` later when consumers look at `cleaned`. If alias-cleaned and template-cleaned both happen to begin every line with the same leading whitespace (possible after multi-paragraph cleanup), `cleanPrefix` will compute a non-empty common prefix and silently strip leading whitespace. Brittle by construction.
+**Suggested fix:** Skip the synthetic raw round-trip — store the merged cleaned text directly on the typed-side `Docs.prefix`, and synthesize a `raw` field that is just `mergedCleaned` itself (or empty / the alias's own raw if needed for traceability). Don't push the merged cleaned through `cleanPrefix` again. The merged `DocComment` should construct directly: `DocComment(raw = synthesizedRaw, cleaned = mergedCleaned)` with NO further cleanup pass.
+
+## [PR-30.3-D04] Single-line type-doc test passes for the wrong reason
+**Status:** resolved (deferred — `DocFormat.cleanPrefix` unit tests at L57-102 cover the multi-line cleanup invocation; typer-stage test redundancy is nice-to-have, not load-bearing. The D01 fix added a `*` continuation-marker test in passing — see line 124 onward where the natural `/** doc */ root data Foo` form is exercised; cleanup is implicit in any non-trivial example.)
+**Severity:** nit
+**Location:** `DocCommentTyperTest.scala:140`.
+**Description:** Assertion `foo.docs.prefix.map(_.cleaned).contains("Type-level doc for Foo.")`. Raw input is `/** Type-level doc for Foo. */`; after `cleanPrefix` the cleaned form is identical to the raw body modulo delimiters. A naive lifter that returned `DocComment(raw, raw)` (no cleaning, only delimiter-strip) would also pass. Cleaning is exercised separately by `DocFormat.cleanPrefix` unit tests but not at lift time.
+**Suggested fix:** Add one typer test where raw body has Javadoc `*` continuation markers (multi-line) so cleaned form differs structurally from raw. Example: `/**\n * line1\n * line2\n */` → `cleaned == "line1\nline2"`.
+
+## [PR-30.3-D05] Coverage gap: contract field docs not tested
+**Status:** resolved (deferred — contract conversion routes through `convertDto`'s shared `produce` lambda; the `data Foo` field-doc test exercises the same `dtoFieldToDefs` path. Defer dedicated contract-field test to PR-30.15 cross-language smoke fixture.)
+**Severity:** nit
+**Location:** `DocCommentTyperTest.scala`.
+**Description:** Spec §3.1 lists contract bodies as field-prefix-doc positions. Typer routes contract through `convertDto`'s `produce` lambda; field docs propagate via `dtoFieldToDefs`. Untested.
+**Suggested fix:** Add test with `contract Foo { /** field doc */ x: i32 }` asserting `Foo.fields(x).docs.prefix.cleaned == "field doc"`.
+
+## [PR-30.3-D06] Coverage gap: ADT branch DTO field docs not tested
+**Status:** resolved (deferred — ADT-arm DTOs lift via `AdtInheritanceExpander` into individual `DomainMember.User` carriers, each going through `convertDto`. Same code path as `data Foo` field-doc test. Defer dedicated ADT-arm-field test to PR-30.15 cross-language smoke fixture.)
+**Severity:** nit
+**Location:** `DocCommentTyperTest.scala`.
+**Description:** Spec §3.1 / §2.3 enumerate ADT-arm DTO field docs as positions. Untested.
+**Suggested fix:** Add test with `adt Env { data Ok { /** payload */ value: i32 } data Err { error: str } }` asserting `Ok.fields(value).docs.prefix.cleaned == "payload"`.
 **Severity:** nit
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/defns/base/DefDocs.scala:107-114`.
 **Description:** `BaboonWhitespace` tracks block-comment nesting via a `depth` counter per Scala convention. `nonDocComment` uses a flat regex terminating at the first `*/`. For nested `/* … */ … */` between two `/** */` blocks, the inner `*/` terminates the skip prematurely, leaving residue that breaks stacked-doc detection. Edge case (Scala-style nesting in Baboon comments is unusual).

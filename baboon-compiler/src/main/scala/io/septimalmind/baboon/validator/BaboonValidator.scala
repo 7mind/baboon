@@ -152,7 +152,7 @@ object BaboonValidator {
               }
               val anyFields = d.fields.filter(f => f.tpe.isInstanceOf[TypeRef.Any])
               val userNotIdFields: List[(Field, TypeId)] = d.fields.collect {
-                case f @ Field(_, TypeRef.Scalar(uid: TypeId.User), _) if !isIdentifierDto(uid) =>
+                case f @ Field(_, TypeRef.Scalar(uid: TypeId.User), _, _) if !isIdentifierDto(uid) =>
                   (f, uid: TypeId)
               }
 
