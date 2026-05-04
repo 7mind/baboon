@@ -48,6 +48,26 @@ object ScServiceWiringTranslator {
       }
     }
 
+    // Returns true if any method in the service references a TypeId.User in its input or output,
+    // which means ctx will be used in the generated encode/decode expressions.
+    private def jsonCtxIsUsed(service: Typedef.Service): Boolean =
+      service.methods.exists {
+        m =>
+          m.sig.id.isInstanceOf[TypeId.User] || m.out.exists(_.id.isInstanceOf[TypeId.User])
+      }
+
+    private def uebaCtxIsUsed(service: Typedef.Service): Boolean =
+      service.methods.exists {
+        m =>
+          m.sig.id.isInstanceOf[TypeId.User] || m.out.exists(_.id.isInstanceOf[TypeId.User])
+      }
+
+    // Emits @nowarn only when ctx will NOT be used (to avoid "unused-params" warning).
+    // When ctx IS used, the annotation would have nothing to suppress and would itself become
+    // a fatal warning under -Wconf:cat=unused-nowarn:e.
+    private def nowarnIfCtxUnused(ctxUsed: Boolean): String =
+      if (ctxUsed) "" else "@scala.annotation.nowarn(\"cat=unused-params\")\n"
+
     private def jsonCodecName(typeId: TypeId.User): ScValue.ScType = {
       val srcRef = trans.toScTypeRefKeepForeigns(typeId, domain, evo)
       ScValue.ScType(srcRef.pkg, s"${srcRef.name}_JsonCodec", fq = srcRef.fq)
@@ -329,8 +349,7 @@ object ScServiceWiringTranslator {
              |  ${encodeOutput.shift(2).trim}""".stripMargin
       }.join("\n")
 
-      q"""@scala.annotation.nowarn("cat=unused-params")
-         |def invokeJson$genericParam(
+      q"""${nowarnIfCtxUnused(jsonCtxIsUsed(service))}def invokeJson$genericParam(
          |  method: $baboonMethodId,
          |  data: String,
          |  impl: $svcName$svcTypeArg,
@@ -374,8 +393,7 @@ object ScServiceWiringTranslator {
              |  ${encodeOutput.shift(2).trim}""".stripMargin
       }.join("\n")
 
-      q"""@scala.annotation.nowarn("cat=unused-params")
-         |def invokeUeba$genericParam(
+      q"""${nowarnIfCtxUnused(uebaCtxIsUsed(service))}def invokeUeba$genericParam(
          |  method: $baboonMethodId,
          |  data: Array[Byte],
          |  impl: $svcName$svcTypeArg,
@@ -510,8 +528,7 @@ object ScServiceWiringTranslator {
              |  ${callAndEncodeStep.shift(2).trim}""".stripMargin
       }.join("\n")
 
-      q"""@scala.annotation.nowarn("cat=unused-params")
-         |def invokeJson$genericParam(
+      q"""${nowarnIfCtxUnused(jsonCtxIsUsed(service))}def invokeJson$genericParam(
          |  method: $baboonMethodId,
          |  data: String,
          |  impl: $svcName$svcTypeArg,
@@ -618,8 +635,7 @@ object ScServiceWiringTranslator {
              |  ${callAndEncodeStep.shift(2).trim}""".stripMargin
       }.join("\n")
 
-      q"""@scala.annotation.nowarn("cat=unused-params")
-         |def invokeUeba$genericParam(
+      q"""${nowarnIfCtxUnused(uebaCtxIsUsed(service))}def invokeUeba$genericParam(
          |  method: $baboonMethodId,
          |  data: Array[Byte],
          |  impl: $svcName$svcTypeArg,
