@@ -11,15 +11,20 @@ class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto, defContract:
   context.discard()
 
   def adtMember[$: P]: P[RawAdtMemberDto] =
-    P(meta.withMeta(defDto.dtoEnclosed)).map {
-      case (meta, dto) =>
-        RawAdtMemberDto(dto, meta)
+    defDto.dtoEnclosed.map { dto =>
+      // `dtoEnclosed` calls `meta.member(kw.data, …)` internally, which calls `withMeta`
+      // and captures any prefix `/** … */` doc directly into `dto.meta`.  Wrapping in
+      // an outer `meta.withMeta` would consume the doc first (into a separate outer meta)
+      // and leave `dto.meta.docs.prefix` empty — causing ADT-arm prefix-doc loss
+      // (PR-30.4-D02).  Mirror `dto.meta` onto the wrapper so both sides see the doc.
+      RawAdtMemberDto(dto, dto.meta)
     }
 
   def adtMemberContract[$: P]: P[RawAdtMemberContract] =
-    P(meta.withMeta(defContract.contractEnclosed)).map {
-      case (meta, c) =>
-        RawAdtMemberContract(c, meta)
+    defContract.contractEnclosed.map { c =>
+      // Same reasoning as `adtMember` above: `contractEnclosed` calls `meta.member`
+      // internally and captures the prefix doc into `c.meta`.  No outer `withMeta`.
+      RawAdtMemberContract(c, c.meta)
     }
 
   /** `+ ref` — include the referenced ADT or branch; All-vs-Branch resolution deferred to PR-63. */

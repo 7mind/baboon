@@ -1145,11 +1145,12 @@ Round-1 review of Scala generator emission. Reviewer model: Opus. 1 major (upstr
 **Suggested fix:** Invert order at the call site in `makeFullRepr` so `prependDocs` runs after `obsoletePrevious` for type-level emission (doc above annotation).
 
 ## [PR-30.4-D02] Inline ADT-arm prefix docs dropped before reaching backend (upstream parser/typer gap)
-**Status:** open (deferred — fixes belong to PR-30.2 / PR-30.3; ledgered as follow-up)
+**Status:** resolved
 **Severity:** major (user-visible; parallels [PR-30.3-D01] root-keyword case)
 **Location:** `parser/defns/DefAdt.scala:13-17` and `typer/BaboonTranslator.scala:328-334`.
 **Description:** `DefAdt.adtMember` wraps `defDto.dtoEnclosed` in `meta.withMeta(...)`, capturing the ADT-arm prefix doc into `RawAdtMemberDto.meta`. But `dtoEnclosed` itself uses `meta.member(kw.data, …)`, which calls `withMeta` again — re-running `prefixDocs` on input from which the doc was already consumed, yielding `prefix = None` on the inner `RawDto.meta`. Downstream `convertDto` builds `DomainMember.User(…, dto.meta)` using the inner meta only, so the wrapper's `RawAdtMemberDto.meta.docs.prefix` is silently dropped.
 **Suggested fix:** Pick (a) in `convertDto` for ADT-arm DTOs prefer `RawAdtMemberDto.meta` over the inner `dto.meta` (or merge both), OR (b) in `DefAdt.adtMember` flatten so `dtoEnclosed` does not re-consume `prefixDocs`. Lock with a fixture line `/** Successful */ data DocOk { … }` and an assertion. Track as PR-30.2/PR-30.3 follow-up to be addressed before PR-30.15 (cross-language smoke).
+**Fix:** Chose option (b). `DefAdt.adtMember` and `adtMemberContract` no longer wrap in outer `meta.withMeta(...)`; they forward `dto.meta` / `c.meta` directly. The inner `dtoEnclosed`/`contractEnclosed`'s own `meta.member` captures the prefix doc into the inner meta. Added test "emit /** arm-level */ doc before ADT arm case class (PR-30.4-D02)" in `DocCommentScalaEmissionTest.scala` asserting both arm-level and field-level docs appear. Extended `m30_sc_docs.baboon` fixture with `/** Successful payload variant. */ data DocOk { /** the carried payload */ value: i32 }`. Gates: `sbt baboonJVM/compile` PASS, `sbt baboonJS/compile` PASS, 41 doc-comment tests, `baboonJVM/test` 437/437.
 
 ## [PR-30.4-D03] Foreign type docs deliberately dropped without rationale comment
 **Status:** resolved

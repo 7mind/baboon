@@ -188,6 +188,31 @@ abstract class DocCommentScalaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonT
         }
     }
 
+    "emit /** arm-level */ doc before ADT arm case class (PR-30.4-D02)" in {
+      (loader: BaboonLoader[F], translator: BaboonAbstractTranslator[F]) =>
+        for {
+          family <- loadDocsFamily(loader)
+          srcs   <- translator.translate(family)
+        } yield {
+          val all = srcs.files.iterator.map { case (path, of) => (path, of.content) }.toList
+
+          val resultFile = all.collectFirst {
+            case (_, c) if c.contains("case class DocOk") => c
+          }.getOrElse(fail(s"DocOk ADT arm not found. Paths: ${all.map(_._1)}"))
+
+          // Arm-level doc on DocOk
+          assert(
+            resultFile.contains("/** Successful payload variant. */"),
+            s"Expected arm-level doc before DocOk.\n$resultFile",
+          )
+          // Field-level doc inside DocOk arm
+          assert(
+            resultFile.contains("/** the carried payload */"),
+            s"Expected field doc for DocOk.value.\n$resultFile",
+          )
+        }
+    }
+
     "emit no doc comment for types without docs (no churn on non-doc types)" in {
       (loader: BaboonLoader[F], translator: BaboonAbstractTranslator[F]) =>
         for {
