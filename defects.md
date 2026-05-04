@@ -386,12 +386,12 @@ Verification: `grep -n 'RawTypeRef.Constructor docs/spec/generics.md` no matches
 **Description:** Round-2 reports `mdl :build` PASS — but `:build` only runs JVM-side. CLAUDE.md historical PR-47/M21 risk: shared-source changes must be cross-build-verified.
 **Fix:** `nix develop --command sbt --batch baboonJS/compile` PASS (1s, fully cached). The PyJsonCodecGenerator change compiles cleanly for both JVM and JS targets; no exhaustive-match gaps on the JS side.
 
-## [PR-29.10-D09] JS cross-build NOT verified for the round-2 PyJsonCodecGenerator change
-**Status:** open
+## [PR-29.10-D09] JS cross-build NOT verified for the round-2 PyJsonCodecGenerator change (DUPLICATE — superseded)
+**Status:** resolved (duplicate ledger entry — see [PR-29.10-D09] above at line 382, closed by round 3)
 **Severity:** moderate
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/python/PyJsonCodecGenerator.scala` (shared `src/main/scala`, compiled for both JVM and Scala.js).
-**Description:** Round-2 reports `mdl :build` PASS — but the `:build` action only runs `sbt baboonJVM/GraalVMNativeImage/packageBin` (JVM-only). CLAUDE.md explicitly warns: "`sbt baboonJVM/compile` is NOT a CI-equivalent check. CI runs `sbt +compile` (cross-build for JVM + Scala.js)." The PyJsonCodecGenerator change adds new pattern matching against `DomainMember.User(_, _: Typedef.Adt, _, _)` and uses `domain.defs.meta.nodes.get(u)`. Imports look fine; should be safe — but unverified.
-**Suggested fix:** Run `nix develop --command sbt --batch baboonJS/compile` (or `mdl :test` which includes cross-build via `sbt +compile`).
+**Description:** Duplicate of the entry at line 382 (which was closed by round 3 with `sbt baboonJS/compile` PASS).
+**Fix:** Reconciled per the loop's "never delete" rule (same pattern as the four PR-29.10-D0[3456] duplicates closed by PR-29.16). The authoritative entry at line 382 carries the round-3 verification.
 
 ## [PR-29.10-D03] Pre-existing-failure claims (KMP column, Python→Kotlin OOM) lack baseline diff verification (DUPLICATE — superseded)
 **Status:** resolved (duplicate ledger entry — see [PR-29.10-D03] above at line 342)
