@@ -1,0 +1,134 @@
+model my.ok.m30
+
+version "1.0.0"
+
+/**
+ * An opaque byte-array foreign type.
+ *
+ * Exercises type-level doc on a foreign declaration (spec §3.1).
+ */
+foreign M30Bytes {
+  rt = str
+  cs = "byte[]"
+  scala = "java.lang.String"
+  kotlin = "java.lang.String"
+  java = "java.lang.String"
+  py = "builtins.bytes"
+  rust = "std::string::String"
+  typescript = "string"
+  dart = "dart.core.String"
+  swift = "Swift.String"
+}
+
+/**
+ * A shared header contract for requests/responses.
+ *
+ * Exercises type-level doc on a top-level contract declaration (spec §3.1).
+ */
+contract M30Header {
+  /** Correlation id for tracing. */
+  traceId: str
+}
+
+/**
+ * Severity of a diagnostic entry.
+ *
+ * Exercises type-level doc on an enum (spec §3.1).
+ * Per spec §3.2 individual enum values do not carry docs.
+ */
+enum M30Severity {
+  Low
+  Medium
+  High
+}
+
+/**
+ * A simple item DTO with mixed field docs.
+ *
+ * Exercises type-level doc on a data declaration and the combination of
+ * field-prefix docs with a field-suffix doc for the price field (spec §3.1, §3.3).
+ */
+data M30Item {
+  /** Display name of the item. */
+  name: str
+  /** Unit price in store currency. */
+  price: f64  //! never negative
+  quantity: i32
+}
+
+/**
+ * Paged item results.
+ *
+ * Exercises a root data with type-level doc and undocumented fields (spec §3.1).
+ */
+root data M30Page : derived[json], derived[ueba] {
+  items: lst[M30Item]
+  total: u32
+}
+
+/**
+ * A tagged diagnostic entry.
+ *
+ * Exercises a root data with contract inclusion, documented and undocumented
+ * fields, and reference to enum and data types (spec §3.1).
+ */
+root data M30Entry : derived[json], derived[ueba] {
+  is M30Header
+  /** Severity level of this entry. */
+  severity: M30Severity
+  /** Human-readable message. */
+  message: str
+  payload: M30Item
+}
+
+/**
+ * Result or error ADT.
+ *
+ * Exercises type-level doc on an adt declaration, arm-level docs on inline
+ * data arms, and field-level docs inside an ADT arm body (spec §3.1).
+ */
+root adt M30Result : derived[json], derived[ueba] {
+  /** Successful result arm. */
+  data M30Ok {
+    /** The returned payload. */
+    value: i32
+    label: str
+  }
+  /** Error arm. */
+  data M30Err {
+    /** Error code. */
+    code: i32
+    message: str
+  }
+}
+
+data M30Req {
+  /** Request identifier. */
+  reqId: str
+  body: M30Item
+}
+
+data M30Resp {
+  /** Response identifier. */
+  respId: str
+}
+
+/**
+ * CRUD service for M30Item management.
+ *
+ * Exercises type-level doc on a service declaration and method-level docs
+ * on individual service method definitions (spec §3.1).
+ */
+root service M30Svc {
+  /** Create a new item. Returns the assigned entry. */
+  def create (M30Req): M30Resp
+  /** Fetch an item by id. */
+  def fetch (M30Req): M30Resp
+}
+
+root data M30Holder {
+  sev: M30Severity
+  res: M30Result
+  item: M30Item
+  entry: M30Entry
+}
