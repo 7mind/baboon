@@ -165,6 +165,17 @@ class HoverProvider(
     s"```baboon\n$kind $canonicalName[$params] { … }\n```\n\n*Template — instantiate via `type Alias = $canonicalName[…]`*\n\n---\n*Package: ${domain.id}*"
   }
 
+  /** Render a single `Docs` slot as markdown text (prefix and/or suffix).
+    * Returns `None` when both slots are absent.
+    */
+  private def renderDocs(docs: Docs): Option[String] = {
+    val parts = List(
+      docs.prefix.map(_.cleaned),
+      docs.suffix.map(d => s"*(${d.cleaned})*"),
+    ).flatten
+    if (parts.isEmpty) None else Some(parts.mkString(" "))
+  }
+
   private def renderTypeInfo(member: DomainMember.User, @annotation.unused domain: Domain): String = {
     val sb = new StringBuilder
 
@@ -185,13 +196,17 @@ class HoverProvider(
       case _                         =>
     }
 
+    // Type-level doc comment (prefix block only; suffix cannot appear on a type declaration).
+    renderDocs(member.docs).foreach(d => sb.append(s"\n$d\n"))
+
     member.defn match {
       case dto: Typedef.Dto =>
         if (dto.fields.nonEmpty) {
           sb.append("\n**Fields:**\n")
           dto.fields.foreach {
             f =>
-              sb.append(s"- `${f.name.name}`: ${renderTypeRef(f.tpe)}\n")
+              val docSuffix = renderDocs(f.docs).map(d => s" — $d").getOrElse("")
+              sb.append(s"- `${f.name.name}`: ${renderTypeRef(f.tpe)}$docSuffix\n")
           }
         }
         if (dto.contracts.nonEmpty) {
@@ -234,7 +249,8 @@ class HoverProvider(
           sb.append("\n**Required fields:**\n")
           contract.fields.foreach {
             f =>
-              sb.append(s"- `${f.name.name}`: ${renderTypeRef(f.tpe)}\n")
+              val docSuffix = renderDocs(f.docs).map(d => s" — $d").getOrElse("")
+              sb.append(s"- `${f.name.name}`: ${renderTypeRef(f.tpe)}$docSuffix\n")
           }
         }
 
@@ -244,7 +260,8 @@ class HoverProvider(
           m =>
             val outPart = m.out.map(o => s" -> ${renderTypeRef(o)}").getOrElse("")
             val errPart = m.err.map(e => s" !> ${renderTypeRef(e)}").getOrElse("")
-            sb.append(s"- `${m.name.name}(${renderTypeRef(m.sig)})$outPart$errPart`\n")
+            val docSuffix = renderDocs(m.docs).map(d => s" — $d").getOrElse("")
+            sb.append(s"- `${m.name.name}(${renderTypeRef(m.sig)})$outPart$errPart`$docSuffix\n")
         }
     }
 

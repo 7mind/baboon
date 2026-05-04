@@ -466,6 +466,72 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
     }
   }
 
+  "hover provider (m30 docs)" should {
+    // m30_sc_docs.baboon contains doc-bearing types:
+    //   /** A simple item with field-level docs. */
+    //   data DocItem { ... }
+    //
+    //   /** The CRUD service. */
+    //   root service DocCrud {
+    //     /** Create an item. */
+    //     def create (DocReq): DocResp
+    //   }
+
+    "include type-level doc in hover for a doc-bearing type" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m30-sc-docs/m30_sc_docs.baboon") {
+          (docState, wsState, uri) =>
+            val hover = new HoverProvider(docState, wsState, logger)
+
+            val content = docState.getContent(uri).get
+            val lines   = content.split("\n")
+            // Find "data DocItem {" — hover over "DocItem"
+            val lineIdx = lines.indexWhere(_.contains("data DocItem"))
+            assert(lineIdx >= 0, "Should find 'data DocItem' line")
+
+            val colIdx = lines(lineIdx).indexOf("DocItem")
+            val result = hover.getHover(uri, Position(lineIdx, colIdx + 1))
+            assert(result.isDefined, "Should return hover for DocItem")
+            val markdown = result.get.contents.value
+            assert(markdown.contains("DocItem"), s"Hover should mention 'DocItem': $markdown")
+            // Type-level doc text must appear in the hover output
+            assert(
+              markdown.contains("A simple item with field-level docs"),
+              s"Hover should include type-level doc: $markdown",
+            )
+        }
+    }
+
+    "include field-level doc in hover for a type with documented fields" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m30-sc-docs/m30_sc_docs.baboon") {
+          (docState, wsState, uri) =>
+            val hover = new HoverProvider(docState, wsState, logger)
+
+            val content = docState.getContent(uri).get
+            val lines   = content.split("\n")
+            // Hover over "DocItem" — the rendered output must include field-level docs
+            val lineIdx = lines.indexWhere(_.contains("data DocItem"))
+            assert(lineIdx >= 0, "Should find 'data DocItem' line")
+
+            val colIdx = lines(lineIdx).indexOf("DocItem")
+            val result = hover.getHover(uri, Position(lineIdx, colIdx + 1))
+            assert(result.isDefined, "Should return hover for DocItem")
+            val markdown = result.get.contents.value
+            // "name" field has doc "Display name of the item."
+            assert(
+              markdown.contains("Display name of the item"),
+              s"Hover should include field doc for 'name': $markdown",
+            )
+            // "price" field has suffix doc "never negative"
+            assert(
+              markdown.contains("never negative"),
+              s"Hover should include suffix field doc for 'price': $markdown",
+            )
+        }
+    }
+  }
+
   "definition provider" should {
     "find definitions for regular types" in {
       (loader: BaboonLoader[F]) =>

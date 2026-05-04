@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.lsp.features
 
 import io.septimalmind.baboon.lsp.LspLogging
-import io.septimalmind.baboon.lsp.protocol.{CompletionItem, CompletionItemKind, Position}
+import io.septimalmind.baboon.lsp.protocol.{CompletionItem, CompletionItemKind, MarkupContent, MarkupKind, Position}
 import io.septimalmind.baboon.lsp.state.{DocumentState, WorkspaceState}
 import io.septimalmind.baboon.translator.{ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.typer.model._
@@ -279,13 +279,15 @@ class CompletionProvider(
                     // Use owner (namespace path) + name, without the package prefix
                     val pathParts = u.id.owner.asPseudoPkg :+ simpleName
                     val typePath  = pathParts.mkString(".")
+                    val docMarkup = u.docs.prefix.map(dc => MarkupContent(MarkupKind.Markdown, dc.cleaned))
                     CompletionItem(
-                      label      = typePath,
-                      kind       = Some(kind),
-                      detail     = Some(u.id.pkg.toString),
-                      insertText = Some(typePath),
-                      sortText   = Some(s"0_$simpleName"),
-                      filterText = Some(simpleName),
+                      label         = typePath,
+                      kind          = Some(kind),
+                      detail        = Some(u.id.pkg.toString),
+                      documentation = docMarkup,
+                      insertText    = Some(typePath),
+                      sortText      = Some(s"0_$simpleName"),
+                      filterText    = Some(simpleName),
                     )
                 }
             }
