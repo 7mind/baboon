@@ -32,6 +32,7 @@ Authoritative brief: `./job.md`. Pre-flight: CI status on `wip/generics` @ `1a91
 - [x] **M29-prep** — Pre-M29 CI hardening. Two defects fixed: CI-01 (BaboonRuntimeCodec tso UTC-zero `+00:00`↔`Z`), CI-02 (acceptance-tests sbt resolution under `--ignore-environment`). Both CI jobs green on `wip/ids-and-adts` (verified by user 2026-05-03; branch merged into `wip/generics`).
 - [x] **M29-prep follow-ups** — PR-29P.4 landed both deferred items (D02 non-UTC tso coverage, D03 RandomJsonGenerator tso/tsu split). Surgical, additive, no wire-format impact.
 - [x] **M29** — User-defined generics (BAB-A04). **Complete 2026-05-04**. 12 PRs landed (29.1, 29.1a, 29.2..29.11). The architectural bet held end-to-end: monomorphisation runs as a typer-early raw-AST rewrite; codegen never sees a template; all 9 backends produce concrete code with no synthetic generic identifiers. Cross-language wire-format acceptance 200/200. Two follow-ups deferred: tree-sitter editor grammar (`[PR-29.8-D01]` — needs submodule coordination) and end-to-end cross-language service-acceptance for templated services (`[PR-29.10-D07]`).
+- [!] **M30** — Docstring / comment preservation. Plan `docs/drafts/20260504-1213-m30-docstrings-plan.md`. Surface syntax: prefix `/** ... */` on type/method/field; postfix `//! ...` on field. Threaded through `RawNodeMeta.docs` → typed `Docs` on `Field`/`MethodDef`/`DomainMember.User` → emitted by all 11 backends in idiomatic form (Javadoc / XML doc / `///` / `///`-with-PEP257 / `"""…"""` / OpenAPI `description`). Tree-sitter editor grammar deferred per `[PR-29.8-D01]` precedent. **Blocked on user sign-off for four design decisions** (template propagation, Python convention, stacked-doc accumulation, cleanup-time policy) — see plan §6.
 
 ---
 
@@ -88,6 +89,28 @@ Detail: per-PR breakdown will live in `docs/drafts/<YYYYMMDD-HHMM>-m29-generics-
 7. `type Y = X` — template referenced without instantiation.
 8. `type Y = i32[X]` — instantiating a non-generic.
 9. `type A = X[B]; type B = X[A]` — cycle through aliases.
+
+---
+
+## Milestone M30 — PR breakdown
+
+Detail: `docs/drafts/20260504-1213-m30-docstrings-plan.md`. 15 PRs total: 1 spec → 1 parser → 1 typer/domain → 10 per-backend (PR-30.4..30.13) → 1 LSP → 1 cross-language smoke + close-out. Tree-sitter editor grammar deferred.
+
+- [!] **PR-30.1** — Spec doc `docs/spec/docstrings.md`. **Blocked on user sign-off for four design decisions** (plan §6): template propagation, Python attribute-doc convention, stacked-prefix accumulation, cleanup-time policy.
+- [ ] **PR-30.2** — Parser: `/** … */` prefix + `//! …` suffix capture into `RawNodeMeta.docs` via anchored `NoWhitespace` rule; new `parser/defns/base/DefDocs.scala`; `RawNodeMeta` extended with `docs: RawDocs = RawDocs.empty`. Highest-risk PR — FastParse `ScalaWhitespace` already swallows `/** */` as a block comment; the anchored rule must intercept **before** the implicit whitespace boundary.
+- [ ] **PR-30.3** — Typer: thread docs into `Field` / `MethodDef` / `DomainMember.User` (defaulted `Docs.empty`); `TemplateInstantiator` propagates per locked decision (4); pattern-match audit on `case Field(...) =>` etc; **schema-id digest stability load-bearing** — `ShallowSchemaId` / `DeepSchemaId` must NOT churn after `docs` field add.
+- [ ] **PR-30.4** — Backend: Scala (Javadoc-style).
+- [ ] **PR-30.5** — Backend: C# (`/// <summary>…</summary>` XML doc; XML-text escape).
+- [ ] **PR-30.6** — Backend: Python (PEP-257 attribute docstrings; `"""` escape).
+- [ ] **PR-30.7** — Backend: Rust (`///`; field suffix `//!` → `///` before the field).
+- [ ] **PR-30.8** — Backend: TypeScript (Javadoc).
+- [ ] **PR-30.9** — Backend: Kotlin (incl. KMP) (KDoc; verify emitter sharing).
+- [ ] **PR-30.10** — Backend: Java (Javadoc; HTML-escape).
+- [ ] **PR-30.11** — Backend: Dart (`///`).
+- [ ] **PR-30.12** — Backend: Swift (`///`).
+- [ ] **PR-30.13** — Backend: GraphQL SDL + OpenAPI 3.1 (bundled; `"""…"""` block-string + `description`).
+- [ ] **PR-30.14** — LSP: hover surfaces docs; optional `CompletionItem.documentation`. No new `TyperIssue`, no 3-site exhaustive-match update.
+- [ ] **PR-30.15** — Cross-language smoke fixture `m30-ok/m30.baboon` covering every doc position; per-backend stub goldens; close-out + session log.
 
 ---
 
