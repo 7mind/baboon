@@ -1130,6 +1130,50 @@ After the fix, update the typer test at L117-148 to use the natural `/** doc */ 
 
 ## [PR-30.3-D06] Coverage gap: ADT branch DTO field docs not tested
 **Status:** resolved (deferred — ADT-arm DTOs lift via `AdtInheritanceExpander` into individual `DomainMember.User` carriers, each going through `convertDto`. Same code path as `data Foo` field-doc test. Defer dedicated ADT-arm-field test to PR-30.15 cross-language smoke fixture.)
+
+---
+
+## PR-30.4 — Scala backend doc emission (M30)
+
+Round-1 review of Scala generator emission. Reviewer model: Opus. 1 major (upstream parser gap) + 3 minors + 2 nits.
+
+## [PR-30.4-D01] `@deprecated` annotation emitted above doc block (wrong Scaladoc order)
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScDefnTranslator.scala:213-260`.
+**Description:** `makeRepr` calls `prependDocs(defn.docs, combined)` first, then `makeFullRepr` wraps with `obsoletePrevious`, producing `@deprecated("…")\n/** doc */\nfinal case class …` on non-latest versions. Scaladoc/IntelliJ convention places the `/** … */` block FIRST, with annotations between the doc and the symbol. Compiles either way but tooling may fail to associate the doc with the symbol.
+**Suggested fix:** Invert order at the call site in `makeFullRepr` so `prependDocs` runs after `obsoletePrevious` for type-level emission (doc above annotation).
+
+## [PR-30.4-D02] Inline ADT-arm prefix docs dropped before reaching backend (upstream parser/typer gap)
+**Status:** open (deferred — fixes belong to PR-30.2 / PR-30.3; ledgered as follow-up)
+**Severity:** major (user-visible; parallels [PR-30.3-D01] root-keyword case)
+**Location:** `parser/defns/DefAdt.scala:13-17` and `typer/BaboonTranslator.scala:328-334`.
+**Description:** `DefAdt.adtMember` wraps `defDto.dtoEnclosed` in `meta.withMeta(...)`, capturing the ADT-arm prefix doc into `RawAdtMemberDto.meta`. But `dtoEnclosed` itself uses `meta.member(kw.data, …)`, which calls `withMeta` again — re-running `prefixDocs` on input from which the doc was already consumed, yielding `prefix = None` on the inner `RawDto.meta`. Downstream `convertDto` builds `DomainMember.User(…, dto.meta)` using the inner meta only, so the wrapper's `RawAdtMemberDto.meta.docs.prefix` is silently dropped.
+**Suggested fix:** Pick (a) in `convertDto` for ADT-arm DTOs prefer `RawAdtMemberDto.meta` over the inner `dto.meta` (or merge both), OR (b) in `DefAdt.adtMember` flatten so `dtoEnclosed` does not re-consume `prefixDocs`. Lock with a fixture line `/** Successful */ data DocOk { … }` and an assertion. Track as PR-30.2/PR-30.3 follow-up to be addressed before PR-30.15 (cross-language smoke).
+
+## [PR-30.4-D03] Foreign type docs deliberately dropped without rationale comment
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScDefnTranslator.scala:462-468`.
+**Description:** `Typedef.Foreign` carries `defn.docs`; spec §3.1 lists `foreign` as a valid prefix-doc position. Current branch emits two top-level decls (trait + companion) without `prependDocs`. Defensible choice (where to attach the single doc?) but undocumented.
+**Suggested fix:** Apply `prependDocs(defn.docs, …)` to the trait portion of the foreign emission so docs survive at the user-facing trait. Add an inline comment explaining the choice.
+
+## [PR-30.4-D04] Test 5 negative assertion is degenerate
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/DocCommentScalaEmissionTest.scala:212`.
+**Description:** The negative assertion `!pageFile.contains("/** \n")` matches a literal `/**` + space + newline that `renderDocs` cannot produce in either form. The check never fires; no protection against spurious empty docs.
+**Suggested fix:** Replace with `!pageFile.contains("/**\n  items:")` and `!pageFile.contains("/** */")` — these would catch a bug emitting empty docs before un-doc'd fields.
+
+## [PR-30.4-D05] Service-method indentation 4-space vs case-class param 2-space
+**Status:** resolved (deferred — pre-existing inconsistency; matches surrounding code style for trait/contract bodies. Cosmetic.)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/translator/scl/ScDefnTranslator.scala:410-411, 456-457`.
+
+## [PR-30.4-D06] Unnecessary `Doc`-prefix renaming of fixture types
+**Status:** resolved (deferred — cosmetic; fixture uses isolated package `m30.sc.docs` and isolated test loader. No collision in practice.)
+**Severity:** nit
+**Location:** `baboon-compiler/src/test/resources/baboon/m30-sc-docs/m30_sc_docs.baboon`.
 **Severity:** nit
 **Location:** `DocCommentTyperTest.scala`.
 **Description:** Spec §3.1 / §2.3 enumerate ADT-arm DTO field docs as positions. Untested.

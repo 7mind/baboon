@@ -229,9 +229,16 @@ object ScDefnTranslator {
       // PR-I-D04: Foreign emits two top-level decls (trait + companion object)
       // and applies obsoletePrevious per-decl inside makeRepr. Skip the outer
       // annotation so we don't double-annotate the trait.
+      // D01 fix: apply obsoletePrevious BEFORE prependDocs so the emitted order
+      // is /** doc */ then @deprecated then the declaration, matching Scaladoc
+      // convention (doc-then-annotation-then-symbol).
       val defnRepr = defn.defn match {
-        case _: Typedef.Foreign => repr.defn
-        case _                  => obsoletePrevious(repr.defn)
+        // Spec §3.1: docs attach to the user-facing trait (not the companion,
+        // which is implementation scaffolding). obsoletePrevious is applied
+        // per-decl inside makeRepr, so repr.defn already has @deprecated on
+        // each part; prependDocs goes last to place the doc block above it.
+        case _: Typedef.Foreign => prependDocs(defn.docs, repr.defn)
+        case _                  => prependDocs(defn.docs, obsoletePrevious(repr.defn))
       }
 
       assert(defn.id.pkg == domain.id)
@@ -259,6 +266,14 @@ object ScDefnTranslator {
       DefnRepr(content, allRegs)
     }
 
+    /** Prepend a Javadoc-style doc comment block before a tree when `docs` is
+      * non-empty. Returns the tree unchanged when `docs` is empty.
+      */
+    private def prependDocs(docs: Docs, tree: TextTree[ScValue]): TextTree[ScValue] = {
+      val block = scTrees.renderDocs(docs, "")
+      if (block.isEmpty) tree else q"${block}$tree"
+    }
+
     private def makeRepr(
       defn: DomainMember.User,
       name: ScValue.ScType,
@@ -274,8 +289,9 @@ object ScDefnTranslator {
         case dto: Typedef.Dto =>
           val params = dto.fields.map {
             f =>
-              val t = trans.asScRef(f.tpe, domain, evo)
-              q"${f.name.name}: $t"
+              val t       = trans.asScRef(f.tpe, domain, evo)
+              val fieldEx = q"${f.name.name}: $t"
+              prependDocs(f.docs, fieldEx)
           }
           val paramsList      = if (params.nonEmpty) params.join(",\n") else q""
           val contractParents = dto.contracts.map(c => trans.toScTypeRefKeepForeigns(c, domain, evo))
@@ -372,7 +388,7 @@ object ScDefnTranslator {
           val objectMetaFields = mainMeta.map(_.valueField) ++ codecMeta
           val classMetaFields  = mainMeta.map(mt => q"override ${mt.refValueField}")
 
-          DefnRepr(
+          val adtTree =
             q"""$sealedTrait {
                |  ${classMetaFields.joinN().shift(2).trim}
                |}
@@ -380,15 +396,16 @@ object ScDefnTranslator {
                |object ${name.name} {
                |  ${memberTrees.map(_.defn).toList.joinNN().shift(2).trim}
                |  ${objectMetaFields.joinN().shift(2).trim}
-               |}""".stripMargin,
-            Nil,
-          )
+               |}""".stripMargin
+
+          DefnRepr(adtTree, Nil)
 
         case contract: Typedef.Contract =>
           val methods = contract.fields.map {
             f =>
-              val t = trans.asScRef(f.tpe, domain, evo)
-              q"def ${f.name.name}: $t"
+              val t        = trans.asScRef(f.tpe, domain, evo)
+              val methodEx = q"def ${f.name.name}: $t"
+              prependDocs(f.docs, methodEx)
           }
           val parents       = contract.contracts.map(c => trans.toScTypeRefKeepForeigns(c, domain, evo)) :+ genMarker
           val extendsClause = if (parents.nonEmpty) q" extends ${parents.map(t => q"$t").join(" with ")}" else q""
@@ -421,10 +438,11 @@ object ScDefnTranslator {
                   if (typeParts.startsWith(servicePkgParts)) typeParts.drop(servicePkgParts.size).mkString(".")
                   else typeParts.mkString(".")
               }
-              val outStr = out.map(_.mapRender(scFqName)).getOrElse("")
-              val errStr = err.map(_.mapRender(scFqName))
-              val retStr = resolved.renderReturnType(outStr, errStr, "Unit")
-              q"def ${m.name.name}(${ctxParam}arg: $in): $retStr"
+              val outStr   = out.map(_.mapRender(scFqName)).getOrElse("")
+              val errStr   = err.map(_.mapRender(scFqName))
+              val retStr   = resolved.renderReturnType(outStr, errStr, "Unit")
+              val methodEx = q"def ${m.name.name}(${ctxParam}arg: $in): $retStr"
+              prependDocs(m.docs, methodEx)
           }
           val typeParams = Seq(
             resolved.traitTypeParam,

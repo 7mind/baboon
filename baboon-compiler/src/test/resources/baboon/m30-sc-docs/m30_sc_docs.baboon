@@ -1,0 +1,44 @@
+model m30.sc.docs
+
+version "1.0.0"
+
+/** A simple item with field-level docs. */
+data DocItem {
+  /** Display name of the item. */
+  name: str
+  /** Unit price in store currency. */
+  price: f64  //! never negative
+}
+
+/** Paged doc results. */
+root data DocPage {
+  items: lst[DocItem]
+  total: u32
+}
+
+/** Severity levels. */
+enum DocSeverity {
+  Low
+  High
+}
+
+/** Result or error. */
+adt DocResult {
+  data DocOk  { value: i32 }
+  data DocErr { message: str }
+}
+
+data DocReq  { x: i32 }
+data DocResp { y: i32 }
+
+/** The CRUD service. */
+root service DocCrud {
+  /** Create an item. */
+  def create (DocReq): DocResp
+}
+
+root data DocHolder {
+  sev: DocSeverity
+  res: DocResult
+  item: DocItem
+}
