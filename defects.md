@@ -347,11 +347,11 @@ Verification: `grep -n 'RawTypeRef.Constructor docs/spec/generics.md` no matches
 **Fix:** Defer; moot — no remaining failures to categorise.
 
 ## [PR-29.10-D04] Rust JSON path uses serde_json::to_string (not generated codec) — key ordering may diverge from cross-language source rows
-**Status:** resolved (deferred — full acceptance now 200/200, divergence not blocking; flagged for future polish)
+**Status:** resolved (PR-29.13 — 11 sites swept to generated to_json/from_json)
 **Severity:** minor
-**Location:** `test/conv-test-rs/src/main.rs:235`.
-**Description:** Rust uses `serde_json::to_string(data)` (raw serde) instead of `M29OkHolder_JsonCodec.encode`. Other backends use the generated `_JsonCodec`. Key ordering will differ.
-**Fix:** Defer; full 200/200 acceptance includes Rust-as-source rows passing, so the divergence is tolerated by the cross-language harness. Flagged for future polish.
+**Location:** `test/conv-test-rs/src/main.rs` (multiple sites).
+**Description:** Rust harness used raw `serde_json::to_string` / `from_str` for top-level fixture types (AllBasicTypes, AnyShowcase, ForeignKeyHolder, BuiltinMapKeyHolder, M29OkHolder) instead of the generated `to_json` / `from_json` codec methods. Other 8 backends use generated codecs. Key ordering or future codec semantics could diverge.
+**Fix:** PR-29.13 (2026-05-04) — converted all 11 top-level sites in `test/conv-test-rs/src/main.rs` to use generated `data.to_json()` / `data.to_json_pretty()` / `T::from_json(s)`. The two AnyOpaque-payload helper sites (L165 `serde_json::to_value`, L413 `serde_json::from_value`) deliberately preserved — these construct/decode `AnyOpaque::Json` payloads, not top-level fixtures. Comment at L458-460 updated. Verified all 5 generated codec methods delegate verbatim to `serde_json::to_string`/`to_string_pretty`/`from_str` — wire bytes identical pre/post (see review report). Gates: `cargo build --release` PASS, `mdl :test-acceptance` 200/200 PASS with Rust-as-source rows green to all 10 destinations. Adversarial review clean (no defects).
 
 ## [PR-29.10-D05] Swift `readAndVerifyM29Ok` doesn't roundtrip (only spot-check decode)
 **Status:** resolved (deferred — full acceptance harness covers Swift roundtrips at the harness level, not just the Swift-internal verifier)
