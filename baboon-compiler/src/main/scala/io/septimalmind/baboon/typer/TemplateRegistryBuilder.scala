@@ -43,17 +43,32 @@ object TemplateRegistryBuilder {
       ownerForCurrent: Owner,
     ): F[NEList[BaboonIssue], (Seq[RawTLDef], TemplateRegistry)] = {
 
-      F.traverseAccumErrors(members)(m => processMember(pkg, m, ownerForCurrent)).map {
+      F.traverseAccumErrors(members)(m => processMember(pkg, m, ownerForCurrent)).flatMap {
         results =>
           val filteredMembers = results.flatMap(_._1)
-          // note [PR-29.4-D04]: templates are removed from filteredMembers before ScopeBuilder
-          // runs, so ScopeBuilder.NonUniqueScope does NOT catch duplicate template names at the
-          // same namespace level. Two sibling templates with the same name would produce two
-          // registry entries with the same key; `toMap` silently keeps the last one. If this
-          // becomes a concern, replace with an explicit duplicate-detection step emitting a
-          // dedicated issue (e.g. DuplicateTemplateName) here, before ScopeBuilder.
-          val mergedTemplates = results.flatMap(_._2.templates).toMap
-          (filteredMembers, TemplateRegistry(mergedTemplates))
+          val flat            = results.flatMap(_._2.templates).toList
+          val grouped         = flat.groupBy(_._1)
+          // Detect duplicate template names at the same namespace level.
+          val dupes: List[BaboonIssue] = grouped.collect {
+            case (key, entries) if entries.size > 1 =>
+              // brief: emit at the meta of the second definition (the one being dropped from the registry)
+              val secondMeta = entries.tail.head._2.rawDefn match {
+                case RawTemplateDefn.Dto(raw)      => raw.meta
+                case RawTemplateDefn.Adt(raw)      => raw.meta
+                case RawTemplateDefn.Contract(raw) => raw.meta
+                case RawTemplateDefn.Service(raw)  => raw.meta
+              }
+              val ownerStr = key._2 match {
+                case Owner.Toplevel => "<toplevel>"
+                case Owner.Ns(path) => path.iterator.map(_.name).mkString(".")
+                case adt: Owner.Adt => throw new IllegalStateException(s"Templates cannot be declared inside an ADT scope; got $adt")
+              }
+              BaboonIssue.Typer(TyperIssue.DuplicateTemplateName(key._3.name, ownerStr, secondMeta))
+          }.toList
+          NEList.from(dupes) match {
+            case Some(errors) => F.fail(errors)
+            case None         => F.pure((filteredMembers, TemplateRegistry(flat.toMap)))
+          }
       }
     }
 
@@ -111,7 +126,7 @@ object TemplateRegistryBuilder {
           val nextOwner = ownerForCurrent match {
             case Owner.Toplevel => Owner.Ns(List(TypeName(ns.name.name)))
             case Owner.Ns(path) => Owner.Ns(path.toList :+ TypeName(ns.name.name))
-            case other          => Owner.Ns(other.asPseudoPkg.map(TypeName(_)) :+ TypeName(ns.name.name))
+            case adt: Owner.Adt => throw new IllegalStateException(s"Namespace declared inside an ADT scope is structurally impossible; got $adt")
           }
           buildRecursive(pkg, ns.defns, nextOwner).map {
             case (rewrittenChildren, registry) =>

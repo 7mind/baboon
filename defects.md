@@ -744,3 +744,86 @@ All 14 round-1 defects fixed in one round by a single Sonnet executor; round-2 r
 - **D14** (lines 243-244) — rewrote §2.5.6 diagnostic-name aside to the §2.5.9/§5.3 pattern: `(NameNotFound or OrphanTypeParam) is finalised in PR-29.7`.
 
 Verification: round-2 reviewer (Opus) verified all 9 negative-test matrix items still appear in §2.5 in matrix order with their correct examples; locked-decision integrity vs `tasks.md:42-47` preserved; D04/D05 block-body syntax consistent across §1, §2.1, §2.6, §7; no sentence fragments, broken cross-references, duplicated paragraphs, or search-and-replace residue detected. Fixer caught one extra residual (§2.6 line 297 `adt X[T] = ...`) not in the original defect list — same shape as D04, applied same fix.
+
+---
+
+## PR-29.12 — DuplicateTemplateName diagnostic (M29 deferred-drain)
+
+Closes `[PR-29.4-D04]`.
+
+## [PR-29.12-D01] Negative-control test for cross-namespace same-name templates is missing
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateRegistryBuilderTest.scala`.
+**Description:** No test asserts that `data X[T] {…}` in `ns a` and `data X[U] {…}` in `ns b` does NOT fire `DuplicateTemplateName`. Brief explicitly required this. A regression that grouped by `(Pkg, TypeName)` ignoring `Owner` would slip past CI; the existing tests use `collectFirst` so they cannot detect over-firing either.
+**Fix:** Added `crossNamespacesSameNameTemplateDomain` fixture (`ns a { data X[T] {…} data AnchorA {…} } ns b { data X[U] {…} root data Anchor {…} }`) and a new test asserting `outcome.isRight`. Comment explains the typer fails fast on `DuplicateTemplateName`, so success implies no such issue. Required non-template anchors in both namespaces (otherwise `ScopeCannotBeEmpty` masks the diagnostic).
+
+## [PR-29.12-D02] Tests do not verify the "second meta" requirement
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateRegistryBuilderTest.scala`.
+**Description:** Brief specifies `meta` should point at the SECOND (dropped) definition — important for editor diagnostics on the offending site. The two new tests asserted only `name` and `ownerName`; never looked at `dupIssue.meta`.
+**Fix:** Added pattern-match on `dupIssue.meta.pos` inside the existing top-level dup test asserting `full.start.line == 9` (the line of the second `data X[U]` in the fixture). `InputPointer.ComparisonHack` makes `==` class-identity only, so a pattern match is the correct approach.
+
+## [PR-29.12-D03] No test for 3+ duplicate templates
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateRegistryBuilderTest.scala`.
+**Description:** Implementation reports one issue per group (citing `entries(1)`, dropping info about the third). UX choice consistent with `validateTypeParams`, but unverified.
+**Fix:** Added `triplicateTemplateNameTopLevel` fixture (three `data X` at top level). Test asserts `dupIssues.size == 1` with `name == "X"`.
+
+## [PR-29.12-D04] No test verifying multi-segment namespace path formatting (`a.b`)
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateRegistryBuilderTest.scala`.
+**Description:** Single-level (`foo`) was tested; nested (`a.b`) was not.
+**Fix:** Added `duplicateTemplateNameNestedNs` fixture (`ns a { ns b { data X[T] {…} data X[U] {…} root data Anchor {…} } }`) and test asserting `ownerName == "a.b"`.
+
+## [PR-29.12-D05] No positive-control test for template + non-template name reuse
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateRegistryBuilderTest.scala`.
+**Description:** Brief asked for a control where template `X[T]` and non-template `data X {…}` coexist.
+**Fix:** Added `templateAndNonTemplateSameNameDomain` fixture. Test asserts no `DuplicateTemplateName` fires regardless of the typer outcome (whatever ScopeBuilder does about the name collision is separate concern).
+
+## [PR-29.12-D06] `entries(1)` indexing relies on undocumented `groupBy` ordering
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateRegistryBuilder.scala:55`.
+**Description:** Replace `entries(1)._2.rawDefn` with `entries.tail.head._2.rawDefn` (semantically equivalent; signals intent).
+**Fix:** Replaced as suggested. Added comment: `// brief: emit at the meta of the second definition (the one being dropped from the registry)`.
+
+## [PR-29.12-D07] `Owner.Adt` catch-all branch is dead code with surprising semantics
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateRegistryBuilder.scala:64,129`.
+**Description:** Two `case other =>` catch-alls over `Owner` were structurally unreachable but silently produced wrong-looking outputs.
+**Fix:** Replaced both with explicit `case adt: Owner.Adt => throw new IllegalStateException(...)` matching `Owner`'s sealed hierarchy. Compiler now verifies exhaustiveness against future `Owner` subtypes.
+
+## [PR-29.12-D08] User-facing diagnostic message reads awkwardly
+**Status:** resolved (deferred — wording polish, no functional impact)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/lsp/features/DiagnosticsProvider.scala:108` and `TyperIssue.scala:679`.
+**Description:** `"Duplicate template name 'X' at owner '<toplevel>'"` reads awkwardly. Consider "in scope".
+**Fix:** Defer; cosmetic. Wording can be tuned later when more diagnostics are reviewed in aggregate.
+
+## [PR-29.12-D09] DRY: the `RawTemplateDefn → meta` extraction is duplicated
+**Status:** resolved (deferred — refactor opportunity, low priority)
+**Severity:** nit
+**Location:** `TemplateRegistryBuilder.scala:54-59` vs. `DefinitionProvider.scala:102-105`.
+**Description:** Identical 4-arm match could be a `def metaOf(d: RawTemplateDefn): RawNodeMeta` on the companion. Existing pre-PR-29.12 code that I did not author here.
+**Fix:** Defer; small refactor for a future cleanup PR. Don't bundle into PR-29.12 (CLAUDE.md §5 surgical-edits rule).
+
+## [PR-29.12-D10] D07 fix extended to a second `Owner.Adt` site (`nextOwner` in `processMember`) not in the original D07 brief
+**Status:** resolved (intentional — orchestrator brief authorised both sites)
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateRegistryBuilder.scala:129`.
+**Description:** Round-2 reviewer flagged that the round-1 fix subagent replaced the previous fallback `case other => Owner.Ns(other.asPseudoPkg.map(TypeName(_)) :+ TypeName(ns.name.name))` at line 129 with `case adt: Owner.Adt => throw new IllegalStateException(...)`. Original D07 only named the line-64 site. The line-129 change is in the namespace-recursion path, not the duplicate-detection path.
+**Fix:** Intentional. Orchestrator's round-1 fix brief explicitly authorised both sites: "For the analogous match at line ~128 (in `processMember`'s `nextOwner` calculation, in the `case nsTL @ RawTLDef.Namespace(ns)` arm) — same treatment". Rationale: per CLAUDE.md fail-fast principle ("Use assertions, throw errors early — no graceful fallbacks for internal logic"), the silent `Owner.Ns(asPseudoPkg :+ ...)` fallback was the defect — it would silently produce a wrong-looking owner string if the structurally-impossible case ever surfaced. The `IllegalStateException` is loud failure aligned with project conventions. The path is structurally unreachable: `RawTLDef.Namespace` only appears at top-level or nested under another namespace; ADT-internal scopes use a different RawTLDef shape (RawAdtMember, not RawTLDef). If a future change introduces an `Owner` 4th case, the sealed-trait match warning will catch it.
+
+## [PR-29.12-D11] D01 cross-namespace test asserts `outcome.isRight` rather than precise `DuplicateTemplateName` filter
+**Status:** resolved (deferred — load-bearing assertion is sufficient; precision improvement is a nit)
+**Severity:** nit
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/TemplateRegistryBuilderTest.scala:411-419` (approximate).
+**Description:** Round-2 reviewer noted the D05 test uses precise filtering (`collect { case d: DuplicateTemplateName => d }` → `isEmpty`); the D01 cross-ns test uses the broader `outcome.isRight`. If an unrelated typer regression broke the fixture for a non-`DuplicateTemplateName` reason, D01 would falsely red.
+**Fix:** Defer; the fixture is minimal (two cross-ns templates + per-ns anchors) and well-formed. `isRight` failing on this fixture would itself signal a real regression. Precision improvement is worth doing in a future test-suite cleanup but not load-bearing for this PR's correctness.
