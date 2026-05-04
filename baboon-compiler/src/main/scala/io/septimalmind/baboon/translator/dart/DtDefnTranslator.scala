@@ -54,6 +54,14 @@ object DtDefnTranslator {
   ) extends DtDefnTranslator[F] {
     import DtTypes.*
 
+    /** Prepend `///` doc lines before a tree when `docs` is non-empty.
+      * Returns the tree unchanged when `docs` is empty.
+      */
+    private def prependDocs(docs: Docs, tree: TextTree[DtValue]): TextTree[DtValue] = {
+      val block = dtTrees.renderDocs(docs, "")
+      if (block.isEmpty) tree else q"${block}$tree"
+    }
+
     override def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       defn.id.owner match {
         case Owner.Adt(_) => F.pure(List.empty)
@@ -206,16 +214,19 @@ object DtDefnTranslator {
 
       defn.defn match {
         case dto: Typedef.Dto =>
-          renderDto(dto, name, genMarker, mainMeta, codecMeta)
+          val repr = renderDto(dto, name, genMarker, mainMeta, codecMeta)
+          repr.copy(defn = prependDocs(defn.docs, repr.defn))
 
         case e: Typedef.Enum =>
-          renderEnum(e, name, mainMeta, codecMeta)
+          val repr = renderEnum(e, name, mainMeta, codecMeta)
+          repr.copy(defn = prependDocs(defn.docs, repr.defn))
 
         case adt: Typedef.Adt =>
           renderAdt(defn, adt, name, genMarker, mainMeta, codecMeta)
 
         case contract: Typedef.Contract =>
-          renderContract(contract, name, genMarker)
+          val repr = renderContract(contract, name, genMarker)
+          repr.copy(defn = prependDocs(defn.docs, repr.defn))
 
         case _: Typedef.Service =>
           renderService(defn, name)
@@ -291,12 +302,13 @@ object DtDefnTranslator {
         f =>
           val t              = trans.asDtRef(f.tpe, domain, evo)
           val overridePrefix = if (contractFieldNames.contains(f.name.name)) "@override " else ""
-          f.tpe match {
+          val fieldTree = f.tpe match {
             case TypeRef.Constructor(TypeId.Builtins.opt, _) =>
               q"${overridePrefix}final $t ${f.name.name};"
             case _ =>
               q"${overridePrefix}final $t ${f.name.name};"
           }
+          prependDocs(f.docs, fieldTree)
       }
 
       val constructorParams = dto.fields.map {
@@ -465,14 +477,17 @@ object DtDefnTranslator {
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
 
-      DefnRepr(
+      val sealedClass =
         q"""sealed class ${name.asName}$implementsClause {
            |  const ${name.asName}();
            |
            |  ${staticMetaFields.joinN().shift(2).trim}
            |}
            |
-           |${memberTrees.map(_.defn).toList.joinNN()}""".stripMargin,
+           |${memberTrees.map(_.defn).toList.joinNN()}""".stripMargin
+
+      DefnRepr(
+        prependDocs(defn.docs, sealedClass),
         memberTrees.toList.flatMap(_.codecs),
       )
     }
@@ -484,8 +499,9 @@ object DtDefnTranslator {
     ): DefnRepr = {
       val methods = contract.fields.map {
         f =>
-          val t = trans.asDtRef(f.tpe, domain, evo)
-          q"$t get ${f.name.name};"
+          val t        = trans.asDtRef(f.tpe, domain, evo)
+          val methodEx = q"$t get ${f.name.name};"
+          prependDocs(f.docs, methodEx)
       }
       val contractParents  = contract.contracts.map(c => trans.toDtTypeRefKeepForeigns(c, domain, evo))
       val parents          = (contractParents :+ genMarker).distinct
@@ -507,19 +523,20 @@ object DtDefnTranslator {
       val service = defn.defn.asInstanceOf[Typedef.Service]
       val methods = service.methods.map {
         m =>
-          val in     = trans.asDtRef(m.sig, domain, evo)
-          val out    = m.out.map(trans.asDtRef(_, domain, evo))
-          val retStr = out.map(o => q"$o").getOrElse(q"void")
-          q"$retStr ${m.name.name}($in arg);"
+          val in      = trans.asDtRef(m.sig, domain, evo)
+          val out     = m.out.map(trans.asDtRef(_, domain, evo))
+          val retStr  = out.map(o => q"$o").getOrElse(q"void")
+          val methodEx = q"$retStr ${m.name.name}($in arg);"
+          prependDocs(m.docs, methodEx)
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
 
-      DefnRepr(
+      val serviceTree =
         q"""abstract class ${name.asName} {
            |  ${body.shift(2).trim}
-           |}""".stripMargin,
-        Nil,
-      )
+           |}""".stripMargin
+
+      DefnRepr(prependDocs(defn.docs, serviceTree), Nil)
     }
 
     // ----- Identifier toString + parseRepr emission (PR-57d) -----
