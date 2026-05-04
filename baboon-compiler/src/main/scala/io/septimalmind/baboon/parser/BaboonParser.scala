@@ -48,7 +48,16 @@ object BaboonParser {
           }
 
         case failure: Parsed.Failure =>
-          F.fail(NEList(ParserIssue.ParserFailed(failure, input.path)))
+          // Stacked-doc detection (PR-30.2) sets a side-channel on the
+          // ParserContext just before failing the parse. Surface it as a
+          // typed `StackedDocComments(pos)` instead of a generic
+          // `ParserFailed`.
+          context.stackedDocAt match {
+            case Some(pos) =>
+              F.fail(NEList(ParserIssue.StackedDocComments(pos)))
+            case None =>
+              F.fail(NEList(ParserIssue.ParserFailed(failure, input.path)))
+          }
       }
     }
 
@@ -74,8 +83,12 @@ object BaboonParser {
                       sub ++ value.defs
                     }
                   case failure: Parsed.Failure =>
-                    F.fail(NEList(ParserIssue.ParserFailed(failure, context.file)))
-
+                    context.stackedDocAt match {
+                      case Some(pos) =>
+                        F.fail(NEList(ParserIssue.StackedDocComments(pos)))
+                      case None =>
+                        F.fail(NEList(ParserIssue.ParserFailed(failure, context.file)))
+                    }
                 }
 
               case None =>

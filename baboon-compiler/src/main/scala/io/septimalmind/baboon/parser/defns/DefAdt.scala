@@ -24,7 +24,7 @@ class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto, defContract:
 
   /** `+ ref` — include the referenced ADT or branch; All-vs-Branch resolution deferred to PR-63. */
   def adtIncludeDef[$: P]: P[RawAdtMember.Include] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(meta.withMeta("+" ~ defDto.nonGenericTypeRef)).map {
       case (m, ref) => RawAdtMember.Include(ref, m)
     }
@@ -32,7 +32,7 @@ class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto, defContract:
 
   /** `- ref` — exclude the referenced ADT or branch; All-vs-Branch resolution deferred to PR-63. */
   def adtExcludeDef[$: P]: P[RawAdtMember.Exclude] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(meta.withMeta("-" ~ defDto.nonGenericTypeRef)).map {
       case (m, ref) => RawAdtMember.Exclude(ref, m)
     }
@@ -40,14 +40,14 @@ class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto, defContract:
 
   /** `^ ref` — intersect this ADT's branch set with the referenced ADT; deferred to PR-63. */
   def adtIntersectDef[$: P]: P[RawAdtMember.Intersect] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(meta.withMeta("^" ~ defDto.nonGenericTypeRef)).map {
       case (m, ref) => RawAdtMember.Intersect(ref, m)
     }
   }
 
   def adt[$: P]: P[Seq[Either[ContractRef, RawAdtMember]]] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(
       (adtIncludeDef | adtExcludeDef | adtIntersectDef | adtMember | adtMemberContract)
         .map(m => Right(m)) | defDto.extendedContractRef.map(ref => Left(ref))
@@ -55,7 +55,7 @@ class DefAdt(context: ParserContext, meta: DefMeta, defDto: DefDto, defContract:
   }
 
   def adtEnclosed[$: P]: P[RawAdt] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(meta.member(kw.adt, defDto.templateHead.? ~ meta.derived ~ struct.enclosed(adt))).map {
       case (meta, name, (tps, derived, members)) =>
         val typeMembers     = members.collect { case Right(m) => m }

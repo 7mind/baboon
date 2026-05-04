@@ -84,6 +84,8 @@ class WorkspaceState(
             Some(InputPointer.JustFile(path))
           case io.septimalmind.baboon.parser.model.issues.ParserIssue.IncludeNotFound(path) =>
             Some(InputPointer.JustFile(FSPath.parse(izumi.fundamentals.collections.nonempty.NEString.unsafeFrom(path))))
+          case io.septimalmind.baboon.parser.model.issues.ParserIssue.StackedDocComments(pos) =>
+            Some(pos)
         }
       case BaboonIssue.Typer(ti) =>
         extractTyperIssuePointer(ti)
@@ -209,6 +211,8 @@ class WorkspaceState(
         (Some(path.asString), s"Parse error: ${error.msg}")
       case BaboonIssue.Parser(IncludeNotFound(path)) =>
         (None, s"Include not found: $path")
+      case BaboonIssue.Parser(StackedDocComments(pos)) =>
+        (extractLocation(pos), "Stacked prefix doc comments — merge into a single `/** … */` block per declaration.")
 
       case BaboonIssue.Typer(ti) =>
         ti match {

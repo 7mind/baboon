@@ -3,7 +3,7 @@ package io.septimalmind.baboon.parser.defns.base
 import fastparse.*
 
 trait Structs {
-  import fastparse.ScalaWhitespace.whitespace
+  import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
 
   def enclosed[T](defparser: => P[T])(implicit v: P[?]): P[T] = {
     P(inCurlyBraces(defparser) | inBraces(defparser))

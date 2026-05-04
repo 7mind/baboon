@@ -15,7 +15,7 @@ class DefService(
 ) {
   Quirks.discard(context)
   def service[$: P]: P[RawService] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(meta.member(kw.service, dto.templateHead.? ~ struct.enclosed(methods))).map {
       case (meta, name, (tps, members)) =>
         RawService(RawTypeName(name), members, meta, tps.getOrElse(Nil))
@@ -23,12 +23,12 @@ class DefService(
   }
 
   def methods[$: P]: P[Seq[RawFunc]] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(method.rep())
   }
 
   def method[$: P]: P[RawFunc] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(meta.member("def", shorthandSig | struct.enclosed(sigpart.rep()))).map {
       case (meta, name, member) =>
         RawFunc(name, member, meta)
@@ -40,7 +40,7 @@ class DefService(
   }
 
   def shorthandSig[$: P]: P[Seq[RawFuncArg]] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     ("(" ~ shorthandRef("in") ~ ")" ~ ":" ~ shorthandRef("out") ~ ("!!" ~ shorthandRef("err")).?).map {
       case (in, out, errOpt) =>
         Seq(in, out) ++ errOpt.toSeq
@@ -54,7 +54,7 @@ class DefService(
   }
 
   def sigstruct[$: P]: P[RawFuncArg.Ref] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
 
     meta.withMeta(marker ~ "=" ~ dto.typeRef).map {
       case (meta, (marker, ref)) =>

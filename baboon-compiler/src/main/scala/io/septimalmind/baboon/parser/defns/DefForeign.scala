@@ -9,7 +9,7 @@ import scala.annotation.unused
 
 class DefForeign(@unused context: ParserContext, meta: DefMeta, defDto: DefDto) {
   def kvPair[$: P]: P[RawForeignEntryAttr] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     (Literals.Literals.SimpleStr ~ "=" ~ Literals.Literals.SimpleStr).map {
       case (k, v) =>
         RawForeignEntryAttr(k, v)
@@ -17,7 +17,7 @@ class DefForeign(@unused context: ParserContext, meta: DefMeta, defDto: DefDto) 
   }
 
   def foreignAttrs[$: P]: P[RawForeignEntryAttrs] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     (P("with") ~ "{" ~ kvPair.rep() ~ "}").map {
       a =>
         RawForeignEntryAttrs(a.toList)
@@ -25,7 +25,7 @@ class DefForeign(@unused context: ParserContext, meta: DefMeta, defDto: DefDto) 
   }
 
   def customForeignDecl[$: P]: P[RawForeignDecl.Custom] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     (Literals.Literals.SimpleStr ~ foreignAttrs.?).map {
       case (tpe, attrs) =>
         RawForeignDecl.Custom(tpe, attrs.getOrElse(RawForeignEntryAttrs.empty))
@@ -37,7 +37,7 @@ class DefForeign(@unused context: ParserContext, meta: DefMeta, defDto: DefDto) 
   }
 
   def foreignMember[$: P]: P[RawForeignEntry] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     (idt.symbol ~ "=" ~ (customForeignDecl | baboonRefDecl)).map {
       case (lang, decl) =>
         RawForeignEntry(lang, decl)
@@ -45,12 +45,12 @@ class DefForeign(@unused context: ParserContext, meta: DefMeta, defDto: DefDto) 
   }
 
   def foreign[$: P]: P[Seq[RawForeignEntry]] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(foreignMember.rep())
   }
 
   def foreignEnclosed[$: P]: P[RawForeign] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(meta.member(kw.foreign, meta.derived ~ struct.enclosed(foreign))).map {
       case (meta, name, (derived, members)) =>
         model.RawForeign(RawTypeName(name), members.toList, derived, meta)

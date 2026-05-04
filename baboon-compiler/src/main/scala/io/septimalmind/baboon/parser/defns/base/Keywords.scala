@@ -38,7 +38,7 @@ trait Keywords {
   def `type`[$: P]: P[Unit]     = kw("type")
 
   def apply[T](kw: => P[Unit], defparser: => P[T])(implicit v: P[?]): P[T] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(kw ~/ defparser)
   }
 }

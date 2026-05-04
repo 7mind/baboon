@@ -2,13 +2,13 @@ package io.septimalmind.baboon.parser.defns
 
 import fastparse.*
 import io.septimalmind.baboon.parser.{ParserContext, model}
-import io.septimalmind.baboon.parser.defns.base.{idt, kw, struct}
+import io.septimalmind.baboon.parser.defns.base.{DefDocs, idt, kw, struct}
 import io.septimalmind.baboon.parser.model.RawDtoMember.ContractRef
-import io.septimalmind.baboon.parser.model.{RawContractRef, RawDto, RawDtoMember, RawField, RawFieldName, RawIdentifier, RawTypeName, RawTypeRef, ScopedRef}
+import io.septimalmind.baboon.parser.model.{RawContractRef, RawDocComment, RawDocs, RawDto, RawDtoMember, RawField, RawFieldName, RawIdentifier, RawTypeName, RawTypeRef, ScopedRef}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.language.Quirks.Discarder
 
-class DefDto(context: ParserContext, meta: DefMeta) {
+class DefDto(context: ParserContext, meta: DefMeta, docs: DefDocs) {
   context.discard()
 
   def typeParams[$: P]: P[NEList[RawTypeRef]] = {
@@ -93,7 +93,7 @@ class DefDto(context: ParserContext, meta: DefMeta) {
     idt.symbol.map(name => RawFieldName(name))
 
   def contractDef[$: P]: P[RawContractRef] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     ("is" ~ nonGenericTypeRef).map { case t => model.RawContractRef(t) }
   }
 
@@ -104,39 +104,59 @@ class DefDto(context: ParserContext, meta: DefMeta) {
   }
 
   private def fieldWas[$: P]: P[RawFieldName] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     kw.was ~ fieldName
   }
 
   def fieldDef[$: P]: P[RawField] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     (fieldName ~ ":" ~ typeRef ~ fieldWas.?).map { case (n, t, prev) => model.RawField(n, t, prev) }
   }
 
   def parentDef[$: P]: P[ScopedRef] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     "+" ~ nonGenericTypeRef
   }
 
   def unparentDef[$: P]: P[ScopedRef] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     "-" ~ nonGenericTypeRef
   }
 
   def intersectionDef[$: P]: P[ScopedRef] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     "^" ~ nonGenericTypeRef
   }
 
   def unfieldDef[$: P]: P[RawField] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     "-" ~ fieldDef
   }
 
-  def dtoMember[$: P]: P[RawDtoMember] =
-    P(meta.withMeta(fieldDef)).map {
-      case (meta, field) =>
-        model.RawDtoMember.FieldDef(field, meta)
+  // Field-definition branch with optional postfix `//!` doc capture.
+  //
+  // The connection between `fieldDef` and `suffixDoc` runs under `NoWhitespace`
+  // so that no NLC can be consumed between the field's last token and the `//!`
+  // marker -- otherwise `BaboonWhitespace` (which eats `\n`) would let a
+  // freestanding `//!` on the next line silently bind to the previous field.
+  // `suffixDoc` itself consumes a leading run of `[ \t]*` before the marker.
+  // [PR-30.2-D01].
+  private def fieldDefWithSuffix[$: P]: P[(RawField, Option[RawDocComment])] = {
+    import fastparse.NoWhitespace.noWhitespaceImplicit
+    noWhitespaceImplicit.discard()
+    P(fieldDef ~ docs.suffixDoc)
+  }
+
+  def dtoMember[$: P]: P[RawDtoMember] = {
+    // No `~` operators are composed directly inside this body -- each branch's
+    // whitespace contract is managed by its own helper (`fieldDefWithSuffix`,
+    // `parentDef`, `meta.withMeta(...)`, etc.). The `|` alternation operator
+    // does not consume whitespace, so no implicit Whitespace import is needed
+    // at this scope.
+    P(meta.withMeta(fieldDefWithSuffix)).map {
+      case (m, (field, suffix)) =>
+        val merged = m.copy(docs = RawDocs(m.docs.prefix, suffix))
+        model.RawDtoMember.FieldDef(field, merged)
     } | P(meta.withMeta(parentDef)).map {
       case (meta, parent) =>
         model.RawDtoMember.ParentDef(parent, meta)
@@ -150,14 +170,15 @@ class DefDto(context: ParserContext, meta: DefMeta) {
       case (meta, parent) =>
         model.RawDtoMember.IntersectionDef(parent, meta)
     } | extendedContractRef
+  }
 
   def dto[$: P]: P[Seq[RawDtoMember]] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(dtoMember.rep())
   }
 
   def dtoEnclosed[$: P]: P[RawDto] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(meta.member(kw.data, templateHead.? ~ meta.derived ~ struct.enclosed(dto))).map {
       case (meta, name, (tps, derived, members)) =>
         RawDto(RawTypeName(name), members, derived, meta, tps.getOrElse(Nil))
@@ -165,7 +186,7 @@ class DefDto(context: ParserContext, meta: DefMeta) {
   }
 
   def identifierEnclosed[$: P]: P[RawIdentifier] = {
-    import fastparse.ScalaWhitespace.whitespace
+    import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
     P(meta.member(kw.identifier, meta.derived ~ struct.enclosed(dto))).map {
       case (meta, name, (derived, members)) => RawIdentifier(RawTypeName(name), members, derived, meta)
     }
