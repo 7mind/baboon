@@ -1534,6 +1534,7 @@ object BaboonJS {
       case _: TodoTyperIssue                                    => None
       case InvalidRtMapping(_, _, meta)                         => Some(meta.pos)
       case DuplicateTypeParam(_, _, meta)                       => Some(meta.pos)
+      case DuplicateTemplateName(_, _, meta)                    => Some(meta.pos)
       case TemplateArityMismatch(_, _, _, _, meta)              => Some(meta.pos)
       case TemplateInstantiationInForbiddenPosition(_, _, meta) => Some(meta.pos)
       case TemplateNotInstantiated(_, _, meta)                  => Some(meta.pos)

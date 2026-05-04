@@ -1,7 +1,7 @@
 package io.septimalmind.baboon.tests
 
 import io.septimalmind.baboon.parser.BaboonParser
-import io.septimalmind.baboon.parser.model.{FSPath, RawTypeName}
+import io.septimalmind.baboon.parser.model.{FSPath, InputPointer, RawTypeName}
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TyperIssue}
 import io.septimalmind.baboon.tests.BaboonTest.BaboonTestModule
 import io.septimalmind.baboon.typer.BaboonTyper
@@ -157,6 +157,40 @@ abstract class TemplateRegistryBuilderTestBase[F[+_, +_]: Error2: TagKK: BaboonT
       |}
       |""".stripMargin
 
+  /** Two top-level templates with the same name — triggers DuplicateTemplateName (PR-29.4-D04). */
+  private val duplicateTemplateNameTopLevel: String =
+    """model template.registry.dup
+      |
+      |version "1.0.0"
+      |
+      |data X[T] {
+      |  f: T
+      |}
+      |
+      |data X[U] {
+      |  g: U
+      |}
+      |""".stripMargin
+
+  /** Two templates with the same name inside the same `ns foo { … }` block. */
+  private val duplicateTemplateNameInNs: String =
+    """model template.registry.dup.ns
+      |
+      |version "1.0.0"
+      |
+      |ns foo {
+      |  data X[T] {
+      |    f: T
+      |  }
+      |  data X[U] {
+      |    g: U
+      |  }
+      |  root data Anchor {
+      |    v: i32
+      |  }
+      |}
+      |""".stripMargin
+
   /** A top-level single-template domain used for registry contents inspection. */
   private val singleTemplateDomain: String =
     """model template.registry.test
@@ -166,6 +200,61 @@ abstract class TemplateRegistryBuilderTestBase[F[+_, +_]: Error2: TagKK: BaboonT
       |data X[T] {
       |  f: i32
       |}
+      |""".stripMargin
+
+  /** Two templates named X in *different* namespaces — must NOT trigger DuplicateTemplateName.
+    * The template registry uses (pkg, owner, name) as key, so cross-namespace entries are distinct.
+    * Each namespace has a non-template anchor so neither namespace becomes empty after template excision
+    * (an empty namespace after excision triggers ScopeCannotBeEmpty, not DuplicateTemplateName).
+    * The root data Anchor in ns b gives the domain at least one root for type-checking.
+    */
+  private val crossNamespacesSameNameTemplateDomain: String =
+    """model template.registry.crossns
+      |
+      |version "1.0.0"
+      |
+      |ns a { data X[T] { f: T } data AnchorA { x: i32 } }
+      |ns b { data X[U] { g: U } root data Anchor { x: i32 } }
+      |""".stripMargin
+
+  /** Three top-level templates with the same name — the implementation reports one
+    * DuplicateTemplateName per duplicate group (not one per extra duplicate after the first).
+    * The second `data X` is marked for easy line counting.
+    */
+  private val triplicateTemplateNameTopLevel: String =
+    """model template.registry.dup3
+      |
+      |version "1.0.0"
+      |
+      |data X[T] { f: T }
+      |data X[U] { g: U }
+      |data X[V] { h: V }
+      |""".stripMargin
+
+  /** Two templates with the same name inside a two-level nested namespace `ns a { ns b { … } }`.
+    * Verifies that multi-segment paths are formatted as "a.b".
+    * An anchor is included so the domain has at least one root.
+    */
+  private val duplicateTemplateNameNestedNs: String =
+    """model template.registry.dup.nested.ns
+      |
+      |version "1.0.0"
+      |
+      |ns a { ns b { data X[T] { f: T } data X[U] { g: U } root data Anchor { x: i32 } } }
+      |""".stripMargin
+
+  /** A template X[T] and a non-template `data X { f: i32 }` coexist.
+    * The template is excised by TemplateRegistryBuilder; the non-template goes to ScopeBuilder.
+    * Whatever ScopeBuilder does about the name collision is separate — this fixture asserts
+    * only that no DuplicateTemplateName issue fires (the two code paths are independent).
+    */
+  private val templateAndNonTemplateSameNameDomain: String =
+    """model template.registry.mixed.nontemplate
+      |
+      |version "1.0.0"
+      |
+      |data X[T] { f: T }
+      |root data X { f: i32 }
       |""".stripMargin
 
   // ─── tests ────────────────────────────────────────────────────────────────────
@@ -288,6 +377,107 @@ abstract class TemplateRegistryBuilderTestBase[F[+_, +_]: Error2: TagKK: BaboonT
           assert(
             nsUserNames.contains("Y"),
             s"non-template Y under namespace foo must appear in Domain.defs.meta.nodes, but found: $nsUserNames",
+          )
+        }
+    }
+
+    "produce DuplicateTemplateName for two sibling top-level templates with the same name (PR-29.4-D04)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, duplicateTemplateNameTopLevel)
+        } yield {
+          val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val dupIssue = typerIssues(issues).collectFirst { case d: TyperIssue.DuplicateTemplateName => d }
+            .getOrElse(throw new AssertionError(s"no DuplicateTemplateName in: ${typerIssues(issues)}"))
+          assert(dupIssue.name == "X", s"expected name 'X', got '${dupIssue.name}'")
+          assert(dupIssue.ownerName == "<toplevel>", s"expected ownerName '<toplevel>', got '${dupIssue.ownerName}'")
+          // The second `data X[U]` in duplicateTemplateNameTopLevel is on line 9 (1-based).
+          // Pin the source position to catch regressions where the meta targets the wrong definition.
+          // InputPointer.ComparisonHack overrides equals to class-identity only, so we pattern-match
+          // rather than using ==.
+          val secondXLine = 9
+          dupIssue.meta.pos match {
+            case full: InputPointer.Full =>
+              assert(
+                full.start.line == secondXLine,
+                s"expected meta.pos.start.line == $secondXLine (second data X), got ${full.start.line}",
+              )
+            case other =>
+              throw new AssertionError(s"expected InputPointer.Full for meta.pos, got: $other")
+          }
+        }
+    }
+
+    "produce DuplicateTemplateName for two sibling templates inside the same namespace (PR-29.4-D04)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, duplicateTemplateNameInNs)
+        } yield {
+          val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val dupIssue = typerIssues(issues).collectFirst { case d: TyperIssue.DuplicateTemplateName => d }
+            .getOrElse(throw new AssertionError(s"no DuplicateTemplateName in: ${typerIssues(issues)}"))
+          assert(dupIssue.name == "X", s"expected name 'X', got '${dupIssue.name}'")
+          assert(dupIssue.ownerName == "foo", s"expected ownerName 'foo', got '${dupIssue.ownerName}'")
+        }
+    }
+
+    // D01: cross-namespace same-name templates must NOT fire DuplicateTemplateName
+    "not produce DuplicateTemplateName for same-name templates in distinct namespaces (cross-ns negative control)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, crossNamespacesSameNameTemplateDomain)
+        } yield {
+          // The typer fails fast on DuplicateTemplateName, so a Right(Domain) outcome implies none fired.
+          assert(outcome.isRight, s"expected typer to succeed for cross-namespace same-name templates, got: $outcome")
+        }
+    }
+
+    // D03: 3+ duplicates — exactly ONE DuplicateTemplateName per group (not one per extra duplicate)
+    "produce exactly one DuplicateTemplateName for three sibling templates with the same name" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, triplicateTemplateNameTopLevel)
+        } yield {
+          val issues    = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val dupIssues = typerIssues(issues).collect { case d: TyperIssue.DuplicateTemplateName => d }
+          assert(
+            dupIssues.size == 1,
+            s"expected exactly 1 DuplicateTemplateName for 3-way duplicate, got ${dupIssues.size}: $dupIssues",
+          )
+          assert(dupIssues.head.name == "X", s"expected name 'X', got '${dupIssues.head.name}'")
+        }
+    }
+
+    // D04: multi-segment ns path — ownerName must be "a.b" (dot-joined)
+    "produce DuplicateTemplateName with ownerName 'a.b' for duplicate templates inside a two-level nested namespace" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, duplicateTemplateNameNestedNs)
+        } yield {
+          val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val dupIssue = typerIssues(issues).collectFirst { case d: TyperIssue.DuplicateTemplateName => d }
+            .getOrElse(throw new AssertionError(s"no DuplicateTemplateName in: ${typerIssues(issues)}"))
+          assert(dupIssue.name == "X", s"expected name 'X', got '${dupIssue.name}'")
+          assert(dupIssue.ownerName == "a.b", s"expected ownerName 'a.b', got '${dupIssue.ownerName}'")
+        }
+    }
+
+    // D05: template X[T] and non-template `data X { … }` coexist — no DuplicateTemplateName
+    "not produce DuplicateTemplateName when a template and a non-template share the same name" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, templateAndNonTemplateSameNameDomain)
+        } yield {
+          // The template is excised by TemplateRegistryBuilder; the non-template goes to ScopeBuilder.
+          // Whatever ScopeBuilder does about the collision is a separate concern.
+          // This assertion is ONLY about the absence of DuplicateTemplateName.
+          val dupTemplateIssues = outcome match {
+            case Right(_)    => Nil
+            case Left(errs)  => typerIssues(errs).collect { case d: TyperIssue.DuplicateTemplateName => d }
+          }
+          assert(
+            dupTemplateIssues.isEmpty,
+            s"expected no DuplicateTemplateName issues, got: $dupTemplateIssues",
           )
         }
     }

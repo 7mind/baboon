@@ -162,6 +162,12 @@ object TyperIssue {
     */
   case class DuplicateTypeParam(name: String, ownerName: String, meta: RawNodeMeta) extends TyperIssue
 
+  /** Two sibling templates at the same namespace level share the same name (PR-29.4-D04).
+    * `name` is the template name; `ownerName` is `"<toplevel>"` or the dot-joined namespace path.
+    * `meta` is the meta of the second (dropped) definition.
+    */
+  case class DuplicateTemplateName(name: String, ownerName: String, meta: RawNodeMeta) extends TyperIssue
+
   /** Arity mismatch at a template instantiation site (negative-test matrix #3):
     * the number of type arguments does not equal the number of type parameters
     * declared on the template.
@@ -664,6 +670,13 @@ object TyperIssue {
     (issue: DuplicateTypeParam) => {
       s"""${extractLocation(issue.meta)}
          |Template '${issue.ownerName}' declares duplicate type parameter '${issue.name}'
+         |""".stripMargin
+    }
+
+  implicit val duplicateTemplateNamePrinter: IssuePrinter[DuplicateTemplateName] =
+    (issue: DuplicateTemplateName) => {
+      s"""${extractLocation(issue.meta)}
+         |Duplicate template name '${issue.name}' at owner '${issue.ownerName}'
          |""".stripMargin
     }
 

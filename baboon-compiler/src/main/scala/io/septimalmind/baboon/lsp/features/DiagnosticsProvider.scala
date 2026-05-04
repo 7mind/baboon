@@ -105,6 +105,7 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
       case ServiceMultipleInputs(svc, method, _, meta)  => (Some(meta), s"Multiple inputs in $svc.$method")
       case ServiceMultipleErrors(svc, method, _, meta)  => (Some(meta), s"Multiple errors in $svc.$method")
       case DuplicateTypeParam(name, ownerName, meta)    => (Some(meta), s"Duplicate type parameter '$name' in template '$ownerName'")
+      case DuplicateTemplateName(name, ownerName, meta) => (Some(meta), s"Duplicate template name '$name' at owner '$ownerName'")
       case TemplateArityMismatch(tname, alias, exp, act, meta) =>
         (Some(meta), s"Template '$tname' instantiated in alias '$alias' with wrong arity: expected $exp, got $act")
       case TemplateInstantiationInForbiddenPosition(containingName, instName, meta) =>
