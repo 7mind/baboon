@@ -178,12 +178,13 @@ Domain → backends               ← each backend's *DefnTranslator emits
     `DefForeign.scala`, `DefModel.scala` — verify each `meta.member`
     site picks up prefix docs without further change.
 - Tests (new parser unit tests): prefix `/** */`; multi-line
-  `/** \n * x \n */`; multiple stacked prefix docs accumulate in order;
-  suffix `//!` on a field; suffix `//!` followed by another field on
-  the next line does NOT bind to the next field; plain `//` and
-  `/* */` comments NOT captured; doc on a line by itself between two
+  `/** \n * x \n */`; **stacked prefix `/** … */ /** … */` blocks
+  produce `ParserIssue.StackedDocComments`** (per Q3 lock); suffix
+  `//!` on a field; suffix `//!` followed by another field on the next
+  line does NOT bind to the next field; plain `//` and `/* */`
+  comments NOT captured; doc on a line by itself between two
   declarations binds to the **following** declaration; empty `/***/`
-  edge case (decision in spec).
+  edge case (decision pending Q4c).
 - Success: `mdl :build :test` green; existing parser tests unchanged;
   no fixture md5 churn.
 - Dependencies: PR-30.1.
@@ -244,14 +245,21 @@ Domain → backends               ← each backend's *DefnTranslator emits
 
 ### PR-30.6 — Backend: Python
 
-- Goal: triple-quoted docstrings per decision (5).
-- Touch: `translator/python/PyDefnTranslator.scala`. Class-level / method
-  -level: `"""…"""` as first statement. Field-level: PEP-257 attribute
-  docstring as separate string literal after the assignment, OR
-  `__doc__`-style depending on existing emitter shape — verify by
-  reading `PyDefnTranslator.scala` first.
+- Goal: triple-quoted class/method docstrings per Q2 lock; field docs
+  folded into the class docstring as a Google/Sphinx `Attributes:`
+  section keyed by field name.
+- Touch: `translator/python/PyDefnTranslator.scala`. Class-level /
+  method-level: `"""…"""` as first statement. Field-level: NO per-
+  field statement; the class docstring renderer composes
+  `class_doc + "\n\nAttributes:\n    {name}: {field_doc}\n…"` from the
+  parent class's `Docs` plus each `Field.docs`. ADT arms inherit the
+  same shape: each arm class folds its own field docs into its arm
+  docstring.
 - Risk: `"""` escaping when docs contain triple-quote — replace with
-  `\"\"\"`.
+  `\"\"\"`. Indentation alignment of multi-paragraph field docs inside
+  the `Attributes:` section: continuation lines indent by 8 spaces
+  (4 for `Attributes:` block + 4 for continuation) per Sphinx/Google
+  convention.
 
 ### PR-30.7 — Backend: Rust
 
@@ -357,19 +365,42 @@ Domain → backends               ← each backend's *DefnTranslator emits
    a backend needs a doc-formatting helper, prefer codegen-side
    formatting over a runtime helper.
 
-## 6. Open questions blocking PR-30.1
+## 6. Locked answers (user 2026-05-04)
 
-1. **Template doc propagation** — confirm decision (4): alias-level
-   docs override template-type docs; template field-level docs
-   propagate verbatim; template-type docs are the fallback when alias
-   has none.
-2. **Python attribute-docstring convention** — confirm decision (5):
-   PEP-257 separate string-literal after the assignment, vs. an
-   alternative (`# field: docstring` line comment, `__doc__` injection).
-3. **Stacked prefix docs** — confirm decision (8): accumulate as
-   ordered list, emit concatenated with blank line.
-4. **Cleanup-time policy** — confirm decision (9): clean once at
-   typer-stage, backends consume cleaned text + may further escape.
+- **Q1 — template doc propagation.** Type-level doc on the synthesized
+  DTO = **alias doc + blank line + template-type doc**, in that order.
+  Both are emitted when both exist; either alone is emitted when only
+  one exists. Field docs propagate verbatim from the template body
+  (alias declarations have no field docs). This **revises decision (4)**
+  in §2.
+- **Q2 — Python field-doc convention.** Python field docs are folded
+  into the **class-level docstring** as a Sphinx/Google-style
+  `Attributes:` section keyed by field name. Python field-level emission
+  produces NO per-field docstring statement. Class/method docstrings
+  use the standard PEP-257 `"""…"""` first-statement form. This
+  **revises decision (5)** in §2.
+- **Q3 — stacked prefix docs.** Two `/** … */` blocks back-to-back
+  with no declaration between them is a **parser error** —
+  `ParserIssue.StackedDocComments(pos)`. This **revises decision (8)**
+  in §2 and removes "accumulate as `List[RawDocComment]`": prefix docs
+  are at most one block per declaration. Update RawDocs to
+  `prefix: Option[RawDocComment]`. (Suffix `//!` on fields is also at
+  most one — already a single-line form.)
+- **Q4a — cleanup ownership.** Single typer-stage cleanup function
+  `DocFormat.clean(raw: String): String`. `DocComment(raw, cleaned)`
+  carries both. Backends consume `cleaned` and apply per-language
+  escaping (XML for C#, `"""` for Python / GraphQL, HTML for Java).
+- **Q4b — canonical cleaned form.** Strip `/**` and `*/`. For
+  multi-line: compute the common leading whitespace + `*` prefix
+  across interior lines and strip it; preserve paragraph structure by
+  keeping internal blank lines as paragraph separators; collapse
+  leading and trailing blank lines; trim trailing whitespace per line.
+  For postfix `//! …`: strip the `//!` marker and a single optional
+  leading space; result is the trimmed inline text.
+- **Q4c — empty / whitespace-only doc bodies.** Silently drop. No
+  `Docs` is attached to the carrier node. No diagnostic.
+
+## 7. Critical files for implementation
 
 ## 7. Critical files for implementation
 

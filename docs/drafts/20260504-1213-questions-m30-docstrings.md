@@ -138,3 +138,88 @@ each backend cleans on its own.
 Answer:
 
 ---
+
+## Q4-elab: what does "cleanup" actually do?
+
+You asked for elaboration. Q4 is really two questions tangled together:
+*who owns the cleanup logic* (Q4a) and *what does the canonical cleaned
+form look like* (Q4b). Splitting them.
+
+### Q4a: ownership of cleanup logic
+
+**Recommended: A from the original Q4** — one cleanup function in the
+typer (`DocFormat.clean(raw: String): String`), `DocComment(raw,
+cleaned)` carries both, backends consume `cleaned` and apply per-
+language escaping (XML escape for C#, `"""` escape for Python /
+GraphQL, HTML escape for Java). Reasoning: 11 backends × 11 cleanup
+implementations is a guaranteed drift surface; one function tested
+once is the simpler shape.
+
+**Alternative B** — store raw only, each backend cleans inline.
+Picks up flexibility (a backend could choose to preserve `*` prefixes
+verbatim) at the cost of duplicating one ~30-line function 11×.
+
+**Alternative C** — clean at parse time, discard raw. Smaller AST,
+but no recovery if any future tool needs the original spelling.
+
+### Q4b: canonical cleaned form
+
+Given input
+
+```
+/**
+ *  First paragraph.
+ *  Continued.
+ *
+ *  Second paragraph.
+ */
+```
+
+what does `cleaned` contain?
+
+- **Option 1 (recommended)** — strip `/**` and `*/`, strip the common
+  leading-whitespace + `*` prefix on each interior line, normalise
+  trailing whitespace, collapse leading/trailing blank lines, preserve
+  internal blank lines as paragraph separators. Result for the example:
+  ```
+  First paragraph.
+  Continued.
+  
+  Second paragraph.
+  ```
+  This is what Scaladoc / Javadoc / KDoc tools see. Backends that need
+  Javadoc form re-wrap with `*` line prefix at emission time;
+  backends that need raw paragraphs (Python, GraphQL, OpenAPI) consume
+  this directly.
+
+- **Option 2** — strip only `/**` and `*/`, leave interior `*` prefixes
+  intact. Simpler cleanup but every non-Javadoc backend (Python,
+  GraphQL, OpenAPI, Rust `///`, Dart `///`, Swift `///`) has to
+  re-strip on emission — defeating Q4a.
+
+- **Option 3** — strip everything, collapse all whitespace to single
+  spaces. Loses paragraph structure; bad for any backend that respects
+  paragraph breaks.
+
+For postfix `//! …` field comments: cleanup just strips the `//!`
+marker and a single optional leading space. Result is the trimmed
+inline text (no multi-paragraph case for postfix).
+
+### Q4c: what about empty / whitespace-only doc bodies?
+
+- `/** */` and `/**\n*/` and `/**\n* \n*/` — should these (a) be
+  rejected as a parser error (degenerate doc), (b) be silently
+  dropped (no `Docs` attached), or (c) be preserved as an empty doc?
+  Recommended **(b) silently drop** — degenerate but harmless; matches
+  Scaladoc/Javadoc tooling behaviour.
+
+Answer Q4a: A (recommended) — typer-stage cleanup; `DocComment(raw, cleaned)`; backends consume `cleaned` + apply per-language escaping.
+
+Answer Q4b: Option 1 (recommended) — strip `/**` / `*/` and common leading `*` prefix; preserve paragraph breaks via blank lines; collapse leading/trailing blank lines; trim trailing whitespace per line.
+
+Answer Q4c: (b) silently drop empty / whitespace-only doc bodies.
+
+---
+
+
+---

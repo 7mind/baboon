@@ -892,3 +892,101 @@ Closes `[PR-29.5-D04]`, `[PR-29.7-D07]`, `[PR-29.8-D06]`. Adversarial review (ro
 **Location:** `job.md` (untracked → became staged via prior executor working in canonical).
 **Description:** Reviewer noted `job.md` shows `A` in `git status --short`. The brief is not part of the PR.
 **Fix:** Orchestrator unstages before commit.
+
+---
+
+## PR-30.1 — Docstring/comment preservation spec (M30)
+
+Round-1 adversarial review of `docs/spec/docstrings.md` (694 lines).
+Reviewer model: Opus. 2 majors + 4 minors + 2 nits.
+
+## [PR-30.1-D01] §5.5 worked-example output contradicts §5.2 step-3 algorithm by one space
+**Status:** resolved (mitigated; underlying inconsistency tracked as D09 — `*`-only separator line not excluded from prefix computation)
+**Severity:** major
+**Location:** `docs/spec/docstrings.md:300-318` (algorithm) and `docs/spec/docstrings.md:343-365` (worked example).
+**Description:** §5.2 step 3 specifies the strippable common prefix as the regex `\s*\*?\s?` — "any leading whitespace, an optional single `*`, and an optional single trailing space." Applied to the worked-example interior lines ` *  First paragraph.`, ` *  Continued.`, ` *`, ` *  Second paragraph.`, the longest shared prefix matching that regex is ` * ` (space, asterisk, single trailing space). Stripping that prefix from ` *  First paragraph.` leaves ` First paragraph.` (one leading space). Yet the claimed output (lines 360-365) is `First paragraph.` with no leading space. Either the algorithm regex must allow `\s*` after the `*` (multiple trailing spaces, common across all lines), or the worked example is off by one space on every non-blank line.
+**Root cause:** The `\s?` (single optional space) in step 3 is too narrow vs. the Q4b lock, which says "common leading whitespace + `*` prefix" — implying any common whitespace, not capped at one space.
+**Fix:** §5.2 step 3 regex updated to `\s*\*?\s*` at L317–323; §5.5 prose reworded at L370 for two-space prefix. Round-2 review confirmed regex change is correct but discovered the algorithm still does not derive the worked example because the ` *` separator line is not whitespace-only and remains in the prefix-computation set — tracked as D09.
+
+## [PR-30.1-D02] §8.2 undercount: WorkspaceState.scala has TWO ParserIssue match sites, not one
+**Status:** resolved
+**Severity:** major
+**Location:** `docs/spec/docstrings.md:616-636`; cross-source `lsp/state/WorkspaceState.scala:81-87` and `lsp/state/WorkspaceState.scala:208-211`.
+**Description:** §8.2 claims "Three sites … one new arm per file — three arms total across three files." `WorkspaceState.scala` actually contains TWO independent matches over `ParserIssue` (the `extractInputPointer` body at L81-87 and the `formatIssue` body at L207-211). PR-30.2 will need to add `StackedDocComments` arms to BOTH; treating the file as one site risks a partially-applied update that fails CI on the missed match. The "three arms total" arithmetic is wrong by one.
+**Root cause:** Audit performed by counting files, not by counting `match` expressions over the sealed `ParserIssue` hierarchy.
+**Suggested fix:** Update §8.2 to enumerate four sites: DiagnosticsProvider.scala (`convertToDiagnostic`), WorkspaceState.scala (`extractInputPointer`), WorkspaceState.scala (`formatIssue`), BaboonJS.scala (`extractIssuePointer`). Restate as "four arms total across three files."
+**Fix:** §8.2 rewritten at L637–662 to enumerate the four match sites with their enclosing functions; arithmetic restated as "four arms total across three files." Round-2 review confirmed.
+
+## [PR-30.1-D03] Spec narrows Q4b scope by inserting `\s?` cap not present in the user's lock
+**Status:** resolved (resolved by D01 edit — same textual change to `\s*\*?\s*`)
+**Severity:** minor
+**Location:** `docs/spec/docstrings.md:300-308`; cross-source `docs/drafts/20260504-1213-questions-m30-docstrings.md:218`.
+**Description:** Q4b lock says "strip `/**` / `*/` and common leading `*` prefix; preserve paragraph breaks via blank lines; collapse leading/trailing blank lines; trim trailing whitespace per line." There is no constraint to "an optional **single** trailing space." The spec narrowed the contract by inserting `\s?` (single space cap) into `\s*\*?\s?`. Implementation detail not blessed by the user.
+**Suggested fix:** Match the lock's wording: state "longest common prefix consisting of whitespace, an optional single `*`, and optional further whitespace" (or `\s*\*?\s*`). Same edit as D01.
+
+## [PR-30.1-D04] §8.2 "single touch per file" guidance contradicts D02's two-match reality in WorkspaceState
+**Status:** resolved
+**Severity:** minor
+**Location:** `docs/spec/docstrings.md:631-636`.
+**Description:** "PR-30.2 must update all three sites in a single touch per file" — for WorkspaceState.scala that requires touching two distinct match expressions in one edit. The CLAUDE.md M29 discipline being mirrored ("3-site update pattern") is about touching each *file* once when one file contains many arms; the spec recasts that as one *site*-per-file, which is inconsistent with WorkspaceState.scala's actual shape. Risk of the implementer applying the bundle to one match and missing the other.
+**Suggested fix:** Reword to "PR-30.2 must add the `StackedDocComments` arm to every exhaustive `ParserIssue` match in each of the three files in a single edit per file" — explicitly stating that a file may carry multiple matches.
+**Fix:** §8.2 wording at L652–655 now reads: "Bundle all arms in a single edit per file even when a file carries multiple matches (e.g. `WorkspaceState.scala` contains two such matches)." Round-2 review confirmed.
+
+## [PR-30.1-D05] §3 silent on ADT inheritance arms (`+`, `-`, `^`) as prefix-doc positions
+**Status:** resolved (mitigated; bullet added at L220–225 but introduces unstated "orphan doc" diagnostic — wording polish tracked as D10)
+**Severity:** minor
+**Location:** `docs/spec/docstrings.md:181-218`.
+**Description:** §3.1 enumerates accepted prefix-doc positions; §3.2 enumerates non-positions. Neither mentions ADT inheritance arms (`+ Ref`, `- Ref`, `^ Ref` produced by `DefAdt.adtIncludeDef`/`adtExcludeDef`/`adtIntersectDef`). These pass through `meta.withMeta` and would naturally pick up a prefix doc under PR-30.2's anchored rule. The spec must say whether `/** doc */ + Foo` is accepted (and if so, where the doc lands) or rejected.
+**Suggested fix:** Add an entry to §3.2 stating: "ADT inheritance arms (`+ Ref`, `- Ref`, `^ Ref`) do NOT accept prefix docs. They are not declarations — they are structural composition operators on the parent ADT. A doc above an inheritance arm is rejected at parse time as an orphan doc." (Choice: rejecting matches the principle that docs bind to *declarations*, and inheritance arms have no per-arm carrier in the typed model.)
+**Fix:** Bullet added at §3.2 L220–225. Round-2 review flagged that the executor literally applied the suggested-fix wording ("rejected at parse time as an orphan doc") which implies an unstated `OrphanDoc` `ParserIssue` not declared in §8 — now tracked as D10. The orchestrator's suggested-fix wording was at fault; the executor faithfully applied it.
+
+## [PR-30.1-D06] §3 / §9 silent on plain (non-template) `type` aliases — they don't survive into `domain.defs`
+**Status:** resolved
+**Severity:** minor
+**Location:** `docs/spec/docstrings.md:181-218`, `docs/spec/docstrings.md:640-668`; cross-source `typer/BaboonTyper.scala:39` (`TyperOutput.aliases`).
+**Description:** §3.1 lists `type` aliases as accepting a prefix doc. But plain `type Y = X` aliases are stored in `TyperOutput.aliases`, not lifted into `domain.defs` as `DomainMember.User`. The spec's §6 only addresses *template-instantiation* aliases (where the materialised concrete type carries the merged doc). For a plain alias whose RHS is itself a non-template type, there is no carrier in the typed model and therefore nowhere to attach a `Docs` slot — backends never see it. Open path not surfaced in §3, §6, or §9.
+**Suggested fix:** Add a paragraph (best in §3 or §9) stating: "Plain non-template aliases (`type Y = X` where the RHS is not a template instantiation) do not appear in the typed model as a `DomainMember.User`; a doc on such an alias is silently dropped, since it has no emission carrier. This is consistent with the existing typer behaviour where plain aliases are resolved transparently and never become standalone members."
+**Fix:** Sub-paragraph added at §3.1 L189–196 (the alias bullet) with the exact suggested wording. Round-2 review confirmed.
+
+## [PR-30.1-D07] §10 implementation pointers list HoverProvider.scala under §8.2 audit, but it has no ParserIssue match
+**Status:** resolved
+**Severity:** nit
+**Location:** `docs/spec/docstrings.md:683-686`.
+**Description:** §10 critical-files list cross-references the §8.2 audit but lists `lsp/features/{HoverProvider,DiagnosticsProvider}.scala`. HoverProvider does not perform a `ParserIssue` match (PR-30.14 work). The §8.2 audit list is `DiagnosticsProvider`, `WorkspaceState`, `BaboonJS` — HoverProvider is not part of it. Listing HoverProvider here muddles which files PR-30.2 must touch.
+**Suggested fix:** Drop `HoverProvider` from the §8.2 audit pointer in §10; it belongs to PR-30.14's pointer list, not PR-30.2's.
+**Fix:** §10 pointer split at L712–713: §8.2 audit lists only `DiagnosticsProvider.scala`, `WorkspaceState.scala`, `BaboonJS.scala`; HoverProvider moved to a separate PR-30.14 pointer.
+
+## [PR-30.1-D08] §6.1 alias-doc + template-doc concat lacks worked rendering of the `\n\n` separator
+**Status:** resolved
+**Severity:** nit
+**Location:** `docs/spec/docstrings.md:382-389`, `docs/spec/docstrings.md:430-433`.
+**Description:** §6.1 says "blank line between the two is exactly one `\n\n` in the cleaned form." Worked example at §6.2 line 432 displays `…integers.\n\nPaged-results shape…` as a quoted literal — readers may misread the literal `\n\n` as backslash characters in the cleaned form rather than as the string-escape rendering of a single blank line.
+**Fix:** §6.1 prose at L398–402 replaced inline `"\n\n"` with natural-language description, retaining a parenthetical note about the join. §6.2 worked example at L446–453 now shows the merged doc as a multi-line `text` code block with a visible blank line between paragraphs.
+
+## Round 2 (2026-05-04, Opus reviewer)
+
+Verified D01 resolved-incomplete (became D09); D02-D08 fixed as specified except D05 (became D10). Three new defects below. Verdict: major rework needed.
+
+## [PR-30.1-D09] §5.5 worked example still breaks §5.2 step 3 because the ` *` separator line is non-blank
+**Status:** resolved
+**Severity:** major
+**Location:** `docs/spec/docstrings.md:312-323` (algorithm) and `docs/spec/docstrings.md:356-380` (worked example).
+**Description:** §5.2 step 3 says "longest string of the form `\s*\*?\s*` that is a prefix of every **non-blank** interior line." In the §5.5 worked-example input, the four interior lines are ` *  First paragraph.`, ` *  Continued.`, ` *`, ` *  Second paragraph.`. The line ` *` is not whitespace-only, so it counts as non-blank under any natural reading of "blank". The longest prefix of ` *` matching `\s*\*?\s*` is ` *` (2 chars). The longest *common* prefix matching `\s*\*?\s*` across all four is therefore ` *`, not ` *  ` (4 chars) as the spec claims at line 370. Stripping ` *` from ` *  First paragraph.` leaves `  First paragraph.` (two leading spaces), not `First paragraph.`. Round-1's D01 fix changed `\s?` → `\s*` but the underlying inconsistency survives because the algorithm has no rule that excludes Javadoc-separator lines (lines matching `\s*\*\s*$` only) from prefix computation.
+**Suggested fix:** Extend "blank" in step 3 to mean "matches `\s*\*?\s*$` only" (whitespace-only OR whitespace + optional `*` + optional whitespace, i.e., the conventional Javadoc separator), so that ` *` is excluded from prefix computation and the common prefix for the remaining three non-blank lines is ` *  ` as claimed. After computing, strip the prefix from every line including the ones excluded from computation. Walk the worked example through the revised algorithm to confirm match.
+**Fix:** §5.2 step 3 split into 3a/3b/3c at L318-336. 3a defines content vs separator lines (lines matching `\s*\*?\s*$` end-to-end). 3b excludes separator lines from common-prefix computation, with degenerate case ("no content lines → body empty, falls through to step 5") spelled out. 3c strips the common prefix from every line including separator lines, with explicit "shorter than prefix" handling. §5.5 worked example replaced with a four-line classification table showing `*` separator excluded, common prefix ` *  ` derived, strip applied. Round-3 reviewer verified the algorithm produces the documented output.
+
+## [PR-30.1-D10] §3.2 ADT-arm bullet introduces an unstated "orphan doc" parser diagnostic
+**Status:** resolved
+**Severity:** minor
+**Location:** `docs/spec/docstrings.md:220-225`.
+**Description:** The new §3.2 ADT-inheritance-arm bullet (added by the D05 fix) says "A doc above an inheritance arm is rejected at parse time as an orphan doc." §8 declares M30 introduces a single new parser diagnostic, `StackedDocComments`. There is no `OrphanDoc` parser issue in §8.1, no entry in the §11 PR-origin table, and no description of when/how this rejection produces a diagnostic. The §3.2 preamble at L207-208 permits two outcomes ("either a parser error or a doc that fails to bind to anything") — the ADT-arm bullet should pick one explicitly. If "rejected at parse time" means a new diagnostic, §8 must enumerate it (and the audit count rises from "single new" to "two new"). If it means silent drop, wording should match §3.1's plain-alias treatment.
+**Suggested fix:** Downgrade "rejected at parse time as an orphan doc" to silent drop matching §3.1's plain-alias wording: "A doc above an inheritance arm is silently dropped — the doc has no carrier in the typed model since inheritance arms are resolved structurally and do not appear as standalone members." This avoids introducing a second new `ParserIssue` case and keeps M30's parser-diagnostic surface to the single `StackedDocComments`.
+**Fix:** §3.2 ADT-arm bullet at L220-226 now reads "silently dropped … No parser diagnostic is produced." §8.1 confirms only `StackedDocComments` is introduced; §11 PR-origin table unchanged. Round-3 reviewer verified.
+
+## [PR-30.1-D11] §5.2 step 3 underspecified for "no `*` prefix at all" Javadoc bodies
+**Status:** resolved
+**Severity:** nit
+**Location:** `docs/spec/docstrings.md:312-323`.
+**Description:** §5.5 covers the conventional Javadoc shape with a `*` line prefix. Spec is silent on the algorithm's behaviour for `/**\n  text\n  more\n  */` (no `*` continuation markers — common in TypeScript/Kotlin/Rust-flavoured doc-comment bodies). The literal algorithm handles it correctly (the `*` is optional; the common prefix becomes whitespace-only) but no worked example confirms this.
+**Suggested fix:** Add a one-line note to §5.2 (or a small second worked example after §5.5) confirming that bodies without `*` line prefixes are handled by the same algorithm: the common prefix degenerates to common leading whitespace, the `\*?` term contributes nothing, and the result is lines stripped of common indentation. No algorithm change needed — only a clarifying example.
+**Fix:** Note + worked example added at §5.2 L348-367 covering `*`-free Javadoc bodies. Round-3 reviewer verified the algorithm produces the documented output (common prefix degenerates to two-space leading whitespace; result is lines stripped of indentation).
