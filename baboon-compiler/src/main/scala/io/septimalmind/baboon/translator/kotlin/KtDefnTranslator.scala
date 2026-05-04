@@ -6,7 +6,7 @@ import io.septimalmind.baboon.parser.model.issues.BaboonIssue
 import io.septimalmind.baboon.translator.{ResolvedServiceContext, ServiceContextResolver, ServiceResultResolver}
 import io.septimalmind.baboon.translator.kotlin.KtValue.KtType
 import io.septimalmind.baboon.typer.EnumWireStyle
-import io.septimalmind.baboon.typer.model.*
+import io.septimalmind.baboon.typer.model.{Docs, *}
 import izumi.functional.bio.{Applicative2, F}
 import izumi.fundamentals.collections.nonempty.NEList
 import izumi.fundamentals.platform.strings.TextTree
@@ -214,7 +214,7 @@ object KtDefnTranslator {
           .flatMap(t => t.translate(defn, ktTypeRef, srcRef).toList)
           .map(deprecatePrevious)
 
-      val defnRepr = deprecatePrevious(repr.defn)
+      val defnRepr = prependDocs(defn.docs, deprecatePrevious(repr.defn))
 
       assert(defn.id.pkg == domain.id)
 
@@ -241,6 +241,14 @@ object KtDefnTranslator {
       DefnRepr(content, allRegs)
     }
 
+    /** Prepend a KDoc-style doc comment block before a tree when `docs` is
+      * non-empty. Returns the tree unchanged when `docs` is empty.
+      */
+    private def prependDocs(docs: Docs, tree: TextTree[KtValue]): TextTree[KtValue] = {
+      val block = ktTrees.renderDocs(docs, "")
+      if (block.isEmpty) tree else q"${block}$tree"
+    }
+
     private def makeRepr(
       defn: DomainMember.User,
       name: KtValue.KtType,
@@ -257,9 +265,10 @@ object KtDefnTranslator {
           val contractFieldNames = collectContractFieldNames(dto.contracts)
           val params = dto.fields.map {
             f =>
-              val t      = trans.asKtNullableRef(f.tpe, domain, evo)
-              val prefix = if (contractFieldNames.contains(f.name.name)) "override val" else "val"
-              q"$prefix ${f.name.name}: $t"
+              val t        = trans.asKtNullableRef(f.tpe, domain, evo)
+              val prefix   = if (contractFieldNames.contains(f.name.name)) "override val" else "val"
+              val fieldTree = q"$prefix ${f.name.name}: $t"
+              prependDocs(f.docs, fieldTree)
           }
           val paramsList      = if (params.nonEmpty) params.join(",\n") else q""
           val contractParents = dto.contracts.map(c => trans.toKtTypeRefKeepForeigns(c, domain, evo))
@@ -396,8 +405,9 @@ object KtDefnTranslator {
         case contract: Typedef.Contract =>
           val methods = contract.fields.map {
             f =>
-              val t = trans.asKtNullableRef(f.tpe, domain, evo)
-              q"val ${f.name.name}: $t"
+              val t         = trans.asKtNullableRef(f.tpe, domain, evo)
+              val methodTree = q"val ${f.name.name}: $t"
+              prependDocs(f.docs, methodTree)
           }
           val contractParents = contract.contracts.map(c => trans.toKtTypeRefKeepForeigns(c, domain, evo))
           val parents         = (contractParents :+ genMarker).distinct
@@ -429,8 +439,9 @@ object KtDefnTranslator {
               }
               val outStr = out.map(_.mapRender(ktFqName)).getOrElse("")
               val errStr = err.map(_.mapRender(ktFqName))
-              val retStr = resolved.renderReturnType(outStr, errStr, "Unit")
-              q"fun ${m.name.name}(${ctxParam}arg: $in): $retStr"
+              val retStr   = resolved.renderReturnType(outStr, errStr, "Unit")
+              val methodTree = q"fun ${m.name.name}(${ctxParam}arg: $in): $retStr"
+              prependDocs(m.docs, methodTree)
           }
           val typeParams = Seq(
             resolved.traitTypeParam,

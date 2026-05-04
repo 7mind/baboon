@@ -105,7 +105,7 @@ Detail: `docs/drafts/20260504-1213-m30-docstrings-plan.md`. 15 PRs total: 1 spec
 - [x] **PR-30.6** (2026-05-04, single round — clean) — Python backend emits PEP-257 class/method docstrings with field docs folded into class-level `Attributes:` section per Q2 lock; `"""` → `\"\"\"` escape applied. New `PyTreeTools.{renderClassDocstring,renderMethodDocstring}`; wired into `PyDefnTranslator`. 14 new tests (6 integration + 8 unit). 457/457 full suite; no fixture churn.
 - [x] **PR-30.7** (2026-05-04, single round — clean) — Rust backend emits outer-line `///` doc comments per spec §7.7. Field-suffix `//!` → `///` line BEFORE the field (no `//!` in generated output). New `RsTreeTools.renderDocs`; wired at type/field/method/ADT-branch positions in `RsDefnTranslator`. 6 emission tests; 463/463 full suite; no fixture churn.
 - [x] **PR-30.8** (2026-05-04, single round — clean) — TypeScript backend emits Javadoc-style `/** … */` doc comments per spec §7.4. Field docs attach to getters (idiomatic TypeScript). New `TsTreeTools.renderDocs`; wired in `TsDefnTranslator`. 6 emission tests; 469/469 full suite; no fixture churn.
-- [ ] **PR-30.9** — Backend: Kotlin (incl. KMP) (KDoc; verify emitter sharing).
+- [x] **PR-30.9** (2026-05-04, single round — clean) — Kotlin backend emits KDoc `/** … */` per spec §7.3. **KMP shares the JVM emitter** (`KtBaboonTranslator`/`KtDefnTranslator` shared; `multiplatform` flag controls only runtime library variant). New `KtTreeTools.renderDocs`; wired in `KtDefnTranslator`. 6 emission tests covering both targets; 475/475 full suite; no fixture churn.
 - [ ] **PR-30.10** — Backend: Java (Javadoc; HTML-escape).
 - [ ] **PR-30.11** — Backend: Dart (`///`).
 - [ ] **PR-30.12** — Backend: Swift (`///`).
