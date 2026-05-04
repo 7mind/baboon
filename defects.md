@@ -393,33 +393,33 @@ Verification: `grep -n 'RawTypeRef.Constructor docs/spec/generics.md` no matches
 **Description:** Round-2 reports `mdl :build` PASS — but the `:build` action only runs `sbt baboonJVM/GraalVMNativeImage/packageBin` (JVM-only). CLAUDE.md explicitly warns: "`sbt baboonJVM/compile` is NOT a CI-equivalent check. CI runs `sbt +compile` (cross-build for JVM + Scala.js)." The PyJsonCodecGenerator change adds new pattern matching against `DomainMember.User(_, _: Typedef.Adt, _, _)` and uses `domain.defs.meta.nodes.get(u)`. Imports look fine; should be safe — but unverified.
 **Suggested fix:** Run `nix develop --command sbt --batch baboonJS/compile` (or `mdl :test` which includes cross-build via `sbt +compile`).
 
-## [PR-29.10-D03] Pre-existing-failure claims (KMP column, Python→Kotlin OOM) lack baseline diff verification
-**Status:** open
+## [PR-29.10-D03] Pre-existing-failure claims (KMP column, Python→Kotlin OOM) lack baseline diff verification (DUPLICATE — superseded)
+**Status:** resolved (duplicate ledger entry — see [PR-29.10-D03] above at line 342)
 **Severity:** minor
 **Location:** PR-29.10 verification report.
-**Description:** Executor reports 145/200 acceptance tests passing with three failure categories (Python ADT, Kotlin KMP column, Python→Kotlin OOM) asserted as pre-existing or out-of-scope. Reviewer flagged that no per-fixture row decomposition or baseline diff was provided. User confirmed pre-M29 CI was green, so any failure not present pre-PR-29.10 is a regression. KMP and Python→Kotlin OOM categories need either (a) row-level confirmation that they fire on existing fixtures too (truly pre-existing), or (b) explicit categorisation as M29-introduced regressions requiring fix.
-**Suggested fix:** Capture a pre-PR-29.10 baseline (`git stash` the PR-29.10 changes, run `mdl :test-acceptance`, capture failures, `git stash pop`). Diff failure sets. If KMP or Python→Kotlin OOM fail on existing-fixture rows pre-PR-29.10, they are pre-existing (defer with rationale). If they fail only on m29-ok rows, they are M29-introduced regressions requiring fix.
+**Description:** This is a duplicate ledger entry. The original "open" PR-29.10 round-1 finding remained here when the post-PR-29.10b orchestrator added a second "resolved (deferred — moot)" copy at line 342 instead of updating in place. Both entries reference the same defect.
+**Fix:** PR-29.16 close-out — reconciled. The authoritative entry is the resolved-deferred one above (line 342); this duplicate is marked superseded per the loop's "never delete" rule.
 
-## [PR-29.10-D04] Rust JSON path uses serde_json::to_string (not generated codec) — key ordering may diverge from cross-language source rows
-**Status:** open
+## [PR-29.10-D04] Rust JSON path uses serde_json::to_string (not generated codec) — key ordering may diverge from cross-language source rows (DUPLICATE — superseded)
+**Status:** resolved (duplicate ledger entry — see [PR-29.10-D04] above at line 349, closed by PR-29.13)
 **Severity:** minor
-**Location:** `test/conv-test-rs/src/main.rs:235`.
-**Description:** Rust uses `serde_json::to_string(data)` (raw serde) instead of `M29OkHolder_JsonCodec.encode`. Other backends use the generated `_JsonCodec`. Key ordering will differ. May explain some Rust-as-source acceptance failures.
-**Suggested fix:** Verify whether Rust-as-source rows fail; if yes, route Rust through the generated codec. Existing Rust handling for `AllBasicTypes` uses `to_string_pretty` (line 124) — same inconsistency.
+**Location:** `test/conv-test-rs/src/main.rs` (multiple sites — see authoritative entry above).
+**Description:** Duplicate of the entry at line 349 (which itself was updated by PR-29.13 to closed-by-PR-29.13). Both reference the same Rust-side codec routing defect.
+**Fix:** PR-29.16 close-out — reconciled. The authoritative entry at line 349 carries the PR-29.13 fix details; this duplicate is marked superseded per the loop's "never delete" rule.
 
-## [PR-29.10-D05] Swift `readAndVerifyM29Ok` doesn't roundtrip (only spot-check decode)
-**Status:** open
+## [PR-29.10-D05] Swift `readAndVerifyM29Ok` doesn't roundtrip (only spot-check decode) (DUPLICATE — superseded)
+**Status:** resolved (duplicate ledger entry — see [PR-29.10-D05] above at line 356, closed by PR-29.14)
 **Severity:** minor
-**Location:** `test/conv-test-sw/Sources/CompatMain/main.swift` (`readAndVerifyM29Ok` function).
-**Description:** Other backends re-encode + re-decode + compare; Swift only checks `intPage.total == 3` and that envelope variants are `.ok` and `.err`. A Swift backend that decoded `IntPage(items=[1,2,3], total=3)` as `IntPage(items=[], total=3)` would pass.
-**Suggested fix:** Mirror the Python/C#/Kotlin pattern: re-encode the decoded value and byte-compare against the input.
+**Location:** `test/conv-test-sw/Sources/CompatMain/main.swift` (multiple read-and-verify functions — see authoritative entry above).
+**Description:** Duplicate of the entry at line 356 (which itself was updated by PR-29.14 to closed-by-PR-29.14). Both reference the same Swift-side weak-roundtrip defect.
+**Fix:** PR-29.16 close-out — reconciled. The authoritative entry at line 356 carries the PR-29.14 fix details; this duplicate is marked superseded per the loop's "never delete" rule.
 
-## [PR-29.10-D06] No defects.md entries written by executor for the failure categories
-**Status:** resolved (orchestrator wrote D01-D05 inline)
+## [PR-29.10-D06] No defects.md entries written by executor for the failure categories (DUPLICATE — superseded)
+**Status:** resolved (duplicate ledger entry — see [PR-29.10-D06] above at line 363)
 **Severity:** nit (process)
 **Location:** `defects.md`.
-**Description:** Per established M29 discipline (PR-29.5/29.7/29.8), every reviewer finding lands in defects.md. Executor's report deferred informally without ledger entries.
-**Fix:** Orchestrator wrote D01-D05 inline.
+**Description:** Duplicate of the entry at line 363. Both reference the same process gap (executor not landing defects).
+**Fix:** PR-29.16 close-out — reconciled. The authoritative entry at line 363 carries the resolution; this duplicate is marked superseded per the loop's "never delete" rule.
 
 ---
 
@@ -573,11 +573,11 @@ Verification: `grep -n 'RawTypeRef.Constructor docs/spec/generics.md` no matches
 **Suggested fix:** Add `assert(names.contains("IP"))` (or equivalent) to lock the chain semantics — otherwise a regression that drops aliases-of-aliases passes silently.
 
 ## [PR-29.5-D06] `Domain.templateRegistry` field now write-only after PR-29.5
-**Status:** resolved (deferred — keep for inspection tooling per documented disposition)
+**Status:** resolved (PR-29.16 verify-and-close — confirmed read by HoverProvider, DefinitionProvider, and CompletionProvider)
 **Severity:** minor
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/model/Domain.scala:20`.
-**Description:** PR-29.4 added `Domain.templateRegistry` so PR-29.5 could consume it. PR-29.5 actually consumes the registry IN-PIPELINE (before `Domain` is built). The field is set but not read by any pass.
-**Fix:** Defer; documented as inspection/tooling state. PR-29.8 (LSP polish) may consume the field for hover/completion of template definitions; if not needed there, drop in PR-29.11 (docs catch-up + cleanup).
+**Description:** PR-29.4 added `Domain.templateRegistry` so PR-29.5 could consume it. PR-29.5 actually consumes the registry IN-PIPELINE (before `Domain` is built). The field appeared write-only at PR-29.5's landing point.
+**Fix:** PR-29.16 close-out — verified via grep that the field IS read post-PR-29.8: `HoverProvider.scala` reads it at lines 94, 132, 146 (template lookup for template definitions, type-param lookup, alias-of-template lookup); `DefinitionProvider.scala:91` reads it (go-to-def for templates from alias RHS); `CompletionProvider.scala:241` reads it (template completions in alias-RHS context). PR-29.15's CompletionProvider regex widening additionally exercises the prefix-aware completion path. Field is fully load-bearing; no cleanup needed.
 
 ## [PR-29.5-D07] Namespaced alias targeting namespaced template — coverage gap
 **Status:** resolved (round 2)
