@@ -47,7 +47,16 @@ object TsDefnTranslator {
     tsFileTools: TsFileTools,
     tsDomainTreeTools: TsDomainTreeTools,
     wiringTranslator: TsServiceWiringTranslator,
+    tsTrees: TsTreeTools,
   ) extends TsDefnTranslator[F] {
+
+    /** Prepend a Javadoc-style `/** … */` doc comment block before a tree when
+      * `docs` is non-empty. Returns the tree unchanged when `docs` is empty.
+      */
+    private def prependDocs(docs: Docs, tree: TextTree[TsValue]): TextTree[TsValue] = {
+      val block = tsTrees.renderDocs(docs, "")
+      if (block.isEmpty) tree else q"${block}$tree"
+    }
 
     override def translate(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
       defn.id.owner match {
@@ -115,7 +124,8 @@ object TsDefnTranslator {
 
       val repr = makeRepr(defn, tsTypeRef, isLatestVersion)
 
-      val allDefs = (List(repr.defn) ++ codecTrees).joinNN()
+      val defnWithDocs = prependDocs(defn.docs, repr.defn)
+      val allDefs      = (List(defnWithDocs) ++ codecTrees).joinNN()
 
       DefnRepr(allDefs, Nil)
     }
@@ -256,11 +266,14 @@ object TsDefnTranslator {
           q"private readonly _${name.name}: $tpe;"
       }
 
-      val getters = fieldsNameAndType.map {
-        case (name, tpe) =>
-          q"""public get ${name.name}(): $tpe {
-             |    return this._${name.name};
-             |}""".stripMargin
+      val getters = dto.fields.map {
+        f =>
+          val tpe  = typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)
+          val getter =
+            q"""public get ${f.name.name}(): $tpe {
+               |    return this._${f.name.name};
+               |}""".stripMargin
+          prependDocs(f.docs, getter)
       }
 
       val constrcutorParams = dto.fields.map(f => q"${f.name.name}: ${typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)}").join(", ")
@@ -468,8 +481,9 @@ object TsDefnTranslator {
       val contract = defn.defn.asInstanceOf[Typedef.Contract]
       val methods = contract.fields.map {
         f =>
-          val t = typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)
-          q"readonly ${f.name.name}: $t;"
+          val t      = typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)
+          val member = q"readonly ${f.name.name}: $t;"
+          prependDocs(f.docs, member)
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
       DefnRepr(
@@ -513,7 +527,8 @@ object TsDefnTranslator {
             }
           }
           val retTree: TextTree[TsValue] = if (isAsync) q"Promise<$baseRetTree>" else baseRetTree
-          q"${m.name.name}(${ctxParam}arg: $inType): $retTree;"
+          val methodSig                  = q"${m.name.name}(${ctxParam}arg: $inType): $retTree;"
+          prependDocs(m.docs, methodSig)
       }
       val genericParam = resolvedCtx match {
         case ResolvedServiceContext.AbstractContext(tn, _) => s"<$tn>"

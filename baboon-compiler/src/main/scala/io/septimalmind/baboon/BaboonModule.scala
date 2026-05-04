@@ -206,6 +206,7 @@ class BaboonCommonTsModule[F[+_, +_]: Error2: TagKK] extends ModuleDef {
     })
 
   make[TsFileTools].from[TsFileTools.TsFileToolsImpl]
+  make[TsTreeTools].from[TsTreeTools.TsTreeToolsImpl]
 
   make[TsTypeTranslator]
   makeFactory[TsConversionTranslator.Factory[F]]
