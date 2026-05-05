@@ -851,9 +851,15 @@ object RsDefnTranslator {
               }
           }
           // wrappers is ordered innermost-first; chain .map(|v| Wrapper { field: v })
+          // Emit the full RsType (not .asName) so the import collector in
+          // RsBaboonTranslator.renderTree picks up `use crate::...::Wrapper;` for
+          // intermediate wrappers that are not otherwise referenced as field types
+          // in this file. RsType with fq=false renders as the bare name (see the
+          // mapRender branch on RsValue.RsType in RsBaboonTranslator), so this stays
+          // unqualified at the call site while still registering the import.
           wrappers.foldLeft(parseExpr) {
             case (acc, (fieldSnake, wrapRs)) =>
-              q"$acc.map(|v| ${wrapRs.asName} { $fieldSnake: v })"
+              q"$acc.map(|v| $wrapRs { $fieldSnake: v })"
           }
         }
 
