@@ -88,7 +88,7 @@ questions:
   drifted? (The exact production wire bytes are the source of truth, not the
   proposal text.)
 
-answer: you can access these files,
+answer: you can access these files, in  /tmp/exchange/Baboon. DO not add any project-specific details into this repo.
 
 ## 6. Logger / tracing surface
 
@@ -113,6 +113,8 @@ Number is cleaner; string matches current parse path. Cross-language note: a
 JSON number-vs-string mismatch tends to bite Java/Kotlin Jackson and Swift
 `JSONSerialization` first.
 
+answer: number
+
 ## 8. Backwards-compat: existing baboon-emitted byte-16 streams
 
 If any baboon test fixtures or downstream consumers already have byte-16 streams
@@ -121,6 +123,10 @@ under `test/conv-test*/expected/*` or downstream that depend on byte 16
 specifically? `test/cs-stub/BaboonTests/AnyMetaCodecTests.cs` (per the M32
 commit) tests at byte 16 — those fixtures will need updating in lockstep with
 any byte change.
+
+answer: there is no downstream yet, but there is a problem: our new format supports various forms of metadata
+but our legacy format only supports "all metadata together" - so we still need several versions I guess,
+but we could reconcile version 16 with version 1.
 
 ## 9. Scope of "support proposal format AND new format"
 
@@ -132,3 +138,92 @@ To pin the success criterion: by "support" do you mean
 
 If decode-only, the work is much smaller (one read path). If bidirectional, we
 need a writer path + a context flag to select format.
+
+answer: bidirectional of course
+
+---
+
+# Follow-up questions (Q10–Q14) — after reading reference impl
+
+Dated 2026-05-05, after reading `/tmp/exchange/Baboon/`. The first nine answers
+left ambiguities and the reference revealed semantic gaps. These pin them down.
+
+## Q10. Pin Q2 — "rewrite to what?"
+
+Q2 answer was "it's not hard to rewrite," — incomplete. Q1 says only byte `1`
+is used in production. The natural completion is option (A) "hard unify at byte
+1": rewrite `META_VERSION_1` from `16` → `1` across all 11 runtimes, drop byte
+`16` entirely. The M32 bump becomes a no-op.
+
+Confirm: **(A) byte-1 unification across all 11 runtimes, byte 16 retired**?
+Or did you mean something else?
+
+## Q11. Pin Q8 — "various forms of metadata" at top level?
+
+Q8 mentioned "our new format supports various forms of metadata". I read all
+11 in-tree top-level envelope writers — they all emit the same fixed shape
+(`metaVersion` + `domain` + `version` + optional `minCompat` + `typeIdentifier`),
+identical to proposal/byte 1. So the "various forms of metadata" phrasing
+must refer to one of:
+
+- **(a) field-level `AnyMeta`** envelope (the 6 kinds 0x00..0x07 in
+  `docs/ueba-format.md` §"Any fields") — that's already shipped in 11 backends
+  and is unrelated to the top-level envelope.
+- **(b) a planned future shape for the top-level envelope** that hasn't
+  landed yet (kind-tagged subset of the 4 fields, similar to AnyMeta).
+- **(c) something else.**
+
+Which is it? If (a), there's no top-level "various forms" — your top-level
+envelope today is exactly the proposal's, and Q10=(A) is the right call. If
+(b), I need the spec/sketch so the byte-1↔byte-16 reconciliation can be
+designed in (e.g. byte 1 = "all-fields kind"; byte 16 = "kind-prefix" mode).
+
+## Q12. Forward-compat reader semantics
+
+Reference impl returns `None<BaboonTypeMeta>` on unknown `metaVersion` (both
+bin and JSON). Baboon's `BaboonCodecsFacade.DecodeFromBin` currently THROWS
+`DecoderFailure("Cannot decode binary type meta")` when meta is null
+(`BaboonCodecsFacade.cs:425-426`). JSON path returns `null` (matches
+reference).
+
+Should I:
+- **(A) match reference exactly** — bin path also returns "no envelope"
+  (null/Option.None) for unknown `metaVersion`, callers distinguish "broken"
+  vs "not for me"; **OR**
+- **(B) keep current throwing behaviour on bin** — argument: a binary stream
+  that's not an envelope is a hard error because there's no other way to
+  read it.
+
+Recommendation: (A). Lets future `metaVersion=N` payloads coexist with
+older readers gracefully, matches JSON path, matches reference. Net: one
+fewer exception subclass surfaced to callers on stream-source mismatch.
+
+## Q13. C# `TypeIsAdt` — abstract-base ADTs
+
+Reference: `type.IsAbstract || type.IsInterface`. Baboon C#: `IsInterface`
+only (`baboon-runtime/cs/BaboonTypeMeta.cs:98`). If any user models compile
+abstract-class ADTs (vs interface ADTs), baboon C# will use the concrete
+branch identifier on encode through the parent type instead of the ADT
+identifier — the encoded envelope's `typeIdentifier` will then mis-route
+on decode.
+
+Are abstract-class ADTs a thing in baboon's C# emit, or is `interface` the
+only ADT shape? If abstract is possible, widen baboon to match reference.
+Other backends use structural checks (`isInterface`, `isAbstract`-equivalent,
+or codegen-marker traits) so this is a C#-specific gap.
+
+## Q14. Per-domain facade — naming + flag
+
+Q3 confirmed "generate, add a flag to disable". Concrete proposal:
+
+- Class name template per backend: `Domain<DomainId>Facade` (PascalCase
+  domain identifier with dots stripped). E.g. domain `my.dom` → class
+  `DomainMyDomFacade`. Or do you want a different template?
+- Compiler flag: `--generate-domain-facade=true` (default on). Or do you
+  want it under `--cs-generate-domain-facade` / per-target prefix? The
+  baboon CLI today has both shape (`--generate-json-codecs-by-default`
+  is global; `--cs-write-evolution-dict` is target-prefixed). The
+  facade is target-emitted but conceptually global (every target gets
+  one), so I'd default to global flag.
+
+Confirm name template and flag shape, or override.

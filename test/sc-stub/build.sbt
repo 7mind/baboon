@@ -6,6 +6,12 @@ ThisBuild / organizationName := "example"
 lazy val root = (project in file("."))
   .settings(
     name := "sc-stub",
+    // KeyCodecHostLastWinsSpec mutates a process-global mutable singleton
+    // (`FStr_KeyCodec.instance`) that other suites (e.g. ForeignMapKeyRoundTripSpec)
+    // read concurrently when scalatest runs suites in parallel — observed Windows-only
+    // CI flake at PR-32.2-D01 (2026-05-05). The `after` teardown restores identity but
+    // cannot prevent in-flight reads during the test body. Serialise the stub.
+    Test / parallelExecution := false,
     libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.19" % "test",
 
       libraryDependencies ++=  Seq(

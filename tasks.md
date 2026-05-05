@@ -32,6 +32,19 @@ gate Phase 1+. Phase 0 (this ledger reset) does not require answers.
   into the upstream-facade plan: PR-32.1 will be re-decided (kept at 16, or
   rolled back to 1) per Q2 of the open-questions draft.
 
+- [x] **PR-32.3** (2026-05-05) — Windows-only CI flake in `test-sc-wiring-result`:
+  `runtime.ForeignMapKeyRoundTripSpec` failed with decoded keys carrying an `A:`
+  prefix that originated from `KeyCodecHostLastWinsSpec`'s in-flight
+  `register(PrefixCodec("A"))`. Race on the process-global mutable
+  `FStr_KeyCodec.instance` singleton: scalatest runs suites in parallel (sbt
+  default), so a sibling spec can read the singleton between the two
+  `register(...)` calls in `KeyCodecHostLastWinsSpec`. Linux happened to
+  schedule sequentially; Windows did not. The `after { register(IdentityCodec) }`
+  teardown (PR-26.2-D01) restores cleanly post-test but cannot prevent in-flight
+  reads. Fix: `Test / parallelExecution := false` in `test/sc-stub/build.sbt`.
+  Stub is small; serial cost is negligible. Local
+  `mdl --simple-log :build :test-sc-wiring-result` green.
+
 - [x] **PR-32.2** (2026-05-05) — CI hot-fix. Commit `0d9d7165` missed three
   sites that hardcoded the literal `"1"` in JSON `$mv` handling:
     1. `swift/baboon_runtime.swift:1358` reader compared `mvStr == "1"` →
