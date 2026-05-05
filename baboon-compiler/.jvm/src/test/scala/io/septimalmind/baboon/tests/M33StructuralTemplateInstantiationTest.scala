@@ -663,19 +663,22 @@ abstract class M33StructuralTemplateInstantiationTestBase[F[+_, +_]: Error2: Tag
         }
     }
 
-    "- Empty[i32] (empty template body under -): accepted as an idempotent no-op; surviving fields intact" in {
+    "- Empty[i32] (empty template body under -): rejected with TemplateBodyNotFlatForRemoval (empty body sentinel)" in {
       (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
         for {
           outcome <- runTyperFor(parser, typer, emptyBodyMinusFixture)
         } yield {
-          // regression guard pinning current silent no-op behaviour; update when [PR-33.4-D01] is resolved
-          // Removing an empty set of fields is idempotent — `- Empty[i32]` removes nothing, so `v: i32`
-          // (contributed by `+ Foo[i32]`) must survive in the receiver.
-          val domain   = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
-          val receiver = findDto(domain, "Receiver")
+          // PR-33.4-D01 fix: `- Empty[T]` with an empty template body now fails at lowering time
+          // with TemplateBodyNotFlatForRemoval(kind="minus", offendingMemberKind="empty body").
+          // Symmetric with `^ Empty[T]` (PR-33.4): user-facing diagnostic instead of silent no-op.
+          assertProducesTyperIssue[TyperIssue.TemplateBodyNotFlatForRemoval](outcome)
+          val ti = outcome.left.toOption.toList.flatMap(_.toList).collect {
+            case BaboonIssue.Typer(t: TyperIssue.TemplateBodyNotFlatForRemoval) => t
+          }
+          assert(ti.nonEmpty, s"expected a TemplateBodyNotFlatForRemoval issue, got: $outcome")
           assert(
-            receiver.fields.exists(f => f.name.name == "v" && f.tpe == TypeRef.Scalar(TypeId.Builtins.i32)),
-            s"expected v:i32 to survive the - Empty[i32] no-op, got: ${receiver.fields}",
+            ti.exists(t => t.kind == "minus" && t.offendingMemberKind == "empty body"),
+            s"expected kind=minus and offendingMemberKind=empty body, got: ${ti.map(t => (t.kind, t.offendingMemberKind))}",
           )
         }
     }

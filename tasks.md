@@ -44,6 +44,7 @@ Detail in `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`
 - [x] **PR-33.4** — Cycle / recursive-substitution detection. **Largely absorbed into PR-33.2/PR-33.3** (recursion guard + cycle-set + self/mutual-recursion tests landed). Residual scope: audit completeness; enforce non-empty-intersection edge case (PR-33.2 round-2 advisory); harden cycle-key canonicalisation if needed.
 - [x] **PR-33.5** — Cross-language acceptance fixture `m33-ok` (`test/conv-test/m33.baboon` + per-backend conv-test rows).
 - [x] **PR-33.6** — LSP smoke + close-out + tree-sitter grammar bump + spec doc.
+- [x] **PR-33.7** — Deferred-drain: close `[PR-33.3-D01]` (silent-dedup `+ MyGen[i32]; + MyGen[i32]`), close `[PR-33.4-D01]` (empty body under `-`), ship tree-sitter submodule chain-commit script.
 
 ---
 
@@ -61,6 +62,13 @@ Detail in `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`
 - [~] **M32 / PR-32.1** — `META_VERSION_1` 1→16 bump. Byte already lifted in all 11 runtime files at HEAD `0d9d7165`. Final disposition deferred until MFACADE Q2 resolves.
 
 ## Completed
+
+- [x] **PR-33.7** (2026-05-05, two review rounds — clean) — Deferred-drain: closed two M33 deferred defects + shipped the tree-sitter submodule chain-commit script.
+  1. **`[PR-33.3-D01]`** — duplicate template-arm silent-dedup. Added `checkNoDuplicateConvertedFields` in `BaboonTranslator.scala:230-243` (with comment documenting the broadened scope per round-2 D04). Pre-`.distinct` validation groups `converted` by lowercased field name; fails with `TyperIssue.NonUniqueFields` if duplicates present. The `.distinct` call below stays (still needed for ADT contract dedup). The corresponding regression-guard test in `M29ValidatorTest.scala` flipped from `outcome.isRight` to `assertProducesTyperIssue[TyperIssue.NonUniqueFields]`; renamed away from `_REGRESSION_GUARD` suffix.
+  2. **`[PR-33.4-D01]`** — empty body under `-` is now symmetric with `^`: emits `TemplateBodyNotFlatForRemoval(kind="minus", offendingMemberKind="empty body")`. Printer at `TyperIssue.scala:749-755` extended to be operator-aware (caret → "intersection over an empty field set"; minus → "removal of an empty field set"). The corresponding regression-guard test for `- Empty[i32]` flipped to expect the diagnostic.
+  3. **Tree-sitter submodule chain-commit script** at `scripts/m33-submodule-chain-commit.sh` — `set -euo pipefail`; three-step commit chain (inner `grammars/baboon` → middle `editors/baboon-zed` → parent); does NOT push; verifies preconditions and prints push order. Round-2 hardened: dropped orchestrator-private `proposal.md` carve-out; added opt-in `M33_CHAIN_ALLOW_DIRTY=path1,path2,…` env var for additional allowed dirty paths.
+  Verification: `sbt baboonJVM/compile` clean; `sbt baboonJS/compile` clean; `sbt 'testOnly *M29Validator* *M33StructuralTemplateInstantiation* *TemplateInstantiator*'` 61/61 green; `bash -n scripts/m33-submodule-chain-commit.sh` parses.
+  Review history: round 1 → 2 deferreds + 1 script; round 2 → 2 new defects D03 (script over-fits to orchestrator's tree) + D04 (broadened `NonUniqueFields` scope on contract diamonds — kept as opportunistic improvement, documented). Round 3 not run (text-only fixes verified directly).
 
 - [x] **PR-33.6** (2026-05-05, single pass — clean) — M33 close-out: LSP smoke + tree-sitter corpus + spec doc + milestone close. Five deliverables shipped:
   1. **LSP smoke tests** (+2 tests, 20 → 22 in `LspFeaturesTest`): hover on `MyGen` inside `+ MyGen[i32]` returns the template signature via the existing `domain.templateRegistry` lookup branch (no provider change needed). Completion right after `+ ` on its own line inside a DTO body offers the template alongside concrete types and builtins. The completion case required one surgical provider change: new `CompletionContext.StructuralArmPosition` branch in `CompletionProvider.scala` matched by `^\s*[+\-^]\s+([\w.]*)$`; returns `getTypeCompletions ++ getBuiltinCompletions ++ getTemplateCompletions` (no keywords, since keywords cannot head a structural arm). New fixture `baboon-compiler/src/test/resources/baboon/m33-lsp/m33-lsp.baboon`.

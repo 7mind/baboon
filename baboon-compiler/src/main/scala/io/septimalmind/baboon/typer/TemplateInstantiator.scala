@@ -544,9 +544,26 @@ object TemplateInstantiator {
           // contains any non-FieldDef member (e.g. a concrete `+ ParentRef`, ContractRef, etc.),
           // emit `TemplateBodyNotFlatForRemoval` rather than silently drop it — the dropped
           // contributor would mask a semantically incorrect removal.
-          checkFlatOrFail(loweredMembers, "minus", armMeta, templateName, receivingName).map {
+          // PR-33.4-D01: an empty substituted body under `-` is also rejected for symmetry with
+          // `^`. Removing nothing is idempotent but almost certainly a user mistake — emit the
+          // same sentinel so the user gets an explicit diagnostic instead of a silent no-op.
+          checkFlatOrFail(loweredMembers, "minus", armMeta, templateName, receivingName).flatMap {
             fieldDefs =>
-              fieldDefs.map(f => RawDtoMember.UnfieldDef(f.field, f.meta)).toList
+              if (fieldDefs.isEmpty) {
+                F.fail(
+                  BaboonIssue.of(
+                    TyperIssue.TemplateBodyNotFlatForRemoval(
+                      templateName        = templateName,
+                      receivingName       = receivingName,
+                      kind                = "minus",
+                      offendingMemberKind = "empty body",
+                      meta                = armMeta,
+                    )
+                  )
+                )
+              } else {
+                F.pure(fieldDefs.map(f => RawDtoMember.UnfieldDef(f.field, f.meta)).toList)
+              }
           }
         case ArmKind.Caret =>
           // PR-33.2-D02: same flatness invariant as `-`. PR-33.2-D06: per-field meta is

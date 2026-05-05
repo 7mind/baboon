@@ -10,7 +10,21 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 
 ---
 
-## PR-33.6
+## PR-33.7
+
+### [PR-33.7-D03] Submodule-chain script's precondition allowlist hard-codes orchestrator-private files
+**Status:** resolved
+**Severity:** minor
+**Location:** `scripts/m33-submodule-chain-commit.sh:66`
+**Description:** The precondition check excludes `^ M editors/baboon-zed$` and `^?? proposal.md$` from the parent repo's expected dirty state. `proposal.md` is orchestrator-private (not in the project's git or `.gitignore`); another developer running this script encounters a hard failure with no carve-out for their own untracked files. The script should require a clean parent tree (modulo the submodule pointer) and let users stash/commit other state themselves.
+**Fix:** `scripts/m33-submodule-chain-commit.sh` — dropped `^?? proposal.md$` carve-out; precondition now expects ONLY the submodule pointer (`^ M editors/baboon-zed$`); added opt-in `M33_CHAIN_ALLOW_DIRTY=path1,path2,…` env var that extends the allowlist per comma-separated path. Header comment updated to document the requirement and the opt-in env var.
+
+### [PR-33.7-D04] `checkNoDuplicateConvertedFields` silently broadens `NonUniqueFields` to contract-diamond cases
+**Status:** resolved (documented; no narrowing — broadening kept as opportunistic improvement)
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonTranslator.scala:223-237` (new method) + invocation in `convertDto`
+**Description:** The new pre-`.distinct` check operates on `converted`, which (`BaboonTranslator.scala:249-256`) absorbs ContractRef-flattened fields too. A DTO with `+ ContractA + ContractB` where both contracts share a field name will now fire `NonUniqueFields` where `.distinct` at L341 previously absorbed the diamond silently. 61/61 typer + 200/200 cross-language acceptance suggests no existing fixture exercises this, but the behavior change is wider than "duplicate template arm" — the original D01 was specifically about template-arm dedup. The broadening is arguably an improvement (silent diamond dedup masks user errors) but undocumented and unverified.
+**Fix:** `BaboonTranslator.scala:230-243` — added a 9-line `//`-comment block above `checkNoDuplicateConvertedFields` documenting that the new check fires on duplicates from ANY source (template-arm inline expansion, contract-diamond field collision, manual field duplication). The `.distinct` call below still absorbs structurally-identical Field instances (used by ADT contract dedup); the new check surfaces user-visible name collisions before that dedup. Comment also names the narrowing escape hatch (PR-33.7-D04 follow-up — narrow the predicate to ParentDef-style template arms specifically) for the future case where a legitimate contract-diamond pattern needs silent dedup.
 
 ### [PR-33.6-D01] Close-log + tasks.md falsely claim the inner-submodule corpus file is "staged but not committed"
 **Status:** resolved
