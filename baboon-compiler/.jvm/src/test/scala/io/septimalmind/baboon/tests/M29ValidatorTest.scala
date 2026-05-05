@@ -763,16 +763,17 @@ abstract class M29ValidatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] 
     }
 
     // Row 11: duplicate inline arm — same template + same args twice.
-    // PR-33.3-D01 fix: the pre-`.distinct` duplicate-name check in BaboonTranslator.convertDto
-    // now fires NonUniqueFields when two arms produce fields with the same name, even when the
-    // fields are type-identical. `+ MyGen[i32]; + MyGen[i32]` produces two `v: i32` entries
-    // in `converted`; the groupBy check catches them before `.distinct` erases the duplicate.
-    "m33_bad_11: NonUniqueFields for duplicate template arm + MyGen[i32]; + MyGen[i32]" in {
+    // [PR-33.3-D01] regression-guard pinning current (defective) idempotent-dedup behaviour;
+    // BaboonTranslator.convertDto's `.distinct` (pre-existing project code) silently
+    // deduplicates structurally-identical Field instances. PR-33.7's broad pre-`.distinct`
+    // check was reverted in PR-33.8 because it broke contract-diamond cases (pkg03.baboon).
+    // Will need updating when [PR-33.3-D01] is resolved with a provenance-aware narrowing.
+    "m33_bad_11_duplicate_arm_silently_deduplicated_REGRESSION_GUARD" in {
       (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
         for {
           outcome <- runTyperFor(parser, typer, m33bad11DuplicateArm, "m33-bad-11-duplicate-arm.baboon")
         } yield {
-          assertProducesTyperIssue[TyperIssue.NonUniqueFields](outcome)
+          assert(outcome.isRight)
         }
     }
 

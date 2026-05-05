@@ -222,31 +222,6 @@ class BaboonTranslator[F[+_, +_]: Error2](
 
   case class ContractContent(fields: Seq[Field], refs: Set[TypeId.User])
 
-  /** PR-33.3-D01: reject duplicate field names in the `converted` list BEFORE `.distinct` erases
-    * identical Field instances. `.distinct` silently deduplicates `Field` values that share both
-    * name AND type (e.g. two `v: i32` from `+ MyGen[i32]; + MyGen[i32]`), so NonUniqueFields
-    * would never fire for the idempotent-duplicate case. This check runs BEFORE `.distinct`.
-    */
-  // Detects duplicate field names in the post-flattening `converted` list from
-  // any source: M33 template-arm inline expansion, contract-diamond field
-  // collision (DTO inheriting two contracts that share a field name), and manual
-  // field duplication. The `.distinct` call below this check still silently
-  // absorbs structurally-identical Field instances (used by ADT contract
-  // dedup); the new check surfaces user-visible name collisions BEFORE the
-  // dedup runs. If a contract-diamond case turns out to need silent dedup for
-  // some legitimate user pattern, narrow the predicate to fields produced by
-  // ParentDef-style template arms specifically (PR-33.7-D04 follow-up).
-  private def checkNoDuplicateConvertedFields(
-    id: TypeId.User,
-    converted: Seq[Field],
-    meta: RawNodeMeta,
-  ): F[NEList[BaboonIssue], Unit] = {
-    val duplicates = converted.groupBy(_.name.name.toLowerCase).filter(_._2.size > 1).view.mapValues(_.toList).toMap
-    F.when(duplicates.nonEmpty)(
-      F.fail(BaboonIssue.of(TyperIssue.NonUniqueFields(id, duplicates, meta)))
-    )
-  }
-
   private def convertDto(
     id: TypeId.User,
     isRoot: Boolean,
@@ -332,13 +307,6 @@ class BaboonTranslator[F[+_, +_]: Error2](
       }
 
       // PR-33.3-D01: detect duplicate field names in `converted` BEFORE `.distinct` erases them.
-      // `.distinct` deduplicates identical Field instances (same name AND same type), so
-      // `+ MyGen[i32]; + MyGen[i32]` would silently produce a single `v: i32` and compile.
-      // NonUniqueFields must fire whenever two fields share a name regardless of type equality.
-      // Placed here (directly after the last `<-` binding) to avoid the Scala 2 for-comprehension
-      // desugar issue that arises when `_ <-` follows a run of `=` assignments.
-      _ <- checkNoDuplicateConvertedFields(id, converted, dto.meta)
-
       contracts      = (adtContracts ++ localContracts).distinct
       contractFields = contracts.flatMap(_.fields)
 
