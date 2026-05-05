@@ -462,11 +462,11 @@ object BaboonFamilyManager {
           filesFromMeta(meta)
         case io.septimalmind.baboon.parser.model.RawDtoMember.UnfieldDef(_, meta) =>
           filesFromMeta(meta)
-        case io.septimalmind.baboon.parser.model.RawDtoMember.ParentDef(_, meta) =>
+        case io.septimalmind.baboon.parser.model.RawDtoMember.ParentDef(_, meta, _) =>
           filesFromMeta(meta)
-        case io.septimalmind.baboon.parser.model.RawDtoMember.UnparentDef(_, meta) =>
+        case io.septimalmind.baboon.parser.model.RawDtoMember.UnparentDef(_, meta, _) =>
           filesFromMeta(meta)
-        case io.septimalmind.baboon.parser.model.RawDtoMember.IntersectionDef(_, meta) =>
+        case io.septimalmind.baboon.parser.model.RawDtoMember.IntersectionDef(_, meta, _) =>
           filesFromMeta(meta)
         case io.septimalmind.baboon.parser.model.RawDtoMember.ContractRef(_, meta) =>
           filesFromMeta(meta)

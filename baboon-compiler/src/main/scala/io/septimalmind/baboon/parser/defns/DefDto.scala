@@ -113,19 +113,23 @@ class DefDto(context: ParserContext, meta: DefMeta, docs: DefDocs) {
     (fieldName ~ ":" ~ typeRef ~ fieldWas.?).map { case (n, t, prev) => model.RawField(n, t, prev) }
   }
 
-  def parentDef[$: P]: P[ScopedRef] = {
+  // NOTE: BaboonWhitespace (imported below) consumes newlines, so `nonGenericTypeRef ~ typeParams.?`
+  // allows `[…]` on a separate line to silently bind as args. This is safe contingent on no other
+  // dtoMember alternative starting with `[`; a future extension that introduces one would break this
+  // silently. Pinned by the cross-line binding tripwire test in M33StructuralTemplateInheritanceParserTest.
+  def parentDef[$: P]: P[(ScopedRef, Option[NEList[RawTypeRef]])] = {
     import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
-    "+" ~ nonGenericTypeRef
+    ("+" ~ nonGenericTypeRef ~ typeParams.?).map { case (ref, args) => (ref, args) }
   }
 
-  def unparentDef[$: P]: P[ScopedRef] = {
+  def unparentDef[$: P]: P[(ScopedRef, Option[NEList[RawTypeRef]])] = {
     import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
-    "-" ~ nonGenericTypeRef
+    ("-" ~ nonGenericTypeRef ~ typeParams.?).map { case (ref, args) => (ref, args) }
   }
 
-  def intersectionDef[$: P]: P[ScopedRef] = {
+  def intersectionDef[$: P]: P[(ScopedRef, Option[NEList[RawTypeRef]])] = {
     import io.septimalmind.baboon.parser.defns.base.BaboonWhitespace.whitespace
-    "^" ~ nonGenericTypeRef
+    ("^" ~ nonGenericTypeRef ~ typeParams.?).map { case (ref, args) => (ref, args) }
   }
 
   def unfieldDef[$: P]: P[RawField] = {
@@ -158,17 +162,17 @@ class DefDto(context: ParserContext, meta: DefMeta, docs: DefDocs) {
         val merged = m.copy(docs = RawDocs(m.docs.prefix, suffix))
         model.RawDtoMember.FieldDef(field, merged)
     } | P(meta.withMeta(parentDef)).map {
-      case (meta, parent) =>
-        model.RawDtoMember.ParentDef(parent, meta)
+      case (meta, (parent, args)) =>
+        model.RawDtoMember.ParentDef(parent, meta, args)
     } | P(meta.withMeta(unfieldDef)).map {
       case (meta, field) =>
         model.RawDtoMember.UnfieldDef(field, meta)
     } | P(meta.withMeta(unparentDef)).map {
-      case (meta, parent) =>
-        model.RawDtoMember.UnparentDef(parent, meta)
+      case (meta, (parent, args)) =>
+        model.RawDtoMember.UnparentDef(parent, meta, args)
     } | P(meta.withMeta(intersectionDef)).map {
-      case (meta, parent) =>
-        model.RawDtoMember.IntersectionDef(parent, meta)
+      case (meta, (parent, args)) =>
+        model.RawDtoMember.IntersectionDef(parent, meta, args)
     } | extendedContractRef
   }
 

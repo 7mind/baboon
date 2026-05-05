@@ -221,10 +221,13 @@ object BaboonEnquiries {
         case d: RawDtoid =>
           d.members.collect {
             case d: RawDtoMember.ParentDef =>
+              // PR-33.2: `d.args` type refs omitted here; see TemplateInstantiator.substituteDtoMember for the hand-off plan.
               Seq(d.parent)
             case d: RawDtoMember.UnparentDef =>
+              // PR-33.2: `d.args` type refs omitted here; see TemplateInstantiator.substituteDtoMember for the hand-off plan.
               Seq(d.parent)
             case d: RawDtoMember.IntersectionDef =>
+              // PR-33.2: `d.args` type refs omitted here; see TemplateInstantiator.substituteDtoMember for the hand-off plan.
               Seq(d.parent)
             case d: RawDtoMember.ContractRef =>
               Seq(d.contract.tpe)

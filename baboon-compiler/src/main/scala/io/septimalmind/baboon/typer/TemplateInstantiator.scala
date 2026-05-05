@@ -382,7 +382,19 @@ object TemplateInstantiator {
             newTpe => u.copy(field = field.copy(tpe = newTpe))
           }
         case other =>
-          // ParentDef, UnparentDef, IntersectionDef, ContractRef — no RawTypeRef to walk.
+          // ParentDef, UnparentDef, IntersectionDef, ContractRef — body left unchanged here.
+          // PR-33.1 added `args: Option[NEList[RawTypeRef]]` to ParentDef/UnparentDef/IntersectionDef;
+          // those RawTypeRefs MUST be substituted by PR-33.2. This catch-all is correct for
+          // PR-33.1 (parser-only) but PR-33.2 must add explicit arms for those three cases.
+          // PR-33.2 hand-off index — ALL sites that silently drop `args` and need updating:
+          //   1. HERE (TemplateInstantiator.substituteDtoMember) — add explicit arms for
+          //      ParentDef, UnparentDef, IntersectionDef that substitute their `args` field.
+          //   2. BaboonTranslator.scala — three `dtoParentToDefs` call-sites (ParentDef ~L244,
+          //      UnparentDef ~L252, IntersectionDef ~L258): pass/thread `args` once the typer
+          //      is ready to consume it.
+          //   3. BaboonEnquiries.scala — three arms in `hardDepsOfRawDefn` (~L223-228):
+          //      `Seq(d.parent)` must also include the type refs inside `d.args` once
+          //      template-argument resolution is wired end-to-end.
           F.pure(other)
       }
     }
