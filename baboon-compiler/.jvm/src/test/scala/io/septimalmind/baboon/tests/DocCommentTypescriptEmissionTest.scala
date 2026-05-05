@@ -243,5 +243,52 @@ abstract class DocCommentTypescriptEmissionTestBase[F[+_, +_]: Error2: TagKK: Ba
           )
         }
     }
+
+    // BAB-T03 regression: every type-only name in a mixed import must carry its own `type`
+    // qualifier. Pre-fix the emitter prepended `type ` once before the comma-joined list,
+    // producing `import { type BaboonAdtMemberMeta, BaboonGeneratedLatest }` — only the
+    // first name got the qualifier, causing TS1484 under `verbatimModuleSyntax: true`.
+    "emit per-name `type` qualifier for every type-only name in an ADT import (BAB-T03)" in {
+      (loader: BaboonLoader[F], translator: BaboonAbstractTranslator[F]) =>
+        for {
+          family <- loadDocsFamily(loader)
+          srcs   <- translator.translate(family)
+        } yield {
+          val all = srcs.files.iterator.map { case (path, of) => (path, of.content) }.toList
+
+          // DocResult is an ADT with two members (DocOk, DocErr).  The emitted file for
+          // DocResult imports BaboonAdtMemberMeta *and* BaboonGeneratedLatest, both
+          // type-only, from the same BaboonSharedRuntime module.  That produces a
+          // multi-name type-only import — the exact case where the pre-fix emitter
+          // dropped `type` from every name after the first.
+          val resultFile = all.collectFirst {
+            case (_, c) if c.contains("export type DocResult") => c
+          }.getOrElse(fail(s"DocResult ADT not found. Paths: ${all.map(_._1)}"))
+
+          // Every `type X` qualifier in the import block must appear as a standalone
+          // `type X` token, not as `X` without a qualifier. We verify that the two
+          // known type-only names from BaboonSharedRuntime both carry their `type` prefix.
+          assert(
+            resultFile.contains("type BaboonAdtMemberMeta"),
+            s"Expected 'type BaboonAdtMemberMeta' in import (BAB-T03).\n$resultFile",
+          )
+          assert(
+            resultFile.contains("type BaboonGeneratedLatest"),
+            s"Expected 'type BaboonGeneratedLatest' in import (BAB-T03).\n$resultFile",
+          )
+          // Negative check: the broken pattern has a bare (non-type-qualified) name
+          // immediately after a comma in the type-only import.  We ensure there is no
+          // import line where `BaboonGeneratedLatest` appears without a leading `type `.
+          val importLines = resultFile.linesIterator.filter(_.startsWith("import ")).toList
+          importLines.foreach { line =>
+            if (line.contains("BaboonGeneratedLatest")) {
+              assert(
+                line.contains("type BaboonGeneratedLatest"),
+                s"Found 'BaboonGeneratedLatest' without per-name 'type' qualifier (BAB-T03):\n  $line",
+              )
+            }
+          }
+        }
+    }
   }
 }
