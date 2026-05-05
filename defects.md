@@ -10,6 +10,52 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 
 ---
 
+## PR-33.4
+
+### [PR-33.4-D02] Empty-body test asserts diagnostic class only; does not pin sentinel `kind="caret"` / `offendingMemberKind="empty body"`
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/M33StructuralTemplateInstantiationTest.scala:594-604`
+**Description:** The new `^ Empty[i32]` test asserts only `assertProducesTyperIssue[TyperIssue.TemplateBodyNotFlatForRemoval](outcome)` — class-only. It does not check `kind == "caret"` nor `offendingMemberKind == "empty body"`. The whole point of the PR-33.4 fix is the new sentinel-driven branch. The assertion is satisfied by ANY `TemplateBodyNotFlatForRemoval` surfacing through this fixture — including a hypothetical regression that fires the diagnostic for the wrong arm.
+**Fix:** `M33StructuralTemplateInstantiationTest.scala:628-649` — extracts `TemplateBodyNotFlatForRemoval` issues from `outcome` (mirrors `selfRefStructural` pattern at L517-525) and asserts `kind == "caret"` AND `offendingMemberKind == "empty body"`. Class-level coverage retained.
+
+### [PR-33.4-D03] Printer message for empty-body sentinel is paradoxical: "contains a non-field member (empty body)"
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/issues/TyperIssue.scala:738-748` (printer); sentinel produced at `TemplateInstantiator.scala:568`
+**Description:** The printer template reads "the substituted body contains a non-field member (${issue.offendingMemberKind})". For preexisting call-sites `offendingMemberKind` is a `getClass.getSimpleName` (e.g. `"ParentDef"`) and the sentence reads correctly. PR-33.4 introduces sentinel `"empty body"`, making the rendered message "the substituted body contains a non-field member (empty body)" — paradoxical (an empty body contains no member of any kind). The in-code comment at `TemplateInstantiator.scala:558` claiming the message is "informative enough" is wrong on inspection of actual printer output.
+**Fix:** `TyperIssue.scala:746-751` — printer for `TemplateBodyNotFlatForRemoval` now branches on the `"empty body"` sentinel, emitting "the substituted body is empty (intersection over an empty field set would be a silent no-op; caught at lowering time…)" instead of the paradoxical "contains a non-field member (empty body)". `TemplateInstantiator.scala:553-558` — comment retracted; replaced with a pointer to the sentinel-aware printer branch.
+
+### [PR-33.4-D04] Sentinel `"empty body"` violates the documented `offendingMemberKind` contract
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/issues/TyperIssue.scala:269-277` (case-class scaladoc); `TemplateInstantiator.scala:568`
+**Description:** The case-class scaladoc defines `offendingMemberKind` as "the simple-class-name of the offending RawDtoMember subtype". The new use injects `"empty body"` — NOT a simple-class-name. Contract is silently broken at one call-site; the in-code comment at `TemplateInstantiator.scala:556-558` is the only place describing the convention break.
+**Fix:** `TyperIssue.scala:269` — scaladoc on `offendingMemberKind` now reads "...the simple-class-name of the offending RawDtoMember subtype, OR the sentinel `\"empty body\"` when the substituted body is empty (PR-33.4)".
+
+### [PR-33.4-D05] No negative-control test for `+ Empty[i32]` and no regression-pin for `- Empty[i32]` (deferred D01)
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/M33StructuralTemplateInstantiationTest.scala`
+**Description:** The PR adds one positive-fail test for `^ Empty[i32]`. Without a sibling positive-pass `+ Empty[i32]` (must compile, idempotent no-op) and a regression-pin for `- Empty[i32]` (currently silent no-op, deferred per [PR-33.4-D01]), nothing in the suite distinguishes between the diagnostic firing for the right operator versus a future refactor that accidentally swaps outcomes. Per the PR-33.3-D08 lesson: pin even defective behaviour as a regression guard.
+**Fix:** `M33StructuralTemplateInstantiationTest.scala` — added `emptyBodyPlusFixture` (`Receiver + Empty[i32]` → zero fields) and `emptyBodyMinusFixture` (`Receiver + Foo[i32] - Empty[i32]` → `v: i32` survives), each with its own test arm. `- Empty[i32]` test carries the regression-guard comment naming `[PR-33.4-D01]`.
+
+### [PR-33.4-D06] Cycle-key uses `RawTypeRef.toString` rather than the explicit `render` canonical form
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala:449`
+**Description:** The cycle-key tuple uses `argList.map(_.toString).mkString(",")`. `RawTypeRef` declares an explicit `render: String` method (`RawTypeRef.scala:6-17`) intended as the canonical display form. Auto-derived case-class toString is structurally equivalent for the current shape, but it is implicit equivalence rather than declared. If a non-canonical field (e.g. a parse-time hint) is later added to `RawTypeRef.{Simple,Constructor,AnyRef}`, auto-toString would silently bake it into cycle-keys, while `render` would not. Audit conclusion was correct *now* but fragile.
+**Fix:** `TemplateInstantiator.scala:449` — `argList.map(_.toString).mkString(",")` changed to `argList.map(_.render).mkString(",")`. Same behaviour today; canonicalisation contract now explicit.
+
+### [PR-33.4-D01] Empty template body under `-` is a silent no-op (analogous to the `^` gap fixed in this PR)
+**Status:** [ ] open
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala` (`convertLoweredArm` Minus case); `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonTranslator.scala:311-316` (`removedSet` / `withoutRemoved`)
+**Description:** PR-33.4 fixed the empty-body-under-`^` gap (empty `IntersectionFields` → `if (intersectionSet.isEmpty)` short-circuit was a no-op). The analogous `^`-fix was: fail with `TemplateBodyNotFlatForRemoval(offendingMemberKind="empty body")` at lowering time. The `-` operator with an empty body is semantically different: removing an empty set of fields is idempotent (no fields are removed). Whether this should be a hard error or a silent no-op is a product decision. Current behaviour: silently accepted. This is not a silent corruption (unlike the `^` case which masked a "pass-through" masquerading as "intersection"), but it may indicate a user mistake. Deferred for a future product decision.
+**Fix (suggested):** Either (a) emit a warning/error diagnostic at lowering time when `fieldDefs.isEmpty` in the `Minus` arm of `convertLoweredArm`, or (b) leave as a silent no-op with a code comment. Option (b) is correct for now (removing nothing is correct semantics). If a warning facility is added in a future milestone, this can be upgraded.
+
+---
+
 ## PR-33.3
 
 ### [PR-33.3-D02] Row 4 fixture exercises matrix #1 (template-in-body) instead of plan-mandated matrix #2 (forbidden type-arg)

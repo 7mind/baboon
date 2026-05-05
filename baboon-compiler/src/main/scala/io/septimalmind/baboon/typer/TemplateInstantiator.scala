@@ -446,7 +446,9 @@ object TemplateInstantiator {
                 )
               } else {
               // Cycle key: (receiver, template, arg-string-repr).
-              val argTupleKey = argList.map(_.toString).mkString(",")
+              // PR-33.4-D06: use `render` (the declared canonical form) instead of auto-derived
+              // `toString`, so the key is immune to non-canonical-field drift on RawTypeRef subclasses.
+              val argTupleKey = argList.map(_.render).mkString(",")
               val cycleKey    = (receivingName, templateName, argTupleKey)
               if (cycleSet.contains(cycleKey)) {
                 F.fail(
@@ -550,9 +552,29 @@ object TemplateInstantiator {
           // PR-33.2-D02: same flatness invariant as `-`. PR-33.2-D06: per-field meta is
           // preserved by carrying FieldDef instances (each retaining its own meta) through
           // IntersectionFields rather than only RawField.
-          checkFlatOrFail(loweredMembers, "caret", armMeta, templateName, receivingName).map {
+          // PR-33.4: an empty substituted body under `^` would produce IntersectionFields(Seq.empty),
+          // which combined with BaboonTranslator.scala:319's `if (intersectionSet.isEmpty)` short-circuit
+          // silently becomes a no-op (all fields pass through) instead of the expected empty-result
+          // semantics. Catch it at lowering time. Reusing TemplateBodyNotFlatForRemoval with
+          // offendingMemberKind="empty body" — the printer (TyperIssue.scala, templateBodyNotFlatForRemovalPrinter)
+          // branches on this sentinel to emit a non-paradoxical message (PR-33.4-D03).
+          checkFlatOrFail(loweredMembers, "caret", armMeta, templateName, receivingName).flatMap {
             fieldDefs =>
-              List(RawDtoMember.IntersectionFields(fieldDefs, armMeta))
+              if (fieldDefs.isEmpty) {
+                F.fail(
+                  BaboonIssue.of(
+                    TyperIssue.TemplateBodyNotFlatForRemoval(
+                      templateName        = templateName,
+                      receivingName       = receivingName,
+                      kind                = "caret",
+                      offendingMemberKind = "empty body",
+                      meta                = armMeta,
+                    )
+                  )
+                )
+              } else {
+                F.pure(List(RawDtoMember.IntersectionFields(fieldDefs, armMeta)))
+              }
           }
       }
     }

@@ -360,6 +360,62 @@ abstract class M33StructuralTemplateInstantiationTestBase[F[+_, +_]: Error2: Tag
       |}
       |""".stripMargin
 
+  // PR-33.4: empty template body under `^` must fail at lowering time (not silently become a no-op).
+  // BaboonTranslator.scala:319's `if (intersectionSet.isEmpty)` short-circuit would otherwise pass
+  // all fields through, producing a DTO with no intersection applied — silent semantic gap.
+  private val emptyBodyCaretFixture: String =
+    """model m33.emptycaret
+      |
+      |version "1.0.0"
+      |
+      |data Empty[T] {
+      |}
+      |
+      |data Wide {
+      |  v: i32
+      |  total: u32
+      |}
+      |
+      |root data Holder {
+      |  + Wide
+      |  ^ Empty[i32]
+      |}
+      |""".stripMargin
+
+  // PR-33.4-D05: positive-pass `+ Empty[i32]` — adding an empty-body template is an idempotent no-op.
+  private val emptyBodyPlusFixture: String =
+    """model m33.emptyplus
+      |
+      |version "1.0.0"
+      |
+      |data Empty[T] {
+      |}
+      |
+      |root data Receiver {
+      |  + Empty[i32]
+      |}
+      |""".stripMargin
+
+  // PR-33.4-D05: regression-pin `- Empty[i32]` — removing an empty field set is an idempotent no-op.
+  // `+ Foo[i32]` provides `v: i32`; `- Empty[i32]` removes nothing, so `v: i32` must survive.
+  private val emptyBodyMinusFixture: String =
+    """model m33.emptyminus
+      |
+      |version "1.0.0"
+      |
+      |data Empty[T] {
+      |}
+      |
+      |data Foo[T] {
+      |  v: T
+      |}
+      |
+      |root data Receiver {
+      |  + Foo[i32]
+      |  - Empty[i32]
+      |}
+      |""".stripMargin
+
   // PR-33.2-D04: exercise the depth-limit branch. We use a single self-referential template that
   // wraps its argument in `lst[…]` at each level, so the cycle key (receiver, template, argTupleKey)
   // is fresh at every iteration and the cycle-set branch never fires. Depth must exceed
@@ -564,6 +620,63 @@ abstract class M33StructuralTemplateInstantiationTestBase[F[+_, +_]: Error2: Tag
           outcome <- runTyperFor(parser, typer, bareTemplateCaretFixture)
         } yield {
           assertProducesTyperIssue[TyperIssue.TemplateNotInstantiated](outcome)
+        }
+    }
+
+    // ─── PR-33.4: empty template body under `^` must fail ─────────────────────────────────────
+
+    "^ Empty[i32] (empty template body under ^): rejected with TemplateBodyNotFlatForRemoval (empty body sentinel)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, emptyBodyCaretFixture)
+        } yield {
+          // An empty-body template under `^` would silently become a no-op via
+          // BaboonTranslator.scala:319's `if (intersectionSet.isEmpty)` short-circuit, passing all
+          // fields through unchanged instead of producing an empty result. Catch at lowering time
+          // via TemplateBodyNotFlatForRemoval with offendingMemberKind="empty body" (PR-33.4).
+          assertProducesTyperIssue[TyperIssue.TemplateBodyNotFlatForRemoval](outcome)
+          // PR-33.4-D02: pin the sentinel values so the test fails if a future regression fires
+          // TemplateBodyNotFlatForRemoval for the wrong operator or the wrong offendingMemberKind.
+          val ti = outcome.left.toOption.toList.flatMap(_.toList).collect {
+            case BaboonIssue.Typer(t: TyperIssue.TemplateBodyNotFlatForRemoval) => t
+          }
+          assert(ti.nonEmpty, s"expected a TemplateBodyNotFlatForRemoval issue, got: $outcome")
+          assert(
+            ti.exists(t => t.kind == "caret" && t.offendingMemberKind == "empty body"),
+            s"expected kind=caret and offendingMemberKind=empty body, got: ${ti.map(t => (t.kind, t.offendingMemberKind))}",
+          )
+        }
+    }
+
+    // ─── PR-33.4-D05: positive-pass and regression-pin for empty-body template ─────────────────
+
+    "+ Empty[i32] (empty template body under +): accepted as an idempotent no-op" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, emptyBodyPlusFixture)
+        } yield {
+          // Adding an empty-body template is a no-op: `+ Empty[T]` contributes zero fields.
+          // The receiver must compile and carry zero fields (the `+ Empty[i32]` arm adds nothing).
+          val domain   = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val receiver = findDto(domain, "Receiver")
+          assert(receiver.fields.isEmpty, s"expected Receiver to have zero fields (empty-body no-op), got: ${receiver.fields}")
+        }
+    }
+
+    "- Empty[i32] (empty template body under -): accepted as an idempotent no-op; surviving fields intact" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, emptyBodyMinusFixture)
+        } yield {
+          // regression guard pinning current silent no-op behaviour; update when [PR-33.4-D01] is resolved
+          // Removing an empty set of fields is idempotent — `- Empty[i32]` removes nothing, so `v: i32`
+          // (contributed by `+ Foo[i32]`) must survive in the receiver.
+          val domain   = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val receiver = findDto(domain, "Receiver")
+          assert(
+            receiver.fields.exists(f => f.name.name == "v" && f.tpe == TypeRef.Scalar(TypeId.Builtins.i32)),
+            s"expected v:i32 to survive the - Empty[i32] no-op, got: ${receiver.fields}",
+          )
         }
     }
 

@@ -266,7 +266,8 @@ object TyperIssue {
     * `templateName`        — the template whose body was substituted.
     * `receivingName`       — the DTO/Contract receiving the `-`/`^` arm.
     * `kind`                — `"minus"` for `-`, `"caret"` for `^`.
-    * `offendingMemberKind` — the simple-class-name of the offending RawDtoMember subtype.
+    * `offendingMemberKind` — the simple-class-name of the offending RawDtoMember subtype, OR the
+    *                         sentinel `"empty body"` when the substituted body is empty (PR-33.4).
     */
   case class TemplateBodyNotFlatForRemoval(
     templateName: String,
@@ -742,8 +743,15 @@ object TyperIssue {
         case "caret" => "'^'"
         case other   => s"'$other'"
       }
+      // PR-33.4-D03: the sentinel "empty body" (produced when the substituted body is empty under `^`)
+      // requires a distinct message — "contains a non-field member (empty body)" would be paradoxical.
+      val detail = if (issue.offendingMemberKind == "empty body") {
+        s"the substituted body is empty (intersection over an empty field set would be a silent no-op; caught at lowering time to surface the likely mistake)"
+      } else {
+        s"the substituted body contains a non-field member (${issue.offendingMemberKind}). The $opGloss operator only operates on a flat field list — restrict the template body to FieldDefs when it is intended for use under '-' or '^'"
+      }
       s"""${extractLocation(issue.meta)}
-         |Template '${issue.templateName}' cannot be used under the $opGloss operator on '${issue.receivingName}': the substituted body contains a non-field member (${issue.offendingMemberKind}). The $opGloss operator only operates on a flat field list — restrict the template body to FieldDefs when it is intended for use under '-' or '^'.
+         |Template '${issue.templateName}' cannot be used under the $opGloss operator on '${issue.receivingName}': $detail.
          |""".stripMargin
     }
 
