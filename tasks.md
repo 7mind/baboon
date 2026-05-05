@@ -33,6 +33,19 @@ Authoritative brief: `./job.md`. Pre-flight: CI status on `wip/generics` @ `1a91
 - [x] **M29-prep follow-ups** — PR-29P.4 landed both deferred items (D02 non-UTC tso coverage, D03 RandomJsonGenerator tso/tsu split). Surgical, additive, no wire-format impact.
 - [x] **M29** — User-defined generics (BAB-A04). **Complete 2026-05-04**. 12 PRs landed (29.1, 29.1a, 29.2..29.11). The architectural bet held end-to-end: monomorphisation runs as a typer-early raw-AST rewrite; codegen never sees a template; all 9 backends produce concrete code with no synthetic generic identifiers. Cross-language wire-format acceptance 200/200. Two follow-ups deferred: tree-sitter editor grammar (`[PR-29.8-D01]` — needs submodule coordination) and end-to-end cross-language service-acceptance for templated services (`[PR-29.10-D07]`).
 - [x] **M30** — Docstring / comment preservation. **Complete 2026-05-05**. 15 PRs landed (30.1..30.14 + 30.4b + 30.15). Prefix `/** … */` doc on type/method/field; postfix `//!` on field. Threaded through `RawNodeMeta.docs` → `BaboonWhitespace` parser pivot → typed `Docs` on `Field`/`MethodDef`/`DomainMember.User` → emitted by all 11 backends in idiomatic form. LSP hover surfaces docs. Cross-language smoke fixture `m30-ok` exercises every spec §3.1 doc position. 511/511 JVM tests; all per-backend toolchain tests pass. Deferred: tree-sitter editor grammar (per `[PR-29.8-D01]`); per-enum-value docs (`§9`); D02/D03/D04/D05/D07/D10 from per-PR ledgers.
+- [~] **M31** — Upstream defect triage from real-world multi-stack usage. User-supplied report 2026-05-05 — 5 defects across 3 backends. Each shipped as a separate PR (PR-31.1..PR-31.5).
+
+---
+
+## Milestone M31 — PR breakdown
+
+User-supplied upstream defect report 2026-05-05 against `6d5609dd` (M29 ship). Defects observed against a mid-sized schema with all 5 generator targets exercised. **All defects are pre-existing — none introduced by M30.**
+
+- [x] **PR-31.1** (2026-05-05, single round — clean) — BAB-T03 fix: `TsBaboonTranslator.typeString` now emits `type` per name instead of once before the comma-separated list. Generated imports now valid under `verbatimModuleSyntax: true`. 1 new regression test in `DocCommentTypescriptEmissionTest`; 512/512 full suite. Hand-written `BaboonSharedRuntime.ts` already uses `import type { ... }` — no change needed.
+- [x] **PR-31.2** — BAB-K01 already fixed by PR-28 (`6a8f2400`, 2026-04-28). Report is stale. No code change. Investigation log + ledger update only. Existing fixture `pkg0/pkg03.baboon` (`ns svcns`, `ns notifications`) locks the regression; `mdl :test-kotlin-regular` runs `kt-stub` with `allWarningsAsErrors=true` against the wiring path.
+- [ ] **PR-31.3** — BAB-K05 Kotlin: generated codec emits redundant conversion-method call (compiler nit). 1 site in mid-sized schema; needs narrowing.
+- [ ] **PR-31.4** — BAB-R03 Rust: typed-map-key deserialiser emits `Uid { hex: v }` body without importing `Uid`. Affects ~12 service files in mid-sized schema.
+- [ ] **PR-31.5** — BAB-R04 Rust: manual `Ord` impl on struct with `Option<f64>` fields calls `.total_cmp()` (which exists only on `f64`). Cascade: 3 errors per affected struct (`Ord`, `Eq`, `PartialEq`). Spec compliance: structs with floats should NOT derive `Eq`/`Ord` — only `PartialEq`/`PartialOrd`.
 
 ---
 

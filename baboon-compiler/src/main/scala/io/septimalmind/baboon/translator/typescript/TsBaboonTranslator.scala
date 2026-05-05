@@ -236,17 +236,16 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
           // Partition into type-only and value-bearing
           val (typeOnlyTypes, valueTypes) = types.partition(_.typeOnly)
 
-          def typeString(ts: Seq[TsType]): String = ts.map {
-            case t if aliasMap.contains(t)          => s"${t.name} as ${aliasMap(t)}"
-            case TsType(_, name, Some(alias), _, _) => s"$name as $alias"
-            case t: TsValue.TsType                  => t.name
+          def typeString(ts: Seq[TsType], perNameType: Boolean): String = ts.map {
+            case t if aliasMap.contains(t)          => s"${if (perNameType) "type " else ""}${t.name} as ${aliasMap(t)}"
+            case TsType(_, name, Some(alias), _, _) => s"${if (perNameType) "type " else ""}$name as $alias"
+            case t: TsValue.TsType                  => s"${if (perNameType) "type " else ""}${t.name}"
           }.mkString(", ")
 
           def mkImportFor(tsList: Seq[TsType], importType: Boolean): Option[TextTree[TsValue]] = {
             if (tsList.isEmpty) None
             else {
-              val keyword     = if (importType) "type " else ""
-              val typesString = keyword + typeString(tsList)
+              val typesString = typeString(tsList, perNameType = importType)
               val result = if (moduleId.path.startsWith(tsFileTools.definitionsBasePkg)) {
                 definitionImport(moduleId, typesString)
               } else if (moduleId.path.startsWith(tsFileTools.fixturesBasePkg) && tsFileTools.fixturesBasePkg.nonEmpty) {
