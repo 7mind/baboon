@@ -250,6 +250,26 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
             symbolMap.get("BinaryData").foreach(kind => assert(kind == SymbolKind.TypeParameter, s"BinaryData (alias) should be TypeParameter, got $kind"))
         }
     }
+
+    "include templates from templateRegistry (GAP-2)" in {
+      // Templates are excised from domain.defs after monomorphisation and live in
+      // domain.templateRegistry.templates.  Verify getSymbols surfaces them.
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-lsp/m29-lsp.baboon") {
+          (_, wsState, uri) =>
+            val symbolProvider = new DocumentSymbolProvider(wsState, positionConverter, pathOps, logger)
+            val symbols        = symbolProvider.getSymbols(uri)
+            val names          = symbols.map(_.name).toSet
+
+            // Template defined in m29-lsp.baboon: data Page[T] { ... }
+            assert(names.contains("Page"), s"Should include template 'Page', got: $names")
+            // Regular non-template type in the same file must still appear
+            assert(names.contains("Plain"), s"Should include regular type 'Plain', got: $names")
+            // Verify template carries SymbolKind.Class
+            val symbolMap = symbols.map(s => s.name -> s.kind).toMap
+            symbolMap.get("Page").foreach(kind => assert(kind == SymbolKind.Class, s"Template 'Page' should have kind Class, got $kind"))
+        }
+    }
   }
 
   "hover provider (m29 templates)" should {

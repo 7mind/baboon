@@ -4,7 +4,7 @@ import io.septimalmind.baboon.lsp.LspLogging
 import io.septimalmind.baboon.lsp.protocol.{DocumentSymbol, Range, SymbolKind}
 import io.septimalmind.baboon.lsp.state.WorkspaceState
 import io.septimalmind.baboon.lsp.util.{PathOps, PositionConverter}
-import io.septimalmind.baboon.parser.model.InputPointer
+import io.septimalmind.baboon.parser.model.{InputPointer, RawNodeMeta}
 import io.septimalmind.baboon.typer.model._
 import io.septimalmind.baboon.util.BLogger
 
@@ -66,9 +66,33 @@ class DocumentSymbolProvider(
             }
         }.toSeq
 
+        val templateSymbols = family.domains.toMap.values.flatMap {
+          lineage =>
+            lineage.versions.toMap.values.flatMap {
+              domain =>
+                domain.templateRegistry.templates.collect {
+                  case ((_, _, name), body) if isInFile(templateBodyMeta(body).pos, filePath) =>
+                    val meta  = templateBodyMeta(body)
+                    val range = meta.pos match {
+                      case full: InputPointer.Full     => positionConverter.fromInputPointer(full)
+                      case offset: InputPointer.Offset => positionConverter.fromStartOffset(offset)
+                      case _                           => Range.zero
+                    }
+                    DocumentSymbol(name.name, SymbolKind.Class, range, range)
+                }
+            }
+        }.toSeq
+
         val typeSymbols = inFile.map(u => createSymbol(u, family.domains.toMap.values.flatMap(_.versions.toMap.values).head))
-        (typeSymbols ++ aliasSymbols).sortBy(_.name)
+        (typeSymbols ++ aliasSymbols ++ templateSymbols).sortBy(_.name)
     }
+  }
+
+  private def templateBodyMeta(body: TemplateBody): RawNodeMeta = body.rawDefn match {
+    case RawTemplateDefn.Dto(raw)      => raw.meta
+    case RawTemplateDefn.Adt(raw)      => raw.meta
+    case RawTemplateDefn.Contract(raw) => raw.meta
+    case RawTemplateDefn.Service(raw)  => raw.meta
   }
 
   private def isInFile(pos: InputPointer, filePath: String): Boolean = {
