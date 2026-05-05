@@ -21,6 +21,7 @@ class CompletionProvider(
     "root",
     "data",
     "struct",
+    "id",
     "adt",
     "enum",
     "foreign",

@@ -156,6 +156,7 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
               "root",
               "data",
               "struct",
+              "id",
               "adt",
               "enum",
               "foreign",
