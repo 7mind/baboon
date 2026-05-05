@@ -420,6 +420,31 @@ object TemplateInstantiator {
                 )
               )
             } else {
+              // Matrix #2 (PR-33.3-D02): structural-arm template arguments must not themselves
+              // be template instantiations (spec §2.5.2). Mirrors `processMember`'s alias-RHS
+              // matrix-#2 walk (lines 686-708) at the structural-arm position. For prefixed
+              // forms (e.g. `ns.Foo[T]`), resolve the owner from the prefix so cross-namespace
+              // template-in-arg references also produce the precise diagnostic.
+              val badArg = argList.collectFirst {
+                case argCtor: RawTypeRef.Constructor if {
+                      val argOwner: Owner =
+                        if (argCtor.prefix.isEmpty) ownerForCurrent
+                        else Owner.Ns(argCtor.prefix.map(p => TypeName(p.name)))
+                      registry.templates.keys.exists { case (kPkg, kOwner, tname) => tname.name == argCtor.name.name && kPkg == pkg && kOwner == argOwner }
+                    } =>
+                  argCtor.name.name
+              }
+              if (badArg.isDefined) {
+                F.fail(
+                  BaboonIssue.of(
+                    TyperIssue.TemplateInstantiationInForbiddenPosition(
+                      containingTemplateName = templateName,
+                      instantiatedName       = badArg.get,
+                      meta                   = armMeta,
+                    )
+                  )
+                )
+              } else {
               // Cycle key: (receiver, template, arg-string-repr).
               val argTupleKey = argList.map(_.toString).mkString(",")
               val cycleKey    = (receivingName, templateName, argTupleKey)
@@ -483,6 +508,7 @@ object TemplateInstantiator {
                       )
                     )
                 }
+              }
               }
             }
         }

@@ -10,6 +10,74 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 
 ---
 
+## PR-33.3
+
+### [PR-33.3-D02] Row 4 fixture exercises matrix #1 (template-in-body) instead of plan-mandated matrix #2 (forbidden type-arg)
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/M29ValidatorTest.scala:251-271` (`m33bad4ForbiddenTypeArg` fixture + test); underlying gap at `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala:342-499` (`lowerOneArm`)
+**Description:** Plan §4 row 4 specifies "`+ MyGeneric[T]` where `T` is a forbidden type per existing template-arg rules" — i.e. the type ARGUMENT itself is forbidden (matrix #2: nested template instantiation in arg position). The executor's fixture instead places `Other[T]` in MyGen's body field (`data MyGen[T] { v: Other[T] }`). The fired diagnostic IS `TemplateInstantiationInForbiddenPosition`, but it fires from `substituteTypeRef`'s matrix #1 check at `TemplateInstantiator.scala:1006-1014` — the same code path that would fire for an alias-RHS instantiation. The structural-arm pre-validation `lowerOneArm` does NOT check whether `args` themselves are template constructors — there is no equivalent of the matrix-#2 `args.collectFirst { … forbiddenInnerTemplate … }` block found in `processMember` at lines 686-708. Concretely, `+ MyGen[OtherTemplate[i32]]` over a benign `data MyGen[T] { v: T }` would silently pass — the actual plan §4 row 4 case is NOT covered, AND there is a real underlying validation gap.
+**Fix:** Confirmed real validation gap (failing-first test produced `UnexpectedNonBuiltin`, not `TemplateInstantiationInForbiddenPosition`). Replaced fixture with genuine matrix-#2 shape `data Other[T]; data MyGen[T] { v: T }; root data Receiver { + MyGen[Other[i32]] }`. Extended `lowerOneArm` at `TemplateInstantiator.scala:422-441` with a matrix-#2 walk mirroring `processMember`'s alias-RHS check at L686-708: walks each `arg` and rejects any `RawTypeRef.Constructor` whose head names a registered template, emitting `TyperIssue.TemplateInstantiationInForbiddenPosition`. Reuses existing TyperIssue case — no 3-site exhaustive-match update. Test asserts `containingTemplateName="MyGen", instantiatedName="Other"`.
+
+### [PR-33.3-D03] Row 6 fixture is single-Pkg cross-namespace, not cross-package — name misleads
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/M29ValidatorTest.scala:273-291` (`m33bad6CrossPkgLike` and the test name "m33_bad_6: …cross-pkg.baboon")
+**Description:** The fixture has a single `model m33.bad6` declaration with `OtherTemplate` declared at top level, then a `+ otherpkg.OtherTemplate[i32]` reference. Resolves to prefix-derived `Owner.Ns(["otherpkg"])` and misses the registry — but this is cross-namespace within ONE Pkg, NOT cross-package. The test name suggests "cross-pkg" coverage; future readers debugging an actual cross-Pkg regression will not find what the name advertises. Plan §4 row 6 wording was "cross-package template via `+`" with explicit reference to spec §6 item 11 (deferred).
+**Fix:** Renamed val `m33bad6CrossPkgLike` → `m33bad6NamespacePrefixMiss`, test name no longer mentions "cross-pkg", docstring now says "namespace-prefix miss". No multi-Pkg fixture added (deferred per spec §6 item 11).
+
+### [PR-33.3-D04] Plan §4 row 2 (`TemplateNotInstantiated` for `+ MyGen` no brackets) is uncovered
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/M29ValidatorTest.scala` (no test added for row 2)
+**Description:** Plan §4 row 2 lists `+ MyGeneric` (no brackets, head IS a registered template) → `TyperIssue.TemplateNotInstantiated` as required negative-path coverage. The executor's per-row mapping (rows 1, 3, 4, 6, 9, 11, 12) silently omits row 2. Wired-up code path exists: `TemplateInstantiator.validateNoBareTemplateRefs` (PR-33.2 D05 fix) emits the diagnostic from line 188.
+**Fix:** Added test arm `m33_bad_2_template_not_instantiated` in `M29ValidatorTest.scala`. Fixture: `data MyGen[T] { v: T }; root data X { + MyGen }`. Asserts `TyperIssue.TemplateNotInstantiated(templateName="MyGen", aliasName="X")`. Pins the diagnostic at validator-level entry; complements PR-33.2's M33StructuralTemplateInstantiationTest coverage of the same case (no duplication).
+
+### [PR-33.3-D05] Plan §3.d-mandated positive `+ ns.NsTemplate[i32]` cross-namespace structural-arm test missing
+**Status:** resolved
+**Severity:** minor
+**Location:** `M29ValidatorTest.scala` (no test added) — plan §3.d / §4 row 5
+**Description:** Plan §3.d states: "PR-33.3's negative tests must include a positive `+ ns.NsTemplate[i32]` case to verify cross-ns instantiation works in structural-arm position". Without it, a future bug breaking cross-ns lookup in `lowerOneArm`'s prefix→Owner.Ns conversion (line 386-390) would slip through (negative tests cannot isolate it).
+**Fix:** Added test arm `m33_ok_cross_ns_structural_arm_plus` in `M29ValidatorTest.scala`. Fixture: `ns foo { data NsT[T] { v: T } } root data Receiver { + foo.NsT[i32] }`. Asserts `outcome.isRight` AND `Receiver` carries `v: i32` (TypeRef.Scalar `i32`). Used the file's existing positive-test scaffolding pattern (`domain.defs.meta.nodes` traversal).
+
+### [PR-33.3-D06] Plan §4 row 7 (template self-instantiation via structural arm) is uncovered
+**Status:** resolved
+**Severity:** minor
+**Location:** `M29ValidatorTest.scala` (no test added) — plan §4 row 7
+**Description:** Plan §4 row 7 specifies `template X[T] { data X { + X[T] } }` as the close cousin of M29 matrix #5 — self-instantiation through a structural arm. Per §3.f should fire `CircularInheritance` via the cycle-detection set. Row 9 covers MUTUAL recursion (two templates) but not direct self-recursion (one template, single arm) — different cycleSet code paths.
+**Fix:** Added test arm `m33_bad_7_template_self_instantiation` in `M29ValidatorTest.scala`. Fixture: `data X[T] { + X[T] }; root type Y = X[i32]`. Asserts `TyperIssue.CircularInheritance` fires AND the matrix is non-empty AND mentions `X` (verifying the PR-33.2 D01 synthetic-edge fix).
+
+### [PR-33.3-D07] [PR-33.3-D01] deferral framing implies broader work than required; `.distinct` is preexisting
+**Status:** resolved
+**Severity:** nit
+**Location:** `defects.md` `## [PR-33.3-D01]` entry; underlying preexisting code at `BaboonTranslator.scala:314-316`
+**Description:** [PR-33.3-D01]'s entry attributes the silent-dedup behaviour to `.distinct` at `BaboonTranslator.scala:316`. This `.distinct` predates M33 (it is old translator code), so the issue is preexisting — not a regression introduced by PR-33.x. The "Fix (suggested)" mentions "careful audit of callers" implying broader scope than is actually required: a small local fix is feasible (compute `convertedDuplicateNames = converted.groupBy(_.name).filter(_._2.size > 1)`, fail with `NonUniqueFields` if non-empty BEFORE the `.distinct` line, leaving ADT contract dedup untouched).
+**Fix:** Updated the `[PR-33.3-D01]` entry: added "Preexisting; predates M33" note to Description; replaced Fix-suggested with the scoped `convertedDuplicateNames = converted.groupBy(_.name).filter(_._2.size > 1)` approach leaving `.distinct` intact; updated Test reference to the new test name.
+
+### [PR-33.3-D08] m33_bad_11 test docstring says "DEFERRED" but the test runs and asserts a passing outcome
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/M29ValidatorTest.scala:649-660`
+**Description:** Test name string starts with "DEFERRED [PR-33.3-D01]" but the test body is fully active — asserts `outcome.isRight` and runs in normal suite. Reader scanning suite output sees "DEFERRED" line that actually executes and pins the (defective) idempotent-dedup behaviour. If [PR-33.3-D01] is later fixed, this test will FAIL and a maintainer reading "DEFERRED" may mistakenly mark it ignored rather than updating the assertion.
+**Fix:** Renamed test to `m33_bad_11_duplicate_arm_silently_deduplicated_REGRESSION_GUARD`. Dropped "DEFERRED" from the name; updated docstring to "regression guard pinning current (defective) idempotent-dedup behaviour; will need updating when [PR-33.3-D01] is resolved". Assertion (`outcome.isRight`) unchanged — still pins current behaviour.
+
+### [PR-33.3-D09] Row 1 fixture conflates user type-name with diagnostic case-name
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/M29ValidatorTest.scala:225-233` (`m33bad1NotATemplate` fixture)
+**Description:** The fixture declares `data NotATemplate { v: str }` and asserts `TyperIssue.NotATemplate`. User type and diagnostic case share the exact name. The assertion `issue.head == "NotATemplate"` is checking the field-value of a case named NotATemplate where "NotATemplate" is the head name. If a future regression fires NotATemplate for the WRONG reason (e.g. prefix walk fails entirely), the head-string assertion is uninformative due to the naming collision.
+**Fix:** Renamed `data NotATemplate { v: str }` → `data PlainDto { v: str }` in the fixture; `+ NotATemplate[i32]` → `+ PlainDto[i32]`; assertion updated to `issue.head == "PlainDto"`. Diagnostic case `TyperIssue.NotATemplate` unchanged.
+
+### [PR-33.3-D01] Duplicate template-arm `+ MyGen[T]; + MyGen[T]` is silently deduplicated rather than rejected
+**Status:** [ ] open
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonTranslator.scala:314-316` (`convertDto` — `withoutRemoved` computation applies `.distinct` before the `toUniqueMap` uniqueness check)
+**Description:** The plan §4 row 11 expected `NonUniqueFields` to fire when the same template is included twice with the same type args (e.g. `data X { + MyGen[i32]; + MyGen[i32] }`). At runtime, both arms inline `v: i32`; the `.distinct` call at `BaboonTranslator.scala:316` deduplicates identical `Field` instances before `toUniqueMap` runs — so only one `v: i32` survives and the DTO compiles without error. `NonUniqueFields` fires only when two fields share the same name but DIFFER in type (e.g. `v: i32` vs `v: str`). The idempotent-duplicate case is silently accepted. **Preexisting; predates M33** — the `.distinct` call at `BaboonTranslator.scala:316` is older translator code; M33 only exposed the case via inlined fields.
+**Fix (suggested):** Compute `convertedDuplicateNames = converted.groupBy(_.name).filter(_._2.size > 1)` BEFORE the `.distinct` call; fail with `TyperIssue.NonUniqueFields` if non-empty. Leave the `.distinct` call (and the ADT contract dedup that depends on it) intact.
+**Test:** `M29ValidatorTest.scala` row 11 (`m33_bad_11_duplicate_arm_silently_deduplicated_REGRESSION_GUARD`) pins the current (defective) idempotent-dedup behaviour. Update the assertion to `NonUniqueFields` when this defect is resolved.
+
+---
+
 ## PR-33.2
 
 ### [PR-33.2-D01] Synthetic `CircularInheritance` from recursion guard prints with empty payload

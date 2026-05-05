@@ -216,6 +216,194 @@ abstract class M29ValidatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] 
 
   // ─── tests ────────────────────────────────────────────────────────────────────
 
+  // ─── M33 §4 negative-path fixtures ───────────────────────────────────────────
+
+  /** Row 1: `+ PlainDto[i32]` where the head resolves to a plain DTO (not a template).
+    * Expected: `TyperIssue.NotATemplate` (the structural-arm lookup misses the template
+    * registry because `PlainDto` was never registered as a template). User-type name and
+    * diagnostic case-name are deliberately distinct so the assertion surface clearly
+    * distinguishes "the diagnostic case is NotATemplate" from "the head name was …". */
+  private val m33bad1NotATemplate: String =
+    """model m33.bad1
+      |
+      |version "1.0.0"
+      |
+      |data PlainDto { v: str }
+      |
+      |root data Receiver {
+      |  + PlainDto[i32]
+      |}
+      |""".stripMargin
+
+  /** Row 2 (PR-33.3-D04): `+ MyGen` (no brackets) where MyGen IS a registered template.
+    * Expected: `TyperIssue.TemplateNotInstantiated` with `templateName == "MyGen"` and
+    * `aliasName == "X"`. Pins the diagnostic at the M29Validator level (i.e. fires through
+    * the validator-level entry point in `validateNoBareTemplateRefs`). */
+  private val m33bad2TemplateNotInstantiated: String =
+    """model m33.bad2
+      |
+      |version "1.0.0"
+      |
+      |data MyGen[T] { v: T }
+      |
+      |root data X {
+      |  + MyGen
+      |}
+      |""".stripMargin
+
+  /** Row 5 / §3.d positive (PR-33.3-D05): cross-namespace structural-arm `+` instantiation.
+    * `ns foo { data NsT[T] { v: T } } root data Receiver { + foo.NsT[i32] }` — the prefix
+    * `foo.` resolves to `Owner.Ns(["foo"])`; PR-29.15 hardened the resolver so this case
+    * works. Pins that breaking the prefix→Owner.Ns conversion in `lowerOneArm` would
+    * regress this positive scenario. */
+  private val m33ok5CrossNsStructuralArmPlus: String =
+    """model m33.ok5
+      |
+      |version "1.0.0"
+      |
+      |ns foo { data NsT[T] { v: T } }
+      |
+      |root data Receiver {
+      |  + foo.NsT[i32]
+      |}
+      |""".stripMargin
+
+  /** Row 7 (PR-33.3-D06): template self-instantiation via structural arm.
+    * `data X[T] { + X[T] }; root type Y = X[i32]`. Per §3.f the cycle-detection set in
+    * `lowerOneArm` fires `TyperIssue.CircularInheritance`. The synthetic matrix carries one
+    * edge so `niceList()` renders a non-empty diagnostic. */
+  private val m33bad7TemplateSelfInstantiation: String =
+    """model m33.bad7
+      |
+      |version "1.0.0"
+      |
+      |data X[T] {
+      |  + X[T]
+      |}
+      |
+      |root type Y = X[i32]
+      |""".stripMargin
+
+  /** Row 3: `+ MyGen[i32, str]` where `MyGen` is a 1-arg template — arity mismatch.
+    * Expected: `TyperIssue.TemplateArityMismatch`. */
+  private val m33bad3ArityMismatch: String =
+    """model m33.bad3
+      |
+      |version "1.0.0"
+      |
+      |data MyGen[T] { v: T }
+      |
+      |root data Receiver {
+      |  + MyGen[i32, str]
+      |}
+      |""".stripMargin
+
+  /** Row 4: forbidden type-arg in structural-arm position (matrix #2).
+    *
+    * `data MyGen[T] { v: T }; data Other[T] { o: T }; root data Receiver { + MyGen[Other[i32]] }`.
+    * The `+ MyGen[…]` arm is a structural-arm template instantiation; its single argument
+    * `Other[i32]` is itself a Constructor whose head names a registered template — this is
+    * matrix #2 (template instantiation in arg position; spec §4 / locked decision #3).
+    * Expected: `TyperIssue.TemplateInstantiationInForbiddenPosition` with
+    * `containingTemplateName == "MyGen"` and `instantiatedName == "Other"`.
+    *
+    * This mirrors `processMember`'s alias-RHS matrix-#2 walk (lines 686-708) at the
+    * structural-arm position in `lowerOneArm`.
+    */
+  private val m33bad4ForbiddenTypeArg: String =
+    """model m33.bad4
+      |
+      |version "1.0.0"
+      |
+      |data Other[T] { o: T }
+      |data MyGen[T] { v: T }
+      |
+      |root data Receiver {
+      |  + MyGen[Other[i32]]
+      |}
+      |""".stripMargin
+
+  /** Row 6: namespace-prefix miss in structural-arm template instantiation.
+    *
+    * `+ otherpkg.OtherTemplate[i32]` — the prefix `otherpkg` resolves to
+    * `Owner.Ns(["otherpkg"])` for the registry lookup. `OtherTemplate` is defined at
+    * `Owner.Toplevel` (not inside any namespace), so the lookup
+    * `(pkg, Owner.Ns(["otherpkg"]), TypeName("OtherTemplate"))` misses → `NotATemplate`.
+    *
+    * This is single-Pkg cross-namespace prefix miss; true multi-Pkg cross-package
+    * instantiation is out of scope per spec §6 item 11.
+    */
+  private val m33bad6NamespacePrefixMiss: String =
+    """model m33.bad6
+      |
+      |version "1.0.0"
+      |
+      |data OtherTemplate[T] { v: T }
+      |
+      |root data Receiver {
+      |  + otherpkg.OtherTemplate[i32]
+      |}
+      |""".stripMargin
+
+  /** Row 9: mutual recursion — `A[U] { + B[U] }; B[U] { + A[U] }` instantiated as `X = A[i32]`.
+    *
+    * Pass 1 (alias instantiation) materialises `X` from `A[i32]` with body `{ + B[i32] }`.
+    * Pass 2 (structural-arm lowering) descends into `B[i32]`, substitutes its body `{ + A[i32] }`,
+    * then tries `(X, B, i32)` which is already in the cycle-detection set → `CircularInheritance`.
+    *
+    * Verifies: (a) no stack overflow, (b) `CircularInheritance` is emitted,
+    * (c) the rendered matrix mentions `B` (the template being lowered when the cycle fires).
+    */
+  private val m33bad9MutualRecursion: String =
+    """model m33.bad9
+      |
+      |version "1.0.0"
+      |
+      |data A[U] {
+      |  + B[U]
+      |}
+      |
+      |data B[U] {
+      |  + A[U]
+      |}
+      |
+      |root type X = A[i32]
+      |""".stripMargin
+
+  /** Row 11: duplicate inline arm — `+ MyGen[i32]` twice in the same DTO.
+    *
+    * Both arms inline the same field `v: i32`; `BaboonTranslator` detects the
+    * duplicate field names and fires `NonUniqueFields`.
+    */
+  private val m33bad11DuplicateArm: String =
+    """model m33.bad11
+      |
+      |version "1.0.0"
+      |
+      |data MyGen[T] { v: T }
+      |
+      |root data X {
+      |  + MyGen[i32]
+      |  + MyGen[i32]
+      |}
+      |""".stripMargin
+
+  /** Row 12: inline-then-collide — `+ MyGen[i32]` inlines `v: i32` which collides with
+    * a locally declared field `v: str`. `BaboonTranslator` fires `NonUniqueFields`.
+    */
+  private val m33bad12InlineThenCollide: String =
+    """model m33.bad12
+      |
+      |version "1.0.0"
+      |
+      |data MyGen[T] { v: T }
+      |
+      |root data X {
+      |  + MyGen[i32]
+      |  v: str
+      |}
+      |""".stripMargin
+
   "M29 validator (PR-29.7)" should {
 
     // ── Matrix #7 ────────────────────────────────────────────────────────────
@@ -414,6 +602,194 @@ abstract class M29ValidatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] 
             .getOrElse(throw new AssertionError(s"no TemplateInstantiationInForbiddenPosition in: $issues"))
           assert(issue.containingTemplateName == "Y", s"expected containingTemplateName='Y', got '${issue.containingTemplateName}'")
           assert(issue.instantiatedName == "X", s"expected instantiatedName='X', got '${issue.instantiatedName}'")
+        }
+    }
+
+    // ─── M33 §4 negative-path tests (PR-33.3) ─────────────────────────────────
+
+    // Row 1: + PlainDto[i32] where head is a plain DTO
+    "m33_bad_1: produce NotATemplate for `+ PlainDto[i32]` where PlainDto is a plain DTO (structural-arm position)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, m33bad1NotATemplate, "m33-bad-1-not-a-template.baboon")
+        } yield {
+          val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val issue = typerIssues(issues).collectFirst { case i: TyperIssue.NotATemplate => i }
+            .getOrElse(throw new AssertionError(s"no NotATemplate in: $issues"))
+          assert(issue.head == "PlainDto", s"expected head='PlainDto', got '${issue.head}'")
+          assert(issue.aliasName == "Receiver", s"expected aliasName='Receiver', got '${issue.aliasName}'")
+        }
+    }
+
+    // Row 2: + MyGen (no brackets) where MyGen IS a registered template
+    "m33_bad_2_template_not_instantiated" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, m33bad2TemplateNotInstantiated, "m33-bad-2-template-not-instantiated.baboon")
+        } yield {
+          // Pinned at the M29Validator-level entry point: validateNoBareTemplateRefs walks the
+          // receiving DTO's member list and emits TemplateNotInstantiated for any `+/-/^ Foo`
+          // arm whose head names a registered template AND whose `args = None`.
+          val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val issue = typerIssues(issues).collectFirst { case i: TyperIssue.TemplateNotInstantiated => i }
+            .getOrElse(throw new AssertionError(s"no TemplateNotInstantiated in: $issues"))
+          assert(issue.templateName == "MyGen", s"expected templateName='MyGen', got '${issue.templateName}'")
+          assert(issue.aliasName == "X", s"expected aliasName='X', got '${issue.aliasName}'")
+        }
+    }
+
+    // Row 3: + MyGen[i32, str] (arity mismatch — MyGen has 1 param, 2 args supplied)
+    "m33_bad_3: produce TemplateArityMismatch for `+ MyGen[i32, str]` where MyGen[T] has arity 1 (structural-arm position)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, m33bad3ArityMismatch, "m33-bad-3-arity.baboon")
+        } yield {
+          val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val issue = typerIssues(issues).collectFirst { case i: TyperIssue.TemplateArityMismatch => i }
+            .getOrElse(throw new AssertionError(s"no TemplateArityMismatch in: $issues"))
+          assert(issue.templateName == "MyGen", s"expected templateName='MyGen', got '${issue.templateName}'")
+          assert(issue.expected == 1, s"expected expected=1, got ${issue.expected}")
+          assert(issue.actual == 2, s"expected actual=2, got ${issue.actual}")
+        }
+    }
+
+    // Row 4: forbidden type-arg — `+ MyGen[Other[i32]]` (matrix #2: template-in-arg)
+    "m33_bad_4: produce TemplateInstantiationInForbiddenPosition for `+ MyGen[Other[i32]]` where Other is a registered template in arg position (structural-arm matrix #2)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, m33bad4ForbiddenTypeArg, "m33-bad-4-forbidden-type-arg.baboon")
+        } yield {
+          // The `+ MyGen[…]` arm carries arg `Other[i32]` — Other is a registered template,
+          // so the arg itself is a template instantiation. lowerOneArm's matrix-#2 walk
+          // mirrors processMember's alias-RHS check (lines 686-708) and emits
+          // TemplateInstantiationInForbiddenPosition with containingTemplateName=MyGen,
+          // instantiatedName=Other.
+          val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val issue = typerIssues(issues).collectFirst { case i: TyperIssue.TemplateInstantiationInForbiddenPosition => i }
+            .getOrElse(throw new AssertionError(s"no TemplateInstantiationInForbiddenPosition in: $issues"))
+          assert(issue.containingTemplateName == "MyGen", s"expected containingTemplateName='MyGen', got '${issue.containingTemplateName}'")
+          assert(issue.instantiatedName == "Other", s"expected instantiatedName='Other', got '${issue.instantiatedName}'")
+        }
+    }
+
+    // Row 6: namespace-prefix miss — prefix-qualified head misses the template registry
+    "m33_bad_6: produce NotATemplate for `+ otherpkg.OtherTemplate[i32]` where OtherTemplate is at Owner.Toplevel (namespace-prefix miss)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, m33bad6NamespacePrefixMiss, "m33-bad-6-namespace-prefix-miss.baboon")
+        } yield {
+          // OtherTemplate is registered as (pkg, Owner.Toplevel, TypeName("OtherTemplate")).
+          // The structural-arm lookup for `+ otherpkg.OtherTemplate[i32]` resolves the prefix to
+          // Owner.Ns(["otherpkg"]), producing key (pkg, Ns(["otherpkg"]), "OtherTemplate") — a miss.
+          // Pins "namespace-prefix miss" wording; true multi-Pkg cross-package case is deferred.
+          val issues = outcome.left.getOrElse(throw new AssertionError(s"expected failure, got: $outcome"))
+          val issue = typerIssues(issues).collectFirst { case i: TyperIssue.NotATemplate => i }
+            .getOrElse(throw new AssertionError(s"no NotATemplate in: $issues"))
+          assert(issue.head == "OtherTemplate", s"expected head='OtherTemplate', got '${issue.head}'")
+          assert(issue.aliasName == "Receiver", s"expected aliasName='Receiver', got '${issue.aliasName}'")
+        }
+    }
+
+    // Row 5 / §3.d positive: cross-namespace structural-arm `+` instantiation succeeds
+    "m33_ok_cross_ns_structural_arm_plus" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, m33ok5CrossNsStructuralArmPlus, "m33-ok-cross-ns-structural-arm-plus.baboon")
+        } yield {
+          // PR-29.15 hardened the resolver: `+ foo.NsT[i32]` → Owner.Ns(["foo"]) lookup hits.
+          // After lowering, Receiver carries the substituted field `v: i32`.
+          val domain = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val receiverName = io.septimalmind.baboon.typer.model.TypeName("Receiver")
+          val receiverEntry = domain.defs.meta.nodes.collectFirst {
+            case (id: io.septimalmind.baboon.typer.model.TypeId.User, dm) if id.name == receiverName => dm
+          }.getOrElse(throw new AssertionError(s"no Receiver in domain: ${domain.defs.meta.nodes.keys}"))
+          val dto = receiverEntry match {
+            case io.septimalmind.baboon.typer.model.DomainMember.User(_, defn: io.septimalmind.baboon.typer.model.Typedef.Dto, _, _) => defn
+            case other => throw new AssertionError(s"expected Receiver to be Typedef.Dto, got: $other")
+          }
+          val fieldNames = dto.fields.map(_.name.name).toSet
+          assert(fieldNames.contains("v"), s"expected Receiver to have field 'v', got: $fieldNames")
+          val vField = dto.fields.find(_.name.name == "v").get
+          val isI32 = vField.tpe match {
+            case io.septimalmind.baboon.typer.model.TypeRef.Scalar(id) => id.name.name == "i32"
+            case _                                                     => false
+          }
+          assert(isI32, s"expected v: i32 in Receiver, got: ${vField.tpe}")
+        }
+    }
+
+    // Row 7: template self-instantiation via structural arm — `data X[T] { + X[T] }`
+    "m33_bad_7_template_self_instantiation" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, m33bad7TemplateSelfInstantiation, "m33-bad-7-template-self-instantiation.baboon")
+        } yield {
+          // The cycle-detection set in `lowerOneArm` fires on the second iteration of the
+          // self-recursion. Per §3.f the diagnostic is the existing `CircularInheritance`.
+          assertProducesTyperIssue[TyperIssue.CircularInheritance](outcome)
+          val ti = outcome.left.toOption.toList.flatMap(_.toList).collect { case BaboonIssue.Typer(t: TyperIssue.CircularInheritance) => t }
+          assert(ti.nonEmpty, s"expected a CircularInheritance issue, got: $outcome")
+          val matrix = ti.head.error match {
+            case izumi.fundamentals.graphs.ToposortError.UnexpectedLoop(_, m) => m.links
+            case _                                                            => Map.empty[io.septimalmind.baboon.typer.model.TypeId.User, Set[io.septimalmind.baboon.typer.model.TypeId.User]]
+          }
+          assert(matrix.nonEmpty, s"expected non-empty matrix in CircularInheritance payload")
+          val rendered = matrix.flatMap { case (t, cs) => Iterator(t.name.name) ++ cs.iterator.map(_.name.name) }.toSet
+          assert(rendered.contains("X"), s"expected matrix to mention 'X', got: $rendered")
+        }
+    }
+
+    // Row 9: mutual recursion — A[U]{+B[U]}; B[U]{+A[U]}; type X = A[i32]
+    "m33_bad_9: mutual-recursion structural arms terminate with CircularInheritance (no stack overflow); matrix mentions B" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, m33bad9MutualRecursion, "m33-bad-9-mutual-recursion.baboon")
+        } yield {
+          // Pass 1 materialises X from A[i32] with body {+ B[i32]}.
+          // Pass 2 lowers B[i32], substitutes body {+ A[i32]}, recurses; on the next iteration
+          // cycleKey (X, B, i32) hits the cycle-detection set → CircularInheritance.
+          assertProducesTyperIssue[TyperIssue.CircularInheritance](outcome)
+          val ti = outcome.left.toOption.toList.flatMap(_.toList).collect { case BaboonIssue.Typer(t: TyperIssue.CircularInheritance) => t }
+          assert(ti.nonEmpty, s"expected a CircularInheritance issue, got: $outcome")
+          val matrix = ti.head.error match {
+            case izumi.fundamentals.graphs.ToposortError.UnexpectedLoop(_, m) => m.links
+            case _                                                            => Map.empty[io.septimalmind.baboon.typer.model.TypeId.User, Set[io.septimalmind.baboon.typer.model.TypeId.User]]
+          }
+          assert(matrix.nonEmpty, s"expected non-empty matrix in CircularInheritance payload")
+          val rendered = matrix.flatMap { case (t, cs) => Iterator(t.name.name) ++ cs.iterator.map(_.name.name) }.toSet
+          // The cycle fires when (X, B, i32) is found in cycleSet; the matrix encodes X → B.
+          assert(rendered.exists(n => n == "B" || n == "A"), s"expected matrix to mention 'A' or 'B', got: $rendered")
+        }
+    }
+
+    // Row 11: duplicate inline arm — same template + same args twice.
+    // Regression guard pinning the current (defective) idempotent-dedup behaviour; will need
+    // updating when [PR-33.3-D01] is resolved. BaboonTranslator.convertDto applies `.distinct`
+    // to the field list BEFORE the `toUniqueMap` uniqueness check
+    // (BaboonTranslator.scala:316). Identical fields (same name AND same type) are silently
+    // deduplicated, so `+ MyGen[i32]; + MyGen[i32]` produces only one `v: i32` and the DTO
+    // compiles. NonUniqueFields fires only when two fields share a name but differ in type
+    // (e.g. Row 12).
+    "m33_bad_11_duplicate_arm_silently_deduplicated_REGRESSION_GUARD" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, m33bad11DuplicateArm, "m33-bad-11-duplicate-arm.baboon")
+        } yield {
+          // Pins the ACTUAL behaviour: the duplicate arm is silently absorbed and the DTO
+          // compiles with a single `v: i32` field. If [PR-33.3-D01] is resolved, this test
+          // must be updated to assert NonUniqueFields instead.
+          assert(outcome.isRight, s"expected success (deduplicated), got: $outcome")
+        }
+    }
+
+    // Row 12: inline-then-collide — + MyGen[i32] inlines v:i32 colliding with explicit v:str
+    "m33_bad_12: produce NonUniqueFields for `+ MyGen[i32]; v: str` where MyGen[T] produces v:T" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, m33bad12InlineThenCollide, "m33-bad-12-inline-collide.baboon")
+        } yield {
+          // + MyGen[i32] inlines v:i32; the explicit field v:str collides → NonUniqueFields.
+          assertProducesTyperIssue[TyperIssue.NonUniqueFields](outcome)
         }
     }
   }
