@@ -8,7 +8,8 @@
 // are human-readable strings — same content as sibling backends — so test
 // assertions can match on substrings across languages.
 
-import { BaboonDateTimeOffset, BaboonDateTimeUtc, BaboonEither } from "./BaboonSharedRuntime";
+import { BaboonDateTimeOffset, BaboonDateTimeUtc } from "./BaboonSharedRuntime";
+import type { BaboonEither } from "./BaboonSharedRuntime";
 
 // Defensive: numeric char-code constants rather than literal escapes so the
 // emitted/copied source is robust against any future template-escape pass.
