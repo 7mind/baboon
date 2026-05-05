@@ -1406,7 +1406,7 @@ public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
 }
 
 public enum BaboonTypeMetaCodec {
-    public static let metaVersion: Int = 1
+    public static let metaVersion: Int = 16
 
     public static func writeBin(_ meta: BaboonTypeMeta, _ writer: BaboonBinWriter) {
         writer.writeU8(UInt8(metaVersion))
@@ -1423,7 +1423,7 @@ public enum BaboonTypeMetaCodec {
 
     public static func readMeta(_ reader: BaboonBinReader) throws -> BaboonTypeMeta? {
         let v = Int(reader.readU8())
-        if v == 1 { return try readMetaV1(reader) }
+        if v == metaVersion { return try readMetaV1(reader) }
         return nil
     }
 

@@ -987,7 +987,7 @@ export class BaboonTypeMeta {
 }
 
 export class BaboonTypeMetaCodec {
-    public static readonly META_VERSION_1: number = 1;
+    public static readonly META_VERSION_1: number = 16;
     public static readonly META_VERSION: number = BaboonTypeMetaCodec.META_VERSION_1;
 
     public static readonly META_VERSION_KEY = "$mv";

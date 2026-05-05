@@ -377,7 +377,7 @@ package baboon.runtime.shared {
   }
 
   object BaboonTypeMetaCodec {
-    private val META_VERSION_1: Byte = 1
+    private val META_VERSION_1: Byte = 16
     val META_VERSION: Byte           = META_VERSION_1
 
     private val META_VERSION_KEY              = "$mv"
@@ -412,7 +412,7 @@ package baboon.runtime.shared {
 
     def readMeta(reader: LEDataInputStream): Option[BaboonTypeMeta] = {
       val metaVersion = reader.readByte()
-      if (metaVersion == 1) {
+      if (metaVersion == META_VERSION_1) {
         readMetaV1(reader)
       } else None
     }

@@ -118,7 +118,7 @@ data class BaboonTypeMeta(
 }
 
 object BaboonTypeMetaCodec {
-    private const val META_VERSION_1: Byte = 1
+    private const val META_VERSION_1: Byte = 16
     const val META_VERSION: Byte = META_VERSION_1
 
     fun writeBin(meta: BaboonTypeMeta, writer: LEDataOutputStream) {
@@ -136,7 +136,7 @@ object BaboonTypeMetaCodec {
 
     fun readMeta(reader: LEDataInputStream): BaboonTypeMeta? {
         val metaVersion = reader.readByte()
-        if (metaVersion.toInt() == 1) {
+        if (metaVersion == META_VERSION_1) {
             return readMetaV1(reader)
         }
         return null

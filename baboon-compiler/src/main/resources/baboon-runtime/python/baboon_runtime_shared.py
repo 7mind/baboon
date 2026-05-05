@@ -553,7 +553,7 @@ class BaboonTypeMeta(BaseModel):
 
 
 class BaboonTypeMetaCodec:
-    META_VERSION_1: int = 1
+    META_VERSION_1: int = 16
     META_VERSION: int = META_VERSION_1
 
     META_VERSION_KEY = "$mv"
@@ -600,7 +600,7 @@ class BaboonTypeMetaCodec:
     def read_meta_bin(reader: LEDataInputStream) -> Optional[BaboonTypeMeta]:
         try:
             meta_version = reader.read_byte()
-            if meta_version == 1:
+            if meta_version == BaboonTypeMetaCodec.META_VERSION_1:
                 return BaboonTypeMetaCodec._read_meta_v1_bin(reader)
             return None
         except Exception:

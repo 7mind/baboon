@@ -96,7 +96,7 @@ public record BaboonTypeMeta(
     public static final class BaboonTypeMetaCodec {
         private BaboonTypeMetaCodec() {}
 
-        public static final byte META_VERSION_1 = 1;
+        public static final byte META_VERSION_1 = 16;
         public static final byte META_VERSION = META_VERSION_1;
 
         public static final String META_VERSION_KEY = "$mv";

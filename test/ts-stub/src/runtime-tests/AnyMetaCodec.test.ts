@@ -511,9 +511,9 @@ describe("BaboonTypeMeta.readMetaJson $mv handling", () => {
         expect(meta!.domainIdentifier).toBe("dom");
     });
 
-    test("accepts explicit $mv=1", () => {
+    test("accepts explicit $mv=16", () => {
         const meta = BaboonTypeMeta.readMetaJson({
-            "$mv": "1", "$d": "dom", "$v": "1.0.0", "$t": "T",
+            "$mv": "16", "$d": "dom", "$v": "1.0.0", "$t": "T",
         });
         expect(meta).toBeDefined();
     });

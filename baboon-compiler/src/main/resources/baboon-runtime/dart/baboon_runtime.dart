@@ -1153,7 +1153,7 @@ class BaboonTypeMeta {
 }
 
 class BaboonTypeMetaCodec {
-  static const int metaVersion = 1;
+  static const int metaVersion = 16;
 
   static void writeBin(BaboonTypeMeta meta, BaboonBinWriter writer) {
     writer.writeU8(metaVersion);
@@ -1170,7 +1170,7 @@ class BaboonTypeMetaCodec {
 
   static BaboonTypeMeta? readMeta(BaboonBinReader reader) {
     final v = reader.readU8();
-    if (v == 1) return _readMetaV1(reader);
+    if (v == metaVersion) return _readMetaV1(reader);
     return null;
   }
 
