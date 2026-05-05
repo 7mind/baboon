@@ -1,0 +1,33 @@
+model my.ok.m31
+
+version "1.0.0"
+
+// BAB-R04 regression fixture: float-bearing structs must NOT emit
+// `impl Eq` / `impl Ord` and must NOT call `.total_cmp()`.
+// Floats fail Eq/Ord per Rust semantics (NaN); the previous emitter
+// produced `self.lat.total_cmp(&other.lat)` for `lat: Option<f64>`,
+// which fails to compile because total_cmp is a method of f64 only.
+
+// A) Bare float field — must derive PartialEq/PartialOrd, not Eq/Ord.
+root data BareFloat : derived[json], derived[ueba] {
+  bare64: f64
+  bare32: f32
+}
+
+// B) Wrapped float — opt[f64] (the original BAB-R04 reproduction).
+root data WrappedFloat : derived[json], derived[ueba] {
+  optLat: opt[f64]
+  optAlt: opt[f32]
+}
+
+// C) Float in collections — covers the recursive case.
+root data CollFloat : derived[json], derived[ueba] {
+  series: lst[f64]
+  named: map[str, f64]
+}
+
+// D) No floats — must keep the full Eq/Ord/PartialEq/PartialOrd derive set.
+root data NoFloats : derived[json], derived[ueba] {
+  name: str
+  count: i32
+}
