@@ -575,10 +575,12 @@ async def read_and_verify(
 ) -> StepResult:
     """Run deserializer for a (format, from, to) triplet.
 
-    Checks all-basic-types first, then m29-ok (PR-29.10 template acceptance).
-    Both files must pass; the first failure is returned. The m29-ok fixture
-    is skipped silently if the blob is absent (e.g. running against blobs
-    produced by a pre-M29 commit in cross-version compat checks).
+    Checks all-basic-types first, then m29-ok (PR-29.10 template acceptance),
+    then m33-ok (PR-33.5 structural-inheritance-via-template acceptance).
+    All files must pass; the first failure is returned. Each secondary
+    fixture is skipped silently if the blob is absent (e.g. running against
+    blobs produced by a pre-M29 / pre-M33 commit in cross-version compat
+    checks).
     """
     config = LANG_CONFIGS[to_lang]
     cwd = str(target_dir / config.dir_name)
@@ -598,13 +600,25 @@ async def read_and_verify(
 
     # PR-29.10 (M29) secondary fixture: m29-ok (monomorphised template acceptance).
     m29_blob = blob_dir / f"m29-ok.{ext}"
-    if not m29_blob.exists():
+    if m29_blob.exists():
+        m29_path = str(m29_blob.resolve())
+        cmd2, use_shell2 = config.read_cmd(m29_path)
+        async with _get_lang_lock(to_lang):
+            r2 = await run_subprocess(
+                cmd2, cwd=cwd, semaphore=semaphore, timeout=timeout, use_shell=use_shell2
+            )
+        if r2.status != Status.PASSED:
+            return r2
+
+    # PR-33.5 (M33) secondary fixture: m33-ok (structural-inheritance-via-template acceptance).
+    m33_blob = blob_dir / f"m33-ok.{ext}"
+    if not m33_blob.exists():
         return primary
-    m29_path = str(m29_blob.resolve())
-    cmd2, use_shell2 = config.read_cmd(m29_path)
+    m33_path = str(m33_blob.resolve())
+    cmd3, use_shell3 = config.read_cmd(m33_path)
     async with _get_lang_lock(to_lang):
         return await run_subprocess(
-            cmd2, cwd=cwd, semaphore=semaphore, timeout=timeout, use_shell=use_shell2
+            cmd3, cwd=cwd, semaphore=semaphore, timeout=timeout, use_shell=use_shell3
         )
 
 

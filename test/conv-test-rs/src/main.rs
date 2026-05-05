@@ -17,6 +17,8 @@ use baboon_conv_test_rs::convtest::m26builtinkeys::BuiltinMapKeyHolder;
 // PR-29.10 (M29) — monomorphised template cross-language acceptance fixture.
 use baboon_conv_test_rs::convtest::m29ok::{M29OkHolder, IntPage, StrPage, Item, ItemPage};
 use baboon_conv_test_rs::convtest::m29ok::int_str_envelope::{IntStrEnvelope, Ok as EnvOk, Err as EnvErr};
+// PR-33.5 (M33) — structural-inheritance-via-template cross-language acceptance fixture.
+use baboon_conv_test_rs::convtest::m33ok::{M33OkHolder, IntPageWithStats, PageMinusStats, PageOnly};
 use uuid::Uuid;
 
 // Domain constants — match the convtest.testpkg domain at version 2.0.0 (where AnyShowcase + InnerPayload live).
@@ -287,6 +289,91 @@ fn read_and_verify_m29ok(file_path: &str) {
     println!("OK");
 }
 
+// PR-33.5 (M33) — structural-inheritance-via-template acceptance fixture helpers.
+fn create_m33ok_sample() -> M33OkHolder {
+    M33OkHolder {
+        // PR-33.5-D02 — pairwise-distinct values: total=42 (was 3),
+        // n_observations=7 (was 3), so a swapped-field defect surfaces.
+        page_with_stats: IntPageWithStats {
+            items:          vec![10, 20, 30],
+            total:          42,
+            sum:            60,
+            n_observations: 7,
+        },
+        // PR-33.5-D01 — `-` operator coverage. After lowering only `items`
+        // and `total` survive; sample values pairwise-distinct from
+        // page_with_stats.
+        page_minus_stats: PageMinusStats {
+            items: vec![100, 200],
+            total: 99,
+        },
+        // PR-33.5-D01 — `^` operator coverage. After lowering only `items`
+        // and `total` survive (intersection with Page[i32]'s body).
+        page_only_intersect: PageOnly {
+            items: vec![1, 2, 3, 4, 5],
+            total: 5,
+        },
+    }
+}
+
+fn write_m33ok_json(data: &M33OkHolder, output_dir: &str) {
+    fs::create_dir_all(output_dir).expect("Failed to create output directory");
+    let json_str = data.to_json().expect("Failed to serialize M33OkHolder to JSON");
+    let path = PathBuf::from(output_dir).join("m33-ok.json");
+    fs::write(&path, &json_str).expect("Failed to write M33OkHolder JSON");
+    println!("Written JSON to {:?}", path);
+}
+
+fn write_m33ok_ueba(data: &M33OkHolder, output_dir: &str) {
+    let ctx = BaboonCodecContext::Default;
+    fs::create_dir_all(output_dir).expect("Failed to create output directory");
+    let mut ueba_bytes = Vec::new();
+    data.encode_ueba(&ctx, &mut ueba_bytes).expect("Failed to encode M33OkHolder UEBA");
+    let path = PathBuf::from(output_dir).join("m33-ok.ueba");
+    fs::write(&path, &ueba_bytes).expect("Failed to write M33OkHolder UEBA");
+    println!("Written UEBA to {:?}", path);
+}
+
+fn read_and_verify_m33ok(file_path: &str) {
+    let ctx = BaboonCodecContext::Default;
+    let path = PathBuf::from(file_path);
+    let data: M33OkHolder = if file_path.ends_with(".json") {
+        let json_str = fs::read_to_string(&path)
+            .unwrap_or_else(|e| { eprintln!("Failed to read {:?}: {}", path, e); std::process::exit(1); });
+        M33OkHolder::from_json(&json_str)
+            .unwrap_or_else(|e| { eprintln!("M33OkHolder JSON decode failed: {}", e); std::process::exit(1); })
+    } else {
+        let bytes = fs::read(&path)
+            .unwrap_or_else(|e| { eprintln!("Failed to read {:?}: {}", path, e); std::process::exit(1); });
+        let mut cursor = Cursor::new(&bytes);
+        M33OkHolder::decode_ueba(&ctx, &mut cursor)
+            .unwrap_or_else(|e| { eprintln!("M33OkHolder UEBA decode failed: {}", e); std::process::exit(1); })
+    };
+    // Roundtrip
+    if file_path.ends_with(".json") {
+        let re_encoded = data.to_json()
+            .unwrap_or_else(|e| { eprintln!("M33OkHolder JSON re-encode failed: {}", e); std::process::exit(1); });
+        let re_decoded = M33OkHolder::from_json(&re_encoded)
+            .unwrap_or_else(|e| { eprintln!("M33OkHolder JSON roundtrip decode failed: {}", e); std::process::exit(1); });
+        if data != re_decoded {
+            eprintln!("M33OkHolder JSON roundtrip mismatch");
+            std::process::exit(1);
+        }
+    } else {
+        let mut re_bytes = Vec::new();
+        data.encode_ueba(&ctx, &mut re_bytes)
+            .unwrap_or_else(|e| { eprintln!("M33OkHolder UEBA re-encode failed: {}", e); std::process::exit(1); });
+        let mut cursor = Cursor::new(&re_bytes);
+        let re_decoded = M33OkHolder::decode_ueba(&ctx, &mut cursor)
+            .unwrap_or_else(|e| { eprintln!("M33OkHolder UEBA roundtrip decode failed: {}", e); std::process::exit(1); });
+        if data != re_decoded {
+            eprintln!("M33OkHolder UEBA roundtrip mismatch");
+            std::process::exit(1);
+        }
+    }
+    println!("OK");
+}
+
 fn write_json_any(data: &AnyShowcase, output_dir: &str) {
     fs::create_dir_all(output_dir).expect("Failed to create output directory");
     let json_str = data.to_json_pretty().expect("Failed to serialize AnyShowcase to JSON");
@@ -312,6 +399,10 @@ fn read_and_verify(file_path: &str) {
     }
     if file_path.ends_with("m29-ok.json") || file_path.ends_with("m29-ok.ueba") {
         read_and_verify_m29ok(file_path);
+        return;
+    }
+    if file_path.ends_with("m33-ok.json") || file_path.ends_with("m33-ok.ueba") {
+        read_and_verify_m33ok(file_path);
         return;
     }
     let ctx = BaboonCodecContext::Default;
@@ -546,16 +637,19 @@ fn main() {
             let format = &args[2];
             let sample_data = create_sample_data();
             let m29_sample = create_m29ok_sample();
+            let m33_sample = create_m33ok_sample();
             match format.as_str() {
                 "json" => {
                     write_json(&sample_data, output_dir);
                     write_json_any(&create_sample_any_showcase_json(), output_dir);
                     write_m29ok_json(&m29_sample, output_dir);
+                    write_m33ok_json(&m33_sample, output_dir);
                 }
                 "ueba" => {
                     write_ueba(&sample_data, output_dir);
                     write_ueba_any(&create_sample_any_showcase_ueba(), output_dir);
                     write_m29ok_ueba(&m29_sample, output_dir);
+                    write_m33ok_ueba(&m33_sample, output_dir);
                 }
                 _ => {
                     eprintln!("Unknown format: {}", format);

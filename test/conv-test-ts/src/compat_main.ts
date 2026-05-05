@@ -36,6 +36,11 @@ import {StrPage} from "./generated/convtest/m29ok/StrPage";
 import {Item} from "./generated/convtest/m29ok/Item";
 import {ItemPage} from "./generated/convtest/m29ok/ItemPage";
 import {Ok as EnvelopeOk, Err as EnvelopeErr} from "./generated/convtest/m29ok/IntStrEnvelope";
+// PR-33.5 (M33) — structural-inheritance-via-template cross-language acceptance fixture.
+import {M33OkHolder} from "./generated/convtest/m33ok/M33OkHolder";
+import {IntPageWithStats} from "./generated/convtest/m33ok/IntPageWithStats";
+import {PageMinusStats} from "./generated/convtest/m33ok/PageMinusStats";
+import {PageOnly} from "./generated/convtest/m33ok/PageOnly";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -270,6 +275,10 @@ function readAndVerify(filePath: string): void {
         readAndVerifyAnyShowcase(filePath);
         return;
     }
+    if (filePath.endsWith("m33-ok.json") || filePath.endsWith("m33-ok.ueba")) {
+        readAndVerifyM33Ok(filePath);
+        return;
+    }
     if (filePath.endsWith("m29-ok.json") || filePath.endsWith("m29-ok.ueba")) {
         readAndVerifyM29Ok(filePath);
         return;
@@ -500,6 +509,82 @@ function readAndVerifyM29Ok(filePath: string): void {
     console.log("OK");
 }
 
+// PR-33.5 (M33) — structural-inheritance-via-template acceptance fixture helpers.
+function createM33OkSample(): M33OkHolder {
+    // PR-33.5-D02 — pairwise-distinct values: total=42 (was 3),
+    // nObservations=7 (was 3), so a swapped-field defect surfaces.
+    // PR-33.5-D01 — `-` operator coverage (PageMinusStats: items + total
+    // survive after Stats subtraction); `^` operator coverage (PageOnly:
+    // items + total survive after intersection with Page[i32]).
+    return new M33OkHolder(
+        new IntPageWithStats([10, 20, 30], 42, 60, 7),
+        new PageMinusStats([100, 200], 99),
+        new PageOnly([1, 2, 3, 4, 5], 5),
+    );
+}
+
+function writeM33OkJson(ctx: BaboonCodecContext, data: M33OkHolder, outputDir: string): void {
+    fs.mkdirSync(outputDir, {recursive: true});
+    const json = JSON.stringify(M33OkHolder.jsonCodec().encode(ctx, data));
+    const p = path.join(outputDir, "m33-ok.json");
+    fs.writeFileSync(p, json);
+    console.log(`Written JSON to ${p}`);
+}
+
+function writeM33OkUeba(ctx: BaboonCodecContext, data: M33OkHolder, outputDir: string): void {
+    fs.mkdirSync(outputDir, {recursive: true});
+    const w = new BaboonBinWriter();
+    M33OkHolder.binCodec().encode(ctx, data, w);
+    const p = path.join(outputDir, "m33-ok.ueba");
+    fs.writeFileSync(p, w.toBytes());
+    console.log(`Written UEBA to ${p}`);
+}
+
+function readAndVerifyM33Ok(filePath: string): void {
+    const ctx = BaboonCodecContext.Default;
+    let data: M33OkHolder;
+    try {
+        if (filePath.endsWith(".json")) {
+            const jsonStr = fs.readFileSync(filePath, "utf-8");
+            const json = JSON.parse(jsonStr);
+            data = M33OkHolder.jsonCodec().decode(ctx, json);
+        } else {
+            const bytes = fs.readFileSync(filePath);
+            const r = new BaboonBinReader(new Uint8Array(bytes));
+            data = M33OkHolder.binCodec().decode(ctx, r);
+        }
+    } catch (e) {
+        console.error(`M33OkHolder deserialization failed: ${e}`);
+        process.exit(1);
+    }
+    // Roundtrip
+    try {
+        if (filePath.endsWith(".json")) {
+            const reEncoded = M33OkHolder.jsonCodec().encode(ctx, data!);
+            const reDecoded = M33OkHolder.jsonCodec().decode(ctx, reEncoded);
+            if (JSON.stringify(reEncoded) !== JSON.stringify(M33OkHolder.jsonCodec().encode(ctx, reDecoded))) {
+                console.error("M33OkHolder JSON roundtrip mismatch");
+                process.exit(1);
+            }
+        } else {
+            const w = new BaboonBinWriter();
+            M33OkHolder.binCodec().encode(ctx, data!, w);
+            const r = new BaboonBinReader(w.toBytes());
+            const reDecoded = M33OkHolder.binCodec().decode(ctx, r);
+            const w2 = new BaboonBinWriter();
+            M33OkHolder.binCodec().encode(ctx, reDecoded, w2);
+            if (w.toBytes().join(",") !== w2.toBytes().join(",")) {
+                console.error("M33OkHolder UEBA roundtrip mismatch");
+                process.exit(1);
+            }
+        }
+    } catch (e) {
+        console.error(`M33OkHolder roundtrip failed: ${e}`);
+        process.exit(1);
+    }
+    console.log("OK");
+}
+
 const args = process.argv.slice(2);
 if (args[0] === "write") {
     const outputDir = args[1];
@@ -508,15 +593,18 @@ if (args[0] === "write") {
     const sampleAny = createSampleAnyShowcase();
     const facadeCtx = BaboonCodecContext.withFacade(false, freshFacade());
     const m29Sample = createM29OkSample();
+    const m33Sample = createM33OkSample();
     if (format === "json") {
         writeJson(sampleData, outputDir);
         writeJsonAny(facadeCtx, sampleAny, outputDir);
         writeForeignKeyHolderJson(BaboonCodecContext.Default, createForeignKeyHolderSample(), outputDir);
         writeM29OkJson(BaboonCodecContext.Default, m29Sample, outputDir);
+        writeM33OkJson(BaboonCodecContext.Default, m33Sample, outputDir);
     } else if (format === "ueba") {
         writeUeba(sampleData, outputDir);
         writeUebaAny(facadeCtx, sampleAny, outputDir);
         writeM29OkUeba(BaboonCodecContext.Default, m29Sample, outputDir);
+        writeM33OkUeba(BaboonCodecContext.Default, m33Sample, outputDir);
     } else {
         console.error(`Unknown format: ${format}`);
         process.exit(1);

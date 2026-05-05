@@ -3,6 +3,8 @@ package example
 import convtest.testpkg.{AllBasicTypes, AllBasicTypes_JsonCodec, AllBasicTypes_UEBACodec, AnyShowcase, AnyShowcase_JsonCodec, AnyShowcase_UEBACodec, BaboonCodecsJson, BaboonCodecsUeba, CompositeId, InnerPayload, InnerPayload_JsonCodec, InnerPayload_UEBACodec, ItemId, PointId, WireEnum}
 // PR-29.10 (M29) — monomorphised template cross-language acceptance fixture.
 import convtest.m29ok.{IntPage, IntPage_JsonCodec, IntPage_UEBACodec, IntStrEnvelope, Item, ItemPage, M29OkHolder, M29OkHolder_JsonCodec, M29OkHolder_UEBACodec, StrPage}
+// PR-33.5 (M33) — structural-inheritance-via-template cross-language acceptance fixture.
+import convtest.m33ok.{IntPageWithStats, M33OkHolder, M33OkHolder_JsonCodec, M33OkHolder_UEBACodec, PageMinusStats, PageOnly}
 // PR-I.1a (M24 Phase 3.1) — Custom-foreign KeyCodec hook fixture. Stringy
 // foreign FStr maps to java.lang.String; the default identity FStr_KeyCodec
 // impl handles encode/decode of map keys without host registration.
@@ -36,15 +38,18 @@ object CompatMain {
         val ctx        = BaboonCodecContext.Default
         val facadeCtx  = BaboonCodecContext.WithFacade(useIndices = false, freshFacade())
         val m29Sample  = createM29OkSample()
+        val m33Sample  = createM33OkSample()
         format match {
           case "json" =>
             writeJson(ctx, sampleData, dir.toString)
             writeJsonAny(facadeCtx, sampleAny, dir.toString)
             writeM29OkJson(ctx, m29Sample, dir.toString)
+            writeM33OkJson(ctx, m33Sample, dir.toString)
           case "ueba" =>
             writeUeba(ctx, sampleData, dir.toString)
             writeUebaAny(facadeCtx, sampleAny, dir.toString)
             writeM29OkUeba(ctx, m29Sample, dir.toString)
+            writeM33OkUeba(ctx, m33Sample, dir.toString)
           case _ =>
             System.err.println(s"Unknown format: $format")
             sys.exit(1)
@@ -322,6 +327,134 @@ object CompatMain {
     println("OK")
   }
 
+  // PR-33.5 (M33) — structural-inheritance-via-template acceptance fixture write/read helpers.
+  // After PR-33.2 lowering, IntPageWithStats is a vanilla DTO with the four fields produced
+  // by inlining Page[i32] + Stats[i32] (items, total, sum, nObservations). Cross-language
+  // byte-canonical interop is the gate; the codegen path is identical to a hand-written DTO.
+  private def createM33OkSample(): M33OkHolder = {
+    M33OkHolder(
+      pageWithStats = IntPageWithStats(
+        // PR-33.5-D02 — pairwise-distinct values: total=42 (was 3),
+        // nObservations=7 (was 3), so a swapped-field defect surfaces.
+        items         = List(10, 20, 30),
+        total         = 42,
+        sum           = 60,
+        nObservations = 7,
+      ),
+      // PR-33.5-D01 — `-` operator coverage. After lowering only `items` and
+      // `total` survive; sample values pairwise-distinct from PageWithStats.
+      pageMinusStats = PageMinusStats(
+        items = List(100, 200),
+        total = 99,
+      ),
+      // PR-33.5-D01 — `^` operator coverage. After lowering only `items` and
+      // `total` survive (intersection with Page[i32]'s body).
+      pageOnlyIntersect = PageOnly(
+        items = List(1, 2, 3, 4, 5),
+        total = 5,
+      ),
+    )
+  }
+
+  private def writeM33OkJson(ctx: BaboonCodecContext, data: M33OkHolder, outputDir: String): Unit = {
+    val json    = M33OkHolder_JsonCodec.instance.encode(ctx, data)
+    val jsonStr = json.noSpaces
+    val path    = Paths.get(outputDir).resolve("m33-ok.json")
+    Files.write(path, jsonStr.getBytes("UTF-8"))
+    println(s"Written JSON to $path")
+  }
+
+  private def writeM33OkUeba(ctx: BaboonCodecContext, data: M33OkHolder, outputDir: String): Unit = {
+    val baos = new ByteArrayOutputStream()
+    val w    = new LEDataOutputStream(baos)
+    try {
+      M33OkHolder_UEBACodec.instance.encode(ctx, w, data)
+      w.flush()
+      val path = Paths.get(outputDir).resolve("m33-ok.ueba")
+      Files.write(path, baos.toByteArray)
+      println(s"Written UEBA to $path")
+    } finally {
+      w.close()
+    }
+  }
+
+  private def readAndVerifyM33Ok(filePath: String): Unit = {
+    val ctx  = BaboonCodecContext.Default
+    val path = Paths.get(filePath)
+    val data: M33OkHolder =
+      try {
+        if (filePath.endsWith(".json")) {
+          val jsonStr = new String(Files.readAllBytes(path), "UTF-8")
+          val json    = parse(jsonStr).getOrElse(throw new RuntimeException(s"Failed to parse JSON from $filePath"))
+          M33OkHolder_JsonCodec.instance.decode(ctx, json) match {
+            case Right(d)  => d
+            case Left(err) => throw new RuntimeException(s"M33OkHolder JSON decode failed: $err")
+          }
+        } else {
+          val bytes = Files.readAllBytes(path)
+          val r     = new LEDataInputStream(new java.io.ByteArrayInputStream(bytes))
+          try {
+            M33OkHolder_UEBACodec.instance.decode(ctx, r) match {
+              case Right(d)  => d
+              case Left(err) => throw new RuntimeException(s"M33OkHolder UEBA decode failed: $err")
+            }
+          } finally {
+            r.close()
+          }
+        }
+      } catch {
+        case e: Exception =>
+          System.err.println(s"M33OkHolder deserialization failed: ${e.getMessage}")
+          sys.exit(1)
+          throw new RuntimeException("unreachable")
+      }
+    // Roundtrip
+    try {
+      if (filePath.endsWith(".json")) {
+        val reEncoded = M33OkHolder_JsonCodec.instance.encode(ctx, data)
+        M33OkHolder_JsonCodec.instance.decode(ctx, reEncoded) match {
+          case Right(reDecoded) =>
+            if (data != reDecoded) {
+              System.err.println("M33OkHolder JSON roundtrip mismatch")
+              sys.exit(1)
+            }
+          case Left(err) =>
+            System.err.println(s"M33OkHolder JSON roundtrip decode failed: $err")
+            sys.exit(1)
+        }
+      } else {
+        val baos = new ByteArrayOutputStream()
+        val w    = new LEDataOutputStream(baos)
+        try {
+          M33OkHolder_UEBACodec.instance.encode(ctx, w, data)
+          w.flush()
+        } finally {
+          w.close()
+        }
+        val r = new LEDataInputStream(new java.io.ByteArrayInputStream(baos.toByteArray))
+        try {
+          M33OkHolder_UEBACodec.instance.decode(ctx, r) match {
+            case Right(reDecoded) =>
+              if (data != reDecoded) {
+                System.err.println("M33OkHolder UEBA roundtrip mismatch")
+                sys.exit(1)
+              }
+            case Left(err) =>
+              System.err.println(s"M33OkHolder UEBA roundtrip decode failed: $err")
+              sys.exit(1)
+          }
+        } finally {
+          r.close()
+        }
+      }
+    } catch {
+      case e: Exception =>
+        System.err.println(s"M33OkHolder roundtrip failed: ${e.getMessage}")
+        sys.exit(1)
+    }
+    println("OK")
+  }
+
   private def readAndVerify(filePath: String): Unit = {
     if (filePath.endsWith("any-showcase.json") || filePath.endsWith("any-showcase.ueba")) {
       readAndVerifyAnyShowcase(filePath)
@@ -329,6 +462,10 @@ object CompatMain {
     }
     if (filePath.endsWith("m29-ok.json") || filePath.endsWith("m29-ok.ueba")) {
       readAndVerifyM29Ok(filePath)
+      return
+    }
+    if (filePath.endsWith("m33-ok.json") || filePath.endsWith("m33-ok.ueba")) {
+      readAndVerifyM33Ok(filePath)
       return
     }
     val ctx  = BaboonCodecContext.Default

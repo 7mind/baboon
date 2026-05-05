@@ -9,6 +9,8 @@ import ConvtestM24foreign
 import ConvtestM26builtinkeys
 // PR-29.10 (M29) — monomorphised-template cross-language wire-format fixture.
 import ConvtestM29ok
+// PR-33.5 (M33) — structural-inheritance-via-template cross-language acceptance fixture.
+import ConvtestM33ok
 
 func fail(_ message: String) -> Never {
     fputs(message + "\n", stderr)
@@ -261,6 +263,10 @@ func readAndVerify(_ filePath: String) throws {
         try readAndVerifyAnyShowcase(filePath)
         return
     }
+    if filePath.hasSuffix("m33-ok.json") || filePath.hasSuffix("m33-ok.ueba") {
+        try readAndVerifyM33Ok(filePath)
+        return
+    }
     if filePath.hasSuffix("m29-ok.json") || filePath.hasSuffix("m29-ok.ueba") {
         try readAndVerifyM29Ok(filePath)
         return
@@ -406,6 +412,93 @@ func readAndVerifyM29Ok(_ filePath: String) throws {
     }
 }
 
+// PR-33.5 (M33) — structural-inheritance-via-template acceptance fixture helpers.
+func createM33OkSample() -> M33OkHolder {
+    // PR-33.5-D02 — pairwise-distinct values: total=42 (was 3),
+    // nObservations=7 (was 3), so a swapped-field defect surfaces.
+    // PR-33.5-D01 — `-` operator coverage (PageMinusStats: items + total
+    // survive after Stats subtraction); `^` operator coverage (PageOnly:
+    // items + total survive after intersection with Page[i32]).
+    return M33OkHolder(
+        pageWithStats: IntPageWithStats(
+            items: [Int32(10), Int32(20), Int32(30)],
+            total: UInt32(42),
+            sum: Int32(60),
+            nObservations: UInt32(7)
+        ),
+        pageMinusStats: PageMinusStats(
+            items: [Int32(100), Int32(200)],
+            total: UInt32(99)
+        ),
+        pageOnlyIntersect: PageOnly(
+            items: [Int32(1), Int32(2), Int32(3), Int32(4), Int32(5)],
+            total: UInt32(5)
+        )
+    )
+}
+
+func writeM33OkJson(_ ctx: BaboonCodecContext, _ data: M33OkHolder, _ outputDir: String) throws {
+    try FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+    let jsonObj = M33OkHolder_JsonCodec.instance.encode(ctx, data)
+    let jsonData = try JSONSerialization.data(withJSONObject: jsonObj as Any, options: [.sortedKeys])
+    let path = "\(outputDir)/m33-ok.json"
+    try jsonData.write(to: URL(fileURLWithPath: path))
+    print("Written JSON to \(path)")
+}
+
+func writeM33OkUeba(_ ctx: BaboonCodecContext, _ data: M33OkHolder, _ outputDir: String) throws {
+    try FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+    let writer = BaboonBinWriter()
+    M33OkHolder_UebaCodec.instance.encode(ctx, writer, data)
+    let path = "\(outputDir)/m33-ok.ueba"
+    try writer.toData().write(to: URL(fileURLWithPath: path))
+    print("Written UEBA to \(path)")
+}
+
+func readAndVerifyM33Ok(_ filePath: String) throws {
+    let data: M33OkHolder
+    if filePath.hasSuffix(".json") {
+        let raw = try Data(contentsOf: URL(fileURLWithPath: filePath))
+        let json = try JSONSerialization.jsonObject(with: raw, options: [.fragmentsAllowed])
+        data = try M33OkHolder_JsonCodec.instance.decode(.defaultCtx, json)
+    } else {
+        let raw = try Data(contentsOf: URL(fileURLWithPath: filePath))
+        let r = BaboonBinReader(raw)
+        data = try M33OkHolder_UebaCodec.instance.decode(.defaultCtx, r)
+    }
+    guard data.pageWithStats.total == UInt32(42) else {
+        fail("M33OkHolder pageWithStats.total mismatch: expected 42, got \(data.pageWithStats.total)")
+    }
+    guard data.pageWithStats.sum == Int32(60) else {
+        fail("M33OkHolder pageWithStats.sum mismatch: expected 60, got \(data.pageWithStats.sum)")
+    }
+    guard data.pageWithStats.nObservations == UInt32(7) else {
+        fail("M33OkHolder pageWithStats.nObservations mismatch: expected 7, got \(data.pageWithStats.nObservations)")
+    }
+    guard data.pageMinusStats.total == UInt32(99) else {
+        fail("M33OkHolder pageMinusStats.total mismatch: expected 99, got \(data.pageMinusStats.total)")
+    }
+    guard data.pageOnlyIntersect.total == UInt32(5) else {
+        fail("M33OkHolder pageOnlyIntersect.total mismatch: expected 5, got \(data.pageOnlyIntersect.total)")
+    }
+    // Roundtrip
+    if filePath.hasSuffix(".json") {
+        let reEncoded = M33OkHolder_JsonCodec.instance.encode(.defaultCtx, data)
+        let reDecoded = try M33OkHolder_JsonCodec.instance.decode(.defaultCtx, reEncoded)
+        guard reDecoded == data else {
+            fail("M33OkHolder JSON roundtrip mismatch (structural)")
+        }
+    } else {
+        let writer = BaboonBinWriter()
+        M33OkHolder_UebaCodec.instance.encode(.defaultCtx, writer, data)
+        let reReader = BaboonBinReader(writer.toData())
+        let reDecoded = try M33OkHolder_UebaCodec.instance.decode(.defaultCtx, reReader)
+        guard reDecoded == data else {
+            fail("M33OkHolder UEBA roundtrip mismatch (structural)")
+        }
+    }
+}
+
 func runLegacy() throws {
     let sampleData = createSampleData()
     let sampleAny = try createSampleAnyShowcase()
@@ -488,6 +581,7 @@ do {
         let sampleAny = try createSampleAnyShowcase()
         let facadeCtx = BaboonCodecContext.withFacade(false, freshFacade())
         let m29Sample = createM29OkSample()
+        let m33Sample = createM33OkSample()
         let outputDir = args[1]
         let format = args[2]
         switch format {
@@ -496,10 +590,12 @@ do {
             try writeJsonAny(facadeCtx, sampleAny, outputDir)
             try writeForeignKeyHolderJson(.defaultCtx, createForeignKeyHolderSample(), outputDir)
             try writeM29OkJson(.defaultCtx, m29Sample, outputDir)
+            try writeM33OkJson(.defaultCtx, m33Sample, outputDir)
         case "ueba":
             try writeUeba(sampleData, outputDir)
             try writeUebaAny(facadeCtx, sampleAny, outputDir)
             try writeM29OkUeba(.defaultCtx, m29Sample, outputDir)
+            try writeM33OkUeba(.defaultCtx, m33Sample, outputDir)
         default:
             fail("Unknown format: \(format)")
         }

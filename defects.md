@@ -10,6 +10,52 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 
 ---
 
+## PR-33.5
+
+### [PR-33.5-D01] m33-ok exercises only the `+` arm; `-` and `^` template-arm lowering paths are codegen-unverified at byte level
+**Status:** resolved
+**Severity:** minor (cross-language gate coverage gap)
+**Location:** `test/conv-test/m33.baboon:36-39`
+**Description:** Plan §5 explicitly recommended `data PageOnly { + Page[str]; - Stats[str] }` (`-` operator) and a `^` intersection example. The shipped fixture only contains `+ Page[i32]; + Stats[i32]` — both arms are `+`. In `TemplateInstantiator.scala:540-595`, ArmKind.Plus / Minus / Caret produce *different* intermediate `RawDtoMember` shapes (`FieldDef`, `UnfieldDef`, `IntersectionFields`) that are differently consumed by `BaboonTranslator.convertDto`. The cross-language byte-canonical gate, which the plan claims pins "the codegen surface", thus only covers the `+` path. A regression in the `-`/`^` lowering reduction in `convertDto` could ship undetected.
+**Fix:** Extended both `test/conv-test/m33.baboon` and `baboon-compiler/src/test/resources/baboon/m33-ok/m33.baboon` with two additional consumer DTOs: `PageMinusStats { + Page[i32]; + Stats[i32]; - Stats[i32] }` (lowered shape `items, total`) and `PageOnly { + Page[i32]; + Stats[i32]; ^ Page[i32] }` (lowered shape `items, total`). Both added to `M33OkHolder` root. All 10 `CompatMain.*` updated with `CreateM33OkSample` (+ per-language equivalents) producing the new fields. `:test-acceptance` re-run: 200/200 passed; both `-` and `^` paths now exercised across all 10 backends and both wire formats.
+
+### [PR-33.5-D02] Sample-value collision — `total = nObservations = 3 = items.length` masks swapped-field bugs
+**Status:** resolved
+**Severity:** minor
+**Location:** every `CompatMain.*` (e.g. `test/conv-test-cs/ConvTest/CompatMain.cs:382-385`)
+**Description:** Sample data is `items=[10,20,30], total=3, sum=60, nObservations=3` across all 10 backends. Both u32 fields (total, nObservations) carry the literal value 3, and items has 3 elements. A codegen defect that swapped the encoder positions of `total` and `nObservations`, or that read `items.size()` instead of the literal `total` field, would round-trip cleanly because the values are pairwise indistinguishable.
+**Fix:** All 10 `CompatMain.*` updated with `pageWithStats: items=[10,20,30] (len 3), total=42, sum=60, nObservations=7`. Five distinct values (3, 5 from items.length+sum coincidence is benign; 42, 60, 7 + length 3 are pairwise distinct). New consumers got their own distinct values: `pageMinusStats: items=[100,200], total=99`; `pageOnlyIntersect: items=[1..5], total=5`. Cross-language byte-canonical agreement preserved (md5 `f340dd76…` across 9 backends; Swift diverges by sorted-key shape, consistent with m29 history).
+
+### [PR-33.5-D03] No assertion that decoded value matches the canonical sample (round-trip-only check)
+**Status:** resolved (note-only — project-wide convention, not introduced by PR-33.5)
+**Severity:** nit
+**Location:** every `readAndVerifyM33Ok` across 10 backends
+**Description:** Each backend's `readAndVerifyM33Ok` decodes the blob, re-encodes, re-decodes, and compares `data == reDecoded` — a self-consistency check. There is no `assertEquals(data, expectedSample)` against the canonical sample. A backend that decodes any well-formed m33-ok blob into `M33OkHolder(IntPageWithStats([], 0, 0, 0))` and re-encodes into the same shape would PASS the round-trip but mask data loss. m29's path is identical; this is a project-wide pattern.
+**Fix:** Note-only. PR-33.5 follows the existing m29 convention. A project-wide upgrade to value-content assertions is out of scope for this PR; documented as residual risk.
+
+### [PR-33.5-D04] No mixed-arm-kind, nested template-arg, or cross-namespace coverage in the conv-test fixture
+**Status:** resolved (note-only — typer-only coverage in M29ValidatorTest is the documented home)
+**Severity:** minor
+**Location:** `test/conv-test/m33.baboon`
+**Description:** Plan §5 / §3.c / §3.d called out: mixed `+ ConcreteRef; + Template[Args]` arms; nested template-arg `+ Foo[Bar[i32]]`; cross-namespace structural-arm template (`+ ns.NsT[i32]`). None appear in the conv-test fixture. Cross-namespace IS covered by `m33ok5CrossNsStructuralArmPlus` in `M29ValidatorTest.scala` (typer-only), and nested template-arg by `M33StructuralTemplateInheritanceParserTest`. The risk that codegen-side handling of namespace-prefixed identity formation regresses without surfacing in cross-language byte gate is low — codegen sees a flat post-lowered DTO regardless of source-side prefixes.
+**Fix:** Note-only. Cross-language coverage is restricted to `+ Template[Concrete]` at top-level; cross-ns / nested / mixed shapes are covered by typer-only tests. Documented in the PR's Completed entry.
+
+### [PR-33.5-D05] No `bit`-typed, foreign-typed, ADT-typed, or `str`-typed concrete instantiation
+**Status:** resolved (note-only — m29 covers str/non-template-arg variety; m33 is `+`-arm-shape canonical)
+**Severity:** nit
+**Location:** `test/conv-test/m33.baboon`
+**Description:** Both templates instantiate at `i32` only. Different concrete type categories (`bit`, `str`, `f64`, foreign, ADT, enum) routed through `T` are not exercised. m29 already covers `IntPage`/`StrPage`/`ItemPage` with non-`i32` args; m33's role is to pin the structural-arm operator surface, not re-cover M29's substitution variety.
+**Fix:** Note-only. Different concrete arg types are M29's coverage; M33 focuses on the new structural-arm operator paths.
+
+### [PR-33.5-D06] Plan §5 enumerated four shapes; executor shipped one (scope-shrink note)
+**Status:** resolved (cascaded from D01 fix)
+**Severity:** minor (process)
+**Location:** `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md` §5 vs `test/conv-test/m33.baboon`
+**Description:** Plan §5 explicitly listed: (1) `+ Page[i32] + Stats[i32]`, (2) `-` example, (3) `^` intersection, (4) holder. Executor shipped only (1) and (4). Coverage component of the cross-language gate (everything the plan said the fixture should exercise) was reduced.
+**Fix:** Resolved when D01's fixture extension landed. All four shapes now present.
+
+---
+
 ## PR-33.4
 
 ### [PR-33.4-D02] Empty-body test asserts diagnostic class only; does not pin sentinel `kind="caret"` / `offendingMemberKind="empty body"`

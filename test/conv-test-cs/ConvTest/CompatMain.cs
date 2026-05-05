@@ -7,6 +7,10 @@ using System.Text;
 using Convtest.Testpkg;
 // PR-29.10 (M29) — monomorphised template cross-language acceptance fixture.
 using Convtest.M29ok;
+// PR-33.5 (M33) — structural-inheritance-via-template cross-language acceptance
+// fixture. Sibling of m29-ok; proves codegen still emits a vanilla DTO after
+// PR-33.2's `+ Template[Args]` inline lowering.
+using Convtest.M33ok;
 // PR-I.1c (M24 Phase 3.1) — Custom-foreign KeyCodec hook fixture. Stringy
 // foreign FStr maps to System.String; the default identity FStr_KeyCodec
 // impl handles encode/decode of map keys without host registration.
@@ -40,17 +44,20 @@ namespace ConvTest
                 var facadeCtx = BaboonCodecContext.WithFacade(useIndices: false, FreshFacade());
 
                 var m29Sample = CreateM29OkSample();
+                var m33Sample = CreateM33OkSample();
                 if (format == "json")
                 {
                     WriteJson(ctx, sampleData, outputDir);
                     WriteJsonAny(facadeCtx, sampleAny, outputDir);
                     WriteM29OkJson(ctx, m29Sample, outputDir);
+                    WriteM33OkJson(ctx, m33Sample, outputDir);
                 }
                 else if (format == "ueba")
                 {
                     WriteUeba(ctx, sampleData, outputDir);
                     WriteUebaAny(facadeCtx, sampleAny, outputDir);
                     WriteM29OkUeba(ctx, m29Sample, outputDir);
+                    WriteM33OkUeba(ctx, m33Sample, outputDir);
                 }
                 else
                 {
@@ -360,6 +367,131 @@ namespace ConvTest
             Console.WriteLine("OK");
         }
 
+        // PR-33.5 (M33) — structural-inheritance-via-template fixture helpers.
+        // IntPageWithStats inlines the bodies of Page[i32] and Stats[i32] via PR-33.2
+        // structural-arm lowering. After lowering it is a vanilla DTO with four
+        // fields (items, total, sum, nObservations) and the codegen path is
+        // indistinguishable from a hand-written DTO — the byte-canonical-interop
+        // gate pins this property cross-language.
+        private static M33OkHolder CreateM33OkSample()
+        {
+            return new M33OkHolder(
+                PageWithStats: new IntPageWithStats(
+                    // PR-33.5-D02 — pairwise-distinct values: total=42 (was 3),
+                    // nObservations=7 (was 3), so a swapped-field defect surfaces.
+                    Items:         new List<int> { 10, 20, 30 },
+                    Total:         42u,
+                    Sum:           60,
+                    NObservations: 7u),
+                // PR-33.5-D01 — `-` operator coverage. After lowering only `items`
+                // and `total` survive; sample values pairwise-distinct from the
+                // PageWithStats slot.
+                PageMinusStats: new PageMinusStats(
+                    Items: new List<int> { 100, 200 },
+                    Total: 99u),
+                // PR-33.5-D01 — `^` operator coverage. After lowering only `items`
+                // and `total` survive (intersection with Page[i32]'s body).
+                PageOnlyIntersect: new PageOnly(
+                    Items: new List<int> { 1, 2, 3, 4, 5 },
+                    Total: 5u));
+        }
+
+        private static void WriteM33OkJson(BaboonCodecContext ctx, M33OkHolder data, string outputDir)
+        {
+            var json    = M33OkHolder_JsonCodec.Instance.Encode(ctx, data);
+            var jsonStr = JsonConvert.SerializeObject(json, Formatting.None);
+            var path    = Path.Combine(outputDir, "m33-ok.json");
+            File.WriteAllText(path, jsonStr, new UTF8Encoding(false));
+            Console.WriteLine($"Written JSON to {path}");
+        }
+
+        private static void WriteM33OkUeba(BaboonCodecContext ctx, M33OkHolder data, string outputDir)
+        {
+            byte[] bytes;
+            using (var ms = new MemoryStream())
+            {
+                using (var bw = new BinaryWriter(ms))
+                {
+                    M33OkHolder_UEBACodec.Instance.Encode(ctx, bw, data);
+                }
+                ms.Flush();
+                bytes = ms.ToArray();
+            }
+            var path = Path.Combine(outputDir, "m33-ok.ueba");
+            File.WriteAllBytes(path, bytes);
+            Console.WriteLine($"Written UEBA to {path}");
+        }
+
+        private static void ReadAndVerifyM33Ok(string filePath)
+        {
+            var ctx = BaboonCodecContext.Default;
+            M33OkHolder data;
+            try
+            {
+                if (filePath.EndsWith(".json"))
+                {
+                    var jsonStr = File.ReadAllText(filePath, Encoding.UTF8);
+                    JToken jsonToken;
+                    using (var reader = new JsonTextReader(new StringReader(jsonStr)))
+                    {
+                        reader.DateParseHandling = DateParseHandling.None;
+                        jsonToken = JToken.Load(reader);
+                    }
+                    data = M33OkHolder_JsonCodec.Instance.Decode(ctx, jsonToken);
+                }
+                else
+                {
+                    var bytes = File.ReadAllBytes(filePath);
+                    using var ms = new MemoryStream(bytes);
+                    using var br = new BinaryReader(ms);
+                    data = M33OkHolder_UEBACodec.Instance.Decode(ctx, br);
+                }
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine($"M33OkHolder deserialization failed: {e.Message}");
+                Environment.Exit(1);
+                return;
+            }
+            // Roundtrip
+            try
+            {
+                if (filePath.EndsWith(".json"))
+                {
+                    var reEncoded = M33OkHolder_JsonCodec.Instance.Encode(ctx, data);
+                    var reDecoded = M33OkHolder_JsonCodec.Instance.Decode(ctx, reEncoded);
+                    if (!data.Equals(reDecoded))
+                    {
+                        Console.Error.WriteLine("M33OkHolder JSON roundtrip mismatch");
+                        Environment.Exit(1);
+                    }
+                }
+                else
+                {
+                    using var ms = new MemoryStream();
+                    using (var bw = new BinaryWriter(ms))
+                    {
+                        M33OkHolder_UEBACodec.Instance.Encode(ctx, bw, data);
+                    }
+                    var reBytes = ms.ToArray();
+                    using var ms2 = new MemoryStream(reBytes);
+                    using var br2 = new BinaryReader(ms2);
+                    var reDecoded = M33OkHolder_UEBACodec.Instance.Decode(ctx, br2);
+                    if (!data.Equals(reDecoded))
+                    {
+                        Console.Error.WriteLine("M33OkHolder UEBA roundtrip mismatch");
+                        Environment.Exit(1);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine($"M33OkHolder roundtrip failed: {e.Message}");
+                Environment.Exit(1);
+            }
+            Console.WriteLine("OK");
+        }
+
         private static void ReadAndVerify(string filePath)
         {
             if (filePath.EndsWith("any-showcase.json") || filePath.EndsWith("any-showcase.ueba"))
@@ -370,6 +502,11 @@ namespace ConvTest
             if (filePath.EndsWith("m29-ok.json") || filePath.EndsWith("m29-ok.ueba"))
             {
                 ReadAndVerifyM29Ok(filePath);
+                return;
+            }
+            if (filePath.EndsWith("m33-ok.json") || filePath.EndsWith("m33-ok.ueba"))
+            {
+                ReadAndVerifyM33Ok(filePath);
                 return;
             }
             var ctx = BaboonCodecContext.Default;

@@ -28,6 +28,11 @@ import 'package:conv_test_dt/generated/convtest/m29ok/str_page.dart';
 import 'package:conv_test_dt/generated/convtest/m29ok/item.dart';
 import 'package:conv_test_dt/generated/convtest/m29ok/item_page.dart';
 import 'package:conv_test_dt/generated/convtest/m29ok/int_str_envelope.dart';
+// PR-33.5 (M33) — structural-inheritance-via-template cross-language acceptance fixture.
+import 'package:conv_test_dt/generated/convtest/m33ok/m33_ok_holder.dart';
+import 'package:conv_test_dt/generated/convtest/m33ok/int_page_with_stats.dart';
+import 'package:conv_test_dt/generated/convtest/m33ok/page_minus_stats.dart';
+import 'package:conv_test_dt/generated/convtest/m33ok/page_only.dart';
 
 const String _domainId = 'convtest.testpkg';
 const String _domainVer = '2.0.0';
@@ -247,6 +252,10 @@ void writeUeba(AllBasicTypes data, String outputDir) {
 void readAndVerify(String filePath) {
   if (filePath.endsWith('any-showcase.json') || filePath.endsWith('any-showcase.ueba')) {
     readAndVerifyAnyShowcase(filePath);
+    return;
+  }
+  if (filePath.endsWith('m33-ok.json') || filePath.endsWith('m33-ok.ueba')) {
+    readAndVerifyM33Ok(filePath);
     return;
   }
   if (filePath.endsWith('m29-ok.json') || filePath.endsWith('m29-ok.ueba')) {
@@ -470,6 +479,90 @@ void readAndVerifyM29Ok(String filePath) {
   print('OK');
 }
 
+// PR-33.5 (M33) — structural-inheritance-via-template acceptance fixture helpers.
+M33OkHolder _createM33OkSample() {
+  return M33OkHolder(
+    // PR-33.5-D02 — pairwise-distinct values: total=42 (was 3),
+    // nObservations=7 (was 3), so a swapped-field defect surfaces.
+    pageWithStats: IntPageWithStats(
+      items: [10, 20, 30],
+      total: 42,
+      sum: 60,
+      nObservations: 7,
+    ),
+    // PR-33.5-D01 — `-` operator coverage. After lowering only `items` and
+    // `total` survive; sample values pairwise-distinct from pageWithStats.
+    pageMinusStats: PageMinusStats(
+      items: [100, 200],
+      total: 99,
+    ),
+    // PR-33.5-D01 — `^` operator coverage. After lowering only `items` and
+    // `total` survive (intersection with Page[i32]'s body).
+    pageOnlyIntersect: PageOnly(
+      items: [1, 2, 3, 4, 5],
+      total: 5,
+    ),
+  );
+}
+
+void writeM33OkJson(BaboonCodecContext ctx, M33OkHolder data, String outputDir) {
+  Directory(outputDir).createSync(recursive: true);
+  final json = M33OkHolder_JsonCodec.instance.encode(ctx, data);
+  final jsonStr = jsonEncode(json);
+  final f = File('$outputDir/m33-ok.json');
+  f.writeAsStringSync(jsonStr);
+  print('Written JSON to ${f.absolute.path}');
+}
+
+void writeM33OkUeba(BaboonCodecContext ctx, M33OkHolder data, String outputDir) {
+  Directory(outputDir).createSync(recursive: true);
+  final writer = BaboonBinWriter();
+  M33OkHolder_UebaCodec.instance.encode(ctx, writer, data);
+  final f = File('$outputDir/m33-ok.ueba');
+  f.writeAsBytesSync(writer.toBytes());
+  print('Written UEBA to ${f.absolute.path}');
+}
+
+void readAndVerifyM33Ok(String filePath) {
+  final ctx = BaboonCodecContext.defaultCtx;
+  M33OkHolder data;
+  try {
+    if (filePath.endsWith('.json')) {
+      final jsonStr = File(filePath).readAsStringSync();
+      final json = jsonDecode(jsonStr);
+      data = M33OkHolder_JsonCodec.instance.decode(ctx, json);
+    } else {
+      final bytes = File(filePath).readAsBytesSync();
+      final reader = BaboonBinReader(Uint8List.fromList(bytes));
+      data = M33OkHolder_UebaCodec.instance.decode(ctx, reader);
+    }
+  } catch (e) {
+    stderr.writeln('M33OkHolder deserialization failed: $e');
+    exit(1);
+  }
+  if (data.pageWithStats.total != 42) {
+    stderr.writeln('M33OkHolder pageWithStats.total mismatch: expected 42, got ${data.pageWithStats.total}');
+    exit(1);
+  }
+  if (data.pageWithStats.sum != 60) {
+    stderr.writeln('M33OkHolder pageWithStats.sum mismatch: expected 60, got ${data.pageWithStats.sum}');
+    exit(1);
+  }
+  if (data.pageWithStats.nObservations != 7) {
+    stderr.writeln('M33OkHolder pageWithStats.nObservations mismatch: expected 7, got ${data.pageWithStats.nObservations}');
+    exit(1);
+  }
+  if (data.pageMinusStats.total != 99) {
+    stderr.writeln('M33OkHolder pageMinusStats.total mismatch: expected 99, got ${data.pageMinusStats.total}');
+    exit(1);
+  }
+  if (data.pageOnlyIntersect.total != 5) {
+    stderr.writeln('M33OkHolder pageOnlyIntersect.total mismatch: expected 5, got ${data.pageOnlyIntersect.total}');
+    exit(1);
+  }
+  print('OK');
+}
+
 void main(List<String> args) {
   if (args.length >= 3 && args[0] == 'write') {
     final outputDir = args[1];
@@ -478,17 +571,20 @@ void main(List<String> args) {
     final sampleAny = _createSampleAnyShowcase();
     final facadeCtx = BaboonCodecContext.withFacade(false, _freshFacade());
     final m29Sample = _createM29OkSample();
+    final m33Sample = _createM33OkSample();
     switch (format) {
       case 'json':
         writeJson(sampleData, outputDir);
         writeJsonAny(facadeCtx, sampleAny, outputDir);
         writeForeignKeyHolderJson(BaboonCodecContext.defaultCtx, _createForeignKeyHolderSample(), outputDir);
         writeM29OkJson(BaboonCodecContext.defaultCtx, m29Sample, outputDir);
+        writeM33OkJson(BaboonCodecContext.defaultCtx, m33Sample, outputDir);
         break;
       case 'ueba':
         writeUeba(sampleData, outputDir);
         writeUebaAny(facadeCtx, sampleAny, outputDir);
         writeM29OkUeba(BaboonCodecContext.defaultCtx, m29Sample, outputDir);
+        writeM33OkUeba(BaboonCodecContext.defaultCtx, m33Sample, outputDir);
         break;
       default:
         stderr.writeln('Unknown format: $format');

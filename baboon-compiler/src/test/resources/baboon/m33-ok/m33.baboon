@@ -1,0 +1,46 @@
+model my.ok.m33
+
+version "1.0.0"
+
+// PR-33.5 (M33) — typer-side compile-only fixture for structural-inheritance
+// -via-template. Sibling of `m29-ok/m29.baboon`. Loaded by `BaboonTest`'s
+// directoryInputs alongside the rest of the corpus; verifies the full M33
+// pipeline (parse → lower → typer → translator → codegen) accepts the
+// canonical positive shape.
+//
+// See `test/conv-test/m33.baboon` for the cross-language wire-format
+// fixture. The two files keep identical body shape so any divergence
+// surfaces as a typer / lowering disagreement between corpus and conv-test.
+
+data Page[T] {
+  items: lst[T]
+  total: u32
+}
+
+data Stats[T] {
+  sum:           T
+  nObservations: u32
+}
+
+data IntPageWithStats : derived[json], derived[ueba] {
+  + Page[i32]
+  + Stats[i32]
+}
+
+data PageMinusStats : derived[json], derived[ueba] {
+  + Page[i32]
+  + Stats[i32]
+  - Stats[i32]
+}
+
+data PageOnly : derived[json], derived[ueba] {
+  + Page[i32]
+  + Stats[i32]
+  ^ Page[i32]
+}
+
+root data M33OkHolder : derived[json], derived[ueba] {
+  pageWithStats:     IntPageWithStats
+  pageMinusStats:    PageMinusStats
+  pageOnlyIntersect: PageOnly
+}

@@ -1,0 +1,67 @@
+model convtest.m33ok
+
+version "1.0.0"
+
+// PR-33.5 (M33) — cross-language wire-format acceptance fixture for
+// structural-inheritance-via-template (i.e. `+ Template[Args]` lowering).
+// Sibling of `m29.baboon`; proves the M29 architectural bet (codegen never
+// sees a template) still holds: PR-33.2 inlines the template body into the
+// receiving DTO before the translator runs, so all 9 backends emit a vanilla
+// DTO with literal field-defs and produce byte-identical JSON + UEBA wire
+// output. See plan §3.1 / §5 in
+// docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md.
+//
+// Cross-language wire-format safety: only i32, u32, str, lst are used.
+// f32/f64/tso/tsu deliberately avoided (M28-N01/N02 cross-language
+// canonicalisation history).
+
+// data template: paged-results shape.
+data Page[T] {
+  items: lst[T]
+  total: u32
+}
+
+// data template: simple aggregate stats. Field `nObservations` is named
+// distinctly from `Page.total` to avoid `NonUniqueFields` when both
+// templates inline into the same receiving DTO (PR-33.2 D02 / row 12).
+data Stats[T] {
+  sum:           T
+  nObservations: u32
+}
+
+// Concrete consumer using `+ Template[Args]` (M33 surface). Two structural
+// arms each instantiate a different template at the same concrete type
+// (i32). After PR-33.2 lowering this becomes a vanilla DTO with four
+// inlined fields: items, total, sum, nObservations.
+data IntPageWithStats : derived[json], derived[ueba] {
+  + Page[i32]
+  + Stats[i32]
+}
+
+// PR-33.5-D01 — `-` operator coverage. Builds up four fields (items, total,
+// sum, nObservations) via `+ Page[i32]; + Stats[i32]`, then removes the
+// fields contributed by Stats. After lowering this DTO has only `items` and
+// `total`.
+data PageMinusStats : derived[json], derived[ueba] {
+  + Page[i32]
+  + Stats[i32]
+  - Stats[i32]
+}
+
+// PR-33.5-D01 — `^` operator coverage. Builds up four fields, then
+// intersects with Page's body — keeping only fields whose (name, type) pair
+// also appears in the substituted Page[i32] body. After lowering this DTO
+// has only `items` and `total`.
+data PageOnly : derived[json], derived[ueba] {
+  + Page[i32]
+  + Stats[i32]
+  ^ Page[i32]
+}
+
+// Acceptance holder — single root record so one write/read exercise covers
+// the lowered concrete DTO.
+root data M33OkHolder : derived[json], derived[ueba] {
+  pageWithStats:     IntPageWithStats
+  pageMinusStats:    PageMinusStats
+  pageOnlyIntersect: PageOnly
+}

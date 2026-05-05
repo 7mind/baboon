@@ -43,7 +43,7 @@ Detail in `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`
 - [x] **PR-33.2** — Typer: lower template instantiation in structural arms via `TemplateInstantiator` inline substitution (decision §3.b Option I). Receiving DTO absorbs substituted member list; no transient `DomainMember.User`.
 - [x] **PR-33.3** — Typer: negative-path diagnostics. Reuses existing `TyperIssue` cases. Most plan §4 rows already covered by PR-33.2 (D02/D05/D01); this PR adds the residual rows: row 1 `NotATemplate`, row 3 arity mismatch, row 4 forbidden type-arg, row 6 cross-package, row 9 mutual recursion, row 11 duplicate inline, row 12 field-name collision.
 - [x] **PR-33.4** — Cycle / recursive-substitution detection. **Largely absorbed into PR-33.2/PR-33.3** (recursion guard + cycle-set + self/mutual-recursion tests landed). Residual scope: audit completeness; enforce non-empty-intersection edge case (PR-33.2 round-2 advisory); harden cycle-key canonicalisation if needed.
-- [ ] **PR-33.5** — Cross-language acceptance fixture `m33-ok` (`test/conv-test/m33.baboon` + per-backend conv-test rows).
+- [x] **PR-33.5** — Cross-language acceptance fixture `m33-ok` (`test/conv-test/m33.baboon` + per-backend conv-test rows).
 - [ ] **PR-33.6** — LSP smoke + close-out + tree-sitter grammar bump + spec doc.
 
 ---
@@ -62,6 +62,19 @@ Detail in `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`
 - [~] **M32 / PR-32.1** — `META_VERSION_1` 1→16 bump. Byte already lifted in all 11 runtime files at HEAD `0d9d7165`. Final disposition deferred until MFACADE Q2 resolves.
 
 ## Completed
+
+- [x] **PR-33.5** (2026-05-05, two review rounds — clean) — Cross-language acceptance fixture `m33-ok` proves the M29 architectural bet holds for all three M33 structural-arm operators (`+`/`-`/`^`) across all 9 codegen backends. Three consumer DTOs in `test/conv-test/m33.baboon` (with the typer-side mirror at `baboon-compiler/src/test/resources/baboon/m33-ok/m33.baboon`):
+  - `IntPageWithStats { + Page[i32]; + Stats[i32] }` — `+` arm.
+  - `PageMinusStats { + Page[i32]; + Stats[i32]; - Stats[i32] }` — `-` arm; lowered to `items, total`.
+  - `PageOnly { + Page[i32]; + Stats[i32]; ^ Page[i32] }` — `^` arm; lowered to `items, total` via `BaboonTranslator.intersectionLimiters` Field-set equality.
+  All three included in `M33OkHolder` root.
+  Per-backend wiring across all 10 `CompatMain.*` files (cs, sc, py, rs, ts, kt, kt-kmp, jv, dt, sw) plus `test/conv-test-sw/Package.swift` target registration. Distinct sample values (`total=42, nObservations=7, items=[10,20,30], sum=60` + new-consumer values) ensure swap-bug detection. `test/acceptance/run_acceptance.py` extended to dispatch m33-ok blobs after m29-ok (skip-if-absent for cross-version compat).
+  Verification: `mdl --simple-log :build :test-acceptance` 200/200 (build 100s, acceptance 723s wall — round 2 with extended fixture). 9 backends agree byte-identically on m33-ok.json (md5 `f340dd76…`); Swift diverges by sorted-key shape, consistent with m29 history. UEBA blobs byte-identical across all 10 (verified via md5 in fix-subagent report).
+  Review history: round 1 → 6 defects (1 minor coverage gap D01 — only `+` arm; 1 minor D02 sample-value collision; 3 note-only D03/D04/D05 project-pattern; 1 process D06 cascaded from D01); fix extended fixture to add `-`/`^` consumers and distinct values; round 2 clean.
+  Surprises:
+  - **`-` and `^` operator coverage was nearly missed.** The minimal-fixture executor shipped only `+` arms, citing scope-conservatism. Round-1 review flagged this as a real coverage gap because the three operators produce *different* intermediate `RawDtoMember` shapes (FieldDef / UnfieldDef / IntersectionFields) consumed by `BaboonTranslator.convertDto` along different paths. Fix-pass extended the fixture; both lowered shapes now match expectations across all 9 backends.
+  - **`^ Template[T]`'s semantic.** Verified: `withoutRemoved.filter(f => intersectionSet.contains(f))` on `Field` case-class equality (name + tpe + prevName + docs). Both arms route through the same `dtoFieldToDefs` lowering so Field instances match cleanly.
+  - **`run_acceptance.py` chain** primary → m29-ok → m33-ok with skip-if-absent at each secondary fixture preserves cross-version compat (a pre-M29 binary's blobs lack m29-ok and m33-ok; the chain still succeeds on the primary fixture alone).
 
 - [x] **PR-33.4** (2026-05-05, two review rounds — clean) — Cycle / recursive-substitution detection. Bulk of the planned work landed in PR-33.2 (recursion guard, cycle-set, depth-limit, self/mutual recursion tests) and PR-33.3 (negative-path pins). Residual: closed the empty-intersection edge case (PR-33.2 round-2 advisory). When `^ Template[T]`'s substituted body is empty, the existing `BaboonTranslator.scala:319` `if (intersectionSet.isEmpty)` short-circuit silently turned `^ Empty[T]` into a no-op pass-through. Now fails at lowering time with `TemplateBodyNotFlatForRemoval` carrying sentinel `offendingMemberKind = "empty body"` (`TemplateInstantiator.scala:553-572`). Printer branches on the sentinel to emit a non-paradoxical message: "the substituted body is empty (intersection over an empty field set would be a silent no-op; caught at lowering time…)". Cycle-key canonicalisation hardened from `RawTypeRef.toString` to the explicit `RawTypeRef.render` form (`TemplateInstantiator.scala:449`) — same behaviour today, immune to non-canonical-field drift. Added regression-guard tests for `+ Empty[i32]` (positive no-op pass) and `- Empty[i32]` (positive no-op pass with comment naming deferred [PR-33.4-D01]).
   Files: `typer/TemplateInstantiator.scala`, `parser/model/issues/TyperIssue.scala`, `M33StructuralTemplateInstantiationTest.scala` (15 → 17 tests).

@@ -53,14 +53,25 @@ let package = Package(
                 .unsafeFlags(["-enable-testing"])
             ]
         ),
+        // PR-33.5 (M33) — convtest.m33ok (structural-inheritance-via-template
+        // cross-language wire-format fixture). IntPageWithStats inlines
+        // Page[i32] + Stats[i32] via PR-33.2 lowering.
+        .target(
+            name: "ConvtestM33ok",
+            dependencies: ["BaboonRuntime"],
+            path: "Generated/ConvtestM33ok",
+            swiftSettings: [
+                .unsafeFlags(["-enable-testing"])
+            ]
+        ),
         .executableTarget(
             name: "CompatMain",
-            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0", "ConvtestM24foreign", "ConvtestM26builtinkeys", "ConvtestM29ok"],
+            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0", "ConvtestM24foreign", "ConvtestM26builtinkeys", "ConvtestM29ok", "ConvtestM33ok"],
             path: "Sources/CompatMain"
         ),
         .testTarget(
             name: "CrossLanguageTests",
-            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0", "ConvtestM24foreign", "ConvtestM26builtinkeys", "ConvtestM29ok"],
+            dependencies: ["BaboonRuntime", "ConvtestTestpkg", "ConvtestTestpkg_v1_0_0", "ConvtestM24foreign", "ConvtestM26builtinkeys", "ConvtestM29ok", "ConvtestM33ok"],
             path: "Tests/CrossLanguageTests"
         ),
     ]

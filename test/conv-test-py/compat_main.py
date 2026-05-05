@@ -35,6 +35,11 @@ from Generated.convtest.m29ok.StrPage import StrPage
 from Generated.convtest.m29ok.Item import Item
 from Generated.convtest.m29ok.ItemPage import ItemPage
 from Generated.convtest.m29ok.IntStrEnvelope import IntStrEnvelope, IntStrEnvelope_JsonCodec, IntStrEnvelope_UEBACodec, Ok as EnvelopeOk, Err as EnvelopeErr
+# PR-33.5 (M33) — structural-inheritance-via-template cross-language acceptance fixture.
+from Generated.convtest.m33ok.M33OkHolder import M33OkHolder, M33OkHolder_JsonCodec, M33OkHolder_UEBACodec
+from Generated.convtest.m33ok.IntPageWithStats import IntPageWithStats
+from Generated.convtest.m33ok.PageMinusStats import PageMinusStats
+from Generated.convtest.m33ok.PageOnly import PageOnly
 
 DOMAIN_ID = "convtest.testpkg"
 DOMAIN_VER = "2.0.0"
@@ -341,6 +346,90 @@ def read_and_verify_m29ok(file_path):
     print("OK")
 
 
+# PR-33.5 (M33) — structural-inheritance-via-template acceptance fixture helpers.
+def create_m33ok_sample():
+    return M33OkHolder(
+        # PR-33.5-D02 — pairwise-distinct values: total=42 (was 3),
+        # nObservations=7 (was 3), so a swapped-field defect surfaces.
+        pageWithStats = IntPageWithStats(
+            items=[10, 20, 30],
+            total=42,
+            sum=60,
+            nObservations=7,
+        ),
+        # PR-33.5-D01 — `-` operator coverage. After lowering only `items`
+        # and `total` survive; sample values pairwise-distinct from PageWithStats.
+        pageMinusStats = PageMinusStats(
+            items=[100, 200],
+            total=99,
+        ),
+        # PR-33.5-D01 — `^` operator coverage. After lowering only `items`
+        # and `total` survive (intersection with Page[i32]'s body).
+        pageOnlyIntersect = PageOnly(
+            items=[1, 2, 3, 4, 5],
+            total=5,
+        ),
+    )
+
+
+def write_m33ok_json(ctx, data, output_dir):
+    json_str = M33OkHolder_JsonCodec.instance().encode(ctx, data)
+    p = Path(output_dir) / "m33-ok.json"
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(json_str)
+    print(f"Written JSON to {p}")
+
+
+def write_m33ok_ueba(ctx, data, output_dir):
+    ms = io.BytesIO()
+    w = LEDataOutputStream(ms)
+    M33OkHolder_UEBACodec.instance().encode(ctx, w, data)
+    p = Path(output_dir) / "m33-ok.ueba"
+    with open(p, "wb") as f:
+        f.write(ms.getvalue())
+    print(f"Written UEBA to {p}")
+
+
+def read_and_verify_m33ok(file_path):
+    ctx = BaboonCodecContext.default()
+    fp = Path(file_path)
+    try:
+        if fp.suffix == ".json":
+            with open(fp, "r", encoding="utf-8") as f:
+                json_str = f.read()
+            data = M33OkHolder_JsonCodec.instance().decode(ctx, json_str)
+        else:
+            with open(fp, "rb") as f:
+                ueba_bytes = f.read()
+            r = LEDataInputStream(io.BytesIO(ueba_bytes))
+            data = M33OkHolder_UEBACodec.instance().decode(ctx, r)
+    except Exception as e:
+        print(f"M33OkHolder deserialization failed: {e}", file=sys.stderr)
+        sys.exit(1)
+    # Roundtrip
+    try:
+        if fp.suffix == ".json":
+            re_encoded = M33OkHolder_JsonCodec.instance().encode(ctx, data)
+            re_decoded = M33OkHolder_JsonCodec.instance().decode(ctx, re_encoded)
+            if data != re_decoded:
+                print("M33OkHolder JSON roundtrip mismatch", file=sys.stderr)
+                sys.exit(1)
+        else:
+            ms = io.BytesIO()
+            w = LEDataOutputStream(ms)
+            M33OkHolder_UEBACodec.instance().encode(ctx, w, data)
+            re_bytes = ms.getvalue()
+            r = LEDataInputStream(io.BytesIO(re_bytes))
+            re_decoded = M33OkHolder_UEBACodec.instance().decode(ctx, r)
+            if data != re_decoded:
+                print("M33OkHolder UEBA roundtrip mismatch", file=sys.stderr)
+                sys.exit(1)
+    except Exception as e:
+        print(f"M33OkHolder roundtrip failed: {e}", file=sys.stderr)
+        sys.exit(1)
+    print("OK")
+
+
 def write_json(ctx, data, output_dir):
     json_str = AllBasicTypes_JsonCodec.instance().encode(ctx, data)
     json_file_path = Path(output_dir) / "all-basic-types.json"
@@ -366,6 +455,9 @@ def read_and_verify(file_path):
         return
     if file_path.endswith("m29-ok.json") or file_path.endswith("m29-ok.ueba"):
         read_and_verify_m29ok(file_path)
+        return
+    if file_path.endswith("m33-ok.json") or file_path.endswith("m33-ok.ueba"):
+        read_and_verify_m33ok(file_path)
         return
     ctx = BaboonCodecContext.default()
     fp = Path(file_path)
@@ -526,15 +618,18 @@ if __name__ == "__main__":
         sample_data = create_sample_data()
         ctx = BaboonCodecContext.default()
         m29_sample = create_m29ok_sample()
+        m33_sample = create_m33ok_sample()
         if fmt == "json":
             write_json(ctx, sample_data, output_dir)
             write_json_any(ctx, create_sample_any_showcase_json(), output_dir)
             write_foreign_key_holder_json(ctx, create_foreign_key_holder_sample(), output_dir)
             write_m29ok_json(ctx, m29_sample, output_dir)
+            write_m33ok_json(ctx, m33_sample, output_dir)
         elif fmt == "ueba":
             write_ueba(ctx, sample_data, output_dir)
             write_ueba_any(ctx, create_sample_any_showcase_ueba(), output_dir)
             write_m29ok_ueba(ctx, m29_sample, output_dir)
+            write_m33ok_ueba(ctx, m33_sample, output_dir)
         else:
             print(f"Unknown format: {fmt}", file=sys.stderr)
             sys.exit(1)
