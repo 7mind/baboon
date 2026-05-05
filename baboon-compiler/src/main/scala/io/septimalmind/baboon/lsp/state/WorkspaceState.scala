@@ -161,6 +161,7 @@ class WorkspaceState(
       case TemplateNotInstantiated(_, _, meta)                  => Some(meta.pos)
       case NotATemplate(_, _, meta)                             => Some(meta.pos)
       case TemplateBodyCarriesDerived(_, meta)                  => Some(meta.pos)
+      case TemplateBodyNotFlatForRemoval(_, _, _, _, meta)      => Some(meta.pos)
     }
   }
 
@@ -244,6 +245,9 @@ class WorkspaceState(
             (extractLocation(meta.pos), s"'$head' is not a template or builtin collection — cannot be used as a generic constructor head in alias '$alias'")
           case TemplateBodyCarriesDerived(tname, meta) =>
             (extractLocation(meta.pos), s"Template '$tname' carries ':derived[…]' — write the annotation on the alias instead")
+          case TemplateBodyNotFlatForRemoval(tname, recv, kind, offending, meta) =>
+            val op = if (kind == "minus") "-" else if (kind == "caret") "^" else kind
+            (extractLocation(meta.pos), s"Template '$tname' cannot be used under '$op' on '$recv': substituted body contains non-field member ($offending). Restrict the template body to fields when used under '-' or '^'.")
           case DuplicatedAdtBranches(id, branch, sources, meta) =>
             (extractLocation(meta.pos), s"Duplicate ADT branches '$branch' in ${id.name.name}: contributed by ${sources.map(_.name.name).mkString(", ")}")
           case WrongAdtInclusion(id, ref, reason, meta) =>

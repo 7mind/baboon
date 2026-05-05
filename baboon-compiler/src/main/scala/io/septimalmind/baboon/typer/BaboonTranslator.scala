@@ -241,7 +241,10 @@ class BaboonTranslator[F[+_, +_]: Error2](
         case f: RawDtoMember.FieldDef =>
           dtoFieldToDefs(f.field, f.meta)
         case p: RawDtoMember.ParentDef =>
-          // PR-33.2: `p.args` is dropped here; see TemplateInstantiator.substituteDtoMember for the hand-off plan.
+          // PR-33.2 (M33): when args.isDefined, the TemplateInstantiator pre-pass has already
+          // spliced the substituted FieldDefs into the receiving DTO's member list (Approach M1).
+          // Any ParentDef surviving to the translator therefore carries args = None — a legacy
+          // `+ ParentRef` (no template instantiation) — and is handled exactly as before.
           dtoParentToDefs(p.parent, dto.meta, p.meta)
         case _ =>
           F.pure(Seq.empty)
@@ -250,15 +253,29 @@ class BaboonTranslator[F[+_, +_]: Error2](
         case f: RawDtoMember.UnfieldDef =>
           dtoFieldToDefs(f.field, f.meta)
         case p: RawDtoMember.UnparentDef =>
-          // PR-33.2: `p.args` is dropped here; see TemplateInstantiator.substituteDtoMember for the hand-off plan.
+          // PR-33.2 (M33): when args.isDefined, the TemplateInstantiator pre-pass has already
+          // converted each substituted FieldDef into an UnfieldDef and spliced them into the
+          // receiving DTO's member list (Approach M1). Any UnparentDef surviving to the
+          // translator therefore carries args = None — a legacy `- ParentRef` (no template
+          // instantiation) — and is handled exactly as before.
           dtoParentToDefs(p.parent, dto.meta, p.meta)
         case _ =>
           F.pure(Seq.empty)
       }
       intersectionLimiters <- F.flatTraverseAccumErrors(dto.members) {
         case p: RawDtoMember.IntersectionDef =>
-          // PR-33.2: `p.args` is dropped here; see TemplateInstantiator.substituteDtoMember for the hand-off plan.
+          // PR-33.2 (M33): when args.isDefined the TemplateInstantiator pre-pass has already
+          // lowered this arm into RawDtoMember.IntersectionFields (see below). Any IntersectionDef
+          // surviving to the translator therefore carries args = None — a legacy `^ ParentRef`
+          // (no template instantiation) — and is handled exactly as before.
           dtoParentToDefs(p.parent, dto.meta, p.meta)
+        case f: RawDtoMember.IntersectionFields =>
+          // PR-33.2 (M33): typer-synthesized intersection-limiter (M3 carrier for
+          // `^ Template[Args]`). Each FieldDef is converted via dtoFieldToDefs to a Field, so
+          // Field equality matches the receiver's other-arm-produced fields exactly.
+          // PR-33.2-D06: per-field meta is preserved on each FieldDef so diagnostics anchor at
+          // the original template-body field declaration site (not at the `^` operator position).
+          F.flatTraverseAccumErrors(f.fields)(fd => dtoFieldToDefs(fd.field, fd.meta))
         case _ =>
           F.pure(Seq.empty)
       }

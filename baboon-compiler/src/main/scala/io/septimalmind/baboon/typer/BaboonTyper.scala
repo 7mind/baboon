@@ -417,6 +417,13 @@ object BaboonTyper {
         registryResult                        <- templateRegistryBuilder.build(pkg, members)
         (nonTemplateMembers, templateRegistry) = registryResult
 
+        // PR-33.2-D05: validate that no DTO/Contract/Identifier/ADT-branch body references a
+        // registered template by bare name (without `[…]`) in `+`/`-`/`^` arm position. The
+        // toposort `order` (below) reports such bare refs as hard deps, which then resolve
+        // through the regular scope tree and produce a confusing `NameNotFound` instead of the
+        // precise diagnostic. Catch the error here, before order() runs.
+        _ <- templateInstantiator.validateNoBareTemplateRefs(pkg, nonTemplateMembers, templateRegistry)
+
         builder = new ScopeBuilder[F]()
         // Build an initial scope tree over the as-parsed (PR-62) raw AST so we can resolve
         // `+ X` / `- X` / `^ X` refs in ADT bodies. The PR-63 typer-early pass uses this

@@ -220,14 +220,19 @@ object BaboonEnquiries {
       dd match {
         case d: RawDtoid =>
           d.members.collect {
-            case d: RawDtoMember.ParentDef =>
-              // PR-33.2: `d.args` type refs omitted here; see TemplateInstantiator.substituteDtoMember for the hand-off plan.
+            case d: RawDtoMember.ParentDef if d.args.isEmpty =>
+              // PR-33.2 (M33): when args.isDefined, the parent ref points at a TEMPLATE name
+              // which is excluded from the non-template scope tree. Reporting it as a hard dep
+              // would break `BaboonTyper.order` (toposort happens BEFORE template lowering).
+              // The TemplateInstantiator inlines the substituted body into the receiver's
+              // member list before the second buildScopes/order pass runs, so the dependency is
+              // resolved by then. Skip such refs here.
               Seq(d.parent)
-            case d: RawDtoMember.UnparentDef =>
-              // PR-33.2: `d.args` type refs omitted here; see TemplateInstantiator.substituteDtoMember for the hand-off plan.
+            case d: RawDtoMember.UnparentDef if d.args.isEmpty =>
+              // PR-33.2 (M33): same invariant as ParentDef above.
               Seq(d.parent)
-            case d: RawDtoMember.IntersectionDef =>
-              // PR-33.2: `d.args` type refs omitted here; see TemplateInstantiator.substituteDtoMember for the hand-off plan.
+            case d: RawDtoMember.IntersectionDef if d.args.isEmpty =>
+              // PR-33.2 (M33): same invariant as ParentDef above.
               Seq(d.parent)
             case d: RawDtoMember.ContractRef =>
               Seq(d.contract.tpe)

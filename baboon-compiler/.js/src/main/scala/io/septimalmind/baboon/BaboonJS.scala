@@ -1542,6 +1542,7 @@ object BaboonJS {
       case TemplateNotInstantiated(_, _, meta)                  => Some(meta.pos)
       case NotATemplate(_, _, meta)                             => Some(meta.pos)
       case TemplateBodyCarriesDerived(_, meta)                  => Some(meta.pos)
+      case TemplateBodyNotFlatForRemoval(_, _, _, _, meta)      => Some(meta.pos)
     }
   }
 

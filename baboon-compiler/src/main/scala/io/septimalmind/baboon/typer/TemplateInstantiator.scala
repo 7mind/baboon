@@ -42,6 +42,19 @@ trait TemplateInstantiator[F[+_, +_]] {
     members: Seq[RawTLDef],
     registry: TemplateRegistry,
   ): F[NEList[BaboonIssue], Seq[RawTLDef]]
+
+  /** PR-33.2-D05: pre-toposort validation. Walks every DTO/Identifier/Contract/ADT member list
+    * and emits `TyperIssue.TemplateNotInstantiated` for any `+/-/^ Foo` arm whose head names a
+    * registered template AND whose `args = None`. This must run BEFORE `BaboonTyper.order`
+    * because `hardDepsOfRawDefn` reports bare refs as hard deps; the toposort then resolves
+    * them through the regular scope tree (which excludes templates) and produces a
+    * confusing `NameNotFound` instead of the precise diagnostic.
+    */
+  def validateNoBareTemplateRefs(
+    pkg: Pkg,
+    members: Seq[RawTLDef],
+    registry: TemplateRegistry,
+  ): F[NEList[BaboonIssue], Unit]
 }
 
 object TemplateInstantiator {
@@ -86,6 +99,14 @@ object TemplateInstantiator {
     aliasMeta.copy(docs = RawDocs(prefix = mergedPrefix, suffix = None))
   }
 
+  /** Kind of structural-composition arm being lowered (PR-33.2 / M33). */
+  private sealed trait ArmKind
+  private object ArmKind {
+    case object Plus  extends ArmKind
+    case object Minus extends ArmKind
+    case object Caret extends ArmKind
+  }
+
   class Impl[F[+_, +_]: Error2] extends TemplateInstantiator[F] {
 
     // Canonical set of builtin constructor heads (collections + any).
@@ -98,12 +119,80 @@ object TemplateInstantiator {
       TypeId.Builtins.any.name.name,
     )
 
+    /** Maximum recursion depth for structural-arm template instantiation (PR-33.2 / M33).
+      *
+      * Each level represents one full substitution: `template Outer[U] { + Inner[U] }`
+      * instantiated as `Outer[i32]` produces a body containing `+ Inner[i32]`, which is then
+      * re-substituted as the next level. Pathological mutual-recursion shapes
+      * (`A[U] = + B[U]; B[U] = + A[U]`) terminate via either the cycle-detection set OR this
+      * depth limit (whichever fires first). PR-33.4 will refine the diagnostic; PR-33.2 only
+      * needs to ensure termination.
+      */
+    private val structuralArmRecursionLimit: Int = 32
+
     override def instantiate(
       pkg: Pkg,
       members: Seq[RawTLDef],
       registry: TemplateRegistry,
     ): F[NEList[BaboonIssue], Seq[RawTLDef]] = {
       instantiateRecursive(pkg, members, registry, ownerForCurrent = Owner.Toplevel, nsPath = List.empty)
+    }
+
+    override def validateNoBareTemplateRefs(
+      pkg: Pkg,
+      members: Seq[RawTLDef],
+      registry: TemplateRegistry,
+    ): F[NEList[BaboonIssue], Unit] = {
+      F.traverseAccumErrors_(members)(m => validateBareTemplateRefsInTLDef(pkg, m, registry, ownerForCurrent = Owner.Toplevel))
+    }
+
+    private def validateBareTemplateRefsInTLDef(
+      pkg: Pkg,
+      tldef: RawTLDef,
+      registry: TemplateRegistry,
+      ownerForCurrent: Owner,
+    ): F[NEList[BaboonIssue], Unit] = {
+      tldef match {
+        case RawTLDef.DTO(_, dto) =>
+          validateBareTemplateRefsInMembers(pkg, dto.members, registry, dto.name.name)
+        case RawTLDef.Identifier(_, idi) =>
+          validateBareTemplateRefsInMembers(pkg, idi.members, registry, idi.name.name)
+        case RawTLDef.Contract(_, c) =>
+          validateBareTemplateRefsInMembers(pkg, c.members, registry, c.name.name)
+        case RawTLDef.ADT(_, adt) =>
+          F.traverseAccumErrors_(adt.members) {
+            case m: RawAdtMemberDto      => validateBareTemplateRefsInMembers(pkg, m.dto.members, registry, m.dto.name.name)
+            case m: RawAdtMemberContract => validateBareTemplateRefsInMembers(pkg, m.contract.members, registry, m.contract.name.name)
+            case _                       => F.unit
+          }
+        case RawTLDef.Namespace(ns) =>
+          val nextOwner = ownerForCurrent match {
+            case Owner.Toplevel => Owner.Ns(List(TypeName(ns.name.name)))
+            case Owner.Ns(path) => Owner.Ns(path.toList :+ TypeName(ns.name.name))
+            case adt: Owner.Adt => throw new IllegalStateException(s"Namespace declared inside an ADT scope is structurally impossible; got $adt")
+          }
+          F.traverseAccumErrors_(ns.defns)(m => validateBareTemplateRefsInTLDef(pkg, m, registry, nextOwner))
+        case _ =>
+          F.unit
+      }
+    }
+
+    private def validateBareTemplateRefsInMembers(
+      pkg: Pkg,
+      members: Seq[RawDtoMember],
+      registry: TemplateRegistry,
+      receivingName: String,
+    ): F[NEList[BaboonIssue], Unit] = {
+      F.traverseAccumErrors_(members) {
+        case p: RawDtoMember.ParentDef if p.args.isEmpty && refersToRegisteredTemplate(pkg, p.parent, registry) =>
+          F.fail(BaboonIssue.of(TyperIssue.TemplateNotInstantiated(p.parent.path.last.name, receivingName, p.meta)))
+        case u: RawDtoMember.UnparentDef if u.args.isEmpty && refersToRegisteredTemplate(pkg, u.parent, registry) =>
+          F.fail(BaboonIssue.of(TyperIssue.TemplateNotInstantiated(u.parent.path.last.name, receivingName, u.meta)))
+        case i: RawDtoMember.IntersectionDef if i.args.isEmpty && refersToRegisteredTemplate(pkg, i.parent, registry) =>
+          F.fail(BaboonIssue.of(TyperIssue.TemplateNotInstantiated(i.parent.path.last.name, receivingName, i.meta)))
+        case _ =>
+          F.unit
+      }
     }
 
     private def instantiateRecursive(
@@ -113,8 +202,367 @@ object TemplateInstantiator {
       ownerForCurrent: Owner,
       nsPath: List[TypeName],
     ): F[NEList[BaboonIssue], Seq[RawTLDef]] = {
-      F.traverseAccumErrors(members)(m => processMember(pkg, m, registry, ownerForCurrent, nsPath)).map(_.flatten)
+      for {
+        // Pass 1 (PR-29.5): replace alias-over-template members with concrete RawTLDef nodes.
+        afterAlias <- F.traverseAccumErrors(members)(m => processMember(pkg, m, registry, ownerForCurrent, nsPath)).map(_.flatten)
+        // Pass 2 (PR-33.2 / M33): lower `+/-/^ Template[Args]` structural arms inside DTO/
+        // Contract/Identifier/ADT bodies via inline substitution (Approach M1 for `+`/`-`,
+        // M3 for `^`). Decision documented in RawDtoMember.IntersectionFields scaladoc.
+        afterStructural <- F.traverseAccumErrors(afterAlias)(m => lowerStructuralArmsInTLDef(pkg, m, registry, ownerForCurrent))
+      } yield afterStructural
     }
+
+    // ─── PR-33.2 / M33: structural-arm lowering ───────────────────────────────
+
+    /** Walk a single TLDef and lower any `+/-/^ Template[Args]` arms inside its DTO / Contract
+      * / Identifier / ADT body via inline substitution (Approach M1 for `+`/`-`, M3 for `^`).
+      *
+      * Architectural choice: M1 (pure inline) for `+` and `-`, M3 (one new sealed branch
+      * `RawDtoMember.IntersectionFields`) for `^`. Rationale:
+      *   - `+` and `-` operate on field-set semantics that map cleanly to existing FieldDef /
+      *     UnfieldDef arms (translator path unchanged for those arms; equality-by-Field for `-`).
+      *   - `^` requires a list of fields to survive to translator-time intersection. The existing
+      *     IntersectionDef path resolves a ScopedRef against a registered DTO; inline substitution
+      *     has no such id (M29 invariant: no synthetic id for template instantiations). We add ONE
+      *     new sealed branch that carries the substituted RawFields directly.
+      */
+    private def lowerStructuralArmsInTLDef(
+      pkg: Pkg,
+      tldef: RawTLDef,
+      registry: TemplateRegistry,
+      ownerForCurrent: Owner,
+    ): F[NEList[BaboonIssue], RawTLDef] = {
+      tldef match {
+        case dtoTL @ RawTLDef.DTO(_, dto) =>
+          lowerStructuralArmsInMembers(pkg, dto.members, registry, ownerForCurrent, dto.name.name, depth = 0, cycleSet = Set.empty).map {
+            newMembers => dtoTL.copy(value = dto.copy(members = newMembers))
+          }
+        case idTL @ RawTLDef.Identifier(_, idi) =>
+          lowerStructuralArmsInMembers(pkg, idi.members, registry, ownerForCurrent, idi.name.name, depth = 0, cycleSet = Set.empty).map {
+            newMembers => idTL.copy(value = idi.copy(members = newMembers))
+          }
+        case cTL @ RawTLDef.Contract(_, c) =>
+          lowerStructuralArmsInMembers(pkg, c.members, registry, ownerForCurrent, c.name.name, depth = 0, cycleSet = Set.empty).map {
+            newMembers => cTL.copy(value = c.copy(members = newMembers))
+          }
+        case adtTL @ RawTLDef.ADT(_, adt) =>
+          // ADT branches' nested DTO/Contract bodies may carry `+/-/^ Template[Args]` arms.
+          // Walk each branch's body.
+          F.traverseAccumErrors(adt.members) {
+            case m: RawAdtMemberDto =>
+              lowerStructuralArmsInMembers(pkg, m.dto.members, registry, ownerForCurrent, m.dto.name.name, depth = 0, cycleSet = Set.empty).map {
+                newMembers => m.copy(dto = m.dto.copy(members = newMembers))
+              }
+            case m: RawAdtMemberContract =>
+              lowerStructuralArmsInMembers(pkg, m.contract.members, registry, ownerForCurrent, m.contract.name.name, depth = 0, cycleSet = Set.empty).map {
+                newMembers => m.copy(contract = m.contract.copy(members = newMembers))
+              }
+            case other =>
+              F.pure(other)
+          }.map {
+            newAdtMembers => adtTL.copy(value = adt.copy(members = newAdtMembers))
+          }
+        case nsTL @ RawTLDef.Namespace(ns) =>
+          val nextOwner = Owner.Ns(nsPathFromOwner(ownerForCurrent) :+ TypeName(ns.name.name))
+          F.traverseAccumErrors(ns.defns)(m => lowerStructuralArmsInTLDef(pkg, m, registry, nextOwner)).map {
+            newDefns => nsTL.copy(value = ns.copy(defns = newDefns))
+          }
+        case other =>
+          F.pure(other)
+      }
+    }
+
+    /** Convert an `Owner` to its namespace path (List[TypeName]) for further nesting. */
+    private def nsPathFromOwner(o: Owner): List[TypeName] = o match {
+      case Owner.Toplevel => List.empty
+      case Owner.Ns(path) => path.toList
+      case Owner.Adt(_)   => List.empty // ADT-owned scopes don't compose with template registry keys.
+    }
+
+    /** Walk a member list and lower every `+/-/^ Template[Args]` arm via inline substitution.
+      *
+      * Recursion: when the substituted body contains another `+/-/^ Template[Args]` arm
+      * (e.g. `template Outer[U] { + Inner[U] }` instantiated at `Outer[i32]` produces a body
+      * with `+ Inner[i32]`), the lowered body is fed back through the same walk with a depth
+      * counter and a cycle-detection set keyed by `(receiverName, templateName, argTuple)`.
+      *
+      * Termination guard: depth-limit (default 32) OR cycle-set hit. Either fires
+      * `TyperIssue.CircularInheritance` per §3.f. PR-33.4 will refine the diagnostic.
+      */
+    private def lowerStructuralArmsInMembers(
+      pkg: Pkg,
+      members: Seq[RawDtoMember],
+      registry: TemplateRegistry,
+      ownerForCurrent: Owner,
+      receivingName: String,
+      depth: Int,
+      cycleSet: Set[(String, String, String)],
+    ): F[NEList[BaboonIssue], Seq[RawDtoMember]] = {
+      F.flatTraverseAccumErrors(members) {
+        case p: RawDtoMember.ParentDef if p.args.isDefined =>
+          lowerOneArm(pkg, p.parent, p.args.get, p.meta, registry, ownerForCurrent, receivingName, depth, cycleSet, ArmKind.Plus)
+        case u: RawDtoMember.UnparentDef if u.args.isDefined =>
+          lowerOneArm(pkg, u.parent, u.args.get, u.meta, registry, ownerForCurrent, receivingName, depth, cycleSet, ArmKind.Minus)
+        case i: RawDtoMember.IntersectionDef if i.args.isDefined =>
+          lowerOneArm(pkg, i.parent, i.args.get, i.meta, registry, ownerForCurrent, receivingName, depth, cycleSet, ArmKind.Caret)
+        case other =>
+          F.pure(List(other))
+      }
+    }
+
+    /** PR-33.2-D05: true iff the ScopedRef's last segment names a registered template under the
+      * effective owner. Honours explicit prefix per PR-29.15.
+      */
+    private def refersToRegisteredTemplate(
+      pkg: Pkg,
+      ref: ScopedRef,
+      registry: TemplateRegistry,
+    ): Boolean = {
+      val pathSegments = ref.path.toList.map(_.name)
+      val (prefixSegments, headName) = (pathSegments.init, pathSegments.last)
+      // For an unprefixed bare reference, the template might be registered under any owner in
+      // the same package (the structural-arm position is in the receiver's scope, but a
+      // sibling-namespace template could also be a forgotten-arguments candidate). Mirror the
+      // same broad lookup used by `substituteTypeRef`'s matrix #1 check (pkg-wide, any-owner)
+      // for the empty-prefix case; for the prefixed case, narrow to the prefix-derived owner.
+      if (prefixSegments.isEmpty) {
+        registry.templates.keys.exists {
+          case (kPkg, _, tname) => kPkg == pkg && tname.name == headName
+        }
+      } else {
+        val ownerForLookup = Owner.Ns(prefixSegments.map(TypeName(_)))
+        registry.templates.contains((pkg, ownerForLookup, TypeName(headName)))
+      }
+    }
+
+    /** Resolve one `+/-/^ Template[Args]` arm into a list of `RawDtoMember`s to splice into the
+      * receiver's member list. Validates arity, substitutes the body, recursively lowers any
+      * nested structural arms, and converts the result according to the operator.
+      */
+    private def lowerOneArm(
+      pkg: Pkg,
+      parent: ScopedRef,
+      args: NEList[RawTypeRef],
+      armMeta: RawNodeMeta,
+      registry: TemplateRegistry,
+      ownerForCurrent: Owner,
+      receivingName: String,
+      depth: Int,
+      cycleSet: Set[(String, String, String)],
+      armKind: ArmKind,
+    ): F[NEList[BaboonIssue], List[RawDtoMember]] = {
+      // Termination guard: depth limit OR cycle detection. Per §3.f, reuse CircularInheritance.
+      // The existing `order` toposort emits CircularInheritance with a `ToposortError[TypeId.User]`
+      // payload; we don't have that shape here so we fabricate a synthetic single-edge matrix
+      // (receivingName -> templateName) so the printer's `niceList()` produces a meaningful
+      // line instead of empty payload. PR-33.2-D01.
+      val pathSegments = parent.path.toList.map(_.name)
+      val headName     = pathSegments.last
+      val syntheticMatrix = izumi.fundamentals.graphs.struct.AdjacencyList(
+        Map[TypeId.User, Set[TypeId.User]](
+          TypeId.User(pkg, Owner.Toplevel, TypeName(receivingName)) ->
+            Set(TypeId.User(pkg, Owner.Toplevel, TypeName(headName)))
+        )
+      )
+      if (depth >= structuralArmRecursionLimit) {
+        F.fail(
+          BaboonIssue.of(
+            TyperIssue.CircularInheritance(
+              error = izumi.fundamentals.graphs.ToposortError.UnexpectedLoop[TypeId.User](
+                done   = Seq.empty,
+                matrix = syntheticMatrix,
+              ),
+              meta = armMeta,
+            )
+          )
+        )
+      } else {
+        // Resolve the head against the template registry. Honour explicit prefix (cross-namespace
+        // per PR-29.15); otherwise fall back to the receiver's own owner.
+        // The ScopedRef has a `path`: (segments...) where the last segment is the type name and
+        // any preceding segments are namespace prefix.
+        // (`pathSegments` and `headName` were captured earlier for the synthetic recursion-guard matrix.)
+        val prefixSegments = pathSegments.init
+        val ownerForLookup: Owner = if (prefixSegments.isEmpty) {
+          ownerForCurrent
+        } else {
+          Owner.Ns(prefixSegments.map(TypeName(_)))
+        }
+        val key = (pkg, ownerForLookup, TypeName(headName))
+        registry.templates.get(key) match {
+          case None =>
+            // Maybe it's a builtin or a non-template ref. Builtins don't make sense in
+            // structural-arm position with args; emit NotATemplate. The aliasName carries the
+            // receiving DTO's name for diagnostic context.
+            F.fail(
+              BaboonIssue.of(
+                TyperIssue.NotATemplate(
+                  head      = headName,
+                  aliasName = receivingName,
+                  meta      = armMeta,
+                )
+              )
+            )
+          case Some(body) =>
+            val templateName = headName
+            val argList      = args.toList
+            // Arity check (matrix #3).
+            if (argList.size != body.typeParams.size) {
+              F.fail(
+                BaboonIssue.of(
+                  TyperIssue.TemplateArityMismatch(
+                    templateName = templateName,
+                    aliasName    = receivingName,
+                    expected     = body.typeParams.size,
+                    actual       = argList.size,
+                    meta         = armMeta,
+                  )
+                )
+              )
+            } else {
+              // Cycle key: (receiver, template, arg-string-repr).
+              val argTupleKey = argList.map(_.toString).mkString(",")
+              val cycleKey    = (receivingName, templateName, argTupleKey)
+              if (cycleSet.contains(cycleKey)) {
+                F.fail(
+                  BaboonIssue.of(
+                    TyperIssue.CircularInheritance(
+                      error = izumi.fundamentals.graphs.ToposortError.UnexpectedLoop[TypeId.User](
+                        done   = Seq.empty,
+                        matrix = syntheticMatrix,
+                      ),
+                      meta = armMeta,
+                    )
+                  )
+                )
+              } else {
+                // Substitute the body's members.
+                val substMap: Map[String, RawTypeRef] = body.typeParams.map(_.name).zip(argList).toMap
+                body.rawDefn match {
+                  case RawTemplateDefn.Dto(rawDto) =>
+                    for {
+                      substMembers <- substituteMembers(rawDto.members, substMap, templateName, registry, armMeta, pkg)
+                      // Recursive lowering: the substituted body may itself carry
+                      // `+/-/^ Template[Args]` arms. Re-enter lowering with incremented depth
+                      // and updated cycle set.
+                      loweredMembers <- lowerStructuralArmsInMembers(
+                        pkg,
+                        substMembers,
+                        registry,
+                        ownerForCurrent,
+                        receivingName,
+                        depth + 1,
+                        cycleSet + cycleKey,
+                      )
+                      result <- convertLoweredArm(loweredMembers, armKind, armMeta, templateName, receivingName)
+                    } yield result
+                  case RawTemplateDefn.Contract(rawC) =>
+                    for {
+                      substMembers <- substituteMembers(rawC.members, substMap, templateName, registry, armMeta, pkg)
+                      loweredMembers <- lowerStructuralArmsInMembers(
+                        pkg,
+                        substMembers,
+                        registry,
+                        ownerForCurrent,
+                        receivingName,
+                        depth + 1,
+                        cycleSet + cycleKey,
+                      )
+                      result <- convertLoweredArm(loweredMembers, armKind, armMeta, templateName, receivingName)
+                    } yield result
+                  case _ =>
+                    // ADT or Service template in `+/-/^` position: not meaningful as a
+                    // structural-composition arm. Reuse NotATemplate with the head name.
+                    F.fail(
+                      BaboonIssue.of(
+                        TyperIssue.NotATemplate(
+                          head      = headName,
+                          aliasName = receivingName,
+                          meta      = armMeta,
+                        )
+                      )
+                    )
+                }
+              }
+            }
+        }
+      }
+    }
+
+    /** Convert a lowered (substituted, recursively-flattened) member list into the appropriate
+      * splice for the operator:
+      *   - `+`: keep the member list as-is (FieldDefs splice in directly).
+      *   - `-`: convert each FieldDef into an UnfieldDef (the existing `removed` walk handles them
+      *     by Field equality, identical to `- ParentDto`).
+      *   - `^`: extract the FieldDef list, wrap as one IntersectionFields node.
+      *
+      * Non-FieldDef members (ContractRef, leftover ParentDef-with-args = None, etc.) are dropped
+      * for `-` and `^` because intersection / removal only operates on field-by-field semantics.
+      * For `+`, non-FieldDef members from a recursively-substituted template body are preserved
+      * verbatim (e.g. a ContractRef from the template body becomes a ContractRef on the receiver).
+      */
+    private def convertLoweredArm(
+      loweredMembers: Seq[RawDtoMember],
+      armKind: ArmKind,
+      armMeta: RawNodeMeta,
+      templateName: String,
+      receivingName: String,
+    ): F[NEList[BaboonIssue], List[RawDtoMember]] = {
+      armKind match {
+        case ArmKind.Plus =>
+          F.pure(loweredMembers.toList)
+        case ArmKind.Minus =>
+          // PR-33.2-D02: `-` is defined only over a flat field list. If the substituted body
+          // contains any non-FieldDef member (e.g. a concrete `+ ParentRef`, ContractRef, etc.),
+          // emit `TemplateBodyNotFlatForRemoval` rather than silently drop it — the dropped
+          // contributor would mask a semantically incorrect removal.
+          checkFlatOrFail(loweredMembers, "minus", armMeta, templateName, receivingName).map {
+            fieldDefs =>
+              fieldDefs.map(f => RawDtoMember.UnfieldDef(f.field, f.meta)).toList
+          }
+        case ArmKind.Caret =>
+          // PR-33.2-D02: same flatness invariant as `-`. PR-33.2-D06: per-field meta is
+          // preserved by carrying FieldDef instances (each retaining its own meta) through
+          // IntersectionFields rather than only RawField.
+          checkFlatOrFail(loweredMembers, "caret", armMeta, templateName, receivingName).map {
+            fieldDefs =>
+              List(RawDtoMember.IntersectionFields(fieldDefs, armMeta))
+          }
+      }
+    }
+
+    /** PR-33.2-D02: enforce that the substituted body for `-` or `^` contains only FieldDef
+      * members. Returns the FieldDef list on success, fails with `TemplateBodyNotFlatForRemoval`
+      * on the first non-FieldDef encountered.
+      */
+    private def checkFlatOrFail(
+      loweredMembers: Seq[RawDtoMember],
+      kind: String,
+      armMeta: RawNodeMeta,
+      templateName: String,
+      receivingName: String,
+    ): F[NEList[BaboonIssue], Seq[RawDtoMember.FieldDef]] = {
+      val offending = loweredMembers.collectFirst {
+        case m if !m.isInstanceOf[RawDtoMember.FieldDef] => m
+      }
+      offending match {
+        case Some(m) =>
+          F.fail(
+            BaboonIssue.of(
+              TyperIssue.TemplateBodyNotFlatForRemoval(
+                templateName        = templateName,
+                receivingName       = receivingName,
+                kind                = kind,
+                offendingMemberKind = m.getClass.getSimpleName,
+                meta                = armMeta,
+              )
+            )
+          )
+        case None =>
+          F.pure(loweredMembers.collect { case f: RawDtoMember.FieldDef => f })
+      }
+    }
+
 
     private def processMember(
       pkg: Pkg,
@@ -381,20 +829,32 @@ object TemplateInstantiator {
           substituteTypeRef(field.tpe, substMap, templateName, registry, fm, pkg).map {
             newTpe => u.copy(field = field.copy(tpe = newTpe))
           }
+        // PR-33.2 (M33): substitute the `args` of structural-composition arms when the template
+        // body itself contains `+/-/^ Inner[U]`. After substitution the arm still carries
+        // `args.isDefined`; it is the caller's job (`lowerStructuralArmsInMembers`) to recursively
+        // lower it. We do NOT call `substituteTypeRef` here because that helper rejects any
+        // RawTypeRef.Constructor whose head names a registered template (matrix #1, used to
+        // forbid template instantiations in field position). For structural-arm args, template
+        // instantiation IS forbidden in the same way (matrix #2 — args may not themselves be
+        // template instantiations); rejecting them here keeps the invariant. So we substitute
+        // each arg through the same `substituteTypeRef` that would catch a forbidden inner
+        // template instantiation.
+        case p @ RawDtoMember.ParentDef(_, _, Some(parentArgs)) =>
+          F.traverseAccumErrors(parentArgs.toList)(a => substituteTypeRef(a, substMap, templateName, registry, meta, pkg)).map {
+            newArgs => p.copy(args = Some(NEList.unsafeFrom(newArgs)))
+          }
+        case u @ RawDtoMember.UnparentDef(_, _, Some(parentArgs)) =>
+          F.traverseAccumErrors(parentArgs.toList)(a => substituteTypeRef(a, substMap, templateName, registry, meta, pkg)).map {
+            newArgs => u.copy(args = Some(NEList.unsafeFrom(newArgs)))
+          }
+        case i @ RawDtoMember.IntersectionDef(_, _, Some(parentArgs)) =>
+          F.traverseAccumErrors(parentArgs.toList)(a => substituteTypeRef(a, substMap, templateName, registry, meta, pkg)).map {
+            newArgs => i.copy(args = Some(NEList.unsafeFrom(newArgs)))
+          }
         case other =>
-          // ParentDef, UnparentDef, IntersectionDef, ContractRef — body left unchanged here.
-          // PR-33.1 added `args: Option[NEList[RawTypeRef]]` to ParentDef/UnparentDef/IntersectionDef;
-          // those RawTypeRefs MUST be substituted by PR-33.2. This catch-all is correct for
-          // PR-33.1 (parser-only) but PR-33.2 must add explicit arms for those three cases.
-          // PR-33.2 hand-off index — ALL sites that silently drop `args` and need updating:
-          //   1. HERE (TemplateInstantiator.substituteDtoMember) — add explicit arms for
-          //      ParentDef, UnparentDef, IntersectionDef that substitute their `args` field.
-          //   2. BaboonTranslator.scala — three `dtoParentToDefs` call-sites (ParentDef ~L244,
-          //      UnparentDef ~L252, IntersectionDef ~L258): pass/thread `args` once the typer
-          //      is ready to consume it.
-          //   3. BaboonEnquiries.scala — three arms in `hardDepsOfRawDefn` (~L223-228):
-          //      `Seq(d.parent)` must also include the type refs inside `d.args` once
-          //      template-argument resolution is wired end-to-end.
+          // ParentDef/UnparentDef/IntersectionDef with args = None, ContractRef,
+          // IntersectionFields (typer-internal — never appears at substitution time in practice
+          // because it is produced AFTER substitution by `lowerStructuralArmsInMembers`).
           F.pure(other)
       }
     }

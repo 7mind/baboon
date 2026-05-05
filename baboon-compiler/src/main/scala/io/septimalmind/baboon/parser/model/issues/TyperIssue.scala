@@ -256,6 +256,26 @@ object TyperIssue {
     meta: RawNodeMeta,
   ) extends TyperIssue
 
+  /** PR-33.2 (M33) [PR-33.2-D02]: a `- Template[Args]` or `^ Template[Args]` arm was
+    * substituted, but the resulting member list contains a non-FieldDef member (e.g. a
+    * concrete `+ ParentRef`, ContractRef, etc.). The `-` and `^` operators only have a
+    * defined semantics over a flat field list (field-by-field equality / intersection); a
+    * non-FieldDef contributor would be silently dropped, masking the omission. Restrict
+    * template bodies used in `-`/`^` position to flat field lists.
+    *
+    * `templateName`        — the template whose body was substituted.
+    * `receivingName`       — the DTO/Contract receiving the `-`/`^` arm.
+    * `kind`                — `"minus"` for `-`, `"caret"` for `^`.
+    * `offendingMemberKind` — the simple-class-name of the offending RawDtoMember subtype.
+    */
+  case class TemplateBodyNotFlatForRemoval(
+    templateName: String,
+    receivingName: String,
+    kind: String,
+    offendingMemberKind: String,
+    meta: RawNodeMeta,
+  ) extends TyperIssue
+
   implicit val todoPrinter: IssuePrinter[TodoTyperIssue] =
     (issue: TodoTyperIssue) => {
       issue.descr
@@ -712,6 +732,18 @@ object TyperIssue {
     (issue: TemplateBodyCarriesDerived) => {
       s"""${extractLocation(issue.meta)}
          |Template '${issue.templateName}' carries a ':derived[…]' annotation, which is forbidden on template bodies — write the annotation on the instantiating alias instead (spec §5.3, locked decision #6)
+         |""".stripMargin
+    }
+
+  implicit val templateBodyNotFlatForRemovalPrinter: IssuePrinter[TemplateBodyNotFlatForRemoval] =
+    (issue: TemplateBodyNotFlatForRemoval) => {
+      val opGloss = issue.kind match {
+        case "minus" => "'-'"
+        case "caret" => "'^'"
+        case other   => s"'$other'"
+      }
+      s"""${extractLocation(issue.meta)}
+         |Template '${issue.templateName}' cannot be used under the $opGloss operator on '${issue.receivingName}': the substituted body contains a non-field member (${issue.offendingMemberKind}). The $opGloss operator only operates on a flat field list — restrict the template body to FieldDefs when it is intended for use under '-' or '^'.
          |""".stripMargin
     }
 

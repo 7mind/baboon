@@ -470,6 +470,10 @@ object BaboonFamilyManager {
           filesFromMeta(meta)
         case io.septimalmind.baboon.parser.model.RawDtoMember.ContractRef(_, meta) =>
           filesFromMeta(meta)
+        case io.septimalmind.baboon.parser.model.RawDtoMember.IntersectionFields(_, meta) =>
+          // PR-33.2 (M33): typer-synthesized intersection-limiter; never appears in user-authored
+          // sources, so its files-from-meta contribution is just the synthesized meta.
+          filesFromMeta(meta)
       }
     }
 

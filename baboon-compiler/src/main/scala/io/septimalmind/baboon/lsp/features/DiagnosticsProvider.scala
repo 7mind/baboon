@@ -129,6 +129,9 @@ class DiagnosticsProvider(positionConverter: PositionConverter) {
         (Some(meta), s"'$head' is not a template or builtin collection — cannot be used as a generic constructor head in alias '$alias'")
       case TemplateBodyCarriesDerived(tname, meta) =>
         (Some(meta), s"Template '$tname' carries ':derived[…]' — write the annotation on the alias instead")
+      case TemplateBodyNotFlatForRemoval(tname, recv, kind, offending, meta) =>
+        val op = if (kind == "minus") "-" else if (kind == "caret") "^" else kind
+        (Some(meta), s"Template '$tname' cannot be used under '$op' on '$recv': substituted body contains non-field member ($offending). Restrict the template body to fields when used under '-' or '^'.")
       case DagError(e, meta)                    => (Some(meta), s"DAG error: $e")
       case ScalarExpected(id, meta)             => (Some(meta), s"Scalar expected: ${id.name.name}")
       case CollectionExpected(id, meta)         => (Some(meta), s"Collection expected: ${id.name.name}")
