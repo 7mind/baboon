@@ -230,6 +230,26 @@ class WorkspaceState(
           case UnexpectedNonBuiltin(name, _, _, meta) => (extractLocation(meta.pos), s"Type not found: ${name.name}")
           case NonUniqueDomainVersions(dupes)         => (None, s"Duplicate domain versions: ${dupes.keys.mkString(", ")}")
           case NonUniqueRawDomainVersion(conflicts)   => (None, s"Duplicate domain versions: ${conflicts.keys.map(k => s"${k.id}@${k.version}").mkString(", ")}")
+          case DuplicateTypeParam(name, ownerName, meta) =>
+            (extractLocation(meta.pos), s"Duplicate type parameter '$name' in template '$ownerName'")
+          case DuplicateTemplateName(name, ownerName, meta) =>
+            (extractLocation(meta.pos), s"Duplicate template name '$name' at owner '$ownerName'")
+          case TemplateArityMismatch(tname, alias, exp, act, meta) =>
+            (extractLocation(meta.pos), s"Template '$tname' instantiated in alias '$alias' with wrong arity: expected $exp, got $act")
+          case TemplateInstantiationInForbiddenPosition(containingName, instName, meta) =>
+            (extractLocation(meta.pos), s"Template instantiation `$instName` is forbidden here — templates may only be instantiated as the right-hand side of a top-level `type` alias (matrix #1 / decision #3). Containing context: '$containingName'")
+          case TemplateNotInstantiated(tname, alias, meta) =>
+            (extractLocation(meta.pos), s"Alias '$alias' references template '$tname' without type arguments — use '$tname[…]'")
+          case NotATemplate(head, alias, meta) =>
+            (extractLocation(meta.pos), s"'$head' is not a template or builtin collection — cannot be used as a generic constructor head in alias '$alias'")
+          case TemplateBodyCarriesDerived(tname, meta) =>
+            (extractLocation(meta.pos), s"Template '$tname' carries ':derived[…]' — write the annotation on the alias instead")
+          case DuplicatedAdtBranches(id, branch, sources, meta) =>
+            (extractLocation(meta.pos), s"Duplicate ADT branches '$branch' in ${id.name.name}: contributed by ${sources.map(_.name.name).mkString(", ")}")
+          case WrongAdtInclusion(id, ref, reason, meta) =>
+            (extractLocation(meta.pos), s"Invalid ADT inheritance arm in ${id.name.name} referencing '${ref.path.toList.map(_.name).mkString(".")}': $reason")
+          case CrossVersionAdtInclusion(id, ref, includeId, meta) =>
+            (extractLocation(meta.pos), s"Cross-version ADT inclusion in ${id.name.name}: '${ref.path.toList.map(_.name).mkString(".")}' resolved to ${includeId.name.name}")
           case _                                      => (None, ti.toString.take(100))
         }
 
@@ -238,6 +258,18 @@ class WorkspaceState(
           case ConflictingDtoFields(dto, _, meta) => (extractLocation(meta.pos), s"Conflicting fields in ${dto.name.name}")
           case EmptyEnumDef(e, meta)              => (extractLocation(meta.pos), s"Empty enum: ${e.id.name.name}")
           case EmptyAdtDef(a, meta)               => (extractLocation(meta.pos), s"Empty ADT: ${a.id.name.name}")
+          case IdentifierFieldFloatType(owner, fields, meta) =>
+            (extractLocation(meta.pos), s"identifier '${owner.id.name.name}' has float field(s): ${fields.map(_.name.name).mkString(", ")}")
+          case IdentifierFieldCollection(owner, fields, meta) =>
+            (extractLocation(meta.pos), s"identifier '${owner.id.name.name}' has collection field(s): ${fields.map(_.name.name).mkString(", ")}")
+          case IdentifierFieldUserNotIdentifier(owner, fields, meta) =>
+            (extractLocation(meta.pos), s"identifier '${owner.id.name.name}' references non-`id` type(s): ${fields.map { case (f, t) => s"${f.name.name} → ${t.name.name}" }.mkString(", ")}")
+          case IdentifierFieldAny(owner, fields, meta) =>
+            (extractLocation(meta.pos), s"identifier '${owner.id.name.name}' has `any` field(s): ${fields.map(_.name.name).mkString(", ")}")
+          case IneligibleUserMapKey(owner, badField, reason, meta) =>
+            (extractLocation(meta.pos), s"map key field '${badField.name.name}' in ${owner.id.name.name} is ineligible: $reason")
+          case MapKeyMissingDerivation(owner, badField, keyType, missing, meta) =>
+            (extractLocation(meta.pos), s"map key field '${badField.name.name}' in ${owner.id.name.name}: key type ${keyType.name.name} lacks `: derived[$missing]`")
           case _                                  => (None, vi.toString.take(100))
         }
 
