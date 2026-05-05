@@ -72,6 +72,12 @@ class CompletionProvider(
         // plus ordinary types and builtins (a non-template alias is also valid).
         getTypeCompletions ++ getBuiltinCompletions ++ getTemplateCompletions
 
+      case CompletionContext.StructuralArmPosition =>
+        // M33: `+ Foo` / `- Foo` / `^ Foo` inside a DTO body. The head can be a concrete
+        // type or a template instantiated as `+ MyGen[i32]` (spec §3 of generics.md).
+        // Surface concrete types, builtins, and templates; keywords are not valid here.
+        getTypeCompletions ++ getBuiltinCompletions ++ getTemplateCompletions
+
       case CompletionContext.KeywordPosition =>
         getKeywordCompletions
 
@@ -110,6 +116,9 @@ class CompletionProvider(
     case object TypePosition extends CompletionContext
     // Alias RHS position: after `type Name = ` — templates are valid here (spec §2.4).
     case object AliasRhsPosition extends CompletionContext
+    // Structural-inheritance arm position: after `+ ` / `- ` / `^ ` inside a DTO body.
+    // M33 widened these arms to accept template instantiations (spec generics.md §3).
+    case object StructuralArmPosition extends CompletionContext
     case object KeywordPosition extends CompletionContext
     case object FieldName extends CompletionContext
     case object PragmaKeyPosition extends CompletionContext
@@ -131,6 +140,9 @@ class CompletionProvider(
             // Templates are only valid on the RHS of a type alias (spec §2.4).
             // [\w.]* accepts alphanumeric/underscore AND dots, matching qualified prefixes like `foo.Pa`.
             val aliasRhsPattern = """^\s*(?:root\s+)?type\s+\w+\s*=\s*([\w.]*)$""".r
+            // M33: structural-arm position inside a DTO body — `+ ` / `- ` / `^ ` followed by an
+            // optional word-or-qualified prefix. Templates are valid here as instantiation heads.
+            val structuralArmPattern = """^\s*[+\-^]\s+([\w.]*)$""".r
             // Pattern to match type position with optional prefix: "field: TypePre" -> ("field: ", "TypePre")
             val typeWithPrefixPattern = """^(.*:\s*)(\w*)$""".r
             // Pattern for generic args: "opt[TypePre" or "map[K, ValuePre"
@@ -147,6 +159,8 @@ class CompletionProvider(
                 (CompletionContext.PragmaKeyPosition, Some(prefix))
               case aliasRhsPattern(prefix) =>
                 (CompletionContext.AliasRhsPosition, Some(prefix))
+              case structuralArmPattern(prefix) =>
+                (CompletionContext.StructuralArmPosition, Some(prefix))
               case typeWithPrefixPattern(_, prefix) =>
                 (CompletionContext.TypePosition, Some(prefix))
               case genericArgPattern(_, prefix) =>

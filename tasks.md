@@ -14,12 +14,11 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ## Active brief
 
-**Active milestone:** M33 — Generic structural inheritance via template
-instantiation (extends BAB-A04 / M29). Allows
-`data X { + MyGeneric[i32] }` (and `-` / `^`) to instantiate the template
-and apply its shape via the existing structural inheritance pipeline,
-without emitting the transient instantiated type as a domain member.
-Plan: `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`.
+**Active milestone:** none. M33 closed 2026-05-05; see closed-out
+entries below and `docs/logs/<m33-close-log>.md` for the milestone narrative.
+Next active work pending — typically MFACADE (multi-version codec facade)
+once Q10–Q14 in `docs/drafts/20260505-1830-questions-multi-version-facade-upstream.md`
+resolve.
 
 **On hold:** Multi-version codec facade upstream (proposal.md). Open
 questions Q1–Q14 in
@@ -29,7 +28,7 @@ questions Q1–Q14 in
 
 ## Milestones (high-level)
 
-- [~] **M33** — Generic structural inheritance via template instantiation. Plan: `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`.
+- [x] **M33** — Generic structural inheritance via template instantiation (closed 2026-05-05). Six PRs landed; `+`/`-`/`^` template instantiation in DTO/contract bodies via inline substitution; codegen byte-identical (m33-ok fixture); LSP smoke green; spec doc §9 landed; tree-sitter corpus locked. Plan: `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`. Close-out log: `docs/logs/20260505-2005-m33-close-log.md`.
 - [ ] **MFACADE** — Multi-version codec facade upstream (proposal.md). Blocked on Q10–Q14.
 - [~] **M32** — META_VERSION_1 1→16 bump. Carry-over (PR-32.1 byte change in main; PR-32.2/PR-32.3 fixes shipped).
 
@@ -44,7 +43,7 @@ Detail in `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`
 - [x] **PR-33.3** — Typer: negative-path diagnostics. Reuses existing `TyperIssue` cases. Most plan §4 rows already covered by PR-33.2 (D02/D05/D01); this PR adds the residual rows: row 1 `NotATemplate`, row 3 arity mismatch, row 4 forbidden type-arg, row 6 cross-package, row 9 mutual recursion, row 11 duplicate inline, row 12 field-name collision.
 - [x] **PR-33.4** — Cycle / recursive-substitution detection. **Largely absorbed into PR-33.2/PR-33.3** (recursion guard + cycle-set + self/mutual-recursion tests landed). Residual scope: audit completeness; enforce non-empty-intersection edge case (PR-33.2 round-2 advisory); harden cycle-key canonicalisation if needed.
 - [x] **PR-33.5** — Cross-language acceptance fixture `m33-ok` (`test/conv-test/m33.baboon` + per-backend conv-test rows).
-- [ ] **PR-33.6** — LSP smoke + close-out + tree-sitter grammar bump + spec doc.
+- [x] **PR-33.6** — LSP smoke + close-out + tree-sitter grammar bump + spec doc.
 
 ---
 
@@ -62,6 +61,15 @@ Detail in `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`
 - [~] **M32 / PR-32.1** — `META_VERSION_1` 1→16 bump. Byte already lifted in all 11 runtime files at HEAD `0d9d7165`. Final disposition deferred until MFACADE Q2 resolves.
 
 ## Completed
+
+- [x] **PR-33.6** (2026-05-05, single pass — clean) — M33 close-out: LSP smoke + tree-sitter corpus + spec doc + milestone close. Five deliverables shipped:
+  1. **LSP smoke tests** (+2 tests, 20 → 22 in `LspFeaturesTest`): hover on `MyGen` inside `+ MyGen[i32]` returns the template signature via the existing `domain.templateRegistry` lookup branch (no provider change needed). Completion right after `+ ` on its own line inside a DTO body offers the template alongside concrete types and builtins. The completion case required one surgical provider change: new `CompletionContext.StructuralArmPosition` branch in `CompletionProvider.scala` matched by `^\s*[+\-^]\s+([\w.]*)$`; returns `getTypeCompletions ++ getBuiltinCompletions ++ getTemplateCompletions` (no keywords, since keywords cannot head a structural arm). New fixture `baboon-compiler/src/test/resources/baboon/m33-lsp/m33-lsp.baboon`.
+  2. **Tree-sitter grammar**: the existing grammar at `editors/baboon-zed/grammars/baboon/grammar.js` already accepts `+ TypeRef[Args]` because `parent_def`/`unparent_def`/`intersection_def` use `$.type_ref`, which already includes `$.generic_type`. **No grammar code change required.** Added a corpus test file `editors/baboon-zed/grammars/baboon/test/corpus/m33-template-arms.txt` with 5 cases (parent_def / unparent_def / intersection_def with template instantiation, mixed +/-/^ in one DTO, cross-namespace head). Tree-sitter test count 42 → 47, all green. The submodule pointer bump (`grammars/baboon` inner repo + `editors/baboon-zed` outer repo) is documented but not executed in this PR — per CLAUDE.md "Do not commit. The orchestrator commits at PR close-out", the submodule chain commits are deferred to the orchestrator's close-out commit. Files present in the inner submodule's working tree as untracked entries; the orchestrator stages and commits them at close-out.
+  3. **Spec doc**: extended `docs/spec/generics.md` with new top-level §9 "Structural-arm template instantiation (M33)" (~155 lines added: 9.1 syntax, 9.2 inline-substitution semantics, 9.3 operator semantics with `TemplateBodyNotFlatForRemoval` + empty-body sentinel, 9.4 mixed composition, 9.5 recursive substitution + cycle handling, 9.6 constraints + `adt`-arm carve-out, 9.7 PR cross-reference). Added cross-link from §2.6 to §9. M29 §6 item 6 ("templates on ADT inheritance arms ... out of scope") deliberately retained as historically accurate description of M29; §2.6 now carries the M33-supersession note.
+  4. **`tasks.md` close**: M33 flipped from `[~]` to `[x]` in milestones list with milestone-summary line; PR-33.6 flipped to `[x]`; "Active brief" updated to reflect milestone close.
+  5. **Session log**: `docs/logs/20260505-2005-m33-close-log.md` (~280 lines: orchestrator brief, six-PR narrative with review-round counts and defect headlines, locked architectural decisions §3.a-§3.f, deferred items, final verification matrix).
+  Verification: `sbt baboonJVM/compile` clean; `sbt baboonJS/compile` clean; `sbt 'testOnly *LspFeatures* *M33StructuralTemplateInstantiation* *M29Validator*'` 64/64; `tree-sitter test` 47/47; `sbt baboonJVM/test` deferred to gate (see verification section in close log).
+  Surprises: (a) tree-sitter required no grammar code change — all three operators routed through `type_ref` which already accepts `generic_type`. The PR-29.8 historical worry was about M29 template *declarations*, not M33 template instantiations. (b) HoverProvider needed no change — `findTypeInfo`'s template-registry fallback branch (PR-29.7 / GAP-2) handles `MyGen` lookup correctly when the template is excised from `domain.defs`. (c) CompletionProvider needed a one-pattern, one-branch surgical addition; total provider change is < 15 lines.
 
 - [x] **PR-33.5** (2026-05-05, two review rounds — clean) — Cross-language acceptance fixture `m33-ok` proves the M29 architectural bet holds for all three M33 structural-arm operators (`+`/`-`/`^`) across all 9 codegen backends. Three consumer DTOs in `test/conv-test/m33.baboon` (with the typer-side mirror at `baboon-compiler/src/test/resources/baboon/m33-ok/m33.baboon`):
   - `IntPageWithStats { + Page[i32]; + Stats[i32] }` — `+` arm.

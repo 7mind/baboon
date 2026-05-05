@@ -10,6 +10,66 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 
 ---
 
+## PR-33.6
+
+### [PR-33.6-D01] Close-log + tasks.md falsely claim the inner-submodule corpus file is "staged but not committed"
+**Status:** resolved
+**Severity:** minor
+**Location:** `tasks.md:67` (PR-33.6 entry); `docs/logs/20260505-2005-m33-close-log.md:215-216`
+**Description:** `git -C editors/baboon-zed/grammars/baboon status` shows `test/corpus/m33-template-arms.txt` under "Untracked files" — NOT staged. The outer `editors/baboon-zed` repo also has no staged changes (only `grammars/baboon (untracked content)` reported as modified). Both write-ups are factually wrong; an orchestrator following them would expect pre-staged content.
+**Fix:** Reworded `tasks.md:67` and `docs/logs/20260505-2005-m33-close-log.md:215-216` to "Files present in the inner submodule's working tree as untracked entries; the orchestrator stages and commits them at close-out." Verified `git -C editors/baboon-zed/grammars/baboon status` shows the corpus file under "Untracked files" — matches the corrected wording.
+
+### [PR-33.6-D02] M33 closed in tasks.md but `mdl :build :test` close-out gate was deferred
+**Status:** resolved
+**Severity:** minor (process)
+**Location:** `docs/logs/20260505-2005-m33-close-log.md:284-291` (verification matrix rows 4 + 6)
+**Description:** Both row 4 (`sbt baboonJVM/test`) and row 6 (`mdl --simple-log :build :test`) marked "deferred / not run in this PR's executor pass". CLAUDE.md is explicit: "Run mdl with the appropriate target before every commit and push: `mdl :build :test`". Closing M33 without running the documented pre-commit gate is a process violation. Combined with D01, the close posture is uncomfortably thin.
+**Fix:** Ran `mdl --simple-log :build :test` (parallel) — failed on documented Kotlin daemon OOM (CLAUDE.md "<16GB RAM use --seq" workaround). Re-ran `mdl --simple-log --seq :build :test` — green. Total wall time 2132.3s (~36 min); all actions completed successfully ("Execution completed successfully", `success: true`). M33's `[x]` flip is now confirmed by the gate. Verification matrix row 6 backfilled in the close log.
+
+### [PR-33.6-D03] Hover-test type-param assertion is vacuously true (`markdown.contains("T")` matches "Template")
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/lsp/features/LspFeaturesTest.scala:514`
+**Description:** Test asserts `markdown.contains("T")` with comment "Hover should list type-param 'T'". Since the rendered markdown always contains "Template" (asserted by previous line), `contains("T")` cannot fail — asserts nothing about the type-param's actual presence. A regression dropping `[T]` from `renderTemplateInfo`'s output would not break this test.
+**Fix:** `LspFeaturesTest.scala:516` — replaced `markdown.contains("T")` with `markdown.contains("[T]")`. Now pins the type-param-list rendering; would catch a regression that drops `[T]` from `renderTemplateInfo`'s output.
+
+### [PR-33.6-D04] LSP-test docstring lies about fixture line numbering and DTO shape
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/lsp/features/LspFeaturesTest.scala:491-493`
+**Description:** Comment claims "15: data MyGen[T] { v: T }" and "17: data Holder { + MyGen[i32] }". Actual fixture has `data MyGen[T] { v: T }` on (1-indexed) line 10 and the `+ MyGen[i32]` arm on line 13 — split across three lines, not the single-line `data Holder { + MyGen[i32] }` form. Test logic uses `lines.indexWhere` so it's correct; only the comment is wrong.
+**Fix:** `LspFeaturesTest.scala:491-493` — comment corrected to actual 1-indexed layout (line 10 for `data MyGen[T] { v: T }`, lines 12-14 for the multi-line `root data Holder { …\n + MyGen[i32]\n}` shape).
+
+### [PR-33.6-D05] Spec §9.1 claims legacy non-templated arms "behave exactly as before" — false for `+ MyGen` (head IS a template)
+**Status:** resolved
+**Severity:** minor
+**Location:** `docs/spec/generics.md:837-838` (§9.1 closing sentence)
+**Description:** §9.1 says legacy non-templated forms (`+ Page`, `- Stats`, `^ Page`) "continue to parse and behave exactly as before — the new clause is opt-in". This is FALSE when the head names a registered template: §9.6 ("No bare-template heads") and `validateNoBareTemplateRefs` actively reject `+ MyGen` with `TemplateNotInstantiated`. M33 is a behavioural change for the bare-template-head case, not pure opt-in. §9.1 contradicts §9.6.
+**Fix:** `docs/spec/generics.md` §9.1 — appended qualifier "provided the head is not itself a registered template (see §9.6 'No bare-template heads')" to the closing sentence. Resolves the contradiction with §9.6.
+
+### [PR-33.6-D06] Spec §2.6 supersession note is grammatically tangled
+**Status:** resolved
+**Severity:** nit
+**Location:** `docs/spec/generics.md:320-324` (M33-update blockquote in §2.6)
+**Description:** "`adt`-arm instantiation remains scoped only to *DTO/contract* bodies, not ADT bodies" — paradoxical at the surface ("adt-arm instantiation scoped to DTO/contract bodies" reads contradictorily). Intent: "template instantiation in structural-composition arms remains scoped to DTO/contract bodies; ADT inheritance arms are not widened in M33".
+**Fix:** `docs/spec/generics.md` §2.6 — replaced the tangled "`adt`-arm instantiation remains scoped only to *DTO/contract* bodies, not ADT bodies" with: "Template instantiation in structural-composition arms (`+`/`-`/`^`) is widened only inside `data` and `contract` bodies; ADT inheritance arms remain restricted as in §2.6 above (see §9.6)."
+
+### [PR-33.6-D07] Spec §9.7 attributes "Cycle / recursive-substitution guard" entirely to PR-33.4; bulk landed in PR-33.2
+**Status:** resolved
+**Severity:** nit
+**Location:** `docs/spec/generics.md:976-977` (§9.7 PR-33.4 row)
+**Description:** tasks.md's PR-33.4 entry: "Bulk of the planned work landed in PR-33.2 (recursion guard, cycle-set, depth-limit, self/mutual recursion tests) and PR-33.3 (negative-path pins). Residual: closed the empty-intersection edge case." Spec §9.7 collapses this: "PR-33.4 — Cycle / recursive-substitution guard; empty-body sentinel for `^`; cycle-key canonicalisation hardening." Overstates PR-33.4, understates PR-33.2.
+**Fix:** `docs/spec/generics.md` §9.7 — split the single PR-33.4 row into two: PR-33.2 owns recursion-depth limit + cycle-set guard + self/mutual-recursion tests; PR-33.4 owns empty-`^`-body sentinel + cycle-key canonicalisation (`render` not `toString`) + regression-guard pins for `+ Empty[i32]` / `- Empty[i32]`. Attribution now matches `tasks.md`'s Completed entries.
+
+### [PR-33.6-D08] Pre-existing stale hover string survives M33 close-out — `renderTemplateInfo` advertises only the alias instantiation form
+**Status:** resolved (note-only — pre-existing, deferred)
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/lsp/features/HoverProvider.scala:165`
+**Description:** Hover output reads `*Template — instantiate via `type Alias = $canonicalName[…]`*`. With M33 landed, `+ MyGen[i32]` / `- MyGen[i32]` / `^ MyGen[i32]` are also valid instantiation sites. PR-33.6 added an LSP smoke test exercising hover on `MyGen` inside a `+ MyGen[i32]` arm — but kept the rendered text suggesting only the alias form. Pre-existing (PR-29.8 vintage).
+**Fix:** Note-only — pre-existing PR-29.8-vintage wording. M33 close-out scope is documentation + tests, not LSP UX upgrades. Deferred as a future LSP-polish PR.
+
+---
+
 ## PR-33.5
 
 ### [PR-33.5-D01] m33-ok exercises only the `+` arm; `-` and `^` template-arm lowering paths are codegen-unverified at byte level

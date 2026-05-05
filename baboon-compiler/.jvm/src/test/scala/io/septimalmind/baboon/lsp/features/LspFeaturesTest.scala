@@ -487,6 +487,77 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
     }
   }
 
+  "hover provider (m33 structural-arm template)" should {
+    // m33-lsp.baboon layout (1-indexed lines):
+    //   10: data MyGen[T] { v: T }
+    //   12: root data Holder {
+    //   13:   + MyGen[i32]
+    //   14: }
+    //
+    // Smoke: hover on `MyGen` inside `+ MyGen[i32]` returns the template signature
+    // (looked up via domain.templateRegistry — templates are excised from domain.defs
+    // post-monomorphisation, see PR-29.7 / GAP-2 / DocumentSymbolProvider).
+    "show template signature when hovering on template name in + arm" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m33-lsp/m33-lsp.baboon") {
+          (docState, wsState, uri) =>
+            val hover = new HoverProvider(docState, wsState, logger)
+
+            val content = docState.getContent(uri).get
+            val lines   = content.split("\n")
+            val lineIdx = lines.indexWhere(_.contains("+ MyGen[i32]"))
+            assert(lineIdx >= 0, "Should find '+ MyGen[i32]' line")
+
+            val colIdx = lines(lineIdx).indexOf("MyGen")
+            val result = hover.getHover(uri, Position(lineIdx, colIdx + 1))
+            assert(result.isDefined, "Should return hover for template 'MyGen' in + arm position")
+            val markdown = result.get.contents.value
+            assert(markdown.contains("MyGen"), s"Hover should mention 'MyGen': $markdown")
+            // Template hover renders header `data MyGen[T] { … }` plus a "Template" label.
+            assert(markdown.contains("Template"), s"Hover should describe a template: $markdown")
+            assert(markdown.contains("[T]"), s"Hover should list type-param '[T]': $markdown")
+        }
+    }
+  }
+
+  "completion provider (m33 structural-arm position)" should {
+    // Smoke: completion right after `+ ` inside a DTO body offers the template `MyGen`
+    // alongside concrete types and builtins (CompletionContext.StructuralArmPosition).
+    "include template in candidate list right after '+ ' in DTO body" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m33-lsp/m33-lsp.baboon") {
+          (docState, wsState, uri) =>
+            val completion = new CompletionProvider(docState, wsState, logger)
+
+            val content = docState.getContent(uri).get
+            val lines   = content.split("\n")
+            // Line: "data Holder { + MyGen[i32] }" — place cursor right after "+ "
+            val lineIdx = lines.indexWhere(_.contains("+ MyGen[i32]"))
+            assert(lineIdx >= 0, "Should find '+ MyGen[i32]' line")
+
+            val plusIdx   = lines(lineIdx).indexOf('+')
+            val cursorCol = plusIdx + 2 // right after "+ "; captured prefix is empty
+            val items     = completion.getCompletions(uri, Position(lineIdx, cursorCol))
+            val labels    = items.map(item => item.filterText.getOrElse(item.label)).toSet
+
+            assert(
+              labels.contains("MyGen"),
+              s"Structural-arm completions should include template 'MyGen', got: ${items.map(_.label).take(20)}",
+            )
+            // Concrete types + builtins must also surface (the head can be a concrete type too).
+            assert(
+              labels.contains("i32"),
+              s"Structural-arm completions should include builtin 'i32', got: ${items.map(_.label).take(20)}",
+            )
+            // Keywords are NOT valid as a structural-arm head — `data` etc. must be absent.
+            assert(
+              !labels.contains("data"),
+              s"Keyword 'data' must be absent in structural-arm position, got: ${items.map(_.label).take(30)}",
+            )
+        }
+    }
+  }
+
   "hover provider (m30 docs)" should {
     // m30_sc_docs.baboon contains doc-bearing types:
     //   /** A simple item with field-level docs. */

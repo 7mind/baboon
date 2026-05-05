@@ -317,6 +317,14 @@ arm position, not on arms appearing inside template bodies.
 
 The wider question of generics-in-arms is out of scope for M29; see §6.
 
+> **M33 update.** Milestone M33 widens `+` / `-` / `^` to accept template
+> instantiations as the arm head — see §9 "Structural-arm template
+> instantiation (M33)" below. The rule above ("not legal in M29") is
+> superseded by §9 starting at the M33 boundary. Template instantiation in
+> structural-composition arms (`+`/`-`/`^`) is widened only inside `data`
+> and `contract` bodies; ADT inheritance arms remain restricted as in §2.6
+> above (see §9.6).
+
 ---
 
 ## 3. Semantics — monomorphisation
@@ -811,3 +819,169 @@ their dependency order. Diagnostic names for the forbidden positions in
 PR-29.7), `NotATemplate` (§2.5.8, PR-29.7), `TemplateBodyCarriesDerived`
 (§5.3, PR-29.7), `VerificationIssue.ReferentialCyclesFound` (§2.5.9,
 PR-29.6, existing validator diagnostic reused).
+
+---
+
+## 9. Structural-arm template instantiation (M33)
+
+Milestone M33 (PR-33.1 .. PR-33.6) widens the structural-composition
+operators `+`, `-`, `^` inside `data` and `contract` bodies to accept a
+template instantiation as the arm head. M33 extends — but does not
+relax — the M29 invariants of §3: codegen never sees a template, and no
+synthetic identifier is exposed.
+
+### 9.1 Syntax
+
+The three structural-composition operators in a `data` / `contract` body
+may now carry an optional `[…]` clause after the type-reference head:
+
+```text
+data Holder {
+  + Page[i32]
+  - Stats[i32]
+  ^ Page[i32]
+}
+```
+
+The legacy non-templated forms (`+ Page`, `- Stats`, `^ Page`) continue
+to parse and behave exactly as before **provided the head is not itself a
+registered template** (see §9.6 'No bare-template heads') — the new clause
+is opt-in.
+
+### 9.2 Semantics — inline substitution
+
+When the typer encounters `+ Template[A1, …, An]`, `- Template[A1, …, An]`,
+or `^ Template[A1, …, An]`, it:
+
+1. Resolves the head against the template registry (cross-namespace
+   prefixes honoured per §6 item 11).
+2. Validates the argument count against the template's declared
+   parameter list (`TemplateArityMismatch` on mismatch).
+3. Substitutes each type parameter with the corresponding argument in the
+   template's body.
+4. **Inlines** the substituted member list into the receiving DTO's
+   member list, replacing the structural-arm node verbatim.
+
+No transient `DomainMember.User` is registered. The receiving DTO
+absorbs the substituted members directly. This is structurally identical
+to how `AdtInheritanceExpander` substitutes ADT-arm references by
+copying the target's literal branches (M29 architectural decision §3.b
+Option I — "no synthetic id exposed", PR-33.2).
+
+### 9.3 Operator semantics
+
+After substitution the receiving DTO's accumulated member list is
+processed by the existing `BaboonTranslator` pipeline:
+
+- **`+ Template[Args]`** — the substituted members (typically `FieldDef`s,
+  but also nested `+`/`-`/`^` arms; see §9.5) are appended to the
+  receiver's accumulated member list. Identical to `+ ConcreteRef`
+  except the arm comes from a template body rather than a registered
+  DTO.
+
+- **`- Template[Args]`** — the substituted body's `FieldDef` set is
+  removed, by name (with type) match, from the accumulated member set.
+  The template body must be **flat** — every contributor must be a
+  `FieldDef`. A template body containing `+ ConcreteBase` or any other
+  non-`FieldDef` arm is rejected at lowering time with
+  `TemplateBodyNotFlatForRemoval` (PR-33.2 D02), naming the offending
+  member kind. This avoids silent loss of `Base`'s contributions.
+
+- **`^ Template[Args]`** — the receiver's accumulated `FieldDef` set is
+  intersected (by `Field` case-class equality: name + tpe + prevName +
+  docs) with the template body's substituted `FieldDef` set. Same
+  flatness requirement as `-`. An **empty** substituted body is rejected
+  with the same `TemplateBodyNotFlatForRemoval` diagnostic carrying the
+  sentinel `offendingMemberKind = "empty body"` (PR-33.4) — without this
+  guard the existing `BaboonTranslator.intersectionLimiters` short-circuit
+  would silently turn `^ Empty[T]` into a no-op pass-through. An empty
+  *result* of intersection (non-empty body, but no `Field` matches the
+  receiver) is allowed and matches concrete-`^` semantics.
+
+### 9.4 Composition with mixed concrete and template arms
+
+Concrete and template arms compose uniformly within the same DTO body
+and preserve source order:
+
+```text
+data IntPageWithStats {
+  + Page[i32]      // template
+  + Stats[i32]     // template
+  + ConcreteBase   // concrete
+  - Stats[i32]     // template
+}
+```
+
+After lowering, each arm has been replaced by its substituted contribution
+and the receiver is a vanilla `Typedef.Dto` with a flat `FieldDef` list —
+indistinguishable from a hand-written equivalent.
+
+### 9.5 Recursive template instantiation through structural arms
+
+A template body itself may use the new structural-arm syntax. When the
+outer template is instantiated, the substituted body's structural arms
+are recursively re-substituted:
+
+```text
+data Inner[T] { v: T }
+data Outer[U] { + Inner[U] }
+
+type X = Outer[i32]
+```
+
+After substitution, `Outer[i32]`'s body is `{ + Inner[i32] }`; the
+instantiator re-enters the substitution machinery to lower the inner
+arm, producing the final body `{ v: i32 }` (PR-33.4).
+
+The recursion is depth-limited (constant 32) and additionally guarded by
+a cycle-detection set keyed by `(receivingName, templateName, argTuple)`.
+Self-instantiation cycles such as `template Self[T] { + Self[T] }` and
+mutual cycles `template A[U] { + B[U] }; template B[U] { + A[U] }` are
+caught by either the depth limit or the cycle set, rendered through the
+existing `CircularInheritance` typer issue (M29 architectural decision
+§3.f — reuse rather than introduce a dedicated case).
+
+### 9.6 Constraints and restrictions
+
+- **Position**: the new syntax is allowed only as a structural-composition
+  arm head in a `data` or `contract` body. Field-position template
+  instantiation (`field: Foo[Bar]`) and nested instantiation in alias RHS
+  (`type Y = Foo[Bar[i32]]`) remain forbidden by the M29 negative-test
+  matrix #1 / #2 (§2.5.1 / §2.5.2). PR-33.3's negative-path tests re-pin
+  these diagnostics to prove the M33 widening did not leak.
+
+- **`adt` arms**: M33 does not extend the new syntax to `adt`-body arms.
+  The §2.6 restriction continues to apply to ADT inheritance arms — only
+  DTO and contract bodies are widened.
+
+- **Cross-namespace**: same-package cross-namespace heads work via
+  PR-29.15's hardened `resolveTemplateKey`. Cross-package instantiation
+  remains deferred (§6 item 11).
+
+- **No bare-template heads**: `+ MyGen` (no brackets, head IS a registered
+  template) is rejected by `validateNoBareTemplateRefs` with
+  `TemplateNotInstantiated`, fired pre-toposort to avoid a confusing
+  downstream `NameNotFound`.
+
+- **Codegen invariance**: no per-language codegen changes ship with M33.
+  The cross-language acceptance fixture `m33-ok` (`test/conv-test/m33.baboon`)
+  proves byte-identical wire-format agreement across all 9 backends —
+  the only test addition needed beyond the typer-side fixtures (PR-33.5).
+
+### 9.7 Implementation reference
+
+M33 ships across PR-33.1 .. PR-33.6 (`tasks.md`, "M33 — PR breakdown"):
+
+- **PR-33.1** — Parser: optional `[…]` head on `+`/`-`/`^` arms.
+- **PR-33.2** — Typer: inline substitution (§9.2 Option I); new sealed
+  branch `RawDtoMember.IntersectionFields` carries substituted `^` bodies
+  through the lowering boundary; new diagnostic `TemplateBodyNotFlatForRemoval`.
+- **PR-33.3** — Negative-path diagnostics; bounded fix in `lowerOneArm`
+  to walk arg constructors for matrix-#2 forbidden type-args.
+- **PR-33.2** — Recursion-depth limit (32), cycle-set guard, self/mutual-recursion tests.
+- **PR-33.4** — Empty-`^`-body sentinel; cycle-key canonicalisation (`render` instead of `toString`); regression-guard pins for `+ Empty[i32]` / `- Empty[i32]`.
+- **PR-33.5** — Cross-language acceptance fixture `m33-ok`.
+- **PR-33.6** — LSP smoke + spec doc (this section) + tree-sitter test
+  corpus (`editors/baboon-zed/grammars/baboon/test/corpus/m33-template-arms.txt`;
+  the existing grammar already accepts `+ TypeRef[Args]` since `type_ref`
+  includes `generic_type` — only locked-in test cases were added).

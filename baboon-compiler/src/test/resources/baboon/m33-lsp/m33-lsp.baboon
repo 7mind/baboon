@@ -1,0 +1,14 @@
+model my.lsp.m33
+
+version "0.0.1"
+
+// PR-33.6 LSP smoke fixture for M33 structural-inheritance-via-template.
+// Sibling of m29-lsp/m29-lsp.baboon; tests live in LspFeaturesTest.scala.
+// The smoke tests exercise hover on a template name in a structural arm
+// position and completion right after the operator on its own line.
+
+data MyGen[T] { v: T }
+
+root data Holder {
+  + MyGen[i32]
+}
