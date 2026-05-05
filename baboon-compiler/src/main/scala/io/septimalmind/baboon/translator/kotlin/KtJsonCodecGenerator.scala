@@ -196,7 +196,9 @@ class KtJsonCodecGenerator(
         case TypeId.Builtins.tso => q"$baboonTimeFormats.formatTso($ref)"
         // Note: u64 → kotlin.ULong (per KtTypeTranslator). ULong.toString() is unsigned natively;
         // no special arm needed (PR-28.1-D02 audit confirmed).
-        case _: TypeId.Builtin => q"$ref.toString()"
+        // BAB-K05: str is already a Kotlin String; no .toString() needed (avoids -Werror redundant-call warning).
+        case TypeId.Builtins.str => q"$ref"
+        case _: TypeId.Builtin   => q"$ref.toString()"
         case uid: TypeId.User =>
           domain.defs.meta.nodes(uid) match {
             case u: DomainMember.User =>
