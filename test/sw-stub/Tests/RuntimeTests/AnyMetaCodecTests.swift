@@ -290,7 +290,7 @@ final class AnyMetaCodecTests: XCTestCase {
     // ----- BaboonTypeMeta + BaboonTypeMetaCodec (PR-08-D01 / PR-22-D01) ----------------------
 
     func testBaboonTypeMeta_writeJson_readMetaJson_roundtrip() {
-        let m = BaboonTypeMeta(1, "my.dom", "1.0.0", "1.0.0", "MyT")
+        let m = BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion, "my.dom", "1.0.0", "1.0.0", "MyT")
         let json = m.writeJson()
         let parsed = BaboonTypeMeta.readMetaJson(json)
         XCTAssertEqual(parsed, m)

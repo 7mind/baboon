@@ -1090,14 +1090,15 @@ class BaboonTypeMeta {
 
   Map<String, dynamic> writeJson() => BaboonTypeMetaCodec.writeJson(this);
 
-  /// PR-08-D01: tolerate absent `\$mv` (treat as v1) and reject explicit `\$mv != "1"` (forward-
-  /// compat: future meta versions return null so the facade reports a typed decode failure).
+  /// PR-08-D01: tolerate absent `\$mv` (treat as canonical) and reject explicit
+  /// `\$mv != String(metaVersion)` (forward-compat: future meta versions return null so the
+  /// facade reports a typed decode failure).
   static BaboonTypeMeta? readMetaJson(Object? json) {
     if (json is! Map) return null;
     final mv = json[r'$mv'];
     // PR-22-D01: spec says `$mv` is a JSON string (not number); Java/TS enforce string-only.
-    // Tolerate absent (v1 by default) and string "1"; reject everything else.
-    if (mv != null && mv != '1') return null;
+    // Tolerate absent (canonical by default) and string-form of canonical metaVersion.
+    if (mv != null && mv != BaboonTypeMetaCodec.metaVersion.toString()) return null;
     final d = json[r'$d'];
     final v = json[r'$v'];
     final t = json[r'$t'];
@@ -1184,8 +1185,9 @@ class BaboonTypeMetaCodec {
   }
 
   static Map<String, dynamic> writeJson(BaboonTypeMeta meta) {
+    // `$mv` elided for the canonical version (matches cs/java/rust/scala/ts/python writers).
+    // Reader treats absent `$mv` as canonical.
     final obj = <String, dynamic>{
-      r'$mv': '1',
       r'$d': meta.domainIdentifier,
       r'$v': meta.domainVersion,
       r'$t': meta.typeIdentifier,

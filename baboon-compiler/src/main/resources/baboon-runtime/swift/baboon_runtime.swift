@@ -1350,12 +1350,12 @@ public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
         return BaboonTypeMetaCodec.writeJson(self)
     }
 
-    // PR-08-D01 / PR-22-D01: tolerate absent `$mv` (treat as v1) and reject explicit `$mv != "1"`.
-    // Spec: `$mv` is a JSON string; numbers are rejected.
+    // PR-08-D01 / PR-22-D01: tolerate absent `$mv` (treat as canonical) and reject explicit
+    // `$mv != String(metaVersion)`. Spec: `$mv` is a JSON string; numbers are rejected.
     public static func readMetaJson(_ json: Any?) -> BaboonTypeMeta? {
         guard let obj = json as? [String: Any] else { return nil }
         if let mv = obj["$mv"] {
-            guard let mvStr = mv as? String, mvStr == "1" else { return nil }
+            guard let mvStr = mv as? String, mvStr == String(BaboonTypeMetaCodec.metaVersion) else { return nil }
         }
         guard let d = obj["$d"] as? String else { return nil }
         guard let v = obj["$v"] as? String else { return nil }
@@ -1437,8 +1437,9 @@ public enum BaboonTypeMetaCodec {
     }
 
     public static func writeJson(_ meta: BaboonTypeMeta) -> [String: Any] {
+        // `$mv` elided for the canonical version (matches cs/java/rust/scala/ts/python writers).
+        // Reader treats absent `$mv` as canonical.
         var obj: [String: Any] = [
-            "$mv": "1",
             "$d": meta.domainIdentifier,
             "$v": meta.domainVersion,
             "$t": meta.typeIdentifier,
