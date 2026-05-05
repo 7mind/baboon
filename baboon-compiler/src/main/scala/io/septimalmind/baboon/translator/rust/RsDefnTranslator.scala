@@ -907,11 +907,20 @@ object RsDefnTranslator {
     }
 
     private def dtoDerives(dto: Typedef.Dto): TextTree[RsValue] = {
-      val hasNonOrd      = dto.fields.exists(f => hasDirectFloat(f.tpe))
+      val hasBareFloat   = dto.fields.exists(f => isBareFloat(f.tpe))
+      val hasWrappedFlt  = dto.fields.exists(f => hasFloatRecursive(f.tpe) && !isBareFloat(f.tpe))
       val hasUnorderable = dto.fields.exists(f => hasAnyField(f.tpe))
       val wrappedBranch  = isWrappedAdtBranch(dto)
-      // Three independent axes:
-      // - hasNonOrd (floats): PartialEq/Eq/Ord/PartialOrd are emitted manually via total_cmp.
+      // Four independent axes:
+      // - hasBareFloat: a field's static type is exactly `f32`/`f64` — Eq/Ord can be honoured by
+      //   a manual impl using `f64::total_cmp`. We emit that impl in `dtoOrdImpls` and suppress the
+      //   auto-derive for Eq/Ord (manual impl supersedes derive). Rationale: pkg0 fixtures
+      //   (`set[T6_D2]` etc.) require T6_D2 to be `Ord`. NaN-soundness is a known follow-up.
+      // - hasWrappedFlt: a field's static type contains `f32`/`f64` only via a generic constructor
+      //   (e.g. `Option<f64>`, `Vec<f64>`, `BTreeMap<…, f64>`) or via a transitively float-bearing
+      //   user type. `total_cmp` is a method of `f64`, not of `Option<f64>` — manual impls cannot
+      //   be synthesized soundly. Drop Eq/Ord entirely; rely on `derive(PartialEq, PartialOrd)`.
+      //   This is the BAB-R04 fix.
       // - hasUnorderable (any): PartialEq is derived (AnyOpaque has PartialEq); no Eq/Ord because
       //   serde_json::Value has no total ordering and JSON-source bytes can be byte-different but
       //   semantically equal — Eq is misleading.
@@ -921,7 +930,8 @@ object RsDefnTranslator {
         else "serde::Serialize, serde::Deserialize"
 
       val cmpDerives =
-        if (hasNonOrd) ""
+        if (hasWrappedFlt) "PartialEq, PartialOrd, "
+        else if (hasBareFloat) "" // manual PartialEq/Eq/PartialOrd/Ord via dtoOrdImpls
         else if (hasUnorderable) "PartialEq, "
         else "PartialEq, Eq, PartialOrd, Ord, "
 
@@ -929,20 +939,21 @@ object RsDefnTranslator {
     }
 
     private def dtoOrdImpls(dto: Typedef.Dto, name: RsType): TextTree[RsValue] = {
-      val hasNonOrd      = dto.fields.exists(f => hasDirectFloat(f.tpe))
-      val hasUnorderable = dto.fields.exists(f => hasAnyField(f.tpe))
-      if (hasUnorderable) {
-        // `any` fields carry payloads (UEBA bytes / serde_json::Value) without total ordering.
-        // Skip Ord/Eq entirely; users get only `PartialEq` (derived) for value comparison.
-        // The manual `total_cmp` path used for floats is not applicable here.
+      val hasBareFloat  = dto.fields.exists(f => isBareFloat(f.tpe))
+      val hasWrappedFlt = dto.fields.exists(f => hasFloatRecursive(f.tpe) && !isBareFloat(f.tpe))
+      if (hasWrappedFlt) {
+        // BAB-R04: wrapped-float field types (Option<f64>, Vec<f64>, …) cannot have manual
+        // total_cmp synthesized — `total_cmp` is a method of `f64` only. Rely on derive(PartialEq,
+        // PartialOrd) (see dtoDerives); no manual Eq/Ord — they are unsound for NaN regardless.
         q""
-      } else if (!hasNonOrd) {
-        q""
-      } else {
+      } else if (hasBareFloat) {
+        // Bare-float fields: synthesize Eq/Ord via `f64::total_cmp` so float-bearing structs can
+        // appear inside `BTreeSet<T>` / `BTreeMap<T, _>` (pkg0 cross-version fixtures rely on
+        // this). Long-term unsoundness for NaN is a known follow-up.
         val fieldComparisons = dto.fields.map {
           f =>
             val fld = toSnakeCase(f.name.name)
-            if (hasDirectFloat(f.tpe)) {
+            if (isBareFloat(f.tpe)) {
               q"""match self.$fld.total_cmp(&other.$fld) {
                  |    std::cmp::Ordering::Equal => {},
                  |    ord => return ord,
@@ -974,16 +985,62 @@ object RsDefnTranslator {
            |        std::cmp::Ordering::Equal
            |    }
            |}""".stripMargin
-      }
+      } else q""
     }
 
-    private def hasDirectFloat(tpe: TypeRef): Boolean = {
+    /** True iff `tpe` is exactly the scalar `f32` or `f64` (no wrapping). */
+    private def isBareFloat(tpe: TypeRef): Boolean = tpe match {
+      case TypeRef.Scalar(TypeId.Builtins.f32) => true
+      case TypeRef.Scalar(TypeId.Builtins.f64) => true
+      case _                                   => false
+    }
+
+    /** True iff `tpe` reaches an `f32`/`f64` either directly, through a generic
+      * constructor (`opt`, `lst`, `set`, `map`), or transitively through a referenced
+      * user `data`/`adt` typedef. Enums and foreigns are never float-bearing.
+      *
+      * Transitive propagation is required because Rust's `derive(Eq, Ord)` needs the
+      * field types to themselves implement `Eq, Ord`. Per BAB-R04 a float-bearing struct
+      * derives only `PartialEq, PartialOrd`; any struct that contains it as a field
+      * (directly, in a collection, or inside another wrapping struct) inherits the
+      * same constraint and must also drop `Eq, Ord`.
+      *
+      * Cycle protection: typedefs may contain self-references (recursive ADTs); we
+      * track visited user ids to terminate.
+      */
+    private def hasFloatRecursive(tpe: TypeRef): Boolean =
+      hasFloatRecursive0(tpe, Set.empty)
+
+    private def hasFloatRecursive0(tpe: TypeRef, seen: Set[TypeId.User]): Boolean = {
       tpe match {
         case TypeRef.Scalar(TypeId.Builtins.f32) => true
         case TypeRef.Scalar(TypeId.Builtins.f64) => true
-        case TypeRef.Constructor(_, args)        => args.exists(hasDirectFloat)
-        case _                                   => false
+        case TypeRef.Scalar(u: TypeId.User) =>
+          if (seen.contains(u)) false
+          else {
+            domain.defs.meta.nodes.get(u) match {
+              case Some(DomainMember.User(_, defn, _, _)) =>
+                userDefnHasFloat(defn, seen + u)
+              case _ => false
+            }
+          }
+        case TypeRef.Constructor(_, args) => args.exists(hasFloatRecursive0(_, seen))
+        case _                            => false
       }
+    }
+
+    private def userDefnHasFloat(defn: Typedef, seen: Set[TypeId.User]): Boolean = defn match {
+      case dto: Typedef.Dto =>
+        dto.fields.exists(f => hasFloatRecursive0(f.tpe, seen))
+      case adt: Typedef.Adt =>
+        adt.dataMembers(domain).exists {
+          mid =>
+            domain.defs.meta.nodes.get(mid) match {
+              case Some(DomainMember.User(_, branchDefn, _, _)) => userDefnHasFloat(branchDefn, seen + mid)
+              case _                                            => false
+            }
+        }
+      case _ => false // enums, foreigns, contracts, services, aliases — never float-bearing here
     }
 
     private def hasAnyField(tpe: TypeRef): Boolean = {
@@ -1305,11 +1362,26 @@ object RsDefnTranslator {
       }
 
       val adtDocBlock = rsTrees.renderDocs(adtDocs, "")
+      // BAB-R04: if any branch DTO has a wrapped-float (or transitively float-bearing) field, that
+      // branch dropped `Eq, Ord` — and the wrapping ADT enum cannot derive `Eq, Ord` either, since
+      // `derive(Eq, Ord)` on `enum Foo { Branch(BranchDto) }` needs `BranchDto: Eq + Ord`.
+      // Branches with only bare-float fields keep `Eq, Ord` via manual `total_cmp` impls.
+      val adtBranchHasWrappedFloat = adt.dataMembers(domain).exists {
+        mid =>
+          domain.defs.meta.nodes.get(mid) match {
+            case Some(DomainMember.User(_, dto: Typedef.Dto, _, _)) =>
+              dto.fields.exists(f => hasFloatRecursive(f.tpe) && !isBareFloat(f.tpe))
+            case _ => false
+          }
+      }
+      val adtCmpDerives =
+        if (adtBranchHasWrappedFloat) "PartialEq, PartialOrd"
+        else "PartialEq, Eq, PartialOrd, Ord"
       q"""${branchStructs.toList.joinNN()}
          |
          |${branchCodecs.toList.joinNN()}
          |
-         |${adtDocBlock}#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+         |${adtDocBlock}#[derive(Clone, Debug, $adtCmpDerives)]
          |pub enum ${name.asName} {
          |    ${variants.toList.joinN().shift(4).trim}
          |}
