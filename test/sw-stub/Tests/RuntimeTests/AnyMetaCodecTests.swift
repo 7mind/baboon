@@ -538,4 +538,93 @@ final class AnyMetaCodecTests: XCTestCase {
         XCTAssertTrue(lazy.isValueCreated)
         XCTAssertEqual(calls, 1)
     }
+
+    // ----- MFACADE-PR-4: preload / decodeFromBinLatest / decodeFromJsonLatest ----------------
+
+    func testPreload_doesNotThrowOnEmptyFacade() {
+        // preload() is fire-and-forget; on an empty facade the lazy maps are empty and the
+        // async block completes immediately without any observable side-effect.
+        let f = BaboonCodecsFacade()
+        f.preload()   // must not throw, trap, or otherwise crash
+    }
+
+    func testDecodeFromBinLatest_roundTrip() throws {
+        final class StubLatestValue: BaboonGeneratedLatest, BaboonMetaProvider {
+            var baboonDomainVersion: String { "1.0.0" }
+            var baboonDomainIdentifier: String { "stub.dom" }
+            var baboonTypeIdentifier: String { "StubT" }
+            var baboonSameInVersions: [String] { ["1.0.0"] }
+        }
+
+        final class StubBinCodec: BaboonBinCodecBase<StubLatestValue> {
+            override func decode(_ ctx: BaboonCodecContext, _ reader: BaboonBinReader) throws -> StubLatestValue {
+                _ = reader.readU8()
+                return StubLatestValue()
+            }
+            override func encode(_ ctx: BaboonCodecContext, _ writer: BaboonBinWriter, _ value: StubLatestValue) {
+                writer.writeU8(0x55)
+            }
+        }
+
+        final class StubJsonCodec: BaboonJsonCodecBase<StubLatestValue> {
+            override func decode(_ ctx: BaboonCodecContext, _ wire: Any) throws -> StubLatestValue {
+                return StubLatestValue()
+            }
+            override func encode(_ ctx: BaboonCodecContext, _ value: StubLatestValue) -> Any { return "stub" }
+        }
+
+        final class StubMeta: BaboonMeta {
+            static var baboonDomainVersion: String { "1.0.0" }
+            static var baboonDomainIdentifier: String { "stub.dom" }
+            static var baboonTypeIdentifier: String { "StubT" }
+            func sameInVersions(_ typeId: String) -> [String] { ["1.0.0"] }
+        }
+
+        let dv = BaboonDomainVersion("stub.dom", "1.0.0")
+        let binCodecs = AbstractBaboonUebaCodecs()
+        binCodecs.register("StubT") { StubBinCodec() }
+        let jsonCodecs = AbstractBaboonJsonCodecs()
+        jsonCodecs.register("StubT") { StubJsonCodec() }
+        let facade = BaboonCodecsFacade()
+        _ = facade.register(dv, codecsJson: { jsonCodecs }, codecsBin: { binCodecs }, conversions: { AbstractBaboonConversions() }, meta: { StubMeta() })
+
+        // Encode a value through encodeToBin, then decode via decodeFromBinLatest.
+        let original = StubLatestValue()
+        let encodeResult = facade.encodeToBin(BaboonCodecContext.compact, original)
+        guard case .success(let bytes) = encodeResult else {
+            XCTFail("encodeToBin failed: \(encodeResult)")
+            return
+        }
+        let reader = BaboonBinReader(bytes)
+        let decodeResult: Result<StubLatestValue, BaboonCodecException> = facade.decodeFromBinLatest(reader)
+        switch decodeResult {
+        case .success:
+            break   // decoded successfully — type is correct by the generic constraint
+        case .failure(let e):
+            XCTFail("decodeFromBinLatest failed: \(e)")
+        }
+    }
+
+    // Concrete BaboonGeneratedLatest used to witness the generic parameter in absent-envelope
+    // and nil-input tests. Swift cannot bind `any BaboonGeneratedLatest` to a generic
+    // `T: BaboonGeneratedLatest`; a concrete type is required at the call site.
+    private final class _StubLatestForNilTests: BaboonGeneratedLatest, BaboonMetaProvider {
+        var baboonDomainVersion: String { "stub.dom" }
+        var baboonDomainIdentifier: String { "stub.dom" }
+        var baboonTypeIdentifier: String { "StubT" }
+        var baboonSameInVersions: [String] { ["1.0.0"] }
+    }
+
+    func testDecodeFromJsonLatest_absentEnvelope_returnsNil() throws {
+        let facade = BaboonCodecsFacade()
+        // A plain dictionary with no `$d`/`$v`/`$t` keys has no valid BaboonTypeMeta envelope.
+        let result: _StubLatestForNilTests? = try facade.decodeFromJsonLatest([String: Any]())
+        XCTAssertNil(result)
+    }
+
+    func testDecodeFromJsonLatest_nilInput_returnsNil() throws {
+        let facade = BaboonCodecsFacade()
+        let result: _StubLatestForNilTests? = try facade.decodeFromJsonLatest(Optional<Any>.none as Any)
+        XCTAssertNil(result)
+    }
 }

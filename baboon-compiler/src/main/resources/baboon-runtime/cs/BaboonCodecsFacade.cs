@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 
 // ReSharper disable UnusedTypeParameter
@@ -128,6 +129,24 @@ namespace Baboon.Runtime.Shared
                         $"Baboon codecs must have codecs for {dv} registered.");
                 }
             }
+        }
+
+        public void Preload()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    foreach (var v in _versionsCodecsJson.Values) { _ = v.Value; }
+                    foreach (var v in _versionsCodecsBin.Values) { _ = v.Value; }
+                    foreach (var v in _versionsConversions.Values) { _ = v.Value; }
+                    foreach (var v in _versionsMeta.Values) { _ = v.Value; }
+                }
+                catch
+                {
+                    // Preload is a hint; exceptions must not propagate.
+                }
+            });
         }
 
         public Either<BaboonCodecException, byte[]> EncodeToBin<T>(BaboonCodecContext ctx, T value)
@@ -455,6 +474,26 @@ namespace Baboon.Runtime.Shared
             return DecodeFromBin(reader);
         }
 
+        public Either<BaboonCodecException, TTo> DecodeFromBinLatest<TTo>(BinaryReader reader)
+            where TTo : IBaboonGeneratedLatest
+        {
+            var decodeResult = DecodeFromBin(reader);
+            if (decodeResult is Either<BaboonCodecException, IBaboonGenerated>.Left dl)
+            {
+                return Either.Left<BaboonCodecException, TTo>(dl.Value);
+            }
+            var decoded = ((Either<BaboonCodecException, IBaboonGenerated>.Right)decodeResult).Value;
+            return Convert<IBaboonGenerated, TTo>(decoded);
+        }
+
+        public Either<BaboonCodecException, TTo> DecodeFromBinLatest<TTo>(byte[] bytes)
+            where TTo : IBaboonGeneratedLatest
+        {
+            using var ms = new MemoryStream(bytes);
+            using var reader = new BinaryReader(ms);
+            return DecodeFromBinLatest<TTo>(reader);
+        }
+
         public Either<BaboonCodecException, JToken> EncodeToJson<T>(T value)
             where T : IBaboonGenerated
         {
@@ -543,6 +582,43 @@ namespace Baboon.Runtime.Shared
                     new BaboonCodecException.DecoderFailure($"Cannot parse JSON: {e.Message}", e));
             }
             return DecodeFromJson(parsed);
+        }
+
+        public Either<BaboonCodecException, TTo?> DecodeFromJsonLatest<TTo>(JToken value)
+            where TTo : class, IBaboonGeneratedLatest
+        {
+            var decodeResult = DecodeFromJson(value);
+            if (decodeResult is Either<BaboonCodecException, IBaboonGenerated?>.Left dl)
+            {
+                return Either.Left<BaboonCodecException, TTo?>(dl.Value);
+            }
+            var decoded = ((Either<BaboonCodecException, IBaboonGenerated?>.Right)decodeResult).Value;
+            if (decoded is null)
+            {
+                return Either.Right<BaboonCodecException, TTo?>(null);
+            }
+            var convertResult = Convert<IBaboonGenerated, TTo>(decoded);
+            if (convertResult is Either<BaboonCodecException, TTo>.Left cl)
+            {
+                return Either.Left<BaboonCodecException, TTo?>(cl.Value);
+            }
+            return Either.Right<BaboonCodecException, TTo?>(((Either<BaboonCodecException, TTo>.Right)convertResult).Value);
+        }
+
+        public Either<BaboonCodecException, TTo?> DecodeFromJsonLatest<TTo>(string value)
+            where TTo : class, IBaboonGeneratedLatest
+        {
+            JToken parsed;
+            try
+            {
+                parsed = JToken.Parse(value);
+            }
+            catch (Exception e)
+            {
+                return Either.Left<BaboonCodecException, TTo?>(
+                    new BaboonCodecException.DecoderFailure($"Cannot parse JSON: {e.Message}", e));
+            }
+            return DecodeFromJsonLatest<TTo>(parsed);
         }
 
         public Either<BaboonCodecException, TTo> Convert<TFrom, TTo>(TFrom value)

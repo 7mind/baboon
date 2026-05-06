@@ -40,6 +40,7 @@ import type {
     BaboonCodecData,
     BaboonEither,
     BaboonGenerated,
+    BaboonGeneratedLatest,
     BaboonJsonCodec,
     BaboonMeta,
 } from "./BaboonSharedRuntime";
@@ -489,6 +490,76 @@ export class BaboonCodecsFacade {
         return leftCodecException(new BaboonConverterFailure(
             "BaboonCodecsFacade.convert is not yet implemented in the TypeScript runtime; lands with PR 7.3/7.4 once generated conversions expose a generic dispatch hook.",
         ));
+    }
+
+    /**
+     * Pre-evaluate all registered `Lazy` codec/conversion/meta entries by forcing their `.value`
+     * accessor. The entries are iterated synchronously inside a `Promise.resolve().then(...)` so
+     * the call returns immediately (fire-and-forget). Any exception thrown by a lazy initializer
+     * is swallowed — preload is best-effort warm-up.
+     *
+     * Mirrors Scala `preload()` (Future { ... }.recover).
+     */
+    public preload(): void {
+        const jsonEntries = [...this.versionsCodecsJson.values()];
+        const binEntries  = [...this.versionsCodecsBin.values()];
+        const convEntries = [...this.versionsConversions.values()];
+        const metaEntries = [...this.versionsMeta.values()];
+        Promise.resolve().then(() => {
+            try {
+                for (const e of jsonEntries) { e.value; }
+                for (const e of binEntries)  { e.value; }
+                for (const e of convEntries) { e.value; }
+                for (const e of metaEntries) { e.value; }
+            } catch (_) {
+                // swallow — preload is best-effort
+            }
+        });
+    }
+
+    /**
+     * Decode a binary envelope and immediately convert the result to the latest registered
+     * version of `T`. Mirrors Scala `decodeFromBinLatest[T <: BaboonGeneratedLatest](reader)`.
+     *
+     * TS has no ClassTag, so the caller supplies `targetTypeIdentifier` — the Baboon-domain type
+     * identifier string for `T` (e.g. `"my.domain/:#MyType"`). This is forwarded to `convert`;
+     * once PR 7.3/7.4 lands the actual conversion walk, the identifier will be used to locate
+     * the target codec. Until then `convert` returns a `BaboonConverterFailure` (stub).
+     */
+    public decodeFromBinLatest<T extends BaboonGeneratedLatest>(
+        input: BaboonBinReader | Uint8Array,
+        targetTypeIdentifier: string,
+    ): BaboonEither<BaboonCodecException, T> {
+        const decoded = this.decodeFromBin(input);
+        if (decoded.tag === "Left") return decoded;
+        return this.convert<BaboonGenerated, T>(
+            decoded.value,
+            decoded.value.baboonTypeIdentifier(),
+            targetTypeIdentifier,
+        );
+    }
+
+    /**
+     * Decode a JSON envelope and immediately convert the result to the latest registered version
+     * of `T`. Mirrors Scala `decodeFromJsonLatest[T <: BaboonGeneratedLatest](value: Json)`.
+     *
+     * The TS `decodeFromJson` returns `Left` both for unrecognised envelopes and for codec
+     * failures (no `Option` wrapper). `decodeFromJsonLatest` preserves that contract: `Left`
+     * propagates, `Right` is forwarded to `convert`. `targetTypeIdentifier` is the Baboon-domain
+     * type identifier for `T`, forwarded to `convert` (see `decodeFromBinLatest` for rationale).
+     */
+    public decodeFromJsonLatest<T extends BaboonGeneratedLatest>(
+        value: unknown,
+        targetTypeIdentifier: string,
+    ): BaboonEither<BaboonCodecException, T> {
+        const decoded = this.decodeFromJson(value);
+        if (decoded.tag === "Left") return decoded as BaboonEither<BaboonCodecException, T>;
+        const inner = decoded.value;
+        return this.convert<BaboonGenerated, T>(
+            inner,
+            inner.baboonTypeIdentifier(),
+            targetTypeIdentifier,
+        );
     }
 
     // ----- private dispatch --------------------------------------------------------------------

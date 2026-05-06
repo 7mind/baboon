@@ -271,6 +271,107 @@ open class BaboonCodecsFacade {
         return domainVersion
     }
 
+    fun preload() {
+        try {
+            versionsCodecsJson.values.forEach { it.value }
+            versionsCodecsBin.values.forEach { it.value }
+        } catch (_: Throwable) {}
+    }
+
+    fun <T : BaboonGeneratedLatest> decodeFromBinLatest(reader: BaboonBinaryReader, targetClass: kotlin.reflect.KClass<T>): Either<BaboonCodecException, T> {
+        return try {
+            val decoded = decodeFromBin(reader)
+            convert(decoded, targetClass)
+        } catch (e: BaboonCodecException) {
+            Either.Left(e)
+        } catch (e: Throwable) {
+            Either.Left(BaboonCodecException.DecoderFailure("decodeFromBinLatest: decode failed.", e))
+        }
+    }
+
+    fun <T : BaboonGeneratedLatest> decodeFromBinLatest(bytes: ByteArray, targetClass: kotlin.reflect.KClass<T>): Either<BaboonCodecException, T> {
+        return try {
+            val decoded = decodeFromBin(bytes)
+            convert(decoded, targetClass)
+        } catch (e: BaboonCodecException) {
+            Either.Left(e)
+        } catch (e: Throwable) {
+            Either.Left(BaboonCodecException.DecoderFailure("decodeFromBinLatest: decode failed.", e))
+        }
+    }
+
+    // @baboon:json-start
+    fun <T : BaboonGeneratedLatest> decodeFromJsonLatest(value: kotlinx.serialization.json.JsonElement, targetClass: kotlin.reflect.KClass<T>): Either<BaboonCodecException, T?> {
+        return try {
+            val decoded = decodeFromJson(value) ?: return Either.Right(null)
+            convert(decoded, targetClass).let { r ->
+                when (r) {
+                    is Either.Left -> r
+                    is Either.Right -> Either.Right(r.value)
+                }
+            }
+        } catch (e: BaboonCodecException) {
+            Either.Left(e)
+        } catch (e: Throwable) {
+            Either.Left(BaboonCodecException.DecoderFailure("decodeFromJsonLatest: decode failed.", e))
+        }
+    }
+
+    fun <T : BaboonGeneratedLatest> decodeFromJsonLatest(value: String, targetClass: kotlin.reflect.KClass<T>): Either<BaboonCodecException, T?> {
+        return try {
+            val decoded = decodeFromJson(value) ?: return Either.Right(null)
+            convert(decoded, targetClass).let { r ->
+                when (r) {
+                    is Either.Left -> r
+                    is Either.Right -> Either.Right(r.value)
+                }
+            }
+        } catch (e: BaboonCodecException) {
+            Either.Left(e)
+        } catch (e: Throwable) {
+            Either.Left(BaboonCodecException.DecoderFailure("decodeFromJsonLatest: decode failed.", e))
+        }
+    }
+    // @baboon:json-end
+
+    private fun <T : BaboonGeneratedLatest> convert(value: BaboonGenerated, targetClass: kotlin.reflect.KClass<T>): Either<BaboonCodecException, T> {
+        if (targetClass.isInstance(value)) {
+            @Suppress("UNCHECKED_CAST")
+            return Either.Right(value as T)
+        }
+        val domainVersion = value.domainVersion()
+        val versions = domainVersions[domainVersion.domainIdentifier]
+            ?.takeIf { it.isNotEmpty() }
+            ?: return Either.Left(BaboonCodecException.ConverterFailure("Unknown domain '${domainVersion.domainIdentifier}'."))
+
+        var current: BaboonGenerated = value
+        for (toVersion in versions) {
+            if (current.domainVersion().version >= toVersion.version) continue
+            val lazyConversions = versionsConversions[toVersion]
+                ?: return Either.Left(BaboonCodecException.ConverterFailure("Cannot find version '$toVersion' conversions."))
+            val candidates = lazyConversions.value.findConversions(current)
+            val conversion = candidates
+                .filter { c -> current::class == c.typeFrom || (current is BaboonAdtMemberMeta && (current as BaboonAdtMemberMeta).baboonAdtType == c.typeFrom) }
+                .maxByOrNull { c -> Version.from(c.versionTo) }
+                ?: return Either.Left(BaboonCodecException.ConverterFailure("Cannot find version '$toVersion' type [${current::class.simpleName}] conversions."))
+            current = try {
+                lazyConversions.value.convert(current, conversion)
+            } catch (e: Throwable) {
+                return Either.Left(BaboonCodecException.ConverterFailure(
+                    "Exception while converting type [${current::class.simpleName}] of version '${current.domainVersion()}' to version '$toVersion'.", e
+                ))
+            }
+        }
+        return if (targetClass.isInstance(current)) {
+            @Suppress("UNCHECKED_CAST")
+            Either.Right(current as T)
+        } else {
+            Either.Left(BaboonCodecException.ConverterFailure(
+                "Expected type [${targetClass.simpleName}] after conversion, but got [${current::class.simpleName}]."
+            ))
+        }
+    }
+
     /** Decode an `AnyOpaque` payload via the registered codec for `(meta.domain, meta.version,
      *  meta.typeid)`. User-facing — `meta` must carry all three components (variant A only). For
      *  variants B/C/D1/D2/D3 use `jsonToUebaBytes`/`uebaToJson` (cross-format helpers with static

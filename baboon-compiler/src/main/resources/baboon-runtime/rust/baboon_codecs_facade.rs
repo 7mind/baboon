@@ -1266,6 +1266,38 @@ impl BaboonCodecsFacade {
         Ok(current)
     }
 
+    /// Pre-evaluates all registered `LazyCodec` cells (JSON codecs, UEBA codecs, conversions,
+    /// meta) by calling `.get()` on each entry. Runs in a background thread so the caller is
+    /// not blocked; panics inside the thread are swallowed. Useful for warming up lazy
+    /// initialization at application startup before the first real request arrives.
+    pub fn preload(&self) {
+        // Snapshot the Arc handles under each mutex without holding the locks across the
+        // potentially-blocking `.get()` calls. Each `Arc<LazyCodec<_>>.get()` runs the
+        // closure exactly once (OnceLock guarantees); subsequent calls are cheap.
+        let json_cells: Vec<Arc<LazyCodec<Arc<AbstractBaboonJsonCodecsImpl>>>> = {
+            self.versions_codecs_json.lock().expect("mutex poisoned").values().cloned().collect()
+        };
+        let bin_cells: Vec<Arc<LazyCodec<Arc<AbstractBaboonUebaCodecsImpl>>>> = {
+            self.versions_codecs_bin.lock().expect("mutex poisoned").values().cloned().collect()
+        };
+        let meta_cells: Vec<Arc<LazyCodec<Arc<dyn BaboonAnyMeta>>>> = {
+            self.versions_meta.lock().expect("mutex poisoned").values().cloned().collect()
+        };
+        let conv_cells: Vec<Arc<LazyCodec<Arc<dyn BaboonAnyConversions>>>> = {
+            self.versions_conversions.lock().expect("mutex poisoned").values().cloned().collect()
+        };
+        std::thread::spawn(move || {
+            // Best-effort: panics from a codec initializer terminate this thread only —
+            // they do not propagate to the spawning thread. No catch_unwind needed (and
+            // the captured `Vec<Arc<LazyCodec<...>>>` is not `UnwindSafe` anyway because
+            // `LazyCodec` interior mutability prevents the auto-trait).
+            for c in &json_cells { c.get(); }
+            for c in &bin_cells  { c.get(); }
+            for c in &meta_cells { c.get(); }
+            for c in &conv_cells { c.get(); }
+        });
+    }
+
     /// Typed wrapper around `convert`. Mirrors C#'s `Convert<TFrom, TTo>` final-cast tail.
     /// `TTo` must be `'static` so its `TypeId` is known; the downcast goes through
     /// `Box<dyn Any>` via `BaboonGeneratedDyn::into_any`.
@@ -1296,6 +1328,54 @@ impl BaboonCodecsFacade {
                 "Expected to have target type at the end, but got [{}].",
                 converted_type_name
             )))
+        }
+    }
+
+    /// Decode a binary envelope and immediately convert the result to the latest version of
+    /// type `T`. Mirrors Scala `decodeFromBinLatest[T <: BaboonGeneratedLatest](reader)`.
+    ///
+    /// `T` must satisfy both `BaboonGeneratedLatest` (marker from `baboon_runtime`) and
+    /// `BaboonGeneratedDyn + 'static` (required by `convert_typed` for the downcast).
+    pub fn decode_from_bin_latest<T, R>(
+        &self,
+        reader: &mut R,
+    ) -> Result<Box<T>, BaboonCodecError>
+    where
+        T: crate::baboon_runtime::BaboonGeneratedLatest + BaboonGeneratedDyn + 'static,
+        R: Read,
+    {
+        let decoded = self.decode_from_bin(reader)?;
+        self.convert_typed::<T>(decoded)
+    }
+
+    /// Byte-slice convenience wrapper for `decode_from_bin_latest`.
+    pub fn decode_from_bin_latest_bytes<T>(
+        &self,
+        bytes: &[u8],
+    ) -> Result<Box<T>, BaboonCodecError>
+    where
+        T: crate::baboon_runtime::BaboonGeneratedLatest + BaboonGeneratedDyn + 'static,
+    {
+        let mut cursor = Cursor::new(bytes);
+        self.decode_from_bin_latest::<T, _>(&mut cursor)
+    }
+
+    /// Decode a JSON envelope and immediately convert the result to the latest version of
+    /// type `T`. Mirrors Scala `decodeFromJsonLatest[T <: BaboonGeneratedLatest](value: Json)`.
+    ///
+    /// Returns `Ok(None)` when `value` is not a recognised Baboon meta envelope (same
+    /// null-pass-through contract as `decode_from_json`). `Err` is reserved for codec-resolution
+    /// and decode/convert failures.
+    pub fn decode_from_json_latest<T>(
+        &self,
+        value: &serde_json::Value,
+    ) -> Result<Option<Box<T>>, BaboonCodecError>
+    where
+        T: crate::baboon_runtime::BaboonGeneratedLatest + BaboonGeneratedDyn + 'static,
+    {
+        match self.decode_from_json(value)? {
+            None => Ok(None),
+            Some(decoded) => self.convert_typed::<T>(decoded).map(Some),
         }
     }
 }

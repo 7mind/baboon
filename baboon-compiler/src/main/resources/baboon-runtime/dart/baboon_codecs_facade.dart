@@ -3,8 +3,11 @@
 // Public surface:
 //   * codec / conversion / meta registration (overloads)
 //   * `verify()` startup-sanity check
+//   * `preload()` fire-and-forget pre-evaluation of lazy registries (MFACADE-PR-4)
 //   * `encodeToBin` / `decodeFromBin`
+//   * `decodeFromBinLatest<T>` — decode then convert to latest (MFACADE-PR-4)
 //   * `encodeToJson` / `decodeFromJson`
+//   * `decodeFromJsonLatest<T>` — decode then convert to latest (MFACADE-PR-4)
 //   * `convert<TFrom, TTo>` cross-version (single-step stub — multi-step deferred per PR-17-D05)
 //   * `decodeAny(opaque)`
 //   * `jsonToUebaBytes(meta, json, staticDomain?, staticVersion?, staticTypeid?)` (PR-06-D01)
@@ -126,6 +129,89 @@ class BaboonCodecsFacade extends BaboonCodecsFacadeBase {
         }
       }
     }
+  }
+
+  // MFACADE-PR-4: fire-and-forget pre-evaluation of all lazy codec, conversion, and meta
+  // registries so first real encode/decode calls do not pay initialisation latency.
+  // Dart is single-threaded per isolate; `Future.microtask` schedules the work after the
+  // current task without blocking the caller. Errors inside individual lazy initialisers are
+  // swallowed — a faulty registry will surface a typed failure on the first actual call.
+  void preload() {
+    Future.microtask(() {
+      try {
+        _versionsCodecsJson.values.forEach((l) => l.value);
+        _versionsCodecsBin.values.forEach((l) => l.value);
+        _versionsConversions.values.forEach((l) => l.value);
+        _versionsMeta.values.forEach((l) => l.value);
+      } catch (_) {
+        // swallow — faulty registries surface on first real call
+      }
+    });
+  }
+
+  // MFACADE-PR-4: decode binary bytes then convert to the registered latest version.
+  // Composition: `decodeFromBin` then `convert<T>` to `(fromTypeId, fromTypeId, latestVersion)`.
+  // If the decoded value is already an instance of `T` (already at latest), it is returned
+  // directly. The `toTypeId` equals `fromTypeId` (same type, later schema version).
+  BaboonEither<BaboonCodecException, T> decodeFromBinLatest<T extends BaboonGeneratedLatest>(
+    BaboonBinReader reader,
+  ) {
+    final decoded = decodeFromBin(reader);
+    if (decoded is BaboonLeft<BaboonCodecException, BaboonGenerated>) {
+      return BaboonLeft(decoded.value);
+    }
+    final value = (decoded as BaboonRight<BaboonCodecException, BaboonGenerated>).value;
+    if (value is T) return BaboonRight(value);
+    if (value is! BaboonMetaProvider) {
+      return BaboonLeft(BaboonConverterFailure(
+        'decodeFromBinLatest: decoded value of type ${value.runtimeType} does not implement BaboonMetaProvider.',
+      ));
+    }
+    final meta = value as BaboonMetaProvider;
+    final domain = meta.baboonDomainIdentifier;
+    final fromTypeId = meta.baboonTypeIdentifier;
+    final versions = _domainVersions[domain];
+    if (versions == null || versions.isEmpty) {
+      return BaboonLeft(BaboonConverterFailure("decodeFromBinLatest: unknown domain '$domain'."));
+    }
+    final latestDV = versions.last;
+    return convert<T>(value, fromTypeId, fromTypeId, latestDV);
+  }
+
+  // MFACADE-PR-4: decode JSON then convert to the registered latest version.
+  // Absent or invalid envelope (no recognisable BaboonTypeMeta header) →
+  // `BaboonRight(null)` (null pass-through, mirrors Scala `Right(None)`).
+  // Decode or conversion failures → `BaboonLeft`.
+  BaboonEither<BaboonCodecException, T?> decodeFromJsonLatest<T extends BaboonGeneratedLatest>(
+    Object? value,
+  ) {
+    if (BaboonTypeMeta.readMetaJson(value) == null) {
+      return BaboonRight<BaboonCodecException, T?>(null);
+    }
+    final decoded = decodeFromJson(value);
+    if (decoded is BaboonLeft<BaboonCodecException, BaboonGenerated>) {
+      return BaboonLeft(decoded.value);
+    }
+    final decodedValue = (decoded as BaboonRight<BaboonCodecException, BaboonGenerated>).value;
+    if (decodedValue is T) return BaboonRight<BaboonCodecException, T?>(decodedValue);
+    if (decodedValue is! BaboonMetaProvider) {
+      return BaboonLeft(BaboonConverterFailure(
+        'decodeFromJsonLatest: decoded value of type ${decodedValue.runtimeType} does not implement BaboonMetaProvider.',
+      ));
+    }
+    final meta = decodedValue as BaboonMetaProvider;
+    final domain = meta.baboonDomainIdentifier;
+    final fromTypeId = meta.baboonTypeIdentifier;
+    final versions = _domainVersions[domain];
+    if (versions == null || versions.isEmpty) {
+      return BaboonLeft(BaboonConverterFailure("decodeFromJsonLatest: unknown domain '$domain'."));
+    }
+    final latestDV = versions.last;
+    final convResult = convert<T>(decodedValue, fromTypeId, fromTypeId, latestDV);
+    if (convResult is BaboonLeft<BaboonCodecException, T>) {
+      return BaboonLeft<BaboonCodecException, T?>(convResult.value);
+    }
+    return BaboonRight<BaboonCodecException, T?>((convResult as BaboonRight<BaboonCodecException, T>).value);
   }
 
   // ----- encode / decode --------------------------------------------------------------------

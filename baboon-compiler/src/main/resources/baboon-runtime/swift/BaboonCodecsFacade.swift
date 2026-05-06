@@ -3,8 +3,11 @@
 // Dart `baboon_codecs_facade.dart`. Public surface:
 //   * codec / conversion / meta registration (overloads)
 //   * `verify()` startup-sanity check
+//   * `preload()` fire-and-forget pre-evaluation of lazy registries (MFACADE-PR-4)
 //   * `encodeToBin` / `decodeFromBin`
+//   * `decodeFromBinLatest<T: BaboonGeneratedLatest>` — decode then convert to latest (MFACADE-PR-4)
 //   * `encodeToJson` / `decodeFromJson`
+//   * `decodeFromJsonLatest<T: BaboonGeneratedLatest>` — decode then convert to latest (MFACADE-PR-4)
 //   * `convert<TFrom, TTo>` cross-version (single-step stub — multi-step deferred per PR-17-D05)
 //   * `decodeAny(opaque)`
 //   * `jsonToUebaBytes(meta, json, staticDomain?, staticVersion?, staticTypeid?)` (PR-06-D01)
@@ -129,6 +132,101 @@ public class BaboonCodecsFacade: BaboonCodecsFacadeBase {
                         "Baboon codecs must have codecs for \(dv) registered."
                     )
                 }
+            }
+        }
+    }
+
+    // MFACADE-PR-4: fire-and-forget pre-evaluation of all lazy codec, conversion, and meta
+    // registries so that first real encode/decode calls do not pay initialisation latency.
+    // Errors inside individual lazy initialisers are swallowed — a faulty registry will
+    // surface a typed failure on the first actual call.
+    public func preload() {
+        let jsonSnap = versionsCodecsJson
+        let binSnap = versionsCodecsBin
+        let convSnap = versionsConversions
+        let metaSnap = versionsMeta
+        DispatchQueue.global().async {
+            for lazy in jsonSnap.values { _ = lazy.value }
+            for lazy in binSnap.values { _ = lazy.value }
+            for lazy in convSnap.values { _ = lazy.value }
+            for lazy in metaSnap.values { _ = lazy.value }
+        }
+    }
+
+    // MFACADE-PR-4: decode binary bytes then convert the result to the registered latest version.
+    // Composition: `decodeFromBin` → `convert(fromTypeId, toTypeId=fromTypeId, latestVersion)`.
+    // If the decoded value is already an instance of `T` (already at latest), it is returned
+    // directly without a conversion round-trip.
+    // The `toTypeId` is assumed equal to `fromTypeId` (same type, later version). Callers that
+    // need to convert across different typeIds should use `convert` directly.
+    public func decodeFromBinLatest<T: BaboonGeneratedLatest>(_ reader: BaboonBinReader) -> Result<T, BaboonCodecException> {
+        let decoded = decodeFromBin(reader)
+        switch decoded {
+        case .failure(let e): return .failure(e)
+        case .success(let value):
+            if let already = value as? T { return .success(already) }
+            guard let meta = value as? BaboonMetaProvider else {
+                return .failure(.converterFailure(
+                    "decodeFromBinLatest: decoded value of type \(type(of: value)) does not conform to BaboonMetaProvider.",
+                    nil
+                ))
+            }
+            let domain = meta.baboonDomainIdentifier
+            let fromTypeId = meta.baboonTypeIdentifier
+            guard let versions = domainVersions[domain], !versions.isEmpty else {
+                return .failure(.converterFailure("decodeFromBinLatest: unknown domain '\(domain)'.", nil))
+            }
+            let latestDV = versions.last!
+            let convResult = convert(value, fromTypeId, fromTypeId, latestDV)
+            switch convResult {
+            case .failure(let e): return .failure(e)
+            case .success(let converted):
+                guard let typed = converted as? T else {
+                    return .failure(.converterFailure(
+                        "decodeFromBinLatest: converted value of type \(type(of: converted)) cannot be cast to expected type.",
+                        nil
+                    ))
+                }
+                return .success(typed)
+            }
+        }
+    }
+
+    // MFACADE-PR-4: decode JSON then convert the result to the registered latest version.
+    // Absent or invalid envelope (no recognisable `BaboonTypeMeta` header) → `nil` (null
+    // pass-through, mirrors Scala `Right(None)`). Decode or conversion failure → throws.
+    public func decodeFromJsonLatest<T: BaboonGeneratedLatest>(_ value: Any) throws -> T? {
+        guard BaboonTypeMeta.readMetaJson(value) != nil else { return nil }
+        let decoded = decodeFromJson(value)
+        switch decoded {
+        case .failure(let e): throw e
+        case .success(let decodedValue):
+            if let already = decodedValue as? T { return already }
+            guard let meta = decodedValue as? BaboonMetaProvider else {
+                throw BaboonCodecException.converterFailure(
+                    "decodeFromJsonLatest: decoded value of type \(type(of: decodedValue)) does not conform to BaboonMetaProvider.",
+                    nil
+                )
+            }
+            let domain = meta.baboonDomainIdentifier
+            let fromTypeId = meta.baboonTypeIdentifier
+            guard let versions = domainVersions[domain], !versions.isEmpty else {
+                throw BaboonCodecException.converterFailure(
+                    "decodeFromJsonLatest: unknown domain '\(domain)'.", nil
+                )
+            }
+            let latestDV = versions.last!
+            let convResult = convert(decodedValue, fromTypeId, fromTypeId, latestDV)
+            switch convResult {
+            case .failure(let e): throw e
+            case .success(let converted):
+                guard let typed = converted as? T else {
+                    throw BaboonCodecException.converterFailure(
+                        "decodeFromJsonLatest: converted value of type \(type(of: converted)) cannot be cast to expected type.",
+                        nil
+                    )
+                }
+                return typed
             }
         }
     }

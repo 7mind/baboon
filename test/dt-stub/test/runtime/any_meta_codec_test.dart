@@ -629,4 +629,185 @@ void main() {
       expect(nf, isNot(isA<BaboonDecoderFailure>()));
     });
   });
+
+  // ===== MFACADE-PR-4: preload / decodeFromBinLatest / decodeFromJsonLatest ===================
+
+  // Stub generated-latest type used by the three new facade methods.
+  // Implements BaboonGeneratedLatest + BaboonMetaProvider.
+  // The bin codec writes a single 0x55 sentinel byte; JSON codec encodes to the string 'stub'.
+
+  group('preload', () {
+    test('does not throw on empty facade', () {
+      final facade = BaboonCodecsFacade();
+      expect(() => facade.preload(), returnsNormally);
+    });
+
+    test('does not throw on populated facade', () {
+      final facade = BaboonCodecsFacade();
+      final dv = BaboonDomainVersion('dom', '1.0.0');
+      final binCodecs = AbstractBaboonUebaCodecs();
+      binCodecs.register('T', () => _StubBinCodec());
+      final jsonCodecs = AbstractBaboonJsonCodecs();
+      jsonCodecs.register('T', () => _StubJsonCodec());
+      facade.register(
+        dv,
+        codecsJson: () => jsonCodecs,
+        codecsBin: () => binCodecs,
+        conversions: () => _StubConversions(),
+        meta: () => _StubMeta(['1.0.0']),
+      );
+      expect(() => facade.preload(), returnsNormally);
+    });
+  });
+
+  group('decodeFromBinLatest', () {
+    test('roundtrip: encode then decodeFromBinLatest returns Right with latest type', () {
+      // Uses _StubLatestBinCodec whose decode() returns _StubGeneratedLatest directly, so
+      // the "already T" fast-path fires and no conversion is needed.
+      final facade = BaboonCodecsFacade();
+      final dv = BaboonDomainVersion('dom', '1.0.0');
+      final binCodecs = AbstractBaboonUebaCodecs();
+      binCodecs.register('T', () => _StubLatestBinCodec());
+      final jsonCodecs = AbstractBaboonJsonCodecs();
+      jsonCodecs.register('T', () => _StubLatestJsonCodec());
+      facade.register(
+        dv,
+        codecsJson: () => jsonCodecs,
+        codecsBin: () => binCodecs,
+        conversions: () => _StubConversions(),
+        meta: () => _StubMeta(['1.0.0']),
+      );
+
+      final encodeResult = facade.encodeToBin(BaboonCodecContext.compact, _StubGeneratedLatest());
+      expect(encodeResult, isA<BaboonRight>());
+      final bytes = (encodeResult as BaboonRight).value as Uint8List;
+
+      final decodeResult = facade.decodeFromBinLatest<_StubGeneratedLatest>(BaboonBinReader(bytes));
+      expect(decodeResult, isA<BaboonRight>());
+      expect((decodeResult as BaboonRight).value, isA<_StubGeneratedLatest>());
+    });
+
+    test('returns Left on unknown domain', () {
+      // Facade is registered for 'other.dom'; the encoded bytes carry 'dom'.
+      // decodeFromBin will fail at codec lookup because 'dom' is not registered.
+      final facade = BaboonCodecsFacade();
+      final binCodecs = AbstractBaboonUebaCodecs();
+      binCodecs.register('T', () => _StubLatestBinCodec());
+      final jsonCodecs = AbstractBaboonJsonCodecs();
+      jsonCodecs.register('T', () => _StubLatestJsonCodec());
+      facade.register(
+        BaboonDomainVersion('other.dom', '1.0.0'),
+        codecsJson: () => jsonCodecs,
+        codecsBin: () => binCodecs,
+        conversions: () => _StubConversions(),
+        meta: () => _StubMeta(['1.0.0']),
+      );
+
+      // Encode against 'dom' using a separate facade.
+      final encFacade = BaboonCodecsFacade();
+      final encBinCodecs = AbstractBaboonUebaCodecs();
+      encBinCodecs.register('T', () => _StubLatestBinCodec());
+      final encJsonCodecs = AbstractBaboonJsonCodecs();
+      encJsonCodecs.register('T', () => _StubLatestJsonCodec());
+      encFacade.register(
+        BaboonDomainVersion('dom', '1.0.0'),
+        codecsJson: () => encJsonCodecs,
+        codecsBin: () => encBinCodecs,
+        conversions: () => _StubConversions(),
+        meta: () => _StubMeta(['1.0.0']),
+      );
+      final encResult = encFacade.encodeToBin(BaboonCodecContext.compact, _StubGeneratedLatest());
+      expect(encResult, isA<BaboonRight>());
+      final bytes = (encResult as BaboonRight).value as Uint8List;
+
+      final decodeResult = facade.decodeFromBinLatest<_StubGeneratedLatest>(BaboonBinReader(bytes));
+      expect(decodeResult, isA<BaboonLeft>());
+    });
+  });
+
+  group('decodeFromJsonLatest', () {
+    test('absent envelope returns Right(null)', () {
+      final facade = BaboonCodecsFacade();
+      final result = facade.decodeFromJsonLatest<_StubGeneratedLatest>({'key': 'value'});
+      expect(result, isA<BaboonRight>());
+      expect((result as BaboonRight).value, isNull);
+    });
+
+    test('null input returns Right(null)', () {
+      final facade = BaboonCodecsFacade();
+      final result = facade.decodeFromJsonLatest<_StubGeneratedLatest>(null);
+      expect(result, isA<BaboonRight>());
+      expect((result as BaboonRight).value, isNull);
+    });
+
+    test('roundtrip: encodeToJson then decodeFromJsonLatest returns Right with latest type', () {
+      final facade = BaboonCodecsFacade();
+      final dv = BaboonDomainVersion('dom', '1.0.0');
+      final binCodecs = AbstractBaboonUebaCodecs();
+      binCodecs.register('T', () => _StubLatestBinCodec());
+      final jsonCodecs = AbstractBaboonJsonCodecs();
+      jsonCodecs.register('T', () => _StubLatestJsonCodec());
+      facade.register(
+        dv,
+        codecsJson: () => jsonCodecs,
+        codecsBin: () => binCodecs,
+        conversions: () => _StubConversions(),
+        meta: () => _StubMeta(['1.0.0']),
+      );
+
+      final encResult = facade.encodeToJson(_StubGeneratedLatest());
+      expect(encResult, isA<BaboonRight>());
+      final wire = (encResult as BaboonRight).value as Map<String, dynamic>;
+
+      final decResult = facade.decodeFromJsonLatest<_StubGeneratedLatest>(wire);
+      expect(decResult, isA<BaboonRight>());
+      expect((decResult as BaboonRight).value, isA<_StubGeneratedLatest>());
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Stub BaboonGeneratedLatest type and codecs used by MFACADE-PR-4 tests.
+// ---------------------------------------------------------------------------
+
+class _StubGeneratedLatest implements BaboonGeneratedLatest, BaboonMetaProvider {
+  @override
+  String get baboonDomainVersion => '1.0.0';
+  @override
+  String get baboonDomainIdentifier => 'dom';
+  @override
+  String get baboonTypeIdentifier => 'T';
+  @override
+  List<String> get baboonSameInVersions => ['1.0.0'];
+}
+
+class _StubLatestBinCodec extends BaboonBinCodecBase<BaboonGenerated> implements BaboonCodecData {
+  @override
+  String get baboonDomainVersion => '1.0.0';
+  @override
+  String get baboonDomainIdentifier => 'dom';
+  @override
+  String get baboonTypeIdentifier => 'T';
+  @override
+  void encode(BaboonCodecContext ctx, BaboonBinWriter writer, BaboonGenerated value) {
+    writer.writeU8(0x55);
+  }
+  @override
+  BaboonGenerated decode(BaboonCodecContext ctx, BaboonBinReader reader) {
+    reader.readU8();
+    return _StubGeneratedLatest();
+  }
+}
+
+class _StubLatestJsonCodec extends BaboonJsonCodecBase<BaboonGenerated> implements BaboonCodecData {
+  @override
+  String get baboonDomainVersion => '1.0.0';
+  @override
+  String get baboonDomainIdentifier => 'dom';
+  @override
+  String get baboonTypeIdentifier => 'T';
+  @override
+  Object? encode(BaboonCodecContext ctx, BaboonGenerated value) => 'stub';
+  @override
+  BaboonGenerated decode(BaboonCodecContext ctx, Object? wire) => _StubGeneratedLatest();
 }

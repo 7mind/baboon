@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
@@ -127,6 +128,82 @@ public class BaboonCodecsFacade {
                 }
             }
         }
+    }
+
+    /**
+     * Fire-and-forget pre-evaluation of all registered {@link Lazy} codec, conversion, and meta
+     * registries. Evaluation runs asynchronously on the common pool; any exception is swallowed.
+     * This is a hint — callers must not rely on it completing before use.
+     */
+    public void preload() {
+        CompletableFuture.runAsync(() -> {
+            versionsCodecsJson.values().forEach(Lazy::get);
+            versionsCodecsBin.values().forEach(Lazy::get);
+            versionsConversions.values().forEach(Lazy::get);
+            versionsMeta.values().forEach(Lazy::get);
+        }).exceptionally(t -> null);
+    }
+
+    /**
+     * Decode UEBA bytes and convert the result to the latest version of the given target type.
+     * Composition: {@code decodeFromBin(reader)} then {@link #convert}.
+     */
+    @SuppressWarnings("unchecked")
+    public <TTo extends BaboonGeneratedLatest> BaboonEither<BaboonCodecException, TTo> decodeFromBinLatest(
+        LEDataInputStream reader, Class<TTo> targetClass
+    ) {
+        BaboonEither<BaboonCodecException, BaboonGenerated> decoded = decodeFromBin(reader);
+        if (decoded instanceof BaboonEither.Left<BaboonCodecException, BaboonGenerated> l) {
+            return BaboonEither.left(l.value());
+        }
+        BaboonGenerated value = ((BaboonEither.Right<BaboonCodecException, BaboonGenerated>) decoded).value();
+        return convert(value, (Class<BaboonGenerated>) value.getClass(), targetClass);
+    }
+
+    /**
+     * Decode UEBA bytes and convert the result to the latest version of the given target type.
+     * Composition: {@code decodeFromBin(bytes)} then {@link #convert}.
+     */
+    public <TTo extends BaboonGeneratedLatest> BaboonEither<BaboonCodecException, TTo> decodeFromBinLatest(
+        byte[] bytes, Class<TTo> targetClass
+    ) {
+        return decodeFromBinLatest(new LEDataInputStream(new ByteArrayInputStream(bytes)), targetClass);
+    }
+
+    /**
+     * Decode a JSON node and convert the result to the latest version of the given target type.
+     * Returns {@code Right(null)} when the envelope is absent (mirrors {@link #decodeFromJson(JsonNode)}).
+     * Composition: {@code decodeFromJson(value)} then {@link #convert}.
+     */
+    @SuppressWarnings("unchecked")
+    public <TTo extends BaboonGeneratedLatest> BaboonEither<BaboonCodecException, TTo> decodeFromJsonLatest(
+        JsonNode value, Class<TTo> targetClass
+    ) {
+        BaboonEither<BaboonCodecException, BaboonGenerated> decoded = decodeFromJson(value);
+        if (decoded instanceof BaboonEither.Left<BaboonCodecException, BaboonGenerated> l) {
+            return BaboonEither.left(l.value());
+        }
+        BaboonGenerated gen = ((BaboonEither.Right<BaboonCodecException, BaboonGenerated>) decoded).value();
+        if (gen == null) return BaboonEither.right(null);
+        return convert(gen, (Class<BaboonGenerated>) gen.getClass(), targetClass);
+    }
+
+    /**
+     * Decode a JSON string and convert the result to the latest version of the given target type.
+     * Returns {@code Right(null)} when the envelope is absent (mirrors {@link #decodeFromJson(String)}).
+     * Composition: {@code decodeFromJson(value)} then {@link #convert}.
+     */
+    @SuppressWarnings("unchecked")
+    public <TTo extends BaboonGeneratedLatest> BaboonEither<BaboonCodecException, TTo> decodeFromJsonLatest(
+        String value, Class<TTo> targetClass
+    ) {
+        BaboonEither<BaboonCodecException, BaboonGenerated> decoded = decodeFromJson(value);
+        if (decoded instanceof BaboonEither.Left<BaboonCodecException, BaboonGenerated> l) {
+            return BaboonEither.left(l.value());
+        }
+        BaboonGenerated gen = ((BaboonEither.Right<BaboonCodecException, BaboonGenerated>) decoded).value();
+        if (gen == null) return BaboonEither.right(null);
+        return convert(gen, (Class<BaboonGenerated>) gen.getClass(), targetClass);
     }
 
     public BaboonEither<BaboonCodecException, byte[]> encodeToBin(BaboonCodecContext ctx, BaboonGenerated value) {
