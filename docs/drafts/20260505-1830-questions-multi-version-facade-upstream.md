@@ -158,6 +158,9 @@ is used in production. The natural completion is option (A) "hard unify at byte
 Confirm: **(A) byte-1 unification across all 11 runtimes, byte 16 retired**?
 Or did you mean something else?
 
+answer: if we could unify version 16 and 1 - let's drop version 16. But don't forget that 1 assumes all the meta
+and our 16+ have several forms
+
 ## Q11. Pin Q8 — "various forms of metadata" at top level?
 
 Q8 mentioned "our new format supports various forms of metadata". I read all
@@ -177,6 +180,8 @@ Which is it? If (a), there's no top-level "various forms" — your top-level
 envelope today is exactly the proposal's, and Q10=(A) is the right call. If
 (b), I need the spec/sketch so the byte-1↔byte-16 reconciliation can be
 designed in (e.g. byte 1 = "all-fields kind"; byte 16 = "kind-prefix" mode).
+
+answer: are you sure it works this way? check docs/drafts/20260424-1738-any-opaque-fields.md, we have several forms
 
 ## Q12. Forward-compat reader semantics
 
@@ -198,6 +203,8 @@ Recommendation: (A). Lets future `metaVersion=N` payloads coexist with
 older readers gracefully, matches JSON path, matches reference. Net: one
 fewer exception subclass surfaced to callers on stream-source mismatch.
 
+answer: reference impl is not an ideal set in stone, if we can improve from it - improve
+
 ## Q13. C# `TypeIsAdt` — abstract-base ADTs
 
 Reference: `type.IsAbstract || type.IsInterface`. Baboon C#: `IsInterface`
@@ -211,6 +218,8 @@ Are abstract-class ADTs a thing in baboon's C# emit, or is `interface` the
 only ADT shape? If abstract is possible, widen baboon to match reference.
 Other backends use structural checks (`isInterface`, `isAbstract`-equivalent,
 or codegen-marker traits) so this is a C#-specific gap.
+
+answer: I think reference implementation is more broad => probably safer, but check what we emit
 
 ## Q14. Per-domain facade — naming + flag
 
@@ -227,3 +236,5 @@ Q3 confirmed "generate, add a flag to disable". Concrete proposal:
   one), so I'd default to global flag.
 
 Confirm name template and flag shape, or override.
+
+answer: template is fine. Per-target prefix.
