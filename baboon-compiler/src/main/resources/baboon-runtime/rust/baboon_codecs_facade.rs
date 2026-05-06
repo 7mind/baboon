@@ -341,13 +341,15 @@ mod baboon_type_meta_codec {
             None => return Ok(None),
         };
         if let Some(mv) = obj.get(META_VERSION_KEY) {
-            // Scala: parses as String then toByte; C#: same. Reject non-string or non-"1".
-            let mv_str = match mv.as_str() {
-                Some(s) => s,
-                None => return Ok(None),
+            // MFACADE-PR-3: accept $mv as either a JSON number or a string (back-compat
+            // with M28-vintage fixtures); both must equal META_VERSION_1.
+            let mv_byte: Option<u8> = match mv {
+                serde_json::Value::Number(n) => n.as_u64().and_then(|x| u8::try_from(x).ok()),
+                serde_json::Value::String(s) => s.parse::<u8>().ok(),
+                _ => None,
             };
-            match mv_str.parse::<u8>() {
-                Ok(v) if v == BaboonTypeMeta::META_VERSION_1 => {}
+            match mv_byte {
+                Some(v) if v == BaboonTypeMeta::META_VERSION_1 => {}
                 _ => return Ok(None),
             }
         }
@@ -1062,6 +1064,12 @@ impl BaboonCodecsFacade {
             })?;
         let effective = type_meta_override.unwrap_or(&type_meta);
         let mut envelope = serde_json::Map::new();
+        // MFACADE-PR-3: always emit `$mv` as a JSON number so envelopes are
+        // self-identifying without out-of-band knowledge (proposal §10.6 (a)).
+        envelope.insert(
+            "$mv".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(BaboonTypeMeta::META_VERSION)),
+        );
         envelope.insert(
             "$d".to_string(),
             serde_json::Value::String(effective.domain_identifier.clone()),

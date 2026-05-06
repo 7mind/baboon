@@ -445,6 +445,36 @@ class AnyMetaCodecTest {
         assertNull(meta);
     }
 
+    // [MFACADE-PR-3-D04] writer emits numeric $mv
+    @Test
+    void typeMetaWriteJson_emitsMvAsNumeric1() {
+        BaboonTypeMeta meta = new BaboonTypeMeta(
+            BaboonTypeMeta.BaboonTypeMetaCodec.META_VERSION,
+            "com.example.dom",
+            "1.0.0",
+            "1.0.0",
+            "MyType"
+        );
+        JsonNode wire = meta.writeJson();
+        JsonNode mv = wire.get("$mv");
+        assertNotNull(mv);
+        assertTrue(mv.isIntegralNumber());
+        assertEquals(1, mv.asInt());
+    }
+
+    // [MFACADE-PR-3-D05] reader accepts numeric $mv
+    @Test
+    void typeMetaReadJson_acceptsNumericMv1() {
+        ObjectNode obj = NF.objectNode();
+        obj.put("$mv", 1);
+        obj.put("$d", "com.example.dom");
+        obj.put("$v", "1.0.0");
+        obj.put("$t", "MyType");
+        BaboonTypeMeta meta = BaboonTypeMeta.readMeta(obj);
+        assertNotNull(meta);
+        assertEquals("com.example.dom", meta.domainIdentifier());
+    }
+
     // ===== JsonNode content equality (Jackson sanity / PR-08-D06) ==============================
 
     @Test

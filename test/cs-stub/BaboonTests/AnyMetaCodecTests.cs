@@ -302,18 +302,20 @@ namespace ConversionsTest
         }
 
         [Test]
-        public void BaboonTypeMetaCodec_ReadMetaJson_RejectsNonStringMv()
+        public void BaboonTypeMetaCodec_ReadMetaJson_AcceptsNumericMv()
         {
-            // $mv as JSON number (not string) — must return null per Scala parity.
-            var bad = new JObject
+            // MFACADE-PR-3: $mv as JSON number is accepted (numeric form is now canonical;
+            // string form retained for back-compat with M28-vintage fixtures).
+            var ok = new JObject
             {
                 ["$mv"] = 1,
                 ["$d"] = "com.example",
                 ["$v"] = "1.0.0",
                 ["$t"] = "T",
             };
-            var result = BaboonTypeMetaCodec.ReadMeta(bad);
-            Assert.That(result, Is.Null);
+            var result = BaboonTypeMetaCodec.ReadMeta(ok);
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result!.MetaVersion, Is.EqualTo((byte)1));
         }
 
         [Test]
@@ -323,6 +325,115 @@ namespace ConversionsTest
             var bad = new JObject
             {
                 ["$mv"] = "not-a-byte",
+                ["$d"] = "com.example",
+                ["$v"] = "1.0.0",
+                ["$t"] = "T",
+            };
+            var result = BaboonTypeMetaCodec.ReadMeta(bad);
+            Assert.That(result, Is.Null);
+        }
+
+        [Test]
+        public void BaboonTypeMetaCodec_ReadMetaJson_RejectsNumericMvVersionMismatch()
+        {
+            // $mv as JSON integer 2 — in byte range but not META_VERSION_1, must return null.
+            var bad = new JObject
+            {
+                ["$mv"] = 2,
+                ["$d"] = "com.example",
+                ["$v"] = "1.0.0",
+                ["$t"] = "T",
+            };
+            var result = BaboonTypeMetaCodec.ReadMeta(bad);
+            Assert.That(result, Is.Null);
+        }
+
+        // ===== BaboonTypeMetaCodec.WriteJson $mv envelope (MFACADE-PR-3-D04) =====
+
+        [Test]
+        public void WriteJson_EmitsMvAsNumber()
+        {
+            var meta = new BaboonTypeMeta(
+                BaboonTypeMetaCodec.META_VERSION,
+                "com.example",
+                "1.0.0",
+                "1.0.0",
+                "T"
+            );
+            var json = BaboonTypeMetaCodec.WriteJson(meta);
+            Assert.That(json, Is.InstanceOf<JObject>());
+            var obj = (JObject)json;
+            var mvToken = obj[BaboonTypeMetaCodec.META_VERSION_KEY];
+            Assert.That(mvToken, Is.Not.Null);
+            Assert.That(mvToken!.Type, Is.EqualTo(JTokenType.Integer));
+            Assert.That(mvToken.Value<int>(), Is.EqualTo((int)BaboonTypeMetaCodec.META_VERSION));
+        }
+
+        // ===== ReadMeta(JToken) $mv edge-case matrix (MFACADE-PR-3-D06) =====
+
+        [TestCase(300,  TestName = "ReadMetaJson_ReturnsNull_MvOutOfByteRange_300")]
+        [TestCase(-1,   TestName = "ReadMetaJson_ReturnsNull_MvNegative")]
+        public void BaboonTypeMetaCodec_ReadMetaJson_ReturnsNull_NumericMvOutOfRange(int mvValue)
+        {
+            var bad = new JObject
+            {
+                ["$mv"] = mvValue,
+                ["$d"] = "com.example",
+                ["$v"] = "1.0.0",
+                ["$t"] = "T",
+            };
+            var result = BaboonTypeMetaCodec.ReadMeta(bad);
+            Assert.That(result, Is.Null);
+        }
+
+        [Test]
+        public void BaboonTypeMetaCodec_ReadMetaJson_ReturnsNull_MvFractional()
+        {
+            var bad = new JObject
+            {
+                ["$mv"] = 1.5,
+                ["$d"] = "com.example",
+                ["$v"] = "1.0.0",
+                ["$t"] = "T",
+            };
+            var result = BaboonTypeMetaCodec.ReadMeta(bad);
+            Assert.That(result, Is.Null);
+        }
+
+        [Test]
+        public void BaboonTypeMetaCodec_ReadMetaJson_ReturnsNull_MvBoolean()
+        {
+            var bad = new JObject
+            {
+                ["$mv"] = true,
+                ["$d"] = "com.example",
+                ["$v"] = "1.0.0",
+                ["$t"] = "T",
+            };
+            var result = BaboonTypeMetaCodec.ReadMeta(bad);
+            Assert.That(result, Is.Null);
+        }
+
+        [Test]
+        public void BaboonTypeMetaCodec_ReadMetaJson_ReturnsNull_MvArray()
+        {
+            var bad = new JObject
+            {
+                ["$mv"] = new JArray(),
+                ["$d"] = "com.example",
+                ["$v"] = "1.0.0",
+                ["$t"] = "T",
+            };
+            var result = BaboonTypeMetaCodec.ReadMeta(bad);
+            Assert.That(result, Is.Null);
+        }
+
+        [Test]
+        public void BaboonTypeMetaCodec_ReadMetaJson_ReturnsNull_MvObject()
+        {
+            var bad = new JObject
+            {
+                ["$mv"] = new JObject(),
                 ["$d"] = "com.example",
                 ["$v"] = "1.0.0",
                 ["$t"] = "T",

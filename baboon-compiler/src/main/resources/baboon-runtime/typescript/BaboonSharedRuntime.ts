@@ -1029,7 +1029,10 @@ export class BaboonTypeMetaCodec {
     }
 
     public static writeJson(meta: BaboonTypeMeta): Record<string, unknown> {
+        // MFACADE-PR-3: always emit `$mv` as a JSON number so envelopes are
+        // self-identifying without out-of-band knowledge (proposal §10.6 (a)).
         const obj: Record<string, unknown> = {};
+        obj[BaboonTypeMetaCodec.META_VERSION_KEY] = BaboonTypeMetaCodec.META_VERSION;
         obj[BaboonTypeMetaCodec.DOMAIN_IDENTIFIER_KEY] = meta.domainIdentifier;
         obj[BaboonTypeMetaCodec.DOMAIN_VERSION_KEY] = meta.domainVersion;
         obj[BaboonTypeMetaCodec.TYPE_IDENTIFIER_KEY] = meta.typeIdentifier;
@@ -1048,12 +1051,20 @@ export class BaboonTypeMetaCodec {
         if (typeof json !== "object" || json === null || Array.isArray(json)) return undefined;
         const obj = json as Record<string, unknown>;
 
+        // MFACADE-PR-3: accept $mv as either a JSON number or a string (back-compat
+        // with M28-vintage fixtures); both must equal META_VERSION_1.
         const mvNode = obj[BaboonTypeMetaCodec.META_VERSION_KEY];
         if (mvNode !== undefined) {
-            if (typeof mvNode !== "string") return undefined;
-            // PR-12-D01: bound parse explicitly; reject anything that isn't a clean integer.
-            if (!/^-?\d+$/.test(mvNode)) return undefined;
-            const mv = parseInt(mvNode, 10);
+            let mv: number;
+            if (typeof mvNode === "number") {
+                if (!Number.isInteger(mvNode)) return undefined;
+                mv = mvNode;
+            } else if (typeof mvNode === "string") {
+                if (!/^-?\d+$/.test(mvNode)) return undefined;
+                mv = parseInt(mvNode, 10);
+            } else {
+                return undefined;
+            }
             if (mv !== BaboonTypeMetaCodec.META_VERSION_1) return undefined;
         }
 

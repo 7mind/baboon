@@ -119,7 +119,10 @@ public record BaboonTypeMeta(
         }
 
         public static JsonNode writeJson(BaboonTypeMeta meta) {
+            // MFACADE-PR-3: always emit `$mv` as a JSON number so envelopes are
+            // self-identifying without out-of-band knowledge (proposal §10.6 (a)).
             ObjectNode obj = JsonNodeFactory.instance.objectNode();
+            obj.put(META_VERSION_KEY, (int) META_VERSION);
             obj.put(DOMAIN_IDENTIFIER_KEY, meta.domainIdentifier);
             obj.put(DOMAIN_VERSION_KEY, meta.domainVersion);
             obj.put(TYPE_IDENTIFIER_KEY, meta.typeIdentifier);
@@ -142,22 +145,32 @@ public record BaboonTypeMeta(
             return new BaboonTypeMeta(META_VERSION, domainIdentifier, domainVersion, domainVersionMinCompat, typeIdentifier);
         }
 
-        // Mirror Scala/C# (PR-08-D01): if `$mv` is present and not "1", reject; if absent, fall
-        // through to v1 read.
+        // MFACADE-PR-3: accept `$mv` as either a JSON number or a string (back-compat with
+        // M28-vintage fixtures); both must equal META_VERSION_1. Absent `$mv` falls through.
         public static BaboonTypeMeta readMeta(JsonNode json) {
             if (!json.isObject()) return null;
             ObjectNode obj = (ObjectNode) json;
 
+            // MFACADE-PR-3: accept $mv as either a JSON number or a string (back-compat
+            // with M28-vintage fixtures); both must equal META_VERSION_1.
             JsonNode mvNode = obj.get(META_VERSION_KEY);
             if (mvNode != null) {
-                if (!mvNode.isTextual()) return null;
-                String mvStr = mvNode.asText();
-                try {
-                    byte mv = Byte.parseByte(mvStr);
-                    if (mv != META_VERSION_1) return null;
-                } catch (NumberFormatException e) {
+                byte mv;
+                if (mvNode.isIntegralNumber()) {
+                    int n = mvNode.asInt();
+                    if (n < Byte.MIN_VALUE || n > Byte.MAX_VALUE) return null;
+                    mv = (byte) n;
+                } else if (mvNode.isTextual()) {
+                    String mvStr = mvNode.asText();
+                    try {
+                        mv = Byte.parseByte(mvStr);
+                    } catch (NumberFormatException e) {
+                        return null;
+                    }
+                } else {
                     return null;
                 }
+                if (mv != META_VERSION_1) return null;
             }
 
             JsonNode d = obj.get(DOMAIN_IDENTIFIER_KEY);

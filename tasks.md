@@ -65,7 +65,7 @@ Detail in `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`.
 
 - [x] **MFACADE-PR-1** — Byte-1 unification. Flip `META_VERSION_1` from 16 → 1 across all 11 runtimes + 6 `AnyMetaCodec*` test fixtures.
 - [ ] **MFACADE-PR-2** — Reader forward-compat: bin path returns null on unknown `metaVersion` (matches JSON path + reference impl).
-- [ ] **MFACADE-PR-3** — JSON `$mv` value type = number (writer numeric, reader accepts both numeric + string for back-compat).
+- [x] **MFACADE-PR-3** — JSON `$mv` value type = number (writer numeric, reader accepts both numeric + string for back-compat).
 - [ ] **MFACADE-PR-4** — Facade API parity: `DecodeFromBin/JsonLatest<T>`, `Latest(domain)`, optional `Preload()`.
 - [ ] **MFACADE-PR-5** — `BaboonExt`-style helpers + C# `TypeIsAdt` widening (`IsAbstract || IsInterface`).
 - [ ] **MFACADE-PR-6** — Per-domain `Domain<X>Facade` codegen + per-target-prefixed `--*-generate-domain-facade=true` flag.
@@ -77,6 +77,21 @@ Detail in `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`.
 - [x] **M32 / PR-32.1** — `META_VERSION_1` 1→16 bump. Carry-over RESOLVED via Q2 + Q10: byte 16 retired in MFACADE-PR-1 (`6ed3a5cf`-ish — see Completed). M32 collapsed into MFACADE.
 
 ## Completed
+
+- [x] **MFACADE-PR-3** (2026-05-06, two review rounds + state-recovery — clean) — Option β JSON `$mv` envelope: writers always emit numeric; readers accept numeric or string. Implemented across 8 runtimes (cs, sc, py, rs, ts, jv, dt, sw); kt and kt-kmp deliberately deferred (pre-existing facade asymmetry — not in PR-3 scope). Six reviewer-found defects resolved with surgical fixes:
+  - **D01** (cs major): `mvToken.Value<byte>()` threw `OverflowException` on `$mv: 300` / `$mv: -1` — replaced with bounds-checked `long` parse.
+  - **D02** (sw major): NSNumber branch truncated fractional `$mv: 1.5` → 1; in Foundation `Bool` bridges to NSNumber so `true` slipped through too — added `mv is Bool` rejection guard plus `truncatingRemainder` integrality check before `intValue`.
+  - **D03** (py minor): `int(mv_node)` accepted whitespace-padded strings — added strict regex gate (`r'-?[0-9]+'`, `\d` avoided to keep the file embeddable through the Scala `StringContext` macro that ingests the runtime resource) plus explicit `bool` rejection.
+  - **D04**: writer-emits-numeric-`$mv` test added per backend.
+  - **D05**: `acceptsNumericMv` reader-form test added in 4 backends previously missing it (sc/rs/jv/py — sc/rs/py via new dedicated test files).
+  - **D06**: edge-case rejection matrix (`1.5`, `true`, `300`, `-1`, `[]`, `{}`) added in cs/sw/dt/ts/py.
+  Plus **D09** (jv major doc): stale "PR-08-D01: $mv must be a string" comment in `BaboonTypeMeta.java:148-149` re-aligned to PR-3 phrasing.
+  Deferred / wontfix with rationale (D07-D08, D10-D13): byte-range signedness in jv (immaterial at META_VERSION=1), Rust writer using literal `"$mv"` (pre-existing scoping pattern), D06 matrix in sc/rs/jv (covered by 5 other backends; same defensive structure), explicit-null and Double-1.0 cross-backend asymmetries (no producer emits these forms; pin in PR-7 conformance suite), Rust facade-vs-module test fidelity (pre-existing structural difference).
+  Verification: `mdl :build` clean; `mdl :test-acceptance` 200/200; full `mdl :test` matrix green (kotlin OOMs under default parallelism — re-runs cleanly with `mdl --seq`, documented in CLAUDE.md).
+  Process notes (carry into future PRs):
+  - `sbt clean` is **mandatory** after any edit under `baboon-runtime/`. The `PortableResource.embedSources` macro caches resource contents per build; first acceptance pass passed because `mdl :build` did a fresh build, but subsequent `mdl :test` reused the cached binary with stale runtimes — the cs/sw stubs surfaced D01/D02 against the *old* code, masking that the source-level fix was already in place.
+  - The same macro processes runtime files through Scala `StringContext`, so `\d`/`\w`/`\s` regex escapes in Python/Rust/etc. trip `InvalidEscapeException` at compile time. Use `[0-9]` / `[A-Za-z]` / explicit char classes; reserve regex shorthand for languages whose runtime isn't embedded.
+  - When dispatching parallel-edit subagents in worktrees, double-check via `git rev-parse --show-toplevel` that the orchestrator's CWD is actually the main checkout. A stray cd into a child worktree silently routes diffs to the wrong branch and patches that look fine in `git status` are actually edits to a side-checkout.
 
 - [x] **MFACADE-PR-1** (2026-05-06, single pass — clean) — Byte-1 unification at the global envelope. Flipped `META_VERSION_1` from 16 → 1 across all 10 runtime files (one constant per backend in `cs/BaboonTypeMeta.cs`, `scala/BaboonRuntimeShared.scala`, `rust/baboon_codecs_facade.rs`, `java/BaboonTypeMeta.java`, `kotlin/BaboonRuntimeShared.kt`, `kotlin-kmp/BaboonRuntimeShared.kt`, `typescript/BaboonSharedRuntime.ts`, `python/baboon_runtime_shared.py`, `dart/baboon_runtime.dart`, `swift/baboon_runtime.swift`). The 6 `AnyMetaCodec*` test fixtures M32 commit `0d9d7165` had bumped to expect byte-16 are flipped back: `cs-stub`, `dt-stub`, `jv-stub`, `rs-stub`, `sw-stub`, `ts-stub`. Result: top-level `BaboonTypeMeta` envelope is now byte-identical to `proposal.md` §2.1 / production reference.
   Files: 16 modified (10 runtime + 6 test fixtures). Pure prefix-byte flip, structural layout unchanged. No API changes; no codec changes.

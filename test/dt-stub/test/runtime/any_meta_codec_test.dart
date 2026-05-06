@@ -541,12 +541,13 @@ void main() {
       expect(meta, isNotNull);
     });
 
-    test('rejects numeric \$mv=1 (PR-22-D01: spec says string-only; Java/TS enforce)', () {
-      // Cross-runtime parity: $mv must be a JSON string. Java/TS reject numerics; Dart now matches.
+    test('accepts numeric \$mv=1 (MFACADE-PR-3: numeric is canonical form)', () {
+      // MFACADE-PR-3: $mv is now emitted as a JSON number; both numeric and string
+      // forms are accepted by the reader (back-compat with M28-vintage fixtures).
       final meta = BaboonTypeMeta.readMetaJson({
         r'$mv': 1, r'$d': 'dom', r'$v': '1.0.0', r'$t': 'T',
       });
-      expect(meta, isNull);
+      expect(meta, isNotNull);
     });
 
     test('rejects \$mv="2" (forward-compat: future meta versions return null)', () {
@@ -554,6 +555,47 @@ void main() {
         r'$mv': '2', r'$d': 'dom', r'$v': '1.0.0', r'$t': 'T',
       });
       expect(meta, isNull);
+    });
+  });
+
+  // ===== BaboonTypeMeta writeJson $mv numeric emission (MFACADE-PR-3-D04) ====================
+
+  group('BaboonTypeMeta writeJson \$mv numeric emission', () {
+    test('writeJson emits \$mv as a JSON int equal to 1', () {
+      const meta = BaboonTypeMeta(1, 'dom', '1.0.0', '1.0.0', 'T');
+      final json = meta.writeJson();
+      expect(json[r'$mv'], isA<int>());
+      expect(json[r'$mv'], 1);
+    });
+  });
+
+  // ===== BaboonTypeMeta readMetaJson edge-case rejection matrix (MFACADE-PR-3-D06) ============
+
+  group('BaboonTypeMeta.readMetaJson \$mv edge-case rejection', () {
+    final base = <String, dynamic>{r'$d': 'dom', r'$v': '1.0.0', r'$t': 'T'};
+
+    test('rejects \$mv=1.5 (fractional double)', () {
+      expect(BaboonTypeMeta.readMetaJson({r'$mv': 1.5, ...base}), isNull);
+    });
+
+    test('rejects \$mv=true (boolean)', () {
+      expect(BaboonTypeMeta.readMetaJson({r'$mv': true, ...base}), isNull);
+    });
+
+    test('rejects \$mv=300 (out of byte range / not meta version 1)', () {
+      expect(BaboonTypeMeta.readMetaJson({r'$mv': 300, ...base}), isNull);
+    });
+
+    test('rejects \$mv=-1 (negative)', () {
+      expect(BaboonTypeMeta.readMetaJson({r'$mv': -1, ...base}), isNull);
+    });
+
+    test('rejects \$mv=[] (list)', () {
+      expect(BaboonTypeMeta.readMetaJson({r'$mv': <dynamic>[], ...base}), isNull);
+    });
+
+    test('rejects \$mv={} (map)', () {
+      expect(BaboonTypeMeta.readMetaJson({r'$mv': <String, dynamic>{}, ...base}), isNull);
     });
   });
 

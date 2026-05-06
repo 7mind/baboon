@@ -400,7 +400,10 @@ package baboon.runtime.shared {
     }
 
     def writeJson(meta: BaboonTypeMeta): Json = {
+      // MFACADE-PR-3: always emit `$mv` as a JSON number so envelopes are
+      // self-identifying without out-of-band knowledge (proposal §10.6 (a)).
       val json = Json.obj(
+        META_VERSION_KEY      -> Json.fromInt(META_VERSION.toInt),
         DOMAIN_IDENTIFIER_KEY -> Json.fromString(meta.domainIdentifier),
         DOMAIN_VERSION_KEY    -> Json.fromString(meta.domainVersion),
         TYPE_IDENTIFIER_KEY   -> Json.fromString(meta.typeIdentifier),
@@ -420,10 +423,17 @@ package baboon.runtime.shared {
     def readMeta(json: Json): Option[BaboonTypeMeta] = {
       if (!json.isObject) return None
 
-      json.hcursor.downField(META_VERSION_KEY).as[String].toOption match {
-        case Some(value) =>
-          if (value.toByte == META_VERSION_1) readMetaV1(json) else None
-        case None => readMetaV1(json)
+      // MFACADE-PR-3: accept $mv as either a JSON number or a string (back-compat with
+      // M28-vintage fixtures); both must equal META_VERSION_1. Absent $mv falls through.
+      val mvField = json.hcursor.downField(META_VERSION_KEY)
+      val mvByte: Option[Option[Byte]] = mvField.focus.map { value =>
+        value.asNumber.flatMap(_.toByte)
+          .orElse(value.asString.flatMap(s => scala.util.Try(s.toByte).toOption))
+      }
+      mvByte match {
+        case Some(Some(b)) if b == META_VERSION_1 => readMetaV1(json)
+        case Some(_)                              => None  // $mv present but malformed or wrong version
+        case None                                 => readMetaV1(json)  // $mv absent
       }
     }
 

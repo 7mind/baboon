@@ -525,11 +525,55 @@ describe("BaboonTypeMeta.readMetaJson $mv handling", () => {
         expect(meta).toBeUndefined();
     });
 
-    test("rejects non-string $mv", () => {
+    test("accepts numeric $mv", () => {
+        // MFACADE-PR-3: numeric `$mv` is accepted (canonical form); string form retained
+        // for back-compat with M28-vintage fixtures.
         const meta = BaboonTypeMeta.readMetaJson({
             "$mv": 1, "$d": "dom", "$v": "1.0.0", "$t": "T",
         });
-        expect(meta).toBeUndefined();
+        expect(meta).toBeDefined();
+    });
+});
+
+// ===== BaboonTypeMeta writeJson $mv numeric emission (MFACADE-PR-3-D04) =======================
+
+describe("BaboonTypeMeta writeJson $mv numeric emission", () => {
+    test("writeJson emits $mv as a JSON number equal to 1", () => {
+        const meta = new BaboonTypeMeta(1, "dom", "1.0.0", "1.0.0", "T");
+        const obj = meta.writeJson();
+        expect(typeof obj["$mv"]).toBe("number");
+        expect(Number.isInteger(obj["$mv"])).toBe(true);
+        expect(obj["$mv"]).toBe(1);
+    });
+});
+
+// ===== BaboonTypeMeta readMetaJson edge-case rejection matrix (MFACADE-PR-3-D06) ==============
+
+describe("BaboonTypeMeta.readMetaJson $mv edge-case rejection", () => {
+    const base = { "$d": "dom", "$v": "1.0.0", "$t": "T" };
+
+    test("rejects $mv=1.5 (fractional number)", () => {
+        expect(BaboonTypeMeta.readMetaJson({ "$mv": 1.5, ...base })).toBeUndefined();
+    });
+
+    test("rejects $mv=true (boolean)", () => {
+        expect(BaboonTypeMeta.readMetaJson({ "$mv": true, ...base })).toBeUndefined();
+    });
+
+    test("rejects $mv=300 (out of byte range / not meta version 1)", () => {
+        expect(BaboonTypeMeta.readMetaJson({ "$mv": 300, ...base })).toBeUndefined();
+    });
+
+    test("rejects $mv=-1 (negative)", () => {
+        expect(BaboonTypeMeta.readMetaJson({ "$mv": -1, ...base })).toBeUndefined();
+    });
+
+    test("rejects $mv=[] (array)", () => {
+        expect(BaboonTypeMeta.readMetaJson({ "$mv": [], ...base })).toBeUndefined();
+    });
+
+    test("rejects $mv={} (object/map)", () => {
+        expect(BaboonTypeMeta.readMetaJson({ "$mv": {}, ...base })).toBeUndefined();
     });
 });
 

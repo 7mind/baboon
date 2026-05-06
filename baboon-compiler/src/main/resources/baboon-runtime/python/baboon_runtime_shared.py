@@ -3,6 +3,7 @@
 
 
 import random
+import re
 import string
 import struct
 import warnings
@@ -584,8 +585,11 @@ class BaboonTypeMetaCodec:
         writer.write_str(meta.type_identifier)
 
     @staticmethod
-    def write_json(meta: BaboonTypeMeta) -> dict[str, str]:
-        json_obj = {
+    def write_json(meta: BaboonTypeMeta) -> dict[str, Any]:
+        # MFACADE-PR-3: always emit `$mv` as a JSON number so envelopes are
+        # self-identifying without out-of-band knowledge (proposal §10.6 (a)).
+        json_obj: dict[str, Any] = {
+            BaboonTypeMetaCodec.META_VERSION_KEY: BaboonTypeMetaCodec.META_VERSION,
             BaboonTypeMetaCodec.DOMAIN_IDENTIFIER_KEY: meta.domain_identifier,
             BaboonTypeMetaCodec.DOMAIN_VERSION_KEY: meta.domain_version,
             BaboonTypeMetaCodec.TYPE_IDENTIFIER_KEY: meta.type_identifier,
@@ -608,17 +612,26 @@ class BaboonTypeMetaCodec:
 
     @staticmethod
     def read_meta_json(json_obj: dict[str, Any]) -> Optional[BaboonTypeMeta]:
-        meta_version_str = json_obj.get(BaboonTypeMetaCodec.META_VERSION_KEY)
-        if meta_version_str is not None:
-            try:
-                if int(meta_version_str) == BaboonTypeMetaCodec.META_VERSION_1:
-                    return BaboonTypeMetaCodec._read_meta_v1_json(json_obj)
-                else:
-                    return None
-            except (ValueError, TypeError):
+        # MFACADE-PR-3: accept $mv as either a JSON number (int) or a string
+        # (back-compat with M28-vintage fixtures); both must equal META_VERSION_1.
+        mv_node = json_obj.get(BaboonTypeMetaCodec.META_VERSION_KEY)
+        if mv_node is not None:
+            if isinstance(mv_node, bool):
                 return None
-        else:
-            return BaboonTypeMetaCodec._read_meta_v1_json(json_obj)
+            if isinstance(mv_node, int):
+                mv = mv_node
+            elif isinstance(mv_node, str):
+                if not re.fullmatch(r'-?[0-9]+', mv_node):
+                    return None
+                try:
+                    mv = int(mv_node)
+                except (ValueError, TypeError):
+                    return None
+            else:
+                return None
+            if mv != BaboonTypeMetaCodec.META_VERSION_1:
+                return None
+        return BaboonTypeMetaCodec._read_meta_v1_json(json_obj)
 
     @staticmethod
     def _read_meta_v1_bin(reader: LEDataInputStream) -> Optional[BaboonTypeMeta]:

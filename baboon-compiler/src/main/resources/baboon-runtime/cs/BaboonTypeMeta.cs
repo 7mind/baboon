@@ -153,8 +153,11 @@ namespace Baboon.Runtime.Shared
 
         public static JToken WriteJson(BaboonTypeMeta meta)
         {
+            // MFACADE-PR-3: always emit `$mv` as a JSON number so envelopes are
+            // self-identifying without out-of-band knowledge (proposal §10.6 (a)).
             var obj = new JObject
             {
+                [META_VERSION_KEY] = META_VERSION,
                 [DOMAIN_IDENTIFIER_KEY] = meta.DomainIdentifier,
                 [DOMAIN_VERSION_KEY] = meta.DomainVersion,
                 [TYPE_IDENTIFIER_KEY] = meta.TypeIdentifier,
@@ -190,15 +193,29 @@ namespace Baboon.Runtime.Shared
         {
             if (json is not JObject obj) return null;
 
-            // Mirror Scala readMeta(json) (BaboonRuntimeShared.scala:197-205): if $mv is present
-            // and not "1", reject; if absent, fall through to v1 read.
+            // MFACADE-PR-3: accept $mv as either a JSON number or a string (back-compat
+            // with M28-vintage fixtures that produced string $mv); both must equal META_VERSION_1.
+            // Absent $mv falls through to canonical-version read.
             var mvToken = obj[META_VERSION_KEY];
             if (mvToken != null)
             {
-                if (mvToken.Type != JTokenType.String) return null;
-                var mvStr = mvToken.Value<string>();
-                if (mvStr is null) return null;
-                if (!byte.TryParse(mvStr, out var mv) || mv != META_VERSION_1) return null;
+                byte mv;
+                if (mvToken.Type == JTokenType.Integer)
+                {
+                    long n = mvToken.Value<long>();
+                    if (n < 0 || n > 255) return null;
+                    mv = (byte) n;
+                }
+                else if (mvToken.Type == JTokenType.String)
+                {
+                    var mvStr = mvToken.Value<string>();
+                    if (mvStr is null || !byte.TryParse(mvStr, out mv)) return null;
+                }
+                else
+                {
+                    return null;
+                }
+                if (mv != META_VERSION_1) return null;
             }
 
             var d = obj[DOMAIN_IDENTIFIER_KEY]?.Value<string>();

@@ -312,10 +312,11 @@ final class AnyMetaCodecTests: XCTestCase {
         XCTAssertNil(BaboonTypeMeta.readMetaJson(json))
     }
 
-    func testReadMetaJson_rejectsNumericMv() {
-        // PR-22-D01: numeric `$mv` must be rejected (string-only).
+    func testReadMetaJson_acceptsNumericMv() {
+        // MFACADE-PR-3: numeric `$mv` is accepted (canonical form); string form retained
+        // for back-compat with M28-vintage fixtures.
         let json: [String: Any] = ["$mv": 1, "$d": "d", "$v": "1.0.0", "$t": "T"]
-        XCTAssertNil(BaboonTypeMeta.readMetaJson(json))
+        XCTAssertNotNil(BaboonTypeMeta.readMetaJson(json))
     }
 
     func testReadMetaJson_rejectsMissingD() {
@@ -342,6 +343,50 @@ final class AnyMetaCodecTests: XCTestCase {
         let m = BaboonTypeMeta(1, "d", "1.0.0", "1.0.0", "T")
         let json = m.writeJson()
         XCTAssertNil(json["$uv"])
+    }
+
+    // ----- MFACADE-PR-3-D04: writeJson emits $mv as JSON number ------------------------------
+
+    func testBaboonTypeMeta_writeJson_emitsMvAsNumber() {
+        let m = BaboonTypeMeta(BaboonTypeMetaCodec.metaVersion, "d", "1.0.0", "1.0.0", "T")
+        let json = m.writeJson()
+        let mv = json["$mv"]
+        XCTAssertNotNil(mv, "$mv must be present in writeJson output")
+        XCTAssertTrue(mv is Int, "$mv must be a Swift Int (JSON number), got \(type(of: mv as Any))")
+        XCTAssertFalse(mv is String, "$mv must NOT be a String")
+        XCTAssertEqual(mv as? Int, BaboonTypeMetaCodec.metaVersion)
+    }
+
+    // ----- MFACADE-PR-3-D06: readMetaJson edge-case rejection matrix -------------------------
+
+    func testReadMetaJson_rejectsFractionalMv() {
+        let json: [String: Any] = ["$mv": 1.5, "$d": "d", "$v": "1.0.0", "$t": "T"]
+        XCTAssertNil(BaboonTypeMeta.readMetaJson(json))
+    }
+
+    func testReadMetaJson_rejectsBooleanMv() {
+        let json: [String: Any] = ["$mv": true, "$d": "d", "$v": "1.0.0", "$t": "T"]
+        XCTAssertNil(BaboonTypeMeta.readMetaJson(json))
+    }
+
+    func testReadMetaJson_rejectsMvOutOfByteRange() {
+        let json: [String: Any] = ["$mv": 300, "$d": "d", "$v": "1.0.0", "$t": "T"]
+        XCTAssertNil(BaboonTypeMeta.readMetaJson(json))
+    }
+
+    func testReadMetaJson_rejectsNegativeMv() {
+        let json: [String: Any] = ["$mv": -1, "$d": "d", "$v": "1.0.0", "$t": "T"]
+        XCTAssertNil(BaboonTypeMeta.readMetaJson(json))
+    }
+
+    func testReadMetaJson_rejectsArrayMv() {
+        let json: [String: Any] = ["$mv": [Any](), "$d": "d", "$v": "1.0.0", "$t": "T"]
+        XCTAssertNil(BaboonTypeMeta.readMetaJson(json))
+    }
+
+    func testReadMetaJson_rejectsDictMv() {
+        let json: [String: Any] = ["$mv": [String: Any](), "$d": "d", "$v": "1.0.0", "$t": "T"]
+        XCTAssertNil(BaboonTypeMeta.readMetaJson(json))
     }
 
     // ----- BaboonVersion ---------------------------------------------------------------------

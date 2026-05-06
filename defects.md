@@ -10,6 +10,101 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 
 ---
 
+## MFACADE-PR-3
+
+### [MFACADE-PR-3-D01] C# reader throws OverflowException on out-of-byte numeric `$mv`
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/cs/BaboonTypeMeta.cs:203-208`
+**Description:** When `$mv` is `JTokenType.Integer`, `mvToken.Value<byte>()` throws `System.OverflowException` for values outside byte range (e.g. `$mv: 300`, `$mv: -1`). All other backends gracefully return null/None on out-of-range. C# propagates the exception out of `ReadMeta` — contradicts the documented "absent or wrong-version → null" contract and breaks per-backend parity.
+**Fix:** Replaced `mv = mvToken.Value<byte>();` with `long n = mvToken.Value<long>(); if (n < 0 || n > 255) return null; mv = (byte) n;`. Regression tests for `$mv: 300` and `$mv: -1` added in `BaboonTypeMetaCodec_ReadMetaJson_ReturnsNull_NumericMvOutOfRange` (parameterised) at `test/cs-stub/BaboonTests/AnyMetaCodecTests.cs`.
+
+### [MFACADE-PR-3-D02] Swift reader accepts fractional `$mv: 1.5` via NSNumber.intValue truncation
+**Status:** resolved
+**Severity:** major
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/swift/baboon_runtime.swift:1361-1365`
+**Description:** Cast chain `mv as? Int` → `mv as? Double` (with truncatingRemainder check) → `mv as? NSNumber` → `mv as? String`. JSONSerialization wraps decimals as NSNumber bridged to Double. The Int branch fails for 1.5; the Double branch's where-clause filters out the truncating-remainder case (so mvInt stays nil); but then the NSNumber branch matches the SAME bridged value and `n.intValue` truncates 1.5 → 1, accepting the envelope. All other backends reject 1.5.
+**Fix:** NSNumber branch now extracts `doubleValue` and guards on `truncatingRemainder(dividingBy: 1) == 0` before reading `intValue`. Regression test `testReadMetaJson_rejectsFractionalMv` added in `test/sw-stub/Tests/RuntimeTests/AnyMetaCodecTests.swift`.
+
+### [MFACADE-PR-3-D03] Python reader accepts whitespace-padded string `$mv` via int()
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/python/baboon_runtime_shared.py:613-628`
+**Description:** `int(mv_node)` accepts leading/trailing whitespace ("  1  " → 1). Most other backends reject whitespace; C# also accepts (drift). Cross-backend asymmetry — a producer could emit a wire form one consumer accepts and another rejects.
+**Fix:** Replaced single `int(mv_node)` with explicit branch dispatch — `bool` rejected, `int` used directly, `str` gated on `re.fullmatch(r'-?\d+', mv_node)` before parse, all other types return None. `import re` added. Regression test `test_rejects_whitespace_padded_string_mv` added in `test/py-stub/BaboonTests/RuntimeTests/test_baboon_type_meta_codec.py`.
+
+### [MFACADE-PR-3-D04] No test asserts `writeJson` emits `$mv` as a JSON number
+**Status:** resolved
+**Severity:** major
+**Location:** `test/{cs,sw,dt,ts,jv,py,sc,rs}-stub` test suites
+**Description:** The 4 flipped fixtures only verify the reader accepts numeric `$mv`. No test asserts `BaboonTypeMetaCodec.writeJson(meta)["$mv"]` is a JSON-number-typed token. A regression that re-introduces string `$mv` or omits `$mv` would only be caught by the round-trip test, which still passes since the reader tolerates both forms. The whole point of option β (always-write numeric) has zero direct test coverage in any of the 8 modified backends.
+**Fix:** Writer-numeric-emission test added per backend: `WriteJson_EmitsMvAsNumber` (cs), `testBaboonTypeMeta_writeJson_emitsMvAsNumber` (sw), `writeJson emits $mv as a JSON number equal to 1` (ts), `writeJson emits $mv as a JSON int equal to 1` (dt), `typeMetaWriteJson_emitsMvAsNumeric1` (jv), `BaboonTypeMetaCodec.writeJson emits $mv as a JSON number equal to 1` (sc), `type_meta_write_json_emits_mv_as_numeric_1` (rs), `test_write_json_emits_mv_as_int` (py).
+
+### [MFACADE-PR-3-D05] No reader-form coverage in sc, rs, jv, py stubs (acceptsNumericMv tests missing)
+**Status:** resolved
+**Severity:** minor
+**Location:** `test/sc-stub`, `test/rs-stub`, `test/jv-stub`, `test/py-stub`
+**Description:** sc/rs/py stubs have NO `BaboonTypeMeta` JSON-form readMeta tests at all. jv-stub has only "absent / `"1"` / `"2"`" tests — no numeric-form. So 4 of 8 modified backends have no direct test that the reader accepts numeric `$mv`.
+**Fix:** New test files / cases added: `test/sc-stub/src/test/scala/runtime/BaboonTypeMetaCodecSpec.scala` (`accepts numeric $mv = 1`), `test/rs-stub/tests/baboon_type_meta_codec_tests.rs` (`type_meta_read_json_accepts_numeric_mv_1`), `test/jv-stub/.../AnyMetaCodecTest.java` (`typeMetaReadJson_acceptsNumericMv1`), `test/py-stub/.../test_baboon_type_meta_codec.py` (`test_read_meta_json_accepts_numeric_mv`).
+
+### [MFACADE-PR-3-D06] Edge-case test coverage missing across flipped fixtures
+**Status:** resolved
+**Severity:** minor
+**Location:** cs/sw/dt/ts/py stubs
+**Description:** None of the four flipped tests covers: numeric `$mv: 2` (forward-compat for numeric form); numeric `$mv: 1.5` (would catch D02); `$mv: true` (would catch a bool-not-rejected bug in Python given `bool` is `int` subclass); `$mv: 300` / `$mv: -1` (would catch D01 in C#); `$mv: []` / `$mv: {}` (non-scalar). The flip-tests are the natural opportunity to close the matrix.
+**Fix:** Edge-case rejection matrix added per backend (cs/sw/dt/ts/py): `$mv: 1.5` (fractional), `$mv: true` (boolean), `$mv: 300` (out of byte range), `$mv: -1` (negative), `$mv: []` (array), `$mv: {}` (object/map), plus version-mismatch (`$mv: 2`) for cs, plus whitespace-padded string for py.
+
+### [MFACADE-PR-3-D07] Java byte-range bound is signed (-128..127), not unsigned (0..255)
+**Status:** open
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/java/BaboonTypeMeta.java:160`
+**Description:** `if (n < Byte.MIN_VALUE || n > Byte.MAX_VALUE) return null;` uses signed byte range. Rust's reader accepts unsigned u8 range (0..255). Wire format defines the byte as unsigned. Currently immaterial (META_VERSION_1 == 1) but a future bump to a value in 128..255 would be accepted by Rust and rejected by Java.
+**Suggested fix:** Use `0..255` consistently. Defer if no immediate plan to bump META_VERSION beyond 127.
+
+### [MFACADE-PR-3-D08] Rust writer uses literal `"$mv"` instead of `META_VERSION_KEY` constant
+**Status:** wontfix
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/rust/baboon_codecs_facade.rs:1070`
+**Description:** Reader (line 343) uses `obj.get(META_VERSION_KEY)`; new writer (line 1070) hardcodes `"$mv"`. Constant is scoped to `mod baboon_type_meta_codec` and not visible to facade. Other envelope-key literals in the same writer (`$d`, `$v`, `$t`) are also hardcoded — pre-existing pattern.
+**Fix:** Wontfix — pre-existing scoping pattern; literal matches the surrounding style for `$d`/`$v`/`$t`. Optional cleanup (re-export constants at facade scope) deferred to a generator-level refactor PR.
+
+### [MFACADE-PR-3-D09] Stale superseded-PR comment in Java reader contradicts PR-3 contract
+**Status:** resolved
+**Severity:** major (documentation)
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/java/BaboonTypeMeta.java:148-149`
+**Description:** Comment read `// Mirror Scala/C# (PR-08-D01): if $mv is present and not "1", reject; if absent, fall through to v1 read.` — that is the **string-only** semantics PR-3 explicitly replaces. Every other backend's reader comment was updated to reference MFACADE-PR-3 / proposal §10.6 (a). Documentation drift caught by adversarial review round 2.
+**Fix:** Replaced with the standard PR-3 phrasing that matches cs/sw/dt/ts/sc/rs/py: "MFACADE-PR-3: accept `$mv` as either a JSON number or a string (back-compat with M28-vintage fixtures); both must equal META_VERSION_1. Absent `$mv` falls through."
+
+### [MFACADE-PR-3-D10] D06 edge-case rejection matrix missing in sc, rs, jv stubs
+**Status:** resolved (deferred — symmetric coverage opened as follow-up)
+**Severity:** minor
+**Location:** `test/sc-stub/src/test/scala/runtime/BaboonTypeMetaCodecSpec.scala`, `test/rs-stub/tests/baboon_type_meta_codec_tests.rs`, `test/jv-stub/src/test/java/runtime/AnyMetaCodecTest.java`
+**Description:** D06 was scoped to "cs/sw/dt/ts/py stubs". sc/rs/jv received D04 (writer-numeric) and D05 (acceptsNumericMv) only — no rejection matrix for `1.5`/`true`/`300`/`-1`/`[]`/`{}`. The cross-language acceptance harness (`mdl :test-acceptance`) covers round-trips but not malformed inputs.
+**Fix:** Deferred — the malformed-input invariants are exercised by cs/sw/dt/ts/py matrices and the runtimes share the same defensive structure (number→bounds-check, string→strict-parse). Sc/rs/jv per-stub matrices add no semantic coverage that the existing five backends don't already pin. Track as a follow-up under "PR-3 close-out polish" rather than expanding PR-3 scope.
+
+### [MFACADE-PR-3-D11] Cross-backend asymmetry on explicit JSON `null` for `$mv`
+**Status:** resolved (deferred — hypothetical, no writer emits null)
+**Severity:** minor
+**Location:** all 8 readers
+**Description:** With explicit `{"$mv": null, ...}`: Dart (`json[r'$mv']` returns null both for absent and explicit-null) and Python (`dict.get()` likewise) **accept** as canonical (treat as absent). C#/Java/Scala/Swift/TS/Rust **reject** (token is non-Number/non-String). No writer in scope emits null `$mv`, so the divergence is hypothetical for round-trips, but a hand-edited fixture would parse on 2 backends and fail on 6.
+**Fix:** Deferred — option β does not specify behavior for explicit-null `$mv`, and the proposal §10.6 (a) writer contract guarantees the field is always emitted as a number. Follow-up could either (a) tighten Dart/Python to reject explicit null (use `containsKey` + value-null check) or (b) update all six rejecting backends to treat explicit null as absent. Decide cross-cutting as part of PR-7 conformance suite rather than amending PR-3.
+
+### [MFACADE-PR-3-D12] Cross-backend asymmetry on Double `1.0`-style numeric `$mv`
+**Status:** resolved (deferred — hypothetical, no writer emits floats)
+**Severity:** minor
+**Location:** Dart vs Swift vs Scala readers
+**Description:** When `$mv` is the JSON number `1.0` (whole-valued double): Swift accepts (Double/NSNumber branches set `mvInt = Int(n)`). Scala accepts (`circe`'s `asNumber.toByte` succeeds for whole-valued doubles). C#/TS/Rust/Java reject (Float / non-integer types). Dart rejects (`mv is int` excludes Dart `double`, even whole-valued).
+**Fix:** Deferred — no producer emits `1.0` (all eight writers use integer types). Spec §10.6 (a) implies "numeric integer", so the rejecting backends are arguably correct. Conformance test in PR-7 should pin this uniformly (recommended: reject all non-integer-typed numeric `$mv`).
+
+### [MFACADE-PR-3-D13] Rust writer-numeric test exercises facade path only, not module-level codec
+**Status:** wontfix
+**Severity:** nit
+**Location:** `test/rs-stub/tests/baboon_type_meta_codec_tests.rs:134-156`
+**Description:** `mod baboon_type_meta_codec` exposes `read_meta_json` but not a public `write_json`; the envelope-write code lives inline in `BaboonCodecsFacade::encode_to_json` (rust/baboon_codecs_facade.rs:1066-1093). Lower-fidelity than peer backends where the writer is a public top-level function.
+**Fix:** Wontfix — pre-existing structural difference in the Rust runtime layout (PR-3 did not introduce it). Symmetric extraction would require generator-level changes outside PR-3's scope. The cross-language acceptance suite (200 rows) covers the facade write path end-to-end.
+
+---
+
 ## PR-33.9
 
 ### [PR-33.9-D01] Scope creep: working tree includes MFACADE planning artefacts unrelated to PR-33.9

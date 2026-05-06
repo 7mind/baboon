@@ -1350,12 +1350,24 @@ public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
         return BaboonTypeMetaCodec.writeJson(self)
     }
 
-    // PR-08-D01 / PR-22-D01: tolerate absent `$mv` (treat as canonical) and reject explicit
-    // `$mv != String(metaVersion)`. Spec: `$mv` is a JSON string; numbers are rejected.
+    // MFACADE-PR-3: accept `$mv` as either a JSON number or a string (back-compat
+    // with M28-vintage fixtures); both must equal `metaVersion`. Absent falls through.
     public static func readMetaJson(_ json: Any?) -> BaboonTypeMeta? {
         guard let obj = json as? [String: Any] else { return nil }
         if let mv = obj["$mv"] {
-            guard let mvStr = mv as? String, mvStr == String(BaboonTypeMetaCodec.metaVersion) else { return nil }
+            // MFACADE-PR-3-D02: reject Bool explicitly — in Foundation Bool bridges to NSNumber,
+            // so `true`/`false` would otherwise slip through the NSNumber branch with intValue 1/0.
+            if mv is Bool { return nil }
+            var mvInt: Int? = nil
+            if let n = mv as? Int { mvInt = n }
+            else if let n = mv as? Double, n.truncatingRemainder(dividingBy: 1) == 0 { mvInt = Int(n) }
+            else if let n = mv as? NSNumber {
+                let d = n.doubleValue
+                guard d.truncatingRemainder(dividingBy: 1) == 0 else { return nil }
+                mvInt = n.intValue
+            }
+            else if let s = mv as? String { mvInt = Int(s) }
+            guard let n = mvInt, n == BaboonTypeMetaCodec.metaVersion else { return nil }
         }
         guard let d = obj["$d"] as? String else { return nil }
         guard let v = obj["$v"] as? String else { return nil }
@@ -1437,9 +1449,10 @@ public enum BaboonTypeMetaCodec {
     }
 
     public static func writeJson(_ meta: BaboonTypeMeta) -> [String: Any] {
-        // `$mv` elided for the canonical version (matches cs/java/rust/scala/ts/python writers).
-        // Reader treats absent `$mv` as canonical.
+        // MFACADE-PR-3: always emit `$mv` as a JSON number so envelopes are
+        // self-identifying without out-of-band knowledge (proposal §10.6 (a)).
         var obj: [String: Any] = [
+            "$mv": metaVersion,
             "$d": meta.domainIdentifier,
             "$v": meta.domainVersion,
             "$t": meta.typeIdentifier,
