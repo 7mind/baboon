@@ -249,6 +249,7 @@ class JvBaboonTranslator[F[+_, +_]: Error2](
           rt("BaboonMethodId.java", "baboon-runtime/java/BaboonMethodId.java"),
           rt("BaboonWiringError.java", "baboon-runtime/java/BaboonWiringError.java"),
           rt("BaboonWiringException.java", "baboon-runtime/java/BaboonWiringException.java"),
+          rt("BaboonExt.java", "baboon-runtime/java/BaboonExt.java"),
         )
       )
     } else {

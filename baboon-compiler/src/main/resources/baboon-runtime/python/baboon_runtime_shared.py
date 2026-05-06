@@ -29,6 +29,11 @@ class BaboonGenerated(ABC):
 
     @property
     @abstractmethod
+    def baboon_domain_version(self) -> str:
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
     def baboon_type_identifier(self) -> str:
         raise NotImplementedError
 
@@ -681,3 +686,19 @@ class BaboonTypeMetaCodec:
             )
         except Exception:
             return None
+
+
+def domain_version(g: BaboonGenerated) -> BaboonDomainVersion:
+    return BaboonDomainVersion(g.baboon_domain_identifier, g.baboon_domain_version)
+
+
+def baboon_unmodified_since_version(g: BaboonGenerated) -> str:
+    return g.baboon_same_in_versions[0]
+
+
+def unmodified_since_version(meta: BaboonMeta, type_id: str) -> str:
+    # NOTE: The abstract BaboonMeta.same_in_versions property returns list[str] per
+    # its declaration, but concrete implementations (e.g. generated BaboonMetadata)
+    # return a callable(typeId) -> list[str] (matching C#/Scala sameInVersions(typeId)).
+    # We call it as a callable per the C# reference signature.
+    return meta.same_in_versions(type_id)[0]

@@ -1165,3 +1165,48 @@ export abstract class AbstractBaboonUebaCodecs extends AbstractBaboonCodecs {
         return codec.value as BaboonBinCodec<T>;
     }
 }
+
+// --- BaboonExt helpers ---
+//
+// Mirrors C# `BaboonExt` convenience methods. Exported as free functions following the
+// existing TypeScript runtime idiom (standalone exports rather than a static utility class).
+
+/**
+ * Returns a `BaboonDomainVersion` combining the domain identifier and version from a generated
+ * value. Mirrors C# `BaboonExt.DomainVersion(g)`.
+ */
+export function domainVersion(g: BaboonGenerated): BaboonDomainVersion {
+    return new BaboonDomainVersion(g.baboonDomainIdentifier(), g.baboonDomainVersion());
+}
+
+/**
+ * Returns the first entry of `g.baboonSameInVersions()` — the oldest version in which this
+ * type's schema has been unmodified. Mirrors C# `BaboonExt.BaboonUnmodifiedSinceVersion(g)`.
+ *
+ * Throws if `baboonSameInVersions()` is empty (codegen invariant violation).
+ */
+export function baboonUnmodifiedSinceVersion(g: BaboonGenerated): string {
+    const versions = g.baboonSameInVersions();
+    if (versions.length === 0) {
+        throw new BaboonException(
+            `baboonSameInVersions() is empty for type ${g.baboonTypeIdentifier()}`,
+        );
+    }
+    return versions[0]!;
+}
+
+/**
+ * Returns the first entry of `meta.sameInVersions(typeId)` — the oldest version in which
+ * the type identified by `typeId` has been unmodified. Mirrors C# `BaboonExt.UnmodifiedSinceVersion(meta, tpe)`.
+ *
+ * Throws if `sameInVersions()` returns an empty array (codegen invariant violation).
+ */
+export function unmodifiedSinceVersion(meta: BaboonMeta, typeId: string): string {
+    const versions = meta.sameInVersions(typeId);
+    if (versions.length === 0) {
+        throw new BaboonException(
+            `sameInVersions() is empty for typeId ${typeId}`,
+        );
+    }
+    return versions[0]!;
+}

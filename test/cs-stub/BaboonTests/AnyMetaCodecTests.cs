@@ -709,5 +709,34 @@ namespace ConversionsTest
             Assert.That(msg, Does.Contain("domain"));
             Assert.That(msg, Does.Contain("version"));
         }
+
+        // ===== PR-5/Q13: BaboonTypeMeta.From widening — ADT branch declared as abstract parent =====
+
+        [Test]
+        public void BaboonTypeMeta_From_AdtBranchDeclaredAsAbstractParent_UsesAdtTypeIdentifier()
+        {
+            // Fixture: testpkg.pkg0 / T4_A1 (current pkg03 schema) is a `root adt` with
+            // branches B1, B2, B4. The C# generator emits `public abstract record T4_A1`
+            // for the parent. Declaring a branch instance as the abstract parent type
+            // exercises the PR-5/Q13 IsAbstract widening in BaboonTypeMeta.From.
+            //
+            // Pre-fix (IsInterface): typeof(Testpkg.Pkg0.T4_A1).IsInterface == false for an
+            //   abstract record, so the ADT path was skipped — TypeIdentifier resolved to the
+            //   branch's own id, not the ADT parent's.
+            // Post-fix (IsAbstract): typeof(Testpkg.Pkg0.T4_A1).IsAbstract == true for an
+            //   abstract record, so the ADT path fires — TypeIdentifier resolves to the ADT
+            //   parent's type id (BaboonAdtTypeIdentifier()).
+            Testpkg.Pkg0.T4_A1 value = new Testpkg.Pkg0.T4_A1.B4(null, "f1", "f");
+
+            var meta = BaboonTypeMeta.From(value, typeof(Testpkg.Pkg0.T4_A1));
+
+            // When declared as the abstract parent, From must use the ADT type identifier
+            // (returned by IBaboonAdtMemberMeta.BaboonAdtTypeIdentifier()), not the branch's own.
+            var branchMeta = BaboonTypeMeta.From(value, typeof(Testpkg.Pkg0.T4_A1.B4));
+            Assert.That(meta.TypeIdentifier, Is.Not.EqualTo(branchMeta.TypeIdentifier),
+                "abstract-parent declaration must yield the ADT type id, not the branch type id");
+            Assert.That(meta.TypeIdentifier, Is.EqualTo(((IBaboonAdtMemberMeta)value).BaboonAdtTypeIdentifier()),
+                "abstract-parent declaration must yield IBaboonAdtMemberMeta.BaboonAdtTypeIdentifier()");
+        }
     }
 }

@@ -1498,6 +1498,33 @@ public func baboonDeepEquals(_ a: Any?, _ b: Any?) -> Bool {
     return false
 }
 
+// --- BaboonExt helpers ---
+//
+// Convenience accessors. Placed on [BaboonMetaProvider] (instance-side protocol) because
+// [BaboonGenerated] is a bare marker protocol with no members — the instance metadata lives
+// on [BaboonMetaProvider]. Helper 3 is on [BaboonMeta] (per-domain version registry).
+
+public extension BaboonMetaProvider {
+    /// Returns a [BaboonDomainVersion] for this value's domain/version pair.
+    var domainVersion: BaboonDomainVersion {
+        BaboonDomainVersion(baboonDomainIdentifier, baboonDomainVersion)
+    }
+
+    /// Returns the earliest version this type has been unchanged since (first element of
+    /// [baboonSameInVersions]).
+    var baboonUnmodifiedSinceVersion: String {
+        baboonSameInVersions[0]
+    }
+}
+
+public extension BaboonMeta {
+    /// Returns the earliest version the given type has been unchanged since, according to this
+    /// domain-version metadata registry.
+    func unmodifiedSinceVersion(_ typeId: String) -> String {
+        sameInVersions(typeId)[0]
+    }
+}
+
 public func baboonDeepHashCode(_ value: Any?) -> Int {
     guard let v = value else { return 0 }
     if let m = v as? [String: Any] {

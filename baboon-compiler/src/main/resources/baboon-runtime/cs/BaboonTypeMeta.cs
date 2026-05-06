@@ -95,7 +95,9 @@ namespace Baboon.Runtime.Shared
             // type identifier so the encoder can wrap with the ADT meta envelope. When the
             // user-declared type is the concrete branch, use the branch identifier directly.
             string typeIdentifier;
-            if (value is IBaboonAdtMemberMeta adt && declaredType is { IsInterface: true })
+            // PR-5/Q13 widening: IsAbstract covers both interfaces and abstract classes (IsInterface ⊂ IsAbstract).
+            // Baboon's C# generator emits `public abstract record` for ADT parents, not interfaces.
+            if (value is IBaboonAdtMemberMeta adt && declaredType is { IsAbstract: true })
             {
                 typeIdentifier = adt.BaboonAdtTypeIdentifier();
             }

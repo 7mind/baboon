@@ -407,6 +407,7 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
           rt(s"BaboonByteString.cs", "baboon-runtime/cs/BaboonByteString.cs"),
           rt(s"BaboonIdentifierRepr.cs", "baboon-runtime/cs/BaboonIdentifierRepr.cs"),
           rt(s"BaboonServiceWiring.cs", "baboon-runtime/cs/BaboonServiceWiring.cs"),
+          rt(s"BaboonExt.cs", "baboon-runtime/cs/BaboonExt.cs"),
         )
       )
     } else {

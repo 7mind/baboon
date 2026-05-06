@@ -246,6 +246,50 @@ pub trait BaboonMeta {
     fn same_in_versions(type_id: &str) -> &[&str];
 }
 
+// --- BaboonExt helpers ---
+//
+// Mirrors C# `BaboonExt` / TS `domainVersion` / `baboonUnmodifiedSinceVersion`.
+//
+// Rust note: `BaboonGenerated` exposes only static identity fields; `BaboonMeta` carries the
+// per-type same-in-versions table. `baboon_unmodified_since_version` therefore requires
+// the concrete type to also implement `BaboonMeta` so the lookup can resolve correctly.
+// `unmodified_since_version` is a free function (not a trait method) because it takes two
+// non-self arguments: the meta type parameter and a `type_id` key.
+
+pub trait BaboonExt {
+    fn domain_version(&self) -> crate::baboon_codecs_facade::BaboonDomainVersion;
+    fn baboon_unmodified_since_version(&self) -> String;
+}
+
+impl<T: BaboonGenerated + BaboonMeta> BaboonExt for T {
+    fn domain_version(&self) -> crate::baboon_codecs_facade::BaboonDomainVersion {
+        crate::baboon_codecs_facade::BaboonDomainVersion::new(
+            T::baboon_domain_identifier(),
+            T::baboon_domain_version(),
+        )
+    }
+
+    fn baboon_unmodified_since_version(&self) -> String {
+        // Codegen invariant: same_in_versions is never empty for a registered type.
+        T::same_in_versions(T::baboon_type_identifier())
+            .first()
+            .expect("same_in_versions must be non-empty per codegen invariant")
+            .to_string()
+    }
+}
+
+/// Free function: returns the first entry in `M::same_in_versions(type_id)`.
+///
+/// Mirrors C# `BaboonExt.UnmodifiedSinceVersion(meta, tpe)` and TS `unmodifiedSinceVersion`.
+/// Panics if `same_in_versions` returns an empty slice — this violates the codegen invariant
+/// that every registered type has at least one entry.
+pub fn unmodified_since_version<M: BaboonMeta>(type_id: &str) -> String {
+    M::same_in_versions(type_id)
+        .first()
+        .expect("same_in_versions must be non-empty per codegen invariant")
+        .to_string()
+}
+
 // --- Conversion traits ---
 
 pub trait AbstractConversion<From, To> {

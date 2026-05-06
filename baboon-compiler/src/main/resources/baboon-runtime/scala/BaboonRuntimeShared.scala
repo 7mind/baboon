@@ -279,6 +279,20 @@ package baboon.runtime.shared {
     def instance: T = LazyInstance.value
   }
 
+  // MFACADE-PR-5: extension helpers wrapped in an object so the synthetic methods Scala
+  // generates for implicit classes don't collide with the implicit classes themselves at
+  // package scope under `-Xsource:3-cross`. Users opt in via
+  // `import baboon.runtime.shared.BaboonExt._`.
+  object BaboonExt {
+    implicit class BaboonGeneratedExt(private val g: BaboonGenerated) extends AnyVal {
+      def baboonUnmodifiedSinceVersion: String = g.baboonSameInVersions.head
+    }
+
+    implicit class BaboonMetaExt(private val meta: BaboonMeta) extends AnyVal {
+      def unmodifiedSinceVersion(typeId: String): String = meta.sameInVersions(typeId).head
+    }
+  }
+
   final case class BaboonDomainVersion(domainIdentifier: String, domainVersion: String) {
     private val LazyVersion = Lazy(Version.from(domainVersion))
     def version: Version    = LazyVersion.value

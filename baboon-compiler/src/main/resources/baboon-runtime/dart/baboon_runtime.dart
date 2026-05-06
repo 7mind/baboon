@@ -1223,6 +1223,28 @@ abstract class BaboonAdtMember {
   String get baboonAdtTypeIdentifier;
 }
 
+// --- BaboonExt helpers ---
+//
+// Convenience accessors. Placed on [BaboonMetaProvider] (instance-side abstract class) because
+// [BaboonGenerated] is a bare marker interface with no members — the instance metadata lives
+// on [BaboonMetaProvider]. Helper 3 is on [BaboonMeta] (per-domain version registry).
+
+extension BaboonExtOnMetaProvider on BaboonMetaProvider {
+  /// Returns a [BaboonDomainVersion] for this value's domain/version pair.
+  BaboonDomainVersion get domainVersion =>
+      BaboonDomainVersion(baboonDomainIdentifier, baboonDomainVersion);
+
+  /// Returns the earliest version this type has been unchanged since (first element of
+  /// [baboonSameInVersions]).
+  String get baboonUnmodifiedSinceVersion => baboonSameInVersions[0];
+}
+
+extension BaboonExtOnMeta on BaboonMeta {
+  /// Returns the earliest version the given type has been unchanged since, according to this
+  /// domain-version metadata registry.
+  String unmodifiedSinceVersion(String typeId) => sameInVersions(typeId)[0];
+}
+
 int baboonDeepHashCode(dynamic value) {
   if (value == null) return 0;
   if (value is Map) {

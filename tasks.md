@@ -64,10 +64,10 @@ Detail in `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`
 Detail in `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`.
 
 - [x] **MFACADE-PR-1** — Byte-1 unification. Flip `META_VERSION_1` from 16 → 1 across all 11 runtimes + 6 `AnyMetaCodec*` test fixtures.
-- [ ] **MFACADE-PR-2** — Reader forward-compat: bin path returns null on unknown `metaVersion` (matches JSON path + reference impl).
+- [x] **MFACADE-PR-2** — *Skipped.* Drafted under faulty Q12 framing; closer reading of `proposal.md` §4.2 establishes that the bin path SHOULD be a hard `Left(DecoderFailure)` on unknown `metaVersion`, not null. Current behaviour is already correct. User-authorised skip on 2026-05-06.
 - [x] **MFACADE-PR-3** — JSON `$mv` value type = number (writer numeric, reader accepts both numeric + string for back-compat).
 - [x] **MFACADE-PR-4** — Facade API parity: `DecodeFromBin/JsonLatest<T>`, `Latest(domain)`, optional `Preload()`.
-- [ ] **MFACADE-PR-5** — `BaboonExt`-style helpers + C# `TypeIsAdt` widening (`IsAbstract || IsInterface`).
+- [x] **MFACADE-PR-5** — `BaboonExt`-style helpers + C# `TypeIsAdt` widening (`IsAbstract || IsInterface`).
 - [ ] **MFACADE-PR-6** — Per-domain `Domain<X>Facade` codegen + per-target-prefixed `--*-generate-domain-facade=true` flag.
 - [ ] **MFACADE-PR-7** — Spec doc `docs/spec/codec-envelope.md` + conformance tests (envelope round-trip × shapes × backends, captured-byte fixtures vs reference).
 - [ ] **MFACADE-PR-8** — Close-out (proposal.md deviations recorded; session log).
@@ -77,6 +77,19 @@ Detail in `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`.
 - [x] **M32 / PR-32.1** — `META_VERSION_1` 1→16 bump. Carry-over RESOLVED via Q2 + Q10: byte 16 retired in MFACADE-PR-1 (`6ed3a5cf`-ish — see Completed). M32 collapsed into MFACADE.
 
 ## Completed
+
+- [x] **MFACADE-PR-5** (2026-05-06, single round — clean after 4 mid-flight verification fixes) — `BaboonExt`-style helpers + C# `TypeIsAdt` widening (Q13).
+  - Three helpers ported from `/tmp/exchange/Baboon/BaboonExt.cs` (skipped the reference's 4th `Version()` helper — depends on a project-private `Models.Version` type, excluded per Q5):
+    - `domainVersion(g) -> BaboonDomainVersion` (where `BaboonGenerated` exposes the identifier+version directly; on Java/Swift/Dart `BaboonGenerated` is an empty marker so the helpers live on `BaboonMetaProvider` instead).
+    - `baboonUnmodifiedSinceVersion(g) -> string` — head of the `baboonSameInVersions` array.
+    - `unmodifiedSinceVersion(meta, typeId) -> string` — head of `meta.sameInVersions(typeId)`.
+  - Per-backend idiom: cs static class with extension methods (`BaboonExt.cs`), scala implicit classes wrapped in `object BaboonExt` inside the existing package (necessary to dodge the Scala 2.13 + `-Xsource:3-cross` "implicit class same-name as compiler-generated method" rejection at top-level), python module-level free functions, java static utility (`BaboonExt.java` — Java `BaboonGenerated` is an empty marker so helpers use reflection), kotlin/kt-kmp top-level extension functions (kt's `domainVersion` was already a default method on `BaboonGenerated`, only added the other two), rust trait + blanket impl with `BaboonGenerated + BaboonMeta` constraint (rust separates the surface across two traits), typescript free functions, swift protocol extensions on `BaboonMetaProvider` + `BaboonMeta`, dart extension declarations on `BaboonMetaProvider` + `BaboonMeta`.
+  - **C# `TypeIsAdt` widening** (Q13): `BaboonTypeMeta.From(value, declaredType)` at `cs/BaboonTypeMeta.cs:98` widened from `declaredType is { IsInterface: true }` to `declaredType is { IsAbstract: true }`. The C# generator emits `public abstract record T_Adt` (`CSDefnTranslator.scala:434`); the prior narrow check missed those abstract-record ADTs entirely, so encoding a branch as the abstract parent type produced the branch's own type identifier instead of the ADT envelope. Matches reference `BaboonTypeMeta.cs:73` (`type.IsAbstract || type.IsInterface`; `IsAbstract` ⊃ `IsInterface` in .NET reflection so the disjunction collapses to `IsAbstract`). Regression-test `BaboonTypeMeta_From_AdtBranchDeclaredAsAbstractParent_UsesAdtTypeIdentifier` in `test/cs-stub/BaboonTests/AnyMetaCodecTests.cs` exercises the widening using `Testpkg.Pkg0.T4_A1.B4` (current pkg03 schema branch, not the agent's initial guess `B3` which only existed in older pkg01).
+  - **Mid-flight verification fixes (caught pre-review):**
+    - cs ADT test: agent guessed `T4_A1.B3`; current pkg03 schema has `B1/B2/B4`. Switched to `B4(null, "f1", "f")` per the actual generated constructor.
+    - scala implicit classes: top-level placement under `-Xsource:3-cross` triggered "BaboonGeneratedExt is already defined as (compiler-generated) method" — wrapped both in an `object BaboonExt` inside the existing `baboon.runtime.shared` package; test imports `baboon.runtime.shared.BaboonExt._`.
+    - cs `BaboonExt.cs` was a NEW resource file but unregistered in `CSBaboonTranslator.scala`'s runtime list — codegen wasn't propagating it. Same for jv `BaboonExt.java`. Added both to their translators' `rt(...)` lists (`CSBaboonTranslator.scala:410` and `JvBaboonTranslator.scala:252`). Other backends modified existing already-registered files, so no propagation issue.
+  - Verification: `mdl :build` clean; `mdl --seq :test` all 50+ language test actions green (~33 min serial). Per-backend tests cover all 3 helpers (≈30 tests across 10 stubs).
 
 - [x] **MFACADE-PR-4** (2026-05-06, single round — clean after 3 mid-flight verification fixes) — Facade API parity across 8 backends: added `Preload()`, `DecodeFromBinLatest<T>`, `DecodeFromJsonLatest<T>` (cs, jv, kt, kt-kmp, rs, ts, sw, dt). Scala and Python already had the surface. `Latest(domain)` was already present everywhere — verified via grep at audit time, no widening needed. Composition is mechanical: `decode → convert<T>` per the canonical Scala impl at `BaboonCodecsFacade.scala:347-426`. Per-backend Either/Result idioms preserved — cs `Either<,>` with pattern-match chaining; jv `BaboonEither` with `instanceof` chaining; kt `Either` sealed class; sw `Result<T, E>` for bin and `throws T?` for json; dt `BaboonEither`; rs `Result<T, E>` with `?`; ts `BaboonEither` with tag-check.
   - **Mid-flight fixes during verification (recorded for posterity, not surfaced as defects since caught pre-review):**

@@ -11,6 +11,10 @@ interface BaboonGenerated {
     fun domainVersion(): BaboonDomainVersion = BaboonDomainVersion(baboonDomainIdentifier, baboonDomainVersion)
 }
 
+fun BaboonGenerated.baboonUnmodifiedSinceVersion(): String = baboonSameInVersions[0]
+
+fun BaboonMeta.unmodifiedSinceVersion(typeId: String): String = sameInVersions(typeId)[0]
+
 interface BaboonGeneratedLatest : BaboonGenerated
 
 interface BaboonAdtMemberMeta {
