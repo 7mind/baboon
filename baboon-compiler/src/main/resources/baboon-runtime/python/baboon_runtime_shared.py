@@ -553,7 +553,7 @@ class BaboonTypeMeta(BaseModel):
 
 
 class BaboonTypeMetaCodec:
-    META_VERSION_1: int = 16
+    META_VERSION_1: int = 1
     META_VERSION: int = META_VERSION_1
 
     META_VERSION_KEY = "$mv"

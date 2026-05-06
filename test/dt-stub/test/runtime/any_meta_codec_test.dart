@@ -534,9 +534,9 @@ void main() {
       expect(meta!.domainIdentifier, 'dom');
     });
 
-    test('accepts explicit \$mv="16"', () {
+    test('accepts explicit \$mv="1"', () {
       final meta = BaboonTypeMeta.readMetaJson({
-        r'$mv': '16', r'$d': 'dom', r'$v': '1.0.0', r'$t': 'T',
+        r'$mv': '1', r'$d': 'dom', r'$v': '1.0.0', r'$t': 'T',
       });
       expect(meta, isNotNull);
     });

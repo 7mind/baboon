@@ -426,7 +426,7 @@ class AnyMetaCodecTest {
     @Test
     void typeMetaReadJson_acceptsExplicitMv1() {
         ObjectNode obj = NF.objectNode();
-        obj.put("$mv", "16");
+        obj.put("$mv", "1");
         obj.put("$d", "dom");
         obj.put("$v", "1.0.0");
         obj.put("$t", "T");

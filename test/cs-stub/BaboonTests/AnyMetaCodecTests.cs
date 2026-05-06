@@ -291,14 +291,14 @@ namespace ConversionsTest
         {
             var ok = new JObject
             {
-                ["$mv"] = "16",
+                ["$mv"] = "1",
                 ["$d"] = "com.example",
                 ["$v"] = "1.0.0",
                 ["$t"] = "T",
             };
             var result = BaboonTypeMetaCodec.ReadMeta(ok);
             Assert.That(result, Is.Not.Null);
-            Assert.That(result!.MetaVersion, Is.EqualTo((byte)16));
+            Assert.That(result!.MetaVersion, Is.EqualTo((byte)1));
         }
 
         [Test]

@@ -377,7 +377,7 @@ package baboon.runtime.shared {
   }
 
   object BaboonTypeMetaCodec {
-    private val META_VERSION_1: Byte = 16
+    private val META_VERSION_1: Byte = 1
     val META_VERSION: Byte           = META_VERSION_1
 
     private val META_VERSION_KEY              = "$mv"

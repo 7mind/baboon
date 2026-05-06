@@ -1154,7 +1154,7 @@ class BaboonTypeMeta {
 }
 
 class BaboonTypeMetaCodec {
-  static const int metaVersion = 16;
+  static const int metaVersion = 1;
 
   static void writeBin(BaboonTypeMeta meta, BaboonBinWriter writer) {
     writer.writeU8(metaVersion);

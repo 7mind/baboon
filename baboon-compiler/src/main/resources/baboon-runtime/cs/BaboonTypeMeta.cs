@@ -125,7 +125,7 @@ namespace Baboon.Runtime.Shared
 
     public static class BaboonTypeMetaCodec
     {
-        public const byte META_VERSION_1 = 16;
+        public const byte META_VERSION_1 = 1;
         public const byte META_VERSION = META_VERSION_1;
 
         public const string META_VERSION_KEY = "$mv";

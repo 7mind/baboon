@@ -208,7 +208,7 @@ pub struct BaboonTypeMeta {
 }
 
 impl BaboonTypeMeta {
-    pub const META_VERSION_1: u8 = 16;
+    pub const META_VERSION_1: u8 = 1;
     pub const META_VERSION: u8 = Self::META_VERSION_1;
 
     pub fn new<D: Into<String>, V: Into<String>, MC: Into<String>, T: Into<String>>(

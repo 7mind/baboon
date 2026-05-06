@@ -676,7 +676,7 @@ fn pr11_d01_encode_to_bin_writes_type_meta_prefix() {
         .encode_to_bin(&BaboonCodecContext::Compact, &value)
         .expect("encode_to_bin");
 
-    // First byte must be META_VERSION_1 (= 16). Without the D01 fix the buffer started
+    // First byte must be META_VERSION_1 (= 1). Without the D01 fix the buffer started
     // with the raw payload (0x2A 0x00 0x00 0x00).
     assert_eq!(bytes[0], BaboonTypeMeta::META_VERSION_1, "first byte must be meta-version");
 

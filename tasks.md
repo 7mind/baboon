@@ -29,7 +29,7 @@ narrowing.
 ## Milestones (high-level)
 
 - [x] **M33** — Generic structural inheritance via template instantiation (closed 2026-05-05; provenance follow-up landed 2026-05-06). Nine PRs landed (PR-33.1 .. PR-33.9 inc. PR-33.8 hot-fix + PR-33.9 provenance follow-up); `+`/`-`/`^` template instantiation in DTO/contract bodies via inline substitution; codegen byte-identical (m33-ok fixture); LSP smoke green; spec doc §9 landed; tree-sitter corpus locked; duplicate-template-arm rejection now provenance-aware (preserves contract-diamond silent dedup). Plan: `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`. Close-out log: `docs/logs/20260505-2005-m33-close-log.md`.
-- [ ] **MFACADE** — Multi-version codec facade upstream + byte-1 unification (collapses M32). Plan: `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`. Eight PRs (MFACADE-PR-1 .. MFACADE-PR-8). Q1–Q14 resolved.
+- [~] **MFACADE** — Multi-version codec facade upstream + byte-1 unification (collapses M32). Plan: `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`. Eight PRs (MFACADE-PR-1 .. MFACADE-PR-8). Q1–Q14 resolved. PR-1 shipped 2026-05-06.
 - [x] **M33 follow-up** — `[PR-33.3-D01]` provenance-aware narrowing of duplicate-template-arm rejection. Closed 2026-05-06 via PR-33.9. Per-Field origin via new `RawDtoMember.TemplateArmFieldDef` sibling variant; check fires only when ≥2 origins are M33 template-arm. Contract-diamond cases (e.g. pkg03 `T4_A1#B1`) continue to silently dedupe via `.distinct`.
 
 ---
@@ -59,11 +59,35 @@ Detail in `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`
 - [x] **§3.e** — No `Typedef.Dto.contracts` edge for inlined template-instantiation; treat identically to `+ ConcreteRef`.
 - [x] **§3.f** — Reuse `CircularInheritance` for self-instantiation cycles; no new `TyperIssue` case unless PR-33.4 review demands it (decision reopens if so).
 
+## MFACADE — PR breakdown
+
+Detail in `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`.
+
+- [x] **MFACADE-PR-1** — Byte-1 unification. Flip `META_VERSION_1` from 16 → 1 across all 11 runtimes + 6 `AnyMetaCodec*` test fixtures.
+- [ ] **MFACADE-PR-2** — Reader forward-compat: bin path returns null on unknown `metaVersion` (matches JSON path + reference impl).
+- [ ] **MFACADE-PR-3** — JSON `$mv` value type = number (writer numeric, reader accepts both numeric + string for back-compat).
+- [ ] **MFACADE-PR-4** — Facade API parity: `DecodeFromBin/JsonLatest<T>`, `Latest(domain)`, optional `Preload()`.
+- [ ] **MFACADE-PR-5** — `BaboonExt`-style helpers + C# `TypeIsAdt` widening (`IsAbstract || IsInterface`).
+- [ ] **MFACADE-PR-6** — Per-domain `Domain<X>Facade` codegen + per-target-prefixed `--*-generate-domain-facade=true` flag.
+- [ ] **MFACADE-PR-7** — Spec doc `docs/spec/codec-envelope.md` + conformance tests (envelope round-trip × shapes × backends, captured-byte fixtures vs reference).
+- [ ] **MFACADE-PR-8** — Close-out (proposal.md deviations recorded; session log).
+
 ## Carry-over from prior milestones
 
-- [x] **M32 / PR-32.1** — `META_VERSION_1` 1→16 bump. Carry-over RESOLVED via Q2 + Q10: byte 16 to be retired in MFACADE-PR-1 (revert to byte 1 to match the production reference + `proposal.md` §2.1). M32 collapses into MFACADE.
+- [x] **M32 / PR-32.1** — `META_VERSION_1` 1→16 bump. Carry-over RESOLVED via Q2 + Q10: byte 16 retired in MFACADE-PR-1 (`6ed3a5cf`-ish — see Completed). M32 collapsed into MFACADE.
 
 ## Completed
+
+- [x] **MFACADE-PR-1** (2026-05-06, single pass — clean) — Byte-1 unification at the global envelope. Flipped `META_VERSION_1` from 16 → 1 across all 10 runtime files (one constant per backend in `cs/BaboonTypeMeta.cs`, `scala/BaboonRuntimeShared.scala`, `rust/baboon_codecs_facade.rs`, `java/BaboonTypeMeta.java`, `kotlin/BaboonRuntimeShared.kt`, `kotlin-kmp/BaboonRuntimeShared.kt`, `typescript/BaboonSharedRuntime.ts`, `python/baboon_runtime_shared.py`, `dart/baboon_runtime.dart`, `swift/baboon_runtime.swift`). The 6 `AnyMetaCodec*` test fixtures M32 commit `0d9d7165` had bumped to expect byte-16 are flipped back: `cs-stub`, `dt-stub`, `jv-stub`, `rs-stub`, `sw-stub`, `ts-stub`. Result: top-level `BaboonTypeMeta` envelope is now byte-identical to `proposal.md` §2.1 / production reference.
+  Files: 16 modified (10 runtime + 6 test fixtures). Pure prefix-byte flip, structural layout unchanged. No API changes; no codec changes.
+  Verification:
+  - `sbt clean compile` clean (after PortableResource macro cache invalidation per CLAUDE.md).
+  - `sbt baboonJVM/test` 556/556 green (pre-existing 3 canceled).
+  - `mdl --simple-log :build :test-acceptance` GREEN — 920.8s wall (build 3m6s + test-acceptance 12m15s); 200+ cross-language acceptance rows pass; m29-ok and m33-ok cross-language fixtures unaffected (they use the direct-codec path, no envelope, so the byte change is invisible).
+  Surprises:
+  - **The cross-language `m29-ok` / `m33-ok` fixtures use the raw-codec path, not the facade-envelope path** — the byte flip is invisible to those tests, hence "200/200 unaffected" is not a regression-guard for the byte change itself; the per-stub `AnyMetaCodec*` tests are. Updated 6 of those in lockstep.
+  - **Dart and Swift used `metaVersion = 16` directly (no `META_VERSION_1` constant);** their flips are to `metaVersion = 1`. Other backends use the `META_VERSION_1` indirection.
+  - **Field-level `AnyMeta` envelope unchanged.** This is the kind-tagged subset-metadata format in `docs/drafts/20260424-1738-any-opaque-fields.md`; lives at the field level, not the global envelope. M32 / MFACADE-PR-1 do not touch it.
 
 - [x] **PR-33.9** (2026-05-06, two review rounds — clean) — Provenance-aware narrowing of `[PR-33.3-D01]`. Closes the M33 leftover that PR-33.7 attempted broadly and PR-33.8 reverted: silent-dedup of duplicate template arms `+ MyGen[i32]; + MyGen[i32]` now produces `NonUniqueFields`, while contract-diamond duplicates (e.g. pkg03 `T4_A1#B1` two `f2: #i32` from `is S1`/`is S2` ContractRef paths) continue to silently dedupe via `.distinct` — preserving established project semantics.
   Approach: AST extension via sibling sealed-trait variant `RawDtoMember.TemplateArmFieldDef(field, meta)`. Sibling, NOT subclass — preserves all existing `case f: RawDtoMember.FieldDef` matches and `RawDtoMember.FieldDef(f, m)` constructor extractors unchanged across the parser/typer/test sites. Only one true exhaustive-match site needed updating: `BaboonFamilyManager.filesFromDtoMember` (+4 lines).

@@ -299,11 +299,11 @@ final class AnyMetaCodecTests: XCTestCase {
     func testReadMetaJson_acceptsMissingMv_asV1() {
         let json: [String: Any] = ["$d": "d", "$v": "1.0.0", "$t": "T"]
         let parsed = BaboonTypeMeta.readMetaJson(json)
-        XCTAssertEqual(parsed?.metaVersion, 16)
+        XCTAssertEqual(parsed?.metaVersion, 1)
     }
 
     func testReadMetaJson_acceptsExplicitMvOne() {
-        let json: [String: Any] = ["$mv": "16", "$d": "d", "$v": "1.0.0", "$t": "T"]
+        let json: [String: Any] = ["$mv": "1", "$d": "d", "$v": "1.0.0", "$t": "T"]
         XCTAssertNotNil(BaboonTypeMeta.readMetaJson(json))
     }
 
@@ -319,12 +319,12 @@ final class AnyMetaCodecTests: XCTestCase {
     }
 
     func testReadMetaJson_rejectsMissingD() {
-        let json: [String: Any] = ["$mv": "16", "$v": "1.0.0", "$t": "T"]
+        let json: [String: Any] = ["$mv": "1", "$v": "1.0.0", "$t": "T"]
         XCTAssertNil(BaboonTypeMeta.readMetaJson(json))
     }
 
     func testBaboonTypeMeta_writeBin_readMetaBin_roundtrip() throws {
-        let m = BaboonTypeMeta(16, "my.dom", "2.0.0", "1.0.0", "Foo")
+        let m = BaboonTypeMeta(1, "my.dom", "2.0.0", "1.0.0", "Foo")
         let writer = BaboonBinWriter()
         m.writeBin(writer)
         let reader = BaboonBinReader(writer.toData())
