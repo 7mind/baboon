@@ -538,7 +538,17 @@ object TemplateInstantiator {
     ): F[NEList[BaboonIssue], List[RawDtoMember]] = {
       armKind match {
         case ArmKind.Plus =>
-          F.pure(loweredMembers.toList)
+          // PR-33.9 [PR-33.3-D01]: tag every lowered FieldDef with template-arm provenance so
+          // `BaboonTranslator.convertDto` can fire `NonUniqueFields` when ≥2 same-name entries
+          // BOTH originate from a template-arm inline expansion (idempotent-dedup case the
+          // pre-existing `.distinct` would otherwise silently absorb). Inner-recursion already
+          // carries `TemplateArmFieldDef` from the inner `lowerOneArm`'s Plus arm; we leave
+          // those untouched to preserve provenance. Other member kinds (e.g. ContractRef
+          // surviving from a substituted body) pass through verbatim.
+          F.pure(loweredMembers.toList.map {
+            case f: RawDtoMember.FieldDef => RawDtoMember.TemplateArmFieldDef(f.field, f.meta)
+            case other                    => other
+          })
         case ArmKind.Minus =>
           // PR-33.2-D02: `-` is defined only over a flat field list. If the substituted body
           // contains any non-FieldDef member (e.g. a concrete `+ ParentRef`, ContractRef, etc.),
@@ -607,8 +617,12 @@ object TemplateInstantiator {
       templateName: String,
       receivingName: String,
     ): F[NEList[BaboonIssue], Seq[RawDtoMember.FieldDef]] = {
+      // PR-33.9: inner-recursion may carry RawDtoMember.TemplateArmFieldDef (template-arm-
+      // provenance carrier). Treat it as flat-equivalent to FieldDef for the `-` / `^` flatness
+      // invariant — the field-set semantics are identical; provenance only matters at
+      // duplicate-name detection in BaboonTranslator.convertDto.
       val offending = loweredMembers.collectFirst {
-        case m if !m.isInstanceOf[RawDtoMember.FieldDef] => m
+        case m if !m.isInstanceOf[RawDtoMember.FieldDef] && !m.isInstanceOf[RawDtoMember.TemplateArmFieldDef] => m
       }
       offending match {
         case Some(m) =>
@@ -624,7 +638,10 @@ object TemplateInstantiator {
             )
           )
         case None =>
-          F.pure(loweredMembers.collect { case f: RawDtoMember.FieldDef => f })
+          F.pure(loweredMembers.collect {
+            case f: RawDtoMember.FieldDef            => f
+            case f: RawDtoMember.TemplateArmFieldDef => RawDtoMember.FieldDef(f.field, f.meta)
+          })
       }
     }
 

@@ -10,6 +10,48 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 
 ---
 
+## PR-33.9
+
+### [PR-33.9-D01] Scope creep: working tree includes MFACADE planning artefacts unrelated to PR-33.9
+**Status:** resolved
+**Severity:** minor (process)
+**Location:** `docs/drafts/20260505-1830-questions-multi-version-facade-upstream.md` (Q10-Q14 user answers); `docs/drafts/20260506-0000-mfacade-and-m32-plan.md` (new untracked); `tasks.md` (Active brief switched from "none" to "MFACADE"; PR-33.9 entry only loosely coupled)
+**Description:** PR-33.9's stated scope is provenance-aware narrowing of `[PR-33.3-D01]`. The working tree carries MFACADE planning artefacts the orchestrator wrote BEFORE invoking the review-loop — those edits are unrelated to PR-33.9 and should not ride its commit. The executor's report enumerated 5 modified source files + defects.md; `git diff --stat HEAD` shows 8 modified + 1 new untracked.
+**Fix:** Pre-PR-33.9 planning commit `0ed9f974` ("MFACADE: planning — synthesize Q1-Q14 answers into the multi-version-codec-facade upstream plan") landed BEFORE PR-33.9. It carries only the two planning artefacts (Q10-Q14 answers + new `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`). PR-33.9's commit will carry strictly the provenance-narrowing files plus the matching tasks.md/defects.md updates.
+
+### [PR-33.9-D02] Two enumerated edge cases not covered by new fixtures
+**Status:** resolved
+**Severity:** minor
+**Location:** `baboon-compiler/.jvm/src/test/scala/io/septimalmind/baboon/tests/M29ValidatorTest.scala`
+**Description:** Executor enumerated four edge cases. Two were tested (row 11 idempotent; new positive control for contract-diamond). Two are not:
+  (a) `+ MyGen[i32]; + MyGen[str]` — two template-arm origins, different arg types. Implementation fires `NonUniqueFields` (templateArmCounts["v"] = 2). No fixture pins this.
+  (b) `+ ConcreteBase; + MyGen[i32]` mixed origin (one ParentDef-no-args, one TemplateArmFieldDef) producing same-name field. Implementation correctly stays silent (templateArmCounts["v"] = 1). No fixture pins this either.
+A future refactor that flips the rule from "≥2 by lowercased name" to "≥2 with structurally-identical Field" would slip both cases without test signal.
+**Fix:** Added two fixtures in `M29ValidatorTest.scala`: `m33_bad_13_duplicate_template_arm_different_args` (asserts `NonUniqueFields` for `+ MyGen[i32]; + MyGen[str]`); `m33_ok_concrete_plus_template_dedup_silent` (asserts `outcome.isRight` AND exactly one `v: i32` field for `+ ConcreteBase; + MyGen[i32]`). M29ValidatorTest 24 → 26 tests.
+
+### [PR-33.9-D03] Behavioural change: `+ Tmpl[i32]; + Tmpl[i32]; - Tmpl[i32]` now fires NonUniqueFields where the prior suite would dedupe-and-remove silently
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonTranslator.scala:337-349`
+**Description:** New check runs against `converted` BEFORE `removed` is subtracted. For input `+ MyGen[i32]; + MyGen[i32]; - MyGen[i32]` the converted list contains two TemplateArmFieldDef("v") origins → templateArmCounts["v"] = 2 → fires NonUniqueFields. Pre-PR-33.9, the redundant duplicate would have been silently absorbed by `.distinct` and then removed entirely by `removed`, yielding an empty net field set. The new failure is arguably correct (duplicate `+` arms are likely a user mistake), but undocumented and template-arm-asymmetric vs concrete-type analogue (`+ A; + A; - A` continues to silently dedupe).
+**Fix:** Appended 5 lines to the existing scaladoc on the new check in `BaboonTranslator.scala:318-332`. Documents: check fires BEFORE `removed` is processed; `+ Tmpl[i32]; + Tmpl[i32]; - Tmpl[i32]` fires `NonUniqueFields` even though `-` would cancel — intentional fail-fast on duplicate intent. Concrete-type analogue (`+ A; + A; - A`) remains silent because origins are not `TemplateArmFieldDef`.
+
+### [PR-33.9-D04] No fixture covers `^ Outer[T]` recursive over inner `+ Inner[U]`
+**Status:** resolved
+**Severity:** nit
+**Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala:588-605, 619-645`
+**Description:** Caret arm's `checkFlatOrFail` strips inner-recursion `TemplateArmFieldDef` back to `FieldDef` before bundling into `IntersectionFields(Seq[FieldDef])`. PR-33.9's `checkFlatOrFail` widening was added; the recursive Caret-over-Plus path is now exercised but not pinned. Behaviour is "Caret with template-arm provenance is dropped" — consistent with intent (`^` is a filter, not an add) but implicit in the carrier type.
+**Fix:** Added fixture `caretOverRecursiveTemplateFixture` in `M33StructuralTemplateInstantiationTest.scala`: `data Inner[T] { v: T }; data Outer[U] { + Inner[U] }; data Wide { v: i32; extra: str }; root data X { + Wide; ^ Outer[i32] }`. Test asserts `outcome.isRight`, `x.fields.size == 1`, and that `v: i32` is the sole field. The `+ Wide` parent (a non-template `+ ConcreteRef`) is needed because `^` is a filter — without something to intersect against, the result is empty. Surprise: original suggested fixture `root data X { ^ Outer[i32] }` (no `+` parent) yields zero fields — contradicts the assertion. Fixture corrected. M33StructuralTemplateInstantiationTest 17 → 18 tests.
+
+### [PR-33.9-D05] tasks.md M33 entry says "eight PRs" but ledger has nine entries (PR-33.1 .. PR-33.9)
+**Status:** resolved
+**Severity:** nit
+**Location:** `tasks.md` (M33 high-level milestone entry)
+**Description:** tasks.md declares M33 closed AND lists PR-33.9 as `[~]` under the M33 PR ledger. Reader sees "eight PRs landed (PR-33.1 .. PR-33.8)" but ledger has nine entries. Internal-consistency drift introduced by adding PR-33.9 to the M33 list.
+**Fix:** Updated the M33 high-level entry in `tasks.md` to "Nine PRs landed (PR-33.1 .. PR-33.9 inc. PR-33.8 hot-fix + PR-33.9 provenance follow-up)" with a closed-2026-05-06 follow-up note. Orchestrator-side at PR-33.9 close-out commit.
+
+---
+
 ## PR-33.7
 
 ### [PR-33.7-D03] Submodule-chain script's precondition allowlist hard-codes orchestrator-private files
@@ -235,12 +277,12 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 **Fix:** Renamed `data NotATemplate { v: str }` → `data PlainDto { v: str }` in the fixture; `+ NotATemplate[i32]` → `+ PlainDto[i32]`; assertion updated to `issue.head == "PlainDto"`. Diagnostic case `TyperIssue.NotATemplate` unchanged.
 
 ### [PR-33.3-D01] Duplicate template-arm `+ MyGen[T]; + MyGen[T]` is silently deduplicated rather than rejected
-**Status:** [ ] open
+**Status:** resolved (PR-33.9)
 **Severity:** minor
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonTranslator.scala:314-316` (`convertDto` — `withoutRemoved` computation applies `.distinct` before the `toUniqueMap` uniqueness check)
 **Description:** The plan §4 row 11 expected `NonUniqueFields` to fire when the same template is included twice with the same type args (e.g. `data X { + MyGen[i32]; + MyGen[i32] }`). At runtime, both arms inline `v: i32`; the `.distinct` call at `BaboonTranslator.scala:316` deduplicates identical `Field` instances before `toUniqueMap` runs — so only one `v: i32` survives and the DTO compiles without error. `NonUniqueFields` fires only when two fields share the same name but DIFFER in type (e.g. `v: i32` vs `v: str`). The idempotent-duplicate case is silently accepted. **Preexisting; predates M33** — the `.distinct` call at `BaboonTranslator.scala:316` is older translator code; M33 only exposed the case via inlined fields.
-**Fix (suggested):** PR-33.7 attempted the broad pre-`.distinct` `groupBy(_.name)` approach. **CI failed** (`pkg03.baboon` line 153/162: `testpkg.pkg0/[testpkg.pkg0/:#T4_A1]#B1` legitimately produces two `f2: #i32` via a contract diamond). The broad check was reverted in PR-33.8 and `[PR-33.3-D01]` reopened. Future fix needs **provenance-aware narrowing**: detect duplicates only when produced by template-arm inline expansion (M33), not by contract-diamond inheritance. This requires threading provenance metadata through the conversion pipeline — non-trivial. Possible approach: track per-Field origin (which `RawDtoMember` produced it) and fire `NonUniqueFields` only when ≥2 origin entries are `RawDtoMember.ParentDef` with `args.isDefined`.
-**Test:** `M29ValidatorTest.scala` row 11 (`m33_bad_11_duplicate_arm_silently_deduplicated_REGRESSION_GUARD`) pins the current (defective) idempotent-dedup behaviour. Update the assertion to `NonUniqueFields` when this defect is resolved.
+**Fix:** PR-33.9 — provenance-aware narrowing via a typer-internal AST variant. Added `RawDtoMember.TemplateArmFieldDef(field, meta)` (sibling of `FieldDef`; sealed-trait extension) at `baboon-compiler/src/main/scala/io/septimalmind/baboon/parser/model/RawDtoMember.scala:9-25`. `TemplateInstantiator.convertLoweredArm` Plus arm at `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala:539-552` maps every lowered `FieldDef` to `TemplateArmFieldDef` (inner-recursion's already-tagged carriers pass through). `BaboonTranslator.convertDto` at `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonTranslator.scala:316-345` walks `dto.members` to count template-arm-origin field names; when ≥2 entries with the same lowercased name are `TemplateArmFieldDef` and the converted-list contains ≥2 same-name Fields, fires `NonUniqueFields(id, dupes, dto.meta)` BEFORE `.distinct` collapses them. Contract-diamond duplicates (e.g. pkg03 `T4_A1#B1` two `f2: #i32` from `is S2`/`is S1` ContractRef paths) carry zero template-arm origins → silent (`.distinct` absorption preserved). New positive control test `m33_ok_contract_diamond_duplicate_silent` pins the contract-diamond path. JVM 556/556 pass; JS cross-build clean.
+**Test:** `M29ValidatorTest.scala` row 11 (`m33_bad_11: produce NonUniqueFields for '+ MyGen[i32]; + MyGen[i32]'`) and the new positive-control `m33_ok_contract_diamond_duplicate_silent`.
 
 ---
 

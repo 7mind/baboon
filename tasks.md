@@ -14,23 +14,23 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ## Active brief
 
-**Active milestone:** none. M33 closed 2026-05-05; see closed-out
-entries below and `docs/logs/<m33-close-log>.md` for the milestone narrative.
-Next active work pending — typically MFACADE (multi-version codec facade)
-once Q10–Q14 in `docs/drafts/20260505-1830-questions-multi-version-facade-upstream.md`
-resolve.
+**Active milestone:** MFACADE (multi-version codec facade upstream from `proposal.md`).
+Q1–Q14 resolved in `docs/drafts/20260505-1830-questions-multi-version-facade-upstream.md`;
+synthesised plan at `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`. M32
+collapses into MFACADE-PR-1 (byte-16 → byte-1 unification revert).
 
-**On hold:** Multi-version codec facade upstream (proposal.md). Open
-questions Q1–Q14 in
-`docs/drafts/20260505-1830-questions-multi-version-facade-upstream.md`.
+**M33 leftover (in flight):** `[PR-33.3-D01]` reopened after PR-33.8 hot-fix
+(broad pre-`.distinct` check incompatible with contract diamonds — see
+`pkg03.baboon` line 153/162 CI failure). Future fix needs provenance-aware
+narrowing.
 
 ---
 
 ## Milestones (high-level)
 
-- [x] **M33** — Generic structural inheritance via template instantiation (closed 2026-05-05). Six PRs landed; `+`/`-`/`^` template instantiation in DTO/contract bodies via inline substitution; codegen byte-identical (m33-ok fixture); LSP smoke green; spec doc §9 landed; tree-sitter corpus locked. Plan: `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`. Close-out log: `docs/logs/20260505-2005-m33-close-log.md`.
-- [ ] **MFACADE** — Multi-version codec facade upstream (proposal.md). Blocked on Q10–Q14.
-- [~] **M32** — META_VERSION_1 1→16 bump. Carry-over (PR-32.1 byte change in main; PR-32.2/PR-32.3 fixes shipped).
+- [x] **M33** — Generic structural inheritance via template instantiation (closed 2026-05-05; provenance follow-up landed 2026-05-06). Nine PRs landed (PR-33.1 .. PR-33.9 inc. PR-33.8 hot-fix + PR-33.9 provenance follow-up); `+`/`-`/`^` template instantiation in DTO/contract bodies via inline substitution; codegen byte-identical (m33-ok fixture); LSP smoke green; spec doc §9 landed; tree-sitter corpus locked; duplicate-template-arm rejection now provenance-aware (preserves contract-diamond silent dedup). Plan: `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`. Close-out log: `docs/logs/20260505-2005-m33-close-log.md`.
+- [ ] **MFACADE** — Multi-version codec facade upstream + byte-1 unification (collapses M32). Plan: `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`. Eight PRs (MFACADE-PR-1 .. MFACADE-PR-8). Q1–Q14 resolved.
+- [x] **M33 follow-up** — `[PR-33.3-D01]` provenance-aware narrowing of duplicate-template-arm rejection. Closed 2026-05-06 via PR-33.9. Per-Field origin via new `RawDtoMember.TemplateArmFieldDef` sibling variant; check fires only when ≥2 origins are M33 template-arm. Contract-diamond cases (e.g. pkg03 `T4_A1#B1`) continue to silently dedupe via `.distinct`.
 
 ---
 
@@ -46,6 +46,7 @@ Detail in `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`
 - [x] **PR-33.6** — LSP smoke + close-out + tree-sitter grammar bump + spec doc.
 - [x] **PR-33.7** — Deferred-drain: close `[PR-33.3-D01]` (silent-dedup `+ MyGen[i32]; + MyGen[i32]`), close `[PR-33.4-D01]` (empty body under `-`), ship tree-sitter submodule chain-commit script.
 - [x] **PR-33.8** — Hot-fix: revert PR-33.7's `[PR-33.3-D01]` broad-check (CI red on contract-diamond case in `pkg03.baboon`); reopen D01 with provenance-aware narrowing as documented future fix. PR-33.4-D01 (`-` empty body) and chain-commit script unaffected.
+- [x] **PR-33.9** — Provenance-aware narrowing of `[PR-33.3-D01]`. Track per-Field origin (`RawDtoMember` source) through `BaboonTranslator.convertDto`. Fire `NonUniqueFields` only when ≥2 origins are `RawDtoMember.ParentDef` arms with `args.isDefined` (M33 template-arm inline expansion). Contract-diamond `ContractRef` and non-args `ParentDef` duplicates continue to silently dedupe via `.distinct`.
 
 ---
 
@@ -60,9 +61,22 @@ Detail in `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`
 
 ## Carry-over from prior milestones
 
-- [~] **M32 / PR-32.1** — `META_VERSION_1` 1→16 bump. Byte already lifted in all 11 runtime files at HEAD `0d9d7165`. Final disposition deferred until MFACADE Q2 resolves.
+- [x] **M32 / PR-32.1** — `META_VERSION_1` 1→16 bump. Carry-over RESOLVED via Q2 + Q10: byte 16 to be retired in MFACADE-PR-1 (revert to byte 1 to match the production reference + `proposal.md` §2.1). M32 collapses into MFACADE.
 
 ## Completed
+
+- [x] **PR-33.9** (2026-05-06, two review rounds — clean) — Provenance-aware narrowing of `[PR-33.3-D01]`. Closes the M33 leftover that PR-33.7 attempted broadly and PR-33.8 reverted: silent-dedup of duplicate template arms `+ MyGen[i32]; + MyGen[i32]` now produces `NonUniqueFields`, while contract-diamond duplicates (e.g. pkg03 `T4_A1#B1` two `f2: #i32` from `is S1`/`is S2` ContractRef paths) continue to silently dedupe via `.distinct` — preserving established project semantics.
+  Approach: AST extension via sibling sealed-trait variant `RawDtoMember.TemplateArmFieldDef(field, meta)`. Sibling, NOT subclass — preserves all existing `case f: RawDtoMember.FieldDef` matches and `RawDtoMember.FieldDef(f, m)` constructor extractors unchanged across the parser/typer/test sites. Only one true exhaustive-match site needed updating: `BaboonFamilyManager.filesFromDtoMember` (+4 lines).
+  `TemplateInstantiator.convertLoweredArm` Plus arm tags every lowered FieldDef as `TemplateArmFieldDef` (recursive substitution's already-tagged carriers pass through). `BaboonTranslator.convertDto` walks `dto.members` to count template-arm origins by lowercased field name; when ≥2 entries with the same name are tagged, fires `NonUniqueFields(id, dupes, dto.meta)` BEFORE `.distinct`. The check is intentionally fail-fast on duplicate intent — `+ Tmpl[i32]; + Tmpl[i32]; - Tmpl[i32]` fires even though `-` would cancel; concrete-type analogue `+ A; + A; - A` continues silently because origins are not template-arm tagged. Documented in scaladoc.
+  `^` and `-` arms intentionally don't propagate the template-arm tag — `IntersectionFields(Seq[FieldDef])` and `UnfieldDef` carriers are filter/remove operators, not adds. `checkFlatOrFail` widened to accept both `FieldDef` and `TemplateArmFieldDef` so recursive `^ Outer[T]` over inner `+ Inner[U]` works correctly.
+  Files: `parser/model/RawDtoMember.scala` (+20 lines: new variant + scaladoc); `typer/TemplateInstantiator.scala` (+18 lines); `typer/BaboonTranslator.scala` (+30 lines including the documented scaladoc); `typer/BaboonFamilyManager.scala` (+4 lines). Tests: `M29ValidatorTest` 24 → 26 (+2: row 11 flipped `m33_bad_11` from REGRESSION_GUARD to positive-fail; new `m33_ok_contract_diamond_duplicate_silent` positive control using `is A; is B` ContractRef paths; new `m33_bad_13_duplicate_template_arm_different_args`; new `m33_ok_concrete_plus_template_dedup_silent`). `M33StructuralTemplateInstantiationTest` 17 → 18 (+1: `caretOverRecursiveTemplateFixture` — `+ Wide; ^ Outer[i32]` where `Outer[U] = + Inner[U]` recursively substitutes through Caret).
+  Verification: `sbt baboonJVM/compile` clean; `sbt baboonJS/compile` clean; targeted suites 65/65 green; full JVM `sbt baboonJVM/test` 559/559 green (pkg03 contract-diamond preserved).
+  Review history: round 1 → 5 defects (D01 scope-creep MFACADE artefacts, D02 missing edge-case fixtures, D03 behavioural-change documentation, D04 missing recursive Caret test, D05 tasks.md "eight PRs" inconsistency); fix-pass closed D01-D04; D05 closed at this commit. Round 2 clean.
+  Surprises:
+  - **Sibling variant chosen over defaulted FieldDef param** because Scala 2.13's auto-generated case-class `unapply` returns a tuple of all params; adding a defaulted param would break every existing 2-arg pattern extractor (5 sites in tests/parser/family manager). The sibling preserves them all.
+  - **`is A; is B` not `+ A; + B`** for contract-diamond positive control: contracts can't be `+`-included (translator rejects with `WrongParent`). Switched to `is` (the actual ContractRef path that pkg03 uses).
+  - **`+ Wide` parent in caret-recursive test**: `^` is a filter, not an add; without something to intersect against (`Wide` provides `v: i32`), `^ Outer[i32]` would yield empty fields. The fixture documents this with an inline comment.
+  - **D01 commit-split**: orchestrator-side fix per the round-1 reviewer's flag; the MFACADE planning artefacts (Q10-Q14 answers + new `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`) landed as a SEPARATE pre-PR-33.9 commit (`0ed9f974`) so PR-33.9's diff is clean of unrelated planning.
 
 - [x] **PR-33.8** (2026-05-05, hot-fix — verification only) — Revert PR-33.7's `[PR-33.3-D01]` broad pre-`.distinct` duplicate-name check in `BaboonTranslator.convertDto`. CI red on `pkg03.baboon` line 153/162: `testpkg.pkg0/[testpkg.pkg0/:#T4_A1]#B1` legitimately uses contract diamonds producing two `f2: #i32` that the historical `.distinct` was silently absorbing. PR-33.7's broad check fired on this established project pattern, breaking the test-gen-cs-wiring-either action ("Loader failed: DTO has fields with identical names"). PR-33.7-D04's documented escape hatch ("narrow the predicate to fields produced by ParentDef-style template arms specifically") is the correct fix but requires per-Field provenance metadata threaded through the conversion pipeline — non-trivial. Hot-fix reverts to status quo: removed `checkNoDuplicateConvertedFields` method + invocation in `BaboonTranslator.scala`; flipped `m33_bad_11` test in `M29ValidatorTest.scala` back to `outcome.isRight` regression-guard form (with REGRESSION_GUARD suffix in name). `[PR-33.3-D01]` reopened in defects.md with the provenance-aware narrowing path as the future fix; `[PR-33.7-D04]` closed via the same revert (broadening went away with the check). PR-33.4-D01 (`-` empty body symmetric to `^`) and the submodule chain-commit script (`scripts/m33-submodule-chain-commit.sh`) are unaffected — they remain shipped. Verification: `sbt baboonJVM/compile` clean; `sbt 'testOnly *M29Validator* *M33Structural* *TemplateInstantiator*'` 61/61 green; PR-33.7 minus this revert remains shipped.
 

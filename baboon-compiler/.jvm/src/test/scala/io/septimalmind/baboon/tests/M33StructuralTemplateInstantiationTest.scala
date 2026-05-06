@@ -416,6 +416,38 @@ abstract class M33StructuralTemplateInstantiationTestBase[F[+_, +_]: Error2: Tag
       |}
       |""".stripMargin
 
+  // PR-33.9-D04: `^ Outer[U]` where Outer's body uses `+ Inner[U]` — recursive caret path.
+  // `checkFlatOrFail` in TemplateInstantiator strips the inner-recursion TemplateArmFieldDef
+  // carriers back to plain FieldDef before bundling into IntersectionFields. This exercises the
+  // "caret over template-arm body" path to verify: (a) no crash, (b) no spurious
+  // TemplateBodyNotFlatForRemoval (the recursive `+ Inner[U]` arm is already lowered flat by the
+  // time checkFlatOrFail sees it), (c) the field set is correctly intersected.
+  // Fixture: Wide provides {v:i32, extra:str}; Outer[i32] resolves to {v:i32} (via + Inner[i32]);
+  // ^ Outer[i32] intersects → X has exactly {v:i32}.
+  private val caretOverRecursiveTemplateFixture: String =
+    """model m33.caretrecursive
+      |
+      |version "1.0.0"
+      |
+      |data Inner[T] {
+      |  v: T
+      |}
+      |
+      |data Outer[U] {
+      |  + Inner[U]
+      |}
+      |
+      |data Wide {
+      |  v: i32
+      |  extra: str
+      |}
+      |
+      |root data X {
+      |  + Wide
+      |  ^ Outer[i32]
+      |}
+      |""".stripMargin
+
   // PR-33.2-D04: exercise the depth-limit branch. We use a single self-referential template that
   // wraps its argument in `lst[…]` at each level, so the cycle key (receiver, template, argTupleKey)
   // is fresh at every iteration and the cycle-set branch never fires. Depth must exceed
@@ -694,6 +726,30 @@ abstract class M33StructuralTemplateInstantiationTestBase[F[+_, +_]: Error2: Tag
           outcome <- runTyperFor(parser, typer, depthLimitFixture)
         } yield {
           assertProducesTyperIssue[TyperIssue.CircularInheritance](outcome)
+        }
+    }
+
+    // ─── PR-33.9-D04: `^ Outer[U]` recursive over inner `+ Inner[U]` ───────────────────────────
+
+    "^ Outer[i32] where Outer's body uses `+ Inner[U]`: accepted; X carries exactly v:i32 after intersection" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        // Exercises the caret-over-template-arm-body path in checkFlatOrFail.
+        // Wide provides {v:i32, extra:str}; Outer[i32] resolves via + Inner[i32] to {v:i32};
+        // ^ Outer[i32] intersects Wide's fields with {v:i32} → X retains only v:i32.
+        // Verifies: (a) no TemplateBodyNotFlatForRemoval fires (recursive + Inner[U] is already
+        // flat when checkFlatOrFail processes the caret body), (b) outcome is Right,
+        // (c) X has exactly one field: v:i32.
+        for {
+          outcome <- runTyperFor(parser, typer, caretOverRecursiveTemplateFixture, "m33-caret-over-recursive-template.baboon")
+        } yield {
+          val domain = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val x      = findDto(domain, "X")
+          assert(x.fields.size == 1, s"expected exactly 1 field in X after intersection, got: ${x.fields}")
+          assert(
+            x.fields.exists(f => f.name.name == "v" && f.tpe == TypeRef.Scalar(TypeId.Builtins.i32)),
+            s"expected v:i32 in X, got: ${x.fields}",
+          )
+          assert(!x.fields.exists(f => f.name.name == "extra"), s"extra must be excluded by intersection, got: ${x.fields}")
         }
     }
   }

@@ -7,6 +7,24 @@ sealed trait RawDtoMember
 object RawDtoMember {
   case class FieldDef(field: RawField, meta: RawNodeMeta) extends RawDtoMember
 
+  /** PR-33.9 (M33): typer-internal carrier for a `RawDtoMember.FieldDef` whose origin is a
+    * template-arm inline expansion (`+ Template[Args]` lowered by `TemplateInstantiator`).
+    *
+    * Behaves identically to `FieldDef` everywhere downstream EXCEPT in
+    * `BaboonTranslator.convertDto`, which uses the variant tag to narrow duplicate-name
+    * detection: `NonUniqueFields` fires when ≥2 entries with the same lowercased name are
+    * `TemplateArmFieldDef` (provenance-aware narrowing closing `[PR-33.3-D01]`). Contract-
+    * diamond duplicates (e.g. pkg03 `T4_A1#B1` two `f2: #i32` from `+` ContractRef paths) are
+    * left to the existing `.distinct` absorption.
+    *
+    * This node is NEVER produced by the parser; it is a typer-internal AST node only.
+    * Inheriting from `FieldDef` would change `unapply` arity for existing 2-arg pattern
+    * extractors (`case RawDtoMember.FieldDef(f, m)`) — so we model it as a sibling sealed-trait
+    * variant. The lowering pass in `TemplateInstantiator.convertLoweredArm` (`Plus` arm) maps
+    * each `FieldDef` to a `TemplateArmFieldDef`.
+    */
+  case class TemplateArmFieldDef(field: RawField, meta: RawNodeMeta) extends RawDtoMember
+
   case class UnfieldDef(field: RawField, meta: RawNodeMeta) extends RawDtoMember
 
   case class ParentDef(parent: ScopedRef, meta: RawNodeMeta, args: Option[NEList[RawTypeRef]] = None) extends RawDtoMember

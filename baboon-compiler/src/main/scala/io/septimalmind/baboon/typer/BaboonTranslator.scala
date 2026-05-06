@@ -240,6 +240,12 @@ class BaboonTranslator[F[+_, +_]: Error2](
           }
         case f: RawDtoMember.FieldDef =>
           dtoFieldToDefs(f.field, f.meta)
+        case f: RawDtoMember.TemplateArmFieldDef =>
+          // PR-33.9 [PR-33.3-D01]: typer-internal carrier produced by
+          // `TemplateInstantiator.convertLoweredArm` (Plus arm) for fields originating from a
+          // `+ Template[Args]` inline expansion. Field-level conversion is identical to
+          // `FieldDef`; the variant tag only matters for the duplicate-name detection below.
+          dtoFieldToDefs(f.field, f.meta)
         case p: RawDtoMember.ParentDef =>
           // PR-33.2 (M33): when args.isDefined, the TemplateInstantiator pre-pass has already
           // spliced the substituted FieldDefs into the receiving DTO's member list (Approach M1).
@@ -306,9 +312,47 @@ class BaboonTranslator[F[+_, +_]: Error2](
           F.pure(Seq.empty)
       }
 
-      // PR-33.3-D01: detect duplicate field names in `converted` BEFORE `.distinct` erases them.
       contracts      = (adtContracts ++ localContracts).distinct
       contractFields = contracts.flatMap(_.fields)
+
+      // PR-33.9 [PR-33.3-D01]: provenance-aware narrowing of the duplicate-field-name detection.
+      // The `.distinct` below silently absorbs structurally-identical Field instances; that is
+      // correct for the contract-diamond case (e.g. pkg03 `T4_A1#B1` two `f2: #i32` from `+`
+      // ContractRef paths) but wrong for `+ MyGen[i32]; + MyGen[i32]` (idempotent template-arm
+      // duplicate). We narrow by counting only fields whose origin is a template-arm inline
+      // expansion (`RawDtoMember.TemplateArmFieldDef`, produced by
+      // `TemplateInstantiator.convertLoweredArm` Plus arm). When ≥2 same-name converted fields
+      // are template-arm-origin, fire `NonUniqueFields` BEFORE `.distinct` collapses them.
+      // Edge cases (documented in PR-33.9 task brief):
+      //   - `+ MyGen[i32]; + MyGen[i32]` → 2 template-arm origins → fires.
+      //   - pkg03 contract diamond `+ S1; + S2` both with `f2: i32` → 0 template-arm origins → silent.
+      //   - `+ MyGen[i32]; + MyGen[str]` → 2 template-arm origins, types differ → fires here
+      //     (existing toUniqueMap below would also fire; new check is earlier with same case-name).
+      //   - `+ ConcreteBase; + MyGen[i32]` both producing `v: i32` → 1 template-arm origin → silent
+      //     (matches the orchestrator-stated rule "≥2 origins are template-arm").
+      // [PR-33.9-D03] Ordering note: this check runs BEFORE `removed` is subtracted from
+      // `converted`. Consequently, `+ Tmpl[i32]; + Tmpl[i32]; - Tmpl[i32]` fires NonUniqueFields
+      // even though the `-` arm would have cancelled both `+` arms. This is intentional fail-fast
+      // on duplicate intent: two identical `+` arms indicate a user mistake regardless of what `-`
+      // follows. The concrete-type analogue (`+ A; + A; - A`) is unaffected — concrete-arm origins
+      // are not `TemplateArmFieldDef`, so templateArmCounts["v"] = 0 → silent (`.distinct` absorbs).
+      templateArmOriginNamesLc: Seq[String] = dto.members.collect {
+        case f: RawDtoMember.TemplateArmFieldDef => f.field.name.name.toLowerCase
+      }
+      templateArmCounts = templateArmOriginNamesLc.groupBy(identity).view.mapValues(_.size).toMap
+      _ <- {
+        val convertedByLcName: Map[String, List[Field]] =
+          converted.toList.groupBy(_.name.name.toLowerCase)
+        val offenders: Map[String, List[Field]] =
+          convertedByLcName.collect {
+            case (lc, fields) if fields.size >= 2 && templateArmCounts.getOrElse(lc, 0) >= 2 => lc -> fields
+          }
+        if (offenders.nonEmpty) {
+          F.fail(BaboonIssue.of(TyperIssue.NonUniqueFields(id, offenders, dto.meta)))
+        } else {
+          F.unit
+        }
+      }
 
       removedSet      = removed.toSet
       intersectionSet = intersectionLimiters.toSet

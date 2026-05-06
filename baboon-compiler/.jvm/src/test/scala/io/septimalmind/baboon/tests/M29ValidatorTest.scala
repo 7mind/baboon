@@ -404,6 +404,48 @@ abstract class M29ValidatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] 
       |}
       |""".stripMargin
 
+  /** Row 13 [PR-33.9-D02 case (a)]: two template-arm origins with different inner arg types.
+    *
+    * `+ MyGen[i32]; + MyGen[str]` — both arms are `TemplateArmFieldDef` origins producing `v`
+    * (first `v: i32`, then `v: str`). `templateArmCounts["v"] = 2` → fires `NonUniqueFields`
+    * BEFORE `.distinct`. Distinct check would also fire at `toUniqueMap` later, but this pins
+    * the earlier provenance-based path.
+    */
+  private val m33bad13DifferentArgsDuplicateTemplateArm: String =
+    """model m33.bad13
+      |
+      |version "1.0.0"
+      |
+      |data MyGen[T] { v: T }
+      |
+      |root data X {
+      |  + MyGen[i32]
+      |  + MyGen[str]
+      |}
+      |""".stripMargin
+
+  /** Positive [PR-33.9-D02 case (b)]: one `ParentDef(args=None)` concrete origin + one
+    * `TemplateArmFieldDef` origin, both producing the same field name `v: i32`.
+    *
+    * `+ ConcreteBase` is a concrete structural parent (no args); `+ MyGen[i32]` is a
+    * template-arm inline. Both produce `v: i32`. `templateArmCounts["v"] = 1` → silent
+    * (the rule requires ≥2 template-arm origins to fire). The receiver must compile and carry
+    * exactly one `v: i32` field (`.distinct` absorbs the structurally-identical duplicate).
+    */
+  private val m33okConcretePlusTemplateDedupSilent: String =
+    """model m33.ok.concreteplustemplate
+      |
+      |version "1.0.0"
+      |
+      |data ConcreteBase { v: i32 }
+      |data MyGen[T] { v: T }
+      |
+      |root data X {
+      |  + ConcreteBase
+      |  + MyGen[i32]
+      |}
+      |""".stripMargin
+
   "M29 validator (PR-29.7)" should {
 
     // ── Matrix #7 ────────────────────────────────────────────────────────────
@@ -763,17 +805,45 @@ abstract class M29ValidatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] 
     }
 
     // Row 11: duplicate inline arm — same template + same args twice.
-    // [PR-33.3-D01] regression-guard pinning current (defective) idempotent-dedup behaviour;
-    // BaboonTranslator.convertDto's `.distinct` (pre-existing project code) silently
-    // deduplicates structurally-identical Field instances. PR-33.7's broad pre-`.distinct`
-    // check was reverted in PR-33.8 because it broke contract-diamond cases (pkg03.baboon).
-    // Will need updating when [PR-33.3-D01] is resolved with a provenance-aware narrowing.
-    "m33_bad_11_duplicate_arm_silently_deduplicated_REGRESSION_GUARD" in {
+    // PR-33.9 closed [PR-33.3-D01] via provenance-aware narrowing: BaboonTranslator.convertDto
+    // counts converted-field origins from `RawDtoMember.TemplateArmFieldDef` (the typer-internal
+    // carrier produced by TemplateInstantiator's Plus arm) and fires NonUniqueFields BEFORE
+    // `.distinct` collapses idempotent duplicates. Contract-diamond duplicates (pkg03 T4_A1#B1)
+    // remain silent because their origins are ContractRef, not template-arm.
+    "m33_bad_11: produce NonUniqueFields for `+ MyGen[i32]; + MyGen[i32]` (idempotent template-arm duplicate)" in {
       (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
         for {
           outcome <- runTyperFor(parser, typer, m33bad11DuplicateArm, "m33-bad-11-duplicate-arm.baboon")
         } yield {
-          assert(outcome.isRight)
+          assertProducesTyperIssue[TyperIssue.NonUniqueFields](outcome)
+        }
+    }
+
+    /** PR-33.9 positive control: contract-diamond duplicate must NOT trigger the new template-arm
+      * narrowing. Two contracts both declaring `f: i32`, structurally-identical Field instances
+      * survive `.distinct` collapse and the converted-list contains zero TemplateArmFieldDef
+      * origins → silent (the receiving DTO compiles). Contracts are pulled in via `is` (i.e.
+      * `RawDtoMember.ContractRef`), the same path pkg03's `T4_A1#B1` exercises.
+      */
+    "m33_ok_contract_diamond_duplicate_silent" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        val src =
+          """model m33.ok.contract.diamond
+            |
+            |version "1.0.0"
+            |
+            |contract A { f: i32 }
+            |contract B { f: i32 }
+            |
+            |root data Receiver {
+            |  is A
+            |  is B
+            |}
+            |""".stripMargin
+        for {
+          outcome <- runTyperFor(parser, typer, src, "m33-ok-contract-diamond-duplicate-silent.baboon")
+        } yield {
+          assert(outcome.isRight, s"expected success (contract-diamond duplicate must stay silent), got: $outcome")
         }
     }
 
@@ -785,6 +855,47 @@ abstract class M29ValidatorTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] 
         } yield {
           // + MyGen[i32] inlines v:i32; the explicit field v:str collides → NonUniqueFields.
           assertProducesTyperIssue[TyperIssue.NonUniqueFields](outcome)
+        }
+    }
+
+    // Row 13 [PR-33.9-D02 case (a)]: two template-arm origins, different arg types
+    "m33_bad_13_duplicate_template_arm_different_args: produce NonUniqueFields for `+ MyGen[i32]; + MyGen[str]` (two template-arm origins, different arg types)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, m33bad13DifferentArgsDuplicateTemplateArm, "m33-bad-13-duplicate-template-arm-different-args.baboon")
+        } yield {
+          // Both arms are TemplateArmFieldDef origins for `v` (first v:i32, then v:str).
+          // templateArmCounts["v"] = 2 → provenance-aware check fires NonUniqueFields
+          // before .distinct can collapse them.
+          assertProducesTyperIssue[TyperIssue.NonUniqueFields](outcome)
+        }
+    }
+
+    // [PR-33.9-D02 case (b)]: mixed origin — concrete + template-arm, same field name, silent dedup
+    "m33_ok_concrete_plus_template_dedup_silent: `+ ConcreteBase; + MyGen[i32]` producing same `v: i32` stays silent (only 1 template-arm origin)" in {
+      (parser: BaboonParser[F], typer: BaboonTyper[F]) =>
+        for {
+          outcome <- runTyperFor(parser, typer, m33okConcretePlusTemplateDedupSilent, "m33-ok-concrete-plus-template-dedup-silent.baboon")
+        } yield {
+          // ConcreteBase contributes v:i32 via ParentDef (no args — not TemplateArmFieldDef).
+          // MyGen[i32] contributes v:i32 via TemplateArmFieldDef.
+          // templateArmCounts["v"] = 1 → below the ≥2 threshold → silent.
+          // .distinct absorbs the structurally-identical duplicate; receiver has exactly one v:i32.
+          val domain = outcome.toOption.getOrElse(throw new AssertionError(s"expected success, got: $outcome"))
+          val xId = domain.defs.meta.nodes.keys.collectFirst {
+            case u: io.septimalmind.baboon.typer.model.TypeId.User if u.name.name == "X" => u
+          }.getOrElse(throw new AssertionError(s"no X in domain: ${domain.defs.meta.nodes.keys}"))
+          val xDto = domain.defs.meta.nodes(xId) match {
+            case io.septimalmind.baboon.typer.model.DomainMember.User(_, defn: io.septimalmind.baboon.typer.model.Typedef.Dto, _, _) => defn
+            case other => throw new AssertionError(s"expected X to be Typedef.Dto, got: $other")
+          }
+          val vFields = xDto.fields.filter(_.name.name == "v")
+          assert(vFields.size == 1, s"expected exactly one `v` field in X after silent dedup, got: ${xDto.fields}")
+          val isI32 = vFields.head.tpe match {
+            case io.septimalmind.baboon.typer.model.TypeRef.Scalar(id) => id.name.name == "i32"
+            case _                                                     => false
+          }
+          assert(isI32, s"expected v: i32 in X, got: ${vFields.head.tpe}")
         }
     }
   }
