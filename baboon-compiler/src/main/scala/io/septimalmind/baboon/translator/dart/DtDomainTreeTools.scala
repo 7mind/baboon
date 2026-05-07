@@ -38,28 +38,34 @@ object DtDomainTreeTools {
       mainMeta(defn) ++ adtMeta(defn)
     }
 
+    // MFACADE-PR-F: dart static metadata fields use a `Const` suffix so they don't
+    // collide with the same-named instance getters required by BaboonMetaProvider.
+    // Dart forbids a class from declaring static and instance members of the same name;
+    // this rename keeps both addressable. The `name` field below stays as the
+    // BaboonMetaProvider-required instance name; signature/value/refValue use the
+    // `Const`-suffixed static identifier.
     private def mainMeta(defn: DomainMember.User): List[MetaField] = {
       val ref = typeTranslator.asDtType(defn.id, domain, evolution).asName
       val baboonDomainVersion = MetaField(
-        q"static const String baboonDomainVersion",
+        q"static const String baboonDomainVersionConst",
         q"'${domain.version.v.toString}'",
-        q"$ref.baboonDomainVersion",
+        q"$ref.baboonDomainVersionConst",
         "baboonDomainVersion",
         q"String",
         isCodecData = true,
       )
       val baboonDomainIdentifier = MetaField(
-        q"static const String baboonDomainIdentifier",
+        q"static const String baboonDomainIdentifierConst",
         q"'${defn.id.pkg.toString}'",
-        q"$ref.baboonDomainIdentifier",
+        q"$ref.baboonDomainIdentifierConst",
         "baboonDomainIdentifier",
         q"String",
         isCodecData = true,
       )
       val baboonTypeIdentifier = MetaField(
-        q"static const String baboonTypeIdentifier",
+        q"static const String baboonTypeIdentifierConst",
         q"'${defn.id.toString}'",
-        q"$ref.baboonTypeIdentifier",
+        q"$ref.baboonTypeIdentifierConst",
         "baboonTypeIdentifier",
         q"String",
         isCodecData = true,
@@ -72,9 +78,9 @@ object DtDomainTreeTools {
         case Owner.Adt(id) =>
           val adtRef = typeTranslator.asDtType(defn.id, domain, evolution).asName
           val adtTypeIdentifier = MetaField(
-            q"static const String baboonAdtTypeIdentifier",
+            q"static const String baboonAdtTypeIdentifierConst",
             q"'${id.toString}'",
-            q"$adtRef.baboonAdtTypeIdentifier",
+            q"$adtRef.baboonAdtTypeIdentifierConst",
             "baboonAdtTypeIdentifier",
             q"String",
             isCodecData = false,
@@ -88,9 +94,9 @@ object DtDomainTreeTools {
       val ref             = typeTranslator.asDtType(defn.id, domain, evolution).asName
       val unmodifiedSince = evolution.typesUnchangedSince(domain.version)(defn.id).sameIn.map(v => s"'${v.v.toString}'")
       val sameInVersion = MetaField(
-        q"static const List<String> baboonSameInVersions",
+        q"static const List<String> baboonSameInVersionsConst",
         q"[${unmodifiedSince.mkString(", ")}]",
-        q"$ref.baboonSameInVersions",
+        q"$ref.baboonSameInVersionsConst",
         "baboonSameInVersions",
         q"List<String>",
         isCodecData = false,

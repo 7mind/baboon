@@ -49,11 +49,11 @@ const Inner SAMPLE_INNER = Inner(x: 42);
 
 class _InnerBinAdapter extends BaboonBinCodecBase<BaboonGenerated> implements BaboonCodecData {
   @override
-  String get baboonDomainVersion => Inner.baboonDomainVersion;
+  String get baboonDomainVersion => Inner.baboonDomainVersionConst;
   @override
-  String get baboonDomainIdentifier => Inner.baboonDomainIdentifier;
+  String get baboonDomainIdentifier => Inner.baboonDomainIdentifierConst;
   @override
-  String get baboonTypeIdentifier => Inner.baboonTypeIdentifier;
+  String get baboonTypeIdentifier => Inner.baboonTypeIdentifierConst;
   @override
   void encode(BaboonCodecContext ctx, BaboonBinWriter writer, BaboonGenerated value) =>
       Inner_UebaCodec.instance.encode(ctx, writer, value as Inner);
@@ -64,11 +64,11 @@ class _InnerBinAdapter extends BaboonBinCodecBase<BaboonGenerated> implements Ba
 
 class _HolderBinAdapter extends BaboonBinCodecBase<BaboonGenerated> implements BaboonCodecData {
   @override
-  String get baboonDomainVersion => Holder.baboonDomainVersion;
+  String get baboonDomainVersion => Holder.baboonDomainVersionConst;
   @override
-  String get baboonDomainIdentifier => Holder.baboonDomainIdentifier;
+  String get baboonDomainIdentifier => Holder.baboonDomainIdentifierConst;
   @override
-  String get baboonTypeIdentifier => Holder.baboonTypeIdentifier;
+  String get baboonTypeIdentifier => Holder.baboonTypeIdentifierConst;
   @override
   void encode(BaboonCodecContext ctx, BaboonBinWriter writer, BaboonGenerated value) =>
       Holder_UebaCodec.instance.encode(ctx, writer, value as Holder);
@@ -79,11 +79,11 @@ class _HolderBinAdapter extends BaboonBinCodecBase<BaboonGenerated> implements B
 
 class _InnerJsonAdapter extends BaboonJsonCodecBase<BaboonGenerated> implements BaboonCodecData {
   @override
-  String get baboonDomainVersion => Inner.baboonDomainVersion;
+  String get baboonDomainVersion => Inner.baboonDomainVersionConst;
   @override
-  String get baboonDomainIdentifier => Inner.baboonDomainIdentifier;
+  String get baboonDomainIdentifier => Inner.baboonDomainIdentifierConst;
   @override
-  String get baboonTypeIdentifier => Inner.baboonTypeIdentifier;
+  String get baboonTypeIdentifier => Inner.baboonTypeIdentifierConst;
   @override
   Object? encode(BaboonCodecContext ctx, BaboonGenerated value) =>
       Inner_JsonCodec.instance.encode(ctx, value as Inner);
@@ -94,11 +94,11 @@ class _InnerJsonAdapter extends BaboonJsonCodecBase<BaboonGenerated> implements 
 
 class _HolderJsonAdapter extends BaboonJsonCodecBase<BaboonGenerated> implements BaboonCodecData {
   @override
-  String get baboonDomainVersion => Holder.baboonDomainVersion;
+  String get baboonDomainVersion => Holder.baboonDomainVersionConst;
   @override
-  String get baboonDomainIdentifier => Holder.baboonDomainIdentifier;
+  String get baboonDomainIdentifier => Holder.baboonDomainIdentifierConst;
   @override
-  String get baboonTypeIdentifier => Holder.baboonTypeIdentifier;
+  String get baboonTypeIdentifier => Holder.baboonTypeIdentifierConst;
   @override
   Object? encode(BaboonCodecContext ctx, BaboonGenerated value) =>
       Holder_JsonCodec.instance.encode(ctx, value as Holder);
@@ -109,15 +109,15 @@ class _HolderJsonAdapter extends BaboonJsonCodecBase<BaboonGenerated> implements
 
 class _MyOkUebaCodecs extends AbstractBaboonUebaCodecs {
   _MyOkUebaCodecs() {
-    register(Inner.baboonTypeIdentifier, () => _InnerBinAdapter());
-    register(Holder.baboonTypeIdentifier, () => _HolderBinAdapter());
+    register(Inner.baboonTypeIdentifierConst, () => _InnerBinAdapter());
+    register(Holder.baboonTypeIdentifierConst, () => _HolderBinAdapter());
   }
 }
 
 class _MyOkJsonCodecs extends AbstractBaboonJsonCodecs {
   _MyOkJsonCodecs() {
-    register(Inner.baboonTypeIdentifier, () => _InnerJsonAdapter());
-    register(Holder.baboonTypeIdentifier, () => _HolderJsonAdapter());
+    register(Inner.baboonTypeIdentifierConst, () => _InnerJsonAdapter());
+    register(Holder.baboonTypeIdentifierConst, () => _HolderJsonAdapter());
   }
 }
 

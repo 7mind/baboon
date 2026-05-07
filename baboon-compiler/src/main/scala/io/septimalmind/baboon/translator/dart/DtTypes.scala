@@ -11,6 +11,11 @@ object DtTypes {
   // baboon metadata
   val iBaboonGenerated: DtType       = DtType(baboonRuntimePkg, "BaboonGenerated")
   val iBaboonAdtMemberMeta: DtType   = DtType(baboonRuntimePkg, "BaboonAdtMemberMeta")
+  // PR-F: BaboonAdtMember is the runtime-active interface with an instance getter
+  // (`String get baboonAdtTypeIdentifier`) used by `BaboonTypeMeta.from(_, useAdtIdentifier: true)`.
+  // BaboonAdtMemberMeta is the static-only marker kept for back-compat; new ADT branches
+  // implement BaboonAdtMember so the instance @override is valid and the runtime check fires.
+  val iBaboonAdtMember: DtType       = DtType(baboonRuntimePkg, "BaboonAdtMember")
   val iBaboonGeneratedLatest: DtType = DtType(baboonRuntimePkg, "BaboonGeneratedLatest")
   val iBaboonMetaProvider: DtType    = DtType(baboonRuntimePkg, "BaboonMetaProvider")
   val baboonMeta: DtType             = DtType(baboonRuntimePkg, "BaboonMeta")

@@ -56,6 +56,26 @@ The `hasMinCompat` flag:
 
 Other flag values are illegal; readers reject them.
 
+#### 2.1.1 Conformance reference — canonical bytes for `Inner(x=42)` v1.0.0
+
+Pinned in C# at `test/cs-stub/BaboonTests/DomainFacadeTests.cs` —
+`EncodeToBin_Inner42_Compact_ProducesCanonicalBytes`. Cross-backend agreement
+is enforced by the cross-language acceptance harness
+(`mdl :test-acceptance`); a backend that drifts from this byte sequence will
+fail the harness against the unmodified C# (and other) peers.
+
+```
+01                                              META_VERSION_1
+05 6D 79 2E 6F 6B                               len(5) + "my.ok"
+05 31 2E 30 2E 30                               len(5) + "1.0.0"
+00                                              hasMinCompat = 0
+0D 6D 79 2E 6F 6B 2F 3A 23 49 6E 6E 65 72       len(13) + "my.ok/:#Inner"
+00                                              Inner UEBA mode-byte (0 = compact)
+2A 00 00 00                                     i32 little-endian = 42
+```
+
+Total: 33 bytes.
+
 ### 2.2 JSON
 
 The envelope is a JSON object with the keys below. A reader does not assume

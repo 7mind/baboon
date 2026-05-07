@@ -325,17 +325,25 @@ object DtDefnTranslator {
       val (adtMarker, adtParent) = dto.id.owner match {
         case Owner.Adt(adtId) =>
           val adtType = trans.toDtTypeRefKeepForeigns(adtId, domain, evo)
-          (Seq(iBaboonAdtMemberMeta), Seq(adtType))
+          // PR-F: switched from BaboonAdtMemberMeta (static-only marker) to BaboonAdtMember
+          // (instance interface with `String get baboonAdtTypeIdentifier`). The runtime
+          // already uses `value is BaboonAdtMember` for the useAdtIdentifier path; the
+          // instance getter we emit on each branch now satisfies the protocol cleanly.
+          (Seq(iBaboonAdtMember), Seq(adtType))
         case _ => (Seq.empty, Seq.empty)
       }
 
-      val interfaceParents = (adtParent ++ adtMarker ++ contractParents :+ genMarker).distinct
+      // MFACADE-PR-F: append `BaboonMetaProvider`. Static metadata fields use the
+      // `Const` suffix (see DtDomainTreeTools) so they don't collide with the
+      // BaboonMetaProvider instance getters of the same logical name; instance
+      // getters below return literals directly via `valueGetter`.
+      val interfaceParents = (adtParent ++ adtMarker ++ contractParents :+ genMarker :+ iBaboonMetaProvider).distinct
       val implementsList   = interfaceParents.map(t => q"$t").join(", ")
 
       val extendsClause = dto.id.owner match {
         case Owner.Adt(_) =>
           val adtType = adtParent.head
-          val ifaces  = (adtMarker ++ contractParents :+ genMarker).distinct
+          val ifaces  = (adtMarker ++ contractParents :+ genMarker :+ iBaboonMetaProvider).distinct
           if (ifaces.nonEmpty) q" extends $adtType implements ${ifaces.map(t => q"$t").join(", ")}"
           else q" extends $adtType"
         case _ =>
@@ -343,6 +351,18 @@ object DtDefnTranslator {
       }
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
+      // Instance getters for BaboonMetaProvider-required names PLUS, when this is an ADT
+      // branch, `baboonAdtTypeIdentifier` for BaboonAdtMember conformance — both
+      // interfaces require instance-side accessors and the static fields are renamed
+      // with a `Const` suffix to dodge Dart's same-name restriction.
+      val providerFieldNames = Set(
+        "baboonDomainVersion",
+        "baboonDomainIdentifier",
+        "baboonTypeIdentifier",
+        "baboonSameInVersions",
+        "baboonAdtTypeIdentifier",
+      )
+      val instanceGetters = mainMeta.filter(m => providerFieldNames.contains(m.name)).map(_.valueGetter)
 
       val constructorBlock = if (hasFields) {
         q"""const ${name.asName}({
@@ -400,6 +420,8 @@ object DtDefnTranslator {
            |
            |  ${staticMetaFields.joinN().shift(2).trim}
            |
+           |  ${instanceGetters.joinN().shift(2).trim}
+           |
            |  ${equalsBody.shift(2).trim}
            |
            |  ${hashCodeBody.shift(2).trim}
@@ -435,12 +457,22 @@ object DtDefnTranslator {
       }.toList
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
+      // MFACADE-PR-F: BaboonMetaProvider conformance via instance getters.
+      val providerFieldNames = Set(
+        "baboonDomainVersion",
+        "baboonDomainIdentifier",
+        "baboonTypeIdentifier",
+        "baboonSameInVersions",
+      )
+      val instanceGetters = mainMeta.filter(m => providerFieldNames.contains(m.name)).map(_.valueGetter)
 
       DefnRepr(
-        q"""enum ${name.asName} implements $iBaboonGenerated {
+        q"""enum ${name.asName} implements $iBaboonGenerated, $iBaboonMetaProvider {
            |  ${cases.join(",\n").shift(2).trim};
            |
            |  ${staticMetaFields.joinN().shift(2).trim}
+           |
+           |  ${instanceGetters.joinN().shift(2).trim}
            |
            |  static ${name.asName}? parse(String s) {
            |    return switch (s) {
@@ -464,7 +496,10 @@ object DtDefnTranslator {
       codecMeta: Iterable[TextTree[DtValue]],
     ): DefnRepr = {
       val contractParents  = adt.contracts.map(c => trans.toDtTypeRefKeepForeigns(c, domain, evo))
-      val parents          = (contractParents :+ genMarker).distinct
+      // MFACADE-PR-F: include BaboonMetaProvider on the sealed parent so polymorphic
+      // dispatch sees the interface; concrete branch DTOs implement it via renderDto's
+      // own conformance + instance getters.
+      val parents          = (contractParents :+ genMarker :+ iBaboonMetaProvider).distinct
       val implementsClause = if (parents.nonEmpty) q" implements ${parents.map(t => q"$t").join(", ")}" else q""
 
       val memberTrees = adt.members.map {

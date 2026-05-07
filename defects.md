@@ -62,11 +62,11 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 **Fix:** Switched bound to unsigned `0..255` for both numeric and string `$mv` paths. Numeric branch checks `n < 0 || n > 255` and casts via `(byte) n` (Java cast preserves low 8 bits, so 200 reads back as `(byte) -56` which compares bit-for-bit equal to a 200-encoded `META_VERSION_1`). String branch swaps `Byte.parseByte` for `Integer.parseInt` then bounds-checks 0..255 before casting. META_VERSION_1 = 1 is unchanged; the broader range is forward-compat with future bumps. Comment added explaining the bit-preservation invariant.
 
 ### [MFACADE-PR-3-D08] Rust writer uses literal `"$mv"` instead of `META_VERSION_KEY` constant
-**Status:** wontfix
+**Status:** resolved (incidentally closed by PR-E's D13 extraction)
 **Severity:** nit
-**Location:** `baboon-compiler/src/main/resources/baboon-runtime/rust/baboon_codecs_facade.rs:1070`
-**Description:** Reader (line 343) uses `obj.get(META_VERSION_KEY)`; new writer (line 1070) hardcodes `"$mv"`. Constant is scoped to `mod baboon_type_meta_codec` and not visible to facade. Other envelope-key literals in the same writer (`$d`, `$v`, `$t`) are also hardcoded — pre-existing pattern.
-**Fix:** Wontfix — pre-existing scoping pattern; literal matches the surrounding style for `$d`/`$v`/`$t`. Optional cleanup (re-export constants at facade scope) deferred to a generator-level refactor PR.
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/rust/baboon_codecs_facade.rs` (`mod baboon_type_meta_codec` `write_meta_json`)
+**Description:** Reader used `obj.get(META_VERSION_KEY)`; the original facade-side writer hardcoded `"$mv"` because the constants were scoped to `mod baboon_type_meta_codec` and not visible at facade scope. Other envelope-key literals (`$d`, `$v`, `$t`) shared the same pattern.
+**Fix:** PR-E extracted the writer body into `pub fn write_meta_json` *inside* `mod baboon_type_meta_codec` (closing D13), which moved the literals into a scope where the constants are visible. The new writer uses `META_VERSION_KEY`, `DOMAIN_IDENTIFIER_KEY`, `DOMAIN_VERSION_KEY`, `TYPE_IDENTIFIER_KEY`, and `DOMAIN_VERSION_MIN_COMPAT_KEY` directly (lines 344-363). The original "wontfix" justification (scope-of-constants) is no longer applicable. Closed as a free side-effect of PR-E.
 
 ### [MFACADE-PR-3-D09] Stale superseded-PR comment in Java reader contradicts PR-3 contract
 **Status:** resolved
