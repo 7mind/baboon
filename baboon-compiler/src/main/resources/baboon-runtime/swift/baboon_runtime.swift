@@ -1359,14 +1359,21 @@ public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
             // so `true`/`false` would otherwise slip through the NSNumber branch with intValue 1/0.
             if mv is Bool { return nil }
             var mvInt: Int? = nil
-            if let n = mv as? Int { mvInt = n }
-            else if let n = mv as? Double, n.truncatingRemainder(dividingBy: 1) == 0 { mvInt = Int(n) }
-            else if let n = mv as? NSNumber {
-                let d = n.doubleValue
-                guard d.truncatingRemainder(dividingBy: 1) == 0 else { return nil }
+            if let n = mv as? Int {
+                mvInt = n
+            } else if let n = mv as? NSNumber {
+                // MFACADE-PR-7-D12: reject Float/Double-typed NSNumber. JSONSerialization
+                // bridges JSON numbers as NSNumber whose `objCType` reflects the source literal:
+                // `d` = Double, `f` = Float; integer types ('i'/'l'/'q'/'s'/'c'/etc.) otherwise.
+                // Even whole-valued doubles like `1.0` are rejected because the source token
+                // wasn't integer-typed. Decided per-PR-7 to be strict-everywhere about
+                // numeric-type discrimination where parse-time preservation allows.
+                let oct = String(cString: n.objCType)
+                if oct == "d" || oct == "f" { return nil }
                 mvInt = n.intValue
+            } else if let s = mv as? String {
+                mvInt = Int(s)
             }
-            else if let s = mv as? String { mvInt = Int(s) }
             guard let n = mvInt, n == BaboonTypeMetaCodec.metaVersion else { return nil }
         }
         guard let d = obj["$d"] as? String else { return nil }

@@ -116,6 +116,13 @@ Per
     `"$mv": "1"`).
 - Any other JSON type — boolean, fractional number, array, object, null —
   MUST be rejected.
+- Whole-valued doubles such as `"$mv": 1.0` MUST be rejected where the
+  parser preserves the source literal's numeric type (cs / jv / dt / rs
+  / py / sw). Where the parser normalises (sc circe, ts `JSON.parse`)
+  whole-valued doubles are accepted silently — this is an
+  implementation-defined corner that no current writer exercises; see
+  `defects.md` `[MFACADE-PR-3-D12]` for context. New readers MUST NOT
+  rely on this leniency.
 
 This asymmetry — writers narrow, readers wide — lets this repo evolve away
 from the legacy string form without breaking consumers reading historical
@@ -129,6 +136,9 @@ Edge cases readers MUST reject:
                               `true.toInt() == 1`; code must reject before
                               numeric coercion)
 - `"$mv": []` / `"$mv": {}`  (non-scalar)
+- `"$mv": null`              (explicit null — distinct from absent
+                              `$mv`; absent falls through to canonical
+                              version, explicit `null` is malformed)
 - `"$mv": "  1  "`           (whitespace-padded numeric string — strict
                               parse only; current Python uses
                               `re.fullmatch(r'-?[0-9]+', s)`)

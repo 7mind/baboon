@@ -130,6 +130,12 @@ class BaboonTypeMetaReadMetaJsonEdgeCasesTest(unittest.TestCase):
         result = BaboonTypeMeta.read_meta_json(self._valid_obj(**{"$mv": {}}))
         self.assertIsNone(result)
 
+    def test_rejects_explicit_null_mv(self):
+        # PR-7-D11: explicit `$mv: null` is rejected (distinct from absent — `in` vs `.get()`
+        # returning None). Decided per-PR-7 to reject everywhere rather than per-backend split.
+        result = BaboonTypeMeta.read_meta_json(self._valid_obj(**{"$mv": None}))
+        self.assertIsNone(result)
+
 
 if __name__ == "__main__":
     unittest.main()

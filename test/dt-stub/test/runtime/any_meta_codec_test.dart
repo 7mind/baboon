@@ -597,6 +597,12 @@ void main() {
     test('rejects \$mv={} (map)', () {
       expect(BaboonTypeMeta.readMetaJson({r'$mv': <String, dynamic>{}, ...base}), isNull);
     });
+
+    test('rejects explicit \$mv=null (PR-7-D11: distinct from absent)', () {
+      // `containsKey` distinguishes explicit null from absent. PR-7 decided to reject explicit
+      // null as malformed; absent `\$mv` continues to fall through as canonical version.
+      expect(BaboonTypeMeta.readMetaJson({r'$mv': null, ...base}), isNull);
+    });
   });
 
   // ===== BaboonVersion sanity =================================================================

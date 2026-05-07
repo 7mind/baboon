@@ -4,6 +4,8 @@ package baboon.runtime.shared
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 // @baboon:json-end
 
@@ -158,9 +160,23 @@ open class BaboonCodecsFacade {
     // @baboon:json-start
     @Suppress("UNCHECKED_CAST")
     fun <T : BaboonGenerated> encodeToJson(ctx: BaboonCodecContext, value: T): JsonElement {
+        // MFACADE-PR-7: emit the full `{$mv,$d,$v,$t,$uv,$c}` envelope to match Scala / cs / etc.
+        // Pre-PR-7 kt-kmp emitted content-only, asymmetric with `decodeFromJson` which expects
+        // an envelope; users had to wrap manually for round-trip. Now `encodeToJson` and
+        // `decodeFromJson` round-trip without intervention.
         val typeMeta = BaboonTypeMeta.from(value)
         val codec = getJsonCodec(typeMeta, exact = true) as BaboonJsonCodec<T>
-        return codec.encode(ctx, value)
+        val content = codec.encode(ctx, value)
+        return buildJsonObject {
+            put("${'$'}mv", JsonPrimitive(BaboonTypeMetaCodec.META_VERSION.toInt()))
+            put("${'$'}d", JsonPrimitive(typeMeta.domainIdentifier))
+            put("${'$'}v", JsonPrimitive(typeMeta.domainVersion))
+            put("${'$'}t", JsonPrimitive(typeMeta.typeIdentifier))
+            if (typeMeta.domainVersion != typeMeta.domainVersionMinCompat) {
+                put("${'$'}uv", JsonPrimitive(typeMeta.domainVersionMinCompat))
+            }
+            put(CONTENT_JSON_KEY, content)
+        }
     }
 
     fun decodeFromJson(value: JsonElement): BaboonGenerated? {

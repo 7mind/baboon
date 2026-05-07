@@ -9,8 +9,6 @@ import baboon.runtime.shared.BaboonCodecContext
 import baboon.runtime.shared.BaboonCodecsFacade
 import baboon.runtime.shared.BaboonDomainVersion
 import baboon.runtime.shared.Either
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -48,15 +46,9 @@ class DecodeLatestTest {
     fun decodeFromJsonLatest_string_roundTripsInner() {
         val facade = freshFacade()
         val original = my.ok.Inner(42)
-        // kt-kmp facade's encodeToJson emits content-only (asymmetric with decodeFromJson
-        // which expects an envelope); construct the {$d,$v,$t,$c} envelope manually for the test.
-        val contentJson = facade.encodeToJson(BaboonCodecContext.Compact, original)
-        val envelope = buildJsonObject {
-            put("\$d", original.baboonDomainIdentifier)
-            put("\$v", original.baboonDomainVersion)
-            put("\$t", original.baboonTypeIdentifier)
-            put("\$c", contentJson)
-        }
+        // PR-7 aligned kt-kmp encodeToJson to emit the full envelope, so round-trip works
+        // without manual wrapping (matches Scala / cs / etc.).
+        val envelope = facade.encodeToJson(BaboonCodecContext.Compact, original)
         val result = facade.decodeFromJsonLatest(envelope.toString(), my.ok.Inner::class)
         assertTrue(result is Either.Right, "decodeFromJsonLatest must succeed: $result")
         assertEquals(original, (result as Either.Right).value)

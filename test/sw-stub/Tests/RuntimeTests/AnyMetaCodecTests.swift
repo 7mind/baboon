@@ -389,6 +389,17 @@ final class AnyMetaCodecTests: XCTestCase {
         XCTAssertNil(BaboonTypeMeta.readMetaJson(json))
     }
 
+    // ----- MFACADE-PR-7-D12: reject Double-typed numeric $mv (whole-valued or not) -----------
+
+    func testReadMetaJson_rejectsDoubleTypedMv_wholeValued() {
+        // 1.0 written as a Double — JSONSerialization-bridged this would be NSNumber objCType "d".
+        // PR-7-D12 decided to reject Float/Double-typed numerics uniformly where parse-time
+        // type preservation allows. JSON spec doesn't distinguish 1 from 1.0, but Swift's
+        // NSNumber retains the source literal's type from JSONSerialization, so we can.
+        let json: [String: Any] = ["$mv": NSNumber(value: 1.0), "$d": "d", "$v": "1.0.0", "$t": "T"]
+        XCTAssertNil(BaboonTypeMeta.readMetaJson(json))
+    }
+
     // ----- BaboonVersion ---------------------------------------------------------------------
 
     func testBaboonVersion_parsesValid() throws {

@@ -1093,10 +1093,14 @@ class BaboonTypeMeta {
   /// MFACADE-PR-3: accept `\$mv` as either a JSON number (int) or a string
   /// (back-compat with M28-vintage fixtures); both must equal `metaVersion`.
   /// Absent `\$mv` falls through to canonical-version read.
+  /// MFACADE-PR-7-D11: explicit `\$mv: null` is rejected (distinct from absent
+  /// — `containsKey` vs `[]` returning null). Decided against per-backend
+  /// asymmetry in favour of the strict-everywhere interpretation.
   static BaboonTypeMeta? readMetaJson(Object? json) {
     if (json is! Map) return null;
-    final mv = json[r'$mv'];
-    if (mv != null) {
+    if (json.containsKey(r'$mv')) {
+      final mv = json[r'$mv'];
+      if (mv == null) return null;  // explicit null = malformed
       int? mvInt;
       if (mv is int) {
         mvInt = mv;

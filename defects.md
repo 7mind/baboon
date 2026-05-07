@@ -83,18 +83,18 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 **Fix:** Deferred — the malformed-input invariants are exercised by cs/sw/dt/ts/py matrices and the runtimes share the same defensive structure (number→bounds-check, string→strict-parse). Sc/rs/jv per-stub matrices add no semantic coverage that the existing five backends don't already pin. Track as a follow-up under "PR-3 close-out polish" rather than expanding PR-3 scope.
 
 ### [MFACADE-PR-3-D11] Cross-backend asymmetry on explicit JSON `null` for `$mv`
-**Status:** resolved (deferred — hypothetical, no writer emits null)
+**Status:** resolved (PR-7 follow-up: tightened Dart and Python to reject explicit null)
 **Severity:** minor
 **Location:** all 8 readers
 **Description:** With explicit `{"$mv": null, ...}`: Dart (`json[r'$mv']` returns null both for absent and explicit-null) and Python (`dict.get()` likewise) **accept** as canonical (treat as absent). C#/Java/Scala/Swift/TS/Rust **reject** (token is non-Number/non-String). No writer in scope emits null `$mv`, so the divergence is hypothetical for round-trips, but a hand-edited fixture would parse on 2 backends and fail on 6.
-**Fix:** Deferred — option β does not specify behavior for explicit-null `$mv`, and the proposal §10.6 (a) writer contract guarantees the field is always emitted as a number. Follow-up could either (a) tighten Dart/Python to reject explicit null (use `containsKey` + value-null check) or (b) update all six rejecting backends to treat explicit null as absent. Decide cross-cutting as part of PR-7 conformance suite rather than amending PR-3.
+**Fix:** Tightened Dart `BaboonTypeMeta.readMetaJson` to use `Map.containsKey(r'$mv')` + explicit `null` check (`baboon-runtime/dart/baboon_runtime.dart:1098-1102`). Tightened Python `BaboonTypeMetaCodec.read_meta_json` similarly via `in` + `is None` check (`baboon-runtime/python/baboon_runtime_shared.py:622-628`). Per-backend tests added: dt `rejects explicit \$mv=null`, py `test_rejects_explicit_null_mv`. User-authorised reject-everywhere on 2026-05-07.
 
 ### [MFACADE-PR-3-D12] Cross-backend asymmetry on Double `1.0`-style numeric `$mv`
-**Status:** resolved (deferred — hypothetical, no writer emits floats)
+**Status:** resolved (PR-7 follow-up: tightened Swift; documented sc/ts limitation in spec)
 **Severity:** minor
-**Location:** Dart vs Swift vs Scala readers
-**Description:** When `$mv` is the JSON number `1.0` (whole-valued double): Swift accepts (Double/NSNumber branches set `mvInt = Int(n)`). Scala accepts (`circe`'s `asNumber.toByte` succeeds for whole-valued doubles). C#/TS/Rust/Java reject (Float / non-integer types). Dart rejects (`mv is int` excludes Dart `double`, even whole-valued).
-**Fix:** Deferred — no producer emits `1.0` (all eight writers use integer types). Spec §10.6 (a) implies "numeric integer", so the rejecting backends are arguably correct. Conformance test in PR-7 should pin this uniformly (recommended: reject all non-integer-typed numeric `$mv`).
+**Location:** Dart vs Swift vs Scala vs TS readers
+**Description:** When `$mv` is the JSON number `1.0` (whole-valued double): Swift accepts (Double/NSNumber branches set `mvInt = Int(n)`). Scala accepts (`circe`'s `asNumber.toByte` succeeds for whole-valued doubles). TypeScript accepts (`Number.isInteger(1.0) === true` in JS). C#/TS/Rust/Java reject (Float / non-integer types). Dart rejects (`mv is int` excludes Dart `double`, even whole-valued).
+**Fix:** Tightened Swift `readMetaJson` NSNumber branch to inspect `objCType` and reject `d` (Double) and `f` (Float) types — JSONSerialization preserves the source literal's type in the bridged NSNumber, so even `1.0` is rejected when the source token wasn't integer-typed (`baboon-runtime/swift/baboon_runtime.swift:1364-1374`). Per-backend test: sw `testReadMetaJson_rejectsDoubleTypedMv_wholeValued`. **Limitation documented in `docs/spec/codec-envelope.md` § 4** for Scala (circe normalises) and TypeScript (`JSON.parse` collapses `1.0` to `1` losing source-type info) — those backends accept whole-valued doubles silently; the asymmetry is hypothetical (no writer emits floats) and bounded by the spec note. User-authorised reject-everywhere-where-possible on 2026-05-07.
 
 ### [MFACADE-PR-3-D13] Rust writer-numeric test exercises facade path only, not module-level codec
 **Status:** wontfix

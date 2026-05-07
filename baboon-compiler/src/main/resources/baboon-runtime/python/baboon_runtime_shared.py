@@ -619,8 +619,13 @@ class BaboonTypeMetaCodec:
     def read_meta_json(json_obj: dict[str, Any]) -> Optional[BaboonTypeMeta]:
         # MFACADE-PR-3: accept $mv as either a JSON number (int) or a string
         # (back-compat with M28-vintage fixtures); both must equal META_VERSION_1.
-        mv_node = json_obj.get(BaboonTypeMetaCodec.META_VERSION_KEY)
-        if mv_node is not None:
+        # MFACADE-PR-7-D11: explicit `$mv: null` is rejected (distinct from absent —
+        # `in` vs `.get()` returning None). Decided against per-backend asymmetry
+        # in favour of the strict-everywhere interpretation.
+        if BaboonTypeMetaCodec.META_VERSION_KEY in json_obj:
+            mv_node = json_obj[BaboonTypeMetaCodec.META_VERSION_KEY]
+            if mv_node is None:
+                return None  # explicit null = malformed
             if isinstance(mv_node, bool):
                 return None
             if isinstance(mv_node, int):
