@@ -1224,10 +1224,12 @@ public protocol BaboonCodecData: AnyObject {
 
 // --- Generated meta accessors (instance-side) ---
 //
-// Shape exposed by generated values. Codegen for Swift currently only emits the static-side
-// `BaboonMeta` constants on each DTO; PR 9.2/9.3 will emit the instance-side accessors below.
-// Until then, `BaboonTypeMeta.from` requires the value to conform to this protocol — staged
-// rollout, mirrors PR-22-D02 (Dart) and PR-19-D02 (TS).
+// Shape exposed by generated values. As of MFACADE-PR-E the Swift codegen emits a
+// `BaboonMetaProvider` conformance on every generated DTO/Enum/ADT, plus per-type
+// instance accessors that forward to the static metadata the codegen has been emitting
+// all along (`public static let baboonDomainVersion: String = "..."`). The protocol
+// stays instance-only so existing hand-written conforming types (test stubs that carry
+// per-instance metadata, e.g. `StubMeta`) keep working unchanged.
 public protocol BaboonMetaProvider {
     var baboonDomainVersion: String { get }
     var baboonDomainIdentifier: String { get }
@@ -1389,12 +1391,12 @@ public struct BaboonTypeMeta: Hashable, CustomStringConvertible {
 
     // Build a meta from a generated value. Optionally use the ADT type identifier when encoding
     // through an ADT-typed reference (PR-19-D02). Throws when the value does not conform to
-    // [BaboonMetaProvider] — staged rollout: PR 9.2/9.3 will conform generated DTOs.
+    // [BaboonMetaProvider] — generated DTOs gain this conformance via the codegen's
+    // automatic `: BaboonMetaProvider` clause (MFACADE-PR-E).
     public static func from(_ value: Any, useAdtIdentifier: Bool = false) throws -> BaboonTypeMeta {
         guard let meta = value as? BaboonMetaProvider else {
             throw BaboonException(
-                "BaboonTypeMeta.from: value of type \(type(of: value)) does not conform to BaboonMetaProvider; " +
-                "generated DTOs gain this conformance in PR 9.2/9.3."
+                "BaboonTypeMeta.from: value of type \(type(of: value)) does not conform to BaboonMetaProvider."
             )
         }
         let typeId: String

@@ -54,4 +54,33 @@ class BaboonTypeMetaCodecSpec extends AnyFunSuite {
       s"parsed meta must carry domainIdentifier; got: $result",
     )
   }
+
+  // [MFACADE-PR-3-D10] cross-backend rejection matrix for malformed $mv values.
+  // Mirrors the cs/sw/dt/ts/py matrices (D06) so sc has parity. Reject: 1.5 (fractional),
+  // true (boolean), 300 (out of byte range), -1 (negative), [] (array), {} (object).
+  // Whole-valued doubles (1.0) ARE accepted on circe — circe normalises to Long when
+  // representable, so the source-type info is lost; documented in spec § 4.
+  Seq(
+    ("fractional", Json.fromDoubleOrNull(1.5)),
+    ("boolean", Json.fromBoolean(true)),
+    ("out-of-range-300", Json.fromInt(300)),
+    ("negative", Json.fromInt(-1)),
+    ("array", Json.arr()),
+    ("object", Json.obj()),
+  ).foreach {
+    case (label, mvValue) =>
+      test(s"BaboonTypeMeta.readMeta rejects malformed $$mv ($label)") {
+        val json = Json.obj(
+          "$mv" -> mvValue,
+          "$d"  -> Json.fromString("com.example.dom"),
+          "$v"  -> Json.fromString("1.0.0"),
+          "$t"  -> Json.fromString("MyType"),
+        )
+        val result = BaboonTypeMeta.readMeta(json)
+        assert(
+          result.isEmpty,
+          s"readMeta must return None for malformed $$mv=$mvValue ($label); got: $result",
+        )
+      }
+  }
 }

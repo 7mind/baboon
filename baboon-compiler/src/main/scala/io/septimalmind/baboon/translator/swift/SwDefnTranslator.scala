@@ -337,10 +337,25 @@ object SwDefnTranslator {
         case _ => Seq.empty
       }
 
-      val allParents        = (adtMemberProto ++ contractParents :+ genMarker).distinct
+      // MFACADE-PR-E: append `BaboonMetaProvider` so user code can pass a generated DTO
+      // directly through `BaboonCodecsFacade.encodeToBin(_, _)` (and round-trip via the
+      // facade). Instance forwarders below satisfy the protocol's instance reqs by
+      // delegating to the static metadata the codegen already emits.
+      val allParents        = (adtMemberProto ++ contractParents :+ genMarker :+ iBaboonMetaProvider).distinct
       val conformanceClause = allParents.map(t => q"$t").join(", ")
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
+      // BaboonMetaProvider's instance reqs — emitted as forwarders to the static metadata.
+      // ADT branches additionally satisfy `BaboonAdtMember` via baboonAdtTypeIdentifier;
+      // include it when present.
+      val providerFieldNames = Set(
+        "baboonDomainVersion",
+        "baboonDomainIdentifier",
+        "baboonTypeIdentifier",
+        "baboonSameInVersions",
+        "baboonAdtTypeIdentifier",
+      )
+      val instanceForwarders = mainMeta.filter(m => providerFieldNames.contains(m.name)).map(_.instanceForwarder)
 
       val fieldsBlock = if (hasFields) {
         fieldDeclarations.joinN()
@@ -374,6 +389,8 @@ object SwDefnTranslator {
            |  ${initDecl.shift(4).trim}
            |
            |  ${staticMetaFields.joinN().shift(4).trim}
+           |
+           |  ${instanceForwarders.joinN().shift(4).trim}
            |}""".stripMargin
 
       // Identifier toString + parseRepr emission (PR-57c / spec:
@@ -702,12 +719,22 @@ object SwDefnTranslator {
       }.toList
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
+      // MFACADE-PR-E: instance forwarders to satisfy BaboonMetaProvider.
+      val providerFieldNames = Set(
+        "baboonDomainVersion",
+        "baboonDomainIdentifier",
+        "baboonTypeIdentifier",
+        "baboonSameInVersions",
+      )
+      val instanceForwarders = mainMeta.filter(m => providerFieldNames.contains(m.name)).map(_.instanceForwarder)
 
       DefnRepr(
-        q"""public enum ${name.asDeclName}: String, CaseIterable, $iBaboonGenerated {
+        q"""public enum ${name.asDeclName}: String, CaseIterable, $iBaboonGenerated, $iBaboonMetaProvider {
            |  ${cases.joinN().shift(4).trim}
            |
            |  ${staticMetaFields.joinN().shift(4).trim}
+           |
+           |  ${instanceForwarders.joinN().shift(4).trim}
            |
            |  public static func parse(_ s: String) -> ${name.asDeclName}? {
            |    return ${name.asDeclName}(rawValue: s)
@@ -727,7 +754,9 @@ object SwDefnTranslator {
       mainMeta: List[SwDomainTreeTools.MetaField],
       codecMeta: Iterable[TextTree[SwValue]],
     ): DefnRepr = {
-      val parents           = Seq(genMarker)
+      // MFACADE-PR-E: include BaboonMetaProvider so ADT-typed values can flow through the
+      // facade's `encodeToBin(_, _)`. Default extension forwards to static metadata.
+      val parents           = Seq(genMarker, iBaboonMetaProvider)
       val conformanceClause = parents.map(t => q"$t").join(", ")
 
       val dataMembers = adt.members.toList.filter {
@@ -757,6 +786,14 @@ object SwDefnTranslator {
       }.toList
 
       val staticMetaFields = mainMeta.map(_.valueField) ++ codecMeta
+      // MFACADE-PR-E: instance forwarders to satisfy BaboonMetaProvider on the ADT enum.
+      val providerFieldNames = Set(
+        "baboonDomainVersion",
+        "baboonDomainIdentifier",
+        "baboonTypeIdentifier",
+        "baboonSameInVersions",
+      )
+      val instanceForwarders = mainMeta.filter(m => providerFieldNames.contains(m.name)).map(_.instanceForwarder)
 
       val adtEnum =
         q"""public indirect enum ${name.asDeclName}: Equatable, Hashable, $conformanceClause {
@@ -765,6 +802,8 @@ object SwDefnTranslator {
            |  ${enumCases.joinN().shift(4).trim}
            |
            |  ${staticMetaFields.joinN().shift(4).trim}
+           |
+           |  ${instanceForwarders.joinN().shift(4).trim}
            |}""".stripMargin
 
       DefnRepr(

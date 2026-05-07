@@ -12,6 +12,7 @@ object SwTypes {
   val iBaboonGenerated: SwType       = SwType(baboonRuntimePkg, "BaboonGenerated")
   val iBaboonAdtMemberMeta: SwType   = SwType(baboonRuntimePkg, "BaboonAdtMemberMeta")
   val iBaboonGeneratedLatest: SwType = SwType(baboonRuntimePkg, "BaboonGeneratedLatest")
+  val iBaboonMetaProvider: SwType    = SwType(baboonRuntimePkg, "BaboonMetaProvider")
   val baboonMeta: SwType             = SwType(baboonRuntimePkg, "BaboonMeta")
 
   // baboon JSON codecs types

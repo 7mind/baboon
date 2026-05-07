@@ -475,6 +475,49 @@ class AnyMetaCodecTest {
         assertEquals("com.example.dom", meta.domainIdentifier());
     }
 
+    // [MFACADE-PR-3-D10] cross-backend rejection matrix for malformed $mv values.
+    // Mirrors the cs/sw/dt/ts/py matrices (D06) so jv has parity. Reject:
+    //   1.5 (fractional), true (boolean), 300 (out of unsigned-byte range), -1 (negative),
+    //   [] (array), {} (object).
+    private static ObjectNode badEnvelope(JsonNode mvValue) {
+        ObjectNode obj = NF.objectNode();
+        obj.set("$mv", mvValue);
+        obj.put("$d", "com.example.dom");
+        obj.put("$v", "1.0.0");
+        obj.put("$t", "MyType");
+        return obj;
+    }
+
+    @Test
+    void typeMetaReadJson_rejectsFractionalMv() {
+        assertNull(BaboonTypeMeta.readMeta(badEnvelope(NF.numberNode(1.5))));
+    }
+
+    @Test
+    void typeMetaReadJson_rejectsBooleanMv() {
+        assertNull(BaboonTypeMeta.readMeta(badEnvelope(NF.booleanNode(true))));
+    }
+
+    @Test
+    void typeMetaReadJson_rejectsOutOfRangeMv300() {
+        assertNull(BaboonTypeMeta.readMeta(badEnvelope(NF.numberNode(300))));
+    }
+
+    @Test
+    void typeMetaReadJson_rejectsNegativeMv() {
+        assertNull(BaboonTypeMeta.readMeta(badEnvelope(NF.numberNode(-1))));
+    }
+
+    @Test
+    void typeMetaReadJson_rejectsArrayMv() {
+        assertNull(BaboonTypeMeta.readMeta(badEnvelope(NF.arrayNode())));
+    }
+
+    @Test
+    void typeMetaReadJson_rejectsObjectMv() {
+        assertNull(BaboonTypeMeta.readMeta(badEnvelope(NF.objectNode())));
+    }
+
     // ===== JsonNode content equality (Jackson sanity / PR-08-D06) ==============================
 
     @Test

@@ -248,7 +248,7 @@ impl BaboonTypeMeta {
 // JSON envelopes. Lives here (alongside `BaboonTypeMeta`) rather than in `any_opaque.rs`
 // because it's part of the facade-level wire surface, not the AnyMeta protocol.
 
-mod baboon_type_meta_codec {
+pub mod baboon_type_meta_codec {
     use super::{BaboonTypeMeta, BaboonCodecError};
     use crate::baboon_runtime::bin_tools;
     use std::io::{Read, Write};
@@ -328,6 +328,43 @@ mod baboon_type_meta_codec {
             domain_version_min_compat,
             type_identifier,
         )))
+    }
+
+    /// JSON envelope writer. Mirrors C# `BaboonTypeMetaCodec.WriteJson` (BaboonTypeMeta.cs:156)
+    /// and Scala `writeMeta(json)` — returns the `{$mv,$d,$v,$t,$uv?}` object without `$c`.
+    /// Callers (e.g. `BaboonCodecsFacade::encode_to_json`) are expected to append the content
+    /// payload under the `$c` key. Symmetric to `read_meta_json` so the rust runtime exposes
+    /// the same shape of public envelope API as the peer backends; closes
+    /// `[MFACADE-PR-3-D13]`.
+    pub fn write_meta_json(meta: &BaboonTypeMeta) -> serde_json::Map<String, serde_json::Value> {
+        let mut envelope = serde_json::Map::new();
+        // MFACADE-PR-3: always emit `$mv` as a JSON number so envelopes are
+        // self-identifying without out-of-band knowledge (proposal §10.6 (a)).
+        envelope.insert(
+            META_VERSION_KEY.to_string(),
+            serde_json::Value::Number(serde_json::Number::from(BaboonTypeMeta::META_VERSION)),
+        );
+        envelope.insert(
+            DOMAIN_IDENTIFIER_KEY.to_string(),
+            serde_json::Value::String(meta.domain_identifier.clone()),
+        );
+        envelope.insert(
+            DOMAIN_VERSION_KEY.to_string(),
+            serde_json::Value::String(meta.domain_version.clone()),
+        );
+        envelope.insert(
+            TYPE_IDENTIFIER_KEY.to_string(),
+            serde_json::Value::String(meta.type_identifier.clone()),
+        );
+        if meta.domain_version != meta.domain_version_min_compat
+            && !meta.domain_version_min_compat.is_empty()
+        {
+            envelope.insert(
+                DOMAIN_VERSION_MIN_COMPAT_KEY.to_string(),
+                serde_json::Value::String(meta.domain_version_min_compat.clone()),
+            );
+        }
+        envelope
     }
 
     /// JSON envelope reader. Mirrors C# `ReadMeta(JToken)` (BaboonTypeMeta.cs:189) and Scala
@@ -1063,33 +1100,7 @@ impl BaboonCodecsFacade {
                 ))
             })?;
         let effective = type_meta_override.unwrap_or(&type_meta);
-        let mut envelope = serde_json::Map::new();
-        // MFACADE-PR-3: always emit `$mv` as a JSON number so envelopes are
-        // self-identifying without out-of-band knowledge (proposal §10.6 (a)).
-        envelope.insert(
-            "$mv".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(BaboonTypeMeta::META_VERSION)),
-        );
-        envelope.insert(
-            "$d".to_string(),
-            serde_json::Value::String(effective.domain_identifier.clone()),
-        );
-        envelope.insert(
-            "$v".to_string(),
-            serde_json::Value::String(effective.domain_version.clone()),
-        );
-        envelope.insert(
-            "$t".to_string(),
-            serde_json::Value::String(effective.type_identifier.clone()),
-        );
-        if effective.domain_version != effective.domain_version_min_compat
-            && !effective.domain_version_min_compat.is_empty()
-        {
-            envelope.insert(
-                "$uv".to_string(),
-                serde_json::Value::String(effective.domain_version_min_compat.clone()),
-            );
-        }
+        let mut envelope = baboon_type_meta_codec::write_meta_json(effective);
         envelope.insert(CONTENT_JSON_KEY.to_string(), content);
         Ok(serde_json::Value::Object(envelope))
     }

@@ -156,6 +156,45 @@ fn type_meta_write_json_emits_mv_as_numeric_1() {
 }
 
 // ---------------------------------------------------------------------------
+// [MFACADE-PR-3-D13] writer-numeric tripwire exercises the public top-level
+// `write_meta_json` symmetric to peer backends (cs/jv/sc/sw/ts/dt/py expose a
+// public top-level writer; rust now does too via the PR-3 follow-up extraction
+// out of `BaboonCodecsFacade::encode_to_json` into the
+// `baboon_codecs_facade::baboon_type_meta_codec` module).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn type_meta_write_meta_json_emits_mv_as_numeric_1_at_module_level() {
+    use baboon_rs_stub::baboon_codecs_facade::{baboon_type_meta_codec, BaboonTypeMeta};
+
+    let meta = BaboonTypeMeta::new(
+        BaboonTypeMeta::META_VERSION,
+        "test.dom".to_string(),
+        "1.0.0".to_string(),
+        "1.0.0".to_string(),
+        "TestType".to_string(),
+    );
+    let envelope = baboon_type_meta_codec::write_meta_json(&meta);
+
+    assert!(
+        matches!(envelope.get("$mv"), Some(serde_json::Value::Number(_))),
+        "$mv must be a JSON Number; got: {:?}",
+        envelope.get("$mv"),
+    );
+    assert_eq!(
+        envelope.get("$mv").and_then(|v| v.as_u64()),
+        Some(1),
+        "$mv must equal 1; got: {:?}",
+        envelope.get("$mv"),
+    );
+    assert_eq!(envelope.get("$d").and_then(|v| v.as_str()), Some("test.dom"));
+    assert_eq!(envelope.get("$v").and_then(|v| v.as_str()), Some("1.0.0"));
+    assert_eq!(envelope.get("$t").and_then(|v| v.as_str()), Some("TestType"));
+    // Caller is responsible for appending $c (content); the writer returns the envelope only.
+    assert!(envelope.get("$c").is_none(), "$c must NOT be set by write_meta_json");
+}
+
+// ---------------------------------------------------------------------------
 // [MFACADE-PR-3-D05] reader accepts numeric $mv
 //
 // decode_from_json must parse a JSON envelope where "$mv" is the number 1
@@ -187,4 +226,46 @@ fn type_meta_read_json_accepts_numeric_mv_1() {
         "decode_from_json must not return Ok(None) for a numeric $mv=1 envelope; \
          Ok(None) means the meta was rejected",
     );
+}
+
+
+// ---------------------------------------------------------------------------
+// [MFACADE-PR-3-D10] cross-backend rejection matrix for malformed $mv values.
+// Mirrors the cs/sw/dt/ts/py matrices (D06) so rs has parity. Reject:
+//   1.5 (fractional), true (boolean), 300 (out of byte range), -1 (negative),
+//   [] (array), {} (object).
+// Whole-valued doubles like 1.0 ARE rejected here because serde_json preserves
+// the JSON token type (Number-Float vs Number-Int) — distinguished via
+// `serde_json::Number::is_u64()` in `read_meta_json`.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn type_meta_read_json_rejects_malformed_mv() {
+    use baboon_rs_stub::baboon_codecs_facade::baboon_type_meta_codec;
+
+    let cases: &[(&str, serde_json::Value)] = &[
+        ("fractional", serde_json::json!(1.5)),
+        ("boolean", serde_json::json!(true)),
+        ("out-of-range-300", serde_json::json!(300)),
+        ("negative", serde_json::json!(-1)),
+        ("array", serde_json::json!([])),
+        ("object", serde_json::json!({})),
+    ];
+
+    for (label, mv) in cases {
+        let envelope = serde_json::json!({
+            "$mv": mv,
+            "$d": "com.example.dom",
+            "$v": "1.0.0",
+            "$t": "MyType",
+        });
+        let result = baboon_type_meta_codec::read_meta_json(&envelope)
+            .expect("read_meta_json must not surface an Err for malformed $mv");
+        assert!(
+            result.is_none(),
+            "read_meta_json must return Ok(None) for malformed $mv ({}); got: {:?}",
+            label,
+            result,
+        );
+    }
 }

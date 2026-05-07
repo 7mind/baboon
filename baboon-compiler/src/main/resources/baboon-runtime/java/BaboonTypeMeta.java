@@ -155,15 +155,20 @@ public record BaboonTypeMeta(
             // with M28-vintage fixtures); both must equal META_VERSION_1.
             JsonNode mvNode = obj.get(META_VERSION_KEY);
             if (mvNode != null) {
+                // Wire byte is unsigned 0..255 (per docs/spec/codec-envelope.md § 3); store as
+                // signed `byte` for comparison with META_VERSION_1, which works bit-for-bit
+                // because Java cast of int->byte preserves the low 8 bits.
                 byte mv;
                 if (mvNode.isIntegralNumber()) {
                     int n = mvNode.asInt();
-                    if (n < Byte.MIN_VALUE || n > Byte.MAX_VALUE) return null;
+                    if (n < 0 || n > 255) return null;
                     mv = (byte) n;
                 } else if (mvNode.isTextual()) {
                     String mvStr = mvNode.asText();
                     try {
-                        mv = Byte.parseByte(mvStr);
+                        int n = Integer.parseInt(mvStr);
+                        if (n < 0 || n > 255) return null;
+                        mv = (byte) n;
                     } catch (NumberFormatException e) {
                         return null;
                     }

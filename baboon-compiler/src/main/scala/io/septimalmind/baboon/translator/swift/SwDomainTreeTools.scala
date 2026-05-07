@@ -15,9 +15,17 @@ object SwDomainTreeTools {
     signature: TextTree[SwValue],
     value: TextTree[SwValue],
     refValue: TextTree[SwValue],
+    name: String,
+    typeAnn: String,
   ) {
     def valueField: TextTree[SwValue]    = q"$signature = $value"
     def refValueField: TextTree[SwValue] = q"$signature = $refValue"
+    /** Instance computed property that forwards to the static metadata. Used to satisfy
+      * `BaboonMetaProvider` conformance without relying on a protocol-level default
+      * extension (which would require static reqs that hand-written test stubs don't have).
+      */
+    def instanceForwarder: TextTree[SwValue] =
+      q"public var $name: $typeAnn { Self.$name }"
   }
 
   final class SwDomainTreeToolsImpl(
@@ -39,16 +47,22 @@ object SwDomainTreeTools {
         q"""public static let baboonDomainVersion: String""",
         q""""${domain.version.v.toString}"""",
         q"$ref.baboonDomainVersion",
+        "baboonDomainVersion",
+        "String",
       )
       val baboonDomainIdentifier = MetaField(
         q"""public static let baboonDomainIdentifier: String""",
         q""""${defn.id.pkg.toString}"""",
         q"$ref.baboonDomainIdentifier",
+        "baboonDomainIdentifier",
+        "String",
       )
       val baboonTypeIdentifier = MetaField(
         q"""public static let baboonTypeIdentifier: String""",
         q""""${defn.id.toString}"""",
         q"$ref.baboonTypeIdentifier",
+        "baboonTypeIdentifier",
+        "String",
       )
       List(baboonDomainVersion, baboonDomainIdentifier, baboonTypeIdentifier)
     }
@@ -61,6 +75,8 @@ object SwDomainTreeTools {
             q"""public static let baboonAdtTypeIdentifier: String""",
             q""""${id.toString}"""",
             q"$adtRef.baboonAdtTypeIdentifier",
+            "baboonAdtTypeIdentifier",
+            "String",
           )
           List(adtTypeIdentifier)
         case _ => Nil
@@ -74,6 +90,8 @@ object SwDomainTreeTools {
         q"public static let baboonSameInVersions: [String]",
         q"[${unmodifiedSince.mkString(", ")}]",
         q"$ref.baboonSameInVersions",
+        "baboonSameInVersions",
+        "[String]",
       )
       List(sameInVersion)
     }

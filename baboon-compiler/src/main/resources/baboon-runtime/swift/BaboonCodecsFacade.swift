@@ -21,7 +21,9 @@
 //   PR-08-D02  fail-fast on empty `baboonSameInVersions` (in BaboonTypeMeta.from)
 //   PR-19-D02  `useAdtIdentifier` knob threaded through encode paths
 //   PR-19-D01/PR-20-D01 escape gotcha: `\(...)` for Swift interpolation; `$` literal in strings.
-//   PR-22-D02  staged rollout — generated DTOs gain `BaboonMetaProvider` conformance in PR 9.2/9.3.
+//   PR-22-D02  staged rollout closed in MFACADE-PR-E: generated DTOs now declare `BaboonMetaProvider`
+//              conformance directly; the protocol's default extension forwards instance accessors
+//              to the per-type static metadata, so no per-type instance impl is required.
 
 import Foundation
 

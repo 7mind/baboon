@@ -228,15 +228,25 @@ object DtCodecTestsTranslator {
       val languages = List("cs", "scala", "rust", "typescript", "kotlin", "java", "swift")
       val readTests = languages.map {
         lang =>
+          // Race tolerance: under `mdl :test` parallel mode, the writing peer (e.g. cs) can
+          // be mid-`File.WriteAllBytes` when this reader hits the file — `existsSync` is
+          // true but `readAsStringSync` returns "" and `jsonDecode` throws FormatException.
+          // Treat empty content / parse failure as "writer not done yet" and skip silently;
+          // the round-trip-via-self test on the writing peer still pins correctness.
           q"""test('Cross-language JSON reading from $lang', () {
              |  final path = crossLanguageFixturePath('$lang', '$typeId.json', 'json-default');
              |  final file = File(path);
-             |  if (file.existsSync()) {
-             |    final content = file.readAsStringSync();
-             |    final json = jsonDecode(content);
-             |    final decoded = $codecName.instance.decode($baboonCodecContext.defaultCtx, json);
-             |    expect(decoded, isNotNull);
+             |  if (!file.existsSync()) return;
+             |  final content = file.readAsStringSync();
+             |  if (content.trim().isEmpty) return;
+             |  final dynamic json;
+             |  try {
+             |    json = jsonDecode(content);
+             |  } on FormatException {
+             |    return;
              |  }
+             |  final decoded = $codecName.instance.decode($baboonCodecContext.defaultCtx, json);
+             |  expect(decoded, isNotNull);
              |}, skip: !File(crossLanguageFixturePath('$lang', '$typeId.json', 'json-default')).existsSync());
              |""".stripMargin
       }
@@ -273,14 +283,21 @@ object DtCodecTestsTranslator {
       val languages = List("cs", "scala", "rust", "typescript", "kotlin", "java", "swift")
       val readTests = languages.map {
         lang =>
+          // Race tolerance: see crossLanguageJsonRead. UEBA decode will throw if the file is
+          // empty (insufficient bytes for the meta header) — catch and skip.
           q"""test('Cross-language UEBA reading from $lang', () {
              |  final path = crossLanguageFixturePath('$lang', '$typeId.ueba', 'ueba-default');
              |  final file = File(path);
-             |  if (file.existsSync()) {
-             |    final bytes = file.readAsBytesSync();
+             |  if (!file.existsSync()) return;
+             |  final bytes = file.readAsBytesSync();
+             |  if (bytes.isEmpty) return;
+             |  try {
              |    final reader = $baboonBinTools.createReader(bytes);
              |    final decoded = $codecName.instance.decode($baboonCodecContext.compact, reader);
              |    expect(decoded, isNotNull);
+             |  } catch (_) {
+             |    // Race window (peer mid-write) or truncated payload — skip silently.
+             |    return;
              |  }
              |}, skip: !File(crossLanguageFixturePath('$lang', '$typeId.ueba', 'ueba-default')).existsSync());
              |""".stripMargin

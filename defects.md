@@ -55,11 +55,11 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 **Fix:** Edge-case rejection matrix added per backend (cs/sw/dt/ts/py): `$mv: 1.5` (fractional), `$mv: true` (boolean), `$mv: 300` (out of byte range), `$mv: -1` (negative), `$mv: []` (array), `$mv: {}` (object/map), plus version-mismatch (`$mv: 2`) for cs, plus whitespace-padded string for py.
 
 ### [MFACADE-PR-3-D07] Java byte-range bound is signed (-128..127), not unsigned (0..255)
-**Status:** open
+**Status:** resolved (PR-E 2026-05-07)
 **Severity:** nit
-**Location:** `baboon-compiler/src/main/resources/baboon-runtime/java/BaboonTypeMeta.java:160`
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/java/BaboonTypeMeta.java:155-176`
 **Description:** `if (n < Byte.MIN_VALUE || n > Byte.MAX_VALUE) return null;` uses signed byte range. Rust's reader accepts unsigned u8 range (0..255). Wire format defines the byte as unsigned. Currently immaterial (META_VERSION_1 == 1) but a future bump to a value in 128..255 would be accepted by Rust and rejected by Java.
-**Suggested fix:** Use `0..255` consistently. Defer if no immediate plan to bump META_VERSION beyond 127.
+**Fix:** Switched bound to unsigned `0..255` for both numeric and string `$mv` paths. Numeric branch checks `n < 0 || n > 255` and casts via `(byte) n` (Java cast preserves low 8 bits, so 200 reads back as `(byte) -56` which compares bit-for-bit equal to a 200-encoded `META_VERSION_1`). String branch swaps `Byte.parseByte` for `Integer.parseInt` then bounds-checks 0..255 before casting. META_VERSION_1 = 1 is unchanged; the broader range is forward-compat with future bumps. Comment added explaining the bit-preservation invariant.
 
 ### [MFACADE-PR-3-D08] Rust writer uses literal `"$mv"` instead of `META_VERSION_KEY` constant
 **Status:** wontfix
@@ -76,11 +76,11 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 **Fix:** Replaced with the standard PR-3 phrasing that matches cs/sw/dt/ts/sc/rs/py: "MFACADE-PR-3: accept `$mv` as either a JSON number or a string (back-compat with M28-vintage fixtures); both must equal META_VERSION_1. Absent `$mv` falls through."
 
 ### [MFACADE-PR-3-D10] D06 edge-case rejection matrix missing in sc, rs, jv stubs
-**Status:** resolved (deferred — symmetric coverage opened as follow-up)
+**Status:** resolved (PR-E follow-up: symmetric coverage added 2026-05-07)
 **Severity:** minor
 **Location:** `test/sc-stub/src/test/scala/runtime/BaboonTypeMetaCodecSpec.scala`, `test/rs-stub/tests/baboon_type_meta_codec_tests.rs`, `test/jv-stub/src/test/java/runtime/AnyMetaCodecTest.java`
 **Description:** D06 was scoped to "cs/sw/dt/ts/py stubs". sc/rs/jv received D04 (writer-numeric) and D05 (acceptsNumericMv) only — no rejection matrix for `1.5`/`true`/`300`/`-1`/`[]`/`{}`. The cross-language acceptance harness (`mdl :test-acceptance`) covers round-trips but not malformed inputs.
-**Fix:** Deferred — the malformed-input invariants are exercised by cs/sw/dt/ts/py matrices and the runtimes share the same defensive structure (number→bounds-check, string→strict-parse). Sc/rs/jv per-stub matrices add no semantic coverage that the existing five backends don't already pin. Track as a follow-up under "PR-3 close-out polish" rather than expanding PR-3 scope.
+**Fix:** Per-stub rejection matrices added 2026-05-07. Sc: parameterised `readMeta rejects malformed $mv (...)` test with all 6 cases (note: whole-valued doubles like `1.0` are still accepted because circe normalises before our reader sees them — documented in spec § 4 sc/ts limitation, separate concern). Rs: `type_meta_read_json_rejects_malformed_mv` table-driven test exercising the public top-level `read_meta_json` (rs preserves Number-Float vs Number-Int via `serde_json::Number::is_u64()` so `1.0` is rejected). Jv: 6 individual `typeMetaReadJson_rejects*` tests using a shared `badEnvelope(JsonNode)` helper. Closes the original deferred work item.
 
 ### [MFACADE-PR-3-D11] Cross-backend asymmetry on explicit JSON `null` for `$mv`
 **Status:** resolved (PR-7 follow-up: tightened Dart and Python to reject explicit null)
@@ -97,11 +97,11 @@ Status: `[ ]` open · `[~]` under fix · `[x]` resolved
 **Fix:** Tightened Swift `readMetaJson` NSNumber branch to inspect `objCType` and reject `d` (Double) and `f` (Float) types — JSONSerialization preserves the source literal's type in the bridged NSNumber, so even `1.0` is rejected when the source token wasn't integer-typed (`baboon-runtime/swift/baboon_runtime.swift:1364-1374`). Per-backend test: sw `testReadMetaJson_rejectsDoubleTypedMv_wholeValued`. **Limitation documented in `docs/spec/codec-envelope.md` § 4** for Scala (circe normalises) and TypeScript (`JSON.parse` collapses `1.0` to `1` losing source-type info) — those backends accept whole-valued doubles silently; the asymmetry is hypothetical (no writer emits floats) and bounded by the spec note. User-authorised reject-everywhere-where-possible on 2026-05-07.
 
 ### [MFACADE-PR-3-D13] Rust writer-numeric test exercises facade path only, not module-level codec
-**Status:** wontfix
+**Status:** resolved (PR-E 2026-05-07: extraction landed)
 **Severity:** nit
-**Location:** `test/rs-stub/tests/baboon_type_meta_codec_tests.rs:134-156`
-**Description:** `mod baboon_type_meta_codec` exposes `read_meta_json` but not a public `write_json`; the envelope-write code lives inline in `BaboonCodecsFacade::encode_to_json` (rust/baboon_codecs_facade.rs:1066-1093). Lower-fidelity than peer backends where the writer is a public top-level function.
-**Fix:** Wontfix — pre-existing structural difference in the Rust runtime layout (PR-3 did not introduce it). Symmetric extraction would require generator-level changes outside PR-3's scope. The cross-language acceptance suite (200 rows) covers the facade write path end-to-end.
+**Location:** `baboon-compiler/src/main/resources/baboon-runtime/rust/baboon_codecs_facade.rs` (envelope writer extracted into `mod baboon_type_meta_codec`); `test/rs-stub/tests/baboon_type_meta_codec_tests.rs` (new tripwire test exercises the public top-level writer)
+**Description:** `mod baboon_type_meta_codec` exposed `read_meta_json` but not a public `write_meta_json`; the envelope-write code lived inline in `BaboonCodecsFacade::encode_to_json`. Lower fidelity than peer backends where the writer is a public top-level function (cs `BaboonTypeMetaCodec.WriteJson`, jv/sc/sw/ts/dt/py equivalents).
+**Fix:** Extracted the envelope-emit code from `BaboonCodecsFacade::encode_to_json_with_declared_trait` into a new public top-level `pub fn write_meta_json(meta: &BaboonTypeMeta) -> serde_json::Map<String, serde_json::Value>` inside `mod baboon_type_meta_codec`. `mod` widened from default to `pub` so external callers (and integration tests) can reach it. The facade now calls `baboon_type_meta_codec::write_meta_json(effective)` and appends `$c` (content). Symmetric to the existing `read_meta_json` reader and to peer backends' top-level writers. New tripwire test `type_meta_write_meta_json_emits_mv_as_numeric_1_at_module_level` exercises the public surface directly (matches the cs/sw/dt/ts/py writer-numeric tests). User-authorised "deliver clean solution through extraction" 2026-05-07.
 
 ---
 
@@ -305,11 +305,11 @@ A future refactor that flips the rule from "≥2 by lowercased name" to "≥2 wi
 **Fix:** `TemplateInstantiator.scala:449` — `argList.map(_.toString).mkString(",")` changed to `argList.map(_.render).mkString(",")`. Same behaviour today; canonicalisation contract now explicit.
 
 ### [PR-33.4-D01] Empty template body under `-` is a silent no-op (analogous to the `^` gap fixed in this PR)
-**Status:** [ ] open
+**Status:** resolved (option (b) — silent no-op confirmed as correct semantics; user-decided 2026-05-07)
 **Severity:** minor
 **Location:** `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/TemplateInstantiator.scala` (`convertLoweredArm` Minus case); `baboon-compiler/src/main/scala/io/septimalmind/baboon/typer/BaboonTranslator.scala:311-316` (`removedSet` / `withoutRemoved`)
 **Description:** PR-33.4 fixed the empty-body-under-`^` gap (empty `IntersectionFields` → `if (intersectionSet.isEmpty)` short-circuit was a no-op). The analogous `^`-fix was: fail with `TemplateBodyNotFlatForRemoval(offendingMemberKind="empty body")` at lowering time. The `-` operator with an empty body is semantically different: removing an empty set of fields is idempotent (no fields are removed). Whether this should be a hard error or a silent no-op is a product decision. Current behaviour: silently accepted. This is not a silent corruption (unlike the `^` case which masked a "pass-through" masquerading as "intersection"), but it may indicate a user mistake. Deferred for a future product decision.
-**Fix (suggested):** Either (a) emit a warning/error diagnostic at lowering time when `fieldDefs.isEmpty` in the `Minus` arm of `convertLoweredArm`, or (b) leave as a silent no-op with a code comment. Option (b) is correct for now (removing nothing is correct semantics). If a warning facility is added in a future milestone, this can be upgraded.
+**Fix:** Option (b) accepted by user 2026-05-07: silent no-op. Removing the empty set of fields is the identity — semantically correct. Promoting to a hard error would block legitimate refactor flows mid-edit; promoting to a warning would require introducing a warning facility (Baboon has none today) which is out of scope. The asymmetry with the `^` fix is principled: `^ Empty[T]` was a footgun (intersection with empty set should be empty, but legacy code treated it as pass-through); `- Empty[T]` is mathematically idempotent and harmless.
 
 ---
 

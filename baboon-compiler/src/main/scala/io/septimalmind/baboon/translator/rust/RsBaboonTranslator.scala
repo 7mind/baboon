@@ -188,19 +188,22 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
     sb.append("use std::sync::Arc;\n")
     sb.append("\n")
 
-    // Per-version: generate Dyn wrappers, codec structs, codec factory functions, meta
+    // Per-version: impl BaboonGeneratedDyn directly on the user type, plus per-type codec
+    // structs, codec factory functions, meta. Implementing the trait on the user type
+    // (rather than on a private wrapper) lets external callers pass `&my_inner` directly
+    // to `facade.encode_to_bin(&ctx, ...)` — closing MFACADE-PR-D's deferred round-trip
+    // exposure note. Older versions live in their own `v<X_Y_Z>` module so each rust
+    // type carries its own version metadata via its impl; no symbol clash.
     for (domain <- orderedVersions) {
       val versionStr = domain.version.v.toString
       val verSuffix  = versionStr.replace('.', '_')
       val types      = collectTypes(domain)
 
       for ((fullPath, dynBase, typeId, _) <- types) {
-        val dynName   = s"${dynBase}V${verSuffix}Dyn"
         val binCodec  = s"${dynBase}V${verSuffix}BinCodec"
         val jsonCodec = s"${dynBase}V${verSuffix}JsonCodec"
 
-        sb.append(s"struct $dynName($fullPath);\n")
-        sb.append(s"impl BaboonGeneratedDyn for $dynName {\n")
+        sb.append(s"impl BaboonGeneratedDyn for $fullPath {\n")
         sb.append(s"""    fn baboon_domain_version_dyn(&self) -> &str { "$versionStr" }\n""")
         sb.append(s"""    fn baboon_domain_identifier_dyn(&self) -> &str { "$domainIdStr" }\n""")
         sb.append(s"""    fn baboon_type_identifier_dyn(&self) -> &str { "$typeId" }\n""")
@@ -212,24 +215,24 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
         sb.append(s"impl BaboonAnyBinCodec for $binCodec {\n")
         sb.append(s"""    fn type_identifier(&self) -> &str { "$typeId" }\n""")
         sb.append( "    fn encode_dyn(&self, ctx: &BaboonCodecContext, writer: &mut dyn Write, value: &dyn BaboonGeneratedDyn) -> Result<(), crate::any_opaque::BaboonCodecError> {\n")
-        sb.append(s"        let v = value.as_any().downcast_ref::<$dynName>().ok_or_else(|| crate::any_opaque::BaboonCodecError::encoder_failure(\"${binCodec}.encode: wrong type\"))?;\n")
-        sb.append( "        v.0.encode_ueba(ctx, writer).map_err(|e| crate::any_opaque::BaboonCodecError::encoder_failure(format!(\"{}\", e)))\n")
+        sb.append(s"        let v = value.as_any().downcast_ref::<$fullPath>().ok_or_else(|| crate::any_opaque::BaboonCodecError::encoder_failure(\"${binCodec}.encode: wrong type\"))?;\n")
+        sb.append( "        v.encode_ueba(ctx, writer).map_err(|e| crate::any_opaque::BaboonCodecError::encoder_failure(format!(\"{}\", e)))\n")
         sb.append( "    }\n")
         sb.append( "    fn decode_dyn(&self, ctx: &BaboonCodecContext, reader: &mut dyn Read) -> Result<Box<dyn BaboonGeneratedDyn>, crate::any_opaque::BaboonCodecError> {\n")
         sb.append(s"        let v = <$fullPath as BaboonBinDecode>::decode_ueba(ctx, reader).map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!(\"{}\", e)))?;\n")
-        sb.append(s"        Ok(Box::new($dynName(v)))\n")
+        sb.append( "        Ok(Box::new(v))\n")
         sb.append( "    }\n")
         sb.append( "}\n")
         sb.append(s"struct $jsonCodec;\n")
         sb.append(s"impl BaboonAnyJsonCodec for $jsonCodec {\n")
         sb.append(s"""    fn type_identifier(&self) -> &str { "$typeId" }\n""")
         sb.append( "    fn encode_json_dyn(&self, _ctx: &BaboonCodecContext, value: &dyn BaboonGeneratedDyn) -> Result<serde_json::Value, crate::any_opaque::BaboonCodecError> {\n")
-        sb.append(s"        let v = value.as_any().downcast_ref::<$dynName>().ok_or_else(|| crate::any_opaque::BaboonCodecError::encoder_failure(\"${jsonCodec}.encode: wrong type\"))?;\n")
-        sb.append( "        serde_json::to_value(&v.0).map_err(|e| crate::any_opaque::BaboonCodecError::encoder_failure(format!(\"{}\", e)))\n")
+        sb.append(s"        let v = value.as_any().downcast_ref::<$fullPath>().ok_or_else(|| crate::any_opaque::BaboonCodecError::encoder_failure(\"${jsonCodec}.encode: wrong type\"))?;\n")
+        sb.append( "        serde_json::to_value(v).map_err(|e| crate::any_opaque::BaboonCodecError::encoder_failure(format!(\"{}\", e)))\n")
         sb.append( "    }\n")
         sb.append( "    fn decode_json_dyn(&self, _ctx: &BaboonCodecContext, wire: &serde_json::Value) -> Result<Box<dyn BaboonGeneratedDyn>, crate::any_opaque::BaboonCodecError> {\n")
         sb.append(s"        let v: $fullPath = serde_json::from_value(wire.clone()).map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!(\"{}\", e)))?;\n")
-        sb.append(s"        Ok(Box::new($dynName(v)))\n")
+        sb.append( "        Ok(Box::new(v))\n")
         sb.append( "    }\n")
         sb.append( "}\n")
       }

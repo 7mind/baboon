@@ -12,6 +12,7 @@ object DtTypes {
   val iBaboonGenerated: DtType       = DtType(baboonRuntimePkg, "BaboonGenerated")
   val iBaboonAdtMemberMeta: DtType   = DtType(baboonRuntimePkg, "BaboonAdtMemberMeta")
   val iBaboonGeneratedLatest: DtType = DtType(baboonRuntimePkg, "BaboonGeneratedLatest")
+  val iBaboonMetaProvider: DtType    = DtType(baboonRuntimePkg, "BaboonMetaProvider")
   val baboonMeta: DtType             = DtType(baboonRuntimePkg, "BaboonMeta")
 
   // baboon codecs types
