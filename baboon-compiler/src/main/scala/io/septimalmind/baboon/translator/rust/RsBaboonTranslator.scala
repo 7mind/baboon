@@ -121,6 +121,14 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
 
   private def generateDomainFacade(lineage: BaboonLineage): List[RsDefnTranslator.Output] = {
     if (!target.output.products.contains(CompilerProduct.Runtime)) return List.empty
+    if (!target.language.generateDomainFacade) return List.empty
+    // The rust facade enumerates per-type `BaboonGeneratedDyn` wrappers and references the
+    // `BaboonBinEncode`/`BaboonBinDecode` traits per type. Both are only implemented when
+    // UEBA + JSON codec generation is on by default — without that, individual types may
+    // lack the trait impls and the facade fails to compile (see conv-test-rs, where neither
+    // byDefault flag is set).
+    if (!(target.language.generateUebaCodecs && target.language.generateUebaCodecsByDefault)) return List.empty
+    if (!(target.language.generateJsonCodecs && target.language.generateJsonCodecsByDefault)) return List.empty
 
     val evo           = lineage.evolution
     val latestVersion = evo.latest
@@ -132,24 +140,33 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
     val structName     = s"Domain${pascalDomainId}Facade"
     val domainIdStr    = latestDomain.id.path.mkString(".")
 
-    // Collect non-ADT-branch User types per version
-    def collectTypes(domain: Domain): List[(String, String, String)] = {
-      // Returns list of (rustFullPath, typeIdentifier, versionStr)
+    // Collect non-ADT-branch User types per version.
+    // Returns list of (rustFullPath, dynBaseName, typeIdentifier, versionStr).
+    // `dynBaseName` is a stable per-type symbol that uniquely identifies the type within
+    // the domain across all `Owner.Ns` paths — it is the type name prefixed by the
+    // PascalCase namespace path. Two types named `Clash` in different namespaces (e.g.
+    // top-level vs `ns clash`) get distinct names (`Clash` vs `ClashClash`) so the
+    // generated `${dynBaseName}V${ver}Dyn` symbol does not collide.
+    def collectTypes(domain: Domain): List[(String, String, String, String)] = {
       val versionStr = domain.version.v.toString
       val isLatest   = domain.version == evo.latest
-      val crateParts = domain.id.path.map(_.toLowerCase) ++ (if (isLatest) Nil else List("v" + versionStr.replace('.', '_')))
+      val versionTail = if (isLatest) Nil else List("v" + versionStr.replace('.', '_'))
+      val domainParts = domain.id.path.map(_.toLowerCase) ++ versionTail
       domain.defs.meta.nodes.toList.flatMap {
         case (_, defn: DomainMember.User) =>
           defn.id.owner match {
             case Owner.Adt(_) => None // skip ADT branches
-            case _ =>
+            case owner =>
               defn.defn match {
                 case _: Typedef.Dto | _: Typedef.Enum | _: Typedef.Adt =>
                   val typeName   = defn.id.name.name.capitalize
                   val moduleName = escapeRustModuleName(toSnakeCaseRaw(defn.id.name.name))
-                  val fullPath   = (List("crate") ++ crateParts ++ List(moduleName) :+ typeName).mkString("::")
+                  val nsParts    = owner.asPseudoPkg.map(s => escapeRustModuleName(s.toLowerCase)).toList
+                  val fullPath   = (List("crate") ++ domainParts ++ nsParts ++ List(moduleName) :+ typeName).mkString("::")
+                  val nsPrefix   = owner.asPseudoPkg.map(_.capitalize).mkString
+                  val dynBase    = s"$nsPrefix$typeName"
                   val typeId     = defn.id.toString
-                  Some((fullPath, typeId, versionStr))
+                  Some((fullPath, dynBase, typeId, versionStr))
                 case _ => None
               }
           }
@@ -177,11 +194,10 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       val verSuffix  = versionStr.replace('.', '_')
       val types      = collectTypes(domain)
 
-      for ((fullPath, typeId, _) <- types) {
-        val baseName  = fullPath.split("::").last
-        val dynName   = s"${baseName}V${verSuffix}Dyn"
-        val binCodec  = s"${baseName}V${verSuffix}BinCodec"
-        val jsonCodec = s"${baseName}V${verSuffix}JsonCodec"
+      for ((fullPath, dynBase, typeId, _) <- types) {
+        val dynName   = s"${dynBase}V${verSuffix}Dyn"
+        val binCodec  = s"${dynBase}V${verSuffix}BinCodec"
+        val jsonCodec = s"${dynBase}V${verSuffix}JsonCodec"
 
         sb.append(s"struct $dynName($fullPath);\n")
         sb.append(s"impl BaboonGeneratedDyn for $dynName {\n")
@@ -231,9 +247,8 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       val jsonFn = s"make_${domainIdStr.replace('.', '_')}_v${verSuffix}_json_codecs"
       sb.append(s"fn $jsonFn() -> Arc<AbstractBaboonJsonCodecsImpl> {\n")
       sb.append( "    let mut t = AbstractBaboonJsonCodecsImpl::new();\n")
-      for ((fullPath, typeId, _) <- types) {
-        val baseName  = fullPath.split("::").last
-        val jsonCodec = s"${baseName}V${verSuffix}JsonCodec"
+      for ((_, dynBase, typeId, _) <- types) {
+        val jsonCodec = s"${dynBase}V${verSuffix}JsonCodec"
         sb.append(s"""    t.register("$typeId", || Arc::new($jsonCodec) as Arc<dyn BaboonAnyJsonCodec>);\n""")
       }
       sb.append( "    Arc::new(t)\n")
@@ -243,9 +258,8 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
       val binFn = s"make_${domainIdStr.replace('.', '_')}_v${verSuffix}_bin_codecs"
       sb.append(s"fn $binFn() -> Arc<AbstractBaboonUebaCodecsImpl> {\n")
       sb.append( "    let mut t = AbstractBaboonUebaCodecsImpl::new();\n")
-      for ((fullPath, typeId, _) <- types) {
-        val baseName = fullPath.split("::").last
-        val binCodec = s"${baseName}V${verSuffix}BinCodec"
+      for ((_, dynBase, typeId, _) <- types) {
+        val binCodec = s"${dynBase}V${verSuffix}BinCodec"
         sb.append(s"""    t.register("$typeId", || Arc::new($binCodec) as Arc<dyn BaboonAnyBinCodec>);\n""")
       }
       sb.append( "    Arc::new(t)\n")
@@ -297,9 +311,11 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
     outputs: List[RsDefnTranslator.Output],
     conflicting: List[RsDefnTranslator.Output],
   ): Out[List[RsDefnTranslator.Output]] = {
-    val nonModified   = outputs.filterNot(_.doNotModify)
-    val allPaths      = nonModified.map(_.path)
-    val adtPaths      = nonModified.filter(_.isAdt).map(_.path.stripSuffix(".rs")).toSet
+    // Per-domain facades are emitted with `doNotModify = true` (verbatim text rendering)
+    // but live inside the domain directory tree, so their module declaration must appear
+    // in the enclosing `mod.rs`. Don't filter them out of the path scan.
+    val allPaths      = outputs.map(_.path)
+    val adtPaths      = outputs.filterNot(_.doNotModify).filter(_.isAdt).map(_.path.stripSuffix(".rs")).toSet
     val conflictByDir = conflicting.groupBy(_.path.stripSuffix(".rs"))
     val mods          = generateModFilesForPaths(allPaths, conflictByDir, adtPaths, CompilerProduct.Definition)
     F.pure(mods)
