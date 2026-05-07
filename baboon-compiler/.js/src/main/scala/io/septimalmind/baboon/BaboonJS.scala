@@ -373,6 +373,7 @@ object BaboonJS {
                 serviceResult                             = ServiceResultConfig.csDefault,
                 serviceContext                            = ServiceContextConfig.default,
                 pragmas                                   = Map.empty,
+                generateDomainFacade        = false,
               ),
             )
           case "scala" =>
@@ -392,6 +393,7 @@ object BaboonJS {
                 serviceResult               = ServiceResultConfig.scalaDefault,
                 serviceContext              = ServiceContextConfig.default,
                 pragmas                     = Map.empty,
+                generateDomainFacade        = false,
               ),
             )
           case "python" =>
@@ -411,6 +413,7 @@ object BaboonJS {
                 serviceResult               = ServiceResultConfig.pythonDefault,
                 serviceContext              = ServiceContextConfig.default,
                 pragmas                     = Map.empty,
+                generateDomainFacade        = false,
               ),
             )
           case "rust" =>
@@ -429,6 +432,7 @@ object BaboonJS {
                 serviceResult               = ServiceResultConfig.rustDefault,
                 serviceContext              = ServiceContextConfig.default,
                 pragmas                     = Map.empty,
+                generateDomainFacade        = false,
                 asyncServices               = opts.asyncServices.getOrElse(false),
                 cratePrefix                 = "crate",
                 reexportMode                = "selective",
@@ -452,6 +456,7 @@ object BaboonJS {
                 serviceResult               = ServiceResultConfig.typescriptDefault,
                 serviceContext              = ServiceContextConfig.default,
                 pragmas                     = Map.empty,
+                generateDomainFacade        = false,
                 asyncServices               = false,
                 mapsAsRecords               = false,
                 timestampsUtcMode           = "wrapper",
@@ -476,6 +481,7 @@ object BaboonJS {
                 serviceResult               = ServiceResultConfig.kotlinDefault,
                 serviceContext              = ServiceContextConfig.default,
                 pragmas                     = Map.empty,
+                generateDomainFacade        = false,
                 multiplatform               = opts.multiplatform.getOrElse(false),
               ),
             )
@@ -496,6 +502,7 @@ object BaboonJS {
                 serviceResult               = ServiceResultConfig.javaDefault,
                 serviceContext              = ServiceContextConfig.default,
                 pragmas                     = Map.empty,
+                generateDomainFacade        = false,
               ),
             )
           case "dart" =>
@@ -514,6 +521,7 @@ object BaboonJS {
                 serviceResult               = ServiceResultConfig.dartDefault,
                 serviceContext              = ServiceContextConfig.default,
                 pragmas                     = Map.empty,
+                generateDomainFacade        = false,
               ),
             )
           case "swift" =>
@@ -532,6 +540,7 @@ object BaboonJS {
                 serviceResult               = ServiceResultConfig.swiftDefault,
                 serviceContext              = ServiceContextConfig.default,
                 pragmas                     = Map.empty,
+                generateDomainFacade        = false,
               ),
             )
           case "graphql" =>

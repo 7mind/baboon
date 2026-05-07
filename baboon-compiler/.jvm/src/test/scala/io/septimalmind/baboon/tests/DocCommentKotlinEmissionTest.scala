@@ -59,6 +59,7 @@ abstract class DocCommentKotlinEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboon
       serviceResult               = ServiceResultConfig.kotlinDefault,
       serviceContext              = ServiceContextConfig.default,
       pragmas                     = Map.empty,
+      generateDomainFacade        = false,
     ),
   )
 

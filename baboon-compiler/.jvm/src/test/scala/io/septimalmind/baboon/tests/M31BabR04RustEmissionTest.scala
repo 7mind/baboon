@@ -56,6 +56,7 @@ abstract class M31BabR04RustEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTes
       serviceResult               = ServiceResultConfig.rustDefault,
       serviceContext              = ServiceContextConfig.default,
       pragmas                     = Map.empty,
+      generateDomainFacade        = false,
       asyncServices               = false,
       cratePrefix                 = "crate",
       reexportMode                = "selective",

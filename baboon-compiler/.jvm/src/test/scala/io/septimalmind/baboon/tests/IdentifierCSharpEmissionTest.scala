@@ -59,6 +59,7 @@ abstract class IdentifierCSharpEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboon
       serviceResult                             = ServiceResultConfig.csDefault,
       serviceContext                            = ServiceContextConfig.default,
       pragmas                                   = Map.empty,
+      generateDomainFacade        = false,
     ),
   )
 

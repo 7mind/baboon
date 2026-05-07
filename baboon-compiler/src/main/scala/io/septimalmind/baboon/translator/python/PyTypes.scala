@@ -97,6 +97,11 @@ object PyTypes {
   // baboon exceptions
   val baboonCodecException: PyType = PyType(pyBaboonExceptionsModule, "BaboonCodecException")
 
+  // baboon facade
+  val pyBaboonCodecsFacadeModule: PyModuleId = PyModuleId("baboon_codecs_facade")
+  val baboonCodecsFacade: PyType             = PyType(pyBaboonCodecsFacadeModule, "BaboonCodecsFacade")
+  val baboonDomainVersion: PyType            = PyType(pyBaboonSharedRuntimeModule, "BaboonDomainVersion")
+
   // cross-language fixture helpers (test scope)
   val pyCrossLanguageFixturePath: PyType =
     PyType(pyCrossLanguageFixturePathModule, "cross_language_fixture_path")

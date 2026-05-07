@@ -81,6 +81,10 @@ object CSTypes {
 
   val iBaboonMeta: CSType = CSType(baboonRuntimePkg, "IBaboonMeta", fq = false, CSTypeOrigin.Other)
 
+  // Per-domain auto-registration facade base class and its primary key (MFACADE-PR-6).
+  val baboonCodecsFacade: CSType  = CSType(baboonRuntimePkg, "BaboonCodecsFacade", fq = false, CSTypeOrigin.Other)
+  val baboonDomainVersion: CSType = CSType(baboonRuntimePkg, "BaboonDomainVersion", fq = false, CSTypeOrigin.Other)
+
   // any-feature runtime types (PR 3.1)
   val baboonAnyOpaque: CSType      = CSType(baboonRuntimePkg, "AnyOpaque", fq = false, CSTypeOrigin.Other)
   val baboonAnyOpaqueUeba: CSType  = CSType(baboonRuntimePkg, "AnyOpaqueUeba", fq = false, CSTypeOrigin.Other)

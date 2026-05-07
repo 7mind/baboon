@@ -50,8 +50,76 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
   private def translateLineage(
     lineage: BaboonLineage
   ): Out[List[PyDefnTranslator.Output]] = {
-    F.flatSequenceAccumErrors {
-      lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList
+    for {
+      perVersion <- F.flatSequenceAccumErrors {
+        lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList
+      }
+      facade <- generateDomainFacade(lineage)
+    } yield perVersion ++ facade
+  }
+
+  private def generateDomainFacade(lineage: BaboonLineage): Out[List[PyDefnTranslator.Output]] = {
+    if (!target.language.generateDomainFacade || !target.output.products.contains(CompilerProduct.Conversion)) {
+      F.pure(List.empty)
+    } else {
+      val domainIdStr   = lineage.pkg.path.mkString(".")
+      val facadeName    = "Domain" + lineage.pkg.path.map(s => s.capitalize).mkString + "Facade"
+      val moduleIdParts = lineage.pkg.path.toList.map(_.toLowerCase) :+ "domain_facade"
+      val facadeModule  = PyValue.PyModuleId(NEList.unsafeFrom(moduleIdParts))
+      val basename      = lineage.pkg.path.map(_.toLowerCase).mkString("/")
+
+      val sortedVersions = lineage.versions.iterator.toList.sortBy(_._1)
+
+      // Per-version import metadata: (import lines, alias names, version string)
+      val versionImports = sortedVersions.map {
+        case (version, _) =>
+          val isLatest    = version == lineage.evolution.latest
+          val vPrefix     = if (isLatest) "" else version.format(prefix = "v", delimiter = "_") + "."
+          val suffix      = if (isLatest) "" else s"_${version.format(prefix = "v", delimiter = "_")}"
+          val jsonAlias   = s"BaboonCodecsJson$suffix"
+          val uebaAlias   = s"BaboonCodecsUeba$suffix"
+          val metaAlias   = s"BaboonMetadata$suffix"
+          val runtimeMod  = s".${vPrefix}baboon_runtime"
+          val metadataMod = s".${vPrefix}baboon_metadata"
+          val jsonImport  =
+            if (isLatest) s"from $runtimeMod import BaboonCodecsJson, BaboonCodecsUeba"
+            else s"from $runtimeMod import BaboonCodecsJson as $jsonAlias, BaboonCodecsUeba as $uebaAlias"
+          val metaImport  =
+            if (isLatest) s"from $metadataMod import BaboonMetadata"
+            else s"from $metadataMod import BaboonMetadata as $metaAlias"
+          (jsonImport, metaImport, jsonAlias, uebaAlias, metaAlias, version.v.toString)
+      }
+
+      val importLines = versionImports.flatMap { case (ji, mi, _, _, _, _) => List(ji, mi) }.mkString("\n")
+
+      val registerCalls = versionImports.map {
+        case (_, _, jsonAlias, uebaAlias, metaAlias, versionStr) =>
+          q"""self.register(
+             |    $baboonDomainVersion("$domainIdStr", "$versionStr"),
+             |    codecs_json=lambda: ${jsonAlias}.instance(),
+             |    codecs_bin=lambda: ${uebaAlias}.instance(),
+             |    meta=lambda: ${metaAlias}(),
+             |)""".stripMargin
+      }
+
+      val facadeTree =
+        q"""$importLines
+           |
+           |
+           |class $facadeName($baboonCodecsFacade):
+           |    def __init__(self):
+           |        super().__init__()
+           |        ${registerCalls.map(_.shift(8).trim).joinN().shift(8).trim}
+           |""".stripMargin
+
+      val facadeOutput = PyDefnTranslator.Output(
+        s"$basename/domain_facade.py",
+        facadeTree,
+        facadeModule,
+        CompilerProduct.Conversion,
+      )
+
+      F.pure(List(facadeOutput))
     }
   }
 
@@ -209,7 +277,7 @@ class PyBaboonTranslator[F[+_, +_]: Error2](
           t =>
             aliasMap.get(t).map(a => s"${t.name} as $a").getOrElse(t.name)
         }.mkString(", ")
-        if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule || module == pyBaboonConversionsModule || module == pyBaboonServiceWiringModule || module == pyBaboonAnyOpaqueModule || module == pyBaboonExceptionsModule || module == pyBaboonIdReprModule) {
+        if (module == pyBaboonCodecsModule || module == pyBaboonSharedRuntimeModule || module == pyBaboonConversionsModule || module == pyBaboonServiceWiringModule || module == pyBaboonAnyOpaqueModule || module == pyBaboonExceptionsModule || module == pyBaboonIdReprModule || module == pyBaboonCodecsFacadeModule) {
           val baseString = pyFileTools.definitionsBasePkg.mkString(".")
           q"from $baseString.${module.module} import $typesString"
         } else if (module == pyCrossLanguageFixturePathModule) {

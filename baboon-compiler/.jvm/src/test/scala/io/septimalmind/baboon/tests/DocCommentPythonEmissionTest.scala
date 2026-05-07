@@ -53,6 +53,7 @@ abstract class DocCommentPythonEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboon
       serviceResult               = ServiceResultConfig.pythonDefault,
       serviceContext              = ServiceContextConfig.default,
       pragmas                     = Map.empty,
+      generateDomainFacade        = false,
     ),
   )
 

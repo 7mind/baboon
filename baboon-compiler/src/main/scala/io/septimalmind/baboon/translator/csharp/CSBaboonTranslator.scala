@@ -173,9 +173,80 @@ class CSBaboonTranslator[F[+_, +_]: Error2](
   private def translateLineage(
     lineage: BaboonLineage
   ): Out[List[CSDefnTranslator.Output]] = {
-    F.flatSequenceAccumErrors {
-      lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList
+    for {
+      perVersion <- F.flatSequenceAccumErrors {
+        lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList
+      }
+      facade = generateDomainFacade(lineage)
+    } yield {
+      perVersion ++ facade
     }
+  }
+
+  // Per-domain auto-registration facade (MFACADE-PR-6 stage B). Emits a `Domain<PascalDomainId>Facade`
+  // class in the unversioned top-level domain namespace, whose parameterless ctor calls `Register(...)`
+  // for every known version of the domain. Users instantiate it directly instead of registering each
+  // version by hand.
+  //
+  // Gated on the same products that produce the singletons it references: `Conversion` (emits
+  // `BaboonCodecsJson`/`BaboonCodecsUeba`) and — for the meta factory arg — `writeEvolutionDict`
+  // (emits `BaboonMeta`). When `writeEvolutionDict` is off, the 3-arg `Register` overload is used.
+  private def generateDomainFacade(lineage: BaboonLineage): List[CSDefnTranslator.Output] = {
+    if (!target.output.products.contains(CompilerProduct.Conversion)) return List.empty
+    if (!target.language.generateDomainFacade) return List.empty
+
+    val evo            = lineage.evolution
+    val latestVersion  = evo.latest
+    val latestDomain   = lineage.versions(latestVersion)
+    val latestPkg      = trans.toCsPkg(latestDomain.id, latestVersion, evo)
+    val basename       = csFiles.basename(latestDomain, evo)
+    val withMeta       = target.language.writeEvolutionDict
+    val pascalDomainId = latestDomain.id.path.iterator.map(_.capitalize).mkString
+    val className      = s"Domain${pascalDomainId}Facade"
+
+    // Emit one Register call per known version, in ascending order.
+    val registers = lineage.versions.toSeq.sortBy(_._1).map {
+      case (version, domain) =>
+        val versionPkg = trans.toCsPkg(domain.id, version, evo)
+        val codecsJson = CSValue.CSType(versionPkg, "BaboonCodecsJson", fq = false, CSValue.CSTypeOrigin.Other)
+        val codecsUeba = CSValue.CSType(versionPkg, "BaboonCodecsUeba", fq = false, CSValue.CSTypeOrigin.Other)
+        val metaFac    = CSValue.CSType(versionPkg, "BaboonMeta", fq = false, CSValue.CSTypeOrigin.Other)
+        val domainId   = domain.id.toString
+        val versionStr = version.v.toString
+
+        if (withMeta) {
+          q"""Register(
+             |    new $baboonDomainVersion("$domainId", "$versionStr"),
+             |    () => $codecsJson.Instance,
+             |    () => $codecsUeba.Instance,
+             |    () => $metaFac.Instance);""".stripMargin
+        } else {
+          q"""Register(
+             |    new $baboonDomainVersion("$domainId", "$versionStr"),
+             |    () => $codecsJson.Instance,
+             |    () => $codecsUeba.Instance);""".stripMargin
+        }
+    }.toList
+
+    val classTree =
+      q"""public sealed class $className : $baboonCodecsFacade
+         |{
+         |    public $className() : base()
+         |    {
+         |        ${registers.join("\n").shift(8).trim}
+         |    }
+         |}""".stripMargin
+
+    val source = csTrees.inNs(latestPkg.parts.toSeq, classTree)
+    List(
+      CSDefnTranslator.Output(
+        s"$basename/$className.cs",
+        Some(source),
+        latestPkg,
+        CompilerProduct.Conversion,
+        origin = OutputOrigin.Runtime,
+      )
+    )
   }
 
   private def translateProduct(

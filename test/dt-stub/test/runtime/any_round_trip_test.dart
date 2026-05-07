@@ -483,7 +483,7 @@ void main() {
       // $av?, $at?) alongside the $c content key. Any change to the envelope that drops one
       // of these would break cross-language interop.
       final original = _buildJsonNativeHolder();
-      final token = Holder_JsonCodec.instance.encode(BaboonCodecContext.compact, original) as Map<String, dynamic>;
+      final Map<String, dynamic> token = Holder_JsonCodec.instance.encode(BaboonCodecContext.compact, original);
 
       // fAny variant A → all four meta keys + $c present.
       final anyField = token['fAny'] as Map<String, dynamic>;

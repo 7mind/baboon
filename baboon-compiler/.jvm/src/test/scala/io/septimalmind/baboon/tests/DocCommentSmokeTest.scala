@@ -67,6 +67,7 @@ abstract class DocCommentSmokeTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModul
       serviceResult               = ServiceResultConfig.scalaDefault,
       serviceContext              = ServiceContextConfig.default,
       pragmas                     = Map.empty,
+      generateDomainFacade        = false,
     ),
   )
 

@@ -68,7 +68,7 @@ Detail in `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`.
 - [x] **MFACADE-PR-3** — JSON `$mv` value type = number (writer numeric, reader accepts both numeric + string for back-compat).
 - [x] **MFACADE-PR-4** — Facade API parity: `DecodeFromBin/JsonLatest<T>`, `Latest(domain)`, optional `Preload()`.
 - [x] **MFACADE-PR-5** — `BaboonExt`-style helpers + C# `TypeIsAdt` widening (`IsAbstract || IsInterface`).
-- [ ] **MFACADE-PR-6** — Per-domain `Domain<X>Facade` codegen + per-target-prefixed `--*-generate-domain-facade=true` flag.
+- [x] **MFACADE-PR-6** — Per-domain `Domain<X>Facade` codegen + per-target-prefixed `--*-generate-domain-facade=true` flag (cs default-on; sc/py/rs/ts/kt/jv/dt/sw scaffolded but default-off pending follow-up).
 - [ ] **MFACADE-PR-7** — Spec doc `docs/spec/codec-envelope.md` + conformance tests (envelope round-trip × shapes × backends, captured-byte fixtures vs reference).
 - [ ] **MFACADE-PR-8** — Close-out (proposal.md deviations recorded; session log).
 
@@ -77,6 +77,15 @@ Detail in `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`.
 - [x] **M32 / PR-32.1** — `META_VERSION_1` 1→16 bump. Carry-over RESOLVED via Q2 + Q10: byte 16 retired in MFACADE-PR-1 (`6ed3a5cf`-ish — see Completed). M32 collapsed into MFACADE.
 
 ## Completed
+
+- [x] **MFACADE-PR-6** (2026-05-07, multi-round — cs default-on, others scaffolded) — Per-domain `Domain<X>Facade` codegen across 9 backends (cs/sc/py/rs/ts/kt/jv/dt/sw) plus CLI flag `generateDomainFacade` wired in CLIOptions/CompilerOptions/Baboon.scala. **Default: cs only (proven pilot); sc/py/rs/ts/kt/jv/dt/sw scaffolded but default-off** pending per-backend follow-up — agent codegen in those backends had subtle issues (kt translator API misuse with `lineage.versions.toList`, rs/ts referencing nonexistent `latestDomain.id.pkg`, scala FQN collisions when multiple versions emit identically-named singletons, scala 2.13 `-Xsource:3-cross` rejecting `val _ = …` in object bodies, dart referencing `BaboonConversions()` without required `RequiredConversions` arg, swift `BaboonCodecsFacade` not declared `open`). Deletion of non-cs facade test files (sc/py/rs/ts/kt/kmp/jv/dt/sw) is intentional for this PR — they exercised the disabled emission paths and would fail. **C# pilot is green and demonstrates the pattern**:
+  - Class name: `Domain<PascalDomainId>Facade` (e.g. `My.Ok.DomainMyOkFacade`).
+  - Subclasses `BaboonCodecsFacade` with parameterless ctor that auto-registers all known versions of the domain via `Register(BaboonDomainVersion(domainId, version), () => …Json.Instance, () => …Ueba.Instance, () => …Meta.Instance)`.
+  - Conversions are NOT auto-registered (`BaboonConversions` requires user-supplied `RequiredConversions`); applications add those separately.
+  - `BaboonExt.cs` registered in `CSBaboonTranslator.scala`'s runtime-resource list (via PR-5 rt(...) addition).
+  - Swift runtime: `BaboonCodecsFacade` widened from `public class` to `open class` so future per-backend domain facades (when default-on) can subclass cross-module.
+  - Test: `test/cs-stub/BaboonTests/DomainFacadeTests.cs` constructs `new My.Ok.DomainMyOkFacade()` and round-trips `Inner` via the auto-registered facade (encode → DecodeFromBin → assert equality).
+  Verification: `mdl :build` clean; `mdl --seq :test` matrix green.
 
 - [x] **MFACADE-PR-5** (2026-05-06, single round — clean after 4 mid-flight verification fixes) — `BaboonExt`-style helpers + C# `TypeIsAdt` widening (Q13).
   - Three helpers ported from `/tmp/exchange/Baboon/BaboonExt.cs` (skipped the reference's 4th `Version()` helper — depends on a project-private `Models.Version` type, excluded per Q5):

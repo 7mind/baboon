@@ -52,6 +52,7 @@ abstract class DocCommentScalaEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonT
       serviceResult               = ServiceResultConfig.scalaDefault,
       serviceContext              = ServiceContextConfig.default,
       pragmas                     = Map.empty,
+      generateDomainFacade        = false,
     ),
   )
 

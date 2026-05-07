@@ -132,6 +132,10 @@ object KtTypes {
   val baboonAbstractConversion: KtType  = KtType(baboonRuntimePkg, "AbstractConversion")
   val baboonAbstractConversions: KtType = KtType(baboonRuntimePkg, "AbstractBaboonConversions")
 
+  // baboon domain facade (MFACADE-PR-6)
+  val baboonCodecsFacade: KtType  = KtType(baboonRuntimePkg, "BaboonCodecsFacade")
+  val baboonDomainVersion: KtType = KtType(baboonRuntimePkg, "BaboonDomainVersion")
+
   // kotlin
   val kotlinPkg: KtPackageId = parseKtPkg("kotlin")
 

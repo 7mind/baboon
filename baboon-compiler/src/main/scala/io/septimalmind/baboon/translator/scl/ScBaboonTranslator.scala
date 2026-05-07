@@ -53,8 +53,63 @@ class ScBaboonTranslator[F[+_, +_]: Error2](
   private def translateLineage(
     lineage: BaboonLineage
   ): Out[List[ScDefnTranslator.Output]] = {
-    F.flatSequenceAccumErrors {
-      lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList
+    for {
+      perVersion <- F.flatSequenceAccumErrors {
+        lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList
+      }
+      facade <- generateDomainFacade(lineage)
+    } yield perVersion ++ facade
+  }
+
+  private def generateDomainFacade(lineage: BaboonLineage): Out[List[ScDefnTranslator.Output]] = {
+    if (!target.language.generateDomainFacade || !target.output.products.contains(CompilerProduct.Conversion)) {
+      F.pure(List.empty)
+    } else {
+      val domainPkg    = trans.toScPkg(lineage.pkg, lineage.evolution.latest, omitVersion = true)
+      val domainIdStr  = lineage.pkg.path.mkString(".")
+      val facadeName   = "Domain" + lineage.pkg.path.map(s => s.capitalize).mkString + "Facade"
+
+      val withMeta = target.language.writeEvolutionDict
+
+      val registrations = lineage.versions.iterator.toList.sortBy(_._1).map {
+        case (version, _) =>
+          val versionedPkg = trans.toScPkg(lineage.pkg, version, lineage.evolution)
+          // Use fully-qualified `_root_.…` references because every per-version package emits
+          // identically-named singletons (`BaboonCodecsJson` / `…Ueba` / `BaboonMetadata`); a
+          // simple import would collide and the renderer would silently use the same singleton
+          // for every register call. Forcing FQN-with-_root_ sidesteps the import collector.
+          val verPath        = versionedPkg.parts.mkString(".")
+          val jsonCodecsRef  = q"_root_.$verPath.BaboonCodecsJson"
+          val uebaCodecsRef  = q"_root_.$verPath.BaboonCodecsUeba"
+          val domainVersionExpr =
+            q"""$baboonDomainVersion("$domainIdStr", "${version.v.toString}")"""
+          // `locally { … }` wrapper avoids Scala 2.13 + `-Wconf:any:error` rejection of
+          // `val _ = …` for Unit-typed expressions inside object bodies. The 4-arg overload
+          // (with `BaboonMetadata`) only exists when `writeEvolutionDict=true`; otherwise the
+          // 3-arg overload is the only valid choice.
+          if (withMeta) {
+            val metadataRef = q"_root_.$verPath.BaboonMetadata"
+            q"""locally { register($domainVersionExpr, $jsonCodecsRef, $uebaCodecsRef, $metadataRef); () }"""
+          } else {
+            q"""locally { register($domainVersionExpr, $jsonCodecsRef, $uebaCodecsRef); () }"""
+          }
+      }
+
+      val facadeTree =
+        q"""object $facadeName extends $baboonCodecsFacade {
+           |  ${registrations.joinN().shift(2).trim}
+           |}""".stripMargin
+
+      val facadeWrapped = scTreeTools.inNs(domainPkg.parts.toSeq, facadeTree)
+      val basename      = lineage.pkg.path.map(_.toLowerCase).mkString("/")
+      val facadeOutput  = ScDefnTranslator.Output(
+        s"$basename/$facadeName.scala",
+        facadeWrapped,
+        domainPkg,
+        CompilerProduct.Conversion,
+      )
+
+      F.pure(List(facadeOutput))
     }
   }
 

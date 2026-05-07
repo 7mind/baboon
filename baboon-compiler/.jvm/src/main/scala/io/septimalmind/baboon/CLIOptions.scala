@@ -82,6 +82,8 @@ case class CsCLIOptions(
   serviceContextType: Option[String],
   @HelpMessage("Context parameter name (default: ctx)")
   serviceContextParameterName: Option[String],
+  @HelpMessage("Generate a per-domain `Domain<DomainId>Facade` class with a parameterless ctor that auto-registers all known versions (default true).")
+  generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
 ) extends SharedCLIOptions
@@ -123,6 +125,8 @@ case class ScCLIOptions(
   serviceContextType: Option[String],
   @HelpMessage("Context parameter name (default: ctx)")
   serviceContextParameterName: Option[String],
+  @HelpMessage("Generate a per-domain `Domain<DomainId>Facade` class with a parameterless ctor that auto-registers all known versions (default true).")
+  generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
 ) extends SharedCLIOptions
@@ -159,6 +163,8 @@ case class PyCLIOptions(
   serviceContextType: Option[String],
   @HelpMessage("Context parameter name (default: ctx)")
   serviceContextParameterName: Option[String],
+  @HelpMessage("Generate a per-domain `Domain<DomainId>Facade` class with a parameterless ctor that auto-registers all known versions (default true).")
+  generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
 ) extends SharedCLIOptions
@@ -192,6 +198,8 @@ case class RsCLIOptions(
   serviceContextType: Option[String],
   @HelpMessage("Context parameter name (default: ctx)")
   serviceContextParameterName: Option[String],
+  @HelpMessage("Generate a per-domain `Domain<DomainId>Facade` class with a parameterless ctor that auto-registers all known versions (default true).")
+  generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
   @HelpMessage("Generate async service interfaces (default: false)")
@@ -235,6 +243,8 @@ case class TsCLIOptions(
   serviceContextType: Option[String],
   @HelpMessage("Context parameter name (default: ctx)")
   serviceContextParameterName: Option[String],
+  @HelpMessage("Generate a per-domain `Domain<DomainId>Facade` class with a parameterless ctor that auto-registers all known versions (default true).")
+  generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
   @HelpMessage("Generate async service interfaces with Promise return types (default: false)")
@@ -286,6 +296,8 @@ case class KtCLIOptions(
   serviceContextType: Option[String],
   @HelpMessage("Context parameter name (default: ctx)")
   serviceContextParameterName: Option[String],
+  @HelpMessage("Generate a per-domain `Domain<DomainId>Facade` class with a parameterless ctor that auto-registers all known versions (default true).")
+  generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
   @HelpMessage("Generate Kotlin Multiplatform compatible code (default: false)")
@@ -324,6 +336,8 @@ case class JvCLIOptions(
   serviceContextType: Option[String],
   @HelpMessage("Context parameter name (default: ctx)")
   serviceContextParameterName: Option[String],
+  @HelpMessage("Generate a per-domain `Domain<DomainId>Facade` class with a parameterless ctor that auto-registers all known versions (default true).")
+  generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
 ) extends SharedCLIOptions
@@ -357,6 +371,8 @@ case class DtCLIOptions(
   serviceContextType: Option[String],
   @HelpMessage("Context parameter name (default: ctx)")
   serviceContextParameterName: Option[String],
+  @HelpMessage("Generate a per-domain `Domain<DomainId>Facade` class with a parameterless ctor that auto-registers all known versions (default true).")
+  generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
 ) extends SharedCLIOptions
@@ -441,6 +457,8 @@ case class SwCLIOptions(
   serviceContextType: Option[String],
   @HelpMessage("Context parameter name (default: ctx)")
   serviceContextParameterName: Option[String],
+  @HelpMessage("Generate a per-domain `Domain<DomainId>Facade` class with a parameterless ctor that auto-registers all known versions (default true).")
+  generateDomainFacade: Option[Boolean],
   @HelpMessage("Set a pragma value (key=value, repeatable)")
   pragma: List[String],
 ) extends SharedCLIOptions

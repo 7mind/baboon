@@ -53,6 +53,7 @@ abstract class DocCommentRustEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
       serviceResult               = ServiceResultConfig.rustDefault,
       serviceContext              = ServiceContextConfig.default,
       pragmas                     = Map.empty,
+      generateDomainFacade        = false,
       asyncServices               = false,
       cratePrefix                 = "crate",
       reexportMode                = "selective",

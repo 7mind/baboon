@@ -45,6 +45,10 @@ object JvTypes {
   val baboonRandom: JvType                    = JvType(baboonFixturePkg, "BaboonRandom")
   val baboonRandomFactory: JvType             = JvType(baboonFixturePkg, "BaboonRandomFactory")
 
+  // baboon facade types
+  val baboonCodecsFacade: JvType    = JvType(baboonRuntimePkg, "BaboonCodecsFacade")
+  val baboonDomainVersion: JvType   = JvType(baboonRuntimePkg, "BaboonDomainVersion")
+
   // baboon service wiring types
   val baboonMethodId: JvType        = JvType(baboonRuntimePkg, "BaboonMethodId")
   val baboonWiringError: JvType     = JvType(baboonRuntimePkg, "BaboonWiringError")

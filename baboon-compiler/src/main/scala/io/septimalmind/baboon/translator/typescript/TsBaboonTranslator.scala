@@ -55,8 +55,13 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def translateLineage(lineage: BaboonLineage): Out[List[TsDefnTranslator.Output]] = {
-    F.flatSequenceAccumErrors {
-      lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList
+    for {
+      perVersion <- F.flatSequenceAccumErrors {
+        lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList
+      }
+      facade = generateDomainFacade(lineage)
+    } yield {
+      perVersion ++ facade
     }
   }
 
@@ -98,6 +103,148 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
           defnSources ++ serviceRt ++ dispatcher ++ conversionSources ++ fixturesSources ++ testsSources
         }
     }
+  }
+
+  private def generateDomainFacade(lineage: BaboonLineage): List[TsDefnTranslator.Output] = {
+    if (!target.output.products.contains(CompilerProduct.Runtime)) return List.empty
+
+    val evo            = lineage.evolution
+    val latestVersion  = evo.latest
+    val latestDomain   = lineage.versions(latestVersion)
+    val latestBasename = tsFileTools.basename(latestDomain, evo)
+
+    // Pascal-case domain name: "my.ok" → "MyOk"
+    val pascalDomainId = latestDomain.id.path.map(_.capitalize).mkString
+    val className      = s"Domain${pascalDomainId}Facade"
+    val domainIdStr    = latestDomain.id.path.mkString(".")
+
+    // Collect non-ADT-branch User types per version
+    // Returns list of (tsImportPath, typeAlias, typeName, typeIdentifier)
+    // typeAlias differs from typeName for older versions (to avoid import name conflicts)
+    def collectTypes(domain: Domain): List[(String, String, String, String)] = {
+      val versionStr    = domain.version.v.toString
+      val isLatest      = domain.version == evo.latest
+      val verSuffix     = versionStr.replace('.', '_')
+      // Relative path prefix from facade file's dir (= latestBasename) to type's dir
+      val relPrefix = if (isLatest) "." else s"./v$verSuffix"
+      domain.defs.meta.nodes.toList.flatMap {
+        case (_, defn: DomainMember.User) =>
+          defn.id.owner match {
+            case Owner.Adt(_) => None // skip ADT branches
+            case _ =>
+              defn.defn match {
+                case _: Typedef.Dto | _: Typedef.Enum | _: Typedef.Adt =>
+                  val typeName   = defn.id.name.name.capitalize
+                  val typeAlias  = if (isLatest) typeName else s"${typeName}V$verSuffix"
+                  val importPath = s"$relPrefix/$typeName"
+                  val typeId     = defn.id.toString
+                  Some((importPath, typeAlias, typeName, typeId))
+                case _ => None
+              }
+          }
+        case _ => None
+      }
+    }
+
+    // Ordered versions (ascending)
+    val orderedVersions = lineage.versions.toSeq.sortBy(_._1).map { case (_, domain) => domain }
+
+    val sfx = target.language.importSuffix
+    val sb  = new StringBuilder
+
+    // Imports
+    sb.append(s"import { AbstractBaboonJsonCodecs, AbstractBaboonUebaCodecs, BaboonBinCodec, BaboonJsonCodec, BaboonDomainVersion, BaboonMeta, Lazy } from '../BaboonSharedRuntime$sfx';\n")
+    sb.append(s"import type { AbstractBaboonConversions } from '../BaboonSharedRuntime$sfx';\n")
+    sb.append(s"import { BaboonCodecsFacade } from '../BaboonCodecsFacade$sfx';\n")
+
+    // Per-version imports and class definitions
+    for (domain <- orderedVersions) {
+      val types = collectTypes(domain)
+
+      for ((importPath, typeAlias, typeName, _) <- types) {
+        if (typeAlias == typeName) {
+          sb.append(s"import { $typeName, ${typeName}_JsonCodec, ${typeName}_UEBACodec } from '$importPath$sfx';\n")
+        } else {
+          // Aliased import for non-latest versions to avoid name conflicts
+          sb.append(s"import { $typeName as $typeAlias, ${typeName}_JsonCodec as ${typeAlias}_JsonCodec, ${typeName}_UEBACodec as ${typeAlias}_UEBACodec } from '$importPath$sfx';\n")
+        }
+      }
+    }
+
+    sb.append("\n")
+
+    // Per-version codec/meta/conversions classes
+    for (domain <- orderedVersions) {
+      val versionStr   = domain.version.v.toString
+      val verSuffix    = versionStr.replace('.', '_')
+      val types        = collectTypes(domain)
+      val verClassName = s"Domain${pascalDomainId}V${verSuffix}"
+
+      // JSON codecs class
+      sb.append(s"class ${verClassName}JsonCodecs extends AbstractBaboonJsonCodecs {\n")
+      sb.append( "    constructor() {\n")
+      sb.append( "        super();\n")
+      for ((_, typeAlias, _, _) <- types) {
+        sb.append(s"        this.register($typeAlias.BaboonTypeIdentifier, new Lazy<BaboonJsonCodec<unknown>>(() => ${typeAlias}_JsonCodec.instance as unknown as BaboonJsonCodec<unknown>));\n")
+      }
+      sb.append( "    }\n")
+      sb.append( "}\n\n")
+
+      // UEBA codecs class
+      sb.append(s"class ${verClassName}UebaCodecs extends AbstractBaboonUebaCodecs {\n")
+      sb.append( "    constructor() {\n")
+      sb.append( "        super();\n")
+      for ((_, typeAlias, _, _) <- types) {
+        sb.append(s"        this.register($typeAlias.BaboonTypeIdentifier, new Lazy<BaboonBinCodec<unknown>>(() => ${typeAlias}_UEBACodec.instance as unknown as BaboonBinCodec<unknown>));\n")
+      }
+      sb.append( "    }\n")
+      sb.append( "}\n\n")
+
+      // Conversions class
+      sb.append(s"class ${verClassName}Conversions implements AbstractBaboonConversions {\n")
+      sb.append(s"    public versionsFrom(): string[] { return []; }\n")
+      sb.append(s"""    public versionTo(): string { return '$versionStr'; }\n""")
+      sb.append( "}\n\n")
+
+      // Meta class
+      sb.append(s"class ${verClassName}Meta implements BaboonMeta {\n")
+      sb.append(s"""    public sameInVersions(_typeId: string): string[] { return ['$versionStr']; }\n""")
+      sb.append( "}\n\n")
+    }
+
+    // Facade class
+    sb.append(s"export class $className extends BaboonCodecsFacade {\n")
+    sb.append( "    constructor() {\n")
+    sb.append( "        super();\n")
+    for (domain <- orderedVersions) {
+      val versionStr   = domain.version.v.toString
+      val verSuffix    = versionStr.replace('.', '_')
+      val verClassName = s"Domain${pascalDomainId}V${verSuffix}"
+      sb.append( "        this.register(\n")
+      sb.append(s"""            new BaboonDomainVersion('$domainIdStr', '$versionStr'),\n""")
+      sb.append(s"            () => new ${verClassName}JsonCodecs(),\n")
+      sb.append(s"            () => new ${verClassName}UebaCodecs(),\n")
+      sb.append(s"            () => new ${verClassName}Conversions(),\n")
+      sb.append(s"            () => new ${verClassName}Meta(),\n")
+      sb.append( "        );\n")
+    }
+    sb.append( "    }\n")
+    sb.append( "}\n")
+
+    val content    = sb.toString()
+    val outputPath = s"$latestBasename/$className.ts"
+    val moduleParts = tsFileTools.definitionsBasePkg ++ outputPath.stripSuffix(".ts").split('/').toList
+    val moduleId   = TsValue.TsModuleId(moduleParts)
+
+    List(
+      TsDefnTranslator.Output(
+        outputPath,
+        TextTree.verbatim(content),
+        moduleId,
+        CompilerProduct.Runtime,
+        doNotModify = true,
+      )
+    )
   }
 
   private def sharedRuntime: Out[List[TsDefnTranslator.Output]] = {

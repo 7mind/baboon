@@ -4,7 +4,7 @@ import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.RsTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
-import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustKeyword, escapeRustModuleName}
+import io.septimalmind.baboon.translator.rust.RsDefnTranslator.{escapeRustKeyword, escapeRustModuleName, toSnakeCaseRaw}
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
@@ -70,8 +70,13 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
   }
 
   private def translateLineage(lineage: BaboonLineage): Out[List[RsDefnTranslator.Output]] = {
-    F.flatSequenceAccumErrors {
-      lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList
+    for {
+      perVersion <- F.flatSequenceAccumErrors {
+        lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList
+      }
+      facade = generateDomainFacade(lineage)
+    } yield {
+      perVersion ++ facade
     }
   }
 
@@ -112,6 +117,180 @@ class RsBaboonTranslator[F[+_, +_]: Error2](
           defnSources ++ serviceRt ++ conversionSources ++ fixturesSources ++ testsSources
         }
     }
+  }
+
+  private def generateDomainFacade(lineage: BaboonLineage): List[RsDefnTranslator.Output] = {
+    if (!target.output.products.contains(CompilerProduct.Runtime)) return List.empty
+
+    val evo           = lineage.evolution
+    val latestVersion = evo.latest
+    val latestDomain  = lineage.versions(latestVersion)
+    val latestBasename = rsFiles.basename(latestDomain, evo)
+
+    // Pascal-case domain name: "my.ok" → "MyOk"
+    val pascalDomainId = latestDomain.id.path.map(_.capitalize).mkString
+    val structName     = s"Domain${pascalDomainId}Facade"
+    val domainIdStr    = latestDomain.id.path.mkString(".")
+
+    // Collect non-ADT-branch User types per version
+    def collectTypes(domain: Domain): List[(String, String, String)] = {
+      // Returns list of (rustFullPath, typeIdentifier, versionStr)
+      val versionStr = domain.version.v.toString
+      val isLatest   = domain.version == evo.latest
+      val crateParts = domain.id.path.map(_.toLowerCase) ++ (if (isLatest) Nil else List("v" + versionStr.replace('.', '_')))
+      domain.defs.meta.nodes.toList.flatMap {
+        case (_, defn: DomainMember.User) =>
+          defn.id.owner match {
+            case Owner.Adt(_) => None // skip ADT branches
+            case _ =>
+              defn.defn match {
+                case _: Typedef.Dto | _: Typedef.Enum | _: Typedef.Adt =>
+                  val typeName   = defn.id.name.name.capitalize
+                  val moduleName = escapeRustModuleName(toSnakeCaseRaw(defn.id.name.name))
+                  val fullPath   = (List("crate") ++ crateParts ++ List(moduleName) :+ typeName).mkString("::")
+                  val typeId     = defn.id.toString
+                  Some((fullPath, typeId, versionStr))
+                case _ => None
+              }
+          }
+        case _ => None
+      }
+    }
+
+    // Ordered versions (ascending by semver)
+    val orderedVersions = lineage.versions.toSeq.sortBy(_._1).map { case (_, domain) => domain }
+
+    val sb = new StringBuilder
+    sb.append("use crate::baboon_codecs_facade::{\n")
+    sb.append("    AbstractBaboonJsonCodecsImpl, AbstractBaboonUebaCodecsImpl,\n")
+    sb.append("    BaboonAnyBinCodec, BaboonAnyJsonCodec, BaboonAnyMeta,\n")
+    sb.append("    BaboonCodecsFacade, BaboonDomainVersion, BaboonGeneratedDyn,\n")
+    sb.append("};\n")
+    sb.append("use crate::baboon_runtime::{BaboonBinDecode, BaboonBinEncode, BaboonCodecContext};\n")
+    sb.append("use std::io::{Read, Write};\n")
+    sb.append("use std::sync::Arc;\n")
+    sb.append("\n")
+
+    // Per-version: generate Dyn wrappers, codec structs, codec factory functions, meta
+    for (domain <- orderedVersions) {
+      val versionStr = domain.version.v.toString
+      val verSuffix  = versionStr.replace('.', '_')
+      val types      = collectTypes(domain)
+
+      for ((fullPath, typeId, _) <- types) {
+        val baseName  = fullPath.split("::").last
+        val dynName   = s"${baseName}V${verSuffix}Dyn"
+        val binCodec  = s"${baseName}V${verSuffix}BinCodec"
+        val jsonCodec = s"${baseName}V${verSuffix}JsonCodec"
+
+        sb.append(s"struct $dynName($fullPath);\n")
+        sb.append(s"impl BaboonGeneratedDyn for $dynName {\n")
+        sb.append(s"""    fn baboon_domain_version_dyn(&self) -> &str { "$versionStr" }\n""")
+        sb.append(s"""    fn baboon_domain_identifier_dyn(&self) -> &str { "$domainIdStr" }\n""")
+        sb.append(s"""    fn baboon_type_identifier_dyn(&self) -> &str { "$typeId" }\n""")
+        sb.append(s"""    fn baboon_same_in_versions_dyn(&self) -> Vec<String> { vec!["$versionStr".to_string()] }\n""")
+        sb.append( "    fn as_any(&self) -> &dyn std::any::Any { self }\n")
+        sb.append( "    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> { self }\n")
+        sb.append( "}\n")
+        sb.append(s"struct $binCodec;\n")
+        sb.append(s"impl BaboonAnyBinCodec for $binCodec {\n")
+        sb.append(s"""    fn type_identifier(&self) -> &str { "$typeId" }\n""")
+        sb.append( "    fn encode_dyn(&self, ctx: &BaboonCodecContext, writer: &mut dyn Write, value: &dyn BaboonGeneratedDyn) -> Result<(), crate::any_opaque::BaboonCodecError> {\n")
+        sb.append(s"        let v = value.as_any().downcast_ref::<$dynName>().ok_or_else(|| crate::any_opaque::BaboonCodecError::encoder_failure(\"${binCodec}.encode: wrong type\"))?;\n")
+        sb.append( "        v.0.encode_ueba(ctx, writer).map_err(|e| crate::any_opaque::BaboonCodecError::encoder_failure(format!(\"{}\", e)))\n")
+        sb.append( "    }\n")
+        sb.append( "    fn decode_dyn(&self, ctx: &BaboonCodecContext, reader: &mut dyn Read) -> Result<Box<dyn BaboonGeneratedDyn>, crate::any_opaque::BaboonCodecError> {\n")
+        sb.append(s"        let v = <$fullPath as BaboonBinDecode>::decode_ueba(ctx, reader).map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!(\"{}\", e)))?;\n")
+        sb.append(s"        Ok(Box::new($dynName(v)))\n")
+        sb.append( "    }\n")
+        sb.append( "}\n")
+        sb.append(s"struct $jsonCodec;\n")
+        sb.append(s"impl BaboonAnyJsonCodec for $jsonCodec {\n")
+        sb.append(s"""    fn type_identifier(&self) -> &str { "$typeId" }\n""")
+        sb.append( "    fn encode_json_dyn(&self, _ctx: &BaboonCodecContext, value: &dyn BaboonGeneratedDyn) -> Result<serde_json::Value, crate::any_opaque::BaboonCodecError> {\n")
+        sb.append(s"        let v = value.as_any().downcast_ref::<$dynName>().ok_or_else(|| crate::any_opaque::BaboonCodecError::encoder_failure(\"${jsonCodec}.encode: wrong type\"))?;\n")
+        sb.append( "        serde_json::to_value(&v.0).map_err(|e| crate::any_opaque::BaboonCodecError::encoder_failure(format!(\"{}\", e)))\n")
+        sb.append( "    }\n")
+        sb.append( "    fn decode_json_dyn(&self, _ctx: &BaboonCodecContext, wire: &serde_json::Value) -> Result<Box<dyn BaboonGeneratedDyn>, crate::any_opaque::BaboonCodecError> {\n")
+        sb.append(s"        let v: $fullPath = serde_json::from_value(wire.clone()).map_err(|e| crate::any_opaque::BaboonCodecError::decoder_failure(format!(\"{}\", e)))?;\n")
+        sb.append(s"        Ok(Box::new($dynName(v)))\n")
+        sb.append( "    }\n")
+        sb.append( "}\n")
+      }
+
+      // Meta struct
+      val metaName = s"Domain${pascalDomainId}V${verSuffix}Meta"
+      sb.append(s"struct $metaName;\n")
+      sb.append(s"impl BaboonAnyMeta for $metaName {\n")
+      sb.append( "    fn same_in_versions(&self, _type_id: &str) -> Vec<String> {\n")
+      sb.append(s"""        vec!["$versionStr".to_string()]\n""")
+      sb.append( "    }\n")
+      sb.append( "}\n")
+
+      // JSON codecs factory
+      val jsonFn = s"make_${domainIdStr.replace('.', '_')}_v${verSuffix}_json_codecs"
+      sb.append(s"fn $jsonFn() -> Arc<AbstractBaboonJsonCodecsImpl> {\n")
+      sb.append( "    let mut t = AbstractBaboonJsonCodecsImpl::new();\n")
+      for ((fullPath, typeId, _) <- types) {
+        val baseName  = fullPath.split("::").last
+        val jsonCodec = s"${baseName}V${verSuffix}JsonCodec"
+        sb.append(s"""    t.register("$typeId", || Arc::new($jsonCodec) as Arc<dyn BaboonAnyJsonCodec>);\n""")
+      }
+      sb.append( "    Arc::new(t)\n")
+      sb.append( "}\n")
+
+      // Bin codecs factory
+      val binFn = s"make_${domainIdStr.replace('.', '_')}_v${verSuffix}_bin_codecs"
+      sb.append(s"fn $binFn() -> Arc<AbstractBaboonUebaCodecsImpl> {\n")
+      sb.append( "    let mut t = AbstractBaboonUebaCodecsImpl::new();\n")
+      for ((fullPath, typeId, _) <- types) {
+        val baseName = fullPath.split("::").last
+        val binCodec = s"${baseName}V${verSuffix}BinCodec"
+        sb.append(s"""    t.register("$typeId", || Arc::new($binCodec) as Arc<dyn BaboonAnyBinCodec>);\n""")
+      }
+      sb.append( "    Arc::new(t)\n")
+      sb.append( "}\n")
+    }
+
+    // Facade struct
+    sb.append(s"\npub struct $structName {\n")
+    sb.append( "    pub facade: BaboonCodecsFacade,\n")
+    sb.append( "}\n\n")
+    sb.append(s"impl $structName {\n")
+    sb.append( "    pub fn new() -> Self {\n")
+    sb.append( "        let facade = BaboonCodecsFacade::new();\n")
+    for (domain <- orderedVersions) {
+      val versionStr = domain.version.v.toString
+      val verSuffix  = versionStr.replace('.', '_')
+      val jsonFn     = s"make_${domainIdStr.replace('.', '_')}_v${verSuffix}_json_codecs"
+      val binFn      = s"make_${domainIdStr.replace('.', '_')}_v${verSuffix}_bin_codecs"
+      val metaName   = s"Domain${pascalDomainId}V${verSuffix}Meta"
+      sb.append( "        facade.register_with_meta(\n")
+      sb.append(s"""            BaboonDomainVersion::new("$domainIdStr", "$versionStr"),\n""")
+      sb.append(s"            $jsonFn,\n")
+      sb.append(s"            $binFn,\n")
+      sb.append(s"            || Arc::new($metaName) as Arc<dyn BaboonAnyMeta>,\n")
+      sb.append( "        );\n")
+    }
+    sb.append(s"        $structName { facade }\n")
+    sb.append( "    }\n")
+    sb.append( "}\n\n")
+    sb.append(s"impl Default for $structName {\n")
+    sb.append(s"    fn default() -> Self { Self::new() }\n")
+    sb.append( "}\n")
+
+    val content = sb.toString()
+    val crate   = trans.toRsCrate(latestDomain.id, latestVersion, evo)
+
+    List(
+      RsDefnTranslator.Output(
+        s"$latestBasename/domain_${pascalDomainId.toLowerCase}_facade.rs",
+        TextTree.verbatim(content),
+        crate,
+        CompilerProduct.Runtime,
+        doNotModify = true,
+      )
+    )
   }
 
   private def generateModFiles(

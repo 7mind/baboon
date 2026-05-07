@@ -78,6 +78,10 @@ object ScTypes {
   val baboonAbstractConversion  = ScType(baboonRuntimePkg, "AbstractConversion")
   val baboonAbstractConversions = ScType(baboonRuntimePkg, "AbstractBaboonConversions")
 
+  // baboon facade
+  val baboonCodecsFacade    = ScType(baboonRuntimePkg, "BaboonCodecsFacade")
+  val baboonDomainVersion   = ScType(baboonRuntimePkg, "BaboonDomainVersion")
+
   // scala
 
   val scalaPkg: ScPackageId = parseScPkg("_root_.scala")

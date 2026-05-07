@@ -132,6 +132,16 @@ $BABOON_BIN \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true
 
+# Re-rsync hand-written Dart runtime tests under test/runtime/ — the baboon `--test-output`
+# pass erases the entire test/ directory before writing generated tests (see
+# BaboonCompiler.cleanupTargetPaths via IzFiles.erase), so the original rsync of
+# test/dt-stub/test/runtime/ (the only checked-in subdir of test/) gets wiped. Restoring
+# it after codegen keeps hand-written runtime-side tests (e.g. domain_facade_test.dart)
+# discoverable by `dart test`.
+if [ -d "./test/dt-stub/test/runtime" ]; then
+  rsync -a ./test/dt-stub/test/runtime/ "$TEST_DIR/dt-stub/test/runtime/"
+fi
+
 # Move Dart runtime files into the baboon_runtime package
 mv "$TEST_DIR/dt-stub/lib/baboon_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
 mv "$TEST_DIR/dt-stub/lib/baboon_fixture.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
@@ -438,6 +448,13 @@ $BABOON_BIN \
   --sw-wrapped-adt-branch-codecs=true \
   --generate-ueba-codecs-by-default=true \
   --generate-json-codecs-by-default=true
+
+# Re-rsync hand-written Dart runtime tests under test/runtime/ — same rationale as in
+# test-gen-regular-adt: baboon's --test-output cleanup erases the entire test/ directory
+# before emitting generated tests, so the rsync of test/dt-stub/test/runtime/ is lost.
+if [ -d "./test/dt-stub/test/runtime" ]; then
+  rsync -a ./test/dt-stub/test/runtime/ "$TEST_DIR/dt-stub/test/runtime/"
+fi
 
 # Move Dart runtime files into the baboon_runtime package
 mv "$TEST_DIR/dt-stub/lib/baboon_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"

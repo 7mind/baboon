@@ -55,6 +55,7 @@ abstract class IdentifierKotlinEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboon
       serviceResult               = ServiceResultConfig.kotlinDefault,
       serviceContext              = ServiceContextConfig.default,
       pragmas                     = Map.empty,
+      generateDomainFacade        = false,
     ),
   )
 
@@ -240,6 +241,7 @@ abstract class IdentifierKotlinKmpEmissionTestBase[F[+_, +_]: Error2: TagKK: Bab
       serviceResult               = ServiceResultConfig.kotlinDefault,
       serviceContext              = ServiceContextConfig.default,
       pragmas                     = Map.empty,
+      generateDomainFacade        = false,
     ),
   )
 

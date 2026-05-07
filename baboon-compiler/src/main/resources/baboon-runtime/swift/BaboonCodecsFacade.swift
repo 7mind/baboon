@@ -27,7 +27,10 @@ import Foundation
 
 private let CONTENT_JSON_KEY = "$c"
 
-public class BaboonCodecsFacade: BaboonCodecsFacadeBase {
+// MFACADE-PR-6: `open` so generated `Domain<X>Facade` subclasses (in user packages outside
+// the BaboonRuntime module) can inherit. Swift's `public class` is closed by default;
+// cross-module subclassing requires `open`.
+open class BaboonCodecsFacade: BaboonCodecsFacadeBase {
     private var versionsCodecsJson: [BaboonDomainVersion: BaboonLazy<AbstractBaboonJsonCodecs>] = [:]
     private var versionsCodecsBin: [BaboonDomainVersion: BaboonLazy<AbstractBaboonUebaCodecs>] = [:]
     private var versionsConversions: [BaboonDomainVersion: BaboonLazy<AbstractBaboonConversions>] = [:]

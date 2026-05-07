@@ -5,6 +5,7 @@ import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.KtTarget
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.kotlin.KtTypes.*
+import io.septimalmind.baboon.translator.kotlin.KtValue.KtPackageId
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
@@ -28,9 +29,10 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
   override def translate(family: BaboonFamily): F[NEList[BaboonIssue], Sources] = {
     for {
       translated <- translateFamily(family)
+      facades    <- translateFacades(family)
       runtime    <- sharedRuntime()
       fixture    <- sharedFixture()
-      rendered = (translated ++ runtime ++ fixture).map {
+      rendered = (translated ++ facades ++ runtime ++ fixture).map {
         o =>
           val content = renderTree(o)
           (o.path, OutputFile(content, o.product))
@@ -55,6 +57,78 @@ class KtBaboonTranslator[F[+_, +_]: Error2](
     F.flatSequenceAccumErrors {
       lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList
     }
+  }
+
+  private def translateFacades(
+    family: BaboonFamily
+  ): Out[List[KtDefnTranslator.Output]] = {
+    if (target.language.generateDomainFacade && target.output.products.contains(CompilerProduct.Conversion)) {
+      F.flatSequenceAccumErrors {
+        family.domains.iterator.map { case (_, lineage) => generateDomainFacade(lineage) }.toList
+      }
+    } else {
+      F.pure(List.empty)
+    }
+  }
+
+  private def generateDomainFacade(lineage: BaboonLineage): Out[List[KtDefnTranslator.Output]] = {
+    val domainIdStr  = lineage.pkg.path.mkString(".")
+    val classNameStr = "Domain" + lineage.pkg.path.toList.map(s => s.head.toUpper + s.tail).mkString + "Facade"
+    val lineagePkg   = KtPackageId(lineage.pkg.path.map(_.toLowerCase))
+
+    val registerCalls = lineage.versions.toSeq.sortBy(_._1).map {
+      case (version, domain) =>
+        val verPkg      = trans.toKtPkg(domain.id, version, lineage.evolution)
+        val verStr      = version.v.toString
+        val codecsJson  = KtValue.KtType(verPkg, "BaboonCodecsJson")
+        val codecsUeba  = KtValue.KtType(verPkg, "BaboonCodecsUeba")
+        val metadata    = KtValue.KtType(verPkg, "BaboonMetadata")
+        val hasMeta     = target.language.writeEvolutionDict
+        val hasJson     = target.language.generateJsonCodecs
+        (hasJson, hasMeta) match {
+          case (true, true) =>
+            q"""register(
+               |  $baboonDomainVersion("$domainIdStr", "$verStr"),
+               |  { $codecsJson },
+               |  { $codecsUeba },
+               |  { $metadata },
+               |)""".stripMargin
+          case (true, false) =>
+            q"""register(
+               |  $baboonDomainVersion("$domainIdStr", "$verStr"),
+               |  { $codecsJson },
+               |  { $codecsUeba },
+               |)""".stripMargin
+          case (false, true) =>
+            q"""registerBin(
+               |  $baboonDomainVersion("$domainIdStr", "$verStr"),
+               |  { $codecsUeba },
+               |  { $metadata },
+               |)""".stripMargin
+          case (false, false) =>
+            q"""registerBin(
+               |  $baboonDomainVersion("$domainIdStr", "$verStr"),
+               |  { $codecsUeba },
+               |)""".stripMargin
+        }
+    }
+
+    val facadeTree =
+      q"""class $classNameStr : $baboonCodecsFacade() {
+         |  init {
+         |    ${registerCalls.joinN().shift(4).trim}
+         |  }
+         |}""".stripMargin
+
+    val tree   = ktTreeTools.inPkg(lineagePkg.parts.toSeq, facadeTree)
+    val output = KtDefnTranslator.Output(
+      s"${lineage.pkg.path.map(_.toLowerCase).mkString("/")}/$classNameStr.kt",
+      tree,
+      lineagePkg,
+      CompilerProduct.Conversion,
+    )
+
+    F.pure(List(output))
   }
 
   private def translateProduct(

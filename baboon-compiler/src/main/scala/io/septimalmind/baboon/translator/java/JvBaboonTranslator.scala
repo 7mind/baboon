@@ -52,8 +52,64 @@ class JvBaboonTranslator[F[+_, +_]: Error2](
   private def translateLineage(
     lineage: BaboonLineage
   ): Out[List[JvDefnTranslator.Output]] = {
-    F.flatSequenceAccumErrors {
-      lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList
+    for {
+      domainOutputs <- F.flatSequenceAccumErrors {
+        lineage.versions.iterator.map { case (_, domain) => translateDomain(domain, lineage) }.toList
+      }
+      facadeOutputs <- generateDomainFacade(lineage)
+    } yield domainOutputs ++ facadeOutputs
+  }
+
+  private def generateDomainFacade(lineage: BaboonLineage): Out[List[JvDefnTranslator.Output]] = {
+    if (!target.language.generateDomainFacade || !target.output.products.contains(CompilerProduct.Conversion)) {
+      F.pure(List.empty)
+    } else {
+      val latestVersion = lineage.evolution.latest
+      val latestDomain  = lineage.versions(latestVersion)
+      val latestPkg     = trans.toJvPkg(lineage.pkg, latestVersion, lineage.evolution)
+      val basename      = jvFiles.basename(latestDomain, lineage.evolution)
+
+      val domainIdStr = lineage.pkg.path.mkString(".")
+      val className   = "Domain" + lineage.pkg.path.toList.map(_.capitalize).mkString + "Facade"
+
+      val registerCalls = lineage.versions.toMap.toList.sortBy(_._1.v.toString).map {
+        case (version, _) =>
+          val verPkg        = trans.toJvPkg(lineage.pkg, version, lineage.evolution)
+          val verStr        = version.v.toString
+          val codecJsonType = JvValue.JvType(verPkg, "BaboonCodecsJson")
+          val codecUebaType = JvValue.JvType(verPkg, "BaboonCodecsUeba")
+          if (target.language.writeEvolutionDict) {
+            val metadataType = JvValue.JvType(verPkg, "BaboonMetadata")
+            q"""register(
+               |    new $baboonDomainVersion("$domainIdStr", "$verStr"),
+               |    () -> new $codecJsonType(),
+               |    () -> new $codecUebaType(),
+               |    () -> new $metadataType());""".stripMargin
+          } else {
+            q"""register(
+               |    new $baboonDomainVersion("$domainIdStr", "$verStr"),
+               |    () -> new $codecJsonType(),
+               |    () -> new $codecUebaType());""".stripMargin
+          }
+      }
+
+      val facadeTree =
+        q"""public final class $className extends $baboonCodecsFacade {
+           |    public $className() {
+           |        super();
+           |        ${registerCalls.joinN().shift(8).trim}
+           |    }
+           |}""".stripMargin
+
+      val wrapped = jvTreeTools.inPkg(latestPkg.parts.toSeq, facadeTree)
+      val output = JvDefnTranslator.Output(
+        s"$basename/$className.java",
+        wrapped,
+        latestPkg,
+        CompilerProduct.Conversion,
+      )
+
+      F.pure(List(output))
     }
   }
 

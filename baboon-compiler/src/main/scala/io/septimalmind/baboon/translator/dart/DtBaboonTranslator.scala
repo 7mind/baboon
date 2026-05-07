@@ -98,15 +98,104 @@ class DtBaboonTranslator[F[+_, +_]: Error2](
               F.pure(List.empty)
             }
           }
+          facade <- {
+            if (
+              target.language.generateDomainFacade &&
+              target.output.products.contains(CompilerProduct.Conversion) &&
+              domain.version == evo.latest
+            ) {
+              generateDomainFacade(domain, lineage)
+            } else {
+              F.pure(List.empty)
+            }
+          }
         } yield {
           defnSources ++
           conversionSources ++
           fixturesSources ++
           testsSources ++
           serviceRt ++
-          meta
+          meta ++
+          facade
         }
     }
+  }
+
+  private def generateDomainFacade(domain: Domain, lineage: BaboonLineage): Out[List[DtDefnTranslator.Output]] = {
+    val evo              = lineage.evolution
+    val basename         = dtFiles.basename(domain, evo)
+    val pkg              = trans.toDtPkg(domain.id, domain.version, evo)
+    val domainPathParts  = domain.id.path.toList
+    val domainFileSuffix = domainPathParts.mkString("_")
+    val facadeClassName  = "Domain" + domainPathParts.map(s => s"${s.head.toUpper}${s.tail}").mkString + "Facade"
+    val domainId         = domainPathParts.mkString(".")
+    val versionStr       = domain.version.v.toString
+    val domainIdLit      = s"'$domainId'"
+    val versionLit       = s"'$versionStr'"
+
+    // Domain-specific types — DtType nodes so that renderTree auto-generates the correct imports.
+    val baboonMetadata    = DtValue.DtType(pkg, "BaboonMetadata")
+    val baboonCodecsJson  = DtValue.DtType(pkg, "BaboonCodecsJson")
+    val baboonCodecsUeba  = DtValue.DtType(pkg, "BaboonCodecsUeba")
+    val baboonConversions = DtValue.DtType(pkg, "BaboonConversions")
+
+    val metaAdapter = if (target.language.writeEvolutionDict) {
+      q"""class _MetaAdapter extends $baboonMeta {
+         |  final $baboonMetadata _md = $baboonMetadata();
+         |  @override
+         |  List<String> sameInVersions(String typeId) => _md.sameInVersions(typeId);
+         |}""".stripMargin
+    } else {
+      q"""class _MetaAdapter extends $baboonMeta {
+         |  @override
+         |  List<String> sameInVersions(String typeId) => [$versionLit];
+         |}""".stripMargin
+    }
+
+    // Single-version domains have a no-arg BaboonConversions constructor, so the auto-facade can
+    // call register() with all four factories (codecs, conversions, meta) — verify() will pass.
+    // Multi-version domains require a user-supplied RequiredConversions argument, so the auto-facade
+    // uses registerCodecsAndMeta() and omits conversions; application code must call
+    // registerConversions() separately.
+    val facadeTree = if (lineage.versions.size == 1) {
+      q"""$metaAdapter
+         |
+         |class $facadeClassName extends $baboonCodecsFacade {
+         |  $facadeClassName() {
+         |    final dv = BaboonDomainVersion($domainIdLit, $versionLit);
+         |    register(dv,
+         |      codecsJson: () => $baboonCodecsJson(),
+         |      codecsBin: () => $baboonCodecsUeba(),
+         |      conversions: () => $baboonConversions(),
+         |      meta: () => _MetaAdapter(),
+         |    );
+         |  }
+         |}""".stripMargin
+    } else {
+      q"""$metaAdapter
+         |
+         |class $facadeClassName extends $baboonCodecsFacade {
+         |  $facadeClassName() {
+         |    final dv = BaboonDomainVersion($domainIdLit, $versionLit);
+         |    registerCodecsAndMeta(dv,
+         |      codecsJson: () => $baboonCodecsJson(),
+         |      codecsBin: () => $baboonCodecsUeba(),
+         |      meta: () => _MetaAdapter(),
+         |    );
+         |  }
+         |}""".stripMargin
+    }
+
+    F.pure(
+      List(
+        DtDefnTranslator.Output(
+          s"$basename/domain_${domainFileSuffix}_facade.dart",
+          facadeTree,
+          pkg,
+          CompilerProduct.Conversion,
+        )
+      )
+    )
   }
 
   private def generateMeta(domain: Domain, lineage: BaboonLineage): Out[List[DtDefnTranslator.Output]] = {

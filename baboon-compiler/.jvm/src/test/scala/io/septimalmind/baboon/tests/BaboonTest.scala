@@ -61,6 +61,7 @@ abstract class BaboonTest[F[+_, +_]: TagKK: BaboonTestModule] extends Spec2[F]()
                 serviceResult                             = ServiceResultConfig.csDefault,
                 serviceContext                            = ServiceContextConfig.default,
                 pragmas                                   = Map.empty,
+      generateDomainFacade        = false,
               ),
             )
           ),

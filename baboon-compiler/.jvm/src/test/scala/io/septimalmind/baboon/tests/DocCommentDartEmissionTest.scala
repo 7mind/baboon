@@ -52,6 +52,7 @@ abstract class DocCommentDartEmissionTestBase[F[+_, +_]: Error2: TagKK: BaboonTe
       serviceResult               = ServiceResultConfig.dartDefault,
       serviceContext              = ServiceContextConfig.default,
       pragmas                     = Map.empty,
+      generateDomainFacade        = false,
     ),
   )
 

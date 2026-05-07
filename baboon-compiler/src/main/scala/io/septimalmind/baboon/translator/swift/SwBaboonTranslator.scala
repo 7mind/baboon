@@ -99,6 +99,17 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
               F.pure(List.empty)
             }
           }
+          facade <- {
+            if (
+              target.language.generateDomainFacade &&
+              target.output.products.contains(CompilerProduct.Conversion) &&
+              domain.version == evo.latest
+            ) {
+              generateDomainFacade(domain, lineage)
+            } else {
+              F.pure(List.empty)
+            }
+          }
         } yield {
           val namespaceDecls = generateNamespaceDeclarations(domain, evo)
 
@@ -108,9 +119,92 @@ class SwBaboonTranslator[F[+_, +_]: Error2](
           testsSources ++
           serviceRt ++
           meta ++
-          namespaceDecls
+          namespaceDecls ++
+          facade
         }
     }
+  }
+
+  private def generateDomainFacade(domain: Domain, lineage: BaboonLineage): Out[List[SwDefnTranslator.Output]] = {
+    val evo              = lineage.evolution
+    val basename         = swFiles.basename(domain, evo)
+    val pkg              = trans.toSwPkg(domain.id, domain.version, evo)
+    val domainSuffix     = domainClassSuffix(domain)
+    val domainFileSuffix = trans.toSnakeCase(domainSuffix)
+    val facadeClassName  = s"Domain${domainSuffix.replace("_", "")}Facade"
+    val domainId         = domain.id.path.mkString(".")
+    val versionStr       = domain.version.v.toString
+    val domainIdLit      = s""""$domainId""""
+    val versionLit       = s""""$versionStr""""
+
+    val conversionsClassName = s"BaboonConversions_$domainSuffix"
+    val metadataClassName    = s"BaboonMetadata_$domainSuffix"
+
+    val metaAdapter = if (target.language.writeEvolutionDict) {
+      q"""private final class _MetaAdapter: $baboonMeta {
+         |    static let baboonDomainVersion: String = $versionLit
+         |    static let baboonDomainIdentifier: String = $domainIdLit
+         |    static let baboonTypeIdentifier: String = ""
+         |    private let _md: $metadataClassName
+         |    init() { self._md = $metadataClassName() }
+         |    func sameInVersions(_ typeId: String) -> [String] { return _md.sameInVersions(typeId) }
+         |}""".stripMargin
+    } else {
+      q"""private final class _MetaAdapter: $baboonMeta {
+         |    static let baboonDomainVersion: String = $versionLit
+         |    static let baboonDomainIdentifier: String = $domainIdLit
+         |    static let baboonTypeIdentifier: String = ""
+         |    func sameInVersions(_ typeId: String) -> [String] { return [$versionLit] }
+         |}""".stripMargin
+    }
+
+    // Single-version domains have a no-arg BaboonConversions constructor, so register() with all
+    // four factories (codecs, conversions, meta) — verify() will pass.
+    // Multi-version domains require a user-supplied RequiredConversions argument, so
+    // registerCodecsAndMeta() omits conversions; application code calls registerConversions()
+    // separately.
+    val facadeTree = if (lineage.versions.size == 1) {
+      q"""$metaAdapter
+         |
+         |public class $facadeClassName: $baboonCodecsFacade {
+         |    public override init() {
+         |        super.init()
+         |        let dv = BaboonDomainVersion($domainIdLit, $versionLit)
+         |        register(dv,
+         |            codecsJson: { BaboonCodecsJson_$domainSuffix() },
+         |            codecsBin: { BaboonCodecsUeba_$domainSuffix() },
+         |            conversions: { $conversionsClassName() },
+         |            meta: { _MetaAdapter() }
+         |        )
+         |    }
+         |}""".stripMargin
+    } else {
+      q"""$metaAdapter
+         |
+         |public class $facadeClassName: $baboonCodecsFacade {
+         |    public override init() {
+         |        super.init()
+         |        let dv = BaboonDomainVersion($domainIdLit, $versionLit)
+         |        registerCodecsAndMeta(dv,
+         |            codecsJson: { BaboonCodecsJson_$domainSuffix() },
+         |            codecsBin: { BaboonCodecsUeba_$domainSuffix() },
+         |            meta: { _MetaAdapter() }
+         |        )
+         |    }
+         |}""".stripMargin
+    }
+
+    F.pure(
+      List(
+        SwDefnTranslator.Output(
+          s"$basename/domain_${domainFileSuffix}_facade.swift",
+          facadeTree,
+          pkg,
+          CompilerProduct.Conversion,
+          imports = Set("BaboonRuntime"),
+        )
+      )
+    )
   }
 
   private def generateNamespaceDeclarations(domain: Domain, evo: BaboonEvolution): List[SwDefnTranslator.Output] = {
