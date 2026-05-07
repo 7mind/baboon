@@ -36,6 +36,11 @@ UEBA has a sister format, [SICK](https://github.com/7mind/sick), which is an ind
 
 ## Any fields
 
+> **Note:** the field-level `AnyMeta` envelope below is distinct from the
+> top-level `BaboonTypeMeta` envelope (the metadata block that wraps every
+> value emitted through `BaboonCodecsFacade.encodeToBin`). The top-level
+> envelope is specified in [`docs/spec/codec-envelope.md`](spec/codec-envelope.md).
+
 A field of type `any` (or any of its qualified forms — see [`docs/language-features.md#polymorphic-any-fields`](language-features.md#polymorphic-any-fields)) is encoded as a self‑describing length‑prefixed envelope so any reader can skip it without the inner codec:
 
 ```

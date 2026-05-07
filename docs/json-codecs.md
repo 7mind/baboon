@@ -85,6 +85,12 @@ Shipped: M24 / PR-I.1a (Scala reference) → PR-I.1b (Java/Kotlin/KMP) → PR-I.
 
 ## Any fields
 
+> **Note:** the field-level `AnyMeta` envelope below is distinct from the
+> top-level `BaboonTypeMeta` envelope (the `{$mv,$d,$v,$t,$uv,$c}` block
+> that wraps every value emitted through `BaboonCodecsFacade.encodeToJson`).
+> The top-level envelope is specified in
+> [`docs/spec/codec-envelope.md`](spec/codec-envelope.md).
+
 A field of type `any` (or any of its qualified forms — see [`docs/language-features.md#polymorphic-any-fields`](language-features.md#polymorphic-any-fields)) serializes as a single object envelope that wraps the inner JSON payload:
 
 ```json
