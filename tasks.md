@@ -14,7 +14,7 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ## Active brief
 
-**Active milestone:** MFACADE (multi-version codec facade upstream from `proposal.md`).
+**Active milestone:** none (MFACADE closed 2026-05-07; see `docs/logs/20260507-0406-mfacade-close-log.md`).
 Q1–Q14 resolved in `docs/drafts/20260505-1830-questions-multi-version-facade-upstream.md`;
 synthesised plan at `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`. M32
 collapses into MFACADE-PR-1 (byte-16 → byte-1 unification revert).
@@ -29,7 +29,7 @@ narrowing.
 ## Milestones (high-level)
 
 - [x] **M33** — Generic structural inheritance via template instantiation (closed 2026-05-05; provenance follow-up landed 2026-05-06). Nine PRs landed (PR-33.1 .. PR-33.9 inc. PR-33.8 hot-fix + PR-33.9 provenance follow-up); `+`/`-`/`^` template instantiation in DTO/contract bodies via inline substitution; codegen byte-identical (m33-ok fixture); LSP smoke green; spec doc §9 landed; tree-sitter corpus locked; duplicate-template-arm rejection now provenance-aware (preserves contract-diamond silent dedup). Plan: `docs/drafts/20260505-1500-m33-generic-structural-inheritance-plan.md`. Close-out log: `docs/logs/20260505-2005-m33-close-log.md`.
-- [~] **MFACADE** — Multi-version codec facade upstream + byte-1 unification (collapses M32). Plan: `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`. Eight PRs (MFACADE-PR-1 .. MFACADE-PR-8). Q1–Q14 resolved. PR-1 shipped 2026-05-06.
+- [x] **MFACADE** — Multi-version codec facade upstream + byte-1 unification (collapses M32). Plan: `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`. Eight PRs (MFACADE-PR-1 .. MFACADE-PR-8). Q1–Q14 resolved. PR-1, PR-3, PR-4, PR-5, PR-6, PR-7 shipped; PR-2 skipped (bin path already correct); PR-8 close-out 2026-05-07. Close log: `docs/logs/20260507-0406-mfacade-close-log.md`.
 - [x] **M33 follow-up** — `[PR-33.3-D01]` provenance-aware narrowing of duplicate-template-arm rejection. Closed 2026-05-06 via PR-33.9. Per-Field origin via new `RawDtoMember.TemplateArmFieldDef` sibling variant; check fires only when ≥2 origins are M33 template-arm. Contract-diamond cases (e.g. pkg03 `T4_A1#B1`) continue to silently dedupe via `.distinct`.
 
 ---
@@ -70,7 +70,7 @@ Detail in `docs/drafts/20260506-0000-mfacade-and-m32-plan.md`.
 - [x] **MFACADE-PR-5** — `BaboonExt`-style helpers + C# `TypeIsAdt` widening (`IsAbstract || IsInterface`).
 - [x] **MFACADE-PR-6** — Per-domain `Domain<X>Facade` codegen + per-target-prefixed `--*-generate-domain-facade=true` flag (cs default-on; sc/py/rs/ts/kt/jv/dt/sw scaffolded but default-off pending follow-up).
 - [x] **MFACADE-PR-7** — Spec doc `docs/spec/codec-envelope.md` (landed) + conformance tests (envelope round-trip × shapes × backends, captured-byte fixtures vs reference) — *spec landed; conformance tests deferred to follow-up*.
-- [ ] **MFACADE-PR-8** — Close-out (proposal.md deviations recorded; session log).
+- [x] **MFACADE-PR-8** — Close-out (session log `docs/logs/20260507-0406-mfacade-close-log.md`; milestone marked closed; deferred items itemised in the log).
 
 ## Carry-over from prior milestones
 
