@@ -152,10 +152,13 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     val sfx = target.language.importSuffix
     val sb  = new StringBuilder
 
+    // Relative path back to the generated/ root (where BaboonSharedRuntime lives). The facade
+    // file lives at `<latestBasename>/<className>.ts`, so depth = segments in `latestBasename`.
+    val rootRel = "../" * latestBasename.split('/').length
     // Imports
-    sb.append(s"import { AbstractBaboonJsonCodecs, AbstractBaboonUebaCodecs, BaboonBinCodec, BaboonJsonCodec, BaboonDomainVersion, BaboonMeta, Lazy } from '../BaboonSharedRuntime$sfx';\n")
-    sb.append(s"import type { AbstractBaboonConversions } from '../BaboonSharedRuntime$sfx';\n")
-    sb.append(s"import { BaboonCodecsFacade } from '../BaboonCodecsFacade$sfx';\n")
+    sb.append(s"import { AbstractBaboonJsonCodecs, AbstractBaboonUebaCodecs, BaboonBinCodec, BaboonJsonCodec, BaboonDomainVersion, BaboonMeta, Lazy } from '${rootRel}BaboonSharedRuntime$sfx';\n")
+    sb.append(s"import type { AbstractBaboonConversions } from '${rootRel}BaboonSharedRuntime$sfx';\n")
+    sb.append(s"import { BaboonCodecsFacade } from '${rootRel}BaboonCodecsFacade$sfx';\n")
 
     // Per-version imports and class definitions
     for (domain <- orderedVersions) {
