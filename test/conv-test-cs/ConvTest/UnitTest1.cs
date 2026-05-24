@@ -29,6 +29,33 @@ namespace ConvTest
             Assert.That(a1u1 == a1u2);
         }
 
+        // Regression test for `EnumVariant : was[OldName]` rename conversion
+        // (see test/conv-test/pkg02.baboon `enum EnumMemberRename` and the
+        // matching Rust/TypeScript regression tests in
+        // test/conv-test-{rs,ts}/tests/). Invokes the generated rename
+        // conversion against both the renamed variant (OldValue -> NewValue)
+        // and the pass-through variant (KeepValue) to also exercise the
+        // fallback arm of the switch.
+        [Test]
+        public void Test_EnumMemberRename_Renamed_Variant_Maps_To_New_Name()
+        {
+            var conv = new BaboonConversions(new RequiredConversionsImpl());
+            var mapped = conv.ConvertWithContext<object,
+                Convtest.Testpkg.v1_0_0.EnumMemberRename,
+                EnumMemberRename>(null, Convtest.Testpkg.v1_0_0.EnumMemberRename.OldValue);
+            Assert.That(mapped, Is.EqualTo(EnumMemberRename.NewValue));
+        }
+
+        [Test]
+        public void Test_EnumMemberRename_NonRenamed_Variant_Passes_Through()
+        {
+            var conv = new BaboonConversions(new RequiredConversionsImpl());
+            var mapped = conv.ConvertWithContext<object,
+                Convtest.Testpkg.v1_0_0.EnumMemberRename,
+                EnumMemberRename>(null, Convtest.Testpkg.v1_0_0.EnumMemberRename.KeepValue);
+            Assert.That(mapped, Is.EqualTo(EnumMemberRename.KeepValue));
+        }
+
         [Test]
         public void Test_Opt_List_Auto_Upgrade()
         {
