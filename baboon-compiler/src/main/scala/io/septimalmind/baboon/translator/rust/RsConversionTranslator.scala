@@ -89,14 +89,18 @@ class RsConversionTranslator[F[+_, +_]: Error2](
           case c: Conversion.CopyEnumByName =>
             val mappingEntries = c.memberMapping.map {
               case (fromName, toName) =>
-                q""""$fromName" => "$tout::$toName".parse().expect("enum parse"),"""
+                q""""$fromName" => "$toName","""
             }
             val mappedExpr = if (mappingEntries.isEmpty) {
               q"""from.to_string().parse().expect("enum parse")"""
             } else {
-              q"""match from.to_string().as_str() {
-                 |    ${mappingEntries.toList.joinN().shift(4).trim}
-                 |    other => other.parse().expect("enum parse"),
+              q"""{
+                 |    let s = from.to_string();
+                 |    let name: &str = match s.as_str() {
+                 |        ${mappingEntries.toList.joinN().shift(8).trim}
+                 |        other => other,
+                 |    };
+                 |    name.parse().expect("enum parse")
                  |}""".stripMargin
             }
 

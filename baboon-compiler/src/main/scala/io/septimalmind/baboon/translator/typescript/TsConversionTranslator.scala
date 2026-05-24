@@ -88,7 +88,7 @@ class TsConversionTranslator[F[+_, +_]: Error2](
           case c: Conversion.CopyEnumByName =>
             val mappingEntries = c.memberMapping.map {
               case (fromName, toName) =>
-                q""""$fromName": return "$toName" as $tout;"""
+                q"""case "$fromName": return "$toName" as $tout;"""
             }
             val mappedExpr = if (mappingEntries.isEmpty) {
               q"return from as unknown as $tout;"
