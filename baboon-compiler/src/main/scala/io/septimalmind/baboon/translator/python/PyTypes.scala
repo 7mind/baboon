@@ -122,6 +122,7 @@ object PyTypes {
   val pyList         = PyType(pyBuiltins, "list")
   val pyClassMethod  = PyType(pyBuiltins, "classmethod")
   val pyStaticMethod = PyType(pyBuiltins, "staticmethod")
+  val pyProperty     = PyType(pyBuiltins, "property")
   val pyBytes        = PyType(pyBuiltins, "bytes")
 
   // unittest

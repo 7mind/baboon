@@ -833,6 +833,13 @@ Generate compatibility test files using Swift.
 ```bash
 dep action.test-gen-manual
 
+# Eliminate SwiftPM .build/ cache foot-gun: stale PCH paths from other worktree
+# checkouts and missed new-test-file pickups have reproduced twice in 24h.
+# Regen rewrites Swift sources anyway, so the incremental graph is mostly
+# invalidated; cleaning here is cheap and deterministic. Do NOT replicate this
+# in :test-manual-swift — its cache value across runs is high.
+rm -rf ./test/conv-test-sw/.build
+
 if ! command -v swift &> /dev/null; then
   if [[ "$(uname)" == "Linux" ]]; then
     echo "Swift is required on Linux but was not found in PATH" >&2
@@ -1988,6 +1995,7 @@ dep action.test-dart-wrapped
 dep action.test-swift-wrapped
 dep action.test-manual-cs
 dep action.test-manual-scala
+dep action.test-manual-python
 dep action.test-manual-rust
 dep action.test-manual-typescript
 dep action.test-manual-kotlin

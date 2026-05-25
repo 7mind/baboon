@@ -1,3 +1,4 @@
+import unittest
 from unittest import TestCase
 
 from Generated.convtest.testpkg import v1_0_0
@@ -13,32 +14,23 @@ class TestConversions(TestCase):
         b1 = v1_0_0.Adt0.B1(f="value")
         conv = BaboonConversions(required=RequiredConversions())
 
-        converted = conv.convert_with_context(conv, b1, v1_0_0.Adt0.B1, B1)
+        converted = conv.convert_by_type(None, b1, v1_0_0.Adt0.B1, B1)
 
         self.assertEqual(b1.f, converted.f)
 
-        converted2 = conv.convert_with_context(conv, b1, v1_0_0.Adt0.Adt0, Adt0.Adt0)
+        converted2 = conv.convert_by_type(None, b1, v1_0_0.Adt0.Adt0, Adt0.Adt0)
 
         self.assertEqual(converted, converted2)
 
 
 class TestEnumMemberRenameConversion(TestCase):
-    """Regression test for the ``EnumVariant : was[OldName]`` rename conversion
-    (see ``test/conv-test/pkg02.baboon`` ``enum EnumMemberRename`` and the
-    matching Rust/TypeScript regression tests in
-    ``test/conv-test-{rs,ts}/tests/``). Invokes the generated rename
-    conversion directly against both the renamed variant
+    """Regression test for the ``EnumVariant : was[OldName]`` rename
+    conversion (see ``test/conv-test/pkg02.baboon`` ``enum
+    EnumMemberRename`` and the matching Rust/TypeScript regression tests
+    in ``test/conv-test-{rs,ts}/tests/``). Invokes the generated rename
+    conversion against both the renamed variant
     (``OldValue`` -> ``NewValue``) and the pass-through variant
-    (``KeepValue``) to also exercise the fallback arm of the mapping.
-
-    Constructs the generated ``Convert__EnumMemberRename__From__1_0_0``
-    directly with the (from_type, to_type) args instead of via the
-    ``instance()`` classmethod. The generated ``instance()`` calls
-    ``cls()`` with no args, which trips on
-    ``AbstractConversion.__init__``'s required ``from_type``/``to_type``
-    parameters — that is a separate, pre-existing PyConversionTranslator
-    defect (every Python conv-test suite is affected; not introduced by
-    this regression test).
+    (``KeepValue``) so the fallback arm of the mapping is exercised.
     """
 
     def test_renamed_variant_maps_to_new_name(self):
@@ -54,3 +46,11 @@ class TestEnumMemberRenameConversion(TestCase):
         )
         mapped = converter.do_convert(None, None, v1_0_0_EnumMemberRename.KeepValue)
         self.assertEqual(EnumMemberRename.KeepValue, mapped)
+
+    def test_conversion_meta_accessors_resolve_to_string(self):
+        converter = Convert__EnumMemberRename__From__1_0_0(
+            v1_0_0_EnumMemberRename, EnumMemberRename
+        )
+        self.assertIsInstance(converter.type_id, str)
+        self.assertIsInstance(converter.version_from, str)
+        self.assertIsInstance(converter.version_to, str)

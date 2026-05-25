@@ -53,22 +53,17 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
         def typeTo   = typeTranslator.asPyType(conversion.targetTpe, domain, evolution, pyFileTools.definitionsBasePkg)
 
         val meta =
-          q"""@$pyStaticMethod
-             |def version_from() -> str:
+          q"""@$pyProperty
+             |def version_from(self) -> str:
              |    return "${sourceVersion.v.toString}"
              |
-             |@$pyStaticMethod
-             |def version_to() -> str:
+             |@$pyProperty
+             |def version_to(self) -> str:
              |    return "${domain.version.v.toString}"
              |
-             |@$pyStaticMethod
-             |def type_id() -> str:
+             |@$pyProperty
+             |def type_id(self) -> str:
              |    return "${conversion.sourceTpe.toString}"
-             |
-             |@$pyClassMethod
-             |@$pyCache
-             |def instance (cls):
-             |    return cls()
              |""".stripMargin
 
         val convTree           = genConversionTree(conversion, typeFrom, typeTo, convType, meta)
@@ -91,9 +86,9 @@ final class PyConversionTranslator[F[+_, +_]: Error2](
     convType: PyType,
   ): Option[TextTree[PyType]] = {
     conversion match {
-      case _: Conversion.CustomConversionRequired => Some(q"self.register(required.${convType.name}(), $typeFrom, $typeTo)")
+      case _: Conversion.CustomConversionRequired => Some(q"self.register(required.${convType.name}())")
       case _: Conversion.CopyEnumByName | _: Conversion.CopyAdtBranchByName | _: Conversion.DtoConversion =>
-        Some(q"self.register($convType.instance(), $typeFrom, $typeTo)")
+        Some(q"self.register($convType($typeFrom, $typeTo))")
 
       case _ => None
     }
