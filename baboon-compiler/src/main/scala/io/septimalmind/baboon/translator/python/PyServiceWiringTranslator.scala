@@ -215,6 +215,110 @@ object PyServiceWiringTranslator {
       case ResolvedServiceContext.ConcreteContext(_, pn) => s"$pn, "
     }
 
+    /** Emits the cross-domain Muxer-entry wrapper classes for a service.
+      *
+      * Each wrapper structurally satisfies the runtime `IBaboonJsonService` /
+      * `IBaboonUebaService` Protocol (PEP 544) — no explicit inheritance is
+      * needed, just the right `service_name` attribute and `invoke` method.
+      * Extra dependencies the underlying `invoke_json_X` / `invoke_ueba_X`
+      * functions consume (`rt` in errors mode, plus any service-context
+      * parameter) are baked at construction time so the runtime
+      * `IBaboon*Service.invoke(method, data, ctx)` contract stays uniform.
+      * Python has no `--py-async-services` flag, so the wrappers' `invoke`
+      * return type is plain `str` / `bytes` (noErrors mode) or unannotated
+      * (errors mode, where the underlying invoker already returns the
+      * configured result container).
+      */
+    private def generateServiceWrappers(service: Typedef.Service, svcType: PyType): TextTree[PyValue] = {
+      val jsonWrapper =
+        if (hasActiveJsonCodecs(service)) Some(generateOneWrapper(service, svcType, isJson = true))
+        else None
+      val uebaWrapper =
+        if (hasActiveUebaCodecs(service)) Some(generateOneWrapper(service, svcType, isJson = false))
+        else None
+      Seq(jsonWrapper, uebaWrapper).flatten.joinNN()
+    }
+
+    private def generateOneWrapper(service: Typedef.Service, svcType: PyType, isJson: Boolean): TextTree[PyValue] = {
+      val svcName     = service.id.name.name
+      val wrapperName = s"${svcName}${if (isJson) "_JsonService" else "_UebaService"}"
+      val invokerFn   = s"${if (isJson) "invoke_json_" else "invoke_ueba_"}$svcName"
+      val wireType    = if (isJson) "str" else "bytes"
+      val retAnnot: TextTree[PyValue] = if (resolved.noErrors) q"$wireType" else q""
+
+      // Extra constructor parameters: `rt` (errors mode only) and any
+      // service-context. Mirror the order used by the underlying invoker:
+      // (impl, [rt,] [svc_ctx,]).
+      val rtParam: Option[(String, TextTree[PyValue])] =
+        if (resolved.noErrors) None else Some(("rt", q"$ibaboonServiceRtType"))
+      val svcCtxParam: Option[(String, TextTree[PyValue], String)] = resolvedCtx match {
+        case ResolvedServiceContext.NoContext               => None
+        case ResolvedServiceContext.AbstractContext(tn, pn) => Some((pn, q"$tn", pn))
+        case ResolvedServiceContext.ConcreteContext(tn, pn) => Some((pn, q"$tn", pn))
+      }
+
+      val ctorParams: List[TextTree[PyValue]] = {
+        val base = List[TextTree[PyValue]](q"impl: $svcType")
+        val withRt = rtParam match {
+          case Some((n, tpe)) => base :+ q"$n: $tpe"
+          case None           => base
+        }
+        svcCtxParam match {
+          case Some((n, tpe, _)) => withRt :+ q"$n: $tpe"
+          case None              => withRt
+        }
+      }
+      val ctorAssigns: List[TextTree[PyValue]] = {
+        val base = List[TextTree[PyValue]](q"self.impl = impl")
+        val withRt = rtParam match {
+          case Some((n, _)) => base :+ q"self.$n = $n"
+          case None         => base
+        }
+        svcCtxParam match {
+          case Some((n, _, _)) => withRt :+ q"self.$n = $n"
+          case None            => withRt
+        }
+      }
+
+      // Forwarded args to the underlying invoker:
+      // (method, data, self.impl, [self.rt,] [self.svc_ctx,] ctx)
+      val invokerArgs: List[TextTree[PyValue]] = {
+        val base = List[TextTree[PyValue]](q"method", q"data", q"self.impl")
+        val withRt = rtParam match {
+          case Some((n, _)) => base :+ q"self.$n"
+          case None         => base
+        }
+        val withSvcCtx = svcCtxParam match {
+          case Some((n, _, _)) => withRt :+ q"self.$n"
+          case None            => withRt
+        }
+        withSvcCtx :+ q"ctx"
+      }
+
+      // The wrapper carries no explicit Protocol inheritance — structural
+      // typing via the `IBaboonJsonService` / `IBaboonUebaService` Protocols
+      // suffices. We still reference the Protocol in a phantom annotation to
+      // trigger the import (purely for code-navigability; type-checkers honour
+      // the structural match regardless).
+      val ifaceRef: PyType = if (isJson) ibaboonJsonService else ibaboonUebaService
+
+      val invokeReturnArrow: TextTree[PyValue] =
+        if (resolved.noErrors) q" -> $retAnnot" else q""
+
+      q"""class $wrapperName:
+         |    \"\"\"Adapter from $svcType to ${if (isJson) "IBaboonJsonService" else "IBaboonUebaService"} for use with the cross-domain
+         |    ${if (isJson) "JsonMuxer" else "UebaMuxer"}. Structurally satisfies $ifaceRef.
+         |    \"\"\"
+         |    service_name: str = "$svcName"
+         |
+         |    def __init__(self, ${ctorParams.join(", ")}) -> None:
+         |        ${ctorAssigns.join("\n").shift(8).trim}
+         |
+         |    def invoke(self, method: $baboonMethodId, data: $wireType, ctx: $baboonCodecContext)$invokeReturnArrow:
+         |        return $invokerFn(${invokerArgs.join(", ")})
+         |""".stripMargin
+    }
+
     // ========== noErrors mode ==========
 
     private def generateNoErrorsWiring(service: Typedef.Service): TextTree[PyValue] = {
@@ -231,7 +335,9 @@ object PyServiceWiringTranslator {
           Some(generateNoErrorsUebaFn(service, svcName, svcType))
         else None
 
-      Seq(jsonFn, uebaFn).flatten.joinNN()
+      val wrappers = generateServiceWrappers(service, svcType)
+
+      (Seq(jsonFn, uebaFn).flatten :+ wrappers).joinNN()
     }
 
     private def generateNoErrorsJsonFn(service: Typedef.Service, svcName: String, svcType: PyType): TextTree[PyValue] = {
@@ -318,7 +424,9 @@ object PyServiceWiringTranslator {
           Some(generateErrorsUebaFn(service, svcName, svcType))
         else None
 
-      Seq(jsonFn, uebaFn).flatten.joinNN()
+      val wrappers = generateServiceWrappers(service, svcType)
+
+      (Seq(jsonFn, uebaFn).flatten :+ wrappers).joinNN()
     }
 
     private def generateErrorsJsonFn(service: Typedef.Service, svcName: String, svcType: PyType): TextTree[PyValue] = {

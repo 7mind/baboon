@@ -176,6 +176,8 @@ object PyTypes {
   val baboonMethodId: PyType                  = PyType(pyBaboonServiceWiringModule, "BaboonMethodId")
   val baboonWiringError: PyType               = PyType(pyBaboonServiceWiringModule, "BaboonWiringError")
   val baboonNoMatchingMethod: PyType          = PyType(pyBaboonServiceWiringModule, "NoMatchingMethod")
+  val baboonNoMatchingService: PyType         = PyType(pyBaboonServiceWiringModule, "NoMatchingService")
+  val baboonDuplicateService: PyType          = PyType(pyBaboonServiceWiringModule, "DuplicateService")
   val baboonDecoderFailed: PyType             = PyType(pyBaboonServiceWiringModule, "DecoderFailed")
   val baboonEncoderFailed: PyType             = PyType(pyBaboonServiceWiringModule, "EncoderFailed")
   val baboonCallFailed: PyType                = PyType(pyBaboonServiceWiringModule, "CallFailed")
@@ -183,4 +185,8 @@ object PyTypes {
   val baboonEitherType: PyType                = PyType(pyBaboonServiceWiringModule, "BaboonEither")
   val baboonLeftType: PyType                  = PyType(pyBaboonServiceWiringModule, "BaboonLeft")
   val baboonRightType: PyType                 = PyType(pyBaboonServiceWiringModule, "BaboonRight")
+  val ibaboonJsonService: PyType              = PyType(pyBaboonServiceWiringModule, "IBaboonJsonService")
+  val ibaboonUebaService: PyType              = PyType(pyBaboonServiceWiringModule, "IBaboonUebaService")
+  val baboonJsonMuxer: PyType                 = PyType(pyBaboonServiceWiringModule, "JsonMuxer")
+  val baboonUebaMuxer: PyType                 = PyType(pyBaboonServiceWiringModule, "UebaMuxer")
 }
