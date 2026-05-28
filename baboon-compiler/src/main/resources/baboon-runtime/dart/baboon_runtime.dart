@@ -843,12 +843,75 @@ class BaboonMethodId {
   String toString() => '$serviceId.$methodName';
 }
 
-class BaboonWiringError {
-  final String message;
-  const BaboonWiringError(this.message);
+// Sealed family of wiring-failure reasons. The classifier-style factories below
+// keep the call sites in generated code (`BaboonWiringError.noMatchingMethod(method)`,
+// `decoderFailed(method, ex)`, etc.) short and stable.
+sealed class BaboonWiringError {
+  const BaboonWiringError();
+
+  factory BaboonWiringError.noMatchingMethod(BaboonMethodId method) = NoMatchingMethod;
+  factory BaboonWiringError.noMatchingService(BaboonMethodId method) = NoMatchingService;
+  factory BaboonWiringError.duplicateService(String serviceName) = DuplicateService;
+  factory BaboonWiringError.decoderFailed(BaboonMethodId method, Object error) = DecoderFailed;
+  factory BaboonWiringError.encoderFailed(BaboonMethodId method, Object error) = EncoderFailed;
+  factory BaboonWiringError.callFailed(BaboonMethodId method, Object domainError) = CallFailed;
+}
+
+class NoMatchingMethod extends BaboonWiringError {
+  final BaboonMethodId method;
+  const NoMatchingMethod(this.method);
 
   @override
-  String toString() => 'BaboonWiringError: $message';
+  String toString() => 'BaboonWiringError.NoMatchingMethod: $method';
+}
+
+/// Raised by [JsonMuxer]/[UebaMuxer] when no registered service matches
+/// `method.serviceId`. The intra-service `NoMatchingMethod` is the analogous
+/// failure at the per-service level.
+class NoMatchingService extends BaboonWiringError {
+  final BaboonMethodId method;
+  const NoMatchingService(this.method);
+
+  @override
+  String toString() => 'BaboonWiringError.NoMatchingService: $method';
+}
+
+/// Raised by [JsonMuxer.register]/[UebaMuxer.register] when two services share
+/// the same `serviceName`. The muxer fails fast — duplicates would otherwise
+/// silently mask one service's methods.
+class DuplicateService extends BaboonWiringError {
+  final String serviceName;
+  const DuplicateService(this.serviceName);
+
+  @override
+  String toString() => 'BaboonWiringError.DuplicateService: $serviceName';
+}
+
+class DecoderFailed extends BaboonWiringError {
+  final BaboonMethodId method;
+  final Object error;
+  const DecoderFailed(this.method, this.error);
+
+  @override
+  String toString() => 'BaboonWiringError.DecoderFailed: $method ($error)';
+}
+
+class EncoderFailed extends BaboonWiringError {
+  final BaboonMethodId method;
+  final Object error;
+  const EncoderFailed(this.method, this.error);
+
+  @override
+  String toString() => 'BaboonWiringError.EncoderFailed: $method ($error)';
+}
+
+class CallFailed extends BaboonWiringError {
+  final BaboonMethodId method;
+  final Object domainError;
+  const CallFailed(this.method, this.domainError);
+
+  @override
+  String toString() => 'BaboonWiringError.CallFailed: $method ($domainError)';
 }
 
 class BaboonWiringException implements Exception {
@@ -857,6 +920,81 @@ class BaboonWiringException implements Exception {
 
   @override
   String toString() => error.toString();
+}
+
+// --- Service muxers ---
+//
+// Cross-domain composable dispatch. A muxer holds a set of services from any
+// model(s) and routes a `(method, data, ctx)` call to the right one by
+// `method.serviceId`. The R type parameter encodes the return shape so the
+// same class supports both sync and async generated services — Dart codegen
+// currently emits sync services, so the typical instantiation is
+// `JsonMuxer<String>` / `UebaMuxer<Uint8List>` (or the result-container shape
+// in errors mode). The per-service wrapper classes generated alongside each
+// `${Svc}Wiring` carry the matching parameterisation.
+
+abstract interface class IBaboonJsonService<R> {
+  String get serviceName;
+  R invoke(BaboonMethodId method, String data, BaboonCodecContext ctx);
+}
+
+abstract interface class IBaboonUebaService<R> {
+  String get serviceName;
+  R invoke(BaboonMethodId method, Uint8List data, BaboonCodecContext ctx);
+}
+
+class JsonMuxer<R> {
+  final Map<String, IBaboonJsonService<R>> _table = <String, IBaboonJsonService<R>>{};
+
+  JsonMuxer([Iterable<IBaboonJsonService<R>> services = const []]) {
+    for (final s in services) {
+      register(s);
+    }
+  }
+
+  void register(IBaboonJsonService<R> service) {
+    if (_table.containsKey(service.serviceName)) {
+      throw BaboonWiringException(BaboonWiringError.duplicateService(service.serviceName));
+    }
+    _table[service.serviceName] = service;
+  }
+
+  R invoke(BaboonMethodId method, String data, BaboonCodecContext ctx) {
+    final service = _table[method.serviceId];
+    if (service == null) {
+      throw BaboonWiringException(BaboonWiringError.noMatchingService(method));
+    }
+    return service.invoke(method, data, ctx);
+  }
+
+  Iterable<String> serviceNames() => _table.keys;
+}
+
+class UebaMuxer<R> {
+  final Map<String, IBaboonUebaService<R>> _table = <String, IBaboonUebaService<R>>{};
+
+  UebaMuxer([Iterable<IBaboonUebaService<R>> services = const []]) {
+    for (final s in services) {
+      register(s);
+    }
+  }
+
+  void register(IBaboonUebaService<R> service) {
+    if (_table.containsKey(service.serviceName)) {
+      throw BaboonWiringException(BaboonWiringError.duplicateService(service.serviceName));
+    }
+    _table[service.serviceName] = service;
+  }
+
+  R invoke(BaboonMethodId method, Uint8List data, BaboonCodecContext ctx) {
+    final service = _table[method.serviceId];
+    if (service == null) {
+      throw BaboonWiringException(BaboonWiringError.noMatchingService(method));
+    }
+    return service.invoke(method, data, ctx);
+  }
+
+  Iterable<String> serviceNames() => _table.keys;
 }
 
 // --- Either for Service Results ---

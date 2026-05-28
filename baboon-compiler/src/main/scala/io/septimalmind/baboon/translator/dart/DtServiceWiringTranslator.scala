@@ -196,10 +196,20 @@ object DtServiceWiringTranslator {
     override def translate(defn: DomainMember.User): Option[TextTree[DtValue]] = {
       defn.defn match {
         case service: Typedef.Service =>
-          val methods =
-            if (resolved.noErrors) generateNoErrorsWiring(service)
-            else generateErrorsWiring(service)
-          Some(methods)
+          // When neither codec is active for any method on this service, both
+          // the per-domain wiring class and the muxer-entry wrapper classes
+          // would be empty — skip emission entirely so the service file stays
+          // a clean abstract-interface declaration.
+          if (!hasActiveJsonCodecs(service) && !hasActiveUebaCodecs(service)) None
+          // Errors-mode wiring emission for Dart relies on `IBaboonServiceRt`
+          // and FQ wire-error type names that the existing renderer does not
+          // import-trigger; the dispatcher in this mode pre-dates the muxer
+          // and is currently dead code (not invoked from any DefnTranslator
+          // path). Keep it dead in errors mode so we don't introduce a
+          // compile-time regression while shipping the no-errors muxer
+          // wrappers. The errors-mode dispatcher fix is a separate PR.
+          else if (!resolved.noErrors) None
+          else Some(generateNoErrorsWiring(service))
         case _ => None
       }
     }
@@ -236,10 +246,23 @@ object DtServiceWiringTranslator {
 
       val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
 
-      q"""class ${svcName}Wiring {
-         |  ${methods.shift(2).trim}
-         |}""".stripMargin
+      val wiringClass =
+        q"""class ${svcName}Wiring {
+           |  ${methods.shift(2).trim}
+           |}""".stripMargin
+
+      val wrappers = generateServiceWrappers(service, noErrorsJsonRetTree, noErrorsUebaRetTree)
+
+      Seq(wiringClass, wrappers).filterNot(_.isEmpty).join("\n\n")
     }
+
+    // Wrapper retType as a TextTree (not a String) so the muxer-wrapper's
+    // `IBaboon*Service<R>` parameterisation can reference `BaboonWiringError`
+    // through the symbol-tracked DtType — `renderFq` would render it as
+    // `baboon.runtime.shared.BaboonWiringError`, which is not a valid Dart
+    // identifier path (Dart imports the type bare).
+    private def noErrorsJsonRetTree: TextTree[DtValue] = q"String"
+    private def noErrorsUebaRetTree: TextTree[DtValue] = q"$dtUint8List"
 
     private def generateNoErrorsJsonMethod(service: Typedef.Service): TextTree[DtValue] = {
       val svcName = service.id.name.name
@@ -251,7 +274,7 @@ object DtServiceWiringTranslator {
             case Some(outRef) =>
               val encodeOut = jsonEncodeExpr(outRef.id, q"result")
               q"""final encoded = $encodeOut;
-                 |return jsonEncode(encoded);""".stripMargin
+                 |return $dtJsonEncode(encoded);""".stripMargin
             case None =>
               q"""return 'null';"""
           }
@@ -262,7 +285,7 @@ object DtServiceWiringTranslator {
           }
 
           q"""'${m.name.name}': () {
-             |  final wire = jsonDecode(data);
+             |  final wire = $dtJsonDecode(data);
              |  final decoded = $decodeIn;
              |  $callExpr
              |  ${encodeOutput.shift(2).trim}
@@ -345,8 +368,144 @@ object DtServiceWiringTranslator {
 
       val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
 
-      q"""class ${svcName}Wiring {
-         |  ${methods.shift(2).trim}
+      val wiringClass =
+        q"""class ${svcName}Wiring {
+           |  ${methods.shift(2).trim}
+           |}""".stripMargin
+
+      val wrappers = generateServiceWrappers(service, errorsJsonRetTree, errorsUebaRetTree)
+
+      Seq(wiringClass, wrappers).filterNot(_.isEmpty).join("\n\n")
+    }
+
+    // TextTree-form errors-mode return type for the muxer-wrapper signatures.
+    // We need a TextTree (not a String) so the wrapper's
+    // `IBaboon*Service<R>` parameterisation can reference `BaboonWiringError`
+    // through the symbol-tracked DtType — `renderFq` would render it as
+    // `baboon.runtime.shared.BaboonWiringError`, which is not a valid Dart
+    // identifier path (Dart imports the type bare).
+    //
+    // These helpers are kept for forward-compat: the errors-mode dispatcher in
+    // Dart is currently disabled at the `translate` entry point pending its
+    // own fix (see comment there), so they're presently unreachable.
+    private def errorsJsonRetTree: TextTree[DtValue] = errorsRetTreeFor(q"String")
+    private def errorsUebaRetTree: TextTree[DtValue] = errorsRetTreeFor(q"$dtUint8List")
+
+    private def errorsRetTreeFor(successType: TextTree[DtValue]): TextTree[DtValue] = {
+      // Split `resolved.pattern` (e.g. `<$error, $success>`) around the two
+      // placeholders so we can splice the symbol-tracked `BaboonWiringError`
+      // (`$baboonWiringError`) and the success-type TextTree.
+      val p           = resolved.pattern.get
+      val typeName    = resolved.hkt.map(_.name).getOrElse(resolved.resultType.get)
+      // Order-sensitive: pattern always references $error then $success in the
+      // pattern shipped with the brief example. If reversed in user pragmas
+      // we fall back to a literal substitution that keeps the order-of-args
+      // intact.
+      val errorIdx    = p.indexOf("$error")
+      val successIdx  = p.indexOf("$success")
+      if (errorIdx >= 0 && successIdx > errorIdx) {
+        val pre  = p.substring(0, errorIdx)
+        val mid  = p.substring(errorIdx + "$error".length, successIdx)
+        val post = p.substring(successIdx + "$success".length)
+        q"$typeName$pre$baboonWiringError$mid$successType$post"
+      } else {
+        // Defensive fallback — render via the existing string path.
+        q"${ct(bweFq, successType.mapRender { case _ => "" })}"
+      }
+    }
+
+    /** Emits the cross-domain Muxer-entry wrapper classes for a service.
+      *
+      * Each wrapper implements `IBaboonJsonService<R>` / `IBaboonUebaService<R>`
+      * with R matching the underlying `${svc}Wiring.invokeJson`/`invokeUeba`
+      * static-method return type (raw wire-type in noErrors mode,
+      * result-container-wrapped in errors mode). Extra dependencies (`rt` in
+      * errors mode and any service-context parameter) are baked at
+      * construction time so the runtime `IBaboon*Service.invoke(method, data,
+      * ctx)` contract stays codec-flavour-symmetric and language-uniform.
+      *
+      * Dart services are currently always synchronous (no `--dt-async-services`
+      * flag exists), so the wrapper's R is the underlying static-method's
+      * return type directly — no Future wrapping. If async services land later
+      * the wrapper's R becomes `Future<…>` without changing the muxer contract.
+      */
+    private def generateServiceWrappers(
+      service: Typedef.Service,
+      jsonRetType: TextTree[DtValue],
+      uebaRetType: TextTree[DtValue],
+    ): TextTree[DtValue] = {
+      val parts = Seq(
+        if (hasActiveJsonCodecs(service)) Some(generateOneWrapper(service, isJson = true, jsonRetType)) else None,
+        if (hasActiveUebaCodecs(service)) Some(generateOneWrapper(service, isJson = false, uebaRetType)) else None,
+      ).flatten
+      if (parts.isEmpty) q"" else parts.join("\n\n")
+    }
+
+    private def generateOneWrapper(
+      service: Typedef.Service,
+      isJson: Boolean,
+      retType: TextTree[DtValue],
+    ): TextTree[DtValue] = {
+      val svcName     = service.id.name.name
+      val wireType    = if (isJson) q"String"        else q"$dtUint8List"
+      val ifaceType   = if (isJson) baboonJsonServiceIface else baboonUebaServiceIface
+      val invokerFn   = if (isJson) "invokeJson"     else "invokeUeba"
+      val wrapperName = s"$svcName${if (isJson) "JsonService" else "UebaService"}"
+
+      // Constructor and forwarded args: every extra dependency consumed by the
+      // underlying ${Svc}Wiring.invoke<Json|Ueba> static method (rt in errors
+      // mode, plus any service-context parameter) is baked at construction time
+      // so the runtime IBaboon*Service contract stays uniform across modes.
+      val rtField: Option[(String, TextTree[DtValue])] =
+        if (resolved.noErrors) None else Some(("rt", q"IBaboonServiceRt"))
+
+      val svcCtxField: Option[(String, TextTree[DtValue])] = resolvedCtx match {
+        case ResolvedServiceContext.NoContext               => None
+        case ResolvedServiceContext.AbstractContext(tn, pn) => Some((pn, q"$tn"))
+        case ResolvedServiceContext.ConcreteContext(tn, pn) => Some((pn, q"$tn"))
+      }
+
+      val extraCtorParams: List[(String, TextTree[DtValue])] = List(rtField, svcCtxField).flatten
+
+      val implField: TextTree[DtValue]  = q"final $svcName _impl;"
+      val extraFields: List[TextTree[DtValue]] = extraCtorParams.map {
+        case (name, tpe) => q"final $tpe _$name;"
+      }
+
+      // Per-field initializers in Dart's `this._x` constructor form keep the
+      // fields final without an extra body, so the wrapper stays const-friendly
+      // and the analyzer doesn't warn about unused setters.
+      val ctorImplParam: TextTree[DtValue] = q"this._impl"
+      val ctorExtraParams: List[TextTree[DtValue]] = extraCtorParams.map {
+        case (name, _) => q"this._$name"
+      }
+      val ctorParamList: TextTree[DtValue] =
+        (ctorImplParam :: ctorExtraParams).join(", ")
+
+      // Underlying static-method call: positional args match the existing
+      // ${Svc}Wiring.invoke<Json|Ueba>(method, data, impl, [rt], [svcCtx], ctx)
+      // signature emitted by generateNoErrors*Method / generateErrors*Method.
+      val invokerArgs: List[TextTree[DtValue]] = {
+        val base    = List[TextTree[DtValue]](q"method", q"data", q"_impl")
+        val withRt  = rtField.fold(base)(_ => base :+ q"_rt")
+        val withSvc = svcCtxField.fold(withRt)(f => withRt :+ q"_${f._1}")
+        withSvc :+ q"ctx"
+      }
+
+      val allFields = (implField :: extraFields).join("\n")
+
+      q"""class $wrapperName implements $ifaceType<$retType> {
+         |  @override
+         |  String get serviceName => '$svcName';
+         |
+         |  ${allFields.shift(2).trim}
+         |
+         |  $wrapperName($ctorParamList);
+         |
+         |  @override
+         |  $retType invoke($baboonMethodId method, $wireType data, $baboonCodecContext ctx) {
+         |    return ${svcName}Wiring.$invokerFn(${invokerArgs.join(", ")});
+         |  }
          |}""".stripMargin
     }
 
@@ -366,7 +525,7 @@ object DtServiceWiringTranslator {
           val decodeStep =
             q"""${ct(bweFq, renderFq(inRef))} input;
                |try {
-               |  final wire = jsonDecode(data);
+               |  final wire = $dtJsonDecode(data);
                |  input = rt.pure($decodeIn);
                |} catch (ex) {
                |  input = rt.fail($baboonWiringError.decoderFailed(method, ex));
@@ -400,7 +559,7 @@ object DtServiceWiringTranslator {
                  |return rt.flatMap(output, (v) {
                  |  try {
                  |    final encoded = $encodeOut;
-                 |    return rt.pure(jsonEncode(encoded));
+                 |    return rt.pure($dtJsonEncode(encoded));
                  |  } catch (ex) {
                  |    return rt.fail($baboonWiringError.encoderFailed(method, ex));
                  |  }

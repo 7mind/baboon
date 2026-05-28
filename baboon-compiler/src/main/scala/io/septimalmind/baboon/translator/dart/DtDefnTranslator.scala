@@ -571,7 +571,15 @@ object DtDefnTranslator {
            |  ${body.shift(2).trim}
            |}""".stripMargin
 
-      DefnRepr(prependDocs(defn.docs, serviceTree), Nil)
+      // Per-service wiring (the `${svc}Wiring` static-dispatch class plus the
+      // muxer-entry `${svc}JsonService` / `${svc}UebaService` wrapper classes)
+      // lands in the same file as the service interface. `wiringTranslator`
+      // returns None if no codecs are active for this service.
+      val wiringTree = wiringTranslator.translate(defn)
+
+      val combined = wiringTree.fold(serviceTree)(w => Seq(serviceTree, w).joinNN())
+
+      DefnRepr(prependDocs(defn.docs, combined), Nil)
     }
 
     // ----- Identifier toString + parseRepr emission (PR-57d) -----
