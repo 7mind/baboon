@@ -139,7 +139,7 @@ class TsTypeTranslator(target: TsTarget) {
     pkgBase: List[String],
     suffix: String = "",
   ): TsModuleId = {
-    val pathToModule    = tid.pkg.path.toList
+    val pathToModule    = tid.pkg.path.toList.map(_.toLowerCase)
     val versionPathPart = if (version != evolution.latest) List(version.format(prefix = "v", delimiter = "_")) else Nil
     val ownerPath       = renderOwner(tid.owner)
     val name            = typeModuleName(tid).map(name => s"$name$suffix").toList

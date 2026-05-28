@@ -1,0 +1,20 @@
+model MixedCase.Pkg
+
+version "1.0.0"
+
+data Pet {
+  id: i64
+  name: str
+}
+
+root service AdminService {
+  def shutdown (
+    data in {
+      reason: str
+    }
+
+    data out {
+      ok: bit
+    }
+  )
+}
