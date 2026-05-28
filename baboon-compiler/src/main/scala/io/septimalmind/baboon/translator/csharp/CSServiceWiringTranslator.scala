@@ -241,6 +241,98 @@ object CSServiceWiringTranslator {
       case _                                             => ""
     }
 
+    /** Emits the cross-domain Muxer-entry wrapper classes for a service.
+      *
+      * Each wrapper implements `IBaboonJsonService<R>` / `IBaboonUebaService<R>`
+      * with R matching the underlying `${svcName}Wiring.InvokeJson` /
+      * `InvokeUeba` return type (raw `string`/`byte[]` for noErrors=true,
+      * container-wrapped for noErrors=false). Extra dependencies (`rt` for
+      * the errors mode, and any service-context parameter) are baked at
+      * construction time so the runtime `IBaboon*Service.Invoke(method,
+      * data, ctx)` contract stays codec-flavour-symmetric and
+      * language-uniform.
+      *
+      * C# wiring is currently sync-only — no `Task<…>` variant is emitted.
+      * The runtime `JsonMuxer<R>` / `UebaMuxer<R>` stay parametric in R so
+      * a future async axis could plug in without breaking the contract.
+      */
+    private def generateServiceWrappers(
+      service: Typedef.Service,
+      jsonRetType: TextTree[CSValue],
+      uebaRetType: TextTree[CSValue],
+    ): Option[TextTree[CSValue]] = {
+      val jsonWrapper =
+        if (hasActiveJsonCodecs(service)) Some(generateOneWrapper(service, isJson = true, jsonRetType))
+        else None
+      val uebaWrapper =
+        if (hasActiveUebaCodecs(service)) Some(generateOneWrapper(service, isJson = false, uebaRetType))
+        else None
+      val both = Seq(jsonWrapper, uebaWrapper).flatten
+      if (both.isEmpty) None else Some(both.join("\n\n"))
+    }
+
+    private def generateOneWrapper(
+      service: Typedef.Service,
+      isJson: Boolean,
+      retType: TextTree[CSValue],
+    ): TextTree[CSValue] = {
+      val svcName     = service.id.name.name
+      val wireType    = if (isJson) q"$csString" else q"byte[]"
+      val invokerName = if (isJson) "InvokeJson" else "InvokeUeba"
+      val iface       = if (isJson) iBaboonJsonService else iBaboonUebaService
+      val wrapperName = s"${svcName}${if (isJson) "JsonService" else "UebaService"}"
+      val svcType: TextTree[CSValue] = q"$svcName.$svcName$genericParam"
+
+      // Constructor and forwarded-args: every extra dependency consumed by
+      // ${svc}Wiring.InvokeJson/InvokeUeba (`rt` in errors mode, plus any
+      // service-context parameter) is baked at construction time so the
+      // runtime IBaboon*Service<R> contract stays uniform across modes.
+      val rtField: Option[(String, TextTree[CSValue])] =
+        if (resolved.noErrors) None else Some(("rt", q"IBaboonServiceRt"))
+
+      val svcCtxField: Option[(String, TextTree[CSValue])] = resolvedCtx match {
+        case ResolvedServiceContext.NoContext               => None
+        case ResolvedServiceContext.AbstractContext(tn, pn) => Some((pn, q"$tn"))
+        case ResolvedServiceContext.ConcreteContext(tn, pn) => Some((pn, q"$tn"))
+      }
+
+      val extraFields: List[(String, TextTree[CSValue])] = List(rtField, svcCtxField).flatten
+
+      val fieldDecls: List[TextTree[CSValue]] =
+        q"private readonly $svcType _impl;" ::
+          extraFields.map { case (n, t) => q"private readonly $t _$n;" }
+
+      val ctorParams: TextTree[CSValue] = {
+        val all = q"$svcType impl" :: extraFields.map { case (n, t) => q"$t $n" }
+        all.join(", ")
+      }
+      val ctorAssigns: List[TextTree[CSValue]] =
+        q"_impl = impl;" :: extraFields.map { case (n, _) => q"_$n = $n;" }
+
+      val invokerArgs: List[TextTree[CSValue]] = {
+        val base = List(q"method", q"data", q"_impl")
+        val withRt = rtField.fold(base)(_ => base :+ q"_rt")
+        val withSvcCtx = svcCtxField.fold(withRt)(f => withRt :+ q"_${f._1}")
+        withSvcCtx :+ q"ctx"
+      }
+
+      q"""public sealed class $wrapperName : $iface<$retType>
+         |{
+         |    public $csString ServiceName => "$svcName";
+         |    ${fieldDecls.join("\n").shift(4).trim}
+         |
+         |    public $wrapperName($ctorParams)
+         |    {
+         |        ${ctorAssigns.join("\n").shift(8).trim}
+         |    }
+         |
+         |    public $retType Invoke($baboonMethodId method, $wireType data, $baboonCodecContext ctx)
+         |    {
+         |        return ${svcName}Wiring.$invokerName$genericParam(${invokerArgs.join(", ")});
+         |    }
+         |}""".stripMargin
+    }
+
     // ========== noErrors mode ==========
 
     private def generateNoErrorsWiring(service: Typedef.Service): TextTree[CSValue] = {
@@ -258,10 +350,19 @@ object CSServiceWiringTranslator {
 
       val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
 
-      q"""public static class ${svcName}Wiring
-         |{
-         |    ${methods.shift(4).trim}
-         |}""".stripMargin
+      val wiringClass =
+        q"""public static class ${svcName}Wiring
+           |{
+           |    ${methods.shift(4).trim}
+           |}""".stripMargin
+
+      val wrappers = generateServiceWrappers(
+        service,
+        jsonRetType = q"$csString",
+        uebaRetType = q"byte[]",
+      )
+
+      Seq(Some(wiringClass), wrappers).flatten.join("\n\n")
     }
 
     private def generateNoErrorsJsonMethod(service: Typedef.Service): TextTree[CSValue] = {
@@ -373,10 +474,26 @@ object CSServiceWiringTranslator {
 
       val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
 
-      q"""public static class ${svcName}Wiring
-         |{
-         |    ${methods.shift(4).trim}
-         |}""".stripMargin
+      val wiringClass =
+        q"""public static class ${svcName}Wiring
+           |{
+           |    ${methods.shift(4).trim}
+           |}""".stripMargin
+
+      // In errors mode the underlying InvokeJson_/InvokeUeba_ return shape is
+      // wrapped in the service-result container (e.g. Either<…>) — the
+      // wrapper's `Invoke` return type must mirror that for IBaboon*Service<R>
+      // to type-check.
+      val jsonContainer: String = ct("BaboonWiringError", "string")
+      val uebaContainer: String = ct("BaboonWiringError", "byte[]")
+
+      val wrappers = generateServiceWrappers(
+        service,
+        jsonRetType = q"$jsonContainer",
+        uebaRetType = q"$uebaContainer",
+      )
+
+      Seq(Some(wiringClass), wrappers).flatten.join("\n\n")
     }
 
     private def ct(error: String, success: String): String = renderContainer(error, success)

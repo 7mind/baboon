@@ -74,6 +74,8 @@ object CSTypes {
   val baboonMethodId: CSType        = CSType(baboonRuntimePkg, "BaboonMethodId", fq = false, CSTypeOrigin.Other)
   val baboonWiringError: CSType     = CSType(baboonRuntimePkg, "BaboonWiringError", fq = false, CSTypeOrigin.Other)
   val baboonWiringException: CSType = CSType(baboonRuntimePkg, "BaboonWiringException", fq = false, CSTypeOrigin.Other)
+  val iBaboonJsonService: CSType    = CSType(baboonRuntimePkg, "IBaboonJsonService", fq = false, CSTypeOrigin.Other)
+  val iBaboonUebaService: CSType    = CSType(baboonRuntimePkg, "IBaboonUebaService", fq = false, CSTypeOrigin.Other)
 
   val csException: CSType = CSType(csSystemPkg, "Exception", fq = false, CSTypeOrigin.Other)
 
