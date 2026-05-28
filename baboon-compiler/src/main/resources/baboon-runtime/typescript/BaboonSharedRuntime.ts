@@ -662,6 +662,8 @@ export interface BaboonMethodId {
 
 export type BaboonWiringError =
     | { readonly tag: 'NoMatchingMethod'; readonly method: BaboonMethodId }
+    | { readonly tag: 'NoMatchingService'; readonly method: BaboonMethodId }
+    | { readonly tag: 'DuplicateService'; readonly serviceName: string }
     | { readonly tag: 'DecoderFailed'; readonly method: BaboonMethodId; readonly error: unknown }
     | { readonly tag: 'EncoderFailed'; readonly method: BaboonMethodId; readonly error: unknown }
     | { readonly tag: 'CallFailed'; readonly method: BaboonMethodId; readonly domainError: unknown };
@@ -671,6 +673,73 @@ export class BaboonWiringException extends Error {
     constructor(error: BaboonWiringError) {
         super(JSON.stringify(error));
         this.error = error;
+    }
+}
+
+// --- Service muxers ---
+//
+// Cross-domain composable dispatch. A muxer holds a set of services from any
+// model(s) and routes an `(method, data, ctx)` call to the right one by
+// `method.serviceName`. The R type parameter encodes the return shape so the
+// same class supports both sync and async generated services — pass
+// `JsonMuxer<Promise<string>>` (default) for `--ts-async-services=true`
+// generated code, or `JsonMuxer<string>` for sync code. The per-service
+// wrapper classes emitted alongside `invokeJson_X` / `invokeUeba_X` carry the
+// matching parameterisation.
+
+export interface IBaboonJsonService<R = Promise<string>> {
+    readonly serviceName: string;
+    invoke(method: BaboonMethodId, data: string, ctx: BaboonCodecContext): R;
+}
+
+export interface IBaboonUebaService<R = Promise<Uint8Array>> {
+    readonly serviceName: string;
+    invoke(method: BaboonMethodId, data: Uint8Array, ctx: BaboonCodecContext): R;
+}
+
+export class JsonMuxer<R = Promise<string>> {
+    private readonly table = new Map<string, IBaboonJsonService<R>>();
+    constructor(...services: IBaboonJsonService<R>[]) {
+        for (const s of services) this.register(s);
+    }
+    register(service: IBaboonJsonService<R>): void {
+        if (this.table.has(service.serviceName)) {
+            throw new BaboonWiringException({ tag: 'DuplicateService', serviceName: service.serviceName });
+        }
+        this.table.set(service.serviceName, service);
+    }
+    invoke(method: BaboonMethodId, data: string, ctx: BaboonCodecContext): R {
+        const service = this.table.get(method.serviceName);
+        if (service === undefined) {
+            throw new BaboonWiringException({ tag: 'NoMatchingService', method });
+        }
+        return service.invoke(method, data, ctx);
+    }
+    serviceNames(): readonly string[] {
+        return Array.from(this.table.keys());
+    }
+}
+
+export class UebaMuxer<R = Promise<Uint8Array>> {
+    private readonly table = new Map<string, IBaboonUebaService<R>>();
+    constructor(...services: IBaboonUebaService<R>[]) {
+        for (const s of services) this.register(s);
+    }
+    register(service: IBaboonUebaService<R>): void {
+        if (this.table.has(service.serviceName)) {
+            throw new BaboonWiringException({ tag: 'DuplicateService', serviceName: service.serviceName });
+        }
+        this.table.set(service.serviceName, service);
+    }
+    invoke(method: BaboonMethodId, data: Uint8Array, ctx: BaboonCodecContext): R {
+        const service = this.table.get(method.serviceName);
+        if (service === undefined) {
+            throw new BaboonWiringException({ tag: 'NoMatchingService', method });
+        }
+        return service.invoke(method, data, ctx);
+    }
+    serviceNames(): readonly string[] {
+        return Array.from(this.table.keys());
     }
 }
 

@@ -77,6 +77,8 @@ object TsTypes {
   val baboonWiringError: TsType     = TsType(tsBaboonRuntimeShared, "BaboonWiringError", typeOnly = true)
   val baboonWiringException: TsType = TsType(tsBaboonRuntimeShared, "BaboonWiringException")
   val baboonEither: TsType          = TsType(tsBaboonRuntimeShared, "BaboonEither", typeOnly = true)
+  val ibaboonJsonService: TsType    = TsType(tsBaboonRuntimeShared, "IBaboonJsonService", typeOnly = true)
+  val ibaboonUebaService: TsType    = TsType(tsBaboonRuntimeShared, "IBaboonUebaService", typeOnly = true)
 
   // Fixture types
   val baboonRandom: TsType = TsType(tsFixtureShared, "BaboonRandom")

@@ -394,8 +394,17 @@ object TsServiceWiringTranslator {
       val jsonCodecActive = services.exists(activeJsonCodec(_).isDefined)
       if (!binCodecActive && !jsonCodecActive) return None
 
-      val retTypeUeba = if (isAsync) "Promise<Uint8Array>" else "Uint8Array"
-      val retTypeJson = if (isAsync) "Promise<string>" else "string"
+      // In errors mode the underlying invoke<Json|Ueba>_X return shape is
+      // wrapped in the service-result container (e.g. BaboonEither<…>), so the
+      // dispatcher must mirror that — otherwise tsc rejects with TS2322.
+      val retTypeUeba: String = {
+        val base = if (resolved.noErrors) "Uint8Array" else renderContainer("BaboonWiringError", "Uint8Array")
+        if (isAsync) s"Promise<$base>" else base
+      }
+      val retTypeJson: String = {
+        val base = if (resolved.noErrors) "string" else renderContainer("BaboonWiringError", "string")
+        if (isAsync) s"Promise<$base>" else base
+      }
 
       val implFields = services.map {
         s =>
@@ -486,7 +495,19 @@ object TsServiceWiringTranslator {
         )
       } else None
 
-      val tree             = Seq(uebaFn, jsonFn).flatten.joinNN()
+      // When the dispatcher's return type contains a result container (errors
+      // mode), trigger the symbol imports for `BaboonEither<…>` and
+      // `BaboonWiringError` via a phantom type alias — the dispatcher's
+      // return-type string `Promise<BaboonEither<BaboonWiringError, …>>` is
+      // built textually via `renderContainer` and would otherwise reference
+      // unimported names.
+      val containerImportTrigger: Option[TextTree[TsValue]] =
+        if (resolved.noErrors) None
+        else containerTypeRef.map(ref => q"type _DispatcherContainerImport<L, R> = $ref<L, R>;")
+      val wiringErrorImportTrigger: Option[TextTree[TsValue]] =
+        if (resolved.noErrors) None else Some(q"type _DispatcherWiringErrorImport = $baboonWiringError;")
+
+      val tree             = (containerImportTrigger.toSeq ++ wiringErrorImportTrigger.toSeq ++ Seq(uebaFn, jsonFn).flatten).joinNN()
       val dispatcherPath   = s"$fbase/baboon-dispatcher.ts"
       val dispatcherModule = TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ dispatcherPath.stripSuffix(".ts").split('/').toList)
 
@@ -544,6 +565,88 @@ object TsServiceWiringTranslator {
     private val asyncPrefix: String = if (isAsync) "async " else ""
     private val awaitPrefix: String = if (isAsync) "await " else ""
 
+    /** Emits the cross-domain Muxer-entry wrapper classes for a service.
+      *
+      * Each wrapper implements `IBaboonJsonService<R>` / `IBaboonUebaService<R>`
+      * with R matching the underlying `invokeJson_X`/`invokeUeba_X` return
+      * type (Promise-wrapped or raw, container-wrapped or raw — per the
+      * asyncServices and noErrors axes). Extra dependencies (`rt` for the
+      * errors mode, and any service-context parameter) are baked at
+      * construction time so the runtime `IBaboon*Service.invoke(method, data,
+      * ctx)` contract stays codec-flavour-symmetric and language-uniform.
+      */
+    private def generateServiceWrappers(
+      service: Typedef.Service,
+      svcType: TsValue.TsType,
+      jsonRetType: TextTree[TsValue],
+      uebaRetType: TextTree[TsValue],
+    ): TextTree[TsValue] = {
+      val jsonWrapper =
+        if (activeJsonCodec(service).isDefined) Some(generateOneWrapper(service, svcType, isJson = true, jsonRetType))
+        else None
+      val uebaWrapper =
+        if (activeBinCodec(service).isDefined) Some(generateOneWrapper(service, svcType, isJson = false, uebaRetType))
+        else None
+      Seq(jsonWrapper, uebaWrapper).flatten.joinNN()
+    }
+
+    private def generateOneWrapper(
+      service: Typedef.Service,
+      svcType: TsValue.TsType,
+      isJson: Boolean,
+      retType: TextTree[TsValue],
+    ): TextTree[TsValue] = {
+      val wireType   = if (isJson) q"string"     else q"Uint8Array"
+      val invokerFn  = if (isJson) s"invokeJson_${svcType.name}" else s"invokeUeba_${svcType.name}"
+      val ifaceType  = if (isJson) ibaboonJsonService else ibaboonUebaService
+      val wrapperName: String = s"${svcType.name}${if (isJson) "JsonService" else "UebaService"}"
+
+      // Constructor and forwarded-args: every extra dependency consumed by
+      // invoke<Json|Ueba>_X (`rt` in errors mode, and any service-context
+      // parameter) is baked at construction time so the runtime
+      // IBaboon*Service contract stays uniform across modes.
+      val rtField: Option[(String, TextTree[TsValue])] =
+        if (resolved.noErrors) None else Some(("rt", q"$ibaboonServiceRt"))
+
+      val svcCtxField: Option[(String, TextTree[TsValue])] = resolvedCtx match {
+        case ResolvedServiceContext.NoContext               => None
+        case ResolvedServiceContext.AbstractContext(tn, pn) => Some((pn, q"$tn"))
+        case ResolvedServiceContext.ConcreteContext(tn, pn) => Some((pn, q"$tn"))
+      }
+
+      val extraCtorParams: List[(String, TextTree[TsValue])] = List(rtField, svcCtxField).flatten
+      val extraFieldDecls: List[TextTree[TsValue]] = extraCtorParams.map {
+        case (name, tpe) => q"private readonly $name: $tpe;"
+      }
+      val ctorParamList: TextTree[TsValue] = {
+        val all = q"impl: $svcType" :: extraCtorParams.map { case (n, t) => q"$n: $t" }
+        all.join(", ")
+      }
+      val ctorAssigns: List[TextTree[TsValue]] =
+        q"this.impl = impl;" :: extraCtorParams.map { case (n, _) => q"this.$n = $n;" }
+
+      val invokerArgs: List[TextTree[TsValue]] = {
+        val base = List(q"method", q"data", q"this.impl")
+        val withRt = rtField.fold(base)(_ => base :+ q"this.rt")
+        val withSvcCtx = svcCtxField.fold(withRt)(f => withRt :+ q"this.${f._1}")
+        withSvcCtx :+ q"ctx"
+      }
+
+      q"""export class $wrapperName implements $ifaceType<$retType> {
+         |    readonly serviceName = "${svcType.name}";
+         |    private readonly impl: $svcType;
+         |    ${extraFieldDecls.join("\n").shift(4).trim}
+         |
+         |    constructor($ctorParamList) {
+         |        ${ctorAssigns.join("\n").shift(8).trim}
+         |    }
+         |
+         |    invoke(method: $baboonMethodId, data: $wireType, ctx: $tsBaboonCodecContext): $retType {
+         |        return $invokerFn(${invokerArgs.join(", ")});
+         |    }
+         |}""".stripMargin
+    }
+
     // ========== noErrors mode ==========
 
     private def generateNoErrorsWiring(service: Typedef.Service): TextTree[TsValue] = {
@@ -557,11 +660,16 @@ object TsServiceWiringTranslator {
         if (activeBinCodec(service).isDefined) Some(generateNoErrorsUebaFn(service, svcType))
         else None
 
-      Seq(jsonFn, uebaFn).flatten.joinNN()
+      val wrappers = generateServiceWrappers(service, svcType, noErrorsJsonRetTree, noErrorsUebaRetTree)
+
+      (Seq(jsonFn, uebaFn).flatten :+ wrappers).joinNN()
     }
 
     private def noErrorsJsonRetType: String = if (isAsync) "Promise<string>" else "string"
     private def noErrorsUebaRetType: String = if (isAsync) "Promise<Uint8Array>" else "Uint8Array"
+
+    private def noErrorsJsonRetTree: TextTree[TsValue] = if (isAsync) q"Promise<string>"     else q"string"
+    private def noErrorsUebaRetTree: TextTree[TsValue] = if (isAsync) q"Promise<Uint8Array>" else q"Uint8Array"
 
     private def generateNoErrorsJsonFn(
       service: Typedef.Service,
@@ -665,7 +773,9 @@ object TsServiceWiringTranslator {
           q"type _ContainerImport<L, R> = $ref<L, R>;"
       }
 
-      (importTrigger.toSeq ++ jsonFn.toSeq ++ uebaFn.toSeq).joinNN()
+      val wrappers = generateServiceWrappers(service, svcType, errorsJsonRetTree, errorsUebaRetTree)
+
+      (importTrigger.toSeq ++ jsonFn.toSeq ++ uebaFn.toSeq :+ wrappers).joinNN()
     }
 
     private def errorsJsonRetType: String = {
@@ -676,6 +786,16 @@ object TsServiceWiringTranslator {
     private def errorsUebaRetType: String = {
       val base = renderContainer("BaboonWiringError", "Uint8Array")
       if (isAsync) s"Promise<$base>" else base
+    }
+
+    private def errorsJsonRetTree: TextTree[TsValue] = {
+      val base = renderContainer("BaboonWiringError", "string")
+      if (isAsync) q"Promise<$base>" else q"$base"
+    }
+
+    private def errorsUebaRetTree: TextTree[TsValue] = {
+      val base = renderContainer("BaboonWiringError", "Uint8Array")
+      if (isAsync) q"Promise<$base>" else q"$base"
     }
 
     private def generateErrorsMethodBody(
