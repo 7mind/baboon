@@ -38,6 +38,10 @@ class RsTypes(val cratePrefix: String) {
   val baboonServiceWiringCrate: RsCrateId = parseCrate(s"$cratePrefix::baboon_service_wiring")
   val baboonMethodId: RsType              = RsType(baboonServiceWiringCrate, "BaboonMethodId")
   val baboonWiringError: RsType           = RsType(baboonServiceWiringCrate, "BaboonWiringError")
+  val ibaboonJsonService: RsType          = RsType(baboonServiceWiringCrate, "IBaboonJsonService")
+  val ibaboonUebaService: RsType          = RsType(baboonServiceWiringCrate, "IBaboonUebaService")
+  val baboonJsonMuxer: RsType             = RsType(baboonServiceWiringCrate, "JsonMuxer")
+  val baboonUebaMuxer: RsType             = RsType(baboonServiceWiringCrate, "UebaMuxer")
 
   // baboon conversions
   val baboonAbstractConversion: RsType  = RsType(baboonRuntimeCrate, "AbstractConversion")

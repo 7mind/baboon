@@ -258,6 +258,187 @@ object RsServiceWiringTranslator {
     private val asyncKw: String     = if (isAsync) "async " else ""
     private val awaitSuffix: String = if (isAsync) ".await" else ""
 
+    // ========== muxer wrapper structs ==========
+    //
+    // For every service S, emit `${S}JsonService` and `${S}UebaService` wrapper
+    // structs that implement `IBaboon{Json,Ueba}Service<R>` by forwarding to
+    // the existing per-service `invoke_{json,ueba}_<svc>` free function. Extra
+    // dependencies (`rt` in errors mode, service-context when configured) are
+    // baked at construction time so the trait-method signature stays uniform
+    // across mode-axes — matching the TS reference. Wrappers are generic over
+    // `Impl: <SvcTrait>` (static dispatch into the service impl) and, where
+    // applicable, over `Rt: IBaboonServiceRt` and the abstract service-ctx
+    // type param. The muxer holds them as `Box<dyn IBaboon*Service<R>>` so a
+    // heterogeneous set of wrappers can be composed cross-domain.
+
+    private case class WrapperSpec(
+      service: Typedef.Service,
+      svcName: String,
+      svcType: RsValue.RsType,
+      isJson: Boolean,
+    )
+
+    /** Returns the `R` (return-type) used by the underlying invoke function
+      * and by the wrapper's `IBaboon*Service<R>` impl. In sync mode this is
+      * the wire-shape result type (with the result container in errors mode);
+      * in async mode it's wrapped in `Pin<Box<dyn Future<Output=…> + Send>>`.
+      */
+    private def wrapperRetType(isJson: Boolean): String = {
+      val wire = if (isJson) "String" else "Vec<u8>"
+      val base =
+        if (resolved.noErrors) s"Result<$wire, $bweFq>"
+        else ct(bweFq, wire)
+      if (isAsync) s"std::pin::Pin<Box<dyn std::future::Future<Output = $base> + Send>>"
+      else base
+    }
+
+    /** Render the abstract-context's type-parameter declaration (e.g. `SvcCtx`)
+      * when context resolution names an abstract type.
+      */
+    private def absCtxTypeParam: Option[String] = resolvedCtx match {
+      case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+      case _                                             => None
+    }
+
+    /** Render the field declaration for the bound service-context (concrete
+      * or abstract) when the underlying invoke takes one.
+      */
+    private def svcCtxField: Option[(String, String)] = resolvedCtx match {
+      case ResolvedServiceContext.NoContext               => None
+      case ResolvedServiceContext.AbstractContext(tn, pn) => Some((pn, tn))
+      case ResolvedServiceContext.ConcreteContext(tn, pn) => Some((pn, tn))
+    }
+
+    private def generateServiceWrappers(service: Typedef.Service): TextTree[RsValue] = {
+      val svcName = service.id.name.name
+      val svcType = trans.asRsType(service.id, domain, evo)
+      val jsonWrapper =
+        if (hasActiveJsonCodecs(service)) Some(generateOneWrapper(WrapperSpec(service, svcName, svcType, isJson = true)))
+        else None
+      val uebaWrapper =
+        if (hasActiveUebaCodecs(service)) Some(generateOneWrapper(WrapperSpec(service, svcName, svcType, isJson = false)))
+        else None
+      Seq(jsonWrapper, uebaWrapper).flatten.joinNN()
+    }
+
+    private def generateOneWrapper(spec: WrapperSpec): TextTree[RsValue] = {
+      val wrapperName = s"${spec.svcName}${if (spec.isJson) "JsonService" else "UebaService"}"
+      val wireTypeStr = if (spec.isJson) "&str" else "&[u8]"
+      val invokerFn   = if (spec.isJson) s"invoke_json_${toSnakeCase(spec.svcName)}"
+                        else s"invoke_ueba_${toSnakeCase(spec.svcName)}"
+      val ifaceType   = if (spec.isJson) ibaboonJsonService else ibaboonUebaService
+      val retTypeStr  = wrapperRetType(spec.isJson)
+
+      // The service trait the impl must satisfy. `genericParam` produces
+      // `<SvcCtx>` only when ResolvedServiceContext is AbstractContext.
+      val svcTraitRef: TextTree[RsValue] = q"${spec.svcType}$genericParam"
+
+      // ---- type parameters (declaration list) ----
+      val typeParamNames: List[String] = {
+        val rt  = if (resolved.noErrors) Nil else List("Rt")
+        val ctx = absCtxTypeParam.toList
+        "Impl" :: rt ++ ctx
+      }
+      val typeParamDecl: String = typeParamNames.mkString("<", ", ", ">")
+
+      // ---- where clauses (as TextTree fragments so symbols flow correctly) ----
+      val sendSync   = if (isAsync) " + Send + Sync + 'static" else " + 'static"
+      val implBound: TextTree[RsValue]               = q"Impl: $svcTraitRef$sendSync"
+      val rtBound: Option[TextTree[RsValue]]         =
+        if (resolved.noErrors) None else Some(q"Rt: $ibaboonServiceRt$sendSync")
+      val absCtxBound: Option[TextTree[RsValue]] = absCtxTypeParam.map { p =>
+        val tail = if (isAsync) ": Clone + Send + Sync + 'static" else ": Clone + 'static"
+        q"$p$tail"
+      }
+
+      val whereLines: List[TextTree[RsValue]] =
+        implBound :: rtBound.toList ++ absCtxBound.toList
+      val whereBlock: TextTree[RsValue] = whereLines.map(l => q"    $l,").join("\n")
+
+      // ---- struct fields and ctor ----
+      val rtFieldOpt: Option[TextTree[RsValue]] =
+        if (resolved.noErrors) None else Some(q"rt: Rt,")
+      val ctxFieldOpt: Option[TextTree[RsValue]] = svcCtxField.map {
+        case (pn, tn) => q"$pn: $tn,"
+      }
+      val fieldsBlock: TextTree[RsValue] =
+        (q"impl_: Impl," :: rtFieldOpt.toList ++ ctxFieldOpt.toList).join("\n")
+
+      val rtCtorParamOpt: Option[TextTree[RsValue]] =
+        if (resolved.noErrors) None else Some(q"rt: Rt")
+      val ctxCtorParamOpt: Option[TextTree[RsValue]] = svcCtxField.map {
+        case (pn, tn) => q"$pn: $tn"
+      }
+      val ctorParams: TextTree[RsValue] =
+        (q"impl_: Impl" :: rtCtorParamOpt.toList ++ ctxCtorParamOpt.toList).join(", ")
+
+      val rtCtorAssignOpt: Option[String]  = if (resolved.noErrors) None else Some("rt,")
+      val ctxCtorAssignOpt: Option[String] = svcCtxField.map { case (pn, _) => s"$pn," }
+      val ctorAssignsList: List[String]    = "impl_," :: rtCtorAssignOpt.toList ++ ctxCtorAssignOpt.toList
+      val ctorAssigns: String              = ctorAssignsList.mkString(" ")
+
+      // ---- body for invoke() ----
+      val body: TextTree[RsValue] = if (isAsync) {
+        // Async path: clone everything the future captures into owned
+        // bindings, then return a `Pin<Box<Future + Send>>`. Requires
+        // Impl/Rt/SvcCtx: Clone + Send + Sync + 'static.
+        val cloneRt   = if (resolved.noErrors) "" else "let rt_clone = self.rt.clone();\n"
+        val cloneCtx  = svcCtxField.fold("")(f => s"let svc_ctx_clone = self.${f._1}.clone();\n")
+        val dataOwn   = if (spec.isJson) "let data_owned: String = data.to_string();"
+                        else "let data_owned: Vec<u8> = data.to_vec();"
+        val dataRef   = if (spec.isJson) "data_owned.as_str()" else "data_owned.as_slice()"
+
+        val futArgs: List[String] = {
+          val base    = List("&method_owned", dataRef, "&impl_clone")
+          val withRt  = if (resolved.noErrors) base else base :+ "&rt_clone"
+          val withCtx = svcCtxField.fold(withRt)(_ => withRt :+ "svc_ctx_clone")
+          withCtx :+ "&codec_ctx"
+        }
+        val futArgsStr = futArgs.mkString(", ")
+        q"""let method_owned = method.clone();
+           |let impl_clone = self.impl_.clone();
+           |$cloneRt$cloneCtx$dataOwn
+           |let codec_ctx = ctx.clone();
+           |Box::pin(async move {
+           |    $invokerFn($futArgsStr).await
+           |})""".stripMargin
+      } else {
+        val syncArgs: List[String] = {
+          val base    = List("method", "data", "&self.impl_")
+          val withRt  = if (resolved.noErrors) base else base :+ "&self.rt"
+          val withCtx = svcCtxField.fold(withRt)(f => withRt :+ s"self.${f._1}.clone()")
+          withCtx :+ "ctx"
+        }
+        q"$invokerFn(${syncArgs.mkString(", ")})"
+      }
+
+      q"""pub struct $wrapperName$typeParamDecl
+         |where
+         |${whereBlock.shift(0).trim}
+         |{
+         |    ${fieldsBlock.shift(4).trim}
+         |}
+         |
+         |impl$typeParamDecl $wrapperName$typeParamDecl
+         |where
+         |${whereBlock.shift(0).trim}
+         |{
+         |    pub fn new($ctorParams) -> Self {
+         |        Self { $ctorAssigns }
+         |    }
+         |}
+         |
+         |impl$typeParamDecl $ifaceType<$retTypeStr> for $wrapperName$typeParamDecl
+         |where
+         |${whereBlock.shift(0).trim}
+         |{
+         |    fn service_name(&self) -> &str { "${spec.svcName}" }
+         |    fn invoke(&self, method: &$baboonMethodId, data: $wireTypeStr, ctx: &$baboonCodecContext) -> $retTypeStr {
+         |        ${body.shift(8).trim}
+         |    }
+         |}""".stripMargin
+    }
+
     private def implParam(svcType: RsValue.RsType): String = {
       val gp = genericParam
       if (isAsync) s"impl_: &(impl ${renderFq(q"$svcType")}$gp + Send + Sync)"
@@ -290,7 +471,9 @@ object RsServiceWiringTranslator {
           Some(generateNoErrorsUebaFn(service, svcName, svcType))
         else None
 
-      Seq(jsonFn, uebaFn).flatten.joinNN()
+      val wrappers = generateServiceWrappers(service)
+
+      (Seq(jsonFn, uebaFn).flatten :+ wrappers).joinNN()
     }
 
     private def generateNoErrorsJsonFn(service: Typedef.Service, svcName: String, svcType: RsValue.RsType): TextTree[RsValue] = {
@@ -393,7 +576,9 @@ object RsServiceWiringTranslator {
           Some(generateErrorsUebaFn(service, svcName, svcType))
         else None
 
-      Seq(jsonFn, uebaFn).flatten.joinNN()
+      val wrappers = generateServiceWrappers(service)
+
+      (Seq(jsonFn, uebaFn).flatten :+ wrappers).joinNN()
     }
 
     private def generateErrorsJsonFn(service: Typedef.Service, svcName: String, svcType: RsValue.RsType): TextTree[RsValue] = {
