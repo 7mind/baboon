@@ -120,7 +120,12 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
 
     // Collect non-ADT-branch User types per version
     // Returns list of (tsImportPath, typeAlias, typeName, typeIdentifier)
-    // typeAlias differs from typeName for older versions (to avoid import name conflicts)
+    // typeAlias differs from typeName when either (a) the version is older
+    // (to disambiguate cross-version imports) or (b) the type lives in a
+    // non-toplevel namespace and might collide with a same-named type under
+    // a different namespace (e.g. service method `In`/`Out`/`Err` synthetic
+    // types). Path segments derived from the source are lowercased to match
+    // the on-disk layout produced by TsDefnTranslator.getOutputPath.
     def collectTypes(domain: Domain): List[(String, String, String, String)] = {
       val versionStr    = domain.version.v.toString
       val isLatest      = domain.version == evo.latest
@@ -131,13 +136,34 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         case (_, defn: DomainMember.User) =>
           defn.id.owner match {
             case Owner.Adt(_) => None // skip ADT branches
-            case _ =>
+            case owner =>
               defn.defn match {
                 case _: Typedef.Dto | _: Typedef.Enum | _: Typedef.Adt =>
-                  val typeName   = defn.id.name.name.capitalize
-                  val typeAlias  = if (isLatest) typeName else s"${typeName}V$verSuffix"
-                  val importPath = s"$relPrefix/$typeName"
-                  val typeId     = defn.id.toString
+                  // `typeName` is the TS-class symbol exported by the source
+                  // file (always Pascal-case). `fileBase` is the on-disk file
+                  // basename, which preserves the source-declared case — for
+                  // service-method synthetic types (`in`/`out`/`err` from the
+                  // parser keywords) this is lowercase, while top-level type
+                  // declarations are typically Pascal-case already. The import
+                  // path MUST use `fileBase` so it resolves on case-sensitive
+                  // filesystems; the import binding uses `typeName`.
+                  val rawName  = defn.id.name.name
+                  val typeName = rawName.capitalize
+                  val fileBase = rawName
+                  val nsSegs: List[String] = owner match {
+                    case Owner.Toplevel => Nil
+                    case Owner.Ns(p)    => p.map(_.name.toLowerCase).toList
+                    case Owner.Adt(_)   => Nil // unreachable, filtered above
+                  }
+                  val nsPathSegment = if (nsSegs.isEmpty) "" else nsSegs.mkString("", "/", "/")
+                  // Unique local alias to avoid collisions: an `In` under
+                  // `adminservice/shutdown` and an `In` under `reportservice/fetch`
+                  // would otherwise both import as bare `In`.
+                  val nsAliasPrefix = nsSegs.map(_.capitalize).mkString
+                  val baseAlias     = s"$nsAliasPrefix$typeName"
+                  val typeAlias     = if (isLatest) baseAlias else s"${baseAlias}V$verSuffix"
+                  val importPath    = s"$relPrefix/$nsPathSegment$fileBase"
+                  val typeId        = defn.id.toString
                   Some((importPath, typeAlias, typeName, typeId))
                 case _ => None
               }
@@ -183,22 +209,25 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       val types        = collectTypes(domain)
       val verClassName = s"Domain${pascalDomainId}V${verSuffix}"
 
-      // JSON codecs class
+      // JSON codecs class. We reference `${typeAlias}_JsonCodec.BaboonTypeIdentifier`
+      // (rather than `${typeAlias}.BaboonTypeIdentifier`) because TypeScript `enum`s
+      // cannot carry static properties — only the generated codec classes do.
+      // The codec class carries the same identifier string for every type kind.
       sb.append(s"class ${verClassName}JsonCodecs extends AbstractBaboonJsonCodecs {\n")
       sb.append( "    constructor() {\n")
       sb.append( "        super();\n")
       for ((_, typeAlias, _, _) <- types) {
-        sb.append(s"        this.register($typeAlias.BaboonTypeIdentifier, new Lazy<BaboonJsonCodec<unknown>>(() => ${typeAlias}_JsonCodec.instance as unknown as BaboonJsonCodec<unknown>));\n")
+        sb.append(s"        this.register(${typeAlias}_JsonCodec.BaboonTypeIdentifier, new Lazy<BaboonJsonCodec<unknown>>(() => ${typeAlias}_JsonCodec.instance as unknown as BaboonJsonCodec<unknown>));\n")
       }
       sb.append( "    }\n")
       sb.append( "}\n\n")
 
-      // UEBA codecs class
+      // UEBA codecs class — same reasoning as above.
       sb.append(s"class ${verClassName}UebaCodecs extends AbstractBaboonUebaCodecs {\n")
       sb.append( "    constructor() {\n")
       sb.append( "        super();\n")
       for ((_, typeAlias, _, _) <- types) {
-        sb.append(s"        this.register($typeAlias.BaboonTypeIdentifier, new Lazy<BaboonBinCodec<unknown>>(() => ${typeAlias}_UEBACodec.instance as unknown as BaboonBinCodec<unknown>));\n")
+        sb.append(s"        this.register(${typeAlias}_UEBACodec.BaboonTypeIdentifier, new Lazy<BaboonBinCodec<unknown>>(() => ${typeAlias}_UEBACodec.instance as unknown as BaboonBinCodec<unknown>));\n")
       }
       sb.append( "    }\n")
       sb.append( "}\n\n")

@@ -2,9 +2,15 @@ model MixedCase.Pkg
 
 version "1.0.0"
 
-data Pet {
+enum EnvSelector {
+  Dev
+  Prod
+}
+
+root data Pet {
   id: i64
   name: str
+  env: EnvSelector
 }
 
 root service AdminService {
@@ -15,6 +21,26 @@ root service AdminService {
 
     data out {
       ok: bit
+    }
+
+    data err {
+      code: i32
+    }
+  )
+}
+
+root service ReportService {
+  def fetch (
+    data in {
+      since: i64
+    }
+
+    data out {
+      count: u32
+    }
+
+    data err {
+      code: i32
     }
   )
 }
