@@ -53,6 +53,8 @@ object JvTypes {
   val baboonMethodId: JvType        = JvType(baboonRuntimePkg, "BaboonMethodId")
   val baboonWiringError: JvType     = JvType(baboonRuntimePkg, "BaboonWiringError")
   val baboonWiringException: JvType = JvType(baboonRuntimePkg, "BaboonWiringException")
+  val iBaboonJsonService: JvType    = JvType(baboonRuntimePkg, "IBaboonJsonService")
+  val iBaboonUebaService: JvType    = JvType(baboonRuntimePkg, "IBaboonUebaService")
 
   // baboon conversions
   val baboonAbstractConversion: JvType  = JvType(baboonRuntimePkg, "AbstractConversion")

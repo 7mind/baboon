@@ -279,7 +279,15 @@ object JvServiceWiringTranslator {
           Some(generateNoErrorsUebaMethod(service))
         else None
 
-      val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
+      val wrappers = generateServiceWrappers(
+        service,
+        isErrorsMode = false,
+        jsonActive = hasActiveJsonCodecs(service),
+        uebaActive = hasActiveUebaCodecs(service),
+      )
+
+      val parts   = Seq(jsonMethod, uebaMethod).flatten ++ wrappers.toSeq
+      val methods = parts.join("\n\n")
 
       q"""public final class ${svcName}Wiring {
          |  ${methods.shift(2).trim}
@@ -386,7 +394,15 @@ object JvServiceWiringTranslator {
           Some(generateErrorsUebaMethod(service))
         else None
 
-      val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
+      val wrappers = generateServiceWrappers(
+        service,
+        isErrorsMode = true,
+        jsonActive = hasActiveJsonCodecs(service),
+        uebaActive = hasActiveUebaCodecs(service),
+      )
+
+      val parts   = Seq(jsonMethod, uebaMethod).flatten ++ wrappers.toSeq
+      val methods = parts.join("\n\n")
 
       q"""public final class ${svcName}Wiring {
          |  ${methods.shift(2).trim}
@@ -442,7 +458,7 @@ object JvServiceWiringTranslator {
               q"""var output = rt.flatMap(input, v -> {
                  |  ${callBody.shift(2).trim}
                  |});
-                 |return rt.flatMap(output, v -> {
+                 |yield rt.flatMap(output, v -> {
                  |  try {
                  |    var encoded = $encodeOut;
                  |    return rt.pure(encoded.toString());
@@ -469,7 +485,7 @@ object JvServiceWiringTranslator {
                    |}""".stripMargin
               }
 
-              q"""return rt.flatMap(input, v -> {
+              q"""yield rt.flatMap(input, v -> {
                  |  ${callBody.shift(2).trim}
                  |  return rt.pure("null");
                  |});""".stripMargin
@@ -539,7 +555,7 @@ object JvServiceWiringTranslator {
               q"""var output = rt.flatMap(input, v -> {
                  |  ${callBody.shift(2).trim}
                  |});
-                 |return rt.flatMap(output, v -> {
+                 |yield rt.flatMap(output, v -> {
                  |  try {
                  |    var oms = new $byteArrayOutputStream();
                  |    var bw = new $binaryOutput(oms);
@@ -569,7 +585,7 @@ object JvServiceWiringTranslator {
                    |}""".stripMargin
               }
 
-              q"""return rt.flatMap(input, v -> {
+              q"""yield rt.flatMap(input, v -> {
                  |  ${callBody.shift(2).trim}
                  |  return rt.pure(new byte[0]);
                  |});""".stripMargin
@@ -591,6 +607,151 @@ object JvServiceWiringTranslator {
          |    ${cases.shift(4).trim}
          |    default -> rt.fail(new $baboonWiringError.NoMatchingMethod(method));
          |  };
+         |}""".stripMargin
+    }
+
+    // ========== Cross-domain muxer-entry wrapper classes ==========
+    //
+    // Each service emits nested `JsonService` and `UebaService` classes that
+    // implement `IBaboonJsonService<R>` / `IBaboonUebaService<R>` with R
+    // matching the underlying invokeJson/invokeUeba return shape. Extra
+    // dependencies the static invoker consumes (`rt` for errors mode, any
+    // abstract/concrete service-context parameter) are baked at construction
+    // time so the runtime contract stays uniform.
+    //
+    // Java has no native sync/async polymorphism via type-only mechanisms;
+    // the current Java backend has no asyncServices flag. R is therefore
+    // either the bare wire type (String/byte[]) in noErrors mode or the
+    // service-result container in errors mode. Nesting the wrappers inside
+    // ${Svc}Wiring (rather than emitting them as top-level files) keeps the
+    // emission shape compatible with the existing one-output-per-service
+    // dispatcher and matches Java's "helpers nested under the public class"
+    // idiom.
+
+    private def generateServiceWrappers(
+      service: Typedef.Service,
+      isErrorsMode: Boolean,
+      jsonActive: Boolean,
+      uebaActive: Boolean,
+    ): Option[TextTree[JvValue]] = {
+      if (!jsonActive && !uebaActive) return None
+      val jsonWrapper = if (jsonActive) Some(generateOneWrapper(service, isJson = true, isErrorsMode = isErrorsMode))  else None
+      val uebaWrapper = if (uebaActive) Some(generateOneWrapper(service, isJson = false, isErrorsMode = isErrorsMode)) else None
+      val joined = Seq(jsonWrapper, uebaWrapper).flatten.join("\n\n")
+      Some(joined)
+    }
+
+    private def generateOneWrapper(
+      service: Typedef.Service,
+      isJson: Boolean,
+      isErrorsMode: Boolean,
+    ): TextTree[JvValue] = {
+      val svcName     = service.id.name.name
+      val wireType    = if (isJson) "String" else "byte[]"
+      val invokerFn   = if (isJson) "invokeJson" else "invokeUeba"
+      val ifaceType   = if (isJson) iBaboonJsonService else iBaboonUebaService
+      val wrapperName = if (isJson) "JsonService" else "UebaService"
+
+      // Type parameters for the wrapper class. Mirrors `genericParam` from
+      // the static invoker: in errors mode the HKT F (if present); in any
+      // mode the abstract service-context type C (if present). These names
+      // are stable across noErrors/errors so the wrapper R type can refer to
+      // them.
+      val classTypeParams: String = {
+        val params = Seq(
+          if (isErrorsMode) resolved.hkt.map(h => s"${h.name}${h.signature}") else None,
+          resolvedCtx match {
+            case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+            case _                                             => None
+          },
+        ).flatten
+        if (params.nonEmpty) params.mkString("<", ", ", ">") else ""
+      }
+
+      // The type-arg list passed to the impl's interface type and the static
+      // invoker, mirrors `svcTypeArg`.
+      val svcImplTypeArg: String = {
+        val params = Seq(
+          if (isErrorsMode) resolved.hkt.map(_.name) else None,
+          resolvedCtx match {
+            case ResolvedServiceContext.AbstractContext(tn, _) => Some(tn)
+            case _                                             => None
+          },
+        ).flatten
+        if (params.nonEmpty) params.mkString("<", ", ", ">") else ""
+      }
+
+      // R for IBaboon*Service<R>. In noErrors mode it's just the wire type.
+      // In errors mode it's the service-result container wrapping the wire
+      // type, e.g. `BaboonEither<BaboonWiringError, String>` or `F<…, …>`.
+      val rType: String = {
+        if (!isErrorsMode) wireType
+        else renderContainer(bweFq, wireType)
+      }
+
+      // Extra deps to bake at construction time. `rt` only in errors mode.
+      // Service context (abstract or concrete) in any mode when configured.
+      val rtField: Option[(String, String)] =
+        if (isErrorsMode) {
+          val rtTypeArgLocal = resolved.hkt match {
+            case Some(h) => s"<${h.name}>"
+            case None    => ""
+          }
+          Some(("rt", s"IBaboonServiceRt$rtTypeArgLocal"))
+        } else None
+
+      val svcCtxField: Option[(String, String)] = resolvedCtx match {
+        case ResolvedServiceContext.NoContext               => None
+        case ResolvedServiceContext.AbstractContext(tn, pn) => Some((pn, tn))
+        case ResolvedServiceContext.ConcreteContext(tn, pn) => Some((pn, tn))
+      }
+
+      val extras: List[(String, String)] = List(rtField, svcCtxField).flatten
+
+      val implFieldDecl: TextTree[JvValue] = q"private final $svcName$svcImplTypeArg impl;"
+      val extraFieldDecls: Seq[TextTree[JvValue]] = extras.map { case (n, t) => q"private final $t $n;" }
+      val allFieldDecls: TextTree[JvValue]        = (implFieldDecl +: extraFieldDecls).join("\n")
+
+      val ctorParams: String = {
+        val all = s"$svcName$svcImplTypeArg impl" :: extras.map { case (n, t) => s"$t $n" }
+        all.mkString(", ")
+      }
+      val ctorAssigns: TextTree[JvValue] = {
+        val all = q"this.impl = impl;" +: extras.map { case (n, _) => q"this.$n = $n;" }
+        all.join("\n")
+      }
+
+      // Forward args to the static invoker: (method, data, impl, [rt,] [svcCtx,] ctx)
+      val invokerArgs: String = {
+        val base = List("method", "data", "this.impl")
+        val withRt = rtField.fold(base)(_ => base :+ "this.rt")
+        val withSvcCtx = svcCtxField.fold(withRt)(f => withRt :+ s"this.${f._1}")
+        (withSvcCtx :+ "ctx").mkString(", ")
+      }
+
+      // The invoke method on noErrors-mode static methods declares `throws
+      // Exception` — propagate that. Errors mode returns the container and
+      // does not throw.
+      val throwsClause = if (isErrorsMode) "" else " throws Exception"
+
+      // The wrapper is a nested class inside ${Svc}Wiring; call the enclosing
+      // class's static method directly. Type inference picks F/C from impl.
+      q"""public static final class $wrapperName$classTypeParams implements ${ifaceType}<$rType> {
+         |  ${allFieldDecls.shift(2).trim}
+         |
+         |  public $wrapperName($ctorParams) {
+         |    ${ctorAssigns.shift(4).trim}
+         |  }
+         |
+         |  @Override
+         |  public String serviceName() {
+         |    return "$svcName";
+         |  }
+         |
+         |  @Override
+         |  public $rType invoke($baboonMethodId method, $wireType data, $baboonCodecContext ctx)$throwsClause {
+         |    return $invokerFn($invokerArgs);
+         |  }
          |}""".stripMargin
     }
   }

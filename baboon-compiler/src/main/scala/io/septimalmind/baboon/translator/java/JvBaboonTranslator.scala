@@ -305,6 +305,10 @@ class JvBaboonTranslator[F[+_, +_]: Error2](
           rt("BaboonMethodId.java", "baboon-runtime/java/BaboonMethodId.java"),
           rt("BaboonWiringError.java", "baboon-runtime/java/BaboonWiringError.java"),
           rt("BaboonWiringException.java", "baboon-runtime/java/BaboonWiringException.java"),
+          rt("IBaboonJsonService.java", "baboon-runtime/java/IBaboonJsonService.java"),
+          rt("IBaboonUebaService.java", "baboon-runtime/java/IBaboonUebaService.java"),
+          rt("JsonMuxer.java", "baboon-runtime/java/JsonMuxer.java"),
+          rt("UebaMuxer.java", "baboon-runtime/java/UebaMuxer.java"),
           rt("BaboonExt.java", "baboon-runtime/java/BaboonExt.java"),
         )
       )

@@ -176,7 +176,13 @@ object JvDefnTranslator {
           val wrapped = jvTrees.inPkg(pkg.parts.toSeq, tree)
           val fbase   = jvFiles.basename(domain, evo)
           Output(
-            s"$fbase/BaboonServiceRt.java",
+            // Java's "one public type per file" rule requires the filename to
+            // match the public interface name. The interface is `IBaboonServiceRt`
+            // (see JvServiceWiringTranslator.translateServiceRt), so the file
+            // must be `IBaboonServiceRt.java`. Pre-existing mismatch surfaced
+            // by the muxer's mvn-compile validation — no prior errors-mode
+            // wiring acceptance test exercised this path.
+            s"$fbase/IBaboonServiceRt.java",
             wrapped,
             pkg,
             CompilerProduct.Definition,
