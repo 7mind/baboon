@@ -3,10 +3,12 @@ package io.septimalmind.baboon.translator.typescript
 import distage.Subcontext
 import io.septimalmind.baboon.CompilerProduct
 import io.septimalmind.baboon.CompilerTarget.TsTarget
+import io.septimalmind.baboon.parser.model.RawMemberMeta
 import io.septimalmind.baboon.parser.model.issues.{BaboonIssue, TranslationIssue}
 import io.septimalmind.baboon.translator.typescript.TsTypes.{tsBaboonAnyOpaqueModule, tsBaboonIdReprModule, tsBaboonRuntimeShared, tsCrossLangFixtureModule, tsFixtureShared}
 import io.septimalmind.baboon.translator.typescript.TsValue.{TsModuleId, TsType}
 import io.septimalmind.baboon.translator.{BaboonAbstractTranslator, OutputFile, Sources}
+import io.septimalmind.baboon.typer.BaboonEnquiries
 import io.septimalmind.baboon.typer.model.*
 import izumi.functional.bio.{Error2, F}
 import izumi.fundamentals.collections.IzCollections.*
@@ -20,6 +22,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
   defnTranslator: Subcontext[TsDefnTranslator[F]],
   target: TsTarget,
   tsFileTools: TsFileTools,
+  enquiries: BaboonEnquiries,
 ) extends BaboonAbstractTranslator[F] {
 
   type Out[T] = F[NEList[BaboonIssue], T]
@@ -118,15 +121,46 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     val className      = s"Domain${pascalDomainId}Facade"
     val domainIdStr    = latestDomain.id.path.mkString(".")
 
-    // Collect non-ADT-branch User types per version
-    // Returns list of (tsImportPath, typeAlias, typeName, typeIdentifier)
+    // Per-type codec activation predicate, mirroring `isActive` in
+    // TsJsonCodecGenerator / TsUEBACodecGenerator. Foreign-bound types emit
+    // no codec class at all, and the global generate-X flags plus the
+    // per-type `derived[…]` opt-in further constrain emission. If either
+    // codec is inactive for a type, the facade must NOT import or register
+    // that flavour for it.
+    def jsonCodecActive(domain: Domain, id: TypeId): Boolean = {
+      !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Typescript) &&
+      target.language.generateJsonCodecs && (
+        target.language.generateJsonCodecsByDefault ||
+        domain.derivationRequests.getOrElse(RawMemberMeta.Derived("json"), Set.empty[TypeId]).contains(id)
+      )
+    }
+    def uebaCodecActive(domain: Domain, defn: DomainMember.User): Boolean = {
+      val id = defn.id
+      !BaboonEnquiries.isBaboonRefForeign(id, domain, BaboonLang.Typescript) &&
+      target.language.generateUebaCodecs && (
+        target.language.generateUebaCodecsByDefault ||
+        domain.derivationRequests.getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId]).contains(id)
+      ) &&
+      // UEBA emission skips types that transitively depend on a foreign-bound
+      // type, since the binary wire format has no generic foreign codec hook
+      // (only JSON has the `${F}_KeyCodecHost` runtime escape). Mirror that
+      // suppression here so the facade does not import a non-existent symbol.
+      // See TsUEBACodecGenerator.codecMeta / makeRepr — both guarded by
+      // `!enquiries.hasForeignType(defn, domain)`.
+      !enquiries.hasForeignType(defn, domain)
+    }
+
+    // Collect non-ADT-branch User types per version with codec-activation flags.
+    // Returns list of (tsImportPath, typeAlias, typeName, typeIdentifier, hasJsonCodec, hasUebaCodec).
     // typeAlias differs from typeName when either (a) the version is older
     // (to disambiguate cross-version imports) or (b) the type lives in a
     // non-toplevel namespace and might collide with a same-named type under
     // a different namespace (e.g. service method `In`/`Out`/`Err` synthetic
     // types). Path segments derived from the source are lowercased to match
-    // the on-disk layout produced by TsDefnTranslator.getOutputPath.
-    def collectTypes(domain: Domain): List[(String, String, String, String)] = {
+    // the on-disk layout produced by TsDefnTranslator.getOutputPath. Types
+    // where neither codec is active (foreign-bound types) are dropped — they
+    // emit no codec class so there is nothing for the facade to register.
+    def collectTypes(domain: Domain): List[(String, String, String, String, Boolean, Boolean)] = {
       val versionStr    = domain.version.v.toString
       val isLatest      = domain.version == evo.latest
       val verSuffix     = versionStr.replace('.', '_')
@@ -139,32 +173,37 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
             case owner =>
               defn.defn match {
                 case _: Typedef.Dto | _: Typedef.Enum | _: Typedef.Adt =>
-                  // `typeName` is the TS-class symbol exported by the source
-                  // file (always Pascal-case). `fileBase` is the on-disk file
-                  // basename, which preserves the source-declared case — for
-                  // service-method synthetic types (`in`/`out`/`err` from the
-                  // parser keywords) this is lowercase, while top-level type
-                  // declarations are typically Pascal-case already. The import
-                  // path MUST use `fileBase` so it resolves on case-sensitive
-                  // filesystems; the import binding uses `typeName`.
-                  val rawName  = defn.id.name.name
-                  val typeName = rawName.capitalize
-                  val fileBase = rawName
-                  val nsSegs: List[String] = owner match {
-                    case Owner.Toplevel => Nil
-                    case Owner.Ns(p)    => p.map(_.name.toLowerCase).toList
-                    case Owner.Adt(_)   => Nil // unreachable, filtered above
+                  val hasJson = jsonCodecActive(domain, defn.id)
+                  val hasUeba = uebaCodecActive(domain, defn)
+                  if (!hasJson && !hasUeba) None
+                  else {
+                    // `typeName` is the TS-class symbol exported by the source
+                    // file (always Pascal-case). `fileBase` is the on-disk file
+                    // basename, which preserves the source-declared case — for
+                    // service-method synthetic types (`in`/`out`/`err` from the
+                    // parser keywords) this is lowercase, while top-level type
+                    // declarations are typically Pascal-case already. The import
+                    // path MUST use `fileBase` so it resolves on case-sensitive
+                    // filesystems; the import binding uses `typeName`.
+                    val rawName  = defn.id.name.name
+                    val typeName = rawName.capitalize
+                    val fileBase = rawName
+                    val nsSegs: List[String] = owner match {
+                      case Owner.Toplevel => Nil
+                      case Owner.Ns(p)    => p.map(_.name.toLowerCase).toList
+                      case Owner.Adt(_)   => Nil // unreachable, filtered above
+                    }
+                    val nsPathSegment = if (nsSegs.isEmpty) "" else nsSegs.mkString("", "/", "/")
+                    // Unique local alias to avoid collisions: an `In` under
+                    // `adminservice/shutdown` and an `In` under `reportservice/fetch`
+                    // would otherwise both import as bare `In`.
+                    val nsAliasPrefix = nsSegs.map(_.capitalize).mkString
+                    val baseAlias     = s"$nsAliasPrefix$typeName"
+                    val typeAlias     = if (isLatest) baseAlias else s"${baseAlias}V$verSuffix"
+                    val importPath    = s"$relPrefix/$nsPathSegment$fileBase"
+                    val typeId        = defn.id.toString
+                    Some((importPath, typeAlias, typeName, typeId, hasJson, hasUeba))
                   }
-                  val nsPathSegment = if (nsSegs.isEmpty) "" else nsSegs.mkString("", "/", "/")
-                  // Unique local alias to avoid collisions: an `In` under
-                  // `adminservice/shutdown` and an `In` under `reportservice/fetch`
-                  // would otherwise both import as bare `In`.
-                  val nsAliasPrefix = nsSegs.map(_.capitalize).mkString
-                  val baseAlias     = s"$nsAliasPrefix$typeName"
-                  val typeAlias     = if (isLatest) baseAlias else s"${baseAlias}V$verSuffix"
-                  val importPath    = s"$relPrefix/$nsPathSegment$fileBase"
-                  val typeId        = defn.id.toString
-                  Some((importPath, typeAlias, typeName, typeId))
                 case _ => None
               }
           }
@@ -186,23 +225,33 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     sb.append(s"import type { AbstractBaboonConversions } from '${rootRel}BaboonSharedRuntime$sfx';\n")
     sb.append(s"import { BaboonCodecsFacade } from '${rootRel}BaboonCodecsFacade$sfx';\n")
 
-    // Per-version imports and class definitions
+    // Imports: emit a single line per type with only the codec flavours
+    // actually generated for that type. A type may have only JSON, only
+    // UEBA, or both; the type itself (class/enum/adt) is always imported
+    // since identity registration goes through the codec class.
     for (domain <- orderedVersions) {
       val types = collectTypes(domain)
 
-      for ((importPath, typeAlias, typeName, _) <- types) {
-        if (typeAlias == typeName) {
-          sb.append(s"import { $typeName, ${typeName}_JsonCodec, ${typeName}_UEBACodec } from '$importPath$sfx';\n")
-        } else {
-          // Aliased import for non-latest versions to avoid name conflicts
-          sb.append(s"import { $typeName as $typeAlias, ${typeName}_JsonCodec as ${typeAlias}_JsonCodec, ${typeName}_UEBACodec as ${typeAlias}_UEBACodec } from '$importPath$sfx';\n")
-        }
+      for ((importPath, typeAlias, typeName, _, hasJson, hasUeba) <- types) {
+        val pieces = List(
+          Some((typeName, typeAlias)),
+          if (hasJson) Some((s"${typeName}_JsonCodec", s"${typeAlias}_JsonCodec")) else None,
+          if (hasUeba) Some((s"${typeName}_UEBACodec", s"${typeAlias}_UEBACodec")) else None,
+        ).flatten
+        val rendered = pieces.map {
+          case (src, alias) => if (src == alias) src else s"$src as $alias"
+        }.mkString(", ")
+        sb.append(s"import { $rendered } from '$importPath$sfx';\n")
       }
     }
 
     sb.append("\n")
 
-    // Per-version codec/meta/conversions classes
+    // Per-version codec/meta/conversions classes. The JSON and UEBA codec
+    // classes each iterate the type list filtered by their respective
+    // activation flag, so a domain that emits only UEBA codecs produces an
+    // empty (but well-formed) JSON codec class — keeps the facade contract
+    // uniform without referencing non-existent symbols.
     for (domain <- orderedVersions) {
       val versionStr   = domain.version.v.toString
       val verSuffix    = versionStr.replace('.', '_')
@@ -216,7 +265,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       sb.append(s"class ${verClassName}JsonCodecs extends AbstractBaboonJsonCodecs {\n")
       sb.append( "    constructor() {\n")
       sb.append( "        super();\n")
-      for ((_, typeAlias, _, _) <- types) {
+      for ((_, typeAlias, _, _, hasJson, _) <- types if hasJson) {
         sb.append(s"        this.register(${typeAlias}_JsonCodec.BaboonTypeIdentifier, new Lazy<BaboonJsonCodec<unknown>>(() => ${typeAlias}_JsonCodec.instance as unknown as BaboonJsonCodec<unknown>));\n")
       }
       sb.append( "    }\n")
@@ -226,7 +275,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       sb.append(s"class ${verClassName}UebaCodecs extends AbstractBaboonUebaCodecs {\n")
       sb.append( "    constructor() {\n")
       sb.append( "        super();\n")
-      for ((_, typeAlias, _, _) <- types) {
+      for ((_, typeAlias, _, _, _, hasUeba) <- types if hasUeba) {
         sb.append(s"        this.register(${typeAlias}_UEBACodec.BaboonTypeIdentifier, new Lazy<BaboonBinCodec<unknown>>(() => ${typeAlias}_UEBACodec.instance as unknown as BaboonBinCodec<unknown>));\n")
       }
       sb.append( "    }\n")
@@ -517,15 +566,18 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       case (dir, files) =>
         val sortedFiles = files.sortBy(_.path)
 
-        // Collect exported names per file and detect collisions across files in this directory
-        val fileExports = sortedFiles.map(f => (f, exportedNames(f)))
+        // Collect exported names per file and detect collisions across files in this directory.
+        // Files with NO exports (e.g. baboon-ref foreigns that map to a builtin and emit an
+        // empty .ts) must be skipped from the barrel — `export * from './X'` against an empty
+        // file produces TS2306 "File ... is not a module" on strict tsc/deno.
+        val fileExports = sortedFiles.map(f => (f, exportedNames(f))).filter(_._2.nonEmpty)
         val nameCount   = fileExports.flatMap(_._2.keys).groupBy(identity).view.mapValues(_.size).toMap
         val colliding   = nameCount.filter(_._2 > 1).keySet
 
         val reexports = if (colliding.isEmpty) {
-          // No collisions — simple export * for all files
-          sortedFiles.map {
-            f =>
+          // No collisions — simple export * for all files with exports
+          fileExports.map {
+            case (f, _) =>
               val fname = f.path.drop(dir.length + 1).stripSuffix(".ts")
               TextTree.text[TsValue](s"export * from './$fname$sfx';")
           }

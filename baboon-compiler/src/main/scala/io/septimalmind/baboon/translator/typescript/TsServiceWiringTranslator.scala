@@ -423,7 +423,12 @@ object TsServiceWiringTranslator {
             }
         }
 
-        val rtParam = if (resolved.noErrors) "" else s"rt: $ibaboonServiceRt, "
+        // rtParam carries a TextTree containing a TsType reference, NOT a String.
+        // A plain `s"rt: $ibaboonServiceRt, "` would call `TsType.toString`, which
+        // produces the literal Scala case-class rendering (`TsType(TsModuleId(…),…)`).
+        // TextTree interpolation preserves the symbolic reference until rendering,
+        // so the import-resolution pass emits a proper import for the type.
+        val rtParam: TextTree[TsValue] = if (resolved.noErrors) q"" else q"rt: $ibaboonServiceRt, "
 
         Some(
           q"""export ${asyncPrefix}function dispatchUeba(
@@ -462,7 +467,7 @@ object TsServiceWiringTranslator {
             }
         }
 
-        val rtParam = if (resolved.noErrors) "" else s"rt: $ibaboonServiceRt, "
+        val rtParam: TextTree[TsValue] = if (resolved.noErrors) q"" else q"rt: $ibaboonServiceRt, "
 
         Some(
           q"""export ${asyncPrefix}function dispatchJson(
