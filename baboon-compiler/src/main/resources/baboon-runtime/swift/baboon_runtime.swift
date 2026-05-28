@@ -1118,6 +1118,8 @@ public struct BaboonMethodId: Equatable, Hashable {
 
 public enum BaboonWiringError: Error {
     case noMatchingMethod(BaboonMethodId)
+    case noMatchingService(BaboonMethodId)
+    case duplicateService(String)
     case decoderFailed(BaboonMethodId, Error)
     case encoderFailed(BaboonMethodId, Error)
     case callFailed(BaboonMethodId, Any)
@@ -1126,6 +1128,133 @@ public enum BaboonWiringError: Error {
 public struct BaboonWiringException: Error {
     public let error: BaboonWiringError
     public init(_ error: BaboonWiringError) { self.error = error }
+}
+
+// --- Service muxers ---
+//
+// Cross-domain composable dispatch. A muxer holds a set of services from any
+// model(s) and routes a `(method, data, ctx)` call to the right one by
+// `method.serviceId`. The `R` type parameter encodes the return shape so the
+// same class supports both modes — pass `JsonMuxer<String>` for noErrors-mode
+// throwing services, or `JsonMuxer<BaboonEither<BaboonWiringError, String>>`
+// for errors-mode non-throwing services. The per-service wrapper classes
+// emitted alongside `<Svc>Wiring.invokeJson` / `<Svc>Wiring.invokeUeba` carry
+// the matching parameterisation.
+
+public protocol IBaboonJsonService {
+    associatedtype R
+    var serviceName: String { get }
+    func invoke(_ method: BaboonMethodId, _ data: String, _ ctx: BaboonCodecContext) throws -> R
+}
+
+public protocol IBaboonUebaService {
+    associatedtype R
+    var serviceName: String { get }
+    func invoke(_ method: BaboonMethodId, _ data: Data, _ ctx: BaboonCodecContext) throws -> R
+}
+
+// Type-erasing boxes — Swift `protocol` with `associatedtype` cannot be used
+// as an existential pre-Swift-5.7, and even on newer compilers a homogeneous
+// `[any IBaboonJsonService]<R>` storage needs erasure to keep the muxer
+// generic over a single `R`. The boxes capture the closure and the
+// `serviceName` so the muxer's storage stays a flat `[String: AnyJsonService<R>]`.
+
+public struct AnyJsonService<R> {
+    public let serviceName: String
+    private let _invoke: (BaboonMethodId, String, BaboonCodecContext) throws -> R
+
+    public init<S: IBaboonJsonService>(_ s: S) where S.R == R {
+        self.serviceName = s.serviceName
+        self._invoke = s.invoke
+    }
+
+    public init(serviceName: String, invoke: @escaping (BaboonMethodId, String, BaboonCodecContext) throws -> R) {
+        self.serviceName = serviceName
+        self._invoke = invoke
+    }
+
+    public func invoke(_ method: BaboonMethodId, _ data: String, _ ctx: BaboonCodecContext) throws -> R {
+        return try _invoke(method, data, ctx)
+    }
+}
+
+public struct AnyUebaService<R> {
+    public let serviceName: String
+    private let _invoke: (BaboonMethodId, Data, BaboonCodecContext) throws -> R
+
+    public init<S: IBaboonUebaService>(_ s: S) where S.R == R {
+        self.serviceName = s.serviceName
+        self._invoke = s.invoke
+    }
+
+    public init(serviceName: String, invoke: @escaping (BaboonMethodId, Data, BaboonCodecContext) throws -> R) {
+        self.serviceName = serviceName
+        self._invoke = invoke
+    }
+
+    public func invoke(_ method: BaboonMethodId, _ data: Data, _ ctx: BaboonCodecContext) throws -> R {
+        return try _invoke(method, data, ctx)
+    }
+}
+
+public class JsonMuxer<R> {
+    private var table: [String: AnyJsonService<R>] = [:]
+
+    public init(_ services: AnyJsonService<R>...) throws {
+        for s in services { try register(s) }
+    }
+
+    public init(_ services: [AnyJsonService<R>]) throws {
+        for s in services { try register(s) }
+    }
+
+    public func register(_ service: AnyJsonService<R>) throws {
+        if table[service.serviceName] != nil {
+            throw BaboonWiringException(BaboonWiringError.duplicateService(service.serviceName))
+        }
+        table[service.serviceName] = service
+    }
+
+    public func invoke(_ method: BaboonMethodId, _ data: String, _ ctx: BaboonCodecContext) throws -> R {
+        guard let svc = table[method.serviceId] else {
+            throw BaboonWiringException(BaboonWiringError.noMatchingService(method))
+        }
+        return try svc.invoke(method, data, ctx)
+    }
+
+    public func serviceNames() -> [String] {
+        return Array(table.keys)
+    }
+}
+
+public class UebaMuxer<R> {
+    private var table: [String: AnyUebaService<R>] = [:]
+
+    public init(_ services: AnyUebaService<R>...) throws {
+        for s in services { try register(s) }
+    }
+
+    public init(_ services: [AnyUebaService<R>]) throws {
+        for s in services { try register(s) }
+    }
+
+    public func register(_ service: AnyUebaService<R>) throws {
+        if table[service.serviceName] != nil {
+            throw BaboonWiringException(BaboonWiringError.duplicateService(service.serviceName))
+        }
+        table[service.serviceName] = service
+    }
+
+    public func invoke(_ method: BaboonMethodId, _ data: Data, _ ctx: BaboonCodecContext) throws -> R {
+        guard let svc = table[method.serviceId] else {
+            throw BaboonWiringException(BaboonWiringError.noMatchingService(method))
+        }
+        return try svc.invoke(method, data, ctx)
+    }
+
+    public func serviceNames() -> [String] {
+        return Array(table.keys)
+    }
 }
 
 // --- Either for Service Results ---

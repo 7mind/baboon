@@ -84,7 +84,18 @@ object SwDefnTranslator {
         imports  = Set("BaboonRuntime"),
       )
 
-      F.pure(List(mainOutput))
+      val wiringOutput = wiringTranslator.translate(defn).map {
+        wiringTree =>
+          Output(
+            getOutputPath(defn, suffix = Some("_wiring")),
+            wiringTree,
+            getOutputModule(defn),
+            CompilerProduct.Definition,
+            imports = Set("BaboonRuntime"),
+          )
+      }.toList
+
+      F.pure(mainOutput :: wiringOutput)
     }
 
     override def translateFixtures(defn: DomainMember.User): F[NEList[BaboonIssue], List[Output]] = {
