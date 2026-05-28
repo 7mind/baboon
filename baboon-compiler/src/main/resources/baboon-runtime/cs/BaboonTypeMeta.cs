@@ -88,6 +88,11 @@ namespace Baboon.Runtime.Shared
 
         public JToken WriteJson() => BaboonTypeMetaCodec.WriteJson(this);
 
+        public static BaboonTypeMeta From<T>(T value) where T : IBaboonGenerated
+        {
+            return From(value, typeof(T));
+        } 
+        
         public static BaboonTypeMeta From(IBaboonGenerated value, Type? declaredType)
         {
             // Codec discovery with ADT awareness, mirroring Scala's BaboonTypeMeta.from:
