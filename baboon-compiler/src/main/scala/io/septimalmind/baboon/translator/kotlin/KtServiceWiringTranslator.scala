@@ -360,9 +360,13 @@ object KtServiceWiringTranslator {
 
       val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
 
-      q"""object ${svcName}Wiring {
-         |  ${methods.shift(2).trim}
-         |}""".stripMargin
+      val wiringObj =
+        q"""object ${svcName}Wiring {
+           |  ${methods.shift(2).trim}
+           |}""".stripMargin
+
+      val wrappers = generateServiceWrappers(service, q"String", q"ByteArray")
+      Seq(Some(wiringObj), wrappers).flatten.join("\n\n")
     }
 
     private def generateNoErrorsJsonMethod(service: Typedef.Service): TextTree[KtValue] = {
@@ -465,8 +469,93 @@ object KtServiceWiringTranslator {
 
       val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
 
-      q"""object ${svcName}Wiring {
-         |  ${methods.shift(2).trim}
+      val wiringObj =
+        q"""object ${svcName}Wiring {
+           |  ${methods.shift(2).trim}
+           |}""".stripMargin
+
+      val jsonRet = q"${ct(bweFq, "String")}"
+      val uebaRet = q"${ct(bweFq, "ByteArray")}"
+      val wrappers = generateServiceWrappers(service, jsonRet, uebaRet)
+      Seq(Some(wiringObj), wrappers).flatten.join("\n\n")
+    }
+
+    // ========== Service muxer wrappers ==========
+    //
+    // Emits per-service `${SvcName}JsonService` / `${SvcName}UebaService`
+    // classes adapting the per-domain `${SvcName}Wiring.invokeJson` /
+    // `invokeUeba` functions to the runtime `IBaboonJsonService<R>` /
+    // `IBaboonUebaService<R>` contract. Extra dependencies the underlying
+    // invoker needs (`rt` for noErrors=false, any service-context parameter)
+    // are baked at construction time so the runtime contract stays uniform.
+
+    private def generateServiceWrappers(
+      service: Typedef.Service,
+      jsonRet: TextTree[KtValue],
+      uebaRet: TextTree[KtValue],
+    ): Option[TextTree[KtValue]] = {
+      val jsonWrapper =
+        if (hasActiveJsonCodecs(service)) Some(generateOneWrapper(service, isJson = true, jsonRet))
+        else None
+      val uebaWrapper =
+        if (hasActiveUebaCodecs(service)) Some(generateOneWrapper(service, isJson = false, uebaRet))
+        else None
+      val all = Seq(jsonWrapper, uebaWrapper).flatten
+      if (all.isEmpty) None else Some(all.join("\n\n"))
+    }
+
+    private def generateOneWrapper(
+      service: Typedef.Service,
+      isJson: Boolean,
+      retType: TextTree[KtValue],
+    ): TextTree[KtValue] = {
+      val svcName       = service.id.name.name
+      val wireType: TextTree[KtValue] = if (isJson) q"String" else q"ByteArray"
+      val ifaceType     = if (isJson) ibaboonJsonService else ibaboonUebaService
+      val wrapperName   = s"$svcName${if (isJson) "JsonService" else "UebaService"}"
+      val invokerName   = if (isJson) "invokeJson" else "invokeUeba"
+
+      // Constructor-baked dependencies, in the order the wiring function expects them.
+      val implType: TextTree[KtValue] = q"$svcName$svcTypeArg"
+
+      val rtField: Option[(String, TextTree[KtValue])] = {
+        if (resolved.noErrors) None
+        else {
+          // IBaboonServiceRt is emitted in the domain's root package, not in baboon.runtime.shared.
+          val rootPkg = trans.toKtPkg(domain.id, domain.version, evo)
+          Some(("rt", q"${KtValue.KtType(rootPkg, "IBaboonServiceRt")}$rtTypeArg"))
+        }
+      }
+
+      val svcCtxField: Option[(String, TextTree[KtValue])] = resolvedCtx match {
+        case ResolvedServiceContext.NoContext               => None
+        case ResolvedServiceContext.AbstractContext(tn, pn) => Some((pn, q"$tn"))
+        case ResolvedServiceContext.ConcreteContext(tn, pn) => Some((pn, q"$tn"))
+      }
+
+      val extraCtorParams: List[(String, TextTree[KtValue])] = List(rtField, svcCtxField).flatten
+
+      val ctorParamList: TextTree[KtValue] = {
+        val all = q"private val impl: $implType" ::
+          extraCtorParams.map { case (n, t) => q"private val $n: $t" }
+        all.join(",\n")
+      }
+
+      val invokerArgs: List[TextTree[KtValue]] = {
+        val base                       = List(q"method", q"data", q"impl")
+        val withRt                     = rtField.fold(base)(_ => base :+ q"rt")
+        val withSvcCtx                 = svcCtxField.fold(withRt)(f => withRt :+ q"${f._1}")
+        withSvcCtx :+ q"ctx"
+      }
+
+      q"""class $wrapperName$genericParam(
+         |  ${ctorParamList.shift(2).trim}
+         |) : $ifaceType<$retType> {
+         |  override val serviceName: String = "$svcName"
+         |
+         |  override fun invoke(method: $baboonMethodId, data: $wireType, ctx: $baboonCodecContext): $retType {
+         |    return ${svcName}Wiring.$invokerName(${invokerArgs.join(", ")})
+         |  }
          |}""".stripMargin
     }
 
