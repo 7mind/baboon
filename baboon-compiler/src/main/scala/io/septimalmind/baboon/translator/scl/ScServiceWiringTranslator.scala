@@ -299,6 +299,82 @@ object ScServiceWiringTranslator {
       case t: ScValue.ScType => if (t.predef) t.name else (t.pkg.parts :+ t.name).mkString(".")
     }
 
+    /** Emits the cross-domain Muxer-entry wrapper classes for a service.
+      *
+      * Each wrapper extends `IBaboonJsonService[R]` / `IBaboonUebaService[R]`
+      * with `R` matching the underlying `${Svc}Wiring.invokeJson` /
+      * `invokeUeba` return type — `String` / `Array[Byte]` in noErrors mode,
+      * `F[BaboonWiringError, String]` / `F[BaboonWiringError, Array[Byte]]`
+      * in errors mode (where `F` is either the user's HKT or the concrete
+      * result container). Extra dependencies the underlying invoker needs
+      * (`rt` for errors mode, any service-context parameter) are baked at
+      * construction time so the runtime `IBaboon*Service.invoke(method, data,
+      * ctx)` contract stays uniform across modes.
+      */
+    private def generateServiceWrappers(service: Typedef.Service): TextTree[ScValue] = {
+      val jsonWrapper =
+        if (hasActiveJsonCodecs(service)) Some(generateOneWrapper(service, isJson = true))
+        else None
+      val uebaWrapper =
+        if (hasActiveUebaCodecs(service)) Some(generateOneWrapper(service, isJson = false))
+        else None
+      Seq(jsonWrapper, uebaWrapper).flatten.join("\n\n")
+    }
+
+    private def generateOneWrapper(
+      service: Typedef.Service,
+      isJson: Boolean,
+    ): TextTree[ScValue] = {
+      val svcName     = service.id.name.name
+      val wrapperName = s"$svcName${if (isJson) "JsonService" else "UebaService"}"
+      val wireType    = if (isJson) "String" else "Array[Byte]"
+      val invokerFn   = if (isJson) "invokeJson" else "invokeUeba"
+      val ifaceType   = if (isJson) ibaboonJsonService else ibaboonUebaService
+
+      // Underlying invoker's return shape (R).
+      val retType: String = {
+        if (resolved.noErrors) wireType
+        else s"${ct(bweFq, wireType)}"
+      }
+
+      // Class type parameters: same as the wiring method's genericParam.
+      val classTypeParams: String = genericParam
+
+      // Constructor params, in the same order as the underlying invoker
+      // (impl, [rt,] [svcCtx]); ctx is per-call and stays on `invoke`.
+      val rtField: Option[(String, String)] =
+        if (resolved.noErrors) None
+        else Some(("rt", s"$iBaboonServiceRtFq$rtTypeArg"))
+
+      val svcCtxField: Option[(String, String)] = resolvedCtx match {
+        case ResolvedServiceContext.NoContext               => None
+        case ResolvedServiceContext.AbstractContext(tn, pn) => Some((pn, tn))
+        case ResolvedServiceContext.ConcreteContext(tn, pn) => Some((pn, tn))
+      }
+
+      val implField: (String, String) = ("impl", s"$svcName$svcTypeArg")
+
+      val ctorFields: List[(String, String)] =
+        List(Some(implField), rtField, svcCtxField).flatten
+
+      val ctorParamList: String =
+        ctorFields.map { case (n, t) => s"$n: $t" }.mkString(", ")
+
+      // Forwarded arg list for the underlying invoker call.
+      val callArgs: String = {
+        val base = List("method", "data", "impl")
+        val withRt = rtField.fold(base)(_ => base :+ "rt")
+        val withSvcCtx = svcCtxField.fold(withRt)(f => withRt :+ f._1)
+        (withSvcCtx :+ "ctx").mkString(", ")
+      }
+
+      q"""class $wrapperName$classTypeParams($ctorParamList) extends $ifaceType[$retType] {
+         |  val serviceName: String = "$svcName"
+         |  def invoke(method: $baboonMethodId, data: $wireType, ctx: $baboonCodecContext): $retType =
+         |    ${svcName}Wiring.$invokerFn($callArgs)
+         |}""".stripMargin
+    }
+
     // ========== noErrors mode ==========
 
     private def generateNoErrorsWiring(service: Typedef.Service): TextTree[ScValue] = {
@@ -316,9 +392,13 @@ object ScServiceWiringTranslator {
 
       val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
 
+      val wrappers = generateServiceWrappers(service)
+
       q"""object ${svcName}Wiring {
          |  ${methods.shift(2).trim}
-         |}""".stripMargin
+         |}
+         |
+         |$wrappers""".stripMargin
     }
 
     private def generateNoErrorsJsonMethod(service: Typedef.Service): TextTree[ScValue] = {
@@ -423,9 +503,13 @@ object ScServiceWiringTranslator {
 
       val methods = Seq(jsonMethod, uebaMethod).flatten.join("\n\n")
 
+      val wrappers = generateServiceWrappers(service)
+
       q"""object ${svcName}Wiring {
          |  ${methods.shift(2).trim}
-         |}""".stripMargin
+         |}
+         |
+         |$wrappers""".stripMargin
     }
 
     private val bweFq: String = renderFq(q"$baboonWiringError")
