@@ -129,7 +129,15 @@ class TsTypeTranslator(target: TsTarget) {
       case DomainMember.User(_, _: Typedef.Service, _, _)  => true
       case _                                               => false
     }
-    TsType(module, s"${tid.name.name.capitalize}", typeOnly = isTypeOnly)
+    // ADT-branch DTOs are prefixed with the owning ADT name (`<Adt>_<Branch>`) to avoid module-/
+    // barrel-level collisions between same-named branches of different ADTs (and between a branch
+    // and a top-level type). Branches stay inline in the ADT file; only the TS symbol changes — the
+    // on-wire branch name (JSON envelope key, type identifier, UEBA tag) is unaffected.
+    val symbolName = tid.owner match {
+      case Owner.Adt(adtId) => s"${adtId.name.name.capitalize}_${tid.name.name.capitalize}"
+      case _                => tid.name.name.capitalize
+    }
+    TsType(module, symbolName, typeOnly = isTypeOnly)
   }
 
   def toTsModule(

@@ -203,9 +203,10 @@ abstract class DocCommentTypescriptEmissionTestBase[F[+_, +_]: Error2: TagKK: Ba
         } yield {
           val all = srcs.files.iterator.map { case (path, of) => (path, of.content) }.toList
 
+          // ADT-branch classes are prefixed with the owning ADT name (`DocResult_DocOk`).
           val resultFile = all.collectFirst {
-            case (_, c) if c.contains("export class DocOk") => c
-          }.getOrElse(fail(s"DocOk ADT arm not found. Paths: ${all.map(_._1)}"))
+            case (_, c) if c.contains("export class DocResult_DocOk") => c
+          }.getOrElse(fail(s"DocResult_DocOk ADT arm not found. Paths: ${all.map(_._1)}"))
 
           // Arm-level doc on DocOk
           assert(

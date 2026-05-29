@@ -165,11 +165,11 @@ class TsJsonCodecGenerator(
         val branchType  = trans.asTsTypeDerefForeign(mid, domain, evo, tsFileTools.definitionsBasePkg)
         val branchCodec = codecName(branchType)
         if (target.language.wrappedAdtBranchCodecs) {
-          q"""if (value instanceof $branchName) {
+          q"""if (value instanceof $branchType) {
              |    return $branchCodec.instance.encode($tsBaboonCodecContext.Default, value)
              |}""".stripMargin
         } else {
-          q"""if (value instanceof $branchName) {
+          q"""if (value instanceof $branchType) {
              |    return { "$branchName": $branchCodec.instance.encode($tsBaboonCodecContext.Default, value) }
              |}""".stripMargin
         }

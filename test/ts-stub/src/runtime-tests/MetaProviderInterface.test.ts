@@ -25,7 +25,8 @@ import {
 import { Inner } from "../generated/my/ok/Inner";
 // `T4_A1` is the ADT defined in baboon-fixtures `testpkg.pkg0` v3 (latest). Its branches are
 // emitted inline inside the ADT's TS module file rather than in separate files.
-import { B1 } from "../generated/testpkg/pkg0/T4_A1";
+// ADT-branch classes are prefixed with the owning ADT name (`T4_A1_B1`); alias to keep `B1` below.
+import { T4_A1_B1 as B1 } from "../generated/testpkg/pkg0/T4_A1";
 
 describe("PR-25.8 generated DTO/ADT branch structural meta surface", () => {
     test("generated DTO satisfies BaboonGenerated structurally", () => {

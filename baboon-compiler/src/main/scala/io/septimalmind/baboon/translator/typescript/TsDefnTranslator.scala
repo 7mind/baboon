@@ -452,24 +452,17 @@ object TsDefnTranslator {
           }
       }
 
-      val typeGuards = adt.members.toList.flatMap {
-        mid =>
-          domain.defs.meta.nodes(mid) match {
-            case DomainMember.User(_, _: Typedef.Dto, _, _) =>
-              val branchName = mid.name.name
-              Some(q"export function is$branchName(value: $name): value is $branchName { return value instanceof $branchName; }")
-            case _ => None // skip contracts/interfaces — instanceof doesn't work on them
-          }
-      }
+      // Branch references use the prefixed branch symbol (`<Adt>_<Branch>`) via asTsType. The `isX`
+      // instanceof type guards are intentionally dropped — narrowing is done on the union members
+      // directly (instanceof, or a discriminator) and the guards were unused internally and by tests.
+      val branchRefs = adt.members.toList.map(m => q"${typeTranslator.asTsType(m, domain, evo, tsFileTools.definitionsBasePkg)}")
 
       DefnRepr(
-        q"""export type $name = ${adt.members.toList.map(m => q"${m.name.name}").join(" | ")}
+        q"""export type $name = ${branchRefs.join(" | ")}
            |
            |export const $name = {
            |    ${meta.join(",\n").shift(4).trim}
            |} as const
-           |
-           |${typeGuards.joinN().trim}
            |
            |${memberTrees.map(_.defn).toList.joinNN().trim}
            |""".stripMargin,

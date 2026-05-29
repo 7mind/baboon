@@ -254,16 +254,15 @@ class TsUEBACodecGenerator(
 
     val encBranches = branches.map {
       case (mid, idx) =>
-        val branchName = mid.name.name
         val branchType = typeTranslator.asTsType(mid, domain, evo, tsFileTools.definitionsBasePkg)
         val codecType  = codecName(branchType)
         if (target.language.wrappedAdtBranchCodecs) {
-          q"""if (value instanceof $branchName) {
+          q"""if (value instanceof $branchType) {
              |    $codecType.instance.encode(ctx, value, writer);
              |    return;
              |}""".stripMargin
         } else {
-          q"""if (value instanceof $branchName) {
+          q"""if (value instanceof $branchType) {
              |    $tsBinTools.writeByte(writer, ${idx.toString});
              |    $codecType.instance.encode(ctx, value, writer);
              |    return;
