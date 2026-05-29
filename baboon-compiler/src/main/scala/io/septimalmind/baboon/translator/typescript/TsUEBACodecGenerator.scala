@@ -20,12 +20,19 @@ class TsUEBACodecGenerator(
   tsDomainTreeTools: TsDomainTreeTools,
 ) extends TsCodecTranslator {
   override def translate(defn: DomainMember.User, tsRef: TsValue.TsType, srcRef: TsValue.TsType): Option[TextTree[TsValue]] = {
-    if (isActive(defn.id) && !enquiries.hasForeignType(defn, domain)) {
+    if (isActive(defn.id)) {
       (defn.defn match {
-        case d: Typedef.Dto      => Some(genDtoCodec(srcRef, d))
-        case e: Typedef.Enum     => Some(genEnumCodec(srcRef, e))
-        case a: Typedef.Adt      => Some(genAdtCodec(srcRef, a))
-        case _: Typedef.Foreign  => None
+        case d: Typedef.Dto  => Some(genDtoCodec(srcRef, d))
+        case e: Typedef.Enum => Some(genEnumCodec(srcRef, e))
+        case a: Typedef.Adt  => Some(genAdtCodec(srcRef, a))
+        case f: Typedef.Foreign =>
+          // Mirror C# (CSUEBACodecGenerator): a Custom-bound foreign emits a value codec class whose
+          // encode/decode throw by default; the host overrides it via `lazyInstance`. Containing types
+          // are no longer suppressed — they route the foreign field through this codec.
+          f.bindings.get(BaboonLang.Typescript) match {
+            case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.Custom(_, _))) => Some(genForeignBodies(srcRef))
+            case _                                                                  => None
+          }
         case _: Typedef.Contract => None
         case _: Typedef.Service  => None
       }).map {
@@ -47,7 +54,9 @@ class TsUEBACodecGenerator(
     dec: TextTree[TsValue],
     branchDecoder: Option[TextTree[TsValue]],
   ): TextTree[TsValue] = {
-    val cName = codecName(name)
+    // Codec class is named after the keep-foreigns source ref (the baboon type name), not the mapped
+    // value type `name`; for foreigns the latter is the host type. They coincide for non-foreigns.
+    val cName = codecName(srcRef)
 
     val encodeMethod =
       List(
@@ -86,11 +95,22 @@ class TsUEBACodecGenerator(
        |
        |    ${meta.joinN().shift(4).trim}
        |
-       |    protected static lazyInstance = new $tsBaboonLazy(() => new $cName())
+       |    public static lazyInstance = new $tsBaboonLazy(() => new $cName())
        |    public static get instance(): $cName {
        |        return $cName.lazyInstance.value
        |    }
        |}""".stripMargin
+  }
+
+  // Throwing default bodies for a Custom-bound foreign UEBA value codec (mirrors C#). The host
+  // overrides via `<F>_UEBACodec.lazyInstance`; the guard in `genCodec` routes to the override.
+  private def genForeignBodies(srcRef: TsValue.TsType): (TextTree[TsValue], TextTree[TsValue]) = {
+    val fqn = s"${(srcRef.moduleId.path :+ codecName(srcRef).name).mkString(".")}"
+    val msg = s"$fqn is a foreign type with no built-in codec; provide one via $fqn.lazyInstance = new Lazy(() => yourCodec)."
+    (
+      q"""throw new $tsBaboonEncoderFailure("$msg");""",
+      q"""throw new $tsBaboonDecoderFailure("$msg");""",
+    )
   }
 
   private def adtBranchIndex(adtId: TypeId.User, dtoId: TypeId): Int = {
@@ -323,7 +343,8 @@ class TsUEBACodecGenerator(
                   case Some(Typedef.ForeignEntry(_, Typedef.ForeignMapping.BaboonRef(aliasedRef))) =>
                     mkEncoder(aliasedRef, ref, writer)
                   case _ =>
-                    val tsType = typeTranslator.asTsTypeDerefForeign(u, domain, evo, tsFileTools.definitionsBasePkg)
+                    // keep-foreigns naming matches the emitted `<F>_UEBACodec` and the decoder branch.
+                    val tsType = typeTranslator.asTsTypeKeepForeigns(u, domain, evo, tsFileTools.definitionsBasePkg)
                     val codec  = codecName(tsType)
                     q"$codec.instance.encode(ctx, $ref, $w);"
                 }
@@ -592,7 +613,7 @@ class TsUEBACodecGenerator(
   }
 
   override def codecMeta(definition: DomainMember.User, name: TsValue.TsType): Option[TextTree[TsValue]] = {
-    if (isActive(definition.id) && !enquiries.hasForeignType(definition, domain)) {
+    if (isActive(definition.id)) {
       definition.defn match {
         case _: Typedef.Adt =>
           Some(q"""binCodec(): ${codecName(name)} {

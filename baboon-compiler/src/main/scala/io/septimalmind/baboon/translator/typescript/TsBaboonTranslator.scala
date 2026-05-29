@@ -140,14 +140,10 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       target.language.generateUebaCodecs && (
         target.language.generateUebaCodecsByDefault ||
         domain.derivationRequests.getOrElse(RawMemberMeta.Derived("ueba"), Set.empty[TypeId]).contains(id)
-      ) &&
-      // UEBA emission skips types that transitively depend on a foreign-bound
-      // type, since the binary wire format has no generic foreign codec hook
-      // (only JSON has the `${F}_KeyCodecHost` runtime escape). Mirror that
-      // suppression here so the facade does not import a non-existent symbol.
-      // See TsUEBACodecGenerator.codecMeta / makeRepr — both guarded by
-      // `!enquiries.hasForeignType(defn, domain)`.
-      !enquiries.hasForeignType(defn, domain)
+      )
+      // Foreign-bearing types are no longer suppressed: a Custom foreign now emits a `<F>_UEBACodec`
+      // value codec (throwing by default, host-overridable via lazyInstance), so containing types
+      // route the foreign field through it — mirroring the JSON side and the C# backend.
     }
 
     // Collect non-ADT-branch User types per version with codec-activation flags.
