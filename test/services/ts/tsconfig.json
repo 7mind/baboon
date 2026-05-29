@@ -14,7 +14,6 @@
   },
   "include": ["src/**/*.ts"],
   "exclude": [
-    "src/generated/petstore/api/PetStore.ts",
-    "src/generated/petstore/api/pet-store-wiring.ts"
+    "src/generated/petstore/api/pet-store/wiring.ts"
   ]
 }

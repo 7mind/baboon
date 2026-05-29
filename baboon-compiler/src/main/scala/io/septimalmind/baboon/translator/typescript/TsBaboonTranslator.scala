@@ -23,6 +23,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
   target: TsTarget,
   tsFileTools: TsFileTools,
   enquiries: BaboonEnquiries,
+  typeTranslator: TsTypeTranslator,
 ) extends BaboonAbstractTranslator[F] {
 
   type Out[T] = F[NEList[BaboonIssue], T]
@@ -33,7 +34,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
       runtime    <- sharedRuntime
       fixture    <- sharedFixture
       testHelper <- sharedTestHelper
-      barrels     = generateBarrels(translated ++ runtime)
+      barrels     = generateBarrels(translated ++ runtime, family)
       rendered = (
         translated ++
           runtime ++
@@ -184,16 +185,19 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
                     val rawName  = defn.id.name.name
                     val typeName = rawName.capitalize
                     val fileBase = rawName
+                    // Path segments must match the on-disk layout, which kebab-cases
+                    // the service segment (`pet-store`) via the shared rule.
                     val nsSegs: List[String] = owner match {
                       case Owner.Toplevel => Nil
-                      case Owner.Ns(p)    => p.map(_.name.toLowerCase).toList
+                      case Owner.Ns(p)    => typeTranslator.renderNsOwnerPath(p, domain)
                       case Owner.Adt(_)   => Nil // unreachable, filtered above
                     }
                     val nsPathSegment = if (nsSegs.isEmpty) "" else nsSegs.mkString("", "/", "/")
                     // Unique local alias to avoid collisions: an `In` under
                     // `adminservice/shutdown` and an `In` under `reportservice/fetch`
-                    // would otherwise both import as bare `In`.
-                    val nsAliasPrefix = nsSegs.map(_.capitalize).mkString
+                    // would otherwise both import as bare `In`. Kebab segments are
+                    // flattened to a valid TS identifier prefix (`pet-store` -> `Petstore`).
+                    val nsAliasPrefix = nsSegs.map(_.replace("-", "").capitalize).mkString
                     val baseAlias     = s"$nsAliasPrefix$typeName"
                     val typeAlias     = if (isLatest) baseAlias else s"${baseAlias}V$verSuffix"
                     val importPath    = s"$relPrefix/$nsPathSegment$fileBase"
@@ -526,6 +530,23 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     }.toMap
   }
 
+  /** Whether a file emits at least one top-level export. `exportedNames` only
+    * sees exports embedded as `TsType` values; declarations whose symbol is
+    * interpolated as a plain string (service interfaces, client/wiring classes
+    * and functions) are invisible to it. A textual scan catches those so a
+    * non-empty wiring/client/service file is barrel-able while a genuinely empty
+    * one (e.g. wiring suppressed by flags) is not (avoids TS2306). */
+  private def hasExports(output: TsDefnTranslator.Output): Boolean = {
+    if (exportedNames(output).nonEmpty) true
+    else {
+      val text = output.tree.mapRender {
+        case TsValue.TsType(_, name, Some(alias), _, _) => alias
+        case t: TsValue.TsType                          => t.name
+      }
+      text.linesIterator.exists(_.trim.startsWith("export "))
+    }
+  }
+
   /** Render a named re-export line, splitting type-only and value-bearing names into separate statements. */
   private def namedReexports(
     nameToTypeOnly: Map[String, Boolean],
@@ -542,12 +563,132 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
     ).flatten
   }
 
-  private def generateBarrels(outputs: List[TsDefnTranslator.Output]): List[TsDefnTranslator.Output] = {
+  /** Layout of one service's per-service directory, derived from the model so
+    * the barrels stay aligned with `TsTypeTranslator.serviceDirSegments` /
+    * `getOutputPath`. `serviceDirPath` and `modelsDirPath` are relative paths
+    * (no definitionsBasePkg prefix), matching `TsDefnTranslator.Output.path`.
+    */
+  private final case class ServiceBarrelInfo(
+    modelsDirPath: String,
+    serviceDirPath: String,
+    pascalName: String,
+    kebabName: String,
+  )
+
+  private def collectServiceInfos(family: BaboonFamily): List[ServiceBarrelInfo] = {
+    family.domains.toMap.values.toList.flatMap {
+      lineage =>
+        val evo = lineage.evolution
+        lineage.versions.toMap.values.toList.flatMap {
+          domain =>
+            val basename = tsFileTools.basename(domain, evo)
+            domain.defs.meta.nodes.valuesIterator.collect {
+              case DomainMember.User(_, svc: Typedef.Service, _, _) =>
+                val segs       = typeTranslator.serviceDirSegments(svc)
+                val serviceDir = (basename +: segs).mkString("/")
+                ServiceBarrelInfo(
+                  modelsDirPath  = (basename +: segs.dropRight(1)).mkString("/"),
+                  serviceDirPath = serviceDir,
+                  pascalName     = svc.id.name.name.capitalize,
+                  kebabName      = segs.last,
+                )
+            }.toList
+        }
+    }
+  }
+
+  private def barrelOutput(path: String, tree: TextTree[TsValue]): TsDefnTranslator.Output = {
+    val module = TsModuleId(tsFileTools.definitionsBasePkg ++ path.stripSuffix(".ts").split('/').toList)
+    TsDefnTranslator.Output(path, tree, module, CompilerProduct.Definition, doNotModify = true, isBarrel = true)
+  }
+
+  /** Service-specific barrels: the per-service `index.ts`, the `methods.ts`
+    * namespace aggregator, and the extra `export * as <Service>` lines that the
+    * models-level `index.ts` must carry. Method-level `<method>/index.ts`
+    * barrels are produced by the generic per-directory logic (a method dir
+    * contains only `in`/`out`/`err`, so `export *` of each is correct).
+    */
+  private def generateServiceBarrels(
+    outputs: List[TsDefnTranslator.Output],
+    family: BaboonFamily,
+  ): (List[TsDefnTranslator.Output], Map[String, List[TextTree[TsValue]]]) = {
+    val sfx = target.language.importSuffix
+    // Paths whose module actually exports symbols (`hasExports` also sees
+    // string-interpolated declarations like the service interface and the
+    // wiring/client classes). An empty file (e.g. wiring suppressed by flags)
+    // must NOT be `export *`-ed — that yields TS2306 under strict tsc.
+    val pathsWithExports = outputs.iterator.filter(o => o.path.endsWith(".ts") && hasExports(o)).map(_.path).toSet
+    val infos            = collectServiceInfos(family)
+
+    val serviceBarrels = infos.flatMap {
+      info =>
+        // Method directory names = immediate child dirs of the service dir that
+        // hold emitted files (so absent message types never produce dead exports).
+        val prefix = s"${info.serviceDirPath}/"
+        val methodDirs = pathsWithExports
+          .filter(_.startsWith(prefix))
+          .flatMap { p =>
+            val rest = p.drop(prefix.length)
+            val slash = rest.indexOf('/')
+            if (slash >= 0) Some(rest.substring(0, slash)) else None
+          }
+          .toList
+          .distinct
+          .sorted
+
+        val hasClient  = pathsWithExports.contains(s"${info.serviceDirPath}/client.ts")
+        val hasWiring  = pathsWithExports.contains(s"${info.serviceDirPath}/wiring.ts")
+        val hasService = pathsWithExports.contains(s"${info.serviceDirPath}/service.ts")
+
+        val methodsBarrel: Option[TsDefnTranslator.Output] =
+          if (methodDirs.isEmpty) None
+          else {
+            // Directory re-export: target the method dir's `index` explicitly. A bare `./<method>`
+            // specifier does not resolve under strict ESM / NodeNext (no directory-index fallback).
+            val lines = methodDirs.map(m => TextTree.text[TsValue](s"export * as $m from './$m/index$sfx';"))
+            Some(barrelOutput(s"${info.serviceDirPath}/methods.ts", lines.reduce((a, b) => q"$a\n$b")))
+          }
+
+        val indexLines: List[TextTree[TsValue]] =
+          (if (methodDirs.nonEmpty) List(TextTree.text[TsValue](s"export * as methods from './methods$sfx';")) else Nil) ++
+            (if (hasService) List(TextTree.text[TsValue](s"export * from './service$sfx';")) else Nil) ++
+            (if (hasClient) List(TextTree.text[TsValue](s"export * from './client$sfx';")) else Nil) ++
+            (if (hasWiring) List(TextTree.text[TsValue](s"export * from './wiring$sfx';")) else Nil)
+
+        val indexBarrel: Option[TsDefnTranslator.Output] =
+          if (indexLines.isEmpty) None
+          else Some(barrelOutput(s"${info.serviceDirPath}/index.ts", indexLines.reduce((a, b) => q"$a\n$b")))
+
+        methodsBarrel.toList ++ indexBarrel.toList
+    }
+
+    // Extra `export * as <Service> from './<kebab>/index'` lines per models-level dir. The service
+    // dir is a directory, so the specifier must target its `index` explicitly (strict ESM has no
+    // directory-index fallback).
+    val modelsExtras: Map[String, List[TextTree[TsValue]]] =
+      infos
+        .groupBy(_.modelsDirPath)
+        .view
+        .mapValues(_.sortBy(_.kebabName).map(i => TextTree.text[TsValue](s"export * as ${i.pascalName} from './${i.kebabName}/index$sfx';")))
+        .toMap
+
+    (serviceBarrels, modelsExtras)
+  }
+
+  private def generateBarrels(outputs: List[TsDefnTranslator.Output], family: BaboonFamily): List[TsDefnTranslator.Output] = {
     val sfx = target.language.importSuffix
     val definitionOutputs = outputs
       .filter(o => o.product == CompilerProduct.Definition || o.product == CompilerProduct.Runtime)
       .filterNot(_.isBarrel)
       .filter(_.path.endsWith(".ts"))
+
+    val (serviceBarrels, modelsExtras) = generateServiceBarrels(outputs, family)
+    // Service directories own a bespoke `index.ts` (methods namespace + service +
+    // client/wiring), so the generic per-directory logic must skip them.
+    val serviceDirs = serviceBarrels.iterator
+      .filter(_.path.endsWith("/index.ts"))
+      .map(_.path.stripSuffix("/index.ts"))
+      .toSet
 
     // Group files by their direct parent directory
     val byDir = definitionOutputs.groupBy {
@@ -558,7 +699,7 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
 
     // Generate per-directory barrels with collision detection.
     // Skip root directory (runtime-only files, not useful in barrel).
-    val perDirBarrels = byDir.toList.filter(_._1.nonEmpty).sortBy(_._1).flatMap {
+    val perDirBarrels = byDir.toList.filter(_._1.nonEmpty).filterNot(kv => serviceDirs.contains(kv._1)).sortBy(_._1).flatMap {
       case (dir, files) =>
         val sortedFiles = files.sortBy(_.path)
 
@@ -599,24 +740,25 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
           }
         }
 
-        if (reexports.nonEmpty) {
-          val barrelPath   = s"$dir/index.ts"
-          val barrelModule = TsModuleId(tsFileTools.definitionsBasePkg ++ barrelPath.stripSuffix(".ts").split('/').toList)
-          val tree         = reexports.reduce((a, b) => q"$a\n$b")
-          Some(
-            TsDefnTranslator.Output(
-              barrelPath,
-              tree,
-              barrelModule,
-              CompilerProduct.Definition,
-              doNotModify = true,
-              isBarrel    = true,
-            )
-          )
+        // A models-level dir that contains services also re-exports each
+        // service as a namespace (`export * as PetStore from './pet-store'`).
+        val allReexports = reexports ++ modelsExtras.getOrElse(dir, Nil)
+
+        if (allReexports.nonEmpty) {
+          Some(barrelOutput(s"$dir/index.ts", allReexports.reduce((a, b) => q"$a\n$b")))
         } else None
     }
 
-    perDirBarrels
+    // Models dirs that emit no per-directory barrel of their own (no top-level
+    // model files, services only) still need an `index.ts` carrying the service
+    // namespace re-exports.
+    val handledDirs = byDir.keySet
+    val orphanModelBarrels = modelsExtras.toList.collect {
+      case (dir, lines) if dir.nonEmpty && !handledDirs.contains(dir) =>
+        barrelOutput(s"$dir/index.ts", lines.reduce((a, b) => q"$a\n$b"))
+    }
+
+    perDirBarrels ++ orphanModelBarrels ++ serviceBarrels
   }
 
   private def generateConversions(

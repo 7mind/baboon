@@ -521,32 +521,21 @@ object TsServiceWiringTranslator {
       )
     }
 
-    private def getWiringPath(defn: DomainMember.User): String = {
-      val fname = s"${typeTranslator.camelToKebab(defn.defn.id.name.name)}-wiring.ts"
-      defn.defn.id.owner match {
-        case Owner.Toplevel => s"$fbase/$fname"
-        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString("/")}/$fname"
-        case Owner.Adt(id)  => s"$fbase/${typeTranslator.camelToKebab(id.name.name)}/$fname"
-      }
-    }
+    // Per-service directory under `fbase`, shared with file emission and type
+    // references via `TsTypeTranslator.serviceDirSegments`. Wiring, client, and
+    // the service interface all live inside this directory; keeping the single
+    // source of truth prevents the file path and its imports from drifting.
+    private def serviceDir(service: Typedef.Service): String =
+      typeTranslator.serviceDirSegments(service).mkString("/")
 
-    private def getWiringPathForService(service: Typedef.Service): String = {
-      val fname = s"${typeTranslator.camelToKebab(service.id.name.name)}-wiring.ts"
-      service.id.owner match {
-        case Owner.Toplevel => s"$fbase/$fname"
-        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString("/")}/$fname"
-        case Owner.Adt(id)  => s"$fbase/${typeTranslator.camelToKebab(id.name.name)}/$fname"
-      }
-    }
+    private def getWiringPath(defn: DomainMember.User): String =
+      getWiringPathForService(defn.defn.asInstanceOf[Typedef.Service])
 
-    private def getClientPath(defn: DomainMember.User): String = {
-      val fname = s"${typeTranslator.camelToKebab(defn.defn.id.name.name)}-client.ts"
-      defn.defn.id.owner match {
-        case Owner.Toplevel => s"$fbase/$fname"
-        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString("/")}/$fname"
-        case Owner.Adt(id)  => s"$fbase/${typeTranslator.camelToKebab(id.name.name)}/$fname"
-      }
-    }
+    private def getWiringPathForService(service: Typedef.Service): String =
+      s"$fbase/${serviceDir(service)}/wiring.ts"
+
+    private def getClientPath(defn: DomainMember.User): String =
+      s"$fbase/${serviceDir(defn.defn.asInstanceOf[Typedef.Service])}/client.ts"
 
     private def ctxParamDecl: String = resolvedCtx match {
       case ResolvedServiceContext.NoContext               => ""
