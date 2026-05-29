@@ -2098,10 +2098,18 @@ ret test_dir:string="$TEST_DIR"
 Run Swift cross-domain muxer + per-domain wiring tests.
 
 ```bash
+if ! command -v swift &> /dev/null; then
+  if [[ "$(uname)" == "Linux" ]]; then
+    echo "Swift is required on Linux but was not found in PATH" >&2
+    exit 1
+  fi
+  echo "Swift not found, skipping test"
+  ret success:bool=true
+  exit 0
+fi
+
 TEST_DIR="${action.test-gen-sw-wiring.test_dir}"
-pushd "$TEST_DIR/sw-stub"
-swift test --filter WiringTests
-popd
+./scripts/swift-xcode.sh "$TEST_DIR/sw-stub" test --filter WiringTests
 
 ret success:bool=true
 ```

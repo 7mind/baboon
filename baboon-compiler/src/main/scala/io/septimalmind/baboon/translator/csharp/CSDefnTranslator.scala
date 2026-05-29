@@ -127,8 +127,14 @@ object CSDefnTranslator {
 
     override def translateFixtures(defn: DomainMember.User): Out[List[Output]] = {
       defn.id.owner match {
-        case Owner.Adt(_) => F.pure(List.empty)
-        case _            => doTranslateFixtures(defn)
+        case Owner.Adt(_)                                                       => F.pure(List.empty)
+        // Inline service-method I/O types nest in the `static partial class
+        // <Service>.<Method>` companion (interface-companion layout); their
+        // fixtures would re-open that container in the separate test assembly,
+        // which `partial` cannot span (CS0436). They are round-tripped by the
+        // service-wiring tests instead — same precedent as ADT members above.
+        case _ if trans.serviceMethodContainers(defn.id, domain, evo).isDefined => F.pure(List.empty)
+        case _                                                                  => doTranslateFixtures(defn)
       }
     }
 
@@ -149,8 +155,9 @@ object CSDefnTranslator {
 
     override def translateTests(defn: DomainMember.User): Out[List[Output]] = {
       defn.id.owner match {
-        case Owner.Adt(_) => F.pure(List.empty)
-        case _            => doTranslateTest(defn)
+        case Owner.Adt(_)                                                       => F.pure(List.empty)
+        case _ if trans.serviceMethodContainers(defn.id, domain, evo).isDefined => F.pure(List.empty)
+        case _                                                                  => doTranslateTest(defn)
       }
     }
 
@@ -229,10 +236,8 @@ object CSDefnTranslator {
 
       assert(defn.id.pkg == domain.id)
 
-      val ns = srcRef.pkg.parts
-
       val allDefs = (defnRepr +: codecTrees).join("\n\n")
-      val content = if (inNs) csTrees.inNs(ns.toSeq, allDefs) else allDefs
+      val content = if (inNs) wrapInContainer(defn, srcRef, allDefs) else allDefs
 
       val reg = defn.defn match {
         case _: Typedef.NonDataTypedef =>
@@ -473,10 +478,8 @@ object CSDefnTranslator {
             case _                                             => ""
           }
           DefnRepr(
-            q"""namespace ${name.asName} {
-               |    public interface ${name.asName}$genericParam  {
-               |        ${methods.shift(8).trim}
-               |    }
+            q"""public interface ${name.asName}$genericParam  {
+               |    ${methods.shift(4).trim}
                |}""".stripMargin,
             List.empty,
           )
@@ -535,12 +538,31 @@ object CSDefnTranslator {
       }
     }
 
+    /** Wrap a per-type tree in its enclosing C# container. Inline
+      * service-method I/O types nest in `static partial class <Service> {
+      * static partial class <Method> { … } }` (the interface-companion layout);
+      * everything else lives in a flat namespace. Shared by the definition,
+      * fixture, and test emitters so all three agree on the type's location. */
+    private def wrapInContainer(defn: DomainMember.User, srcRef: CSValue.CSType, tree: TextTree[CSValue]): TextTree[CSValue] = {
+      trans.serviceMethodContainers(defn.id, domain, evo) match {
+        case Some((nsPrefix, classes)) =>
+          val nested = classes.foldRight(tree) {
+            (cls, acc) =>
+              q"""public static partial class $cls {
+                 |    ${acc.shift(4).trim}
+                 |}""".stripMargin
+          }
+          csTrees.inNs(nsPrefix, nested)
+        case None =>
+          csTrees.inNs(srcRef.pkg.parts.toSeq, tree)
+      }
+    }
+
     private def makeFixtureRepr(defn: DomainMember.User): Option[TextTree[CSValue]] = {
       val srcRef = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
-      val ns     = srcRef.pkg.parts
 
       val fixtureTree       = codecsFixture.translate(defn)
-      val fixtureTreeWithNs = fixtureTree.map(t => csTrees.inNs(ns.toSeq, t))
+      val fixtureTreeWithNs = fixtureTree.map(t => wrapInContainer(defn, srcRef, t))
 
       fixtureTreeWithNs
     }
@@ -548,10 +570,9 @@ object CSDefnTranslator {
     private def makeTestRepr(defn: DomainMember.User): Option[TextTree[CSValue]] = {
       val csTypeRef = trans.asCsType(defn.id, domain, evo)
       val srcRef    = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
-      val ns        = srcRef.pkg.parts
 
       val testTree       = codecsTests.translate(defn, csTypeRef, srcRef)
-      val testTreeWithNs = testTree.map(t => csTrees.inNs(ns.toSeq, t))
+      val testTreeWithNs = testTree.map(t => wrapInContainer(defn, srcRef, t))
 
       testTreeWithNs
     }

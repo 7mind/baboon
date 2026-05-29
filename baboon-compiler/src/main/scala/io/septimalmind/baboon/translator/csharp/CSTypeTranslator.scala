@@ -130,6 +130,21 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
     val version = domain.version
     val pkg     = toCsPkg(tid.pkg, version, evolution)
 
+    // C#-only service layout: the service interface is `I<Service>` at the
+    // domain namespace, and inline method I/O types nest in
+    // `static partial class <Service> { static partial class <Method> { … } }`
+    // (the interface companion) — see serviceMethodContainers.
+    if (isService(tid, domain)) {
+      val nsPrefix = pkg.parts ++ renderOwner(tid.owner)
+      return CSType(CSPackageId(nsPrefix), s"I${tid.name.name.capitalize}", fq = false, CSTypeOrigin(tid, domain))
+    }
+    serviceMethodContainers(tid, domain, evolution) match {
+      case Some((nsPrefix, classes)) =>
+        val staticPkg = CSPackageId(NEList.unsafeFrom((nsPrefix ++ classes).toList), isStatic = true)
+        return CSType(staticPkg, tid.name.name.capitalize, fq = false, CSTypeOrigin(tid, domain))
+      case None =>
+    }
+
     val ownerAsPrefix = renderOwner(tid.owner)
     val fullPrefix    = pkg.parts ++ ownerAsPrefix
 
@@ -140,6 +155,42 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
         CSPackageId(fullPrefix)
     }
     CSType(fullPkg, tid.name.name.capitalize, fq = false, CSTypeOrigin(tid, domain))
+  }
+
+  /** True if `tid` is a `Typedef.Service`. The C# backend renders services as
+    * `I`-prefixed interfaces (interface-companion layout). */
+  def isService(tid: TypeId.User, domain: Domain): Boolean =
+    domain.defs.meta.nodes.get(tid).exists {
+      case DomainMember.User(_, _: Typedef.Service, _, _) => true
+      case _                                              => false
+    }
+
+  /** For an inline service-method I/O type (the `in`/`out`/`err` of a service
+    * method, owned by `Ns(servicePath :+ serviceName :+ methodName)`), returns
+    * `(namespacePrefix, staticClassChain)` where the static-class chain is the
+    * PascalCased `[Service, Method]` companion containers. Returns None for
+    * any other type (including method types declared by reference rather than
+    * inline). C#-only. */
+  def serviceMethodContainers(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): Option[(Seq[String], Seq[String])] = {
+    tid.owner match {
+      case Owner.Ns(path) if path.length >= 2 =>
+        val svcOwnerPath = path.dropRight(2)
+        val svcName      = path(path.length - 2)
+        val methodName   = path.last
+        val svcOwner     = if (svcOwnerPath.isEmpty) Owner.Toplevel else Owner.Ns(svcOwnerPath)
+        val svcId        = TypeId.User(tid.pkg, svcOwner, svcName)
+        domain.defs.meta.nodes.get(svcId) match {
+          case Some(DomainMember.User(_, svc: Typedef.Service, _, _))
+              if svc.methods.exists { m =>
+                m.name.name == methodName.name &&
+                (Set(m.sig.id) ++ m.out.map(_.id) ++ m.err.map(_.id)).contains(tid)
+              } =>
+            val nsPrefix = toCsPkg(tid.pkg, domain.version, evolution).parts.toSeq ++ svcOwnerPath.map(_.name)
+            Some((nsPrefix, Seq(svcName.name.capitalize, methodName.name.capitalize)))
+          case _ => None
+        }
+      case _ => None
+    }
   }
 
   def toCsPkg(p: Pkg, version: Version, evolution: BaboonEvolution): CSPackageId = {
