@@ -281,7 +281,7 @@ object CSServiceWiringTranslator {
       val invokerName = if (isJson) "InvokeJson" else "InvokeUeba"
       val iface       = if (isJson) iBaboonJsonService else iBaboonUebaService
       val wrapperName = s"${svcName}${if (isJson) "JsonService" else "UebaService"}"
-      val svcType: TextTree[CSValue] = q"$svcName.$svcName$genericParam"
+      val svcType: TextTree[CSValue] = q"I${svcName.capitalize}$genericParam"
 
       // Constructor and forwarded-args: every extra dependency consumed by
       // ${svc}Wiring.InvokeJson/InvokeUeba (`rt` in errors mode, plus any
@@ -397,7 +397,7 @@ object CSServiceWiringTranslator {
       q"""public static $csString InvokeJson$genericParam(
          |    $baboonMethodId method,
          |    $csString data,
-         |    $svcName.$svcName$genericParam impl,
+         |    I${svcName.capitalize}$genericParam impl,
          |    $ctxParamDecl$baboonCodecContext ctx)
          |{
          |    switch (method.MethodName)
@@ -445,7 +445,7 @@ object CSServiceWiringTranslator {
       q"""public static byte[] InvokeUeba$genericParam(
          |    $baboonMethodId method,
          |    byte[] data,
-         |    $svcName.$svcName$genericParam impl,
+         |    I${svcName.capitalize}$genericParam impl,
          |    $ctxParamDecl$baboonCodecContext ctx)
          |{
          |    switch (method.MethodName)
@@ -613,7 +613,7 @@ object CSServiceWiringTranslator {
       q"""public static $wiringRetType InvokeJson$genericParam(
          |    $baboonMethodId method,
          |    $csString data,
-         |    $svcName.$svcName$genericParam impl,
+         |    I${svcName.capitalize}$genericParam impl,
          |    IBaboonServiceRt rt,
          |    $ctxParamDecl$baboonCodecContext ctx)
          |{
@@ -740,7 +740,7 @@ object CSServiceWiringTranslator {
       q"""public static $wiringRetType InvokeUeba$genericParam(
          |    $baboonMethodId method,
          |    byte[] data,
-         |    $svcName.$svcName$genericParam impl,
+         |    I${svcName.capitalize}$genericParam impl,
          |    IBaboonServiceRt rt,
          |    $ctxParamDecl$baboonCodecContext ctx)
          |{

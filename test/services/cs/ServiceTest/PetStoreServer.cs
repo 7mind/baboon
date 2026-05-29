@@ -82,30 +82,30 @@ public static class PetStoreServer
         {
             case "addPet":
             {
-                Petstore.Api.PetStore.addPet.In decoded = Petstore.Api.PetStore.addPet.In_JsonCodec.Instance.Decode(ctx, wire);
-                Petstore.Api.PetStore.addPet.Out result = impl.addPet(decoded);
-                JToken encoded = Petstore.Api.PetStore.addPet.Out_JsonCodec.Instance.Encode(ctx, result);
+                Petstore.Api.PetStore.AddPet.In decoded = Petstore.Api.PetStore.AddPet.In_JsonCodec.Instance.Decode(ctx, wire);
+                Petstore.Api.PetStore.AddPet.Out result = impl.addPet(decoded);
+                JToken encoded = Petstore.Api.PetStore.AddPet.Out_JsonCodec.Instance.Encode(ctx, result);
                 return encoded.ToString(Formatting.None);
             }
             case "getPet":
             {
-                Petstore.Api.PetStore.getPet.In decoded = Petstore.Api.PetStore.getPet.In_JsonCodec.Instance.Decode(ctx, wire);
-                Petstore.Api.PetStore.getPet.Out result = impl.getPet(decoded);
-                JToken encoded = Petstore.Api.PetStore.getPet.Out_JsonCodec.Instance.Encode(ctx, result);
+                Petstore.Api.PetStore.GetPet.In decoded = Petstore.Api.PetStore.GetPet.In_JsonCodec.Instance.Decode(ctx, wire);
+                Petstore.Api.PetStore.GetPet.Out result = impl.getPet(decoded);
+                JToken encoded = Petstore.Api.PetStore.GetPet.Out_JsonCodec.Instance.Encode(ctx, result);
                 return encoded.ToString(Formatting.None);
             }
             case "listPets":
             {
-                Petstore.Api.PetStore.listPets.In decoded = Petstore.Api.PetStore.listPets.In_JsonCodec.Instance.Decode(ctx, wire);
-                Petstore.Api.PetStore.listPets.Out result = impl.listPets(decoded);
-                JToken encoded = Petstore.Api.PetStore.listPets.Out_JsonCodec.Instance.Encode(ctx, result);
+                Petstore.Api.PetStore.ListPets.In decoded = Petstore.Api.PetStore.ListPets.In_JsonCodec.Instance.Decode(ctx, wire);
+                Petstore.Api.PetStore.ListPets.Out result = impl.listPets(decoded);
+                JToken encoded = Petstore.Api.PetStore.ListPets.Out_JsonCodec.Instance.Encode(ctx, result);
                 return encoded.ToString(Formatting.None);
             }
             case "deletePet":
             {
-                Petstore.Api.PetStore.deletePet.In decoded = Petstore.Api.PetStore.deletePet.In_JsonCodec.Instance.Decode(ctx, wire);
-                Petstore.Api.PetStore.deletePet.Out result = impl.deletePet(decoded);
-                JToken encoded = Petstore.Api.PetStore.deletePet.Out_JsonCodec.Instance.Encode(ctx, result);
+                Petstore.Api.PetStore.DeletePet.In decoded = Petstore.Api.PetStore.DeletePet.In_JsonCodec.Instance.Decode(ctx, wire);
+                Petstore.Api.PetStore.DeletePet.Out result = impl.deletePet(decoded);
+                JToken encoded = Petstore.Api.PetStore.DeletePet.Out_JsonCodec.Instance.Encode(ctx, result);
                 return encoded.ToString(Formatting.None);
             }
             default:

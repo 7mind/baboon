@@ -8,13 +8,13 @@ using NUnit.Framework;
 
 namespace ConversionsTest
 {
-    public class MockI1Either : Testpkg.Pkg0.I1.I1
+    public class MockI1Either : Testpkg.Pkg0.II1
     {
-        public Either<Testpkg.Pkg0.I1.testCall.Err, Testpkg.Pkg0.I1.testCall.Out> testCall(
-            Testpkg.Pkg0.I1.testCall.In arg)
+        public Either<Testpkg.Pkg0.I1.TestCall.Err, Testpkg.Pkg0.I1.TestCall.Out> testCall(
+            Testpkg.Pkg0.I1.TestCall.In arg)
         {
-            return new Either<Testpkg.Pkg0.I1.testCall.Err, Testpkg.Pkg0.I1.testCall.Out>.Right(
-                new Testpkg.Pkg0.I1.testCall.Out(42));
+            return new Either<Testpkg.Pkg0.I1.TestCall.Err, Testpkg.Pkg0.I1.TestCall.Out>.Right(
+                new Testpkg.Pkg0.I1.TestCall.Out(42));
         }
 
         public Either<Testpkg.Pkg0.T7_Empty, Testpkg.Pkg0.T7_Empty> testCall2(
@@ -25,13 +25,13 @@ namespace ConversionsTest
         }
     }
 
-    public class FailingI1Either : Testpkg.Pkg0.I1.I1
+    public class FailingI1Either : Testpkg.Pkg0.II1
     {
-        public Either<Testpkg.Pkg0.I1.testCall.Err, Testpkg.Pkg0.I1.testCall.Out> testCall(
-            Testpkg.Pkg0.I1.testCall.In arg)
+        public Either<Testpkg.Pkg0.I1.TestCall.Err, Testpkg.Pkg0.I1.TestCall.Out> testCall(
+            Testpkg.Pkg0.I1.TestCall.In arg)
         {
-            return new Either<Testpkg.Pkg0.I1.testCall.Err, Testpkg.Pkg0.I1.testCall.Out>.Left(
-                new Testpkg.Pkg0.I1.testCall.Err("domain error"));
+            return new Either<Testpkg.Pkg0.I1.TestCall.Err, Testpkg.Pkg0.I1.TestCall.Out>.Left(
+                new Testpkg.Pkg0.I1.TestCall.Err("domain error"));
         }
 
         public Either<Testpkg.Pkg0.T7_Empty, Testpkg.Pkg0.T7_Empty> testCall2(
@@ -42,10 +42,10 @@ namespace ConversionsTest
         }
     }
 
-    public class ThrowingI1Either : Testpkg.Pkg0.I1.I1
+    public class ThrowingI1Either : Testpkg.Pkg0.II1
     {
-        public Either<Testpkg.Pkg0.I1.testCall.Err, Testpkg.Pkg0.I1.testCall.Out> testCall(
-            Testpkg.Pkg0.I1.testCall.In arg)
+        public Either<Testpkg.Pkg0.I1.TestCall.Err, Testpkg.Pkg0.I1.TestCall.Out> testCall(
+            Testpkg.Pkg0.I1.TestCall.In arg)
         {
             throw new InvalidOperationException("service error");
         }
@@ -57,11 +57,11 @@ namespace ConversionsTest
         }
     }
 
-    public class MockI2Either : Testpkg.Pkg0.I2.I2
+    public class MockI2Either : Testpkg.Pkg0.II2
     {
-        public Testpkg.Pkg0.I2.noErrCall.Out noErrCall(Testpkg.Pkg0.I2.noErrCall.In arg)
+        public Testpkg.Pkg0.I2.NoErrCall.Out noErrCall(Testpkg.Pkg0.I2.NoErrCall.In arg)
         {
-            return new Testpkg.Pkg0.I2.noErrCall.Out("result_" + arg.Value);
+            return new Testpkg.Pkg0.I2.NoErrCall.Out("result_" + arg.Value);
         }
     }
 
@@ -79,8 +79,8 @@ namespace ConversionsTest
         {
             var impl = new MockI1Either();
             var method = new BaboonMethodId("I1", "testCall");
-            var inputJson = Testpkg.Pkg0.I1.testCall.In_JsonCodec.Instance
-                .Encode(_ctx, new Testpkg.Pkg0.I1.testCall.In())
+            var inputJson = Testpkg.Pkg0.I1.TestCall.In_JsonCodec.Instance
+                .Encode(_ctx, new Testpkg.Pkg0.I1.TestCall.In())
                 .ToString(Newtonsoft.Json.Formatting.None);
 
             var result = Testpkg.Pkg0.I1Wiring.InvokeJson(method, inputJson, impl, _rt, _ctx);
@@ -88,7 +88,7 @@ namespace ConversionsTest
             Assert.That(result, Is.InstanceOf<Either<BaboonWiringError, string>.Right>());
             var right = (Either<BaboonWiringError, string>.Right)result;
             var outputToken = JToken.Parse(right.Value);
-            var decoded = Testpkg.Pkg0.I1.testCall.Out_JsonCodec.Instance.Decode(_ctx, outputToken);
+            var decoded = Testpkg.Pkg0.I1.TestCall.Out_JsonCodec.Instance.Decode(_ctx, outputToken);
             Assert.That(decoded.I00, Is.EqualTo(42));
         }
 
@@ -111,8 +111,8 @@ namespace ConversionsTest
         {
             var impl = new FailingI1Either();
             var method = new BaboonMethodId("I1", "testCall");
-            var inputJson = Testpkg.Pkg0.I1.testCall.In_JsonCodec.Instance
-                .Encode(_ctx, new Testpkg.Pkg0.I1.testCall.In())
+            var inputJson = Testpkg.Pkg0.I1.TestCall.In_JsonCodec.Instance
+                .Encode(_ctx, new Testpkg.Pkg0.I1.TestCall.In())
                 .ToString(Newtonsoft.Json.Formatting.None);
 
             var result = Testpkg.Pkg0.I1Wiring.InvokeJson(method, inputJson, impl, _rt, _ctx);
@@ -153,8 +153,8 @@ namespace ConversionsTest
         {
             var impl = new ThrowingI1Either();
             var method = new BaboonMethodId("I1", "testCall");
-            var inputJson = Testpkg.Pkg0.I1.testCall.In_JsonCodec.Instance
-                .Encode(_ctx, new Testpkg.Pkg0.I1.testCall.In())
+            var inputJson = Testpkg.Pkg0.I1.TestCall.In_JsonCodec.Instance
+                .Encode(_ctx, new Testpkg.Pkg0.I1.TestCall.In())
                 .ToString(Newtonsoft.Json.Formatting.None);
 
             var result = Testpkg.Pkg0.I1Wiring.InvokeJson(method, inputJson, impl, _rt, _ctx);
@@ -173,8 +173,8 @@ namespace ConversionsTest
             var method = new BaboonMethodId("I1", "testCall");
             using var inputMs = new MemoryStream();
             using var inputWriter = new BinaryWriter(inputMs);
-            Testpkg.Pkg0.I1.testCall.In_UEBACodec.Instance.Encode(
-                _ctx, inputWriter, new Testpkg.Pkg0.I1.testCall.In());
+            Testpkg.Pkg0.I1.TestCall.In_UEBACodec.Instance.Encode(
+                _ctx, inputWriter, new Testpkg.Pkg0.I1.TestCall.In());
             inputWriter.Flush();
             var inputBytes = inputMs.ToArray();
 
@@ -184,7 +184,7 @@ namespace ConversionsTest
             var right = (Either<BaboonWiringError, byte[]>.Right)result;
             using var outputMs = new MemoryStream(right.Value);
             using var outputReader = new BinaryReader(outputMs);
-            var decoded = Testpkg.Pkg0.I1.testCall.Out_UEBACodec.Instance.Decode(_ctx, outputReader);
+            var decoded = Testpkg.Pkg0.I1.TestCall.Out_UEBACodec.Instance.Decode(_ctx, outputReader);
             Assert.That(decoded.I00, Is.EqualTo(42));
         }
 
@@ -209,8 +209,8 @@ namespace ConversionsTest
             var method = new BaboonMethodId("I1", "testCall");
             using var inputMs = new MemoryStream();
             using var inputWriter = new BinaryWriter(inputMs);
-            Testpkg.Pkg0.I1.testCall.In_UEBACodec.Instance.Encode(
-                _ctx, inputWriter, new Testpkg.Pkg0.I1.testCall.In());
+            Testpkg.Pkg0.I1.TestCall.In_UEBACodec.Instance.Encode(
+                _ctx, inputWriter, new Testpkg.Pkg0.I1.TestCall.In());
             inputWriter.Flush();
             var inputBytes = inputMs.ToArray();
 
@@ -228,8 +228,8 @@ namespace ConversionsTest
         {
             var impl = new MockI2Either();
             var method = new BaboonMethodId("I2", "noErrCall");
-            var inputJson = Testpkg.Pkg0.I2.noErrCall.In_JsonCodec.Instance
-                .Encode(_ctx, new Testpkg.Pkg0.I2.noErrCall.In(123))
+            var inputJson = Testpkg.Pkg0.I2.NoErrCall.In_JsonCodec.Instance
+                .Encode(_ctx, new Testpkg.Pkg0.I2.NoErrCall.In(123))
                 .ToString(Newtonsoft.Json.Formatting.None);
 
             var result = Testpkg.Pkg0.I2Wiring.InvokeJson(method, inputJson, impl, _rt, _ctx);
@@ -237,7 +237,7 @@ namespace ConversionsTest
             Assert.That(result, Is.InstanceOf<Either<BaboonWiringError, string>.Right>());
             var right = (Either<BaboonWiringError, string>.Right)result;
             var outputToken = JToken.Parse(right.Value);
-            var decoded = Testpkg.Pkg0.I2.noErrCall.Out_JsonCodec.Instance.Decode(_ctx, outputToken);
+            var decoded = Testpkg.Pkg0.I2.NoErrCall.Out_JsonCodec.Instance.Decode(_ctx, outputToken);
             Assert.That(decoded.Result, Is.EqualTo("result_123"));
         }
 
@@ -248,8 +248,8 @@ namespace ConversionsTest
             var method = new BaboonMethodId("I2", "noErrCall");
             using var inputMs = new MemoryStream();
             using var inputWriter = new BinaryWriter(inputMs);
-            Testpkg.Pkg0.I2.noErrCall.In_UEBACodec.Instance.Encode(
-                _ctx, inputWriter, new Testpkg.Pkg0.I2.noErrCall.In(456));
+            Testpkg.Pkg0.I2.NoErrCall.In_UEBACodec.Instance.Encode(
+                _ctx, inputWriter, new Testpkg.Pkg0.I2.NoErrCall.In(456));
             inputWriter.Flush();
             var inputBytes = inputMs.ToArray();
 
@@ -259,7 +259,7 @@ namespace ConversionsTest
             var right = (Either<BaboonWiringError, byte[]>.Right)result;
             using var outputMs = new MemoryStream(right.Value);
             using var outputReader = new BinaryReader(outputMs);
-            var decoded = Testpkg.Pkg0.I2.noErrCall.Out_UEBACodec.Instance.Decode(_ctx, outputReader);
+            var decoded = Testpkg.Pkg0.I2.NoErrCall.Out_UEBACodec.Instance.Decode(_ctx, outputReader);
             Assert.That(decoded.Result, Is.EqualTo("result_456"));
         }
     }
@@ -289,15 +289,15 @@ namespace ConversionsTest
         public void JsonMuxer_RoutesToI1()
         {
             var method = new BaboonMethodId("I1", "testCall");
-            var inputJson = Testpkg.Pkg0.I1.testCall.In_JsonCodec.Instance
-                .Encode(_ctx, new Testpkg.Pkg0.I1.testCall.In())
+            var inputJson = Testpkg.Pkg0.I1.TestCall.In_JsonCodec.Instance
+                .Encode(_ctx, new Testpkg.Pkg0.I1.TestCall.In())
                 .ToString(Newtonsoft.Json.Formatting.None);
 
             var result = NewJsonMuxer().Invoke(method, inputJson, _ctx);
 
             Assert.That(result, Is.InstanceOf<Either<BaboonWiringError, string>.Right>());
             var right = (Either<BaboonWiringError, string>.Right)result;
-            var decoded = Testpkg.Pkg0.I1.testCall.Out_JsonCodec.Instance.Decode(_ctx, JToken.Parse(right.Value));
+            var decoded = Testpkg.Pkg0.I1.TestCall.Out_JsonCodec.Instance.Decode(_ctx, JToken.Parse(right.Value));
             Assert.That(decoded.I00, Is.EqualTo(42));
         }
 
@@ -305,15 +305,15 @@ namespace ConversionsTest
         public void JsonMuxer_RoutesToI2()
         {
             var method = new BaboonMethodId("I2", "noErrCall");
-            var inputJson = Testpkg.Pkg0.I2.noErrCall.In_JsonCodec.Instance
-                .Encode(_ctx, new Testpkg.Pkg0.I2.noErrCall.In(123))
+            var inputJson = Testpkg.Pkg0.I2.NoErrCall.In_JsonCodec.Instance
+                .Encode(_ctx, new Testpkg.Pkg0.I2.NoErrCall.In(123))
                 .ToString(Newtonsoft.Json.Formatting.None);
 
             var result = NewJsonMuxer().Invoke(method, inputJson, _ctx);
 
             Assert.That(result, Is.InstanceOf<Either<BaboonWiringError, string>.Right>());
             var right = (Either<BaboonWiringError, string>.Right)result;
-            var decoded = Testpkg.Pkg0.I2.noErrCall.Out_JsonCodec.Instance.Decode(_ctx, JToken.Parse(right.Value));
+            var decoded = Testpkg.Pkg0.I2.NoErrCall.Out_JsonCodec.Instance.Decode(_ctx, JToken.Parse(right.Value));
             Assert.That(decoded.Result, Is.EqualTo("result_123"));
         }
 
@@ -341,7 +341,7 @@ namespace ConversionsTest
             var method = new BaboonMethodId("I1", "testCall");
             using var inputMs = new MemoryStream();
             using var inputWriter = new BinaryWriter(inputMs);
-            Testpkg.Pkg0.I1.testCall.In_UEBACodec.Instance.Encode(_ctx, inputWriter, new Testpkg.Pkg0.I1.testCall.In());
+            Testpkg.Pkg0.I1.TestCall.In_UEBACodec.Instance.Encode(_ctx, inputWriter, new Testpkg.Pkg0.I1.TestCall.In());
             inputWriter.Flush();
 
             var result = NewUebaMuxer().Invoke(method, inputMs.ToArray(), _ctx);
@@ -350,7 +350,7 @@ namespace ConversionsTest
             var right = (Either<BaboonWiringError, byte[]>.Right)result;
             using var outputMs = new MemoryStream(right.Value);
             using var outputReader = new BinaryReader(outputMs);
-            var decoded = Testpkg.Pkg0.I1.testCall.Out_UEBACodec.Instance.Decode(_ctx, outputReader);
+            var decoded = Testpkg.Pkg0.I1.TestCall.Out_UEBACodec.Instance.Decode(_ctx, outputReader);
             Assert.That(decoded.I00, Is.EqualTo(42));
         }
 
@@ -360,7 +360,7 @@ namespace ConversionsTest
             var method = new BaboonMethodId("I2", "noErrCall");
             using var inputMs = new MemoryStream();
             using var inputWriter = new BinaryWriter(inputMs);
-            Testpkg.Pkg0.I2.noErrCall.In_UEBACodec.Instance.Encode(_ctx, inputWriter, new Testpkg.Pkg0.I2.noErrCall.In(456));
+            Testpkg.Pkg0.I2.NoErrCall.In_UEBACodec.Instance.Encode(_ctx, inputWriter, new Testpkg.Pkg0.I2.NoErrCall.In(456));
             inputWriter.Flush();
 
             var result = NewUebaMuxer().Invoke(method, inputMs.ToArray(), _ctx);
@@ -369,7 +369,7 @@ namespace ConversionsTest
             var right = (Either<BaboonWiringError, byte[]>.Right)result;
             using var outputMs = new MemoryStream(right.Value);
             using var outputReader = new BinaryReader(outputMs);
-            var decoded = Testpkg.Pkg0.I2.noErrCall.Out_UEBACodec.Instance.Decode(_ctx, outputReader);
+            var decoded = Testpkg.Pkg0.I2.NoErrCall.Out_UEBACodec.Instance.Decode(_ctx, outputReader);
             Assert.That(decoded.Result, Is.EqualTo("result_456"));
         }
 
