@@ -68,6 +68,7 @@ abstract class TypeScriptImportCaseTestBase[F[+_, +_]: Error2: TagKK: BaboonTest
       pragmas                     = Map.empty,
       generateDomainFacade        = false,
       asyncServices               = true,
+      bareServiceSymbols          = false,
       mapsAsRecords               = false,
       timestampsUtcMode           = "wrapper",
       timestampsOffsetMode        = "wrapper",

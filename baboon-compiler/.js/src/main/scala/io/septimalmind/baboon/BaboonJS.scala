@@ -458,6 +458,7 @@ object BaboonJS {
                 pragmas                     = Map.empty,
                 generateDomainFacade        = false,
                 asyncServices               = false,
+                bareServiceSymbols          = false,
                 mapsAsRecords               = false,
                 timestampsUtcMode           = "wrapper",
                 timestampsOffsetMode        = "wrapper",

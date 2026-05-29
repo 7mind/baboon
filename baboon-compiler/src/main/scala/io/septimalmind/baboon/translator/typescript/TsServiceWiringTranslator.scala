@@ -358,7 +358,7 @@ object TsServiceWiringTranslator {
           ).flatten
 
           val clientTree =
-            q"""export class ${svcType.name}Client {
+            q"""export class ${typeTranslator.serviceClientName(svcType.name)} {
                |    ${transportFields.joinN().shift(4).trim}
                |
                |    constructor(${ctorParams.join(", ")}) {
@@ -409,7 +409,7 @@ object TsServiceWiringTranslator {
       val implFields = services.map {
         s =>
           val svcType = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
-          q"${s.id.name.name}: $svcType"
+          q"${s.id.name.name}: ${typeTranslator.serviceInterfaceRef(svcType)}"
       }
 
       val uebaFn = if (binCodecActive) {
@@ -418,9 +418,10 @@ object TsServiceWiringTranslator {
             activeBinCodec(s).map {
               _ =>
                 val svcType = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
-                val wiringFnRef = TsValue.TsType(
+                val wiringFnRef = typeTranslator.serviceInvokeRef(
                   TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ getWiringPathForService(s).stripSuffix(".ts").split('/').toList),
-                  s"invokeUeba_${svcType.name}",
+                  svcType.name,
+                  json = false,
                 )
                 if (resolved.noErrors) {
                   q"""case "${s.id.name.name}":
@@ -462,9 +463,10 @@ object TsServiceWiringTranslator {
             activeJsonCodec(s).map {
               _ =>
                 val svcType = typeTranslator.asTsType(s.id, domain, evo, tsFileTools.definitionsBasePkg)
-                val wiringFnRef = TsValue.TsType(
+                val wiringFnRef = typeTranslator.serviceInvokeRef(
                   TsValue.TsModuleId(tsFileTools.definitionsBasePkg ++ getWiringPathForService(s).stripSuffix(".ts").split('/').toList),
-                  s"invokeJson_${svcType.name}",
+                  svcType.name,
+                  json = true,
                 )
                 if (resolved.noErrors) {
                   q"""case "${s.id.name.name}":
@@ -586,9 +588,9 @@ object TsServiceWiringTranslator {
       retType: TextTree[TsValue],
     ): TextTree[TsValue] = {
       val wireType   = if (isJson) q"string"     else q"Uint8Array"
-      val invokerFn  = if (isJson) s"invokeJson_${svcType.name}" else s"invokeUeba_${svcType.name}"
+      val invokerFn  = typeTranslator.serviceInvokeName(svcType.name, isJson)
       val ifaceType  = if (isJson) ibaboonJsonService else ibaboonUebaService
-      val wrapperName: String = s"${svcType.name}${if (isJson) "JsonService" else "UebaService"}"
+      val wrapperName: String = typeTranslator.serviceWrapperName(svcType.name, isJson)
 
       // Constructor and forwarded-args: every extra dependency consumed by
       // invoke<Json|Ueba>_X (`rt` in errors mode, and any service-context
@@ -608,7 +610,7 @@ object TsServiceWiringTranslator {
         case (name, tpe) => q"private readonly $name: $tpe;"
       }
       val ctorParamList: TextTree[TsValue] = {
-        val all = q"impl: $svcType" :: extraCtorParams.map { case (n, t) => q"$n: $t" }
+        val all = q"impl: ${typeTranslator.serviceInterfaceRef(svcType)}" :: extraCtorParams.map { case (n, t) => q"$n: $t" }
         all.join(", ")
       }
       val ctorAssigns: List[TextTree[TsValue]] =
@@ -623,7 +625,7 @@ object TsServiceWiringTranslator {
 
       q"""export class $wrapperName implements $ifaceType<$retType> {
          |    readonly serviceName = "${svcType.name}";
-         |    private readonly impl: $svcType;
+         |    private readonly impl: ${typeTranslator.serviceInterfaceRef(svcType)};
          |    ${extraFieldDecls.join("\n").shift(4).trim}
          |
          |    constructor($ctorParamList) {
@@ -684,10 +686,10 @@ object TsServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""export ${asyncPrefix}function invokeJson_${svcType.name}(
+      q"""export ${asyncPrefix}function ${typeTranslator.serviceInvokeName(svcType.name, json = true)}(
          |    method: $baboonMethodId,
          |    data: string,
-         |    impl: $svcType,
+         |    impl: ${typeTranslator.serviceInterfaceRef(svcType)},
          |    ${ctxParamDecl}ctx: $tsBaboonCodecContext
          |): $noErrorsJsonRetType {
          |    switch (method.methodName) {
@@ -725,10 +727,10 @@ object TsServiceWiringTranslator {
              |}""".stripMargin
       }.join("\n")
 
-      q"""export ${asyncPrefix}function invokeUeba_${svcType.name}(
+      q"""export ${asyncPrefix}function ${typeTranslator.serviceInvokeName(svcType.name, json = false)}(
          |    method: $baboonMethodId,
          |    data: Uint8Array,
-         |    impl: $svcType,
+         |    impl: ${typeTranslator.serviceInterfaceRef(svcType)},
          |    ${ctxParamDecl}ctx: $tsBaboonCodecContext
          |): $noErrorsUebaRetType {
          |    switch (method.methodName) {
@@ -949,10 +951,10 @@ object TsServiceWiringTranslator {
           generateErrorsMethodBody(m, WireKind.Json, "string")
       }.join("\n")
 
-      q"""export ${asyncPrefix}function invokeJson_${svcType.name}(
+      q"""export ${asyncPrefix}function ${typeTranslator.serviceInvokeName(svcType.name, json = true)}(
          |    method: $baboonMethodId,
          |    data: string,
-         |    impl: $svcType,
+         |    impl: ${typeTranslator.serviceInterfaceRef(svcType)},
          |    rt: $ibaboonServiceRt,
          |    ${ctxParamDecl}ctx: $tsBaboonCodecContext
          |): $errorsJsonRetType {
@@ -973,10 +975,10 @@ object TsServiceWiringTranslator {
           generateErrorsMethodBody(m, WireKind.Ueba, "Uint8Array")
       }.join("\n")
 
-      q"""export ${asyncPrefix}function invokeUeba_${svcType.name}(
+      q"""export ${asyncPrefix}function ${typeTranslator.serviceInvokeName(svcType.name, json = false)}(
          |    method: $baboonMethodId,
          |    data: Uint8Array,
-         |    impl: $svcType,
+         |    impl: ${typeTranslator.serviceInterfaceRef(svcType)},
          |    rt: $ibaboonServiceRt,
          |    ${ctxParamDecl}ctx: $tsBaboonCodecContext
          |): $errorsUebaRetType {

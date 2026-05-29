@@ -251,6 +251,11 @@ final case class TsOptions(
   serviceContext: ServiceContextConfig,
   pragmas: Map[String, String],
   asyncServices: Boolean,
+  // When true, service symbols are emitted bare (Service/Client/invokeJson/invokeUeba/
+  // JsonService/UebaService) and cross-file references are aliased to the prefixed form; the
+  // per-service directory + barrel namespace disambiguates. When false (default), the legacy
+  // service-name-prefixed symbols are emitted.
+  bareServiceSymbols: Boolean,
   mapsAsRecords: Boolean,
   timestampsUtcMode: String,
   timestampsOffsetMode: String,

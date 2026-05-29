@@ -413,6 +413,7 @@ object Baboon {
                             serviceContext              = mkServiceContext(opts),
                             pragmas                     = parsePragmas(opts.pragma),
                             asyncServices               = opts.tsAsyncServices.getOrElse(false),
+                            bareServiceSymbols          = opts.tsBareServiceSymbols.getOrElse(false),
                             mapsAsRecords               = opts.tsMapsAsRecords.getOrElse(false),
                             timestampsUtcMode =
                               if (opts.tsTimestampsAsStrings.getOrElse(false)) "string"

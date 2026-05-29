@@ -512,11 +512,18 @@ class TsBaboonTranslator[F[+_, +_]: Error2](
         val commonLen = paths.map(_._2).reduce((a, b) => a.zip(b).takeWhile { case (x, y) => x == y }.map(_._1)).size
         paths.map {
           case (t, path) =>
-            val distinguishing = path.drop(commonLen).dropRight(1)
-            val prefix =
-              if (distinguishing.nonEmpty) distinguishing.mkString("_")
-              else path.dropRight(1).lastOption.getOrElse("m")
-            t -> s"${prefix}_$name"
+            // An explicit alias on the ref (e.g. the bare-service-symbol refs, which carry a
+            // service-name-prefixed alias) wins — auto-aliasing only fills in for refs that don't
+            // declare one. Path segments are kebab-cased (per-service dirs), so a module-derived
+            // prefix must be sanitized to a valid TS identifier (`report-service` -> `report_service`).
+            val alias = t.alias.getOrElse {
+              val distinguishing = path.drop(commonLen).dropRight(1)
+              val raw =
+                if (distinguishing.nonEmpty) distinguishing.mkString("_")
+                else path.dropRight(1).lastOption.getOrElse("m")
+              s"${raw.replaceAll("[^A-Za-z0-9_$]", "_")}_$name"
+            }
+            t -> alias
         }
     }
   }
