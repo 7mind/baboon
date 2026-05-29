@@ -111,7 +111,6 @@ class TsConversionTranslator[F[+_, +_]: Error2](
             )
 
           case c: Conversion.CopyAdtBranchByName =>
-            val adtType = trans.asTsTypeKeepForeigns(conv.targetTpe, domain, evo, tsFileTools.definitionsBasePkg)
             val cases = c.oldDefn.dataMembers(srcDom).map {
               oldId =>
                 val oldTpe = trans
@@ -119,7 +118,6 @@ class TsConversionTranslator[F[+_, +_]: Error2](
                   .withAlias(s"${oldId.name.name}_${srcDom.version.format(prefix = "_", delimiter = "_")}")
                 val newId         = c.branchMapping.getOrElse(oldId.name.name, oldId)
                 val newBranchType = trans.asTsTypeKeepForeigns(newId, domain, evo, tsFileTools.definitionsBasePkg)
-                val factoryFn     = TsValue.TsType(adtType.moduleId, s"${adtType.name}_${newId.name.name}")
                 q"""if (from instanceof $oldTpe) {
                    |    return JSON.parse(JSON.stringify(from)) as $newBranchType
                    |}""".stripMargin

@@ -35,7 +35,7 @@ import {IntPage} from "./generated/convtest/m29ok/IntPage";
 import {StrPage} from "./generated/convtest/m29ok/StrPage";
 import {Item} from "./generated/convtest/m29ok/Item";
 import {ItemPage} from "./generated/convtest/m29ok/ItemPage";
-import {Ok as EnvelopeOk, Err as EnvelopeErr} from "./generated/convtest/m29ok/IntStrEnvelope";
+import {IntStrEnvelope_Ok as EnvelopeOk, IntStrEnvelope_Err as EnvelopeErr} from "./generated/convtest/m29ok/IntStrEnvelope";
 // PR-33.5 (M33) — structural-inheritance-via-template cross-language acceptance fixture.
 import {M33OkHolder} from "./generated/convtest/m33ok/M33OkHolder";
 import {IntPageWithStats} from "./generated/convtest/m33ok/IntPageWithStats";
