@@ -72,6 +72,53 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
     }
   }
 
+  /** Like `withLspState` but opens every good corpus file, for the corpus-wide robustness audit. */
+  private def withLspStateAllFiles(
+    loader: BaboonLoader[F]
+  )(fn: (DocumentState, WorkspaceState, Seq[String]) => Unit
+  ): F[NEList[BaboonIssue], Unit] = {
+    import izumi.fundamentals.platform.files.IzFiles
+
+    val basePath = java.nio.file.Paths.get("./baboon-compiler/src/test/resources/baboon").toAbsolutePath.normalize()
+    val allFiles = IzFiles
+      .walk(basePath.toFile).toList
+      .filter(p => p.toFile.isFile && p.toFile.getName.endsWith(".baboon"))
+
+    val inputs = allFiles.map {
+      f =>
+        val path    = f.toAbsolutePath.normalize()
+        val content = java.nio.file.Files.readString(path)
+        BaboonParser.Input(FSPath.parse(izumi.fundamentals.collections.nonempty.NEString.unsafeFrom(path.toString)), content)
+    }
+
+    for {
+      family <- loader.load(allFiles)
+    } yield {
+      val docState = new DocumentState(pathOps)
+      val uris = allFiles.map {
+        f =>
+          val path    = f.toAbsolutePath.normalize()
+          val content = java.nio.file.Files.readString(path)
+          val uri     = path.toUri.toString
+          docState.open(uri, content)
+          uri
+      }
+
+      val compiler = new LspCompiler {
+        def reload(inputs: Seq[BaboonParser.Input], previous: Option[BaboonFamily]): Either[NEList[BaboonIssue], BaboonFamily] = Right(family)
+      }
+      val inputProvider = new InputProvider {
+        def getWorkspaceInputs: Seq[BaboonParser.Input] = inputs
+        def pathToUri(path: String): String             = pathOps.pathToUri(path)
+        def uriToPath(uri: String): String              = pathOps.uriToPath(uri)
+      }
+      val wsState = new WorkspaceState(docState, compiler, inputProvider, pathOps, logger)
+      wsState.recompile()
+
+      fn(docState, wsState, uris)
+    }
+  }
+
   "hover provider" should {
     "show hover for regular types" in {
       (loader: BaboonLoader[F]) =>
@@ -325,6 +372,62 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
             assert(
               result.get.contents.value.contains("Page"),
               s"Hover on T should mention the enclosing template 'Page', got: ${result.get.contents.value}",
+            )
+        }
+    }
+
+    "NOT mis-shadow a top-level type referenced AFTER a template body closes" in {
+      // Repro for the unbounded-backward-scan defect in HoverProvider.enclosingTemplateName:
+      // the scan walks up line-by-line with no brace tracking, so it treats any line that lies
+      // textually below a `data Name[T] { … }` header — even past the closing `}` — as "inside"
+      // that template body. Consequence: a reference to a top-level type whose name collides with
+      // a type-param (here `T`) resolves to "type parameter of template Page" instead of the
+      // top-level `data T`. We drive a synthetic document against the real m29-lsp family (which
+      // defines both `data T` and `data Page[T]`).
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-lsp/m29-lsp.baboon") {
+          (docState, wsState, realUri) =>
+            val hover = new HoverProvider(docState, wsState, logger)
+
+            // Sanity: top-level `data T` is reachable (User.marker: T) so it resolves on its own.
+            val realContent = docState.getContent(realUri).get
+            val realLines   = realContent.split("\n")
+            val markerIdx   = realLines.indexWhere(_.contains("marker: T"))
+            assert(markerIdx >= 0, "Should find 'marker: T' line in m29-lsp.baboon")
+            val markerCol = realLines(markerIdx).lastIndexOf("T")
+            val realT     = hover.getHover(realUri, Position(markerIdx, markerCol + 1))
+            assert(realT.isDefined, "Hover on User.marker: T should resolve")
+            assert(realT.get.contents.value.contains("data"), s"Top-level data T should be reachable/resolvable, got: ${realT.get.contents.value}")
+
+            // Synthetic doc: a closed template body, then an unrelated DTO referencing top-level T.
+            val synthUri = "file:///synthetic-shadowing.baboon"
+            val synth =
+              """data Page[T] {
+                |  items: lst[T]
+                |}
+                |
+                |data Holder {
+                |  ref: T
+                |}
+                |""".stripMargin
+            docState.open(synthUri, synth)
+
+            val lines   = synth.split("\n", -1)
+            val lineIdx = lines.indexWhere(_.contains("ref: T"))
+            assert(lineIdx >= 0, "Should find 'ref: T' line")
+            val colIdx = lines(lineIdx).lastIndexOf("T")
+            val result = hover.getHover(synthUri, Position(lineIdx, colIdx + 1))
+
+            assert(result.isDefined, "Should return hover for T referenced in Holder")
+            val md = result.get.contents.value
+            // T here is the top-level `data T`, NOT Page's type-param: the cursor is past Page's `}`.
+            assert(
+              !md.contains("parameter"),
+              s"Hover on T in Holder (after Page's body closed) must NOT report a type parameter, got: $md",
+            )
+            assert(
+              md.contains("data"),
+              s"Hover on T in Holder should resolve to top-level `data T`, got: $md",
             )
         }
     }
@@ -624,6 +727,111 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
     }
   }
 
+  "generics provider coverage (m29-ok: adt + service templates)" should {
+    // m29.baboon (1-indexed) — adt + service templates NOT covered by the m29-lsp fixture:
+    //   12: data Page[T] { … }
+    //   18: adt Envelope[T, E] {
+    //   19:   data Ok  { value: T }
+    //   20:   data Err { error: E }
+    //   35: service Crud[K, V] {
+    //   36:   def get (K): V
+    //   38: root type IntStrEnvelope = Envelope[i32, str] : derived[json], derived[ueba]
+    //   40: root type IntStrCrud = Crud[i32, str]
+
+    def hoverOnWord(docState: DocumentState, wsState: WorkspaceState, uri: String, lineSubstr: String, word: String) = {
+      val hover   = new HoverProvider(docState, wsState, logger)
+      val content = docState.getContent(uri).get
+      val lines   = content.split("\n")
+      val lineIdx = lines.indexWhere(_.contains(lineSubstr))
+      assert(lineIdx >= 0, s"Should find line containing '$lineSubstr'")
+      val colIdx = lines(lineIdx).indexOf(word)
+      assert(colIdx >= 0, s"Should find '$word' on line '$lineSubstr'")
+      hover.getHover(uri, Position(lineIdx, colIdx + 1))
+    }
+
+    "show template signature when hovering on an adt template name" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-ok/m29.baboon") {
+          (docState, wsState, uri) =>
+            val result = hoverOnWord(docState, wsState, uri, "adt Envelope[T, E]", "Envelope")
+            assert(result.isDefined, "Should return hover for adt template 'Envelope'")
+            val md = result.get.contents.value
+            assert(md.contains("adt"), s"Hover should render kind 'adt': $md")
+            assert(md.contains("Envelope"), s"Hover should mention 'Envelope': $md")
+            assert(md.contains("Template"), s"Hover should label it a Template: $md")
+        }
+    }
+
+    "show template signature when hovering on a service template name" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-ok/m29.baboon") {
+          (docState, wsState, uri) =>
+            val result = hoverOnWord(docState, wsState, uri, "service Crud[K, V]", "Crud")
+            assert(result.isDefined, "Should return hover for service template 'Crud'")
+            val md = result.get.contents.value
+            assert(md.contains("service"), s"Hover should render kind 'service': $md")
+            assert(md.contains("Crud"), s"Hover should mention 'Crud': $md")
+            assert(md.contains("Template"), s"Hover should label it a Template: $md")
+        }
+    }
+
+    "resolve a type-param inside an adt template body" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-ok/m29.baboon") {
+          (docState, wsState, uri) =>
+            // `data Ok  { value: T }` — T is a type-param of the enclosing adt Envelope[T, E].
+            val result = hoverOnWord(docState, wsState, uri, "data Ok  { value: T }", "T")
+            assert(result.isDefined, "Should return hover for type-param T inside adt body")
+            assert(
+              result.get.contents.value.contains("parameter"),
+              s"Hover on T inside Envelope body should describe a type parameter, got: ${result.get.contents.value}",
+            )
+        }
+    }
+
+    "include adt and service templates in document symbols" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-ok/m29.baboon") {
+          (_, wsState, uri) =>
+            val symbolProvider = new DocumentSymbolProvider(wsState, positionConverter, pathOps, logger)
+            val names          = symbolProvider.getSymbols(uri).map(_.name).toSet
+            assert(names.contains("Envelope"), s"Document symbols should include adt template 'Envelope', got: $names")
+            assert(names.contains("Crud"), s"Document symbols should include service template 'Crud', got: $names")
+            assert(names.contains("Page"), s"Document symbols should include data template 'Page', got: $names")
+        }
+    }
+
+    "find definition of an adt template from its alias RHS" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-ok/m29.baboon") {
+          (docState, wsState, uri) =>
+            val defProvider = new DefinitionProvider(docState, wsState, positionConverter)
+            val content     = docState.getContent(uri).get
+            val lines       = content.split("\n")
+            val lineIdx     = lines.indexWhere(_.contains("type IntStrEnvelope = Envelope"))
+            assert(lineIdx >= 0, "Should find IntStrEnvelope alias line")
+            val colIdx    = lines(lineIdx).indexOf("Envelope", lines(lineIdx).indexOf("="))
+            val locations = defProvider.findDefinition(uri, Position(lineIdx, colIdx + 1))
+            assert(locations.nonEmpty, "Should find definition for adt template 'Envelope' from alias RHS")
+        }
+    }
+
+    "find definition of a service template from its alias RHS" in {
+      (loader: BaboonLoader[F]) =>
+        withLspState(loader, "m29-ok/m29.baboon") {
+          (docState, wsState, uri) =>
+            val defProvider = new DefinitionProvider(docState, wsState, positionConverter)
+            val content     = docState.getContent(uri).get
+            val lines       = content.split("\n")
+            val lineIdx     = lines.indexWhere(_.contains("type IntStrCrud = Crud"))
+            assert(lineIdx >= 0, "Should find IntStrCrud alias line")
+            val colIdx    = lines(lineIdx).indexOf("Crud", lines(lineIdx).indexOf("="))
+            val locations = defProvider.findDefinition(uri, Position(lineIdx, colIdx + 1))
+            assert(locations.nonEmpty, "Should find definition for service template 'Crud' from alias RHS")
+        }
+    }
+  }
+
   "definition provider" should {
     "find definitions for regular types" in {
       (loader: BaboonLoader[F]) =>
@@ -663,6 +871,45 @@ abstract class LspFeaturesTestBase[F[+_, +_]: Error2: TagKK: BaboonTestModule] e
 
             val locations = defProvider.findDefinition(uri, Position(lineIdx, colIdx + 1))
             assert(locations.nonEmpty, "Should find definition for BinaryData alias")
+        }
+    }
+  }
+
+  "provider robustness (Part B feature audit)" should {
+    // Drive every provider over every word/line of every good corpus file. The corpus exercises
+    // every language feature (DTO/ADT/enum/foreign/contract/service/alias/template/ns/collections/
+    // any/identifier/@root/derived/structural-ops/multi-version). A provider must never throw on a
+    // successfully-compiled model — at worst it returns None/empty.
+    "never throw on any word/line of any good corpus file" in {
+      (loader: BaboonLoader[F]) =>
+        withLspStateAllFiles(loader) {
+          (docState, wsState, uris) =>
+            val hover      = new HoverProvider(docState, wsState, logger)
+            val defs       = new DefinitionProvider(docState, wsState, positionConverter)
+            val completion = new CompletionProvider(docState, wsState, logger)
+            val symbols    = new DocumentSymbolProvider(wsState, positionConverter, pathOps, logger)
+
+            uris.foreach {
+              uri =>
+                // Document symbols must not throw for any file.
+                symbols.getSymbols(uri)
+
+                val content = docState.getContent(uri).getOrElse("")
+                val lines   = content.split("\n", -1)
+                lines.indices.foreach {
+                  lineIdx =>
+                    val line = lines(lineIdx)
+                    // Completion at start, after every ':' / '[' / '=' / '+' and at end of line.
+                    val cols = (0 to line.length).toList
+                    cols.foreach {
+                      col =>
+                        completion.getCompletions(uri, Position(lineIdx, col))
+                        hover.getHover(uri, Position(lineIdx, col))
+                        defs.findDefinition(uri, Position(lineIdx, col))
+                    }
+                }
+            }
+            assert(uris.nonEmpty, "Corpus should contain at least one file")
         }
     }
   }
