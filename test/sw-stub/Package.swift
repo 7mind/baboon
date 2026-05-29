@@ -165,7 +165,7 @@ let package = Package(
         // AnyRoundTripTests imports MyOk; IdentifierReprTests imports IdentifierOk.
         .testTarget(
             name: "RuntimeTests",
-            dependencies: ["BaboonRuntime", "MyOk", "IdentifierOk", "MyOkM19Foreign"],
+            dependencies: ["BaboonRuntime", "MyOk", "IdentifierOk", "MyOkM19Foreign", "TestpkgPkg0"],
             path: "Tests/RuntimeTests"
         ),
 

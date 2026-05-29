@@ -3,7 +3,10 @@ import {
     BaboonBinWriter,
     BaboonCodecContext,
     BaboonEither,
-    BaboonMethodId
+    BaboonMethodId,
+    BaboonWiringException,
+    JsonMuxer,
+    UebaMuxer
 } from "./baboondefinitions/generated/BaboonSharedRuntime";
 import {BaboonServiceRtDefault, IBaboonServiceRt} from "./baboondefinitions/generated/testpkg/pkg0/baboon-service-rt";
 import {I1} from "./baboondefinitions/generated/testpkg/pkg0/i1/service";
@@ -14,8 +17,8 @@ import {T7_Empty} from "./baboondefinitions/generated/testpkg/pkg0/T7_Empty";
 import {I2} from "./baboondefinitions/generated/testpkg/pkg0/i2/service";
 import {In as In_No_Err} from "./baboondefinitions/generated/testpkg/pkg0/i2/noerrcall/in";
 import {Out as Out_No_Err} from "./baboondefinitions/generated/testpkg/pkg0/i2/noerrcall/out";
-import {invokeJson_I1, invokeUeba_I1} from "./baboondefinitions/generated/testpkg/pkg0/i1/wiring";
-import {invokeJson_I2, invokeUeba_I2} from "./baboondefinitions/generated/testpkg/pkg0/i2/wiring";
+import {invokeJson_I1, invokeUeba_I1, I1JsonService, I1UebaService} from "./baboondefinitions/generated/testpkg/pkg0/i1/wiring";
+import {invokeJson_I2, invokeUeba_I2, I2JsonService, I2UebaService} from "./baboondefinitions/generated/testpkg/pkg0/i2/wiring";
 
 const ctx = BaboonCodecContext.Default;
 const rt: IBaboonServiceRt = BaboonServiceRtDefault;
@@ -204,5 +207,117 @@ describe("I2 UEBA wiring", () => {
             const decoded = Out_No_Err.binCodec().decode(ctx, reader);
             expect(decoded.result).toBe("456");
         }
+    });
+});
+
+// ==================== Cross-domain Muxer ====================
+// A single muxer composes the I1 (errors mode) and I2 (no-err mode) services
+// and routes each incoming call by method.serviceName.
+
+describe("JsonMuxer cross-service routing", () => {
+    const newMuxer = () => new JsonMuxer<BaboonEither<BaboonWiringError, string>>(
+        new I1JsonService(mockI1, rt),
+        new I2JsonService(mockI2, rt),
+    );
+
+    test("routes to I1", () => {
+        const method: BaboonMethodId = { serviceName: "I1", methodName: "testCall" };
+        const inputJson = JSON.stringify(In.jsonCodec().encode(ctx, new In()));
+
+        const result = newMuxer().invoke(method, inputJson, ctx);
+
+        expect(result.tag).toBe("Right");
+        if (result.tag === "Right") {
+            const decoded = Out.jsonCodec().decode(ctx, JSON.parse(result.value));
+            expect(decoded.i00).toBe(42);
+        }
+    });
+
+    test("routes to I2", () => {
+        const method: BaboonMethodId = { serviceName: "I2", methodName: "noErrCall" };
+        const inputJson = JSON.stringify(In_No_Err.jsonCodec().encode(ctx, new In_No_Err(123)));
+
+        const result = newMuxer().invoke(method, inputJson, ctx);
+
+        expect(result.tag).toBe("Right");
+        if (result.tag === "Right") {
+            const decoded = Out_No_Err.jsonCodec().decode(ctx, JSON.parse(result.value));
+            expect(decoded.result).toBe("123");
+        }
+    });
+
+    test("throws NoMatchingService for an unregistered service", () => {
+        const method: BaboonMethodId = { serviceName: "Nonexistent", methodName: "x" };
+
+        let caught: unknown;
+        try {
+            newMuxer().invoke(method, "{}", ctx);
+        } catch (e) {
+            caught = e;
+        }
+        expect(caught).toBeInstanceOf(BaboonWiringException);
+        expect((caught as BaboonWiringException).error.tag).toBe("NoMatchingService");
+    });
+
+    test("throws DuplicateService on duplicate registration", () => {
+        let caught: unknown;
+        try {
+            new JsonMuxer<BaboonEither<BaboonWiringError, string>>(
+                new I1JsonService(mockI1, rt),
+                new I1JsonService(mockI1, rt),
+            );
+        } catch (e) {
+            caught = e;
+        }
+        expect(caught).toBeInstanceOf(BaboonWiringException);
+        expect((caught as BaboonWiringException).error.tag).toBe("DuplicateService");
+    });
+});
+
+describe("UebaMuxer cross-service routing", () => {
+    const newMuxer = () => new UebaMuxer<BaboonEither<BaboonWiringError, Uint8Array>>(
+        new I1UebaService(mockI1, rt),
+        new I2UebaService(mockI2, rt),
+    );
+
+    test("routes to I1", () => {
+        const method: BaboonMethodId = { serviceName: "I1", methodName: "testCall" };
+        const writer = new BaboonBinWriter();
+        In.binCodec().encode(ctx, new In(), writer);
+
+        const result = newMuxer().invoke(method, writer.toBytes(), ctx);
+
+        expect(result.tag).toBe("Right");
+        if (result.tag === "Right") {
+            const decoded = Out.binCodec().decode(ctx, new BaboonBinReader(result.value));
+            expect(decoded.i00).toBe(42);
+        }
+    });
+
+    test("routes to I2", () => {
+        const method: BaboonMethodId = { serviceName: "I2", methodName: "noErrCall" };
+        const writer = new BaboonBinWriter();
+        In_No_Err.binCodec().encode(ctx, new In_No_Err(456), writer);
+
+        const result = newMuxer().invoke(method, writer.toBytes(), ctx);
+
+        expect(result.tag).toBe("Right");
+        if (result.tag === "Right") {
+            const decoded = Out_No_Err.binCodec().decode(ctx, new BaboonBinReader(result.value));
+            expect(decoded.result).toBe("456");
+        }
+    });
+
+    test("throws NoMatchingService for an unregistered service", () => {
+        const method: BaboonMethodId = { serviceName: "Nonexistent", methodName: "x" };
+
+        let caught: unknown;
+        try {
+            newMuxer().invoke(method, new Uint8Array(0), ctx);
+        } catch (e) {
+            caught = e;
+        }
+        expect(caught).toBeInstanceOf(BaboonWiringException);
+        expect((caught as BaboonWiringException).error.tag).toBe("NoMatchingService");
     });
 });
