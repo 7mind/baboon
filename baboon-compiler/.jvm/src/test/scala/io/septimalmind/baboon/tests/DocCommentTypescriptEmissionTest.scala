@@ -55,6 +55,7 @@ abstract class DocCommentTypescriptEmissionTestBase[F[+_, +_]: Error2: TagKK: Ba
       pragmas                     = Map.empty,
       generateDomainFacade        = false,
       asyncServices               = false,
+      bareServiceSymbols          = false,
       mapsAsRecords               = false,
       timestampsUtcMode           = "wrapper",
       timestampsOffsetMode        = "wrapper",

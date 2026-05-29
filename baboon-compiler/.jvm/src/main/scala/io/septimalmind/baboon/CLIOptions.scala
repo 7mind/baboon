@@ -249,6 +249,8 @@ case class TsCLIOptions(
   pragma: List[String],
   @HelpMessage("Generate async service interfaces with Promise return types (default: false)")
   tsAsyncServices: Option[Boolean],
+  @HelpMessage("Emit bare service symbols (Service, Client, invokeJson, JsonService, …) instead of service-name-prefixed ones, relying on the per-service directory/barrel for namespacing (default: false)")
+  tsBareServiceSymbols: Option[Boolean],
   @HelpMessage("Use Record<string,V> instead of Map<string,V> for string-keyed maps (default: false)")
   tsMapsAsRecords: Option[Boolean],
   @HelpMessage("Use ISO string instead of BaboonDateTimeUtc wrapper for timestamps (default: false)")

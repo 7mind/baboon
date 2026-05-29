@@ -538,7 +538,7 @@ object TsDefnTranslator {
       }
       val body = if (methods.nonEmpty) methods.joinN() else q""
       DefnRepr(
-        q"""export interface ${name.name}$genericParam {
+        q"""export interface ${typeTranslator.serviceInterfaceName(name.name)}$genericParam {
            |    ${body.shift(4).trim}
            |}""".stripMargin,
         Nil,

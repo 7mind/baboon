@@ -258,6 +258,39 @@ class TsTypeTranslator(target: TsTarget) {
     service.id.owner.asPseudoPkg.toList.map(_.toLowerCase) :+ camelToKebab(service.id.name.name)
   }
 
+  // --- Service symbol naming (gated on --ts-bare-service-symbols) -------------------------------
+  // When the flag is on, service symbols are emitted bare (Service/Client/invokeJson/invokeUeba/
+  // JsonService/UebaService), disambiguated by the per-service directory + barrel namespace.
+  // Cross-file references import the bare export aliased back to the service-name-prefixed local
+  // name so multiple services never collide (notably in the package-level dispatcher). The RPC wire
+  // service name is always the real service name, independent of this flag.
+  private def bareServices: Boolean = target.language.bareServiceSymbols
+
+  def serviceInterfaceName(serviceName: String): String = if (bareServices) "Service" else serviceName
+  def serviceClientName(serviceName: String): String    = if (bareServices) "Client" else s"${serviceName}Client"
+  def serviceInvokeName(serviceName: String, json: Boolean): String = {
+    val base = if (json) "invokeJson" else "invokeUeba"
+    if (bareServices) base else s"${base}_$serviceName"
+  }
+  def serviceWrapperName(serviceName: String, json: Boolean): String = {
+    val suffix = if (json) "JsonService" else "UebaService"
+    if (bareServices) suffix else s"$serviceName$suffix"
+  }
+
+  /** Reference to a service interface as a type. Bare mode imports the bare `Service` aliased to the
+    * service name, so multi-service files (the dispatcher) don't collide. `svcType` must be the
+    * `asTsType` of the service id (its `.name` is the real service name, used as the alias). */
+  def serviceInterfaceRef(svcType: TsType): TsType =
+    if (bareServices) TsType(svcType.moduleId, "Service", alias = Some(svcType.name)) else svcType
+
+  /** Reference to a wiring `invokeJson`/`invokeUeba` function, aliased to the prefixed name in bare
+    * mode. `wiringModule` is the service's `wiring.ts` module. */
+  def serviceInvokeRef(wiringModule: TsModuleId, serviceName: String, json: Boolean): TsType = {
+    val base = if (json) "invokeJson" else "invokeUeba"
+    if (bareServices) TsType(wiringModule, base, alias = Some(s"${base}_$serviceName"))
+    else TsType(wiringModule, s"${base}_$serviceName")
+  }
+
   /** Index into `names` of the segment that names a service, when the path is
     * nested under one. The service scope is `service.id.owner.asPseudoPkg ++
     * [service.id.name.name]`; when that sequence is a strict prefix of
