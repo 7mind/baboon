@@ -1,5 +1,5 @@
 use baboon_rs_stub::baboon_runtime::{BaboonCodecContext, BaboonBinEncode, BaboonBinDecode};
-use baboon_rs_stub::baboon_service_wiring::BaboonMethodId;
+use baboon_rs_stub::baboon_service_wiring::{BaboonMethodId, BaboonWiringError, JsonMuxer, UebaMuxer};
 use baboon_rs_stub::testpkg::pkg0::baboon_service_rt::BaboonServiceRtDefault;
 use baboon_rs_stub::testpkg::pkg0::i1::I1;
 use baboon_rs_stub::testpkg::pkg0::i1::testcall::input::In as I1_testCall_in;
@@ -9,8 +9,8 @@ use baboon_rs_stub::testpkg::pkg0::i2::I2;
 use baboon_rs_stub::testpkg::pkg0::i2::noerrcall::input::In as I2_noErrCall_in;
 use baboon_rs_stub::testpkg::pkg0::i2::noerrcall::out::Out as I2_noErrCall_out;
 use baboon_rs_stub::testpkg::pkg0::t7_empty::T7_Empty;
-use baboon_rs_stub::testpkg::pkg0::i1_wiring::{invoke_json_i1, invoke_ueba_i1};
-use baboon_rs_stub::testpkg::pkg0::i2_wiring::{invoke_json_i2, invoke_ueba_i2};
+use baboon_rs_stub::testpkg::pkg0::i1_wiring::{invoke_json_i1, invoke_ueba_i1, I1JsonService, I1UebaService};
+use baboon_rs_stub::testpkg::pkg0::i2_wiring::{invoke_json_i2, invoke_ueba_i2, I2JsonService, I2UebaService};
 
 struct MockI1;
 impl I1 for MockI1 {
@@ -136,4 +136,92 @@ fn i2_ueba_no_err_call_success() {
     let mut cursor = std::io::Cursor::new(result.unwrap());
     let decoded: I2_noErrCall_out = BaboonBinDecode::decode_ueba(&ctx, &mut cursor).unwrap();
     assert_eq!(decoded.result, "result_456");
+}
+
+// ==================== Cross-domain Muxer ====================
+// A single muxer composes the I1 (errors mode) and I2 (no-err mode)
+// services and routes each call by method.service_name. The outer Result
+// is the muxer's routing result; the inner is the service's own result.
+
+type JsonR = Result<String, BaboonWiringError>;
+type UebaR = Result<Vec<u8>, BaboonWiringError>;
+
+fn new_json_muxer() -> JsonMuxer<JsonR> {
+    JsonMuxer::<JsonR>::new()
+        .with(Box::new(I1JsonService::new(MockI1, BaboonServiceRtDefault))).unwrap()
+        .with(Box::new(I2JsonService::new(MockI2, BaboonServiceRtDefault))).unwrap()
+}
+
+fn new_ueba_muxer() -> UebaMuxer<UebaR> {
+    UebaMuxer::<UebaR>::new()
+        .with(Box::new(I1UebaService::new(MockI1, BaboonServiceRtDefault))).unwrap()
+        .with(Box::new(I2UebaService::new(MockI2, BaboonServiceRtDefault))).unwrap()
+}
+
+#[test]
+fn json_muxer_routes_to_i1() {
+    let ctx = BaboonCodecContext::Default;
+    let method = BaboonMethodId { service_name: "I1".to_string(), method_name: "testCall".to_string() };
+    let input_json = serde_json::to_string(&I1_testCall_in {}).unwrap();
+    let routed = new_json_muxer().invoke(&method, &input_json, &ctx).expect("routing");
+    let decoded: I1_testCall_out = serde_json::from_str(&routed.unwrap()).unwrap();
+    assert_eq!(decoded.i00, 42);
+}
+
+#[test]
+fn json_muxer_routes_to_i2() {
+    let ctx = BaboonCodecContext::Default;
+    let method = BaboonMethodId { service_name: "I2".to_string(), method_name: "noErrCall".to_string() };
+    let input_json = serde_json::to_string(&I2_noErrCall_in { value: 123 }).unwrap();
+    let routed = new_json_muxer().invoke(&method, &input_json, &ctx).expect("routing");
+    let decoded: I2_noErrCall_out = serde_json::from_str(&routed.unwrap()).unwrap();
+    assert_eq!(decoded.result, "result_123");
+}
+
+#[test]
+fn json_muxer_no_matching_service() {
+    let ctx = BaboonCodecContext::Default;
+    let method = BaboonMethodId { service_name: "Nonexistent".to_string(), method_name: "x".to_string() };
+    let routed = new_json_muxer().invoke(&method, "{}", &ctx);
+    assert!(matches!(routed, Err(BaboonWiringError::NoMatchingService(_))));
+}
+
+#[test]
+fn json_muxer_duplicate_service() {
+    let dup = JsonMuxer::<JsonR>::new()
+        .with(Box::new(I1JsonService::new(MockI1, BaboonServiceRtDefault))).unwrap()
+        .with(Box::new(I1JsonService::new(MockI1, BaboonServiceRtDefault)));
+    assert!(matches!(dup, Err(BaboonWiringError::DuplicateService(_))));
+}
+
+#[test]
+fn ueba_muxer_routes_to_i1() {
+    let ctx = BaboonCodecContext::Default;
+    let method = BaboonMethodId { service_name: "I1".to_string(), method_name: "testCall".to_string() };
+    let mut writer = Vec::new();
+    BaboonBinEncode::encode_ueba(&I1_testCall_in {}, &ctx, &mut writer).unwrap();
+    let routed = new_ueba_muxer().invoke(&method, &writer, &ctx).expect("routing");
+    let mut cursor = std::io::Cursor::new(routed.unwrap());
+    let decoded: I1_testCall_out = BaboonBinDecode::decode_ueba(&ctx, &mut cursor).unwrap();
+    assert_eq!(decoded.i00, 42);
+}
+
+#[test]
+fn ueba_muxer_routes_to_i2() {
+    let ctx = BaboonCodecContext::Default;
+    let method = BaboonMethodId { service_name: "I2".to_string(), method_name: "noErrCall".to_string() };
+    let mut writer = Vec::new();
+    BaboonBinEncode::encode_ueba(&I2_noErrCall_in { value: 456 }, &ctx, &mut writer).unwrap();
+    let routed = new_ueba_muxer().invoke(&method, &writer, &ctx).expect("routing");
+    let mut cursor = std::io::Cursor::new(routed.unwrap());
+    let decoded: I2_noErrCall_out = BaboonBinDecode::decode_ueba(&ctx, &mut cursor).unwrap();
+    assert_eq!(decoded.result, "result_456");
+}
+
+#[test]
+fn ueba_muxer_no_matching_service() {
+    let ctx = BaboonCodecContext::Default;
+    let method = BaboonMethodId { service_name: "Nonexistent".to_string(), method_name: "x".to_string() };
+    let routed = new_ueba_muxer().invoke(&method, &[], &ctx);
+    assert!(matches!(routed, Err(BaboonWiringError::NoMatchingService(_))));
 }

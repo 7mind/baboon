@@ -263,4 +263,122 @@ namespace ConversionsTest
             Assert.That(decoded.Result, Is.EqualTo("result_456"));
         }
     }
+
+    // ==================== Cross-domain Muxer ====================
+    // A single muxer composes the I1 (errors mode) and I2 (no-err mode)
+    // services and routes each call by method.ServiceName.
+
+    [TestFixture]
+    public class MuxerWiringTests
+    {
+        private readonly BaboonCodecContext _ctx = BaboonCodecContext.Default;
+        private readonly Testpkg.Pkg0.BaboonServiceRtDefault _rt =
+            Testpkg.Pkg0.BaboonServiceRtDefault.Instance;
+
+        private JsonMuxer<Either<BaboonWiringError, string>> NewJsonMuxer() =>
+            new JsonMuxer<Either<BaboonWiringError, string>>(
+                new Testpkg.Pkg0.I1JsonService(new MockI1Either(), _rt),
+                new Testpkg.Pkg0.I2JsonService(new MockI2Either(), _rt));
+
+        private UebaMuxer<Either<BaboonWiringError, byte[]>> NewUebaMuxer() =>
+            new UebaMuxer<Either<BaboonWiringError, byte[]>>(
+                new Testpkg.Pkg0.I1UebaService(new MockI1Either(), _rt),
+                new Testpkg.Pkg0.I2UebaService(new MockI2Either(), _rt));
+
+        [Test]
+        public void JsonMuxer_RoutesToI1()
+        {
+            var method = new BaboonMethodId("I1", "testCall");
+            var inputJson = Testpkg.Pkg0.I1.testCall.In_JsonCodec.Instance
+                .Encode(_ctx, new Testpkg.Pkg0.I1.testCall.In())
+                .ToString(Newtonsoft.Json.Formatting.None);
+
+            var result = NewJsonMuxer().Invoke(method, inputJson, _ctx);
+
+            Assert.That(result, Is.InstanceOf<Either<BaboonWiringError, string>.Right>());
+            var right = (Either<BaboonWiringError, string>.Right)result;
+            var decoded = Testpkg.Pkg0.I1.testCall.Out_JsonCodec.Instance.Decode(_ctx, JToken.Parse(right.Value));
+            Assert.That(decoded.I00, Is.EqualTo(42));
+        }
+
+        [Test]
+        public void JsonMuxer_RoutesToI2()
+        {
+            var method = new BaboonMethodId("I2", "noErrCall");
+            var inputJson = Testpkg.Pkg0.I2.noErrCall.In_JsonCodec.Instance
+                .Encode(_ctx, new Testpkg.Pkg0.I2.noErrCall.In(123))
+                .ToString(Newtonsoft.Json.Formatting.None);
+
+            var result = NewJsonMuxer().Invoke(method, inputJson, _ctx);
+
+            Assert.That(result, Is.InstanceOf<Either<BaboonWiringError, string>.Right>());
+            var right = (Either<BaboonWiringError, string>.Right)result;
+            var decoded = Testpkg.Pkg0.I2.noErrCall.Out_JsonCodec.Instance.Decode(_ctx, JToken.Parse(right.Value));
+            Assert.That(decoded.Result, Is.EqualTo("result_123"));
+        }
+
+        [Test]
+        public void JsonMuxer_NoMatchingService()
+        {
+            var method = new BaboonMethodId("Nonexistent", "x");
+            var ex = Assert.Throws<BaboonWiringException>(() => NewJsonMuxer().Invoke(method, "{}", _ctx));
+            Assert.That(ex!.Error, Is.InstanceOf<BaboonWiringError.NoMatchingService>());
+        }
+
+        [Test]
+        public void JsonMuxer_DuplicateService()
+        {
+            var ex = Assert.Throws<BaboonWiringException>(() =>
+                new JsonMuxer<Either<BaboonWiringError, string>>(
+                    new Testpkg.Pkg0.I1JsonService(new MockI1Either(), _rt),
+                    new Testpkg.Pkg0.I1JsonService(new MockI1Either(), _rt)));
+            Assert.That(ex!.Error, Is.InstanceOf<BaboonWiringError.DuplicateService>());
+        }
+
+        [Test]
+        public void UebaMuxer_RoutesToI1()
+        {
+            var method = new BaboonMethodId("I1", "testCall");
+            using var inputMs = new MemoryStream();
+            using var inputWriter = new BinaryWriter(inputMs);
+            Testpkg.Pkg0.I1.testCall.In_UEBACodec.Instance.Encode(_ctx, inputWriter, new Testpkg.Pkg0.I1.testCall.In());
+            inputWriter.Flush();
+
+            var result = NewUebaMuxer().Invoke(method, inputMs.ToArray(), _ctx);
+
+            Assert.That(result, Is.InstanceOf<Either<BaboonWiringError, byte[]>.Right>());
+            var right = (Either<BaboonWiringError, byte[]>.Right)result;
+            using var outputMs = new MemoryStream(right.Value);
+            using var outputReader = new BinaryReader(outputMs);
+            var decoded = Testpkg.Pkg0.I1.testCall.Out_UEBACodec.Instance.Decode(_ctx, outputReader);
+            Assert.That(decoded.I00, Is.EqualTo(42));
+        }
+
+        [Test]
+        public void UebaMuxer_RoutesToI2()
+        {
+            var method = new BaboonMethodId("I2", "noErrCall");
+            using var inputMs = new MemoryStream();
+            using var inputWriter = new BinaryWriter(inputMs);
+            Testpkg.Pkg0.I2.noErrCall.In_UEBACodec.Instance.Encode(_ctx, inputWriter, new Testpkg.Pkg0.I2.noErrCall.In(456));
+            inputWriter.Flush();
+
+            var result = NewUebaMuxer().Invoke(method, inputMs.ToArray(), _ctx);
+
+            Assert.That(result, Is.InstanceOf<Either<BaboonWiringError, byte[]>.Right>());
+            var right = (Either<BaboonWiringError, byte[]>.Right)result;
+            using var outputMs = new MemoryStream(right.Value);
+            using var outputReader = new BinaryReader(outputMs);
+            var decoded = Testpkg.Pkg0.I2.noErrCall.Out_UEBACodec.Instance.Decode(_ctx, outputReader);
+            Assert.That(decoded.Result, Is.EqualTo("result_456"));
+        }
+
+        [Test]
+        public void UebaMuxer_NoMatchingService()
+        {
+            var method = new BaboonMethodId("Nonexistent", "x");
+            var ex = Assert.Throws<BaboonWiringException>(() => NewUebaMuxer().Invoke(method, Array.Empty<byte>(), _ctx));
+            Assert.That(ex!.Error, Is.InstanceOf<BaboonWiringError.NoMatchingService>());
+        }
+    }
 }

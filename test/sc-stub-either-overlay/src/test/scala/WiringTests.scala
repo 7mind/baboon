@@ -220,4 +220,106 @@ class EitherWiringTests extends AnyFlatSpec with Matchers {
       case Left(err) => fail(s"Expected Right, got Left($err)")
     }
   }
+
+  // ==================== Cross-domain Muxer ====================
+  // A single muxer composes the I1 (errors mode) and I2 (no-err mode)
+  // services and routes each call by method.serviceName.
+
+  def newJsonMuxer(): JsonMuxer[Either[BaboonWiringError, String]] =
+    new JsonMuxer[Either[BaboonWiringError, String]](
+      new testpkg.pkg0.I1JsonService(new MockI1Either(), rt),
+      new testpkg.pkg0.I2JsonService(new MockI2Either(), rt),
+    )
+
+  def newUebaMuxer(): UebaMuxer[Either[BaboonWiringError, Array[Byte]]] =
+    new UebaMuxer[Either[BaboonWiringError, Array[Byte]]](
+      new testpkg.pkg0.I1UebaService(new MockI1Either(), rt),
+      new testpkg.pkg0.I2UebaService(new MockI2Either(), rt),
+    )
+
+  "JsonMuxer" should "route to I1" in {
+    val method = BaboonMethodId("I1", "testCall")
+    val inputJson = testpkg.pkg0.i1.testcall.In_JsonCodec.instance
+      .encode(ctx, testpkg.pkg0.i1.testcall.In()).noSpaces
+
+    newJsonMuxer().invoke(method, inputJson, ctx) match {
+      case Right(jsonStr) =>
+        val wire = io.circe.parser.parse(jsonStr).fold(throw _, identity)
+        val decoded = testpkg.pkg0.i1.testcall.Out_JsonCodec.instance
+          .decode(ctx, wire).fold(ex => fail(ex.toString), identity)
+        decoded.i00 shouldBe 42
+      case Left(err) => fail(s"Expected Right, got Left($err)")
+    }
+  }
+
+  "JsonMuxer" should "route to I2" in {
+    val method = BaboonMethodId("I2", "noErrCall")
+    val inputJson = testpkg.pkg0.i2.noerrcall.In_JsonCodec.instance
+      .encode(ctx, testpkg.pkg0.i2.noerrcall.In(value = 123)).noSpaces
+
+    newJsonMuxer().invoke(method, inputJson, ctx) match {
+      case Right(jsonStr) =>
+        val wire = io.circe.parser.parse(jsonStr).fold(throw _, identity)
+        val decoded = testpkg.pkg0.i2.noerrcall.Out_JsonCodec.instance
+          .decode(ctx, wire).fold(ex => fail(ex.toString), identity)
+        decoded.result shouldBe "result_123"
+      case Left(err) => fail(s"Expected Right, got Left($err)")
+    }
+  }
+
+  "JsonMuxer" should "throw NoMatchingService for an unregistered service" in {
+    val method = BaboonMethodId("Nonexistent", "x")
+    val ex = intercept[BaboonWiringException](newJsonMuxer().invoke(method, "{}", ctx))
+    ex.error shouldBe a[BaboonWiringError.NoMatchingService]
+  }
+
+  "JsonMuxer" should "throw DuplicateService on duplicate registration" in {
+    val ex = intercept[BaboonWiringException](
+      new JsonMuxer[Either[BaboonWiringError, String]](
+        new testpkg.pkg0.I1JsonService(new MockI1Either(), rt),
+        new testpkg.pkg0.I1JsonService(new MockI1Either(), rt),
+      )
+    )
+    ex.error shouldBe a[BaboonWiringError.DuplicateService]
+  }
+
+  "UebaMuxer" should "route to I1" in {
+    val method = BaboonMethodId("I1", "testCall")
+    val oms = new java.io.ByteArrayOutputStream()
+    val bw  = new baboon.runtime.shared.LEDataOutputStream(oms)
+    testpkg.pkg0.i1.testcall.In_UEBACodec.instance.encode(ctx, bw, testpkg.pkg0.i1.testcall.In())
+    bw.flush()
+
+    newUebaMuxer().invoke(method, oms.toByteArray, ctx) match {
+      case Right(outputBytes) =>
+        val br = new baboon.runtime.shared.LEDataInputStream(new java.io.ByteArrayInputStream(outputBytes))
+        val decoded = testpkg.pkg0.i1.testcall.Out_UEBACodec.instance
+          .decode(ctx, br).fold(ex => fail(ex.toString), identity)
+        decoded.i00 shouldBe 42
+      case Left(err) => fail(s"Expected Right, got Left($err)")
+    }
+  }
+
+  "UebaMuxer" should "route to I2" in {
+    val method = BaboonMethodId("I2", "noErrCall")
+    val oms = new java.io.ByteArrayOutputStream()
+    val bw  = new baboon.runtime.shared.LEDataOutputStream(oms)
+    testpkg.pkg0.i2.noerrcall.In_UEBACodec.instance.encode(ctx, bw, testpkg.pkg0.i2.noerrcall.In(value = 456))
+    bw.flush()
+
+    newUebaMuxer().invoke(method, oms.toByteArray, ctx) match {
+      case Right(outputBytes) =>
+        val br = new baboon.runtime.shared.LEDataInputStream(new java.io.ByteArrayInputStream(outputBytes))
+        val decoded = testpkg.pkg0.i2.noerrcall.Out_UEBACodec.instance
+          .decode(ctx, br).fold(ex => fail(ex.toString), identity)
+        decoded.result shouldBe "result_456"
+      case Left(err) => fail(s"Expected Right, got Left($err)")
+    }
+  }
+
+  "UebaMuxer" should "throw NoMatchingService for an unregistered service" in {
+    val method = BaboonMethodId("Nonexistent", "x")
+    val ex = intercept[BaboonWiringException](newUebaMuxer().invoke(method, Array.emptyByteArray, ctx))
+    ex.error shouldBe a[BaboonWiringError.NoMatchingService]
+  }
 }

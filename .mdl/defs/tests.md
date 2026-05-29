@@ -1891,6 +1891,221 @@ popd
 ret success:bool=true
 ```
 
+# action: test-gen-kt-wiring
+
+Generate code for Kotlin wiring tests in no-errors service-result mode
+(matches the service-acceptance harness's `--service-result-no-errors=true`).
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-kt-wiring"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/kt-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='build' --exclude='.gradle' \
+  ./test/kt-stub/ "$TEST_DIR/kt-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-kt-wiring.lock \
+  :kotlin \
+  --output "$TEST_DIR/kt-stub/src/main/kotlin/generated-main" \
+  --test-output "$TEST_DIR/kt-stub/src/test/kotlin/generated-tests" \
+  --fixture-output "$TEST_DIR/kt-stub/src/main/kotlin/generated-fixtures" \
+  --kt-write-evolution-dict=true \
+  --kt-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=true
+
+rsync -a ./test/kt-stub-wiring-overlay/ "$TEST_DIR/kt-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-kt-wiring
+
+Run Kotlin cross-domain muxer + per-domain wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-kt-wiring.test_dir}"
+pushd "$TEST_DIR/kt-stub"
+gradle --no-daemon clean test --tests "runtime.WiringTests"
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-jv-wiring
+
+Generate code for Java wiring tests in no-errors service-result mode.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-jv-wiring"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/jv-stub"
+
+rsync -a --exclude='Generated*' --exclude='generated-*' --exclude='target' \
+  ./test/jv-stub/ "$TEST_DIR/jv-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-jv-wiring.lock \
+  :java \
+  --output "$TEST_DIR/jv-stub/src/main/java/generated-main" \
+  --test-output "$TEST_DIR/jv-stub/src/test/java/generated-tests" \
+  --fixture-output "$TEST_DIR/jv-stub/src/main/java/generated-fixtures" \
+  --jv-write-evolution-dict=true \
+  --jv-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=true
+
+rsync -a ./test/jv-stub-wiring-overlay/ "$TEST_DIR/jv-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-jv-wiring
+
+Run Java cross-domain muxer + per-domain wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-jv-wiring.test_dir}"
+pushd "$TEST_DIR/jv-stub"
+mvn -q -Dtest=WiringTests test
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-dt-wiring
+
+Generate code for Dart wiring tests in no-errors service-result mode.
+Mirrors `test-gen-regular-adt`'s Dart post-processing: the generated runtime
+files are moved into the `packages/baboon_runtime` package and the checked-in
+hand-written runtime tests are restored after codegen wipes `test/`.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-dt-wiring"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/dt-stub"
+
+rsync -a --exclude='generated-*' --exclude='.dart_tool' --exclude='pubspec.lock' \
+  ./test/dt-stub/ "$TEST_DIR/dt-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-dt-wiring.lock \
+  :dart \
+  --output "$TEST_DIR/dt-stub/lib" \
+  --test-output "$TEST_DIR/dt-stub/test" \
+  --fixture-output "$TEST_DIR/dt-stub/lib" \
+  --dt-write-evolution-dict=true \
+  --dt-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=true
+
+if [ -d "./test/dt-stub/test/runtime" ]; then
+  rsync -a ./test/dt-stub/test/runtime/ "$TEST_DIR/dt-stub/test/runtime/"
+fi
+
+mv "$TEST_DIR/dt-stub/lib/baboon_runtime.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_fixture.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_any_opaque.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_codecs_facade.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+mv "$TEST_DIR/dt-stub/lib/baboon_identifier_repr.dart" "$TEST_DIR/dt-stub/packages/baboon_runtime/lib/"
+
+rsync -a ./test/dt-stub-wiring-overlay/ "$TEST_DIR/dt-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-dt-wiring
+
+Run Dart cross-domain muxer + per-domain wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-dt-wiring.test_dir}"
+pushd "$TEST_DIR/dt-stub"
+dart pub get
+dart test test/wiring_test.dart
+popd
+
+ret success:bool=true
+```
+
+# action: test-gen-sw-wiring
+
+Generate code for Swift wiring tests in no-errors service-result mode.
+
+```bash
+BABOON_BIN="${action.build.binary}"
+TEST_DIR="./target/test-sw-wiring"
+
+mkdir -p "$TEST_DIR"
+rm -rf "$TEST_DIR/sw-stub"
+
+rsync -a --exclude='.build' --exclude='.swiftpm' \
+  ./test/sw-stub/ "$TEST_DIR/sw-stub/"
+
+$BABOON_BIN \
+  --model-dir ./baboon-compiler/src/test/resources/baboon/ \
+  --meta-write-evolution-json baboon-meta.json \
+  --lock-file=./target/baboon-sw-wiring.lock \
+  :swift \
+  --output "$TEST_DIR/sw-stub/Sources" \
+  --test-output "$TEST_DIR/sw-stub/Tests/BaboonTests" \
+  --fixture-output "$TEST_DIR/sw-stub/Sources" \
+  --sw-write-evolution-dict=true \
+  --sw-wrapped-adt-branch-codecs=false \
+  --generate-ueba-codecs-by-default=true \
+  --generate-json-codecs-by-default=true \
+  --service-result-no-errors=true
+
+# Swift SPM splits Tests/BaboonTests into per-module .testTarget()s; the
+# codegen-emitted CrossLanguageFixturePath.swift sits at the top level and must
+# be copied into each per-module subdirectory (mirrors test-gen-regular-adt).
+SW_BTESTS="$TEST_DIR/sw-stub/Tests/BaboonTests"
+if [ -f "$SW_BTESTS/CrossLanguageFixturePath.swift" ]; then
+  for sub in "$SW_BTESTS"/*/; do
+    [ -d "$sub" ] || continue
+    cp "$SW_BTESTS/CrossLanguageFixturePath.swift" "$sub"
+  done
+  rm -f "$SW_BTESTS/CrossLanguageFixturePath.swift"
+fi
+
+rsync -a ./test/sw-stub-wiring-overlay/ "$TEST_DIR/sw-stub/"
+
+ret success:bool=true
+ret test_dir:string="$TEST_DIR"
+```
+
+# action: test-sw-wiring
+
+Run Swift cross-domain muxer + per-domain wiring tests.
+
+```bash
+TEST_DIR="${action.test-gen-sw-wiring.test_dir}"
+pushd "$TEST_DIR/sw-stub"
+swift test --filter WiringTests
+popd
+
+ret success:bool=true
+```
+
 # action: test-gen-graphql
 
 Generate GraphQL SDL schemas and validate them.
@@ -2019,6 +2234,10 @@ dep action.test-rs-wiring-outcome
 dep action.test-py-wiring-either
 dep action.test-py-wiring-result
 dep action.test-py-wiring-outcome
+dep action.test-kt-wiring
+dep action.test-jv-wiring
+dep action.test-dt-wiring
+dep action.test-sw-wiring
 
 ret success:bool=true
 ```
