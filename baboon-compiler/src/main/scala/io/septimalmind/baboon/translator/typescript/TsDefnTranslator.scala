@@ -266,6 +266,15 @@ object TsDefnTranslator {
           q"private readonly _${name.name}: $tpe;"
       }
 
+      // ADT-branch DTOs carry a `$$type` discriminant — a const-literal of the branch's own type
+      // identifier — so the union (`A | B`) is a TS discriminated union narrowable via
+      // `value.$$type === '…'`. It is inline-initialized (not a constructor param, not in `dto.fields`),
+      // so codecs / toJSON / with / fromPlain never touch it and the wire format is unchanged. The
+      // `$$` escapes to a literal `$` in the emitted source. (`$$type` cannot collide with a baboon
+      // field name — identifiers are alphanumeric and cannot start with `$`.)
+      val discriminatorField: List[TextTree[TsValue]] =
+        if (defn.ownedByAdt) List(q"public readonly $$type = '${defn.id.toString}' as const;") else Nil
+
       val getters = dto.fields.map {
         f =>
           val tpe  = typeTranslator.asTsRef(f.tpe, domain, evo, tsFileTools.definitionsBasePkg)
@@ -350,7 +359,7 @@ object TsDefnTranslator {
 
       val classBody =
         q"""export class $name $implementsClause {
-           |    ${fields.joinN().shift(4).trim}
+           |    ${(discriminatorField ++ fields).joinN().shift(4).trim}
            |
            |    constructor($constrcutorParams) {
            |        ${constructorInside.shift(8).trim}
