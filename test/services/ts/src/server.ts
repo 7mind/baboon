@@ -1,14 +1,17 @@
 import * as http from 'node:http';
 import { BaboonCodecContext } from './generated/BaboonSharedRuntime.js';
-import { In_JsonCodec as AddPetInCodec } from './generated/petstore/api/petstore/addpet/in.js';
-import { Out_JsonCodec as AddPetOutCodec } from './generated/petstore/api/petstore/addpet/out.js';
-import { In_JsonCodec as GetPetInCodec } from './generated/petstore/api/petstore/getpet/in.js';
-import { Out_JsonCodec as GetPetOutCodec } from './generated/petstore/api/petstore/getpet/out.js';
-import { In_JsonCodec as ListPetsInCodec } from './generated/petstore/api/petstore/listpets/in.js';
-import { Out_JsonCodec as ListPetsOutCodec } from './generated/petstore/api/petstore/listpets/out.js';
-import { In_JsonCodec as DeletePetInCodec } from './generated/petstore/api/petstore/deletepet/in.js';
-import { Out_JsonCodec as DeletePetOutCodec } from './generated/petstore/api/petstore/deletepet/out.js';
+import { PetStore } from './generated/petstore/api/index.js';
 import { PetStoreImpl } from './petstore_impl.js';
+
+// Codecs are reached through the service namespace barrel.
+const AddPetInCodec = PetStore.methods.addpet.In_JsonCodec;
+const AddPetOutCodec = PetStore.methods.addpet.Out_JsonCodec;
+const GetPetInCodec = PetStore.methods.getpet.In_JsonCodec;
+const GetPetOutCodec = PetStore.methods.getpet.Out_JsonCodec;
+const ListPetsInCodec = PetStore.methods.listpets.In_JsonCodec;
+const ListPetsOutCodec = PetStore.methods.listpets.Out_JsonCodec;
+const DeletePetInCodec = PetStore.methods.deletepet.In_JsonCodec;
+const DeletePetOutCodec = PetStore.methods.deletepet.Out_JsonCodec;
 
 const ctx = BaboonCodecContext.Default;
 

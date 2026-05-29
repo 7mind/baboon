@@ -95,7 +95,7 @@ object TsDefnTranslator {
         Output(
           getOutputPath(defn),
           repr.defn,
-          typeTranslator.toTsModule(defn.id, domain.version, evo, tsFileTools.definitionsBasePkg),
+          typeTranslator.toTsModule(defn.id, domain, evo, tsFileTools.definitionsBasePkg),
           CompilerProduct.Definition,
         )
       ) ++ wiring ++ client
@@ -863,10 +863,19 @@ object TsDefnTranslator {
       val fbase = tsFileTools.basename(domain, evo)
       val fname = s"${defn.id.name.name}${suffix.getOrElse("")}.ts"
 
-      defn.defn.id.owner match {
-        case Owner.Toplevel => s"$fbase/$fname"
-        case Owner.Ns(path) => s"$fbase/${path.map(_.name.toLowerCase).mkString("/")}/$fname"
-        case Owner.Adt(id)  => s"$fbase/${id.name.name.toLowerCase}.$fname"
+      defn.defn match {
+        // A service's own interface relocates to `<serviceDir>/service.ts`
+        // (serviceDir = nsPrefix.lower ++ [kebab(serviceName)]). This must match
+        // `TsTypeTranslator.toTsModule`'s service-type module so references resolve.
+        case svc: Typedef.Service =>
+          val serviceDir = typeTranslator.serviceDirSegments(svc).mkString("/")
+          s"$fbase/$serviceDir/service${suffix.getOrElse("")}.ts"
+        case _ =>
+          defn.defn.id.owner match {
+            case Owner.Toplevel => s"$fbase/$fname"
+            case Owner.Ns(path) => s"$fbase/${typeTranslator.renderNsOwnerPath(path, domain).mkString("/")}/$fname"
+            case Owner.Adt(id)  => s"$fbase/${id.name.name.toLowerCase}.$fname"
+          }
       }
     }
 

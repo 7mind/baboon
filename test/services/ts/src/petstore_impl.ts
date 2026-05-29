@@ -1,13 +1,4 @@
-import { Pet } from './generated/petstore/api/Pet.js';
-import { PetStatus } from './generated/petstore/api/PetStatus.js';
-import { In as AddPetIn } from './generated/petstore/api/petstore/addpet/in.js';
-import { Out as AddPetOut } from './generated/petstore/api/petstore/addpet/out.js';
-import { In as GetPetIn } from './generated/petstore/api/petstore/getpet/in.js';
-import { Out as GetPetOut } from './generated/petstore/api/petstore/getpet/out.js';
-import { In as ListPetsIn } from './generated/petstore/api/petstore/listpets/in.js';
-import { Out as ListPetsOut } from './generated/petstore/api/petstore/listpets/out.js';
-import { In as DeletePetIn } from './generated/petstore/api/petstore/deletepet/in.js';
-import { Out as DeletePetOut } from './generated/petstore/api/petstore/deletepet/out.js';
+import { Pet, PetStore } from './generated/petstore/api/index.js';
 
 export class PetStoreImpl {
   private pets: Map<bigint, Pet> = new Map();
@@ -18,30 +9,30 @@ export class PetStoreImpl {
     this.nextId = 1n;
   }
 
-  addPet(input: AddPetIn): AddPetOut {
+  addPet(input: PetStore.methods.addpet.In): PetStore.methods.addpet.Out {
     const id = this.nextId++;
     const pet = new Pet(id, input.name, input.status, input.tag);
     this.pets.set(id, pet);
-    return new AddPetOut(pet);
+    return new PetStore.methods.addpet.Out(pet);
   }
 
-  getPet(input: GetPetIn): GetPetOut {
+  getPet(input: PetStore.methods.getpet.In): PetStore.methods.getpet.Out {
     const pet = this.pets.get(input.id);
     if (pet === undefined) {
       throw new Error(`Pet not found: id=${input.id}`);
     }
-    return new GetPetOut(pet);
+    return new PetStore.methods.getpet.Out(pet);
   }
 
-  listPets(_input: ListPetsIn): ListPetsOut {
+  listPets(_input: PetStore.methods.listpets.In): PetStore.methods.listpets.Out {
     const sorted = [...this.pets.values()].sort((a, b) =>
       a.id < b.id ? -1 : a.id > b.id ? 1 : 0
     );
-    return new ListPetsOut(sorted);
+    return new PetStore.methods.listpets.Out(sorted);
   }
 
-  deletePet(input: DeletePetIn): DeletePetOut {
+  deletePet(input: PetStore.methods.deletepet.In): PetStore.methods.deletepet.Out {
     const existed = this.pets.delete(input.id);
-    return new DeletePetOut(existed);
+    return new PetStore.methods.deletepet.Out(existed);
   }
 }

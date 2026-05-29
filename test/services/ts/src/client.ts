@@ -1,14 +1,22 @@
 import * as http from 'node:http';
 import { BaboonCodecContext } from './generated/BaboonSharedRuntime.js';
+import { PetStore } from './generated/petstore/api/index.js';
 import { PetStatus } from './generated/petstore/api/PetStatus.js';
-import { In as AddPetIn, In_JsonCodec as AddPetInCodec } from './generated/petstore/api/petstore/addpet/in.js';
-import { Out_JsonCodec as AddPetOutCodec } from './generated/petstore/api/petstore/addpet/out.js';
-import { In as GetPetIn, In_JsonCodec as GetPetInCodec } from './generated/petstore/api/petstore/getpet/in.js';
-import { Out_JsonCodec as GetPetOutCodec } from './generated/petstore/api/petstore/getpet/out.js';
-import { In as ListPetsIn, In_JsonCodec as ListPetsInCodec } from './generated/petstore/api/petstore/listpets/in.js';
-import { Out_JsonCodec as ListPetsOutCodec } from './generated/petstore/api/petstore/listpets/out.js';
-import { In as DeletePetIn, In_JsonCodec as DeletePetInCodec } from './generated/petstore/api/petstore/deletepet/in.js';
-import { Out_JsonCodec as DeletePetOutCodec } from './generated/petstore/api/petstore/deletepet/out.js';
+
+// Per-method message types and codecs are reached through the service
+// namespace barrel: PetStore.methods.<method>.{In, Out, In_JsonCodec, ...}.
+const AddPetIn = PetStore.methods.addpet.In;
+const AddPetInCodec = PetStore.methods.addpet.In_JsonCodec;
+const AddPetOutCodec = PetStore.methods.addpet.Out_JsonCodec;
+const GetPetIn = PetStore.methods.getpet.In;
+const GetPetInCodec = PetStore.methods.getpet.In_JsonCodec;
+const GetPetOutCodec = PetStore.methods.getpet.Out_JsonCodec;
+const ListPetsIn = PetStore.methods.listpets.In;
+const ListPetsInCodec = PetStore.methods.listpets.In_JsonCodec;
+const ListPetsOutCodec = PetStore.methods.listpets.Out_JsonCodec;
+const DeletePetIn = PetStore.methods.deletepet.In;
+const DeletePetInCodec = PetStore.methods.deletepet.In_JsonCodec;
+const DeletePetOutCodec = PetStore.methods.deletepet.Out_JsonCodec;
 
 const ctx = BaboonCodecContext.Default;
 

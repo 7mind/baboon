@@ -123,7 +123,7 @@ class TsTypeTranslator(target: TsTarget) {
     evolution: BaboonEvolution,
     pkgBase: List[String],
   ): TsType = {
-    val module = toTsModule(tid, domain.version, evolution, pkgBase)
+    val module = toTsModule(tid, domain, evolution, pkgBase)
     val isTypeOnly = domain.defs.meta.nodes.get(tid).exists {
       case DomainMember.User(_, _: Typedef.Contract, _, _) => true
       case DomainMember.User(_, _: Typedef.Service, _, _)  => true
@@ -134,16 +134,28 @@ class TsTypeTranslator(target: TsTarget) {
 
   def toTsModule(
     tid: TypeId.User,
-    version: Version,
+    domain: Domain,
     evolution: BaboonEvolution,
     pkgBase: List[String],
     suffix: String = "",
   ): TsModuleId = {
+    val version         = domain.version
     val pathToModule    = tid.pkg.path.toList.map(_.toLowerCase)
     val versionPathPart = if (version != evolution.latest) List(version.format(prefix = "v", delimiter = "_")) else Nil
-    val ownerPath       = renderOwner(tid.owner)
-    val name            = typeModuleName(tid).map(name => s"$name$suffix").toList
-    val fullPath        = pkgBase ++ pathToModule ++ versionPathPart ++ ownerPath ++ name
+    // A service type lives at `<serviceDir>/service` (file `service.ts`), where
+    // serviceDir = nsPrefix.lower ++ [kebab(serviceName)]. References to the
+    // service interface must resolve to that module while keeping the exported
+    // PascalCase symbol. All other types keep the owner-derived module path.
+    val serviceTail = domain.defs.meta.nodes.get(tid) match {
+      case Some(DomainMember.User(_, svc: Typedef.Service, _, _)) => Some(serviceDirSegments(svc) :+ "service")
+      case _                                                      => None
+    }
+    val ownerPath = renderOwner(tid.owner, domain)
+    val name      = typeModuleName(tid).map(name => s"$name$suffix").toList
+    val fullPath = serviceTail match {
+      case Some(tail) => pkgBase ++ pathToModule ++ versionPathPart ++ tail
+      case None       => pkgBase ++ pathToModule ++ versionPathPart ++ ownerPath ++ name
+    }
     TsModuleId(fullPath, if (version == evolution.latest) None else Some(version))
   }
 
@@ -197,11 +209,60 @@ class TsTypeTranslator(target: TsTarget) {
     }
   }
 
-  private def renderOwner(owner: Owner): List[String] = {
+  private def renderOwner(owner: Owner, domain: Domain): List[String] = {
     owner match {
       case Owner.Toplevel => Nil
-      case Owner.Ns(path) => path.map(_.name.toLowerCase).toList
-      case Owner.Adt(id)  => renderOwner(id.owner) :+ id.name.name
+      case Owner.Ns(path) => renderNsOwnerPath(path, domain)
+      case Owner.Adt(id)  => renderOwner(id.owner, domain) :+ id.name.name
+    }
+  }
+
+  /** Render the path segments of an `Owner.Ns`, kebab-casing exactly the one
+    * segment that names a service while lowercasing every other segment.
+    *
+    * A method message type (`in`/`out`/`err`) lives at owner
+    * `Owner.Ns(nsPrefix ++ [serviceName, methodName])`. The on-disk layout
+    * places it under a per-service directory whose name is the KEBAB-cased
+    * service name; the method directory keeps the lowercased method name.
+    * Regular namespaces and ADTs carry no service in their path and must be
+    * lowercased unchanged (`ns FooBar` -> `foobar`, never `foo-bar`).
+    *
+    * The shared rule lives here so file emission (`getOutputPath`/
+    * `getOutputModule`), wiring/client paths, and type references all derive
+    * the service segment identically -- divergence breaks `import` resolution.
+    */
+  def renderNsOwnerPath(path: Seq[TypeName], domain: Domain): List[String] = {
+    val names = path.map(_.name).toList
+    serviceSegmentIndex(names, domain) match {
+      case Some(idx) =>
+        names.zipWithIndex.map {
+          case (n, i) => if (i == idx) camelToKebab(n) else n.toLowerCase
+        }
+      case None =>
+        names.map(_.toLowerCase)
+    }
+  }
+
+  /** Kebab-cased per-service directory segments for a service definition:
+    * its namespace prefix lowercased, then the service name kebab-cased.
+    */
+  def serviceDirSegments(service: Typedef.Service): List[String] = {
+    service.id.owner.asPseudoPkg.toList.map(_.toLowerCase) :+ camelToKebab(service.id.name.name)
+  }
+
+  /** Index into `names` of the segment that names a service, when the path is
+    * nested under one. The service scope is `service.id.owner.asPseudoPkg ++
+    * [service.id.name.name]`; when that sequence is a strict prefix of
+    * `names`, the service-name segment sits at `owner.asPseudoPkg.size`.
+    */
+  private def serviceSegmentIndex(names: List[String], domain: Domain): Option[Int] = {
+    domain.defs.meta.nodes.valuesIterator.collectFirst {
+      case DomainMember.User(_, svc: Typedef.Service, _, _)
+          if {
+            val scope = svc.id.owner.asPseudoPkg.toList :+ svc.id.name.name
+            names.startsWith(scope) && names.size > scope.size
+          } =>
+        svc.id.owner.asPseudoPkg.size
     }
   }
 

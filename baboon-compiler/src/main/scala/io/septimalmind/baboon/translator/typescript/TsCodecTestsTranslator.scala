@@ -56,7 +56,7 @@ object TsCodecTestsTranslator {
       val fixtureBaseName = s"random_${typeTranslator.camelToKebab(definition.id.name.name).replace('-', '_')}"
       val fixtureModule = typeTranslator.toTsModule(
         definition.id,
-        domain.version,
+        domain,
         evo,
         tsFileTools.fixturesBasePkg,
         ".fixture",
