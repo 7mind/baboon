@@ -22,6 +22,10 @@ type StrPage = Page[str]
 root data User {
   page: IntPage
   name: str
+  // References top-level `data T` directly so that `T` is reachable from a @root and therefore
+  // retained in the compiled family — exercises hover-resolution of a type whose name collides
+  // with a template type-param (see the shadowing regression test in LspFeaturesTest).
+  marker: T
 }
 
 // A plain type without template — used for completion tests.
