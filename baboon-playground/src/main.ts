@@ -7,6 +7,7 @@ import { OptionsPanel, DEFAULT_OPTIONS } from "./options.ts";
 import type { CompilerOptions } from "./options.ts";
 import { CodecToolsPanel } from "./codec-tools.ts";
 import { zipSync, unzipSync, strToU8, strFromU8 } from "fflate";
+import { encodeFiles, decodeFiles, readSharedParam, buildShareUrl, MAX_SHARED_URL_LENGTH } from "./share.ts";
 
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
@@ -58,6 +59,12 @@ exportBtn.textContent = "Export";
 exportBtn.title = "Export editor files as a ZIP archive";
 headerActions.appendChild(exportBtn);
 
+const shareBtn = document.createElement("button");
+shareBtn.className = "header-btn";
+shareBtn.textContent = "Share";
+shareBtn.title = "Copy a shareable URL that embeds the current editor files";
+headerActions.appendChild(shareBtn);
+
 const optionsBtn = document.createElement("button");
 optionsBtn.className = "header-btn";
 optionsBtn.textContent = "Options";
@@ -84,6 +91,33 @@ const preview = new Preview(mainContent);
 preview.setNavigateToErrorCallback((file, line, column) => {
   baboonEditor.focusLocation(file, line, column);
 });
+
+let toastTimer: number | undefined;
+function showToast(message: string, isError = false): void {
+  let toast = document.getElementById("toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "toast";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.className = isError ? "toast toast-error toast-visible" : "toast toast-visible";
+  if (toastTimer !== undefined) window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    toast!.classList.remove("toast-visible");
+  }, isError ? 6000 : 3000);
+}
+
+// Restore editor state from a `?shared=<base64>` link, if present.
+const sharedParam = readSharedParam();
+if (sharedParam) {
+  try {
+    const sharedFiles = decodeFiles(sharedParam);
+    if (sharedFiles.size > 0) baboonEditor.setFiles(sharedFiles);
+  } catch (e) {
+    showToast(`Could not load shared content: ${e instanceof Error ? e.message : String(e)}`, true);
+  }
+}
 
 let currentOptions: CompilerOptions = structuredClone(DEFAULT_OPTIONS);
 
@@ -116,6 +150,31 @@ exportBtn.addEventListener("click", () => {
   a.download = "baboon-playground.zip";
   a.click();
   URL.revokeObjectURL(url);
+});
+
+shareBtn.addEventListener("click", async () => {
+  let shareUrl: string;
+  try {
+    shareUrl = buildShareUrl(encodeFiles(baboonEditor.getFiles()));
+  } catch (e) {
+    showToast(`Could not encode editor state: ${e instanceof Error ? e.message : String(e)}`, true);
+    return;
+  }
+  if (shareUrl.length > MAX_SHARED_URL_LENGTH) {
+    showToast(
+      `Editor content is too large to share as a link (${shareUrl.length} of ${MAX_SHARED_URL_LENGTH} chars). Use Export instead.`,
+      true,
+    );
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(shareUrl);
+    window.history.replaceState(null, "", shareUrl);
+    showToast("Share link copied to clipboard");
+  } catch {
+    window.history.replaceState(null, "", shareUrl);
+    window.prompt("Copy this share link:", shareUrl);
+  }
 });
 
 const fileInput = document.createElement("input");
