@@ -127,14 +127,8 @@ object CSDefnTranslator {
 
     override def translateFixtures(defn: DomainMember.User): Out[List[Output]] = {
       defn.id.owner match {
-        case Owner.Adt(_)                                                       => F.pure(List.empty)
-        // Inline service-method I/O types nest in the `static partial class
-        // <Service>.<Method>` companion (interface-companion layout); their
-        // fixtures would re-open that container in the separate test assembly,
-        // which `partial` cannot span (CS0436). They are round-tripped by the
-        // service-wiring tests instead — same precedent as ADT members above.
-        case _ if trans.serviceMethodContainers(defn.id, domain, evo).isDefined => F.pure(List.empty)
-        case _                                                                  => doTranslateFixtures(defn)
+        case Owner.Adt(_) => F.pure(List.empty)
+        case _            => doTranslateFixtures(defn)
       }
     }
 
@@ -155,9 +149,8 @@ object CSDefnTranslator {
 
     override def translateTests(defn: DomainMember.User): Out[List[Output]] = {
       defn.id.owner match {
-        case Owner.Adt(_)                                                       => F.pure(List.empty)
-        case _ if trans.serviceMethodContainers(defn.id, domain, evo).isDefined => F.pure(List.empty)
-        case _                                                                  => doTranslateTest(defn)
+        case Owner.Adt(_) => F.pure(List.empty)
+        case _            => doTranslateTest(defn)
       }
     }
 
@@ -558,11 +551,23 @@ object CSDefnTranslator {
       }
     }
 
+    /** Wrap a fixture/test tree. For inline service-method types this is the
+      * `serviceMethodFixtureNs` namespace (NOT the static-class companion): the
+      * fixture/test classes are siblings referencing the type by FQN, so the
+      * separate test assembly compiles (no cross-assembly `partial`). Other
+      * types keep the fixture beside the type's own namespace. */
+    private def wrapFixtureNs(defn: DomainMember.User, srcRef: CSValue.CSType, tree: TextTree[CSValue]): TextTree[CSValue] = {
+      trans.serviceMethodFixtureNs(defn.id, domain, evo) match {
+        case Some(ns) => csTrees.inNs(ns, tree)
+        case None     => csTrees.inNs(srcRef.pkg.parts.toSeq, tree)
+      }
+    }
+
     private def makeFixtureRepr(defn: DomainMember.User): Option[TextTree[CSValue]] = {
       val srcRef = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
 
       val fixtureTree       = codecsFixture.translate(defn)
-      val fixtureTreeWithNs = fixtureTree.map(t => wrapInContainer(defn, srcRef, t))
+      val fixtureTreeWithNs = fixtureTree.map(t => wrapFixtureNs(defn, srcRef, t))
 
       fixtureTreeWithNs
     }
@@ -572,7 +577,7 @@ object CSDefnTranslator {
       val srcRef    = trans.asCsTypeKeepForeigns(defn.id, domain, evo)
 
       val testTree       = codecsTests.translate(defn, csTypeRef, srcRef)
-      val testTreeWithNs = testTree.map(t => wrapInContainer(defn, srcRef, t))
+      val testTreeWithNs = testTree.map(t => wrapFixtureNs(defn, srcRef, t))
 
       testTreeWithNs
     }

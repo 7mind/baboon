@@ -193,6 +193,33 @@ class CSTypeTranslator(target: CSTarget, enquiries: BaboonEnquiries, info: CSTyp
     }
   }
 
+  /** Namespace for an inline service-method type's fixture/test classes:
+    * `<pkg>.<Service>Methods.<Method>`. A plain namespace (the `Methods`
+    * suffix keeps it distinct from the `static partial class <Service>`
+    * companion that holds the type itself), so the separate test assembly can
+    * declare fixture/test siblings without re-opening the companion class —
+    * which `partial` cannot do across assemblies (CS0436). The serialized blob
+    * path is keyed by the baboon type id, not by this C# location, so
+    * cross-language fixtures stay intact. */
+  def serviceMethodFixtureNs(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): Option[Seq[String]] =
+    serviceMethodContainers(tid, domain, evolution).map {
+      case (nsPrefix, classes) => nsPrefix ++ Seq(s"${classes.head}Methods", classes(1))
+    }
+
+  /** FQN of the `<Type>_Fixture` class for `tid`. Method types route to the
+    * `serviceMethodFixtureNs` namespace; all other types keep the fixture
+    * beside the type's own namespace. Used by both the fixture emitter (to
+    * place the class) and the test emitter (to reference it). */
+  def csFixtureRef(tid: TypeId.User, domain: Domain, evolution: BaboonEvolution): CSType = {
+    serviceMethodFixtureNs(tid, domain, evolution) match {
+      case Some(ns) =>
+        CSType(CSPackageId(NEList.unsafeFrom(ns.toList)), s"${tid.name.name.capitalize}_Fixture", fq = false, CSTypeOrigin(tid, domain))
+      case None =>
+        val t = asCsType(tid, domain, evolution)
+        CSType(t.pkg, s"${t.name}_Fixture", fq = false, t.origin)
+    }
+  }
+
   def toCsPkg(p: Pkg, version: Version, evolution: BaboonEvolution): CSPackageId = {
     toCsPkg(
       p,
