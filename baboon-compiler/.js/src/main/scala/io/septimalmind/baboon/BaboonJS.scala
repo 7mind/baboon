@@ -259,6 +259,14 @@ object BaboonJS {
     val generateUebaCodecsByDefault: js.UndefOr[Boolean]
     val generateJsonCodecsByDefault: js.UndefOr[Boolean]
     val deduplicate: js.UndefOr[Boolean]
+    val serviceResultNoErrors: js.UndefOr[Boolean]
+    val serviceResultType: js.UndefOr[String]
+    val serviceResultPattern: js.UndefOr[String]
+    val serviceContextMode: js.UndefOr[String]
+    val serviceContextType: js.UndefOr[String]
+    val serviceContextParameterName: js.UndefOr[String]
+    val pragma: js.UndefOr[js.Array[String]]
+    val generateDomainFacade: js.UndefOr[Boolean]
   }
 
   @js.native
@@ -270,6 +278,17 @@ object BaboonJS {
     val generateUebaCodecs: js.UndefOr[Boolean]
     val generateUebaCodecsByDefault: js.UndefOr[Boolean]
     val generateJsonCodecsByDefault: js.UndefOr[Boolean]
+    val serviceResultNoErrors: js.UndefOr[Boolean]
+    val serviceResultType: js.UndefOr[String]
+    val serviceResultPattern: js.UndefOr[String]
+    val serviceResultHkt: js.UndefOr[Boolean]
+    val serviceResultHktName: js.UndefOr[String]
+    val serviceResultHktSignature: js.UndefOr[String]
+    val serviceContextMode: js.UndefOr[String]
+    val serviceContextType: js.UndefOr[String]
+    val serviceContextParameterName: js.UndefOr[String]
+    val pragma: js.UndefOr[js.Array[String]]
+    val generateDomainFacade: js.UndefOr[Boolean]
   }
 
   @js.native
@@ -283,6 +302,15 @@ object BaboonJS {
     val generateJsonCodecsByDefault: js.UndefOr[Boolean]
     val asyncServices: js.UndefOr[Boolean]
     val multiplatform: js.UndefOr[Boolean]
+    val importSuffix: js.UndefOr[String]
+    val serviceResultNoErrors: js.UndefOr[Boolean]
+    val serviceResultType: js.UndefOr[String]
+    val serviceResultPattern: js.UndefOr[String]
+    val serviceContextMode: js.UndefOr[String]
+    val serviceContextType: js.UndefOr[String]
+    val serviceContextParameterName: js.UndefOr[String]
+    val pragma: js.UndefOr[js.Array[String]]
+    val generateDomainFacade: js.UndefOr[Boolean]
   }
 
   @js.native
@@ -344,6 +372,45 @@ object BaboonJS {
     )
   }
 
+  // Mirror the JVM CLI's option assembly (Baboon#parsePragmas / mkServiceContext
+  // / mkServiceResult) so the playground honours the same service / pragma
+  // settings; absent fields fall back to the per-language defaults.
+  private def parsePragmas(raw: js.UndefOr[js.Array[String]]): Map[String, String] = {
+    raw.toOption.toList.flatMap(_.toList).flatMap {
+      s =>
+        val idx = s.indexOf('=')
+        if (idx > 0) Some(s.substring(0, idx).trim -> s.substring(idx + 1).trim)
+        else None
+    }.toMap
+  }
+
+  private def mkServiceContext(
+    mode: js.UndefOr[String],
+    typeName: js.UndefOr[String],
+    parameterName: js.UndefOr[String],
+  ): ServiceContextConfig = {
+    ServiceContextConfig(
+      mode          = mode.getOrElse("none"),
+      typeName      = typeName.getOrElse("Ctx"),
+      parameterName = parameterName.getOrElse("ctx"),
+    )
+  }
+
+  private def mkServiceResult(
+    noErrors: js.UndefOr[Boolean],
+    resultType: js.UndefOr[String],
+    pattern: js.UndefOr[String],
+    hkt: Option[HktConfig],
+    default: ServiceResultConfig,
+  ): ServiceResultConfig = {
+    ServiceResultConfig(
+      noErrors   = noErrors.getOrElse(default.noErrors),
+      resultType = resultType.toOption.orElse(default.resultType),
+      pattern    = pattern.toOption.orElse(default.pattern),
+      hkt        = hkt.orElse(default.hkt),
+    )
+  }
+
   private def createTargets(jsTargets: js.Array[JSCompilerTarget]): Seq[CompilerTargetJS] = {
     jsTargets.toSeq.map {
       target =>
@@ -370,10 +437,10 @@ object BaboonJS {
                 generateJsonCodecsByDefault               = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault               = opts.generateUebaCodecsByDefault.getOrElse(false),
                 deduplicate                               = opts.deduplicate.getOrElse(true),
-                serviceResult                             = ServiceResultConfig.csDefault,
-                serviceContext                            = ServiceContextConfig.default,
-                pragmas                                   = Map.empty,
-                generateDomainFacade        = false,
+                serviceResult                             = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.csDefault),
+                serviceContext                            = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas                                   = parsePragmas(opts.pragma),
+                generateDomainFacade                      = opts.generateDomainFacade.getOrElse(true),
               ),
             )
           case "scala" =>
@@ -390,10 +457,18 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = ServiceResultConfig.scalaDefault,
-                serviceContext              = ServiceContextConfig.default,
-                pragmas                     = Map.empty,
-                generateDomainFacade        = false,
+                serviceResult               = mkServiceResult(
+                  opts.serviceResultNoErrors,
+                  opts.serviceResultType,
+                  opts.serviceResultPattern,
+                  if (opts.serviceResultHkt.getOrElse(false))
+                    Some(HktConfig(opts.serviceResultHktName.getOrElse("F"), opts.serviceResultHktSignature.getOrElse("[+_, +_]")))
+                  else None,
+                  ServiceResultConfig.scalaDefault,
+                ),
+                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas                     = parsePragmas(opts.pragma),
+                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
               ),
             )
           case "python" =>
@@ -410,10 +485,10 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = ServiceResultConfig.pythonDefault,
-                serviceContext              = ServiceContextConfig.default,
-                pragmas                     = Map.empty,
-                generateDomainFacade        = false,
+                serviceResult               = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.pythonDefault),
+                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas                     = parsePragmas(opts.pragma),
+                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
               ),
             )
           case "rust" =>
@@ -429,10 +504,10 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = ServiceResultConfig.rustDefault,
-                serviceContext              = ServiceContextConfig.default,
-                pragmas                     = Map.empty,
-                generateDomainFacade        = false,
+                serviceResult               = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.rustDefault),
+                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas                     = parsePragmas(opts.pragma),
+                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
                 asyncServices               = opts.asyncServices.getOrElse(false),
                 cratePrefix                 = "crate",
                 reexportMode                = "selective",
@@ -448,15 +523,15 @@ object BaboonJS {
               language = TsOptions(
                 writeEvolutionDict          = opts.writeEvolutionDict.getOrElse(false),
                 wrappedAdtBranchCodecs      = opts.wrappedAdtBranchCodecs.getOrElse(false),
-                importSuffix                = "",
+                importSuffix                = opts.importSuffix.getOrElse(""),
                 generateJsonCodecs          = opts.generateJsonCodecs.getOrElse(true),
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = ServiceResultConfig.typescriptDefault,
-                serviceContext              = ServiceContextConfig.default,
-                pragmas                     = Map.empty,
-                generateDomainFacade        = false,
+                serviceResult               = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.typescriptDefault),
+                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas                     = parsePragmas(opts.pragma),
+                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
                 asyncServices               = false,
                 bareServiceSymbols          = false,
                 mapsAsRecords               = false,
@@ -479,10 +554,10 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = ServiceResultConfig.kotlinDefault,
-                serviceContext              = ServiceContextConfig.default,
-                pragmas                     = Map.empty,
-                generateDomainFacade        = false,
+                serviceResult               = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.kotlinDefault),
+                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas                     = parsePragmas(opts.pragma),
+                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
                 multiplatform               = opts.multiplatform.getOrElse(false),
               ),
             )
@@ -500,10 +575,10 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = ServiceResultConfig.javaDefault,
-                serviceContext              = ServiceContextConfig.default,
-                pragmas                     = Map.empty,
-                generateDomainFacade        = false,
+                serviceResult               = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.javaDefault),
+                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas                     = parsePragmas(opts.pragma),
+                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
               ),
             )
           case "dart" =>
@@ -519,10 +594,10 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = ServiceResultConfig.dartDefault,
-                serviceContext              = ServiceContextConfig.default,
-                pragmas                     = Map.empty,
-                generateDomainFacade        = false,
+                serviceResult               = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.dartDefault),
+                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas                     = parsePragmas(opts.pragma),
+                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
               ),
             )
           case "swift" =>
@@ -538,10 +613,10 @@ object BaboonJS {
                 generateUebaCodecs          = opts.generateUebaCodecs.getOrElse(true),
                 generateJsonCodecsByDefault = opts.generateJsonCodecsByDefault.getOrElse(false),
                 generateUebaCodecsByDefault = opts.generateUebaCodecsByDefault.getOrElse(false),
-                serviceResult               = ServiceResultConfig.swiftDefault,
-                serviceContext              = ServiceContextConfig.default,
-                pragmas                     = Map.empty,
-                generateDomainFacade        = false,
+                serviceResult               = mkServiceResult(opts.serviceResultNoErrors, opts.serviceResultType, opts.serviceResultPattern, None, ServiceResultConfig.swiftDefault),
+                serviceContext              = mkServiceContext(opts.serviceContextMode, opts.serviceContextType, opts.serviceContextParameterName),
+                pragmas                     = parsePragmas(opts.pragma),
+                generateDomainFacade        = opts.generateDomainFacade.getOrElse(true),
               ),
             )
           case "graphql" =>

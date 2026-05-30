@@ -39,6 +39,18 @@ interface JSLangOptions {
   deduplicate?: boolean;
   asyncServices?: boolean;
   multiplatform?: boolean;
+  generateDomainFacade?: boolean;
+  serviceResultNoErrors?: boolean;
+  serviceResultType?: string;
+  serviceResultPattern?: string;
+  serviceContextMode?: string;
+  serviceContextType?: string;
+  serviceContextParameterName?: string;
+  pragma?: string[];
+  importSuffix?: string;
+  serviceResultHkt?: boolean;
+  serviceResultHktName?: string;
+  serviceResultHktSignature?: string;
 }
 
 interface JSGenericOptions {
@@ -394,6 +406,9 @@ function buildTargets(options: CompilerOptions): JSCompilerTarget[] {
     const target: JSCompilerTarget = { language, generic };
     if (!SCHEMA_ONLY_LANGUAGES.has(language)) {
       const lo = options.languages[language];
+      // Blank string ⇒ omit so the bridge keeps its per-language default.
+      const str = (s: string): string | undefined => (s.trim() === "" ? undefined : s);
+      const pragmaLines = lo.pragma.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
       // The bridge reads only the fields relevant to each language; passing the
       // full superset is harmless.
       const langOpts: JSLangOptions = {
@@ -410,6 +425,18 @@ function buildTargets(options: CompilerOptions): JSCompilerTarget[] {
         deduplicate: lo.deduplicate,
         asyncServices: lo.asyncServices,
         multiplatform: lo.multiplatform,
+        generateDomainFacade: lo.generateDomainFacade,
+        serviceResultNoErrors: lo.serviceResultNoErrors,
+        serviceResultType: str(lo.serviceResultType),
+        serviceResultPattern: str(lo.serviceResultPattern),
+        serviceContextMode: lo.serviceContextMode,
+        serviceContextType: str(lo.serviceContextType),
+        serviceContextParameterName: str(lo.serviceContextParameterName),
+        pragma: pragmaLines.length > 0 ? pragmaLines : undefined,
+        importSuffix: str(lo.importSuffix),
+        serviceResultHkt: lo.serviceResultHkt,
+        serviceResultHktName: str(lo.serviceResultHktName),
+        serviceResultHktSignature: str(lo.serviceResultHktSignature),
       };
       target[language] = langOpts;
     }
