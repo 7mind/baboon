@@ -32,10 +32,23 @@ interface JSLangOptions {
   generateJsonCodecsByDefault?: boolean;
   generateUebaCodecsByDefault?: boolean;
   writeEvolutionDict?: boolean;
+  enableDeprecatedEncoders?: boolean;
+  obsoleteErrors?: boolean;
+  disregardImplicitUsings?: boolean;
+  generateIndexWriters?: boolean;
+  deduplicate?: boolean;
+  asyncServices?: boolean;
+  multiplatform?: boolean;
 }
 
 interface JSGenericOptions {
   disableConversions?: boolean;
+  runtime?: string;
+  omitMostRecentVersionSuffixFromPaths?: boolean;
+  omitMostRecentVersionSuffixFromNamespaces?: boolean;
+  generateTests?: boolean;
+  generateFixtures?: boolean;
+  codecTestIterations?: number;
 }
 
 interface JSCompilerTarget {
@@ -367,13 +380,37 @@ function remapErrorLocation(
 const SCHEMA_ONLY_LANGUAGES: ReadonlySet<string> = new Set(["graphql", "openapi"]);
 
 function buildTargets(options: CompilerOptions): JSCompilerTarget[] {
+  const g = options.generic;
   const generic: JSGenericOptions = {
-    disableConversions: options.generic.disableConversions,
+    disableConversions: g.disableConversions,
+    runtime: g.runtime,
+    omitMostRecentVersionSuffixFromPaths: g.omitVersionSuffixFromPaths,
+    omitMostRecentVersionSuffixFromNamespaces: g.omitVersionSuffixFromNamespaces,
+    generateTests: g.generateTests,
+    generateFixtures: g.generateFixtures,
+    codecTestIterations: g.codecTestIterations,
   };
   return ALL_LANGUAGES.map((language) => {
     const target: JSCompilerTarget = { language, generic };
     if (!SCHEMA_ONLY_LANGUAGES.has(language)) {
-      const langOpts: JSLangOptions = options.languages[language];
+      const lo = options.languages[language];
+      // The bridge reads only the fields relevant to each language; passing the
+      // full superset is harmless.
+      const langOpts: JSLangOptions = {
+        wrappedAdtBranchCodecs: lo.wrappedAdtBranchCodecs,
+        generateJsonCodecs: lo.generateJsonCodecs,
+        generateUebaCodecs: lo.generateUebaCodecs,
+        generateJsonCodecsByDefault: lo.generateJsonCodecsByDefault,
+        generateUebaCodecsByDefault: lo.generateUebaCodecsByDefault,
+        writeEvolutionDict: lo.writeEvolutionDict,
+        enableDeprecatedEncoders: lo.enableDeprecatedEncoders,
+        obsoleteErrors: lo.obsoleteErrors,
+        disregardImplicitUsings: lo.disregardImplicitUsings,
+        generateIndexWriters: lo.generateIndexWriters,
+        deduplicate: lo.deduplicate,
+        asyncServices: lo.asyncServices,
+        multiplatform: lo.multiplatform,
+      };
       target[language] = langOpts;
     }
     return target;
