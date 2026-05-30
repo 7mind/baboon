@@ -183,7 +183,7 @@ abstract class DocCommentCsharpEmissionTestBase[F[+_, +_]: Error2: TagKK: Baboon
           val all = srcs.files.iterator.map { case (path, of) => (path, of.content) }.toList
 
           val crudFile = all.collectFirst {
-            case (_, c) if c.contains("interface DocCrud") => c
+            case (_, c) if c.contains("interface IDocCrud") => c
           }.getOrElse(fail(s"DocCrud service not found. Paths: ${all.map(_._1)}"))
 
           assert(
