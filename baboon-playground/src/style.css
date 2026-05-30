@@ -290,6 +290,39 @@ body {
   border-color: #0e639c;
 }
 
+/* Rows that stack a text/textarea control below the label. */
+.options-row-stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  cursor: default;
+}
+
+.options-text,
+.options-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  padding: 5px 7px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.options-textarea {
+  min-height: 56px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.options-text:focus,
+.options-textarea:focus {
+  outline: none;
+  border-color: #0e639c;
+}
+
 /* Main content */
 .main-content {
   display: flex;
