@@ -7,7 +7,7 @@ import { OptionsPanel, DEFAULT_OPTIONS } from "./options.ts";
 import type { CompilerOptions } from "./options.ts";
 import { CodecToolsPanel } from "./codec-tools.ts";
 import { zipSync, unzipSync, strToU8, strFromU8 } from "fflate";
-import { encodeFiles, decodeFiles, readSharedParam, buildShareUrl, MAX_SHARED_URL_LENGTH } from "./share.ts";
+import { encodeShare, decodeShare, readSharedParam, buildShareUrl, MAX_SHARED_URL_LENGTH } from "./share.ts";
 
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
@@ -108,22 +108,24 @@ function showToast(message: string, isError = false): void {
   }, isError ? 6000 : 3000);
 }
 
-// Restore editor state from a `?shared=<base64>` link, if present.
-const sharedParam = readSharedParam();
-if (sharedParam) {
-  try {
-    const sharedFiles = decodeFiles(sharedParam);
-    if (sharedFiles.size > 0) baboonEditor.setFiles(sharedFiles);
-  } catch (e) {
-    showToast(`Could not load shared content: ${e instanceof Error ? e.message : String(e)}`, true);
-  }
-}
-
 let currentOptions: CompilerOptions = structuredClone(DEFAULT_OPTIONS);
 
 const optionsPanel = new OptionsPanel((options) => {
   currentOptions = options;
 });
+
+// Restore editor state (files + compiler options) from a `#shared=<base64>`
+// link, if present. Runs after the options panel exists so options apply.
+const sharedParam = readSharedParam();
+if (sharedParam) {
+  try {
+    const shared = decodeShare(sharedParam);
+    if (shared.files.size > 0) baboonEditor.setFiles(shared.files);
+    if (shared.options) optionsPanel.setOptions(shared.options);
+  } catch (e) {
+    showToast(`Could not load shared content: ${e instanceof Error ? e.message : String(e)}`, true);
+  }
+}
 
 optionsBtn.addEventListener("click", () => {
   optionsPanel.open();
@@ -155,7 +157,7 @@ exportBtn.addEventListener("click", () => {
 shareBtn.addEventListener("click", async () => {
   let shareUrl: string;
   try {
-    shareUrl = buildShareUrl(encodeFiles(baboonEditor.getFiles()));
+    shareUrl = buildShareUrl(encodeShare(baboonEditor.getFiles(), optionsPanel.getOptions()));
   } catch (e) {
     showToast(`Could not encode editor state: ${e instanceof Error ? e.message : String(e)}`, true);
     return;

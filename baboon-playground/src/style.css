@@ -263,6 +263,33 @@ body {
   color: #888888;
 }
 
+/* Rows hosting a value control (number / select) put the control on the right. */
+.options-row-control {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.options-number,
+.options-select {
+  flex-shrink: 0;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 13px;
+}
+
+.options-number {
+  width: 90px;
+}
+
+.options-number:focus,
+.options-select:focus {
+  outline: none;
+  border-color: #0e639c;
+}
+
 /* Main content */
 .main-content {
   display: flex;
