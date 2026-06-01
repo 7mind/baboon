@@ -107,7 +107,11 @@ SWIFT_WRAPPER = str(
 )
 
 
-SVC_FLAGS = ["--service-result-no-errors=true", "--generate-json-codecs-by-default=true"]
+SVC_FLAGS = [
+    "--service-result-no-errors=true",
+    "--generate-json-codecs-by-default=true",
+    "--generate-ueba-codecs-by-default=true",
+]
 
 
 LANG_CONFIGS: dict[Lang, ServiceLangConfig] = {
