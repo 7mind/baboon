@@ -1,4 +1,5 @@
 import 'generated/petstore/api/pet.dart';
+import 'generated/petstore/api/pet_store.dart';
 import 'generated/petstore/api/petstore/addpet/in.dart' as addpet;
 import 'generated/petstore/api/petstore/addpet/out.dart' as addpet;
 import 'generated/petstore/api/petstore/getpet/in.dart' as getpet;
@@ -8,7 +9,7 @@ import 'generated/petstore/api/petstore/listpets/out.dart' as listpets;
 import 'generated/petstore/api/petstore/deletepet/in.dart' as deletepet;
 import 'generated/petstore/api/petstore/deletepet/out.dart' as deletepet;
 
-class PetStoreImpl {
+class PetStoreImpl implements PetStore {
   final Map<int, Pet> _pets = {};
   int _nextId = 1;
 

@@ -573,11 +573,15 @@ object DtDefnTranslator {
 
       // Per-service wiring (the `${svc}Wiring` static-dispatch class plus the
       // muxer-entry `${svc}JsonService` / `${svc}UebaService` wrapper classes)
-      // lands in the same file as the service interface. `wiringTranslator`
-      // returns None if no codecs are active for this service.
+      // and the `${svc}Client` RPC stub both land in the same file as the
+      // service interface so their references to the in/out codecs and the
+      // shared runtime resolve through the file's own imports. Both translators
+      // return None if no codecs are active for this service.
       val wiringTree = wiringTranslator.translate(defn)
+      val clientTree = wiringTranslator.translateClient(defn)
 
-      val combined = wiringTree.fold(serviceTree)(w => Seq(serviceTree, w).joinNN())
+      val combined =
+        (Seq(serviceTree) ++ wiringTree.toSeq ++ clientTree.toSeq).joinNN()
 
       DefnRepr(prependDocs(defn.docs, combined), Nil)
     }
