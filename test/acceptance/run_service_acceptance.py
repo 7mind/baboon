@@ -78,7 +78,7 @@ class StepResult:
 class ServiceReport:
     codegen_result: Optional[StepResult] = None
     build_results: dict = field(default_factory=dict)
-    matrix_results: dict = field(default_factory=dict)  # (server_lang, client_lang) -> StepResult
+    matrix_results: dict = field(default_factory=dict)  # (server_lang, client_lang, codec) -> StepResult
     total_duration_sec: float = 0.0
 
 
@@ -94,7 +94,7 @@ class ServiceLangConfig:
     baboon_extra_flags: list
     build_cmds: list
     server_cmd: object  # callable(host, port) -> (cmd_list_or_str, use_shell)
-    client_cmd: object  # callable(host, port) -> (cmd_list_or_str, use_shell)
+    client_cmd: object  # callable(host, port, codec) -> (cmd_list_or_str, use_shell)
     rsync_excludes: list = field(default_factory=list)
 
 
@@ -124,7 +124,7 @@ LANG_CONFIGS: dict[Lang, ServiceLangConfig] = {
             (["npm", "install"], False),
         ],
         server_cmd=lambda h, p: (["npx", "tsx", "src/main.ts", "server", "--host", h, "--port", str(p)], False),
-        client_cmd=lambda h, p: (["npx", "tsx", "src/main.ts", "client", "--host", h, "--port", str(p)], False),
+        client_cmd=lambda h, p, codec: (["npx", "tsx", "src/main.ts", "client", "--host", h, "--port", str(p), "--codec", codec], False),
         rsync_excludes=["node_modules", "dist", "generated"],
     ),
     Lang.PYTHON: ServiceLangConfig(
@@ -139,8 +139,8 @@ LANG_CONFIGS: dict[Lang, ServiceLangConfig] = {
         server_cmd=lambda h, p: _shell_cmd(
             f"source .venv/bin/activate && python3 main.py server --host {h} --port {p}"
         ),
-        client_cmd=lambda h, p: _shell_cmd(
-            f"source .venv/bin/activate && python3 main.py client --host {h} --port {p}"
+        client_cmd=lambda h, p, codec: _shell_cmd(
+            f"source .venv/bin/activate && python3 main.py client --host {h} --port {p} --codec {codec}"
         ),
         rsync_excludes=[".venv", "Generated", "__pycache__"],
     ),
@@ -156,8 +156,8 @@ LANG_CONFIGS: dict[Lang, ServiceLangConfig] = {
             ["mvn", "-q", "exec:java", f"-Dexec.args=server --host {h} --port {p}"],
             False,
         ),
-        client_cmd=lambda h, p: (
-            ["mvn", "-q", "exec:java", f"-Dexec.args=client --host {h} --port {p}"],
+        client_cmd=lambda h, p, codec: (
+            ["mvn", "-q", "exec:java", f"-Dexec.args=client --host {h} --port {p} --codec {codec}"],
             False,
         ),
         rsync_excludes=["target", "generated"],
@@ -174,8 +174,8 @@ LANG_CONFIGS: dict[Lang, ServiceLangConfig] = {
             ["gradle", "--no-daemon", "run", f"--args=server --host {h} --port {p}"],
             False,
         ),
-        client_cmd=lambda h, p: (
-            ["gradle", "--no-daemon", "run", f"--args=client --host {h} --port {p}"],
+        client_cmd=lambda h, p, codec: (
+            ["gradle", "--no-daemon", "run", f"--args=client --host {h} --port {p} --codec {codec}"],
             False,
         ),
         rsync_excludes=["build", ".gradle", "generated"],
@@ -191,8 +191,8 @@ LANG_CONFIGS: dict[Lang, ServiceLangConfig] = {
         server_cmd=lambda h, p: _shell_cmd(
             f'sbt -batch "runMain example.Main server --host {h} --port {p}"'
         ),
-        client_cmd=lambda h, p: _shell_cmd(
-            f'sbt -batch "runMain example.Main client --host {h} --port {p}"'
+        client_cmd=lambda h, p, codec: _shell_cmd(
+            f'sbt -batch "runMain example.Main client --host {h} --port {p} --codec {codec}"'
         ),
         rsync_excludes=["target", "project/target", "generated"],
     ),
@@ -210,10 +210,10 @@ LANG_CONFIGS: dict[Lang, ServiceLangConfig] = {
              "server", "--host", h, "--port", str(p)],
             False,
         ),
-        client_cmd=lambda h, p: (
+        client_cmd=lambda h, p, codec: (
             ["dotnet", "run", "-c", "Release", "--no-build",
              "--project", "ServiceTest/ServiceTest.csproj", "--",
-             "client", "--host", h, "--port", str(p)],
+             "client", "--host", h, "--port", str(p), "--codec", codec],
             False,
         ),
         rsync_excludes=["bin", "obj", "Generated"],
@@ -230,8 +230,8 @@ LANG_CONFIGS: dict[Lang, ServiceLangConfig] = {
             ["cargo", "run", "--release", "--", "server", "--host", h, "--port", str(p)],
             False,
         ),
-        client_cmd=lambda h, p: (
-            ["cargo", "run", "--release", "--", "client", "--host", h, "--port", str(p)],
+        client_cmd=lambda h, p, codec: (
+            ["cargo", "run", "--release", "--", "client", "--host", h, "--port", str(p), "--codec", codec],
             False,
         ),
         rsync_excludes=["target", "generated"],
@@ -248,8 +248,8 @@ LANG_CONFIGS: dict[Lang, ServiceLangConfig] = {
             ["dart", "run", "bin/main.dart", "server", "--host", h, "--port", str(p)],
             False,
         ),
-        client_cmd=lambda h, p: (
-            ["dart", "run", "bin/main.dart", "client", "--host", h, "--port", str(p)],
+        client_cmd=lambda h, p, codec: (
+            ["dart", "run", "bin/main.dart", "client", "--host", h, "--port", str(p), "--codec", codec],
             False,
         ),
         rsync_excludes=[".dart_tool", "pubspec.lock", "generated"],
@@ -266,8 +266,8 @@ LANG_CONFIGS: dict[Lang, ServiceLangConfig] = {
             [SWIFT_WRAPPER, ".", "run", "ServiceMain", "server", "--host", h, "--port", str(p)],
             False,
         ),
-        client_cmd=lambda h, p: (
-            [SWIFT_WRAPPER, ".", "run", "ServiceMain", "client", "--host", h, "--port", str(p)],
+        client_cmd=lambda h, p, codec: (
+            [SWIFT_WRAPPER, ".", "run", "ServiceMain", "client", "--host", h, "--port", str(p), "--codec", codec],
             False,
         ),
         rsync_excludes=[".build", "Generated"],
@@ -285,6 +285,10 @@ _lang_locks: dict = {}
 _self_pair_client_dirs: dict[Lang, str] = {}
 
 BASE_PORT = 18100
+
+# Each (server, client) pair is exercised once per codec; the matrix shows two
+# status icons per cell — one for JSON, one for UEBA.
+CODECS = ("json", "ueba")
 
 
 def _get_lang_lock(lang: Lang) -> asyncio.Lock:
@@ -718,8 +722,9 @@ async def run_server_client_pair(
     port: int,
     server_proc: asyncio.subprocess.Process,
     timeout: int,
+    codec: str,
 ) -> StepResult:
-    """Run a client against a running server."""
+    """Run a client against a running server for a single codec."""
     config = LANG_CONFIGS[client_lang]
     cwd = str(target_dir / config.dir_name)
     if server_lang == client_lang and client_lang not in (Lang.SWIFT, Lang.TYPESCRIPT):
@@ -747,7 +752,7 @@ async def run_server_client_pair(
         return StepResult(Status.SERVER_FAILED, 0, "", f"Reset failed: {e}", -1)
 
     # Run client
-    cmd, use_shell = config.client_cmd(host, str(port))
+    cmd, use_shell = config.client_cmd(host, str(port), codec)
     async with _get_lang_lock(client_lang):
         result = await run_subprocess(cmd, cwd=cwd, timeout=timeout, use_shell=use_shell)
 
@@ -803,6 +808,15 @@ def generate_html_report(report: ServiceReport, langs: list[Lang], target_dir: P
         ".cell-C { background: #f44336; color: white; font-weight: bold; }",
         ".cell-U { background: #9e9e9e; color: white; font-weight: bold; }",
         "td.cell-P:hover, td.cell-B:hover, td.cell-S:hover, td.cell-C:hover, td.cell-U:hover { opacity: 0.8; cursor: pointer; }",
+        "td.matrix-cell { padding: 0; }",
+        ".codec-pair { display: flex; }",
+        ".codec-box { flex: 1; padding: 6px 8px; color: white; font-weight: bold; cursor: pointer; }",
+        ".codec-box:hover { opacity: 0.8; }",
+        ".codec-box.cb-P { background: #4caf50; }",
+        ".codec-box.cb-B { background: #ff9800; }",
+        ".codec-box.cb-S { background: #e91e63; }",
+        ".codec-box.cb-C { background: #f44336; }",
+        ".codec-box.cb-U { background: #9e9e9e; }",
         ".summary { display: flex; gap: 20px; margin: 10px 0; }",
         ".summary-item { padding: 8px 16px; border-radius: 4px; color: white; font-weight: bold; }",
         ".log-section { display: none; margin: 5px 0 15px 0; background: #f0f0f0; padding: 10px; ",
@@ -824,31 +838,25 @@ def generate_html_report(report: ServiceReport, langs: list[Lang], target_dir: P
         lines.append(f"<span style='background:{color}'>{code} = {label}</span>")
     lines.append("</div>")
 
-    # Summary counts
-    expected_total = len(langs) * len(langs)
-    counts = {s: 0 for s in Status}
+    # Summary counts — 81 cells x 2 codecs = 162 checks
+    cell_total = len(langs) * len(langs)
+    expected_total = cell_total * len(CODECS)
+    counts = {s.value: 0 for s in Status}
     for server_lang in langs:
         for client_lang in langs:
-            key = (server_lang, client_lang)
-            r = report.matrix_results.get(key)
-            if r:
-                counts[r.status] += 1
-            else:
-                br_server = report.build_results.get(server_lang)
-                br_client = report.build_results.get(client_lang)
-                if (br_server and br_server.status != Status.PASSED) or (
-                    br_client and br_client.status != Status.PASSED
-                ):
-                    counts[Status.BUILD_FAILED] += 1
-                else:
-                    counts[Status.UNEXPECTED] += 1
+            for codec in CODECS:
+                counts[_cell_codec_status(report, server_lang, client_lang, codec)] += 1
 
+    lines.append(
+        f"<p>{cell_total} cells x {len(CODECS)} codecs "
+        f"({', '.join(CODECS)}) = {expected_total} checks</p>"
+    )
     lines.append("<div class='summary'>")
     for status in Status:
         color = STATUS_COLORS[status.value]
         lines.append(
             f"<div class='summary-item' style='background:{color}'>"
-            f"{status.value}: {counts[status]}/{expected_total}</div>"
+            f"{status.value}: {counts[status.value]}/{expected_total}</div>"
         )
     lines.append("</div>")
 
@@ -878,7 +886,8 @@ def generate_html_report(report: ServiceReport, langs: list[Lang], target_dir: P
 
     # Matrix
     lines.append("<h2>Service RPC Compatibility Matrix</h2>")
-    lines.append("<p><em>Rows = Server language, Columns = Client language</em></p>")
+    lines.append("<p><em>Rows = Server language, Columns = Client language. "
+                 "Each cell shows two codecs: left box = J (JSON), right box = U (UEBA).</em></p>")
     lines.append("<table>")
 
     # Header
@@ -887,27 +896,25 @@ def generate_html_report(report: ServiceReport, langs: list[Lang], target_dir: P
         lines.append(f"<th>{LANG_DISPLAY[client_lang]}</th>")
     lines.append("</tr>")
 
-    # Rows
+    # Rows — two glyphs per cell, one per codec
+    codec_glyph = {"json": "J", "ueba": "U"}
     for server_lang in langs:
         lines.append(f"<tr><th>{LANG_DISPLAY[server_lang]}</th>")
         for client_lang in langs:
-            key = (server_lang, client_lang)
-            r = report.matrix_results.get(key)
-            if r:
-                s = r.status.value
-            else:
-                br_server = report.build_results.get(server_lang)
-                br_client = report.build_results.get(client_lang)
-                if (br_server and br_server.status != Status.PASSED) or (
-                    br_client and br_client.status != Status.PASSED
-                ):
-                    s = "B"
-                else:
-                    s = "U"
-            cell_id = f"{server_lang.value}-{client_lang.value}"
+            boxes = []
+            for codec in CODECS:
+                s = _cell_codec_status(report, server_lang, client_lang, codec)
+                glyph = codec_glyph.get(codec, codec[0].upper())
+                log_id = f"{server_lang.value}-{client_lang.value}-{codec}-log"
+                boxes.append(
+                    f"<div class='codec-box cb-{s}' "
+                    f"title='{codec}: {STATUS_LABELS[s]}' "
+                    f"onclick=\"toggleLog('{log_id}')\">{glyph}:{s}</div>"
+                )
             lines.append(
-                f"<td class='cell-{s}' id='{cell_id}' "
-                f"onclick=\"toggleLog('{cell_id}-log')\">{s}</td>"
+                "<td class='matrix-cell'><div class='codec-pair'>"
+                + "".join(boxes)
+                + "</div></td>"
             )
         lines.append("</tr>")
     lines.append("</table>")
@@ -937,12 +944,12 @@ def generate_html_report(report: ServiceReport, langs: list[Lang], target_dir: P
 
     for key, r in report.matrix_results.items():
         if r.status != Status.PASSED:
-            server_lang, client_lang = key
-            cell_id = f"{server_lang.value}-{client_lang.value}"
-            lines.append(f"<div id='{cell_id}-log' class='log-section'>")
+            server_lang, client_lang, codec = key
+            log_id = f"{server_lang.value}-{client_lang.value}-{codec}-log"
+            lines.append(f"<div id='{log_id}' class='log-section'>")
             lines.append(
                 f"<strong>Server: {LANG_DISPLAY[server_lang]}, "
-                f"Client: {LANG_DISPLAY[client_lang]}</strong><br/>"
+                f"Client: {LANG_DISPLAY[client_lang]}, Codec: {codec}</strong><br/>"
             )
             lines.append(f"Status: {r.status.value}<br/>")
             lines.append(f"Exit code: {r.return_code}<br/>")
@@ -958,19 +965,23 @@ def generate_html_report(report: ServiceReport, langs: list[Lang], target_dir: P
     print(f"HTML report: {report_path}")
 
 
-def _resolve_cell_status(
-    report: ServiceReport, server_lang: Lang, client_lang: Lang,
+def _cell_codec_status(
+    report: ServiceReport, server_lang: Lang, client_lang: Lang, codec: str,
 ) -> str:
-    key = (server_lang, client_lang)
-    r = report.matrix_results.get(key)
-    if r:
-        return r.status.value
+    """Return the P/B/S/C/U status code for one (server, client, codec) cell.
+
+    Build-failed takes precedence: if either language did not build, the cell
+    is "B" for both codecs.
+    """
     br_server = report.build_results.get(server_lang)
     br_client = report.build_results.get(client_lang)
     if (br_server and br_server.status != Status.PASSED) or (
         br_client and br_client.status != Status.PASSED
     ):
         return "B"
+    r = report.matrix_results.get((server_lang, client_lang, codec))
+    if r:
+        return r.status.value
     return "U"
 
 
@@ -980,11 +991,13 @@ def generate_markdown_summary(
     status_emoji = {"P": ":white_check_mark:", "B": ":warning:", "S": ":no_entry:", "C": ":x:", "U": ":grey_question:"}
     lines: list[str] = []
 
-    expected_total = len(langs) * len(langs)
+    cell_total = len(langs) * len(langs)
+    expected_total = cell_total * len(CODECS)
     counts: dict[str, int] = {"P": 0, "B": 0, "S": 0, "C": 0, "U": 0}
     for server_lang in langs:
         for client_lang in langs:
-            counts[_resolve_cell_status(report, server_lang, client_lang)] += 1
+            for codec in CODECS:
+                counts[_cell_codec_status(report, server_lang, client_lang, codec)] += 1
 
     all_passed = counts["P"] == expected_total
 
@@ -993,6 +1006,10 @@ def generate_markdown_summary(
     else:
         lines.append(f"## :x: Service Tests: {counts['P']}/{expected_total} passed")
 
+    lines.append("")
+    lines.append(
+        f"{cell_total} cells x {len(CODECS)} codecs ({', '.join(CODECS)}) = {expected_total} checks"
+    )
     lines.append("")
     lines.append(f"Duration: {report.total_duration_sec:.1f}s")
     lines.append("")
@@ -1007,17 +1024,24 @@ def generate_markdown_summary(
     lines.append("")
     lines.append("*Rows = Server, Columns = Client*")
     lines.append("")
+    lines.append("*Each cell shows two codecs as `J:… U:…` — left = JSON, right = UEBA.*")
+    lines.append("")
 
     header = "| Server \\ Client | " + " | ".join(LANG_DISPLAY[l] for l in langs) + " |"
     sep = "|---|" + "|".join("---" for _ in langs) + "|"
     lines.append(header)
     lines.append(sep)
 
+    codec_label = {"json": "J", "ueba": "U"}
     for server_lang in langs:
         cells = []
         for client_lang in langs:
-            s = _resolve_cell_status(report, server_lang, client_lang)
-            cells.append(status_emoji.get(s, s))
+            parts = []
+            for codec in CODECS:
+                s = _cell_codec_status(report, server_lang, client_lang, codec)
+                label = codec_label.get(codec, codec[0].upper())
+                parts.append(f"{label}:{status_emoji.get(s, s)}")
+            cells.append(" ".join(parts))
         lines.append(
             f"| **{LANG_DISPLAY[server_lang]}** | " + " | ".join(cells) + " |"
         )
@@ -1027,17 +1051,17 @@ def generate_markdown_summary(
     failures = []
     for server_lang in langs:
         for client_lang in langs:
-            s = _resolve_cell_status(report, server_lang, client_lang)
-            if s != "P":
-                key = (server_lang, client_lang)
-                r = report.matrix_results.get(key)
-                detail = ""
-                if r and r.stderr:
-                    detail = r.stderr.strip().split("\n")[-1][:120]
-                failures.append(
-                    f"- **{LANG_DISPLAY[server_lang]} server / {LANG_DISPLAY[client_lang]} client**: {s}"
-                    + (f" — `{detail}`" if detail else "")
-                )
+            for codec in CODECS:
+                s = _cell_codec_status(report, server_lang, client_lang, codec)
+                if s != "P":
+                    r = report.matrix_results.get((server_lang, client_lang, codec))
+                    detail = ""
+                    if r and r.stderr:
+                        detail = r.stderr.strip().split("\n")[-1][:120]
+                    failures.append(
+                        f"- **{LANG_DISPLAY[server_lang]} server / {LANG_DISPLAY[client_lang]} client / {codec}**: {s}"
+                        + (f" — `{detail}`" if detail else "")
+                    )
 
     if failures:
         lines.append("<details>")
@@ -1069,25 +1093,16 @@ def write_json_results(report: ServiceReport, langs: list[Lang], target_dir: Pat
             "status": r.status.value,
             "duration": r.duration_sec,
         }
-    for key, r in report.matrix_results.items():
-        server_lang, client_lang = key
-        results["matrix"][f"{server_lang.value}/{client_lang.value}"] = {
-            "status": r.status.value,
-            "duration": r.duration_sec,
-        }
-
     for server_lang in langs:
         for client_lang in langs:
-            k = f"{server_lang.value}/{client_lang.value}"
-            if k not in results["matrix"]:
-                br_server = report.build_results.get(server_lang)
-                br_client = report.build_results.get(client_lang)
-                if (br_server and br_server.status != Status.PASSED) or (
-                    br_client and br_client.status != Status.PASSED
-                ):
-                    results["matrix"][k] = {"status": "B", "duration": 0}
-                else:
-                    results["matrix"][k] = {"status": "U", "duration": 0}
+            for codec in CODECS:
+                k = f"{server_lang.value}/{client_lang.value}/{codec}"
+                r = report.matrix_results.get((server_lang, client_lang, codec))
+                status = _cell_codec_status(report, server_lang, client_lang, codec)
+                results["matrix"][k] = {
+                    "status": status,
+                    "duration": r.duration_sec if r else 0,
+                }
 
     results_path = target_dir / "service-results.json"
     results_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
@@ -1125,35 +1140,26 @@ def print_step(lang: Lang, action: str, result: StepResult):
 
 
 def print_summary(report: ServiceReport, langs: list[Lang]):
-    total = len(langs) * len(langs)
-    counts = {s: 0 for s in Status}
+    cell_total = len(langs) * len(langs)
+    total = cell_total * len(CODECS)
+    counts = {s.value: 0 for s in Status}
 
     for server_lang in langs:
         for client_lang in langs:
-            key = (server_lang, client_lang)
-            r = report.matrix_results.get(key)
-            if r:
-                counts[r.status] += 1
-            else:
-                br_server = report.build_results.get(server_lang)
-                br_client = report.build_results.get(client_lang)
-                if (br_server and br_server.status != Status.PASSED) or (
-                    br_client and br_client.status != Status.PASSED
-                ):
-                    counts[Status.BUILD_FAILED] += 1
-                else:
-                    counts[Status.UNEXPECTED] += 1
+            for codec in CODECS:
+                counts[_cell_codec_status(report, server_lang, client_lang, codec)] += 1
 
     print(f"\n{'='*60}")
     print(f"  SUMMARY ({report.total_duration_sec:.1f}s total)")
     print(f"{'='*60}")
-    print(f"  Passed:        {counts[Status.PASSED]}/{total}")
-    print(f"  Build failed:  {counts[Status.BUILD_FAILED]}/{total}")
-    print(f"  Server failed: {counts[Status.SERVER_FAILED]}/{total}")
-    print(f"  Client failed: {counts[Status.CLIENT_FAILED]}/{total}")
-    print(f"  Unexpected:    {counts[Status.UNEXPECTED]}/{total}")
+    print(f"  {cell_total} cells x {len(CODECS)} codecs ({', '.join(CODECS)}) = {total} checks")
+    print(f"  Passed:        {counts['P']}/{total}")
+    print(f"  Build failed:  {counts['B']}/{total}")
+    print(f"  Server failed: {counts['S']}/{total}")
+    print(f"  Client failed: {counts['C']}/{total}")
+    print(f"  Unexpected:    {counts['U']}/{total}")
 
-    all_passed = counts[Status.PASSED] == total
+    all_passed = counts["P"] == total
     print(f"\n  Result: {'ALL PASSED' if all_passed else 'FAILURES DETECTED'}")
     return all_passed
 
@@ -1224,7 +1230,8 @@ async def async_main():
     print(f"  Target:      {target_dir}")
     print(f"  Parallelism: {args.parallelism}")
     print(f"  Languages:   {', '.join(LANG_DISPLAY[l] for l in langs)}")
-    print(f"  Matrix:      {len(langs)}x{len(langs)} = {len(langs) * len(langs)} pairs")
+    print(f"  Matrix:      {len(langs)}x{len(langs)} = {len(langs) * len(langs)} cells"
+          f" x {len(CODECS)} codecs ({', '.join(CODECS)}) = {len(langs) * len(langs) * len(CODECS)} checks")
 
     # Phase 1: Copy projects
     print_phase("Phase 1: Copy projects")
@@ -1295,32 +1302,41 @@ async def async_main():
                 for line in srv_stderr.strip().split("\n")[-5:]:
                     print(f"       {line}")
             for client_lang in buildable_langs:
-                report.matrix_results[(server_lang, client_lang)] = StepResult(
-                    Status.SERVER_FAILED, 0, srv_stdout, srv_stderr, -1
-                )
+                for codec in CODECS:
+                    report.matrix_results[(server_lang, client_lang, codec)] = StepResult(
+                        Status.SERVER_FAILED, 0, srv_stdout, srv_stderr, -1
+                    )
             continue
 
         print(f"  [OK] {LANG_DISPLAY[server_lang]} server started on {host}:{port}")
 
-        # Run all clients against this server
+        # Run all clients against this server, once per codec
         for client_lang in buildable_langs:
             if _shutting_down:
                 break
 
-            result = await run_server_client_pair(
-                server_lang, client_lang, target_dir, host, port,
-                server_proc, args.timeout,
-            )
-            report.matrix_results[(server_lang, client_lang)] = result
+            codec_icons = []
+            for codec in CODECS:
+                if _shutting_down:
+                    break
 
-            status_icon = "OK" if result.status == Status.PASSED else "FAIL"
+                # Reset before each codec run so each is independent.
+                result = await run_server_client_pair(
+                    server_lang, client_lang, target_dir, host, port,
+                    server_proc, args.timeout, codec,
+                )
+                report.matrix_results[(server_lang, client_lang, codec)] = result
+
+                tag = "OK" if result.status == Status.PASSED else result.status.value
+                codec_icons.append(f"{codec}:{tag}")
+                if result.status != Status.PASSED and result.stderr:
+                    for line in result.stderr.strip().split("\n")[-3:]:
+                        print(f"         [{codec}] {line}")
+
             print(
-                f"    [{status_icon}] {LANG_DISPLAY[server_lang]} server <- "
-                f"{LANG_DISPLAY[client_lang]} client ({result.duration_sec:.1f}s)"
+                f"    [{' '.join(codec_icons)}] {LANG_DISPLAY[server_lang]} server <- "
+                f"{LANG_DISPLAY[client_lang]} client"
             )
-            if result.status != Status.PASSED and result.stderr:
-                for line in result.stderr.strip().split("\n")[-3:]:
-                    print(f"         {line}")
 
         # Stop server
         await stop_server_process(server_proc, host, port)
